@@ -420,8 +420,18 @@ public:
     bool valuesEqualDeepPublic(const Value &left, const Value &right) const { return valuesEqualDeep(left, right); }
     Value callFunctionSyncPublic(const Value &fn, const std::vector<Value> &args) { return callFunctionSync(fn, args); }
     std::optional<std::string> resolveKeyPublic(const Value &value) const { return resolveKey(value); }
-  void pushStackPublic(Value value) { pushStack(std::move(value)); }
-  Value popStackPublic() { return popStack(); }
+    void pushStackPublic(Value value) { pushStack(std::move(value)); }
+    Value popStackPublic() { return popStack(); }
+    void loadFiberStatePublic(Fiber* fiber) { loadFiberState(fiber); }
+    void saveFiberStatePublic(Fiber* fiber) { saveFiberState(fiber); }
+    // Replace top-of-stack with a new value (used when resuming from await)
+    void replaceStackTop(Value value) {
+        if (!stack.empty()) {
+            stack.top() = std::move(value);
+        } else {
+            pushStack(std::move(value));
+        }
+    }
   // Upvalue/closure access for JIT bridges
   uint32_t currentClosureIdPublic() const { return currentFrame().closure_id; }
   GCHeap::RuntimeClosure* currentClosurePublic() {
@@ -599,7 +609,18 @@ public:
     }
   }
 
-  // ========== CALLER INFO ==========
+    // ========== CALLER INFO ==========
+
+    // ========== THREAD RESULTS (for await thread join) ==========
+    // Get the result stored for a completed thread (used by ExecutionEngine to
+    // populate wait_handle.resume_value when unparking a waiting goroutine)
+    Value getThreadResult(uint32_t thread_id) const {
+        auto it = thread_results_.find(thread_id);
+        if (it != thread_results_.end()) return it->second;
+        return Value::makeNull();
+    }
+
+    // ========== CALLER INFO ==========
   // Returns caller info at given depth (0 = immediate caller, 1 = caller's caller, etc.)
   // Returns {function_name, line, file} as strings, or empty strings if unavailable
   struct CallerInfo {
@@ -793,8 +814,16 @@ public:
 Value callFunction(const Value &fn,
 const std::vector<Value> &args);
 
-void addIntervalResult(uint32_t id, Value result) { interval_results_[id] = std::move(result); }
-void addTimeoutResult(uint32_t id, Value result) { timeout_results_[id] = std::move(result); }
+    void addIntervalResult(uint32_t id, Value result) { interval_results_[id] = std::move(result); }
+    void addTimeoutResult(uint32_t id, Value result) { timeout_results_[id] = std::move(result); }
+    Value getIntervalResult(uint32_t id) const {
+        auto it = interval_results_.find(id);
+        return (it != interval_results_.end()) ? it->second : Value::makeNull();
+    }
+    Value getTimeoutResult(uint32_t id) const {
+        auto it = timeout_results_.find(id);
+        return (it != timeout_results_.end()) ? it->second : Value::makeNull();
+    }
 
   // Prototype system - methods on types
   void registerPrototypeMethod(const std::string &typeName,

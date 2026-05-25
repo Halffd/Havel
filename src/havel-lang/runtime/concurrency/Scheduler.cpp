@@ -196,7 +196,30 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
 			runnable_queue_.push_back(g);
             ::havel::debug("[Scheduler] [UNPARK] gid={} name='{}' to RUNNABLE queue", g->id, g->name);
 		}
-	}
+    }
+}
+
+Scheduler::Goroutine* Scheduler::findGoroutineByWaitTarget(AwaitableType type, uint32_t target_id) {
+    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    for (auto& [id, g] : goroutines_) {
+        if (g->state == GoroutineState::Suspended &&
+            g->wait_handle.type == type &&
+            g->wait_handle.target_id == target_id) {
+            return g.get();
+        }
+    }
+    return nullptr;
+}
+
+Scheduler::Goroutine* Scheduler::findGoroutineByFiber(Fiber* fiber) {
+    if (!fiber) return nullptr;
+    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    for (auto& [id, g] : goroutines_) {
+        if (g->fiber == fiber) {
+            return g.get();
+        }
+    }
+    return nullptr;
 }
 
 void Scheduler::start() {
@@ -356,6 +379,7 @@ void Scheduler::requeueFront(Goroutine* g) {
     if (!g) return;
     g->state = GoroutineState::Created;
     g->suspension_reason = SuspensionReason::None;
+    g->wait_handle.clear();
     g->ip = 0;
     g->stack.clear();
     g->locals.clear();
@@ -408,7 +432,7 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
 
     switch (g->hotkey_policy) {
     case HotkeyPolicy::Drop:
-        if (isPending) return false;
+        if (isPending) return g->persistent;
         break;
     case HotkeyPolicy::Replace:
         break;
@@ -480,8 +504,9 @@ size_t Scheduler::wakeSleepingGoroutines() {
     for (auto& [id, g] : goroutines_) {
         if (g->state != GoroutineState::Suspended) continue;
         if (g->suspension_reason != SuspensionReason::SleepWait) continue;
-        if (g->resume_at_time == std::chrono::steady_clock::time_point{}) continue;
-        if (now < g->resume_at_time) continue;
+    if (g->wait_handle.type != AwaitableType::SLEEP) continue;
+    if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) continue;
+    if (now < g->wait_handle.deadline) continue;
 
         g->state = GoroutineState::Runnable;
         g->suspension_reason = SuspensionReason::None;
@@ -525,6 +550,71 @@ size_t Scheduler::drainDeferredCallbacks() {
   }
 
   return acts.size();
+}
+
+Scheduler::Goroutine* Scheduler::getHotkeyByAlias(const std::string& alias) {
+    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    for (auto& [id, g] : goroutines_) {
+        if (g && g->persistent && g->hotkey_alias == alias) {
+            return g.get();
+        }
+    }
+    return nullptr;
+}
+
+void Scheduler::setHotkeyPolicy(Goroutine* g, HotkeyPolicy policy) {
+    if (!g) return;
+    g->hotkey_policy = policy;
+}
+
+HotkeyPolicy Scheduler::getHotkeyPolicy(Goroutine* g) const {
+  if (!g) return HotkeyPolicy::Drop;
+  return g->hotkey_policy;
+}
+
+size_t Scheduler::hotkeyCount() const {
+  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  size_t count = 0;
+  for (const auto& [id, g] : goroutines_) {
+    if (g && g->persistent) count++;
+  }
+  return count;
+}
+
+size_t Scheduler::activeHotkeyCount() const {
+  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  size_t count = 0;
+  for (const auto& [id, g] : goroutines_) {
+    if (g && g->persistent &&
+        (g->state == GoroutineState::Running ||
+         g->state == GoroutineState::Runnable ||
+         g->state == GoroutineState::Created)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+size_t Scheduler::suspendedHotkeyCount() const {
+  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  size_t count = 0;
+  for (const auto& [id, g] : goroutines_) {
+    if (g && g->persistent && g->state == GoroutineState::Suspended) {
+      count++;
+    }
+  }
+  return count;
+}
+
+std::vector<std::string> Scheduler::getHotkeyAliases() const {
+  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::vector<std::string> result;
+  for (const auto& [id, g] : goroutines_) {
+    if (g && g->persistent && !g->hotkey_alias.empty()) {
+      result.push_back(g->hotkey_alias);
+    }
+  }
+  return result;
 }
 
 } // namespace havel::compiler

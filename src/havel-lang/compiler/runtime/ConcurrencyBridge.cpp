@@ -410,51 +410,88 @@ Value ConcurrencyBridge::channelNew(const std::vector<Value> &args) {
 }
 
 Value ConcurrencyBridge::channelSend(const std::vector<Value> &args) {
-  if (args.size() < 2 || !args[0].isChannelId()) {
-    return Value::makeNull();
-  }
+    if (args.size() < 2 || !args[0].isChannelId()) {
+        return Value::makeNull();
+    }
 
-  uint32_t channel_id = args[0].asChannelId();
-  Value value = args[1];
+    uint32_t channel_id = args[0].asChannelId();
+    Value value = args[1];
 
-  std::lock_guard<std::mutex> lock(channels_mutex_);
-  auto it = channels_.find(channel_id);
-  if (it == channels_.end() || it->second->closed) {
-    return Value::makeBool(false);
-  }
+    std::lock_guard<std::mutex> lock(channels_mutex_);
+    auto it = channels_.find(channel_id);
+    if (it == channels_.end() || it->second->closed) {
+        return Value::makeBool(false);
+    }
 
-  it->second->queue.push(value);
-  it->second->cv.notify_one();
+    it->second->queue.push(value);
+    it->second->cv.notify_one();
 
-  return Value::makeBool(true);
+    // Emit CHANNEL_RECV event so the ExecutionEngine can unpark
+    // any goroutine that is suspended waiting for data on this channel
+    if (event_queue_) {
+        event_queue_->push(Event(EventType::CHANNEL_RECV, channel_id));
+    }
+
+    return Value::makeBool(true);
 }
 
 Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
-  if (args.empty() || !args[0].isChannelId()) {
-    return Value::makeNull();
-  }
+    if (args.empty() || !args[0].isChannelId()) {
+        return Value::makeNull();
+    }
 
-  uint32_t channel_id = args[0].asChannelId();
+    uint32_t channel_id = args[0].asChannelId();
 
-  std::unique_lock<std::mutex> lock(channels_mutex_);
-  auto it = channels_.find(channel_id);
-  if (it == channels_.end()) {
-    return Value::makeNull();
-  }
+    std::unique_lock<std::mutex> lock(channels_mutex_);
+    auto it = channels_.find(channel_id);
+    if (it == channels_.end()) {
+        return Value::makeNull();
+    }
 
-  // Wait for a value to be available or channel to be closed
-  it->second->cv.wait(lock, [&] {
-    return !it->second->queue.empty() || it->second->closed;
-  });
+    // If data is available, return it immediately
+    if (!it->second->queue.empty()) {
+        Value value = it->second->queue.front();
+        it->second->queue.pop();
+        return value;
+    }
 
-  if (it->second->queue.empty() && it->second->closed) {
-    return Value::makeNull();
-  }
+    // Channel closed and empty
+    if (it->second->closed) {
+        return Value::makeNull();
+    }
 
-  Value value = it->second->queue.front();
-  it->second->queue.pop();
+    // No data available — check if we're in a goroutine context
+    // If so, suspend instead of blocking
+    auto* vm = getVM();
+    auto* sched = vm ? vm->getScheduler() : nullptr;
+    if (sched) {
+        auto* current_g = sched->current();
+        if (current_g && current_g->state == Scheduler::GoroutineState::Running) {
+            // Suspend the goroutine — the EventQueue will unpark us
+            // when data arrives on this channel
+            current_g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
+            current_g->wait_handle.target_id = channel_id;
+            current_g->wait_handle.resume_value = Value::makeNull();
+            vm->requestSuspension(
+                static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV),
+                reinterpret_cast<void*>(static_cast<intptr_t>(channel_id)));
+            return Value::makeNull(); // placeholder, replaced on resume
+        }
+    }
 
-  return value;
+    // No scheduler — blocking wait (legacy path)
+    it->second->cv.wait(lock, [&] {
+        return !it->second->queue.empty() || it->second->closed;
+    });
+
+    if (it->second->queue.empty() && it->second->closed) {
+        return Value::makeNull();
+    }
+
+    Value value = it->second->queue.front();
+    it->second->queue.pop();
+
+    return value;
 }
 
 Value ConcurrencyBridge::channelClose(const std::vector<Value> &args) {

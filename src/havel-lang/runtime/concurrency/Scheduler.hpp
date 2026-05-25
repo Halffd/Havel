@@ -66,14 +66,45 @@ public:
     Done             // Execution finished
   };
 
-  enum class SuspensionReason {
+enum class SuspensionReason {
     None = 0,
-    ChannelWait,     // Suspended on recv() from empty channel
-    ThreadWait,      // Suspended on thread.join()
-    SleepWait,       // Suspended on sleep()
-    TimerWait,        // Suspended on timeout
-    HotkeyWait       // Parked waiting for next hotkey trigger (persistent)
-  };
+    ChannelWait, // Suspended on recv() from empty channel
+    ThreadWait, // Suspended on thread.join()
+    SleepWait, // Suspended on sleep()
+    TimerWait, // Suspended on timeout/interval await
+    HotkeyWait, // Parked waiting for next hotkey trigger (persistent)
+    CoroutineWait, // Suspended on coroutine await
+    ChannelSendWait // Suspended on send() to full channel
+};
+
+// AwaitableType - identifies what a goroutine is awaiting
+// Used by WaitHandle to generalize suspension context
+enum class AwaitableType : uint8_t {
+    NONE = 0,
+    SLEEP,        // Sleeping until deadline
+    THREAD_JOIN,  // Waiting for thread completion
+    CHANNEL_RECV, // Waiting for data on channel
+    CHANNEL_SEND, // Waiting for space on channel
+    TIMER_WAIT,   // Waiting for interval/timeout fire
+    COROUTINE,    // Waiting for coroutine completion
+    EXTERNAL      // External system parked this goroutine
+};
+
+// WaitHandle - unified suspension context for a goroutine
+// Replaces ad-hoc waiting_for_thread/waiting_for_channel/resume_at_time fields
+struct WaitHandle {
+    AwaitableType type = AwaitableType::NONE;
+    uint32_t target_id = 0;  // thread_id, channel_id, interval_id, timeout_id, coroutine_id
+    Value resume_value;      // Value to push on stack when resuming from await
+    std::chrono::steady_clock::time_point deadline{}; // For SLEEP
+
+    void clear() {
+        type = AwaitableType::NONE;
+        target_id = 0;
+        resume_value = Value::makeNull();
+        deadline = {};
+    }
+};
 
   /**
    * Goroutine - Bytecode execution context
@@ -103,11 +134,9 @@ public:
     // Goroutine state machine
     GoroutineState state;
     SuspensionReason suspension_reason;
-    
-    // Suspension context (what we're waiting for)
-    uint32_t waiting_for_channel;      // Channel ID (if waiting on recv)
-    uint32_t waiting_for_thread;       // Thread ID (if waiting on join)
-    std::chrono::steady_clock::time_point resume_at_time;  // Time-based waits
+
+    // Unified suspension context (what we're waiting for)
+    WaitHandle wait_handle;
 
     // Timing information
     std::chrono::steady_clock::time_point created_time;
@@ -132,12 +161,10 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;
     std::string hotkey_alias;
 
-	explicit Goroutine(uint32_t id_, const std::string& name_ = "",
-		FiberPriority prio = FiberPriority::NORMAL)
-	: id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
-	state(GoroutineState::Created), suspension_reason(SuspensionReason::None),
-	waiting_for_channel(0), waiting_for_thread(0),
-	created_time(std::chrono::steady_clock::now()), parent_id(0),
+    explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL)
+        : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
+          state(GoroutineState::Created), suspension_reason(SuspensionReason::None),
+          created_time(std::chrono::steady_clock::now()), parent_id(0),
 	max_instructions_per_tick(prio == FiberPriority::HOTKEY ? HOTKEY_MAX_INSTRUCTIONS : DEFAULT_MAX_INSTRUCTIONS),
 	priority(prio) {}
 
@@ -226,9 +253,29 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
    *
    * @param g Goroutine to wake (must be Suspended)
    */
-  void unpark(Goroutine* g);
+    void unpark(Goroutine* g);
 
-  // ===== Scheduler Lifecycle =====
+    /**
+     * Find a suspended goroutine waiting on a specific awaitable target.
+     * Used by event handlers to locate the goroutine to unpark.
+     * Linear scan of suspended goroutines (can be indexed later for perf).
+     *
+     * @param type The awaitable type to match
+     * @param target_id The target ID to match (thread_id, channel_id, etc.)
+     * @return Goroutine pointer or nullptr if not found
+     */
+    Goroutine* findGoroutineByWaitTarget(AwaitableType type, uint32_t target_id);
+
+    /**
+     * Find the goroutine that owns a specific fiber.
+     * Used by event handlers that only have a Fiber* reference.
+     *
+     * @param fiber The fiber to search for
+     * @return Goroutine pointer or nullptr if not found
+     */
+    Goroutine* findGoroutineByFiber(Fiber* fiber);
+
+    // ===== Scheduler Lifecycle =====
 
   void start();
   void stop();
@@ -274,7 +321,29 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     // Used by hotkey.trigger() to reach persistent goroutines without HotkeyManager
     bool wakeHotkeyByAlias(const std::string& alias);
 
-    // Check if there are runnable fibers
+    // Find a persistent goroutine by its hotkey alias
+    // Returns nullptr if not found
+    Goroutine* getHotkeyByAlias(const std::string& alias);
+
+    // Change the hotkey policy on a goroutine at runtime
+    void setHotkeyPolicy(Goroutine* g, HotkeyPolicy policy);
+
+  // Query the hotkey policy on a goroutine
+  HotkeyPolicy getHotkeyPolicy(Goroutine* g) const;
+
+  // Count persistent hotkey goroutines
+  size_t hotkeyCount() const;
+
+  // Count active (Running/Runnable/Created) persistent hotkey goroutines
+  size_t activeHotkeyCount() const;
+
+  // Count suspended persistent hotkey goroutines
+  size_t suspendedHotkeyCount() const;
+
+  // Collect aliases of all persistent hotkey goroutines
+  std::vector<std::string> getHotkeyAliases() const;
+
+  // Check if there are runnable fibers
     bool hasRunnableFibers() const;
 
     // Wake sleeping goroutines whose resume_at_time has passed

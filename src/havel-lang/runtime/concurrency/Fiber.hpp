@@ -152,10 +152,12 @@ enum class SuspensionReason : uint8_t {
     CHANNEL_RECV,    // Waiting to receive on channel
     CHANNEL_SEND,    // Waiting to send on channel
     THREAD_JOIN,     // Waiting for thread to complete
-    TIMER,           // Waiting for timer to fire
+    TIMER,           // Waiting for timer to fire (interval or timeout)
     SLEEP,           // Waiting for sleep to complete
     EXTERNAL,        // External system parked this fiber
-    HOTKEY_WAIT      // Parked waiting for next hotkey trigger (persistent)
+    HOTKEY_WAIT,     // Parked waiting for next hotkey trigger (persistent)
+    AWAIT,           // General-purpose await (any awaitable type)
+    COROUTINE_WAIT   // Waiting for a coroutine to complete
 };
 
 // ============================================================================
@@ -436,15 +438,18 @@ public:
     
     std::string suspensionReasonString() const {
         switch (suspended_reason) {
-            case SuspensionReason::NONE: return "NONE";
-            case SuspensionReason::YIELD: return "YIELD";
-            case SuspensionReason::CHANNEL_RECV: return "CHANNEL_RECV";
-            case SuspensionReason::CHANNEL_SEND: return "CHANNEL_SEND";
-            case SuspensionReason::THREAD_JOIN: return "THREAD_JOIN";
-            case SuspensionReason::TIMER: return "TIMER";
-            case SuspensionReason::SLEEP: return "SLEEP";
-            case SuspensionReason::EXTERNAL: return "EXTERNAL";
-            default: return "UNKNOWN";
+        case SuspensionReason::NONE: return "NONE";
+        case SuspensionReason::YIELD: return "YIELD";
+        case SuspensionReason::CHANNEL_RECV: return "CHANNEL_RECV";
+        case SuspensionReason::CHANNEL_SEND: return "CHANNEL_SEND";
+        case SuspensionReason::THREAD_JOIN: return "THREAD_JOIN";
+        case SuspensionReason::TIMER: return "TIMER";
+        case SuspensionReason::SLEEP: return "SLEEP";
+        case SuspensionReason::EXTERNAL: return "EXTERNAL";
+        case SuspensionReason::HOTKEY_WAIT: return "HOTKEY_WAIT";
+        case SuspensionReason::AWAIT: return "AWAIT";
+    case SuspensionReason::COROUTINE_WAIT: return "COROUTINE_WAIT";
+        default: return "UNKNOWN";
         }
     }
 };

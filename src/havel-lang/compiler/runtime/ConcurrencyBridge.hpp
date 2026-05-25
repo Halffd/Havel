@@ -67,8 +67,11 @@ public:
   bool cleanupThread(uint32_t thread_id);
   
   
-  // Returns count of threads cleaned up
-  int cleanupCompletedThreads();
+    // Returns count of threads cleaned up
+    int cleanupCompletedThreads();
+
+    // Access the VM (for goroutine-aware suspension)
+    class compiler::VM* getVM() const { return vm_; }
 
 private:
   const ::havel::HostContext *ctx_;

@@ -29,9 +29,15 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
 event_queue_->onEvent(EventType::VAR_CHANGED,
 [this](const Event& event) { onVariableChanged(event); });
 
-event_queue_->onEvent(EventType::TIMER_FIRE,
-[this](const Event& event) { onTimerFire(event); });
-}
+        event_queue_->onEvent(EventType::TIMER_FIRE,
+            [this](const Event& event) { onTimerFire(event); });
+
+        event_queue_->onEvent(EventType::CHANNEL_RECV,
+            [this](const Event& event) { onChannelRecv(event); });
+
+        event_queue_->onEvent(EventType::CHANNEL_SEND,
+            [this](const Event& event) { onChannelSend(event); });
+    }
 }
 
 ExecutionEngine::~ExecutionEngine() {
@@ -107,9 +113,16 @@ bool ExecutionEngine::executeFrame() {
         if (g->fiber) {
             vm_->saveFiberState(g->fiber);
         }
-    } else if (g->fiber) {
-        vm_->loadFiberState(g->fiber);
-    }
+        } else if (g->fiber) {
+            vm_->loadFiberState(g->fiber);
+            // If resuming from an await suspension, replace the placeholder null
+            // on the stack with the actual resume_value from the WaitHandle
+            if (g->wait_handle.type != Scheduler::AwaitableType::NONE &&
+                g->wait_handle.type != Scheduler::AwaitableType::SLEEP) {
+                vm_->replaceStackTop(g->wait_handle.resume_value);
+                g->wait_handle.clear();
+            }
+        }
 
 
     // If this Fiber is a hotkey action (special marker function_id), execute the callback
@@ -195,12 +208,37 @@ bool ExecutionEngine::executeFrame() {
             g->fiber->suspend(static_cast<SuspensionReason>(reason), context);
           }
           
-          // Special handling for SLEEP - set resume time
-          if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
-            // Context for sleep is the duration in milliseconds
-            int64_t ms = reinterpret_cast<intptr_t>(context);
-            g->resume_at_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-          }
+                // Special handling for SLEEP - set deadline via WaitHandle
+                if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+                    // Context for sleep is the duration in milliseconds
+                    int64_t ms = reinterpret_cast<intptr_t>(context);
+                    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+                    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+                }
+                // Handle COROUTINE_WAIT - set WaitHandle for coroutine await
+                if (reason == static_cast<uint8_t>(SuspensionReason::COROUTINE_WAIT)) {
+                    uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+                    g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
+                    g->wait_handle.target_id = co_id;
+                }
+                // Handle THREAD_JOIN - set WaitHandle for thread join
+                if (reason == static_cast<uint8_t>(SuspensionReason::THREAD_JOIN)) {
+                    uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+                    g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
+                    g->wait_handle.target_id = tid;
+                }
+                // Handle CHANNEL_RECV - set WaitHandle for channel receive
+                if (reason == static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV)) {
+                    uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+                    g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
+                    g->wait_handle.target_id = ch_id;
+                }
+                // Handle TIMER - set WaitHandle for timer/interval/timeout
+                if (reason == static_cast<uint8_t>(SuspensionReason::TIMER)) {
+                    uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+                    g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+                    g->wait_handle.target_id = timer_id;
+                }
           
           vm_->clearSuspensionRequest();
         }
@@ -336,33 +374,42 @@ void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& ms
 // ============================================================================
 
 void ExecutionEngine::onThreadComplete(const Event& event) {
-  // Event payload: data1 = thread_id that completed
-  uint32_t thread_id = event.data1;
-  
-  if (!vm_) {
-    return;
-  }
+    // Event payload: data1 = thread_id that completed
+    uint32_t thread_id = event.data1;
+
+    if (!vm_) {
+        return;
+    }
 
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine] Thread " << thread_id << " completed (event-driven)\n";
     }
 
-  // Get the fiber that was waiting on this thread
-  Fiber* waiting_fiber = vm_->getThreadWaitingFiber(thread_id);
-  
-  if (waiting_fiber) {
+    // Check if a goroutine is waiting on this thread via WaitHandle
+    if (scheduler_) {
+        Scheduler::Goroutine* g = scheduler_->findGoroutineByWaitTarget(
+            Scheduler::AwaitableType::THREAD_JOIN, thread_id);
+        if (g) {
+            if (debug_mode_) {
+                std::cerr << "[ExecutionEngine] Unparking goroutine " << g->id
+                          << " waiting on thread " << thread_id << "\n";
+            }
+            // Store the thread result as resume_value
+            g->wait_handle.resume_value = vm_->getThreadResult(thread_id);
+            scheduler_->unpark(g);
+        }
+    }
+
+    // Legacy: also handle fiber-only (non-goroutine) thread wait
+    Fiber* waiting_fiber = vm_->getThreadWaitingFiber(thread_id);
+    if (waiting_fiber) {
         if (debug_mode_) {
             std::cerr << "[ExecutionEngine] Unparking fiber waiting on thread " << thread_id << "\n";
         }
-    
-    // Mark fiber as runnable (no longer suspended on thread.join())
-    
-    // For now, we directly manipulate fiber state
-    waiting_fiber->state = FiberState::RUNNABLE;
-  }
-  
-  // Unregister the wait tracking
-  vm_->unregisterThreadWait(thread_id);
+        waiting_fiber->state = FiberState::RUNNABLE;
+    }
+
+    vm_->unregisterThreadWait(thread_id);
 }
 
 // ============================================================================
@@ -447,26 +494,91 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
 }
 
 void ExecutionEngine::onTimerFire(const Event& event) {
-auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
-if (!payload) return;
+    auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
+    if (!payload) return;
 
-Value closure = payload->first;
-uint32_t timer_id = payload->second;
-bool is_timeout = (event.data1 == 1);
-delete payload;
+    Value closure = payload->first;
+    uint32_t timer_id = payload->second;
+    bool is_timeout = (event.data1 == 1);
+    delete payload;
 
-if (!vm_) return;
+    if (!vm_) return;
 
-try {
-Value result = vm_->callFunction(closure, {});
-if (is_timeout) {
-vm_->addTimeoutResult(timer_id, result);
-} else {
-vm_->addIntervalResult(timer_id, result);
+    // Check if a goroutine is waiting on this timer via WaitHandle
+    if (scheduler_) {
+        Scheduler::Goroutine* g = scheduler_->findGoroutineByWaitTarget(
+            Scheduler::AwaitableType::TIMER_WAIT, timer_id);
+        if (g) {
+            if (debug_mode_) {
+                std::cerr << "[ExecutionEngine] Unparking goroutine " << g->id
+                          << " waiting on timer " << timer_id << "\n";
+            }
+            // Store the timer result as resume_value
+            if (is_timeout) {
+                g->wait_handle.resume_value = vm_->getTimeoutResult(timer_id);
+            } else {
+                g->wait_handle.resume_value = vm_->getIntervalResult(timer_id);
+            }
+            scheduler_->unpark(g);
+        }
+    }
+
+    // Also call the timer callback for non-await usage
+    try {
+        Value result = vm_->callFunction(closure, {});
+        if (is_timeout) {
+            vm_->addTimeoutResult(timer_id, result);
+        } else {
+            vm_->addIntervalResult(timer_id, result);
+        }
+    } catch (const std::exception& e) {
+        ::havel::error("[ExecutionEngine] Timer callback exception: {}", e.what());
+    }
 }
-} catch (const std::exception& e) {
-::havel::error("[ExecutionEngine] Timer callback exception: {}", e.what());
+
+void ExecutionEngine::onChannelRecv(const Event& event) {
+    // Event payload: data1 = channel_id that now has data available
+    uint32_t channel_id = event.data1;
+
+    if (!scheduler_) return;
+
+    if (debug_mode_) {
+        std::cerr << "[ExecutionEngine] Channel " << channel_id << " has data available\n";
+    }
+
+    // Find goroutine waiting for data on this channel
+    Scheduler::Goroutine* g = scheduler_->findGoroutineByWaitTarget(
+        Scheduler::AwaitableType::CHANNEL_RECV, channel_id);
+    if (g) {
+        if (debug_mode_) {
+            std::cerr << "[ExecutionEngine] Unparking goroutine " << g->id
+                      << " waiting on channel " << channel_id << " recv\n";
+        }
+        // Resume value will be fetched from channel when goroutine resumes
+        scheduler_->unpark(g);
+    }
 }
+
+void ExecutionEngine::onChannelSend(const Event& event) {
+    // Event payload: data1 = channel_id that now has space available
+    uint32_t channel_id = event.data1;
+
+    if (!scheduler_) return;
+
+    if (debug_mode_) {
+        std::cerr << "[ExecutionEngine] Channel " << channel_id << " has space available\n";
+    }
+
+    // Find goroutine waiting to send on this channel
+    Scheduler::Goroutine* g = scheduler_->findGoroutineByWaitTarget(
+        Scheduler::AwaitableType::CHANNEL_SEND, channel_id);
+    if (g) {
+        if (debug_mode_) {
+            std::cerr << "[ExecutionEngine] Unparking goroutine " << g->id
+                      << " waiting on channel " << channel_id << " send\n";
+        }
+        scheduler_->unpark(g);
+    }
 }
 
 } // namespace havel::compiler

@@ -1801,8 +1801,151 @@ if (timer_check_func_) timer_check_func_();
 if (event_queue_) event_queue_->processAll();
           }
         }
+    return Value::makeNull();
+  });
+
+  // wait() — unified wait on any awaitable value
+  //   wait(thread_id)   → suspend until thread completes
+  //   wait(interval_id) → suspend until interval fires
+  //   wait(timeout_id)  → suspend until timeout fires
+  //   wait(channel_id)  → suspend until channel has data
+  //   wait(coroutine_id)→ suspend until coroutine completes
+  //   wait(int_ms)      → alias for sleep(int_ms)
+  registerHostFunction("wait", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) {
+      COMPILER_THROW("wait() requires one argument");
+    }
+    const Value &awaitable = args[0];
+
+    if (scheduler_) {
+      auto *current_g = scheduler_->current();
+      if (current_g && current_g->state == Scheduler::GoroutineState::Running) {
+        if (awaitable.isThreadId()) {
+          uint32_t tid = awaitable.asThreadId();
+          auto *threadObj = heap_.thread(tid);
+          if (threadObj && threadObj->isRunning()) {
+            current_g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
+            current_g->wait_handle.target_id = tid;
+            current_g->wait_handle.resume_value = Value::makeNull();
+            registerThreadWait(tid, current_g->fiber);
+            suspension_requested_ = true;
+            suspension_reason_ = static_cast<uint8_t>(SuspensionReason::THREAD_JOIN);
+            suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(tid));
+            return Value::makeNull();
+          }
+          return Value::makeNull();
+        }
+        if (awaitable.isIntervalId()) {
+          uint32_t iid = awaitable.asIntervalId();
+          current_g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+          current_g->wait_handle.target_id = iid;
+          current_g->wait_handle.resume_value = Value::makeNull();
+          suspension_requested_ = true;
+          suspension_reason_ = static_cast<uint8_t>(SuspensionReason::TIMER);
+          suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(iid));
+          return Value::makeNull();
+        }
+        if (awaitable.isTimeoutId()) {
+          uint32_t tid = awaitable.asTimeoutId();
+          current_g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+          current_g->wait_handle.target_id = tid;
+          current_g->wait_handle.resume_value = Value::makeNull();
+          suspension_requested_ = true;
+          suspension_reason_ = static_cast<uint8_t>(SuspensionReason::TIMER);
+          suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(tid));
+          return Value::makeNull();
+        }
+        if (awaitable.isChannelId()) {
+          uint32_t chid = awaitable.asChannelId();
+          current_g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
+          current_g->wait_handle.target_id = chid;
+          current_g->wait_handle.resume_value = Value::makeNull();
+          suspension_requested_ = true;
+          suspension_reason_ = static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV);
+          suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(chid));
+          return Value::makeNull();
+        }
+        if (awaitable.isCoroutineId()) {
+          uint32_t coId = awaitable.asCoroutineId();
+          auto *co = heap_.coroutine(coId);
+          if (co && co->state != GCHeap::Coroutine::Done) {
+            current_g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
+            current_g->wait_handle.target_id = coId;
+            current_g->wait_handle.resume_value = Value::makeNull();
+            suspension_requested_ = true;
+            suspension_reason_ = static_cast<uint8_t>(SuspensionReason::COROUTINE_WAIT);
+            suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(coId));
+            return Value::makeNull();
+          }
+          if (co && co->state == GCHeap::Coroutine::Done) {
+            return co->stack.empty() ? Value::makeNull() : co->stack.back();
+          }
+          return Value::makeNull();
+        }
+      }
+    }
+
+    // Integer → sleep alias
+    if (awaitable.isInt()) {
+      auto duration_ms = parseDuration(awaitable);
+      if (duration_ms && *duration_ms > 0) {
+        if (scheduler_) {
+          suspension_requested_ = true;
+          suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
+          suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(*duration_ms));
+          return Value::makeNull();
+        }
+        auto end_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(*duration_ms);
+        while (std::chrono::steady_clock::now() < end_time) {
+          if (exit_requested_.load()) return Value::makeNull();
+          auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - std::chrono::steady_clock::now());
+          auto chunk = std::min(static_cast<int>(remaining.count()), 10);
+          if (chunk > 0) {
+            execution_mutex_.lock();
+            std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+            execution_mutex_.unlock();
+          }
+          if (timer_check_func_) timer_check_func_();
+          if (event_queue_) event_queue_->processAll();
+        }
         return Value::makeNull();
-      });
+      }
+    }
+
+    // No-scheduler synchronous fallback for thread/channel/coroutine
+    if (awaitable.isThreadId()) {
+      uint32_t tid = awaitable.asThreadId();
+      auto *threadObj = heap_.thread(tid);
+      if (threadObj && threadObj->isRunning()) {
+        while (threadObj->isRunning()) {
+          if (exit_requested_.load()) return Value::makeNull();
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          if (timer_check_func_) timer_check_func_();
+          if (event_queue_) event_queue_->processAll();
+        }
+      }
+      return Value::makeNull();
+    }
+    if (awaitable.isCoroutineId()) {
+      uint32_t coId = awaitable.asCoroutineId();
+      auto *co = heap_.coroutine(coId);
+      if (co && co->state != GCHeap::Coroutine::Done) {
+        while (co->state != GCHeap::Coroutine::Done) {
+          if (exit_requested_.load()) return Value::makeNull();
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          if (timer_check_func_) timer_check_func_();
+          if (event_queue_) event_queue_->processAll();
+        }
+        return co->stack.empty() ? Value::makeNull() : co->stack.back();
+      }
+      if (co && co->state == GCHeap::Coroutine::Done) {
+        return co->stack.empty() ? Value::makeNull() : co->stack.back();
+      }
+      return Value::makeNull();
+    }
+
+    COMPILER_THROW("wait(): unsupported argument type — expected thread, interval, timeout, channel, coroutine, or integer (ms)");
+  });
 
   // Type conversion builtins
   registerHostFunction("int", 1, [this](const std::vector<Value> &args) {
@@ -2196,14 +2339,10 @@ if (event_queue_) event_queue_->processAll();
     globals["function"] = Value::makeObjectId(funcProto.id);
   }
 
-    registerHostFunction("async.await", 1, [this](const std::vector<Value> &args) {
-        if (args.empty()) return Value::makeNull();
-        return args[0];
-    });
-    registerHostFunction("await", 1, [this](const std::vector<Value> &args) {
-        if (args.empty()) return Value::makeNull();
-        return args[0];
-    });
+    // "await" keyword compiles to FIBER_AWAIT opcode, not a host function call.
+    // The old "async.await" and "await" host function stubs have been removed
+    // because they were identity no-ops that were never reached from normal
+    // compilation. FIBER_AWAIT is the real implementation.
 
     // app.restart() - restart the application
   registerHostFunction("app.restart", 0, [this](const std::vector<Value> &) {
@@ -4092,19 +4231,24 @@ while (frame_count_ > stop_frame_depth) {
                         std::chrono::milliseconds(ms);
                     auto *current_g = scheduler_->current();
                     if (current_g) {
-                        current_g->resume_at_time = deadline;
+                        current_g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+                current_g->wait_handle.deadline = deadline;
                         scheduler_->suspend(current_g,
                             Scheduler::SuspensionReason::SleepWait);
                         saveFiberState(current_g->fiber);
                     }
+                    // Save main VM state into a temporary fiber so scheduler
+                    // goroutines don't trash it (frame_arena_, ip, etc.)
+                    auto main_fiber_snapshot = std::make_unique<Fiber>(0, 0);
+                    saveFiberState(main_fiber_snapshot.get());
                     ::havel::debug("[VM] runDispatchLoop: scheduler-aware sleep for {}ms, current_gid={}",
                         ms, current_g ? current_g->id : 0);
- while (std::chrono::steady_clock::now() < deadline) {
- if (exit_requested_.load()) break;
- scheduler_->wakeSleepingGoroutines();
- if (event_queue_) event_queue_->processAll();
- executePendingTimerCallbacks();
- bool hasRunnable = scheduler_->hasRunnableFibers();
+                    while (std::chrono::steady_clock::now() < deadline) {
+                        if (exit_requested_.load()) break;
+                        scheduler_->wakeSleepingGoroutines();
+                        if (event_queue_) event_queue_->processAll();
+                        executePendingTimerCallbacks();
+                        bool hasRunnable = scheduler_->hasRunnableFibers();
                         if (!hasRunnable) {
                             std::this_thread::sleep_for(
                                 std::chrono::milliseconds(1));
@@ -4115,46 +4259,123 @@ while (frame_count_ > stop_frame_depth) {
                         if (g == current_g) {
                             break;
                         }
-            ::havel::debug("[VM] runDispatchLoop: running goroutine {} while main sleeps", g->id);
-            bool needsInit = (g->state == Scheduler::GoroutineState::Created ||
-                              g->state == Scheduler::GoroutineState::Running) ||
-                             (g->fiber && g->fiber->call_stack.empty());
-            if (needsInit) {
-                startGoroutineCall(g->function_id,
-                    g->closure_id, g->locals);
-                g->state = Scheduler::GoroutineState::Runnable;
-                if (g->fiber) saveFiberState(g->fiber);
-            } else if (g->fiber) {
-                loadFiberState(g->fiber);
-            }
- // Run instructions up to goroutine's per-tick budget
- uint64_t budget = g->max_instructions_per_tick;
- uint64_t steps = 0;
- while (steps < budget) {
- steps++;
- if (g->fiber && g->fiber->state == FiberState::DONE) break;
- if (exit_requested_.load()) break;
- auto r = executeOneStep(g->fiber);
- if (g->fiber) saveFiberState(g->fiber);
- if (r.type == VMExecutionResult::RETURNED ||
- r.type == VMExecutionResult::ERROR) {
- g->state = Scheduler::GoroutineState::Done;
- if (g->fiber) g->fiber->state = FiberState::DONE;
- break;
- }
- if (r.type == VMExecutionResult::SUSPENDED) {
- break;
- }
- }
-                        // Yield the goroutine back
-                        if (g->state != Scheduler::GoroutineState::Done &&
-                            g->state != Scheduler::GoroutineState::Suspended) {
-                            scheduler_->yield(g);
-                        }
+                        ::havel::debug("[VM] runDispatchLoop: running goroutine {} (state={}) while main sleeps",
+                        g->id, (int)g->state);
+                        bool needsInit = (g->state == Scheduler::GoroutineState::Created ||
+                            g->state == Scheduler::GoroutineState::Running) ||
+                            (g->fiber && g->fiber->call_stack.empty());
+                        if (needsInit) {
+                            startGoroutineCall(g->function_id,
+                                g->closure_id, g->locals);
+                            g->state = Scheduler::GoroutineState::Runnable;
+                            if (g->fiber) saveFiberState(g->fiber);
+    } else if (g->fiber) {
+        loadFiberState(g->fiber);
+        // If resuming from an await suspension, replace the placeholder null
+        // on the stack with the actual resume_value from the WaitHandle
+        if (g->wait_handle.type != Scheduler::AwaitableType::NONE &&
+            g->wait_handle.type != Scheduler::AwaitableType::SLEEP &&
+            !stack.empty()) {
+            // The top of stack is the null placeholder from FIBER_AWAIT.
+            // Replace it with the actual result.
+                    stack.top() = g->wait_handle.resume_value;
+            g->wait_handle.clear();
+        }
+    }
+        if (g->fiber) g->fiber->state = FiberState::RUNNING;
+        // Run instructions up to goroutine's per-tick budget
+        uint64_t budget = g->max_instructions_per_tick;
+        uint64_t steps = 0;
+        while (steps < budget) {
+            steps++;
+            if (g->fiber && g->fiber->state == FiberState::DONE) break;
+            if (exit_requested_.load()) break;
+            auto r = executeOneStep(g->fiber);
+            if (g->fiber) saveFiberState(g->fiber);
+            if (r.type == VMExecutionResult::RETURNED ||
+                r.type == VMExecutionResult::ERROR) {
+                if (g->persistent && r.type == VMExecutionResult::RETURNED) {
+                                    g->state = Scheduler::GoroutineState::Suspended;
+                                    g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+                                    if (g->fiber) {
+                                        g->fiber->state = FiberState::CREATED;
+                                        g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;
+                                    }
+                                } else {
+                                    g->state = Scheduler::GoroutineState::Done;
+                                    if (g->fiber) g->fiber->state = FiberState::DONE;
+                                }
+                                break;
+                            }
+            if (r.type == VMExecutionResult::SUSPENDED) {
+                if (g->fiber && g->fiber->suspended_reason == SuspensionReason::SLEEP) {
+                    int64_t ms = reinterpret_cast<intptr_t>(g->fiber->suspension_context);
+                    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+                    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+                    scheduler_->suspend(g, Scheduler::SuspensionReason::SleepWait);
+                } else if (g->fiber && g->fiber->suspended_reason == SuspensionReason::HOTKEY_WAIT) {
+                    scheduler_->suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+                } else if (g->fiber && g->fiber->suspended_reason == SuspensionReason::THREAD_JOIN) {
+                    uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(g->fiber->suspension_context));
+                    g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
+                    g->wait_handle.target_id = tid;
+                    scheduler_->suspend(g, Scheduler::SuspensionReason::ThreadWait);
+                } else if (g->fiber && g->fiber->suspended_reason == SuspensionReason::TIMER) {
+                    uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(g->fiber->suspension_context));
+                    g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+                    g->wait_handle.target_id = timer_id;
+                    scheduler_->suspend(g, Scheduler::SuspensionReason::TimerWait);
+                } else if (g->fiber && g->fiber->suspended_reason == SuspensionReason::CHANNEL_RECV) {
+                    uint32_t chid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(g->fiber->suspension_context));
+                    g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
+                    g->wait_handle.target_id = chid;
+                    scheduler_->suspend(g, Scheduler::SuspensionReason::ChannelWait);
+                } else if (g->fiber && g->fiber->suspended_reason == SuspensionReason::COROUTINE_WAIT) {
+                    uint32_t coId = static_cast<uint32_t>(reinterpret_cast<intptr_t>(g->fiber->suspension_context));
+                    g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
+                    g->wait_handle.target_id = coId;
+                    scheduler_->suspend(g, Scheduler::SuspensionReason::CoroutineWait);
+                } else if (g->fiber && g->fiber->suspended_reason == SuspensionReason::AWAIT) {
+                    // Generic await — WaitHandle was already set by FIBER_AWAIT
+                    // Map Fiber suspension reason to Scheduler suspension reason
+                    switch (g->wait_handle.type) {
+                        case Scheduler::AwaitableType::THREAD_JOIN:
+                            scheduler_->suspend(g, Scheduler::SuspensionReason::ThreadWait);
+                            break;
+                        case Scheduler::AwaitableType::CHANNEL_RECV:
+                            scheduler_->suspend(g, Scheduler::SuspensionReason::ChannelWait);
+                            break;
+                        case Scheduler::AwaitableType::TIMER_WAIT:
+                            scheduler_->suspend(g, Scheduler::SuspensionReason::TimerWait);
+                            break;
+                        case Scheduler::AwaitableType::COROUTINE:
+                            scheduler_->suspend(g, Scheduler::SuspensionReason::CoroutineWait);
+                            break;
+                        default:
+                            scheduler_->suspend(g, Scheduler::SuspensionReason::None);
+                            break;
                     }
-                    // Resume the original goroutine
+                }
+                break;
+            }
+                        }
+        // Yield the goroutine back
+        if (g->state != Scheduler::GoroutineState::Done &&
+            g->state != Scheduler::GoroutineState::Suspended) {
+            scheduler_->yield(g);
+            if (g->fiber && g->fiber->state == FiberState::RUNNING)
+                g->fiber->state = FiberState::RUNNABLE;
+        }
+                    }
+                    // Clear scheduler's current pointer — the main script is
+                    // not a scheduler goroutine, and the sleep sub-loop may have
+                    // set current_ to the last goroutine it ran
+                    scheduler_->clearCurrent();
+                    // Restore main VM state after running scheduler goroutines
                     if (current_g && current_g->fiber) {
                         loadFiberState(current_g->fiber);
+                    } else {
+                        loadFiberState(main_fiber_snapshot.get());
                     }
                 } else if (ms > 0) {
                     // No scheduler — fall back to blocking sleep
@@ -5145,8 +5366,20 @@ while (stack.size() > finished.stack_depth) {
             if (current_coroutine_id_ != UINT32_MAX) {
                 auto *co = heap_.coroutine(current_coroutine_id_);
                 if (co) {
-                    co->state = GCHeap::Coroutine::Done;
-                    if (!co->caller_stack.empty()) {
+        co->state = GCHeap::Coroutine::Done;
+
+        // Notify scheduler if a goroutine is awaiting this coroutine
+        if (scheduler_) {
+            uint32_t completed_coId = current_coroutine_id_;
+            Scheduler::Goroutine* waiting_g = scheduler_->findGoroutineByWaitTarget(
+                Scheduler::AwaitableType::COROUTINE, completed_coId);
+            if (waiting_g) {
+                waiting_g->wait_handle.resume_value = ret;
+                scheduler_->unpark(waiting_g);
+            }
+        }
+
+        if (!co->caller_stack.empty()) {
                         auto &caller = co->caller_stack.back();
                         frame_count_ = caller.frame_count;
                         locals = caller.locals;
@@ -9009,10 +9242,94 @@ pushStack(Value::makeNull());
 break;
 }
 
- case OpCode::FIBER_AWAIT: {
- Value awaitable = popStack();
+case OpCode::FIBER_AWAIT: {
+    Value awaitable = popStack();
 
- if (awaitable.isCoroutineId()) {
+    // --- Goroutine-aware suspension path ---
+    // If we're running inside a scheduler goroutine, suspend instead of
+    // busy-waiting/blocking. The EventQueue callbacks will unpark us.
+    if (scheduler_) {
+        auto *current_g = scheduler_->current();
+        if (current_g && current_g->state == Scheduler::GoroutineState::Running) {
+            // Thread join: suspend goroutine, onThreadComplete will unpark
+            if (awaitable.isThreadId()) {
+                uint32_t tid = awaitable.asThreadId();
+                auto *threadObj = heap_.thread(tid);
+                if (threadObj && threadObj->isRunning()) {
+                    // Thread still running — suspend
+                    current_g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
+                    current_g->wait_handle.target_id = tid;
+                    current_g->wait_handle.resume_value = Value::makeNull();
+                    registerThreadWait(tid, current_g->fiber);
+                    pushStack(Value::makeNull()); // placeholder, replaced on resume
+                    suspension_requested_ = true;
+                    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::THREAD_JOIN);
+                    suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(tid));
+                    break;
+                }
+                // Thread already done — fall through to synchronous path
+            }
+
+            // Interval: suspend goroutine until interval fires
+            if (awaitable.isIntervalId()) {
+                uint32_t iid = awaitable.asIntervalId();
+                current_g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+                current_g->wait_handle.target_id = iid;
+                current_g->wait_handle.resume_value = Value::makeNull();
+                pushStack(Value::makeNull()); // placeholder
+                suspension_requested_ = true;
+                suspension_reason_ = static_cast<uint8_t>(SuspensionReason::TIMER);
+                suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(iid));
+                break;
+            }
+
+            // Timeout: suspend goroutine until timeout fires
+            if (awaitable.isTimeoutId()) {
+                uint32_t tid = awaitable.asTimeoutId();
+                current_g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+                current_g->wait_handle.target_id = tid;
+                current_g->wait_handle.resume_value = Value::makeNull();
+                pushStack(Value::makeNull()); // placeholder
+                suspension_requested_ = true;
+                suspension_reason_ = static_cast<uint8_t>(SuspensionReason::TIMER);
+                suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(tid));
+                break;
+            }
+
+            // Channel receive: suspend goroutine until data is available
+            if (awaitable.isChannelId()) {
+                uint32_t chid = awaitable.asChannelId();
+                current_g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
+                current_g->wait_handle.target_id = chid;
+                current_g->wait_handle.resume_value = Value::makeNull();
+                pushStack(Value::makeNull()); // placeholder
+                suspension_requested_ = true;
+                suspension_reason_ = static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV);
+                suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(chid));
+                break;
+            }
+
+            // Coroutine: suspend goroutine until coroutine completes
+            if (awaitable.isCoroutineId()) {
+                uint32_t coId = awaitable.asCoroutineId();
+                auto *co = heap_.coroutine(coId);
+                if (co && co->state != GCHeap::Coroutine::Done) {
+                    current_g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
+                    current_g->wait_handle.target_id = coId;
+                    current_g->wait_handle.resume_value = Value::makeNull();
+                    pushStack(Value::makeNull()); // placeholder
+                    suspension_requested_ = true;
+                    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::COROUTINE_WAIT);
+                    suspension_context_ = reinterpret_cast<void*>(static_cast<intptr_t>(coId));
+                    break;
+                }
+                // Coroutine already done — fall through to synchronous path
+            }
+        }
+    }
+    // --- End goroutine-aware path ---
+
+    if (awaitable.isCoroutineId()) {
  uint32_t coId = awaitable.asCoroutineId();
  auto *co = heap_.coroutine(coId);
 

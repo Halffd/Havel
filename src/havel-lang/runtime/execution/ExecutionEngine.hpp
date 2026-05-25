@@ -117,11 +117,11 @@ private:
   void handleError(Scheduler::Goroutine* g, const std::string& msg);
   
   
-  void onThreadComplete(const Event& event);
-  
-  
-  void onVariableChanged(const Event& event);
-  void onTimerFire(const Event& event);
+    void onThreadComplete(const Event& event);
+    void onVariableChanged(const Event& event);
+    void onTimerFire(const Event& event);
+    void onChannelRecv(const Event& event);
+    void onChannelSend(const Event& event);
   
   
   // Evaluates a condition bytecode for a specific watcher

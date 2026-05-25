@@ -318,13 +318,9 @@ options.vm_setup = [&](havel::compiler::VM &vm) {
     vm.registerPrototypeMethodByName("object", "running", "object.running");
 };
 
- options.host_functions["async.await"] = [&](const std::vector<Value> &args) {
- if (args.empty()) return Value::makeNull();
- return args[0];
- };
- options.host_functions["await"] = options.host_functions["async.await"];
+// "await" keyword compiles to FIBER_AWAIT opcode — no host function stub needed
 
- options.host_functions["sleep"] = [&](const std::vector<Value> &args) {
+options.host_functions["sleep"] = [&](const std::vector<Value> &args) {
  return Value::makeNull();
  };
 

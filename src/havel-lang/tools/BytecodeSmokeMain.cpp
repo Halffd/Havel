@@ -279,15 +279,11 @@ int runAsyncCase(const std::string &name, const std::string &source,
     std::unordered_map<std::string, Value> timeout_callbacks;
     std::unordered_map<std::string, bool> timeout_running;
 
-    options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
+options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
 
-    options.host_functions["async.await"] = [&](const std::vector<Value> &args) {
-        if (args.empty()) return Value::makeNull();
-        return args[0];
-    };
-    options.host_functions["await"] = options.host_functions["async.await"];
+// "await" keyword compiles to FIBER_AWAIT opcode — no host function stub needed
 
-    options.host_functions["thread"] = [&](const std::vector<Value> &args) {
+options.host_functions["thread"] = [&](const std::vector<Value> &args) {
     if (!vm_ptr || args.empty()) {
         throw std::runtime_error("thread requires callback");
     }

@@ -641,11 +641,12 @@ if (param->defaultValue.has_value()) {
         } else {
             current_function->default_values.push_back(Value::makeDouble(num.value));
         }
-    } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
-        const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
-        current_function->default_values.push_back(
-            Value::makeNull()); // TODO: string default
-      } else if (defaultExpr->kind == ast::NodeType::BooleanLiteral) {
+        } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
+            const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
+            uint32_t strId = addStringConstant(str.value);
+            current_function->default_values.push_back(
+                Value::makeStringValId(strId));
+        } else if (defaultExpr->kind == ast::NodeType::BooleanLiteral) {
         const auto &boolean =
             static_cast<const ast::BooleanLiteral &>(*defaultExpr);
         current_function->default_values.push_back(
@@ -799,9 +800,10 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
                     Value::makeDouble(num.value));
             }
         } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
-        const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
-        current_function->default_values.push_back(
-            Value::makeNull()); // TODO: string default
+            const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
+            uint32_t strId = addStringConstant(str.value);
+            current_function->default_values.push_back(
+                Value::makeStringValId(strId));
       } else if (defaultExpr->kind == ast::NodeType::BooleanLiteral) {
         const auto &boolean =
             static_cast<const ast::BooleanLiteral &>(*defaultExpr);

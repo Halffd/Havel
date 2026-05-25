@@ -1,0 +1,10 @@
+// smoke: negative-number = 2
+x = -5
+y = -3 + 2
+z = 10 + -2
+val __result = x + y + z
+if __result != 2 {
+ print("FAIL negative-number: expected 2, got " + str(__result))
+ process.exit(1)
+}
+return __result

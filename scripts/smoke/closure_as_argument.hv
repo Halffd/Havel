@@ -1,0 +1,21 @@
+// smoke: closure-as-argument = 15
+fn apply(g, v):
+  return g(v)
+
+fn mkDouble():
+  fn double(x):
+    return x * 2
+  return double
+
+d = mkDouble()
+val a = apply(d, 7)
+
+fn inc(x):
+  return x + 1
+
+val b = apply(inc, 0)
+val __result = a + b
+if __result != 15:
+  print("FAIL closure-as-argument: expected 15, got " + str(__result))
+  process.exit(1)
+return __result

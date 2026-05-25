@@ -1,0 +1,8 @@
+// smoke: string-sub = 1
+v = string.sub("hello", 0, 3)
+val __result = v == "hel" ? 1 : 0
+if __result != 1 {
+ print("FAIL string-sub: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

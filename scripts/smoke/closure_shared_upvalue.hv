@@ -1,0 +1,20 @@
+// smoke: closure-shared-upvalue = 9
+fn makePair():
+  x = 0
+  fn inc():
+    x += 1
+    return x
+  fn get():
+    return x
+  return [inc, get]
+
+pair = makePair()
+val a = pair[0]()
+val b = pair[0]()
+val c = pair[0]()
+val d = pair[1]()
+val __result = a + b + c + d
+if __result != 9:
+  print("FAIL closure-shared-upvalue: expected 9, got " + str(__result))
+  process.exit(1)
+return __result

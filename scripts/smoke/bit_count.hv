@@ -1,0 +1,8 @@
+// smoke: bit-count = 4
+// popcount of 0b1111 = 4
+val __result = bit.count(15)
+if __result != 4 {
+ print("FAIL bit-count: expected 4, got " + str(__result))
+ process.exit(1)
+}
+return __result

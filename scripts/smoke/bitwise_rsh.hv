@@ -1,0 +1,7 @@
+// smoke: bitwise-rsh = 16
+val __result = 256 >> 4
+if __result != 16 {
+ print("FAIL bitwise-rsh: expected 16, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -21,7 +21,6 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-// ... existing code ...
 #include <mutex>
 #include <optional>
 #include <regex>
@@ -30,6 +29,7 @@
 #include <stdexcept>
 #include <thread>
 #include <queue>
+#include "havel-lang/compiler/runtime/DebugUtils.hpp"
 
 #include "VMApi.hpp"
 #include "../../stdlib/ShellModule.hpp"
@@ -156,8 +156,11 @@ std::string VM::toString(const Value &value) {
 }
 
 const std::string* VM::getStringPtr(const Value &value) const {
-  if (value.isStringValId()) {
-    return heap_.string(value.asStringValId());
+  if (value.isStringId()) {
+    return heap_.string(value.asStringId());
+  }
+  if (value.isStringValId() && current_chunk) {
+    return &current_chunk->getString(value.asStringValId());
   }
   return nullptr;
 }
@@ -970,7 +973,6 @@ ObjectRef VM::createHostObject() {
   ObjectRef ref = heap_.allocateObject();
   Value root = Value::makeObjectId(ref.id);
   stack.push(root);
-  maybeCollectGarbage();
   stack.pop();
   return ref;
 }
@@ -979,7 +981,6 @@ ArrayRef VM::createHostArray() {
   ArrayRef ref = heap_.allocateArray();
   Value root = Value::makeArrayId(ref.id);
   stack.push(root);
-  maybeCollectGarbage();
   stack.pop();
   return ref;
 }
@@ -988,7 +989,6 @@ StringRef VM::createRuntimeString(std::string value) {
   StringRef ref = heap_.allocateString(std::move(value));
   Value root = Value::makeStringId(ref.id);
   stack.push(root);
-  maybeCollectGarbage();
   stack.pop();
   return ref;
 }
@@ -2086,6 +2086,7 @@ if (event_queue_) event_queue_->processAll();
     else if (value.isFunctionObjId()) typeName = "function";
     else if (value.isEnumId()) typeName = "enum";
     else if (value.isIteratorId()) typeName = "iterator";
+    else if (value.isBoundMethodId()) typeName = "fn";
     else if (value.isCoroutineId()) typeName = "coroutine";
     else typeName = "unknown";
     auto strRef = heap_.allocateString(typeName);
@@ -2120,7 +2121,7 @@ if (event_queue_) event_queue_->processAll();
     if (args.empty()) return Value::makeBool(false);
     const auto &value = args[0];
     bool isCallable = value.isFunctionObjId() || value.isClosureId() ||
-                      value.isHostFuncId();
+                       value.isHostFuncId() || value.isBoundMethodId();
     return Value::makeBool(isCallable);
   });
 
@@ -3398,9 +3399,66 @@ void VM::registerDefaultHostGlobals() {
     }
   }
 
-  // Note: shell, interval, config modules are registered via registerStdLibWithVM()
-  // called during VM initialization - do NOT register them here as this function
-  // is called on every execute() invocation
+    // FFI module object
+    if (hasHostFunction("ffi.open")) {
+        auto ffi_obj = heap_.allocateObject();
+        setHostObjectField(ffi_obj, "open", Value::makeHostFuncId(getHostFunctionIndex("ffi.open")));
+        setHostObjectField(ffi_obj, "close", Value::makeHostFuncId(getHostFunctionIndex("ffi.close")));
+        setHostObjectField(ffi_obj, "sym", Value::makeHostFuncId(getHostFunctionIndex("ffi.sym")));
+        setHostObjectField(ffi_obj, "call", Value::makeHostFuncId(getHostFunctionIndex("ffi.call")));
+        setHostObjectField(ffi_obj, "cdef", Value::makeHostFuncId(getHostFunctionIndex("ffi.cdef")));
+        setHostObjectField(ffi_obj, "alloc", Value::makeHostFuncId(getHostFunctionIndex("ffi.alloc")));
+        setHostObjectField(ffi_obj, "allocBytes", Value::makeHostFuncId(getHostFunctionIndex("ffi.allocBytes")));
+        setHostObjectField(ffi_obj, "free", Value::makeHostFuncId(getHostFunctionIndex("ffi.free")));
+        setHostObjectField(ffi_obj, "sizeof", Value::makeHostFuncId(getHostFunctionIndex("ffi.sizeof")));
+        setHostObjectField(ffi_obj, "alignof", Value::makeHostFuncId(getHostFunctionIndex("ffi.alignof")));
+        setHostObjectField(ffi_obj, "string", Value::makeHostFuncId(getHostFunctionIndex("ffi.string")));
+        setHostObjectField(ffi_obj, "cstring", Value::makeHostFuncId(getHostFunctionIndex("ffi.cstring")));
+        setHostObjectField(ffi_obj, "array", Value::makeHostFuncId(getHostFunctionIndex("ffi.array")));
+        setHostObjectField(ffi_obj, "cast", Value::makeHostFuncId(getHostFunctionIndex("ffi.cast")));
+        setHostObjectField(ffi_obj, "newStruct", Value::makeHostFuncId(getHostFunctionIndex("ffi.newStruct")));
+        setHostObjectField(ffi_obj, "field", Value::makeHostFuncId(getHostFunctionIndex("ffi.field")));
+        setHostObjectField(ffi_obj, "setField", Value::makeHostFuncId(getHostFunctionIndex("ffi.setField")));
+        setHostObjectField(ffi_obj, "callback", Value::makeHostFuncId(getHostFunctionIndex("ffi.callback")));
+        setHostObjectField(ffi_obj, "closure", Value::makeHostFuncId(getHostFunctionIndex("ffi.closure")));
+        setHostObjectField(ffi_obj, "memcpy", Value::makeHostFuncId(getHostFunctionIndex("ffi.memcpy")));
+        setHostObjectField(ffi_obj, "memset", Value::makeHostFuncId(getHostFunctionIndex("ffi.memset")));
+        setHostObjectField(ffi_obj, "var", Value::makeHostFuncId(getHostFunctionIndex("ffi.var")));
+        setHostObjectField(ffi_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("ffi.get")));
+        setHostObjectField(ffi_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("ffi.set")));
+        setHostObjectField(ffi_obj, "get_i8", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i8")));
+        setHostObjectField(ffi_obj, "set_i8", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i8")));
+        setHostObjectField(ffi_obj, "get_i16", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i16")));
+        setHostObjectField(ffi_obj, "set_i16", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i16")));
+        setHostObjectField(ffi_obj, "get_i32", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i32")));
+        setHostObjectField(ffi_obj, "set_i32", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i32")));
+        setHostObjectField(ffi_obj, "get_i64", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i64")));
+        setHostObjectField(ffi_obj, "set_i64", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i64")));
+        setHostObjectField(ffi_obj, "get_u8", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u8")));
+        setHostObjectField(ffi_obj, "set_u8", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u8")));
+        setHostObjectField(ffi_obj, "get_u16", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u16")));
+        setHostObjectField(ffi_obj, "set_u16", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u16")));
+        setHostObjectField(ffi_obj, "get_u32", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u32")));
+        setHostObjectField(ffi_obj, "set_u32", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u32")));
+        setHostObjectField(ffi_obj, "get_u64", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u64")));
+        setHostObjectField(ffi_obj, "set_u64", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u64")));
+        setHostObjectField(ffi_obj, "get_f32", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_f32")));
+        setHostObjectField(ffi_obj, "set_f32", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_f32")));
+        setHostObjectField(ffi_obj, "get_f64", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_f64")));
+        setHostObjectField(ffi_obj, "set_f64", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_f64")));
+        setHostObjectField(ffi_obj, "get_ptr", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_ptr")));
+        setHostObjectField(ffi_obj, "set_ptr", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_ptr")));
+        setHostObjectField(ffi_obj, "ptr_add", Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_add")));
+        setHostObjectField(ffi_obj, "ptr_sub", Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_sub")));
+        setHostObjectField(ffi_obj, "ptr_to_uint", Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_to_uint")));
+        setHostObjectField(ffi_obj, "lastError", Value::makeHostFuncId(getHostFunctionIndex("ffi.lastError")));
+        setHostObjectField(ffi_obj, "clearError", Value::makeHostFuncId(getHostFunctionIndex("ffi.clearError")));
+        setGlobal("ffi", Value::makeObjectId(ffi_obj.id));
+    }
+
+    // Note: shell, interval, config modules are registered via registerStdLibWithVM()
+    // called during VM initialization - do NOT register them here as this function
+    // is called on every execute() invocation
 
   // Register default window globals (these need to be reset per execution)
   setGlobal("title", Value::makeNull());
@@ -3534,27 +3592,27 @@ if (debug_mode) {
  return result;
  }
 
- Value VM::executePersistent(const BytecodeChunk &chunk,
- const std::string &function_name,
- const std::vector<Value> &args) {
- const BytecodeChunk *saved_chunk = current_chunk;
- current_chunk = &chunk;
+Value VM::executePersistent(const BytecodeChunk &chunk,
+    const std::string &function_name,
+    const std::vector<Value> &args) {
+  const BytecodeChunk *saved_chunk = current_chunk;
+  current_chunk = &chunk;
 
   const auto *entry = chunk.getFunction(function_name);
   if (!entry) {
     COMPILER_THROW("Function not found: " + function_name);
   }
 
+  suspendGC();
+
   // Clear stack and locals for this execution, but PRESERVE:
   // - globals (user-defined variables persist)
   // - heap (objects allocated by user persist)
   // - struct_type_ids (type information persists)
-  while (!stack.empty()) {
-    stack.pop();
-  }
+  while (!stack.empty()) { stack.pop(); }
   locals.clear();
   frame_count_ = 0;
-// DON'T reset heap - preserves user globals
+  // DON'T reset heap - preserves user globals
     if (!host_globals_registered_) {
         registerDefaultHostGlobals();
         host_globals_registered_ = true;
@@ -3587,16 +3645,17 @@ if (debug_mode) {
 
     runDispatchLoop(0);
 
-    current_chunk = saved_chunk;
+  current_chunk = saved_chunk;
+  resumeGC();
 
- if (stack.empty()) {
- return nullptr;
- }
+  if (stack.empty()) {
+    return nullptr;
+  }
 
- Value result = stack.top();
- stack.pop();
- return result;
- }
+  Value result = stack.top();
+  stack.pop();
+  return result;
+}
 
  // ============================================================================
  
@@ -4210,12 +4269,26 @@ while (frame_count_ > stop_frame_depth) {
 
   const auto &instruction = function->instructions[ip];
 
-  try {
-      if (profiling_enabled_) {
-        opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
-        executed_instructions_++;
-      }
-      executeInstruction(instruction);
+        try {
+            if (profiling_enabled_) {
+                opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
+                executed_instructions_++;
+            }
+            if (trace_execution_ && current_chunk) {
+                auto funcName = function->name.empty() ? std::string("<anon>") : function->name;
+                BytecodeDisassembler::Options opts;
+                opts.showLineNumbers = false;
+                opts.showSourceLocations = true;
+                opts.showConstantPool = false;
+                opts.showFunctionInfo = false;
+                opts.useLabels = true;
+                auto disasm = BytecodeDisassembler(*current_chunk).formatInstruction(
+                    ip, instruction, opts);
+                std::fprintf(stderr, "\033[2m[trace] %3u %s:%u  %s\033[0m\n",
+                             static_cast<unsigned>(frame_count_), funcName.c_str(),
+                             static_cast<unsigned>(ip), disasm.c_str());
+            }
+            executeInstruction(instruction);
       if (exit_requested_.load()) {
         break;
       }
@@ -4602,8 +4675,11 @@ auto it = host_functions.find(name);
     if (it == host_functions.end()) {
       COMPILER_THROW("Host function not found: " + name);
     }
+    gc_suspend_counter_++;
     Value result = it->second(args);
+    gc_suspend_counter_--;
     pushStack(result);
+    maybeCollectGarbage();
     return;
   }
 
@@ -4985,6 +5061,19 @@ void VM::doTailCall(Value callee_value,
         pushStack(result);
         this->doReturn();
         return;
+    }
+
+    // Handle bound methods (lightweight BoundMethod struct)
+    if (callee_value.isBoundMethodId()) {
+        auto *bm = heap_.boundMethod(callee_value.asBoundMethodId());
+        if (bm && (bm->fn.isHostFuncId() || bm->fn.isFunctionObjId() || bm->fn.isClosureId())) {
+            std::vector<Value> boundArgs;
+            boundArgs.push_back(bm->self);
+            boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+            doCall(bm->fn, std::move(boundArgs), false);
+            this->doReturn();
+            return;
+        }
     }
 
     // Handle callable objects (Lua-style __call / op_call)
@@ -6688,6 +6777,18 @@ Value callee_value = popStack();
       }
     }
 
+    // Handle bound methods (lightweight BoundMethod struct)
+    if (callee_value.isBoundMethodId()) {
+        auto *bm = heap_.boundMethod(callee_value.asBoundMethodId());
+        if (bm && (bm->fn.isHostFuncId() || bm->fn.isFunctionObjId() || bm->fn.isClosureId())) {
+            std::vector<Value> boundArgs;
+            boundArgs.push_back(bm->self);
+            boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+            doCall(bm->fn, std::move(boundArgs));
+            break;
+        }
+    }
+
     // Handle bound method objects (from runtime member lookup)
     if (callee_value.isObjectId()) {
       auto *obj = heap_.object(callee_value.asObjectId());
@@ -7908,14 +8009,8 @@ auto *parent_closure = heap_.closure(parent_closure_id);
             }
             auto method = getPrototypeMethod(object, *key);
             if (method) {
-                // Create a bound method object: {fn: HostFuncId, self: ArrayId}
-                auto boundObj = heap_.allocateObject();
-                auto *obj = heap_.object(boundObj.id);
-                if (obj) {
-                    (*obj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
-                    (*obj)["self"] = Value::makeArrayId(object.asArrayId());
-                }
-                pushStack(Value::makeObjectId(boundObj.id));
+                auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method])), Value::makeArrayId(object.asArrayId()));
+                pushStack(Value::makeBoundMethodId(bmRef.id));
                 break;
             }
         }
@@ -7942,17 +8037,12 @@ auto *parent_closure = heap_.closure(parent_closure_id);
                 pushStack(Value::makeInt(static_cast<int64_t>(actualStr.size())));
                 break;
             }
-            auto method = getPrototypeMethod(stringVal, *key);
-        if (method) {
-          auto boundObj = heap_.allocateObject();
-          auto *obj = heap_.object(boundObj.id);
-          if (obj) {
-            (*obj)["fn"] = Value::makeHostFuncId(*method);
-            (*obj)["self"] = stringVal;
-          }
-          pushStack(Value::makeObjectId(boundObj.id));
-          break;
-        }
+                auto method = getPrototypeMethod(stringVal, *key);
+                if (method) {
+                    auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(*method), stringVal);
+                    pushStack(Value::makeBoundMethodId(bmRef.id));
+                    break;
+                }
       }
       pushStack(Value::makeNull());
       break;
@@ -8002,13 +8092,10 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         auto *set = heap_.set(object.asSetId());
         pushStack(Value::makeInt(set ? static_cast<int64_t>(set->size()) : 0));
       } else if (key) {
-        auto method = getPrototypeMethod(object, *key);
-        if (method) {
-          auto boundObj = heap_.allocateObject();
-          auto *bObj = heap_.object(boundObj.id);
-          (*bObj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
-          (*bObj)["self"] = object;
-          pushStack(Value::makeObjectId(boundObj.id));
+                auto method = getPrototypeMethod(object, *key);
+                if (method) {
+                    auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method])), object);
+                    pushStack(Value::makeBoundMethodId(bmRef.id));
         } else {
           pushStack(Value::makeNull());
         }
@@ -8053,12 +8140,9 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 		}
 		auto it = globals.find(*key);
 		if (it != globals.end()) {
-			if (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId()) {
-				auto boundObj = heap_.allocateObject();
-				auto *bObj = heap_.object(boundObj.id);
-				(*bObj)["fn"] = it->second;
-				(*bObj)["self"] = object;
-				pushStack(Value::makeObjectId(boundObj.id));
+                if (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId()) {
+                    auto bmRef = heap_.allocateBoundMethod(it->second, object);
+                    pushStack(Value::makeBoundMethodId(bmRef.id));
 			} else {
 				pushStack(it->second);
 			}
@@ -8066,13 +8150,10 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 		}
 		auto hostIt = host_function_globals_.find(*key);
 		if (hostIt != host_function_globals_.end()) {
-			if (hostIt->second.isFunctionObjId() || hostIt->second.isClosureId() || hostIt->second.isHostFuncId()) {
-				auto boundObj = heap_.allocateObject();
-				auto *bObj = heap_.object(boundObj.id);
-				(*bObj)["fn"] = hostIt->second;
-				(*bObj)["self"] = object;
-				pushStack(Value::makeObjectId(boundObj.id));
-			} else {
+                if (hostIt->second.isFunctionObjId() || hostIt->second.isClosureId() || hostIt->second.isHostFuncId()) {
+                    auto bmRef = heap_.allocateBoundMethod(hostIt->second, object);
+                    pushStack(Value::makeBoundMethodId(bmRef.id));
+                } else {
 				pushStack(hostIt->second);
 			}
 			break;
@@ -8212,7 +8293,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         // Safety: reject __ prefixed keys (reserved for internal use)
         // Exception: __name__, __wrapped__, __arity__ are allowed on callable types
         // for decorator metadata preservation (Python convention)
-        bool isCallable = object.isFunctionObjId() || object.isClosureId() || object.isHostFuncId();
+        bool isCallable = object.isFunctionObjId() || object.isClosureId() || object.isHostFuncId() || object.isBoundMethodId();
         bool isAllowedDunder = *keyStr == "__name__" || *keyStr == "__wrapped__" || *keyStr == "__arity__";
         if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_' &&
             !(isCallable && isAllowedDunder)) {
@@ -10182,7 +10263,7 @@ bool VM::isTruthy(const Value &value) {
   }
 
   // Step 8: functions are always truthy
-  if (value.isFunctionObjId() || value.isHostFuncId() || value.isClosureId()) {
+    if (value.isFunctionObjId() || value.isHostFuncId() || value.isClosureId() || value.isBoundMethodId()) {
     return true;
   }
 
@@ -10385,6 +10466,14 @@ size_t base = locals.size();
                     argVal = deepMaterializeStrings(argVal, savedChunk);
                 }
                 locals[base + i] = std::move(argVal);
+            } else if (i < callee->default_values.size() &&
+                       callee->default_values[i].has_value()) {
+                const auto &dv = callee->default_values[i].value();
+                if (dv.isBool() && dv.asBool()) {
+                    locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
+                } else {
+                    locals[base + i] = dv;
+                }
             } else {
                 locals[base + i] = Value::makeNull();
             }

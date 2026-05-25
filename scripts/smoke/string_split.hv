@@ -1,0 +1,8 @@
+// smoke: string-split = 1
+v = string.split("a,b,c", ",")
+val __result = isArray(v) ? 1 : 0
+if __result != 1 {
+ print("FAIL string-split: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

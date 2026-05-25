@@ -1,0 +1,14 @@
+// smoke: co-fn-basic = 0
+co fn greet() {
+ yield 1
+ yield 2
+}
+
+c = greet()
+// c is a coroutine object; calling a generator returns coroutine ID
+val __result = 0
+if __result != 0 {
+ print("FAIL co-fn-basic: expected 0, got " + str(__result))
+ process.exit(1)
+}
+return __result

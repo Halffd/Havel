@@ -204,16 +204,17 @@ public:
   // Constant pool
   std::string disassembleConstantPool() const;
 
-  // Helper
-  static std::string opcodeToString(OpCode opcode);
-  static std::string operandToString(const Value& operand);
+    // Helper
+    static std::string opcodeToString(OpCode opcode);
+    static std::string operandToString(const Value& operand);
+
+    // Single instruction formatting (used by VM trace)
+    std::string formatInstruction(uint32_t index,
+                                  const Instruction& instr,
+                                  const Options& options) const;
 
 private:
-  const BytecodeChunk& chunk_;
-
-  std::string formatInstruction(uint32_t index,
-                                 const Instruction& instr,
-                                 const Options& options) const;
+    const BytecodeChunk& chunk_;
 };
 
 // ============================================================================

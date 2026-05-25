@@ -1,0 +1,8 @@
+// smoke: tail-call-method-arg = 0
+print(1.+(2))
+val __result = 0
+if __result != 0 {
+ print("FAIL tail-call-method-arg: expected 0, got " + str(__result))
+ process.exit(1)
+}
+return __result

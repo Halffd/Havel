@@ -1,0 +1,9 @@
+// smoke: pack-unpack-u8 = 99
+data = pack.pack("u", 99)
+result = pack.unpack("u", data)
+val __result = result[0]
+if __result != 99 {
+ print("FAIL pack-unpack-u8: expected 99, got " + str(__result))
+ process.exit(1)
+}
+return __result

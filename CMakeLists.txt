@@ -338,6 +338,7 @@ list(APPEND CORE_SOURCES
   "src/host/ui/ImGuiBackend.cpp"
   "src/host/ui/UIManager.cpp"
   "src/host/window/WindowService.cpp"
+  "src/Havel.cpp"
 )
 
 # Qt-dependent core sources (only built when in-process Qt backend is enabled)
@@ -927,6 +928,24 @@ target_include_directories(hvtest PRIVATE
 
 target_link_libraries(hvtest PRIVATE
   havel_lang
+)
+
+add_executable(havel_api_test tests/test_embed_api.cpp)
+set_target_properties(havel_api_test PROPERTIES
+  CXX_STANDARD 23
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+target_compile_options(havel_api_test PRIVATE -fno-lto)
+target_link_options(havel_api_test PRIVATE -fno-lto)
+target_include_directories(havel_api_test PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
+target_link_libraries(havel_api_test PRIVATE
+  -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+  ${COMMON_LIBS}
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

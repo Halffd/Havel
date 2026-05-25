@@ -1,0 +1,22 @@
+// smoke: closure-multiple-upvalues = 255
+fn makeCalc():
+  a = 10
+  b = 20
+  fn sum():
+    return a + b
+  fn product():
+    return a * b
+  fn setA(v):
+    a = v
+  return [sum, product, setA]
+
+calc = makeCalc()
+val s1 = calc[0]()
+val p1 = calc[1]()
+calc[2](5)
+val s2 = calc[0]()
+val __result = s1 + p1 + s2
+if __result != 255:
+  print("FAIL closure-multiple-upvalues: expected 255, got " + str(__result))
+  process.exit(1)
+return __result

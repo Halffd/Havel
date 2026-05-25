@@ -1,0 +1,30 @@
+// pre-compile the self-hosted compiler modules to .hvc bytecode
+// run via: ./build-debug/havel run modules/lang/launcher.hv -- scripts/precompile_compiler.hv
+
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+modules = ["lexer", "scope", "ast", "types", "pratt", "emitter", "loader", "debug"]
+dir = "modules/lang"
+
+for name in modules:
+ path = "{dir}/{name}.hv"
+ print("compiling {name}...")
+ source = fs.read(path)
+ if source == null:
+  print("  SKIP: could not read {path}")
+  continue
+ result = parse(source)
+ if #result.errors > 0:
+  print("  PARSE ERRORS in {name}:")
+  for e in result.errors:
+   print("    {e}")
+  continue
+ em = Emitter()
+ compileProgram(em, result.ast, true)
+ outPath = "{dir}/__cache__/{name}.hvc"
+ fs.mkdirAll("{dir}/__cache__")
+ bc.serialize(outPath)
+ print("  wrote {outPath} ({bc.func_count()} functions)")
+
+print("done")

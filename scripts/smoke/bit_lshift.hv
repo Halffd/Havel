@@ -1,0 +1,7 @@
+// smoke: bit-lshift = 16
+val __result = bit.lshift(1, 4)
+if __result != 16 {
+ print("FAIL bit-lshift: expected 16, got " + str(__result))
+ process.exit(1)
+}
+return __result

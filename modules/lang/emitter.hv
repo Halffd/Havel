@@ -2,7 +2,8 @@
 // Walks the AST from "pratt".hv/ast.hv and emits bytecode via bc.* host functions
 // Uses scope.hv for variable resolution and upvalue tracking
 
-use { Scope, scopeDeclare, scopeResolve, scopeLocalCount } from "scope"
+use { Scope, scopeDeclare, scopeResolve, scopeLocalCount, scopeFindFuncRoot } from "scope"
+use { traceEmitter, isOn } from "debug"
 
 fn charDigit(c) {
     // map single char to its digit value: 0-9, a-f, A-F
@@ -48,7 +49,7 @@ fn parseOct(s) {
 
 
 fn Emitter() {
-    {scope: null, func_idx: 0, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: []}
+    {scope: null, func_idx: 0, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1}
 
 }
 fn emitError(msg, line, col) {
@@ -80,20 +81,28 @@ fn emitLoadVar(emitter, name) {
 
 }
 fn emitStoreVar(emitter, name) {
-    resolved = scopeResolve(emitter.scope, name)
-    if resolved != null {
-        if resolved.kind == "local" {
-            bc.emit("STORE_VAR", resolved.index)
-            return
-        }
-        if resolved.kind == "upvalue" {
-            bc.emit("STORE_UPVALUE", resolved.index)
-            return
-        }
+  resolved = scopeResolve(emitter.scope, name)
+  if resolved != null {
+    if resolved.kind == "local" {
+      bc.emit("STORE_VAR", resolved.index)
+      return
     }
-    bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
+    if resolved.kind == "upvalue" {
+      bc.emit("STORE_UPVALUE", resolved.index)
+      return
+    }
+  }
+  // Variable not found in scope — bare assignment creates local inside function, global at top level
+  funcRoot = scopeFindFuncRoot(emitter.scope)
+  if funcRoot.parent != null {
+    // Inside a function — declare as local in the current scope
+    idx = scopeDeclare(emitter.scope, name)
+    bc.emit("STORE_VAR", idx)
+    return
+  }
+  bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
 
-}
+ }
 // ============================================================
 // Expression emission
 // ============================================================
@@ -481,16 +490,22 @@ return
         }
         return
     }
-    if k == "LambdaExpression" {
-        funcIdx = emitter.func_idx
-        emitter.func_idx = funcIdx + 1
-        // Compile the lambda body now
-        compileLambda(emitter, funcIdx, node.params, node.body, node.line)
-        // Emit CLOSURE instruction
-        bc.emit("CLOSURE", funcIdx)
-        return
+if k == "LambdaExpression" {
+funcIdx = emitter.func_idx
+emitter.func_idx = funcIdx + 1
+// Compile the lambda body now
+upcount = compileLambda(emitter, funcIdx, node.params, node.body, node.line)
+// If lambda captures upvalues, emit CLOSURE; otherwise LOAD_CONST
+if upcount > 0 {
+bc.emit("CLOSURE", funcIdx)
+}
+else {
+fnConstIdx = bc.add_const(bc.make_function_obj(funcIdx))
+bc.emit("LOAD_CONST", fnConstIdx)
+}
+return
 
-    }
+}
     if k == "InterpolatedString" {
   emptyIdx = bc.add_string("")
   bc.emit("LOAD_CONST", emptyIdx)
@@ -641,24 +656,25 @@ fn emitStmt(emitter, node) {
 
     // ForStatement handler (inlined emitExpr for iterator to work around arg passing bug)
 if k == "ForStatement" {
-	iterName = node.name
-	iterNode = node.iterator
-	// Emit the iterable expression in the OUTER scope
-	// Inline emitExpr for RangeExpression to work around call arg bug
-	if iterNode.kind == "RangeExpression" {
-		emitExpr(emitter, iterNode.start)
-		emitExpr(emitter, iterNode.end)
-		if !iterNode.inclusive {
-			bc.emit("LOAD_CONST", bc.add_const(1))
-			bc.emit("SUB")
-		}
-		bc.emit("RANGE_NEW")
-	}
-	if iterNode.kind != "RangeExpression" {
-		emitExpr(emitter, iterNode)
-	}
-	// STRING_PROMOTE for string iterables (harmless for others)
-	bc.emit("STRING_PROMOTE")
+iterNameRaw = node.name
+iterName = iterNameRaw
+if iterNameRaw.kind == "Identifier" {
+iterName = iterNameRaw.name
+}
+iterNode = node.iterator
+if iterNode.kind == "RangeExpression" {
+emitExpr(emitter, iterNode.start)
+emitExpr(emitter, iterNode.end)
+if !iterNode.inclusive {
+bc.emit("LOAD_CONST", bc.add_const(1))
+bc.emit("SUB")
+}
+bc.emit("RANGE_NEW")
+}
+if iterNode.kind != "RangeExpression" {
+emitExpr(emitter, iterNode)
+}
+bc.emit("STRING_PROMOTE")
 	// Push loop scope AFTER evaluating iterable
 	oldScope = emitter.scope
 	loopScope = Scope(oldScope)
@@ -682,11 +698,11 @@ if k == "ForStatement" {
 	// Store result in temp
 	resultIdx = scopeDeclare(loopScope, "__result__")
 	bc.emit("STORE_VAR", resultIdx)
-	// Check result.done
-	bc.emit("LOAD_VAR", resultIdx)
-	doneSid = bc.str_id(bc.add_chunk_string("done"))
-	bc.emit("LOAD_CONST", bc.add_const(doneSid))
-	bc.emit("OBJECT_GET")
+// Check result.done
+bc.emit("LOAD_VAR", resultIdx)
+doneSid = bc.str_id(bc.add_chunk_string("done"))
+bc.emit("LOAD_CONST", bc.add_const(doneSid))
+bc.emit("OBJECT_GET")
 	doneJump = bc.emit("JUMP_IF_TRUE", 0)
 	// Get result.second (the value for single-var iteration)
 	bc.emit("LOAD_VAR", resultIdx)
@@ -870,26 +886,32 @@ if k == "RepeatStatement" {
     }
     return
   }
-    if k == "FnDeclaration" {
-        // Declare the function name in scope
-        localIdx = scopeDeclare(emitter.scope, node.name)
-        funcIdx = emitter.func_idx
-        emitter.func_idx = funcIdx + 1
-        emitter.func_map[node.name] = funcIdx
-        // Compile the function body
-        compileFuncDecl(emitter, node.name, node.params, node.body, funcIdx, node.line)
-        // Emit CLOSURE to create the closure value
-        bc.emit("CLOSURE", funcIdx)
-        // Store the closure in the variable
-        if localIdx >= 0 {
-            bc.emit("STORE_VAR", localIdx)
-        }
-        else {
-            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-        }
-        return
+if k == "FnDeclaration" {
+// Declare the function name in scope
+localIdx = scopeDeclare(emitter.scope, node.name)
+funcIdx = emitter.func_idx
+emitter.func_idx = funcIdx + 1
+emitter.func_map[node.name] = funcIdx
+// Compile the function body
+upcount = compileFuncDecl(emitter, node.name, node.params, node.body, funcIdx, node.line)
+// If function captures upvalues, emit CLOSURE; otherwise LOAD_CONST
+if upcount > 0 {
+bc.emit("CLOSURE", funcIdx)
+}
+else {
+fnConstIdx = bc.add_const(bc.make_function_obj(funcIdx))
+bc.emit("LOAD_CONST", fnConstIdx)
+}
+// Store the closure in the variable
+if localIdx >= 0 {
+bc.emit("STORE_VAR", localIdx)
+}
+else {
+bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+}
+return
 
-    }
+}
     if k == "BreakStatement" {
     if #emitter.breakStack > 0 {
         jumpIp = bc.emit("JUMP", 0)
@@ -1138,9 +1160,11 @@ fn emitBlockWithReturn(emitter, node) {
       bc.emit("PUSH_NULL")
       return
     }
-    for i in 0..(n - 2) {
-      emitStmt(emitter, stmts[i])
-    }
+si = 0
+while si < n - 1 {
+emitStmt(emitter, stmts[si])
+si = si + 1
+}
     last = stmts[n - 1]
     if last.kind == "ExpressionStatement" {
       if last.expr != null {
@@ -1163,7 +1187,11 @@ fn emitBlockWithReturn(emitter, node) {
     bc.emit("PUSH_NULL")
     return
   }
-  if node.kind == "ExpressionStatement" {
+  if node.kind == "IfStatement" {
+emitIfExpr(emitter, node)
+return
+}
+if node.kind == "ExpressionStatement" {
     if node.expr != null {
       emitExpr(emitter, node.expr)
     }
@@ -1181,7 +1209,9 @@ fn emitBlockWithReturn(emitter, node) {
 
 fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
   oldScope = emitter.scope
-  newScope = Scope(oldScope)
+  fid = emitter.nextFuncId
+  emitter.nextFuncId = fid + 1
+  newScope = Scope(oldScope, fid)
   emitter.scope = newScope
   for p in params {
     if type(p) == "object" {
@@ -1192,47 +1222,88 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
   }
   paramCount = #params
   localCount = paramCount + 16
-  // Save current function context and switch to new function
-  bc.func_push()
-  bc.func_new(name, paramCount, localCount)
-  if sourceLine != null {
-    bc.set_func_source_line(sourceLine)
-  }
-  emitBlockWithReturn(emitter, bodyNode)
-    bc.emit("RETURN")
-    // Set actual local count
-    actualLocals = scopeLocalCount(newScope)
-    bc.set_local_count(actualLocals)
-    // Restore previous function context
-    bc.func_pop()
-    emitter.scope = oldScope
+	bc.func_push()
+	bc.func_new(name, paramCount, localCount)
+	traceEmitter("func_new " + name + " params=" + str(paramCount) + " locals=" + str(localCount))
+	if sourceLine != null {
+		bc.set_func_source_line(sourceLine)
+	}
+	di = 0
+	for p in params {
+	if type(p) == "object" && (p.defval != null || p.default != null) {
+		dv = p.defval != null ? p.defval : p.default
+			if type(dv) == "object" && dv.kind == "StringLiteral" {
+				sid = bc.add_chunk_string(dv.value)
+				bc.set_default_value(di, bc.str_id(sid))
+			} else if type(dv) == "object" && dv.kind == "NumberLiteral" {
+				bc.set_default_value(di, num(dv.value))
+			} else if type(dv) == "object" && dv.kind == "BooleanLiteral" {
+				bc.set_default_value(di, bool(dv.value))
+			} else if type(dv) == "object" && dv.kind == "NullLiteral" {
+				bc.set_default_value(di, null)
+			}
+		}
+		di = di + 1
+	}
+	emitBlockWithReturn(emitter, bodyNode)
+	bc.emit("RETURN")
+	actualLocals = scopeLocalCount(newScope)
+	bc.set_local_count(actualLocals)
+	upcount = newScope.upcount
+	bc.func_pop()
+	traceEmitter("func_pop " + name + " upcount=" + str(upcount) + " locals=" + str(actualLocals))
+	emitter.scope = oldScope
+	upcount
 
 }
 fn compileLambda(emitter, funcIdx, params, bodyNode, sourceLine) {
-    name = "lambda_" + str(funcIdx)
-    oldScope = emitter.scope
-    newScope = Scope(oldScope)
-    emitter.scope = newScope
-  for p in params {
-    if type(p) == "object" {
-      if p.name != null { scopeDeclare(newScope, p.name) }
-      else { scopeDeclare(newScope, p) }
-    }
-    else { scopeDeclare(newScope, p) }
-  }
-  paramCount = #params
-  localCount = paramCount + 16
-  bc.func_push()
-  bc.func_new(name, paramCount, localCount)
-  if sourceLine != null {
-    bc.set_func_source_line(sourceLine)
-  }
-  emitBlockWithReturn(emitter, bodyNode)
-    bc.emit("RETURN")
-    actualLocals = scopeLocalCount(newScope)
-    bc.set_local_count(actualLocals)
-    bc.func_pop()
-    emitter.scope = oldScope
+name = "lambda_" + str(funcIdx)
+oldScope = emitter.scope
+fid = emitter.nextFuncId
+emitter.nextFuncId = fid + 1
+newScope = Scope(oldScope, fid)
+emitter.scope = newScope
+for p in params {
+if type(p) == "object" {
+if p.name != null { scopeDeclare(newScope, p.name) }
+else { scopeDeclare(newScope, p) }
+}
+else { scopeDeclare(newScope, p) }
+}
+paramCount = #params
+localCount = paramCount + 16
+	bc.func_push()
+	bc.func_new(name, paramCount, localCount)
+	traceEmitter("func_new " + name + " params=" + str(paramCount))
+	if sourceLine != null {
+		bc.set_func_source_line(sourceLine)
+	}
+	di = 0
+	for p in params {
+	if type(p) == "object" && (p.defval != null || p.default != null) {
+		dv = p.defval != null ? p.defval : p.default
+			if type(dv) == "object" && dv.kind == "StringLiteral" {
+				sid = bc.add_chunk_string(dv.value)
+				bc.set_default_value(di, bc.str_id(sid))
+			} else if type(dv) == "object" && dv.kind == "NumberLiteral" {
+				bc.set_default_value(di, num(dv.value))
+			} else if type(dv) == "object" && dv.kind == "BooleanLiteral" {
+				bc.set_default_value(di, bool(dv.value))
+			} else if type(dv) == "object" && dv.kind == "NullLiteral" {
+				bc.set_default_value(di, null)
+			}
+		}
+		di = di + 1
+	}
+	emitBlockWithReturn(emitter, bodyNode)
+	bc.emit("RETURN")
+	actualLocals = scopeLocalCount(newScope)
+	bc.set_local_count(actualLocals)
+	upcount = newScope.upcount
+	bc.func_pop()
+	traceEmitter("func_pop " + name + " upcount=" + str(upcount))
+	emitter.scope = oldScope
+	upcount
 
 }
 // ============================================================
@@ -1293,23 +1364,25 @@ fn emitUseStatement(emitter, node) {
     bc.emit("IMPORT")
     iNames = node.importNames
     iAliases = node.importAliases
-    if iNames != null {
-      for i in 0..(#iNames - 1) {
-        name = iNames[i]
-        alias = name
-      if iAliases != null {
-        if i < #iAliases {
-          alias = iAliases[i]
-        }
-      }
-      bc.emit("DUP")
-        keyIdx = bc.add_string(name)
-        bc.emit("LOAD_CONST", keyIdx)
-        bc.emit("OBJECT_GET")
-        sid = bc.add_chunk_string(alias)
-        bc.emit("STORE_GLOBAL", bc.str_id(sid))
-      }
-    }
+if iNames != null {
+ii = 0
+while ii < #iNames {
+name = iNames[ii]
+alias = name
+if iAliases != null {
+if ii < #iAliases {
+alias = iAliases[ii]
+}
+}
+bc.emit("DUP")
+keyIdx = bc.add_string(name)
+bc.emit("LOAD_CONST", keyIdx)
+bc.emit("OBJECT_GET")
+sid = bc.add_chunk_string(alias)
+bc.emit("STORE_GLOBAL", bc.str_id(sid))
+ii = ii + 1
+}
+}
     bc.emit("POP")
     return
   }
@@ -1367,28 +1440,29 @@ fn emitImportStatement(emitter, node) {
   // import { a, b as c } from "module"
   if node.importNames != null {
     pathIdx = bc.add_string(module)
-    bc.emit("LOAD_CONST", pathIdx)
-    bc.emit("IMPORT")
-    for i in 0..(#node.importNames - 1) {
-      name = node.importNames[i]
-      alias = name
-      if node.importAliases != null {
-        if i < #node.importAliases {
-          alias = node.importAliases[i]
-        }
-      }
-      // wildcard: import * from "module"
-      if name == "*" {
-        bc.emit("IMPORT_WILDCARD")
-        return
-      }
-      bc.emit("DUP")
-      keyIdx = bc.add_string(name)
-      bc.emit("LOAD_CONST", keyIdx)
-      bc.emit("OBJECT_GET")
-      sid = bc.add_chunk_string(alias)
-      bc.emit("STORE_GLOBAL", bc.str_id(sid))
-    }
+bc.emit("LOAD_CONST", pathIdx)
+bc.emit("IMPORT")
+ii2 = 0
+while ii2 < #node.importNames {
+name = node.importNames[ii2]
+alias = name
+if node.importAliases != null {
+if ii2 < #node.importAliases {
+alias = node.importAliases[ii2]
+}
+}
+if name == "*" {
+bc.emit("IMPORT_WILDCARD")
+return
+}
+bc.emit("DUP")
+keyIdx = bc.add_string(name)
+bc.emit("LOAD_CONST", keyIdx)
+bc.emit("OBJECT_GET")
+sid = bc.add_chunk_string(alias)
+bc.emit("STORE_GLOBAL", bc.str_id(sid))
+ii2 = ii2 + 1
+}
     bc.emit("POP")
     return
   }
@@ -1406,12 +1480,13 @@ fn emitImportStatement(emitter, node) {
 // ============================================================
 
 fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, entryName = "__main__", noReset = false) {
-    if !noReset {
-        bc.reset()
-    }
-  if sourceFile != null {
-    bc.set_source_file(sourceFile)
-  }
+ traceEmitter("compileProgram entryName=" + entryName + " skip_execute=" + str(skip_execute))
+ if !noReset {
+  bc.reset()
+ }
+ if sourceFile != null {
+  bc.set_source_file(sourceFile)
+ }
     // parse() returns {errors, ast} — unwrap if needed
     if program.ast != null {
         program = program.ast
@@ -1428,28 +1503,47 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
 
         }
     }
-    // Pass 1: compile all function bodies
-  for i in 0..(#funcDecls - 1) {
-    decl = funcDecls[i]
-    funcIdx = emitter.func_idx
-    emitter.func_idx = funcIdx + 1
-    emitter.func_map[decl.name] = funcIdx
-    compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.line)
-  }
-  // Pass 2: compile __main__
-    bc.func_new(entryName, 0, 64)
-  emitter.scope = Scope(null)
-  // Emit CLOSURE + STORE_GLOBAL for each top-level function
-  for i in 0..(#funcDecls - 1) {
-        decl = funcDecls[i]
-        bc.emit("CLOSURE", emitter.func_map[decl.name])
-        bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
-    }
-    // Emit top-level statements (all except last)
-    n = #topStmts
-    for i in 0..(n - 2) {
-        emitStmt(emitter, topStmts[i])
-    }
+ // Module scope — used as parent for top-level functions
+ moduleScope = Scope(null)
+ emitter.scope = moduleScope
+ // Pass 1: compile all function bodies
+ funcUpcounts = []
+ fi = 0
+while fi < #funcDecls {
+decl = funcDecls[fi]
+funcIdx = emitter.func_idx
+emitter.func_idx = funcIdx + 1
+emitter.func_map[decl.name] = funcIdx
+uc = compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.line)
+funcUpcounts.push(uc)
+fi = fi + 1
+}
+ // Pass 2: compile __main__
+ bc.func_new(entryName, 0, 64)
+ traceEmitter("func_new " + entryName + " (main)")
+ emitter.scope = moduleScope
+// Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
+fi2 = 0
+while fi2 < #funcDecls {
+decl = funcDecls[fi2]
+fidx = emitter.func_map[decl.name]
+if funcUpcounts[fi2] > 0 {
+bc.emit("CLOSURE", fidx)
+}
+else {
+fnConstIdx = bc.add_const(bc.make_function_obj(fidx))
+bc.emit("LOAD_CONST", fnConstIdx)
+}
+bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
+fi2 = fi2 + 1
+}
+// Emit top-level statements (all except last)
+n = #topStmts
+si = 0
+while si < n - 1 {
+emitStmt(emitter, topStmts[si])
+si = si + 1
+}
     // Last expression is the return rvalue
     if n > 0 {
         last = topStmts[n - 1]
@@ -1481,6 +1575,7 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
 	if !skip_execute {
+		traceEmitter("execute_persistent " + entryName)
 		return bc.execute_persistent(entryName)
 	}
 

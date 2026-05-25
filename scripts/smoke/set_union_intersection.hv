@@ -1,0 +1,11 @@
+// smoke: set-union-intersection = 42
+a = {1, 2, 3}
+    b = {2, 3, 4}
+    u = a.union(b)
+    i = a.intersection(b)
+    val __result = u.len * 10 + i.len
+    if __result != 42 {
+     print("FAIL set-union-intersection: expected 42, got " + str(__result))
+     process.exit(1)
+    }
+    return __result

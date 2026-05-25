@@ -1,0 +1,5 @@
+// smoke: logic-or-eval = 1
+x = 0
+    fn side() { x += 1; 1 }
+    result = true || side()
+    x

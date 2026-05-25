@@ -1,8 +1,122 @@
+// shell.hv — shell/OS operations wrapping C++ shell.* host bridge
+// Host bridge: shell.run, shell.exec, shell.which, shell.env, shell.getenv,
+// shell.cwd, shell.cd, shell.escape, shell.platform, shell.pid, shell.home,
+// shell.tmpdir, shell.hostname, shell.user, shell.shell, shell.sleep,
+// shell.read, shell.write, shell.isatty, shell.exit, shell.splitArgs,
+// shell.exists, shell.isFile, shell.isDir, shell.mkdir, shell.mkdirs,
+// shell.remove, shell.removeAll, shell.copy, shell.move, shell.listDir,
+// shell.tmpfile, shell.envList, shell.open
+
+// ============================================================
+// Command execution
+// ============================================================
+
 fn run(cmd) { shell.run(cmd) }
 fn exec(cmd) { shell.exec(cmd) }
 fn which(name) { shell.which(name) }
+fn escape(input) { shell.escape(input) }
+fn splitArgs(str) { shell.splitArgs(str) }
+
+// ============================================================
+// Environment
+// ============================================================
+
 fn env(name, value=null) { shell.env(name, value) }
 fn getenv(name) { shell.getenv(name) }
+fn envList() { shell.envList() }
+
+// ============================================================
+// Filesystem
+// ============================================================
+
 fn cwd() { shell.cwd() }
 fn cd(path) { shell.cd(path) }
-fn escape(input) { shell.escape(input) }
+fn home() { shell.home() }
+fn tmpdir() { shell.tmpdir() }
+fn tmpfile() { shell.tmpfile() }
+fn exists(path) { shell.exists(path) }
+fn isFile(path) { shell.isFile(path) }
+fn isDir(path) { shell.isDir(path) }
+fn mkdir(path) { shell.mkdir(path) }
+fn mkdirs(path) { shell.mkdirs(path) }
+fn remove(path) { shell.remove(path) }
+fn removeAll(path) { shell.removeAll(path) }
+fn copy(src, dst) { shell.copy(src, dst) }
+fn move(src, dst) { shell.move(src, dst) }
+fn listDir(path) { shell.listDir(path) }
+fn read(path) { shell.read(path) }
+fn write(path, content) { shell.write(path, content) }
+
+// ============================================================
+// System info
+// ============================================================
+
+fn platform() { shell.platform() }
+fn pid() { shell.pid() }
+fn hostname() { shell.hostname() }
+fn user() { shell.user() }
+fn shell() { shell.shell() }
+
+// ============================================================
+// Process control
+// ============================================================
+
+fn sleep(ms) { shell.sleep(ms) }
+fn exit(code) { shell.exit(code) }
+fn isatty() { shell.isatty() }
+fn open(url) { shell.open(url) }
+
+// ============================================================
+// Higher-level convenience
+// ============================================================
+
+// Read file lines as array
+fn readLines(path) {
+ content = shell.read(path)
+ if content == null { return [] }
+ content.split("\n")
+}
+
+// Write lines to file (joins with newlines)
+fn writeLines(path, lines) {
+ shell.write(path, lines.join("\n"))
+}
+
+// Copy file content to string, transform, write back
+fn transformFile(path, cb) {
+  content = shell.read(path)
+  if content == null { return null }
+  result = cb(content)
+ shell.write(path, result)
+ result
+}
+
+// List files matching a glob-like pattern (simple prefix/suffix)
+fn listMatching(dir, prefix="", suffix="") {
+ entries = shell.listDir(dir)
+ if entries == null { return [] }
+ result = []
+ for e in entries {
+  if prefix != "" && !e.startsWith(prefix) { continue }
+  if suffix != "" && !e.endsWith(suffix) { continue }
+  result.push(e)
+ }
+ result
+}
+
+// Ensure directory exists, create if needed
+fn ensureDir(path) {
+ if !shell.exists(path) { shell.mkdirs(path) }
+}
+
+// Remove file if it exists
+fn removeIfExists(path) {
+ if shell.exists(path) { shell.remove(path) }
+}
+
+// Append content to file (read + write)
+fn append(path, content) {
+ existing = shell.read(path)
+ if existing == null { existing = "" }
+ shell.write(path, existing + content)
+}

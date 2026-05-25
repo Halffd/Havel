@@ -1,0 +1,18 @@
+// smoke: member-compound-single-eval = 13
+fn run() {
+    hits = 0
+    obj = {a: 1}
+    fn getObj() {
+        hits += 1
+        return obj
+    }
+
+    getObj().a += 2
+    return obj.a + hits * 10
+}
+val __result = run()
+if __result != 13 {
+ print("FAIL member-compound-single-eval: expected 13, got " + str(__result))
+ process.exit(1)
+}
+return __result

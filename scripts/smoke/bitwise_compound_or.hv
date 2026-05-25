@@ -1,0 +1,9 @@
+// smoke: bitwise-compound-or = 255
+x = 0xF0
+x |= 0x0F
+val __result = x
+if __result != 255 {
+ print("FAIL bitwise-compound-or: expected 255, got " + str(__result))
+ process.exit(1)
+}
+return __result

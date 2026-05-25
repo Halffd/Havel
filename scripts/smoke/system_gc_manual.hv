@@ -1,0 +1,13 @@
+// smoke: system-gc-manual = 256
+i = 0
+while i < 256 {
+    arr = [i, i + 1]
+    i += 1
+}
+system.gc()
+val __result = i
+if __result != 256 {
+ print("FAIL system-gc-manual: expected 256, got " + str(__result))
+ process.exit(1)
+}
+return __result

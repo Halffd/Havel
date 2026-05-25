@@ -1,0 +1,7 @@
+// smoke: string-startswith-true = 1
+val __result = string.startswith("hello", "hel") ? 1 : 0
+if __result != 1 {
+ print("FAIL string-startswith-true: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

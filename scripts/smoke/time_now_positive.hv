@@ -1,0 +1,9 @@
+// smoke: time-now-positive = 1
+// time.now() returns ms since epoch, should be > 0
+v = time.now()
+val __result = v > 0 ? 1 : 0
+if __result != 1 {
+ print("FAIL time-now-positive: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

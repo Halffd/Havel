@@ -688,15 +688,43 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk)
             }
         }
 
-        // Upvalues (per-function)
-        uint32_t numUp = static_cast<uint32_t>(func.upvalues.size());
-        append(&numUp, sizeof(numUp));
-        for (const auto& u : func.upvalues) {
-            append(&u.index, sizeof(u.index));
-            append(&u.captures_local, sizeof(u.captures_local));
-        }
+    // Upvalues (per-function)
+    uint32_t numUp = static_cast<uint32_t>(func.upvalues.size());
+    append(&numUp, sizeof(numUp));
+    for (const auto& u : func.upvalues) {
+        append(&u.index, sizeof(u.index));
+        append(&u.captures_local, sizeof(u.captures_local));
+    }
 
-        // Instructions (per-function)
+    // Default values (per-function)
+    uint32_t numDefaults = static_cast<uint32_t>(func.default_values.size());
+    append(&numDefaults, sizeof(numDefaults));
+    for (const auto& dv : func.default_values) {
+        if (!dv.has_value()) {
+            uint8_t tag = 0;
+            append(&tag, sizeof(tag));
+        } else if (dv->isStringValId()) {
+            uint8_t tag = 1;
+            append(&tag, sizeof(tag));
+            uint32_t strIdx = dv->asStringValId();
+            const std::string& str = chunk.getString(strIdx);
+            uint32_t len = static_cast<uint32_t>(str.size());
+            append(&len, sizeof(len));
+            if (!str.empty()) append(str.data(), str.size());
+        } else if (dv->isFunctionObjId()) {
+            uint8_t tag = 2;
+            append(&tag, sizeof(tag));
+            uint32_t fnIdx = dv->asFunctionObjId();
+            append(&fnIdx, sizeof(fnIdx));
+        } else {
+            uint8_t tag = 3;
+            append(&tag, sizeof(tag));
+            uint64_t raw = dv->rawBits();
+            append(&raw, sizeof(raw));
+        }
+    }
+
+    // Instructions (per-function)
         uint32_t numInstr = static_cast<uint32_t>(func.instructions.size());
         append(&numInstr, sizeof(numInstr));
         for (const auto& instr : func.instructions) {
@@ -821,17 +849,49 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
             }
         }
 
-        // Upvalues (per-function)
-        uint32_t numUp = 0;
-        if (!read(&numUp, sizeof(numUp))) return std::nullopt;
-        for (uint32_t u = 0; u < numUp; ++u) {
-            UpvalueDescriptor uv;
-            if (!read(&uv.index, sizeof(uv.index))) return std::nullopt;
-            if (!read(&uv.captures_local, sizeof(uv.captures_local))) return std::nullopt;
-            func.upvalues.push_back(uv);
-        }
+    // Upvalues (per-function)
+    uint32_t numUp = 0;
+    if (!read(&numUp, sizeof(numUp))) return std::nullopt;
+    for (uint32_t u = 0; u < numUp; ++u) {
+        UpvalueDescriptor uv;
+        if (!read(&uv.index, sizeof(uv.index))) return std::nullopt;
+        if (!read(&uv.captures_local, sizeof(uv.captures_local))) return std::nullopt;
+        func.upvalues.push_back(uv);
+    }
 
-        // Instructions (per-function)
+    // Default values (per-function)
+    uint32_t numDefaults = 0;
+    if (!read(&numDefaults, sizeof(numDefaults))) return std::nullopt;
+    for (uint32_t d = 0; d < numDefaults; ++d) {
+        uint8_t dvTag = 0;
+        if (!read(&dvTag, sizeof(dvTag))) return std::nullopt;
+        if (dvTag == 0) {
+            func.default_values.push_back(std::nullopt);
+        } else if (dvTag == 1) {
+            uint32_t len = 0;
+            if (!read(&len, sizeof(len))) return std::nullopt;
+            std::string str(len, '\0');
+            if (len > 0) {
+                if (pos + len > data.size()) return std::nullopt;
+                std::memcpy(str.data(), data.data() + pos, len);
+                pos += len;
+            }
+            uint32_t strId = chunk.addString(std::move(str));
+            func.default_values.push_back(Value::makeStringValId(strId));
+        } else if (dvTag == 2) {
+            uint32_t fnIdx = 0;
+            if (!read(&fnIdx, sizeof(fnIdx))) return std::nullopt;
+            func.default_values.push_back(Value::makeFunctionObjId(fnIdx));
+        } else if (dvTag == 3) {
+            uint64_t raw = 0;
+            if (!read(&raw, sizeof(raw))) return std::nullopt;
+            func.default_values.push_back(Value::fromRawBits(raw));
+        } else {
+            func.default_values.push_back(std::nullopt);
+        }
+    }
+
+    // Instructions (per-function)
         uint32_t numInstr = 0;
         if (!read(&numInstr, sizeof(numInstr))) return std::nullopt;
 

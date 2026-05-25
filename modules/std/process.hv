@@ -1,0 +1,115 @@
+// process.hv — process management wrapping C++ process.* host bridge
+// Host bridge: process.spawn, process.wait, process.run, process.runDetached,
+// process.kill, process.killObj, process.find, process.exists, process.nice
+
+// ============================================================
+// Spawn + wait (two-step async pattern)
+// ============================================================
+
+fn spawn(cmd) {
+ process.spawn(cmd)
+}
+
+fn wait(proc) {
+ process.wait(proc)
+}
+
+fn killObj(proc) {
+ process.killObj(proc)
+}
+
+// ============================================================
+// Synchronous run — returns {pid, exitCode, success, stdout, stderr, error}
+// ============================================================
+
+fn run(cmd) {
+ process.run(cmd)
+}
+
+// Run command and return only stdout (trimmed). Errors logged, not thrown.
+fn capture(cmd) {
+ r = process.run(cmd)
+ if !r.success {
+  log.warn("process.capture failed: " + r.stderr.trim())
+ }
+ r.stdout.trim()
+}
+
+// Run command, throw on failure.
+fn runOrThrow(cmd) {
+ r = process.run(cmd)
+ if !r.success {
+  throw("process failed (exit " + str(r.exitCode) + "): " + r.stderr)
+ }
+ r
+}
+
+// ============================================================
+// Detached — fire and forget, returns PID
+// ============================================================
+
+fn runDetached(cmd) {
+ process.runDetached(cmd)
+}
+
+// ============================================================
+// Process finding and existence
+// ============================================================
+
+fn find(name) {
+ process.find(name)
+}
+
+fn exists(nameOrPid) {
+ process.exists(nameOrPid)
+}
+
+// ============================================================
+// Signal sending and priority
+// ============================================================
+
+fn kill(pid, sig) {
+ process.kill(pid, sig)
+}
+
+fn nice(pid, value) {
+ process.nice(pid, value)
+}
+
+// ============================================================
+// Higher-level convenience
+// ============================================================
+
+// Check if a command is available on PATH
+fn which(cmd) {
+ r = process.run("command -v " + cmd + " 2>/dev/null")
+ if r.success { return r.stdout.trim() }
+ null
+}
+
+// Spawn, wait, return exit code only
+fn exec(cmd) {
+ p = process.spawn(cmd)
+ process.wait(p)
+ p.exitCode
+}
+
+// Spawn, wait, return {stdout, stderr, exitCode}
+fn output(cmd) {
+ p = process.spawn(cmd)
+ process.wait(p)
+ {stdout: p.stdout, stderr: p.stderr, exitCode: p.exitCode}
+}
+
+// Run command silently, return true on success
+fn ok(cmd) {
+ r = process.run(cmd)
+ r.success
+}
+
+// Pipeline: run cmd1, pipe stdout into cmd2
+fn pipe(cmd1, cmd2) {
+ r1 = process.run(cmd1)
+ if !r1.success { return {success: false, error: r1.stderr} }
+ process.run("echo '" + r1.stdout.replace("'", "'\\''") + "' | " + cmd2)
+}

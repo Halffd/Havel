@@ -62,19 +62,20 @@ struct RuntimeClosure {
             return nullptr;
         }
 
-        void set(const std::string &key, Value value) {
-            if (data.find(key) == data.end()) {
-                insertionOrder.push_back(key);
-            }
-            data[key] = std::move(value);
+    void set(const std::string &key, Value value) {
+        auto [it, inserted] = data.insert_or_assign(key, std::move(value));
+        if (inserted) {
+            insertionOrder.push_back(key);
         }
+    }
 
-        Value &operator[](const std::string &key) {
-            if (data.find(key) == data.end()) {
-                insertionOrder.push_back(key);
-            }
-            return data[key];
+    Value &operator[](const std::string &key) {
+        auto [it, inserted] = data.try_emplace(key);
+        if (inserted) {
+            insertionOrder.push_back(key);
         }
+        return it->second;
+    }
 
         auto begin() { return data.begin(); }
         auto end() { return data.end(); }
@@ -84,13 +85,14 @@ struct RuntimeClosure {
         auto find(const std::string &key) { return data.find(key); }
         auto find(const std::string &key) const { return data.find(key); }
         size_t size() const { return data.size(); }
-        size_t erase(const std::string &key) {
-            auto it = std::find(insertionOrder.begin(), insertionOrder.end(), key);
-            if (it != insertionOrder.end()) {
-                insertionOrder.erase(it);
-            }
-            return data.erase(key);
+    size_t erase(const std::string &key) {
+        auto it = std::find(insertionOrder.begin(), insertionOrder.end(), key);
+        if (it != insertionOrder.end()) {
+            std::swap(*it, insertionOrder.back());
+            insertionOrder.pop_back();
         }
+        return data.erase(key);
+    }
 
         std::vector<std::string> getKeys() const {
             if (sorted) {
@@ -138,12 +140,17 @@ struct RuntimeClosure {
         void assign(typename std::vector<Value>::iterator first, typename std::vector<Value>::iterator last) { if (!frozen) data.assign(first, last); }
     };
 
-struct Iterator {
-    Value iterable;
-    size_t index = 0;
-    size_t codepoint_index = 0;
-    std::vector<std::string> keys;
-};
+    struct Iterator {
+        Value iterable;
+        size_t index = 0;
+        size_t codepoint_index = 0;
+        std::vector<std::string> keys;
+    };
+
+    struct BoundMethod {
+        Value fn;
+        Value self;
+    };
 
     struct Range {
         int64_t start = 0;
@@ -235,6 +242,7 @@ struct Iterator {
     }
 
     IteratorRef allocateIterator(const Value &iterable);
+    BoundMethodRef allocateBoundMethod(Value fn, Value self);
 
     ThreadRef allocateThreadObj(std::shared_ptr<::havel::Thread> thread);
     IntervalRef allocateIntervalObj(std::shared_ptr<::havel::Interval> interval);
@@ -259,6 +267,8 @@ struct Iterator {
     const Range *range(uint32_t id) const;
     Iterator *iterator(uint32_t id);
     const Iterator *iterator(uint32_t id) const;
+    BoundMethod *boundMethod(uint32_t id);
+    const BoundMethod *boundMethod(uint32_t id) const;
 
     ::havel::Thread* thread(uint32_t id);
     const ::havel::Thread* thread(uint32_t id) const;
@@ -335,8 +345,9 @@ private:
         SweepSets,
         SweepClosures,
         SweepStrings,
-        SweepIterators,
-        SweepRanges,
+    SweepIterators,
+    SweepBoundMethods,
+    SweepRanges,
         SweepErrors,
         SweepEnums,
         SweepCoroutines,
@@ -381,6 +392,7 @@ private:
     std::unordered_map<uint32_t, ErrorObject> errors_;
     std::unordered_map<uint32_t, std::pair<uint32_t, std::vector<Value>>> enums_;
     std::unordered_map<uint32_t, Iterator> iterators_;
+    std::unordered_map<uint32_t, BoundMethod> bound_methods_;
 
     std::unordered_map<uint32_t, std::shared_ptr<::havel::Thread>> threads_;
     std::unordered_map<uint32_t, std::shared_ptr<::havel::Interval>> intervals_;
@@ -399,6 +411,7 @@ private:
     uint32_t next_range_id_ = 1;
     uint32_t next_error_id_ = 1;
     uint32_t next_iterator_id_ = 1;
+    uint32_t next_bound_method_id_ = 1;
     uint32_t next_thread_id_ = 1;
     uint32_t next_interval_id_ = 1;
     uint32_t next_timeout_id_ = 1;
@@ -430,6 +443,7 @@ private:
     std::unordered_set<uint32_t> marked_closures_;
     std::unordered_set<uint32_t> marked_strings_;
     std::unordered_set<uint32_t> marked_iterators_;
+    std::unordered_set<uint32_t> marked_bound_methods_;
     std::unordered_set<uint32_t> marked_ranges_;
     std::unordered_set<uint32_t> marked_errors_;
     std::unordered_set<uint32_t> marked_enums_;

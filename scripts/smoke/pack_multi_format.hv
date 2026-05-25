@@ -1,0 +1,9 @@
+// smoke: pack-multi-format = 3
+data = pack.pack("uI", 1, 500)
+    // u8=1 byte, I16=2 bytes -> 3 total
+val __result = data.len
+if __result != 3 {
+ print("FAIL pack-multi-format: expected 3, got " + str(__result))
+ process.exit(1)
+}
+return __result

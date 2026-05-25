@@ -1,0 +1,8 @@
+// smoke: object-has-true = 1
+obj = { a: 1 }
+val __result = object.has(obj, "a") ? 1 : 0
+if __result != 1 {
+ print("FAIL object-has-true: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

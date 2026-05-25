@@ -1,0 +1,7 @@
+// smoke: fmt-hex-neg = 1
+val __result = fmt.hex(-1) == "0xffffffffffffffff" ? 1 : 0
+if __result != 1 {
+ print("FAIL fmt-hex-neg: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

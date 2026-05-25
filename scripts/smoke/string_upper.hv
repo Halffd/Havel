@@ -1,0 +1,8 @@
+// smoke: string-upper = 1
+s = string.upper("hello")
+val __result = s == "HELLO" ? 1 : 0
+if __result != 1 {
+ print("FAIL string-upper: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

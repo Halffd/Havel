@@ -1,0 +1,18 @@
+// smoke: throw-across-frames = 7
+fn inner() {
+    throw 7
+}
+fn outer() {
+    inner()
+    return 0
+}
+try {
+    return outer()
+} catch (e) {
+    val __result = e
+    if __result != 7 {
+     print("FAIL throw-across-frames: expected 7, got " + str(__result))
+     process.exit(1)
+    }
+    return __result
+}

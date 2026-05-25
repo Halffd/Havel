@@ -1,0 +1,8 @@
+// smoke: logic-and = 1
+if true && true { return 1 }
+val __result = 0
+if __result != 1 {
+ print("FAIL logic-and: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -295,14 +295,123 @@ fn dumpAst(program) {
 }
 
 // ============================================================
+// Bytecode stats — cheap, always available
+// ============================================================
+
+fn bytecodeStats() {
+ fc = bc.func_count()
+ ic = bc.instr_count()
+ cc = bc.const_count()
+ {funcs: fc, instrs: ic, consts: cc}
+}
+
+fn dumpBytecodeStats() {
+ s = bytecodeStats()
+ traceBytecode("funcs=" + str(s.funcs) + " instrs=" + str(s.instrs) + " consts=" + str(s.consts))
+}
+
+// ============================================================
 // Bytecode dump — for --debug-bytecode
+// Uses bc.disasm (current func) and bc.disasm_all (all funcs)
+// bc.disasm returns a string with raw numeric opcodes
+// bc.disasm_all returns a string with named opcodes + operands
 // ============================================================
 
 fn dumpBytecode() {
-  if !isOn("bytecode") { return }
-  traceBytecode("--- bytecode dump ---")
-  bc.debug_print()
+ if !isOn("bytecode") { return }
+ traceBytecode("--- bytecode dump ---")
+ raw = bc.disasm_all()
+ if raw == null || raw == "<no chunk>" {
+  traceBytecode("<no chunk>")
   traceBytecode("--- end bytecode dump ---")
+  return
+ }
+ lines = raw.split("\n")
+ for line in lines {
+  if line == "" { continue }
+  colorized = colorizeBytecodeLine(line)
+  traceBytecode("  " + colorized)
+ }
+ traceBytecode("--- end bytecode dump ---")
+}
+
+fn dumpCurrentFunc() {
+ if !isOn("bytecode") { return }
+ raw = bc.disasm()
+ if raw == null || raw == "<no current function>" {
+  traceBytecode("<no current function>")
+  return
+ }
+ lines = raw.split("\n")
+ for line in lines {
+  if line == "" { continue }
+  colorized = colorizeBytecodeLine(line)
+  traceBytecode("  " + colorized)
+ }
+}
+
+fn colorizeBytecodeLine(line) {
+ if !flags.color { return line }
+ if line.startsWith("function ") {
+  return DBG_BOLD + DBG_CYAN + line + DBG_RESET
+ }
+ if line.startsWith("constants:") {
+  return DBG_YELLOW + line + DBG_RESET
+ }
+ if line.startsWith(" [") {
+  return DBG_DIM + line + DBG_RESET
+ }
+ parts = line.split(" ")
+ if #parts >= 2 {
+  offset = parts[0]
+  opname = parts[1]
+  rest = ""
+  i = 2
+  while i < #parts {
+   if rest != "" { rest = rest + " " }
+   rest = rest + parts[i]
+   i = i + 1
+  }
+  opColor = DBG_GREEN
+  // Control flow
+  if opname == "JUMP" || opname == "JUMP_IF_FALSE" || opname == "JUMP_IF_TRUE" || opname == "JUMP_IF_NULL" || opname == "LOOP" || opname == "CALL" || opname == "TAIL_CALL" || opname == "CALL_METHOD" || opname == "CALL_SUPER" || opname == "RETURN" || opname == "GO_ASYNC" || opname == "YIELD" || opname == "YIELD_RESUME" || opname == "THROW" {
+   opColor = DBG_MAGENTA
+  }
+  // Stack/load/store
+  if opname == "LOAD_CONST" || opname == "LOAD_GLOBAL" || opname == "STORE_GLOBAL" || opname == "LOAD_VAR" || opname == "STORE_VAR" || opname == "LOAD_UPVALUE" || opname == "STORE_UPVALUE" || opname == "POP" || opname == "DUP" || opname == "SWAP" || opname == "PUSH_NULL" {
+   opColor = DBG_YELLOW
+  }
+  // Object/array/string ops
+  if opname == "OBJECT_NEW" || opname == "OBJECT_GET" || opname == "OBJECT_SET" || opname == "ARRAY_NEW" || opname == "ARRAY_PUSH" || opname == "ARRAY_GET" || opname == "ARRAY_SET" || opname == "CLASS_NEW" || opname == "CLASS_GET_FIELD" || opname == "CLASS_SET_FIELD" || opname == "STRUCT_NEW" || opname == "STRUCT_GET" || opname == "STRUCT_SET" || opname == "STRING_CONCAT" || opname == "STRING_SUB" || opname == "STRING_FIND" || opname == "STRING_SPLIT" || opname == "STRING_STARTS" || opname == "STRING_ENDS" || opname == "STRING_TRIM" || opname == "STRING_LOWER" || opname == "STRING_UPPER" {
+   opColor = DBG_CYAN
+  }
+  // Concurrency
+  if opname == "CHANNEL_NEW" || opname == "CHANNEL_SEND" || opname == "CHANNEL_RECEIVE" || opname == "CHANNEL_CLOSE" || opname == "THREAD_SPAWN" || opname == "THREAD_JOIN" || opname == "THREAD_SEND" || opname == "THREAD_RECEIVE" || opname == "FIBER_AWAIT" || opname == "FIBER_SLEEP" {
+   opColor = DBG_RED
+  }
+  DBG_DIM + offset + DBG_RESET + " " + opColor + opname + DBG_RESET + " " + rest
+ } else {
+  line
+ }
+}
+
+// ============================================================
+// Emit trace — show current func bytecode after each func_pop
+// Call from emitter after bc.func_pop() when --debug-bytecode
+// ============================================================
+
+fn traceEmit(funcName) {
+ if !isOn("bytecode") { return }
+ raw = bc.disasm()
+ if raw == null || raw == "<no current function>" { return }
+ lines = raw.split("\n")
+ traceBytecode("--- emitted: " + str(funcName) + " ---")
+ for line in lines {
+  if line == "" { continue }
+  colorized = colorizeBytecodeLine(line)
+  traceBytecode("  " + colorized)
+ }
+ traceBytecode("--- end ---")
 }
 
 // ============================================================
@@ -339,7 +448,92 @@ fn dumpScope(scope, indent) {
   count = scope.count
   if count == null { count = 0 }
   traceScope(pad + name + " (vars: " + str(count) + ")")
-  if scope.children != null {
-    for child in scope.children { dumpScope(child, indent + 1) }
+ if scope.children != null {
+  for child in scope.children { dumpScope(child, indent + 1) }
+ }
+}
+
+// ============================================================
+// Structured bytecode summary — parse disasm_all into objects
+// Returns array of {name, params, locals, upvalues, instrs, consts}
+// ============================================================
+
+fn parseBytecodeSummary() {
+ raw = bc.disasm_all()
+ if raw == null || raw == "<no chunk>" { return [] }
+ lines = raw.split("\n")
+ funcs = []
+ cur = null
+ for line in lines {
+  if line == "" { continue }
+  if line.startsWith("function ") {
+   rest = line.slice(9)
+   fname = rest
+   params = 0
+   locals = 0
+   upvals = 0
+   pIdx = rest.find("(params=")
+   if pIdx != null && pIdx >= 0 {
+    fname = rest.slice(0, pIdx).trim()
+    meta = rest.slice(pIdx)
+    pm = meta.find("params=")
+    if pm != null && pm >= 0 {
+     s = meta.slice(pm + 7)
+     pe = s.find(")")
+     if pe != null && pe > 0 {
+      params = int(s.slice(0, pe))
+     }
+    }
+    lm = meta.find("locals=")
+    if lm != null && lm >= 0 {
+     s = meta.slice(lm + 7)
+     le = s.find(")")
+     if le == null || le < 0 { le = s.find(" ") }
+     if le != null && le > 0 {
+      locals = int(s.slice(0, le))
+     }
+    }
+    um = meta.find("upvalues=")
+    if um != null && um >= 0 {
+     s = meta.slice(um + 9)
+     ue = s.find(")")
+     if ue != null && ue > 0 {
+      upvals = int(s.slice(0, ue))
+     }
+    }
+   }
+   cur = {name: fname, params: params, locals: locals, upvalues: upvals, instrs: 0, consts: 0}
+   funcs.push(cur)
+   continue
   }
+  if cur != null {
+   if line.startsWith("constants:") { continue }
+   if line.startsWith(" [") {
+    cur.consts = cur.consts + 1
+   } else {
+    cur.instrs = cur.instrs + 1
+   }
+  }
+ }
+ funcs
+}
+
+fn dumpBytecodeSummary() {
+ if !isOn("bytecode") { return }
+ funcs = parseBytecodeSummary()
+ if #funcs == 0 {
+  traceBytecode("<no functions>")
+  return
+ }
+ traceBytecode(#funcs + " functions:")
+ totalInstrs = 0
+ totalConsts = 0
+ for f in funcs {
+  totalInstrs = totalInstrs + f.instrs
+  totalConsts = totalConsts + f.consts
+  tag = f.name
+  if tag == "" || tag == null { tag = "<top>" }
+  traceBytecode("  " + tag + " p=" + str(f.params) + " l=" + str(f.locals) + " u=" + str(f.upvalues) + " instrs=" + str(f.instrs) + " consts=" + str(f.consts))
+ }
+ traceBytecode("total: " + str(totalInstrs) + " instrs, " + str(totalConsts) + " consts")
 }

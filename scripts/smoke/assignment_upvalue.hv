@@ -1,0 +1,18 @@
+// smoke: assignment-upvalue = 42
+fn makeCounter(seed) {
+    x = seed
+    fn next() {
+        x += 1
+        return x
+    }
+    return next
+}
+
+c = makeCounter(40)
+c()
+val __result = c()
+if __result != 42 {
+ print("FAIL assignment-upvalue: expected 42, got " + str(__result))
+ process.exit(1)
+}
+return __result

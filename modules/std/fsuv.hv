@@ -259,12 +259,12 @@ fn rmdir(path) {
 
 fn rename(oldPath, newPath) {
     req = _req()
-    co = ffi.cstring(oldPath)
-    cn = ffi.cstring(newPath)
-    ffi.call(_uv_fs_rename, "int64", _t_pppppp, _loop, req, co, cn, 0)
-    r = _result(req)
-    _cleanup(req)
-    ffi.free(co)
+cOld = ffi.cstring(oldPath)
+  cNew = ffi.cstring(newPath)
+  ffi.call(_uv_fs_rename, "int64", _t_pppppp, _loop, req, cOld, cNew, 0)
+  r = _result(req)
+  _cleanup(req)
+  ffi.free(cOld)
     ffi.free(cn)
     return r == 0
 }

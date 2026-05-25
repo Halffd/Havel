@@ -1,0 +1,9 @@
+// smoke: for-loop-destructure-obj = 60
+sum = 0
+for i, v in {a: 10, b: 20, c: 30} { sum += v }
+val __result = sum
+if __result != 60 {
+ print("FAIL for-loop-destructure-obj: expected 60, got " + str(__result))
+ process.exit(1)
+}
+return __result

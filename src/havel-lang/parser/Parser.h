@@ -288,11 +288,11 @@ private:
   std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
   std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();
   std::pair<std::vector<ast::StructFieldDef>,
-            std::vector<std::unique_ptr<ast::StructMethodDef>>>
-  parseStructMembers();
+  std::vector<std::unique_ptr<ast::StructMethodDef>>>
+  parseStructMembers(bool isColonBody = false, size_t colonBaseIndent = 0);
   std::pair<std::vector<ast::ClassFieldDef>,
-            std::vector<std::unique_ptr<ast::ClassMethodDef>>>
-  parseClassMembers();
+  std::vector<std::unique_ptr<ast::ClassMethodDef>>>
+  parseClassMembers(bool isColonBody = false, size_t colonBaseIndent = 0);
   std::vector<ast::EnumVariantDef> parseEnumVariants();
 
   std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>

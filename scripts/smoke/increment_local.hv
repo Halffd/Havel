@@ -1,0 +1,9 @@
+// smoke: increment-local = 41
+x = 40
+x++
+val __result = x
+if __result != 41 {
+ print("FAIL increment-local: expected 41, got " + str(__result))
+ process.exit(1)
+}
+return __result

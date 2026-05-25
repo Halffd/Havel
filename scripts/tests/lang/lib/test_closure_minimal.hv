@@ -1,0 +1,10 @@
+// Verify: basic emitter still works after GC suspension fix
+use { compileProgram, Emitter } from "emitter"
+use { NumberLiteral, ExpressionStatement, Program } from "ast"
+
+fn run(em, prog):
+  return compileProgram(em, prog, false, null, "__main__", false)
+
+em = Emitter()
+result = run(em, Program([ExpressionStatement(NumberLiteral(42, 0, 0), 0, 0)], 0, 0))
+print("basic=" + str(result))

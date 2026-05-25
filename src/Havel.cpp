@@ -1,340 +1,184 @@
-// Havel.cpp
-// Implementation of embeddable C++ API
+#include "Havel.hpp"
+#include "havel-lang/core/Value.hpp"
+#include "havel-lang/compiler/vm/VM.hpp"
+#include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/gc/GC.hpp"
+#include "havel-lang/runtime/HavelEngine.hpp"
 
-#include "core/init/Havel.hpp"
-#include "havel-lang/runtime/Environment.hpp"
-#include "havel-lang/types/HavelType.hpp"
-#include "havel-lang/ast/AST.h"
 #include <sstream>
 #include <fstream>
 
 namespace havel {
 
-// ============================================================================
-// Value::Impl definition (must be before internal helpers)
-// ============================================================================
+using CoreValue = ::havel::core::Value;
+using CompilerVM = ::havel::compiler::VM;
 
 struct Value::Impl {
-    std::shared_ptr<::havel::HavelValue> internal;
-};
+    CoreValue internal;
+    CompilerVM* vm = nullptr;
+    std::string stringContent;
+    bool needsIntern = false;
 
-// ============================================================================
-// Internal helpers
-// ============================================================================
+    Impl() = default;
+    explicit Impl(CoreValue v, CompilerVM* vmPtr = nullptr)
+        : internal(std::move(v)), vm(vmPtr) {}
+    explicit Impl(std::string s, CompilerVM* vmPtr = nullptr)
+        : vm(vmPtr), stringContent(std::move(s)), needsIntern(true) {}
+};
 
 namespace internal {
 
-// Convert internal HavelValue to public Value
-Value toPublicValue(const ::havel::HavelValue& internal) {
-    Value publicVal;
-    
-    if (internal.is<std::nullptr_t>()) {
-        publicVal.type = Value::Type::Nil;
-    } else if (internal.is<bool>()) {
-        publicVal.type = Value::Type::Bool;
-    } else if (internal.is<int>() || internal.is<double>()) {
-        publicVal.type = Value::Type::Number;
-    } else if (internal.is<std::string>()) {
-        publicVal.type = Value::Type::String;
-    } else if (internal.is<::havel::HavelArray>()) {
-        publicVal.type = Value::Type::Array;
-    } else if (internal.is<::havel::HavelObject>()) {
-        publicVal.type = Value::Type::Object;
-    } else if (internal.is<::havel::HavelStructInstance>()) {
-        publicVal.type = Value::Type::Struct;
-    } else if (internal.is<::havel::BuiltinFunction>() || 
-               internal.is<std::shared_ptr<::havel::HavelFunction>>()) {
-        publicVal.type = Value::Type::Function;
+static Value::Type classifyType(const CoreValue& v) {
+    if (v.isNull()) return Value::Type::Nil;
+    if (v.isBool()) return Value::Type::Bool;
+    if (v.isInt()) return Value::Type::Int;
+    if (v.isDouble()) return Value::Type::Float;
+    if (v.isStringId() || v.isStringValId()) return Value::Type::String;
+    if (v.isArrayId()) return Value::Type::Array;
+    if (v.isObjectId()) return Value::Type::Object;
+    if (v.isClosureId() || v.isHostFuncId()) return Value::Type::Function;
+    return Value::Type::Error;
+}
+
+static Value toPublicValue(CoreValue internal, CompilerVM* vm = nullptr) {
+    Value pub;
+    pub.type = classifyType(internal);
+    pub.impl = std::make_shared<Value::Impl>(std::move(internal), vm);
+    if (pub.type == Value::Type::String && vm) {
+        auto* ptr = vm->getStringPtr(pub.impl->internal);
+        if (ptr) pub.impl->stringContent = *ptr;
     }
-    
-    publicVal.impl = std::make_shared<Value::Impl>();
-    publicVal.impl->internal = std::make_shared<::havel::HavelValue>(internal);
-    
-    return publicVal;
+    return pub;
 }
 
-// Convert public Value to internal HavelValue
-::havel::HavelValue toInternalValue(const Value& publicVal) {
-    if (!publicVal.impl) {
-        return ::havel::HavelValue(nullptr);
+static CoreValue toCoreValue(const Value& pub) {
+    if (!pub.impl) return CoreValue::makeNull();
+    if (pub.impl->needsIntern && pub.impl->vm) {
+        auto* vm = pub.impl->vm;
+        auto ref = vm->heap_.allocateString(pub.impl->stringContent);
+        pub.impl->internal = CoreValue::makeStringId(ref.id);
+        pub.impl->needsIntern = false;
     }
-    // Access internal through the complete type defined later
-    return *publicVal.impl->internal;
+    return pub.impl->internal;
 }
 
-} // namespace internal
-
-// ============================================================================
-// Value implementation
-// ============================================================================
-
-Value::Value(bool b) : type(Type::Bool), impl(std::make_shared<Impl>()) {
-    impl->internal = std::make_shared<::havel::HavelValue>(b);
+static CompilerVM* vmFrom(const Value& pub) {
+    if (!pub.impl) return nullptr;
+    return pub.impl->vm;
 }
 
-Value::Value(double n) : type(Type::Number), impl(std::make_shared<Impl>()) {
-    impl->internal = std::make_shared<::havel::HavelValue>(n);
 }
 
-Value::Value(int n) : type(Type::Number), impl(std::make_shared<Impl>()) {
-    impl->internal = std::make_shared<::havel::HavelValue>(static_cast<double>(n));
-}
+Value::Value() : type(Type::Nil), impl(std::make_shared<Impl>()) {}
+Value::Value(std::nullptr_t) : type(Type::Nil), impl(std::make_shared<Impl>()) {}
 
-Value::Value(const std::string& s) : type(Type::String), impl(std::make_shared<Impl>()) {
-    impl->internal = std::make_shared<::havel::HavelValue>(s);
-}
+Value::Value(bool b) : type(Type::Bool), impl(std::make_shared<Impl>(CoreValue::makeBool(b))) {}
 
-Value::Value(const char* s) : type(Type::String), impl(std::make_shared<Impl>()) {
-    impl->internal = std::make_shared<::havel::HavelValue>(std::string(s));
-}
+Value::Value(int n) : type(Type::Int), impl(std::make_shared<Impl>(CoreValue::makeInt(n))) {}
+
+Value::Value(int64_t n) : type(Type::Int), impl(std::make_shared<Impl>(CoreValue::makeInt(static_cast<int64_t>(n)))) {}
+
+Value::Value(double n) : type(Type::Float), impl(std::make_shared<Impl>(CoreValue::makeDouble(n))) {}
+
+Value::Value(const std::string& s) : type(Type::String), impl(std::make_shared<Impl>(s)) {}
+
+Value::Value(const char* s) : type(Type::String), impl(std::make_shared<Impl>(std::string(s))) {}
 
 bool Value::asBool() const {
-    if (!impl || !impl->internal) return false;
-    
-    if (impl->internal->is<bool>()) {
-        return impl->internal->get<bool>();
-    }
-    if (impl->internal->isNumber()) {
-        return impl->internal->asNumber() != 0.0;
-    }
-    if (impl->internal->is<std::string>()) {
-        return !impl->internal->get<std::string>().empty();
-    }
+    if (!impl) return false;
+    if (impl->internal.isBool()) return impl->internal.asBool();
+    if (impl->internal.isInt()) return impl->internal.asInt64() != 0;
+    if (impl->internal.isDouble()) return impl->internal.asDouble() != 0.0;
     return false;
 }
 
+int64_t Value::asInt() const {
+    if (!impl) return 0;
+    if (impl->internal.isInt()) return impl->internal.asInt64();
+    if (impl->internal.isDouble()) return static_cast<int64_t>(impl->internal.asDouble());
+    if (impl->internal.isBool()) return impl->internal.asBool() ? 1 : 0;
+    return 0;
+}
+
+double Value::asFloat() const {
+    if (!impl) return 0.0;
+    if (impl->internal.isDouble()) return impl->internal.asDouble();
+    if (impl->internal.isInt()) return static_cast<double>(impl->internal.asInt64());
+    return 0.0;
+}
+
 double Value::asNumber() const {
-    if (!impl || !impl->internal) return 0.0;
-    return impl->internal->asNumber();
+    if (impl && impl->internal.isDouble()) return impl->internal.asDouble();
+    if (impl && impl->internal.isInt()) return static_cast<double>(impl->internal.asInt64());
+    return 0.0;
 }
 
 std::string Value::asString() const {
-    if (!impl || !impl->internal) return "";
-    
-    if (impl->internal->is<std::string>()) {
-        return impl->internal->get<std::string>();
+    if (!impl) return "";
+    if (impl->needsIntern) return impl->stringContent;
+    if (impl->internal.isStringId() || impl->internal.isStringValId()) {
+        auto* vmPtr = impl->vm;
+        if (vmPtr) {
+            auto* ptr = vmPtr->getStringPtr(impl->internal);
+            if (ptr) return *ptr;
+        }
+        return impl->internal.toString();
     }
-    
-    // Convert other types to string
-    std::ostringstream oss;
-    if (impl->internal->is<bool>()) {
-        oss << (impl->internal->get<bool>() ? "true" : "false");
-    } else if (impl->internal->isNumber()) {
-        oss << impl->internal->asNumber();
-    }
-    return oss.str();
+    return toString();
 }
 
 bool Value::isTruthy() const {
     if (type == Type::Nil) return false;
     if (type == Type::Bool) return asBool();
-    if (type == Type::Number) return asNumber() != 0.0;
+    if (type == Type::Int) return asInt() != 0;
+    if (type == Type::Float) return asFloat() != 0.0;
     if (type == Type::String) return !asString().empty();
     return true;
 }
 
 std::string Value::toString() const {
-    if (!impl || !impl->internal) return "nil";
-    
+    if (!impl) return "nil";
     switch (type) {
-        case Type::Nil: return "nil";
-        case Type::Bool: return asBool() ? "true" : "false";
-        case Type::Number: return std::to_string(asNumber());
-        case Type::String: return asString();
-        case Type::Array: return "<array>";
-        case Type::Object: return "<object>";
-        case Type::Function: return "<function>";
-        case Type::Struct: return "<struct>";
-        case Type::Error: return "<error>";
+    case Type::Nil: return "nil";
+    case Type::Bool: return asBool() ? "true" : "false";
+    case Type::Int: return std::to_string(asInt());
+    case Type::Float: return std::to_string(asFloat());
+    case Type::String: return asString();
+    case Type::Array: return "<array>";
+    case Type::Object: return "<object>";
+    case Type::Function: return "<function>";
+    case Type::Error: return "<error>";
     }
     return "<unknown>";
 }
 
-// ============================================================================
-// Array implementation
-// ============================================================================
-
-size_t Array::size() const {
-    if (!value.impl || !value.impl->internal) return 0;
-    
-    if (auto* arrPtr = value.impl->internal->get_if<::havel::HavelArray>()) {
-        if (*arrPtr) {
-            return (*arrPtr)->size();
-        }
-    }
-    return 0;
-}
-
-Value Array::get(size_t index) const {
-    if (!value.impl || !value.impl->internal) return Value();
-    
-    if (auto* arrPtr = value.impl->internal->get_if<::havel::HavelArray>()) {
-        if (*arrPtr && index < (*arrPtr)->size()) {
-            return internal::toPublicValue((*arrPtr)->at(index));
-        }
-    }
-    return Value();
-}
-
-void Array::set(size_t index, const Value& val) {
-    if (!value.impl || !value.impl->internal) return;
-    
-    if (auto* arrPtr = value.impl->internal->get_if<::havel::HavelArray>()) {
-        if (*arrPtr && index < (*arrPtr)->size()) {
-            (*arrPtr)->at(index) = internal::toInternalValue(val);
-        }
-    }
-}
-
-void Array::push(const Value& val) {
-    if (!value.impl || !value.impl->internal) return;
-    
-    if (auto* arrPtr = value.impl->internal->get_if<::havel::HavelArray>()) {
-        if (*arrPtr) {
-            (*arrPtr)->push_back(internal::toInternalValue(val));
-        }
-    }
-}
-
-Value Array::pop() {
-    if (!value.impl || !value.impl->internal) return Value();
-    
-    if (auto* arrPtr = value.impl->internal->get_if<::havel::HavelArray>()) {
-        if (*arrPtr && !(*arrPtr)->empty()) {
-            auto val = (*arrPtr)->back();
-            (*arrPtr)->pop_back();
-            return internal::toPublicValue(val);
-        }
-    }
-    return Value();
-}
-
-// ============================================================================
-// Object implementation
-// ============================================================================
-
-Value Object::get(const std::string& key) const {
-    if (!value.impl || !value.impl->internal) return Value();
-    
-    if (auto* objPtr = value.impl->internal->get_if<::havel::HavelObject>()) {
-        if (*objPtr) {
-            auto it = (*objPtr)->find(key);
-            if (it != (*objPtr)->end()) {
-                return internal::toPublicValue(it->second);
-            }
-        }
-    }
-    return Value();
-}
-
-void Object::set(const std::string& key, const Value& val) {
-    if (!value.impl || !value.impl->internal) return;
-    
-    if (auto* objPtr = value.impl->internal->get_if<::havel::HavelObject>()) {
-        if (*objPtr) {
-            (*objPtr)->insert_or_assign(key, internal::toInternalValue(val));
-        }
-    }
-}
-
-bool Object::has(const std::string& key) const {
-    if (!value.impl || !value.impl->internal) return false;
-    
-    if (auto* objPtr = value.impl->internal->get_if<::havel::HavelObject>()) {
-        if (*objPtr) {
-            return (*objPtr)->find(key) != (*objPtr)->end();
-        }
-    }
-    return false;
-}
-
-std::vector<std::string> Object::keys() const {
-    std::vector<std::string> result;
-    
-    if (!value.impl || !value.impl->internal) return result;
-    
-    if (auto* objPtr = value.impl->internal->get_if<::havel::HavelObject>()) {
-        if (*objPtr) {
-            for (const auto& [key, val] : **objPtr) {
-                result.push_back(key);
-            }
-        }
-    }
-    return result;
-}
-
-// ============================================================================
-// Struct implementation
-// ============================================================================
-
-std::string Struct::getType() const {
-    if (!value.impl || !value.impl->internal) return "";
-    
-    if (auto* structPtr = value.impl->internal->get_if<::havel::HavelStructInstance>()) {
-        return structPtr->typeName;
-    }
-    return "";
-}
-
-Value Struct::getField(const std::string& name) const {
-    if (!value.impl || !value.impl->internal) return Value();
-    
-    if (auto* structPtr = value.impl->internal->get_if<::havel::HavelStructInstance>()) {
-        if (structPtr->fields) {
-            auto it = structPtr->fields->find(name);
-            if (it != structPtr->fields->end()) {
-                return internal::toPublicValue(it->second);
-            }
-        }
-    }
-    return Value();
-}
-
-void Struct::setField(const std::string& name, const Value& val) {
-    if (!value.impl || !value.impl->internal) return;
-    
-    if (auto* structPtr = value.impl->internal->get_if<::havel::HavelStructInstance>()) {
-        if (structPtr->fields) {
-            structPtr->fields->insert_or_assign(name, internal::toInternalValue(val));
-        }
-    }
-}
-
-Value Struct::callMethod(const std::string& name, const std::vector<Value>& args) {
-    if (!value.impl || !value.impl->internal) return Value();
-    
-    auto* structPtr = value.impl->internal->get_if<::havel::HavelStructInstance>();
-    if (!structPtr || !structPtr->structType) return Value();
-    
-    // Get method from struct type
-    auto method = structPtr->structType->getMethod(name);
-    if (!method || !method->body) return Value();
-    
-    // TODO: Execute method through VM
-    // For now, return nil
-    return Value();
-}
-
-// ============================================================================
-// VM implementation
-// ============================================================================
-
 struct VM::Impl {
-    std::shared_ptr<::havel::Interpreter> interpreter;
+    std::unique_ptr<HavelEngine> engine;
     std::string lastError;
-    void* hostContext = nullptr;
-    
-    Impl() {
-        // Create interpreter instance
-        try {
-            interpreter = std::make_shared<::havel::Interpreter>();
-        } catch (const std::exception& e) {
-            lastError = e.what();
-        }
-    }
+    bool initialized = false;
+
+    Impl() = default;
 };
 
-VM::VM() : impl(std::make_unique<Impl>()) {}
+VM::VM() : impl(std::make_unique<Impl>()) {
+    impl->engine = std::make_unique<HavelEngine>();
+    impl->engine->initializeMinimal();
+    impl->initialized = true;
+}
+
+VM::VM(bool leanStartup) : impl(std::make_unique<Impl>()) {
+    EngineConfig config;
+    config.leanMinimalStartup = leanStartup;
+    impl->engine = std::make_unique<HavelEngine>(config);
+    if (leanStartup) {
+        impl->engine->initializeMinimal();
+    } else {
+        auto io = std::make_shared<IO>();
+        auto hostAPI = std::make_shared<HostAPI>(io.get(), nullptr, Configs::Get());
+        impl->engine->initializeFull(hostAPI, leanStartup);
+    }
+    impl->initialized = true;
+}
 
 VM::~VM() = default;
 
@@ -342,27 +186,16 @@ VM::VM(VM&&) noexcept = default;
 VM& VM::operator=(VM&&) noexcept = default;
 
 Result<Value> VM::load(const std::string& code, const std::string& sourceName) {
-    if (!impl->interpreter) {
-        return Result<Value>::err_result("VM not initialized: " + impl->lastError);
+    if (!impl->initialized || !impl->engine) {
+        return Result<Value>::err_result("VM not initialized");
     }
-    
+
     try {
-        auto result = impl->interpreter->Execute(code);
-        
-        // Check for errors
-        if (std::holds_alternative<::havel::HavelRuntimeError>(result)) {
-            auto& err = std::get<::havel::HavelRuntimeError>(result);
-            return Result<Value>::err_result(err.what());
-        }
-        
-        // Return result value
-        if (auto* valPtr = std::get_if<::havel::HavelValue>(&result)) {
-            return Result<Value>::ok_result(internal::toPublicValue(*valPtr));
-        }
-        
-        return Result<Value>::ok_result(Value());
-        
+        CoreValue result = impl->engine->execute(code, "__main__", sourceName);
+        auto* vm = impl->engine->vm();
+        return Result<Value>::ok_result(internal::toPublicValue(std::move(result), vm));
     } catch (const std::exception& e) {
+        impl->lastError = e.what();
         return Result<Value>::err_result(e.what());
     }
 }
@@ -372,139 +205,149 @@ Result<Value> VM::loadFile(const std::string& path) {
     if (!file) {
         return Result<Value>::err_result("Cannot open file: " + path);
     }
-    
     std::stringstream buffer;
     buffer << file.rdbuf();
-    
     return load(buffer.str(), path);
 }
 
 Result<Value> VM::call(const std::string& funcName, const std::vector<Value>& args) {
-    // Get function from globals
-    auto funcVal = getGlobal(funcName);
-    if (funcVal.isNil()) {
-        return Result<Value>::err_result("Function not found: " + funcName);
+    if (!impl->initialized || !impl->engine) {
+        return Result<Value>::err_result("VM not initialized");
     }
-    return call(funcVal, args);
+
+    auto* vm = impl->engine->vm();
+    if (!vm) {
+        return Result<Value>::err_result("VM not available");
+    }
+
+    try {
+        auto it = vm->globals.find(funcName);
+        if (it == vm->globals.end()) {
+            auto hostIt = vm->host_function_globals_.find(funcName);
+            if (hostIt == vm->host_function_globals_.end()) {
+                return Result<Value>::err_result("Function not found: " + funcName);
+            }
+            CoreValue callee = hostIt->second;
+            std::vector<CoreValue> coreArgs;
+            for (const auto& arg : args) {
+                coreArgs.push_back(internal::toCoreValue(arg));
+            }
+            CoreValue result = vm->callFunctionSync(callee, coreArgs);
+            return Result<Value>::ok_result(internal::toPublicValue(std::move(result), vm));
+        }
+
+        CoreValue callee = it->second;
+        std::vector<CoreValue> coreArgs;
+        for (const auto& arg : args) {
+            coreArgs.push_back(internal::toCoreValue(arg));
+        }
+
+        CoreValue result = vm->callFunctionSync(callee, coreArgs);
+        return Result<Value>::ok_result(internal::toPublicValue(std::move(result), vm));
+    } catch (const std::exception& e) {
+        impl->lastError = e.what();
+        return Result<Value>::err_result(e.what());
+    }
 }
 
 Result<Value> VM::call(const Value& func, const std::vector<Value>& args) {
-    if (!impl->interpreter) {
+    if (!impl->initialized || !impl->engine) {
         return Result<Value>::err_result("VM not initialized");
     }
-    
+
+    auto* vm = impl->engine->vm();
+    if (!vm) {
+        return Result<Value>::err_result("VM not available");
+    }
+
     try {
-        // Convert args to internal values
-        std::vector<::havel::HavelValue> internalArgs;
+        CoreValue callee = internal::toCoreValue(func);
+        std::vector<CoreValue> coreArgs;
         for (const auto& arg : args) {
-            internalArgs.push_back(internal::toInternalValue(arg));
+            coreArgs.push_back(internal::toCoreValue(arg));
         }
-        
-        // Call the function through interpreter
-        auto result = impl->interpreter->CallFunction(internal::toInternalValue(func), internalArgs);
-        
-        // Check for errors
-        if (std::holds_alternative<::havel::HavelRuntimeError>(result)) {
-            auto& err = std::get<::havel::HavelRuntimeError>(result);
-            return Result<Value>::err_result(err.what());
-        }
-        
-        // Return result value
-        if (auto* valPtr = std::get_if<::havel::HavelValue>(&result)) {
-            return Result<Value>::ok_result(internal::toPublicValue(*valPtr));
-        }
-        
-        return Result<Value>::ok_result(Value());
-        
+
+        CoreValue result = vm->callFunctionSync(callee, coreArgs);
+        return Result<Value>::ok_result(internal::toPublicValue(std::move(result), vm));
     } catch (const std::exception& e) {
+        impl->lastError = e.what();
         return Result<Value>::err_result(e.what());
     }
 }
 
 Value VM::getGlobal(const std::string& name) {
-    if (!impl->interpreter) return Value();
-    
-    try {
-        auto env = impl->interpreter->getEnvironment();
-        if (auto val = env->Get(name)) {
-            return internal::toPublicValue(*val);
-        }
-    } catch (...) {
-        // Return nil on error
+    if (!impl->initialized || !impl->engine) return Value();
+
+    auto* vm = impl->engine->vm();
+    if (!vm) return Value();
+
+    auto it = vm->globals.find(name);
+    if (it != vm->globals.end()) {
+        return internal::toPublicValue(it->second, vm);
     }
-    
+    auto hostIt = vm->host_function_globals_.find(name);
+    if (hostIt != vm->host_function_globals_.end()) {
+        return internal::toPublicValue(hostIt->second, vm);
+    }
     return Value();
 }
 
 void VM::setGlobal(const std::string& name, const Value& value) {
-    if (!impl->interpreter) return;
-    
-    try {
-        auto env = impl->interpreter->getEnvironment();
-        env->Define(name, internal::toInternalValue(value));
-    } catch (...) {
-        // Ignore errors
-    }
+    if (!impl->initialized || !impl->engine) return;
+
+    auto* vm = impl->engine->vm();
+    if (!vm) return;
+
+    vm->globals[name] = internal::toCoreValue(value);
 }
 
 void VM::registerFn(const std::string& name, NativeFunction fn) {
-    if (!impl->interpreter) return;
-    
-    try {
-        auto env = impl->interpreter->getEnvironment();
-        
-        // Wrap native function in Havel BuiltinFunction
-        ::havel::BuiltinFunction wrapper([fn, this](const std::vector<::havel::HavelValue>& internalArgs) -> ::havel::HavelResult {
-            // Convert internal args to public values
-            std::vector<Value> publicArgs;
-            for (const auto& arg : internalArgs) {
-                publicArgs.push_back(internal::toPublicValue(arg));
-            }
-            
-            // Call native function
-            Value result = fn(*this, publicArgs);
-            
-            // Convert result back to internal value
-            return internal::toInternalValue(result);
-        });
-        
-        env->Define(name, wrapper);
-        
-    } catch (...) {
-        // Ignore errors
-    }
+    if (!impl->initialized || !impl->engine) return;
+
+    auto* vm = impl->engine->vm();
+    if (!vm) return;
+
+    vm->registerHostFunction(name, [fn, this, vm](const std::vector<CoreValue>& coreArgs) -> CoreValue {
+        std::vector<Value> pubArgs;
+        pubArgs.reserve(coreArgs.size());
+        for (const auto& arg : coreArgs) {
+            pubArgs.push_back(internal::toPublicValue(arg, vm));
+        }
+
+        Value result = fn(*this, pubArgs);
+        return internal::toCoreValue(result);
+    });
 }
 
 void VM::registerModule(const std::string& name, const std::vector<std::pair<std::string, NativeFunction>>& fns) {
-    if (!impl->interpreter) return;
-    
-    try {
-        auto env = impl->interpreter->getEnvironment();
-        
-        // Create module object
-        ::havel::HavelObject moduleObj = std::make_shared<std::unordered_map<std::string, ::havel::HavelValue>>();
-        
-        // Add each function to module
-        for (const auto& [fnName, fn] : fns) {
-            ::havel::BuiltinFunction wrapper([fn, this](const std::vector<::havel::HavelValue>& internalArgs) -> ::havel::HavelResult {
-                std::vector<Value> publicArgs;
-                for (const auto& arg : internalArgs) {
-                    publicArgs.push_back(internal::toPublicValue(arg));
-                }
-                
-                Value result = fn(*this, publicArgs);
-                return internal::toInternalValue(result);
-            });
-            
-            (*moduleObj)[fnName] = wrapper;
+    if (!impl->initialized || !impl->engine) return;
+
+    auto* vm = impl->engine->vm();
+    if (!vm) return;
+
+    uint32_t objId = vm->heap_.allocateObject().id;
+    auto* obj = vm->heap_.object(objId);
+
+    for (const auto& [fnName, fn] : fns) {
+        std::string qualName = name + "." + fnName;
+
+        vm->registerHostFunction(qualName, [fn, this, vm](const std::vector<CoreValue>& coreArgs) -> CoreValue {
+            std::vector<Value> pubArgs;
+            pubArgs.reserve(coreArgs.size());
+            for (const auto& arg : coreArgs) {
+                pubArgs.push_back(internal::toPublicValue(arg, vm));
+            }
+            Value result = fn(*this, pubArgs);
+            return internal::toCoreValue(result);
+        });
+
+        auto it = vm->host_function_globals_.find(qualName);
+        if (it != vm->host_function_globals_.end()) {
+            obj->set(fnName, it->second);
         }
-        
-        // Register module
-        env->Define(name, ::havel::HavelValue(moduleObj));
-        
-    } catch (...) {
-        // Ignore errors
     }
+
+    vm->globals[name] = CoreValue::makeObjectId(objId);
 }
 
 std::string VM::getError() const {
@@ -515,17 +358,93 @@ void VM::clearError() {
     impl->lastError.clear();
 }
 
-void VM::setHostContext(void* ctx) {
-    impl->hostContext = ctx;
-    
-    // Also set on interpreter if available
-    if (impl->interpreter) {
-        // TODO: Pass host context to interpreter
-    }
+Array::Array() : value() {}
+
+Array::Array(const Value& v) : value(v) {}
+
+size_t Array::size() const {
+    if (!value.impl || !value.impl->internal.isArrayId()) return 0;
+    auto* vm = internal::vmFrom(value);
+    if (!vm) return 0;
+    auto* arr = vm->heap_.array(value.impl->internal.asArrayId());
+    return arr ? arr->size() : 0;
 }
 
-void* VM::getHostContext() const {
-    return impl->hostContext;
+Value Array::get(size_t index) const {
+    if (!value.impl || !value.impl->internal.isArrayId()) return Value();
+    auto* vm = internal::vmFrom(value);
+    if (!vm) return Value();
+    auto* arr = vm->heap_.array(value.impl->internal.asArrayId());
+    if (!arr || index >= arr->size()) return Value();
+    return internal::toPublicValue((*arr)[index], vm);
+}
+
+void Array::set(size_t index, const Value& val) {
+    if (!value.impl || !value.impl->internal.isArrayId()) return;
+    auto* vm = internal::vmFrom(value);
+    if (!vm) return;
+    auto* arr = vm->heap_.array(value.impl->internal.asArrayId());
+    if (!arr || index >= arr->size()) return;
+    (*arr)[index] = internal::toCoreValue(val);
+}
+
+void Array::push(const Value& val) {
+    if (!value.impl || !value.impl->internal.isArrayId()) return;
+    auto* vm = internal::vmFrom(value);
+    if (!vm) return;
+    auto* arr = vm->heap_.array(value.impl->internal.asArrayId());
+    if (!arr) return;
+    arr->push_back(internal::toCoreValue(val));
+}
+
+Value Array::pop() {
+    if (!value.impl || !value.impl->internal.isArrayId()) return Value();
+    auto* vm = internal::vmFrom(value);
+    if (!vm) return Value();
+    auto* arr = vm->heap_.array(value.impl->internal.asArrayId());
+    if (!arr || arr->empty()) return Value();
+    CoreValue back = arr->back();
+    arr->pop_back();
+    return internal::toPublicValue(std::move(back), vm);
+}
+
+Object::Object() : value() {}
+
+Object::Object(const Value& v) : value(v) {}
+
+Value Object::get(const std::string& key) const {
+    if (!value.impl || !value.impl->internal.isObjectId()) return Value();
+    auto* vm = internal::vmFrom(value);
+    if (!vm) return Value();
+    auto* obj = vm->heap_.object(value.impl->internal.asObjectId());
+    if (!obj) return Value();
+    auto* val = obj->get(key);
+    return val ? internal::toPublicValue(*val, vm) : Value();
+}
+
+void Object::set(const std::string& key, const Value& val) {
+    if (!value.impl || !value.impl->internal.isObjectId()) return;
+    auto* vm = internal::vmFrom(value);
+    if (!vm) return;
+    auto* obj = vm->heap_.object(value.impl->internal.asObjectId());
+    if (!obj) return;
+    obj->set(key, internal::toCoreValue(val));
+}
+
+bool Object::has(const std::string& key) const {
+    if (!value.impl || !value.impl->internal.isObjectId()) return false;
+    auto* vm = internal::vmFrom(value);
+    if (!vm) return false;
+    auto* obj = vm->heap_.object(value.impl->internal.asObjectId());
+    return obj && obj->get(key) != nullptr;
+}
+
+std::vector<std::string> Object::keys() const {
+    if (!value.impl || !value.impl->internal.isObjectId()) return {};
+    auto* vm = internal::vmFrom(value);
+    if (!vm) return {};
+    auto* obj = vm->heap_.object(value.impl->internal.asObjectId());
+    return obj ? obj->getKeys() : std::vector<std::string>{};
 }
 
 } // namespace havel

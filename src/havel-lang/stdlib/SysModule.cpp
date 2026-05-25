@@ -921,8 +921,9 @@ void registerSysModule(const VMApi &api) {
   api.setField(processObj, "runDetached", api.makeFunctionRef("process.runDetached"));
   api.setField(processObj, "spawn", api.makeFunctionRef("process.spawn"));
   api.setField(processObj, "wait", api.makeFunctionRef("process.wait"));
-  api.setField(processObj, "killObj", api.makeFunctionRef("process.killObj"));
-  api.setGlobal("process", processObj);
+    api.setField(processObj, "killObj", api.makeFunctionRef("process.killObj"));
+    api.setField(processObj, "exit", api.makeFunctionRef("sys.exit"));
+    api.setGlobal("process", processObj);
 }
 
 } // namespace havel::stdlib

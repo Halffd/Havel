@@ -1,48 +1,86 @@
-// Pure Havel log module
+// log.hv — structured logging wrapping C++ log.* host bridge
+// Host bridge: log.info, log.error, log.warn, log.debug, log.critical,
+//              log.get, log.set, log.history, log.log
 
-_logState = {
-    entries: [],
-    key: "",
+// ============================================================
+// Core level functions — thin wrappers over C++ bridge
+// ============================================================
+
+fn info(msg) { log.info(msg) }
+fn warn(msg) { log.warn(msg) }
+fn error(msg) { log.error(msg) }
+fn debug(msg) { log.debug(msg) }
+fn critical(msg) { log.critical(msg) }
+
+// ============================================================
+// File/target control
+// ============================================================
+
+fn getPath() { log.get() }
+
+fn setPath(path) { log.set(path) }
+
+fn toStdout() { log.set(0) }
+fn toStderr() { log.set(1) }
+
+// ============================================================
+// Log history
+// ============================================================
+
+fn history() { log.history() }
+
+fn dumpHistory() {
+ entries = log.history()
+ for e in entries {
+  print(e)
+ }
 }
 
-fn _format(level, msg) {
-    entry = "[" + level + "] " + msg
-    if _logState.key != "" {
-        entry = "[" + _logState.key + "] " + entry
-    }
-    _logState.entries.push(entry)
-    print(entry)
-    entry
+// ============================================================
+// Raw log to specific target (file, stdout, stderr)
+// ============================================================
+
+fn to(target, msg) { log.log(target, msg) }
+fn toFile(path, msg) { log.log(path, msg) }
+
+// ============================================================
+// Formatted logging with key prefix
+// ============================================================
+
+_key = ""
+
+fn setKey(key) { _key = key }
+
+fn getKey() { _key }
+
+fn _prefix() {
+ if _key == "" { return "" }
+ "[" + _key + "] "
 }
 
-fn info(msg) {
-    _format("INFO", msg)
-}
+fn infof(msg) { log.info(_prefix() + msg) }
+fn warnf(msg) { log.warn(_prefix() + msg) }
+fn errorf(msg) { log.error(_prefix() + msg) }
+fn debugf(msg) { log.debug(_prefix() + msg) }
+fn criticalf(msg) { log.critical(_prefix() + msg) }
 
-fn warn(msg) {
-    _format("WARN", msg)
-}
+// ============================================================
+// Conditional logging — only log if condition is true
+// ============================================================
 
-fn error(msg) {
-    _format("ERROR", msg)
-}
+fn infoIf(cond, msg) { if cond { info(msg) } }
+fn warnIf(cond, msg) { if cond { warn(msg) } }
+fn errorIf(cond, msg) { if cond { error(msg) } }
+fn debugIf(cond, msg) { if cond { debug(msg) } }
 
-fn debug(msg) {
-    _format("DEBUG", msg)
-}
+// ============================================================
+// Benchmark helper — log elapsed time for a block
+// ============================================================
 
-fn critical(msg) {
-    _format("FATAL", msg)
-}
-
-fn history() {
-    _logState.entries
-}
-
-fn set(key) {
-    _logState.key = key
-}
-
-fn get() {
-    _logState.key
+fn bench(label, cb) {
+  start = time.now()
+  cb()
+  elapsed = time.now() - start
+ ms = int(elapsed * 1000)
+ info("{label}: {ms}ms")
 }

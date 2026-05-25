@@ -98,16 +98,17 @@ static Value registerStringFallback(const VMApi &api) {
         return api.makeString(str.substr(start, len));
       });
 
-  api.registerFunction("string.find",
-                       [api](const std::vector<Value> &args) {
-                         if (args.size() < 2)
-                           throw std::runtime_error(
-                               "string.find() requires at least 2 arguments");
-                         std::string str = api.toString(args[0]);
-                         std::string substr = api.toString(args[1]);
-                         size_t pos = str.find(substr);
-                         return Value(static_cast<int64_t>(pos));
-                       });
+    api.registerFunction("string.find",
+    [api](const std::vector<Value> &args) {
+        if (args.size() < 2)
+            throw std::runtime_error(
+                "string.find() requires at least 2 arguments");
+        std::string str = api.toString(args[0]);
+        std::string substr = api.toString(args[1]);
+        size_t pos = str.find(substr);
+        if (pos == std::string::npos) return Value::makeInt(-1);
+        return Value::makeInt(static_cast<int64_t>(pos));
+    });
 
   api.registerFunction(
       "string.replace", [api](const std::vector<Value> &args) {
@@ -231,18 +232,20 @@ static Value registerStringFallback(const VMApi &api) {
   });
 
   auto strObj = api.makeObject();
-  api.setField(strObj, "len", api.makeFunctionRef("string.len"));
-  api.setField(strObj, "lower", api.makeFunctionRef("string.lower"));
-  api.setField(strObj, "upper", api.makeFunctionRef("string.upper"));
-  api.setField(strObj, "trim", api.makeFunctionRef("string.trim"));
-  api.setField(strObj, "sub", api.makeFunctionRef("string.sub"));
-  api.setField(strObj, "find", api.makeFunctionRef("string.find"));
-  api.setField(strObj, "replace", api.makeFunctionRef("string.replace"));
-  api.setField(strObj, "split", api.makeFunctionRef("string.split"));
-  api.setField(strObj, "join", api.makeFunctionRef("string.join"));
-  api.setField(strObj, "startswith", api.makeFunctionRef("string.startswith"));
-  api.setField(strObj, "endswith", api.makeFunctionRef("string.endswith"));
-  api.setField(strObj, "includes", api.makeFunctionRef("string.includes"));
+    api.setField(strObj, "len", api.makeFunctionRef("string.len"));
+    api.setField(strObj, "lower", api.makeFunctionRef("string.lower"));
+    api.setField(strObj, "upper", api.makeFunctionRef("string.upper"));
+    api.setField(strObj, "trim", api.makeFunctionRef("string.trim"));
+    api.setField(strObj, "sub", api.makeFunctionRef("string.sub"));
+    api.setField(strObj, "find", api.makeFunctionRef("string.find"));
+    api.setField(strObj, "replace", api.makeFunctionRef("string.replace"));
+    api.setField(strObj, "split", api.makeFunctionRef("string.split"));
+    api.setField(strObj, "join", api.makeFunctionRef("string.join"));
+    api.setField(strObj, "startsWith", api.makeFunctionRef("string.startswith"));
+    api.setField(strObj, "endsWith", api.makeFunctionRef("string.endswith"));
+    api.setField(strObj, "includes", api.makeFunctionRef("string.includes"));
+    api.setField(strObj, "startswith", api.makeFunctionRef("string.startswith"));
+    api.setField(strObj, "endswith", api.makeFunctionRef("string.endswith"));
     api.setGlobal("String", strObj);
     api.setGlobal("string", strObj);
     return strObj;

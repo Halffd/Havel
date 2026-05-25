@@ -1,0 +1,8 @@
+// smoke: object-len = 2
+obj = { a: 1, b: 2 }
+val __result = object.len(obj)
+if __result != 2 {
+ print("FAIL object-len: expected 2, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -1,0 +1,14 @@
+// smoke: closure-recursive-upvalue = 120
+fn makeFactorial():
+  fn fact(n):
+    if n <= 1:
+      return 1
+    return n * fact(n - 1)
+  return fact
+
+f = makeFactorial()
+val __result = f(5)
+if __result != 120:
+  print("FAIL closure-recursive-upvalue: expected 120, got " + str(__result))
+  process.exit(1)
+return __result

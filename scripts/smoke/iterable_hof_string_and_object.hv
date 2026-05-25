@@ -1,0 +1,21 @@
+// smoke: iterable-hof-string-and-object = 1
+chars = "ab".map((c) => c)
+print(chars)
+print(chars[0])
+print(chars[0] == "a")
+keys = {a: 1, b: 2}.map((k) => k)
+print(keys)
+print(keys.find("a"))
+if chars[0] == "a" {
+  if keys.find("a") >= 0 {
+    if keys.find("b") >= 0 {
+      return 1
+    }
+  }
+}
+val __result = 0
+if __result != 1 {
+ print("FAIL iterable-hof-string-and-object: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

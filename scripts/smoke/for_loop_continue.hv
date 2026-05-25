@@ -1,0 +1,12 @@
+// smoke: for-loop-continue = 25
+sum = 0
+for i in 1..10 {
+  if i % 2 == 0 { continue }
+  sum += i
+}
+val __result = sum
+if __result != 25 {
+ print("FAIL for-loop-continue: expected 25, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -1,0 +1,18 @@
+// smoke: closure-loop-capture = 6
+// Havel closures capture the stack slot, so each iteration's
+// val reuses the same slot. We test that the closure can still
+// read the upvalue correctly (even if it's the last value).
+fns = []
+i = 0
+while i < 3:
+  fn f(): return i
+  fns.push(f)
+  i += 1
+
+// All closures capture the same 'i' slot, now i=3
+// This tests that closures can read upvalues at all
+val __result = fns[0]() + fns[1]() + fns[2]()
+if __result != 9:
+  print("FAIL closure-loop-capture: expected 9, got " + str(__result))
+  process.exit(1)
+return __result

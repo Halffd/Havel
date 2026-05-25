@@ -1,0 +1,9 @@
+// smoke: physics-momentum = 1
+// p = m * v = 10 * 5 = 50
+v = momentum(10, 5)
+val __result = v == 50.0 ? 1 : 0
+if __result != 1 {
+ print("FAIL physics-momentum: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

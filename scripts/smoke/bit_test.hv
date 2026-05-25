@@ -1,0 +1,8 @@
+// smoke: bit-test = 1
+// test bit 2 of 0b100 (4) -> true -> 1
+val __result = bit.test(4, 2) ? 1 : 0
+if __result != 1 {
+ print("FAIL bit-test: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

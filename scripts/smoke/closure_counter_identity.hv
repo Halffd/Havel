@@ -1,0 +1,17 @@
+// smoke: closure-counter-identity = 4
+fn makeCounter():
+  count = 0
+  fn inc():
+    count += 1
+    return count
+  return inc
+
+a = makeCounter()
+b = makeCounter()
+a()
+a()
+val __result = a() + b()
+if __result != 4:
+  print("FAIL closure-counter-identity: expected 4, got " + str(__result))
+  process.exit(1)
+return __result

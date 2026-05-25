@@ -1,0 +1,16 @@
+// smoke: await-cofn-multi-yield = 60
+co fn gen() {
+  yield 10
+  yield 20
+  return 30
+}
+c = gen()
+r1 = <-c
+r2 = <-c
+r3 = <-c
+val __result = r1 + r2 + r3
+if __result != 60 {
+ print("FAIL await-cofn-multi-yield: expected 60, got " + str(__result))
+ process.exit(1)
+}
+return __result

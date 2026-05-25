@@ -1,0 +1,19 @@
+// smoke: closure-transitive = 42
+fn outer() {
+    x = 41
+    fn middle() {
+        fn inner() {
+            return x + 1
+        }
+        return inner
+    }
+    return middle()
+}
+
+f = outer()
+val __result = f()
+if __result != 42 {
+ print("FAIL closure-transitive: expected 42, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -1,0 +1,9 @@
+// smoke: time-format-length = 1
+now = time.now()
+s = time.format(now)
+val __result = #s > 0 ? 1 : 0
+if __result != 1 {
+ print("FAIL time-format-length: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -1,0 +1,17 @@
+// smoke: class-basic = 3
+class Counter {
+      count
+      fn @(start) { @count = start }
+      fn increment() { @count++ }
+      fn current() { @count }
+    }
+    c = Counter(0)
+    c.increment()
+    c.increment()
+    c.increment()
+    val __result = c.current()
+    if __result != 3 {
+     print("FAIL class-basic: expected 3, got " + str(__result))
+     process.exit(1)
+    }
+    return __result

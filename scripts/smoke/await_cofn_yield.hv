@@ -1,0 +1,14 @@
+// smoke: await-cofn-yield = 10
+co fn gen() {
+  yield 10
+  yield 20
+  return 30
+}
+c = gen()
+r1 = <-c
+val __result = r1
+if __result != 10 {
+ print("FAIL await-cofn-yield: expected 10, got " + str(__result))
+ process.exit(1)
+}
+return __result

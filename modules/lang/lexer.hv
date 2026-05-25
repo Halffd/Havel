@@ -282,9 +282,10 @@ fn Lexer(source) {
 
     src = source
     pos = 0
-    line = 1
-    col = 1
-    tokens = []
+ line = 1
+ col = 1
+ tokenStartCol = 1
+ tokens = []
     errors = []
     inBitwiseExpr = false
     parenDepth = 0
@@ -325,10 +326,10 @@ fn Lexer(source) {
 
         }
     }
-    fn addToken(ttype, value) {
-        tokens.push({type: ttype, value: value, line: line, col: col})
+fn addToken(ttype, value) {
+ tokens.push({type: ttype, value: value, line: line, col: tokenStartCol})
 
-    }
+}
     fn error(msg) {
         errors.push({msg: msg, line: line, col: col})
 
@@ -809,14 +810,14 @@ fn Lexer(source) {
         exprTokens.has(lastTokenType())
 
     }
-    fn _scan() {
-        while pos < src.len {
-            skipWhitespace()
-            if pos >= src.len {
-                break
-
-            }
-            c = current()
+fn _scan() {
+ while pos < src.len {
+  skipWhitespace()
+  if pos >= src.len {
+   break
+  }
+  tokenStartCol = col
+  c = current()
 
             if c == "\n" {
                 addToken("NewLine", "\n")

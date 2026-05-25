@@ -36,9 +36,11 @@ std::string Value::toString() const {
 
   if (isEnumId())
     return "<enum:" + std::to_string(asEnumId()) + ">";
-  if (isIteratorId())
-    return "<iterator:" + std::to_string(asIteratorId()) + ">";
-  if (isHostFuncId())
+    if (isIteratorId())
+        return "<iterator:" + std::to_string(asIteratorId()) + ">";
+    if (isBoundMethodId())
+        return "<boundmethod:" + std::to_string(asBoundMethodId()) + ">";
+    if (isHostFuncId())
     return "<hostfunc:" + std::to_string(asHostFuncId()) + ">";
   if (isLazyPipelineId())
     return "<pipeline:" + std::to_string(asLazyPipelineId()) + ">";

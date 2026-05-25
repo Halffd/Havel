@@ -1,0 +1,9 @@
+// smoke: object-set = 1
+obj = { a: 1 }
+object.set(obj, "b", 2)
+val __result = object.has(obj, "b") ? 1 : 0
+if __result != 1 {
+ print("FAIL object-set: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

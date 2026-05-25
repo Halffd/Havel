@@ -37,8 +37,13 @@ fn rep(s, n) { s.repeat(n) }
 fn count(s, sub) { s.count(sub) }
 fn indexOf(s, sub) { s.indexOf(sub) }
 fn find(s, sub, start = nil) {
-  if start != nil { s.find(sub, start) }
-  else { s.find(sub) }
+  if start != nil {
+    val r = s.find(sub, start)
+    r == nil ? -1 : r
+  }
+  else {
+    s.find(sub)
+  }
 }
 fn lastIndexOf(s, sub) { s.lastIndexOf(sub) }
 fn findLast(s, sub) { s.findLast(sub) }

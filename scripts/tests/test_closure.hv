@@ -1,0 +1,56 @@
+// test_closure.hv — Test closure/upvalue capture in pure-Havel emitter
+
+// Test 1: Simple closure capturing an outer variable
+fn makeAdder(x) {
+  fn add(y) {
+    x + y
+  }
+  add
+}
+
+adder = makeAdder(10)
+r1 = adder(5)
+print("closure_basic: {r1}")
+if r1 == 15 {
+  print("PASS: closure_basic")
+}
+else {
+  print("FAIL: closure_basic expected 15 got {r1}")
+}
+
+// Test 2: Closure that modifies captured variable
+fn makeCounter() {
+  count = 0
+  fn increment() {
+    count = count + 1
+    count
+  }
+  increment
+}
+
+counter = makeCounter()
+c1 = counter()
+c2 = counter()
+c3 = counter()
+print("closure_mutate: {c1} {c2} {c3}")
+if c1 == 1 && c2 == 2 && c3 == 3 {
+  print("PASS: closure_mutate")
+}
+else {
+  print("FAIL: closure_mutate expected 1 2 3 got {c1} {c2} {c3}")
+}
+
+// Test 3: Lambda capturing outer variable
+fn applyWith(x) {
+  fn(y) { x * y }
+}
+
+doubler = applyWith(2)
+r3 = doubler(5)
+print("lambda_capture: {r3}")
+if r3 == 10 {
+  print("PASS: lambda_capture")
+}
+else {
+  print("FAIL: lambda_capture expected 10 got {r3}")
+}

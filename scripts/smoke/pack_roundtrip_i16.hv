@@ -1,0 +1,9 @@
+// smoke: pack-roundtrip-i16 = 1000
+data = pack.pack("I", 1000)
+    result = pack.unpack("I", data)
+val __result = result[0]
+if __result != 1000 {
+ print("FAIL pack-roundtrip-i16: expected 1000, got " + str(__result))
+ process.exit(1)
+}
+return __result

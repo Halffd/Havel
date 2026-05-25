@@ -1,0 +1,12 @@
+// smoke: pack-unpack-multi = 1
+data = pack.pack("uI", 1, 500)
+    result = pack.unpack("uI", data)
+ok = 1
+if result[0] != 1 { ok = 0 }
+if result[1] != 500 { ok = 0 }
+val __result = ok
+if __result != 1 {
+ print("FAIL pack-unpack-multi: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

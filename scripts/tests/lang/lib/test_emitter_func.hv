@@ -161,6 +161,9 @@ print(passed + " passed, " + failed + " failed")
 // Extended functional tests
 // ============================================================
 
+print("starting extended tests...")
+print("about to test RepeatStatement...")
+
 // Test: RepeatStatement (repeat 3 times, sum += 1)
 em = Emitter()
 result = run(em, Program([
@@ -270,21 +273,50 @@ result = run(em, Program([
 ], 0, 0))
 check("update_post_inc", result, 1)
 
-// Test: closure captures variable
+// Test: closure capturing outer variable
+// fn makeAdder(x) { fn add(y) { x + y } add }
+// adder = makeAdder(10); adder(5) => 15
 em = Emitter()
 result = run(em, Program([
-    LetDeclaration("x", NumberLiteral(10, 0, 0), 0, 0),
-    FnDeclaration("get_x", [], ReturnStatement(Identifier("x", 0, 0), 0, 0), 0, 0),
-    ExpressionStatement(CallExpression(Identifier("get_x", 0, 0), [], 0, 0), 0, 0)
+  FnDeclaration("makeAdder", ["x"], BlockStatement([
+    FnDeclaration("add", ["y"], ReturnStatement(BinaryExpression(Identifier("x", 0, 0), "+", Identifier("y", 0, 0), 0, 0), 0, 0), 0, 0),
+    ExpressionStatement(Identifier("add", 0, 0), 0, 0)
+  ], 0, 0), 0, 0),
+  LetDeclaration("adder", CallExpression(Identifier("makeAdder", 0, 0), [NumberLiteral(10, 0, 0)], 0, 0), 0, 0),
+  ExpressionStatement(CallExpression(Identifier("adder", 0, 0), [NumberLiteral(5, 0, 0)], 0, 0), 0, 0)
 ], 0, 0))
-check("closure_capture", result, 10)
+check("closure_capture", result, 15)
 
-// Test: lambda expression
+// Test: closure mutating captured variable
+// fn makeCounter() { count = 0; fn inc() { count += 1; count }; inc }
+// c = makeCounter(); c(); c(); c() => 3
 em = Emitter()
 result = run(em, Program([
-    LetDeclaration("f", LambdaExpression(["a", "b"], BinaryExpression(Identifier("a", 0, 0), "+", Identifier("b", 0, 0), 0, 0), 0, 0), 0, 0),
-    ExpressionStatement(CallExpression(Identifier("f", 0, 0), [NumberLiteral(3, 0, 0), NumberLiteral(4, 0, 0)], 0, 0), 0, 0)
+  FnDeclaration("makeCounter", [], BlockStatement([
+    LetDeclaration("count", NumberLiteral(0, 0, 0), 0, 0),
+    FnDeclaration("inc", [], BlockStatement([
+      ExpressionStatement(CompoundAssignment(Identifier("count", 0, 0), "+=", NumberLiteral(1, 0, 0), 0, 0), 0, 0),
+      ExpressionStatement(Identifier("count", 0, 0), 0, 0)
+    ], 0, 0), 0, 0),
+    ExpressionStatement(Identifier("inc", 0, 0), 0, 0)
+  ], 0, 0), 0, 0),
+  LetDeclaration("c", CallExpression(Identifier("makeCounter", 0, 0), [], 0, 0), 0, 0),
+  ExpressionStatement(CallExpression(Identifier("c", 0, 0), [], 0, 0), 0, 0),
+  ExpressionStatement(CallExpression(Identifier("c", 0, 0), [], 0, 0), 0, 0),
+  ExpressionStatement(CallExpression(Identifier("c", 0, 0), [], 0, 0), 0, 0)
 ], 0, 0))
-check("lambda_add", result, 7)
+check("closure_mutate", result, 3)
+
+// Test: lambda capturing outer variable
+// fn applyWith(x) { fn(y) { x * y } }; doubler = applyWith(2); doubler(5) => 10
+em = Emitter()
+result = run(em, Program([
+  FnDeclaration("applyWith", ["x"], BlockStatement([
+    ExpressionStatement(LambdaExpression(["y"], ReturnStatement(BinaryExpression(Identifier("x", 0, 0), "*", Identifier("y", 0, 0), 0, 0), 0, 0), 0, 0), 0, 0)
+  ], 0, 0), 0, 0),
+  LetDeclaration("doubler", CallExpression(Identifier("applyWith", 0, 0), [NumberLiteral(2, 0, 0)], 0, 0), 0, 0),
+  ExpressionStatement(CallExpression(Identifier("doubler", 0, 0), [NumberLiteral(5, 0, 0)], 0, 0), 0, 0)
+], 0, 0))
+check("lambda_capture", result, 10)
 
 print(passed + " passed, " + failed + " failed")

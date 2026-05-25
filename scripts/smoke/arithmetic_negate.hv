@@ -1,0 +1,8 @@
+// smoke: arithmetic-negate = 42
+x = 10
+val __result = -x + 52
+if __result != 42 {
+ print("FAIL arithmetic-negate: expected 42, got " + str(__result))
+ process.exit(1)
+}
+return __result

@@ -54,8 +54,10 @@ private:
 		bool diffBytecode = false; // Compare bytecode with previous run
 		bool stopOnError = false; // Stop on first error/warning
 		bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
-		bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
-		bool lintOnly = false; // Only lint the script and check for errors
+    bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
+        bool pureStdlib = false; // Load full pure stdlib (not just core) in minimal mode
+        bool selfHosted = false; // Run via pure Havel pipeline (launcher.hv) instead of C++
+    bool lintOnly = false; // Only lint the script and check for errors
 		bool buildOnly = false; // Compile to bytecode only
 		std::string outputPath; // Output path for --build (-o)
 		std::string testDir; // Directory containing test scripts
@@ -97,7 +99,8 @@ private:
   int runRepl(const LaunchConfig &cfg);
   int runCli(int argc, char *argv[]);
   int runTest(const LaunchConfig &cfg);
-  int runBuild(const LaunchConfig &cfg);
+    int runBuild(const LaunchConfig &cfg);
+    int runSelfHosted(const LaunchConfig &cfg);
   void showHelp();
 };
 

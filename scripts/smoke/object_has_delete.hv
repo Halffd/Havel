@@ -1,0 +1,12 @@
+// smoke: object-has-delete = 1
+obj = {x: 10, y: 20}
+if obj.has("x") {
+  obj.delete("y")
+  if !obj.has("y") { return 1 }
+}
+val __result = 0
+if __result != 1 {
+ print("FAIL object-has-delete: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

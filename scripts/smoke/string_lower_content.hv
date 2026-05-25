@@ -1,0 +1,8 @@
+// smoke: string-lower-content = 1
+s = string.lower("HELLO")
+val __result = s == "hello" ? 1 : 0
+if __result != 1 {
+ print("FAIL string-lower-content: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

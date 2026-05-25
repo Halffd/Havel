@@ -1,0 +1,11 @@
+// smoke: array-includes-has = 1
+arr = [10, 20, 30]
+if arr.has(20) {
+  if !arr.has(99) { return 1 }
+}
+val __result = 0
+if __result != 1 {
+ print("FAIL array-includes-has: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

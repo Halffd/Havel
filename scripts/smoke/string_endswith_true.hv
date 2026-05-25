@@ -1,0 +1,7 @@
+// smoke: string-endswith-true = 1
+val __result = string.endswith("hello", "llo") ? 1 : 0
+if __result != 1 {
+ print("FAIL string-endswith-true: expected 1, got " + str(__result))
+ process.exit(1)
+}
+return __result

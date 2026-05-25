@@ -723,24 +723,42 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
         return Value::makeBool(enabled);
     });
 
-    api.registerFunction("bc.log", [api](const std::vector<Value> &args) -> Value {
-        if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
-            return Value::makeNull();
-        }
-        int level = 0; // debug
-        if (args.size() > 1 && args[1].isInt()) {
-            level = static_cast<int>(args[1].asInt());
-        }
-        auto msg = api.resolveString(args[0]);
-        auto &logger = havel::Logger::getInstance();
-        switch (level) {
-            case 1: logger.info(msg); break;
-            case 2: logger.warning(msg); break;
-            case 3: logger.error(msg); break;
-            default: logger.debug(msg); break;
-        }
-        return Value::makeNull();
-    });
+	api.registerFunction("bc.log", [api](const std::vector<Value> &args) -> Value {
+		if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+			return Value::makeNull();
+		}
+		int level = 0; // debug
+		if (args.size() > 1 && args[1].isInt()) {
+			level = static_cast<int>(args[1].asInt());
+		}
+		auto msg = api.resolveString(args[0]);
+		auto &logger = havel::Logger::getInstance();
+		switch (level) {
+		case 1: logger.info(msg); break;
+		case 2: logger.warning(msg); break;
+		case 3: logger.error(msg); break;
+		default: logger.debug(msg); break;
+		}
+		return Value::makeNull();
+	});
+
+	api.registerFunction("bc.log_level", [api](const std::vector<Value> &args) -> Value {
+		auto &logger = havel::Logger::getInstance();
+		if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+			auto lvl = static_cast<int>(logger.getCurrentLevel());
+			return Value::makeInt(lvl);
+		}
+		auto name = api.resolveString(args[0]);
+		havel::Logger::Level lvl;
+		if (name == "debug") lvl = havel::Logger::LOG_DEBUG;
+		else if (name == "info") lvl = havel::Logger::LOG_INFO;
+		else if (name == "warning" || name == "warn") lvl = havel::Logger::LOG_WARNING;
+		else if (name == "error" || name == "err") lvl = havel::Logger::LOG_ERROR;
+		else if (name == "fatal") lvl = havel::Logger::LOG_FATAL;
+		else lvl = havel::Logger::LOG_DEBUG;
+		logger.setLogLevel(lvl);
+		return Value::makeInt(static_cast<int>(lvl));
+	});
 
     auto bcObj = api.makeObject();
   api.setField(bcObj, "reset", api.makeFunctionRef("bc.reset"));
@@ -775,8 +793,9 @@ api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
     api.setField(bcObj, "set_source_file", api.makeFunctionRef("bc.set_source_file"));
     api.setField(bcObj, "set_default_value", api.makeFunctionRef("bc.set_default_value"));
     api.setField(bcObj, "trace_execution", api.makeFunctionRef("bc.trace_execution"));
-    api.setField(bcObj, "log", api.makeFunctionRef("bc.log"));
-    api.setGlobal("bc", bcObj);
+	api.setField(bcObj, "log", api.makeFunctionRef("bc.log"));
+	api.setField(bcObj, "log_level", api.makeFunctionRef("bc.log_level"));
+	api.setGlobal("bc", bcObj);
 }
 
 } // namespace havel::stdlib

@@ -6,6 +6,7 @@ use { parse } from "pratt"
 use { Emitter, compileProgram } from "emitter"
 use { inferProgram } from "types"
 use { loaderInit, loaderLoad, collectUseDeps, loaderSetScriptDir } from "loader"
+use { isOn, setFlag, parseDebugArgs, dumpAst, dumpBytecode, startTimer, endTimer, traceBytecode, traceEmitter } from "debug"
 
 // --- Inline error reporting (until use-imports work in C++ compiled path) ---
 _launcherErrors = []
@@ -40,99 +41,12 @@ fn printAll() {
 }
 
 fn printSummary() {
-    if #_launcherErrors > 0 {
-        print(str(#_launcherErrors) + " error(s) found")
-    }
-    if _launcherWarnings > 0 {
-        print(str(_launcherWarnings) + " warning(s)")
-    }
-}
-
-// --- Inline debug flag system ---
-_dbgFlags = {
-    lexer: false, parser: false, ast: false, bytecode: false,
-    scope: false, emitter: false, types: false, gc: false,
-    all: false, color: true, timing: false, verbose: false
-}
-
-fn isOn(name) {
-    if _dbgFlags.all { return true }
-    rval = _dbgFlags[name]
-    if rval != null { return rval }
-    false
-}
-
-fn setFlag(name, value) {
-    _dbgFlags[name] = value
-    if name == "all" && value {
-        _dbgFlags.lexer = true
-        _dbgFlags.parser = true
-        _dbgFlags.ast = true
-        _dbgFlags.bytecode = true
-        _dbgFlags.scope = true
-        _dbgFlags.emitter = true
-        _dbgFlags.types = true
-    }
-}
-
-fn parseDebugArgs(args) {
-    i = 0
-    while i < #args {
-        arg = args[i]
-        if arg == "-d" || arg == "--debug" { _dbgFlags.all = true; _dbgFlags.verbose = true }
-        if arg == "-dl" || arg == "--debug-lexer" { _dbgFlags.lexer = true }
-        if arg == "-dp" || arg == "--debug-parser" { _dbgFlags.parser = true }
-        if arg == "-da" || arg == "--debug-ast" { _dbgFlags.ast = true }
-        if arg == "-dbc" || arg == "--debug-bytecode" { _dbgFlags.bytecode = true }
-        if arg == "-dgc" || arg == "--debug-gc" { _dbgFlags.gc = true }
-        if arg == "-ds" || arg == "--debug-scope" { _dbgFlags.scope = true }
-        if arg == "-de" || arg == "--debug-emitter" { _dbgFlags.emitter = true }
-        if arg == "--no-color" { _dbgFlags.color = false }
-        if arg == "--timing" { _dbgFlags.timing = true }
-        i = i + 1
-    }
-    if _dbgFlags.all {
-        _dbgFlags.lexer = true
-        _dbgFlags.parser = true
-        _dbgFlags.ast = true
-        _dbgFlags.bytecode = true
-        _dbgFlags.scope = true
-        _dbgFlags.emitter = true
-        _dbgFlags.types = true
-    }
-}
-
-fn dumpAst(program) {
- if program == null { return }
- if program.body != null {
-  print("AST: " + str(#program.body) + " top-level statements")
+ if #_launcherErrors > 0 {
+  print(str(#_launcherErrors) + " error(s) found")
  }
-}
-
- fn dumpBytecode() {
-  if !isOn("bytecode") { return }
-  fc = bc.func_count()
-  ic = bc.instr_count()
-  cc = bc.const_count()
-  print("[BC] funcs=" + str(fc) + " instrs=" + str(ic) + " consts=" + str(cc))
-  raw = bc.disasm_all()
-  if raw == null || raw == "<no chunk>" { return }
-  lines = raw.split("\n")
-  for line in lines {
-   if line == "" { continue }
-   print("  " + line)
-  }
+ if _launcherWarnings > 0 {
+  print(str(_launcherWarnings) + " warning(s)")
  }
-
-_startTimes = {}
-fn startTimer(name) { _startTimes[name] = time.now() }
-fn endTimer(name) {
-    started = _startTimes[name]
-    if started != null {
-        elapsed = time.now() - started
-        print("[timing] " + name + ": " + str(int(elapsed * 1000)) + "ms")
-        _startTimes[name] = null
-    }
 }
 
 fn readScriptFile(path) {

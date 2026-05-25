@@ -3,6 +3,7 @@
 // Uses scope.hv for variable resolution and upvalue tracking
 
 use { Scope, scopeDeclare, scopeResolve, scopeLocalCount } from "scope"
+use { traceEmitter, isOn } from "debug"
 
 fn charDigit(c) {
     // map single char to its digit value: 0-9, a-f, A-F
@@ -1213,36 +1214,38 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
   }
   paramCount = #params
   localCount = paramCount + 16
-  bc.func_push()
-  bc.func_new(name, paramCount, localCount)
-  if sourceLine != null {
-    bc.set_func_source_line(sourceLine)
-  }
-  di = 0
-  for p in params {
-    if type(p) == "object" && p.default != null {
-      dv = p.default
-      if type(dv) == "object" && dv.kind == "StringLiteral" {
-        sid = bc.add_chunk_string(dv.value)
-        bc.set_default_value(di, bc.str_id(sid))
-      } else if type(dv) == "object" && dv.kind == "NumberLiteral" {
-        bc.set_default_value(di, num(dv.value))
-      } else if type(dv) == "object" && dv.kind == "BooleanLiteral" {
-        bc.set_default_value(di, bool(dv.value))
-      } else if type(dv) == "object" && dv.kind == "NullLiteral" {
-        bc.set_default_value(di, null)
-      }
-    }
-    di = di + 1
-  }
-  emitBlockWithReturn(emitter, bodyNode)
-  bc.emit("RETURN")
-  actualLocals = scopeLocalCount(newScope)
-  bc.set_local_count(actualLocals)
-  upcount = newScope.upcount
-  bc.func_pop()
-  emitter.scope = oldScope
-  upcount
+	bc.func_push()
+	bc.func_new(name, paramCount, localCount)
+	traceEmitter("func_new " + name + " params=" + str(paramCount) + " locals=" + str(localCount))
+	if sourceLine != null {
+		bc.set_func_source_line(sourceLine)
+	}
+	di = 0
+	for p in params {
+		if type(p) == "object" && p.default != null {
+			dv = p.default
+			if type(dv) == "object" && dv.kind == "StringLiteral" {
+				sid = bc.add_chunk_string(dv.value)
+				bc.set_default_value(di, bc.str_id(sid))
+			} else if type(dv) == "object" && dv.kind == "NumberLiteral" {
+				bc.set_default_value(di, num(dv.value))
+			} else if type(dv) == "object" && dv.kind == "BooleanLiteral" {
+				bc.set_default_value(di, bool(dv.value))
+			} else if type(dv) == "object" && dv.kind == "NullLiteral" {
+				bc.set_default_value(di, null)
+			}
+		}
+		di = di + 1
+	}
+	emitBlockWithReturn(emitter, bodyNode)
+	bc.emit("RETURN")
+	actualLocals = scopeLocalCount(newScope)
+	bc.set_local_count(actualLocals)
+	upcount = newScope.upcount
+	bc.func_pop()
+	traceEmitter("func_pop " + name + " upcount=" + str(upcount) + " locals=" + str(actualLocals))
+	emitter.scope = oldScope
+	upcount
 
 }
 fn compileLambda(emitter, funcIdx, params, bodyNode, sourceLine) {
@@ -1261,36 +1264,38 @@ else { scopeDeclare(newScope, p) }
 }
 paramCount = #params
 localCount = paramCount + 16
-bc.func_push()
-  bc.func_new(name, paramCount, localCount)
-  if sourceLine != null {
-    bc.set_func_source_line(sourceLine)
-  }
-  di = 0
-  for p in params {
-    if type(p) == "object" && p.default != null {
-      dv = p.default
-      if type(dv) == "object" && dv.kind == "StringLiteral" {
-        sid = bc.add_chunk_string(dv.value)
-        bc.set_default_value(di, bc.str_id(sid))
-      } else if type(dv) == "object" && dv.kind == "NumberLiteral" {
-        bc.set_default_value(di, num(dv.value))
-      } else if type(dv) == "object" && dv.kind == "BooleanLiteral" {
-        bc.set_default_value(di, bool(dv.value))
-      } else if type(dv) == "object" && dv.kind == "NullLiteral" {
-        bc.set_default_value(di, null)
-      }
-    }
-    di = di + 1
-  }
-  emitBlockWithReturn(emitter, bodyNode)
-bc.emit("RETURN")
-actualLocals = scopeLocalCount(newScope)
-bc.set_local_count(actualLocals)
-upcount = newScope.upcount
-bc.func_pop()
-emitter.scope = oldScope
-upcount
+	bc.func_push()
+	bc.func_new(name, paramCount, localCount)
+	traceEmitter("func_new " + name + " params=" + str(paramCount))
+	if sourceLine != null {
+		bc.set_func_source_line(sourceLine)
+	}
+	di = 0
+	for p in params {
+		if type(p) == "object" && p.default != null {
+			dv = p.default
+			if type(dv) == "object" && dv.kind == "StringLiteral" {
+				sid = bc.add_chunk_string(dv.value)
+				bc.set_default_value(di, bc.str_id(sid))
+			} else if type(dv) == "object" && dv.kind == "NumberLiteral" {
+				bc.set_default_value(di, num(dv.value))
+			} else if type(dv) == "object" && dv.kind == "BooleanLiteral" {
+				bc.set_default_value(di, bool(dv.value))
+			} else if type(dv) == "object" && dv.kind == "NullLiteral" {
+				bc.set_default_value(di, null)
+			}
+		}
+		di = di + 1
+	}
+	emitBlockWithReturn(emitter, bodyNode)
+	bc.emit("RETURN")
+	actualLocals = scopeLocalCount(newScope)
+	bc.set_local_count(actualLocals)
+	upcount = newScope.upcount
+	bc.func_pop()
+	traceEmitter("func_pop " + name + " upcount=" + str(upcount))
+	emitter.scope = oldScope
+	upcount
 
 }
 // ============================================================
@@ -1467,12 +1472,13 @@ ii2 = ii2 + 1
 // ============================================================
 
 fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, entryName = "__main__", noReset = false) {
-  if !noReset {
-        bc.reset()
-    }
-  if sourceFile != null {
-    bc.set_source_file(sourceFile)
-  }
+ traceEmitter("compileProgram entryName=" + entryName + " skip_execute=" + str(skip_execute))
+ if !noReset {
+  bc.reset()
+ }
+ if sourceFile != null {
+  bc.set_source_file(sourceFile)
+ }
     // parse() returns {errors, ast} — unwrap if needed
     if program.ast != null {
         program = program.ast
@@ -1501,9 +1507,10 @@ uc = compileFuncDecl(emitter, decl.name, decl.params, decl.body, funcIdx, decl.l
 funcUpcounts.push(uc)
 fi = fi + 1
 }
-  // Pass 2: compile __main__
-  bc.func_new(entryName, 0, 64)
-  emitter.scope = Scope(null)
+	// Pass 2: compile __main__
+	bc.func_new(entryName, 0, 64)
+	traceEmitter("func_new " + entryName + " (main)")
+	emitter.scope = Scope(null)
 // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
 fi2 = 0
 while fi2 < #funcDecls {
@@ -1557,6 +1564,7 @@ si = si + 1
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
 	if !skip_execute {
+		traceEmitter("execute_persistent " + entryName)
 		return bc.execute_persistent(entryName)
 	}
 

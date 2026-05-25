@@ -35,7 +35,8 @@ public:
     void initializeWithConfig(bool useTimestamped, int logMaxPeriod, bool colorsEnabled);
 
     void setLogFile(const std::string& filename);
-    void setLogLevel(Level level);
+	void setLogLevel(Level level);
+	Level getCurrentLevel() const { return currentLevel; }
     void setColoredOutput(bool enabled); // Set if console output should be colored
 
     // Get current log file path

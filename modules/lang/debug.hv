@@ -394,76 +394,6 @@ fn colorizeBytecodeLine(line) {
   line
  }
 }
- lines = str.split(raw, "\n")
- for line in lines {
-  if line == "" { continue }
-  colorized = colorizeBytecodeLine(line)
-  traceBytecode("  " + colorized)
- }
- traceBytecode("--- end bytecode dump ---")
-}
-
-fn dumpCurrentFunc() {
- if !isOn("bytecode") { return }
- raw = bc.disasm()
- if raw == null || raw == "<no current function>" {
-  traceBytecode("<no current function>")
-  return
- }
- lines = str.split(raw, "\n")
- for line in lines {
-  if line == "" { continue }
-  colorized = colorizeBytecodeLine(line)
-  traceBytecode("  " + colorized)
- }
-}
-
-fn colorizeBytecodeLine(line) {
- if !flags.color { return line }
- // Function header: "function foo (params=2 locals=5)"
- if str.startsWith(line, "function ") {
-  return DBG_BOLD + DBG_CYAN + line + DBG_RESET
- }
- // Constants section header
- if str.startsWith(line, "constants:") {
-  return DBG_YELLOW + line + DBG_RESET
- }
- // Constant entry: " [0] 42"
- if str.startsWith(line, " [") {
-  return DBG_DIM + line + DBG_RESET
- }
- // Instruction line: " 0: CONST 3" or " 5: CALL 2"
- // Format from C++: "  <offset>: <opname> <operands>"
- // Color the opcode name
- parts = str.split(line, " ")
- if #parts >= 2 {
-  offset = parts[0]
-  opname = parts[1]
-  rest = ""
-  i = 2
-  while i < #parts {
-   if rest != "" { rest = rest + " " }
-   rest = rest + parts[i]
-   i = i + 1
-  }
-  opColor = DBG_GREEN
-  // Control flow opcodes in magenta
-  if opname == "JUMP" || opname == "JUMP_IF_FALSE" || opname == "JUMP_IF_TRUE" || opname == "LOOP" || opname == "CALL" || opname == "RETURN" || opname == "GO_ASYNC" {
-   opColor = DBG_MAGENTA
-  }
-  // Stack ops in yellow
-  if opname == "CONST" || opname == "POP" || opname == "DUP" || opname == "LOAD_LOCAL" || opname == "STORE_LOCAL" || opname == "LOAD_GLOBAL" || opname == "STORE_GLOBAL" {
-   opColor = DBG_YELLOW
-  }
-  // Object/array ops in cyan
-  if opname == "GET_FIELD" || opname == "SET_FIELD" || opname == "GET_INDEX" || opname == "SET_INDEX" || opname == "ARRAY_PUSH" || opname == "OBJECT_SET" {
-   opColor = DBG_CYAN
-  }
-  DBG_DIM + offset + DBG_RESET + " " + opColor + opname + DBG_RESET + " " + rest
- } else {
-  line
- }
-}
 
 // ============================================================
 // Emit trace — show current func bytecode after each func_pop
@@ -481,8 +411,6 @@ fn traceEmit(funcName) {
   colorized = colorizeBytecodeLine(line)
   traceBytecode("  " + colorized)
  }
- traceBytecode("--- end ---")
-}
  traceBytecode("--- end ---")
 }
 

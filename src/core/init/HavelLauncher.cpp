@@ -189,7 +189,14 @@ int HavelLauncher::run(int argc, char *argv[]) {
 
     if (cfg.buildOnly) {
 
-      return runBuild(cfg);
+        return runBuild(cfg);
+    }
+
+    // Self-hosted mode: route through launcher.hv instead of C++ pipeline
+    if (cfg.selfHosted) {
+        cfg.mode = Mode::SCRIPT_ONLY;
+        cfg.minimalMode = true;
+        return runSelfHosted(cfg);
     }
 
     switch (cfg.mode) {
@@ -360,12 +367,13 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (cfg.mode == Mode::DAEMON) cfg.mode = Mode::SCRIPT_ONLY;
       cfg.minimalMode = true;
     }
-    } else if (arg == "--run" || arg == "run") {
-      cfg.mode = Mode::SCRIPT_ONLY;
-      // Next argument should be the script file
-      if (i + 1 < argc) {
-        cfg.scriptFiles.push_back(argv[++i]);
-      }
+} else if (arg == "--run" || arg == "run") {
+            cfg.mode = Mode::SCRIPT_ONLY;
+            cfg.minimalMode = true;
+        } else if (arg == "--pure-stdlib") {
+            cfg.pureStdlib = true;
+        } else if (arg == "--self-hosted") {
+            cfg.selfHosted = true;
     } else if (arg == "--test" || arg == "-t") {
       // Test mode - run all .hv files in a directory
       cfg.mode = Mode::TEST;
@@ -793,14 +801,15 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
   if (debugging::debug_io) debug("Running combined scripts (headless): {}", combinedNames);
 
   try {
-    havel::HavelEngine engine({
-      .debugBytecode = cfg.debugBytecode,
-      .debugLexer = cfg.debugLexer,
-      .debugParser = cfg.debugParser,
-      .debugAst = cfg.debugAst,
-      .stopOnError = cfg.stopOnError,
-      .leanMinimalStartup = cfg.minimalMode
-    });
+        havel::HavelEngine engine({
+            .debugBytecode = cfg.debugBytecode,
+            .debugLexer = cfg.debugLexer,
+            .debugParser = cfg.debugParser,
+            .debugAst = cfg.debugAst,
+            .stopOnError = cfg.stopOnError,
+            .leanMinimalStartup = cfg.minimalMode,
+            .pureStdlib = cfg.pureStdlib
+        });
     engine.initializeMinimal();
     engine.execute(combinedCode, "__main__", combinedNames);
     engine.shutdown();
@@ -866,9 +875,13 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
                     : havel::compiler::HostBridge::InstallProfile::Full,
         !coreProfile);
     if (coreProfile) {
-      havel::registerCoreStdLib(*vm);
+        if (cfg.pureStdlib) {
+            havel::registerPureStdLib(*vm);
+        } else {
+            havel::registerCoreStdLib(*vm);
+        }
     } else {
-      havel::registerStdLibWithVM(*bridge);
+        havel::registerStdLibWithVM(*bridge);
     }
 
     for (const auto& [name, fn] : bridge->options().host_functions) {
@@ -1086,12 +1099,13 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
         .debugLexer = cfg.debugLexer,
         .debugParser = cfg.debugParser,
         .debugAst = cfg.debugAst,
-        .stopOnError = cfg.stopOnError,
-        .leanMinimalStartup = cfg.minimalMode
-      });
-      engine.initializeMinimal();
+            .stopOnError = cfg.stopOnError,
+            .leanMinimalStartup = cfg.minimalMode,
+            .pureStdlib = cfg.pureStdlib
+        });
+        engine.initializeMinimal();
 
-      // Populate app.args with script arguments (after --)
+        // Populate app.args with script arguments (after --)
       if (!cfg.scriptArgs.empty()) {
         auto& vm = *engine.vm();
         auto arrRef = vm.createHostArray();
@@ -1109,6 +1123,103 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 		error("Bytecode error: {}", e.what());
 		return 1;
 	}
+}
+
+int havel::init::HavelLauncher::runSelfHosted(const LaunchConfig &cfg) {
+    // Find launcher.hv relative to the binary
+    // Binary lives in build-debug/ or build-release/, modules are at repo root
+    char selfBuf[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", selfBuf, sizeof(selfBuf) - 1);
+    std::string binDir;
+    if (len > 0) {
+        selfBuf[len] = '\0';
+        std::filesystem::path p(selfBuf);
+        binDir = p.parent_path().string();
+    }
+
+    std::vector<std::string> searchPaths = {
+        binDir + "/../modules/lang/launcher.hv",
+        binDir + "/../../modules/lang/launcher.hv",
+        "modules/lang/launcher.hv",
+        "../modules/lang/launcher.hv",
+        "../../modules/lang/launcher.hv",
+    };
+
+    std::string launcherPath;
+    for (const auto& candidate : searchPaths) {
+        std::error_code ec;
+        if (std::filesystem::exists(candidate, ec) && !ec) {
+            launcherPath = candidate;
+            break;
+        }
+    }
+
+    if (launcherPath.empty()) {
+        error("Cannot find modules/lang/launcher.hv (searched relative to binary and cwd)");
+        return 1;
+    }
+
+    // Resolve to absolute path
+    std::error_code ec;
+    auto absPath = std::filesystem::canonical(launcherPath, ec);
+    if (!ec) launcherPath = absPath.string();
+
+    std::string launcherCode = readScriptFile(launcherPath);
+    if (launcherCode.empty()) {
+        error("Cannot read launcher.hv at {}", launcherPath);
+        return 1;
+    }
+
+    // Build app.args: --self-hosted <script files> [-- script args]
+    // launcher.hv's main() reads app.args and dispatches
+    std::vector<std::string> appArgList;
+    appArgList.push_back("--self-hosted");
+    for (const auto& f : cfg.scriptFiles) {
+        appArgList.push_back(f);
+    }
+    if (cfg.lintOnly) appArgList.push_back("--lint");
+    for (const auto& a : cfg.scriptArgs) {
+        appArgList.push_back(a);
+    }
+
+    if (debugging::debug_io) debug("Self-hosted mode: launcher={}, args={}", launcherPath, appArgList.size());
+
+    // Set up signal handling
+    struct sigaction sa;
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_handler = [](int sig) { std::exit(0); };
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
+
+    try {
+        havel::HavelEngine engine({
+            .debugBytecode = cfg.debugBytecode,
+            .debugLexer = cfg.debugLexer,
+            .debugParser = cfg.debugParser,
+            .debugAst = cfg.debugAst,
+            .stopOnError = cfg.stopOnError,
+            .leanMinimalStartup = true,
+            .pureStdlib = true
+        });
+        engine.initializeMinimal();
+
+        // Populate app.args for launcher.hv
+        auto& vm = *engine.vm();
+        auto arrRef = vm.createHostArray();
+        for (const auto& arg : appArgList) {
+            auto strRef = vm.createRuntimeString(arg);
+            vm.pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
+        }
+        vm.setAppArgs(arrRef.id);
+
+        engine.execute(launcherCode, "__main__", launcherPath);
+        engine.shutdown();
+        return 0;
+    } catch (const std::exception &e) {
+        error("Self-hosted error: {}", e.what());
+        return 1;
+    }
 }
 
 int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
@@ -1262,7 +1373,9 @@ std::cout << " --debug-hotkeys, -dhk Enable hotkey debugging\n";
                "GUI, etc.)\n";
   std::cout << "  --gui               GUI-only mode (no hotkeys)\n";
   std::cout
-      << "  --run               Run script in minimal mode (auto-enables -m)\n";
+        << " --run Run script in minimal mode (auto-enables -m)\n";
+    std::cout
+        << " --self-hosted Run via pure Havel pipeline (launcher.hv)\n";
   std::cout
       << "  --test, -t          Run all .hv scripts in a directory\n";
   std::cout << "  --lint              Check syntax and compilation errors\n";
@@ -1294,7 +1407,8 @@ std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
   std::cout << "  havel --repl script.hv    - Run script then REPL (FULL features)\n";
   std::cout << "  havel --repl              - Start REPL with FULL features\n";
   std::cout << "  havel --full-repl         - Start REPL with ALL features\n";
-  std::cout << "  havel --run script.hv     - Run script in MINIMAL mode\n";
+    std::cout << " havel --run script.hv - Run script in MINIMAL mode\n";
+    std::cout << " havel --run --self-hosted script.hv - Run via pure Havel pipeline\n";
   std::cout << "  havel --test dir/         - Run all .hv files in directory\n";
   std::cout << "  havel --lint script.hv    - Check for errors without running\n";
   std::cout << "  havel --build script.hv   - Compile to bytecode (.hvc)\n";

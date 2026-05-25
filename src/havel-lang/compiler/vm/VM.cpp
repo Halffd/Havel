@@ -156,8 +156,11 @@ std::string VM::toString(const Value &value) {
 }
 
 const std::string* VM::getStringPtr(const Value &value) const {
-  if (value.isStringValId()) {
-    return heap_.string(value.asStringValId());
+  if (value.isStringId()) {
+    return heap_.string(value.asStringId());
+  }
+  if (value.isStringValId() && current_chunk) {
+    return &current_chunk->getString(value.asStringValId());
   }
   return nullptr;
 }
@@ -937,7 +940,6 @@ ObjectRef VM::createHostObject() {
   ObjectRef ref = heap_.allocateObject();
   Value root = Value::makeObjectId(ref.id);
   stack.push(root);
-  maybeCollectGarbage();
   stack.pop();
   return ref;
 }
@@ -946,7 +948,6 @@ ArrayRef VM::createHostArray() {
   ArrayRef ref = heap_.allocateArray();
   Value root = Value::makeArrayId(ref.id);
   stack.push(root);
-  maybeCollectGarbage();
   stack.pop();
   return ref;
 }
@@ -955,7 +956,6 @@ StringRef VM::createRuntimeString(std::string value) {
   StringRef ref = heap_.allocateString(std::move(value));
   Value root = Value::makeStringId(ref.id);
   stack.push(root);
-  maybeCollectGarbage();
   stack.pop();
   return ref;
 }
@@ -3232,9 +3232,66 @@ void VM::registerDefaultHostGlobals() {
     }
   }
 
-  // Note: shell, interval, config modules are registered via registerStdLibWithVM()
-  // called during VM initialization - do NOT register them here as this function
-  // is called on every execute() invocation
+    // FFI module object
+    if (hasHostFunction("ffi.open")) {
+        auto ffi_obj = heap_.allocateObject();
+        setHostObjectField(ffi_obj, "open", Value::makeHostFuncId(getHostFunctionIndex("ffi.open")));
+        setHostObjectField(ffi_obj, "close", Value::makeHostFuncId(getHostFunctionIndex("ffi.close")));
+        setHostObjectField(ffi_obj, "sym", Value::makeHostFuncId(getHostFunctionIndex("ffi.sym")));
+        setHostObjectField(ffi_obj, "call", Value::makeHostFuncId(getHostFunctionIndex("ffi.call")));
+        setHostObjectField(ffi_obj, "cdef", Value::makeHostFuncId(getHostFunctionIndex("ffi.cdef")));
+        setHostObjectField(ffi_obj, "alloc", Value::makeHostFuncId(getHostFunctionIndex("ffi.alloc")));
+        setHostObjectField(ffi_obj, "allocBytes", Value::makeHostFuncId(getHostFunctionIndex("ffi.allocBytes")));
+        setHostObjectField(ffi_obj, "free", Value::makeHostFuncId(getHostFunctionIndex("ffi.free")));
+        setHostObjectField(ffi_obj, "sizeof", Value::makeHostFuncId(getHostFunctionIndex("ffi.sizeof")));
+        setHostObjectField(ffi_obj, "alignof", Value::makeHostFuncId(getHostFunctionIndex("ffi.alignof")));
+        setHostObjectField(ffi_obj, "string", Value::makeHostFuncId(getHostFunctionIndex("ffi.string")));
+        setHostObjectField(ffi_obj, "cstring", Value::makeHostFuncId(getHostFunctionIndex("ffi.cstring")));
+        setHostObjectField(ffi_obj, "array", Value::makeHostFuncId(getHostFunctionIndex("ffi.array")));
+        setHostObjectField(ffi_obj, "cast", Value::makeHostFuncId(getHostFunctionIndex("ffi.cast")));
+        setHostObjectField(ffi_obj, "newStruct", Value::makeHostFuncId(getHostFunctionIndex("ffi.newStruct")));
+        setHostObjectField(ffi_obj, "field", Value::makeHostFuncId(getHostFunctionIndex("ffi.field")));
+        setHostObjectField(ffi_obj, "setField", Value::makeHostFuncId(getHostFunctionIndex("ffi.setField")));
+        setHostObjectField(ffi_obj, "callback", Value::makeHostFuncId(getHostFunctionIndex("ffi.callback")));
+        setHostObjectField(ffi_obj, "closure", Value::makeHostFuncId(getHostFunctionIndex("ffi.closure")));
+        setHostObjectField(ffi_obj, "memcpy", Value::makeHostFuncId(getHostFunctionIndex("ffi.memcpy")));
+        setHostObjectField(ffi_obj, "memset", Value::makeHostFuncId(getHostFunctionIndex("ffi.memset")));
+        setHostObjectField(ffi_obj, "var", Value::makeHostFuncId(getHostFunctionIndex("ffi.var")));
+        setHostObjectField(ffi_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("ffi.get")));
+        setHostObjectField(ffi_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("ffi.set")));
+        setHostObjectField(ffi_obj, "get_i8", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i8")));
+        setHostObjectField(ffi_obj, "set_i8", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i8")));
+        setHostObjectField(ffi_obj, "get_i16", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i16")));
+        setHostObjectField(ffi_obj, "set_i16", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i16")));
+        setHostObjectField(ffi_obj, "get_i32", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i32")));
+        setHostObjectField(ffi_obj, "set_i32", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i32")));
+        setHostObjectField(ffi_obj, "get_i64", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i64")));
+        setHostObjectField(ffi_obj, "set_i64", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i64")));
+        setHostObjectField(ffi_obj, "get_u8", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u8")));
+        setHostObjectField(ffi_obj, "set_u8", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u8")));
+        setHostObjectField(ffi_obj, "get_u16", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u16")));
+        setHostObjectField(ffi_obj, "set_u16", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u16")));
+        setHostObjectField(ffi_obj, "get_u32", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u32")));
+        setHostObjectField(ffi_obj, "set_u32", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u32")));
+        setHostObjectField(ffi_obj, "get_u64", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u64")));
+        setHostObjectField(ffi_obj, "set_u64", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u64")));
+        setHostObjectField(ffi_obj, "get_f32", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_f32")));
+        setHostObjectField(ffi_obj, "set_f32", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_f32")));
+        setHostObjectField(ffi_obj, "get_f64", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_f64")));
+        setHostObjectField(ffi_obj, "set_f64", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_f64")));
+        setHostObjectField(ffi_obj, "get_ptr", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_ptr")));
+        setHostObjectField(ffi_obj, "set_ptr", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_ptr")));
+        setHostObjectField(ffi_obj, "ptr_add", Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_add")));
+        setHostObjectField(ffi_obj, "ptr_sub", Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_sub")));
+        setHostObjectField(ffi_obj, "ptr_to_uint", Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_to_uint")));
+        setHostObjectField(ffi_obj, "lastError", Value::makeHostFuncId(getHostFunctionIndex("ffi.lastError")));
+        setHostObjectField(ffi_obj, "clearError", Value::makeHostFuncId(getHostFunctionIndex("ffi.clearError")));
+        setGlobal("ffi", Value::makeObjectId(ffi_obj.id));
+    }
+
+    // Note: shell, interval, config modules are registered via registerStdLibWithVM()
+    // called during VM initialization - do NOT register them here as this function
+    // is called on every execute() invocation
 
   // Register default window globals (these need to be reset per execution)
   setGlobal("title", Value::makeNull());
@@ -4297,8 +4354,11 @@ auto it = host_functions.find(name);
     if (it == host_functions.end()) {
       COMPILER_THROW("Host function not found: " + name);
     }
+    gc_suspend_counter_++;
     Value result = it->second(args);
+    gc_suspend_counter_--;
     pushStack(result);
+    maybeCollectGarbage();
     return;
   }
 

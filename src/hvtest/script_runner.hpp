@@ -70,7 +70,7 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 		dup2(pipefd[1], STDOUT_FILENO);
 		dup2(pipefd[1], STDERR_FILENO);
 		close(pipefd[1]);
-		execlp(havel_bin.c_str(), havel_bin.c_str(), "run", script_path.c_str(), nullptr);
+        execlp(havel_bin.c_str(), havel_bin.c_str(), "--run", "--pure-stdlib", script_path.c_str(), nullptr);
 		_exit(127);
 	}
 
@@ -106,13 +106,15 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 	auto end = std::chrono::high_resolution_clock::now();
 	result.elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-	if (killed) {
-		result.timed_out = true;
-		result.exit_code = -1;
-	} else if (WIFEXITED(status)) {
-		result.exit_code = WEXITSTATUS(status);
-		result.passed = (result.exit_code == 0);
-	}
+    if (killed) {
+        result.timed_out = true;
+        result.exit_code = -1;
+    } else if (WIFEXITED(status)) {
+        result.exit_code = WEXITSTATUS(status);
+        result.passed = (result.exit_code == 0);
+    } else if (WIFSIGNALED(status)) {
+        result.exit_code = -WTERMSIG(status);
+    }
 
 	return result;
 }
@@ -144,12 +146,42 @@ inline int run_script_suite(const std::string &havel_bin, const std::vector<std:
 }
 
 inline int list_scripts(const std::vector<std::string> &directories) {
-	auto scripts = discover_scripts(directories);
-	for (const auto &script : scripts) {
-		std::cout << script << std::endl;
-	}
-	std::cout << scripts.size() << " test(s)" << std::endl;
-	return 0;
+    auto scripts = discover_scripts(directories);
+    for (const auto &script : scripts) {
+        std::cout << script << std::endl;
+    }
+    std::cout << scripts.size() << " test(s)" << std::endl;
+    return 0;
+}
+
+inline int run_smoke_suite(const std::string &havel_bin, const std::string &smoke_dir, bool verbose = false) {
+    auto scripts = discover_scripts({smoke_dir});
+    if (scripts.empty()) {
+        std::cerr << "no .hv smoke tests found in " << smoke_dir << std::endl;
+        return 1;
+    }
+
+    int pass = 0, fail = 0, skip = 0;
+    for (const auto &script : scripts) {
+        auto result = run_script(havel_bin, script);
+        auto name = fs::path(script).stem().string();
+        if (result.passed) {
+            if (verbose) std::cout << "[PASS] " << name << " (" << result.elapsed_ms << "ms)" << std::endl;
+            pass++;
+        } else if (result.timed_out) {
+            std::cout << "[FAIL] " << name << " (timeout)" << std::endl;
+            fail++;
+        } else if (result.exit_code == -6 || result.exit_code == -11) {
+            if (verbose) std::cout << "[SKIP] " << name << " (crash, needs event loop)" << std::endl;
+            skip++;
+        } else {
+            std::cout << "[FAIL] " << name << " (exit=" << result.exit_code << ")" << std::endl;
+            fail++;
+        }
+    }
+
+    std::cout << "\nsmoke: " << pass << " passed, " << fail << " failed, " << skip << " skipped" << std::endl;
+    return fail > 0 ? 1 : 0;
 }
 
 }

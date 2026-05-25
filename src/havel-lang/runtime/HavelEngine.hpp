@@ -31,6 +31,7 @@ struct EngineConfig {
     bool debugAst = false;
     bool stopOnError = false;
     bool leanMinimalStartup = false;
+    bool pureStdlib = false;
 };
 
 class HavelEngine {
@@ -116,17 +117,21 @@ vm_->setJITCompiler(jitCompiler_.get());
             vm_->moduleLoader().addSearchPath(canonicalRoot);
         }
 
-        vm_->suspendGC();
-        if (leanStartup) {
-            registerCoreStdLib(*vm_);
+    vm_->suspendGC();
+    if (leanStartup) {
+        if (config_.pureStdlib) {
+            registerPureStdLib(*vm_);
         } else {
-            registerStdLibWithVM(*hostBridge_);
+            registerCoreStdLib(*vm_);
         }
-        vm_->resumeGC();
-        hostBridge_->install(
-            leanStartup ? compiler::HostBridge::InstallProfile::Core
-                        : compiler::HostBridge::InstallProfile::Full,
-            !leanStartup);
+    } else {
+        registerStdLibWithVM(*hostBridge_);
+    }
+    vm_->resumeGC();
+    hostBridge_->install(
+        leanStartup ? compiler::HostBridge::InstallProfile::Core
+                    : compiler::HostBridge::InstallProfile::Full,
+        !leanStartup);
 
         for (const auto& [name, fn] : hostBridge_->options().host_functions) {
             vm_->registerHostFunction(name, fn);

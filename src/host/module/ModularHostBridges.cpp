@@ -559,6 +559,9 @@ void SystemBridge::install(PipelineOptions &options) {
     vm->setHostObjectField(
         processObj, "killObj",
         Value::makeHostFuncId(vm->getHostFunctionIndex("process.killObj")));
+    vm->setHostObjectField(
+        processObj, "exit",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("sys.exit")));
     vm->setGlobal("process", Value::makeObjectId(processObj.id));
 
     // Extension object

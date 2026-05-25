@@ -331,9 +331,13 @@ struct EnumRef {
   uint32_t typeId = 0; // Type registry index
 };
 
-struct IteratorRef {
-  uint32_t id = 0;
-};
+    struct IteratorRef {
+        uint32_t id = 0;
+    };
+
+    struct BoundMethodRef {
+        uint32_t id = 0;
+    };
 
 struct HostFunctionRef {
   std::string name;

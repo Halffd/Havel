@@ -22,6 +22,7 @@ void GCHeap::reset() {
     sets_.clear();
     ranges_.clear();
     iterators_.clear();
+    bound_methods_.clear();
     strings_.clear();
     enums_.clear();
     enumTypes_.clear();
@@ -38,6 +39,7 @@ void GCHeap::reset() {
     next_set_id_ = 1;
     next_range_id_ = 1;
     next_iterator_id_ = 1;
+    next_bound_method_id_ = 1;
     next_string_id_ = 1;
     next_thread_id_ = 1;
     next_interval_id_ = 1;
@@ -64,6 +66,7 @@ void GCHeap::reset() {
     marked_closures_.clear();
     marked_strings_.clear();
     marked_iterators_.clear();
+    marked_bound_methods_.clear();
     marked_ranges_.clear();
     marked_errors_.clear();
     marked_enums_.clear();
@@ -395,17 +398,33 @@ const GCHeap::Range *GCHeap::range(uint32_t id) const {
     return it == ranges_.end() ? nullptr : &it->second;
 }
 
-GCHeap::Iterator *GCHeap::iterator(uint32_t id) {
-    auto it = iterators_.find(id);
-    return it == iterators_.end() ? nullptr : &it->second;
-}
+    GCHeap::Iterator *GCHeap::iterator(uint32_t id) {
+        auto it = iterators_.find(id);
+        return it == iterators_.end() ? nullptr : &it->second;
+    }
 
-const GCHeap::Iterator *GCHeap::iterator(uint32_t id) const {
-    auto it = iterators_.find(id);
-    return it == iterators_.end() ? nullptr : &it->second;
-}
+    const GCHeap::Iterator *GCHeap::iterator(uint32_t id) const {
+        auto it = iterators_.find(id);
+        return it == iterators_.end() ? nullptr : &it->second;
+    }
 
-GCHeap::ErrorObject *GCHeap::error(uint32_t id) {
+    BoundMethodRef GCHeap::allocateBoundMethod(Value fn, Value self) {
+        uint32_t id = next_bound_method_id_++;
+        bound_methods_[id] = BoundMethod{std::move(fn), std::move(self)};
+        return BoundMethodRef{id};
+    }
+
+    GCHeap::BoundMethod *GCHeap::boundMethod(uint32_t id) {
+        auto it = bound_methods_.find(id);
+        return it == bound_methods_.end() ? nullptr : &it->second;
+    }
+
+    const GCHeap::BoundMethod *GCHeap::boundMethod(uint32_t id) const {
+        auto it = bound_methods_.find(id);
+        return it == bound_methods_.end() ? nullptr : &it->second;
+    }
+
+    GCHeap::ErrorObject *GCHeap::error(uint32_t id) {
     auto it = errors_.find(id);
     return it == errors_.end() ? nullptr : &it->second;
 }
@@ -491,7 +510,7 @@ GCHeap::Stats GCHeap::stats() const {
         .heap_size = heap_size,
         .object_count = static_cast<uint64_t>(arrays_.size() + objects_.size() +
             sets_.size() + closures_.size() + strings_.size() + iterators_.size() +
-            errors_.size() + coroutines_.size() + ranges_.size() + enums_.size()),
+            bound_methods_.size() + errors_.size() + coroutines_.size() + ranges_.size() + enums_.size()),
         .collections = collections_,
         .last_pause_ns = last_pause_ns_,
         .total_recovered = total_recovered_,
@@ -611,6 +630,7 @@ void GCHeap::startIncrementalCollection(
     marked_closures_.clear();
     marked_strings_.clear();
     marked_iterators_.clear();
+    marked_bound_methods_.clear();
     marked_ranges_.clear();
     marked_errors_.clear();
     marked_enums_.clear();
@@ -683,6 +703,15 @@ void GCHeap::markReference(const Value &value) {
     }
     if (value.isIteratorId()) {
         marked_iterators_.insert(value.asIteratorId());
+        return;
+    }
+    if (value.isBoundMethodId()) {
+        marked_bound_methods_.insert(value.asBoundMethodId());
+        auto it = bound_methods_.find(value.asBoundMethodId());
+        if (it != bound_methods_.end()) {
+            markReference(it->second.fn);
+            markReference(it->second.self);
+        }
         return;
     }
     if (value.isEnumId()) {
@@ -1053,13 +1082,37 @@ void GCHeap::sweepStep(size_t &work_budget) {
                     recovered_in_cycle_++;
                 }
             }
-            if (sweep_index_ >= sweep_keys_.size()) {
-                gc_state_ = IncrementalState::SweepRanges;
-                sweep_index_ = 0;
-            }
-            break;
+        if (sweep_index_ >= sweep_keys_.size()) {
+            gc_state_ = IncrementalState::SweepBoundMethods;
+            sweep_index_ = 0;
+        }
+        break;
 
-        case IncrementalState::SweepRanges:
+    case IncrementalState::SweepBoundMethods:
+        if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
+            sweep_keys_.clear();
+            for (const auto &kv : bound_methods_) {
+                sweep_keys_.push_back(kv.first);
+            }
+            sweep_index_ = 0;
+            sweep_phase_ = gc_state_;
+        }
+        while (work_budget > 0 && sweep_index_ < sweep_keys_.size()) {
+            uint32_t id = sweep_keys_[sweep_index_++];
+            work_budget--;
+
+            if (marked_bound_methods_.find(id) == marked_bound_methods_.end()) {
+                bound_methods_.erase(id);
+                recovered_in_cycle_++;
+            }
+        }
+        if (sweep_index_ >= sweep_keys_.size()) {
+            gc_state_ = IncrementalState::SweepRanges;
+            sweep_index_ = 0;
+        }
+        break;
+
+    case IncrementalState::SweepRanges:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
                 for (const auto &kv : ranges_) {
@@ -1283,6 +1336,7 @@ void GCHeap::completeCollection() {
     marked_closures_.clear();
     marked_strings_.clear();
     marked_iterators_.clear();
+    marked_bound_methods_.clear();
     marked_ranges_.clear();
     marked_errors_.clear();
     marked_enums_.clear();

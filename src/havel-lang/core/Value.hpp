@@ -75,9 +75,10 @@ enum class ExtendedTag : uint64_t {
   THREAD_ID = 0xD,        // Thread object (stores index into GC heap)
   INTERVAL_ID = 0xE,      // Interval timer (stores index into GC heap)
   TIMEOUT_ID = 0xF,       // Timeout timer (stores index into GC heap)
-  TAIL_CALL_REQUEST = 0x10, // Special tag for JIT trampoline
-  REGEX_VAL_ID = 0x11,      // Regex string literal (stores index into string pool)
-};
+    TAIL_CALL_REQUEST = 0x10, // Special tag for JIT trampoline
+    REGEX_VAL_ID = 0x11, // Regex string literal (stores index into string pool)
+    BOUND_METHOD_ID = 0x12, // Bound method (stores index into GC heap)
+    };
 
 // Bool payload values
 static constexpr uint64_t BOOL_FALSE = 0;
@@ -261,11 +262,15 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::ENUM_ID), payload));
   }
 
-  static Value makeIteratorId(uint32_t id) {
-    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::ITERATOR_ID), id));
-  }
+    static Value makeIteratorId(uint32_t id) {
+        return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::ITERATOR_ID), id));
+    }
 
-  static Value makeHostFuncId(uint32_t id) {
+    static Value makeBoundMethodId(uint32_t id) {
+        return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::BOUND_METHOD_ID), id));
+    }
+
+    static Value makeHostFuncId(uint32_t id) {
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::HOST_FUNC_ID), id));
   }
 
@@ -368,12 +373,17 @@ public:
            extractExtendedTag(bits_) == ExtendedTag::ENUM_ID;
   }
 
-  bool isIteratorId() const {
-    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
-           extractExtendedTag(bits_) == ExtendedTag::ITERATOR_ID;
-  }
+    bool isIteratorId() const {
+        return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+               extractExtendedTag(bits_) == ExtendedTag::ITERATOR_ID;
+    }
 
-  bool isHostFuncId() const {
+    bool isBoundMethodId() const {
+        return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+               extractExtendedTag(bits_) == ExtendedTag::BOUND_METHOD_ID;
+    }
+
+    bool isHostFuncId() const {
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
            extractExtendedTag(bits_) == ExtendedTag::HOST_FUNC_ID;
   }
@@ -489,11 +499,15 @@ public:
     return static_cast<uint32_t>((extractPayload(bits_) >> 32) & 0xFFFULL);
   }
 
-  uint32_t asIteratorId() const {
-    return static_cast<uint32_t>(extractPayload(bits_));
-  }
+    uint32_t asIteratorId() const {
+        return static_cast<uint32_t>(extractPayload(bits_));
+    }
 
-  uint32_t asHostFuncId() const {
+    uint32_t asBoundMethodId() const {
+        return static_cast<uint32_t>(extractPayload(bits_));
+    }
+
+    uint32_t asHostFuncId() const {
     return static_cast<uint32_t>(extractPayload(bits_));
   }
 

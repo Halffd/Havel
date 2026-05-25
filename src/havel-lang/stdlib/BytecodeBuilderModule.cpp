@@ -2,6 +2,7 @@
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
+#include "utils/Logger.hpp"
 #include <fstream>
 
 using havel::compiler::BytecodeChunk;
@@ -709,9 +710,39 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
     auto name = api.resolveString(args[0]);
     auto op = parseOpcode(name);
     return Value::makeInt(static_cast<int64_t>(static_cast<uint8_t>(op)));
-  });
+    });
 
-  auto bcObj = api.makeObject();
+    api.registerFunction("bc.trace_execution", [api](const std::vector<Value> &args) -> Value {
+        auto &vm = api.vm();
+        bool enabled = true;
+        if (!args.empty()) {
+            if (args[0].isBool()) enabled = args[0].asBool();
+            else if (args[0].isInt()) enabled = args[0].asInt() != 0;
+        }
+        vm.setTraceExecution(enabled);
+        return Value::makeBool(enabled);
+    });
+
+    api.registerFunction("bc.log", [api](const std::vector<Value> &args) -> Value {
+        if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+            return Value::makeNull();
+        }
+        int level = 0; // debug
+        if (args.size() > 1 && args[1].isInt()) {
+            level = static_cast<int>(args[1].asInt());
+        }
+        auto msg = api.resolveString(args[0]);
+        auto &logger = havel::Logger::getInstance();
+        switch (level) {
+            case 1: logger.info(msg); break;
+            case 2: logger.warning(msg); break;
+            case 3: logger.error(msg); break;
+            default: logger.debug(msg); break;
+        }
+        return Value::makeNull();
+    });
+
+    auto bcObj = api.makeObject();
   api.setField(bcObj, "reset", api.makeFunctionRef("bc.reset"));
     api.setField(bcObj, "func_new", api.makeFunctionRef("bc.func_new"));
     api.setField(bcObj, "func_push", api.makeFunctionRef("bc.func_push"));
@@ -743,6 +774,8 @@ api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
   api.setField(bcObj, "set_func_source_line", api.makeFunctionRef("bc.set_func_source_line"));
     api.setField(bcObj, "set_source_file", api.makeFunctionRef("bc.set_source_file"));
     api.setField(bcObj, "set_default_value", api.makeFunctionRef("bc.set_default_value"));
+    api.setField(bcObj, "trace_execution", api.makeFunctionRef("bc.trace_execution"));
+    api.setField(bcObj, "log", api.makeFunctionRef("bc.log"));
     api.setGlobal("bc", bcObj);
 }
 

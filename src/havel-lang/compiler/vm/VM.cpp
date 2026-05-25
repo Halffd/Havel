@@ -21,7 +21,6 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-// ... existing code ...
 #include <mutex>
 #include <optional>
 #include <regex>
@@ -30,6 +29,7 @@
 #include <stdexcept>
 #include <thread>
 #include <queue>
+#include "havel-lang/compiler/runtime/DebugUtils.hpp"
 
 #include "VMApi.hpp"
 #include "../../stdlib/ShellModule.hpp"
@@ -1915,6 +1915,7 @@ if (event_queue_) event_queue_->processAll();
     else if (value.isFunctionObjId()) typeName = "function";
     else if (value.isEnumId()) typeName = "enum";
     else if (value.isIteratorId()) typeName = "iterator";
+    else if (value.isBoundMethodId()) typeName = "fn";
     else if (value.isCoroutineId()) typeName = "coroutine";
     else typeName = "unknown";
     auto strRef = heap_.allocateString(typeName);
@@ -1949,7 +1950,7 @@ if (event_queue_) event_queue_->processAll();
     if (args.empty()) return Value::makeBool(false);
     const auto &value = args[0];
     bool isCallable = value.isFunctionObjId() || value.isClosureId() ||
-                      value.isHostFuncId();
+                       value.isHostFuncId() || value.isBoundMethodId();
     return Value::makeBool(isCallable);
   });
 
@@ -4039,12 +4040,26 @@ while (frame_count_ > stop_frame_depth) {
 
   const auto &instruction = function->instructions[ip];
 
-  try {
-      if (profiling_enabled_) {
-        opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
-        executed_instructions_++;
-      }
-      executeInstruction(instruction);
+        try {
+            if (profiling_enabled_) {
+                opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
+                executed_instructions_++;
+            }
+            if (trace_execution_ && current_chunk) {
+                auto funcName = function->name.empty() ? std::string("<anon>") : function->name;
+                BytecodeDisassembler::Options opts;
+                opts.showLineNumbers = false;
+                opts.showSourceLocations = true;
+                opts.showConstantPool = false;
+                opts.showFunctionInfo = false;
+                opts.useLabels = true;
+                auto disasm = BytecodeDisassembler(*current_chunk).formatInstruction(
+                    ip, instruction, opts);
+                std::fprintf(stderr, "\033[2m[trace] %3u %s:%u  %s\033[0m\n",
+                             static_cast<unsigned>(frame_count_), funcName.c_str(),
+                             static_cast<unsigned>(ip), disasm.c_str());
+            }
+            executeInstruction(instruction);
       if (exit_requested_.load()) {
         break;
       }
@@ -4665,6 +4680,19 @@ void VM::doTailCall(Value callee_value,
         pushStack(result);
         this->doReturn();
         return;
+    }
+
+    // Handle bound methods (lightweight BoundMethod struct)
+    if (callee_value.isBoundMethodId()) {
+        auto *bm = heap_.boundMethod(callee_value.asBoundMethodId());
+        if (bm && (bm->fn.isHostFuncId() || bm->fn.isFunctionObjId() || bm->fn.isClosureId())) {
+            std::vector<Value> boundArgs;
+            boundArgs.push_back(bm->self);
+            boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+            doCall(bm->fn, std::move(boundArgs), false);
+            this->doReturn();
+            return;
+        }
     }
 
     // Handle callable objects (Lua-style __call / op_call)
@@ -6356,6 +6384,18 @@ Value callee_value = popStack();
       }
     }
 
+    // Handle bound methods (lightweight BoundMethod struct)
+    if (callee_value.isBoundMethodId()) {
+        auto *bm = heap_.boundMethod(callee_value.asBoundMethodId());
+        if (bm && (bm->fn.isHostFuncId() || bm->fn.isFunctionObjId() || bm->fn.isClosureId())) {
+            std::vector<Value> boundArgs;
+            boundArgs.push_back(bm->self);
+            boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+            doCall(bm->fn, std::move(boundArgs));
+            break;
+        }
+    }
+
     // Handle bound method objects (from runtime member lookup)
     if (callee_value.isObjectId()) {
       auto *obj = heap_.object(callee_value.asObjectId());
@@ -7576,14 +7616,8 @@ auto *parent_closure = heap_.closure(parent_closure_id);
             }
             auto method = getPrototypeMethod(object, *key);
             if (method) {
-                // Create a bound method object: {fn: HostFuncId, self: ArrayId}
-                auto boundObj = heap_.allocateObject();
-                auto *obj = heap_.object(boundObj.id);
-                if (obj) {
-                    (*obj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
-                    (*obj)["self"] = Value::makeArrayId(object.asArrayId());
-                }
-                pushStack(Value::makeObjectId(boundObj.id));
+                auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method])), Value::makeArrayId(object.asArrayId()));
+                pushStack(Value::makeBoundMethodId(bmRef.id));
                 break;
             }
         }
@@ -7610,17 +7644,12 @@ auto *parent_closure = heap_.closure(parent_closure_id);
                 pushStack(Value::makeInt(static_cast<int64_t>(actualStr.size())));
                 break;
             }
-            auto method = getPrototypeMethod(stringVal, *key);
-        if (method) {
-          auto boundObj = heap_.allocateObject();
-          auto *obj = heap_.object(boundObj.id);
-          if (obj) {
-            (*obj)["fn"] = Value::makeHostFuncId(*method);
-            (*obj)["self"] = stringVal;
-          }
-          pushStack(Value::makeObjectId(boundObj.id));
-          break;
-        }
+                auto method = getPrototypeMethod(stringVal, *key);
+                if (method) {
+                    auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(*method), stringVal);
+                    pushStack(Value::makeBoundMethodId(bmRef.id));
+                    break;
+                }
       }
       pushStack(Value::makeNull());
       break;
@@ -7670,13 +7699,10 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         auto *set = heap_.set(object.asSetId());
         pushStack(Value::makeInt(set ? static_cast<int64_t>(set->size()) : 0));
       } else if (key) {
-        auto method = getPrototypeMethod(object, *key);
-        if (method) {
-          auto boundObj = heap_.allocateObject();
-          auto *bObj = heap_.object(boundObj.id);
-          (*bObj)["fn"] = Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method]));
-          (*bObj)["self"] = object;
-          pushStack(Value::makeObjectId(boundObj.id));
+                auto method = getPrototypeMethod(object, *key);
+                if (method) {
+                    auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex(host_function_names_[*method])), object);
+                    pushStack(Value::makeBoundMethodId(bmRef.id));
         } else {
           pushStack(Value::makeNull());
         }
@@ -7721,12 +7747,9 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 		}
 		auto it = globals.find(*key);
 		if (it != globals.end()) {
-			if (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId()) {
-				auto boundObj = heap_.allocateObject();
-				auto *bObj = heap_.object(boundObj.id);
-				(*bObj)["fn"] = it->second;
-				(*bObj)["self"] = object;
-				pushStack(Value::makeObjectId(boundObj.id));
+                if (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId()) {
+                    auto bmRef = heap_.allocateBoundMethod(it->second, object);
+                    pushStack(Value::makeBoundMethodId(bmRef.id));
 			} else {
 				pushStack(it->second);
 			}
@@ -7734,13 +7757,10 @@ auto *parent_closure = heap_.closure(parent_closure_id);
 		}
 		auto hostIt = host_function_globals_.find(*key);
 		if (hostIt != host_function_globals_.end()) {
-			if (hostIt->second.isFunctionObjId() || hostIt->second.isClosureId() || hostIt->second.isHostFuncId()) {
-				auto boundObj = heap_.allocateObject();
-				auto *bObj = heap_.object(boundObj.id);
-				(*bObj)["fn"] = hostIt->second;
-				(*bObj)["self"] = object;
-				pushStack(Value::makeObjectId(boundObj.id));
-			} else {
+                if (hostIt->second.isFunctionObjId() || hostIt->second.isClosureId() || hostIt->second.isHostFuncId()) {
+                    auto bmRef = heap_.allocateBoundMethod(hostIt->second, object);
+                    pushStack(Value::makeBoundMethodId(bmRef.id));
+                } else {
 				pushStack(hostIt->second);
 			}
 			break;
@@ -7880,7 +7900,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
         // Safety: reject __ prefixed keys (reserved for internal use)
         // Exception: __name__, __wrapped__, __arity__ are allowed on callable types
         // for decorator metadata preservation (Python convention)
-        bool isCallable = object.isFunctionObjId() || object.isClosureId() || object.isHostFuncId();
+        bool isCallable = object.isFunctionObjId() || object.isClosureId() || object.isHostFuncId() || object.isBoundMethodId();
         bool isAllowedDunder = *keyStr == "__name__" || *keyStr == "__wrapped__" || *keyStr == "__arity__";
         if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_' &&
             !(isCallable && isAllowedDunder)) {
@@ -9764,7 +9784,7 @@ bool VM::isTruthy(const Value &value) {
   }
 
   // Step 8: functions are always truthy
-  if (value.isFunctionObjId() || value.isHostFuncId() || value.isClosureId()) {
+    if (value.isFunctionObjId() || value.isHostFuncId() || value.isClosureId() || value.isBoundMethodId()) {
     return true;
   }
 

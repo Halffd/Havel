@@ -814,8 +814,9 @@ std::string BytecodeDisassembler::operandToString(const Value& operand) {
   if (operand.isHostFuncId()) return "hostfn[" + std::to_string(operand.asHostFuncId()) + "]";
   if (operand.isRangeId()) return "range[" + std::to_string(operand.asRangeId()) + "]";
   if (operand.isEnumId()) return "enum[" + std::to_string(operand.asEnumId()) + "]";
-  if (operand.isIteratorId()) return "iter[" + std::to_string(operand.asIteratorId()) + "]";
-  return "<?>";
+    if (operand.isIteratorId()) return "iter[" + std::to_string(operand.asIteratorId()) + "]";
+    if (operand.isBoundMethodId()) return "bm[" + std::to_string(operand.asBoundMethodId()) + "]";
+    return "<?>";
 }
 
 std::string BytecodeDisassembler::formatInstruction(

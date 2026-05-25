@@ -33,9 +33,13 @@ enum class FiberPriority : uint8_t;
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
+} // close havel::compiler
+
 namespace havel::errors {
-  struct HavelError;
-}
+struct HavelError;
+} // close havel::errors
+
+namespace havel::compiler {
 
 // Error handling with stack traces
 struct ScriptThrow final {
@@ -306,6 +310,7 @@ bool prototypes_registered_ = false;
     size_t max_call_depth_ = 1024;
     size_t tail_call_depth_ = 0;
     bool profiling_enabled_ = false;
+    bool trace_execution_ = false;
     std::array<uint64_t, 256> opcode_counts_{};
     uint64_t executed_instructions_ = 0;
     uint64_t max_instructions_ = 0; // 0 = no limit
@@ -685,6 +690,8 @@ public:
 
   void setMaxCallDepth(size_t value);
     void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }
+    void setTraceExecution(bool enabled) { trace_execution_ = enabled; }
+    bool isTraceExecution() const { return trace_execution_; }
     uint64_t executedInstructionCount() const { return executed_instructions_; }
     void setMaxInstructions(uint64_t limit) { max_instructions_ = limit; }
     uint64_t maxInstructions() const { return max_instructions_; }

@@ -175,13 +175,13 @@ void* FFIMemory::to_native(const Value& v, std::shared_ptr<FFIType> type) {
         if (v.isPtr()) p = v.asPtr();
         else if (v.isInt()) p = reinterpret_cast<void*>(static_cast<uintptr_t>(v.asInt64()));
         else if (v.isDouble()) p = reinterpret_cast<void*>(static_cast<uintptr_t>(v.asDouble()));
-        std::memcpy(buf, &p, sizeof(void*));
+        std::memcpy(buf, static_cast<const void*>(&p), sizeof(void*));
         break;
     }
     case FFITypeKind::STRING: {
         const char* s = "";
         if (v.isPtr()) s = static_cast<const char*>(v.asPtr());
-        std::memcpy(buf, &s, sizeof(const char*));
+        std::memcpy(buf, static_cast<const void*>(&s), sizeof(const char*));
         break;
     }
     default:

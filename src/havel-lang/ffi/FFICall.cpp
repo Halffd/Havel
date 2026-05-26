@@ -11,6 +11,7 @@
 #include <dlfcn.h>
 #endif
 #include <cstring>
+#include <memory>
 #include <sstream>
 
 #ifdef HAVE_LIBFFI
@@ -354,12 +355,18 @@ Value FFICall::call_native(void* fn_ptr,
   auto entry = get_or_create_cif(fn_ptr, param_types, return_type, variadic, variadic_types);
   if (!entry.cif) return Value::makeNull();
 
-  size_t ret_size = FFITypeRegistry::size_of(return_type);
-  void* ffi_ret_ptr = alloca(ret_size > 0 ? ret_size : 1);
-  std::memset(ffi_ret_ptr, 0, ret_size > 0 ? ret_size : 1);
-  std::vector<void*> ffi_args(arg_ptrs.begin(), arg_ptrs.end());
+    size_t ret_size = FFITypeRegistry::size_of(return_type);
+    if (ret_size > 65536) {
+        ::havel::error("FFICall: return type size {} exceeds 64KB limit", ret_size);
+        return Value::makeNull();
+    }
+    size_t alloc_size = ret_size > 0 ? ret_size : 1;
+    auto ret_buf = std::make_unique<std::byte[]>(alloc_size);
+    void* ffi_ret_ptr = ret_buf.get();
+    std::memset(ffi_ret_ptr, 0, alloc_size);
+    std::vector<void*> ffi_args(arg_ptrs.begin(), arg_ptrs.end());
 
-  ffi_call(entry.cif.get(), reinterpret_cast<void(*)()>(fn_ptr), ffi_ret_ptr, ffi_args.data());
+    ffi_call(entry.cif.get(), reinterpret_cast<void(*)()>(fn_ptr), ffi_ret_ptr, ffi_args.data());
 
     return FFIMemory::to_havel(ffi_ret_ptr, return_type);
 }

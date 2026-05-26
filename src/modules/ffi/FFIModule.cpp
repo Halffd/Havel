@@ -147,14 +147,14 @@ static Value ffiCall(const compiler::VMApi& api, const std::vector<Value>& rawAr
       std::memcpy(buf.get(), s.c_str(), s.size() + 1);
       char* str_ptr = buf.get();
       auto ptr_buf = std::make_unique<uint8_t[]>(sizeof(void*));
-      std::memcpy(ptr_buf.get(), &str_ptr, sizeof(void*));
+      std::memcpy(ptr_buf.get(), static_cast<const void*>(&str_ptr), sizeof(void*));
       arg_ptrs.push_back(ptr_buf.get());
       arg_storage.push_back(std::move(ptr_buf));
       string_storage.push_back(std::move(buf));
         } else if (pt->kind == FFITypeKind::POINTER) {
             void* p = resolvePtr(arg);
             auto buf = std::make_unique<uint8_t[]>(sizeof(void*));
-            std::memcpy(buf.get(), &p, sizeof(void*));
+            std::memcpy(buf.get(), static_cast<const void*>(&p), sizeof(void*));
             arg_ptrs.push_back(buf.get());
             arg_storage.push_back(std::move(buf));
         } else {
@@ -274,7 +274,9 @@ static Value ffiAlloc(const compiler::VMApi& api, const std::vector<Value>& rawA
     if (args.size() < 1) return Value::makeNull();
     // If arg is an integer, treat as byte count (like allocBytes)
     if (args[0].isInt()) {
-        size_t size = static_cast<size_t>(args[0].asInt64());
+        int64_t sz = args[0].asInt64();
+        if (sz < 0) return Value::makeNull();
+        size_t size = static_cast<size_t>(sz);
         void* ptr = FFIMemory::alloc_bytes(size);
         return Value::makePtr(ptr);
     }
@@ -287,7 +289,9 @@ static Value ffiAlloc(const compiler::VMApi& api, const std::vector<Value>& rawA
 static Value ffiAllocBytes(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 1) return Value::makeNull();
-    size_t size = static_cast<size_t>(args[0].asInt64());
+    int64_t sz = args[0].asInt64();
+    if (sz < 0) return Value::makeNull();
+    size_t size = static_cast<size_t>(sz);
     void* ptr = FFIMemory::alloc_bytes(size);
     return Value::makePtr(ptr);
 }
@@ -326,7 +330,17 @@ static Value ffiString(const compiler::VMApi& api, const std::vector<Value>& raw
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     const char* str = static_cast<const char*>(ptr);
-    return api.makeString(std::string(str));
+    size_t max_len = static_cast<size_t>(16) * 1024 * 1024;
+    if (args.size() >= 2 && args[1].isInt()) {
+        int64_t user_max = args[1].asInt64();
+        if (user_max > 0) max_len = static_cast<size_t>(user_max);
+    }
+    size_t len = strnlen(str, max_len);
+    if (len == max_len) {
+        ::havel::warn("ffi.string: string at {} not null-terminated within {} bytes, truncating",
+                      ptr, max_len);
+    }
+    return api.makeString(std::string(str, len));
 }
 
 static Value ffiCstring(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
@@ -494,7 +508,9 @@ static Value ffiMemcpy(const compiler::VMApi& api, const std::vector<Value>& raw
     void* dst = resolvePtr(args[0]);
     void* src = resolvePtr(args[1]);
     if (!dst || !src) return Value::makeNull();
-    size_t size = static_cast<size_t>(args[2].asInt64());
+    int64_t sz = args[2].asInt64();
+    if (sz < 0) return Value::makeNull();
+    size_t size = static_cast<size_t>(sz);
     std::memcpy(dst, src, size);
     return Value::makePtr(dst);
 }
@@ -505,7 +521,9 @@ static Value ffiMemset(const compiler::VMApi& api, const std::vector<Value>& raw
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     int val = static_cast<int>(args[1].asInt64());
-    size_t size = static_cast<size_t>(args[2].asInt64());
+    int64_t sz = args[2].asInt64();
+    if (sz < 0) return Value::makeNull();
+    size_t size = static_cast<size_t>(sz);
     std::memset(ptr, val, size);
     return Value::makePtr(ptr);
 }

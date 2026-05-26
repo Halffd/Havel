@@ -996,16 +996,24 @@ namespace havel
         .detach();
   }
 
-  void HotkeyManager::handleHotkeyTrigger(int hotkeyId)
+void HotkeyManager::handleHotkeyTrigger(int hotkeyId)
+{
+  HotKey hotkeyCopy;
+  bool found = false;
   {
-    // Find the hotkey by ID and execute it
     std::lock_guard<std::mutex> lock(g_registeredHotkeysMutex);
     auto it = g_registeredHotkeys.find(hotkeyId);
     if (it != g_registeredHotkeys.end())
     {
-      executeHotkey(it->second);
+      hotkeyCopy = it->second;
+      found = true;
     }
   }
+  if (found)
+  {
+    executeHotkey(hotkeyCopy);
+  }
+}
 
   bool HotkeyManager::HandleInputEvent(const InputEvent &event)
   {

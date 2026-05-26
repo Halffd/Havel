@@ -87,11 +87,35 @@ struct VMApi {
         return vm().getHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
     }
 
-    bool deleteField(Value obj, const std::string &key) const {
-        if (!obj.isObjectId())
-            return false;
-        return vm().deleteHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
-    }
+  bool deleteField(Value obj, const std::string &key) const {
+    if (!obj.isObjectId())
+      return false;
+    return vm().deleteHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
+  }
+
+  void freeze(Value obj) const {
+    if (!obj.isObjectId())
+      return;
+    vm().setHostObjectFrozen(ObjectRef{obj.asObjectId(), true}, true);
+  }
+
+  void seal(Value obj) const {
+    if (!obj.isObjectId())
+      return;
+    vm().setHostObjectSealed(ObjectRef{obj.asObjectId(), true}, true);
+  }
+
+  bool isFrozen(Value obj) const {
+    if (!obj.isObjectId())
+      return false;
+    return vm().hasHostObjectField(ObjectRef{obj.asObjectId(), true}, "__frozen__");
+  }
+
+  bool isSealed(Value obj) const {
+    if (!obj.isObjectId())
+      return false;
+    return vm().hasHostObjectField(ObjectRef{obj.asObjectId(), true}, "__sealed__");
+  }
 
     void push(Value arr, Value value) const {
         if (!arr.isArrayId()) {
@@ -100,12 +124,26 @@ struct VMApi {
         vm().pushHostArrayValue(ArrayRef{arr.asArrayId()}, std::move(value));
     }
 
-    Value pop(Value arr) const {
-        if (!arr.isArrayId()) {
-            throw std::runtime_error("VMApi::pop: expected array");
-        }
-        return vm().popHostArrayValue(ArrayRef{arr.asArrayId()});
+  Value pop(Value arr) const {
+    if (!arr.isArrayId()) {
+      throw std::runtime_error("VMApi::pop: expected array");
     }
+    return vm().popHostArrayValue(ArrayRef{arr.asArrayId()});
+  }
+
+  void insertAt(Value arr, uint32_t index, Value value) const {
+    if (!arr.isArrayId()) {
+      throw std::runtime_error("VMApi::insertAt: expected array");
+    }
+    vm().insertHostArrayValue(ArrayRef{arr.asArrayId()}, index, std::move(value));
+  }
+
+  Value removeAt(Value arr, uint32_t index) const {
+    if (!arr.isArrayId()) {
+      throw std::runtime_error("VMApi::removeAt: expected array");
+    }
+    return vm().removeHostArrayValue(ArrayRef{arr.asArrayId()}, index);
+  }
 
     uint32_t length(Value arr) const {
         if (arr.isArrayId()) {

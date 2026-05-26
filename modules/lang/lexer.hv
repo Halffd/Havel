@@ -405,9 +405,7 @@ fn addToken(ttype, value) {
         }
     }
 fn scanString(quote, isFString, isRegexString) {
-    _safetyCount = 0
-    _safetyCount = 0
-    advance()
+ advance()
 
     s = ""
         isInterpolated = false
@@ -848,9 +846,19 @@ fn scanIdentifier() {
 
     }
 fn _scan() {
-    _iterCount = 0
-    while current() != null {
-        skipWhitespace()
+ _dbgCount = 0
+ _lastDbgPos = 0
+ while current() != null {
+  _dbgCount = _dbgCount + 1
+  if pos != _lastDbgPos and _dbgCount % 500 == 0 {
+   print("[lexer] iter=" + str(_dbgCount) + " pos=" + str(pos) + " line=" + str(line) + " tokens=" + str(tokens.len) + " char=[" + str(current()) + "]")
+   _lastDbgPos = pos
+  }
+  if _dbgCount > 50000 {
+   print("[lexer] LOOP LIMIT at iter=" + str(_dbgCount) + " pos=" + str(pos) + " line=" + str(line) + " char=[" + str(current()) + "]")
+   break
+  }
+  skipWhitespace()
         if current() == null { break }
         tokenStartCol = col
   c = current()
@@ -1490,12 +1498,12 @@ if isAlpha(c) {
                 continue
 
             }
-    if c == "#" {
-        advance()
-        nextCh = current()
-        if afterExpression() or nextCh == "[" or nextCh == "{" or (nextCh != null && isAlpha(nextCh)) {
-            addToken("Length", "#")
-        }
+if c == "#" {
+advance()
+nextCh = current()
+if afterExpression() or nextCh == "[" or nextCh == "{" or nextCh == "\"" or nextCh == "'" or (nextCh != null && isAlpha(nextCh)) {
+addToken("Length", "#")
+}
         else {
             s = "#"
             while current() != null and current() != "\n" and current() != "{" {
@@ -1532,15 +1540,6 @@ if isAlpha(c) {
 
         }
         advance()
-
-        _iterCount = _iterCount + 1
-        if _iterCount % 100 == 0 {
-            print("lexer at iter=" + str(_iterCount) + " pos=" + str(pos) + " char=[" + str(current()) + "] tokens=" + str(tokens.len))
-        }
-        if _iterCount > 2000 {
-            error("lexer loop limit at pos=" + str(pos) + " char=[" + str(current()) + "]")
-            break
-        }
 
     }
         addToken("EOF", "")

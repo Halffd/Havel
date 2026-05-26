@@ -373,15 +373,16 @@ fn runSelfHosted(cfg) {
     }
     if isOn("timing") { endTimer("loader") }
 
- // Compile the main script into the shared chunk (noReset=true)
- // skip_execute=false means compileProgram will call bc.execute_persistent automatically
- if isOn("timing") { startTimer("compile") }
- em = Emitter()
- em.func_idx = bc.func_count()
- safeName = sourceFile.replace("/", "_").replace(".", "_").replace("-", "_")
- mainEntry = "__init_" + safeName
- compileProgram(em, result.ast, true, sourceFile, mainEntry, true)
- if isOn("timing") { endTimer("compile") }
+    // Compile the main script into the shared chunk (noReset=true)
+    // skip_execute=false means compileProgram will call bc.execute_persistent automatically
+    if isOn("timing") { startTimer("compile") }
+    em = Emitter()
+    em.func_idx = bc.func_count()
+    safeName = sourceFile.replace("/", "_").replace(".", "_").replace("-", "_")
+    mainEntry = "__init_" + safeName
+    result = compileProgram(em, result.ast, false, sourceFile, mainEntry, true)
+    if isOn("timing") { endTimer("compile") }
+    result
 }
 
 fn runTests(cfg) {

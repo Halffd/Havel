@@ -123,9 +123,20 @@ bool EventQueue::empty() const {
 }
 
 void EventQueue::clear() {
+  std::queue<Event> empty;
+  {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::queue<Event> empty;
-    std::swap(events_, empty);
+    // Delete any LEGACY_CALLBACK payloads before discarding
+    std::queue<Event> to_clear;
+    std::swap(events_, to_clear);
+    while (!to_clear.empty()) {
+      Event ev = std::move(to_clear.front());
+      to_clear.pop();
+      if (ev.type == EventType::LEGACY_CALLBACK && ev.ptr) {
+        delete static_cast<Callback*>(ev.ptr);
+      }
+    }
+  }
 }
 
 void EventQueue::initCallbackWorkers(size_t pool_size) {

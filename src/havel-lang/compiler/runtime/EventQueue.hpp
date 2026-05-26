@@ -10,6 +10,7 @@
 #include <memory>
 #include <sys/eventfd.h>
 #include <unistd.h>
+#include <atomic>
 
 namespace havel::compiler {
 
@@ -174,7 +175,7 @@ private:
     std::queue<Callback> callback_queue_;
     std::mutex callback_mutex_;
     std::condition_variable callback_cv_;
-    bool shutdown_workers_ = false;
+    std::atomic<bool> shutdown_workers_{false};
     
     void initCallbackWorkers(size_t pool_size = 2);
     void callbackWorkerLoop();

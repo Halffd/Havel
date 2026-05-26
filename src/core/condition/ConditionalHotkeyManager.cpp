@@ -44,12 +44,14 @@ void ConditionalHotkeyManager::ScheduleReevaluation() {
 void ConditionalHotkeyManager::registerVarChangedHandler() {
   if (eventQueue_) {
     eventQueue_->onEvent(compiler::EventType::VAR_CHANGED,
-      [this](const compiler::Event& event) {
-        std::string var_name;
-        if (event.ptr) {
-          var_name = static_cast<const char*>(event.ptr);
-        }
-        if (debugging::debug_hotkeys) debug("VAR_CHANGED event for '{}' - reevaluating conditional hotkeys", var_name);
+        [this](const compiler::Event& event) {
+            std::string var_name;
+            if (event.ptr) {
+                auto* sp = static_cast<std::string*>(event.ptr);
+                var_name = *sp;
+                delete sp;
+            }
+            if (debugging::debug_hotkeys) debug("VAR_CHANGED event for '{}' - reevaluating conditional hotkeys", var_name);
         if (!var_name.empty()) {
           eventQueue_->push([this, var_name]() {
             UpdateConditionalHotkeysForVariable(var_name);

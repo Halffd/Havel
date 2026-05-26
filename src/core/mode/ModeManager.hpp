@@ -100,6 +100,7 @@ public:
     std::string name;
     std::vector<std::string> modes;
     std::function<void()> onEnter;
+    std::function<void()> onExit;
   };
 
   // Register a signal

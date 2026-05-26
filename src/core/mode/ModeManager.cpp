@@ -162,15 +162,18 @@ void ModeManager::triggerExit(ModeDefinition &mode) {
 
 void ModeManager::triggerTransition(const std::string &fromMode,
                                     const std::string &toMode) {
-  // Trigger group callbacks if applicable
   for (const auto &group : groups) {
-    if (group.onEnter) {
-      for (const auto &modeName : group.modes) {
-        if (modeName == toMode) {
-          group.onEnter();
-          break;
-        }
-      }
+    bool wasInGroup = false;
+    bool nowInGroup = false;
+    for (const auto &modeName : group.modes) {
+      if (modeName == fromMode) wasInGroup = true;
+      if (modeName == toMode) nowInGroup = true;
+    }
+    if (wasInGroup && !nowInGroup && group.onExit) {
+      group.onExit();
+    }
+    if (!wasInGroup && nowInGroup && group.onEnter) {
+      group.onEnter();
     }
   }
 }
@@ -285,11 +288,12 @@ void ModeManager::registerVarChangedHandler() {
   // This enables event-driven mode condition checking
   if (eventQueue_) {
     // Register handler for VAR_CHANGED events
-    eventQueue_->onEvent(compiler::EventType::VAR_CHANGED,
-        [this](const compiler::Event& event) {
-          // Reevaluate mode conditions when variables change
-          // This allows conditions like "window.any(exe == 'steam.exe')" to react immediately
-          if (debugging::debug_hotkeys) debug("VAR_CHANGED event - reevaluating mode conditions");
+        eventQueue_->onEvent(compiler::EventType::VAR_CHANGED,
+            [this](const compiler::Event& event) {
+                if (event.ptr) {
+                    delete static_cast<std::string*>(event.ptr);
+                }
+                if (debugging::debug_hotkeys) debug("VAR_CHANGED event - reevaluating mode conditions");
           // Schedule reevaluation via a callback to avoid blocking
           eventQueue_->push([this]() {
             // Use cached evaluator if available, otherwise skip

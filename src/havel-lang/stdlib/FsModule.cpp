@@ -181,6 +181,12 @@ struct FileHandle {
     bool open;
 };
 
+struct LockEntry {
+    int fd;
+    LockEntry() : fd(-1) {}
+    explicit LockEntry(int f) : fd(f) {}
+};
+
 static std::set<FileHandle *> &getFileHandles() {
     static std::set<FileHandle *> handles;
     return handles;
@@ -194,8 +200,8 @@ static FileHandle *getHandle(const Value &v, const VMApi &api) {
   return reinterpret_cast<FileHandle *>(static_cast<intptr_t>(ptrVal.asInt()));
 }
 
-static std::set<std::string> &getLockedFiles() {
-    static std::set<std::string> locked;
+static std::unordered_map<std::string, LockEntry> &getLockedFiles() {
+    static std::unordered_map<std::string, LockEntry> locked;
     return locked;
 }
 
@@ -674,18 +680,18 @@ void registerFsModule(const VMApi &api) {
             if (args.size() > 1) {
                 mode = api.resolveString(args[1]);
             }
-            int flags;
-            if (mode == "r") {
-                flags = O_RDONLY;
-            } else if (mode == "w") {
-                flags = O_WRONLY | O_CREAT | O_TRUNC;
-            } else if (mode == "w+") {
-                flags = O_RDWR | O_CREAT | O_TRUNC;
-            } else if (mode == "a") {
-                flags = O_WRONLY | O_CREAT | O_APPEND;
-            } else {
-                flags = O_RDONLY;
-            }
+        int flags;
+        if (mode == "r") {
+            flags = O_RDONLY | O_NOFOLLOW;
+        } else if (mode == "w") {
+            flags = O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW;
+        } else if (mode == "w+") {
+            flags = O_RDWR | O_CREAT | O_TRUNC | O_NOFOLLOW;
+        } else if (mode == "a") {
+            flags = O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW;
+        } else {
+            flags = O_RDONLY | O_NOFOLLOW;
+        }
             int fd = ::open(path.c_str(), flags, 0644);
             if (fd < 0)
                 return Value::makeNull();
@@ -911,26 +917,58 @@ void registerFsModule(const VMApi &api) {
 #endif
         });
 
-    // fs.atomicWrite (write to temp then rename)
+    // fs.atomicWrite (write to exclusive temp then fsync+rename)
     api.registerFunction(
-        "fs.atomicWrite", [api](const std::vector<Value> &args) {
-            if (args.size() < 2)
+    "fs.atomicWrite", [api](const std::vector<Value> &args) {
+#ifndef _WIN32
+        if (args.size() < 2)
+            return Value::makeBool(false);
+        std::string path = api.resolveString(args[0]);
+        std::string content = api.resolveString(args[1]);
+        std::string tmpPath = path + ".tmp.XXXXXX";
+        std::vector<char> tmpBuf(tmpPath.begin(), tmpPath.end());
+        tmpBuf.push_back('\0');
+        int fd = ::mkstemp(tmpBuf.data());
+        if (fd < 0)
+            return Value::makeBool(false);
+        ssize_t written = ::write(fd, content.data(), content.size());
+        if (written < 0 || static_cast<size_t>(written) != content.size()) {
+            ::close(fd);
+            ::unlink(tmpBuf.data());
+            return Value::makeBool(false);
+        }
+        if (::fsync(fd) != 0) {
+            ::close(fd);
+            ::unlink(tmpBuf.data());
+            return Value::makeBool(false);
+        }
+        ::close(fd);
+        std::error_code ec;
+        fs::rename(tmpBuf.data(), path, ec);
+        if (ec) {
+            ::unlink(tmpBuf.data());
+            return Value::makeBool(false);
+        }
+        return Value::makeBool(true);
+#else
+        if (args.size() < 2)
+            return Value::makeBool(false);
+        std::string path = api.resolveString(args[0]);
+        std::string content = api.resolveString(args[1]);
+        std::string tmpPath = path + ".tmp." + std::to_string(::getpid());
+        {
+            std::ofstream file(tmpPath);
+            if (!file.is_open())
                 return Value::makeBool(false);
-            std::string path = api.resolveString(args[0]);
-            std::string content = api.resolveString(args[1]);
-            std::string tmpPath = path + ".tmp." + std::to_string(::getpid());
-            {
-                std::ofstream file(tmpPath);
-                if (!file.is_open())
-                    return Value::makeBool(false);
-                file << content;
-                if (!file.flush())
-                    return Value::makeBool(false);
-            }
-            std::error_code ec;
-            fs::rename(tmpPath, path, ec);
-            return Value::makeBool(!ec);
-        });
+            file << content;
+            if (!file.flush())
+                return Value::makeBool(false);
+        }
+        std::error_code ec;
+        fs::rename(tmpPath, path, ec);
+        return Value::makeBool(!ec);
+#endif
+    });
 
     // fs.tempFile (create temporary file, returns {path, fd})
     api.registerFunction(
@@ -964,65 +1002,86 @@ void registerFsModule(const VMApi &api) {
 #endif
         });
 
-    // fs.lock (advisory file lock via flock)
+    // fs.lock (advisory file lock via flock — fd stays open)
     api.registerFunction(
-        "fs.lock", [api](const std::vector<Value> &args) {
+    "fs.lock", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
-            if (args.empty())
-                return Value::makeBool(false);
-            std::string path = api.resolveString(args[0]);
-            int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0644);
-            if (fd < 0)
-                return Value::makeBool(false);
-            int ret = ::flock(fd, LOCK_EX);
-            if (ret != 0) {
-                ::close(fd);
-                return Value::makeBool(false);
-            }
-            std::lock_guard<std::mutex> lk(getFileLockMutex());
-            getLockedFiles().insert(path);
-            ::close(fd);
-            return Value::makeBool(true);
-#else
-            (void)args;
+        if (args.empty())
             return Value::makeBool(false);
+        std::string path = api.resolveString(args[0]);
+        int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_NOFOLLOW, 0644);
+        if (fd < 0)
+            return Value::makeBool(false);
+        int ret = ::flock(fd, LOCK_EX);
+        if (ret != 0) {
+            ::close(fd);
+            return Value::makeBool(false);
+        }
+        std::lock_guard<std::mutex> lk(getFileLockMutex());
+        getLockedFiles()[path] = LockEntry(fd);
+        return Value::makeBool(true);
+#else
+        (void)args;
+        return Value::makeBool(false);
 #endif
-        });
+    });
 
-    // fs.tryLock (non-blocking advisory file lock)
+    // fs.tryLock (non-blocking advisory file lock — fd stays open)
     api.registerFunction(
-        "fs.tryLock", [api](const std::vector<Value> &args) {
+    "fs.tryLock", [api](const std::vector<Value> &args) {
 #ifndef _WIN32
-            if (args.empty())
-                return Value::makeBool(false);
-            std::string path = api.resolveString(args[0]);
-            int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0644);
-            if (fd < 0)
-                return Value::makeBool(false);
-            int ret = ::flock(fd, LOCK_EX | LOCK_NB);
-            if (ret != 0) {
-                ::close(fd);
-                return Value::makeBool(false);
-            }
-            std::lock_guard<std::mutex> lk(getFileLockMutex());
-            getLockedFiles().insert(path);
-            ::close(fd);
-            return Value::makeBool(true);
-#else
-            (void)args;
+        if (args.empty())
             return Value::makeBool(false);
+        std::string path = api.resolveString(args[0]);
+        int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_NOFOLLOW, 0644);
+        if (fd < 0)
+            return Value::makeBool(false);
+        int ret = ::flock(fd, LOCK_EX | LOCK_NB);
+        if (ret != 0) {
+            ::close(fd);
+            return Value::makeBool(false);
+        }
+        std::lock_guard<std::mutex> lk(getFileLockMutex());
+        getLockedFiles()[path] = LockEntry(fd);
+        return Value::makeBool(true);
+#else
+        (void)args;
+        return Value::makeBool(false);
 #endif
-        });
+    });
 
     // fs.isLocked
     api.registerFunction(
-        "fs.isLocked", [api](const std::vector<Value> &args) {
-            if (args.empty())
-                return Value::makeBool(false);
-            std::string path = api.resolveString(args[0]);
-            std::lock_guard<std::mutex> lk(getFileLockMutex());
-            return Value::makeBool(getLockedFiles().count(path) > 0);
-        });
+    "fs.isLocked", [api](const std::vector<Value> &args) {
+        if (args.empty())
+            return Value::makeBool(false);
+        std::string path = api.resolveString(args[0]);
+        std::lock_guard<std::mutex> lk(getFileLockMutex());
+        return Value::makeBool(getLockedFiles().count(path) > 0);
+    });
+
+    // fs.unlock (release advisory file lock and close fd)
+    api.registerFunction(
+    "fs.unlock", [api](const std::vector<Value> &args) {
+#ifndef _WIN32
+        if (args.empty())
+            return Value::makeBool(false);
+        std::string path = api.resolveString(args[0]);
+        std::lock_guard<std::mutex> lk(getFileLockMutex());
+        auto it = getLockedFiles().find(path);
+        if (it == getLockedFiles().end())
+            return Value::makeBool(false);
+        if (it->second.fd >= 0) {
+            ::flock(it->second.fd, LOCK_UN);
+            ::close(it->second.fd);
+        }
+        getLockedFiles().erase(it);
+        return Value::makeBool(true);
+#else
+        (void)args;
+        return Value::makeBool(false);
+#endif
+    });
 
     // Create fs namespace object
     auto fsObj = api.makeObject();
@@ -1061,6 +1120,7 @@ void registerFsModule(const VMApi &api) {
     api.setField(fsObj, "lock", api.makeFunctionRef("fs.lock"));
     api.setField(fsObj, "tryLock", api.makeFunctionRef("fs.tryLock"));
     api.setField(fsObj, "isLocked", api.makeFunctionRef("fs.isLocked"));
+    api.setField(fsObj, "unlock", api.makeFunctionRef("fs.unlock"));
     api.setGlobal("fs", fsObj);
 }
 

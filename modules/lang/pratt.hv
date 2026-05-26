@@ -19,7 +19,7 @@ use { NODE_TYPES, BINARY_OPS, COMPOUND_ASSIGN_OPS, UNARY_OPS,
 	ThrowStatement, TryStatement, MatchExpression, MatchCase,
 	InterpolatedString, RegexLiteral, AtExpression, AtAtExpression,
 	ConfigBlock, SleepStatement, ErrorNode,
-	ClassDeclaration, StructDeclaration, EnumDeclaration,
+ ClassDeclaration, StructDeclaration, EnumDeclaration, TraitDeclaration, ProtocolDeclaration, ImplDeclaration,
 	isNode, prettyPrint } from "ast"
 
 // --- Binding power constants (matching C++ switch-based values) ---
@@ -1288,8 +1288,15 @@ fn Parser(tokenList) {
             while current().type != "CloseParen" and notEOF() {
                 skipNewlines()
                 if current().type == "CloseParen": break
-                // Parse param name (allow keywords as param names)
-                pname = advance().value
+            // Parse param name (allow keyword-idents as param names, but not Fn)
+            lpt = current().type
+            if lpt == "Fn" {
+                return error("'fn' cannot be used as a parameter name (reserved for lambda syntax)", current().line, current().col)
+            }
+            if lpt != "Identifier" && !isKeywordIdent(lpt) {
+                return error("Expected parameter name, got " + lpt, current().line, current().col)
+            }
+            pname = advance().value
                 p = {name: pname}
                 // Type annotation
                 if current().type == "Colon" {
@@ -1847,13 +1854,13 @@ fn parseStatement() {
         if tt == "Interval": return parseIntervalStatement()
         if tt == "Timeout": return parseTimeoutStatement()
 
-	// Type declarations
-	if tt == "Class" { return parseClassDeclaration() }
-	if tt == "Struct" { return parseStructDeclaration() }
-	if tt == "Enum" or tt == "Trait" or tt == "Prot" or tt == "Impl" {
-		return parseTypeDeclStatement()
-
-        }
+ // Type declarations
+ if tt == "Class" { return parseClassDeclaration() }
+ if tt == "Struct" { return parseStructDeclaration() }
+ if tt == "Enum" { return parseEnumDeclaration() }
+ if tt == "Trait" { return parseTraitDeclaration() }
+ if tt == "Prot" { return parseProtocolDeclaration() }
+ if tt == "Impl" { return parseImplDeclaration() }
         // Expression statement
         expr = parseExpr(0)
         if expr == null: return null
@@ -2247,8 +2254,15 @@ fn parseIfStatement() {
             while current().type != "CloseParen" and notEOF() {
                 skipNewlines()
                 if current().type == "CloseParen": break
-        // Param name
-        pname = advance().value
+            // Param name — must be Identifier or keyword-as-ident (not Fn, it's ambiguous with lambda)
+            pt = current().type
+            if pt == "Fn" {
+                return error("'fn' cannot be used as a parameter name (reserved for lambda syntax)", current().line, current().col)
+            }
+            if pt != "Identifier" && !isKeywordIdent(pt) {
+                return error("Expected parameter name, got " + pt, current().line, current().col)
+            }
+            pname = advance().value
         p = {name: pname}
         // Type annotation
         if current().type == "Colon" {
@@ -3051,26 +3065,251 @@ fn parseStructDeclaration() {
 }
 
 // ===================================================================
-// STATEMENT: type declarations (stub — just consume and return ConfigBlock)
+// STATEMENT: enum declaration
+// enum Name { Variant1, Variant2(Type), Variant3 }
 // ===================================================================
-fn parseTypeDeclStatement() {
-	l = current().line
-	c = current().col
-	advance() // consume enum/trait/prot/impl
-	skipNewlines()
-	name = current().value
-	advance() // consume name
-	skipNewlines()
-	// Try to parse body
-	body = null
-	if current().type == "OpenBrace" or current().type == "Colon" {
-		body = parseBlock()
-	}
-	else {
-		body = BlockStatement([], l, c)
-	}
-	ConfigBlock("type:" + name, body, l, c)
+fn parseEnumDeclaration() {
+    l = current().line
+    c = current().col
+    advance() // consume 'enum'
+    skipNewlines()
+    if current().type != "Identifier" {
+        return error("Expected enum name after 'enum'", l, c)
+    }
+    name = advance().value
+    skipNewlines()
+    if current().type != "OpenBrace" {
+        return error("Expected '{' after enum name", l, c)
+    }
+    advance() // consume '{'
+    variants = []
+    while current().type != "CloseBrace" and notEOF() {
+        skipNewlinesAndSemicolons()
+        if current().type == "CloseBrace" || current().type == "EOF": break
+        // Variant name
+        if current().type != "Identifier" {
+            return error("Expected variant name in enum", current().line, current().col)
+        }
+        vname = advance().value
+        variant = {name: vname}
+        // Optional payload type: Variant(Type)
+        if current().type == "OpenParen" {
+            advance() // consume '('
+            skipNewlines()
+            payloadType = ""
+            if current().type == "Identifier" {
+                payloadType = advance().value
+            }
+            skipNewlines()
+            if current().type == "CloseParen" {
+                advance() // consume ')'
+            }
+            variant.payloadType = payloadType
+        }
+        variants.push(variant)
+        // Optional comma
+        if current().type == "Comma" { advance() }
+        skipNewlines()
+    }
+    if current().type == "CloseBrace" {
+        advance() // consume '}'
+    }
+    EnumDeclaration(name, variants, l, c)
+}
 
+// ===================================================================
+// STATEMENT: trait declaration
+// trait Name { fn method(params); fn method2(params) { default_body } }
+// ===================================================================
+fn parseTraitDeclaration() {
+    l = current().line
+    c = current().col
+    advance() // consume 'trait'
+    skipNewlines()
+    if current().type != "Identifier" {
+        return error("Expected trait name after 'trait'", l, c)
+    }
+    name = advance().value
+    skipNewlines()
+    if current().type != "OpenBrace" {
+        return error("Expected '{' after trait name", l, c)
+    }
+    advance() // consume '{'
+    methods = []
+    while current().type != "CloseBrace" and notEOF() {
+        skipNewlinesAndSemicolons()
+        if current().type == "CloseBrace" || current().type == "EOF": break
+        // Expect 'fn' keyword
+        if current().type != "Fn" {
+            return error("Expected 'fn' in trait body", current().line, current().col)
+        }
+        advance() // consume 'fn'
+        skipNewlines()
+        // Method name
+        if current().type != "Identifier" {
+            return error("Expected method name in trait", current().line, current().col)
+        }
+        methodName = advance().value
+        // Parameters
+        methodParams = []
+        if current().type == "OpenParen" {
+            advance() // consume '('
+            skipNewlines()
+            while current().type != "CloseParen" and notEOF() {
+                skipNewlines()
+                if current().type == "CloseParen": break
+                if current().type != "Identifier" {
+                    return error("Expected parameter name in trait method", current().line, current().col)
+                }
+                methodParams.push(advance().value)
+                skipNewlines()
+                if current().type == "Comma" { advance() }
+            }
+            if current().type == "CloseParen" { advance() }
+        }
+        // Optional default body
+        defaultBody = null
+        if current().type == "OpenBrace" {
+            defaultBody = parseBlock()
+        }
+        methods.push({name: methodName, params: methodParams, body: defaultBody})
+        skipNewlines()
+    }
+    if current().type == "CloseBrace" {
+        advance() // consume '}'
+    }
+    TraitDeclaration(name, methods, l, c)
+}
+
+// ===================================================================
+// STATEMENT: protocol declaration
+// prot Name { fn method(params); fn +(other) }
+// ===================================================================
+fn parseProtocolDeclaration() {
+    l = current().line
+    c = current().col
+    advance() // consume 'prot'
+    skipNewlines()
+    if current().type != "Identifier" {
+        return error("Expected protocol name after 'prot'", l, c)
+    }
+    name = advance().value
+    skipNewlines()
+    // Colon or brace body
+    isColonBody = false
+    if current().type == "Colon" {
+        isColonBody = true
+        advance() // consume ':'
+        skipNewlines()
+    } else if current().type == "OpenBrace" {
+        advance() // consume '{'
+    } else {
+        return error("Expected '{' or ':' after protocol name", l, c)
+    }
+    methods = []
+    // End condition depends on body style
+    while notEOF() {
+        if !isColonBody && current().type == "CloseBrace": break
+        if isColonBody && current().col < c + 1: break
+        skipNewlinesAndSemicolons()
+        if !isColonBody && current().type == "CloseBrace": break
+        if isColonBody && (current().type == "EOF" || current().col < c + 1): break
+        // Expect 'fn'
+        if current().type != "Fn" {
+            return error("Expected 'fn' in protocol body", current().line, current().col)
+        }
+        advance() // consume 'fn'
+        skipNewlines()
+        // Method name or operator
+        methodName = ""
+        pt = current().type
+        if pt == "Identifier" {
+            methodName = advance().value
+        } else if pt == "Plus" || pt == "Minus" || pt == "Multiply" || pt == "Divide" || pt == "Equals" || pt == "Less" || pt == "Greater" || pt == "OpenBracket" {
+            methodName = advance().value
+        } else {
+            return error("Expected method or operator name in protocol", current().line, current().col)
+        }
+        // Parameters
+        methodParams = []
+        if current().type == "OpenParen" {
+            advance() // consume '('
+            skipNewlines()
+            while current().type != "CloseParen" and notEOF() {
+                skipNewlines()
+                if current().type == "CloseParen": break
+                if current().type != "Identifier" {
+                    return error("Expected parameter name in protocol method", current().line, current().col)
+                }
+                methodParams.push(advance().value)
+                skipNewlines()
+                if current().type == "Comma" { advance() }
+            }
+            if current().type == "CloseParen" { advance() }
+        }
+        // Optional default body
+        defaultBody = null
+        if current().type == "OpenBrace" {
+            defaultBody = parseBlock()
+        }
+        methods.push({name: methodName, params: methodParams, body: defaultBody})
+        skipNewlines()
+    }
+    if !isColonBody && current().type == "CloseBrace" {
+        advance() // consume '}'
+    }
+    ProtocolDeclaration(name, methods, l, c)
+}
+
+// ===================================================================
+// STATEMENT: impl declaration
+// impl TypeName { fn method() {} }
+// impl TypeName for TraitName { fn method() {} }
+// ===================================================================
+fn parseImplDeclaration() {
+    l = current().line
+    c = current().col
+    advance() // consume 'impl'
+    skipNewlines()
+    if current().type != "Identifier" {
+        return error("Expected type name after 'impl'", l, c)
+    }
+    typeName = advance().value
+    skipNewlines()
+    // Check for 'for' clause: impl TypeName for TraitName
+    traitName = ""
+    if current().type == "Identifier" && current().value == "for" {
+        advance() // consume 'for'
+        skipNewlines()
+        if current().type != "Identifier" {
+            return error("Expected trait name after 'for'", current().line, current().col)
+        }
+        traitName = advance().value
+        skipNewlines()
+    }
+    if current().type != "OpenBrace" {
+        return error("Expected '{' after impl declaration", l, c)
+    }
+    advance() // consume '{'
+    funcs = []
+    while current().type != "CloseBrace" and notEOF() {
+        skipNewlinesAndSemicolons()
+        if current().type == "CloseBrace" || current().type == "EOF": break
+        // Each member should be a fn declaration
+        if current().type == "Fn" {
+            fnDecl = parseFnDeclaration()
+            if fnDecl != null && fnDecl.kind != "ErrorNode" {
+                funcs.push(fnDecl)
+            }
+            continue
+        }
+        // Skip unknown tokens
+        advance()
+    }
+    if current().type == "CloseBrace" {
+        advance() // consume '}'
+    }
+    ImplDeclaration(Identifier(typeName, l, c), traitName, funcs, l, c)
 }
     // ===================================================================
     // PRODUCE AST — main entry point

@@ -1,0 +1,6 @@
+use { tokenize } from "lexer"
+src = "// hello\nfn foo() { 1 }\n"
+print("length: " + str(#src))
+tokens = tokenize(src)
+print("tokens: " + str(#tokens))
+for t in tokens { print("  " + t.type + " [" + t.value + "]") }

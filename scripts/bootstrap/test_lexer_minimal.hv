@@ -1,0 +1,5 @@
+// Minimal test: does use from lexer work at all?
+use { tokenize } from "lexer"
+print("loaded lexer")
+tokens = tokenize("1 + 2")
+print("tokens: " + str(#tokens))

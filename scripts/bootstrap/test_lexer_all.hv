@@ -1,0 +1,10 @@
+use { tokenize } from "lexer"
+files = ["modules/lang/scope.hv", "modules/lang/error.hv", "modules/lang/types.hv", "modules/lang/debug.hv", "modules/lang/ast.hv", "modules/lang/lexer.hv"]
+for f in files {
+    src = fs.read(f)
+    if src == null { print("FAIL: " + f); continue }
+    t0 = time.now()
+    tokens = tokenize(src)
+    ms = time.now() - t0
+    print(f + ": " + str(#src) + " bytes -> " + str(#tokens) + " tokens in " + str(ms) + "ms")
+}

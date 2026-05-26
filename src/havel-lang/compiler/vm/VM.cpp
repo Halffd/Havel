@@ -10321,11 +10321,11 @@ return std::nullopt;
 }
 
 void VM::emitVariableChanged(const std::string& var_name) {
-  if (!event_queue_) return;
-  uint32_t var_hash = std::hash<std::string>{}(var_name);
-  Event change_event(EventType::VAR_CHANGED, var_hash);
-  change_event.ptr = const_cast<void*>(static_cast<const void*>(var_name.c_str()));
-event_queue_->push(change_event);
+    if (!event_queue_) return;
+    uint32_t var_hash = std::hash<std::string>{}(var_name);
+    Event change_event(EventType::VAR_CHANGED, var_hash);
+    change_event.ptr = new std::string(var_name);
+    event_queue_->push(change_event);
 }
 
 void VM::throwError(const std::string &msg) {

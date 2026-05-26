@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include <atomic>
 
+#include "utils/LockFreeQueue.hpp"
+
 namespace havel::compiler {
 
 /**
@@ -45,7 +47,8 @@ struct Event {
     uint32_t data1 = 0;
     uint32_t data2 = 0;
     void* ptr = nullptr;
-    
+
+    Event() : type(EventType::THREAD_COMPLETE) {}
     Event(EventType t) : type(t) {}
     Event(EventType t, uint32_t d1) : type(t), data1(d1) {}
     Event(EventType t, uint32_t d1, uint32_t d2) : type(t), data1(d1), data2(d2) {}
@@ -150,7 +153,7 @@ public:
      */
     void clear();
     size_t getEventsCount(){
-        return events_.size();
+        return events_.unsafe_size();
     }
 
     int wakeupFd() const { return wakeupFd_; }
@@ -162,11 +165,13 @@ public:
      * Should be called during application shutdown
      */
     void shutdownWorkers();
+
+    bool isShutdown() const { return shutdown_workers_.load(std::memory_order_acquire); }
     
 private:
-    std::queue<Event> events_;
-    std::unordered_map<uint8_t, EventHandler> handlers_; // EventType -> Handler
-    mutable std::mutex mutex_;
+    utils::LockFreeQueue<Event> events_;
+    std::unordered_map<uint8_t, EventHandler> handlers_;
+    mutable std::mutex handlers_mutex_;
     int wakeupFd_ = -1;
     void signalWakeup();
     

@@ -1,8 +1,11 @@
 #include "EventQueue.hpp"
 #include "../../../utils/Logger.hpp"
+#include "havel-lang/core/Value.hpp"
 #include <algorithm>
 #include <iostream>
 #include <cstring>
+#include <string>
+#include <utility>
 
 namespace havel::compiler {
 
@@ -23,10 +26,7 @@ EventQueue::~EventQueue() {
 }
 
 void EventQueue::push(const Event& event) {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        events_.push(event);
-    }
+    events_.push(event);
     signalWakeup();
 }
 
@@ -36,7 +36,6 @@ void EventQueue::push(Callback cb) {
     }
 
     {
-        std::lock_guard<std::mutex> lock(mutex_);
         auto cb_ptr = new Callback(std::move(cb));
         Event legacy_event(EventType::LEGACY_CALLBACK);
         legacy_event.ptr = cb_ptr;
@@ -65,7 +64,7 @@ void EventQueue::drainWakeup() {
 }
 
 void EventQueue::onEvent(EventType type, EventHandler handler) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> lock(handlers_mutex_);
     if (handler) {
         handlers_[static_cast<uint8_t>(type)] = handler;
     }
@@ -74,23 +73,18 @@ void EventQueue::onEvent(EventType type, EventHandler handler) {
 void EventQueue::processAll() {
     drainWakeup();
 
-    while (true) {
-        Event event(EventType::THREAD_COMPLETE);
+    std::unordered_map<uint8_t, EventHandler> local_handlers;
+    {
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        local_handlers = handlers_;
+    }
 
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (events_.empty()) {
-                break;
-            }
-            event = std::move(events_.front());
-            events_.pop();
-        }
-
+    Event event;
+    while (events_.pop(event)) {
         try {
             if (event.type == EventType::LEGACY_CALLBACK) {
                 Callback* cb = static_cast<Callback*>(event.ptr);
                 if (cb) {
-                    // Queue callback to worker thread pool instead of executing synchronously
                     {
                         std::lock_guard<std::mutex> cb_lock(callback_mutex_);
                         callback_queue_.push(*cb);
@@ -99,8 +93,8 @@ void EventQueue::processAll() {
                     delete cb;
                 }
             } else {
-                auto handler_it = handlers_.find(static_cast<uint8_t>(event.type));
-                if (handler_it != handlers_.end() && handler_it->second) {
+                auto handler_it = local_handlers.find(static_cast<uint8_t>(event.type));
+                if (handler_it != local_handlers.end() && handler_it->second) {
                     handler_it->second(event);
                 }
             }
@@ -113,30 +107,24 @@ void EventQueue::processAll() {
 }
 
 uint32_t EventQueue::size() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return static_cast<uint32_t>(events_.size());
+    return static_cast<uint32_t>(events_.unsafe_size());
 }
 
 bool EventQueue::empty() const {
-    std::lock_guard<std::mutex> lock(mutex_);
     return events_.empty();
 }
 
 void EventQueue::clear() {
-  std::queue<Event> empty;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    // Delete any LEGACY_CALLBACK payloads before discarding
-    std::queue<Event> to_clear;
-    std::swap(events_, to_clear);
-    while (!to_clear.empty()) {
-      Event ev = std::move(to_clear.front());
-      to_clear.pop();
-      if (ev.type == EventType::LEGACY_CALLBACK && ev.ptr) {
-        delete static_cast<Callback*>(ev.ptr);
-      }
+    Event ev;
+    while (events_.pop(ev)) {
+        if (ev.type == EventType::LEGACY_CALLBACK && ev.ptr) {
+            delete static_cast<Callback*>(ev.ptr);
+        } else if (ev.type == EventType::TIMER_FIRE && ev.ptr) {
+            delete static_cast<std::pair<havel::core::Value, uint32_t>*>(ev.ptr);
+        } else if (ev.type == EventType::VAR_CHANGED && ev.ptr) {
+            delete static_cast<std::string*>(ev.ptr);
+        }
     }
-  }
 }
 
 void EventQueue::initCallbackWorkers(size_t pool_size) {

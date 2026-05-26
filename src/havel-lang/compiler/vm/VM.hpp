@@ -23,6 +23,8 @@
 #include <mutex>
 #include <queue>
 
+#include "utils/RobinHoodHashMap.hpp"
+
 namespace havel::compiler {
 
 // Forward declarations
@@ -213,9 +215,9 @@ struct CallFrame {
     mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
     std::unordered_set<std::string> immutable_globals_; // val-declared globals
     std::unordered_set<uint32_t> immutable_locals_; // val-declared local indices (per-frame)
-  std::unordered_map<std::string, BytecodeHostFunction> host_functions;
+  utils::RobinHoodHashMap<std::string, BytecodeHostFunction> host_functions;
   std::vector<std::string> host_function_names_; // Index -> name mapping
-  std::unordered_map<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
+  utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
   
         // Function properties support (fn.prop = value for static state, memoization, etc.)
         std::unordered_map<uint32_t, ObjectRef> function_properties_; // function_index -> properties object
@@ -857,10 +859,10 @@ const std::vector<Value> &args);
   std::string getTypeName(const Value &value) const;
 
   // Get registered host functions (for copying to options)
-  std::unordered_map<std::string, BytecodeHostFunction> &getHostFunctions() {
+  utils::RobinHoodHashMap<std::string, BytecodeHostFunction> &getHostFunctions() {
     return host_functions;
   }
-  const std::unordered_map<std::string, BytecodeHostFunction> &
+  const utils::RobinHoodHashMap<std::string, BytecodeHostFunction> &
   getHostFunctions() const {
     return host_functions;
   }

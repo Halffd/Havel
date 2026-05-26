@@ -12,6 +12,11 @@ using havel::compiler::ObjectRef;
 
 namespace havel::stdlib {
 
+static bool isInternalKey(const std::string &key) {
+  return key == "__set_marker__" || key == "__proto__" ||
+         key == "__frozen__" || key == "__sealed__";
+}
+
 void registerObjectModule(const VMApi &api) {
     // Object.keys(obj) - Get all keys of an object
     api.registerFunction("object.keys", [api](const std::vector<Value>& args) {
@@ -21,7 +26,7 @@ void registerObjectModule(const VMApi &api) {
         auto keys = api.getObjectKeys(args[0]);
         auto result = api.makeArray();
         for (const auto& key : keys) {
-            if (key != "__set_marker__" && key != "__proto__") {
+            if (!isInternalKey(key)) {
                 api.push(result, api.makeString(key));
             }
         }
@@ -36,7 +41,7 @@ void registerObjectModule(const VMApi &api) {
         auto keys = api.getObjectKeys(args[0]);
         auto result = api.makeArray();
         for (const auto& key : keys) {
-            if (key != "__set_marker__" && key != "__proto__") {
+            if (!isInternalKey(key)) {
                 api.push(result, api.getField(args[0], key));
             }
         }
@@ -51,7 +56,7 @@ void registerObjectModule(const VMApi &api) {
         auto keys = api.getObjectKeys(args[0]);
         auto result = api.makeArray();
         for (const auto& key : keys) {
-            if (key != "__set_marker__" && key != "__proto__") {
+            if (!isInternalKey(key)) {
                 auto entry = api.makeArray();
                 api.push(entry, api.makeString(key));
                 api.push(entry, api.getField(args[0], key));
@@ -101,8 +106,38 @@ void registerObjectModule(const VMApi &api) {
         if (!args[1].isStringId() && !args[1].isStringValId()) throw std::runtime_error("Object.delete() second arg must be key string");
 
         std::string key = api.toString(args[1]);
-        return Value::makeBool(api.deleteField(args[0], key));
-    });
+    return Value::makeBool(api.deleteField(args[0], key));
+  });
+
+  // Object.freeze(obj) - Freeze object (no additions, deletions, or modifications)
+  api.registerFunction("object.freeze", [api](const std::vector<Value>& args) {
+    if (args.empty()) throw std::runtime_error("Object.freeze() requires object");
+    if (!args[0].isObjectId()) throw std::runtime_error("Object.freeze() arg must be object");
+    api.freeze(args[0]);
+    return args[0];
+  });
+
+  // Object.seal(obj) - Seal object (no additions or deletions, modifications allowed)
+  api.registerFunction("object.seal", [api](const std::vector<Value>& args) {
+    if (args.empty()) throw std::runtime_error("Object.seal() requires object");
+    if (!args[0].isObjectId()) throw std::runtime_error("Object.seal() arg must be object");
+    api.seal(args[0]);
+    return args[0];
+  });
+
+  // Object.isFrozen(obj) - Check if object is frozen
+  api.registerFunction("object.isFrozen", [api](const std::vector<Value>& args) {
+    if (args.empty()) throw std::runtime_error("Object.isFrozen() requires object");
+    if (!args[0].isObjectId()) throw std::runtime_error("Object.isFrozen() arg must be object");
+    return Value::makeBool(api.isFrozen(args[0]));
+  });
+
+  // Object.isSealed(obj) - Check if object is sealed
+  api.registerFunction("object.isSealed", [api](const std::vector<Value>& args) {
+    if (args.empty()) throw std::runtime_error("Object.isSealed() requires object");
+    if (!args[0].isObjectId()) throw std::runtime_error("Object.isSealed() arg must be object");
+    return Value::makeBool(api.isSealed(args[0]));
+  });
 
     // Object.isEmpty(obj) - Check if object has no user keys
     api.registerFunction("object.isEmpty", [api](const std::vector<Value>& args) {
@@ -111,7 +146,7 @@ void registerObjectModule(const VMApi &api) {
 
         auto keys = api.getObjectKeys(args[0]);
         for (const auto& k : keys) {
-            if (k != "__set_marker__" && k != "__proto__") return Value::makeBool(false);
+            if (!isInternalKey(k)) return Value::makeBool(false);
         }
         return Value::makeBool(true);
     });
@@ -124,7 +159,7 @@ void registerObjectModule(const VMApi &api) {
         auto keys = api.getObjectKeys(args[0]);
         int64_t count = 0;
         for (const auto& k : keys) {
-            if (k != "__set_marker__" && k != "__proto__") count++;
+            if (!isInternalKey(k)) count++;
         }
         return Value::makeInt(count);
     });
@@ -136,7 +171,7 @@ void registerObjectModule(const VMApi &api) {
         auto keys = api.getObjectKeys(args[0]);
         int64_t count = 0;
         for (const auto& k : keys) {
-            if (k != "__set_marker__" && k != "__proto__") count++;
+            if (!isInternalKey(k)) count++;
         }
         return Value::makeInt(count);
     });
@@ -149,7 +184,7 @@ void registerObjectModule(const VMApi &api) {
         auto keys = api.getObjectKeys(args[0]);
         auto result = api.makeObject();
         for (const auto& key : keys) {
-            if (key == "__set_marker__" || key == "__proto__") continue;
+            if (isInternalKey(key)) continue;
             Value val = api.getField(args[0], key);
             api.setField(result, key, api.invoke(args[1], {val, api.makeString(key)}));
         }
@@ -164,7 +199,7 @@ void registerObjectModule(const VMApi &api) {
         auto keys = api.getObjectKeys(args[0]);
         auto result = api.makeObject();
         for (const auto& key : keys) {
-            if (key == "__set_marker__" || key == "__proto__") continue;
+            if (isInternalKey(key)) continue;
             Value val = api.getField(args[0], key);
             if (api.toBool(api.invoke(args[1], {val, api.makeString(key)}))) {
                 api.setField(result, key, val);
@@ -186,6 +221,10 @@ void registerObjectModule(const VMApi &api) {
     api.registerPrototypeMethodByName("object", "filter", "object.filter");
     api.registerPrototypeMethodByName("object", "set", "object.set");
     api.registerPrototypeMethodByName("object", "delete", "object.delete");
+  api.registerPrototypeMethodByName("object", "freeze", "object.freeze");
+  api.registerPrototypeMethodByName("object", "seal", "object.seal");
+  api.registerPrototypeMethodByName("object", "isFrozen", "object.isFrozen");
+  api.registerPrototypeMethodByName("object", "isSealed", "object.isSealed");
 
     // Register global object/Object namespace object
     auto objVal = api.makeObject();
@@ -201,6 +240,10 @@ void registerObjectModule(const VMApi &api) {
     api.setField(objVal, "filter", api.makeFunctionRef("object.filter"));
     api.setField(objVal, "set", api.makeFunctionRef("object.set"));
     api.setField(objVal, "delete", api.makeFunctionRef("object.delete"));
+  api.setField(objVal, "freeze", api.makeFunctionRef("object.freeze"));
+  api.setField(objVal, "seal", api.makeFunctionRef("object.seal"));
+  api.setField(objVal, "isFrozen", api.makeFunctionRef("object.isFrozen"));
+  api.setField(objVal, "isSealed", api.makeFunctionRef("object.isSealed"));
 
   api.setGlobal("Object", objVal);
   api.setGlobal("object", objVal);

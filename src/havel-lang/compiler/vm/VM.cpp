@@ -763,13 +763,16 @@ void VM::setEventQueue(class EventQueue* eq) {
  event_queue_ = eq;
  if (eq && !timer_handler_registered_) {
  timer_handler_registered_ = true;
- eq->onEvent(EventType::TIMER_FIRE, [this](const Event& event) {
- auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
- if (!payload) return;
- bool is_timeout = (event.data1 == 1);
- pending_timer_callbacks_.push_back({payload->first, payload->second, is_timeout});
- delete payload;
- });
+    eq->onEvent(EventType::TIMER_FIRE, [this](const Event& event) {
+      auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
+      if (!payload) return;
+      bool is_timeout = (event.data1 == 1);
+      {
+        std::lock_guard<std::mutex> lk(pending_timer_mutex_);
+        pending_timer_callbacks_.push_back({payload->first, payload->second, is_timeout});
+      }
+      delete payload;
+    });
  }
 }
 
@@ -906,10 +909,14 @@ Value VM::callFunctionSync(const Value &fn,
 }
 
 void VM::executePendingTimerCallbacks() {
- if (pending_timer_callbacks_.empty()) return;
- auto callbacks = std::move(pending_timer_callbacks_);
- pending_timer_callbacks_.clear();
- for (auto& cb : callbacks) {
+  std::vector<PendingTimerCallback> callbacks;
+  {
+    std::lock_guard<std::mutex> lk(pending_timer_mutex_);
+    callbacks = std::move(pending_timer_callbacks_);
+    pending_timer_callbacks_.clear();
+  }
+  if (callbacks.empty()) return;
+  for (auto& cb : callbacks) {
  if (exit_requested_.load()) break;
  try {
  Value result = callFunctionSync(cb.closure, {});

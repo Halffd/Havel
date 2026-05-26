@@ -282,8 +282,9 @@ bool executing_in_fiber_ = false; // True when executeOneStep runs with non-null
  uint32_t timer_id;
  bool is_timeout;
  };
- std::vector<PendingTimerCallback> pending_timer_callbacks_;
- bool timer_handler_registered_ = false;
+  std::vector<PendingTimerCallback> pending_timer_callbacks_;
+  std::mutex pending_timer_mutex_;
+  bool timer_handler_registered_ = false;
  void executePendingTimerCallbacks();
 
  WatcherRegistry* watcher_registry_ = nullptr;

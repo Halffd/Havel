@@ -380,18 +380,8 @@ fn runSelfHosted(cfg) {
  em.func_idx = bc.func_count()
  safeName = sourceFile.replace("/", "_").replace(".", "_").replace("-", "_")
  mainEntry = "__init_" + safeName
- compileProgram(em, result.ast, false, sourceFile, mainEntry, true)
+ compileProgram(em, result.ast, true, sourceFile, mainEntry, true)
  if isOn("timing") { endTimer("compile") }
-
- // Check for emitter errors
- if hasErrors() {
- printAll()
- printSummary()
- return 1
- }
-
- dumpBytecode()
- 0
 }
 
 fn runTests(cfg) {

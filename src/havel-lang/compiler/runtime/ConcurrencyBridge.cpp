@@ -276,13 +276,13 @@ interval_ms = *parsed;
 Value callback = args[1];
 auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
-        auto vm_cb = [vm = vm_, callback, intervalIdPtr]() {
-            auto *eq = vm->getEventQueue();
-            if (eq && !eq->isShutdown()) {
-                auto *payload = new std::pair<Value, uint32_t>(callback, *intervalIdPtr);
-                eq->push(Event(EventType::TIMER_FIRE, 0, payload));
-            }
-        };
+  auto vm_cb = [vm = vm_, callback, intervalIdPtr]() {
+    auto *eq = vm->getEventQueue();
+    if (eq && !eq->isShutdown()) {
+      auto *payload = new std::pair<Value, uint32_t>(callback, *intervalIdPtr);
+      eq->push(Event(EventType::TIMER_FIRE, 0, payload));
+    }
+  };
 
 auto intervalObj = std::make_shared<Interval>(static_cast<int>(interval_ms), std::move(vm_cb));
 auto intervalRef = vm_->getHeap().allocateIntervalObj(intervalObj);
@@ -352,13 +352,13 @@ int ms = static_cast<int>(*parsed);
 Value callback = args[1];
 auto timeoutIdPtr = std::make_shared<uint32_t>(0);
 
-        auto vm_cb = [vm = vm_, callback, timeoutIdPtr]() {
-            auto *eq = vm->getEventQueue();
-            if (eq && !eq->isShutdown()) {
-                auto *payload = new std::pair<Value, uint32_t>(callback, *timeoutIdPtr);
-                eq->push(Event(EventType::TIMER_FIRE, 1, payload));
-            }
-        };
+  auto vm_cb = [vm = vm_, callback, timeoutIdPtr]() {
+    auto *eq = vm->getEventQueue();
+    if (eq && !eq->isShutdown()) {
+      auto *payload = new std::pair<Value, uint32_t>(callback, *timeoutIdPtr);
+      eq->push(Event(EventType::TIMER_FIRE, 1, payload));
+    }
+  };
 
 auto timeoutObj = std::make_shared<Timeout>(ms, std::move(vm_cb));
 auto timeoutRef = vm_->getHeap().allocateTimeoutObj(timeoutObj);

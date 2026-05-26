@@ -115,16 +115,16 @@ bool EventQueue::empty() const {
 }
 
 void EventQueue::clear() {
-    Event ev;
-    while (events_.pop(ev)) {
-        if (ev.type == EventType::LEGACY_CALLBACK && ev.ptr) {
-            delete static_cast<Callback*>(ev.ptr);
-        } else if (ev.type == EventType::TIMER_FIRE && ev.ptr) {
-            delete static_cast<std::pair<havel::core::Value, uint32_t>*>(ev.ptr);
-        } else if (ev.type == EventType::VAR_CHANGED && ev.ptr) {
-            delete static_cast<std::string*>(ev.ptr);
-        }
+  Event ev;
+  while (events_.pop(ev)) {
+    if (ev.type == EventType::LEGACY_CALLBACK && ev.ptr) {
+      delete static_cast<Callback*>(ev.ptr);
+    } else if (ev.type == EventType::TIMER_FIRE && ev.ptr) {
+      delete static_cast<std::pair<havel::core::Value, uint32_t>*>(ev.ptr);
+    } else if (ev.type == EventType::VAR_CHANGED && ev.ptr) {
+      delete static_cast<std::string*>(ev.ptr);
     }
+  }
 }
 
 void EventQueue::initCallbackWorkers(size_t pool_size) {

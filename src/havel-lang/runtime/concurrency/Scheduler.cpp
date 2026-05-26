@@ -435,7 +435,8 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
     case HotkeyPolicy::Drop:
         if (isPending) return g->persistent;
         break;
-    case HotkeyPolicy::Replace:
+  case HotkeyPolicy::Replace:
+    break;
     case HotkeyPolicy::Queue:
         break;
     case HotkeyPolicy::Coalesce:

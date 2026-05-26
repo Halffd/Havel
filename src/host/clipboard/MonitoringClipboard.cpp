@@ -54,7 +54,8 @@ void MonitoringClipboard::setMonitorInterval(int intervalMs) {
 
 void MonitoringClipboard::onClipboardChanged(
     const std::function<void(const std::string&)>& callback) {
-    onChangeCallback_ = callback;
+  std::lock_guard<std::mutex> lock(callback_mutex_);
+  onChangeCallback_ = callback;
 }
 
 void MonitoringClipboard::monitorLoop() {
@@ -69,32 +70,38 @@ void MonitoringClipboard::monitorLoop() {
 }
 
 void MonitoringClipboard::checkForChanges() {
+  std::string currentContent;
+
+  {
     std::lock_guard<std::mutex> lock(contentMutex_);
-    
-    // Get current clipboard content
-    std::string currentContent;
+
     if (QApplication::instance()) {
-        QClipboard* clipboard = QApplication::clipboard();
-        if (clipboard) {
-            currentContent = clipboard->text().toStdString();
-        }
+      QClipboard* clipboard = QApplication::clipboard();
+      if (clipboard) {
+        currentContent = clipboard->text().toStdString();
+      }
     }
-    
-    // Check if changed
+
     if (currentContent != lastContent_) {
-        lastContent_ = currentContent;
-        lastChangeTime_ = std::chrono::system_clock::now();
-        
-        // Add to history
-        if (!currentContent.empty()) {
-            addToHistory(currentContent);
-        }
-        
-        // Trigger callback
-        if (onChangeCallback_) {
-            onChangeCallback_(currentContent);
-        }
+      lastContent_ = currentContent;
+      lastChangeTime_ = std::chrono::system_clock::now();
+
+      if (!currentContent.empty()) {
+        addToHistory(currentContent);
+      }
+    } else {
+      return;
     }
+  }
+
+  std::function<void(const std::string&)> cb;
+  {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+    cb = onChangeCallback_;
+  }
+  if (cb) {
+    cb(currentContent);
+  }
 }
 
 } // namespace havel::host

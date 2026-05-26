@@ -74,10 +74,11 @@ private:
 
     std::atomic<bool> monitoring_{false};
     std::atomic<bool> shouldStop_{false};
-    int monitorIntervalMs_ = 500;  // Check every 500ms by default
+  std::atomic<int> monitorIntervalMs_{500};
     
     std::thread monitorThread_;
     std::function<void(const std::string&)> onChangeCallback_;
+  mutable std::mutex callback_mutex_;
     
     std::string lastContent_;
     std::chrono::system_clock::time_point lastChangeTime_;

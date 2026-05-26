@@ -78,7 +78,7 @@ uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
 }
 
 Scheduler::Goroutine* Scheduler::current() {
-	return current_;
+    return current_.load(std::memory_order_acquire);
 }
 
 Scheduler::Goroutine* Scheduler::get(uint32_t id) {
@@ -158,7 +158,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 
 	if (result) {
 		result->state = GoroutineState::Running;
-		current_ = result;
+        current_.store(result, std::memory_order_release);
         if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}", 
                       result->id, result->name, (int)result->state);
 	}
@@ -322,7 +322,7 @@ void Scheduler::yield(Goroutine* g) {
 }
 
 void Scheduler::yieldCurrentAndCheckTimers() {
-	Goroutine* g = current_;
+    Goroutine* g = current_.load(std::memory_order_acquire);
 	if (!g) return;
 	if (g->state == GoroutineState::Done) return;
 	if (g->fiber && g->fiber->state == FiberState::DONE) {
@@ -346,7 +346,7 @@ void Scheduler::yieldCurrentAndCheckTimers() {
 }
 
 void Scheduler::clearCurrent() {
-	current_ = nullptr;
+    current_.store(nullptr, std::memory_order_release);
 }
 
 void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
@@ -436,7 +436,6 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
         if (isPending) return g->persistent;
         break;
     case HotkeyPolicy::Replace:
-        break;
     case HotkeyPolicy::Queue:
         break;
     case HotkeyPolicy::Coalesce:

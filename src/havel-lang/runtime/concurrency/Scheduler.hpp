@@ -391,8 +391,8 @@ private:
   std::deque<DeferredAction> deferred_actions_;
   mutable std::mutex deferred_mutex_;
 
-  // Current goroutine (the one VM is executing)
-  Goroutine* current_ = nullptr;
+    // Current goroutine (the one VM is executing)
+    std::atomic<Goroutine*> current_{nullptr};
 
   // Thread tracking for isVMThread() check
   std::thread::id vm_thread_id_;

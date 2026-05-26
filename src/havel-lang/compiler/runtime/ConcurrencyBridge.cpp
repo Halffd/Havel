@@ -276,20 +276,13 @@ interval_ms = *parsed;
 Value callback = args[1];
 auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
-  auto vm_cb = [vm = vm_, callback, intervalIdPtr]() {
-    auto *eq = vm->getEventQueue();
-    if (eq) {
-      auto *payload = new std::pair<Value, uint32_t>(callback, *intervalIdPtr);
-      eq->push(Event(EventType::TIMER_FIRE, 0, payload));
-    } else {
-      try {
-        Value result = vm->callFunction(callback, {});
-        vm->addIntervalResult(*intervalIdPtr, result);
-      } catch (const std::exception &e) {
-        ::havel::error("[interval] Exception: {}", e.what());
-      }
-    }
-  };
+        auto vm_cb = [vm = vm_, callback, intervalIdPtr]() {
+            auto *eq = vm->getEventQueue();
+            if (eq && !eq->isShutdown()) {
+                auto *payload = new std::pair<Value, uint32_t>(callback, *intervalIdPtr);
+                eq->push(Event(EventType::TIMER_FIRE, 0, payload));
+            }
+        };
 
 auto intervalObj = std::make_shared<Interval>(static_cast<int>(interval_ms), std::move(vm_cb));
 auto intervalRef = vm_->getHeap().allocateIntervalObj(intervalObj);
@@ -359,20 +352,13 @@ int ms = static_cast<int>(*parsed);
 Value callback = args[1];
 auto timeoutIdPtr = std::make_shared<uint32_t>(0);
 
-  auto vm_cb = [vm = vm_, callback, timeoutIdPtr]() {
-    auto *eq = vm->getEventQueue();
-    if (eq) {
-      auto *payload = new std::pair<Value, uint32_t>(callback, *timeoutIdPtr);
-      eq->push(Event(EventType::TIMER_FIRE, 1, payload));
-    } else {
-      try {
-        Value result = vm->callFunction(callback, {});
-        vm->addTimeoutResult(*timeoutIdPtr, result);
-      } catch (const std::exception &e) {
-        ::havel::error("[timeout] Exception: {}", e.what());
-      }
-    }
-  };
+        auto vm_cb = [vm = vm_, callback, timeoutIdPtr]() {
+            auto *eq = vm->getEventQueue();
+            if (eq && !eq->isShutdown()) {
+                auto *payload = new std::pair<Value, uint32_t>(callback, *timeoutIdPtr);
+                eq->push(Event(EventType::TIMER_FIRE, 1, payload));
+            }
+        };
 
 auto timeoutObj = std::make_shared<Timeout>(ms, std::move(vm_cb));
 auto timeoutRef = vm_->getHeap().allocateTimeoutObj(timeoutObj);
@@ -506,6 +492,14 @@ Value ConcurrencyBridge::channelClose(const std::vector<Value> &args) {
   if (it != channels_.end()) {
     it->second->closed = true;
     it->second->cv.notify_all();
+    // Clean up closed channels with empty queues
+    for (auto ci = channels_.begin(); ci != channels_.end(); ) {
+      if (ci->second->closed && ci->second->queue.empty()) {
+        ci = channels_.erase(ci);
+      } else {
+        ++ci;
+      }
+    }
   }
 
   return Value::makeNull();
@@ -604,6 +598,7 @@ bool ConcurrencyBridge::cleanupThread(uint32_t thread_id) {
   if (info_it != thread_info_.end()) {
     info_it->second.state = ThreadState::JOINED;
   }
+  thread_info_.erase(thread_id);
 
   // Remove mailbox
   thread_mailboxes_.erase(thread_id);

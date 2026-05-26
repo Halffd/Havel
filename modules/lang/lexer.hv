@@ -404,10 +404,12 @@ fn addToken(ttype, value) {
             }
         }
     }
-    fn scanString(quote, isFString, isRegexString) {
-        advance()
+fn scanString(quote, isFString, isRegexString) {
+    _safetyCount = 0
+    _safetyCount = 0
+    advance()
 
-        s = ""
+    s = ""
         isInterpolated = false
         if isFString {
             isInterpolated = true
@@ -846,6 +848,7 @@ fn scanIdentifier() {
 
     }
 fn _scan() {
+    _iterCount = 0
     while current() != null {
         skipWhitespace()
         if current() == null { break }
@@ -1527,10 +1530,19 @@ if isAlpha(c) {
                 scanIdentifier()
                 continue
 
-            }
-            advance()
-
         }
+        advance()
+
+        _iterCount = _iterCount + 1
+        if _iterCount % 100 == 0 {
+            print("lexer at iter=" + str(_iterCount) + " pos=" + str(pos) + " char=[" + str(current()) + "] tokens=" + str(tokens.len))
+        }
+        if _iterCount > 2000 {
+            error("lexer loop limit at pos=" + str(pos) + " char=[" + str(current()) + "]")
+            break
+        }
+
+    }
         addToken("EOF", "")
         {tokens: tokens, errors: errors}
 

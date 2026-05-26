@@ -3254,6 +3254,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
       isVariadic = true;
  } else if (at().type == havel::TokenType::Identifier || at().type == havel::TokenType::Underscore) {
  pattern = makeIdentifier(advance());
+ } else if (at().type == havel::TokenType::Class || at().type == havel::TokenType::Struct ||
+ at().type == havel::TokenType::Enum || at().type == havel::TokenType::Mode ||
+ at().type == havel::TokenType::Val || at().type == havel::TokenType::On ||
+ at().type == havel::TokenType::Off || at().type == havel::TokenType::When ||
+ at().type == havel::TokenType::Timeout || at().type == havel::TokenType::Thread ||
+ at().type == havel::TokenType::Interval || at().type == havel::TokenType::Channel ||
+ at().type == havel::TokenType::Go || at().type == havel::TokenType::Repeat) {
+ pattern = makeIdentifier(advance());
+ } else if (at().type == havel::TokenType::Fn) {
+ failAt(at(), "'fn' cannot be used as a parameter name (reserved for lambda syntax)");
  } else {
  failAt(at(), "Expected identifier or '...' in parameter list");
     }

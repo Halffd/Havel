@@ -56,8 +56,9 @@ NODE_TYPES = {
   "ErrorNode": true,
   "StructDeclaration": true,
   "ClassDeclaration": true,
-  "EnumDeclaration": true,
-  "ProtocolDeclaration": true,
+ "EnumDeclaration": true,
+ "TraitDeclaration": true,
+ "ProtocolDeclaration": true,
   "ImplDeclaration": true,
   "SetLiteral": true,
 }
@@ -349,13 +350,23 @@ fn ClassDeclaration(name, parentName, fields, methods, line, col) {
 
 }
 fn EnumDeclaration(name, variants, line, col) {
-  {
-    kind: "EnumDeclaration",
-    line: line,
-    col: col,
-    name: name,
-    variants: variants
-  }
+{
+kind: "EnumDeclaration",
+line: line,
+col: col,
+name: name,
+variants: variants
+}
+
+}
+fn TraitDeclaration(name, methods, line, col) {
+{
+kind: "TraitDeclaration",
+line: line,
+col: col,
+name: name,
+methods: methods
+}
 
 }
 fn ProtocolDeclaration(name, methods, line, col) {

@@ -44,7 +44,9 @@ fn compileProgramTest(emitter, program) {
         emitter.scope = oldScope
 
     }
-    bc.func_new("__main__", 0, 32)
+    mainFuncIdx = emitter.func_idx
+ emitter.func_idx = mainFuncIdx + 1
+ bc.func_new("__main__", 0, 32)
     bc.emit("LOAD_CONST", bc.add_const(42))
     bc.emit("RETURN")
     bc.execute_persistent("__main__")

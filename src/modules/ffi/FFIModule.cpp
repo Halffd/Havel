@@ -136,17 +136,21 @@ static Value ffiCall(const compiler::VMApi& api, const std::vector<Value>& rawAr
         const Value& arg = args[havel_arg_offset + i];
         auto& pt = param_types[i];
 
-        if (pt->kind == FFITypeKind::STRING) {
-            std::string s;
-            if (arg.isPtr()) {
-                s = static_cast<const char*>(arg.asPtr());
-            } else if (arg.isStringId() || arg.isStringValId()) {
-                s = api.toString(arg);
-            }
-            auto buf = std::make_unique<char[]>(s.size() + 1);
-            std::memcpy(buf.get(), s.c_str(), s.size() + 1);
-            arg_ptrs.push_back(buf.get());
-            string_storage.push_back(std::move(buf));
+    if (pt->kind == FFITypeKind::STRING) {
+      std::string s;
+      if (arg.isPtr()) {
+        s = static_cast<const char*>(arg.asPtr());
+      } else if (arg.isStringId() || arg.isStringValId()) {
+        s = api.toString(arg);
+      }
+      auto buf = std::make_unique<char[]>(s.size() + 1);
+      std::memcpy(buf.get(), s.c_str(), s.size() + 1);
+      char* str_ptr = buf.get();
+      auto ptr_buf = std::make_unique<uint8_t[]>(sizeof(void*));
+      std::memcpy(ptr_buf.get(), &str_ptr, sizeof(void*));
+      arg_ptrs.push_back(ptr_buf.get());
+      arg_storage.push_back(std::move(ptr_buf));
+      string_storage.push_back(std::move(buf));
         } else if (pt->kind == FFITypeKind::POINTER) {
             void* p = resolvePtr(arg);
             auto buf = std::make_unique<uint8_t[]>(sizeof(void*));

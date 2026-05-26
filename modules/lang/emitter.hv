@@ -1519,8 +1519,10 @@ funcUpcounts.push(uc)
 fi = fi + 1
 }
  // Pass 2: compile __main__
+ entryFuncIdx = emitter.func_idx
+ emitter.func_idx = entryFuncIdx + 1
  bc.func_new(entryName, 0, 64)
- traceEmitter("func_new " + entryName + " (main)")
+ traceEmitter("func_new " + entryName + " (main) funcIdx=" + str(entryFuncIdx))
  emitter.scope = moduleScope
 // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
 fi2 = 0

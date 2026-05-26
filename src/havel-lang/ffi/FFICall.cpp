@@ -22,7 +22,7 @@ std::unordered_map<void*, std::string> FFICall::libraries_;
 std::mutex FFICall::callback_mutex_;
 std::unordered_map<void*, std::unique_ptr<FFICall::CallbackData>> FFICall::callbacks_;
 std::mutex FFICall::cif_mutex_;
-std::unordered_map<FFICall::CifKey, std::shared_ptr<ffi_cif>, FFICall::CifKeyHash> FFICall::cif_cache_;
+std::unordered_map<FFICall::CifKey, FFICall::CifEntry, FFICall::CifKeyHash> FFICall::cif_cache_;
 
 static ffi_type* to_ffi_type_internal(FFITypeKind kind) {
     switch (kind) {
@@ -282,7 +282,7 @@ FFICall::CifKey FFICall::make_cif_key(void* fn_ptr,
     return key;
 }
 
-std::shared_ptr<ffi_cif> FFICall::get_or_create_cif(void* fn_ptr,
+ FFICall::CifEntry FFICall::get_or_create_cif(void* fn_ptr,
                                                       const std::vector<std::shared_ptr<FFIType>>& param_types,
                                                       std::shared_ptr<FFIType> return_type,
                                                       bool variadic,
@@ -297,43 +297,47 @@ std::shared_ptr<ffi_cif> FFICall::get_or_create_cif(void* fn_ptr,
         }
     }
 
-    size_t fixed_count = param_types.size();
-    size_t total_count = variadic ? (fixed_count + variadic_types.size()) : param_types.size();
+  size_t fixed_count = param_types.size();
+  size_t total_count = variadic ? (fixed_count + variadic_types.size()) : param_types.size();
 
-    auto cif = std::make_shared<ffi_cif>();
+  auto cif = std::make_shared<ffi_cif>();
 
-    std::vector<ffi_type*> ffi_param_types(total_count);
-    for (size_t i = 0; i < fixed_count; i++) {
-        ffi_param_types[i] = to_ffi_type(param_types[i]);
+  auto arg_types_arr = std::shared_ptr<ffi_type*[]>(new ffi_type*[total_count]);
+  for (size_t i = 0; i < fixed_count; i++) {
+    arg_types_arr[i] = to_ffi_type(param_types[i]);
+  }
+  if (variadic) {
+    for (size_t i = 0; i < variadic_types.size(); i++) {
+      arg_types_arr[fixed_count + i] = to_ffi_type(variadic_types[i]);
     }
-    if (variadic) {
-        for (size_t i = 0; i < variadic_types.size(); i++) {
-            ffi_param_types[fixed_count + i] = to_ffi_type(variadic_types[i]);
-        }
-    }
+  }
 
-    ffi_type* ffi_ret = to_ffi_type(return_type);
-    ffi_status status;
+  ffi_type* ffi_ret = to_ffi_type(return_type);
+  ffi_status status;
 
-    if (variadic) {
-        status = ffi_prep_cif_var(cif.get(), FFI_DEFAULT_ABI,
-                                  static_cast<unsigned int>(fixed_count),
-                                  static_cast<unsigned int>(total_count),
-                                  ffi_ret, ffi_param_types.data());
-    } else {
-        status = ffi_prep_cif(cif.get(), FFI_DEFAULT_ABI,
-                              static_cast<unsigned int>(total_count),
-                              ffi_ret, ffi_param_types.data());
-    }
+  if (variadic) {
+    status = ffi_prep_cif_var(cif.get(), FFI_DEFAULT_ABI,
+      static_cast<unsigned int>(fixed_count),
+      static_cast<unsigned int>(total_count),
+      ffi_ret, arg_types_arr.get());
+  } else {
+    status = ffi_prep_cif(cif.get(), FFI_DEFAULT_ABI,
+      static_cast<unsigned int>(total_count),
+      ffi_ret, arg_types_arr.get());
+  }
 
-    if (status != FFI_OK) {
-        ::havel::error("FFICall: failed to prep cif: {}", static_cast<int>(status));
-        return nullptr;
-    }
+  if (status != FFI_OK) {
+    ::havel::error("FFICall: failed to prep cif: {}", static_cast<int>(status));
+    return {};
+  }
 
-    std::lock_guard<std::mutex> lock(cif_mutex_);
-    cif_cache_[key] = cif;
-    return cif;
+  CifEntry entry;
+  entry.cif = cif;
+  entry.arg_types = std::move(arg_types_arr);
+
+  std::lock_guard<std::mutex> lock(cif_mutex_);
+  auto& stored = cif_cache_[key] = std::move(entry);
+  return stored;
 }
 
 Value FFICall::call_native(void* fn_ptr,
@@ -347,15 +351,15 @@ Value FFICall::call_native(void* fn_ptr,
         return Value::makeNull();
     }
 
-    auto cif = get_or_create_cif(fn_ptr, param_types, return_type, variadic, variadic_types);
-    if (!cif) return Value::makeNull();
+  auto entry = get_or_create_cif(fn_ptr, param_types, return_type, variadic, variadic_types);
+  if (!entry.cif) return Value::makeNull();
 
-    size_t ret_size = FFITypeRegistry::size_of(return_type);
-    void* ffi_ret_ptr = alloca(ret_size > 0 ? ret_size : 1);
-    std::memset(ffi_ret_ptr, 0, ret_size > 0 ? ret_size : 1);
-    std::vector<void*> ffi_args(arg_ptrs.begin(), arg_ptrs.end());
+  size_t ret_size = FFITypeRegistry::size_of(return_type);
+  void* ffi_ret_ptr = alloca(ret_size > 0 ? ret_size : 1);
+  std::memset(ffi_ret_ptr, 0, ret_size > 0 ? ret_size : 1);
+  std::vector<void*> ffi_args(arg_ptrs.begin(), arg_ptrs.end());
 
-    ffi_call(cif.get(), reinterpret_cast<void(*)()>(fn_ptr), ffi_ret_ptr, ffi_args.data());
+  ffi_call(entry.cif.get(), reinterpret_cast<void(*)()>(fn_ptr), ffi_ret_ptr, ffi_args.data());
 
     return FFIMemory::to_havel(ffi_ret_ptr, return_type);
 }

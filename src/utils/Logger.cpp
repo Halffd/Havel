@@ -61,12 +61,17 @@ void Logger::initializeWithConfig(bool useTimestamped, int logMaxPeriod, bool co
 }
 
 void Logger::setLogFile(const std::string& filename) {
-    std::lock_guard<std::mutex> lock(mutex);
-    if (pImpl->logFile.is_open()) {
-        pImpl->logFile.close();
-    }
-    pImpl->logFile.open(filename, std::ios::app);
-    pImpl->currentFilename = filename;
+  std::lock_guard<std::mutex> lock(mutex);
+  if (pImpl->logFile.is_open()) {
+    pImpl->logFile.close();
+  }
+  pImpl->logFile.open(filename, std::ios::app);
+  pImpl->currentFilename = filename;
+  currentFileSize_ = 0;
+  if (pImpl->logFile.is_open()) {
+    pImpl->logFile.seekp(0, std::ios::end);
+    currentFileSize_ = static_cast<size_t>(pImpl->logFile.tellp());
+  }
 }
 
 void Logger::setLogLevel(Level level) {
@@ -75,8 +80,19 @@ void Logger::setLogLevel(Level level) {
 }
 
 void Logger::setColoredOutput(bool enabled) {
-    std::lock_guard<std::mutex> lock(mutex);
-    coloredOutput = enabled;
+  std::lock_guard<std::mutex> lock(mutex);
+  coloredOutput = enabled;
+}
+
+void Logger::setMaxHistorySize(size_t maxSize) {
+  std::lock_guard<std::mutex> lock(mutex);
+  maxHistorySize_ = maxSize;
+  while (history_.size() > maxHistorySize_) history_.pop_front();
+}
+
+void Logger::setMaxFileSize(size_t maxBytes) {
+  std::lock_guard<std::mutex> lock(mutex);
+  maxFileSize_ = maxBytes;
 }
 
 void Logger::debug(const std::string& message)   { log(LOG_DEBUG, message); }
@@ -102,27 +118,37 @@ void Logger::log(Level level, const std::string& message) {
         }
     }
 
-    std::string timestamp = getCurrentTimestamp();
-    std::string levelStr = getLevelString(level);
-std::string logMessage = timestamp + " [" + levelStr + "] " + message + "\n";
+  std::string timestamp = getCurrentTimestamp();
+  std::string levelStr = getLevelString(level);
+  std::string logMessage = timestamp + " [" + levelStr + "] " + message + "\n";
 
   history_.push_back(logMessage);
-  if (history_.size() > 200) history_.pop_front();
+  while (history_.size() > maxHistorySize_) history_.pop_front();
 
-  // Write to file
-    if (pImpl->logFile.is_open()) {
-        pImpl->logFile << logMessage;
-        pImpl->logFile.flush();
+  // Write to file (check size limit)
+  if (pImpl->logFile.is_open()) {
+    if (maxFileSize_ > 0 && currentFileSize_ >= maxFileSize_) {
+      pImpl->logFile.close();
+      std::string rotated = pImpl->currentFilename + ".1";
+      std::error_code ec;
+      std::filesystem::rename(pImpl->currentFilename, rotated, ec);
+      pImpl->logFile.open(pImpl->currentFilename, std::ios::app);
+      currentFileSize_ = 0;
     }
+    pImpl->logFile << logMessage;
+    currentFileSize_ += logMessage.size();
+    static size_t flushCounter = 0;
+    if (++flushCounter % 64 == 0) pImpl->logFile.flush();
+  }
 
-    // Write to console with optional coloring
-    if (consoleOutput) {
-        if (coloredOutput) {
-            std::cout << getColorCode(level) << logMessage << resetColorCode();
-        } else {
-            std::cout << logMessage;
-        }
+  // Write to console with optional coloring
+  if (consoleOutput) {
+    if (coloredOutput) {
+      std::cout << getColorCode(level) << logMessage << resetColorCode();
+    } else {
+      std::cout << logMessage;
     }
+  }
 }
 
 std::string Logger::getLevelString(Level level) {
@@ -207,10 +233,15 @@ void Logger::openNewLogFile() {
         pImpl->logFile.close();
     }
 
-    // Open new file
-    pImpl->logFile.open(fullFilePath, std::ios::app);
-    pImpl->currentFilename = fullFilePath;
-    pImpl->currentDate = currentDate;
+  // Open new file
+  pImpl->logFile.open(fullFilePath, std::ios::app);
+  pImpl->currentFilename = fullFilePath;
+  pImpl->currentDate = currentDate;
+  currentFileSize_ = 0;
+  if (pImpl->logFile.is_open()) {
+    pImpl->logFile.seekp(0, std::ios::end);
+    currentFileSize_ = static_cast<size_t>(pImpl->logFile.tellp());
+  }
 
     // Clean up old logs after opening new file
     cleanupOldLogs();

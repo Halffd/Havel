@@ -89,7 +89,11 @@ private:
     static std::unordered_map<void*, std::unique_ptr<CallbackData>> callbacks_;
     static std::mutex cif_mutex_;
 #ifdef HAVE_LIBFFI
-    static std::unordered_map<CifKey, std::shared_ptr<ffi_cif>, CifKeyHash> cif_cache_;
+  struct CifEntry {
+    std::shared_ptr<ffi_cif> cif;
+    std::shared_ptr<ffi_type*[]> arg_types;
+  };
+  static std::unordered_map<CifKey, CifEntry, CifKeyHash> cif_cache_;
 #endif
 
     static CifKey make_cif_key(void* fn_ptr,
@@ -99,7 +103,7 @@ private:
                                const std::vector<std::shared_ptr<FFIType>>& variadic_types);
 
 #ifdef HAVE_LIBFFI
-    static std::shared_ptr<ffi_cif> get_or_create_cif(void* fn_ptr,
+    static CifEntry get_or_create_cif(void* fn_ptr,
                                                        const std::vector<std::shared_ptr<FFIType>>& param_types,
                                                        std::shared_ptr<FFIType> return_type,
                                                        bool variadic,

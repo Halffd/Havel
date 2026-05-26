@@ -37,13 +37,15 @@ public:
     void setLogFile(const std::string& filename);
 	void setLogLevel(Level level);
 	Level getCurrentLevel() const { return currentLevel; }
-    void setColoredOutput(bool enabled); // Set if console output should be colored
+  void setColoredOutput(bool enabled); // Set if console output should be colored
+  void setMaxHistorySize(size_t maxSize); // Set max in-memory history entries
+  void setMaxFileSize(size_t maxBytes); // Set max log file size before rotation
 
-    // Get current log file path
-    std::string getLogFilePath() const;
+  // Get current log file path
+  std::string getLogFilePath() const;
 
-    // Get log history (last N entries from current log file)
-    std::vector<std::string> getHistory(size_t maxLines = 100) const;
+  // Get log history (last N entries from current log file)
+  std::vector<std::string> getHistory(size_t maxLines = 100) const;
 
   void debug(const std::string& message);
   void info(const std::string& message);
@@ -164,15 +166,18 @@ private:
     void cleanupOldLogs();
     void openNewLogFile();
 
-struct Impl;
+  struct Impl;
   std::unique_ptr<Impl> pImpl;
   mutable std::deque<std::string> history_;
   mutable std::mutex mutex;
-    Level currentLevel;
-    bool consoleOutput;
-    bool useTimestampedFiles = true;
-    int logMaxPeriod = 3; // Maximum days to keep logs
-    bool coloredOutput = true;
+  Level currentLevel;
+  bool consoleOutput;
+  bool useTimestampedFiles = true;
+  int logMaxPeriod = 3;
+  bool coloredOutput = true;
+  size_t maxHistorySize_ = 200;
+  size_t maxFileSize_ = 10 * 1024 * 1024; // 10 MB default
+  size_t currentFileSize_ = 0;
 
     // Color codes
     std::unordered_map<Level, std::string> colorCodes = {

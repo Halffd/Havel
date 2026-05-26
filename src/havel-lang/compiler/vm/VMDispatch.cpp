@@ -4,6 +4,16 @@
 #include "../../utils/ErrorPrinter.hpp"
 #include "../runtime/HostBridge.hpp"
 #include "../runtime/RuntimeSupport.hpp"
+#include "../../runtime/concurrency/DependencyTracker.hpp"
+#include "../../runtime/concurrency/WatcherRegistry.hpp"
+#include "../../runtime/concurrency/Fiber.hpp"
+#include "../prototypes/PrototypeRegistry.hpp"
+#include "core/config/ConfigManager.hpp"
+
+#include <cmath>
+#include <iostream>
+#include <set>
+#include <sstream>
 
 namespace havel::compiler {
 

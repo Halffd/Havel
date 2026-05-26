@@ -1,6 +1,8 @@
 #include "VM.hpp"
 #include "VMInternals.hpp"
 #include "../../../utils/Logger.hpp"
+#include "../../runtime/concurrency/Thread.hpp"
+#include "../../runtime/concurrency/Fiber.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "../runtime/HostBridge.hpp"
 

@@ -407,7 +407,7 @@ bool prototypes_registered_ = false;
   bool valuesEqualDeep(const Value &left, const Value &right,
                        std::unordered_set<uint64_t> &visited_array_pairs,
                        std::unordered_set<uint64_t> &visited_object_pairs) const;
-  std::string formatErrorWithContext(const std::string &message) const;
+
 
   std::vector<Value> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;
@@ -776,12 +776,12 @@ public:
  Value execLengthOpPublic(Value v) { return execLengthOp(v); }
   Value getHostArrayValue(ArrayRef array_ref, size_t index);
   void setHostArrayValue(ArrayRef array_ref, size_t index, Value value);
-  Value popHostArrayValue(ArrayRef array_ref);
-  void insertHostArrayValue(ArrayRef array_ref, size_t index,
-                            Value value);
-  Value removeHostArrayValue(ArrayRef array_ref, size_t index);
+    Value popHostArrayValue(ArrayRef array_ref);
+    void insertHostArrayValue(ArrayRef array_ref, size_t index,
+                              Value value);
+    Value removeHostArrayValue(ArrayRef array_ref, size_t index);
 
-  // Range helpers
+    // Range helpers
   bool isInRange(RangeRef range_ref, int64_t value);
 
   // Enum helpers
@@ -797,11 +797,11 @@ public:
   std::string getEnumVariantName(uint32_t typeId, uint32_t tag) const;
   uint32_t getEnumTypeVariantCount(uint32_t typeId) const;
 
-  // Membership helpers
-  bool arrayContains(ArrayRef array_ref, const Value &value);
-  bool objectHasKey(ObjectRef object_ref, const std::string &key);
+    // Membership helpers
+    bool arrayContains(ArrayRef array_ref, const Value &value);
+    bool objectHasKey(ObjectRef object_ref, const std::string &key);
 
-  // Iterator helpers
+    // Iterator helpers
   IteratorRef createIterator(const Value &iterable);
   Value iteratorNext(IteratorRef iterRef);
 
@@ -812,11 +812,11 @@ public:
   bool hasHostObjectField(ObjectRef object_ref, const std::string &key);
   Value getHostObjectField(ObjectRef object_ref,
                                    const std::string &key);
-  bool deleteHostObjectField(ObjectRef object_ref, const std::string &key);
-  void setHostObjectFrozen(ObjectRef object_ref, bool frozen);
-  void setHostObjectSealed(ObjectRef object_ref, bool sealed);
+    bool deleteHostObjectField(ObjectRef object_ref, const std::string &key);
+    void setHostObjectFrozen(ObjectRef object_ref, bool frozen);
+    void setHostObjectSealed(ObjectRef object_ref, bool sealed);
 
-  // Function calling
+    // Function calling
   Value callHostFunction(const Value &fn,
                                  const std::vector<Value> &args);
 

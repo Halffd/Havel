@@ -82,14 +82,19 @@ size_t VM::getRuntimeStringLength(StringRef string_ref) {
   return str ? str->length() : 0;
 }
 
-void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
-                            Value value) {
-  auto *object = heap_.object(object_ref.id);
-  if (!object) {
-    COMPILER_THROW("setHostObjectField unknown object id");
+  void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
+                              Value value) {
+    auto *object = heap_.object(object_ref.id);
+    if (!object) {
+      COMPILER_THROW("setHostObjectField unknown object id");
+    }
+    if (key != "__frozen__" && key != "__sealed__") {
+      auto it = object->find("__frozen__");
+      if (it != object->end() && it->second.isBool() && it->second.asBool())
+        COMPILER_THROW("cannot set field on frozen object");
+    }
+    (*object)[key] = std::move(value);
   }
-  (*object)[key] = std::move(value);
-}
 
 void VM::pushHostArrayValue(ArrayRef array_ref, Value value) {
   auto *array = heap_.array(array_ref.id);
@@ -174,27 +179,27 @@ Value VM::popHostArrayValue(ArrayRef array_ref) {
     return Value::makeNull();
   auto value = std::move(array->back());
   array->pop_back();
-  return value;
-}
+    return value;
+  }
 
-void VM::insertHostArrayValue(ArrayRef array_ref, size_t index,
-                              Value value) {
-  auto *array = heap_.array(array_ref.id);
-  if (!array)
-    return;
-  if (index > array->size())
-    index = array->size();
-  array->insert(array->begin() + index, std::move(value));
-}
+  void VM::insertHostArrayValue(ArrayRef array_ref, size_t index,
+                                Value value) {
+    auto *array = heap_.array(array_ref.id);
+    if (!array)
+      return;
+    if (index > array->size())
+      index = array->size();
+    array->insert(array->begin() + index, std::move(value));
+  }
 
-Value VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
-  auto *array = heap_.array(array_ref.id);
-  if (!array || index >= array->size())
-    return Value::makeNull();
-  auto value = std::move((*array)[index]);
-  array->erase(array->begin() + index);
-  return value;
-}
+  Value VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
+    auto *array = heap_.array(array_ref.id);
+    if (!array || index >= array->size())
+      return Value::makeNull();
+    auto value = std::move((*array)[index]);
+    array->erase(array->begin() + index);
+    return value;
+  }
 
 // Range helpers
 bool VM::isInRange(RangeRef range_ref, int64_t value) {
@@ -278,17 +283,17 @@ bool VM::arrayContains(ArrayRef array_ref, const Value &value) {
       return true;
     }
   }
-  return false;
-}
-
-bool VM::objectHasKey(ObjectRef object_ref, const std::string &key) {
-  auto *object = heap_.object(object_ref.id);
-  if (!object)
     return false;
-  return object->find(key) != object->end();
-}
+  }
 
-// Iterator helpers
+  bool VM::objectHasKey(ObjectRef object_ref, const std::string &key) {
+    auto *object = heap_.object(object_ref.id);
+    if (!object)
+      return false;
+    return object->find(key) != object->end();
+  }
+
+  // Iterator helpers
 IteratorRef VM::createIterator(const Value &iterable) {
     IteratorRef ref;
 
@@ -420,22 +425,52 @@ Value VM::getHostObjectField(ObjectRef object_ref,
 	return Value::makeNull();
 }
 
-bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string &key) {
-  auto *object = heap_.object(object_ref.id);
-  if (!object)
-    return false;
-  return object->erase(key) > 0;
-}
+  bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string &key) {
+    auto *object = heap_.object(object_ref.id);
+    if (!object)
+      return false;
+    if (key == "__frozen__" || key == "__sealed__")
+      return false;
+    {
+      auto it = object->find("__frozen__");
+      if (it != object->end() && it->second.isBool() && it->second.asBool())
+        return false;
+    }
+    {
+      auto it = object->find("__sealed__");
+      if (it != object->end() && it->second.isBool() && it->second.asBool()) {
+        if (object->find(key) != object->end())
+          return false;
+      }
+    }
+    return object->erase(key) > 0;
+  }
 
-void VM::setHostObjectFrozen(ObjectRef, bool) {
-  // TODO: Implement object freezing
-}
+  void VM::setHostObjectFrozen(ObjectRef object_ref, bool frozen) {
+    auto *object = heap_.object(object_ref.id);
+    if (!object)
+      return;
+    if (frozen) {
+      (*object)["__frozen__"] = Value::makeBool(true);
+      (*object)["__sealed__"] = Value::makeBool(true);
+    } else {
+      object->erase("__frozen__");
+      object->erase("__sealed__");
+    }
+  }
 
-void VM::setHostObjectSealed(ObjectRef, bool) {
-  // TODO: Implement object sealing
-}
+  void VM::setHostObjectSealed(ObjectRef object_ref, bool sealed) {
+    auto *object = heap_.object(object_ref.id);
+    if (!object)
+      return;
+    if (sealed) {
+      (*object)["__sealed__"] = Value::makeBool(true);
+    } else {
+      object->erase("__sealed__");
+    }
+  }
 
-// Function calling
+  // Function calling
 Value VM::callHostFunction(const Value &fn,
                                     const std::vector<Value> &args) {
   if (fn.isHostFuncId()) {

@@ -508,25 +508,6 @@ std::optional<std::string> VM::resolveKey(const Value &value) const {
     const BytecodeChunk* chunk = cf.chunk ? cf.chunk : current_chunk;
     return ::havel::compiler::keyFromValue(value, &heap_, chunk);
 }
-std::string VM::formatErrorWithContext(const std::string &message) const {
-  if (frame_count_ == 0 || !frame_arena_[frame_count_ - 1].function) {
-    return "\033[1;31merror\033[0m: " + message + "\n";
-  }
-
-  const auto &frame = frame_arena_[frame_count_ - 1];
-  const auto *function = frame.function;
-
-  if (frame.ip >= function->instruction_locations.size()) {
-    return "\033[1;31merror\033[0m: " + message + "\n";
-  }
-
-  const auto &loc = function->instruction_locations[frame.ip];
-  if (loc.line == 0) {
-    return "\033[1;31merror\033[0m: " + message + "\n";
-  }
-
-  return ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", message, loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
-}
 // Value utility functions
 bool VM::isNull(const Value &value) const {
   return value.isNull();

@@ -38,6 +38,7 @@
 #endif
 #include "core/process/Launcher.hpp"
 #include "host/process/ProcessService.hpp"
+#include "utils/SafeExec.hpp"
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -653,31 +654,21 @@ void registerSysModule(const VMApi &api) {
   // ========================================================================
   // process.find — find PIDs by name
   // ========================================================================
-  api.registerFunction("process.find", [api](const std::vector<Value>& args) {
+api.registerFunction("process.find", [api](const std::vector<Value>& args) {
     if (args.empty())
-      throw std::runtime_error("process.find() requires a process name");
+        throw std::runtime_error("process.find() requires a process name");
     std::string name = api.resolveString(args[0]);
 #ifndef _WIN32
+    auto pids = havel::utils::findProcessesByName(name);
     auto arr = api.makeArray();
-    FILE* pipe = popen(("pgrep -x " + name + " 2>/dev/null || pgrep " + name + " 2>/dev/null").c_str(), "r");
-    if (pipe) {
-      char buf[128];
-      while (fgets(buf, sizeof(buf), pipe)) {
-        std::string line = trim(buf);
-        if (!line.empty()) {
-          try {
-            int64_t pid = std::stoll(line);
-            api.push(arr, Value::makeInt(pid));
-          } catch (...) {}
-        }
-      }
-      pclose(pipe);
+    for (pid_t pid : pids) {
+        api.push(arr, Value::makeInt(static_cast<int64_t>(pid)));
     }
     return arr;
 #else
     return api.makeArray();
 #endif
-  });
+});
 
   // ========================================================================
   // process.exists — check if process is running (by name or PID)
@@ -691,8 +682,7 @@ void registerSysModule(const VMApi &api) {
       return Value::makeBool(kill(pid, 0) == 0);
     }
     std::string name = api.resolveString(args[0]);
-    std::string result = runCmd(("pgrep -x " + name + " 2>/dev/null || pgrep " + name + " 2>/dev/null").c_str());
-    return Value::makeBool(!result.empty());
+    return Value::makeBool(havel::utils::processExistsByName(name));
 #else
     return Value::makeBool(false);
 #endif

@@ -1,6 +1,7 @@
 #include "Launcher.hpp"
 #include "core/util/Env.hpp"
 #include "utils/Logger.hpp"
+#include "utils/SafeExec.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -294,12 +295,6 @@ DWORD Launcher::getWindowsPriorityClass(Priority priority) {
 ProcessResult Launcher::executeUnix(const std::string &executable,
                                     const std::vector<std::string> &args,
                                     const LaunchParams &params) {
-  // Resolve the executable path and working directory
-  std::string resolvedExe = resolveExecutable(executable);
-  std::string workingDir = params.workingDir.empty()
-                               ? Env::current()
-                               : Env::expand(params.workingDir);
-
   // Create pipes for output capture when not detaching
   int pipe_stdout[2] = {-1, -1};
   int pipe_stderr[2] = {-1, -1};
@@ -967,20 +962,10 @@ std::vector<int64_t> Launcher::findByName(const std::string &name) {
 
   CloseHandle(hSnapshot);
 #else
-  // Simple implementation using pgrep
-  std::string command = "pgrep " + escapeArgument(name);
-  FILE *pipe = popen(command.c_str(), "r");
-  if (!pipe)
-    return pids;
-
-  char buffer[128];
-  while (fgets(buffer, sizeof(buffer), pipe)) {
-    int64_t pid = std::stoll(buffer);
-    if (pid > 0)
-      pids.push_back(pid);
-  }
-
-  pclose(pipe);
+        auto found = havel::utils::findProcessesByName(name);
+        for (pid_t pid : found) {
+            pids.push_back(static_cast<int64_t>(pid));
+        }
 #endif
 
   return pids;
@@ -1008,36 +993,32 @@ std::string Launcher::getLastError() {
 }
 
 std::string Launcher::escapeArgument(const std::string &arg) {
-  if (arg.find(' ') == std::string::npos &&
-      arg.find('\t') == std::string::npos &&
-      arg.find('"') == std::string::npos) {
-    return arg;
-  }
+    if (arg.empty()) return "''";
 
 #ifdef _WIN32
-  std::string escaped = "\"";
-  for (size_t i = 0; i < arg.length(); ++i) {
-    if (arg[i] == '"') {
-      escaped += "\\\"";
-    } else if (arg[i] == '\\' && i + 1 < arg.length() && arg[i + 1] == '"') {
-      escaped += "\\\\";
-    } else {
-      escaped += arg[i];
+    std::string escaped = "\"";
+    for (size_t i = 0; i < arg.length(); ++i) {
+        if (arg[i] == '"') {
+            escaped += "\\\"";
+        } else if (arg[i] == '\\' && i + 1 < arg.length() && arg[i + 1] == '"') {
+            escaped += "\\\\";
+        } else {
+            escaped += arg[i];
+        }
     }
-  }
-  escaped += "\"";
-  return escaped;
+    escaped += "\"";
+    return escaped;
 #else
-  std::string escaped = "'";
-  for (char c : arg) {
-    if (c == '\'') {
-      escaped += "'\"'\"'";
-    } else {
-      escaped += c;
+    std::string escaped = "'";
+    for (char c : arg) {
+        if (c == '\'') {
+            escaped += "'\"'\"'";
+        } else {
+            escaped += c;
+        }
     }
-  }
-  escaped += "'";
-  return escaped;
+    escaped += "'";
+    return escaped;
 #endif
 }
 std::string Launcher::expandPath(const std::string &path) {

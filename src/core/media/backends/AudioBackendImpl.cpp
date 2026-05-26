@@ -7,6 +7,7 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include "utils/SafeExec.hpp"
 
 namespace havel {
 
@@ -629,12 +630,14 @@ bool AudioBackendImpl::playTestSound() {
 
 bool AudioBackendImpl::playSound(const std::string &soundFile) {
 #ifdef __linux__
-  return system(("paplay " + soundFile + " 2>/dev/null").c_str()) == 0 ||
-         system(("aplay " + soundFile + " 2>/dev/null").c_str()) == 0;
+    auto r1 = havel::utils::execSync({"paplay", soundFile});
+    if (r1 && r1->exitCode == 0) return true;
+    auto r2 = havel::utils::execSync({"aplay", soundFile});
+    return r2 && r2->exitCode == 0;
 #elif _WIN32
-  return system(("powershell -c \"(New-Object Media.SoundPlayer '" + soundFile + "').PlaySync()\" 2>nul").c_str()) == 0;
+    return false;
 #else
-  return false;
+    return false;
 #endif
 }
 

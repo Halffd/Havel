@@ -11,6 +11,7 @@
 #include <sstream>
 #include <pwd.h>
 #include <limits.h>
+#include "utils/SafeExec.hpp"
 #ifdef __linux__
 #include <sys/sysinfo.h>
 #endif
@@ -26,8 +27,8 @@ struct AppService::Impl {
 
   std::string get_app_dir() const {
     char result[PATH_MAX];
-    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
-    if (count != -1) {
+    ssize_t count = readlink("/proc/self/exe", result, sizeof(result) - 1);
+    if (count > 0) {
       result[count] = '\0';
       std::string path(result);
       // Return directory part
@@ -169,41 +170,26 @@ std::vector<std::string> AppService::getEnvVars() const {
 }
 
 bool AppService::openUrl(const std::string &url) {
-  // Use xdg-open on Linux
-  std::string cmd = "xdg-open '" + url + "' 2>/dev/null &";
-  return system(cmd.c_str()) == 0;
+    return havel::utils::execDetached({"xdg-open", url});
 }
 
 bool AppService::openFile(const std::string &path) {
-  std::string cmd = "xdg-open '" + path + "' 2>/dev/null &";
-  return system(cmd.c_str()) == 0;
+    return havel::utils::execDetached({"xdg-open", path});
 }
 
 bool AppService::showInFolder(const std::string &path) {
-  std::string cmd = "xdg-open '" + path + "' 2>/dev/null &";
-  return system(cmd.c_str()) == 0;
+    return havel::utils::execDetached({"xdg-open", path});
 }
 
 bool AppService::copyToClipboard(const std::string &text) {
-  // Use xclip or xsel
-  std::string cmd = "echo '" + text + "' | xclip -selection clipboard 2>/dev/null";
-  return system(cmd.c_str()) == 0;
+    auto result = havel::utils::execSync({"xclip", "-selection", "clipboard"});
+    if (!result) return false;
+    return result->exitCode == 0;
 }
 
 std::string AppService::getClipboardText() const {
-  // Use xclip to get clipboard content
-  std::string cmd = "xclip -selection clipboard -o 2>/dev/null";
-  std::array<char, 128> buffer;
-  std::string result;
-  FILE *pipe = popen(cmd.c_str(), "r");
-  if (!pipe) {
-    return "";
-  }
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-    result += buffer.data();
-  }
-  pclose(pipe);
-  return result;
+    auto output = havel::utils::execCapture({"xclip", "-selection", "clipboard", "-o"});
+    return output.value_or("");
 }
 
 } // namespace havel::host

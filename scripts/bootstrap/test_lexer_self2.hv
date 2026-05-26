@@ -1,0 +1,6 @@
+use { tokenize } from "lexer"
+print("loaded lexer")
+src = fs.read("modules/lang/lexer.hv")
+print("source length: " + str(#src))
+tokens = tokenize(src)
+print("token count: " + str(#tokens))

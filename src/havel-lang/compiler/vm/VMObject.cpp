@@ -82,19 +82,19 @@ size_t VM::getRuntimeStringLength(StringRef string_ref) {
   return str ? str->length() : 0;
 }
 
-  void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
-                              Value value) {
-    auto *object = heap_.object(object_ref.id);
-    if (!object) {
-      COMPILER_THROW("setHostObjectField unknown object id");
-    }
-    if (key != "__frozen__" && key != "__sealed__") {
-      auto it = object->find("__frozen__");
-      if (it != object->end() && it->second.isBool() && it->second.asBool())
-        COMPILER_THROW("cannot set field on frozen object");
-    }
-    (*object)[key] = std::move(value);
-  }
+ void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
+ Value value) {
+ auto *object = heap_.object(object_ref.id);
+ if (!object) {
+ COMPILER_THROW("setHostObjectField unknown object id");
+ }
+ if (key != "__frozen__" && key != "__sealed__") {
+ auto it = object->find("__frozen__");
+ if (it != object->end() && it->second.isBool() && it->second.asBool())
+ COMPILER_THROW("cannot set field on frozen object");
+ }
+ (*object)[key] = std::move(value);
+ }
 
 void VM::pushHostArrayValue(ArrayRef array_ref, Value value) {
   auto *array = heap_.array(array_ref.id);
@@ -179,29 +179,29 @@ Value VM::popHostArrayValue(ArrayRef array_ref) {
     return Value::makeNull();
   auto value = std::move(array->back());
   array->pop_back();
-    return value;
+  return value;
   }
 
   void VM::insertHostArrayValue(ArrayRef array_ref, size_t index,
-                                Value value) {
-    auto *array = heap_.array(array_ref.id);
-    if (!array)
-      return;
-    if (index > array->size())
-      index = array->size();
-    array->insert(array->begin() + index, std::move(value));
+  Value value) {
+  auto *array = heap_.array(array_ref.id);
+  if (!array)
+  return;
+  if (index > array->size())
+  index = array->size();
+  array->insert(array->begin() + index, std::move(value));
   }
 
   Value VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
-    auto *array = heap_.array(array_ref.id);
-    if (!array || index >= array->size())
-      return Value::makeNull();
-    auto value = std::move((*array)[index]);
-    array->erase(array->begin() + index);
-    return value;
+  auto *array = heap_.array(array_ref.id);
+  if (!array || index >= array->size())
+  return Value::makeNull();
+  auto value = std::move((*array)[index]);
+  array->erase(array->begin() + index);
+  return value;
   }
 
-// Range helpers
+  // Range helpers
 bool VM::isInRange(RangeRef range_ref, int64_t value) {
   auto *r = heap_.range(range_ref.id);
   if (!r)

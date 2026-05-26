@@ -508,6 +508,7 @@ std::optional<std::string> VM::resolveKey(const Value &value) const {
     const BytecodeChunk* chunk = cf.chunk ? cf.chunk : current_chunk;
     return ::havel::compiler::keyFromValue(value, &heap_, chunk);
 }
+
 // Value utility functions
 bool VM::isNull(const Value &value) const {
   return value.isNull();

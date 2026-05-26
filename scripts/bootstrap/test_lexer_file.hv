@@ -1,0 +1,6 @@
+use { tokenize } from "lexer"
+src = fs.read("modules/lang/scope.hv")
+if src == null { print("FAIL: could not read file"); exit(1) }
+print("source length: " + str(#src))
+tokens = tokenize(src)
+print("token count: " + str(#tokens))

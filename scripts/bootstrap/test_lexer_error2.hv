@@ -1,0 +1,6 @@
+use { tokenize } from "lexer"
+src = fs.read("modules/lang/error.hv")
+if src == null { print("FAIL: read error"); exit(1) }
+print("read " + str(#src) + " bytes")
+tokens = tokenize(src)
+print("tokens: " + str(#tokens))

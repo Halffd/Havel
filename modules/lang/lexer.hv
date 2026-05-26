@@ -275,6 +275,42 @@ fn isWhitespace(c) {
     c == " " or c == "\t" or c == "\r"
 
 }
+fn isUnicodeLetter(cp) {
+    if cp < 0x80: return false
+    if cp >= 0x00C0 and cp <= 0x00D6: return true
+    if cp >= 0x00D8 and cp <= 0x00F6: return true
+    if cp >= 0x00F8 and cp <= 0x00FF: return true
+    if cp >= 0x0100 and cp <= 0x017F: return true
+    if cp >= 0x0180 and cp <= 0x024F: return true
+    if cp >= 0x0400 and cp <= 0x04FF: return true
+    if cp >= 0x0600 and cp <= 0x06FF: return true
+    if cp >= 0x0900 and cp <= 0x097F: return true
+    if cp >= 0xAC00 and cp <= 0xD7AF: return true
+    if cp >= 0x4E00 and cp <= 0x9FFF: return true
+    if cp >= 0x3040 and cp <= 0x309F: return true
+    if cp >= 0x30A0 and cp <= 0x30FF: return true
+    false
+
+}
+fn isUnicodeDigit(cp) {
+    if cp < 0x80: return false
+    if cp >= 0x0660 and cp <= 0x0669: return true
+    if cp >= 0xFF10 and cp <= 0xFF19: return true
+    false
+
+}
+fn isNonAscii(c) {
+    cp = ord(c)
+    cp != null and cp >= 0x80
+
+}
+fn isUnicodeIdentifierChar(c) {
+    cp = ord(c)
+    if cp == null: return false
+    if cp < 0x80: return isAlphaNum(c)
+    isUnicodeLetter(cp) or isUnicodeDigit(cp)
+
+}
 fn Lexer(source) {
     // Copy module-scope vars into locals so nested closures can see them
     keywords = KEYWORDS
@@ -290,17 +326,16 @@ fn Lexer(source) {
     inBitwiseExpr = false
     parenDepth = 0
 
-    fn peek(offset) {
-        i = pos + offset
-        if i < src.len: src.sub(i, 1)
-        else: null
+fn peek(offset) {
+    i = pos + offset
+    if i >= 0: src[i]
+    else: null
 
-    }
-    fn current() {
-        if pos < src.len: src.sub(pos, 1)
-        else: null
+}
+fn current() {
+    src[pos]
 
-    }
+}
     fn advance() {
         c = current()
         if c != null {
@@ -491,8 +526,8 @@ fn addToken(ttype, value) {
         s = ""
         isInterpolated = isFString
 
-        while pos < src.len {
-            if current() == quote and peek(1) == quote and peek(2) == quote {
+while current() != null {
+        if current() == quote and peek(1) == quote and peek(2) == quote {
                 advance()
                 advance()
                 advance()
@@ -575,8 +610,8 @@ fn addToken(ttype, value) {
         s = ""
         isInterpolated = false
 
-        while pos < src.len {
-            if isTriple {
+while current() != null {
+    if isTriple {
                 if current() == "`" and peek(1) == "`" and peek(2) == "`" {
                     advance()
                     advance()
@@ -738,25 +773,25 @@ fn addToken(ttype, value) {
         addToken("Number", s)
 
     }
-    fn scanIdentifier() {
-        s = ""
-        while current() != null and isAlphaNum(current()) {
-            s = s + current()
-            advance()
+fn scanIdentifier() {
+    s = ""
+    while current() != null and isUnicodeIdentifierChar(current()) {
+        s = s + current()
+        advance()
 
-        }
-        if keywords.has(s) {
-            addToken(keywords[s], s)
-        }
-        else {
-            addToken("Identifier", s)
-
-        }
     }
+    if keywords.has(s) {
+        addToken(keywords[s], s)
+    }
+    else {
+        addToken("Identifier", s)
+
+    }
+}
     fn scanRegexLiteral() {
         advance()
         s = ""
-        while pos < src.len and current() != "/" {
+        while current() != null and current() != "/" {
             if current() == "\\" {
                 s = s + current()
                 advance()
@@ -811,12 +846,10 @@ fn addToken(ttype, value) {
 
     }
 fn _scan() {
- while pos < src.len {
-  skipWhitespace()
-  if pos >= src.len {
-   break
-  }
-  tokenStartCol = col
+    while current() != null {
+        skipWhitespace()
+        if current() == null { break }
+        tokenStartCol = col
   c = current()
 
             if c == "\n" {
@@ -879,11 +912,21 @@ fn _scan() {
                 continue
 
             }
-            if isAlpha(c) {
-                scanIdentifier()
-                continue
+if isAlpha(c) {
+        scanIdentifier()
+        continue
 
-            }
+    }
+    if isNonAscii(c) {
+        cp = ord(c)
+        if cp != null and isUnicodeLetter(cp) {
+            scanIdentifier()
+            continue
+        }
+        advance()
+        continue
+
+    }
             if c == "$" {
                 advance()
                 if current() == "!" {

@@ -1,0 +1,5 @@
+use { tokenize } from "lexer"
+src = fs.read("modules/lang/scope.hv")
+print("scope.hv length: " + str(#src))
+tokens = tokenize(src)
+print("scope.hv tokens: " + str(#tokens))

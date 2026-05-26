@@ -122,9 +122,9 @@ uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vec
 }
 
 uint32_t VM::createPersistentHotkeyCallback(CallbackId id, FiberPriority priority,
-                                              const std::vector<Value> &args,
-                                              HotkeyPolicy policy,
-                                              const std::string &alias) {
+const std::vector<Value> &args,
+HotkeyPolicy policy,
+const std::string &alias) {
     if (!scheduler_) {
         ::havel::warn("[VM] createPersistentHotkeyCallback: No scheduler available");
         return 0;
@@ -162,8 +162,8 @@ uint32_t VM::createPersistentHotkeyCallback(CallbackId id, FiberPriority priorit
         g->hotkey_function_id = function_index;
         g->hotkey_closure_id = closure_id;
         g->hotkey_args = args;
-        g->hotkey_policy = policy;
-        g->hotkey_alias = alias;
+  g->hotkey_policy = policy;
+  g->hotkey_alias = alias;
         // Park immediately: set Suspended so pickNext skips it until first trigger
         g->state = Scheduler::GoroutineState::Suspended;
         g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
@@ -433,43 +433,43 @@ VMImage VM::createImageFromRGBA(int width, int height,
 }
 
 void VM::setEventQueue(class EventQueue* eq) {
-    event_queue_ = eq;
-    if (eq && !timer_handler_registered_) {
-        timer_handler_registered_ = true;
-        eq->onEvent(EventType::TIMER_FIRE, [this](const Event& event) {
-            auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
-            if (!payload) return;
-            bool is_timeout = (event.data1 == 1);
-            {
-                std::lock_guard<std::mutex> lk(pending_timer_mutex_);
-                pending_timer_callbacks_.push_back({payload->first, payload->second, is_timeout});
-            }
-            delete payload;
-        });
-    }
+  event_queue_ = eq;
+  if (eq && !timer_handler_registered_) {
+    timer_handler_registered_ = true;
+    eq->onEvent(EventType::TIMER_FIRE, [this](const Event& event) {
+      auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
+      if (!payload) return;
+      bool is_timeout = (event.data1 == 1);
+      {
+        std::lock_guard<std::mutex> lk(pending_timer_mutex_);
+        pending_timer_callbacks_.push_back({payload->first, payload->second, is_timeout});
+      }
+      delete payload;
+    });
+  }
 }
 
 void VM::executePendingTimerCallbacks() {
-    std::vector<PendingTimerCallback> callbacks;
-    {
-        std::lock_guard<std::mutex> lk(pending_timer_mutex_);
-        callbacks = std::move(pending_timer_callbacks_);
-        pending_timer_callbacks_.clear();
+  std::vector<PendingTimerCallback> callbacks;
+  {
+    std::lock_guard<std::mutex> lk(pending_timer_mutex_);
+    callbacks = std::move(pending_timer_callbacks_);
+    pending_timer_callbacks_.clear();
+  }
+  if (callbacks.empty()) return;
+  for (auto& cb : callbacks) {
+    if (exit_requested_.load()) break;
+    try {
+      Value result = callFunctionSync(cb.closure, {});
+      if (cb.is_timeout) {
+        addTimeoutResult(cb.timer_id, result);
+      } else {
+        addIntervalResult(cb.timer_id, result);
+      }
+    } catch (const std::exception& e) {
+      ::havel::error("[VM] Timer callback exception: {}", e.what());
     }
-    if (callbacks.empty()) return;
-    for (auto& cb : callbacks) {
-        if (exit_requested_.load()) break;
-        try {
-            Value result = callFunctionSync(cb.closure, {});
-            if (cb.is_timeout) {
-                addTimeoutResult(cb.timer_id, result);
-            } else {
-                addIntervalResult(cb.timer_id, result);
-            }
-        } catch (const std::exception& e) {
-            ::havel::error("[VM] Timer callback exception: {}", e.what());
-        }
-    }
+  }
 }
 
 std::unique_ptr<BytecodeInterpreter> createVM() {

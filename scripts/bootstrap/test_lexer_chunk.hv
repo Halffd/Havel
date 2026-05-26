@@ -1,0 +1,9 @@
+use { tokenize } from "lexer"
+src = fs.read("modules/lang/error.hv")
+if src == null { print("FAIL"); exit(1) }
+// take first N chars
+limit = 3200
+src = src.sub(0, limit)
+print("source length: " + str(#src))
+tokens = tokenize(src)
+print("token count: " + str(#tokens))

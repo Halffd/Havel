@@ -196,6 +196,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
     if (cfg.selfHosted) {
         cfg.mode = Mode::SCRIPT_ONLY;
         cfg.minimalMode = true;
+        cfg.pureStdlib = true;
         return runSelfHosted(cfg);
     }
 
@@ -363,21 +364,24 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     }
   } else if (arg == "--eval" || arg == "-E") {
     if (i + 1 < argc) {
-      cfg.evalString = argv[++i];
-      if (cfg.mode == Mode::DAEMON) cfg.mode = Mode::SCRIPT_ONLY;
-      cfg.minimalMode = true;
+        cfg.evalString = argv[++i];
+            if (cfg.mode == Mode::DAEMON) cfg.mode = Mode::SCRIPT_ONLY;
+            cfg.minimalMode = true;
+            cfg.pureStdlib = true;
     }
 } else if (arg == "--run" || arg == "run") {
-            cfg.mode = Mode::SCRIPT_ONLY;
-            cfg.minimalMode = true;
+                cfg.mode = Mode::SCRIPT_ONLY;
+                cfg.minimalMode = true;
+                cfg.pureStdlib = true;
         } else if (arg == "--pure-stdlib") {
             cfg.pureStdlib = true;
         } else if (arg == "--self-hosted") {
             cfg.selfHosted = true;
     } else if (arg == "--test" || arg == "-t") {
       // Test mode - run all .hv files in a directory
-      cfg.mode = Mode::TEST;
-      cfg.minimalMode = true;
+        cfg.mode = Mode::TEST;
+            cfg.minimalMode = true;
+            cfg.pureStdlib = true;
       // Next argument should be the test directory
       if (i + 1 < argc) {
         cfg.testDir = argv[++i];

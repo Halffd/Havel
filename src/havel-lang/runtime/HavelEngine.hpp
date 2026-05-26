@@ -10,6 +10,7 @@
 #include "StdLibModules.hpp"
 #include "HostAPI.hpp"
 #include "../../modules/HostModules.hpp"
+#include "../../modules/ffi/FFIModule.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../core/util/Env.hpp"
 #include "../runtime/concurrency/WatcherRegistry.hpp"
@@ -121,6 +122,12 @@ vm_->setJITCompiler(jitCompiler_.get());
     if (leanStartup) {
         if (config_.pureStdlib) {
             registerPureStdLib(*vm_);
+#ifndef HAVEL_PURE_VM
+            {
+                compiler::VMApi ffiApi(*vm_);
+                modules::ffi::registerFFIModule(ffiApi);
+            }
+#endif
         } else {
             registerCoreStdLib(*vm_);
         }

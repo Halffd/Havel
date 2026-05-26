@@ -555,17 +555,14 @@ bool ConcurrencyBridge::isThreadCompleted(uint32_t thread_id) {
 }
 
 void ConcurrencyBridge::markThreadCompleted(uint32_t thread_id) {
-  std::lock_guard<std::mutex> lock(completed_threads_mutex_);
+  std::lock_guard<std::mutex> lock(threads_mutex_);
+  std::lock_guard<std::mutex> completed_lock(completed_threads_mutex_);
   completed_threads_.insert(thread_id);
-  
-  // Also update thread_info if exists
-  {
-    std::lock_guard<std::mutex> info_lock(threads_mutex_);
-    auto it = thread_info_.find(thread_id);
-    if (it != thread_info_.end()) {
-      it->second.state = ThreadState::COMPLETED;
-      it->second.completed_at = std::chrono::steady_clock::now();
-    }
+
+  auto it = thread_info_.find(thread_id);
+  if (it != thread_info_.end()) {
+    it->second.state = ThreadState::COMPLETED;
+    it->second.completed_at = std::chrono::steady_clock::now();
   }
 }
 

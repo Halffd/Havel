@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <unordered_map>
 #include <unordered_set>
+#include <atomic>
 
 namespace havel::compiler {
 
@@ -86,7 +87,7 @@ private:
   std::queue<ThreadTask> task_queue_;
   std::mutex queue_mutex_;
   std::condition_variable queue_cv_;
-  bool shutdown_ = false;
+  std::atomic<bool> shutdown_{false};
 
   
   enum class ThreadState : uint8_t {

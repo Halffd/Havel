@@ -9540,8 +9540,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
       auto nextAfterDot = at(1).type;
       bool isOperatorAfterDot = (nextAfterDot == havel::TokenType::Nullish ||
                                   nextAfterDot == havel::TokenType::Question ||
-                                  nextAfterDot == havel::TokenType::Or ||
-                                  nextAfterDot == havel::TokenType::And ||
+
                                   nextAfterDot == havel::TokenType::Equals ||
                                   nextAfterDot == havel::TokenType::NotEquals ||
                                   nextAfterDot == havel::TokenType::Less ||

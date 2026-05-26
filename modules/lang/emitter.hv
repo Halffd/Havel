@@ -228,15 +228,19 @@ fn emitExpr(emitter, node) {
             bc.patch_jump(sj, bc.instr_count())
             return
         }
-        if opr == "??" {
-            emitExpr(emitter, node.left)
-            bc.emit("DUP")
-            sj = bc.emit("JUMP_IF_NULL", 0)
-            bc.emit("POP")
-            emitExpr(emitter, node.right)
-            bc.patch_jump(sj, bc.instr_count())
-            return
-        }
+if opr == "??" {
+emitExpr(emitter, node.left)
+bc.emit("DUP")
+isNullJump = bc.emit("JUMP_IF_NULL", 0)
+// Not null: keep left, skip right
+notNullJump = bc.emit("JUMP", 0)
+bc.patch_jump(isNullJump, bc.instr_count())
+// Null: pop null, evaluate right
+bc.emit("POP")
+emitExpr(emitter, node.right)
+bc.patch_jump(notNullJump, bc.instr_count())
+return
+}
         emitExpr(emitter, node.left)
         emitExpr(emitter, node.right)
         opcodes = {
@@ -401,33 +405,59 @@ return
         return
 
     }
-    if k == "CompoundAssignment" {
-        target = node.target
-        if target.kind == "Identifier" {
-            emitLoadVar(emitter, target.name)
-            emitExpr(emitter, node.value)
-            opcodes = {
-                "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
-                "%=": "MOD", "**=": "POW",
-                "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
-                "<<=": "BIT_LSH", ">>=": "BIT_RSH",
-            }
-            oc = opcodes[node.oper]
-            if oc != null {
-                bc.emit(oc)
-            }
-            else {
-                emitError("unknown compound op: " + node.oper, node.line, node.col)
-            }
-            bc.emit("DUP")
-            emitStoreVar(emitter, target.name)
-        }
-        else {
-            emitError("unsupported compound target: " + target.kind, node.line, node.col)
-        }
-        return
+if k == "CompoundAssignment" {
+target = node.target
+if target.kind == "Identifier" {
+emitLoadVar(emitter, target.name)
+emitExpr(emitter, node.value)
+opcodes = {
+"+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
+"%=": "MOD", "**=": "POW",
+"&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
+"<<=": "BIT_LSH", ">>=": "BIT_RSH",
+}
+oc = opcodes[node.oper]
+if oc != null {
+bc.emit(oc)
+}
+else {
+emitError("unknown compound op: " + node.oper, node.line, node.col)
+}
+bc.emit("DUP")
+emitStoreVar(emitter, target.name)
+}
+else if target.kind == "MemberExpression" {
+// obj.prop += val → load obj, get prop, load val, op, set prop
+emitExpr(emitter, target.obj)
+bc.emit("DUP")
+keyIdx = bc.add_string(target.property)
+bc.emit("LOAD_CONST", keyIdx)
+bc.emit("OBJECT_GET")
+emitExpr(emitter, node.value)
+opcodes = {
+"+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
+"%=": "MOD", "**=": "POW",
+"&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
+"<<=": "BIT_LSH", ">>=": "BIT_RSH",
+}
+oc = opcodes[node.oper]
+if oc != null {
+bc.emit(oc)
+}
+else {
+emitError("unknown compound member op: " + node.oper, node.line, node.col)
+}
+// Stack: [obj, result] — need [obj, result, key] for OBJECT_SET
+keyIdx2 = bc.add_string(target.property)
+bc.emit("LOAD_CONST", keyIdx2)
+bc.emit("OBJECT_SET")
+}
+else {
+emitError("unsupported compound target: " + target.kind, node.line, node.col)
+}
+return
 
-    }
+}
     if k == "TernaryExpression" {
         emitExpr(emitter, node.condition)
         elseJump = bc.emit("JUMP_IF_FALSE", 0)
@@ -665,11 +695,12 @@ iterNode = node.iterator
 if iterNode.kind == "RangeExpression" {
 emitExpr(emitter, iterNode.start)
 emitExpr(emitter, iterNode.end)
-if !iterNode.inclusive {
-bc.emit("LOAD_CONST", bc.add_const(1))
-bc.emit("SUB")
-}
+if iterNode.step != null {
+emitExpr(emitter, iterNode.step)
+bc.emit("RANGE_STEP_NEW")
+} else {
 bc.emit("RANGE_NEW")
+}
 }
 if iterNode.kind != "RangeExpression" {
 emitExpr(emitter, iterNode)
@@ -1118,22 +1149,27 @@ fn emitTryExpr(emitter, node) {
 
 }
 fn emitBlock(emitter, node) {
-    if node == null {
-        return
-    }
-    if node.kind == "BlockStatement" {
-        for stmt in node.body {
-            emitStmt(emitter, stmt)
-        }
-        return
-    }
-    if node.kind == "Program" {
-        for stmt in node.body {
-            emitStmt(emitter, stmt)
-        }
-        return
-    }
-    emitStmt(emitter, node)
+if node == null {
+return
+}
+if node.kind == "BlockStatement" {
+oldScope = emitter.scope
+blockScope = Scope(oldScope)
+emitter.scope = blockScope
+for stmt in node.body {
+emitStmt(emitter, stmt)
+}
+oldScope.count = blockScope.count
+emitter.scope = oldScope
+return
+}
+if node.kind == "Program" {
+for stmt in node.body {
+emitStmt(emitter, stmt)
+}
+return
+}
+emitStmt(emitter, node)
 
 }
 fn emitBlockWithReturn(emitter, node) {
@@ -1141,52 +1177,66 @@ fn emitBlockWithReturn(emitter, node) {
     bc.emit("PUSH_NULL")
     return
   }
-  if node.kind == "BlockStatement" {
-    stmts = node.body
-    n = #stmts
-    if n == 0 {
-      bc.emit("PUSH_NULL")
-      return
-    }
-    isBuggyNullExpr = false
-    if n == 1 {
-      if stmts[0].kind == "ExpressionStatement" {
-        if stmts[0].expr == null {
-          isBuggyNullExpr = true
-        }
-      }
-    }
-    if isBuggyNullExpr {
-      bc.emit("PUSH_NULL")
-      return
-    }
+if node.kind == "BlockStatement" {
+oldScope = emitter.scope
+blockScope = Scope(oldScope)
+emitter.scope = blockScope
+stmts = node.body
+n = #stmts
+if n == 0 {
+oldScope.count = blockScope.count
+emitter.scope = oldScope
+bc.emit("PUSH_NULL")
+return
+}
+isBuggyNullExpr = false
+if n == 1 {
+if stmts[0].kind == "ExpressionStatement" {
+if stmts[0].expr == null {
+isBuggyNullExpr = true
+}
+}
+}
+if isBuggyNullExpr {
+oldScope.count = blockScope.count
+emitter.scope = oldScope
+bc.emit("PUSH_NULL")
+return
+}
 si = 0
 while si < n - 1 {
 emitStmt(emitter, stmts[si])
 si = si + 1
 }
-    last = stmts[n - 1]
-    if last.kind == "ExpressionStatement" {
-      if last.expr != null {
-        emitExpr(emitter, last.expr)
-      }
-      else {
-        bc.emit("PUSH_NULL")
-      }
-      return
-    }
-    if last.kind == "ReturnStatement" {
-      emitStmt(emitter, last)
-      return
-    }
-    if last.kind == "IfStatement" {
-      emitIfExpr(emitter, last)
-      return
-    }
-    emitStmt(emitter, last)
-    bc.emit("PUSH_NULL")
-    return
-  }
+last = stmts[n - 1]
+if last.kind == "ExpressionStatement" {
+if last.expr != null {
+emitExpr(emitter, last.expr)
+} else {
+bc.emit("PUSH_NULL")
+}
+oldScope.count = blockScope.count
+emitter.scope = oldScope
+return
+}
+if last.kind == "ReturnStatement" {
+emitStmt(emitter, last)
+oldScope.count = blockScope.count
+emitter.scope = oldScope
+return
+}
+if last.kind == "IfStatement" {
+emitIfExpr(emitter, last)
+oldScope.count = blockScope.count
+emitter.scope = oldScope
+return
+}
+emitStmt(emitter, last)
+bc.emit("PUSH_NULL")
+oldScope.count = blockScope.count
+emitter.scope = oldScope
+return
+}
   if node.kind == "IfStatement" {
 emitIfExpr(emitter, node)
 return

@@ -545,7 +545,7 @@ fn Parser(tokenList) {
             parseInterpolatedString(tok.value, l, c)
 
         }
-        else if tt == "Identifier" or (isKeywordIdent(tt) and tt != "True" and tt != "False" and tt != "Null") {
+        else if tt == "Identifier" or (isKeywordIdent(tt) and tt != "True" and tt != "False" and tt != "Null" and tt != "Fn") {
             Identifier(tok.value, l, c)
 
         }
@@ -2112,17 +2112,28 @@ fn parseIfStatement() {
         catchBlock = null
         finallyBlock = null
 
-        if current().type == "Catch" {
-            advance()
-            skipNewlines()
-            if current().type == "Identifier" {
-                catchParam = advance().value
-            }
-            skipNewlines()
-            catchBlock = parseBlock()
-            skipNewlines()
+if current().type == "Catch" {
+advance()
+skipNewlines()
+if current().type == "OpenParen" {
+advance() // consume (
+skipNewlines()
+if current().type == "Identifier" {
+catchParam = advance().value
+}
+skipNewlines()
+if current().type == "CloseParen" {
+advance() // consume )
+}
+}
+else if current().type == "Identifier" {
+catchParam = advance().value
+}
+skipNewlines()
+catchBlock = parseBlock()
+skipNewlines()
 
-        }
+}
         if current().type == "Finally" {
             advance()
             skipNewlines()
@@ -3278,7 +3289,7 @@ fn parseImplDeclaration() {
     skipNewlines()
     // Check for 'for' clause: impl TypeName for TraitName
     traitName = ""
-    if current().type == "Identifier" && current().value == "for" {
+    if current().type == "For" {
         advance() // consume 'for'
         skipNewlines()
         if current().type != "Identifier" {
@@ -3309,7 +3320,7 @@ fn parseImplDeclaration() {
     if current().type == "CloseBrace" {
         advance() // consume '}'
     }
-    ImplDeclaration(Identifier(typeName, l, c), traitName, funcs, l, c)
+    ImplDeclaration(typeName, traitName, funcs, l, c)
 }
     // ===================================================================
     // PRODUCE AST — main entry point

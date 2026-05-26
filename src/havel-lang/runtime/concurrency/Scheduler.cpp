@@ -8,12 +8,13 @@
 namespace havel::compiler {
 
 static Scheduler* g_scheduler_instance = nullptr;
+static std::once_flag g_scheduler_once;
 
 Scheduler& Scheduler::instance() {
-	if (!g_scheduler_instance) {
-		g_scheduler_instance = new Scheduler();
-	}
-	return *g_scheduler_instance;
+  std::call_once(g_scheduler_once, []() {
+    g_scheduler_instance = new Scheduler();
+  });
+  return *g_scheduler_instance;
 }
 
 Scheduler::Scheduler() {

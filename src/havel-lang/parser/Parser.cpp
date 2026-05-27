@@ -5347,7 +5347,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effective
   auto keyword = at();
   size_t ifColumn = effectiveColumn ? effectiveColumn : at().column;
   size_t originalIfColumn = chainColumn ? chainColumn : ifColumn;
-  fprintf(stderr, "DEBUG parseIf ENTER: ifCol=%zu origCol=%zu line=%zu col=%zu\n", ifColumn, originalIfColumn, at().line, at().column);
   advance(); // consume "if"
 
     bool prevAllow = context.allowBraceSugar;
@@ -5376,7 +5375,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effective
     }
 
 std::unique_ptr<havel::ast::Statement> alternative = nullptr;
-    fprintf(stderr, "DEBUG parseIf: checking else: toktype=%d col=%zu line=%zu ifCol=%zu origCol=%zu\n", (int)at().type, at().column, at().line, ifColumn, originalIfColumn);
   if (at().type == havel::TokenType::Else) {
     if (at().column >= originalIfColumn) {
     size_t elseCol = at().column;

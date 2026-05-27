@@ -485,10 +485,9 @@ fn scanString(quote, isFString, isRegexString) {
       }
       s = s + "}"
     }
-    else {
-      s = s + "$"
-      advance()
-    }
+ else {
+  s = s + "$"
+ }
   }
             else {
                 s = s + current()
@@ -846,18 +845,7 @@ fn scanIdentifier() {
 
     }
 fn _scan() {
- _dbgCount = 0
- _lastDbgPos = 0
  while current() != null {
-  _dbgCount = _dbgCount + 1
-  if pos != _lastDbgPos and _dbgCount % 500 == 0 {
-   print("[lexer] iter=" + str(_dbgCount) + " pos=" + str(pos) + " line=" + str(line) + " tokens=" + str(tokens.len) + " char=[" + str(current()) + "]")
-   _lastDbgPos = pos
-  }
-  if _dbgCount > 50000 {
-   print("[lexer] LOOP LIMIT at iter=" + str(_dbgCount) + " pos=" + str(pos) + " line=" + str(line) + " char=[" + str(current()) + "]")
-   break
-  }
   skipWhitespace()
         if current() == null { break }
         tokenStartCol = col

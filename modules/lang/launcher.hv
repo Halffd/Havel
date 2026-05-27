@@ -144,13 +144,31 @@ fn parseArgs(args) {
             continue
         }
 
-        if arg == "--debug-ast" || arg == "-da" {
-            setFlag("ast", true)
-            i = i + 1
-            continue
-        }
+if arg == "--debug-ast" || arg == "-da" {
+setFlag("ast", true)
+i = i + 1
+continue
+}
 
-        if arg == "--error" || arg == "-e" {
+if arg == "--debug-emitter" || arg == "-de" {
+setFlag("emitter", true)
+i = i + 1
+continue
+}
+
+if arg == "--debug-scope" || arg == "-ds" {
+setFlag("scope", true)
+i = i + 1
+continue
+}
+
+if arg == "--debug-gc" || arg == "-dgc" {
+setFlag("gc", true)
+i = i + 1
+continue
+}
+
+if arg == "--error" || arg == "-e" {
             cfg.stopOnError = true
             i = i + 1
             continue

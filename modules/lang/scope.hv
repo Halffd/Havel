@@ -1,6 +1,8 @@
 // scope.hv — Lexical scope, variable resolution, upvalue tracking
 // Works with bc.add_upvalue() to register closure captures with the VM
 
+scope_counter_val = 0
+
 fn Scope(parent, funcId) {
 startCount = 0
 if parent != null {
@@ -19,7 +21,9 @@ else {
 fid = 0
 }
 }
-{parent: parent, locals: {}, count: startCount, upvalues: {}, upcount: 0, startCount: startCount, funcId: fid}
+sid = scope_counter_val
+scope_counter_val = scope_counter_val + 1
+{parent: parent, locals: {}, count: startCount, upvalues: {}, upcount: 0, startCount: startCount, funcId: fid, sid: sid}
 }
 fn scopeDeclare(scope, name) {
   existing = scope.locals[name]
@@ -33,51 +37,40 @@ fn scopeDeclare(scope, name) {
 
 }
 fn scopeFindInEnclosingFunc(scope, name) {
-  // Walk up the scope chain across function boundaries to find a variable.
-  // Returns {kind: "local", index: N} or {kind: "upvalue", index: N} or null.
-  // For "local": the variable is a local in the enclosing function's scope chain
-  // For "upvalue": the variable was already captured as an upvalue in the enclosing function
-  s = scope.parent
-  while s != null {
-    // Check locals first
-    entry = s.locals[name]
+s = scope.parent
+while s != null {
+entry = s.locals[name]
     if entry != null {
-      return {kind: "local", index: entry}
+        return {kind: "local", index: entry}
     }
-    // Check if this scope already has it as an upvalue
     uv = s.upvalues[name]
     if uv != null {
-      return {kind: "upvalue", index: uv}
+        return {kind: "upvalue", index: uv}
     }
-    s = s.parent
-  }
-  null
+s = s.parent
+}
+null
 
 }
 fn scopeResolveUpvalue(scope, name) {
-  // Register an upvalue for this scope (function's root scope).
-  // First check if already registered.
-  existing = scope.upvalues[name]
-  if existing != null {
-    return existing
-  }
-  // Find the variable in enclosing function scopes
-  found = scopeFindInEnclosingFunc(scope, name)
-  if found == null {
-    return -1
-  }
-  upidx = scope.upcount
-  scope.upvalues[name] = upidx
-  scope.upcount = upidx + 1
-  if found.kind == "local" {
-    // Captures a local variable from enclosing function
-    bc.add_upvalue(found.index, 1)
-  }
-  else {
-    // Captures an upvalue from enclosing function (recursive capture)
+existing = scope.upvalues[name]
+if existing != null {
+return existing
+}
+found = scopeFindInEnclosingFunc(scope, name)
+if found == null {
+return -1
+}
+upidx = scope.upcount
+scope.upvalues[name] = upidx
+scope.upcount = upidx + 1
+if found.kind == "local" {
+bc.add_upvalue(found.index, 1)
+}
+else {
     bc.add_upvalue(found.index, 0)
-  }
-  return upidx
+    }
+    return upidx
 
 }
 fn scopeResolve(scope, name) {
@@ -102,22 +95,23 @@ fn scopeResolve(scope, name) {
     // s is now the root scope of an enclosing function (or somewhere above it)
     // Walk from here to find the variable in enclosing functions
     upidx = scopeResolveUpvalue(scopeFindFuncRoot(scope), name)
-    if upidx >= 0 {
-      return {kind: "upvalue", index: upidx}
-    }
+        if upidx >= 0 {
+            return {kind: "upvalue", index: upidx}
+        }
   }
   null
 
 }
 fn scopeFindFuncRoot(scope) {
-  // Walk up to the root scope of the current function
-  root = scope
-  while root.parent != null && root.parent.funcId == scope.funcId {
-    root = root.parent
-  }
-  root
-
+    root = scope
+    steps = 0
+    while root.parent != null && root.parent.funcId == scope.funcId {
+        root = root.parent
+        steps = steps + 1
+    }
+    root
 }
+
 fn scopeDepth(scope) {
   d = 0
   s = scope

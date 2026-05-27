@@ -195,44 +195,35 @@ NUD_TOKENS = {
 
 // --- Keywords allowed as identifiers in expression context ---
 KEYWORD_IDENTS = {
-    "Class": true,
-    "Struct": true,
-    "Enum": true,
-    "Mode": true,
-    "Val": true,
-    "Const": true,
-    "Let": true,
-    "Config": true,
-    "Devices": true,
-    "On": true,
-    "Off": true,
-    "When": true,
-    "Timeout": true,
-    "Thread": true,
-    "Interval": true,
-    "Channel": true,
-    "Co": true,
-    "Go": true,
-    "Fn": true,
-    "If": true,
-    "For": true,
-    "Loop": true,
-    "While": true,
-    "Switch": true,
-    "Do": true,
-    "Return": true,
-    "Ret": true,
-    "Break": true,
-    "Continue": true,
-    "Try": true,
-    "Catch": true,
-    "Finally": true,
-    "Throw": true,
-    "Del": true,
-    "True": true,
-    "False": true,
-    "Null": true,
-    "Repeat": true,
+  "Class": true, "Struct": true, "Enum": true, "Mode": true,
+  "Val": true, "Const": true, "Let": true,
+  "Config": true, "Devices": true, "On": true, "Off": true, "When": true,
+  "Timeout": true, "Thread": true, "Interval": true, "Channel": true,
+  "Co": true, "Go": true, "Fn": true, "Op": true,
+  "Return": true, "Ret": true, "Break": true, "Continue": true,
+  "Try": true, "Catch": true, "Finally": true, "Throw": true, "Del": true,
+  "True": true, "False": true, "Null": true, "This": true, "Repeat": true,
+  "Use": true, "Import": true, "From": true, "As": true, "With": true,
+  "Type": true, "Dsl": true,
+  "Pool": true, "Signal": true, "Group": true, "Modes": true,
+  "Sleep": true, "Yield": true,
+}
+
+DOT_ACCESS_KEYWORDS = {
+  "If": true, "Else": true, "For": true, "In": true, "While": true,
+  "Loop": true, "Switch": true, "Do": true, "Match": true, "Case": true,
+  "Default": true, "Not": true, "And": true, "Or": true, "Is": true,
+  "Matches": true, "Where": true, "Select": true,
+  "Async": true, "Sync": true,
+  "Trait": true, "Prot": true, "Impl": true,
+}
+
+fn isKeywordIdent(ttype) {
+  KEYWORD_IDENTS.has(ttype)
+}
+
+fn isDotAccessIdent(ttype) {
+  KEYWORD_IDENTS.has(ttype) or DOT_ACCESS_KEYWORDS.has(ttype)
 }
 
 // --- Token types that are infix/postfix operators (have led) ---
@@ -401,11 +392,7 @@ fn Parser(tokenList) {
         LED_TOKENS.has(ttype)
 
     }
-    fn isKeywordIdent(ttype) {
-        KEYWORD_IDENTS.has(ttype)
-
-    }
-    // --- Check if 'not' is infix (followed by 'in') ---
+// --- Check if 'not' is infix (followed by 'in') ---
     fn isNotIn() {
         current().type == "Not" and at(1).type == "In"
 
@@ -413,33 +400,39 @@ fn Parser(tokenList) {
     // ===================================================================
     // PRATT EXPRESSION PARSER
     // ===================================================================
-    fn parseExpr(rbp) {
-        startToken = current()
-        tok = advance()
+fn parseExpr(rbp) {
+  startToken = current()
+  tok = advance()
+  print("[DBG parseExpr] rbp=" + str(rbp) + " tok=" + tok.type + " '" + tok.value + "' pos=" + str(pos))
 
-        left = nud(tok)
+  left = nud(tok)
+  print("[DBG parseExpr] after nud: left=" + str(left) + " left.kind=" + str(left.kind))
 
-        if left == null {
-            return error("Unexpected token " + tok.type, startToken.line, startToken.col)
+  if left == null {
+    print("[DBG parseExpr] nud returned null for " + tok.type)
+    return error("Unexpected token " + tok.type, startToken.line, startToken.col)
 
-        }
-        if left.kind == "ErrorNode" {
-            return left
+  }
+  if left.kind == "ErrorNode" {
+    print("[DBG parseExpr] nud returned ErrorNode for " + tok.type + " tok.value='" + tok.value + "' left.kind=" + left.kind + " left=" + str(left))
+    return left
 
-        }
-        iterations = 0
-        while true {
-            iterations = iterations + 1
-            if iterations > 10000 {
-                return error("Pratt loop exceeded", startToken.line, startToken.col)
+  }
+  print("[DBG parseExpr] nud returned " + left.kind + " for " + tok.type + " '" + tok.value + "'")
+  iterations = 0
+  while true {
+    iterations = iterations + 1
+    if iterations > 10000 {
+      return error("Pratt loop exceeded", startToken.line, startToken.col)
 
-            }
-            curType = current().type
-            bp = getBindingPower(curType)
+    }
+    curType = current().type
+    bp = getBindingPower(curType)
+    print("[DBG parseExpr loop] rbp=" + str(rbp) + " curType=" + curType + " bp=" + str(bp) + " pos=" + str(pos))
 
-            // Special: 'not' only acts as infix when followed by 'in'
-            if curType == "Not" and !isNotIn() {
-                break
+    // Special: 'not' only acts as infix when followed by 'in'
+    if curType == "Not" and !isNotIn() {
+      break
 
             }
             // Special: Arrow returns 0 in match context
@@ -492,12 +485,13 @@ fn Parser(tokenList) {
     // ===================================================================
     // NULL DENOTATION (nud) — tokens that start expressions
     // ===================================================================
-    fn nud(tok) {
-        tt = tok.type
-        l = tok.line
-        c = tok.col
+fn nud(tok) {
+  tt = tok.type
+  l = tok.line
+  c = tok.col
+  print("[DBG nud] tt='" + tt + "' tok.value='" + tok.value + "' tt=='Identifier':" + str(tt == "Identifier"))
 
-        if tt == "Number" {
+  if tt == "Number" {
             NumberLiteral(tok.value, l, c)
 
         }
@@ -545,10 +539,12 @@ fn Parser(tokenList) {
             parseInterpolatedString(tok.value, l, c)
 
         }
-        else if tt == "Identifier" or (isKeywordIdent(tt) and tt != "True" and tt != "False" and tt != "Null" and tt != "Fn") {
-            Identifier(tok.value, l, c)
+else if tt == "Identifier" or (isKeywordIdent(tt) and tt != "True" and tt != "False" and tt != "Null" and tt != "Fn") {
+  result = Identifier(tok.value, l, c)
+  print("[DBG nud Identifier] result.kind='" + result.kind + "' name='" + result.name + "'")
+  result
 
-        }
+}
         else if tt == "True" {
             BooleanLiteral(true, l, c)
 
@@ -582,17 +578,19 @@ fn Parser(tokenList) {
             parseObjectLiteral(true)
 
         }
-        else if tt == "Not" {
-            // Check for !{} unsorted object
-            if current().type == "OpenBrace" {
-                parseObjectLiteral(true)
-            }
-            else {
-                operand = parseExpr(140)
-                UnaryExpression(tok.value, operand, l, c)
+else if tt == "Not" {
+  // Check for !{} unsorted object
+  if current().type == "OpenBrace" {
+    parseObjectLiteral(true)
+  }
+  else {
+    print("[DBG nud(Not)] entering, pos=" + str(pos) + " current=" + current().type + " '" + current().value + "'")
+    operand = parseExpr(140)
+    print("[DBG nud(Not)] after parseExpr(140), pos=" + str(pos) + " current=" + current().type + " '" + current().value + "'")
+    UnaryExpression(tok.value, operand, l, c)
 
-            }
-        }
+  }
+}
         else if tt == "Minus" {
             operand = parseExpr(140)
             UnaryExpression("-", operand, l, c)
@@ -693,10 +691,11 @@ fn Parser(tokenList) {
 
             }
         }
-        else {
-            error("Unexpected token in expression: " + tt, l, c)
+else {
+  print("[DBG nud ELSE] tt='" + tt + "' - falling through to else!")
+  error("Unexpected token in expression: " + tt, l, c)
 
-        }
+}
     }
     // ===================================================================
     // LEFT DENOTATION (led) — infix and postfix operators
@@ -920,9 +919,9 @@ fn Parser(tokenList) {
         }
         // Member access: expr.field
         else if tt == "Dot" {
-            if current().type == "Identifier" or isKeywordIdent(current().type) {
-                prop = advance()
-                MemberExpression(left, prop.value, l, c)
+  if current().type == "Identifier" or isDotAccessIdent(current().type) {
+    prop = advance()
+    MemberExpression(left, prop.value, l, c)
             }
             else {
                 error("Expected identifier after '.'", l, c)
@@ -931,9 +930,9 @@ fn Parser(tokenList) {
         }
         // Optional chaining: expr?.field
         else if tt == "QuestionDot" {
-            if current().type == "Identifier" or isKeywordIdent(current().type) {
-                prop = advance()
-                node = MemberExpression(left, prop.value, l, c)
+  if current().type == "Identifier" or isDotAccessIdent(current().type) {
+    prop = advance()
+    node = MemberExpression(left, prop.value, l, c)
                 node.optional = true
                 node
             }
@@ -1610,10 +1609,10 @@ fn Parser(tokenList) {
             else if current().type == "Number" {
                 key = advance().value
             }
-            else if current().type == "Identifier" or isKeywordIdent(current().type) {
-                key = advance().value
-            }
-            else if current().type == "OpenBracket" {
+else if current().type == "Identifier" or isDotAccessIdent(current().type) {
+  key = advance().value
+}
+else if current().type == "OpenBracket" {
                 // Computed key: [expr]
                 advance()
                 key = parseExpr(0)
@@ -1879,18 +1878,24 @@ fn parseIfStatement() {
 
   prevSugar = allowBraceSugar
   allowBraceSugar = false
+  print("[DBG parseIf] before parseExpr, pos=" + str(pos) + " current=" + current().type + " '" + current().value + "'")
   condition = parseExpr(0)
+  print("[DBG parseIf] after parseExpr, pos=" + str(pos) + " current=" + current().type + " '" + current().value + "' allowBraceSugar=" + str(allowBraceSugar))
   allowBraceSugar = prevSugar
 
   skipNewlines()
+  print("[DBG parseIfStatement] condition parsed, current=" + current().type + " '" + current().value + "' line=" + str(current().line))
 
   thenBranch = null
   if current().type == "OpenBrace" {
     thenBranch = parseBlock()
   }
- if thenBranch == null && current().type == "Colon" {
-  thenBranch = parseBlock()
- }
+  print("[DBG parseIfStatement] after OpenBrace check, thenBranch=" + str(thenBranch != null) + " current=" + current().type)
+  if thenBranch == null && current().type == "Colon" {
+    print("[DBG parseIfStatement] entering colon block")
+    thenBranch = parseBlock()
+    print("[DBG parseIfStatement] colon block done, thenBranch=" + str(thenBranch != null) + " current=" + current().type)
+  }
   if thenBranch == null {
     thenBranch = parseStatement()
     if thenBranch == null: thenBranch = BlockStatement([], l, c)

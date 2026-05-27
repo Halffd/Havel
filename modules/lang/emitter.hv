@@ -66,13 +66,13 @@ fn globalIdx(emitter, name) {
 
 }
 fn emitLoadVar(emitter, name) {
-    resolved = scopeResolve(emitter.scope, name)
-    if resolved != null {
-        if resolved.kind == "local" {
-            bc.emit("LOAD_VAR", resolved.index)
-            return
-        }
-        if resolved.kind == "upvalue" {
+resolved = scopeResolve(emitter.scope, name)
+if resolved != null {
+if resolved.kind == "local" {
+bc.emit("LOAD_VAR", resolved.index)
+return
+}
+    if resolved.kind == "upvalue" {
             bc.emit("LOAD_UPVALUE", resolved.index)
             return
         }
@@ -924,8 +924,8 @@ funcIdx = emitter.func_idx
 emitter.func_idx = funcIdx + 1
 emitter.func_map[node.name] = funcIdx
 // Compile the function body
-upcount = compileFuncDecl(emitter, node.name, node.params, node.body, funcIdx, node.line)
-// If function captures upvalues, emit CLOSURE; otherwise LOAD_CONST
+    upcount = compileFuncDecl(emitter, node.name, node.params, node.body, funcIdx, node.line)
+    // If function captures upvalues, emit CLOSURE; otherwise LOAD_CONST
 if upcount > 0 {
 bc.emit("CLOSURE", funcIdx)
 }
@@ -1258,11 +1258,13 @@ if node.kind == "ExpressionStatement" {
 // ============================================================
 
 fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
-  oldScope = emitter.scope
-  fid = emitter.nextFuncId
-  emitter.nextFuncId = fid + 1
-  newScope = Scope(oldScope, fid)
-  emitter.scope = newScope
+oldScope = emitter.scope
+fid = emitter.nextFuncId
+emitter.nextFuncId = fid + 1
+newScope = Scope(oldScope, fid)
+newScope.tag = name + str(fid)
+emitter.lastFuncScope = newScope
+    emitter.scope = newScope
   for p in params {
     if type(p) == "object" {
       if p.name != null { scopeDeclare(newScope, p.name) }
@@ -1295,14 +1297,14 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
 		}
 		di = di + 1
 	}
-	emitBlockWithReturn(emitter, bodyNode)
-	bc.emit("RETURN")
-	actualLocals = scopeLocalCount(newScope)
-	bc.set_local_count(actualLocals)
-	upcount = newScope.upcount
-	bc.func_pop()
-	traceEmitter("func_pop " + name + " upcount=" + str(upcount) + " locals=" + str(actualLocals))
-	emitter.scope = oldScope
+emitBlockWithReturn(emitter, bodyNode)
+    bc.emit("RETURN")
+    rootCheck = scopeFindFuncRoot(newScope)
+    actualLocals = scopeLocalCount(newScope)
+bc.set_local_count(actualLocals)
+upcount = newScope.upcount
+bc.func_pop()
+emitter.scope = oldScope
 	upcount
 
 }

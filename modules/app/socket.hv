@@ -1,0 +1,151 @@
+use ffi
+
+_c = ffi.open("libc.so.6")
+if _c == null { _c = ffi.open("libc.so") }
+
+_socket  = ffi.sym(_c, "socket")
+_connect = ffi.sym(_c, "connect")
+_send    = ffi.sym(_c, "send")
+_recv    = ffi.sym(_c, "recv")
+_close   = ffi.sym(_c, "close")
+
+AF_UNIX = 1
+SOCK_STREAM = 1
+SOCKADDR_UN_SIZE = 110
+
+fn _strToBuf(s) {
+    n = #s
+    buf = ffi.allocBytes(n)
+    i = 0
+    while i < n {
+        ffi.set_i8(ffi.ptr_add(buf, i), ord(s[i:i+1]))
+        i = i + 1
+    }
+    buf
+}
+
+fn _buildAddr(path) {
+    addr = ffi.allocBytes(SOCKADDR_UN_SIZE)
+    ffi.set_i16(addr, AF_UNIX)
+    i = 0
+    n = #path
+    while i < n && i < 108 {
+        ffi.set_i8(ffi.ptr_add(addr, 2 + i), ord(path[i:i+1]))
+        i = i + 1
+    }
+    if i < 108 {
+        ffi.set_i8(ffi.ptr_add(addr, 2 + i), 0)
+    }
+    addr
+}
+
+fn UnixSocket() {
+    self = {fd: -1, connected: false, path: ""}
+
+    fn _doConnect(path) {
+        if self.connected { self.close() }
+        fd = ffi.call(_socket, "int32", ["int32", "int32", "int32"], AF_UNIX, SOCK_STREAM, 0)
+        if fd < 0 { return false }
+        addr = _buildAddr(path)
+        _ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, SOCKADDR_UN_SIZE)
+        ffi.free(addr)
+        if _ret == 0 {
+            self.fd = fd
+            self.connected = true
+            self.path = path
+            return true
+        }
+        ffi.call(_close, "int32", ["int32"], fd)
+        false
+    }
+
+    fn _doSend(data) {
+        if self.connected == false { return -1 }
+        n = #data
+        buf = _strToBuf(data)
+        sent = ffi.call(_send, "int64", ["int32", "pointer", "uint64", "int32"], self.fd, buf, n, 0)
+        ffi.free(buf)
+        sent
+    }
+
+    fn _doRecv(maxSize) {
+        if self.connected == false { return "" }
+        if maxSize == null { maxSize = 8192 }
+        buf = ffi.allocBytes(maxSize)
+        n = ffi.call(_recv, "int64", ["int32", "pointer", "uint64", "int32"], self.fd, buf, maxSize, 0)
+        result = ""
+        if n > 0 {
+            i = 0
+            while i < n {
+                b = ffi.get_i8(ffi.ptr_add(buf, i))
+                result = result + char(b)
+                i = i + 1
+            }
+        }
+        ffi.free(buf)
+        result
+    }
+
+    fn _doClose() {
+        if self.fd >= 0 {
+            ffi.call(_close, "int32", ["int32"], self.fd)
+            self.fd = -1
+        }
+        self.connected = false
+    }
+
+    fn _isAlive() {
+        self.connected && self.fd >= 0
+    }
+
+    self.connect = _doConnect
+    self.send = _doSend
+    self.recv = _doRecv
+    self.close = _doClose
+    self.isAlive = _isAlive
+    self
+}
+
+fn create() {
+    ffi.call(_socket, "int32", ["int32", "int32", "int32"], AF_UNIX, SOCK_STREAM, 0)
+}
+
+fn connect(fd, path) {
+    if fd < 0 { return false }
+    addr = _buildAddr(path)
+    _ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, SOCKADDR_UN_SIZE)
+    ffi.free(addr)
+    _ret == 0
+}
+
+fn send(fd, data) {
+    if fd < 0 || data == null { return -1 }
+    n = #data
+    buf = _strToBuf(data)
+    sent = ffi.call(_send, "int64", ["int32", "pointer", "uint64", "int32"], fd, buf, n, 0)
+    ffi.free(buf)
+    sent
+}
+
+fn recv(fd, maxSize) {
+    if fd < 0 { return "" }
+    if maxSize == null { maxSize = 8192 }
+    buf = ffi.allocBytes(maxSize)
+    n = ffi.call(_recv, "int64", ["int32", "pointer", "uint64", "int32"], fd, buf, maxSize, 0)
+    result = ""
+    if n > 0 {
+        i = 0
+        while i < n {
+            b = ffi.get_i8(ffi.ptr_add(buf, i))
+            result = result + char(b)
+            i = i + 1
+        }
+    }
+    ffi.free(buf)
+    result
+}
+
+fn close(fd) {
+    if fd < 0 { return }
+    ffi.call(_close, "int32", ["int32"], fd)
+}

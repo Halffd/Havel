@@ -1,0 +1,93 @@
+// media.hv — Higher-level media control
+// Wraps mpv.MPV with a simpler API and default instance tracking
+//
+// Usage:
+//   use "modules/app/media.hv" as media
+//   media.connect()
+//   media.playPause()
+//   media.seek(10)
+
+use mpv
+
+_default = null
+
+fn connect(path) {
+    h = mpv.MPV(path)
+    _default = h
+    h
+}
+
+fn setDefault(handle) {
+    _default = handle
+}
+
+fn playPause() {
+    if _default == null { return }
+    _default.playPause()
+}
+
+fn seek(seconds) {
+    if _default == null { return }
+    _default.seek(seconds)
+}
+
+fn seekForward() {
+    if _default == null { return }
+    _default.seekForward()
+}
+
+fn seekBackward() {
+    if _default == null { return }
+    _default.seekBackward()
+}
+
+fn stop() {
+    if _default == null { return }
+    _default.stop()
+}
+
+fn next() {
+    if _default == null { return }
+    _default.next()
+}
+
+fn previous() {
+    if _default == null { return }
+    _default.previous()
+}
+
+fn volumeUp(delta) {
+    if _default == null { return }
+    _default.volumeUp(delta)
+}
+
+fn volumeDown(delta) {
+    if _default == null { return }
+    _default.volumeDown(delta)
+}
+
+fn setVolume(level) {
+    if _default == null { return }
+    _default.setVolume(level)
+}
+
+fn toggleMute() {
+    if _default == null { return }
+    _default.toggleMute()
+}
+
+fn toggleFullscreen() {
+    if _default == null { return }
+    _default.toggleFullscreen()
+}
+
+fn close() {
+    if _default == null { return }
+    _default.close()
+    _default = null
+}
+
+fn isConnected() {
+    if _default == null { return false }
+    _default.isConnected()
+}

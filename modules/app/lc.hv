@@ -1,0 +1,88 @@
+// lc.hv — Lyric/Subtitle Controller for MPV
+// Provides: subtitle toggle, scale, delay, seek, and copy
+//
+// Usage:
+//   use "modules/app/lc.hv" as lc
+//   lc.connect()
+//   lc.toggleSubtitles()
+//   lc.subtitleUp()
+
+use mpv
+
+_default = null
+
+fn connect(path) {
+    h = mpv.MPV(path)
+    _default = h
+    h
+}
+
+fn setDefault(handle) {
+    _default = handle
+}
+
+fn toggleSubtitles() {
+    if _default == null { return }
+    _default.toggleSubs()
+}
+
+fn toggleSecondarySubtitles() {
+    if _default == null { return }
+    _default.toggleSecondarySubs()
+}
+
+fn subtitleUp(delta) {
+    if _default == null { return }
+    _default.subScaleUp(delta)
+}
+
+fn subtitleDown(delta) {
+    if _default == null { return }
+    _default.subScaleDown(delta)
+}
+
+fn subtitleFaster(delta) {
+    if _default == null { return }
+    _default.subDelayForward(delta)
+}
+
+fn subtitleSlower(delta) {
+    if _default == null { return }
+    _default.subDelayBackward(delta)
+}
+
+fn nextTrack() {
+    if _default == null { return }
+    _default.nextSubtitle()
+}
+
+fn prevTrack() {
+    if _default == null { return }
+    _default.prevSubtitle()
+}
+
+fn seekToCurrent() {
+    if _default == null { return }
+    _default.subSeekCurrent()
+}
+
+fn seekNext() {
+    if _default == null { return }
+    _default.subSeekNext()
+}
+
+fn seekPrev() {
+    if _default == null { return }
+    _default.subSeekPrev()
+}
+
+fn copyCurrentSubtitle() {
+    if _default == null { return }
+    _default.copySubtitle()
+}
+
+fn close() {
+    if _default == null { return }
+    _default.close()
+    _default = null
+}

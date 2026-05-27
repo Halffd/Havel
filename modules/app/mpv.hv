@@ -1,0 +1,184 @@
+use socket
+use "../std/json.hv" as json
+
+DEFAULT_SOCKET = "/tmp/mpvsocket"
+
+fn _cmd(conn, args) {
+    if conn == null || conn.connected == false {
+        return null
+    }
+    req = json.stringify({command: args})
+    sent = conn.sock.send(req + "\n")
+    if sent < 0 {
+        return null
+    }
+    resp = conn.sock.recv(8192)
+    if resp == "" {
+        return null
+    }
+    resp
+}
+
+fn MPV(socketPath) {
+    if socketPath == null { socketPath = DEFAULT_SOCKET }
+
+    sock = socket.UnixSocket()
+    ok = sock.connect(socketPath)
+    conn = {sock: sock, path: socketPath, connected: ok}
+    self = {conn: conn}
+
+    self.reconnect = fn(path) {
+        if path == null { path = self.conn.path }
+        s = socket.UnixSocket()
+        ok = s.connect(path)
+        self.conn.sock = s
+        self.conn.path = path
+        self.conn.connected = ok
+        ok
+    }
+
+    self.isConnected = fn() { self.conn.connected && self.conn.sock.isAlive() }
+    self.close = fn() { self.conn.sock.close(); self.conn.connected = false }
+
+    self.playPause = fn() { _cmd(self.conn, ["cycle", "pause"]) }
+    self.stop = fn() { _cmd(self.conn, ["stop"]) }
+    self.next = fn() { _cmd(self.conn, ["playlist-next"]) }
+    self.previous = fn() { _cmd(self.conn, ["playlist-prev"]) }
+    self.loadfile = fn(url) { _cmd(self.conn, ["loadfile", url]) }
+    self.quit = fn() { _cmd(self.conn, ["quit"]) }
+
+    self.seek = fn(seconds, seekMode) {
+        if seekMode == null { seekMode = "relative" }
+        _cmd(self.conn, ["seek", seconds, seekMode])
+    }
+
+    self.seekForward = fn() { _cmd(self.conn, ["seek", 3]) }
+    self.seekBackward = fn() { _cmd(self.conn, ["seek", -3]) }
+    self.seekAbsolute = fn(seconds) { _cmd(self.conn, ["seek", seconds, "absolute"]) }
+    self.seekPercent = fn(pct) { _cmd(self.conn, ["seek", pct, "absolute-percent"]) }
+
+    self.volumeUp = fn(delta) {
+        if delta == null { delta = 5 }
+        _cmd(self.conn, ["add", "volume", delta])
+    }
+
+    self.volumeDown = fn(delta) {
+        if delta == null { delta = 5 }
+        _cmd(self.conn, ["add", "volume", -delta])
+    }
+
+    self.setVolume = fn(level) { _cmd(self.conn, ["set", "volume", level]) }
+    self.toggleMute = fn() { _cmd(self.conn, ["cycle", "mute"]) }
+
+    self.speedUp = fn(factor) {
+        if factor == null { factor = 1.1 }
+        _cmd(self.conn, ["multiply", "speed", factor])
+    }
+
+    self.slowDown = fn(factor) {
+        if factor == null { factor = 1.1 }
+        _cmd(self.conn, ["multiply", "speed", 1.0 / factor])
+    }
+
+    self.setSpeed = fn(speed) { _cmd(self.conn, ["set", "speed", speed]) }
+    self.resetSpeed = fn() { _cmd(self.conn, ["set", "speed", 1.0]) }
+
+    self.toggleSubs = fn() { _cmd(self.conn, ["cycle", "sub-visibility"]) }
+    self.toggleSecondarySubs = fn() { _cmd(self.conn, ["cycle", "secondary-sub-visibility"]) }
+    self.nextSubtitle = fn() { _cmd(self.conn, ["cycle", "sub"]) }
+    self.prevSubtitle = fn() { _cmd(self.conn, ["cycle", "sub", "down"]) }
+
+    self.subScaleUp = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "sub-scale", delta])
+    }
+
+    self.subScaleDown = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "sub-scale", -delta])
+    }
+
+    self.subDelayForward = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "sub-delay", delta])
+    }
+
+    self.subDelayBackward = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "sub-delay", -delta])
+    }
+
+    self.subSeek = fn(dir) { _cmd(self.conn, ["sub-seek", dir]) }
+    self.subSeekPrev = fn() { _cmd(self.conn, ["sub-seek", -1]) }
+    self.subSeekNext = fn() { _cmd(self.conn, ["sub-seek", 1]) }
+    self.subSeekCurrent = fn() { _cmd(self.conn, ["sub-seek", 0]) }
+    self.copySubtitle = fn() { _cmd(self.conn, ["script-binding", "copy_current_subtitle"]) }
+
+    self.nextAudio = fn() { _cmd(self.conn, ["cycle", "audio"]) }
+    self.prevAudio = fn() { _cmd(self.conn, ["cycle", "audio", "down"]) }
+
+    self.audioDelayUp = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "audio-delay", delta])
+    }
+
+    self.audioDelayDown = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "audio-delay", -delta])
+    }
+
+    self.toggleFullscreen = fn() { _cmd(self.conn, ["cycle", "fullscreen"]) }
+    self.toggleOntop = fn() { _cmd(self.conn, ["cycle", "ontop"]) }
+
+    self.zoomIn = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "video-zoom", delta])
+    }
+
+    self.zoomOut = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "video-zoom", -delta])
+    }
+
+    self.resetZoom = fn() { _cmd(self.conn, ["set", "video-zoom", 0]) }
+
+    self.panX = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "video-pan-x", delta])
+    }
+
+    self.panY = fn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(self.conn, ["add", "video-pan-y", delta])
+    }
+
+    self.resetPan = fn() {
+        _cmd(self.conn, ["set", "video-pan-x", 0])
+        _cmd(self.conn, ["set", "video-pan-y", 0])
+    }
+
+    self.playlistNext = fn() { _cmd(self.conn, ["playlist-next"]) }
+    self.playlistPrev = fn() { _cmd(self.conn, ["playlist-prev"]) }
+    self.playlistClear = fn() { _cmd(self.conn, ["playlist-clear"]) }
+    self.playlistRemove = fn(index) { _cmd(self.conn, ["playlist-remove", index]) }
+    self.playlistMove = fn(src, dst) { _cmd(self.conn, ["playlist-move", src, dst]) }
+
+    self.nextChapter = fn() { _cmd(self.conn, ["add", "chapter", 1]) }
+    self.prevChapter = fn() { _cmd(self.conn, ["add", "chapter", -1]) }
+    self.setChapter = fn(ch) { _cmd(self.conn, ["set", "chapter", ch]) }
+
+    self.getProperty = fn(name) { _cmd(self.conn, ["get_property", name]) }
+
+    self.scriptMessage = fn(name, args) {
+        cmd = ["script-message", name]
+        _cmd(self.conn, cmd)
+    }
+
+    self.sendRaw = fn(jsonStr) {
+        if self.conn == null || self.conn.connected == false { return null }
+        self.conn.sock.send(jsonStr + "\n")
+        self.conn.sock.recv(8192)
+    }
+
+    self
+}

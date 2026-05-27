@@ -727,7 +727,7 @@ if (is_impl_method) {
 current_class_name_ = "";
 }
 
-leaveFunction();
+  leaveFunction();
 }
 
 void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {

@@ -1,0 +1,41 @@
+fn isKeywordIdent(tt) {
+  tt == "If" || tt == "Else" || tt == "For" || tt == "While" || tt == "Match"
+}
+
+fn test(tt) {
+  if tt == "Number" {
+    {kind: "NumberLiteral"}
+  } else if tt == "String" || tt == "MultilineString" {
+    {kind: "StringLiteral"}
+  } else if tt == "RegexString" {
+    {kind: "StringLiteral"}
+  } else if tt == "RegexLiteral" {
+    parts = tt.split("/")
+    pattern = ""
+    if #parts >= 2 { pattern = parts[1] }
+    {kind: "RegexLiteral", pattern: pattern}
+  } else if tt == "Backtick" {
+    if tt.has("{") || tt.has("$") {
+      {kind: "ShellCommand"}
+    } else {
+      {kind: "BacktickExpr"}
+    }
+  } else if tt == "Identifier" || (isKeywordIdent(tt) && tt != "True" && tt != "False") {
+    {kind: "Identifier"}
+  } else if tt == "True" {
+    {kind: "BooleanLiteral", value: true}
+  } else if tt == "False" {
+    {kind: "BooleanLiteral", value: false}
+  } else {
+    {kind: "ErrorNode", msg: "Unexpected: " + tt}
+  }
+}
+
+r1 = test("Number")
+print("Number: " + r1.kind)
+
+r2 = test("Identifier")
+print("Identifier: " + r2.kind)
+
+r3 = test("Z")
+print("Z: " + r3.kind)

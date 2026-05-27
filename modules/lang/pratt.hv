@@ -373,11 +373,10 @@ fn Parser(tokenList) {
         }
     }
     // --- Error handling ---
-    fn error(msg, line, col) {
-        errors.push({msg: msg, line: line, col: col})
-        ErrorNode(msg, line, col)
-
-    }
+fn error(msg, line, col) {
+    errors.push({msg: msg, line: line, col: col})
+    return ErrorNode(msg, line, col)
+}
     fn parseError(msg) {
         t = current()
         error(msg, t.line, t.col)
@@ -403,22 +402,17 @@ fn Parser(tokenList) {
 fn parseExpr(rbp) {
   startToken = current()
   tok = advance()
-  print("[DBG parseExpr] rbp=" + str(rbp) + " tok=" + tok.type + " '" + tok.value + "' pos=" + str(pos))
 
   left = nud(tok)
-  print("[DBG parseExpr] after nud: left=" + str(left) + " left.kind=" + str(left.kind))
 
   if left == null {
-    print("[DBG parseExpr] nud returned null for " + tok.type)
     return error("Unexpected token " + tok.type, startToken.line, startToken.col)
 
   }
   if left.kind == "ErrorNode" {
-    print("[DBG parseExpr] nud returned ErrorNode for " + tok.type + " tok.value='" + tok.value + "' left.kind=" + left.kind + " left=" + str(left))
     return left
 
   }
-  print("[DBG parseExpr] nud returned " + left.kind + " for " + tok.type + " '" + tok.value + "'")
   iterations = 0
   while true {
     iterations = iterations + 1
@@ -428,7 +422,6 @@ fn parseExpr(rbp) {
     }
     curType = current().type
     bp = getBindingPower(curType)
-    print("[DBG parseExpr loop] rbp=" + str(rbp) + " curType=" + curType + " bp=" + str(bp) + " pos=" + str(pos))
 
     // Special: 'not' only acts as infix when followed by 'in'
     if curType == "Not" and !isNotIn() {
@@ -486,524 +479,429 @@ fn parseExpr(rbp) {
     // NULL DENOTATION (nud) — tokens that start expressions
     // ===================================================================
 fn nud(tok) {
-  tt = tok.type
-  l = tok.line
-  c = tok.col
-  print("[DBG nud] tt='" + tt + "' tok.value='" + tok.value + "' tt=='Identifier':" + str(tt == "Identifier"))
+    tt = tok.type
+    l = tok.line
+    c = tok.col
 
-  if tt == "Number" {
-            NumberLiteral(tok.value, l, c)
-
-        }
-        else if tt == "String" or tt == "MultilineString" {
-            StringLiteral(tok.value, l, c)
-
-        }
-        else if tt == "RegexString" {
-            StringLiteral(tok.value, l, c)
-
-        }
-        else if tt == "RegexLiteral" {
-            // value contains pattern + flags after the closing /
-            parts = tok.value.split("/")
-            // parts[0] is empty (before first /), parts[1] is pattern, parts[2] is flags
-            pattern = ""
-            flags = ""
-            if parts.len >= 2: pattern = parts[1]
-            if parts.len >= 3: flags = parts[2]
-            RegexLiteral(pattern, flags, l, c)
-
-        }
-        else if tt == "Backtick" {
-            if tok.value.has("{") or tok.value.has("$") {
-                ShellCommand(tok.value, false, l, c)
-            }
-            else {
-                BacktickExpression(tok.value, l, c)
-
-            }
-        }
-        else if tt == "InterpolatedBacktick" {
-            ShellCommand(tok.value, true, l, c)
-
-        }
-        else if tt == "ShellCommand" {
-            ShellCommand(tok.value, false, l, c)
-
-        }
-        else if tt == "ShellCommandCapture" {
-            ShellCommand(tok.value, true, l, c)
-
-        }
-        else if tt == "InterpolatedString" {
-            parseInterpolatedString(tok.value, l, c)
-
-        }
-else if tt == "Identifier" or (isKeywordIdent(tt) and tt != "True" and tt != "False" and tt != "Null" and tt != "Fn") {
-  result = Identifier(tok.value, l, c)
-  print("[DBG nud Identifier] result.kind='" + result.kind + "' name='" + result.name + "'")
-  result
-
-}
-        else if tt == "True" {
-            BooleanLiteral(true, l, c)
-
-        }
-        else if tt == "False" {
-            BooleanLiteral(false, l, c)
-
-        }
-        else if tt == "Null" {
-            NullLiteral(l, c)
-
-        }
-        else if tt == "OpenParen" {
-            parseParenExpr(tok)
-
-        }
-        else if tt == "OpenBracket" {
-            // Pratt already consumed '[', but parseArrayLiteral expects to consume it
-            pos = pos - 1
-            parseArrayLiteral()
-
-        }
-        else if tt == "OpenBrace" {
-            // Pratt already consumed '{', but parseObjectLiteral expects to consume it
-            pos = pos - 1
-            disambiguateBrace()
-
-        }
-        else if tt == "BangOpenBrace" {
-            // !{key: value} unsorted object literal
-            parseObjectLiteral(true)
-
-        }
-else if tt == "Not" {
-  // Check for !{} unsorted object
-  if current().type == "OpenBrace" {
-    parseObjectLiteral(true)
-  }
-  else {
-    print("[DBG nud(Not)] entering, pos=" + str(pos) + " current=" + current().type + " '" + current().value + "'")
-    operand = parseExpr(140)
-    print("[DBG nud(Not)] after parseExpr(140), pos=" + str(pos) + " current=" + current().type + " '" + current().value + "'")
-    UnaryExpression(tok.value, operand, l, c)
-
-  }
-}
-        else if tt == "Minus" {
-            operand = parseExpr(140)
-            UnaryExpression("-", operand, l, c)
-
-        }
-        else if tt == "Plus" {
-            parseExpr(140)
-
-        }
-        else if tt == "PlusPlus" {
-            operand = parseExpr(140)
-            UpdateExpression(operand, "++", true, l, c)
-
-        }
-        else if tt == "MinusMinus" {
-            operand = parseExpr(140)
-            UpdateExpression(operand, "--", true, l, c)
-
-        }
-        else if tt == "Length" {
-            operand = parseExpr(140)
-            UnaryExpression("#", operand, l, c)
-
-        }
-        else if tt == "At" {
-            if current().type == "Identifier" {
-                field = advance()
-                AtExpression(field.value, l, c)
-            }
-            else {
-                error("Expected field name after '@'", l, c)
-
-            }
-        }
-        else if tt == "AtAt" {
-            if current().type == "Identifier" {
-                field = advance()
-                AtAtExpression(field.value, l, c)
-            }
-            else {
-                error("Expected field name after '@@'", l, c)
-
-            }
-        }
-        else if tt == "ColonColon" {
-            // :: global scope identifier
-            if current().type == "Identifier" {
-                ident = advance()
-                node = Identifier(ident.value, l, c)
-                node.globalScope = true
-                node
-            }
-            else {
-                error("Expected identifier after '::'", l, c)
-
-            }
-        }
-        else if tt == "Fn" {
-            parseLambdaExpr()
-
-        }
-        else if tt == "Match" {
-            parseMatchExpr()
-
-        }
-        else if tt == "If" {
-            parseIfExpr()
-
-        }
-        else if tt == "SuperArrow" {
-            // @->method — super call
-            if current().type == "Identifier" {
-                methodName = advance().value
-                node = Identifier("__super__", l, c)
-                node.isSuperCall = true
-                node.superMethodName = methodName
-                // Parse arguments if present
-                if current().type == "OpenParen" {
-                    advance()
-                    args = []
-                    skipNewlines()
-                    while current().type != "CloseParen" and notEOF() {
-                        skipNewlines()
-                        if current().type == "CloseParen": break
-                        args.push(parseExpr(0))
-                        skipNewlines()
-                        if current().type == "Comma": advance()
-                    }
-                    expect("CloseParen")
-                    CallExpression(node, args, l, c)
-                }
-                else {
-                    node
-                }
-            }
-            else {
-                error("Expected method name after '@->'", l, c)
-
-            }
-        }
-else {
-  print("[DBG nud ELSE] tt='" + tt + "' - falling through to else!")
-  error("Unexpected token in expression: " + tt, l, c)
-
-}
+    if tt == "Number" {
+        return NumberLiteral(tok.value, l, c)
     }
+    else if tt == "String" or tt == "MultilineString" {
+        return StringLiteral(tok.value, l, c)
+    }
+    else if tt == "RegexString" {
+        return StringLiteral(tok.value, l, c)
+    }
+    else if tt == "RegexLiteral" {
+        parts = tok.value.split("/")
+        pattern = ""
+        flags = ""
+        if parts.len >= 2: pattern = parts[1]
+        if parts.len >= 3: flags = parts[2]
+        return RegexLiteral(pattern, flags, l, c)
+    }
+    else if tt == "Backtick" {
+        if tok.value.has("{") or tok.value.has("$") {
+            return ShellCommand(tok.value, false, l, c)
+        }
+        else {
+            return BacktickExpression(tok.value, l, c)
+        }
+    }
+    else if tt == "InterpolatedBacktick" {
+        return ShellCommand(tok.value, true, l, c)
+    }
+    else if tt == "ShellCommand" {
+        return ShellCommand(tok.value, false, l, c)
+    }
+    else if tt == "ShellCommandCapture" {
+        return ShellCommand(tok.value, true, l, c)
+    }
+    else if tt == "InterpolatedString" {
+        return parseInterpolatedString(tok.value, l, c)
+    }
+    else if tt == "Identifier" or (isKeywordIdent(tt) and tt != "True" and tt != "False" and tt != "Null" and tt != "Fn") {
+        return Identifier(tok.value, l, c)
+    }
+    else if tt == "True" {
+        return BooleanLiteral(true, l, c)
+    }
+    else if tt == "False" {
+        return BooleanLiteral(false, l, c)
+    }
+    else if tt == "Null" {
+        return NullLiteral(l, c)
+    }
+    else if tt == "OpenParen" {
+        return parseParenExpr(tok)
+    }
+    else if tt == "OpenBracket" {
+        pos = pos - 1
+        return parseArrayLiteral()
+    }
+    else if tt == "OpenBrace" {
+        pos = pos - 1
+        return disambiguateBrace()
+    }
+    else if tt == "BangOpenBrace" {
+        return parseObjectLiteral(true)
+    }
+    else if tt == "Not" {
+        if current().type == "OpenBrace" {
+            return parseObjectLiteral(true)
+        }
+        else {
+            operand = parseExpr(140)
+            return UnaryExpression(tok.value, operand, l, c)
+        }
+    }
+    else if tt == "Minus" {
+        operand = parseExpr(140)
+        return UnaryExpression("-", operand, l, c)
+    }
+    else if tt == "Plus" {
+        return parseExpr(140)
+    }
+    else if tt == "PlusPlus" {
+        operand = parseExpr(140)
+        return UpdateExpression(operand, "++", true, l, c)
+    }
+    else if tt == "MinusMinus" {
+        operand = parseExpr(140)
+        return UpdateExpression(operand, "--", true, l, c)
+    }
+    else if tt == "Length" {
+        operand = parseExpr(140)
+        return UnaryExpression("#", operand, l, c)
+    }
+    else if tt == "At" {
+        if current().type == "Identifier" {
+            field = advance()
+            return AtExpression(field.value, l, c)
+        }
+        else {
+            return error("Expected field name after '@'", l, c)
+        }
+    }
+    else if tt == "AtAt" {
+        if current().type == "Identifier" {
+            field = advance()
+            return AtAtExpression(field.value, l, c)
+        }
+        else {
+            return error("Expected field name after '@@'", l, c)
+        }
+    }
+    else if tt == "ColonColon" {
+        if current().type == "Identifier" {
+            ident = advance()
+            node = Identifier(ident.value, l, c)
+            node.globalScope = true
+            return node
+        }
+        else {
+            return error("Expected identifier after '::'", l, c)
+        }
+    }
+    else if tt == "Fn" {
+        return parseLambdaExpr()
+    }
+    else if tt == "Match" {
+        return parseMatchExpr()
+    }
+    else if tt == "If" {
+        return parseIfExpr()
+    }
+    else if tt == "SuperArrow" {
+        if current().type == "Identifier" {
+            methodName = advance().value
+            node = Identifier("__super__", l, c)
+            node.isSuperCall = true
+            node.superMethodName = methodName
+            if current().type == "OpenParen" {
+                advance()
+                args = []
+                skipNewlines()
+                while current().type != "CloseParen" and notEOF() {
+                    skipNewlines()
+                    if current().type == "CloseParen": break
+                    args.push(parseExpr(0))
+                    skipNewlines()
+                    if current().type == "Comma": advance()
+                }
+                expect("CloseParen")
+                return CallExpression(node, args, l, c)
+            }
+            else {
+                return node
+            }
+        }
+        else {
+            return error("Expected method name after '@->'", l, c)
+        }
+    }
+    else {
+        return error("Unexpected token in expression: " + tt, l, c)
+    }
+}
     // ===================================================================
     // LEFT DENOTATION (led) — infix and postfix operators
     // ===================================================================
-    fn led(tok, left) {
-        tt = tok.type
-        l = tok.line
-        c = tok.col
+fn led(tok, left) {
+    tt = tok.type
+    l = tok.line
+    c = tok.col
 
-        // Assignment operators
-        if tt == "Assign" {
-            right = parseExpr(getRightBindingPower("Assign"))
-            if right == null: return error("Expected value after '='", l, c)
-            if right.kind == "ErrorNode": return right
-            AssignmentExpression(left, right, l, c)
-
-        }
-        else if COMPOUND_ASSIGN_TOKENS.has(tt) {
-            right = parseExpr(getRightBindingPower(tt))
-            if right == null: return error("Expected value after compound assign", l, c)
-            if right.kind == "ErrorNode": return right
-            CompoundAssignment(left, COMPOUND_ASSIGN_TOKENS[tt], right, l, c)
-
-        }
-        else if tt == "LeftArrow" {
-            // await-assign: x <- expr
-            right = parseExpr(getRightBindingPower("LeftArrow"))
-            if right == null: return error("Expected value after '<-'", l, c)
-            if right.kind == "ErrorNode": return right
-            AssignmentExpression(left, right, l, c)
-
-        }
-        // Binary operators
-        else if tt == "Plus" {
-            right = parseExpr(getRightBindingPower("Plus"))
-            BinaryExpression(left, "+", right, l, c)
-
-        }
-        else if tt == "Minus" {
-            right = parseExpr(getRightBindingPower("Minus"))
-            BinaryExpression(left, "-", right, l, c)
-
-        }
-        else if tt == "Multiply" {
-            right = parseExpr(getRightBindingPower("Multiply"))
-            BinaryExpression(left, "*", right, l, c)
-
-        }
-        else if tt == "Divide" {
-            right = parseExpr(getRightBindingPower("Divide"))
-            BinaryExpression(left, "/", right, l, c)
-
-        }
-        else if tt == "Modulo" {
-            right = parseExpr(getRightBindingPower("Modulo"))
-            BinaryExpression(left, "%", right, l, c)
-
-        }
-        else if tt == "Backslash" {
-            right = parseExpr(getRightBindingPower("Backslash"))
-            BinaryExpression(left, "\\", right, l, c)
-
-        }
-        else if tt == "DoubleBackslash" {
-            right = parseExpr(getRightBindingPower("DoubleBackslash"))
-            BinaryExpression(left, "\\\\", right, l, c)
-
-        }
-        else if tt == "DoubleModulo" {
-            right = parseExpr(getRightBindingPower("DoubleModulo"))
-            BinaryExpression(left, "%%", right, l, c)
-
-        }
-        else if tt == "Power" {
-            right = parseExpr(getRightBindingPower("Power"))
-            BinaryExpression(left, "**", right, l, c)
-
-        }
-        else if tt == "Equals" {
-            right = parseExpr(getRightBindingPower("Equals"))
-            BinaryExpression(left, "==", right, l, c)
-
-        }
-        else if tt == "NotEquals" {
-            right = parseExpr(getRightBindingPower("NotEquals"))
-            BinaryExpression(left, "!=", right, l, c)
-
-        }
-        else if tt == "Is" {
-            right = parseExpr(getRightBindingPower("Is"))
-            BinaryExpression(left, "is", right, l, c)
-
-        }
-        else if tt == "Tilde" or tt == "Matches" {
-            right = parseExpr(getRightBindingPower(tt))
-            BinaryExpression(left, "matches", right, l, c)
-
-        }
-        else if tt == "In" {
-            right = parseExpr(getRightBindingPower("In"))
-            BinaryExpression(left, "in", right, l, c)
-
-        }
-        else if tt == "Not" {
-            // 'not in' compound infix
-            if current().type == "In" {
-                advance()
-                right = parseExpr(getRightBindingPower("In"))
-                BinaryExpression(left, "not in", right, l, c)
-            }
-            else {
-                left
-
-            }
-        }
-        else if tt == "Less" {
-            right = parseExpr(getRightBindingPower("Less"))
-            BinaryExpression(left, "<", right, l, c)
-
-        }
-        else if tt == "Greater" {
-            right = parseExpr(getRightBindingPower("Greater"))
-            BinaryExpression(left, ">", right, l, c)
-
-        }
-        else if tt == "LessEquals" {
-            right = parseExpr(getRightBindingPower("LessEquals"))
-            BinaryExpression(left, "<=", right, l, c)
-
-        }
-        else if tt == "GreaterEquals" {
-            right = parseExpr(getRightBindingPower("GreaterEquals"))
-            BinaryExpression(left, ">=", right, l, c)
-
-        }
-        else if tt == "And" {
-            right = parseExpr(getRightBindingPower("And"))
-            BinaryExpression(left, "&&", right, l, c)
-
-        }
-        else if tt == "Or" {
-            right = parseExpr(getRightBindingPower("Or"))
-            BinaryExpression(left, "||", right, l, c)
-
-        }
-        else if tt == "Nullish" {
-            right = parseExpr(getRightBindingPower("Nullish"))
-            BinaryExpression(left, "??", right, l, c)
-
-        }
-        // Bitwise
-        else if tt == "BitwiseOr" {
-            right = parseExpr(getRightBindingPower("BitwiseOr"))
-            BinaryExpression(left, "|", right, l, c)
-
-        }
-        else if tt == "BitwiseXor" {
-            right = parseExpr(getRightBindingPower("BitwiseXor"))
-            BinaryExpression(left, "^", right, l, c)
-
-        }
-        else if tt == "BitwiseAnd" {
-            right = parseExpr(getRightBindingPower("BitwiseAnd"))
-            BinaryExpression(left, "&", right, l, c)
-
-        }
-        else if tt == "ShiftLeft" {
-            right = parseExpr(getRightBindingPower("ShiftLeft"))
-            BinaryExpression(left, "<<", right, l, c)
-
-        }
-        else if tt == "ShiftRight" {
-            right = parseExpr(getRightBindingPower("ShiftRight"))
-            BinaryExpression(left, ">>", right, l, c)
-
-        }
-        // Ternary: cond ? true : false
-        else if tt == "Question" {
-            trueExpr = parseExpr(0)
-            if current().type != "Colon" {
-                return error("Expected ':' after ternary true branch", l, c)
-            }
+    // Assignment operators
+    if tt == "Assign" {
+        right = parseExpr(getRightBindingPower("Assign"))
+        if right == null: return error("Expected value after '='", l, c)
+        if right.kind == "ErrorNode": return right
+        return AssignmentExpression(left, right, l, c)
+    }
+    else if COMPOUND_ASSIGN_TOKENS.has(tt) {
+        right = parseExpr(getRightBindingPower(tt))
+        if right == null: return error("Expected value after compound assign", l, c)
+        if right.kind == "ErrorNode": return right
+        return CompoundAssignment(left, COMPOUND_ASSIGN_TOKENS[tt], right, l, c)
+    }
+    else if tt == "LeftArrow" {
+        right = parseExpr(getRightBindingPower("LeftArrow"))
+        if right == null: return error("Expected value after '<-'", l, c)
+        if right.kind == "ErrorNode": return right
+        return AssignmentExpression(left, right, l, c)
+    }
+    // Binary operators
+    else if tt == "Plus" {
+        right = parseExpr(getRightBindingPower("Plus"))
+        return BinaryExpression(left, "+", right, l, c)
+    }
+    else if tt == "Minus" {
+        right = parseExpr(getRightBindingPower("Minus"))
+        return BinaryExpression(left, "-", right, l, c)
+    }
+    else if tt == "Multiply" {
+        right = parseExpr(getRightBindingPower("Multiply"))
+        return BinaryExpression(left, "*", right, l, c)
+    }
+    else if tt == "Divide" {
+        right = parseExpr(getRightBindingPower("Divide"))
+        return BinaryExpression(left, "/", right, l, c)
+    }
+    else if tt == "Modulo" {
+        right = parseExpr(getRightBindingPower("Modulo"))
+        return BinaryExpression(left, "%", right, l, c)
+    }
+    else if tt == "Backslash" {
+        right = parseExpr(getRightBindingPower("Backslash"))
+        return BinaryExpression(left, "\\", right, l, c)
+    }
+    else if tt == "DoubleBackslash" {
+        right = parseExpr(getRightBindingPower("DoubleBackslash"))
+        return BinaryExpression(left, "\\\\", right, l, c)
+    }
+    else if tt == "DoubleModulo" {
+        right = parseExpr(getRightBindingPower("DoubleModulo"))
+        return BinaryExpression(left, "%%", right, l, c)
+    }
+    else if tt == "Power" {
+        right = parseExpr(getRightBindingPower("Power"))
+        return BinaryExpression(left, "**", right, l, c)
+    }
+    else if tt == "Equals" {
+        right = parseExpr(getRightBindingPower("Equals"))
+        return BinaryExpression(left, "==", right, l, c)
+    }
+    else if tt == "NotEquals" {
+        right = parseExpr(getRightBindingPower("NotEquals"))
+        return BinaryExpression(left, "!=", right, l, c)
+    }
+    else if tt == "Is" {
+        right = parseExpr(getRightBindingPower("Is"))
+        return BinaryExpression(left, "is", right, l, c)
+    }
+    else if tt == "Tilde" or tt == "Matches" {
+        right = parseExpr(getRightBindingPower(tt))
+        return BinaryExpression(left, "matches", right, l, c)
+    }
+    else if tt == "In" {
+        right = parseExpr(getRightBindingPower("In"))
+        return BinaryExpression(left, "in", right, l, c)
+    }
+    else if tt == "Not" {
+        if current().type == "In" {
             advance()
-            falseExpr = parseExpr(getRightBindingPower("Question"))
-            TernaryExpression(left, trueExpr, falseExpr, l, c)
-
-        }
-        // Range
-        else if tt == "DotDot" {
-            right = parseExpr(getRightBindingPower("DotDot"))
-            // Check for step: a..b..step
-            if current().type == "DotDot" {
-                advance()
-                step = parseExpr(getRightBindingPower("DotDot"))
-                node = RangeExpression(left, right, false, l, c)
-                node.step = step
-                node
-            }
-            else {
-                RangeExpression(left, right, false, l, c)
-
-            }
-        }
-        else if tt == "DotDotEquals" {
-            right = parseExpr(getRightBindingPower("DotDotEquals"))
-            RangeExpression(left, right, true, l, c)
-
-        }
-        // Pipeline
-        else if tt == "Pipe" or tt == "PipeRight" {
-            right = parseExpr(getRightBindingPower(tt))
-            // If right is a CallExpression, prepend left as first arg
-            if right != null and right.kind == "CallExpression" {
-                right.args.insert(0, left)
-                PipelineExpression(left, right, l, c)
-            }
-            else {
-                PipelineExpression(left, right, l, c)
-
-            }
-        }
-        // Member access: expr.field
-        else if tt == "Dot" {
-  if current().type == "Identifier" or isDotAccessIdent(current().type) {
-    prop = advance()
-    MemberExpression(left, prop.value, l, c)
-            }
-            else {
-                error("Expected identifier after '.'", l, c)
-
-            }
-        }
-        // Optional chaining: expr?.field
-        else if tt == "QuestionDot" {
-  if current().type == "Identifier" or isDotAccessIdent(current().type) {
-    prop = advance()
-    node = MemberExpression(left, prop.value, l, c)
-                node.optional = true
-                node
-            }
-            else {
-                error("Expected identifier after '?.'", l, c)
-
-            }
-        }
-        // Function call: expr(args)
-        else if tt == "OpenParen" {
-            args = parseCallArgs()
-            CallExpression(left, args, l, c)
-
-        }
-        // Index: expr[index]
-        else if tt == "OpenBracket" {
-            // Check for slice: look ahead for colon at bracket depth 1
-            isSlice = detectSlice()
-
-            if isSlice {
-                parseSliceExpr(left, l, c)
-            }
-            else {
-                idx = parseExpr(0)
-                skipNewlines()
-                if current().type != "CloseBracket" {
-                    error("Expected ']' after index", l, c)
-                }
-                else {
-                    advance()
-                    IndexExpression(left, idx, l, c)
-
-                }
-            }
-        }
-        // Postfix increment/decrement
-        else if tt == "PlusPlus" {
-            UpdateExpression(left, "++", false, l, c)
-
-        }
-        else if tt == "MinusMinus" {
-            UpdateExpression(left, "--", false, l, c)
-
-        }
-        // Arrow function: param => body
-        else if tt == "Arrow" {
-            if inMatchExpr {
-                return null
-            }
-            if left == null or left.kind != "Identifier" {
-                return error("Arrow function requires identifier parameter", l, c)
-            }
-            paramName = left.name
-            params = [paramName]
-            // Parse body
-            body = null
-            if current().type == "OpenBrace" {
-                body = parseBlock()
-            }
-            else {
-                bodyExpr = parseExpr(getRightBindingPower("Arrow"))
-                body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-            }
-            LambdaExpression(params, body, l, c)
-
+            right = parseExpr(getRightBindingPower("In"))
+            return BinaryExpression(left, "not in", right, l, c)
         }
         else {
-            error("Unexpected token in infix position: " + tt, l, c)
-
+            return left
         }
     }
+    else if tt == "Less" {
+        right = parseExpr(getRightBindingPower("Less"))
+        return BinaryExpression(left, "<", right, l, c)
+    }
+    else if tt == "Greater" {
+        right = parseExpr(getRightBindingPower("Greater"))
+        return BinaryExpression(left, ">", right, l, c)
+    }
+    else if tt == "LessEquals" {
+        right = parseExpr(getRightBindingPower("LessEquals"))
+        return BinaryExpression(left, "<=", right, l, c)
+    }
+    else if tt == "GreaterEquals" {
+        right = parseExpr(getRightBindingPower("GreaterEquals"))
+        return BinaryExpression(left, ">=", right, l, c)
+    }
+    else if tt == "And" {
+        right = parseExpr(getRightBindingPower("And"))
+        return BinaryExpression(left, "&&", right, l, c)
+    }
+    else if tt == "Or" {
+        right = parseExpr(getRightBindingPower("Or"))
+        return BinaryExpression(left, "||", right, l, c)
+    }
+    else if tt == "Nullish" {
+        right = parseExpr(getRightBindingPower("Nullish"))
+        return BinaryExpression(left, "??", right, l, c)
+    }
+    // Bitwise
+    else if tt == "BitwiseOr" {
+        right = parseExpr(getRightBindingPower("BitwiseOr"))
+        return BinaryExpression(left, "|", right, l, c)
+    }
+    else if tt == "BitwiseXor" {
+        right = parseExpr(getRightBindingPower("BitwiseXor"))
+        return BinaryExpression(left, "^", right, l, c)
+    }
+    else if tt == "BitwiseAnd" {
+        right = parseExpr(getRightBindingPower("BitwiseAnd"))
+        return BinaryExpression(left, "&", right, l, c)
+    }
+    else if tt == "ShiftLeft" {
+        right = parseExpr(getRightBindingPower("ShiftLeft"))
+        return BinaryExpression(left, "<<", right, l, c)
+    }
+    else if tt == "ShiftRight" {
+        right = parseExpr(getRightBindingPower("ShiftRight"))
+        return BinaryExpression(left, ">>", right, l, c)
+    }
+    // Ternary: cond ? true : false
+    else if tt == "Question" {
+        trueExpr = parseExpr(0)
+        if current().type != "Colon" {
+            return error("Expected ':' after ternary true branch", l, c)
+        }
+        advance()
+        falseExpr = parseExpr(getRightBindingPower("Question"))
+        return TernaryExpression(left, trueExpr, falseExpr, l, c)
+    }
+    // Range
+    else if tt == "DotDot" {
+        right = parseExpr(getRightBindingPower("DotDot"))
+        if current().type == "DotDot" {
+            advance()
+            step = parseExpr(getRightBindingPower("DotDot"))
+            node = RangeExpression(left, right, false, l, c)
+            node.step = step
+            return node
+        }
+        else {
+            return RangeExpression(left, right, false, l, c)
+        }
+    }
+    else if tt == "DotDotEquals" {
+        right = parseExpr(getRightBindingPower("DotDotEquals"))
+        return RangeExpression(left, right, true, l, c)
+    }
+    // Pipeline
+    else if tt == "Pipe" or tt == "PipeRight" {
+        right = parseExpr(getRightBindingPower(tt))
+        if right != null and right.kind == "CallExpression" {
+            right.args.insert(0, left)
+            return PipelineExpression(left, right, l, c)
+        }
+        else {
+            return PipelineExpression(left, right, l, c)
+        }
+    }
+    // Member access: expr.field
+    else if tt == "Dot" {
+        if current().type == "Identifier" or isDotAccessIdent(current().type) {
+            prop = advance()
+            return MemberExpression(left, prop.value, l, c)
+        }
+        else {
+            return error("Expected identifier after '.'", l, c)
+        }
+    }
+    // Optional chaining: expr?.field
+    else if tt == "QuestionDot" {
+        if current().type == "Identifier" or isDotAccessIdent(current().type) {
+            prop = advance()
+            node = MemberExpression(left, prop.value, l, c)
+            node.optional = true
+            return node
+        }
+        else {
+            return error("Expected identifier after '?.'", l, c)
+        }
+    }
+    // Function call: expr(args)
+    else if tt == "OpenParen" {
+        args = parseCallArgs()
+        return CallExpression(left, args, l, c)
+    }
+    // Index: expr[index]
+    else if tt == "OpenBracket" {
+        isSlice = detectSlice()
+        if isSlice {
+            return parseSliceExpr(left, l, c)
+        }
+        else {
+            idx = parseExpr(0)
+            skipNewlines()
+            if current().type != "CloseBracket" {
+                return error("Expected ']' after index", l, c)
+            }
+            else {
+                advance()
+                return IndexExpression(left, idx, l, c)
+            }
+        }
+    }
+    // Postfix increment/decrement
+    else if tt == "PlusPlus" {
+        return UpdateExpression(left, "++", false, l, c)
+    }
+    else if tt == "MinusMinus" {
+        return UpdateExpression(left, "--", false, l, c)
+    }
+    // Arrow function: param => body
+    else if tt == "Arrow" {
+        if inMatchExpr {
+            return null
+        }
+        if left == null or left.kind != "Identifier" {
+            return error("Arrow function requires identifier parameter", l, c)
+        }
+        paramName = left.name
+        params = [paramName]
+        body = null
+        if current().type == "OpenBrace" {
+            body = parseBlock()
+        }
+        else {
+            bodyExpr = parseExpr(getRightBindingPower("Arrow"))
+            body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+        }
+        return LambdaExpression(params, body, l, c)
+    }
+    else {
+        return error("Unexpected token in infix position: " + tt, l, c)
+    }
+}
     // ===================================================================
     // HELPER: Parse call arguments
     // ===================================================================
@@ -1861,12 +1759,11 @@ fn parseStatement() {
  if tt == "Prot" { return parseProtocolDeclaration() }
  if tt == "Impl" { return parseImplDeclaration() }
         // Expression statement
-        expr = parseExpr(0)
-        if expr == null: return null
-        if expr.kind == "ErrorNode": return expr
-        ExpressionStatement(expr, l, c)
-
-    }
+    expr = parseExpr(0)
+    if expr == null: return null
+    if expr.kind == "ErrorNode": return expr
+    return ExpressionStatement(expr, l, c)
+}
     // ===================================================================
     // STATEMENT: if
     // ===================================================================
@@ -1878,23 +1775,17 @@ fn parseIfStatement() {
 
   prevSugar = allowBraceSugar
   allowBraceSugar = false
-  print("[DBG parseIf] before parseExpr, pos=" + str(pos) + " current=" + current().type + " '" + current().value + "'")
   condition = parseExpr(0)
-  print("[DBG parseIf] after parseExpr, pos=" + str(pos) + " current=" + current().type + " '" + current().value + "' allowBraceSugar=" + str(allowBraceSugar))
   allowBraceSugar = prevSugar
 
   skipNewlines()
-  print("[DBG parseIfStatement] condition parsed, current=" + current().type + " '" + current().value + "' line=" + str(current().line))
 
   thenBranch = null
   if current().type == "OpenBrace" {
     thenBranch = parseBlock()
   }
-  print("[DBG parseIfStatement] after OpenBrace check, thenBranch=" + str(thenBranch != null) + " current=" + current().type)
   if thenBranch == null && current().type == "Colon" {
-    print("[DBG parseIfStatement] entering colon block")
     thenBranch = parseBlock()
-    print("[DBG parseIfStatement] colon block done, thenBranch=" + str(thenBranch != null) + " current=" + current().type)
   }
   if thenBranch == null {
     thenBranch = parseStatement()

@@ -51,8 +51,9 @@ static void print_usage(const char *prog) {
 " --hvmoke run .hv smoke tests (scripts/smoke/*.hv)\n"
 " --scripts run .hv script tests (smoke + integration + main)\n"
 " --cpp run C++ unit tests via ctest\n"
+" --jit   run JIT smoke tests (requires LLVM build)\n"
 " --list list all test files without running\n"
-" --all run everything (smoke + hvmoke + scripts + cpp)\n"
+" --all run everything (smoke + jit + hvmoke + scripts + cpp)\n"
 "\n"
 "options:\n"
 " --verbose show script output on failure\n"
@@ -70,6 +71,7 @@ int main(int argc, char **argv) {
     bool mode_hvmoke = false;
     bool mode_scripts = false;
 	bool mode_cpp = false;
+	bool mode_jit = false;
 	bool mode_list = false;
 	bool mode_all = false;
 	bool mode_scheduler = false;
@@ -87,6 +89,7 @@ int main(int argc, char **argv) {
         if (arg == "--smoke") { mode_smoke = true; }
         else if (arg == "--hvmoke") { mode_hvmoke = true; }
         else if (arg == "--scripts") { mode_scripts = true; }
+		else if (arg == "--jit") { mode_jit = true; }
 		else if (arg == "--cpp") { mode_cpp = true; }
 		else if (arg == "--list") { mode_list = true; }
 		else if (arg == "--all") { mode_all = true; }
@@ -109,7 +112,7 @@ int main(int argc, char **argv) {
 	if (havel_bin.empty()) havel_bin = find_havel_binary();
 	if (scripts_root.empty()) scripts_root = find_scripts_root();
 
-    if (!mode_smoke && !mode_hvmoke && !mode_scripts && !mode_cpp && !mode_list && !mode_all && single_files.empty()) {
+    if (!mode_smoke && !mode_hvmoke && !mode_scripts && !mode_jit && !mode_cpp && !mode_list && !mode_all && single_files.empty()) {
 		mode_all = true;
 	}
 
@@ -147,6 +150,22 @@ int main(int argc, char **argv) {
         std::vector<char *> smoke_argv(smoke_args.begin(), smoke_args.end());
         failures += hvtest::run_smoke_tests(smoke_argc, smoke_argv.data());
     }
+
+#ifdef HAVEL_ENABLE_LLVM
+    if (mode_all || mode_jit) {
+        std::cout << "\n=== JIT smoke ===" << std::endl;
+        int smoke_argc = static_cast<int>(smoke_args.size());
+        std::vector<char *> smoke_argv(smoke_args.begin(), smoke_args.end());
+        failures += hvtest::run_jit_smoke_tests(smoke_argc, smoke_argv.data());
+    }
+#else
+    if (mode_jit) {
+        std::cerr << "JIT tests require LLVM build (ENABLE_LLVM=ON). "
+                  << "Use build mode 0 (build.sh 0 build) or scripts/build-aot-jit.sh"
+                  << std::endl;
+        return 1;
+    }
+#endif
 
     if (mode_all || mode_hvmoke) {
         std::cout << "\n=== .hv smoke tests ===" << std::endl;

@@ -15,6 +15,12 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef HAVEL_ENABLE_LLVM
+#include "compiler/BytecodeOrcJIT.h"
+#include "runtime/StdLibModules.hpp"
+#include "runtime/HostContext.hpp"
+#endif
+
 namespace hvtest {
 namespace {
 
@@ -2703,5 +2709,247 @@ if (failures != 0) {
 	std::cout << "Bytecode smoke passed" << std::endl;
 	return 0;
 }
+
+// ===========================================================================
+// JIT-compiled smoke tests (requires HAVEL_ENABLE_LLVM)
+// ===========================================================================
+#ifdef HAVEL_ENABLE_LLVM
+
+int runJitCase(const std::string &name, const std::string &source,
+               int64_t expected, bool dump_bytecode,
+               const std::string &snapshot_dir) {
+  try {
+    if (dump_bytecode) {
+      dumpBytecode(name, source);
+    }
+
+    ::havel::HostContext ctx;
+    ::havel::compiler::BytecodeOrcJIT jit;
+    jit.setShowWarnings(false);
+    ::havel::compiler::VM vm(ctx);
+    ctx.vm = &vm;
+    ::havel::registerPureStdLib(vm);
+    vm.setHotFunctionCallback(
+        [&jit](const ::havel::compiler::BytecodeFunction &func) {
+          jit.compileFunction(func);
+        });
+    vm.setJITCompiler(&jit);
+
+    ::havel::compiler::PipelineOptions options;
+    options.compile_unit_name = name;
+    options.snapshot_dir = snapshot_dir;
+    options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.vm_override = &vm;
+
+    const auto result =
+        ::havel::compiler::runBytecodePipeline(source, "__main__", options);
+    if (!equalsInt(result.return_value, expected)) {
+      std::string val_desc;
+      if (result.return_value.isInt())
+        val_desc = std::to_string(result.return_value.asInt());
+      else if (result.return_value.isNull())
+        val_desc = "null";
+      else if (result.return_value.isDouble())
+        val_desc = "double:" + std::to_string(result.return_value.asDouble());
+      else if (result.return_value.isBool())
+        val_desc = "bool:" + std::to_string(result.return_value.asBool());
+      else
+        val_desc = "non-int";
+      std::cerr << "[FAIL] " << name << " (JIT): expected " << expected
+                << " but got " << val_desc << std::endl;
+      return 1;
+    }
+
+    std::cout << "[PASS] " << name << " (JIT)" << std::endl;
+    return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "[FAIL] " << name << " (JIT): exception: " << e.what()
+              << std::endl;
+    return 1;
+  }
+}
+
+int run_jit_smoke_tests(int argc, char **argv) {
+  bool dump_bytecode = false;
+  std::string snapshot_dir = "/tmp/havel-bytecode-snapshots";
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "--dump-bytecode") {
+      dump_bytecode = true;
+    } else if (std::string(argv[i]) == "--no-snapshots") {
+      snapshot_dir.clear();
+    } else if (std::string(argv[i]) == "--snapshot-dir") {
+      if (i + 1 >= argc) {
+        std::cerr << "--snapshot-dir requires a directory argument" << std::endl;
+        return 1;
+      }
+      snapshot_dir = argv[++i];
+    }
+  }
+
+  int failures = 0;
+
+  // -- Arithmetic (core JIT path) --
+  failures += runJitCase("jit-arith-add", R"havel(
+return 19 + 23
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-arith-sub", R"havel(
+return 100 - 58
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-arith-mul", R"havel(
+return 6 * 7
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-arith-div", R"havel(
+return 126 / 3
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-arith-complex", R"havel(
+x = 10
+y = 20
+z = x + y * 2 - 5
+return z
+)havel", 45, dump_bytecode, snapshot_dir);
+
+  // -- Comparisons --
+  failures += runJitCase("jit-compare-eq", R"havel(
+if 10 == 10 { return 1 }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-compare-lt", R"havel(
+if 5 < 10 { return 1 }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // -- Boolean logic --
+  failures += runJitCase("jit-logic-and", R"havel(
+if true && true { return 1 }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-logic-or", R"havel(
+if false || true { return 1 }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // -- Function call --
+  failures += runJitCase("jit-func-call", R"havel(
+fn add(a, b) { return a + b }
+return add(20, 22)
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-func-nested", R"havel(
+fn outer(x) {
+  fn double(v) { return v * 2 }
+  return double(x)
+}
+return outer(21)
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  // -- Control flow --
+  failures += runJitCase("jit-if-else", R"havel(
+a = 42
+if a > 40 { return 1 }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-while-loop", R"havel(
+i = 0
+sum = 0
+while i < 5 {
+  sum = sum + i
+  i = i + 1
+}
+return sum
+)havel", 10, dump_bytecode, snapshot_dir);
+
+  // -- Local variables --
+  failures += runJitCase("jit-local-vars", R"havel(
+x = 1
+y = 2
+z = 3
+return x + y + z
+)havel", 6, dump_bytecode, snapshot_dir);
+
+  // -- Global variable access --
+  failures += runJitCase("jit-global-var", R"havel(
+x = 40
+y = 2
+return x + y
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  // -- Array operations --
+  failures += runJitCase("jit-array-basic", R"havel(
+arr = [10, 20, 30]
+return arr[1]
+)havel", 20, dump_bytecode, snapshot_dir);
+
+  // -- String operations --
+  failures += runJitCase("jit-string-concat", R"havel(
+s = "hello " + "world"
+return #s
+)havel", 11, dump_bytecode, snapshot_dir);
+
+  // -- Closure --
+  failures += runJitCase("jit-closure", R"havel(
+fn makeCounter(seed) {
+  x = seed
+  fn next() {
+    x += 1
+    return x
+  }
+  return next
+}
+c = makeCounter(40)
+c()
+return c()
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  // -- Bitwise operations --
+  failures += runJitCase("jit-bitwise-and", R"havel(
+return 0xFF & 0x0F
+)havel", 15, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-bitwise-shift", R"havel(
+return 1 << 8
+)havel", 256, dump_bytecode, snapshot_dir);
+
+  // -- Method call --
+  failures += runJitCase("jit-method-call", R"havel(
+s = "hello".upper()
+return s == "HELLO" ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  // -- Array HOF (tests JIT tier-2 hot path) --
+  failures += runJitCase("jit-array-map", R"havel(
+nums = [1, 2, 3]
+out = nums.map((x) => x * 2)
+return out[2]
+)havel", 6, dump_bytecode, snapshot_dir);
+
+  // -- GC stress (exercises JIT + GC interaction) --
+  failures += runJitCase("jit-gc-stress", R"havel(
+i = 0
+while i < 500 {
+  arr = [i, i + 1, i + 2]
+  obj = {v: i}
+  i += 1
+}
+return i
+)havel", 500, dump_bytecode, snapshot_dir);
+
+  if (failures != 0) {
+    std::cerr << "JIT smoke failed with " << failures << " failing case(s)"
+              << std::endl;
+    return 1;
+  }
+
+  std::cout << "JIT smoke passed" << std::endl;
+  return 0;
+}
+
+#endif // HAVEL_ENABLE_LLVM
 
 } // namespace hvtest

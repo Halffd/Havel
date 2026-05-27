@@ -926,8 +926,14 @@ target_include_directories(hvtest PRIVATE
   ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 
+target_compile_definitions(hvtest PRIVATE
+  $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+)
+
 target_link_libraries(hvtest PRIVATE
-  havel_lang
+  -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+  ${COMMON_LIBS}
+  $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
 )
 
 add_executable(havel_api_test tests/test_embed_api.cpp)

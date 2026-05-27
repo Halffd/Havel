@@ -837,10 +837,8 @@ int ms = toInt(args[0]);
 auto closure = args[1];
 auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
-fprintf(stderr, "DEBUG: interval() creating, event_queue_=%p\n", (void*)event_queue_);
-auto callback = [this, closure, intervalIdPtr]() {
-if (event_queue_) {
-fprintf(stderr, "DEBUG: interval callback pushing TIMER_FIRE\n");
+	auto callback = [this, closure, intervalIdPtr]() {
+		if (event_queue_) {
 auto *payload = new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
 event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
 } else {

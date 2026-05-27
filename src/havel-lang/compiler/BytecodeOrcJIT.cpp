@@ -1613,6 +1613,20 @@ uint64_t havel_vm_import(void* vm_ptr, uint64_t path_bits) {
   return vm->loadModule(path).rawBits();
 }
 
+void havel_vm_import_wildcard(void* vm_ptr, uint64_t exports_bits) {
+  if (!vm_ptr) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value exports;
+  std::memcpy(&exports, &exports_bits, sizeof(uint64_t));
+  if (!exports.isObjectId()) return;
+  auto* obj = vm->getHeap().object(exports.asObjectId());
+  if (!obj) return;
+  for (const auto& [name, value] : *obj) {
+    if (name.empty() || name[0] == '_') continue;
+    vm->getGlobals()[name] = value;
+  }
+}
+
 uint64_t havel_vm_yield_resume(void* vm_ptr, uint64_t co_bits) {
   if (!vm_ptr) return Value::makeNull().rawBits();
   return Value::makeNull().rawBits();
@@ -1954,6 +1968,7 @@ addSym("havel_vm_object_new", reinterpret_cast<void*>(&havel_vm_object_new));
     addSym("havel_vm_object_get", reinterpret_cast<void*>(&havel_vm_object_get));
     addSym("havel_vm_object_get_raw", reinterpret_cast<void*>(&havel_vm_object_get_raw));
     addSym("havel_vm_object_set", reinterpret_cast<void*>(&havel_vm_object_set));
+    addSym("havel_vm_object_set_raw", reinterpret_cast<void*>(&havel_vm_object_set_raw));
 addSym("havel_vm_range_new", reinterpret_cast<void*>(&havel_vm_range_new));
 addSym("havel_vm_iter_new", reinterpret_cast<void*>(&havel_vm_iter_new));
 addSym("havel_vm_iter_next", reinterpret_cast<void*>(&havel_vm_iter_next));
@@ -2053,6 +2068,12 @@ addSym("havel_vm_length", reinterpret_cast<void*>(&havel_vm_length));
         addSym("havel_vm_export_var", reinterpret_cast<void*>(&havel_vm_export_var));
         addSym("havel_vm_begin_module", reinterpret_cast<void*>(&havel_vm_begin_module));
         addSym("havel_vm_end_module", reinterpret_cast<void*>(&havel_vm_end_module));
+    addSym("havel_vm_set_exception", reinterpret_cast<void*>(&havel_vm_set_exception));
+    addSym("havel_vm_try_find_throw_target", reinterpret_cast<void*>(&havel_vm_try_find_throw_target));
+    addSym("havel_vm_throw_from_jit", reinterpret_cast<void*>(&havel_vm_throw_from_jit));
+    addSym("havel_vm_object_has_raw", reinterpret_cast<void*>(&havel_vm_object_has_raw));
+    addSym("havel_vm_object_delete_raw", reinterpret_cast<void*>(&havel_vm_object_delete_raw));
+    addSym("havel_vm_import_wildcard", reinterpret_cast<void*>(&havel_vm_import_wildcard));
 
     if (auto err = jd.define(absoluteSymbols(std::move(syms)))) {
         reportLLVMError("define-symbols", std::move(err), show_warnings_);

@@ -1991,11 +1991,10 @@ while (stack.size() > finished.stack_depth) {
 
 
 void VM::emitVariableChanged(const std::string& var_name) {
-    if (!event_queue_) return;
-    uint32_t var_hash = std::hash<std::string>{}(var_name);
-    Event change_event(EventType::VAR_CHANGED, var_hash);
-    change_event.ptr = new std::string(var_name);
-    event_queue_->push(change_event);
+  if (!event_queue_ || !event_queue_->hasHandler(EventType::VAR_CHANGED)) return;
+  uint32_t var_hash = std::hash<std::string>{}(var_name);
+  Event change_event(EventType::VAR_CHANGED, var_hash, new std::string(var_name));
+  event_queue_->push(change_event);
 }
 
 void VM::throwError(const std::string &msg) {

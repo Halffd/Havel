@@ -3574,21 +3574,22 @@ globals[name] = value;
   // CONCURRENCY PRIMITIVES
   // ============================================================================
 
-  case OpCode::THREAD_SPAWN: {
-    // Spawn new thread with function from stack
-    Value func_val = popStack();
-    if (!func_val.isClosureId() && !func_val.isFunctionObjId()) {
-      COMPILER_THROW("THREAD_SPAWN expects a function");
-    }
-    
-    // Create thread object (placeholder - actual thread implementation needed)
-    uint32_t thread_id = heap_.allocateThread();
-    pushStack(Value::makeThreadId(thread_id));
-    
-    
-    // This would require a thread pool and async execution system
-    break;
-  }
+case OpCode::THREAD_SPAWN: {
+			Value func_val = popStack();
+			if (!func_val.isClosureId() && !func_val.isFunctionObjId()) {
+				COMPILER_THROW("THREAD_SPAWN expects a function");
+			}
+			Value result = invokeHostFunctionDirect("thread_spawn", {func_val});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("thread.spawn", {func_val});
+			}
+			if (result.isNull()) {
+				uint32_t thread_id = heap_.allocateThread();
+				result = Value::makeThreadId(thread_id);
+			}
+			pushStack(result);
+			break;
+		}
 
   case OpCode::THREAD_JOIN: {
     // Join thread and wait for completion (non-blocking via fiber suspension)
@@ -3613,100 +3614,110 @@ globals[name] = value;
     break;
   }
 
-  case OpCode::THREAD_SEND: {
-    // Send message to thread
-    Value message = popStack();
-    Value thread_val = popStack();
-    
-    if (!thread_val.isThreadId()) {
-      COMPILER_THROW("THREAD_SEND expects a thread");
-    }
-    
-    // TODO: Implement message passing
-    pushStack(Value::makeNull());
-    break;
-  }
+case OpCode::THREAD_SEND: {
+			Value message = popStack();
+			Value thread_val = popStack();
+			if (!thread_val.isThreadId()) {
+				COMPILER_THROW("THREAD_SEND expects a thread");
+			}
+			Value result = invokeHostFunctionDirect("thread_send", {thread_val, message});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("thread.send", {thread_val, message});
+			}
+			pushStack(result);
+			break;
+		}
 
-  case OpCode::THREAD_RECEIVE: {
-    // Receive message from thread
-    Value thread_val = popStack();
-    
-    if (!thread_val.isThreadId()) {
-      COMPILER_THROW("THREAD_RECEIVE expects a thread");
-    }
-    
-    // TODO: Implement message receiving
-    pushStack(Value::makeNull());
-    break;
-  }
+		case OpCode::THREAD_RECEIVE: {
+			Value thread_val = popStack();
+			if (!thread_val.isThreadId()) {
+				COMPILER_THROW("THREAD_RECEIVE expects a thread");
+			}
+			Value result = invokeHostFunctionDirect("thread_receive", {thread_val});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("thread.receive", {thread_val});
+			}
+			pushStack(result);
+			break;
+		}
 
-  case OpCode::INTERVAL_START: {
-    // Start interval timer with function from stack and duration
-    Value func_val = popStack();
-    Value duration_val = popStack();
-    
-    if (!func_val.isClosureId() && !func_val.isFunctionObjId()) {
-      COMPILER_THROW("INTERVAL_START expects a function");
-    }
-    
-    if (!duration_val.isInt()) {
-      COMPILER_THROW("INTERVAL_START expects duration in milliseconds");
-    }
-    
-    // Create interval object (placeholder)
-    uint32_t interval_id = heap_.allocateInterval();
-    pushStack(Value::makeIntervalId(interval_id));
-    
-    // TODO: Actually start the interval timer
-    break;
-  }
+case OpCode::INTERVAL_START: {
+			Value func_val = popStack();
+			Value duration_val = popStack();
 
-  case OpCode::INTERVAL_STOP: {
-    // Stop interval timer
-    Value interval_val = popStack();
-    
-    if (!interval_val.isIntervalId()) {
-      COMPILER_THROW("INTERVAL_STOP expects an interval");
-    }
-    
-    // TODO: Stop the interval timer
-    pushStack(Value::makeNull());
-    break;
-  }
+			if (!func_val.isClosureId() && !func_val.isFunctionObjId()) {
+				COMPILER_THROW("INTERVAL_START expects a function");
+			}
 
-  case OpCode::TIMEOUT_START: {
-    // Start one-shot timeout with function from stack and delay
-    Value func_val = popStack();
-    Value delay_val = popStack();
-    
-    if (!func_val.isClosureId() && !func_val.isFunctionObjId()) {
-      COMPILER_THROW("TIMEOUT_START expects a function");
-    }
-    
-    if (!delay_val.isInt()) {
-      COMPILER_THROW("TIMEOUT_START expects delay in milliseconds");
-    }
-    
-    // Create timeout object (placeholder)
-    uint32_t timeout_id = heap_.allocateTimeout();
-    pushStack(Value::makeTimeoutId(timeout_id));
-    
-    // TODO: Actually start the timeout
-    break;
-  }
+			if (!duration_val.isInt()) {
+				COMPILER_THROW("INTERVAL_START expects duration in milliseconds");
+			}
 
-  case OpCode::TIMEOUT_CANCEL: {
-    // Cancel pending timeout
-    Value timeout_val = popStack();
-    
-    if (!timeout_val.isTimeoutId()) {
-      COMPILER_THROW("TIMEOUT_CANCEL expects a timeout");
-    }
-    
-    // TODO: Cancel the timeout
-    pushStack(Value::makeNull());
-    break;
-  }
+			Value result = invokeHostFunctionDirect("interval_start", {duration_val, func_val});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("interval.start", {duration_val, func_val});
+			}
+			if (result.isNull()) {
+				uint32_t interval_id = heap_.allocateInterval();
+				result = Value::makeIntervalId(interval_id);
+			}
+			pushStack(result);
+			break;
+		}
+
+		case OpCode::INTERVAL_STOP: {
+			Value interval_val = popStack();
+
+			if (!interval_val.isIntervalId()) {
+				COMPILER_THROW("INTERVAL_STOP expects an interval");
+			}
+
+			Value result = invokeHostFunctionDirect("interval_stop", {interval_val});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("interval.stop", {interval_val});
+			}
+			pushStack(result);
+			break;
+		}
+
+case OpCode::TIMEOUT_START: {
+			Value func_val = popStack();
+			Value delay_val = popStack();
+
+			if (!func_val.isClosureId() && !func_val.isFunctionObjId()) {
+				COMPILER_THROW("TIMEOUT_START expects a function");
+			}
+
+			if (!delay_val.isInt()) {
+				COMPILER_THROW("TIMEOUT_START expects delay in milliseconds");
+			}
+
+			Value result = invokeHostFunctionDirect("timeout_start", {delay_val, func_val});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("timeout.start", {delay_val, func_val});
+			}
+			if (result.isNull()) {
+				uint32_t timeout_id = heap_.allocateTimeout();
+				result = Value::makeTimeoutId(timeout_id);
+			}
+			pushStack(result);
+			break;
+		}
+
+		case OpCode::TIMEOUT_CANCEL: {
+			Value timeout_val = popStack();
+
+			if (!timeout_val.isTimeoutId()) {
+				COMPILER_THROW("TIMEOUT_CANCEL expects a timeout");
+			}
+
+			Value result = invokeHostFunctionDirect("timeout_cancel", {timeout_val});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("timeout.cancel", {timeout_val});
+			}
+			pushStack(result);
+			break;
+		}
 
   // ============================================================================
   // COROUTINES
@@ -4162,51 +4173,64 @@ break;
   // CHANNELS
   // ============================================================================
 
-  case OpCode::CHANNEL_NEW: {
-    // Create new channel
-    ChannelRef channel_ref = heap_.allocateChannel();
-    uint32_t channel_id = channel_ref.id;
-    pushStack(Value::makeChannelId(channel_id));
-    break;
-  }
+case OpCode::CHANNEL_NEW: {
+			Value result = invokeHostFunctionDirect("channel_new", {});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("channel.new", {});
+			}
+			if (result.isNull()) {
+				ChannelRef channel_ref = heap_.allocateChannel();
+				result = Value::makeChannelId(channel_ref.id);
+			}
+			pushStack(result);
+			break;
+		}
 
-  case OpCode::CHANNEL_SEND: {
-    // Send value to channel
-    Value value = popStack();
-    Value channel_val = popStack();
-    
-    if (!channel_val.isChannelId()) {
-      COMPILER_THROW("CHANNEL_SEND expects a channel");
-    }
-    
-    // TODO: Implement channel send
-    pushStack(Value::makeNull());
-    break;
-  }
+case OpCode::CHANNEL_SEND: {
+			Value value = popStack();
+			Value channel_val = popStack();
 
-  case OpCode::CHANNEL_RECEIVE: {
-    // Receive value from channel (blocking)
-    Value channel_val = popStack();
-    
-    if (!channel_val.isChannelId()) {
-      COMPILER_THROW("CHANNEL_RECEIVE expects a channel");
-    }
-    
-    // TODO: Implement channel receive
-    pushStack(Value::makeNull());
-    break;
-  }
+			if (!channel_val.isChannelId()) {
+				COMPILER_THROW("CHANNEL_SEND expects a channel");
+			}
 
-  case OpCode::CHANNEL_CLOSE: {
-    Value channel_val = popStack();
-    
-    if (!channel_val.isChannelId()) {
-      COMPILER_THROW("CHANNEL_CLOSE expects a channel");
-    }
-    
-    pushStack(Value::makeNull());
-    break;
-  }
+			Value result = invokeHostFunctionDirect("channel_send", {channel_val, value});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("channel.send", {channel_val, value});
+			}
+			pushStack(result);
+			break;
+		}
+
+		case OpCode::CHANNEL_RECEIVE: {
+			Value channel_val = popStack();
+
+			if (!channel_val.isChannelId()) {
+				COMPILER_THROW("CHANNEL_RECEIVE expects a channel");
+			}
+
+			Value result = invokeHostFunctionDirect("channel_receive", {channel_val});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("channel.receive", {channel_val});
+			}
+			pushStack(result);
+			break;
+		}
+
+		case OpCode::CHANNEL_CLOSE: {
+			Value channel_val = popStack();
+
+			if (!channel_val.isChannelId()) {
+				COMPILER_THROW("CHANNEL_CLOSE expects a channel");
+			}
+
+			Value result = invokeHostFunctionDirect("channel_close", {channel_val});
+			if (result.isNull()) {
+				result = invokeHostFunctionDirect("channel.close", {channel_val});
+			}
+			pushStack(result);
+			break;
+		}
 
   case OpCode::BEGIN_MODULE: {
     break;

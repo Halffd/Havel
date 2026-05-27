@@ -511,7 +511,9 @@ public:
         while (current_obj) {
             auto *val = current_obj->get(key);
             if (val) return *val;
-            auto* parent_val = current_obj->get("__class");
+            auto* parent_val = current_obj->get("__proto");
+            if (!parent_val) parent_val = current_obj->get("__class");
+            if (!parent_val) parent_val = current_obj->get("__struct");
             if (!parent_val) parent_val = current_obj->get("__parent");
             if (parent_val && parent_val->isObjectId()) {
                 current_obj = heap_.object(parent_val->asObjectId());

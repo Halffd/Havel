@@ -166,8 +166,14 @@ public:
      */
     void shutdownWorkers();
 
-    bool isShutdown() const { return shutdown_workers_.load(std::memory_order_acquire); }
-    
+  bool isShutdown() const { return shutdown_workers_.load(std::memory_order_acquire); }
+
+  bool hasHandler(EventType type) const {
+    std::lock_guard<std::mutex> lock(handlers_mutex_);
+    auto it = handlers_.find(static_cast<uint8_t>(type));
+    return it != handlers_.end() && it->second;
+  }
+
 private:
     utils::LockFreeQueue<Event> events_;
     std::unordered_map<uint8_t, EventHandler> handlers_;

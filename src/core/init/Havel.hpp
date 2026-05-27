@@ -2,8 +2,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -134,6 +136,8 @@ private:
   // Timer thread
   std::unique_ptr<std::thread> timerThread;
   std::atomic<bool> timerRunning{false};
+  std::mutex timerMutex;
+  std::condition_variable timerCv;
 
   // Timing
   std::chrono::steady_clock::time_point lastCheck;

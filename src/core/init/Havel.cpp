@@ -512,10 +512,11 @@ void Havel::startPeriodicTimer() {
     while (timerRunning) {
       auto now = std::chrono::steady_clock::now();
 
-      // Window check
-      if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck)
+      // Window check (only if timer is still running)
+      if (timerRunning &&
+          std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck)
               .count() >= WINDOW_CHECK_INTERVAL_MS) {
-        if (hotkeyManager) {
+        if (timerRunning && hotkeyManager) {
           hotkeyManager->updateAllConditionalHotkeys();
         }
         lastWindowCheck = now;
@@ -527,15 +528,31 @@ void Havel::startPeriodicTimer() {
         lastCheck = now;
       }
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(PERIODIC_INTERVAL_MS));
+      // Wait for interval or stop signal
+      std::unique_lock<std::mutex> lock(timerMutex);
+      timerCv.wait_for(lock, std::chrono::milliseconds(PERIODIC_INTERVAL_MS),
+                       [this]() { return !timerRunning.load(); });
     }
   });
 }
 
 void Havel::stopPeriodicTimer() {
   timerRunning = false;
+  timerCv.notify_one();
   if (timerThread && timerThread->joinable()) {
-    timerThread->join();
+    // Try to join with a timeout — if the timer thread is stuck on a
+    // mutex inside updateAllConditionalHotkeys, detach to avoid deadlock.
+    auto tid = timerThread->get_id();
+    std::this_thread::sleep_for(std::chrono::milliseconds(PERIODIC_INTERVAL_MS + 50));
+    if (timerThread->joinable()) {
+      // Thread didn't finish — it's stuck on a blocking call.
+      // Detach it and let it finish on its own (it will exit cleanly
+      // once the blocking call returns and timerRunning is false).
+      warn("Periodic timer thread did not stop in time — detaching");
+      timerThread->detach();
+    } else {
+      timerThread->join();
+    }
   }
   timerThread.reset();
 }

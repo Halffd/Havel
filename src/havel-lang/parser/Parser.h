@@ -229,7 +229,7 @@ private:
 
   // Havel-specific parsers
   std::unique_ptr<ast::Statement> parseLetDeclaration();
-        std::unique_ptr<ast::Statement> parseIfStatement(size_t effectiveColumn = 0);
+        std::unique_ptr<ast::Statement> parseIfStatement(size_t effectiveColumn = 0, size_t chainColumn = 0);
   std::unique_ptr<ast::Statement> parseWhileStatement();
   std::unique_ptr<ast::Statement> parseDoWhileStatement();
   std::unique_ptr<ast::Statement> parseForStatement();

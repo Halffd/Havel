@@ -925,11 +925,11 @@ const std::vector<Value> &args);
 
     Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk);
 Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited);
-    Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-                                   const std::unordered_map<std::string, Value>& moduleGlobals,
-                                   const std::string& canonicalKey,
-                                   const std::string& fieldPath,
-                                int depth = 0);
+  Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
+    const std::unordered_map<std::string, Value>& moduleGlobals,
+    const std::string& canonicalKey, const std::string& fieldPath,
+    int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
+
     Value loadModule(const std::string& path);
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }

@@ -2880,6 +2880,17 @@ y = 2
 return x + y
 )havel", 42, dump_bytecode, snapshot_dir);
 
+  // -- Object operations --
+  failures += runJitCase("jit-object-basic", R"havel(
+obj = {value: 42}
+return obj.value
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-object-nested", R"havel(
+obj = {a: {b: 42}}
+return obj.a.b
+)havel", 42, dump_bytecode, snapshot_dir);
+
   // -- Array operations --
   failures += runJitCase("jit-array-basic", R"havel(
 arr = [10, 20, 30]
@@ -2939,6 +2950,77 @@ while i < 500 {
 }
 return i
 )havel", 500, dump_bytecode, snapshot_dir);
+
+  // -- JIT: recursion --
+  failures += runJitCase("jit-recursion", R"havel(
+fn fact(n) {
+  if n <= 1 { return 1 }
+  return n * fact(n - 1)
+}
+return fact(10)
+)havel", 3628800, dump_bytecode, snapshot_dir);
+
+  // -- JIT: class field access (calls >1000x) --
+  failures += runJitCase("jit-class-jit", R"havel(
+class Point {
+  x, y
+  fn @(x, y) { @x = x; @y = y }
+  fn getX() { return @x }
+  fn getY() { return @y }
+}
+fn add(p) { return p.getX() + p.getY() }
+p = Point(3, 4)
+i = 0
+while i < 1500 {
+  x = add(p)
+  i += 1
+}
+return x
+)havel", 7, dump_bytecode, snapshot_dir);
+
+  // -- JIT: try-catch in hot path --
+  failures += runJitCase("jit-try-catch", R"havel(
+fn maybeGet(obj) {
+  try {
+    return obj.value
+  } catch (e) {
+    return -1
+  }
+}
+obj = {value: 42}
+i = 0
+x = 0
+while i < 1500 {
+  x = maybeGet(obj)
+  i += 1
+}
+return x
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  // -- Object field access via JIT (calls function >1000x to trigger JIT) --
+  failures += runJitCase("jit-object-jit-read", R"havel(
+fn getVal(o) { return o.value }
+obj = {value: 42}
+i = 0
+while i < 1500 {
+  x = getVal(obj)
+  i += 1
+}
+return x
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runJitCase("jit-object-jit-chain", R"havel(
+fn getNested(o) { return o.a.b }
+obj = {a: {b: 99}}
+i = 0
+while i < 1500 {
+  x = getNested(obj)
+  i += 1
+}
+return x
+)havel", 99, dump_bytecode, snapshot_dir);
+
+
 
   if (failures != 0) {
     std::cerr << "JIT smoke failed with " << failures << " failing case(s)"

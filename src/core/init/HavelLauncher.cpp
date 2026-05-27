@@ -1794,12 +1794,15 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
     llvm::LLVMContext ctx;
     auto module = std::make_unique<llvm::Module>(primaryFile + "_module", ctx);
 
-    for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-        const auto* func = chunk->getFunction(i);
-        if (func && !havel::compiler::BytecodeOrcJIT::hasUnsupportedOpcodes(*func)) {
-            jit.translate(*func, *module);
-        }
+for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+    const auto* func = chunk->getFunction(i);
+    if (func && !havel::compiler::BytecodeOrcJIT::hasUnsupportedOpcodes(*func)) {
+        jit.translate(*func, *module);
+    } else if (func && cfg.aotWarnings) {
+        warn("AOT: skipping function '{}' — contains async/concurrency opcodes not supported in AOT",
+             func->name);
     }
+}
 
     // Verify module
     if (llvm::verifyModule(*module, &llvm::errs())) {

@@ -417,15 +417,13 @@ void ExecutionEngine::onThreadComplete(const Event& event) {
 // ============================================================================
 
 void ExecutionEngine::onVariableChanged(const Event& event) {
-  // Event payload:
-  //   data1: hash of variable name
-  //   ptr: unsafe pointer to variable name string (must be copied)
-  
   if (!event.ptr || !watcher_registry_) {
     return;
   }
-  
-  const std::string var_name = static_cast<const char*>(event.ptr);
+
+  auto *name_ptr = static_cast<std::string*>(event.ptr);
+  const std::string var_name = *name_ptr;
+  delete name_ptr;
   
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine] Variable '" << var_name << "' changed, checking "

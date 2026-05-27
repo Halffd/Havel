@@ -526,7 +526,7 @@ static std::string extractParamName(const ast::FunctionParameter &param) {
 }
 
 void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
-    if (!function.name) {
+  if (!function.name) {
         COMPILER_THROW("Function declaration missing name");
     }
 
@@ -671,18 +671,18 @@ if (param->defaultValue.has_value()) {
     }
   }
 
- if (function.body) {
- // Compile all statements except the last
- const auto &stmts = function.body->body;
- if (!stmts.empty()) {
+if (function.body) {
+    // Compile all statements except the last
+    const auto &stmts = function.body->body;
+    if (!stmts.empty()) {
  // Compile all but last statement normally (not in tail position)
  for (size_t i = 0; i < stmts.size() - 1; i++) {
  compileStatement(*stmts[i]);
  }
 
- // Last statement: if it's an expression statement, return its value
- // (Rust-like implicit return)
- const auto &lastStmt = stmts.back();
+    // Last statement: if it's an expression statement, return its value
+      // (Rust-like implicit return)
+      const auto &lastStmt = stmts.back();
  if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
  const auto &exprStmt =
  static_cast<const ast::ExpressionStatement &>(*lastStmt);
@@ -4960,9 +4960,9 @@ if (in_tail_position_ && try_depth_ == 0 &&
 }
 
 void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
-    if (!statement.condition || !statement.consequence) {
-        COMPILER_THROW("Malformed if statement");
-    }
+  if (!statement.condition || !statement.consequence) {
+    COMPILER_THROW("Malformed if statement");
+  }
 
     compileExpression(*statement.condition);
   uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);

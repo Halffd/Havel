@@ -2058,8 +2058,9 @@ return Value::makeClosureId(closureRef.id);
 }
 
 Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-  const std::unordered_map<std::string, Value>& moduleGlobals,
-  const std::string& canonicalKey, const std::string& fieldPath, int depth) {
+    const std::unordered_map<std::string, Value>& moduleGlobals,
+    const std::string& canonicalKey, const std::string& fieldPath, int depth,
+    std::unordered_set<uint32_t>* visitedPtr) {
   if (depth > 64) return value;
   bool suspendedGc = false;
   if (depth == 0) { suspendGC(); suspendedGc = true; }
@@ -2243,46 +2244,70 @@ std::string fnCapturedField = fieldPath;
         return Value::makeHostFuncId(hostIdx);
     }
 
-    if (value.isObjectId()) {
-        stack.push(value);
-        auto* srcObj = heap_.object(value.asObjectId());
-        if (!srcObj) { stack.pop(); resumeGcGuard(); return value; }
-        std::vector<std::pair<std::string, Value>> entries;
-        entries.reserve(srcObj->size());
-        for (const auto& [k, v] : *srcObj) {
-            entries.emplace_back(k, v);
-        }
-        stack.pop();
-        ObjectRef copyRef = createHostObject();
-        auto* copyObj = heap_.object(copyRef.id);
-        for (const auto& [k, v] : entries) {
-            (*copyObj)[k] = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
-                fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1);
-        }
-        resumeGcGuard();
-        return Value::makeObjectId(copyRef.id);
+  if (value.isObjectId()) {
+    uint32_t objId = value.asObjectId();
+    if (visitedPtr && visitedPtr->count(objId)) { resumeGcGuard(); return value; }
+    auto* srcObj = heap_.object(objId);
+    if (!srcObj) { resumeGcGuard(); return value; }
+    bool anyWrapped = false;
+    std::vector<std::pair<std::string, Value>> entries;
+    entries.reserve(srcObj->size());
+    std::unordered_set<uint32_t> localVisited;
+    if (!visitedPtr) visitedPtr = &localVisited;
+    visitedPtr->insert(objId);
+    for (const auto& [k, v] : *srcObj) {
+      Value wrapped = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
+        fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1, visitedPtr);
+      if (!(wrapped == v)) anyWrapped = true;
+      entries.emplace_back(k, std::move(wrapped));
     }
+    if (!anyWrapped) {
+      visitedPtr->erase(objId);
+      resumeGcGuard();
+      return value;
+    }
+    ObjectRef copyRef = createHostObject();
+    auto* copyObj = heap_.object(copyRef.id);
+    for (auto& [k, v] : entries) {
+      (*copyObj)[k] = std::move(v);
+    }
+    visitedPtr->erase(objId);
+    resumeGcGuard();
+    return Value::makeObjectId(copyRef.id);
+  }
 
-    if (value.isArrayId()) {
-        stack.push(value);
-        auto* srcArr = heap_.array(value.asArrayId());
-        if (!srcArr) { stack.pop(); resumeGcGuard(); return value; }
-        std::vector<Value> elements;
-        elements.reserve(srcArr->size());
-        for (size_t i = 0; i < srcArr->size(); i++) {
-            elements.push_back((*srcArr)[i]);
-        }
-        stack.pop();
-        ArrayRef copyRef = createHostArray();
-        auto* copyArr = heap_.array(copyRef.id);
-        copyArr->reserve(elements.size());
-        for (size_t i = 0; i < elements.size(); i++) {
-            copyArr->push_back(deepWrapModuleFunctions(elements[i], chunk, moduleGlobals, canonicalKey,
-                fieldPath + "[" + std::to_string(i) + "]", depth + 1));
-        }
-        resumeGcGuard();
-        return Value::makeArrayId(copyRef.id);
+  if (value.isArrayId()) {
+    uint32_t arrId = value.asArrayId();
+    if (visitedPtr && visitedPtr->count(arrId)) { resumeGcGuard(); return value; }
+    auto* srcArr = heap_.array(arrId);
+    if (!srcArr) { resumeGcGuard(); return value; }
+    bool anyWrapped = false;
+    std::vector<Value> elements;
+    elements.reserve(srcArr->size());
+    std::unordered_set<uint32_t> localVisited;
+    if (!visitedPtr) visitedPtr = &localVisited;
+    visitedPtr->insert(arrId);
+    for (size_t i = 0; i < srcArr->size(); i++) {
+      Value wrapped = deepWrapModuleFunctions((*srcArr)[i], chunk, moduleGlobals, canonicalKey,
+        fieldPath + "[" + std::to_string(i) + "]", depth + 1, visitedPtr);
+      if (!(wrapped == (*srcArr)[i])) anyWrapped = true;
+      elements.push_back(std::move(wrapped));
     }
+    if (!anyWrapped) {
+      visitedPtr->erase(arrId);
+      resumeGcGuard();
+      return value;
+    }
+    ArrayRef copyRef = createHostArray();
+    auto* copyArr = heap_.array(copyRef.id);
+    copyArr->reserve(elements.size());
+    for (auto& elem : elements) {
+      copyArr->push_back(std::move(elem));
+    }
+    visitedPtr->erase(arrId);
+    resumeGcGuard();
+    return Value::makeArrayId(copyRef.id);
+  }
 
     resumeGcGuard();
     return value;

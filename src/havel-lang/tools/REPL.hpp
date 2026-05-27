@@ -19,6 +19,7 @@
 #include <string>
 #include <unordered_set>
 #include <atomic>
+#include <fstream>
 
 namespace havel { class IHostAPI; }
 
@@ -37,6 +38,8 @@ struct REPLConfig {
   bool debugAst = false;
   std::string prompt = "havel> ";
   std::string continuePrompt = "... ";
+  std::string historyFile = "";   // empty = default (~/.havel_history)
+  std::string outputLogFile = ""; // empty = no output logging
 };
 
 /**
@@ -188,6 +191,21 @@ private:
 
     // Interrupt flag for Ctrl-C handling
     static std::atomic<bool> interrupted_;
+
+    // Output log stream (append to file)
+    std::ofstream outputLog_;
+
+    // History file path (resolved from config)
+    std::string historyFilePath_;
+
+    // Session start timestamp string
+    std::string sessionStart_;
+
+    // Write to output log if enabled
+    void logOutput(const std::string& text);
+
+    // Resolve history file path from config
+    std::string resolveHistoryPath() const;
 
     friend void replSignalHandler(int sig);
 };

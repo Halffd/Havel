@@ -362,6 +362,14 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     if (i + 1 < argc) {
       Configs::SetPath(argv[++i]);
     }
+  } else if (arg == "--output-log") {
+    if (i + 1 < argc) {
+      cfg.outputLogFile = argv[++i];
+    }
+  } else if (arg == "--history-file") {
+    if (i + 1 < argc) {
+      cfg.historyFile = argv[++i];
+    }
   } else if (arg == "--eval" || arg == "-E") {
     if (i + 1 < argc) {
         cfg.evalString = argv[++i];
@@ -1271,6 +1279,8 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         replConfig.debugLexer = cfg.debugLexer;
         replConfig.debugParser = cfg.debugParser;
         replConfig.debugAst = cfg.debugAst;
+        replConfig.outputLogFile = cfg.outputLogFile;
+        replConfig.historyFile = cfg.historyFile;
         havel::repl::REPL repl(replConfig);
         repl.attach(engine.vm(), engine.hostBridge(), collectKnownGlobals(engine.vm()));
 
@@ -1332,6 +1342,8 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         replConfig.debugLexer = cfg.debugLexer;
         replConfig.debugParser = cfg.debugParser;
         replConfig.debugAst = cfg.debugAst;
+        replConfig.outputLogFile = cfg.outputLogFile;
+        replConfig.historyFile = cfg.historyFile;
 
         havel::repl::REPL repl(replConfig);
       
@@ -1436,7 +1448,10 @@ std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
   std::cout
       << "  Useful for testing scripts that auto-exit or don't need input.\n";
   std::cout << "  Example: havel --run scripts/test_types.hv\n";
-std::cout << "\nDebugging flags:\n";
+  std::cout << "\nREPL options:\n";
+  std::cout << "  --output-log PATH   Save REPL session output to file\n";
+  std::cout << "  --history-file PATH Read/write REPL history from/to file (default: ~/.havel_history)\n";
+  std::cout << "\nDebugging flags:\n";
     std::cout << " --debug-bytecode Print bytecode to console\n";
     std::cout << " --debug-gc       Print GC collection info\n";
 std::cout << " --debug-engine Print engine scheduling info\n";
@@ -1468,6 +1483,8 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
         replConfig.debugLexer = cfg.debugLexer;
         replConfig.debugParser = cfg.debugParser;
         replConfig.debugAst = cfg.debugAst;
+        replConfig.outputLogFile = cfg.outputLogFile;
+        replConfig.historyFile = cfg.historyFile;
 
         havel::repl::REPL repl(replConfig);
         repl.attach(engine.vm(), engine.hostBridge(), collectKnownGlobals(engine.vm()));
@@ -1515,6 +1532,8 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
         replConfig.debugLexer = cfg.debugLexer;
         replConfig.debugParser = cfg.debugParser;
         replConfig.debugAst = cfg.debugAst;
+        replConfig.outputLogFile = cfg.outputLogFile;
+        replConfig.historyFile = cfg.historyFile;
 
         havel::repl::REPL repl(replConfig);
 

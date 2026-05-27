@@ -60,6 +60,8 @@ private:
     bool lintOnly = false; // Only lint the script and check for errors
 		bool buildOnly = false; // Compile to bytecode only
 		std::string outputPath; // Output path for --build (-o)
+		std::string outputLogFile; // Output log file for REPL
+		std::string historyFile;   // History file for REPL
 		std::string testDir; // Directory containing test scripts
 		int testTimeout = 30; // Timeout for each test in seconds
 		bool useJIT = true;

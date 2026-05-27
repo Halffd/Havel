@@ -21,6 +21,8 @@
 #include <algorithm>
 #include <csignal>
 #include <atomic>
+#include <ctime>
+#include <sys/stat.h>
 
 #ifdef HAVE_READLINE
 #include <readline/readline.h>
@@ -47,7 +49,9 @@ REPL::REPL(const REPLConfig& config)
 }
 
 REPL::~REPL() {
-  // Cleanup
+    if (outputLog_.is_open()) {
+        outputLog_.close();
+    }
 }
 
 void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
@@ -88,6 +92,19 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
     // but REPL uses executePersistent() which skips that, so we must do it explicitly.
     vm_->registerDefaultPrototypes();
 
+    // Open output log if configured
+    if (!config_.outputLogFile.empty()) {
+        outputLog_.open(config_.outputLogFile, std::ios::app);
+        if (outputLog_.is_open()) {
+            info("REPL output logging to: {}", config_.outputLogFile);
+        } else {
+            warn("Failed to open REPL output log: {}", config_.outputLogFile);
+        }
+    }
+
+    // Resolve history file path
+    historyFilePath_ = resolveHistoryPath();
+
   initialized = true;
 }
 
@@ -107,8 +124,38 @@ void REPL::attach(compiler::VM* existingVM,
   vm_ = std::shared_ptr<compiler::VM>(existingVM, [](compiler::VM*){});
   hostBridge_ = std::shared_ptr<compiler::HostBridge>(bridge, [](compiler::HostBridge*){});
   known_globals_ = std::move(globals);
+
+    // Open output log if configured
+    if (!config_.outputLogFile.empty()) {
+        outputLog_.open(config_.outputLogFile, std::ios::app);
+        if (outputLog_.is_open()) {
+            info("REPL output logging to: {}", config_.outputLogFile);
+        } else {
+            warn("Failed to open REPL output log: {}", config_.outputLogFile);
+        }
+    }
+
+    // Resolve history file path
+    historyFilePath_ = resolveHistoryPath();
+
   initialized = true;
   info("REPL attached successfully");
+}
+
+std::string REPL::resolveHistoryPath() const {
+    if (!config_.historyFile.empty()) {
+        return config_.historyFile;
+    }
+    std::string home = getenv("HOME") ? getenv("HOME") : "/tmp";
+    std::string path = home + "/.havel_history";
+    return path;
+}
+
+void REPL::logOutput(const std::string& text) {
+    if (outputLog_.is_open()) {
+        outputLog_ << text;
+        outputLog_.flush();
+    }
 }
 
 void REPL::setPrintHandler(std::function<void(const std::string&)> handler) {
@@ -205,6 +252,7 @@ void REPL::printValue(const std::string& value) {
   } else {
     std::cout << value << std::endl;
   }
+  logOutput(value + "\n");
 }
 
 void REPL::printError(const std::string& error, int line, int column, int length, const std::string& sourceLine) {
@@ -221,6 +269,7 @@ void REPL::printError(const std::string& error, int line, int column, int length
         } else {
             ::havel::info("{}", result);
   }
+  logOutput(result + "\n");
 }
 
 bool REPL::handleCommand(const std::string& input) {
@@ -259,6 +308,16 @@ bool REPL::handleCommand(const std::string& input) {
         return false;
     }
 
+    if (input == ":log") {
+        if (outputLog_.is_open()) {
+            std::cout << "Output log: " << config_.outputLogFile << "\n";
+        } else {
+            std::cout << "Output logging is disabled\n";
+        }
+        std::cout << "History file: " << historyFilePath_ << "\n";
+        return false;
+    }
+
     return false; // Not a command
 }
 
@@ -271,6 +330,7 @@ void REPL::showHelp() const {
     std::cout << "  clear, :clear    - Clear screen\n";
     std::cout << "  :bytecode, :bc   - Toggle bytecode debug output\n";
     std::cout << "  :globals         - Show known global variables\n";
+    std::cout << "  :log             - Show output log and history file paths\n";
     std::cout << "\n";
     std::cout << "Keybindings:\n";
     std::cout << "  Up/Down          - Navigate history\n";
@@ -379,17 +439,25 @@ int REPL::run() {
 
     setupSignalHandlers();
 
+    // Session timestamp
+    std::time_t now = std::time(nullptr);
+    char timeBuf[64];
+    std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+    sessionStart_ = timeBuf;
+
 #ifdef HAVE_READLINE
     rl_readline_name = "havel";
     rl_catch_signals = 0;
     rl_catch_sigwinch = 1;
     stifle_history(500);
-    std::string historyFile = std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + "/.havel_history";
-    read_history(historyFile.c_str());
+    read_history(historyFilePath_.c_str());
 #endif
 
-    std::cout << "Havel REPL (Bytecode VM)\n";
-    std::cout << "Type 'help' for commands, 'exit' to quit.\n\n";
+    std::cout << "Havel REPL (Bytecode VM)" << std::endl;
+    std::cout << "Type 'help' for commands, 'exit' to quit." << std::endl;
+    std::cout << std::endl;
+
+    logOutput("=== Havel REPL session started at " + sessionStart_ + " ===\n");
 
   accumulatedInput.clear();
     currentLine = 0;
@@ -461,13 +529,6 @@ int REPL::run() {
       }
     }
     
-    // Add to history (if using readline)
-#ifdef HAVE_READLINE
-    if (!line.empty() && accumulatedInput.empty()) {
-      add_history(line.c_str());
-    }
-#endif
-    
     // Accumulate input
     if (accumulatedInput.empty()) {
       accumulatedInput = line;
@@ -480,6 +541,13 @@ int REPL::run() {
       continue;  // Need more input
     }
     
+    // Add complete input to readline history (single or multi-line)
+#ifdef HAVE_READLINE
+    if (!accumulatedInput.empty()) {
+      add_history(accumulatedInput.c_str());
+    }
+#endif
+    
     // Execute accumulated input
     bool success = execute(accumulatedInput);
     
@@ -491,10 +559,15 @@ int REPL::run() {
         }
     }
 
+    logOutput("=== Havel REPL session ended at " + sessionStart_ + " ===\n");
+
 #ifdef HAVE_READLINE
-    std::string historyFile = std::string(getenv("HOME") ? getenv("HOME") : "/tmp") + "/.havel_history";
-    write_history(historyFile.c_str());
+    write_history(historyFilePath_.c_str());
 #endif
+
+    if (outputLog_.is_open()) {
+        outputLog_.close();
+    }
 
     return 0;
 }

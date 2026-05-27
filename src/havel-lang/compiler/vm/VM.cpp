@@ -2072,27 +2072,27 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
 auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
 std::string fnCapturedKey = canonicalKey;
 std::string fnCapturedField = fieldPath;
-registerHostFunction(wrapperName,
-[this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
-std::vector<Value> callArgs = args;
-if (callArgs.size() > paramCount && paramCount > 0) {
-callArgs.erase(callArgs.begin());
-}
-auto* savedChunk = current_chunk;
+    registerHostFunction(wrapperName,
+    [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
+    std::vector<Value> callArgs = args;
+    if (callArgs.size() > paramCount && paramCount > 0) {
+    callArgs.erase(callArgs.begin());
+    }
+    auto* savedChunk = current_chunk;
                     auto savedGlobals = globals;
                     auto savedMirrorId = globals_mirror_object_id_;
                     Value savedG = globals["_G"];
                     globals = moduleGlobals;
                     current_chunk = moduleChunk.get();
-const auto* callee = moduleChunk->getFunction(funcIdx);
-if (!callee) {
-globals = std::move(savedGlobals);
-globals_mirror_object_id_ = savedMirrorId;
-globals["_G"] = savedG;
-current_chunk = savedChunk;
-return Value::makeNull();
-}
-size_t base = locals.size();
+    const auto* callee = moduleChunk->getFunction(funcIdx);
+    if (!callee) {
+    globals = std::move(savedGlobals);
+    globals_mirror_object_id_ = savedMirrorId;
+    globals["_G"] = savedG;
+    current_chunk = savedChunk;
+    return Value::makeNull();
+    }
+    size_t base = locals.size();
                     size_t savedLocalsSize = base;
                     locals.resize(base + callee->local_count, nullptr);
                     uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
@@ -2146,7 +2146,7 @@ size_t base = locals.size();
         current_chunk = savedChunk;
         return result;
     });
-        uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
+        uint32_t hostIdx = host_function_globals_[wrapperName].asHostFuncId();
         resumeGcGuard();
         return Value::makeHostFuncId(hostIdx);
     }
@@ -2156,6 +2156,10 @@ size_t base = locals.size();
         auto* rc = heap_.closure(closureId);
         if (!rc || !rc->chunk) { resumeGcGuard(); return value; }
         if (rc->chunk != chunk.get()) { resumeGcGuard(); return value; }
+
+        // Pin the closure as a GC root so the host function wrapper
+        // can safely reference it by ID across GC cycles.
+        pinExternalRoot(Value::makeClosureId(closureId));
 
     uint32_t funcIdx = rc->function_index;
     auto moduleChunk = chunk;
@@ -2234,7 +2238,7 @@ size_t base = locals.size();
  current_chunk = savedChunk;
  return result;
  });
-        uint32_t hostIdx = static_cast<uint32_t>(host_function_names_.size()) - 1;
+        uint32_t hostIdx = host_function_globals_[wrapperName].asHostFuncId();
         resumeGcGuard();
         return Value::makeHostFuncId(hostIdx);
     }

@@ -2,6 +2,7 @@
 #include "HotkeyExecutor.hpp"
 #include "KeyMap.hpp"
 #include "SignalHandler.hpp"
+#include "InputBackend.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/IO.hpp"
@@ -2076,10 +2077,14 @@ void EventListener::HandleSignal(int sig) {
       SignalSafeShutdown(sig, true);
     }
     break;
-  case SIGSEGV:
-    error("Segmentation fault - attempting graceful shutdown");
-    SignalSafeShutdown(sig, true);
-    break;
+    case SIGSEGV:
+    case SIGABRT:
+    case SIGBUS:
+    case SIGILL:
+    case SIGFPE:
+        EmergencyUngrabAllEvdevSignalSafe();
+        _exit(sig + 128);
+        break;
   default:
     if (debugging::debug_io) debug("Unknown signal received: {}", sig);
     break;
@@ -2087,31 +2092,27 @@ void EventListener::HandleSignal(int sig) {
 }
 
 void EventListener::RequestShutdownFromSignal(int sig) {
-  ForceUngrabAllDevices();
-  EmergencyReleaseAllKeys();
-  asyncSignalRequested = sig;
-  if (shutdownFd >= 0) {
-    uint64_t val = 1;
-    write(shutdownFd, &val, sizeof(val));
-  }
+    EmergencyUngrabAllEvdevSignalSafe();
+    asyncSignalRequested = sig;
+    if (shutdownFd >= 0) {
+        uint64_t val = 1;
+        write(shutdownFd, &val, sizeof(val));
+    }
 }
 
 void EventListener::SignalSafeShutdown(int sig, bool exitAfter) {
-  ForceUngrabAllDevices();
-  EmergencyReleaseAllKeys();
-  running.store(false);
-  shutdown.store(true);
-  if (shutdownFd >= 0) {
-    uint64_t val = 1;
-    write(shutdownFd, &val, sizeof(val));
-  }
-  if (exitAfter) {
-    // Use proper exit codes: 0 for graceful shutdown, signal number + 128 for
-    // signal termination
-    int exitCode =
-        (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
-    _exit(exitCode);
-  }
+    EmergencyUngrabAllEvdevSignalSafe();
+    running.store(false);
+    shutdown.store(true);
+    if (shutdownFd >= 0) {
+        uint64_t val = 1;
+        write(shutdownFd, &val, sizeof(val));
+    }
+    if (exitAfter) {
+        int exitCode =
+            (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
+        _exit(exitCode);
+    }
 }
 
 } // namespace havel

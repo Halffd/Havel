@@ -205,6 +205,7 @@ vm_->addIntervalResult(timer_id, result);
     bool isInitialized() const { return initialized_; }
 
     void shutdown() {
+        if (!initialized_) return;
         if (hostBridge_) {
             hostBridge_->shutdown();
         }

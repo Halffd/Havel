@@ -1106,31 +1106,43 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 	}
 
     try {
-      havel::HavelEngine engine({
-        .debugBytecode = cfg.debugBytecode,
-        .debugLexer = cfg.debugLexer,
-        .debugParser = cfg.debugParser,
-        .debugAst = cfg.debugAst,
+        havel::HavelEngine engine({
+            .debugBytecode = cfg.debugBytecode,
+            .debugLexer = cfg.debugLexer,
+            .debugParser = cfg.debugParser,
+            .debugAst = cfg.debugAst,
             .stopOnError = cfg.stopOnError,
             .leanMinimalStartup = cfg.minimalMode,
             .pureStdlib = cfg.pureStdlib
         });
+        auto t0 = std::chrono::high_resolution_clock::now();
         engine.initializeMinimal();
 
-        // Populate app.args with script arguments (after --)
-      if (!cfg.scriptArgs.empty()) {
-        auto& vm = *engine.vm();
-        auto arrRef = vm.createHostArray();
-        for (const auto& arg : cfg.scriptArgs) {
-          auto strRef = vm.createRuntimeString(arg);
-          vm.pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
+        if (!cfg.scriptArgs.empty()) {
+            auto& vm = *engine.vm();
+            auto arrRef = vm.createHostArray();
+            for (const auto& arg : cfg.scriptArgs) {
+                auto strRef = vm.createRuntimeString(arg);
+                vm.pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
+            }
+            vm.setAppArgs(arrRef.id);
         }
-        vm.setAppArgs(arrRef.id);
-      }
 
-      engine.execute(combinedCode, "__main__", combinedNames);
-      engine.shutdown();
-		return 0;
+        auto t1 = std::chrono::high_resolution_clock::now();
+        engine.execute(combinedCode, "__main__", combinedNames);
+        auto t2 = std::chrono::high_resolution_clock::now();
+        engine.shutdown();
+        auto t3 = std::chrono::high_resolution_clock::now();
+
+        if (cfg.debugMode) {
+            double init_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+            double exec_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
+            double shut_ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
+            double total_ms = std::chrono::duration<double, std::milli>(t3 - t0).count();
+            info("benchmark: init={:.1f}ms exec={:.1f}ms shutdown={:.1f}ms total={:.1f}ms",
+                 init_ms, exec_ms, shut_ms, total_ms);
+        }
+        return 0;
 	} catch (const std::exception &e) {
 		error("Bytecode error: {}", e.what());
 		return 1;

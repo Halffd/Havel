@@ -445,13 +445,16 @@ private:
   static Value
   handleAltTabPrevious(const std::vector<Value> &args,
                        const HostContext *ctx);
-  static Value
-  handleAltTabSelect(const std::vector<Value> &args,
-                     const HostContext *ctx);
-  static Value
-  handleAltTabGetWindows(const std::vector<Value> &args,
+static Value
+    handleAltTabSelect(const std::vector<Value> &args,
+                       const HostContext *ctx);
+    static Value
+    handleAltTabGetWindows(const std::vector<Value> &args,
+                           const HostContext *ctx);
+    static Value
+    handleHotkeyOnAnyKey(const std::vector<Value> &args,
                          const HostContext *ctx);
-};
+  };
 
 /**
  * MediaBridge - Media playback control
@@ -830,13 +833,21 @@ public:
 private:
   const HostContext *ctx_;
   static Value handleRegister(const std::vector<Value> &args,
-                                      const HostContext *ctx);
+                               const HostContext *ctx);
   static Value handleGetCurrent(const std::vector<Value> &args,
-                                        const HostContext *ctx);
+                                const HostContext *ctx);
   static Value handleSet(const std::vector<Value> &args,
-                                 const HostContext *ctx);
+                          const HostContext *ctx);
   static Value handleGetPrevious(const std::vector<Value> &args,
-                                         const HostContext *ctx);
+                                 const HostContext *ctx);
+  static Value handleList(const std::vector<Value> &args,
+                          const HostContext *ctx);
+  static Value handleTime(const std::vector<Value> &args,
+                          const HostContext *ctx);
+  static Value handleTransitions(const std::vector<Value> &args,
+                                 const HostContext *ctx);
+  static Value handleSignalActive(const std::vector<Value> &args,
+                                  const HostContext *ctx);
 };
 
 /**

@@ -22,7 +22,7 @@
 namespace havel {
 
 namespace {
-EvdevAdapter *g_active_adapter = nullptr;
+std::atomic<EvdevAdapter *> g_active_adapter{nullptr};
 }
 
 class EvdevAdapter : public InputBackend {
@@ -79,6 +79,9 @@ public:
     void ReleaseAllKeys() override;
     void ReleaseAllVirtualKeys() override;
     void EmergencyReleaseAllKeys() override;
+
+    void rebuildSignalSafeFds();
+    void SignalSafeUngrabAll();
 
     // Input blocking
     void SetBlockInput(bool block) override;
@@ -170,6 +173,12 @@ private:
     mutable std::mutex devicesMutex_;
     mutable std::shared_mutex stateMutex_;
 
+    // Signal-safe grabbed FD tracking: lock-free array for async-signal-safe ungrab.
+    // Updated alongside grabbedFds_ under devicesMutex_, but readable without lock.
+    static constexpr size_t MAX_GRABBED_FDS = 32;
+    int signalSafeGrabbedFds_[MAX_GRABBED_FDS] = {};
+    std::atomic<size_t> signalSafeGrabbedCount_{0};
+
     // Key state tracking (raw state, no hotkey logic)
     std::unordered_map<uint32_t, bool> keyStates_;
     std::unordered_map<uint32_t, bool> buttonStates_;
@@ -230,11 +239,11 @@ private:
 
 EvdevAdapter::EvdevAdapter() {
     shutdownFd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-    g_active_adapter = this;
+    g_active_adapter.store(this, std::memory_order_release);
 }
 
 EvdevAdapter::~EvdevAdapter() {
-    g_active_adapter = nullptr;
+    g_active_adapter.store(nullptr, std::memory_order_release);
     Shutdown();
     if (shutdownFd_ >= 0) {
         close(shutdownFd_);
@@ -335,7 +344,7 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
 void EvdevAdapter::CloseDevice(const std::string &path) {
     std::lock_guard<std::mutex> lock(devicesMutex_);
     auto it = std::find_if(devices_.begin(), devices_.end(),
-        [&](const Device &d) { return d.path == path; });
+                           [&](const Device &d) { return d.path == path; });
     if (it != devices_.end()) {
         if (it->grabbed) {
             ioctl(it->fd, EVIOCGRAB, 0);
@@ -343,6 +352,7 @@ void EvdevAdapter::CloseDevice(const std::string &path) {
         }
         if (it->fd >= 0) close(it->fd);
         devices_.erase(it);
+        rebuildSignalSafeFds();
     }
 }
 
@@ -357,8 +367,12 @@ bool EvdevAdapter::GrabDevice(const std::string &path) {
         return false;
     }
 
-    it->grabbed = true;
-    grabbedFds_.insert(it->fd);
+        it->grabbed = true;
+        grabbedFds_.insert(it->fd);
+        if (signalSafeGrabbedCount_.load(std::memory_order_relaxed) < MAX_GRABBED_FDS) {
+            signalSafeGrabbedFds_[signalSafeGrabbedCount_.load(std::memory_order_relaxed)] = it->fd;
+            signalSafeGrabbedCount_.store(signalSafeGrabbedCount_.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+        }
 
     ReleasePressedKeys(*it);
     DrainDeviceEvents(*it);
@@ -370,11 +384,12 @@ bool EvdevAdapter::GrabDevice(const std::string &path) {
 void EvdevAdapter::UngrabDevice(const std::string &path) {
     std::lock_guard<std::mutex> lock(devicesMutex_);
     auto it = std::find_if(devices_.begin(), devices_.end(),
-        [&](const Device &d) { return d.path == path; });
+                           [&](const Device &d) { return d.path == path; });
     if (it != devices_.end() && it->grabbed) {
         ioctl(it->fd, EVIOCGRAB, 0);
         it->grabbed = false;
         grabbedFds_.erase(it->fd);
+        rebuildSignalSafeFds();
     }
 }
 
@@ -387,6 +402,27 @@ void EvdevAdapter::UngrabAllDevices() {
         }
     }
     grabbedFds_.clear();
+    signalSafeGrabbedCount_.store(0, std::memory_order_release);
+}
+
+void EvdevAdapter::rebuildSignalSafeFds() {
+    size_t idx = 0;
+    for (auto fd : grabbedFds_) {
+        if (idx < MAX_GRABBED_FDS) {
+            signalSafeGrabbedFds_[idx] = fd;
+            idx++;
+        }
+    }
+    signalSafeGrabbedCount_.store(idx, std::memory_order_release);
+}
+
+void EvdevAdapter::SignalSafeUngrabAll() {
+    size_t count = signalSafeGrabbedCount_.load(std::memory_order_acquire);
+    for (size_t i = 0; i < count && i < MAX_GRABBED_FDS; ++i) {
+        int fd = signalSafeGrabbedFds_[i];
+        if (fd >= 0) ioctl(fd, EVIOCGRAB, 0);
+    }
+    signalSafeGrabbedCount_.store(0, std::memory_order_release);
 }
 
 int EvdevAdapter::GetPollFd() const {
@@ -471,10 +507,13 @@ bool EvdevAdapter::SendKeyEvent(uint32_t code, bool down) {
     uinput_->SendEvent(EV_KEY, code, down ? 1 : 0);
     uinput_->SendEvent(EV_SYN, SYN_REPORT, 0);
 
-    if (down) {
-        pressedVirtualKeys_.insert(code);
-    } else {
-        pressedVirtualKeys_.erase(code);
+    {
+        std::unique_lock<std::shared_mutex> lock(stateMutex_);
+        if (down) {
+            pressedVirtualKeys_.insert(code);
+        } else {
+            pressedVirtualKeys_.erase(code);
+        }
     }
 
     return true;
@@ -564,6 +603,7 @@ void EvdevAdapter::ReleaseAllKeys() {
 void EvdevAdapter::ReleaseAllVirtualKeys() {
     if (!uinput_) return;
 
+    std::unique_lock<std::shared_mutex> lock(stateMutex_);
     for (uint32_t code : pressedVirtualKeys_) {
         uinput_->SendEvent(EV_KEY, code, 0);
     }
@@ -1034,9 +1074,17 @@ std::unique_ptr<InputBackend> CreateEvdevAdapter() {
 }
 
 void EmergencyUngrabAllEvdev() {
-    if (g_active_adapter) {
-        g_active_adapter->UngrabAllDevices();
-        g_active_adapter->ReleaseAllVirtualKeys();
+    EvdevAdapter *adapter = g_active_adapter.load(std::memory_order_acquire);
+    if (adapter) {
+        adapter->UngrabAllDevices();
+        adapter->ReleaseAllVirtualKeys();
+    }
+}
+
+void EmergencyUngrabAllEvdevSignalSafe() {
+    EvdevAdapter *adapter = g_active_adapter.load(std::memory_order_acquire);
+    if (adapter) {
+        adapter->SignalSafeUngrabAll();
     }
 }
 

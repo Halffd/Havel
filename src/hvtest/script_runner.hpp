@@ -14,11 +14,14 @@ namespace hvtest {
 namespace fs = std::filesystem;
 
 struct ScriptResult {
-	std::string path;
-	bool passed;
-	int exit_code;
-	double elapsed_ms;
-	bool timed_out;
+    std::string path;
+    bool passed;
+    int exit_code;
+    double elapsed_ms;
+    bool timed_out;
+    std::string name() const {
+        return fs::path(path).stem().string();
+    }
 };
 
 inline std::vector<std::string> discover_scripts(const std::vector<std::string> &directories) {
@@ -120,29 +123,33 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 }
 
 inline int run_script_suite(const std::string &havel_bin, const std::vector<std::string> &directories, bool verbose = false) {
-	auto scripts = discover_scripts(directories);
-	if (scripts.empty()) {
-		std::cerr << "no .hv scripts found in specified directories" << std::endl;
-		return 1;
-	}
+    auto scripts = discover_scripts(directories);
+    if (scripts.empty()) {
+        std::cerr << "no .hv scripts found in specified directories" << std::endl;
+        return 1;
+    }
 
-	int pass = 0, fail = 0;
-	for (const auto &script : scripts) {
-		auto result = run_script(havel_bin, script);
-		if (result.passed) {
-			std::cout << "[PASS] " << script << " (" << result.elapsed_ms << "ms)" << std::endl;
-			pass++;
-		} else if (result.timed_out) {
-			std::cout << "[FAIL] " << script << " (timeout)" << std::endl;
-			fail++;
-		} else {
-			std::cout << "[FAIL] " << script << " (exit=" << result.exit_code << ")" << std::endl;
-			fail++;
-		}
-	}
+    int pass = 0, fail = 0;
+    std::vector<ScriptResult> results;
+    for (const auto &script : scripts) {
+        auto result = run_script(havel_bin, script);
+        results.push_back(result);
+        if (result.passed) {
+            std::cout << "[PASS] " << script << " (" << result.elapsed_ms << "ms)" << std::endl;
+            pass++;
+        } else if (result.timed_out) {
+            std::cout << "[FAIL] " << script << " (timeout)" << std::endl;
+            fail++;
+        } else {
+            std::cout << "[FAIL] " << script << " (exit=" << result.exit_code << ")" << std::endl;
+            fail++;
+        }
+    }
 
-	std::cout << "\nscripts: " << pass << " passed, " << fail << " failed" << std::endl;
-	return fail > 0 ? 1 : 0;
+    double total_ms = 0;
+    for (const auto &r : results) total_ms += r.elapsed_ms;
+    std::cout << "\nscripts: " << pass << " passed, " << fail << " failed | " << results.size() << " files, " << total_ms << "ms total" << std::endl;
+    return fail > 0 ? 1 : 0;
 }
 
 inline int list_scripts(const std::vector<std::string> &directories) {
@@ -162,8 +169,10 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
     }
 
     int pass = 0, fail = 0, skip = 0;
+    std::vector<ScriptResult> results;
     for (const auto &script : scripts) {
         auto result = run_script(havel_bin, script);
+        results.push_back(result);
         auto name = fs::path(script).stem().string();
         if (result.passed) {
             if (verbose) std::cout << "[PASS] " << name << " (" << result.elapsed_ms << "ms)" << std::endl;
@@ -180,7 +189,20 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
         }
     }
 
-    std::cout << "\nsmoke: " << pass << " passed, " << fail << " failed, " << skip << " skipped" << std::endl;
+    double total_ms = 0;
+    for (const auto &r : results) total_ms += r.elapsed_ms;
+    std::sort(results.begin(), results.end(), [](const ScriptResult &a, const ScriptResult &b) {
+        return a.elapsed_ms > b.elapsed_ms;
+    });
+    std::cout << "\nsmoke: " << pass << " passed, " << fail << " failed, " << skip << " skipped | " << results.size() << " files, " << total_ms << "ms total" << std::endl;
+    if (!results.empty()) {
+        int n = std::min<int>(5, results.size());
+        std::cout << "slowest:";
+        for (int i = 0; i < n; i++) {
+            std::cout << " " << results[i].name() << "=" << (int)results[i].elapsed_ms << "ms";
+        }
+        std::cout << std::endl;
+    }
     return fail > 0 ? 1 : 0;
 }
 

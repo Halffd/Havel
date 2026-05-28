@@ -2993,9 +2993,12 @@ void InputBridge::install(PipelineOptions &options) {
   options.host_functions["alttab.select"] = [ctx = ctx_](const auto &args) {
     return handleAltTabSelect(args, ctx);
   };
-  options.host_functions["alttab.getWindows"] = [ctx = ctx_](const auto &args) {
-    return handleAltTabGetWindows(args, ctx);
-  };
+    options.host_functions["alttab.getWindows"] = [ctx = ctx_](const auto &args) {
+        return handleAltTabGetWindows(args, ctx);
+    };
+    options.host_functions["hotkey.onAnyKey"] = [ctx = ctx_](const auto &args) {
+        return handleHotkeyOnAnyKey(args, ctx);
+    };
 }
 
 Value
@@ -3325,6 +3328,33 @@ Value InputBridge::handleHotkeyConditionalList(
         vm->pushHostArrayValue(result, Value::makeObjectId(obj.id));
     }
     return Value::makeArrayId(result.id);
+}
+
+Value
+InputBridge::handleHotkeyOnAnyKey(const std::vector<Value> &args,
+                                   const HostContext *ctx) {
+    if (args.size() < 1) {
+        return Value::makeNull();
+    }
+    if (!ctx || !ctx->hotkeyManager || !ctx->vm) {
+        return Value::makeNull();
+    }
+
+    auto *vm = static_cast<VM *>(ctx->vm);
+    CallbackId callbackId = ctx->vm->registerCallback(args[0]);
+
+    ctx->hotkeyManager->RegisterAnyKeyPressCallback(
+        [vm, callbackId](const std::string &key) {
+            auto *sched = vm->getScheduler();
+            if (!sched) return;
+            sched->deferToVM([vm, callbackId, key]() {
+                auto keyRef = vm->createRuntimeString(key);
+                vm->spawnCallback(callbackId, FiberPriority::HOTKEY,
+                                  {Value::makeStringId(keyRef.id)});
+            });
+        });
+
+    return Value::makeBool(true);
 }
 
 Value
@@ -5632,6 +5662,18 @@ void ModeBridge::install(PipelineOptions &options) {
   options.host_functions["mode.previous"] = [ctx = ctx_](const auto &args) {
     return handleGetPrevious(args, ctx);
   };
+  options.host_functions["mode.list"] = [ctx = ctx_](const auto &args) {
+    return handleList(args, ctx);
+  };
+  options.host_functions["mode.time"] = [ctx = ctx_](const auto &args) {
+    return handleTime(args, ctx);
+  };
+  options.host_functions["mode.transitions"] = [ctx = ctx_](const auto &args) {
+    return handleTransitions(args, ctx);
+  };
+  options.host_functions["mode.signalActive"] = [ctx = ctx_](const auto &args) {
+    return handleSignalActive(args, ctx);
+  };
 }
 
 Value ModeBridge::handleRegister(const std::vector<Value> &args,
@@ -5805,6 +5847,88 @@ ModeBridge::handleGetPrevious(const std::vector<Value> &args,
   std::string previous = ctx->modeManager->getPreviousMode();
   auto ref = vm->getHeap().allocateString(previous);
   return Value::makeStringId(ref.id);
+}
+
+Value
+ModeBridge::handleList(const std::vector<Value> &args,
+                       const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->modeManager || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto result = vm->createHostArray();
+  auto resultGuard = vm->makeRoot(Value::makeArrayId(result.id));
+
+  for (const auto &mode : ctx->modeManager->getModes()) {
+    auto obj = vm->createHostObject();
+    auto nameRef = vm->createRuntimeString(mode.name);
+    vm->setHostObjectField(obj, "name", Value::makeStringId(nameRef.id));
+    vm->setHostObjectField(obj, "priority", Value::makeInt(mode.priority));
+    vm->setHostObjectField(obj, "active", Value::makeBool(mode.isActive));
+    vm->setHostObjectField(obj, "transitions", Value::makeInt(mode.transitionCount));
+    auto totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       mode.totalTime)
+                       .count();
+    if (mode.isActive) {
+      totalMs += std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - mode.enterTime)
+                     .count();
+    }
+    vm->setHostObjectField(obj, "timeMs", Value::makeInt(totalMs));
+    vm->pushHostArrayValue(result, Value::makeObjectId(obj.id));
+  }
+
+  return Value::makeArrayId(result.id);
+}
+
+Value
+ModeBridge::handleTime(const std::vector<Value> &args,
+                       const HostContext *ctx) {
+  if (!ctx || !ctx->modeManager || !ctx->vm || args.empty()) {
+    return Value::makeInt(0);
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string modeName;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    modeName = vm->resolveStringKey(args[0]);
+  } else {
+    return Value::makeInt(0);
+  }
+  auto ms = ctx->modeManager->getModeTime(modeName);
+  return Value::makeInt(ms.count());
+}
+
+Value
+ModeBridge::handleTransitions(const std::vector<Value> &args,
+                              const HostContext *ctx) {
+  if (!ctx || !ctx->modeManager || !ctx->vm || args.empty()) {
+    return Value::makeInt(0);
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string modeName;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    modeName = vm->resolveStringKey(args[0]);
+  } else {
+    return Value::makeInt(0);
+  }
+  return Value::makeInt(ctx->modeManager->getModeTransitions(modeName));
+}
+
+Value
+ModeBridge::handleSignalActive(const std::vector<Value> &args,
+                               const HostContext *ctx) {
+  if (!ctx || !ctx->modeManager || !ctx->vm || args.empty()) {
+    return Value::makeBool(false);
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string signalName;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    signalName = vm->resolveStringKey(args[0]);
+  } else {
+    return Value::makeBool(false);
+  }
+  return Value::makeBool(ctx->modeManager->isSignalActive(signalName));
 }
 
 // ============================================================================

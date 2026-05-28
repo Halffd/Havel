@@ -217,5 +217,6 @@ class WaylandAdapter;
 class WindowsAdapter;
 
 void EmergencyUngrabAllEvdev();
+void EmergencyUngrabAllEvdevSignalSafe();
 
 }

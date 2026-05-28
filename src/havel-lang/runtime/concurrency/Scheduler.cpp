@@ -4,6 +4,11 @@
 #include "utils/DebugFlags.hpp"
 #include <algorithm>
 #include <thread>
+#ifndef _WIN32
+#include <sys/eventfd.h>
+#include <unistd.h>
+#include <cstring>
+#endif
 
 namespace havel::compiler {
 
@@ -18,10 +23,22 @@ Scheduler& Scheduler::instance() {
 }
 
 Scheduler::Scheduler() {
+#ifndef _WIN32
+  deferred_wakeup_fd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  if (deferred_wakeup_fd_ < 0) {
+    havel::warning("[Scheduler] Failed to create deferred wakeup eventfd: {}", strerror(errno));
+  }
+#endif
 }
 
 Scheduler::~Scheduler() {
-	stop();
+#ifndef _WIN32
+  if (deferred_wakeup_fd_ >= 0) {
+    close(deferred_wakeup_fd_);
+    deferred_wakeup_fd_ = -1;
+  }
+#endif
+  stop();
 }
 
 Scheduler::Goroutine::~Goroutine() {
@@ -422,44 +439,56 @@ void Scheduler::requeueFront(Goroutine* g) {
 }
 
 bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
-    if (!g) return false;
+  if (!g) return false;
 
-    bool isPending = (g->state == GoroutineState::Runnable ||
-        g->state == GoroutineState::Created ||
-        g->state == GoroutineState::Running);
+  bool isPending = (g->state == GoroutineState::Runnable ||
+                    g->state == GoroutineState::Created ||
+                    g->state == GoroutineState::Running);
 
-    ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
-        g->id, static_cast<int>(g->state), static_cast<int>(g->hotkey_policy), isPending);
+  ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
+                 g->id, static_cast<int>(g->state), static_cast<int>(g->hotkey_policy), isPending);
 
-    switch (g->hotkey_policy) {
-    case HotkeyPolicy::Drop:
-        if (isPending) return g->persistent;
-        break;
-  case HotkeyPolicy::Replace:
+  switch (g->hotkey_policy) {
+  case HotkeyPolicy::Drop:
+    if (isPending) return g->persistent;
     break;
-    case HotkeyPolicy::Queue:
-        break;
-    case HotkeyPolicy::Coalesce:
-        if (isPending && !newArgs.empty()) {
-            g->hotkey_args = newArgs;
-            g->locals = newArgs;
-            if (g->fiber) {
-                g->fiber->stack.clear();
-                for (const auto& arg : newArgs) {
-                    g->fiber->stack.push(arg);
-                }
-            }
-            return true;
+  case HotkeyPolicy::Replace:
+    if (isPending) {
+      g->hotkey_retrigger.store(true, std::memory_order_release);
+      return true;
+    }
+    break;
+  case HotkeyPolicy::Queue:
+    if (isPending) {
+      g->hotkey_retrigger.store(true, std::memory_order_release);
+      return true;
+    }
+    break;
+  case HotkeyPolicy::Coalesce:
+    if (isPending && !newArgs.empty()) {
+      g->hotkey_args = newArgs;
+      g->locals = newArgs;
+      if (g->fiber) {
+        g->fiber->stack.clear();
+        for (const auto& arg : newArgs) {
+          g->fiber->stack.push(arg);
         }
-        if (isPending) return true;
-        break;
+      }
+      g->hotkey_retrigger.store(true, std::memory_order_release);
+      return true;
     }
+    if (isPending) {
+      g->hotkey_retrigger.store(true, std::memory_order_release);
+      return true;
+    }
+    break;
+  }
 
-    if (!newArgs.empty()) {
-        g->hotkey_args = newArgs;
-    }
-    requeueFront(g);
-    return true;
+  if (!newArgs.empty()) {
+    g->hotkey_args = newArgs;
+  }
+  requeueFront(g);
+  return true;
 }
 
 bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
@@ -527,14 +556,30 @@ size_t Scheduler::wakeSleepingGoroutines() {
 }
 
 void Scheduler::deferToVM(DeferredAction fn) {
-  std::lock_guard<std::mutex> lock(deferred_mutex_);
-  deferred_actions_.push_back(std::move(fn));
+  {
+    std::lock_guard<std::mutex> lock(deferred_mutex_);
+    deferred_actions_.push_back(std::move(fn));
+  }
+#ifndef _WIN32
+  if (deferred_wakeup_fd_ >= 0) {
+    uint64_t val = 1;
+    ssize_t ret = write(deferred_wakeup_fd_, &val, sizeof(val));
+    (void)ret;
+  }
+#endif
 }
 
 size_t Scheduler::drainDeferredCallbacks() {
   if (vm_thread_id_ == std::thread::id()) {
     vm_thread_id_ = std::this_thread::get_id();
   }
+
+#ifndef _WIN32
+  if (deferred_wakeup_fd_ >= 0) {
+    uint64_t val;
+    while (read(deferred_wakeup_fd_, &val, sizeof(val)) == sizeof(val)) {}
+  }
+#endif
 
   std::deque<DeferredAction> acts;
   {

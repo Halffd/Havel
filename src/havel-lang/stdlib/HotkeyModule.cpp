@@ -112,7 +112,7 @@ static HotkeyPolicy parsePolicy(const std::string &s) {
     if (s == "replace") return HotkeyPolicy::Replace;
     if (s == "queue") return HotkeyPolicy::Queue;
     if (s == "coalesce") return HotkeyPolicy::Coalesce;
-    return HotkeyPolicy::Drop;
+    return HotkeyPolicy::Queue;
 }
 
 static const char *policyToString(HotkeyPolicy p) {

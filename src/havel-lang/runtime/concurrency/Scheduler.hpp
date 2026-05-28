@@ -158,8 +158,9 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     uint32_t hotkey_function_id = 0;
     uint32_t hotkey_closure_id = 0;
     std::vector<Value> hotkey_args;
-    HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;
+    HotkeyPolicy hotkey_policy = HotkeyPolicy::Queue;
     std::string hotkey_alias;
+    std::atomic<bool> hotkey_retrigger{false};
 
     explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL)
         : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
@@ -358,6 +359,8 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
 
   void deferToVM(DeferredAction fn);
 
+  int deferredWakeupFd() const { return deferred_wakeup_fd_; }
+
   size_t drainDeferredCallbacks();
 
 private:
@@ -390,6 +393,7 @@ private:
   // Deferred actions: thread-safe queue for cross-thread VM scheduling
   std::deque<DeferredAction> deferred_actions_;
   mutable std::mutex deferred_mutex_;
+  int deferred_wakeup_fd_ = -1;
 
     // Current goroutine (the one VM is executing)
     std::atomic<Goroutine*> current_{nullptr};

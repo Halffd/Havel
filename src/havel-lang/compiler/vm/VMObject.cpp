@@ -647,7 +647,24 @@ std::vector<std::string> VM::getProtocolNames() const {
 }
 
 std::string VM::getTypeName(const Value &value) const {
+  // Handle non-object (builtin) types first
+  if (value.isNull()) return "null";
+  if (value.isBool()) return "bool";
+  if (value.isInt()) return "int";
+  if (value.isDouble()) return "float";
+  if (value.isStringValId() || value.isStringId() || value.isRegexValId()) return "str";
+  if (value.isArrayId()) return "array";
+  if (value.isSetId()) return "set";
+  if (value.isRangeId()) return "range";
+  if (value.isHostFuncId()) return "hostfunc";
+  if (value.isClosureId()) return "closure";
+  if (value.isFunctionObjId()) return "fn";
+  if (value.isEnumId()) return "enum";
+  if (value.isIteratorId()) return "iterator";
+  if (value.isBoundMethodId()) return "boundmethod";
+  if (value.isCoroutineId()) return "coroutine";
   if (!value.isObjectId()) return "";
+
   const auto *obj = heap_.object(value.asObjectId());
   if (!obj) return "";
   // Check __name on the object itself (struct/class prototypes store __name)
@@ -668,7 +685,8 @@ std::string VM::getTypeName(const Value &value) const {
       }
     }
   }
-  return "";
+  // Plain objects with no __class/__struct still implement Iterable/Indexable
+  return "object";
 }
 
 std::optional<std::string> VM::getHostFunctionName(uint32_t index) const {

@@ -1,0 +1,23 @@
+// Test struct protocol conformance
+prot Drawable {
+  fn draw()
+}
+
+struct Shape : Drawable {
+  x = 0
+  y = 0
+}
+
+impl Drawable for Shape {
+  fn draw(self) {
+    print("drawing at {self.x},{self.y}")
+  }
+}
+
+s = Shape()
+s.x = 10
+s.y = 20
+if s is Drawable { print("Shape is Drawable") }
+s.draw()
+
+print("struct protocol ok")

@@ -1,0 +1,22 @@
+// Test class protocol conformance syntax
+prot Printable {
+  fn toString()
+}
+
+class Widget {
+  fn init(self, name) {
+    @name = name
+  }
+}
+
+impl Printable for Widget {
+  fn toString(self) {
+    @name
+  }
+}
+
+w = Widget("btn")
+if w is Printable { print("Widget is Printable") }
+result = w.toString()
+print(result)
+print("class protocol ok")

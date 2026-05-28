@@ -141,6 +141,8 @@ void TypeChecker::collectClassDeclaration(const ast::ClassDeclaration &decl) {
   info.name = decl.name;
   if (info.name.empty()) return;
 
+  info.protocolNames = decl.protocolNames;
+
   for (const auto &method : decl.definition.methods) {
     if (!method) continue;
     std::string mname = method->name;

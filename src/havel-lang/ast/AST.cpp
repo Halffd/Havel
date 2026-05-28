@@ -640,6 +640,20 @@ void visitTryExpression(const TryExpression &node) override {
   void visitWildcardPattern(const WildcardPattern &node) override {
     out << getIndent() << node.toString() << std::endl;
   }
+
+  void visitConstructorPattern(const ConstructorPattern &node) override {
+    out << getIndent() << "ConstructorPattern {" << node.name << std::endl;
+    indentLevel++;
+    for (const auto &arg : node.args) {
+      if (arg) {
+        arg->accept(*this);
+      } else {
+        out << getIndent() << "nullptr" << std::endl;
+      }
+    }
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
 };
 
 // BooleanLiteral accept method

@@ -833,7 +833,14 @@ for (const auto &stmt : program->body) {
         vm->registerProtocolImpl(traitName, typeName);
       }
     }
-    if (stmt->kind == ast::NodeType::StructDeclaration) {
+    if (stmt->kind == ast::NodeType::ClassDeclaration) {
+    const auto &classDecl =
+        static_cast<const ast::ClassDeclaration &>(*stmt);
+    for (const auto &protoName : classDecl.protocolNames) {
+      vm->registerProtocolImpl(protoName, classDecl.name);
+    }
+  }
+  if (stmt->kind == ast::NodeType::StructDeclaration) {
       const auto &structDecl =
           static_cast<const ast::StructDeclaration &>(*stmt);
       for (const auto &protoName : structDecl.protocolNames) {

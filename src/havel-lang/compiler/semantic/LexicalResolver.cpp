@@ -520,6 +520,13 @@ void LexicalResolver::resolvePatternWithBindings(const ast::Expression &pattern)
     if (spreadPat.target) resolvePatternWithBindings(*spreadPat.target);
     break;
   }
+  case ast::NodeType::ConstructorPattern: {
+    const auto &ctorPat = static_cast<const ast::ConstructorPattern &>(pattern);
+    for (const auto &arg : ctorPat.args) {
+      if (arg) resolvePatternWithBindings(*arg);
+    }
+    break;
+  }
   default:
     // Literals and other non-binding patterns - nothing to resolve
     break;

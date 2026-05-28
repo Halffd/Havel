@@ -3912,19 +3912,28 @@ std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
   }
   std::string className = advance().value;
 
-  // Check for inheritance syntax: class X : ParentClass
+  // Check for inheritance syntax: class X : ParentClass [, Protocol1, ...]
   // But also: class X : (colon body with no parent)
-  // Disambiguate: if ':' followed by Identifier, it's inheritance
+  // Disambiguate: if ':' followed by Identifier, it's inheritance (possibly with protocols)
   // If ':' followed by newline/not-identifier, it's colon body
   std::string parentName;
+  std::vector<std::string> protocolNames;
   bool isColonBody = false;
   size_t colonBaseIndent = 0;
 
   if (at().type == havel::TokenType::Colon) {
     if (at(1).type == havel::TokenType::Identifier && at(1).line == at().line) {
-      // Inheritance: class X : ParentClass
+      // Inheritance: class X : ParentClass [, Protocol1, Protocol2, ...]
       advance(); // consume ':'
       parentName = advance().value;
+      // Additional comma-separated names after parent are protocol conformances
+      while (at().type == havel::TokenType::Comma) {
+        advance(); // consume ','
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected protocol name after ','");
+        }
+        protocolNames.push_back(advance().value);
+      }
     } else {
       // Colon body: class X :
       isColonBody = true;
@@ -3985,8 +3994,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
   // Create class definition with fields and methods
   ast::ClassDefinition def(std::move(fields), std::move(methods));
 
-    return makeNodeAt<ast::ClassDeclaration>(keyword, className, std::move(def),
-        parentName);
+  return makeNodeAt<ast::ClassDeclaration>(keyword, className, std::move(def),
+                                           parentName, std::move(protocolNames));
 }
 
 // Parse struct members (fields and methods)
@@ -9382,9 +9391,34 @@ try {
     auto tok = advance();
     literal = makeNode<havel::ast::CharLiteral>(tok.value[0]);
   }
-  // Identifier (variable binding or reference)
+  // Identifier (variable binding or constructor pattern)
   else if (at().type == havel::TokenType::Identifier) {
-    literal = makeIdentifier(advance());
+    auto tok = advance();
+    // If followed by '(', parse as constructor pattern Name(p1, p2, ...)
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      std::vector<std::unique_ptr<havel::ast::Expression>> args;
+      while (at().type != havel::TokenType::CloseParen && notEOF()) {
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type == havel::TokenType::CloseParen) break;
+        auto arg = parsePattern();
+        if (!arg) {
+          failAt(at(), "Expected pattern in constructor pattern");
+          return nullptr;
+        }
+        args.push_back(std::move(arg));
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type == havel::TokenType::Comma) advance();
+      }
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' to close constructor pattern");
+        return nullptr;
+      }
+      advance(); // consume ')'
+      literal = makeNode<havel::ast::ConstructorPattern>(tok.value, std::move(args));
+    } else {
+      literal = makeIdentifier(tok);
+    }
   }
   // Wildcard pattern _
   else if (at().type == havel::TokenType::Underscore) {

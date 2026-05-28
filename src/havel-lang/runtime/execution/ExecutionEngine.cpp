@@ -324,28 +324,20 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
     }
  if (!g) return;
 
-  // Persistent goroutines (hotkey system): re-suspend instead of Done.
-  // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
-  if (g->persistent) {
-    if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
-      g->hotkey_retrigger.store(false, std::memory_order_release);
-      scheduler_->requeueFront(g);
-      if (scheduler_->current() == g) {
-        scheduler_->clearCurrent();
-      }
-      return;
-    }
-    g->state = Scheduler::GoroutineState::Suspended;
-    g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
-    if (g->fiber) {
-      g->fiber->state = FiberState::SUSPENDED;
-      g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
-    }
-    if (scheduler_->current() == g) {
-      scheduler_->clearCurrent();
-    }
-    return;
-  }
+ // Persistent goroutines (hotkey system): re-suspend instead of Done.
+ // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
+ if (g->persistent) {
+     g->state = Scheduler::GoroutineState::Suspended;
+     g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+     if (g->fiber) {
+         g->fiber->state = FiberState::SUSPENDED;
+         g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+     }
+     if (scheduler_->current() == g) {
+         scheduler_->clearCurrent();
+     }
+     return;
+ }
 
  g->state = Scheduler::GoroutineState::Done;
  if (g->fiber) {

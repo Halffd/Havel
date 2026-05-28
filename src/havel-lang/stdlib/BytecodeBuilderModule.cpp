@@ -420,7 +420,24 @@ api.registerFunction("bc.str_id", [](const std::vector<Value> &args) -> Value {
     return Value::makeInt(static_cast<int64_t>(fn->upvalues.size() - 1));
     });
 
-api.registerFunction("bc.set_default_value", [](const std::vector<Value> &args) -> Value {
+    api.registerFunction("bc.add_upvalue_to", [](const std::vector<Value> &args) -> Value {
+    if (args.size() < 3 || !args[0].isInt() || !args[1].isInt() || !args[2].isInt()) {
+        throw std::runtime_error("bc.add_upvalue_to: requires (funcIdx, index, captures_local)");
+    }
+    int64_t targetIdx = args[0].asInt();
+    if (targetIdx < 0 || targetIdx >= static_cast<int64_t>(g_builder.chunk->getFunctionCount())) {
+        throw std::runtime_error("bc.add_upvalue_to: funcIdx out of range");
+    }
+ auto *targetFn = g_builder.chunk->getFunctionMutable(static_cast<uint32_t>(targetIdx));
+ if (!targetFn) throw std::runtime_error("bc.add_upvalue_to: function not found at index " + std::to_string(targetIdx));
+ havel::compiler::UpvalueDescriptor desc;
+ desc.index = static_cast<uint32_t>(args[1].asInt());
+ desc.captures_local = args[2].asInt() != 0;
+ targetFn->upvalues.push_back(desc);
+    return Value::makeInt(static_cast<int64_t>(targetFn->upvalues.size() - 1));
+    });
+
+    api.registerFunction("bc.set_default_value", [](const std::vector<Value> &args) -> Value {
     auto *fn = g_builder.currentFunc();
     if (!fn) throw std::runtime_error("bc.set_default_value: no current function");
     if (args.size() < 2 || !args[0].isInt()) {
@@ -772,7 +789,8 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
   api.setField(bcObj, "patch_jump", api.makeFunctionRef("bc.patch_jump"));
   api.setField(bcObj, "set_local_count", api.makeFunctionRef("bc.set_local_count"));
   api.setField(bcObj, "set_param_count", api.makeFunctionRef("bc.set_param_count"));
-  api.setField(bcObj, "add_upvalue", api.makeFunctionRef("bc.add_upvalue"));
+    api.setField(bcObj, "add_upvalue", api.makeFunctionRef("bc.add_upvalue"));
+    api.setField(bcObj, "add_upvalue_to", api.makeFunctionRef("bc.add_upvalue_to"));
   api.setField(bcObj, "execute", api.makeFunctionRef("bc.execute"));
   api.setField(bcObj, "serialize", api.makeFunctionRef("bc.serialize"));
   api.setField(bcObj, "execute_persistent", api.makeFunctionRef("bc.execute_persistent"));

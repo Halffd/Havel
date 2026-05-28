@@ -103,22 +103,26 @@ LOG_DIR="logs"
 THREADS=${THREADS:-$(detect_cores)}
 
 declare -A BUILD_CONFIGS=(
-    [0]="Debug,ON,ON,ON,build-debug"
-    [1]="Release,OFF,OFF,ON,build-release"
-    [2]="Debug,OFF,ON,ON,build-debug"
-    [3]="Debug,OFF,OFF,OFF,build-debug"
-    [4]="Debug,ON,ON,OFF,build-debug"
-    [5]="Release,ON,ON,ON,build-release"
-    [6]="Debug,ON,ON,OFF,build-debug"
-    [7]="Release,OFF,OFF,OFF,build-release"
-    [8]="Debug,OFF,ON,OFF,build-debug"
-    [9]="Release,ON,ON,OFF,build-release"
-    [10]="Debug,OFF,ON,ON,build"
-    [11]="Release,OFF,ON,ON,build"
+  [0]="Debug,ON,ON,ON,OFF,build-debug"
+  [1]="Release,OFF,OFF,ON,OFF,build-release"
+  [2]="Debug,OFF,ON,ON,OFF,build-debug"
+  [3]="Debug,OFF,OFF,OFF,OFF,build-debug"
+  [4]="Debug,ON,ON,OFF,OFF,build-debug"
+  [5]="Release,ON,ON,ON,OFF,build-release"
+  [6]="Debug,ON,ON,OFF,OFF,build-debug"
+  [7]="Release,OFF,OFF,OFF,OFF,build-release"
+  [8]="Debug,OFF,ON,OFF,OFF,build-debug"
+  [9]="Release,ON,ON,OFF,OFF,build-release"
+  [10]="Debug,OFF,ON,ON,OFF,build"
+  [11]="Release,OFF,ON,ON,OFF,build"
+  [12]="Debug,ON,ON,OFF,ON,build-headless"
+  [13]="Release,OFF,ON,OFF,ON,build-headless"
+  [14]="Debug,OFF,ON,OFF,ON,build-headless"
+  [15]="Release,ON,ON,OFF,ON,build-headless"
 )
 
 if [[ "$BUILD_MODE" =~ ^[0-9]+$ ]] && [[ -n "${BUILD_CONFIGS[$BUILD_MODE]:-}" ]]; then
-    IFS=',' read -r BUILD_TYPE ENABLE_TESTS ENABLE_HAVEL_LANG ENABLE_LLVM BUILD_DIR <<<"${BUILD_CONFIGS[$BUILD_MODE]}"
+    IFS=',' read -r BUILD_TYPE ENABLE_TESTS ENABLE_HAVEL_LANG ENABLE_LLVM ENABLE_HEADLESS BUILD_DIR <<<"${BUILD_CONFIGS[$BUILD_MODE]}"
     if [[ "$ENABLE_LLVM" == "ON" && "$ENABLE_HAVEL_LANG" == "OFF" ]]; then
         log "WARNING" "LLVM requires Havel Lang - enabling automatically" "${YELLOW}"
         ENABLE_HAVEL_LANG="ON"
@@ -140,22 +144,27 @@ show_config() {
     log "INFO" "Build Dir: ${SCRIPT_DIR}/${BUILD_DIR}" "${BLUE}"
     log "INFO" "Source Dir: ${SCRIPT_DIR}" "${BLUE}"
     echo ""
-    log "INFO" "Features:" "${CYAN}"
-    log "INFO" "  Tests:     $([[ "$ENABLE_TESTS" == "ON" ]] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
-    log "INFO" "  Havel Lang: $([[ "$ENABLE_HAVEL_LANG" == "ON" ]] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
-    log "INFO" "  LLVM JIT:  $([[ "$ENABLE_LLVM" == "ON" ]] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
-    case $BUILD_MODE in
-        0) echo -e "  ${GREEN}→${NC} Standard development build" ;;
-        1) echo -e "  ${GREEN}→${NC} Minimal release build" ;;
-        2) echo -e "  ${GREEN}→${NC} Quick debug build" ;;
-        3) echo -e "  ${GREEN}→${NC} Test-focused development" ;;
-        4) echo -e "  ${YELLOW}→${NC} Debug with tests, no LLVM" ;;
-        5) echo -e "  ${GREEN}→${NC} Full-featured release" ;;
-        6) echo -e "  ${YELLOW}→${NC} Debug without LLVM (default)" ;;
-        7) echo -e "  ${YELLOW}→${NC} Lightweight release" ;;
-        8) echo -e "  ${YELLOW}→${NC} Pure language development" ;;
-        9) echo -e "  ${YELLOW}→${NC} Feature-complete release" ;;
-    esac
+  log "INFO" "Features:" "${CYAN}"
+  log "INFO" " Tests: $([[ "$ENABLE_TESTS" == "ON" ]] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
+  log "INFO" " Havel Lang: $([[ "$ENABLE_HAVEL_LANG" == "ON" ]] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
+  log "INFO" " LLVM JIT: $([[ "$ENABLE_LLVM" == "ON" ]] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
+  log "INFO" " Headless: $([[ "$ENABLE_HEADLESS" == "ON" ]] && echo "ENABLED (no Qt)" || echo "DISABLED (with Qt)")" "${BLUE}"
+  case $BUILD_MODE in
+  0) echo -e " ${GREEN}→${NC} Standard development build" ;;
+  1) echo -e " ${GREEN}→${NC} Minimal release build" ;;
+  2) echo -e " ${GREEN}→${NC} Quick debug build" ;;
+  3) echo -e " ${GREEN}→${NC} Test-focused development" ;;
+  4) echo -e " ${YELLOW}→${NC} Debug with tests, no LLVM" ;;
+  5) echo -e " ${GREEN}→${NC} Full-featured release" ;;
+  6) echo -e " ${YELLOW}→${NC} Debug without LLVM (default)" ;;
+  7) echo -e " ${YELLOW}→${NC} Lightweight release" ;;
+  8) echo -e " ${YELLOW}→${NC} Pure language development" ;;
+  9) echo -e " ${YELLOW}→${NC} Feature-complete release" ;;
+  12) echo -e " ${YELLOW}→${NC} Debug headless (no Qt/GUI)" ;;
+  13) echo -e " ${YELLOW}→${NC} Release headless (no Qt/GUI)" ;;
+  14) echo -e " ${YELLOW}→${NC} Debug headless minimal (no Qt/GUI)" ;;
+  15) echo -e " ${YELLOW}→${NC} Release headless with tests (no Qt/GUI)" ;;
+  esac
 }
 
 detect() {
@@ -194,9 +203,13 @@ build() {
         -DCMAKE_CXX_COMPILER=$llvm_base_dir/bin/clang++ \
         -DCMAKE_LINKER=$llvm_base_dir/bin/ld.lld"
     fi
-    cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
-    cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
-    cmake_cmd+=" ${SCRIPT_DIR}"
+  cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
+  cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
+  cmake_cmd+=" -DENABLE_HEADLESS=${ENABLE_HEADLESS}"
+  if [[ "$ENABLE_HEADLESS" == "ON" ]]; then
+    cmake_cmd+=" -DENABLE_QT=OFF -DENABLE_QT_UI_BACKEND=OFF"
+  fi
+  cmake_cmd+=" ${SCRIPT_DIR}"
 
     log "INFO" "CMake command: ${cmake_cmd}" "${YELLOW}"
 
@@ -266,8 +279,14 @@ usage() {
     echo "  7    Release + no Tests + no Havel Lang + no LLVM"
     echo "  8    Debug  + no Tests + Havel Lang + no LLVM"
     echo "  9    Release + Tests + Havel Lang + no LLVM"
-    echo "  10   Debug  + no Tests + Havel Lang + LLVM  (build/)"
-    echo "  11   Release + no Tests + Havel Lang + LLVM (build/)"
+  echo " 10 Debug + no Tests + Havel Lang + LLVM (build/)"
+  echo " 11 Release + no Tests + Havel Lang + LLVM (build/)"
+  echo ""
+  echo -e "${YELLOW}Headless Modes (no Qt/GUI):${NC}"
+  echo " 12 Debug + Tests + Havel Lang + no LLVM + Headless"
+  echo " 13 Release + no Tests + Havel Lang + no LLVM + Headless"
+  echo " 14 Debug + no Tests + Havel Lang + no LLVM + Headless"
+  echo " 15 Release + Tests + Havel Lang + no LLVM + Headless"
     echo ""
     echo -e "${YELLOW}Commands:${NC}"
     echo "  build      Configure and build"
@@ -291,7 +310,8 @@ usage() {
     echo "  $0 rebuild         # clean + build mode 6"
     echo "  $0 6 clean build   # explicit mode 6"
     echo "  $0 9 build         # release no LLVM"
-    echo "  $0 0 rebuild       # full debug with LLVM"
+  echo " $0 0 rebuild # full debug with LLVM"
+  echo " $0 12 build # headless debug (no Qt)"
     echo "  THREADS=4 $0 build # 4 threads"
     echo ""
     echo -e "${YELLOW}Logs:${NC} ${LOG_DIR}/build-mode[X]-[type].log"

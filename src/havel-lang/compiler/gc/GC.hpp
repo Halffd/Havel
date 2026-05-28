@@ -418,7 +418,7 @@ private:
     uint32_t next_channel_id_ = 1;
     uint32_t next_coroutine_id_ = 1;
 
-    size_t allocation_budget_ = 1024;
+    size_t allocation_budget_ = 65536;
     size_t allocations_since_last_ = 0;
     size_t recovered_in_cycle_ = 0;
 

@@ -1,0 +1,91 @@
+// keytap.hv — Key tap detection: distinguish single taps from combos
+// Provides: KeyTap class with onTap/onCombo callbacks
+//
+// Usage:
+//   use keytap
+//   kt = KeyTap("a", fn() { print("tapped a") })
+//   kt.setup()
+//
+//   kt = KeyTap("a", fn() { print("tapped a") }, fn() { print("combo") })
+//   kt.setup()
+//
+//   kt = KeyTap("a", fn() { print("tapped") }, fn() { print("combo") }, false)
+//   kt.setup()
+//
+//   kt = KeyTap("a", fn() { print("tapped") }, null, true, fn() { mode.current() == "vim" })
+//   kt.setup()
+//
+// State machine:
+//   keyDown → keyHeld=true, combo=false
+//   anyKey (while keyHeld && key != target) → combo=true, fire onComboFn, clear state
+//   keyUp (keyHeld && !combo) → fire onTapFn, clear state
+//   keyUp (combo) → just clear state
+
+use hotkey
+
+class KeyTap {
+  key: str
+  onTapFn: fn
+  onComboFn: fn
+  keyHeld: bool = false
+  combo: bool = false
+  grab: bool = true
+  conditionFn: fn
+
+  fn @(key, onTapFn, onComboFn, grab, conditionFn) {
+    @key = key
+    @onTapFn = onTapFn
+    @onComboFn = onComboFn
+    if grab != null { @grab = grab }
+    @conditionFn = conditionFn
+  }
+
+  fn _downStr() {
+    _p = "@|"
+    if @grab == false { _p = "@|~" }
+    "{_p}{@key}"
+  }
+
+  fn _upStr() {
+    "{_downStr()}:up"
+  }
+
+  fn setup() {
+    hotkey.onAnyKey(fn(key) {
+      if @keyHeld && key != @key {
+        @combo = true
+        if @onComboFn != null {
+          @onComboFn()
+          @keyHeld = false
+          @combo = false
+        }
+      }
+    })
+
+    if @conditionFn != null {
+      hotkey.register_conditional(_downStr(), fn() {
+        @keyHeld = true
+        @combo = false
+      }, @conditionFn)
+      hotkey.register_conditional(_upStr(), fn() {
+        if @keyHeld && @combo == false {
+          @onTapFn()
+        }
+        @keyHeld = false
+        @combo = false
+      }, @conditionFn)
+    } else {
+      hotkey.register(_downStr(), fn() {
+        @keyHeld = true
+        @combo = false
+      })
+      hotkey.register(_upStr(), fn() {
+        if @keyHeld && @combo == false {
+          @onTapFn()
+        }
+        @keyHeld = false
+        @combo = false
+      })
+    }
+  }
+}

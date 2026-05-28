@@ -1,0 +1,39 @@
+// modes.hv — Keyboard mode/layer system
+// Wraps the ModeManager host functions for script-defined modes
+// with priority-based switching, enter/exit callbacks, and statistics.
+//
+// Note: This is the keyboard layer system (gaming/coding/streaming modes),
+// not window focus tracking (see focus.hv for that).
+//
+// Usage:
+//   use modes
+//   modes.current()              // "gaming"
+//   modes.previous()             // "default"
+//   modes.set("gaming")          // explicitly switch mode
+//   modes.list()                 // [{name: ..., priority: ..., active: ...}, ...]
+//   modes.time("gaming")         // ms spent in gaming mode
+//   modes.transitions("gaming")  // how many times entered
+//   modes.signalActive("steam")  // check a signal
+//   modes.define("gaming", 10, fn() { true }, fn() { ... }, fn() { ... })
+
+fn current() { mode.current() }
+
+fn previous() { mode.previous() }
+
+fn set(name) { mode.set(name) }
+
+fn list() { mode.list() }
+
+fn time(name) { mode.time(name) }
+
+fn transitions(name) { mode.transitions(name) }
+
+fn signalActive(name) { mode.signalActive(name) }
+
+fn define(name, priority, condition, enter, exit) {
+  mode.register(name, priority, condition, enter, exit, "", null, "", null)
+}
+
+fn defineTransition(name, priority, condition, enter, exit, onEnterFrom, onExitTo) {
+  mode.register(name, priority, condition, enter, exit, "", onEnterFrom, "", onExitTo)
+}

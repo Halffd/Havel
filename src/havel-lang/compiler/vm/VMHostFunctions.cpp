@@ -1070,11 +1070,11 @@ registerHostFunction(
         return Value::makeObjectId(protoRef.id);
     });
 
-  registerHostFunction(
+registerHostFunction(
   "struct.method", [this](const std::vector<Value> &args) {
     if (args.size() != 3 || !args[1].isStringValId() ||
-        !args[2].isFunctionObjId()) {
-      COMPILER_THROW("struct.method expects (structType, methodNameString, functionObj)");
+        (!args[2].isFunctionObjId() && !args[2].isClosureId() && !args[2].isHostFuncId())) {
+      COMPILER_THROW("struct.method expects (structType, methodNameString, callableObj)");
     }
     if (!current_chunk) COMPILER_THROW("struct.method requires active chunk");
 
@@ -1797,10 +1797,25 @@ void VM::registerDefaultPrototypes() {
     registerPrototypeMethodByName("thread", "resume", "thread.resume");
     registerPrototypeMethodByName("thread", "running", "thread.running");
 registerPrototypeMethodByName("interval", "pause", "interval.pause");
-registerPrototypeMethodByName("interval", "resume", "interval.resume");
-registerPrototypeMethodByName("interval", "stop", "interval.stop");
-registerPrototypeMethodByName("timeout", "cancel", "timeout.cancel");
-registerPrototypeMethodByName("timeout", "stop", "timeout.stop");
+  registerPrototypeMethodByName("interval", "resume", "interval.resume");
+  registerPrototypeMethodByName("interval", "stop", "interval.stop");
+  registerPrototypeMethodByName("timeout", "cancel", "timeout.cancel");
+  registerPrototypeMethodByName("timeout", "stop", "timeout.stop");
+
+  // Register builtin type protocol conformance so PROT_CHECK/PROT_CAST
+  // can use the generic protocol dispatch instead of hardcoded checks.
+  // Iterable: array, str, set, range, object, iterator
+  for (const char *name : {"array", "str", "set", "range", "object", "iterator"}) {
+    registerProtocolImpl("Iterable", name);
+  }
+  // Indexable: array, str, set, object
+  for (const char *name : {"array", "str", "set", "object"}) {
+    registerProtocolImpl("Indexable", name);
+  }
+  // Callable: fn (function objects), closure, hostfunc, boundmethod
+  for (const char *name : {"fn", "closure", "hostfunc", "boundmethod"}) {
+    registerProtocolImpl("Callable", name);
+  }
 }
 
 Value VM::invokeHostFunction(const std::string &name,

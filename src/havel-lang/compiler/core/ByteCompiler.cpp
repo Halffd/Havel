@@ -2126,31 +2126,33 @@ case ast::NodeType::EnumDeclaration: {
     }
 
 case ast::NodeType::ImplDeclaration: {
-  const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
-  std::string typeName = implDecl.typeName ? implDecl.typeName->symbol : "";
-  std::string traitName = implDecl.traitName ? implDecl.traitName->symbol : "";
- for (const auto &method : implDecl.funcs) {
- if (!method || !method->name) continue;
- auto index_it = function_indices_by_node_.find(method.get());
- if (index_it == function_indices_by_node_.end()) continue;
- {
- uint32_t register_sid = addStringConstant("class.method");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(register_sid));
- }
- // Load type object from globals
- uint32_t type_name_sid = addStringConstant(typeName);
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_name_sid));
- // Load method name
- uint32_t method_name_sid = addStringConstant(method->name->symbol);
- emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(method_name_sid)));
- // Load function
- emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(index_it->second)));
- // Call class.method(typeObj, methodName, funcObj)
- emit(OpCode::CALL, Value::makeInt(3));
- emit(OpCode::POP);
- }
-  break;
-}
+      const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
+      std::string typeName = implDecl.typeName ? implDecl.typeName->symbol : "";
+      std::string traitName = implDecl.traitName ? implDecl.traitName->symbol : "";
+      bool isStructType = top_level_struct_names_.count(typeName) > 0;
+      const char *methodHostFn = isStructType ? "struct.method" : "class.method";
+      for (const auto &method : implDecl.funcs) {
+        if (!method || !method->name) continue;
+        auto index_it = function_indices_by_node_.find(method.get());
+        if (index_it == function_indices_by_node_.end()) continue;
+        {
+          uint32_t register_sid = addStringConstant(methodHostFn);
+          emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(register_sid));
+        }
+        // Load type object from globals
+        uint32_t type_name_sid = addStringConstant(typeName);
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_name_sid));
+        // Load method name
+        uint32_t method_name_sid = addStringConstant(method->name->symbol);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(method_name_sid)));
+        // Load function
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(index_it->second)));
+        // Call struct.method / class.method(typeObj, methodName, funcObj)
+        emit(OpCode::CALL, Value::makeInt(3));
+        emit(OpCode::POP);
+      }
+      break;
+    }
 
   case ast::NodeType::UseStatement: {
     compileUseStatement(static_cast<const ast::UseStatement &>(statement));
@@ -2482,25 +2484,20 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
         if (prop.second->kind == ast::NodeType::Identifier) {
           // Identifier pattern: check existence and bind
           const auto &ident = static_cast<const ast::Identifier &>(*prop.second);
-          // Find slot by looking up in resolution results
           auto binding = bindingFor(ident);
           if (binding && binding->kind == ResolvedBindingKind::Local) {
-            // DUP the value, store to pattern slot, then check existence
             emit(OpCode::DUP);
             emit(OpCode::STORE_VAR, binding->slot);
           }
-          // Check existence (non-null)
           emit(OpCode::IS_NULL);
           emit(OpCode::NOT);
           emit(OpCode::AND);
         } else {
-          // Nested pattern - compare
           compileExpression(*prop.second);
           emit(OpCode::EQ);
           emit(OpCode::AND);
         }
       } else {
-        // Null pattern - just check existence
         emit(OpCode::IS_NULL);
         emit(OpCode::NOT);
         emit(OpCode::AND);
@@ -2508,7 +2505,65 @@ void ByteCompiler::compilePattern(const ast::Expression &pattern, uint32_t discS
     }
     break;
   }
-  
+
+  case ast::NodeType::ConstructorPattern: {
+    const auto &ctorPat = static_cast<const ast::ConstructorPattern &>(pattern);
+    // ConstructorPattern: check value.tag == "Name" and destructure fields
+    // Field mapping: position 0 -> "value", 1 -> "error", 2 -> "message"
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+
+    // Check tag: disc.tag == "ConstructorName"
+    emit(OpCode::LOAD_VAR, discSlot);
+    { uint32_t sid = addStringConstant("tag"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid))); }
+    emit(OpCode::OBJECT_GET);
+    { uint32_t sid = addStringConstant(ctorPat.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid))); }
+    emit(OpCode::EQ);
+    emit(OpCode::AND);
+
+    // Extract and match each argument by position
+    for (size_t i = 0; i < ctorPat.args.size(); i++) {
+      const auto &arg = ctorPat.args[i];
+      if (!arg) continue;
+
+      // Wildcard arg - no check needed, value not bound
+      if (arg->kind == ast::NodeType::WildcardPattern) continue;
+
+      // Determine field name by position
+      const char *fieldName = "value";
+      if (i == 1) fieldName = "error";
+      else if (i == 2) fieldName = "message";
+
+      // Get field value from the object
+      emit(OpCode::LOAD_VAR, discSlot);
+      { uint32_t sid = addStringConstant(fieldName); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid))); }
+      emit(OpCode::OBJECT_GET);
+
+      if (arg->kind == ast::NodeType::Identifier) {
+        const auto &ident = static_cast<const ast::Identifier &>(*arg);
+        auto binding = bindingFor(ident);
+        if (binding && binding->kind == ResolvedBindingKind::Local) {
+          emit(OpCode::STORE_VAR, binding->slot);
+        }
+      } else if (arg->kind == ast::NodeType::ConstructorPattern ||
+                 arg->kind == ast::NodeType::ObjectPattern ||
+                 arg->kind == ast::NodeType::ArrayPattern ||
+                 arg->kind == ast::NodeType::RangePattern ||
+                 arg->kind == ast::NodeType::OrPattern) {
+        // Nested pattern: store field to temp slot, compile sub-pattern
+        uint32_t tempSlot = next_local_index++;
+        emit(OpCode::STORE_VAR, tempSlot);
+        compilePattern(*arg, tempSlot);
+        emit(OpCode::AND);
+      } else {
+        // Literal comparison
+        compileExpression(*arg);
+        emit(OpCode::EQ);
+        emit(OpCode::AND);
+      }
+    }
+    break;
+  }
+
   case ast::NodeType::RangePattern: {
     const auto &rangePat = static_cast<const ast::RangePattern &>(pattern);
     // Range pattern: check discSlot >= start && discSlot <= end

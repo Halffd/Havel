@@ -1,0 +1,62 @@
+// Test constructor pattern matching with full Result type
+
+Result = {
+    Ok: (value) => ({tag: "Ok", value: value}),
+    Err: (error) => ({tag: "Err", error: error}),
+    isOk: (r) => r.tag == "Ok",
+    isErr: (r) => r.tag == "Err",
+}
+
+r = Result.Ok(42)
+match r {
+    Ok(v) => print("got Ok({v})")
+    Err(e) => print("got Err({e})")
+}
+print("test1 ok")
+
+r2 = Result.Err("fail")
+match r2 {
+    Ok(v) => print("got Ok({v})")
+    Err(e) => print("got Err({e})")
+}
+print("test2 ok")
+
+r3 = Result.Ok("hello")
+match r3 {
+    Ok(_) => print("Ok with wildcard")
+    Err(_) => print("Err with wildcard")
+}
+print("test3 ok")
+
+r4 = Result.Ok(99)
+match r4 {
+    Ok(v) => print("first arm Ok: {v}")
+    Err(e) => print("first arm Err: {e}")
+}
+print("test4 ok")
+
+r5 = Result.Err("oops")
+match r5 {
+    Ok(v) => print("second arm Ok: {v}")
+    Err(e) => print("second arm Err: {e}")
+}
+print("test5 ok")
+
+r6 = Result.Ok("specific")
+match r6 {
+    Ok("specific") => print("matched specific Ok")
+    Ok(v) => print("matched other Ok: {v}")
+    Err(e) => print("matched Err: {e}")
+}
+print("test6 ok")
+
+r7 = Result.Ok(42)
+v = null
+match r7 {
+    Ok(x) => v = x
+    Err(_) => v = -1
+}
+print("extracted value: {v}")
+print("test7 ok")
+
+print("all constructor pattern tests passed")

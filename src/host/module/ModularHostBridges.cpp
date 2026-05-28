@@ -3019,7 +3019,7 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         return Value::makeNull();
     }
 
-    HotkeyPolicy policy = HotkeyPolicy::Drop;
+    HotkeyPolicy policy = HotkeyPolicy::Queue;
     if (args.size() >= 3 && args[2].isObjectId()) {
         auto policyVal = vm->objectGetWithClassChain(args[2].asObjectId(), "policy");
         if (policyVal.isStringValId()) {

@@ -15,6 +15,7 @@
 #include <wayland-client.h>
 #endif
 #include "core/display/DisplayManager.hpp"
+#include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>

@@ -1,0 +1,33 @@
+// Test constructor patterns with inline tag-value objects
+
+// Match Ok-style inline object
+x = {tag: "Ok", value: 42}
+match x {
+    Ok(v) => print("inline Ok: {v}")
+    Err(e) => print("inline Err: {e}")
+}
+
+// Match Err-style inline object
+y = {tag: "Err", error: "fail"}
+match y {
+    Ok(v) => print("inline Ok: {v}")
+    Err(e) => print("inline Err: {e}")
+}
+
+// Default arm with wildcard
+q = {tag: "Unknown", value: 1}
+match q {
+    Ok(v) => print("Ok: {v}")
+    Err(e) => print("Err: {e}")
+    _ => print("unknown variant")
+}
+
+// Nested: literal match inside constructor
+r = {tag: "Ok", value: 42}
+match r {
+    Ok(99) => print("got 99")
+    Ok(v) => print("got {v}")
+    Err(e) => print("Err: {e}")
+}
+
+print("inline constructor pattern tests ok")

@@ -477,17 +477,26 @@ void EventListener::EventLoop() {
       if (signalFd > maxFd) maxFd = signalFd;
     }
 
-        int eventQueueWakeupFd = -1;
-        if (executionEngine) {
-            auto* eq = executionEngine->getEventQueue();
-            if (eq) {
-                eventQueueWakeupFd = eq->wakeupFd();
-                if (eventQueueWakeupFd >= 0) {
-                    FD_SET(eventQueueWakeupFd, &readfds);
-                    if (eventQueueWakeupFd > maxFd) maxFd = eventQueueWakeupFd;
-                }
-            }
+    int eventQueueWakeupFd = -1;
+    int deferredWakeupFd = -1;
+    if (executionEngine) {
+      auto* eq = executionEngine->getEventQueue();
+      if (eq) {
+        eventQueueWakeupFd = eq->wakeupFd();
+        if (eventQueueWakeupFd >= 0) {
+          FD_SET(eventQueueWakeupFd, &readfds);
+          if (eventQueueWakeupFd > maxFd) maxFd = eventQueueWakeupFd;
         }
+      }
+      auto* sched = executionEngine->getScheduler();
+      if (sched) {
+        deferredWakeupFd = sched->deferredWakeupFd();
+        if (deferredWakeupFd >= 0) {
+          FD_SET(deferredWakeupFd, &readfds);
+          if (deferredWakeupFd > maxFd) maxFd = deferredWakeupFd;
+        }
+      }
+    }
 
     struct timeval timeout;
     timeout.tv_sec = 0;
@@ -525,8 +534,13 @@ void EventListener::EventLoop() {
     }
 
     if (eventQueueWakeupFd >= 0 && FD_ISSET(eventQueueWakeupFd, &readfds)) {
-        uint64_t val;
-        while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
+      uint64_t val;
+      while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
+    }
+
+    if (deferredWakeupFd >= 0 && FD_ISSET(deferredWakeupFd, &readfds)) {
+      uint64_t val;
+      while (read(deferredWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
     }
   }
 

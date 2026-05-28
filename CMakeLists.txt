@@ -17,6 +17,7 @@ option(ENABLE_GTK "Enable GTK4 native backend" OFF)
 option(ENABLE_IMGUI "Enable Dear ImGui native backend" OFF)
 option(ENABLE_QT "Enable Qt6 native backend (default)" ON)
 option(ENABLE_QT_UI_BACKEND "Build in-process Qt6 UI backend (fallback to dynamic extension)" ON)
+option(ENABLE_HEADLESS "Build without any GUI backend (server/headless mode)" OFF)
 
 # ==============================================================================
 # COMPILER AND STANDARDS CONFIGURATION
@@ -588,17 +589,27 @@ else()
 endif()
 
 # Auto-select backend if not specified
-if(UI_BACKEND STREQUAL "AUTO")
-    if(QT_BACKEND_AVAILABLE)
-        set(UI_BACKEND "QT")
-    elseif(GTK_BACKEND_AVAILABLE)
-        set(UI_BACKEND "GTK")
-    elseif(IMGUI_BACKEND_AVAILABLE)
-        set(UI_BACKEND "IMGUI")
-    else()
-        message(FATAL_ERROR "No UI backend available. Install Qt6, GTK4, or ImGui+GLFW3+OpenGL")
-    endif()
+if(ENABLE_HEADLESS)
+  set(UI_BACKEND "HEADLESS")
+  set(ENABLE_QT OFF)
+  set(ENABLE_QT_UI_BACKEND OFF)
+  message(STATUS "UI backend: HEADLESS (no GUI)")
+elseif(UI_BACKEND STREQUAL "AUTO")
+  if(QT_BACKEND_AVAILABLE)
+    set(UI_BACKEND "QT")
+  elseif(GTK_BACKEND_AVAILABLE)
+    set(UI_BACKEND "GTK")
+  elseif(IMGUI_BACKEND_AVAILABLE)
+    set(UI_BACKEND "IMGUI")
+  else()
+    set(UI_BACKEND "HEADLESS")
+    set(ENABLE_QT OFF)
+    set(ENABLE_QT_UI_BACKEND OFF)
+    message(WARNING "No UI backend available - falling back to HEADLESS mode")
+  endif()
+  if(NOT UI_BACKEND STREQUAL "HEADLESS")
     message(STATUS "Auto-selected UI backend: ${UI_BACKEND}")
+  endif()
 endif()
 
 set(COMMON_LIBS
@@ -735,29 +746,31 @@ target_link_options(gtk_extension PRIVATE -fno-lto)
 
 # ImGui extension (Dear ImGui with GLFW/OpenGL)
 # Uses dynamic loading - no compile-time dependency on ImGui/GLFW/OpenGL
+if(IMGUI_BACKEND_AVAILABLE)
 add_library(imgui_extension MODULE src/extensions/imgui/imgui_extension.cpp)
 target_include_directories(imgui_extension PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/extensions
-    ${GLFW3_INCLUDE_DIRS}
-    ${IMGUI_INCLUDE_DIR}
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src/extensions
+  ${GLFW3_INCLUDE_DIRS}
+  ${IMGUI_INCLUDE_DIR}
 )
 target_link_libraries(imgui_extension PRIVATE
-    havel_extension_runtime
-    ${GLFW3_LIBRARIES}
-    OpenGL::GL
-    dl
+  havel_extension_runtime
+  ${GLFW3_LIBRARIES}
+  OpenGL::GL
+  dl
 )
 target_compile_definitions(imgui_extension PRIVATE HAVE_IMGUI_BACKEND)
 set_target_properties(imgui_extension PROPERTIES
-    PREFIX ""
-    C_STANDARD 11
-    CXX_STANDARD 23
-    C_VISIBILITY_PRESET default
-    CXX_VISIBILITY_PRESET default
-    VISIBILITY_INLINES_HIDDEN OFF
-    INTERPROCEDURAL_OPTIMIZATION OFF
+  PREFIX ""
+  C_STANDARD 11
+  CXX_STANDARD 23
+  C_VISIBILITY_PRESET default
+  CXX_VISIBILITY_PRESET default
+  VISIBILITY_INLINES_HIDDEN OFF
+  INTERPROCEDURAL_OPTIMIZATION OFF
 )
+endif()
 
 # Qt6 extension (Qt6 Widgets) - for additional dynamic UI capabilities
 # Uses dynamic loading but main executable still links Qt for core functionality

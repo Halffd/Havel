@@ -120,6 +120,7 @@ enum class NodeType {
   OrPattern,     // pat1 | pat2 for alternative patterns
   WildcardPattern, // _ for match statements
   SpreadPattern, // ..rest for array rest patterns
+  ConstructorPattern, // Name(p1, p2) constructor destructuring in match
   // Literals
   StringLiteral,                // "Hello"
   CharLiteral,                  // 'x' single char
@@ -2247,11 +2248,14 @@ struct StructDeclaration : public Statement {
 struct ClassDeclaration : public Statement {
   std::string name;
   std::string parentName; // Parent class name for inheritance (empty if none)
+  std::vector<std::string> protocolNames;
   ClassDefinition definition;
 
   ClassDeclaration(const std::string &className, ClassDefinition def,
-                   const std::string &parent = "")
-      : name(className), parentName(parent), definition(std::move(def)) {
+                   const std::string &parent = "",
+                   std::vector<std::string> protos = {})
+      : name(className), parentName(parent),
+        protocolNames(std::move(protos)), definition(std::move(def)) {
     kind = NodeType::ClassDeclaration;
   }
 
@@ -2259,6 +2263,14 @@ struct ClassDeclaration : public Statement {
     std::string result = "ClassDeclaration{name: " + name;
     if (!parentName.empty()) {
       result += ", parent: " + parentName;
+    }
+    if (!protocolNames.empty()) {
+      result += ", protocols: [";
+      for (size_t i = 0; i < protocolNames.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += protocolNames[i];
+      }
+      result += "]";
     }
     result += ", definition: " + definition.toString() + "}";
     return result;
@@ -2418,6 +2430,25 @@ kind = NodeType::ArrayPattern;
   std::string toString() const override {
     return "ArrayPattern{" + std::to_string(elements.size()) + " elements" +
            (rest ? ", has rest" : "") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Constructor Pattern for match (Name(p1, p2))
+struct ConstructorPattern : public Expression {
+  std::string name;                          // Constructor name (e.g. "Ok", "Err")
+  std::vector<std::unique_ptr<Expression>> args; // Sub-patterns for each field
+
+  ConstructorPattern(std::string n,
+                     std::vector<std::unique_ptr<Expression>> a = {})
+      : name(std::move(n)), args(std::move(a)) {
+    kind = NodeType::ConstructorPattern;
+  }
+
+  std::string toString() const override {
+    return "ConstructorPattern{" + name + " " +
+           std::to_string(args.size()) + " args}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -3152,6 +3183,7 @@ virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitWildcardPattern(const WildcardPattern &node) = 0;
   virtual void visitSpreadPattern(const SpreadPattern &node) = 0;
   virtual void visitSpreadExpression(const SpreadExpression &node) = 0;
+  virtual void visitConstructorPattern(const ConstructorPattern &node) = 0;
   virtual void visitSetExpression(const SetExpression &node) = 0;
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
   virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
@@ -3407,6 +3439,10 @@ inline void SpreadPattern::accept(ASTVisitor &visitor) const {
 
 inline void SpreadExpression::accept(ASTVisitor &visitor) const {
   visitor.visitSpreadExpression(*this);
+}
+
+inline void ConstructorPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitConstructorPattern(*this);
 }
 
 inline void SetExpression::accept(ASTVisitor &visitor) const {

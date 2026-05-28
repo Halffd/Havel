@@ -58,17 +58,27 @@ fn scopeResolveUpvalue(scope, name) {
     if existing != null {
         return existing
     }
-    // Walk up from scope.parent to find the variable.
-    // If it's in the direct parent function (local or upvalue), register directly.
-    // If it's further away (in a grandparent function), we need to chain:
-    //   - ensure the direct parent function also captures it as an upvalue
-    //   - then our function captures from the parent's upvalue
+    // Check locals in this scope
+    localEntry = scope.locals[name]
+    if localEntry != null {
+        myUpidx = scope.upcount
+        scope.upvalues[name] = myUpidx
+        scope.upcount = myUpidx + 1
+        if scope.bcFuncIdx != null {
+            bc.add_upvalue_to(scope.bcFuncIdx, localEntry, 1)
+        }
+        else {
+            bc.add_upvalue(localEntry, 1)
+        }
+        return myUpidx
+    }
+    // Walk up from scope.parent to find the variable
     s = scope.parent
     foundDirect = null
+    foundFuncId = null
     crossedBoundary = false
     parentFuncRoot = null
     while s != null {
-        // Detect crossing into a different function
         if s.funcId != scope.funcId && !crossedBoundary {
             crossedBoundary = true
             parentFuncRoot = scopeFindFuncRootByFuncId(s, s.funcId)
@@ -76,11 +86,13 @@ fn scopeResolveUpvalue(scope, name) {
         entry = s.locals[name]
         if entry != null {
             foundDirect = {kind: "local", index: entry}
+            foundFuncId = s.funcId
             break
         }
         uv = s.upvalues[name]
         if uv != null {
             foundDirect = {kind: "upvalue", index: uv}
+            foundFuncId = s.funcId
             break
         }
         s = s.parent
@@ -89,80 +101,90 @@ fn scopeResolveUpvalue(scope, name) {
         return -1
     }
     if !crossedBoundary {
-        // Variable is in the same function — shouldn't happen (scopeResolve handles it)
+        // Variable is in the same function's scope chain
+        myUpidx = scope.upcount
+        scope.upvalues[name] = myUpidx
+        scope.upcount = myUpidx + 1
+        isLocal = foundDirect.kind == "local" ? 1 : 0
+        if scope.bcFuncIdx != null {
+            bc.add_upvalue_to(scope.bcFuncIdx, foundDirect.index, isLocal)
+        }
+        else {
+            bc.add_upvalue(foundDirect.index, isLocal)
+        }
+        return myUpidx
+    }
+    // Variable is in a different function.
+    // If it's a LOCAL in the direct parent function, we can capture it directly.
+    directParentFid = parentFuncRoot.funcId
+    if foundDirect.kind == "local" && foundFuncId == directParentFid {
+        // Variable is a local in the direct parent function.
+        // We capture it directly from the parent frame's local slot.
         myUpidx = scope.upcount
         scope.upvalues[name] = myUpidx
         scope.upcount = myUpidx + 1
         if scope.bcFuncIdx != null {
-            bc.add_upvalue_to(scope.bcFuncIdx, foundDirect.index, foundDirect.kind == "local" ? 1 : 0)
+            bc.add_upvalue_to(scope.bcFuncIdx, foundDirect.index, 1)
         }
         else {
-            bc.add_upvalue(foundDirect.index, foundDirect.kind == "local" ? 1 : 0)
+            bc.add_upvalue(foundDirect.index, 1)
         }
         return myUpidx
     }
- // Variable is in a different function (crossed at least one boundary).
- // If it's a LOCAL in the direct parent function, we capture it directly
- // with captures_local=1. No need for the parent to also register an upvalue.
- if foundDirect.kind == "local" {
- myUpidx = scope.upcount
- scope.upvalues[name] = myUpidx
- scope.upcount = myUpidx + 1
- if scope.bcFuncIdx != null {
- bc.add_upvalue_to(scope.bcFuncIdx, foundDirect.index, 1)
- } else {
- bc.add_upvalue(foundDirect.index, 1)
- }
- return myUpidx
- }
- // Variable is an UPVALUE in an enclosing function — need to chain.
- // Ensure the direct parent function also captures it as an upvalue,
- // then we capture from the parent's upvalue slot (captures_local=0).
- parentUpidx = parentFuncRoot.upvalues[name]
- if parentUpidx == null {
- parentUpidx = scopeResolveUpvalue(parentFuncRoot, name)
- if parentUpidx < 0 {
- return -1
- }
- }
- myUpidx = scope.upcount
- scope.upvalues[name] = myUpidx
- scope.upcount = myUpidx + 1
- if scope.bcFuncIdx != null {
- bc.add_upvalue_to(scope.bcFuncIdx, parentUpidx, 0)
- } else {
- bc.add_upvalue(parentUpidx, 0)
- }
- myUpidx
+    // Variable is in a grandparent+ function, or is an upvalue in the parent.
+    // The direct parent must also capture it as an upvalue first.
+    parentUpidx = parentFuncRoot.upvalues[name]
+    if parentUpidx == null {
+        parentUpidx = scopeResolveUpvalue(parentFuncRoot, name)
+        if parentUpidx < 0 {
+            return -1
+        }
+    }
+    // Now capture from parent's upvalue slot
+    myUpidx = scope.upcount
+    scope.upvalues[name] = myUpidx
+    scope.upcount = myUpidx + 1
+    if scope.bcFuncIdx != null {
+        bc.add_upvalue_to(scope.bcFuncIdx, parentUpidx, 0)
+    }
+    else {
+        bc.add_upvalue(parentUpidx, 0)
+    }
+    return myUpidx
 }
 
 fn scopeResolve(scope, name) {
-  localEntry = scope.locals[name]
-  if localEntry != null {
-    return {kind: "local", index: localEntry}
-  }
-  if scope.parent == null {
-    return null
-  }
-  // Walk parent chain within same function — these are all "local" (same slot space)
-  s = scope.parent
-  while s != null && s.funcId == scope.funcId {
-    entry = s.locals[name]
-    if entry != null {
-      return {kind: "local", index: entry}
+    localEntry = scope.locals[name]
+    if localEntry != null {
+        return {kind: "local", index: localEntry}
     }
-    s = s.parent
-  }
-  // Variable not found in same function — check enclosing function scopes
-  if s != null {
-    // s is now the root scope of an enclosing function (or somewhere above it)
-    // Walk from here to find the variable in enclosing functions
-    upidx = scopeResolveUpvalue(scopeFindFuncRoot(scope), name)
+    if scope.parent == null {
+        return null
+    }
+    // Walk parent chain within same function
+    s = scope.parent
+    boundaryScope = null
+    while s != null && s.funcId == scope.funcId {
+        entry = s.locals[name]
+        if entry != null {
+            return {kind: "local", index: entry}
+        }
+        s = s.parent
+    }
+    // Variable not found in same function
+    if s != null {
+        // s is in a different function's scope. Pass s (not func root) so
+        // scopeResolveUpvalue can walk UP from s to find the variable.
+        // But we also need to ensure upvalues are registered on the correct
+        // function root. Find our function root.
+        myFuncRoot = scopeFindFuncRoot(scope)
+        // Copy any newly-discovered upvalue info to our func root
+        upidx = scopeResolveUpvalue(myFuncRoot, name)
         if upidx >= 0 {
             return {kind: "upvalue", index: upidx}
         }
-  }
-  null
+    }
+    null
 
 }
 fn scopeFindFuncRoot(scope) {

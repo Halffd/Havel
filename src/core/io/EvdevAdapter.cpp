@@ -21,6 +21,10 @@
 
 namespace havel {
 
+namespace {
+EvdevAdapter *g_active_adapter = nullptr;
+}
+
 class EvdevAdapter : public InputBackend {
 public:
     EvdevAdapter();
@@ -226,9 +230,11 @@ private:
 
 EvdevAdapter::EvdevAdapter() {
     shutdownFd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    g_active_adapter = this;
 }
 
 EvdevAdapter::~EvdevAdapter() {
+    g_active_adapter = nullptr;
     Shutdown();
     if (shutdownFd_ >= 0) {
         close(shutdownFd_);
@@ -1025,6 +1031,13 @@ void EvdevAdapter::SendSync() {
 
 std::unique_ptr<InputBackend> CreateEvdevAdapter() {
     return std::make_unique<EvdevAdapter>();
+}
+
+void EmergencyUngrabAllEvdev() {
+    if (g_active_adapter) {
+        g_active_adapter->UngrabAllDevices();
+        g_active_adapter->ReleaseAllVirtualKeys();
+    }
 }
 
 }

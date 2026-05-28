@@ -71,16 +71,14 @@ EventListener::EventListener() {
   shutdownFd = eventfd(0, EFD_NONBLOCK);
 
   // Register atexit handler for emergency cleanup
-  static bool atexitRegistered = false;
-  if (!atexitRegistered) {
-    std::atexit([]() {
-      if (debugging::debug_io) debug("atexit: emergency evdev ungrab");
-      // Emergency cleanup - ForceUngrabAllDevices is async-signal-safe
-      // but we can't call it here safely without knowing instance state
-      // The IO destructor should handle normal cleanup
-    });
-    atexitRegistered = true;
-  }
+    static bool atexitRegistered = false;
+    if (!atexitRegistered) {
+        std::atexit([]() {
+            if (debugging::debug_io) debug("atexit: emergency evdev ungrab");
+            EmergencyUngrabAllEvdev();
+        });
+        atexitRegistered = true;
+    }
 }
 
 EventListener::~EventListener() {
@@ -216,29 +214,28 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 }
 
 void EventListener::Stop() {
-  if (!running.load()) return;
+    bool was_running = running.load();
+    running.store(false);
+    shutdown.store(true);
 
-  running.store(false);
-  shutdown.store(true);
+    if (shutdownFd >= 0) {
+        uint64_t val = 1;
+        write(shutdownFd, &val, sizeof(val));
+    }
 
-  if (shutdownFd >= 0) {
-    uint64_t val = 1;
-    write(shutdownFd, &val, sizeof(val));
-  }
+    if (was_running && eventThread.joinable()) eventThread.join();
 
-  if (eventThread.joinable()) eventThread.join();
+    ReleaseAllVirtualKeys();
 
-  ReleaseAllVirtualKeys();
+    if (backend_) {
+        backend_->Shutdown();
+    }
 
-  if (backend_) {
-    backend_->Shutdown();
-  }
+    if (signalHandler) {
+        signalHandler->Shutdown();
+    }
 
-  if (signalHandler) {
-    signalHandler->Shutdown();
-  }
-
-  StopX11Monitor();
+    StopX11Monitor();
 }
 
 bool EventListener::SetupUinput() {
@@ -434,20 +431,22 @@ void EventListener::EventLoop() {
             if (hostBridge) hostBridge->checkTimers();
             executionEngine->executeFrame();
 
-            auto* vm = executionEngine->getVM();
-            if (vm && vm->exit_requested_.load()) {
-                int code = vm->exit_code_.load();
-                shutdown.store(true);
-                running.store(false);
+        auto* vm = executionEngine->getVM();
+        if (vm && vm->exit_requested_.load()) {
+            int code = vm->exit_code_.load();
+            shutdown.store(true);
+            running.store(false);
+            ForceUngrabAllDevices();
+            ReleaseAllVirtualKeys();
 #ifdef HAVE_QT_EXTENSION
-                QCoreApplication::exit(code);
+            QCoreApplication::exit(code);
 #endif
-                if (shutdownFd >= 0) {
-                    uint64_t val = 1;
-                    write(shutdownFd, &val, sizeof(val));
-                }
-                break;
+            if (shutdownFd >= 0) {
+                uint64_t val = 1;
+                write(shutdownFd, &val, sizeof(val));
             }
+            break;
+        }
         } else if (hostBridge) {
             hostBridge->checkTimers();
         }

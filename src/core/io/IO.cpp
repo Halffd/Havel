@@ -5,6 +5,7 @@
 #include "KeyTap.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "utils/DebugFlags.hpp"
+#include "InputBackend.hpp"
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
@@ -380,13 +381,14 @@ IO::IO() {
   debug("[IO] KeyMap initialized");
 
   // Register cleanup handler to ensure evdev ungrab on exit
-  static bool cleanupRegistered = false;
-  if (!cleanupRegistered) {
-    std::atexit([]() {
-        if (debugging::debug_io) debug("atexit: forcing evdev ungrab on process exit");
-    });
-    cleanupRegistered = true;
-  }
+    static bool cleanupRegistered = false;
+    if (!cleanupRegistered) {
+        std::atexit([]() {
+            if (debugging::debug_io) debug("atexit: forcing evdev ungrab on process exit");
+            EmergencyUngrabAllEvdev();
+        });
+        cleanupRegistered = true;
+    }
 
   // Read process priority and thread count from config
   int processPriority = Configs::Get().Get<int>(

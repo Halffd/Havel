@@ -217,18 +217,19 @@ void registerSysModule(const VMApi &api) {
 #endif
                        });
 
-  api.registerFunction("sys.exit",
-                       [](const std::vector<Value> &args) -> Value {
-                         int code = 0;
-                         if (!args.empty()) {
-                           if (args[0].isInt())
-                             code = static_cast<int>(args[0].asInt());
-                           else if (args[0].isDouble())
-                             code = static_cast<int>(args[0].asDouble());
-                         }
-                         std::exit(code);
-                         return Value::makeNull();
-                       });
+    api.registerFunction("sys.exit",
+        [&api](const std::vector<Value> &args) -> Value {
+        int code = 0;
+        if (!args.empty()) {
+            if (args[0].isInt())
+                code = static_cast<int>(args[0].asInt());
+            else if (args[0].isDouble())
+                code = static_cast<int>(args[0].asDouble());
+        }
+        api.vm().exit_requested_.store(true);
+        api.vm().exit_code_.store(code);
+        return Value::makeNull();
+    });
 
   api.registerFunction("sys.hostname",
                        [api](const std::vector<Value> &args) {

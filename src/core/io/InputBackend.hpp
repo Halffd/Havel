@@ -216,4 +216,6 @@ class X11Adapter;
 class WaylandAdapter;
 class WindowsAdapter;
 
+void EmergencyUngrabAllEvdev();
+
 }

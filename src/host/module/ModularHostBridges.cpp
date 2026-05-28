@@ -5887,14 +5887,16 @@ void AppBridge::install(PipelineOptions &options) {
   options.host_functions["app.openUrl"] = [ctx = ctx_](const auto &args) {
     return handleAppOpenUrl(args, ctx);
   };
-  options.host_functions["app.exit"] = [ctx = ctx_](const auto &args) {
-    std::exit(0);
-    return Value();
-  };
-  options.host_functions["app.restart"] = [ctx = ctx_](const auto &args) {
-    std::exit(42);
-    return Value();
-  };
+    options.host_functions["app.exit"] = [ctx = ctx_](const auto &args) {
+        ctx->vm->exit_requested_.store(true);
+        ctx->vm->exit_code_.store(0);
+        return Value();
+    };
+    options.host_functions["app.restart"] = [ctx = ctx_](const auto &args) {
+        ctx->vm->exit_requested_.store(true);
+        ctx->vm->exit_code_.store(42);
+        return Value();
+    };
 }
 
 Value

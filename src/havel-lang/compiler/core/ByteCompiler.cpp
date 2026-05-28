@@ -671,41 +671,85 @@ if (param->defaultValue.has_value()) {
     }
   }
 
-if (function.body) {
-    // Compile all statements except the last
+ if (function.body) {
     const auto &stmts = function.body->body;
     if (!stmts.empty()) {
- // Compile all but last statement normally (not in tail position)
- for (size_t i = 0; i < stmts.size() - 1; i++) {
- compileStatement(*stmts[i]);
- }
+      // Function declarations are hoisted — they don't produce a return value.
+      // Find the last non-FunctionDeclaration statement for implicit return.
+      // Compile everything in order, but only apply tail position to the last
+      // meaningful statement. The RETURN must come after all side-effecting code
+      // (including fn decl STORE_VAR) so inner functions get properly registered.
+      size_t lastMeaningful = stmts.size();
+      for (size_t i = stmts.size(); i > 0; i--) {
+        if (stmts[i - 1] && stmts[i - 1]->kind != ast::NodeType::FunctionDeclaration) {
+          lastMeaningful = i - 1;
+          break;
+        }
+      }
 
-    // Last statement: if it's an expression statement, return its value
-      // (Rust-like implicit return)
-      const auto &lastStmt = stmts.back();
- if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
- const auto &exprStmt =
- static_cast<const ast::ExpressionStatement &>(*lastStmt);
- if (exprStmt.expression) {
- enterTailPosition();
- clearTailCallFlag();
- compileExpression(*exprStmt.expression);
- exitTailPosition();
- if (!wasTailCall()) emit(OpCode::RETURN);
- } else {
- emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
- emit(OpCode::RETURN);
- }
-      } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
-        enterTailPosition();
-        compileStatement(*lastStmt);
-        exitTailPosition();
-      } else if (lastStmt) {
-        enterTailPosition();
-        compileStatement(*lastStmt);
-        exitTailPosition();
-        if (!wasTailCall()) emit(OpCode::RETURN);
+      if (lastMeaningful < stmts.size()) {
+        // Compile all statements before the last meaningful one (not in tail position)
+        for (size_t i = 0; i < lastMeaningful; i++) {
+          compileStatement(*stmts[i]);
+        }
+
+        // Compile the last meaningful statement in tail position (implicit return)
+        const auto &lastStmt = stmts[lastMeaningful];
+        bool needsExplicitReturn = true;
+        if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
+          const auto &exprStmt =
+              static_cast<const ast::ExpressionStatement &>(*lastStmt);
+          if (exprStmt.expression) {
+            enterTailPosition();
+            clearTailCallFlag();
+            compileExpression(*exprStmt.expression);
+            exitTailPosition();
+            if (wasTailCall()) {
+              needsExplicitReturn = false;
+            }
+          } else {
+            // Empty expression statement — will emit LOAD_CONST null + RETURN below
+          }
+        } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
+          enterTailPosition();
+          compileStatement(*lastStmt);
+          exitTailPosition();
+          needsExplicitReturn = false;
+        } else if (lastStmt && (lastStmt->kind == ast::NodeType::IfStatement ||
+                                 lastStmt->kind == ast::NodeType::BlockStatement)) {
+          // If/Match/Block in tail position may return from all branches
+          enterTailPosition();
+          compileStatement(*lastStmt);
+          exitTailPosition();
+          if (wasTailCall()) {
+            needsExplicitReturn = false;
+          }
+        } else if (lastStmt) {
+          compileStatement(*lastStmt);
+        }
+
+        // Compile trailing function declarations (they still need STORE_VAR)
+        for (size_t i = lastMeaningful + 1; i < stmts.size(); i++) {
+          compileStatement(*stmts[i]);
+        }
+
+        // Emit RETURN at the very end — after all fn declarations are registered
+        if (needsExplicitReturn) {
+          if (lastMeaningful < stmts.size() &&
+              stmts[lastMeaningful] &&
+              stmts[lastMeaningful]->kind == ast::NodeType::ExpressionStatement) {
+            // The expression result is still on the stack
+            emit(OpCode::RETURN);
+          } else {
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+            emit(OpCode::RETURN);
+          }
+        }
       } else {
+        // All statements are function declarations — compile them, return null
+        for (size_t i = 0; i < stmts.size(); i++) {
+          compileStatement(*stmts[i]);
+        }
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
         emit(OpCode::RETURN);
       }
@@ -713,10 +757,10 @@ if (function.body) {
       emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
       emit(OpCode::RETURN);
     }
-    } else {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-        emit(OpCode::RETURN);
-    }
+  } else {
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+    emit(OpCode::RETURN);
+  }
 
 if (function.body) {
 current_function->is_generator = function.is_coroutine || (function.body ? functionContainsYield(*function.body) : false);

@@ -30,15 +30,15 @@ fn exprKind(ast, idx) {
 
 }
 fn firstExpr(ast) {
-  if #ast.body > 0 and ast.body[0].kind == "ExpressionStatement": ast.body[0].expr
-  else: null
+    if ast.body.len() > 0 and ast.body[0].kind == "ExpressionStatement": ast.body[0].expr
+    else: null
 
-}
-fn firstStmt(ast) {
-  if #ast.body > 0: ast.body[0]
-  else: null
+  }
+  fn firstStmt(ast) {
+    if ast.body.len() > 0: ast.body[0]
+    else: null
 
-}
+  }
 // ============================================================
 // 1. Literals
 // ============================================================
@@ -209,7 +209,7 @@ check("array elements", #e.elements == 3)
 r = parse('{name: "test", age: 30}')
 e = firstExpr(r.ast)
 check("object kind", e.kind == "ObjectLiteral")
-check("object fields", #e.fields == 2)
+check("object fields", e.fields.len() == 2)
 
 // ============================================================
 // 12. Let/val declarations

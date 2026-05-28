@@ -5,12 +5,12 @@
 #include "HotkeyExecutor.hpp"
 #include "IOBackend.hpp"
 #include "KeyMap.hpp"
+#include "x11.h"
 #include "MouseController.hpp"
 #include "InputBackend.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
 #include "havel-lang/runtime/ImportManager.hpp"
 #include "types.hpp"
-#include "x11.h"
 #include <atomic>
 #include <functional>
 #include <map>
@@ -365,10 +365,6 @@ public:
   // Utility methods
 
   void MsgBox(const std::string &message);
-
-  int GetMouse();
-
-  int GetKeyboard();
 
   static ParsedHotkey ParseModifiersAndFlags(const std::string &input,
                                              bool isEvdev);

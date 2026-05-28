@@ -10,7 +10,6 @@
 static std::mutex g_keyTapMutex;
 static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 
-#include "include/x11_includes.h"
 #include "EventListener.hpp"
 #include "HotkeyExecutor.hpp"
 #include "utils/Logger.hpp"
@@ -21,7 +20,6 @@ static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 #include <fcntl.h>
 #include <future>
 #include <linux/input.h>
-#include <linux/uinput.h>
 #include <mutex>
 #ifdef HAVE_QT_EXTENSION
 #include <qapplication.h>
@@ -31,14 +29,6 @@ static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 #include <sys/resource.h>
 #include <sys/select.h>
 #include <unistd.h>
-
-// X11 includes
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/extensions/XI2proto.h>
-#include <X11/extensions/XInput.h>
-#include <X11/extensions/XInput2.h>
-#include <X11/extensions/XTest.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -2050,12 +2040,6 @@ void IO::SendText(const std::string &text) {
 }
 
 // Method to get mouse position
-int IO::GetMouse() {
-  // No need to get root window here
-  // Window root = DisplayManager::GetRootWindow();
-  return 0;
-}
-
 Key IO::StringToVirtualKey(std::string keyName) {
   removeSpecialCharacters(keyName);
   keyName = ToLower(keyName);
@@ -2170,35 +2154,6 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
   return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
 }
 #endif
-
-int IO::GetKeyboard() {
-  Display *dpy = havel::DisplayManager::GetDisplay();
-  if (!dpy) {
-      error("Unable to open X display!");
-      return EXIT_FAILURE;
-  }
-
-  x11::Window window = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy),
-                                           0, 0, 1, 1, 0, 0, 0);
-  if (XGrabKeyboard(dpy, window, x11::XTrue, GrabModeAsync, GrabModeAsync,
-                    CurrentTime) != GrabSuccess) {
-        havel::error("Unable to grab keyboard!");
-    XDestroyWindow(dpy, window);
-    return EXIT_FAILURE;
-  }
-
-  XEvent event;
-  while (true) {
-    XNextEvent(dpy, &event);
-    if (event.type == x11::XKeyPress) {
-    }
-  }
-
-  XUngrabKeyboard(dpy, CurrentTime);
-  XDestroyWindow(dpy, window);
-  XCloseDisplay(dpy);
-  return 0;
-}
 
 int IO::ParseModifiers(str str) {
   int modifiers = 0;

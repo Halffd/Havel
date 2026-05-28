@@ -833,8 +833,8 @@ case OpCode::LOAD_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
 
-    // First check regular globals (user variables shadow host functions)
-            auto it = globals.find(name);
+        // First check regular globals (user variables shadow host functions)
+        auto it = globals.find(name);
         if (it != globals.end()) {
             trackGlobalAccess(name);
             pushStack(it->second);

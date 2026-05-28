@@ -458,7 +458,7 @@ fn scanString(quote, isFString, isRegexString) {
                     advance()
                 }
             }
-            else if current() == "{" and !isFString {
+            else if current() == "{" and isFString {
              isInterpolated = true
              s = s + current()
              advance()

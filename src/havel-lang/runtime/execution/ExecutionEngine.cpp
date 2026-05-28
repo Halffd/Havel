@@ -8,6 +8,30 @@
 
 namespace havel::compiler {
 
+// ============================================================================
+// SuspensionReason conversion: Fiber::SuspensionReason → Scheduler::SuspensionReason
+// These enums have DIFFERENT ordinal values (historical divergence).
+// Direct static_cast produces wrong values — must map explicitly.
+// ============================================================================
+static Scheduler::SuspensionReason toSchedulerReason(uint8_t fiberReason) {
+  using F = SuspensionReason;
+  using S = Scheduler::SuspensionReason;
+  switch (static_cast<F>(fiberReason)) {
+    case F::NONE:          return S::None;
+    case F::YIELD:         return S::None;
+    case F::CHANNEL_RECV:  return S::ChannelWait;
+    case F::CHANNEL_SEND:  return S::ChannelSendWait;
+    case F::THREAD_JOIN:   return S::ThreadWait;
+    case F::TIMER:         return S::TimerWait;
+    case F::SLEEP:         return S::SleepWait;
+    case F::EXTERNAL:      return S::None;
+    case F::HOTKEY_WAIT:   return S::HotkeyWait;
+    case F::AWAIT:         return S::None; // AWAIT handled via WaitHandle type, not suspension_reason
+    case F::COROUTINE_WAIT: return S::CoroutineWait;
+    default:               return S::None;
+  }
+}
+
 ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
     : vm_(vm), scheduler_(sched), event_queue_(eq), running_(true) {
   if (!vm || !sched || !eq) {
@@ -161,49 +185,54 @@ bool ExecutionEngine::executeFrame() {
  }
  g->fiber->state = FiberState::DONE;
     } else {
-      // STEP 4: Execute one instruction in this goroutine
-      // This is non-blocking - always returns immediately
-      result = vm_->executeOneStep(g->fiber);
-    }
-    
-// STEP 5: Save VM state back to fiber
-    // This persists any progress made by the instruction
-    // Preserves IP for resumption on next iteration
-    if (g->fiber) {
-        vm_->saveFiberState(g->fiber);
-    }
+        // STEP 4: Run goroutine's instruction budget in a tight loop.
+        // Each executeOneStep() runs one bytecode instruction and returns YIELD
+        // (normal completion), SUSPENDED (sleep/channel/timer), RETURNED, or ERROR.
+        // Previously we ran ONE instruction per executeFrame() call, which meant
+        // every instruction paid the cost of saveFiberState/loadFiberState/handleYield/
+        // requeue — making a 50-instruction hotkey callback take ~50 round trips
+        // through the event loop. Now we loop until the goroutine needs a real
+        // scheduler action or exhausts its time slice.
+        for (;;) {
+            result = vm_->executeOneStep(g->fiber);
 
-    stats_.instructions_executed++;
-    g->instructions_executed++;
+            stats_.instructions_executed++;
+            g->instructions_executed++;
 
-    // Time slice enforcement: auto-yield when goroutine exceeds instruction budget
-    // Prevents a single goroutine from monopolizing the scheduler
-    // Hotkeys get a smaller budget to prevent infinite loops from blocking UI
-    bool budget_exceeded = (g->instructions_executed >= g->max_instructions_per_tick);
+            if (result.type != VMExecutionResult::YIELD) {
+                break;
+            }
 
-    // STEP 6: Handle execution result
-    switch (result.type) {
-      case VMExecutionResult::YIELD:
-        // Instruction completed normally, goroutine yields
-        // Return it to scheduler's runnable queue
-        if (budget_exceeded) {
-            // Time slice expired - yield and reset budget for next run
-            g->instructions_executed = 0;
+            if (g->instructions_executed >= g->max_instructions_per_tick) {
+                g->instructions_executed = 0;
                 if (debug_mode_) {
                     std::cerr << "[ExecutionEngine] Goroutine " << g->id << " time slice expired ("
                               << g->max_instructions_per_tick << " instructions), yielding\n";
                 }
+                break;
+            }
         }
+    }
+
+    // STEP 5: Save VM state back to fiber
+    if (g->fiber) {
+        vm_->saveFiberState(g->fiber);
+    }
+
+    // STEP 6: Handle execution result
+    switch (result.type) {
+    case VMExecutionResult::YIELD:
+        // Budget expired mid-execution — yield to scheduler, will resume next tick
         handleYield(g);
         break;
-        
-      case VMExecutionResult::SUSPENDED:
+
+    case VMExecutionResult::SUSPENDED:
         // Handle suspension requested via VM (e.g. from host function)
         if (vm_->isSuspensionRequested()) {
           uint8_t reason = vm_->getSuspensionReason();
           void* context = vm_->getSuspensionContext();
           
-          scheduler_->suspend(g, static_cast<Scheduler::SuspensionReason>(reason));
+          scheduler_->suspend(g, toSchedulerReason(reason));
           if (g->fiber) {
             g->fiber->suspend(static_cast<SuspensionReason>(reason), context);
           }
@@ -327,6 +356,14 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
  // Persistent goroutines (hotkey system): re-suspend instead of Done.
  // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
  if (g->persistent) {
+   if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
+     g->hotkey_retrigger.store(false, std::memory_order_release);
+     scheduler_->requeueFront(g);
+     if (scheduler_->current() == g) {
+       scheduler_->clearCurrent();
+     }
+     return;
+   }
      g->state = Scheduler::GoroutineState::Suspended;
      g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
      if (g->fiber) {

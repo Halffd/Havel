@@ -94,9 +94,9 @@ void X11HotkeyMonitor::MonitorLoop() {
     std::vector<int> triggeredHotkeyIds;
     triggeredHotkeyIds.reserve(16);
 
-    // Adaptive sleep: start with longer sleep, reduce on activity
-    constexpr auto MAX_SLEEP = std::chrono::milliseconds(100);
-    constexpr auto MIN_SLEEP = std::chrono::milliseconds(5);
+    // Adaptive sleep: reduce on activity
+    constexpr auto MAX_SLEEP = std::chrono::milliseconds(16);
+    constexpr auto MIN_SLEEP = std::chrono::milliseconds(1);
     auto currentSleep = MAX_SLEEP;
     auto lastActivityTime = std::chrono::steady_clock::now();
 
@@ -115,11 +115,11 @@ void X11HotkeyMonitor::MonitorLoop() {
                 // No events - use adaptive sleep
                 // Increase sleep time gradually when idle
                 auto idleTime = std::chrono::steady_clock::now() - lastActivityTime;
-                if (idleTime > std::chrono::seconds(5)) {
-                    currentSleep = MAX_SLEEP;  // Long sleep when truly idle
-                } else if (idleTime > std::chrono::seconds(1)) {
-                    currentSleep = std::chrono::milliseconds(50);
-                }
+            if (idleTime > std::chrono::seconds(5)) {
+                currentSleep = MAX_SLEEP;
+            } else if (idleTime > std::chrono::seconds(1)) {
+                currentSleep = std::chrono::milliseconds(10);
+            }
 
                 std::this_thread::sleep_for(currentSleep);
                 continue;

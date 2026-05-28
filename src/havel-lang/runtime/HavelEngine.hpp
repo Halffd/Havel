@@ -256,7 +256,7 @@ void processGoroutines() {
         }
 
         // Start and run this goroutine to completion
-        // pickNext() sets state to Running, so check both Created and Running
+        // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
         if (g->state == compiler::Scheduler::GoroutineState::Created) {
             bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
             if (ok) {
@@ -264,7 +264,8 @@ void processGoroutines() {
                 vm_->runDispatchLoopPublic(0);
                 anyExecuted = true;
             }
-        } else if (g->state == compiler::Scheduler::GoroutineState::Running) {
+        } else if (g->state == compiler::Scheduler::GoroutineState::Runnable ||
+                   g->state == compiler::Scheduler::GoroutineState::Running) {
             // Resumed goroutine (unparked from await/sleep)
             if (g->fiber) {
                 vm_->loadFiberStatePublic(g->fiber);

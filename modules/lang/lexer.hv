@@ -415,18 +415,13 @@ fn scanString(quote, isFString, isRegexString) {
         }
         while current() != null and current() != quote and current() != "\n" {
             if current() == "\\" {
-                advance()
-                c = current()
-                if c == "n": s = s + "\n"
-                else if c == "t": s = s + "\t"
-                else if c == "r": s = s + "\r"
-                else if c == "\\": s = s + "\\"
-                else if c == quote: s = s + quote
-                else if c == "0": s = s + "\0"
-                else if c == "$": s = s + "$"
-                else if c == "{": s = s + "{"
-                else if c == "}": s = s + "}"
-                else if c == "x" {
+        advance()
+        c = current()
+        SIMPLE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "0": "\0", "$": "$", "{": "{", "}": "}"}
+        esc = SIMPLE_ESCAPES[c]
+        if esc != null { s = s + esc }
+        else if c == quote { s = s + quote }
+        else if c == "x" {
                     h1 = peek(1)
                     h2 = peek(2)
                     if h1 != null and h2 != null and isHexDigit(h1) and isHexDigit(h2) {
@@ -533,37 +528,14 @@ while current() != null {
                 break
 
             }
-            if current() == "\\" {
-                advance()
-                c = current()
-                if c == "n" {
-                    s = s + "\n"
-                    advance()
-                }
-                else if c == "t" {
-                    s = s + "\t"
-                    advance()
-                }
-                else if c == "r" {
-                    s = s + "\r"
-                    advance()
-                }
-                else if c == "\\" {
-                    s = s + "\\"
-                    advance()
-                }
-                else if c == quote {
-                    s = s + quote
-                    advance()
-                }
-                else if c == "0" {
-                    s = s + "\0"
-                    advance()
-                }
-                else {
-                    s = s + "\\" + c
-                    advance()
-                }
+        if current() == "\\" {
+        advance()
+        c = current()
+        MLES_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "0": "\0"}
+        esc = MLES_ESCAPES[c]
+        if esc != null { s = s + esc; advance() }
+        else if c == quote { s = s + quote; advance() }
+        else { s = s + "\\" + c; advance() }
             }
   else if current() == "$" {
     isInterpolated = true
@@ -625,33 +597,14 @@ while current() != null {
 
                 }
             }
-            if current() == "\\" {
-                advance()
-                c = current()
-                if c == "n" {
-                    s = s + "\n"
-                    advance()
-                }
-                else if c == "t" {
-                    s = s + "\t"
-                    advance()
-                }
-                else if c == "r" {
-                    s = s + "\r"
-                    advance()
-                }
-                else if c == "\\" {
-                    s = s + "\\"
-                    advance()
-                }
-                else if c == "`" {
-                    s = s + "`"
-                    advance()
-                }
-                else {
-                    s = s + "\\" + c
-                    advance()
-                }
+        if current() == "\\" {
+        advance()
+        c = current()
+        BT_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
+        esc = BT_ESCAPES[c]
+        if esc != null { s = s + esc; advance() }
+        else if c == "`" { s = s + "`"; advance() }
+        else { s = s + "\\" + c; advance() }
             }
             else if current() == "{" and isTriple {
                 isInterpolated = true

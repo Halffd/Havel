@@ -45,92 +45,52 @@ BP_POWER = 135
 BP_POSTFIX = 150
 BP_CALL_MEMBER = 170
 
-// --- getBindingPower: left binding power for each token type ---
-fn getBindingPower(ttype) {
-    if ttype == "Assign": BP_ASSIGN
-    else if ttype == "PlusAssign": BP_ASSIGN
-    else if ttype == "MinusAssign": BP_ASSIGN
-    else if ttype == "MultiplyAssign": BP_ASSIGN
-    else if ttype == "DivideAssign": BP_ASSIGN
-    else if ttype == "ModuloAssign": BP_ASSIGN
-    else if ttype == "PowerAssign": BP_ASSIGN
-    else if ttype == "BackslashAssign": BP_ASSIGN
-    else if ttype == "DoubleModuloAssign": BP_ASSIGN
-    else if ttype == "BitwiseAndAssign": BP_ASSIGN
-    else if ttype == "BitwiseOrAssign": BP_ASSIGN
-    else if ttype == "BitwiseXorAssign": BP_ASSIGN
-    else if ttype == "ShiftLeftAssign": BP_ASSIGN
-    else if ttype == "ShiftRightAssign": BP_ASSIGN
-    else if ttype == "Nullish": BP_NULLISH
-    else if ttype == "Question": BP_QUESTION
-    else if ttype == "Or": BP_OR
-    else if ttype == "And": BP_AND
-    else if ttype == "Equals": BP_EQUALITY
-    else if ttype == "NotEquals": BP_EQUALITY
-    else if ttype == "Is": BP_EQUALITY
-    else if ttype == "Tilde": BP_EQUALITY
-    else if ttype == "Matches": BP_EQUALITY
-    else if ttype == "In": BP_IN
-    else if ttype == "Less": BP_COMPARISON
-    else if ttype == "Greater": BP_COMPARISON
-    else if ttype == "LessEquals": BP_COMPARISON
-    else if ttype == "GreaterEquals": BP_COMPARISON
-    else if ttype == "DotDot": BP_RANGE
-    else if ttype == "DotDotEquals": BP_RANGE
-    else if ttype == "Plus": BP_ADD
-    else if ttype == "Minus": BP_ADD
-    else if ttype == "Pipe": BP_PIPE
-    else if ttype == "PipeRight": BP_PIPE
-    else if ttype == "BitwiseOr": BP_BITWISE_OR
-    else if ttype == "BitwiseXor": BP_BITWISE_XOR
-    else if ttype == "BitwiseAnd": BP_BITWISE_AND
-    else if ttype == "ShiftLeft": BP_SHIFT
-    else if ttype == "ShiftRight": BP_SHIFT
-    else if ttype == "Multiply": BP_MUL
-    else if ttype == "Divide": BP_MUL
-    else if ttype == "Modulo": BP_MUL
-    else if ttype == "Backslash": BP_MUL
-    else if ttype == "DoubleBackslash": BP_MUL
-    else if ttype == "DoubleModulo": BP_MUL
-    else if ttype == "Power": BP_POWER
-    else if ttype == "PlusPlus": BP_POSTFIX
-    else if ttype == "MinusMinus": BP_POSTFIX
-    else if ttype == "Dot": BP_CALL_MEMBER
-    else if ttype == "QuestionDot": BP_CALL_MEMBER
-    else if ttype == "OpenParen": BP_CALL_MEMBER
-    else if ttype == "OpenBracket": BP_CALL_MEMBER
-    else if ttype == "Arrow": BP_ASSIGN
-    else if ttype == "LeftArrow": BP_ASSIGN
-    else if ttype == "Not" {
-        // infix 'not in' — only when followed by 'in'
-        52
-    }
-    else: BP_NONE
-
+// --- Binding power lookup tables (avoids VM if/else fallthrough bug) ---
+BP_TABLE = {
+    "Assign": 20, "PlusAssign": 20, "MinusAssign": 20, "MultiplyAssign": 20,
+    "DivideAssign": 20, "ModuloAssign": 20, "PowerAssign": 20, "BackslashAssign": 20,
+    "DoubleModuloAssign": 20, "BitwiseAndAssign": 20, "BitwiseOrAssign": 20,
+    "BitwiseXorAssign": 20, "ShiftLeftAssign": 20, "ShiftRightAssign": 20,
+    "Arrow": 20, "LeftArrow": 20,
+    "Nullish": 30, "Question": 35,
+    "Or": 40, "And": 50,
+    "Equals": 60, "NotEquals": 60, "Is": 60, "Tilde": 60, "Matches": 60,
+    "In": 52,
+    "Less": 70, "Greater": 70, "LessEquals": 70, "GreaterEquals": 70,
+    "DotDot": 75, "DotDotEquals": 75,
+    "Plus": 80, "Minus": 80, "Pipe": 35, "PipeRight": 35,
+    "BitwiseOr": 85, "BitwiseXor": 90, "BitwiseAnd": 100,
+    "ShiftLeft": 110, "ShiftRight": 110,
+    "Multiply": 130, "Divide": 130, "Modulo": 130, "Backslash": 130,
+    "DoubleBackslash": 130, "DoubleModulo": 130,
+    "Power": 135,
+    "PlusPlus": 150, "MinusMinus": 150,
+    "Dot": 170, "QuestionDot": 170, "OpenParen": 170, "OpenBracket": 170
 }
+
+RBP_TABLE = {
+    "Assign": 5, "PlusAssign": 5, "MinusAssign": 5, "MultiplyAssign": 5,
+    "DivideAssign": 5, "ModuloAssign": 5, "PowerAssign": 5, "BackslashAssign": 5,
+    "DoubleModuloAssign": 5, "BitwiseAndAssign": 5, "BitwiseOrAssign": 5,
+    "BitwiseXorAssign": 5, "ShiftLeftAssign": 5, "ShiftRightAssign": 5,
+    "LeftArrow": 5, "Arrow": 5,
+    "Power": 130,
+    "Nullish": 15,
+    "Question": 10
+}
+
+fn getBindingPower(ttype) {
+  if ttype == "Not": return 52
+  r = BP_TABLE[ttype]
+  if r != null: return r
+  return BP_NONE
+}
+
 // --- getRightBindingPower: lower rbp for right-associative operators ---
 fn getRightBindingPower(ttype) {
-    if ttype == "Assign": 5
-    else if ttype == "PlusAssign": 5
-    else if ttype == "MinusAssign": 5
-    else if ttype == "MultiplyAssign": 5
-    else if ttype == "DivideAssign": 5
-    else if ttype == "ModuloAssign": 5
-    else if ttype == "PowerAssign": 5
-    else if ttype == "BackslashAssign": 5
-    else if ttype == "DoubleModuloAssign": 5
-    else if ttype == "BitwiseAndAssign": 5
-    else if ttype == "BitwiseOrAssign": 5
-    else if ttype == "BitwiseXorAssign": 5
-    else if ttype == "ShiftLeftAssign": 5
-    else if ttype == "ShiftRightAssign": 5
-    else if ttype == "LeftArrow": 5
-    else if ttype == "Arrow": 5
-    else if ttype == "Power": 130
-    else if ttype == "Nullish": 15
-    else if ttype == "Question": 10
-    else: getBindingPower(ttype)
-
+    r = RBP_TABLE[ttype]
+    if r != null: return r
+    return getBindingPower(ttype)
 }
 // --- Compound assign token set ---
 COMPOUND_ASSIGN_TOKENS = {
@@ -313,52 +273,52 @@ fn Parser(tokenList) {
     _dbg_cnt = 0
 
     // --- Token access ---
-    fn at(offset) {
-        i = pos + offset
-        if i < 0: i = 0
-        if i < tokens.len: tokens[i]
-        else: {type: "EOF", value: "", line: 0, col: 0}
+  fn at(offset) {
+    i = pos + offset
+    if i < 0: i = 0
+    if i < tokens.len: return tokens[i]
+    else: return {type: "EOF", value: "", line: 0, col: 0}
 
-    }
-    fn current() {
-        at(0)
+  }
+  fn current() {
+    return at(0)
 
+  }
+  fn advance() {
+    if pos < tokens.len {
+      t = tokens[pos]
+      pos = pos + 1
+      return t
     }
-    fn advance() {
-        if pos < tokens.len {
-            t = tokens[pos]
-            pos = pos + 1
-            t
-        }
-        else {
-            {type: "EOF", value: "", line: 0, col: 0}
-
-        }
-    }
-    fn notEOF() {
-        pos < tokens.len and current().type != "EOF"
-
-    }
-    fn expect(ttype) {
-        t = current()
-        if t.type == ttype {
-            advance()
-        }
-        else {
-            error("Expected " + ttype + " but got " + t.type, t.line, t.col)
+    else {
+      return {type: "EOF", value: "", line: 0, col: 0}
 
         }
     }
-    fn expectValue(ttype, expectedVal) {
-        t = current()
-        if t.type == ttype and t.value == expectedVal {
-            advance()
-        }
-        else {
-            error("Expected " + ttype + " '" + expectedVal + "' but got " + t.type, t.line, t.col)
+  fn notEOF() {
+    return pos < tokens.len and current().type != "EOF"
 
-        }
+  }
+  fn expect(ttype) {
+    t = current()
+    if t.type == ttype {
+      return advance()
     }
+    else {
+      return error("Expected " + ttype + " but got " + t.type, t.line, t.col)
+
+    }
+  }
+  fn expectValue(ttype, expectedVal) {
+    t = current()
+    if t.type == ttype and t.value == expectedVal {
+      return advance()
+    }
+    else {
+      return error("Expected " + ttype + " '" + expectedVal + "' but got " + t.type, t.line, t.col)
+
+    }
+  }
     // --- Newline skipping ---
     fn skipNewlines() {
         while current().type == "NewLine" {
@@ -377,33 +337,33 @@ fn error(msg, line, col) {
     errors.push({msg: msg, line: line, col: col})
     return ErrorNode(msg, line, col)
 }
-    fn parseError(msg) {
-        t = current()
-        error(msg, t.line, t.col)
+  fn parseError(msg) {
+    t = current()
+    return error(msg, t.line, t.col)
 
-    }
-    // --- Token classification ---
-    fn canStartExpr(ttype) {
-        NUD_TOKENS.has(ttype)
+  }
+  // --- Token classification ---
+  fn canStartExpr(ttype) {
+    return NUD_TOKENS.has(ttype)
 
-    }
-    fn isLed(ttype) {
-        LED_TOKENS.has(ttype)
+  }
+  fn isLed(ttype) {
+    return LED_TOKENS.has(ttype)
 
-    }
+  }
 // --- Check if 'not' is infix (followed by 'in') ---
-    fn isNotIn() {
-        current().type == "Not" and at(1).type == "In"
+fn isNotIn() {
+  return current().type == "Not" and at(1).type == "In"
 
-    }
+  }
     // ===================================================================
     // PRATT EXPRESSION PARSER
     // ===================================================================
 fn parseExpr(rbp) {
-  startToken = current()
-  tok = advance()
+    startToken = current()
+    tok = advance()
 
-  left = nud(tok)
+    left = nud(tok)
 
   if left == null {
     return error("Unexpected token " + tok.type, startToken.line, startToken.col)
@@ -413,14 +373,14 @@ fn parseExpr(rbp) {
     return left
 
   }
-  iterations = 0
-  while true {
-    iterations = iterations + 1
-    if iterations > 10000 {
-      return error("Pratt loop exceeded", startToken.line, startToken.col)
+ iterations = 0
+ while true {
+ iterations = iterations + 1
+ if iterations > 10000 {
+ return error("Pratt loop exceeded", startToken.line, startToken.col)
 
-    }
-    curType = current().type
+ }
+ curType = current().type
     bp = getBindingPower(curType)
 
     // Special: 'not' only acts as infix when followed by 'in'
@@ -448,8 +408,10 @@ fn parseExpr(rbp) {
 
             }
         }
-        // Implicit call sugar: expr "string" -> expr("string")
-        if allowBraceSugar and IMPLICIT_CALL_STARTERS.has(current().type) {
+ // Implicit call sugar: expr "string" -> expr("string")
+ // Not across newlines — NewLine has bp=0 so the Pratt loop exits before we get here
+ // and NewLine is not in IMPLICIT_CALL_STARTERS
+ if allowBraceSugar and IMPLICIT_CALL_STARTERS.has(current().type) {
             prevSugar = allowBraceSugar
             allowBraceSugar = false
             arg = parseExpr(0)
@@ -1019,10 +981,10 @@ fn led(tok, left) {
         if step != null: args.push(step)
         else: args.push(NullLiteral(l, c))
 
-        sliceMember = MemberExpression(obj, "slice", l, c)
-        CallExpression(sliceMember, args, l, c)
+  sliceMember = MemberExpression(obj, "slice", l, c)
+  return CallExpression(sliceMember, args, l, c)
 
-    }
+  }
     // ===================================================================
     // HELPER: Parse interpolated string into parts
     // ===================================================================
@@ -1090,10 +1052,10 @@ fn led(tok, left) {
         if buf.len > 0 {
             parts.push(StringLiteral(buf, l, c))
 
-        }
-        InterpolatedString(parts, l, c)
+  }
+  return InterpolatedString(parts, l, c)
 
-    }
+  }
     // ===================================================================
     // HELPER: Parenthesized expression or lambda
     // ===================================================================
@@ -1165,11 +1127,11 @@ fn led(tok, left) {
         pos = savedPos
         skipNewlines()
         expr = parseExpr(0)
-        skipNewlines()
-        expect("CloseParen")
-        expr
+skipNewlines()
+expect("CloseParen")
+return expr
 
-    }
+}
     // ===================================================================
     // HELPER: Lambda expression (fn keyword form)
     // ===================================================================
@@ -1233,10 +1195,10 @@ fn led(tok, left) {
             bodyExpr = parseExpr(getRightBindingPower("Arrow"))
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
-        }
-        LambdaExpression(params, body, l, c)
+  }
+  return LambdaExpression(params, body, l, c)
 
-    }
+  }
     // ===================================================================
     // HELPER: Match expression
     // ===================================================================
@@ -1261,63 +1223,94 @@ fn led(tok, left) {
         prevMatch = inMatchExpr
         inMatchExpr = true
 
-        cases = []
-        skipNewlines()
-        while current().type != "CloseBrace" and notEOF() and current().type != "EOF" {
-            skipNewlines()
-            if current().type == "CloseBrace": break
-            cases.push(parseMatchCase())
-            skipNewlines()
+ cases = []
+ defaultCase = null
+ skipNewlines()
+ while current().type != "CloseBrace" and notEOF() and current().type != "EOF" {
+ skipNewlines()
+ if current().type == "CloseBrace": break
+ mc = parseMatchCase()
+ if mc != null {
+ if mc.isDefault {
+ defaultCase = mc.body
+ } else {
+ cases.push(mc)
+ }
+ }
+ // Skip optional comma between cases
+ if current().type == "Comma" {
+ advance()
+ }
+ // Skip newlines and semicolons (case separators)
+ while current().type == "NewLine" or current().type == "Semicolon" {
+ advance()
+ }
+ }
+ inMatchExpr = prevMatch
 
-        }
-        inMatchExpr = prevMatch
+ if current().type == "CloseBrace" {
+ advance()
 
-        if current().type == "CloseBrace" {
-            advance()
+ }
+ node = MatchExpression(subject, cases, l, c)
+ node.defaultCase = defaultCase
+ node
 
-        }
-        MatchExpression(subject, cases, l, c)
+  }
+fn parseMatchCase() {
+ l = current().line
+ c = current().col
 
-    }
-    fn parseMatchCase() {
-        l = current().line
-        c = current().col
+ isDefault = false
+ pattern = null
 
-        // Parse pattern
-        pattern = parseExpr(0)
-        skipNewlines()
+ // Check for wildcard pattern _
+ if current().type == "Identifier" and current().value == "_" {
+ advance()
+ pattern = Identifier("_", l, c)
+ isDefault = true
+ skipNewlines()
+ } else {
+ // Parse pattern as expression
+ prevSugar = allowBraceSugar
+ allowBraceSugar = false
+ pattern = parseExpr(0)
+ allowBraceSugar = prevSugar
+ skipNewlines()
+ }
 
-        // Optional guard: when expr
-        guard = null
-        if current().type == "When" {
-            advance()
-            guard = parseExpr(0)
-            skipNewlines()
+ // Optional guard: when expr or if expr
+ guard = null
+ if current().type == "When" or current().type == "If" {
+ advance()
+ guard = parseExpr(0)
+ skipNewlines()
 
-        }
-        // Expect =>
-        if current().type == "Arrow" {
-            advance()
-        }
-        else {
-            return error("Expected '=>' in match case", l, c)
+ }
+ // Expect =>
+ if current().type == "Arrow" {
+ advance()
+ } else {
+ return error("Expected '=>' in match case", l, c)
 
-        }
-        skipNewlines()
+ }
+ skipNewlines()
 
-        // Body
-        body = null
-        if current().type == "OpenBrace" {
-            body = parseBlock()
-        }
-        else {
-            bodyExpr = parseExpr(0)
-            body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+ // Body
+ body = null
+ if current().type == "OpenBrace" {
+ body = parseBlock()
+ }
+ else {
+ bodyExpr = parseExpr(0)
+ body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
-        }
-        MatchCase(pattern, guard, body, l, c)
+ }
+ mc = MatchCase(pattern, guard, body, l, c)
+ mc.isDefault = isDefault
+ mc
 
-    }
+ }
     // ===================================================================
     // HELPER: If expression
     // ===================================================================
@@ -1362,11 +1355,11 @@ fn led(tok, left) {
                 elseBranch = parseStatement()
                 if elseBranch == null: elseBranch = BlockStatement([], l, c)
 
-            }
-        }
-        IfStatement(condition, thenBranch, elseBranch, l, c)
+}
+}
+return IfStatement(condition, thenBranch, elseBranch, l, c)
 
-    }
+}
     // ===================================================================
     // HELPER: Array literal
     // ===================================================================
@@ -1400,44 +1393,44 @@ fn led(tok, left) {
 
             }
         }
-        expect("CloseBracket")
-        ArrayLiteral(elements, l, c)
+expect("CloseBracket")
+return ArrayLiteral(elements, l, c)
 
-    }
+}
     // ===================================================================
     // HELPER: Object literal disambiguation
     // ===================================================================
-    fn disambiguateBrace() {
-        l = current().line
-        c = current().col
+fn disambiguateBrace() {
+    l = current().line
+    c = current().col
 
-        // Lookahead to determine set vs object
-        lookahead = 1
-        while at(lookahead).type == "NewLine" {
-            lookahead = lookahead + 1
+    // Lookahead to determine set vs object
+    lookahead = 1
+    while at(lookahead).type == "NewLine" {
+        lookahead = lookahead + 1
 
-        }
-        nextTok = at(lookahead)
+    }
+    nextTok = at(lookahead)
 
         // Empty braces = empty object
         if nextTok.type == "CloseBrace" {
             return parseObjectLiteral(false)
 
         }
-        // Check if object: identifier/string/number followed by colon
-        isObject = false
-        isObjKeyType = (nextTok.type == "Identifier" or nextTok.type == "String" or nextTok.type == "MultilineString" or nextTok.type == "Number" or isKeywordIdent(nextTok.type))
+// Check if object: identifier/string/number followed by colon or =
+isObject = false
+isObjKeyType = (nextTok.type == "Identifier" or nextTok.type == "String" or nextTok.type == "MultilineString" or nextTok.type == "Number" or isKeywordIdent(nextTok.type))
 
-        if isObjKeyType {
-            colonLook = lookahead + 1
-            while at(colonLook).type == "NewLine" {
-                colonLook = colonLook + 1
-            }
-            if at(colonLook).type == "Colon" {
-                isObject = true
+if isObjKeyType {
+    colonLook = lookahead + 1
+    while at(colonLook).type == "NewLine" {
+        colonLook = colonLook + 1
+    }
+    if at(colonLook).type == "Colon" or at(colonLook).type == "Assign" {
+        isObject = true
 
-            }
-        }
+    }
+}
         if isObject {
             return parseObjectLiteral(false)
 
@@ -1473,11 +1466,11 @@ fn led(tok, left) {
                 return node
 
             }
-        }
-        // Default to object literal
-        parseObjectLiteral(false)
+}
+// Default to object literal
+return parseObjectLiteral(false)
 
-    }
+}
     // ===================================================================
     // HELPER: Object literal
     // ===================================================================
@@ -1494,42 +1487,40 @@ fn led(tok, left) {
         }
         skipNewlines()
 
-        fields = []
-        while current().type != "CloseBrace" and notEOF() {
-            skipNewlines()
-            if current().type == "CloseBrace": break
+    fields = []
+    while current().type != "CloseBrace" and notEOF() {
+        skipNewlines()
+        if current().type == "CloseBrace": break
 
-            // Parse key
-            key = null
-            if current().type == "String" or current().type == "MultilineString" {
-                key = advance().value
-            }
-            else if current().type == "Number" {
-                key = advance().value
-            }
-else if current().type == "Identifier" or isDotAccessIdent(current().type) {
-  key = advance().value
-}
-else if current().type == "OpenBracket" {
-                // Computed key: [expr]
-                advance()
-                key = parseExpr(0)
-                expect("CloseBracket")
-            }
-            else {
-                // Try to advance past error
-                return error("Expected object key", l, c)
-
-            }
+        // Parse key — using separate if/return guards to avoid VM if/else fallthrough bug
+        key = null
+        if current().type == "String" or current().type == "MultilineString" {
+            key = advance().value
+        }
+        if current().type == "Number" and key == null {
+            key = advance().value
+        }
+        if (current().type == "Identifier" or isDotAccessIdent(current().type)) and key == null {
+            key = advance().value
+        }
+        if current().type == "OpenBracket" and key == null {
+            // Computed key: [expr]
+            advance()
+            key = parseExpr(0)
+            expect("CloseBracket")
+        }
+        if key == null {
+            return error("Expected object key", l, c)
+        }
             skipNewlines()
 
-            // Check for colon (key: value)
-            value = null
-            if current().type == "Colon" {
-                advance()
-                skipNewlines()
-                value = parseExpr(0)
-            }
+    // Check for colon or = (key: value or key = value)
+    value = null
+    if current().type == "Colon" or current().type == "Assign" {
+        advance()
+        skipNewlines()
+        value = parseExpr(0)
+    }
             else {
                 // Shorthand: {x} means {x: x}
                 if type(key) == "string" {
@@ -1809,11 +1800,11 @@ fn parseIfStatement() {
     if elseBranch == null {
       elseBranch = parseStatement()
       if elseBranch == null: elseBranch = BlockStatement([], l, c)
-    }
-  }
-  IfStatement(condition, thenBranch, elseBranch, l, c)
+}
+}
+return IfStatement(condition, thenBranch, elseBranch, l, c)
 
-    }
+}
     // ===================================================================
     // STATEMENT: while
     // ===================================================================
@@ -1839,7 +1830,7 @@ fn parseIfStatement() {
             if body == null: body = BlockStatement([], l, c)
 
         }
-        WhileStatement(condition, body, l, c)
+        return WhileStatement(condition, body, l, c)
 
     }
     // ===================================================================
@@ -1925,7 +1916,7 @@ fn parseIfStatement() {
             if body == null: body = BlockStatement([], l, c)
 
         }
-        LoopStatement(body, l, c)
+        return LoopStatement(body, l, c)
 
     }
     // ===================================================================
@@ -1953,7 +1944,7 @@ fn parseIfStatement() {
             if body == null: body = BlockStatement([], l, c)
 
         }
-        RepeatStatement(count, body, l, c)
+        return RepeatStatement(count, body, l, c)
 
     }
     // ===================================================================
@@ -1977,7 +1968,7 @@ fn parseIfStatement() {
             value = parseExpr(0)
 
         }
-        ReturnStatement(value, l, c)
+        return ReturnStatement(value, l, c)
 
     }
     // ===================================================================
@@ -1989,7 +1980,7 @@ fn parseIfStatement() {
         advance() // consume 'throw'
         skipNewlines()
         value = parseExpr(0)
-        ThrowStatement(value, l, c)
+        return ThrowStatement(value, l, c)
 
     }
     // ===================================================================
@@ -2036,7 +2027,7 @@ skipNewlines()
             finallyBlock = parseBlock()
 
         }
-        TryStatement(tryBlock, catchParam, catchBlock, finallyBlock, l, c)
+        return TryStatement(tryBlock, catchParam, catchBlock, finallyBlock, l, c)
 
     }
     // ===================================================================
@@ -2108,7 +2099,7 @@ skipNewlines()
         for c in cases {
             matchCases.push(MatchCase(c.test, null, c.body, l, c))
         }
-        MatchExpression(subject, matchCases, l, c)
+        return MatchExpression(subject, matchCases, l, c)
 
     }
     // ===================================================================
@@ -2161,38 +2152,41 @@ skipNewlines()
             while current().type != "CloseParen" and notEOF() {
                 skipNewlines()
                 if current().type == "CloseParen": break
-            // Param name — must be Identifier or keyword-as-ident (not Fn, it's ambiguous with lambda)
-            pt = current().type
-            if pt == "Fn" {
-                return error("'fn' cannot be used as a parameter name (reserved for lambda syntax)", current().line, current().col)
-            }
-            if pt != "Identifier" && !isKeywordIdent(pt) {
+      // Param name — must be Identifier or keyword-as-ident (not Fn, it's ambiguous with lambda)
+      pt = current().type
+      if pt == "Fn" {
+        return error("'fn' cannot be used as a parameter name (reserved for lambda syntax)", current().line, current().col)
+      }
+      isVariadic = false
+      if pt == "Spread" {
+        isVariadic = true
+        advance()
+        skipNewlines()
+        pt = current().type
+      }
+      if pt != "Identifier" && !isKeywordIdent(pt) {
                 return error("Expected parameter name, got " + pt, current().line, current().col)
             }
-            pname = advance().value
-        p = {name: pname}
-        // Type annotation
-        if current().type == "Colon" {
-          advance()
-          p.typeAnn = advance().value
-          skipNewlines()
-        }
-	// Default value
-	if current().type == "Assign" {
-		advance()
-		p.defval = parseExpr(0)
-		skipNewlines()
-	}
-        // Variadic
-        if current().type == "Spread" {
-          advance()
-          skipNewlines()
-        }
-        params.push(p)
-                if current().type == "Comma": advance()
-            }
-            expect("CloseParen")
-            skipNewlines()
+      pname = advance().value
+      p = {name: pname}
+      if isVariadic: p.isVariadic = true
+      // Type annotation
+      if current().type == "Colon" {
+        advance()
+        p.typeAnn = advance().value
+        skipNewlines()
+      }
+      // Default value
+      if current().type == "Assign" {
+        advance()
+        p.defval = parseExpr(0)
+        skipNewlines()
+      }
+      params.push(p)
+      if current().type == "Comma": advance()
+      }
+      expect("CloseParen")
+      skipNewlines()
 
         }
         // Return type annotation
@@ -2234,7 +2228,7 @@ skipNewlines()
         body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
     }
-    FnDeclaration(name, params, body, l, c)
+    return FnDeclaration(name, params, body, l, c)
 
     }
     // ===================================================================
@@ -2269,10 +2263,10 @@ skipNewlines()
             }
         }
         if keyword == "Let" {
-            LetDeclaration(name, value, l, c)
+return LetDeclaration(name, value, l, c)
         }
         else {
-            ValDeclaration(name, value, l, c)
+            return ValDeclaration(name, value, l, c)
 
         }
     }
@@ -2353,7 +2347,7 @@ fn parseImportStatement() {
 
   // bare: import "module"
   module = advance().value
-  ImportStatement(module, [], l, c, null)
+  return ImportStatement(module, [], l, c, null)
 
 }
     // ===================================================================
@@ -2543,7 +2537,7 @@ fn parseUseStatement() {
         name = advance().value
         skipNewlines()
         body = parseBlock()
-        ConfigBlock(name, body, l, c)
+        return ConfigBlock(name, body, l, c)
 
     }
     // ===================================================================
@@ -2585,7 +2579,7 @@ fn parseUseStatement() {
         name = advance().value
         skipNewlines()
         body = parseBlock()
-        ConfigBlock("mode:" + name, body, l, c)
+        return ConfigBlock("mode:" + name, body, l, c)
 
     }
     // ===================================================================
@@ -2599,7 +2593,7 @@ fn parseUseStatement() {
         name = advance().value
         skipNewlines()
         body = parseBlock()
-        ConfigBlock("group:" + name, body, l, c)
+        return ConfigBlock("group:" + name, body, l, c)
 
     }
     // ===================================================================
@@ -2633,7 +2627,7 @@ fn parseUseStatement() {
         name = advance().value
         skipNewlines()
         body = parseBlock()
-        ConfigBlock("pool:" + name, body, l, c)
+        return ConfigBlock("pool:" + name, body, l, c)
 
     }
     // ===================================================================
@@ -2645,7 +2639,7 @@ fn parseUseStatement() {
         advance() // consume 'devices'
         skipNewlines()
         body = parseBlock()
-        ConfigBlock("devices", body, l, c)
+        return ConfigBlock("devices", body, l, c)
 
     }
     // ===================================================================
@@ -2753,7 +2747,7 @@ fn parseClassDeclaration() {
 			advance() // consume '}'
 		}
 	}
-	ClassDeclaration(name, parentName, fields, methods, l, c)
+	return ClassDeclaration(name, parentName, fields, methods, l, c)
 
 }
 
@@ -2850,44 +2844,36 @@ fn _parseClassMethod() {
 }
 
 fn _parseClassOperatorMethod() {
-	mline = current().line
-	mcol = current().col
-	// Already consumed 'op'
-	// Map operator token to method name
-	tv = current().value
-	tt = current().type
-	methodName = ""
-	if tv == "+" { methodName = "op_add" }
-	else if tv == "-" { methodName = "op_sub" }
-	else if tv == "*" { methodName = "op_mul" }
-	else if tv == "/" { methodName = "op_div" }
-	else if tv == "==" { methodName = "op_eq" }
-	else if tv == "!=" { methodName = "op_ne" }
-	else if tv == "<" { methodName = "op_lt" }
-	else if tv == ">" { methodName = "op_gt" }
-	else if tv == "<=" { methodName = "op_le" }
-	else if tv == ">=" { methodName = "op_ge" }
-	else if tv == "[]" { methodName = "op_index" }
-	else if tv == "[]=" { methodName = "op_index_set" }
-	else if current().type == "OpenBracket" {
-		advance() // consume '['
-		if current().type == "CloseBracket" {
-			advance() // consume ']'
-			if current().type == "Assign" {
-				advance() // consume '='
-				methodName = "op_index_set"
-			} else {
-				methodName = "op_index"
-			}
-		}
-	}
-	else if current().type == "OpenParen" {
-		methodName = "op_call"
-	}
-	else if tv == "#" { methodName = "op_length" }
-	else if current().type == "Not" { methodName = "op_not" }
-	else if tv == "repr" { methodName = "op_repr" }
-	else { methodName = "op_" + tv }
+    mline = current().line
+    mcol = current().col
+    tv = current().value
+    tt = current().type
+
+    OP_METHOD_MAP = {
+        "+": "op_add", "-": "op_sub", "*": "op_mul", "/": "op_div",
+        "==": "op_eq", "!=": "op_ne", "<": "op_lt", ">": "op_gt",
+        "<=": "op_le", ">=": "op_ge", "[]": "op_index", "[]=": "op_index_set",
+        "#": "op_length", "repr": "op_repr"
+    }
+
+    methodName = OP_METHOD_MAP[tv]
+    if methodName == null && tt == "Not" { methodName = "op_not" }
+    if methodName == null && tt == "OpenBracket" {
+        advance() // consume '['
+        if current().type == "CloseBracket" {
+            advance() // consume ']'
+            if current().type == "Assign" {
+                advance() // consume '='
+                methodName = "op_index_set"
+            } else {
+                methodName = "op_index"
+            }
+        }
+    }
+    else if methodName == null && tt == "OpenParen" {
+        methodName = "op_call"
+    }
+    if methodName == null { methodName = "op_" + tv }
 	if methodName != "" && methodName.startsWith("op_") && current().type != "OpenBracket" && current().type != "OpenParen" {
 		advance() // consume the operator token
 	}
@@ -2967,7 +2953,7 @@ fn parseStructDeclaration() {
 		skipNewlines()
 		_parseClassMembers(methods, fields)
 	}
-	StructDeclaration(name, fields, methods, null, l, c)
+	return StructDeclaration(name, fields, methods, null, l, c)
 
 }
 
@@ -3021,7 +3007,7 @@ fn parseEnumDeclaration() {
     if current().type == "CloseBrace" {
         advance() // consume '}'
     }
-    EnumDeclaration(name, variants, l, c)
+    return EnumDeclaration(name, variants, l, c)
 }
 
 // ===================================================================
@@ -3085,7 +3071,7 @@ fn parseTraitDeclaration() {
     if current().type == "CloseBrace" {
         advance() // consume '}'
     }
-    TraitDeclaration(name, methods, l, c)
+    return TraitDeclaration(name, methods, l, c)
 }
 
 // ===================================================================
@@ -3165,7 +3151,7 @@ fn parseProtocolDeclaration() {
     if !isColonBody && current().type == "CloseBrace" {
         advance() // consume '}'
     }
-    ProtocolDeclaration(name, methods, l, c)
+    return ProtocolDeclaration(name, methods, l, c)
 }
 
 // ===================================================================
@@ -3216,7 +3202,7 @@ fn parseImplDeclaration() {
     if current().type == "CloseBrace" {
         advance() // consume '}'
     }
-    ImplDeclaration(typeName, traitName, funcs, l, c)
+    return ImplDeclaration(typeName, traitName, funcs, l, c)
 }
     // ===================================================================
     // PRODUCE AST — main entry point
@@ -3243,11 +3229,11 @@ fn parseImplDeclaration() {
                 // Null statement — skip
                 if pos < tokens.len: advance()
 
-            }
-        }
-        Program(stmts, 1, 1)
+}
+}
+return Program(stmts, 1, 1)
 
-    }
+}
     // Return the parser interface
     {
     parseExpr: parseExpr,
@@ -3267,15 +3253,15 @@ fn parseImplDeclaration() {
 // ===================================================================
 
 fn parse(source) {
-    tokenList = tokenize(source)
-    p = Parser(tokenList)
-    ast = p.produceAST()
-    {ast: ast, errors: p.errors}
+  tokenList = tokenize(source)
+  p = Parser(tokenList)
+  ast = p.produceAST()
+  return {ast: ast, errors: p.errors}
 
-}
-fn parseTokens(tokenList) {
-    p = Parser(tokenList)
-    ast = p.produceAST()
-    {ast: ast, errors: p.errors}
+  }
+  fn parseTokens(tokenList) {
+  p = Parser(tokenList)
+  ast = p.produceAST()
+  return {ast: ast, errors: p.errors}
 
-}
+  }

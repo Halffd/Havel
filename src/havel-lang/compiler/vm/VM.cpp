@@ -1817,16 +1817,16 @@ std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
 }
 
 void VM::maybeCollectGarbage() {
-    if (gc_suspend_counter_ > 0) return;
-    heap_.maybeCollectGarbage(
-        stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
-        [this](uint32_t index) -> std::optional<Value> {
-            if (index >= locals.size()) {
-                return std::nullopt;
-            }
-            return locals[index];
-        });
-}
+ if (gc_suspend_counter_ > 0) return;
+ heap_.maybeCollectGarbage(
+ stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
+ [this](uint32_t index) -> std::optional<Value> {
+ if (index >= locals.size()) {
+ return std::nullopt;
+ }
+ return locals[index];
+ });
+ }
 
 void VM::drainFinalizers() {
     auto finalizers = heap_.drainFinalizers();

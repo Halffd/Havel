@@ -307,15 +307,18 @@ options.vm_setup = [&](havel::compiler::VM &vm) {
   auto thread_obj = vm.createHostObject();
   auto threadGuard = vm.makeRoot(Value::makeObjectId(thread_obj.id));
   vm.setHostObjectField(thread_obj, "spawn", Value::makeHostFuncId(vm.getHostFunctionIndex("thread")));
+  vm.setHostObjectField(thread_obj, "__call", Value::makeHostFuncId(vm.getHostFunctionIndex("thread")));
   vm.setGlobal("thread", Value::makeObjectId(thread_obj.id));
   auto interval_obj = vm.createHostObject();
   auto intervalGuard = vm.makeRoot(Value::makeObjectId(interval_obj.id));
   vm.setHostObjectField(interval_obj, "start", Value::makeHostFuncId(vm.getHostFunctionIndex("interval")));
+  vm.setHostObjectField(interval_obj, "__call", Value::makeHostFuncId(vm.getHostFunctionIndex("interval")));
   vm.setGlobal("interval", Value::makeObjectId(interval_obj.id));
   auto timeout_obj = vm.createHostObject();
   auto timeoutGuard = vm.makeRoot(Value::makeObjectId(timeout_obj.id));
   vm.setHostObjectField(timeout_obj, "start", Value::makeHostFuncId(vm.getHostFunctionIndex("timeout")));
-    vm.setGlobal("timeout", Value::makeObjectId(timeout_obj.id));
+  vm.setHostObjectField(timeout_obj, "__call", Value::makeHostFuncId(vm.getHostFunctionIndex("timeout")));
+  vm.setGlobal("timeout", Value::makeObjectId(timeout_obj.id));
 
     vm.registerPrototypeMethodByName("object", "send", "object.send");
     vm.registerPrototypeMethodByName("object", "pause", "object.pause");
@@ -331,27 +334,25 @@ options.host_functions["sleep"] = [&](const std::vector<Value> &args) {
  };
 
 options.host_functions["thread"] = [&](const std::vector<Value> &args) {
-    if (!vm_ptr || args.empty()) {
-        throw std::runtime_error("thread requires callback");
-    }
-    // When called via CALL_METHOD (thread.spawn(fn)), receiver is prepended
-    Value callback = args[0];
-    if (args.size() >= 2 && args[0].isObjectId()) {
-        callback = args[1];
-    }
-    int64_t tid = next_task_id++;
-    std::string id = "thread-" + std::to_string(tid);
-    thread_callbacks[id] = callback;
-    thread_running[id] = true;
-    thread_paused[id] = false;
-    auto obj = vm_ptr->createHostObject();
-    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
-    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
-    vm_ptr->setHostObjectField(obj, "send", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.send")));
-    vm_ptr->setHostObjectField(obj, "pause", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.pause")));
-    vm_ptr->setHostObjectField(obj, "resume", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.resume")));
-    vm_ptr->setHostObjectField(obj, "running", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.running")));
-    return Value::makeObjectId(obj.id);
+  if (!vm_ptr || args.empty()) {
+    throw std::runtime_error("thread requires callback");
+  }
+  // When called via CALL_METHOD (thread.spawn(fn)), receiver is prepended
+  Value callback = args[0];
+  if (args.size() >= 2 && args[0].isObjectId()) {
+    callback = args[1];
+  }
+  int64_t tid = next_task_id++;
+  std::string id = "thread-" + std::to_string(tid);
+  thread_callbacks[id] = callback;
+  thread_running[id] = true;
+  thread_paused[id] = false;
+  auto obj = vm_ptr->createHostObject();
+  vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
+  vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
+  // No instance fields for send/pause/resume/running — rely on prototype dispatch
+  // (object.send, object.pause, etc.) which always prepends self as args[0]
+  return Value::makeObjectId(obj.id);
 };
 
 // thread.spawn(closure) — called by block-sugar "thread { ... }" via LOAD_GLOBAL + CALL
@@ -366,31 +367,28 @@ options.host_functions["thread.spawn"] = [&](const std::vector<Value> &args) {
     thread_callbacks[id] = callback;
     thread_running[id] = true;
     thread_paused[id] = false;
-    auto obj = vm_ptr->createHostObject();
-    vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
-    vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
-    vm_ptr->setHostObjectField(obj, "send", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.send")));
-    vm_ptr->setHostObjectField(obj, "pause", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.pause")));
-    vm_ptr->setHostObjectField(obj, "resume", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.resume")));
-    vm_ptr->setHostObjectField(obj, "running", Value::makeHostFuncId(vm_ptr->getHostFunctionIndex("thread.running")));
-    return Value::makeObjectId(obj.id);
+  auto obj = vm_ptr->createHostObject();
+  vm_ptr->setHostObjectField(obj, "__kind", Value::makeInt(0));
+  vm_ptr->setHostObjectField(obj, "__id", Value::makeInt(tid));
+  // No instance fields — rely on prototype dispatch (object.send, etc.)
+  return Value::makeObjectId(obj.id);
 };
 
- options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
- if (!vm_ptr || args.size() < 2 || !args[0].isObjectId()) {
- return Value::makeNull();
- }
- auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
- auto idv = vm_ptr->getHostObjectField(obj, "__id");
- if (!idv.isInt()) return Value::makeNull();
- std::string key = "thread-" + std::to_string(idv.asInt());
- auto it = thread_callbacks.find(key);
- if (it == thread_callbacks.end()) return Value::makeNull();
- Value msg = args[1];
- Value result = vm_ptr->callFunction(it->second, {msg});
- vm_ptr->setHostObjectField(obj, "__await_result", result);
- return result;
- };
+options.host_functions["thread.send"] = [&](const std::vector<Value> &args) {
+  if (!vm_ptr || args.size() < 2 || !args[0].isObjectId()) {
+    return Value::makeNull();
+  }
+  auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};
+  auto idv = vm_ptr->getHostObjectField(obj, "__id");
+  if (!idv.isInt()) return Value::makeNull();
+  std::string key = "thread-" + std::to_string(idv.asInt());
+  auto it = thread_callbacks.find(key);
+  if (it == thread_callbacks.end()) return Value::makeNull();
+  Value msg = args[1];
+  Value result = vm_ptr->callFunction(it->second, {msg});
+  vm_ptr->setHostObjectField(obj, "__await_result", result);
+  return result;
+};
 options.host_functions["thread.pause"] = [&](const std::vector<Value> &args) {
     if (!vm_ptr || args.empty() || !args[0].isObjectId()) return Value(false);
     auto obj = havel::compiler::ObjectRef{args[0].asObjectId(), true};

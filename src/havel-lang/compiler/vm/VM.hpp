@@ -383,7 +383,11 @@ bool prototypes_registered_ = false;
   void execNegate();
   void execJump(const Instruction &instruction);
   void execJumpIfFalse(const Instruction &instruction);
-  void execJumpIfTrue(const Instruction &instruction);
+	void execJumpIfTrue(const Instruction &instruction);
+	bool execCollectionOp(const Instruction &instruction);
+	bool execConcurrencyOp(const Instruction &instruction);
+	bool execControlFlowOp(const Instruction &instruction);
+	bool execBuiltinOp(const Instruction &instruction);
 
   void doCall(Value callee_value, std::vector<Value> args,
               bool advance_caller_ip = true);

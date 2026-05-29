@@ -218,6 +218,7 @@ struct CallFrame {
   utils::RobinHoodHashMap<std::string, BytecodeHostFunction> host_functions;
   std::vector<std::string> host_function_names_; // Index -> name mapping
   utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
+  std::unordered_map<std::string, Value> root_globals_; // Snapshot from execute() for persistent execution
   
         // Function properties support (fn.prop = value for static state, memoization, etc.)
         std::unordered_map<uint32_t, ObjectRef> function_properties_; // function_index -> properties object
@@ -760,12 +761,6 @@ public:
     std::string key = name;
     globals[std::move(name)] = std::move(value);
     emitVariableChanged(key);
-  }
-  void eraseGlobal(const std::string &name) {
-    if (name == "isArray") {
-      std::fprintf(stderr, "DBG eraseGlobal('isArray') called from\n");
-    }
-    globals.erase(name);
   }
   [[nodiscard]] GCRoot makeRoot(const Value &value) {
     return GCRoot(*this, value);

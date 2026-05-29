@@ -213,8 +213,6 @@ Value VM::execute(const BytecodeChunk &chunk,
     current_exception_ = nullptr;
   registerDefaultHostGlobals();
   host_globals_registered_ = true;
-  std::fprintf(stderr, "DBG execute(): isArray=%d globals_size=%zu\n",
-               globals.contains("isArray")?1:0, globals.size());
   if (post_reset_setup_) {
         post_reset_setup_(*this);
     }
@@ -242,13 +240,23 @@ Value VM::execute(const BytecodeChunk &chunk,
  }
  }
 
-if (debug_mode) {
-        ::havel::debug("=== Executing function: {} ===", function_name);
-    }
+  if (debug_mode) {
+    ::havel::debug("=== Executing function: {} ===", function_name);
+  }
 
-    runDispatchLoop(0);
+  // Snapshot root globals before execution. This captures all
+  // host-registered globals (including TypeModule's isArray, etc.)
+  // for use by executePersistent, which may be called during this
+  // execution from within a module closure context.
+  root_globals_ = globals;
 
- current_chunk = saved_chunk;
+  runDispatchLoop(0);
+
+  // Update root globals snapshot after execution too (in case
+  // module loads added more builtins during execution).
+  root_globals_ = globals;
+
+  current_chunk = saved_chunk;
 
  if (stack.empty()) {
  return nullptr;
@@ -272,21 +280,25 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
 
   suspendGC();
 
-  std::fprintf(stderr, "DBG executePersistent ENTRY: isArray=%d globals_size=%zu stack_depth=%zu main_chunk=%p current_chunk=%p\n",
-               globals.contains("isArray")?1:0, globals.size(), globals_stack_.size(),
-               main_chunk_ ? main_chunk_.get() : nullptr, current_chunk);
-
-  // Save globals state (we may be inside a module closure that swapped
-  // globals). The persistent execution needs root-level globals that
-  // contain all host-registered globals (Type.isArray, math.PI, etc).
+  // Save globals state so we can restore after execution.
   auto saved_globals = globals;
   auto saved_globals_stack = globals_stack_;
 
-  // Unwind to root globals: the bottom of the stack holds the globals
-  // that were active before any module closure swapped them.
-  if (!globals_stack_.empty()) {
-    globals = std::move(globals_stack_.front());
-    globals_stack_.erase(globals_stack_.begin());
+  // Merge root globals into current globals. When called from inside a
+  // module closure (e.g., deepWrap wrapper), the current globals may be
+  // a module-local snapshot missing TypeModule functions (isArray, etc.).
+  // Root globals (captured after execute() completes) have all builtins.
+  for (const auto& [name, value] : root_globals_) {
+    if (!globals.count(name)) {
+      globals[name] = value;
+    }
+  }
+
+  // Also ensure host function globals are available (print, len, etc.)
+  for (const auto& [name, value] : host_function_globals_) {
+    if (!globals.count(name)) {
+      globals[name] = value;
+    }
   }
 
   // Clear stack and locals for this execution, but PRESERVE:
@@ -1485,12 +1497,12 @@ co->ip = 0;
 
  current_chunk = resolve_chunk;
 
-    bool frame_owns_globals = false;
-    if (closure_globals) {
-        globals_stack_.push_back(std::move(globals));
-        globals = *closure_globals;
-        frame_owns_globals = true;
-    }
+  bool frame_owns_globals = false;
+  if (closure_globals) {
+    globals_stack_.push_back(std::move(globals));
+    globals = *closure_globals;
+    frame_owns_globals = true;
+  }
 
  size_t base = locals.size();
  size_t stack_depth = stack.size(); // Save current stack depth
@@ -1759,7 +1771,7 @@ else if (callee_value.isStringValId()) {
  globals_stack_.push_back(std::move(globals));
  current_frame.owns_globals = true;
  }
- globals = *tail_closure_globals;
+    globals = *tail_closure_globals;
  }
  // Keep same locals base
 
@@ -1983,11 +1995,11 @@ void VM::doReturn() {
  current_chunk = frame_arena_[frame_count_ - 1].chunk;
  }
 
- // Restore globals if this frame swapped them (module closure call)
-    if (finished.owns_globals && !globals_stack_.empty()) {
-        globals = std::move(globals_stack_.back());
-        globals_stack_.pop_back();
-    }
+  // Restore globals if this frame swapped them (module closure call)
+  if (finished.owns_globals && !globals_stack_.empty()) {
+    globals = std::move(globals_stack_.back());
+    globals_stack_.pop_back();
+  }
 
  closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
  static_cast<uint32_t>(locals.size()));
@@ -2125,16 +2137,16 @@ std::string fnCapturedField = fieldPath;
     if (callArgs.size() > paramCount && paramCount > 0) {
     callArgs.erase(callArgs.begin());
     }
-    auto* savedChunk = current_chunk;
-                    auto savedGlobals = globals;
-                    auto savedMirrorId = globals_mirror_object_id_;
-                    Value savedG = globals["_G"];
-                    globals = moduleGlobals;
-                    current_chunk = moduleChunk.get();
+        auto* savedChunk = current_chunk;
+        auto savedGlobals = globals;
+        auto savedMirrorId = globals_mirror_object_id_;
+        Value savedG = globals["_G"];
+    globals = moduleGlobals;
+    current_chunk = moduleChunk.get();
     const auto* callee = moduleChunk->getFunction(funcIdx);
     if (!callee) {
-    globals = std::move(savedGlobals);
-    globals_mirror_object_id_ = savedMirrorId;
+  globals = std::move(savedGlobals);
+  globals_mirror_object_id_ = savedMirrorId;
     globals["_G"] = savedG;
     current_chunk = savedChunk;
     return Value::makeNull();
@@ -2178,7 +2190,18 @@ std::string fnCapturedField = fieldPath;
                 locals[base + i] = Value::makeNull();
             }
         }
+        try {
         runDispatchLoop(frame_count_ - 1);
+        } catch (...) {
+          if (locals.size() > savedLocalsSize) {
+            locals.resize(savedLocalsSize);
+          }
+          globals = std::move(savedGlobals);
+          globals_mirror_object_id_ = savedMirrorId;
+          globals["_G"] = savedG;
+          current_chunk = savedChunk;
+          throw;
+        }
         Value result = popStack();
         if (locals.size() > savedLocalsSize) {
             locals.resize(savedLocalsSize);
@@ -2187,11 +2210,11 @@ std::string fnCapturedField = fieldPath;
             result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
                 moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
         }
-        globals = std::move(savedGlobals);
-        globals_mirror_object_id_ = savedMirrorId;
-        globals["_G"] = savedG;
-        current_chunk = savedChunk;
-        return result;
+  globals = std::move(savedGlobals);
+  globals_mirror_object_id_ = savedMirrorId;
+  globals["_G"] = savedG;
+  current_chunk = savedChunk;
+  return result;
     });
         uint32_t hostIdx = host_function_globals_[wrapperName].asHostFuncId();
         resumeGcGuard();
@@ -2225,8 +2248,8 @@ std::string fnCapturedField = fieldPath;
             auto savedGlobals = globals;
             auto savedMirrorId = globals_mirror_object_id_;
             Value savedG = globals["_G"];
-            globals = *closureGlobals;
-            current_chunk = moduleChunk.get();
+    globals = *closureGlobals;
+    current_chunk = moduleChunk.get();
 
             const auto* callee = moduleChunk->getFunction(funcIdx);
             if (!callee) {
@@ -2273,13 +2296,23 @@ std::string fnCapturedField = fieldPath;
             }
         }
 
- runDispatchLoop(frame_count_ - 1);
- Value result = popStack();
- if (bc_execute_depth_ == 0) {
- result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
- moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
- }
- globals = std::move(savedGlobals);
+        try {
+        runDispatchLoop(frame_count_ - 1);
+        } catch (...) {
+          if (locals.size() > base) {
+            locals.resize(base);
+          }
+          globals = std::move(savedGlobals);
+          globals_mirror_object_id_ = savedMirrorId;
+          globals["_G"] = savedG;
+          current_chunk = savedChunk;
+          throw;
+        }
+        Value result = popStack();
+        if (bc_execute_depth_ == 0) {
+          result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk), moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
+        }
+        globals = std::move(savedGlobals);
  globals_mirror_object_id_ = savedMirrorId;
  globals["_G"] = savedG;
  current_chunk = savedChunk;
@@ -2360,13 +2393,13 @@ std::string fnCapturedField = fieldPath;
 }
 
 Value VM::loadModule(const std::string& path) {
-    // Check cache via canonical ModuleLoader
-    if (moduleLoader_.isCached(path)) {
-        Value cachedVal;
-        if (moduleLoader_.getCached(path, &cachedVal)) {
-            return cachedVal;
-        }
+  // Check cache via canonical ModuleLoader
+  if (moduleLoader_.isCached(path)) {
+    Value cachedVal;
+    if (moduleLoader_.getCached(path, &cachedVal)) {
+      return cachedVal;
     }
+  }
 
     // Resolve the module path
     auto resolved = moduleLoader_.resolve(path, current_script_dir_);
@@ -2514,8 +2547,8 @@ Value exports = Value::makeObjectId(exportsObj.id);
   }
 
     // Execute the module in a sandboxed globals context
-    // Save current globals state
-    globals_stack_.push_back(globals);
+  // Save current globals state
+  globals_stack_.push_back(globals);
     auto saved_immutable_globals = immutable_globals_;
     auto old_mirror_id = globals_mirror_object_id_;
     Value old_g = globals["_G"];
@@ -2529,11 +2562,11 @@ Value exports = Value::makeObjectId(exportsObj.id);
     bool saved_exception = has_current_exception_;
     Value saved_exception_val = current_exception_;
 
-    // Fresh globals for the module — populate with host globals so
-    // the module can call print(), len(), str, etc.
-    std::unordered_set<std::string> inheritedGlobalNames;
-    std::unordered_map<std::string, Value> inheritedGlobalValues;
-    globals.clear();
+  // Fresh globals for the module — populate with host globals so
+  // the module can call print(), len(), str, etc.
+  std::unordered_set<std::string> inheritedGlobalNames;
+  std::unordered_map<std::string, Value> inheritedGlobalValues;
+  globals.clear();
     // Register host function globals into sandbox (print, len, str, etc.)
     for (const auto& [name, value] : host_function_globals_) {
         globals[name] = value;
@@ -2680,9 +2713,9 @@ Value exports = Value::makeObjectId(exportsObj.id);
         }
     }
 
-    // Restore caller's globals and execution state
-    globals = std::move(globals_stack_.back());
-    globals_stack_.pop_back();
+  // Restore caller's globals and execution state
+  globals = std::move(globals_stack_.back());
+  globals_stack_.pop_back();
     globals["_G"] = old_g;
     globals_mirror_object_id_ = old_mirror_id;
     immutable_globals_ = saved_immutable_globals;

@@ -24,6 +24,7 @@
 #include "../../modules/screenshot/ScreenshotModule.hpp"
 #include "../../modules/ui/UIModule.hpp"
 #include "../../modules/window/WindowMonitorModule.hpp"
+#include "../../modules/display/DisplayModule.hpp"
 #endif
 
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
@@ -94,7 +95,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerHttpModule(api);
   stdlib::registerBrowserModule(api);
   modules::registerConfigModule(api);
-  modules::registerWindowMonitorModule(api);
+    modules::registerWindowMonitorModule(api);
+    modules::registerDisplayModule(api);
   modules::registerHelpModule(api);
   modules::registerMouseModule(api);
   modules::registerAutomationModule(api);

@@ -257,60 +257,60 @@ void registerHotkeyModule(const VMApi &api) {
         auto *ctx = getHotkeyContextDataMutable(hotkeyId);
         if (!ctx) return Value::makeBool(false);
 
-        auto *hostCtx = vm.hostContext();
-        if (hostCtx && hostCtx->hotkeyManager) {
-            hostCtx->hotkeyManager->EnableHotkey(hotkeyId);
-            ctx->enabled = true;
-            ctx->state = "enabled";
-            vm.setHostObjectField(objRef, "enabled", Value::makeBool(true));
-            auto strRef = vm.createRuntimeString("enabled");
-            vm.setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
-            return Value::makeBool(true);
-        }
-        return Value::makeBool(false);
-    });
+	auto *hostCtx = vm.hostContext();
+	if (hostCtx && hostCtx->hotkeyManager) {
+		hostCtx->hotkeyManager->EnableHotkey(ctx->alias);
+		ctx->enabled = true;
+		ctx->state = "enabled";
+		vm.setHostObjectField(objRef, "enabled", Value::makeBool(true));
+		auto strRef = vm.createRuntimeString("enabled");
+		vm.setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
+		return Value::makeBool(true);
+	}
+	return Value::makeBool(false);
+});
 
-    // disable() - disable this hotkey
-    api.registerPrototypeMethod("Hotkey", "disable", 1, [&vm](const std::vector<Value> &args) -> Value {
-        if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
-        auto objRef = ObjectRef{args[0].asObjectId(), true};
-        auto idValue = vm.getHostObjectField(objRef, "id");
-        if (idValue.isNull()) return Value::makeBool(false);
-        auto hotkeyId = resolveHotkeyId(vm, idValue);
-        auto *ctx = getHotkeyContextDataMutable(hotkeyId);
-        if (!ctx) return Value::makeBool(false);
+// disable() - disable this hotkey
+api.registerPrototypeMethod("Hotkey", "disable", 1, [&vm](const std::vector<Value> &args) -> Value {
+	if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+	auto objRef = ObjectRef{args[0].asObjectId(), true};
+	auto idValue = vm.getHostObjectField(objRef, "id");
+	if (idValue.isNull()) return Value::makeBool(false);
+	auto hotkeyId = resolveHotkeyId(vm, idValue);
+	auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+	if (!ctx) return Value::makeBool(false);
 
-        auto *hostCtx = vm.hostContext();
-        if (hostCtx && hostCtx->hotkeyManager) {
-            hostCtx->hotkeyManager->DisableHotkey(hotkeyId);
-            ctx->enabled = false;
-            ctx->state = "disabled";
-            vm.setHostObjectField(objRef, "enabled", Value::makeBool(false));
-            auto strRef = vm.createRuntimeString("disabled");
-            vm.setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
-            return Value::makeBool(true);
-        }
-        return Value::makeBool(false);
-    });
+	auto *hostCtx = vm.hostContext();
+	if (hostCtx && hostCtx->hotkeyManager) {
+		hostCtx->hotkeyManager->DisableHotkey(ctx->alias);
+		ctx->enabled = false;
+		ctx->state = "disabled";
+		vm.setHostObjectField(objRef, "enabled", Value::makeBool(false));
+		auto strRef = vm.createRuntimeString("disabled");
+		vm.setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
+		return Value::makeBool(true);
+	}
+	return Value::makeBool(false);
+});
 
-    // toggle() - toggle enabled/disabled
-    api.registerPrototypeMethod("Hotkey", "toggle", 1, [&vm](const std::vector<Value> &args) -> Value {
-        if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
-        auto objRef = ObjectRef{args[0].asObjectId(), true};
-        auto idValue = vm.getHostObjectField(objRef, "id");
-        if (idValue.isNull()) return Value::makeBool(false);
-        auto hotkeyId = resolveHotkeyId(vm, idValue);
-        auto *ctx = getHotkeyContextDataMutable(hotkeyId);
-        if (!ctx) return Value::makeBool(false);
+// toggle() - toggle enabled/disabled
+api.registerPrototypeMethod("Hotkey", "toggle", 1, [&vm](const std::vector<Value> &args) -> Value {
+	if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+	auto objRef = ObjectRef{args[0].asObjectId(), true};
+	auto idValue = vm.getHostObjectField(objRef, "id");
+	if (idValue.isNull()) return Value::makeBool(false);
+	auto hotkeyId = resolveHotkeyId(vm, idValue);
+	auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+	if (!ctx) return Value::makeBool(false);
 
-        auto *hostCtx = vm.hostContext();
-        if (hostCtx && hostCtx->hotkeyManager) {
-            bool newState = !ctx->enabled;
-            if (newState) {
-                hostCtx->hotkeyManager->EnableHotkey(hotkeyId);
-            } else {
-                hostCtx->hotkeyManager->DisableHotkey(hotkeyId);
-            }
+	auto *hostCtx = vm.hostContext();
+	if (hostCtx && hostCtx->hotkeyManager) {
+		bool newState = !ctx->enabled;
+		if (newState) {
+			hostCtx->hotkeyManager->EnableHotkey(ctx->alias);
+		} else {
+			hostCtx->hotkeyManager->DisableHotkey(ctx->alias);
+		}
             ctx->enabled = newState;
             ctx->state = newState ? "enabled" : "disabled";
             vm.setHostObjectField(objRef, "enabled", Value::makeBool(newState));
@@ -321,18 +321,20 @@ void registerHotkeyModule(const VMApi &api) {
         return Value::makeBool(false);
     });
 
-    // remove() - remove this hotkey
-    api.registerPrototypeMethod("Hotkey", "remove", 1, [&vm](const std::vector<Value> &args) -> Value {
-        if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
-        auto objRef = ObjectRef{args[0].asObjectId(), true};
-        auto idValue = vm.getHostObjectField(objRef, "id");
-        if (idValue.isNull()) return Value::makeBool(false);
-        auto hotkeyId = resolveHotkeyId(vm, idValue);
+// remove() - remove this hotkey
+api.registerPrototypeMethod("Hotkey", "remove", 1, [&vm](const std::vector<Value> &args) -> Value {
+	if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+	auto objRef = ObjectRef{args[0].asObjectId(), true};
+	auto idValue = vm.getHostObjectField(objRef, "id");
+	if (idValue.isNull()) return Value::makeBool(false);
+	auto hotkeyId = resolveHotkeyId(vm, idValue);
+	auto *ctx = getHotkeyContextDataMutable(hotkeyId);
 
-        auto *hostCtx = vm.hostContext();
-        if (hostCtx && hostCtx->hotkeyManager) {
-            bool success = hostCtx->hotkeyManager->RemoveHotkey(hotkeyId);
-            if (success) {
+	auto *hostCtx = vm.hostContext();
+	if (hostCtx && hostCtx->hotkeyManager) {
+		std::string alias = ctx ? ctx->alias : hotkeyId;
+		bool success = hostCtx->hotkeyManager->RemoveHotkey(alias);
+		if (success) {
                 std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
                 g_hotkeyContexts.erase(hotkeyId);
             }
@@ -405,14 +407,14 @@ void registerHotkeyModule(const VMApi &api) {
         auto *ctx = getHotkeyContextDataMutable(hotkeyId);
         if (!ctx) return Value::makeBool(false);
 
-        bool enable = vm.toBoolPublic(args[1]);
-        auto *hostCtx = vm.hostContext();
-        if (hostCtx && hostCtx->hotkeyManager) {
-            if (enable) {
-                hostCtx->hotkeyManager->EnableHotkey(hotkeyId);
-            } else {
-                hostCtx->hotkeyManager->DisableHotkey(hotkeyId);
-            }
+	bool enable = vm.toBoolPublic(args[1]);
+	auto *hostCtx = vm.hostContext();
+	if (hostCtx && hostCtx->hotkeyManager) {
+		if (enable) {
+			hostCtx->hotkeyManager->EnableHotkey(ctx->alias);
+		} else {
+			hostCtx->hotkeyManager->DisableHotkey(ctx->alias);
+		}
             ctx->enabled = enable;
             ctx->state = enable ? "enabled" : "disabled";
             vm.setHostObjectField(objRef, "enabled", Value::makeBool(enable));
@@ -423,33 +425,33 @@ void registerHotkeyModule(const VMApi &api) {
         return Value::makeBool(false);
     });
 
-    // removeAll() - remove all hotkeys
-    api.registerPrototypeMethod("Hotkey", "removeAll", 1, [&vm](const std::vector<Value> &args) -> Value {
-        auto *hostCtx = vm.hostContext();
-        if (!hostCtx || !hostCtx->hotkeyManager) return Value::makeInt(0);
+// removeAll() - remove all hotkeys
+api.registerPrototypeMethod("Hotkey", "removeAll", 1, [&vm](const std::vector<Value> &args) -> Value {
+	auto *hostCtx = vm.hostContext();
+	if (!hostCtx || !hostCtx->hotkeyManager) return Value::makeInt(0);
 
-        std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
-        size_t count = g_hotkeyContexts.size();
-        for (auto &[id, data] : g_hotkeyContexts) {
-            hostCtx->hotkeyManager->RemoveHotkey(id);
-        }
-        g_hotkeyContexts.clear();
-        return Value::makeInt(static_cast<int64_t>(count));
-    });
+	std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
+	size_t count = g_hotkeyContexts.size();
+	for (auto &[id, data] : g_hotkeyContexts) {
+		hostCtx->hotkeyManager->RemoveHotkey(data ? data->alias : id);
+	}
+	g_hotkeyContexts.clear();
+	return Value::makeInt(static_cast<int64_t>(count));
+});
 
-  // clearAll() - alias for removeAll
-  api.registerPrototypeMethod("Hotkey", "clearAll", 1, [&vm](const std::vector<Value> &args) -> Value {
-    auto *hostCtx = vm.hostContext();
-    if (!hostCtx || !hostCtx->hotkeyManager) return Value::makeInt(0);
+// clearAll() - alias for removeAll
+api.registerPrototypeMethod("Hotkey", "clearAll", 1, [&vm](const std::vector<Value> &args) -> Value {
+	auto *hostCtx = vm.hostContext();
+	if (!hostCtx || !hostCtx->hotkeyManager) return Value::makeInt(0);
 
-    std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
-    size_t count = g_hotkeyContexts.size();
-    for (auto &[id, data] : g_hotkeyContexts) {
-      hostCtx->hotkeyManager->RemoveHotkey(id);
-    }
-    g_hotkeyContexts.clear();
-    return Value::makeInt(static_cast<int64_t>(count));
-  });
+	std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
+	size_t count = g_hotkeyContexts.size();
+	for (auto &[id, data] : g_hotkeyContexts) {
+		hostCtx->hotkeyManager->RemoveHotkey(data ? data->alias : id);
+	}
+	g_hotkeyContexts.clear();
+	return Value::makeInt(static_cast<int64_t>(count));
+});
 
   // ===== New Prototype Methods =====
 

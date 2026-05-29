@@ -132,7 +132,8 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   compiled_functions.clear();
   function_indices_by_node_.clear();
   class_method_indices_by_node_.clear();
-  struct_method_indices_by_node_.clear();
+	struct_method_indices_by_node_.clear();
+	trait_method_indices_by_node_.clear();
   lambda_indices_by_node_.clear();
   top_level_function_indices_by_name_.clear();
   top_level_struct_names_.clear();
@@ -206,11 +207,22 @@ std::string typeName = impl.typeName ? impl.typeName->symbol : "";
 for (const auto &method : impl.funcs) {
 if (!method || !method->name) continue;
 impl_method_nodes_.insert(method.get());
-impl_method_type_names_[method.get()] = typeName;
-function_indices_by_node_[method.get()] = next_function_index++;
-}
-}
-      continue;
+			impl_method_type_names_[method.get()] = typeName;
+				function_indices_by_node_[method.get()] = next_function_index++;
+			}
+		}
+		// Reserve function indices for protocol/trait default method bodies
+		// that will be injected into conforming types (per TypeChecker).
+		if (statement &&
+			(statement->kind == ast::NodeType::ProtocolDeclaration ||
+			 statement->kind == ast::NodeType::TraitDeclaration)) {
+			for (const auto &injection : type_check_result_.defaultInjections) {
+				if (!injection.defaultBody || !injection.defaultBody->defaultBody) continue;
+				if (trait_method_indices_by_node_.count(injection.defaultBody) > 0) continue;
+				trait_method_indices_by_node_[injection.defaultBody] = next_function_index++;
+			}
+		}
+		continue;
     }
     if (!fnDecl->name) {
       COMPILER_THROW("Function declaration missing name");
@@ -296,18 +308,28 @@ function_indices_by_node_[method.get()] = next_function_index++;
     }
   }
 
-  for (const auto *lambda : declared_lambdas) {
-    if (!lambda) {
-      continue;
-    }
-    compileLambda(*lambda);
-  }
+	for (const auto *lambda : declared_lambdas) {
+		if (!lambda) {
+			continue;
+		}
+		compileLambda(*lambda);
+	}
+
+	// Compile default method bodies from protocol conformance checking.
+	// These are trait/protocol default implementations injected into conforming types.
+	for (const auto &injection : type_check_result_.defaultInjections) {
+		if (!injection.defaultBody || !injection.defaultBody->defaultBody) continue;
+		auto index_it = trait_method_indices_by_node_.find(injection.defaultBody);
+		if (index_it == trait_method_indices_by_node_.end()) continue;
+		compileDefaultMethodBody(injection.typeName, injection.methodName,
+								 *injection.defaultBody);
+	}
 
   // Compute max local slot from resolver's main_local_count
   uint32_t max_slot = lexical_resolution_.main_local_count;
 
-  enterFunction(BytecodeFunction("__main__", 0, max_slot), main_function_index);
-next_local_index = max_slot;
+	enterFunction(BytecodeFunction("__main__", 0, max_slot), main_function_index);
+	next_local_index = max_slot;
 
 const ast::Statement *lastRegularStmt = nullptr;
 for (auto it = program.body.rbegin(); it != program.body.rend(); ++it) {
@@ -427,9 +449,9 @@ for (const auto &statement : program.body) {
     if (lastStmtIsExpr && statement.get() == lastRegularStmt) {
         exitTailPosition();
     }
-}
+	}
 
-if (lastStmtIsExpr) {
+	if (lastStmtIsExpr) {
     if (!wasTailCall()) {
         emit(OpCode::RETURN);
     }
@@ -1185,9 +1207,151 @@ void ByteCompiler::compileStructMethod(
     current_function->is_generator = functionContainsYield(*method.body);
   }
 
-  current_class_name_ = prev_class_name;
-  
-  leaveFunction();
+	current_class_name_ = prev_class_name;
+
+	leaveFunction();
+}
+
+void ByteCompiler::compileDefaultMethodBody(
+	const std::string &type_name, const std::string &method_name,
+	const ast::TraitMethod &traitMethod) {
+	auto index_it = trait_method_indices_by_node_.find(&traitMethod);
+	if (index_it == trait_method_indices_by_node_.end()) {
+		COMPILER_THROW("Missing function index for default method: " + method_name);
+	}
+
+	// Default method bodies are instance methods: self at slot 0
+	const uint32_t param_count =
+		static_cast<uint32_t>(traitMethod.parameters.size() + 1);
+
+	uint32_t max_slot = param_count;
+	auto local_it = lexical_resolution_.trait_method_local_counts.find(&traitMethod);
+	if (local_it != lexical_resolution_.trait_method_local_counts.end()) {
+		if (local_it->second > max_slot) {
+			max_slot = local_it->second;
+		}
+	}
+
+	std::vector<std::string> param_names;
+	param_names.reserve(traitMethod.parameters.size() + 1);
+	param_names.push_back("self");
+	for (const auto &param : traitMethod.parameters) {
+		if (param && param->pattern) {
+			param_names.push_back(extractParamName(*param));
+		} else {
+			param_names.push_back("_");
+		}
+	}
+
+	BytecodeFunction bf(type_name + "." + method_name, param_count, max_slot);
+	bf.param_names = std::move(param_names);
+	bf.source_line = traitMethod.line;
+
+	enterFunction(std::move(bf), index_it->second);
+	next_local_index = max_slot;
+
+	// Store self (slot 0) into global "this" for @field access
+	{
+		uint32_t this_id = addStringConstant("this");
+		emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+		emit(OpCode::STORE_GLOBAL, Value::makeStringValId(this_id));
+	}
+
+	// Bind user parameters to slots 1..N (slot 0 is self)
+	for (size_t i = 0; i < traitMethod.parameters.size(); ++i) {
+		const auto &param = traitMethod.parameters[i];
+		if (!param || !param->pattern) {
+			COMPILER_THROW("Default method parameter missing pattern");
+		}
+		const uint32_t method_param_slot = static_cast<uint32_t>(i + 1);
+		compileParameterPattern(*param->pattern, method_param_slot);
+		if (param->isVariadic) {
+			current_function->variadic_param_index = method_param_slot;
+		}
+	}
+
+	if (traitMethod.defaultBody) {
+		const auto &stmts = traitMethod.defaultBody->body;
+		if (!stmts.empty()) {
+			for (size_t i = 0; i < stmts.size() - 1; i++) {
+				if (stmts[i]) {
+					compileStatement(*stmts[i]);
+				}
+			}
+
+			const auto &lastStmt = stmts.back();
+			if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
+				const auto &exprStmt =
+					static_cast<const ast::ExpressionStatement &>(*lastStmt);
+				if (exprStmt.expression) {
+					enterTailPosition();
+					clearTailCallFlag();
+					compileExpression(*exprStmt.expression);
+					exitTailPosition();
+					if (!wasTailCall()) {
+						emit(OpCode::RETURN);
+					}
+				} else {
+					emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+					emit(OpCode::RETURN);
+				}
+			} else if (lastStmt &&
+					   lastStmt->kind == ast::NodeType::ReturnStatement) {
+				enterTailPosition();
+				compileStatement(*lastStmt);
+				exitTailPosition();
+			} else if (lastStmt) {
+				enterTailPosition();
+				clearTailCallFlag();
+				compileStatement(*lastStmt);
+				exitTailPosition();
+				if (!wasTailCall()) {
+					emit(OpCode::RETURN);
+				}
+			} else {
+				emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+				emit(OpCode::RETURN);
+			}
+		} else {
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+			emit(OpCode::RETURN);
+		}
+	} else {
+		emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+		emit(OpCode::RETURN);
+	}
+
+	if (traitMethod.defaultBody) {
+		current_function->is_generator = functionContainsYield(*traitMethod.defaultBody);
+	}
+
+	leaveFunction();
+}
+
+void ByteCompiler::emitDefaultMethodInjections(const std::string &type_name, bool is_struct) {
+	const char *methodHostFn = is_struct ? "struct.method" : "class.method";
+
+	for (const auto &injection : type_check_result_.defaultInjections) {
+		if (injection.typeName != type_name) continue;
+		if (!injection.defaultBody || !injection.defaultBody->defaultBody) continue;
+
+		auto index_it = trait_method_indices_by_node_.find(injection.defaultBody);
+		if (index_it == trait_method_indices_by_node_.end()) continue;
+
+		{
+			uint32_t strId = addStringConstant(methodHostFn);
+			emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+		}
+		uint32_t type_name_sid = addStringConstant(type_name);
+		emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(type_name_sid));
+		{
+			uint32_t _sid = addStringConstant(injection.methodName);
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+		}
+		emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(index_it->second)));
+		emit(OpCode::CALL, Value::makeInt(3));
+		emit(OpCode::POP);
+	}
 }
 
 // Compile a parameter pattern - extracts fields from parameter into locals
@@ -1995,13 +2159,32 @@ case ast::NodeType::TryExpression:
          addConstant(Value::makeStringValId(method_name_sid)));
     emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(
                                   method_index_it->second)));
-      emit(OpCode::CALL, Value::makeInt(3));
-      emit(OpCode::POP);
-    }
-    break;
-  }
+		emit(OpCode::CALL, Value::makeInt(3));
+		emit(OpCode::POP);
+	}
+	// Register default method bodies from protocol conformance
+	emitDefaultMethodInjections(structDecl.name, true);
+	// Register inline protocol conformance: prot.impl(protocolName, structName)
+	for (const auto &protName : structDecl.protocolNames) {
+		{
+			uint32_t strId = addStringConstant("prot.impl");
+			emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+		}
+		{
+			uint32_t _sid = addStringConstant(protName);
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+		}
+		{
+			uint32_t _sid = addStringConstant(structDecl.name);
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+		}
+		emit(OpCode::CALL, Value::makeInt(2));
+		emit(OpCode::POP);
+	}
+	break;
+}
 
-  case ast::NodeType::ClassDeclaration: {
+case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =
         static_cast<const ast::ClassDeclaration &>(statement);
  // Runtime registration: class.define("Name", ["field1", ...], parent, ["@@class_field1", ...])
@@ -2077,11 +2260,30 @@ case ast::NodeType::TryExpression:
  addConstant(Value::makeStringValId(method_name_sid)));
  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(
  method_index_it->second)));
- emit(OpCode::CALL, Value::makeInt(3));
- emit(OpCode::POP);
- }
-    break;
-  }
+		emit(OpCode::CALL, Value::makeInt(3));
+		emit(OpCode::POP);
+	}
+	// Register default method bodies from protocol conformance
+	emitDefaultMethodInjections(classDecl.name, false);
+	// Register inline protocol conformance: prot.impl(protocolName, className)
+	for (const auto &protName : classDecl.protocolNames) {
+		{
+			uint32_t strId = addStringConstant("prot.impl");
+			emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+		}
+		{
+			uint32_t _sid = addStringConstant(protName);
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+		}
+		{
+			uint32_t _sid = addStringConstant(classDecl.name);
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+		}
+		emit(OpCode::CALL, Value::makeInt(2));
+		emit(OpCode::POP);
+	}
+	break;
+}
 
 case ast::NodeType::EnumDeclaration: {
         const auto &enumDecl = static_cast<const ast::EnumDeclaration &>(statement);
@@ -2113,17 +2315,57 @@ case ast::NodeType::EnumDeclaration: {
         break;
     }
 
-    case ast::NodeType::TraitDeclaration: {
-      const auto &traitDecl =
-          static_cast<const ast::TraitDeclaration &>(statement);
-      break;
-    }
+	case ast::NodeType::TraitDeclaration: {
+		const auto &traitDecl =
+			static_cast<const ast::TraitDeclaration &>(statement);
+		// Emit prot.register(name, method1, method2, ...)
+		{
+			uint32_t strId = addStringConstant("prot.register");
+			emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+		}
+		{
+			uint32_t _sid = addStringConstant(traitDecl.name ? traitDecl.name->symbol : "");
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+		}
+		for (const auto &method : traitDecl.methods) {
+			if (!method || !method->name) continue;
+			uint32_t _sid = addStringConstant(method->name->symbol);
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+		}
+		emit(OpCode::CALL, Value(static_cast<uint32_t>(1 + traitDecl.methods.size())));
+		// Store protocol as a global so "s is Measurable" resolves the name
+		{
+			uint32_t strId = addStringConstant(traitDecl.name ? traitDecl.name->symbol : "");
+			emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+		}
+		break;
+	}
 
-    case ast::NodeType::ProtocolDeclaration: {
-      const auto &protDecl =
-          static_cast<const ast::ProtocolDeclaration &>(statement);
-      break;
-    }
+	case ast::NodeType::ProtocolDeclaration: {
+		const auto &protDecl =
+			static_cast<const ast::ProtocolDeclaration &>(statement);
+		// Emit prot.register(name, method1, method2, ...)
+		{
+			uint32_t strId = addStringConstant("prot.register");
+			emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+		}
+		{
+			uint32_t _sid = addStringConstant(protDecl.name ? protDecl.name->symbol : "");
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+		}
+		for (const auto &method : protDecl.methods) {
+			if (!method || !method->name) continue;
+			uint32_t _sid = addStringConstant(method->name->symbol);
+			emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+		}
+		emit(OpCode::CALL, Value(static_cast<uint32_t>(1 + protDecl.methods.size())));
+		// Store protocol as a global so "s is Measurable" resolves the name
+		{
+			uint32_t strId = addStringConstant(protDecl.name ? protDecl.name->symbol : "");
+			emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+		}
+		break;
+	}
 
 case ast::NodeType::ImplDeclaration: {
       const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
@@ -2148,13 +2390,28 @@ case ast::NodeType::ImplDeclaration: {
         // Load function
         emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(index_it->second)));
         // Call struct.method / class.method(typeObj, methodName, funcObj)
-        emit(OpCode::CALL, Value::makeInt(3));
-        emit(OpCode::POP);
-      }
-      break;
-    }
+		emit(OpCode::CALL, Value::makeInt(3));
+		emit(OpCode::POP);
+	}
+	// Register protocol conformance: prot.impl(protocolName, typeName)
+	{
+		uint32_t strId = addStringConstant("prot.impl");
+		emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+	}
+	{
+		uint32_t _sid = addStringConstant(traitName);
+		emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+	}
+	{
+		uint32_t _sid = addStringConstant(typeName);
+		emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid)));
+	}
+	emit(OpCode::CALL, Value::makeInt(2));
+	emit(OpCode::POP);
+	break;
+}
 
-  case ast::NodeType::UseStatement: {
+case ast::NodeType::UseStatement: {
     compileUseStatement(static_cast<const ast::UseStatement &>(statement));
     break;
   }

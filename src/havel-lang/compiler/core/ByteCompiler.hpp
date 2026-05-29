@@ -116,9 +116,13 @@ void optimizeJumps();  // Jump threading optimization
   const ast::ClassMethodDef &method,
   const std::vector<ast::ClassFieldDef> &fields,
   const std::string &parent_class_name);
-  void compileStructMethod(const std::string &struct_name,
-  const ast::StructMethodDef &method,
-  const std::vector<ast::StructFieldDef> &fields);
+	void compileStructMethod(const std::string &struct_name,
+		const ast::StructMethodDef &method,
+		const std::vector<ast::StructFieldDef> &fields);
+	void compileDefaultMethodBody(const std::string &type_name,
+		const std::string &method_name,
+		const ast::TraitMethod &traitMethod);
+	void emitDefaultMethodInjections(const std::string &type_name, bool is_struct);
   void compileParameterPattern(const ast::Expression &pattern,
                                uint32_t paramIndex);
   void compileParameterPatternValue(const ast::Expression &pattern);
@@ -210,8 +214,10 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
       function_indices_by_node_;
   std::unordered_map<const ast::ClassMethodDef *, uint32_t>
   class_method_indices_by_node_;
-  std::unordered_map<const ast::StructMethodDef *, uint32_t>
-  struct_method_indices_by_node_;
+	std::unordered_map<const ast::StructMethodDef *, uint32_t>
+		struct_method_indices_by_node_;
+	std::unordered_map<const ast::TraitMethod *, uint32_t>
+		trait_method_indices_by_node_;
   std::unordered_map<const ast::LambdaExpression *, uint32_t>
       lambda_indices_by_node_;
   std::optional<uint32_t> current_function_slot_;

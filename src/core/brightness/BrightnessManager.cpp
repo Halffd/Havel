@@ -1154,11 +1154,10 @@ bool BrightnessManager::setBrightness(double brightness) {
 
 // === BRIGHTNESS GETTERS ===
 double BrightnessManager::getBrightness() {
-  // Get brightness from primary/first monitor
-  auto monitors = getConnectedMonitors();
-  if (monitors.empty())
-    return 0.0;
-  return getBrightness(monitors[0]);
+	auto monitors = getConnectedMonitors();
+	if (monitors.empty()) return 1.0;
+	if (primaryMonitor.empty()) primaryMonitor = monitors[0];
+	return getBrightness(monitors[0]);
 }
 
 double BrightnessManager::getBrightness(int monitorIndex) {
@@ -1168,21 +1167,31 @@ double BrightnessManager::getBrightness(int monitorIndex) {
   return getBrightness(monitorName);
 }
 double BrightnessManager::getBrightness(const std::string &monitor) {
-  if (WindowManagerDetector::IsX11()) {
-    return getBrightnessGamma(monitor);
-  }
+	if (WindowManagerDetector::IsX11()) {
+		double xrandr_val = getBrightnessXrandr(monitor);
+		if (xrandr_val >= 0.0) return xrandr_val;
+
+		double gamma_val = getBrightnessGamma(monitor);
+		if (gamma_val > 0.0) return gamma_val;
+
+		double sysfs_val = getBrightnessSysfs(monitor);
+		if (sysfs_val > 0.0) return sysfs_val;
+
+		auto it = brightness.find(monitor);
+		if (it != brightness.end()) return it->second;
+
+		return 1.0;
+	}
 #ifdef __WAYLAND__
-  else if (WindowManagerDetector::IsWayland()) {
-    // Wayland doesn't have a direct brightness query API
-    // We'd need to track our last-set values or use sysfs
-    auto it = brightness.find(monitor);
-    if (it != brightness.end()) {
-      return it->second;
-    }
-    return 1.0; // Default
-  }
+	else if (WindowManagerDetector::IsWayland()) {
+		auto it = brightness.find(monitor);
+		if (it != brightness.end()) {
+			return it->second;
+		}
+		return 1.0;
+	}
 #endif
-  return 0.0;
+	return 0.0;
 }
 
 // === GAMMA GETTERS ===
@@ -1334,7 +1343,49 @@ double BrightnessManager::getBrightnessSysfs(const std::string &monitor) {
     }
   }
 
-  return 0.0; // Couldn't read
+	return 0.0; // Couldn't read
+}
+
+double BrightnessManager::getBrightnessXrandr(const std::string &monitor) {
+	if (!getX11Display()) return -1.0;
+
+	DisplayManager::MonitorInfo monitorInfo = DisplayManager::GetMonitorByName(monitor);
+	if (monitorInfo.id == 0) return -1.0;
+
+	const char *property_names[] = {"Brightness", "brightness", "BACKLIGHT", "Backlight", nullptr};
+	for (int i = 0; property_names[i] != nullptr; i++) {
+		Atom prop_atom = XInternAtom(getX11Display(), property_names[i], x11::XFalse);
+		if (prop_atom == x11::XNone) continue;
+
+		XRRPropertyInfo *prop_info = XRRQueryOutputProperty(getX11Display(), monitorInfo.id, prop_atom);
+		if (!prop_info) continue;
+
+		if (prop_info->num_values >= 2) {
+			long min_val = prop_info->values[0];
+			long max_val = prop_info->values[1];
+
+			Atom actual_type;
+			int actual_format;
+			unsigned long nitems, bytes_after;
+			unsigned char *prop_data = nullptr;
+
+			if (XRRGetOutputProperty(getX11Display(), monitorInfo.id, prop_atom,
+				0, ~0, x11::XFalse, x11::XFalse, x11::XNone,
+				&actual_type, &actual_format, &nitems, &bytes_after, &prop_data) == 0 && prop_data) {
+				if (actual_format == 32 && nitems >= 1) {
+					long raw_value = *(long *)prop_data;
+					double normalized = (double)(raw_value - min_val) / (double)(max_val - min_val);
+					XFree(prop_data);
+					XFree(prop_info);
+					return std::clamp(normalized, 0.0, 2.0);
+				}
+				XFree(prop_data);
+			}
+		}
+		XFree(prop_info);
+	}
+
+	return -1.0;
 }
 
 // === X11 GAMMA GETTER ===
@@ -1454,25 +1505,39 @@ BrightnessManager::getGammaXrandrRGB(const std::string &monitor) {
   return {1.0, 1.0, 1.0};
 }
 bool BrightnessManager::increaseBrightness(double amount) {
-  double newBrightness = std::min(1.0, brightness[primaryMonitor] + amount);
-  return setBrightness(newBrightness);
+	if (primaryMonitor.empty()) {
+		auto monitors = getConnectedMonitors();
+		if (monitors.empty()) return false;
+		primaryMonitor = monitors[0];
+	}
+	double current = getBrightness(primaryMonitor);
+	double newBrightness = std::min(1.0, current + amount);
+	return setBrightness(newBrightness);
 }
 
 bool BrightnessManager::increaseBrightness(const std::string &monitor,
-                                           double amount) {
-  double newBrightness = std::min(1.0, brightness[monitor] + amount);
-  return setBrightness(monitor, newBrightness);
+	double amount) {
+	double current = getBrightness(monitor);
+	double newBrightness = std::min(1.0, current + amount);
+	return setBrightness(monitor, newBrightness);
 }
 
 bool BrightnessManager::decreaseBrightness(double amount) {
-  double newBrightness = std::max(0.0, brightness[primaryMonitor] - amount);
-  return setBrightness(newBrightness);
+	if (primaryMonitor.empty()) {
+		auto monitors = getConnectedMonitors();
+		if (monitors.empty()) return false;
+		primaryMonitor = monitors[0];
+	}
+	double current = getBrightness(primaryMonitor);
+	double newBrightness = std::max(0.0, current - amount);
+	return setBrightness(newBrightness);
 }
 
 bool BrightnessManager::decreaseBrightness(const std::string &monitor,
-                                           double amount) {
-  double newBrightness = std::max(0.0, brightness[monitor] - amount);
-  return setBrightness(monitor, newBrightness);
+	double amount) {
+	double current = getBrightness(monitor);
+	double newBrightness = std::max(0.0, current - amount);
+	return setBrightness(monitor, newBrightness);
 }
 
 // === TEMPERATURE INCREMENT METHODS (CONTINUED) ===

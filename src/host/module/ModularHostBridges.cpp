@@ -5330,11 +5330,10 @@ DisplayBridge::handleGetMonitors(const std::vector<Value> &args,
   auto arr = vm->createHostArray();
   auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
 
-  for (const auto &mon : monitors) {
-    auto obj = vm->createHostObject();
-    // TODO: string pool integration - for now return null for name
-    (void)mon.name;
-    vm->setHostObjectField(obj, "name", Value::makeNull());
+    for (const auto &mon : monitors) {
+        auto obj = vm->createHostObject();
+        auto nameRef = vm->createRuntimeString(mon.name);
+        vm->setHostObjectField(obj, "name", Value::makeStringId(nameRef.id));
     vm->setHostObjectField(obj, "x",
                            Value::makeInt(static_cast<int64_t>(mon.x)));
     vm->setHostObjectField(obj, "y",
@@ -5360,11 +5359,10 @@ DisplayBridge::handleGetPrimary(const std::vector<Value> &args,
   if (!vm)
     return Value::makeNull();
 
-  auto mon = ::havel::DisplayManager::GetPrimaryMonitor();
-  auto obj = vm->createHostObject();
-  // TODO: string pool integration - for now return null for name
-  (void)mon.name;
-  vm->setHostObjectField(obj, "name", Value::makeNull());
+    auto mon = ::havel::DisplayManager::GetPrimaryMonitor();
+    auto obj = vm->createHostObject();
+    auto nameRef = vm->createRuntimeString(mon.name);
+    vm->setHostObjectField(obj, "name", Value::makeStringId(nameRef.id));
   vm->setHostObjectField(obj, "x", Value::makeInt(static_cast<int64_t>(mon.x)));
   vm->setHostObjectField(obj, "y", Value::makeInt(static_cast<int64_t>(mon.y)));
   vm->setHostObjectField(obj, "width",

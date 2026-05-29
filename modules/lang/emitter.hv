@@ -49,7 +49,7 @@ fn parseOct(s) {
 
 
 fn Emitter() {
- {scope: null, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}}
+ {scope: null, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}, structNames: {}}
 
 }
 fn emitError(msg, line, col) {
@@ -66,20 +66,20 @@ fn globalIdx(emitter, name) {
 
 }
 fn emitLoadVar(emitter, name) {
-        resolved = scopeResolve(emitter.scope, name)
-        if resolved != null {
-            if resolved.kind == "local" {
-                bc.emit("LOAD_VAR", resolved.index)
-                return
-            }
-            if resolved.kind == "upvalue" {
-                bc.emit("LOAD_UPVALUE", resolved.index)
-                return
-            }
-        }
-        bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, name)))
-
+  resolved = scopeResolve(emitter.scope, name)
+  if resolved != null {
+    if resolved.kind == "local" {
+      bc.emit("LOAD_VAR", resolved.index)
+      return
     }
+    if resolved.kind == "upvalue" {
+      bc.emit("LOAD_UPVALUE", resolved.index)
+      return
+    }
+  }
+  bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, name)))
+
+}
 fn emitStoreVar(emitter, name) {
   resolved = scopeResolve(emitter.scope, name)
   if resolved != null {
@@ -202,8 +202,8 @@ fn emitExpr(emitter, node) {
         return
 
     }
-    if k == "Identifier" {
-        emitLoadVar(emitter, node.name)
+  if k == "Identifier" {
+    emitLoadVar(emitter, node.name)
         return
 
     }
@@ -304,51 +304,97 @@ return
     return
 
   }
-    if k == "UpdateExpression" {
-        target = node.operand
-        if target.kind == "Identifier" {
-            if node.oper == "++" {
-                if node.prefix {
-                    emitLoadVar(emitter, target.name)
-                    bc.emit("LOAD_CONST", bc.add_const(1))
-                    bc.emit("ADD")
-                    bc.emit("DUP")
-                    emitStoreVar(emitter, target.name)
-                }
-                else {
-                    emitLoadVar(emitter, target.name)
-                    bc.emit("DUP")
-                    bc.emit("LOAD_CONST", bc.add_const(1))
-                    bc.emit("ADD")
-                    emitStoreVar(emitter, target.name)
-                }
-                return
-            }
-            if node.oper == "--" {
-                if node.prefix {
-                    emitLoadVar(emitter, target.name)
-                    bc.emit("LOAD_CONST", bc.add_const(1))
-                    bc.emit("SUB")
-                    bc.emit("DUP")
-                    emitStoreVar(emitter, target.name)
-                }
-                else {
-                    emitLoadVar(emitter, target.name)
-                    bc.emit("DUP")
-                    bc.emit("LOAD_CONST", bc.add_const(1))
-                    bc.emit("SUB")
-                    emitStoreVar(emitter, target.name)
-                }
-                return
-            }
-            emitError("unknown update op: " + node.oper, node.line, node.col)
-            return
-        }
-        emitError("unsupported update target: " + target.kind, node.line, node.col)
-        return
-
+if k == "UpdateExpression" {
+  target = node.operand
+  if target.kind == "Identifier" {
+    if node.oper == "++" {
+      if node.prefix {
+        emitLoadVar(emitter, target.name)
+        bc.emit("LOAD_CONST", bc.add_const(1))
+        bc.emit("ADD")
+        bc.emit("DUP")
+        emitStoreVar(emitter, target.name)
+      }
+      else {
+        emitLoadVar(emitter, target.name)
+        bc.emit("DUP")
+        bc.emit("LOAD_CONST", bc.add_const(1))
+        bc.emit("ADD")
+        emitStoreVar(emitter, target.name)
+      }
+      return
     }
-    if k == "CallExpression" {
+    if node.oper == "--" {
+      if node.prefix {
+        emitLoadVar(emitter, target.name)
+        bc.emit("LOAD_CONST", bc.add_const(1))
+        bc.emit("SUB")
+        bc.emit("DUP")
+        emitStoreVar(emitter, target.name)
+      }
+      else {
+        emitLoadVar(emitter, target.name)
+        bc.emit("DUP")
+        bc.emit("LOAD_CONST", bc.add_const(1))
+        bc.emit("SUB")
+        emitStoreVar(emitter, target.name)
+      }
+      return
+    }
+    emitError("unknown update op: " + node.oper, node.line, node.col)
+    return
+  }
+  if target.kind == "AtExpression" {
+    fname = target.field
+    if fname.kind == "Identifier" { fname = fname.name }
+    isIncrement = node.oper == "++"
+    // Load self.field
+    bc.emit("LOAD_VAR", 0)
+    keyIdx = bc.add_string(fname)
+    bc.emit("LOAD_CONST", keyIdx)
+    bc.emit("OBJECT_GET")
+    bc.emit("LOAD_CONST", bc.add_const(1))
+    bc.emit(isIncrement ? "ADD" : "SUB")
+    bc.emit("DUP")
+    // Store back: [self, value, key] for OBJECT_SET
+    tempVal = scopeLocalCount(emitter.scope)
+    emitter.scope.count = emitter.scope.count + 1
+    bc.emit("STORE_VAR", tempVal)
+    bc.emit("LOAD_VAR", 0)
+    bc.emit("LOAD_VAR", tempVal)
+    keyIdx2 = bc.add_string(fname)
+    bc.emit("LOAD_CONST", keyIdx2)
+    bc.emit("OBJECT_SET")
+    bc.emit("POP")
+    bc.emit("LOAD_VAR", tempVal)
+    return
+  }
+  if target.kind == "MemberExpression" {
+    isIncrement = node.oper == "++"
+    // obj.field++ → load obj, get field, +1, store back
+    emitExpr(emitter, target.obj)
+    bc.emit("DUP")
+    keyIdx = bc.add_string(target.property)
+    bc.emit("LOAD_CONST", keyIdx)
+    bc.emit("OBJECT_GET")
+    bc.emit("LOAD_CONST", bc.add_const(1))
+    bc.emit(isIncrement ? "ADD" : "SUB")
+    // Store: [obj, value, key]
+    tempVal = scopeLocalCount(emitter.scope)
+    emitter.scope.count = emitter.scope.count + 1
+    bc.emit("STORE_VAR", tempVal)
+    bc.emit("LOAD_VAR", tempVal)
+    keyIdx2 = bc.add_string(target.property)
+    bc.emit("LOAD_CONST", keyIdx2)
+    bc.emit("OBJECT_SET")
+    bc.emit("POP")
+    bc.emit("LOAD_VAR", tempVal)
+    return
+  }
+  emitError("unsupported update target: " + target.kind, node.line, node.col)
+  return
+}
+if k == "CallExpression" {
         callee = node.callee
         argc = #node.args
         if callee.kind == "MemberExpression" {
@@ -360,10 +406,14 @@ return
             bc.emit("CALL_METHOD", bc.str_id(propIdx), argc)
             return
         }
- if callee.kind == "Identifier" {
- if emitter.classNames[callee.name] != null {
- sid = globalIdx(emitter, "class.new")
- bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+if callee.kind == "Identifier" {
+    if emitter.classNames[callee.name] != null {
+      newFn = "class.new"
+      if emitter.structNames[callee.name] != null {
+        newFn = "struct.new"
+      }
+      sid = globalIdx(emitter, newFn)
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
  nameIdx = bc.add_string(callee.name)
  bc.emit("LOAD_CONST", nameIdx)
  for arg in node.args {
@@ -1725,21 +1775,24 @@ fn emitMatchExpr(emitter, node) {
   emitExpr(emitter, node.subject)
   subjectIdx = scopeDeclare(emitter.scope, "_match_subject")
   bc.emit("STORE_VAR", subjectIdx)
+  // Match result accumulator slot
+  matchSlot = scopeDeclare(emitter.scope, "_match_result")
   // Compile each case
   caseJumps = []
   for c in node.cases {
-    // Load subject for comparison
-    bc.emit("LOAD_VAR", subjectIdx)
-    // Compile pattern match — result is bool on stack
-    emitPatternMatch(emitter, c.pattern, subjectIdx)
+    // Initialize match slot to true
+    bc.emit("LOAD_CONST", bc.add_const(true))
+    bc.emit("STORE_VAR", matchSlot)
+    // Compile pattern match — ANDs result into matchSlot
+    emitPatternMatch(emitter, c.pattern, subjectIdx, matchSlot)
+    // Check if all patterns matched
+    bc.emit("LOAD_VAR", matchSlot)
     // If pattern doesn't match, jump to next case
     failJump = bc.emit("JUMP_IF_FALSE", 0)
-    bc.emit("POP")
     // Check guard if present
     if c.guard != null {
       emitExpr(emitter, c.guard)
       guardFailJump = bc.emit("JUMP_IF_FALSE", 0)
-      bc.emit("POP")
       // Emit result
       if c.body != null {
         if c.body.kind == "BlockStatement" {
@@ -1773,17 +1826,17 @@ fn emitMatchExpr(emitter, node) {
     // Patch pattern failure jump to next case
     bc.patch_jump(failJump, bc.instr_count())
   }
- // Default case
- if node.defaultCase != null {
- if node.defaultCase.kind == "BlockStatement" {
- emitBlockWithReturn(emitter, node.defaultCase)
- } else {
- emitExpr(emitter, node.defaultCase)
- }
- } else {
- bc.emit("PUSH_NULL")
- }
- // Patch all case jumps to end
+  // Default case
+  if node.defaultCase != null {
+    if node.defaultCase.kind == "BlockStatement" {
+      emitBlockWithReturn(emitter, node.defaultCase)
+    } else {
+      emitExpr(emitter, node.defaultCase)
+    }
+  } else {
+    bc.emit("PUSH_NULL")
+  }
+  // Patch all case jumps to end
   endTarget = bc.instr_count()
   for j in caseJumps {
     bc.patch_jump(j, endTarget)
@@ -1791,51 +1844,110 @@ fn emitMatchExpr(emitter, node) {
 
 }
 
-fn emitPatternMatch(emitter, pattern, subjectIdx) {
-  // Emits code that pushes bool: does the subject match the pattern?
+fn emitPatternMatch(emitter, pattern, subjectIdx, matchSlot) {
   if pattern == null {
-    // Wildcard — always matches
-    bc.emit("LOAD_CONST", bc.add_const(1))
-    bc.emit("TO_BOOL")
     return
   }
   k = pattern.kind
-    if k == "Identifier" {
-        // Literal match: subject == pattern_value
-        // Or bind: always matches and stores subject in variable
-        bc.emit("LOAD_VAR", subjectIdx)
-        bc.emit("LOAD_VAR", subjectIdx)
-        bc.emit("LOAD_CONST", bc.add_const(0))
-        bc.emit("TO_BOOL")
-        return
-    }
+  if k == "Identifier" {
+    // Bind variable: always matches, store subject value
+    bindSlot = scopeDeclare(emitter.scope, pattern.name)
+    bc.emit("LOAD_VAR", subjectIdx)
+    bc.emit("STORE_VAR", bindSlot)
+    return
+  }
   if k == "NumberLiteral" {
+    bc.emit("LOAD_VAR", matchSlot)
     bc.emit("LOAD_VAR", subjectIdx)
     emitExpr(emitter, pattern)
     bc.emit("EQ")
+    bc.emit("AND")
+    bc.emit("STORE_VAR", matchSlot)
     return
   }
   if k == "StringLiteral" {
+    bc.emit("LOAD_VAR", matchSlot)
     bc.emit("LOAD_VAR", subjectIdx)
     emitExpr(emitter, pattern)
     bc.emit("EQ")
+    bc.emit("AND")
+    bc.emit("STORE_VAR", matchSlot)
     return
   }
   if k == "BooleanLiteral" {
+    bc.emit("LOAD_VAR", matchSlot)
     bc.emit("LOAD_VAR", subjectIdx)
     emitExpr(emitter, pattern)
     bc.emit("EQ")
+    bc.emit("AND")
+    bc.emit("STORE_VAR", matchSlot)
     return
   }
   if k == "NullLiteral" {
+    bc.emit("LOAD_VAR", matchSlot)
     bc.emit("LOAD_VAR", subjectIdx)
     emitExpr(emitter, pattern)
     bc.emit("EQ")
+    bc.emit("AND")
+    bc.emit("STORE_VAR", matchSlot)
     return
   }
-    // Default: always match
-    bc.emit("LOAD_CONST", bc.add_const(1))
-    bc.emit("TO_BOOL")
+  if k == "ConstructorPattern" || k == "CallExpression" {
+    ctorName = pattern.name
+    if ctorName == null && pattern.callee != null {
+      ctorName = pattern.callee.name
+    }
+    // Get args list — avoid if/else scoping by using ternary-like approach
+    ctorArgs = pattern.args != null ? pattern.args : (pattern.params != null ? pattern.params : [])
+    // Check subject.tag == constructor name
+    // matchSlot = matchSlot AND (subject.tag == ctorName)
+    bc.emit("LOAD_VAR", matchSlot)
+    bc.emit("LOAD_VAR", subjectIdx)
+    tagIdx = bc.add_string("tag")
+    bc.emit("LOAD_CONST", tagIdx)
+    bc.emit("OBJECT_GET")
+    nameIdx = bc.add_string(ctorName)
+    bc.emit("LOAD_CONST", nameIdx)
+    bc.emit("EQ")
+    bc.emit("AND")
+    bc.emit("STORE_VAR", matchSlot)
+    // Extract and bind each argument by position
+    fnames = ["value", "error", "message"]
+    lim = #ctorArgs
+    ai = 0
+    while ai < lim {
+      arg = ctorArgs[ai]
+      if arg != null {
+        if arg.kind != "WildcardPattern" {
+          fn = fnames[ai]
+          if fn == null { fn = "field" + str(ai) }
+          // Get field from subject
+          bc.emit("LOAD_VAR", subjectIdx)
+          fidx = bc.add_string(fn)
+          bc.emit("LOAD_CONST", fidx)
+          bc.emit("OBJECT_GET")
+          if arg.kind == "Identifier" {
+            bindSlot = scopeDeclare(emitter.scope, arg.name)
+            bc.emit("STORE_VAR", bindSlot)
+          }
+          else {
+            bc.emit("LOAD_VAR", matchSlot)
+            bc.emit("LOAD_VAR", subjectIdx)
+            fidx2 = bc.add_string(fn)
+            bc.emit("LOAD_CONST", fidx2)
+            bc.emit("OBJECT_GET")
+            emitExpr(emitter, arg)
+            bc.emit("EQ")
+            bc.emit("AND")
+            bc.emit("STORE_VAR", matchSlot)
+          }
+        }
+      }
+      ai = ai + 1
+    }
+    return
+  }
+  // Default: always match (no change to matchSlot)
 
 }
 // ============================================================
@@ -1935,8 +2047,10 @@ fn emitClassMethodRegister(emitter, className, method) {
   bc.emit("LOAD_CONST", mnameIdx)
   // Instance methods get 'self' at slot 0, class methods (@@) don't
   isClassMethod = method.isClassMethod != null && method.isClassMethod
+  chunkIdx = -1
   if isClassMethod {
     result = compileFuncDecl(emitter, method.name, method.params, method.body, -1, method.line, false)
+    chunkIdx = result[1]
   }
   else {
     selfParam = {name: "self", "default": null}
@@ -1944,14 +2058,10 @@ fn emitClassMethodRegister(emitter, className, method) {
     for p in method.params {
       methodParams.push(p)
     }
-    print("DEBUG: registering method " + method.name + " params=" + str(#methodParams))
     result = compileFuncDecl(emitter, method.name, methodParams, method.body, -1, method.line, true)
-    print("DEBUG: result=" + str(result) + " type=" + str(type(result)))
+    chunkIdx = result[1]
   }
-  chunkIdx = result[1]
-  print("DEBUG: chunkIdx=" + str(chunkIdx) + " type=" + str(type(chunkIdx)))
   fnObj = bc.make_function_obj(chunkIdx)
-  print("DEBUG: fnObj=" + str(fnObj) + " type=" + str(type(fnObj)))
   fnConstIdx = bc.add_const(fnObj)
   bc.emit("LOAD_CONST", fnConstIdx)
   bc.emit("CALL", 3)
@@ -1960,9 +2070,10 @@ fn emitClassMethodRegister(emitter, className, method) {
 }
 
 fn emitStructDeclaration(emitter, node) {
- emitter.classNames[node.name] = true
- // struct Foo(field1, field2) → class.define("Foo", ["field1", "field2"], null, [])
-  sid = globalIdx(emitter, "class.define")
+  emitter.classNames[node.name] = true
+  emitter.structNames[node.name] = true
+  // struct Foo(field1, field2) → struct.define("Foo", ["field1", "field2"], [default1, default2])
+  sid = globalIdx(emitter, "struct.define")
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   // Name
   nameIdx = bc.add_string(node.name)
@@ -1980,11 +2091,20 @@ fn emitStructDeclaration(emitter, node) {
       bc.emit("ARRAY_PUSH")
     }
   }
-  // No parent
-  bc.emit("PUSH_NULL")
-  // No class fields
+  // Default values array
   bc.emit("ARRAY_NEW")
-  bc.emit("CALL", 4)
+  if node.definition.fields != null {
+    for f in node.definition.fields {
+      if type(f) == "object" && f.defaultValue != null {
+        emitExpr(emitter, f.defaultValue)
+      }
+      else {
+        bc.emit("PUSH_NULL")
+      }
+      bc.emit("ARRAY_PUSH")
+    }
+  }
+  bc.emit("CALL", 3)
   // Store as global
   nameSid = globalIdx(emitter, node.name)
   bc.emit("STORE_GLOBAL", bc.str_id(nameSid))

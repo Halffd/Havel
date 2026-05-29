@@ -1047,10 +1047,77 @@ registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
         Value::makeInt(static_cast<int64_t>(stats.collections)));
         setHostObjectField(object_ref, "lastPauseNs",
         Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
-        return Value::makeObjectId(object_ref.id);
-    });
+	return Value::makeObjectId(object_ref.id);
+});
 
-  // Struct operations (prototype-based)
+// Protocol operations
+registerHostFunction(
+	"prot.register", [this](const std::vector<Value> &args) {
+		if (args.empty() || !args[0].isStringValId()) {
+			COMPILER_THROW("prot.register requires protocol name string");
+		}
+		if (!current_chunk) COMPILER_THROW("prot.register requires active chunk");
+
+		const std::string &protName = current_chunk->getString(args[0].asStringValId());
+		std::unordered_set<std::string> methods;
+		for (size_t i = 1; i < args.size(); i++) {
+			if (args[i].isStringValId()) {
+				methods.insert(current_chunk->getString(args[i].asStringValId()));
+			}
+		}
+		registerProtocol(protName, methods);
+
+		auto protRef = heap_.allocateObject();
+		auto *protObj = heap_.object(protRef.id);
+		protObj->set("__name", args[0]);
+		protObj->set("__is_protocol", Value::makeBool(true));
+		return Value::makeObjectId(protRef.id);
+	});
+
+registerHostFunction(
+	"prot.impl", [this](const std::vector<Value> &args) {
+		if (args.size() < 2) {
+			COMPILER_THROW("prot.impl requires (protocolName, typeName)");
+		}
+		if (!current_chunk) COMPILER_THROW("prot.impl requires active chunk");
+
+	std::string protName;
+	if (args[0].isStringValId()) {
+		protName = current_chunk->getString(args[0].asStringValId());
+	} else if (args[0].isObjectId()) {
+		auto *obj = heap_.object(args[0].asObjectId());
+		if (obj) {
+			auto it = obj->find("__name");
+			if (it != obj->end() && it->second.isStringValId()) {
+				protName = current_chunk->getString(it->second.asStringValId());
+			}
+		}
+	}
+	if (protName.empty()) {
+		COMPILER_THROW("prot.impl: first arg must be protocol name string or object");
+	}
+
+	std::string typeName;
+	if (args[1].isStringValId()) {
+		typeName = current_chunk->getString(args[1].asStringValId());
+	} else if (args[1].isObjectId()) {
+		auto *obj = heap_.object(args[1].asObjectId());
+		if (obj) {
+			auto it = obj->find("__name");
+			if (it != obj->end() && it->second.isStringValId()) {
+				typeName = current_chunk->getString(it->second.asStringValId());
+			}
+		}
+	}
+		if (typeName.empty()) {
+			COMPILER_THROW("prot.impl: second arg must be type name string or object");
+		}
+
+		registerProtocolImpl(protName, typeName);
+		return Value::makeBool(true);
+	});
+
+// Struct operations (prototype-based)
 registerHostFunction(
         "struct.define", [this](const std::vector<Value> &args) {
         size_t offset = (args.size() >= 3 && args[0].isObjectId()) ? 1 : 0;
@@ -1681,11 +1748,15 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(class_obj, "method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
   setHostObjectField(class_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("class.get")));
   setHostObjectField(class_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("class.set")));
-        setGlobal("class", Value::makeObjectId(class_obj.id));
-        // Also register Class (capital C) as alias for compatibility
-        setGlobal("Class", Value::makeObjectId(class_obj.id));
+	setGlobal("class", Value::makeObjectId(class_obj.id));
+	setGlobal("Class", Value::makeObjectId(class_obj.id));
 
-    // app global object with args and restart
+	auto prot_obj = heap_.allocateObject();
+	setHostObjectField(prot_obj, "register", Value::makeHostFuncId(getHostFunctionIndex("prot.register")));
+	setHostObjectField(prot_obj, "impl", Value::makeHostFuncId(getHostFunctionIndex("prot.impl")));
+	setGlobal("prot", Value::makeObjectId(prot_obj.id));
+
+	// app global object with args and restart
   // Merge with existing app object if AppModule already registered one
   {
     auto appIt = globals.find("app");

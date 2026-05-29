@@ -15,6 +15,7 @@
 #include "WindowMonitorModule.hpp"
 #include "core/window/WindowManager.hpp"
 #include "core/window/WindowQuery.hpp"
+#include "core/window/WindowMonitor.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "utils/Logger.hpp"
 

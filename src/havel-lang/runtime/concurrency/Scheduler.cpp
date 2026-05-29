@@ -127,7 +127,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 			}
 			if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
 				result = g;
-                if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}", g->id, (int)g->state);
+                if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}", g->id, (int)g->state.load());
 				break;
 			}
 		}
@@ -146,7 +146,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 				}
 				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
 					result = g;
-                    if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected RUNNABLE gid={} state={}", g->id, (int)g->state);
+                    if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected RUNNABLE gid={} state={}", g->id, (int)g->state.load());
 					break;
 				}
 			}
@@ -166,7 +166,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 				}
 				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
 					result = g;
-                    if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected BACKGROUND gid={} state={}", g->id, (int)g->state);
+                    if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected BACKGROUND gid={} state={}", g->id, (int)g->state.load());
 					break;
 				}
 			}
@@ -177,7 +177,7 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 		result->state = GoroutineState::Running;
         current_.store(result, std::memory_order_release);
         if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}", 
-                      result->id, result->name, (int)result->state);
+                      result->id, result->name, (int)result->state.load());
 	}
 
 	return result;
@@ -446,7 +446,7 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
                     g->state == GoroutineState::Running);
 
   ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
-                 g->id, static_cast<int>(g->state), static_cast<int>(g->hotkey_policy), isPending);
+                 g->id, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending);
 
   switch (g->hotkey_policy) {
   case HotkeyPolicy::Drop:

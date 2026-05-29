@@ -133,6 +133,7 @@ VM::ExecutionState VM::saveState() const {
 void VM::restoreState(const ExecutionState &state) {
   stack = state.stack;
   locals = state.locals;
+  immutable_locals_.clear(); // stale indices from old locals
   frame_arena_ = state.frames;
   frame_count_ = state.frame_count;
 }
@@ -577,6 +578,7 @@ void VM::loadFiberState(Fiber *fiber) {
     stack.pop();
   }
   locals.clear();
+  immutable_locals_.clear();
   frame_count_ = 0;
 
   // STEP 2: Restore operand stack from fiber's stack
@@ -761,6 +763,7 @@ bool VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
     // Clear VM state for fresh goroutine context
     while (!stack.empty()) stack.pop();
     locals.clear();
+    immutable_locals_.clear();
     frame_count_ = 0;
 
     // Resolve chunk: closures carry their defining chunk
@@ -1240,6 +1243,10 @@ auto it = host_functions.find(name);
       // Restore coroutine's locals for execution
       locals = co->locals;
 
+      // Coroutine switched into execution — its val declarations
+      // will repopulate immutable_locals_ during execution
+      immutable_locals_.clear();
+
       size_t coroutine_stack_depth = stack.size();
     if (frame_arena_.size() <= frame_count_) {
         frame_arena_.push_back(CallFrame{func, current_chunk, co->ip, 0, co->closure_id});
@@ -1482,6 +1489,11 @@ co->ip = 0;
         }
     }
     frame_count_++;
+
+    // Clear per-frame immutable_locals_ on function entry.
+    // Each function's STORE_IMMUT_VAR opcodes will repopulate
+    // this set with absolute indices valid for this frame's locals.
+    immutable_locals_.clear();
 
   // Initialize parameter slots: provided args first, then defaults
   // Handle variadic parameters: pack extra args into array
@@ -1734,6 +1746,10 @@ else if (callee_value.isStringValId()) {
     locals.resize(new_locals_needed, nullptr);
   }
 
+  // Tail-call reuses the same frame but a different function; the new
+  // function's val declarations will repopulate immutable_locals_
+  immutable_locals_.clear();
+
   // Set up arguments in the reused frame (at old_base): provided args first,
   // then defaults Handle variadic parameters: pack extra args into array
   for (uint32_t i = 0; i < callee->param_count; i++) {
@@ -1957,6 +1973,12 @@ if (locals.size() >= finished.locals_base) {
     locals.resize(finished.locals_base);
 }
 
+// immutable_locals_ stores absolute indices into the locals vector.
+// After returning from a frame and truncating locals, those indices
+// are stale — clear them so the parent frame's val declarations
+// can be re-established on next function entry.
+immutable_locals_.clear();
+
 // Restore expression stack to the depth at call time, preserving return value
 while (stack.size() > finished.stack_depth) {
     popStack();
@@ -1970,6 +1992,7 @@ while (stack.size() > finished.stack_depth) {
                         auto &caller = co->caller_stack.back();
                         frame_count_ = caller.frame_count;
                         locals = caller.locals;
+                        immutable_locals_.clear();
                         current_coroutine_id_ = caller.coroutine_id;
 
                         currentFrame().ip = caller.ip;
@@ -2528,6 +2551,7 @@ Value exports = Value::makeObjectId(exportsObj.id);
         immutable_globals_ = saved_immutable_globals;
         stack = std::move(saved_stack);
         locals = std::move(saved_locals);
+        immutable_locals_.clear();
         frame_count_ = saved_frame_count;
         frame_arena_ = std::move(saved_frames);
         current_chunk = saved_chunk;
@@ -2570,6 +2594,7 @@ Value exports = Value::makeObjectId(exportsObj.id);
         immutable_globals_ = saved_immutable_globals;
         stack = std::move(saved_stack);
         locals = std::move(saved_locals);
+        immutable_locals_.clear();
         frame_count_ = saved_frame_count;
         frame_arena_ = std::move(saved_frames);
         current_chunk = saved_chunk;
@@ -2640,6 +2665,7 @@ Value exports = Value::makeObjectId(exportsObj.id);
     immutable_globals_ = saved_immutable_globals;
     stack = std::move(saved_stack);
     locals = std::move(saved_locals);
+    immutable_locals_.clear();
     frame_count_ = saved_frame_count;
     frame_arena_ = std::move(saved_frames);
     current_chunk = saved_chunk;

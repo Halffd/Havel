@@ -258,7 +258,9 @@ public:
   }
 
   static Value makeEnumId(uint32_t id, uint32_t typeId = 0) {
-    uint64_t payload = (static_cast<uint64_t>(typeId & 0xFFF) << 32) | id;
+    // typeId is limited to 11 bits (0-2047) because makeExtendedRaw
+    // masks the payload to 43 bits and typeId occupies bits 32-42
+    uint64_t payload = (static_cast<uint64_t>(typeId & 0x7FF) << 32) | id;
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::ENUM_ID), payload));
   }
 

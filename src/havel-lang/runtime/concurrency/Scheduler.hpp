@@ -131,8 +131,8 @@ struct WaitHandle {
     // the fiber and the VM's global execution state via load/save methods
     class Fiber* fiber = nullptr;      
     
-    // Goroutine state machine
-    GoroutineState state;
+    // Goroutine state machine (atomic for lock-free cross-thread reads)
+    std::atomic<GoroutineState> state;
     SuspensionReason suspension_reason;
 
     // Unified suspension context (what we're waiting for)

@@ -703,6 +703,12 @@ void GCHeap::markReference(const Value &value) {
     }
     if (value.isIteratorId()) {
         marked_iterators_.insert(value.asIteratorId());
+        // Trace the iterable — the object being iterated can be the only
+        // reference keeping an array/object/string alive
+        auto it = iterators_.find(value.asIteratorId());
+        if (it != iterators_.end()) {
+            markReference(it->second.iterable);
+        }
         return;
     }
     if (value.isBoundMethodId()) {
@@ -738,10 +744,41 @@ void GCHeap::markReference(const Value &value) {
     }
     if (value.isChannelId()) {
         marked_channels_.insert(value.asChannelId());
+        // Trace buffered values in the channel — they are live references
+        auto it = channels_.find(value.asChannelId());
+        if (it != channels_.end()) {
+            for (const auto &ch_val : it->second) {
+                markReference(ch_val);
+            }
+        }
         return;
     }
     if (value.isCoroutineId()) {
         marked_coroutines_.insert(value.asCoroutineId());
+        // Trace all Values inside the coroutine — stack, locals,
+        // caller_stack locals/stack, and yield_values are all live
+        // references that must prevent GC collection
+        auto it = coroutines_.find(value.asCoroutineId());
+        if (it != coroutines_.end()) {
+            const Coroutine &co = it->second;
+            for (const auto &v : co.stack) {
+                markReference(v);
+            }
+            for (const auto &v : co.locals) {
+                markReference(v);
+            }
+            for (const auto &cf : co.caller_stack) {
+                for (const auto &v : cf.locals) {
+                    markReference(v);
+                }
+                for (const auto &v : cf.stack) {
+                    markReference(v);
+                }
+            }
+            for (const auto &v : co.yield_values) {
+                markReference(v);
+            }
+        }
         return;
     }
 }

@@ -165,6 +165,20 @@ case OpCode::ADD:
         identical = left.asHostFuncId() == right.asHostFuncId();
     } else if (left.isEnumId() && right.isEnumId()) {
         identical = left.asEnumId() == right.asEnumId();
+    } else if (left.isCoroutineId() && right.isCoroutineId()) {
+        identical = left.asCoroutineId() == right.asCoroutineId();
+    } else if (left.isThreadId() && right.isThreadId()) {
+        identical = left.asThreadId() == right.asThreadId();
+    } else if (left.isChannelId() && right.isChannelId()) {
+        identical = left.asChannelId() == right.asChannelId();
+    } else if (left.isIteratorId() && right.isIteratorId()) {
+        identical = left.asIteratorId() == right.asIteratorId();
+    } else if (left.isBoundMethodId() && right.isBoundMethodId()) {
+        identical = left.asBoundMethodId() == right.asBoundMethodId();
+    } else if (left.isErrorId() && right.isErrorId()) {
+        identical = left.asErrorId() == right.asErrorId();
+    } else if (left.isSetId() && right.isSetId()) {
+        identical = left.asSetId() == right.asSetId();
     }
     pushStack(Value::makeBool(identical));
     return;
@@ -223,8 +237,16 @@ case OpCode::LTE: pushStack(l <= r); break;
         case OpCode::BIT_AND: pushStack(l & r); break;
         case OpCode::BIT_OR: pushStack(l | r); break;
         case OpCode::BIT_XOR: pushStack(l ^ r); break;
-        case OpCode::BIT_LSH: pushStack(l << r); break;
-        case OpCode::BIT_RSH: pushStack(l >> r); break;
+        case OpCode::BIT_LSH: {
+            uint64_t shift = static_cast<uint64_t>(r) & 63;
+            pushStack(l << shift);
+            break;
+        }
+        case OpCode::BIT_RSH: {
+            uint64_t shift = static_cast<uint64_t>(r) & 63;
+            pushStack(l >> shift);
+            break;
+        }
         default: COMPILER_THROW("Unsupported integer operation");
     }
     return;
@@ -242,15 +264,17 @@ case OpCode::LTE: pushStack(l <= r); break;
                 if (r == 0.0) COMPILER_THROW("Division by zero");
                 pushStack(l / r);
                 break;
-            case OpCode::INT_DIV:
-                if (r == 0.0) COMPILER_THROW("Division by zero");
-                pushStack(static_cast<int64_t>(l) / static_cast<int64_t>(r));
+            case OpCode::INT_DIV: {
+                int64_t divisor = static_cast<int64_t>(r);
+                if (divisor == 0) COMPILER_THROW("Division by zero");
+                pushStack(static_cast<int64_t>(l) / divisor);
                 break;
+            }
             case OpCode::DIVMOD:
-                if (r == 0.0) COMPILER_THROW("Division by zero");
       {
-        int64_t il = static_cast<int64_t>(l);
         int64_t ir = static_cast<int64_t>(r);
+        if (ir == 0) COMPILER_THROW("Division by zero");
+        int64_t il = static_cast<int64_t>(l);
         int64_t rem = il % ir;
         if (rem != 0 && ((rem < 0) != (ir < 0))) rem += ir;
         int64_t quot = (il - rem) / ir;
@@ -262,8 +286,11 @@ case OpCode::LTE: pushStack(l <= r); break;
       }
       break;
             case OpCode::REMAINDER:
-                if (r == 0.0) COMPILER_THROW("Division by zero");
-      pushStack(static_cast<int64_t>(l) % static_cast<int64_t>(r)); // C-style
+      {
+        int64_t divisor = static_cast<int64_t>(r);
+        if (divisor == 0) COMPILER_THROW("Division by zero");
+        pushStack(static_cast<int64_t>(l) % divisor);
+      }
       break;
     case OpCode::MOD:
       if (r == 0.0) COMPILER_THROW("Modulo by zero");
@@ -283,8 +310,8 @@ case OpCode::LTE: pushStack(l <= r); break;
         case OpCode::BIT_AND: pushStack(static_cast<int64_t>(l) & static_cast<int64_t>(r)); break;
         case OpCode::BIT_OR: pushStack(static_cast<int64_t>(l) | static_cast<int64_t>(r)); break;
         case OpCode::BIT_XOR: pushStack(static_cast<int64_t>(l) ^ static_cast<int64_t>(r)); break;
-        case OpCode::BIT_LSH: pushStack(static_cast<int64_t>(l) << static_cast<int64_t>(r)); break;
-        case OpCode::BIT_RSH: pushStack(static_cast<int64_t>(l) >> static_cast<int64_t>(r)); break;
+        case OpCode::BIT_LSH: pushStack(static_cast<int64_t>(l) << (static_cast<uint64_t>(r) & 63)); break;
+        case OpCode::BIT_RSH: pushStack(static_cast<int64_t>(l) >> (static_cast<uint64_t>(r) & 63)); break;
         default: COMPILER_THROW("Unsupported floating point operation");
     }
     return;
@@ -1612,7 +1639,7 @@ if (found_host) {
     }
 
     const std::string &method_name =
-        instruction.operands[0].toString();
+        current_chunk ? current_chunk->getString(instruction.operands[0].asStringValId()) : instruction.operands[0].toString();
     uint32_t arg_count = instruction.operands[1].asInt();
 
     if (stack.size() < static_cast<size_t>(arg_count)) {
@@ -1627,7 +1654,10 @@ if (found_host) {
 
     // Get current 'this' from local scope (slot 0 typically)
     size_t base = currentFrame().locals_base;
-    Value this_value = locals[base + 0];
+    if (base >= locals.size()) {
+      COMPILER_THROW("CALL_SUPER: locals_base out of range");
+    }
+    Value this_value = locals[base];
 
     // Find the parent class method using the prototype chain
     // For now, emit as a host function call with special prefix
@@ -2983,8 +3013,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     auto *arr = heap_.array(arrRef.id);
     auto keys = obj->getKeys();
     for (const auto &key : keys) {
-      // TODO: string pool registration
-      arr->push_back(Value::makeNull());
+      arr->push_back(Value::makeStringId(heap_.allocateString(key).id));
     }
     pushStack(Value::makeArrayId(arrRef.id));
     break;
@@ -3342,9 +3371,11 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!str.isStringValId() || !substr.isStringValId()) {
       COMPILER_THROW("STRING_HAS expects strings");
     }
-    // TODO: string pool lookup
-    const std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
-    const std::string sub = "<string:" + std::to_string(substr.asStringValId()) + ">";
+    if (!current_chunk) {
+      COMPILER_THROW("STRING_HAS: no current chunk");
+    }
+    const std::string &s = current_chunk->getString(str.asStringValId());
+    const std::string &sub = current_chunk->getString(substr.asStringValId());
     pushStack(Value::makeBool(s.find(sub) != std::string::npos));
     break;
   }
@@ -3355,9 +3386,11 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!str.isStringValId() || !prefix.isStringValId()) {
       COMPILER_THROW("STRING_STARTS expects strings");
     }
-    // TODO: string pool lookup
-    const std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
-    const std::string pre = "<string:" + std::to_string(prefix.asStringValId()) + ">";
+    if (!current_chunk) {
+      COMPILER_THROW("STRING_STARTS: no current chunk");
+    }
+    const std::string &s = current_chunk->getString(str.asStringValId());
+    const std::string &pre = current_chunk->getString(prefix.asStringValId());
     pushStack(Value::makeBool(s.size() >= pre.size() &&
                        s.compare(0, pre.size(), pre) == 0));
     break;
@@ -3369,9 +3402,11 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     if (!str.isStringValId() || !suffix.isStringValId()) {
       COMPILER_THROW("STRING_ENDS expects strings");
     }
-    // TODO: string pool lookup
-    const std::string s = "<string:" + std::to_string(str.asStringValId()) + ">";
-    const std::string suf = "<string:" + std::to_string(suffix.asStringValId()) + ">";
+    if (!current_chunk) {
+      COMPILER_THROW("STRING_ENDS: no current chunk");
+    }
+    const std::string &s = current_chunk->getString(str.asStringValId());
+    const std::string &suf = current_chunk->getString(suffix.asStringValId());
     pushStack(Value::makeBool(s.size() >= suf.size() &&
                        s.compare(s.size() - suf.size(), suf.size(), suf) == 0));
     break;
@@ -3497,9 +3532,26 @@ auto *parent_closure = heap_.closure(parent_closure_id);
   // typeof() builtin
   case OpCode::TYPE_OF: {
     Value value = popStack();
-    // TODO: string pool integration - return string ID instead of std::string
-    // For now, return a placeholder integer
-    pushStack(Value::makeInt(0));
+    std::string typeName;
+    if (value.isNull()) typeName = "nil";
+    else if (value.isInt()) typeName = "int";
+    else if (value.isDouble()) typeName = "num";
+    else if (value.isBool()) typeName = "bool";
+    else if (value.isStringValId() || value.isStringId()) typeName = "str";
+    else if (value.isArrayId()) typeName = "array";
+    else if (value.isObjectId()) typeName = "object";
+    else if (value.isSetId()) typeName = "set";
+    else if (value.isRangeId()) typeName = "range";
+    else if (value.isClosureId() || value.isFunctionObjId() || value.isHostFuncId()) typeName = "fn";
+    else if (value.isCoroutineId()) typeName = "coroutine";
+    else if (value.isThreadId()) typeName = "thread";
+    else if (value.isChannelId()) typeName = "channel";
+    else if (value.isIteratorId()) typeName = "iterator";
+    else if (value.isBoundMethodId()) typeName = "bound_method";
+    else if (value.isEnumId()) typeName = "enum";
+    else if (value.isErrorId()) typeName = "error";
+    else typeName = "unknown";
+    pushStack(Value::makeStringId(heap_.allocateString(typeName).id));
     break;
   }
 
@@ -3810,6 +3862,11 @@ case OpCode::TIMEOUT_START: {
         // Restore coroutine's locals
         locals = co->locals;
 
+        // Clear stale immutable_locals_ from the previous frame that used
+        // different absolute indices; coroutine's STORE_IMMUT_VAR opcodes
+        // will repopulate during execution
+        immutable_locals_.clear();
+
         // Restore coroutine's instruction pointer
         currentFrame().ip = co->ip;
 
@@ -3885,6 +3942,7 @@ break;
                 co->caller_stack.push_back(std::move(cf));
             }
             locals = co->locals;
+            immutable_locals_.clear();
 
  const auto *chunk = current_chunk;
  const auto *func = chunk ? chunk->getFunction(co->function_index) : nullptr;
@@ -3892,6 +3950,7 @@ break;
  stack = saved.stack;
  frame_count_ = saved.frame_count;
  locals = saved.locals;
+ immutable_locals_.clear();
  frame_arena_ = saved.frame_arena;
  current_coroutine_id_ = saved.current_coroutine_id;
  COMPILER_THROW("FIBER_AWAIT: function not found for coroutine");
@@ -3940,9 +3999,10 @@ break;
  }
  }
  }
- // Resume coroutine after sleep
- co->state = GCHeap::Coroutine::Runnable;
- locals = co->locals;
+  // Resume coroutine after sleep
+  co->state = GCHeap::Coroutine::Runnable;
+  locals = co->locals;
+  immutable_locals_.clear();
  const auto *resume_chunk = current_chunk;
  const auto *resume_func = resume_chunk ? resume_chunk->getFunction(co->function_index) : nullptr;
         if (resume_func) {
@@ -4013,6 +4073,7 @@ break;
  stack = saved.stack;
  frame_count_ = saved.frame_count;
  locals = saved.locals;
+ immutable_locals_.clear();
  frame_arena_ = saved.frame_arena;
  current_coroutine_id_ = saved.current_coroutine_id;
 
@@ -4103,15 +4164,20 @@ break;
 
  closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
  static_cast<uint32_t>(locals.size()));
- if (locals.size() >= finished.locals_base) {
- locals.resize(finished.locals_base);
- }
+  if (locals.size() >= finished.locals_base) {
+  locals.resize(finished.locals_base);
+  }
 
-                    if (!co->caller_stack.empty()) {
-                        auto &caller = co->caller_stack.back();
-                        frame_count_ = caller.frame_count;
-                        locals = caller.locals;
-                        current_coroutine_id_ = caller.coroutine_id;
+  // Stale immutable_locals_ indices from the old frame are invalid
+  // after locals truncation; clear for the parent frame to repopulate
+  immutable_locals_.clear();
+
+                     if (!co->caller_stack.empty()) {
+                         auto &caller = co->caller_stack.back();
+                         frame_count_ = caller.frame_count;
+                         locals = caller.locals;
+                         immutable_locals_.clear();
+                         current_coroutine_id_ = caller.coroutine_id;
                         currentFrame().ip = caller.ip;
                         co->caller_stack.pop_back();
                     }

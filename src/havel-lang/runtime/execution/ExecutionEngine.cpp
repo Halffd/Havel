@@ -193,6 +193,15 @@ bool ExecutionEngine::executeFrame() {
         // requeue — making a 50-instruction hotkey callback take ~50 round trips
         // through the event loop. Now we loop until the goroutine needs a real
         // scheduler action or exhausts its time slice.
+
+        // CRITICAL: Set fiber state to RUNNING before execution.
+        // Fiber::suspend() requires state == RUNNING, otherwise it throws
+        // "Cannot suspend non-RUNNING fiber" and the goroutine silently dies.
+        // Previously this was never set, making all suspension code dead.
+        if (g->fiber) {
+            g->fiber->state = FiberState::RUNNING;
+        }
+
         for (;;) {
             result = vm_->executeOneStep(g->fiber);
 
@@ -226,16 +235,16 @@ bool ExecutionEngine::executeFrame() {
         handleYield(g);
         break;
 
-    case VMExecutionResult::SUSPENDED:
-        // Handle suspension requested via VM (e.g. from host function)
-        if (vm_->isSuspensionRequested()) {
-          uint8_t reason = vm_->getSuspensionReason();
-          void* context = vm_->getSuspensionContext();
-          
-          scheduler_->suspend(g, toSchedulerReason(reason));
-          if (g->fiber) {
-            g->fiber->suspend(static_cast<SuspensionReason>(reason), context);
-          }
+        case VMExecutionResult::SUSPENDED:
+            // Fiber already suspended by VM::executeOneStep() — it called
+            // fiber->suspend() which set state=SUSPENDED and saved reason/context.
+            // Do NOT call fiber->suspend() again — that would throw since the
+            // fiber is already SUSPENDED.
+            if (vm_->isSuspensionRequested()) {
+                uint8_t reason = vm_->getSuspensionReason();
+                void* context = vm_->getSuspensionContext();
+
+                scheduler_->suspend(g, toSchedulerReason(reason));
           
                 // Special handling for SLEEP - set deadline via WaitHandle
                 if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
@@ -336,7 +345,11 @@ void ExecutionEngine::handleYield(Scheduler::Goroutine* g) {
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine] Goroutine yielded, returning to runnable queue\n";
     }
-  scheduler_->yield(g);
+    // Fiber was RUNNING, now returning to scheduler queue — set RUNNABLE
+    if (g->fiber && g->fiber->state == FiberState::RUNNING) {
+        g->fiber->state = FiberState::RUNNABLE;
+    }
+    scheduler_->yield(g);
 }
 
 void ExecutionEngine::handleSuspended(Scheduler::Goroutine* g) {

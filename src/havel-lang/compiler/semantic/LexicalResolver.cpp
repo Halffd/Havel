@@ -229,10 +229,14 @@ void LexicalResolver::endFunction() {
     } else if (ctx.owner->kind == ast::NodeType::ClassMethodDef) {
       auto *m = static_cast<const ast::ClassMethodDef *>(ctx.owner);
       result_.class_method_local_counts[m] = ctx.next_slot;
-    } else if (ctx.owner->kind == ast::NodeType::StructMethodDef) {
-      auto *m = static_cast<const ast::StructMethodDef *>(ctx.owner);
-      result_.struct_method_local_counts[m] = ctx.next_slot;
-    }
+		} else if (ctx.owner->kind == ast::NodeType::StructMethodDef) {
+			auto *m = static_cast<const ast::StructMethodDef *>(ctx.owner);
+			result_.struct_method_local_counts[m] = ctx.next_slot;
+		} else if (ctx.owner->kind == ast::NodeType::TraitMethod) {
+			auto *m = static_cast<const ast::TraitMethod *>(ctx.owner);
+			result_.trait_method_local_counts[m] = ctx.next_slot;
+			result_.trait_method_upvalues[m] = ctx.upvalues;
+		}
     // ThreadExpression/IntervalExpression/TimeoutExpression: identifiers in
     // their bodies are resolved and stored in identifier_bindings, so
     // ByteCompiler can find them via bindingFor().

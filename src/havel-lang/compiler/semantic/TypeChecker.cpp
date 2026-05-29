@@ -192,12 +192,12 @@ void TypeChecker::collectImplDeclaration(const ast::ImplDeclaration &impl) {
 }
 
 void TypeChecker::verifyProtocolConformance() {
-  for (const auto &[typeName, info] : result_.registry) {
-    if (info.kind != TypeKind::Nominal) continue;
-    for (const auto &protoName : info.protocolNames) {
-      verifyProtocolConformanceForType(typeName, protoName);
-    }
-  }
+	for (const auto &[typeName, info] : result_.registry) {
+		if (info.kind != TypeKind::Nominal) continue;
+		for (const auto &protoName : info.protocolNames) {
+			verifyProtocolConformanceForType(typeName, protoName);
+		}
+	}
 }
 
 void TypeChecker::verifyProtocolConformanceForType(

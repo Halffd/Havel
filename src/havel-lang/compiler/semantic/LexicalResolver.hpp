@@ -37,7 +37,9 @@ struct LexicalResolutionResult {
   std::unordered_map<const ast::FunctionDeclaration *, uint32_t> function_local_counts;
   std::unordered_map<const ast::LambdaExpression *, uint32_t> lambda_local_counts;
   std::unordered_map<const ast::ClassMethodDef *, uint32_t> class_method_local_counts;
-  std::unordered_map<const ast::StructMethodDef *, uint32_t> struct_method_local_counts;
+	std::unordered_map<const ast::StructMethodDef *, uint32_t> struct_method_local_counts;
+	std::unordered_map<const ast::TraitMethod *, uint32_t> trait_method_local_counts;
+	std::unordered_map<const ast::TraitMethod *, std::vector<UpvalueDescriptor>> trait_method_upvalues;
   uint32_t main_local_count = 0;
   std::unordered_set<std::string> global_variables; // Top-level let declarations
 };

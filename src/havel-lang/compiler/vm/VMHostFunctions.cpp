@@ -1681,7 +1681,9 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(class_obj, "method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
   setHostObjectField(class_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("class.get")));
   setHostObjectField(class_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("class.set")));
-    setGlobal("class", Value::makeObjectId(class_obj.id));
+        setGlobal("class", Value::makeObjectId(class_obj.id));
+        // Also register Class (capital C) as alias for compatibility
+        setGlobal("Class", Value::makeObjectId(class_obj.id));
 
     // app global object with args and restart
   // Merge with existing app object if AppModule already registered one

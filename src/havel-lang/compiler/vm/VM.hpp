@@ -756,11 +756,17 @@ public:
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
   
-    void setGlobal(std::string name, Value value) {
-        std::string key = name;
-        globals[std::move(name)] = std::move(value);
-            emitVariableChanged(key);
-        }
+  void setGlobal(std::string name, Value value) {
+    std::string key = name;
+    globals[std::move(name)] = std::move(value);
+    emitVariableChanged(key);
+  }
+  void eraseGlobal(const std::string &name) {
+    if (name == "isArray") {
+      std::fprintf(stderr, "DBG eraseGlobal('isArray') called from\n");
+    }
+    globals.erase(name);
+  }
   [[nodiscard]] GCRoot makeRoot(const Value &value) {
     return GCRoot(*this, value);
   }

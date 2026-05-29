@@ -211,9 +211,11 @@ Value VM::execute(const BytecodeChunk &chunk,
     open_upvalues.clear();
     has_current_exception_ = false;
     current_exception_ = nullptr;
-    registerDefaultHostGlobals();
-    host_globals_registered_ = true;
-    if (post_reset_setup_) {
+  registerDefaultHostGlobals();
+  host_globals_registered_ = true;
+  std::fprintf(stderr, "DBG execute(): isArray=%d globals_size=%zu\n",
+               globals.contains("isArray")?1:0, globals.size());
+  if (post_reset_setup_) {
         post_reset_setup_(*this);
     }
     opcode_counts_.fill(0);
@@ -258,8 +260,8 @@ if (debug_mode) {
  }
 
 Value VM::executePersistent(const BytecodeChunk &chunk,
-    const std::string &function_name,
-    const std::vector<Value> &args) {
+                             const std::string &function_name,
+                             const std::vector<Value> &args) {
   const BytecodeChunk *saved_chunk = current_chunk;
   current_chunk = &chunk;
 
@@ -270,6 +272,23 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
 
   suspendGC();
 
+  std::fprintf(stderr, "DBG executePersistent ENTRY: isArray=%d globals_size=%zu stack_depth=%zu main_chunk=%p current_chunk=%p\n",
+               globals.contains("isArray")?1:0, globals.size(), globals_stack_.size(),
+               main_chunk_ ? main_chunk_.get() : nullptr, current_chunk);
+
+  // Save globals state (we may be inside a module closure that swapped
+  // globals). The persistent execution needs root-level globals that
+  // contain all host-registered globals (Type.isArray, math.PI, etc).
+  auto saved_globals = globals;
+  auto saved_globals_stack = globals_stack_;
+
+  // Unwind to root globals: the bottom of the stack holds the globals
+  // that were active before any module closure swapped them.
+  if (!globals_stack_.empty()) {
+    globals = std::move(globals_stack_.front());
+    globals_stack_.erase(globals_stack_.begin());
+  }
+
   // Clear stack and locals for this execution, but PRESERVE:
   // - globals (user-defined variables persist)
   // - heap (objects allocated by user persist)
@@ -278,11 +297,11 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   locals.clear();
   frame_count_ = 0;
   // DON'T reset heap - preserves user globals
-    if (!host_globals_registered_) {
-        registerDefaultHostGlobals();
-        host_globals_registered_ = true;
-    }
-    registerDefaultPrototypes();
+  if (!host_globals_registered_) {
+    registerDefaultHostGlobals();
+    host_globals_registered_ = true;
+  }
+  registerDefaultPrototypes();
   open_upvalues.clear();
   has_current_exception_ = false;
   current_exception_ = nullptr;
@@ -309,6 +328,10 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
     }
 
     runDispatchLoop(0);
+
+  // Restore globals state so the calling module context is unbroken
+  globals = std::move(saved_globals);
+  globals_stack_ = std::move(saved_globals_stack);
 
   current_chunk = saved_chunk;
   resumeGC();
@@ -1462,12 +1485,12 @@ co->ip = 0;
 
  current_chunk = resolve_chunk;
 
- bool frame_owns_globals = false;
- if (closure_globals) {
- globals_stack_.push_back(std::move(globals));
- globals = *closure_globals;
- frame_owns_globals = true;
- }
+    bool frame_owns_globals = false;
+    if (closure_globals) {
+        globals_stack_.push_back(std::move(globals));
+        globals = *closure_globals;
+        frame_owns_globals = true;
+    }
 
  size_t base = locals.size();
  size_t stack_depth = stack.size(); // Save current stack depth
@@ -1961,10 +1984,10 @@ void VM::doReturn() {
  }
 
  // Restore globals if this frame swapped them (module closure call)
- if (finished.owns_globals && !globals_stack_.empty()) {
- globals = std::move(globals_stack_.back());
- globals_stack_.pop_back();
- }
+    if (finished.owns_globals && !globals_stack_.empty()) {
+        globals = std::move(globals_stack_.back());
+        globals_stack_.pop_back();
+    }
 
  closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
  static_cast<uint32_t>(locals.size()));

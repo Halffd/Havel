@@ -401,18 +401,63 @@ return
             return
         }
 if target.kind == "IndexExpression" {
-tempIdx = scopeLocalCount(emitter.scope)
-emitter.scope.count = emitter.scope.count + 1
-emitExpr(emitter, node.value)
-bc.emit("STORE_VAR", tempIdx)
-emitExpr(emitter, target.obj)
-emitExpr(emitter, target.index)
-bc.emit("LOAD_VAR", tempIdx)
-bc.emit("ARRAY_SET")
-bc.emit("LOAD_VAR", tempIdx)
-return
-}
-        emitError("unsupported assignment target: " + str(target.kind), node.line, node.col)
+      tempIdx = scopeLocalCount(emitter.scope)
+      emitter.scope.count = emitter.scope.count + 1
+      emitExpr(emitter, node.value)
+      bc.emit("STORE_VAR", tempIdx)
+      emitExpr(emitter, target.obj)
+      emitExpr(emitter, target.index)
+      bc.emit("LOAD_VAR", tempIdx)
+      bc.emit("ARRAY_SET")
+      bc.emit("LOAD_VAR", tempIdx)
+      return
+    }
+    if target.kind == "AtExpression" {
+      fname = target.field
+      if fname.kind == "Identifier" { fname = fname.name }
+      tempVal = scopeLocalCount(emitter.scope)
+      emitter.scope.count = emitter.scope.count + 1
+      tempKey = scopeLocalCount(emitter.scope)
+      emitter.scope.count = emitter.scope.count + 1
+      emitExpr(emitter, node.value)
+      bc.emit("STORE_VAR", tempVal)
+      keyIdx = bc.add_string(fname)
+      bc.emit("LOAD_CONST", keyIdx)
+      bc.emit("STORE_VAR", tempKey)
+      bc.emit("LOAD_VAR", 0)
+      bc.emit("LOAD_VAR", tempVal)
+      bc.emit("LOAD_VAR", tempKey)
+      bc.emit("OBJECT_SET")
+      bc.emit("POP")
+      bc.emit("LOAD_VAR", tempVal)
+      return
+    }
+    if target.kind == "AtAtExpression" {
+      fname = target.field
+      if fname.kind == "Identifier" { fname = fname.name }
+      tempVal = scopeLocalCount(emitter.scope)
+      emitter.scope.count = emitter.scope.count + 1
+      tempObj = scopeLocalCount(emitter.scope)
+      emitter.scope.count = emitter.scope.count + 1
+      tempKey = scopeLocalCount(emitter.scope)
+      emitter.scope.count = emitter.scope.count + 1
+      emitExpr(emitter, node.value)
+      sid = globalIdx(emitter, "this")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      bc.emit("STORE_VAR", tempObj)
+      bc.emit("STORE_VAR", tempVal)
+      keyIdx = bc.add_string(fname)
+      bc.emit("LOAD_CONST", keyIdx)
+      bc.emit("STORE_VAR", tempKey)
+      bc.emit("LOAD_VAR", tempObj)
+      bc.emit("LOAD_VAR", tempVal)
+      bc.emit("LOAD_VAR", tempKey)
+      bc.emit("OBJECT_SET")
+      bc.emit("POP")
+      bc.emit("LOAD_VAR", tempVal)
+      return
+    }
+    emitError("unsupported assignment target: " + str(target.kind), node.line, node.col)
         return
 
     }
@@ -593,18 +638,15 @@ if k == "PipelineExpression" {
   }
 if k == "AtExpression" {
   if node.field != null {
-    if node.field.kind == "Identifier" {
-      bc.emit("LOAD_VAR", 0)
-      keyIdx = bc.add_string(node.field.name)
-      bc.emit("LOAD_CONST", keyIdx)
-      bc.emit("OBJECT_GET")
-      directives = {"disable": true, "enable": true, "remove": true, "toggle": true}
-      if directives[node.field.name] != null {
-        bc.emit("CALL", 0)
-      }
-    }
-    else {
-      emitError("@ expression field must be identifier", node.line, node.col)
+    fname = node.field
+    if fname.kind == "Identifier" { fname = fname.name }
+    bc.emit("LOAD_VAR", 0)
+    keyIdx = bc.add_string(fname)
+    bc.emit("LOAD_CONST", keyIdx)
+    bc.emit("OBJECT_GET")
+    directives = {"disable": true, "enable": true, "remove": true, "toggle": true}
+    if directives[fname] != null {
+      bc.emit("CALL", 0)
     }
   }
   else {
@@ -614,16 +656,13 @@ if k == "AtExpression" {
 }
 if k == "AtAtExpression" {
   if node.field != null {
-    if node.field.kind == "Identifier" {
-      sid = globalIdx(emitter, "this")
-      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      keyIdx = bc.add_string(node.field.name)
-      bc.emit("LOAD_CONST", keyIdx)
-      bc.emit("OBJECT_GET")
-    }
-    else {
-      emitError("@@ expression field must be identifier", node.line, node.col)
-    }
+    fname = node.field
+    if fname.kind == "Identifier" { fname = fname.name }
+    sid = globalIdx(emitter, "this")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    keyIdx = bc.add_string(fname)
+    bc.emit("LOAD_CONST", keyIdx)
+    bc.emit("OBJECT_GET")
   }
   else {
     emitError("@@ expression field must be identifier", node.line, node.col)
@@ -1272,55 +1311,62 @@ if node.kind == "ExpressionStatement" {
 // Function compilation (with upvalue registration)
 // ============================================================
 
-fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine) {
- oldScope = emitter.scope
- fid = emitter.nextFuncId
- emitter.nextFuncId = fid + 1
- newScope = Scope(oldScope, fid, null)  // bcFuncIdx set after func_new
- newScope.tag = name + str(fid)
- emitter.lastFuncScope = newScope
- emitter.scope = newScope
- for p in params {
- if type(p) == "object" {
- if p.name != null { scopeDeclare(newScope, p.name) }
- else { scopeDeclare(newScope, p) }
- }
- else { scopeDeclare(newScope, p) }
- }
- paramCount = #params
- localCount = paramCount + 16
- bc.func_push()
- actualIdx = bc.func_new(name, paramCount, localCount)
- newScope.bcFuncIdx = actualIdx
- traceEmitter("func_new " + name + " params=" + str(paramCount) + " locals=" + str(localCount) + " bcIdx=" + str(actualIdx))
-	if sourceLine != null {
-		bc.set_func_source_line(sourceLine)
-	}
-	di = 0
-	for p in params {
-	if type(p) == "object" && (p.defval != null || p.default != null) {
-        dv = p.defval != null ? p.defval : p.default
-        _handled = false
-        if type(dv) == "object" && dv.kind == "StringLiteral" {
-            sid = bc.add_chunk_string(dv.value)
-            bc.set_default_value(di, bc.str_id(sid))
-            _handled = true
-        }
-        if !_handled && type(dv) == "object" && dv.kind == "NumberLiteral" {
-            bc.set_default_value(di, num(dv.value))
-            _handled = true
-        }
-        if !_handled && type(dv) == "object" && dv.kind == "BooleanLiteral" {
-            bc.set_default_value(di, bool(dv.value))
-            _handled = true
-        }
-        if !_handled && type(dv) == "object" && dv.kind == "NullLiteral" {
-            bc.set_default_value(di, null)
-        }
-		}
-		di = di + 1
-	}
-emitBlockWithReturn(emitter, bodyNode)
+fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInstanceMethod) {
+  if isInstanceMethod == null { isInstanceMethod = false }
+  oldScope = emitter.scope
+  fid = emitter.nextFuncId
+  emitter.nextFuncId = fid + 1
+  newScope = Scope(oldScope, fid, null) // bcFuncIdx set after func_new
+  newScope.tag = name + str(fid)
+  emitter.lastFuncScope = newScope
+  emitter.scope = newScope
+  for p in params {
+    if type(p) == "object" {
+      if p.name != null { scopeDeclare(newScope, p.name) }
+      else { scopeDeclare(newScope, p) }
+    }
+    else { scopeDeclare(newScope, p) }
+  }
+  paramCount = #params
+  localCount = paramCount + 16
+  bc.func_push()
+  actualIdx = bc.func_new(name, paramCount, localCount)
+  newScope.bcFuncIdx = actualIdx
+  traceEmitter("func_new " + name + " params=" + str(paramCount) + " locals=" + str(localCount) + " bcIdx=" + str(actualIdx))
+  if sourceLine != null {
+    bc.set_func_source_line(sourceLine)
+  }
+  di = 0
+  for p in params {
+    if type(p) == "object" && (p.defval != null || p.default != null) {
+      dv = p.defval != null ? p.defval : p.default
+      _handled = false
+      if type(dv) == "object" && dv.kind == "StringLiteral" {
+        sid = bc.add_chunk_string(dv.value)
+        bc.set_default_value(di, bc.str_id(sid))
+        _handled = true
+      }
+      if !_handled && type(dv) == "object" && dv.kind == "NumberLiteral" {
+        bc.set_default_value(di, num(dv.value))
+        _handled = true
+      }
+      if !_handled && type(dv) == "object" && dv.kind == "BooleanLiteral" {
+        bc.set_default_value(di, bool(dv.value))
+        _handled = true
+      }
+      if !_handled && type(dv) == "object" && dv.kind == "NullLiteral" {
+        bc.set_default_value(di, null)
+      }
+    }
+    di = di + 1
+  }
+  // Instance methods: store self (slot 0) into global 'this' for @field access
+  if isInstanceMethod {
+    thisSid = globalIdx(emitter, "this")
+    bc.emit("LOAD_VAR", 0)
+    bc.emit("STORE_GLOBAL", bc.str_id(thisSid))
+  }
+  emitBlockWithReturn(emitter, bodyNode)
     bc.emit("RETURN")
     rootCheck = scopeFindFuncRoot(newScope)
     actualLocals = scopeLocalCount(newScope)
@@ -1884,15 +1930,32 @@ fn emitClassMethodRegister(emitter, className, method) {
   // Load class object
   classSid = globalIdx(emitter, className)
   bc.emit("LOAD_GLOBAL", bc.str_id(classSid))
- // Method name
- mnameIdx = bc.add_string(method.name)
- bc.emit("LOAD_CONST", mnameIdx)
- // Compile method body as a function
- result = compileFuncDecl(emitter, method.name, method.params, method.body, -1, method.line)
- chunkIdx = result[1]
- bc.emit("LOAD_CONST", bc.add_const(chunkIdx))
- bc.emit("CALL", 3)
- bc.emit("POP")
+  // Method name
+  mnameIdx = bc.add_string(method.name)
+  bc.emit("LOAD_CONST", mnameIdx)
+  // Instance methods get 'self' at slot 0, class methods (@@) don't
+  isClassMethod = method.isClassMethod != null && method.isClassMethod
+  if isClassMethod {
+    result = compileFuncDecl(emitter, method.name, method.params, method.body, -1, method.line, false)
+  }
+  else {
+    selfParam = {name: "self", "default": null}
+    methodParams = [selfParam]
+    for p in method.params {
+      methodParams.push(p)
+    }
+    print("DEBUG: registering method " + method.name + " params=" + str(#methodParams))
+    result = compileFuncDecl(emitter, method.name, methodParams, method.body, -1, method.line, true)
+    print("DEBUG: result=" + str(result) + " type=" + str(type(result)))
+  }
+  chunkIdx = result[1]
+  print("DEBUG: chunkIdx=" + str(chunkIdx) + " type=" + str(type(chunkIdx)))
+  fnObj = bc.make_function_obj(chunkIdx)
+  print("DEBUG: fnObj=" + str(fnObj) + " type=" + str(type(fnObj)))
+  fnConstIdx = bc.add_const(fnObj)
+  bc.emit("LOAD_CONST", fnConstIdx)
+  bc.emit("CALL", 3)
+  bc.emit("POP")
 
 }
 

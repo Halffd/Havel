@@ -1,7 +1,7 @@
 // smoke: random-choice-from-array = 1
 // choice picks from an array
 arr = [10, 20, 30]
-v = choice(arr)
+v = random.choice(arr)
 ok = 0
 if v == 10 { ok = 1 }
 if v == 20 { ok = 1 }

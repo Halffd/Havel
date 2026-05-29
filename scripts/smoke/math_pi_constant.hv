@@ -1,6 +1,6 @@
 // smoke: math-pi-constant = 1
 // PI should be approximately 3.14159
-diff = PI - 3.14159
+diff = math.PI - 3.14159
 if diff < 0 { diff = 0 - diff }
 val __result = diff < 0.00001 ? 1 : 0
 if __result != 1 {

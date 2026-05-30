@@ -61,6 +61,9 @@ NODE_TYPES = {
  "ProtocolDeclaration": true,
   "ImplDeclaration": true,
   "SetLiteral": true,
+"DeferStatement": true,
+"WaitExpression": true,
+"WaitGroupExpression": true,
 }
 
 BINARY_OPS = {
@@ -314,7 +317,19 @@ fn ConfigBlock(name, body, line, col) {
 
 }
 fn SleepStatement(duration, line, col) {
-    {kind: "SleepStatement", line: line, col: col, duration: duration}
+	{kind: "SleepStatement", line: line, col: col, duration: duration}
+
+}
+fn DeferStatement(expression, line, col) {
+	{kind: "DeferStatement", line: line, col: col, expression: expression}
+
+}
+fn WaitExpression(target, line, col) {
+	{kind: "WaitExpression", line: line, col: col, target: target}
+
+}
+fn WaitGroupExpression(line, col) {
+	{kind: "WaitGroupExpression", line: line, col: col}
 
 }
 fn ErrorNode(msg, line, col) {
@@ -831,12 +846,26 @@ fn prettyPrint(node, depth) {
             print(_indent(depth + 1) + "field " + f)
         }
     }
-    else if k == "SleepStatement" {
-        print(prefix + "Sleep:")
-        prettyPrint(node.duration, depth + 1)
+else if k == "SleepStatement" {
+	print(prefix + "Sleep:")
+	prettyPrint(node.duration, depth + 1)
 
-    }
-    else if k == "ErrorNode" {
+}
+else if k == "DeferStatement" {
+	print(prefix + "Defer:")
+	prettyPrint(node.expression, depth + 1)
+
+}
+else if k == "WaitExpression" {
+	print(prefix + "Wait:")
+	prettyPrint(node.target, depth + 1)
+
+}
+else if k == "WaitGroupExpression" {
+	print(prefix + "WaitGroup()")
+
+}
+else if k == "ErrorNode" {
         print(prefix + "ERROR: " + node.msg)
 
     }

@@ -712,18 +712,27 @@ if k == "ShellCommand" {
         return
 
     }
-	if k == "ThrowStatement" {
-		if node.value != null {
-			emitExpr(emitter, node.value)
-		}
-		else {
-			bc.emit("PUSH_NULL")
-		}
-		bc.emit("THROW")
-		bc.emit("PUSH_NULL")
-		return
+if k == "ThrowStatement" {
+	if node.value != null {
+		emitExpr(emitter, node.value)
 	}
-	emitError("unsupported expr: " + k, node.line, node.col)
+	else {
+		bc.emit("PUSH_NULL")
+	}
+	bc.emit("THROW")
+	bc.emit("PUSH_NULL")
+	return
+}
+if k == "WaitExpression" {
+	emitExpr(emitter, node.target)
+	bc.emit("THREAD_JOIN")
+	return
+}
+if k == "WaitGroupExpression" {
+	bc.emit("WAITGROUP_NEW")
+	return
+}
+emitError("unsupported expr: " + k, node.line, node.col)
 	bc.emit("PUSH_NULL")
 
 }
@@ -1069,12 +1078,29 @@ if k == "TryStatement" {
     emitImportStatement(emitter, node)
     return
   }
-  if k == "SleepStatement" {
-    emitExpr(emitter, node.duration)
-    bc.emit("SLEEP")
-    return
+if k == "SleepStatement" {
+	emitExpr(emitter, node.duration)
+	bc.emit("FIBER_SLEEP")
+	return
 
-  }
+}
+if k == "DeferStatement" {
+	emitExpr(emitter, node.expression)
+	bc.emit("DEFER_PUSH")
+	return
+
+}
+if k == "WaitExpression" {
+	emitExpr(emitter, node.target)
+	bc.emit("THREAD_JOIN")
+	return
+
+}
+if k == "WaitGroupExpression" {
+	bc.emit("WAITGROUP_NEW")
+	return
+
+}
   if k == "ClassDeclaration" {
     emitClassDeclaration(emitter, node)
     return

@@ -82,8 +82,11 @@ TOKEN_TYPES = {
     "Or": "Or",
     "Not": "Not",
     "Is": "Is",
-    "Matches": "Matches",
-    "ShellCommand": "ShellCommand",
+"Matches": "Matches",
+"WaitGroup": "WaitGroup",
+"Wait": "Wait",
+"Defer": "Defer",
+"ShellCommand": "ShellCommand",
     "ShellCommandCapture": "ShellCommandCapture",
     "OpenParen": "OpenParen",
     "CloseParen": "CloseParen",
@@ -226,7 +229,10 @@ KEYWORDS = {
     "or": "Or",
     "not": "Not",
     "is": "Is",
-    "matches": "Matches",
+	"matches": "Matches",
+	"waitgroup": "WaitGroup",
+	"wait": "Wait",
+	"defer": "Defer",
 }
 
 EXPRESSION_TOKENS = {

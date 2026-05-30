@@ -84,8 +84,9 @@ public:
     };
 
 private:
-    static std::unordered_map<void*, std::string> libraries_;
-    static std::mutex callback_mutex_;
+	static std::unordered_map<void*, std::string> libraries_;
+	static std::mutex library_mutex_;
+	static std::mutex callback_mutex_;
     static std::unordered_map<void*, std::unique_ptr<CallbackData>> callbacks_;
     static std::mutex cif_mutex_;
 #ifdef HAVE_LIBFFI

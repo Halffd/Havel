@@ -270,30 +270,29 @@ static Value ffiCdef(const compiler::VMApi& api, const std::vector<Value>& rawAr
 // ============================================================================
 
 static Value ffiAlloc(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.size() < 1) return Value::makeNull();
-    // If arg is an integer, treat as byte count (like allocBytes)
-    if (args[0].isInt()) {
-        int64_t sz = args[0].asInt64();
-        if (sz < 0) return Value::makeNull();
-        size_t size = static_cast<size_t>(sz);
-        void* ptr = FFIMemory::alloc_bytes(size);
-        return Value::makePtr(ptr);
-    }
-    auto t = resolveType(api, args[0]);
-    if (!t) return Value::makeNull();
-    void* ptr = FFIMemory::alloc(t);
-    return Value::makePtr(ptr);
+	auto args = stripReceiver(api, rawArgs);
+	if (args.size() < 1) return Value::makeNull();
+	if (args[0].isInt()) {
+		int64_t sz = args[0].asInt64();
+		if (sz < 0 || sz > 1024 * 1024 * 1024) return Value::makeNull();
+		size_t size = static_cast<size_t>(sz);
+		void* ptr = FFIMemory::alloc_bytes(size);
+		return Value::makePtr(ptr);
+	}
+	auto t = resolveType(api, args[0]);
+	if (!t) return Value::makeNull();
+	void* ptr = FFIMemory::alloc(t);
+	return Value::makePtr(ptr);
 }
 
 static Value ffiAllocBytes(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.size() < 1) return Value::makeNull();
-    int64_t sz = args[0].asInt64();
-    if (sz < 0) return Value::makeNull();
-    size_t size = static_cast<size_t>(sz);
-    void* ptr = FFIMemory::alloc_bytes(size);
-    return Value::makePtr(ptr);
+	auto args = stripReceiver(api, rawArgs);
+	if (args.size() < 1) return Value::makeNull();
+	int64_t sz = args[0].asInt64();
+	if (sz < 0 || sz > 1024 * 1024 * 1024) return Value::makeNull();
+	size_t size = static_cast<size_t>(sz);
+	void* ptr = FFIMemory::alloc_bytes(size);
+	return Value::makePtr(ptr);
 }
 
 static Value ffiFree(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
@@ -330,11 +329,12 @@ static Value ffiString(const compiler::VMApi& api, const std::vector<Value>& raw
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     const char* str = static_cast<const char*>(ptr);
-    size_t max_len = static_cast<size_t>(16) * 1024 * 1024;
-    if (args.size() >= 2 && args[1].isInt()) {
-        int64_t user_max = args[1].asInt64();
-        if (user_max > 0) max_len = static_cast<size_t>(user_max);
-    }
+constexpr size_t FFI_MAX_STRING_READ = 64 * 1024 * 1024;
+	size_t max_len = FFI_MAX_STRING_READ;
+	if (args.size() >= 2 && args[1].isInt()) {
+		int64_t user_max = args[1].asInt64();
+		if (user_max > 0) max_len = std::min(static_cast<size_t>(user_max), FFI_MAX_STRING_READ);
+	}
     size_t len = strnlen(str, max_len);
     if (len == max_len) {
         ::havel::warn("ffi.string: string at {} not null-terminated within {} bytes, truncating",
@@ -354,22 +354,25 @@ static Value ffiCstring(const compiler::VMApi& api, const std::vector<Value>& ra
 }
 
 static Value ffiArray(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.size() < 3) return Value::makeNull();
-    void* ptr = resolvePtr(args[0]);
-    if (!ptr) return Value::makeNull();
-    auto t = resolveType(api, args[1]);
-    if (!t) return Value::makeNull();
-    int64_t len = args[2].asInt64();
-    if (len <= 0) return Value::makeNull();
+	auto args = stripReceiver(api, rawArgs);
+	if (args.size() < 3) return Value::makeNull();
+	void* ptr = resolvePtr(args[0]);
+	if (!ptr) return Value::makeNull();
+	auto t = resolveType(api, args[1]);
+	if (!t) return Value::makeNull();
+	int64_t len = args[2].asInt64();
+	if (len <= 0 || len > 1024 * 1024) return Value::makeNull();
 
-    size_t elemSize = FFITypeRegistry::size_of(t);
-    auto arr = api.makeArray();
-    for (int64_t i = 0; i < len; i++) {
-        void* elemPtr = static_cast<char*>(ptr) + i * elemSize;
-        api.push(arr, FFIMemory::to_havel(elemPtr, t));
-    }
-    return arr;
+	size_t elemSize = FFITypeRegistry::size_of(t);
+	size_t totalBytes = static_cast<size_t>(len) * elemSize;
+	if (totalBytes / elemSize != static_cast<size_t>(len)) return Value::makeNull();
+
+	auto arr = api.makeArray();
+	for (int64_t i = 0; i < len; i++) {
+		void* elemPtr = static_cast<char*>(ptr) + static_cast<size_t>(i) * elemSize;
+		api.push(arr, FFIMemory::to_havel(elemPtr, t));
+	}
+	return arr;
 }
 
 static Value ffiCast(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
@@ -503,29 +506,29 @@ static Value ffiClosure(const compiler::VMApi& api, const std::vector<Value>& ra
 // ============================================================================
 
 static Value ffiMemcpy(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.size() < 3) return Value::makeNull();
-    void* dst = resolvePtr(args[0]);
-    void* src = resolvePtr(args[1]);
-    if (!dst || !src) return Value::makeNull();
-    int64_t sz = args[2].asInt64();
-    if (sz < 0) return Value::makeNull();
-    size_t size = static_cast<size_t>(sz);
-    std::memcpy(dst, src, size);
-    return Value::makePtr(dst);
+	auto args = stripReceiver(api, rawArgs);
+	if (args.size() < 3) return Value::makeNull();
+	void* dst = resolvePtr(args[0]);
+	void* src = resolvePtr(args[1]);
+	if (!dst || !src) return Value::makeNull();
+	int64_t sz = args[2].asInt64();
+	if (sz < 0 || sz > 1024 * 1024 * 1024) return Value::makeNull();
+	size_t size = static_cast<size_t>(sz);
+	std::memcpy(dst, src, size);
+	return Value::makePtr(dst);
 }
 
 static Value ffiMemset(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.size() < 3) return Value::makeNull();
-    void* ptr = resolvePtr(args[0]);
-    if (!ptr) return Value::makeNull();
-    int val = static_cast<int>(args[1].asInt64());
-    int64_t sz = args[2].asInt64();
-    if (sz < 0) return Value::makeNull();
-    size_t size = static_cast<size_t>(sz);
-    std::memset(ptr, val, size);
-    return Value::makePtr(ptr);
+	auto args = stripReceiver(api, rawArgs);
+	if (args.size() < 3) return Value::makeNull();
+	void* ptr = resolvePtr(args[0]);
+	if (!ptr) return Value::makeNull();
+	int val = static_cast<int>(args[1].asInt64());
+	int64_t sz = args[2].asInt64();
+	if (sz < 0 || sz > 1024 * 1024 * 1024) return Value::makeNull();
+	size_t size = static_cast<size_t>(sz);
+	std::memset(ptr, val, size);
+	return Value::makePtr(ptr);
 }
 
 // ============================================================================

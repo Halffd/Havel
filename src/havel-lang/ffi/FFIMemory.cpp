@@ -41,37 +41,46 @@ void* FFIMemory::alloc_bytes(size_t size) {
 }
 
 void* FFIMemory::realloc(void* ptr, size_t new_size) {
-    if (!ptr) return alloc_bytes(new_size);
-    if (new_size == 0) { free(ptr); return nullptr; }
-    
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    auto it = allocations_.find(ptr);
-    if (it == allocations_.end()) {
-        return std::realloc(ptr, new_size);
-    }
-    
-    void* new_ptr = std::realloc(ptr, new_size);
-    if (new_ptr && new_ptr != ptr) {
-    total_used_ -= it->second.size;
-    it->second.size = new_size;
-        total_used_ += new_size;
-    }
-    return new_ptr;
+	if (!ptr) return alloc_bytes(new_size);
+	if (new_size == 0) { free(ptr); return nullptr; }
+
+	std::lock_guard<std::mutex> lock(alloc_mutex_);
+	auto it = allocations_.find(ptr);
+	if (it == allocations_.end()) {
+		return std::realloc(ptr, new_size);
+	}
+
+	size_t old_size = it->second.size;
+	void* new_ptr = std::realloc(ptr, new_size);
+	if (new_ptr) {
+		if (new_ptr != ptr) {
+			Allocation a = std::move(it->second);
+			a.ptr = new_ptr;
+			a.size = new_size;
+			allocations_.erase(it);
+			allocations_[new_ptr] = std::move(a);
+		} else {
+			it->second.size = new_size;
+		}
+		total_used_ -= old_size;
+		total_used_ += new_size;
+	}
+	return new_ptr;
 }
 
 void FFIMemory::free(void* ptr) {
-    if (!ptr) return;
-    
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    auto it = allocations_.find(ptr);
-    if (it != allocations_.end()) {
-        if (it->second.finalizer) {
-            it->second.finalizer(ptr);
-        }
-        total_used_ -= it->second.size;
-        allocations_.erase(it);
-    }
-    std::free(ptr);
+	if (!ptr) return;
+
+	std::lock_guard<std::mutex> lock(alloc_mutex_);
+	auto it = allocations_.find(ptr);
+	if (it != allocations_.end()) {
+		auto fin = std::move(it->second.finalizer);
+		it->second.finalizer = nullptr;
+		total_used_ -= it->second.size;
+		allocations_.erase(it);
+		std::free(ptr);
+		if (fin) fin(ptr);
+	}
 }
 
 void* FFIMemory::cast(void* ptr, std::shared_ptr<FFIType> new_type) {
@@ -87,17 +96,21 @@ void FFIMemory::mark(void* ptr) {
 }
 
 void FFIMemory::sweep() {
-    std::lock_guard<std::mutex> lock(alloc_mutex_);
-    for (auto it = allocations_.begin(); it != allocations_.end(); ) {
-        if (it->second.gc_mark == 0) {
-            total_used_ -= it->second.size;
-            std::free(it->first);
-            it = allocations_.erase(it);
-        } else {
-            it->second.gc_mark = 0;
-            ++it;
-        }
-    }
+	std::lock_guard<std::mutex> lock(alloc_mutex_);
+	for (auto it = allocations_.begin(); it != allocations_.end(); ) {
+		if (it->second.gc_mark == 0) {
+			auto fin = std::move(it->second.finalizer);
+			it->second.finalizer = nullptr;
+			total_used_ -= it->second.size;
+			void* ptr = it->first;
+			it = allocations_.erase(it);
+			std::free(ptr);
+			if (fin) fin(ptr);
+		} else {
+			it->second.gc_mark = 0;
+			++it;
+		}
+	}
 }
 
 void FFIMemory::attach_finalizer(void* ptr, std::function<void(void*)> finalizer) {

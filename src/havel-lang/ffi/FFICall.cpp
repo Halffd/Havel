@@ -20,6 +20,7 @@
 namespace havel::ffi {
 
 std::unordered_map<void*, std::string> FFICall::libraries_;
+std::mutex FFICall::library_mutex_;
 std::mutex FFICall::callback_mutex_;
 std::unordered_map<void*, std::unique_ptr<FFICall::CallbackData>> FFICall::callbacks_;
 std::mutex FFICall::cif_mutex_;
@@ -52,47 +53,49 @@ ffi_type* FFICall::to_ffi_type(std::shared_ptr<FFIType> type) {
 
 void* FFICall::load_library(const std::string& path) {
 #ifndef _WIN32
-    int flags = RTLD_NOW;
+	int flags = RTLD_NOW;
 #ifdef __APPLE__
-    flags |= RTLD_FIRST;
+	flags |= RTLD_FIRST;
 #endif
 
-    void* handle = dlopen(path.c_str(), flags);
-    if (!handle) {
-        ::havel::debug("FFICall: failed to load {}: {}", path, dlerror());
-    } else {
-        libraries_[handle] = path;
-    }
-    return handle;
+	void* handle = dlopen(path.c_str(), flags);
+	if (!handle) {
+		::havel::debug("FFICall: failed to load {}: {}", path, dlerror());
+	} else {
+		std::lock_guard<std::mutex> lock(library_mutex_);
+		libraries_[handle] = path;
+	}
+	return handle;
 #else
-    HMODULE handle = LoadLibraryA(path.c_str());
-    if (!handle) {
-        // Keep parity with POSIX behavior: try alternate name if not provided.
-        if (path.find(".dll") == std::string::npos) {
-            std::string altPath = path + ".dll";
-            handle = LoadLibraryA(altPath.c_str());
-        }
-    }
-    if (!handle) {
-        DWORD err = GetLastError();
-        ::havel::error("FFICall: failed to load {} (Win32 error {})", path, static_cast<unsigned long>(err));
-        return nullptr;
-    }
-    void* rawHandle = reinterpret_cast<void*>(handle);
-    libraries_[rawHandle] = path;
-    return rawHandle;
+	HMODULE handle = LoadLibraryA(path.c_str());
+	if (!handle) {
+		if (path.find(".dll") == std::string::npos) {
+			std::string altPath = path + ".dll";
+			handle = LoadLibraryA(altPath.c_str());
+		}
+	}
+	if (!handle) {
+		DWORD err = GetLastError();
+		::havel::error("FFICall: failed to load {} (Win32 error {})", path, static_cast<unsigned long>(err));
+		return nullptr;
+	}
+	void* rawHandle = reinterpret_cast<void*>(handle);
+	std::lock_guard<std::mutex> lock(library_mutex_);
+	libraries_[rawHandle] = path;
+	return rawHandle;
 #endif
 }
 
 void FFICall::unload_library(void* handle) {
-    if (handle) {
+	if (handle) {
 #ifndef _WIN32
-        dlclose(handle);
+		dlclose(handle);
 #else
-        FreeLibrary(reinterpret_cast<HMODULE>(handle));
+		FreeLibrary(reinterpret_cast<HMODULE>(handle));
 #endif
-        libraries_.erase(handle);
-    }
+		std::lock_guard<std::mutex> lock(library_mutex_);
+		libraries_.erase(handle);
+	}
 }
 
 void* FFICall::get_symbol(void* handle, const std::string& name) {
@@ -336,9 +339,12 @@ FFICall::CifKey FFICall::make_cif_key(void* fn_ptr,
   entry.cif = cif;
   entry.arg_types = std::move(arg_types_arr);
 
-  std::lock_guard<std::mutex> lock(cif_mutex_);
-  auto& stored = cif_cache_[key] = std::move(entry);
-  return stored;
+	std::lock_guard<std::mutex> lock(cif_mutex_);
+	if (cif_cache_.size() > 4096) {
+		cif_cache_.clear();
+	}
+	auto& stored = cif_cache_[key] = std::move(entry);
+	return stored;
 }
 
 Value FFICall::call_native(void* fn_ptr,

@@ -168,16 +168,22 @@ void registerPhysicsModule(const VMApi &api) {
         return Value(299792458.0 / frequency); // c / f
       });
 
-  // Register physics object
-  auto physicsObj = api.makeObject();
-  api.setField(physicsObj, "force", api.makeFunctionRef("force"));
-  api.setField(physicsObj, "kinetic_energy",
-               api.makeFunctionRef("kinetic_energy"));
-  api.setField(physicsObj, "potential_energy",
-               api.makeFunctionRef("potential_energy"));
-  api.setField(physicsObj, "momentum", api.makeFunctionRef("momentum"));
-  api.setField(physicsObj, "wavelength", api.makeFunctionRef("wavelength"));
-  api.setGlobal("Physics", physicsObj);
+ // Register physics object
+ auto physicsObj = api.makeObject();
+ api.setField(physicsObj, "C", Value(299792458.0));
+ api.setField(physicsObj, "G", Value(9.80665));
+ api.setField(physicsObj, "G0", Value(6.67430e-11));
+ api.setField(physicsObj, "PI", Value(3.14159265358979323846));
+ api.setField(physicsObj, "E", Value(2.71828182845904523536));
+ api.setField(physicsObj, "force", api.makeFunctionRef("force"));
+ api.setField(physicsObj, "kinetic_energy",
+ api.makeFunctionRef("kinetic_energy"));
+ api.setField(physicsObj, "potential_energy",
+ api.makeFunctionRef("potential_energy"));
+ api.setField(physicsObj, "momentum", api.makeFunctionRef("momentum"));
+ api.setField(physicsObj, "wavelength", api.makeFunctionRef("wavelength"));
+ api.setGlobal("Physics", physicsObj);
+ api.setGlobal("physics", physicsObj);
 }
 
 } // namespace havel::stdlib

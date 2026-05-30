@@ -1,4 +1,10 @@
-/* MathModule.cpp - VM-native stdlib module */
+/* MathModule.cpp - VM-native math host bridges
+ * Only registers <cmath> functions that need native code.
+ * Pure-Havel additions (clamp, lerp, sign, etc.) come from
+ * the sidecar module modules/lang/math/math.hv
+ * Physics constants/functions come from
+ * the sidecar module modules/lang/math/physics.hv
+ */
 #include "MathModule.hpp"
 #include "../compiler/vm/VM.hpp"
 
@@ -13,8 +19,22 @@ static double toNum(const Value &v) {
   return 0.0;
 }
 
+static void mergeExports(const VMApi &api, Value targetObj, Value exports) {
+  auto &vm = api.vm();
+  if (!exports.isObjectId()) return;
+  auto *obj = vm.getHeap().object(exports.asObjectId());
+  if (!obj) return;
+  for (const auto& [name, value] : *obj) {
+    if (name.empty() || name[0] == '_') continue;
+    api.setField(targetObj, name, value);
+    api.setGlobal(name, value);
+  }
+}
+
 void registerMathModule(const VMApi &api) {
   auto &vm = api.vm();
+
+  // --- cmath host bridges (require native <cmath>) ---
 
   api.registerFunction("math.ceil", [](const std::vector<Value> &args) {
     if (args.size() != 1) throw std::runtime_error("math.ceil() requires 1 argument");
@@ -60,63 +80,86 @@ void registerMathModule(const VMApi &api) {
     if (args.size() != 2) throw std::runtime_error("math.pow() requires 2 arguments");
     return Value(std::pow(toNum(args[0]), toNum(args[1])));
   });
-api.registerFunction("math.random", [](const std::vector<Value> &) {
-        return Value(static_cast<double>(std::rand()) / RAND_MAX);
-    });
-    api.registerFunction("math.abs", [](const std::vector<Value> &args) {
-        if (args.size() != 1) throw std::runtime_error("math.abs() requires 1 argument");
-        return Value(std::abs(toNum(args[0])));
-    });
-    api.registerFunction("math.min", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("math.min() requires at least 1 argument");
-        double min = toNum(args[0]);
-        for (size_t i = 1; i < args.size(); ++i) { double val = toNum(args[i]); if (val < min) min = val; }
-        return Value(min);
-    });
-    api.registerFunction("math.max", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("math.max() requires at least 1 argument");
-        double max = toNum(args[0]);
-        for (size_t i = 1; i < args.size(); ++i) { double val = toNum(args[i]); if (val > max) max = val; }
-        return Value(max);
-    });
+  api.registerFunction("math.random", [](const std::vector<Value> &) {
+    return Value(static_cast<double>(std::rand()) / RAND_MAX);
+  });
+  api.registerFunction("math.abs", [](const std::vector<Value> &args) {
+    if (args.size() != 1) throw std::runtime_error("math.abs() requires 1 argument");
+    return Value(std::abs(toNum(args[0])));
+  });
+  api.registerFunction("math.min", [](const std::vector<Value> &args) {
+    if (args.empty()) throw std::runtime_error("math.min() requires at least 1 argument");
+    double min = toNum(args[0]);
+    for (size_t i = 1; i < args.size(); ++i) { double val = toNum(args[i]); if (val < min) min = val; }
+    return Value(min);
+  });
+  api.registerFunction("math.max", [](const std::vector<Value> &args) {
+    if (args.empty()) throw std::runtime_error("math.max() requires at least 1 argument");
+    double max = toNum(args[0]);
+    for (size_t i = 1; i < args.size(); ++i) { double val = toNum(args[i]); if (val > max) max = val; }
+    return Value(max);
+  });
 
-    api.setGlobal("PI", Value(3.14159265358979323846));
-    api.setGlobal("E", Value(2.71828182845904523536));
+  // Bare constants (backward compat — also set by math.hv sidecar)
+  api.setGlobal("PI", Value(3.14159265358979323846));
+  api.setGlobal("E", Value(2.71828182845904523536));
 
-    auto mathObj = api.makeObject();
-    api.setField(mathObj, "ceil", api.makeFunctionRef("math.ceil"));
-    api.setField(mathObj, "floor", api.makeFunctionRef("math.floor"));
-    api.setField(mathObj, "round", api.makeFunctionRef("math.round"));
-    api.setField(mathObj, "sin", api.makeFunctionRef("math.sin"));
-    api.setField(mathObj, "cos", api.makeFunctionRef("math.cos"));
-    api.setField(mathObj, "tan", api.makeFunctionRef("math.tan"));
-    api.setField(mathObj, "sqrt", api.makeFunctionRef("math.sqrt"));
-    api.setField(mathObj, "log", api.makeFunctionRef("math.log"));
-    api.setField(mathObj, "exp", api.makeFunctionRef("math.exp"));
-    api.setField(mathObj, "pow", api.makeFunctionRef("math.pow"));
-    api.setField(mathObj, "random", api.makeFunctionRef("math.random"));
-    api.setField(mathObj, "abs", api.makeFunctionRef("math.abs"));
-    api.setField(mathObj, "min", api.makeFunctionRef("math.min"));
-    api.setField(mathObj, "max", api.makeFunctionRef("math.max"));
+  // Build "math" namespace object from host bridges
+  auto mathObj = api.makeObject();
+  api.setField(mathObj, "ceil", api.makeFunctionRef("math.ceil"));
+  api.setField(mathObj, "floor", api.makeFunctionRef("math.floor"));
+  api.setField(mathObj, "round", api.makeFunctionRef("math.round"));
+  api.setField(mathObj, "sin", api.makeFunctionRef("math.sin"));
+  api.setField(mathObj, "cos", api.makeFunctionRef("math.cos"));
+  api.setField(mathObj, "tan", api.makeFunctionRef("math.tan"));
+  api.setField(mathObj, "sqrt", api.makeFunctionRef("math.sqrt"));
+  api.setField(mathObj, "log", api.makeFunctionRef("math.log"));
+  api.setField(mathObj, "exp", api.makeFunctionRef("math.exp"));
+  api.setField(mathObj, "pow", api.makeFunctionRef("math.pow"));
+  api.setField(mathObj, "random", api.makeFunctionRef("math.random"));
+  api.setField(mathObj, "abs", api.makeFunctionRef("math.abs"));
+  api.setField(mathObj, "min", api.makeFunctionRef("math.min"));
+  api.setField(mathObj, "max", api.makeFunctionRef("math.max"));
+  api.setField(mathObj, "PI", Value(3.14159265358979323846));
+  api.setField(mathObj, "E", Value(2.71828182845904523536));
 
-    Value exports;
-    try {
-        exports = vm.loadModule("math");
-    } catch (...) {
-    }
+  // Set "math" global BEFORE loading sidecars so they can use math.PI etc
+  api.setGlobal("math", mathObj);
 
-  if (exports.isObjectId()) {
-    auto *obj = vm.getHeap().object(exports.asObjectId());
-    if (obj) {
-      for (const auto& [name, value] : *obj) {
+  // Load pure-Havel math sidecar (adds TAU, SQRT2, clamp, lerp, etc.)
+  Value mathExports;
+  try {
+    mathExports = vm.loadModule("math");
+  } catch (const std::exception& e) {
+    // Sidecar loading is best-effort — missing file is not fatal
+  } catch (...) {
+  }
+  // Merge sidecar exports into math object (also sets as bare globals)
+  mergeExports(api, mathObj, mathExports);
+
+  // Load pure-Havel physics sidecar (adds G, C, force, momentum, etc.)
+  Value physicsExports;
+  try {
+    physicsExports = vm.loadModule("math/physics");
+  } catch (const std::exception& e) {
+  } catch (...) {
+  }
+
+  // Build "physics"/"Physics" namespace object from physics sidecar
+  auto physicsObj = api.makeObject();
+  if (physicsExports.isObjectId()) {
+    auto *pobj = vm.getHeap().object(physicsExports.asObjectId());
+    if (pobj) {
+      for (const auto& [name, value] : *pobj) {
         if (name.empty() || name[0] == '_') continue;
-        api.setField(mathObj, name, value);
+        api.setField(physicsObj, name, value);
         api.setGlobal(name, value);
       }
     }
   }
 
-  api.setGlobal("math", mathObj);
+  api.setGlobal("physics", physicsObj);
+  api.setGlobal("Physics", physicsObj);
 }
 
 } // namespace havel::stdlib

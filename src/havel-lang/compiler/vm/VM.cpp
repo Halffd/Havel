@@ -1110,8 +1110,7 @@ bool VM::handleScriptThrow(const Value &value) {
           deferred.pop_back();
           if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
             try {
-              pushStack(defer_fn);
-              emitCall(0);
+              callFunctionSync(defer_fn, {});
             } catch (...) {
               // Swallow exceptions in deferred code during exception unwinding
             }
@@ -1128,8 +1127,7 @@ bool VM::handleScriptThrow(const Value &value) {
         deferred.pop_back();
         if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
           try {
-            pushStack(defer_fn);
-            emitCall(0);
+            callFunctionSync(defer_fn, {});
           } catch (...) {
             // Swallow exceptions in deferred code during exception unwinding
           }
@@ -1986,8 +1984,7 @@ void VM::doReturn() {
     deferred.pop_back();
     if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
       try {
-        pushStack(defer_fn);
-        emitCall(0);
+        callFunctionSync(defer_fn, {});
       } catch (...) {
         // Swallow exceptions in deferred code to allow remaining defers to run
       }

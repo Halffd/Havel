@@ -13,7 +13,7 @@ void registerObjectModule(const compiler::VMApi &api);
 void registerTypeModule(const compiler::VMApi &api);
 void registerArrayModule(const compiler::VMApi &api);
 void registerRegexModule(const compiler::VMApi &api);
-void registerPhysicsModule(const compiler::VMApi &api);
+
 void registerTimeModule(const compiler::VMApi &api);
 void registerTimerModule(const compiler::VMApi &api);
 void registerFsModule(const compiler::VMApi &api);
@@ -53,7 +53,7 @@ void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
   }
 
   stdlib::registerRegexModule(api);
-  stdlib::registerPhysicsModule(api);
+ 
   stdlib::registerTimeModule(api);
   stdlib::registerTimerModule(api);
   stdlib::registerFsModule(api);

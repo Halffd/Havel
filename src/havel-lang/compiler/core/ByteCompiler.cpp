@@ -6473,11 +6473,6 @@ case ast::NodeType::WaitExpression: {
   if (wait_expr.target) collectLambdaExpressions(*wait_expr.target, out);
   break;
 }
-case ast::NodeType::DeferStatement: {
-  const auto &defer_stmt = static_cast<const ast::DeferStatement &>(expression);
-  if (defer_stmt.expression) collectLambdaExpressions(*defer_stmt.expression, out);
-  break;
-}
 
   default:
     break;

@@ -396,11 +396,38 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
     if (args.empty() || !args[0].isInt()) {
         throw std::runtime_error("bc.set_param_count: requires count (int)");
     }
-    fn->param_count = static_cast<uint32_t>(args[0].asInt());
-    return Value::makeNull();
-});
+  fn->param_count = static_cast<uint32_t>(args[0].asInt());
+  return Value::makeNull();
+ });
 
-api.registerFunction("bc.str_id", [](const std::vector<Value> &args) -> Value {
+ api.registerFunction("bc.set_param_names", [api](const std::vector<Value> &args) -> Value {
+  auto *fn = g_builder.currentFunc();
+  if (!fn) throw std::runtime_error("bc.set_param_names: no current function");
+  if (args.empty() || !args[0].isArrayId()) {
+   throw std::runtime_error("bc.set_param_names: requires array of string indices");
+  }
+  auto &heap = api.vm().getHeap();
+  auto *arr = heap.array(args[0].asArrayId());
+  if (!arr) throw std::runtime_error("bc.set_param_names: array not found");
+  fn->param_names.clear();
+  for (size_t i = 0; i < arr->size(); i++) {
+   auto &elem = (*arr)[i];
+   if (elem.isStringValId()) {
+    fn->param_names.push_back(g_builder.chunk->getString(elem.asStringValId()));
+   } else if (elem.isStringId()) {
+    auto *sp = heap.string(elem.asStringId());
+    fn->param_names.push_back(sp ? *sp : std::to_string(i));
+   } else if (elem.isInt()) {
+    uint32_t sid = static_cast<uint32_t>(elem.asInt());
+    fn->param_names.push_back(g_builder.chunk->getString(sid));
+   } else {
+    fn->param_names.push_back("_");
+   }
+  }
+  return Value::makeNull();
+ });
+
+ api.registerFunction("bc.str_id", [](const std::vector<Value> &args) -> Value {
     if (args.empty() || !args[0].isInt()) {
         throw std::runtime_error("bc.str_id: requires chunk string index (int)");
     }
@@ -789,6 +816,7 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
   api.setField(bcObj, "patch_jump", api.makeFunctionRef("bc.patch_jump"));
   api.setField(bcObj, "set_local_count", api.makeFunctionRef("bc.set_local_count"));
   api.setField(bcObj, "set_param_count", api.makeFunctionRef("bc.set_param_count"));
+ api.setField(bcObj, "set_param_names", api.makeFunctionRef("bc.set_param_names"));
     api.setField(bcObj, "add_upvalue", api.makeFunctionRef("bc.add_upvalue"));
     api.setField(bcObj, "add_upvalue_to", api.makeFunctionRef("bc.add_upvalue_to"));
   api.setField(bcObj, "execute", api.makeFunctionRef("bc.execute"));

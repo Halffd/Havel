@@ -103,18 +103,32 @@ fn emitStoreVar(emitter, name) {
   bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
 
  }
+fn emitKwargsObject(emitter, kwargs) {
+  bc.emit("OBJECT_NEW")
+  trueIdx = bc.add_const(true)
+  kwargKeyIdx = bc.add_string("__kwargs")
+  bc.emit("LOAD_CONST", trueIdx)
+  bc.emit("LOAD_CONST", kwargKeyIdx)
+  bc.emit("OBJECT_SET")
+  for kw in kwargs {
+    emitExpr(emitter, kw.value)
+    nameIdx = bc.add_string(kw.name)
+    bc.emit("LOAD_CONST", nameIdx)
+    bc.emit("OBJECT_SET")
+  }
+}
 // ============================================================
 // Expression emission
 // ============================================================
 
 fn emitExpr(emitter, node) {
-    if node == null {
+  if node == null {
         bc.emit("PUSH_NULL")
         return
     }
-  if node.line != null {
-    bc.set_source(node.line, node.col)
-  }
+    if node.line != null {
+        bc.set_source(node.line, node.col)
+    }
   k = node.kind
 
   if k == "NumberLiteral" {
@@ -400,18 +414,23 @@ if k == "UpdateExpression" {
   return
 }
 if k == "CallExpression" {
-        callee = node.callee
-        argc = #node.args
-        if callee.kind == "MemberExpression" {
-            emitExpr(emitter, callee.obj)
-            for arg in node.args {
-                emitExpr(emitter, arg)
-            }
-            propIdx = bc.add_chunk_string(callee.property)
-            bc.emit("CALL_METHOD", bc.str_id(propIdx), argc)
-            return
-        }
-if callee.kind == "Identifier" {
+  callee = node.callee
+  argc = #node.args
+  hasKwargs = node.kwargs != null and #node.kwargs > 0
+  if callee.kind == "MemberExpression" {
+    emitExpr(emitter, callee.obj)
+    for arg in node.args {
+      emitExpr(emitter, arg)
+    }
+    if hasKwargs {
+      emitKwargsObject(emitter, node.kwargs)
+      argc = argc + 1
+    }
+    propIdx = bc.add_chunk_string(callee.property)
+    bc.emit("CALL_METHOD", bc.str_id(propIdx), argc)
+    return
+  }
+  if callee.kind == "Identifier" {
     if emitter.classNames[callee.name] != null {
       newFn = "class.new"
       if emitter.structNames[callee.name] != null {
@@ -419,26 +438,35 @@ if callee.kind == "Identifier" {
       }
       sid = globalIdx(emitter, newFn)
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))
- nameIdx = bc.add_string(callee.name)
- bc.emit("LOAD_CONST", nameIdx)
- for arg in node.args {
- emitExpr(emitter, arg)
- }
- bc.emit("CALL", argc + 1)
- return
- }
- emitLoadVar(emitter, callee.name)
- }
-        else {
-            emitExpr(emitter, callee)
-        }
-        for arg in node.args {
-            emitExpr(emitter, arg)
-        }
-        bc.emit("CALL", argc)
-        return
-
+      nameIdx = bc.add_string(callee.name)
+      bc.emit("LOAD_CONST", nameIdx)
+      for arg in node.args {
+        emitExpr(emitter, arg)
+      }
+      if hasKwargs {
+        emitKwargsObject(emitter, node.kwargs)
+        bc.emit("CALL", argc + 2)
+      }
+      else {
+        bc.emit("CALL", argc + 1)
+      }
+      return
     }
+    emitLoadVar(emitter, callee.name)
+  }
+  else {
+    emitExpr(emitter, callee)
+  }
+  for arg in node.args {
+    emitExpr(emitter, arg)
+  }
+  if hasKwargs {
+    emitKwargsObject(emitter, node.kwargs)
+    argc = argc + 1
+  }
+  bc.emit("CALL", argc)
+  return
+}
     if k == "AssignmentExpression" {
         target = node.target
         if target.kind == "Identifier" {
@@ -619,18 +647,18 @@ return
         return
 
     }
-    if k == "RangeExpression" {
-        emitExpr(emitter, node.start)
-        emitExpr(emitter, node.end)
-        if node.inclusive {
-            bc.emit("LOAD_CONST", bc.add_const(1))
-            bc.emit("RANGE_STEP_NEW")
-        }
-        if !node.inclusive {
-            bc.emit("RANGE_NEW")
-        }
-        return
+  if k == "RangeExpression" or k == "range" {
+    emitExpr(emitter, node.start)
+    emitExpr(emitter, node.end)
+    if node.inclusive {
+        bc.emit("LOAD_CONST", bc.add_const(1))
+        bc.emit("RANGE_STEP_NEW")
     }
+    if !node.inclusive {
+        bc.emit("RANGE_NEW")
+    }
+    return
+}
  if k == "LambdaExpression" {
  // Compile the lambda body now
  result = compileLambda(emitter, node.params, node.body, node.line)
@@ -1461,6 +1489,23 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
   bc.func_push()
   actualIdx = bc.func_new(name, paramCount, localCount)
   newScope.bcFuncIdx = actualIdx
+  // Set parameter names for kwargs support
+  paramNameStrIds = []
+  for p in params {
+    if type(p) == "object" && p.name != null {
+      sid = bc.add_chunk_string(p.name)
+      paramNameStrIds.push(sid)
+    }
+    else if type(p) == "object" && p.value != null {
+      sid = bc.add_chunk_string(p.value)
+      paramNameStrIds.push(sid)
+    }
+    else if type(p) == "str" {
+      sid = bc.add_chunk_string(p)
+      paramNameStrIds.push(sid)
+    }
+  }
+  bc.set_param_names(paramNameStrIds)
   traceEmitter("func_new " + name + " params=" + str(paramCount) + " locals=" + str(localCount) + " bcIdx=" + str(actualIdx))
   if sourceLine != null {
     bc.set_func_source_line(sourceLine)
@@ -1522,12 +1567,29 @@ fn compileLambda(emitter, params, bodyNode, sourceLine) {
  }
  else { scopeDeclare(newScope, p) }
  }
- paramCount = #params
- localCount = paramCount + 16
- bc.func_push()
- actualIdx = bc.func_new(name, paramCount, localCount)
- newScope.bcFuncIdx = actualIdx
- traceEmitter("func_new " + name + " params=" + str(paramCount) + " bcIdx=" + str(actualIdx))
+  paramCount = #params
+  localCount = paramCount + 16
+  bc.func_push()
+  actualIdx = bc.func_new(name, paramCount, localCount)
+  newScope.bcFuncIdx = actualIdx
+  // Set parameter names for kwargs support
+  paramNameStrIds = []
+  for p in params {
+    if type(p) == "object" && p.name != null {
+      sid = bc.add_chunk_string(p.name)
+      paramNameStrIds.push(sid)
+    }
+    else if type(p) == "object" && p.value != null {
+      sid = bc.add_chunk_string(p.value)
+      paramNameStrIds.push(sid)
+    }
+    else if type(p) == "str" {
+      sid = bc.add_chunk_string(p)
+      paramNameStrIds.push(sid)
+    }
+  }
+  bc.set_param_names(paramNameStrIds)
+  traceEmitter("func_new " + name + " params=" + str(paramCount) + " bcIdx=" + str(actualIdx))
  if sourceLine != null {
  bc.set_func_source_line(sourceLine)
  }
@@ -1807,10 +1869,11 @@ emitStmt(emitter, topStmts[si])
 si = si + 1
 }
     // Last expression is the return rvalue
-    if n > 0 {
-        last = topStmts[n - 1]
-        if last.kind == "ExpressionStatement" {
-            emitExpr(emitter, last.expr)
+  if n > 0 {
+    last = topStmts[n - 1]
+    lastExpr = last.expr
+    if last.kind == "ExpressionStatement" {
+      emitExpr(emitter, lastExpr)
             bc.emit("RETURN")
         }
         if last.kind == "IfStatement" {

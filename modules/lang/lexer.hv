@@ -317,6 +317,8 @@ fn isUnicodeIdentifierChar(c) {
     isUnicodeLetter(cp) or isUnicodeDigit(cp)
 
 }
+
+SIMPLE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "0": "\0", "$": "$", "{": "{", "}": "}"}
 fn Lexer(source) {
     // Copy module-scope vars into locals so nested closures can see them
     keywords = KEYWORDS
@@ -420,11 +422,10 @@ fn scanString(quote, isFString, isRegexString) {
 
         }
     while current() != null and current() != quote and current() != "\n" {
-        if current() == "\\" {
-        advance()
-        c = current()
-        SIMPLE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "0": "\0", "$": "$", "{": "{", "}": "}"}
-        esc = SIMPLE_ESCAPES[c]
+    if current() == "\\" {
+            advance()
+            c = current()
+            esc = SIMPLE_ESCAPES[c]
         if esc != null { s = s + esc }
         else if c == quote { s = s + quote }
         else if c == "x" {
@@ -463,6 +464,7 @@ fn scanString(quote, isFString, isRegexString) {
         if c != null and c != "x" and c != "u" {
             advance()
         }
+        print("DBG_ESC: after c=" + c + " slen=" + str(#s) + " pos=" + str(pos) + " cur=" + str(current()) + " cur_eq_quote=" + str(current() == quote) + " quote=" + str(quote) + "\n")
     }
             else if current() == "{" and isFString {
              isInterpolated = true

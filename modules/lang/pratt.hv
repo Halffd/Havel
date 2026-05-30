@@ -431,7 +431,7 @@ fn parseExpr(rbp) {
                 args.push(nextArg)
 
             }
-            left = CallExpression(left, args, startToken.line, startToken.col)
+            left = CallExpression(left, args, [], startToken.line, startToken.col)
 
         }
         left
@@ -615,7 +615,7 @@ else if tt == "Length" {
 					if current().type == "Comma": advance()
 				}
 				expect("CloseParen")
-				return CallExpression(node, args, l, c)
+      return CallExpression(node, args, [], l, c)
 			}
 			else {
 				return node
@@ -850,10 +850,10 @@ fn led(tok, left) {
         }
     }
     // Function call: expr(args)
-    else if tt == "OpenParen" {
-        args = parseCallArgs()
-        return CallExpression(left, args, l, c)
-    }
+  else if tt == "OpenParen" {
+    callResult = parseCallArgs()
+    return CallExpression(left, callResult.args, callResult.kwargs, l, c)
+  }
     // Index: expr[index]
     else if tt == "OpenBracket" {
         isSlice = detectSlice()
@@ -906,39 +906,46 @@ fn led(tok, left) {
     // ===================================================================
     // HELPER: Parse call arguments
     // ===================================================================
-    fn parseCallArgs() {
-        args = []
+fn parseCallArgs() {
+  args = []
+  kwargs = []
+  skipNewlines()
+  while current().type != "CloseParen" and notEOF() {
+    skipNewlines()
+    if current().type == "CloseParen": break
+    if args.len > 0 or kwargs.len > 0 {
+      if current().type == "Comma" {
+        advance()
         skipNewlines()
-        while current().type != "CloseParen" and notEOF() {
-            skipNewlines()
-            if current().type == "CloseParen": break
-            if args.len > 0 {
-                if current().type == "Comma" {
-                    advance()
-                    skipNewlines()
-                }
-            }
-            if current().type == "CloseParen": break
-            // Spread
-            if current().type == "Spread" {
-                advance()
-                target = parseExpr(0)
-                args.push(SpreadExpression(target, current().line, current().col))
-            }
-            else {
-                args.push(parseExpr(0))
-            }
-            skipNewlines()
-        }
-        if current().type == "CloseParen" {
-            advance()
-        }
-        else {
-            error("Expected ')' after arguments", current().line, current().col)
-        }
-        args
-
+      }
     }
+    if current().type == "CloseParen": break
+    // Keyword argument: name=value
+    if current().type == "Identifier" and at(1).type == "Assign" {
+      name = advance().value
+      advance() // consume '='
+      value = parseExpr(0)
+      kwargs.push({name: name, value: value})
+    }
+    // Spread
+    else if current().type == "Spread" {
+      advance()
+      target = parseExpr(0)
+      args.push(SpreadExpression(target, current().line, current().col))
+    }
+    else {
+      args.push(parseExpr(0))
+    }
+    skipNewlines()
+  }
+  if current().type == "CloseParen" {
+    advance()
+  }
+  else {
+    error("Expected ')' after arguments", current().line, current().col)
+  }
+  {args: args, kwargs: kwargs}
+}
     // ===================================================================
     // HELPER: Detect slice expression [...:...]
     // ===================================================================
@@ -1021,7 +1028,7 @@ fn led(tok, left) {
         else: args.push(NullLiteral(l, c))
 
   sliceMember = MemberExpression(obj, "slice", l, c)
-  return CallExpression(sliceMember, args, l, c)
+  return CallExpression(sliceMember, args, [], l, c)
 
   }
     // ===================================================================
@@ -2177,7 +2184,7 @@ skipNewlines()
             // Could be del(expr) — parse as call
             callee = Identifier("del", l, c)
             args = parseCallArgs()
-            return ExpressionStatement(CallExpression(callee, args, l, c), l, c)
+            return ExpressionStatement(CallExpression(callee, args, [], l, c), l, c)
 
         }
         target = parseExpr(0)

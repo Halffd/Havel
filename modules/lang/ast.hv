@@ -132,9 +132,8 @@ fn UpdateExpression(operand, oper, prefix, line, col) {
     {kind: "UpdateExpression", line: line, col: col, operand: operand, oper: oper, prefix: prefix}
 
 }
-fn CallExpression(callee, args, line, col) {
-    {kind: "CallExpression", line: line, col: col, callee: callee, args: args}
-
+fn CallExpression(callee, args, kwargs, line, col) {
+  {kind: "CallExpression", line: line, col: col, callee: callee, args: args, kwargs: kwargs}
 }
 fn MemberExpression(obj, property, line, col) {
     {kind: "MemberExpression", line: line, col: col, obj: obj, property: property}

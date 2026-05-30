@@ -30,6 +30,12 @@ void registerBytecodeBuilderModule(const compiler::VMApi &api);
 void registerLogModule(const compiler::VMApi &api);
 } // namespace havel::stdlib
 
+namespace havel::modules {
+void registerWindowMonitorModule(const compiler::VMApi &api);
+void registerDisplayModule(const compiler::VMApi &api);
+void registerBrightnessModule(const compiler::VMApi &api);
+} // namespace havel::modules
+
 namespace havel {
 
 namespace {
@@ -62,6 +68,11 @@ void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
 stdlib::registerOptionModule(api);
 stdlib::registerBytecodeBuilderModule(api);
 stdlib::registerLogModule(api);
+
+  // OS-query modules (safe to call even without display server - returns empty data)
+  modules::registerWindowMonitorModule(api);
+  modules::registerDisplayModule(api);
+  modules::registerBrightnessModule(api);
 }
 } // namespace
 

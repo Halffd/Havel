@@ -75,6 +75,7 @@ void GCHeap::reset() {
     marked_intervals_.clear();
     marked_timeouts_.clear();
     marked_channels_.clear();
+  marked_waitgroups_.clear();
 
     array_ages_.clear();
     object_ages_.clear();
@@ -639,6 +640,7 @@ void GCHeap::startIncrementalCollection(
     marked_intervals_.clear();
     marked_timeouts_.clear();
     marked_channels_.clear();
+  marked_waitgroups_.clear();
 
     recovered_in_cycle_ = 0;
     collection_requested_ = false;
@@ -742,17 +744,21 @@ void GCHeap::markReference(const Value &value) {
         marked_timeouts_.insert(value.asTimeoutId());
         return;
     }
-    if (value.isChannelId()) {
-        marked_channels_.insert(value.asChannelId());
-        // Trace buffered values in the channel — they are live references
-        auto it = channels_.find(value.asChannelId());
-        if (it != channels_.end()) {
-            for (const auto &ch_val : it->second) {
-                markReference(ch_val);
-            }
-        }
-        return;
+  if (value.isChannelId()) {
+    marked_channels_.insert(value.asChannelId());
+    // Trace buffered values in the channel — they are live references
+    auto it = channels_.find(value.asChannelId());
+    if (it != channels_.end()) {
+      for (const auto &ch_val : it->second) {
+        markReference(ch_val);
+      }
     }
+    return;
+  }
+  if (value.isWaitGroupId()) {
+    marked_waitgroups_.insert(value.asWaitGroupId());
+    return;
+  }
     if (value.isCoroutineId()) {
         marked_coroutines_.insert(value.asCoroutineId());
         // Trace all Values inside the coroutine — stack, locals,
@@ -1341,13 +1347,35 @@ recovered_in_cycle_++;
                     recovered_in_cycle_++;
                 }
             }
-            if (sweep_index_ >= sweep_keys_.size()) {
-                gc_state_ = IncrementalState::Idle;
-                sweep_index_ = 0;
-            }
-            break;
+  if (sweep_index_ >= sweep_keys_.size()) {
+    gc_state_ = IncrementalState::SweepWaitGroups;
+    sweep_index_ = 0;
+  }
+  break;
 
-        default:
+case IncrementalState::SweepWaitGroups:
+  if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
+    sweep_keys_.clear();
+    for (const auto &kv : waitgroups_) {
+      sweep_keys_.push_back(kv.first);
+    }
+    sweep_index_ = 0;
+    sweep_phase_ = gc_state_;
+  }
+  while (work_budget > 0 && sweep_index_ < sweep_keys_.size()) {
+    uint32_t id = sweep_keys_[sweep_index_++];
+    work_budget--;
+
+    if (marked_waitgroups_.find(id) == marked_waitgroups_.end()) {
+      waitgroups_.erase(id);
+      recovered_in_cycle_++;
+    }
+  }
+  if (sweep_index_ >= sweep_keys_.size()) {
+    gc_state_ = IncrementalState::Idle;
+    sweep_index_ = 0;
+  }
+  break;
             gc_state_ = IncrementalState::Idle;
             break;
     }
@@ -1382,6 +1410,7 @@ void GCHeap::completeCollection() {
     marked_intervals_.clear();
     marked_timeouts_.clear();
     marked_channels_.clear();
+  marked_waitgroups_.clear();
 
     root_stack_snapshot_.clear();
     root_locals_snapshot_.clear();
@@ -1470,9 +1499,15 @@ TimeoutRef GCHeap::allocateTimeoutObj(std::shared_ptr<::havel::Timeout> timeout)
 }
 
 ChannelRef GCHeap::allocateChannel() {
-    const uint32_t id = next_channel_id_++;
-    channels_[id] = {};
-    return ChannelRef{.id = id};
+  const uint32_t id = next_channel_id_++;
+  channels_[id] = {};
+  return ChannelRef{.id = id};
+}
+
+GCHeap::WaitGroupRef GCHeap::allocateWaitGroup() {
+  const uint32_t id = next_waitgroup_id_++;
+  waitgroups_[id] = std::make_unique<WaitGroup>();
+  return WaitGroupRef{.id = id};
 }
 
 uint32_t GCHeap::allocateThread() {
@@ -1540,8 +1575,18 @@ GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) {
 }
 
 const GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) const {
-    auto it = coroutines_.find(id);
-    return it == coroutines_.end() ? nullptr : &it->second;
+  auto it = coroutines_.find(id);
+  return it == coroutines_.end() ? nullptr : &it->second;
+}
+
+GCHeap::WaitGroup* GCHeap::waitgroup(uint32_t id) {
+  auto it = waitgroups_.find(id);
+  return it == waitgroups_.end() ? nullptr : it->second.get();
+}
+
+const GCHeap::WaitGroup* GCHeap::waitgroup(uint32_t id) const {
+  auto it = waitgroups_.find(id);
+  return it == waitgroups_.end() ? nullptr : it->second.get();
 }
 
 std::vector<std::pair<uint32_t, GCHeap::ObjectEntry>> GCHeap::drainFinalizers() {

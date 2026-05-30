@@ -703,7 +703,22 @@ void GoExpression::accept(ASTVisitor &visitor) const {
 
 // ChannelExpression accept method
 void ChannelExpression::accept(ASTVisitor &visitor) const {
-visitor.visitChannelExpression(*this);
+  visitor.visitChannelExpression(*this);
+}
+
+// WaitGroupExpression accept method
+void WaitGroupExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitWaitGroupExpression(*this);
+}
+
+// DeferStatement accept method
+void DeferStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitDeferStatement(*this);
+}
+
+// WaitExpression accept method
+void WaitExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitWaitExpression(*this);
 }
 
 } // namespace havel::ast

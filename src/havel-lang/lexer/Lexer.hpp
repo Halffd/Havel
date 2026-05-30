@@ -182,8 +182,11 @@ enum class TokenType {
   Go, // go
   Sync,  // sync - synchronous hotkey modifier
   Async, // async - asynchronous hotkey modifier
- Channel, // channel
- Co, // co - coroutine modifier
+  Channel, // channel
+  WaitGroup, // waitgroup
+  Wait, // wait - join on goroutine or waitgroup
+  Defer, // defer
+  Co, // co - coroutine modifier
  Dsl, // dsl
   Del,            // del - delete variable/element
   DoubleOpenParen,  // (( bitwise expression start

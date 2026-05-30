@@ -1052,12 +1052,18 @@ case ast::NodeType::BlockStatement: {
     break;
   }
 
-  case ast::NodeType::UseStatement:
-    // Global imports already handled in first pass of resolve()
-    break;
+case ast::NodeType::UseStatement:
+  // Global imports already handled in first pass of resolve()
+  break;
 
-  default:
-    break;
+case ast::NodeType::DeferStatement: {
+  const auto &defer_stmt = static_cast<const ast::DeferStatement &>(statement);
+  if (defer_stmt.expression) resolveExpression(*defer_stmt.expression);
+  break;
+}
+
+default:
+  break;
   }
 }
 
@@ -1674,9 +1680,16 @@ case ast::NodeType::MemberExpression: {
         break;
     }
 
-    case ast::NodeType::ChannelExpression:
-    case ast::NodeType::ThisExpression:
-        break;
+  case ast::NodeType::ChannelExpression:
+  case ast::NodeType::WaitGroupExpression:
+  case ast::NodeType::ThisExpression:
+  break;
+
+  case ast::NodeType::WaitExpression: {
+    const auto &wait_expr = static_cast<const ast::WaitExpression &>(expression);
+    if (wait_expr.target) resolveExpression(*wait_expr.target);
+    break;
+  }
 
     case ast::NodeType::GetInputExpression: {
         const auto &getInput = static_cast<const ast::GetInputExpression &>(expression);

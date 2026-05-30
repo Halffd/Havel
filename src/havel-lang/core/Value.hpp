@@ -77,8 +77,9 @@ enum class ExtendedTag : uint64_t {
   TIMEOUT_ID = 0xF,       // Timeout timer (stores index into GC heap)
     TAIL_CALL_REQUEST = 0x10, // Special tag for JIT trampoline
     REGEX_VAL_ID = 0x11, // Regex string literal (stores index into string pool)
-    BOUND_METHOD_ID = 0x12, // Bound method (stores index into GC heap)
-    };
+  BOUND_METHOD_ID = 0x12, // Bound method (stores index into GC heap)
+  WAITGROUP_ID = 0x13, // WaitGroup object (stores index into GC heap)
+};
 
 // Bool payload values
 static constexpr uint64_t BOOL_FALSE = 0;
@@ -313,6 +314,10 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::CHANNEL_ID), id));
   }
 
+  static Value makeWaitGroupId(uint32_t id) {
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::WAITGROUP_ID), id));
+  }
+
   static Value makeCoroutineId(uint32_t id) {
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::COROUTINE_ID), id));
   }
@@ -432,7 +437,12 @@ public:
 
   bool isChannelId() const {
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
-           extractExtendedTag(bits_) == ExtendedTag::CHANNEL_ID;
+      extractExtendedTag(bits_) == ExtendedTag::CHANNEL_ID;
+  }
+
+  bool isWaitGroupId() const {
+    return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
+      extractExtendedTag(bits_) == ExtendedTag::WAITGROUP_ID;
   }
 
   bool isCoroutineId() const {
@@ -546,6 +556,10 @@ public:
   }
 
   uint32_t asChannelId() const {
+    return static_cast<uint32_t>(extractPayload(bits_));
+  }
+
+  uint32_t asWaitGroupId() const {
     return static_cast<uint32_t>(extractPayload(bits_));
   }
 

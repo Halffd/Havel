@@ -4,6 +4,8 @@
 #include "../../runtime/concurrency/Thread.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -186,23 +188,29 @@ struct RuntimeClosure {
         std::vector<Value> stack;
     };
 
-    struct Coroutine {
-        enum State { Runnable, Waiting, Done };
+struct Coroutine {
+  enum State { Runnable, Waiting, Done };
 
-        uint32_t function_index = 0;
-        uint32_t chunk_index = 0;
-        uint32_t ip = 0;
-        uint32_t closure_id = 0;
-        std::vector<Value> stack;
-        std::vector<Value> locals;
-        std::vector<CallerFrame> caller_stack;
-        State state = Runnable;
-        std::vector<Value> yield_values;
-        size_t parent_locals_size = 0;
-        std::chrono::steady_clock::time_point resume_at_time{};
+  uint32_t function_index = 0;
+  uint32_t chunk_index = 0;
+  uint32_t ip = 0;
+  uint32_t closure_id = 0;
+  std::vector<Value> stack;
+  std::vector<Value> locals;
+  std::vector<CallerFrame> caller_stack;
+  State state = Runnable;
+  std::vector<Value> yield_values;
+  size_t parent_locals_size = 0;
+  std::chrono::steady_clock::time_point resume_at_time{};
 
-        Coroutine() = default;
-    };
+  Coroutine() = default;
+};
+
+struct WaitGroup {
+  std::atomic<int64_t> counter{0};
+  std::mutex mutex;
+  std::condition_variable cv;
+};
 
     void reset();
 
@@ -249,6 +257,9 @@ struct RuntimeClosure {
     TimeoutRef allocateTimeoutObj(std::shared_ptr<::havel::Timeout> timeout);
     ChannelRef allocateChannel();
 
+  using WaitGroupRef = ChannelRef; // reuse {id} pattern
+  WaitGroupRef allocateWaitGroup();
+
     uint32_t allocateThread();
     uint32_t allocateInterval();
     uint32_t allocateTimeout();
@@ -277,8 +288,11 @@ const ::havel::Interval* interval(uint32_t id) const;
     ::havel::Timeout* timeout(uint32_t id);
     const ::havel::Timeout* timeout(uint32_t id) const;
 
-    Coroutine *coroutine(uint32_t id);
-    const Coroutine *coroutine(uint32_t id) const;
+  Coroutine *coroutine(uint32_t id);
+  const Coroutine *coroutine(uint32_t id) const;
+
+  WaitGroup *waitgroup(uint32_t id);
+  const WaitGroup *waitgroup(uint32_t id) const;
 
     ErrorObject *error(uint32_t id);
     const ErrorObject *error(uint32_t id) const;
@@ -354,8 +368,9 @@ private:
         SweepThreads,
         SweepIntervals,
         SweepTimeouts,
-        SweepChannels,
-    };
+  SweepChannels,
+  SweepWaitGroups,
+};
 
     void markValue(const Value &value,
         std::unordered_set<uint32_t> &marked_arrays,
@@ -398,6 +413,7 @@ private:
     std::unordered_map<uint32_t, std::shared_ptr<::havel::Interval>> intervals_;
     std::unordered_map<uint32_t, std::shared_ptr<::havel::Timeout>> timeouts_;
     std::unordered_map<uint32_t, std::vector<Value>> channels_;
+  std::unordered_map<uint32_t, std::unique_ptr<WaitGroup>> waitgroups_;
 
     std::unordered_map<uint32_t, Coroutine> coroutines_;
 
@@ -415,8 +431,9 @@ private:
     uint32_t next_thread_id_ = 1;
     uint32_t next_interval_id_ = 1;
     uint32_t next_timeout_id_ = 1;
-    uint32_t next_channel_id_ = 1;
-    uint32_t next_coroutine_id_ = 1;
+  uint32_t next_channel_id_ = 1;
+  uint32_t next_waitgroup_id_ = 1;
+  uint32_t next_coroutine_id_ = 1;
 
     size_t allocation_budget_ = 65536;
     size_t allocations_since_last_ = 0;
@@ -452,6 +469,7 @@ private:
     std::unordered_set<uint32_t> marked_intervals_;
     std::unordered_set<uint32_t> marked_timeouts_;
     std::unordered_set<uint32_t> marked_channels_;
+  std::unordered_set<uint32_t> marked_waitgroups_;
 
     std::unordered_map<uint32_t, uint8_t> array_ages_;
     std::unordered_map<uint32_t, uint8_t> object_ages_;

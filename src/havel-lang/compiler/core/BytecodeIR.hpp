@@ -266,11 +266,20 @@ DECLOCAL_POST,  // local-- (postfix decrement)
  FIBER_AWAIT, // <- expr: await/blocking expression for fibers
  FIBER_SLEEP, // <-sleep(ms): non-blocking sleep in coroutines
   
-  // Channels
-  CHANNEL_NEW,      // Create new channel: channel()
-  CHANNEL_SEND,     // Send value to channel
-  CHANNEL_RECEIVE,  // Receive value from channel (blocking)
-  CHANNEL_CLOSE,    // Close channel
+// Channels
+CHANNEL_NEW, // Create new channel: channel()
+CHANNEL_SEND, // Send value to channel
+CHANNEL_RECEIVE, // Receive value from channel (blocking)
+CHANNEL_CLOSE, // Close channel
+
+// Defer
+DEFER_PUSH, // Push a closure onto the current scope's defer stack
+
+// WaitGroup
+WAITGROUP_NEW, // Create new WaitGroup: waitgroup()
+WAITGROUP_ADD, // WaitGroup.add(n): increment counter
+WAITGROUP_DONE, // WaitGroup.done(): decrement counter
+WAITGROUP_WAIT, // WaitGroup.wait(): block until counter == 0
 
   // Module context
   BEGIN_MODULE,     // Begin module scope, collect exports to object on stack

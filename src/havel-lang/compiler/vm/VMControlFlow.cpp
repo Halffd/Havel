@@ -179,9 +179,11 @@ case OpCode::TAIL_CALL: {
       type_name = "thread";
     } else if (receiver.isIntervalId()) {
       type_name = "interval";
-    } else if (receiver.isTimeoutId()) {
-      type_name = "timeout";
-} else if (receiver.isRangeId()) {
+  } else if (receiver.isTimeoutId()) {
+    type_name = "timeout";
+  } else if (receiver.isWaitGroupId()) {
+    type_name = "waitgroup";
+  } else if (receiver.isRangeId()) {
         type_name = "range";
     } else if (receiver.isHostFuncId()) {
         // Dotted host function call: e.g. interval.start(100, fn)

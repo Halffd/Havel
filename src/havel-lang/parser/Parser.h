@@ -224,6 +224,9 @@ private:
   std::unique_ptr<ast::Statement> parseGoStatement();
   std::unique_ptr<ast::Expression> parseGoExpression();
   std::unique_ptr<ast::Expression> parseChannelExpression();
+  std::unique_ptr<ast::Expression> parseWaitGroupExpression();
+  std::unique_ptr<ast::Statement> parseDeferStatement();
+  std::unique_ptr<ast::Expression> parseWaitExpression();
   std::unique_ptr<ast::Expression> parseBinaryExpression();
   std::unique_ptr<ast::Expression> parsePrimaryExpression();
 

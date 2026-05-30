@@ -184,9 +184,12 @@ enum class NodeType {
   
   // Coroutines
  YieldExpression, // yield or yield(ms) or yield value
- GoStatement, // go func()
-  GoExpression,       // go expr - as expression returning thread object
-  ChannelExpression,  // channel()
+  GoStatement, // go func()
+  GoExpression, // go expr - as expression returning thread object
+  ChannelExpression, // channel()
+  WaitGroupExpression, // waitgroup()
+  WaitExpression, // wait expr - join on goroutine or waitgroup
+  DeferStatement, // defer expr
 
   // Special
   ErrorNode,
@@ -701,11 +704,37 @@ struct GoExpression : public Expression {
 };
 
 struct ChannelExpression : public Expression {
-    ChannelExpression() {
-        kind = NodeType::ChannelExpression;
-    }
-    std::string toString() const override { return "channel()"; }
-    void accept(ASTVisitor &visitor) const override;
+  ChannelExpression() {
+    kind = NodeType::ChannelExpression;
+  }
+  std::string toString() const override { return "channel()"; }
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct WaitGroupExpression : public Expression {
+  WaitGroupExpression() {
+    kind = NodeType::WaitGroupExpression;
+  }
+  std::string toString() const override { return "waitgroup()"; }
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct DeferStatement : public Statement {
+  std::unique_ptr<Expression> expression;
+  DeferStatement(std::unique_ptr<Expression> expr) : expression(std::move(expr)) {
+    kind = NodeType::DeferStatement;
+  }
+  std::string toString() const override { return "defer " + (expression ? expression->toString() : "null"); }
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct WaitExpression : public Expression {
+  std::unique_ptr<Expression> target;
+  WaitExpression(std::unique_ptr<Expression> t) : target(std::move(t)) {
+    kind = NodeType::WaitExpression;
+  }
+  std::string toString() const override { return "wait " + (target ? target->toString() : "null"); }
+  void accept(ASTVisitor &visitor) const override;
 };
 
 // Function parameter with optional default value and type annotation
@@ -3213,9 +3242,12 @@ virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitIntervalExpression(const IntervalExpression &node) = 0;
   virtual void visitTimeoutExpression(const TimeoutExpression &node) = 0;
  virtual void visitYieldExpression(const YieldExpression &node) = 0;
- virtual void visitGoStatement(const GoStatement &node) = 0;
+  virtual void visitGoStatement(const GoStatement &node) = 0;
   virtual void visitGoExpression(const GoExpression &node) = 0;
   virtual void visitChannelExpression(const ChannelExpression &node) = 0;
+  virtual void visitWaitGroupExpression(const WaitGroupExpression &node) = 0;
+  virtual void visitDeferStatement(const DeferStatement &node) = 0;
+  virtual void visitWaitExpression(const WaitExpression &node) = 0;
   virtual void visitOnModeStatement(const OnModeStatement &node) = 0;
   virtual void visitOffModeStatement(const OffModeStatement &node) = 0;
   virtual void visitOnReloadStatement(const OnReloadStatement &node) = 0;

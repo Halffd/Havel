@@ -8,7 +8,8 @@
 // findByClass, findByPid, list, info, isMinimized, isMaximized,
 // isFullscreen, isHidden, above, below, decorated, focusable,
 // setFocusable, setDecorated, frameExtents, raise, lower,
-// setProperty, getProperty, sendEvent, kill
+// setProperty, getProperty, sendEvent, kill,
+// workspaces, currentDesktop, switchDesktop, groupNames
 
 use x11
 use protocols
@@ -720,13 +721,75 @@ fn sendEvent(win, eventType, d0, d1, d2, d3, d4) {
 // ============================================================
 
 fn screenPos(win) {
-    _d = _dpy()
-    if _d == 0 { return null }
-    _root = _root()
-    if _root == 0 { return null }
-    _g = geometry(win)
-    if _g == null { return null }
-    _r = x11.translateCoordinates(_d, win, _root, 0, 0)
-    if _r.ret == 0 { null }
-    else { {x: _r.x, y: _r.y} }
+  _d = _dpy()
+  if _d == 0 { return null }
+  _root = _root()
+  if _root == 0 { return null }
+  _g = geometry(win)
+  if _g == null { return null }
+  _r = x11.translateCoordinates(_d, win, _root, 0, 0)
+  if _r.ret == 0 { null }
+  else { {x: _r.x, y: _r.y} }
+}
+
+// ============================================================
+// Desktop / workspace
+// ============================================================
+
+fn workspaces() {
+  _d = _dpy()
+  if _d == 0 { return [] }
+  _root = _root()
+  if _root == 0 { return [] }
+  _num = protocols.getCardinalProp(_d, _root, protocols.netNumberOfDesktops())
+  _names = []
+  _i = 0
+  while _i < _num {
+    _names.push(str(_i))
+    _i = _i + 1
+  }
+  _names_atom = protocols.netDesktopNames()
+  _r = x11.getWindowProperty(_d, _root, _names_atom, 0, 4096, 0, 0)
+  if _r.rcode == 0 && _r.nitems > 0 && _r.prop != 0 {
+    _raw = ffi.string(_r.prop)
+    x11.free(_r.prop)
+    _decoded = _raw.split("\0")
+    _clean = []
+    for _n in _decoded {
+      if _n != "" { _clean.push(_n) }
+    }
+    if #_clean > 0 { _names = _clean }
+  }
+  _names
+}
+
+fn currentDesktop() {
+  _d = _dpy()
+  if _d == 0 { return -1 }
+  _root = _root()
+  if _root == 0 { return -1 }
+  protocols.getCardinalProp(_d, _root, protocols.netCurrentDesktop())
+}
+
+fn switchDesktop(desktop_num) {
+  _d = _dpy()
+  if _d == 0 { return false }
+  protocols.sendDesktopMessage(_d, desktop_num)
+  true
+}
+
+// ============================================================
+// Window groups
+// ============================================================
+
+fn groupNames() {
+  _wins = _allWindows()
+  _groups = {}
+  for _w in _wins {
+    _hint = x11.getClassHint(_dpy(), _w)
+    if _hint.resClass != "" {
+      _groups.set(_hint.resClass, true)
+    }
+  }
+  _groups.keys()
 }

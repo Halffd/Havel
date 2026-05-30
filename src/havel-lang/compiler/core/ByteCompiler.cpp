@@ -2093,6 +2093,11 @@ case ast::NodeType::TryExpression:
     break;
   }
 
+  case ast::NodeType::DeferStatement: {
+    compileDeferStatement(static_cast<const ast::DeferStatement &>(statement));
+    break;
+  }
+
   case ast::NodeType::OnMessageStatement: {
     // on msg { ... }
     // This is a message handler that binds the message to a variable
@@ -4730,6 +4735,14 @@ case ast::NodeType::UnaryExpression: {
     compileChannelExpression(static_cast<const ast::ChannelExpression &>(expression));
     break;
 
+  case ast::NodeType::WaitGroupExpression:
+    compileWaitGroupExpression(static_cast<const ast::WaitGroupExpression &>(expression));
+    break;
+
+  case ast::NodeType::WaitExpression:
+    compileWaitExpression(static_cast<const ast::WaitExpression &>(expression));
+    break;
+
  case ast::NodeType::BacktickExpression: {
  const auto &backtick = static_cast<const ast::BacktickExpression &>(expression);
  {
@@ -6136,14 +6149,22 @@ void ByteCompiler::collectLambdaExpressions(
     }
     break;
   }
-  case ast::NodeType::GoStatement: {
-    const auto &go_stmt =
-        static_cast<const ast::GoStatement &>(statement);
-    if (go_stmt.call) {
-      collectLambdaExpressions(*go_stmt.call, out);
-    }
-    break;
+case ast::NodeType::GoStatement: {
+  const auto &go_stmt =
+    static_cast<const ast::GoStatement &>(statement);
+  if (go_stmt.call) {
+    collectLambdaExpressions(*go_stmt.call, out);
   }
+  break;
+}
+case ast::NodeType::DeferStatement: {
+  const auto &defer_stmt =
+    static_cast<const ast::DeferStatement &>(statement);
+  if (defer_stmt.expression) {
+    collectLambdaExpressions(*defer_stmt.expression, out);
+  }
+  break;
+}
   case ast::NodeType::ClassDeclaration: {
     const auto &class_decl =
         static_cast<const ast::ClassDeclaration &>(statement);
@@ -6440,11 +6461,23 @@ case ast::NodeType::SpreadPattern: {
       if (spreadPat.target) collectLambdaExpressions(*spreadPat.target, out);
       break;
     }
-  case ast::NodeType::GoExpression: {
-      const auto &go_expr = static_cast<const ast::GoExpression &>(expression);
-      if (go_expr.call) collectLambdaExpressions(*go_expr.call, out);
-      break;
-    }
+case ast::NodeType::GoExpression: {
+  const auto &go_expr = static_cast<const ast::GoExpression &>(expression);
+  if (go_expr.call) collectLambdaExpressions(*go_expr.call, out);
+  break;
+}
+case ast::NodeType::WaitGroupExpression:
+  break;
+case ast::NodeType::WaitExpression: {
+  const auto &wait_expr = static_cast<const ast::WaitExpression &>(expression);
+  if (wait_expr.target) collectLambdaExpressions(*wait_expr.target, out);
+  break;
+}
+case ast::NodeType::DeferStatement: {
+  const auto &defer_stmt = static_cast<const ast::DeferStatement &>(expression);
+  if (defer_stmt.expression) collectLambdaExpressions(*defer_stmt.expression, out);
+  break;
+}
 
   default:
     break;
@@ -7530,16 +7563,44 @@ void ByteCompiler::compileDelTarget(const ast::Expression &target) {
   }
 }
 
- void ByteCompiler::compileChannelExpression(const ast::ChannelExpression &expression) {
- // channel() -> create a new channel
- // Emit LOAD_GLOBAL + CALL to channel.new
+void ByteCompiler::compileChannelExpression(const ast::ChannelExpression &expression) {
+  // channel() -> create a new channel
+  // Emit LOAD_GLOBAL + CALL to channel.new
 
- (void)expression; // Unused parameter
+  (void)expression; // Unused parameter
 
- // Emit LOAD_GLOBAL + CALL to channel.new
- uint32_t strId = addStringConstant("channel.new");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- emit(OpCode::CALL, Value(static_cast<uint32_t>(0)));
+  // Emit LOAD_GLOBAL + CALL to channel.new
+  uint32_t strId = addStringConstant("channel.new");
+  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+  emit(OpCode::CALL, Value(static_cast<uint32_t>(0)));
+}
+
+void ByteCompiler::compileDeferStatement(const ast::DeferStatement &statement) {
+  if (!statement.expression) {
+    COMPILER_THROW("Defer statement missing expression");
+  }
+
+  // Wrap the expression in a lambda if it's not already callable
+  // defer fn_call() => compile fn_call, push as defer
+  // defer { ... } => already a lambda from parser
+  compileExpression(*statement.expression);
+  emit(OpCode::DEFER_PUSH);
+}
+
+void ByteCompiler::compileWaitGroupExpression(const ast::WaitGroupExpression &expression) {
+  (void)expression;
+  emit(OpCode::WAITGROUP_NEW);
+}
+
+void ByteCompiler::compileWaitExpression(const ast::WaitExpression &expression) {
+  if (!expression.target) {
+    COMPILER_THROW("wait expression missing target");
+  }
+  compileExpression(*expression.target);
+  // At runtime, if target is a WaitGroup, emit WAITGROUP_WAIT
+  // If target is a thread, emit THREAD_JOIN
+  // We use a unified WAIT_FIBER opcode that dispatches at runtime
+  emit(OpCode::THREAD_JOIN);
 }
 
 

@@ -41,28 +41,40 @@ case OpCode::THREAD_SPAWN: {
 			break;
 		}
 
-  case OpCode::THREAD_JOIN: {
-    // Join thread and wait for completion (non-blocking via fiber suspension)
-    // Phase 3B-7: Instead of blocking thread.join(), suspend the fiber
-    // and enqueue a callback to unpark when thread completes
-    Value thread_val = popStack();
-    if (!thread_val.isThreadId()) {
-      COMPILER_THROW("THREAD_JOIN expects a thread");
+case OpCode::THREAD_JOIN: {
+  // Join thread/waitgroup and wait for completion (non-blocking via fiber suspension)
+  Value target = popStack();
+
+  if (target.isWaitGroupId()) {
+    // wait on a WaitGroup — block until counter reaches 0
+    uint32_t wg_id = target.asWaitGroupId();
+    auto *wg = heap_.waitgroup(wg_id);
+    if (wg && wg->counter.load() > 0) {
+      suspension_requested_ = true;
+      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::THREAD_JOIN);
+      suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(wg_id));
     }
-    
-    uint32_t thread_id = thread_val.asThreadId();
-    
-    // Set suspension request - signals executeOneStep to suspend the fiber
-    // Context pointer carries the thread_id for the callback to use
-    suspension_requested_ = true;
-    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::THREAD_JOIN);
-    suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(thread_id));
-    
-    // The actual suspension will happen in executeOneStep after this instruction
-    // For now, push null as the return value (will be used if thread already done)
     pushStack(Value::makeNull());
     break;
   }
+
+  if (!target.isThreadId()) {
+    COMPILER_THROW("wait expects a thread or waitgroup");
+  }
+
+  uint32_t thread_id = target.asThreadId();
+
+  // Set suspension request - signals executeOneStep to suspend the fiber
+  // Context pointer carries the thread_id for the callback to use
+  suspension_requested_ = true;
+  suspension_reason_ = static_cast<uint8_t>(SuspensionReason::THREAD_JOIN);
+  suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(thread_id));
+
+  // The actual suspension will happen in executeOneStep after this instruction
+  // For now, push null as the return value (will be used if thread already done)
+  pushStack(Value::makeNull());
+  break;
+}
 
 case OpCode::THREAD_SEND: {
 			Value message = popStack();
@@ -681,20 +693,79 @@ case OpCode::CHANNEL_SEND: {
 			break;
 		}
 
-		case OpCode::CHANNEL_CLOSE: {
-			Value channel_val = popStack();
+  case OpCode::CHANNEL_CLOSE: {
+    Value channel_val = popStack();
 
-			if (!channel_val.isChannelId()) {
-				COMPILER_THROW("CHANNEL_CLOSE expects a channel");
-			}
+    if (!channel_val.isChannelId()) {
+      COMPILER_THROW("CHANNEL_CLOSE expects a channel");
+    }
 
-			Value result = invokeHostFunctionDirect("channel_close", {channel_val});
-			if (result.isNull()) {
-				result = invokeHostFunctionDirect("channel.close", {channel_val});
-			}
-			pushStack(result);
-			break;
-		}
+    Value result = invokeHostFunctionDirect("channel_close", {channel_val});
+    if (result.isNull()) {
+      result = invokeHostFunctionDirect("channel.close", {channel_val});
+    }
+    pushStack(result);
+    break;
+  }
+
+  case OpCode::DEFER_PUSH: {
+    Value closure = popStack();
+    if (frame_count_ > 0) {
+      frame_arena_[frame_count_ - 1].defer_stack.push_back(closure);
+    }
+    break;
+  }
+
+  case OpCode::WAITGROUP_NEW: {
+    auto ref = heap_.allocateWaitGroup();
+    pushStack(Value::makeWaitGroupId(ref.id));
+    break;
+  }
+
+  case OpCode::WAITGROUP_ADD: {
+    Value delta = popStack();
+    Value wg_val = popStack();
+    if (!wg_val.isWaitGroupId()) {
+      COMPILER_THROW("WAITGROUP_ADD expects a waitgroup");
+    }
+    auto *wg = heap_.waitgroup(wg_val.asWaitGroupId());
+    if (wg) {
+      int64_t n = delta.isInt() ? delta.asInt() : 1;
+      wg->counter.fetch_add(n);
+    }
+    break;
+  }
+
+  case OpCode::WAITGROUP_DONE: {
+    Value wg_val = popStack();
+    if (!wg_val.isWaitGroupId()) {
+      COMPILER_THROW("WAITGROUP_DONE expects a waitgroup");
+    }
+    auto *wg = heap_.waitgroup(wg_val.asWaitGroupId());
+    if (wg) {
+      int64_t prev = wg->counter.fetch_sub(1);
+      if (prev <= 1) {
+        std::lock_guard<std::mutex> lock(wg->mutex);
+        wg->cv.notify_all();
+      }
+    }
+    break;
+  }
+
+  case OpCode::WAITGROUP_WAIT: {
+    Value wg_val = popStack();
+    if (!wg_val.isWaitGroupId()) {
+      COMPILER_THROW("WAITGROUP_WAIT expects a waitgroup");
+    }
+    auto *wg = heap_.waitgroup(wg_val.asWaitGroupId());
+    if (wg && wg->counter.load() > 0) {
+      suspension_requested_ = true;
+      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::THREAD_JOIN);
+      suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(wg_val.asWaitGroupId()));
+    }
+    pushStack(Value::makeNull());
+    break;
+  }
 
 	default:
 		return false;

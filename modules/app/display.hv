@@ -2,7 +2,7 @@
 // Provides: monitors, monitorsArea, monitorsCount, isX11, isWayland,
 // isWindows, protocol, open, monitorsResolution, wm, displayNum,
 // screenWidth, screenHeight, primaryMonitor, refresh, close,
-// monitorsWorkarea
+// monitorsWorkarea, monitorAt, monitorByName
 
 use x11
 use protocols
@@ -289,8 +289,28 @@ fn monitorsWorkarea() {
     _workareas
 }
 
+fn monitorAt(x, y) {
+  _mons = monitors()
+  for _m in _mons {
+    _right = _m.x + _m.width
+    _bottom = _m.y + _m.height
+    if x >= _m.x && x < _right && y >= _m.y && y < _bottom {
+      return _m
+    }
+  }
+  if #_mons > 0 { _mons[0] } else { {name: "", x: 0, y: 0, width: 0, height: 0, isPrimary: false} }
+}
+
+fn monitorByName(name) {
+  _mons = monitors()
+  for _m in _mons {
+    if _m.name == name { return _m }
+  }
+  {name: "", x: 0, y: 0, width: 0, height: 0, isPrimary: false}
+}
+
 fn refresh() {
-    close()
-    _wmName = null
-    _ensureInit()
+  close()
+  _wmName = null
+  _ensureInit()
 }

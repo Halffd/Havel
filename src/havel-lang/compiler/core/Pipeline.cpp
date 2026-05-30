@@ -542,14 +542,24 @@ case OpCode::INT_DIV:
  return "FIBER_AWAIT";
  case OpCode::FIBER_SLEEP:
  return "FIBER_SLEEP";
-  case OpCode::CHANNEL_NEW:
-    return "CHANNEL_NEW";
-  case OpCode::CHANNEL_SEND:
-    return "CHANNEL_SEND";
-  case OpCode::CHANNEL_RECEIVE:
-    return "CHANNEL_RECEIVE";
-  case OpCode::CHANNEL_CLOSE:
-    return "CHANNEL_CLOSE";
+case OpCode::CHANNEL_NEW:
+return "CHANNEL_NEW";
+case OpCode::CHANNEL_SEND:
+return "CHANNEL_SEND";
+case OpCode::CHANNEL_RECEIVE:
+return "CHANNEL_RECEIVE";
+case OpCode::CHANNEL_CLOSE:
+return "CHANNEL_CLOSE";
+case OpCode::DEFER_PUSH:
+return "DEFER_PUSH";
+case OpCode::WAITGROUP_NEW:
+return "WAITGROUP_NEW";
+case OpCode::WAITGROUP_ADD:
+return "WAITGROUP_ADD";
+case OpCode::WAITGROUP_DONE:
+return "WAITGROUP_DONE";
+case OpCode::WAITGROUP_WAIT:
+return "WAITGROUP_WAIT";
   case OpCode::BEGIN_MODULE:
     return "BEGIN_MODULE";
   case OpCode::END_MODULE:

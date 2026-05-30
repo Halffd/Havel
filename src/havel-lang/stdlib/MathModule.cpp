@@ -7,6 +7,7 @@
  */
 #include "MathModule.hpp"
 #include "../compiler/vm/VM.hpp"
+#include <limits>
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -100,9 +101,11 @@ void registerMathModule(const VMApi &api) {
     return Value(max);
   });
 
-  // Bare constants (backward compat — also set by math.hv sidecar)
+  // Bare constants (backward compat)
   api.setGlobal("PI", Value(3.14159265358979323846));
   api.setGlobal("E", Value(2.71828182845904523536));
+  api.setGlobal("INF", Value(std::numeric_limits<double>::infinity()));
+  api.setGlobal("NAN", Value(std::numeric_limits<double>::quiet_NaN()));
 
   // Build "math" namespace object from host bridges
   auto mathObj = api.makeObject();
@@ -122,26 +125,30 @@ void registerMathModule(const VMApi &api) {
   api.setField(mathObj, "max", api.makeFunctionRef("math.max"));
   api.setField(mathObj, "PI", Value(3.14159265358979323846));
   api.setField(mathObj, "E", Value(2.71828182845904523536));
+  api.setField(mathObj, "TAU", Value(6.28318530717958647692));
+  api.setField(mathObj, "SQRT2", Value(1.41421356237309504880));
+  api.setField(mathObj, "INF", Value(std::numeric_limits<double>::infinity()));
+  api.setField(mathObj, "NAN", Value(std::numeric_limits<double>::quiet_NaN()));
 
   // Set "math" global BEFORE loading sidecars so they can use math.PI etc
   api.setGlobal("math", mathObj);
 
   // Load pure-Havel math sidecar (adds TAU, SQRT2, clamp, lerp, etc.)
+  // Load "math/math" directly — that file defines top-level globals
+  // which become module exports. The wrapper "math" only uses `use`
+  // which creates locals (not globals), so they don't get exported.
   Value mathExports;
   try {
-    mathExports = vm.loadModule("math");
+    mathExports = vm.loadModule("math/math");
   } catch (const std::exception& e) {
-    // Sidecar loading is best-effort — missing file is not fatal
   } catch (...) {
   }
-  // Merge sidecar exports into math object (also sets as bare globals)
   mergeExports(api, mathObj, mathExports);
 
   // Load pure-Havel physics sidecar (adds G, C, force, momentum, etc.)
   Value physicsExports;
   try {
     physicsExports = vm.loadModule("math/physics");
-  } catch (const std::exception& e) {
   } catch (...) {
   }
 

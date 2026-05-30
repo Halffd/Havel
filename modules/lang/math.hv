@@ -1,11 +1,39 @@
 // modules/lang/math.hv - Math stdlib sidecar entry point
 // Loaded by C++ MathModule via vm.loadModule("math")
-// C++ host bridges (sin, cos, tan, sqrt, log, exp, pow, ceil, floor,
-// round, abs, min, max, random) already registered before this loads.
-// Exports from this file get merged into the "math" namespace object
-// AND set as bare globals by the C++ MathModule merge loop.
+// C++ host bridges already registered. INF/NAN set by C++.
+// We import from math/math and re-export as top-level globals
+// so they appear in the module's exports object.
 
-use { TAU, SQRT2, INF, NAN, clamp, lerp, sign, fract, deg2rad,
-      rad2deg, mod, distance, hypot, log2, log10, cbrt, asin, acos,
-      atan2, is_nan, is_inf, is_finite, copysign, fma, rem, sum,
-      mean, randint, random_range } from "math/math"
+use { TAU, SQRT2, clamp, lerp, sign, fract, deg2rad,
+  rad2deg, mod, distance, hypot, log2, log10, cbrt, asin, acos,
+  atan2, is_nan, is_inf, is_finite, copysign, fma, rem, sum,
+  mean, randint, random_range } from "math/math"
+
+// Re-export as globals so loadModule() picks them up in exports
+math_TAU = TAU
+math_SQRT2 = SQRT2
+math_clamp = clamp
+math_lerp = lerp
+math_sign = sign
+math_fract = fract
+math_deg2rad = deg2rad
+math_rad2deg = rad2deg
+math_mod = mod
+math_distance = distance
+math_hypot = hypot
+math_log2 = log2
+math_log10 = log10
+math_cbrt = cbrt
+math_asin = asin
+math_acos = acos
+math_atan2 = atan2
+math_is_nan = is_nan
+math_is_inf = is_inf
+math_is_finite = is_finite
+math_copysign = copysign
+math_fma = fma
+math_rem = rem
+math_sum = sum
+math_mean = mean
+math_randint = randint
+math_random_range = random_range

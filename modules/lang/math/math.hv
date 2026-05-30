@@ -8,8 +8,8 @@
 
 TAU = 6.28318530717958647692
 SQRT2 = 1.41421356237309504880
-INF = 1.0 / 0.0
-NAN = 0.0 / 0.0
+// INF and NAN are set by C++ MathModule (no way to produce
+// them in pure Havel without triggering division-by-zero error)
 
 fn clamp(v, lo, hi) {
   if v < lo { lo } else if v > hi { hi } else { v }

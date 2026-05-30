@@ -9,9 +9,11 @@
 #include <cstdint>
 #include <deque>
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <unistd.h>
 #include <unordered_map>
 #include <vector>
 
@@ -898,6 +900,26 @@ int runStdlibCase(const std::string &name, const std::string &source,
     havel::HostContext ctx;
     havel::compiler::VM vm(ctx);
     ctx.vm = &vm;
+
+    // Set module search paths so sidecar loading (math, physics) works
+    namespace fs = std::filesystem;
+    char self_path[4096] = {};
+    ssize_t len = readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
+    std::string modulesRoot;
+    if (len > 0) {
+      self_path[len] = '\0';
+      fs::path self(self_path);
+      modulesRoot = (self.parent_path() / ".." / "modules").string();
+    } else {
+      modulesRoot = "./modules";
+    }
+    auto canonicalRoot = fs::exists(modulesRoot)
+      ? fs::canonical(modulesRoot).string() : modulesRoot;
+    vm.moduleLoader().addSearchPath(canonicalRoot + "/lang");
+    vm.moduleLoader().addSearchPath(canonicalRoot + "/std");
+    vm.moduleLoader().addSearchPath(canonicalRoot + "/app");
+    vm.moduleLoader().addSearchPath(canonicalRoot);
+
     havel::registerPureStdLib(vm);
 
     havel::compiler::PipelineOptions options;
@@ -2726,6 +2748,26 @@ int runJitCase(const std::string &name, const std::string &source,
     jit.setShowWarnings(false);
     ::havel::compiler::VM vm(ctx);
     ctx.vm = &vm;
+
+    {
+      std::string modulesRoot;
+      char self_path[4096] = {};
+      ssize_t len = readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
+      if (len > 0) {
+        self_path[len] = '\0';
+        fs::path self(self_path);
+        modulesRoot = (self.parent_path() / ".." / "modules").string();
+      } else {
+        modulesRoot = "./modules";
+      }
+      auto canonicalRoot = fs::exists(modulesRoot)
+        ? fs::canonical(modulesRoot).string() : modulesRoot;
+      vm.moduleLoader().addSearchPath(canonicalRoot + "/lang");
+      vm.moduleLoader().addSearchPath(canonicalRoot + "/std");
+      vm.moduleLoader().addSearchPath(canonicalRoot + "/app");
+      vm.moduleLoader().addSearchPath(canonicalRoot);
+    }
+
     ::havel::registerPureStdLib(vm);
     vm.setHotFunctionCallback(
         [&jit](const ::havel::compiler::BytecodeFunction &func) {

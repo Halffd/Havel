@@ -1,0 +1,109 @@
+// modules/lang/math/stats.hv - Statistics functions
+
+fn mean(arr) {
+  s = 0.0
+  for v in arr { s = s + num(v) }
+  s / arr.len()
+}
+
+fn median(arr) {
+  s = arr.sort()
+  n = s.len()
+  if n % 2 == 1 { s[n \\ 2] } else { (num(s[n \\ 2 - 1]) + num(s[n \\ 2])) / 2.0 }
+}
+
+fn variance(arr) {
+  m = mean(arr)
+  s = 0.0
+  for v in arr { d = num(v) - m; s = s + d * d }
+  s / arr.len()
+}
+
+fn sample_variance(arr) {
+  m = mean(arr)
+  s = 0.0
+  for v in arr { d = num(v) - m; s = s + d * d }
+  s / (arr.len() - 1)
+}
+
+fn stddev(arr) { sqrt(variance(arr)) }
+
+fn sample_stddev(arr) { sqrt(sample_variance(arr)) }
+
+fn covariance(x, y) {
+  mx = mean(x); my = mean(y)
+  s = 0.0
+  for i in 0..(x.len() - 1) { s = s + (num(x[i]) - mx) * (num(y[i]) - my) }
+  s / x.len()
+}
+
+fn correlation(x, y) {
+  covariance(x, y) / (stddev(x) * stddev(y))
+}
+
+fn mode(arr) {
+  counts = {}
+  for v in arr {
+    k = str(v)
+    if counts.has(k) { counts[k] = counts[k] + 1 } else { counts[k] = 1 }
+  }
+  best_key = ""
+  best_count = -1
+  for k in counts.keys() {
+    if counts[k] > best_count { best_count = counts[k]; best_key = k }
+  }
+  num(best_key)
+}
+
+fn percentile(arr, p) {
+  s = arr.sort()
+  idx = (num(p) / 100.0) * (s.len() - 1)
+  lo = int(floor(idx))
+  hi = int(ceil(idx))
+  if lo == hi { s[lo] } else { s[lo] + (idx - lo) * (s[hi] - s[lo]) }
+}
+
+fn iqr(arr) { percentile(arr, 75) - percentile(arr, 25) }
+
+fn skewness(arr) {
+  m = mean(arr); s = stddev(arr)
+  if s == 0 { 0.0 }
+  else {
+    n = num(arr.len())
+    s3 = 0.0
+    for v in arr { d = (num(v) - m) / s; s3 = s3 + d * d * d }
+    (n / ((n - 1) * (n - 2))) * s3
+  }
+}
+
+fn kurtosis(arr) {
+  m = mean(arr); s = stddev(arr)
+  if s == 0 { 0.0 }
+  else {
+    n = num(arr.len())
+    s4 = 0.0
+    for v in arr { d = (num(v) - m) / s; s4 = s4 + d * d * d * d }
+    ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3))) * s4 -
+      (3.0 * (n - 1) * (n - 1)) / ((n - 2) * (n - 3))
+  }
+}
+
+fn zscore(arr) {
+  m = mean(arr); s = stddev(arr)
+  if s == 0 { arr.map(fn(x) { 0.0 }) }
+  else { arr.map(fn(x) { (num(x) - m) / s }) }
+}
+
+fn geometric_mean(arr) {
+  p = 1.0
+  for v in arr { p = p * num(v) }
+  pow(p, 1.0 / num(arr.len()))
+}
+
+fn harmonic_mean(arr) {
+  s = 0.0
+  for v in arr { s = s + 1.0 / num(v) }
+  num(arr.len()) / s
+}
+
+fn range_val(arr) { max(arr) - min(arr) }

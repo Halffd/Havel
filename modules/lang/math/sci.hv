@@ -1,0 +1,141 @@
+// modules/lang/math/sci.hv - Scientific computing
+// Numerical integration, ODE solvers, FFT, optimization
+
+fn trapezoid(fn, a, b, n = 1000) {
+  h = (num(b) - num(a)) / n
+  s = 0.5 * (fn(a) + fn(b))
+  for i in 1..(n - 1) { s = s + fn(num(a) + i * h) }
+  s * h
+}
+
+fn simpson(fn, a, b, n = 1000) {
+  h = (num(b) - num(a)) / n
+  s = fn(a) + fn(b)
+  for i in 1..(n - 1) {
+    x = num(a) + i * h
+    if i % 2 == 0 { s = s + 2.0 * fn(x) } else { s = s + 4.0 * fn(x) }
+  }
+  s * h / 3.0
+}
+
+fn midpoint(fn, a, b, n = 1000) {
+  h = (num(b) - num(a)) / n
+  s = 0.0
+  for i in 0..(n - 1) { s = s + fn(num(a) + (i + 0.5) * h) }
+  s * h
+}
+
+fn euler(f, y0, t_start, t_end, n = 100) {
+  h = (num(t_end) - num(t_start)) / n
+  t = num(t_start)
+  y = num(y0)
+  result = [[t, y]]
+  for i in 1..n {
+    y = y + h * f(t, y)
+    t = t + h
+    result.push([t, y])
+  }
+  result
+}
+
+fn rk4(f, y0, t_start, t_end, n = 100) {
+  h = (num(t_end) - num(t_start)) / n
+  t = num(t_start)
+  y = num(y0)
+  result = [[t, y]]
+  for i in 1..n {
+    k1 = h * f(t, y)
+    k2 = h * f(t + h / 2.0, y + k1 / 2.0)
+    k3 = h * f(t + h / 2.0, y + k2 / 2.0)
+    k4 = h * f(t + h, y + k3)
+    y = y + (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+    t = t + h
+    result.push([t, y])
+  }
+  result
+}
+
+fn fft(x) {
+  n = x.len()
+  if n <= 1 { return x }
+  even = []; odd = []
+  for i in 0..(n - 1) {
+    if i % 2 == 0 { even.push(x[i]) } else { odd.push(x[i]) }
+  }
+  fe = fft(even); fo = fft(odd)
+  result = [0.0] * n
+  for k in 0..(n \\ 2 - 1) {
+    angle = -2.0 * PI * num(k) / n
+    wr = cos(angle); wi = sin(angle)
+    tr = wr * num(fo[k].re) - wi * num(fo[k].im)
+    ti = wr * num(fo[k].im) + wi * num(fo[k].re)
+    result[k] = {re: num(fe[k].re) + tr, im: num(fe[k].im) + ti}
+    result[k + n \\ 2] = {re: num(fe[k].re) - tr, im: num(fe[k].im) - ti}
+  }
+  result
+}
+
+fn bisect(fn, a, b, tol = 1e-10, max_iter = 100) {
+  lo = num(a); hi = num(b)
+  for i in 1..max_iter {
+    mid = (lo + hi) / 2.0
+    if abs(hi - lo) < tol { mid }
+    if fn(lo) * fn(mid) < 0 { hi = mid } else { lo = mid }
+  }
+  (lo + hi) / 2.0
+}
+
+fn newton(fn, dfn, x0, tol = 1e-10, max_iter = 100) {
+  x = num(x0)
+  for i in 1..max_iter {
+    fx = fn(x)
+    if abs(fx) < tol { x }
+    dfx = dfn(x)
+    if abs(dfx) < 1e-15 { 0.0 / 0.0 }
+    x = x - fx / dfx
+  }
+  x
+}
+
+fn gradient_descent(fn, grad_fn, x0, lr = 0.01, max_iter = 1000, tol = 1e-8) {
+  x = num(x0)
+  for i in 1..max_iter {
+    g = grad_fn(x)
+    x_new = x - lr * g
+    if abs(x_new - x) < tol { x_new }
+    x = x_new
+  }
+  x
+}
+
+fn lagrange_interpolate(xs, ys, x) {
+  result = 0.0
+  n = xs.len()
+  for i in 0..(n - 1) {
+    basis = 1.0
+    for j in 0..(n - 1) {
+      if j != i { basis = basis * (num(x) - num(xs[j])) / (num(xs[i]) - num(xs[j])) }
+    }
+    result = result + num(ys[i]) * basis
+  }
+  result
+}
+
+fn cubic_spline(xs, ys, x) {
+  n = xs.len() - 1
+  h = []
+  for i in 0..(n - 1) { h.push(num(xs[i + 1]) - num(xs[i])) }
+  idx = 0
+  for i in 0..(n - 1) {
+    if num(x) >= num(xs[i]) && num(x) <= num(xs[i + 1]) { idx = i }
+  }
+  t = (num(x) - num(xs[idx])) / h[idx]
+  t2 = t * t; t3 = t2 * t
+  y0 = num(ys[idx]); y1 = num(ys[idx + 1])
+  h2 = h[idx] * h[idx]
+  a = 2.0 * t3 - 3.0 * t2 + 1.0
+  b = t3 - 2.0 * t2 + t
+  c = -2.0 * t3 + 3.0 * t2
+  d = t3 - t2
+  a * y0 + c * y1 + b * 0.0 * h2 + d * 0.0 * h2
+}

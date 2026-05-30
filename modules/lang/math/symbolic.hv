@@ -1,0 +1,175 @@
+// modules/lang/math/symbolic.hv - Symbolic math
+// Expression trees, simplification, differentiation, substitution
+
+struct Expr {
+  kind, value, left, right, args
+
+  init_num(n) { @kind = "num"; @value = num(n); @left = nil; @right = nil; @args = [] }
+  init_var(name) { @kind = "var"; @value = str(name); @left = nil; @right = nil; @args = [] }
+  init_binop(op, l, r) { @kind = "binop"; @value = str(op); @left = l; @right = r; @args = [] }
+  init_unary(op, operand) { @kind = "unary"; @value = str(op); @left = operand; @right = nil; @args = [] }
+  init_call(name, arguments) { @kind = "call"; @value = str(name); @left = nil; @right = nil; @args = arguments }
+
+  to_str() {
+    if @kind == "num" { str(@value) }
+    else if @kind == "var" { @value }
+    else if @kind == "binop" { "({@left.to_str()} {@value} {@right.to_str()})" }
+    else if @kind == "unary" { "({@value}{@left.to_str()})" }
+    else if @kind == "call" {
+      parts = []
+      for a in @args { parts.push(a.to_str()) }
+      "{@value}({parts.join(\", \")})"
+    }
+    else { "?" }
+  }
+
+  substitute(name, replacement) {
+    if @kind == "num" { @ }
+    else if @kind == "var" { if @value == name { replacement } else { @ } }
+    else if @kind == "binop" {
+      Expr.init_binop(@value, @left.substitute(name, replacement), @right.substitute(name, replacement))
+    }
+    else if @kind == "unary" {
+      Expr.init_unary(@value, @left.substitute(name, replacement))
+    }
+    else if @kind == "call" {
+      new_args = []
+      for a in @args { new_args.push(a.substitute(name, replacement)) }
+      Expr.init_call(@value, new_args)
+    }
+    else { @ }
+  }
+
+  evaluate(env) {
+    if @kind == "num" { @value }
+    else if @kind == "var" { env[@value] }
+    else if @kind == "binop" {
+      l = @left.evaluate(env); r = @right.evaluate(env)
+      if @value == "+" { l + r }
+      else if @value == "-" { l - r }
+      else if @value == "*" { l * r }
+      else if @value == "/" { l / r }
+      else if @value == "^" { pow(l, r) }
+      else { 0.0 / 0.0 }
+    }
+    else if @kind == "unary" {
+      v = @left.evaluate(env)
+      if @value == "-" { -v } else { v }
+    }
+    else if @kind == "call" {
+      vals = []
+      for a in @args { vals.push(a.evaluate(env)) }
+      if @value == "sin" { sin(vals[0]) }
+      else if @value == "cos" { cos(vals[0]) }
+      else if @value == "exp" { exp(vals[0]) }
+      else if @value == "log" { log(vals[0]) }
+      else if @value == "sqrt" { sqrt(vals[0]) }
+      else { 0.0 / 0.0 }
+    }
+    else { 0.0 / 0.0 }
+  }
+
+  diff(variable) {
+    if @kind == "num" { Expr.init_num(0) }
+    else if @kind == "var" { Expr.init_num(if @value == variable { 1 } else { 0 }) }
+    else if @kind == "binop" {
+      dl = @left.diff(variable); dr = @right.diff(variable)
+      if @value == "+" { Expr.init_binop("+", dl, dr) }
+      else if @value == "-" { Expr.init_binop("-", dl, dr) }
+      else if @value == "*" {
+        Expr.init_binop("+",
+          Expr.init_binop("*", @left, dr),
+          Expr.init_binop("*", dl, @right)
+        )
+      }
+      else if @value == "/" {
+        Expr.init_binop("-",
+          Expr.init_binop("/", Expr.init_binop("-", Expr.init_binop("*", dl, @right), Expr.init_binop("*", @left, dr)), Expr.init_binop("^", @right, Expr.init_num(2)))
+        )
+      }
+      else if @value == "^" {
+        Expr.init_binop("*",
+          Expr.init_binop("*", @right, Expr.init_binop("^", @left, Expr.init_binop("-", @right, Expr.init_num(1)))),
+          dl
+        )
+      }
+      else { Expr.init_num(0) }
+    }
+    else if @kind == "unary" {
+      if @value == "-" { Expr.init_unary("-", @left.diff(variable)) }
+      else { Expr.init_num(0) }
+    }
+    else if @kind == "call" {
+      da = @args[0].diff(variable)
+      if @value == "sin" { Expr.init_binop("*", Expr.init_call("cos", @args), da) }
+      else if @value == "cos" { Expr.init_binop("*", Expr.init_unary("-", Expr.init_call("sin", @args)), da) }
+      else if @value == "exp" { Expr.init_binop("*", Expr.init_call("exp", @args), da) }
+      else if @value == "log" { Expr.init_binop("/", da, @args[0]) }
+      else if @value == "sqrt" { Expr.init_binop("/", da, Expr.init_binop("*", Expr.init_num(2), Expr.init_call("sqrt", @args))) }
+      else { Expr.init_num(0) }
+    }
+    else { Expr.init_num(0) }
+  }
+
+  simplify() {
+    if @kind == "num" || @kind == "var" { @ }
+    else if @kind == "unary" {
+      inner = @left.simplify()
+      if @value == "-" && inner.kind == "num" { Expr.init_num(-inner.value) }
+      else if @value == "-" && inner.kind == "unary" && inner.value == "-" { inner.left }
+      else { Expr.init_unary(@value, inner) }
+    }
+    else if @kind == "binop" {
+      l = @left.simplify(); r = @right.simplify()
+      ln = l.kind == "num"; rn = r.kind == "num"
+      if ln && rn {
+        if @value == "+" { Expr.init_num(l.value + r.value) }
+        else if @value == "-" { Expr.init_num(l.value - r.value) }
+        else if @value == "*" { Expr.init_num(l.value * r.value) }
+        else if @value == "/" { Expr.init_num(l.value / r.value) }
+        else if @value == "^" { Expr.init_num(pow(l.value, r.value)) }
+        else { Expr.init_binop(@value, l, r) }
+      }
+      else if ln && l.value == 0 {
+        if @value == "+" { r }
+        else if @value == "-" { Expr.init_unary("-", r) }
+        else if @value == "*" { Expr.init_num(0) }
+        else { Expr.init_binop(@value, l, r) }
+      }
+      else if rn && r.value == 0 {
+        if @value == "+" { l }
+        else if @value == "-" { l }
+        else if @value == "*" { Expr.init_num(0) }
+        else if @value == "^" { Expr.init_num(1) }
+        else { Expr.init_binop(@value, l, r) }
+      }
+      else if ln && l.value == 1 {
+        if @value == "*" { r }
+        else if @value == "^" { Expr.init_num(1) }
+        else { Expr.init_binop(@value, l, r) }
+      }
+      else if rn && r.value == 1 {
+        if @value == "*" { l }
+        else if @value == "/" { l }
+        else if @value == "^" { l }
+        else { Expr.init_binop(@value, l, r) }
+      }
+      else { Expr.init_binop(@value, l, r) }
+    }
+    else { @ }
+  }
+}
+
+fn num_expr(n) { Expr.init_num(n) }
+fn var_expr(name) { Expr.init_var(name) }
+fn add_expr(l, r) { Expr.init_binop("+", l, r) }
+fn sub_expr(l, r) { Expr.init_binop("-", l, r) }
+fn mul_expr(l, r) { Expr.init_binop("*", l, r) }
+fn div_expr(l, r) { Expr.init_binop("/", l, r) }
+fn pow_expr(l, r) { Expr.init_binop("^", l, r) }
+fn neg_expr(e) { Expr.init_unary("-", e) }
+fn sin_expr(e) { Expr.init_call("sin", [e]) }
+fn cos_expr(e) { Expr.init_call("cos", [e]) }
+fn exp_expr(e) { Expr.init_call("exp", [e]) }
+fn log_expr(e) { Expr.init_call("log", [e]) }
+fn sqrt_expr(e) { Expr.init_call("sqrt", [e]) }

@@ -1,0 +1,157 @@
+// modules/lang/math/num.hv - N-dimensional array (NumPy-like)
+// Provides NDArray struct with basic operations
+
+struct NDArray {
+  data, shape, strides
+
+  init(data, shape) {
+    @data = data
+    @shape = shape
+    s = [1] * shape.len()
+    for i in (shape.len() - 2)..0 { s[i] = s[i + 1] * shape[i + 1] }
+    @strides = s
+  }
+
+  flat_index(indices) {
+    idx = 0
+    for i in 0..(indices.len() - 1) { idx = idx + int(indices[i]) * int(@strides[i]) }
+    idx + int(indices[indices.len() - 1])
+  }
+
+  size() {
+    s = 1
+    for d in @shape { s = s * int(d) }
+    s
+  }
+
+  ndim() { @shape.len() }
+
+  get(indices) { @data[@flat_index(indices)] }
+
+  set(indices, value) { @data[@flat_index(indices)] = value }
+
+  map(fn) {
+    result = []
+    for v in @data { result.push(fn(v)) }
+    NDArray(result, @shape)
+  }
+
+  filter(fn) {
+    result = []
+    for v in @data { if fn(v) { result.push(v) } }
+    NDArray(result, @shape)
+  }
+
+  each(fn) { for v in @data { fn(v) } }
+
+  sum() {
+    s = 0
+    for v in @data { s = s + num(v) }
+    s
+  }
+
+  mean() { @sum() / @size() }
+
+  min_val() {
+    best = @data[0]
+    for v in @data { if v < best { best = v } }
+    best
+  }
+
+  max_val() {
+    best = @data[0]
+    for v in @data { if v > best { best = v } }
+    best
+  }
+
+  variance() {
+    m = @mean()
+    s = 0.0
+    for v in @data { d = num(v) - m; s = s + d * d }
+    s / @size()
+  }
+
+  stddev() { sqrt(@variance()) }
+
+  reshape(new_shape) {
+    NDArray(@data, new_shape)
+  }
+
+  flatten() { NDArray(@data, [@size()]) }
+
+  to_array() { @data }
+
+  copy() { NDArray(@data.copy(), @shape.copy()) }
+
+  fill(value) {
+    for i in 0..(@data.len() - 1) { @data[i] = value }
+    @
+  }
+
+  zeros(shape) {
+    s = 1
+    for d in shape { s = s * int(d) }
+    NDArray([0] * s, shape)
+  }
+
+  ones(shape) {
+    s = 1
+    for d in shape { s = s * int(d) }
+    NDArray([1] * s, shape)
+  }
+}
+
+fn arange(start, stop, step = 1) {
+  data = []
+  v = num(start)
+  s = num(step)
+  e = num(stop)
+  if s > 0 {
+    while v < e { data.push(v); v = v + s }
+  } else {
+    while v > e { data.push(v); v = v + s }
+  }
+  NDArray(data, [data.len()])
+}
+
+fn linspace(start, stop, num) {
+  n = int(num)
+  if n <= 1 { return NDArray([num(start)], [1]) }
+  step = (num(stop) - num(start)) / (n - 1)
+  data = []
+  for i in 0..(n - 1) { data.push(num(start) + i * step) }
+  data.push(num(stop))
+  NDArray(data, [n])
+}
+
+fn zeros(shape) { NDArray([], shape).zeros(shape) }
+fn ones(shape) { NDArray([], shape).ones(shape) }
+fn full(shape, value) { NDArray([], shape).fill(value) }
+
+fn dot_product(a, b) {
+  s = 0
+  for i in 0..(a.data.len() - 1) { s = s + num(a.data[i]) * num(b.data[i]) }
+  s
+}
+
+fn add(a, b) {
+  result = []
+  for i in 0..(a.data.len() - 1) { result.push(num(a.data[i]) + num(b.data[i])) }
+  NDArray(result, a.shape)
+}
+
+fn sub(a, b) {
+  result = []
+  for i in 0..(a.data.len() - 1) { result.push(num(a.data[i]) - num(b.data[i])) }
+  NDArray(result, a.shape)
+}
+
+fn mul(a, b) {
+  result = []
+  for i in 0..(a.data.len() - 1) { result.push(num(a.data[i]) * num(b.data[i])) }
+  NDArray(result, a.shape)
+}
+
+fn scale(arr, scalar) {
+  arr.map(fn(x) { num(x) * num(scalar) })
+}

@@ -1,0 +1,11 @@
+// modules/lang/math.hv - Math stdlib sidecar entry point
+// Loaded by C++ MathModule via vm.loadModule("math")
+// C++ host bridges (sin, cos, tan, sqrt, log, exp, pow, ceil, floor,
+// round, abs, min, max, random) already registered before this loads.
+// Exports from this file get merged into the "math" namespace object
+// AND set as bare globals by the C++ MathModule merge loop.
+
+use { TAU, SQRT2, INF, NAN, clamp, lerp, sign, fract, deg2rad,
+      rad2deg, mod, distance, hypot, log2, log10, cbrt, asin, acos,
+      atan2, is_nan, is_inf, is_finite, copysign, fma, rem, sum,
+      mean, randint, random_range } from "math/math"

@@ -1,0 +1,121 @@
+// modules/lang/math/physics.hv - Physics constants and functions
+// Loaded by C++ MathModule via vm.loadModule("math/physics")
+// Replaces the removed C++ PhysicsModule.cpp entirely
+// Uses math.PI, math.sqrt, math.pow etc since module scope
+// only inherits host function globals and namespace objects
+
+// Gravitational acceleration (m/s^2)
+G = 9.80665
+
+// Speed of light (m/s)
+C = 299792458.0
+
+// Gravitational constant (N*m^2/kg^2)
+G0 = 6.67430e-11
+
+// Boltzmann constant (J/K)
+KB = 1.380649e-23
+
+// Avogadro constant (mol^-1)
+NA = 6.02214076e23
+
+// Gas constant (J/(mol*K))
+RGAS = 8.314462618
+
+// Electron mass (kg)
+ME = 9.1093837015e-31
+
+// Proton mass (kg)
+MP = 1.67262192369e-27
+
+// Elementary charge (C)
+ECHARGE = 1.602176634e-19
+
+// Planck constant (J*s)
+HPLANCK = 6.62607015e-34
+
+// Vacuum permittivity (F/m)
+EPS0 = 8.8541878128e-12
+
+// Vacuum permeability (N/A^2)
+MU0 = 1.25663706212e-6
+
+// Fine structure constant
+ALPHA = ECHARGE * ECHARGE / (4.0 * math.PI * EPS0 * HPLANCK * C)
+
+// Stefan-Boltzmann constant (W*m^-2*K^-4)
+SIGMA = 2.0 * math.pow(math.PI, 5) * math.pow(KB, 4) / (15.0 * math.pow(HPLANCK, 3) * math.pow(C, 2))
+
+// Bohr radius (m)
+A0 = 4.0 * math.PI * EPS0 * HPLANCK * HPLANCK / (ME * ECHARGE * ECHARGE)
+
+// Classical electron radius (m)
+RE = ECHARGE * ECHARGE / (4.0 * math.PI * EPS0 * ME * C * C)
+
+// Rydberg constant (1/m)
+RINF = ME * ECHARGE * ECHARGE * ECHARGE * ECHARGE / (8.0 * EPS0 * EPS0 * HPLANCK * HPLANCK * HPLANCK * C)
+
+// Atomic mass unit (kg)
+U = 1.66053906660e-27
+
+// Electron volt (J)
+EV = ECHARGE
+
+// Proton-electron mass ratio
+MPME = MP / ME
+
+fn force(mass, accel) { num(mass) * num(accel) }
+
+fn kinetic_energy(mass, velocity) {
+  m = num(mass); v = num(velocity)
+  0.5 * m * v * v
+}
+
+fn potential_energy(mass, height, gravity = 9.80665) {
+  num(mass) * num(gravity) * num(height)
+}
+
+fn momentum(mass, velocity) { num(mass) * num(velocity) }
+
+fn wavelength(frequency) {
+  f = num(frequency)
+  if f <= 0 { return 0.0 / 0.0 }
+  C / f
+}
+
+fn de_broglie(mass, velocity) { HPLANCK / (num(mass) * num(velocity)) }
+
+fn kepler_period(semi_major_axis, mass) {
+  2.0 * math.PI * math.sqrt(math.pow(num(semi_major_axis), 3) / (G0 * num(mass)))
+}
+
+fn escape_velocity(mass, radius) {
+  math.sqrt(2.0 * G0 * num(mass) / num(radius))
+}
+
+fn ohm_law(voltage, resistance) { num(voltage) / num(resistance) }
+
+fn gravitational_force(m1, m2, distance) {
+  G0 * num(m1) * num(m2) / (num(distance) * num(distance))
+}
+
+fn coulomb_force(q1, q2, distance) {
+  (1.0 / (4.0 * math.PI * EPS0)) * num(q1) * num(q2) / (num(distance) * num(distance))
+}
+
+fn thermal_energy(moles, temperature) { moles * RGAS * num(temperature) }
+
+fn photon_energy(frequency) { HPLANCK * num(frequency) }
+
+fn de_broglie_wavelength(momentum) { HPLANCK / num(momentum) }
+
+fn schwarzschild_radius(mass) { 2.0 * G0 * num(mass) / (C * C) }
+
+fn lorentz_factor(v) {
+  beta = num(v) / C
+  1.0 / math.sqrt(1.0 - beta * beta)
+}
+
+fn relativistic_mass(rest_mass, v) { num(rest_mass) * lorentz_factor(v) }
+
+fn compton_wavelength(mass) { HPLANCK / (ME * num(mass)) }

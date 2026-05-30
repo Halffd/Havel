@@ -1,0 +1,65 @@
+// modules/lang/math/set.hv - Set theory operations
+// Works with Havel's built-in set type
+
+fn union(a, b) { a | b }
+
+fn intersect(a, b) { a & b }
+
+fn difference(a, b) { a - b }
+
+fn symmetric_difference(a, b) { (a - b) | (b - a) }
+
+fn is_subset(a, b) { (a - b).len() == 0 }
+
+fn is_superset(a, b) { is_subset(b, a) }
+
+fn is_disjoint(a, b) { intersect(a, b).len() == 0 }
+
+fn powerset(s) {
+  items = []
+  for v in s { items.push(v) }
+  n = items.len()
+  result = [set()]
+  for mask in 1..(pow(2, n) - 1) {
+    subset = set()
+    for i in 0..(n - 1) {
+      if (mask & (1 << i)) != 0 { subset = subset | set([items[i]]) }
+    }
+    result.push(subset)
+  }
+  result
+}
+
+fn cartesian(a, b) {
+  result = []
+  for x in a {
+    for y in b { result.push((x, y)) }
+  }
+  result
+}
+
+fn from_array(arr) {
+  s = set()
+  for v in arr { s = s | set([v]) }
+  s
+}
+
+fn to_array(s) {
+  result = []
+  for v in s { result.push(v) }
+  result
+}
+
+fn cardinality(s) { s.len() }
+
+fn map_set(s, fn) {
+  result = set()
+  for v in s { result = result | set([fn(v)]) }
+  result
+}
+
+fn filter_set(s, fn) {
+  result = set()
+  for v in s { if fn(v) { result = result | set([v]) } }
+  result
+}

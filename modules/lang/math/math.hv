@@ -1,0 +1,110 @@
+// modules/lang/math/math.hv - Pure Havel math stdlib additions
+// Loaded as sidecar by C++ MathModule via vm.loadModule("math")
+// Adds constants and utility functions that don't need <cmath>
+// C++ host bridges (sin, cos, tan, sqrt, log, exp, pow, ceil, floor,
+// round, abs, min, max, random) are already registered before this loads.
+// Module scope only has host function globals + namespace objects,
+// so we use math.* prefix for cmath functions.
+
+TAU = 6.28318530717958647692
+SQRT2 = 1.41421356237309504880
+INF = 1.0 / 0.0
+NAN = 0.0 / 0.0
+
+fn clamp(v, lo, hi) {
+  if v < lo { lo } else if v > hi { hi } else { v }
+}
+
+fn lerp(a, b, t) { a + (b - a) * t }
+
+fn sign(x) {
+  v = num(x)
+  if v > 0 { 1 } else if v < 0 { -1 } else { 0 }
+}
+
+fn fract(x) { num(x) - math.floor(num(x)) }
+
+fn deg2rad(d) { num(d) * math.PI / 180.0 }
+
+fn rad2deg(r) { num(r) * 180.0 / math.PI }
+
+fn mod(a, b) {
+  a = num(a); b = num(b)
+  a - b * math.floor(a / b)
+}
+
+fn distance(x1, y1, x2, y2) {
+  dx = num(x2) - num(x1)
+  dy = num(y2) - num(y1)
+  math.sqrt(dx * dx + dy * dy)
+}
+
+fn hypot(a, b) {
+  x = num(a); y = num(b)
+  math.sqrt(x * x + y * y)
+}
+
+fn log2(x) { math.log(num(x)) / math.log(2.0) }
+
+fn log10(x) { math.log(num(x)) / math.log(10.0) }
+
+fn cbrt(x) {
+  v = num(x)
+  if v >= 0 { math.pow(v, 1.0 / 3.0) } else { -math.pow(-v, 1.0 / 3.0) }
+}
+
+fn asin(x) {
+  v = num(x)
+  math.atan(v / math.sqrt(1.0 - v * v))
+}
+
+fn acos(x) {
+  v = num(x)
+  math.atan(math.sqrt(1.0 - v * v) / v)
+}
+
+fn atan2(y, x) {
+  y = num(y); x = num(x)
+  if x > 0 { math.atan(y / x) }
+  else if x < 0 && y >= 0 { math.atan(y / x) + math.PI }
+  else if x < 0 && y < 0 { math.atan(y / x) - math.PI }
+  else if x == 0 && y > 0 { math.PI / 2.0 }
+  else if x == 0 && y < 0 { -math.PI / 2.0 }
+  else { 0.0 }
+}
+
+fn is_nan(x) { x != x }
+
+fn is_inf(x) { x == x * 2 && x != 0 }
+
+fn is_finite(x) { !is_nan(x) && !is_inf(x) }
+
+fn copysign(mag, sgn) {
+  m = math.abs(num(mag)); s = num(sgn)
+  if s < 0 { -m } else { m }
+}
+
+fn fma(a, b, c) { num(a) * num(b) + num(c) }
+
+fn rem(a, b) {
+  x = num(a); y = num(b)
+  r = x % y
+  if r != 0 && (r < 0) != (y < 0) { r + y } else { r }
+}
+
+fn sum(arr) {
+  s = 0
+  for v in arr { s = s + num(v) }
+  s
+}
+
+fn mean(arr) { sum(arr) / arr.len() }
+
+fn randint(lo, hi) {
+  lo = int(lo); hi = int(hi)
+  lo + int(math.random() * (hi - lo + 1))
+}
+
+fn random_range(lo, hi) {
+  num(lo) + math.random() * (num(hi) - num(lo))
+}

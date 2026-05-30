@@ -1,0 +1,242 @@
+// modules/lang/math/vec.hv - Vector, matrix, quaternion types
+// GLM-style linear algebra for 2D/3D/4D graphics
+
+struct Vec2 {
+  x, y
+  init(x = 0.0, y = 0.0) { @x = num(x); @y = num(y) }
+  op +(other) { Vec2(@x + other.x, @y + other.y) }
+  op -(other) { Vec2(@x - other.x, @y - other.y) }
+  op *(scalar) { Vec2(@x * scalar, @y * scalar) }
+  op /(scalar) { s = num(scalar); Vec2(@x / s, @y / s) }
+  op ==(other) { @x == other.x && @y == other.y }
+  dot(other) { @x * other.x + @y * other.y }
+  len() { sqrt(@dot(@)) }
+  norm() { l = @len(); if l == 0 { Vec2() } else { @ / l } }
+  dist(other) { (@ - other).len() }
+  lerp(other, t) { @ + (other - @) * t }
+  angle() { atan2(@y, @x) }
+  rotate(a) { c = cos(a); s = sin(a); Vec2(@x * c - @y * s, @x * s + @y * c) }
+  perp() { Vec2(-@y, @x) }
+  reflect(n) { @ - n * (2.0 * @dot(n)) }
+}
+
+struct Vec3 {
+  x, y, z
+  init(x = 0.0, y = 0.0, z = 0.0) { @x = num(x); @y = num(y); @z = num(z) }
+  op +(other) { Vec3(@x + other.x, @y + other.y, @z + other.z) }
+  op -(other) { Vec3(@x - other.x, @y - other.y, @z - other.z) }
+  op *(scalar) { Vec3(@x * scalar, @y * scalar, @z * scalar) }
+  op /(scalar) { s = num(scalar); Vec3(@x / s, @y / s, @z / s) }
+  op ==(other) { @x == other.x && @y == other.y && @z == other.z }
+  dot(other) { @x * other.x + @y * other.y + @z * other.z }
+  cross(other) {
+    Vec3(
+      @y * other.z - @z * other.y,
+      @z * other.x - @x * other.z,
+      @x * other.y - @y * other.x
+    )
+  }
+  len() { sqrt(@dot(@)) }
+  norm() { l = @len(); if l == 0 { Vec3() } else { @ / l } }
+  dist(other) { (@ - other).len() }
+  lerp(other, t) { @ + (other - @) * t }
+  reflect(n) { @ - n * (2.0 * @dot(n)) }
+  refract(n, eta) {
+    d = @norm().dot(n)
+    k = 1.0 - eta * eta * (1.0 - d * d)
+    if k < 0 { Vec3() } else { @ * eta - n * (eta * d + sqrt(k)) }
+  }
+}
+
+struct Vec4 {
+  x, y, z, w
+  init(x = 0.0, y = 0.0, z = 0.0, w = 1.0) { @x = num(x); @y = num(y); @z = num(z); @w = num(w) }
+  op +(other) { Vec4(@x + other.x, @y + other.y, @z + other.z, @w + other.w) }
+  op -(other) { Vec4(@x - other.x, @y - other.y, @z - other.z, @w - other.w) }
+  op *(scalar) { Vec4(@x * scalar, @y * scalar, @z * scalar, @w * scalar) }
+  op /(scalar) { s = num(scalar); Vec4(@x / s, @y / s, @z / s, @w / s) }
+  dot(other) { @x * other.x + @y * other.y + @z * other.z + @w * other.w }
+  len() { sqrt(@dot(@)) }
+  norm() { l = @len(); if l == 0 { Vec4() } else { @ / l } }
+  xyz() { Vec3(@x, @y, @z) }
+}
+
+struct Mat4 {
+  m
+  init() {
+    @m = [
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      0.0, 0.0, 0.0, 1.0
+    ]
+  }
+  init_raw(data) { @m = data }
+  at(row, col) { @m[row * 4 + col] }
+  set(row, col, v) { @m[row * 4 + col] = v }
+  op *(other) {
+    r = Mat4.init_raw([0.0] * 16)
+    for i in 0..3 {
+      for j in 0..3 {
+        s = 0.0
+        for k in 0..3 { s = s + @at(i, k) * other.at(k, j) }
+        r.set(i, j, s)
+      }
+    }
+    r
+  }
+  transform(v) {
+    Vec4(
+      @m[0]*v.x + @m[1]*v.y + @m[2]*v.z + @m[3]*v.w,
+      @m[4]*v.x + @m[5]*v.y + @m[6]*v.z + @m[7]*v.w,
+      @m[8]*v.x + @m[9]*v.y + @m[10]*v.z + @m[11]*v.w,
+      @m[12]*v.x + @m[13]*v.y + @m[14]*v.z + @m[15]*v.w
+    )
+  }
+  transform_point(v) {
+    r = @transform(Vec4(v.x, v.y, v.z, 1.0))
+    Vec3(r.x, r.y, r.z)
+  }
+  transform_dir(v) {
+    r = @transform(Vec4(v.x, v.y, v.z, 0.0))
+    Vec3(r.x, r.y, r.z)
+  }
+}
+
+fn translate(x, y, z) {
+  m = Mat4()
+  m.set(0, 3, num(x))
+  m.set(1, 3, num(y))
+  m.set(2, 3, num(z))
+  m
+}
+
+fn scale(x, y, z) {
+  m = Mat4()
+  m.set(0, 0, num(x))
+  m.set(1, 1, num(y))
+  m.set(2, 2, num(z))
+  m
+}
+
+fn rotate_x(a) {
+  m = Mat4()
+  c = cos(a); s = sin(a)
+  m.set(1, 1, c); m.set(1, 2, -s)
+  m.set(2, 1, s); m.set(2, 2, c)
+  m
+}
+
+fn rotate_y(a) {
+  m = Mat4()
+  c = cos(a); s = sin(a)
+  m.set(0, 0, c); m.set(0, 2, s)
+  m.set(2, 0, -s); m.set(2, 2, c)
+  m
+}
+
+fn rotate_z(a) {
+  m = Mat4()
+  c = cos(a); s = sin(a)
+  m.set(0, 0, c); m.set(0, 1, -s)
+  m.set(1, 0, s); m.set(1, 1, c)
+  m
+}
+
+fn look_at(eye, center, up) {
+  f = (center - eye).norm()
+  s = f.cross(up).norm()
+  u = s.cross(f)
+  m = Mat4()
+  m.set(0, 0, s.x); m.set(0, 1, s.y); m.set(0, 2, s.z)
+  m.set(1, 0, u.x); m.set(1, 1, u.y); m.set(1, 2, u.z)
+  m.set(2, 0, -f.x); m.set(2, 1, -f.y); m.set(2, 2, -f.z)
+  m.set(0, 3, -s.dot(eye))
+  m.set(1, 3, -u.dot(eye))
+  m.set(2, 3, f.dot(eye))
+  m
+}
+
+fn perspective(fov, aspect, near, far) {
+  f = 1.0 / tan(num(fov) / 2.0)
+  nf = 1.0 / (num(near) - num(far))
+  m = Mat4.init_raw([0.0] * 16)
+  m.set(0, 0, f / num(aspect))
+  m.set(1, 1, f)
+  m.set(2, 2, (num(near) + num(far)) * nf)
+  m.set(2, 3, 2.0 * num(near) * num(far) * nf)
+  m.set(3, 2, -1.0)
+  m
+}
+
+fn ortho(left, right, bottom, top, near, far) {
+  m = Mat4.init_raw([0.0] * 16)
+  m.set(0, 0, 2.0 / (num(right) - num(left)))
+  m.set(1, 1, 2.0 / (num(top) - num(bottom)))
+  m.set(2, 2, -2.0 / (num(far) - num(near)))
+  m.set(0, 3, -(num(right) + num(left)) / (num(right) - num(left)))
+  m.set(1, 3, -(num(top) + num(bottom)) / (num(top) - num(bottom)))
+  m.set(2, 3, -(num(far) + num(near)) / (num(far) - num(near)))
+  m.set(3, 3, 1.0)
+  m
+}
+
+struct Quat {
+  x, y, z, w
+  init(x = 0.0, y = 0.0, z = 0.0, w = 1.0) { @x = num(x); @y = num(y); @z = num(z); @w = num(w) }
+  op *(other) {
+    Quat(
+      @w*other.x + @x*other.w + @y*other.z - @z*other.y,
+      @w*other.y - @x*other.z + @y*other.w + @z*other.x,
+      @w*other.z + @x*other.y - @y*other.x + @z*other.w,
+      @w*other.w - @x*other.x - @y*other.y - @z*other.z
+    )
+  }
+  len() { sqrt(@x*@x + @y*@y + @z*@z + @w*@w) }
+  norm() { l = @len(); if l == 0 { Quat() } else { Quat(@x/l, @y/l, @z/l, @w/l) } }
+  conjugate() { Quat(-@x, -@y, -@z, @w) }
+  to_mat4() {
+    q = @norm()
+    xx = q.x * q.x; yy = q.y * q.y; zz = q.z * q.z
+    xy = q.x * q.y; xz = q.x * q.z; yz = q.y * q.z
+    wx = q.w * q.x; wy = q.w * q.y; wz = q.w * q.z
+    m = Mat4()
+    m.set(0, 0, 1.0 - 2.0*(yy + zz)); m.set(0, 1, 2.0*(xy - wz)); m.set(0, 2, 2.0*(xz + wy))
+    m.set(1, 0, 2.0*(xy + wz)); m.set(1, 1, 1.0 - 2.0*(xx + zz)); m.set(1, 2, 2.0*(yz - wx))
+    m.set(2, 0, 2.0*(xz - wy)); m.set(2, 1, 2.0*(yz + wx)); m.set(2, 2, 1.0 - 2.0*(xx + yy))
+    m
+  }
+}
+
+fn quat_from_axis_angle(axis, angle) {
+  ha = num(angle) / 2.0
+  s = sin(ha)
+  n = axis.norm()
+  Quat(n.x * s, n.y * s, n.z * s, cos(ha))
+}
+
+fn quat_from_euler(pitch, yaw, roll) {
+  p = num(pitch) / 2.0; y = num(yaw) / 2.0; r = num(roll) / 2.0
+  Quat(
+    sin(p)*cos(y)*cos(r) - cos(p)*sin(y)*sin(r),
+    cos(p)*sin(y)*cos(r) + sin(p)*cos(y)*sin(r),
+    cos(p)*cos(y)*sin(r) - sin(p)*sin(y)*cos(r),
+    cos(p)*cos(y)*cos(r) + sin(p)*sin(y)*sin(r)
+  )
+}
+
+fn quat_slerp(a, b, t) {
+  d = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w
+  flip = false
+  if d < 0 { d = -d; flip = true }
+  if d > 0.9995 {
+    r = Quat(a.x + t*(b.x - a.x), a.y + t*(b.y - a.y), a.z + t*(b.z - a.z), a.w + t*(b.w - a.w))
+    return r.norm()
+  }
+  theta = acos(d)
+  sin_theta = sin(theta)
+  wa = sin((1.0 - t) * theta) / sin_theta
+  wb = sin(t * theta) / sin_theta
+  if flip { wb = -wb }
+  Quat(wa*a.x + wb*b.x, wa*a.y + wb*b.y, wa*a.z + wb*b.z, wa*a.w + wb*b.w)
+}

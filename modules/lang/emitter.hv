@@ -791,6 +791,38 @@ emitError("unsupported expr: " + k, node.line, node.col)
 	bc.emit("PUSH_NULL")
 
 }
+
+fn emitDel(emitter, node) {
+  k = node.kind
+  if k == "Identifier" {
+    binding = scopeResolve(emitter.scope, node.name)
+    if binding != null && binding.kind == "local" {
+      bc.emit("PUSH_NULL")
+      bc.emit("STORE_VAR", binding.slot)
+    } else if binding != null && binding.kind == "upvalue" {
+      emitError("cannot del upvalue binding", node.line, node.col)
+    } else {
+      bc.emit("PUSH_NULL")
+      bc.emit("STORE_GLOBAL", node.name)
+    }
+    return
+  }
+  if k == "MemberExpression" {
+    emitExpr(emitter, node.obj)
+    keyIdx = bc.add_string(node.property)
+    bc.emit("LOAD_CONST", keyIdx)
+    bc.emit("OBJECT_DELETE")
+    return
+  }
+  if k == "IndexExpression" {
+    emitExpr(emitter, node.obj)
+    emitExpr(emitter, node.index)
+    bc.emit("ARRAY_DEL")
+    return
+  }
+  emitError("del target must be identifier, member, or index", node.line, node.col)
+}
+
 // ============================================================
 // Statement emission
 // ============================================================
@@ -895,10 +927,14 @@ bc.emit("OBJECT_GET")
 	return
 }
 
-    if k == "ExpressionStatement" {
-        emitExpr(emitter, node.expr)
-        bc.emit("POP")
-        return
+if k == "ExpressionStatement" {
+  if node.isDel {
+    emitDel(emitter, node.expr)
+    return
+  }
+  emitExpr(emitter, node.expr)
+  bc.emit("POP")
+  return
 
     }
     if k == "IfStatement" {

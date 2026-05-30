@@ -1,0 +1,20 @@
+// test_defer_advanced.hv - defer with exception handling
+
+log = []
+
+fn testDeferWithThrow() {
+  log.push("start")
+  defer { log.push("cleanup1") }
+  defer { log.push("cleanup2") }
+  throw "error!"
+  log.push("unreachable")
+}
+
+try {
+  testDeferWithThrow()
+} catch e {
+  log.push("caught: {e}")
+}
+
+print(log)
+// Expected: ["start", "cleanup2", "cleanup1", "caught: error!"]

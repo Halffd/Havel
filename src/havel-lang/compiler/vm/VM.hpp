@@ -267,6 +267,11 @@ uint8_t suspension_reason_ = 0; // Why is it suspending? (SuspensionReason enum 
 void* suspension_context_ = nullptr; // Context pointer (thread_id, channel*, etc)
 bool executing_in_fiber_ = false; // True when executeOneStep runs with non-null current_fiber
 
+// Last suspension info preserved after runDispatchLoop exits
+// Used by processGoroutines to set WaitHandle on the goroutine
+uint8_t last_suspension_reason_ = 0;
+void* last_suspension_context_ = nullptr;
+
  
  // Maps thread_id -> Fiber* for fibers suspended on THREAD_JOIN
  // Used to unpark fibers when threads complete
@@ -708,10 +713,14 @@ public:
     suspension_reason_ = reason;
     suspension_context_ = context;
   }
-  bool isSuspensionRequested() const { return suspension_requested_; }
-  void clearSuspensionRequest() { suspension_requested_ = false; }
-  uint8_t getSuspensionReason() const { return suspension_reason_; }
-  void* getSuspensionContext() const { return suspension_context_; }
+bool isSuspensionRequested() const { return suspension_requested_; }
+void clearSuspensionRequest() { suspension_requested_ = false; }
+uint8_t getSuspensionReason() const { return suspension_reason_; }
+void* getSuspensionContext() const { return suspension_context_; }
+
+uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
+void* getLastSuspensionContext() const { return last_suspension_context_; }
+void clearLastSuspension() { last_suspension_reason_ = 0; last_suspension_context_ = nullptr; }
 
   uint32_t getHostFunctionIndex(const std::string &name);
   void throwError(const std::string &msg);

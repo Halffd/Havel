@@ -271,14 +271,18 @@ bool ExecutionEngine::executeFrame() {
                     g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
                     g->wait_handle.target_id = ch_id;
                 }
-                // Handle TIMER - set WaitHandle for timer/interval/timeout
-                if (reason == static_cast<uint8_t>(SuspensionReason::TIMER)) {
-                    uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                    g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
-                    g->wait_handle.target_id = timer_id;
-                }
-          
-          vm_->clearSuspensionRequest();
+// Handle TIMER - set WaitHandle for timer/interval/timeout
+if (reason == static_cast<uint8_t>(SuspensionReason::TIMER)) {
+uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+g->wait_handle.target_id = timer_id;
+}
+// Handle AWAIT - WaitHandle already set by the VM opcode handler
+// (FIBER_AWAIT sets wait_handle.type and target_id before requesting suspension)
+// No additional work needed here — the event handlers will find and unpark
+// the goroutine by its WaitHandle type/target_id.
+
+vm_->clearSuspensionRequest();
         }
         
         // Goroutine blocked on external event (channel, timer, thread)

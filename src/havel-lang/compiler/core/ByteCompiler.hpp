@@ -160,6 +160,9 @@ void optimizeJumps();  // Jump threading optimization
   void compileGoExpression(const ast::GoExpression &expression);
   void compileDelTarget(const ast::Expression &target);
   void compileChannelExpression(const ast::ChannelExpression &expression);
+  void compileDeferStatement(const ast::DeferStatement &statement);
+  void compileWaitGroupExpression(const ast::WaitGroupExpression &expression);
+  void compileWaitExpression(const ast::WaitExpression &expression);
   void compileIfStatement(const ast::IfStatement &statement);
   void compileWhileStatement(const ast::WhileStatement &statement);
   void compileDoWhileStatement(const ast::DoWhileStatement &statement);

@@ -1004,13 +1004,56 @@ timeout_results_[*timeoutIdPtr] = result;
 }
 }
 };
-auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
-auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
-*timeoutIdPtr = timeoutRef.id;
-return Value::makeTimeoutId(timeoutRef.id);
-});
+  auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+  auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
+  *timeoutIdPtr = timeoutRef.id;
+  return Value::makeTimeoutId(timeoutRef.id);
+  });
 
-    // GC control
+  // WaitGroup host functions
+  // waitgroup.add(wg, n) - Increment waitgroup counter
+  registerHostFunction("waitgroup.add", 2, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isWaitGroupId()) {
+      COMPILER_THROW("waitgroup.add requires a waitgroup argument");
+    }
+    int64_t n = (args.size() > 1 && args[1].isInt()) ? args[1].asInt() : 1;
+    auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
+    if (wg) {
+      wg->counter.fetch_add(n);
+    }
+    return Value::makeNull();
+  });
+
+  // waitgroup.done(wg) - Decrement waitgroup counter
+  registerHostFunction("waitgroup.done", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isWaitGroupId()) {
+      COMPILER_THROW("waitgroup.done requires a waitgroup argument");
+    }
+    auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
+    if (wg) {
+      int64_t prev = wg->counter.fetch_sub(1);
+      if (prev <= 1) {
+        std::lock_guard<std::mutex> lock(wg->mutex);
+        wg->cv.notify_all();
+      }
+    }
+    return Value::makeNull();
+  });
+
+  // waitgroup.wait(wg) - Block until counter reaches 0
+  registerHostFunction("waitgroup.wait", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isWaitGroupId()) {
+      COMPILER_THROW("waitgroup.wait requires a waitgroup argument");
+    }
+    auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
+    if (wg && wg->counter.load() > 0) {
+      std::unique_lock<std::mutex> lock(wg->mutex);
+      wg->cv.wait(lock, [&wg]() { return wg->counter.load() <= 0; });
+    }
+    return Value::makeNull();
+  });
+
+  // GC control
     // "system.gc" is called via method dispatch (system.gc()) which prepends
     // the receiver, so it needs arity 1. The underscore alias "system_gc"
     // is called directly without a receiver, so arity 0.
@@ -1874,6 +1917,9 @@ registerPrototypeMethodByName("interval", "pause", "interval.pause");
   registerPrototypeMethodByName("interval", "stop", "interval.stop");
   registerPrototypeMethodByName("timeout", "cancel", "timeout.cancel");
   registerPrototypeMethodByName("timeout", "stop", "timeout.stop");
+  registerPrototypeMethodByName("waitgroup", "add", "waitgroup.add");
+  registerPrototypeMethodByName("waitgroup", "done", "waitgroup.done");
+  registerPrototypeMethodByName("waitgroup", "wait", "waitgroup.wait");
 
   // Register builtin type protocol conformance so PROT_CHECK/PROT_CAST
   // can use the generic protocol dispatch instead of hardcoded checks.

@@ -1362,8 +1362,14 @@ case TokenType::Timeout:
     case TokenType::Yield:
       return parseYieldExpression();
 
-    case TokenType::Channel:
-      return parseChannelExpression();
+  case TokenType::Channel:
+    return parseChannelExpression();
+
+  case TokenType::WaitGroup:
+    return parseWaitGroupExpression();
+
+  case TokenType::Wait:
+    return parseWaitExpression();
 
  case TokenType::Go:
  return parseGoExpression();
@@ -2895,6 +2901,8 @@ case havel::TokenType::Struct:
     return parseDelStatement();
   case havel::TokenType::Go:
     return parseGoStatement();
+  case havel::TokenType::Defer:
+    return parseDeferStatement();
   case havel::TokenType::Try:
     return parseTryStatement();
   case havel::TokenType::Catch:
@@ -10588,9 +10596,76 @@ return makeNode<ast::Identifier>("__get_input_stub__");
 }
 
 std::unique_ptr<ast::Statement> Parser::parseWaitStatement() {
-advance();
-auto expr = parseExpression();
-return makeNode<ast::ExpressionStatement>(std::move(expr));
+  advance();
+  auto expr = parseExpression();
+  return makeNode<ast::ExpressionStatement>(std::move(expr));
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseWaitGroupExpression() {
+  auto wgToken = at();
+
+  if (at().type == havel::TokenType::WaitGroup) {
+    advance();
+  }
+
+  if (at().type == havel::TokenType::OpenParen) {
+    advance();
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected '()' after waitgroup");
+    }
+    advance();
+  }
+
+  auto expr = makeNode<havel::ast::WaitGroupExpression>();
+  expr->line = wgToken.line;
+  expr->column = wgToken.column;
+  return expr;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseDeferStatement() {
+  auto deferToken = at();
+  advance();
+
+  std::unique_ptr<ast::Expression> expr;
+
+  if (at().type == havel::TokenType::OpenBrace) {
+    advance();
+    auto blockStmt = makeNode<ast::BlockStatement>();
+    while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+      if (at().type == havel::TokenType::NewLine) {
+        advance();
+        continue;
+      }
+      blockStmt->body.push_back(parseStatement());
+    }
+    if (at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected '}' after defer block");
+      return nullptr;
+    }
+    advance();
+    expr = makeNode<havel::ast::LambdaExpression>(
+      std::vector<std::unique_ptr<ast::FunctionParameter>>(),
+      std::move(blockStmt)
+    );
+  } else {
+    expr = parseExpression();
+  }
+
+  auto stmt = makeNode<havel::ast::DeferStatement>(std::move(expr));
+  stmt->line = deferToken.line;
+  stmt->column = deferToken.column;
+  return stmt;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseWaitExpression() {
+  auto waitToken = at();
+  advance();
+
+  auto target = parseExpression();
+  auto expr = makeNode<havel::ast::WaitExpression>(std::move(target));
+  expr->line = waitToken.line;
+  expr->column = waitToken.column;
+  return expr;
 }
 
 } // namespace havel::parser

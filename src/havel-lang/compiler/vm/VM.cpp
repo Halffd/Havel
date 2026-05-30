@@ -213,8 +213,6 @@ Value VM::execute(const BytecodeChunk &chunk,
     current_exception_ = nullptr;
   registerDefaultHostGlobals();
   host_globals_registered_ = true;
-  std::fprintf(stderr, "DBG execute(): isArray=%d globals_size=%zu\n",
-               globals.contains("isArray")?1:0, globals.size());
   if (post_reset_setup_) {
         post_reset_setup_(*this);
     }
@@ -271,10 +269,6 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   }
 
   suspendGC();
-
-  std::fprintf(stderr, "DBG executePersistent ENTRY: isArray=%d globals_size=%zu stack_depth=%zu main_chunk=%p current_chunk=%p\n",
-               globals.contains("isArray")?1:0, globals.size(), globals_stack_.size(),
-               main_chunk_ ? main_chunk_.get() : nullptr, current_chunk);
 
   // Save globals state (we may be inside a module closure that swapped
   // globals). The persistent execution needs root-level globals that
@@ -1113,12 +1107,40 @@ bool VM::handleScriptThrow(const Value &value) {
 
       // Jump to catch block (finally is compiled into the catch block if it
       // exists)
-      frame.ip = handler.catch_ip;
-      return true;
-    }
+        frame.ip = handler.catch_ip;
+        // Run deferred closures for this frame before resuming at catch
+        auto &deferred = frame.defer_stack;
+        while (!deferred.empty()) {
+          Value defer_fn = deferred.back();
+          deferred.pop_back();
+          if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
+            try {
+              pushStack(defer_fn);
+              emitCall(0);
+            } catch (...) {
+              // Swallow exceptions in deferred code during exception unwinding
+            }
+          }
+        }
+        return true;
+      }
 
-    auto finished = frame;
-    frame_count_--;
+      auto finished = frame;
+      // Run deferred closures for this unwound frame
+      auto &deferred = finished.defer_stack;
+      while (!deferred.empty()) {
+        Value defer_fn = deferred.back();
+        deferred.pop_back();
+        if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
+          try {
+            pushStack(defer_fn);
+            emitCall(0);
+          } catch (...) {
+            // Swallow exceptions in deferred code during exception unwinding
+          }
+        }
+      }
+      frame_count_--;
 
     closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
                        static_cast<uint32_t>(locals.size()));
@@ -1957,12 +1979,27 @@ void VM::ensureLocalIndex(uint32_t absolute_index) {
 }
 
 void VM::doReturn() {
-    tail_call_depth_ = 0;
-    if (frame_count_ == 0) {
-        return;
-    }
+  tail_call_depth_ = 0;
+  if (frame_count_ == 0) {
+    return;
+  }
 
-    Value ret = nullptr;
+  // Execute deferred closures in reverse order (LIFO)
+  auto &deferred = frame_arena_[frame_count_ - 1].defer_stack;
+  while (!deferred.empty()) {
+    Value defer_fn = deferred.back();
+    deferred.pop_back();
+    if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
+      try {
+        pushStack(defer_fn);
+        emitCall(0);
+      } catch (...) {
+        // Swallow exceptions in deferred code to allow remaining defers to run
+      }
+    }
+  }
+
+  Value ret = nullptr;
     if (!stack.empty()) {
         ret = popStack();
     }

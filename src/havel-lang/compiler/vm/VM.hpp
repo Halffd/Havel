@@ -192,14 +192,15 @@ private:
   };
 
 struct CallFrame {
-    const BytecodeFunction *function = nullptr;
-    const BytecodeChunk *chunk = nullptr;
-    size_t ip = 0;
-    size_t locals_base = 0;
-    uint32_t closure_id = 0;
-    bool owns_globals = false;
-    std::vector<TryHandler> try_stack;
-    size_t stack_depth = 0; // Expression stack depth at call time
+  const BytecodeFunction *function = nullptr;
+  const BytecodeChunk *chunk = nullptr;
+  size_t ip = 0;
+  size_t locals_base = 0;
+  uint32_t closure_id = 0;
+  bool owns_globals = false;
+  std::vector<TryHandler> try_stack;
+  size_t stack_depth = 0; // Expression stack depth at call time
+  std::vector<Value> defer_stack; // Deferred closures to execute on scope exit
 };
   public:
 
@@ -766,9 +767,6 @@ public:
     emitVariableChanged(key);
   }
   void eraseGlobal(const std::string &name) {
-    if (name == "isArray") {
-      std::fprintf(stderr, "DBG eraseGlobal('isArray') called from\n");
-    }
     globals.erase(name);
   }
   [[nodiscard]] GCRoot makeRoot(const Value &value) {

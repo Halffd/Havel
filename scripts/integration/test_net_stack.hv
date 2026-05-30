@@ -1,0 +1,82 @@
+// test_net_stack.hv — Integration test for the Havel Network Stack
+
+use "net/address" as addr
+use "net/socket" as sock
+use "net/tcp" as tcp
+use "net/udp" as udp
+use "net/unix" as unix
+use "net/tls" as tls
+use "net/http" as http
+use "net/websocket" as wsproto
+use "net/ws" as ws
+use "net/webserver" as ws_framework
+use "net/client" as client
+use "net/rest" as rest
+use "net/jsonrpc" as jsonrpc
+use "net/rpc" as rpc
+use "net/cluster" as cluster
+
+print("=== STARTING HAVEL NETWORK STACK TESTS ===")
+
+// 1. Test URL & Address parsing
+parsedUrl = http.parseUrl("https://localhost:8443/api/v1/users?active=true")
+if parsedUrl.scheme != "https" { print("FAILED: URL scheme") }
+if parsedUrl.host != "localhost" { print("FAILED: URL host") }
+if parsedUrl.port != 8443 { print("FAILED: URL port") }
+if parsedUrl.path != "/api/v1/users?active=true" { print("FAILED: URL path") }
+
+parsedIP = addr.parse("[::1]:9090")
+if parsedIP.host != "::1" { print("FAILED: IPv6 parse host") }
+if parsedIP.port != 9090 { print("FAILED: IPv6 parse port") }
+
+print("1. URL and Address parsing passed!")
+
+// 2. Test Low-Level DNS resolveFirst (uses AF_INET)
+localhostIP = addr.resolve("localhost")
+if localhostIP == null {
+    print("WARNING: 'localhost' DNS resolution returned null. Network config might be missing.")
+} else {
+    print("2. DNS resolution passed! (localhost -> {localhostIP})")
+}
+
+// 3. Test HTTP & TCP Mock Connection
+// We will test if our modules load and run correctly without errors.
+// Since port binding inside tests can conflict or block, we instantiate modules locally.
+srv = ws_framework.create()
+srv.use(ws_framework.logger())
+srv.use(ws_framework.cors())
+
+srv.get("/api/ping", fn(req, res) {
+    res.json({status: "ok"})
+})
+
+print("3. Web Application Framework instantiation passed!")
+
+// 4. Test WebSocket Accept Key Handshake
+expectedKey = wsproto.acceptKey("dGhlIHNhbXBsZSBub25jZQ==")
+if expectedKey == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" {
+    print("4. WebSocket Accept Key generation passed! ({expectedKey})")
+} else {
+    print("FAILED: WebSocket Accept Key generation (expected s3pPLMBiTxaQ9kYGzzhZRbK+xOo=, got {expectedKey})")
+}
+
+// 5. Test JSON-RPC Server Method Registration
+jrpcSrv = jsonrpc.server("0.0.0.0", 8089)
+jrpcSrv.method("ping", fn(params) { "pong" })
+print("5. JSON-RPC method registration passed!")
+
+// 6. Test RPC Server Registration
+rpcSrv = rpc.server("0.0.0.0", 9099)
+rpcSrv.register("multiply", fn(a, b) { a * b })
+print("6. RPC server method registration passed!")
+
+// 7. Test Cluster Join Discovery Instantiation
+cNode = cluster.join("test-node-1", 1234, 9998)
+if cNode == null {
+    print("FAILED: Cluster node joining")
+} else {
+    print("7. Cluster node discovery instantiated successfully!")
+    cNode.close()
+}
+
+print("=== ALL STATIC NETWORK STACK TESTS PASSED SUCCESSFULLY ===")

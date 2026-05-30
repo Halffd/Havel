@@ -1,0 +1,79 @@
+// test_module.hv — incrementally testing socket.hv content
+use ffi
+
+_c = ffi.open("libc.so.6")
+if _c == null { _c = ffi.open("libc.so") }
+
+_socket     = ffi.sym(_c, "socket")
+_bind       = ffi.sym(_c, "bind")
+_listen     = ffi.sym(_c, "listen")
+_accept     = ffi.sym(_c, "accept")
+_connect    = ffi.sym(_c, "connect")
+_send       = ffi.sym(_c, "send")
+_recv       = ffi.sym(_c, "recv")
+_sendto     = ffi.sym(_c, "sendto")
+_recvfrom   = ffi.sym(_c, "recvfrom")
+_close      = ffi.sym(_c, "close")
+_shutdown   = ffi.sym(_c, "shutdown")
+_setsockopt = ffi.sym(_c, "setsockopt")
+_getsockopt = ffi.sym(_c, "getsockopt")
+_fcntl      = ffi.sym(_c, "fcntl")
+_poll       = ffi.sym(_c, "poll")
+_htons      = ffi.sym(_c, "htons")
+_htonl      = ffi.sym(_c, "htonl")
+_ntohs      = ffi.sym(_c, "ntohs")
+_ntohl      = ffi.sym(_c, "ntohl")
+_inet_pton  = ffi.sym(_c, "inet_pton")
+_inet_ntop  = ffi.sym(_c, "inet_ntop")
+_strerror   = ffi.sym(_c, "strerror")
+_errno_loc  = ffi.sym(_c, "__errno_location")
+_getaddrinfo  = ffi.sym(_c, "getaddrinfo")
+_freeaddrinfo = ffi.sym(_c, "freeaddrinfo")
+
+AF_UNSPEC  = 0
+AF_UNIX    = 1
+AF_INET    = 2
+AF_INET6   = 10
+
+SOCK_STREAM    = 1
+SOCK_DGRAM     = 2
+
+fn _strToBuf(s) {
+    n = #s
+    buf = ffi.allocBytes(n)
+    i = 0
+    while i < n {
+        ffi.set_i8(ffi.ptr_add(buf, i), ord(s[i:i+1]))
+        i = i + 1
+    }
+    buf
+}
+
+fn _bufToStr(buf, n) {
+    result = ""
+    i = 0
+    while i < n {
+        b = ffi.get_u8(ffi.ptr_add(buf, i))
+        result = result + char(b)
+        i = i + 1
+    }
+    result
+}
+
+fn htons(v) {
+    ffi.call(_htons, "uint16", ["uint16"], v)
+}
+
+fn create(family, sockType, proto) {
+    if family == null { family = AF_INET }
+    if sockType == null { sockType = SOCK_STREAM }
+    if proto == null { proto = 0 }
+    ffi.call(_socket, "int32", ["int32", "int32", "int32"], family, sockType, proto)
+}
+
+fn close(fd) {
+    if fd < 0 { return -1 }
+    ffi.call(_close, "int32", ["int32"], fd)
+}
+
+TEST_OK = true

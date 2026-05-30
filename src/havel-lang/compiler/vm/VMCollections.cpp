@@ -92,19 +92,31 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     break;
   }
 
-  case OpCode::ARRAY_LEN: {
-    Value container = popStack();
-    if (!container.isArrayId()) {
-      COMPILER_THROW("ARRAY_LEN expects array container");
-    }
-    uint32_t id = container.asArrayId();
-    auto *array = heap_.array(id);
-    if (!array) {
-      COMPILER_THROW("ARRAY_LEN unknown array id");
-    }
-    pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
-    break;
-  }
+	case OpCode::ARRAY_LEN: {
+	Value container = popStack();
+	if (container.isArrayId()) {
+		uint32_t id = container.asArrayId();
+		auto *array = heap_.array(id);
+		if (!array) {
+			COMPILER_THROW("ARRAY_LEN unknown array id");
+		}
+		pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
+	} else if (container.isStringValId()) {
+		if (!current_chunk) {
+			COMPILER_THROW("ARRAY_LEN: no current chunk for string length");
+		}
+		pushStack(Value::makeInt(static_cast<int64_t>(current_chunk->getString(container.asStringValId()).size())));
+	} else if (container.isStringId()) {
+		const std::string *str = heap_.string(container.asStringId());
+		if (!str) {
+			COMPILER_THROW("ARRAY_LEN unknown string id");
+		}
+		pushStack(Value::makeInt(static_cast<int64_t>(str->size())));
+	} else {
+		COMPILER_THROW("ARRAY_LEN expects array or string");
+	}
+	break;
+	}
 
   case OpCode::ARRAY_FREEZE: {
     Value container = popStack();
@@ -122,22 +134,36 @@ bool VM::execCollectionOp(const Instruction &instruction) {
   }
 
   // Range creation: start..end or start..step..end
-  case OpCode::RANGE_NEW: {
-    int64_t end = popStack().asInt();
-    int64_t start = popStack().asInt();
-    RangeRef rangeRef = heap_.allocateRange(start, end, 1);
-    pushStack(Value::makeRangeId(rangeRef.id));
-    break;
-  }
+	case OpCode::RANGE_NEW: {
+	Value endVal = popStack();
+	Value startVal = popStack();
+	if (!startVal.isInt() || !endVal.isInt()) {
+		COMPILER_THROW("RANGE_NEW expects integers");
+	}
+	int64_t end = endVal.asInt();
+	int64_t start = startVal.asInt();
+	RangeRef rangeRef = heap_.allocateRange(start, end, 1);
+	pushStack(Value::makeRangeId(rangeRef.id));
+	break;
+	}
 
-  case OpCode::RANGE_STEP_NEW: {
-    int64_t step = popStack().asInt();
-    int64_t end = popStack().asInt();
-    int64_t start = popStack().asInt();
-    RangeRef rangeRef = heap_.allocateRange(start, end, step);
-    pushStack(Value::makeRangeId(rangeRef.id));
-    break;
-  }
+	case OpCode::RANGE_STEP_NEW: {
+	Value stepVal = popStack();
+	Value endVal = popStack();
+	Value startVal = popStack();
+	if (!startVal.isInt() || !endVal.isInt() || !stepVal.isInt()) {
+		COMPILER_THROW("RANGE_STEP_NEW expects integers");
+	}
+	int64_t step = stepVal.asInt();
+	int64_t end = endVal.asInt();
+	int64_t start = startVal.asInt();
+	if (step == 0) {
+		COMPILER_THROW("RANGE_STEP_NEW step cannot be zero");
+	}
+	RangeRef rangeRef = heap_.allocateRange(start, end, step);
+	pushStack(Value::makeRangeId(rangeRef.id));
+	break;
+	}
 
   // Enum operations
   case OpCode::ENUM_NEW: {
@@ -160,17 +186,28 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     break;
   }
 
-  case OpCode::ENUM_PAYLOAD: {
-    Value indexVal = popStack();
-    Value enumVal = popStack();
-    if (!enumVal.isEnumId() || !indexVal.isInt()) {
-      COMPILER_THROW("ENUM_PAYLOAD expects enum and int index");
-    }
-    auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
-    size_t index = static_cast<size_t>(indexVal.asInt());
-    pushStack(heap_.enums_.at(enumRef.id).second.at(index));
-    break;
-  }
+	case OpCode::ENUM_PAYLOAD: {
+	Value indexVal = popStack();
+	Value enumVal = popStack();
+	if (!enumVal.isEnumId() || !indexVal.isInt()) {
+		COMPILER_THROW("ENUM_PAYLOAD expects enum and int index");
+	}
+	auto enumRef = EnumRef{enumVal.asEnumId(), 0, 0};
+	int64_t idx = indexVal.asInt();
+	if (idx < 0) {
+		COMPILER_THROW("ENUM_PAYLOAD index must be non-negative");
+	}
+	size_t index = static_cast<size_t>(idx);
+	auto it = heap_.enums_.find(enumRef.id);
+	if (it == heap_.enums_.end()) {
+		COMPILER_THROW("ENUM_PAYLOAD unknown enum id");
+	}
+	if (index >= it->second.second.size()) {
+		COMPILER_THROW("ENUM_PAYLOAD index out of bounds");
+	}
+	pushStack(it->second.second.at(index));
+	break;
+	}
 
   case OpCode::ENUM_MATCH: {
     // Pop: enum ref, expected tag
@@ -354,11 +391,14 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     if (container.isObjectId()) {
         // Operator overloading: check for op_index method
         {
-            Value opIndex = getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index");
-            if (!opIndex.isNull() && (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
-                pushStack(callFunction(opIndex, {container, index_or_key}));
-                break;
-            }
+		Value opIndex = getHostObjectField(ObjectRef{container.asObjectId(), true}, "op_index");
+		if (!opIndex.isNull() && (opIndex.isFunctionObjId() || opIndex.isClosureId() || opIndex.isHostFuncId())) {
+			uint64_t opIndexRootId = pinExternalRoot(opIndex);
+			Value result = callFunction(opIndex, {container, index_or_key});
+			unpinExternalRoot(opIndexRootId);
+			pushStack(result);
+			break;
+		}
         }
         // _G globals mirror: resolve from live globals maps
         if (container.asObjectId() == globals_mirror_object_id_) {
@@ -427,10 +467,13 @@ bool VM::execCollectionOp(const Instruction &instruction) {
       COMPILER_THROW("ARRAY_SET index out of bounds: " + std::to_string(*index));
     }
   }
-  const auto idx_size = static_cast<size_t>(idx);
-  if (idx_size >= array->size()) {
-    array->resize(idx_size + 1, Value::makeNull());
-  }
+	const auto idx_size = static_cast<size_t>(idx);
+	if (idx_size >= 100'000'000) {
+		COMPILER_THROW("ARRAY_SET index too large: " + std::to_string(idx));
+	}
+	if (idx_size >= array->size()) {
+		array->resize(idx_size + 1, Value::makeNull());
+	}
   (*array)[idx_size] = value;
       break;
     }
@@ -1413,44 +1456,50 @@ bool VM::execCollectionOp(const Instruction &instruction) {
       COMPILER_THROW("ARRAY_MAP expects function/closure");
     }
 
-    auto resultRef = heap_.allocateArray();
-    auto *result = heap_.array(resultRef.id);
-    uint64_t resultRootId = pinExternalRoot(Value::makeArrayId(resultRef.id));
+	auto resultRef = heap_.allocateArray();
+	auto *result = heap_.array(resultRef.id);
+	uint64_t resultRootId = pinExternalRoot(Value::makeArrayId(resultRef.id));
+	uint64_t srcRootId = pinExternalRoot(array);
 
-    for (size_t i = 0; i < arr->size(); i++) {
-      Value mapped = callFunctionSync(fn, {(*arr)[i]});
-      result->push_back(mapped);
-    }
+	for (size_t i = 0; i < arr->size(); i++) {
+		Value mapped = callFunctionSync(fn, {(*arr)[i]});
+		arr = heap_.array(array.asArrayId());
+		result->push_back(mapped);
+	}
 
-    unpinExternalRoot(resultRootId);
-    pushStack(Value::makeArrayId(resultRef.id));
-    break;
-  }
+	unpinExternalRoot(srcRootId);
+	unpinExternalRoot(resultRootId);
+	pushStack(Value::makeArrayId(resultRef.id));
+	break;
+	}
 
-  case OpCode::ARRAY_FILTER: {
-    Value fn = popStack();
-    Value array = popStack();
-    if (!array.isArrayId()) {
-      COMPILER_THROW("ARRAY_FILTER expects array");
-    }
-    auto *arr = heap_.array(array.asArrayId());
-    if (!arr) {
-      pushStack(Value::makeNull());
-      break;
-    }
+	case OpCode::ARRAY_FILTER: {
+	Value fn = popStack();
+	Value array = popStack();
+	if (!array.isArrayId()) {
+		COMPILER_THROW("ARRAY_FILTER expects array");
+	}
+	auto *arr = heap_.array(array.asArrayId());
+	if (!arr) {
+		pushStack(Value::makeNull());
+		break;
+	}
 
-    auto resultRef = heap_.allocateArray();
-    auto *result = heap_.array(resultRef.id);
-    uint64_t resultRootId = pinExternalRoot(Value::makeArrayId(resultRef.id));
+	auto resultRef = heap_.allocateArray();
+	auto *result = heap_.array(resultRef.id);
+	uint64_t resultRootId = pinExternalRoot(Value::makeArrayId(resultRef.id));
+	uint64_t srcRootId = pinExternalRoot(array);
 
-    for (size_t i = 0; i < arr->size(); i++) {
-      Value predResult = callFunctionSync(fn, {(*arr)[i]});
-      if (predResult.isBool() && predResult.asBool()) {
-        result->push_back((*arr)[i]);
-      }
-    }
+	for (size_t i = 0; i < arr->size(); i++) {
+		Value predResult = callFunctionSync(fn, {(*arr)[i]});
+		arr = heap_.array(array.asArrayId());
+		if (predResult.isBool() && predResult.asBool()) {
+			result->push_back((*arr)[i]);
+		}
+	}
 
-    unpinExternalRoot(resultRootId);
+	unpinExternalRoot(srcRootId);
+	unpinExternalRoot(resultRootId);
     pushStack(Value::makeArrayId(resultRef.id));
     break;
   }
@@ -1468,34 +1517,40 @@ bool VM::execCollectionOp(const Instruction &instruction) {
       break;
     }
 
-    Value acc = initial;
-    for (size_t i = 0; i < arr->size(); i++) {
-      acc = callFunctionSync(fn, {acc, (*arr)[i]});
-    }
+	uint64_t srcRootId = pinExternalRoot(array);
+	Value acc = initial;
+	for (size_t i = 0; i < arr->size(); i++) {
+		acc = callFunctionSync(fn, {acc, (*arr)[i]});
+		arr = heap_.array(array.asArrayId());
+	}
 
-    pushStack(acc);
-    break;
-  }
+	unpinExternalRoot(srcRootId);
+	pushStack(acc);
+	break;
+	}
 
-  case OpCode::ARRAY_FOREACH: {
-    Value fn = popStack();
-    Value array = popStack();
-    if (!array.isArrayId()) {
-      COMPILER_THROW("ARRAY_FOREACH expects array");
-    }
-    auto *arr = heap_.array(array.asArrayId());
-    if (!arr) {
-      pushStack(Value::makeNull());
-      break;
-    }
+	case OpCode::ARRAY_FOREACH: {
+	Value fn = popStack();
+	Value array = popStack();
+	if (!array.isArrayId()) {
+		COMPILER_THROW("ARRAY_FOREACH expects array");
+	}
+	auto *arr = heap_.array(array.asArrayId());
+	if (!arr) {
+		pushStack(Value::makeNull());
+		break;
+	}
 
-    for (size_t i = 0; i < arr->size(); i++) {
-      (void)callFunctionSync(fn, {(*arr)[i]});
-    }
+	uint64_t srcRootId = pinExternalRoot(array);
+	for (size_t i = 0; i < arr->size(); i++) {
+		(void)callFunctionSync(fn, {(*arr)[i]});
+		arr = heap_.array(array.asArrayId());
+	}
 
-    pushStack(Value::makeNull());
-    break;
-  }
+	unpinExternalRoot(srcRootId);
+	pushStack(Value::makeNull());
+	break;
+	}
 
   // String intrinsics (VM-level operations)
   case OpCode::STRING_LEN: {
@@ -1596,19 +1651,23 @@ bool VM::execCollectionOp(const Instruction &instruction) {
           pushStack(elem);
         }
       }
-    } else if (value.isStringValId()) {
-      // Spread string into characters
-      // TODO: string pool lookup
-      std::string str = "<string:" + std::to_string(value.asStringValId()) + ">";
-      auto arrRef = heap_.allocateArray();
-      auto *arr = heap_.array(arrRef.id);
-      if (arr) {
-        for (char c : str) {
-          // TODO: string pool registration
-          arr->push_back(Value::makeNull());
-        }
-        pushStack(Value::makeArrayId(arrRef.id));
-      }
+	} else if (value.isStringValId()) {
+		if (!current_chunk) {
+			COMPILER_THROW("SPREAD: no current chunk for string spread");
+		}
+		const std::string &str = current_chunk->getString(value.asStringValId());
+		for (char c : str) {
+			auto charRef = createRuntimeString(std::string(1, c));
+			pushStack(Value::makeStringId(charRef.id));
+		}
+	} else if (value.isStringId()) {
+		const std::string *str = heap_.string(value.asStringId());
+		if (str) {
+			for (char c : *str) {
+				auto charRef = createRuntimeString(std::string(1, c));
+				pushStack(Value::makeStringId(charRef.id));
+			}
+		}
     }
     break;
   }

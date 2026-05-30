@@ -4,7 +4,6 @@
 #include "Closure.hpp"
 #include "../gc/GC.hpp"
 #include <shared_mutex>
-#include <stack>
 #include <vector>
 #include <unordered_map>
 
@@ -91,17 +90,13 @@ public:
   // Stack inspection
   bool isEmpty() const { return stack_.empty(); }
   size_t size() const { return stack_.size(); }
-  void clear() {
-    while (!stack_.empty()) {
-      stack_.pop();
-    }
-  }
+	void clear() { stack_.clear(); }
 
-  // Get all values for GC roots
-  std::vector<Value> getValues() const;
+	// Get all values for GC roots
+	std::vector<Value> getValues() const;
 
 private:
-  std::stack<Value> stack_;
+	std::vector<Value> stack_;
 };
 
 // ============================================================================

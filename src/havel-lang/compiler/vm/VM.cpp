@@ -1317,10 +1317,13 @@ if (main_chunk_ && main_chunk_->getFunction(function_index)) {
 resolve_chunk = main_chunk_.get();
 }
 }
-} else if (callee_value.isClosureId()) {
-closure_id = callee_value.asClosureId();
-auto *closure = heap_.closure(closure_id);
- function_index = closure->function_index;
+	} else if (callee_value.isClosureId()) {
+		closure_id = callee_value.asClosureId();
+		auto *closure = heap_.closure(closure_id);
+		if (!closure) {
+			COMPILER_THROW("Closure not found for call (id=" + std::to_string(closure_id) + ")");
+		}
+		function_index = closure->function_index;
  if (closure->chunk) {
  resolve_chunk = closure->chunk;
  }
@@ -1984,7 +1987,12 @@ Value VM::popStack() {
   return value;
 }
 
-void VM::pushStack(Value value) { stack.push(std::move(value)); }
+void VM::pushStack(Value value) {
+	if (stack.size() >= 1'000'000) {
+		COMPILER_THROW("Expression stack overflow");
+	}
+	stack.push(std::move(value));
+}
 
 uint32_t VM::toAbsoluteLocal(uint32_t local_index) {
   size_t base = frame_count_ > 0 ? currentFrame().locals_base : 0;

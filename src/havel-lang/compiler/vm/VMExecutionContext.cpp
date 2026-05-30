@@ -136,61 +136,51 @@ void CallFrameManager::clear() {
 // ============================================================================
 
 VMStack::VMStack(size_t initialCapacity) {
-  // Reserve space if needed
-  (void)initialCapacity;
+	stack_.reserve(initialCapacity);
 }
 
 void VMStack::push(const Value& value) {
-  stack_.push(value);
+	stack_.push_back(value);
 }
 
 Value VMStack::pop() {
-  if (stack_.empty()) {
-    COMPILER_THROW("Stack underflow");
-  }
-  Value value = stack_.top();
-  stack_.pop();
-  return value;
+	if (stack_.empty()) {
+		COMPILER_THROW("Stack underflow");
+	}
+	Value value = stack_.back();
+	stack_.pop_back();
+	return value;
 }
 
 Value& VMStack::peek(size_t distance) {
-  // This is tricky with std::stack - we need to access by index
-  // For now, throw if trying to peek beyond top
-  (void)distance;
-  return const_cast<Value&>(stack_.top());
+	if (distance >= stack_.size()) {
+		COMPILER_THROW("Stack peek out of bounds");
+	}
+	return stack_[stack_.size() - 1 - distance];
 }
 
 const Value& VMStack::peek(size_t distance) const {
-  (void)distance;
-  return stack_.top();
+	if (distance >= stack_.size()) {
+		COMPILER_THROW("Stack peek out of bounds");
+	}
+	return stack_[stack_.size() - 1 - distance];
 }
 
 void VMStack::pushMultiple(const std::vector<Value>& values) {
-  for (const auto& value : values) {
-    push(value);
-  }
+	stack_.insert(stack_.end(), values.begin(), values.end());
 }
 
 std::vector<Value> VMStack::popMultiple(size_t count) {
-  std::vector<Value> result;
-  result.reserve(count);
-  for (size_t i = 0; i < count; ++i) {
-    result.push_back(pop());
-  }
-  std::reverse(result.begin(), result.end());
-  return result;
+	if (count > stack_.size()) {
+		COMPILER_THROW("Stack underflow in popMultiple");
+	}
+	std::vector<Value> result(stack_.end() - count, stack_.end());
+	stack_.resize(stack_.size() - count);
+	return result;
 }
 
 std::vector<Value> VMStack::getValues() const {
-  // Copy stack contents
-  std::vector<Value> result;
-  auto temp = stack_;
-  while (!temp.empty()) {
-    result.push_back(temp.top());
-    temp.pop();
-  }
-  std::reverse(result.begin(), result.end());
-  return result;
+	return stack_;
 }
 
 // ============================================================================

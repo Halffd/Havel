@@ -419,8 +419,8 @@ fn scanString(quote, isFString, isRegexString) {
             isInterpolated = true
 
         }
-        while current() != null and current() != quote and current() != "\n" {
-            if current() == "\\" {
+    while current() != null and current() != quote and current() != "\n" {
+        if current() == "\\" {
         advance()
         c = current()
         SIMPLE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "0": "\0", "$": "$", "{": "{", "}": "}"}
@@ -460,10 +460,10 @@ fn scanString(quote, isFString, isRegexString) {
                 else {
                     s = s + "\\" + c
                 }
-                if c != null and c != "x" and c != "u" {
-                    advance()
-                }
-            }
+        if c != null and c != "x" and c != "u" {
+            advance()
+        }
+    }
             else if current() == "{" and isFString {
              isInterpolated = true
              s = s + current()
@@ -510,11 +510,10 @@ else if current() == "$" {
         else if isInterpolated {
             addToken("InterpolatedString", s)
         }
-        else {
-            addToken("String", s)
-
-        }
+    else {
+        addToken("String", s)
     }
+}
     fn scanMultilineString(quote, isFString) {
         advance()
         advance()

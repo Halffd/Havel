@@ -261,9 +261,9 @@ fn bind(fd, host, port, family) {
     if family == null { family = AF_INET }
     addr = _buildAddr(family, host, port)
     if addr == null { return -1 }
-    ret = ffi.call(_bind, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrSize(family))
-    ffi.free(addr)
-    ret
+  result = ffi.call(_bind, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrSize(family))
+  ffi.free(addr)
+  result
 }
 
 fn listen(fd, backlog) {
@@ -289,9 +289,9 @@ fn connect(fd, host, port, family) {
     if family == null { family = AF_INET }
     addr = _buildAddr(family, host, port)
     if addr == null { return -1 }
-    ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrSize(family))
-    ffi.free(addr)
-    ret
+  result = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrSize(family))
+  ffi.free(addr)
+  result
 }
 
 fn send(fd, data, flags) {
@@ -382,9 +382,9 @@ fn setsockopt(fd, level, optname, value) {
     if level == null { level = SOL_SOCKET }
     valBuf = ffi.allocBytes(4)
     ffi.set_i32(valBuf, value)
-    ret = ffi.call(_setsockopt, "int32", ["int32", "int32", "int32", "pointer", "uint32"], fd, level, optname, valBuf, 4)
-    ffi.free(valBuf)
-    ret
+  result = ffi.call(_setsockopt, "int32", ["int32", "int32", "int32", "pointer", "uint32"], fd, level, optname, valBuf, 4)
+  ffi.free(valBuf)
+  result
 }
 
 fn getsockopt(fd, level, optname) {
@@ -393,10 +393,10 @@ fn getsockopt(fd, level, optname) {
     lenBuf = ffi.allocBytes(4)
     ffi.set_u32(lenBuf, 4)
     ffi.call(_getsockopt, "int32", ["int32", "int32", "int32", "pointer", "pointer"], fd, level, optname, valBuf, lenBuf)
-    val = ffi.get_i32(valBuf)
-    ffi.free(valBuf)
-    ffi.free(lenBuf)
-    val
+  value = ffi.get_i32(valBuf)
+  ffi.free(valBuf)
+  ffi.free(lenBuf)
+  value
 }
 
 fn setReuseAddr(fd) {
@@ -452,9 +452,9 @@ fn poll(fds, timeoutMs) {
         ffi.set_i16(ffi.ptr_add(base, 6), 0)
         i = i + 1
     }
-    ret = ffi.call(_poll, "int32", ["pointer", "uint32", "int32"], pollBuf, nfds, timeoutMs)
-    results = []
-    if ret > 0 {
+  result = ffi.call(_poll, "int32", ["pointer", "uint32", "int32"], pollBuf, nfds, timeoutMs)
+  results = []
+  if result > 0 {
         i = 0
         while i < nfds {
             base = ffi.ptr_add(pollBuf, i * 8)
@@ -491,10 +491,10 @@ fn resolve(host, family) {
     ffi.set_i32(ffi.ptr_add(hint, 4), SOCK_STREAM) // ai_socktype
     resultPtr = ffi.allocBytes(8)
     ffi.memset(resultPtr, 0, 8)
-    ret = ffi.call(_getaddrinfo, "int32", ["pointer", "pointer", "pointer", "pointer"], _chost, 0, hint, resultPtr)
-    ffi.free(_chost)
-    ffi.free(hint)
-    if ret != 0 {
+  result = ffi.call(_getaddrinfo, "int32", ["pointer", "pointer", "pointer", "pointer"], _chost, 0, hint, resultPtr)
+  ffi.free(_chost)
+  ffi.free(hint)
+  if result != 0 {
         ffi.free(resultPtr)
         return []
     }

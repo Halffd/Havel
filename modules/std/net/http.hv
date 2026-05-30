@@ -101,14 +101,14 @@ fn parseResponse(conn) {
 
     status = 0
     if #statusParts >= 2 {
-        statusStr = statusParts[1]
-        val = 0
-        j = 0
-        while j < #statusStr {
-            val = val * 10 + ord(statusStr[j:j+1]) - ord("0")
-            j = j + 1
-        }
-        status = val
+    statusStr = statusParts[1]
+    num = 0
+    j = 0
+    while j < #statusStr {
+      num = num * 10 + ord(statusStr[j:j+1]) - ord("0")
+      j = j + 1
+    }
+    status = num
     }
 
     // Read headers
@@ -154,14 +154,14 @@ fn parseResponse(conn) {
             // Parse hex chunk size
             chunkSize = 0
             j = 0
-            while j < #sizeLine {
-                c = sizeLine[j:j+1]
-                val = 0
-                if c >= "0" && c <= "9" { val = ord(c) - ord("0") }
-                else if c >= "a" && c <= "f" { val = 10 + ord(c) - ord("a") }
-                else if c >= "A" && c <= "F" { val = 10 + ord(c) - ord("A") }
-                else { break } // ignores extensions
-                chunkSize = chunkSize * 16 + val
+  while j < #sizeLine {
+    c = sizeLine[j:j+1]
+    digit = 0
+    if c >= "0" && c <= "9" { digit = ord(c) - ord("0") }
+    else if c >= "a" && c <= "f" { digit = 10 + ord(c) - ord("a") }
+    else if c >= "A" && c <= "F" { digit = 10 + ord(c) - ord("A") }
+    else { break } // ignores extensions
+    chunkSize = chunkSize * 16 + digit
                 j = j + 1
             }
 

@@ -24,15 +24,15 @@ DISCONNECT  = 14
 
 fn encodeLength(len) {
     res = ""
-    val = len
-    while true {
-        digit = val % 128
-        val = val / 128
-        if val > 0 {
-            digit = digit | 128
-        }
-        res = res + char(digit)
-        if val <= 0 { break }
+  rem = len
+  while true {
+    digit = rem % 128
+    rem = rem / 128
+    if rem > 0 {
+      digit = digit | 128
+    }
+    res = res + char(digit)
+    if rem <= 0 { break }
     }
     res
 }

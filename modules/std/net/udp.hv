@@ -77,8 +77,8 @@ fn bind(host, port) {
 
     sock.setReuseAddr(fd)
 
-    ret = sock.bind(fd, host, port)
-    if ret < 0 {
+  rc = sock.bind(fd, host, port)
+  if rc < 0 {
         sock.close(fd)
         return null
     }

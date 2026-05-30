@@ -99,27 +99,27 @@ fn connect(path, timeout) {
 
     if timeout != null {
         sock.setNonBlocking(fd)
-        ret = sock.connect(fd, path, 0, sock.AF_UNIX)
-        if ret < 0 {
-            e = sock._errno()
-            if e != 115 { // EINPROGRESS
-                sock.close(fd)
-                return null
-            }
-            if !sock.pollWrite(fd, timeout) {
-                sock.close(fd)
-                return null
-            }
-            err = sock.getError(fd)
-            if err != 0 {
-                sock.close(fd)
-                return null
-            }
-        }
-        sock.setBlocking(fd)
-    } else {
-        ret = sock.connect(fd, path, 0, sock.AF_UNIX)
-        if ret < 0 {
+  rc = sock.connect(fd, path, 0, sock.AF_UNIX)
+  if rc < 0 {
+    e = sock._errno()
+    if e != 115 { // EINPROGRESS
+      sock.close(fd)
+      return null
+    }
+    if !sock.pollWrite(fd, timeout) {
+      sock.close(fd)
+      return null
+    }
+    err = sock.getError(fd)
+    if err != 0 {
+      sock.close(fd)
+      return null
+    }
+  }
+  sock.setBlocking(fd)
+  } else {
+  rc = sock.connect(fd, path, 0, sock.AF_UNIX)
+  if rc < 0 {
             sock.close(fd)
             return null
         }
@@ -147,14 +147,14 @@ fn listen(path, backlog) {
     fd = sock.create(sock.AF_UNIX, sock.SOCK_STREAM, 0)
     if fd < 0 { return null }
 
-    ret = sock.bind(fd, path, 0, sock.AF_UNIX)
-    if ret < 0 {
-        sock.close(fd)
-        return null
-    }
+  rc = sock.bind(fd, path, 0, sock.AF_UNIX)
+  if rc < 0 {
+    sock.close(fd)
+    return null
+  }
 
-    ret = sock.listen(fd, backlog)
-    if ret < 0 {
+  rc = sock.listen(fd, backlog)
+  if rc < 0 {
         sock.close(fd)
         return null
     }

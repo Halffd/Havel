@@ -173,8 +173,8 @@ fn TLSServer(sslCtx, tcpServer) {
         ffi.call(_SSL_set_fd, "int32", ["pointer", "int32"], sslPtr, tcpConn.fd)
         
         // int SSL_accept(SSL *ssl)
-        ret = ffi.call(_SSL_accept, "int32", ["pointer"], sslPtr)
-        if ret <= 0 {
+  rc = ffi.call(_SSL_accept, "int32", ["pointer"], sslPtr)
+  if rc <= 0 {
             ffi.call(_SSL_free, "void", ["pointer"], sslPtr)
             tcpConn.close()
             return null
@@ -224,8 +224,8 @@ fn connect(tcpConn) {
     ffi.call(_SSL_set_fd, "int32", ["pointer", "int32"], sslPtr, tcpConn.fd)
 
     // int SSL_connect(SSL *ssl)
-    ret = ffi.call(_SSL_connect, "int32", ["pointer"], sslPtr)
-    if ret <= 0 {
+  rc = ffi.call(_SSL_connect, "int32", ["pointer"], sslPtr)
+  if rc <= 0 {
         ffi.call(_SSL_free, "void", ["pointer"], sslPtr)
         ffi.call(_SSL_CTX_free, "void", ["pointer"], ctx)
         return null

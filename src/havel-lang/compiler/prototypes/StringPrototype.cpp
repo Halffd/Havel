@@ -538,14 +538,14 @@ regProtoVar("find", [&vm](const std::vector<Value>& args) {
     std::string result;
     result.reserve(fmt.size() * 2);
 
-    // Check if last arg is a named args object
+    // Check if last arg is a named args object (marked with __kwargs)
     bool hasNamedArgs = false;
     GCHeap::ObjectEntry* namedArgs = nullptr;
     if (args.size() > 1 && args.back().isObjectId()) {
-      namedArgs = vm.getHeap().object(args.back().asObjectId());
-      if (namedArgs && namedArgs->size() > 0) {
-        hasNamedArgs = true;
-      }
+        namedArgs = vm.getHeap().object(args.back().asObjectId());
+        if (namedArgs && namedArgs->find("__kwargs") != namedArgs->end()) {
+            hasNamedArgs = true;
+        }
     }
 
     size_t posIdx = 1; // Positional arg index (starts at 1, 0 is format string)

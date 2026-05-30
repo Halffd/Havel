@@ -18,7 +18,7 @@ namespace havel::compiler {
 void VM::registerDefaultHostFunctions() {
   // Register print as both host function AND global (for closure access)
   registerHostFunction("print", [this](const std::vector<Value> &args) {
-    // Check if last arg is kwargs object (has end= or delim=)
+    // Check if last arg is kwargs object (marked with __kwargs key)
     std::string delim = " ";
     std::string end = "\n";
     size_t argCount = args.size();
@@ -26,26 +26,24 @@ void VM::registerDefaultHostFunctions() {
     // Check for kwargs object as last argument
     bool hasKwargs = false;
     if (!args.empty() && args.back().isObjectId()) {
-      auto *kwargsObj = heap_.object(args.back().asObjectId());
-      if (kwargsObj) {
-        auto itEnd = kwargsObj->find("end");
-        bool foundEnd = itEnd != kwargsObj->end();
-        auto itDelim = kwargsObj->find("delim");
-        bool foundDelim = itDelim != kwargsObj->end();
-        if (foundEnd) {
-          end = resolveStringKey(itEnd->second);
+        auto *kwargsObj = heap_.object(args.back().asObjectId());
+        if (kwargsObj) {
+            auto itMarker = kwargsObj->find("__kwargs");
+            if (itMarker != kwargsObj->end()) {
+                hasKwargs = true;
+                auto itEnd = kwargsObj->find("end");
+                if (itEnd != kwargsObj->end()) {
+                    end = resolveStringKey(itEnd->second);
+                }
+                auto itDelim = kwargsObj->find("delim");
+                if (itDelim != kwargsObj->end()) {
+                    delim = resolveStringKey(itDelim->second);
+                }
+            }
         }
-        if (foundDelim) {
-          delim = resolveStringKey(itDelim->second);
-        }
-        // Only treat as kwargs if it has at least one of end/delim
-        if (foundEnd || foundDelim) {
-          hasKwargs = true;
-        }
-      }
     }
     if (hasKwargs) {
-      argCount--; // Don't count kwargs as a value to print
+        argCount--; // Don't count kwargs as a value to print
     }
 
     // Print values with delimiter

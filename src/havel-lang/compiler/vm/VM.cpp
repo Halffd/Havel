@@ -1544,28 +1544,24 @@ co->ip = 0;
   // Initialize parameter slots: provided args first, then defaults
   // Handle variadic parameters: pack extra args into array
   
-  // Check if last arg is a kwargs object
-  bool has_kwargs = false;
-  auto *kwargs_obj = heap_.object(0);
-  if (!args.empty() && args.back().isObjectId()) {
-    kwargs_obj = heap_.object(args.back().asObjectId());
-    if (kwargs_obj) {
-            auto itEnd = kwargs_obj->find("end");
-            if (itEnd != kwargs_obj->end()) {
-                has_kwargs = true;
-            } else {
-                auto itDelim = kwargs_obj->find("delim");
-                if (itDelim != kwargs_obj->end()) {
-                    has_kwargs = true;
+                // Check if last arg is a kwargs object (marked with __kwargs key)
+                bool has_kwargs = false;
+                auto *kwargs_obj = heap_.object(0);
+                if (!args.empty() && args.back().isObjectId()) {
+                    kwargs_obj = heap_.object(args.back().asObjectId());
+                    if (kwargs_obj) {
+                        auto itMarker = kwargs_obj->find("__kwargs");
+                        if (itMarker != kwargs_obj->end()) {
+                            has_kwargs = true;
+                        }
+                        if (has_kwargs) {
+                            kwargs_obj->erase("__kwargs");
+                            args.pop_back();
+                        } else {
+                            kwargs_obj = heap_.object(0);
+                        }
+                    }
                 }
-            }
-      if (has_kwargs) {
-        args.pop_back();
-      } else {
-        kwargs_obj = heap_.object(0);
-      }
-    }
-    }
 
     for (uint32_t i = 0; i < callee->param_count; i++) {
         if (callee->variadic_param_index != UINT32_MAX &&
@@ -1796,8 +1792,27 @@ else if (callee_value.isStringValId()) {
   // function's val declarations will repopulate immutable_locals_
   immutable_locals_.clear();
 
+  // Check if last arg is a kwargs object (marked with __kwargs key)
+  bool has_kwargs = false;
+  auto *kwargs_obj = heap_.object(0);
+  if (!args.empty() && args.back().isObjectId()) {
+    kwargs_obj = heap_.object(args.back().asObjectId());
+    if (kwargs_obj) {
+      auto itMarker = kwargs_obj->find("__kwargs");
+      if (itMarker != kwargs_obj->end()) {
+        has_kwargs = true;
+      }
+      if (has_kwargs) {
+        kwargs_obj->erase("__kwargs");
+        args.pop_back();
+      } else {
+        kwargs_obj = heap_.object(0);
+      }
+    }
+  }
+
   // Set up arguments in the reused frame (at old_base): provided args first,
-  // then defaults Handle variadic parameters: pack extra args into array
+  // then kwargs, then defaults Handle variadic parameters: pack extra args into array
   for (uint32_t i = 0; i < callee->param_count; i++) {
     if (callee->variadic_param_index != UINT32_MAX &&
         i == callee->variadic_param_index) {
@@ -1810,6 +1825,21 @@ else if (callee_value.isStringValId()) {
       locals[old_base + i] = Value::makeArrayId(arrRef.id);
     } else if (i < args.size()) {
       locals[old_base + i] = std::move(args[i]);
+    } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
+      auto it = kwargs_obj->find(callee->param_names[i]);
+      if (it != kwargs_obj->end()) {
+        locals[old_base + i] = it->second;
+      } else if (i < callee->default_values.size() &&
+                 callee->default_values[i].has_value()) {
+        const auto &dv = callee->default_values[i].value();
+        if (dv.isBool() && dv.asBool()) {
+          locals[old_base + i] = Value::makeArrayId(heap_.allocateArray().id);
+        } else {
+          locals[old_base + i] = dv;
+        }
+      } else {
+        locals[old_base + i] = nullptr;
+      }
     } else if (i < callee->default_values.size() &&
                callee->default_values[i].has_value()) {
       locals[old_base + i] = callee->default_values[i].value();

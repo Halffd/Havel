@@ -4878,16 +4878,19 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 }
                 compileExpression(*arg);
             }
-            uint32_t totalArgs = arg_count;
-            if (hasKwargs) {
-                emit(OpCode::OBJECT_NEW);
-                for (const auto &kwarg : expression.kwargs) {
-                    compileExpression(*kwarg.value);
-                    { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-                    emit(OpCode::OBJECT_SET);
-                }
-                totalArgs++;
-            }
+    uint32_t totalArgs = arg_count;
+    if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+        { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_SET);
+        for (const auto &kwarg : expression.kwargs) {
+            compileExpression(*kwarg.value);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+        }
+        totalArgs++;
+    }
             emit(OpCode::CALL, Value(totalArgs));
             in_tail_position_ = saved_tail_position;
             return;
@@ -4982,15 +4985,17 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  totalArgs++;
  }
  }
- if (hasKwargs) {
- emit(OpCode::OBJECT_NEW);
- for (const auto &kwarg : expression.kwargs) {
- emit(OpCode::DUP);
- { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
- compileExpression(*kwarg.value);
- emit(OpCode::OBJECT_SET);
- }
- totalArgs++;
+    if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+        { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_SET);
+        for (const auto &kwarg : expression.kwargs) {
+            compileExpression(*kwarg.value);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+        }
+        totalArgs++;
  }
 
             // Call method
@@ -5043,13 +5048,16 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
       }
     }
     if (hasKwargs) {
-      emit(OpCode::OBJECT_NEW);
-      for (const auto &kwarg : expression.kwargs) {
-        { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-        compileExpression(*kwarg.value);
+        emit(OpCode::OBJECT_NEW);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+        { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
         emit(OpCode::OBJECT_SET);
-      }
-      totalArgs++;
+        for (const auto &kwarg : expression.kwargs) {
+            compileExpression(*kwarg.value);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+        }
+        totalArgs++;
     }
     uint32_t method_sid = addStringConstant(property->symbol);
     emit(OpCode::CALL_METHOD, std::vector<Value>{
@@ -5082,18 +5090,20 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 compileExpression(*arg);
                 totalArgs++;
             }
-            if (hasKwargs) {
-                emit(OpCode::OBJECT_NEW);
-                for (const auto &kwarg : expression.kwargs) {
-                    emit(OpCode::DUP);
-                    { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-                    compileExpression(*kwarg.value);
-                    emit(OpCode::OBJECT_SET);
-                }
-                totalArgs++;
+        if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+            { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+            for (const auto &kwarg : expression.kwargs) {
+                compileExpression(*kwarg.value);
+                { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+                emit(OpCode::OBJECT_SET);
             }
-            emit(OpCode::CALL, Value(totalArgs));
-            in_tail_position_ = saved_tail_position;
+            totalArgs++;
+        }
+        emit(OpCode::CALL, Value(totalArgs));
+        in_tail_position_ = saved_tail_position;
             return;
  }
 
@@ -5127,18 +5137,21 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  totalArgs++;
  }
  }
- if (hasKwargs) {
- emit(OpCode::OBJECT_NEW);
- for (const auto &kwarg : expression.kwargs) {
- compileExpression(*kwarg.value);
- { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
- emit(OpCode::OBJECT_SET);
- }
- totalArgs++;
- }
-            emit(OpCode::CALL, Value(totalArgs));
-            in_tail_position_ = saved_tail_position;
-            return;
+        if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+            { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+            for (const auto &kwarg : expression.kwargs) {
+                compileExpression(*kwarg.value);
+                { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+                emit(OpCode::OBJECT_SET);
+            }
+            totalArgs++;
+        }
+        emit(OpCode::CALL, Value(totalArgs));
+        in_tail_position_ = saved_tail_position;
+        return;
         }
 
     if (binding->kind == ResolvedBindingKind::Function) {
@@ -5184,15 +5197,18 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
           totalArgs++;
         }
       }
-      if (hasKwargs) {
-        emit(OpCode::OBJECT_NEW);
-        for (const auto &kwarg : expression.kwargs) {
-          compileExpression(*kwarg.value);
-          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-          emit(OpCode::OBJECT_SET);
+        if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+            { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+            for (const auto &kwarg : expression.kwargs) {
+                compileExpression(*kwarg.value);
+                { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+                emit(OpCode::OBJECT_SET);
+            }
+            totalArgs++;
         }
-        totalArgs++;
-      }
 
 in_tail_position_ = saved_tail_position;
   if (in_tail_position_ && try_depth_ == 0) {
@@ -5239,15 +5255,18 @@ if (binding->kind == ResolvedBindingKind::Global) {
         totalArgs++;
       }
     }
-    if (hasKwargs) {
-      emit(OpCode::OBJECT_NEW);
-      for (const auto &kwarg : expression.kwargs) {
-        compileExpression(*kwarg.value);
-        { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-        emit(OpCode::OBJECT_SET);
-      }
-      totalArgs++;
-    }
+        if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+            { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+            for (const auto &kwarg : expression.kwargs) {
+                compileExpression(*kwarg.value);
+                { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+                emit(OpCode::OBJECT_SET);
+            }
+            totalArgs++;
+        }
 
     in_tail_position_ = saved_tail_position;
 if (in_tail_position_ && try_depth_ == 0) {
@@ -5296,16 +5315,19 @@ if (in_tail_position_ && try_depth_ == 0) {
     }
   }
 
-  // Compile kwargs as object if present
-  if (hasKwargs) {
-    emit(OpCode::OBJECT_NEW);
-    for (const auto &kwarg : expression.kwargs) {
-      compileExpression(*kwarg.value);
-      { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      emit(OpCode::OBJECT_SET);
+    // Compile kwargs as object if present
+    if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+        { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_SET);
+        for (const auto &kwarg : expression.kwargs) {
+            compileExpression(*kwarg.value);
+            { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+            emit(OpCode::OBJECT_SET);
+        }
+        actualArgCount++;
     }
-    actualArgCount++;
-  }
 
   // TCO: Emit TAIL_CALL if in tail position and callee is a user-defined
   // function

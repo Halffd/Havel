@@ -1002,13 +1002,14 @@ bool VM::execCollectionOp(const Instruction &instruction) {
         // Safety: reject __ prefixed keys (reserved for internal use)
         // Exception: __name__, __wrapped__, __arity__ are allowed on callable types
         // for decorator metadata preservation (Python convention)
-        bool isCallable = object.isFunctionObjId() || object.isClosureId() || object.isHostFuncId() || object.isBoundMethodId();
-        bool isAllowedDunder = *keyStr == "__name__" || *keyStr == "__wrapped__" || *keyStr == "__arity__";
-        if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_' &&
-            !(isCallable && isAllowedDunder)) {
-            COMPILER_THROW(
-                "OBJECT_SET: keys starting with '__' are reserved");
-        }
+            bool isCallable = object.isFunctionObjId() || object.isClosureId() || object.isHostFuncId() || object.isBoundMethodId();
+            bool isAllowedDunder = *keyStr == "__name__" || *keyStr == "__wrapped__" || *keyStr == "__arity__";
+            bool isKwargsMarker = *keyStr == "__kwargs" && object.isObjectId();
+            if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_' &&
+                !(isCallable && isAllowedDunder) && !isKwargsMarker) {
+                COMPILER_THROW(
+                    "OBJECT_SET: keys starting with '__' are reserved");
+            }
 
     // Handle function objects - support fn.prop = value
     if (object.isFunctionObjId()) {

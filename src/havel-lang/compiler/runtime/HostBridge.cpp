@@ -920,7 +920,7 @@ return vm->execLengthOp(args[0]);
   // Global print() function - resolves strings and outputs
   options_.host_functions["print"] =
       [this](const std::vector<Value> &args) {
-        // Check if last arg is kwargs object (has end= or delim=)
+        // Check if last arg is kwargs object (marked with __kwargs key)
         std::string delim = " ";
         std::string end = "\n";
         size_t argCount = args.size();
@@ -928,26 +928,24 @@ return vm->execLengthOp(args[0]);
         // Check for kwargs object as last argument
         bool hasKwargs = false;
         if (!args.empty() && args.back().isObjectId()) {
-          auto *kwargsObj = ctx_->vm->getHeap().object(args.back().asObjectId());
-          if (kwargsObj) {
-            auto itEnd = kwargsObj->find("end");
-            bool foundEnd = itEnd != kwargsObj->end();
-            auto itDelim = kwargsObj->find("delim");
-            bool foundDelim = itDelim != kwargsObj->end();
-            if (foundEnd) {
-              end = ctx_->vm->resolveStringKey(itEnd->second);
+            auto *kwargsObj = ctx_->vm->getHeap().object(args.back().asObjectId());
+            if (kwargsObj) {
+                auto itMarker = kwargsObj->find("__kwargs");
+                if (itMarker != kwargsObj->end()) {
+                    hasKwargs = true;
+                    auto itEnd = kwargsObj->find("end");
+                    if (itEnd != kwargsObj->end()) {
+                        end = ctx_->vm->resolveStringKey(itEnd->second);
+                    }
+                    auto itDelim = kwargsObj->find("delim");
+                    if (itDelim != kwargsObj->end()) {
+                        delim = ctx_->vm->resolveStringKey(itDelim->second);
+                    }
+                }
             }
-            if (foundDelim) {
-              delim = ctx_->vm->resolveStringKey(itDelim->second);
-            }
-            // Only treat as kwargs if it has at least one of end/delim
-            if (foundEnd || foundDelim) {
-              hasKwargs = true;
-            }
-          }
         }
         if (hasKwargs) {
-          argCount--; // Don't count kwargs as a value to print
+            argCount--; // Don't count kwargs as a value to print
         }
 
         if (!ctx_ || !ctx_->vm) {

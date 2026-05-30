@@ -532,9 +532,32 @@ fn nud(tok) {
         operand = parseExpr(140)
         return UpdateExpression(operand, "--", true, l, c)
     }
-    else if tt == "Length" {
-        operand = parseExpr(140)
-        return UnaryExpression("#", operand, l, c)
+else if tt == "Length" {
+      operand = parseExpr(140)
+      return UnaryExpression("#", operand, l, c)
+    }
+    else if tt == "Tilde" {
+      if current().type == "Identifier" or current().type == "Hotkey" {
+        combo = "~" + current().value
+        advance()
+        if current().type == "Colon" {
+          advance()
+          if current().type == "Number" or current().type == "Identifier" {
+            combo = combo + ":" + current().value
+            advance()
+          }
+        }
+        return HotkeyExpression(combo, l, c)
+      }
+      operand = parseExpr(140)
+      return UnaryExpression("~", operand, l, c)
+    }
+    else if tt == "DoubleOpenParen" {
+      inner = parseExpr(2)
+      if current().type == "DoubleCloseParen" {
+        advance()
+      }
+      return inner
     }
     else if tt == "At" {
         if current().type == "Identifier" {
@@ -3160,49 +3183,48 @@ fn parseProtocolDeclaration() {
 // impl TypeName for TraitName { fn method() {} }
 // ===================================================================
 fn parseImplDeclaration() {
-    l = current().line
-    c = current().col
-    advance() // consume 'impl'
+  l = current().line
+  c = current().col
+  advance() // consume 'impl'
+  skipNewlines()
+  if current().type != "Identifier" {
+    return error("Expected trait name after 'impl'", l, c)
+  }
+  traitName = advance().value
+  skipNewlines()
+  typeName = ""
+  if current().type == "For" {
+    advance() // consume 'for'
     skipNewlines()
     if current().type != "Identifier" {
-        return error("Expected type name after 'impl'", l, c)
+      return error("Expected type name after 'for'", current().line, current().col)
     }
     typeName = advance().value
     skipNewlines()
-    // Check for 'for' clause: impl TypeName for TraitName
-    traitName = ""
-    if current().type == "For" {
-        advance() // consume 'for'
-        skipNewlines()
-        if current().type != "Identifier" {
-            return error("Expected trait name after 'for'", current().line, current().col)
-        }
-        traitName = advance().value
-        skipNewlines()
+  }
+  if current().type != "OpenBrace" {
+    return error("Expected '{' after impl declaration", l, c)
+  }
+  advance() // consume '{'
+  funcs = []
+  while current().type != "CloseBrace" and notEOF() {
+    skipNewlinesAndSemicolons()
+    if current().type == "CloseBrace" || current().type == "EOF": break
+    // Each member should be a fn declaration
+    if current().type == "Fn" {
+      fnDecl = parseFnDeclaration()
+      if fnDecl != null && fnDecl.kind != "ErrorNode" {
+        funcs.push(fnDecl)
+      }
+      continue
     }
-    if current().type != "OpenBrace" {
-        return error("Expected '{' after impl declaration", l, c)
-    }
-    advance() // consume '{'
-    funcs = []
-    while current().type != "CloseBrace" and notEOF() {
-        skipNewlinesAndSemicolons()
-        if current().type == "CloseBrace" || current().type == "EOF": break
-        // Each member should be a fn declaration
-        if current().type == "Fn" {
-            fnDecl = parseFnDeclaration()
-            if fnDecl != null && fnDecl.kind != "ErrorNode" {
-                funcs.push(fnDecl)
-            }
-            continue
-        }
-        // Skip unknown tokens
-        advance()
-    }
-    if current().type == "CloseBrace" {
-        advance() // consume '}'
-    }
-    return ImplDeclaration(typeName, traitName, funcs, l, c)
+    // Skip unknown tokens
+    advance()
+  }
+  if current().type == "CloseBrace" {
+    advance() // consume '}'
+  }
+  return ImplDeclaration(typeName, traitName, funcs, l, c)
 }
     // ===================================================================
     // PRODUCE AST — main entry point

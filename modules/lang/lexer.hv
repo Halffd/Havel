@@ -463,7 +463,7 @@ fn scanString(quote, isFString, isRegexString) {
              s = s + current()
              advance()
             }
-            else if current() == "$" {
+else if current() == "$" {
     advance()
     if current() != null and (isAlpha(current()) or current() == "_" or current() == "@") {
       isInterpolated = true
@@ -480,9 +480,10 @@ fn scanString(quote, isFString, isRegexString) {
       }
       s = s + "}"
     }
- else {
-  s = s + "$"
- }
+    else {
+      s = s + "$"
+      continue
+    }
   }
             else {
                 s = s + current()

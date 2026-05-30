@@ -228,45 +228,50 @@ fn emitExpr(emitter, node) {
             bc.patch_jump(sj, bc.instr_count())
             return
         }
-if opr == "??" {
-emitExpr(emitter, node.left)
-bc.emit("DUP")
-isNullJump = bc.emit("JUMP_IF_NULL", 0)
-// Not null: keep left, skip right
-notNullJump = bc.emit("JUMP", 0)
-bc.patch_jump(isNullJump, bc.instr_count())
-// Null: pop null, evaluate right
-bc.emit("POP")
-emitExpr(emitter, node.right)
-bc.patch_jump(notNullJump, bc.instr_count())
-return
-}
-        emitExpr(emitter, node.left)
-        emitExpr(emitter, node.right)
-    opcodes = {
-        "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV",
-        "%": "MOD", "**": "POW", "\\": "INT_DIV", "\\\\": "INT_DIV",
-        "==": "EQ", "!=": "NEQ", "<": "LT", ">": "GT",
-        "<=": "LTE", ">=": "GTE",
-        "&": "BIT_AND", "|": "BIT_OR", "^": "BIT_XOR",
-        "<<": "BIT_LSH", ">>": "BIT_RSH",
-        "is": "IS",
-    }
-        oc = opcodes[opr]
-        if oc != null {
-            bc.emit(oc)
-            return
-        }
-        if opr == "in" {
-            bc.emit("HAS_KEY")
-            return
-        }
-        if opr == "not in" {
-            bc.emit("HAS_KEY")
-            bc.emit("NOT")
-            return
-        }
-        if opr == "matches" {
+ if opr == "??" {
+ emitExpr(emitter, node.left)
+ bc.emit("DUP")
+ isNullJump = bc.emit("JUMP_IF_NULL", 0)
+ notNullJump = bc.emit("JUMP", 0)
+ bc.patch_jump(isNullJump, bc.instr_count())
+ bc.emit("POP")
+ emitExpr(emitter, node.right)
+ bc.patch_jump(notNullJump, bc.instr_count())
+ return
+ }
+ if opr == "in" {
+ emitExpr(emitter, node.right)
+ emitExpr(emitter, node.left)
+ hasIdx = bc.add_chunk_string("has")
+ bc.emit("CALL_METHOD", bc.str_id(hasIdx), 1)
+ return
+ }
+ if opr == "not in" {
+ emitExpr(emitter, node.right)
+ emitExpr(emitter, node.left)
+ hasIdx = bc.add_chunk_string("has")
+ bc.emit("CALL_METHOD", bc.str_id(hasIdx), 1)
+ bc.emit("NOT")
+ return
+ }
+ emitExpr(emitter, node.left)
+ emitExpr(emitter, node.right)
+ opcodes = {
+ "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV",
+ "%": "MOD", "**": "POW", "\\": "INT_DIV", "\\\\": "INT_DIV", "%%": "REMAINDER",
+ "==": "EQ", "!=": "NEQ", "<": "LT", ">": "GT",
+ "<=": "LTE", ">=": "GTE",
+ "&&": "AND", "||": "OR",
+ "&": "BIT_AND", "|": "BIT_OR", "^": "BIT_XOR",
+ "<<": "BIT_LSH", ">>": "BIT_RSH",
+ "is": "IS",
+ }
+ oc = opcodes[opr]
+ if oc != null {
+ bc.emit(oc)
+ return
+ }
+ if opr == "matches" {
             // ~ substring or regex match
             // Check if right side is a regex literal
             if node.right.kind == "RegexLiteral" {
@@ -516,36 +521,36 @@ target = node.target
 if target.kind == "Identifier" {
 emitLoadVar(emitter, target.name)
 emitExpr(emitter, node.value)
-opcodes = {
-"+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
-"%=": "MOD", "**=": "POW",
-"&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
-"<<=": "BIT_LSH", ">>=": "BIT_RSH",
-}
-oc = opcodes[node.oper]
-if oc != null {
-bc.emit(oc)
-}
-else {
-emitError("unknown compound op: " + node.oper, node.line, node.col)
-}
-bc.emit("DUP")
-emitStoreVar(emitter, target.name)
-}
-else if target.kind == "MemberExpression" {
-// obj.prop += val → load obj, get prop, load val, op, set prop
-emitExpr(emitter, target.obj)
-bc.emit("DUP")
-keyIdx = bc.add_string(target.property)
-bc.emit("LOAD_CONST", keyIdx)
-bc.emit("OBJECT_GET")
-emitExpr(emitter, node.value)
-opcodes = {
-"+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
-"%=": "MOD", "**=": "POW",
-"&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
-"<<=": "BIT_LSH", ">>=": "BIT_RSH",
-}
+ opcodes = {
+ "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
+ "%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
+ "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
+ "<<=": "BIT_LSH", ">>=": "BIT_RSH",
+ }
+ oc = opcodes[node.oper]
+ if oc != null {
+ bc.emit(oc)
+ }
+ else {
+ emitError("unknown compound op: " + node.oper, node.line, node.col)
+ }
+ bc.emit("DUP")
+ emitStoreVar(emitter, target.name)
+ }
+ else if target.kind == "MemberExpression" {
+ // obj.prop += val → load obj, get prop, load val, op, set prop
+ emitExpr(emitter, target.obj)
+ bc.emit("DUP")
+ keyIdx = bc.add_string(target.property)
+ bc.emit("LOAD_CONST", keyIdx)
+ bc.emit("OBJECT_GET")
+ emitExpr(emitter, node.value)
+ opcodes = {
+ "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
+ "%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
+ "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
+ "<<=": "BIT_LSH", ">>=": "BIT_RSH",
+ }
 oc = opcodes[node.oper]
 if oc != null {
 bc.emit(oc)
@@ -840,13 +845,25 @@ bc.emit("LOAD_VAR", resultIdx)
 doneSid = bc.str_id(bc.add_chunk_string("done"))
 bc.emit("LOAD_CONST", bc.add_const(doneSid))
 bc.emit("OBJECT_GET")
-	doneJump = bc.emit("JUMP_IF_TRUE", 0)
-	// Get result.second (the value for single-var iteration)
-	bc.emit("LOAD_VAR", resultIdx)
-	secondSid = bc.str_id(bc.add_chunk_string("second"))
-	bc.emit("LOAD_CONST", bc.add_const(secondSid))
-	bc.emit("OBJECT_GET")
-	bc.emit("STORE_VAR", localIdx)
+      doneJump = bc.emit("JUMP_IF_TRUE", 0)
+      // Check if keyVar is set (for a, b in arr => keyVar=a, name=b)
+      keyVar = node.keyVar
+      hasKeyVar = keyVar != null
+      if hasKeyVar {
+        // Get result.first (the key/index)
+        bc.emit("LOAD_VAR", resultIdx)
+        firstSid = bc.str_id(bc.add_chunk_string("first"))
+        bc.emit("LOAD_CONST", bc.add_const(firstSid))
+        bc.emit("OBJECT_GET")
+        keyIdx = scopeDeclare(loopScope, keyVar)
+        bc.emit("STORE_VAR", keyIdx)
+      }
+      // Get result.second (the value)
+      bc.emit("LOAD_VAR", resultIdx)
+      secondSid = bc.str_id(bc.add_chunk_string("second"))
+      bc.emit("LOAD_CONST", bc.add_const(secondSid))
+      bc.emit("OBJECT_GET")
+      bc.emit("STORE_VAR", localIdx)
 	// Body
 	emitBlock(emitter, node.body)
 	// Loop back
@@ -1119,10 +1136,12 @@ if k == "TryStatement" {
     emitImportStatement(emitter, node)
     return
   }
-  if k == "SleepStatement" {
-    emitExpr(emitter, node.duration)
-    bc.emit("SLEEP")
-    return
+ if k == "SleepStatement" {
+ sid = globalIdx(emitter, "sleep")
+ bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+ emitExpr(emitter, node.duration)
+ bc.emit("CALL", 1)
+ return
 
   }
   if k == "ClassDeclaration" {
@@ -1844,6 +1863,34 @@ fn emitMatchExpr(emitter, node) {
 
 }
 
+fn _bindCtorArg(emitter, ctorArgs, idx, fieldName, subjectIdx, matchSlot) {
+  arg = ctorArgs[idx]
+  if arg == null { return }
+  if arg.kind == "WildcardPattern" { return }
+  // Get field from subject
+  bc.emit("LOAD_VAR", subjectIdx)
+  fidx = bc.add_string(fieldName)
+  bc.emit("LOAD_CONST", fidx)
+  bc.emit("OBJECT_GET")
+  if arg.kind == "Identifier" {
+    // Bind the field value to a variable
+    bindSlot = scopeDeclare(emitter.scope, arg.name)
+    bc.emit("STORE_VAR", bindSlot)
+  }
+  else {
+    // Literal or nested pattern: matchSlot = matchSlot AND (field == pattern)
+    bc.emit("LOAD_VAR", matchSlot)
+    bc.emit("LOAD_VAR", subjectIdx)
+    fidx2 = bc.add_string(fieldName)
+    bc.emit("LOAD_CONST", fidx2)
+    bc.emit("OBJECT_GET")
+    emitExpr(emitter, arg)
+    bc.emit("EQ")
+    bc.emit("AND")
+    bc.emit("STORE_VAR", matchSlot)
+  }
+}
+
 fn emitPatternMatch(emitter, pattern, subjectIdx, matchSlot) {
   if pattern == null {
     return
@@ -1912,39 +1959,10 @@ fn emitPatternMatch(emitter, pattern, subjectIdx, matchSlot) {
     bc.emit("AND")
     bc.emit("STORE_VAR", matchSlot)
     // Extract and bind each argument by position
-    fnames = ["value", "error", "message"]
-    lim = #ctorArgs
-    ai = 0
-    while ai < lim {
-      arg = ctorArgs[ai]
-      if arg != null {
-        if arg.kind != "WildcardPattern" {
-          fn = fnames[ai]
-          if fn == null { fn = "field" + str(ai) }
-          // Get field from subject
-          bc.emit("LOAD_VAR", subjectIdx)
-          fidx = bc.add_string(fn)
-          bc.emit("LOAD_CONST", fidx)
-          bc.emit("OBJECT_GET")
-          if arg.kind == "Identifier" {
-            bindSlot = scopeDeclare(emitter.scope, arg.name)
-            bc.emit("STORE_VAR", bindSlot)
-          }
-          else {
-            bc.emit("LOAD_VAR", matchSlot)
-            bc.emit("LOAD_VAR", subjectIdx)
-            fidx2 = bc.add_string(fn)
-            bc.emit("LOAD_CONST", fidx2)
-            bc.emit("OBJECT_GET")
-            emitExpr(emitter, arg)
-            bc.emit("EQ")
-            bc.emit("AND")
-            bc.emit("STORE_VAR", matchSlot)
-          }
-        }
-      }
-      ai = ai + 1
-    }
+    // Field names by position: 0=value, 1=error, 2=message
+    _bindCtorArg(emitter, ctorArgs, 0, "value", subjectIdx, matchSlot)
+    _bindCtorArg(emitter, ctorArgs, 1, "error", subjectIdx, matchSlot)
+    _bindCtorArg(emitter, ctorArgs, 2, "message", subjectIdx, matchSlot)
     return
   }
   // Default: always match (no change to matchSlot)

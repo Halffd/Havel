@@ -1,0 +1,15 @@
+// test_defer.hv - smoke test for defer keyword
+// defer runs cleanup at function exit (LIFO order)
+
+log = []
+
+fn testDefer() {
+  log.push("start")
+  defer { log.push("defer1") }
+  defer { log.push("defer2") }
+  log.push("end")
+}
+
+testDefer()
+print(log)
+// Expected: ["start", "end", "defer2", "defer1"] (LIFO order)

@@ -966,21 +966,25 @@ while (frame_count_ > stop_frame_depth) {
       if (exit_requested_.load()) {
         break;
       }
-      if (suspension_requested_) {
-        // SUSPENDED or SLEEP was requested (e.g. by sleep() host function).
-        // In runDispatchLoop mode, handle SLEEP as blocking sleep since there's
-        // no scheduler event loop to resume us. Other suspension reasons
-        // (channel/thread) are not applicable in dispatch loop mode.
+if (suspension_requested_) {
         uint8_t reason = suspension_reason_;
         void* ctx = suspension_context_;
         suspension_requested_ = false;
         suspension_context_ = nullptr;
         if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+          if (scheduler_) {
+            // In scheduler/goroutine context: break out so processGoroutines
+            // can set the deadline on the WaitHandle and suspend properly
+            last_suspension_reason_ = reason;
+            last_suspension_context_ = ctx;
+            break;
+          }
+          // Non-scheduler: blocking sleep inline
           int64_t ms = reinterpret_cast<intptr_t>(ctx);
           if (ms > 0) {
             const int CHUNK = 10;
             auto deadline = std::chrono::steady_clock::now() +
-                            std::chrono::milliseconds(ms);
+                std::chrono::milliseconds(ms);
             while (std::chrono::steady_clock::now() < deadline) {
               if (exit_requested_.load()) break;
               if (timer_check_func_) timer_check_func_();
@@ -991,9 +995,11 @@ while (frame_count_ > stop_frame_depth) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
             }
           }
-          // IP already incremented by auto-increment below — continue.
         } else {
-          // Unknown suspension — break out so caller can handle
+          // Non-SLEEP suspension (thread join, channel recv, await, etc.)
+          // Save suspension info for processGoroutines to read, then break
+          last_suspension_reason_ = reason;
+          last_suspension_context_ = ctx;
           break;
         }
       }
@@ -1104,13 +1110,14 @@ bool VM::handleScriptThrow(const Value &value) {
       // exists)
         frame.ip = handler.catch_ip;
         // Run deferred closures for this frame before resuming at catch
-        auto &deferred = frame.defer_stack;
-        while (!deferred.empty()) {
-          Value defer_fn = deferred.back();
-          deferred.pop_back();
+        auto deferred_copy = frame.defer_stack;
+        frame.defer_stack.clear();
+        while (!deferred_copy.empty()) {
+          Value defer_fn = deferred_copy.back();
+          deferred_copy.pop_back();
           if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
             try {
-              callFunctionSync(defer_fn, {});
+              callFunction(defer_fn, {});
             } catch (...) {
               // Swallow exceptions in deferred code during exception unwinding
             }
@@ -1121,13 +1128,14 @@ bool VM::handleScriptThrow(const Value &value) {
 
       auto finished = frame;
       // Run deferred closures for this unwound frame
-      auto &deferred = finished.defer_stack;
-      while (!deferred.empty()) {
-        Value defer_fn = deferred.back();
-        deferred.pop_back();
+      auto deferred_copy = finished.defer_stack;
+      finished.defer_stack.clear();
+      while (!deferred_copy.empty()) {
+        Value defer_fn = deferred_copy.back();
+        deferred_copy.pop_back();
         if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
           try {
-            callFunctionSync(defer_fn, {});
+            callFunction(defer_fn, {});
           } catch (...) {
             // Swallow exceptions in deferred code during exception unwinding
           }
@@ -1978,13 +1986,15 @@ void VM::doReturn() {
   }
 
   // Execute deferred closures in reverse order (LIFO)
-  auto &deferred = frame_arena_[frame_count_ - 1].defer_stack;
-  while (!deferred.empty()) {
-    Value defer_fn = deferred.back();
-    deferred.pop_back();
+  // Copy the defer stack first since callFunction may reallocate frame_arena_
+  auto deferred_copy = frame_arena_[frame_count_ - 1].defer_stack;
+  frame_arena_[frame_count_ - 1].defer_stack.clear();
+  while (!deferred_copy.empty()) {
+    Value defer_fn = deferred_copy.back();
+    deferred_copy.pop_back();
     if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
       try {
-        callFunctionSync(defer_fn, {});
+        callFunction(defer_fn, {});
       } catch (...) {
         // Swallow exceptions in deferred code to allow remaining defers to run
       }

@@ -166,7 +166,7 @@ KEYWORD_IDENTS = {
   "Use": true, "Import": true, "From": true, "As": true, "With": true,
   "Type": true, "Dsl": true,
   "Pool": true, "Signal": true, "Group": true, "Modes": true,
-  "Sleep": true, "Yield": true,
+  "Sleep": true, "Yield": true, "WaitGroup": true, "Wait": true, "Defer": true,
 }
 
 DOT_ACCESS_KEYWORDS = {
@@ -482,7 +482,7 @@ fn nud(tok) {
     else if tt == "InterpolatedString" {
         return parseInterpolatedString(tok.value, l, c)
     }
-    else if tt == "Identifier" or (isKeywordIdent(tt) and tt != "True" and tt != "False" and tt != "Null" and tt != "Fn") {
+    else if tt == "Identifier" or (isKeywordIdent(tt) and tt != "True" and tt != "False" and tt != "Null" and tt != "Fn" and tt != "WaitGroup" and tt != "Wait" and tt != "Defer") {
         return Identifier(tok.value, l, c)
     }
     else if tt == "True" {
@@ -597,34 +597,50 @@ else if tt == "Length" {
     else if tt == "If" {
         return parseIfExpr()
     }
-    else if tt == "SuperArrow" {
-        if current().type == "Identifier" {
-            methodName = advance().value
-            node = Identifier("__super__", l, c)
-            node.isSuperCall = true
-            node.superMethodName = methodName
-            if current().type == "OpenParen" {
-                advance()
-                args = []
-                skipNewlines()
-                while current().type != "CloseParen" and notEOF() {
-                    skipNewlines()
-                    if current().type == "CloseParen": break
-                    args.push(parseExpr(0))
-                    skipNewlines()
-                    if current().type == "Comma": advance()
-                }
-                expect("CloseParen")
-                return CallExpression(node, args, l, c)
-            }
-            else {
-                return node
-            }
-        }
-        else {
-            return error("Expected method name after '@->'", l, c)
-        }
-    }
+	else if tt == "SuperArrow" {
+		if current().type == "Identifier" {
+			methodName = advance().value
+			node = Identifier("__super__", l, c)
+			node.isSuperCall = true
+			node.superMethodName = methodName
+			if current().type == "OpenParen" {
+				advance()
+				args = []
+				skipNewlines()
+				while current().type != "CloseParen" and notEOF() {
+					skipNewlines()
+					if current().type == "CloseParen": break
+					args.push(parseExpr(0))
+					skipNewlines()
+					if current().type == "Comma": advance()
+				}
+				expect("CloseParen")
+				return CallExpression(node, args, l, c)
+			}
+			else {
+				return node
+			}
+		}
+		else {
+			return error("Expected method name after '@->'", l, c)
+		}
+	}
+	else if tt == "WaitGroup" {
+		advance()
+		if current().type == "OpenParen" {
+			advance()
+			if current().type != "CloseParen" {
+				return error("Expected '()' after waitgroup", l, c)
+			}
+			advance()
+		}
+		return WaitGroupExpression(l, c)
+	}
+	else if tt == "Wait" {
+		advance()
+		target = parseExpr(140)
+		return WaitExpression(target, l, c)
+	}
     else {
         return error("Unexpected token in expression: " + tt, l, c)
     }
@@ -1745,13 +1761,35 @@ fn parseStatement() {
             return parseConfigBlockStatement()
 
         }
-        // Sleep
-        if tt == "Sleep" {
-            advance()
-            duration = parseExpr(0)
-            return SleepStatement(duration, l, c)
+// Sleep
+if tt == "Sleep" {
+	advance()
+	duration = parseExpr(0)
+	return SleepStatement(duration, l, c)
 
-        }
+}
+// Defer
+if tt == "Defer" {
+	advance()
+	if current().type == "OpenBrace" {
+		advance()
+		stmts = []
+		skipNewlines()
+		while current().type != "CloseBrace" and notEOF() {
+			if current().type == "NewLine" { advance(); continue }
+			stmts.push(parseStatement())
+			skipNewlines()
+		}
+		expect("CloseBrace")
+		block = BlockStatement(stmts, l, c)
+		expr = FnDeclaration("", [], block, l, c)
+		return DeferStatement(expr, l, c)
+	}
+	else {
+		expr = parseExpr(0)
+		return DeferStatement(expr, l, c)
+	}
+}
         // DSL statements
         if tt == "On": return parseOnStatement()
         if tt == "Mode": return parseModeBlockStatement()

@@ -7,6 +7,7 @@
 #include "../../runtime/concurrency/DependencyTracker.hpp"
 #include "../../runtime/concurrency/WatcherRegistry.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "core/config/ConfigManager.hpp"
 #include <cmath>
@@ -46,12 +47,18 @@ case OpCode::THREAD_JOIN: {
   Value target = popStack();
 
   if (target.isWaitGroupId()) {
-    // wait on a WaitGroup — block until counter reaches 0
     uint32_t wg_id = target.asWaitGroupId();
     auto *wg = heap_.waitgroup(wg_id);
     if (wg && wg->counter.load() > 0) {
+      if (scheduler_) {
+        auto* g = scheduler_->current();
+        if (g) {
+          g->wait_handle.type = Scheduler::AwaitableType::EXTERNAL;
+          g->wait_handle.target_id = wg_id;
+        }
+      }
       suspension_requested_ = true;
-      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::THREAD_JOIN);
+      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
       suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(wg_id));
     }
     pushStack(Value::makeNull());
@@ -64,14 +71,27 @@ case OpCode::THREAD_JOIN: {
 
   uint32_t thread_id = target.asThreadId();
 
-  // Set suspension request - signals executeOneStep to suspend the fiber
-  // Context pointer carries the thread_id for the callback to use
-  suspension_requested_ = true;
-  suspension_reason_ = static_cast<uint8_t>(SuspensionReason::THREAD_JOIN);
-  suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(thread_id));
+  // Check if thread result already available
+  auto it = thread_results_.find(thread_id);
+  if (it != thread_results_.end()) {
+    Value result = it->second;
+    thread_results_.erase(it);
+    pushStack(result);
+    break;
+  }
 
-  // The actual suspension will happen in executeOneStep after this instruction
-  // For now, push null as the return value (will be used if thread already done)
+  // Set WaitHandle on the current goroutine for event-driven unpark
+  if (scheduler_) {
+    auto* g = scheduler_->current();
+    if (g) {
+      g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
+      g->wait_handle.target_id = thread_id;
+    }
+  }
+
+  suspension_requested_ = true;
+  suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+  suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(thread_id));
   pushStack(Value::makeNull());
   break;
 }
@@ -511,55 +531,125 @@ break;
  break;
  }
 
- // <- thread_id: join the thread, return its result
- if (awaitable.isThreadId()) {
- uint32_t tid = awaitable.asThreadId();
- auto *threadObj = heap_.thread(tid);
- if (threadObj) {
- threadObj->stop();
- }
- // Check if a result was stored for this thread
- auto it = thread_results_.find(tid);
- Value result = (it != thread_results_.end()) ? it->second : Value::makeNull();
- if (it != thread_results_.end()) thread_results_.erase(it);
- pushStack(result);
- break;
- }
+// <- thread_id: join the thread, return its result
+if (awaitable.isThreadId()) {
+  uint32_t tid = awaitable.asThreadId();
 
- // <- interval_id: wait for next tick, return callback result
- if (awaitable.isIntervalId()) {
- uint32_t iid = awaitable.asIntervalId();
- // Wait for interval to produce a result by polling
- // In a real async VM, this would suspend the fiber.
- // For now, busy-wait with processPendingCalls
- while (interval_results_.find(iid) == interval_results_.end()) {
- if (timer_check_func_) timer_check_func_();
- std::this_thread::sleep_for(std::chrono::milliseconds(1));
- }
- auto it = interval_results_.find(iid);
- Value result = it->second;
- interval_results_.erase(it);
- pushStack(result);
- break;
- }
+  // Check if result already available (thread already completed)
+  auto it = thread_results_.find(tid);
+  if (it != thread_results_.end()) {
+    Value result = it->second;
+    thread_results_.erase(it);
+    pushStack(result);
+    break;
+  }
 
- // <- timeout_id: wait for timeout to fire, return callback result
- if (awaitable.isTimeoutId()) {
- uint32_t tid = awaitable.asTimeoutId();
- auto *timeoutObj = heap_.timeout(tid);
- if (timeoutObj) {
- // The timeout is already scheduled. We need to wait for it.
- // Since Timeout::cancel() joins the thread, we can call it
- // to wait for completion. If it was already cancelled, this
- // is a no-op.
- timeoutObj->cancel();
- }
- auto it = timeout_results_.find(tid);
- Value result = (it != timeout_results_.end()) ? it->second : Value::makeNull();
- if (it != timeout_results_.end()) timeout_results_.erase(it);
- pushStack(result);
- break;
- }
+  // In scheduler/goroutine context: suspend the fiber cooperatively
+  // The ExecutionEngine::onThreadComplete handler will unpark us
+  if (scheduler_) {
+    auto* g = scheduler_->current();
+    if (g) {
+      g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
+      g->wait_handle.target_id = tid;
+    }
+    suspension_requested_ = true;
+    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+    suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(tid));
+    pushStack(Value::makeNull()); // placeholder — replaced on resume by HavelEngine
+    break;
+  }
+
+  // Non-scheduler context: blocking join
+  auto *threadObj = heap_.thread(tid);
+  if (threadObj) {
+    threadObj->stop();
+  }
+  auto it2 = thread_results_.find(tid);
+  Value result = (it2 != thread_results_.end()) ? it2->second : Value::makeNull();
+  if (it2 != thread_results_.end()) thread_results_.erase(it2);
+  pushStack(result);
+  break;
+}
+
+// <- interval_id: wait for next tick, return callback result
+if (awaitable.isIntervalId()) {
+  uint32_t iid = awaitable.asIntervalId();
+
+  // Check if result already available
+  auto it = interval_results_.find(iid);
+  if (it != interval_results_.end()) {
+    Value result = it->second;
+    interval_results_.erase(it);
+    pushStack(result);
+    break;
+  }
+
+  // In scheduler/goroutine context: suspend cooperatively
+  // The ExecutionEngine::onTimerFire handler will unpark us
+  if (scheduler_) {
+    auto* g = scheduler_->current();
+    if (g) {
+      g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+      g->wait_handle.target_id = iid;
+    }
+    suspension_requested_ = true;
+    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+    suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(iid));
+    pushStack(Value::makeNull()); // placeholder — replaced on resume
+    break;
+  }
+
+  // Non-scheduler context: busy-wait
+  while (interval_results_.find(iid) == interval_results_.end()) {
+    if (timer_check_func_) timer_check_func_();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  auto it2 = interval_results_.find(iid);
+  Value result = it2->second;
+  interval_results_.erase(it2);
+  pushStack(result);
+  break;
+}
+
+// <- timeout_id: wait for timeout to fire, return callback result
+if (awaitable.isTimeoutId()) {
+  uint32_t tid = awaitable.asTimeoutId();
+
+  // Check if result already available
+  auto it = timeout_results_.find(tid);
+  if (it != timeout_results_.end()) {
+    Value result = it->second;
+    timeout_results_.erase(it);
+    pushStack(result);
+    break;
+  }
+
+  // In scheduler/goroutine context: suspend cooperatively
+  // The ExecutionEngine::onTimerFire handler will unpark us
+  if (scheduler_) {
+    auto* g = scheduler_->current();
+    if (g) {
+      g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+      g->wait_handle.target_id = tid;
+    }
+    suspension_requested_ = true;
+    suspension_reason_ = static_cast<uint8_t>(SuspensionReason::AWAIT);
+    suspension_context_ = reinterpret_cast<void*>(static_cast<uintptr_t>(tid));
+    pushStack(Value::makeNull()); // placeholder — replaced on resume
+    break;
+  }
+
+  // Non-scheduler context: blocking join
+  auto *timeoutObj = heap_.timeout(tid);
+  if (timeoutObj) {
+    timeoutObj->cancel();
+  }
+  auto it2 = timeout_results_.find(tid);
+  Value result = (it2 != timeout_results_.end()) ? it2->second : Value::makeNull();
+  if (it2 != timeout_results_.end()) timeout_results_.erase(it2);
+  pushStack(result);
+  break;
+}
 
  // <- object with __await_result field (simulated concurrency in tests)
  if (awaitable.isObjectId()) {

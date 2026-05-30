@@ -6474,7 +6474,7 @@ case ast::NodeType::WaitExpression: {
   break;
 }
 
-  default:
+default:
     break;
   }
 }

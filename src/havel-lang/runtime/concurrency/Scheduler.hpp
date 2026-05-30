@@ -307,6 +307,7 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
   // Yield current goroutine and allow other goroutines to run
   void yieldCurrentAndCheckTimers();
   void clearCurrent();
+void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
   // Add a pre-created Action Fiber to the scheduler with priority
   void addActionFiber(Fiber* fiber, FiberPriority priority = FiberPriority::NORMAL);
 

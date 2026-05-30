@@ -1094,21 +1094,31 @@ timeout_results_[*timeoutIdPtr] = result;
     return Value::makeNull();
   });
 
-  // waitgroup.done(wg) - Decrement waitgroup counter
-  registerHostFunction("waitgroup.done", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isWaitGroupId()) {
-      COMPILER_THROW("waitgroup.done requires a waitgroup argument");
-    }
-    auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
-    if (wg) {
-      int64_t prev = wg->counter.fetch_sub(1);
-      if (prev <= 1) {
-        std::lock_guard<std::mutex> lock(wg->mutex);
-        wg->cv.notify_all();
+// waitgroup.done(wg) - Decrement waitgroup counter
+registerHostFunction("waitgroup.done", 1, [this](const std::vector<Value> &args) {
+  if (args.empty() || !args[0].isWaitGroupId()) {
+    COMPILER_THROW("waitgroup.done requires a waitgroup argument");
+  }
+  uint32_t wg_id = args[0].asWaitGroupId();
+  auto *wg = heap_.waitgroup(wg_id);
+  if (wg) {
+    int64_t prev = wg->counter.fetch_sub(1);
+    if (prev <= 1) {
+      std::lock_guard<std::mutex> lock(wg->mutex);
+      wg->cv.notify_all();
+      // Unpark any goroutine waiting on this waitgroup
+      if (scheduler_) {
+        auto* g = scheduler_->findGoroutineByWaitTarget(
+            Scheduler::AwaitableType::EXTERNAL, wg_id);
+        if (g) {
+          g->wait_handle.resume_value = Value::makeNull();
+          scheduler_->unpark(g);
+        }
       }
     }
-    return Value::makeNull();
-  });
+  }
+  return Value::makeNull();
+});
 
   // waitgroup.wait(wg) - Block until counter reaches 0
   registerHostFunction("waitgroup.wait", 1, [this](const std::vector<Value> &args) {

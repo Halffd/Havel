@@ -10658,13 +10658,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDeferStatement() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseWaitExpression() {
-  auto waitToken = at();
-  advance();
-
-  auto target = parseExpression();
+  // Note: parsePrattExpression already consumed 'wait' via advance()
+  // So at() is already the next token after 'wait'
+  auto target = parsePrattExpression(bp(BindingPower::Prefix));
   auto expr = makeNode<havel::ast::WaitExpression>(std::move(target));
-  expr->line = waitToken.line;
-  expr->column = waitToken.column;
   return expr;
 }
 

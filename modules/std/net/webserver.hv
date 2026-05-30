@@ -1,0 +1,438 @@
+// webserver.hv — High-level web application framework for Havel
+//
+// Features:
+//   - Route pattern matching with named parameters (e.g., /users/:id)
+//   - Query parameter parsing
+//   - Elegant middleware support (e.g., Logger, CORS)
+//   - JSON request parsing & JSON response sugar
+//   - Static file serving
+//
+// Usage:
+//   use "net/webserver" as ws
+//   app = ws.create()
+//   app.use(ws.logger())
+//   app.get("/api/users/:id", fn(req, res) {
+//       res.json({id: req.params.id, name: "User name"})
+//   })
+//   app.listen("0.0.0.0", 8080)
+
+use "net/http" as http
+use "fsuv" as fs
+use json
+
+// ===================================================================
+// Request & Response wrapper objects
+// ===================================================================
+
+fn WebResponse(clientConn) {
+    self = {conn: clientConn, status: 200, headers: {}, sent: false}
+
+    fn _setHeader(k, v) {
+        self.headers[k] = v
+        self
+    }
+
+    fn _setStatus(code) {
+        self.status = code
+        self
+    }
+
+    fn _send(body, contentType) {
+        if self.sent { return }
+        
+        statusPhrase = "OK"
+        if self.status == 404 { statusPhrase = "Not Found" }
+        else if self.status == 500 { statusPhrase = "Internal Server Error" }
+        else if self.status == 201 { statusPhrase = "Created" }
+        else if self.status == 204 { statusPhrase = "No Content" }
+        else if self.status == 301 { statusPhrase = "Moved Permanently" }
+        else if self.status == 302 { statusPhrase = "Found" }
+
+        respStr = "HTTP/1.1 {self.status} {statusPhrase}\r\n"
+        respStr = respStr + "Server: Havel-WebFramework/1.0\r\n"
+        
+        if contentType != null && !self.headers.has("Content-Type") {
+            self.headers["Content-Type"] = contentType
+        }
+        
+        if body != null {
+            respStr = respStr + "Content-Length: {#body}\r\n"
+        } else {
+            respStr = respStr + "Content-Length: 0\r\n"
+        }
+
+        for k in self.headers.keys() {
+            respStr = respStr + "{k}: {self.headers[k]}\r\n"
+        }
+        respStr = respStr + "\r\n"
+
+        self.conn.send(respStr)
+        if body != null {
+            self.conn.send(body)
+        }
+        self.sent = true
+    }
+
+    fn _json(obj) {
+        bodyStr = json.stringify(obj)
+        _send(bodyStr, "application/json")
+    }
+
+    fn _html(htmlStr) {
+        _send(htmlStr, "text/html; charset=utf-8")
+    }
+
+    fn _text(textStr) {
+        _send(textStr, "text/plain")
+    }
+
+    fn _redirect(url) {
+        _setStatus(302)
+        _setHeader("Location", url)
+        _send("", null)
+    }
+
+    self.header = _setHeader
+    self.status = _setStatus
+    self.send = _send
+    self.json = _json
+    self.html = _html
+    self.text = _text
+    self.redirect = _redirect
+    self
+}
+
+// ===================================================================
+// Route helper (matches /users/:id with /users/42)
+// ===================================================================
+
+fn parseQueryParams(queryStr) {
+    params = {}
+    if queryStr == null || #queryStr == 0 { return params }
+    
+    parts = []
+    curr = ""
+    i = 0
+    while i < #queryStr {
+        c = queryStr[i:i+1]
+        if c == "&" {
+            if #curr > 0 { parts.push(curr); curr = "" }
+        } else {
+            curr = curr + c
+        }
+        i = i + 1
+    }
+    if #curr > 0 { parts.push(curr) }
+
+    for p in parts {
+        eqIdx = -1
+        j = 0
+        while j < #p {
+            if p[j:j+1] == "=" {
+                eqIdx = j
+                break
+            }
+            j = j + 1
+        }
+        if eqIdx > 0 {
+            k = p[0:eqIdx]
+            v = p[eqIdx+1:#p]
+            params[k] = v
+        } else {
+            params[p] = ""
+        }
+    }
+    params
+}
+
+fn splitPath(path) {
+    segments = []
+    if path == null || path == "/" { return segments }
+    
+    curr = ""
+    i = 0
+    while i < #path {
+        c = path[i:i+1]
+        if c == "/" {
+            if #curr > 0 { segments.push(curr); curr = "" }
+        } else {
+            curr = curr + c
+        }
+        i = i + 1
+    }
+    if #curr > 0 { segments.push(curr) }
+    segments
+}
+
+fn matchRoute(pattern, path) {
+    patSegs = splitPath(pattern)
+    pathSegs = splitPath(path)
+
+    if #patSegs != #pathSegs { return null }
+
+    params = {}
+    i = 0
+    while i < #patSegs {
+        pat = patSegs[i]
+        seg = pathSegs[i]
+        
+        if #pat > 1 && pat[0:1] == ":" {
+            // Named parameter
+            paramName = pat[1:#pat]
+            params[paramName] = seg
+        } else if pat != seg {
+            return null
+        }
+        i = i + 1
+    }
+    params
+}
+
+// ===================================================================
+// WebApplication
+// ===================================================================
+
+fn WebApplication() {
+    self = {middlewares: [], routes: [], staticRoutes: []}
+
+    fn _use(mw) {
+        self.middlewares.push(mw)
+    }
+
+    fn _addRoute(method, pattern, handler) {
+        self.routes.push({method: method, pattern: pattern, handler: handler})
+    }
+
+    fn _get(pattern, handler) { _addRoute("GET", pattern, handler) }
+    fn _post(pattern, handler) { _addRoute("POST", pattern, handler) }
+    fn _put(pattern, handler) { _addRoute("PUT", pattern, handler) }
+    fn _delete(pattern, handler) { _addRoute("DELETE", pattern, handler) }
+
+    fn _static(prefix, dir) {
+        self.staticRoutes.push({prefix: prefix, dir: dir})
+    }
+
+    fn _dispatch(req, res) {
+        // Run middlewares sequentially
+        mwIndex = 0
+        
+        fn next() {
+            if mwIndex < #self.middlewares {
+                mw = self.middlewares[mwIndex]
+                mwIndex = mwIndex + 1
+                mw(req, res, next)
+            } else {
+                // Done with middlewares, execute route
+                _executeRoute(req, res)
+            }
+        }
+        
+        next()
+    }
+
+    fn _executeRoute(req, res) {
+        // Check static routes first
+        for sr in self.staticRoutes {
+            pfx = sr.prefix
+            if #req.path >= #pfx && req.path[0:#pfx] == pfx {
+                relPath = req.path[#pfx:#req.path]
+                if #relPath == 0 || relPath == "/" { relPath = "/index.html" }
+                filePath = sr.dir + relPath
+                
+                // Read static file
+                content = fs.read(fs.open(filePath, 0, 0), 1048576, 0)
+                if content != null {
+                    ext = ""
+                    dotIdx = -1
+                    i = #filePath - 1
+                    while i >= 0 {
+                        if filePath[i:i+1] == "." { dotIdx = i; break }
+                        i = i - 1
+                    }
+                    if dotIdx >= 0 { ext = filePath[dotIdx:#filePath] }
+                    
+                    mime = "text/plain"
+                    if ext == ".html" { mime = "text/html" }
+                    else if ext == ".css" { mime = "text/css" }
+                    else if ext == ".js" { mime = "application/javascript" }
+                    else if ext == ".json" { mime = "application/json" }
+                    else if ext == ".png" { mime = "image/png" }
+                    else if ext == ".jpg" { mime = "image/jpeg" }
+                    
+                    res.send(content, mime)
+                    return
+                }
+            }
+        }
+
+        // Check routes
+        for route in self.routes {
+            if route.method == req.method {
+                params = matchRoute(route.pattern, req.path)
+                if params != null {
+                    req.params = params
+                    
+                    // Try parsing JSON body if application/json
+                    if req.headers.has("content-type") && req.headers["content-type"].lower() == "application/json" {
+                        if #req.body > 0 {
+                            req.json = json.parse(req.body)
+                        }
+                    }
+                    
+                    route.handler(req, res)
+                    return
+                }
+            }
+        }
+
+        // 404 Not Found
+        res.setStatus(404).text("Not Found")
+    }
+
+    fn _listen(host, port) {
+        srv = http.server(host, port)
+        if srv == null { return false }
+        
+        srv.setDefault(fn(httpReq) {
+            res = WebResponse(srv.tcpServer.accept()) // wait, actually http server creates res inside default handler
+            // But our http server doesn't pass the connection.
+            // Oh! Let's adapt HTTPServer to pass a clean request/response handler.
+            // Actually, we can just run http.server directly in a customized loop inside webserver.
+            // Let's implement the HTTP connection accept loop here directly!
+        })
+        
+        // Let's build a clean, custom HTTP listen loop so we are fully in control!
+        use "net/tcp" as tcp
+        tcpSrv = tcp.listen(host, port)
+        if tcpSrv == null { return false }
+        
+        while true {
+            client = tcpSrv.accept()
+            if client != null {
+                // Read Request-Line
+                reqLine = client.recvLine()
+                if reqLine != null && #reqLine > 0 {
+                    parts = []
+                    curr = ""
+                    i = 0
+                    while i < #reqLine {
+                        c = reqLine[i:i+1]
+                        if c == " " {
+                            if #curr > 0 { parts.push(curr); curr = "" }
+                        } else {
+                            curr = curr + c
+                        }
+                        i = i + 1
+                    }
+                    if #curr > 0 { parts.push(curr) }
+
+                    if #parts >= 2 {
+                        method = parts[0]
+                        fullPath = parts[1]
+                        
+                        path = fullPath
+                        queryStr = ""
+                        qIdx = -1
+                        j = 0
+                        while j < #fullPath {
+                            if fullPath[j:j+1] == "?" { qIdx = j; break }
+                            j = j + 1
+                        }
+                        if qIdx >= 0 {
+                            path = fullPath[0:qIdx]
+                            queryStr = fullPath[qIdx+1:#fullPath]
+                        }
+
+                        // Read headers
+                        headers = {}
+                        while true {
+                            line = client.recvLine()
+                            if line == null || #line == 0 { break }
+
+                            colonIdx = -1
+                            j = 0
+                            while j < #line {
+                                if line[j:j+1] == ":" { colonIdx = j; break }
+                                j = j + 1
+                            }
+
+                            if colonIdx > 0 {
+                                k = line[0:colonIdx]
+                                v = line[colonIdx+1:#line]
+                                start = 0
+                                while start < #v && v[start:start+1] == " " { start = start + 1 }
+                                headers[k.lower()] = v[start:#v]
+                            }
+                        }
+
+                        // Read body
+                        body = ""
+                        if headers.has("content-length") {
+                            clStr = headers["content-length"]
+                            cl = 0
+                            j = 0
+                            while j < #clStr {
+                                cl = cl * 10 + ord(clStr[j:j+1]) - ord("0")
+                                j = j + 1
+                            }
+                            body = client.recv(cl)
+                        }
+
+                        req = {
+                            method: method,
+                            path: path,
+                            queryStr: queryStr,
+                            query: parseQueryParams(queryStr),
+                            headers: headers,
+                            body: body,
+                            params: {}
+                        }
+                        
+                        res = WebResponse(client)
+                        
+                        _dispatch(req, res)
+                    }
+                }
+                client.close()
+            }
+        }
+        true
+    }
+
+    self.use = _use
+    self.get = _get
+    self.post = _post
+    self.put = _put
+    self.delete = _delete
+    self.static = _static
+    self.listen = _listen
+    self
+}
+
+// ===================================================================
+// Built-in Middleware Providers
+// ===================================================================
+
+fn logger() {
+    fn(req, res, next) {
+        print("{req.method} {req.path}")
+        next()
+    }
+}
+
+fn cors() {
+    fn(req, res, next) {
+        res.header("Access-Control-Allow-Origin", "*")
+        res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        res.header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        if req.method == "OPTIONS" {
+            res.setStatus(204).send("", null)
+        } else {
+            next()
+        }
+    }
+}
+
+fn create() {
+    WebApplication()
+}

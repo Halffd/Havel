@@ -1,0 +1,147 @@
+// client.hv — HTTP client with connection pooling and Keep-Alive support
+//
+// Usage:
+//   use "net/client" as hc
+//   client = hc.create()
+//   res = client.get("http://httpbin.org/get")
+//   print(res.body)
+//   // The underlying TCP socket is kept alive and reused for the next request!
+//   res2 = client.get("http://httpbin.org/headers")
+//   client.close()
+
+use "net/tcp" as tcp
+use "net/tls" as tls
+use "net/http" as http
+
+fn HTTPClient() {
+    self = {pool: [], maxIdleConns: 5, idleTimeout: 60000} // idleTimeout 60 seconds
+
+    fn _getConn(parsedUrl) {
+        // Clean up expired connections first
+        now = time.now()
+        activePool = []
+        targetConn = null
+        
+        for entry in self.pool {
+            if now - entry.lastUsed > self.idleTimeout {
+                entry.conn.close()
+            } else if targetConn == null && entry.scheme == parsedUrl.scheme && entry.host == parsedUrl.host && entry.port == parsedUrl.port && entry.conn.isAlive() {
+                targetConn = entry.conn
+            } else {
+                activePool.push(entry)
+            }
+        }
+        self.pool = activePool
+
+        if targetConn != null {
+            return targetConn
+        }
+
+        // Create new connection
+        rawConn = tcp.connect(parsedUrl.host, parsedUrl.port)
+        if rawConn == null { return null }
+
+        conn = rawConn
+        if parsedUrl.scheme == "https" {
+            conn = tls.connect(rawConn)
+            if conn == null {
+                rawConn.close()
+                return null
+            }
+        }
+        conn
+    }
+
+    fn _releaseConn(parsedUrl, conn) {
+        if conn == null { return }
+        if !conn.isAlive() {
+            conn.close()
+            return
+        }
+
+        if #self.pool >= self.maxIdleConns {
+            // Close oldest connection
+            oldest = self.pool[0]
+            oldest.conn.close()
+            // Shift
+            newPool = []
+            i = 1
+            while i < #self.pool {
+                newPool.push(self.pool[i])
+                i = i + 1
+            }
+            self.pool = newPool
+        }
+
+        self.pool.push({
+            scheme: parsedUrl.scheme,
+            host: parsedUrl.host,
+            port: parsedUrl.port,
+            conn: conn,
+            lastUsed: time.now()
+        })
+    }
+
+    fn _request(method, url, headers, body) {
+        if headers == null { headers = {} }
+        parsed = http.parseUrl(url)
+        
+        conn = _getConn(parsed)
+        if conn == null { return null }
+
+        // Send request
+        reqStr = "{method} {parsed.path} HTTP/1.1\r\n"
+        reqStr = reqStr + "Host: {parsed.host}\r\n"
+        reqStr = reqStr + "Connection: keep-alive\r\n"
+
+        if body != null {
+            reqStr = reqStr + "Content-Length: {#body}\r\n"
+        }
+
+        for k in headers.keys() {
+            reqStr = reqStr + "{k}: {headers[k]}\r\n"
+        }
+        reqStr = reqStr + "\r\n"
+
+        conn.send(reqStr)
+        if body != null {
+            conn.send(body)
+        }
+
+        res = http.parseResponse(conn)
+        
+        // Check if server wants to close the connection
+        shouldClose = false
+        if res != null && res.headers.has("connection") && res.headers["connection"].lower() == "close" {
+            shouldClose = true
+        }
+
+        if shouldClose || res == null {
+            conn.close()
+        } else {
+            _releaseConn(parsed, conn)
+        }
+
+        res
+    }
+
+    fn _get(url, headers) { _request("GET", url, headers, null) }
+    fn _post(url, body, headers) { _request("POST", url, headers, body) }
+
+    fn _close() {
+        for entry in self.pool {
+            entry.conn.close()
+        }
+        self.pool = []
+    }
+
+    self.request = _request
+    self.get = _get
+    self.post = _post
+    self.close = _close
+    self
+}
+
+fn create() {
+    HTTPClient()
+}

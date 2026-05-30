@@ -1,0 +1,148 @@
+// jsonrpc.hv — JSON-RPC 2.0 Client and Server over HTTP
+//
+// Usage:
+//   use "net/jsonrpc" as jrpc
+//
+//   // Server
+//   srv = jrpc.server("0.0.0.0", 8082)
+//   srv.method("add", fn(params) {
+//       params[0] + params[1]
+//   })
+//   // srv.start()
+//
+//   // Client
+//   client = jrpc.client("http://localhost:8082")
+//   result = client.call("add", [40, 2]) // 42
+
+use "net/http" as http
+use json
+
+// ===================================================================
+// JSON-RPC 2.0 Client
+// ===================================================================
+
+fn JSONRPCClient(url) {
+    self = {url: url, idCounter: 1}
+
+    fn _call(method, params) {
+        id = self.idCounter
+        self.idCounter = self.idCounter + 1
+        
+        payload = {
+            jsonrpc: "2.0",
+            method: method,
+            params: params,
+            id: id
+        }
+
+        res = http.postJson(self.url, payload)
+        if res == null { return null }
+        
+        parsed = json.parse(res.body)
+        if parsed == null { return null }
+
+        if parsed.has("error") {
+            err = parsed.error
+            print("JSON-RPC Error: {err.message} (code: {err.code})")
+            return null
+        }
+
+        if parsed.has("result") {
+            return parsed.result
+        }
+        null
+    }
+
+    self.call = _call
+    self
+}
+
+// ===================================================================
+// JSON-RPC 2.0 Server
+// ===================================================================
+
+fn JSONRPCServer(host, port) {
+    self = {server: http.server(host, port), methods: {}}
+
+    fn _method(name, handler) {
+        self.methods[name] = handler
+    }
+
+    fn _handleRequest(req) {
+        parsed = json.parse(req.body)
+        if parsed == null {
+            return http.response(400, "application/json", json.stringify({
+                jsonrpc: "2.0",
+                error: {code: -32700, message: "Parse error"},
+                id: null
+            }))
+        }
+
+        id = null
+        if parsed.has("id") { id = parsed.id }
+
+        if !parsed.has("jsonrpc") || parsed.jsonrpc != "2.0" || !parsed.has("method") {
+            return http.response(400, "application/json", json.stringify({
+                jsonrpc: "2.0",
+                error: {code: -32600, message: "Invalid Request"},
+                id: id
+            }))
+        }
+
+        method = parsed.method
+        params = []
+        if parsed.has("params") { params = parsed.params }
+
+        if !self.methods.has(method) {
+            return http.response(200, "application/json", json.stringify({
+                jsonrpc: "2.0",
+                error: {code: -32601, message: "Method not found"},
+                id: id
+            }))
+        }
+
+        handler = self.methods[method]
+        
+        // Execute handler
+        result = null
+        // Basic exception handling
+        // (Since Havel VM has robust try-catch syntax)
+        try {
+            result = handler(params)
+        } catch (e) {
+            return http.response(200, "application/json", json.stringify({
+                jsonrpc: "2.0",
+                error: {code: -32603, message: "Internal error"},
+                id: id
+            }))
+        }
+
+        http.response(200, "application/json", json.stringify({
+            jsonrpc: "2.0",
+            result: result,
+            id: id
+        }))
+    }
+
+    fn _start() {
+        self.server.setDefault(_handleRequest)
+        self.server.start()
+    }
+
+    fn _stop() {
+        self.server.stop()
+    }
+
+    self.method = _method
+    self.start = _start
+    self.stop = _stop
+    self
+}
+
+fn client(url) {
+    JSONRPCClient(url)
+}
+
+fn server(host, port) {
+    JSONRPCServer(host, port)
+}

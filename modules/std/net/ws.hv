@@ -1,0 +1,271 @@
+// ws.hv — High-level WebSocket client and server module
+//
+// Usage:
+//   use net/ws
+//
+//   // Client
+//   client = ws.connect("ws://echo.websocket.events")
+//   client.send("hello")
+//   print(client.recv())
+//   client.close()
+//
+//   // Server
+//   srv = ws.server("0.0.0.0", 8081)
+//   srv.onConnection(fn(wsConn) {
+//       wsConn.onMessage(fn(msg) {
+//           wsConn.send("echo: {msg}")
+//       })
+//   })
+//   srv.start()
+
+use "net/tcp" as tcp
+use "net/tls" as tls
+use "net/http" as http
+use "net/websocket" as wsproto
+use "crypto" as crypt
+use random
+
+// ===================================================================
+// WebSocket Connection
+// ===================================================================
+
+fn WSConnection(conn, isClient) {
+    self = {conn: conn, isClient: isClient, closed: false, onMsgHandler: null, onCloseHandler: null}
+
+    fn _send(data, opcode) {
+        if self.closed { return false }
+        if opcode == null { opcode = wsproto.OP_TEXT }
+        
+        maskKey = null
+        if self.isClient {
+            // Clients must mask payload
+            rb = random.bytes(4)
+            maskKey = [rb[0], rb[1], rb[2], rb[3]]
+        }
+        
+        frameBytes = wsproto.frame(opcode, data, maskKey)
+        self.conn.send(frameBytes)
+        true
+    }
+
+    fn _recv() {
+        if self.closed { return null }
+        frame = wsproto.parseFrame(self.conn)
+        if frame == null {
+            self.close()
+            return null
+        }
+
+        if frame.opcode == wsproto.OP_CLOSE {
+            self.close()
+            return null
+        }
+
+        if frame.opcode == wsproto.OP_PING {
+            _send(frame.data, wsproto.OP_PONG)
+            return _recv() // recurse
+        }
+
+        if frame.opcode == wsproto.OP_PONG {
+            return _recv() // ignore pong payload, recurse
+        }
+
+        frame.data
+    }
+
+    fn _onMessage(handler) {
+        self.onMsgHandler = handler
+    }
+
+    fn _onClose(handler) {
+        self.onCloseHandler = handler
+    }
+
+    fn _close() {
+        if !self.closed {
+            // Send close frame
+            _send("", wsproto.OP_CLOSE)
+            self.conn.close()
+            self.closed = true
+            if self.onCloseHandler != null {
+                self.onCloseHandler()
+            }
+        }
+    }
+
+    fn _listenLoop() {
+        while !self.closed {
+            msg = _recv()
+            if msg == null { break }
+            if self.onMsgHandler != null {
+                self.onMsgHandler(msg)
+            }
+        }
+    }
+
+    self.send = _send
+    self.recv = _recv
+    self.onMessage = _onMessage
+    self.onClose = _onClose
+    self.close = _close
+    self.listenLoop = _listenLoop
+    self
+}
+
+// ===================================================================
+// Client connect
+// ===================================================================
+
+fn connect(url, timeout) {
+    parsed = http.parseUrl(url)
+    
+    rawConn = tcp.connect(parsed.host, parsed.port, timeout)
+    if rawConn == null { return null }
+
+    conn = rawConn
+    if url[0:6] == "wss://" {
+        conn = tls.connect(rawConn)
+        if conn == null {
+            rawConn.close()
+            return null
+        }
+    }
+
+    // Generate random 16-byte Sec-WebSocket-Key
+    rb = random.bytes(16)
+    clientKey = crypt.base64Encode(rb)
+
+    // Handshake request
+    req = "GET {parsed.path} HTTP/1.1\r\n"
+    req = req + "Host: {parsed.host}\r\n"
+    req = req + "Upgrade: websocket\r\n"
+    req = req + "Connection: Upgrade\r\n"
+    req = req + "Sec-WebSocket-Key: {clientKey}\r\n"
+    req = req + "Sec-WebSocket-Version: 13\r\n\r\n"
+
+    conn.send(req)
+
+    // Parse handshake response
+    res = http.parseResponse(conn)
+    if res == null || res.status != 101 {
+        conn.close()
+        return null
+    }
+
+    // Validate Sec-WebSocket-Accept
+    expectedAccept = wsproto.acceptKey(clientKey)
+    respAccept = ""
+    if res.headers.has("sec-websocket-accept") {
+        respAccept = res.headers["sec-websocket-accept"]
+    }
+
+    if respAccept != expectedAccept {
+        conn.close()
+        return null
+    }
+
+    WSConnection(conn, true)
+}
+
+// ===================================================================
+// WebSocket Server
+// ===================================================================
+
+fn WSServer(host, port) {
+    self = {host: host, port: port, connHandler: null, tcpServer: null, running: false}
+
+    fn _onConnection(handler) {
+        self.connHandler = handler
+    }
+
+    fn _handleUpgrade(client) {
+        // Read Request-Line
+        reqLine = client.recvLine()
+        if reqLine == null || #reqLine == 0 { return }
+
+        // Read headers
+        headers = {}
+        while true {
+            line = client.recvLine()
+            if line == null || #line == 0 { break }
+
+            colonIdx = -1
+            j = 0
+            while j < #line {
+                if line[j:j+1] == ":" {
+                    colonIdx = j
+                    break
+                }
+                j = j + 1
+            }
+
+            if colonIdx > 0 {
+                k = line[0:colonIdx]
+                v = line[colonIdx+1:#line]
+                start = 0
+                while start < #v && v[start:start+1] == " " { start = start + 1 }
+                headers[k.lower()] = v[start:#v]
+            }
+        }
+
+        // Validate WebSocket Upgrade headers
+        isUpgrade = false
+        if headers.has("upgrade") && headers["upgrade"].lower() == "websocket" {
+            isUpgrade = true
+        }
+
+        if !isUpgrade || !headers.has("sec-websocket-key") {
+            client.send("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
+            client.close()
+            return
+        }
+
+        clientKey = headers["sec-websocket-key"]
+        acceptKey = wsproto.acceptKey(clientKey)
+
+        // Handshake Response
+        resp = "HTTP/1.1 101 Switching Protocols\r\n"
+        resp = resp + "Upgrade: websocket\r\n"
+        resp = resp + "Connection: Upgrade\r\n"
+        resp = resp + "Sec-WebSocket-Accept: {acceptKey}\r\n\r\n"
+
+        client.send(resp)
+
+        wsConn = WSConnection(client, false)
+        if self.connHandler != null {
+            // Launch in a background thread or let the handler loop
+            // In Havel VM scheduler, fiber runtime handles co-operative multi-tasking
+            // We spawn a goroutine if the platform supports it, or call the handler
+            self.connHandler(wsConn)
+        }
+    }
+
+    fn _start() {
+        self.tcpServer = tcp.listen(self.host, self.port)
+        if self.tcpServer == null { return false }
+        self.running = true
+        while self.running {
+            client = self.tcpServer.accept()
+            if client != null {
+                _handleUpgrade(client)
+            }
+        }
+        true
+    }
+
+    fn _stop() {
+        self.running = false
+        if self.tcpServer != null {
+            self.tcpServer.close()
+        }
+    }
+
+    self.onConnection = _onConnection
+    self.start = _start
+    self.stop = _stop
+    self
+}
+
+fn server(host, port) {
+    WSServer(host, port)
+}

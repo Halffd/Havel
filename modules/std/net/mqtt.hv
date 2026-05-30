@@ -1,0 +1,216 @@
+// mqtt.hv — Lightweight MQTT v3.1.1 client for IoT applications
+//
+// Usage:
+//   use "net/mqtt" as mqtt
+//   client = mqtt.connect("broker.hivemq.com", 1883)
+//   client.subscribe("sensors/temperature", fn(topic, payload) {
+//       print("Temp update: {payload}")
+//   })
+//   client.publish("sensors/temperature", "23.5")
+//   // client.startLoop()
+
+use "net/tcp" as tcp
+
+// --- MQTT Control Packet Types ---
+CONNECT     = 1
+CONNACK     = 2
+PUBLISH     = 3
+PUBACK      = 4
+SUBSCRIBE   = 8
+SUBACK      = 9
+PINGREQ     = 12
+PINGRESP    = 13
+DISCONNECT  = 14
+
+fn encodeLength(len) {
+    res = ""
+    val = len
+    while true {
+        digit = val % 128
+        val = val / 128
+        if val > 0 {
+            digit = digit | 128
+        }
+        res = res + char(digit)
+        if val <= 0 { break }
+    }
+    res
+}
+
+fn decodeLength(conn) {
+    multiplier = 1
+    value = 0
+    while true {
+        bStr = conn.recv(1)
+        if bStr == null || #bStr == 0 { return -1 }
+        encodedByte = ord(bStr)
+        value = value + (encodedByte & 127) * multiplier
+        if (encodedByte & 128) == 0 {
+            return value
+        }
+        multiplier = multiplier * 128
+    }
+}
+
+fn encodeString(s) {
+    n = #s
+    char((n / 256) % 256) + char(n % 256) + s
+}
+
+// ===================================================================
+// MQTT Client Object
+// ===================================================================
+
+fn MQTTClient(conn, clientId) {
+    self = {conn: conn, clientId: clientId, messageId: 1, subscriptions: {}, closed: false}
+
+    fn _connectPacket() {
+        // Variable Header
+        vh = encodeString("MQTT")
+        vh = vh + char(4) // Protocol Level (4 = v3.1.1)
+        vh = vh + char(2) // Connect Flags (Clean Session = 2)
+        vh = vh + char(0) + char(60) // Keep Alive (60s)
+        
+        // Payload
+        pl = encodeString(self.clientId)
+        
+        packet = char(CONNECT * 16) + encodeLength(#vh + #pl) + vh + pl
+        self.conn.send(packet)
+    }
+
+    fn _publish(topic, payload, retain) {
+        if self.closed { return false }
+        if retain == null { retain = 0 }
+        
+        // Fixed header type = 3
+        typeByte = PUBLISH * 16
+        if retain != 0 { typeByte = typeByte | 1 }
+        
+        vh = encodeString(topic)
+        pl = payload
+        
+        packet = char(typeByte) + encodeLength(#vh + #pl) + vh + pl
+        self.conn.send(packet)
+        true
+    }
+
+    fn _subscribe(topicFilter, callback) {
+        if self.closed { return false }
+        self.subscriptions[topicFilter] = callback
+        
+        msgId = self.messageId
+        self.messageId = self.messageId + 1
+        
+        // Variable Header: Msg ID
+        vh = char((msgId / 256) % 256) + char(msgId % 256)
+        
+        // Payload: Topic Filter + Requested QoS (0)
+        pl = encodeString(topicFilter) + char(0)
+        
+        packet = char(SUBSCRIBE * 16 | 2) + encodeLength(#vh + #pl) + vh + pl
+        self.conn.send(packet)
+        true
+    }
+
+    fn _ping() {
+        if self.closed { return }
+        packet = char(PINGREQ * 16) + char(0)
+        self.conn.send(packet)
+    }
+
+    fn _recvPacket() {
+        b0Str = self.conn.recv(1)
+        if b0Str == null || #b0Str == 0 { return null }
+        b0 = ord(b0Str)
+        type = b0 / 16
+        flags = b0 % 16
+        
+        remLen = decodeLength(self.conn)
+        if remLen < 0 { return null }
+        
+        payload = ""
+        if remLen > 0 {
+            payload = self.conn.recv(remLen)
+        }
+        
+        {type: type, flags: flags, payload: payload}
+    }
+
+    fn _loopOnce() {
+        packet = _recvPacket()
+        if packet == null {
+            self.close()
+            return false
+        }
+
+        if packet.type == CONNACK {
+            // Success or error
+            if #packet.payload >= 2 {
+                retCode = ord(packet.payload[1:2])
+                if retCode != 0 {
+                    print("MQTT Connection Rejected (code: {retCode})")
+                    self.close()
+                }
+            }
+        } else if packet.type == PUBLISH {
+            pl = packet.payload
+            if #pl >= 2 {
+                topicLen = (ord(pl[0:1]) * 256) + ord(pl[1:2])
+                topic = pl[2:2 + topicLen]
+                msg = pl[2 + topicLen:#pl]
+                
+                // Route to handler
+                if self.subscriptions.has(topic) {
+                    handler = self.subscriptions[topic]
+                    handler(topic, msg)
+                }
+            }
+        } else if packet.type == PINGRESP {
+            // Keep alive pong
+        }
+        true
+    }
+
+    fn _startLoop() {
+        while !self.closed {
+            if !_loopOnce() { break }
+        }
+    }
+
+    fn _close() {
+        if !self.closed {
+            // Send DISCONNECT packet
+            self.conn.send(char(DISCONNECT * 16) + char(0))
+            self.conn.close()
+            self.closed = true
+        }
+    }
+
+    self.publish = _publish
+    self.subscribe = _subscribe
+    self.ping = _ping
+    self.loopOnce = _loopOnce
+    self.startLoop = _startLoop
+    self.close = _close
+    
+    // Send CONNECT packet immediately on creation
+    _connectPacket()
+    self
+}
+
+// ===================================================================
+// Public API
+// ===================================================================
+
+fn connect(host, port, clientId) {
+    if port == null { port = 1883 }
+    if clientId == null { clientId = "havel_mqtt_" + random.bytes(4).toString() } // using custom random
+    
+    conn = tcp.connect(host, port)
+    if conn == null { return null }
+    
+    client = MQTTClient(conn, clientId)
+    // Wait for CONNACK
+    client.loopOnce()
+    client
+}

@@ -1,0 +1,109 @@
+// cluster.hv — Simple node discovery and clustering over UDP broadcast
+//
+// Usage:
+//   use "net/cluster" as cl
+//   node = cl.join("node-1", 9090)
+//   // Heartbeat and listening happens automatically!
+//   
+//   // Print current active members in the cluster:
+//   for m in node.members() {
+//       print("Member found: {m.id} at {m.host}:{m.port}")
+//   }
+//   node.close()
+
+use "net/udp" as udp
+use json
+
+fn ClusterNode(id, servicePort, clusterPort, broadcastAddr) {
+    if clusterPort == null { clusterPort = 9999 }
+    if broadcastAddr == null { broadcastAddr = "255.255.255.255" }
+    
+    // Bind receiver socket to listen for other nodes' heartbeats
+    rx = udp.bind("0.0.0.0", clusterPort)
+    // Create sender socket
+    tx = udp.open()
+    if tx != null { tx.setBroadcast() }
+
+    self = {
+        id: id,
+        port: servicePort,
+        clusterPort: clusterPort,
+        broadcastAddr: broadcastAddr,
+        activeMembers: {},
+        closed: false
+    }
+
+    fn _broadcastHeartbeat() {
+        if self.closed || tx == null { return }
+        payload = {
+            id: self.id,
+            port: self.port,
+            timestamp: time.now()
+        }
+        tx.sendTo(json.stringify(payload), self.broadcastAddr, self.clusterPort)
+    }
+
+    fn _update() {
+        // 1. Process incoming heartbeats (non-blocking style using pollRead)
+        if rx != null {
+            while rx.pollRead(5) {
+                msg = rx.recvFrom(1024)
+                if msg == null { break }
+                
+                parsed = json.parse(msg.data)
+                if parsed != null && parsed.has("id") && parsed.has("port") && parsed.has("timestamp") {
+                    memberId = parsed.id
+                    if memberId != self.id {
+                        self.activeMembers[memberId] = {
+                            id: memberId,
+                            host: msg.remote.host,
+                            port: parsed.port,
+                            lastSeen: time.now()
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Prune inactive members (no heartbeat for 10 seconds)
+        now = time.now()
+        pruned = {}
+        for k in self.activeMembers.keys() {
+            m = self.activeMembers[k]
+            if now - m.lastSeen < 10000 {
+                pruned[k] = m
+            }
+        }
+        self.activeMembers = pruned
+    }
+
+    fn _members() {
+        _update()
+        res = []
+        for k in self.activeMembers.keys() {
+            res.push(self.activeMembers[k])
+        }
+        res
+    }
+
+    fn _close() {
+        if !self.closed {
+            if rx != null { rx.close() }
+            if tx != null { tx.close() }
+            self.closed = true
+        }
+    }
+
+    self.heartbeat = _broadcastHeartbeat
+    self.update = _update
+    self.members = _members
+    self.close = _close
+    
+    // Send initial heartbeat
+    _broadcastHeartbeat()
+    self
+}
+
+fn join(nodeId, servicePort, clusterPort, broadcastAddr) {
+    ClusterNode(nodeId, servicePort, clusterPort, broadcastAddr)
+}

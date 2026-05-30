@@ -1,0 +1,85 @@
+// address.hv — IP and Port helper and DNS resolution
+//
+// Usage:
+//   use net/address
+//   addr = address.parse("127.0.0.1:8080")
+//   print(addr.host) // "127.0.0.1"
+//   print(addr.port) // 8080
+
+use "net/socket" as sock
+
+fn isIP(host) {
+    if host == null || #host == 0 { return false }
+    // Check if it's IPv4
+    dots = 0
+    i = 0
+    isV4 = true
+    while i < #host {
+        c = host[i:i+1]
+        if c == "." { dots = dots + 1 }
+        else if c < "0" || c > "9" { isV4 = false }
+        i = i + 1
+    }
+    if isV4 && dots == 3 { return true }
+
+    // Check if it's IPv6 (has colons)
+    colons = 0
+    i = 0
+    isV6 = true
+    while i < #host {
+        c = host[i:i+1]
+        if c == ":" { colons = colons + 1 }
+        else if (c < "0" || c > "9") && (c < "a" || c > "f") && (c < "A" || c > "F") { isV6 = false }
+        i = i + 1
+    }
+    if isV6 && colons >= 2 { return true }
+
+    false
+}
+
+fn resolve(host) {
+    if isIP(host) { return host }
+    sock.resolveFirst(host, sock.AF_INET)
+}
+
+fn parse(str) {
+    if str == null || #str == 0 { return null }
+    // Look for last colon for port
+    i = #str - 1
+    portStr = ""
+    hostStr = ""
+    foundColon = false
+    while i >= 0 {
+        c = str[i:i+1]
+        if c == ":" && !foundColon {
+            foundColon = true
+        } else if foundColon {
+            hostStr = c + hostStr
+        } else {
+            portStr = c + portStr
+        }
+        i = i - 1
+    }
+    
+    if !foundColon {
+        return {host: str, port: 0}
+    }
+    
+    // Strip square brackets for IPv6 hosts like [::1]
+    if #hostStr > 2 && hostStr[0:1] == "[" && hostStr[#hostStr-1:#hostStr] == "]" {
+        hostStr = hostStr[1:#hostStr-1]
+    }
+    
+    // Convert portStr to integer
+    p = 0
+    i = 0
+    while i < #portStr {
+        c = portStr[i:i+1]
+        if c >= "0" && c <= "9" {
+            p = p * 10 + ord(c) - ord("0")
+        }
+        i = i + 1
+    }
+    
+    {host: hostStr, port: p}
+}

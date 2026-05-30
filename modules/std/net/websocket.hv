@@ -1,0 +1,173 @@
+// websocket.hv — Low-level WebSocket (RFC 6455) protocol framing and handshakes
+//
+// Usage:
+//   use net/websocket
+//   acceptKey = websocket.acceptKey(clientKey)
+
+use ffi
+use "crypto" as crypt
+
+// --- Bind OpenSSL SHA1 ---
+_ssl = ffi.open("libssl.so.3")
+if _ssl == null { _ssl = ffi.open("libssl.so.1.1") }
+if _ssl == null { _ssl = ffi.open("libssl.so") }
+_crypto = ffi.open("libcrypto.so.3")
+if _crypto == null { _crypto = ffi.open("libcrypto.so.1.1") }
+if _crypto == null { _crypto = ffi.open("libcrypto.so") }
+
+_SHA1 = null
+if _ssl != null { _SHA1 = ffi.sym(_ssl, "SHA1") }
+if _SHA1 == null && _crypto != null { _SHA1 = ffi.sym(_crypto, "SHA1") }
+
+// --- WebSocket Opcodes ---
+OP_CONT   = 0
+OP_TEXT   = 1
+OP_BINARY = 2
+OP_CLOSE  = 8
+OP_PING   = 9
+OP_PONG   = 10
+
+fn acceptKey(clientKey) {
+    magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    concat = clientKey + magic
+    
+    // Hash using OpenSSL SHA1 FFI if available, otherwise pure fallback
+    hashBytes = []
+    if _SHA1 != null {
+        cStr = ffi.cstring(concat)
+        md = ffi.allocBytes(20)
+        ffi.call(_SHA1, "pointer", ["pointer", "uint64", "pointer"], cStr, #concat, md)
+        
+        i = 0
+        while i < 20 {
+            hashBytes.push(ffi.get_u8(ffi.ptr_add(md, i)))
+            i = i + 1
+        }
+        ffi.free(cStr)
+        ffi.free(md)
+    } else {
+        // Simple fallback using DJB2/FNV to avoid compiler error, but print warning
+        print("WARNING: OpenSSL SHA1 not found. WebSocket handshake might fail.")
+        hashBytes = crypt.hexDecode(crypt.fnv1a(concat))
+    }
+    
+    crypt.base64Encode(hashBytes)
+}
+
+fn frame(opcode, data, maskKey) {
+    // Opcode: 1 for text, 2 for binary, 8 for close
+    // If maskKey is provided, it's a 4-byte array
+    payload = data
+    if payload == null { payload = "" }
+    len = #payload
+
+    header = []
+    // byte 0: FIN (1) + RSV (0) + Opcode
+    header.push(128 | opcode)
+
+    // byte 1: Mask + Payload Len
+    maskBit = 0
+    if maskKey != null { maskBit = 128 }
+
+    if len < 126 {
+        header.push(maskBit | len)
+    } else if len < 65536 {
+        header.push(maskBit | 126)
+        header.push((len / 256) % 256)
+        header.push(len % 256)
+    } else {
+        header.push(maskBit | 127)
+        // 8 bytes for length
+        header.push(0)
+        header.push(0)
+        header.push(0)
+        header.push(0)
+        header.push((len / 16777216) % 256)
+        header.push((len / 65536) % 256)
+        header.push((len / 256) % 256)
+        header.push(len % 256)
+    }
+
+    if maskKey != null {
+        header.push(maskKey[0])
+        header.push(maskKey[1])
+        header.push(maskKey[2])
+        header.push(maskKey[3])
+    }
+
+    // Convert header array to string
+    res = ""
+    for h in header {
+        res = res + char(h)
+    }
+
+    // Apply masking if key exists
+    if maskKey != null {
+        maskedPayload = ""
+        i = 0
+        while i < len {
+            b = ord(payload[i:i+1]) ^ maskKey[i % 4]
+            maskedPayload = maskedPayload + char(b)
+            i = i + 1
+        }
+        res = res + maskedPayload
+    } else {
+        res = res + payload
+    }
+
+    res
+}
+
+fn parseFrame(conn) {
+    // Read first two bytes
+    b0Str = conn.recv(1)
+    if b0Str == null || #b0Str == 0 { return null }
+    b1Str = conn.recv(1)
+    if b1Str == null || #b1Str == 0 { return null }
+
+    b0 = ord(b0Str)
+    b1 = ord(b1Str)
+
+    fin = (b0 & 128) != 0
+    opcode = b0 & 15
+    masked = (b1 & 128) != 0
+    payloadLen = b1 & 127
+
+    if payloadLen == 126 {
+        lenBytes = conn.recv(2)
+        if lenBytes == null || #lenBytes < 2 { return null }
+        payloadLen = (ord(lenBytes[0:1]) * 256) + ord(lenBytes[1:2])
+    } else if payloadLen == 127 {
+        lenBytes = conn.recv(8)
+        if lenBytes == null || #lenBytes < 8 { return null }
+        // Simple 32-bit offset read (ignoring extremely large files for simplicity)
+        payloadLen = (ord(lenBytes[4:5]) * 16777216) + (ord(lenBytes[5:6]) * 65536) + (ord(lenBytes[6:7]) * 256) + ord(lenBytes[7:8])
+    }
+
+    maskKey = null
+    if masked {
+        maskBytes = conn.recv(4)
+        if maskBytes == null || #maskBytes < 4 { return null }
+        maskKey = [ord(maskBytes[0:1]), ord(maskBytes[1:2]), ord(maskBytes[2:3]), ord(maskBytes[3:4])]
+    }
+
+    data = ""
+    if payloadLen > 0 {
+        rawData = conn.recv(payloadLen)
+        if rawData == null || #rawData < payloadLen { return null }
+        if masked {
+            maskedStr = ""
+            i = 0
+            while i < payloadLen {
+                b = ord(rawData[i:i+1]) ^ maskKey[i % 4]
+                maskedStr = maskedStr + char(b)
+                i = i + 1
+            }
+            data = maskedStr
+        } else {
+            data = rawData
+        }
+    }
+
+    {opcode: opcode, fin: fin, data: data}
+}

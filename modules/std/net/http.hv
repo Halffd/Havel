@@ -1,0 +1,437 @@
+// http.hv — Foundational HTTP/1.1 client + server module
+//
+// Usage:
+//   use net/http
+//
+//   // Client GET
+//   res = http.get("http://httpbin.org/get")
+//   print("Status: {res.status}, Body: {res.body}")
+//
+//   // Server
+//   srv = http.server("0.0.0.0", 8080)
+//   srv.route("GET", "/hello", fn(req) {
+//       http.response(200, "text/plain", "Hello World!")
+//   })
+//   srv.start()
+
+use "net/tcp" as tcp
+use "net/tls" as tls
+use "net/address" as addr
+use json
+
+// ===================================================================
+// URL parsing helper
+// ===================================================================
+
+fn parseUrl(url) {
+    scheme = "http"
+    rest = url
+    if #url > 7 && url[0:7] == "http://" {
+        scheme = "http"
+        rest = url[7:#url]
+    } else if #url > 8 && url[0:8] == "https://" {
+        scheme = "https"
+        rest = url[8:#url]
+    }
+
+    // Find first slash to isolate host/port from path
+    slashIdx = -1
+    i = 0
+    while i < #rest {
+        if rest[i:i+1] == "/" {
+            slashIdx = i
+            break
+        }
+        i = i + 1
+    }
+
+    hostPort = rest
+    pathQuery = "/"
+    if slashIdx >= 0 {
+        hostPort = rest[0:slashIdx]
+        pathQuery = rest[slashIdx:#rest]
+    }
+
+    // Split hostPort into host and port
+    parsedAddr = addr.parse(hostPort)
+    h = parsedAddr.host
+    p = parsedAddr.port
+    if p == 0 {
+        if scheme == "https" { p = 443 }
+        else { p = 80 }
+    }
+
+    {scheme: scheme, host: h, port: p, path: pathQuery}
+}
+
+// ===================================================================
+// HTTP Response Object & Parsing
+// ===================================================================
+
+fn HTTPResponse(status, headers, body) {
+    self = {status: status, headers: headers, body: body}
+    
+    fn _json() {
+        json.parse(self.body)
+    }
+    
+    self.json = _json
+    self
+}
+
+fn parseResponse(conn) {
+    // Read status line
+    statusLine = conn.recvLine()
+    if statusLine == null || #statusLine == 0 { return null }
+
+    // Parse status line, e.g. "HTTP/1.1 200 OK"
+    statusParts = []
+    curr = ""
+    i = 0
+    while i < #statusLine {
+        c = statusLine[i:i+1]
+        if c == " " {
+            if #curr > 0 { statusParts.push(curr); curr = "" }
+        } else {
+            curr = curr + c
+        }
+        i = i + 1
+    }
+    if #curr > 0 { statusParts.push(curr) }
+
+    status = 0
+    if #statusParts >= 2 {
+        statusStr = statusParts[1]
+        val = 0
+        j = 0
+        while j < #statusStr {
+            val = val * 10 + ord(statusStr[j:j+1]) - ord("0")
+            j = j + 1
+        }
+        status = val
+    }
+
+    // Read headers
+    headers = {}
+    while true {
+        line = conn.recvLine()
+        if line == null || #line == 0 { break }
+
+        // Split "Key: Value"
+        colonIdx = -1
+        j = 0
+        while j < #line {
+            if line[j:j+1] == ":" {
+                colonIdx = j
+                break
+            }
+            j = j + 1
+        }
+
+        if colonIdx > 0 {
+            k = line[0:colonIdx]
+            v = line[colonIdx+1:#line]
+            // Strip leading spaces in v
+            start = 0
+            while start < #v && v[start:start+1] == " " { start = start + 1 }
+            // lowercase the header key for case-insensitive lookup
+            headers[k.lower()] = v[start:#v]
+        }
+    }
+
+    // Determine body reading strategy
+    body = ""
+    isChunked = false
+    if headers.has("transfer-encoding") && headers["transfer-encoding"].lower() == "chunked" {
+        isChunked = true
+    }
+
+    if isChunked {
+        while true {
+            sizeLine = conn.recvLine()
+            if sizeLine == null || #sizeLine == 0 { break }
+
+            // Parse hex chunk size
+            chunkSize = 0
+            j = 0
+            while j < #sizeLine {
+                c = sizeLine[j:j+1]
+                val = 0
+                if c >= "0" && c <= "9" { val = ord(c) - ord("0") }
+                else if c >= "a" && c <= "f" { val = 10 + ord(c) - ord("a") }
+                else if c >= "A" && c <= "F" { val = 10 + ord(c) - ord("A") }
+                else { break } // ignores extensions
+                chunkSize = chunkSize * 16 + val
+                j = j + 1
+            }
+
+            if chunkSize == 0 {
+                // Read trailing blank line
+                conn.recvLine()
+                break
+            }
+
+            chunkData = conn.recv(chunkSize)
+            if chunkData != null { body = body + chunkData }
+            // Read trailing CRLF
+            conn.recvLine()
+        }
+    } else if headers.has("content-length") {
+        clStr = headers["content-length"]
+        cl = 0
+        j = 0
+        while j < #clStr {
+            cl = cl * 10 + ord(clStr[j:j+1]) - ord("0")
+            j = j + 1
+        }
+        body = conn.recv(cl)
+    } else {
+        // Read until EOF
+        body = conn.recvAll()
+    }
+
+    HTTPResponse(status, headers, body)
+}
+
+// ===================================================================
+// Client request
+// ===================================================================
+
+fn request(method, url, headers, body, timeout) {
+    if headers == null { headers = {} }
+    parsed = parseUrl(url)
+    
+    rawConn = tcp.connect(parsed.host, parsed.port, timeout)
+    if rawConn == null { return null }
+
+    conn = rawConn
+    if parsed.scheme == "https" {
+        conn = tls.connect(rawConn)
+        if conn == null {
+            rawConn.close()
+            return null
+        }
+    }
+
+    // Build HTTP/1.1 request
+    reqStr = "{method} {parsed.path} HTTP/1.1\r\n"
+    reqStr = reqStr + "Host: {parsed.host}\r\n"
+    reqStr = reqStr + "Connection: close\r\n"
+
+    // Set content-length if body exists
+    if body != null {
+        reqStr = reqStr + "Content-Length: {#body}\r\n"
+    }
+
+    // Add other headers
+    for k in headers.keys() {
+        reqStr = reqStr + "{k}: {headers[k]}\r\n"
+    }
+    reqStr = reqStr + "\r\n"
+
+    conn.send(reqStr)
+    if body != null {
+        conn.send(body)
+    }
+
+    res = parseResponse(conn)
+    conn.close()
+    res
+}
+
+fn get(url, headers, timeout) {
+    request("GET", url, headers, null, timeout)
+}
+
+fn post(url, body, headers, timeout) {
+    if headers == null { headers = {} }
+    if !headers.has("content-type") && !headers.has("Content-Type") {
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    }
+    request("POST", url, headers, body, timeout)
+}
+
+fn postJson(url, payload, headers, timeout) {
+    if headers == null { headers = {} }
+    headers["Content-Type"] = "application/json"
+    post(url, json.stringify(payload), headers, timeout)
+}
+
+// ===================================================================
+// HTTP Server Response Creator
+// ===================================================================
+
+fn response(status, contentType, body, headers) {
+    if headers == null { headers = {} }
+    if contentType != null {
+        headers["Content-Type"] = contentType
+    }
+    {status: status, headers: headers, body: body}
+}
+
+// ===================================================================
+// HTTP Server Implementation
+// ===================================================================
+
+fn HTTPServer(host, port) {
+    self = {host: host, port: port, routes: {}, defaultHandler: null, running: false, tcpServer: null}
+
+    fn _route(method, path, handler) {
+        key = "{method}:{path}"
+        self.routes[key] = handler
+    }
+
+    fn _setDefault(handler) {
+        self.defaultHandler = handler
+    }
+
+    fn _handleRequest(client) {
+        // Read Request-Line
+        reqLine = client.recvLine()
+        if reqLine == null || #reqLine == 0 { return }
+
+        // Parse Request-Line e.g., "GET /index.html HTTP/1.1"
+        parts = []
+        curr = ""
+        i = 0
+        while i < #reqLine {
+            c = reqLine[i:i+1]
+            if c == " " {
+                if #curr > 0 { parts.push(curr); curr = "" }
+            } else {
+                curr = curr + c
+            }
+            i = i + 1
+        }
+        if #curr > 0 { parts.push(curr) }
+
+        if #parts < 2 { return }
+        method = parts[0]
+        fullPath = parts[1]
+
+        // Parse path & query string
+        path = fullPath
+        queryStr = ""
+        qIdx = -1
+        j = 0
+        while j < #fullPath {
+            if fullPath[j:j+1] == "?" {
+                qIdx = j
+                break
+            }
+            j = j + 1
+        }
+        if qIdx >= 0 {
+            path = fullPath[0:qIdx]
+            queryStr = fullPath[qIdx+1:#fullPath]
+        }
+
+        // Read headers
+        headers = {}
+        while true {
+            line = client.recvLine()
+            if line == null || #line == 0 { break }
+
+            colonIdx = -1
+            j = 0
+            while j < #line {
+                if line[j:j+1] == ":" {
+                    colonIdx = j
+                    break
+                }
+                j = j + 1
+            }
+
+            if colonIdx > 0 {
+                k = line[0:colonIdx]
+                v = line[colonIdx+1:#line]
+                start = 0
+                while start < #v && v[start:start+1] == " " { start = start + 1 }
+                headers[k.lower()] = v[start:#v]
+            }
+        }
+
+        // Read Body
+        body = ""
+        if headers.has("content-length") {
+            clStr = headers["content-length"]
+            cl = 0
+            j = 0
+            while j < #clStr {
+                cl = cl * 10 + ord(clStr[j:j+1]) - ord("0")
+                j = j + 1
+            }
+            body = client.recv(cl)
+        }
+
+        req = {method: method, path: path, query: queryStr, headers: headers, body: body}
+        
+        // Find route handler
+        handlerKey = "{method}:{path}"
+        res = null
+        if self.routes.has(handlerKey) {
+            handler = self.routes[handlerKey]
+            res = handler(req)
+        } else if self.defaultHandler != null {
+            res = self.defaultHandler(req)
+        } else {
+            res = response(404, "text/plain", "Not Found")
+        }
+
+        // Send response
+        statusPhrase = "OK"
+        if res.status == 404 { statusPhrase = "Not Found" }
+        else if res.status == 500 { statusPhrase = "Internal Server Error" }
+        
+        resStr = "HTTP/1.1 {res.status} {statusPhrase}\r\n"
+        resStr = resStr + "Server: Havel-WebServer/1.0\r\n"
+        resStr = resStr + "Connection: close\r\n"
+        
+        if res.body != null {
+            resStr = resStr + "Content-Length: {#res.body}\r\n"
+        } else {
+            resStr = resStr + "Content-Length: 0\r\n"
+        }
+
+        for k in res.headers.keys() {
+            resStr = resStr + "{k}: {res.headers[k]}\r\n"
+        }
+        resStr = resStr + "\r\n"
+
+        client.send(resStr)
+        if res.body != null {
+            client.send(res.body)
+        }
+    }
+
+    fn _start() {
+        self.tcpServer = tcp.listen(self.host, self.port)
+        if self.tcpServer == null { return false }
+        self.running = true
+        while self.running {
+            client = self.tcpServer.accept()
+            if client != null {
+                _handleRequest(client)
+                client.close()
+            }
+        }
+        true
+    }
+
+    fn _stop() {
+        self.running = false
+        if self.tcpServer != null {
+            self.tcpServer.close()
+        }
+    }
+
+    self.route = _route
+    self.setDefault = _setDefault
+    self.start = _start
+    self.stop = _stop
+    self
+}
+
+fn server(host, port) {
+    HTTPServer(host, port)
+}

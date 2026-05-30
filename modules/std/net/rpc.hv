@@ -1,0 +1,158 @@
+// rpc.hv — Simple, fast Remote Procedure Call (RPC) over TCP using JSON serialization
+//
+// Usage:
+//   use "net/rpc" as rpc
+//
+//   // Server
+//   srv = rpc.server("0.0.0.0", 9090)
+//   srv.register("add", fn(a, b) { a + b })
+//   // srv.start()
+//
+//   // Client
+//   client = rpc.client("127.0.0.1", 9090)
+//   res = client.call("add", [20, 22]) // 42
+
+use "net/tcp" as tcp
+use json
+
+// ===================================================================
+// RPC Client
+// ===================================================================
+
+fn RPCClient(host, port) {
+    self = {host: host, port: port, idCounter: 1}
+
+    fn _call(method, args) {
+        conn = tcp.connect(self.host, self.port)
+        if conn == null { return null }
+        
+        reqId = self.idCounter
+        self.idCounter = self.idCounter + 1
+        
+        payload = {
+            method: method,
+            args: args,
+            id: reqId
+        }
+        
+        // Write payload + delimiter newline
+        conn.send(json.stringify(payload) + "\n")
+        
+        // Read response line
+        resLine = conn.recvLine()
+        conn.close()
+        
+        if resLine == null || #resLine == 0 { return null }
+        
+        parsed = json.parse(resLine)
+        if parsed == null { return null }
+        
+        if parsed.has("error") && parsed.error != null {
+            print("RPC Remote Error: {parsed.error}")
+            return null
+        }
+        
+        if parsed.has("result") {
+            return parsed.result
+        }
+        null
+    }
+
+    self.call = _call
+    self
+}
+
+// ===================================================================
+// RPC Server
+// ===================================================================
+
+fn RPCServer(host, port) {
+    self = {host: host, port: port, tcpServer: null, running: false, handlers: {}}
+
+    fn _register(methodName, handler) {
+        self.handlers[methodName] = handler
+    }
+
+    fn _handleConnection(client) {
+        reqLine = client.recvLine()
+        if reqLine == null || #reqLine == 0 { return }
+        
+        parsed = json.parse(reqLine)
+        if parsed == null {
+            client.send(json.stringify({result: null, error: "Parse error", id: null}) + "\n")
+            return
+        }
+        
+        reqId = null
+        if parsed.has("id") { reqId = parsed.id }
+        
+        if !parsed.has("method") || !parsed.has("args") {
+            client.send(json.stringify({result: null, error: "Invalid request format", id: reqId}) + "\n")
+            return
+        }
+        
+        method = parsed.method
+        args = parsed.args
+        
+        if !self.handlers.has(method) {
+            client.send(json.stringify({result: null, error: "Method not found: {method}", id: reqId}) + "\n")
+            return
+        }
+        
+        handler = self.handlers[method]
+        
+        // Build arguments list dynamically and invoke
+        // In Havel VM we can pass a list of arguments directly to functions
+        try {
+            resVal = null
+            // Unpack arguments
+            if #args == 0 { resVal = handler() }
+            else if #args == 1 { resVal = handler(args[0]) }
+            else if #args == 2 { resVal = handler(args[0], args[1]) }
+            else if #args == 3 { resVal = handler(args[0], args[1], args[2]) }
+            else if #args == 4 { resVal = handler(args[0], args[1], args[2], args[3]) }
+            else {
+                // Generic call (or throw arity exception)
+                resVal = handler(args[0], args[1], args[2], args[3], args[4])
+            }
+            
+            client.send(json.stringify({result: resVal, error: null, id: reqId}) + "\n")
+        } catch (e) {
+            client.send(json.stringify({result: null, error: "Runtime method error: {e}", id: reqId}) + "\n")
+        }
+    }
+
+    fn _start() {
+        self.tcpServer = tcp.listen(self.host, self.port)
+        if self.tcpServer == null { return false }
+        self.running = true
+        while self.running {
+            client = self.tcpServer.accept()
+            if client != null {
+                _handleConnection(client)
+                client.close()
+            }
+        }
+        true
+    }
+
+    fn _stop() {
+        self.running = false
+        if self.tcpServer != null {
+            self.tcpServer.close()
+        }
+    }
+
+    self.register = _register
+    self.start = _start
+    self.stop = _stop
+    self
+}
+
+fn client(host, port) {
+    RPCClient(host, port)
+}
+
+fn server(host, port) {
+    RPCServer(host, port)
+}

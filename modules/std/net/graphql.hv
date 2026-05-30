@@ -1,0 +1,49 @@
+// graphql.hv — Lightweight GraphQL client for Havel
+//
+// Usage:
+//   use "net/graphql" as gql
+//   client = gql.client("https://countries.trevorblades.com")
+//   
+//   query = "query getCountry($code: ID!) { country(code: $code) { name emoji } }"
+//   res = client.query(query, {code: "BR"})
+//   print(res.country.name) // "Brazil"
+
+use "net/rest" as rest
+
+fn GraphQLClient(url, defaultHeaders) {
+    self = {restClient: rest.client(url, defaultHeaders)}
+
+    fn _query(queryString, variables) {
+        payload = {
+            query: queryString,
+            variables: variables
+        }
+        
+        res = self.restClient.post("", payload)
+        if res == null { return null }
+
+        if res.has("errors") {
+            for err in res.errors {
+                print("GraphQL Error: {err.message}")
+            }
+            return null
+        }
+
+        if res.has("data") {
+            return res.data
+        }
+        null
+    }
+
+    fn _close() {
+        self.restClient.close()
+    }
+
+    self.query = _query
+    self.close = _close
+    self
+}
+
+fn client(url, headers) {
+    GraphQLClient(url, headers)
+}

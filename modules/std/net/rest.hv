@@ -1,0 +1,83 @@
+// rest.hv — REST client helper for easy JSON APIs
+//
+// Usage:
+//   use "net/rest" as rest
+//   api = rest.client("https://jsonplaceholder.typicode.com")
+//   todos = api.get("/todos")
+//   print(todos[0].title)
+//   
+//   api.post("/todos", {title: "Buy milk", completed: false})
+
+use "net/client" as hc
+use json
+
+fn RESTClient(baseUrl, defaultHeaders) {
+    self = {client: hc.create(), baseUrl: baseUrl, headers: defaultHeaders}
+    if self.headers == null { self.headers = {} }
+    if self.baseUrl == null { self.baseUrl = "" }
+
+    fn _auth(token) {
+        self.headers["Authorization"] = "Bearer {token}"
+        self
+    }
+
+    fn _basicAuth(username, password) {
+        use "crypto" as crypt
+        authStr = "{username}:{password}"
+        // Convert to byte array
+        b = []
+        i = 0
+        while i < #authStr {
+            b.push(ord(authStr[i:i+1]))
+            i = i + 1
+        }
+        encoded = crypt.base64Encode(b)
+        self.headers["Authorization"] = "Basic {encoded}"
+        self
+    }
+
+    fn _request(method, path, payload) {
+        url = self.baseUrl + path
+        reqHeaders = {}
+        for k in self.headers.keys() {
+            reqHeaders[k] = self.headers[k]
+        }
+        
+        body = null
+        if payload != null {
+            body = json.stringify(payload)
+            reqHeaders["Content-Type"] = "application/json"
+        }
+        reqHeaders["Accept"] = "application/json"
+
+        res = self.client.request(method, url, reqHeaders, body)
+        if res == null { return null }
+        
+        if #res.body > 0 {
+            return json.parse(res.body)
+        }
+        null
+    }
+
+    fn _get(path) { _request("GET", path, null) }
+    fn _post(path, payload) { _request("POST", path, payload) }
+    fn _put(path, payload) { _request("PUT", path, payload) }
+    fn _delete(path) { _request("DELETE", path, null) }
+
+    fn _close() {
+        self.client.close()
+    }
+
+    self.auth = _auth
+    self.basicAuth = _basicAuth
+    self.get = _get
+    self.post = _post
+    self.put = _put
+    self.delete = _delete
+    self.close = _close
+    self
+}
+
+fn client(baseUrl, headers) {
+    RESTClient(baseUrl, headers)
+}

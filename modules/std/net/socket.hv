@@ -1,0 +1,542 @@
+// socket.hv — Low-level BSD socket API wrapper via FFI
+// Provides: create, bind, listen, accept, connect, send, recv, close,
+//           setsockopt, getsockopt, shutdown, sendto, recvfrom, poll
+//
+// Usage:
+//   use net/socket
+//   fd = socket.create(socket.AF_INET, socket.SOCK_STREAM, 0)
+//   socket.connect(fd, "127.0.0.1", 8080)
+//   socket.send(fd, "GET / HTTP/1.1\r\n\r\n")
+//   data = socket.recv(fd, 4096)
+//   socket.close(fd)
+
+use ffi
+
+// --- libc binding ---
+_c = ffi.open("libc.so.6")
+if _c == null { _c = ffi.open("libc.so") }
+
+_socket     = ffi.sym(_c, "socket")
+_bind       = ffi.sym(_c, "bind")
+_listen     = ffi.sym(_c, "listen")
+_accept     = ffi.sym(_c, "accept")
+_connect    = ffi.sym(_c, "connect")
+_send       = ffi.sym(_c, "send")
+_recv       = ffi.sym(_c, "recv")
+_sendto     = ffi.sym(_c, "sendto")
+_recvfrom   = ffi.sym(_c, "recvfrom")
+_close      = ffi.sym(_c, "close")
+_shutdown   = ffi.sym(_c, "shutdown")
+_setsockopt = ffi.sym(_c, "setsockopt")
+_getsockopt = ffi.sym(_c, "getsockopt")
+_fcntl      = ffi.sym(_c, "fcntl")
+_poll       = ffi.sym(_c, "poll")
+_htons      = ffi.sym(_c, "htons")
+_htonl      = ffi.sym(_c, "htonl")
+_ntohs      = ffi.sym(_c, "ntohs")
+_ntohl      = ffi.sym(_c, "ntohl")
+_inet_pton  = ffi.sym(_c, "inet_pton")
+_inet_ntop  = ffi.sym(_c, "inet_ntop")
+_strerror   = ffi.sym(_c, "strerror")
+_errno_loc  = ffi.sym(_c, "__errno_location")
+_getaddrinfo  = ffi.sym(_c, "getaddrinfo")
+_freeaddrinfo = ffi.sym(_c, "freeaddrinfo")
+
+// --- Address families ---
+AF_UNSPEC  = 0
+AF_UNIX    = 1
+AF_INET    = 2
+AF_INET6   = 10
+
+// --- Socket types ---
+SOCK_STREAM    = 1
+SOCK_DGRAM     = 2
+SOCK_RAW       = 3
+SOCK_NONBLOCK  = 2048
+SOCK_CLOEXEC   = 524288
+
+// --- Protocols ---
+IPPROTO_TCP = 6
+IPPROTO_UDP = 17
+
+// --- Shutdown modes ---
+SHUT_RD   = 0
+SHUT_WR   = 1
+SHUT_RDWR = 2
+
+// --- Socket options ---
+SOL_SOCKET    = 1
+SO_REUSEADDR  = 2
+SO_REUSEPORT  = 15
+SO_KEEPALIVE  = 9
+SO_RCVTIMEO   = 20
+SO_SNDTIMEO   = 21
+SO_RCVBUF     = 8
+SO_SNDBUF     = 7
+SO_ERROR      = 4
+SO_LINGER     = 13
+
+// --- TCP options ---
+SOL_TCP       = 6
+TCP_NODELAY   = 1
+TCP_KEEPIDLE  = 4
+TCP_KEEPINTVL = 5
+TCP_KEEPCNT   = 6
+
+// --- fcntl ---
+F_GETFL = 3
+F_SETFL = 4
+O_NONBLOCK = 2048
+
+// --- poll events ---
+POLLIN   = 1
+POLLOUT  = 4
+POLLERR  = 8
+POLLHUP  = 16
+POLLNVAL = 32
+
+// --- sockaddr_in sizes ---
+SOCKADDR_IN_SIZE  = 16
+SOCKADDR_IN6_SIZE = 28
+SOCKADDR_UN_SIZE  = 110
+
+// --- Internal helpers ---
+
+fn _strToBuf(s) {
+    n = #s
+    buf = ffi.allocBytes(n)
+    i = 0
+    while i < n {
+        ffi.set_i8(ffi.ptr_add(buf, i), ord(s[i:i+1]))
+        i = i + 1
+    }
+    buf
+}
+
+fn _bufToStr(buf, n) {
+    result = ""
+    i = 0
+    while i < n {
+        b = ffi.get_u8(ffi.ptr_add(buf, i))
+        result = result + char(b)
+        i = i + 1
+    }
+    result
+}
+
+fn _errno() {
+    loc = ffi.call(_errno_loc, "pointer", [])
+    ffi.get_i32(loc)
+}
+
+fn lastError() {
+    e = _errno()
+    ptr = ffi.call(_strerror, "pointer", ["int32"], e)
+    if ptr == 0 || ptr == null { "errno {e}" }
+    else { ffi.string(ptr) }
+}
+
+// --- Byte order ---
+
+fn htons(v) {
+    ffi.call(_htons, "uint16", ["uint16"], v)
+}
+
+fn htonl(v) {
+    ffi.call(_htonl, "uint32", ["uint32"], v)
+}
+
+fn ntohs(v) {
+    ffi.call(_ntohs, "uint16", ["uint16"], v)
+}
+
+fn ntohl(v) {
+    ffi.call(_ntohl, "uint32", ["uint32"], v)
+}
+
+// --- Address construction ---
+
+fn _buildSockaddrIn(host, port) {
+    addr = ffi.allocBytes(SOCKADDR_IN_SIZE)
+    ffi.memset(addr, 0, SOCKADDR_IN_SIZE)
+    // sin_family = AF_INET (offset 0, 2 bytes)
+    ffi.set_i16(addr, AF_INET)
+    // sin_port (offset 2, 2 bytes, network byte order)
+    ffi.set_u16(ffi.ptr_add(addr, 2), htons(port))
+    // sin_addr (offset 4, 4 bytes)
+    if host == "0.0.0.0" || host == "" || host == null {
+        ffi.set_u32(ffi.ptr_add(addr, 4), 0)
+    } else {
+        _chost = ffi.cstring(host)
+        _ret = ffi.call(_inet_pton, "int32", ["int32", "pointer", "pointer"], AF_INET, _chost, ffi.ptr_add(addr, 4))
+        ffi.free(_chost)
+        if _ret != 1 {
+            ffi.free(addr)
+            return null
+        }
+    }
+    addr
+}
+
+fn _buildSockaddrIn6(host, port) {
+    addr = ffi.allocBytes(SOCKADDR_IN6_SIZE)
+    ffi.memset(addr, 0, SOCKADDR_IN6_SIZE)
+    // sin6_family (offset 0)
+    ffi.set_i16(addr, AF_INET6)
+    // sin6_port (offset 2)
+    ffi.set_u16(ffi.ptr_add(addr, 2), htons(port))
+    // sin6_addr (offset 8, 16 bytes)
+    if host == "::" || host == "" || host == null {
+        // leave as zeros (IN6ADDR_ANY)
+    } else {
+        _chost = ffi.cstring(host)
+        _ret = ffi.call(_inet_pton, "int32", ["int32", "pointer", "pointer"], AF_INET6, _chost, ffi.ptr_add(addr, 8))
+        ffi.free(_chost)
+        if _ret != 1 {
+            ffi.free(addr)
+            return null
+        }
+    }
+    addr
+}
+
+fn _buildSockaddrUn(path) {
+    addr = ffi.allocBytes(SOCKADDR_UN_SIZE)
+    ffi.memset(addr, 0, SOCKADDR_UN_SIZE)
+    ffi.set_i16(addr, AF_UNIX)
+    i = 0
+    n = #path
+    while i < n && i < 108 {
+        ffi.set_i8(ffi.ptr_add(addr, 2 + i), ord(path[i:i+1]))
+        i = i + 1
+    }
+    if i < 108 {
+        ffi.set_i8(ffi.ptr_add(addr, 2 + i), 0)
+    }
+    addr
+}
+
+fn _addrSize(family) {
+    if family == AF_INET6 { SOCKADDR_IN6_SIZE }
+    else if family == AF_UNIX { SOCKADDR_UN_SIZE }
+    else { SOCKADDR_IN_SIZE }
+}
+
+fn _buildAddr(family, host, port) {
+    if family == AF_INET6 { _buildSockaddrIn6(host, port) }
+    else if family == AF_UNIX { _buildSockaddrUn(host) }
+    else { _buildSockaddrIn(host, port) }
+}
+
+fn _parseSockaddrIn(addr) {
+    port = ntohs(ffi.get_u16(ffi.ptr_add(addr, 2)))
+    // Read sin_addr as 4 bytes and convert to dotted quad
+    buf = ffi.allocBytes(46)
+    ffi.call(_inet_ntop, "pointer", ["int32", "pointer", "pointer", "uint32"], AF_INET, ffi.ptr_add(addr, 4), buf, 46)
+    host = ffi.string(buf)
+    ffi.free(buf)
+    {host: host, port: port}
+}
+
+// --- Core socket operations ---
+
+fn create(family, sockType, proto) {
+    if family == null { family = AF_INET }
+    if sockType == null { sockType = SOCK_STREAM }
+    if proto == null { proto = 0 }
+    ffi.call(_socket, "int32", ["int32", "int32", "int32"], family, sockType, proto)
+}
+
+fn close(fd) {
+    if fd < 0 { return -1 }
+    ffi.call(_close, "int32", ["int32"], fd)
+}
+
+fn shutdown(fd, how) {
+    if how == null { how = SHUT_RDWR }
+    ffi.call(_shutdown, "int32", ["int32", "int32"], fd, how)
+}
+
+fn bind(fd, host, port, family) {
+    if family == null { family = AF_INET }
+    addr = _buildAddr(family, host, port)
+    if addr == null { return -1 }
+    ret = ffi.call(_bind, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrSize(family))
+    ffi.free(addr)
+    ret
+}
+
+fn listen(fd, backlog) {
+    if backlog == null { backlog = 128 }
+    ffi.call(_listen, "int32", ["int32", "int32"], fd, backlog)
+}
+
+fn accept(fd) {
+    addrBuf = ffi.allocBytes(SOCKADDR_IN_SIZE)
+    lenBuf = ffi.allocBytes(4)
+    ffi.set_u32(lenBuf, SOCKADDR_IN_SIZE)
+    clientFd = ffi.call(_accept, "int32", ["int32", "pointer", "pointer"], fd, addrBuf, lenBuf)
+    info = null
+    if clientFd >= 0 {
+        info = _parseSockaddrIn(addrBuf)
+    }
+    ffi.free(addrBuf)
+    ffi.free(lenBuf)
+    {fd: clientFd, remote: info}
+}
+
+fn connect(fd, host, port, family) {
+    if family == null { family = AF_INET }
+    addr = _buildAddr(family, host, port)
+    if addr == null { return -1 }
+    ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrSize(family))
+    ffi.free(addr)
+    ret
+}
+
+fn send(fd, data, flags) {
+    if fd < 0 || data == null { return -1 }
+    if flags == null { flags = 0 }
+    n = #data
+    buf = _strToBuf(data)
+    sent = ffi.call(_send, "int64", ["int32", "pointer", "uint64", "int32"], fd, buf, n, flags)
+    ffi.free(buf)
+    sent
+}
+
+fn sendAll(fd, data, flags) {
+    if fd < 0 || data == null { return -1 }
+    if flags == null { flags = 0 }
+    n = #data
+    buf = _strToBuf(data)
+    totalSent = 0
+    while totalSent < n {
+        sent = ffi.call(_send, "int64", ["int32", "pointer", "uint64", "int32"], fd, ffi.ptr_add(buf, totalSent), n - totalSent, flags)
+        if sent <= 0 {
+            ffi.free(buf)
+            return totalSent
+        }
+        totalSent = totalSent + sent
+    }
+    ffi.free(buf)
+    totalSent
+}
+
+fn recv(fd, maxSize, flags) {
+    if fd < 0 { return null }
+    if maxSize == null { maxSize = 4096 }
+    if flags == null { flags = 0 }
+    buf = ffi.allocBytes(maxSize)
+    n = ffi.call(_recv, "int64", ["int32", "pointer", "uint64", "int32"], fd, buf, maxSize, flags)
+    if n <= 0 {
+        ffi.free(buf)
+        if n == 0 { return "" }
+        return null
+    }
+    result = _bufToStr(buf, n)
+    ffi.free(buf)
+    result
+}
+
+fn sendto(fd, data, host, port, family, flags) {
+    if fd < 0 || data == null { return -1 }
+    if family == null { family = AF_INET }
+    if flags == null { flags = 0 }
+    n = #data
+    buf = _strToBuf(data)
+    addr = _buildAddr(family, host, port)
+    if addr == null {
+        ffi.free(buf)
+        return -1
+    }
+    sent = ffi.call(_sendto, "int64", ["int32", "pointer", "uint64", "int32", "pointer", "uint32"], fd, buf, n, flags, addr, _addrSize(family))
+    ffi.free(buf)
+    ffi.free(addr)
+    sent
+}
+
+fn recvfrom(fd, maxSize, flags) {
+    if fd < 0 { return null }
+    if maxSize == null { maxSize = 4096 }
+    if flags == null { flags = 0 }
+    buf = ffi.allocBytes(maxSize)
+    addrBuf = ffi.allocBytes(SOCKADDR_IN_SIZE)
+    lenBuf = ffi.allocBytes(4)
+    ffi.set_u32(lenBuf, SOCKADDR_IN_SIZE)
+    n = ffi.call(_recvfrom, "int64", ["int32", "pointer", "uint64", "int32", "pointer", "pointer"], fd, buf, maxSize, flags, addrBuf, lenBuf)
+    result = null
+    if n > 0 {
+        data = _bufToStr(buf, n)
+        remote = _parseSockaddrIn(addrBuf)
+        result = {data: data, remote: remote, size: n}
+    }
+    ffi.free(buf)
+    ffi.free(addrBuf)
+    ffi.free(lenBuf)
+    result
+}
+
+// --- Socket options ---
+
+fn setsockopt(fd, level, optname, value) {
+    if level == null { level = SOL_SOCKET }
+    valBuf = ffi.allocBytes(4)
+    ffi.set_i32(valBuf, value)
+    ret = ffi.call(_setsockopt, "int32", ["int32", "int32", "int32", "pointer", "uint32"], fd, level, optname, valBuf, 4)
+    ffi.free(valBuf)
+    ret
+}
+
+fn getsockopt(fd, level, optname) {
+    if level == null { level = SOL_SOCKET }
+    valBuf = ffi.allocBytes(4)
+    lenBuf = ffi.allocBytes(4)
+    ffi.set_u32(lenBuf, 4)
+    ffi.call(_getsockopt, "int32", ["int32", "int32", "int32", "pointer", "pointer"], fd, level, optname, valBuf, lenBuf)
+    val = ffi.get_i32(valBuf)
+    ffi.free(valBuf)
+    ffi.free(lenBuf)
+    val
+}
+
+fn setReuseAddr(fd) {
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, 1)
+}
+
+fn setReusePort(fd) {
+    setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, 1)
+}
+
+fn setNoDelay(fd) {
+    setsockopt(fd, SOL_TCP, TCP_NODELAY, 1)
+}
+
+fn setKeepAlive(fd) {
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, 1)
+}
+
+// --- Non-blocking I/O ---
+
+fn setNonBlocking(fd) {
+    flags = ffi.call(_fcntl, "int32", ["int32", "int32", "int32"], fd, F_GETFL, 0)
+    if flags < 0 { return -1 }
+    ffi.call(_fcntl, "int32", ["int32", "int32", "int32"], fd, F_SETFL, flags | O_NONBLOCK)
+}
+
+fn setBlocking(fd) {
+    flags = ffi.call(_fcntl, "int32", ["int32", "int32", "int32"], fd, F_GETFL, 0)
+    if flags < 0 { return -1 }
+    // Clear O_NONBLOCK: use bitwise AND with complement
+    // O_NONBLOCK = 2048 = 0x800, complement on 32-bit = 0xFFFFF7FF = 4294965247
+    mask = 4294967295 - O_NONBLOCK
+    ffi.call(_fcntl, "int32", ["int32", "int32", "int32"], fd, F_SETFL, flags & mask)
+}
+
+// --- Polling ---
+
+fn poll(fds, timeoutMs) {
+    // fds: [{fd: int, events: int}]
+    // timeoutMs: milliseconds (-1 = infinite)
+    // Returns: [{fd, events, revents}]
+    if fds == null || #fds == 0 { return [] }
+    if timeoutMs == null { timeoutMs = -1 }
+    nfds = #fds
+    // struct pollfd = { int fd; short events; short revents; } = 8 bytes
+    pollBuf = ffi.allocBytes(nfds * 8)
+    i = 0
+    while i < nfds {
+        entry = fds[i]
+        base = ffi.ptr_add(pollBuf, i * 8)
+        ffi.set_i32(base, entry.fd)
+        ffi.set_i16(ffi.ptr_add(base, 4), entry.events)
+        ffi.set_i16(ffi.ptr_add(base, 6), 0)
+        i = i + 1
+    }
+    ret = ffi.call(_poll, "int32", ["pointer", "uint32", "int32"], pollBuf, nfds, timeoutMs)
+    results = []
+    if ret > 0 {
+        i = 0
+        while i < nfds {
+            base = ffi.ptr_add(pollBuf, i * 8)
+            revents = ffi.get_i16(ffi.ptr_add(base, 6))
+            if revents != 0 {
+                results.push({fd: fds[i].fd, events: fds[i].events, revents: revents})
+            }
+            i = i + 1
+        }
+    }
+    ffi.free(pollBuf)
+    results
+}
+
+fn pollRead(fd, timeoutMs) {
+    result = poll([{fd: fd, events: POLLIN}], timeoutMs)
+    #result > 0
+}
+
+fn pollWrite(fd, timeoutMs) {
+    result = poll([{fd: fd, events: POLLOUT}], timeoutMs)
+    #result > 0
+}
+
+// --- DNS resolution ---
+
+fn resolve(host, family) {
+    if family == null { family = AF_UNSPEC }
+    _chost = ffi.cstring(host)
+    // struct addrinfo hint
+    hint = ffi.allocBytes(48)
+    ffi.memset(hint, 0, 48)
+    ffi.set_i32(hint, family) // ai_family
+    ffi.set_i32(ffi.ptr_add(hint, 4), SOCK_STREAM) // ai_socktype
+    resultPtr = ffi.allocBytes(8)
+    ffi.memset(resultPtr, 0, 8)
+    ret = ffi.call(_getaddrinfo, "int32", ["pointer", "pointer", "pointer", "pointer"], _chost, 0, hint, resultPtr)
+    ffi.free(_chost)
+    ffi.free(hint)
+    if ret != 0 {
+        ffi.free(resultPtr)
+        return []
+    }
+    addrs = []
+    ai = ffi.get_ptr(resultPtr)
+    while ai != 0 && ai != null {
+        // ai_family at offset 0
+        aiFam = ffi.get_i32(ai)
+        // ai_addrlen at offset 16
+        aiAddrLen = ffi.get_u32(ffi.ptr_add(ai, 16))
+        // ai_addr at offset 24
+        aiAddr = ffi.get_ptr(ffi.ptr_add(ai, 24))
+        if aiFam == AF_INET && aiAddr != 0 && aiAddr != null {
+            ipBuf = ffi.allocBytes(46)
+            ffi.call(_inet_ntop, "pointer", ["int32", "pointer", "pointer", "uint32"], AF_INET, ffi.ptr_add(aiAddr, 4), ipBuf, 46)
+            ipStr = ffi.string(ipBuf)
+            ffi.free(ipBuf)
+            addrs.push({family: AF_INET, address: ipStr})
+        }
+        if aiFam == AF_INET6 && aiAddr != 0 && aiAddr != null {
+            ipBuf = ffi.allocBytes(46)
+            ffi.call(_inet_ntop, "pointer", ["int32", "pointer", "pointer", "uint32"], AF_INET6, ffi.ptr_add(aiAddr, 8), ipBuf, 46)
+            ipStr = ffi.string(ipBuf)
+            ffi.free(ipBuf)
+            addrs.push({family: AF_INET6, address: ipStr})
+        }
+        // ai_next at offset 40
+        ai = ffi.get_ptr(ffi.ptr_add(ai, 40))
+    }
+    ffi.call(_freeaddrinfo, "void", ["pointer"], ffi.get_ptr(resultPtr))
+    ffi.free(resultPtr)
+    addrs
+}
+
+fn resolveFirst(host, family) {
+    addrs = resolve(host, family)
+    if #addrs > 0 { addrs[0].address }
+    else { null }
+}
+
+// --- Socket error ---
+
+fn getError(fd) {
+    getsockopt(fd, SOL_SOCKET, SO_ERROR)
+}

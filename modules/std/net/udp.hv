@@ -1,0 +1,95 @@
+// udp.hv — UDP datagram client/server built on net/socket
+//
+// Usage:
+//   use net/udp
+//
+//   // Send datagrams
+//   sock = udp.open()
+//   sock.sendTo("hello", "127.0.0.1", 9999)
+//   sock.close()
+//
+//   // Receive datagrams
+//   sock = udp.bind("0.0.0.0", 9999)
+//   msg = sock.recvFrom(4096)
+//   print("from {msg.remote.host}:{msg.remote.port}: {msg.data}")
+//   sock.close()
+
+use "net/socket" as sock
+
+// ===================================================================
+// UDPSocket — wraps a UDP fd
+// ===================================================================
+
+fn UDPSocket(fd, boundHost, boundPort) {
+    self = {fd: fd, host: boundHost, port: boundPort, closed: false}
+
+    fn _sendTo(data, host, port, flags) {
+        if self.closed { return -1 }
+        sock.sendto(self.fd, data, host, port, sock.AF_INET, flags)
+    }
+
+    fn _recvFrom(maxSize, flags) {
+        if self.closed { return null }
+        sock.recvfrom(self.fd, maxSize, flags)
+    }
+
+    fn _close() {
+        if !self.closed {
+            sock.close(self.fd)
+            self.closed = true
+        }
+    }
+
+    fn _setBroadcast() {
+        sock.setsockopt(self.fd, sock.SOL_SOCKET, 6, 1) // SO_BROADCAST = 6
+    }
+
+    fn _setNonBlocking() { sock.setNonBlocking(self.fd) }
+
+    fn _pollRead(timeout) { sock.pollRead(self.fd, timeout) }
+
+    fn _isAlive() { !self.closed && self.fd >= 0 }
+
+    self.sendTo = _sendTo
+    self.recvFrom = _recvFrom
+    self.close = _close
+    self.setBroadcast = _setBroadcast
+    self.setNonBlocking = _setNonBlocking
+    self.pollRead = _pollRead
+    self.isAlive = _isAlive
+    self
+}
+
+// ===================================================================
+// Public API
+// ===================================================================
+
+fn open() {
+    fd = sock.create(sock.AF_INET, sock.SOCK_DGRAM, 0)
+    if fd < 0 { return null }
+    UDPSocket(fd, null, null)
+}
+
+fn bind(host, port) {
+    if host == null { host = "0.0.0.0" }
+    fd = sock.create(sock.AF_INET, sock.SOCK_DGRAM, 0)
+    if fd < 0 { return null }
+
+    sock.setReuseAddr(fd)
+
+    ret = sock.bind(fd, host, port)
+    if ret < 0 {
+        sock.close(fd)
+        return null
+    }
+
+    UDPSocket(fd, host, port)
+}
+
+fn sendOnce(data, host, port) {
+    s = open()
+    if s == null { return -1 }
+    n = s.sendTo(data, host, port)
+    s.close()
+    n
+}

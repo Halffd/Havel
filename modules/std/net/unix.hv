@@ -1,0 +1,163 @@
+// unix.hv — Unix domain sockets (IPC) built on net/socket
+//
+// Usage:
+//   use net/unix
+//
+//   // Client
+//   conn = unix.connect("/tmp/my.sock")
+//   conn.send("hello")
+//   print(conn.recv())
+//   conn.close()
+//
+//   // Server
+//   srv = unix.listen("/tmp/my.sock")
+//   while true {
+//     conn = srv.accept()
+//     if conn != null {
+//       data = conn.recv()
+//       conn.send("echo: {data}")
+//       conn.close()
+//     }
+//   }
+
+use "net/socket" as sock
+
+// ===================================================================
+// UnixConnection — wraps a Unix socket connection
+// ===================================================================
+
+fn UnixConnection(fd, path) {
+    self = {fd: fd, path: path, closed: false}
+
+    fn _send(data, flags) {
+        if self.closed { return -1 }
+        sock.sendAll(self.fd, data, flags)
+    }
+
+    fn _recv(maxSize, flags) {
+        if self.closed { return null }
+        sock.recv(self.fd, maxSize, flags)
+    }
+
+    fn _close() {
+        if !self.closed {
+            sock.shutdown(self.fd, sock.SHUT_RDWR)
+            sock.close(self.fd)
+            self.closed = true
+        }
+    }
+
+    fn _setNonBlocking() { sock.setNonBlocking(self.fd) }
+    fn _pollRead(timeout) { sock.pollRead(self.fd, timeout) }
+    fn _pollWrite(timeout) { sock.pollWrite(self.fd, timeout) }
+
+    self.send = _send
+    self.recv = _recv
+    self.close = _close
+    self.setNonBlocking = _setNonBlocking
+    self.pollRead = _pollRead
+    self.pollWrite = _pollWrite
+    self
+}
+
+// ===================================================================
+// UnixServer — wraps a Unix socket server
+// ===================================================================
+
+fn UnixServer(fd, path) {
+    self = {fd: fd, path: path, closed: false}
+
+    fn _accept() {
+        if self.closed { return null }
+        result = sock.accept(self.fd)
+        if result.fd < 0 { return null }
+        UnixConnection(result.fd, self.path)
+    }
+
+    fn _close() {
+        if !self.closed {
+            sock.close(self.fd)
+            self.closed = true
+        }
+    }
+
+    fn _pollAccept(timeout) { sock.pollRead(self.fd, timeout) }
+
+    self.accept = _accept
+    self.close = _close
+    self.pollAccept = _pollAccept
+    self
+}
+
+// ===================================================================
+// Public API
+// ===================================================================
+
+fn connect(path, timeout) {
+    fd = sock.create(sock.AF_UNIX, sock.SOCK_STREAM, 0)
+    if fd < 0 { return null }
+
+    if timeout != null {
+        sock.setNonBlocking(fd)
+        ret = sock.connect(fd, path, 0, sock.AF_UNIX)
+        if ret < 0 {
+            e = sock._errno()
+            if e != 115 { // EINPROGRESS
+                sock.close(fd)
+                return null
+            }
+            if !sock.pollWrite(fd, timeout) {
+                sock.close(fd)
+                return null
+            }
+            err = sock.getError(fd)
+            if err != 0 {
+                sock.close(fd)
+                return null
+            }
+        }
+        sock.setBlocking(fd)
+    } else {
+        ret = sock.connect(fd, path, 0, sock.AF_UNIX)
+        if ret < 0 {
+            sock.close(fd)
+            return null
+        }
+    }
+
+    UnixConnection(fd, path)
+}
+
+fn listen(path, backlog) {
+    if backlog == null { backlog = 128 }
+    
+    // Unix socket paths must be unlinked first to avoid "Address already in use"
+    // Use fsuv.hv if available, or just call system/libc unlink via FFI
+    // Let's call _uv_fs_unlink if it's there or libc unlink.
+    // Actually we can open libc to get 'unlink'
+    _c = ffi.open("libc.so.6")
+    if _c == null { _c = ffi.open("libc.so") }
+    _unlink = ffi.sym(_c, "unlink")
+    if _unlink != null {
+        cpath = ffi.cstring(path)
+        ffi.call(_unlink, "int32", ["pointer"], cpath)
+        ffi.free(cpath)
+    }
+
+    fd = sock.create(sock.AF_UNIX, sock.SOCK_STREAM, 0)
+    if fd < 0 { return null }
+
+    ret = sock.bind(fd, path, 0, sock.AF_UNIX)
+    if ret < 0 {
+        sock.close(fd)
+        return null
+    }
+
+    ret = sock.listen(fd, backlog)
+    if ret < 0 {
+        sock.close(fd)
+        return null
+    }
+
+    UnixServer(fd, path)
+}

@@ -1,0 +1,268 @@
+// tls.hv — TLS/SSL client and server wrapper using OpenSSL FFI
+//
+// Usage:
+//   use net/tcp
+//   use net/tls
+//
+//   // Client
+//   conn = tcp.connect("encrypted.google.com", 443)
+//   tlsConn = tls.connect(conn)
+//   tlsConn.send("GET / HTTP/1.0\r\nHost: encrypted.google.com\r\n\r\n")
+//   print(tlsConn.recvAll())
+//   tlsConn.close()
+
+use ffi
+use "net/tcp" as tcp
+
+// --- Bind OpenSSL ---
+_ssl = ffi.open("libssl.so.3")
+if _ssl == null { _ssl = ffi.open("libssl.so.1.1") }
+if _ssl == null { _ssl = ffi.open("libssl.so") }
+
+if _ssl == null {
+    // Graceful fallback warning, but we define the functions to return error
+    print("WARNING: OpenSSL library not found. TLS/SSL will not be available.")
+}
+
+_TLS_method           = ffi.sym(_ssl, "TLS_method")
+_TLS_client_method    = ffi.sym(_ssl, "TLS_client_method")
+_TLS_server_method    = ffi.sym(_ssl, "TLS_server_method")
+_SSL_CTX_new          = ffi.sym(_ssl, "SSL_CTX_new")
+_SSL_CTX_free         = ffi.sym(_ssl, "SSL_CTX_free")
+_SSL_new              = ffi.sym(_ssl, "SSL_new")
+_SSL_free             = ffi.sym(_ssl, "SSL_free")
+_SSL_set_fd           = ffi.sym(_ssl, "SSL_set_fd")
+_SSL_connect          = ffi.sym(_ssl, "SSL_connect")
+_SSL_accept           = ffi.sym(_ssl, "SSL_accept")
+_SSL_write            = ffi.sym(_ssl, "SSL_write")
+_SSL_read             = ffi.sym(_ssl, "SSL_read")
+_SSL_shutdown         = ffi.sym(_ssl, "SSL_shutdown")
+_SSL_get_error        = ffi.sym(_ssl, "SSL_get_error")
+
+_SSL_CTX_use_certificate_file = ffi.sym(_ssl, "SSL_CTX_use_certificate_file")
+_SSL_CTX_use_PrivateKey_file  = ffi.sym(_ssl, "SSL_CTX_use_PrivateKey_file")
+_SSL_CTX_check_private_key    = ffi.sym(_ssl, "SSL_CTX_check_private_key")
+
+SSL_FILETYPE_PEM = 1
+
+// --- Internal helpers ---
+
+fn _strToBuf(s) {
+    n = #s
+    buf = ffi.allocBytes(n)
+    i = 0
+    while i < n {
+        ffi.set_i8(ffi.ptr_add(buf, i), ord(s[i:i+1]))
+        i = i + 1
+    }
+    buf
+}
+
+fn _bufToStr(buf, n) {
+    result = ""
+    i = 0
+    while i < n {
+        b = ffi.get_u8(ffi.ptr_add(buf, i))
+        result = result + char(b)
+        i = i + 1
+    }
+    result
+}
+
+// ===================================================================
+// TLSConnection
+// ===================================================================
+
+fn TLSConnection(sslCtx, sslPtr, tcpConn) {
+    self = {ctx: sslCtx, ssl: sslPtr, conn: tcpConn, closed: false}
+
+    fn _send(data) {
+        if self.closed || _ssl == null { return -1 }
+        n = #data
+        buf = _strToBuf(data)
+        // int SSL_write(SSL *ssl, const void *buf, int num)
+        written = ffi.call(_SSL_write, "int32", ["pointer", "pointer", "int32"], self.ssl, buf, n)
+        ffi.free(buf)
+        written
+    }
+
+    fn _recv(maxSize) {
+        if self.closed || _ssl == null { return null }
+        if maxSize == null { maxSize = 4096 }
+        buf = ffi.allocBytes(maxSize)
+        // int SSL_read(SSL *ssl, void *buf, int num)
+        n = ffi.call(_SSL_read, "int32", ["pointer", "pointer", "int32"], self.ssl, buf, maxSize)
+        if n <= 0 {
+            ffi.free(buf)
+            if n == 0 { return "" }
+            return null
+        }
+        result = _bufToStr(buf, n)
+        ffi.free(buf)
+        result
+    }
+
+    fn _recvAll(maxSize) {
+        if self.closed { return "" }
+        if maxSize == null { maxSize = 65536 }
+        parts = []
+        total = 0
+        while total < maxSize {
+            chunk = _recv(4096)
+            if chunk == null || chunk == "" { break }
+            parts.push(chunk)
+            total = total + #chunk
+        }
+        result = ""
+        for p in parts { result = result + p }
+        result
+    }
+
+    fn _recvLine() {
+        if self.closed { return null }
+        line = ""
+        while true {
+            ch = _recv(1)
+            if ch == null || ch == "" { break }
+            if ch == "\n" { break }
+            if ch != "\r" { line = line + ch }
+        }
+        line
+    }
+
+    fn _close() {
+        if !self.closed {
+            if _ssl != null && self.ssl != 0 {
+                ffi.call(_SSL_shutdown, "int32", ["pointer"], self.ssl)
+                ffi.call(_SSL_free, "void", ["pointer"], self.ssl)
+            }
+            self.conn.close()
+            self.closed = true
+        }
+    }
+
+    fn _isAlive() { !self.closed && self.conn.isAlive() }
+
+    self.send = _send
+    self.recv = _recv
+    self.recvAll = _recvAll
+    self.recvLine = _recvLine
+    self.close = _close
+    self.isAlive = _isAlive
+    self
+}
+
+// ===================================================================
+// TLSServer
+// ===================================================================
+
+fn TLSServer(sslCtx, tcpServer) {
+    self = {ctx: sslCtx, server: tcpServer, closed: false}
+
+    fn _accept() {
+        if self.closed || _ssl == null { return null }
+        tcpConn = self.server.accept()
+        if tcpConn == null { return null }
+
+        sslPtr = ffi.call(_SSL_new, "pointer", ["pointer"], self.ctx)
+        if sslPtr == 0 || sslPtr == null {
+            tcpConn.close()
+            return null
+        }
+
+        ffi.call(_SSL_set_fd, "int32", ["pointer", "int32"], sslPtr, tcpConn.fd)
+        
+        // int SSL_accept(SSL *ssl)
+        ret = ffi.call(_SSL_accept, "int32", ["pointer"], sslPtr)
+        if ret <= 0 {
+            ffi.call(_SSL_free, "void", ["pointer"], sslPtr)
+            tcpConn.close()
+            return null
+        }
+
+        TLSConnection(self.ctx, sslPtr, tcpConn)
+    }
+
+    fn _close() {
+        if !self.closed {
+            self.server.close()
+            if _ssl != null && self.ctx != 0 {
+                ffi.call(_SSL_CTX_free, "void", ["pointer"], self.ctx)
+            }
+            self.closed = true
+        }
+    }
+
+    fn _isAlive() { !self.closed && self.server.isAlive() }
+
+    self.accept = _accept
+    self.close = _close
+    self.isAlive = _isAlive
+    self
+}
+
+// ===================================================================
+// Public API
+// ===================================================================
+
+fn connect(tcpConn) {
+    if _ssl == null || tcpConn == null { return null }
+
+    // Create SSL Context
+    method = ffi.call(_TLS_client_method, "pointer", [])
+    if method == 0 || method == null { return null }
+
+    ctx = ffi.call(_SSL_CTX_new, "pointer", ["pointer"], method)
+    if ctx == 0 || ctx == null { return null }
+
+    sslPtr = ffi.call(_SSL_new, "pointer", ["pointer"], ctx)
+    if sslPtr == 0 || sslPtr == null {
+        ffi.call(_SSL_CTX_free, "void", ["pointer"], ctx)
+        return null
+    }
+
+    ffi.call(_SSL_set_fd, "int32", ["pointer", "int32"], sslPtr, tcpConn.fd)
+
+    // int SSL_connect(SSL *ssl)
+    ret = ffi.call(_SSL_connect, "int32", ["pointer"], sslPtr)
+    if ret <= 0 {
+        ffi.call(_SSL_free, "void", ["pointer"], sslPtr)
+        ffi.call(_SSL_CTX_free, "void", ["pointer"], ctx)
+        return null
+    }
+
+    TLSConnection(ctx, sslPtr, tcpConn)
+}
+
+fn listen(tcpServer, certFile, keyFile) {
+    if _ssl == null || tcpServer == null { return null }
+
+    method = ffi.call(_TLS_server_method, "pointer", [])
+    if method == 0 || method == null { return null }
+
+    ctx = ffi.call(_SSL_CTX_new, "pointer", ["pointer"], method)
+    if ctx == 0 || ctx == null { return null }
+
+    // Configure certificate
+    cCert = ffi.cstring(certFile)
+    ret1 = ffi.call(_SSL_CTX_use_certificate_file, "int32", ["pointer", "pointer", "int32"], ctx, cCert, SSL_FILETYPE_PEM)
+    ffi.free(cCert)
+
+    cKey = ffi.cstring(keyFile)
+    ret2 = ffi.call(_SSL_CTX_use_PrivateKey_file, "int32", ["pointer", "pointer", "int32"], ctx, cKey, SSL_FILETYPE_PEM)
+    ffi.free(cKey)
+
+    if ret1 <= 0 || ret2 <= 0 {
+        ffi.call(_SSL_CTX_free, "void", ["pointer"], ctx)
+        return null
+    }
+
+    // Verify private key match
+    ret3 = ffi.call(_SSL_CTX_check_private_key, "int32", ["pointer"], ctx)
+    if ret3 <= 0 {
+        ffi.call(_SSL_CTX_free, "void", ["pointer"], ctx)
+        return null
+    }
+
+    TLSServer(ctx, tcpServer)
+}

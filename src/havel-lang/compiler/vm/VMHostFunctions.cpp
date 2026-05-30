@@ -63,11 +63,81 @@ void VM::registerDefaultHostFunctions() {
       }
     }
     std::cout << end;
-    return Value::makeNull();
-    });
+  return Value::makeNull();
+  });
 
-    registerHostFunction("repr", [this](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("repr() requires an argument");
+  registerHostFunction("println", [this](const std::vector<Value> &args) {
+    for (size_t i = 0; i < args.size(); ++i) {
+      if (i > 0) std::cout << " ";
+      const auto &arg = args[i];
+      if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
+        std::cout << resolveStringKey(arg);
+      } else {
+        std::cout << toString(arg);
+      }
+    }
+    std::cout << std::endl;
+    return Value::makeNull();
+  });
+
+  registerHostFunction("error", [this](const std::vector<Value> &args) {
+    for (size_t i = 0; i < args.size(); ++i) {
+      if (i > 0) std::cerr << " ";
+      const auto &arg = args[i];
+      if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
+        std::cerr << resolveStringKey(arg);
+      } else {
+        std::cerr << toString(arg);
+      }
+    }
+    std::cerr << std::endl;
+    return Value::makeNull();
+  });
+
+  registerHostFunction("warn", [this](const std::vector<Value> &args) {
+    for (size_t i = 0; i < args.size(); ++i) {
+      if (i > 0) std::cerr << " ";
+      const auto &arg = args[i];
+      if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
+        std::cerr << resolveStringKey(arg);
+      } else {
+        std::cerr << toString(arg);
+      }
+    }
+    std::cerr << std::endl;
+    return Value::makeNull();
+  });
+
+  registerHostFunction("info", [this](const std::vector<Value> &args) {
+    for (size_t i = 0; i < args.size(); ++i) {
+      if (i > 0) std::cerr << " ";
+      const auto &arg = args[i];
+      if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
+        std::cerr << resolveStringKey(arg);
+      } else {
+        std::cerr << toString(arg);
+      }
+    }
+    std::cerr << std::endl;
+    return Value::makeNull();
+  });
+
+  registerHostFunction("debug", [this](const std::vector<Value> &args) {
+    for (size_t i = 0; i < args.size(); ++i) {
+      if (i > 0) std::cerr << " ";
+      const auto &arg = args[i];
+      if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
+        std::cerr << resolveStringKey(arg);
+      } else {
+        std::cerr << toString(arg);
+      }
+    }
+    std::cerr << std::endl;
+    return Value::makeNull();
+  });
+
+  registerHostFunction("repr", [this](const std::vector<Value> &args) {
+  if (args.empty()) throw std::runtime_error("repr() requires an argument");
         const auto &arg = args[0];
         if (arg.isObjectId()) {
             Value opMethod = getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_repr");

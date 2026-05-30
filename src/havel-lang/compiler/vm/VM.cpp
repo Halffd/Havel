@@ -244,19 +244,9 @@ Value VM::execute(const BytecodeChunk &chunk,
     ::havel::debug("=== Executing function: {} ===", function_name);
   }
 
-  // Snapshot root globals before execution. This captures all
-  // host-registered globals (including TypeModule's isArray, etc.)
-  // for use by executePersistent, which may be called during this
-  // execution from within a module closure context.
-  root_globals_ = globals;
+ runDispatchLoop(0);
 
-  runDispatchLoop(0);
-
-  // Update root globals snapshot after execution too (in case
-  // module loads added more builtins during execution).
-  root_globals_ = globals;
-
-  current_chunk = saved_chunk;
+ current_chunk = saved_chunk;
 
  if (stack.empty()) {
  return nullptr;
@@ -284,22 +274,7 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   auto saved_globals = globals;
   auto saved_globals_stack = globals_stack_;
 
-  // Merge root globals into current globals. When called from inside a
-  // module closure (e.g., deepWrap wrapper), the current globals may be
-  // a module-local snapshot missing TypeModule functions (isArray, etc.).
-  // Root globals (captured after execute() completes) have all builtins.
-  for (const auto& [name, value] : root_globals_) {
-    if (!globals.count(name)) {
-      globals[name] = value;
-    }
-  }
 
-  // Also ensure host function globals are available (print, len, etc.)
-  for (const auto& [name, value] : host_function_globals_) {
-    if (!globals.count(name)) {
-      globals[name] = value;
-    }
-  }
 
   // Clear stack and locals for this execution, but PRESERVE:
   // - globals (user-defined variables persist)

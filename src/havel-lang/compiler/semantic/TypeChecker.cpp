@@ -63,6 +63,10 @@ void TypeChecker::collectDeclarations(const ast::Program &program) {
       collectFunctionDeclaration(
           static_cast<const ast::FunctionDeclaration &>(*stmt));
       break;
+    case ast::NodeType::EnumDeclaration:
+        collectEnumDeclaration(
+            static_cast<const ast::EnumDeclaration &>(*stmt));
+        break;
     case ast::NodeType::ImplDeclaration:
       collectImplDeclaration(static_cast<const ast::ImplDeclaration &>(*stmt));
       break;
@@ -117,52 +121,107 @@ void TypeChecker::collectTraitDeclaration(const ast::TraitDeclaration &decl) {
 
 void TypeChecker::collectStructDeclaration(
     const ast::StructDeclaration &decl) {
-  TypeInfo info;
-  info.kind = TypeKind::Nominal;
-  info.name = decl.name;
-  if (info.name.empty()) return;
+    TypeInfo info;
+    info.kind = TypeKind::Nominal;
+    info.name = decl.name;
+    if (info.name.empty()) return;
 
-  info.protocolNames = decl.protocolNames;
+    info.protocolNames = decl.protocolNames;
 
-  for (const auto &method : decl.definition.methods) {
-    if (!method) continue;
-    std::string mname = method->name;
-    FunctionSignature sig;
-    sig.arity = method->parameters.size();
-    info.methods[mname] = sig;
-  }
+    // Store type parameter names in metadata so generic instantiations
+    // can be validated later
+	for (const auto &typeParam : decl.typeParameters) {
+		info.metadata["typeParam:" + typeParam.name] = "true";
+		for (const auto &bound : typeParam.upperBounds) {
+			info.metadata["typeParamBound:" + typeParam.name + ":" + bound] = "true";
+		}
+	}
+	if (!decl.typeParameters.empty()) {
+		info.metadata["typeParamCount"] =
+			std::to_string(decl.typeParameters.size());
+	}
 
-  result_.registry[info.name] = info;
+	for (const auto &method : decl.definition.methods) {
+		if (!method) continue;
+		std::string mname = method->name;
+		FunctionSignature sig;
+		sig.arity = method->parameters.size();
+		info.methods[mname] = sig;
+	}
+
+	result_.registry[info.name] = info;
 }
 
 void TypeChecker::collectClassDeclaration(const ast::ClassDeclaration &decl) {
-  TypeInfo info;
-  info.kind = TypeKind::Nominal;
-  info.name = decl.name;
-  if (info.name.empty()) return;
+	TypeInfo info;
+	info.kind = TypeKind::Nominal;
+	info.name = decl.name;
+	if (info.name.empty()) return;
 
-  info.protocolNames = decl.protocolNames;
+	info.protocolNames = decl.protocolNames;
 
-  for (const auto &method : decl.definition.methods) {
-    if (!method) continue;
-    std::string mname = method->name;
-    FunctionSignature sig;
-    sig.arity = method->parameters.size();
-    info.methods[mname] = sig;
-  }
+	for (const auto &typeParam : decl.typeParameters) {
+		info.metadata["typeParam:" + typeParam.name] = "true";
+		for (const auto &bound : typeParam.upperBounds) {
+			info.metadata["typeParamBound:" + typeParam.name + ":" + bound] = "true";
+		}
+	}
+	if (!decl.typeParameters.empty()) {
+		info.metadata["typeParamCount"] =
+			std::to_string(decl.typeParameters.size());
+	}
 
-  result_.registry[info.name] = info;
+    for (const auto &method : decl.definition.methods) {
+        if (!method) continue;
+        std::string mname = method->name;
+        FunctionSignature sig;
+        sig.arity = method->parameters.size();
+        info.methods[mname] = sig;
+    }
+
+    result_.registry[info.name] = info;
+}
+
+void TypeChecker::collectEnumDeclaration(const ast::EnumDeclaration &decl) {
+    TypeInfo info;
+    info.kind = TypeKind::Nominal;
+    info.name = decl.name;
+    if (info.name.empty()) return;
+
+	for (const auto &typeParam : decl.typeParameters) {
+		info.metadata["typeParam:" + typeParam.name] = "true";
+		for (const auto &bound : typeParam.upperBounds) {
+			info.metadata["typeParamBound:" + typeParam.name + ":" + bound] = "true";
+		}
+	}
+	if (!decl.typeParameters.empty()) {
+		info.metadata["typeParamCount"] =
+			std::to_string(decl.typeParameters.size());
+	}
+
+	result_.registry[info.name] = info;
 }
 
 void TypeChecker::collectFunctionDeclaration(
     const ast::FunctionDeclaration &fn) {
-  if (!fn.name) return;
-  TypeInfo info;
-  info.kind = TypeKind::Builtin;
-  info.name = fn.name->symbol;
-  FunctionSignature sig;
-  sig.arity = fn.parameters.size();
-  info.methods[fn.name->symbol] = sig;
+    if (!fn.name) return;
+    TypeInfo info;
+    info.kind = TypeKind::Builtin;
+    info.name = fn.name->symbol;
+    FunctionSignature sig;
+    sig.arity = fn.parameters.size();
+    info.methods[fn.name->symbol] = sig;
+
+	for (const auto &typeParam : fn.typeParameters) {
+		info.metadata["typeParam:" + typeParam.name] = "true";
+		for (const auto &bound : typeParam.upperBounds) {
+			info.metadata["typeParamBound:" + typeParam.name + ":" + bound] = "true";
+		}
+	}
+	if (!fn.typeParameters.empty()) {
+		info.metadata["typeParamCount"] =
+			std::to_string(fn.typeParameters.size());
+	}
 }
 
 void TypeChecker::collectImplDeclaration(const ast::ImplDeclaration &impl) {
@@ -310,6 +369,15 @@ std::optional<std::string> TypeChecker::resolveTypeAnnotation(
     const auto *nullable =
         dynamic_cast<const ast::NullableType *>(ann->type.get());
     if (nullable && nullable->inner) {
+        // Check if inner is a GenericTypeRef
+        const auto *innerGeneric =
+            dynamic_cast<const ast::GenericTypeRef *>(nullable->inner.get());
+        if (innerGeneric) {
+            auto innerResolved = resolveGenericTypeRef(*innerGeneric);
+            if (innerResolved) {
+                return "?" + *innerResolved;
+            }
+        }
         const auto *innerRef =
             dynamic_cast<const ast::TypeReference *>(nullable->inner.get());
         if (innerRef) {
@@ -319,6 +387,13 @@ std::optional<std::string> TypeChecker::resolveTypeAnnotation(
             }
         }
         return std::nullopt;
+    }
+
+    // Handle generic type reference like List(Int)
+    const auto *genericRef =
+        dynamic_cast<const ast::GenericTypeRef *>(ann->type.get());
+    if (genericRef) {
+        return resolveGenericTypeRef(*genericRef);
     }
 
     const auto *ref =
@@ -350,9 +425,183 @@ std::optional<std::string> TypeChecker::resolveTypeName(const std::string &name)
     if (lowered == "any" || lowered == "auto" || lowered == "unknown")
         return std::nullopt;
 
+    // Check if name is a type parameter in scope (e.g., T, E)
+    auto envLookup = env_.lookup(name);
+    if (envLookup && envLookup->starts_with("typeparam:")) {
+        return name; // type parameter resolves to itself
+    }
+
     if (result_.registry.count(name) > 0) return name;
 
     return std::nullopt;
+}
+
+std::optional<std::string> TypeChecker::resolveGenericTypeRef(
+    const ast::GenericTypeRef &ref) const {
+    // Resolve base type name
+    auto baseResolved = resolveTypeName(ref.name);
+    if (!baseResolved) {
+        // Base type not found — will be reported as error elsewhere
+        return std::nullopt;
+    }
+
+    // Validate type argument count against declaration
+    validateTypeArgCount(ref.name, ref.typeArguments.size());
+
+    // Build parameterized type string like "List(int)" or "Result(int, str)"
+    // Collect resolved type argument names for bounds validation
+    std::vector<std::string> resolvedArgNames;
+    std::string result = *baseResolved + "(";
+    for (size_t i = 0; i < ref.typeArguments.size(); ++i) {
+        if (i > 0) result += ", ";
+        if (ref.typeArguments[i]) {
+            const auto *argRef =
+                dynamic_cast<const ast::TypeReference *>(ref.typeArguments[i].get());
+            const auto *argGeneric =
+                dynamic_cast<const ast::GenericTypeRef *>(ref.typeArguments[i].get());
+            if (argGeneric) {
+                auto argResolved = resolveGenericTypeRef(*argGeneric);
+                std::string resolved = argResolved.value_or("unknown");
+                result += resolved;
+                resolvedArgNames.push_back(resolved);
+            } else if (argRef) {
+                auto argResolved = resolveTypeName(argRef->name);
+                std::string resolved = argResolved.value_or(argRef->name);
+                result += resolved;
+                resolvedArgNames.push_back(resolved);
+            } else {
+                std::string resolved = ref.typeArguments[i]->toString();
+                result += resolved;
+                resolvedArgNames.push_back(resolved);
+            }
+        } else {
+            result += "unknown";
+            resolvedArgNames.push_back("unknown");
+        }
+    }
+    result += ")";
+
+    // Validate type argument bounds against declaration
+    validateTypeArgBounds(*baseResolved, resolvedArgNames);
+
+    // Register the parameterized instantiation in the registry
+    // if not already present (monomorphized cache entry)
+    if (result_.registry.find(result) == result_.registry.end()) {
+        TypeInfo instInfo;
+        instInfo.kind = TypeKind::Nominal;
+        instInfo.name = result;
+        // Copy methods from the base type
+        auto baseIt = result_.registry.find(*baseResolved);
+        if (baseIt != result_.registry.end()) {
+            instInfo.methods = baseIt->second.methods;
+            instInfo.protocolNames = baseIt->second.protocolNames;
+        }
+        result_.registry[result] = instInfo;
+    }
+
+    return result;
+}
+
+bool TypeChecker::validateTypeArgCount(const std::string &baseName,
+                                        size_t argCount) const {
+    auto it = result_.registry.find(baseName);
+    if (it == result_.registry.end()) return true; // unknown base, skip
+
+    const auto &info = it->second;
+    if (!info.isGeneric()) {
+        // Non-generic type used with type arguments — error
+        if (argCount > 0) {
+            result_.errors.push_back(
+                "type '" + baseName +
+                "' is not generic but was given " +
+                std::to_string(argCount) + " type argument(s)");
+            return false;
+        }
+        return true;
+    }
+
+    size_t expected = info.typeParamCount();
+    if (argCount != expected) {
+        result_.errors.push_back(
+            "generic type '" + baseName + "' expects " +
+            std::to_string(expected) + " type argument(s), got " +
+            std::to_string(argCount));
+        return false;
+    }
+    return true;
+}
+
+std::vector<std::string> TypeChecker::getTypeParamBounds(
+    const std::string &baseName, const std::string &paramName) const {
+    std::vector<std::string> bounds;
+    auto it = result_.registry.find(baseName);
+    if (it == result_.registry.end()) return bounds;
+    const auto &info = it->second;
+    std::string prefix = "typeParamBound:" + paramName + ":";
+    for (const auto &[key, val] : info.metadata) {
+        if (key.starts_with(prefix) && val == "true") {
+            bounds.push_back(key.substr(prefix.size()));
+        }
+    }
+    return bounds;
+}
+
+bool TypeChecker::typeSatisfiesBound(const std::string &argTypeName,
+                                      const std::string &boundName) const {
+    if (argTypeName == boundName) return true;
+
+    auto argIt = result_.registry.find(argTypeName);
+    if (argIt == result_.registry.end()) return false;
+
+    const auto &argInfo = argIt->second;
+
+    if (argInfo.kind == TypeKind::Protocol && boundName == argTypeName) return true;
+
+    for (const auto &proto : argInfo.protocolNames) {
+        if (proto == boundName) return true;
+        if (typeConformsToProtocol(argTypeName, boundName)) return true;
+    }
+
+    auto boundIt = result_.registry.find(boundName);
+    if (boundIt != result_.registry.end() && boundIt->second.kind == TypeKind::Protocol) {
+        for (const auto &requiredMethod : boundIt->second.requiredMethodNames) {
+            if (!argInfo.hasMethod(requiredMethod)) return false;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool TypeChecker::validateTypeArgBounds(
+    const std::string &baseName,
+    const std::vector<std::string> &argTypeNames) const {
+    auto it = result_.registry.find(baseName);
+    if (it == result_.registry.end()) return true;
+
+    const auto &info = it->second;
+    if (!info.isGeneric()) return true;
+
+    auto paramNames = info.typeParamNames();
+    bool allValid = true;
+
+    for (size_t i = 0; i < argTypeNames.size() && i < paramNames.size(); ++i) {
+        const std::string &paramName = paramNames[i];
+        const std::string &argType = argTypeNames[i];
+
+        auto bounds = getTypeParamBounds(baseName, paramName);
+        for (const auto &bound : bounds) {
+            if (!typeSatisfiesBound(argType, bound)) {
+                result_.errors.push_back(
+                    "type argument '" + argType + "' for type parameter '" +
+                    paramName + "' does not satisfy bound '" + bound +
+                    "' in generic type '" + baseName + "'");
+                allValid = false;
+            }
+        }
+    }
+
+    return allValid;
 }
 
 bool TypeChecker::isNullableType(const std::string &typeStr) const {
@@ -522,30 +771,37 @@ void TypeChecker::checkLetDeclaration(const ast::LetDeclaration &let) {
 
 void TypeChecker::checkFunctionDeclaration(
     const ast::FunctionDeclaration &fn) {
-  if (!fn.name) return;
-  std::string fnName = fn.name->symbol;
-  env_.set(fnName, "function");
+    if (!fn.name) return;
+    std::string fnName = fn.name->symbol;
+    env_.set(fnName, "function");
 
-  env_.push();
-  for (const auto &param : fn.parameters) {
-    if (!param) continue;
-    auto *ident =
-        dynamic_cast<const ast::Identifier *>(param->pattern.get());
-    if (!ident) continue;
-    if (param->typeAnnotation) {
-      auto resolved = resolveTypeAnnotation((*param->typeAnnotation).get());
-      if (resolved) {
-        env_.set(ident->symbol, *resolved);
-      }
-    }
-  }
+    env_.push();
 
-  if (fn.body) {
-    if (fn.body->kind == ast::NodeType::BlockStatement) {
-      checkBlock(static_cast<const ast::BlockStatement &>(*fn.body));
+    // Introduce type parameters into scope as type-like bindings
+    // so resolveTypeName can find them when checking the body
+	for (const auto &typeParam : fn.typeParameters) {
+		env_.set(typeParam.name, "typeparam:" + typeParam.name);
+	}
+
+    for (const auto &param : fn.parameters) {
+        if (!param) continue;
+        auto *ident =
+            dynamic_cast<const ast::Identifier *>(param->pattern.get());
+        if (!ident) continue;
+        if (param->typeAnnotation) {
+            auto resolved = resolveTypeAnnotation((*param->typeAnnotation).get());
+            if (resolved) {
+                env_.set(ident->symbol, *resolved);
+            }
+        }
     }
-  }
-  env_.pop();
+
+    if (fn.body) {
+        if (fn.body->kind == ast::NodeType::BlockStatement) {
+            checkBlock(static_cast<const ast::BlockStatement &>(*fn.body));
+        }
+    }
+    env_.pop();
 }
 
 void TypeChecker::checkAssignment(const ast::AssignmentExpression &assign) {

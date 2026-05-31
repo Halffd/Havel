@@ -16,14 +16,15 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 struct BuilderState {
-  std::unique_ptr<BytecodeChunk> chunk;
-  int32_t current_func_idx = -1;
-  std::vector<int32_t> saved_func_stack;
-  std::unordered_map<std::string, OpCode> opcode_map;
-  uint32_t current_source_line = 0;
-  uint32_t current_source_col = 0;
-  bool has_source_location = false;
-  Value current_source_file;
+    std::unique_ptr<BytecodeChunk> chunk;
+    int32_t current_func_idx = -1;
+    std::vector<int32_t> saved_func_stack;
+    std::unordered_map<std::string, OpCode> opcode_map;
+    uint32_t current_source_line = 0;
+    uint32_t current_source_col = 0;
+    bool has_source_location = false;
+    Value current_source_file;
+    std::vector<std::shared_ptr<BytecodeChunk>> stored_chunks;
 
 	BytecodeFunction *currentFunc() {
 		if (current_func_idx < 0) return nullptr;
@@ -211,10 +212,12 @@ static OpCode parseOpcode(const std::string &name) {
 }
 
 void registerBytecodeBuilderModule(const VMApi &api) {
-	api.registerFunction("bc.reset", [](const std::vector<Value> &) -> Value {
-		g_builder = BuilderState();
-		return Value::makeNull();
-	});
+    api.registerFunction("bc.reset", [](const std::vector<Value> &) -> Value {
+        auto saved_chunks = std::move(g_builder.stored_chunks);
+        g_builder = BuilderState();
+        g_builder.stored_chunks = std::move(saved_chunks);
+        return Value::makeNull();
+    });
 
 	api.registerFunction("bc.func_new", [api](const std::vector<Value> &args) -> Value {
     if (args.size() < 1 || (!args[0].isStringId() && !args[0].isStringValId())) {
@@ -360,12 +363,12 @@ api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> V
 		return Value::makeInt(static_cast<int64_t>(idx));
 	});
 
-	api.registerFunction("bc.patch_jump", [](const std::vector<Value> &args) -> Value {
-		auto *fn = g_builder.currentFunc();
-		if (!fn) throw std::runtime_error("bc.patch_jump: no current function");
-		if (args.size() < 2 || !args[0].isInt() || !args[1].isInt()) {
-			throw std::runtime_error("bc.patch_jump: requires (jump_ip, target_ip)");
-		}
+api.registerFunction("bc.patch_jump", [](const std::vector<Value> &args) -> Value {
+auto *fn = g_builder.currentFunc();
+if (!fn) throw std::runtime_error("bc.patch_jump: no current function");
+if (args.size() < 2 || !args[0].isInt() || !args[1].isInt()) {
+throw std::runtime_error("bc.patch_jump: requires (jump_ip, target_ip)");
+}
 		uint32_t jumpIp = static_cast<uint32_t>(args[0].asInt());
 		uint32_t targetIp = static_cast<uint32_t>(args[1].asInt());
 		auto &instrs = fn->instructions;
@@ -801,8 +804,81 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
 		else if (name == "fatal") lvl = havel::Logger::LOG_FATAL;
 		else lvl = havel::Logger::LOG_DEBUG;
 		logger.setLogLevel(lvl);
-		return Value::makeInt(static_cast<int>(lvl));
-	});
+    return Value::makeInt(static_cast<int>(lvl));
+    });
+
+    api.registerFunction("bc.store_chunk", [api](const std::vector<Value> &) -> Value {
+        auto count = g_builder.chunk->getFunctionCount();
+        if (count == 0) {
+            throw std::runtime_error("bc.store_chunk: no functions in chunk");
+        }
+        auto stored = std::shared_ptr<BytecodeChunk>(g_builder.chunk.release());
+        uint32_t id = static_cast<uint32_t>(g_builder.stored_chunks.size());
+        g_builder.stored_chunks.push_back(stored);
+        g_builder.chunk = std::make_unique<BytecodeChunk>();
+        g_builder.current_func_idx = -1;
+        g_builder.saved_func_stack.clear();
+        auto result = Value::makeInt(static_cast<int64_t>(id));
+        return result;
+    });
+
+    api.registerFunction("bc.execute_stored", [api](const std::vector<Value> &args) -> Value {
+        if (args.empty() || !args[0].isInt()) {
+            throw std::runtime_error("bc.execute_stored: requires chunk id (int)");
+        }
+        uint32_t chunk_id = static_cast<uint32_t>(args[0].asInt());
+        if (chunk_id >= g_builder.stored_chunks.size()) {
+            throw std::runtime_error("bc.execute_stored: invalid chunk id " + std::to_string(chunk_id));
+        }
+        auto &exec_chunk = g_builder.stored_chunks[chunk_id];
+        if (!exec_chunk || exec_chunk->getFunctionCount() == 0) {
+            throw std::runtime_error("bc.execute_stored: chunk has no functions");
+        }
+        std::string entry = "__main__";
+        if (args.size() > 1 && (args[1].isStringId() || args[1].isStringValId())) {
+            entry = api.resolveString(args[1]);
+        }
+        std::vector<Value> runArgs;
+        for (size_t i = 2; i < args.size(); ++i) {
+            runArgs.push_back(args[i]);
+        }
+
+        auto &vm = api.vm();
+        auto saved_chunk = vm.current_chunk;
+        auto saved_frame_count = vm.frame_count_;
+        auto saved_frame_arena = vm.frame_arena_;
+        std::stack<Value> saved_stack = vm.stack;
+        auto saved_locals = vm.locals;
+        auto saved_immutable_locals = vm.immutable_locals_;
+        auto saved_main_chunk = vm.getMainChunk();
+
+        vm.setMainChunkShared(exec_chunk);
+        vm.current_chunk = exec_chunk.get();
+
+        try {
+            vm.bc_execute_depth_++;
+            auto result = vm.executePersistent(*exec_chunk, entry, runArgs);
+            vm.bc_execute_depth_--;
+            vm.current_chunk = saved_chunk;
+            vm.frame_count_ = saved_frame_count;
+            vm.frame_arena_ = std::move(saved_frame_arena);
+            vm.stack = std::move(saved_stack);
+            vm.locals = std::move(saved_locals);
+            vm.immutable_locals_ = std::move(saved_immutable_locals);
+            vm.setMainChunkShared(saved_main_chunk);
+            return result;
+        } catch (const std::exception &e) {
+            vm.bc_execute_depth_--;
+            vm.current_chunk = saved_chunk;
+            vm.frame_count_ = saved_frame_count;
+            vm.frame_arena_ = std::move(saved_frame_arena);
+            vm.stack = std::move(saved_stack);
+            vm.locals = std::move(saved_locals);
+            vm.immutable_locals_ = std::move(saved_immutable_locals);
+            vm.setMainChunkShared(saved_main_chunk);
+            throw std::runtime_error(e.what());
+        }
+    });
 
     auto bcObj = api.makeObject();
   api.setField(bcObj, "reset", api.makeFunctionRef("bc.reset"));
@@ -821,7 +897,9 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
     api.setField(bcObj, "add_upvalue_to", api.makeFunctionRef("bc.add_upvalue_to"));
   api.setField(bcObj, "execute", api.makeFunctionRef("bc.execute"));
   api.setField(bcObj, "serialize", api.makeFunctionRef("bc.serialize"));
-  api.setField(bcObj, "execute_persistent", api.makeFunctionRef("bc.execute_persistent"));
+    api.setField(bcObj, "execute_persistent", api.makeFunctionRef("bc.execute_persistent"));
+    api.setField(bcObj, "store_chunk", api.makeFunctionRef("bc.store_chunk"));
+    api.setField(bcObj, "execute_stored", api.makeFunctionRef("bc.execute_stored"));
 api.setField(bcObj, "get_global", api.makeFunctionRef("bc.get_global"));
   api.setField(bcObj, "func_count", api.makeFunctionRef("bc.func_count"));
   api.setField(bcObj, "instr_count", api.makeFunctionRef("bc.instr_count"));

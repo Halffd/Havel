@@ -9,6 +9,75 @@
  */
 #pragma once
 
+#ifdef HAVEL_CORE_PROFILE
+
+#include <algorithm>
+#include <cctype>
+#include <functional>
+#include <string>
+#include <vector>
+
+namespace havel {
+
+namespace ConfigPaths {
+inline std::string GetDefaultConfigDir() { return {}; }
+inline std::string CONFIG_DIR;
+inline std::string MAIN_CONFIG;
+inline std::string HOTKEYS_DIR;
+inline void SetConfigPath(const std::string &, const std::string & = "havel.cfg") {}
+inline std::string GetConfigPath() { return {}; }
+inline std::string GetConfigPath(const std::string &) { return {}; }
+inline void EnsureConfigDir() {}
+} // namespace ConfigPaths
+
+class Configs {
+public:
+  static Configs &Get() {
+    static Configs instance;
+    return instance;
+  }
+  ~Configs() = default;
+  void Load(const std::string & = "havel.cfg") {}
+  void Save(const std::string & = "") {}
+  void Reload() {}
+  std::string getPath() { return {}; }
+  static void SetPath(const std::string &) {}
+  void StartFileWatching(const std::string & = "havel.cfg") {}
+  void StopFileWatching() {}
+  void EnsureConfigFile(const std::string & = "havel.cfg") {}
+  template <typename T> T Get(const std::string &, const T &defaultVal) const {
+    return defaultVal;
+  }
+  void Set(const std::string &, const std::string &, bool = false) {}
+  template <typename T> void Set(const std::string &, const T &, bool = false) {}
+  bool Remove(const std::string &) { return false; }
+  bool Has(const std::string &) const { return false; }
+  void BeginBatch() {}
+  void EndBatch() {}
+  std::vector<std::string> GetAllKeys() const { return {}; }
+  bool GetVerboseKeyLogging() const { return false; }
+  bool GetVerboseWindowLogging() const { return false; }
+  bool GetVerboseConditionLogging() const { return false; }
+  std::vector<std::string> GetGamingApps() const { return {}; }
+  std::vector<std::string> GetGamingAppsExclude() const { return {}; }
+  std::vector<std::string> GetGamingAppsExcludeTitle() const { return {}; }
+  std::vector<std::string> GetGamingAppsTitle() const { return {}; }
+  std::vector<std::string> GetConfigs() const { return {}; }
+  using WatchCallback = std::function<void(const std::string &)>;
+  void Watch(const std::string &, WatchCallback) {}
+  template <typename T> void Watch(const std::string &, std::function<void(T)>) {}
+  void RequestSave() {}
+  void ForceSave() {}
+  void Print() const {}
+  template <typename T> static T Convert(const std::string &) { return T{}; }
+};
+
+inline void BackupConfig(const std::string & = "havel.cfg") {}
+
+} // namespace havel
+
+#else
+
 #include "core/config/ConfigObject.hpp"
 #include "types.hpp"
 #include "utils/Logger.hpp"
@@ -277,6 +346,8 @@ inline void RestoreConfig(const std::string &path = "havel.cfg") {
 }
 
 } // namespace havel
+
+#endif
 
 // Helper function to access config (use Configs::Get() directly)
 inline havel::Configs &Conf() { return havel::Configs::Get(); }

@@ -2,6 +2,15 @@
  * LogModule.cpp - VM-native logging stdlib module
  */
 #include "LogModule.hpp"
+
+#ifdef HAVEL_CORE_PROFILE
+namespace havel::stdlib {
+
+void registerLogModule(const VMApi &) {}
+void registerDebugModule(const VMApi &) {}
+
+} // namespace havel::stdlib
+#else
 #include "../../utils/Logger.hpp"
 #include "core/config/ConfigManager.hpp"
 #include <sstream>
@@ -189,7 +198,8 @@ void registerDebugModule(const VMApi &api) {
     auto debugObj = api.makeObject();
     api.setField(debugObj, "toggleVerboseConditionLogging", api.makeFunctionRef("debug.toggleVerboseConditionLogging"));
     api.setField(debugObj, "toggleVerboseKeyLogging", api.makeFunctionRef("debug.toggleVerboseKeyLogging"));
-    api.setGlobal("debug", debugObj);
-}
+api.setGlobal("debug", debugObj);
+    }
 
 } // namespace havel::stdlib
+#endif

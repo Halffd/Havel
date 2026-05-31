@@ -1,0 +1,14 @@
+print("collections native")
+
+arr = [1, 2]
+arr.push(3)
+print(arr[0])
+print(arr[2])
+
+obj = {"name": "havel"}
+obj["kind"] = "core"
+print(obj["name"])
+print(obj["kind"])
+
+iter = arr.iter()
+print(iter.next())

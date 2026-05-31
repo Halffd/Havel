@@ -3,6 +3,7 @@
 #include <chrono>
 #include <iostream>
 #include <filesystem>
+#include <mutex>
 #include "../../ast/AST.h"
 #include "compiler/core/BytecodeIR.hpp"
 #include <unordered_map>

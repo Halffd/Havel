@@ -1101,6 +1101,15 @@ if(ENABLE_HAVEL_LANG)
   ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime/PureStdLib.cpp
     )
     add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
+
+    set(HAVEL_LANG_CORE_SOURCES ${HAVEL_LANG_LIB_SOURCES})
+    list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/host/module/ModularHostBridges.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
+        ${CMAKE_SOURCE_DIR}/src/extensions/ExtensionLoader.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp
+    )
+    add_library(havel_lang_core STATIC ${HAVEL_LANG_CORE_SOURCES})
     
     target_include_directories(havel_lang PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -1127,6 +1136,29 @@ dl
 havel_core
 )
 
+    target_link_libraries(havel_lang_core PRIVATE
+${COMMON_LIBS}
+$<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+$<$<BOOL:${HAVE_LIBFFI}>:ffi>
+dl
+havel_core
+)
+
+    target_include_directories(havel_lang_core PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+        ${X11_INCLUDE_DIR}
+        ${XI_INCLUDE_DIR}
+ ${DBUS_INCLUDE_DIRS}
+ ${PULSEAUDIO_INCLUDE_DIRS}
+ ${PIPEWIRE_INCLUDE_DIRS}
+  ${ALSA_INCLUDE_DIRS}
+  ${WAYLAND_INCLUDE_DIRS}
+        ${GENERATED_PROTO_DIR}
+        $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
+        $<$<BOOL:${HAVE_LIBFFI}>:${LIBFFI_INCLUDE_DIRS}>
+    )
+
     # Disable LTO for debug builds to avoid R_X86_64_PC32 relocation overflow
     # in PIE test binaries. Release builds keep LTO for performance.
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -1147,6 +1179,18 @@ $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_WIDG
 $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
 )
 
+    target_compile_definitions(havel_lang_core PRIVATE
+$<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
+$<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
+$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>
+$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_CORE_LIB>
+$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_GUI_LIB>
+$<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_WIDGETS_LIB>
+$<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
+HAVEL_CORE_PROFILE
+)
+
     # -----------------------------------------------------------------------
     # Note: LLVM_INCLUDE_DIRS handling is applied globally at source assembly
     # stage to all targets that use HAVEL_LANG_SOURCES (including tests).
@@ -1165,6 +1209,7 @@ if(ENABLE_HAVEL_LANG)
 
     add_library(havel_aot_core_shim STATIC
         src/havel-lang/runtime/AotCoreShim.cpp
+        src/havel-lang/runtime/CoreRuntimeExports.cpp
     )
     target_include_directories(havel_aot_core_shim PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -1172,7 +1217,7 @@ if(ENABLE_HAVEL_LANG)
         ${CMAKE_SOURCE_DIR}/include
     )
     target_link_libraries(havel_aot_core_shim PRIVATE
-        havel_lang
+        havel_lang_core
     )
     set_target_properties(havel_aot_core_shim PROPERTIES
         INTERPROCEDURAL_OPTIMIZATION OFF

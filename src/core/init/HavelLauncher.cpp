@@ -2100,7 +2100,7 @@ for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
                     linkCmd += " -L\"" + libDir + "\"";
                 }
                 if (coreProfile) {
-                    linkCmd += " -lhavel_aot_core_shim -lhavel_lang -lhavel_core";
+                    linkCmd += " -lhavel_aot_core_shim -lhavel_lang_core";
                 } else {
                     linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
                 }

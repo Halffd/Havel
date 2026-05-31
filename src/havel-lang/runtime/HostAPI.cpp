@@ -4,7 +4,73 @@
 
 #include "HostAPI.hpp"
 
-#ifndef HAVEL_PURE_VM
+#ifdef HAVEL_CORE_PROFILE
+namespace havel {
+
+HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
+                 WindowManager *windowManager,
+                 BrightnessManager *brightnessManager,
+                 AudioManager *audioManager, GUIManager *guiManager,
+                 ScreenshotManager *screenshotManager,
+                 ClipboardManager *clipboardManager,
+                 PixelAutomation *pixelAutomation,
+                 AutomationManager *automationManager, FileManager *fileManager,
+                 ProcessManager *processManager, MapManager *mapManager,
+                 ModeManager *modeManager,
+                 const std::vector<std::string> &commandLineArgs)
+    : io(io), hotkeyManager(hotkeyManager), config(config),
+      windowManager(windowManager), brightnessManager(brightnessManager),
+      audioManager(audioManager), guiManager(guiManager),
+      screenshotManager(screenshotManager), clipboardManager(clipboardManager),
+      pixelAutomation(pixelAutomation), automationManager(automationManager),
+      fileManager(fileManager), processManager(processManager),
+      mapManager(mapManager), modeManager(modeManager),
+      commandLineArgs(commandLineArgs) {}
+
+std::string HostAPI::GetActiveWindowTitle() { return ""; }
+std::string HostAPI::GetActiveWindowClass() { return ""; }
+pID HostAPI::GetActiveWindowPID() { return 0; }
+std::string HostAPI::GetActiveWindowProcess() { return ""; }
+bool HostAPI::IsWindowInGroup(const std::string &, const std::string &) { return false; }
+std::vector<std::string> HostAPI::GetGroupNames() { return {}; }
+std::vector<std::string> HostAPI::GetGroupWindows(const std::string &) { return {}; }
+bool HostAPI::RegisterHotkey(const std::string &, std::function<void()>) { return false; }
+bool HostAPI::UnregisterHotkey(int) { return false; }
+void HostAPI::SuspendHotkeys(bool) {}
+bool HostAPI::AreHotkeysSuspended() const { return false; }
+std::string HostAPI::GetCurrentMode() const { return "default"; }
+void HostAPI::SetCurrentMode(const std::string &) {}
+void HostAPI::SendKeys(const std::string &) {}
+void HostAPI::SendKey(const std::string &, bool) {}
+void HostAPI::MouseMove(int, int) {}
+void HostAPI::MouseClick(int) {}
+void HostAPI::Scroll(int, int) {}
+std::string HostAPI::GetClipboardText() { return ""; }
+void HostAPI::SetClipboardText(const std::string &) {}
+std::string HostAPI::GetConfigString(const std::string &, const std::string &defaultVal) { return defaultVal; }
+void HostAPI::SetConfig(const std::string &, const std::string &) {}
+Configs &HostAPI::GetConfig() { return config; }
+IO *HostAPI::GetIO() { return io; }
+HotkeyManager *HostAPI::GetHotkeyManager() { return hotkeyManager; }
+WindowManager *HostAPI::GetWindowManager() { return windowManager; }
+BrightnessManager *HostAPI::GetBrightnessManager() { return brightnessManager; }
+AudioManager *HostAPI::GetAudioManager() { return audioManager; }
+GUIManager *HostAPI::GetGUIManager() { return guiManager; }
+ScreenshotManager *HostAPI::GetScreenshotManager() { return screenshotManager; }
+ClipboardManager *HostAPI::GetClipboardManager() { return clipboardManager; }
+PixelAutomation *HostAPI::GetPixelAutomation() { return pixelAutomation; }
+AutomationManager *HostAPI::GetAutomationManager() { return automationManager; }
+FileManager *HostAPI::GetFileManager() { return fileManager; }
+ProcessManager *HostAPI::GetProcessManager() { return processManager; }
+MapManager *HostAPI::GetMapManager() { return mapManager; }
+ModeManager *HostAPI::GetModeManager() { return modeManager; }
+void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }
+void HostAPI::SetIO(IO *newIo) { io = newIo; }
+void HostAPI::SetModeManager(ModeManager *mm) { modeManager = mm; }
+const std::vector<std::string> &HostAPI::GetCommandLineArgs() { return commandLineArgs; }
+
+} // namespace havel
+#else
 #include "ImportManager.hpp"
 #include "core/brightness/BrightnessManager.hpp"
 #include "core/config/ConfigManager.hpp"
@@ -178,4 +244,4 @@ const std::vector<std::string> &HostAPI::GetCommandLineArgs() {
 }
 
 } // namespace havel
-#endif // HAVEL_PURE_VM
+#endif // HAVEL_CORE_PROFILE

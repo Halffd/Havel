@@ -150,7 +150,7 @@ struct VMConfig {
     uint8_t gc_promotion_age = 2;
 
     // Call / stack limits
-    size_t max_call_depth = 1024;
+    size_t max_call_depth = 16384;
     size_t max_stack_depth = 1 << 20;
     uint64_t max_instructions = 0;
 
@@ -368,7 +368,7 @@ const BytecodeChunk *current_chunk = nullptr;
     bool host_globals_registered_ = false;
 bool prototypes_registered_ = false;
 VMConfig vm_config_{};
-size_t max_call_depth_ = 1024;
+size_t max_call_depth_ = 16384;
 size_t tail_call_depth_ = 0;
     bool profiling_enabled_ = false;
     bool trace_execution_ = false;

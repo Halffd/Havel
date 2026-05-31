@@ -373,8 +373,63 @@ api.registerFunction("replace", [api](const std::vector<Value>& args) {
   api.setField(strObj, "codePointLen", api.makeFunctionRef("string.codePointLen"));
   api.setField(strObj, "fromCodePoint", api.makeFunctionRef("string.fromCodePoint"));
   api.setField(strObj, "cpAtByte", api.makeFunctionRef("string.cpAtByte"));
-  api.setField(strObj, "cpByteLen", api.makeFunctionRef("string.cpByteLen"));
-  api.setGlobal("String", strObj);
+api.setField(strObj, "cpByteLen", api.makeFunctionRef("string.cpByteLen"));
+
+    api.registerFunction(
+        "string.toCodePointArray", [api](const std::vector<Value> &args) {
+            if (args.empty())
+                throw std::runtime_error("string.toCodePointArray() requires 1 argument");
+            std::string s = api.toString(args[0]);
+            auto arr = api.makeArray();
+            size_t i = 0;
+            while (i < s.size()) {
+                auto cpArr = api.makeArray();
+                unsigned char c = static_cast<unsigned char>(s[i]);
+                int64_t cp;
+                if (c < 0x80) {
+                    cp = static_cast<int64_t>(c);
+                    api.push(cpArr, Value(cp));
+                    api.push(cpArr, Value(static_cast<int64_t>(i)));
+                    api.push(cpArr, Value(static_cast<int64_t>(1)));
+                    i += 1;
+                } else if ((c & 0xE0) == 0xC0) {
+                    cp = static_cast<int64_t>(c & 0x1F);
+                    if (i + 1 < s.size()) cp = (cp << 6) | (static_cast<unsigned char>(s[i+1]) & 0x3F);
+                    api.push(cpArr, Value(cp));
+                    api.push(cpArr, Value(static_cast<int64_t>(i)));
+                    api.push(cpArr, Value(static_cast<int64_t>(2)));
+                    i += 2;
+                } else if ((c & 0xF0) == 0xE0) {
+                    cp = static_cast<int64_t>(c & 0x0F);
+                    if (i + 1 < s.size()) cp = (cp << 6) | (static_cast<unsigned char>(s[i+1]) & 0x3F);
+                    if (i + 2 < s.size()) cp = (cp << 6) | (static_cast<unsigned char>(s[i+2]) & 0x3F);
+                    api.push(cpArr, Value(cp));
+                    api.push(cpArr, Value(static_cast<int64_t>(i)));
+                    api.push(cpArr, Value(static_cast<int64_t>(3)));
+                    i += 3;
+                } else if ((c & 0xF8) == 0xF0) {
+                    cp = static_cast<int64_t>(c & 0x07);
+                    if (i + 1 < s.size()) cp = (cp << 6) | (static_cast<unsigned char>(s[i+1]) & 0x3F);
+                    if (i + 2 < s.size()) cp = (cp << 6) | (static_cast<unsigned char>(s[i+2]) & 0x3F);
+                    if (i + 3 < s.size()) cp = (cp << 6) | (static_cast<unsigned char>(s[i+3]) & 0x3F);
+                    api.push(cpArr, Value(cp));
+                    api.push(cpArr, Value(static_cast<int64_t>(i)));
+                    api.push(cpArr, Value(static_cast<int64_t>(4)));
+                    i += 4;
+                } else {
+                    cp = static_cast<int64_t>(c);
+                    api.push(cpArr, Value(cp));
+                    api.push(cpArr, Value(static_cast<int64_t>(i)));
+                    api.push(cpArr, Value(static_cast<int64_t>(1)));
+                    i += 1;
+                }
+                api.push(arr, cpArr);
+            }
+            return arr;
+        });
+    api.setField(strObj, "toCodePointArray", api.makeFunctionRef("string.toCodePointArray"));
+
+    api.setGlobal("String", strObj);
     api.setGlobal("string", strObj);
     return strObj;
 }

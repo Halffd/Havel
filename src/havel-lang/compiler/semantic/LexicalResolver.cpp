@@ -1175,7 +1175,13 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         // If binding is a "fake" Global (not in global_variables_), still declare local
         if (binding && binding->kind == ResolvedBindingKind::Global &&
             global_variables_.count(binding->name) == 0) {
-            shouldDeclareLocal = true;
+          shouldDeclareLocal = true;
+        }
+        // Inside a function, assignment without :: should create a local,
+        // even if the name exists in global_variables_ (from top-level pre-scan).
+        // Use ::x = val to explicitly assign to a global from inside a function.
+        if (binding && binding->kind == ResolvedBindingKind::Global && insideFunction) {
+          shouldDeclareLocal = true;
         }
         // If binding resolves to a Function or HostFunction name, declare as local
         // so that shadowing variables (e.g., _root = _root()) work correctly
@@ -1242,17 +1248,26 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               newBinding.name = ident.symbol;
               noteIdentifierBinding(ident, newBinding);
             }
-          } else if (binding->kind == ResolvedBindingKind::Local ||
-                     binding->kind == ResolvedBindingKind::Upvalue) {
-            // Use existing binding, don't shadow
-            noteIdentifierBinding(ident, *binding);
-          } else {
-            noteIdentifierBinding(ident, *binding);
+            } else if (binding->kind == ResolvedBindingKind::Local ||
+                       binding->kind == ResolvedBindingKind::Upvalue) {
+              // Use existing binding, don't shadow
+              noteIdentifierBinding(ident, *binding);
+            } else if (binding->kind == ResolvedBindingKind::Global &&
+                       function_stack_.size() > 1) {
+              // Inside a function, assignment without :: creates a local
+              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              ResolvedBinding newBinding;
+              newBinding.kind = ResolvedBindingKind::Local;
+              newBinding.slot = slot;
+              newBinding.name = ident.symbol;
+              noteIdentifierBinding(ident, newBinding);
+            } else {
+              noteIdentifierBinding(ident, *binding);
+            }
           }
         }
-      }
-    } else if (assignment.target &&
-               assignment.target->kind == ast::NodeType::ObjectLiteral) {
+      } else if (assignment.target &&
+                 assignment.target->kind == ast::NodeType::ObjectLiteral) {
       // Pre-declare object destructuring targets
       const auto &objLit =
           static_cast<const ast::ObjectLiteral &>(*assignment.target);
@@ -1280,18 +1295,27 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               newBinding.name = ident.symbol;
               noteIdentifierBinding(ident, newBinding);
             }
-          } else if (binding->kind == ResolvedBindingKind::Local ||
-                     binding->kind == ResolvedBindingKind::Upvalue) {
-            // Use existing binding, don't shadow
-            noteIdentifierBinding(ident, *binding);
-          } else {
-            noteIdentifierBinding(ident, *binding);
+            } else if (binding->kind == ResolvedBindingKind::Local ||
+                       binding->kind == ResolvedBindingKind::Upvalue) {
+              // Use existing binding, don't shadow
+              noteIdentifierBinding(ident, *binding);
+            } else if (binding->kind == ResolvedBindingKind::Global &&
+                       function_stack_.size() > 1) {
+              // Inside a function, assignment without :: creates a local
+              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              ResolvedBinding newBinding;
+              newBinding.kind = ResolvedBindingKind::Local;
+              newBinding.slot = slot;
+              newBinding.name = ident.symbol;
+              noteIdentifierBinding(ident, newBinding);
+            } else {
+              noteIdentifierBinding(ident, *binding);
+            }
           }
         }
       }
-    }
 
-    // STEP 2: Now resolve the RHS (lambdas can find pre-declared targets)
+      // STEP 2: Now resolve the RHS (lambdas can find pre-declared targets)
     if (assignment.value) {
       resolveExpression(*assignment.value);
     }
@@ -1338,10 +1362,20 @@ case ast::NodeType::MultipleAssignment: {
                     newBinding.is_const = false;
                     noteIdentifierBinding(ident, newBinding);
                 }
-            } else {
-                noteIdentifierBinding(ident, *binding);
-            }
+        } else if (binding->kind == ResolvedBindingKind::Global &&
+                   function_stack_.size() > 1) {
+          // Inside a function, assignment without :: creates a local
+          uint32_t slot = declareLocal(ident.symbol, &ident, false);
+          ResolvedBinding newBinding;
+          newBinding.kind = ResolvedBindingKind::Local;
+          newBinding.slot = slot;
+          newBinding.name = ident.symbol;
+          newBinding.is_const = false;
+          noteIdentifierBinding(ident, newBinding);
+        } else {
+          noteIdentifierBinding(ident, *binding);
         }
+      }
     }
 
     // STEP 2: Resolve the value

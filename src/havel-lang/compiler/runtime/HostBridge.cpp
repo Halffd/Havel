@@ -25,6 +25,14 @@
 #include "../../../host/media/MediaService.hpp"
 #include "../../../host/network/NetworkService.hpp"
 
+namespace havel::modules {
+void setupDynamicWindowGlobals(const compiler::VMApi &api, WindowMonitor *monitor)
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((weak))
+#endif
+;
+}
+
 namespace havel::compiler {
 
 // Helper: convert OpCode to string name (simplified subset for bytecode() display)
@@ -166,6 +174,16 @@ void HostBridge::registerModeCallbacks(const std::string &modeName,
 }
 
 void HostBridge::initBridges() {
+#ifdef HAVEL_CORE_PROFILE
+  // Core profile has no host bridges.
+  extensionLoader_ = std::make_unique<ExtensionLoader>();
+  moduleLoader_.registerBuiltin("io", [](VM &) {}, {"io", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("window", [](VM &) {}, {"window", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("ui", [](VM &) {}, {"ui", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("audio", [](VM &) {}, {"audio", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("browser", [](VM &) {}, {"browser", "1.0", true, false, ""});
+  moduleLoader_.registerBuiltin("automation", [](VM &) {}, {"automation", "1.0", true, false, ""});
+#else
   ioBridge_ = std::make_unique<IOBridge>(ctx_);
   systemBridge_ = std::make_unique<SystemBridge>(ctx_);
   uiBridge_ = std::make_unique<UIBridge>(ctx_);
@@ -204,12 +222,31 @@ void HostBridge::initBridges() {
                                 [this](VM &) { automationBridge_->install(options_); },
                                 {"automation", "1.0", true, false, ""});
 }
+#endif
 
 void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
   const bool coreProfile = (profile == InstallProfile::Core);
   options_.host_functions.reserve(64);
   vm_setup_callbacks_.reserve(16);
 
+#ifdef HAVEL_CORE_PROFILE
+  (void)eagerBridgeInstall;
+  if (coreProfile) {
+    options_.host_functions["type"] =
+        [this](const std::vector<Value> &args) {
+          if (args.empty()) return Value::makeNull();
+          std::string typeName = getTypeName(args[0]);
+          auto ref = ctx_->vm->getHeap().allocateString(std::move(typeName));
+          return Value::makeStringId(ref.id);
+        };
+    options_.host_functions["len"] = [this](const std::vector<Value> &args) {
+      if (args.empty()) return Value::makeInt(0);
+      auto *vm = static_cast<VM *>(ctx_->vm);
+      return vm->execLengthOp(args[0]);
+    };
+    return;
+  }
+#else
   if (eagerBridgeInstall && !coreProfile) {
     // Default/full mode: install all bridge modules eagerly.
     ioBridge_->install(options_);
@@ -234,7 +271,7 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
   // Setup dynamic window globals using existing WindowMonitor from
   // HotkeyManager This integrates window monitoring with bytecode VM without
   // creating duplicate instances
-  if (!coreProfile && ctx_->windowMonitor && ctx_->vm) {
+  if (!coreProfile && ctx_->windowMonitor && ctx_->vm && ::havel::modules::setupDynamicWindowGlobals) {
     VM *vm = static_cast<VM *>(ctx_->vm);
     VMApi api(*vm);
     ::havel::modules::setupDynamicWindowGlobals(api, ctx_->windowMonitor);
@@ -296,24 +333,24 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
         extensionLoader_->addSearchPath(path);
         return Value::makeBool(true);
       };
+#endif
 
+  // Global type() function - returns type name string for any value
+  options_.host_functions["type"] =
+  [this](const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeNull();
+  std::string typeName = getTypeName(args[0]);
+  auto ref = ctx_->vm->getHeap().allocateString(std::move(typeName));
+  return Value::makeStringId(ref.id);
+  };
 
-// Global type() function - returns type name string for any value
-options_.host_functions["type"] =
-[this](const std::vector<Value> &args) {
-if (args.empty()) return Value::makeNull();
-std::string typeName = getTypeName(args[0]);
-auto ref = ctx_->vm->getHeap().allocateString(std::move(typeName));
-return Value::makeStringId(ref.id);
-};
-
-// Global len() function - returns length of array/string/object/set
-options_.host_functions["len"] =
-[this](const std::vector<Value> &args) {
-if (args.empty()) return Value::makeInt(0);
-auto *vm = static_cast<VM *>(ctx_->vm);
-return vm->execLengthOp(args[0]);
-};
+  // Global len() function - returns length of array/string/object/set
+  options_.host_functions["len"] =
+  [this](const std::vector<Value> &args) {
+  if (args.empty()) return Value::makeInt(0);
+  auto *vm = static_cast<VM *>(ctx_->vm);
+  return vm->execLengthOp(args[0]);
+  };
 
  // Helper: check if a value is callable (host func, closure, or function object)
   auto isCallable = [](const Value &v) {

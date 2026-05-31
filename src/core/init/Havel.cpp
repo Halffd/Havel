@@ -37,6 +37,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <system_error>
+#include <chrono>
 
 namespace havel {
 
@@ -83,57 +84,58 @@ Havel::~Havel() {
 }
 
 void Havel::initialize(bool isStartup) {
-  if (debugging::debug_io) debug("Initializing HvC components...");
-  if (debugging::debug_io) debug("isStartup: " + std::to_string(isStartup));
-  if (debugging::debug_io) debug("GUI: " + std::to_string(guiMode));
+    if (debugging::debug_io) debug("Initializing HvC components...");
+    if (debugging::debug_io) debug("isStartup: " + std::to_string(isStartup));
+    if (debugging::debug_io) debug("GUI: " + std::to_string(guiMode));
 
-  // Initialize in dependency order
-  io = std::make_shared<IO>();
+    using Clock = std::chrono::steady_clock;
+    auto t0 = Clock::now();
+    auto report = [&](const char* label, Clock::time_point since) {
+        auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - since).count();
+        info("[startup] {} = {:.2f}ms", label, us / 1000.0);
+        return Clock::now();
+    };
+
+    // Initialize in dependency order
+    io = std::make_shared<IO>();
+    auto t = report("IO-create", t0);
   if (!io) {
     throw std::runtime_error("Failed to create IO manager");
   }
 
   // Create HotkeyManager (depends on IO)
-  hotkeyManager = std::make_shared<HotkeyManager>(io);
+    hotkeyManager = std::make_shared<HotkeyManager>(io);
+    t = report("HotkeyManager-create", t);
   if (!hotkeyManager) {
     throw std::runtime_error("Failed to create HotkeyManager");
   }
 
-  windowManager = std::make_shared<WindowManager>();
+    windowManager = std::make_shared<WindowManager>();
+    t = report("WindowManager-create", t);
   if (!windowManager) {
     throw std::runtime_error("Failed to create WindowManager");
   }
 
 
 
-  mpv = std::make_shared<MPVController>();
-  if (!mpv) {
-    throw std::runtime_error("Failed to create MPVController");
-  }
-  mpv->Initialize();
+    mpv = std::make_shared<MPVController>();
+    mpv->Initialize();
+    t = report("MPVController-init", t);
 
-  audioManager = std::make_shared<AudioManager>(AudioBackend::AUTO);
-  if (!audioManager) {
-    throw std::runtime_error("Failed to create AudioManager");
-  }
+    audioManager = std::make_shared<AudioManager>(AudioBackend::AUTO);
+    t = report("AudioManager-init", t);
 
-  brightnessManager = std::make_shared<BrightnessManager>();
-  if (!brightnessManager) {
-    throw std::runtime_error("Failed to create BrightnessManager");
-  }
-  brightnessManager->init();
+    brightnessManager = std::make_shared<BrightnessManager>();
+    brightnessManager->init();
+    t = report("BrightnessManager-init", t);
 
-  automationManager = std::make_shared<automation::AutomationManager>(io);
-  if (!automationManager) {
-    throw std::runtime_error("Failed to create AutomationManager");
-  }
+    automationManager = std::make_shared<automation::AutomationManager>(io);
+    t = report("AutomationManager-create", t);
 
   // Initialize NetworkManager (singleton)
-  networkManager = std::shared_ptr<net::NetworkManager>(
-      &net::NetworkManager::getInstance(), [](net::NetworkManager *) {});
-  if (!networkManager) {
-    throw std::runtime_error("Failed to create NetworkManager");
-  }
+    networkManager = std::shared_ptr<net::NetworkManager>(
+        &net::NetworkManager::getInstance(), [](net::NetworkManager *) {});
+    t = report("NetworkManager-init", t);
 
 #ifdef ENABLE_HAVEL_LANG
   if (debugging::debug_io) debug("Initializing bytecode VM and HostBridge...");
@@ -148,9 +150,10 @@ void Havel::initialize(bool isStartup) {
   hostContext->networkManager = networkManager.get();
   hostContext->mpvController = mpv.get();
 
-  // Create VM
-  bytecodeVM = std::make_unique<compiler::VM>(*hostContext);
-  hostContext->vm = bytecodeVM.get();
+    // Create VM
+        bytecodeVM = std::make_unique<compiler::VM>(*hostContext);
+        hostContext->vm = bytecodeVM.get();
+        t = report("VM-create", t);
 
 #ifdef HAVEL_ENABLE_LLVM
   // Initialize JIT if enabled
@@ -211,15 +214,20 @@ void Havel::initialize(bool isStartup) {
 
 
   // Create HostBridge
-  hostBridge = compiler::createHostBridge(*hostContext);
+        hostBridge = compiler::createHostBridge(*hostContext);
+        t = report("HostBridge-create", t);
 
-// Register stdlib modules
-registerStdLibWithVM(*hostBridge);
-hostBridge->install();
-for (const auto& [name, fn] : hostBridge->options().host_functions) {
-    bytecodeVM->registerHostFunction(name, fn);
-}
-hostBridge->runVmSetup();
+        // Register stdlib modules
+        registerStdLibWithVM(*hostBridge);
+        t = report("stdlib-register", t);
+        hostBridge->install();
+        t = report("HostBridge-install", t);
+        for (const auto& [name, fn] : hostBridge->options().host_functions) {
+            bytecodeVM->registerHostFunction(name, fn);
+        }
+        t = report("host-functions-register", t);
+        hostBridge->runVmSetup();
+        t = report("vm-setup", t);
 
 {
     std::string stdlibPath;
@@ -317,13 +325,14 @@ if (hotkeyManager) {
 #else
   info("Havel language disabled");
 #endif
-  if (WindowManagerDetector::IsX11()) {
-    Display *display = DisplayManager::GetDisplay();
-    if (!display) {
-      throw std::runtime_error("Failed to open X11 display");
+    if (WindowManagerDetector::IsX11()) {
+        Display *display = DisplayManager::GetDisplay();
+        if (!display) {
+            throw std::runtime_error("Failed to open X11 display");
+        }
     }
-  }
-	if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
+    report("Havel::initialize TOTAL", t0);
+    if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
 		std::thread([this]() {
 			auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
 			std::this_thread::sleep_for(std::chrono::seconds(s));

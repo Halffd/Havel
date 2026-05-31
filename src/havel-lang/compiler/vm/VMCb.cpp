@@ -354,18 +354,59 @@ DirectCallThunk VM::buildDirectCallThunk(CallbackId id) {
                         else break;
                     }
                 }
-                // Check type prototypes
-                if (!found_host && vm_func.isNull()) {
-                    std::string tn = "object";
-                    auto pt = prototypes_.find(tn);
-                    if (pt != prototypes_.end()) {
-                        auto mt = pt->second.find(method);
-                        if (mt != pt->second.end()) {
-                            host_idx = mt->second;
-                            found_host = true;
-                        }
-                    }
-                }
+      // Check type prototypes
+      if (!found_host && vm_func.isNull()) {
+        std::string tn;
+        if (recv->isStringValId() || recv->isStringId()) {
+          tn = "string";
+        } else if (recv->isInt()) {
+          tn = "int";
+        } else if (recv->isDouble()) {
+          tn = "float";
+        } else if (recv->isBool()) {
+          tn = "bool";
+        } else if (recv->isArrayId()) {
+          tn = "array";
+        } else if (recv->isObjectId()) {
+          tn = "object";
+        } else if (recv->isSetId()) {
+          tn = "set";
+        } else if (recv->isThreadId()) {
+          tn = "thread";
+        } else if (recv->isIntervalId()) {
+          tn = "interval";
+        } else if (recv->isTimeoutId()) {
+          tn = "timeout";
+        } else if (recv->isWaitGroupId()) {
+          tn = "waitgroup";
+        } else if (recv->isRangeId()) {
+          tn = "range";
+        } else if (recv->isHostFuncId()) {
+          std::string receiver_name;
+          if (recv->asHostFuncId() < host_function_names_.size()) {
+            receiver_name = host_function_names_[recv->asHostFuncId()];
+          }
+          std::string dotted_name = receiver_name + "." + method;
+          for (size_t i = 0; i < host_function_names_.size(); ++i) {
+            if (host_function_names_[i] == dotted_name) {
+              host_idx = static_cast<uint32_t>(i);
+              found_host = true;
+              found_via_module = true;
+              break;
+            }
+          }
+        }
+        if (!tn.empty()) {
+          auto pt = prototypes_.find(tn);
+          if (pt != prototypes_.end()) {
+            auto mt = pt->second.find(method);
+            if (mt != pt->second.end()) {
+              host_idx = mt->second;
+              found_host = true;
+            }
+          }
+        }
+      }
             }
 
             if (!found_host) { ok = false; break; }

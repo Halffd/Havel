@@ -1107,6 +1107,7 @@ if(ENABLE_HAVEL_LANG)
         ${CMAKE_SOURCE_DIR}/src/host/module/ModularHostBridges.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
         ${CMAKE_SOURCE_DIR}/src/extensions/ExtensionLoader.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp
     )
     add_library(havel_lang_core STATIC ${HAVEL_LANG_CORE_SOURCES})
     

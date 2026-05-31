@@ -2,6 +2,16 @@
  * LogModule.cpp - VM-native logging stdlib module
  */
 #include "LogModule.hpp"
+
+#ifdef HAVEL_CORE_PROFILE
+namespace havel::stdlib {
+
+void registerLogModule(const VMApi &) {}
+void registerDebugModule(const VMApi &) {}
+
+} // namespace havel::stdlib
+#endif // HAVEL_CORE_PROFILE
+#else
 #include "../../utils/Logger.hpp"
 #include "core/config/ConfigManager.hpp"
 #include <sstream>

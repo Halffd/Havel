@@ -22,7 +22,7 @@
 #include <memory>
 #include <string>
 #include <cstdlib>
-#include <chrono>
+#include "utils/StartupTiming.hpp"
 
 namespace havel {
 
@@ -57,24 +57,21 @@ public:
 
     void initializeFull(std::shared_ptr<IHostAPI> hostAPI, bool leanStartup = false) {
         if (initialized_) return;
-        using Clock = std::chrono::steady_clock;
-        auto t0 = Clock::now();
-        auto report = [&](const char* label, Clock::time_point since) {
-            auto ms = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - since).count();
-            ::havel::info("[startup] {} = {:.2f}ms", label, ms / 1000.0);
-            return Clock::now();
-        };
+        auto t0 = havel::startup_now();
 
         host::ServiceRegistry::instance().clear();
         initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes);
-        auto t = report("service-registry", t0);
+        auto t = havel::startup_now();
+        havel::startup_timing_report("service-registry", t0);
 
         hostContext_ = std::make_unique<HostContext>(createHostContext(hostAPI));
-        t = report("host-context", t);
+        havel::startup_timing_report("host-context", t);
+        t = havel::startup_now();
 
         vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
         hostContext_->vm = vm_.get();
-        t = report("vm-create", t);
+        havel::startup_timing_report("vm-create", t);
+        t = havel::startup_now();
 
         // Set up scheduler for goroutine/thread support
         vm_->setScheduler(&compiler::Scheduler::instance());
@@ -101,7 +98,8 @@ vm_->setJITCompiler(jitCompiler_.get());
 #endif
 
         hostBridge_ = compiler::createHostBridge(*hostContext_);
-        t = report("host-bridge-create", t);
+        havel::startup_timing_report("host-bridge-create", t);
+        t = havel::startup_now();
 
         // Set stdlib path BEFORE registration so pure-Havel stdlib modules
         // (type.hv, etc.) can be found by loadModule during init.
@@ -141,37 +139,44 @@ vm_->setJITCompiler(jitCompiler_.get());
         vm_->suspendGC();
         if (leanStartup) {
             if (config_.pureStdlib) {
-                registerPureStdLib(*vm_);
-                t = report("stdlib-register-pure", t);
+            registerPureStdLib(*vm_);
+            havel::startup_timing_report("stdlib-register-pure", t);
+            t = havel::startup_now();
 #ifndef HAVEL_PURE_VM
-                {
-                    compiler::VMApi ffiApi(*vm_);
-                    modules::ffi::registerFFIModule(ffiApi);
-                }
-                t = report("ffi-register", t);
-#endif
-            } else {
-                registerCoreStdLib(*vm_);
-                t = report("stdlib-register-core", t);
+            {
+                compiler::VMApi ffiApi(*vm_);
+                modules::ffi::registerFFIModule(ffiApi);
             }
+            havel::startup_timing_report("ffi-register", t);
+            t = havel::startup_now();
+#endif
+        } else {
+            registerCoreStdLib(*vm_);
+            havel::startup_timing_report("stdlib-register-core", t);
+            t = havel::startup_now();
+        }
         } else {
             registerStdLibWithVM(*hostBridge_);
-            t = report("stdlib-register-full", t);
+            havel::startup_timing_report("stdlib-register-full", t);
+            t = havel::startup_now();
         }
         vm_->resumeGC();
         hostBridge_->install(
             leanStartup ? compiler::HostBridge::InstallProfile::Core
             : compiler::HostBridge::InstallProfile::Full,
             !leanStartup);
-        t = report("host-bridge-install", t);
+        havel::startup_timing_report("host-bridge-install", t);
+        t = havel::startup_now();
 
         for (const auto& [name, fn] : hostBridge_->options().host_functions) {
             vm_->registerHostFunction(name, fn);
         }
-        t = report("host-functions-register", t);
+        havel::startup_timing_report("host-functions-register", t);
+        t = havel::startup_now();
 
         hostBridge_->runVmSetup();
-        t = report("vm-setup", t);
+        havel::startup_timing_report("vm-setup", t);
+        t = havel::startup_now();
 
         vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
 
@@ -202,9 +207,9 @@ vm_->addIntervalResult(timer_id, result);
         // Wire watcher registry for reactive when blocks
         watcher_registry_ = std::make_unique<compiler::WatcherRegistry>();
         vm_->setWatcherRegistry(watcher_registry_.get());
-        t = report("watcher-registry", t);
+        havel::startup_timing_report("watcher-registry", t);
 
-        report("TOTAL", t0);
+        havel::startup_timing_report("HavelEngine::initializeFull TOTAL", t0);
         initialized_ = true;
     }
 

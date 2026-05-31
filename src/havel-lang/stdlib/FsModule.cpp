@@ -265,18 +265,18 @@ void registerFsModule(const VMApi &api) {
 
     // fs.read
     api.registerFunction(
-        "fs.read", [api](const std::vector<Value> &args) {
-            if (args.empty())
-                return Value::makeNull();
-            std::string path = api.resolveString(args[0]);
-            std::ifstream file(path);
-            if (!file.is_open())
-                return Value::makeNull();
-            std::stringstream ss;
-            ss << file.rdbuf();
-            std::string content = ss.str();
-            return api.makeString(content);
-        });
+"fs.read", [api](const std::vector<Value> &args) {
+        if (args.empty())
+            return Value::makeNull();
+        std::string path = api.resolveString(args[0]);
+        std::ifstream file(path);
+        if (!file.is_open())
+            return Value::makeNull();
+        std::stringstream ss;
+        ss << file.rdbuf();
+        std::string content = ss.str();
+        return api.makeString(content);
+    });
 
     // fs.readDir
     api.registerFunction(

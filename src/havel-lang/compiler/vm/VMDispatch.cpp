@@ -275,17 +275,6 @@ case OpCode::INCLOCAL_POST: {
     }
     break;
   }
-        }
-        pushStack(old);  // Push old value first
-        if (old.isInt()) {
-            locals[abs] = Value::makeInt(old.asInt() + 1);
-        } else if (old.isDouble()) {
-            locals[abs] = Value::makeDouble(old.asDouble() + 1.0);
-        } else {
-            COMPILER_THROW("Cannot increment non-numeric value");
-        }
-        break;
-    }
 
 case OpCode::DECLOCAL_POST: {
     uint32_t var_index = instruction.operands[0].asInt();
@@ -308,19 +297,8 @@ case OpCode::DECLOCAL_POST: {
     } else {
       COMPILER_THROW("Cannot decrement non-numeric value");
     }
-    break;
-  }
-        }
-        pushStack(old);  // Push old value first
-        if (old.isInt()) {
-            locals[abs] = Value::makeInt(old.asInt() - 1);
-        } else if (old.isDouble()) {
-            locals[abs] = Value::makeDouble(old.asDouble() - 1.0);
-        } else {
-            COMPILER_THROW("Cannot decrement non-numeric value");
-        }
-        break;
-    }
+  break;
+}
 
 case OpCode::LOAD_UPVALUE: {
 uint32_t upvalue_index = instruction.operands[0].asInt();

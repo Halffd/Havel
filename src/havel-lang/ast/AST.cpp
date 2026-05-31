@@ -429,13 +429,25 @@ public:
 void visitTypeReference(const TypeReference &node) override {
     out << getIndent() << "TypeReference{" << node.name << "}" << std::endl;
 }
-void visitNullableType(const NullableType &node) override {
-    out << getIndent() << "NullableType{?" << std::endl;
-    indentLevel++;
-    printChildNode("inner: ", node.inner);
-    indentLevel--;
-    out << getIndent() << "}" << std::endl;
-}
+    void visitNullableType(const NullableType &node) override {
+        out << getIndent() << "NullableType{?" << std::endl;
+        indentLevel++;
+        printChildNode("inner: ", node.inner);
+        indentLevel--;
+        out << getIndent() << "}" << std::endl;
+    }
+    void visitGenericTypeRef(const GenericTypeRef &node) override {
+        out << getIndent() << "GenericTypeRef{" << node.name << "(";
+        for (size_t i = 0; i < node.typeArguments.size(); ++i) {
+            if (i > 0) out << ", ";
+            if (node.typeArguments[i]) {
+                out << node.typeArguments[i]->toString();
+            } else {
+                out << "nullptr";
+            }
+        }
+        out << ")}" << std::endl;
+    }
 void visitTryExpression(const TryExpression &node) override {
     out << getIndent() << "TryExpression {" << std::endl;
     indentLevel++;

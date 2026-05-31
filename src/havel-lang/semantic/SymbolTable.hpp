@@ -19,18 +19,19 @@ namespace havel::semantic {
  * Symbol categories
  */
 enum class SymbolKind {
-  Variable,
-  Constant,
-  Function,
-  Parameter,
-  Struct,
-  Enum,
-  Trait,
-  Builtin,
-  Field,
-  Variant,
-  Label,
-  Signal
+    Variable,
+    Constant,
+    Function,
+    Parameter,
+    Struct,
+    Enum,
+    Trait,
+    Builtin,
+    Field,
+    Variant,
+    Label,
+    Signal,
+    TypeParameter  // Generic type parameter (T, E, etc.)
 };
 
 /**
@@ -88,10 +89,10 @@ struct Symbol {
   bool isVariable() const { return kind == SymbolKind::Variable; }
   bool isConstant() const { return kind == SymbolKind::Constant; }
   bool isParameter() const { return kind == SymbolKind::Parameter; }
-  bool isType() const {
-    return kind == SymbolKind::Struct || kind == SymbolKind::Enum ||
-           kind == SymbolKind::Trait;
-  }
+    bool isType() const {
+        return kind == SymbolKind::Struct || kind == SymbolKind::Enum ||
+               kind == SymbolKind::Trait || kind == SymbolKind::TypeParameter;
+    }
 
   std::string toString() const;
 };

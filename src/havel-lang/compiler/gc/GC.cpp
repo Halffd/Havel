@@ -859,21 +859,13 @@ void GCHeap::markReference(const Value &value) {
 }
 
 void GCHeap::markRoots() {
-  size_t closure_count = 0;
-  size_t array_count = 0;
-  for (const auto &value : root_stack_snapshot_) {
-    if (value.isClosureId()) closure_count++;
-    if (value.isArrayId()) array_count++;
-    markReference(value);
-  }
-  for (const auto &value : root_locals_snapshot_) {
-    if (value.isClosureId()) closure_count++;
-    if (value.isArrayId()) array_count++;
-    markReference(value);
-  }
-fprintf(stderr, "[GC] markRoots: stack+locals had %d closures, %d arrays (stack=%zu locals=%zu)\n",
-            closure_count, array_count, root_stack_snapshot_.size(), root_locals_snapshot_.size());
-  if (root_globals_ptr_) {
+	for (const auto &value : root_stack_snapshot_) {
+		markReference(value);
+	}
+	for (const auto &value : root_locals_snapshot_) {
+		markReference(value);
+	}
+	if (root_globals_ptr_) {
         for (const auto &[_, value] : *root_globals_ptr_) {
             markReference(value);
         }
@@ -946,25 +938,21 @@ void GCHeap::markStep(size_t &work_budget) {
         }
   if (current.isClosureId()) {
         auto it = closures_.find(current.asClosureId());
-        if (it == closures_.end()) {
-          fprintf(stderr, "[GC] markStep: closure %u not found\n", current.asClosureId());
-          continue;
-        }
-        fprintf(stderr, "[GC] markStep: tracing closure %u with %zu upvalues\n", current.asClosureId(), it->second.upvalues.size());
-        for (const auto &cell : it->second.upvalues) {
-          if (!cell) {
-            continue;
-          }
-          if (cell->is_open) {
-            auto local_value = open_local_reader_snapshot_(cell->open_index);
-            if (local_value.has_value()) {
-fprintf(stderr, "[GC] open upvalue idx=%u isArray=%d isObj=%d\n", cell->open_index, local_value->isArrayId(), local_value->isObjectId());
-              markReference(*local_value);
-            }
-          } else {
-fprintf(stderr, "[GC] closed upvalue isArray=%d isObj=%d\n", cell->closed_value.isArrayId(), cell->closed_value.isObjectId());
-            markReference(cell->closed_value);
-          }
+		if (it == closures_.end()) {
+			continue;
+		}
+		for (const auto &cell : it->second.upvalues) {
+			if (!cell) {
+				continue;
+			}
+			if (cell->is_open) {
+				auto local_value = open_local_reader_snapshot_(cell->open_index);
+				if (local_value.has_value()) {
+					markReference(*local_value);
+				}
+			} else {
+				markReference(cell->closed_value);
+			}
         }
         continue;
       }

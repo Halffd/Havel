@@ -287,10 +287,10 @@ fn isNotIn() {
     // PRATT EXPRESSION PARSER
     // ===================================================================
 fn parseExpr(rbp) {
-    startToken = current()
-    tok = advance()
+  startToken = current()
+  tok = advance()
 
-    left = nud(tok)
+  left = nud(tok)
 
   if left == null {
     return error("Unexpected token " + tok.type, startToken.line, startToken.col)
@@ -360,8 +360,8 @@ fn parseExpr(rbp) {
             }
             left = CallExpression(left, args, [], startToken.line, startToken.col)
 
-        }
-        left
+  }
+  left
 
     }
     // ===================================================================

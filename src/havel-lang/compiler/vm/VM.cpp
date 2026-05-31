@@ -922,55 +922,56 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
 }
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
-executing_in_fiber_ = false;
-while (frame_count_ > stop_frame_depth) {
-        // Check if exit was requested (from exit() host function)
-        if (exit_requested_.load()) {
-            break;
-        }
-
-    // Instruction limit check - prevents infinite loops
-    if (max_instructions_ > 0) {
-        executed_instructions_++;
-        if (executed_instructions_ > max_instructions_) {
-            throw std::runtime_error("VM instruction limit exceeded (" +
-                std::to_string(max_instructions_) + ") - possible infinite loop");
-        }
+  executing_in_fiber_ = false;
+  size_t fast_path_counter = 0;
+  const bool has_instruction_limit = (max_instructions_ > 0);
+  const bool has_timer = static_cast<bool>(timer_check_func_);
+  const bool has_profiling = profiling_enabled_;
+  const bool has_tracing = trace_execution_;
+  while (frame_count_ > stop_frame_depth) {
+    fast_path_counter++;
+    if ((fast_path_counter & 4095) == 0) {
+      if (exit_requested_.load()) {
+        break;
+      }
     }
 
-        // Periodically check for expired timers
-        if (timer_check_func_) {
-            instructions_since_timer_check_++;
-            if (instructions_since_timer_check_ >= timer_check_interval_) {
-                timer_check_func_();
-                instructions_since_timer_check_ = 0;
-            }
-        }
-    
-    // CRITICAL: Capture ALL frame data by value BEFORE any mutation!
-    // doCall() may cause vector reallocation, invalidating all
-    // references/indices.
+    if (has_instruction_limit) {
+      executed_instructions_++;
+      if (executed_instructions_ > max_instructions_) {
+        throw std::runtime_error("VM instruction limit exceeded (" +
+          std::to_string(max_instructions_) + ") - possible infinite loop");
+      }
+    }
+
+    if (has_timer) {
+      instructions_since_timer_check_++;
+      if (instructions_since_timer_check_ >= timer_check_interval_) {
+        timer_check_func_();
+        instructions_since_timer_check_ = 0;
+      }
+    }
+
     size_t active_frame_idx = frame_count_ - 1;
 
-    // Capture frame data by value - do NOT keep references!
     const auto *function = frame_arena_[active_frame_idx].function;
     uint32_t ip = frame_arena_[active_frame_idx].ip;
     size_t entry_frame_count = frame_count_;
 
-        if (ip >= function->instructions.size()) {
-            stack.push(nullptr);
-            executeInstruction(Instruction{OpCode::RETURN});
-            continue;
-  }
+    if (ip >= function->instructions.size()) {
+      stack.push(nullptr);
+      executeInstruction(Instruction{OpCode::RETURN});
+      continue;
+    }
 
-  const auto &instruction = function->instructions[ip];
+    const auto &instruction = function->instructions[ip];
 
-        try {
-            if (profiling_enabled_) {
-                opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
-                executed_instructions_++;
-            }
-            if (trace_execution_ && current_chunk) {
+    try {
+      if (has_profiling) {
+        opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
+        executed_instructions_++;
+      }
+      if (has_tracing && current_chunk) {
                 auto funcName = function->name.empty() ? std::string("<anon>") : function->name;
                 BytecodeDisassembler::Options opts;
                 opts.showLineNumbers = false;
@@ -985,7 +986,7 @@ while (frame_count_ > stop_frame_depth) {
                              static_cast<unsigned>(ip), disasm.c_str());
             }
             executeInstruction(instruction);
-      if (exit_requested_.load()) {
+      if ((fast_path_counter & 4095) == 0 && exit_requested_.load()) {
         break;
       }
 if (suspension_requested_) {

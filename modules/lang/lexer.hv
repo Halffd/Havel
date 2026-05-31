@@ -413,97 +413,97 @@ fn addToken(ttype, value) {
         }
     }
 fn scanString(quote, isFString, isRegexString) {
- advance()
+advance()
 
-    s = ""
-        isInterpolated = false
-        if isFString {
-            isInterpolated = true
+s = ""
+isInterpolated = false
+if isFString {
+isInterpolated = true
 
-        }
-    while current() != null and current() != quote and current() != "\n" {
-    if current() == "\\" {
-            advance()
-            c = current()
-            esc = SIMPLE_ESCAPES[c]
-        if esc != null { s = s + esc }
-        else if c == quote { s = s + quote }
-        else if c == "x" {
-                    h1 = peek(1)
-                    h2 = peek(2)
-                    if h1 != null and h2 != null and isHexDigit(h1) and isHexDigit(h2) {
-                        advance()
-                        advance()
-                        advance()
-                        s = s + "\\x" + h1 + h2
-                    }
-                    else {
-                        s = s + "\\x"
-                    }
-                }
-                else if c == "u" {
-                    h1 = peek(1)
-                    h2 = peek(2)
-                    h3 = peek(3)
-                    h4 = peek(4)
-                    if h1 != null and h2 != null and h3 != null and h4 != null and isHexDigit(h1) and isHexDigit(h2) and isHexDigit(h3) and isHexDigit(h4) {
-                        advance()
-                        advance()
-                        advance()
-                        advance()
-                        advance()
-                        s = s + "\\u" + h1 + h2 + h3 + h4
-                    }
-                    else {
-                        s = s + "\\u"
-                    }
-                }
-                else {
-                    s = s + "\\" + c
-                }
-        if c != null and c != "x" and c != "u" {
-            advance()
-        }
-        print("DBG_ESC: after c=" + c + " slen=" + str(#s) + " pos=" + str(pos) + " cur=" + str(current()) + " cur_eq_quote=" + str(current() == quote) + " quote=" + str(quote) + "\n")
-    }
-            else if current() == "{" and isFString {
-             isInterpolated = true
-             s = s + current()
-             advance()
-            }
+}
+while current() != null and current() != quote and current() != "\n" {
+if current() == "\\" {
+advance()
+c = current()
+esc = SIMPLE_ESCAPES[c]
+if esc != null { s = s + esc }
+else if c == quote { s = s + quote }
+else if c == "x" {
+h1 = peek(1)
+h2 = peek(2)
+if h1 != null and h2 != null and isHexDigit(h1) and isHexDigit(h2) {
+advance()
+advance()
+advance()
+s = s + "\\x" + h1 + h2
+}
+else {
+s = s + "\\x"
+}
+}
+else if c == "u" {
+h1 = peek(1)
+h2 = peek(2)
+h3 = peek(3)
+h4 = peek(4)
+if h1 != null and h2 != null and h3 != null and h4 != null and isHexDigit(h1) and isHexDigit(h2) and isHexDigit(h3) and isHexDigit(h4) {
+advance()
+advance()
+advance()
+advance()
+advance()
+s = s + "\\u" + h1 + h2 + h3 + h4
+}
+else {
+s = s + "\\u"
+}
+}
+else {
+s = s + "\\" + c
+}
+if c != null and c != "x" and c != "u" {
+advance()
+}
+
+}
+else if current() == "{" and isFString {
+isInterpolated = true
+s = s + current()
+advance()
+}
 else if current() == "$" {
-    advance()
-    if current() != null and (isAlpha(current()) or current() == "_" or current() == "@") {
-      isInterpolated = true
-      s = s + "${"
-      s = s + current()
-      advance()
-      while current() != null and (isAlphaNum(current()) or current() == "_") {
-        s = s + current()
-        advance()
-      }
-      if current() == "?" {
-        s = s + "?"
-        advance()
-      }
-      s = s + "}"
-    }
-    else {
-      s = s + "$"
-      continue
-    }
-  }
-            else {
-                s = s + current()
-                advance()
+advance()
+if current() != null and (isAlpha(current()) or current() == "_" or current() == "@") {
+isInterpolated = true
+s = s + "${"
+s = s + current()
+advance()
+while current() != null and (isAlphaNum(current()) or current() == "_") {
+s = s + current()
+advance()
+}
+if current() == "?" {
+s = s + "?"
+advance()
+}
+s = s + "}"
+}
+else {
+s = s + "$"
+continue
+}
+}
+else {
+s = s + current()
+advance()
 
-            }
-        }
-        if current() == quote {
-            advance()
-        }
-        else {
-            error("Unterminated string")
+}
+}
+_endQuote = current()
+if _endQuote == quote {
+advance()
+} else {
+error("Unterminated string")
 
         }
         if isRegexString {

@@ -319,9 +319,10 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/window/*.cpp"
     "src/window/backends/*.cpp"
     "src/window/strategies/*.cpp"
-    "src/utils/*.cpp"
-    "src/media/*.cpp"
-    "src/ai/ocr/*.cpp"
+"src/utils/*.cpp"
+"src/utils/*.c"
+"src/media/*.cpp"
+"src/ai/ocr/*.cpp"
 )
 # Non-Qt host sources (always built)
 file(GLOB_RECURSE _HOST_CORE_SOURCES
@@ -806,6 +807,10 @@ endif()  # QT_BACKEND_AVAILABLE
 # MAIN EXECUTABLE
 # ==============================================================================
 add_library(havel_core STATIC ${CORE_SOURCES})
+set_target_properties(havel_core PROPERTIES
+C_STANDARD 17
+C_STANDARD_REQUIRED ON
+)
 set_source_files_properties(
     src/core/hotkey/HotkeyActionContext.cpp
     PROPERTIES COMPILE_FLAGS "-ftls-model=initial-exec"
@@ -883,15 +888,17 @@ set(LSP_SOURCES
     src/havel-lang/ast/AST.cpp
     src/havel-lang/lexer/Lexer.cpp
     src/havel-lang/parser/Parser.cpp
-    src/utils/Logger.cpp
+    src/utils/LoggerC.c
 )
 
 add_executable(havel-lsp ${LSP_SOURCES})
 
 set_target_properties(havel-lsp PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF
+CXX_STANDARD 23
+CXX_STANDARD_REQUIRED ON
+CXX_EXTENSIONS OFF
+C_STANDARD 17
+C_STANDARD_REQUIRED ON
 )
 
 target_compile_options(havel-lsp PRIVATE -fno-lto)
@@ -904,8 +911,9 @@ target_include_directories(havel-lsp PRIVATE
 )
 
 target_link_libraries(havel-lsp PRIVATE
- nlohmann_json::nlohmann_json
- )
+nlohmann_json::nlohmann_json
+Threads::Threads
+)
 
  if(ENABLE_COVERAGE)
  target_compile_options(havel-lsp PRIVATE --coverage)
@@ -920,14 +928,16 @@ set(HVTEST_SOURCES
   src/hvtest/main.cpp
   src/hvtest/smoke_runner.cpp
   src/hvtest/test_scheduler_rig.cpp
-  src/utils/Logger.cpp
+  src/utils/LoggerC.c
 )
 
 add_executable(hvtest ${HVTEST_SOURCES})
 set_target_properties(hvtest PROPERTIES
-  CXX_STANDARD 23
-  CXX_STANDARD_REQUIRED ON
-  CXX_EXTENSIONS OFF
+CXX_STANDARD 23
+CXX_STANDARD_REQUIRED ON
+CXX_EXTENSIONS OFF
+C_STANDARD 17
+C_STANDARD_REQUIRED ON
 )
 
 target_compile_options(hvtest PRIVATE -fno-lto)

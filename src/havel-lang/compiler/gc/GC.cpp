@@ -15,6 +15,27 @@ constexpr size_t kDefaultWorkBudget = 1024;
 constexpr size_t kMaxIterationsPerStep = 100000;
 }
 
+void GCHeap::checkHeapLimit(size_t extra_bytes) {
+    uint64_t current = approx_heap_bytes_.load(std::memory_order_relaxed);
+    if (current + extra_bytes > heap_max_bytes_) {
+        throw std::runtime_error("VM out of memory: heap limit exceeded (" +
+            std::to_string(heap_max_bytes_) + " bytes)");
+    }
+}
+
+void GCHeap::addHeapBytes(size_t bytes) {
+    approx_heap_bytes_.fetch_add(bytes, std::memory_order_relaxed);
+}
+
+void GCHeap::subHeapBytes(size_t bytes) {
+    uint64_t cur = approx_heap_bytes_.load(std::memory_order_relaxed);
+    if (cur >= bytes) {
+        approx_heap_bytes_.fetch_sub(bytes, std::memory_order_relaxed);
+    } else {
+        approx_heap_bytes_.store(0, std::memory_order_relaxed);
+    }
+}
+
 void GCHeap::reset() {
     closures_.clear();
     arrays_.clear();
@@ -81,10 +102,12 @@ void GCHeap::reset() {
     object_ages_.clear();
     set_ages_.clear();
     closure_ages_.clear();
+    string_ages_.clear();
     old_arrays_.clear();
     old_objects_.clear();
     old_sets_.clear();
     old_closures_.clear();
+    old_strings_.clear();
 
     current_collection_full_ = false;
     minor_collections_since_full_ = 0;
@@ -102,17 +125,23 @@ void GCHeap::reset() {
 
 ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    size_t est = sizeof(RuntimeClosure) + closure.upvalues.size() * sizeof(std::shared_ptr<UpvalueCell>);
+    checkHeapLimit(est);
     const uint32_t id = next_closure_id_++;
     closures_.emplace(id, std::move(closure));
     closure_ages_[id] = 0;
     old_closures_.erase(id);
+    addHeapBytes(est);
     return ClosureRef{.id = id};
 }
 
 StringRef GCHeap::allocateString(std::string value) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    size_t est = value.size() + 1;
+    checkHeapLimit(est);
     const uint32_t id = next_string_id_++;
     strings_.emplace(id, std::move(value));
+    addHeapBytes(est);
     return StringRef{.id = id};
 }
 
@@ -130,52 +159,69 @@ const std::string *GCHeap::string(uint32_t id) const {
 
 ArrayRef GCHeap::allocateArray() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    size_t est = sizeof(ArrayEntry);
+    checkHeapLimit(est);
     const uint32_t id = next_array_id_++;
     arrays_[id] = {};
     array_ages_[id] = 0;
     old_arrays_.erase(id);
+    addHeapBytes(est);
     return ArrayRef{.id = id};
 }
 
 ObjectRef GCHeap::allocateObject(bool sorted) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    size_t est = sizeof(ObjectEntry);
+    checkHeapLimit(est);
     const uint32_t id = next_object_id_++;
     ObjectEntry entry;
     entry.sorted = sorted;
     objects_[id] = std::move(entry);
     object_ages_[id] = 0;
     old_objects_.erase(id);
+    addHeapBytes(est);
     return ObjectRef{.id = id, .sorted = sorted};
 }
 
 SetRef GCHeap::allocateSet() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    size_t est = sizeof(std::unordered_map<std::string, Value>);
+    checkHeapLimit(est);
     const uint32_t id = next_set_id_++;
     sets_[id] = {};
     set_ages_[id] = 0;
     old_sets_.erase(id);
+    addHeapBytes(est);
     return SetRef{.id = id};
 }
 
 RangeRef GCHeap::allocateRange(int64_t start, int64_t end, int64_t step) {
+    size_t est = sizeof(Range);
+    checkHeapLimit(est);
     const uint32_t id = next_range_id_++;
     Range range;
     range.start = start;
     range.end = end;
     range.step = step;
     ranges_[id] = range;
+    addHeapBytes(est);
     return RangeRef{.id = id};
 }
 
 ErrorRef GCHeap::allocateError(const std::string &errorType,
-    const std::string &message,
-    const std::string &stackTrace, uint32_t line, uint32_t column) {
+const std::string &message,
+const std::string &stackTrace, uint32_t line, uint32_t column) {
+    size_t est = errorType.size() + message.size() + stackTrace.size() + sizeof(ErrorObject);
+    checkHeapLimit(est);
     const uint32_t id = next_error_id_++;
     errors_[id] = ErrorObject(errorType, message, stackTrace, line, column);
+    addHeapBytes(est);
     return ErrorRef{.id = id};
 }
 
 IteratorRef GCHeap::allocateIterator(const Value &iterable) {
+    size_t est = sizeof(Iterator);
+    checkHeapLimit(est);
     const uint32_t id = next_iterator_id_++;
     Iterator iter;
     iter.iterable = iterable;
@@ -185,6 +231,7 @@ IteratorRef GCHeap::allocateIterator(const Value &iterable) {
         auto *obj = object(iterable.asObjectId());
         if (obj) {
             iter.keys = obj->getKeys();
+            est += iter.keys.size() * sizeof(std::string);
         }
     } else if (iterable.isSetId()) {
         auto *setObj = set(iterable.asSetId());
@@ -195,10 +242,12 @@ IteratorRef GCHeap::allocateIterator(const Value &iterable) {
                 }
                 iter.keys.push_back(key);
             }
+            est += iter.keys.size() * sizeof(std::string);
         }
     }
 
     iterators_[id] = std::move(iter);
+    addHeapBytes(est);
     return IteratorRef{.id = id};
 }
 
@@ -409,11 +458,14 @@ const GCHeap::Range *GCHeap::range(uint32_t id) const {
         return it == iterators_.end() ? nullptr : &it->second;
     }
 
-    BoundMethodRef GCHeap::allocateBoundMethod(Value fn, Value self) {
-        uint32_t id = next_bound_method_id_++;
-        bound_methods_[id] = BoundMethod{std::move(fn), std::move(self)};
-        return BoundMethodRef{id};
-    }
+BoundMethodRef GCHeap::allocateBoundMethod(Value fn, Value self) {
+    size_t est = sizeof(BoundMethod);
+    checkHeapLimit(est);
+    const uint32_t id = next_bound_method_id_++;
+    bound_methods_[id] = BoundMethod{fn, self};
+    addHeapBytes(est);
+    return BoundMethodRef{.id = id};
+}
 
     GCHeap::BoundMethod *GCHeap::boundMethod(uint32_t id) {
         auto it = bound_methods_.find(id);
@@ -533,7 +585,15 @@ void GCHeap::maybeCollectGarbage(
 
     if (collection_requested_ && gc_state_ == IncrementalState::Idle) {
         stepGarbageCollection(stack_values, locals, globals, active_closure_ids,
-            open_local_reader, kDefaultWorkBudget);
+                              open_local_reader, kDefaultWorkBudget);
+    } else if (gc_state_ != IncrementalState::Idle) {
+        root_stack_snapshot_ = stack_values;
+        root_locals_snapshot_ = locals;
+        root_closures_snapshot_ = active_closure_ids;
+        open_local_reader_snapshot_ = open_local_reader;
+        if (gc_state_ == IncrementalState::Mark) {
+            markRoots();
+        }
     }
 }
 
@@ -822,10 +882,13 @@ void GCHeap::markRoots() {
         for (uint32_t id : old_sets_) {
             markReference(Value::makeSetId(id));
         }
-        for (uint32_t id : old_closures_) {
-            markReference(Value::makeClosureId(id));
-        }
-    }
+for (uint32_t id : old_closures_) {
+markReference(Value::makeClosureId(id));
+}
+for (uint32_t id : old_strings_) {
+markReference(Value::makeStringId(id));
+}
+}
 }
 
 void GCHeap::markStep(size_t &work_budget) {
@@ -1083,29 +1146,41 @@ void GCHeap::sweepStep(size_t &work_budget) {
             }
             break;
 
-        case IncrementalState::SweepStrings:
-            if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
-                sweep_keys_.clear();
-                for (const auto &kv : strings_) {
-                    sweep_keys_.push_back(kv.first);
-                }
-                sweep_index_ = 0;
-                sweep_phase_ = gc_state_;
+    case IncrementalState::SweepStrings:
+        if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
+            sweep_keys_.clear();
+            for (const auto &kv : strings_) {
+                sweep_keys_.push_back(kv.first);
             }
-            while (work_budget > 0 && sweep_index_ < sweep_keys_.size()) {
-                uint32_t id = sweep_keys_[sweep_index_++];
-                work_budget--;
+            sweep_index_ = 0;
+            sweep_phase_ = gc_state_;
+        }
+        while (work_budget > 0 && sweep_index_ < sweep_keys_.size()) {
+            uint32_t id = sweep_keys_[sweep_index_++];
+            work_budget--;
 
-                if (marked_strings_.find(id) == marked_strings_.end()) {
-                    strings_.erase(id);
-                    recovered_in_cycle_++;
-                }
+            auto it = strings_.find(id);
+            if (it == strings_.end()) {
+                continue;
             }
-            if (sweep_index_ >= sweep_keys_.size()) {
-                gc_state_ = IncrementalState::SweepIterators;
-                sweep_index_ = 0;
+
+            const bool is_old = old_strings_.find(id) != old_strings_.end();
+            const bool can_collect = current_collection_full_ || !is_old;
+
+            if (can_collect && marked_strings_.find(id) == marked_strings_.end()) {
+                strings_.erase(it);
+                string_ages_.erase(id);
+                old_strings_.erase(id);
+                recovered_in_cycle_++;
+            } else if (!is_old) {
+                ageOrPromoteString(id);
             }
-            break;
+        }
+        if (sweep_index_ >= sweep_keys_.size()) {
+            gc_state_ = IncrementalState::SweepIterators;
+            sweep_index_ = 0;
+        }
+        break;
 
         case IncrementalState::SweepIterators:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
@@ -1428,9 +1503,11 @@ void GCHeap::completeCollection() {
         minor_collections_since_full_++;
     }
 
-    if (debugging::debug_gc)
-        std::cerr << "[GC] Collection complete: recovered " << recovered_in_cycle_
-                  << " objects, new budget: " << allocation_budget_ << "\n";
+if (debugging::debug_gc)
+std::cerr << "[GC] Collection complete: recovered " << recovered_in_cycle_
+<< " objects, new budget: " << allocation_budget_ << "\n";
+
+approx_heap_bytes_.store(stats().heap_size, std::memory_order_relaxed);
 }
 
 void GCHeap::ageOrPromoteArray(uint32_t id) {
@@ -1470,6 +1547,16 @@ void GCHeap::ageOrPromoteClosure(uint32_t id) {
     }
     if (age >= promotion_age_threshold_) {
         old_closures_.insert(id);
+    }
+}
+
+void GCHeap::ageOrPromoteString(uint32_t id) {
+    auto &age = string_ages_[id];
+    if (age < std::numeric_limits<uint8_t>::max()) {
+        age++;
+    }
+    if (age >= promotion_age_threshold_) {
+        old_strings_.insert(id);
     }
 }
 

@@ -858,13 +858,21 @@ void GCHeap::markReference(const Value &value) {
 }
 
 void GCHeap::markRoots() {
-    for (const auto &value : root_stack_snapshot_) {
-        markReference(value);
-    }
-    for (const auto &value : root_locals_snapshot_) {
-        markReference(value);
-    }
-    if (root_globals_ptr_) {
+  size_t closure_count = 0;
+  size_t array_count = 0;
+  for (const auto &value : root_stack_snapshot_) {
+    if (value.isClosureId()) closure_count++;
+    if (value.isArrayId()) array_count++;
+    markReference(value);
+  }
+  for (const auto &value : root_locals_snapshot_) {
+    if (value.isClosureId()) closure_count++;
+    if (value.isArrayId()) array_count++;
+    markReference(value);
+  }
+  spdlog::info("[GC] markRoots: stack+locals had {} closures, {} arrays (stack={} locals={})", 
+               closure_count, array_count, root_stack_snapshot_.size(), root_locals_snapshot_.size());
+  if (root_globals_ptr_) {
         for (const auto &[_, value] : *root_globals_ptr_) {
             markReference(value);
         }
@@ -938,10 +946,10 @@ void GCHeap::markStep(size_t &work_budget) {
   if (current.isClosureId()) {
         auto it = closures_.find(current.asClosureId());
         if (it == closures_.end()) {
-          if (debugging::debug_gc) std::cerr << "[GC] markStep: closure " << current.asClosureId() << " not found\n";
+          spdlog::warn("[GC] markStep: closure {} not found", current.asClosureId());
           continue;
         }
-        if (debugging::debug_gc) std::cerr << "[GC] markStep: tracing closure " << current.asClosureId() << " with " << it->second.upvalues.size() << " upvalues\n";
+        spdlog::info("[GC] markStep: tracing closure {} with {} upvalues", current.asClosureId(), it->second.upvalues.size());
         for (const auto &cell : it->second.upvalues) {
           if (!cell) {
             continue;
@@ -949,29 +957,11 @@ void GCHeap::markStep(size_t &work_budget) {
           if (cell->is_open) {
             auto local_value = open_local_reader_snapshot_(cell->open_index);
             if (local_value.has_value()) {
-              if (debugging::debug_gc) std::cerr << "[GC]   open upvalue idx=" << cell->open_index << " isArray=" << local_value->isArrayId() << " isObj=" << local_value->isObjectId() << "\n";
+              spdlog::info("[GC]   open upvalue idx={} isArray={} isObj={}", cell->open_index, local_value->isArrayId(), local_value->isObjectId());
               markReference(*local_value);
             }
           } else {
-            if (debugging::debug_gc) std::cerr << "[GC]   closed upvalue isArray=" << cell->closed_value.isArrayId() << " isObj=" << cell->closed_value.isObjectId() << "\n";
-            markReference(cell->closed_value);
-          }
-        }
-        continue;
-      }
-        if (debugging::debug_gc) std::cerr << "[GC] markStep: tracing closure " << current.asClosureId() << " with " << it->second.upvalues.size() << " upvalues\n";
-        for (const auto &cell : it->second.upvalues) {
-          if (!cell) {
-            continue;
-          }
-          if (cell->is_open) {
-            auto local_value = open_local_reader_snapshot_(cell->open_index);
-            if (local_value.has_value()) {
-if (debugging::debug_gc) std::cerr << "[GC] open upvalue idx=" << cell->open_index << "\n";
-              markReference(*local_value);
-            }
-          } else {
-if (debugging::debug_gc) std::cerr << "[GC] closed upvalue\n";
+            spdlog::info("[GC]   closed upvalue isArray={} isObj={}", cell->closed_value.isArrayId(), cell->closed_value.isObjectId());
             markReference(cell->closed_value);
           }
         }

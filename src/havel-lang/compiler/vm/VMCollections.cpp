@@ -421,16 +421,19 @@ if (container.isSetId()) {
         } else {
           auto hostIt = host_function_globals_.find(*key);
           if (hostIt != host_function_globals_.end()) {
-            result = hostIt->second;
-          }
-        }
-        if (frame.ip < frame.function->type_feedback.size()) {
-          frame.function->type_feedback[frame.ip].result_type_mask |= getFeedbackMask(result);
-        }
-        pushStack(result);
-        break;
+      result = hostIt->second;
       }
-      auto key = resolveKey(index_or_key);
+    }
+    if (hot_func_cb_) {
+      auto &frame2 = currentFrame();
+      if (frame2.ip < frame2.function->type_feedback.size()) {
+        frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
+      }
+    }
+    pushStack(result);
+    break;
+  }
+  auto key = resolveKey(index_or_key);
       if (!key) {
         COMPILER_THROW("OBJECT index expects string/number/bool key");
       }
@@ -438,12 +441,15 @@ if (container.isSetId()) {
       if (!object) {
         COMPILER_THROW("ARRAY_GET unknown object id");
       }
-      auto kv = object->find(*key);
-      Value result = (kv == object->end() ? Value::makeNull() : kv->second);
-      if (frame.ip < frame.function->type_feedback.size()) {
-        frame.function->type_feedback[frame.ip].result_type_mask |= getFeedbackMask(result);
-      }
-      pushStack(result);
+  auto kv = object->find(*key);
+  Value result = (kv == object->end() ? Value::makeNull() : kv->second);
+  if (hot_func_cb_) {
+    auto &frame2 = currentFrame();
+    if (frame2.ip < frame2.function->type_feedback.size()) {
+      frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
+    }
+  }
+  pushStack(result);
       break;
     }
 

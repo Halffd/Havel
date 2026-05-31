@@ -231,8 +231,10 @@ fn inferExpr(node, env) {
   if k == "BacktickExpression" { return TYPE_STR }
   if k == "MatchExpression" { return TYPE_UNKNOWN }
   if k == "AssignmentExpression" { return inferExpr(node.value, env) }
-  if k == "CompoundAssignment" { return inferExpr(node.value, env) }
-  TYPE_UNKNOWN
+if k == "CompoundAssignment" { return inferExpr(node.value, env) }
+if k == "WaitExpression" { inferExpr(node.target, env); return TYPE_UNKNOWN }
+if k == "WaitGroupExpression" { return TYPE_UNKNOWN }
+TYPE_UNKNOWN
 }
 
 fn inferStmt(node, env) {
@@ -371,6 +373,15 @@ fn inferStmt(node, env) {
     return
   }
   if k == "SleepStatement" { return }
+if k == "DeferStatement" {
+	if node.expression != null { inferExpr(node.expression, env) }
+	return
+}
+if k == "WaitExpression" {
+	if node.target != null { inferExpr(node.target, env) }
+	return
+}
+if k == "WaitGroupExpression" { return }
 }
 
 fn inferProgram(program) {

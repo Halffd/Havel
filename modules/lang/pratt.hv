@@ -264,40 +264,39 @@ IMPLICIT_CALL_STARTERS = {
 // Parser object — encapsulates parsing state
 // ===================================================================
 fn Parser(tokenList) {
-    tokens = tokenList
-    pos = 0
-    errors = []
-    inMatchExpr = false
-    allowBraceSugar = true
-    _dbg_s = null
-    _dbg_cnt = 0
+  tokens = tokenList
+  pos = 0
+  errors = []
+  inMatchExpr = false
+  allowBraceSugar = true
+  _dbg_s = null
+  _dbg_cnt = 0
+  _eof = {type: "EOF", value: "", line: 0, col: 0}
+  _cur = pos < tokens.len ? tokens[pos] : _eof
 
-    // --- Token access ---
   fn at(offset) {
     i = pos + offset
     if i < 0: i = 0
     if i < tokens.len: return tokens[i]
-    else: return {type: "EOF", value: "", line: 0, col: 0}
-
+    else: return _eof
   }
   fn current() {
-    return at(0)
-
+    return _cur
   }
   fn advance() {
     if pos < tokens.len {
       t = tokens[pos]
       pos = pos + 1
+      _cur = pos < tokens.len ? tokens[pos] : _eof
       return t
     }
     else {
-      return {type: "EOF", value: "", line: 0, col: 0}
-
-        }
+      _cur = _eof
+      return _eof
     }
+  }
   fn notEOF() {
-    return pos < tokens.len and current().type != "EOF"
-
+    return _cur.type != "EOF"
   }
   fn expect(ttype) {
     t = current()

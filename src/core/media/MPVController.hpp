@@ -58,8 +58,8 @@ namespace havel {
         bool IsSocketAlive();
 
     private:
-        bool EnsureInitialized();
-        bool ConnectSocket();
+    bool EnsureInitialized();
+    bool ConnectSocket(int retries, int delay_ms);
 
         bool initialized;
         std::string socket_path;

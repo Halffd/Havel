@@ -23,16 +23,16 @@ MPVController::MPVController() {
 MPVController::~MPVController() { Shutdown(); }
 
 bool MPVController::Initialize() {
-  if (initialized)
+    if (initialized)
+        return true;
+    debug("Initializing MPV controller");
+    initialized = true;
+    if (ConnectSocket(0, 0)) {
+        debug("Connected to MPV socket");
+    } else {
+        debug("MPV socket not open");
+    }
     return true;
-  debug("Initializing MPV controller");
-  initialized = true;
-  if (ConnectSocket()) {
-    debug("Connected to MPV socket");
-  } else {
-    debug("MPV socket not open");
-  }
-  return true;
 }
 
 void MPVController::Shutdown() {
@@ -49,42 +49,44 @@ bool MPVController::EnsureInitialized() {
     return Initialize();
   return true;
 }
-bool MPVController::ConnectSocket() {
-  if (socket_fd != -1) {
-    close(socket_fd);
-    socket_fd = -1;
-  }
-
-  socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (socket_fd < 0)
-    return false;
-
-  struct sockaddr_un addr{};
-  memset(&addr, 0, sizeof(addr));
-  addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
-
-  int retries = 0;
-  while (connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-    if (errno == ECONNREFUSED) {
-      // Stale socket – try to remove it
-      unlink(socket_path.c_str());
-      // Optional: small delay before retry
+bool MPVController::ConnectSocket(int retries, int delay_ms) {
+    if (socket_fd != -1) {
+        close(socket_fd);
+        socket_fd = -1;
     }
-    if (++retries >= max_retries) {
-      close(socket_fd);
-      socket_fd = -1;
-      return false;
+
+    socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (socket_fd < 0)
+        return false;
+
+    struct sockaddr_un addr{};
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
+
+    int attempt = 0;
+    while (connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        if (errno == ECONNREFUSED) {
+            unlink(socket_path.c_str());
+        }
+        if (++attempt > retries) {
+            close(socket_fd);
+            socket_fd = -1;
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
-  }
-  return true;
+    return true;
+}
+
+bool MPVController::Reconnect() {
+    return ConnectSocket(max_retries, retry_delay_ms);
 }
 void MPVController::SendCommand(const std::vector<std::string> &cmd) {
   if (!EnsureInitialized())
     return;
 
-  if (!IsSocketAlive() && !ConnectSocket()) {
+  if (!IsSocketAlive() && !ConnectSocket(max_retries, retry_delay_ms)) {
     std::cerr << "MPV socket not available\n";
     return;
   }
@@ -98,7 +100,7 @@ void MPVController::SendCommand(const std::vector<std::string> &cmd) {
   json += "]}\n";
 
   for (int attempt = 0; attempt < max_retries; ++attempt) {
-    if (!IsSocketAlive() && !ConnectSocket())
+    if (!IsSocketAlive() && !ConnectSocket(max_retries, retry_delay_ms))
       continue;
 
     ssize_t sent = send(socket_fd, json.c_str(), json.size(), 0);
@@ -128,7 +130,7 @@ void MPVController::SendCommand(const std::vector<std::string> &cmd) {
 
 bool MPVController::IsSocketAlive() {
   if (socket_fd == -1) {
-    return ConnectSocket();
+    return ConnectSocket(max_retries, retry_delay_ms);
   }
   char buf;
   ssize_t ret = recv(socket_fd, &buf, 1, MSG_PEEK | MSG_DONTWAIT);
@@ -242,7 +244,7 @@ std::string MPVController::GetProperty(const std::string &prop) {
   if (!EnsureInitialized())
     return "";
 
-  if (!IsSocketAlive() && !ConnectSocket()) {
+  if (!IsSocketAlive() && !ConnectSocket(max_retries, retry_delay_ms)) {
     return "";
   }
 
@@ -310,19 +312,11 @@ void MPVController::SetProperty(const std::string &prop,
 
 void MPVController::SetSocketPath(const std::string &path) {
   socket_path = path;
-  if (socket_fd != -1) {
-    close(socket_fd);
-    socket_fd = -1;
-  }
-  ConnectSocket();
-}
-
-bool MPVController::Reconnect() {
-  if (socket_fd != -1) {
-    close(socket_fd);
-    socket_fd = -1;
-  }
-  return ConnectSocket();
-}
+    if (socket_fd != -1) {
+        close(socket_fd);
+        socket_fd = -1;
+    }
+    ConnectSocket(max_retries, retry_delay_ms);
+    }
 
 } // namespace havel

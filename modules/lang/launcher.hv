@@ -486,14 +486,17 @@ fn runTests(cfg) {
 // ============================================================
 
 fn main() {
-    args = app.args
-    if args == null || #args == 0 {
-        print("Usage: havel --run launcher.hv -- [flags] script.hv")
-        print("Use --help for more information")
-        shell.exit(1)
-    }
+	print("[launcher] before app.args")
+	args = app.args
+	print("[launcher] app.args = " + str(args))
+	if args == null || #args == 0 {
+		print("Usage: havel --run launcher.hv -- [flags] script.hv")
+		print("Use --help for more information")
+		shell.exit(1)
+	}
 
-    cfg = parseArgs(args)
+	cfg = parseArgs(args)
+	print("[launcher] cfg.mode = " + cfg.mode + " cfg.selfHosted = " + str(cfg.selfHosted) + " cfg.scriptFiles = " + str(cfg.scriptFiles))
 
     result = 0
     if cfg.mode == "run" && cfg.selfHosted {

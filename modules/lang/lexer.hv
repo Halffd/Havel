@@ -1,417 +1,416 @@
 // Havel lexer — pure Havel implementation
 // Tokenizes Havel source code into a list of {type, value, line, col} objects
+// Uses byte-offset positioning with cpAtByte/cpByteLen for O(1) character access
 
 
 // --- Token types ---
 TOKEN_TYPES = {
-    "Identifier": "Identifier",
-    "Number": "Number",
-    "String": "String",
-    "RegexString": "RegexString",
-    "MultilineString": "MultilineString",
-    "InterpolatedString": "InterpolatedString",
-    "Backtick": "Backtick",
-    "InterpolatedBacktick": "InterpolatedBacktick",
-    "RegexLiteral": "RegexLiteral",
-    "Hotkey": "Hotkey",
-    "True": "True",
-    "False": "False",
-    "Null": "Null",
-    "Let": "Let",
-    "Val": "Val",
-    "Const": "Const",
-    "If": "If",
-    "Else": "Else",
-    "While": "While",
-    "Do": "Do",
-    "Switch": "Switch",
-    "For": "For",
-    "In": "In",
-    "Loop": "Loop",
-    "Break": "Break",
-    "Continue": "Continue",
-    "Match": "Match",
-    "Case": "Case",
-    "Default": "Default",
-    "Fn": "Fn",
-    "Op": "Op",
-    "Return": "Return",
-    "Ret": "Ret",
-    "Struct": "Struct",
-    "Class": "Class",
-    "Enum": "Enum",
-    "Trait": "Trait",
-    "Prot": "Prot",
-    "Impl": "Impl",
-    "This": "This",
-    "Try": "Try",
-    "Catch": "Catch",
-    "Finally": "Finally",
-    "Throw": "Throw",
-    "Thread": "Thread",
-    "Interval": "Interval",
-    "Timeout": "Timeout",
-    "Yield": "Yield",
-    "Sleep": "Sleep",
-    "Go": "Go",
-    "Sync": "Sync",
-    "Async": "Async",
-    "Channel": "Channel",
-    "Co": "Co",
-    "Config": "Config",
-    "Devices": "Devices",
-    "Modes": "Modes",
-    "Pool": "Pool",
-    "Signal": "Signal",
-    "Group": "Group",
-    "On": "On",
-    "Off": "Off",
-    "When": "When",
-    "Mode": "Mode",
-    "Repeat": "Repeat",
-    "Dsl": "Dsl",
-    "Del": "Del",
-    "Import": "Import",
-    "From": "From",
-    "As": "As",
-    "Use": "Use",
-    "With": "With",
-    "Where": "Where",
-    "Select": "Select",
-    "And": "And",
-    "Or": "Or",
-    "Not": "Not",
-    "Is": "Is",
+"Identifier": "Identifier",
+"Number": "Number",
+"String": "String",
+"RegexString": "RegexString",
+"MultilineString": "MultilineString",
+"InterpolatedString": "InterpolatedString",
+"Backtick": "Backtick",
+"InterpolatedBacktick": "InterpolatedBacktick",
+"RegexLiteral": "RegexLiteral",
+"Hotkey": "Hotkey",
+"True": "True",
+"False": "False",
+"Null": "Null",
+"Let": "Let",
+"Val": "Val",
+"Const": "Const",
+"If": "If",
+"Else": "Else",
+"While": "While",
+"Do": "Do",
+"Switch": "Switch",
+"For": "For",
+"In": "In",
+"Loop": "Loop",
+"Break": "Break",
+"Continue": "Continue",
+"Match": "Match",
+"Case": "Case",
+"Default": "Default",
+"Fn": "Fn",
+"Op": "Op",
+"Return": "Return",
+"Ret": "Ret",
+"Struct": "Struct",
+"Class": "Class",
+"Enum": "Enum",
+"Trait": "Trait",
+"Prot": "Prot",
+"Impl": "Impl",
+"This": "This",
+"Try": "Try",
+"Catch": "Catch",
+"Finally": "Finally",
+"Throw": "Throw",
+"Thread": "Thread",
+"Interval": "Interval",
+"Timeout": "Timeout",
+"Yield": "Yield",
+"Sleep": "Sleep",
+"Go": "Go",
+"Sync": "Sync",
+"Async": "Async",
+"Channel": "Channel",
+"Co": "Co",
+"Config": "Config",
+"Devices": "Devices",
+"Modes": "Modes",
+"Pool": "Pool",
+"Signal": "Signal",
+"Group": "Group",
+"On": "On",
+"Off": "Off",
+"When": "When",
+"Mode": "Mode",
+"Repeat": "Repeat",
+"Dsl": "Dsl",
+"Del": "Del",
+"Import": "Import",
+"From": "From",
+"As": "As",
+"Use": "Use",
+"With": "With",
+"Where": "Where",
+"Select": "Select",
+"And": "And",
+"Or": "Or",
+"Not": "Not",
+"Is": "Is",
 "Matches": "Matches",
 "WaitGroup": "WaitGroup",
 "Wait": "Wait",
 "Defer": "Defer",
 "ShellCommand": "ShellCommand",
-    "ShellCommandCapture": "ShellCommandCapture",
-    "OpenParen": "OpenParen",
-    "CloseParen": "CloseParen",
-    "OpenBrace": "OpenBrace",
-    "CloseBrace": "CloseBrace",
-    "BangOpenBrace": "BangOpenBrace",
-    "OpenBracket": "OpenBracket",
-    "CloseBracket": "CloseBracket",
-    "Dot": "Dot",
-    "Comma": "Comma",
-    "Semicolon": "Semicolon",
-    "Colon": "Colon",
-    "ColonColon": "ColonColon",
-    "Underscore": "Underscore",
-    "DotDot": "DotDot",
-    "DotDotEquals": "DotDotEquals",
-    "Spread": "Spread",
-    "Plus": "Plus",
-    "Minus": "Minus",
-    "Multiply": "Multiply",
-    "Divide": "Divide",
-    "Modulo": "Modulo",
-    "Power": "Power",
-    "Backslash": "Backslash",
-    "DoubleBackslash": "DoubleBackslash",
-    "DoubleModulo": "DoubleModulo",
-    "BackslashAssign": "BackslashAssign",
-    "DoubleModuloAssign": "DoubleModuloAssign",
-    "PlusPlus": "PlusPlus",
-    "MinusMinus": "MinusMinus",
-    "Equals": "Equals",
-    "NotEquals": "NotEquals",
-    "Less": "Less",
-    "Greater": "Greater",
-    "LessEquals": "LessEquals",
-    "GreaterEquals": "GreaterEquals",
-    "Arrow": "Arrow",
-    "ReturnType": "ReturnType",
-    "LeftArrow": "LeftArrow",
-    "Assign": "Assign",
-    "PlusAssign": "PlusAssign",
-    "MinusAssign": "MinusAssign",
-    "MultiplyAssign": "MultiplyAssign",
-    "DivideAssign": "DivideAssign",
-    "ModuloAssign": "ModuloAssign",
-    "PowerAssign": "PowerAssign",
-    "BitwiseAnd": "BitwiseAnd",
-    "BitwiseOr": "BitwiseOr",
-    "BitwiseXor": "BitwiseXor",
-    "ShiftLeft": "ShiftLeft",
-    "ShiftRight": "ShiftRight",
-    "BitwiseAndAssign": "BitwiseAndAssign",
-    "BitwiseOrAssign": "BitwiseOrAssign",
-    "BitwiseXorAssign": "BitwiseXorAssign",
-    "ShiftLeftAssign": "ShiftLeftAssign",
-    "ShiftRightAssign": "ShiftRightAssign",
-    "DoubleOpenParen": "DoubleOpenParen",
-    "DoubleCloseParen": "DoubleCloseParen",
-    "Nullish": "Nullish",
-    "Question": "Question",
-    "QuestionDot": "QuestionDot",
-    "Tilde": "Tilde",
-    "At": "At",
-    "AtAt": "AtAt",
-    "SuperArrow": "SuperArrow",
-    "Pipe": "Pipe",
-    "PipeRight": "PipeRight",
-    "Length": "Length",
-    "NewLine": "NewLine",
-    "EOF": "EOF",
+"ShellCommandCapture": "ShellCommandCapture",
+"OpenParen": "OpenParen",
+"CloseParen": "CloseParen",
+"OpenBrace": "OpenBrace",
+"CloseBrace": "CloseBrace",
+"BangOpenBrace": "BangOpenBrace",
+"OpenBracket": "OpenBracket",
+"CloseBracket": "CloseBracket",
+"Dot": "Dot",
+"Comma": "Comma",
+"Semicolon": "Semicolon",
+"Colon": "Colon",
+"ColonColon": "ColonColon",
+"Underscore": "Underscore",
+"DotDot": "DotDot",
+"DotDotEquals": "DotDotEquals",
+"Spread": "Spread",
+"Plus": "Plus",
+"Minus": "Minus",
+"Multiply": "Multiply",
+"Divide": "Divide",
+"Modulo": "Modulo",
+"Power": "Power",
+"Backslash": "Backslash",
+"DoubleBackslash": "DoubleBackslash",
+"DoubleModulo": "DoubleModulo",
+"BackslashAssign": "BackslashAssign",
+"DoubleModuloAssign": "DoubleModuloAssign",
+"PlusPlus": "PlusPlus",
+"MinusMinus": "MinusMinus",
+"Equals": "Equals",
+"NotEquals": "NotEquals",
+"Less": "Less",
+"Greater": "Greater",
+"LessEquals": "LessEquals",
+"GreaterEquals": "GreaterEquals",
+"Arrow": "Arrow",
+"ReturnType": "ReturnType",
+"LeftArrow": "LeftArrow",
+"Assign": "Assign",
+"PlusAssign": "PlusAssign",
+"MinusAssign": "MinusAssign",
+"MultiplyAssign": "MultiplyAssign",
+"DivideAssign": "DivideAssign",
+"ModuloAssign": "ModuloAssign",
+"PowerAssign": "PowerAssign",
+"BitwiseAnd": "BitwiseAnd",
+"BitwiseOr": "BitwiseOr",
+"BitwiseXor": "BitwiseXor",
+"ShiftLeft": "ShiftLeft",
+"ShiftRight": "ShiftRight",
+"BitwiseAndAssign": "BitwiseAndAssign",
+"BitwiseOrAssign": "BitwiseOrAssign",
+"BitwiseXorAssign": "BitwiseXorAssign",
+"ShiftLeftAssign": "ShiftLeftAssign",
+"ShiftRightAssign": "ShiftRightAssign",
+"DoubleOpenParen": "DoubleOpenParen",
+"DoubleCloseParen": "DoubleCloseParen",
+"Nullish": "Nullish",
+"Question": "Question",
+"QuestionDot": "QuestionDot",
+"Tilde": "Tilde",
+"At": "At",
+"AtAt": "AtAt",
+"SuperArrow": "SuperArrow",
+"Pipe": "Pipe",
+"PipeRight": "PipeRight",
+"Length": "Length",
+"NewLine": "NewLine",
+"EOF": "EOF",
 }
 
 KEYWORDS = {
-    "let": "Let",
-    "val": "Val",
-    "const": "Const",
-    "if": "If",
-    "else": "Else",
-    "while": "While",
-    "do": "Do",
-    "switch": "Switch",
-    "for": "For",
-    "in": "In",
-    "loop": "Loop",
-    "break": "Break",
-    "continue": "Continue",
-    "match": "Match",
-    "case": "Case",
-    "default": "Default",
-    "fn": "Fn",
-    "op": "Op",
-    "return": "Return",
-    "ret": "Ret",
-    "struct": "Struct",
-    "class": "Class",
-    "enum": "Enum",
-    "trait": "Trait",
-    "prot": "Prot",
-    "impl": "Impl",
-    "this": "This",
-    "try": "Try",
-    "catch": "Catch",
-    "finally": "Finally",
-    "throw": "Throw",
-    "thread": "Thread",
-    "interval": "Interval",
-    "timeout": "Timeout",
-    "yield": "Yield",
-    "sleep": "Sleep",
-    "go": "Go",
-    "sync": "Sync",
-    "async": "Async",
-    "channel": "Channel",
-    "co": "Co",
-    "config": "Config",
-    "devices": "Devices",
-    "modes": "Modes",
-    "pool": "Pool",
-    "signal": "Signal",
-    "group": "Group",
-    "on": "On",
-    "off": "Off",
-    "when": "When",
-    "mode": "Mode",
-    "repeat": "Repeat",
-    "dsl": "Dsl",
-    "del": "Del",
-    "import": "Import",
-    "from": "From",
-    "as": "As",
-    "use": "Use",
-    "with": "With",
-    "where": "Where",
-    "select": "Select",
-    "true": "True",
-    "false": "False",
-    "null": "Null",
-    "nil": "Null",
-    "and": "And",
-    "or": "Or",
-    "not": "Not",
-    "is": "Is",
-	"matches": "Matches",
-	"waitgroup": "WaitGroup",
-	"wait": "Wait",
-	"defer": "Defer",
+"let": "Let",
+"val": "Val",
+"const": "Const",
+"if": "If",
+"else": "Else",
+"while": "While",
+"do": "Do",
+"switch": "Switch",
+"for": "For",
+"in": "In",
+"loop": "Loop",
+"break": "Break",
+"continue": "Continue",
+"match": "Match",
+"case": "Case",
+"default": "Default",
+"fn": "Fn",
+"op": "Op",
+"return": "Return",
+"ret": "Ret",
+"struct": "Struct",
+"class": "Class",
+"enum": "Enum",
+"trait": "Trait",
+"prot": "Prot",
+"impl": "Impl",
+"this": "This",
+"try": "Try",
+"catch": "Catch",
+"finally": "Finally",
+"throw": "Throw",
+"thread": "Thread",
+"interval": "Interval",
+"timeout": "Timeout",
+"yield": "Yield",
+"sleep": "Sleep",
+"go": "Go",
+"sync": "Sync",
+"async": "Async",
+"channel": "Channel",
+"co": "Co",
+"config": "Config",
+"devices": "Devices",
+"modes": "Modes",
+"pool": "Pool",
+"signal": "Signal",
+"group": "Group",
+"on": "On",
+"off": "Off",
+"when": "When",
+"mode": "Mode",
+"repeat": "Repeat",
+"dsl": "Dsl",
+"del": "Del",
+"import": "Import",
+"from": "From",
+"as": "As",
+"use": "Use",
+"with": "With",
+"where": "Where",
+"select": "Select",
+"true": "True",
+"false": "False",
+"null": "Null",
+"nil": "Null",
+"and": "And",
+"or": "Or",
+"not": "Not",
+"is": "Is",
+"matches": "Matches",
+"waitgroup": "WaitGroup",
+"wait": "Wait",
+"defer": "Defer",
 }
 
 EXPRESSION_TOKENS = {
-    "Number": true,
-    "String": true,
-    "InterpolatedString": true,
-    "MultilineString": true,
-    "Identifier": true,
-    "True": true,
-    "False": true,
-    "Null": true,
-    "CloseParen": true,
-    "CloseBracket": true,
-    "CloseBrace": true,
-    "Length": true,
-    "PlusPlus": true,
-    "MinusMinus": true,
-    "LeftArrow": true,
+"Number": true,
+"String": true,
+"InterpolatedString": true,
+"MultilineString": true,
+"Identifier": true,
+"True": true,
+"False": true,
+"Null": true,
+"CloseParen": true,
+"CloseBracket": true,
+"CloseBrace": true,
+"Length": true,
+"PlusPlus": true,
+"MinusMinus": true,
+"LeftArrow": true,
 }
 
-fn isAlpha(c) {
-    (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or c == "_"
+// --- Character classification (integer codepoint versions) ---
+
+fn isAlphaCp(cp) {
+(cp >= 97 and cp <= 122) or (cp >= 65 and cp <= 90) or cp == 95
 
 }
-fn isDigit(c) {
-    c >= "0" and c <= "9"
+fn isDigitCp(cp) {
+cp >= 48 and cp <= 57
 
 }
-fn isAlphaNum(c) {
-    isAlpha(c) or isDigit(c)
+fn isAlphaNumCp(cp) {
+isAlphaCp(cp) or isDigitCp(cp)
 
 }
-fn isHexDigit(c) {
-    isDigit(c) or (c >= "a" and c <= "f") or (c >= "A" and c <= "F")
+fn isHexDigitCp(cp) {
+isDigitCp(cp) or (cp >= 97 and cp <= 102) or (cp >= 65 and cp <= 70)
 
 }
-fn isBinDigit(c) {
-    c == "0" or c == "1"
+fn isBinDigitCp(cp) {
+cp == 48 or cp == 49
 
 }
-fn isOctDigit(c) {
-    c >= "0" and c <= "7"
+fn isOctDigitCp(cp) {
+cp >= 48 and cp <= 55
 
 }
-fn isWhitespace(c) {
-    c == " " or c == "\t" or c == "\r"
+fn isWhitespaceCp(cp) {
+cp == 32 or cp == 9 or cp == 13
 
 }
-fn isUnicodeLetter(cp) {
-    if cp < 0x80: return false
-    if cp >= 0x00C0 and cp <= 0x00D6: return true
-    if cp >= 0x00D8 and cp <= 0x00F6: return true
-    if cp >= 0x00F8 and cp <= 0x00FF: return true
-    if cp >= 0x0100 and cp <= 0x017F: return true
-    if cp >= 0x0180 and cp <= 0x024F: return true
-    if cp >= 0x0400 and cp <= 0x04FF: return true
-    if cp >= 0x0600 and cp <= 0x06FF: return true
-    if cp >= 0x0900 and cp <= 0x097F: return true
-    if cp >= 0xAC00 and cp <= 0xD7AF: return true
-    if cp >= 0x4E00 and cp <= 0x9FFF: return true
-    if cp >= 0x3040 and cp <= 0x309F: return true
-    if cp >= 0x30A0 and cp <= 0x30FF: return true
-    false
+fn isUnicodeLetterCp(cp) {
+if cp < 0x80: return false
+if cp >= 0x00C0 and cp <= 0x00D6: return true
+if cp >= 0x00D8 and cp <= 0x00F6: return true
+if cp >= 0x00F8 and cp <= 0x00FF: return true
+if cp >= 0x0100 and cp <= 0x017F: return true
+if cp >= 0x0180 and cp <= 0x024F: return true
+if cp >= 0x0400 and cp <= 0x04FF: return true
+if cp >= 0x0600 and cp <= 0x06FF: return true
+if cp >= 0x0900 and cp <= 0x097F: return true
+if cp >= 0xAC00 and cp <= 0xD7AF: return true
+if cp >= 0x4E00 and cp <= 0x9FFF: return true
+if cp >= 0x3040 and cp <= 0x309F: return true
+if cp >= 0x30A0 and cp <= 0x30FF: return true
+false
 
 }
-fn isUnicodeDigit(cp) {
-    if cp < 0x80: return false
-    if cp >= 0x0660 and cp <= 0x0669: return true
-    if cp >= 0xFF10 and cp <= 0xFF19: return true
-    false
+fn isUnicodeDigitCp(cp) {
+if cp < 0x80: return false
+if cp >= 0x0660 and cp <= 0x0669: return true
+if cp >= 0xFF10 and cp <= 0xFF19: return true
+false
 
 }
-fn isNonAscii(c) {
-    cp = ord(c)
-    cp != null and cp >= 0x80
-
-}
-fn isUnicodeIdentifierChar(c) {
-    cp = ord(c)
-    if cp == null: return false
-    if cp < 0x80: return isAlphaNum(c)
-    isUnicodeLetter(cp) or isUnicodeDigit(cp)
+fn isUnicodeIdentifierCharCp(cp) {
+if cp < 0: return false
+if cp < 0x80: return isAlphaNumCp(cp)
+isUnicodeLetterCp(cp) or isUnicodeDigitCp(cp)
 
 }
 
-SIMPLE_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "0": "\0", "$": "$", "{": "{", "}": "}"}
+SIMPLE_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\", 48: "\0", 36: "$", 123: "{", 125: "}"}
+
 fn Lexer(source) {
-    // Copy module-scope vars into locals so nested closures can see them
-    keywords = KEYWORDS
-    exprTokens = EXPRESSION_TOKENS
+keywords = KEYWORDS
+exprTokens = EXPRESSION_TOKENS
+srcLen = source.len
 
-    src = source
-    pos = 0
- line = 1
- col = 1
- tokenStartCol = 1
- tokens = []
-    errors = []
-    inBitwiseExpr = false
-    parenDepth = 0
+src = source
+pos = 0
+line = 1
+col = 1
+tokenStartCol = 1
+tokens = []
+errors = []
+inBitwiseExpr = false
+parenDepth = 0
 
-fn peek(offset) {
-    i = pos + offset
-    if i >= 0: src[i]
-    else: null
+fn cp(offset) {
+bp = pos + offset
+if bp >= 0 and bp < srcLen: src.cpAtByte(bp)
+else: -1
 
 }
 fn current() {
-    src[pos]
+if pos < srcLen: src.cpAtByte(pos)
+else: -1
 
 }
-    fn advance() {
-        c = current()
-        if c != null {
-            pos = pos + 1
-            if c == "\n" {
-                line = line + 1
-                col = 1
-            }
-            else {
-                col = col + 1
-            }
-        }
-        c
+fn advance() {
+if pos >= srcLen: return -1
+c = src.cpAtByte(pos)
+bLen = src.cpByteLen(pos)
+if bLen < 1: bLen = 1
+pos = pos + bLen
+if c == 10 {
+line = line + 1
+col = 1
+}
+else {
+col = col + 1
+}
+c
 
-    }
-    fn matchChar(expected) {
-        if current() == expected {
-            advance()
-            true
-        }
-        else {
-            false
+}
+fn matchCp(expected) {
+if current() == expected {
+advance()
+true
+}
+else {
+false
+}
 
-        }
-    }
+}
 fn addToken(ttype, value) {
- tokens.push({type: ttype, value: value, line: line, col: tokenStartCol})
+tokens.push({type: ttype, value: value, line: line, col: tokenStartCol})
 
 }
-    fn error(msg) {
-        errors.push({msg: msg, line: line, col: col})
+fn error(msg) {
+errors.push({msg: msg, line: line, col: col})
 
-    }
-    fn skipWhitespace() {
-        while isWhitespace(current()) {
-            advance()
+}
+fn skipWhitespace() {
+while isWhitespaceCp(current()) {
+advance()
+}
 
-        }
-    }
-    fn skipLineComment() {
-        advance()
-        advance()
-        while current() != null and current() != "\n" {
-            advance()
+}
+fn skipLineComment() {
+advance()
+advance()
+while current() != -1 and current() != 10 {
+advance()
+}
 
-        }
-    }
-    fn skipBlockComment() {
-        advance()
-        advance()
-        depth = 1
-        while depth > 0 and current() != null {
-            if current() == "*" and peek(1) == "/" {
-                advance()
-                advance()
-                depth = depth - 1
-            }
-            else if current() == "/" and peek(1) == "*" {
-                advance()
-                advance()
-                depth = depth + 1
-            }
-            else {
-                advance()
-
-            }
-        }
-    }
+}
+fn skipBlockComment() {
+advance()
+advance()
+depth = 1
+while depth > 0 and current() != -1 {
+if current() == 42 and cp(1) == 47 {
+advance()
+advance()
+depth = depth - 1
+}
+else if current() == 47 and cp(1) == 42 {
+advance()
+advance()
+depth = depth + 1
+}
+else {
+advance()
+}
+}
+}
 fn scanString(quote, isFString, isRegexString) {
 advance()
 
@@ -421,68 +420,68 @@ if isFString {
 isInterpolated = true
 
 }
-while current() != null and current() != quote and current() != "\n" {
-if current() == "\\" {
+while current() != -1 and current() != quote and current() != 10 {
+if current() == 92 {
 advance()
 c = current()
 esc = SIMPLE_ESCAPES[c]
 if esc != null { s = s + esc }
-else if c == quote { s = s + quote }
-else if c == "x" {
-h1 = peek(1)
-h2 = peek(2)
-if h1 != null and h2 != null and isHexDigit(h1) and isHexDigit(h2) {
+else if c == quote { s = s + string.fromCodePoint(quote) }
+else if c == 120 {
+h1 = cp(1)
+h2 = cp(2)
+if h1 != -1 and h2 != -1 and isHexDigitCp(h1) and isHexDigitCp(h2) {
 advance()
 advance()
 advance()
-s = s + "\\x" + h1 + h2
+s = s + "\\x" + string.fromCodePoint(h1) + string.fromCodePoint(h2)
 }
 else {
 s = s + "\\x"
 }
 }
-else if c == "u" {
-h1 = peek(1)
-h2 = peek(2)
-h3 = peek(3)
-h4 = peek(4)
-if h1 != null and h2 != null and h3 != null and h4 != null and isHexDigit(h1) and isHexDigit(h2) and isHexDigit(h3) and isHexDigit(h4) {
+else if c == 117 {
+h1 = cp(1)
+h2 = cp(2)
+h3 = cp(3)
+h4 = cp(4)
+if h1 != -1 and h2 != -1 and h3 != -1 and h4 != -1 and isHexDigitCp(h1) and isHexDigitCp(h2) and isHexDigitCp(h3) and isHexDigitCp(h4) {
 advance()
 advance()
 advance()
 advance()
 advance()
-s = s + "\\u" + h1 + h2 + h3 + h4
+s = s + "\\u" + string.fromCodePoint(h1) + string.fromCodePoint(h2) + string.fromCodePoint(h3) + string.fromCodePoint(h4)
 }
 else {
 s = s + "\\u"
 }
 }
 else {
-s = s + "\\" + c
+s = s + "\\" + string.fromCodePoint(c)
 }
-if c != null and c != "x" and c != "u" {
+if c != -1 and c != 120 and c != 117 {
 advance()
 }
 
 }
-else if current() == "{" and isFString {
+else if current() == 123 and isFString {
 isInterpolated = true
-s = s + current()
+s = s + "{"
 advance()
 }
-else if current() == "$" {
+else if current() == 36 {
 advance()
-if current() != null and (isAlpha(current()) or current() == "_" or current() == "@") {
+if current() != -1 and (isAlphaCp(current()) or current() == 95 or current() == 64) {
 isInterpolated = true
 s = s + "${"
-s = s + current()
+s = s + string.fromCodePoint(current())
 advance()
-while current() != null and (isAlphaNum(current()) or current() == "_") {
-s = s + current()
+while current() != -1 and (isAlphaNumCp(current()) or current() == 95) {
+s = s + string.fromCodePoint(current())
 advance()
 }
-if current() == "?" {
+if current() == 63 {
 s = s + "?"
 advance()
 }
@@ -494,9 +493,8 @@ continue
 }
 }
 else {
-s = s + current()
+s = s + string.fromCodePoint(current())
 advance()
-
 }
 }
 _endQuote = current()
@@ -505,1019 +503,921 @@ advance()
 } else {
 error("Unterminated string")
 
-        }
-        if isRegexString {
-            addToken("RegexString", s)
-        }
-        else if isInterpolated {
-            addToken("InterpolatedString", s)
-        }
-    else {
-        addToken("String", s)
-    }
 }
-    fn scanMultilineString(quote, isFString) {
-        advance()
-        advance()
-        advance()
+if isRegexString {
+addToken("RegexString", s)
+}
+else if isInterpolated {
+addToken("InterpolatedString", s)
+}
+else {
+addToken("String", s)
+}
+}
+fn scanMultilineString(quote, isFString) {
+advance()
+advance()
+advance()
 
-        if current() == "\n" {
-            advance()
+if current() == 10 {
+advance()
 
-        }
-        s = ""
-        isInterpolated = isFString
+}
+s = ""
+isInterpolated = isFString
 
-while current() != null {
-        if current() == quote and peek(1) == quote and peek(2) == quote {
-                advance()
-                advance()
-                advance()
-                break
+while current() != -1 {
+if current() == quote and cp(1) == quote and cp(2) == quote {
+advance()
+advance()
+advance()
+break
 
-            }
-        if current() == "\\" {
-        advance()
-        c = current()
-        MLES_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "0": "\0"}
-        esc = MLES_ESCAPES[c]
-        if esc != null { s = s + esc; advance() }
-        else if c == quote { s = s + quote; advance() }
-        else { s = s + "\\" + c; advance() }
-            }
-  else if current() == "$" {
-    isInterpolated = true
-    s = s + "$"
-    advance()
-    if current() == "{" or current() == "@" or (current() != null and isAlpha(current())) {
-      s = s + current()
-      advance()
-      while current() != null and isAlphaNum(current()) {
-        s = s + current()
-        advance()
-      }
-    }
-                else {
-                    s = s + current()
-                    advance()
-                }
-            }
-            else {
-                s = s + current()
-                advance()
+}
+if current() == 92 {
+advance()
+c = current()
+MLES_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\", 48: "\0"}
+esc = MLES_ESCAPES[c]
+if esc != null { s = s + esc; advance() }
+else if c == quote { s = s + string.fromCodePoint(quote); advance() }
+else { s = s + "\\" + string.fromCodePoint(c); advance() }
+}
+else if current() == 36 {
+isInterpolated = true
+s = s + "$"
+advance()
+if current() == 123 or current() == 64 or (current() != -1 and isAlphaCp(current())) {
+s = s + string.fromCodePoint(current())
+advance()
+while current() != -1 and isAlphaNumCp(current()) {
+s = s + string.fromCodePoint(current())
+advance()
+}
+}
+else {
+s = s + string.fromCodePoint(current())
+advance()
+}
+}
+else {
+s = s + string.fromCodePoint(current())
+advance()
 
-            }
-        }
-        if isInterpolated {
-            addToken("InterpolatedString", s)
-        }
-        else {
-            addToken("MultilineString", s)
+}
+}
+if isInterpolated {
+addToken("InterpolatedString", s)
+}
+else {
+addToken("MultilineString", s)
 
-        }
-    }
-    fn scanBacktick() {
-        advance()
+}
+}
+fn scanBacktick() {
+advance()
 
-        isTriple = false
-        if current() == "`" and peek(1) == "`" {
-            isTriple = true
-            advance()
-            advance()
+isTriple = false
+if current() == 96 and cp(1) == 96 {
+isTriple = true
+advance()
+advance()
 
-        }
-        s = ""
-        isInterpolated = false
+}
+s = ""
+isInterpolated = false
 
-while current() != null {
-    if isTriple {
-                if current() == "`" and peek(1) == "`" and peek(2) == "`" {
-                    advance()
-                    advance()
-                    advance()
-                    break
-                }
-            }
-            else {
-                if current() == "`" {
-                    advance()
-                    break
+while current() != -1 {
+if isTriple {
+if current() == 96 and cp(1) == 96 and cp(2) == 96 {
+advance()
+advance()
+advance()
+break
+}
+}
+else {
+if current() == 96 {
+advance()
+break
+}
+}
+if current() == 92 {
+advance()
+c = current()
+BT_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\"}
+esc = BT_ESCAPES[c]
+if esc != null { s = s + esc; advance() }
+else if c == 96 { s = s + "`"; advance() }
+else { s = s + "\\" + string.fromCodePoint(c); advance() }
+}
+else if current() == 123 and isTriple {
+isInterpolated = true
+s = s + "{"
+advance()
+}
+else if current() == 36 {
+isInterpolated = true
+s = s + "$"
+advance()
+if current() == 123 or current() == 64 or (current() != -1 and isAlphaCp(current())) {
+s = s + string.fromCodePoint(current())
+advance()
+while current() != -1 and isAlphaNumCp(current()) {
+s = s + string.fromCodePoint(current())
+advance()
+}
+}
+}
+else {
+s = s + string.fromCodePoint(current())
+advance()
 
-                }
-            }
-        if current() == "\\" {
-        advance()
-        c = current()
-        BT_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
-        esc = BT_ESCAPES[c]
-        if esc != null { s = s + esc; advance() }
-        else if c == "`" { s = s + "`"; advance() }
-        else { s = s + "\\" + c; advance() }
-            }
-            else if current() == "{" and isTriple {
-                isInterpolated = true
-                s = s + "{"
-                advance()
-            }
-  else if current() == "$" {
-    isInterpolated = true
-    s = s + "$"
-    advance()
-    if current() == "{" or current() == "@" or (current() != null and isAlpha(current())) {
-      s = s + current()
-      advance()
-      while current() != null and isAlphaNum(current()) {
-        s = s + current()
-        advance()
-      }
-    }
-  }
-            else {
-                s = s + current()
-                advance()
+}
+}
+if isInterpolated {
+addToken("InterpolatedBacktick", s)
+}
+else {
+addToken("Backtick", s)
 
-            }
-        }
-        if isInterpolated {
-            addToken("InterpolatedBacktick", s)
-        }
-        else {
-            addToken("Backtick", s)
+}
+}
+fn scanNumber() {
+startPos = pos
 
-        }
-    }
-    fn scanNumber() {
-        s = ""
+if current() == 48 {
+next = cp(1)
+if next == 120 or next == 88 {
+advance()
+advance()
+if isHexDigitCp(current()) {
+while isHexDigitCp(current()) {
+advance()
+}
+}
+else {
+error("Invalid hex literal")
+}
+addToken("Number", src.sub(startPos, pos - startPos))
+return
+}
+else if next == 111 or next == 79 {
+advance()
+advance()
+if isOctDigitCp(current()) {
+while isOctDigitCp(current()) {
+advance()
+}
+}
+else {
+error("Invalid octal literal")
+}
+addToken("Number", src.sub(startPos, pos - startPos))
+return
+}
+else if next == 98 or next == 66 {
+advance()
+advance()
+if isBinDigitCp(current()) {
+while isBinDigitCp(current()) {
+advance()
+}
+}
+else {
+error("Invalid binary literal")
+}
+addToken("Number", src.sub(startPos, pos - startPos))
+return
 
-        if current() == "0" {
-            next = peek(1)
-            if next == "x" or next == "X" {
-                s = s + advance()
-                s = s + advance()
-                if isHexDigit(current()) {
-                    while isHexDigit(current()) {
-                        s = s + current()
-                        advance()
-                    }
-                }
-                else {
-                    error("Invalid hex literal")
-                }
-                addToken("Number", s)
-                return
-            }
-            else if next == "o" or next == "O" {
-                s = s + advance()
-                s = s + advance()
-                if isOctDigit(current()) {
-                    while isOctDigit(current()) {
-                        s = s + current()
-                        advance()
-                    }
-                }
-                else {
-                    error("Invalid octal literal")
-                }
-                addToken("Number", s)
-                return
-            }
-            else if next == "b" or next == "B" {
-                s = s + advance()
-                s = s + advance()
-                if isBinDigit(current()) {
-                    while isBinDigit(current()) {
-                        s = s + current()
-                        advance()
-                    }
-                }
-                else {
-                    error("Invalid binary literal")
-                }
-                addToken("Number", s)
-                return
+}
+}
+while isDigitCp(current()) {
+advance()
+if current() == 95 and isDigitCp(cp(1)) {
+advance()
+}
+}
+if current() == 46 and isDigitCp(cp(1)) {
+advance()
+while isDigitCp(current()) {
+advance()
+if current() == 95 and isDigitCp(cp(1)) {
+advance()
+}
+}
+}
+if current() == 101 or current() == 69 {
+advance()
+if current() == 43 or current() == 45 {
+advance()
+}
+while isDigitCp(current()) {
+advance()
+}
+}
+addToken("Number", src.sub(startPos, pos - startPos))
 
-            }
-        }
-        while isDigit(current()) {
-            s = s + current()
-            advance()
-            if current() == "_" and isDigit(peek(1)) {
-                advance()
-
-            }
-        }
-        if current() == "." and isDigit(peek(1)) {
-            s = s + "."
-            advance()
-            while isDigit(current()) {
-                s = s + current()
-                advance()
-                if current() == "_" and isDigit(peek(1)) {
-                    advance()
-
-                }
-            }
-        }
-        if current() == "e" or current() == "E" {
-            s = s + current()
-            advance()
-            if current() == "+" or current() == "-" {
-                s = s + current()
-                advance()
-            }
-            while isDigit(current()) {
-                s = s + current()
-                advance()
-            }
-        }
-        addToken("Number", s)
-
-    }
+}
 fn scanIdentifier() {
-    s = ""
-    while current() != null and isUnicodeIdentifierChar(current()) {
-        s = s + current()
-        advance()
-
-    }
-    if keywords.has(s) {
-        addToken(keywords[s], s)
-    }
-    else {
-        addToken("Identifier", s)
-
-    }
+startPos = pos
+while current() != -1 and isUnicodeIdentifierCharCp(current()) {
+advance()
 }
-    fn scanRegexLiteral() {
-        advance()
-        s = ""
-        while current() != null and current() != "/" {
-            if current() == "\\" {
-                s = s + current()
-                advance()
-                if current() != null {
-                    s = s + current()
-                    advance()
-                }
-            }
-            else {
-                s = s + current()
-                advance()
+word = src.sub(startPos, pos - startPos)
+if keywords.has(word) {
+addToken(keywords[word], word)
+}
+else {
+addToken("Identifier", word)
 
-            }
-        }
-        if current() == "/" {
-            advance()
-            while current() != null and isAlpha(current()) {
-                s = s + current()
-                advance()
+}
+}
+fn scanRegexLiteral() {
+advance()
+s = ""
+while current() != -1 and current() != 47 {
+if current() == 92 {
+s = s + "\\"
+advance()
+if current() != -1 {
+s = s + string.fromCodePoint(current())
+advance()
+}
+}
+else {
+s = s + string.fromCodePoint(current())
+advance()
+}
+}
+if current() == 47 {
+advance()
+while current() != -1 and isAlphaCp(current()) {
+s = s + string.fromCodePoint(current())
+advance()
+}
+}
+addToken("RegexLiteral", s)
 
-            }
-        }
-        addToken("RegexLiteral", s)
+}
+fn scanHotkey() {
+s = ""
+while current() != -1 {
+c = current()
+if c == 13 or c == 10 or c == 123 or c == 40 {
+break
+}
+if c == 61 and cp(1) == 62 {
+break
+}
+s = s + string.fromCodePoint(c)
+advance()
+}
+if s.len > 0 {
+addToken("Hotkey", s)
 
-    }
-    fn scanHotkey() {
-        s = ""
-        while current() != null {
-            c = current()
-            if c == "\r" or c == "\n" or c == "{" or c == "(" {
-                break
-            }
-            if c == "=" and peek(1) == ">" {
-                break
-            }
-            s = s + c
-            advance()
+}
+}
+fn lastTokenType() {
+if tokens.len > 0: tokens[tokens.len - 1].type
+else: "NewLine"
 
-        }
-        if s.len > 0 {
-            addToken("Hotkey", s)
+}
+fn afterExpression() {
+exprTokens.has(lastTokenType())
 
-        }
-    }
-    fn lastTokenType() {
-        if tokens.len > 0: tokens[tokens.len - 1].type
-        else: "NewLine"
-
-    }
-    fn afterExpression() {
-        exprTokens.has(lastTokenType())
-
-    }
+}
 fn _scan() {
- while current() != null {
-  skipWhitespace()
-        if current() == null { break }
-        tokenStartCol = col
-  c = current()
-
-            if c == "\n" {
-                addToken("NewLine", "\n")
-                advance()
-                continue
-
-            }
-            if c == "/" and peek(1) == "/" {
-                if peek(2) == "*" {
-                    skipBlockComment()
-                }
-                else {
-                    skipLineComment()
-                }
-                continue
-
-            }
-            if c == "/" and peek(1) == "*" {
-                skipBlockComment()
-                continue
-
-            }
-            if (c == "r" or c == "R") and (peek(1) == "\"" or peek(1) == "'") {
-                advance()
-                quote = current()
-                scanString(quote, false, true)
-                continue
-
-            }
-            if (c == "f" or c == "F") and (peek(1) == "\"" or peek(1) == "'") {
-                if peek(2) == peek(1) {
-                    advance()
-                    scanMultilineString(peek(0), true)
-                    continue
-                }
-                advance()
-                quote = current()
-                scanString(quote, true, false)
-                continue
-
-            }
-            if (c == "\"" or c == "'") and peek(1) == c and peek(2) == c {
-                scanMultilineString(c, false)
-                continue
-
-            }
-            if c == "\"" or c == "'" {
-                scanString(c, false, false)
-                continue
-
-            }
-            if c == "`" {
-                scanBacktick()
-                continue
-
-            }
-            if isDigit(c) {
-                scanNumber()
-                continue
-
-            }
-if isAlpha(c) {
-        scanIdentifier()
-        continue
-
-    }
-    if isNonAscii(c) {
-        cp = ord(c)
-        if cp != null and isUnicodeLetter(cp) {
-            scanIdentifier()
-            continue
-        }
-        advance()
-        continue
-
-    }
-            if c == "$" {
-                advance()
-                if current() == "!" {
-                    advance()
-                    addToken("ShellCommandCapture", "$!")
-                }
-                else {
-                    addToken("ShellCommand", "$")
-                }
-                continue
-
-            }
-            if c == ":" and peek(1) == ":" {
-                advance()
-                advance()
-                addToken("ColonColon", "::")
-                continue
-
-            }
-            if c == ":" {
-                advance()
-                addToken("Colon", ":")
-                continue
-
-            }
-            if c == "." and peek(1) == "." and peek(2) == "." {
-                advance()
-                advance()
-                advance()
-                addToken("Spread", "...")
-                continue
-
-            }
-            if c == "." and peek(1) == "." and peek(2) == "=" {
-                advance()
-                advance()
-                advance()
-                addToken("DotDotEquals", "..=")
-                continue
-
-            }
-            if c == "." and peek(1) == "." {
-                advance()
-                advance()
-                addToken("DotDot", "..")
-                continue
-
-            }
-            if c == "." {
-                advance()
-                addToken("Dot", ".")
-                continue
-
-            }
-            if c == "=" and peek(1) == ">" {
-                advance()
-                advance()
-                addToken("Arrow", "=>")
-                continue
-
-            }
-            if c == "=" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("Equals", "==")
-                continue
-
-            }
-            if c == "=" {
-                advance()
-                addToken("Assign", "=")
-                continue
-
-            }
-            if c == "!" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("NotEquals", "!=")
-                continue
-
-            }
-            if c == "!" and peek(1) == "{" {
-                advance()
-                advance()
-                addToken("BangOpenBrace", "!{")
-                continue
-
-            }
-            if c == "!" {
-                if afterExpression() or (peek(1) != null and peek(1) >= "a" and peek(1) <= "z") {
-                    advance()
-                    addToken("Not", "!")
-                }
-                else {
-                    advance()
-                    s = "!"
-                    while current() != null and current() != "\n" and current() != "{" and current() != "(" {
-                        if current() == "=" and peek(1) == ">" {
-                            break
-                        }
-                        s = s + current()
-                        advance()
-                    }
-                    if s == "!" {
-                        addToken("Not", "!")
-                    }
-                    else {
-                        addToken("Hotkey", s)
-                    }
-                }
-                continue
-
-            }
-            if c == "<" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("LessEquals", "<=")
-                continue
-
-            }
-            if c == "<" and peek(1) == "-" {
-                advance()
-                advance()
-                addToken("LeftArrow", "<-")
-                continue
-
-            }
-            if c == "<" and peek(1) == "<" and peek(2) == "=" {
-                advance()
-                advance()
-                advance()
-                addToken("ShiftLeftAssign", "<<=")
-                continue
-
-            }
-            if c == "<" and peek(1) == "<" {
-                advance()
-                advance()
-                addToken("ShiftLeft", "<<")
-                continue
-
-            }
-            if c == "<" {
-                advance()
-                addToken("Less", "<")
-                continue
-
-            }
-            if c == ">" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("GreaterEquals", ">=")
-                continue
-
-            }
-            if c == ">" and peek(1) == ">" and peek(2) == "=" {
-                advance()
-                advance()
-                advance()
-                addToken("ShiftRightAssign", ">>=")
-                continue
-
-            }
-            if c == ">" and peek(1) == ">" {
-                advance()
-                advance()
-                addToken("ShiftRight", ">>")
-                continue
-
-            }
-            if c == ">" {
-                advance()
-                addToken("Greater", ">")
-                continue
-
-            }
-            if c == "-" and peek(1) == ">" {
-                advance()
-                advance()
-                addToken("ReturnType", "->")
-                continue
-
-            }
-            if c == "-" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("MinusAssign", "-=")
-                continue
-
-            }
-            if c == "-" and peek(1) == "-" {
-                advance()
-                advance()
-                addToken("MinusMinus", "--")
-                continue
-
-            }
-            if c == "-" {
-                advance()
-                addToken("Minus", "-")
-                continue
-
-            }
-            if c == "+" and peek(1) == "+" {
-                advance()
-                advance()
-                addToken("PlusPlus", "++")
-                continue
-
-            }
-            if c == "+" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("PlusAssign", "+=")
-                continue
-
-            }
-            if c == "+" {
-                advance()
-                addToken("Plus", "+")
-                continue
-
-            }
-            if c == "*" and peek(1) == "*" and peek(2) == "=" {
-                advance()
-                advance()
-                advance()
-                addToken("PowerAssign", "**=")
-                continue
-
-            }
-            if c == "*" and peek(1) == "*" {
-                advance()
-                advance()
-                addToken("Power", "**")
-                continue
-
-            }
-            if c == "*" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("MultiplyAssign", "*=")
-                continue
-
-            }
-            if c == "*" {
-                advance()
-                addToken("Multiply", "*")
-                continue
-
-            }
-            if c == "/" {
-                if peek(1) == "=" {
-                    advance()
-                    advance()
-                    addToken("DivideAssign", "/=")
-                    continue
-                }
-                if !afterExpression() {
-                    scanRegexLiteral()
-                    continue
-                }
-                advance()
-                addToken("Divide", "/")
-                continue
-
-            }
-            if c == "%" and peek(1) == "%" and peek(2) == "=" {
-                advance()
-                advance()
-                advance()
-                addToken("DoubleModuloAssign", "%%=")
-                continue
-
-            }
-            if c == "%" and peek(1) == "%" {
-                advance()
-                advance()
-                addToken("DoubleModulo", "%%")
-                continue
-
-            }
-            if c == "%" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("ModuloAssign", "%=")
-                continue
-
-            }
-            if c == "%" {
-                advance()
-                addToken("Modulo", "%")
-                continue
-
-            }
-            if c == "\\" and peek(1) == "\\" and peek(2) == "=" {
-                advance()
-                advance()
-                advance()
-                addToken("BackslashAssign", "\\=")
-                continue
-
-            }
-            if c == "\\" and peek(1) == "\\" {
-                advance()
-                advance()
-                addToken("DoubleBackslash", "\\\\")
-                continue
-
-            }
-            if c == "\\" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("BackslashAssign", "\\=")
-                continue
-
-            }
-            if c == "\\" {
-                advance()
-                addToken("Backslash", "\\")
-                continue
-
-            }
-            if c == "?" and peek(1) == "?" {
-                advance()
-                advance()
-                addToken("Nullish", "??")
-                continue
-
-            }
-            if c == "?" and peek(1) == "." {
-                advance()
-                advance()
-                addToken("QuestionDot", "?.")
-                continue
-
-            }
-            if c == "?" {
-                advance()
-                addToken("Question", "?")
-                continue
-
-            }
-            if c == "&" and peek(1) == "&" {
-                advance()
-                advance()
-                addToken("And", "&&")
-                continue
-
-            }
-            if c == "&" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("BitwiseAndAssign", "&=")
-                continue
-
-            }
-            if c == "&" {
-                if inBitwiseExpr {
-                    advance()
-                    addToken("BitwiseAnd", "&")
-                }
-                else if afterExpression() {
-                    advance()
-                    addToken("BitwiseAnd", "&")
-                }
-                else {
-                    s = "&"
-                    advance()
-                    while current() != null and current() != "\n" and current() != "{" {
-                        if current() == "=" and peek(1) == ">" {
-                            break
-                        }
-                        s = s + current()
-                        advance()
-                    }
-                    addToken("Hotkey", s)
-                }
-                continue
-
-            }
-            if c == "|" and peek(1) == "|" {
-                advance()
-                advance()
-                addToken("Or", "||")
-                continue
-
-            }
-            if c == "|" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("BitwiseOrAssign", "|=")
-                continue
-
-            }
-            if c == "|" and peek(1) == ">" {
-                advance()
-                advance()
-                addToken("PipeRight", "|>")
-                continue
-
-            }
-            if c == "|" {
-                if inBitwiseExpr {
-                    advance()
-                    addToken("BitwiseOr", "|")
-                }
-                else if afterExpression() {
-                    advance()
-                    addToken("BitwiseOr", "|")
-                }
-                else {
-                    advance()
-                    addToken("Pipe", "|")
-                }
-                continue
-
-            }
-            if c == "^" and peek(1) == "=" {
-                advance()
-                advance()
-                addToken("BitwiseXorAssign", "^=")
-                continue
-
-            }
-            if c == "^" {
-                if inBitwiseExpr {
-                    advance()
-                    addToken("BitwiseXor", "^")
-                }
-                else if afterExpression() {
-                    advance()
-                    addToken("BitwiseXor", "^")
-                }
-                else {
-                    s = "^"
-                    advance()
-                    while current() != null and current() != "\n" and current() != "{" {
-                        if current() == "=" and peek(1) == ">" {
-                            break
-                        }
-                        s = s + current()
-                        advance()
-                    }
-                    addToken("Hotkey", s)
-                }
-                continue
-
-            }
-            if c == "(" and peek(1) == "(" {
-                if !afterExpression() {
-                    advance()
-                    advance()
-                    inBitwiseExpr = true
-                    parenDepth = 0
-                    addToken("DoubleOpenParen", "((")
-                    continue
-
-                }
-            }
-            if c == "(" {
-                advance()
-                parenDepth = parenDepth + 1
-                addToken("OpenParen", "(")
-                continue
-
-            }
-            if c == ")" and peek(1) == ")" and inBitwiseExpr {
-                advance()
-                advance()
-                inBitwiseExpr = false
-                addToken("DoubleCloseParen", "))")
-                continue
-
-            }
-            if c == ")" {
-                advance()
-                if parenDepth > 0 {
-                    parenDepth = parenDepth - 1
-                }
-                addToken("CloseParen", ")")
-                continue
-
-            }
-            if c == "[" {
-                advance()
-                addToken("OpenBracket", "[")
-                continue
-
-            }
-            if c == "]" {
-                advance()
-                addToken("CloseBracket", "]")
-                continue
-
-            }
-            if c == "{" {
-                advance()
-                addToken("OpenBrace", "{")
-                continue
-
-            }
-            if c == "}" {
-                advance()
-                addToken("CloseBrace", "}")
-                continue
-
-            }
-            if c == "," {
-                advance()
-                addToken("Comma", ",")
-                continue
-
-            }
-            if c == ";" {
-                advance()
-                addToken("Semicolon", ";")
-                continue
-
-            }
-            if c == "@" and peek(1) == "-" and peek(2) == ">" {
-                advance()
-                advance()
-                advance()
-                addToken("SuperArrow", "@->")
-                continue
-
-            }
-            if c == "@" and peek(1) == "@" {
-                advance()
-                advance()
-                addToken("AtAt", "@@")
-                continue
-
-            }
-            if c == "@" {
-                if afterExpression() or (peek(1) != null and peek(1) >= "a" and peek(1) <= "z") {
-                    advance()
-                    addToken("At", "@")
-                }
-                else {
-                    advance()
-                    s = "@"
-                    while current() != null and isAlphaNum(current()) {
-                        s = s + current()
-                        advance()
-                    }
-                    if current() == "=" and peek(1) == ">" {
-                        addToken("Hotkey", s)
-                    }
-                    else if current() == "&" or current() == ":" {
-                        addToken("Hotkey", s)
-                    }
-                    else {
-                        addToken("At", "@")
-                    }
-                }
-                continue
-
-            }
-if c == "#" {
+while current() != -1 {
+skipWhitespace()
+if current() == -1 { break }
+tokenStartCol = col
+c = current()
+
+if c == 10 {
+addToken("NewLine", "\n")
+advance()
+continue
+}
+if c == 47 and cp(1) == 47 {
+if cp(2) == 42 {
+skipBlockComment()
+}
+else {
+skipLineComment()
+}
+continue
+}
+if c == 47 and cp(1) == 42 {
+skipBlockComment()
+continue
+}
+if (c == 114 or c == 82) and (cp(1) == 34 or cp(1) == 39) {
+advance()
+quote = current()
+scanString(quote, false, true)
+continue
+}
+if (c == 102 or c == 70) and (cp(1) == 34 or cp(1) == 39) {
+if cp(2) == cp(1) {
+advance()
+scanMultilineString(cp(0), true)
+continue
+}
+advance()
+quote = current()
+scanString(quote, true, false)
+continue
+}
+if (c == 34 or c == 39) and cp(1) == c and cp(2) == c {
+scanMultilineString(c, false)
+continue
+}
+if c == 34 or c == 39 {
+scanString(c, false, false)
+continue
+}
+if c == 96 {
+scanBacktick()
+continue
+}
+if isDigitCp(c) {
+scanNumber()
+continue
+}
+if isAlphaCp(c) {
+scanIdentifier()
+continue
+}
+if c >= 0x80 {
+cp = c
+if isUnicodeLetterCp(cp) {
+scanIdentifier()
+continue
+}
+advance()
+continue
+}
+if c == 36 {
+advance()
+if current() == 33 {
+advance()
+addToken("ShellCommandCapture", "$!")
+}
+else {
+addToken("ShellCommand", "$")
+}
+continue
+}
+if c == 58 and cp(1) == 58 {
+advance()
+advance()
+addToken("ColonColon", "::")
+continue
+}
+if c == 58 {
+advance()
+addToken("Colon", ":")
+continue
+}
+if c == 46 and cp(1) == 46 and cp(2) == 46 {
+advance()
+advance()
+advance()
+addToken("Spread", "...")
+continue
+}
+if c == 46 and cp(1) == 46 and cp(2) == 61 {
+advance()
+advance()
+advance()
+addToken("DotDotEquals", "..=")
+continue
+}
+if c == 46 and cp(1) == 46 {
+advance()
+advance()
+addToken("DotDot", "..")
+continue
+}
+if c == 46 {
+advance()
+addToken("Dot", ".")
+continue
+}
+if c == 61 and cp(1) == 62 {
+advance()
+advance()
+addToken("Arrow", "=>")
+continue
+}
+if c == 61 and cp(1) == 61 {
+advance()
+advance()
+addToken("Equals", "==")
+continue
+}
+if c == 61 {
+advance()
+addToken("Assign", "=")
+continue
+}
+if c == 33 and cp(1) == 61 {
+advance()
+advance()
+addToken("NotEquals", "!=")
+continue
+}
+if c == 33 and cp(1) == 123 {
+advance()
+advance()
+addToken("BangOpenBrace", "!{")
+continue
+}
+if c == 33 {
+if afterExpression() or (cp(1) != -1 and cp(1) >= 97 and cp(1) <= 122) {
+advance()
+addToken("Not", "!")
+}
+else {
+advance()
+s = "!"
+while current() != -1 and current() != 10 and current() != 123 and current() != 40 {
+if current() == 61 and cp(1) == 62 {
+break
+}
+s = s + string.fromCodePoint(current())
+advance()
+}
+if s == "!" {
+addToken("Not", "!")
+}
+else {
+addToken("Hotkey", s)
+}
+}
+continue
+}
+if c == 60 and cp(1) == 61 {
+advance()
+advance()
+addToken("LessEquals", "<=")
+continue
+}
+if c == 60 and cp(1) == 45 {
+advance()
+advance()
+addToken("LeftArrow", "<-")
+continue
+}
+if c == 60 and cp(1) == 60 and cp(2) == 61 {
+advance()
+advance()
+advance()
+addToken("ShiftLeftAssign", "<<=")
+continue
+}
+if c == 60 and cp(1) == 60 {
+advance()
+advance()
+addToken("ShiftLeft", "<<")
+continue
+}
+if c == 60 {
+advance()
+addToken("Less", "<")
+continue
+}
+if c == 62 and cp(1) == 61 {
+advance()
+advance()
+addToken("GreaterEquals", ">=")
+continue
+}
+if c == 62 and cp(1) == 62 and cp(2) == 61 {
+advance()
+advance()
+advance()
+addToken("ShiftRightAssign", ">>=")
+continue
+}
+if c == 62 and cp(1) == 62 {
+advance()
+advance()
+addToken("ShiftRight", ">>")
+continue
+}
+if c == 62 {
+advance()
+addToken("Greater", ">")
+continue
+}
+if c == 45 and cp(1) == 62 {
+advance()
+advance()
+addToken("ReturnType", "->")
+continue
+}
+if c == 45 and cp(1) == 61 {
+advance()
+advance()
+addToken("MinusAssign", "-=")
+continue
+}
+if c == 45 and cp(1) == 45 {
+advance()
+advance()
+addToken("MinusMinus", "--")
+continue
+}
+if c == 45 {
+advance()
+addToken("Minus", "-")
+continue
+}
+if c == 43 and cp(1) == 43 {
+advance()
+advance()
+addToken("PlusPlus", "++")
+continue
+}
+if c == 43 and cp(1) == 61 {
+advance()
+advance()
+addToken("PlusAssign", "+=")
+continue
+}
+if c == 43 {
+advance()
+addToken("Plus", "+")
+continue
+}
+if c == 42 and cp(1) == 42 and cp(2) == 61 {
+advance()
+advance()
+advance()
+addToken("PowerAssign", "**=")
+continue
+}
+if c == 42 and cp(1) == 42 {
+advance()
+advance()
+addToken("Power", "**")
+continue
+}
+if c == 42 and cp(1) == 61 {
+advance()
+advance()
+addToken("MultiplyAssign", "*=")
+continue
+}
+if c == 42 {
+advance()
+addToken("Multiply", "*")
+continue
+}
+if c == 47 {
+if cp(1) == 61 {
+advance()
+advance()
+addToken("DivideAssign", "/=")
+continue
+}
+if !afterExpression() {
+scanRegexLiteral()
+continue
+}
+advance()
+addToken("Divide", "/")
+continue
+}
+if c == 37 and cp(1) == 37 and cp(2) == 61 {
+advance()
+advance()
+advance()
+addToken("DoubleModuloAssign", "%%=")
+continue
+}
+if c == 37 and cp(1) == 37 {
+advance()
+advance()
+addToken("DoubleModulo", "%%")
+continue
+}
+if c == 37 and cp(1) == 61 {
+advance()
+advance()
+addToken("ModuloAssign", "%=")
+continue
+}
+if c == 37 {
+advance()
+addToken("Modulo", "%")
+continue
+}
+if c == 92 and cp(1) == 92 and cp(2) == 61 {
+advance()
+advance()
+advance()
+addToken("BackslashAssign", "\\=")
+continue
+}
+if c == 92 and cp(1) == 92 {
+advance()
+advance()
+addToken("DoubleBackslash", "\\\\")
+continue
+}
+if c == 92 and cp(1) == 61 {
+advance()
+advance()
+addToken("BackslashAssign", "\\=")
+continue
+}
+if c == 92 {
+advance()
+addToken("Backslash", "\\")
+continue
+}
+if c == 63 and cp(1) == 63 {
+advance()
+advance()
+addToken("Nullish", "??")
+continue
+}
+if c == 63 and cp(1) == 46 {
+advance()
+advance()
+addToken("QuestionDot", "?.")
+continue
+}
+if c == 63 {
+advance()
+addToken("Question", "?")
+continue
+}
+if c == 38 and cp(1) == 38 {
+advance()
+advance()
+addToken("And", "&&")
+continue
+}
+if c == 38 and cp(1) == 61 {
+advance()
+advance()
+addToken("BitwiseAndAssign", "&=")
+continue
+}
+if c == 38 {
+if inBitwiseExpr {
+advance()
+addToken("BitwiseAnd", "&")
+}
+else if afterExpression() {
+advance()
+addToken("BitwiseAnd", "&")
+}
+else {
+s = "&"
+advance()
+while current() != -1 and current() != 10 and current() != 123 {
+if current() == 61 and cp(1) == 62 {
+break
+}
+s = s + string.fromCodePoint(current())
+advance()
+}
+addToken("Hotkey", s)
+}
+continue
+}
+if c == 124 and cp(1) == 124 {
+advance()
+advance()
+addToken("Or", "||")
+continue
+}
+if c == 124 and cp(1) == 61 {
+advance()
+advance()
+addToken("BitwiseOrAssign", "|=")
+continue
+}
+if c == 124 and cp(1) == 62 {
+advance()
+advance()
+addToken("PipeRight", "|>")
+continue
+}
+if c == 124 {
+if inBitwiseExpr {
+advance()
+addToken("BitwiseOr", "|")
+}
+else if afterExpression() {
+advance()
+addToken("BitwiseOr", "|")
+}
+else {
+advance()
+addToken("Pipe", "|")
+}
+continue
+}
+if c == 94 and cp(1) == 61 {
+advance()
+advance()
+addToken("BitwiseXorAssign", "^=")
+continue
+}
+if c == 94 {
+if inBitwiseExpr {
+advance()
+addToken("BitwiseXor", "^")
+}
+else if afterExpression() {
+advance()
+addToken("BitwiseXor", "^")
+}
+else {
+s = "^"
+advance()
+while current() != -1 and current() != 10 and current() != 123 {
+if current() == 61 and cp(1) == 62 {
+break
+}
+s = s + string.fromCodePoint(current())
+advance()
+}
+addToken("Hotkey", s)
+}
+continue
+}
+if c == 40 and cp(1) == 40 {
+if !afterExpression() {
+advance()
+advance()
+inBitwiseExpr = true
+parenDepth = 0
+addToken("DoubleOpenParen", "((")
+continue
+}
+}
+if c == 40 {
+advance()
+parenDepth = parenDepth + 1
+addToken("OpenParen", "(")
+continue
+}
+if c == 41 and cp(1) == 41 and inBitwiseExpr {
+advance()
+advance()
+inBitwiseExpr = false
+addToken("DoubleCloseParen", "))")
+continue
+}
+if c == 41 {
+advance()
+if parenDepth > 0 {
+parenDepth = parenDepth - 1
+}
+addToken("CloseParen", ")")
+continue
+}
+if c == 91 {
+advance()
+addToken("OpenBracket", "[")
+continue
+}
+if c == 93 {
+advance()
+addToken("CloseBracket", "]")
+continue
+}
+if c == 123 {
+advance()
+addToken("OpenBrace", "{")
+continue
+}
+if c == 125 {
+advance()
+addToken("CloseBrace", "}")
+continue
+}
+if c == 44 {
+advance()
+addToken("Comma", ",")
+continue
+}
+if c == 59 {
+advance()
+addToken("Semicolon", ";")
+continue
+}
+if c == 64 and cp(1) == 45 and cp(2) == 62 {
+advance()
+advance()
+advance()
+addToken("SuperArrow", "@->")
+continue
+}
+if c == 64 and cp(1) == 64 {
+advance()
+advance()
+addToken("AtAt", "@@")
+continue
+}
+if c == 64 {
+if afterExpression() or (cp(1) != -1 and cp(1) >= 97 and cp(1) <= 122) {
+advance()
+addToken("At", "@")
+}
+else {
+advance()
+s = "@"
+while current() != -1 and isAlphaNumCp(current()) {
+s = s + string.fromCodePoint(current())
+advance()
+}
+if current() == 61 and cp(1) == 62 {
+addToken("Hotkey", s)
+}
+else if current() == 38 or current() == 58 {
+addToken("Hotkey", s)
+}
+else {
+addToken("At", "@")
+}
+}
+continue
+}
+if c == 35 {
 advance()
 nextCh = current()
-if afterExpression() or nextCh == "[" or nextCh == "{" or nextCh == "\"" or nextCh == "'" or (nextCh != null && isAlpha(nextCh)) {
+if afterExpression() or nextCh == 91 or nextCh == 123 or nextCh == 34 or nextCh == 39 or (nextCh != -1 and isAlphaCp(nextCh)) {
 addToken("Length", "#")
 }
-        else {
-            s = "#"
-            while current() != null and current() != "\n" and current() != "{" {
-                if current() == "=" and peek(1) == ">" {
-                    break
-                }
-                s = s + current()
-                advance()
-            }
-            if s == "#" {
-                addToken("Length", "#")
-            }
-            else {
-                addToken("Hotkey", s)
-            }
-        }
-        continue
+else {
+s = "#"
+while current() != -1 and current() != 10 and current() != 123 {
+if current() == 61 and cp(1) == 62 {
+break
+}
+s = s + string.fromCodePoint(current())
+advance()
+}
+if s == "#" {
+addToken("Length", "#")
+}
+else {
+addToken("Hotkey", s)
+}
+}
+continue
+}
+if c == 126 {
+advance()
+addToken("Tilde", "~")
+continue
+}
+if c == 95 {
+if !isAlphaNumCp(cp(1)) {
+advance()
+addToken("Underscore", "_")
+continue
+}
+scanIdentifier()
+continue
+}
+advance()
 
-    }
-            if c == "~" {
-                advance()
-                addToken("Tilde", "~")
-                continue
+}
+addToken("EOF", "")
+{tokens: tokens, errors: errors}
 
-            }
-            if c == "_" {
-                if !isAlphaNum(peek(1)) {
-                    advance()
-                    addToken("Underscore", "_")
-                    continue
-                }
-                scanIdentifier()
-                continue
-
-        }
-        advance()
-
-    }
-        addToken("EOF", "")
-        {tokens: tokens, errors: errors}
-
-    }
-    {run: _scan}
+}
+{run: _scan}
 
 }
 fn tokenize(source) {
-    lx = Lexer(source)
-    result = lx.run()
-    result.tokens
+lx = Lexer(source)
+result = lx.run()
+result.tokens
 
 }
 fn tokenizeWithErrors(source) {
-    lx = Lexer(source)
-    result = lx.run()
-    {tokens: result.tokens, errors: result.errors}
+lx = Lexer(source)
+result = lx.run()
+{tokens: result.tokens, errors: result.errors}
 
 }
 fn printTokens(tokens) {
-    for t in tokens {
-        typeStr = t.type
-        valStr = t.value
-        if valStr.len > 40 {
-            valStr = valStr.sub(0, 37) + "..."
-        }
-        print(typeStr + " " + valStr)
-
-    }
+for t in tokens {
+typeStr = t.type
+valStr = t.value
+if valStr.len > 40 {
+valStr = valStr.sub(0, 37) + "..."
+}
+print(typeStr + " " + valStr)
+}
 }

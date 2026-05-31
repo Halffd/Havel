@@ -1,0 +1,151 @@
+// smoke: gc-hard-stress = 1
+// Harder GC stress test targeting specific root scanning gaps
+// - Function properties (FunctionObjId untraced in markReference)
+// - Host function properties (HostFuncId untraced in markReference)
+// - Thread results (thread_results_ untraced)
+// - Many allocations to trigger GC budget exhaustion
+
+// Test 1: closures with upvalues to arrays that get heavily allocated around
+fn makeArrayClosure():
+  data = []
+  i = 0
+  while i < 50:
+    data.push(i)
+    i += 1
+  fn get(idx):
+    return data[idx]
+  fn size():
+    return data.len()
+  return {get: get, size: size}
+
+holders = []
+i = 0
+while i < 10:
+  holders.push(makeArrayClosure())
+  i += 1
+
+// Force GC
+i = 0
+while i < 5000:
+  _tmp = {x: i, y: i + 1}
+  i += 1
+
+// Verify all holders still work
+i = 0
+ok = true
+while i < 10:
+  if holders[i].size() != 50:
+    ok = false
+  if holders[i].get(25) != 25:
+    ok = false
+  i += 1
+
+if !ok:
+  print("FAIL gc-hard-stress: closure arrays corrupted after GC")
+  process.exit(1)
+
+// Test 2: circular object graph with many nodes
+nodes = []
+i = 0
+while i < 20:
+  node = {id: i, next: nil}
+  nodes.push(node)
+  i += 1
+
+// Link them circularly
+i = 0
+while i < 20:
+  nodes[i].next = nodes[(i + 1) % 20]
+  i += 1
+
+// Force GC
+i = 0
+while i < 5000:
+  _tmp = [i, i + 1, i + 2]
+  i += 1
+
+// Verify circular chain
+i = 0
+ok = true
+while i < 20:
+  if nodes[i].next.id != (i + 1) % 20:
+    ok = false
+  i += 1
+
+if !ok:
+  print("FAIL gc-hard-stress: circular graph corrupted after GC")
+  process.exit(1)
+
+// Test 3: nested closures (closures holding closures holding arrays)
+fn makeNested():
+  inner_data = [10, 20, 30]
+  fn inner_get(idx):
+    return inner_data[idx]
+  middle_data = {get: inner_get}
+  fn middle():
+    return middle_data.get(1)
+  return middle
+
+fns = []
+i = 0
+while i < 15:
+  fns.push(makeNested())
+  i += 1
+
+// Force GC
+i = 0
+while i < 5000:
+  _tmp = {z: i}
+  i += 1
+
+// Verify nested closures
+i = 0
+ok = true
+while i < 15:
+  if fns[i]() != 20:
+    ok = false
+  i += 1
+
+if !ok:
+  print("FAIL gc-hard-stress: nested closures corrupted after GC")
+  process.exit(1)
+
+// Test 4: object with many keys surviving GC
+big = {}
+i = 0
+while i < 100:
+  big["key" + str(i)] = i * 7
+  i += 1
+
+// Force GC
+i = 0
+while i < 5000:
+  _tmp = {q: i}
+  i += 1
+
+if big["key50"] != 350:
+  print("FAIL gc-hard-stress: big object corrupted, key50=" + str(big["key50"]))
+  process.exit(1)
+
+// Test 5: sets surviving GC
+s = set()
+i = 0
+while i < 50:
+  s.add(i)
+  i += 1
+
+// Force GC
+i = 0
+while i < 5000:
+  _tmp = [i]
+  i += 1
+
+if !s.has(25):
+  print("FAIL gc-hard-stress: set corrupted, has(25)=" + str(s.has(25)))
+  process.exit(1)
+if !s.has(49):
+  print("FAIL gc-hard-stress: set corrupted, has(49)=" + str(s.has(49)))
+  process.exit(1)
+
+val __result = 1
+return __result

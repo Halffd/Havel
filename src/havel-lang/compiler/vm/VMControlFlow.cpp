@@ -216,12 +216,50 @@ case OpCode::TAIL_CALL: {
 
 // Look up method: 0. Object instance field, 1. Host prototype, 2. Module monkey-patch, 3. Class prototype chain
 
-    // 0. If receiver is an object, check for direct callable field FIRST.
+// 0. If receiver is an object, check for direct callable field FIRST.
     // Namespace objects like `process` have host function fields (e.g. `find`)
     // that must take priority over prototype methods (e.g. `object.find`).
-if (receiver.isObjectId()) {
-    auto *instanceObj = heap_.object(receiver.asObjectId());
-    if (instanceObj) {
+    if (receiver.isObjectId()) {
+        auto *instanceObj = heap_.object(receiver.asObjectId());
+        // Lazy module proxy: trigger module initialization before field lookup
+        if (instanceObj) {
+            auto *lazyFlag = instanceObj->get("__lazy__");
+            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+                auto *modNameVal = instanceObj->get("__module__");
+                std::string modName;
+                if (modNameVal) {
+                    if (modNameVal->isStringId()) {
+                        if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
+                    } else if (modNameVal->isStringValId() && current_chunk) {
+                        modName = current_chunk->getString(modNameVal->asStringValId());
+                    }
+                }
+                if (!modName.empty()) {
+                    ensureModuleLoaded(modName);
+                    auto git = globals.find(modName);
+                    if (git != globals.end() && git->second.isObjectId()) {
+                        receiver = git->second;
+                        instanceObj = heap_.object(receiver.asObjectId());
+                    } else {
+                        std::string capModName = modName;
+                        capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
+                        git = globals.find(capModName);
+                        if (git != globals.end() && git->second.isObjectId()) {
+                            globals[modName] = git->second;
+                            receiver = git->second;
+                            instanceObj = heap_.object(receiver.asObjectId());
+                        }
+                    }
+                    if (!instanceObj) {
+                        for (uint32_t i = 0; i < arg_count; ++i) popStack();
+                        popStack();
+                        pushStack(Value::makeNull());
+                        break;
+                    }
+                }
+            }
+        }
+        if (instanceObj) {
         auto it = instanceObj->find(method_name);
         if (it != instanceObj->end()) {
           if (it->second.isHostFuncId()) {
@@ -276,11 +314,11 @@ if (receiver.isObjectId()) {
       }
     }
 
-    // 1. Try host prototype (for primitives and built-in object methods)
-    if (!found_host && vm_func.isNull()) {
-        auto typeIt = prototypes_.find(type_name);
-        if (typeIt != prototypes_.end()) {
-            auto methodIt = typeIt->second.find(method_name);
+	// 1. Try host prototype (for primitives and built-in object methods)
+	if (!found_host && vm_func.isNull()) {
+		auto typeIt = prototypes_.find(type_name);
+		if (typeIt != prototypes_.end()) {
+			auto methodIt = typeIt->second.find(method_name);
             if (methodIt != typeIt->second.end()) {
                 host_func_idx = methodIt->second;
                 found_host = true;
@@ -341,13 +379,13 @@ all_args.push_back(recv);
 all_args.insert(all_args.end(), args2.begin(), args2.end());
 }
 
-if (found_host) {
-      if (host_func_idx < host_function_names_.size()) {
+	if (found_host) {
+		if (host_func_idx < host_function_names_.size()) {
         std::string resolved_name = host_function_names_[host_func_idx];
-        auto fnIt = host_functions.find(resolved_name);
-        if (fnIt != host_functions.end()) {
-          Value result = fnIt->second(all_args);
-          pushStack(result);
+		auto fnIt = host_functions.find(resolved_name);
+			if (fnIt != host_functions.end()) {
+				Value result = fnIt->second(all_args);
+				pushStack(result);
           if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
             currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);
           }

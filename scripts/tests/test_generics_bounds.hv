@@ -1,0 +1,73 @@
+// Test generics with bounds
+pass = 0
+fail = 0
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+
+// Test 1: class with single bound
+class Calculator(T: Number) {
+	value
+	fn @(v) { @value = v }
+	fn get() { @value }
+}
+
+c = Calculator(42)
+check("bounded-class-get", c.get(), 42)
+
+// Test 2: struct with single bound
+struct Container(T: Number) {
+	item
+	fn @(v) { @item = v }
+	fn unwrap() { @item }
+}
+
+s = Container(99)
+check("bounded-struct-unwrap", s.unwrap(), 99)
+
+// Test 3: function with bound
+fn double(T: Number)(x: T) { x * 2 }
+
+check("bounded-fn-double", double(5), 10)
+
+// Test 4: class with multiple bounds
+prot Serializable { fn serialize() }
+prot Hashable { fn hash() }
+
+class Cache(T: Serializable & Hashable) {
+	data
+	fn @(v) { @data = v }
+	fn get() { @data }
+}
+
+cache = Cache("test")
+check("bounded-cache-multiple", cache.get(), "test")
+
+// Test 5: generic without bounds still works
+class Box(T) {
+	content
+	fn @(v) { @content = v }
+	fn unwrap() { @content }
+}
+
+b = Box("hello")
+check("unbounded-box", b.unwrap(), "hello")
+
+// Test 6: enum with bound
+enum Color(T: Number) { Red, Green, Blue }
+check("bounded-enum", Color.Ok, Color.Ok)
+
+// Test 7: verify original generics test still passes
+struct Stack(T) {
+	items
+	fn @() { @items = [] }
+	fn push(v) { @items.push(v) }
+	fn pop() { @items.pop() }
+	fn len() { @items.len() }
+}
+
+st = Stack()
+st.push(10)
+st.push(20)
+check("unbounded-stack-len", st.len(), 2)
+check("unbounded-stack-pop", st.pop(), 20)
+
+print(f"\nGenerics bounds: {pass} passed, {fail} failed")

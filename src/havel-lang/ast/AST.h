@@ -7,10 +7,8 @@
 #include <vector>
 
 namespace havel::ast {
-// Forward declaration for ASTVisitor
 class ASTVisitor;
 
-// Forward declarations for type system
 struct TypeAnnotation;
 struct TypeDefinition;
 struct StructFieldDef;
@@ -18,6 +16,27 @@ struct EnumVariantDef;
 struct StructDefinition;
 struct ClassDefinition;
 struct EnumDefinition;
+
+struct TypeParam {
+	std::string name;
+	std::vector<std::string> upperBounds;
+
+	TypeParam() = default;
+	explicit TypeParam(std::string n, std::vector<std::string> bounds = {})
+		: name(std::move(n)), upperBounds(std::move(bounds)) {}
+
+	std::string toString() const {
+		std::string result = name;
+		if (!upperBounds.empty()) {
+			result += ": ";
+			for (size_t i = 0; i < upperBounds.size(); ++i) {
+				if (i > 0) result += " & ";
+				result += upperBounds[i];
+			}
+		}
+		return result;
+	}
+};
 struct TraitDeclaration;
 struct ProtocolDeclaration;
 struct ImplDeclaration;
@@ -140,10 +159,11 @@ enum class NodeType {
   FunctionParameter, // function parameter with optional default value
   DecoratorStatement, // @decorator fn foo() { } - decorator applied to declaration
 
-  // Type system (if you want static typing)
-  TypeDeclaration,   // type Point = {x: Float, y: Float}
-  UnionType,         // type Result = Ok(a) | Error(String)
-  TypeAnnotation,    // : List(Int)
+    // Type system (if you want static typing)
+    TypeDeclaration, // type Point = {x: Float, y: Float}
+    UnionType, // type Result = Ok(a) | Error(String)
+    TypeAnnotation, // : List(Int)
+    GenericTypeRef, // List(Int), Result(int, str) — parameterized type reference
   StructDeclaration, // struct Vec2 { x: Num, y: Num }
   StructDefinition,  // struct body definition
   StructFieldDef,    // struct field with optional type
@@ -256,6 +276,30 @@ struct NullableType : public TypeDefinition {
 
     std::string toString() const override {
         return "NullableType{?" + (inner ? inner->toString() : "nullptr") + "}";
+    }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Generic/parameterized type reference (e.g., List(Int), Result(int, str), Map(str, int))
+struct GenericTypeRef : public TypeDefinition {
+    std::string name;                                  // Base type name (e.g., "List")
+    std::vector<std::unique_ptr<TypeDefinition>> typeArguments;  // Type arguments
+
+    GenericTypeRef(const std::string &baseName,
+                   std::vector<std::unique_ptr<TypeDefinition>> args)
+        : name(baseName), typeArguments(std::move(args)) {
+        kind = NodeType::GenericTypeRef;
+    }
+
+    std::string toString() const override {
+        std::string result = name + "(";
+        for (size_t i = 0; i < typeArguments.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += typeArguments[i] ? typeArguments[i]->toString() : "nullptr";
+        }
+        result += ")";
+        return result;
     }
 
     void accept(ASTVisitor &visitor) const override;
@@ -773,21 +817,24 @@ struct FunctionParameter : public ASTNode {
 
 // Struct method definition (including constructor)
 struct StructMethodDef : public ASTNode {
-  std::string name; // "init" for constructor, otherwise method name, or
-                    // operator like "op_add"
-  std::vector<std::unique_ptr<FunctionParameter>> parameters;
-  std::unique_ptr<BlockStatement> body;
-  bool isConstructor;
-  bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
+    std::string name; // "init" for constructor, otherwise method name, or
+                      // operator like "op_add"
+    std::vector<std::unique_ptr<FunctionParameter>> parameters;
+    std::unique_ptr<BlockStatement> body;
+    bool isConstructor;
+    bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
+	std::vector<TypeParam> typeParameters;
 
-  StructMethodDef(const std::string &methodName,
-                  std::vector<std::unique_ptr<FunctionParameter>> params,
-                  std::unique_ptr<BlockStatement> b, bool isCtor = false,
-                  bool isOp = false)
-      : name(methodName), parameters(std::move(params)), body(std::move(b)),
-        isConstructor(isCtor), isOperator(isOp) {
-    kind = NodeType::StructMethodDef;
-  }
+	StructMethodDef(const std::string &methodName,
+		std::vector<std::unique_ptr<FunctionParameter>> params,
+		std::unique_ptr<BlockStatement> b, bool isCtor = false,
+		bool isOp = false,
+		std::vector<TypeParam> typeParams = {})
+		: name(methodName), parameters(std::move(params)), body(std::move(b)),
+		isConstructor(isCtor), isOperator(isOp),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::StructMethodDef;
+    }
 
   std::string toString() const override {
     if (isOperator) {
@@ -879,21 +926,24 @@ struct ClassFieldDef : public ASTNode {
 
 // Class method definition
 struct ClassMethodDef : public ASTNode {
-  std::string name;
-  std::vector<std::unique_ptr<FunctionParameter>> parameters;
-  std::unique_ptr<BlockStatement> body;
-  bool isConstructor;
-  bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
-  bool isClassMethod = false; // true if @@fn (class/static method)
+    std::string name;
+    std::vector<std::unique_ptr<FunctionParameter>> parameters;
+    std::unique_ptr<BlockStatement> body;
+    bool isConstructor;
+    bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
+    bool isClassMethod = false; // true if @@fn (class/static method)
+	std::vector<TypeParam> typeParameters;
 
-  ClassMethodDef(const std::string &methodName,
-                 std::vector<std::unique_ptr<FunctionParameter>> params,
-                 std::unique_ptr<BlockStatement> b, bool isCtor = false,
-                 bool isOp = false, bool isClass = false)
-      : name(methodName), parameters(std::move(params)), body(std::move(b)),
-        isConstructor(isCtor), isOperator(isOp), isClassMethod(isClass) {
-    kind = NodeType::ClassMethodDef;
-  }
+	ClassMethodDef(const std::string &methodName,
+		std::vector<std::unique_ptr<FunctionParameter>> params,
+		std::unique_ptr<BlockStatement> b, bool isCtor = false,
+		bool isOp = false, bool isClass = false,
+		std::vector<TypeParam> typeParams = {})
+		: name(methodName), parameters(std::move(params)), body(std::move(b)),
+		isConstructor(isCtor), isOperator(isOp), isClassMethod(isClass),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::ClassMethodDef;
+    }
 
   std::string toString() const override {
     if (isOperator) {
@@ -2038,22 +2088,25 @@ struct OnComboStatement : public Statement {
 
 // Function Declaration with optional return type annotation
 struct FunctionDeclaration : public Statement {
- std::unique_ptr<Identifier> name;
- std::vector<std::unique_ptr<FunctionParameter>> parameters;
- std::unique_ptr<BlockStatement> body;
- std::optional<std::unique_ptr<TypeAnnotation>>
- returnType; // Optional return type annotation
- bool is_coroutine = false; // co fn - creates a fiber
+    std::unique_ptr<Identifier> name;
+    std::vector<std::unique_ptr<FunctionParameter>> parameters;
+    std::unique_ptr<BlockStatement> body;
+    std::optional<std::unique_ptr<TypeAnnotation>>
+        returnType; // Optional return type annotation
+    bool is_coroutine = false; // co fn - creates a fiber
+	std::vector<TypeParam> typeParameters;
 
- FunctionDeclaration(
- std::unique_ptr<Identifier> n,
- std::vector<std::unique_ptr<FunctionParameter>> params,
- std::unique_ptr<BlockStatement> bd,
- std::optional<std::unique_ptr<TypeAnnotation>> returnAnn = std::nullopt)
- : name(std::move(n)), parameters(std::move(params)), body(std::move(bd)),
- returnType(std::move(returnAnn)) {
-    kind = NodeType::FunctionDeclaration;
-  }
+	FunctionDeclaration(
+		std::unique_ptr<Identifier> n,
+		std::vector<std::unique_ptr<FunctionParameter>> params,
+		std::unique_ptr<BlockStatement> bd,
+		std::optional<std::unique_ptr<TypeAnnotation>> returnAnn = std::nullopt,
+		std::vector<TypeParam> typeParams = {})
+		: name(std::move(n)), parameters(std::move(params)), body(std::move(bd)),
+		returnType(std::move(returnAnn)),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::FunctionDeclaration;
+    }
 
   std::string toString() const override {
     std::string paramsStr;
@@ -2242,32 +2295,43 @@ struct TypeDeclaration : public Statement {
  * Example: struct Vec2 { x: Num, y: Num }
  */
 struct StructDeclaration : public Statement {
-  std::string name;
-  StructDefinition definition;
-  std::vector<std::string> protocolNames;
+    std::string name;
+    StructDefinition definition;
+    std::vector<std::string> protocolNames;
+	std::vector<TypeParam> typeParameters;
 
-  StructDeclaration(const std::string &structName, StructDefinition def,
-                    std::vector<std::string> protos = {})
-      : name(structName), definition(std::move(def)),
-        protocolNames(std::move(protos)) {
-    kind = NodeType::StructDeclaration;
-  }
-
-  std::string toString() const override {
-    std::string result = "StructDeclaration{name: " + name;
-    if (!protocolNames.empty()) {
-      result += ", protocols: [";
-      for (size_t i = 0; i < protocolNames.size(); ++i) {
-        if (i > 0) result += ", ";
-        result += protocolNames[i];
-      }
-      result += "]";
+	StructDeclaration(const std::string &structName, StructDefinition def,
+		std::vector<std::string> protos = {},
+		std::vector<TypeParam> typeParams = {})
+		: name(structName), definition(std::move(def)),
+		protocolNames(std::move(protos)),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::StructDeclaration;
     }
-    result += ", definition: " + definition.toString() + "}";
-    return result;
-  }
 
-  void accept(ASTVisitor &visitor) const override;
+    std::string toString() const override {
+        std::string result = "StructDeclaration{name: " + name;
+        if (!typeParameters.empty()) {
+            result += ", typeParams: [";
+            for (size_t i = 0; i < typeParameters.size(); ++i) {
+                if (i > 0) result += ", ";
+	result += typeParameters[i].toString();
+	}
+	result += "]";
+}
+if (!protocolNames.empty()) {
+            result += ", protocols: [";
+            for (size_t i = 0; i < protocolNames.size(); ++i) {
+                if (i > 0) result += ", ";
+                result += protocolNames[i];
+            }
+            result += "]";
+        }
+        result += ", definition: " + definition.toString() + "}";
+        return result;
+    }
+
+    void accept(ASTVisitor &visitor) const override;
 };
 
 /**
@@ -2275,37 +2339,48 @@ struct StructDeclaration : public Statement {
  * Example: class Window { x, y; fn moveTo(x, y) {...} }
  */
 struct ClassDeclaration : public Statement {
-  std::string name;
-  std::string parentName; // Parent class name for inheritance (empty if none)
-  std::vector<std::string> protocolNames;
-  ClassDefinition definition;
+    std::string name;
+    std::string parentName; // Parent class name for inheritance (empty if none)
+    std::vector<std::string> protocolNames;
+    ClassDefinition definition;
+	std::vector<TypeParam> typeParameters;
 
-  ClassDeclaration(const std::string &className, ClassDefinition def,
-                   const std::string &parent = "",
-                   std::vector<std::string> protos = {})
-      : name(className), parentName(parent),
-        protocolNames(std::move(protos)), definition(std::move(def)) {
-    kind = NodeType::ClassDeclaration;
-  }
-
-  std::string toString() const override {
-    std::string result = "ClassDeclaration{name: " + name;
-    if (!parentName.empty()) {
-      result += ", parent: " + parentName;
+	ClassDeclaration(const std::string &className, ClassDefinition def,
+		const std::string &parent = "",
+		std::vector<std::string> protos = {},
+		std::vector<TypeParam> typeParams = {})
+		: name(className), parentName(parent),
+		protocolNames(std::move(protos)), definition(std::move(def)),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::ClassDeclaration;
     }
-    if (!protocolNames.empty()) {
-      result += ", protocols: [";
-      for (size_t i = 0; i < protocolNames.size(); ++i) {
-        if (i > 0) result += ", ";
-        result += protocolNames[i];
-      }
-      result += "]";
-    }
-    result += ", definition: " + definition.toString() + "}";
-    return result;
-  }
 
-  void accept(ASTVisitor &visitor) const override;
+    std::string toString() const override {
+        std::string result = "ClassDeclaration{name: " + name;
+        if (!typeParameters.empty()) {
+            result += ", typeParams: [";
+            for (size_t i = 0; i < typeParameters.size(); ++i) {
+                if (i > 0) result += ", ";
+		result += typeParameters[i].toString();
+		}
+		result += "]";
+	}
+	if (!parentName.empty()) {
+            result += ", parent: " + parentName;
+        }
+        if (!protocolNames.empty()) {
+            result += ", protocols: [";
+            for (size_t i = 0; i < protocolNames.size(); ++i) {
+                if (i > 0) result += ", ";
+                result += protocolNames[i];
+            }
+            result += "]";
+        }
+        result += ", definition: " + definition.toString() + "}";
+        return result;
+    }
+
+    void accept(ASTVisitor &visitor) const override;
 };
 
 /**
@@ -2313,20 +2388,32 @@ struct ClassDeclaration : public Statement {
  * Example: enum Color { Red, Green, Blue }
  */
 struct EnumDeclaration : public Statement {
-  std::string name;
-  EnumDefinition definition;
+    std::string name;
+    EnumDefinition definition;
+	std::vector<TypeParam> typeParameters;
 
-  EnumDeclaration(const std::string &enumName, EnumDefinition def)
-      : name(enumName), definition(std::move(def)) {
-    kind = NodeType::EnumDeclaration;
-  }
+	EnumDeclaration(const std::string &enumName, EnumDefinition def,
+		std::vector<TypeParam> typeParams = {})
+		: name(enumName), definition(std::move(def)),
+		typeParameters(std::move(typeParams)) {
+		kind = NodeType::EnumDeclaration;
+	}
 
-  std::string toString() const override {
-    return "EnumDeclaration{name: " + name +
-           ", definition: " + definition.toString() + "}";
-  }
+	std::string toString() const override {
+		std::string result = "EnumDeclaration{name: " + name;
+		if (!typeParameters.empty()) {
+			result += ", typeParams: [";
+			for (size_t i = 0; i < typeParameters.size(); ++i) {
+				if (i > 0) result += ", ";
+				result += typeParameters[i].toString();
+			}
+			result += "]";
+		}
+		result += ", definition: " + definition.toString() + "}";
+		return result;
+	}
 
-  void accept(ASTVisitor &visitor) const override;
+    void accept(ASTVisitor &visitor) const override;
 };
 
 struct UnaryExpression : public Expression {
@@ -3195,8 +3282,9 @@ public:
   virtual void visitUnionType(const UnionType &node) = 0;
   virtual void visitRecordType(const RecordType &node) = 0;
   virtual void visitFunctionType(const FunctionType &node) = 0;
-virtual void visitTypeReference(const TypeReference &node) = 0;
-virtual void visitNullableType(const NullableType &node) = 0;
+    virtual void visitTypeReference(const TypeReference &node) = 0;
+    virtual void visitNullableType(const NullableType &node) = 0;
+    virtual void visitGenericTypeRef(const GenericTypeRef &node) = 0;
 virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitUnaryExpression(const UnaryExpression &node) = 0;
   virtual void visitUpdateExpression(const UpdateExpression &node) = 0;
@@ -3615,6 +3703,10 @@ inline void TypeReference::accept(ASTVisitor &visitor) const {
 
 inline void NullableType::accept(ASTVisitor &visitor) const {
     visitor.visitNullableType(*this);
+}
+
+inline void GenericTypeRef::accept(ASTVisitor &visitor) const {
+    visitor.visitGenericTypeRef(*this);
 }
 
 inline void TryExpression::accept(ASTVisitor &visitor) const {

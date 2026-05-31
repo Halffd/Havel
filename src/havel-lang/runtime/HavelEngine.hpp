@@ -26,14 +26,16 @@
 namespace havel {
 
 struct EngineConfig {
-bool debugBytecode = false;
-bool debugLexer = false;
-bool debugParser = false;
-bool debugAst = false;
-bool stopOnError = false;
-bool leanMinimalStartup = false;
-bool pureStdlib = false;
-compiler::VMConfig vmConfig;
+    bool debugBytecode = false;
+    bool debugLexer = false;
+    bool debugParser = false;
+    bool debugAst = false;
+    bool stopOnError = false;
+    bool leanMinimalStartup = false;
+  bool pureStdlib = false;
+  compiler::VMConfig vmConfig;
+  host::ServiceFilter serviceIncludes;
+  host::ServiceFilter serviceExcludes;
 };
 
 class HavelEngine {
@@ -52,11 +54,11 @@ public:
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
-  void initializeFull(std::shared_ptr<IHostAPI> hostAPI, bool leanStartup = false) {
-    if (initialized_) return;
+	void initializeFull(std::shared_ptr<IHostAPI> hostAPI, bool leanStartup = false) {
+		if (initialized_) return;
 
-    host::ServiceRegistry::instance().clear();
-    initializeServiceRegistry(hostAPI);
+		host::ServiceRegistry::instance().clear();
+  initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes);
 
         hostContext_ = std::make_unique<HostContext>(createHostContext(hostAPI));
 

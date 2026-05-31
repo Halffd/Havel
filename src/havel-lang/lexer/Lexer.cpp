@@ -1841,6 +1841,14 @@ if (c == '%' && peek() == '=') {
     }
 
     // Handle @ (at/this field access) - must be before hotkey handling
+    // @ not followed by alpha/underscore is always self-reference (At token), never a hotkey
+    if (c == '@' && !(isAlpha(peek()) || peek() == '_')) {
+        tokens.push_back(makeToken("@", TokenType::At));
+        if (debug_lexer) {
+            havel::debug("LEX: {}", tokens.back().toString());
+        }
+        continue;
+    }
     // Peek ahead to decide: @identifier => is hotkey, everything else is field access
     if (c == '@' && (isAlpha(peek()) || peek() == '_')) {
       // Look ahead past the identifier

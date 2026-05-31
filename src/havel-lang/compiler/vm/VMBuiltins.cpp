@@ -10,6 +10,7 @@
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "core/config/ConfigManager.hpp"
 #include <cmath>
+#include <cctype>
 #include <iostream>
 #include <set>
 #include <sstream>
@@ -130,23 +131,51 @@ bool VM::execBuiltinOp(const Instruction &instruction) {
     break;
   }
 
-    case OpCode::IMPORT: {
-        Value path_val = popStack();
-        std::string path;
-        if (path_val.isStringValId() && current_chunk) {
-            path = current_chunk->getString(path_val.asStringValId());
-        } else if (path_val.isStringId()) {
-            if (auto *s = heap_.string(path_val.asStringId())) path = *s;
-        }
+        case OpCode::IMPORT: {
+            Value path_val = popStack();
+            std::string path;
+            if (path_val.isStringValId() && current_chunk) {
+                path = current_chunk->getString(path_val.asStringValId());
+            } else if (path_val.isStringId()) {
+                if (auto *s = heap_.string(path_val.asStringId())) path = *s;
+            }
 
-        if (path.empty()) {
-            COMPILER_THROW("IMPORT expects valid string path");
-        }
+            if (path.empty()) {
+                COMPILER_THROW("IMPORT expects valid string path");
+            }
 
-        Value exports = loadModule(path);
-        pushStack(exports);
-        break;
-    }
+            if (ensureModuleLoaded(path)) {
+                auto it = globals.find(path);
+                if (it != globals.end()) {
+                    if (it->second.isObjectId()) {
+                        auto *obj = heap_.object(it->second.asObjectId());
+                        if (obj) {
+                            auto *lazyFlag = obj->get("__lazy__");
+                            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+                                globals.erase(it);
+                            }
+                        }
+                    }
+                }
+                it = globals.find(path);
+                if (it != globals.end()) {
+                    pushStack(it->second);
+                    break;
+                }
+                std::string capPath = path;
+                capPath[0] = static_cast<char>(toupper(static_cast<unsigned char>(capPath[0])));
+                it = globals.find(capPath);
+                if (it != globals.end()) {
+                    globals[path] = it->second;
+                    pushStack(it->second);
+                    break;
+                }
+            }
+
+            Value exports = loadModule(path);
+            pushStack(exports);
+            break;
+        }
 
     case OpCode::IMPORT_WILDCARD: {
         Value exports = popStack();

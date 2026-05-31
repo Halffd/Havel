@@ -141,10 +141,18 @@ struct StructField {
  */
 class HavelStructType : public HavelType {
 public:
-  HavelStructType(const std::string &name)
-      : HavelType(Kind::Struct), name_(name) {}
+    HavelStructType(const std::string &name)
+        : HavelType(Kind::Struct), name_(name) {}
 
-  const std::string &getName() const { return name_; }
+    const std::string &getName() const { return name_; }
+
+    void setTypeParameterNames(std::vector<std::string> params) {
+        typeParameterNames_ = std::move(params);
+    }
+    const std::vector<std::string> &getTypeParameterNames() const {
+        return typeParameterNames_;
+    }
+    bool isGeneric() const { return !typeParameterNames_.empty(); }
 
   void addField(const StructField &field) {
     fields_.push_back(field);
@@ -209,8 +217,9 @@ public:
   std::string toString() const override { return "Struct<" + name_ + ">"; }
 
 private:
-  std::string name_;
-  std::vector<StructField> fields_;
+    std::string name_;
+    std::vector<std::string> typeParameterNames_;
+    std::vector<StructField> fields_;
   std::unordered_map<std::string, size_t> fieldIndex_;
   std::unordered_map<std::string, const ast::StructMethodDef *> methods_;
   std::unordered_map<std::string, const ast::StructMethodDef *>
@@ -244,10 +253,18 @@ struct ClassField {
  */
 class HavelClassType : public HavelType {
 public:
-  HavelClassType(const std::string &name)
-      : HavelType(Kind::Class), name_(name) {}
+    HavelClassType(const std::string &name)
+        : HavelType(Kind::Class), name_(name) {}
 
-  const std::string &getName() const { return name_; }
+    const std::string &getName() const { return name_; }
+
+    void setTypeParameterNames(std::vector<std::string> params) {
+        typeParameterNames_ = std::move(params);
+    }
+    const std::vector<std::string> &getTypeParameterNames() const {
+        return typeParameterNames_;
+    }
+    bool isGeneric() const { return !typeParameterNames_.empty(); }
 
   void addField(const ClassField &field) {
     fields_.push_back(field);
@@ -294,11 +311,13 @@ public:
   std::string toString() const override { return "Class<" + name_ + ">"; }
 
 private:
-  std::string name_;
-  std::vector<ClassField> fields_;
-  std::unordered_map<std::string, size_t> fieldIndex_;
-  std::unordered_map<std::string, const ast::StructMethodDef *> methods_;
+    std::string name_;
+    std::vector<std::string> typeParameterNames_;
+    std::vector<ClassField> fields_;
+    std::unordered_map<std::string, size_t> fieldIndex_;
+    std::unordered_map<std::string, const ast::StructMethodDef *> methods_;
 };
+
 
 /**
  * Enum variant definition
@@ -330,9 +349,17 @@ struct EnumVariant {
  */
 class HavelEnumType : public HavelType {
 public:
-  HavelEnumType(const std::string &name) : HavelType(Kind::Enum), name_(name) {}
+    HavelEnumType(const std::string &name) : HavelType(Kind::Enum), name_(name) {}
 
-  const std::string &getName() const { return name_; }
+    const std::string &getName() const { return name_; }
+
+    void setTypeParameterNames(std::vector<std::string> params) {
+        typeParameterNames_ = std::move(params);
+    }
+    const std::vector<std::string> &getTypeParameterNames() const {
+        return typeParameterNames_;
+    }
+    bool isGeneric() const { return !typeParameterNames_.empty(); }
 
   void addVariant(const EnumVariant &variant) {
     variants_.push_back(variant);
@@ -360,9 +387,10 @@ public:
   std::string toString() const override { return "Enum<" + name_ + ">"; }
 
 private:
-  std::string name_;
-  std::vector<EnumVariant> variants_;
-  std::unordered_map<std::string, size_t> variantIndex_;
+    std::string name_;
+    std::vector<std::string> typeParameterNames_;
+    std::vector<EnumVariant> variants_;
+    std::unordered_map<std::string, size_t> variantIndex_;
 };
 
 /**
@@ -422,8 +450,62 @@ public:
   }
 
 private:
-  std::vector<std::shared_ptr<HavelType>> paramTypes_;
-  std::optional<std::shared_ptr<HavelType>> returnType_;
+    std::vector<std::shared_ptr<HavelType>> paramTypes_;
+    std::optional<std::shared_ptr<HavelType>> returnType_;
+};
+
+/**
+ * Parameterized/generic type (e.g., List<Int>, Result<Int, String>, Map<String, Int>)
+ *
+ * Represents a concrete instantiation of a generic type with type arguments.
+ * The base type is the generic declaration (e.g., List), and typeArguments
+ * are the concrete types substituted for the type parameters.
+ */
+class HavelParameterizedType : public HavelType {
+public:
+    HavelParameterizedType(std::shared_ptr<HavelType> baseType,
+                           std::vector<std::shared_ptr<HavelType>> typeArgs)
+        : HavelType(baseType->getKind()), baseType_(baseType),
+          typeArguments_(std::move(typeArgs)) {}
+
+    const HavelType &getBaseType() const { return *baseType_; }
+    std::shared_ptr<HavelType> getBaseTypePtr() const { return baseType_; }
+
+    const std::vector<std::shared_ptr<HavelType>> &getTypeArguments() const {
+        return typeArguments_;
+    }
+
+    size_t getTypeArgumentCount() const { return typeArguments_.size(); }
+
+    bool isCompatible(const HavelType &other) const override {
+        auto *otherParam = dynamic_cast<const HavelParameterizedType *>(&other);
+        if (otherParam) {
+            if (!baseType_->isCompatible(*otherParam->baseType_)) return false;
+            if (typeArguments_.size() != otherParam->typeArguments_.size())
+                return false;
+            for (size_t i = 0; i < typeArguments_.size(); ++i) {
+                if (!typeArguments_[i]->isCompatible(*otherParam->typeArguments_[i]))
+                    return false;
+            }
+            return true;
+        }
+        // A parameterized type is compatible with its base type via Any
+        return baseType_->isCompatible(other);
+    }
+
+    std::string toString() const override {
+        std::string result = baseType_->toString() + "(";
+        for (size_t i = 0; i < typeArguments_.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += typeArguments_[i]->toString();
+        }
+        result += ")";
+        return result;
+    }
+
+private:
+    std::shared_ptr<HavelType> baseType_;
+    std::vector<std::shared_ptr<HavelType>> typeArguments_;
 };
 
 /**
@@ -517,58 +599,104 @@ private:
  */
 class TypeRegistry {
 public:
-  static TypeRegistry &getInstance() {
-    static TypeRegistry instance;
-    return instance;
-  }
+    static TypeRegistry &getInstance() {
+        static TypeRegistry instance;
+        return instance;
+    }
 
-  void registerStructType(std::shared_ptr<HavelStructType> type) {
-    structTypes_[type->getName()] = type;
-  }
+    void registerStructType(std::shared_ptr<HavelStructType> type) {
+        structTypes_[type->getName()] = type;
+    }
 
-  void registerEnumType(std::shared_ptr<HavelEnumType> type) {
-    enumTypes_[type->getName()] = type;
-  }
+    void registerClassType(std::shared_ptr<HavelClassType> type) {
+        classTypes_[type->getName()] = type;
+    }
 
-  void registerTypeAlias(const std::string &name,
-                         std::shared_ptr<HavelType> type) {
-    typeAliases_[name] = type;
-  }
+    void registerEnumType(std::shared_ptr<HavelEnumType> type) {
+        enumTypes_[type->getName()] = type;
+    }
 
-  std::shared_ptr<HavelStructType> getStructType(const std::string &name) {
-    auto it = structTypes_.find(name);
-    return (it != structTypes_.end()) ? it->second : nullptr;
-  }
+    void registerTypeAlias(const std::string &name,
+                           std::shared_ptr<HavelType> type) {
+        typeAliases_[name] = type;
+    }
 
-  std::shared_ptr<HavelEnumType> getEnumType(const std::string &name) {
-    auto it = enumTypes_.find(name);
-    return (it != enumTypes_.end()) ? it->second : nullptr;
-  }
+    // Register a monomorphized (instantiated) generic type
+    // key is "BaseName(Arg1,Arg2,...)" e.g., "List(int)", "Result(int,str)"
+    void registerParameterizedType(const std::string &key,
+                                   std::shared_ptr<HavelType> type) {
+        parameterizedTypes_[key] = type;
+    }
 
-  std::shared_ptr<HavelType> getTypeAlias(const std::string &name) {
-    auto it = typeAliases_.find(name);
-    return (it != typeAliases_.end()) ? it->second : nullptr;
-  }
+    std::shared_ptr<HavelStructType> getStructType(const std::string &name) {
+        auto it = structTypes_.find(name);
+        return (it != structTypes_.end()) ? it->second : nullptr;
+    }
 
-  bool hasStructType(const std::string &name) const {
-    return structTypes_.find(name) != structTypes_.end();
-  }
+    std::shared_ptr<HavelClassType> getClassType(const std::string &name) {
+        auto it = classTypes_.find(name);
+        return (it != classTypes_.end()) ? it->second : nullptr;
+    }
 
-  bool hasEnumType(const std::string &name) const {
-    return enumTypes_.find(name) != enumTypes_.end();
-  }
+    std::shared_ptr<HavelEnumType> getEnumType(const std::string &name) {
+        auto it = enumTypes_.find(name);
+        return (it != enumTypes_.end()) ? it->second : nullptr;
+    }
 
-  bool hasTypeAlias(const std::string &name) const {
-    return typeAliases_.find(name) != typeAliases_.end();
-  }
+    std::shared_ptr<HavelType> getTypeAlias(const std::string &name) {
+        auto it = typeAliases_.find(name);
+        return (it != typeAliases_.end()) ? it->second : nullptr;
+    }
+
+    std::shared_ptr<HavelType> getParameterizedType(const std::string &key) {
+        auto it = parameterizedTypes_.find(key);
+        return (it != parameterizedTypes_.end()) ? it->second : nullptr;
+    }
+
+    bool hasStructType(const std::string &name) const {
+        return structTypes_.find(name) != structTypes_.end();
+    }
+
+    bool hasClassType(const std::string &name) const {
+        return classTypes_.find(name) != classTypes_.end();
+    }
+
+    bool hasEnumType(const std::string &name) const {
+        return enumTypes_.find(name) != enumTypes_.end();
+    }
+
+    bool hasTypeAlias(const std::string &name) const {
+        return typeAliases_.find(name) != typeAliases_.end();
+    }
+
+    bool hasParameterizedType(const std::string &key) const {
+        return parameterizedTypes_.find(key) != parameterizedTypes_.end();
+    }
+
+    // Build a monomorphization key from a base name and type argument strings
+    static std::string makeParameterizedKey(
+        const std::string &baseName,
+        const std::vector<std::string> &argNames) {
+        std::string key = baseName + "(";
+        for (size_t i = 0; i < argNames.size(); ++i) {
+            if (i > 0) key += ",";
+            key += argNames[i];
+        }
+        key += ")";
+        return key;
+    }
 
 private:
-  TypeRegistry() = default;
+    TypeRegistry() = default;
 
-  std::unordered_map<std::string, std::shared_ptr<HavelStructType>>
-      structTypes_;
-  std::unordered_map<std::string, std::shared_ptr<HavelEnumType>> enumTypes_;
-  std::unordered_map<std::string, std::shared_ptr<HavelType>> typeAliases_;
+    std::unordered_map<std::string, std::shared_ptr<HavelStructType>>
+        structTypes_;
+    std::unordered_map<std::string, std::shared_ptr<HavelClassType>>
+        classTypes_;
+    std::unordered_map<std::string, std::shared_ptr<HavelEnumType>> enumTypes_;
+    std::unordered_map<std::string, std::shared_ptr<HavelType>> typeAliases_;
+    std::unordered_map<std::string, std::shared_ptr<HavelType>>
+        parameterizedTypes_;
 };
 
 /**

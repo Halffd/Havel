@@ -67,6 +67,14 @@ struct ScriptError final {
 };
 
 // ============================================================================
+// LAZY MODULE LOADING
+struct ModuleDescriptor {
+    std::string name;
+    std::function<void(class VMApi&)> initFn;
+    bool loaded = false;
+};
+
+// ============================================================================
 // VM EXECUTION RESULT
 //
 // Result of executing a single bytecode instruction in a Fiber
@@ -252,8 +260,12 @@ std::shared_ptr<BytecodeChunk> main_chunk_;
 // Keep REPL chunks alive so closures/functions from previous lines remain valid
 std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
 
-    // Canonical module loader for path resolution and caching
-    ModuleLoader moduleLoader_;
+// Canonical module loader for path resolution and caching
+ModuleLoader moduleLoader_;
+
+// Lazy module registry — descriptors are registered at startup,
+// init functions are called on first use (import/access)
+std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;
 
     std::vector<std::unordered_map<std::string, Value>> globals_stack_;
  std::unordered_map<std::string, Value> rootGlobals_;
@@ -965,6 +977,10 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
     int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
 
     Value loadModule(const std::string& path);
+void registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn);
+bool ensureModuleLoaded(const std::string &name);
+bool isLazyModuleRegistered(const std::string &name) const;
+bool isLazyModuleLoaded(const std::string &name) const;
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
 

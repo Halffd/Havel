@@ -94,8 +94,19 @@ void Parser::checkParseLoop(int &counter, const char* context) {
 }
 
 std::unique_ptr<ast::Identifier> Parser::makeIdentifier(const Token &token) {
-  return makeNode<ast::Identifier>(token.value, token.line,
-                                           token.column);
+    return makeNode<ast::Identifier>(token.value, token.line,
+        token.column);
+}
+
+bool Parser::isFieldLikeToken(const Token &tok) const {
+    if (tok.type == havel::TokenType::Identifier) return true;
+    if (tok.value.empty()) return false;
+    char first = tok.value[0];
+    if (!std::isalpha(static_cast<unsigned char>(first)) && first != '_') return false;
+    for (char c : tok.value) {
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') return false;
+        }
+        return true;
 }
 
 void Parser::synchronize() {
@@ -734,9 +745,9 @@ std::unique_ptr<ast::Expression> Parser::parsePrattExpression(int rbp) {
 
   // While the next token has higher binding power than our right binding power
   // Guard against infinite loops from malformed binding power tables
-  int infixIterations = 0;
-  while (rbp < getBindingPower(at().type)) {
-    infixIterations++;
+        int infixIterations = 0;
+        while (rbp < getBindingPower(at().type)) {
+            infixIterations++;
     if (infixIterations > 10000) {
       throw std::runtime_error("Pratt infix loop exceeded at token " + std::to_string(position) + ": " + at().toString() + " (rbp=" + std::to_string(rbp) + ", bp=" + std::to_string(getBindingPower(at().type)) + ")");
     }
@@ -1259,17 +1270,17 @@ case TokenType::BangOpenBrace: {
         return makeNodeAt<ast::UnaryExpression>(token, ast::UnaryExpression::UnaryOperator::Length, std::move(operand));
     }
 
-    case TokenType::At: {
-        if (at().type != TokenType::Identifier) {
-            errorAt(at(), "Expected field name after '@'");
-            return nullptr;
+        case TokenType::At: {
+            if (!isFieldLikeToken(at())) {
+                // Standalone @ is self-reference (like 'this')
+                return makeNodeAt<ast::AtExpression>(token, nullptr);
+            }
+            auto fieldName = makeIdentifier(advance());
+            return makeNodeAt<ast::AtExpression>(token, std::move(fieldName));
         }
-        auto fieldName = makeIdentifier(advance());
-        return makeNodeAt<ast::AtExpression>(token, std::move(fieldName));
-    }
 
     case TokenType::AtAt: {
-        if (at().type != TokenType::Identifier) {
+        if (!isFieldLikeToken(at())) {
             errorAt(at(), "Expected field name after '@@'");
             return nullptr;
         }
@@ -1405,7 +1416,7 @@ case TokenType::Timeout:
       return inner;
     }
 
-default: {
+        default: {
             errorAt(token, "Unexpected token in expression: " + token.value);
             return nullptr;
         }
@@ -2492,8 +2503,10 @@ position = savePos; // restore position
     }
 
     // @decorator syntax: @identifier at statement start followed by fn/class
-    if (at().type == havel::TokenType::At &&
-        at(1).type == havel::TokenType::Identifier) {
+    // Only matches if @identifier (optionally with args) is followed by a declaration keyword.
+    // Does NOT match @ as a continuation (stacked decorator) because @field expressions
+    // would be ambiguous — use [dec1] [dec2] fn foo() bracket syntax for stacking.
+    if (at().type == havel::TokenType::At && at(1).type == havel::TokenType::Identifier) {
         size_t savePos = position;
         advance(); // consume '@'
         advance(); // consume identifier
@@ -2508,12 +2521,7 @@ position = savePos; // restore position
             }
         }
         while (at().type == havel::TokenType::NewLine) advance();
-        if (at().type == havel::TokenType::Fn ||
-            at().type == havel::TokenType::Class ||
-            at().type == havel::TokenType::Let ||
-            at().type == havel::TokenType::Val ||
-            at().type == havel::TokenType::Const ||
-            at().type == havel::TokenType::At) {
+        if (at().type == havel::TokenType::Fn || at().type == havel::TokenType::Class || at().type == havel::TokenType::Let || at().type == havel::TokenType::Val || at().type == havel::TokenType::Const) {
             position = savePos;
             return parseAtDecoratorStatement();
         }
@@ -2578,11 +2586,11 @@ position = savePos; // restore position
 
       // No conditions, return normal binding
       return binding;
-    } else {
-      failAt(hotkeyToken, "Expected '=>' after hotkey literal");
+        } else {
+            failAt(hotkeyToken, "Expected '=>' after hotkey literal");
+        }
     }
-  }
-case havel::TokenType::Identifier: {
+    case havel::TokenType::Identifier: {
     // Check for multiple assignment: a, b, c = value
     // Look ahead: identifier comma identifier ... = 
     if (at(1).type == havel::TokenType::Comma) {
@@ -3232,10 +3240,67 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     failAt(at(), "Expected function name after 'fn'");
   }
 
-  // Parse function name (lexer already includes ? suffix if present)
-  auto name = makeIdentifier(advance());
+    // Parse function name (lexer already includes ? suffix if present)
+    auto name = makeIdentifier(advance());
 
-  if (at().type != havel::TokenType::OpenParen) {
+	// Parse optional type parameters: fn identity(T)(x: T): T
+	// or with bounds: fn calc(T: Number)(a: T, b: T): T
+	// Disambiguate: if all tokens between ( and ) are type-param-like
+	// (Identifier [: Bound [& Bound2...]] [, ...]) and followed by another (,
+	// it's a type parameter list
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type == havel::TokenType::OpenParen) {
+		size_t savedPos = position;
+		advance(); // consume '('
+		std::vector<ast::TypeParam> candidateParams;
+		bool isTypeParamList = true;
+		while (at().type != havel::TokenType::CloseParen && notEOF()) {
+			if (at().type == havel::TokenType::Identifier) {
+				std::string pname = advance().value;
+				std::vector<std::string> bounds;
+				// Check for bound: T: Bound [& Bound2 ...]
+				if (at().type == havel::TokenType::Colon) {
+					advance(); // consume ':'
+					if (at().type == havel::TokenType::Identifier) {
+						bounds.push_back(advance().value);
+						while (at().type == havel::TokenType::BitwiseAnd) {
+							advance(); // consume '&'
+							if (at().type == havel::TokenType::Identifier) {
+								bounds.push_back(advance().value);
+							} else {
+								isTypeParamList = false;
+								break;
+							}
+						}
+					} else {
+						isTypeParamList = false;
+						break;
+					}
+				}
+				candidateParams.emplace_back(std::move(pname), std::move(bounds));
+				if (at().type == havel::TokenType::Comma) {
+					advance(); // consume ','
+				} else {
+					break;
+				}
+			} else {
+				isTypeParamList = false;
+				break;
+			}
+		}
+		if (isTypeParamList && at().type == havel::TokenType::CloseParen) {
+			advance(); // consume ')'
+			if (at().type == havel::TokenType::OpenParen && !candidateParams.empty()) {
+				typeParams = std::move(candidateParams);
+			} else {
+				position = savedPos;
+			}
+		} else {
+			position = savedPos;
+		}
+	}
+
+	if (at().type != havel::TokenType::OpenParen) {
     failAt(at(), "Expected '(' after function name");
   }
   advance(); // consume '('
@@ -3324,7 +3389,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 
     return makeNodeAt<havel::ast::FunctionDeclaration>(keyword,
         std::move(name), std::move(params), std::move(body),
-        std::move(returnType));
+        std::move(returnType), std::move(typeParams));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
@@ -3824,13 +3889,63 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
     auto keyword = at();
     advance(); // consume 'struct'
 
-  // Parse struct name
-  if (at().type != havel::TokenType::Identifier) {
-    failAt(at(), "Expected struct name after 'struct'");
-  }
-  std::string structName = advance().value;
+    // Parse struct name
+    if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected struct name after 'struct'");
+    }
+    std::string structName = advance().value;
 
-  // Parse protocol conformance: struct Name : ProtocolName [, ProtocolName2]
+	// Parse type parameters: struct List(T) { ... } or struct List(T: Comparable) { ... }
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type == havel::TokenType::OpenParen && at(1).type == havel::TokenType::Identifier) {
+		size_t savedPos = position;
+		advance(); // consume '('
+		bool isTypeParamList = true;
+		std::vector<ast::TypeParam> candidateParams;
+		while (at().type == havel::TokenType::Identifier) {
+			std::string pname = advance().value;
+			std::vector<std::string> bounds;
+			if (at().type == havel::TokenType::Colon) {
+				advance(); // consume ':'
+				if (at().type == havel::TokenType::Identifier) {
+					bounds.push_back(advance().value);
+					while (at().type == havel::TokenType::BitwiseAnd) {
+						advance(); // consume '&'
+						if (at().type == havel::TokenType::Identifier) {
+							bounds.push_back(advance().value);
+						} else {
+							isTypeParamList = false;
+							break;
+						}
+					}
+				} else {
+					isTypeParamList = false;
+					break;
+				}
+			}
+			candidateParams.emplace_back(std::move(pname), std::move(bounds));
+			if (at().type == havel::TokenType::Comma) {
+				advance(); // consume ','
+			} else {
+				break;
+			}
+		}
+		if (at().type == havel::TokenType::CloseParen) {
+			advance(); // consume ')'
+			if (!candidateParams.empty() && isTypeParamList &&
+				(at().type == havel::TokenType::Colon ||
+				 at().type == havel::TokenType::OpenBrace ||
+				 at().type == havel::TokenType::NewLine)) {
+				typeParams = std::move(candidateParams);
+			} else {
+				position = savedPos;
+			}
+		} else {
+			position = savedPos;
+		}
+	}
+
+    // Parse protocol conformance: struct Name : ProtocolName [, ProtocolName2]
   // Or colon body: struct Name :
   // Disambiguate: ':' followed by identifier on same line = protocol conformance
   // ':' followed by newline (or non-identifier) = colon body
@@ -3903,24 +4018,75 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
     advance(); // consume '}'
   }
 
-  // Create struct definition with fields and methods
-  ast::StructDefinition def(std::move(fields), std::move(methods));
+    // Create struct definition with fields and methods
+    ast::StructDefinition def(std::move(fields), std::move(methods));
 
     return makeNodeAt<ast::StructDeclaration>(keyword, structName, std::move(def),
-        std::move(protocolNames));
+                                               std::move(protocolNames),
+                                               std::move(typeParams));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
     auto keyword = at();
     advance(); // consume 'class'
 
-  // Parse class name
-  if (at().type != havel::TokenType::Identifier) {
-    failAt(at(), "Expected class name after 'class'");
-  }
-  std::string className = advance().value;
+    // Parse class name
+    if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected class name after 'class'");
+    }
+    std::string className = advance().value;
 
-  // Check for inheritance syntax: class X : ParentClass [, Protocol1, ...]
+	// Parse type parameters: class Container(T) { ... } or class Calc(T: Number) { ... }
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type == havel::TokenType::OpenParen && at(1).type == havel::TokenType::Identifier) {
+		size_t savedPos = position;
+		advance(); // consume '('
+		bool isTypeParamList = true;
+		std::vector<ast::TypeParam> candidateParams;
+		while (at().type == havel::TokenType::Identifier) {
+			std::string pname = advance().value;
+			std::vector<std::string> bounds;
+			if (at().type == havel::TokenType::Colon) {
+				advance(); // consume ':'
+				if (at().type == havel::TokenType::Identifier) {
+					bounds.push_back(advance().value);
+					while (at().type == havel::TokenType::BitwiseAnd) {
+						advance(); // consume '&'
+						if (at().type == havel::TokenType::Identifier) {
+							bounds.push_back(advance().value);
+						} else {
+							isTypeParamList = false;
+							break;
+						}
+					}
+				} else {
+					isTypeParamList = false;
+					break;
+				}
+			}
+			candidateParams.emplace_back(std::move(pname), std::move(bounds));
+			if (at().type == havel::TokenType::Comma) {
+				advance(); // consume ','
+			} else {
+				break;
+			}
+		}
+		if (at().type == havel::TokenType::CloseParen) {
+			advance(); // consume ')'
+			if (!candidateParams.empty() && isTypeParamList &&
+				(at().type == havel::TokenType::Colon ||
+				 at().type == havel::TokenType::OpenBrace ||
+				 at().type == havel::TokenType::NewLine)) {
+				typeParams = std::move(candidateParams);
+			} else {
+				position = savedPos;
+			}
+		} else {
+			position = savedPos;
+		}
+	}
+
+    // Check for inheritance syntax: class X : ParentClass [, Protocol1, ...]
   // But also: class X : (colon body with no parent)
   // Disambiguate: if ':' followed by Identifier, it's inheritance (possibly with protocols)
   // If ':' followed by newline/not-identifier, it's colon body
@@ -4000,10 +4166,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
   }
 
   // Create class definition with fields and methods
-  ast::ClassDefinition def(std::move(fields), std::move(methods));
+    ast::ClassDefinition def(std::move(fields), std::move(methods));
 
-  return makeNodeAt<ast::ClassDeclaration>(keyword, className, std::move(def),
-                                           parentName, std::move(protocolNames));
+    return makeNodeAt<ast::ClassDeclaration>(keyword, className, std::move(def),
+                                              parentName, std::move(protocolNames),
+                                              std::move(typeParams));
 }
 
 // Parse struct members (fields and methods)
@@ -4695,31 +4862,81 @@ std::unique_ptr<havel::ast::Statement> Parser::parseEnumDeclaration() {
     auto keyword = at();
     advance(); // consume 'enum'
 
-  // Parse enum name
-  if (at().type != havel::TokenType::Identifier) {
-    failAt(at(), "Expected enum name after 'enum'");
-  }
-  std::string enumName = advance().value;
+    // Parse enum name
+    if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected enum name after 'enum'");
+    }
+    std::string enumName = advance().value;
 
-  // Parse opening brace
-  if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after enum name");
-  }
-  advance(); // consume '{'
+	// Parse type parameters: enum Result(T, E) { ... } or enum Result(T: Hashable, E) { ... }
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type == havel::TokenType::OpenParen && at(1).type == havel::TokenType::Identifier) {
+		size_t savedPos = position;
+		advance(); // consume '('
+		bool isTypeParamList = true;
+		std::vector<ast::TypeParam> candidateParams;
+		while (at().type == havel::TokenType::Identifier) {
+			std::string pname = advance().value;
+			std::vector<std::string> bounds;
+			if (at().type == havel::TokenType::Colon) {
+				advance(); // consume ':'
+				if (at().type == havel::TokenType::Identifier) {
+					bounds.push_back(advance().value);
+					while (at().type == havel::TokenType::BitwiseAnd) {
+						advance(); // consume '&'
+						if (at().type == havel::TokenType::Identifier) {
+							bounds.push_back(advance().value);
+						} else {
+							isTypeParamList = false;
+							break;
+						}
+					}
+				} else {
+					isTypeParamList = false;
+					break;
+				}
+			}
+			candidateParams.emplace_back(std::move(pname), std::move(bounds));
+			if (at().type == havel::TokenType::Comma) {
+				advance(); // consume ','
+			} else {
+				break;
+			}
+		}
+		if (at().type == havel::TokenType::CloseParen) {
+			advance(); // consume ')'
+			if (!candidateParams.empty() && isTypeParamList &&
+				(at().type == havel::TokenType::OpenBrace ||
+				 at().type == havel::TokenType::NewLine)) {
+				typeParams = std::move(candidateParams);
+			} else {
+				position = savedPos;
+			}
+		} else {
+			position = savedPos;
+		}
+	}
 
-  // Parse variants
-  auto variants = parseEnumVariants();
+    // Parse opening brace
+    if (at().type != havel::TokenType::OpenBrace) {
+        failAt(at(), "Expected '{' after enum name");
+    }
+    advance(); // consume '{'
 
-  // Parse closing brace
-  if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}' to close enum definition");
-  }
-  advance(); // consume '}'
+    // Parse variants
+    auto variants = parseEnumVariants();
 
-  // Create enum definition
-  ast::EnumDefinition def(std::move(variants));
+    // Parse closing brace
+    if (at().type != havel::TokenType::CloseBrace) {
+        failAt(at(), "Expected '}' to close enum definition");
+    }
+    advance(); // consume '}'
 
-    return makeNodeAt<ast::EnumDeclaration>(keyword, enumName, std::move(def));
+    // Create enum definition
+    ast::EnumDefinition def(std::move(variants));
+
+    return makeNodeAt<ast::EnumDeclaration>(keyword, enumName, std::move(def),
+                                             std::move(typeParams));
 }
 
 std::vector<ast::EnumVariantDef> Parser::parseEnumVariants() {
@@ -5018,6 +5235,48 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
         std::move(traitName), std::move(typeName), std::move(methods));
 }
 
+std::vector<ast::TypeParam> Parser::parseTypeParameterList() {
+	std::vector<ast::TypeParam> typeParams;
+	if (at().type != havel::TokenType::OpenParen) {
+		return typeParams;
+	}
+	advance(); // consume '('
+	while (at().type != havel::TokenType::CloseParen && notEOF()) {
+		if (at().type != havel::TokenType::Identifier) {
+			failAt(at(), "Expected type parameter name");
+			break;
+		}
+		std::string paramName = advance().value;
+		std::vector<std::string> bounds;
+		// Parse optional bounds: T: Bound or T: Bound1 & Bound2
+		if (at().type == havel::TokenType::Colon) {
+			advance(); // consume ':'
+			if (at().type != havel::TokenType::Identifier) {
+				failAt(at(), "Expected bound name after ':' in type parameter");
+			} else {
+				bounds.push_back(advance().value);
+				while (at().type == havel::TokenType::BitwiseAnd) {
+					advance(); // consume '&'
+					if (at().type != havel::TokenType::Identifier) {
+						failAt(at(), "Expected bound name after '&' in type parameter");
+						break;
+					}
+					bounds.push_back(advance().value);
+				}
+			}
+		}
+		typeParams.emplace_back(std::move(paramName), std::move(bounds));
+		if (at().type == havel::TokenType::Comma) {
+			advance(); // consume ','
+		}
+	}
+	if (at().type != havel::TokenType::CloseParen) {
+		failAt(at(), "Expected ')' to close type parameter list");
+	}
+	advance(); // consume ')'
+	return typeParams;
+}
+
 std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
     // Handle nullable type prefix: ?T means T or null
     if (at().type == havel::TokenType::Question) {
@@ -5028,37 +5287,62 @@ std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
 
     std::string typeName;
     switch (at().type) {
-  case havel::TokenType::Identifier:
-    typeName = advance().value;
-    break;
-  case havel::TokenType::Fn:
-    typeName = "fn";
-    advance();
-    break;
-  case havel::TokenType::Struct:
-    typeName = "struct";
-    advance();
-    break;
-  case havel::TokenType::Class:
-    typeName = "class";
-    advance();
-    break;
-  default:
-    failAt(at(), "Expected type name");
-  }
-
-  // Parse zero or more array suffixes: T[], T[][], ...
-  while (at().type == havel::TokenType::OpenBracket) {
-    advance(); // consume '['
-    if (at().type != havel::TokenType::CloseBracket) {
-      failAt(at(), "Expected ']' in array type annotation");
+    case havel::TokenType::Identifier:
+        typeName = advance().value;
+        break;
+    case havel::TokenType::Fn:
+        typeName = "fn";
+        advance();
+        break;
+    case havel::TokenType::Struct:
+        typeName = "struct";
+        advance();
+        break;
+    case havel::TokenType::Class:
+        typeName = "class";
+        advance();
+        break;
+    default:
+        failAt(at(), "Expected type name");
+        return makeNode<ast::TypeReference>("Any");
     }
-    advance(); // consume ']'
-    typeName += "[]";
-  }
+
+    // Parse generic type arguments: List(Int), Result(int, str), Map(str, int)
+    if (at().type == havel::TokenType::OpenParen) {
+        advance(); // consume '('
+        std::vector<std::unique_ptr<ast::TypeDefinition>> typeArgs;
+        while (at().type != havel::TokenType::CloseParen && notEOF()) {
+            typeArgs.push_back(parseTypeDefinition());
+            if (at().type == havel::TokenType::Comma) {
+                advance(); // consume ','
+            }
+        }
+        if (at().type != havel::TokenType::CloseParen) {
+            failAt(at(), "Expected ')' to close generic type arguments");
+        }
+        advance(); // consume ')'
+
+        auto ref = makeNode<ast::GenericTypeRef>(typeName, std::move(typeArgs));
+
+        // Trailing ? makes it nullable: List(Int)? means List(Int) or null
+        if (at().type == havel::TokenType::Question) {
+            advance(); // consume '?'
+            return makeNode<ast::NullableType>(std::move(ref));
+        }
+        return ref;
+    }
+
+    // Parse zero or more array suffixes: T[], T[][], ...
+    while (at().type == havel::TokenType::OpenBracket) {
+        advance(); // consume '['
+        if (at().type != havel::TokenType::CloseBracket) {
+            failAt(at(), "Expected ']' in array type annotation");
+        }
+        advance(); // consume ']'
+        typeName += "[]";
+    }
 
     // For now, just create a type reference
-    // Could be extended to parse generic types like List(Int)
     auto ref = makeNode<ast::TypeReference>(typeName);
 
     // Trailing ? makes it nullable: String? means String or null
@@ -6208,20 +6492,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
 // Parse hotkey as expression (for assignment: hk = ^t => { ... })
 // Returns HotkeyExpression (wraps HotkeyBinding as expression)
 std::unique_ptr<havel::ast::Expression> Parser::parseHotkeyExpression(const Token &hotkeyToken) {
-  // hotkeyToken was already consumed by the Pratt parser's nud()
+    // hotkeyToken was already consumed by the Pratt parser's nud()
 
-  // Check for prefix condition (before =>)
-  std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
-  if (at().type == havel::TokenType::When) {
-    advance(); // consume 'when'
-    prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-  } else if (at().type == havel::TokenType::If) {
-    advance(); // consume 'if'
-    prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
-  }
+    // Check for prefix condition (before =>)
+    std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
+    if (at().type == havel::TokenType::When) {
+        advance(); // consume 'when'
+        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+    } else if (at().type == havel::TokenType::If) {
+        advance(); // consume 'if'
+        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+    }
 
-  if (at().type != havel::TokenType::Arrow) {
-    failAt(hotkeyToken, "Expected '=>' after hotkey literal");
+    if (at().type != havel::TokenType::Arrow) {
+        failAt(hotkeyToken, "Expected '=>' after hotkey literal");
     return nullptr;
   }
   advance(); // consume '=>'
@@ -6318,8 +6602,8 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
   }
 
   // Expect and consume the arrow operator '=>'
-  if (at().type != havel::TokenType::Arrow) {
-    failAt(at(), "Expected '=>' after hotkey '" + hotkeyToken.value + "'");
+        if (at().type != havel::TokenType::Arrow) {
+            failAt(at(), "Expected '=>' after hotkey '" + hotkeyToken.value + "'");
   }
   advance(); // consume the '=>'
 
@@ -7959,15 +8243,15 @@ return makeNode<havel::ast::StringLiteral>(tk.value, true);
     return parsePostfixExpression(std::move(thisExpr));
   }
 
-  case havel::TokenType::At: {
-    advance(); // consume '@'
-    // Parse field name after @
-    if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected field name after '@'");
+    case havel::TokenType::At: {
+        advance(); // consume '@'
+        // Parse field name after @, or standalone @ as self-reference
+        if (!isFieldLikeToken(at())) {
+            return makeNode<havel::ast::AtExpression>(nullptr);
+        }
+        auto fieldName = makeIdentifier(advance());
+        return makeNode<havel::ast::AtExpression>(std::move(fieldName));
     }
-    auto fieldName = makeIdentifier(advance());
-    return makeNode<havel::ast::AtExpression>(std::move(fieldName));
-  }
 
   case havel::TokenType::SuperArrow: {
     advance(); // consume '@->'

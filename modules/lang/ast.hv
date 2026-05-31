@@ -2,6 +2,12 @@
 // Represents parsed source code as a tree of node objects
 // Each node has: kind, line, col, and kind-specific fields
 
+// Type parameter with optional bounds: T or T: Bound or T: Bound1 & Bound2
+fn TypeParam(name, bounds) {
+    {name: name, bounds: bounds}
+
+}
+
 NODE_TYPES = {
     "Program": true,
     "BlockStatement": true,
@@ -197,8 +203,8 @@ fn ContinueStatement(line, col) {
     {kind: "ContinueStatement", line: line, col: col}
 
 }
-fn FnDeclaration(name, params, body, line, col) {
-    {kind: "FnDeclaration", line: line, col: col, name: name, params: params, body: body}
+fn FnDeclaration(name, params, body, line, col, typeParams) {
+    {kind: "FnDeclaration", line: line, col: col, name: name, params: params, body: body, typeParams: typeParams}
 
 }
 fn LambdaExpression(params, body, line, col) {
@@ -335,7 +341,7 @@ fn ErrorNode(msg, line, col) {
     {kind: "ErrorNode", line: line, col: col, msg: msg}
 
 }
-fn StructDeclaration(name, fields, methods, protocols, line, col) {
+fn StructDeclaration(name, fields, methods, protocols, line, col, typeParams) {
     {
         kind: "StructDeclaration",
         line: line,
@@ -345,32 +351,35 @@ fn StructDeclaration(name, fields, methods, protocols, line, col) {
             fields: fields,
             methods: methods
         },
-        protocols: protocols
+        protocols: protocols,
+        typeParams: typeParams
     }
 
 }
-fn ClassDeclaration(name, parentName, fields, methods, line, col) {
-  {
-    kind: "ClassDeclaration",
-    line: line,
-    col: col,
-    name: name,
-    parentName: parentName,
-    definition: {
-      fields: fields,
-      methods: methods
+fn ClassDeclaration(name, parentName, fields, methods, line, col, typeParams) {
+    {
+        kind: "ClassDeclaration",
+        line: line,
+        col: col,
+        name: name,
+        parentName: parentName,
+        definition: {
+            fields: fields,
+            methods: methods
+        },
+        typeParams: typeParams
     }
-  }
 
 }
-fn EnumDeclaration(name, variants, line, col) {
-{
-kind: "EnumDeclaration",
-line: line,
-col: col,
-name: name,
-variants: variants
-}
+fn EnumDeclaration(name, variants, line, col, typeParams) {
+    {
+        kind: "EnumDeclaration",
+        line: line,
+        col: col,
+        name: name,
+        variants: variants,
+        typeParams: typeParams
+    }
 
 }
 fn TraitDeclaration(name, methods, line, col) {

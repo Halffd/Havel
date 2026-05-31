@@ -288,7 +288,7 @@ bool VM::arrayContains(ArrayRef array_ref, const Value &value) {
 
   bool VM::objectHasKey(ObjectRef object_ref, const std::string &key) {
     auto *object = heap_.object(object_ref.id);
-    if (!object)
+  if (!object)
       return false;
     return object->find(key) != object->end();
   }

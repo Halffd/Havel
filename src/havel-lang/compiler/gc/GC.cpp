@@ -583,16 +583,22 @@ void GCHeap::maybeCollectGarbage(
         collection_requested_ = true;
     }
 
-    if (collection_requested_ && gc_state_ == IncrementalState::Idle) {
-        stepGarbageCollection(stack_values, locals, globals, active_closure_ids,
-                              open_local_reader, kDefaultWorkBudget);
-    } else if (gc_state_ != IncrementalState::Idle) {
-        root_stack_snapshot_ = stack_values;
-        root_locals_snapshot_ = locals;
-        root_closures_snapshot_ = active_closure_ids;
-        open_local_reader_snapshot_ = open_local_reader;
-        if (gc_state_ == IncrementalState::Mark) {
-            markRoots();
+    if (collection_requested_) {
+        if (stop_the_world_) {
+            collectGarbage(stack_values, locals, globals, active_closure_ids,
+                           open_local_reader);
+            collection_requested_ = false;
+        } else if (gc_state_ == IncrementalState::Idle) {
+            stepGarbageCollection(stack_values, locals, globals, active_closure_ids,
+                                  open_local_reader, kDefaultWorkBudget);
+        } else if (gc_state_ != IncrementalState::Idle) {
+            root_stack_snapshot_ = stack_values;
+            root_locals_snapshot_ = locals;
+            root_closures_snapshot_ = active_closure_ids;
+            open_local_reader_snapshot_ = open_local_reader;
+            if (gc_state_ == IncrementalState::Mark) {
+                markRoots();
+            }
         }
     }
 }
@@ -606,17 +612,19 @@ void GCHeap::collectGarbage(
 
     startIncrementalCollection(stack_values, locals, globals, active_closure_ids, open_local_reader);
 
-    size_t iterations = 0;
-    while (isCollectionInProgress() && iterations < kMaxIterationsPerStep) {
+    // Complete marking first
+    while (gc_state_ == IncrementalState::Mark) {
         size_t budget = std::numeric_limits<size_t>::max();
-        sweepStep(budget);
-        iterations++;
+        markStep(budget);
     }
 
-    if (isCollectionInProgress()) {
-        ::havel::warning("[GC] Collection exceeded max iterations, forcing completion");
-        completeCollection();
+    // Then sweep everything
+    while (gc_state_ != IncrementalState::Idle) {
+        size_t budget = std::numeric_limits<size_t>::max();
+        sweepStep(budget);
     }
+
+    completeCollection();
 }
 
 void GCHeap::forceFullCollection(
@@ -927,26 +935,30 @@ void GCHeap::markStep(size_t &work_budget) {
             }
             continue;
         }
-        if (current.isClosureId()) {
-            auto it = closures_.find(current.asClosureId());
-            if (it == closures_.end()) {
-                continue;
-            }
-            for (const auto &cell : it->second.upvalues) {
-                if (!cell) {
-                    continue;
-                }
-                if (cell->is_open) {
-                    auto local_value = open_local_reader_snapshot_(cell->open_index);
-                    if (local_value.has_value()) {
-                        markReference(*local_value);
-                    }
-                } else {
-                    markReference(cell->closed_value);
-                }
-            }
-            continue;
+  if (current.isClosureId()) {
+        auto it = closures_.find(current.asClosureId());
+        if (it == closures_.end()) {
+          if (debugging::debug_gc) std::cerr << "[GC] markStep: closure " << current.asClosureId() << " not found\n";
+          continue;
         }
+        if (debugging::debug_gc) std::cerr << "[GC] markStep: tracing closure " << current.asClosureId() << " with " << it->second.upvalues.size() << " upvalues\n";
+        for (const auto &cell : it->second.upvalues) {
+          if (!cell) {
+            continue;
+          }
+          if (cell->is_open) {
+            auto local_value = open_local_reader_snapshot_(cell->open_index);
+            if (local_value.has_value()) {
+              if (debugging::debug_gc) std::cerr << "[GC]   open upvalue idx=" << cell->open_index << " type=" << local_value->type() << "\n";
+              markReference(*local_value);
+            }
+          } else {
+            if (debugging::debug_gc) std::cerr << "[GC]   closed upvalue type=" << cell->closed_value.type() << "\n";
+            markReference(cell->closed_value);
+          }
+        }
+        continue;
+      }
     }
 
     if (mark_worklist_.empty()) {
@@ -1685,6 +1697,30 @@ std::vector<std::pair<uint32_t, GCHeap::ObjectEntry>> GCHeap::drainFinalizers() 
 
 std::vector<std::pair<uint32_t, GCHeap::ObjectEntry>> GCHeap::drainFinalizerQueue() {
     return drainFinalizers();
+}
+
+void GCHeap::writeBarrier(const Value &obj, const Value &field) {
+    if (gc_state_ == IncrementalState::Idle) return;
+    markReference(obj);
+    markReference(field);
+}
+
+void GCHeap::writeArrayBarrier(const std::vector<Value> &array, const Value &element) {
+    if (gc_state_ == IncrementalState::Idle) return;
+    for (const auto &v : array) markReference(v);
+    markReference(element);
+}
+
+void GCHeap::writeObjectBarrier(const std::unordered_map<std::string, Value> &obj, const std::string &key, const Value &value) {
+    if (gc_state_ == IncrementalState::Idle) return;
+    for (const auto &[k, v] : obj) markReference(v);
+    markReference(value);
+}
+
+void GCHeap::writeSetBarrier(const std::unordered_map<std::string, Value> &set, const std::string &key, const Value &value) {
+    if (gc_state_ == IncrementalState::Idle) return;
+    for (const auto &[k, v] : set) markReference(v);
+    markReference(value);
 }
 
 }

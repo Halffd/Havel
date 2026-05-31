@@ -316,6 +316,9 @@ bool isCollectionInProgress() const;
     }
     Stats stats() const;
 
+    void setStopTheWorldMode(bool v) { stop_the_world_ = v; }
+    bool isStopTheWorld() const { return stop_the_world_; }
+
     void maybeCollectGarbage(
         const std::vector<Value> &stack_values,
         const std::vector<Value> &locals,
@@ -395,6 +398,11 @@ private:
     void markStep(size_t &work_budget);
     void sweepStep(size_t &work_budget);
     void completeCollection();
+
+    void writeBarrier(const Value &obj, const Value &field);
+    void writeArrayBarrier(const std::vector<Value> &array, const Value &element);
+    void writeObjectBarrier(const std::unordered_map<std::string, Value> &obj, const std::string &key, const Value &value);
+    void writeSetBarrier(const std::unordered_map<std::string, Value> &set, const std::string &key, const Value &value);
     void ageOrPromoteArray(uint32_t id);
     void ageOrPromoteObject(uint32_t id);
     void ageOrPromoteSet(uint32_t id);
@@ -458,6 +466,7 @@ std::atomic<uint64_t> approx_heap_bytes_{0};
     uint64_t total_recovered_ = 0;
 
     IncrementalState gc_state_ = IncrementalState::Idle;
+    bool stop_the_world_ = true;
     bool collection_requested_ = false;
     bool current_collection_full_ = false;
     size_t minor_collections_since_full_ = 0;

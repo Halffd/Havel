@@ -35,22 +35,33 @@
 
 namespace havel::compiler {
 
-VM::VM() {
-  tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
-  tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
-  tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
-  tier2_flush_on_shutdown_ = envU64("HAVEL_TIER2_FLUSH", 0) != 0;
-  registerDefaultHostFunctions();
+VM::VM() : VM(VMConfig{}) {}
+
+VM::VM(const VMConfig& cfg) {
+    vm_config_ = cfg;
+    tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
+    tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
+    tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
+    tier2_flush_on_shutdown_ = envU64("HAVEL_TIER2_FLUSH", 0) != 0;
+    max_call_depth_ = cfg.max_call_depth;
+    heap_.setAllocationBudget(cfg.gc_budget);
+    heap_.setHeapMaxBytes(cfg.heap_max_bytes);
+    registerDefaultHostFunctions();
 }
 
-VM::VM(const ::havel::HostContext &ctx) {
-  tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
-  tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
-  tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
-  tier2_flush_on_shutdown_ = envU64("HAVEL_TIER2_FLUSH", 0) != 0;
-  // Store context for service access
-  context_ = &ctx;
-  registerDefaultHostFunctions();
+VM::VM(const ::havel::HostContext &ctx) : VM(ctx, VMConfig{}) {}
+
+VM::VM(const ::havel::HostContext &ctx, const VMConfig& cfg) {
+    vm_config_ = cfg;
+    tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
+    tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
+    tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
+    tier2_flush_on_shutdown_ = envU64("HAVEL_TIER2_FLUSH", 0) != 0;
+    context_ = &ctx;
+    max_call_depth_ = cfg.max_call_depth;
+    heap_.setAllocationBudget(cfg.gc_budget);
+    heap_.setHeapMaxBytes(cfg.heap_max_bytes);
+    registerDefaultHostFunctions();
 }
 
 void VM::setMaxCallDepth(size_t value) { max_call_depth_ = value; }

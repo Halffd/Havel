@@ -1,259 +1,215 @@
 #pragma once
 
-#ifdef HAVEL_CORE_PROFILE
+#include "LoggerC.h"
 
-#include <cstddef>
 #include <string>
 #include <vector>
+
+#ifdef __cpp_lib_format
+#include <format>
+#else
+#include <fmt/format.h>
+#endif
 
 namespace havel {
 
 class Logger {
 public:
-    enum Level { LOG_DEBUG, LOG_INFO, LOG_WARNING, LOG_ERROR, LOG_FATAL };
+    enum Level {
+        LOG_DEBUG   = HAVEL_LOG_DEBUG,
+        LOG_INFO    = HAVEL_LOG_INFO,
+        LOG_WARNING = HAVEL_LOG_WARNING,
+        LOG_ERROR   = HAVEL_LOG_ERROR,
+        LOG_FATAL   = HAVEL_LOG_FATAL
+    };
+
     static Logger& getInstance() {
         static Logger instance;
         return instance;
     }
-    void initialize(bool = true, int = 3, bool = true) {}
-    void initializeWithConfig(bool, int, bool) {}
-    void setLogFile(const std::string&) {}
-    void setLogLevel(Level) {}
-    Level getCurrentLevel() const { return LOG_INFO; }
-    void setColoredOutput(bool) {}
-    void setMaxHistorySize(size_t) {}
-    void setMaxFileSize(size_t) {}
-    std::string getLogFilePath() const { return {}; }
-    std::vector<std::string> getHistory(size_t = 100) const { return {}; }
-    void debug(const std::string&) {}
-    void info(const std::string&) {}
-    void warning(const std::string&) {}
-    void error(const std::string&) {}
-    void fatal(const std::string&) {}
-    template<typename... Args> void warn(const std::string&, Args&&...) {}
-    template<typename... Args> void debug(const std::string&, Args&&...) {}
-    template<typename... Args> void info(const std::string&, Args&&...) {}
-    template<typename... Args> void warning(const std::string&, Args&&...) {}
-    template<typename... Args> void error(const std::string&, Args&&...) {}
-    template<typename... Args> void fatal(const std::string&, Args&&...) {}
-};
 
-#define HAVEL_LOG_DEBUG(...) do {} while (0)
-#define HAVEL_LOG_INFO(...)  do {} while (0)
-#define HAVEL_LOG_WARN(...)  do {} while (0)
-#define HAVEL_LOG_ERROR(...) do {} while (0)
-#define HAVEL_LOG_FATAL(...) do {} while (0)
-inline void log(const std::string&) {}
-inline void debug(const std::string&) {}
-inline void info(const std::string&) {}
-inline void warning(const std::string&) {}
-inline void error(const std::string&) {}
-inline void fatal(const std::string&) {}
-template<typename... Args> inline void warn(const std::string&, Args&&...) {}
-template<typename... Args> inline void debug(const std::string&, Args&&...) {}
-template<typename... Args> inline void info(const std::string&, Args&&...) {}
-template<typename... Args> inline void warning(const std::string&, Args&&...) {}
-template<typename... Args> inline void error(const std::string&, Args&&...) {}
-template<typename... Args> inline void fatal(const std::string&, Args&&...) {}
+    void initialize(bool useTimestampedFiles = true, int logMaxPeriod = 3, bool coloredOutput = true) {
+        HavelLogger_initialize(handle(), useTimestampedFiles, logMaxPeriod, coloredOutput);
+    }
 
-} // namespace havel
+    void initializeWithConfig(bool useTimestamped, int logMaxPeriod, bool colorsEnabled) {
+        HavelLogger_initializeWithConfig(handle(), useTimestamped, logMaxPeriod, colorsEnabled);
+    }
 
-#else
+    void setLogFile(const std::string& filename) {
+        HavelLogger_setLogFile(handle(), filename.c_str());
+    }
 
-#include <string>
-#include <mutex>
-#include <memory>
-#include <fstream>
-#include <filesystem>
-#include <chrono>
-#include <unordered_map>
-#include <deque>
-#include <sstream>
+    void setLogLevel(Level level) {
+        HavelLogger_setLogLevel(handle(), static_cast<HavelLoggerLevel>(level));
+    }
 
-// Use std::format if C++20, otherwise fallback to fmt library
-#ifdef __cpp_lib_format
-    #include <format>
-    namespace formatting = std;
-#else
-    #include <fmt/format.h>
-    namespace formatting = fmt;
-#endif
+    Level getCurrentLevel() const {
+        return static_cast<Level>(HavelLogger_getCurrentLevel(handle()));
+    }
 
-namespace havel {
+    void setColoredOutput(bool enabled) {
+        HavelLogger_setColoredOutput(handle(), enabled);
+    }
 
-class Logger {
-public:
-    enum Level { LOG_DEBUG, LOG_INFO, LOG_WARNING, LOG_ERROR, LOG_FATAL };
+    void setMaxHistorySize(size_t maxSize) {
+        HavelLogger_setMaxHistorySize(handle(), maxSize);
+    }
 
-    static Logger& getInstance();
+    void setMaxFileSize(size_t maxBytes) {
+        HavelLogger_setMaxFileSize(handle(), maxBytes);
+    }
 
-    // Initialize logger with timestamped file naming and configurations
-    void initialize(bool useTimestampedFiles = true,
-                   int logMaxPeriod = 3,  // 3 days default
-                   bool coloredOutput = true); // Enable colored output by default
+    std::string getLogFilePath() const {
+        char buf[4096];
+        HavelLogger_getLogFilePath(handle(), buf, sizeof(buf));
+        return std::string(buf);
+    }
 
-    // Initialize with configuration values
-    void initializeWithConfig(bool useTimestamped, int logMaxPeriod, bool colorsEnabled);
+    std::vector<std::string> getHistory(size_t maxLines = 100) const {
+        std::vector<char*> entries(maxLines, nullptr);
+        size_t count = HavelLogger_getHistory(handle(), entries.data(), maxLines, maxLines);
+        std::vector<std::string> result;
+        result.reserve(count);
+        for (size_t i = 0; i < count; i++) {
+            if (entries[i]) {
+                result.emplace_back(entries[i]);
+                std::free(entries[i]);
+            }
+        }
+        return result;
+    }
 
-    void setLogFile(const std::string& filename);
-	void setLogLevel(Level level);
-	Level getCurrentLevel() const { return currentLevel; }
-  void setColoredOutput(bool enabled); // Set if console output should be colored
-  void setMaxHistorySize(size_t maxSize); // Set max in-memory history entries
-  void setMaxFileSize(size_t maxBytes); // Set max log file size before rotation
+    void debug(const std::string& message) {
+        HavelLogger_debug(handle(), message.c_str());
+    }
 
-  // Get current log file path
-  std::string getLogFilePath() const;
+    void info(const std::string& message) {
+        HavelLogger_info(handle(), message.c_str());
+    }
 
-  // Get log history (last N entries from current log file)
-  std::vector<std::string> getHistory(size_t maxLines = 100) const;
+    void warning(const std::string& message) {
+        HavelLogger_warning(handle(), message.c_str());
+    }
 
-  void debug(const std::string& message);
-  void info(const std::string& message);
-  void warning(const std::string& message);
-  void error(const std::string& message);
-  void fatal(const std::string& message);
-  void critical(const std::string& message) { fatal(message); }
+    void error(const std::string& message) {
+        HavelLogger_error(handle(), message.c_str());
+    }
 
-    /**
-     * Debug logging with printf-style formatting
-     * Usage: Logger::debug("Value: {}, Name: {}", 42, "test");
-     */
+    void fatal(const std::string& message) {
+        HavelLogger_fatal(handle(), message.c_str());
+    }
+
+    void critical(const std::string& message) {
+        HavelLogger_critical(handle(), message.c_str());
+    }
+
     template<typename... Args>
-    void debug(const std::string& format, Args&&... args) {
+    void debug(const std::string& fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            log(LOG_DEBUG, format);
+            HavelLogger_debug(handle(), fmt.c_str());
         } else {
             try {
 #ifdef __cpp_lib_format
-                log(LOG_DEBUG, std::vformat(format, std::make_format_args(args...)));
+                auto msg = std::vformat(fmt, std::make_format_args(args...));
 #else
-                log(LOG_DEBUG, fmt::format(format, std::forward<Args>(args)...));
+                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
 #endif
+                HavelLogger_debug(handle(), msg.c_str());
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in debug(): " + std::string(e.what()) +
-                              " | Original format: " + format);
+                HavelLogger_errorf(handle(), "Logger format error in debug(): %s | Original format: %s", e.what(), fmt.c_str());
             }
         }
     }
 
     template<typename... Args>
-    void info(const std::string& format, Args&&... args) {
+    void info(const std::string& fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            log(LOG_INFO, format);
+            HavelLogger_info(handle(), fmt.c_str());
         } else {
             try {
 #ifdef __cpp_lib_format
-                log(LOG_INFO, std::vformat(format, std::make_format_args(args...)));
+                auto msg = std::vformat(fmt, std::make_format_args(args...));
 #else
-                log(LOG_INFO, fmt::format(format, std::forward<Args>(args)...));
+                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
 #endif
+                HavelLogger_info(handle(), msg.c_str());
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in info(): " + std::string(e.what()) +
-                              " | Original format: " + format);
+                HavelLogger_errorf(handle(), "Logger format error in info(): %s | Original format: %s", e.what(), fmt.c_str());
             }
         }
     }
 
     template<typename... Args>
-    void warning(const std::string& format, Args&&... args) {
+    void warning(const std::string& fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            log(LOG_WARNING, format);
+            HavelLogger_warning(handle(), fmt.c_str());
         } else {
             try {
 #ifdef __cpp_lib_format
-                log(LOG_WARNING, std::vformat(format, std::make_format_args(args...)));
+                auto msg = std::vformat(fmt, std::make_format_args(args...));
 #else
-                log(LOG_WARNING, fmt::format(format, std::forward<Args>(args)...));
+                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
 #endif
+                HavelLogger_warning(handle(), msg.c_str());
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in warning(): " + std::string(e.what()) +
-                              " | Original format: " + format);
+                HavelLogger_errorf(handle(), "Logger format error in warning(): %s | Original format: %s", e.what(), fmt.c_str());
             }
         }
     }
 
     template<typename... Args>
-    void error(const std::string& format, Args&&... args) {
+    void error(const std::string& fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            log(LOG_ERROR, format);
+            HavelLogger_error(handle(), fmt.c_str());
         } else {
             try {
 #ifdef __cpp_lib_format
-                log(LOG_ERROR, std::vformat(format, std::make_format_args(args...)));
+                auto msg = std::vformat(fmt, std::make_format_args(args...));
 #else
-                log(LOG_ERROR, fmt::format(format, std::forward<Args>(args)...));
+                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
 #endif
+                HavelLogger_error(handle(), msg.c_str());
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in error(): " + std::string(e.what()) +
-                              " | Original format: " + format);
-                log(LOG_ERROR, format); // Fallback to unformatted message
+                HavelLogger_errorf(handle(), "Logger format error in error(): %s | Original format: %s", e.what(), fmt.c_str());
+                HavelLogger_error(handle(), fmt.c_str());
             }
         }
     }
 
     template<typename... Args>
-    void fatal(const std::string& format, Args&&... args) {
+    void fatal(const std::string& fmt, Args&&... args) {
         if constexpr (sizeof...(args) == 0) {
-            log(LOG_FATAL, format);
+            HavelLogger_fatal(handle(), fmt.c_str());
         } else {
             try {
 #ifdef __cpp_lib_format
-                log(LOG_FATAL, std::vformat(format, std::make_format_args(args...)));
+                auto msg = std::vformat(fmt, std::make_format_args(args...));
 #else
-                log(LOG_FATAL, fmt::format(format, std::forward<Args>(args)...));
+                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
 #endif
+                HavelLogger_fatal(handle(), msg.c_str());
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in fatal(): " + std::string(e.what()) +
-                              " | Original format: " + format);
-                log(LOG_FATAL, format); // Fallback to unformatted message
+                HavelLogger_errorf(handle(), "Logger format error in fatal(): %s | Original format: %s", e.what(), fmt.c_str());
+                HavelLogger_fatal(handle(), fmt.c_str());
             }
         }
     }
+
+    HavelLogger* cHandle() { return HavelLogger_getInstance(); }
 
 private:
-    Logger(); // make constructor private
-    ~Logger(); // and destructor
+    Logger() = default;
+    ~Logger() = default;
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
 
-    void log(Level level, const std::string& message);
-    std::string getLevelString(Level level);
-    std::string getCurrentTimestamp();
-    std::string getFormattedTimestamp(); // For use in filename
-    std::string getColorCode(Level level) const;
-    std::string resetColorCode() const;
-    std::string getLogDirectory() const;
-    void cleanupOldLogs();
-    void openNewLogFile();
-
-  struct Impl;
-  std::unique_ptr<Impl> pImpl;
-  mutable std::deque<std::string> history_;
-  mutable std::mutex mutex;
-  Level currentLevel;
-  bool consoleOutput;
-  bool useTimestampedFiles = true;
-  int logMaxPeriod = 3;
-  bool coloredOutput = true;
-  size_t maxHistorySize_ = 200;
-  size_t maxFileSize_ = 10 * 1024 * 1024; // 10 MB default
-  size_t currentFileSize_ = 0;
-
-    // Color codes
-    std::unordered_map<Level, std::string> colorCodes = {
-        {LOG_DEBUG, "\033[36m"},    // Cyan
-        {LOG_INFO, "\033[32m"},     // Green
-        {LOG_WARNING, "\033[33m"},  // Yellow
-        {LOG_ERROR, "\033[31m"},    // Red
-        {LOG_FATAL, "\033[35m"}     // Magenta
-    };
+    HavelLogger* handle() const { return HavelLogger_getInstance(); }
 };
 
-// Move macros outside the class
 #define HAVEL_LOG_DEBUG(...) havel::Logger::getInstance().debug(__VA_ARGS__)
-#define HAVEL_LOG_INFO(...)  havel::Logger::getInstance().info(__VA_ARGS__)
-#define HAVEL_LOG_WARN(...)  havel::Logger::getInstance().warning(__VA_ARGS__)
+#define HAVEL_LOG_INFO(...) havel::Logger::getInstance().info(__VA_ARGS__)
+#define HAVEL_LOG_WARN(...) havel::Logger::getInstance().warning(__VA_ARGS__)
 #define HAVEL_LOG_ERROR(...) havel::Logger::getInstance().error(__VA_ARGS__)
 #define HAVEL_LOG_FATAL(...) havel::Logger::getInstance().fatal(__VA_ARGS__)
 
@@ -276,39 +232,38 @@ inline void fatal(const std::string& message) {
     Logger::getInstance().fatal(message);
 }
 template<typename... Args>
-inline void debug(const std::string& format, Args&&... args) {
-    Logger::getInstance().debug(format, std::forward<Args>(args)...);
+inline void debug(const std::string& fmt, Args&&... args) {
+    Logger::getInstance().debug(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
-inline void info(const std::string& format, Args&&... args) {
-    Logger::getInstance().info(format, std::forward<Args>(args)...);
+inline void info(const std::string& fmt, Args&&... args) {
+    Logger::getInstance().info(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
-inline void warning(const std::string& format, Args&&... args) {
-    Logger::getInstance().warning(format, std::forward<Args>(args)...);
+inline void warning(const std::string& fmt, Args&&... args) {
+    Logger::getInstance().warning(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
-inline void error(const std::string& format, Args&&... args) {
-    Logger::getInstance().error(format, std::forward<Args>(args)...);
+inline void error(const std::string& fmt, Args&&... args) {
+    Logger::getInstance().error(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
-inline void fatal(const std::string& format, Args&&... args) {
-    Logger::getInstance().fatal(format, std::forward<Args>(args)...);
+inline void fatal(const std::string& fmt, Args&&... args) {
+    Logger::getInstance().fatal(fmt, std::forward<Args>(args)...);
 }
 template<typename... Args>
-inline void warn(const std::string& format, Args&&... args) {
-    Logger::getInstance().warning(format, std::forward<Args>(args)...);
+inline void warn(const std::string& fmt, Args&&... args) {
+    Logger::getInstance().warning(fmt, std::forward<Args>(args)...);
 }
 inline void warn(const std::string& message) {
     Logger::getInstance().warning(message);
 }
 template<typename... Args>
-inline void critical(const std::string& format, Args&&... args) {
-    Logger::getInstance().fatal(format, std::forward<Args>(args)...);
+inline void critical(const std::string& fmt, Args&&... args) {
+    Logger::getInstance().fatal(fmt, std::forward<Args>(args)...);
 }
 inline void critical(const std::string& message) {
     Logger::getInstance().fatal(message);
 }
-} // namespace havel
 
-#endif
+} // namespace havel

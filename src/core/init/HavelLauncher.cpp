@@ -465,9 +465,38 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 		if (i + 1 < argc) {
 			cfg.serviceExcludes.insert(argv[++i]);
 		}
-	} else if (arg == "--list-services") {
-		cfg.listServices = true;
-	} else if (arg == "--") {
+    } else if (arg == "--list-services") {
+        cfg.listServices = true;
+    } else if (arg == "--heap-max") {
+        if (i + 1 < argc) cfg.vmConfig.heap_max_bytes = std::stoull(argv[++i]);
+    } else if (arg == "--gc-budget") {
+        if (i + 1 < argc) cfg.vmConfig.gc_budget = std::stoul(argv[++i]);
+    } else if (arg == "--gc-incremental") {
+        cfg.vmConfig.gc_incremental = true;
+    } else if (arg == "--gc-stop-the-world") {
+        cfg.vmConfig.gc_stop_the_world = true;
+        cfg.vmConfig.gc_incremental = false;
+    } else if (arg == "--gc-full-interval") {
+        if (i + 1 < argc) cfg.vmConfig.gc_full_collection_interval = std::stoul(argv[++i]);
+    } else if (arg == "--gc-promotion-age") {
+        if (i + 1 < argc) cfg.vmConfig.gc_promotion_age = static_cast<uint8_t>(std::stoul(argv[++i]));
+    } else if (arg == "--max-call-depth") {
+        if (i + 1 < argc) cfg.vmConfig.max_call_depth = std::stoul(argv[++i]);
+    } else if (arg == "--max-instructions") {
+        if (i + 1 < argc) cfg.vmConfig.max_instructions = std::stoull(argv[++i]);
+    } else if (arg == "--tick-instructions") {
+        if (i + 1 < argc) cfg.vmConfig.goroutine_tick_instructions = std::stoull(argv[++i]);
+    } else if (arg == "--hotkey-tick-instructions") {
+        if (i + 1 < argc) cfg.vmConfig.goroutine_hotkey_tick_instructions = std::stoull(argv[++i]);
+    } else if (arg == "--tier1-threshold") {
+        if (i + 1 < argc) cfg.vmConfig.tier1_threshold = std::stoull(argv[++i]);
+    } else if (arg == "--tier2-threshold") {
+        if (i + 1 < argc) cfg.vmConfig.tier2_threshold = std::stoull(argv[++i]);
+    } else if (arg == "--tiering") {
+        cfg.vmConfig.tiering_enabled = true;
+    } else if (arg == "--timer-interval") {
+        if (i + 1 < argc) cfg.vmConfig.timer_check_interval = std::stoul(argv[++i]);
+    } else if (arg == "--") {
         // Everything after -- is script arguments (app.args), not flags
         for (int j = i + 1; j < argc; j++) {
           cfg.scriptArgs.push_back(argv[j]);
@@ -1463,10 +1492,25 @@ std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
 	std::cout << " --debug-jit, -djt Print LLVM IR and Assembly to console\n";
 	std::cout << " -S Output compiled IR and Assembly to files\n";
 	std::cout << " --input, -i TYPE Set input backend (evdev, x11, wayland, auto)\n";
-	std::cout << " --enable-service <name> Include only this service (repeatable)\n";
-	std::cout << " --disable-service <name> Exclude this service (repeatable)\n";
-	std::cout << " --list-services List all available services and exit\n";
-	std::cout << " --help, -h Show this help\n";
+    std::cout << " --enable-service <name> Include only this service (repeatable)\n";
+    std::cout << " --disable-service <name> Exclude this service (repeatable)\n";
+    std::cout << " --list-services List all available services and exit\n";
+    std::cout << "\nVM Configuration:\n";
+    std::cout << " --heap-max <bytes> Max heap size in bytes (default 4GB)\n";
+    std::cout << " --gc-budget <n> GC allocation budget (default 65536)\n";
+    std::cout << " --gc-incremental Enable incremental GC\n";
+    std::cout << " --gc-stop-the-world Enable stop-the-world GC (disables incremental)\n";
+    std::cout << " --gc-full-interval <n> Minor collections between full GC (default 8)\n";
+    std::cout << " --gc-promotion-age <n> Generations before promotion (default 2)\n";
+    std::cout << " --max-call-depth <n> Max call stack depth (default 1024)\n";
+    std::cout << " --max-instructions <n> Execution instruction limit (0=unlimited)\n";
+    std::cout << " --tick-instructions <n> Goroutine instructions per tick (default 10000)\n";
+    std::cout << " --hotkey-tick-instructions <n> Hotkey goroutine tick budget (default 100000)\n";
+    std::cout << " --tier1-threshold <n> Tier1 JIT compile threshold (default 1000)\n";
+    std::cout << " --tier2-threshold <n> Tier2 JIT compile threshold (default 10000)\n";
+    std::cout << " --tiering Enable tiered JIT compilation\n";
+    std::cout << " --timer-interval <n> Instructions between timer checks (default 1000)\n";
+    std::cout << " --help, -h Show this help\n";
 
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no arguments are provided, starts interactive REPL with full features.\n";

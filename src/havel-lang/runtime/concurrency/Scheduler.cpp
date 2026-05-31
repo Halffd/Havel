@@ -49,10 +49,11 @@ Scheduler::Goroutine::~Goroutine() {
 
 uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
  	uint32_t closure_id, const std::string& name, FiberPriority priority) {
- 	auto g = std::make_unique<Scheduler::Goroutine>(next_goroutine_id_++, name, priority);
- 	g->function_id = function_id;
- 	g->closure_id = closure_id;
- 	g->state = GoroutineState::Created;
+    auto g = std::make_unique<Scheduler::Goroutine>(next_goroutine_id_++, name, priority);
+    g->function_id = function_id;
+    g->closure_id = closure_id;
+    g->state = GoroutineState::Created;
+    g->max_instructions_per_tick = (priority == FiberPriority::HOTKEY) ? hotkey_tick_instructions_ : default_tick_instructions_;
 
     if (debugging::debug_io) ::havel::debug("[Scheduler] SPAWN: gid={} name='{}' func_id={} closure_id={} priority={}", 
                   g->id, name, function_id, closure_id, (int)priority);

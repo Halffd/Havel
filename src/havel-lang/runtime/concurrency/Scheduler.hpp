@@ -330,6 +330,13 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Change the hotkey policy on a goroutine at runtime
     void setHotkeyPolicy(Goroutine* g, HotkeyPolicy policy);
 
+    void setDefaultTickInstructions(uint64_t normal, uint64_t hotkey) {
+        default_tick_instructions_ = normal;
+        hotkey_tick_instructions_ = hotkey;
+    }
+    uint64_t defaultTickInstructions() const { return default_tick_instructions_; }
+    uint64_t hotkeyTickInstructions() const { return hotkey_tick_instructions_; }
+
   // Query the hotkey policy on a goroutine
   HotkeyPolicy getHotkeyPolicy(Goroutine* g) const;
 
@@ -399,8 +406,12 @@ private:
     // Current goroutine (the one VM is executing)
     std::atomic<Goroutine*> current_{nullptr};
 
-  // Thread tracking for isVMThread() check
-  std::thread::id vm_thread_id_;
+    // Thread tracking for isVMThread() check
+    std::thread::id vm_thread_id_;
+
+    // Configurable tick instructions (set via setDefaultTickInstructions)
+    uint64_t default_tick_instructions_ = Goroutine::DEFAULT_MAX_INSTRUCTIONS;
+    uint64_t hotkey_tick_instructions_ = Goroutine::HOTKEY_MAX_INSTRUCTIONS;
 };
 
 }  // namespace havel::compiler

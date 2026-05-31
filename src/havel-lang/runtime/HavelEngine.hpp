@@ -22,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <cstdlib>
+#include <chrono>
 
 namespace havel {
 
@@ -54,19 +55,34 @@ public:
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
-	void initializeFull(std::shared_ptr<IHostAPI> hostAPI, bool leanStartup = false) {
-		if (initialized_) return;
+    void initializeFull(std::shared_ptr<IHostAPI> hostAPI, bool leanStartup = false) {
+        if (initialized_) return;
+        using Clock = std::chrono::steady_clock;
+        auto t0 = Clock::now();
+        auto report = [&](const char* label, Clock::time_point since) {
+            auto ms = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - since).count();
+            ::havel::info("[startup] {} = {:.2f}ms", label, ms / 1000.0);
+            return Clock::now();
+        };
 
-		host::ServiceRegistry::instance().clear();
-  initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes);
+        host::ServiceRegistry::instance().clear();
+        initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes);
+        auto t = report("service-registry", t0);
 
         hostContext_ = std::make_unique<HostContext>(createHostContext(hostAPI));
+        t = report("host-context", t);
 
         vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
         hostContext_->vm = vm_.get();
+        t = report("vm-create", t);
 
-// Set up scheduler for goroutine/thread support
-vm_->setScheduler(&compiler::Scheduler::instance());
+        // Set up scheduler for goroutine/thread support
+        vm_->setScheduler(&compiler::Scheduler::instance());
+
+        // Apply VMConfig scheduler settings
+        compiler::Scheduler::instance().setDefaultTickInstructions(
+            config_.vmConfig.goroutine_tick_instructions,
+            config_.vmConfig.goroutine_hotkey_tick_instructions);
 
 #ifdef HAVEL_ENABLE_LLVM
 if (Configs::Get().Get<bool>("Compiler.JIT", true)) {
@@ -85,6 +101,7 @@ vm_->setJITCompiler(jitCompiler_.get());
 #endif
 
         hostBridge_ = compiler::createHostBridge(*hostContext_);
+        t = report("host-bridge-create", t);
 
         // Set stdlib path BEFORE registration so pure-Havel stdlib modules
         // (type.hv, etc.) can be found by loadModule during init.
@@ -121,33 +138,40 @@ vm_->setJITCompiler(jitCompiler_.get());
             vm_->moduleLoader().addSearchPath(canonicalRoot);
         }
 
-    vm_->suspendGC();
-    if (leanStartup) {
-        if (config_.pureStdlib) {
-            registerPureStdLib(*vm_);
+        vm_->suspendGC();
+        if (leanStartup) {
+            if (config_.pureStdlib) {
+                registerPureStdLib(*vm_);
+                t = report("stdlib-register-pure", t);
 #ifndef HAVEL_PURE_VM
-            {
-                compiler::VMApi ffiApi(*vm_);
-                modules::ffi::registerFFIModule(ffiApi);
-            }
+                {
+                    compiler::VMApi ffiApi(*vm_);
+                    modules::ffi::registerFFIModule(ffiApi);
+                }
+                t = report("ffi-register", t);
 #endif
+            } else {
+                registerCoreStdLib(*vm_);
+                t = report("stdlib-register-core", t);
+            }
         } else {
-            registerCoreStdLib(*vm_);
+            registerStdLibWithVM(*hostBridge_);
+            t = report("stdlib-register-full", t);
         }
-    } else {
-        registerStdLibWithVM(*hostBridge_);
-    }
-    vm_->resumeGC();
-    hostBridge_->install(
-        leanStartup ? compiler::HostBridge::InstallProfile::Core
-                    : compiler::HostBridge::InstallProfile::Full,
-        !leanStartup);
+        vm_->resumeGC();
+        hostBridge_->install(
+            leanStartup ? compiler::HostBridge::InstallProfile::Core
+            : compiler::HostBridge::InstallProfile::Full,
+            !leanStartup);
+        t = report("host-bridge-install", t);
 
         for (const auto& [name, fn] : hostBridge_->options().host_functions) {
             vm_->registerHostFunction(name, fn);
         }
+        t = report("host-functions-register", t);
 
         hostBridge_->runVmSetup();
+        t = report("vm-setup", t);
 
         vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
 
@@ -178,7 +202,9 @@ vm_->addIntervalResult(timer_id, result);
         // Wire watcher registry for reactive when blocks
         watcher_registry_ = std::make_unique<compiler::WatcherRegistry>();
         vm_->setWatcherRegistry(watcher_registry_.get());
+        t = report("watcher-registry", t);
 
+        report("TOTAL", t0);
         initialized_ = true;
     }
 
@@ -193,6 +219,9 @@ vm_->addIntervalResult(timer_id, result);
         options.compile_unit_name = compileUnitName;
         options.vm_override = vm_.get();
         options.debugBytecode = config_.debugBytecode;
+        if (config_.vmConfig.max_instructions > 0 && options.max_instructions == 0) {
+            options.max_instructions = config_.vmConfig.max_instructions;
+        }
 
         auto result = compiler::runBytecodePipeline(source, entryPoint, options);
 

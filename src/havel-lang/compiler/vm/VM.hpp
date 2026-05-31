@@ -131,10 +131,18 @@ struct VMExecutionResult {
   }
 };
 
+struct VMConfig {
+    uint64_t heap_min_bytes = 64 * 1024 * 1024;
+    uint64_t heap_max_bytes = 4ULL * 1024 * 1024 * 1024;
+    size_t gc_budget = 65536;
+    size_t max_call_depth = 1024;
+    size_t max_stack_depth = 1 << 20;
+};
+
 class VM : public BytecodeInterpreter {
 public:
-  // Timer check callback - called periodically during script execution
-  using TimerCheckFunction = std::function<void()>;
+// Timer check callback - called periodically during script execution
+using TimerCheckFunction = std::function<void()>;
   
   class GCRoot {
   public:

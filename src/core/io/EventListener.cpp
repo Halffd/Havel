@@ -140,11 +140,11 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
   if (blockInput.load()) return;
   if (debugging::debug_hotkeys) {
     if (me.type == MouseEvent::Type::Button)
-      debug("🐭 OnBackendMouseEvent: button={} down={}", me.button, me.down);
+      debug("[Mouse] OnBackendMouseEvent: button={} down={}", me.button, me.down);
     else if (me.type == MouseEvent::Type::Move)
-      debug("🐭 OnBackendMouseEvent: move dx={} dy={}", me.dx, me.dy);
+      debug("[Mouse] OnBackendMouseEvent: move dx={} dy={}", me.dx, me.dy);
     else if (me.type == MouseEvent::Type::Wheel)
-      debug("🐭 OnBackendMouseEvent: wheel={}", me.wheel);
+      debug("[Mouse] OnBackendMouseEvent: wheel={}", me.wheel);
   }
   if (me.type == MouseEvent::Type::Move) {
     struct input_event ev;
@@ -700,7 +700,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
 
   if (down && emergencyShutdownKey != 0 &&
       originalCode == emergencyShutdownKey) {
-    error("🚨 EMERGENCY HOTKEY TRIGGERED! Shutting down...");
+    error("[EMERGENCY] HOTKEY TRIGGERED! Shutting down...");
     running.store(false);
     shutdown.store(true);
     ForceUngrabAllDevices();
@@ -750,7 +750,7 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
                                        int wheelDirection) {
   auto now = std::chrono::steady_clock::now();
 
-  if (debugging::debug_io) debug("🔍 Evaluating wheel combo '{}'", hotkey.alias);
+  if (debugging::debug_io) debug("[Search] Evaluating wheel combo '{}'", hotkey.alias);
 
   // Check if the wheel event occurred recently enough (unless time window is 0
   // for infinite)
@@ -869,13 +869,13 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         activeInputs[ev.code] = ActiveInput(currentMods, now);
         // Track physical mouse button state as well
         physicalKeyStates[ev.code] = true;
-        if (debugging::debug_io) debug("🖱️  Mouse BUTTON DOWN: code={} | Active buttons: {}", ev.code,
+        if (debugging::debug_io) debug("Mouse BUTTON DOWN: code={} | Active buttons: {}", ev.code,
               GetActiveInputsString());
       } else {
         activeInputs.erase(ev.code);
         // Clear physical mouse button state as well
         physicalKeyStates[ev.code] = false;
-        if (debugging::debug_io) debug("🖱️  Mouse BUTTON UP: code={} | Active buttons: {}", ev.code,
+        if (debugging::debug_io) debug("Mouse BUTTON UP: code={} | Active buttons: {}", ev.code,
               GetActiveInputsString());
       }
     } // stateMutex unlocked here
@@ -895,7 +895,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     std::vector<int> matchedHotkeyIds;
     bool shouldBlock = false;
 
-    if (debugging::debug_io) debug("🐭 Evaluating mouse button hotkeys (code={}, down={})", ev.code, down);
+    if (debugging::debug_io) debug("[Mouse] Evaluating mouse button hotkeys (code={}, down={})", ev.code, down);
 
     // Evaluate hotkeys - lock both mutexes
     {
@@ -909,10 +909,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           continue;
 
         if (hotkey.type == HotkeyType::Combo) {
-          if (debugging::debug_hotkeys) debug("🔍 Evaluating COMBO hotkey '{}' (id={})", hotkey.alias, id);
+          if (debugging::debug_hotkeys) debug("[Search] Evaluating COMBO hotkey '{}' (id={})", hotkey.alias, id);
           try {
             if (EvaluateCombo(hotkey)) {
-              if (debugging::debug_hotkeys) debug("🔥 COMBO hotkey MATCHED: '{}' (id={})", hotkey.alias, id);
+              if (debugging::debug_hotkeys) debug("[Hotkey] COMBO MATCHED: '{}' (id={})", hotkey.alias, id);
               matchedHotkeyIds.push_back(id);
               if (hotkey.grab)
                 shouldBlock = true;
@@ -961,7 +961,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
         // Hotkey matched!
         if (debugging::debug_hotkeys || Conf().GetVerboseKeyLogging()) {
-          info("🔥 MOUSE hotkey MATCHED: '{}' (id={}, down={})", hotkey.alias, id, down);
+          info("[Hotkey] MOUSE MATCHED: '{}' (id={}, down={})", hotkey.alias, id, down);
         }
         matchedHotkeyIds.push_back(id);
         if (hotkey.grab)
@@ -971,7 +971,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
     // Execute callbacks outside critical section
     for (int hotkeyId : matchedHotkeyIds) {
-      if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey id={}", hotkeyId);
+      if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING id={}", hotkeyId);
       std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
       auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
@@ -979,7 +979,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           HotkeyManager::RegisteredHotkeysMutex());
       if (it != HotkeyManager::RegisteredHotkeys().end() &&
           it->second.enabled) {
-        if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey '{}' (id={})", it->second.alias, hotkeyId);
+        if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING '{}' (id={})", it->second.alias, hotkeyId);
         auto callback = it->second.callback;
         lock.unlock();
 
@@ -1011,7 +1011,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     // Mouse movement
     if (ev.code == REL_X || ev.code == REL_Y) {
       double scaledValue = ev.value * IO::mouseSensitivity;
-      if (debugging::debug_io) debug("🖱️  Mouse MOVE: axis={}, value={}, scaled={}, sensitivity={}",
+      if (debugging::debug_io) debug("Mouse MOVE: axis={}, value={}, scaled={}, sensitivity={}",
             ev.code == REL_X ? "X" : "Y", ev.value, scaledValue,
             IO::mouseSensitivity);
       int32_t scaledInt = static_cast<int32_t>(scaledValue);
@@ -1102,7 +1102,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         event.modifiers = GetCurrentModifiersMask();
         inputEventCallback(event);
       }
-      if (debugging::debug_io) debug("🖱️  Mouse WHEEL: axis={}, direction={}, speed={}",
+      if (debugging::debug_io) debug("Mouse WHEEL: axis={}, direction={}, speed={}",
             ev.code == REL_WHEEL ? "VERT" : "HORZ",
             wheelDirection > 0 ? "UP/LEFT" : "DOWN/RIGHT", IO::scrollSpeed);
 
@@ -1202,7 +1202,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       currentWheelDirection = 0;
 
       for (int hotkeyId : wheelHotkeyIds) {
-        if (debugging::debug_hotkeys) info("🔥 EXECUTING wheel hotkey id={}", hotkeyId);
+        if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING wheel id={}", hotkeyId);
         std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
         auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
@@ -1210,7 +1210,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
             HotkeyManager::RegisteredHotkeysMutex());
         if (it != HotkeyManager::RegisteredHotkeys().end() &&
             it->second.enabled) {
-          if (debugging::debug_hotkeys) info("🔥 EXECUTING wheel hotkey '{}' (id={})", it->second.alias, hotkeyId);
+          if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING wheel '{}' (id={})", it->second.alias, hotkeyId);
           auto callback = it->second.callback;
           lock.unlock();
 
@@ -1314,19 +1314,19 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
           continue;
       }
 
-      if (debugging::debug_hotkeys) debug("🔥 KEYBOARD/MOVEMENT hotkey MATCHED: '{}' (id={})", hotkey.alias, id);
+      if (debugging::debug_hotkeys) debug("[Hotkey] KEYBOARD/MOVEMENT MATCHED: '{}' (id={})", hotkey.alias, id);
       matchedHotkeyIds.push_back(id);
     }
   }
 
   // Execute callbacks asynchronously to avoid blocking input thread
   for (int hotkeyId : matchedHotkeyIds) {
-    if (debugging::debug_hotkeys) info("🔥 EXECUTING keyboard/movement hotkey id={}", hotkeyId);
+    if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING keyboard/movement id={}", hotkeyId);
     std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
     auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
     if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
-      if (debugging::debug_hotkeys) info("🔥 EXECUTING keyboard/movement hotkey '{}' (id={})", it->second.alias, hotkeyId);
+      if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING keyboard/movement '{}' (id={})", it->second.alias, hotkeyId);
       auto callback = it->second.callback;
       lock.unlock();
 
@@ -1529,7 +1529,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
   bool shouldBlock = false;
 
   if (down && emergencyShutdownKey != 0 && evdevCode == emergencyShutdownKey) {
-    error("🚨 EMERGENCY HOTKEY TRIGGERED! Shutting down...");
+    error("[EMERGENCY] HOTKEY TRIGGERED! Shutting down...");
     running.store(false);
     shutdown.store(true);
     return true;
@@ -1548,10 +1548,10 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       // Check if this is a combo hotkey
       if (hotkey.type == HotkeyType::Combo) {
-        if (debugging::debug_hotkeys) debug("🔍 Evaluating keyboard COMBO '{}' (id={})", hotkey.alias, id);
+        if (debugging::debug_hotkeys) debug("[Search] Evaluating keyboard COMBO '{}' (id={})", hotkey.alias, id);
         try {
           if (EvaluateCombo(hotkey)) {
-            if (debugging::debug_hotkeys) debug("🔥 KEYBOARD COMBO MATCHED: '{}' (id={})", hotkey.alias, id);
+            if (debugging::debug_hotkeys) debug("[Hotkey] KEYBOARD COMBO MATCHED: '{}' (id={})", hotkey.alias, id);
             // Combo matched, collect for execution outside locks
             std::lock_guard<std::mutex> ioLock(
                 HotkeyManager::RegisteredHotkeysMutex());
@@ -1682,7 +1682,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       // Hotkey matched! Collect for execution outside locks
       hotkey.success = true; // Update the actual hotkey's success status
-      if (debugging::debug_hotkeys) debug("🔥 KEYBOARD hotkey MATCHED: '{}' (id={}, down={})", hotkey.alias, id, down);
+      if (debugging::debug_hotkeys) debug("[Hotkey] KEYBOARD MATCHED: '{}' (id={}, down={})", hotkey.alias, id, down);
 
       matchedHotkeyIds.push_back(id);
 
@@ -1694,13 +1694,13 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
   // Execute callbacks outside critical section
   for (int hotkeyId : matchedHotkeyIds) {
-    if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey id={}", hotkeyId);
+    if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING id={}", hotkeyId);
     std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
     auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
     if (it != HotkeyManager::RegisteredHotkeys().end() &&
         it->second.enabled) {
-      if (debugging::debug_hotkeys) info("🔥 EXECUTING hotkey '{}' (id={})", it->second.alias, hotkeyId);
+      if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING '{}' (id={})", it->second.alias, hotkeyId);
       auto callback = it->second.callback;
       lock.unlock();
 
@@ -1755,7 +1755,7 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
       return false;
     }
 
-    if (debugging::debug_io) debug("🔍 Evaluating combo '{}' | Active inputs: {}", hotkey.alias,
+    if (debugging::debug_io) debug("[Search] Evaluating combo '{}' | Active inputs: {}", hotkey.alias,
           GetActiveInputsString());
 
     // Build a set of required keys for this combo

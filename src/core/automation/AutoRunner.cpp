@@ -70,7 +70,7 @@ namespace havel::automation
               }
               io_->Send("{" + direction_ + ":up}");
               io_->Send("{LShift:up}");
-              return;  // 👈 EARLY EXIT
+  return;
           }
           io_->Send("{LShift}");
         }, true);  // repeating=true

@@ -232,7 +232,7 @@ llvm::Value *Compiler::GenerateBinary(const ast::BinaryExpression &binary) {
                              toString(binary.operator_));
   }
 }
-// Generate LLVM IR for expressions - THIS IS WHERE THE MAGIC HAPPENS! 🔥
+// Generate LLVM IR for expressions
 llvm::Value *Compiler::GenerateExpression(const ast::Expression &expr) {
   switch (expr.kind) {
   case ast::NodeType::NumberLiteral:

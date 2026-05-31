@@ -259,8 +259,8 @@ void TextChunkerWindow::setupUI() {
     infoLabel->setFont(infoFont);
     mainLayout->addWidget(infoLabel);
 
-    helpLabel = new QLabel("⌨️  Local: N/→=Next P/←=Prev R=Recopy V=NewText I=Invert Q/Esc=Hide\n"
-                          "🌐 Global: Managed by Havel", this);
+  helpLabel = new QLabel("[Local] N/Right=Next P/Left=Prev R=Recopy V=NewText I=Invert Q/Esc=Hide\n"
+                         "[Global] Managed by Havel", this);
     helpLabel->setAlignment(Qt::AlignCenter);
     helpLabel->setWordWrap(true);
     QFont helpFont = helpLabel->font();

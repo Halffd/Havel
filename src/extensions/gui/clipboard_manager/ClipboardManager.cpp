@@ -1268,7 +1268,7 @@ void ClipboardManager::processClipboardContent() {
             item.type = ContentType::Image;
             item.data = image;
             item.displayText = tr("Image: %1x%2").arg(image.width()).arg(image.height());
-            item.preview = tr("🖼️ [%1x%2]").arg(image.width()).arg(image.height());
+            item.preview = tr("[%1x%2]").arg(image.width()).arg(image.height());
             
             lastClipboardItem = item;
             addToHistory(item);
@@ -1297,7 +1297,7 @@ void ClipboardManager::processClipboardContent() {
             item.type = ContentType::FileList;
             item.data = QVariant::fromValue(filteredUrls);
             item.displayText = formatFileList(filteredUrls);
-            item.preview = tr("📁 %1 files").arg(filteredUrls.size());
+            item.preview = tr("[%1 files]").arg(filteredUrls.size());
             
             lastClipboardItem = item;
             addToHistory(item);
@@ -1328,7 +1328,7 @@ void ClipboardManager::processClipboardContent() {
         }
         
         item.displayText = previewText;
-        item.preview = tr("🌐 ") + previewText.left(50) + (previewText.length() > 50 ? "..." : "");
+        item.preview = previewText.left(50) + (previewText.length() > 50 ? "..." : "");
         
         // Only add if different from last item to prevent duplicates
         if (lastClipboardItem.type != ContentType::Html || 
@@ -1380,7 +1380,7 @@ void ClipboardManager::processClipboardContent() {
             item.type = ContentType::Markdown;
             item.data = text;
             item.displayText = text.left(100).simplified() + (text.length() > 100 ? "..." : "");
-            item.preview = tr("📝 Markdown");
+            item.preview = tr("[Markdown]");
         } else {
             item.type = ContentType::Text;
             item.data = text;
@@ -1550,7 +1550,7 @@ void ClipboardManager::filterHistory(const QString& filter) {
                     listItem->setText(truncateText(item.displayText, 100)); // Truncate text for images
                 } else {
                     // If no valid pixmap, show text with image icon
-                    listItem->setText("🖼️ " + truncateText(item.displayText, 100));
+                    listItem->setText(truncateText(item.displayText, 100));
                 }
             } else {
                 // For text content, just show the text

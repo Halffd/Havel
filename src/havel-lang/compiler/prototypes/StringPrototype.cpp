@@ -147,7 +147,69 @@ void registerStringPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
-  regProtoVar("sub", [&vm](const std::vector<Value>& args) {
+regProto("codePointAt", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeInt(-1);
+        std::string s = extractString(vm, args[0]);
+        int64_t idx = args[1].isInt() ? args[1].asInt() : 0;
+        size_t bytePos = 0;
+        int64_t cpIdx = 0;
+        while (bytePos < s.size() && cpIdx < idx) {
+            unsigned char c = static_cast<unsigned char>(s[bytePos]);
+            if (c < 0x80) bytePos += 1;
+            else if ((c & 0xE0) == 0xC0) bytePos += 2;
+            else if ((c & 0xF0) == 0xE0) bytePos += 3;
+            else if ((c & 0xF8) == 0xF0) bytePos += 4;
+            else bytePos += 1;
+            cpIdx++;
+        }
+        if (bytePos >= s.size()) return Value::makeInt(-1);
+        unsigned char c = static_cast<unsigned char>(s[bytePos]);
+        int32_t codepoint;
+        size_t cpLen;
+        if (c < 0x80) { codepoint = c; cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { codepoint = (c & 0x1F); cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { codepoint = (c & 0x0F); cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { codepoint = (c & 0x07); cpLen = 4; }
+        else { codepoint = c; cpLen = 1; }
+        for (size_t i = 1; i < cpLen && bytePos + i < s.size(); ++i) {
+            codepoint = (codepoint << 6) | (static_cast<unsigned char>(s[bytePos + i]) & 0x3F);
+        }
+        return Value::makeInt(static_cast<int64_t>(codepoint));
+    });
+
+    regProto("cpAtByte", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeInt(-1);
+        std::string s = extractString(vm, args[0]);
+        int64_t bytePos = args[1].isInt() ? args[1].asInt() : 0;
+        if (bytePos < 0 || static_cast<size_t>(bytePos) >= s.size()) return Value::makeInt(-1);
+        unsigned char c = static_cast<unsigned char>(s[static_cast<size_t>(bytePos)]);
+        int32_t codepoint;
+        size_t cpLen;
+        if (c < 0x80) { codepoint = c; cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { codepoint = (c & 0x1F); cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { codepoint = (c & 0x0F); cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { codepoint = (c & 0x07); cpLen = 4; }
+        else { codepoint = c; cpLen = 1; }
+        for (size_t i = 1; i < cpLen && static_cast<size_t>(bytePos) + i < s.size(); ++i) {
+            codepoint = (codepoint << 6) | (static_cast<unsigned char>(s[static_cast<size_t>(bytePos) + i]) & 0x3F);
+        }
+        return Value::makeInt(static_cast<int64_t>(codepoint));
+    });
+
+    regProto("cpByteLen", 2, [&vm](const std::vector<Value>& args) {
+        if (args.size() < 2) return Value::makeInt(0);
+        std::string s = extractString(vm, args[0]);
+        int64_t bytePos = args[1].isInt() ? args[1].asInt() : 0;
+        if (bytePos < 0 || static_cast<size_t>(bytePos) >= s.size()) return Value::makeInt(0);
+        unsigned char c = static_cast<unsigned char>(s[static_cast<size_t>(bytePos)]);
+        if (c < 0x80) return Value::makeInt(1);
+        else if ((c & 0xE0) == 0xC0) return Value::makeInt(2);
+        else if ((c & 0xF0) == 0xE0) return Value::makeInt(3);
+        else if ((c & 0xF8) == 0xF0) return Value::makeInt(4);
+        return Value::makeInt(1);
+    });
+
+    regProtoVar("sub", [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     std::string s = extractString(vm, args[0]);
     int64_t start = args[1].isInt() ? args[1].asInt() : 0;

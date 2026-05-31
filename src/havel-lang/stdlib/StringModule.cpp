@@ -206,7 +206,130 @@ static Value registerStringFallback(const VMApi &api) {
         return Value::makeBool(str.find(substr) != std::string::npos);
       });
 
-  api.registerFunction("replace", [api](const std::vector<Value>& args) {
+  api.registerFunction(
+    "string.codePointAt", [api](const std::vector<Value> &args) {
+        if (args.size() < 2)
+            throw std::runtime_error("string.codePointAt() requires 2 arguments");
+        const std::string* strPtr = api.getStringPtr(args[0]);
+        std::string tempStr;
+        const std::string& str = strPtr ? *strPtr : (tempStr = api.toString(args[0]));
+        int64_t idx = args[1].asInt();
+
+        size_t bytePos = 0;
+        int64_t cpIdx = 0;
+        while (bytePos < str.size() && cpIdx < idx) {
+            unsigned char c = static_cast<unsigned char>(str[bytePos]);
+            if (c < 0x80) bytePos += 1;
+            else if ((c & 0xE0) == 0xC0) bytePos += 2;
+            else if ((c & 0xF0) == 0xE0) bytePos += 3;
+            else if ((c & 0xF8) == 0xF0) bytePos += 4;
+            else bytePos += 1;
+            cpIdx++;
+        }
+        if (bytePos >= str.size()) return Value::makeInt(-1);
+
+        unsigned char c = static_cast<unsigned char>(str[bytePos]);
+        int32_t codepoint;
+        size_t cpLen;
+        if (c < 0x80) { codepoint = c; cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { codepoint = (c & 0x1F); cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { codepoint = (c & 0x0F); cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { codepoint = (c & 0x07); cpLen = 4; }
+        else { codepoint = c; cpLen = 1; }
+
+        for (size_t i = 1; i < cpLen && bytePos + i < str.size(); ++i) {
+            codepoint = (codepoint << 6) | (static_cast<unsigned char>(str[bytePos + i]) & 0x3F);
+        }
+        return Value::makeInt(static_cast<int64_t>(codepoint));
+    });
+
+api.registerFunction(
+    "string.codePointLen", [api](const std::vector<Value> &args) {
+        if (args.empty())
+            throw std::runtime_error("string.codePointLen() requires 1 argument");
+        const std::string* strPtr = api.getStringPtr(args[0]);
+        std::string tempStr;
+        const std::string& str = strPtr ? *strPtr : (tempStr = api.toString(args[0]));
+        int64_t count = 0;
+        size_t bytePos = 0;
+        while (bytePos < str.size()) {
+            unsigned char c = static_cast<unsigned char>(str[bytePos]);
+            if (c < 0x80) bytePos += 1;
+            else if ((c & 0xE0) == 0xC0) bytePos += 2;
+            else if ((c & 0xF0) == 0xE0) bytePos += 3;
+            else if ((c & 0xF8) == 0xF0) bytePos += 4;
+            else bytePos += 1;
+            count++;
+        }
+        return Value::makeInt(count);
+    });
+
+api.registerFunction(
+    "string.fromCodePoint", [api](const std::vector<Value> &args) {
+        if (args.empty())
+            throw std::runtime_error("string.fromCodePoint() requires 1 argument");
+        int64_t cp = args[0].isInt() ? args[0].asInt() : 0;
+        std::string result;
+        if (cp < 0) return api.makeString("");
+        if (cp < 0x80) {
+            result += static_cast<char>(cp);
+        } else if (cp < 0x800) {
+            result += static_cast<char>(0xC0 | (cp >> 6));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        } else if (cp < 0x10000) {
+            result += static_cast<char>(0xE0 | (cp >> 12));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        } else if (cp < 0x110000) {
+            result += static_cast<char>(0xF0 | (cp >> 18));
+            result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        }
+        return api.makeString(result);
+    });
+
+api.registerFunction(
+    "string.cpAtByte", [api](const std::vector<Value> &args) {
+        if (args.size() < 2)
+            throw std::runtime_error("string.cpAtByte() requires 2 arguments");
+        const std::string* strPtr = api.getStringPtr(args[0]);
+        std::string tempStr;
+        const std::string& str = strPtr ? *strPtr : (tempStr = api.toString(args[0]));
+        int64_t bytePos = args[1].asInt();
+        if (bytePos < 0 || static_cast<size_t>(bytePos) >= str.size()) return Value::makeInt(-1);
+        unsigned char c = static_cast<unsigned char>(str[static_cast<size_t>(bytePos)]);
+        int32_t codepoint;
+        size_t cpLen;
+        if (c < 0x80) { codepoint = c; cpLen = 1; }
+        else if ((c & 0xE0) == 0xC0) { codepoint = (c & 0x1F); cpLen = 2; }
+        else if ((c & 0xF0) == 0xE0) { codepoint = (c & 0x0F); cpLen = 3; }
+        else if ((c & 0xF8) == 0xF0) { codepoint = (c & 0x07); cpLen = 4; }
+        else { codepoint = c; cpLen = 1; }
+        for (size_t i = 1; i < cpLen && static_cast<size_t>(bytePos) + i < str.size(); ++i) {
+            codepoint = (codepoint << 6) | (static_cast<unsigned char>(str[static_cast<size_t>(bytePos) + i]) & 0x3F);
+        }
+        return Value::makeInt(static_cast<int64_t>(codepoint));
+    });
+
+api.registerFunction(
+    "string.cpByteLen", [api](const std::vector<Value> &args) {
+        if (args.size() < 2)
+            throw std::runtime_error("string.cpByteLen() requires 2 arguments");
+        const std::string* strPtr = api.getStringPtr(args[0]);
+        std::string tempStr;
+        const std::string& str = strPtr ? *strPtr : (tempStr = api.toString(args[0]));
+        int64_t bytePos = args[1].asInt();
+        if (bytePos < 0 || static_cast<size_t>(bytePos) >= str.size()) return Value::makeInt(0);
+        unsigned char c = static_cast<unsigned char>(str[static_cast<size_t>(bytePos)]);
+        if (c < 0x80) return Value::makeInt(1);
+        else if ((c & 0xE0) == 0xC0) return Value::makeInt(2);
+        else if ((c & 0xF0) == 0xE0) return Value::makeInt(3);
+        else if ((c & 0xF8) == 0xF0) return Value::makeInt(4);
+        return Value::makeInt(1);
+    });
+
+api.registerFunction("replace", [api](const std::vector<Value>& args) {
     if (args.size() < 3)
       throw std::runtime_error("replace() requires string, pattern, and replacement");
     std::string s = api.toString(args[0]);
@@ -245,8 +368,13 @@ static Value registerStringFallback(const VMApi &api) {
     api.setField(strObj, "endsWith", api.makeFunctionRef("string.endswith"));
     api.setField(strObj, "includes", api.makeFunctionRef("string.includes"));
     api.setField(strObj, "startswith", api.makeFunctionRef("string.startswith"));
-    api.setField(strObj, "endswith", api.makeFunctionRef("string.endswith"));
-    api.setGlobal("String", strObj);
+  api.setField(strObj, "endswith", api.makeFunctionRef("string.endswith"));
+  api.setField(strObj, "codePointAt", api.makeFunctionRef("string.codePointAt"));
+  api.setField(strObj, "codePointLen", api.makeFunctionRef("string.codePointLen"));
+  api.setField(strObj, "fromCodePoint", api.makeFunctionRef("string.fromCodePoint"));
+  api.setField(strObj, "cpAtByte", api.makeFunctionRef("string.cpAtByte"));
+  api.setField(strObj, "cpByteLen", api.makeFunctionRef("string.cpByteLen"));
+  api.setGlobal("String", strObj);
     api.setGlobal("string", strObj);
     return strObj;
 }

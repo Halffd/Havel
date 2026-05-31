@@ -12,6 +12,49 @@
 #include <thread>
 #include <unistd.h>
 
+#ifdef HAVEL_CORE_PROFILE
+
+namespace havel {
+namespace ConfigPaths {
+std::string GetDefaultConfigDir() { return "./havel/"; }
+std::string CONFIG_DIR = "./havel/";
+std::string MAIN_CONFIG = "./havel/havel.cfg";
+std::string HOTKEYS_DIR = "./havel/hotkeys/";
+void SetConfigPath(const std::string &path, const std::string &basename) {
+  CONFIG_DIR = path;
+  MAIN_CONFIG = path + basename;
+  HOTKEYS_DIR = path + "hotkeys/";
+}
+std::string GetConfigPath() { return CONFIG_DIR; }
+std::string GetConfigPath(const std::string &filename) { return filename; }
+void EnsureConfigDir() {}
+} // namespace ConfigPaths
+
+Configs &Configs::Get() {
+  static Configs instance;
+  return instance;
+}
+
+Configs::~Configs() = default;
+void Configs::Load(const std::string &) {}
+void Configs::Save(const std::string &) {}
+void Configs::Reload() {}
+std::string Configs::getPath() { return {}; }
+void Configs::SetPath(const std::string &) {}
+void Configs::StartFileWatching(const std::string &) {}
+void Configs::StopFileWatching() {}
+void Configs::EnsureConfigFile(const std::string &) {}
+void Configs::RequestSave() {}
+void Configs::ForceSave() {}
+void Configs::Print() const {}
+template <> std::string Configs::Convert<std::string>(const std::string &v) { return v; }
+template <> bool Configs::Convert<bool>(const std::string &v) { return v == "true" || v == "1"; }
+template <> int Configs::Convert<int>(const std::string &v) { return std::atoi(v.c_str()); }
+template <> double Configs::Convert<double>(const std::string &v) { return std::atof(v.c_str()); }
+} // namespace havel
+
+#else
+
 namespace havel {
 namespace ConfigPaths {
 // Get config directory with fallback to $HOME/.config/havel/
@@ -485,3 +528,5 @@ void havel::Configs::Print() const {
 }
 
 } // namespace havel
+
+#endif

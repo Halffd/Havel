@@ -1,5 +1,30 @@
 #pragma once
 
+#ifdef HAVEL_CORE_PROFILE
+
+#include <string>
+#include <vector>
+
+namespace havel {
+
+class ExtensionLoader {
+public:
+  ExtensionLoader() = default;
+  ~ExtensionLoader() = default;
+
+  bool loadExtension(const std::string &) { return false; }
+  bool loadExtensionByName(const std::string &) { return false; }
+  bool isLoaded(const std::string &) const { return false; }
+  std::vector<std::string> getLoadedExtensions() const { return {}; }
+  void *getHandle(const std::string &) const { return nullptr; }
+  void addSearchPath(const std::string &) {}
+  static std::vector<std::string> getStandardSearchPaths() { return {}; }
+};
+
+} // namespace havel
+
+#else
+
 /**
  * ExtensionLoader.hpp - Pure dlopen-based extension loading
  *
@@ -14,9 +39,9 @@
 
 #include "HavelCAPI.h"
 
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
 
 namespace havel {
 
@@ -89,3 +114,5 @@ private:
 };
 
 } // namespace havel
+
+#endif

@@ -1,4 +1,65 @@
 #pragma once
+
+#ifdef HAVEL_CORE_PROFILE
+
+#include <cstddef>
+#include <string>
+#include <vector>
+
+namespace havel {
+
+class Logger {
+public:
+    enum Level { LOG_DEBUG, LOG_INFO, LOG_WARNING, LOG_ERROR, LOG_FATAL };
+    static Logger& getInstance() {
+        static Logger instance;
+        return instance;
+    }
+    void initialize(bool = true, int = 3, bool = true) {}
+    void initializeWithConfig(bool, int, bool) {}
+    void setLogFile(const std::string&) {}
+    void setLogLevel(Level) {}
+    Level getCurrentLevel() const { return LOG_INFO; }
+    void setColoredOutput(bool) {}
+    void setMaxHistorySize(size_t) {}
+    void setMaxFileSize(size_t) {}
+    std::string getLogFilePath() const { return {}; }
+    std::vector<std::string> getHistory(size_t = 100) const { return {}; }
+    void debug(const std::string&) {}
+    void info(const std::string&) {}
+    void warning(const std::string&) {}
+    void error(const std::string&) {}
+    void fatal(const std::string&) {}
+    template<typename... Args> void warn(const std::string&, Args&&...) {}
+    template<typename... Args> void debug(const std::string&, Args&&...) {}
+    template<typename... Args> void info(const std::string&, Args&&...) {}
+    template<typename... Args> void warning(const std::string&, Args&&...) {}
+    template<typename... Args> void error(const std::string&, Args&&...) {}
+    template<typename... Args> void fatal(const std::string&, Args&&...) {}
+};
+
+#define HAVEL_LOG_DEBUG(...) do {} while (0)
+#define HAVEL_LOG_INFO(...)  do {} while (0)
+#define HAVEL_LOG_WARN(...)  do {} while (0)
+#define HAVEL_LOG_ERROR(...) do {} while (0)
+#define HAVEL_LOG_FATAL(...) do {} while (0)
+inline void log(const std::string&) {}
+inline void debug(const std::string&) {}
+inline void info(const std::string&) {}
+inline void warning(const std::string&) {}
+inline void error(const std::string&) {}
+inline void fatal(const std::string&) {}
+template<typename... Args> inline void warn(const std::string&, Args&&...) {}
+template<typename... Args> inline void debug(const std::string&, Args&&...) {}
+template<typename... Args> inline void info(const std::string&, Args&&...) {}
+template<typename... Args> inline void warning(const std::string&, Args&&...) {}
+template<typename... Args> inline void error(const std::string&, Args&&...) {}
+template<typename... Args> inline void fatal(const std::string&, Args&&...) {}
+
+} // namespace havel
+
+#else
+
 #include <string>
 #include <mutex>
 #include <memory>
@@ -249,3 +310,5 @@ inline void critical(const std::string& message) {
     Logger::getInstance().fatal(message);
 }
 } // namespace havel
+
+#endif

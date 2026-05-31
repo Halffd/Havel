@@ -1,0 +1,131 @@
+// smoke: gc-root-scan-stress = 1
+// Stress test: verify GC root scanning preserves live objects
+
+fn makeCounter():
+  count = 0
+  fn inc():
+    count += 1
+    return count
+  return inc
+
+c1 = makeCounter()
+c2 = makeCounter()
+
+fn makeDeep(n):
+  if n == 0:
+    return {leaf: true}
+  child = makeDeep(n - 1)
+  return {child: child, depth: n}
+
+deep = makeDeep(8)
+
+i = 0
+while i < 3000:
+  _tmp = {x: i}
+  i += 1
+
+v1 = c1()
+v2 = c2()
+if v1 != 1:
+  print("FAIL gc-root-scan-stress c1 expected 1 got " + str(v1))
+  process.exit(1)
+if v2 != 1:
+  print("FAIL gc-root-scan-stress c2 expected 1 got " + str(v2))
+  process.exit(1)
+
+v1b = c1()
+if v1b != 2:
+  print("FAIL gc-root-scan-stress c1 expected 2 got " + str(v1b))
+  process.exit(1)
+
+if deep.depth != 8:
+  print("FAIL gc-root-scan-stress deep expected 8 got " + str(deep.depth))
+  process.exit(1)
+
+arr = []
+i = 0
+while i < 30:
+  arr.push({idx: i})
+  i += 1
+
+i = 0
+while i < 3000:
+  _tmp = [i]
+  i += 1
+
+if arr.len() != 30:
+  print("FAIL gc-root-scan-stress arr expected 30 got " + str(arr.len()))
+  process.exit(1)
+
+a = {name: "a"}
+b = {name: "b"}
+a.ref = b
+b.ref = a
+
+i = 0
+while i < 3000:
+  _tmp = {x: i}
+  i += 1
+
+if a.ref.name != "b":
+  print("FAIL gc-root-scan-stress a.ref expected b")
+  process.exit(1)
+if b.ref.name != "a":
+  print("FAIL gc-root-scan-stress b.ref expected a")
+  process.exit(1)
+
+fn makeArrayHolder():
+  data = []
+  i = 0
+  while i < 10:
+    data.push(i * 2)
+    i += 1
+  fn get(idx):
+    return data[idx]
+  fn len():
+    return data.len()
+  return {get: get, len: len}
+
+holder = makeArrayHolder()
+
+i = 0
+while i < 3000:
+  _tmp = {x: i}
+  i += 1
+
+if holder.len() != 10:
+  print("FAIL gc-root-scan-stress holder.len expected 10 got " + str(holder.len()))
+  process.exit(1)
+if holder.get(5) != 10:
+  print("FAIL gc-root-scan-stress holder.get(5) expected 10 got " + str(holder.get(5)))
+  process.exit(1)
+
+fns = []
+i = 0
+while i < 20:
+  v = i * 3
+  fn getter():
+    return v
+  fns.push(getter)
+  i += 1
+
+i = 0
+while i < 3000:
+  _tmp = {x: i}
+  i += 1
+
+sum = 0
+i = 0
+while i < 20:
+  sum += fns[i]()
+  i += 1
+
+// All getters capture same v slot (last iteration: v=57)
+if sum != 1140:
+  print("FAIL gc-root-scan-stress sum expected 1140 got " + str(sum))
+  process.exit(1)
+
+val __result = 1
+if __result != 1:
+  process.exit(1)
+return __result

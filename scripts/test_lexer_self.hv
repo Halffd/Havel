@@ -1,0 +1,12 @@
+// Test self-hosted lexer tokenizes itself
+use { tokenize, tokenizeWithErrors } from "lexer"
+
+source = fs.read("modules/lang/lexer.hv")
+if source == null || source == "" {
+    println("ERROR: could not read lexer.hv")
+    shell.exit(1)
+}
+
+result = tokenizeWithErrors(source)
+tokens = tokenize(source)
+println("tokenize lexer.hv: " + int(#tokens).str() + " tokens, " + int(#result.errors).str() + " errors")

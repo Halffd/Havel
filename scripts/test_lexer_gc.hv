@@ -1,0 +1,17 @@
+// Test self-hosted lexer tokenizes a string with quotes (scanString pattern)
+use { Lexer, tokenize, tokenizeWithErrors } from "lexer"
+
+code = "x = \"hello world\""
+result = tokenizeWithErrors(code)
+if result.errors != null && #result.errors > 0 {
+    println("ERROR: tokenize failed")
+    for e in result.errors {
+        println("  " + str(e))
+    }
+} else {
+    tokens = tokenize(code)
+    println("tokenize ok: " + int(#tokens).str() + " tokens")
+    for t in tokens {
+        println("  " + t.type + " " + str(t.value))
+    }
+}

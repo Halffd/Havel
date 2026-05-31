@@ -1,0 +1,26 @@
+// Test object dot-assignment
+
+// Test 1: plain object dot-assignment
+obj = {status: "init"}
+obj.status = "core"
+println("obj.status=" + obj.status)
+
+// Test 2: class instance dot-assignment
+class Config {
+    fn init() {
+        @name = "default"
+    }
+    fn setName(n) {
+        @name = n
+    }
+}
+
+cfg = Config()
+cfg.name = "custom"
+println("cfg.name=" + cfg.name)
+
+// Test 3: method-based assignment
+cfg.setName("method")
+println("cfg.name after method=" + cfg.name)
+
+println("all dot-assign tests done")

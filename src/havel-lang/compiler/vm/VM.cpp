@@ -1,5 +1,6 @@
 #include "VM.hpp"
 #include "VMInternals.hpp"
+#include "VMApi.hpp"
 #include "../../../utils/Logger.hpp"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../../runtime/concurrency/Thread.hpp"
@@ -2401,6 +2402,37 @@ std::string fnCapturedField = fieldPath;
 
     resumeGcGuard();
     return value;
+}
+
+void VM::registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn) {
+    lazy_modules_[name] = ModuleDescriptor{name, std::move(initFn), false};
+
+    auto proxyObj = createHostObject();
+    auto *obj = heap_.object(proxyObj.id);
+    (*obj)["__lazy__"] = Value(true);
+    auto nameStr = createRuntimeString(name);
+    (*obj)["__module__"] = Value::makeStringId(nameStr.id);
+    globals[name] = Value::makeObjectId(proxyObj.id);
+}
+
+bool VM::ensureModuleLoaded(const std::string &name) {
+    auto it = lazy_modules_.find(name);
+    if (it == lazy_modules_.end()) return false;
+    if (it->second.loaded) return true;
+
+    VMApi api(*this);
+    it->second.initFn(api);
+    it->second.loaded = true;
+    return true;
+}
+
+bool VM::isLazyModuleRegistered(const std::string &name) const {
+    return lazy_modules_.find(name) != lazy_modules_.end();
+}
+
+bool VM::isLazyModuleLoaded(const std::string &name) const {
+    auto it = lazy_modules_.find(name);
+    return it != lazy_modules_.end() && it->second.loaded;
 }
 
 Value VM::loadModule(const std::string& path) {

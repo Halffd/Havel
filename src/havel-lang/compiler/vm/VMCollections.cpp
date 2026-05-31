@@ -10,6 +10,7 @@
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "core/config/ConfigManager.hpp"
 #include <cmath>
+#include <cctype>
 #include <iostream>
 #include <set>
 #include <sstream>
@@ -875,7 +876,55 @@ bool VM::execCollectionOp(const Instruction &instruction) {
         auto *obj = heap_.object(objRef.id);
         if (!obj) {
             COMPILER_THROW("OBJECT_GET unknown object id");
-	}
+        }
+
+        // Lazy module proxy trap: if object has __lazy__ flag,
+        // trigger module initialization and replace with real namespace
+        auto *lazyFlag = obj->get("__lazy__");
+        if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+            auto *modNameVal = obj->get("__module__");
+            std::string modName;
+            if (modNameVal) {
+                if (modNameVal->isStringId()) {
+                    if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
+                } else if (modNameVal->isStringValId() && current_chunk) {
+                    modName = current_chunk->getString(modNameVal->asStringValId());
+                }
+            }
+        if (!modName.empty()) {
+            ensureModuleLoaded(modName);
+            auto git = globals.find(modName);
+            if (git != globals.end() && git->second.isObjectId()) {
+                auto *proxyObj = heap_.object(git->second.asObjectId());
+                if (proxyObj) {
+                    auto *lf = proxyObj->get("__lazy__");
+                    if (lf && lf->isBool() && lf->asBool()) {
+                        globals.erase(git);
+                    }
+                }
+            }
+            git = globals.find(modName);
+            if (git != globals.end() && git->second.isObjectId()) {
+                obj = heap_.object(git->second.asObjectId());
+                if (!obj) {
+                    pushStack(Value::makeNull());
+                    break;
+                }
+            } else {
+                std::string capModName = modName;
+                capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
+                git = globals.find(capModName);
+                if (git != globals.end() && git->second.isObjectId()) {
+                    globals[modName] = git->second;
+                    obj = heap_.object(git->second.asObjectId());
+                    if (!obj) {
+                        pushStack(Value::makeNull());
+                        break;
+                    }
+                }
+            }
+        }
+        }
 
         // Check for numeric index (obj[0], obj[-1])
     if (key_value.isInt()) {

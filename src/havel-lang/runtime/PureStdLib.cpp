@@ -39,49 +39,53 @@ void registerBrightnessModule(const compiler::VMApi &api);
 namespace havel {
 
 namespace {
+void registerLazyStdlib(compiler::VM &vm) {
+    vm.registerLazyModule("regex", [](compiler::VMApi &api) { stdlib::registerRegexModule(api); });
+    vm.registerLazyModule("physics", [](compiler::VMApi &api) { stdlib::registerPhysicsModule(api); });
+    vm.registerLazyModule("time", [](compiler::VMApi &api) { stdlib::registerTimeModule(api); });
+    vm.registerLazyModule("timer", [](compiler::VMApi &api) { stdlib::registerTimerModule(api); });
+    vm.registerLazyModule("fs", [](compiler::VMApi &api) { stdlib::registerFsModule(api); });
+    vm.registerLazyModule("random", [](compiler::VMApi &api) { stdlib::registerRandomModule(api); });
+    vm.registerLazyModule("debug", [](compiler::VMApi &api) { stdlib::registerDebugModule(api); });
+    vm.registerLazyModule("sys", [](compiler::VMApi &api) { stdlib::registerSysModule(api); });
+    vm.registerLazyModule("shell", [](compiler::VMApi &api) { stdlib::registerShellModule(api); });
+    vm.registerLazyModule("pointer", [](compiler::VMApi &api) { stdlib::registerPointerModule(api); });
+    vm.registerLazyModule("format", [](compiler::VMApi &api) { stdlib::registerFormatModule(api); });
+    vm.registerLazyModule("pack", [](compiler::VMApi &api) { stdlib::registerPackModule(api); });
+    vm.registerLazyModule("bit", [](compiler::VMApi &api) { stdlib::registerBitModule(api); });
+    vm.registerLazyModule("option", [](compiler::VMApi &api) { stdlib::registerOptionModule(api); });
+    vm.registerLazyModule("bytecodeBuilder", [](compiler::VMApi &api) { stdlib::registerBytecodeBuilderModule(api); });
+    vm.registerLazyModule("log", [](compiler::VMApi &api) { stdlib::registerLogModule(api); });
+    vm.registerLazyModule("window", [](compiler::VMApi &api) { modules::registerWindowMonitorModule(api); });
+    vm.registerLazyModule("display", [](compiler::VMApi &api) { modules::registerDisplayModule(api); });
+    vm.registerLazyModule("brightness", [](compiler::VMApi &api) { modules::registerBrightnessModule(api); });
+}
+
 void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
-  compiler::VMApi api(vm);
+    compiler::VMApi api(vm);
 
-  stdlib::registerMathModule(api);
-  stdlib::registerStringModule(api);
-  stdlib::registerObjectModule(api);
-  stdlib::registerTypeModule(api);
-  stdlib::registerArrayModule(api);
+    // Core modules: always eager (used by nearly every script)
+    stdlib::registerMathModule(api);
+    stdlib::registerStringModule(api);
+    stdlib::registerObjectModule(api);
+    stdlib::registerTypeModule(api);
+    stdlib::registerArrayModule(api);
 
-  if (coreOnly) {
-    return;
-  }
+    if (coreOnly) {
+        return;
+    }
 
-  stdlib::registerRegexModule(api);
-  stdlib::registerPhysicsModule(api);
-  stdlib::registerTimeModule(api);
-  stdlib::registerTimerModule(api);
-  stdlib::registerFsModule(api);
-  stdlib::registerRandomModule(api);
-  stdlib::registerDebugModule(api);
-  stdlib::registerSysModule(api);
-  stdlib::registerShellModule(api);
-  stdlib::registerPointerModule(api);
-  stdlib::registerFormatModule(api);
-  stdlib::registerPackModule(api);
-  stdlib::registerBitModule(api);
-stdlib::registerOptionModule(api);
-stdlib::registerBytecodeBuilderModule(api);
-stdlib::registerLogModule(api);
-
-  // OS-query modules (safe to call even without display server - returns empty data)
-  modules::registerWindowMonitorModule(api);
-  modules::registerDisplayModule(api);
-  modules::registerBrightnessModule(api);
+    // Extended modules: lazy — init on first use
+    registerLazyStdlib(vm);
 }
 } // namespace
 
 void registerPureStdLib(compiler::VM &vm) {
-registerStdLibSet(vm, false);
+    registerStdLibSet(vm, false);
 }
 
 void registerCoreStdLib(compiler::VM &vm) {
-registerStdLibSet(vm, true);
+    registerStdLibSet(vm, true);
 }
 
 } // namespace havel

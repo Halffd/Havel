@@ -334,8 +334,9 @@ const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
     bool host_globals_registered_ = false;
 bool prototypes_registered_ = false;
-    size_t max_call_depth_ = 1024;
-    size_t tail_call_depth_ = 0;
+VMConfig vm_config_{};
+size_t max_call_depth_ = 1024;
+size_t tail_call_depth_ = 0;
     bool profiling_enabled_ = false;
     bool trace_execution_ = false;
     std::array<uint64_t, 256> opcode_counts_{};
@@ -559,8 +560,10 @@ public:
   Value invokeHostFunctionDirect(const std::string &name,
                                   const std::vector<Value> &args);
 
-  VM();
-  VM(const HostContext &ctx);
+VM();
+VM(const VMConfig& cfg);
+VM(const HostContext &ctx);
+VM(const HostContext &ctx, const VMConfig& cfg);
   ~VM() override;
   Value execute(const BytecodeChunk &chunk,
                 const std::string &function_name,
@@ -758,11 +761,14 @@ void clearLastSuspension() { last_suspension_reason_ = 0; last_suspension_contex
         return opcode_counts_[static_cast<uint8_t>(opcode)];
     }
 
-  void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
-  void runGarbageCollection() { collectGarbage(); }
-  GCHeap::Stats gcStats() const { return heap_.stats(); }
-  GCHeap& getHeap() { return heap_; }
-  const GCHeap& getHeap() const { return heap_; }
+void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
+void runGarbageCollection() { collectGarbage(); }
+GCHeap::Stats gcStats() const { return heap_.stats(); }
+GCHeap& getHeap() { return heap_; }
+const GCHeap& getHeap() const { return heap_; }
+const VMConfig& vmConfig() const { return vm_config_; }
+uint64_t getMemoryUsage() const { return heap_.approxHeapBytes(); }
+uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
   
 	
  void setEventQueue(class EventQueue* eq);

@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -300,9 +301,12 @@ const ::havel::Interval* interval(uint32_t id) const;
     uint32_t createIterator(const Value &iterable);
     Value iteratorNext(uint32_t id);
 
-    void setAllocationBudget(size_t value);
-    size_t allocationBudget() const { return allocation_budget_; }
-    bool isCollectionInProgress() const;
+void setAllocationBudget(size_t value);
+size_t allocationBudget() const { return allocation_budget_; }
+void setHeapMaxBytes(uint64_t value) { heap_max_bytes_ = value; }
+uint64_t heapMaxBytes() const { return heap_max_bytes_; }
+uint64_t approxHeapBytes() const { return approx_heap_bytes_.load(std::memory_order_relaxed); }
+bool isCollectionInProgress() const;
 
     uint64_t pinExternalRoot(const Value &value);
     bool unpinExternalRoot(uint64_t root_id);
@@ -395,8 +399,13 @@ private:
     void ageOrPromoteObject(uint32_t id);
     void ageOrPromoteSet(uint32_t id);
     void ageOrPromoteClosure(uint32_t id);
+    void ageOrPromoteString(uint32_t id);
 
-    void snapshotSweepKeys();
+void checkHeapLimit(size_t extra_bytes);
+void addHeapBytes(size_t bytes);
+void subHeapBytes(size_t bytes);
+
+void snapshotSweepKeys();
 
     std::unordered_map<uint32_t, RuntimeClosure> closures_;
     std::unordered_map<uint32_t, std::string> strings_;
@@ -435,9 +444,11 @@ private:
   uint32_t next_waitgroup_id_ = 1;
   uint32_t next_coroutine_id_ = 1;
 
-    size_t allocation_budget_ = 65536;
-    size_t allocations_since_last_ = 0;
-    size_t recovered_in_cycle_ = 0;
+size_t allocation_budget_ = 65536;
+size_t allocations_since_last_ = 0;
+size_t recovered_in_cycle_ = 0;
+uint64_t heap_max_bytes_ = 4ULL * 1024 * 1024 * 1024;
+std::atomic<uint64_t> approx_heap_bytes_{0};
 
     std::vector<Value> external_roots_;
     std::vector<bool> external_roots_active_;
@@ -475,10 +486,12 @@ private:
     std::unordered_map<uint32_t, uint8_t> object_ages_;
     std::unordered_map<uint32_t, uint8_t> set_ages_;
     std::unordered_map<uint32_t, uint8_t> closure_ages_;
+    std::unordered_map<uint32_t, uint8_t> string_ages_;
     std::unordered_set<uint32_t> old_arrays_;
     std::unordered_set<uint32_t> old_objects_;
     std::unordered_set<uint32_t> old_sets_;
     std::unordered_set<uint32_t> old_closures_;
+    std::unordered_set<uint32_t> old_strings_;
 
     std::vector<Value> root_stack_snapshot_;
     std::vector<Value> root_locals_snapshot_;

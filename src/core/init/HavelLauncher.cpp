@@ -65,6 +65,20 @@ namespace havel::init {
 // Global flag to enable/disable bytecode VM
 static constexpr bool USE_BYTECODE_VM = true;
 
+static uint64_t parseSizeArg(const std::string &s) {
+if (s.empty()) return 0;
+uint64_t val = 0;
+char *end = nullptr;
+val = std::strtoull(s.c_str(), &end, 10);
+if (end && *end) {
+char suffix = static_cast<char>(std::tolower(static_cast<unsigned char>(*end)));
+if (suffix == 'k') val *= 1024;
+else if (suffix == 'm') val *= 1024 * 1024;
+else if (suffix == 'g') val *= 1024ULL * 1024 * 1024;
+}
+return val;
+}
+
 // Read a script file and strip the shebang line if present
 static std::string readScriptFile(const std::string &path) {
   std::ifstream file(path);
@@ -383,9 +397,19 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
                 cfg.pureStdlib = true;
         } else if (arg == "--pure-stdlib") {
             cfg.pureStdlib = true;
-        } else if (arg == "--self-hosted") {
-            cfg.selfHosted = true;
-    } else if (arg == "--test" || arg == "-t") {
+} else if (arg == "--self-hosted") {
+cfg.selfHosted = true;
+} else if (arg == "--vm-heap-min" || arg.rfind("--vm-heap-min=", 0) == 0) {
+std::string val = (arg.find('=') != std::string::npos) ? arg.substr(arg.find('=') + 1) : ((i + 1 < argc) ? argv[++i] : "");
+if (!val.empty()) cfg.vmConfig.heap_min_bytes = parseSizeArg(val);
+} else if (arg == "--vm-heap-max" || arg.rfind("--vm-heap-max=", 0) == 0) {
+std::string val = (arg.find('=') != std::string::npos) ? arg.substr(arg.find('=') + 1) : ((i + 1 < argc) ? argv[++i] : "");
+if (!val.empty()) cfg.vmConfig.heap_max_bytes = parseSizeArg(val);
+} else if (arg.rfind("-Xms", 0) == 0) {
+cfg.vmConfig.heap_min_bytes = parseSizeArg(arg.substr(4));
+} else if (arg.rfind("-Xmx", 0) == 0) {
+cfg.vmConfig.heap_max_bytes = parseSizeArg(arg.substr(4));
+} else if (arg == "--test" || arg == "-t") {
       // Test mode - run all .hv files in a directory
         cfg.mode = Mode::TEST;
             cfg.minimalMode = true;
@@ -813,18 +837,19 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
   if (debugging::debug_io) debug("Running combined scripts (headless): {}", combinedNames);
 
   try {
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError,
-            .leanMinimalStartup = cfg.minimalMode,
-            .pureStdlib = cfg.pureStdlib
-        });
-    engine.initializeMinimal();
-    engine.execute(combinedCode, "__main__", combinedNames);
-    engine.shutdown();
+havel::HavelEngine engine({
+.debugBytecode = cfg.debugBytecode,
+.debugLexer = cfg.debugLexer,
+.debugParser = cfg.debugParser,
+.debugAst = cfg.debugAst,
+.stopOnError = cfg.stopOnError,
+.leanMinimalStartup = cfg.minimalMode,
+.pureStdlib = cfg.pureStdlib,
+.vmConfig = cfg.vmConfig
+});
+engine.initializeMinimal();
+engine.execute(combinedCode, "__main__", combinedNames);
+engine.shutdown();
     return 0;
   } catch (const std::exception &e) {
     error("Execution error: {}", e.what());
@@ -1106,17 +1131,18 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 	}
 
     try {
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError,
-            .leanMinimalStartup = cfg.minimalMode,
-            .pureStdlib = cfg.pureStdlib
-        });
-        auto t0 = std::chrono::high_resolution_clock::now();
-        engine.initializeMinimal();
+havel::HavelEngine engine({
+.debugBytecode = cfg.debugBytecode,
+.debugLexer = cfg.debugLexer,
+.debugParser = cfg.debugParser,
+.debugAst = cfg.debugAst,
+.stopOnError = cfg.stopOnError,
+.leanMinimalStartup = cfg.minimalMode,
+.pureStdlib = cfg.pureStdlib,
+.vmConfig = cfg.vmConfig
+});
+auto t0 = std::chrono::high_resolution_clock::now();
+engine.initializeMinimal();
 
         if (!cfg.scriptArgs.empty()) {
             auto& vm = *engine.vm();
@@ -1217,16 +1243,17 @@ int havel::init::HavelLauncher::runSelfHosted(const LaunchConfig &cfg) {
     sigaction(SIGTERM, &sa, nullptr);
 
     try {
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError,
-            .leanMinimalStartup = true,
-            .pureStdlib = true
-        });
-        engine.initializeMinimal();
+havel::HavelEngine engine({
+.debugBytecode = cfg.debugBytecode,
+.debugLexer = cfg.debugLexer,
+.debugParser = cfg.debugParser,
+.debugAst = cfg.debugAst,
+.stopOnError = cfg.stopOnError,
+.leanMinimalStartup = true,
+.pureStdlib = true,
+.vmConfig = cfg.vmConfig
+});
+engine.initializeMinimal();
 
         // Populate app.args for launcher.hv
         auto& vm = *engine.vm();
@@ -1267,16 +1294,17 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
             }
         }
 
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError
-        });
-        engine.initializeMinimal();
+havel::HavelEngine engine({
+.debugBytecode = cfg.debugBytecode,
+.debugLexer = cfg.debugLexer,
+.debugParser = cfg.debugParser,
+.debugAst = cfg.debugAst,
+.stopOnError = cfg.stopOnError,
+.vmConfig = cfg.vmConfig
+});
+engine.initializeMinimal();
 
-        info("Executing script code...");
+info("Executing script code...");
         try {
             engine.execute(combinedCode, "__main__", combinedNames.empty() ? "script" : combinedNames);
         } catch (const std::exception &e) {
@@ -1480,16 +1508,17 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
         info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
 
         havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError
-        });
-        engine.initializeMinimal();
+.debugBytecode = cfg.debugBytecode,
+.debugLexer = cfg.debugLexer,
+.debugParser = cfg.debugParser,
+.debugAst = cfg.debugAst,
+.stopOnError = cfg.stopOnError,
+.vmConfig = cfg.vmConfig
+});
+engine.initializeMinimal();
 
-        havel::repl::REPLConfig replConfig;
-        replConfig.debugMode = cfg.debugMode;
+havel::repl::REPLConfig replConfig;
+replConfig.debugMode = cfg.debugMode;
         replConfig.stopOnError = cfg.stopOnError;
         replConfig.debugBytecode = cfg.debugBytecode;
         replConfig.debugLexer = cfg.debugLexer;

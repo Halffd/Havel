@@ -1,5 +1,6 @@
 #pragma once
 
+#include "havel-lang/compiler/vm/VM.hpp"
 #include <string>
 #include <vector>
 #include <memory>
@@ -86,8 +87,9 @@ private:
 		std::vector<std::string> linkLibs; // --link-lib repeated
 		AsmSyntax asmSyntax = AsmSyntax::ATT; // --syntax: assembly syntax (att/intel)
 		std::string evalString; // --eval/-E: run inline code
-		std::string inputBackend; // Input backend: "evdev", "x11", "wayland", "auto"
-	};
+std::string inputBackend; // Input backend: "evdev", "x11", "wayland", "auto"
+compiler::VMConfig vmConfig;
+};
 
   LaunchConfig parseArgs(int argc, char *argv[]);
   int runDaemon(const LaunchConfig &cfg, int argc, char *argv[]);

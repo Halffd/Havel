@@ -26,13 +26,14 @@
 namespace havel {
 
 struct EngineConfig {
-    bool debugBytecode = false;
-    bool debugLexer = false;
-    bool debugParser = false;
-    bool debugAst = false;
-    bool stopOnError = false;
-    bool leanMinimalStartup = false;
-    bool pureStdlib = false;
+bool debugBytecode = false;
+bool debugLexer = false;
+bool debugParser = false;
+bool debugAst = false;
+bool stopOnError = false;
+bool leanMinimalStartup = false;
+bool pureStdlib = false;
+compiler::VMConfig vmConfig;
 };
 
 class HavelEngine {
@@ -59,7 +60,7 @@ public:
 
         hostContext_ = std::make_unique<HostContext>(createHostContext(hostAPI));
 
-        vm_ = std::make_shared<compiler::VM>(*hostContext_);
+        vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
         hostContext_->vm = vm_.get();
 
 // Set up scheduler for goroutine/thread support

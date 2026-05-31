@@ -57,6 +57,7 @@ struct RuntimeClosure {
         std::unordered_map<std::string, Value> data;
         std::vector<std::string> insertionOrder;
         bool sorted = true;
+        std::atomic<uint64_t> shape_version{1};
 
         Value *get(const std::string &key) {
             auto it = data.find(key);
@@ -70,6 +71,7 @@ struct RuntimeClosure {
         if (inserted) {
             insertionOrder.push_back(key);
         }
+        shape_version.fetch_add(1, std::memory_order_relaxed);
     }
 
     Value &operator[](const std::string &key) {
@@ -94,7 +96,11 @@ struct RuntimeClosure {
             std::swap(*it, insertionOrder.back());
             insertionOrder.pop_back();
         }
-        return data.erase(key);
+        auto erased = data.erase(key);
+        if (erased > 0) {
+            shape_version.fetch_add(1, std::memory_order_relaxed);
+        }
+        return erased;
     }
 
         std::vector<std::string> getKeys() const {

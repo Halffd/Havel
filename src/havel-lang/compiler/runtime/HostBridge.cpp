@@ -504,7 +504,7 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
       if (obj) {
         std::string key = args[1].toString();
         if (!key.empty()) {
-          obj->remove(key);
+          obj->erase(key);
           return Value::makeBool(true);
         }
       }

@@ -559,6 +559,10 @@ public:
 
     // OBJECT_GET_RAW support — dynamic key lookup with class/parent chain walk
     uint32_t globalsMirrorObjectId() const { return globals_mirror_object_id_; }
+    uint64_t objectShapeVersion(uint32_t obj_id) const {
+        auto *obj = heap_.object(obj_id);
+        return obj ? obj->shape_version.load(std::memory_order_relaxed) : 0;
+    }
     Value objectGetWithClassChain(uint32_t obj_id, const std::string& key) {
         GCHeap::ObjectEntry *current_obj = heap_.object(obj_id);
         while (current_obj) {

@@ -1,6 +1,5 @@
 // HostModules.cpp
 // Service registry initialization for host modules
-// Module registration is done via StdLibModules.cpp using VMApi
 
 #include "havel-lang/runtime/ModuleLoader.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
@@ -35,201 +34,195 @@
 
 namespace havel {
 
-/**
- * Initialize service registry with all services
- * Called ONCE at application startup, before any modules are loaded.
- * All services MUST be registered here - modules will fail if services are missing.
- */
-void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
- if (!hostAPI) {
- debug("initializeServiceRegistry: hostAPI is null, skipping service registration");
- return;
- }
-
- auto& registry = host::ServiceRegistry::instance();
-
-  if (hostAPI->GetIO()) {
-    auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
-    registry.registerService<host::IOService>(ioService);
-    host::MouseService::setIO(hostAPI->GetIO());
-  } else {
- debug("initializeServiceRegistry: IO not available, skipping IO-dependent services");
- }
-
- if (hostAPI->GetHotkeyManager()) {
- auto hotkeyManager = hostAPI->GetHotkeyManager();
- auto hotkeyService = std::make_shared<host::HotkeyService>(
- std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
- registry.registerService<host::HotkeyService>(hotkeyService);
- }
-
- if (hostAPI->GetWindowManager()) {
- auto windowService = std::make_shared<host::WindowService>(hostAPI->GetWindowManager());
- registry.registerService<host::WindowService>(windowService);
- }
-
-  if (hostAPI->GetModeManager()) {
-    auto modeService = std::make_shared<host::ModeService>(nullptr, hostAPI->GetModeManager());
-    registry.registerService<host::ModeService>(modeService);
-  }
-
-    // ProcessManager is optional
-    if (hostAPI->GetProcessManager()) {
-        auto processService = std::make_shared<host::ProcessService>();
-        registry.registerService<host::ProcessService>(processService);
-    }
-
-    // Clipboard service doesn't need constructor args
-#ifdef HAVE_QT_EXTENSION
-    auto clipboardService = std::make_shared<host::ClipboardService>();
-    registry.registerService<host::ClipboardService>(clipboardService);
-
-    auto monitoringClipboard = std::make_shared<host::MonitoringClipboard>();
-    registry.registerService<host::MonitoringClipboard>(monitoringClipboard);
-#endif
-
-    // TextChunker service doesn't need constructor args (pure C++ logic)
-    auto chunkerService = std::make_shared<host::TextChunkerService>();
-    registry.registerService<host::TextChunkerService>(chunkerService);
-
-    // Browser service doesn't need constructor args (uses HTTP/WebSocket)
-    auto browserService = std::make_shared<host::BrowserService>();
-    registry.registerService<host::BrowserService>(browserService);
-
-    // MapManager service needs IO pointer
-    auto mapManagerService = std::make_shared<host::MapManagerService>(hostAPI->GetIO() ? std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}) : std::shared_ptr<IO>());
-    registry.registerService<host::MapManagerService>(mapManagerService);
-
-    // AltTab service doesn't need constructor args (uses Qt directly)
-#ifdef HAVE_QT_EXTENSION
-    auto altTabService = std::make_shared<host::AltTabService>();
-    registry.registerService<host::AltTabService>(altTabService);
-#endif
-
-  // Timer service (tracking/management)
-  auto timerService = std::make_shared<host::TimerService>();
-  registry.registerService<host::TimerService>(timerService);
-
-  // Automation service needs IO pointer
-  if (hostAPI->GetIO()) {
-  auto automationService = std::make_shared<host::AutomationService>(std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}));
-  registry.registerService<host::AutomationService>(automationService);
-  }
-
-  // Brightness service (X11/Wayland gamma ramps)
-  if (hostAPI->GetBrightnessManager()) {
-    auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
-    registry.registerService<host::BrightnessService>(brightnessService);
-  }
-
-
-
-  // File system service doesn't need constructor args (pure C++ with std::filesystem)
-  auto fsService = std::make_shared<host::FileSystemService>();
-  registry.registerService<host::FileSystemService>(fsService);
-
-  // Image service (OpenCV image processing, no deps)
-  try {
-    auto imageService = std::make_shared<host::ImageService>();
-    registry.registerService<host::ImageService>(imageService);
-  } catch (const std::exception& e) {
-    debug("initializeServiceRegistry: ImageService failed: {}", e.what());
-  }
-
-  // Media service (MPRIS/D-Bus, may fail if no DBus session)
-  try {
-    auto mediaService = std::make_shared<host::MediaService>();
-    registry.registerService<host::MediaService>(mediaService);
-  } catch (const std::exception& e) {
-    debug("initializeServiceRegistry: MediaService failed: {}", e.what());
-  }
-
-  // App service (system info, env, clipboard helpers)
-  try {
-    auto appService = std::make_shared<host::AppService>();
-    registry.registerService<host::AppService>(appService);
-  } catch (const std::exception& e) {
-    debug("initializeServiceRegistry: AppService failed: {}", e.what());
-  }
-
-  // Network service (HTTP via curl)
-  try {
-    auto networkService = std::make_shared<host::NetworkService>();
-    registry.registerService<host::NetworkService>(networkService);
-  } catch (const std::exception& e) {
-    debug("initializeServiceRegistry: NetworkService failed: {}", e.what());
-  }
-
-    debug("ServiceRegistry initialized with {} services", registry.size());
+void declareAllServices() {
+	auto& registry = host::ServiceRegistry::instance();
+	registry.declareService<host::IOService>("io", "core");
+	registry.declareService<host::HotkeyService>("hotkey", "core");
+	registry.declareService<host::WindowService>("window", "core");
+	registry.declareService<host::ModeService>("mode", "core");
+	registry.declareService<host::ProcessService>("process", "core");
+	registry.declareService<host::ClipboardService>("clipboard", "qt");
+	registry.declareService<host::MonitoringClipboard>("monitoring-clipboard", "qt");
+	registry.declareService<host::TextChunkerService>("chunker", "util");
+	registry.declareService<host::BrowserService>("browser", "util");
+	registry.declareService<host::MapManagerService>("map-manager", "io");
+	registry.declareService<host::AltTabService>("alt-tab", "qt");
+	registry.declareService<host::TimerService>("timer", "util");
+	registry.declareService<host::AutomationService>("automation", "io");
+	registry.declareService<host::BrightnessService>("brightness", "core");
+	registry.declareService<host::FileSystemService>("filesystem", "util");
+	registry.declareService<host::ImageService>("image", "util");
+	registry.declareService<host::MediaService>("media", "util");
+	registry.declareService<host::AppService>("app", "util");
+	registry.declareService<host::NetworkService>("network", "util");
 }
 
-/**
- * Create HostContext with injected dependencies
- *
- * @param hostAPI Host API for accessing managers
- * @return HostContext with all available services
- */
+void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
+							   const host::ServiceFilter& includes,
+							   const host::ServiceFilter& excludes) {
+	if (!hostAPI) {
+		debug("initializeServiceRegistry: hostAPI is null, skipping service registration");
+		return;
+	}
+
+	auto& registry = host::ServiceRegistry::instance();
+	declareAllServices();
+
+	if (hostAPI->GetIO() && registry.shouldRegister("io", includes, excludes)) {
+		auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
+		registry.registerService<host::IOService>(ioService);
+		host::MouseService::setIO(hostAPI->GetIO());
+	} else {
+		debug("initializeServiceRegistry: IO not available or excluded, skipping IO-dependent services");
+	}
+
+	if (hostAPI->GetHotkeyManager() && registry.shouldRegister("hotkey", includes, excludes)) {
+		auto hotkeyManager = hostAPI->GetHotkeyManager();
+		auto hotkeyService = std::make_shared<host::HotkeyService>(
+			std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
+		registry.registerService<host::HotkeyService>(hotkeyService);
+	}
+
+	if (hostAPI->GetWindowManager() && registry.shouldRegister("window", includes, excludes)) {
+		auto windowService = std::make_shared<host::WindowService>(hostAPI->GetWindowManager());
+		registry.registerService<host::WindowService>(windowService);
+	}
+
+	if (hostAPI->GetModeManager() && registry.shouldRegister("mode", includes, excludes)) {
+		auto modeService = std::make_shared<host::ModeService>(nullptr, hostAPI->GetModeManager());
+		registry.registerService<host::ModeService>(modeService);
+	}
+
+	if (hostAPI->GetProcessManager() && registry.shouldRegister("process", includes, excludes)) {
+		auto processService = std::make_shared<host::ProcessService>();
+		registry.registerService<host::ProcessService>(processService);
+	}
+
+#ifdef HAVE_QT_EXTENSION
+	if (registry.shouldRegister("clipboard", includes, excludes)) {
+		auto clipboardService = std::make_shared<host::ClipboardService>();
+		registry.registerService<host::ClipboardService>(clipboardService);
+	}
+
+	if (registry.shouldRegister("monitoring-clipboard", includes, excludes)) {
+		auto monitoringClipboard = std::make_shared<host::MonitoringClipboard>();
+		registry.registerService<host::MonitoringClipboard>(monitoringClipboard);
+	}
+#endif
+
+	if (registry.shouldRegister("chunker", includes, excludes)) {
+		auto chunkerService = std::make_shared<host::TextChunkerService>();
+		registry.registerService<host::TextChunkerService>(chunkerService);
+	}
+
+	if (registry.shouldRegister("browser", includes, excludes)) {
+		auto browserService = std::make_shared<host::BrowserService>();
+		registry.registerService<host::BrowserService>(browserService);
+	}
+
+	if (registry.shouldRegister("map-manager", includes, excludes)) {
+		auto mapManagerService = std::make_shared<host::MapManagerService>(hostAPI->GetIO() ? std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}) : std::shared_ptr<IO>());
+		registry.registerService<host::MapManagerService>(mapManagerService);
+	}
+
+#ifdef HAVE_QT_EXTENSION
+	if (registry.shouldRegister("alt-tab", includes, excludes)) {
+		auto altTabService = std::make_shared<host::AltTabService>();
+		registry.registerService<host::AltTabService>(altTabService);
+	}
+#endif
+
+	if (registry.shouldRegister("timer", includes, excludes)) {
+		auto timerService = std::make_shared<host::TimerService>();
+		registry.registerService<host::TimerService>(timerService);
+	}
+
+	if (hostAPI->GetIO() && registry.shouldRegister("automation", includes, excludes)) {
+		auto automationService = std::make_shared<host::AutomationService>(std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}));
+		registry.registerService<host::AutomationService>(automationService);
+	}
+
+	if (hostAPI->GetBrightnessManager() && registry.shouldRegister("brightness", includes, excludes)) {
+		auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
+		registry.registerService<host::BrightnessService>(brightnessService);
+	}
+
+	if (registry.shouldRegister("filesystem", includes, excludes)) {
+		auto fsService = std::make_shared<host::FileSystemService>();
+		registry.registerService<host::FileSystemService>(fsService);
+	}
+
+	if (registry.shouldRegister("image", includes, excludes)) {
+		try {
+			auto imageService = std::make_shared<host::ImageService>();
+			registry.registerService<host::ImageService>(imageService);
+		} catch (const std::exception& e) {
+			debug("initializeServiceRegistry: ImageService failed: {}", e.what());
+		}
+	}
+
+	if (registry.shouldRegister("media", includes, excludes)) {
+		try {
+			auto mediaService = std::make_shared<host::MediaService>();
+			registry.registerService<host::MediaService>(mediaService);
+		} catch (const std::exception& e) {
+			debug("initializeServiceRegistry: MediaService failed: {}", e.what());
+		}
+	}
+
+	if (registry.shouldRegister("app", includes, excludes)) {
+		try {
+			auto appService = std::make_shared<host::AppService>();
+			registry.registerService<host::AppService>(appService);
+		} catch (const std::exception& e) {
+			debug("initializeServiceRegistry: AppService failed: {}", e.what());
+		}
+	}
+
+	if (registry.shouldRegister("network", includes, excludes)) {
+		try {
+			auto networkService = std::make_shared<host::NetworkService>();
+			registry.registerService<host::NetworkService>(networkService);
+		} catch (const std::exception& e) {
+			debug("initializeServiceRegistry: NetworkService failed: {}", e.what());
+		}
+	}
+
+	debug("ServiceRegistry initialized with {} services", registry.size());
+}
+
 havel::HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI) {
-    havel::HostContext ctx;
+	havel::HostContext ctx;
 
-    if (!hostAPI) {
-        return ctx;
-    }
+	if (!hostAPI) {
+		return ctx;
+	}
 
-    // Core services - wrap raw pointers in shared_ptr without ownership (no deleter)
-    ctx.io = hostAPI ? hostAPI->GetIO() : nullptr;
+	ctx.io = hostAPI ? hostAPI->GetIO() : nullptr;
+	ctx.hotkeyManager = hostAPI ? hostAPI->GetHotkeyManager() : nullptr;
+	ctx.windowManager = hostAPI ? hostAPI->GetWindowManager() : nullptr;
+	ctx.modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
+	ctx.brightnessManager = hostAPI ? hostAPI->GetBrightnessManager() : nullptr;
+	ctx.audioManager = hostAPI ? hostAPI->GetAudioManager() : nullptr;
+	ctx.guiManager = hostAPI ? hostAPI->GetGUIManager() : nullptr;
+	ctx.screenshotManager = hostAPI ? hostAPI->GetScreenshotManager() : nullptr;
+	ctx.clipboardManager = hostAPI ? hostAPI->GetClipboardManager() : nullptr;
+	ctx.pixelAutomation = hostAPI ? hostAPI->GetPixelAutomation() : nullptr;
+	ctx.automationManager = hostAPI ? hostAPI->GetAutomationManager() : nullptr;
+	ctx.fileManager = hostAPI ? hostAPI->GetFileManager() : nullptr;
+	ctx.processManager = hostAPI ? hostAPI->GetProcessManager() : nullptr;
 
-    // Optional services (nullptr if not available)
-    ctx.hotkeyManager = hostAPI ? hostAPI->GetHotkeyManager() : nullptr;
-
-    ctx.windowManager = hostAPI ? hostAPI->GetWindowManager() : nullptr;
-
-    ctx.modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
-
-    ctx.brightnessManager = hostAPI ? hostAPI->GetBrightnessManager() : nullptr;
-
-    ctx.audioManager = hostAPI ? hostAPI->GetAudioManager() : nullptr;
-
-    ctx.guiManager = hostAPI ? hostAPI->GetGUIManager() : nullptr;
-
-    ctx.screenshotManager = hostAPI ? hostAPI->GetScreenshotManager() : nullptr;
-
-    ctx.clipboardManager = hostAPI ? hostAPI->GetClipboardManager() : nullptr;
-
-    ctx.pixelAutomation = hostAPI ? hostAPI->GetPixelAutomation() : nullptr;
-
-    ctx.automationManager = hostAPI ? hostAPI->GetAutomationManager() : nullptr;
-
-    ctx.fileManager = hostAPI ? hostAPI->GetFileManager() : nullptr;
-
-    ctx.processManager = hostAPI ? hostAPI->GetProcessManager() : nullptr;
-
-
-    return ctx;
+	return ctx;
 }
 
-/**
- * Register all host modules
- * These modules require IHostAPI
- * 
- * MIGRATED TO BYTECODE VM:
- * Host modules now register through HostBridge with VM
- * Old interpreter-based modules are stubbed out
- */
 void registerHostModules(ModuleLoader& loader) {
-    // MIGRATED: All host modules moved to bytecode VM registration
-    // See HostBridge::install() for VM-native host function registration
-    (void)loader;  // Suppress unused warning
+	(void)loader;
 }
 
-/**
- * Load all host modules into environment
- */
 void loadHostModules(Environment& env, ModuleLoader& loader, std::shared_ptr<IHostAPI> hostAPI) {
-    // MIGRATED: Environment-based loading replaced by bytecode VM
-    (void)env;
-    (void)loader;
-    (void)hostAPI;
+	(void)env;
+	(void)loader;
+	(void)hostAPI;
 }
 
 } // namespace havel

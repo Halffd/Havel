@@ -2,7 +2,9 @@
 
 #include <string>
 #include <vector>
+#include <unordered_set>
 #include <memory>
+#include "../../host/ServiceRegistry.hpp"
 
 namespace havel::init {
 
@@ -87,6 +89,9 @@ private:
 		AsmSyntax asmSyntax = AsmSyntax::ATT; // --syntax: assembly syntax (att/intel)
 		std::string evalString; // --eval/-E: run inline code
 		std::string inputBackend; // Input backend: "evdev", "x11", "wayland", "auto"
+		host::ServiceFilter serviceIncludes;
+		host::ServiceFilter serviceExcludes;
+		bool listServices = false;
 	};
 
   LaunchConfig parseArgs(int argc, char *argv[]);

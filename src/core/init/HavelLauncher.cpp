@@ -457,7 +457,17 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 		if (i + 1 < argc) {
 			cfg.inputBackend = argv[++i];
 		}
-      } else if (arg == "--") {
+	} else if (arg == "--enable-service") {
+		if (i + 1 < argc) {
+			cfg.serviceIncludes.insert(argv[++i]);
+		}
+	} else if (arg == "--disable-service") {
+		if (i + 1 < argc) {
+			cfg.serviceExcludes.insert(argv[++i]);
+		}
+	} else if (arg == "--list-services") {
+		cfg.listServices = true;
+	} else if (arg == "--") {
         // Everything after -- is script arguments (app.args), not flags
         for (int j = i + 1; j < argc; j++) {
           cfg.scriptArgs.push_back(argv[j]);
@@ -501,6 +511,22 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
 		cfg.minimalMode = true;
 		debug("Debug.ForceMinimal is set - forcing minimal mode");
+	}
+
+	// --list-services: print catalog and exit
+	if (cfg.listServices) {
+		havel::declareAllServices();
+		auto& reg = host::ServiceRegistry::instance();
+		auto all = reg.listServices();
+		std::cout << "Available services:\n";
+		for (auto& info : all) {
+			std::cout << "  " << info.name;
+			if (!info.group.empty()) std::cout << " [" << info.group << "]";
+			std::cout << "\n";
+		}
+		std::cout << "\nUse --enable-service <name> to include only specific services\n";
+		std::cout << "Use --disable-service <name> to exclude specific services\n";
+		exit(0);
 	}
 
 	// Resolve input backend: CLI arg > config > auto-detect
@@ -774,10 +800,10 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       nullptr, nullptr, nullptr, nullptr, nullptr,
       nullptr, nullptr, nullptr, nullptr, nullptr,
       hkManager ? hkManager->getModeManager().get() : nullptr,
-      std::vector<std::string>{}));
-    havel::initializeServiceRegistry(hostAPI);
+		std::vector<std::string>{}));
+		havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
 
-    bytecodeVM->setTimerCheckFunction([hostBridge]() { hostBridge->checkTimers(); });
+		bytecodeVM->setTimerCheckFunction([hostBridge]() { hostBridge->checkTimers(); });
 
     try {
       havel::compiler::PipelineOptions options = hostBridge->options();
@@ -812,20 +838,22 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
   // Headless mode — no UI backend, no hotkeys, pure bytecode execution
   if (debugging::debug_io) debug("Running combined scripts (headless): {}", combinedNames);
 
-  try {
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError,
-            .leanMinimalStartup = cfg.minimalMode,
-            .pureStdlib = cfg.pureStdlib
-        });
-    engine.initializeMinimal();
-    engine.execute(combinedCode, "__main__", combinedNames);
-    engine.shutdown();
-    return 0;
+	try {
+		havel::HavelEngine engine({
+			.debugBytecode = cfg.debugBytecode,
+			.debugLexer = cfg.debugLexer,
+			.debugParser = cfg.debugParser,
+			.debugAst = cfg.debugAst,
+			.stopOnError = cfg.stopOnError,
+			.leanMinimalStartup = cfg.minimalMode,
+			.pureStdlib = cfg.pureStdlib,
+			.serviceIncludes = cfg.serviceIncludes,
+			.serviceExcludes = cfg.serviceExcludes
+		});
+		engine.initializeMinimal();
+		engine.execute(combinedCode, "__main__", combinedNames);
+		engine.shutdown();
+		return 0;
   } catch (const std::exception &e) {
     error("Execution error: {}", e.what());
     return 1;
@@ -1106,16 +1134,18 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 	}
 
     try {
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError,
-            .leanMinimalStartup = cfg.minimalMode,
-            .pureStdlib = cfg.pureStdlib
-        });
-        auto t0 = std::chrono::high_resolution_clock::now();
+	havel::HavelEngine engine({
+			.debugBytecode = cfg.debugBytecode,
+			.debugLexer = cfg.debugLexer,
+			.debugParser = cfg.debugParser,
+			.debugAst = cfg.debugAst,
+			.stopOnError = cfg.stopOnError,
+			.leanMinimalStartup = cfg.minimalMode,
+			.pureStdlib = cfg.pureStdlib,
+			.serviceIncludes = cfg.serviceIncludes,
+			.serviceExcludes = cfg.serviceExcludes
+		});
+		auto t0 = std::chrono::high_resolution_clock::now();
         engine.initializeMinimal();
 
         if (!cfg.scriptArgs.empty()) {
@@ -1217,16 +1247,18 @@ int havel::init::HavelLauncher::runSelfHosted(const LaunchConfig &cfg) {
     sigaction(SIGTERM, &sa, nullptr);
 
     try {
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError,
-            .leanMinimalStartup = true,
-            .pureStdlib = true
-        });
-        engine.initializeMinimal();
+	havel::HavelEngine engine({
+		.debugBytecode = cfg.debugBytecode,
+		.debugLexer = cfg.debugLexer,
+		.debugParser = cfg.debugParser,
+		.debugAst = cfg.debugAst,
+		.stopOnError = cfg.stopOnError,
+		.leanMinimalStartup = true,
+		.pureStdlib = true,
+		.serviceIncludes = cfg.serviceIncludes,
+		.serviceExcludes = cfg.serviceExcludes
+	});
+	engine.initializeMinimal();
 
         // Populate app.args for launcher.hv
         auto& vm = *engine.vm();
@@ -1267,16 +1299,18 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
             }
         }
 
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError
-        });
-        engine.initializeMinimal();
+	havel::HavelEngine engine({
+		.debugBytecode = cfg.debugBytecode,
+		.debugLexer = cfg.debugLexer,
+		.debugParser = cfg.debugParser,
+		.debugAst = cfg.debugAst,
+		.stopOnError = cfg.stopOnError,
+		.serviceIncludes = cfg.serviceIncludes,
+		.serviceExcludes = cfg.serviceExcludes
+	});
+	engine.initializeMinimal();
 
-        info("Executing script code...");
+	info("Executing script code...");
         try {
             engine.execute(combinedCode, "__main__", combinedNames.empty() ? "script" : combinedNames);
         } catch (const std::exception &e) {
@@ -1368,11 +1402,11 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
           nullptr, nullptr, nullptr, nullptr, nullptr,
           nullptr, nullptr, nullptr, nullptr, nullptr,
           hkManager ? hkManager->getModeManager().get() : nullptr,
-          std::vector<std::string>{}));
+		std::vector<std::string>{}));
 
-      havel::initializeServiceRegistry(hostAPI);
+		havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
 
-      // Attach REPL to the existing VM from the Havel instance
+		// Attach REPL to the existing VM from the Havel instance
       // (instead of initialize() which creates a new VM)
       repl.attach(bytecodeVM, havel_inst.getHostBridge(), collectKnownGlobals(bytecodeVM));
 
@@ -1425,6 +1459,9 @@ std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
 	std::cout << " --debug-jit, -djt Print LLVM IR and Assembly to console\n";
 	std::cout << " -S Output compiled IR and Assembly to files\n";
 	std::cout << " --input, -i TYPE Set input backend (evdev, x11, wayland, auto)\n";
+	std::cout << " --enable-service <name> Include only this service (repeatable)\n";
+	std::cout << " --disable-service <name> Exclude this service (repeatable)\n";
+	std::cout << " --list-services List all available services and exit\n";
 	std::cout << " --help, -h Show this help\n";
 
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
@@ -1479,16 +1516,18 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
     if (cfg.minimalMode) {
         info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
 
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError
-        });
-        engine.initializeMinimal();
+	havel::HavelEngine engine({
+		.debugBytecode = cfg.debugBytecode,
+		.debugLexer = cfg.debugLexer,
+		.debugParser = cfg.debugParser,
+		.debugAst = cfg.debugAst,
+		.stopOnError = cfg.stopOnError,
+		.serviceIncludes = cfg.serviceIncludes,
+		.serviceExcludes = cfg.serviceExcludes
+	});
+	engine.initializeMinimal();
 
-        havel::repl::REPLConfig replConfig;
+	havel::repl::REPLConfig replConfig;
         replConfig.debugMode = cfg.debugMode;
         replConfig.stopOnError = cfg.stopOnError;
         replConfig.debugBytecode = cfg.debugBytecode;
@@ -1559,10 +1598,10 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
           nullptr, nullptr, nullptr, nullptr, nullptr,
           nullptr, nullptr, nullptr, nullptr, nullptr,
           hkManager ? hkManager->getModeManager().get() : nullptr,
-          std::vector<std::string>{}));
-      
-      havel::initializeServiceRegistry(hostAPI);
-      repl.attach(bytecodeVM, hostBridge, collectKnownGlobals(bytecodeVM));
+		std::vector<std::string>{}));
+
+		havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
+		repl.attach(bytecodeVM, hostBridge, collectKnownGlobals(bytecodeVM));
 
       // Run REPL
       return repl.run();

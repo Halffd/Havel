@@ -269,23 +269,24 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     break;
   }
 
-  case OpCode::ARRAY_GET: {
-    Value index_or_key = popStack();
-    Value container = popStack();
+case OpCode::ARRAY_GET: {
+  Value index_or_key = popStack();
+  Value container = popStack();
 
-    // Record feedback
+  if (hot_func_cb_) {
     auto &frame = currentFrame();
     if (frame.ip < frame.function->type_feedback.size()) {
       auto &fb = frame.function->type_feedback[frame.ip];
       fb.execution_count++;
       fb.left_type_mask |= getFeedbackMask(container);
       fb.right_type_mask |= getFeedbackMask(index_or_key);
-      if (fb.execution_count == 1000 && hot_func_cb_) {
+      if (fb.execution_count == 1000) {
         hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
       }
     }
+  }
 
-        if (container.isStringId() || container.isStringValId()) {
+  if (container.isStringId() || container.isStringValId()) {
             auto index = indexFromValue(index_or_key);
             if (!index) {
                 COMPILER_THROW("STRING_GET expects integer index");
@@ -364,27 +365,33 @@ bool VM::execCollectionOp(const Instruction &instruction) {
         result = (*array)[static_cast<size_t>(idx)];
       }
       
-      if (frame.ip < frame.function->type_feedback.size()) {
-        frame.function->type_feedback[frame.ip].result_type_mask |= getFeedbackMask(result);
-      }
-      pushStack(result);
-      break;
+  if (hot_func_cb_) {
+    auto &frame2 = currentFrame();
+    if (frame2.ip < frame2.function->type_feedback.size()) {
+      frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
     }
+  }
+  pushStack(result);
+  break;
+}
 
-    if (container.isSetId()) {
-      auto key = resolveKey(index_or_key);
-      if (!key) {
-        COMPILER_THROW(
-            "SET membership expects string/number/bool key");
-      }
-      auto *set = heap_.set(container.asSetId());
-      if (!set) {
-        COMPILER_THROW("ARRAY_GET unknown set id");
-      }
-      Value result = Value::makeBool(set->find(*key) != set->end());
-      if (frame.ip < frame.function->type_feedback.size()) {
-        frame.function->type_feedback[frame.ip].result_type_mask |= getFeedbackMask(result);
-      }
+if (container.isSetId()) {
+  auto key = resolveKey(index_or_key);
+  if (!key) {
+    COMPILER_THROW(
+      "SET membership expects string/number/bool key");
+  }
+  auto *set = heap_.set(container.asSetId());
+  if (!set) {
+    COMPILER_THROW("ARRAY_GET unknown set id");
+  }
+  Value result = Value::makeBool(set->find(*key) != set->end());
+  if (hot_func_cb_) {
+    auto &frame2 = currentFrame();
+    if (frame2.ip < frame2.function->type_feedback.size()) {
+      frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
+    }
+  }
       pushStack(result);
       break;
     }

@@ -40,13 +40,18 @@ VM::VM() : VM(VMConfig{}) {}
 
 VM::VM(const VMConfig& cfg) {
     vm_config_ = cfg;
-    tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
-    tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
-    tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
-    tier2_flush_on_shutdown_ = envU64("HAVEL_TIER2_FLUSH", 0) != 0;
+    tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
+    tier1_threshold_ = cfg.tier1_threshold > 0 ? cfg.tier1_threshold : envU64("HAVEL_TIER1_THRESHOLD", 1000);
+    tier2_threshold_ = cfg.tier2_threshold > 0 ? cfg.tier2_threshold : envU64("HAVEL_TIER2_THRESHOLD", 10000);
+    tier2_flush_on_shutdown_ = cfg.tier2_flush_on_shutdown || envU64("HAVEL_TIER2_FLUSH", 0) != 0;
     max_call_depth_ = cfg.max_call_depth;
+    max_instructions_ = cfg.max_instructions;
     heap_.setAllocationBudget(cfg.gc_budget);
     heap_.setHeapMaxBytes(cfg.heap_max_bytes);
+    heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
+    heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
+    heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
+    timer_check_interval_ = cfg.timer_check_interval;
     registerDefaultHostFunctions();
 }
 
@@ -54,14 +59,19 @@ VM::VM(const ::havel::HostContext &ctx) : VM(ctx, VMConfig{}) {}
 
 VM::VM(const ::havel::HostContext &ctx, const VMConfig& cfg) {
     vm_config_ = cfg;
-    tiering_enabled_ = envU64("HAVEL_TIERING", 0) != 0;
-    tier1_threshold_ = envU64("HAVEL_TIER1_THRESHOLD", 1000);
-    tier2_threshold_ = envU64("HAVEL_TIER2_THRESHOLD", 10000);
-    tier2_flush_on_shutdown_ = envU64("HAVEL_TIER2_FLUSH", 0) != 0;
+    tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
+    tier1_threshold_ = cfg.tier1_threshold > 0 ? cfg.tier1_threshold : envU64("HAVEL_TIER1_THRESHOLD", 1000);
+    tier2_threshold_ = cfg.tier2_threshold > 0 ? cfg.tier2_threshold : envU64("HAVEL_TIER2_THRESHOLD", 10000);
+    tier2_flush_on_shutdown_ = cfg.tier2_flush_on_shutdown || envU64("HAVEL_TIER2_FLUSH", 0) != 0;
     context_ = &ctx;
     max_call_depth_ = cfg.max_call_depth;
+    max_instructions_ = cfg.max_instructions;
     heap_.setAllocationBudget(cfg.gc_budget);
     heap_.setHeapMaxBytes(cfg.heap_max_bytes);
+    heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
+    heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
+    heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
+    timer_check_interval_ = cfg.timer_check_interval;
     registerDefaultHostFunctions();
 }
 
@@ -931,7 +941,7 @@ while (frame_count_ > stop_frame_depth) {
         // Periodically check for expired timers
         if (timer_check_func_) {
             instructions_since_timer_check_++;
-            if (instructions_since_timer_check_ >= TIMER_CHECK_INTERVAL) {
+            if (instructions_since_timer_check_ >= timer_check_interval_) {
                 timer_check_func_();
                 instructions_since_timer_check_ = 0;
             }
@@ -1236,13 +1246,13 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
     // Handle host function call directly
 if (callee_value.isHostFuncId()) {
-uint32_t host_func_idx = callee_value.asHostFuncId();
-if (host_func_idx >= host_function_names_.size()) {
-COMPILER_THROW("Host function index out of range: " +
-std::to_string(host_func_idx));
-}
-const std::string &name = host_function_names_[host_func_idx];
-auto it = host_functions.find(name);
+        uint32_t host_func_idx = callee_value.asHostFuncId();
+        if (host_func_idx >= host_function_names_.size()) {
+            COMPILER_THROW("Host function index out of range: " +
+                std::to_string(host_func_idx));
+        }
+        const std::string &name = host_function_names_[host_func_idx];
+        auto it = host_functions.find(name);
     if (it == host_functions.end()) {
       COMPILER_THROW("Host function not found: " + name);
     }

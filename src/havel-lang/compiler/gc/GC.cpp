@@ -1,6 +1,7 @@
 #include "GC.hpp"
 
 #include <chrono>
+#include <cstdio>
 #include <iostream>
 #include <limits>
 #include "utils/Logger.hpp"
@@ -870,8 +871,8 @@ void GCHeap::markRoots() {
     if (value.isArrayId()) array_count++;
     markReference(value);
   }
-  spdlog::info("[GC] markRoots: stack+locals had {} closures, {} arrays (stack={} locals={})", 
-               closure_count, array_count, root_stack_snapshot_.size(), root_locals_snapshot_.size());
+fprintf(stderr, "[GC] markRoots: stack+locals had %d closures, %d arrays (stack=%zu locals=%zu)\n",
+            closure_count, array_count, root_stack_snapshot_.size(), root_locals_snapshot_.size());
   if (root_globals_ptr_) {
         for (const auto &[_, value] : *root_globals_ptr_) {
             markReference(value);
@@ -946,10 +947,10 @@ void GCHeap::markStep(size_t &work_budget) {
   if (current.isClosureId()) {
         auto it = closures_.find(current.asClosureId());
         if (it == closures_.end()) {
-          spdlog::warn("[GC] markStep: closure {} not found", current.asClosureId());
+          fprintf(stderr, "[GC] markStep: closure %u not found\n", current.asClosureId());
           continue;
         }
-        spdlog::info("[GC] markStep: tracing closure {} with {} upvalues", current.asClosureId(), it->second.upvalues.size());
+        fprintf(stderr, "[GC] markStep: tracing closure %u with %zu upvalues\n", current.asClosureId(), it->second.upvalues.size());
         for (const auto &cell : it->second.upvalues) {
           if (!cell) {
             continue;
@@ -957,11 +958,11 @@ void GCHeap::markStep(size_t &work_budget) {
           if (cell->is_open) {
             auto local_value = open_local_reader_snapshot_(cell->open_index);
             if (local_value.has_value()) {
-              spdlog::info("[GC]   open upvalue idx={} isArray={} isObj={}", cell->open_index, local_value->isArrayId(), local_value->isObjectId());
+fprintf(stderr, "[GC] open upvalue idx=%u isArray=%d isObj=%d\n", cell->open_index, local_value->isArrayId(), local_value->isObjectId());
               markReference(*local_value);
             }
           } else {
-            spdlog::info("[GC]   closed upvalue isArray={} isObj={}", cell->closed_value.isArrayId(), cell->closed_value.isObjectId());
+fprintf(stderr, "[GC] closed upvalue isArray=%d isObj=%d\n", cell->closed_value.isArrayId(), cell->closed_value.isObjectId());
             markReference(cell->closed_value);
           }
         }

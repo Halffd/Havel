@@ -301,10 +301,14 @@ const ::havel::Interval* interval(uint32_t id) const;
     uint32_t createIterator(const Value &iterable);
     Value iteratorNext(uint32_t id);
 
-void setAllocationBudget(size_t value);
-size_t allocationBudget() const { return allocation_budget_; }
-void setHeapMaxBytes(uint64_t value) { heap_max_bytes_ = value; }
-uint64_t heapMaxBytes() const { return heap_max_bytes_; }
+    void setAllocationBudget(size_t value);
+    size_t allocationBudget() const { return allocation_budget_; }
+    void setHeapMaxBytes(uint64_t value) { heap_max_bytes_ = value; }
+    uint64_t heapMaxBytes() const { return heap_max_bytes_; }
+    void setFullCollectionInterval(size_t interval) { full_collection_interval_ = interval; }
+    size_t fullCollectionInterval() const { return full_collection_interval_; }
+    void setPromotionAgeThreshold(uint8_t age) { promotion_age_threshold_ = age; }
+    uint8_t promotionAgeThreshold() const { return promotion_age_threshold_; }
 uint64_t approxHeapBytes() const { return approx_heap_bytes_.load(std::memory_order_relaxed); }
 bool isCollectionInProgress() const;
 
@@ -470,8 +474,8 @@ std::atomic<uint64_t> approx_heap_bytes_{0};
     bool collection_requested_ = false;
     bool current_collection_full_ = false;
     size_t minor_collections_since_full_ = 0;
-    static constexpr size_t full_collection_interval_ = 8;
-    static constexpr uint8_t promotion_age_threshold_ = 2;
+    size_t full_collection_interval_ = 8;
+    uint8_t promotion_age_threshold_ = 2;
 
     std::vector<Value> mark_worklist_;
     std::unordered_set<uint32_t> marked_arrays_;

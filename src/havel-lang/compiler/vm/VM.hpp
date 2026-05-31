@@ -140,11 +140,32 @@ struct VMExecutionResult {
 };
 
 struct VMConfig {
+    // Heap / GC
     uint64_t heap_min_bytes = 64 * 1024 * 1024;
     uint64_t heap_max_bytes = 4ULL * 1024 * 1024 * 1024;
     size_t gc_budget = 65536;
+    bool gc_incremental = true;
+    bool gc_stop_the_world = true;
+    size_t gc_full_collection_interval = 8;
+    uint8_t gc_promotion_age = 2;
+
+    // Call / stack limits
     size_t max_call_depth = 1024;
     size_t max_stack_depth = 1 << 20;
+    uint64_t max_instructions = 0;
+
+    // Scheduler / goroutine
+    uint64_t goroutine_tick_instructions = 10000;
+    uint64_t goroutine_hotkey_tick_instructions = 100000;
+
+    // Tiering (JIT)
+    bool tiering_enabled = false;
+    uint64_t tier1_threshold = 1000;
+    uint64_t tier2_threshold = 10000;
+    bool tier2_flush_on_shutdown = false;
+
+    // Timer check interval (instructions between timer checks)
+    size_t timer_check_interval = 1000;
 };
 
 class VM : public BytecodeInterpreter {
@@ -362,7 +383,7 @@ size_t tail_call_depth_ = 0;
     // Timer check function - called periodically during execution
     TimerCheckFunction timer_check_func_;
     size_t instructions_since_timer_check_ = 0;
-    static constexpr size_t TIMER_CHECK_INTERVAL = 1000; // Check every 1000 instructions
+    size_t timer_check_interval_ = 1000;
 
   template <typename T> T getValue(const Value &value);
  std::string toStringInternal(const Value &value,

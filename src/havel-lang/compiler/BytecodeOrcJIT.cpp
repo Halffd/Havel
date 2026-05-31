@@ -31,6 +31,7 @@
 #include "../../utils/Logger.hpp"
 #include <cstring>
 #include <iostream>
+#include <array>
 #include "runtime/HavelEngine.hpp"
 
 using namespace llvm::orc;
@@ -588,6 +589,39 @@ uint64_t havel_vm_object_get_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_b
     }
 
     return vm->objectGetWithClassChain(obj.asObjectId(), *key_str).rawBits();
+}
+
+uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
+    struct CacheEntry {
+        uint32_t obj_id = 0;
+        uint64_t shape_version = 0;
+        uint64_t key_bits = 0;
+        uint64_t value_bits = 0;
+        bool valid = false;
+    };
+
+    thread_local std::array<CacheEntry, 4> cache{};
+
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value obj, key_val;
+    std::memcpy(&obj, &obj_bits, sizeof(uint64_t));
+    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+    if (!obj.isObjectId()) return Value::makeNull().rawBits();
+
+    const uint32_t obj_id = obj.asObjectId();
+    const uint64_t version = vm->objectShapeVersion(obj_id);
+    const size_t primary = static_cast<size_t>((obj_id ^ key_bits ^ (key_bits >> 32)) & (cache.size() - 1));
+    for (size_t probe = 0; probe < cache.size(); ++probe) {
+        const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
+        if (entry.valid && entry.obj_id == obj_id && entry.shape_version == version && entry.key_bits == key_bits) {
+            return entry.value_bits;
+        }
+    }
+
+    auto result_bits = havel_vm_object_get_raw(vm_ptr, obj_bits, key_bits);
+    cache[primary] = CacheEntry{obj_id, version, key_bits, result_bits, true};
+    return result_bits;
 }
 
 uint64_t havel_vm_object_set_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits, uint64_t val_bits) {
@@ -1966,7 +2000,8 @@ addSym("havel_vm_array_len", reinterpret_cast<void*>(&havel_vm_array_len));
 addSym("havel_vm_array_push", reinterpret_cast<void*>(&havel_vm_array_push));
 addSym("havel_vm_object_new", reinterpret_cast<void*>(&havel_vm_object_new));
     addSym("havel_vm_object_get", reinterpret_cast<void*>(&havel_vm_object_get));
-    addSym("havel_vm_object_get_raw", reinterpret_cast<void*>(&havel_vm_object_get_raw));
+    addSym("havel_vm_object_get_raw", reinterpret_cast<void*>(&havel_vm_object_get_raw_ic));
+    addSym("havel_vm_object_get_raw_ic", reinterpret_cast<void*>(&havel_vm_object_get_raw_ic));
     addSym("havel_vm_object_set", reinterpret_cast<void*>(&havel_vm_object_set));
     addSym("havel_vm_object_set_raw", reinterpret_cast<void*>(&havel_vm_object_set_raw));
 addSym("havel_vm_range_new", reinterpret_cast<void*>(&havel_vm_range_new));
@@ -3341,11 +3376,11 @@ case OpCode::INCLOCAL:
         case OpCode::OBJECT_GET_RAW: {
             llvm::Value* key = vstack.back(); vstack.pop_back();
             llvm::Value* obj = vstack.back(); vstack.pop_back();
-            llvm::Function* fnGetRaw = module.getFunction("havel_vm_object_get_raw");
+            llvm::Function* fnGetRaw = module.getFunction("havel_vm_object_get_raw_ic");
             if (!fnGetRaw) {
                 fnGetRaw = llvm::Function::Create(
                     llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                    llvm::Function::ExternalLinkage, "havel_vm_object_get_raw", &module);
+                    llvm::Function::ExternalLinkage, "havel_vm_object_get_raw_ic", &module);
             }
             vstack.push_back(B.CreateCall(fnGetRaw, {vmArg, obj, key}));
             break;
@@ -4330,11 +4365,11 @@ case OpCode::LENGTH: {
     case OpCode::OBJECT_GET: {
         llvm::Value* key = vstack.back(); vstack.pop_back();
         llvm::Value* obj = vstack.back(); vstack.pop_back();
-        llvm::Function* fnGet = module.getFunction("havel_vm_object_get_raw");
+        llvm::Function* fnGet = module.getFunction("havel_vm_object_get_raw_ic");
         if (!fnGet) {
             fnGet = llvm::Function::Create(
                 llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                llvm::Function::ExternalLinkage, "havel_vm_object_get_raw", &module);
+                llvm::Function::ExternalLinkage, "havel_vm_object_get_raw_ic", &module);
         }
         vstack.push_back(B.CreateCall(fnGet, {vmArg, obj, key}));
         break;

@@ -3375,12 +3375,20 @@ switch (binding->kind) {
     break;
   }
 
-  case ast::NodeType::AtExpression: {
-    // @field - compile as loading 'this' (slot 0) and getting the field
-    const auto &atExpr = static_cast<const ast::AtExpression &>(expression);
-    if (!atExpr.field) {
-      COMPILER_THROW("@ expression missing field");
-    }
+case ast::NodeType::AtExpression: {
+        // @field - compile as loading 'this' (slot 0) and getting the field
+        // @ alone - compile as loading 'this' (self-reference)
+        const auto &atExpr = static_cast<const ast::AtExpression &>(expression);
+        if (!atExpr.field) {
+            // Standalone @ — just load 'this'
+            if (!current_class_name_.empty()) {
+                emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+            } else {
+                uint32_t strId = addStringConstant("this");
+                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+            }
+            break;
+        }
     auto *fieldId = dynamic_cast<const ast::Identifier *>(atExpr.field.get());
     if (!fieldId) {
       COMPILER_THROW("@ expression field must be an identifier");

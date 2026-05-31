@@ -281,15 +281,16 @@ private:
   parseGroupDefinition(); // group name { modes: [...] }
   std::unique_ptr<ast::Statement> parseConfigSection();
 
-  // Type system parsers
-  std::unique_ptr<ast::Statement> parseStructDeclaration();
-  std::unique_ptr<ast::Statement> parseClassDeclaration();
-  std::unique_ptr<ast::Statement> parseEnumDeclaration();
-  std::unique_ptr<ast::Statement> parseTraitDeclaration();
-  std::unique_ptr<ast::Statement> parseProtocolDeclaration();
-  std::unique_ptr<ast::Statement> parseImplDeclaration();
-  std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
-  std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();
+    // Type system parsers
+    std::unique_ptr<ast::Statement> parseStructDeclaration();
+    std::unique_ptr<ast::Statement> parseClassDeclaration();
+    std::unique_ptr<ast::Statement> parseEnumDeclaration();
+    std::unique_ptr<ast::Statement> parseTraitDeclaration();
+    std::unique_ptr<ast::Statement> parseProtocolDeclaration();
+    std::unique_ptr<ast::Statement> parseImplDeclaration();
+	std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
+	std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();
+	std::vector<ast::TypeParam> parseTypeParameterList();
   std::pair<std::vector<ast::StructFieldDef>,
   std::vector<std::unique_ptr<ast::StructMethodDef>>>
   parseStructMembers(bool isColonBody = false, size_t colonBaseIndent = 0);
@@ -342,8 +343,12 @@ private:
   parsePostfixExpression(std::unique_ptr<ast::Expression> expr);
   TokenType getBinaryOperatorToken(ast::BinaryOperator op);
 
-  // Helper to create Identifier with source location
-  std::unique_ptr<ast::Identifier> makeIdentifier(const Token &token);
+    // Helper to create Identifier with source location
+    std::unique_ptr<ast::Identifier> makeIdentifier(const Token &token);
+
+    // Check if a token can be used as a field name after @/@@
+    // Keywords like 'val', 'fn', 'type' etc. are valid field names
+    bool isFieldLikeToken(const Token &tok) const;
 
   // Lookahead helper to detect destructuring patterns like {a, b} = obj
   bool isDestructuringPattern() const;

@@ -124,144 +124,157 @@ case OpCode::LOAD_GLOBAL: {
     }
 
 case OpCode::LOAD_VAR: {
-            uint32_t var_index = instruction.operands[0].asInt();
-            uint32_t abs = this->toAbsoluteLocal(var_index);
-            this->ensureLocalIndex(abs);
-Value value = locals[abs];
+    uint32_t var_index = instruction.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value value = locals[abs];
 
-    // Record feedback
-    auto &frame = currentFrame();
-    if (frame.ip < frame.function->type_feedback.size()) {
-      auto &fb = frame.function->type_feedback[frame.ip];
-      fb.execution_count++;
-      fb.result_type_mask |= getFeedbackMask(value);
-      if (fb.execution_count == 1000 && hot_func_cb_) {
-        hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+    if (hot_func_cb_) {
+      auto &frame = currentFrame();
+      if (frame.ip < frame.function->type_feedback.size()) {
+        auto &fb = frame.function->type_feedback[frame.ip];
+        fb.execution_count++;
+        fb.result_type_mask |= getFeedbackMask(value);
+        if (fb.execution_count == 1000) {
+          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+        }
       }
     }
 
     pushStack(value);
     break;
+  }
+
+case OpCode::STORE_VAR: {
+    uint32_t var_index = instruction.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value value = popStack();
+
+    if (immutable_locals_.count(abs)) {
+      COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
     }
 
-    case OpCode::STORE_VAR: {
-            uint32_t var_index = instruction.operands[0].asInt();
-            uint32_t abs = this->toAbsoluteLocal(var_index);
-            this->ensureLocalIndex(abs);
-            Value value = popStack();
-
-        if (immutable_locals_.count(abs)) {
-            COMPILER_THROW("Cannot reassign val local at index " + std::to_string(var_index));
+    if (hot_func_cb_) {
+      auto &frame = currentFrame();
+      if (frame.ip < frame.function->type_feedback.size()) {
+        auto &fb = frame.function->type_feedback[frame.ip];
+        fb.execution_count++;
+        fb.left_type_mask |= getFeedbackMask(value);
+        if (fb.execution_count == 1000) {
+          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
         }
-
-        // Record feedback
-        auto &frame = currentFrame();
-        if (frame.ip < frame.function->type_feedback.size()) {
-            auto &fb = frame.function->type_feedback[frame.ip];
-            fb.execution_count++;
-            fb.left_type_mask |= getFeedbackMask(value);
-            if (fb.execution_count == 1000 && hot_func_cb_) {
-                hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
-            }
-        }
-
-        locals[abs] = value;
-        break;
+      }
     }
 
-    case OpCode::STORE_IMMUT_VAR: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = this->toAbsoluteLocal(var_index);
-        this->ensureLocalIndex(abs);
-        Value value = popStack();
+    locals[abs] = value;
+    break;
+  }
 
-        immutable_locals_.insert(abs);
+case OpCode::STORE_IMMUT_VAR: {
+    uint32_t var_index = instruction.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value value = popStack();
 
-        // Record feedback
-        auto &frame = currentFrame();
-        if (frame.ip < frame.function->type_feedback.size()) {
-            auto &fb = frame.function->type_feedback[frame.ip];
-            fb.execution_count++;
-            fb.left_type_mask |= getFeedbackMask(value);
-            if (fb.execution_count == 1000 && hot_func_cb_) {
-                hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
-            }
+    immutable_locals_.insert(abs);
+
+    if (hot_func_cb_) {
+      auto &frame = currentFrame();
+      if (frame.ip < frame.function->type_feedback.size()) {
+        auto &fb = frame.function->type_feedback[frame.ip];
+        fb.execution_count++;
+        fb.left_type_mask |= getFeedbackMask(value);
+        if (fb.execution_count == 1000) {
+          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
         }
-
-        locals[abs] = value;
-        break;
+      }
     }
+
+    locals[abs] = value;
+    break;
+  }
 
     // Increment/Decrement local variable optimization
-    case OpCode::INCLOCAL: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = this->toAbsoluteLocal(var_index);
-        this->ensureLocalIndex(abs);
-        Value& val = locals[abs];
-        // Record feedback - INCLOCAL is a loop counter hot spot
-        {
-            auto &frame = currentFrame();
-            if (frame.ip < frame.function->type_feedback.size()) {
-                auto &fb = frame.function->type_feedback[frame.ip];
-                fb.execution_count++;
-                fb.left_type_mask |= getFeedbackMask(val);
-                if (fb.execution_count == 1000 && hot_func_cb_) {
-                    hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
-                }
-            }
+case OpCode::INCLOCAL: {
+    uint32_t var_index = instruction.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value& val = locals[abs];
+    if (hot_func_cb_) {
+      auto &frame = currentFrame();
+      if (frame.ip < frame.function->type_feedback.size()) {
+        auto &fb = frame.function->type_feedback[frame.ip];
+        fb.execution_count++;
+        fb.left_type_mask |= getFeedbackMask(val);
+        if (fb.execution_count == 1000) {
+          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
         }
-        if (val.isInt()) {
-            val = Value::makeInt(val.asInt() + 1);
-            pushStack(val);
-        } else if (val.isDouble()) {
-            val = Value::makeDouble(val.asDouble() + 1.0);
-            pushStack(val);
-        } else {
-            COMPILER_THROW("Cannot increment non-numeric value");
-        }
-        break;
+      }
     }
-
-    case OpCode::DECLOCAL: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = this->toAbsoluteLocal(var_index);
-        this->ensureLocalIndex(abs);
-        Value& val = locals[abs];
-        {
-            auto &frame = currentFrame();
-            if (frame.ip < frame.function->type_feedback.size()) {
-                auto &fb = frame.function->type_feedback[frame.ip];
-                fb.execution_count++;
-                fb.left_type_mask |= getFeedbackMask(val);
-                if (fb.execution_count == 1000 && hot_func_cb_) {
-                    hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
-                }
-            }
-        }
-        if (val.isInt()) {
-            val = Value::makeInt(val.asInt() - 1);
-            pushStack(val);
-        } else if (val.isDouble()) {
-            val = Value::makeDouble(val.asDouble() - 1.0);
-            pushStack(val);
-        } else {
-            COMPILER_THROW("Cannot decrement non-numeric value");
-        }
-        break;
+    if (val.isInt()) {
+      val = Value::makeInt(val.asInt() + 1);
+      pushStack(val);
+    } else if (val.isDouble()) {
+      val = Value::makeDouble(val.asDouble() + 1.0);
+      pushStack(val);
+    } else {
+      COMPILER_THROW("Cannot increment non-numeric value");
     }
+    break;
+  }
 
-    case OpCode::INCLOCAL_POST: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = this->toAbsoluteLocal(var_index);
-        this->ensureLocalIndex(abs);
-        Value old = locals[abs];
-        {
-            auto &frame = currentFrame();
-            if (frame.ip < frame.function->type_feedback.size()) {
-                auto &fb = frame.function->type_feedback[frame.ip];
-                fb.execution_count++;
-                fb.left_type_mask |= getFeedbackMask(old);
-            }
+case OpCode::DECLOCAL: {
+    uint32_t var_index = instruction.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value& val = locals[abs];
+    if (hot_func_cb_) {
+      auto &frame = currentFrame();
+      if (frame.ip < frame.function->type_feedback.size()) {
+        auto &fb = frame.function->type_feedback[frame.ip];
+        fb.execution_count++;
+        fb.left_type_mask |= getFeedbackMask(val);
+        if (fb.execution_count == 1000) {
+          hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+        }
+      }
+    }
+    if (val.isInt()) {
+      val = Value::makeInt(val.asInt() - 1);
+      pushStack(val);
+    } else if (val.isDouble()) {
+      val = Value::makeDouble(val.asDouble() - 1.0);
+      pushStack(val);
+    } else {
+      COMPILER_THROW("Cannot decrement non-numeric value");
+    }
+    break;
+  }
+
+case OpCode::INCLOCAL_POST: {
+    uint32_t var_index = instruction.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value old = locals[abs];
+    if (hot_func_cb_) {
+      auto &frame = currentFrame();
+      if (frame.ip < frame.function->type_feedback.size()) {
+        auto &fb = frame.function->type_feedback[frame.ip];
+        fb.execution_count++;
+        fb.left_type_mask |= getFeedbackMask(old);
+      }
+    }
+    pushStack(old);
+    if (old.isInt()) {
+      locals[abs] = Value::makeInt(old.asInt() + 1);
+    } else if (old.isDouble()) {
+      locals[abs] = Value::makeDouble(old.asDouble() + 1.0);
+    } else {
+      COMPILER_THROW("Cannot increment non-numeric value");
+    }
+    break;
+  }
         }
         pushStack(old);  // Push old value first
         if (old.isInt()) {
@@ -274,18 +287,29 @@ Value value = locals[abs];
         break;
     }
 
-    case OpCode::DECLOCAL_POST: {
-        uint32_t var_index = instruction.operands[0].asInt();
-        uint32_t abs = this->toAbsoluteLocal(var_index);
-        this->ensureLocalIndex(abs);
-        Value old = locals[abs];
-        {
-            auto &frame = currentFrame();
-            if (frame.ip < frame.function->type_feedback.size()) {
-                auto &fb = frame.function->type_feedback[frame.ip];
-                fb.execution_count++;
-                fb.left_type_mask |= getFeedbackMask(old);
-            }
+case OpCode::DECLOCAL_POST: {
+    uint32_t var_index = instruction.operands[0].asInt();
+    uint32_t abs = this->toAbsoluteLocal(var_index);
+    this->ensureLocalIndex(abs);
+    Value old = locals[abs];
+    if (hot_func_cb_) {
+      auto &frame = currentFrame();
+      if (frame.ip < frame.function->type_feedback.size()) {
+        auto &fb = frame.function->type_feedback[frame.ip];
+        fb.execution_count++;
+        fb.left_type_mask |= getFeedbackMask(old);
+      }
+    }
+    pushStack(old);
+    if (old.isInt()) {
+      locals[abs] = Value::makeInt(old.asInt() - 1);
+    } else if (old.isDouble()) {
+      locals[abs] = Value::makeDouble(old.asDouble() - 1.0);
+    } else {
+      COMPILER_THROW("Cannot decrement non-numeric value");
+    }
+    break;
+  }
         }
         pushStack(old);  // Push old value first
         if (old.isInt()) {

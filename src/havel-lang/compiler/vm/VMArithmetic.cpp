@@ -11,70 +11,71 @@
 namespace havel::compiler {
 
 void VM::execBinaryOp(const Instruction &instruction) {
-	Value right = popStack();
-	Value left = popStack();
+  Value right = popStack();
+  Value left = popStack();
 
-	auto &frame = currentFrame();
-	if (frame.ip < frame.function->type_feedback.size()) {
-		auto &fb = frame.function->type_feedback[frame.ip];
-		fb.execution_count++;
-		fb.left_type_mask |= getFeedbackMask(left);
-		fb.right_type_mask |= getFeedbackMask(right);
+  if (hot_func_cb_) {
+    auto &frame = currentFrame();
+    if (frame.ip < frame.function->type_feedback.size()) {
+      auto &fb = frame.function->type_feedback[frame.ip];
+      fb.execution_count++;
+      fb.left_type_mask |= getFeedbackMask(left);
+      fb.right_type_mask |= getFeedbackMask(right);
 
-
-		if (tiering_enabled_ && frame.function && jit_compiler_) {
-			const std::string fn_name = frame.function->name;
-			if (fb.execution_count >= tier1_threshold_ && !tier1_compiled_.count(fn_name)) {
-				tier1_compiled_.insert(fn_name);
-				tier1_transition_count_.fetch_add(1);
-				::havel::debug("[tiering] {} -> tier1", fn_name);
-				jit_compiler_->compileFunctionTier(*frame.function, 1);
-			}
-			if (fb.execution_count >= tier2_threshold_ && !tier2_compiled_.count(fn_name)) {
-				tier2_compiled_.insert(fn_name);
-				{
-					std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-					if (tier2_queued_or_compiling_.insert(fn_name).second) {
-						tier2_queue_.push(*frame.function);
-						tier2_enqueue_count_.fetch_add(1);
-						::havel::debug("[tiering] {} queued for tier2", fn_name);
-					} else {
-						tier2_skip_duplicate_count_.fetch_add(1);
-					}
-				}
-				if (!tier2_worker_running_.exchange(true)) {
-					tier2_worker_ = std::thread([this]() {
-						auto hasQueuedWork = [this]() {
-							std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-							return !tier2_queue_.empty();
-						};
-						while (tier2_worker_running_.load() || hasQueuedWork()) {
-							std::optional<BytecodeFunction> fn;
-							{
-								std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-								if (!tier2_queue_.empty()) {
-									fn = tier2_queue_.front();
-									tier2_queue_.pop();
-								}
-							}
-							if (fn.has_value() && jit_compiler_) {
-								jit_compiler_->compileFunctionTier(*fn, 2);
-								tier2_compile_count_.fetch_add(1);
-								::havel::debug("[tiering] {} -> tier2", fn->name);
-								std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
-								tier2_queued_or_compiling_.erase(fn->name);
-							} else {
-								std::this_thread::sleep_for(std::chrono::milliseconds(5));
-							}
-						}
-					});
-				}
-			}
-		}
-		if (fb.execution_count == 1000 && hot_func_cb_) {
-			hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
-		}
-	}
+      if (tiering_enabled_ && frame.function && jit_compiler_) {
+        const std::string fn_name = frame.function->name;
+        if (fb.execution_count >= tier1_threshold_ && !tier1_compiled_.count(fn_name)) {
+          tier1_compiled_.insert(fn_name);
+          tier1_transition_count_.fetch_add(1);
+          ::havel::debug("[tiering] {} -> tier1", fn_name);
+          jit_compiler_->compileFunctionTier(*frame.function, 1);
+        }
+        if (fb.execution_count >= tier2_threshold_ && !tier2_compiled_.count(fn_name)) {
+          tier2_compiled_.insert(fn_name);
+          {
+            std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+            if (tier2_queued_or_compiling_.insert(fn_name).second) {
+              tier2_queue_.push(*frame.function);
+              tier2_enqueue_count_.fetch_add(1);
+              ::havel::debug("[tiering] {} queued for tier2", fn_name);
+            } else {
+              tier2_skip_duplicate_count_.fetch_add(1);
+            }
+          }
+          if (!tier2_worker_running_.exchange(true)) {
+            tier2_worker_ = std::thread([this]() {
+              auto hasQueuedWork = [this]() {
+                std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+                return !tier2_queue_.empty();
+              };
+              while (tier2_worker_running_.load() || hasQueuedWork()) {
+                std::optional<BytecodeFunction> fn;
+                {
+                  std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+                  if (!tier2_queue_.empty()) {
+                    fn = tier2_queue_.front();
+                    tier2_queue_.pop();
+                  }
+                }
+                if (fn.has_value() && jit_compiler_) {
+                  jit_compiler_->compileFunctionTier(*fn, 2);
+                  tier2_compile_count_.fetch_add(1);
+                  ::havel::debug("[tiering] {} -> tier2", fn->name);
+                  std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
+                  tier2_queued_or_compiling_.erase(fn->name);
+                } else {
+                  std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                }
+              }
+            });
+          }
+        }
+      }
+      if (fb.execution_count == 1000) {
+        hot_func_cb_(*const_cast<BytecodeFunction*>(frame.function));
+      }
+    }
+  }
 
 	if (isNull(left) || isNull(right)) {
 		bool result = false;
@@ -722,33 +723,37 @@ void VM::execBinaryOp(const Instruction &instruction) {
 }
 
 void VM::execLogicalOp(OpCode opcode) {
-	Value right = popStack();
-	Value left = popStack();
+  Value right = popStack();
+  Value left = popStack();
 
-	auto &frame = currentFrame();
-	if (frame.ip < frame.function->type_feedback.size()) {
-		auto &fb = frame.function->type_feedback[frame.ip];
-		fb.execution_count++;
-		fb.left_type_mask |= getFeedbackMask(left);
-		fb.right_type_mask |= getFeedbackMask(right);
-	}
-	switch (opcode) {
-	case OpCode::AND: pushStack(isTruthy(left) && isTruthy(right)); break;
-	case OpCode::OR: pushStack(isTruthy(left) || isTruthy(right)); break;
-	default: COMPILER_THROW("Unknown logical opcode");
-	}
+  if (hot_func_cb_) {
+    auto &frame = currentFrame();
+    if (frame.ip < frame.function->type_feedback.size()) {
+      auto &fb = frame.function->type_feedback[frame.ip];
+      fb.execution_count++;
+      fb.left_type_mask |= getFeedbackMask(left);
+      fb.right_type_mask |= getFeedbackMask(right);
+    }
+  }
+  switch (opcode) {
+  case OpCode::AND: pushStack(isTruthy(left) && isTruthy(right)); break;
+  case OpCode::OR: pushStack(isTruthy(left) || isTruthy(right)); break;
+  default: COMPILER_THROW("Unknown logical opcode");
+  }
 }
 
 void VM::execNegate() {
-	Value value = popStack();
+  Value value = popStack();
 
-	auto &frame = currentFrame();
-	if (frame.ip < frame.function->type_feedback.size()) {
-		auto &fb = frame.function->type_feedback[frame.ip];
-		fb.execution_count++;
-		fb.left_type_mask |= getFeedbackMask(value);
-	}
-	if (value.isInt()) {
+  if (hot_func_cb_) {
+    auto &frame = currentFrame();
+    if (frame.ip < frame.function->type_feedback.size()) {
+      auto &fb = frame.function->type_feedback[frame.ip];
+      fb.execution_count++;
+      fb.left_type_mask |= getFeedbackMask(value);
+    }
+  }
+  if (value.isInt()) {
 		pushStack(-value.asInt());
 	} else if (value.isDouble()) {
 		pushStack(-value.asDouble());

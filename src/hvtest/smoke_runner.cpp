@@ -10,6 +10,7 @@
 #include <deque>
 #include <exception>
 #include <filesystem>
+namespace fs = std::filesystem;
 #include <iostream>
 #include <optional>
 #include <string>

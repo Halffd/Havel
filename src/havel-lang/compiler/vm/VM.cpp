@@ -2810,7 +2810,7 @@ Value VM::loadModule(const std::string& path) {
     // caller's chunk after restore, producing garbage.
     auto exportsObj = createHostObject();
     auto *obj = heap_.object(exportsObj.id);
-    auto moduleGlobalsSnapshot = globals;
+        auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
     int exportCount = 0;
     for (const auto& [name, value] : globals) {
         if (name.empty() || name[0] == '_') continue;

@@ -29,6 +29,7 @@
 
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
+#include "loader/ModulePlugin.h"
 
 namespace havel::stdlib {
 void registerMathModule(const compiler::VMApi &api);
@@ -62,9 +63,26 @@ void registerBrowserModule(const compiler::VMApi &api);
 
 namespace havel {
 
+static void tryPluginOrLazy(compiler::HostBridge &bridge,
+                            const std::string &name,
+                            std::function<void(compiler::VMApi &)> staticInit) {
+    auto &vm = *bridge.context().vm;
+    auto plugin = bridge.extensionLoader().loadModulePlugin(name);
+    if (plugin) {
+        auto regFn = plugin->register_fn;
+        vm.registerLazyModule(name, [regFn](compiler::VMApi &a) {
+            regFn(static_cast<void *>(&a));
+        });
+    } else {
+        vm.registerLazyModule(name, std::move(staticInit));
+    }
+}
+
 void registerStdLibWithVM(compiler::HostBridge &bridge) {
     compiler::VMApi api(*bridge.context().vm);
     auto &vm = *bridge.context().vm;
+
+    bridge.extensionLoader().addModulePaths();
 
     // Core modules: eager (used by nearly every script)
     stdlib::registerMathModule(api);
@@ -73,59 +91,59 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
     stdlib::registerTypeModule(api);
     stdlib::registerArrayModule(api);
 
-    // Extended stdlib: lazy — init on first use
-  vm.registerLazyModule("regex", [](compiler::VMApi &a) { stdlib::registerRegexModule(a); });
-  vm.registerLazyModule("time", [](compiler::VMApi &a) { stdlib::registerTimeModule(a); });
-    vm.registerLazyModule("timer", [](compiler::VMApi &a) { stdlib::registerTimerModule(a); });
+    // Extended stdlib: lazy — try .so plugin first, fall back to static
+    tryPluginOrLazy(bridge, "regex", [](compiler::VMApi &a) { stdlib::registerRegexModule(a); });
+    tryPluginOrLazy(bridge, "time", [](compiler::VMApi &a) { stdlib::registerTimeModule(a); });
+    tryPluginOrLazy(bridge, "timer", [](compiler::VMApi &a) { stdlib::registerTimerModule(a); });
 #ifndef HAVEL_PURE_VM
-    vm.registerLazyModule("hotkey", [](compiler::VMApi &a) { stdlib::registerHotkeyModule(a); });
+    tryPluginOrLazy(bridge, "hotkey", [](compiler::VMApi &a) { stdlib::registerHotkeyModule(a); });
 #endif
-    vm.registerLazyModule("fs", [](compiler::VMApi &a) { stdlib::registerFsModule(a); });
-    vm.registerLazyModule("random", [](compiler::VMApi &a) { stdlib::registerRandomModule(a); });
-    vm.registerLazyModule("log", [](compiler::VMApi &a) { stdlib::registerLogModule(a); });
-    vm.registerLazyModule("debug", [](compiler::VMApi &a) { stdlib::registerDebugModule(a); });
-    vm.registerLazyModule("sys", [](compiler::VMApi &a) { stdlib::registerSysModule(a); });
-    vm.registerLazyModule("shell", [](compiler::VMApi &a) { stdlib::registerShellModule(a); });
-    vm.registerLazyModule("pointer", [](compiler::VMApi &a) { stdlib::registerPointerModule(a); });
-    vm.registerLazyModule("format", [](compiler::VMApi &a) { stdlib::registerFormatModule(a); });
-    vm.registerLazyModule("pack", [](compiler::VMApi &a) { stdlib::registerPackModule(a); });
-    vm.registerLazyModule("bit", [](compiler::VMApi &a) { stdlib::registerBitModule(a); });
-    vm.registerLazyModule("option", [](compiler::VMApi &a) { stdlib::registerOptionModule(a); });
-    vm.registerLazyModule("bytecodeBuilder", [](compiler::VMApi &a) { stdlib::registerBytecodeBuilderModule(a); });
+    tryPluginOrLazy(bridge, "fs", [](compiler::VMApi &a) { stdlib::registerFsModule(a); });
+    tryPluginOrLazy(bridge, "random", [](compiler::VMApi &a) { stdlib::registerRandomModule(a); });
+    tryPluginOrLazy(bridge, "log", [](compiler::VMApi &a) { stdlib::registerLogModule(a); });
+    tryPluginOrLazy(bridge, "debug", [](compiler::VMApi &a) { stdlib::registerDebugModule(a); });
+    tryPluginOrLazy(bridge, "sys", [](compiler::VMApi &a) { stdlib::registerSysModule(a); });
+    tryPluginOrLazy(bridge, "shell", [](compiler::VMApi &a) { stdlib::registerShellModule(a); });
+    tryPluginOrLazy(bridge, "pointer", [](compiler::VMApi &a) { stdlib::registerPointerModule(a); });
+    tryPluginOrLazy(bridge, "format", [](compiler::VMApi &a) { stdlib::registerFormatModule(a); });
+    tryPluginOrLazy(bridge, "pack", [](compiler::VMApi &a) { stdlib::registerPackModule(a); });
+    tryPluginOrLazy(bridge, "bit", [](compiler::VMApi &a) { stdlib::registerBitModule(a); });
+    tryPluginOrLazy(bridge, "option", [](compiler::VMApi &a) { stdlib::registerOptionModule(a); });
+    tryPluginOrLazy(bridge, "bytecodeBuilder", [](compiler::VMApi &a) { stdlib::registerBytecodeBuilderModule(a); });
 
 #ifndef HAVEL_PURE_VM
-    // Host modules: lazy
-    vm.registerLazyModule("http", [](compiler::VMApi &a) { stdlib::registerHttpModule(a); });
-    vm.registerLazyModule("browser", [](compiler::VMApi &a) { stdlib::registerBrowserModule(a); });
-    vm.registerLazyModule("config", [](compiler::VMApi &a) { modules::registerConfigModule(a); });
-    vm.registerLazyModule("window", [](compiler::VMApi &a) { modules::registerWindowMonitorModule(a); });
-    vm.registerLazyModule("display", [](compiler::VMApi &a) { modules::registerDisplayModule(a); });
-    vm.registerLazyModule("help", [](compiler::VMApi &a) { modules::registerHelpModule(a); });
-    vm.registerLazyModule("mouse", [](compiler::VMApi &a) { modules::registerMouseModule(a); });
-    vm.registerLazyModule("automation", [](compiler::VMApi &a) { modules::registerAutomationModule(a); });
+    // Host modules: lazy — try .so plugin first, fall back to static
+    tryPluginOrLazy(bridge, "http", [](compiler::VMApi &a) { stdlib::registerHttpModule(a); });
+    tryPluginOrLazy(bridge, "browser", [](compiler::VMApi &a) { stdlib::registerBrowserModule(a); });
+    tryPluginOrLazy(bridge, "config", [](compiler::VMApi &a) { modules::registerConfigModule(a); });
+    tryPluginOrLazy(bridge, "window", [](compiler::VMApi &a) { modules::registerWindowMonitorModule(a); });
+    tryPluginOrLazy(bridge, "display", [](compiler::VMApi &a) { modules::registerDisplayModule(a); });
+    tryPluginOrLazy(bridge, "help", [](compiler::VMApi &a) { modules::registerHelpModule(a); });
+    tryPluginOrLazy(bridge, "mouse", [](compiler::VMApi &a) { modules::registerMouseModule(a); });
+    tryPluginOrLazy(bridge, "automation", [](compiler::VMApi &a) { modules::registerAutomationModule(a); });
 #ifdef HAVE_QT_EXTENSION
-    vm.registerLazyModule("ui", [](compiler::VMApi &a) { modules::registerUIModule(a); });
-    vm.registerLazyModule("pixel", [](compiler::VMApi &a) { modules::registerPixelModule(a); });
+    tryPluginOrLazy(bridge, "ui", [](compiler::VMApi &a) { modules::registerUIModule(a); });
+    tryPluginOrLazy(bridge, "pixel", [](compiler::VMApi &a) { modules::registerPixelModule(a); });
 #endif
-    vm.registerLazyModule("image", [](compiler::VMApi &a) { modules::registerImageModule(a); });
-    vm.registerLazyModule("media", [](compiler::VMApi &a) { modules::registerMediaModule(a); });
+    tryPluginOrLazy(bridge, "image", [](compiler::VMApi &a) { modules::registerImageModule(a); });
+    tryPluginOrLazy(bridge, "media", [](compiler::VMApi &a) { modules::registerMediaModule(a); });
 #ifdef HAVE_QT_EXTENSION
-    vm.registerLazyModule("screenshot", [](compiler::VMApi &a) { modules::registerScreenshotModule(a); });
-    vm.registerLazyModule("alttab", [](compiler::VMApi &a) { modules::registerAltTabModule(a); });
+    tryPluginOrLazy(bridge, "screenshot", [](compiler::VMApi &a) { modules::registerScreenshotModule(a); });
+    tryPluginOrLazy(bridge, "alttab", [](compiler::VMApi &a) { modules::registerAltTabModule(a); });
 #endif
-    vm.registerLazyModule("app", [](compiler::VMApi &a) { modules::registerAppModule(a); });
-    vm.registerLazyModule("audio", [](compiler::VMApi &a) { modules::registerAudioModule(a); });
-    vm.registerLazyModule("brightness", [](compiler::VMApi &a) { modules::registerBrightnessModule(a); });
-    vm.registerLazyModule("filemanager", [](compiler::VMApi &a) { modules::registerFileManagerModule(a); });
-    vm.registerLazyModule("io", [](compiler::VMApi &a) { modules::registerIOModule(a); });
-    vm.registerLazyModule("mapmanager", [](compiler::VMApi &a) { modules::registerMapManagerModule(a); });
-    vm.registerLazyModule("mode", [](compiler::VMApi &a) { modules::registerModeModule(a); });
+    tryPluginOrLazy(bridge, "app", [](compiler::VMApi &a) { modules::registerAppModule(a); });
+    tryPluginOrLazy(bridge, "audio", [](compiler::VMApi &a) { modules::registerAudioModule(a); });
+    tryPluginOrLazy(bridge, "brightness", [](compiler::VMApi &a) { modules::registerBrightnessModule(a); });
+    tryPluginOrLazy(bridge, "filemanager", [](compiler::VMApi &a) { modules::registerFileManagerModule(a); });
+    tryPluginOrLazy(bridge, "io", [](compiler::VMApi &a) { modules::registerIOModule(a); });
+    tryPluginOrLazy(bridge, "mapmanager", [](compiler::VMApi &a) { modules::registerMapManagerModule(a); });
+    tryPluginOrLazy(bridge, "mode", [](compiler::VMApi &a) { modules::registerModeModule(a); });
 #ifdef HAVE_QT_EXTENSION
-    vm.registerLazyModule("clipboard", [](compiler::VMApi &a) { modules::registerClipboardModule(a); });
-    vm.registerLazyModule("historyclipboard", [](compiler::VMApi &a) { modules::registerHistoryClipboardModule(a); });
-    vm.registerLazyModule("monitoringclipboard", [](compiler::VMApi &a) { modules::registerMonitoringClipboardModule(a); });
+    tryPluginOrLazy(bridge, "clipboard", [](compiler::VMApi &a) { modules::registerClipboardModule(a); });
+    tryPluginOrLazy(bridge, "historyclipboard", [](compiler::VMApi &a) { modules::registerHistoryClipboardModule(a); });
+    tryPluginOrLazy(bridge, "monitoringclipboard", [](compiler::VMApi &a) { modules::registerMonitoringClipboardModule(a); });
 #endif
-    vm.registerLazyModule("ffi", [](compiler::VMApi &a) { modules::ffi::registerFFIModule(a); });
+    tryPluginOrLazy(bridge, "ffi", [](compiler::VMApi &a) { modules::ffi::registerFFIModule(a); });
 #endif
 }
 

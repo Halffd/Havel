@@ -25,6 +25,20 @@
 #include "../../../host/media/MediaService.hpp"
 #include "../../../host/network/NetworkService.hpp"
 
+extern "C" {
+
+HavelAPI *getHavelAPI(void) {
+    static HavelAPI api = {};
+    static int initialized = 0;
+    if (!initialized) {
+        initialized = 1;
+        api.version = HAVEL_API_VERSION;
+    }
+    return &api;
+}
+
+}
+
 namespace havel::modules {
 void setupDynamicWindowGlobals(const compiler::VMApi &api, WindowMonitor *monitor)
 #if defined(__GNUC__) || defined(__clang__)
@@ -38,13 +52,13 @@ namespace havel::compiler {
 #ifdef HAVEL_CORE_PROFILE
 HostBridge::HostBridge(const ::havel::HostContext &ctx)
     : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()), moduleLoader_(*ctx_) {
-  extensionLoader_ = std::make_unique<ExtensionLoader>();
+  extensionLoader_ = std::make_unique<Loader>();
 }
 
 HostBridge::HostBridge(const ::havel::HostContext &ctx,
                        const ExecutionPolicy &policy)
     : ctx_(&ctx), policy_(policy), moduleLoader_(*ctx_) {
-  extensionLoader_ = std::make_unique<ExtensionLoader>();
+  extensionLoader_ = std::make_unique<Loader>();
   moduleLoader_.setExecutionPolicy(policy);
 }
 
@@ -146,14 +160,14 @@ static bool valuesEqual(const Value &a, const Value &b) {
 HostBridge::HostBridge(const ::havel::HostContext &ctx)
     : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()),
       moduleLoader_(*ctx_) {
-  extensionLoader_ = std::make_unique<ExtensionLoader>();
+  extensionLoader_ = std::make_unique<Loader>();
   initBridges();
 }
 
 HostBridge::HostBridge(const ::havel::HostContext &ctx,
                        const ExecutionPolicy &policy)
     : ctx_(&ctx), policy_(policy), moduleLoader_(*ctx_) {
-  extensionLoader_ = std::make_unique<ExtensionLoader>();
+  extensionLoader_ = std::make_unique<Loader>();
   moduleLoader_.setExecutionPolicy(policy);
   initBridges();
 }
@@ -207,7 +221,7 @@ void HostBridge::registerModeCallbacks(const std::string &modeName,
 void HostBridge::initBridges() {
 #ifdef HAVEL_CORE_PROFILE
   // Core profile has no host bridges.
-  extensionLoader_ = std::make_unique<ExtensionLoader>();
+  extensionLoader_ = std::make_unique<Loader>();
   moduleLoader_.registerBuiltin("io", [](VM &) {}, {"io", "1.0", true, false, ""});
   moduleLoader_.registerBuiltin("window", [](VM &) {}, {"window", "1.0", true, false, ""});
   moduleLoader_.registerBuiltin("ui", [](VM &) {}, {"ui", "1.0", true, false, ""});
@@ -317,11 +331,12 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
     vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
   });
 
-  options_.host_functions["extension.load"] =
-      [this](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
-        return Value(extensionLoader_->loadExtensionByName(args[0].toString()));
-      };
+options_.host_functions["extension.load"] =
+[this](const std::vector<Value> &args) {
+  if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
+  extensionLoader_->loadExtensionWithInit(args[0].toString(), getHavelAPI());
+  return Value(extensionLoader_->isLoaded(args[0].toString()));
+};
   options_.host_functions["extension.isLoaded"] =
       [this](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
@@ -554,7 +569,7 @@ bool HostBridge::import(const std::string &importSpec) {
 
 void HostBridge::loadExtension(const std::string &name) {
   if (extensionLoader_) {
-    extensionLoader_->loadExtensionByName(name);
+    extensionLoader_->loadExtensionWithInit(name, getHavelAPI());
   }
 }
 

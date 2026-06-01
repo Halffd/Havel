@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../../extensions/ExtensionLoader.hpp"
-#include "../../../extensions/HavelCAPI.h"
+#include "loader/Loader.hpp"
+#include "extensions/HavelCAPI.h"
 #include "../../../host/module/ExecutionPolicy.hpp"
 #include "../../../host/module/ModuleLoader.hpp"
 #include "../../runtime/HostContext.hpp"
@@ -87,8 +87,8 @@ public:
   const HostModuleLoader &moduleLoader() const { return moduleLoader_; }
 
   // Extension loading (native .so modules)
-  ExtensionLoader &extensionLoader() { return *extensionLoader_; }
-  const ExtensionLoader &extensionLoader() const { return *extensionLoader_; }
+  Loader &extensionLoader() { return *extensionLoader_; }
+  const Loader &extensionLoader() const { return *extensionLoader_; }
   void loadExtension(const std::string &name);
 
   // Extension function registration (C API)
@@ -136,7 +136,7 @@ private:
   HostModuleLoader moduleLoader_;
 
   // Extension loader (native .so modules)
-  std::unique_ptr<ExtensionLoader> extensionLoader_;
+  std::unique_ptr<Loader> extensionLoader_;
 
   // Mode system state
   std::unordered_map<std::string, ModeBinding> mode_bindings_;

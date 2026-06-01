@@ -1,5 +1,5 @@
 #include "core/init/Havel.hpp"
-#include "havel-lang/runtime/StdLibModules.hpp"
+#include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include "core/condition/HotkeyConditionCompiler.hpp"
@@ -213,25 +213,20 @@ void Havel::initialize(bool isStartup) {
 #endif
 
 
-  // Create HostBridge
-        hostBridge = compiler::createHostBridge(*hostContext);
-        havel::startup_timing_report("HostBridge-create", t);
-    t = havel::startup_now();
+        // Create Modules
+        modules_ = havel::createModules(*hostContext);
+        hostContext->modules = modules_.get();
+        havel::startup_timing_report("Modules-create", t);
+        t = havel::startup_now();
 
-        // Register stdlib modules
-        registerStdLibWithVM(*hostBridge);
-            havel::startup_timing_report("stdlib-register", t);
+        // Register stdlib + install
+        modules_->install();
+        havel::startup_timing_report("Modules-install", t);
         t = havel::startup_now();
-        hostBridge->install();
-            havel::startup_timing_report("HostBridge-install", t);
-        t = havel::startup_now();
-        for (const auto& [name, fn] : hostBridge->options().host_functions) {
+        for (const auto& [name, fn] : modules_->options().host_functions) {
             bytecodeVM->registerHostFunction(name, fn);
         }
-            havel::startup_timing_report("host-functions-register", t);
-        t = havel::startup_now();
-        hostBridge->runVmSetup();
-            havel::startup_timing_report("vm-setup", t);
+        havel::startup_timing_report("host-functions-register", t);
         t = havel::startup_now();
 
 {
@@ -271,11 +266,11 @@ void Havel::initialize(bool isStartup) {
     throw std::runtime_error("Failed to create Scheduler");
   }
 
-  // EventQueue is created by ConcurrencyBridge during hostBridge->install()
-  compiler::EventQueue* eventQueue = hostContext->eventQueue;
-  if (!eventQueue) {
-    throw std::runtime_error("Failed to get EventQueue from HostBridge");
-  }
+        // EventQueue is created by ConcurrencyBridge during modules_->install()
+        compiler::EventQueue* eventQueue = hostContext->eventQueue;
+        if (!eventQueue) {
+            throw std::runtime_error("Failed to get EventQueue from Modules");
+        }
 
   // Create ExecutionEngine for main loop integration
 	executionEngine = std::make_unique<compiler::ExecutionEngine>(
@@ -321,7 +316,7 @@ if (hotkeyManager) {
 
   // Set HostBridge pointer on EventListener for timer checking
   if (io && io->GetEventListener()) {
-  io->GetEventListener()->setHostBridge(hostBridge.get());
+            io->GetEventListener()->setModules(modules_.get());
   if (executionEngine) {
     io->GetEventListener()->setExecutionEngine(executionEngine.get());
     if (debugging::debug_io) debug("ExecutionEngine integrated into EventListener main loop");
@@ -402,12 +397,12 @@ void Havel::cleanup() noexcept {
  bytecodeVM.reset();
  }
 
-  // Destroy HostBridge
-  if (hostBridge) {
-    if (debugging::debug_io) debug("Havel::cleanup() - destroying HostBridge");
-    hostBridge->shutdown();
-    hostBridge.reset();
-  }
+        // Destroy Modules
+        if (modules_) {
+            if (debugging::debug_io) debug("Havel::cleanup() - destroying Modules");
+            modules_->shutdown();
+            modules_.reset();
+        }
 
   // Destroy other components
   if (automationManager) {

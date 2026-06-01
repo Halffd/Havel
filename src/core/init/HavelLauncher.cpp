@@ -4,14 +4,13 @@
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "havel-lang/common/Debug.hpp"
-#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
-#include "havel-lang/runtime/StdLibModules.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
 #include "havel-lang/tools/REPL.hpp"
 #include "havel-lang/runtime/HavelEngine.hpp"
@@ -693,13 +692,12 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
       if (!combinedCode.empty()) {
         auto *bytecodeVM =
             reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
-        auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(
-            havel_inst.getHostBridge());
+        auto *modules = havel_inst.getModules();
 
-        if (bytecodeVM && hostBridge) {
-          info("Executing combined scripts with bytecode VM: {}", combinedNames);
+        if (bytecodeVM && modules) {
+            info("Executing combined scripts with bytecode VM: {}", combinedNames);
 
-          havel::compiler::PipelineOptions options = hostBridge->options();
+            havel::compiler::PipelineOptions options = modules->options();
           options.compile_unit_name = combinedNames;
           options.vm_override = bytecodeVM;
           options.debugBytecode = cfg.debugBytecode;
@@ -816,26 +814,26 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     }
 
     auto* bytecodeVM = havel_inst.getBytecodeVM();
-    auto* hostBridge = havel_inst.getHostBridge();
-    if (!bytecodeVM || !hostBridge) {
-      error("Bytecode VM not available");
-      return 1;
+    auto* modules = havel_inst.getModules();
+    if (!bytecodeVM || !modules) {
+        error("Bytecode VM not available");
+        return 1;
     }
 
     auto* hkManager = havel_inst.getHotkeyManagerPtr();
     auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
-      havel_inst.getIOPtr(), hkManager, Configs::Get(),
-      havel_inst.getWindowManagerPtr(),
-      nullptr, nullptr, nullptr, nullptr, nullptr,
-      nullptr, nullptr, nullptr, nullptr, nullptr,
-      hkManager ? hkManager->getModeManager().get() : nullptr,
-		std::vector<std::string>{}));
-		havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
+        havel_inst.getIOPtr(), hkManager, Configs::Get(),
+        havel_inst.getWindowManagerPtr(),
+        nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr,
+        hkManager ? hkManager->getModeManager().get() : nullptr,
+        std::vector<std::string>{}));
+    havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
 
-		bytecodeVM->setTimerCheckFunction([hostBridge]() { hostBridge->checkTimers(); });
+    bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
 
     try {
-      havel::compiler::PipelineOptions options = hostBridge->options();
+        havel::compiler::PipelineOptions options = modules->options();
       options.compile_unit_name = combinedNames;
       options.vm_override = bytecodeVM;
       options.debugBytecode = cfg.debugBytecode;
@@ -920,43 +918,41 @@ int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
     havel::HostContext ctx;
     havel::compiler::VM tempVm;
     ctx.vm = &tempVm;
-    auto bridge = havel::compiler::createHostBridge(ctx);
-    // Register host functions with VM
-    auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
-    const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;
+        auto bridge = havel::createModules(ctx);
+        // Register host functions with VM
+        auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
+        const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;
 #ifdef HAVEL_ENABLE_LLVM
-    std::unique_ptr<havel::compiler::BytecodeOrcJIT> jit;
-    if (cfg.useJIT) {
-      jit = std::make_unique<havel::compiler::BytecodeOrcJIT>();
-      jit->setDebugMode(cfg.debugJIT);
-      jit->setDumpIR(cfg.dumpIR);
-      jit->setDumpAsmToFile(cfg.outputAsmToFile);
-      jit->setShowWarnings(cfg.aotWarnings);
-      vm->setHotFunctionCallback([jit_ptr = jit.get()](const havel::compiler::BytecodeFunction &func) {
-        if (!jit_ptr->isCompiled(func.name)) {
-          jit_ptr->compileFunction(func);
+        std::unique_ptr<havel::compiler::BytecodeOrcJIT> jit;
+        if (cfg.useJIT) {
+            jit = std::make_unique<havel::compiler::BytecodeOrcJIT>();
+            jit->setDebugMode(cfg.debugJIT);
+            jit->setDumpIR(cfg.dumpIR);
+            jit->setDumpAsmToFile(cfg.outputAsmToFile);
+            jit->setShowWarnings(cfg.aotWarnings);
+            vm->setHotFunctionCallback([jit_ptr = jit.get()](const havel::compiler::BytecodeFunction &func) {
+                if (!jit_ptr->isCompiled(func.name)) {
+                    jit_ptr->compileFunction(func);
+                }
+            });
+            vm->setJITCompiler(jit.get());
         }
-      });
-      vm->setJITCompiler(jit.get());
-    }
 #endif
-    bridge->install(
-        coreProfile ? havel::compiler::HostBridge::InstallProfile::Core
-                    : havel::compiler::HostBridge::InstallProfile::Full,
-        !coreProfile);
-    if (coreProfile) {
-        if (cfg.pureStdlib) {
-            havel::registerPureStdLib(*vm);
-        } else {
-            havel::registerCoreStdLib(*vm);
+        bridge->install(
+            coreProfile ? havel::InstallProfile::Core
+                        : havel::InstallProfile::Full,
+            !coreProfile);
+        if (coreProfile) {
+            if (cfg.pureStdlib) {
+                havel::registerPureStdLib(*vm);
+            } else {
+                havel::registerCoreStdLib(*vm);
+            }
         }
-    } else {
-        havel::registerStdLibWithVM(*bridge);
-    }
 
-    for (const auto& [name, fn] : bridge->options().host_functions) {
-      vm->registerHostFunction(name, fn);
-    }
+        for (const auto& [name, fn] : bridge->options().host_functions) {
+            vm->registerHostFunction(name, fn);
+        }
 
     info("Loaded bytecode file: {} ({} function(s))", f, chunk->getFunctionCount());
     if (cfg.debugBytecode) {
@@ -1361,7 +1357,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         replConfig.outputLogFile = cfg.outputLogFile;
         replConfig.historyFile = cfg.historyFile;
         havel::repl::REPL repl(replConfig);
-        repl.attach(engine.vm(), engine.hostBridge(), collectKnownGlobals(engine.vm()));
+        repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
 
         return repl.run();
     } else {
@@ -1389,13 +1385,13 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       
       if (!havel_inst.isInitialized()) return 1;
       
-      auto *bytecodeVM = havel_inst.getBytecodeVM();
-      auto *hostBridge = havel_inst.getHostBridge();
-      
-      if (!bytecodeVM || !hostBridge) return 1;
+    auto *bytecodeVM = havel_inst.getBytecodeVM();
+    auto *modules = havel_inst.getModules();
 
-      try {
-        havel::compiler::PipelineOptions options = hostBridge->options();
+    if (!bytecodeVM || !modules) return 1;
+
+    try {
+        havel::compiler::PipelineOptions options = modules->options();
         options.compile_unit_name = combinedNames;
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
@@ -1441,7 +1437,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
 
 		// Attach REPL to the existing VM from the Havel instance
       // (instead of initialize() which creates a new VM)
-      repl.attach(bytecodeVM, havel_inst.getHostBridge(), collectKnownGlobals(bytecodeVM));
+      repl.attach(bytecodeVM, havel_inst.getModules(), collectKnownGlobals(bytecodeVM));
 
       // Enter REPL
       return repl.run();
@@ -1587,7 +1583,7 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
         replConfig.historyFile = cfg.historyFile;
 
         havel::repl::REPL repl(replConfig);
-        repl.attach(engine.vm(), engine.hostBridge(), collectKnownGlobals(engine.vm()));
+        repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
 
         return repl.run();
     } else {
@@ -1615,14 +1611,14 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
         return 1;
       }
       
-      // Get VM and host bridge from havel::Havel
-      auto *bytecodeVM = reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
-      auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(havel_inst.getHostBridge());
-      
-      if (!bytecodeVM || !hostBridge) {
-        error("Bytecode VM or HostBridge not available");
+    // Get VM and modules from havel::Havel
+    auto *bytecodeVM = reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
+    auto *modules = havel_inst.getModules();
+
+    if (!bytecodeVM || !modules) {
+        error("Bytecode VM or Modules not available");
         return 1;
-      }
+    }
       
       // Create REPL with full host API
         havel::repl::REPLConfig replConfig;
@@ -1649,8 +1645,8 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
           hkManager ? hkManager->getModeManager().get() : nullptr,
 		std::vector<std::string>{}));
 
-		havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
-		repl.attach(bytecodeVM, hostBridge, collectKnownGlobals(bytecodeVM));
+    havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
+    repl.attach(bytecodeVM, modules, collectKnownGlobals(bytecodeVM));
 
       // Run REPL
       return repl.run();

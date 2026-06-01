@@ -31,8 +31,11 @@ namespace havel::net {
 class NetworkManager;
 }
 
+namespace havel {
+class Modules;
+}
+
 namespace havel::compiler {
-class HostBridge;
 class VM;
 class Scheduler;
 class ExecutionEngine;
@@ -82,7 +85,7 @@ public:
   WindowManager* getWindowManagerPtr() const { return windowManager.get(); }
 
 
-  compiler::HostBridge *getHostBridge() const { return hostBridge.get(); }
+    Modules *getModules() const { return modules_.get(); }
 
   // Friend declarations for HavelLauncher
   friend class HavelLauncher;
@@ -118,7 +121,7 @@ private:
 
   // Havel language VM
   std::unique_ptr<compiler::VM> bytecodeVM;
-  std::shared_ptr<compiler::HostBridge> hostBridge;
+    std::shared_ptr<Modules> modules_;
   compiler::Scheduler *scheduler = nullptr; // Singleton-owned
   std::unique_ptr<compiler::ExecutionEngine> executionEngine;
 #ifdef HAVEL_ENABLE_LLVM

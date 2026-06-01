@@ -18,6 +18,7 @@ option(ENABLE_IMGUI "Enable Dear ImGui native backend" OFF)
 option(ENABLE_QT "Enable Qt6 native backend (default)" ON)
 option(ENABLE_QT_UI_BACKEND "Build in-process Qt6 UI backend (fallback to dynamic extension)" ON)
 option(ENABLE_HEADLESS "Build without any GUI backend (server/headless mode)" OFF)
+option(ENABLE_MODULE_PLUGINS "Build stdlib/host modules as .so plugins" OFF)
 
 # ==============================================================================
 # COMPILER AND STANDARDS CONFIGURATION
@@ -83,6 +84,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
+find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 # Optional: GNU Readline for REPL line-editing/history
@@ -300,7 +302,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/io/*.cpp"
     "src/core/net/*.cpp"
     "src/core/process/*.cpp"
-    "src/extensions/ExtensionLoader.cpp"
+    "src/loader/*.c"
     "src/host/async/*.cpp"
     "src/host/audio/*.cpp"
     "src/host/brightness/*.cpp"
@@ -637,7 +639,7 @@ $<$<BOOL:${LEPTONICA_FOUND}>:${LEPTONICA_LIBRARIES}>
 $<$<BOOL:${OpenCV_FOUND}>:${OPENCV_ESSENTIAL_LIBS}>
     # Optional Readline
     ${READLINE_LIB}
-    dl crypto ssl pthread m
+    dl crypto ssl pthread m fmt::fmt
  ${CURL_LIBRARIES}
     # ZIP libraries (use minizip if available, otherwise fall back to generic zip)
     $<$<BOOL:${MINIZIP_FOUND}>:${MINIZIP_LIBRARIES}>
@@ -819,6 +821,7 @@ target_compile_definitions(havel_core PRIVATE
     $<$<BOOL:${ENABLE_LLVM}>:HAVEL_DEFAULT_LLVM_LINK_FLAGS=\"${HAVEL_LLVM_LINK_FLAGS}\">
 )
 add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
+target_link_libraries(havel_core PRIVATE fmt::fmt)
 if(ENABLE_QT_UI_BACKEND)
   add_library(havel_gui STATIC ${GUI_SOURCES})
 endif()
@@ -888,7 +891,8 @@ set(LSP_SOURCES
     src/havel-lang/ast/AST.cpp
     src/havel-lang/lexer/Lexer.cpp
     src/havel-lang/parser/Parser.cpp
-    src/utils/LoggerC.c
+  src/utils/LoggerC.c
+  src/loader/Loader.c
 )
 
 add_executable(havel-lsp ${LSP_SOURCES})
@@ -913,6 +917,7 @@ target_include_directories(havel-lsp PRIVATE
 target_link_libraries(havel-lsp PRIVATE
 nlohmann_json::nlohmann_json
 Threads::Threads
+fmt::fmt
 )
 
  if(ENABLE_COVERAGE)
@@ -1113,12 +1118,11 @@ if(ENABLE_HAVEL_LANG)
     add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
 
     set(HAVEL_LANG_CORE_SOURCES ${HAVEL_LANG_LIB_SOURCES})
-    list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
-        ${CMAKE_SOURCE_DIR}/src/host/module/ModularHostBridges.cpp
-        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
-        ${CMAKE_SOURCE_DIR}/src/extensions/ExtensionLoader.cpp
-        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp
-    )
+list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
+  ${CMAKE_SOURCE_DIR}/src/host/module/ModularHostBridges.cpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp
+)
     add_library(havel_lang_core STATIC ${HAVEL_LANG_CORE_SOURCES})
     
     target_include_directories(havel_lang PRIVATE
@@ -1208,6 +1212,61 @@ HAVEL_CORE_PROFILE
     # std::__detail across every translation unit in havel_lang.
     # -----------------------------------------------------------------------
 
+endif()
+
+# ==============================================================================
+# MODULE PLUGINS (conditional .so modules loaded via dlopen)
+# ==============================================================================
+if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
+    set(MODULE_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
+    file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
+
+    # Helper function to define a module plugin .so target
+    function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
+        set(MODULE_TARGET "havel_mod_${MODULE_NAME}")
+        add_library(${MODULE_TARGET} MODULE ${MODULE_SOURCE})
+        set_target_properties(${MODULE_TARGET} PROPERTIES
+            PREFIX ""
+            LIBRARY_OUTPUT_DIRECTORY "${MODULE_PLUGIN_OUTPUT_DIR}"
+            CXX_STANDARD 23
+            CXX_STANDARD_REQUIRED ON
+            C_STANDARD 17
+            C_STANDARD_REQUIRED ON
+            POSITION_INDEPENDENT_CODE ON
+            INTERPROCEDURAL_OPTIMIZATION OFF
+        )
+        target_compile_options(${MODULE_TARGET} PRIVATE -fno-lto)
+        target_link_options(${MODULE_TARGET} PRIVATE -fno-lto)
+        target_compile_definitions(${MODULE_TARGET} PRIVATE
+            HAVEL_MODULE_PLUGIN
+            ENABLE_HAVEL_LANG
+        )
+        target_include_directories(${MODULE_TARGET} PRIVATE
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/havel-lang
+        )
+        target_link_libraries(${MODULE_TARGET} PRIVATE
+            havel_lang
+            havel_core
+            fmt::fmt
+        )
+        install(TARGETS ${MODULE_TARGET}
+            LIBRARY DESTINATION lib/havel/modules
+            COMPONENT Runtime
+        )
+    endfunction()
+
+    # LogModule plugin (proof of concept)
+    add_havel_module_plugin(log
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp
+    )
+
+    # Export symbols from main executable so plugins can resolve them
+    set_target_properties(havel PROPERTIES
+        ENABLE_EXPORTS ON
+    )
+    target_link_options(havel PRIVATE -Wl,--export-dynamic)
 endif()
 
 # Dedicated AOT core runtime shim (lean entrypoint surface for --profile core).
@@ -1398,9 +1457,15 @@ else()
 endif()
 
 if(ENABLE_LLVM)
-    message(STATUS "LLVM JIT:        ✓ ENABLED (${LLVM_PACKAGE_VERSION})")
+message(STATUS "LLVM JIT: ✓ ENABLED (${LLVM_PACKAGE_VERSION})")
 else()
-    message(STATUS "LLVM JIT:        ✗ DISABLED")
+message(STATUS "LLVM JIT: ✗ DISABLED")
+endif()
+
+if(ENABLE_MODULE_PLUGINS)
+message(STATUS "Module Plugins: ✓ ENABLED")
+else()
+message(STATUS "Module Plugins: ✗ DISABLED")
 endif()
 
  if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)

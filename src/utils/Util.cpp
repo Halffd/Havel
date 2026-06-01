@@ -2,6 +2,7 @@
 #include "./Logger.hpp"
 #include <limits.h>
 #include <unistd.h>
+#include <filesystem>
 #ifdef _WIN32
 #include <windows.h>
 #endif

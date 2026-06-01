@@ -8,6 +8,8 @@ use { inferProgram } from "types"
 use { loaderInit, loaderLoad, collectUseDeps, loaderSetScriptDir } from "loader"
 use { isOn, setFlag, parseDebugArgs, dumpAst, dumpBytecode, startTimer, endTimer, traceBytecode, traceEmitter } from "debug"
 
+bc = bytecodeBuilder
+
 // --- Inline error reporting (until use-imports work in C++ compiled path) ---
 _launcherErrors = []
 _launcherWarnings = 0
@@ -486,14 +488,19 @@ fn runTests(cfg) {
 // ============================================================
 
 fn main() {
-	print("[launcher] before app.args")
-	args = app.args
-	print("[launcher] app.args = " + str(args))
-	if args == null || #args == 0 {
-		print("Usage: havel --run launcher.hv -- [flags] script.hv")
-		print("Use --help for more information")
-		shell.exit(1)
-	}
+  print("[launcher] before app.args")
+  args = app.args
+  print("[launcher] app.args = " + str(args))
+  if args == null {
+    print("Usage: havel --run launcher.hv -- [flags] script.hv")
+    print("Use --help for more information")
+    shell.exit(1)
+  }
+  if #args == 0 {
+    print("Usage: havel --run launcher.hv -- [flags] script.hv")
+    print("Use --help for more information")
+    shell.exit(1)
+  }
 
 	cfg = parseArgs(args)
 	print("[launcher] cfg.mode = " + cfg.mode + " cfg.selfHosted = " + str(cfg.selfHosted) + " cfg.scriptFiles = " + str(cfg.scriptFiles))
@@ -518,6 +525,10 @@ fn main() {
 
 // Auto-run main only when this file is the top-level entry point
 // (app.args non-empty means we were invoked with -- flag args)
-if app.args != null && #app.args > 0 {
+if app.args != null {
+  if #app.args > 0 {
     main()
+  }
+} else {
+  print("[launcher] app.args is null, not running main")
 }

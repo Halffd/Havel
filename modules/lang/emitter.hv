@@ -4,6 +4,7 @@
 
 use { Scope, scopeDeclare, scopeResolve, scopeLocalCount, scopeFindFuncRoot } from "scope"
 use { traceEmitter, isOn } from "debug"
+use "bytecodeBuilder"
 
 fn charDigit(c) {
     // map single char to its digit value: 0-9, a-f, A-F

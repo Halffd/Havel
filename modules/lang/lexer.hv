@@ -815,7 +815,7 @@ scanNumber()
 continue
 }
 if isAlphaCp(c) {
-scanIdentifier()
+    scanIdentifier()
 continue
 }
 if c >= 0x80 {
@@ -904,12 +904,19 @@ addToken("BangOpenBrace", "!{")
 continue
 }
 if c == 33 {
-if afterExpression() or (cp(1) != -1 and cp(1) >= 97 and cp(1) <= 122) {
-advance()
-addToken("Not", "!")
-}
-else {
-advance()
+  nextCp = cp(1)
+  isIdentStart = false
+  if nextCp >= 97 and nextCp <= 122: isIdentStart = true
+  if nextCp >= 65 and nextCp <= 90: isIdentStart = true
+  if nextCp == 95: isIdentStart = true
+  if nextCp >= 48 and nextCp <= 57: isIdentStart = true
+isNotContext = afterExpression() or (nextCp != -1 and isIdentStart)
+  if isNotContext {
+    advance()
+    addToken("Not", "!")
+  }
+  else {
+    advance()
 s = "!"
 while current() != -1 and current() != 10 and current() != 123 and current() != 40 {
 if current() == 61 and cp(1) == 62 {
@@ -1350,13 +1357,13 @@ addToken("Tilde", "~")
 continue
 }
 if c == 95 {
-if !isAlphaNumCp(cp(1)) {
-advance()
-addToken("Underscore", "_")
-continue
-}
-scanIdentifier()
-continue
+  if !isAlphaNumCp(cp(1)) {
+    advance()
+    addToken("Underscore", "_")
+    continue
+  }
+  scanIdentifier()
+  continue
 }
 advance()
 

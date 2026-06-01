@@ -78,7 +78,7 @@ RBP_TABLE[TID.LeftArrow] = 5; RBP_TABLE[TID.Arrow] = 5
 RBP_TABLE[TID.Power] = 130; RBP_TABLE[TID.Nullish] = 15; RBP_TABLE[TID.Question] = 10
 
 fn getBindingPower(ttype) {
- if ttype == TID.Not: return 52
+  if ttype == TID.Not: return 52
   r = BP_TABLE[ttype]
   if r != null: return r
   return BP_NONE
@@ -147,11 +147,11 @@ DOT_ACCESS_KEYWORDS[TID.Async] = true; DOT_ACCESS_KEYWORDS[TID.Sync] = true
 DOT_ACCESS_KEYWORDS[TID.Trait] = true; DOT_ACCESS_KEYWORDS[TID.Prot] = true; DOT_ACCESS_KEYWORDS[TID.Impl] = true
 
 fn isKeywordIdent(ttype) {
-  KEYWORD_IDENTS.has(ttype)
+  KEYWORD_IDENTS[ttype] != null
 }
 
 fn isDotAccessIdent(ttype) {
-  KEYWORD_IDENTS.has(ttype) or DOT_ACCESS_KEYWORDS.has(ttype)
+  KEYWORD_IDENTS[ttype] != null or DOT_ACCESS_KEYWORDS[ttype] != null
 }
 
 // --- Token types that are infix/postfix operators (have led) ---
@@ -193,8 +193,6 @@ fn Parser(tokenList) {
   errors = []
   inMatchExpr = false
   allowBraceSugar = true
-  _dbg_s = null
-  _dbg_cnt = 0
   _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
   _cur = pos < tokens.len ? tokens[pos] : _eof
 
@@ -218,6 +216,9 @@ fn Parser(tokenList) {
       _cur = _eof
       return _eof
     }
+  }
+  fn syncCur() {
+    _cur = pos < tokens.len ? tokens[pos] : _eof
   }
   fn notEOF() {
     return _cur.tid != TID.EOF
@@ -271,11 +272,11 @@ fn error(msg, line, col) {
   }
   // --- Token classification ---
   fn canStartExpr(ttype) {
-    return NUD_TOKENS.has(ttype)
+    NUD_TOKENS[ttype] != null
 
   }
   fn isLed(ttype) {
-    return LED_TOKENS.has(ttype)
+    LED_TOKENS[ttype] != null
 
   }
 // --- Check if 'not' is infix (followed by 'in') ---
@@ -307,11 +308,11 @@ fn parseExpr(rbp) {
  return error("Pratt loop exceeded", startToken.line, startToken.col)
 
  }
- curType = current().tid
-    bp = getBindingPower(curType)
+  curType = current().tid
+  bp = getBindingPower(curType)
 
- // Special: 'not' only acts as infix when followed by 'in'
- if curType == TID.Not and !isNotIn() {
+  // Special: 'not' only acts as infix when followed by 'in'
+  if curType == TID.Not and !isNotIn() {
  break
 
  }
@@ -320,12 +321,11 @@ fn parseExpr(rbp) {
                 break
 
             }
-            if bp == BP_NONE or rbp >= bp {
-                break
-
-            }
-            opToken = advance()
-            left = led(opToken, left)
+  if bp == BP_NONE or rbp >= bp {
+    break
+  }
+  opToken = advance()
+  left = led(opToken, left)
 
             if left == null {
                 return error("Failed to parse infix " + opToken.type, opToken.line, opToken.col)
@@ -338,7 +338,7 @@ fn parseExpr(rbp) {
  // Implicit call sugar: expr "string" -> expr("string")
  // Not across newlines — NewLine has bp=0 so the Pratt loop exits before we get here
  // and NewLine is not in IMPLICIT_CALL_STARTERS
- if allowBraceSugar and IMPLICIT_CALL_STARTERS.has(current().tid) {
+ if allowBraceSugar and IMPLICIT_CALL_STARTERS[current().tid] != null {
             prevSugar = allowBraceSugar
             allowBraceSugar = false
             arg = parseExpr(0)
@@ -426,10 +426,12 @@ return parseParenExpr(tok)
 }
 else if tt == TID.OpenBracket {
 pos = pos - 1
+syncCur()
 return parseArrayLiteral()
 }
 else if tt == TID.OpenBrace {
 pos = pos - 1
+syncCur()
 return disambiguateBrace()
 }
 else if tt == TID.BangOpenBrace {
@@ -585,7 +587,7 @@ if right == null: return error("Expected value after '='", l, c)
 if right.kind == "ErrorNode": return right
 return AssignmentExpression(left, right, l, c)
 }
-else if COMPOUND_ASSIGN_TOKENS.has(tt) {
+else if COMPOUND_ASSIGN_TOKENS[tt] != null {
 right = parseExpr(getRightBindingPower(tt))
 if right == null: return error("Expected value after compound assign", l, c)
 if right.kind == "ErrorNode": return right
@@ -824,9 +826,9 @@ body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 }
 return LambdaExpression(params, body, l, c)
 }
-else {
-return error("Unexpected token in infix position: " + tt, l, c)
-}
+  else {
+    return error("Unexpected token in infix position: " + tt, l, c)
+  }
 }
     // ===================================================================
     // HELPER: Parse call arguments
@@ -1096,6 +1098,7 @@ fn parseCallArgs() {
         }
         // Not a lambda — restore position and parse grouped expression
         pos = savedPos
+    syncCur()
         skipNewlines()
         expr = parseExpr(0)
 skipNewlines()
@@ -1579,12 +1582,12 @@ fn parseBlock() {
    if s != null and s.kind == "ErrorNode" {
     advance()
    }
-   skipNewlines()
+   skipNewlinesAndSemicolons()
  if current().tid == TID.EOF: break
  if current().col < baseIndent: break
  endTokens = {}
  endTokens[TID.Else] = true; endTokens[TID.Catch] = true; endTokens[TID.Finally] = true; endTokens[TID.Case] = true; endTokens[TID.Default] = true
- if endTokens.has(current().tid): break
+ if endTokens[current().tid] != null: break
  }
  allowBraceSugar = prevSugar
   return BlockStatement(stmts, blockLine, c)
@@ -1620,9 +1623,11 @@ fn parseStatement() {
             advance() // identifier
             if current().tid == TID.Arrow {
                 pos = savePos
+    syncCur()
                 return parseHotkeyStatement()
             }
             pos = savePos
+    syncCur()
 
         }
         // Variable declarations
@@ -2134,17 +2139,17 @@ skipNewlines()
          return ExpressionStatement(lambda, l, c)
         
         }
-    // Function name
-    name = advance().value
-    skipNewlines()
+  // Function name
+  name = advance().value
+  skipNewlines()
 
     // Parse optional type parameters: fn identity(T)(x: T): T { x }
     // or with bounds: fn calc(T: Number)(a: T, b: T): T { ... }
     typeParams = parseTypeParameterList()
 
-    // Params
-    params = []
-        if current().tid == TID.OpenParen {
+  // Params
+  params = []
+  if current().tid == TID.OpenParen {
             advance()
             skipNewlines()
             while current().tid != TID.CloseParen and notEOF() {
@@ -2212,12 +2217,12 @@ skipNewlines()
  if s != null and s.kind != "ErrorNode" {
   stmts.push(s)
  }
- skipNewlines()
+ skipNewlinesAndSemicolons()
  if current().tid == TID.EOF: break
  if current().col < baseIndent: break
  endTokens = {}
  endTokens[TID.Else] = true; endTokens[TID.Catch] = true; endTokens[TID.Finally] = true; endTokens[TID.Case] = true; endTokens[TID.Default] = true
- if endTokens.has(current().tid): break
+ if endTokens[current().tid] != null: break
  }
  body = BlockStatement(stmts, l, c)
  }
@@ -2745,16 +2750,25 @@ fn parseTypeParameterList() {
             break
         }
     }
-    if isTypeParamList && current().tid == TID.CloseParen {
-        advance() // consume ')'
-        if !candidateParams.isEmpty() {
-            return candidateParams
-        }
+  if isTypeParamList && current().tid == TID.CloseParen {
+    advance() // consume ')'
+    if !candidateParams.isEmpty() {
+      // Only accept as type params if followed by another '(' for regular params
+      // Otherwise this is just a regular parameter list — backtrack
+      if current().tid == TID.OpenParen {
+        return candidateParams
+      }
+      // Not followed by '(' — backtrack
+      pos = savedPos
+      syncCur()
+      return []
     }
-    // Backtrack — not a type parameter list
-    pos = savedPos
-    return []
-}
+  }
+  // Backtrack — not a type parameter list
+  pos = savedPos
+  syncCur()
+  return []
+  }
 
 // ===================================================================
 // STATEMENT: class declaration
@@ -3272,8 +3286,6 @@ fn parseImplDeclaration() {
             if !notEOF() or current().tid == TID.EOF: break
 
             s = parseStatement()
-            _dbg_s = s
-            _dbg_cnt = _dbg_cnt + 1
             if s != null and s.kind != "ErrorNode" {
                 stmts.push(s)
             }
@@ -3299,8 +3311,6 @@ return Program(stmts, 1, 1)
     errors: errors,
     pos: pos,
     tokens: tokens,
-    _dbg_s: _dbg_s,
-    _dbg_cnt: _dbg_cnt,
     }
 
 }

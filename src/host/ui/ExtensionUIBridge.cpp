@@ -27,11 +27,11 @@ bool ExtensionUIBridge::loadExtension() {
     return true;
   }
 
-  loader_ = std::make_unique<havel::ExtensionLoader>();
-  
+  loader_ = std::make_unique<havel::Loader>();
+
   // Add build directory for development
   loader_->addSearchPath("/home/all/repos/havel-wm/havel/build-debug/extensions");
-  
+
   // Try to load the extension
   std::string extName = extensionName_ + "_extension";
   loaded_ = loader_->loadExtensionByName(extName);

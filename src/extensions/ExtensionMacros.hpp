@@ -24,7 +24,7 @@
 #pragma once
 
 #include "HavelCAPI.h"
-#include "DynamicLoader.hpp"
+#include "loader/Loader.hpp"
 #include "ExtensionAPI.hpp"
 #include <cstdio>
 
@@ -61,7 +61,7 @@
 
 // Try to load a library with multiple possible names
 #define EXTENSION_AUTO_LIBRARY(name, prefix, ...) \
-    static ::havel::DynamicLoader _##prefix##_loader; \
+    static ::havel::Dynamic _##prefix##_loader; \
     static bool _##prefix##_initialized = []() { \
         const char* libs[] = { __VA_ARGS__ }; \
         for (const char* lib : libs) { \
@@ -162,7 +162,7 @@
 
 // Library with fallback
 #define EXTENSION_LIBRARY_WITH_FALLBACK(name, prefix, primary, fallback) \
-    static ::havel::DynamicLoader _##prefix##_loader; \
+    static ::havel::Dynamic _##prefix##_loader; \
     static bool _##prefix##_initialized = []() { \
         if (_##prefix##_loader.load(primary)) { \
             fprintf(stderr, "[Extension] Using primary " #name " from %s\n", primary); \

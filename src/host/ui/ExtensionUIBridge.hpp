@@ -4,7 +4,7 @@
 #pragma once
 
 #include "UIBackend.hpp"
-#include "extensions/ExtensionLoader.hpp"
+#include "loader/Loader.hpp"
 
 #include <functional>
 #include <unordered_map>
@@ -118,7 +118,7 @@ private:
   std::string extensionName_;
   Api apiType_;
   bool loaded_ = false;
-  std::unique_ptr<havel::ExtensionLoader> loader_;
+  std::unique_ptr<havel::Loader> loader_;
 
   // Element ID counter for extension bridge
   static ui::ElementId nextId_;

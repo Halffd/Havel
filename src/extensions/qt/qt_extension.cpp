@@ -7,7 +7,7 @@
  */
 
 #include "HavelCAPI.h"
-#include "DynamicLoader.hpp"
+#include "loader/Loader.hpp"
 
 // Include Qt headers for proper type information
 #include <QApplication>
@@ -472,9 +472,9 @@ enum {
 
 /* Dynamic loader for Qt6 */
 struct Qt6Libs {
-    havel::DynamicLoader qtCore;
-    havel::DynamicLoader qtGui;
-    havel::DynamicLoader qtWidgets;
+havel::Dynamic qtCore;
+havel::Dynamic qtGui;
+havel::Dynamic qtWidgets;
     
     /* Core functions */
     QAppInitFn qApp_init = nullptr;

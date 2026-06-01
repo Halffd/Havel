@@ -7,7 +7,7 @@
  */
 
 #include "HavelCAPI.h"
-#include "DynamicLoader.hpp"
+#include "loader/Loader.hpp"
 
 #include <unordered_map>
 #include <vector>
@@ -1039,10 +1039,10 @@ enum {
 
 /* Dynamic loader for GTK4 */
 struct Gtk4Libs {
-    havel::DynamicLoader gtkLoader;
-    havel::DynamicLoader glibLoader;
-    havel::DynamicLoader gobjectLoader;
-    havel::DynamicLoader gdkLoader;
+havel::Dynamic gtkLoader;
+havel::Dynamic glibLoader;
+havel::Dynamic gobjectLoader;
+havel::Dynamic gdkLoader;
     
     /* Function pointers - Core */
     GtkInitFn gtk_init = nullptr;
@@ -1463,24 +1463,24 @@ struct Gtk4Libs {
     
     bool load() {
         /* Load GLib first (required by GTK) */
-        if (!glibLoader.load(LibNames::GLIB2)) {
+        if (!glibLoader.load(havel::LibNames::GLIB2)) {
             fprintf(stderr, "[GTK] Failed to load GLib\n");
             return false;
         }
         
         /* Load GObject */
-        if (!gobjectLoader.load(LibNames::GOBJECT2)) {
+        if (!gobjectLoader.load(havel::LibNames::GOBJECT2)) {
             fprintf(stderr, "[GTK] Failed to load GObject\n");
             return false;
         }
         
         /* Load GDK */
-        if (!gdkLoader.load(LibNames::GDK4)) {
+        if (!gdkLoader.load(havel::LibNames::GDK4)) {
             fprintf(stderr, "[GTK] Warning: Failed to load GDK4\n");
         }
         
         /* Load GTK4 */
-        if (!gtkLoader.load(LibNames::GTK4)) {
+        if (!gtkLoader.load(havel::LibNames::GTK4)) {
             fprintf(stderr, "[GTK] Failed to load GTK4\n");
             return false;
         }

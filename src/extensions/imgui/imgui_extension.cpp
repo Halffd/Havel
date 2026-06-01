@@ -7,7 +7,7 @@
  */
 
 #include "HavelCAPI.h"
-#include "DynamicLoader.hpp"
+#include "loader/Loader.hpp"
 
 #include <unordered_map>
 #include <memory>
@@ -380,9 +380,9 @@ typedef void (*ImGuiImplOpenGL3RenderDrawDataFn)(void* draw_data);
 
 /* Dynamic loader for ImGui and dependencies */
 struct ImGuiLibs {
-    havel::DynamicLoader glfwLoader;
-    havel::DynamicLoader glLoader;
-    havel::DynamicLoader imguiLoader;
+havel::Dynamic glfwLoader;
+havel::Dynamic glLoader;
+havel::Dynamic imguiLoader;
     
     /* GLFW functions */
     GlfwInitFn glfwInit = nullptr;

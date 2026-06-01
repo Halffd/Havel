@@ -43,6 +43,7 @@ DoubleOpenParen: 140, DoubleCloseParen: 141,
 Nullish: 142, Question: 143, QuestionDot: 144,
 Tilde: 145, At: 146, AtAt: 147, SuperArrow: 148,
 Pipe: 149, PipeRight: 150, Length: 151, NewLine: 152, EOF: 153,
+CharLiteral: 154, Hash: 155,
 }
 
 // --- Reverse mapping: integer ID -> string type name ---

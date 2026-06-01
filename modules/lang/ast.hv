@@ -70,6 +70,27 @@ NODE_TYPES = {
 "DeferStatement": true,
 "WaitExpression": true,
 "WaitGroupExpression": true,
+"DoWhileStatement": true,
+"WhenBlock": true,
+"WithStatement": true,
+"DecoratorStatement": true,
+"OnModeStatement": true,
+"OffModeStatement": true,
+"OnReloadStatement": true,
+"OnStartStatement": true,
+"OnTapStatement": true,
+"OnComboStatement": true,
+"OnKeyDownStatement": true,
+"OnKeyUpStatement": true,
+"OnMessageStatement": true,
+"ModesBlock": true,
+"ModeDefinition": true,
+"ConfigSection": true,
+"InputStatement": true,
+"MultipleAssignment": true,
+"QueryExpression": true,
+"CastExpression": true,
+"HotkeyExpression": true,
 }
 
 BINARY_OPS = {
@@ -314,7 +335,91 @@ fn AtExpression(field, line, col) {
 
 }
 fn AtAtExpression(field, line, col) {
-    {kind: "AtAtExpression", line: line, col: col, field: field}
+{kind: "AtAtExpression", line: line, col: col, field: field}
+
+}
+fn CastExpression(expr, targetType, line, col) {
+{kind: "CastExpression", line: line, col: col, expr: expr, targetType: targetType}
+
+}
+fn HotkeyExpression(key, line, col) {
+{kind: "HotkeyExpression", line: line, col: col, key: key}
+
+}
+fn DoWhileStatement(body, condition, line, col) {
+{kind: "DoWhileStatement", line: line, col: col, body: body, condition: condition}
+
+}
+fn WhenBlock(condition, body, line, col) {
+{kind: "WhenBlock", line: line, col: col, condition: condition, body: body}
+
+}
+fn WithStatement(objectName, body, line, col) {
+{kind: "WithStatement", line: line, col: col, objectName: objectName, body: body}
+
+}
+fn DecoratorStatement(decorators, target, line, col) {
+{kind: "DecoratorStatement", line: line, col: col, decorators: decorators, target: target}
+
+}
+fn OnModeStatement(modeName, body, alternative, line, col) {
+{kind: "OnModeStatement", line: line, col: col, modeName: modeName, body: body, alternative: alternative}
+
+}
+fn OffModeStatement(modeName, body, line, col) {
+{kind: "OffModeStatement", line: line, col: col, modeName: modeName, body: body}
+
+}
+fn OnReloadStatement(body, line, col) {
+{kind: "OnReloadStatement", line: line, col: col, body: body}
+
+}
+fn OnStartStatement(body, line, col) {
+{kind: "OnStartStatement", line: line, col: col, body: body}
+
+}
+fn OnTapStatement(key, body, line, col) {
+{kind: "OnTapStatement", line: line, col: col, key: key, body: body}
+
+}
+fn OnComboStatement(key, body, line, col) {
+{kind: "OnComboStatement", line: line, col: col, key: key, body: body}
+
+}
+fn OnKeyDownStatement(keys, body, line, col) {
+{kind: "OnKeyDownStatement", line: line, col: col, keys: keys, body: body}
+
+}
+fn OnKeyUpStatement(keys, body, line, col) {
+{kind: "OnKeyUpStatement", line: line, col: col, keys: keys, body: body}
+
+}
+fn OnMessageStatement(msgVar, body, line, col) {
+{kind: "OnMessageStatement", line: line, col: col, msgVar: msgVar, body: body}
+
+}
+fn ModesBlock(modeList, line, col) {
+{kind: "ModesBlock", line: line, col: col, modes: modeList}
+
+}
+fn ModeDefinition(name, condition, enterBlock, exitBlock) {
+{kind: "ModeDefinition", name: name, condition: condition, enter: enterBlock, exit: exitBlock}
+
+}
+fn ConfigSection(sectionName, args, pairs, line, col) {
+{kind: "ConfigSection", line: line, col: col, sectionName: sectionName, args: args, pairs: pairs}
+
+}
+fn InputStatement(commands, line, col) {
+{kind: "InputStatement", line: line, col: col, commands: commands}
+
+}
+fn MultipleAssignment(targets, value, line, col) {
+{kind: "MultipleAssignment", line: line, col: col, targets: targets, value: value}
+
+}
+fn QueryExpression(varName, source, whereClauses, selectClause, line, col) {
+{kind: "QueryExpression", line: line, col: col, varName: varName, source: source, whereClauses: whereClauses, selectClause: selectClause}
 
 }
 fn ConfigBlock(name, body, line, col) {

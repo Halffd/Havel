@@ -1,13 +1,12 @@
 #pragma once
 
 #include "../compiler/vm/VM.hpp"
-#include "../compiler/runtime/HostBridge.hpp"
+#include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
 #include "../compiler/core/Pipeline.hpp"
 #ifdef HAVEL_ENABLE_LLVM
 #include "../compiler/BytecodeOrcJIT.h"
 #endif
-#include "StdLibModules.hpp"
 #include "HostAPI.hpp"
 #include "../../modules/HostModules.hpp"
 #include "../../modules/ffi/FFIModule.hpp"
@@ -97,8 +96,9 @@ vm_->setJITCompiler(jitCompiler_.get());
 }
 #endif
 
-        hostBridge_ = compiler::createHostBridge(*hostContext_);
-        havel::startup_timing_report("host-bridge-create", t);
+        modules_ = havel::createModules(*hostContext_);
+        hostContext_->modules = modules_.get();
+        havel::startup_timing_report("modules-create", t);
         t = havel::startup_now();
 
         // Set stdlib path BEFORE registration so pure-Havel stdlib modules
@@ -139,9 +139,9 @@ vm_->setJITCompiler(jitCompiler_.get());
         vm_->suspendGC();
         if (leanStartup) {
             if (config_.pureStdlib) {
-            registerPureStdLib(*vm_);
-            havel::startup_timing_report("stdlib-register-pure", t);
-            t = havel::startup_now();
+                havel::registerPureStdLib(*vm_);
+                havel::startup_timing_report("stdlib-register-pure", t);
+                t = havel::startup_now();
 #ifndef HAVEL_PURE_VM
             {
                 compiler::VMApi ffiApi(*vm_);
@@ -150,35 +150,27 @@ vm_->setJITCompiler(jitCompiler_.get());
             havel::startup_timing_report("ffi-register", t);
             t = havel::startup_now();
 #endif
-        } else {
-            registerCoreStdLib(*vm_);
-            havel::startup_timing_report("stdlib-register-core", t);
-            t = havel::startup_now();
-        }
-        } else {
-            registerStdLibWithVM(*hostBridge_);
-            havel::startup_timing_report("stdlib-register-full", t);
-            t = havel::startup_now();
+            } else {
+                havel::registerCoreStdLib(*vm_);
+                havel::startup_timing_report("stdlib-register-core", t);
+                t = havel::startup_now();
+            }
         }
         vm_->resumeGC();
-        hostBridge_->install(
-            leanStartup ? compiler::HostBridge::InstallProfile::Core
-            : compiler::HostBridge::InstallProfile::Full,
+        modules_->install(
+            leanStartup ? havel::InstallProfile::Core
+                        : havel::InstallProfile::Full,
             !leanStartup);
-        havel::startup_timing_report("host-bridge-install", t);
+        havel::startup_timing_report("modules-install", t);
         t = havel::startup_now();
 
-        for (const auto& [name, fn] : hostBridge_->options().host_functions) {
+        for (const auto& [name, fn] : modules_->options().host_functions) {
             vm_->registerHostFunction(name, fn);
         }
         havel::startup_timing_report("host-functions-register", t);
         t = havel::startup_now();
 
-        hostBridge_->runVmSetup();
-        havel::startup_timing_report("vm-setup", t);
-        t = havel::startup_now();
-
-        vm_->setTimerCheckFunction([this]() { hostBridge_->checkTimers(); });
+        vm_->setTimerCheckFunction([this]() { modules_->checkTimers(); });
 
 if (hostContext_->eventQueue) {
 vm_->setEventQueue(hostContext_->eventQueue);
@@ -220,7 +212,7 @@ vm_->addIntervalResult(timer_id, result);
             throw std::runtime_error("HavelEngine not initialized");
         }
 
-        compiler::PipelineOptions options = hostBridge_->options();
+        compiler::PipelineOptions options = modules_->options();
         options.compile_unit_name = compileUnitName;
         options.vm_override = vm_.get();
         options.debugBytecode = config_.debugBytecode;
@@ -238,13 +230,13 @@ vm_->addIntervalResult(timer_id, result);
     }
 
     compiler::VM* vm() const { return vm_.get(); }
-    compiler::HostBridge* hostBridge() const { return hostBridge_.get(); }
+    Modules* modules() const { return modules_.get(); }
     bool isInitialized() const { return initialized_; }
 
     void shutdown() {
         if (!initialized_) return;
-        if (hostBridge_) {
-            hostBridge_->shutdown();
+        if (modules_) {
+            modules_->shutdown();
         }
         if (vm_) {
             vm_->setJITCompiler(nullptr);
@@ -253,22 +245,22 @@ vm_->addIntervalResult(timer_id, result);
         jitCompiler_.reset();
 #endif
         vm_.reset();
-        hostBridge_.reset();
+        modules_.reset();
         hostContext_.reset();
         initialized_ = false;
     }
 
 private:
 	EngineConfig config_;
-	std::shared_ptr<compiler::VM> vm_;
-	std::shared_ptr<IO> io_holder_;
+    std::shared_ptr<compiler::VM> vm_;
+    std::shared_ptr<IO> io_holder_;
 #ifdef HAVEL_ENABLE_LLVM
     std::unique_ptr<compiler::BytecodeOrcJIT> jitCompiler_;
 #endif
-	std::unique_ptr<HostContext> hostContext_;
-	std::shared_ptr<compiler::HostBridge> hostBridge_;
-	std::unique_ptr<compiler::WatcherRegistry> watcher_registry_;
-bool initialized_ = false;
+    std::unique_ptr<HostContext> hostContext_;
+    std::shared_ptr<Modules> modules_;
+    std::unique_ptr<compiler::WatcherRegistry> watcher_registry_;
+    bool initialized_ = false;
 
   static compiler::Scheduler::SuspensionReason toSchedulerReasonPublic(uint8_t fiberReason) {
     using F = compiler::SuspensionReason;

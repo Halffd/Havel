@@ -1,5 +1,5 @@
 /*
- * HostContext.hpp - Injected dependencies for HostBridge
+ * HostContext.hpp - Injected dependencies for Modules
  *
  * Instead of pulling services from a global registry,
  * dependencies are pushed into HostContext by the embedder.
@@ -24,8 +24,10 @@ namespace havel {
 namespace compiler {
 class VM;
 class EventQueue;
-class HostBridge;
 }
+
+// Forward declaration
+class Modules;
 
 // Forward declaration
 
@@ -82,7 +84,7 @@ struct Capability {
 struct HostContext {
   // VM infrastructure (non-owning - only high-level systems use this)
   class compiler::VM *vm = nullptr;
-  class compiler::HostBridge *hostBridge = nullptr;
+    class Modules *modules = nullptr;
 
   // Reference accessor - VM is always present when HostContext is used
   compiler::VM &getVM() { return *vm; }

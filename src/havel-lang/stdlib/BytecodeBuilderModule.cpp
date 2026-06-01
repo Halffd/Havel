@@ -541,15 +541,16 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
 
 
 api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &args) -> Value {
-    if (g_builder.chunk->getFunctionCount() == 0) {
+      if (g_builder.chunk->getFunctionCount() == 0) {
         throw std::runtime_error("bc.execute_persistent: no functions in chunk");
-    }
-    std::string entry = "__main__";
-    if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
+      }
+      std::string entry = "__main__";
+      if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
         entry = api.resolveString(args[0]);
-    }
+      }
+      fprintf(stderr, "[bc.execute_persistent] entry='%s' funcs=%zu\n", entry.c_str(), g_builder.chunk->getFunctionCount());
 
-    std::vector<Value> runArgs;
+      std::vector<Value> runArgs;
     for (size_t i = 1; i < args.size(); ++i) {
         runArgs.push_back(args[i]);
     }

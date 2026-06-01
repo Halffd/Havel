@@ -1832,10 +1832,11 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
  funcChunkIdxs.push(chunkIdx)
  fi = fi + 1
  }
- // Pass 2: compile __main__
- mainChunkIdx = bc.func_new(entryName, 0, 64)
- traceEmitter("func_new " + entryName + " (main) bcIdx=" + str(mainChunkIdx))
- emitter.scope = moduleScope
+    // Pass 2: compile __main__
+    mainChunkIdx = bc.func_new(entryName, 0, 64)
+    traceEmitter("func_new " + entryName + " (main) bcIdx=" + str(mainChunkIdx))
+    print("[emitter] func_new main entryName=" + entryName + " mainChunkIdx=" + str(mainChunkIdx))
+    emitter.scope = moduleScope
  // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
  fi2 = 0
  while fi2 < #funcDecls {
@@ -1851,9 +1852,10 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
 bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
 fi2 = fi2 + 1
 }
-// Emit top-level statements (all except last)
-n = #topStmts
-si = 0
+    // Emit top-level statements (all except last)
+    n = #topStmts
+    print("[emitter] topStmts=" + str(n) + " funcDecls=" + str(#funcDecls))
+    si = 0
 while si < n - 1 {
 emitStmt(emitter, topStmts[si])
 si = si + 1
@@ -1889,7 +1891,8 @@ si = si + 1
     }
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
-	if !skip_execute {
+    print("[emitter] about to call execute_persistent skip_execute=" + str(skip_execute))
+    if !skip_execute {
 		traceEmitter("execute_persistent " + entryName)
 		return bc.execute_persistent(entryName)
 	}

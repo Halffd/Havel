@@ -299,12 +299,13 @@ fn isNotIn() {
     // PRATT EXPRESSION PARSER
     // ===================================================================
 fn parseExpr(rbp) {
-  startToken = current()
-  tok = advance()
+    startToken = current()
+    tok = advance()
 
-  left = nud(tok)
+    left = nud(tok)
 
-  if left == null {
+    print("[parseExpr] tok.tid=" + str(tok.tid) + " tok.val=" + str(tok.value) + " nud_result=" + str(left != null ? left.kind : "null"))
+    if left == null {
     return error("Unexpected token " + tok.type, startToken.line, startToken.col)
 
   }
@@ -1739,17 +1740,16 @@ fn parseBlock() {
     // STATEMENT PARSING
     // ===================================================================
 fn parseStatement() {
-  if !notEOF(): return null
+    if !notEOF(): return null
 
-  skipNewlines()
-  if !notEOF(): return null
+    skipNewlines()
+    if !notEOF(): return null
 
-  tt = current().tid
-  l = current().line
-  c = current().col
-
-        // Hotkey binding: Hotkey token or @token => block
-        if tt == TID.Hotkey {
+    tt = current().tid
+    l = current().line
+    c = current().col
+    print("[parseStatement] entered, tt=" + str(tt) + " val=" + str(current().value))
+    if tt == TID.Hotkey { print("[parseStatement] MATCH Hotkey")
             return parseHotkeyStatement()
 
         }
@@ -1937,9 +1937,11 @@ if tt == TID.Group: return parseGroupStatement()
  if tt == TID.Enum { return parseEnumDeclaration() }
  if tt == TID.Trait { return parseTraitDeclaration() }
  if tt == TID.Prot { return parseProtocolDeclaration() }
- if tt == TID.Impl { return parseImplDeclaration() }
-        // Expression statement
+    if tt == TID.Impl { return parseImplDeclaration() }
+    // Expression statement
+    print("[parseStatement] falling through to expr stmt, tt=" + str(tt) + " val=" + str(current().value))
     expr = parseExpr(0)
+    print("[parseStatement] parseExpr returned: " + str(expr != null ? expr.kind : "null"))
     if expr == null: return null
     if expr.kind == "ErrorNode": return expr
     return ExpressionStatement(expr, l, c)
@@ -3859,7 +3861,10 @@ fn parseImplDeclaration() {
             skipNewlinesAndSemicolons()
             if !notEOF() or current().tid == TID.EOF: break
 
+            curTid = current().tid
+            curVal = current().value
             s = parseStatement()
+            print("[pratt] parseStatement curTid=" + str(curTid) + " curVal=" + str(curVal) + " kind=" + str(s != null ? s.kind : "null"))
             if s != null and s.kind != "ErrorNode" {
                 stmts.push(s)
             }

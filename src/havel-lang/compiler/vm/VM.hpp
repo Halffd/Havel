@@ -997,9 +997,9 @@ const std::vector<Value> &args);
     Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk);
 Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited);
   Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-    const std::unordered_map<std::string, Value>& moduleGlobals,
-    const std::string& canonicalKey, const std::string& fieldPath,
-    int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
+                                std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
+                                const std::string& canonicalKey, const std::string& fieldPath,
+                                int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
 
     Value loadModule(const std::string& path);
 void registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn);
@@ -1077,7 +1077,14 @@ public:
     bool gcSuspended() const { return gc_suspend_counter_ > 0; }
 
 public:
-  void setAppArgs(uint32_t array_id) { app_args_array_id_ = array_id; }
+  void setAppArgs(uint32_t array_id) {
+    app_args_array_id_ = array_id;
+    auto it = globals.find("app");
+    if (it != globals.end() && it->second.isObjectId()) {
+      ObjectRef ref{it->second.asObjectId(), true};
+      setHostObjectField(ref, "args", Value::makeArrayId(array_id));
+    }
+  }
   void setRestartCallback(std::function<void()> cb) { restart_callback_ = std::move(cb); }
   std::recursive_mutex& getExecutionMutex() const { return execution_mutex_; }
 };

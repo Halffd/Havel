@@ -2204,9 +2204,9 @@ return Value::makeClosureId(closureRef.id);
 }
 
 Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-    const std::unordered_map<std::string, Value>& moduleGlobals,
-    const std::string& canonicalKey, const std::string& fieldPath, int depth,
-    std::unordered_set<uint32_t>* visitedPtr) {
+                                std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
+                                const std::string& canonicalKey, const std::string& fieldPath, int depth,
+                                std::unordered_set<uint32_t>* visitedPtr) {
   if (depth > 64) return value;
   bool suspendedGc = false;
   if (depth == 0) { suspendGC(); suspendedGc = true; }
@@ -2220,16 +2220,16 @@ auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
 std::string fnCapturedKey = canonicalKey;
 std::string fnCapturedField = fieldPath;
     registerHostFunction(wrapperName,
-    [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
-    std::vector<Value> callArgs = args;
-    if (callArgs.size() > paramCount && paramCount > 0) {
-    callArgs.erase(callArgs.begin());
-    }
-        auto* savedChunk = current_chunk;
-        auto savedGlobals = globals;
-        auto savedMirrorId = globals_mirror_object_id_;
-        Value savedG = globals["_G"];
-    globals = moduleGlobals;
+        [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
+            std::vector<Value> callArgs = args;
+            if (callArgs.size() > paramCount && paramCount > 0) {
+                callArgs.erase(callArgs.begin());
+            }
+            auto* savedChunk = current_chunk;
+            auto savedGlobals = globals;
+            auto savedMirrorId = globals_mirror_object_id_;
+            Value savedG = globals["_G"];
+            globals = *moduleGlobals;
     current_chunk = moduleChunk.get();
     const auto* callee = moduleChunk->getFunction(funcIdx);
     if (!callee) {
@@ -2298,6 +2298,7 @@ std::string fnCapturedField = fieldPath;
             result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
                 moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
         }
+        }
   globals = std::move(savedGlobals);
   globals_mirror_object_id_ = savedMirrorId;
   globals["_G"] = savedG;
@@ -2321,9 +2322,9 @@ std::string fnCapturedField = fieldPath;
 
     uint32_t funcIdx = rc->function_index;
     auto moduleChunk = chunk;
-    auto closureGlobals = rc->module_globals
-        ? rc->module_globals
-        : std::make_shared<std::unordered_map<std::string, Value>>(moduleGlobals);
+        auto closureGlobals = rc->module_globals
+            ? rc->module_globals
+            : moduleGlobals;
     auto wrapperName = "$module_closure_" + canonicalKey + "_" + fieldPath;
     std::string capturedKey = canonicalKey;
     std::string capturedField = fieldPath;
@@ -2398,7 +2399,7 @@ std::string fnCapturedField = fieldPath;
         }
         Value result = popStack();
         if (bc_execute_depth_ == 0) {
-          result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk), moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
+            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk), moduleChunk, closureGlobals, capturedKey, capturedField + "_ret");
         }
         globals = std::move(savedGlobals);
  globals_mirror_object_id_ = savedMirrorId;
@@ -2537,7 +2538,27 @@ Value VM::loadModule(const std::string& path) {
         }
     }
 
-    if (!resolved) {
+ if (!resolved) {
+        // Check lazy modules first — ensureModuleLoaded runs the init
+        // function which populates globals with the module's namespace object
+        if (ensureModuleLoaded(path)) {
+            auto it = globals.find(path);
+            if (it != globals.end() && it->second.isObjectId()) {
+                auto *obj = heap_.object(it->second.asObjectId());
+                if (obj) {
+                    auto *lazyFlag = obj->get("__lazy__");
+                    if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+                        globals.erase(it);
+                    }
+                }
+            }
+            it = globals.find(path);
+            if (it != globals.end()) {
+                moduleLoader_.putCache(path, it->second);
+                return it->second;
+            }
+        }
+
         std::string prefix = path + ".";
         bool hasNamespace = false;
         for (const auto& [name, value] : host_function_globals_) {
@@ -2552,8 +2573,8 @@ Value VM::loadModule(const std::string& path) {
                     (*obj)[localName] = value;
                 }
             }
-Value exports = Value::makeObjectId(exportsObj.id);
-    moduleLoader_.putCache(path, exports);
+            Value exports = Value::makeObjectId(exportsObj.id);
+            moduleLoader_.putCache(path, exports);
             return exports;
         }
         // Fallback: try modules/ directory relative to executable

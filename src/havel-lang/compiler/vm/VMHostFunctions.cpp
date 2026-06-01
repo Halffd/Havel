@@ -1877,25 +1877,26 @@ void VM::registerDefaultHostGlobals() {
 	setHostObjectField(prot_obj, "impl", Value::makeHostFuncId(getHostFunctionIndex("prot.impl")));
 	setGlobal("prot", Value::makeObjectId(prot_obj.id));
 
-	// app global object with args and restart
-  // Merge with existing app object if AppModule already registered one
+// app global object with args and restart
+// Merge with existing app object if AppModule already registered one
   {
+    Value argsVal = app_args_array_id_ != 0 ? Value::makeArrayId(app_args_array_id_) : Value::makeNull();
     auto appIt = globals.find("app");
     if (appIt != globals.end() && appIt->second.isObjectId()) {
       ObjectRef existingRef{appIt->second.asObjectId(), true};
       auto* existingObj = heap_.object(existingRef.id);
       if (existingObj) {
-        setHostObjectField(existingRef, "args", Value::makeArrayId(app_args_array_id_));
+        setHostObjectField(existingRef, "args", argsVal);
         setHostObjectField(existingRef, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       } else {
         auto app_obj = heap_.allocateObject();
-        setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
+        setHostObjectField(app_obj, "args", argsVal);
         setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
         setGlobal("app", Value::makeObjectId(app_obj.id));
       }
     } else {
       auto app_obj = heap_.allocateObject();
-      setHostObjectField(app_obj, "args", Value::makeArrayId(app_args_array_id_));
+      setHostObjectField(app_obj, "args", argsVal);
       setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       setGlobal("app", Value::makeObjectId(app_obj.id));
     }

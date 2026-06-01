@@ -192,7 +192,6 @@ void registerAppModule(const VMApi& api) {
   });
 
   auto obj = api.makeObject();
-  api.setGlobal("app", obj);
   api.setField(obj, MODULE_MARKER, Value::makeBool(true));
   api.setField(obj, "getAppName", api.makeFunctionRef("app.getAppName"));
   api.setField(obj, "getVersion", api.makeFunctionRef("app.getVersion"));
@@ -212,6 +211,15 @@ void registerAppModule(const VMApi& api) {
   api.setField(obj, "showInFolder", api.makeFunctionRef("app.showInFolder"));
   api.setField(obj, "copyToClipboard", api.makeFunctionRef("app.copyToClipboard"));
   api.setField(obj, "getClipboardText", api.makeFunctionRef("app.getClipboardText"));
+  auto existingAppIt = api.vm().getGlobals().find("app");
+  if (existingAppIt != api.vm().getGlobals().end() && existingAppIt->second.isObjectId()) {
+    Value existingArgs = api.getField(existingAppIt->second, "args");
+    api.setField(obj, "args", existingArgs);
+  } else {
+    api.setField(obj, "args", Value::makeNull());
+  }
+  api.setField(obj, "restart", api.makeFunctionRef("app.restart"));
+  api.setGlobal("app", obj);
 
   HAVEL_END_MODULE();
 }

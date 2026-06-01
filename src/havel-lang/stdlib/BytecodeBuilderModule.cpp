@@ -925,6 +925,7 @@ api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
 	api.setField(bcObj, "log", api.makeFunctionRef("bc.log"));
 	api.setField(bcObj, "log_level", api.makeFunctionRef("bc.log_level"));
 	api.setGlobal("bc", bcObj);
+api.setGlobal("bytecodeBuilder", bcObj);
 }
 
 } // namespace havel::stdlib

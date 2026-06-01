@@ -17,6 +17,7 @@ void registerDebugModule(const VMApi &) {}
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <unordered_map>
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -182,24 +183,203 @@ void registerLogModule(const VMApi &api) {
     api.setGlobal("log", logObj);
 }
 
+static std::unordered_map<std::string, bool> &debugFlags() {
+static std::unordered_map<std::string, bool> flags = {
+{"lexer", false}, {"parser", false}, {"ast", false},
+{"bytecode", false}, {"gc", false}, {"scope", false},
+{"emitter", false}, {"types", false}, {"all", false},
+{"color", true}, {"timing", false}, {"verbose", false},
+};
+return flags;
+}
+
 void registerDebugModule(const VMApi &api) {
-    api.registerFunction("debug.toggleVerboseConditionLogging", [](const std::vector<Value> &) -> Value {
-        bool current = Configs::Get().Get<bool>("Debug.VerboseConditionLogging", false);
-        Configs::Get().Set("Debug.VerboseConditionLogging", !current, true);
-        return Value::makeBool(!current);
-    });
+api.registerFunction("debug.toggleVerboseConditionLogging", [](const std::vector<Value> &) -> Value {
+bool current = Configs::Get().Get<bool>("Debug.VerboseConditionLogging", false);
+Configs::Get().Set("Debug.VerboseConditionLogging", !current, true);
+return Value::makeBool(!current);
+});
 
-    api.registerFunction("debug.toggleVerboseKeyLogging", [](const std::vector<Value> &) -> Value {
-        bool current = Configs::Get().Get<bool>("Debug.VerboseKeyLogging", false);
-        Configs::Get().Set("Debug.VerboseKeyLogging", !current, true);
-        return Value::makeBool(!current);
-    });
+api.registerFunction("debug.toggleVerboseKeyLogging", [](const std::vector<Value> &) -> Value {
+bool current = Configs::Get().Get<bool>("Debug.VerboseKeyLogging", false);
+Configs::Get().Set("Debug.VerboseKeyLogging", !current, true);
+return Value::makeBool(!current);
+});
 
-    auto debugObj = api.makeObject();
-    api.setField(debugObj, "toggleVerboseConditionLogging", api.makeFunctionRef("debug.toggleVerboseConditionLogging"));
-    api.setField(debugObj, "toggleVerboseKeyLogging", api.makeFunctionRef("debug.toggleVerboseKeyLogging"));
+api.registerFunction("debug.isOn", [api](const std::vector<Value> &args) -> Value {
+if (args.empty()) return Value::makeBool(false);
+std::string name = api.toString(args[0]);
+auto &f = debugFlags();
+if (f.count("all") && f["all"]) return Value::makeBool(true);
+auto it = f.find(name);
+if (it != f.end()) return Value::makeBool(it->second);
+return Value::makeBool(false);
+});
+
+api.registerFunction("debug.setFlag", [api](const std::vector<Value> &args) -> Value {
+if (args.size() < 2) return Value::makeNull();
+std::string name = api.toString(args[0]);
+bool val = args[1].isBool() ? args[1].asBool() : (args[1].isInt() && args[1].asInt() != 0);
+auto &f = debugFlags();
+f[name] = val;
+if (name == "all" && val) {
+f["lexer"] = f["parser"] = f["ast"] = f["bytecode"] = true;
+f["scope"] = f["emitter"] = f["types"] = true;
+}
+return Value::makeNull();
+});
+
+api.registerFunction("debug.parseDebugArgs", [](const std::vector<Value> &args) -> Value {
+auto &f = debugFlags();
+if (!args.empty() && args[0].isArrayId()) {
+// iterate not available here, just set all from known flags
+}
+f["all"] = false;
+return Value::makeNull();
+});
+
+api.registerFunction("debug.trace", [api](const std::vector<Value> &args) -> Value {
+std::string stage = (!args.empty() && (args[0].isStringValId() || args[0].isStringId())) ? api.toString(args[0]) : "?";
+std::string msg = (args.size() > 1 && (args[1].isStringValId() || args[1].isStringId())) ? api.toString(args[1]) : "";
+std::cerr << "[" << stage << "] " << msg << "\n";
+return Value::makeNull();
+});
+
+api.registerFunction("debug.traceEmitter", [api](const std::vector<Value> &args) -> Value {
+auto &f = debugFlags();
+if (!f.count("emitter") || !f["emitter"]) return Value::makeNull();
+if (!f.count("all") || !f["all"]) {
+if (!f["emitter"]) return Value::makeNull();
+}
+std::string msg = (!args.empty() && (args[0].isStringValId() || args[0].isStringId())) ? api.toString(args[0]) : "";
+std::cerr << "[EMIT] " << msg << "\n";
+return Value::makeNull();
+});
+
+api.registerFunction("debug.traceBytecode", [api](const std::vector<Value> &args) -> Value {
+auto &f = debugFlags();
+if (!f["bytecode"] && !f["all"]) return Value::makeNull();
+std::string msg = (!args.empty() && (args[0].isStringValId() || args[0].isStringId())) ? api.toString(args[0]) : "";
+std::cerr << "[BC] " << msg << "\n";
+return Value::makeNull();
+});
+
+api.registerFunction("debug.traceLexer", [api](const std::vector<Value> &args) -> Value {
+auto &f = debugFlags();
+if (!f["lexer"] && !f["all"]) return Value::makeNull();
+std::string msg = (!args.empty() && (args[0].isStringValId() || args[0].isStringId())) ? api.toString(args[0]) : "";
+std::cerr << "[LEXER] " << msg << "\n";
+return Value::makeNull();
+});
+
+api.registerFunction("debug.traceParser", [api](const std::vector<Value> &args) -> Value {
+auto &f = debugFlags();
+if (!f["parser"] && !f["all"]) return Value::makeNull();
+std::string msg = (!args.empty() && (args[0].isStringValId() || args[0].isStringId())) ? api.toString(args[0]) : "";
+std::cerr << "[PARSER] " << msg << "\n";
+return Value::makeNull();
+});
+
+api.registerFunction("debug.traceAst", [api](const std::vector<Value> &args) -> Value {
+auto &f = debugFlags();
+if (!f["ast"] && !f["all"]) return Value::makeNull();
+std::string msg = (!args.empty() && (args[0].isStringValId() || args[0].isStringId())) ? api.toString(args[0]) : "";
+std::cerr << "[AST] " << msg << "\n";
+return Value::makeNull();
+});
+
+api.registerFunction("debug.traceScope", [api](const std::vector<Value> &args) -> Value {
+auto &f = debugFlags();
+if (!f["scope"] && !f["all"]) return Value::makeNull();
+std::string msg = (!args.empty() && (args[0].isStringValId() || args[0].isStringId())) ? api.toString(args[0]) : "";
+std::cerr << "[SCOPE] " << msg << "\n";
+return Value::makeNull();
+});
+
+api.registerFunction("debug.traceTypes", [api](const std::vector<Value> &args) -> Value {
+auto &f = debugFlags();
+if (!f["types"] && !f["all"]) return Value::makeNull();
+std::string msg = (!args.empty() && (args[0].isStringValId() || args[0].isStringId())) ? api.toString(args[0]) : "";
+std::cerr << "[TYPES] " << msg << "\n";
+return Value::makeNull();
+});
+
+api.registerFunction("debug.traceGc", [api](const std::vector<Value> &args) -> Value {
+auto &f = debugFlags();
+if (!f["gc"] && !f["all"]) return Value::makeNull();
+std::string msg = (!args.empty() && (args[0].isStringValId() || args[0].isStringId())) ? api.toString(args[0]) : "";
+std::cerr << "[GC] " << msg << "\n";
+return Value::makeNull();
+});
+
+api.registerFunction("debug.dumpAst", [](const std::vector<Value> &) -> Value {
+return Value::makeNull();
+});
+
+api.registerFunction("debug.dumpBytecode", [](const std::vector<Value> &) -> Value {
+return Value::makeNull();
+});
+
+api.registerFunction("debug.startTimer", [](const std::vector<Value> &) -> Value {
+return Value::makeNull();
+});
+
+api.registerFunction("debug.endTimer", [](const std::vector<Value> &) -> Value {
+return Value::makeNull();
+});
+
+api.registerFunction("debug.colorize", [](const std::vector<Value> &args) -> Value {
+if (args.empty()) return Value::makeNull();
+return args[0];
+});
+
+auto debugObj = api.makeObject();
+api.setField(debugObj, "toggleVerboseConditionLogging", api.makeFunctionRef("debug.toggleVerboseConditionLogging"));
+api.setField(debugObj, "toggleVerboseKeyLogging", api.makeFunctionRef("debug.toggleVerboseKeyLogging"));
+api.setField(debugObj, "isOn", api.makeFunctionRef("debug.isOn"));
+api.setField(debugObj, "setFlag", api.makeFunctionRef("debug.setFlag"));
+api.setField(debugObj, "parseDebugArgs", api.makeFunctionRef("debug.parseDebugArgs"));
+api.setField(debugObj, "trace", api.makeFunctionRef("debug.trace"));
+api.setField(debugObj, "traceEmitter", api.makeFunctionRef("debug.traceEmitter"));
+api.setField(debugObj, "traceBytecode", api.makeFunctionRef("debug.traceBytecode"));
+api.setField(debugObj, "traceLexer", api.makeFunctionRef("debug.traceLexer"));
+api.setField(debugObj, "traceParser", api.makeFunctionRef("debug.traceParser"));
+api.setField(debugObj, "traceAst", api.makeFunctionRef("debug.traceAst"));
+api.setField(debugObj, "traceScope", api.makeFunctionRef("debug.traceScope"));
+api.setField(debugObj, "traceTypes", api.makeFunctionRef("debug.traceTypes"));
+api.setField(debugObj, "traceGc", api.makeFunctionRef("debug.traceGc"));
+api.setField(debugObj, "dumpAst", api.makeFunctionRef("debug.dumpAst"));
+api.setField(debugObj, "dumpBytecode", api.makeFunctionRef("debug.dumpBytecode"));
+api.setField(debugObj, "startTimer", api.makeFunctionRef("debug.startTimer"));
+api.setField(debugObj, "endTimer", api.makeFunctionRef("debug.endTimer"));
+api.setField(debugObj, "colorize", api.makeFunctionRef("debug.colorize"));
 api.setGlobal("debug", debugObj);
-    }
+}
 
 } // namespace havel::stdlib
+#endif
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+static const HavelModuleABI log_module_abi = {
+    HAVEL_MODULE_ABI_VERSION,
+    "log",
+    "1.0.0",
+    "Logging stdlib module",
+    nullptr,
+    nullptr
+};
+
+extern "C" const HavelModuleABI *havel_module_info(void) {
+    return &log_module_abi;
+}
+
+extern "C" void havel_module_register(void *vmapi_ptr) {
+    auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr);
+    if (api) {
+        havel::stdlib::registerLogModule(*api);
+        havel::stdlib::registerDebugModule(*api);
+    }
+}
 #endif

@@ -34,6 +34,7 @@ namespace havel::modules {
 void registerWindowMonitorModule(const compiler::VMApi &api);
 void registerDisplayModule(const compiler::VMApi &api);
 void registerBrightnessModule(const compiler::VMApi &api);
+void registerAppModule(const compiler::VMApi &api);
 } // namespace havel::modules
 
 namespace havel {
@@ -58,6 +59,7 @@ void registerLazyStdlib(compiler::VM &vm) {
     vm.registerLazyModule("window", [](compiler::VMApi &api) { modules::registerWindowMonitorModule(api); });
     vm.registerLazyModule("display", [](compiler::VMApi &api) { modules::registerDisplayModule(api); });
     vm.registerLazyModule("brightness", [](compiler::VMApi &api) { modules::registerBrightnessModule(api); });
+  vm.registerLazyModule("app", [](compiler::VMApi &api) { modules::registerAppModule(api); });
 }
 
 void registerStdLibSet(compiler::VM &vm, bool coreOnly) {

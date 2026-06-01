@@ -1703,13 +1703,13 @@ case TokenType::Tilde: {
           std::move(left), std::move(right));
     }
 
-        // Member access
-        case TokenType::Dot: {
-            if (at().type == TokenType::Identifier || Lexer::KEYWORDS.count(at().value) > 0) {
-                auto property = makeIdentifier(advance());
-                return makeNodeAt<ast::MemberExpression>(token, 
-                    std::move(left), std::move(property));
-            }
+// Member access
+  case TokenType::Dot: {
+    if (at().type == TokenType::Identifier || Lexer::KEYWORDS.count(at().value) > 0) {
+      auto property = makeIdentifier(advance());
+      return makeNodeAt<ast::MemberExpression>(token,
+        std::move(left), std::move(property));
+    }
             // Operator method syntax: a.+(b), a.[](i), etc.
             auto isOpToken = [](TokenType t) {
                 switch (t) {

@@ -154,7 +154,6 @@ void *havel_loader_load(HavelLoader *loader, const char *name) {
 
     char *path = find_library(loader, name);
     if (!path) {
-        fprintf(stderr, "[Loader] library '%s' not found in search paths\n", name);
         return NULL;
     }
 
@@ -203,7 +202,6 @@ void *havel_loader_import(HavelLoader *loader, const char *name, void *api) {
 
     char *path = find_library(loader, name);
     if (!path) {
-        fprintf(stderr, "[Loader] module '%s' not found in search paths\n", name);
         return NULL;
     }
 
@@ -217,7 +215,6 @@ void *havel_loader_import(HavelLoader *loader, const char *name, void *api) {
     HavelModuleInitFn init_fn = (HavelModuleInitFn)havel_loader_sym(handle, "havel_extension_init");
     if (init_fn && api) {
         init_fn(api);
-        fprintf(stderr, "[Loader] module '%s' initialized\n", name);
     }
 
     /* Register loaded module */
@@ -283,29 +280,60 @@ void havel_loader_close(void *handle) {
 const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *name) {
     if (!loader || !name) return NULL;
 
+    /* Check if already loaded */
     char lib_name[300];
     snprintf(lib_name, sizeof(lib_name), "havel_mod_%s", name);
 
-    void *handle = havel_loader_load(loader, lib_name);
-    if (!handle) return NULL;
+    for (int i = 0; i < loader->loaded_count; i++) {
+        if (strcmp(loader->loaded[i].name, lib_name) == 0 && loader->loaded[i].is_loaded) {
+            /* Already loaded — get ABI from existing handle */
+            HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(loader->loaded[i].handle, "havel_module_info");
+            return info_fn ? info_fn() : NULL;
+        }
+    }
+
+    char *path = find_library(loader, lib_name);
+    if (!path) return NULL;
+
+    /* RTLD_NOW: resolve all symbols immediately so missing deps fail at load time.
+     * RTLD_GLOBAL: make symbols available for subsequent dlopen calls. */
+    void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+    if (!handle) {
+        fprintf(stderr, "[Loader] dlopen failed for module '%s': %s\n", name, dlerror() ? dlerror() : "unknown");
+        free(path);
+        return NULL;
+    }
 
     HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(handle, "havel_module_info");
     if (!info_fn) {
         fprintf(stderr, "[Loader] module '%s': missing havel_module_info symbol\n", name);
+        free(path);
         return NULL;
     }
 
     const HavelModuleABI *abi = info_fn();
     if (!abi) {
         fprintf(stderr, "[Loader] module '%s': havel_module_info returned NULL\n", name);
+        free(path);
         return NULL;
     }
 
     if (abi->abi_version != HAVEL_MODULE_ABI_VERSION) {
         fprintf(stderr, "[Loader] module '%s': ABI version mismatch (got %d, need %d)\n",
                 name, abi->abi_version, HAVEL_MODULE_ABI_VERSION);
+        free(path);
         return NULL;
     }
 
+    /* Register loaded module */
+    if (loader->loaded_count < HAVEL_MAX_LOADED) {
+        HavelLoadedModule *mod = &loader->loaded[loader->loaded_count++];
+        snprintf(mod->name, sizeof(mod->name), "%s", lib_name);
+        snprintf(mod->path, sizeof(mod->path), "%s", path);
+        mod->handle = handle;
+        mod->is_loaded = 1;
+    }
+
+    free(path);
     return abi;
 }

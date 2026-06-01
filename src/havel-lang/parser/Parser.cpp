@@ -8909,9 +8909,11 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
       at().type != havel::TokenType::Catch &&
       at().type != havel::TokenType::Finally &&
       at().type != havel::TokenType::Throw &&
-      at().type != havel::TokenType::And &&
-      at().type != havel::TokenType::Or &&
-      at().type != havel::TokenType::Not) {
+    at().type != havel::TokenType::And &&
+    at().type != havel::TokenType::Or &&
+    at().type != havel::TokenType::Not &&
+    at().type != havel::TokenType::Const &&
+    at().type != havel::TokenType::Val) {
     failAt(at(), "Expected property name after '.'");
   }
 

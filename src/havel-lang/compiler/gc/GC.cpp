@@ -10,10 +10,29 @@
 namespace havel::compiler {
 
 namespace {
+
 constexpr size_t kMinAllocationBudget = 256;
 constexpr size_t kMaxAllocationBudget = 1 << 20;
 constexpr size_t kDefaultWorkBudget = 1024;
 constexpr size_t kMaxIterationsPerStep = 100000;
+
+template <typename Map>
+void compactIfShrunk(Map& m, size_t load_factor_threshold) {
+    if (m.empty()) {
+        m = Map();
+        return;
+    }
+    size_t bucket_count = m.bucket_count();
+    if (bucket_count > m.size() * load_factor_threshold) {
+        Map compacted;
+        compacted.reserve(m.size());
+        for (auto& kv : m) {
+            compacted.insert(std::move(kv));
+        }
+        m = std::move(compacted);
+    }
+}
+
 }
 
 void GCHeap::checkHeapLimit(size_t extra_bytes) {
@@ -1510,6 +1529,12 @@ void GCHeap::completeCollection() {
         current_collection_full_ = false;
     } else {
         minor_collections_since_full_++;
+    }
+    if (current_collection_full_) {
+        compactIfShrunk(arrays_, 4);
+        compactIfShrunk(objects_, 4);
+        compactIfShrunk(strings_, 4);
+        compactIfShrunk(closures_, 4);
     }
 
 if (debugging::debug_gc)

@@ -810,9 +810,12 @@ endif()  # QT_BACKEND_AVAILABLE
 # ==============================================================================
 add_library(havel_core STATIC ${CORE_SOURCES})
 set_target_properties(havel_core PROPERTIES
-C_STANDARD 17
-C_STANDARD_REQUIRED ON
+    C_STANDARD 17
+    C_STANDARD_REQUIRED ON
 )
+if(ENABLE_MODULE_PLUGINS)
+    set_target_properties(havel_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
 set_source_files_properties(
     src/core/hotkey/HotkeyActionContext.cpp
     PROPERTIES COMPILE_FLAGS "-ftls-model=initial-exec"
@@ -821,6 +824,9 @@ target_compile_definitions(havel_core PRIVATE
     $<$<BOOL:${ENABLE_LLVM}>:HAVEL_DEFAULT_LLVM_LINK_FLAGS=\"${HAVEL_LLVM_LINK_FLAGS}\">
 )
 add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
+if(ENABLE_MODULE_PLUGINS)
+    set_target_properties(havel_modules PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
 target_link_libraries(havel_core PRIVATE fmt::fmt)
 if(ENABLE_QT_UI_BACKEND)
   add_library(havel_gui STATIC ${GUI_SOURCES})
@@ -1246,10 +1252,14 @@ if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
             ${CMAKE_SOURCE_DIR}/include
             ${CMAKE_SOURCE_DIR}/src/havel-lang
         )
+        # Module .so resolves symbols from the main executable at runtime
+        # via --export-dynamic. Do NOT link static libs — they duplicate globals.
         target_link_libraries(${MODULE_TARGET} PRIVATE
-            havel_lang
-            havel_core
             fmt::fmt
+        )
+        # Allow unresolved symbols at link time (resolved from main exe at runtime)
+        target_link_options(${MODULE_TARGET} PRIVATE
+            -Wl,--allow-shlib-undefined
         )
         install(TARGETS ${MODULE_TARGET}
             LIBRARY DESTINATION lib/havel/modules

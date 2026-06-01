@@ -362,12 +362,14 @@ api.setGlobal("debug", debugObj);
 #ifdef HAVEL_MODULE_PLUGIN
 #include "loader/ModulePlugin.h"
 
+extern "C" void havel_module_register(void *vmapi_ptr);
+
 static const HavelModuleABI log_module_abi = {
     HAVEL_MODULE_ABI_VERSION,
     "log",
     "1.0.0",
     "Logging stdlib module",
-    nullptr,
+    havel_module_register,
     nullptr
 };
 

@@ -3,7 +3,7 @@
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/parser/Parser.h"
-#include "havel-lang/runtime/StdLibModules.hpp"
+#include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
 
 #include <cstdint>
@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 
 #ifdef HAVEL_ENABLE_LLVM
 #include "compiler/BytecodeOrcJIT.h"
-#include "runtime/StdLibModules.hpp"
+#include "runtime/Modules.hpp"
 #include "runtime/HostContext.hpp"
 #endif
 

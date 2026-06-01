@@ -12,7 +12,7 @@
 #pragma once
 
 #include "havel-lang/compiler/vm/VM.hpp"
-#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include <functional>
 #include <memory>
@@ -84,7 +84,7 @@ public:
      * @param globals Global variable names already defined in the VM
      */
     void attach(compiler::VM* existingVM,
-                compiler::HostBridge* bridge,
+                Modules* modules,
                 std::unordered_set<std::string> globals);
 
     /**
@@ -175,7 +175,7 @@ private:
     // Bytecode VM
     std::shared_ptr<compiler::VM> vm_;
     std::unique_ptr<HostContext> hostContext_;
-    std::shared_ptr<compiler::HostBridge> hostBridge_;
+    std::shared_ptr<Modules> modules_;
 
     // Handlers
     std::function<void(const std::string&)> printHandler_;

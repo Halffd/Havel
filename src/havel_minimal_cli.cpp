@@ -1,7 +1,7 @@
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
-#include "havel-lang/runtime/StdLibModules.hpp"
+#include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
 #include <iostream>
 #include <fstream>

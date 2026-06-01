@@ -29,9 +29,9 @@
 namespace havel {
 
 // Forward declarations
+class Modules;
 namespace compiler {
-  class HostBridge;
-  class ExecutionEngine;
+class ExecutionEngine;
 }
 
 // Forward declarations
@@ -54,7 +54,7 @@ public:
   bool Start(const std::vector<std::string> &devicePaths,
              bool grabDevices = false);
 
-  void setHostBridge(havel::compiler::HostBridge *hostBridge);
+    void setModules(havel::Modules *modules);
   void setExecutionEngine(havel::compiler::ExecutionEngine *executionEngine);
   void setHotkeyManager(HotkeyManager *manager);
 
@@ -196,7 +196,7 @@ private:
 
   std::function<void()> shutdownCallback_;
 
-  havel::compiler::HostBridge *hostBridge = nullptr;
+    havel::Modules *modules_ = nullptr;
   havel::compiler::ExecutionEngine *executionEngine = nullptr;
   HotkeyManager *hotkeyManager = nullptr;
 

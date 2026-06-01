@@ -8,7 +8,6 @@
 
 #include "../../../extensions/HavelCAPI.h"
 #include "../../../extensions/HavelValue.h"
-#include "../runtime/HostBridge.hpp"
 #include "../vm/VM.hpp"
 
 #include <cstring>

@@ -7,7 +7,7 @@
 #include "../../utils/Logger.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../modules/HostModules.hpp"
-#include "../runtime/StdLibModules.hpp"
+#include "../runtime/Modules.hpp"
 #include "../runtime/HostAPI.hpp"
 #include "../../utils/Logger.hpp"
 #include "../../utils/CrashHandler.hpp"
@@ -78,12 +78,12 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   // Wire VM into HostContext (required before HostBridge::install() fires vm_setup_callbacks_)
   hostContext_->vm = vm_.get();
 
-  // Create HostBridge with injected context
-  hostBridge_ = compiler::createHostBridge(*hostContext_);
-  hostBridge_->install();
+    // Create Modules with injected context
+    modules_ = havel::createModules(*hostContext_);
+    modules_->install();
 
-    // Register HostBridge host functions with the VM
-    for (const auto& [name, fn] : hostBridge_->options().host_functions) {
+    // Register Modules host functions with the VM
+    for (const auto& [name, fn] : modules_->options().host_functions) {
         vm_->registerHostFunction(name, fn);
     }
 
@@ -109,20 +109,20 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
 }
 
 void REPL::attach(compiler::VM* existingVM,
-                  compiler::HostBridge* bridge,
-                  std::unordered_set<std::string> globals) {
-  if (!existingVM) {
-    throw std::runtime_error("REPL::attach requires a non-null VM");
-  }
-  if (!bridge) {
-    throw std::runtime_error("REPL::attach requires a non-null HostBridge");
-  }
+                Modules* modules,
+                std::unordered_set<std::string> globals) {
+    if (!existingVM) {
+        throw std::runtime_error("REPL::attach requires a non-null VM");
+    }
+    if (!modules) {
+        throw std::runtime_error("REPL::attach requires a non-null Modules");
+    }
 
-  info("Attaching REPL to existing VM...");
+    info("Attaching REPL to existing VM...");
 
-  // Reuse the existing VM — non-owning reference via no-op deleter
-  vm_ = std::shared_ptr<compiler::VM>(existingVM, [](compiler::VM*){});
-  hostBridge_ = std::shared_ptr<compiler::HostBridge>(bridge, [](compiler::HostBridge*){});
+    // Reuse the existing VM — non-owning reference via no-op deleter
+    vm_ = std::shared_ptr<compiler::VM>(existingVM, [](compiler::VM*){});
+    modules_ = std::shared_ptr<Modules>(modules, [](Modules*){});
   known_globals_ = std::move(globals);
 
     // Open output log if configured

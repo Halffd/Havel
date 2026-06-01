@@ -19,7 +19,7 @@
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #include "extensions/gui/common/SettingsWindow.hpp"
 #endif
-#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "host/app/AppService.hpp"
@@ -5795,7 +5795,7 @@ Value ModeBridge::handleRegister(const std::vector<Value> &args,
 
   // Store callback IDs in HostBridge for cleanup
   // This is stored in mode_bindings_ map
-  ctx->hostBridge->registerModeCallbacks(modeName, conditionId, enterId,
+    ctx->modules->registerModeCallbacks(modeName, conditionId, enterId,
                                          exitId);
 
   info("Mode registered: {} with priority {}", modeName, priority);

@@ -31,7 +31,6 @@
 #endif
 
 #include "havel-lang/core/Value.hpp"
-#include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
 #ifdef HAVEL_ENABLE_LLVM
 #include "havel-lang/compiler/BytecodeOrcJIT.h"

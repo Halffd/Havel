@@ -1,5 +1,5 @@
 #include "ByteCompiler.hpp"
-#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/errors/ErrorSystem.h"
 #include <algorithm>
 #include <cctype>

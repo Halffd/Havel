@@ -8,7 +8,7 @@
 #include "core/io/IO.hpp"
 #include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
-#include "havel-lang/compiler/runtime/HostBridge.hpp"
+#include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include <cstring>
 #include <fcntl.h>
@@ -406,8 +406,8 @@ int EventListener::GetCurrentModifiersMask() const {
   return mask;
 }
 
-void EventListener::setHostBridge(havel::compiler::HostBridge *hb) {
-  hostBridge = hb;
+void EventListener::setModules(havel::Modules *m) {
+    modules_ = m;
 }
 
 void EventListener::setExecutionEngine(havel::compiler::ExecutionEngine *ee) {
@@ -429,7 +429,7 @@ void EventListener::EventLoop() {
         if (shutdown.load()) break;
 
         if (executionEngine) {
-            if (hostBridge) hostBridge->checkTimers();
+            if (modules_) modules_->checkTimers();
             executionEngine->executeFrame();
 
         auto* vm = executionEngine->getVM();
@@ -448,8 +448,8 @@ void EventListener::EventLoop() {
             }
             break;
         }
-        } else if (hostBridge) {
-            hostBridge->checkTimers();
+} else if (modules_) {
+        modules_->checkTimers();
         }
 
         // Blocking poll for input events — monitors evdev fds for prompt event pickup

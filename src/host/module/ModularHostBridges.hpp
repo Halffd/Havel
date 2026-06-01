@@ -19,6 +19,7 @@
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
+#include "havel-lang/runtime/Modules.hpp"
 
 #include <functional>
 #include <memory>

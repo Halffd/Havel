@@ -9,11 +9,11 @@
 #include "../../runtime/concurrency/WatcherRegistry.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "../runtime/EventQueue.hpp"
-#include "../runtime/HostBridge.hpp"
 #include "../runtime/RuntimeSupport.hpp"
 #include "compiler/core/ByteCompiler.hpp"
 #include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
+#include "../../runtime/Modules.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -928,13 +928,13 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   const bool has_timer = static_cast<bool>(timer_check_func_);
   const bool has_profiling = profiling_enabled_;
   const bool has_tracing = trace_execution_;
-  while (frame_count_ > stop_frame_depth) {
-    fast_path_counter++;
-    if ((fast_path_counter & 4095) == 0) {
-      if (exit_requested_.load()) {
-        break;
-      }
-    }
+    while (frame_count_ > stop_frame_depth) {
+        fast_path_counter++;
+        if ((fast_path_counter & 4095) == 0) {
+            if (exit_requested_.load()) {
+                break;
+            }
+        }
 
     if (has_instruction_limit) {
       executed_instructions_++;
@@ -2204,7 +2204,7 @@ return Value::makeClosureId(closureRef.id);
 }
 
 Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-                                std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
+                                const std::unordered_map<std::string, Value>& moduleGlobals,
                                 const std::string& canonicalKey, const std::string& fieldPath, int depth,
                                 std::unordered_set<uint32_t>* visitedPtr) {
   if (depth > 64) return value;
@@ -2229,7 +2229,7 @@ std::string fnCapturedField = fieldPath;
             auto savedGlobals = globals;
             auto savedMirrorId = globals_mirror_object_id_;
             Value savedG = globals["_G"];
-            globals = *moduleGlobals;
+            globals = moduleGlobals;
     current_chunk = moduleChunk.get();
     const auto* callee = moduleChunk->getFunction(funcIdx);
     if (!callee) {
@@ -2298,8 +2298,7 @@ std::string fnCapturedField = fieldPath;
             result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
                 moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
         }
-        }
-  globals = std::move(savedGlobals);
+        globals = std::move(savedGlobals);
   globals_mirror_object_id_ = savedMirrorId;
   globals["_G"] = savedG;
   current_chunk = savedChunk;
@@ -2324,7 +2323,7 @@ std::string fnCapturedField = fieldPath;
     auto moduleChunk = chunk;
         auto closureGlobals = rc->module_globals
             ? rc->module_globals
-            : moduleGlobals;
+            : std::make_shared<std::unordered_map<std::string, Value>>(moduleGlobals);
     auto wrapperName = "$module_closure_" + canonicalKey + "_" + fieldPath;
     std::string capturedKey = canonicalKey;
     std::string capturedField = fieldPath;
@@ -2399,7 +2398,7 @@ std::string fnCapturedField = fieldPath;
         }
         Value result = popStack();
         if (bc_execute_depth_ == 0) {
-            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk), moduleChunk, closureGlobals, capturedKey, capturedField + "_ret");
+            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk), moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
         }
         globals = std::move(savedGlobals);
  globals_mirror_object_id_ = savedMirrorId;
@@ -2564,7 +2563,7 @@ Value VM::loadModule(const std::string& path) {
         for (const auto& [name, value] : host_function_globals_) {
             if (name.rfind(prefix, 0) == 0) { hasNamespace = true; break; }
         }
-        if (hasNamespace || (context_ && context_->hostBridge && context_->hostBridge->loadModule(path))) {
+        if (hasNamespace || (context_ && context_->modules && context_->modules->loadModule(path))) {
             auto exportsObj = createHostObject();
             auto *obj = heap_.object(exportsObj.id);
             for (const auto& [name, value] : host_function_globals_) {
@@ -2773,15 +2772,15 @@ Value VM::loadModule(const std::string& path) {
     frame_count_++;
     locals.resize(entry->local_count);
 
-    // Execute the module's bytecode (same heap, sandboxed globals)
-    Value exec_result;
-    try {
-        runDispatchLoop(0);
-        if (!stack.empty()) {
-            exec_result = stack.top();
-            stack.pop();
-        }
-    } catch (...) {
+        // Execute the module's bytecode (same heap, sandboxed globals)
+        Value exec_result;
+        try {
+            runDispatchLoop(0);
+            if (!stack.empty()) {
+                exec_result = stack.top();
+                stack.pop();
+            }
+        } catch (...) {
         // Restore caller's globals and execution state on error
         globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
@@ -2810,7 +2809,7 @@ Value VM::loadModule(const std::string& path) {
     // caller's chunk after restore, producing garbage.
     auto exportsObj = createHostObject();
     auto *obj = heap_.object(exportsObj.id);
-        auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+        auto moduleGlobalsSnapshot = globals;
     int exportCount = 0;
     for (const auto& [name, value] : globals) {
         if (name.empty() || name[0] == '_') continue;

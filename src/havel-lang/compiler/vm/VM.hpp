@@ -997,7 +997,7 @@ const std::vector<Value> &args);
     Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk);
 Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited);
   Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-                                std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
+                                const std::unordered_map<std::string, Value>& moduleGlobals,
                                 const std::string& canonicalKey, const std::string& fieldPath,
                                 int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
 

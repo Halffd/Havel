@@ -5,7 +5,6 @@
 #include "../../runtime/concurrency/Fiber.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "../runtime/EventQueue.hpp"
-#include "../runtime/HostBridge.hpp"
 
 namespace havel::compiler {
 

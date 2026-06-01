@@ -7,7 +7,6 @@
 #include "../../runtime/concurrency/DependencyTracker.hpp"
 #include "../../runtime/concurrency/WatcherRegistry.hpp"
 #include "../runtime/EventQueue.hpp"
-#include "../runtime/HostBridge.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
 
 #include <iostream>

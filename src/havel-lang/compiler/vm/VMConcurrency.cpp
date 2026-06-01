@@ -2,7 +2,6 @@
 #include "VMInternals.hpp"
 #include "../../../utils/Logger.hpp"
 #include "../../utils/ErrorPrinter.hpp"
-#include "../runtime/HostBridge.hpp"
 #include "../runtime/RuntimeSupport.hpp"
 #include "../../runtime/concurrency/DependencyTracker.hpp"
 #include "../../runtime/concurrency/WatcherRegistry.hpp"

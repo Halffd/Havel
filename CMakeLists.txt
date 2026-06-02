@@ -782,9 +782,10 @@ add_library(qt_extension MODULE
     src/extensions/qt/qt_extension.cpp
 )
 target_include_directories(qt_extension PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/extensions
-    ${UI_BACKEND_INCLUDES}
+${CMAKE_SOURCE_DIR}/src
+${CMAKE_SOURCE_DIR}/include
+${CMAKE_SOURCE_DIR}/src/extensions
+${UI_BACKEND_INCLUDES}
 )
 target_link_libraries(qt_extension PRIVATE
     havel_extension_runtime
@@ -818,6 +819,7 @@ src/extensions/qt/QtClipboardManagerBackend.hpp
 )
 target_include_directories(havel_toolkit_qt PRIVATE
 ${CMAKE_SOURCE_DIR}/src
+${CMAKE_SOURCE_DIR}/include
 ${CMAKE_SOURCE_DIR}/src/extensions
 ${UI_BACKEND_INCLUDES}
 )

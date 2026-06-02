@@ -1,7 +1,7 @@
 #pragma once
 #include "qt.hpp"
 
-#include "x11_includes.h"
+#include "x11.h"
 // #include <QApplication>
 // #include <QHBoxLayout>
 // #include <QImage>

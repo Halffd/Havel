@@ -418,8 +418,18 @@ if k == "CallExpression" {
   argc = #node.args
   hasKwargs = node.kwargs != null and #node.kwargs > 0
   if callee.kind == "MemberExpression" {
-    // Special case: ClassName.new(args) → class.new(ClassName, args)
-    if callee.property == "new" && callee.obj.kind == "Identifier" && emitter.classNames[callee.obj.name] != null {
+  print("DBG: MemberExpression call prop=" + str(callee.property) + " obj=" + callee.obj.kind)
+  print("DBG: checking property == new...")
+  is_new = callee.property == "new"
+  print("DBG: is_new=" + str(is_new))
+  print("DBG: checking obj kind...")
+  obj_is_id = callee.obj.kind == "Identifier"
+  print("DBG: obj_is_id=" + str(obj_is_id))
+  if is_new && obj_is_id {
+    print("DBG: checking classNames...")
+    cn = emitter.classNames[callee.obj.name]
+    print("DBG: cn=" + str(cn))
+  }
       newFn = "class.new"
       if emitter.structNames[callee.obj.name] != null {
         newFn = "struct.new"
@@ -440,17 +450,24 @@ if k == "CallExpression" {
       }
       return
     }
-    emitExpr(emitter, callee.obj)
-    for arg in node.args {
-      emitExpr(emitter, arg)
-    }
-    if hasKwargs {
-      emitKwargsObject(emitter, node.kwargs)
-      argc = argc + 1
-    }
-    propIdx = bc.add_chunk_string(callee.property)
-    bc.emit("CALL_METHOD", bc.str_id(propIdx), argc)
-    return
+  print("DBG: emitting obj kind=" + callee.obj.kind)
+  emitExpr(emitter, callee.obj)
+  print("DBG: obj emitted ok")
+  for arg in node.args {
+    emitExpr(emitter, arg)
+  }
+  print("DBG: args emitted ok, argc=" + str(argc))
+  if hasKwargs {
+    emitKwargsObject(emitter, node.kwargs)
+    argc = argc + 1
+  }
+  print("DBG: about to add_chunk_string prop=" + callee.property)
+  propIdx = bc.add_chunk_string(callee.property)
+  print("DBG: propIdx=" + str(propIdx))
+  print("DBG: about to emit CALL_METHOD")
+  bc.emit("CALL_METHOD", bc.str_id(propIdx), argc)
+  print("DBG: CALL_METHOD emitted")
+  return
   }
   if callee.kind == "Identifier" {
     if emitter.classNames[callee.name] != null {

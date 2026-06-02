@@ -156,3 +156,11 @@ void registerScreenshotModule(const VMApi& api) {
 }
 
 } // namespace havel::modules
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(screenshot, "1.0.0", "Screenshot module",
+    havel::modules::registerScreenshotModule(*api);
+)
+#endif

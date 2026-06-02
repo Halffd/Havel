@@ -204,3 +204,11 @@ void registerAltTabModule(const VMApi& api) {
 }
 
 } // namespace havel::modules
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(alttab, "1.0.0", "Alt-tab module",
+    havel::modules::registerAltTabModule(*api);
+)
+#endif

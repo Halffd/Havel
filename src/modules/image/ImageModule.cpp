@@ -350,3 +350,11 @@ void registerImageModule(const VMApi& api) {
 }
 
 } // namespace havel::modules
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(image, "1.0.0", "Image operations module",
+    havel::modules::registerImageModule(*api);
+)
+#endif

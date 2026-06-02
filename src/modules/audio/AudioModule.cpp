@@ -114,3 +114,11 @@ void registerAudioModule(const VMApi& api) {
 }
 
 } // namespace havel::modules
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(audio, "1.0.0", "Audio operations module",
+    havel::modules::registerAudioModule(*api);
+)
+#endif

@@ -114,3 +114,11 @@ void registerAutomationModule(const VMApi &api) {
 }
 
 } // namespace havel::modules
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(automation, "1.0.0", "UI automation module",
+    havel::modules::registerAutomationModule(*api);
+)
+#endif

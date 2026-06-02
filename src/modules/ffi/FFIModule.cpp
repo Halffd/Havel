@@ -965,3 +965,13 @@ void registerFFIModule(const compiler::VMApi&) {
 } // namespace havel::modules::ffi
 
 #endif // HAVE_LIBFFI
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(ffi, "1.0.0", "Foreign function interface module",
+#ifdef HAVE_LIBFFI
+    havel::modules::ffi::registerFFIModule(*api);
+#endif
+)
+#endif

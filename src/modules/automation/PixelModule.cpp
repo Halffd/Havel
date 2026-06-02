@@ -318,3 +318,11 @@ void registerPixelModule(const VMApi& api) {
 }
 
 } // namespace havel::modules
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(pixel, "1.0.0", "Pixel operations module",
+    havel::modules::registerPixelModule(*api);
+)
+#endif

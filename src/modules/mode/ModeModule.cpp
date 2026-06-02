@@ -77,3 +77,11 @@ void registerModeModule(const VMApi& api) {
 }
 
 } // namespace havel::modules
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(mode, "1.0.0", "Mode management module",
+    havel::modules::registerModeModule(*api);
+)
+#endif

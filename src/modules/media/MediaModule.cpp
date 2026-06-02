@@ -253,3 +253,11 @@ void registerMediaModule(const VMApi& api) {
 }
 
 } // namespace havel::modules
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(media, "1.0.0", "Media playback module",
+    havel::modules::registerMediaModule(*api);
+)
+#endif

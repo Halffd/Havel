@@ -354,15 +354,6 @@ fn runSelfHosted(cfg) {
     // Tokenize + Parse
     if isOn("timing") { startTimer("parse") }
     result = parse(combinedCode)
-    print("[launcher] parse returned: errors=" + str(result.errors != null && #result.errors > 0) + " ast=" + str(result.ast != null))
-    if result.ast != null {
-        print("[launcher] ast.body count=" + str(#result.ast.body))
-        i = 0
-        while i < #result.ast.body && i < 3 {
-            print("[launcher] body[" + str(i) + "].kind=" + str(result.ast.body[i].kind))
-            i = i + 1
-        }
-    }
     if isOn("timing") { endTimer("parse") }
 
     if result.errors != null && #result.errors > 0 {
@@ -409,9 +400,7 @@ fn runSelfHosted(cfg) {
     em.func_idx = bc.func_count()
     safeName = sourceFile.replace("/", "_").replace(".", "_").replace("-", "_")
     mainEntry = "__init_" + safeName
-    print("[launcher] compiling entry=" + mainEntry)
     result = compileProgram(em, result.ast, false, sourceFile, mainEntry, true)
-    print("[launcher] compileProgram returned: " + str(result))
     if isOn("timing") { endTimer("compile") }
     result
 }

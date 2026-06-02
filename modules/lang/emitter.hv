@@ -217,33 +217,32 @@ fn emitExpr(emitter, node) {
         return
 
     }
-  if k == "Identifier" {
-    emitLoadVar(emitter, node.name)
-        return
+if k == "Identifier" {
+    if node.globalScope == true {
+        bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+    }
+    else {
+        emitLoadVar(emitter, node.name)
+    }
+    return
 
     }
     if k == "BinaryExpression" {
         opr = node.oper
-        // Short-circuit operators
+        // Non-short-circuit: && and || evaluate both sides (matching native compiler)
         if opr == "&&" {
             emitExpr(emitter, node.left)
-            bc.emit("DUP")
-            sj = bc.emit("JUMP_IF_FALSE", 0)
-            bc.emit("POP")
             emitExpr(emitter, node.right)
-            bc.patch_jump(sj, bc.instr_count())
+            bc.emit("AND")
             return
         }
         if opr == "||" {
             emitExpr(emitter, node.left)
-            bc.emit("DUP")
-            sj = bc.emit("JUMP_IF_TRUE", 0)
-            bc.emit("POP")
             emitExpr(emitter, node.right)
-            bc.patch_jump(sj, bc.instr_count())
+            bc.emit("OR")
             return
         }
- if opr == "??" {
+        if opr == "??" {
  emitExpr(emitter, node.left)
  bc.emit("DUP")
  isNullJump = bc.emit("JUMP_IF_NULL", 0)
@@ -419,6 +418,28 @@ if k == "CallExpression" {
   argc = #node.args
   hasKwargs = node.kwargs != null and #node.kwargs > 0
   if callee.kind == "MemberExpression" {
+    // Special case: ClassName.new(args) → class.new(ClassName, args)
+    if callee.property == "new" && callee.obj.kind == "Identifier" && emitter.classNames[callee.obj.name] != null {
+      newFn = "class.new"
+      if emitter.structNames[callee.obj.name] != null {
+        newFn = "struct.new"
+      }
+      sid = globalIdx(emitter, newFn)
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      nameIdx = bc.add_string(callee.obj.name)
+      bc.emit("LOAD_CONST", nameIdx)
+      for arg in node.args {
+        emitExpr(emitter, arg)
+      }
+      if hasKwargs {
+        emitKwargsObject(emitter, node.kwargs)
+        bc.emit("CALL", argc + 2)
+      }
+      else {
+        bc.emit("CALL", argc + 1)
+      }
+      return
+    }
     emitExpr(emitter, callee.obj)
     for arg in node.args {
       emitExpr(emitter, arg)
@@ -470,12 +491,18 @@ if k == "CallExpression" {
 }
     if k == "AssignmentExpression" {
         target = node.target
-        if target.kind == "Identifier" {
+    if target.kind == "Identifier" {
+        if target.globalScope == true {
             emitExpr(emitter, node.value)
             bc.emit("DUP")
-            emitStoreVar(emitter, target.name)
+            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
             return
         }
+        emitExpr(emitter, node.value)
+        bc.emit("DUP")
+        emitStoreVar(emitter, target.name)
+        return
+    }
         if target.kind == "MemberExpression" {
             emitExpr(emitter, target.obj)
             emitExpr(emitter, node.value)
@@ -547,25 +574,35 @@ if target.kind == "IndexExpression" {
     }
 if k == "CompoundAssignment" {
 target = node.target
-if target.kind == "Identifier" {
-emitLoadVar(emitter, target.name)
-emitExpr(emitter, node.value)
- opcodes = {
- "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
- "%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
- "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
- "<<=": "BIT_LSH", ">>=": "BIT_RSH",
- }
- oc = opcodes[node.oper]
- if oc != null {
- bc.emit(oc)
- }
- else {
- emitError("unknown compound op: " + node.oper, node.line, node.col)
- }
- bc.emit("DUP")
- emitStoreVar(emitter, target.name)
- }
+    if target.kind == "Identifier" {
+        if target.globalScope == true {
+            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
+        }
+        else {
+            emitLoadVar(emitter, target.name)
+        }
+        emitExpr(emitter, node.value)
+        opcodes = {
+            "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
+            "%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
+            "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
+            "<<=": "BIT_LSH", ">>=": "BIT_RSH",
+        }
+        oc = opcodes[node.oper]
+        if oc != null {
+            bc.emit(oc)
+        }
+        else {
+            emitError("unknown compound op: " + node.oper, node.line, node.col)
+        }
+        bc.emit("DUP")
+        if target.globalScope == true {
+            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
+        }
+        else {
+            emitStoreVar(emitter, target.name)
+        }
+    }
  else if target.kind == "MemberExpression" {
  // obj.prop += val → load obj, get prop, load val, op, set prop
  emitExpr(emitter, target.obj)
@@ -738,23 +775,29 @@ if k == "AtExpression" {
   }
   return
 }
-if k == "AtAtExpression" {
-  if node.field != null {
-    fname = node.field
-    if fname.kind == "Identifier" { fname = fname.name }
-    sid = globalIdx(emitter, "this")
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    keyIdx = bc.add_string(fname)
-    bc.emit("LOAD_CONST", keyIdx)
-    bc.emit("OBJECT_GET")
-  }
-  else {
-    emitError("@@ expression field must be identifier", node.line, node.col)
-  }
-  return
-}
+    if k == "AtAtExpression" {
+        if node.field != null {
+            fname = node.field
+            if fname.kind == "Identifier" { fname = fname.name }
+            sid = globalIdx(emitter, "this")
+            bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+            keyIdx = bc.add_string(fname)
+            bc.emit("LOAD_CONST", keyIdx)
+            bc.emit("OBJECT_GET")
+        }
+        else {
+            emitError("@@ expression field must be identifier", node.line, node.col)
+        }
+        return
+    }
+    if k == "CastExpression" {
+        emitExpr(emitter, node.expr)
+        typeIdx = bc.add_chunk_string(node.typeName)
+        bc.emit("PROT_CAST", bc.str_id(typeIdx))
+        return
+    }
 
-if k == "ShellCommand" {
+    if k == "ShellCommand" {
     // Shell command: $cmd or $!cmd
     // Emit as call to shell.exec or shell.capture
     if node.capture {
@@ -971,32 +1014,56 @@ if k == "ExpressionStatement" {
         return
 
     }
-if k == "WhileStatement" {
-	loopTop = bc.instr_count()
-	emitter.breakStack.push([])
-	emitter.continueStack.push(loopTop)
-	emitExpr(emitter, node.condition)
-	exitJump = bc.emit("JUMP_IF_FALSE", 0)
-	// Push scope for body
-	oldWhileScope = emitter.scope
+    if k == "WhileStatement" {
+        loopTop = bc.instr_count()
+        emitter.breakStack.push([])
+        emitter.continueStack.push(loopTop)
+    emitExpr(emitter, node.condition)
+    exitJump = bc.emit("JUMP_IF_FALSE", 0)
+    // Push scope for body
+    oldWhileScope = emitter.scope
     whileScope = Scope(oldWhileScope, null, null)
-	emitter.scope = whileScope
-	emitBlock(emitter, node.body)
-	oldWhileScope.count = whileScope.count
-	emitter.scope = oldWhileScope
-	bc.emit("JUMP", loopTop)
-	bc.patch_jump(exitJump, bc.instr_count())
-	// Patch break jumps
-	breakTarget = bc.instr_count()
-	breakList = emitter.breakStack[#emitter.breakStack - 1]
-	i = 0
-	while i < #breakList:
-		bc.patch_jump(breakList[i], breakTarget)
-		i = i + 1
-	emitter.breakStack.pop()
-	emitter.continueStack.pop()
-	return
+    emitter.scope = whileScope
+    emitBlock(emitter, node.body)
+    oldWhileScope.count = whileScope.count
+    emitter.scope = oldWhileScope
+    bc.emit("JUMP", loopTop)
+    bc.patch_jump(exitJump, bc.instr_count())
+        // Patch break jumps
+        breakTarget = bc.instr_count()
+        breakList = emitter.breakStack[#emitter.breakStack - 1]
+        i = 0
+        while i < #breakList:
+            bc.patch_jump(breakList[i], breakTarget)
+            i = i + 1
+        emitter.breakStack.pop()
+    emitter.continueStack.pop()
+    return
+}
 
+if k == "DoWhileStatement" {
+    loopTop = bc.instr_count()
+    emitter.breakStack.push([])
+    emitter.continueStack.push(loopTop)
+    // Push scope for body
+    oldDoScope = emitter.scope
+    doScope = Scope(oldDoScope, null, null)
+    emitter.scope = doScope
+    emitBlock(emitter, node.body)
+    oldDoScope.count = doScope.count
+    emitter.scope = oldDoScope
+    emitExpr(emitter, node.condition)
+    bc.emit("JUMP_IF_TRUE", loopTop)
+    // Patch break jumps
+    breakTarget = bc.instr_count()
+    breakList = emitter.breakStack[#emitter.breakStack - 1]
+    i = 0
+    while i < #breakList:
+        bc.patch_jump(breakList[i], breakTarget)
+        i = i + 1
+    emitter.breakStack.pop()
+    emitter.continueStack.pop()
+    return
 }
 
 if k == "LoopStatement" {
@@ -1792,10 +1859,10 @@ ii2 = ii2 + 1
 // ============================================================
 
 fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, entryName = "__main__", noReset = false) {
- traceEmitter("compileProgram entryName=" + entryName + " skip_execute=" + str(skip_execute))
- if !noReset {
-  bc.reset()
- }
+  traceEmitter("compileProgram entryName=" + entryName + " skip_execute=" + str(skip_execute))
+  if !noReset {
+    bc.reset()
+  }
  if sourceFile != null {
   bc.set_source_file(sourceFile)
  }
@@ -1832,11 +1899,10 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
  funcChunkIdxs.push(chunkIdx)
  fi = fi + 1
  }
-    // Pass 2: compile __main__
-    mainChunkIdx = bc.func_new(entryName, 0, 64)
-    traceEmitter("func_new " + entryName + " (main) bcIdx=" + str(mainChunkIdx))
-    print("[emitter] func_new main entryName=" + entryName + " mainChunkIdx=" + str(mainChunkIdx))
-    emitter.scope = moduleScope
+ // Pass 2: compile __main__
+ mainChunkIdx = bc.func_new(entryName, 0, 64)
+ traceEmitter("func_new " + entryName + " (main) bcIdx=" + str(mainChunkIdx))
+ emitter.scope = moduleScope
  // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
  fi2 = 0
  while fi2 < #funcDecls {
@@ -1852,10 +1918,9 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
 bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
 fi2 = fi2 + 1
 }
-    // Emit top-level statements (all except last)
-    n = #topStmts
-    print("[emitter] topStmts=" + str(n) + " funcDecls=" + str(#funcDecls))
-    si = 0
+// Emit top-level statements (all except last)
+n = #topStmts
+si = 0
 while si < n - 1 {
 emitStmt(emitter, topStmts[si])
 si = si + 1
@@ -1891,8 +1956,7 @@ si = si + 1
     }
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
-    print("[emitter] about to call execute_persistent skip_execute=" + str(skip_execute))
-    if !skip_execute {
+	if !skip_execute {
 		traceEmitter("execute_persistent " + entryName)
 		return bc.execute_persistent(entryName)
 	}
@@ -1906,20 +1970,25 @@ si = si + 1
 // ============================================================
 
 fn emitMatchExpr(emitter, node) {
-  // Evaluate subject and store in temp local
+  // Evaluate subject and store in discSlot (discriminant slot)
   emitExpr(emitter, node.subject)
-  subjectIdx = scopeDeclare(emitter.scope, "_match_subject")
-  bc.emit("STORE_VAR", subjectIdx)
-  // Match result accumulator slot
-  matchSlot = scopeDeclare(emitter.scope, "_match_result")
+  discSlot = scopeDeclare(emitter.scope, "_match_disc")
+  bc.emit("STORE_VAR", discSlot)
+  // Allocate a match slot to accumulate pattern results (like C++ compiler)
+  matchSlot = scopeDeclare(emitter.scope, "_match_ok")
   // Compile each case
   caseJumps = []
   for c in node.cases {
     // Initialize match slot to true
     bc.emit("LOAD_CONST", bc.add_const(true))
     bc.emit("STORE_VAR", matchSlot)
-    // Compile pattern match — ANDs result into matchSlot
-    emitPatternMatch(emitter, c.pattern, subjectIdx, matchSlot)
+    // Compile pattern match — leaves bool on stack
+    emitPatternMatch(emitter, c.pattern, discSlot)
+    // AND with match slot: LOAD_VAR matchSlot, <pattern_bool>, AND, STORE_VAR matchSlot
+    // Pattern bool is already on stack from emitPatternMatch
+    bc.emit("LOAD_VAR", matchSlot)
+    bc.emit("AND")
+    bc.emit("STORE_VAR", matchSlot)
     // Check if all patterns matched
     bc.emit("LOAD_VAR", matchSlot)
     // If pattern doesn't match, jump to next case
@@ -1979,93 +2048,101 @@ fn emitMatchExpr(emitter, node) {
 
 }
 
-fn _bindCtorArg(emitter, ctorArgs, idx, fieldName, subjectIdx, matchSlot) {
-  arg = ctorArgs[idx]
-  if arg == null { return }
-  if arg.kind == "WildcardPattern" { return }
-  // Get field from subject
-  bc.emit("LOAD_VAR", subjectIdx)
-  fidx = bc.add_string(fieldName)
-  bc.emit("LOAD_CONST", fidx)
-  bc.emit("OBJECT_GET")
-  if arg.kind == "Identifier" {
-    // Bind the field value to a variable
-    bindSlot = scopeDeclare(emitter.scope, arg.name)
-    bc.emit("STORE_VAR", bindSlot)
-  }
-  else {
-    // Literal or nested pattern: matchSlot = matchSlot AND (field == pattern)
-    bc.emit("LOAD_VAR", matchSlot)
-    bc.emit("LOAD_VAR", subjectIdx)
-    fidx2 = bc.add_string(fieldName)
-    bc.emit("LOAD_CONST", fidx2)
-    bc.emit("OBJECT_GET")
-    emitExpr(emitter, arg)
-    bc.emit("EQ")
-    bc.emit("AND")
-    bc.emit("STORE_VAR", matchSlot)
-  }
-}
-
-fn emitPatternMatch(emitter, pattern, subjectIdx, matchSlot) {
+fn emitPatternMatch(emitter, pattern, discSlot) {
   if pattern == null {
+    bc.emit("LOAD_CONST", bc.add_const(true))
     return
   }
   k = pattern.kind
-  if k == "Identifier" {
-    // Bind variable: always matches, store subject value
-    bindSlot = scopeDeclare(emitter.scope, pattern.name)
-    bc.emit("LOAD_VAR", subjectIdx)
-    bc.emit("STORE_VAR", bindSlot)
+  if k == "OrPattern" {
+    if pattern.alternatives != null && #pattern.alternatives > 0 {
+      emitPatternMatch(emitter, pattern.alternatives[0], discSlot)
+      i = 1
+      while i < #pattern.alternatives {
+        emitPatternMatch(emitter, pattern.alternatives[i], discSlot)
+        bc.emit("OR")
+        i = i + 1
+      }
+    }
     return
   }
-  if k == "NumberLiteral" {
-    bc.emit("LOAD_VAR", matchSlot)
-    bc.emit("LOAD_VAR", subjectIdx)
-    emitExpr(emitter, pattern)
-    bc.emit("EQ")
+  if k == "ArrayPattern" {
+    bc.emit("LOAD_CONST", bc.add_const(true))
+    expectedLen = 0
+    if pattern.elements != null { expectedLen = #pattern.elements }
+    bc.emit("LOAD_VAR", discSlot)
+    bc.emit("ARRAY_LEN")
+    if pattern.rest != null {
+      bc.emit("LOAD_CONST", bc.add_const(expectedLen))
+      bc.emit("GTE")
+    }
+    if pattern.rest == null {
+      bc.emit("LOAD_CONST", bc.add_const(expectedLen))
+      bc.emit("EQ")
+    }
     bc.emit("AND")
-    bc.emit("STORE_VAR", matchSlot)
+    if pattern.elements != null {
+      i = 0
+      while i < #pattern.elements {
+        elem = pattern.elements[i]
+        if elem != null && elem.kind == "Identifier" {
+          bc.emit("LOAD_VAR", discSlot)
+          bc.emit("LOAD_CONST", bc.add_const(i))
+          bc.emit("ARRAY_GET")
+          bindSlot = scopeDeclare(emitter.scope, elem.name)
+          bc.emit("STORE_VAR", bindSlot)
+        }
+        i = i + 1
+      }
+    }
+    if pattern.rest != null {
+      if pattern.rest.kind == "Identifier" {
+        bc.emit("LOAD_CONST", bc.add_const(null))
+        bindSlot = scopeDeclare(emitter.scope, pattern.rest.name)
+        bc.emit("STORE_VAR", bindSlot)
+      }
+    }
     return
   }
-  if k == "StringLiteral" {
-    bc.emit("LOAD_VAR", matchSlot)
-    bc.emit("LOAD_VAR", subjectIdx)
-    emitExpr(emitter, pattern)
-    bc.emit("EQ")
-    bc.emit("AND")
-    bc.emit("STORE_VAR", matchSlot)
-    return
-  }
-  if k == "BooleanLiteral" {
-    bc.emit("LOAD_VAR", matchSlot)
-    bc.emit("LOAD_VAR", subjectIdx)
-    emitExpr(emitter, pattern)
-    bc.emit("EQ")
-    bc.emit("AND")
-    bc.emit("STORE_VAR", matchSlot)
-    return
-  }
-  if k == "NullLiteral" {
-    bc.emit("LOAD_VAR", matchSlot)
-    bc.emit("LOAD_VAR", subjectIdx)
-    emitExpr(emitter, pattern)
-    bc.emit("EQ")
-    bc.emit("AND")
-    bc.emit("STORE_VAR", matchSlot)
+  if k == "ObjectPattern" {
+    bc.emit("LOAD_CONST", bc.add_const(true))
+    if pattern.properties != null {
+      for prop in pattern.properties {
+        bc.emit("LOAD_VAR", discSlot)
+        fieldIdx = bc.add_string(prop.key)
+        bc.emit("LOAD_CONST", fieldIdx)
+        bc.emit("OBJECT_GET")
+        patVal = prop.pattern != null ? prop.pattern : prop.value
+        if patVal != null {
+          if patVal.kind == "Identifier" {
+            bindSlot = scopeDeclare(emitter.scope, patVal.name)
+            bc.emit("DUP")
+            bc.emit("STORE_VAR", bindSlot)
+            bc.emit("IS_NULL")
+            bc.emit("NOT")
+            bc.emit("AND")
+          }
+          else {
+            emitExpr(emitter, patVal)
+            bc.emit("EQ")
+            bc.emit("AND")
+          }
+        }
+        if patVal == null {
+          bc.emit("IS_NULL")
+          bc.emit("NOT")
+          bc.emit("AND")
+        }
+      }
+    }
     return
   }
   if k == "ConstructorPattern" || k == "CallExpression" {
     ctorName = pattern.name
-    if ctorName == null && pattern.callee != null {
-      ctorName = pattern.callee.name
-    }
-    // Get args list — avoid if/else scoping by using ternary-like approach
+    if ctorName == null && pattern.callee != null { ctorName = pattern.callee.name }
     ctorArgs = pattern.args != null ? pattern.args : (pattern.params != null ? pattern.params : [])
-    // Check subject.tag == constructor name
-    // matchSlot = matchSlot AND (subject.tag == ctorName)
-    bc.emit("LOAD_VAR", matchSlot)
-    bc.emit("LOAD_VAR", subjectIdx)
+    bc.emit("LOAD_CONST", bc.add_const(true))
+    bc.emit("LOAD_VAR", discSlot)
     tagIdx = bc.add_string("tag")
     bc.emit("LOAD_CONST", tagIdx)
     bc.emit("OBJECT_GET")
@@ -2073,16 +2150,64 @@ fn emitPatternMatch(emitter, pattern, subjectIdx, matchSlot) {
     bc.emit("LOAD_CONST", nameIdx)
     bc.emit("EQ")
     bc.emit("AND")
-    bc.emit("STORE_VAR", matchSlot)
-    // Extract and bind each argument by position
-    // Field names by position: 0=value, 1=error, 2=message
-    _bindCtorArg(emitter, ctorArgs, 0, "value", subjectIdx, matchSlot)
-    _bindCtorArg(emitter, ctorArgs, 1, "error", subjectIdx, matchSlot)
-    _bindCtorArg(emitter, ctorArgs, 2, "message", subjectIdx, matchSlot)
+    if ctorArgs != null {
+      i = 0
+      while i < #ctorArgs {
+        arg = ctorArgs[i]
+        if arg == null { i = i + 1; continue }
+        if arg.kind == "WildcardPattern" { i = i + 1; continue }
+        fieldName = "value"
+        if i == 1 { fieldName = "error" }
+        if i == 2 { fieldName = "message" }
+        bc.emit("LOAD_VAR", discSlot)
+        fieldIdx = bc.add_string(fieldName)
+        bc.emit("LOAD_CONST", fieldIdx)
+        bc.emit("OBJECT_GET")
+        if arg.kind == "Identifier" {
+          bindSlot = scopeDeclare(emitter.scope, arg.name)
+          bc.emit("STORE_VAR", bindSlot)
+        }
+        if arg.kind == "ConstructorPattern" || arg.kind == "ObjectPattern" || arg.kind == "ArrayPattern" || arg.kind == "RangePattern" || arg.kind == "OrPattern" {
+          tempSlot = scopeDeclare(emitter.scope, "_pat_tmp")
+          bc.emit("STORE_VAR", tempSlot)
+          emitPatternMatch(emitter, arg, tempSlot)
+          bc.emit("AND")
+        }
+        if arg.kind != "Identifier" && arg.kind != "ConstructorPattern" && arg.kind != "ObjectPattern" && arg.kind != "ArrayPattern" && arg.kind != "RangePattern" && arg.kind != "OrPattern" && arg.kind != "WildcardPattern" {
+          emitExpr(emitter, arg)
+          bc.emit("EQ")
+          bc.emit("AND")
+        }
+        i = i + 1
+      }
+    }
     return
   }
-  // Default: always match (no change to matchSlot)
-
+  if k == "RangePattern" {
+    bc.emit("LOAD_VAR", discSlot)
+    emitExpr(emitter, pattern.start)
+    bc.emit("GTE")
+    bc.emit("LOAD_VAR", discSlot)
+    emitExpr(emitter, pattern.end)
+    bc.emit("LTE")
+    bc.emit("AND")
+    return
+  }
+  if k == "WildcardPattern" {
+    bc.emit("LOAD_CONST", bc.add_const(true))
+    return
+  }
+  if k == "Identifier" {
+    bindSlot = scopeDeclare(emitter.scope, pattern.name)
+    bc.emit("LOAD_VAR", discSlot)
+    bc.emit("STORE_VAR", bindSlot)
+    bc.emit("LOAD_CONST", bc.add_const(true))
+    return
+  }
+  // Default: literal comparison — EQ with discSlot
+  emitExpr(emitter, pattern)
+  bc.emit("LOAD_VAR", discSlot)
+  bc.emit("EQ")
 }
 // ============================================================
 // Class/Struct/Enum declaration emission
@@ -2161,11 +2286,14 @@ fn emitClassDeclaration(emitter, node) {
     }
   }
   if node.definition.methods != null {
+    prevClassName = emitter.currentClassName
+    emitter.currentClassName = node.name
     for m in node.definition.methods {
       if m != null {
         emitClassMethodRegister(emitter, node.name, m)
       }
     }
+    emitter.currentClassName = prevClassName
   }
 
 }
@@ -2244,11 +2372,14 @@ fn emitStructDeclaration(emitter, node) {
   bc.emit("STORE_GLOBAL", bc.str_id(nameSid))
   // Register methods
   if node.definition.methods != null {
+    prevClassName = emitter.currentClassName
+    emitter.currentClassName = node.name
     for m in node.definition.methods {
       if m != null {
         emitClassMethodRegister(emitter, node.name, m)
       }
     }
+    emitter.currentClassName = prevClassName
   }
 
 }
@@ -2302,6 +2433,8 @@ fn emitImplDeclaration(emitter, node) {
     }
     }
   if node.funcs != null {
+    prevClassName = emitter.currentClassName
+    emitter.currentClassName = typeName
     for m in node.funcs {
       if m != null {
         if m.name != null {
@@ -2309,6 +2442,7 @@ fn emitImplDeclaration(emitter, node) {
         }
       }
     }
+    emitter.currentClassName = prevClassName
   }
 
 }
@@ -2353,25 +2487,309 @@ fn emitHotkeyBinding(emitter, node) {
  bc.emit("POP")
  bc.emit("PUSH_NULL")
  bc.emit("RETURN")
- // Register the hotkey
- sid = globalIdx(emitter, "hotkey.register")
- bc.emit("LOAD_GLOBAL", bc.str_id(sid))
- // Key expression
- if node.key != null {
- if type(node.key) == "str" {
- keyIdx = bc.add_string(node.key)
- bc.emit("LOAD_CONST", keyIdx)
- }
- else {
- emitExpr(emitter, node.key)
- }
- }
- else {
- bc.emit("PUSH_NULL")
- }
- bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
- bc.emit("CALL", 2)
- bc.emit("POP")
+  // Register the hotkey
+  if emitter.whenConditionFuncIndex != null {
+    sid = globalIdx(emitter, "hotkey.register_conditional")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if node.key != null {
+      if type(node.key) == "str" {
+        keyIdx = bc.add_string(node.key)
+        bc.emit("LOAD_CONST", keyIdx)
+      }
+      else {
+        emitExpr(emitter, node.key)
+      }
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+    bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
+    bc.emit("CALL", 3)
+  }
+  if emitter.whenConditionFuncIndex == null {
+    sid = globalIdx(emitter, "hotkey.register")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if node.key != null {
+      if type(node.key) == "str" {
+        keyIdx = bc.add_string(node.key)
+        bc.emit("LOAD_CONST", keyIdx)
+      }
+      else {
+        emitExpr(emitter, node.key)
+      }
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+    bc.emit("CALL", 2)
+  }
+  bc.emit("POP")
 
 }
 
+
+fn emitHotkeyBindingExpr(emitter, node) {
+  oldScope = emitter.scope
+  newScope = Scope(null)
+  emitter.scope = newScope
+  actionChunkIdx = bc.func_new("hotkey_action", 1, 16)
+  scopeDeclare(newScope, "this")
+  if node.body != null {
+    if node.body.kind == "BlockStatement" {
+      for s in node.body.body {
+        emitStmt(emitter, s)
+      }
+    }
+    else {
+      emitStmt(emitter, node.body)
+    }
+  }
+  bc.emit("PUSH_NULL")
+  bc.emit("RETURN")
+  bc.set_local_count(scopeLocalCount(newScope))
+  emitter.scope = oldScope
+  wrapperChunkIdx = bc.func_new("hotkey_wrapper", 1, 8)
+  bc.emit("LOAD_VAR", 0)
+  thisSid = globalIdx(emitter, "this")
+  bc.emit("STORE_GLOBAL", bc.str_id(thisSid))
+  bc.emit("LOAD_GLOBAL", bc.str_id(thisSid))
+  bc.emit("LOAD_CONST", bc.add_const(actionChunkIdx))
+  bc.emit("SWAP")
+  bc.emit("CALL", 1)
+  bc.emit("POP")
+  bc.emit("PUSH_NULL")
+  bc.emit("RETURN")
+  if emitter.whenConditionFuncIndex != null {
+    sid = globalIdx(emitter, "hotkey.register_conditional")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if node.key != null {
+      if type(node.key) == "str" {
+        keyIdx = bc.add_string(node.key)
+        bc.emit("LOAD_CONST", keyIdx)
+      }
+      else {
+        emitExpr(emitter, node.key)
+      }
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+    bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
+    bc.emit("CALL", 3)
+  }
+  if emitter.whenConditionFuncIndex == null {
+    sid = globalIdx(emitter, "hotkey.register")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if node.key != null {
+      if type(node.key) == "str" {
+        keyIdx = bc.add_string(node.key)
+        bc.emit("LOAD_CONST", keyIdx)
+      }
+      else {
+        emitExpr(emitter, node.key)
+      }
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+    bc.emit("CALL", 2)
+  }
+}
+
+fn compileCondHotkeyCondition(emitter, condition) {
+  oldScope = emitter.scope
+  newScope = Scope(null)
+  emitter.scope = newScope
+  condChunkIdx = bc.func_new("condhotkey_condition", 0, 16)
+  emitExpr(emitter, condition)
+  bc.emit("RETURN")
+  bc.set_local_count(scopeLocalCount(newScope))
+  emitter.scope = oldScope
+  return [null, condChunkIdx]
+}
+
+fn emitClosureBody(emitter, body, name) {
+  oldScope = emitter.scope
+  newScope = Scope(oldScope)
+  emitter.scope = newScope
+  funcIdx = bc.func_new(name, 0, 16)
+  if body != null {
+    if body.kind == "BlockStatement" {
+      for s in body.body {
+        emitStmt(emitter, s)
+      }
+    }
+    else {
+      emitStmt(emitter, body)
+    }
+  }
+  bc.emit("PUSH_NULL")
+  bc.emit("RETURN")
+  bc.set_local_count(scopeLocalCount(newScope))
+  emitter.scope = oldScope
+  bc.emit("LOAD_CONST", bc.add_const(funcIdx))
+}
+
+fn emitWhenBlock(emitter, node) {
+  oldScope = emitter.scope
+  condScope = Scope(null)
+  emitter.scope = condScope
+  condChunkIdx = bc.func_new("when_condition", 0, 16)
+  if node.condition != null {
+    emitExpr(emitter, node.condition)
+  }
+  if node.condition == null {
+    bc.emit("LOAD_CONST", bc.add_const(true))
+  }
+  bc.emit("RETURN")
+  bc.set_local_count(scopeLocalCount(condScope))
+  emitter.scope = oldScope
+  hotkeyStmts = []
+  otherStmts = []
+  if node.statements != null {
+    for s in node.statements {
+      sk = s.kind
+      if sk == "HotkeyBinding" || sk == "ConditionalHotkey" || sk == "HotkeyExpression" {
+        hotkeyStmts.push(s)
+      }
+      else {
+        otherStmts.push(s)
+      }
+    }
+  }
+  if #otherStmts > 0 {
+    bodyScope = Scope(null)
+    emitter.scope = bodyScope
+    bodyChunkIdx = bc.func_new("when_body", 0, 16)
+    for s in otherStmts {
+      emitStmt(emitter, s)
+    }
+    bc.emit("PUSH_NULL")
+    bc.emit("RETURN")
+    bc.set_local_count(scopeLocalCount(bodyScope))
+    emitter.scope = oldScope
+    sid = globalIdx(emitter, "when.register")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    bc.emit("LOAD_CONST", bc.add_const(condChunkIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bodyChunkIdx))
+    bc.emit("CALL", 2)
+    bc.emit("POP")
+  }
+  prevWcfi = emitter.whenConditionFuncIndex
+  emitter.whenConditionFuncIndex = condChunkIdx
+  for s in hotkeyStmts {
+    emitStmt(emitter, s)
+  }
+  emitter.whenConditionFuncIndex = prevWcfi
+}
+
+fn emitDecoratorStatement(emitter, node) {
+  emitStmt(emitter, node.target)
+  fnName = node.target.name
+  if type(fnName) == "object" { fnName = fnName.name }
+  if fnName == null { fnName = "" }
+  slot = scopeDeclare(emitter.scope, fnName)
+  decos = node.decorators
+  i = #decos - 1
+  while i >= 0 {
+    deco = decos[i]
+    if deco != null {
+      emitExpr(emitter, deco)
+      bc.emit("LOAD_VAR", slot)
+      bc.emit("CALL", 1)
+      bc.emit("STORE_VAR", slot)
+    }
+    i = i - 1
+  }
+  origNameIdx = bc.add_string(fnName)
+  nameKeyIdx = bc.add_string("__name__")
+  wrappedKeyIdx = bc.add_string("__wrapped__")
+  arityKeyIdx = bc.add_string("__arity__")
+  bc.emit("LOAD_VAR", slot)
+  bc.emit("LOAD_CONST", origNameIdx)
+  bc.emit("LOAD_CONST", nameKeyIdx)
+  bc.emit("OBJECT_SET")
+  bc.emit("POP")
+  if node.target.kind == "FunctionDeclaration" {
+    origIdx = emitter.func_map[fnName]
+    if origIdx != null {
+      bc.emit("LOAD_VAR", slot)
+      bc.emit("LOAD_CONST", bc.add_const(origIdx))
+      bc.emit("LOAD_CONST", wrappedKeyIdx)
+      bc.emit("OBJECT_SET")
+      bc.emit("POP")
+    }
+  }
+  if node.target.kind == "FunctionDeclaration" {
+    paramCount = 0
+    if node.target.params != null { paramCount = #node.target.params }
+    bc.emit("LOAD_VAR", slot)
+    bc.emit("LOAD_CONST", bc.add_const(paramCount))
+    bc.emit("LOAD_CONST", arityKeyIdx)
+    bc.emit("OBJECT_SET")
+    bc.emit("POP")
+  }
+}
+
+fn emitInputStatement(emitter, node) {
+  if node.commands == null { return }
+  for cmd in node.commands {
+    ct = cmd.type
+    if ct == "SendText" || ct == "sendText" {
+      sid = globalIdx(emitter, "io.send")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      textIdx = bc.add_string(cmd.text)
+      bc.emit("LOAD_CONST", textIdx)
+      bc.emit("CALL", 1)
+      bc.emit("POP")
+    }
+    if ct == "SendKey" || ct == "sendKey" {
+      sid = globalIdx(emitter, "io.sendKey")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      keyIdx = bc.add_string(cmd.key)
+      bc.emit("LOAD_CONST", keyIdx)
+      bc.emit("CALL", 1)
+      bc.emit("POP")
+    }
+    if ct == "MouseClick" || ct == "mouseClick" {
+      sid = globalIdx(emitter, "io.click")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      btnIdx = bc.add_string(cmd.text)
+      bc.emit("LOAD_CONST", btnIdx)
+      bc.emit("CALL", 1)
+      bc.emit("POP")
+    }
+    if ct == "MouseMove" || ct == "mouseMove" {
+      sid = globalIdx(emitter, "io.mouseMoveTo")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      xIdx = bc.add_string(cmd.xExprStr)
+      bc.emit("LOAD_CONST", xIdx)
+      yIdx = bc.add_string(cmd.yExprStr)
+      bc.emit("LOAD_CONST", yIdx)
+      bc.emit("CALL", 2)
+      bc.emit("POP")
+    }
+    if ct == "MouseRelative" || ct == "mouseRelative" {
+      sid = globalIdx(emitter, "io.mouseMoveRel")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      xIdx = bc.add_string(cmd.xExprStr)
+      bc.emit("LOAD_CONST", xIdx)
+      yIdx = bc.add_string(cmd.yExprStr)
+      bc.emit("LOAD_CONST", yIdx)
+      bc.emit("CALL", 2)
+      bc.emit("POP")
+    }
+    if ct == "Sleep" || ct == "sleep" {
+      sid = globalIdx(emitter, "sleep_ms")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      dur = int(cmd.duration)
+      bc.emit("LOAD_CONST", bc.add_const(dur))
+      bc.emit("CALL", 1)
+      bc.emit("POP")
+    }
+  }
+}

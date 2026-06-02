@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <numeric>
 #include <regex>
+#include <chrono>
 
 namespace havel::compiler {
 
@@ -213,9 +214,151 @@ globals[name] = value;
     break;
   }
 
-  case OpCode::NOP:
-  case OpCode::DEFINE_FUNC:
-    break;
+    case OpCode::NOP:
+    case OpCode::DEFINE_FUNC:
+        break;
+
+    // Math intrinsics
+    case OpCode::MATH_SIN: { Value v = popStack(); pushStack(Value(std::sin(toFloat(v)))); break; }
+    case OpCode::MATH_COS: { Value v = popStack(); pushStack(Value(std::cos(toFloat(v)))); break; }
+    case OpCode::MATH_TAN: { Value v = popStack(); pushStack(Value(std::tan(toFloat(v)))); break; }
+    case OpCode::MATH_ASIN: { Value v = popStack(); pushStack(Value(std::asin(toFloat(v)))); break; }
+    case OpCode::MATH_ACOS: { Value v = popStack(); pushStack(Value(std::acos(toFloat(v)))); break; }
+    case OpCode::MATH_ATAN: { Value v = popStack(); pushStack(Value(std::atan(toFloat(v)))); break; }
+    case OpCode::MATH_ATAN2: { Value y = popStack(); Value x = popStack(); pushStack(Value(std::atan2(toFloat(y), toFloat(x)))); break; }
+    case OpCode::MATH_SINH: { Value v = popStack(); pushStack(Value(std::sinh(toFloat(v)))); break; }
+    case OpCode::MATH_COSH: { Value v = popStack(); pushStack(Value(std::cosh(toFloat(v)))); break; }
+    case OpCode::MATH_TANH: { Value v = popStack(); pushStack(Value(std::tanh(toFloat(v)))); break; }
+    case OpCode::MATH_SQRT: { Value v = popStack(); pushStack(Value(std::sqrt(toFloat(v)))); break; }
+    case OpCode::MATH_LOG: { Value v = popStack(); pushStack(Value(std::log(toFloat(v)))); break; }
+    case OpCode::MATH_LOG2: { Value v = popStack(); pushStack(Value(std::log2(toFloat(v)))); break; }
+    case OpCode::MATH_LOG10: { Value v = popStack(); pushStack(Value(std::log10(toFloat(v)))); break; }
+    case OpCode::MATH_EXP: { Value v = popStack(); pushStack(Value(std::exp(toFloat(v)))); break; }
+    case OpCode::MATH_CEIL: { Value v = popStack(); pushStack(Value(static_cast<int64_t>(std::ceil(toFloat(v))))); break; }
+    case OpCode::MATH_FLOOR: { Value v = popStack(); pushStack(Value(static_cast<int64_t>(std::floor(toFloat(v))))); break; }
+    case OpCode::MATH_ROUND: { Value v = popStack(); pushStack(Value(static_cast<int64_t>(std::round(toFloat(v))))); break; }
+    case OpCode::MATH_ABS: {
+        Value v = popStack();
+        if (v.isInt()) pushStack(Value(std::abs(v.asInt())));
+        else pushStack(Value(std::abs(toFloat(v))));
+        break;
+    }
+
+    // Bit intrinsics
+    case OpCode::BIT_POPCOUNT: { Value v = popStack(); pushStack(Value(static_cast<int64_t>(__builtin_popcountll(static_cast<uint64_t>(toInt(v)))))); break; }
+    case OpCode::BIT_CTZ: { Value v = popStack(); pushStack(Value(static_cast<int64_t>(__builtin_ctzll(static_cast<uint64_t>(toInt(v)))))); break; }
+    case OpCode::BIT_CLZ: { Value v = popStack(); pushStack(Value(static_cast<int64_t>(__builtin_clzll(static_cast<uint64_t>(toInt(v)))))); break; }
+    case OpCode::BIT_BSWAP: { Value v = popStack(); pushStack(Value(static_cast<int64_t>(__builtin_bswap64(static_cast<uint64_t>(toInt(v)))))); break; }
+    case OpCode::BIT_ROTL: {
+        Value shift = popStack(); Value val = popStack();
+        uint64_t x = static_cast<uint64_t>(toInt(val));
+        int s = static_cast<int>(toInt(shift)) & 63;
+        pushStack(Value(static_cast<int64_t>((x << s) | (x >> (64 - s)))));
+        break;
+    }
+    case OpCode::BIT_ROTR: {
+        Value shift = popStack(); Value val = popStack();
+        uint64_t x = static_cast<uint64_t>(toInt(val));
+        int s = static_cast<int>(toInt(shift)) & 63;
+        pushStack(Value(static_cast<int64_t>((x >> s) | (x << (64 - s)))));
+        break;
+    }
+
+    // Time primitive
+    case OpCode::TIME_NOW: {
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        pushStack(Value(static_cast<int64_t>(ms)));
+        break;
+    }
+
+    // Format intrinsics
+    case OpCode::FORMAT_HEX: {
+        Value v = popStack();
+        std::ostringstream oss;
+        if (v.isInt()) {
+            oss << std::hex << static_cast<uint64_t>(v.asInt());
+        } else {
+            oss << std::hex << static_cast<uint64_t>(static_cast<int64_t>(toFloat(v)));
+        }
+        auto ref = createRuntimeString(oss.str());
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
+    case OpCode::FORMAT_UNHEX: {
+        Value v = popStack();
+        std::string s = toString(v);
+        std::string result;
+        for (size_t i = 0; i + 1 < s.size(); i += 2) {
+            unsigned byte = 0;
+            std::istringstream iss(s.substr(i, 2));
+            iss >> std::hex >> byte;
+            result += static_cast<char>(byte);
+        }
+        auto ref = createRuntimeString(std::move(result));
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
+    case OpCode::FORMAT_BASE64_ENCODE: {
+        Value v = popStack();
+        std::string s = toString(v);
+        static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string out;
+        out.reserve(((s.size() + 2) / 3) * 4);
+        size_t i = 0;
+        for (; i + 2 < s.size(); i += 3) {
+            uint32_t n = (static_cast<uint8_t>(s[i]) << 16) | (static_cast<uint8_t>(s[i+1]) << 8) | static_cast<uint8_t>(s[i+2]);
+            out += b64[(n >> 18) & 0x3F]; out += b64[(n >> 12) & 0x3F];
+            out += b64[(n >> 6) & 0x3F]; out += b64[n & 0x3F];
+        }
+        if (i < s.size()) {
+            uint32_t n = static_cast<uint8_t>(s[i]) << 16;
+            if (i + 1 < s.size()) n |= static_cast<uint8_t>(s[i+1]) << 8;
+            out += b64[(n >> 18) & 0x3F]; out += b64[(n >> 12) & 0x3F];
+            out += (i + 1 < s.size()) ? b64[(n >> 6) & 0x3F] : '=';
+            out += '=';
+        }
+        auto ref = createRuntimeString(std::move(out));
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
+    case OpCode::FORMAT_BASE64_DECODE: {
+        Value v = popStack();
+        std::string s = toString(v);
+        static const int8_t d64[256] = {
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+            52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+            -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+            15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+            -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+            41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        };
+        std::string out;
+        out.reserve((s.size() / 4) * 3);
+        int val = 0, valb = -8;
+        for (unsigned char c : s) {
+            if (d64[c] == -1) break;
+            val = (val << 6) + d64[c];
+            valb += 6;
+            if (valb >= 0) {
+                out.push_back(static_cast<char>((val >> valb) & 0xFF));
+                valb -= 8;
+            }
+        }
+        auto ref = createRuntimeString(std::move(out));
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
 
 	default:
 		return false;

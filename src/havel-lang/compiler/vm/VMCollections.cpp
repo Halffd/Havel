@@ -1734,20 +1734,148 @@ if (container.isSetId()) {
   }
 
   // Spread in function call
-  case OpCode::SPREAD_CALL: {
-    // Similar to SPREAD but marks arguments for spread in CALL
-    Value value = popStack();
-    if (value.isArrayId()) {
-      auto arrRef = ArrayRef{value.asArrayId()};
-      auto *arr = heap_.array(arrRef.id);
-      if (arr) {
-        for (auto &elem : *arr) {
-          pushStack(elem);
+    case OpCode::SPREAD_CALL: {
+        // Similar to SPREAD but marks arguments for spread in CALL
+        Value value = popStack();
+        if (value.isArrayId()) {
+            auto arrRef = ArrayRef{value.asArrayId()};
+            auto *arr = heap_.array(arrRef.id);
+            if (arr) {
+                for (auto &elem : *arr) {
+                    pushStack(elem);
+                }
+            }
         }
-      }
+        break;
     }
-    break;
-  }
+
+    // Object intrinsics
+    case OpCode::OBJECT_FREEZE: {
+        Value v = popStack();
+        if (v.isObjectId()) setHostObjectFrozen(ObjectRef{v.asObjectId(), true}, true);
+        pushStack(v);
+        break;
+    }
+    case OpCode::OBJECT_SEAL: {
+        Value v = popStack();
+        if (v.isObjectId()) setHostObjectSealed(ObjectRef{v.asObjectId(), true}, true);
+        pushStack(v);
+        break;
+    }
+    case OpCode::OBJECT_IS_FROZEN: {
+        Value v = popStack();
+        bool frozen = v.isObjectId() && hasHostObjectField(ObjectRef{v.asObjectId(), true}, "__frozen__");
+        pushStack(Value::makeBool(frozen));
+        break;
+    }
+    case OpCode::OBJECT_IS_SEALED: {
+        Value v = popStack();
+        bool sealed = v.isObjectId() && hasHostObjectField(ObjectRef{v.asObjectId(), true}, "__sealed__");
+        pushStack(Value::makeBool(sealed));
+        break;
+    }
+    case OpCode::OBJECT_SIZE: {
+        Value v = popStack();
+        if (!v.isObjectId()) { pushStack(Value::makeInt(0)); break; }
+        auto *obj = heap_.object(v.asObjectId());
+        pushStack(Value::makeInt(obj ? static_cast<int64_t>(obj->size()) : 0));
+        break;
+    }
+    case OpCode::OBJECT_ASSIGN: {
+        Value src = popStack();
+        Value dst = popStack();
+        if (!dst.isObjectId() || !src.isObjectId()) { pushStack(dst); break; }
+        auto *dstObj = heap_.object(dst.asObjectId());
+        auto *srcObj = heap_.object(src.asObjectId());
+        if (dstObj && srcObj) {
+            for (const auto &kv : *srcObj) {
+                (*dstObj)[kv.first] = kv.second;
+            }
+        }
+        pushStack(dst);
+        break;
+    }
+
+    // String intrinsics
+    case OpCode::STRING_REVERSE: {
+        Value v = popStack();
+        std::string s = toString(v);
+        std::reverse(s.begin(), s.end());
+        auto ref = createRuntimeString(std::move(s));
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
+    case OpCode::STRING_REPEAT: {
+        Value count = popStack();
+        Value v = popStack();
+        std::string s = toString(v);
+        int64_t n = toInt(count);
+        if (n <= 0) { auto ref = createRuntimeString(""); pushStack(Value::makeStringId(ref.id)); break; }
+        std::string out;
+        out.reserve(s.size() * static_cast<size_t>(n));
+        for (int64_t i = 0; i < n; i++) out += s;
+        auto ref = createRuntimeString(std::move(out));
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
+    case OpCode::STRING_TRIM_START: {
+        Value v = popStack();
+        std::string s = toString(v);
+        size_t start = s.find_first_not_of(" \t\n\r");
+        if (start == std::string::npos) start = s.size();
+        auto ref = createRuntimeString(s.substr(start));
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
+    case OpCode::STRING_TRIM_END: {
+        Value v = popStack();
+        std::string s = toString(v);
+        size_t end = s.find_last_not_of(" \t\n\r");
+        if (end == std::string::npos) { auto ref = createRuntimeString(""); pushStack(Value::makeStringId(ref.id)); break; }
+        auto ref = createRuntimeString(s.substr(0, end + 1));
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
+    case OpCode::STRING_INCLUDES: {
+        Value substr = popStack();
+        Value str = popStack();
+        std::string s = toString(str);
+        std::string sub = toString(substr);
+        pushStack(Value::makeBool(s.find(sub) != std::string::npos));
+        break;
+    }
+    case OpCode::STRING_PAD_START: {
+        Value padVal = popStack();
+        Value widthVal = popStack();
+        Value strVal = popStack();
+        std::string s = toString(strVal);
+        int64_t width = toInt(widthVal);
+        std::string pad = toString(padVal);
+        if (pad.empty()) pad = " ";
+        while (static_cast<int64_t>(s.size()) < width) {
+            size_t needed = static_cast<size_t>(width - static_cast<int64_t>(s.size()));
+            s = pad.substr(0, std::min(needed, pad.size())) + s;
+        }
+        auto ref = createRuntimeString(std::move(s));
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
+    case OpCode::STRING_PAD_END: {
+        Value padVal = popStack();
+        Value widthVal = popStack();
+        Value strVal = popStack();
+        std::string s = toString(strVal);
+        int64_t width = toInt(widthVal);
+        std::string pad = toString(padVal);
+        if (pad.empty()) pad = " ";
+        while (static_cast<int64_t>(s.size()) < width) {
+            size_t needed = static_cast<size_t>(width - static_cast<int64_t>(s.size()));
+            s += pad.substr(0, std::min(needed, pad.size()));
+        }
+        auto ref = createRuntimeString(std::move(s));
+        pushStack(Value::makeStringId(ref.id));
+        break;
+    }
 
 	default:
 		return false;

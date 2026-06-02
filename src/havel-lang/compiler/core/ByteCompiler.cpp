@@ -6,6 +6,7 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <unordered_map>
 
 // Non-member fallbacks (0,0 for errors outside method scope)
 static uint32_t _compiler_err_line() { return 0; }
@@ -2417,11 +2418,16 @@ case ast::NodeType::ImplDeclaration: {
 }
 
 case ast::NodeType::UseStatement: {
-    compileUseStatement(static_cast<const ast::UseStatement &>(statement));
-    break;
-  }
+        compileUseStatement(static_cast<const ast::UseStatement &>(statement));
+        break;
+    }
 
-  case ast::NodeType::ShellCommandStatement: {
+    case ast::NodeType::WithStatement: {
+        compileWithStatement(static_cast<const ast::WithStatement &>(statement));
+        break;
+    }
+
+    case ast::NodeType::ShellCommandStatement: {
     compileShellCommandStatement(
         static_cast<const ast::ShellCommandStatement &>(statement));
     break;
@@ -2587,7 +2593,27 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
         } else {
             emit(OpCode::POP);
         }
-        return;
+return;
+    }
+    }
+
+void ByteCompiler::compileWithStatement(const ast::WithStatement &statement) {
+    if (statement.object) {
+        compileExpression(*statement.object);
+    } else {
+        emit(OpCode::PUSH_NULL);
+    }
+
+    if (statement.alias) {
+        const uint32_t slot = declarationSlot(*statement.alias);
+        reserveLocalSlot(slot);
+        emit(OpCode::STORE_IMMUT_VAR, slot);
+    } else {
+        emit(OpCode::POP);
+    }
+
+    for (const auto &stmt : statement.body) {
+        if (stmt) compileStatement(*stmt);
     }
 }
 
@@ -4920,34 +4946,77 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  // which CALL_METHOD handles natively.
  if (auto *objIdent =
  dynamic_cast<const ast::Identifier *>(member.object.get())) {
- // Intrinsic struct helpers bypass generic dynamic call path.
- if (objIdent->symbol == "struct" && property->symbol == "get" &&
-     expression.args.size() == 2) {
-   compileExpression(*expression.args[0]); // struct instance
-   const auto* fieldLit =
-       dynamic_cast<const ast::StringLiteral*>(expression.args[1].get());
-   if (!fieldLit) {
-     COMPILER_THROW("struct.get requires literal string field name");
-   }
-   uint32_t field_sid = addStringConstant(fieldLit->value);
-            emit(OpCode::STRUCT_GET, Value::makeStringValId(field_sid));
-            in_tail_position_ = saved_tail_position;
-            return;
- }
- if (objIdent->symbol == "struct" && property->symbol == "set" &&
-     expression.args.size() == 3) {
-   compileExpression(*expression.args[0]); // struct instance
-   const auto* fieldLit =
-       dynamic_cast<const ast::StringLiteral*>(expression.args[1].get());
-   if (!fieldLit) {
-     COMPILER_THROW("struct.set requires literal string field name");
-   }
-   compileExpression(*expression.args[2]); // value
-   uint32_t field_sid = addStringConstant(fieldLit->value);
-            emit(OpCode::STRUCT_SET, Value::makeStringValId(field_sid));
-            in_tail_position_ = saved_tail_position;
-            return;
- }
+            // Intrinsic struct helpers bypass generic dynamic call path.
+            if (objIdent->symbol == "struct" && property->symbol == "get" &&
+                expression.args.size() == 2) {
+                compileExpression(*expression.args[0]); // struct instance
+                const auto* fieldLit =
+                    dynamic_cast<const ast::StringLiteral*>(expression.args[1].get());
+                if (!fieldLit) {
+                    COMPILER_THROW("struct.get requires literal string field name");
+                }
+                uint32_t field_sid = addStringConstant(fieldLit->value);
+                emit(OpCode::STRUCT_GET, Value::makeStringValId(field_sid));
+                in_tail_position_ = saved_tail_position;
+                return;
+            }
+            if (objIdent->symbol == "struct" && property->symbol == "set" &&
+                expression.args.size() == 3) {
+                compileExpression(*expression.args[0]); // struct instance
+                const auto* fieldLit =
+                    dynamic_cast<const ast::StringLiteral*>(expression.args[1].get());
+                if (!fieldLit) {
+                    COMPILER_THROW("struct.set requires literal string field name");
+                }
+                compileExpression(*expression.args[2]); // value
+                uint32_t field_sid = addStringConstant(fieldLit->value);
+                emit(OpCode::STRUCT_SET, Value::makeStringValId(field_sid));
+                in_tail_position_ = saved_tail_position;
+                return;
+            }
+
+            // Stdlib intrinsic dispatch: math.sin(x) -> MATH_SIN, etc.
+            {
+                static const std::unordered_map<std::string, OpCode> intrinsicMap = {
+                    {"math.sin", OpCode::MATH_SIN}, {"math.cos", OpCode::MATH_COS},
+                    {"math.tan", OpCode::MATH_TAN}, {"math.asin", OpCode::MATH_ASIN},
+                    {"math.acos", OpCode::MATH_ACOS}, {"math.atan", OpCode::MATH_ATAN},
+                    {"math.atan2", OpCode::MATH_ATAN2},
+                    {"math.sinh", OpCode::MATH_SINH}, {"math.cosh", OpCode::MATH_COSH},
+                    {"math.tanh", OpCode::MATH_TANH},
+                    {"math.sqrt", OpCode::MATH_SQRT}, {"math.log", OpCode::MATH_LOG},
+                    {"math.log2", OpCode::MATH_LOG2}, {"math.log10", OpCode::MATH_LOG10},
+                    {"math.exp", OpCode::MATH_EXP},
+                    {"math.ceil", OpCode::MATH_CEIL}, {"math.floor", OpCode::MATH_FLOOR},
+                    {"math.round", OpCode::MATH_ROUND}, {"math.abs", OpCode::MATH_ABS},
+                    {"object.freeze", OpCode::OBJECT_FREEZE}, {"object.seal", OpCode::OBJECT_SEAL},
+                    {"object.isFrozen", OpCode::OBJECT_IS_FROZEN}, {"object.isSealed", OpCode::OBJECT_IS_SEALED},
+                    {"object.size", OpCode::OBJECT_SIZE}, {"object.assign", OpCode::OBJECT_ASSIGN},
+                    {"string.reverse", OpCode::STRING_REVERSE}, {"string.repeat", OpCode::STRING_REPEAT},
+                    {"string.trimStart", OpCode::STRING_TRIM_START}, {"string.trimEnd", OpCode::STRING_TRIM_END},
+                    {"string.includes", OpCode::STRING_INCLUDES},
+                    {"string.padStart", OpCode::STRING_PAD_START}, {"string.padEnd", OpCode::STRING_PAD_END},
+                    {"bit.popcount", OpCode::BIT_POPCOUNT}, {"bit.ctz", OpCode::BIT_CTZ},
+                    {"bit.clz", OpCode::BIT_CLZ}, {"bit.bswap", OpCode::BIT_BSWAP},
+                    {"bit.rotl", OpCode::BIT_ROTL}, {"bit.rotr", OpCode::BIT_ROTR},
+                    {"time.now", OpCode::TIME_NOW},
+                    {"format.hex", OpCode::FORMAT_HEX}, {"format.unhex", OpCode::FORMAT_UNHEX},
+                    {"format.base64_encode", OpCode::FORMAT_BASE64_ENCODE},
+                    {"format.base64_decode", OpCode::FORMAT_BASE64_DECODE},
+                };
+                std::string key = objIdent->symbol + "." + property->symbol;
+                auto it = intrinsicMap.find(key);
+                if (it != intrinsicMap.end()) {
+                    // TIME_NOW takes 0 args, ATAN2/REPEAT/ROTL/ROTR/PAD_* take 2-3, rest take 1
+                    for (const auto &arg : expression.args) {
+                        if (!arg) { emit(OpCode::LOAD_CONST, addConstant(Value::makeNull())); continue; }
+                        compileExpression(*arg);
+                    }
+                    emit(it->second);
+                    in_tail_position_ = saved_tail_position;
+                    return;
+                }
+            }
 
             // Push receiver: use local/upvalue binding if available, otherwise global
             const auto *objBinding = bindingFor(*objIdent);
@@ -6056,15 +6125,23 @@ void ByteCompiler::collectFunctionDeclarations(
     break;
   }
 
-  case ast::NodeType::OffModeStatement: {
-    const auto &off_mode = static_cast<const ast::OffModeStatement &>(statement);
-    if (off_mode.body) {
-      collectFunctionDeclarations(*off_mode.body, out);
+case ast::NodeType::OffModeStatement: {
+        const auto &off_mode = static_cast<const ast::OffModeStatement &>(statement);
+        if (off_mode.body) {
+            collectFunctionDeclarations(*off_mode.body, out);
+        }
+        break;
     }
-    break;
-  }
 
-  default:
+    case ast::NodeType::WithStatement: {
+        const auto &with_stmt = static_cast<const ast::WithStatement &>(statement);
+        for (const auto &s : with_stmt.body) {
+            if (s) collectFunctionDeclarations(*s, out);
+        }
+        break;
+    }
+
+    default:
     break;
   }
 }
@@ -6274,14 +6351,24 @@ case ast::NodeType::DecoratorStatement: {
     }
     break;
   }
-  case ast::NodeType::OffModeStatement: {
-    const auto &off_mode = static_cast<const ast::OffModeStatement &>(statement);
-    if (off_mode.body) {
-      collectLambdaExpressions(*off_mode.body, out);
+case ast::NodeType::OffModeStatement: {
+        const auto &off_mode = static_cast<const ast::OffModeStatement &>(statement);
+        if (off_mode.body) {
+            collectLambdaExpressions(*off_mode.body, out);
+        }
+        break;
     }
-    break;
-  }
-  default:
+    case ast::NodeType::WithStatement: {
+        const auto &with_stmt = static_cast<const ast::WithStatement &>(statement);
+        if (with_stmt.object) {
+            collectLambdaExpressions(*with_stmt.object, out);
+        }
+        for (const auto &s : with_stmt.body) {
+            if (s) collectLambdaExpressions(*s, out);
+        }
+        break;
+    }
+    default:
     break;
   }
 }
@@ -7393,12 +7480,20 @@ void ByteCompiler::collectUpvaluesFromBody(const ast::Statement &stmt, std::vect
     }
     break;
   }
-  case ast::NodeType::ReturnStatement: {
-    const auto &ret = static_cast<const ast::ReturnStatement &>(stmt);
-    if (ret.argument) collectUpvaluesFromExpr(*ret.argument, upvalues);
-    break;
-  }
-  default:
+case ast::NodeType::ReturnStatement: {
+        const auto &ret = static_cast<const ast::ReturnStatement &>(stmt);
+        if (ret.argument) collectUpvaluesFromExpr(*ret.argument, upvalues);
+        break;
+    }
+    case ast::NodeType::WithStatement: {
+        const auto &withStmt = static_cast<const ast::WithStatement &>(stmt);
+        if (withStmt.object) collectUpvaluesFromExpr(*withStmt.object, upvalues);
+        for (const auto &s : withStmt.body) {
+            if (s) collectUpvaluesFromBody(*s, upvalues);
+        }
+        break;
+    }
+    default:
     break;
   }
 }
@@ -7734,12 +7829,19 @@ bool ByteCompiler::statementContainsYield(const ast::Statement &stmt) const {
       return false;
     }
     
-    case ast::NodeType::WaitStatement: {
-      const auto &wait = static_cast<const ast::WaitStatement &>(stmt);
-      return wait.condition && expressionContainsYield(*wait.condition);
+case ast::NodeType::WaitStatement: {
+        const auto &wait = static_cast<const ast::WaitStatement &>(stmt);
+        return wait.condition && expressionContainsYield(*wait.condition);
     }
-    
-    
+
+    case ast::NodeType::WithStatement: {
+        const auto &withStmt = static_cast<const ast::WithStatement &>(stmt);
+        for (const auto &s : withStmt.body) {
+            if (s && statementContainsYield(*s)) return true;
+        }
+        return false;
+    }
+
     // Note: We check if the IMMEDIATE parent function contains yield, not nested ones
     // Nested functions are compiled separately and get their own is_generator flag
   case ast::NodeType::FunctionDeclaration:

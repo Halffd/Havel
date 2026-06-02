@@ -1917,19 +1917,39 @@ return add(32)
 )havel", 42, dump_bytecode, snapshot_dir);
 
   // --- String repetition ---
-  failures += runCase("string-repeat", R"havel(
-s = "ha" * 3
-return #s
+failures += runCase("string-repeat", R"havel(
+    s = "ha" * 3
+    return #s
 )havel", 6, dump_bytecode, snapshot_dir);
 
+    failures += runCase("with-as-basic", R"havel(
+    with {x: 10, y: 20} as obj {
+        return obj.x + obj.y
+    }
+)havel", 30, dump_bytecode, snapshot_dir);
 
-  // ================================================================
-  // Stdlib host function smoke tests (via runStdlibCase)
-  // These test functions registered by registerPureStdLib() that
-  // the default runCase() pipeline does NOT have access to.
-  // ================================================================
+    failures += runCase("with-as-scope", R"havel(
+    result = 0
+    with 42 as n {
+        result = n
+    }
+    return result
+)havel", 42, dump_bytecode, snapshot_dir);
 
-  // --- FormatModule: fmt.hex/oct/bin/b64/b64decode/format ---
+    failures += runCase("with-no-alias", R"havel(
+    with 99 {
+        return 99
+    }
+)havel", 99, dump_bytecode, snapshot_dir);
+
+
+    // ================================================================
+    // Stdlib host function smoke tests (via runStdlibCase)
+    // These test functions registered by registerPureStdLib() that
+    // the default runCase() pipeline does NOT have access to.
+    // ================================================================
+
+    // --- FormatModule: fmt.hex/oct/bin/b64/b64decode/format ---
   failures += runStdlibCase("fmt-hex-int", R"havel(
 return fmt.hex(255) == "0xff" ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);

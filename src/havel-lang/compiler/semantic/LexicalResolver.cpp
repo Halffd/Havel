@@ -299,6 +299,36 @@ uint32_t LexicalResolver::declareLocal(const std::string &name,
   return slot;
 }
 
+uint32_t LexicalResolver::declareFunctionLocal(const std::string &name,
+                                                const ast::Identifier *declaration,
+                                                bool is_const) {
+    auto &ctx = function_stack_.back();
+    if (ctx.scopes.empty()) {
+        beginScope();
+    }
+
+    auto &scope = ctx.scopes.front();
+    auto it = scope.find(name);
+    if (it != scope.end()) {
+        return it->second.slot;
+    }
+
+    uint32_t slot = ctx.next_slot++;
+    scope[name] =
+        FunctionContext::LocalSymbol{.slot = slot, .is_const = is_const};
+    if (declaration) {
+        result_.declaration_slots[declaration] = slot;
+        ResolvedBinding binding;
+        binding.kind = ResolvedBindingKind::Local;
+        binding.slot = slot;
+        binding.scope_distance = 0;
+        binding.name = name;
+        binding.is_const = is_const;
+        result_.identifier_bindings[declaration] = binding;
+    }
+    return slot;
+}
+
 // Declare local without duplicate checking (for match pattern bindings)
 uint32_t LexicalResolver::declareLocalUnchecked(const std::string &name,
                                                 const ast::Identifier *declaration,
@@ -1205,11 +1235,10 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           newBinding.is_const = false;
           noteIdentifierBinding(ident, newBinding);
         } else {
-            // Inside a function - declare as local in the current function.
-            // Variables that need to be shared with enclosing scopes will
-            // be resolved as upvalues via resolveIdentifier when accessed
-            // from nested functions.
-            uint32_t slot = declareLocal(ident.symbol, &ident, false);
+            // Inside a function - declare as local in the function's root scope.
+            // This ensures variables assigned inside if/else blocks are
+            // visible throughout the entire function (Python/Ruby semantics).
+            uint32_t slot = declareFunctionLocal(ident.symbol, &ident, false);
             ResolvedBinding newBinding;
             newBinding.kind = ResolvedBindingKind::Local;
             newBinding.slot = slot;

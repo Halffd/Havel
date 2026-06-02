@@ -88,9 +88,12 @@ private:
   void endFunction();
   void beginScope();
   void endScope();
-  uint32_t declareLocal(const std::string &name,
-                        const ast::Identifier *declaration = nullptr,
-                        bool is_const = false);
+    uint32_t declareLocal(const std::string &name,
+                          const ast::Identifier *declaration = nullptr,
+                          bool is_const = false);
+    uint32_t declareFunctionLocal(const std::string &name,
+                                  const ast::Identifier *declaration = nullptr,
+                                  bool is_const = false);
   uint32_t declareLocalUnchecked(const std::string &name,
                                   const ast::Identifier *declaration = nullptr,
                                   bool is_const = false);

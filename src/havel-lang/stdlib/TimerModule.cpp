@@ -65,3 +65,11 @@ void registerTimerModule(const VMApi &api) {
 }
 
 } // namespace havel::stdlib
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(timer, "1.0.0", "Timer operations stdlib module",
+    havel::stdlib::registerTimerModule(*api);
+)
+#endif

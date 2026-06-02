@@ -362,26 +362,8 @@ api.setGlobal("debug", debugObj);
 #ifdef HAVEL_MODULE_PLUGIN
 #include "loader/ModulePlugin.h"
 
-extern "C" void havel_module_register(void *vmapi_ptr);
-
-static const HavelModuleABI log_module_abi = {
-    HAVEL_MODULE_ABI_VERSION,
-    "log",
-    "1.0.0",
-    "Logging stdlib module",
-    havel_module_register,
-    nullptr
-};
-
-extern "C" const HavelModuleABI *havel_module_info(void) {
-    return &log_module_abi;
-}
-
-extern "C" void havel_module_register(void *vmapi_ptr) {
-    auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr);
-    if (api) {
-        havel::stdlib::registerLogModule(*api);
-        havel::stdlib::registerDebugModule(*api);
-    }
-}
+HAVEL_MODULE_PLUGIN_IMPL(log, "1.0.0", "Logging and debug stdlib module",
+    havel::stdlib::registerLogModule(*api);
+    havel::stdlib::registerDebugModule(*api);
+)
 #endif

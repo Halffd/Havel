@@ -202,3 +202,11 @@ void registerPointerModule(const VMApi &api) {
 }
 
 } // namespace havel::stdlib
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(ptr, "1.0.0", "Pointer operations stdlib module",
+    havel::stdlib::registerPointerModule(*api);
+)
+#endif

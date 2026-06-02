@@ -439,3 +439,11 @@ void registerStringModule(const VMApi &api) {
 }
 
 } // namespace havel::stdlib
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(string, "1.0.0", "String operations stdlib module",
+    havel::stdlib::registerStringModule(*api);
+)
+#endif

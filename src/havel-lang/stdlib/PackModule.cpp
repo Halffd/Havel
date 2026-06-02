@@ -394,3 +394,11 @@ void registerPackModule(const VMApi &api) {
 }
 
 } // namespace havel::stdlib
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(pack, "1.0.0", "Binary pack/unpack stdlib module",
+    havel::stdlib::registerPackModule(*api);
+)
+#endif

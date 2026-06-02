@@ -752,3 +752,11 @@ if (!std::getline(std::cin, line))
 }
 
 } // namespace havel::stdlib
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+
+HAVEL_MODULE_PLUGIN_IMPL(shell, "1.0.0", "Shell execution stdlib module",
+    havel::stdlib::registerShellModule(*api);
+)
+#endif

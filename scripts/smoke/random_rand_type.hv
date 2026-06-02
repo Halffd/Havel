@@ -1,4 +1,5 @@
 // smoke: random-rand-type = 1
+use random
 // rand() returns a double in [0, 1)
 v = rand()
 // If it returns a double, comparing with 0 should work

@@ -1,4 +1,5 @@
 // smoke: regex-search-true = 1
+use regex
 // regex_search takes (text, pattern) -- reversed from regex_match
 val __result = regex_search("hello world", "wor") ? 1 : 0
 if __result != 1 {

@@ -1,4 +1,5 @@
 // smoke: regex-replace = 1
+use regex
 s = regex_replace("world", "hello world", "earth")
 val __result = s == "hello earth" ? 1 : 0
 if __result != 1 {

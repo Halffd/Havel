@@ -1,4 +1,5 @@
 // smoke: fmt-format-hex-spec = 1
+use format
 s = fmt.format("{:x}", 255)
 val __result = s == "ff" ? 1 : 0
 if __result != 1 {

@@ -1,4 +1,5 @@
 // smoke: regex-extract = 2
+use regex
 arr = regex_extract("\\d+", "abc123def456")
 val __result = arr.len
 if __result != 2 {

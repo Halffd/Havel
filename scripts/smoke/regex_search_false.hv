@@ -1,4 +1,5 @@
 // smoke: regex-search-false = 1
+use regex
 val __result = regex_search("hello", "xyz") ? 0 : 1
 if __result != 1 {
  print("FAIL regex-search-false: expected 1, got " + str(__result))

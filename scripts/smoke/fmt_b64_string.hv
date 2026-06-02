@@ -1,4 +1,5 @@
 // smoke: fmt-b64-string = 8
+use format
 s = fmt.b64("Hello")
 val __result = #s
 if __result != 8 {

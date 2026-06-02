@@ -1,4 +1,5 @@
 // smoke: fmt-oct-int = 1
+use format
 val __result = fmt.oct(8) == "0o10" ? 1 : 0
 if __result != 1 {
  print("FAIL fmt-oct-int: expected 1, got " + str(__result))

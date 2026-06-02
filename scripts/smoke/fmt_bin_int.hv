@@ -1,4 +1,5 @@
 // smoke: fmt-bin-int = 1
+use format
 val __result = fmt.bin(5) == "0b101" ? 1 : 0
 if __result != 1 {
  print("FAIL fmt-bin-int: expected 1, got " + str(__result))

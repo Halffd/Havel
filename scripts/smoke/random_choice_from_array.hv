@@ -1,4 +1,5 @@
 // smoke: random-choice-from-array = 1
+use random
 // choice picks from an array
 arr = [10, 20, 30]
 v = random.choice(arr)

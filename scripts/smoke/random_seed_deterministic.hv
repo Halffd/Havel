@@ -1,4 +1,5 @@
 // smoke: random-seed-deterministic = 1
+use random
 // Setting seed should make subsequent calls deterministic
 random.seed(42)
 a = randint(1, 1000)

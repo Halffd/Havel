@@ -1,4 +1,5 @@
 // smoke: fmt-hex-zero = 1
+use format
 val __result = fmt.hex(0) == "0x0" ? 1 : 0
 if __result != 1 {
  print("FAIL fmt-hex-zero: expected 1, got " + str(__result))

@@ -921,9 +921,24 @@ int runStdlibCase(const std::string &name, const std::string &source,
     vm.moduleLoader().addSearchPath(canonicalRoot + "/app");
     vm.moduleLoader().addSearchPath(canonicalRoot);
 
-    havel::registerPureStdLib(vm);
+havel::registerPureStdLib(vm);
 
-    havel::compiler::PipelineOptions options;
+vm.ensureModuleLoaded("regex");
+vm.ensureModuleLoaded("random");
+vm.ensureModuleLoaded("format");
+vm.ensureModuleLoaded("bit");
+vm.ensureModuleLoaded("pack");
+vm.ensureModuleLoaded("time");
+vm.ensureModuleLoaded("fs");
+vm.ensureModuleLoaded("debug");
+vm.ensureModuleLoaded("sys");
+vm.ensureModuleLoaded("shell");
+vm.ensureModuleLoaded("pointer");
+vm.ensureModuleLoaded("option");
+vm.ensureModuleLoaded("log");
+vm.ensureModuleLoaded("bytecodeBuilder");
+
+havel::compiler::PipelineOptions options;
     options.compile_unit_name = name;
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
@@ -1539,19 +1554,19 @@ if !false { return 1 }
 return 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
-  failures += runCase("logic-and-eval", R"havel(
-    x = 0
-    fn side() { x += 1; 1 }
-    result = false && side()
-    x
-  )havel", 1, dump_bytecode, snapshot_dir);
+failures += runCase("logic-and-eval", R"havel(
+x = 0
+fn side() { x += 1; 1 }
+result = false && side()
+x
+)havel", 0, dump_bytecode, snapshot_dir);
 
-  failures += runCase("logic-or-eval", R"havel(
-    x = 0
-    fn side() { x += 1; 1 }
-    result = true || side()
-    x
-  )havel", 1, dump_bytecode, snapshot_dir);
+failures += runCase("logic-or-eval", R"havel(
+x = 0
+fn side() { x += 1; 1 }
+result = true || side()
+x
+)havel", 0, dump_bytecode, snapshot_dir);
 
   // --- Bitwise ---
   failures += runCase("bitwise-and", R"havel(

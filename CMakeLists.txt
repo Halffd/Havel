@@ -1224,59 +1224,132 @@ endif()
 # MODULE PLUGINS (conditional .so modules loaded via dlopen)
 # ==============================================================================
 if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
-    set(MODULE_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
-    file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
+set(MODULE_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/modules")
+file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
 
-    # Helper function to define a module plugin .so target
-    function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
-        set(MODULE_TARGET "havel_mod_${MODULE_NAME}")
-        add_library(${MODULE_TARGET} MODULE ${MODULE_SOURCE})
-        set_target_properties(${MODULE_TARGET} PROPERTIES
-            PREFIX ""
-            LIBRARY_OUTPUT_DIRECTORY "${MODULE_PLUGIN_OUTPUT_DIR}"
-            CXX_STANDARD 23
-            CXX_STANDARD_REQUIRED ON
-            C_STANDARD 17
-            C_STANDARD_REQUIRED ON
-            POSITION_INDEPENDENT_CODE ON
-            INTERPROCEDURAL_OPTIMIZATION OFF
-        )
-        target_compile_options(${MODULE_TARGET} PRIVATE -fno-lto)
-        target_link_options(${MODULE_TARGET} PRIVATE -fno-lto)
-        target_compile_definitions(${MODULE_TARGET} PRIVATE
-            HAVEL_MODULE_PLUGIN
-            ENABLE_HAVEL_LANG
-        )
-        target_include_directories(${MODULE_TARGET} PRIVATE
-            ${CMAKE_SOURCE_DIR}/src
-            ${CMAKE_SOURCE_DIR}/include
-            ${CMAKE_SOURCE_DIR}/src/havel-lang
-        )
-        # Module .so resolves symbols from the main executable at runtime
-        # via --export-dynamic. Do NOT link static libs — they duplicate globals.
-        target_link_libraries(${MODULE_TARGET} PRIVATE
-            fmt::fmt
-        )
-        # Allow unresolved symbols at link time (resolved from main exe at runtime)
-        target_link_options(${MODULE_TARGET} PRIVATE
-            -Wl,--allow-shlib-undefined
-        )
-        install(TARGETS ${MODULE_TARGET}
-            LIBRARY DESTINATION lib/havel/modules
-            COMPONENT Runtime
-        )
-    endfunction()
+# Helper function to define a module plugin .so target
+# Usage: add_havel_module_plugin(name source [EXTRA_DEFS def1 def2 ...])
+function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
+  set(MODULE_TARGET "havel_mod_${MODULE_NAME}")
+  add_library(${MODULE_TARGET} MODULE ${MODULE_SOURCE})
+  set_target_properties(${MODULE_TARGET} PROPERTIES
+    PREFIX ""
+    LIBRARY_OUTPUT_DIRECTORY "${MODULE_PLUGIN_OUTPUT_DIR}"
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    C_STANDARD 17
+    C_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON
+    INTERPROCEDURAL_OPTIMIZATION OFF
+  )
+  target_compile_options(${MODULE_TARGET} PRIVATE -fno-lto)
+  target_link_options(${MODULE_TARGET} PRIVATE -fno-lto)
+  target_compile_definitions(${MODULE_TARGET} PRIVATE
+    HAVEL_MODULE_PLUGIN
+    ENABLE_HAVEL_LANG
+  )
+  # Parse optional EXTRA_DEFS keyword
+  set(_extra_defs "")
+  if(ARGC GREATER 2)
+    set(_parsing_defs FALSE)
+    foreach(_arg ${ARGN})
+      if(_arg STREQUAL "EXTRA_DEFS")
+        set(_parsing_defs TRUE)
+      elseif(_parsing_defs)
+        list(APPEND _extra_defs ${_arg})
+      endif()
+    endforeach()
+  endif()
+  foreach(_def ${_extra_defs})
+    target_compile_definitions(${MODULE_TARGET} PRIVATE ${_def})
+  endforeach()
+  target_include_directories(${MODULE_TARGET} PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
+    ${CMAKE_SOURCE_DIR}/src/extensions
+  )
+  # Module .so resolves symbols from the main executable at runtime
+  # via --export-dynamic. Do NOT link static libs -- they duplicate globals.
+  target_link_libraries(${MODULE_TARGET} PRIVATE
+    fmt::fmt
+  )
+  # Allow unresolved symbols at link time (resolved from main exe at runtime)
+  target_link_options(${MODULE_TARGET} PRIVATE
+    -Wl,--allow-shlib-undefined
+  )
+  install(TARGETS ${MODULE_TARGET}
+    LIBRARY DESTINATION lib/havel/modules
+    COMPONENT Runtime
+  )
+endfunction()
 
-    # LogModule plugin (proof of concept)
-    add_havel_module_plugin(log
-        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp
-    )
+# -- stdlib module plugins -------------------------------------------------
+add_havel_module_plugin(log          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp)
+add_havel_module_plugin(array        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ArrayModule.cpp)
+add_havel_module_plugin(bit          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BitModule.cpp)
+add_havel_module_plugin(browser      ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BrowserModule.cpp)
+add_havel_module_plugin(bytecodebuilder ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BytecodeBuilderModule.cpp)
+add_havel_module_plugin(fmt          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FormatModule.cpp)
+add_havel_module_plugin(fs           ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp)
+add_havel_module_plugin(hotkey       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HotkeyModule.cpp)
+add_havel_module_plugin(http         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
+add_havel_module_plugin(math         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/MathModule.cpp)
+add_havel_module_plugin(object       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ObjectModule.cpp)
+add_havel_module_plugin(option       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/OptionModule.cpp)
+add_havel_module_plugin(pack         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/PackModule.cpp)
+add_havel_module_plugin(ptr          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/PointerModule.cpp)
+add_havel_module_plugin(random       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/RandomModule.cpp)
+add_havel_module_plugin(regex        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/RegexModule.cpp)
+add_havel_module_plugin(shell        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ShellModule.cpp)
+add_havel_module_plugin(string       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StringModule.cpp)
+add_havel_module_plugin(sys          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/SysModule.cpp)
+add_havel_module_plugin(time         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/TimeModule.cpp)
+add_havel_module_plugin(timer        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/TimerModule.cpp)
+add_havel_module_plugin(type         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/TypeModule.cpp)
 
-    # Export symbols from main executable so plugins can resolve them
-    set_target_properties(havel PROPERTIES
-        ENABLE_EXPORTS ON
-    )
-    target_link_options(havel PRIVATE -Wl,--export-dynamic)
+# -- host module plugins ---------------------------------------------------
+add_havel_module_plugin(alttab       ${CMAKE_SOURCE_DIR}/src/modules/alttab/AltTabModule.cpp)
+add_havel_module_plugin(app          ${CMAKE_SOURCE_DIR}/src/modules/app/AppModule.cpp)
+add_havel_module_plugin(audio        ${CMAKE_SOURCE_DIR}/src/modules/audio/AudioModule.cpp)
+add_havel_module_plugin(automation   ${CMAKE_SOURCE_DIR}/src/modules/automation/AutomationModule.cpp)
+add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp)
+add_havel_module_plugin(brightness   ${CMAKE_SOURCE_DIR}/src/modules/brightness/BrightnessModule.cpp)
+add_havel_module_plugin(clipboard    ${CMAKE_SOURCE_DIR}/src/modules/clipboard/ClipboardModule.cpp)
+add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/HistoryClipboardModule.cpp)
+add_havel_module_plugin(monitoringclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/MonitoringClipboardModule.cpp)
+add_havel_module_plugin(config       ${CMAKE_SOURCE_DIR}/src/modules/config/ConfigModule.cpp)
+add_havel_module_plugin(display      ${CMAKE_SOURCE_DIR}/src/modules/display/DisplayModule.cpp)
+add_havel_module_plugin(ffi          ${CMAKE_SOURCE_DIR}/src/modules/ffi/FFIModule.cpp
+  EXTRA_DEFS $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>)
+add_havel_module_plugin(filemanager  ${CMAKE_SOURCE_DIR}/src/modules/filesystem/FileManagerModule.cpp)
+add_havel_module_plugin(help         ${CMAKE_SOURCE_DIR}/src/modules/help/HelpModule.cpp)
+add_havel_module_plugin(image        ${CMAKE_SOURCE_DIR}/src/modules/image/ImageModule.cpp)
+add_havel_module_plugin(io           ${CMAKE_SOURCE_DIR}/src/modules/io/IOModule.cpp)
+add_havel_module_plugin(mapmanager   ${CMAKE_SOURCE_DIR}/src/modules/mapmanager/MapManagerModule.cpp)
+add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/MediaModule.cpp)
+add_havel_module_plugin(mode         ${CMAKE_SOURCE_DIR}/src/modules/mode/ModeModule.cpp)
+add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
+add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
+add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)
+add_havel_module_plugin(window       ${CMAKE_SOURCE_DIR}/src/modules/window/WindowMonitorModule.cpp)
+
+# Qt-dependent modules
+if(ENABLE_QT)
+  add_havel_module_plugin(clipboardmgr ${CMAKE_SOURCE_DIR}/src/modules/clipboardmgr/ClipboardMgrModule.cpp)
+  get_target_property(_qt_core_inc Qt6::Core INTERFACE_INCLUDE_DIRECTORIES)
+  get_target_property(_qt_gui_inc Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)
+  get_target_property(_qt_widgets_inc Qt6::Widgets INTERFACE_INCLUDE_DIRECTORIES)
+  target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  # screenshot module has const auto& lambda incompatibility with std::function — skip as .so for now
+  # add_havel_module_plugin(screenshot ${CMAKE_SOURCE_DIR}/src/modules/screenshot/ScreenshotModule.cpp)
+endif()
+
+# Export symbols from main executable so plugins can resolve them
+set_target_properties(havel PROPERTIES
+  ENABLE_EXPORTS ON
+)
+target_link_options(havel PRIVATE -Wl,--export-dynamic)
 endif()
 
 # Dedicated AOT core runtime shim (lean entrypoint surface for --profile core).

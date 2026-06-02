@@ -3184,27 +3184,42 @@ struct UseStatement : public Statement {
 
 // With Statement (with io { ... })
 struct WithStatement : public Statement {
-  std::string objectName;                       // The object/module name
-  std::vector<std::unique_ptr<Statement>> body; // Block statements
+    std::unique_ptr<Expression> object; // The expression to bind
+    std::unique_ptr<Identifier> alias;  // Name after 'as' (null if no alias)
+    std::string objectName;            // Legacy: bare identifier name (when no expr)
+    std::vector<std::unique_ptr<Statement>> body; // Block statements
 
-  WithStatement(const std::string &name,
-                std::vector<std::unique_ptr<Statement>> stmts = {})
-      : objectName(name), body(std::move(stmts)) {
-    kind = NodeType::WithStatement;
-  }
-
-  std::string toString() const override {
-    std::string result = "WithStatement{object: " + objectName + ", body: [";
-    for (size_t i = 0; i < body.size(); ++i) {
-      result += body[i] ? body[i]->toString() : "null";
-      if (i < body.size() - 1)
-        result += ", ";
+    WithStatement(std::unique_ptr<Expression> expr,
+        std::unique_ptr<Identifier> aliasName,
+        std::vector<std::unique_ptr<Statement>> stmts = {})
+        : object(std::move(expr)), alias(std::move(aliasName)), body(std::move(stmts)) {
+        kind = NodeType::WithStatement;
     }
-    result += "]}";
-    return result;
-  }
 
-  void accept(ASTVisitor &visitor) const override;
+    WithStatement(const std::string &name,
+        std::vector<std::unique_ptr<Statement>> stmts = {})
+        : objectName(name), body(std::move(stmts)) {
+        kind = NodeType::WithStatement;
+    }
+
+    std::string toString() const override {
+        std::string result = "WithStatement{";
+        if (object) {
+            result += "object: " + object->toString();
+        } else {
+            result += "object: " + objectName;
+        }
+        if (alias) result += ", as: " + alias->symbol;
+        result += ", body: [";
+        for (size_t i = 0; i < body.size(); ++i) {
+            result += body[i] ? body[i]->toString() : "null";
+            if (i < body.size() - 1) result += ", ";
+        }
+        result += "]}";
+        return result;
+    }
+
+    void accept(ASTVisitor &visitor) const override;
 };
 
 // Visitor pattern interface for AST traversal

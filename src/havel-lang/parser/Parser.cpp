@@ -7350,43 +7350,49 @@ std::unique_ptr<havel::ast::Statement> Parser::parseAtDecoratorStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
-  advance(); // consume 'with'
+    advance(); // consume 'with'
 
-  if (at().type != havel::TokenType::Identifier) {
-    failAt(at(), "Expected object name after 'with'");
-  }
+    auto object = parseExpression();
 
-  std::string objectName = advance().value;
-
-  if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after with object name");
-  }
-
-  advance(); // consume '{'
-
-  std::vector<std::unique_ptr<havel::ast::Statement>> body;
-
-  // Parse block statements
-  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-    auto stmt = parseStatement();
-    if (stmt) {
-      body.push_back(std::move(stmt));
+    std::unique_ptr<havel::ast::Identifier> alias;
+    if (at().type == havel::TokenType::As) {
+        advance(); // consume 'as'
+        if (at().type != havel::TokenType::Identifier) {
+            failAt(at(), "Expected identifier after 'as'");
+        }
+        auto tok = advance();
+        alias = std::make_unique<havel::ast::Identifier>(tok.value);
+        alias->line = tok.line;
+        alias->column = tok.column;
     }
 
-    // Skip newlines
-    while (at().type == havel::TokenType::NewLine) {
-      advance();
+    if (at().type != havel::TokenType::OpenBrace) {
+        failAt(at(), "Expected '{' after with expression");
     }
-  }
 
-  if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}' to close with block");
-  }
+    advance(); // consume '{'
 
-  advance(); // consume '}'
+    std::vector<std::unique_ptr<havel::ast::Statement>> body;
 
-  return makeNode<havel::ast::WithStatement>(objectName,
-                                                     std::move(body));
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+        auto stmt = parseStatement();
+        if (stmt) {
+            body.push_back(std::move(stmt));
+        }
+
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+    }
+
+    if (at().type != havel::TokenType::CloseBrace) {
+        failAt(at(), "Expected '}' to close with block");
+    }
+
+    advance(); // consume '}'
+
+    return makeNode<havel::ast::WithStatement>(std::move(object),
+        std::move(alias), std::move(body));
 }
 
 // Parse LINQ-style query expression and desugar to pipeline

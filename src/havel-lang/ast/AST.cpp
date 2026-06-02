@@ -528,22 +528,30 @@ void visitTryExpression(const TryExpression &node) override {
     out << getIndent() << "}" << std::endl;
   }
 
-  void visitWithStatement(const WithStatement &node) override {
-    out << getIndent() << "WithStatement {" << std::endl;
-    indentLevel++;
-    out << getIndent() << "object: " << node.objectName << std::endl;
-    out << getIndent() << "body: [" << std::endl;
-    indentLevel++;
-    for (const auto &stmt : node.body) {
-      if (stmt) {
-        stmt->accept(*this);
-      }
+void visitWithStatement(const WithStatement &node) override {
+        out << getIndent() << "WithStatement {" << std::endl;
+        indentLevel++;
+        if (node.object) {
+            out << getIndent() << "object: ";
+            node.object->accept(*this);
+        } else {
+            out << getIndent() << "object: " << node.objectName << std::endl;
+        }
+        if (node.alias) {
+            out << getIndent() << "as: " << node.alias->symbol << std::endl;
+        }
+        out << getIndent() << "body: [" << std::endl;
+        indentLevel++;
+        for (const auto &stmt : node.body) {
+            if (stmt) {
+                stmt->accept(*this);
+            }
+        }
+        indentLevel--;
+        out << getIndent() << "]" << std::endl;
+        indentLevel--;
+        out << getIndent() << "}" << std::endl;
     }
-    indentLevel--;
-    out << getIndent() << "]" << std::endl;
-    indentLevel--;
-    out << getIndent() << "}" << std::endl;
-  }
   void visitThrowStatement(const ThrowStatement &node) override {
     out << getIndent() << "ThrowStatement {" << std::endl;
     indentLevel++;

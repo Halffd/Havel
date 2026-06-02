@@ -261,16 +261,21 @@ case OpCode::TAIL_CALL: {
         if (instanceObj) {
         auto it = instanceObj->find(method_name);
         if (it != instanceObj->end()) {
-          if (it->second.isHostFuncId()) {
-            host_func_idx = it->second.asHostFuncId();
-            found_host = true;
-              // Set found_via_module if the object is in globals (likely a module/namespace)
-              for (const auto &g : globals) {
-                if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
-                  found_via_module = true;
-                  break;
-                }
-              }
+                    if (it->second.isHostFuncId()) {
+                        host_func_idx = it->second.asHostFuncId();
+                        found_host = true;
+                        // Set found_via_module if the object is in globals (likely a module/namespace)
+                        // BUT NOT if the receiver is a class/struct prototype — those need self passed
+                        bool isClassProto = instanceObj->get("__class") != nullptr ||
+                                             instanceObj->get("__struct") != nullptr;
+                        if (!isClassProto) {
+                            for (const auto &g : globals) {
+                                if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
+                                    found_via_module = true;
+                                    break;
+                                }
+                            }
+                        }
           } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
             vm_func = it->second;
             isInstanceFunc = true;

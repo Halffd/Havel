@@ -934,6 +934,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
             if (exit_requested_.load()) {
                 break;
             }
+            maybeCollectGarbage();
         }
 
     if (has_instruction_limit) {

@@ -799,11 +799,66 @@ case OpCode::WAITGROUP_ADD: return "WAITGROUP_ADD";
 case OpCode::WAITGROUP_DONE: return "WAITGROUP_DONE";
 case OpCode::WAITGROUP_WAIT: return "WAITGROUP_WAIT";
 
-  // Module context
-  case OpCode::BEGIN_MODULE: return "BEGIN_MODULE";
-  case OpCode::END_MODULE: return "END_MODULE";
+    // Module context
+    case OpCode::BEGIN_MODULE: return "BEGIN_MODULE";
+    case OpCode::END_MODULE: return "END_MODULE";
 
-  case OpCode::NOP: return "NOP";
+    // Math intrinsics
+    case OpCode::MATH_SIN: return "MATH_SIN";
+    case OpCode::MATH_COS: return "MATH_COS";
+    case OpCode::MATH_TAN: return "MATH_TAN";
+    case OpCode::MATH_ASIN: return "MATH_ASIN";
+    case OpCode::MATH_ACOS: return "MATH_ACOS";
+    case OpCode::MATH_ATAN: return "MATH_ATAN";
+    case OpCode::MATH_ATAN2: return "MATH_ATAN2";
+    case OpCode::MATH_SINH: return "MATH_SINH";
+    case OpCode::MATH_COSH: return "MATH_COSH";
+    case OpCode::MATH_TANH: return "MATH_TANH";
+    case OpCode::MATH_SQRT: return "MATH_SQRT";
+    case OpCode::MATH_LOG: return "MATH_LOG";
+    case OpCode::MATH_LOG2: return "MATH_LOG2";
+    case OpCode::MATH_LOG10: return "MATH_LOG10";
+    case OpCode::MATH_EXP: return "MATH_EXP";
+    case OpCode::MATH_CEIL: return "MATH_CEIL";
+    case OpCode::MATH_FLOOR: return "MATH_FLOOR";
+    case OpCode::MATH_ROUND: return "MATH_ROUND";
+    case OpCode::MATH_ABS: return "MATH_ABS";
+
+    // Object intrinsics
+    case OpCode::OBJECT_FREEZE: return "OBJECT_FREEZE";
+    case OpCode::OBJECT_SEAL: return "OBJECT_SEAL";
+    case OpCode::OBJECT_IS_FROZEN: return "OBJECT_IS_FROZEN";
+    case OpCode::OBJECT_IS_SEALED: return "OBJECT_IS_SEALED";
+    case OpCode::OBJECT_SIZE: return "OBJECT_SIZE";
+    case OpCode::OBJECT_ASSIGN: return "OBJECT_ASSIGN";
+
+    // String intrinsics
+    case OpCode::STRING_REVERSE: return "STRING_REVERSE";
+    case OpCode::STRING_REPEAT: return "STRING_REPEAT";
+    case OpCode::STRING_TRIM_START: return "STRING_TRIM_START";
+    case OpCode::STRING_TRIM_END: return "STRING_TRIM_END";
+    case OpCode::STRING_INCLUDES: return "STRING_INCLUDES";
+    case OpCode::STRING_PAD_START: return "STRING_PAD_START";
+    case OpCode::STRING_PAD_END: return "STRING_PAD_END";
+
+    // Bit intrinsics
+    case OpCode::BIT_POPCOUNT: return "BIT_POPCOUNT";
+    case OpCode::BIT_CTZ: return "BIT_CTZ";
+    case OpCode::BIT_CLZ: return "BIT_CLZ";
+    case OpCode::BIT_BSWAP: return "BIT_BSWAP";
+    case OpCode::BIT_ROTL: return "BIT_ROTL";
+    case OpCode::BIT_ROTR: return "BIT_ROTR";
+
+    // Time primitive
+    case OpCode::TIME_NOW: return "TIME_NOW";
+
+    // Format intrinsics
+    case OpCode::FORMAT_HEX: return "FORMAT_HEX";
+    case OpCode::FORMAT_UNHEX: return "FORMAT_UNHEX";
+    case OpCode::FORMAT_BASE64_ENCODE: return "FORMAT_BASE64_ENCODE";
+    case OpCode::FORMAT_BASE64_DECODE: return "FORMAT_BASE64_DECODE";
+
+    case OpCode::NOP: return "NOP";
   default: return "UNKNOWN";
   }
 }

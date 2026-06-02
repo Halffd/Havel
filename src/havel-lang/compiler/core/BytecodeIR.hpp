@@ -281,11 +281,37 @@ WAITGROUP_ADD, // WaitGroup.add(n): increment counter
 WAITGROUP_DONE, // WaitGroup.done(): decrement counter
 WAITGROUP_WAIT, // WaitGroup.wait(): block until counter == 0
 
-  // Module context
-  BEGIN_MODULE,     // Begin module scope, collect exports to object on stack
-  END_MODULE,       // End module scope, filter private vars, return exports
+    // Module context
+    BEGIN_MODULE, // Begin module scope, collect exports to object on stack
+    END_MODULE, // End module scope, filter private vars, return exports
 
-  NOP
+    // Math intrinsics (thin wrappers over libm)
+    MATH_SIN, MATH_COS, MATH_TAN,
+    MATH_ASIN, MATH_ACOS, MATH_ATAN, MATH_ATAN2,
+    MATH_SINH, MATH_COSH, MATH_TANH,
+    MATH_SQRT, MATH_LOG, MATH_LOG2, MATH_LOG10, MATH_EXP,
+    MATH_CEIL, MATH_FLOOR, MATH_ROUND, MATH_ABS,
+
+    // Object intrinsics
+    OBJECT_FREEZE, OBJECT_SEAL, OBJECT_IS_FROZEN, OBJECT_IS_SEALED,
+    OBJECT_SIZE, OBJECT_ASSIGN,
+
+    // String intrinsics
+    STRING_REVERSE, STRING_REPEAT,
+    STRING_TRIM_START, STRING_TRIM_END,
+    STRING_INCLUDES, STRING_PAD_START, STRING_PAD_END,
+
+    // Bit intrinsics
+    BIT_POPCOUNT, BIT_CTZ, BIT_CLZ, BIT_BSWAP, BIT_ROTL, BIT_ROTR,
+
+    // Time primitive
+    TIME_NOW,
+
+    // Format intrinsics
+    FORMAT_HEX, FORMAT_UNHEX,
+    FORMAT_BASE64_ENCODE, FORMAT_BASE64_DECODE,
+
+    NOP
 };
 
 struct ClosureRef {

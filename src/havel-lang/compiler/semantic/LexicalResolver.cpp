@@ -1087,12 +1087,28 @@ case ast::NodeType::UseStatement:
   break;
 
 case ast::NodeType::DeferStatement: {
-  const auto &defer_stmt = static_cast<const ast::DeferStatement &>(statement);
-  if (defer_stmt.expression) resolveExpression(*defer_stmt.expression);
-  break;
-}
+        const auto &defer_stmt = static_cast<const ast::DeferStatement &>(statement);
+        if (defer_stmt.expression) resolveExpression(*defer_stmt.expression);
+        break;
+    }
 
-default:
+    case ast::NodeType::WithStatement: {
+        const auto &withStmt = static_cast<const ast::WithStatement &>(statement);
+        if (withStmt.object) {
+            resolveExpression(*withStmt.object);
+        }
+        beginScope();
+        if (withStmt.alias) {
+            declareLocal(withStmt.alias->symbol, withStmt.alias.get(), true);
+        }
+        for (const auto &s : withStmt.body) {
+            if (s) resolveStatement(*s);
+        }
+        endScope();
+        break;
+    }
+
+    default:
   break;
   }
 }

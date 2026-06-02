@@ -452,11 +452,38 @@ void SemanticAnalyzer::visitStatement(const ast::Statement &stmt) {
     if (whenStmt.body) {
       visitStatement(*whenStmt.body);
     }
-    exitScope();
-    break;
-  }
+exitScope();
+        break;
+    }
 
-  default:
+    case ast::NodeType::WithStatement: {
+        const auto &withStmt = static_cast<const ast::WithStatement &>(stmt);
+
+        if (withStmt.object) {
+            visitExpression(*withStmt.object);
+        }
+
+        enterScope("with");
+
+        if (withStmt.alias) {
+            SymbolAttributes attrs;
+            attrs.isMutable = false;
+            attrs.isInitialized = true;
+            attrs.line = stmt.line;
+            attrs.column = stmt.column;
+            symbolTable_.define(withStmt.alias->symbol, SymbolKind::Variable,
+                HavelType::any(), attrs);
+        }
+
+        for (const auto &s : withStmt.body) {
+            if (s) visitStatement(*s);
+        }
+
+        exitScope();
+        break;
+    }
+
+    default:
     break;
   }
 }

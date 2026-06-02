@@ -803,7 +803,45 @@ set_target_properties(qt_extension PROPERTIES
 )
 target_compile_options(qt_extension PRIVATE -fno-lto)
 target_link_options(qt_extension PRIVATE -fno-lto)
-endif()  # QT_BACKEND_AVAILABLE
+endif() # QT_BACKEND_AVAILABLE
+
+# ==============================================================================
+# TOOLKIT PLUGINS (per-toolkit .so providing all backends)
+# ==============================================================================
+if(QT_BACKEND_AVAILABLE)
+add_library(havel_toolkit_qt MODULE
+src/extensions/qt/havel_toolkit_qt.cpp
+src/extensions/qt/QtScreenshotBackend.hpp
+src/extensions/qt/QtAltTabBackend.hpp
+src/extensions/qt/QtClipboardBackend.hpp
+src/extensions/qt/QtClipboardManagerBackend.hpp
+)
+target_include_directories(havel_toolkit_qt PRIVATE
+${CMAKE_SOURCE_DIR}/src
+${CMAKE_SOURCE_DIR}/src/extensions
+${UI_BACKEND_INCLUDES}
+)
+target_link_libraries(havel_toolkit_qt PRIVATE
+Qt6::Core Qt6::Widgets Qt6::Gui
+fmt::fmt
+dl
+)
+target_compile_definitions(havel_toolkit_qt PRIVATE
+HAVE_QT_EXTENSION
+HAVEL_MODULE_PLUGIN
+)
+set_target_properties(havel_toolkit_qt PROPERTIES
+PREFIX ""
+OUTPUT_NAME "havel_toolkit_qt"
+LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/toolkits"
+CXX_STANDARD 23
+CXX_VISIBILITY_PRESET default
+VISIBILITY_INLINES_HIDDEN OFF
+INTERPROCEDURAL_OPTIMIZATION OFF
+)
+target_compile_options(havel_toolkit_qt PRIVATE -fno-lto)
+target_link_options(havel_toolkit_qt PRIVATE -fno-lto -Wl,--allow-shlib-undefined)
+endif() # QT_BACKEND_AVAILABLE
 
 # ==============================================================================
 # MAIN EXECUTABLE

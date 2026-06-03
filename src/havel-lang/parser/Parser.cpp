@@ -501,6 +501,10 @@ return 110;
     case TokenType::OpenBracket:
       return 170;
 
+    // For expression/generator (expr for binding : iterable)
+    case TokenType::For:
+      return 15;
+
     // Ternary operator (?)
     case TokenType::Question:
       return 15;
@@ -584,6 +588,9 @@ setBoth(ModuloAssign, 10, 10);
 
  // LeftArrow (<- await-assign) - same precedence as assignment
  setBoth(LeftArrow, 10, 10);
+
+ // For comprehension (expr for binding : iterable)
+ setBoth(For, 15, 15);
 
 // Nullish coalescing
       setBoth(Nullish, 20, 20);
@@ -1644,6 +1651,23 @@ case TokenType::Tilde: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return makeNodeAt<ast::BinaryExpression>(token, 
           std::move(left), ast::BinaryOperator::Nullish, std::move(right));
+    }
+
+    case TokenType::For: {
+      // expr for binding : iterable (generator/comprehension)
+      if (at().type != TokenType::Identifier) {
+        failAt(at(), "Expected iterator variable after 'for'");
+      }
+      auto binding = makeIdentifier(advance());
+      if (at().type == TokenType::Colon || at().type == TokenType::In) {
+        advance();
+      } else {
+        failAt(at(), "Expected ':' or 'in' after iterator variable");
+      }
+      auto iterable = parsePrattExpression(getRightBindingPower(token.type));
+      return makeNodeAt<ast::ForExpression>(token, std::move(left),
+                                            std::move(binding),
+                                            std::move(iterable));
     }
 
     // Optional chaining: obj?.field or obj?.method()

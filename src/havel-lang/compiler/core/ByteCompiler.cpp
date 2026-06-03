@@ -4770,6 +4770,11 @@ case ast::NodeType::UnaryExpression: {
     break;
   }
 
+  case ast::NodeType::ForExpression: {
+    compileForExpression(static_cast<const ast::ForExpression &>(expression));
+    break;
+  }
+
   // Pattern types - should be compiled via compilePattern, not directly
   case ast::NodeType::OrPattern:
   case ast::NodeType::ArrayPattern:
@@ -5874,6 +5879,70 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
     for (uint32_t cj : info.continue_jumps) {
         patchJump(cj, loop_start);
     }
+}
+
+void ByteCompiler::compileForExpression(const ast::ForExpression &expression) {
+  if (!expression.mapping || !expression.binding || !expression.iterable) {
+    COMPILER_THROW("Malformed for expression");
+  }
+
+  // Allocate local slots
+  uint32_t arraySlot = next_local_index++;
+  reserveLocalSlot(arraySlot);
+  uint32_t iterableSlot = next_local_index++;
+  reserveLocalSlot(iterableSlot);
+  uint32_t iterVarSlot = next_local_index++;
+  reserveLocalSlot(iterVarSlot);
+  uint32_t resultSlot = next_local_index++;
+  reserveLocalSlot(resultSlot);
+  uint32_t bindSlot = declarationSlot(*expression.binding);
+  reserveLocalSlot(bindSlot);
+
+  // Create result array
+  emit(OpCode::ARRAY_NEW);
+  emit(OpCode::STORE_VAR, arraySlot);
+
+  // Compile iterable
+  compileExpression(*expression.iterable);
+  emit(OpCode::STRING_PROMOTE);
+  emit(OpCode::STORE_VAR, iterableSlot);
+
+  // Create iterator
+  emit(OpCode::LOAD_VAR, iterableSlot);
+  emit(OpCode::ITER_NEW);
+  emit(OpCode::STORE_VAR, iterVarSlot);
+
+  uint32_t loop_start = static_cast<uint32_t>(current_function->instructions.size());
+
+  // Advance iterator
+  emit(OpCode::LOAD_VAR, iterVarSlot);
+  emit(OpCode::ITER_NEXT);
+  emit(OpCode::STORE_VAR, resultSlot);
+
+  // Check done flag
+  emit(OpCode::LOAD_VAR, resultSlot);
+  { uint32_t _sid = addStringConstant("done"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+  emit(OpCode::OBJECT_GET);
+  uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
+
+  // Extract element value (second field of {first, second, done})
+  emit(OpCode::LOAD_VAR, resultSlot);
+  { uint32_t _sid = addStringConstant("second"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+  emit(OpCode::OBJECT_GET);
+  emit(OpCode::STORE_VAR, bindSlot);
+
+  // Evaluate mapping expression and push to array
+  emit(OpCode::LOAD_VAR, arraySlot);
+  compileExpression(*expression.mapping);
+  emit(OpCode::ARRAY_PUSH);
+
+  // Continue loop
+  emit(OpCode::JUMP, static_cast<int64_t>(loop_start));
+  uint32_t loop_end = static_cast<uint32_t>(current_function->instructions.size());
+  patchJump(end_jump, loop_end);
+
+  // Push result array as expression value
+  emit(OpCode::LOAD_VAR, arraySlot);
 }
 
 void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {

@@ -28,7 +28,7 @@ static void mergeExports(const VMApi &api, Value targetObj, Value exports) {
   for (const auto& [name, value] : *obj) {
     if (name.empty() || name[0] == '_') continue;
     api.setField(targetObj, name, value);
-    api.setGlobal(name, value);
+    api.setGlobalIfNew(name, value);
   }
 }
 
@@ -159,8 +159,8 @@ void registerMathModule(const VMApi &api) {
     if (pobj) {
       for (const auto& [name, value] : *pobj) {
         if (name.empty() || name[0] == '_') continue;
-        api.setField(physicsObj, name, value);
-        api.setGlobal(name, value);
+                        api.setField(physicsObj, name, value);
+                        api.setGlobalIfNew(name, value);
       }
     }
   }

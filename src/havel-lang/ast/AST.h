@@ -88,6 +88,7 @@ enum class NodeType {
     CastExpression, // expr as Type
   ReturnStatement,      // return value;
   WhileStatement,       // while condition { ... }
+  ForExpression,        // expr for binding : iterable (generator/comprehension)
   ForStatement,         // for i in range { ... }
   LoopStatement,        // loop { ... }
   DoWhileStatement,     // do { ... } while condition
@@ -1820,6 +1821,29 @@ struct ForStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// For Expression (expr for binding : iterable) - generator/comprehension
+struct ForExpression : public Expression {
+  std::unique_ptr<Expression> mapping;
+  std::unique_ptr<Identifier> binding;
+  std::unique_ptr<Expression> iterable;
+
+  ForExpression(std::unique_ptr<Expression> map,
+                std::unique_ptr<Identifier> bind,
+                std::unique_ptr<Expression> itbl)
+      : mapping(std::move(map)), binding(std::move(bind)),
+        iterable(std::move(itbl)) {
+    kind = NodeType::ForExpression;
+  }
+
+  std::string toString() const override {
+    return "ForExpression{mapping: " + (mapping ? mapping->toString() : "null") +
+           ", binding: " + (binding ? binding->toString() : "null") +
+           ", iterable: " + (iterable ? iterable->toString() : "null") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Loop Statement (infinite loop, condition-driven, or count-based)
 struct LoopStatement : public Statement {
   std::unique_ptr<Statement> body;
@@ -3340,6 +3364,7 @@ virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitMatchExpression(const MatchExpression &node) = 0;
   virtual void visitThrowStatement(const ThrowStatement &node) = 0;
   virtual void visitDelStatement(const DelStatement &node) = 0;
+  virtual void visitForExpression(const ForExpression &node) = 0;
   virtual void visitForStatement(const ForStatement &node) = 0;
   virtual void visitLoopStatement(const LoopStatement &node) = 0;
   virtual void visitBreakStatement(const BreakStatement &node) = 0;
@@ -3643,6 +3668,10 @@ inline void CastExpression::accept(ASTVisitor &visitor) const {
 
 inline void MatchExpression::accept(ASTVisitor &visitor) const {
   visitor.visitMatchExpression(*this);
+}
+
+inline void ForExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitForExpression(*this);
 }
 
 inline void ForStatement::accept(ASTVisitor &visitor) const {

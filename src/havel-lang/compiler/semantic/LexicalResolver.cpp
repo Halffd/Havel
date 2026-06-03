@@ -1185,6 +1185,22 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::ForExpression: {
+    const auto &forExpr = static_cast<const ast::ForExpression &>(expression);
+    if (forExpr.iterable) {
+      resolveExpression(*forExpr.iterable);
+    }
+    beginScope();
+    if (forExpr.binding) {
+      declareLocal(forExpr.binding->symbol, forExpr.binding.get(), false);
+    }
+    if (forExpr.mapping) {
+      resolveExpression(*forExpr.mapping);
+    }
+    endScope();
+    break;
+  }
+
   case ast::NodeType::AssignmentExpression: {
     const auto &assignment =
         static_cast<const ast::AssignmentExpression &>(expression);

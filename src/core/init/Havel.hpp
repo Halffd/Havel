@@ -78,6 +78,7 @@ public:
   BrightnessManager *getBrightnessManager() const { return brightnessManager.get(); }
   AudioManager *getAudioManager() const { return audioManager.get(); }
   MPVController *getMPV() const { return mpv.get(); }
+  automation::AutomationManager *getAutomationManager() const { return automationManager.get(); }
   compiler::VM *getBytecodeVM() const { return bytecodeVM.get(); }
   // Additional getters for HavelLauncher
   HotkeyManager* getHotkeyManagerPtr() const { return hotkeyManager.get(); }

@@ -824,8 +824,10 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
         havel_inst.getIOPtr(), hkManager, Configs::Get(),
         havel_inst.getWindowManagerPtr(),
+        havel_inst.getBrightnessManager(),
+        havel_inst.getAudioManager(),
         nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr,
         hkManager ? hkManager->getModeManager().get() : nullptr,
         std::vector<std::string>{}));
     havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
@@ -1423,15 +1425,17 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         havel::repl::REPL repl(replConfig);
       
       // Create host API with full features
-      auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
+        auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
           havel_inst.getIOPtr(),
           havel_inst.getHotkeyManagerPtr(),
           Configs::Get(),
           havel_inst.getWindowManagerPtr(),
+          havel_inst.getBrightnessManager(),
+          havel_inst.getAudioManager(),
           nullptr, nullptr, nullptr, nullptr, nullptr,
-          nullptr, nullptr, nullptr, nullptr, nullptr,
+          nullptr, nullptr, nullptr,
           hkManager ? hkManager->getModeManager().get() : nullptr,
-		std::vector<std::string>{}));
+          std::vector<std::string>{}));
 
 		havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
 
@@ -1635,15 +1639,17 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
         // Create host API with full features
         auto *hkManager = havel_inst.getHotkeyManagerPtr();
-        auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
+      auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
           havel_inst.getIOPtr(),
           havel_inst.getHotkeyManagerPtr(),
           Configs::Get(),
           havel_inst.getWindowManagerPtr(),
+          havel_inst.getBrightnessManager(),
+          havel_inst.getAudioManager(),
           nullptr, nullptr, nullptr, nullptr, nullptr,
-          nullptr, nullptr, nullptr, nullptr, nullptr,
+          nullptr, nullptr, nullptr,
           hkManager ? hkManager->getModeManager().get() : nullptr,
-		std::vector<std::string>{}));
+          std::vector<std::string>{}));
 
     havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
     repl.attach(bytecodeVM, modules, collectKnownGlobals(bytecodeVM));

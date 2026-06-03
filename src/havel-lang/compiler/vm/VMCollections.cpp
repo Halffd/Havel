@@ -933,32 +933,36 @@ if (container.isSetId()) {
             COMPILER_THROW("OBJECT_GET unknown object id");
         }
 
-        // Lazy module proxy trap: if object has __lazy__ flag,
-        // trigger module initialization and replace with real namespace
-        auto *lazyFlag = obj->get("__lazy__");
-        if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
-            auto *modNameVal = obj->get("__module__");
-            std::string modName;
-            if (modNameVal) {
-                if (modNameVal->isStringId()) {
-                    if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
-                } else if (modNameVal->isStringValId() && current_chunk) {
-                    modName = current_chunk->getString(modNameVal->asStringValId());
-                }
-            }
-        if (!modName.empty()) {
-            ensureModuleLoaded(modName);
-            auto git = globals.find(modName);
-            if (git != globals.end() && git->second.isObjectId()) {
-                auto *proxyObj = heap_.object(git->second.asObjectId());
-                if (proxyObj) {
-                    auto *lf = proxyObj->get("__lazy__");
-                    if (lf && lf->isBool() && lf->asBool()) {
-                        globals.erase(git);
-                    }
-                }
-            }
-            git = globals.find(modName);
+  // Lazy module proxy trap: if object has __lazy__ flag,
+  // trigger module initialization and replace with real namespace
+  auto *lazyFlag = obj->get("__lazy__");
+  if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+    auto *modNameVal = obj->get("__module__");
+    std::string modName;
+    if (modNameVal) {
+      if (modNameVal->isStringId()) {
+        if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
+      } else if (modNameVal->isStringValId() && current_chunk) {
+        modName = current_chunk->getString(modNameVal->asStringValId());
+      }
+    }
+    fprintf(stderr, "[DBG OBJECT_GET] lazy proxy for module '%s', calling ensureModuleLoaded\n", modName.c_str());
+    if (!modName.empty()) {
+      ensureModuleLoaded(modName);
+      fprintf(stderr, "[DBG OBJECT_GET] after ensureModuleLoaded, globals.has(%s) = %d\n", modName.c_str(), globals.find(modName) != globals.end());
+      auto git = globals.find(modName);
+      if (git != globals.end() && git->second.isObjectId()) {
+        auto *proxyObj = heap_.object(git->second.asObjectId());
+        if (proxyObj) {
+          auto *lf = proxyObj->get("__lazy__");
+          fprintf(stderr, "[DBG OBJECT_GET] proxyObj __lazy__ = %s\n", lf ? (lf->isBool() ? (lf->asBool() ? "true" : "false") : "not bool") : "null");
+          if (lf && lf->isBool() && lf->asBool()) {
+            fprintf(stderr, "[DBG OBJECT_GET] ERASING module '%s' from globals!\n", modName.c_str());
+            globals.erase(git);
+          }
+        }
+      }
+      git = globals.find(modName);
             if (git != globals.end() && git->second.isObjectId()) {
                 obj = heap_.object(git->second.asObjectId());
                 if (!obj) {

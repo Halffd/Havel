@@ -257,6 +257,7 @@ void registerFormatModule(const VMApi &api) {
   api.setField(fmtObj, "b64decode", api.makeFunctionRef("fmt.b64decode"));
   api.setField(fmtObj, "format", api.makeFunctionRef("fmt.format"));
   api.setGlobal("fmt", fmtObj);
+ api.setGlobal("Fmt", fmtObj);
 
   // Load pure-Havel format sidecar (adds namespace wrappers + utilities)
   Value exports;
@@ -268,8 +269,8 @@ void registerFormatModule(const VMApi &api) {
       if (obj) {
         for (const auto& [name, value] : *obj) {
           if (name.empty() || name[0] == '_') continue;
-          api.setField(fmtObj, name, value);
-          api.setGlobal(name, value);
+                        api.setField(fmtObj, name, value);
+                        api.setGlobalIfNew(name, value);
         }
       }
     }

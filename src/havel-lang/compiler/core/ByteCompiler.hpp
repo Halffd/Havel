@@ -168,6 +168,7 @@ void optimizeJumps();  // Jump threading optimization
   void compileWhileStatement(const ast::WhileStatement &statement);
   void compileDoWhileStatement(const ast::DoWhileStatement &statement);
   void compileForStatement(const ast::ForStatement &statement);
+  void compileForExpression(const ast::ForExpression &expression);
   void compileLoopStatement(const ast::LoopStatement &statement);
   void compileBlockStatement(const ast::BlockStatement &block);
   // Closure body compilation helpers

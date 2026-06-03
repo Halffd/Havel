@@ -257,8 +257,8 @@ void registerObjectModule(const VMApi &api) {
       if (obj) {
         for (const auto& [name, value] : *obj) {
           if (name.empty() || name[0] == '_') continue;
-          api.setField(objVal, name, value);
-          api.setGlobal(name, value);
+                        api.setField(objVal, name, value);
+                        api.setGlobalIfNew(name, value);
         }
       }
     }

@@ -57,9 +57,17 @@ struct VMApi {
         return vm().resolveStringKey(value);
     }
 
-    void setGlobal(const std::string &name, Value value) const {
-        vm().setGlobal(name, std::move(value));
-    }
+  void setGlobal(const std::string &name, Value value) const {
+    vm().setGlobal(name, std::move(value));
+  }
+
+  bool hasGlobal(const std::string &name) const {
+    return vm().getGlobals().count(name) > 0;
+  }
+
+  void setGlobalIfNew(const std::string &name, Value value) const {
+    if (!hasGlobal(name)) vm().setGlobal(name, std::move(value));
+  }
 
     void setField(Value obj, const std::string &key,
                   Value value) const {

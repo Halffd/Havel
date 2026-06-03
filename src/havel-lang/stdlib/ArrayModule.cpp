@@ -58,8 +58,8 @@ void registerArrayModule(const VMApi &api) {
     if (obj) {
       for (const auto& [name, value] : *obj) {
         if (name.empty() || name[0] == '_') continue;
-        api.setField(arrObj, name, value);
-        api.setGlobal(name, value);
+                        api.setField(arrObj, name, value);
+                        api.setGlobalIfNew(name, value);
       }
     }
   }

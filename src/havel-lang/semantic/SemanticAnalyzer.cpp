@@ -579,6 +579,24 @@ void SemanticAnalyzer::visitExpression(const ast::Expression &expr) {
     break;
   }
 
+  case ast::NodeType::ForExpression: {
+    const auto &forExpr = static_cast<const ast::ForExpression &>(expr);
+    enterScope("for_expr");
+    if (forExpr.binding) {
+      SymbolAttributes attrs;
+      attrs.isMutable = false;
+      attrs.isInitialized = true;
+      symbolTable_.define(forExpr.binding->symbol, SymbolKind::Variable,
+                          HavelType::any(), attrs);
+    }
+    if (forExpr.iterable)
+      visitExpression(*forExpr.iterable);
+    if (forExpr.mapping)
+      visitExpression(*forExpr.mapping);
+    exitScope();
+    break;
+  }
+
   case ast::NodeType::BinaryExpression: {
     const auto &binary = static_cast<const ast::BinaryExpression &>(expr);
     if (binary.left)

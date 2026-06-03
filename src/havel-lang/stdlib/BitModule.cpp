@@ -58,12 +58,13 @@ void registerBitModule(const VMApi &api) {
         return Value(~getInt(args[0]));
     });
 
-    api.registerFunction("bit.lshift", [api](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.lshift() requires value and shift");
-        int64_t v = getInt(args[0]);
-        int s = static_cast<int>(getInt(args[1]));
-        return Value(s >= 0 ? v << s : v >> (-s));
-    });
+ api.registerFunction("bit.lshift", [api](const std::vector<Value> &args) {
+ if (args.size() < 2) throw std::runtime_error("bit.lshift() requires value and shift");
+ uint64_t v = static_cast<uint64_t>(getInt(args[0]));
+ int s = static_cast<int>(getInt(args[1]));
+ uint64_t result = (s >= 0 && s < 64) ? (v << s) : (s < 0 ? (v >> (-s)) : 0);
+ return Value(static_cast<int64_t>(result));
+ });
 
     api.registerFunction("bit.rshift", [api](const std::vector<Value> &args) {
         if (args.size() < 2) throw std::runtime_error("bit.rshift() requires value and shift");
@@ -201,6 +202,7 @@ void registerBitModule(const VMApi &api) {
   api.setField(bitObj, "getfield", api.makeFunctionRef("bit.getfield"));
   api.setField(bitObj, "setfield", api.makeFunctionRef("bit.setfield"));
   api.setGlobal("bit", bitObj);
+ api.setGlobal("Bit", bitObj);
 
   // Load pure-Havel bit sidecar (adds namespace wrappers + utilities)
   Value exports;
@@ -212,8 +214,8 @@ void registerBitModule(const VMApi &api) {
       if (obj) {
         for (const auto& [name, value] : *obj) {
           if (name.empty() || name[0] == '_') continue;
-          api.setField(bitObj, name, value);
-          api.setGlobal(name, value);
+                        api.setField(bitObj, name, value);
+                        api.setGlobalIfNew(name, value);
         }
       }
     }

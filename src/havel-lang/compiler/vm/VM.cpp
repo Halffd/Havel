@@ -2493,14 +2493,25 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
 }
 
 bool VM::ensureModuleLoaded(const std::string &name) {
-    auto it = lazy_modules_.find(name);
-    if (it == lazy_modules_.end()) return false;
-    if (it->second.loaded) return true;
+  auto it = lazy_modules_.find(name);
+  if (it == lazy_modules_.end()) return false;
+  if (it->second.loaded) return true;
 
-    VMApi api(*this);
-    it->second.initFn(api);
-    it->second.loaded = true;
-    return true;
+  VMApi api(*this);
+  it->second.initFn(api);
+  it->second.loaded = true;
+
+  // Clear the __lazy__ flag on the module object so OBJECT_GET
+  // doesn't erase it from globals on subsequent accesses
+  auto git = globals.find(name);
+  if (git != globals.end() && git->second.isObjectId()) {
+    auto *obj = heap_.object(git->second.asObjectId());
+    if (obj) {
+      (*obj)["__lazy__"] = Value(false);
+    }
+  }
+
+  return true;
 }
 
 bool VM::isLazyModuleRegistered(const std::string &name) const {

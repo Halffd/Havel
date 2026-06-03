@@ -280,8 +280,16 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   // Unwind to root globals: the bottom of the stack holds the globals
   // that were active before any module closure swapped them.
   if (!globals_stack_.empty()) {
-    globals = std::move(globals_stack_.front());
+    auto root_globals = std::move(globals_stack_.front());
     globals_stack_.erase(globals_stack_.begin());
+    // Merge any REPL-defined globals from saved_globals into root globals
+    // so definitions from previous executePersistent calls are visible.
+    for (auto& [name, val] : saved_globals) {
+      if (root_globals.find(name) == root_globals.end()) {
+        root_globals[name] = std::move(val);
+      }
+    }
+    globals = std::move(root_globals);
   }
 
   // Clear stack and locals for this execution, but PRESERVE:
@@ -323,6 +331,12 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
     }
 
     runDispatchLoop(0);
+
+  // Merge post-execution globals back into saved_globals so new REPL
+  // definitions (functions, variables) persist across executePersistent calls.
+  for (auto& [name, val] : globals) {
+    saved_globals[name] = std::move(val);
+  }
 
   // Restore globals state so the calling module context is unbroken
   globals = std::move(saved_globals);

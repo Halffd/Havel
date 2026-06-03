@@ -55,6 +55,10 @@ case OpCode::LOAD_GLOBAL: {
   // First check regular globals (user variables shadow host functions)
   auto it = globals.find(name);
   if (it != globals.end()) {
+    if (name == "fs") {
+      fprintf(stderr, "[DBG LOAD_GLOBAL] 'fs' -> objId=%d\n", 
+        it->second.isObjectId() ? (int)it->second.asObjectId() : -1);
+    }
     trackGlobalAccess(name);
     pushStack(it->second);
     break;

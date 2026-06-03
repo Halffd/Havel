@@ -62,7 +62,8 @@ struct VMApi {
   }
 
   bool hasGlobal(const std::string &name) const {
-    return vm().getGlobals().count(name) > 0;
+    return vm().getGlobals().find(name) != vm().getGlobals().end() ||
+           vm().hostFunctionGlobals().find(name) != vm().hostFunctionGlobals().end();
   }
 
   void setGlobalIfNew(const std::string &name, Value value) const {

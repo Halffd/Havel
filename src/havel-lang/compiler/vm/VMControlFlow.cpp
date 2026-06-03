@@ -218,28 +218,35 @@ case OpCode::TAIL_CALL: {
 // 0. If receiver is an object, check for direct callable field FIRST.
     // Namespace objects like `process` have host function fields (e.g. `find`)
     // that must take priority over prototype methods (e.g. `object.find`).
-    if (receiver.isObjectId()) {
-        auto *instanceObj = heap_.object(receiver.asObjectId());
-        // Lazy module proxy: trigger module initialization before field lookup
-        if (instanceObj) {
-            auto *lazyFlag = instanceObj->get("__lazy__");
-            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
-                auto *modNameVal = instanceObj->get("__module__");
-                std::string modName;
-                if (modNameVal) {
-                    if (modNameVal->isStringId()) {
-                        if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
-                    } else if (modNameVal->isStringValId() && current_chunk) {
-                        modName = current_chunk->getString(modNameVal->asStringValId());
-                    }
-                }
-                if (!modName.empty()) {
-                    ensureModuleLoaded(modName);
-                    auto git = globals.find(modName);
-                    if (git != globals.end() && git->second.isObjectId()) {
-                        receiver = git->second;
-                        instanceObj = heap_.object(receiver.asObjectId());
-                    } else {
+  if (receiver.isObjectId()) {
+    auto *instanceObj = heap_.object(receiver.asObjectId());
+    // Lazy module proxy: trigger module initialization before field lookup
+    if (instanceObj) {
+      auto *lazyFlag = instanceObj->get("__lazy__");
+      if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+        auto *modNameVal = instanceObj->get("__module__");
+        std::string modName;
+        if (modNameVal) {
+          if (modNameVal->isStringId()) {
+            if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
+          } else if (modNameVal->isStringValId() && current_chunk) {
+            modName = current_chunk->getString(modNameVal->asStringValId());
+          }
+        }
+        if (!modName.empty()) {
+          ensureModuleLoaded(modName);
+          auto git = globals.find(modName);
+          if (git != globals.end() && git->second.isObjectId()) {
+            // Check if globals[modName] is a different object than the receiver
+            if (git->second.asObjectId() != receiver.asObjectId()) {
+              fprintf(stderr, "[DBG CALL_METHOD] lazy module '%s': receiver objId=%d but globals objId=%d (DIFFERENT!)\n",
+                modName.c_str(), (int)receiver.asObjectId(), (int)git->second.asObjectId());
+            }
+            receiver = git->second;
+            instanceObj = heap_.object(receiver.asObjectId());
+            fprintf(stderr, "[DBG CALL_METHOD] lazy module '%s' resolved, instanceObj=%p, has 'exists'=%d\n", 
+              modName.c_str(), (void*)instanceObj, instanceObj ? (instanceObj->find("exists") != instanceObj->end()) : 0);
+          } else {
                         std::string capModName = modName;
                         capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
                         git = globals.find(capModName);

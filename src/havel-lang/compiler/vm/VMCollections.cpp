@@ -946,18 +946,14 @@ if (container.isSetId()) {
         modName = current_chunk->getString(modNameVal->asStringValId());
       }
     }
-    fprintf(stderr, "[DBG OBJECT_GET] lazy proxy for module '%s', calling ensureModuleLoaded\n", modName.c_str());
     if (!modName.empty()) {
       ensureModuleLoaded(modName);
-      fprintf(stderr, "[DBG OBJECT_GET] after ensureModuleLoaded, globals.has(%s) = %d\n", modName.c_str(), globals.find(modName) != globals.end());
       auto git = globals.find(modName);
       if (git != globals.end() && git->second.isObjectId()) {
         auto *proxyObj = heap_.object(git->second.asObjectId());
         if (proxyObj) {
           auto *lf = proxyObj->get("__lazy__");
-          fprintf(stderr, "[DBG OBJECT_GET] proxyObj __lazy__ = %s\n", lf ? (lf->isBool() ? (lf->asBool() ? "true" : "false") : "not bool") : "null");
           if (lf && lf->isBool() && lf->asBool()) {
-            fprintf(stderr, "[DBG OBJECT_GET] ERASING module '%s' from globals!\n", modName.c_str());
             globals.erase(git);
           }
         }

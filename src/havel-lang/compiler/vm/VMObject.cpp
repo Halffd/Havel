@@ -9,8 +9,16 @@
 namespace havel::compiler {
 
 void VM::registerHostFunction(const std::string &name,
-                               BytecodeHostFunction function) {
-  host_functions[name] = std::move(function);
+    BytecodeHostFunction function) {
+    auto it = host_functions.find(name);
+    if (it != host_functions.end()) {
+        auto rootIt = host_function_gc_roots_.find(name);
+        if (rootIt != host_function_gc_roots_.end()) {
+            unpinExternalRoot(rootIt->second);
+            host_function_gc_roots_.erase(rootIt);
+        }
+    }
+    host_functions[name] = std::move(function);
   for (uint32_t i = 0; i < host_function_names_.size(); i++) {
     if (host_function_names_[i] == name) {
       host_function_globals_[name] = Value::makeHostFuncId(i);

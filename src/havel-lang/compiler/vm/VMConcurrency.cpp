@@ -448,9 +448,10 @@ break;
  }
  }
  }
-  // Resume coroutine after sleep
-  co->state = GCHeap::Coroutine::Runnable;
-  locals = co->locals;
+                        // Resume coroutine after sleep
+                        co->state = GCHeap::Coroutine::Runnable;
+                        current_coroutine_id_ = coId;
+                        locals = co->locals;
   immutable_locals_.clear();
  const auto *resume_chunk = current_chunk;
  const auto *resume_func = resume_chunk ? resume_chunk->getFunction(co->function_index) : nullptr;

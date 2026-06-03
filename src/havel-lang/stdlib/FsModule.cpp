@@ -211,6 +211,7 @@ static std::mutex &getFileLockMutex() {
 }
 
 void registerFsModule(const VMApi &api) {
+  fprintf(stderr, "[DBG registerFsModule] called!\n");
     // fs.exists
     api.registerFunction(
         "fs.exists", [api](const std::vector<Value> &args) {
@@ -1083,9 +1084,10 @@ void registerFsModule(const VMApi &api) {
 #endif
     });
 
-    // Create fs namespace object
-    auto fsObj = api.makeObject();
-    api.setField(fsObj, "exists", api.makeFunctionRef("fs.exists"));
+  // Create fs namespace object
+  auto fsObj = api.makeObject();
+  fprintf(stderr, "[DBG registerFsModule] fsObj created, about to setField\n");
+  api.setField(fsObj, "exists", api.makeFunctionRef("fs.exists"));
     api.setField(fsObj, "isDir", api.makeFunctionRef("fs.isDir"));
     api.setField(fsObj, "isFile", api.makeFunctionRef("fs.isFile"));
     api.setField(fsObj, "isSymlink", api.makeFunctionRef("fs.isSymlink"));
@@ -1121,7 +1123,8 @@ void registerFsModule(const VMApi &api) {
     api.setField(fsObj, "tryLock", api.makeFunctionRef("fs.tryLock"));
     api.setField(fsObj, "isLocked", api.makeFunctionRef("fs.isLocked"));
     api.setField(fsObj, "unlock", api.makeFunctionRef("fs.unlock"));
-    api.setGlobal("fs", fsObj);
+    fprintf(stderr, "[DBG registerFsModule] about to setGlobal fs\n");
+  api.setGlobal("fs", fsObj);
 }
 
 } // namespace havel::stdlib

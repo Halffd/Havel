@@ -292,17 +292,20 @@ private:
     }
 
     bool anyExecuted = false;
+    int idleCycles = 0;
     do {
       anyExecuted = false;
       sched->wakeSleepingGoroutines();
       auto* g = sched->pickNext();
       if (!g) {
         if (sched->suspendedCount() > 0) {
+          if (++idleCycles >= 100) break;
           std::this_thread::sleep_for(std::chrono::milliseconds(10));
           continue;
         }
         break;
       }
+      idleCycles = 0;
 
       // Set as current goroutine so VM opcodes can access it via scheduler_->current()
       sched->setCurrent(g);

@@ -99,7 +99,12 @@ VM::~VM() {
                   tier2_compile_count_.load(),
                   tier2_skip_duplicate_count_.load());
   }
-  if (heap_.externalRootCount() > 0) {
+  for (auto &[name, rootId] : host_function_gc_roots_) {
+        unpinExternalRoot(rootId);
+    }
+    host_function_gc_roots_.clear();
+
+    if (heap_.externalRootCount() > 0) {
         ::havel::warning("[VM][GC] {} external roots still pinned at VM shutdown", heap_.externalRootCount());
   }
 }
@@ -340,9 +345,31 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
 
     runDispatchLoop(0);
 
+  // Before restoring saved_globals, capture any lazy module objects
+  // that were initialized during execution. These must be propagated
+  // to the caller's globals, otherwise the caller still has stale
+  // lazy proxy objects.
+  std::unordered_map<std::string, Value> lazyModuleUpdates;
+  for (const auto &lm : lazy_modules_) {
+    if (lm.second.loaded) {
+      auto git = globals.find(lm.first);
+      if (git != globals.end() && git->second.isObjectId()) {
+        auto *obj = heap_.object(git->second.asObjectId());
+        if (obj && !obj->get("__lazy__")) {
+          lazyModuleUpdates[lm.first] = git->second;
+        }
+      }
+    }
+  }
+
   // Restore globals state so the calling module context is unbroken
   globals = std::move(saved_globals);
   globals_stack_ = std::move(saved_globals_stack);
+
+  // Propagate lazy module objects to the restored globals
+  for (const auto &[name, value] : lazyModuleUpdates) {
+    globals[name] = value;
+  }
 
   current_chunk = saved_chunk;
   resumeGC();
@@ -2316,17 +2343,18 @@ std::string fnCapturedField = fieldPath;
         if (!rc || !rc->chunk) { resumeGcGuard(); return value; }
         if (rc->chunk != chunk.get()) { resumeGcGuard(); return value; }
 
-        // Pin the closure as a GC root so the host function wrapper
+// Pin the closure as a GC root so the host function wrapper
         // can safely reference it by ID across GC cycles.
-        pinExternalRoot(Value::makeClosureId(closureId));
+        uint64_t closureRootId = pinExternalRoot(Value::makeClosureId(closureId));
 
-    uint32_t funcIdx = rc->function_index;
-    auto moduleChunk = chunk;
+        uint32_t funcIdx = rc->function_index;
+        auto moduleChunk = chunk;
         auto closureGlobals = rc->module_globals
             ? rc->module_globals
             : std::make_shared<std::unordered_map<std::string, Value>>(moduleGlobals);
-    auto wrapperName = "$module_closure_" + canonicalKey + "_" + fieldPath;
-    std::string capturedKey = canonicalKey;
+        auto wrapperName = "$module_closure_" + canonicalKey + "_" + fieldPath;
+        host_function_gc_roots_[wrapperName] = closureRootId;
+        std::string capturedKey = canonicalKey;
     std::string capturedField = fieldPath;
     registerHostFunction(wrapperName,
         [this, closureId, funcIdx, moduleChunk, closureGlobals, wrapperName, capturedKey, capturedField](const std::vector<Value>& args) -> Value {
@@ -2494,21 +2522,36 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
 
 bool VM::ensureModuleLoaded(const std::string &name) {
   auto it = lazy_modules_.find(name);
-  if (it == lazy_modules_.end()) return false;
-  if (it->second.loaded) return true;
+  if (it == lazy_modules_.end()) {
+    fprintf(stderr, "[DBG ensureModuleLoaded] '%s' NOT found in lazy_modules_\n", name.c_str());
+    return false;
+  }
+  if (it->second.loaded) {
+    fprintf(stderr, "[DBG ensureModuleLoaded] '%s' already loaded\n", name.c_str());
+    return true;
+  }
 
+  fprintf(stderr, "[DBG ensureModuleLoaded] '%s' loading now...\n", name.c_str());
   VMApi api(*this);
   it->second.initFn(api);
   it->second.loaded = true;
+  fprintf(stderr, "[DBG ensureModuleLoaded] '%s' initFn done\n", name.c_str());
 
-  // Clear the __lazy__ flag on the module object so OBJECT_GET
-  // doesn't erase it from globals on subsequent accesses
+  // Clear the __lazy__ flag on the proxy object so OBJECT_GET's
+  // lazy module trap doesn't erase the module from globals
   auto git = globals.find(name);
   if (git != globals.end() && git->second.isObjectId()) {
     auto *obj = heap_.object(git->second.asObjectId());
     if (obj) {
-      (*obj)["__lazy__"] = Value(false);
+      auto *lf = obj->get("__lazy__");
+      fprintf(stderr, "[DBG ensureModuleLoaded] '%s' globals obj __lazy__ = %s\n", name.c_str(), lf ? (lf->isBool() ? (lf->asBool() ? "true" : "false") : "not bool") : "null");
+      if (lf && lf->isBool() && lf->asBool()) {
+        obj->set("__lazy__", Value(false));
+        fprintf(stderr, "[DBG ensureModuleLoaded] '%s' cleared __lazy__ to false\n", name.c_str());
+      }
     }
+  } else {
+    fprintf(stderr, "[DBG ensureModuleLoaded] '%s' NOT found in globals after loading!\n", name.c_str());
   }
 
   return true;
@@ -2524,6 +2567,7 @@ bool VM::isLazyModuleLoaded(const std::string &name) const {
 }
 
 Value VM::loadModule(const std::string& path) {
+  fprintf(stderr, "[DBG loadModule] path='%s'\n", path.c_str());
   // Check cache via canonical ModuleLoader
   if (moduleLoader_.isCached(path)) {
     Value cachedVal;
@@ -2865,9 +2909,31 @@ Value VM::loadModule(const std::string& path) {
     }
 
   // Restore caller's globals and execution state
+  // But first, capture any lazy module objects that were initialized
+  // during the module's execution (e.g., fs, sys) so we can propagate
+  // them to the caller's globals — otherwise the caller still has
+  // the stale lazy proxy objects.
+  std::unordered_map<std::string, Value> lazyModuleUpdates;
+  for (const auto &lm : lazy_modules_) {
+    if (lm.second.loaded) {
+      auto git = globals.find(lm.first);
+      if (git != globals.end() && git->second.isObjectId()) {
+        auto *obj = heap_.object(git->second.asObjectId());
+        if (obj && !obj->get("__lazy__")) {
+          // This module's global was replaced with the real object
+          // (no __lazy__ flag means it's the initialized namespace)
+          lazyModuleUpdates[lm.first] = git->second;
+        }
+      }
+    }
+  }
   globals = std::move(globals_stack_.back());
   globals_stack_.pop_back();
-    globals["_G"] = old_g;
+  // Propagate lazy module objects to the caller's globals
+  for (const auto &[name, value] : lazyModuleUpdates) {
+    globals[name] = value;
+  }
+  globals["_G"] = old_g;
     globals_mirror_object_id_ = old_mirror_id;
     immutable_globals_ = saved_immutable_globals;
     stack = std::move(saved_stack);

@@ -256,6 +256,7 @@ struct CallFrame {
   utils::RobinHoodHashMap<std::string, BytecodeHostFunction> host_functions;
   std::vector<std::string> host_function_names_; // Index -> name mapping
   utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
+    std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
  
   
         // Function properties support (fn.prop = value for static state, memoization, etc.)
@@ -823,9 +824,14 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     std::atomic<int> exit_code_{0};
   
   void setGlobal(std::string name, Value value) {
-    std::string key = name;
+    if (name == "fs") {
+      fprintf(stderr, "[DBG setGlobal] name='fs' objId=%d isObj=%d isNull=%d\n",
+        value.isObjectId() ? (int)value.asObjectId() : -1,
+        value.isObjectId() ? 1 : 0,
+        value.isNull() ? 1 : 0);
+    }
     globals[std::move(name)] = std::move(value);
-    emitVariableChanged(key);
+    emitVariableChanged(name);
   }
   void eraseGlobal(const std::string &name) {
     globals.erase(name);
@@ -1024,7 +1030,8 @@ bool isLazyModuleLoaded(const std::string &name) const;
         current_chunk = main_chunk_.get();
     }
  const std::shared_ptr<BytecodeChunk>& getMainChunk() const { return main_chunk_; }
- std::unordered_map<std::string, Value>& getGlobals() { return globals; }
+  std::unordered_map<std::string, Value>& getGlobals() { return globals; }
+  auto& hostFunctionGlobals() { return host_function_globals_; }
 void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
   repl_chunks_.push_back(chunk);
   current_chunk = chunk.get();

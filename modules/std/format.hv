@@ -127,7 +127,7 @@ fn urlDecode(s) {
     ch = s[i:i+1]
     if ch == "%" && i + 2 < #s {
       hex_str = s[i+1:i+3]
-      val = 0
+      v = 0
       digits = "0123456789ABCDEFabcdef"
       c1 = hex_str[0:1]
       c2 = hex_str[1:2]

@@ -6,6 +6,10 @@
 // prototype methods (.keys(), .values(), etc.) via VMApi at startup.
 // This module provides additional utility functions in pure Havel
 // that are not in the C++ ObjectModule.
+//
+// NOTE: Use Object.xxx() (capital O) for namespace dispatch.
+// Lowercase "object" is a type name keyword and dispatches differently,
+// passing an implicit self arg that host functions don't expect.
 
 fn isEmpty(obj) { obj.isEmpty() }
 fn size(obj) { obj.size() }
@@ -15,8 +19,6 @@ fn values(obj) { obj.values() }
 fn entries(obj) { obj.entries() }
 fn map(obj, pred) { obj.map(pred) }
 fn filter(obj, pred) { obj.filter(pred) }
-
-// Additional pure-Havel utilities not in C++ ObjectModule:
 
 fn fromEntries(pairs) {
   obj = {}

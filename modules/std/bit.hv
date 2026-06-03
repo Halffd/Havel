@@ -6,8 +6,12 @@
 // rshift, arshift, test, set, clear, toggle, lsb, msb, count, parity, rol,
 // ror, getfield, setfield) and the "bit" namespace object at startup.
 // This module ONLY adds new utility functions that don't shadow C++ ones.
+//
+// NOTE: Havel uses INT48 value representation (48-bit signed integers).
+// Functions that produce values outside -2^47..2^47-1 will silently truncate.
+// Use Bit.xxx() (capital B) for namespace dispatch — lowercase "bit" is
+// a type-name keyword that dispatches differently (passes implicit self).
 
-// Aliases for common bit intrinsics (different naming conventions)
 fn popcount(x) { bit.count(x) }
 
 fn ctz(x) { bit.lsb(x) }
@@ -26,7 +30,7 @@ fn rotr(x, s) { bit.ror(x, s) }
 
 fn mask(n) {
   if n <= 0 { return 0 }
-  if n >= 64 { return bit.not(0) }
+  if n >= 48 { return bit.not(0) }
   bit.lshift(1, n) - 1
 }
 
@@ -53,7 +57,7 @@ fn toBytes(x) {
 fn fromBytes(arr) {
   result = 0
   i = 0
-  while i < 8 && i < arr.len() {
+  while i < 6 && i < arr.len() {
     result = bit.or(result, bit.lshift(int(arr[i]) & 0xFF, i * 8))
     i += 1
   }
@@ -63,18 +67,7 @@ fn fromBytes(arr) {
 fn parity(x) { bit.count(x) % 2 }
 
 fn insert(x, pos, width, val) {
+  if pos + width > 47 { return x }
   m = bit.lshift(bit.lshift(1, width) - 1, pos)
   bit.or(bit.and(x, bit.not(m)), bit.and(bit.lshift(val, pos), m))
-}
-
-fn reverse(x) {
-  result = 0
-  v = int(x)
-  i = 0
-  while i < 64 {
-    result = bit.or(bit.lshift(result, 1), bit.and(v, 1))
-    v = bit.rshift(v, 1)
-    i += 1
-  }
-  result
 }

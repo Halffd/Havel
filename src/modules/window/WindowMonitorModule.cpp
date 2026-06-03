@@ -214,6 +214,38 @@ static Value windowFindByTitle(const std::vector<Value> &args) {
 }
 
 // ============================================================================
+// Window cycling
+// ============================================================================
+
+static Value windowNext(const std::vector<Value> &) {
+    WindowManager::AltTab();
+    return Value::makeBool(true);
+}
+
+static Value windowPrev(const std::vector<Value> &) {
+    auto windows = WindowManager::getAllWindows();
+    if (windows.size() < 2) return Value::makeBool(false);
+
+    uint64_t activeId = WindowManager::GetActiveWindow();
+    size_t currentIdx = 0;
+    bool found = false;
+    for (size_t i = 0; i < windows.size(); i++) {
+        if (windows[i].id == activeId) {
+            currentIdx = i;
+            found = true;
+            break;
+        }
+    }
+    if (!found) return Value::makeBool(false);
+
+    size_t prevIdx = (currentIdx == 0) ? windows.size() - 1 : currentIdx - 1;
+    if (windows[prevIdx].valid && windows[prevIdx].id != 0) {
+        return Value::makeBool(WindowManager::focusWindow(windows[prevIdx].id));
+    }
+    return Value::makeBool(false);
+}
+
+// ============================================================================
 // Window manipulation
 // ============================================================================
 
@@ -373,10 +405,13 @@ static Value windowGroupNames(const VMApi &api, const std::vector<Value> &) {
 // ============================================================================
 
 void registerWindowMonitorModule(const VMApi &api) {
-    // Active window queries
-    api.registerFunction("window.activeTitle", [api](const std::vector<Value> &args) {
-        return windowActiveTitle(api, args);
-    });
+// Active window queries
+api.registerFunction("window.activeTitle", [api](const std::vector<Value> &args) {
+    return windowActiveTitle(api, args);
+});
+api.registerFunction("window.getTitle", [api](const std::vector<Value> &args) {
+    return windowActiveTitle(api, args);
+});
     api.registerFunction("window.activeClass", [api](const std::vector<Value> &args) {
         return windowActiveClass(api, args);
     });
@@ -437,6 +472,14 @@ void registerWindowMonitorModule(const VMApi &api) {
     });
     api.registerFunction("window.findByTitle", [](const std::vector<Value> &args) {
         return windowFindByTitle(args);
+    });
+
+    // Window cycle
+    api.registerFunction("window.next", [](const std::vector<Value> &args) {
+        return windowNext(args);
+    });
+    api.registerFunction("window.prev", [](const std::vector<Value> &args) {
+        return windowPrev(args);
     });
 
     // Window manipulation
@@ -511,6 +554,7 @@ void registerWindowMonitorModule(const VMApi &api) {
     // Register window global object with all methods
     auto windowObj = api.makeObject();
     api.setField(windowObj, "activeTitle", api.makeFunctionRef("window.activeTitle"));
+    api.setField(windowObj, "getTitle", api.makeFunctionRef("window.getTitle"));
     api.setField(windowObj, "activeClass", api.makeFunctionRef("window.activeClass"));
     api.setField(windowObj, "activeExe", api.makeFunctionRef("window.activeExe"));
     api.setField(windowObj, "activePid", api.makeFunctionRef("window.activePid"));
@@ -527,6 +571,8 @@ void registerWindowMonitorModule(const VMApi &api) {
     api.setField(windowObj, "isMaximized", api.makeFunctionRef("window.isMaximized"));
     api.setField(windowObj, "isFullscreen", api.makeFunctionRef("window.isFullscreen"));
     api.setField(windowObj, "list", api.makeFunctionRef("window.list"));
+    api.setField(windowObj, "next", api.makeFunctionRef("window.next"));
+    api.setField(windowObj, "prev", api.makeFunctionRef("window.prev"));
     api.setField(windowObj, "findByPid", api.makeFunctionRef("window.findByPid"));
     api.setField(windowObj, "findByClass", api.makeFunctionRef("window.findByClass"));
     api.setField(windowObj, "findByTitle", api.makeFunctionRef("window.findByTitle"));

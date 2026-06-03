@@ -441,6 +441,25 @@ if (event_queue_) event_queue_->processAll();
     return Value::makeStringId(strRef.id);
   });
 
+  // contains(haystack, needle) - Check if string contains substring
+  registerHostFunction("contains", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2) return Value::makeBool(false);
+    std::string haystack = toString(args[0]);
+    std::string needle = toString(args[1]);
+    return Value::makeBool(haystack.find(needle) != std::string::npos);
+  });
+
+  // lower(s) - Convert string to lowercase
+  registerHostFunction("lower", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    std::string s = toString(args[0]);
+    for (char &c : s) {
+      if (c >= 'A' && c <= 'Z') c += 32;
+    }
+    auto strRef = heap_.allocateString(s);
+    return Value::makeStringId(strRef.id);
+  });
+
 // type() builtin returns type name
   registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
     const auto &value = args[0];

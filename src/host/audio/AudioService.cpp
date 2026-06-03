@@ -39,4 +39,80 @@ bool AudioService::isMuted() const {
     return m_manager && m_manager->isMuted();
 }
 
+std::string AudioService::getActiveApplicationName() const {
+    return m_manager ? m_manager->getActiveApplicationName() : "";
+}
+
+double AudioService::getActiveAppVolume() const {
+    if (!m_manager) return 0.0;
+    auto name = m_manager->getActiveApplicationName();
+    if (name.empty()) {
+        auto apps = m_manager->getApplications();
+        if (!apps.empty()) {
+            return apps[0].volume;
+        }
+        return m_manager->getVolume();
+    }
+    return m_manager->getApplicationVolume(name);
+}
+
+void AudioService::increaseActiveAppVolume(double amount) {
+    if (!m_manager) return;
+    auto name = m_manager->getActiveApplicationName();
+    if (name.empty()) {
+        auto apps = m_manager->getApplications();
+        if (!apps.empty()) {
+            name = apps[0].name;
+        }
+    }
+    if (!name.empty()) {
+        double vol = m_manager->getApplicationVolume(name);
+        m_manager->setApplicationVolume(name, std::min(vol + amount, 1.0));
+    }
+}
+
+void AudioService::decreaseActiveAppVolume(double amount) {
+    if (!m_manager) return;
+    auto name = m_manager->getActiveApplicationName();
+    if (name.empty()) {
+        auto apps = m_manager->getApplications();
+        if (!apps.empty()) {
+            name = apps[0].name;
+        }
+    }
+    if (!name.empty()) {
+        double vol = m_manager->getApplicationVolume(name);
+        m_manager->setApplicationVolume(name, std::max(vol - amount, 0.0));
+    }
+}
+
+std::vector<havel::AudioDevice> AudioService::getAllDevices() const {
+    if (!m_manager) return {};
+    return m_manager->getDevices();
+}
+
+havel::AudioDevice AudioService::findDeviceByName(const std::string &name) const {
+    if (!m_manager) return {};
+    auto *dev = m_manager->findDeviceByName(name);
+    return dev ? *dev : havel::AudioDevice{};
+}
+
+havel::AudioDevice AudioService::findDeviceByIndex(uint32_t index) const {
+    if (!m_manager) return {};
+    auto *dev = m_manager->findDeviceByIndex(index);
+    return dev ? *dev : havel::AudioDevice{};
+}
+
+bool AudioService::setDefaultOutput(const std::string &device) {
+    return m_manager && m_manager->setDefaultOutput(device);
+}
+
+std::string AudioService::getDefaultOutput() const {
+    return m_manager ? m_manager->getDefaultOutput() : "";
+}
+
+bool AudioService::playTestSound() {
+    return m_manager && m_manager->playTestSound();
+}
+
 } // namespace havel::host

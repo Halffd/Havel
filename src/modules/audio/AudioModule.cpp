@@ -2,6 +2,7 @@
 #include "modules/ModuleMacros.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "host/audio/AudioService.hpp"
+#include "core/media/AudioManager.hpp"
 #include "utils/Logger.hpp"
 
 namespace havel::modules {
@@ -35,6 +36,23 @@ static double toDouble(const Value& v, double def = 0.0) {
   if (v.isDouble()) return v.asDouble();
   if (v.isInt()) return static_cast<double>(v.asInt());
   return def;
+}
+
+static std::string valueToStr(const VMApi& api, const Value& v) {
+  if (v.isNull()) return "";
+  return api.toString(v);
+}
+
+static Value deviceToObject(const VMApi& api, const havel::AudioDevice& dev) {
+  auto obj = api.makeObject();
+  api.setField(obj, "name", api.makeString(dev.name));
+  api.setField(obj, "description", api.makeString(dev.description));
+  api.setField(obj, "index", Value::makeInt(static_cast<int64_t>(dev.index)));
+  api.setField(obj, "isDefault", Value::makeBool(dev.isDefault));
+  api.setField(obj, "isMuted", Value::makeBool(dev.isMuted));
+  api.setField(obj, "volume", Value::makeDouble(dev.volume));
+  api.setField(obj, "channels", Value::makeInt(static_cast<int64_t>(dev.channels)));
+  return obj;
 }
 
 void registerAudioModule(const VMApi& api) {
@@ -99,6 +117,94 @@ void registerAudioModule(const VMApi& api) {
     try { return Value::makeBool(svc->isMuted()); } catch (const std::exception& e) { return Value::makeBool(false); }
   });
 
+  HAVEL_REGISTER_FUNCTION(api, "audio.getActiveAppVolume", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    auto svc = getService();
+    if (!svc) return Value::makeDouble(0.0);
+    try { return Value::makeDouble(svc->getActiveAppVolume()); } catch (const std::exception& e) { return Value::makeDouble(0.0); }
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "audio.increaseActiveAppVolume", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    double amount = !args.empty() ? toDouble(args[0], 0.05) : 0.05;
+    auto svc = getService();
+    if (!svc) return Value::makeNull();
+    try { svc->increaseActiveAppVolume(amount); } catch (const std::exception& e) { debug("audio.increaseActiveAppVolume error: {}", e.what()); }
+    return Value::makeNull();
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "audio.decreaseActiveAppVolume", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    double amount = !args.empty() ? toDouble(args[0], 0.05) : 0.05;
+    auto svc = getService();
+    if (!svc) return Value::makeNull();
+    try { svc->decreaseActiveAppVolume(amount); } catch (const std::exception& e) { debug("audio.decreaseActiveAppVolume error: {}", e.what()); }
+    return Value::makeNull();
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "audio.getDevices", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    (void)args;
+    auto svc = getService();
+    if (!svc) return Value::makeNull();
+    try {
+      auto devices = svc->getAllDevices();
+      auto arr = api.makeArray();
+      for (const auto& dev : devices) {
+        api.push(arr, deviceToObject(api, dev));
+      }
+      return arr;
+    } catch (const std::exception& e) { return Value::makeNull(); }
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "audio.findDeviceByName", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    if (args.empty()) return Value::makeNull();
+    auto svc = getService();
+    if (!svc) return Value::makeNull();
+    try {
+      auto dev = svc->findDeviceByName(valueToStr(api, args[0]));
+      if (dev.name.empty()) return Value::makeNull();
+      return deviceToObject(api, dev);
+    } catch (const std::exception& e) { return Value::makeNull(); }
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "audio.findDeviceByIndex", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    if (args.empty()) return Value::makeNull();
+    auto svc = getService();
+    if (!svc) return Value::makeNull();
+    try {
+      auto dev = svc->findDeviceByIndex(static_cast<uint32_t>(toDouble(args[0])));
+      if (dev.name.empty()) return Value::makeNull();
+      return deviceToObject(api, dev);
+    } catch (const std::exception& e) { return Value::makeNull(); }
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "audio.setDefaultOutput", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    if (args.empty()) return Value::makeBool(false);
+    auto svc = getService();
+    if (!svc) return Value::makeBool(false);
+    try { return Value::makeBool(svc->setDefaultOutput(valueToStr(api, args[0]))); } catch (const std::exception& e) { return Value::makeBool(false); }
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "audio.getDefaultOutput", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    (void)args;
+    auto svc = getService();
+    if (!svc) return api.makeString("");
+    try { return api.makeString(svc->getDefaultOutput()); } catch (const std::exception& e) { return api.makeString(""); }
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "audio.playTestSound", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    (void)args;
+    auto svc = getService();
+    if (!svc) return Value::makeBool(false);
+    try { return Value::makeBool(svc->playTestSound()); } catch (const std::exception& e) { return Value::makeBool(false); }
+  });
+
   auto obj = api.makeObject();
   api.setGlobal("audio", obj);
   api.setField(obj, MODULE_MARKER, Value::makeBool(true));
@@ -109,6 +215,15 @@ void registerAudioModule(const VMApi& api) {
   api.setField(obj, "toggleMute", api.makeFunctionRef("audio.toggleMute"));
   api.setField(obj, "setMute", api.makeFunctionRef("audio.setMute"));
   api.setField(obj, "isMuted", api.makeFunctionRef("audio.isMuted"));
+  api.setField(obj, "getActiveAppVolume", api.makeFunctionRef("audio.getActiveAppVolume"));
+  api.setField(obj, "increaseActiveAppVolume", api.makeFunctionRef("audio.increaseActiveAppVolume"));
+  api.setField(obj, "decreaseActiveAppVolume", api.makeFunctionRef("audio.decreaseActiveAppVolume"));
+  api.setField(obj, "getDevices", api.makeFunctionRef("audio.getDevices"));
+  api.setField(obj, "findDeviceByName", api.makeFunctionRef("audio.findDeviceByName"));
+  api.setField(obj, "findDeviceByIndex", api.makeFunctionRef("audio.findDeviceByIndex"));
+  api.setField(obj, "setDefaultOutput", api.makeFunctionRef("audio.setDefaultOutput"));
+  api.setField(obj, "getDefaultOutput", api.makeFunctionRef("audio.getDefaultOutput"));
+  api.setField(obj, "playTestSound", api.makeFunctionRef("audio.playTestSound"));
 
   HAVEL_END_MODULE();
 }

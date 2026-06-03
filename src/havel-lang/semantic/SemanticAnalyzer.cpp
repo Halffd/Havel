@@ -853,7 +853,10 @@ void SemanticAnalyzer::initializeKnownModules() {
       "decreaseVolume",  "toggleMute",        "setMute",
       "isMuted",         "getDevices",        "setDeviceVolume",
       "getDeviceVolume", "getApplications",   "setAppVolume",
-      "getAppVolume",    "increaseAppVolume", "decreaseAppVolume"};
+      "getAppVolume",    "increaseAppVolume", "decreaseAppVolume",
+      "findDeviceByName", "findDeviceByIndex", "setDefaultOutput",
+      "getDefaultOutput", "playTestSound",    "getActiveAppVolume",
+      "increaseActiveAppVolume", "decreaseActiveAppVolume"};
 
   // Brightness module
   knownModules_["brightnessManager"] = {
@@ -887,21 +890,24 @@ void SemanticAnalyzer::initializeKnownModules() {
 
   // Window module
   knownModules_["window"] = {"active",
-                             "list",
-                             "focus",
-                             "minimize",
-                             "maximize",
-                             "close",
-                             "move",
-                             "resize",
-                             "getMonitors",
-                             "getMonitorArea",
-                             "moveToNextMonitor",
-                             "title",
-                             "class",
-                             "pid",
-                             "getActiveWindow",
-                             "getNextMonitor"};
+                              "list",
+                              "focus",
+                              "minimize",
+                              "maximize",
+                              "close",
+                              "move",
+                              "resize",
+                              "getMonitors",
+                              "getMonitorArea",
+                              "moveToNextMonitor",
+                              "title",
+                              "class",
+                              "pid",
+                              "getActiveWindow",
+                              "getNextMonitor",
+                              "getTitle",
+                              "next",
+                              "prev"};
 
   // Mouse module
   knownModules_["mouse"] = {"move",        "moveTo",         "moveRel",
@@ -988,7 +994,7 @@ void SemanticAnalyzer::initializeKnownBuiltins() {
                     "sqrt", "abs", "sin", "cos", "tan", "PI", "E", "min", "max",
                     "round", "floor", "ceil",
                     // String
-                    "lower", "upper", "trim", "replace", "split", "join",
+                    "lower", "upper", "trim", "replace", "split", "join", "contains",
                     // Process
                     "run", "runDetached", "runWait",
                     // IO/Input

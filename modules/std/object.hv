@@ -93,3 +93,40 @@ fn omitBy(obj, pred) {
   }
   result
 }
+
+fn merge(a, b) {
+  result = {}
+  for k in a.keys() { result[k] = a[k] }
+  for k in b.keys() { result[k] = b[k] }
+  result
+}
+
+fn clone(obj) {
+  result = {}
+  for k in obj.keys() { result[k] = obj[k] }
+  result
+}
+
+fn deepEqual(a, b) {
+  if type(a) != type(b) { return false }
+  if type(a) == "object" {
+    akeys = a.keys()
+    bkeys = b.keys()
+    if akeys.len() != bkeys.len() { return false }
+    for k in akeys {
+      if !b.has(k) { return false }
+      if !deepEqual(a[k], b[k]) { return false }
+    }
+    return true
+  }
+  if type(a) == "array" {
+    if a.len() != b.len() { return false }
+    i = 0
+    while i < a.len() {
+      if !deepEqual(a[i], b[i]) { return false }
+      i += 1
+    }
+    return true
+  }
+  a == b
+}

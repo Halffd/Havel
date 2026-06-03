@@ -59,3 +59,22 @@ fn fromBytes(arr) {
   }
   result
 }
+
+fn parity(x) { bit.count(x) % 2 }
+
+fn insert(x, pos, width, val) {
+  m = bit.lshift(bit.lshift(1, width) - 1, pos)
+  bit.or(bit.and(x, bit.not(m)), bit.and(bit.lshift(val, pos), m))
+}
+
+fn reverse(x) {
+  result = 0
+  v = int(x)
+  i = 0
+  while i < 64 {
+    result = bit.or(bit.lshift(result, 1), bit.and(v, 1))
+    v = bit.rshift(v, 1)
+    i += 1
+  }
+  result
+}

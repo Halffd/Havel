@@ -95,8 +95,9 @@ fn _isCmpOp(oper) {
   else if oper == ">" { true }
   else if oper == "<=" { true }
   else if oper == ">=" { true }
-  else if oper == "is" { true }
-  else { false }
+else if oper == "is" { true }
+    else if oper == "is not" { true }
+    else { false }
 }
 
 fn inferBinary(leftType, oper, rightType) {

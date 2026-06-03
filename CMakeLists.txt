@@ -1028,6 +1028,24 @@ target_link_libraries(havel_api_test PRIVATE
   ${COMMON_LIBS}
 )
 
+add_executable(brightness_test tests/test_brightness.cpp)
+set_target_properties(brightness_test PROPERTIES
+  CXX_STANDARD 23
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+target_compile_options(brightness_test PRIVATE -fno-lto)
+target_link_options(brightness_test PRIVATE -fno-lto)
+target_include_directories(brightness_test PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
+target_link_libraries(brightness_test PRIVATE
+  -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+  ${COMMON_LIBS}
+)
+
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
   add_test(NAME hvtest-smoke COMMAND hvtest --smoke)

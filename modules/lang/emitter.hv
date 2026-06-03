@@ -2099,6 +2099,103 @@ if k == "ClassDeclaration" {
     bc.emit("POP")
     return
   }
+  if k == "DelStatement" {
+    if node.target != null {
+      if node.target.kind == "Identifier" {
+        name = node.target.name
+        resolved = scopeResolve(emitter.scope, name)
+        if resolved != null {
+          if resolved.kind == "local" {
+            bc.emit("PUSH_NULL")
+            bc.emit("STORE_VAR", resolved.index)
+          }
+          else {
+            sid = globalIdx(emitter, name)
+            bc.emit("PUSH_NULL")
+            bc.emit("STORE_GLOBAL", bc.str_id(sid))
+          }
+        }
+        else {
+          sid = globalIdx(emitter, name)
+          bc.emit("PUSH_NULL")
+          bc.emit("STORE_GLOBAL", bc.str_id(sid))
+        }
+      }
+      else if node.target.kind == "MemberExpression" {
+        emitExpr(emitter, node.target.obj)
+        propIdx = bc.add_string(node.target.property)
+        bc.emit("LOAD_CONST", propIdx)
+        bc.emit("OBJECT_DELETE")
+      }
+      else if node.target.kind == "IndexExpression" {
+        emitExpr(emitter, node.target.obj)
+        emitExpr(emitter, node.target.index)
+        bc.emit("ARRAY_DEL")
+      }
+    }
+    return
+  }
+  if k == "WithStatement" {
+    if node.object != null {
+      emitExpr(emitter, node.object)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    if node.alias != null {
+      aliasName = node.alias
+      if type(aliasName) == "object" { aliasName = aliasName.name }
+      slot = scopeDeclare(emitter.scope, aliasName)
+      bc.emit("STORE_VAR", slot)
+    }
+    else {
+      bc.emit("POP")
+    }
+    if node.body != null {
+      if node.body.kind == "BlockStatement" {
+        for s in node.body.body {
+          emitStmt(emitter, s)
+        }
+      }
+      else {
+        emitStmt(emitter, node.body)
+      }
+    }
+    return
+  }
+  if k == "TraitDeclaration" {
+    // Same as ProtocolDeclaration: prot.register(name, method1, method2, ...)
+    sid = globalIdx(emitter, "prot.register")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    traitName = node.name
+    if type(traitName) == "object" { traitName = traitName.name }
+    nameIdx = bc.add_string(traitName)
+    bc.emit("LOAD_CONST", nameIdx)
+    methodCount = 1
+    if node.methods != null {
+      for m in node.methods {
+        mName = m.name
+        if type(mName) == "object" { mName = mName.name }
+        if mName != null {
+          midx = bc.add_string(mName)
+          bc.emit("LOAD_CONST", midx)
+          methodCount = methodCount + 1
+        }
+      }
+    }
+    bc.emit("CALL", methodCount)
+    nameSid = globalIdx(emitter, traitName)
+    bc.emit("STORE_GLOBAL", bc.str_id(nameSid))
+    return
+  }
+  if k == "DecoratorStatement" {
+    emitDecoratorStatement(emitter, node)
+    return
+  }
+  if k == "InputStatement" {
+    emitInputStatement(emitter, node)
+    return
+  }
   emitError("unsupported stmt: " + k, node.line, node.col)
 
 }

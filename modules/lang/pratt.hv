@@ -2377,10 +2377,8 @@ skipNewlines()
             return ExpressionStatement(CallExpression(callee, args, [], l, c), l, c)
 
         }
-        target = parseExpr(0)
-        node = ExpressionStatement(target, l, c)
-        node.isDel = true
-        node
+  target = parseExpr(0)
+  DelStatement(target, l, c)
 
     }
     // ===================================================================

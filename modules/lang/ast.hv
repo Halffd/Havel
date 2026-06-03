@@ -427,6 +427,22 @@ fn ImplDeclaration(typeName, traitName, funcs, line, col) {
   }
 
 }
+fn DelStatement(target, line, col) {
+  {kind: "DelStatement", line: line, col: col, target: target}
+
+}
+fn WithStatement(object, alias, body, line, col) {
+  {kind: "WithStatement", line: line, col: col, object: object, alias: alias, body: body}
+
+}
+fn DecoratorStatement(decorators, target, line, col) {
+  {kind: "DecoratorStatement", line: line, col: col, decorators: decorators, target: target}
+
+}
+fn InputStatement(commands, line, col) {
+  {kind: "InputStatement", line: line, col: col, commands: commands}
+
+}
 fn SetLiteral(elements, line, col) {
   {kind: "SetLiteral", line: line, col: col, elements: elements}
 

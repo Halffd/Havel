@@ -1135,9 +1135,7 @@ bool BrightnessManager::setBrightness(const std::string &monitor,
     success = setBrightnessGamma(monitor, brightness);
   }
 
-  if (success) {
-    this->brightness[monitor] = brightness;
-  }
+  this->brightness[monitor] = brightness;
 
   return success;
 }

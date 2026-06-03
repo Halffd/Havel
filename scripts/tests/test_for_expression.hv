@@ -1,0 +1,61 @@
+// Test for-expression (generator/comprehension)
+// Syntax: expr for binding : iterable or expr for binding in iterable
+
+// Basic: extract field from objects
+pairs = [{x: 1, y: 2, z: 3}, {x: 4, y: 5, z: 6}, {x: 7, y: 8, z: 9}]
+result = p.z for p : pairs
+assert(result.len() == 3, "expected 3 elements")
+assert(result[0] == 3, "expected 3")
+assert(result[1] == 6, "expected 6")
+assert(result[2] == 9, "expected 9")
+print("1. object field extraction: ok")
+
+// Using 'in' keyword
+result2 = p.x for p in pairs
+assert(result2.len() == 3)
+assert(result2[0] == 1)
+assert(result2[2] == 7)
+print("2. 'in' keyword syntax: ok")
+
+// Array element access
+arrs = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+result3 = a[2] for a : arrs
+assert(result3.len() == 3)
+assert(result3[0] == 3)
+assert(result3[1] == 6)
+assert(result3[2] == 9)
+print("3. array index access: ok")
+
+// With .sum() method
+total = (a[2] for a : arrs).sum()
+assert(total == 18, "expected 18")
+print("4. .sum() method: ok")
+
+// Standalone variable
+vals = [10, 20, 30]
+doubled = v * 2 for v : vals
+assert(doubled.len() == 3)
+assert(doubled[0] == 20)
+assert(doubled[1] == 40)
+assert(doubled[2] == 60)
+print("5. arithmetic map: ok")
+
+// Nested expression
+matrix = [[1, 2], [3, 4], [5, 6]]
+flattened = (sub[0] + sub[1] for sub : matrix).sum()
+assert(flattened == 21, "expected 21")
+print("6. nested expression: ok")
+
+// Empty iterable
+empty = v for v : []
+assert(empty.len() == 0, "expected empty array")
+print("7. empty iterable: ok")
+
+// String iteration
+chars = c for c : "abc"
+assert(chars.len() == 3)
+assert(chars[0] == "a")
+assert(chars[2] == "c")
+print("8. string iteration: ok")
+
+print("all for-expression tests passed")

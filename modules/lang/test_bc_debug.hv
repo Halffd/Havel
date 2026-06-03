@@ -1,0 +1,14 @@
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+source = "r = fs.exists(\"/tmp\")"
+result = parse(source)
+if result.errors != null && #result.errors > 0 {
+  for e in result.errors { print("Parse error: " + str(e)) }
+}
+
+em = Emitter()
+em.func_idx = bc.func_count()
+compileProgram(em, result.ast, true, "test", "__test__", true)
+
+print(bc.disasm())

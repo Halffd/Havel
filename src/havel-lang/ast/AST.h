@@ -425,7 +425,8 @@ enum class BinaryOperator {
   GreaterEqual,
   Equal,
   NotEqual,
-  Is,        // identity comparison: a is b (same object reference)
+Is, // identity comparison: a is b (same object reference)
+    IsNot, // negated identity: a is not b
   Less,
   Greater,
   And,
@@ -483,8 +484,10 @@ inline std::ostream &operator<<(std::ostream &os, BinaryOperator op) {
     return os << "==";
   case BinaryOperator::NotEqual:
     return os << "!=";
-  case BinaryOperator::Is:
-    return os << "is";
+case BinaryOperator::Is:
+        return os << "is";
+    case BinaryOperator::IsNot:
+        return os << "is not";
   case BinaryOperator::Less:
     return os << "<";
   case BinaryOperator::Greater:
@@ -601,8 +604,10 @@ struct BinaryExpression : public Expression {
       return "||";
     case BinaryOperator::In:
       return "in";
-    case BinaryOperator::Is:
-      return "is";
+case BinaryOperator::Is:
+        return "is";
+    case BinaryOperator::IsNot:
+        return "is not";
     case BinaryOperator::NotIn:
       return "not in";
     case BinaryOperator::Matches:

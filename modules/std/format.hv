@@ -1,0 +1,102 @@
+// format.hv - Pure Havel format stdlib additions
+// Provides additional format.* namespace functions implemented in pure Havel.
+// Loaded by: use "format"
+//
+// C++ FormatModule.cpp registers fmt.* host functions (hex, oct, bin, b64,
+// b64decode, format) and the "fmt" namespace object at startup.
+// This module ONLY adds new utility functions that don't shadow C++ ones.
+
+fn pad(n, width, pad_char = "0") {
+  s = str(n)
+  while #s < width { s = pad_char + s }
+  s
+}
+
+fn padHex(n, width) {
+  s = fmt.hex(n)
+  prefix = s[0:2]
+  rest = s[2:]
+  while #rest < width { rest = "0" + rest }
+  prefix + rest
+}
+
+fn padBin(n, width) {
+  s = fmt.bin(n)
+  prefix = s[0:2]
+  rest = s[2:]
+  while #rest < width { rest = "0" + rest }
+  prefix + rest
+}
+
+fn padOct(n, width) {
+  s = fmt.oct(n)
+  prefix = s[0:2]
+  rest = s[2:]
+  while #rest < width { rest = "0" + rest }
+  prefix + rest
+}
+
+fn hexBytes(arr) {
+  result = ""
+  for b in arr {
+    v = int(b) & 0xFF
+    hi = v >> 4
+    lo = v & 0xF
+    digits = "0123456789abcdef"
+    result = result + digits[hi:hi+1] + digits[lo:lo+1]
+  }
+  result
+}
+
+fn fromHex(s) {
+  result = []
+  i = 0
+  while i + 1 < #s {
+    c1 = s[i:i+1]
+    c2 = s[i+1:i+2]
+    digits = "0123456789abcdef"
+    hi = digits.find(c1.lower())
+    lo = digits.find(c2.lower())
+    if hi < 0 || lo < 0 { return result }
+    result.push(hi * 16 + lo)
+    i += 2
+  }
+  result
+}
+
+fn escape(s) {
+  result = ""
+  i = 0
+  while i < #s {
+    ch = s[i:i+1]
+    if ch == "\n" { result = result + "\\n" }
+    else if ch == "\t" { result = result + "\\t" }
+    else if ch == "\r" { result = result + "\\r" }
+    else if ch == "\\" { result = result + "\\\\" }
+    else if ch == "\"" { result = result + "\\\"" }
+    else { result = result + ch }
+    i += 1
+  }
+  result
+}
+
+fn unescape(s) {
+  result = ""
+  i = 0
+  while i < #s {
+    ch = s[i:i+1]
+    if ch == "\\" && i + 1 < #s {
+      next = s[i+1:i+2]
+      if next == "n" { result = result + "\n"; i += 2 }
+      else if next == "t" { result = result + "\t"; i += 2 }
+      else if next == "r" { result = result + "\r"; i += 2 }
+      else if next == "\\" { result = result + "\\"; i += 2 }
+      else if next == "\"" { result = result + "\""; i += 2 }
+      else { result = result + ch; i += 1 }
+    } else {
+      result = result + ch
+      i += 1
+    }
+  }
+  result
+}

@@ -1,0 +1,61 @@
+// bit.hv - Pure Havel bit stdlib additions
+// Provides additional bit.* namespace functions implemented in pure Havel.
+// Loaded by: use "bit"
+//
+// C++ BitModule.cpp registers bit.* host functions (and, or, xor, not, lshift,
+// rshift, arshift, test, set, clear, toggle, lsb, msb, count, parity, rol,
+// ror, getfield, setfield) and the "bit" namespace object at startup.
+// This module ONLY adds new utility functions that don't shadow C++ ones.
+
+// Aliases for common bit intrinsics (different naming conventions)
+fn popcount(x) { bit.count(x) }
+
+fn ctz(x) { bit.lsb(x) }
+
+fn clz(x) {
+  msb_pos = bit.msb(x)
+  if msb_pos < 0 { return 64 }
+  63 - msb_pos
+}
+
+fn bswap(x) { bit.rol(x, 0) }
+
+fn rotl(x, s) { bit.rol(x, s) }
+
+fn rotr(x, s) { bit.ror(x, s) }
+
+fn mask(n) {
+  if n <= 0 { return 0 }
+  if n >= 64 { return bit.not(0) }
+  bit.lshift(1, n) - 1
+}
+
+fn field(x, pos, width) { bit.getfield(x, pos, width) }
+
+fn setField(x, pos, width, val) { bit.setfield(x, pos, width, val) }
+
+fn extract(x, pos, width) { bit.getfield(x, pos, width) }
+
+fn replace(x, pos, width, val) { bit.setfield(x, pos, width, val) }
+
+fn toBytes(x) {
+  result = []
+  v = int(x)
+  i = 0
+  while i < 8 {
+    result.push(v & 0xFF)
+    v = bit.rshift(v, 8)
+    i += 1
+  }
+  result
+}
+
+fn fromBytes(arr) {
+  result = 0
+  i = 0
+  while i < 8 && i < arr.len() {
+    result = bit.or(result, bit.lshift(int(arr[i]) & 0xFF, i * 8))
+    i += 1
+  }
+  result
+}

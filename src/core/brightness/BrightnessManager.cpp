@@ -1230,7 +1230,6 @@ int BrightnessManager::getTemperature(int monitorIndex) {
 }
 
 int BrightnessManager::getTemperature(const std::string &monitor) {
-  // Get current RGB gamma values and reverse-engineer the temperature
   auto it = temperature.find(monitor);
   if (it != temperature.end()) {
     if (debugging::debug_io) debug("BrightnessManager::getTemperature('{}') - Found cached temperature: "
@@ -1238,10 +1237,23 @@ int BrightnessManager::getTemperature(const std::string &monitor) {
           monitor, it->second);
     return it->second;
   }
+
+  if (WindowManagerDetector::IsX11() && getX11Display()) {
+    RGBColor rgb = getGammaXrandrRGB(monitor);
+    if (rgb.red > 0.0 && rgb.green > 0.0 && rgb.blue > 0.0) {
+      int kelvin = rgbToKelvin(rgb);
+      temperature[monitor] = kelvin;
+      if (debugging::debug_io) debug("BrightnessManager::getTemperature('{}') - Estimated {}K from gamma "
+            "RGB({:.3f}, {:.3f}, {:.3f})",
+            monitor, kelvin, rgb.red, rgb.green, rgb.blue);
+      return kelvin;
+    }
+  }
+
   if (debugging::debug_io) debug("BrightnessManager::getTemperature('{}') - No cached temperature, "
         "returning default 6500K",
         monitor);
-  return 6500; // Default
+  return 6500;
 }
 bool BrightnessManager::decreaseGamma(int amount) {
   bool success = true;

@@ -3639,6 +3639,46 @@ case ast::NodeType::AtExpression: {
             emit(OpCode::IS);
         }
         in_tail_position_ = saved_tail;
+    } else if (binary.operator_ == ast::BinaryOperator::IsNot) {
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        if (type_check_result_.provablyTrueIs.count(&expression) > 0) {
+            compileExpression(*binary.left);
+            emit(OpCode::POP);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(false)));
+        } else if (binary.right && binary.right->kind == ast::NodeType::Identifier) {
+            compileExpression(*binary.left);
+            const auto &ident = static_cast<const ast::Identifier &>(*binary.right);
+            uint32_t sid = addStringConstant(ident.symbol);
+            emit(OpCode::PROT_CHECK, Value::makeStringValId(sid));
+            emit(OpCode::NOT);
+        } else {
+            compileExpression(*binary.left);
+            compileExpression(*binary.right);
+            emit(OpCode::IS);
+            emit(OpCode::NOT);
+        }
+        in_tail_position_ = saved_tail;
+    } else if (binary.operator_ == ast::BinaryOperator::And) {
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileExpression(*binary.left);
+        emit(OpCode::DUP);
+        uint32_t jumpPastRight = emitJump(OpCode::JUMP_IF_FALSE);
+        emit(OpCode::POP);
+        compileExpression(*binary.right);
+        in_tail_position_ = saved_tail;
+        patchJump(jumpPastRight, static_cast<uint32_t>(current_function->instructions.size()));
+    } else if (binary.operator_ == ast::BinaryOperator::Or) {
+        bool saved_tail = in_tail_position_;
+        in_tail_position_ = false;
+        compileExpression(*binary.left);
+        emit(OpCode::DUP);
+        uint32_t jumpPastRight = emitJump(OpCode::JUMP_IF_TRUE);
+        emit(OpCode::POP);
+        compileExpression(*binary.right);
+        in_tail_position_ = saved_tail;
+        patchJump(jumpPastRight, static_cast<uint32_t>(current_function->instructions.size()));
     } else {
             if (emitFoldedLiteral(*binary.left, *binary.right, binary.operator_)) {
                 break;

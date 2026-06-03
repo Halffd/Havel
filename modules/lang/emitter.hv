@@ -50,7 +50,7 @@ fn parseOct(s) {
 
 
 fn Emitter() {
- {scope: null, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}, structNames: {}}
+ {scope: null, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}, structNames: {}, currentClassName: "", currentParentClassName: ""}
 
 }
 fn emitError(msg, line, col) {
@@ -217,29 +217,38 @@ fn emitExpr(emitter, node) {
         return
 
     }
-if k == "Identifier" {
+  if k == "Identifier" {
     if node.globalScope == true {
-        bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+      bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+    }
+    else if node.name == "this" && emitter.currentClassName != null && emitter.currentClassName != "" {
+      bc.emit("LOAD_VAR", 0)
     }
     else {
-        emitLoadVar(emitter, node.name)
+      emitLoadVar(emitter, node.name)
     }
     return
 
     }
     if k == "BinaryExpression" {
         opr = node.oper
-        // Non-short-circuit: && and || evaluate both sides (matching native compiler)
+        // Short-circuit: && and || skip right side when left determines result
         if opr == "&&" {
             emitExpr(emitter, node.left)
+            bc.emit("DUP")
+            jumpPastRight = bc.emit("JUMP_IF_FALSE", 0)
+            bc.emit("POP")
             emitExpr(emitter, node.right)
-            bc.emit("AND")
+            bc.patch_jump(jumpPastRight, bc.instr_count())
             return
         }
         if opr == "||" {
             emitExpr(emitter, node.left)
+            bc.emit("DUP")
+            jumpPastRight = bc.emit("JUMP_IF_TRUE", 0)
+            bc.emit("POP")
             emitExpr(emitter, node.right)
-            bc.emit("OR")
+            bc.patch_jump(jumpPastRight, bc.instr_count())
             return
         }
         if opr == "??" {
@@ -260,57 +269,87 @@ if k == "Identifier" {
  bc.emit("CALL_METHOD", bc.str_id(hasIdx), 1)
  return
  }
- if opr == "not in" {
- emitExpr(emitter, node.right)
- emitExpr(emitter, node.left)
- hasIdx = bc.add_chunk_string("has")
- bc.emit("CALL_METHOD", bc.str_id(hasIdx), 1)
- bc.emit("NOT")
- return
- }
- emitExpr(emitter, node.left)
- emitExpr(emitter, node.right)
- opcodes = {
- "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV",
- "%": "MOD", "**": "POW", "\\": "INT_DIV", "\\\\": "INT_DIV", "%%": "REMAINDER",
- "==": "EQ", "!=": "NEQ", "<": "LT", ">": "GT",
- "<=": "LTE", ">=": "GTE",
- "&&": "AND", "||": "OR",
- "&": "BIT_AND", "|": "BIT_OR", "^": "BIT_XOR",
- "<<": "BIT_LSH", ">>": "BIT_RSH",
- "is": "IS",
- }
- oc = opcodes[opr]
- if oc != null {
- bc.emit(oc)
- return
- }
- if opr == "matches" {
-            // ~ substring or regex match
-            // Check if right side is a regex literal
-            if node.right.kind == "RegexLiteral" {
-                // regex_search(string, pattern)
-                sid = globalIdx(emitter, "regex_search")
-                bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-                emitExpr(emitter, node.left)
-                emitExpr(emitter, node.right)
-                bc.emit("CALL", 2)
-            }
-            else {
-                // string.includes(string, substring)
-                sid = globalIdx(emitter, "string.includes")
-                bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-                emitExpr(emitter, node.left)
-                emitExpr(emitter, node.right)
-                bc.emit("CALL", 2)
-            }
+if opr == "not in" {
+            emitExpr(emitter, node.right)
+            emitExpr(emitter, node.left)
+            hasIdx = bc.add_chunk_string("has")
+            bc.emit("CALL_METHOD", bc.str_id(hasIdx), 1)
+            bc.emit("NOT")
             return
         }
-        emitError("unknown binary opr: " + opr, node.line, node.col)
-        return
-
+  if opr == "is not" {
+    if node.right.kind == "Identifier" {
+      emitExpr(emitter, node.left)
+      protIdx = bc.add_string(node.right.name)
+      bc.emit("PROT_CHECK", bc.str_id(protIdx))
+      bc.emit("NOT")
     }
-  if k == "UnaryExpression" {
+    else {
+      emitExpr(emitter, node.left)
+      emitExpr(emitter, node.right)
+      bc.emit("IS")
+      bc.emit("NOT")
+    }
+    return
+  }
+  if opr == "is" {
+    if node.right.kind == "Identifier" {
+      emitExpr(emitter, node.left)
+      protIdx = bc.add_string(node.right.name)
+      bc.emit("PROT_CHECK", bc.str_id(protIdx))
+    }
+    else {
+      emitExpr(emitter, node.left)
+      emitExpr(emitter, node.right)
+      bc.emit("IS")
+    }
+    return
+  }
+  if opr == "~" {
+    sid = globalIdx(emitter, "string.includes")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    emitExpr(emitter, node.left)
+    emitExpr(emitter, node.right)
+    bc.emit("CALL", 2)
+    return
+  }
+  if opr == "=~" {
+    sid = globalIdx(emitter, "regex_search")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    emitExpr(emitter, node.left)
+    emitExpr(emitter, node.right)
+    bc.emit("CALL", 2)
+    return
+  }
+  if opr == "+=" {
+    // config.append
+    sid = globalIdx(emitter, "config.append")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    emitExpr(emitter, node.left)
+    emitExpr(emitter, node.right)
+    bc.emit("CALL", 2)
+  return
+}
+emitExpr(emitter, node.left)
+emitExpr(emitter, node.right)
+opcodes = {
+  "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV",
+  "%": "MOD", "**": "POW", "\\": "INT_DIV", "\\\\": "INT_DIV", "%%": "REMAINDER",
+  "==": "EQ", "!=": "NEQ", "<": "LT", ">": "GT",
+  "<=": "LTE", ">=": "GTE",
+  "&": "BIT_AND", "|": "BIT_OR", "^": "BIT_XOR",
+  "<<": "BIT_LSH", ">>": "BIT_RSH",
+}
+oc = opcodes[opr]
+if oc != null {
+  bc.emit(oc)
+  return
+}
+emitError("unknown binary opr: " + opr, node.line, node.col)
+return
+
+}
+if k == "UnaryExpression" {
     emitExpr(emitter, node.operand)
     opcodes = {"-": "NEGATE", "!": "NOT", "not": "NOT", "#": "LENGTH", "~": "BIT_NOT"}
     oc = opcodes[node.oper]
@@ -417,6 +456,33 @@ if k == "CallExpression" {
   callee = node.callee
   argc = #node.args
   hasKwargs = node.kwargs != null and #node.kwargs > 0
+  // Super call: @->method(args) → load parent class, OBJECT_GET_RAW method, CALL with self + args
+  if callee.isSuperCall != null && callee.isSuperCall {
+    parentName = emitter.currentParentClassName
+    if parentName != null && parentName != "" {
+      parentSid = globalIdx(emitter, parentName)
+      bc.emit("LOAD_GLOBAL", bc.str_id(parentSid))
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    methodIdx = bc.add_string(callee.superMethodName)
+    bc.emit("LOAD_CONST", methodIdx)
+    bc.emit("OBJECT_GET_RAW")
+    // Push self (slot 0) and args
+    bc.emit("LOAD_VAR", 0)
+    for arg in node.args {
+      emitExpr(emitter, arg)
+    }
+    if hasKwargs {
+      emitKwargsObject(emitter, node.kwargs)
+      bc.emit("CALL", argc + 2)
+    }
+    else {
+      bc.emit("CALL", argc + 1)
+    }
+    return
+  }
   if callee.kind == "MemberExpression" {
     // Special case: ClassName.new(args) → class.new(ClassName, args)
     if callee.property == "new" && callee.obj.kind == "Identifier" {
@@ -649,30 +715,117 @@ return
         return
 
     }
-    if k == "ArrayLiteral" {
-        bc.emit("ARRAY_NEW")
-        for el in node.elements {
-            bc.emit("DUP")
-            emitExpr(emitter, el)
-            bc.emit("ARRAY_PUSH")
-            bc.emit("POP")
-        }
-        return
-
+  if k == "ArrayLiteral" {
+    // Check for spread expressions
+    hasSpread = false
+    for el in node.elements {
+      if el.kind == "SpreadExpression" {
+        hasSpread = true
+      }
     }
-    if k == "ObjectLiteral" {
-        bc.emit("OBJECT_NEW")
-        for field in node.fields {
-            if field.kind == "ObjectField" {
-                emitExpr(emitter, field.value)
-                keyIdx = bc.add_string(field.key)
-                bc.emit("LOAD_CONST", keyIdx)
-                bc.emit("OBJECT_SET")
-            }
-        }
-        return
-
+    if !hasSpread {
+      bc.emit("ARRAY_NEW")
+      for el in node.elements {
+        bc.emit("DUP")
+        emitExpr(emitter, el)
+        bc.emit("ARRAY_PUSH")
+        bc.emit("POP")
+      }
     }
+    else {
+      // Complex: spread requires temp slot and loop
+      bc.emit("ARRAY_NEW")
+      resultSlot = scopeDeclare(emitter.scope, "__arr_tmp__")
+      bc.emit("STORE_VAR", resultSlot)
+      for el in node.elements {
+        if el.kind == "SpreadExpression" {
+          emitExpr(emitter, el.target)
+          spreadSlot = scopeDeclare(emitter.scope, "__spread_arr__")
+          bc.emit("STORE_VAR", spreadSlot)
+          // Get length
+          bc.emit("LOAD_VAR", spreadSlot)
+          bc.emit("ARRAY_LEN")
+          lenSlot = scopeDeclare(emitter.scope, "__spread_len__")
+          bc.emit("STORE_VAR", lenSlot)
+          // Init index
+          idxSlot = scopeDeclare(emitter.scope, "__spread_idx__")
+          bc.emit("LOAD_CONST", bc.add_const(0))
+          bc.emit("STORE_VAR", idxSlot)
+          // Loop start
+          loopStart = bc.instr_count()
+          bc.emit("LOAD_VAR", idxSlot)
+          bc.emit("LOAD_VAR", lenSlot)
+          bc.emit("LT")
+          endJump = bc.emit("JUMP_IF_FALSE", 0)
+          // Push element: result[spread[idx]]
+          bc.emit("LOAD_VAR", resultSlot)
+          bc.emit("LOAD_VAR", spreadSlot)
+          bc.emit("LOAD_VAR", idxSlot)
+          bc.emit("ARRAY_GET")
+          bc.emit("ARRAY_PUSH")
+          bc.emit("STORE_VAR", resultSlot)
+          // Increment idx
+          bc.emit("LOAD_VAR", idxSlot)
+          bc.emit("LOAD_CONST", bc.add_const(1))
+          bc.emit("ADD")
+          bc.emit("STORE_VAR", idxSlot)
+          bc.emit("JUMP", loopStart)
+          bc.patch_jump(endJump, bc.instr_count())
+        }
+        else {
+          bc.emit("LOAD_VAR", resultSlot)
+          emitExpr(emitter, el)
+          bc.emit("ARRAY_PUSH")
+          bc.emit("STORE_VAR", resultSlot)
+        }
+      }
+      bc.emit("LOAD_VAR", resultSlot)
+    }
+    return
+
+  }
+  if k == "ObjectLiteral" {
+    if node.unsorted != null && node.unsorted {
+      bc.emit("OBJECT_NEW_UNSORTED")
+    }
+    else {
+      bc.emit("OBJECT_NEW")
+    }
+    for field in node.fields {
+      if field.kind == "ObjectField" {
+        // Spread: { ...other } → __spread__ key + CALL_METHOD("extend")
+        if field.key == "__spread__" {
+          bc.emit("DUP")
+          spreadSid = bc.add_chunk_string("extend")
+          emitExpr(emitter, field.value)
+          bc.emit("CALL_METHOD", bc.str_id(spreadSid), 1)
+          bc.emit("POP")
+        }
+        // Computed key: { [expr]: value }
+        else if field.computed != null && field.computed {
+          emitExpr(emitter, field.value)
+          emitExpr(emitter, field.key)
+          bc.emit("OBJECT_SET")
+        }
+        else {
+          emitExpr(emitter, field.value)
+          keyIdx = bc.add_string(field.key)
+          bc.emit("LOAD_CONST", keyIdx)
+          bc.emit("OBJECT_SET")
+        }
+      }
+      else if field.kind == "SpreadExpression" {
+        // { ...other } using spread syntax
+        bc.emit("DUP")
+        spreadSid = bc.add_chunk_string("extend")
+        emitExpr(emitter, field.value)
+        bc.emit("CALL_METHOD", bc.str_id(spreadSid), 1)
+        bc.emit("POP")
+      }
+    }
+    return
+
+  }
     if k == "IndexExpression" {
         emitExpr(emitter, node.obj)
         emitExpr(emitter, node.index)
@@ -740,19 +893,109 @@ return
         return
 
     }
-if k == "PipelineExpression" {
-        // x | f → f(x)
-        // x | f(1) → f(x, 1) — parser already inserts left as arg[0] for CallExpression
-        if node.right.kind == "CallExpression" {
-            emitExpr(emitter, node.right)
-        } else {
-            emitExpr(emitter, node.right)
-            emitExpr(emitter, node.left)
-            bc.emit("CALL", 1)
+  if k == "PipelineExpression" {
+    // Pipeline: expr | stage1 | stage2 | ...
+    // Parser stores as nested: ((expr | stage1) | stage2)
+    // Compile left, then pipe right using pipe temp slot
+    emitExpr(emitter, node.left)
+    pipeSlot = scopeDeclare(emitter.scope, "__pipe__")
+    bc.emit("STORE_VAR", pipeSlot)
+    right = node.right
+    if right.kind == "CallExpression" {
+      // f(x) with pipe value prepended: f(pipeVal, ...explicit_args)
+      if right.callee.kind == "Identifier" {
+        calleeName = right.callee.name
+        // nil-pass-through builtins
+        nilPassSet = {"print": true, "log": true, "debug": true, "tap": true}
+        if nilPassSet[calleeName] != null {
+          bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
+          bc.emit("LOAD_VAR", pipeSlot)
+          argc = 1
+          if right.args != null {
+            for a in right.args {
+              emitExpr(emitter, a)
+              argc = argc + 1
+            }
+          }
+          bc.emit("CALL", argc)
+          // nil pass-through: if result is null, restore pipe value
+          bc.emit("DUP")
+          bc.emit("IS_NULL")
+          nullJump = bc.emit("JUMP_IF_FALSE", 0)
+          bc.emit("POP")
+          bc.emit("LOAD_VAR", pipeSlot)
+          bc.patch_jump(nullJump, bc.instr_count())
         }
-        return
-
+        else {
+          bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
+          bc.emit("LOAD_VAR", pipeSlot)
+          argc = 1
+          if right.args != null {
+            for a in right.args {
+              emitExpr(emitter, a)
+              argc = argc + 1
+            }
+          }
+          bc.emit("CALL", argc)
+        }
+      }
+      else if right.callee.kind == "LambdaExpression" {
+        emitExpr(emitter, right.callee)
+        bc.emit("LOAD_VAR", pipeSlot)
+        bc.emit("CALL", 1)
+      }
+      else {
+        emitExpr(emitter, right.callee)
+        bc.emit("LOAD_VAR", pipeSlot)
+        argc = 1
+        if right.args != null {
+          for a in right.args {
+            emitExpr(emitter, a)
+            argc = argc + 1
+          }
+        }
+        bc.emit("CALL", argc)
+      }
     }
+    else if right.kind == "Identifier" {
+      // x | method → pipeVal.method()
+      calleeName = right.name
+      nilPassSet = {"print": true, "log": true, "debug": true, "tap": true}
+      if nilPassSet[calleeName] != null {
+        bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
+        bc.emit("LOAD_VAR", pipeSlot)
+        bc.emit("CALL", 1)
+        bc.emit("DUP")
+        bc.emit("IS_NULL")
+        nullJump = bc.emit("JUMP_IF_FALSE", 0)
+        bc.emit("POP")
+        bc.emit("LOAD_VAR", pipeSlot)
+        bc.patch_jump(nullJump, bc.instr_count())
+      }
+      else {
+        bc.emit("LOAD_VAR", pipeSlot)
+        propIdx = bc.add_chunk_string(calleeName)
+        bc.emit("CALL_METHOD", bc.str_id(propIdx), 0)
+      }
+    }
+    else if right.kind == "MemberExpression" {
+      // x | obj.method → pipeVal.method()
+      bc.emit("LOAD_VAR", pipeSlot)
+      propIdx = bc.add_chunk_string(right.property)
+      bc.emit("CALL_METHOD", bc.str_id(propIdx), 0)
+    }
+    else {
+      // Default: call right with pipe value as argument
+      emitExpr(emitter, right)
+      bc.emit("LOAD_VAR", pipeSlot)
+      bc.emit("CALL", 1)
+    }
+    // Store result back to pipe slot for chained pipelines
+    bc.emit("DUP")
+    bc.emit("STORE_VAR", pipeSlot)
+    return
+
+  }
   if k == "RegexLiteral" {
     // Emit regex as a string constant, tagged for runtime
     idx = bc.add_string(node.pattern)
@@ -858,12 +1101,183 @@ if k == "WaitExpression" {
 	bc.emit("THREAD_JOIN")
 	return
 }
-if k == "WaitGroupExpression" {
-	bc.emit("WAITGROUP_NEW")
-	return
-}
-emitError("unsupported expr: " + k, node.line, node.col)
-	bc.emit("PUSH_NULL")
+  if k == "WaitGroupExpression" {
+    bc.emit("WAITGROUP_NEW")
+    return
+  }
+  if k == "ThisExpression" {
+    if emitter.currentClassName != null && emitter.currentClassName != "" {
+      bc.emit("LOAD_VAR", 0)
+    }
+    else {
+      bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, "this")))
+    }
+    return
+  }
+  if k == "TupleExpression" {
+    bc.emit("ARRAY_NEW")
+    if node.elements != null {
+      for el in node.elements {
+        if el != null {
+          emitExpr(emitter, el)
+        }
+        else {
+          bc.emit("PUSH_NULL")
+        }
+        bc.emit("ARRAY_PUSH")
+      }
+    }
+    bc.emit("ARRAY_FREEZE")
+    return
+  }
+  if k == "BlockExpression" {
+    if node.body != null {
+      for s in node.body {
+        emitStmt(emitter, s)
+        if s.kind == "ExpressionStatement" {
+          bc.emit("POP")
+        }
+      }
+    }
+    if node.value != null {
+      emitExpr(emitter, node.value)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    return
+  }
+  if k == "IfExpression" {
+    emitExpr(emitter, node.condition)
+    elseJump = bc.emit("JUMP_IF_FALSE", 0)
+    if node.then != null {
+      emitBlockWithReturn(emitter, node.then)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    endJump = bc.emit("JUMP", 0)
+    bc.patch_jump(elseJump, bc.instr_count())
+    elseBranch = node["else"]
+    if elseBranch != null {
+      emitBlockWithReturn(emitter, elseBranch)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.patch_jump(endJump, bc.instr_count())
+    return
+  }
+  if k == "ThreadExpression" {
+    sid = globalIdx(emitter, "thread.spawn")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    emitClosureBody(emitter, node.body, "<thread>")
+    bc.emit("CALL", 1)
+    return
+  }
+  if k == "GoExpression" {
+    sid = globalIdx(emitter, "thread_spawn")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if node.call != null {
+      emitExpr(emitter, node.call)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.emit("CALL", 1)
+    return
+  }
+  if k == "YieldExpression" {
+    if node.value != null {
+      emitExpr(emitter, node.value)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.emit("YIELD")
+    return
+  }
+  if k == "AwaitExpression" {
+    if node.argument != null {
+      if node.argument.kind == "CallExpression" {
+        callee = node.argument.callee
+        if callee.kind == "Identifier" && callee.name == "sleep" {
+          if #node.argument.args == 1 {
+            emitExpr(emitter, node.argument.args[0])
+            bc.emit("FIBER_SLEEP")
+            return
+          }
+        }
+      }
+      emitExpr(emitter, node.argument)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.emit("FIBER_AWAIT")
+    return
+  }
+  if k == "ChannelExpression" {
+    sid = globalIdx(emitter, "channel.new")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    bc.emit("CALL", 0)
+    return
+  }
+  if k == "IntervalExpression" {
+    sid = globalIdx(emitter, "interval.start")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if node.intervalMs != null {
+      emitExpr(emitter, node.intervalMs)
+    }
+    else {
+      bc.emit("LOAD_CONST", bc.add_const(0))
+    }
+    emitClosureBody(emitter, node.body, "<interval>")
+    bc.emit("CALL", 2)
+    return
+  }
+  if k == "TimeoutExpression" {
+    sid = globalIdx(emitter, "timeout.start")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if node.delayMs != null {
+      emitExpr(emitter, node.delayMs)
+    }
+    else {
+      bc.emit("LOAD_CONST", bc.add_const(0))
+    }
+    emitClosureBody(emitter, node.body, "<timeout>")
+    bc.emit("CALL", 2)
+    return
+  }
+  if k == "HotkeyLiteral" {
+    idx = bc.add_string(node.key)
+    bc.emit("LOAD_CONST", idx)
+    return
+  }
+  if k == "CharLiteral" {
+    bc.emit("LOAD_CONST", bc.add_const(node.value))
+    return
+  }
+  if k == "TryExpression" {
+    emitTryExpr(emitter, node)
+    return
+  }
+  if k == "GetInputExpression" {
+    if node.timeout != null {
+      sid = globalIdx(emitter, "get_input")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      emitExpr(emitter, node.timeout)
+      bc.emit("CALL", 1)
+    }
+    else {
+      sid = globalIdx(emitter, "get_input")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      bc.emit("CALL", 0)
+    }
+    return
+  }
+  emitError("unsupported expr: " + k, node.line, node.col)
+  bc.emit("PUSH_NULL")
 
 }
 
@@ -1184,30 +1598,69 @@ if k == "LetDeclaration" {
     }
     return
   }
-if k == "FnDeclaration" {
- // Declare the function name in scope
- localIdx = scopeDeclare(emitter.scope, node.name)
- // Compile the function body — compileFuncDecl returns (upcount, actualChunkIdx)
- result = compileFuncDecl(emitter, node.name, node.params, node.body, -1, node.line)
- upcount = result[0]
- chunkIdx = result[1]
- emitter.func_map[node.name] = chunkIdx
- // If function captures upvalues, emit CLOSURE; otherwise LOAD_CONST
- if upcount > 0 {
- bc.emit("CLOSURE", chunkIdx)
- }
- else {
- fnConstIdx = bc.add_const(bc.make_function_obj(chunkIdx))
- bc.emit("LOAD_CONST", fnConstIdx)
- }
-// Store the closure in the variable
-if localIdx >= 0 {
-bc.emit("STORE_VAR", localIdx)
-}
-else {
-bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-}
-return
+  if k == "FnDeclaration" {
+    // Thread sugar: thread { body } parses as FnDeclaration with isThread=true
+    if node.isThread == true {
+      sid = globalIdx(emitter, "thread.spawn")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      emitClosureBody(emitter, node.body, "<thread>")
+      bc.emit("CALL", 1)
+      bc.emit("POP")
+      return
+    }
+    // Interval sugar: interval ms { body } parses as FnDeclaration with isInterval=true
+    if node.isInterval == true {
+      sid = globalIdx(emitter, "interval.start")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      if node.intervalDuration != null {
+        emitExpr(emitter, node.intervalDuration)
+      }
+      else {
+        bc.emit("LOAD_CONST", bc.add_const(0))
+      }
+      emitClosureBody(emitter, node.body, "<interval>")
+      bc.emit("CALL", 2)
+      bc.emit("POP")
+      return
+    }
+    // Timeout sugar: timeout ms { body } parses as FnDeclaration with isTimeout=true
+    if node.isTimeout == true {
+      sid = globalIdx(emitter, "timeout.start")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+      if node.timeoutDuration != null {
+        emitExpr(emitter, node.timeoutDuration)
+      }
+      else {
+        bc.emit("LOAD_CONST", bc.add_const(0))
+      }
+      emitClosureBody(emitter, node.body, "<timeout>")
+      bc.emit("CALL", 2)
+      bc.emit("POP")
+      return
+    }
+    // Declare the function name in scope
+    localIdx = scopeDeclare(emitter.scope, node.name)
+    // Compile the function body — compileFuncDecl returns (upcount, actualChunkIdx)
+    result = compileFuncDecl(emitter, node.name, node.params, node.body, -1, node.line)
+    upcount = result[0]
+    chunkIdx = result[1]
+    emitter.func_map[node.name] = chunkIdx
+    // If function captures upvalues, emit CLOSURE; otherwise LOAD_CONST
+    if upcount > 0 {
+      bc.emit("CLOSURE", chunkIdx)
+    }
+    else {
+      fnConstIdx = bc.add_const(bc.make_function_obj(chunkIdx))
+      bc.emit("LOAD_CONST", fnConstIdx)
+    }
+    // Store the closure in the variable
+    if localIdx >= 0 {
+      bc.emit("STORE_VAR", localIdx)
+    }
+    else {
+      bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+    }
+    return
 
 }
     if k == "BreakStatement" {
@@ -1308,7 +1761,24 @@ if k == "ClassDeclaration" {
 
   }
   if k == "ProtocolDeclaration" {
-    // Protocols are compile-time only, no runtime emission needed
+    // prot.register(name, method1, method2, ...) → CALL(1+N)
+    sid = globalIdx(emitter, "prot.register")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    nameIdx = bc.add_string(node.name)
+    bc.emit("LOAD_CONST", nameIdx)
+    methodCount = 1
+    if node.methods != null {
+      for m in node.methods {
+        if m.name != null {
+          midx = bc.add_string(m.name)
+          bc.emit("LOAD_CONST", midx)
+          methodCount = methodCount + 1
+        }
+      }
+    }
+    bc.emit("CALL", methodCount)
+    nameSid = globalIdx(emitter, node.name)
+    bc.emit("STORE_GLOBAL", bc.str_id(nameSid))
     return
 
   }
@@ -1323,26 +1793,71 @@ if k == "ClassDeclaration" {
 
   }
   if k == "ConfigBlock" {
-    // Config blocks are runtime configuration calls
-    // emit as: config("name", fn)
-    sid = globalIdx(emitter, "config")
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    nameIdx = bc.add_string(node.name)
-    bc.emit("LOAD_CONST", nameIdx)
- // Compile body as a function
- oldScope = emitter.scope
- newScope = Scope(null, null, null)
- emitter.scope = newScope
- chunkIdx = bc.func_new("config_body", 0, 16)
- emitBlock(emitter, node.body)
- bc.emit("PUSH_NULL")
- bc.emit("RETURN")
- bc.set_local_count(scopeLocalCount(newScope))
- emitter.scope = oldScope
- bc.emit("CLOSURE", chunkIdx)
- bc.emit("CALL", 2)
- bc.emit("POP")
- return
+    // Two patterns from C++:
+    // 1. config { key = value } → conf.key = value; config.set("key", value)  (name == "" or null)
+    // 2. mode X { ... } / devices { ... } → Name({key: value, ...})  (name is set)
+    if node.name != null && node.name != "" {
+      // Section call: name({key: value, ...})
+      nameSid = globalIdx(emitter, node.name)
+      bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
+      bc.emit("OBJECT_NEW")
+      // Extract key=value pairs from body statements (AssignmentExpression or ExpressionStatement)
+      if node.body != null {
+        if node.body.kind == "BlockStatement" {
+          for s in node.body.body {
+            if s.kind == "ExpressionStatement" {
+              if s.expr.kind == "AssignmentExpression" {
+                if s.expr.target.kind == "Identifier" {
+                  emitExpr(emitter, s.expr.value)
+                  keyIdx = bc.add_string(s.expr.target.name)
+                  bc.emit("LOAD_CONST", keyIdx)
+                  bc.emit("OBJECT_SET")
+                }
+              }
+            }
+          }
+        }
+      }
+      bc.emit("CALL", 1)
+      bc.emit("POP")
+    }
+    else {
+      // Config block: dual set pattern
+      if node.body != null {
+        if node.body.kind == "BlockStatement" {
+          for s in node.body.body {
+            if s.kind == "ExpressionStatement" {
+              if s.expr.kind == "AssignmentExpression" {
+                if s.expr.target.kind == "Identifier" {
+                  key = s.expr.target.name
+                  // Compile value once, store in temp
+                  emitExpr(emitter, s.expr.value)
+                  tmpSlot = scopeDeclare(emitter.scope, "__conf_tmp__")
+                  bc.emit("STORE_VAR", tmpSlot)
+                  // conf.key = value
+                  confSid = globalIdx(emitter, "conf")
+                  bc.emit("LOAD_GLOBAL", bc.str_id(confSid))
+                  bc.emit("LOAD_VAR", tmpSlot)
+                  keyIdx = bc.add_string(key)
+                  bc.emit("LOAD_CONST", keyIdx)
+                  bc.emit("OBJECT_SET")
+                  bc.emit("POP")
+                  // config.set("key", value)
+                  setSid = globalIdx(emitter, "config.set")
+                  bc.emit("LOAD_GLOBAL", bc.str_id(setSid))
+                  keyStrIdx = bc.add_string(key)
+                  bc.emit("LOAD_CONST", keyStrIdx)
+                  emitExpr(emitter, s.expr.value)
+                  bc.emit("CALL", 2)
+                  bc.emit("POP")
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return
 
   }
   if k == "ShellCommand" {
@@ -1361,6 +1876,228 @@ if k == "ClassDeclaration" {
     bc.emit("POP")
     return
 
+  }
+  if k == "ConditionalHotkey" {
+    if node.binding != null && node.condition != null {
+      oldScope = emitter.scope
+      condScope = Scope(null)
+      emitter.scope = condScope
+      condChunkIdx = bc.func_new("condhotkey_condition", 0, 16)
+      emitExpr(emitter, node.condition)
+      bc.emit("RETURN")
+      bc.set_local_count(scopeLocalCount(condScope))
+      emitter.scope = oldScope
+      prevWcfi = emitter.whenConditionFuncIndex
+      emitter.whenConditionFuncIndex = condChunkIdx
+      emitHotkeyBinding(emitter, node.binding)
+      emitter.whenConditionFuncIndex = prevWcfi
+    }
+    else if node.binding != null {
+      emitHotkeyBinding(emitter, node.binding)
+    }
+    return
+  }
+  if k == "WhenBlockStatement" {
+    emitWhenBlock(emitter, node)
+    return
+  }
+  if k == "ConfigSection" {
+    nameSid = globalIdx(emitter, node.name)
+    bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
+    bc.emit("OBJECT_NEW")
+    if node.pairs != null {
+      for pair in node.pairs {
+        if pair.value != null {
+          emitExpr(emitter, pair.value)
+        }
+        else {
+          bc.emit("PUSH_NULL")
+        }
+        keyIdx = bc.add_string(pair.key)
+        bc.emit("LOAD_CONST", keyIdx)
+        bc.emit("OBJECT_SET")
+      }
+    }
+    bc.emit("CALL", 1)
+    bc.emit("POP")
+    return
+  }
+  if k == "DevicesBlock" {
+    sid = globalIdx(emitter, "devices")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    bc.emit("OBJECT_NEW")
+    if node.pairs != null {
+      for pair in node.pairs {
+        if pair.value != null {
+          emitExpr(emitter, pair.value)
+        }
+        else {
+          bc.emit("PUSH_NULL")
+        }
+        keyIdx = bc.add_string(pair.key)
+        bc.emit("LOAD_CONST", keyIdx)
+        bc.emit("OBJECT_SET")
+      }
+    }
+    bc.emit("CALL", 1)
+    bc.emit("POP")
+    return
+  }
+  if k == "ModeBlock" {
+    modeSid = globalIdx(emitter, "mode")
+    bc.emit("LOAD_GLOBAL", bc.str_id(modeSid))
+    bc.emit("CALL", 0)
+    nameIdx = bc.add_string(node.modeName)
+    bc.emit("LOAD_CONST", nameIdx)
+    bc.emit("EQ")
+    bc.emit("DUP")
+    condSlot = scopeDeclare(emitter.scope, "_mode_cond")
+    bc.emit("STORE_VAR", condSlot)
+    endJump = bc.emit("JUMP_IF_FALSE", 0)
+    if node.statements != null {
+      for s in node.statements {
+        emitStmt(emitter, s)
+      }
+    }
+    bc.patch_jump(endJump, bc.instr_count())
+    return
+  }
+  if k == "ModesBlock" {
+    if node.modes != null {
+      for modeDef in node.modes {
+        sid = globalIdx(emitter, "mode.register")
+        bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+        mNameIdx = bc.add_string(modeDef.name)
+        bc.emit("LOAD_CONST", mNameIdx)
+        bc.emit("LOAD_CONST", bc.add_const(modeDef.priority != null ? modeDef.priority : 0))
+        if modeDef.condition != null {
+          emitExpr(emitter, modeDef.condition)
+        }
+        else {
+          bc.emit("PUSH_NULL")
+        }
+        if modeDef.enterBlock != null {
+          bc.emit("LOAD_CONST", bc.add_const(0))
+        }
+        else {
+          bc.emit("PUSH_NULL")
+        }
+        if modeDef.exitBlock != null {
+          bc.emit("LOAD_CONST", bc.add_const(0))
+        }
+        else {
+          bc.emit("PUSH_NULL")
+        }
+        bc.emit("CALL", 5)
+        bc.emit("POP")
+      }
+    }
+    return
+  }
+  if k == "GoStatement" {
+    sid = globalIdx(emitter, "thread_spawn")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if node.call != null {
+      emitExpr(emitter, node.call)
+    }
+    else {
+      bc.emit("PUSH_NULL")
+    }
+    bc.emit("CALL", 1)
+    bc.emit("POP")
+    return
+  }
+  if k == "OnMessageStatement" {
+    if node.body != null {
+      emitStmt(emitter, node.body)
+    }
+    return
+  }
+  if k == "WaitStatement" {
+    if node.condition != null {
+      loopTop = bc.instr_count()
+      emitExpr(emitter, node.condition)
+      endJump = bc.emit("JUMP_IF_TRUE", 0)
+      sleepSid = globalIdx(emitter, "sleep")
+      bc.emit("LOAD_GLOBAL", bc.str_id(sleepSid))
+      msIdx = bc.add_string("10ms")
+      bc.emit("LOAD_CONST", msIdx)
+      bc.emit("CALL", 1)
+      bc.emit("POP")
+      bc.emit("JUMP", loopTop)
+      bc.patch_jump(endJump, bc.instr_count())
+    }
+    return
+  }
+  if k == "ThreadExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "GoExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "ChannelExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "IntervalExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "TimeoutExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "ThisExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "TupleExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "BlockExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "IfExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "YieldExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "AwaitExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "HotkeyLiteral" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "CharLiteral" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
+  }
+  if k == "GetInputExpression" {
+    emitExpr(emitter, node)
+    bc.emit("POP")
+    return
   }
   emitError("unsupported stmt: " + k, node.line, node.col)
 
@@ -2290,13 +3027,36 @@ fn emitClassDeclaration(emitter, node) {
   }
   if node.definition.methods != null {
     prevClassName = emitter.currentClassName
+    prevParentName = emitter.currentParentClassName
     emitter.currentClassName = node.name
+    if node.parentName != null && node.parentName != "" {
+      emitter.currentParentClassName = node.parentName
+    }
+    else {
+      emitter.currentParentClassName = ""
+    }
     for m in node.definition.methods {
       if m != null {
         emitClassMethodRegister(emitter, node.name, m)
       }
     }
     emitter.currentClassName = prevClassName
+    emitter.currentParentClassName = prevParentName
+  }
+  // Register protocol conformance: prot.impl(protocolName, className)
+  if node.protocolNames != null {
+    for protName in node.protocolNames {
+      if protName != null && protName != "" {
+        protSid = globalIdx(emitter, "prot.impl")
+        bc.emit("LOAD_GLOBAL", bc.str_id(protSid))
+        pnIdx = bc.add_string(protName)
+        bc.emit("LOAD_CONST", pnIdx)
+        cnIdx = bc.add_string(node.name)
+        bc.emit("LOAD_CONST", cnIdx)
+        bc.emit("CALL", 2)
+        bc.emit("POP")
+      }
+    }
   }
 
 }
@@ -2326,6 +3086,36 @@ fn emitClassMethodRegister(emitter, className, method) {
     result = compileFuncDecl(emitter, method.name, methodParams, method.body, -1, method.line, true)
     chunkIdx = result[1]
   }
+fnObj = bc.make_function_obj(chunkIdx)
+fnConstIdx = bc.add_const(fnObj)
+bc.emit("LOAD_CONST", fnConstIdx)
+bc.emit("CALL", 3)
+bc.emit("POP")
+
+}
+
+fn emitStructMethodRegister(emitter, structName, method) {
+  sid = globalIdx(emitter, "struct.method")
+  bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+  structSid = globalIdx(emitter, structName)
+  bc.emit("LOAD_GLOBAL", bc.str_id(structSid))
+  mnameIdx = bc.add_string(method.name)
+  bc.emit("LOAD_CONST", mnameIdx)
+  isClassMethod = method.isClassMethod != null && method.isClassMethod
+  chunkIdx = -1
+  if isClassMethod {
+    result = compileFuncDecl(emitter, method.name, method.params, method.body, -1, method.line, false)
+    chunkIdx = result[1]
+  }
+  else {
+    selfParam = {name: "self", "default": null}
+    methodParams = [selfParam]
+    for p in method.params {
+      methodParams.push(p)
+    }
+    result = compileFuncDecl(emitter, method.name, methodParams, method.body, -1, method.line, true)
+    chunkIdx = result[1]
+  }
   fnObj = bc.make_function_obj(chunkIdx)
   fnConstIdx = bc.add_const(fnObj)
   bc.emit("LOAD_CONST", fnConstIdx)
@@ -2333,6 +3123,7 @@ fn emitClassMethodRegister(emitter, className, method) {
   bc.emit("POP")
 
 }
+
 
 fn emitStructDeclaration(emitter, node) {
   emitter.classNames[node.name] = true
@@ -2379,10 +3170,25 @@ fn emitStructDeclaration(emitter, node) {
     emitter.currentClassName = node.name
     for m in node.definition.methods {
       if m != null {
-        emitClassMethodRegister(emitter, node.name, m)
+        emitStructMethodRegister(emitter, node.name, m)
       }
     }
     emitter.currentClassName = prevClassName
+  }
+  // Register protocol conformance: prot.impl(protocolName, structName)
+  if node.protocolNames != null {
+    for protName in node.protocolNames {
+      if protName != null && protName != "" {
+        protSid = globalIdx(emitter, "prot.impl")
+        bc.emit("LOAD_GLOBAL", bc.str_id(protSid))
+        pnIdx = bc.add_string(protName)
+        bc.emit("LOAD_CONST", pnIdx)
+        cnIdx = bc.add_string(node.name)
+        bc.emit("LOAD_CONST", cnIdx)
+        bc.emit("CALL", 2)
+        bc.emit("POP")
+      }
+    }
   }
 
 }
@@ -2423,18 +3229,18 @@ fn emitEnumDeclaration(emitter, node) {
 }
 
 fn emitImplDeclaration(emitter, node) {
-    // impl TypeName { fn method() {} } — register methods on the type
-    typeName = ""
-    if node.typeName != null {
-        if node.typeName.kind == "Identifier" {
-            typeName = node.typeName.name
-        }
+  // impl TypeName { fn method() {} } — register methods on the type
+  typeName = ""
+  if node.typeName != null {
+    if node.typeName.kind == "Identifier" {
+      typeName = node.typeName.name
+    }
     if node.typeName.kind != "Identifier" {
       if type(node.typeName) == "str" {
         typeName = node.typeName
       }
     }
-    }
+  }
   if node.funcs != null {
     prevClassName = emitter.currentClassName
     emitter.currentClassName = typeName
@@ -2446,6 +3252,17 @@ fn emitImplDeclaration(emitter, node) {
       }
     }
     emitter.currentClassName = prevClassName
+  }
+  // Register protocol conformance: prot.impl(protocolName, typeName)
+  if node.protocolName != null {
+    protSid = globalIdx(emitter, "prot.impl")
+    bc.emit("LOAD_GLOBAL", bc.str_id(protSid))
+    protNameIdx = bc.add_string(node.protocolName)
+    bc.emit("LOAD_CONST", protNameIdx)
+    tnIdx = bc.add_string(typeName)
+    bc.emit("LOAD_CONST", tnIdx)
+    bc.emit("CALL", 2)
+    bc.emit("POP")
   }
 
 }
@@ -2491,7 +3308,23 @@ fn emitHotkeyBinding(emitter, node) {
  bc.emit("PUSH_NULL")
  bc.emit("RETURN")
   // Register the hotkey
-  if emitter.whenConditionFuncIndex != null {
+  // Check for inline condition (F1 when cond => { }) or when-block condition
+  hasCond = emitter.whenConditionFuncIndex != null
+  if node.condition != null && !hasCond {
+    // Compile the inline condition as a separate function
+    condScope = Scope(null)
+    emitter.scope = condScope
+    condChunkIdx = bc.func_new("hotkey_condition", 0, 16)
+    emitExpr(emitter, node.condition)
+    bc.emit("RETURN")
+    bc.set_local_count(scopeLocalCount(condScope))
+    emitter.scope = oldScope
+    hasCond = true
+  }
+  else if hasCond {
+    condChunkIdx = emitter.whenConditionFuncIndex
+  }
+  if hasCond {
     sid = globalIdx(emitter, "hotkey.register_conditional")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
     if node.key != null {
@@ -2507,10 +3340,10 @@ fn emitHotkeyBinding(emitter, node) {
       bc.emit("PUSH_NULL")
     }
     bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
-    bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
+    bc.emit("LOAD_CONST", bc.add_const(condChunkIdx))
     bc.emit("CALL", 3)
   }
-  if emitter.whenConditionFuncIndex == null {
+  else {
     sid = globalIdx(emitter, "hotkey.register")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
     if node.key != null {
@@ -2617,9 +3450,14 @@ fn compileCondHotkeyCondition(emitter, condition) {
 
 fn emitClosureBody(emitter, body, name) {
   oldScope = emitter.scope
-  newScope = Scope(oldScope)
+  fid = emitter.nextFuncId
+  emitter.nextFuncId = fid + 1
+  newScope = Scope(oldScope, fid, null)
   emitter.scope = newScope
-  funcIdx = bc.func_new(name, 0, 16)
+  localCount = 16
+  bc.func_push()
+  funcIdx = bc.func_new(name, 0, localCount)
+  newScope.bcFuncIdx = funcIdx
   if body != null {
     if body.kind == "BlockStatement" {
       for s in body.body {
@@ -2632,9 +3470,19 @@ fn emitClosureBody(emitter, body, name) {
   }
   bc.emit("PUSH_NULL")
   bc.emit("RETURN")
-  bc.set_local_count(scopeLocalCount(newScope))
+  actualLocals = scopeLocalCount(newScope)
+  bc.set_local_count(actualLocals)
+  upcount = newScope.upcount
+  bc.func_pop()
   emitter.scope = oldScope
-  bc.emit("LOAD_CONST", bc.add_const(funcIdx))
+  if upcount > 0 {
+    bc.emit("CLOSURE", funcIdx)
+  }
+  else {
+    fnObj = bc.make_function_obj(funcIdx)
+    fnConstIdx = bc.add_const(fnObj)
+    bc.emit("LOAD_CONST", fnConstIdx)
+  }
 }
 
 fn emitWhenBlock(emitter, node) {

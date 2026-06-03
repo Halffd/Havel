@@ -1555,11 +1555,17 @@ std::move(left), ast::BinaryOperator::IntDiv, std::move(right));
           std::move(left), ast::BinaryOperator::NotEqual, std::move(right));
     }
 
-        case TokenType::Is: {
+case TokenType::Is: {
+        if (at().type == TokenType::Not) {
+            advance();
             auto right = parsePrattExpression(getRightBindingPower(token.type));
-            return makeNodeAt<ast::BinaryExpression>(token, 
-                std::move(left), ast::BinaryOperator::Is, std::move(right));
+            return makeNodeAt<ast::BinaryExpression>(token,
+                std::move(left), ast::BinaryOperator::IsNot, std::move(right));
         }
+        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        return makeNodeAt<ast::BinaryExpression>(token,
+            std::move(left), ast::BinaryOperator::Is, std::move(right));
+    }
 
 case TokenType::Tilde: {
         auto right = parsePrattExpression(getRightBindingPower(token.type));
@@ -7352,7 +7358,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseAtDecoratorStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
     advance(); // consume 'with'
 
-    auto object = parseExpression();
+    auto object = parsePrattExpression(51); // stop before 'as' (BP 50)
 
     std::unique_ptr<havel::ast::Identifier> alias;
     if (at().type == havel::TokenType::As) {
@@ -8062,8 +8068,10 @@ havel::TokenType Parser::getBinaryOperatorToken(ast::BinaryOperator op) {
     return TokenType::Equals;
   case ast::BinaryOperator::NotEqual:
     return TokenType::NotEquals;
-  case ast::BinaryOperator::Is:
-    return TokenType::Is;
+case ast::BinaryOperator::Is:
+        return TokenType::Is;
+    case ast::BinaryOperator::IsNot:
+        return TokenType::Is;
   case ast::BinaryOperator::Less:
     return TokenType::Less;
   case ast::BinaryOperator::Greater:

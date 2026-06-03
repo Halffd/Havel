@@ -649,6 +649,11 @@ right = parseExpr(getRightBindingPower(TID.NotEquals))
 return BinaryExpression(left, "!=", right, l, c)
 }
     else if tt == TID.Is {
+        if current().tid == TID.Not {
+            advance()
+            right = parseExpr(getRightBindingPower(TID.Is))
+            return BinaryExpression(left, "is not", right, l, c)
+        }
         right = parseExpr(getRightBindingPower(TID.Is))
         return BinaryExpression(left, "is", right, l, c)
     }

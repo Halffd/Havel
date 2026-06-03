@@ -167,10 +167,13 @@ std::string bytecodeValueToString(const Value &value) {
 }
 
 bool equalsInt(const Value &value, int64_t expected) {
-  if (!value.isInt()) {
+    if (value.isInt()) {
+        return value.asInt() == expected;
+    }
+    if (value.isBool()) {
+        return (value.asBool() ? 1 : 0) == expected;
+    }
     return false;
-  }
-  return value.asInt() == expected;
 }
 
 std::unique_ptr<havel::compiler::BytecodeChunk>
@@ -1936,11 +1939,43 @@ failures += runCase("string-repeat", R"havel(
     return result
 )havel", 42, dump_bytecode, snapshot_dir);
 
-    failures += runCase("with-no-alias", R"havel(
-    with 99 {
-        return 99
-    }
+failures += runCase("with-no-alias", R"havel(
+with 99 {
+    return 99
+}
 )havel", 99, dump_bytecode, snapshot_dir);
+
+// --- is not operator ---
+failures += runCase("is-not-literal", R"havel(
+return 42 is not 99
+)havel", 1, dump_bytecode, snapshot_dir);
+
+failures += runCase("is-not-same-literal", R"havel(
+return 42 is not 42
+)havel", 0, dump_bytecode, snapshot_dir);
+
+// --- short-circuit and/or ---
+failures += runCase("sc-and-skip", R"havel(
+x = 0
+fn side() { x += 1; 1 }
+result = false && side()
+x
+)havel", 0, dump_bytecode, snapshot_dir);
+
+failures += runCase("sc-or-skip", R"havel(
+x = 0
+fn side() { x += 1; 1 }
+result = true || side()
+x
+)havel", 0, dump_bytecode, snapshot_dir);
+
+failures += runCase("sc-and-value", R"havel(
+return 0 && 42
+)havel", 0, dump_bytecode, snapshot_dir);
+
+failures += runCase("sc-or-value", R"havel(
+return 1 || 42
+)havel", 1, dump_bytecode, snapshot_dir);
 
 
     // ================================================================

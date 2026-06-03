@@ -1,4 +1,5 @@
 #include "FormatModule.hpp"
+#include "../compiler/vm/VM.hpp"
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -248,14 +249,31 @@ void registerFormatModule(const VMApi &api) {
 		return api.makeString(std::move(result));
 	});
 
-	auto fmtObj = api.makeObject();
-	api.setField(fmtObj, "hex", api.makeFunctionRef("fmt.hex"));
-	api.setField(fmtObj, "oct", api.makeFunctionRef("fmt.oct"));
-	api.setField(fmtObj, "bin", api.makeFunctionRef("fmt.bin"));
-	api.setField(fmtObj, "b64", api.makeFunctionRef("fmt.b64"));
-	api.setField(fmtObj, "b64decode", api.makeFunctionRef("fmt.b64decode"));
-	api.setField(fmtObj, "format", api.makeFunctionRef("fmt.format"));
-	api.setGlobal("fmt", fmtObj);
+  auto fmtObj = api.makeObject();
+  api.setField(fmtObj, "hex", api.makeFunctionRef("fmt.hex"));
+  api.setField(fmtObj, "oct", api.makeFunctionRef("fmt.oct"));
+  api.setField(fmtObj, "bin", api.makeFunctionRef("fmt.bin"));
+  api.setField(fmtObj, "b64", api.makeFunctionRef("fmt.b64"));
+  api.setField(fmtObj, "b64decode", api.makeFunctionRef("fmt.b64decode"));
+  api.setField(fmtObj, "format", api.makeFunctionRef("fmt.format"));
+  api.setGlobal("fmt", fmtObj);
+
+  // Load pure-Havel format sidecar (adds namespace wrappers + utilities)
+  Value exports;
+  try {
+    auto &vm = api.vm();
+    exports = vm.loadModule("format");
+    if (exports.isObjectId()) {
+      auto *obj = vm.getHeap().object(exports.asObjectId());
+      if (obj) {
+        for (const auto& [name, value] : *obj) {
+          if (name.empty() || name[0] == '_') continue;
+          api.setField(fmtObj, name, value);
+          api.setGlobal(name, value);
+        }
+      }
+    }
+  } catch (...) {}
 }
 
 } // namespace havel::stdlib

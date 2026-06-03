@@ -1,4 +1,5 @@
 #include "BitModule.hpp"
+#include "../compiler/vm/VM.hpp"
 #include <cstdint>
 #include <stdexcept>
 
@@ -179,27 +180,44 @@ void registerBitModule(const VMApi &api) {
 		return Value(static_cast<int64_t>(v));
 	});
 
-	auto bitObj = api.makeObject();
-	api.setField(bitObj, "and", api.makeFunctionRef("bit.and"));
-	api.setField(bitObj, "or", api.makeFunctionRef("bit.or"));
-	api.setField(bitObj, "xor", api.makeFunctionRef("bit.xor"));
-	api.setField(bitObj, "not", api.makeFunctionRef("bit.not"));
-	api.setField(bitObj, "lshift", api.makeFunctionRef("bit.lshift"));
-	api.setField(bitObj, "rshift", api.makeFunctionRef("bit.rshift"));
-	api.setField(bitObj, "arshift", api.makeFunctionRef("bit.arshift"));
-	api.setField(bitObj, "test", api.makeFunctionRef("bit.test"));
-	api.setField(bitObj, "set", api.makeFunctionRef("bit.set"));
-	api.setField(bitObj, "clear", api.makeFunctionRef("bit.clear"));
-	api.setField(bitObj, "toggle", api.makeFunctionRef("bit.toggle"));
-	api.setField(bitObj, "lsb", api.makeFunctionRef("bit.lsb"));
-	api.setField(bitObj, "msb", api.makeFunctionRef("bit.msb"));
-	api.setField(bitObj, "count", api.makeFunctionRef("bit.count"));
-	api.setField(bitObj, "parity", api.makeFunctionRef("bit.parity"));
-	api.setField(bitObj, "rol", api.makeFunctionRef("bit.rol"));
-	api.setField(bitObj, "ror", api.makeFunctionRef("bit.ror"));
-	api.setField(bitObj, "getfield", api.makeFunctionRef("bit.getfield"));
-	api.setField(bitObj, "setfield", api.makeFunctionRef("bit.setfield"));
-	api.setGlobal("bit", bitObj);
+  auto bitObj = api.makeObject();
+  api.setField(bitObj, "and", api.makeFunctionRef("bit.and"));
+  api.setField(bitObj, "or", api.makeFunctionRef("bit.or"));
+  api.setField(bitObj, "xor", api.makeFunctionRef("bit.xor"));
+  api.setField(bitObj, "not", api.makeFunctionRef("bit.not"));
+  api.setField(bitObj, "lshift", api.makeFunctionRef("bit.lshift"));
+  api.setField(bitObj, "rshift", api.makeFunctionRef("bit.rshift"));
+  api.setField(bitObj, "arshift", api.makeFunctionRef("bit.arshift"));
+  api.setField(bitObj, "test", api.makeFunctionRef("bit.test"));
+  api.setField(bitObj, "set", api.makeFunctionRef("bit.set"));
+  api.setField(bitObj, "clear", api.makeFunctionRef("bit.clear"));
+  api.setField(bitObj, "toggle", api.makeFunctionRef("bit.toggle"));
+  api.setField(bitObj, "lsb", api.makeFunctionRef("bit.lsb"));
+  api.setField(bitObj, "msb", api.makeFunctionRef("bit.msb"));
+  api.setField(bitObj, "count", api.makeFunctionRef("bit.count"));
+  api.setField(bitObj, "parity", api.makeFunctionRef("bit.parity"));
+  api.setField(bitObj, "rol", api.makeFunctionRef("bit.rol"));
+  api.setField(bitObj, "ror", api.makeFunctionRef("bit.ror"));
+  api.setField(bitObj, "getfield", api.makeFunctionRef("bit.getfield"));
+  api.setField(bitObj, "setfield", api.makeFunctionRef("bit.setfield"));
+  api.setGlobal("bit", bitObj);
+
+  // Load pure-Havel bit sidecar (adds namespace wrappers + utilities)
+  Value exports;
+  try {
+    auto &vm = api.vm();
+    exports = vm.loadModule("bit");
+    if (exports.isObjectId()) {
+      auto *obj = vm.getHeap().object(exports.asObjectId());
+      if (obj) {
+        for (const auto& [name, value] : *obj) {
+          if (name.empty() || name[0] == '_') continue;
+          api.setField(bitObj, name, value);
+          api.setGlobal(name, value);
+        }
+      }
+    }
+  } catch (...) {}
 }
 
 } // namespace havel::stdlib

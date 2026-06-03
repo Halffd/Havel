@@ -167,8 +167,8 @@ void Modules::checkTimers() {
 
 bool Modules::loadModule(const std::string &name) {
     if (!ctx_ || !ctx_->vm) return false;
-    auto result = ctx_->vm->loadModule(name);
-    return !result.isNull();
+    auto plugin = extensionLoader().loadModulePlugin(name);
+    return plugin.has_value();
 }
 
 bool Modules::import(const std::string &importSpec) {

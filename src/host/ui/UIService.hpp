@@ -157,7 +157,44 @@ public:
   void canvasFlush(std::shared_ptr<ui::UIElement> canvas);
   void canvasClear(std::shared_ptr<ui::UIElement> canvas);
 
+    // Canvas drawing extras
+    void canvasDrawLine(std::shared_ptr<ui::UIElement> canvasEl, int x1, int y1, int x2, int y2);
+    void canvasDrawRect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y, int w, int h);
+    void canvasDrawCircle(std::shared_ptr<ui::UIElement> canvasEl, int cx, int cy, int r);
+    void canvasSetPen(std::shared_ptr<ui::UIElement> canvasEl, int r, int g, int b, int width);
+    void canvasFill(std::shared_ptr<ui::UIElement> canvasEl, int x, int y);
+    void canvasBeginStroke(std::shared_ptr<ui::UIElement> canvasEl);
+    void canvasEndStroke(std::shared_ptr<ui::UIElement> canvasEl);
+    bool canvasUndo(std::shared_ptr<ui::UIElement> canvasEl);
+    std::vector<int> canvasLassoSelect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y);
+
+    // Timer
+    int64_t timerCreate(int intervalMs, bool singleShot, UIBackend::TimerCallback cb);
+    void timerStart(int64_t timerId);
+    void timerStop(int64_t timerId);
+    bool timerIsActive(int64_t timerId) const;
+    void timerSetInterval(int64_t timerId, int intervalMs);
+    void timerSetSingleShot(int64_t timerId, bool singleShot);
+    void timerDestroy(int64_t timerId);
+
+    // Settings
+    void *settingsCreate(const std::string &org, const std::string &app);
+    void settingsDestroy(void *settings);
+    void settingsSetValue(void *settings, const std::string &key, const std::string &value);
+    std::string settingsValue(void *settings, const std::string &key, const std::string &defaultValue);
+    bool settingsContains(void *settings, const std::string &key);
+    void settingsRemove(void *settings, const std::string &key);
+    void settingsSync(void *settings);
+
+    // Extra dialogs
+    std::string colorPicker(const std::string &initialColor);
+    std::string fontPicker(const std::string &initialFont);
+    std::string inputText(const std::string &title, const std::string &label, const std::string &defaultValue);
+    int64_t inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step);
+
 private:
+    std::map<int64_t, QTimer*> timers_;
+    int64_t nextTimerId_ = 1;
   // Qt widget creation for each element type
   QWidget *createWidget(ui::UIElement *element);
   QMainWindow *createWindow(ui::UIElement *element);

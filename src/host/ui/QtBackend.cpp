@@ -257,6 +257,115 @@ void QtBackend::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
   service_->canvasClear(canvas);
 }
 
+
+void QtBackend::canvasDrawLine(std::shared_ptr<ui::UIElement> canvasEl, int x1, int y1, int x2, int y2) {
+    service_->canvasDrawLine(canvasEl, x1, y1, x2, y2);
+}
+
+void QtBackend::canvasDrawRect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y, int w, int h) {
+    service_->canvasDrawRect(canvasEl, x, y, w, h);
+}
+
+void QtBackend::canvasDrawCircle(std::shared_ptr<ui::UIElement> canvasEl, int cx, int cy, int r) {
+    service_->canvasDrawCircle(canvasEl, cx, cy, r);
+}
+
+void QtBackend::canvasSetPen(std::shared_ptr<ui::UIElement> canvasEl, int r, int g, int b, int width) {
+    service_->canvasSetPen(canvasEl, r, g, b, width);
+}
+
+void QtBackend::canvasFill(std::shared_ptr<ui::UIElement> canvasEl, int x, int y) {
+    service_->canvasFill(canvasEl, x, y);
+}
+
+void QtBackend::canvasBeginStroke(std::shared_ptr<ui::UIElement> canvasEl) {
+    service_->canvasBeginStroke(canvasEl);
+}
+
+void QtBackend::canvasEndStroke(std::shared_ptr<ui::UIElement> canvasEl) {
+    service_->canvasEndStroke(canvasEl);
+}
+
+bool QtBackend::canvasUndo(std::shared_ptr<ui::UIElement> canvasEl) {
+    return service_->canvasUndo(canvasEl);
+}
+
+std::vector<int> QtBackend::canvasLassoSelect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y) {
+    return service_->canvasLassoSelect(canvasEl, x, y);
+}
+
+int64_t QtBackend::timerCreate(int intervalMs, bool singleShot, TimerCallback cb) {
+    return service_->timerCreate(intervalMs, singleShot, std::move(cb));
+}
+
+void QtBackend::timerStart(int64_t timerId) {
+    service_->timerStart(timerId);
+}
+
+void QtBackend::timerStop(int64_t timerId) {
+    service_->timerStop(timerId);
+}
+
+bool QtBackend::timerIsActive(int64_t timerId) const {
+    return service_->timerIsActive(timerId);
+}
+
+void QtBackend::timerSetInterval(int64_t timerId, int intervalMs) {
+    service_->timerSetInterval(timerId, intervalMs);
+}
+
+void QtBackend::timerSetSingleShot(int64_t timerId, bool singleShot) {
+    service_->timerSetSingleShot(timerId, singleShot);
+}
+
+void QtBackend::timerDestroy(int64_t timerId) {
+    service_->timerDestroy(timerId);
+}
+
+void *QtBackend::settingsCreate(const std::string &org, const std::string &app) {
+    return service_->settingsCreate(org, app);
+}
+
+void QtBackend::settingsDestroy(void *settings) {
+    service_->settingsDestroy(settings);
+}
+
+void QtBackend::settingsSetValue(void *settings, const std::string &key, const std::string &value) {
+    service_->settingsSetValue(settings, key, value);
+}
+
+std::string QtBackend::settingsValue(void *settings, const std::string &key, const std::string &defaultValue) {
+    return service_->settingsValue(settings, key, defaultValue);
+}
+
+bool QtBackend::settingsContains(void *settings, const std::string &key) {
+    return service_->settingsContains(settings, key);
+}
+
+void QtBackend::settingsRemove(void *settings, const std::string &key) {
+    service_->settingsRemove(settings, key);
+}
+
+void QtBackend::settingsSync(void *settings) {
+    service_->settingsSync(settings);
+}
+
+std::string QtBackend::colorPicker(const std::string &initialColor) {
+    return service_->colorPicker(initialColor);
+}
+
+std::string QtBackend::fontPicker(const std::string &initialFont) {
+    return service_->fontPicker(initialFont);
+}
+
+std::string QtBackend::inputText(const std::string &title, const std::string &label, const std::string &defaultValue) {
+    return service_->inputText(title, label, defaultValue);
+}
+
+int64_t QtBackend::inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step) {
+    return service_->inputInt(title, label, defaultValue, min, max, step);
+}
+
 } // namespace havel::host
 
 #endif // HAVE_QT_EXTENSION

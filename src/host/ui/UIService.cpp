@@ -6,6 +6,10 @@
 
 #include "UIService.hpp"
 
+#include <QColorDialog>
+#include <QFontDialog>
+#include <QInputDialog>
+#include <QSettings>
 #include <QGuiApplication>
 #include <QMenu>
 #include <QPainterPath>
@@ -1341,6 +1345,174 @@ void UIService::canvasClear(std::shared_ptr<ui::UIElement> canvas) {
   canvas->canvasCommands.clear();
   canvas->canvasCommands.push_back({ui::CanvasCmdType::CLEAR, {}});
   canvasFlush(canvas);
+}
+
+
+void UIService::canvasDrawLine(std::shared_ptr<ui::UIElement> canvasEl, int x1, int y1, int x2, int y2) {
+    if (!canvasEl) return;
+    canvasEl->canvasCommands.push_back({ui::CanvasCmdType::LINE, {{"x1", static_cast<int64_t>(x1)}, {"y1", static_cast<int64_t>(y1)}, {"x2", static_cast<int64_t>(x2)}, {"y2", static_cast<int64_t>(y2)}}});
+    canvasFlush(canvasEl);
+}
+
+void UIService::canvasDrawRect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y, int w, int h) {
+    if (!canvasEl) return;
+    canvasEl->canvasCommands.push_back({ui::CanvasCmdType::RECT, {{"x", static_cast<int64_t>(x)}, {"y", static_cast<int64_t>(y)}, {"w", static_cast<int64_t>(w)}, {"h", static_cast<int64_t>(h)}}});
+    canvasFlush(canvasEl);
+}
+
+void UIService::canvasDrawCircle(std::shared_ptr<ui::UIElement> canvasEl, int cx, int cy, int r) {
+    if (!canvasEl) return;
+    canvasEl->canvasCommands.push_back({ui::CanvasCmdType::CIRCLE, {{"cx", static_cast<int64_t>(cx)}, {"cy", static_cast<int64_t>(cy)}, {"r", static_cast<int64_t>(r)}}});
+    canvasFlush(canvasEl);
+}
+
+void UIService::canvasSetPen(std::shared_ptr<ui::UIElement> canvasEl, int r, int g, int b, int width) {
+    if (!canvasEl) return;
+    canvasEl->canvasCommands.push_back({ui::CanvasCmdType::SET_STROKE, {{"r", static_cast<int64_t>(r)}, {"g", static_cast<int64_t>(g)}, {"b", static_cast<int64_t>(b)}, {"width", static_cast<int64_t>(width)}}});
+}
+
+void UIService::canvasFill(std::shared_ptr<ui::UIElement> canvasEl, int x, int y) {
+    if (!canvasEl) return;
+    canvasEl->canvasCommands.push_back({ui::CanvasCmdType::FILL_RECT, {{"x", static_cast<int64_t>(x)}, {"y", static_cast<int64_t>(y)}}});
+    canvasFlush(canvasEl);
+}
+
+void UIService::canvasBeginStroke(std::shared_ptr<ui::UIElement> canvasEl) {
+    if (!canvasEl) return;
+    canvasEl->canvasCommands.push_back({ui::CanvasCmdType::SET_STROKE, {}});
+}
+
+void UIService::canvasEndStroke(std::shared_ptr<ui::UIElement> canvasEl) {
+    if (!canvasEl) return;
+    canvasEl->canvasCommands.push_back({ui::CanvasCmdType::SET_FILL, {}});
+    canvasFlush(canvasEl);
+}
+
+bool UIService::canvasUndo(std::shared_ptr<ui::UIElement> canvasEl) {
+    if (!canvasEl) return false;
+    return false;
+}
+
+std::vector<int> UIService::canvasLassoSelect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y) {
+    (void)canvasEl; (void)x; (void)y;
+    return {};
+}
+
+int64_t UIService::timerCreate(int intervalMs, bool singleShot, UIBackend::TimerCallback cb) {
+    ensureApp();
+    auto *timer = new QTimer();
+    timer->setInterval(intervalMs);
+    timer->setSingleShot(singleShot);
+    if (cb) {
+        QObject::connect(timer, &QTimer::timeout, [cb]() { cb(); });
+    }
+    int64_t id = nextTimerId_++;
+    timers_[id] = timer;
+    return id;
+}
+
+void UIService::timerStart(int64_t timerId) {
+    auto it = timers_.find(timerId);
+    if (it != timers_.end()) it->second->start();
+}
+
+void UIService::timerStop(int64_t timerId) {
+    auto it = timers_.find(timerId);
+    if (it != timers_.end()) it->second->stop();
+}
+
+bool UIService::timerIsActive(int64_t timerId) const {
+    auto it = timers_.find(timerId);
+    if (it != timers_.end()) return it->second->isActive();
+    return false;
+}
+
+void UIService::timerSetInterval(int64_t timerId, int intervalMs) {
+    auto it = timers_.find(timerId);
+    if (it != timers_.end()) it->second->setInterval(intervalMs);
+}
+
+void UIService::timerSetSingleShot(int64_t timerId, bool singleShot) {
+    auto it = timers_.find(timerId);
+    if (it != timers_.end()) it->second->setSingleShot(singleShot);
+}
+
+void UIService::timerDestroy(int64_t timerId) {
+    auto it = timers_.find(timerId);
+    if (it != timers_.end()) {
+        delete it->second;
+        timers_.erase(it);
+    }
+}
+
+void *UIService::settingsCreate(const std::string &org, const std::string &app) {
+    return new QSettings(QString::fromStdString(org), QString::fromStdString(app));
+}
+
+void UIService::settingsDestroy(void *settings) {
+    delete static_cast<QSettings*>(settings);
+}
+
+void UIService::settingsSetValue(void *settings, const std::string &key, const std::string &value) {
+    auto *s = static_cast<QSettings*>(settings);
+    if (s) s->setValue(QString::fromStdString(key), QString::fromStdString(value));
+}
+
+std::string UIService::settingsValue(void *settings, const std::string &key, const std::string &defaultValue) {
+    auto *s = static_cast<QSettings*>(settings);
+    if (!s) return defaultValue;
+    QVariant v = s->value(QString::fromStdString(key), QString::fromStdString(defaultValue));
+    return v.toString().toStdString();
+}
+
+bool UIService::settingsContains(void *settings, const std::string &key) {
+    auto *s = static_cast<QSettings*>(settings);
+    if (!s) return false;
+    return s->contains(QString::fromStdString(key));
+}
+
+void UIService::settingsRemove(void *settings, const std::string &key) {
+    auto *s = static_cast<QSettings*>(settings);
+    if (s) s->remove(QString::fromStdString(key));
+}
+
+void UIService::settingsSync(void *settings) {
+    auto *s = static_cast<QSettings*>(settings);
+    if (s) s->sync();
+}
+
+std::string UIService::colorPicker(const std::string &initialColor) {
+    QColor initial = QColor(QString::fromStdString(initialColor));
+    QColor color = QColorDialog::getColor(initial, nullptr, "Select Color");
+    if (color.isValid()) return color.name().toStdString();
+    return "";
+}
+
+std::string UIService::fontPicker(const std::string &initialFont) {
+    bool ok = false;
+    QFont initial;
+    if (!initialFont.empty()) initial.fromString(QString::fromStdString(initialFont));
+    QFont font = QFontDialog::getFont(&ok, initial, nullptr, "Select Font");
+    if (ok) return font.toString().toStdString();
+    return "";
+}
+
+std::string UIService::inputText(const std::string &title, const std::string &label, const std::string &defaultValue) {
+    bool ok = false;
+    QString text = QInputDialog::getText(nullptr, QString::fromStdString(title),
+        QString::fromStdString(label), QLineEdit::Normal,
+        QString::fromStdString(defaultValue), &ok);
+    if (ok) return text.toStdString();
+    return "";
+}
+
+int64_t UIService::inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step) {
+    bool ok = false;
+    (void)step;
+    int value = QInputDialog::getInt(nullptr, QString::fromStdString(title),
+        QString::fromStdString(label), defaultValue, min, max, step, &ok);
+    if (ok) return static_cast<int64_t>(value);
+    return static_cast<int64_t>(defaultValue);
 }
 
 } // namespace havel::host

@@ -119,6 +119,41 @@ public:
   void canvasFlush(std::shared_ptr<ui::UIElement> canvas) override;
   void canvasClear(std::shared_ptr<ui::UIElement> canvas) override;
 
+    // Canvas drawing extras
+    void canvasDrawLine(std::shared_ptr<ui::UIElement> canvasEl, int x1, int y1, int x2, int y2) override;
+    void canvasDrawRect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y, int w, int h) override;
+    void canvasDrawCircle(std::shared_ptr<ui::UIElement> canvasEl, int cx, int cy, int r) override;
+    void canvasSetPen(std::shared_ptr<ui::UIElement> canvasEl, int r, int g, int b, int width) override;
+    void canvasFill(std::shared_ptr<ui::UIElement> canvasEl, int x, int y) override;
+    void canvasBeginStroke(std::shared_ptr<ui::UIElement> canvasEl) override;
+    void canvasEndStroke(std::shared_ptr<ui::UIElement> canvasEl) override;
+    bool canvasUndo(std::shared_ptr<ui::UIElement> canvasEl) override;
+    std::vector<int> canvasLassoSelect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y) override;
+
+    // Timer
+    int64_t timerCreate(int intervalMs, bool singleShot, TimerCallback cb) override;
+    void timerStart(int64_t timerId) override;
+    void timerStop(int64_t timerId) override;
+    bool timerIsActive(int64_t timerId) const override;
+    void timerSetInterval(int64_t timerId, int intervalMs) override;
+    void timerSetSingleShot(int64_t timerId, bool singleShot) override;
+    void timerDestroy(int64_t timerId) override;
+
+    // Settings
+    void *settingsCreate(const std::string &org, const std::string &app) override;
+    void settingsDestroy(void *settings) override;
+    void settingsSetValue(void *settings, const std::string &key, const std::string &value) override;
+    std::string settingsValue(void *settings, const std::string &key, const std::string &defaultValue) override;
+    bool settingsContains(void *settings, const std::string &key) override;
+    void settingsRemove(void *settings, const std::string &key) override;
+    void settingsSync(void *settings) override;
+
+    // Extra dialogs
+    std::string colorPicker(const std::string &initialColor) override;
+    std::string fontPicker(const std::string &initialFont) override;
+    std::string inputText(const std::string &title, const std::string &label, const std::string &defaultValue) override;
+    int64_t inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step) override;
+
 private:
     std::unique_ptr<UIService> service_;
 };

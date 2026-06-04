@@ -234,15 +234,11 @@ case OpCode::TAIL_CALL: {
           }
         }
         if (!modName.empty()) {
-          ensureModuleLoaded(modName);
-          auto git = globals.find(modName);
-          if (git != globals.end() && git->second.isObjectId()) {
-            // Check if globals[modName] is a different object than the receiver
-            if (git->second.asObjectId() != receiver.asObjectId()) {
-
-            }
-            receiver = git->second;
-            instanceObj = heap_.object(receiver.asObjectId());
+            ensureModuleLoaded(modName);
+            auto git = globals.find(modName);
+            if (git != globals.end() && git->second.isObjectId()) {
+                receiver = git->second;
+                instanceObj = heap_.object(receiver.asObjectId());
 
           } else {
                         std::string capModName = modName;

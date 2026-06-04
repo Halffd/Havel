@@ -38,9 +38,21 @@ public:
   compileWithModuleLoader(const ast::Program &program, ModuleLoader &loader,
 	const std::filesystem::path &basePath);
 	// Pre-populate known global names (for REPL persistence across compiles)
-    void setKnownGlobals(const std::unordered_set<std::string> &names) {
-        known_globals_ = names;
-    }
+  void setKnownGlobals(const std::unordered_set<std::string> &names) {
+    known_globals_ = names;
+  }
+  void setKnownClassNames(const std::unordered_set<std::string> &names) {
+    known_class_names_ = names;
+  }
+  void setKnownStructNames(const std::unordered_set<std::string> &names) {
+    known_struct_names_ = names;
+  }
+  const std::unordered_set<std::string> &topLevelClassNames() const {
+    return top_level_class_names_;
+  }
+  const std::unordered_set<std::string> &topLevelStructNames() const {
+    return top_level_struct_names_;
+  }
     void setTypeCheckResult(TypeCheckResult result) {
         type_check_result_ = std::move(result);
     }
@@ -236,6 +248,8 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
 
 	// Pre-known globals (from previous REPL sessions)
   std::unordered_set<std::string> known_globals_;
+  std::unordered_set<std::string> known_class_names_;
+  std::unordered_set<std::string> known_struct_names_;
 
   // Module loading
   ModuleLoader *module_loader_ = nullptr;

@@ -7,6 +7,7 @@
 
 #include "Loader.h"
 #include "ModulePlugin.h"
+#include "ToolkitPlugin.h"
 
 #include <dlfcn.h>
 #include <stdio.h>
@@ -326,6 +327,84 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
     }
 
     /* Register loaded module */
+    if (loader->loaded_count < HAVEL_MAX_LOADED) {
+        HavelLoadedModule *mod = &loader->loaded[loader->loaded_count++];
+        snprintf(mod->name, sizeof(mod->name), "%s", lib_name);
+        snprintf(mod->path, sizeof(mod->path), "%s", path);
+        mod->handle = handle;
+        mod->is_loaded = 1;
+    }
+
+    free(path);
+    return abi;
+}
+
+void havel_loader_add_toolkit_paths(HavelLoader *loader) {
+    if (!loader) return;
+
+    havel_loader_add_search_path(loader, "toolkits");
+
+    havel_loader_add_search_path(loader, "/usr/lib/havel/toolkits");
+    havel_loader_add_search_path(loader, "/usr/local/lib/havel/toolkits");
+
+    const char *home = getenv("HOME");
+    if (home) {
+        char buf[512];
+        snprintf(buf, sizeof(buf), "%s/.havel/toolkits", home);
+        havel_loader_add_search_path(loader, buf);
+    }
+
+    const char *tk_dir = getenv("HAVEL_TOOLKIT_DIR");
+    if (tk_dir) {
+        havel_loader_add_search_path(loader, tk_dir);
+    }
+}
+
+const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char *name) {
+    if (!loader || !name) return NULL;
+
+    /* Check if already loaded */
+    char lib_name[300];
+    snprintf(lib_name, sizeof(lib_name), "havel_toolkit_%s", name);
+
+    for (int i = 0; i < loader->loaded_count; i++) {
+        if (strcmp(loader->loaded[i].name, lib_name) == 0 && loader->loaded[i].is_loaded) {
+            havel_toolkit_info_fn info_fn = (havel_toolkit_info_fn)havel_loader_sym(loader->loaded[i].handle, "havel_toolkit_info");
+            return info_fn ? info_fn() : NULL;
+        }
+    }
+
+    char *path = find_library(loader, lib_name);
+    if (!path) return NULL;
+
+    void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+    if (!handle) {
+        fprintf(stderr, "[Loader] dlopen failed for toolkit '%s': %s\n", name, dlerror() ? dlerror() : "unknown");
+        free(path);
+        return NULL;
+    }
+
+    havel_toolkit_info_fn info_fn = (havel_toolkit_info_fn)havel_loader_sym(handle, "havel_toolkit_info");
+    if (!info_fn) {
+        fprintf(stderr, "[Loader] toolkit '%s': missing havel_toolkit_info symbol\n", name);
+        free(path);
+        return NULL;
+    }
+
+    const HavelToolkitABI *abi = info_fn();
+    if (!abi) {
+        fprintf(stderr, "[Loader] toolkit '%s': havel_toolkit_info returned NULL\n", name);
+        free(path);
+        return NULL;
+    }
+
+    if (abi->abi_version != HAVEL_TOOLKIT_ABI_VERSION) {
+        fprintf(stderr, "[Loader] toolkit '%s': ABI version mismatch (got %d, need %d)\n",
+                name, abi->abi_version, HAVEL_TOOLKIT_ABI_VERSION);
+        free(path);
+        return NULL;
+    }
+
     if (loader->loaded_count < HAVEL_MAX_LOADED) {
         HavelLoadedModule *mod = &loader->loaded[loader->loaded_count++];
         snprintf(mod->name, sizeof(mod->name), "%s", lib_name);

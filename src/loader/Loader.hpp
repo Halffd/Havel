@@ -12,6 +12,7 @@
 
 #include "Loader.h"
 #include "ModulePlugin.h"
+#include "ToolkitPlugin.h"
 #include "extensions/HavelCAPI.h"
 
 #include <algorithm>
@@ -31,6 +32,14 @@ struct ModulePlugin {
     const HavelModuleABI *abi = nullptr;
     void (*register_fn)(void *) = nullptr;
     void (*cleanup_fn)(void) = nullptr;
+};
+
+struct ToolkitPlugin {
+    std::string name;
+    std::string version;
+    std::string description;
+    void *dl_handle = nullptr;
+    const HavelToolkitABI *abi = nullptr;
 };
 
 class Loader {
@@ -71,6 +80,14 @@ public:
         };
     }
 
+    static std::vector<std::string> getStandardToolkitPaths() {
+        return {
+            "toolkits",
+            "/usr/lib/havel/toolkits",
+            "/usr/local/lib/havel/toolkits",
+        };
+    }
+
     void *open(const std::string &path) {
         return havel_loader_open(handle_, path.c_str());
     }
@@ -96,7 +113,7 @@ public:
 
     bool import(const std::string &name, HavelAPI *api = nullptr) {
         void *h = havel_loader_import(handle_, name.c_str(),
-                                      api ? static_cast<void *>(api) : nullptr);
+            api ? static_cast<void *>(api) : nullptr);
         return h != nullptr;
     }
 
@@ -129,8 +146,26 @@ public:
         return plugin;
     }
 
+    std::optional<ToolkitPlugin> loadToolkitPlugin(const std::string &name) {
+        const HavelToolkitABI *abi = havel_loader_load_toolkit(handle_, name.c_str());
+        if (!abi) return std::nullopt;
+
+        void *dl = havel_loader_get_handle(handle_, ("havel_toolkit_" + name).c_str());
+        ToolkitPlugin plugin;
+        plugin.name = abi->name ? abi->name : name;
+        plugin.version = abi->version ? abi->version : "0.0.0";
+        plugin.description = abi->description ? abi->description : "";
+        plugin.dl_handle = dl;
+        plugin.abi = abi;
+        return plugin;
+    }
+
     void addModulePaths() {
         havel_loader_add_module_paths(handle_);
+    }
+
+    void addToolkitPaths() {
+        havel_loader_add_toolkit_paths(handle_);
     }
 
     bool isLoaded(const std::string &name) const {

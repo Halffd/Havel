@@ -18,6 +18,7 @@ extern "C" {
 #endif
 
 typedef struct HavelModuleABI HavelModuleABI;
+typedef struct HavelToolkitABI HavelToolkitABI;
 
 /* Opaque handle */
 typedef struct HavelLoader HavelLoader;
@@ -86,6 +87,15 @@ void havel_loader_add_module_paths(HavelLoader *loader);
  * Validates ABI version via havel_module_info().
  * Returns HavelModuleABI* if valid, NULL if not found or incompatible. */
 const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *name);
+
+/* Platform: add toolkit plugin search paths */
+void havel_loader_add_toolkit_paths(HavelLoader *loader);
+
+/* Load a toolkit plugin by name.
+ * Searches for havel_toolkit_<name>.so in toolkit paths.
+ * Validates ABI version via havel_toolkit_info().
+ * Returns HavelToolkitABI* if valid, NULL if not found or incompatible. */
+const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char *name);
 
 #ifdef __cplusplus
 }

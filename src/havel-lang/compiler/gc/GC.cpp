@@ -139,10 +139,13 @@ ArrayRef GCHeap::allocateArray() {
 
 ObjectRef GCHeap::allocateObject(bool sorted) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    const uint32_t id = next_object_id_++;
-    ObjectEntry entry;
-    entry.sorted = sorted;
-    objects_[id] = std::move(entry);
+  const uint32_t id = next_object_id_++;
+  ObjectEntry entry;
+  entry.sorted = sorted;
+  auto [it, inserted] = objects_.emplace(id, std::move(entry));
+  if (!inserted) {
+    it->second.sorted = sorted;
+  }
     object_ages_[id] = 0;
     old_objects_.erase(id);
     return ObjectRef{.id = id, .sorted = sorted};
@@ -994,7 +997,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 if (obj) {
                     auto it = obj->find("op_destructor");
                     if (it != obj->end() && (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId())) {
-                        finalizer_queue_.push_back({id, std::move(*obj)});
+                        finalizer_queue_.emplace_back(id, std::move(*obj));
                     }
                 }
                 objects_.erase(it);

@@ -52,11 +52,30 @@ struct RuntimeClosure {
     std::vector<std::shared_ptr<UpvalueCell>> upvalues;
 };
 
-    struct ObjectEntry {
-        std::unordered_map<std::string, Value> data;
-        std::vector<std::string> insertionOrder;
-        bool sorted = true;
-        std::atomic<uint64_t> shape_version{1};
+struct ObjectEntry {
+  std::unordered_map<std::string, Value> data;
+  std::vector<std::string> insertionOrder;
+  bool sorted = true;
+  std::atomic<uint64_t> shape_version{1};
+
+  ObjectEntry() = default;
+  ObjectEntry(ObjectEntry &&o) noexcept
+    : data(std::move(o.data)),
+      insertionOrder(std::move(o.insertionOrder)),
+      sorted(o.sorted),
+      shape_version(o.shape_version.load(std::memory_order_relaxed)) {}
+  ObjectEntry &operator=(ObjectEntry &&o) noexcept {
+    if (this != &o) {
+      data = std::move(o.data);
+      insertionOrder = std::move(o.insertionOrder);
+      sorted = o.sorted;
+      shape_version.store(o.shape_version.load(std::memory_order_relaxed),
+                           std::memory_order_relaxed);
+    }
+    return *this;
+  }
+  ObjectEntry(const ObjectEntry &) = delete;
+  ObjectEntry &operator=(const ObjectEntry &) = delete;
 
         Value *get(const std::string &key) {
             auto it = data.find(key);

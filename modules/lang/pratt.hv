@@ -1814,14 +1814,14 @@ return parseBracketDecoratorStatement()
 }
 }
         // Variable declarations
-        if tt == TID.Let {
-            return parseLetDecl("Let")
-        }
-        if tt == TID.Val {
-            return parseLetDecl("Val")
-        }
-        if tt == TID.Const {
-            return parseLetDecl("Val") // const is alias for val
+    if tt == TID.Let {
+        return parseLetDecl(TID.Let)
+    }
+    if tt == TID.Val {
+        return parseLetDecl(TID.Val)
+    }
+    if tt == TID.Const {
+        return parseLetDecl(TID.Val) // const is alias for val
 
         }
         // Control flow
@@ -1922,27 +1922,27 @@ if tt == TID.When: return parseWhenBlockStatement()
 if tt == TID.With: return parseWithStatement()
 if tt == TID.Modes: return parseModesBlockStatement()
 if tt == TID.Group: return parseGroupStatement()
-        if tt == TID.Signal: return parseSignalStatement()
-        if tt == TID.Pool: return parsePoolStatement()
-        if tt == TID.Devices: return parseDevicesBlockStatement()
+if tt == TID.Signal: return parseSignalStatement()
+if tt == TID.Pool: return parsePoolStatement()
+if tt == TID.Devices: return parseDevicesBlockStatement()
 
-        // Thread/Interval/Timeout sugar
-        if tt == TID.Thread: return parseThreadStatement()
-        if tt == TID.Interval: return parseIntervalStatement()
-        if tt == TID.Timeout: return parseTimeoutStatement()
+// Thread/Interval/Timeout sugar
+if tt == TID.Thread: return parseThreadStatement()
+if tt == TID.Interval: return parseIntervalStatement()
+if tt == TID.Timeout: return parseTimeoutStatement()
 
- // Type declarations
- if tt == TID.Class { return parseClassDeclaration() }
- if tt == TID.Struct { return parseStructDeclaration() }
- if tt == TID.Enum { return parseEnumDeclaration() }
- if tt == TID.Trait { return parseTraitDeclaration() }
- if tt == TID.Prot { return parseProtocolDeclaration() }
- if tt == TID.Impl { return parseImplDeclaration() }
-        // Expression statement
-    expr = parseExpr(0)
-    if expr == null: return null
-    if expr.kind == "ErrorNode": return expr
-    return ExpressionStatement(expr, l, c)
+// Type declarations
+if tt == TID.Class { return parseClassDeclaration() }
+if tt == TID.Struct { return parseStructDeclaration() }
+if tt == TID.Enum { return parseEnumDeclaration() }
+if tt == TID.Trait { return parseTraitDeclaration() }
+if tt == TID.Prot { return parseProtocolDeclaration() }
+if tt == TID.Impl { return parseImplDeclaration() }
+// Expression statement
+expr = parseExpr(0)
+if expr == null: return null
+if expr.kind == "ErrorNode": return expr
+return ExpressionStatement(expr, l, c)
 }
     // ===================================================================
     // STATEMENT: if
@@ -3374,28 +3374,34 @@ fn parseClassDeclaration() {
     if !isColonBody && current().tid == TID.Colon {
         isColonBody = true
     }
-    fields = []
-    methods = []
-    if isColonBody {
-        advance() // consume ':'
-        skipNewlines()
-        _parseClassMembers(methods, fields)
-    } else if current().tid == TID.OpenBrace {
-        advance() // consume '{'
-        skipNewlines()
-        _parseClassMembers(methods, fields)
-        if current().tid == TID.CloseBrace {
-            advance() // consume '}'
-        }
-    }
-    return ClassDeclaration(name, parentName, fields, methods, l, c, typeParams)
+fields = []
+methods = []
+colonBaseIndent = -1
+if isColonBody {
+  advance() // consume ':'
+  skipNewlines()
+  colonBaseIndent = current().col
+  _parseClassMembers(methods, fields, true, colonBaseIndent)
+} else if current().tid == TID.OpenBrace {
+  advance() // consume '{'
+  skipNewlines()
+  _parseClassMembers(methods, fields, false, -1)
+  if current().tid == TID.CloseBrace {
+    advance() // consume '}'
+  }
+}
+return ClassDeclaration(name, parentName, fields, methods, l, c, typeParams)
 
 }
 
-fn _parseClassMembers(methods, fields) {
-	while notEOF() && current().tid != TID.CloseBrace && current().tid != TID.EOF {
-		skipNewlinesAndSemicolons()
-		if !notEOF() || current().tid == TID.CloseBrace || current().tid == TID.EOF { break }
+fn _parseClassMembers(methods, fields, isColonBody, colonBaseIndent) {
+  while notEOF() && current().tid != TID.CloseBrace && current().tid != TID.EOF {
+    skipNewlinesAndSemicolons()
+    if !notEOF() || current().tid == TID.CloseBrace || current().tid == TID.EOF { break }
+    // Dedent check: for colon-body classes, if current token column < base indent, class body is done
+    if isColonBody && colonBaseIndent > 0 && current().col < colonBaseIndent && current().col > 0 {
+      break
+    }
 		tt = current().tid
 		if tt == TID.Fn {
 			m = _parseClassMethod()
@@ -3583,19 +3589,20 @@ fn parseStructDeclaration() {
             advance() // consume ')'
         }
     }
+  skipNewlines()
+  if current().tid == TID.OpenBrace {
+    advance() // consume '{'
     skipNewlines()
-    if current().tid == TID.OpenBrace {
-        advance() // consume '{'
-        skipNewlines()
-        _parseClassMembers(methods, fields)
-        if current().tid == TID.CloseBrace {
-            advance() // consume '}'
-        }
-    } else if current().tid == TID.Colon {
-        advance() // consume ':'
-        skipNewlines()
-        _parseClassMembers(methods, fields)
+    _parseClassMembers(methods, fields, false, -1)
+    if current().tid == TID.CloseBrace {
+      advance() // consume '}'
     }
+  } else if current().tid == TID.Colon {
+    advance() // consume ':'
+    skipNewlines()
+    colonBaseIndent = current().col
+    _parseClassMembers(methods, fields, true, colonBaseIndent)
+  }
     return StructDeclaration(name, fields, methods, null, l, c, typeParams)
 
 }

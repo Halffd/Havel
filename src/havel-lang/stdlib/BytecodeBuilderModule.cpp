@@ -425,14 +425,34 @@ throw std::runtime_error("bc.patch_jump: requires (jump_ip, target_ip)");
 		}
 		if (instrs[jumpIp].operands.empty()) {
 			instrs[jumpIp].operands.push_back(Value::makeInt(static_cast<int64_t>(targetIp)));
-		} else {
-			instrs[jumpIp].operands[0] = Value::makeInt(static_cast<int64_t>(targetIp));
-		}
-		return Value::makeNull();
-	});
+} else {
+        instrs[jumpIp].operands[0] = Value::makeInt(static_cast<int64_t>(targetIp));
+        }
+        return Value::makeNull();
+    });
 
-	api.registerFunction("bc.set_local_count", [](const std::vector<Value> &args) -> Value {
-		auto *fn = g_builder.currentFunc();
+    api.registerFunction("bc.patch_operand", [](const std::vector<Value> &args) -> Value {
+        auto *fn = g_builder.currentFunc();
+        if (!fn) throw std::runtime_error("bc.patch_operand: no current function");
+        if (args.size() < 3 || !args[0].isInt() || !args[1].isInt() || !args[2].isInt()) {
+            throw std::runtime_error("bc.patch_operand: requires (instr_ip, operand_index, value)");
+        }
+        uint32_t instrIp = static_cast<uint32_t>(args[0].asInt());
+        uint32_t opIdx = static_cast<uint32_t>(args[1].asInt());
+        int64_t value = args[2].asInt();
+        auto &instrs = fn->instructions;
+        if (instrIp >= instrs.size()) {
+            throw std::runtime_error("bc.patch_operand: instr_ip out of range");
+        }
+        while (instrs[instrIp].operands.size() <= opIdx) {
+            instrs[instrIp].operands.push_back(Value::makeInt(0));
+        }
+        instrs[instrIp].operands[opIdx] = Value::makeInt(value);
+        return Value::makeNull();
+    });
+
+    api.registerFunction("bc.set_local_count", [](const std::vector<Value> &args) -> Value {
+        auto *fn = g_builder.currentFunc();
 		if (!fn) throw std::runtime_error("bc.set_local_count: no current function");
 		if (args.empty() || !args[0].isInt()) {
 			throw std::runtime_error("bc.set_local_count: requires count (int)");
@@ -597,13 +617,14 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
     }
 
 auto &vm = api.vm();
-auto saved_chunk = vm.current_chunk;
-auto saved_frame_count = vm.frame_count_;
-auto saved_frame_arena = vm.frame_arena_;
-std::stack<Value> saved_stack = vm.stack;
-auto saved_locals = vm.locals;
-auto saved_immutable_locals = vm.immutable_locals_;
-auto saved_main_chunk = vm.getMainChunk();
+    auto saved_chunk = vm.current_chunk;
+    auto saved_frame_count = vm.frame_count_;
+    auto saved_frame_arena = vm.frame_arena_;
+    std::stack<Value> saved_stack = vm.stack;
+    auto saved_locals = vm.locals;
+    auto saved_immutable_locals = vm.immutable_locals_;
+    auto saved_main_chunk = vm.getMainChunk();
+    fprintf(stderr, "[DBG-BCEP] bc.execute_persistent entry=%s, depth_before=%d, globals_before=%zu, myVar_before=%s\n", entry.c_str(), vm.bc_execute_depth_, vm.globals.size(), vm.globals.count("myVar") ? "present" : "absent");
 
 // Move chunk out of builder into a shared_ptr so it survives any
 // bc.reset() calls during execution (e.g. from imported modules).
@@ -620,14 +641,15 @@ try {
 vm.bc_execute_depth_++;
 auto result = vm.executePersistent(*exec_chunk, entry, runArgs);
 vm.bc_execute_depth_--;
-vm.current_chunk = saved_chunk;
-vm.frame_count_ = saved_frame_count;
-vm.frame_arena_ = std::move(saved_frame_arena);
-vm.stack = std::move(saved_stack);
-vm.locals = std::move(saved_locals);
-vm.immutable_locals_ = std::move(saved_immutable_locals);
-vm.setMainChunkShared(saved_main_chunk);
-return result;
+    vm.current_chunk = saved_chunk;
+    vm.frame_count_ = saved_frame_count;
+    vm.frame_arena_ = std::move(saved_frame_arena);
+    vm.stack = std::move(saved_stack);
+    vm.locals = std::move(saved_locals);
+    vm.immutable_locals_ = std::move(saved_immutable_locals);
+    vm.setMainChunkShared(saved_main_chunk);
+    fprintf(stderr, "[DBG-BCEP] bc.execute_persistent DONE, depth_after=%d, globals_after=%zu, myVar_after=%s\n", vm.bc_execute_depth_, vm.globals.size(), vm.globals.count("myVar") ? "present" : "absent");
+    return result;
 } catch (const std::exception &e) {
 vm.bc_execute_depth_--;
 vm.current_chunk = saved_chunk;
@@ -641,14 +663,16 @@ vm.setMainChunkShared(saved_main_chunk);
   }
 	});
 
-	api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> Value {
+api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
-        throw std::runtime_error("bc.get_global: requires name (string)");
+      throw std::runtime_error("bc.get_global: requires name (string)");
     }
     auto name = api.resolveString(args[0]);
     auto &vm = api.vm();
-        return vm.lookupGlobalByKey(name);
-    });
+    auto result = vm.lookupGlobalByKey(name);
+    fprintf(stderr, "[DBG-GG] bc.get_global('%s') = %s, depth=%d, globals_size=%zu\n", name.c_str(), result.isNull() ? "null" : "found", vm.bc_execute_depth_, vm.globals.size());
+    return result;
+  });
 
     api.registerFunction("bc.set_global", [api](const std::vector<Value> &args) -> Value {
         if (args.size() < 2 || (!args[0].isStringId() && !args[0].isStringValId())) {
@@ -955,7 +979,8 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
   api.setField(bcObj, "add_const", api.makeFunctionRef("bc.add_const"));
   api.setField(bcObj, "add_string", api.makeFunctionRef("bc.add_string"));
   api.setField(bcObj, "add_chunk_string", api.makeFunctionRef("bc.add_chunk_string"));
-  api.setField(bcObj, "patch_jump", api.makeFunctionRef("bc.patch_jump"));
+    api.setField(bcObj, "patch_jump", api.makeFunctionRef("bc.patch_jump"));
+    api.setField(bcObj, "patch_operand", api.makeFunctionRef("bc.patch_operand"));
   api.setField(bcObj, "set_local_count", api.makeFunctionRef("bc.set_local_count"));
   api.setField(bcObj, "set_param_count", api.makeFunctionRef("bc.set_param_count"));
  api.setField(bcObj, "set_param_names", api.makeFunctionRef("bc.set_param_names"));

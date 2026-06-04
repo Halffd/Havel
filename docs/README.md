@@ -6,6 +6,15 @@
 | Document | Description |
 |----------|-------------|
 | [Language Reference](language-reference.md) | Syntax, types, control flow, modules |
+| [REPL Guide](repl-guide.md) | REPL usage, commands, persistence, multi-line input |
+| [Compiler Pipeline](compiler-pipeline.md) | 5-stage pipeline: lexer, parser, semantic, bytecode, VM |
+| [VM Internals](vm-internals.md) | Value representation, dispatch loop, call frames, GC, module system |
+| [Stdlib Reference](stdlib-reference.md) | All standard library modules and functions |
+| [Error Handling](error-handling.md) | Error types, diagnostics, try/catch/finally, error codes |
+| [Concurrency](concurrency.md) | Goroutines, fibers, channels, threads, coroutines, scheduler |
+| [Build Guide](build-guide.md) | Dependencies, build modes, configuration, troubleshooting |
+| [Embedding Guide](embedding-guide.md) | Embedding Havel in C++ applications |
+| [Testing](testing.md) | C++ unit tests, script tests, bytecode smoke test, CI |
 | [Hotkey System](hotkey-system.md) | Hotkey registration, policies, prototype API, conditional hotkeys |
 | [Mode System](mode-system.md) | Mode definition, transitions, conditional hotkey integration |
 | [Host Functions](host-functions.md) | Complete reference for all built-in functions |

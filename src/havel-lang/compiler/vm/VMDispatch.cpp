@@ -27,7 +27,48 @@ void VM::executeInstruction(const Instruction &instruction) {
 // when closures from one chunk call host functions that modify current_chunk).
 if (frame_count_ > 0 && frame_arena_[frame_count_ - 1].chunk) {
         current_chunk = frame_arena_[frame_count_ - 1].chunk;
-    }
+}
+// Debug: trace all instructions in parseStatement
+if (frame_count_ > 0) {
+        auto& fn = currentFrame().function;
+        if (fn && fn->name.find("parseStatement") != std::string::npos) {
+                auto ip = currentFrame().ip;
+                if (ip == 0) {
+                        std::cerr << "[DBG-FUNC] parseStatement instructions=" << fn->instructions.size() << " constants=" << fn->constants.size() << "\n";
+                        // Dump constants 100-110
+                        for (uint32_t ci = 100; ci <= 110 && ci < fn->constants.size(); ci++) {
+                                std::cerr << "[DBG-CONST] [" << ci << "]=" << fn->constants[ci].toString() << "\n";
+                        }
+                        // Dump ip 816-840 and 955-965
+                        for (uint32_t d = 816; d <= 840 && d < fn->instructions.size(); d++) {
+                                auto& inst = fn->instructions[d];
+                                std::cerr << "[DBG-DUMP] ip=" << d << " opcode=" << static_cast<int>(inst.opcode);
+                                if (!inst.operands.empty()) {
+                                        std::cerr << " operands=";
+                                        for (size_t j = 0; j < inst.operands.size(); j++) {
+                                                if (j > 0) std::cerr << ",";
+                                                if (inst.operands[j].isInt()) std::cerr << inst.operands[j].asInt();
+                                                else std::cerr << "?";
+                                        }
+                                }
+                                std::cerr << "\n";
+                        }
+                        for (uint32_t d = 955; d < fn->instructions.size(); d++) {
+                                auto& inst = fn->instructions[d];
+                                std::cerr << "[DBG-DUMP] ip=" << d << " opcode=" << static_cast<int>(inst.opcode);
+                                if (!inst.operands.empty()) {
+                                        std::cerr << " operands=";
+                                        for (size_t j = 0; j < inst.operands.size(); j++) {
+                                                if (j > 0) std::cerr << ",";
+                                                if (inst.operands[j].isInt()) std::cerr << inst.operands[j].asInt();
+                                                else std::cerr << "?";
+                                        }
+                                }
+                                std::cerr << "\n";
+                        }
+                }
+        }
+}
     switch (instruction.opcode) {
   case OpCode::LOAD_CONST: {
     uint32_t const_index = instruction.operands[0].asInt();
@@ -55,11 +96,7 @@ case OpCode::LOAD_GLOBAL: {
   // First check regular globals (user variables shadow host functions)
   auto it = globals.find(name);
   if (it != globals.end()) {
-    if (name == "fs") {
-      fprintf(stderr, "[DBG LOAD_GLOBAL] 'fs' -> objId=%d\n", 
-        it->second.isObjectId() ? (int)it->second.asObjectId() : -1);
-    }
-    trackGlobalAccess(name);
+		trackGlobalAccess(name);
     pushStack(it->second);
     break;
   }
@@ -90,9 +127,9 @@ case OpCode::LOAD_GLOBAL: {
             } else {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
-            Value value = popStack();
+  Value value = popStack();
 
-    if (immutable_globals_.count(name)) {
+  if (immutable_globals_.count(name)) {
             auto existing = globals.find(name);
             if (existing != globals.end() && existing->second == value) {
                 break;

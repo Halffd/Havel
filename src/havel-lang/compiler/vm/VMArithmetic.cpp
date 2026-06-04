@@ -117,11 +117,22 @@ void VM::execBinaryOp(const Instruction &instruction) {
 		return;
 	}
 
-	if (instruction.opcode == OpCode::EQ || instruction.opcode == OpCode::NEQ) {
-		const bool equal = valuesEqualDeep(left, right);
-		pushStack(instruction.opcode == OpCode::EQ ? equal : !equal);
-		return;
-	}
+        if (instruction.opcode == OpCode::EQ || instruction.opcode == OpCode::NEQ) {
+                const bool equal = valuesEqualDeep(left, right);
+                bool result = instruction.opcode == OpCode::EQ ? equal : !equal;
+                // Debug: log EQ in parseStatement
+                if (frame_count_ > 0) {
+                        auto& fn = currentFrame().function;
+                        if (fn && fn->name.find("parseStatement") != std::string::npos) {
+                                std::cerr << "[DBG-EQ] ip=" << currentFrame().ip
+                                          << " left=" << left.toString()
+                                          << " right=" << right.toString()
+                                          << " eq=" << equal << " result=" << result << "\n";
+                        }
+                }
+                pushStack(result);
+                return;
+        }
 
 	if (instruction.opcode == OpCode::IS) {
 		bool identical = false;
@@ -769,16 +780,32 @@ void VM::execNegate() {
 }
 
 void VM::execJump(const Instruction &instruction) {
-	uint32_t target = instruction.operands[0].asInt();
-	currentFrame().ip = target;
+        uint32_t target = instruction.operands[0].asInt();
+        if (frame_count_ > 0) {
+                auto& fn = currentFrame().function;
+                if (fn && fn->name.find("parseStatement") != std::string::npos) {
+                        std::cerr << "[DBG-JMP] ip=" << currentFrame().ip << " target=" << target << "\n";
+                }
+        }
+        currentFrame().ip = target;
 }
 
 void VM::execJumpIfFalse(const Instruction &instruction) {
-	uint32_t target = instruction.operands[0].asInt();
-	Value condition = popStack();
-	if (!isTruthy(condition)) {
-		currentFrame().ip = target;
-	}
+        uint32_t target = instruction.operands[0].asInt();
+        Value condition = popStack();
+        if (frame_count_ > 0) {
+                auto& fn = currentFrame().function;
+                if (fn && fn->name.find("parseStatement") != std::string::npos) {
+                        std::cerr << "[DBG-JIF] ip=" << currentFrame().ip
+                                  << " target=" << target
+                                  << " cond=" << condition.toString()
+                                  << " truthy=" << isTruthy(condition)
+                                  << " will_jump=" << (!isTruthy(condition)) << "\n";
+                }
+        }
+        if (!isTruthy(condition)) {
+                currentFrame().ip = target;
+        }
 }
 
 void VM::execJumpIfTrue(const Instruction &instruction) {

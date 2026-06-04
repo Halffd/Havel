@@ -275,7 +275,7 @@ const std::unordered_map<std::string, BytecodeHostFunction>& getExtensionFunctio
 
 /**
  * Register extension function directly with HostBridge
- * Called by ExtensionLoader after loading extension
+ * Called by Loader after loading extension
  */
 void registerExtensionFunction(const std::string& fullName, BytecodeHostFunction fn) {
     auto& functions = const_cast<std::unordered_map<std::string, BytecodeHostFunction>&>(

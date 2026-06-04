@@ -205,3 +205,10 @@ void registerZoomModule(const VMApi &api) {
 }
 
 } // namespace havel::modules
+
+#ifdef HAVEL_MODULE_PLUGIN
+#include "loader/ModulePlugin.h"
+HAVEL_MODULE_PLUGIN_IMPL(zoom, "1.0.0", "Screen magnifier module",
+    havel::modules::registerZoomModule(*api);
+)
+#endif

@@ -18,7 +18,7 @@ option(ENABLE_IMGUI "Enable Dear ImGui native backend" OFF)
 option(ENABLE_QT "Enable Qt6 native backend (default)" ON)
 option(ENABLE_QT_UI_BACKEND "Build in-process Qt6 UI backend (fallback to dynamic extension)" ON)
 option(ENABLE_HEADLESS "Build without any GUI backend (server/headless mode)" OFF)
-option(ENABLE_MODULE_PLUGINS "Build stdlib/host modules as .so plugins" OFF)
+option(ENABLE_MODULE_PLUGINS "Build stdlib/host modules as .so plugins" ON)
 
 # ==============================================================================
 # COMPILER AND STANDARDS CONFIGURATION

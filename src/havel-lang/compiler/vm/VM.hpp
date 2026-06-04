@@ -1002,6 +1002,7 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
                                 int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
 
     Value loadModule(const std::string& path);
+  Value loadScript(const std::string& path);
 void registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn);
 bool ensureModuleLoaded(const std::string &name);
 bool isLazyModuleRegistered(const std::string &name) const;

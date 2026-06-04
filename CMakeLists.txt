@@ -84,6 +84,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
+find_package(OpenGL REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
@@ -124,6 +125,7 @@ find_library(XTEST_LIB Xtst REQUIRED)
 find_library(XRANDR_LIB Xrandr REQUIRED)  
 find_library(XINERAMA_LIB Xinerama REQUIRED)
 pkg_check_modules(XCOMPOSITE REQUIRED xcomposite)
+pkg_check_modules(XDAMAGE REQUIRED xdamage)
 
 if(NOT XTEST_LIB OR NOT XRANDR_LIB OR NOT XINERAMA_LIB)
     message(FATAL_ERROR "Missing X11 extension libraries. Install libxtst-dev libxrandr-dev libxinerama-dev")
@@ -433,6 +435,8 @@ if(NOT ENABLE_QT_UI_BACKEND)
 endif()
 
 # Explicitly add new modules (GLOB might not catch new files)
+list(APPEND HOST_MODULES_SOURCES "src/modules/zoom/ZoomService.cpp")
+list(APPEND HOST_MODULES_SOURCES "src/modules/zoom/ZoomModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/window/WindowMonitorModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/mouse/MouseModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/automation/AutomationModule.cpp")
@@ -634,7 +638,9 @@ ${XTEST_LIB}
 ${XRANDR_LIB}
 ${XINERAMA_LIB}
 ${XCOMPOSITE_LIBRARIES}
-Xfixes
+    ${XDAMAGE_LIBRARIES}
+    OpenGL::GL
+    Xfixes
 ${WAYLAND_LIBRARIES}
 ${PULSEAUDIO_LIBRARIES}
     ${PIPEWIRE_LIBRARIES}

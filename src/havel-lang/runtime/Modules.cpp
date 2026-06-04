@@ -38,6 +38,7 @@
 #include "../../modules/display/DisplayModule.hpp"
 #endif
 
+#include "../../modules/zoom/ZoomModule.hpp"
 namespace havel::stdlib {
 void registerMathModule(const compiler::VMApi &api);
 void registerStringModule(const compiler::VMApi &api);
@@ -550,6 +551,7 @@ void Modules::installStdLib() {
     tryPluginOrLazy(*this, "monitoringclipboard", [](compiler::VMApi &a) { modules::registerMonitoringClipboardModule(a); });
 #endif
     tryPluginOrLazy(*this, "ffi", [](compiler::VMApi &a) { modules::ffi::registerFFIModule(a); });
+    modules::registerZoomModule(api);
 #endif
 }
 

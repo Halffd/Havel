@@ -922,7 +922,7 @@ else if tt == TID.Arrow {
 if inMatchExpr {
 return null
 }
-if left == null or left.kind != TID.Identifier {
+        if left == null or left.kind != "Identifier" {
 return error("Arrow function requires identifier parameter", l, c)
 }
 paramName = left.name

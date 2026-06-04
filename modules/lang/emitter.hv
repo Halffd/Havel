@@ -1776,33 +1776,47 @@ if k == "LetDeclaration" {
         return
 
     }
-	if k == "TryStatement" {
-		emitter.tryDepth = emitter.tryDepth + 1
-		tryStart = bc.emit("TRY_ENTER", 0)
-		emitBlock(emitter, node.try_block)
-		bc.emit("TRY_EXIT")
-		overJump = bc.emit("JUMP", 0)
-		// Catch handler
-		bc.patch_jump(tryStart, bc.instr_count())
-		if node.catch_param != null {
-			bc.emit("LOAD_EXCEPTION")
-			cpIdx = scopeDeclare(emitter.scope, node.catch_param)
-			bc.emit("STORE_VAR", cpIdx)
-		}
-		else {
-			bc.emit("LOAD_EXCEPTION")
-			bc.emit("POP")
-		}
-		if node.catch_block != null {
-			emitBlock(emitter, node.catch_block)
-		}
-		endJump = bc.emit("JUMP", 0)
-		bc.patch_jump(overJump, bc.instr_count())
-		if node.finally_block != null {
-			emitBlock(emitter, node.finally_block)
-		}
-		bc.patch_jump(endJump, bc.instr_count())
-	return
+if k == "TryStatement" {
+    emitter.tryDepth = emitter.tryDepth + 1
+    tryEnterIp = bc.emit("TRY_ENTER", 0, 0)
+    emitBlock(emitter, node.try_block)
+    bc.emit("TRY_EXIT")
+    // Finally block on normal exit (after try succeeds)
+    finallyIp = 0
+    if node.finally_block != null {
+        finallyIp = bc.instr_count()
+        emitBlock(emitter, node.finally_block)
+    }
+    overJump = bc.emit("JUMP", 0)
+    // Catch handler
+    catchIp = bc.instr_count()
+    if node.catch_param != null {
+        bc.emit("LOAD_EXCEPTION")
+        cpIdx = scopeDeclare(emitter.scope, node.catch_param)
+        bc.emit("STORE_VAR", cpIdx)
+    }
+    else {
+        bc.emit("LOAD_EXCEPTION")
+        bc.emit("POP")
+    }
+    if node.catch_block != null {
+        emitBlock(emitter, node.catch_block)
+    }
+    // After catch, execute finally again
+    if node.finally_block != null {
+        emitBlock(emitter, node.finally_block)
+    }
+    endJump = bc.emit("JUMP", 0)
+    // Patch TRY_ENTER with catch_ip and finally_ip
+    bc.patch_operand(tryEnterIp, 0, catchIp)
+    if finallyIp > 0 {
+        bc.patch_operand(tryEnterIp, 1, finallyIp)
+    }
+    // Patch jumps
+    bc.patch_jump(overJump, bc.instr_count())
+    bc.patch_jump(endJump, bc.instr_count())
+    emitter.tryDepth = emitter.tryDepth - 1
+    return
 
 }
   if k == "UseStatement" {
@@ -2249,34 +2263,47 @@ fn emitIfExpr(emitter, node) {
     }
 }
 fn emitTryExpr(emitter, node) {
-	tryStart = bc.emit("TRY_ENTER", 0)
-	emitBlockWithReturn(emitter, node.try_block)
-	bc.emit("TRY_EXIT")
-	overJump = bc.emit("JUMP", 0)
-	// Catch handler
-	bc.patch_jump(tryStart, bc.instr_count())
-	if node.catch_param != null {
-		bc.emit("LOAD_EXCEPTION")
-		cpIdx = scopeDeclare(emitter.scope, node.catch_param)
-		bc.emit("STORE_VAR", cpIdx)
-	}
-	else {
-		bc.emit("LOAD_EXCEPTION")
-		bc.emit("POP")
-	}
-	if node.catch_block != null {
-		emitBlockWithReturn(emitter, node.catch_block)
-	}
-	else {
-		bc.emit("PUSH_NULL")
-	}
-	endJump = bc.emit("JUMP", 0)
-	bc.patch_jump(overJump, bc.instr_count())
-	if node.finally_block != null {
-		emitBlock(emitter, node.finally_block)
-	}
-	bc.patch_jump(endJump, bc.instr_count())
-
+    emitter.tryDepth = emitter.tryDepth + 1
+    tryEnterIp = bc.emit("TRY_ENTER", 0, 0)
+    emitBlockWithReturn(emitter, node.try_block)
+    bc.emit("TRY_EXIT")
+    // Finally block on normal exit
+    finallyIp = 0
+    if node.finally_block != null {
+        finallyIp = bc.instr_count()
+        emitBlock(emitter, node.finally_block)
+    }
+    overJump = bc.emit("JUMP", 0)
+    // Catch handler
+    catchIp = bc.instr_count()
+    if node.catch_param != null {
+        bc.emit("LOAD_EXCEPTION")
+        cpIdx = scopeDeclare(emitter.scope, node.catch_param)
+        bc.emit("STORE_VAR", cpIdx)
+    }
+    else {
+        bc.emit("LOAD_EXCEPTION")
+        bc.emit("POP")
+    }
+    if node.catch_block != null {
+        emitBlockWithReturn(emitter, node.catch_block)
+    }
+    else {
+        bc.emit("PUSH_NULL")
+    }
+    // After catch, execute finally again
+    if node.finally_block != null {
+        emitBlock(emitter, node.finally_block)
+    }
+    endJump = bc.emit("JUMP", 0)
+    // Patch TRY_ENTER with catch_ip and finally_ip
+    bc.patch_operand(tryEnterIp, 0, catchIp)
+    if finallyIp > 0 {
+        bc.patch_operand(tryEnterIp, 1, finallyIp)
+    }
+    bc.patch_jump(overJump, bc.instr_count())
+    bc.patch_jump(endJump, bc.instr_count())
+    emitter.tryDepth = emitter.tryDepth - 1
 }
 fn emitBlock(emitter, node) {
 if node == null {

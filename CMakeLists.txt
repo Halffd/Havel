@@ -337,14 +337,15 @@ list(APPEND CORE_SOURCES ${_HOST_CORE_SOURCES})
 
 # Non-Qt host files in Qt-dependency directories (always built)
 list(APPEND CORE_SOURCES
-  "src/host/module/ModuleLoader.cpp"
-  "src/host/module/ModularHostBridges.cpp"
-  "src/host/ui/GtkBackend.cpp"
-  "src/host/ui/ImGuiBackend.cpp"
-  "src/host/ui/UIManager.cpp"
-  "src/host/window/WindowService.cpp"
-  "src/Havel.cpp"
-)
+ "src/host/module/ModuleLoader.cpp"
+ "src/host/module/ModularHostBridges.cpp"
+ "src/host/ui/GtkBackend.cpp"
+ "src/host/ui/ImGuiBackend.cpp"
+ "src/host/ui/UIManager.cpp"
+ "src/host/window/WindowService.cpp"
+ "src/Havel.cpp"
+ "src/core/config/Config.c"
+ )
 
 # Qt-dependent core sources (only built when in-process Qt backend is enabled)
 if(ENABLE_QT_UI_BACKEND)
@@ -998,14 +999,15 @@ target_link_libraries(havel PRIVATE
 
 # LSP-specific sources (just lexer and parser, no Qt dependencies)
 set(LSP_SOURCES
-    src/havel-lang/lsp/main.cpp
-    src/havel-lang/lsp/LanguageServer.cpp
-    src/havel-lang/ast/AST.cpp
-    src/havel-lang/lexer/Lexer.cpp
-    src/havel-lang/parser/Parser.cpp
-  src/utils/LoggerC.c
-  src/loader/Loader.c
-)
+ src/havel-lang/lsp/main.cpp
+ src/havel-lang/lsp/LanguageServer.cpp
+ src/havel-lang/ast/AST.cpp
+ src/havel-lang/lexer/Lexer.cpp
+ src/havel-lang/parser/Parser.cpp
+ src/utils/LoggerC.c
+ src/core/config/Config.c
+ src/loader/Loader.c
+ )
 
 add_executable(havel-lsp ${LSP_SOURCES})
 
@@ -1042,11 +1044,12 @@ fmt::fmt
 # ==============================================================================
 if(ENABLE_HAVEL_LANG)
 set(HVTEST_SOURCES
-  src/hvtest/main.cpp
-  src/hvtest/smoke_runner.cpp
-  src/hvtest/test_scheduler_rig.cpp
-  src/utils/LoggerC.c
-)
+ src/hvtest/main.cpp
+ src/hvtest/smoke_runner.cpp
+ src/hvtest/test_scheduler_rig.cpp
+ src/utils/LoggerC.c
+ src/core/config/Config.c
+ )
 
 add_executable(hvtest ${HVTEST_SOURCES})
 set_target_properties(hvtest PROPERTIES

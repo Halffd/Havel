@@ -1,375 +1,274 @@
 /*
  * ConfigManager.hpp
  *
- * Configuration management with:
- * - INI-style parsing
- * - File watching for hot reload
- * - Callback system for config changes
- * - Thread-safe access
+ * Thin C++ wrapper over the C Config API (Config.h / Config.c).
+ * All state lives in the C implementation. This header provides
+ * backward-compatible C++ types and convenience methods.
  */
 #pragma once
 
-#ifdef HAVEL_CORE_PROFILE
-
-#include <algorithm>
-#include <cctype>
-#include <functional>
-#include <string>
-#include <vector>
-
-namespace havel {
-
-namespace ConfigPaths {
-inline std::string GetDefaultConfigDir() { return {}; }
-inline std::string CONFIG_DIR;
-inline std::string MAIN_CONFIG;
-inline std::string HOTKEYS_DIR;
-inline void SetConfigPath(const std::string &, const std::string & = "havel.cfg") {}
-inline std::string GetConfigPath() { return {}; }
-inline std::string GetConfigPath(const std::string &) { return {}; }
-inline void EnsureConfigDir() {}
-} // namespace ConfigPaths
-
-class Configs {
-public:
-  static Configs &Get() {
-    static Configs instance;
-    return instance;
-  }
-  ~Configs() = default;
-  void Load(const std::string & = "havel.cfg") {}
-  void Save(const std::string & = "") {}
-  void Reload() {}
-  std::string getPath() { return {}; }
-  static void SetPath(const std::string &) {}
-  void StartFileWatching(const std::string & = "havel.cfg") {}
-  void StopFileWatching() {}
-  void EnsureConfigFile(const std::string & = "havel.cfg") {}
-  template <typename T> T Get(const std::string &, const T &defaultVal) const {
-    return defaultVal;
-  }
-  void Set(const std::string &, const std::string &, bool = false) {}
-  template <typename T> void Set(const std::string &, const T &, bool = false) {}
-  bool Remove(const std::string &) { return false; }
-  bool Has(const std::string &) const { return false; }
-  void BeginBatch() {}
-  void EndBatch() {}
-  std::vector<std::string> GetAllKeys() const { return {}; }
-  bool GetVerboseKeyLogging() const { return false; }
-  bool GetVerboseWindowLogging() const { return false; }
-  bool GetVerboseConditionLogging() const { return false; }
-  std::vector<std::string> GetGamingApps() const { return {}; }
-  std::vector<std::string> GetGamingAppsExclude() const { return {}; }
-  std::vector<std::string> GetGamingAppsExcludeTitle() const { return {}; }
-  std::vector<std::string> GetGamingAppsTitle() const { return {}; }
-  std::vector<std::string> GetConfigs() const { return {}; }
-  using WatchCallback = std::function<void(const std::string &)>;
-  void Watch(const std::string &, WatchCallback) {}
-  template <typename T> void Watch(const std::string &, std::function<void(T)>) {}
-  void RequestSave() {}
-  void ForceSave() {}
-  void Print() const {}
-  template <typename T> static T Convert(const std::string &) { return T{}; }
-};
-
-inline void BackupConfig(const std::string & = "havel.cfg") {}
-
-} // namespace havel
-
-#else
-
-#include "core/config/ConfigObject.hpp"
-#include "types.hpp"
+#include "core/config/Config.h"
 #include "utils/Logger.hpp"
 
-#ifdef HAVE_QT_EXTENSION
-#include <QStandardPaths>
-#endif
-
 #include <algorithm>
-#include <atomic>
-#include <filesystem>
-#include <fstream>
-#include <functional>
-#include <iostream>
-#include <map>
-#include <mutex>
-#include <sstream>
+#include <cstring>
 #include <string>
-#include <thread>
-#include <unordered_map>
 #include <vector>
+#include <functional>
 
 namespace havel {
 
-// Path handling helper functions
 namespace ConfigPaths {
-// Config base directory
-std::string GetDefaultConfigDir();
+inline std::string GetDefaultConfigDir() {
+    char buf[4096];
+    HavelConfig_getConfigDir(buf, sizeof(buf));
+    return std::string(buf);
+}
 
-extern std::string CONFIG_DIR;
-extern std::string MAIN_CONFIG;
-extern std::string HOTKEYS_DIR;
+inline void SetConfigPath(const std::string &path, const std::string &basename = "havel.cfg") {
+    HavelConfig_setConfigPath(path.c_str(), basename.c_str());
+}
 
-void SetConfigPath(const std::string &path,
-                   const std::string &basename = "havel.cfg");
-std::string GetConfigPath();
-std::string GetConfigPath(const std::string &filename);
-void EnsureConfigDir();
+inline std::string GetConfigPath() {
+    char buf[4096];
+    HavelConfig_getConfigDir(buf, sizeof(buf));
+    return std::string(buf);
+}
+
+inline std::string GetConfigPath(const std::string &filename) {
+    char buf[4096];
+    HavelConfig_getConfigFilePath(filename.c_str(), buf, sizeof(buf));
+    return std::string(buf);
+}
+
+inline void EnsureConfigDir() {
+    HavelConfig_ensureConfigDir();
+}
 } // namespace ConfigPaths
 
-// Main configuration class
 class Configs {
 public:
-  // Default config values
-  static inline const std::vector<std::string> DEFAULT_GAMING_APPS = {
-      "steam_app_default"};
-  static inline const std::string GAMING_APPS_KEY = "General.GamingApps";
-  static inline constexpr double DEFAULT_BRIGHTNESS = 1.0;
-  static inline constexpr double STARTUP_BRIGHTNESS = 1.0;
-  static inline constexpr int STARTUP_GAMMA = 1000;
-  static inline constexpr double DEFAULT_BRIGHTNESS_AMOUNT = 0.05;
-  static inline constexpr double DEFAULT_GAMMA_AMOUNT = 50;
+    enum Level { LOG_DEBUG = 0, LOG_INFO = 1, LOG_WARNING = 2, LOG_ERROR = 3, LOG_FATAL = 4 };
 
-  // Singleton access
-  static Configs &Get();
+    static Configs &Get() {
+        static Configs instance;
+        return instance;
+    }
 
-  // Destructor
-  ~Configs();
+    void Load(const std::string &filename = "havel.cfg") {
+        HavelConfig_load(handle(), filename.c_str());
+    }
 
-  // File operations
-  void Load(const std::string &filename = "havel.cfg");
-  void Save(const std::string &filename = "");
-  void Reload();
+    void Save(const std::string &filename = "") {
+        HavelConfig_save(handle(), filename.empty() ? NULL : filename.c_str());
+    }
 
-  // Path access
-  std::string getPath();
-  static void SetPath(const std::string &newPath);
+    void Reload() {
+        HavelConfig_reload(handle());
+    }
 
-  // File watching
-  void StartFileWatching(const std::string &filename = "havel.cfg");
-  void StopFileWatching();
-  void EnsureConfigFile(const std::string &filename = "havel.cfg");
+    std::string getPath() {
+        return std::string(HavelConfig_getPath(handle()));
+    }
 
-  // Config access
-  template <typename T>
-  T Get(const std::string &key, const T &defaultVal) const {
-    return config.get<T>(key, defaultVal);
-  }
+    static void SetPath(const std::string &newPath) {
+        HavelConfig_setPath(newPath.c_str());
+    }
 
-    void Set(const std::string &key, const std::string &value, bool save = false);
+    void StartFileWatching(const std::string &filename = "havel.cfg") {
+        HavelConfig_startFileWatching(handle(), filename.c_str());
+    }
+
+    void StopFileWatching() {
+        HavelConfig_stopFileWatching(handle());
+    }
+
+    void EnsureConfigFile(const std::string &filename = "havel.cfg") {
+        HavelConfig_ensureConfigFile(handle(), filename.c_str());
+    }
+
+    // --- Typed getters (all specializations inline in class body) ---
+
+    template <typename T>
+    T Get(const std::string &key, const T &defaultVal) const {
+        // Fallback: return default for unsupported types
+        (void)key;
+        return defaultVal;
+    }
+
+    // --- Typed setters ---
+
+    // Typed setters — only explicit specializations exist (bool, int, double, string)
+    template <typename T>
+    void Set(const std::string &key, const T &value, bool save = false);
+
+    // String setter (non-template overload, not specialization)
+    void Set(const std::string &key, const std::string &value, bool save = false) {
+        HavelConfig_setString(handle(), key.c_str(), value.c_str(), save);
+    }
 
     bool Remove(const std::string &key) {
-        bool removed = config.remove(key);
-        if (removed) RequestSave();
-        return removed;
+        return HavelConfig_remove(handle(), key.c_str());
     }
 
     bool Has(const std::string &key) const {
-        return config.has(key);
+        return HavelConfig_has(handle(), key.c_str());
     }
 
-  // Convenience setters for numeric types
- template <typename T>
- void Set(const std::string &key, const T &value, bool save = false) {
- config.set<T>(key, value);
-    if (save)
-      RequestSave();
-  }
+    void BeginBatch() {}
+    void EndBatch() { HavelConfig_requestSave(handle()); }
 
-  // Batch mode - use RequestSave() for multiple changes
-  void BeginBatch() { savePending = false; } // Disable auto-save
-  void EndBatch() { RequestSave(); }         // Save all changes at once
-
-  // Get all config keys
-  std::vector<std::string> GetAllKeys() const { return config.keys(); }
-
-  // Convenience getters
-  bool GetVerboseKeyLogging() const {
-    return Get<bool>("Debug.VerboseKeyLogging", false);
-  }
-  bool GetVerboseWindowLogging() const {
-    return Get<bool>("Debug.VerboseWindowLogging", false);
-  }
-  bool GetVerboseConditionLogging() const {
-    return Get<bool>("Debug.VerboseConditionLogging", false);
-  }
-
-  // Gaming apps helpers
-  std::vector<std::string> GetGamingApps() const {
-    std::string apps = Get<std::string>("General.GamingApps", "");
-    std::vector<std::string> result;
-    std::stringstream ss(apps);
-    std::string item;
-    while (std::getline(ss, item, ',')) {
-      if (!item.empty())
-        result.push_back(item);
+    std::vector<std::string> GetAllKeys() const {
+        char** keys = nullptr;
+        size_t n = HavelConfig_getAllKeys(handle(), &keys);
+        std::vector<std::string> result;
+        result.reserve(n);
+        for (size_t i = 0; i < n; i++) result.emplace_back(keys[i]);
+        HavelConfig_freeKeys(keys, n);
+        return result;
     }
-    return result;
-  }
-  std::vector<std::string> GetGamingAppsExclude() const {
-    std::string apps = Get<std::string>("General.GamingAppsExclude", "");
-    std::vector<std::string> result;
-    std::stringstream ss(apps);
-    std::string item;
-    while (std::getline(ss, item, ',')) {
-      if (!item.empty())
-        result.push_back(item);
+
+    bool GetVerboseKeyLogging() const {
+        return HavelConfig_getVerboseKeyLogging(handle());
     }
-    return result;
-  }
-  std::vector<std::string> GetGamingAppsExcludeTitle() const {
-    std::string apps = Get<std::string>("General.GamingAppsExcludeTitle", "");
-    std::vector<std::string> result;
-    std::stringstream ss(apps);
-    std::string item;
-    while (std::getline(ss, item, ',')) {
-      if (!item.empty())
-        result.push_back(item);
+
+    bool GetVerboseWindowLogging() const {
+        return HavelConfig_getVerboseWindowLogging(handle());
     }
-    return result;
-  }
-  std::vector<std::string> GetGamingAppsTitle() const {
-    std::string apps = Get<std::string>("General.GamingAppsTitle", "");
-    std::vector<std::string> result;
-    std::stringstream ss(apps);
-    std::string item;
-    while (std::getline(ss, item, ',')) {
-      if (!item.empty())
-        result.push_back(item);
+
+    bool GetVerboseConditionLogging() const {
+        return HavelConfig_getVerboseConditionLogging(handle());
     }
-    return result;
-  }
 
-  // Get all config key-value pairs
-  std::vector<std::string> GetConfigs() const {
-    std::vector<std::string> configs;
-    for (const auto &[key, val] : config.values()) {
-      configs.push_back(key + "=" + val);
+    std::vector<std::string> GetGamingApps() const {
+        return splitComma(HavelConfig_getString(handle(), "General.GamingApps", ""));
     }
-    return configs;
-  }
+    std::vector<std::string> GetGamingAppsExclude() const {
+        return splitComma(HavelConfig_getString(handle(), "General.GamingAppsExclude", ""));
+    }
+    std::vector<std::string> GetGamingAppsExcludeTitle() const {
+        return splitComma(HavelConfig_getString(handle(), "General.GamingAppsExcludeTitle", ""));
+    }
+    std::vector<std::string> GetGamingAppsTitle() const {
+        return splitComma(HavelConfig_getString(handle(), "General.GamingAppsTitle", ""));
+    }
 
-  // Watch callbacks
-  using WatchCallback = std::function<void(const std::string &)>;
-  void Watch(const std::string &key, WatchCallback callback);
+    std::vector<std::string> GetConfigs() const {
+        char** entries = nullptr;
+        size_t n = HavelConfig_getConfigs(handle(), &entries);
+        std::vector<std::string> result;
+        result.reserve(n);
+        for (size_t i = 0; i < n; i++) result.emplace_back(entries[i]);
+        HavelConfig_freeEntries(entries, n);
+        return result;
+    }
 
-  // Template version for typed callbacks (caller converts string to type)
-  template <typename T>
-  void Watch(const std::string &key, std::function<void(T)> callback) {
-    Watch(key, [callback](const std::string &value) {
-      try {
-        callback(Convert<T>(value));
-      } catch (...) {
-        // Ignore conversion errors
-      }
-    });
-  }
+    using WatchCallback = std::function<void(const std::string &)>;
 
-  // Debounced save - call this instead of Save(true) for batch operations
-  void RequestSave();
-  void ForceSave(); // Immediate save, cancels pending save
+    void Watch(const std::string &key, WatchCallback callback) {
+        auto* heapCb = new WatchCallback(std::move(callback));
+        HavelConfig_watch(handle(), key.c_str(),
+            [](const char*, const char* v, void* ud) {
+                auto* cb = static_cast<WatchCallback*>(ud);
+                try { (*cb)(v); } catch (...) {}
+            }, heapCb);
+    }
 
-  // Debug
-  void Print() const;
+    void RequestSave() { HavelConfig_requestSave(handle()); }
+    void ForceSave()   { HavelConfig_forceSave(handle()); }
+    void Print() const { HavelConfig_print(handle()); }
 
-  // Type conversions (explicit specializations only)
-  template <typename T> static T Convert(const std::string &val);
+    template <typename T> static T Convert(const std::string &val);
 
 private:
-  // File system helpers
-  std::filesystem::file_time_type
-  GetLastModified(const std::string &filepath) const;
+    Configs() = default;
+    ~Configs() = default;
+    Configs(const Configs &) = delete;
+    Configs &operator=(const Configs &) = delete;
 
-  // Members
-  std::string path;
-  ConfigObject config; // Use ConfigObject instead of raw map
-  std::map<std::string, WatchCallback> watchers;
+    HavelConfig* handle() const { return HavelConfig_getInstance(); }
 
-  // File watching
-  std::atomic<bool> watching{false};
-  std::thread watchingThread;
-  std::mutex watchingMutex;
-
-  // Debounced save
-  std::atomic<bool> savePending{false};
-  std::thread saveThread;
-  std::mutex saveMutex;
-  static constexpr int SAVE_DELAY_MS = 500; // Debounce delay
+    static std::vector<std::string> splitComma(const char* s) {
+        std::vector<std::string> result;
+        if (!s || !*s) return result;
+        std::string str(s);
+        size_t start = 0;
+        while (start < str.size()) {
+            size_t comma = str.find(',', start);
+            std::string item = str.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            if (!item.empty()) result.push_back(item);
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+        return result;
+    }
 };
 
-// Inline implementation for Set (needs to call Save which is in cpp)
-inline void Configs::Set(const std::string &key, const std::string &value,
-                         bool save) {
-  config.setString(key, value);  // Use setString directly to avoid template issues
-  if (save) {
-    RequestSave(); // Use debounced save
-  }
-  // Notify watchers
-  for (auto &[watchKey, callback] : watchers) {
-    if (watchKey == key || watchKey.empty()) {
-      try {
-        callback(value);
-      } catch (...) {
-      }
-    }
-  }
-}
-
-// Convenience functions
-inline void BackupConfig(const std::string &path = "havel.cfg") {
-  std::string configPath = ConfigPaths::GetConfigPath(path);
-  namespace fs = std::filesystem;
-  try {
-    fs::path backupPath = configPath + ".bak";
-    if (fs::exists(configPath)) {
-      fs::copy_file(configPath, backupPath,
-                    fs::copy_options::overwrite_existing);
-    }
-  } catch (const fs::filesystem_error &e) {
-        havel::error("Config backup failed: {}", e.what());
-  }
-}
-
-inline void RestoreConfig(const std::string &path = "havel.cfg") {
-  std::string configPath = ConfigPaths::GetConfigPath(path);
-  namespace fs = std::filesystem;
-  try {
-    fs::path backupPath = configPath + ".bak";
-    if (fs::exists(backupPath)) {
-      fs::copy_file(backupPath, configPath,
-                    fs::copy_options::overwrite_existing);
-    }
-  } catch (const fs::filesystem_error &e) {
-        havel::error("Config restore failed: {}", e.what());
-  }
-}
-
-} // namespace havel
-
-#endif
-
-// Helper function to access config (use Configs::Get() directly)
-inline havel::Configs &Conf() { return havel::Configs::Get(); }
-
-// Template specializations for Configs::Convert
-namespace havel {
-template <> inline bool Configs::Convert<bool>(const std::string &val) {
-  std::string lower = val;
-  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-  return (lower == "true" || lower == "yes" || lower == "1" || lower == "on");
-}
-template <> inline int Configs::Convert<int>(const std::string &val) {
-  return std::stoi(val);
-}
-template <> inline double Configs::Convert<double>(const std::string &val) {
-  return std::stod(val);
-}
-template <> inline float Configs::Convert<float>(const std::string &val) {
-  return std::stof(val);
+// Explicit specializations of Get<T> — outside class body, after class is complete
+template <>
+inline std::string Configs::Get<std::string>(const std::string &key, const std::string &defaultVal) const {
+    return std::string(HavelConfig_getString(handle(), key.c_str(), defaultVal.c_str()));
 }
 template <>
-inline std::string Configs::Convert<std::string>(const std::string &val) {
-  return val;
+inline bool Configs::Get<bool>(const std::string &key, const bool &defaultVal) const {
+    return HavelConfig_getBool(handle(), key.c_str(), defaultVal);
 }
+template <>
+inline int Configs::Get<int>(const std::string &key, const int &defaultVal) const {
+    return HavelConfig_getInt(handle(), key.c_str(), defaultVal);
+}
+template <>
+inline double Configs::Get<double>(const std::string &key, const double &defaultVal) const {
+    return HavelConfig_getDouble(handle(), key.c_str(), defaultVal);
+}
+
+// Explicit specializations of Set<T> — outside class body
+template <>
+inline void Configs::Set<int>(const std::string &key, const int &value, bool save) {
+    HavelConfig_setInt(handle(), key.c_str(), value, save);
+}
+template <>
+inline void Configs::Set<long>(const std::string &key, const long &value, bool save) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%ld", value);
+    HavelConfig_setString(handle(), key.c_str(), buf, save);
+}
+template <>
+inline void Configs::Set<double>(const std::string &key, const double &value, bool save) {
+    HavelConfig_setDouble(handle(), key.c_str(), value, save);
+}
+template <>
+inline void Configs::Set<bool>(const std::string &key, const bool &value, bool save) {
+    HavelConfig_setBool(handle(), key.c_str(), value, save);
+}
+template <>
+inline void Configs::Set<const char*>(const std::string &key, const char* const &value, bool save) {
+    HavelConfig_setString(handle(), key.c_str(), value ? value : "", save);
+}
+template <>
+inline void Configs::Set<std::string>(const std::string &key, const std::string &value, bool save) {
+    HavelConfig_setString(handle(), key.c_str(), value.c_str(), save);
+}
+
+// Convert specializations
+template <> inline bool Configs::Convert<bool>(const std::string &val) {
+    std::string lower = val;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    return (lower == "true" || lower == "yes" || lower == "1" || lower == "on");
+}
+template <> inline int Configs::Convert<int>(const std::string &val) { return std::stoi(val); }
+template <> inline double Configs::Convert<double>(const std::string &val) { return std::stod(val); }
+template <> inline float Configs::Convert<float>(const std::string &val) { return std::stof(val); }
+template <> inline std::string Configs::Convert<std::string>(const std::string &val) { return val; }
+
+inline void BackupConfig(const std::string &path = "havel.cfg") {
+    std::string configPath = ConfigPaths::GetConfigPath(path);
+    std::string backupPath = configPath + ".bak";
+    if (rename(configPath.c_str(), backupPath.c_str()) != 0) {
+        havel::error("Config backup failed: {}", strerror(errno));
+    }
+}
+
 } // namespace havel
+
+inline havel::Configs &Conf() { return havel::Configs::Get(); }

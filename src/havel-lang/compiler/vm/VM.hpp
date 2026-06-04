@@ -824,13 +824,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     std::atomic<int> exit_code_{0};
   
   void setGlobal(std::string name, Value value) {
-    if (name == "fs") {
-      fprintf(stderr, "[DBG setGlobal] name='fs' objId=%d isObj=%d isNull=%d\n",
-        value.isObjectId() ? (int)value.asObjectId() : -1,
-        value.isObjectId() ? 1 : 0,
-        value.isNull() ? 1 : 0);
-    }
-    globals[std::move(name)] = std::move(value);
+	globals[std::move(name)] = std::move(value);
     emitVariableChanged(name);
   }
   void eraseGlobal(const std::string &name) {

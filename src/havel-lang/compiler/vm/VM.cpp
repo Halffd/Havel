@@ -1,6 +1,7 @@
 #include "VM.hpp"
 #include "VMInternals.hpp"
 #include "VMApi.hpp"
+#include <iostream>
 #include "../../../utils/Logger.hpp"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../../runtime/concurrency/Thread.hpp"
@@ -360,6 +361,12 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
         }
       }
     }
+  }
+
+  // Merge post-execution globals into saved_globals so new REPL definitions
+  // (functions, variables) persist across executePersistent calls.
+  for (auto& [name, val] : globals) {
+    saved_globals[name] = std::move(val);
   }
 
   // Restore globals state so the calling module context is unbroken
@@ -2090,10 +2097,17 @@ void VM::doReturn() {
     }
   }
 
-  Value ret = nullptr;
-    if (!stack.empty()) {
-        ret = popStack();
-    }
+        Value ret = nullptr;
+        if (!stack.empty()) {
+                ret = popStack();
+        }
+        // Debug: log return from parseStatement
+        if (frame_count_ > 0) {
+                auto& fn = frame_arena_[frame_count_ - 1].function;
+                if (fn && fn->name.find("parseStatement") != std::string::npos) {
+                        std::cerr << "[DBG-RET] from parseStatement ret=" << ret.toString() << "\n";
+                }
+        }
 
     // Materialize chunk-relative StringValId values into heap-stable StringId
     // while current_chunk still points to the callee's chunk. StringValId is
@@ -2523,36 +2537,29 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
 bool VM::ensureModuleLoaded(const std::string &name) {
   auto it = lazy_modules_.find(name);
   if (it == lazy_modules_.end()) {
-    fprintf(stderr, "[DBG ensureModuleLoaded] '%s' NOT found in lazy_modules_\n", name.c_str());
-    return false;
+        return false;
   }
   if (it->second.loaded) {
-    fprintf(stderr, "[DBG ensureModuleLoaded] '%s' already loaded\n", name.c_str());
-    return true;
+        return true;
   }
 
-  fprintf(stderr, "[DBG ensureModuleLoaded] '%s' loading now...\n", name.c_str());
-  VMApi api(*this);
+    VMApi api(*this);
   it->second.initFn(api);
-  it->second.loaded = true;
-  fprintf(stderr, "[DBG ensureModuleLoaded] '%s' initFn done\n", name.c_str());
+    it->second.loaded = true;
 
-  // Clear the __lazy__ flag on the proxy object so OBJECT_GET's
+    // Clear the __lazy__ flag on the proxy object so OBJECT_GET's
   // lazy module trap doesn't erase the module from globals
   auto git = globals.find(name);
   if (git != globals.end() && git->second.isObjectId()) {
     auto *obj = heap_.object(git->second.asObjectId());
     if (obj) {
-      auto *lf = obj->get("__lazy__");
-      fprintf(stderr, "[DBG ensureModuleLoaded] '%s' globals obj __lazy__ = %s\n", name.c_str(), lf ? (lf->isBool() ? (lf->asBool() ? "true" : "false") : "not bool") : "null");
-      if (lf && lf->isBool() && lf->asBool()) {
-        obj->set("__lazy__", Value(false));
-        fprintf(stderr, "[DBG ensureModuleLoaded] '%s' cleared __lazy__ to false\n", name.c_str());
-      }
+        auto *lf = obj->get("__lazy__");
+            if (lf && lf->isBool() && lf->asBool()) {
+            obj->set("__lazy__", Value(false));
+            }
     }
-  } else {
-    fprintf(stderr, "[DBG ensureModuleLoaded] '%s' NOT found in globals after loading!\n", name.c_str());
-  }
+    } else {
+    }
 
   return true;
 }
@@ -2567,8 +2574,7 @@ bool VM::isLazyModuleLoaded(const std::string &name) const {
 }
 
 Value VM::loadModule(const std::string& path) {
-  fprintf(stderr, "[DBG loadModule] path='%s'\n", path.c_str());
-  // Check cache via canonical ModuleLoader
+    // Check cache via canonical ModuleLoader
   if (moduleLoader_.isCached(path)) {
     Value cachedVal;
     if (moduleLoader_.getCached(path, &cachedVal)) {

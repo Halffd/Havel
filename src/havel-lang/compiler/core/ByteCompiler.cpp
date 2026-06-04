@@ -139,6 +139,8 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   top_level_function_indices_by_name_.clear();
   top_level_struct_names_.clear();
   top_level_class_names_.clear();
+  top_level_struct_names_.insert(known_struct_names_.begin(), known_struct_names_.end());
+  top_level_class_names_.insert(known_class_names_.begin(), known_class_names_.end());
   errors_.clear();
   has_error_ = false;
 

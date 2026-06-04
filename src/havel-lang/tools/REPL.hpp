@@ -188,6 +188,8 @@ private:
 
     // Known globals from previous executions (so compiler doesn't re-declare them)
     std::unordered_set<std::string> known_globals_;
+  std::unordered_set<std::string> known_class_names_;
+  std::unordered_set<std::string> known_struct_names_;
 
     // Interrupt flag for Ctrl-C handling
     static std::atomic<bool> interrupted_;

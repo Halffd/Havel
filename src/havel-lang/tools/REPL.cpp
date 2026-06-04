@@ -296,29 +296,63 @@ bool REPL::handleCommand(const std::string& input) {
         return false;
     }
 
-    if (input == ":globals") {
-        std::cout << "Known globals: ";
-        bool first = true;
-        for (const auto& g : known_globals_) {
-            if (!first) std::cout << ", ";
-            std::cout << g;
-            first = false;
-        }
-        std::cout << "\n";
-        return false;
+  if (input == ":globals") {
+    std::cout << "Known globals: ";
+    bool first = true;
+    for (const auto& g : known_globals_) {
+      if (!first) std::cout << ", ";
+      std::cout << g;
+      first = false;
     }
+    std::cout << "\n";
+    return false;
+  }
 
-    if (input == ":log") {
-        if (outputLog_.is_open()) {
-            std::cout << "Output log: " << config_.outputLogFile << "\n";
-        } else {
-            std::cout << "Output logging is disabled\n";
-        }
-        std::cout << "History file: " << historyFilePath_ << "\n";
-        return false;
+  if (input == ":classes") {
+    std::cout << "Known classes: ";
+    bool first = true;
+    for (const auto& c : known_class_names_) {
+      if (!first) std::cout << ", ";
+      std::cout << c;
+      first = false;
     }
+    std::cout << "\n";
+    if (!known_struct_names_.empty()) {
+      std::cout << "Known structs: ";
+      first = true;
+      for (const auto& s : known_struct_names_) {
+        if (!first) std::cout << ", ";
+        std::cout << s;
+        first = false;
+      }
+      std::cout << "\n";
+    }
+    return false;
+  }
 
-    return false; // Not a command
+  if (input == ":log") {
+    if (outputLog_.is_open()) {
+      std::cout << "Output log: " << config_.outputLogFile << "\n";
+    } else {
+      std::cout << "Output logging is disabled\n";
+    }
+    std::cout << "History file: " << historyFilePath_ << "\n";
+    return false;
+  }
+
+  if (input.rfind(":load ", 0) == 0 || input.rfind(":l ", 0) == 0) {
+    std::string filename = input.substr(input.find(' ') + 1);
+    while (!filename.empty() && filename.front() == ' ') filename.erase(0, 1);
+    while (!filename.empty() && filename.back() == ' ') filename.pop_back();
+    if (filename.empty()) {
+      printError(":load requires a filename");
+      return false;
+    }
+    executeFile(filename);
+    return false;
+  }
+
+  return false; // Not a command
 }
 
 void REPL::showHelp() const {
@@ -329,8 +363,10 @@ void REPL::showHelp() const {
     std::cout << "  help, ?          - Show this help\n";
     std::cout << "  clear, :clear    - Clear screen\n";
     std::cout << "  :bytecode, :bc   - Toggle bytecode debug output\n";
-    std::cout << "  :globals         - Show known global variables\n";
-    std::cout << "  :log             - Show output log and history file paths\n";
+  std::cout << " :globals - Show known global variables\n";
+  std::cout << " :classes - Show known classes and structs\n";
+  std::cout << " :load <file>, :l <file> - Load and execute a script file\n";
+  std::cout << " :log - Show output log and history file paths\n";
     std::cout << "\n";
     std::cout << "Keybindings:\n";
     std::cout << "  Up/Down          - Navigate history\n";
@@ -364,7 +400,9 @@ bool REPL::execute(const std::string& code) {
 
     // Tell compiler about globals from previous REPL lines
     // so `let x = 5` on line 1 means `x` resolves as Global on line 2
-    byteCompiler.setKnownGlobals(known_globals_);
+      byteCompiler.setKnownGlobals(known_globals_);
+      byteCompiler.setKnownClassNames(known_class_names_);
+      byteCompiler.setKnownStructNames(known_struct_names_);
 
     auto program = parser.produceAST(code);
     if (!program || parser.hasErrors()) {
@@ -400,9 +438,15 @@ vm_->storeReplChunk(sharedChunk);
 
 // Collect new global names from the resolver and add to known_globals_
 // so subsequent REPL lines know about variables declared here
-for (const auto& name : byteCompiler.lexicalResolution().global_variables) {
-known_globals_.insert(name);
-}
+      for (const auto& name : byteCompiler.lexicalResolution().global_variables) {
+        known_globals_.insert(name);
+      }
+      for (const auto& name : byteCompiler.topLevelClassNames()) {
+        known_class_names_.insert(name);
+      }
+      for (const auto& name : byteCompiler.topLevelStructNames()) {
+        known_struct_names_.insert(name);
+      }
 
 // Execute persistently (preserves globals between REPL lines)
 // executePersistent saves/restores current_chunk; storeReplChunk already

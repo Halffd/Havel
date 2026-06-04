@@ -2,6 +2,7 @@
 #include "../../utils/Logger.hpp"
 #include "core/config/ConfigManager.hpp"
 #include <X11/Xlib.h>
+#include <X11/extensions/Xrandr.h>
 #include <cstdlib>
 #include <iostream>
 

@@ -1,16 +1,14 @@
+#ifdef HAVE_QT_EXTENSION
+#include <qguiapplication_platform.h>
+#endif
 #include "core/brightness/BrightnessManager.hpp"
 #include "core/process/Launcher.hpp"
 #include "../../utils/Logger.hpp"
 #include "../../utils/DebugFlags.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/window/WindowManagerDetector.hpp"
-#include <X11/Xlib.h>
-#include <X11/extensions/Xrandr.h>
 #include <algorithm>
 #include <cmath>
-#ifdef HAVE_QT_EXTENSION
-#include <qguiapplication_platform.h>
-#endif
 #ifdef __WAYLAND__
 #include <wayland-client.h>
 #endif

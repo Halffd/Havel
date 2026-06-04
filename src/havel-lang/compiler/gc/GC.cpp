@@ -48,12 +48,14 @@ void GCHeap::addHeapBytes(size_t bytes) {
 }
 
 void GCHeap::subHeapBytes(size_t bytes) {
-    uint64_t cur = approx_heap_bytes_.load(std::memory_order_relaxed);
-    if (cur >= bytes) {
-        approx_heap_bytes_.fetch_sub(bytes, std::memory_order_relaxed);
-    } else {
-        approx_heap_bytes_.store(0, std::memory_order_relaxed);
-    }
+uint64_t cur = approx_heap_bytes_.load(std::memory_order_relaxed);
+while (cur >= bytes) {
+if (approx_heap_bytes_.compare_exchange_weak(cur, cur - bytes,
+std::memory_order_relaxed, std::memory_order_relaxed)) {
+return;
+}
+}
+approx_heap_bytes_.store(0, std::memory_order_relaxed);
 }
 
 void GCHeap::reset() {
@@ -86,8 +88,9 @@ void GCHeap::reset() {
     next_interval_id_ = 1;
     next_timeout_id_ = 1;
     next_channel_id_ = 1;
-    next_coroutine_id_ = 1;
-    next_error_id_ = 1;
+next_coroutine_id_ = 1;
+next_error_id_ = 1;
+next_enum_id_ = 1;
 
     allocations_since_last_ = 0;
     recovered_in_cycle_ = 0;
@@ -172,7 +175,7 @@ std::string *GCHeap::string(uint32_t id) {
 }
 
 const std::string *GCHeap::string(uint32_t id) const {
-    std::lock_guard<std::recursive_mutex> lock(const_cast<std::recursive_mutex&>(mutex_));
+std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = strings_.find(id);
     return it == strings_.end() ? nullptr : &it->second;
 }
@@ -216,7 +219,8 @@ SetRef GCHeap::allocateSet() {
 }
 
 RangeRef GCHeap::allocateRange(int64_t start, int64_t end, int64_t step) {
-    size_t est = sizeof(Range);
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+size_t est = sizeof(Range);
     checkHeapLimit(est);
     const uint32_t id = next_range_id_++;
     Range range;
@@ -231,7 +235,8 @@ RangeRef GCHeap::allocateRange(int64_t start, int64_t end, int64_t step) {
 ErrorRef GCHeap::allocateError(const std::string &errorType,
 const std::string &message,
 const std::string &stackTrace, uint32_t line, uint32_t column) {
-    size_t est = errorType.size() + message.size() + stackTrace.size() + sizeof(ErrorObject);
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+size_t est = errorType.size() + message.size() + stackTrace.size() + sizeof(ErrorObject);
     checkHeapLimit(est);
     const uint32_t id = next_error_id_++;
     errors_[id] = ErrorObject(errorType, message, stackTrace, line, column);
@@ -240,7 +245,8 @@ const std::string &stackTrace, uint32_t line, uint32_t column) {
 }
 
 IteratorRef GCHeap::allocateIterator(const Value &iterable) {
-    size_t est = sizeof(Iterator);
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+size_t est = sizeof(Iterator);
     checkHeapLimit(est);
     const uint32_t id = next_iterator_id_++;
     Iterator iter;
@@ -284,7 +290,8 @@ uint32_t GCHeap::registerEnumType(const std::string &name,
 }
 
 EnumRef GCHeap::allocateEnum(uint32_t typeId, uint32_t tag, size_t payloadCount) {
-    const uint32_t id = next_array_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_enum_id_++;
     enums_[id] = {tag, std::vector<Value>(payloadCount, Value::makeNull())};
     return EnumRef{.id = id, .tag = tag, .typeId = typeId};
 }
@@ -421,65 +428,74 @@ GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) {
 }
 
 const GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) const {
-    std::lock_guard<std::recursive_mutex> lock(const_cast<std::recursive_mutex&>(mutex_));
+std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = closures_.find(id);
     return it == closures_.end() ? nullptr : &it->second;
 }
 
 GCHeap::ArrayEntry *GCHeap::array(uint32_t id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    auto it = arrays_.find(id);
-    return it == arrays_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = arrays_.find(id);
+return it == arrays_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::ArrayEntry *GCHeap::array(uint32_t id) const {
-    auto it = arrays_.find(id);
-    return it == arrays_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = arrays_.find(id);
+return it == arrays_.end() ? nullptr : &it->second;
 }
 
 GCHeap::ObjectEntry *GCHeap::object(uint32_t id) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    auto it = objects_.find(id);
-    return it == objects_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = objects_.find(id);
+return it == objects_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::ObjectEntry *GCHeap::object(uint32_t id) const {
-    auto it = objects_.find(id);
-    return it == objects_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = objects_.find(id);
+return it == objects_.end() ? nullptr : &it->second;
 }
 
 std::unordered_map<std::string, Value> *GCHeap::set(uint32_t id) {
-    auto it = sets_.find(id);
-    return it == sets_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = sets_.find(id);
+return it == sets_.end() ? nullptr : &it->second;
 }
 
 const std::unordered_map<std::string, Value> *GCHeap::set(uint32_t id) const {
-    auto it = sets_.find(id);
-    return it == sets_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = sets_.find(id);
+return it == sets_.end() ? nullptr : &it->second;
 }
 
 GCHeap::Range *GCHeap::range(uint32_t id) {
-    auto it = ranges_.find(id);
-    return it == ranges_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = ranges_.find(id);
+return it == ranges_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::Range *GCHeap::range(uint32_t id) const {
-    auto it = ranges_.find(id);
-    return it == ranges_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = ranges_.find(id);
+return it == ranges_.end() ? nullptr : &it->second;
 }
 
-    GCHeap::Iterator *GCHeap::iterator(uint32_t id) {
-        auto it = iterators_.find(id);
-        return it == iterators_.end() ? nullptr : &it->second;
-    }
+GCHeap::Iterator *GCHeap::iterator(uint32_t id) {
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = iterators_.find(id);
+return it == iterators_.end() ? nullptr : &it->second;
+}
 
-    const GCHeap::Iterator *GCHeap::iterator(uint32_t id) const {
-        auto it = iterators_.find(id);
-        return it == iterators_.end() ? nullptr : &it->second;
-    }
+const GCHeap::Iterator *GCHeap::iterator(uint32_t id) const {
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = iterators_.find(id);
+return it == iterators_.end() ? nullptr : &it->second;
+}
 
 BoundMethodRef GCHeap::allocateBoundMethod(Value fn, Value self) {
-    size_t est = sizeof(BoundMethod);
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+size_t est = sizeof(BoundMethod);
     checkHeapLimit(est);
     const uint32_t id = next_bound_method_id_++;
     bound_methods_[id] = BoundMethod{fn, self};
@@ -487,24 +503,28 @@ BoundMethodRef GCHeap::allocateBoundMethod(Value fn, Value self) {
     return BoundMethodRef{.id = id};
 }
 
-    GCHeap::BoundMethod *GCHeap::boundMethod(uint32_t id) {
-        auto it = bound_methods_.find(id);
-        return it == bound_methods_.end() ? nullptr : &it->second;
-    }
+GCHeap::BoundMethod *GCHeap::boundMethod(uint32_t id) {
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = bound_methods_.find(id);
+return it == bound_methods_.end() ? nullptr : &it->second;
+}
 
-    const GCHeap::BoundMethod *GCHeap::boundMethod(uint32_t id) const {
-        auto it = bound_methods_.find(id);
-        return it == bound_methods_.end() ? nullptr : &it->second;
-    }
+const GCHeap::BoundMethod *GCHeap::boundMethod(uint32_t id) const {
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = bound_methods_.find(id);
+return it == bound_methods_.end() ? nullptr : &it->second;
+}
 
-    GCHeap::ErrorObject *GCHeap::error(uint32_t id) {
-    auto it = errors_.find(id);
-    return it == errors_.end() ? nullptr : &it->second;
+GCHeap::ErrorObject *GCHeap::error(uint32_t id) {
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = errors_.find(id);
+return it == errors_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::ErrorObject *GCHeap::error(uint32_t id) const {
-    auto it = errors_.find(id);
-    return it == errors_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = errors_.find(id);
+return it == errors_.end() ? nullptr : &it->second;
 }
 
 uint64_t GCHeap::pinExternalRoot(const Value &value) {
@@ -1474,14 +1494,12 @@ case IncrementalState::SweepWaitGroups:
       recovered_in_cycle_++;
     }
   }
-  if (sweep_index_ >= sweep_keys_.size()) {
-    gc_state_ = IncrementalState::Idle;
-    sweep_index_ = 0;
-  }
-  break;
-            gc_state_ = IncrementalState::Idle;
-            break;
-    }
+if (sweep_index_ >= sweep_keys_.size()) {
+gc_state_ = IncrementalState::Idle;
+sweep_index_ = 0;
+}
+break;
+}
 }
 
 void GCHeap::completeCollection() {
@@ -1602,55 +1620,64 @@ std::shared_ptr<GCHeap::UpvalueCell> GCHeap::createUpvalue(uint32_t index) {
 }
 
 ThreadRef GCHeap::allocateThreadObj(std::shared_ptr<::havel::Thread> thread) {
-    const uint32_t id = next_thread_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_thread_id_++;
     threads_.emplace(id, std::move(thread));
     return ThreadRef{.id = id};
 }
 
 IntervalRef GCHeap::allocateIntervalObj(std::shared_ptr<::havel::Interval> interval) {
-    const uint32_t id = next_interval_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_interval_id_++;
     intervals_.emplace(id, std::move(interval));
     return IntervalRef{.id = id};
 }
 
 TimeoutRef GCHeap::allocateTimeoutObj(std::shared_ptr<::havel::Timeout> timeout) {
-    const uint32_t id = next_timeout_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_timeout_id_++;
     timeouts_.emplace(id, std::move(timeout));
     return TimeoutRef{.id = id};
 }
 
 ChannelRef GCHeap::allocateChannel() {
-  const uint32_t id = next_channel_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_channel_id_++;
   channels_[id] = {};
   return ChannelRef{.id = id};
 }
 
 GCHeap::WaitGroupRef GCHeap::allocateWaitGroup() {
-  const uint32_t id = next_waitgroup_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_waitgroup_id_++;
   waitgroups_[id] = std::make_unique<WaitGroup>();
   return WaitGroupRef{.id = id};
 }
 
 uint32_t GCHeap::allocateThread() {
-    const uint32_t id = next_thread_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_thread_id_++;
     threads_[id] = nullptr;
     return id;
 }
 
 uint32_t GCHeap::allocateInterval() {
-    const uint32_t id = next_interval_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_interval_id_++;
     intervals_[id] = nullptr;
     return id;
 }
 
 uint32_t GCHeap::allocateTimeout() {
-    const uint32_t id = next_timeout_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_timeout_id_++;
     timeouts_[id] = nullptr;
     return id;
 }
 
 uint32_t GCHeap::allocateCoroutine(uint32_t function_index, uint32_t chunk_index) {
-    const uint32_t id = next_coroutine_id_++;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+const uint32_t id = next_coroutine_id_++;
     Coroutine co;
     co.function_index = function_index;
     co.chunk_index = chunk_index;
@@ -1661,53 +1688,63 @@ uint32_t GCHeap::allocateCoroutine(uint32_t function_index, uint32_t chunk_index
 }
 
 ::havel::Thread* GCHeap::thread(uint32_t id) {
-    auto it = threads_.find(id);
-    return it == threads_.end() ? nullptr : it->second.get();
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = threads_.find(id);
+return it == threads_.end() ? nullptr : it->second.get();
 }
 
 const ::havel::Thread* GCHeap::thread(uint32_t id) const {
-    auto it = threads_.find(id);
-    return it == threads_.end() ? nullptr : it->second.get();
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = threads_.find(id);
+return it == threads_.end() ? nullptr : it->second.get();
 }
 
 ::havel::Interval* GCHeap::interval(uint32_t id) {
-    auto it = intervals_.find(id);
-    return it == intervals_.end() ? nullptr : it->second.get();
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = intervals_.find(id);
+return it == intervals_.end() ? nullptr : it->second.get();
 }
 
 const ::havel::Interval* GCHeap::interval(uint32_t id) const {
-    auto it = intervals_.find(id);
-    return it == intervals_.end() ? nullptr : it->second.get();
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = intervals_.find(id);
+return it == intervals_.end() ? nullptr : it->second.get();
 }
 
 ::havel::Timeout* GCHeap::timeout(uint32_t id) {
-    auto it = timeouts_.find(id);
-    return it == timeouts_.end() ? nullptr : it->second.get();
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = timeouts_.find(id);
+return it == timeouts_.end() ? nullptr : it->second.get();
 }
 
 const ::havel::Timeout* GCHeap::timeout(uint32_t id) const {
-    auto it = timeouts_.find(id);
-    return it == timeouts_.end() ? nullptr : it->second.get();
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = timeouts_.find(id);
+return it == timeouts_.end() ? nullptr : it->second.get();
 }
 
 GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) {
-    auto it = coroutines_.find(id);
-    return it == coroutines_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = coroutines_.find(id);
+return it == coroutines_.end() ? nullptr : &it->second;
 }
 
 const GCHeap::Coroutine* GCHeap::coroutine(uint32_t id) const {
-  auto it = coroutines_.find(id);
-  return it == coroutines_.end() ? nullptr : &it->second;
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = coroutines_.find(id);
+return it == coroutines_.end() ? nullptr : &it->second;
 }
 
 GCHeap::WaitGroup* GCHeap::waitgroup(uint32_t id) {
-  auto it = waitgroups_.find(id);
-  return it == waitgroups_.end() ? nullptr : it->second.get();
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = waitgroups_.find(id);
+return it == waitgroups_.end() ? nullptr : it->second.get();
 }
 
 const GCHeap::WaitGroup* GCHeap::waitgroup(uint32_t id) const {
-  auto it = waitgroups_.find(id);
-  return it == waitgroups_.end() ? nullptr : it->second.get();
+std::lock_guard<std::recursive_mutex> lock(mutex_);
+auto it = waitgroups_.find(id);
+return it == waitgroups_.end() ? nullptr : it->second.get();
 }
 
 std::vector<std::pair<uint32_t, GCHeap::ObjectEntry>> GCHeap::drainFinalizers() {

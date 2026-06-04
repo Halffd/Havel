@@ -470,8 +470,9 @@ void snapshotSweepKeys();
     uint32_t next_object_id_ = 1;
     uint32_t next_set_id_ = 1;
     uint32_t next_range_id_ = 1;
-    uint32_t next_error_id_ = 1;
-    uint32_t next_iterator_id_ = 1;
+  uint32_t next_error_id_ = 1;
+  uint32_t next_enum_id_ = 1;
+  uint32_t next_iterator_id_ = 1;
     uint32_t next_bound_method_id_ = 1;
     uint32_t next_thread_id_ = 1;
     uint32_t next_interval_id_ = 1;
@@ -539,7 +540,7 @@ std::atomic<uint64_t> approx_heap_bytes_{0};
     std::vector<uint32_t> sweep_keys_;
     size_t sweep_index_ = 0;
     IncrementalState sweep_phase_ = IncrementalState::Idle;
-    std::recursive_mutex mutex_;
+    mutable std::recursive_mutex mutex_;
 
     std::vector<std::pair<uint32_t, ObjectEntry>> finalizer_queue_;
     bool hasFinalizers() const { return !finalizer_queue_.empty(); }

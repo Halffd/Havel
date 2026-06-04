@@ -139,8 +139,12 @@ ByteCompiler::compileImpl(const ast::Program &program) {
   top_level_function_indices_by_name_.clear();
   top_level_struct_names_.clear();
   top_level_class_names_.clear();
+  top_level_protocol_names_.clear();
+  top_level_impl_names_.clear();
   top_level_struct_names_.insert(known_struct_names_.begin(), known_struct_names_.end());
   top_level_class_names_.insert(known_class_names_.begin(), known_class_names_.end());
+  top_level_protocol_names_.insert(known_protocol_names_.begin(), known_protocol_names_.end());
+  top_level_impl_names_.insert(known_impl_names_.begin(), known_impl_names_.end());
   errors_.clear();
   has_error_ = false;
 
@@ -203,17 +207,29 @@ ByteCompiler::compileImpl(const ast::Program &program) {
           class_method_indices_by_node_[method.get()] = next_function_index++;
         }
       }
-if (statement && statement->kind == ast::NodeType::ImplDeclaration) {
-const auto &impl =
-static_cast<const ast::ImplDeclaration &>(*statement);
-std::string typeName = impl.typeName ? impl.typeName->symbol : "";
-for (const auto &method : impl.funcs) {
-if (!method || !method->name) continue;
-impl_method_nodes_.insert(method.get());
-			impl_method_type_names_[method.get()] = typeName;
-				function_indices_by_node_[method.get()] = next_function_index++;
-			}
-		}
+  if (statement && statement->kind == ast::NodeType::ImplDeclaration) {
+    const auto &impl =
+        static_cast<const ast::ImplDeclaration &>(*statement);
+    std::string typeName = impl.typeName ? impl.typeName->symbol : "";
+    std::string traitName = impl.traitName ? impl.traitName->symbol : "";
+    top_level_impl_names_.insert(traitName + " for " + typeName);
+    for (const auto &method : impl.funcs) {
+      if (!method || !method->name) continue;
+      impl_method_nodes_.insert(method.get());
+      impl_method_type_names_[method.get()] = typeName;
+      function_indices_by_node_[method.get()] = next_function_index++;
+    }
+  }
+  if (statement && statement->kind == ast::NodeType::ProtocolDeclaration) {
+    const auto &prot =
+        static_cast<const ast::ProtocolDeclaration &>(*statement);
+    if (prot.name) top_level_protocol_names_.insert(prot.name->symbol);
+  }
+  if (statement && statement->kind == ast::NodeType::TraitDeclaration) {
+    const auto &trait =
+        static_cast<const ast::TraitDeclaration &>(*statement);
+    if (trait.name) top_level_protocol_names_.insert(trait.name->symbol);
+  }
 		// Reserve function indices for protocol/trait default method bodies
 		// that will be injected into conforming types (per TypeChecker).
 		if (statement &&

@@ -190,6 +190,8 @@ private:
     std::unordered_set<std::string> known_globals_;
   std::unordered_set<std::string> known_class_names_;
   std::unordered_set<std::string> known_struct_names_;
+  std::unordered_set<std::string> known_protocol_names_;
+  std::unordered_set<std::string> known_impl_names_;
 
     // Interrupt flag for Ctrl-C handling
     static std::atomic<bool> interrupted_;

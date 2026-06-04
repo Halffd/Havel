@@ -47,11 +47,23 @@ public:
   void setKnownStructNames(const std::unordered_set<std::string> &names) {
     known_struct_names_ = names;
   }
+  void setKnownProtocolNames(const std::unordered_set<std::string> &names) {
+    known_protocol_names_ = names;
+  }
+  void setKnownImplNames(const std::unordered_set<std::string> &names) {
+    known_impl_names_ = names;
+  }
   const std::unordered_set<std::string> &topLevelClassNames() const {
     return top_level_class_names_;
   }
   const std::unordered_set<std::string> &topLevelStructNames() const {
     return top_level_struct_names_;
+  }
+  const std::unordered_set<std::string> &topLevelProtocolNames() const {
+    return top_level_protocol_names_;
+  }
+  const std::unordered_set<std::string> &topLevelImplNames() const {
+    return top_level_impl_names_;
   }
     void setTypeCheckResult(TypeCheckResult result) {
         type_check_result_ = std::move(result);
@@ -239,9 +251,11 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
       lambda_indices_by_node_;
   std::optional<uint32_t> current_function_slot_;
   std::unordered_map<std::string, uint32_t> top_level_function_indices_by_name_;
-    std::unordered_set<std::string> top_level_struct_names_;
-    std::unordered_set<std::string> top_level_class_names_;
-    std::unordered_set<std::string> decorated_function_names_;
+  std::unordered_set<std::string> top_level_struct_names_;
+  std::unordered_set<std::string> top_level_class_names_;
+  std::unordered_set<std::string> top_level_protocol_names_;
+  std::unordered_set<std::string> top_level_impl_names_;
+  std::unordered_set<std::string> decorated_function_names_;
     std::unordered_set<const ast::FunctionDeclaration *> impl_method_nodes_;
 std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_type_names_;
   uint32_t next_local_index = 0;
@@ -252,6 +266,8 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
   std::unordered_set<std::string> known_globals_;
   std::unordered_set<std::string> known_class_names_;
   std::unordered_set<std::string> known_struct_names_;
+  std::unordered_set<std::string> known_protocol_names_;
+  std::unordered_set<std::string> known_impl_names_;
 
   // Module loading
   ModuleLoader *module_loader_ = nullptr;

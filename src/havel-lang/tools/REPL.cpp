@@ -309,23 +309,53 @@ bool REPL::handleCommand(const std::string& input) {
   }
 
   if (input == ":classes") {
-    std::cout << "Known classes: ";
-    bool first = true;
-    for (const auto& c : known_class_names_) {
-      if (!first) std::cout << ", ";
-      std::cout << c;
-      first = false;
+    bool any = false;
+    if (!known_class_names_.empty()) {
+      std::cout << "Known classes: ";
+      bool first = true;
+      for (const auto& c : known_class_names_) {
+        if (!first) std::cout << ", ";
+        std::cout << c;
+        first = false;
+      }
+      std::cout << "\n";
+      any = true;
     }
-    std::cout << "\n";
     if (!known_struct_names_.empty()) {
       std::cout << "Known structs: ";
-      first = true;
+      bool first = true;
       for (const auto& s : known_struct_names_) {
         if (!first) std::cout << ", ";
         std::cout << s;
         first = false;
       }
       std::cout << "\n";
+      any = true;
+    }
+    if (!known_protocol_names_.empty()) {
+      std::cout << "Known protocols: ";
+      bool first = true;
+      for (const auto& p : known_protocol_names_) {
+        if (!first) std::cout << ", ";
+        std::cout << p;
+        first = false;
+      }
+      std::cout << "\n";
+      any = true;
+    }
+    if (!known_impl_names_.empty()) {
+      std::cout << "Known impls: ";
+      bool first = true;
+      for (const auto& i : known_impl_names_) {
+        if (!first) std::cout << ", ";
+        std::cout << i;
+        first = false;
+      }
+      std::cout << "\n";
+      any = true;
+    }
+    if (!any) {
+      std::cout << "No classes, structs, protocols, or impls defined yet.\n";
     }
     return false;
   }
@@ -364,7 +394,7 @@ void REPL::showHelp() const {
     std::cout << "  clear, :clear    - Clear screen\n";
     std::cout << "  :bytecode, :bc   - Toggle bytecode debug output\n";
   std::cout << " :globals - Show known global variables\n";
-  std::cout << " :classes - Show known classes and structs\n";
+  std::cout << " :classes - Show known classes, structs, protocols, and impls\n";
   std::cout << " :load <file>, :l <file> - Load and execute a script file\n";
   std::cout << " :log - Show output log and history file paths\n";
     std::cout << "\n";
@@ -400,9 +430,11 @@ bool REPL::execute(const std::string& code) {
 
     // Tell compiler about globals from previous REPL lines
     // so `let x = 5` on line 1 means `x` resolves as Global on line 2
-      byteCompiler.setKnownGlobals(known_globals_);
-      byteCompiler.setKnownClassNames(known_class_names_);
-      byteCompiler.setKnownStructNames(known_struct_names_);
+  byteCompiler.setKnownGlobals(known_globals_);
+  byteCompiler.setKnownClassNames(known_class_names_);
+  byteCompiler.setKnownStructNames(known_struct_names_);
+  byteCompiler.setKnownProtocolNames(known_protocol_names_);
+  byteCompiler.setKnownImplNames(known_impl_names_);
 
     auto program = parser.produceAST(code);
     if (!program || parser.hasErrors()) {
@@ -441,12 +473,18 @@ vm_->storeReplChunk(sharedChunk);
       for (const auto& name : byteCompiler.lexicalResolution().global_variables) {
         known_globals_.insert(name);
       }
-      for (const auto& name : byteCompiler.topLevelClassNames()) {
-        known_class_names_.insert(name);
-      }
-      for (const auto& name : byteCompiler.topLevelStructNames()) {
-        known_struct_names_.insert(name);
-      }
+  for (const auto& name : byteCompiler.topLevelClassNames()) {
+    known_class_names_.insert(name);
+  }
+  for (const auto& name : byteCompiler.topLevelStructNames()) {
+    known_struct_names_.insert(name);
+  }
+  for (const auto& name : byteCompiler.topLevelProtocolNames()) {
+    known_protocol_names_.insert(name);
+  }
+  for (const auto& name : byteCompiler.topLevelImplNames()) {
+    known_impl_names_.insert(name);
+  }
 
 // Execute persistently (preserves globals between REPL lines)
 // executePersistent saves/restores current_chunk; storeReplChunk already

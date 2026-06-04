@@ -13,6 +13,7 @@
 #include <functional>
 #include "../../../host/module/ModularHostBridges.hpp"
 #include "../../../modules/window/WindowMonitorModule.hpp"
+#include "../../../host/ui/UIManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "havel-lang/parser/Parser.h"
@@ -328,8 +329,10 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
         vm.setHostObjectField(hotkeyObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
       }
     }
-    vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
-  });
+vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
+});
+
+havel::host::UIManager::instance().setExtensionApi(getHavelAPI());
 
 options_.host_functions["extension.load"] =
 [this](const std::vector<Value> &args) {

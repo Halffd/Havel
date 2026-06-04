@@ -647,13 +647,32 @@ vm.setMainChunkShared(saved_main_chunk);
     }
     auto name = api.resolveString(args[0]);
     auto &vm = api.vm();
-    return vm.lookupGlobalByKey(name);
-});
+        return vm.lookupGlobalByKey(name);
+    });
 
-api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
-	    if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
-	        throw std::runtime_error("bc.serialize: requires path (string)");
-	    }
+    api.registerFunction("bc.set_global", [api](const std::vector<Value> &args) -> Value {
+        if (args.size() < 2 || (!args[0].isStringId() && !args[0].isStringValId())) {
+            throw std::runtime_error("bc.set_global: requires name (string) and value");
+        }
+        auto name = api.resolveString(args[0]);
+        auto &vm = api.vm();
+        vm.setGlobal(name, args[1]);
+        return args[1];
+    });
+
+    api.registerFunction("bc.set_script_dir", [api](const std::vector<Value> &args) -> Value {
+        if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+            throw std::runtime_error("bc.set_script_dir: requires dir (string)");
+        }
+        auto dir = api.resolveString(args[0]);
+        api.vm().setCurrentScriptDir(dir);
+        return Value::makeInt(0);
+    });
+
+    api.registerFunction("bc.serialize", [api](const std::vector<Value> &args) -> Value {
+        if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+            throw std::runtime_error("bc.serialize: requires path (string)");
+        }
 	    auto path = api.resolveString(args[0]);
 	    auto &chunk = *g_builder.chunk;
 	    if (chunk.getFunctionCount() == 0) {
@@ -947,7 +966,9 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
     api.setField(bcObj, "execute_persistent", api.makeFunctionRef("bc.execute_persistent"));
     api.setField(bcObj, "store_chunk", api.makeFunctionRef("bc.store_chunk"));
     api.setField(bcObj, "execute_stored", api.makeFunctionRef("bc.execute_stored"));
-api.setField(bcObj, "get_global", api.makeFunctionRef("bc.get_global"));
+    api.setField(bcObj, "get_global", api.makeFunctionRef("bc.get_global"));
+    api.setField(bcObj, "set_global", api.makeFunctionRef("bc.set_global"));
+    api.setField(bcObj, "set_script_dir", api.makeFunctionRef("bc.set_script_dir"));
   api.setField(bcObj, "func_count", api.makeFunctionRef("bc.func_count"));
   api.setField(bcObj, "instr_count", api.makeFunctionRef("bc.instr_count"));
   api.setField(bcObj, "const_count", api.makeFunctionRef("bc.const_count"));

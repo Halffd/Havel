@@ -1,0 +1,33 @@
+// Test all hotkey syntax patterns from hotkeys0.2.hv
+
+// Pipe-prefixed context hotkeys
+|rwin => { print "context rwin" }
+|*f13 => { print "wildcard f13" }
+|kc89 => { print "keycode 89" }
+|#Print => print "mod print"
+|Print => print "print"
+|+Print => print "shift print"
+|Pause => print "pause"
+
+// Combo hotkeys with &
+RShift & WheelUp => zoom(1)
+RShift & WheelDown => zoom(0)
+LButton & RButton => zoomToggle()
+RButton & LButton => zoom(1)
+RButton & WheelUp => zoom(1)
+RButton & WheelDown => zoom(0)
+
+// Timing/release hotkeys with :
+numpad5:up => mouse.up(1)
+numpadmult:up => mouse.up(2)
+numpadenter:up => mouse.up(3)
+numpad1:up => resetMouseAcc()
+numpad5:down => mouse.down(1)
+
+// Negated context hotkey
+!= => { print "not in context" }
+
+// Standard hotkeys still work
+F1 => { print "F1" }
+^+F2 => print "ctrl shift F2"
+!a => print "alt a"

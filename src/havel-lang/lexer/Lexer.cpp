@@ -989,7 +989,9 @@ Token Lexer::scanHotkey() {
        hotkey.find('~') != std::string::npos ||
        hotkey.find('$') != std::string::npos ||
        hotkey.find('&') != std::string::npos ||
-       hotkey.find(':') != std::string::npos || hotkey[0] == 'F')) {
+       hotkey.find(':') != std::string::npos ||
+       hotkey.find('|') != std::string::npos ||
+       hotkey[0] == 'F')) {
     return makeToken(hotkey, TokenType::Hotkey);
   }
 
@@ -1478,14 +1480,31 @@ if (c == '%' && peek() == '=') {
       }
       continue;
     }
-    if (c == '!' && peek() == '=') {
-      advance();
-      tokens.push_back(makeToken("!=", TokenType::NotEquals));
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
-    }
+if (c == '!' && peek() == '=') {
+// At statement start, != can be a hotkey (Alt+Equals) if followed by =>
+// Check: previous token is statement-level and next after != is =>
+bool prevIsStatementStart = tokens.empty() ||
+tokens.back().type == TokenType::NewLine ||
+tokens.back().type == TokenType::Semicolon ||
+tokens.back().type == TokenType::CloseBrace ||
+tokens.back().type == TokenType::EOF_TOKEN;
+if (prevIsStatementStart) {
+// Look ahead past != to see if => follows
+size_t look = position + 1; // past '='
+while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) look++;
+if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
+// It's a hotkey: scan as != hotkey token
+tokens.push_back(scanHotkey());
+continue;
+}
+}
+advance();
+tokens.push_back(makeToken("!=", TokenType::NotEquals));
+if (debug_lexer) {
+havel::debug("LEX: {}", tokens.back().toString());
+}
+continue;
+}
 
         // Handle (( )) bitwise expression delimiters
         if (c == '(' && peek() == '(' && !inBitwiseExpr) {
@@ -1636,51 +1655,69 @@ if (c == '%' && peek() == '=') {
         }
         continue;
       }
-      // |> pipeline operator
-      if (c == '|' && peek() == '>') {
-        advance();
-        tokens.push_back(makeToken("|>", TokenType::PipeRight));
-        if (debug_lexer) {
-          havel::debug("LEX: {}", tokens.back().toString());
-        }
-        continue;
-      }
+// |> pipeline operator
+if (c == '|' && peek() == '>') {
+advance();
+tokens.push_back(makeToken("|>", TokenType::PipeRight));
+if (debug_lexer) {
+havel::debug("LEX: {}", tokens.back().toString());
+}
+continue;
+}
+// | at statement start followed by hotkey chars = passthrough hotkey prefix
+// e.g. |rwin => {}, |+Print => ..., |#Print => ..., |key:up => ...
+if (c == '|' && !inBitwiseExpr) {
+bool prevIsStatementStart = tokens.empty() ||
+tokens.back().type == TokenType::NewLine ||
+tokens.back().type == TokenType::Semicolon ||
+tokens.back().type == TokenType::CloseBrace ||
+tokens.back().type == TokenType::EOF_TOKEN;
+if (prevIsStatementStart) {
+char next = peek();
+if (isAlpha(next) || next == '+' || next == '!' || next == '^' ||
+next == '#' || next == '@' || next == '~' || next == '$' ||
+next == '*') {
+tokens.push_back(scanHotkey());
+continue;
+}
+}
+}
 // Inside (( )), single | is bitwise OR, not pipeline
-  if (c == '|' && inBitwiseExpr) {
-    tokens.push_back(makeToken("|", TokenType::BitwiseOr));
-    if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
-    }
-    continue;
-  }
-  // Context-aware: if previous token suggests expression context, treat |
-  // as bitwise OR operator rather than pipeline
-  if (c == '|' && !tokens.empty()) {
-    TokenType prevType = tokens.back().type;
-    if (prevType == TokenType::Number ||
-        prevType == TokenType::Identifier ||
-        prevType == TokenType::String ||
-        prevType == TokenType::InterpolatedString ||
-        prevType == TokenType::MultilineString ||
-        prevType == TokenType::RegexString ||
-        prevType == TokenType::CloseParen ||
-        prevType == TokenType::CloseBracket ||
-        prevType == TokenType::Not ||
-        prevType == TokenType::Or ||
-        prevType == TokenType::And ||
-        prevType == TokenType::Assign ||
-        prevType == TokenType::BitwiseOr ||
-        prevType == TokenType::BitwiseAnd ||
-        prevType == TokenType::BitwiseXor ||
-        prevType == TokenType::ShiftLeft ||
-        prevType == TokenType::ShiftRight) {
-      tokens.push_back(makeToken("|", TokenType::BitwiseOr));
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
-    }
-  }
+if (c == '|' && inBitwiseExpr) {
+tokens.push_back(makeToken("|", TokenType::BitwiseOr));
+if (debug_lexer) {
+havel::debug("LEX: {}", tokens.back().toString());
+}
+continue;
+}
+// Context-aware: if previous token suggests expression context, treat |
+// as bitwise OR operator rather than pipeline
+if (c == '|' && !tokens.empty()) {
+TokenType prevType = tokens.back().type;
+if (prevType == TokenType::Number ||
+prevType == TokenType::Identifier ||
+prevType == TokenType::String ||
+prevType == TokenType::InterpolatedString ||
+prevType == TokenType::MultilineString ||
+prevType == TokenType::RegexString ||
+prevType == TokenType::CloseParen ||
+prevType == TokenType::CloseBracket ||
+prevType == TokenType::Not ||
+prevType == TokenType::Or ||
+prevType == TokenType::And ||
+prevType == TokenType::Assign ||
+prevType == TokenType::BitwiseOr ||
+prevType == TokenType::BitwiseAnd ||
+prevType == TokenType::BitwiseXor ||
+prevType == TokenType::ShiftLeft ||
+prevType == TokenType::ShiftRight) {
+tokens.push_back(makeToken("|", TokenType::BitwiseOr));
+if (debug_lexer) {
+havel::debug("LEX: {}", tokens.back().toString());
+}
+continue;
+}
+}
 
   // Handle <= and >=
   if (c == '<' && peek() == '=') {

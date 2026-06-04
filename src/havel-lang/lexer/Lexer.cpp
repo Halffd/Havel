@@ -988,10 +988,9 @@ Token Lexer::scanHotkey() {
        hotkey.find('@') != std::string::npos ||
        hotkey.find('~') != std::string::npos ||
        hotkey.find('$') != std::string::npos ||
-       hotkey.find('&') != std::string::npos ||
-       hotkey.find(':') != std::string::npos ||
-       hotkey.find('|') != std::string::npos ||
-       hotkey[0] == 'F')) {
+hotkey.find('&') != std::string::npos ||
+hotkey.find('|') != std::string::npos ||
+hotkey.find(':') != std::string::npos || hotkey[0] == 'F')) {
     return makeToken(hotkey, TokenType::Hotkey);
   }
 
@@ -1482,18 +1481,16 @@ if (c == '%' && peek() == '=') {
     }
 if (c == '!' && peek() == '=') {
 // At statement start, != can be a hotkey (Alt+Equals) if followed by =>
-// Check: previous token is statement-level and next after != is =>
+
 bool prevIsStatementStart = tokens.empty() ||
 tokens.back().type == TokenType::NewLine ||
 tokens.back().type == TokenType::Semicolon ||
 tokens.back().type == TokenType::CloseBrace ||
 tokens.back().type == TokenType::EOF_TOKEN;
 if (prevIsStatementStart) {
-// Look ahead past != to see if => follows
-size_t look = position + 1; // past '='
+size_t look = position + 1;
 while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) look++;
 if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
-// It's a hotkey: scan as != hotkey token
 tokens.push_back(scanHotkey());
 continue;
 }
@@ -1665,7 +1662,6 @@ havel::debug("LEX: {}", tokens.back().toString());
 continue;
 }
 // | at statement start followed by hotkey chars = passthrough hotkey prefix
-// e.g. |rwin => {}, |+Print => ..., |#Print => ..., |key:up => ...
 if (c == '|' && !inBitwiseExpr) {
 bool prevIsStatementStart = tokens.empty() ||
 tokens.back().type == TokenType::NewLine ||

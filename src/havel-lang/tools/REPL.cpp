@@ -320,44 +320,44 @@ bool REPL::handleCommand(const std::string& input) {
       }
       std::cout << "\n";
       any = true;
+  }
+  if (!known_struct_names_.empty()) {
+    std::cout << "Known structs: ";
+    bool first = true;
+    for (const auto& s : known_struct_names_) {
+      if (!first) std::cout << ", ";
+      std::cout << s;
+      first = false;
     }
-    if (!known_struct_names_.empty()) {
-      std::cout << "Known structs: ";
-      bool first = true;
-      for (const auto& s : known_struct_names_) {
-        if (!first) std::cout << ", ";
-        std::cout << s;
-        first = false;
-      }
-      std::cout << "\n";
-      any = true;
+    std::cout << "\n";
+    any = true;
+  }
+  if (!known_protocol_names_.empty()) {
+    std::cout << "Known protocols: ";
+    bool first = true;
+    for (const auto& p : known_protocol_names_) {
+      if (!first) std::cout << ", ";
+      std::cout << p;
+      first = false;
     }
-    if (!known_protocol_names_.empty()) {
-      std::cout << "Known protocols: ";
-      bool first = true;
-      for (const auto& p : known_protocol_names_) {
-        if (!first) std::cout << ", ";
-        std::cout << p;
-        first = false;
-      }
-      std::cout << "\n";
-      any = true;
+    std::cout << "\n";
+    any = true;
+  }
+  if (!known_impl_names_.empty()) {
+    std::cout << "Known impls: ";
+    bool first = true;
+    for (const auto& i : known_impl_names_) {
+      if (!first) std::cout << ", ";
+      std::cout << i;
+      first = false;
     }
-    if (!known_impl_names_.empty()) {
-      std::cout << "Known impls: ";
-      bool first = true;
-      for (const auto& i : known_impl_names_) {
-        if (!first) std::cout << ", ";
-        std::cout << i;
-        first = false;
-      }
-      std::cout << "\n";
-      any = true;
-    }
-    if (!any) {
-      std::cout << "No classes, structs, protocols, or impls defined yet.\n";
-    }
-    return false;
+    std::cout << "\n";
+    any = true;
+  }
+  if (!any) {
+    std::cout << "No classes, structs, protocols, or impls defined yet.\n";
+  }
+  return false;
   }
 
   if (input == ":log") {

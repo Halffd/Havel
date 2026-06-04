@@ -304,7 +304,20 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   auto saved_globals = globals;
   auto saved_globals_stack = globals_stack_;
 
-
+// Unwind to root globals: the bottom of the stack holds the globals
+// that were active before any module closure swapped them.
+if (!globals_stack_.empty()) {
+    auto root_globals = std::move(globals_stack_.front());
+    globals_stack_.erase(globals_stack_.begin());
+    // Merge any REPL-defined globals from saved_globals into root globals
+    // so definitions from previous executePersistent calls are visible.
+    for (auto& [name, val] : saved_globals) {
+        if (root_globals.find(name) == root_globals.end()) {
+            root_globals[name] = std::move(val);
+        }
+    }
+    globals = std::move(root_globals);
+}
 
   // Clear stack and locals for this execution, but PRESERVE:
   // - globals (user-defined variables persist)
@@ -346,36 +359,11 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
 
     runDispatchLoop(0);
 
-  // Before restoring saved_globals, capture any lazy module objects
-  // that were initialized during execution. These must be propagated
-  // to the caller's globals, otherwise the caller still has stale
-  // lazy proxy objects.
-  std::unordered_map<std::string, Value> lazyModuleUpdates;
-  for (const auto &lm : lazy_modules_) {
-    if (lm.second.loaded) {
-      auto git = globals.find(lm.first);
-      if (git != globals.end() && git->second.isObjectId()) {
-        auto *obj = heap_.object(git->second.asObjectId());
-        if (obj && !obj->get("__lazy__")) {
-          lazyModuleUpdates[lm.first] = git->second;
-        }
-      }
-    }
-  }
-
-  // Merge post-execution globals into saved_globals so new REPL definitions
-  // (functions, variables) persist across executePersistent calls.
-  size_t newGlobalsCount = 0;
-  for (auto& [name, val] : globals) {
-    if (saved_globals.find(name) == saved_globals.end()) {
-      newGlobalsCount++;
-    }
+// Merge post-execution globals back into saved_globals so new REPL
+// definitions (functions, variables) persist across executePersistent calls.
+for (auto& [name, val] : globals) {
     saved_globals[name] = std::move(val);
-  }
-  fprintf(stderr, "[DBG-EP] executePersistent merge: %zu new globals, entry=%s, depth=%d\n", newGlobalsCount, function_name.c_str(), bc_execute_depth_);
-  if (saved_globals.count("myVar")) {
-    fprintf(stderr, "[DBG-EP] myVar found in saved_globals after merge\n");
-  }
+}
 
   // Restore globals state so the calling module context is unbroken
   globals = std::move(saved_globals);

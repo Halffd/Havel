@@ -3961,12 +3961,17 @@ case ast::NodeType::CastExpression: {
           emit(OpCode::LOAD_VAR, temp_slot);
         };
 
-    if (assignment.operator_ == "=") {
-      if (rhs_is_missing) {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      } else {
-        compileExpression(*rhs_expr);
-      }
+  if (assignment.operator_ == "=") {
+    if (rhs_is_missing) {
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+    } else {
+      // Assignment RHS must NOT be in tail position — the result is consumed
+      // by the store operation. TAIL_CALL would RETURN before STORE_GLOBAL.
+      bool saved_tail = in_tail_position_;
+      in_tail_position_ = false;
+      compileExpression(*rhs_expr);
+      in_tail_position_ = saved_tail;
+    }
       if (target_id) {
         // Check for global scope assignment (::x = value)
         if (assignment.isGlobalScope) {

@@ -1,0 +1,52 @@
+// Reproduce all hotkeys0.2.hv parse errors
+
+// Line 667: |rwin => { }
+|rwin => {
+  print("rwin")
+}
+
+// Line 692: |*f13 => { }
+|*f13 => {
+  print("f13")
+}
+
+// Line 755: |kc89 => { }
+|kc89 => {
+  print("kc89")
+}
+
+// Line 959: RShift & WheelUp => zoom(1)
+RShift & WheelUp => print("zoom in")
+RShift & WheelDown => print("zoom out")
+
+// Line 964: LButton & RButton => zoomToggle()
+LButton & RButton => print("zoom toggle")
+RButton & LButton => print("zoom r+l")
+
+// Line 967: RButton & WheelUp => zoom(1)
+RButton & WheelUp => print("r+wu")
+RButton & WheelDown => print("r+wd")
+
+// Line 998: != => { }
+!= => {
+  print("alt+equals")
+}
+
+// Line 1057: |#Print => ...
+|#Print => print("super+print")
+|Print => print("print")
+|+Print => print("shift+print")
+|Pause => print("pause")
+
+// Line 1254: |numpad5 => mouse.down(1)
+|numpad5 => print("numpad5 down")
+
+// Line 1255: numpad5:up => mouse.up(1)
+numpad5:up => print("numpad5 up")
+numpadmult:up => print("numpadmult up")
+numpadenter:up => print("numpadenter up")
+numpad1:up => print("numpad1 up")
+numpad2:up => print("numpad2 up")
+numpad3:up => print("numpad3 up")
+
+print("all hotkey syntax parsed ok")

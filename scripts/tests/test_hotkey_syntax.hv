@@ -1,33 +1,37 @@
-// Test all hotkey syntax patterns from hotkeys0.2.hv
+// Test hotkey syntax forms
 
-// Pipe-prefixed context hotkeys
-|rwin => { print "context rwin" }
-|*f13 => { print "wildcard f13" }
-|kc89 => { print "keycode 89" }
-|#Print => print "mod print"
-|Print => print "print"
-|+Print => print "shift print"
-|Pause => print "pause"
+// Basic hotkey
+F1 => { print("F1") }
 
-// Combo hotkeys with &
-RShift & WheelUp => zoom(1)
-RShift & WheelDown => zoom(0)
-LButton & RButton => zoomToggle()
-RButton & LButton => zoom(1)
-RButton & WheelUp => zoom(1)
-RButton & WheelDown => zoom(0)
+// Modifier prefix
+^F2 => { print("Ctrl+F2") }
 
-// Timing/release hotkeys with :
-numpad5:up => mouse.up(1)
-numpadmult:up => mouse.up(2)
-numpadenter:up => mouse.up(3)
-numpad1:up => resetMouseAcc()
-numpad5:down => mouse.down(1)
+// Chord: identifier & identifier
+RShift & WheelUp => { print("chord") }
 
-// Negated context hotkey
-!= => { print "not in context" }
+// Timing modifier: key:up, key:down
+numpad5:up => { print("numpad5 up") }
+numpad5:down => { print("numpad5 down") }
 
-// Standard hotkeys still work
-F1 => { print "F1" }
-^+F2 => print "ctrl shift F2"
-!a => print "alt a"
+// != hotkey (Alt+Equals)
+!= => { print("alt+equals") }
+
+// Pipe passthrough prefix
+|F3 => { print("passthrough F3") }
+
+// More chord combinations
+LCtrl & Space => { print("ctrl+space chord") }
+
+// More timing modifiers
+numpadmult:up => { print("numpad mult up") }
+numpadenter:down => { print("numpad enter down") }
+numpad1:up => { print("numpad1 up") }
+
+// Passthrough with modifier
+|+Print => { print("passthrough shift+print") }
+|#Print => { print("passthrough super+print") }
+
+// Chord with timing modifier
+LShift & a:up => { print("shift+a up chord") }
+
+print("all hotkey syntax parsed ok")

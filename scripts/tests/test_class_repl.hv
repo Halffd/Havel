@@ -1,0 +1,13 @@
+class Point {
+  x, y
+  fn new(x, y) {
+    @x = x
+    @y = y
+  }
+  fn show() {
+    print("{@x},{@y}")
+  }
+}
+
+p = Point(3, 4)
+p.show()

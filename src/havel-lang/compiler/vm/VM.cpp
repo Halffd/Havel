@@ -2794,6 +2794,212 @@ Value exports = Value::makeObjectId(exportsObj.id);
     return exports;
 }
 
+Value VM::loadScript(const std::string& path) {
+  auto resolved = moduleLoader_.resolve(path, current_script_dir_);
+  if (!resolved) {
+    std::filesystem::path directPath(path);
+    std::error_code ec;
+    if (std::filesystem::exists(directPath, ec)) {
+      resolved = ModuleLoader::ResolvedModule{
+        ModuleLoader::ResolvedModule::UserSource,
+        std::filesystem::canonical(directPath, ec).string(),
+        path
+      };
+    }
+  }
+  if (!resolved) {
+    COMPILER_THROW("load: file not found: " + path);
+  }
+
+  std::string canonicalKey = resolved->canonicalPath;
+
+  if (modules_loading_.count(canonicalKey)) {
+    COMPILER_THROW("load: circular dependency: " + path);
+  }
+  modules_loading_.insert(canonicalKey);
+
+  std::string prev_script_dir = current_script_dir_;
+  std::shared_ptr<BytecodeChunk> chunk;
+
+  std::ifstream file(resolved->canonicalPath);
+  if (!file.is_open()) {
+    modules_loading_.erase(canonicalKey);
+    COMPILER_THROW("load: cannot open file: " + resolved->canonicalPath);
+  }
+  std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
+
+  parser::Parser parser{{}};
+  std::unique_ptr<ast::Program> program;
+  try {
+    program = parser.produceAST(source);
+  } catch (const ::havel::LexError &e) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: lexer error in " + path + ": " + e.what());
+  } catch (const ::havel::parser::ParseError &e) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: parse error in " + path + ": " + e.what());
+  }
+  if (!program || parser.hasErrors()) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    std::string errors;
+    if (parser.hasErrors()) {
+      for (const auto &err : parser.getErrors()) errors += err.message + "\n";
+    }
+    COMPILER_THROW("load: failed to parse " + path + ": " + errors);
+  }
+
+  ByteCompiler compiler;
+  try {
+    chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
+  } catch (const std::exception &e) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: compilation error in " + path + ": " + std::string(e.what()));
+  }
+  if (!chunk) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: compiler returned null chunk for " + path);
+  }
+
+  // Register protocol/impl info from AST with VM
+  for (const auto &stmt : program->body) {
+    if (!stmt) continue;
+    if (stmt->kind == ast::NodeType::ProtocolDeclaration) {
+      const auto &protDecl = static_cast<const ast::ProtocolDeclaration &>(*stmt);
+      std::unordered_set<std::string> methodNames;
+      for (const auto &method : protDecl.methods) {
+        if (method && method->name) methodNames.insert(method->name->symbol);
+      }
+      if (protDecl.name) registerProtocol(protDecl.name->symbol, methodNames);
+    }
+    if (stmt->kind == ast::NodeType::TraitDeclaration) {
+      const auto &traitDecl = static_cast<const ast::TraitDeclaration &>(*stmt);
+      std::unordered_set<std::string> methodNames;
+      for (const auto &method : traitDecl.methods) {
+        if (method && method->name) methodNames.insert(method->name->symbol);
+      }
+      if (traitDecl.name) registerProtocol(traitDecl.name->symbol, methodNames);
+    }
+    if (stmt->kind == ast::NodeType::ImplDeclaration) {
+      const auto &implDecl = static_cast<const ast::ImplDeclaration &>(*stmt);
+      std::string traitName = implDecl.traitName ? implDecl.traitName->symbol : "";
+      std::string typeName = implDecl.typeName ? implDecl.typeName->symbol : "";
+      if (!traitName.empty() && !typeName.empty()) {
+        registerProtocolImpl(traitName, typeName);
+      }
+    }
+  }
+
+  // Keep the chunk alive so closures/functions from this script remain valid
+  module_chunks_[canonicalKey] = chunk;
+
+  // Execute in caller's global scope (like executePersistent, not sandboxed)
+  // Save caller's execution state
+  auto saved_stack = stack;
+  auto saved_locals = locals;
+  auto saved_frame_count = frame_count_;
+  auto saved_frames = frame_arena_;
+  const BytecodeChunk *saved_chunk = current_chunk;
+  bool saved_exception = has_current_exception_;
+  Value saved_exception_val = current_exception_;
+
+  // Record pre-existing globals so we can wrap new function values
+  std::unordered_set<std::string> preExistingGlobals;
+  for (const auto& [name, value] : globals) {
+    preExistingGlobals.insert(name);
+  }
+
+  current_chunk = chunk.get();
+  const auto *entry = chunk->getFunction("__main__");
+  if (!entry) {
+    stack = std::move(saved_stack);
+    locals = std::move(saved_locals);
+    immutable_locals_.clear();
+    frame_count_ = saved_frame_count;
+    frame_arena_ = std::move(saved_frames);
+    current_chunk = saved_chunk;
+    has_current_exception_ = saved_exception;
+    current_exception_ = saved_exception_val;
+    current_script_dir_ = prev_script_dir;
+    modules_loading_.erase(canonicalKey);
+    COMPILER_THROW("load: script " + path + " has no __main__ function");
+  }
+
+  while (!stack.empty()) stack.pop();
+  locals.clear();
+  frame_count_ = 0;
+  open_upvalues.clear();
+  has_current_exception_ = false;
+  current_exception_ = nullptr;
+
+  if (frame_arena_.size() <= frame_count_) {
+    frame_arena_.push_back(CallFrame{entry, chunk.get(), 0, 0, 0});
+  } else {
+    frame_arena_[frame_count_] = CallFrame{entry, chunk.get(), 0, 0, 0};
+  }
+  frame_count_++;
+  locals.resize(entry->local_count);
+
+  Value exec_result;
+  try {
+    runDispatchLoop(0);
+    if (!stack.empty()) {
+      exec_result = stack.top();
+      stack.pop();
+    }
+  } catch (...) {
+    stack = std::move(saved_stack);
+    locals = std::move(saved_locals);
+    immutable_locals_.clear();
+    frame_count_ = saved_frame_count;
+    frame_arena_ = std::move(saved_frames);
+    current_chunk = saved_chunk;
+    has_current_exception_ = saved_exception;
+    current_exception_ = saved_exception_val;
+    current_script_dir_ = prev_script_dir;
+    modules_loading_.erase(canonicalKey);
+    throw;
+  }
+
+  // Wrap new FunctionObjId globals into closures so they survive chunk switch
+  for (auto& [name, val] : globals) {
+    if (val.isFunctionObjId() && !preExistingGlobals.count(name)) {
+      uint32_t fnIdx = val.asFunctionObjId();
+      if (chunk->getFunction(fnIdx)) {
+        auto ref = heap_.allocateClosure(
+          GCHeap::RuntimeClosure{
+            .function_index = fnIdx,
+            .chunk_index = 0,
+            .chunk = chunk.get(),
+            .module_globals = nullptr,
+            .upvalues = {}
+          });
+        val = Value::makeClosureId(ref.id);
+      }
+    }
+  }
+
+  // Restore caller's execution state (but keep the merged globals)
+  stack = std::move(saved_stack);
+  locals = std::move(saved_locals);
+  immutable_locals_.clear();
+  frame_count_ = saved_frame_count;
+  frame_arena_ = std::move(saved_frames);
+  current_chunk = saved_chunk;
+  has_current_exception_ = saved_exception;
+  current_exception_ = saved_exception_val;
+  current_script_dir_ = prev_script_dir;
+
+  modules_loading_.erase(canonicalKey);
+
+  return Value::makeBool(true);
+}
+
 Value VM::runInContext(const std::string& source, Value context) {
   globals_stack_.push_back(globals);
   auto old_mirror_id = globals_mirror_object_id_;

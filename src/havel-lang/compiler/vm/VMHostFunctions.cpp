@@ -1100,10 +1100,20 @@ registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
         Value::makeInt(static_cast<int64_t>(stats.collections)));
         setHostObjectField(object_ref, "lastPauseNs",
         Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
-	return Value::makeObjectId(object_ref.id);
-});
+  return Value::makeObjectId(object_ref.id);
+  });
 
-// Protocol operations
+  // load(path) - execute a script file in the current VM session
+  // Merges all definitions (globals, functions, classes, etc.) into caller's scope
+  registerHostFunction(
+    "load", 1, [this](const std::vector<Value> &args) {
+      if (args.empty()) COMPILER_THROW("load requires a file path string");
+      std::string path = resolveStringKey(args[0]);
+      if (path.empty()) COMPILER_THROW("load: path is empty");
+      return loadScript(path);
+    });
+
+  // Protocol operations
 registerHostFunction(
 	"prot.register", [this](const std::vector<Value> &args) {
 		if (args.empty() || !args[0].isStringValId()) {
@@ -1807,9 +1817,12 @@ void VM::registerDefaultHostGlobals() {
 	auto prot_obj = heap_.allocateObject();
 	setHostObjectField(prot_obj, "register", Value::makeHostFuncId(getHostFunctionIndex("prot.register")));
 	setHostObjectField(prot_obj, "impl", Value::makeHostFuncId(getHostFunctionIndex("prot.impl")));
-	setGlobal("prot", Value::makeObjectId(prot_obj.id));
+  setGlobal("prot", Value::makeObjectId(prot_obj.id));
 
-	// app global object with args and restart
+  // load() - script-level file loading
+  setGlobal("load", Value::makeHostFuncId(getHostFunctionIndex("load")));
+
+  // app global object with args and restart
   // Merge with existing app object if AppModule already registered one
   {
     auto appIt = globals.find("app");

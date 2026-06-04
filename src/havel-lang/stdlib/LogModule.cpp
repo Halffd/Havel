@@ -10,7 +10,6 @@ void registerLogModule(const VMApi &) {}
 void registerDebugModule(const VMApi &) {}
 
 } // namespace havel::stdlib
-#endif // HAVEL_CORE_PROFILE
 #else
 #include "../../utils/Logger.hpp"
 #include "core/config/ConfigManager.hpp"
@@ -203,3 +202,4 @@ void registerDebugModule(const VMApi &api) {
 }
 
 } // namespace havel::stdlib
+#endif // HAVEL_CORE_PROFILE

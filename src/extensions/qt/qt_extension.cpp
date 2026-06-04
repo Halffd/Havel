@@ -2768,7 +2768,7 @@ extern "C" void qt_set_app_metadata(const char* appName, const char* orgName, in
     if (bk) bk->setApplicationMetadata(meta);
 }
 
-extern "C" void havel_extension_init(HavelAPI* api) {
+static void qt_register_host_functions(HavelAPI* api) {
     /* Core */
     api->register_function("qt", "init", qt_init);
     api->register_function("qt", "exec", qt_exec);
@@ -2889,4 +2889,12 @@ extern "C" void havel_extension_init(HavelAPI* api) {
     api->register_function("qt", "canvasUndo", qt_canvasUndo);
     api->register_function("qt", "canvasGetImage", qt_canvasGetImage);
     api->register_function("qt", "canvasLassoSelect", qt_canvasLassoSelect);
+}
+
+extern "C" void havel_extension_init(HavelAPI* api) {
+    qt_register_host_functions(api);
+}
+
+void qt_toolkit_register_functions(void *api) {
+    qt_register_host_functions(static_cast<HavelAPI*>(api));
 }

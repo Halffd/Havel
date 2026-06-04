@@ -337,7 +337,6 @@ list(APPEND CORE_SOURCES ${_HOST_CORE_SOURCES})
 list(APPEND CORE_SOURCES
   "src/host/module/ModuleLoader.cpp"
   "src/host/module/ModularHostBridges.cpp"
-  "src/host/ui/ExtensionUIBridge.cpp"
   "src/host/ui/GtkBackend.cpp"
   "src/host/ui/ImGuiBackend.cpp"
   "src/host/ui/UIManager.cpp"
@@ -546,6 +545,16 @@ if(ENABLE_GTK OR UI_BACKEND STREQUAL "GTK")
     endif()
 else()
     set(GTK_BACKEND_AVAILABLE FALSE)
+# Check for GTK4 dev libs even when not selected as primary backend,
+# so toolkit plugin .so can still be built for dynamic loading.
+pkg_check_modules(GTK4_TOOLKIT gtk4)
+set(GTK4_TOOLKIT_AVAILABLE ${GTK4_TOOLKIT_FOUND})
+if(GTK4_TOOLKIT_AVAILABLE)
+pkg_check_modules(CAIRO_TOOLKIT cairo)
+if(CAIRO_TOOLKIT_FOUND)
+list(APPEND GTK4_TOOLKIT_INCLUDE_DIRS ${CAIRO_TOOLKIT_INCLUDE_DIRS})
+endif()
+endif()
 endif()
 
 # ==============================================================================
@@ -775,36 +784,8 @@ set_target_properties(imgui_extension PROPERTIES
 )
 endif()
 
-# Qt6 extension (Qt6 Widgets) - for additional dynamic UI capabilities
-# Uses dynamic loading but main executable still links Qt for core functionality
-if(QT_BACKEND_AVAILABLE)
-add_library(qt_extension MODULE 
-    src/extensions/qt/qt_extension.cpp
-)
-target_include_directories(qt_extension PRIVATE
-${CMAKE_SOURCE_DIR}/src
-${CMAKE_SOURCE_DIR}/include
-${CMAKE_SOURCE_DIR}/src/extensions
-${UI_BACKEND_INCLUDES}
-)
-target_link_libraries(qt_extension PRIVATE
-    havel_extension_runtime
-    Qt6::Core
-    Qt6::Widgets
-    dl
-)
-set_target_properties(qt_extension PROPERTIES
-    PREFIX ""
-    C_STANDARD 11
-    CXX_STANDARD 23
-    C_VISIBILITY_PRESET default
-    CXX_VISIBILITY_PRESET default
-    VISIBILITY_INLINES_HIDDEN OFF
-    INTERPROCEDURAL_OPTIMIZATION OFF
-)
-target_compile_options(qt_extension PRIVATE -fno-lto)
-target_link_options(qt_extension PRIVATE -fno-lto)
-endif() # QT_BACKEND_AVAILABLE
+# Qt6 extension merged into havel_toolkit_qt.so
+# (qt_extension.cpp is now compiled into the toolkit plugin)
 
 # ==============================================================================
 # TOOLKIT PLUGINS (per-toolkit .so providing all backends)
@@ -812,6 +793,7 @@ endif() # QT_BACKEND_AVAILABLE
 if(QT_BACKEND_AVAILABLE)
 add_library(havel_toolkit_qt MODULE
 src/extensions/qt/havel_toolkit_qt.cpp
+src/extensions/qt/qt_extension.cpp
 src/extensions/qt/QtScreenshotBackend.hpp
 src/extensions/qt/QtAltTabBackend.hpp
 src/extensions/qt/QtClipboardBackend.hpp
@@ -826,6 +808,7 @@ ${UI_BACKEND_INCLUDES}
 target_link_libraries(havel_toolkit_qt PRIVATE
 Qt6::Core Qt6::Widgets Qt6::Gui
 fmt::fmt
+havel_extension_runtime
 dl
 )
 target_compile_definitions(havel_toolkit_qt PRIVATE
@@ -844,6 +827,82 @@ INTERPROCEDURAL_OPTIMIZATION OFF
 target_compile_options(havel_toolkit_qt PRIVATE -fno-lto)
 target_link_options(havel_toolkit_qt PRIVATE -fno-lto -Wl,--allow-shlib-undefined)
 endif() # QT_BACKEND_AVAILABLE
+
+
+# GTK4 toolkit plugin
+if(GTK4_TOOLKIT_AVAILABLE OR GTK_BACKEND_AVAILABLE)
+add_library(havel_toolkit_gtk MODULE
+    src/extensions/gtk/havel_toolkit_gtk.cpp
+)
+set(_GTK_TK_INCLUDES ${GTK4_TOOLKIT_INCLUDE_DIRS})
+if(GTK_BACKEND_AVAILABLE)
+    set(_GTK_TK_INCLUDES ${GTK4_INCLUDE_DIRS})
+endif()
+list(APPEND _GTK_TK_INCLUDES
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/extensions
+    /usr/include/cairo
+    /usr/include/freetype2
+    /usr/include/libpng16
+    /usr/include/pixman-1
+)
+target_include_directories(havel_toolkit_gtk PRIVATE ${_GTK_TK_INCLUDES})
+set(_GTK_TK_LIBS ${GTK4_TOOLKIT_LIBRARIES})
+if(GTK_BACKEND_AVAILABLE)
+    set(_GTK_TK_LIBS ${GTK4_LIBRARIES})
+endif()
+target_link_libraries(havel_toolkit_gtk PRIVATE ${_GTK_TK_LIBS} dl)
+target_compile_definitions(havel_toolkit_gtk PRIVATE
+    HAVE_GTK_BACKEND
+    HAVEL_MODULE_PLUGIN
+)
+set_target_properties(havel_toolkit_gtk PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "havel_toolkit_gtk"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/toolkits"
+    CXX_STANDARD 23
+    C_VISIBILITY_PRESET default
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN OFF
+    INTERPROCEDURAL_OPTIMIZATION OFF
+)
+target_compile_options(havel_toolkit_gtk PRIVATE -fno-lto)
+target_link_options(havel_toolkit_gtk PRIVATE -fno-lto -Wl,--allow-shlib-undefined)
+endif()
+
+# ImGui toolkit plugin
+if(IMGUI_BACKEND_AVAILABLE)
+add_library(havel_toolkit_imgui MODULE
+    src/extensions/imgui/havel_toolkit_imgui.cpp
+)
+target_include_directories(havel_toolkit_imgui PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/extensions
+    ${GLFW3_INCLUDE_DIRS}
+    ${IMGUI_INCLUDE_DIR}
+)
+target_link_libraries(havel_toolkit_imgui PRIVATE
+    ${GLFW3_LIBRARIES}
+    OpenGL::GL
+    dl
+)
+target_compile_definitions(havel_toolkit_imgui PRIVATE
+    HAVE_IMGUI_BACKEND
+    HAVEL_MODULE_PLUGIN
+)
+set_target_properties(havel_toolkit_imgui PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "havel_toolkit_imgui"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/toolkits"
+    CXX_STANDARD 23
+    C_VISIBILITY_PRESET default
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN OFF
+    INTERPROCEDURAL_OPTIMIZATION OFF
+)
+target_compile_options(havel_toolkit_imgui PRIVATE -fno-lto)
+target_link_options(havel_toolkit_imgui PRIVATE -fno-lto -Wl,--allow-shlib-undefined)
+endif() # IMGUI_BACKEND_AVAILABLE
 
 # ==============================================================================
 # MAIN EXECUTABLE

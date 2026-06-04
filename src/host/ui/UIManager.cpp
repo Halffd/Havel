@@ -1,10 +1,7 @@
-/*
- * UIManager.cpp - UI backend manager implementation
- */
 #include "UIManager.hpp"
-#include "ExtensionUIBridge.hpp"
+#include "loader/Loader.hpp"
+#include "loader/ToolkitPlugin.h"
 
-// Include native backends conditionally based on compile-time flags
 #ifdef HAVE_QT_EXTENSION
 #include "QtBackend.hpp"
 #endif
@@ -17,41 +14,51 @@
 #include "ImGuiBackend.hpp"
 #endif
 
+#include <iostream>
+
 namespace havel::host {
 
 UIManager& UIManager::instance() {
-    static UIManager instance;
-    return instance;
+    static UIManager inst;
+    return inst;
+}
+
+void UIManager::destroyBackend() {
+    if (!backend_) return;
+    if (auto fn = backend_->getDestroyFn()) {
+        fn(backend_);
+    } else {
+        delete backend_;
+    }
+    backend_ = nullptr;
 }
 
 bool UIManager::setBackend(UIBackend::Api api) {
     if (api == UIBackend::Api::AUTO) {
         api = detectBestBackend();
     }
-    
-    // Check if already using this backend
+
     if (currentApi_ == api && backend_ != nullptr) {
         return true;
     }
-    
-    // Shutdown current backend
+
     if (backend_) {
         backend_->shutdown();
-        backend_.reset();
+        destroyBackend();
     }
-    
-    // Create new backend
-    backend_ = createBackend(api);
+
+    auto created = createBackend(api);
+    backend_ = created.release();
     if (!backend_) {
+        initialized_ = true;
         return false;
     }
-    
-    // Initialize
+
     if (!backend_->initialize()) {
-        backend_.reset();
+        destroyBackend();
         return false;
     }
-    
+
     currentApi_ = api;
     initialized_ = true;
     return true;
@@ -73,17 +80,9 @@ bool UIManager::setBackend(const std::string& apiName) {
 UIBackend* UIManager::backend() {
     if (!backend_ && !initialized_) {
         initialized_ = true;
-#if defined(HAVE_QT_EXTENSION)
-        setBackend(UIBackend::Api::QT);
-#elif defined(HAVE_GTK_BACKEND)
-        setBackend(UIBackend::Api::GTK);
-#elif defined(HAVE_IMGUI_BACKEND)
-        setBackend(UIBackend::Api::IMGUI);
-#else
-        setBackend(UIBackend::Api::QT);
-#endif
+        setBackend(detectBestBackend());
     }
-    return backend_.get();
+    return backend_;
 }
 
 UIBackend::Api UIManager::currentApi() const {
@@ -98,27 +97,31 @@ std::string UIManager::currentApiName() const {
 }
 
 bool UIManager::isBackendAvailable(UIBackend::Api api) const {
+    if (tryLoadToolkit(api)) {
+        return true;
+    }
+
     switch (api) {
-        case UIBackend::Api::QT:
-            // Check if Qt extension is available
-            {
-                auto extBridge = std::make_unique<ExtensionUIBridge>("qt");
-                return extBridge->isExtensionLoaded();
-            }
-        case UIBackend::Api::GTK:
-            #if defined(HAVE_GTK_BACKEND)
-                return true;
-            #else
-                return false;
-            #endif
-        case UIBackend::Api::IMGUI:
-            #if defined(HAVE_IMGUI_BACKEND)
-                return true;
-            #else
-                return false;
-            #endif
-        case UIBackend::Api::AUTO:
-            return true;
+    case UIBackend::Api::QT:
+#ifdef HAVE_QT_EXTENSION
+        return true;
+#else
+        return false;
+#endif
+    case UIBackend::Api::GTK:
+#ifdef HAVE_GTK_BACKEND
+        return true;
+#else
+        return false;
+#endif
+    case UIBackend::Api::IMGUI:
+#ifdef HAVE_IMGUI_BACKEND
+        return true;
+#else
+        return false;
+#endif
+    case UIBackend::Api::AUTO:
+        return true;
     }
     return false;
 }
@@ -135,31 +138,22 @@ bool UIManager::isBackendAvailable(const std::string& apiName) const {
 }
 
 UIBackend::Api UIManager::detectBestBackend() const {
-    // Check Qt extension availability first
     if (isBackendAvailable(UIBackend::Api::QT)) {
         return UIBackend::Api::QT;
     }
-    
-    #if defined(HAVE_GTK_BACKEND)
-        if (isBackendAvailable(UIBackend::Api::GTK)) {
-            return UIBackend::Api::GTK;
-        }
-    #endif
-    
-    #if defined(HAVE_IMGUI_BACKEND)
-        if (isBackendAvailable(UIBackend::Api::IMGUI)) {
-            return UIBackend::Api::IMGUI;
-        }
-    #endif
-    
-    // Default fallback
+    if (isBackendAvailable(UIBackend::Api::GTK)) {
+        return UIBackend::Api::GTK;
+    }
+    if (isBackendAvailable(UIBackend::Api::IMGUI)) {
+        return UIBackend::Api::IMGUI;
+    }
     return UIBackend::Api::QT;
 }
 
 void UIManager::shutdown() {
     if (backend_) {
         backend_->shutdown();
-        backend_.reset();
+        destroyBackend();
     }
     initialized_ = false;
     currentApi_ = UIBackend::Api::AUTO;
@@ -169,36 +163,70 @@ bool UIManager::isInitialized() const {
     return initialized_;
 }
 
-std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
+std::string UIManager::toolkitNameForApi(UIBackend::Api api) const {
     switch (api) {
-        case UIBackend::Api::QT:
+    case UIBackend::Api::QT:    return "qt";
+    case UIBackend::Api::GTK:   return "gtk";
+    case UIBackend::Api::IMGUI: return "imgui";
+    default: return "";
+    }
+}
+
+std::optional<ToolkitPlugin> UIManager::tryLoadToolkit(UIBackend::Api api) const {
+    std::string name = toolkitNameForApi(api);
+    if (name.empty()) return std::nullopt;
+
+    static Loader loader;
+    static bool paths_added = false;
+    if (!paths_added) {
+        loader.addToolkitPaths();
+        paths_added = true;
+    }
+
+    return loader.loadToolkitPlugin(name);
+}
+
+void UIManager::registerToolkitExtensions(const ToolkitPlugin &toolkit) const {
+    if (!toolkit.abi || !toolkit.abi->register_extension_functions || !extension_api_) return;
+    toolkit.abi->register_extension_functions(extension_api_);
+}
+
+std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
+    auto toolkit = tryLoadToolkit(api);
+    if (toolkit && toolkit->abi->create_ui_backend && toolkit->abi->destroy_ui_backend) {
+        void *raw = toolkit->abi->create_ui_backend();
+        if (!raw) return nullptr;
+
+        auto *destroy_fn = toolkit->abi->destroy_ui_backend;
+        UIBackend *backend = castUIBackend(raw);
+        backend->setDestroyFn(destroy_fn);
+
+        registerToolkitExtensions(*toolkit);
+
+        return std::unique_ptr<UIBackend>(backend);
+    }
+
+    switch (api) {
+    case UIBackend::Api::QT:
 #ifdef HAVE_QT_EXTENSION
-            // Use in-process QtBackend when Qt is linked directly
-            return std::make_unique<QtBackend>();
+        return std::make_unique<QtBackend>();
 #else
-            // Fall back to dynamic extension loading
-            {
-                auto extBridge = std::make_unique<ExtensionUIBridge>("qt");
-                if (extBridge->loadExtension()) {
-                    return extBridge;
-                }
-                return nullptr;
-            }
+        return nullptr;
 #endif
-        case UIBackend::Api::GTK:
-            #if defined(HAVE_GTK_BACKEND)
-                return std::make_unique<GtkBackend>();
-            #else
-                return nullptr;
-            #endif
-        case UIBackend::Api::IMGUI:
-            #if defined(HAVE_IMGUI_BACKEND)
-                return std::make_unique<ImGuiBackend>();
-            #else
-                return nullptr;
-            #endif
-        default:
-            return nullptr;
+    case UIBackend::Api::GTK:
+#ifdef HAVE_GTK_BACKEND
+        return std::make_unique<GtkBackend>();
+#else
+        return nullptr;
+#endif
+    case UIBackend::Api::IMGUI:
+#ifdef HAVE_IMGUI_BACKEND
+        return std::make_unique<ImGuiBackend>();
+#else
+        return nullptr;
+#endif
+    default:
+        return nullptr;
     }
 }
 

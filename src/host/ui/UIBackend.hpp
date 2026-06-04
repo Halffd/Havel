@@ -21,6 +21,10 @@ namespace havel::host {
  * Implementations: QtBackend, GtkBackend, ImGuiBackend
  */
 class UIBackend {
+private:
+    using DestroyFn = void(*)(void *);
+    DestroyFn destroy_fn_ = nullptr;
+
 public:
     enum class Api {
         QT,
@@ -30,6 +34,10 @@ public:
     };
 
     virtual ~UIBackend() = default;
+
+    void setDestroyFn(DestroyFn fn) { destroy_fn_ = fn; }
+    DestroyFn getDestroyFn() const { return destroy_fn_; }
+
 
     struct ApplicationMetadata {
         int* argc = nullptr;
@@ -132,9 +140,45 @@ public:
   // Styling
   virtual void applyStyle(std::shared_ptr<ui::UIElement> element, const std::string &key, const ui::PropValue &value) = 0;
 
-  // Canvas drawing
-  virtual void canvasFlush(std::shared_ptr<ui::UIElement> canvas) = 0;
-  virtual void canvasClear(std::shared_ptr<ui::UIElement> canvas) = 0;
+    // Canvas drawing
+    virtual void canvasFlush(std::shared_ptr<ui::UIElement> canvas) = 0;
+    virtual void canvasClear(std::shared_ptr<ui::UIElement> canvas) = 0;
+
+    // Canvas drawing extras (default no-op, Qt overrides)
+    virtual void canvasDrawLine(std::shared_ptr<ui::UIElement> canvasEl, int x1, int y1, int x2, int y2) { (void)canvasEl; (void)x1; (void)y1; (void)x2; (void)y2; }
+    virtual void canvasDrawRect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y, int w, int h) { (void)canvasEl; (void)x; (void)y; (void)w; (void)h; }
+    virtual void canvasDrawCircle(std::shared_ptr<ui::UIElement> canvasEl, int cx, int cy, int r) { (void)canvasEl; (void)cx; (void)cy; (void)r; }
+    virtual void canvasSetPen(std::shared_ptr<ui::UIElement> canvasEl, int r, int g, int b, int width) { (void)canvasEl; (void)r; (void)g; (void)b; (void)width; }
+    virtual void canvasFill(std::shared_ptr<ui::UIElement> canvasEl, int x, int y) { (void)canvasEl; (void)x; (void)y; }
+    virtual void canvasBeginStroke(std::shared_ptr<ui::UIElement> canvasEl) { (void)canvasEl; }
+    virtual void canvasEndStroke(std::shared_ptr<ui::UIElement> canvasEl) { (void)canvasEl; }
+    virtual bool canvasUndo(std::shared_ptr<ui::UIElement> canvasEl) { (void)canvasEl; return false; }
+    virtual std::vector<int> canvasLassoSelect(std::shared_ptr<ui::UIElement> canvasEl, int x, int y) { (void)canvasEl; (void)x; (void)y; return {}; }
+
+    // Timer (default no-op, Qt overrides)
+    using TimerCallback = std::function<void()>;
+    virtual int64_t timerCreate(int intervalMs, bool singleShot, TimerCallback cb) { (void)intervalMs; (void)singleShot; (void)cb; return 0; }
+    virtual void timerStart(int64_t timerId) { (void)timerId; }
+    virtual void timerStop(int64_t timerId) { (void)timerId; }
+    virtual bool timerIsActive(int64_t timerId) const { (void)timerId; return false; }
+    virtual void timerSetInterval(int64_t timerId, int intervalMs) { (void)timerId; (void)intervalMs; }
+    virtual void timerSetSingleShot(int64_t timerId, bool singleShot) { (void)timerId; (void)singleShot; }
+    virtual void timerDestroy(int64_t timerId) { (void)timerId; }
+
+    // Settings (default no-op, Qt overrides)
+    virtual void *settingsCreate(const std::string &org, const std::string &app) { (void)org; (void)app; return nullptr; }
+    virtual void settingsDestroy(void *settings) { (void)settings; }
+    virtual void settingsSetValue(void *settings, const std::string &key, const std::string &value) { (void)settings; (void)key; (void)value; }
+    virtual std::string settingsValue(void *settings, const std::string &key, const std::string &defaultValue) { (void)settings; (void)key; (void)defaultValue; return defaultValue; }
+    virtual bool settingsContains(void *settings, const std::string &key) { (void)settings; (void)key; return false; }
+    virtual void settingsRemove(void *settings, const std::string &key) { (void)settings; (void)key; }
+    virtual void settingsSync(void *settings) { (void)settings; }
+
+    // Extra dialogs (default no-op, Qt overrides)
+    virtual std::string colorPicker(const std::string &initialColor) { (void)initialColor; return ""; }
+    virtual std::string fontPicker(const std::string &initialFont) { (void)initialFont; return ""; }
+    virtual std::string inputText(const std::string &title, const std::string &label, const std::string &defaultValue) { (void)title; (void)label; (void)defaultValue; return ""; }
+    virtual int64_t inputInt(const std::string &title, const std::string &label, int defaultValue, int min, int max, int step) { (void)title; (void)label; (void)defaultValue; (void)min; (void)max; (void)step; return defaultValue; }
 };
 
 } // namespace havel::host

@@ -638,6 +638,10 @@ fn runSelfHosted(cfg) {
   }
 
     if isOn("timing") { startTimer("execute") }
+    if #cfg.scriptFiles > 0 {
+        scriptDir = string.split(cfg.scriptFiles[0], "/").slice(0, -1).join("/")
+        bc.set_script_dir(scriptDir)
+    }
     bc.execute_persistent(mainEntry)
     if isOn("timing") { endTimer("execute") }
 

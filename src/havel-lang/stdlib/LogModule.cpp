@@ -13,6 +13,7 @@ void registerDebugModule(const VMApi &) {}
 #else
 #include "../../utils/Logger.hpp"
 #include "core/config/ConfigManager.hpp"
+#include <fstream>
 #include <sstream>
 #include <chrono>
 #include <iomanip>

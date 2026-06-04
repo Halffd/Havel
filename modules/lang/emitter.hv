@@ -2454,14 +2454,20 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
         _handled = true
       }
       if !_handled && type(dv) == "object" && dv.kind == "BooleanLiteral" {
-        bc.set_default_value(di, bool(dv.value))
-        _handled = true
-      }
-      if !_handled && type(dv) == "object" && dv.kind == "NullLiteral" {
-        bc.set_default_value(di, null)
-      }
-    }
-    di = di + 1
+bv = dv.value == "true" || dv.value == true
+  bc.set_default_value(di, bv)
+  _handled = true
+}
+            if !_handled && type(dv) == "object" && dv.kind == "NullLiteral" {
+                bc.set_default_value(di, null)
+            }
+            if !_handled && type(dv) == "object" && dv.kind == "ArrayLiteral" {
+                if dv.elements == null || #dv.elements == 0 {
+                    bc.set_default_value(di, true)
+                }
+            }
+}
+di = di + 1
   }
   // Instance methods: store self (slot 0) into global 'this' for @field access
   if isInstanceMethod {
@@ -2537,11 +2543,12 @@ fn compileLambda(emitter, params, bodyNode, sourceLine) {
  _handled = true
  }
  if !_handled && type(dv) == "object" && dv.kind == "BooleanLiteral" {
- bc.set_default_value(di, bool(dv.value))
- _handled = true
- }
- if !_handled && type(dv) == "object" && dv.kind == "NullLiteral" {
- bc.set_default_value(di, null)
+bv = dv.value == "true" || dv.value == true
+  bc.set_default_value(di, bv)
+  _handled = true
+}
+if !_handled && type(dv) == "object" && dv.kind == "NullLiteral" {
+  bc.set_default_value(di, null)
  }
  }
  di = di + 1

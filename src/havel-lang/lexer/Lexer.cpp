@@ -988,8 +988,9 @@ Token Lexer::scanHotkey() {
        hotkey.find('@') != std::string::npos ||
        hotkey.find('~') != std::string::npos ||
        hotkey.find('$') != std::string::npos ||
-       hotkey.find('&') != std::string::npos ||
-       hotkey.find(':') != std::string::npos || hotkey[0] == 'F')) {
+hotkey.find('&') != std::string::npos ||
+hotkey.find('|') != std::string::npos ||
+hotkey.find(':') != std::string::npos || hotkey[0] == 'F')) {
     return makeToken(hotkey, TokenType::Hotkey);
   }
 
@@ -1478,14 +1479,28 @@ if (c == '%' && peek() == '=') {
       }
       continue;
     }
-    if (c == '!' && peek() == '=') {
-      advance();
-      tokens.push_back(makeToken("!=", TokenType::NotEquals));
-      if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
-      }
-      continue;
-    }
+if (c == '!' && peek() == '=') {
+// At statement start, != can be a hotkey (Alt+Equals) if followed by =>
+bool prevIsStatementStart = tokens.empty() ||
+tokens.back().type == TokenType::NewLine ||
+tokens.back().type == TokenType::Semicolon ||
+tokens.back().type == TokenType::CloseBrace ||
+tokens.back().type == TokenType::EOF_TOKEN;
+if (prevIsStatementStart) {
+size_t look = position + 1;
+while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) look++;
+if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
+tokens.push_back(scanHotkey());
+continue;
+}
+}
+advance();
+tokens.push_back(makeToken("!=", TokenType::NotEquals));
+if (debug_lexer) {
+havel::debug("LEX: {}", tokens.back().toString());
+}
+continue;
+}
 
         // Handle (( )) bitwise expression delimiters
         if (c == '(' && peek() == '(' && !inBitwiseExpr) {
@@ -1645,6 +1660,23 @@ if (c == '%' && peek() == '=') {
         }
         continue;
       }
+// | at statement start followed by hotkey chars = passthrough hotkey prefix
+if (c == '|' && !inBitwiseExpr) {
+bool prevIsStatementStart = tokens.empty() ||
+tokens.back().type == TokenType::NewLine ||
+tokens.back().type == TokenType::Semicolon ||
+tokens.back().type == TokenType::CloseBrace ||
+tokens.back().type == TokenType::EOF_TOKEN;
+if (prevIsStatementStart) {
+char next = peek();
+if (isAlpha(next) || next == '+' || next == '!' || next == '^' ||
+next == '#' || next == '@' || next == '~' || next == '$' ||
+next == '*') {
+tokens.push_back(scanHotkey());
+continue;
+}
+}
+}
 // Inside (( )), single | is bitwise OR, not pipeline
   if (c == '|' && inBitwiseExpr) {
     tokens.push_back(makeToken("|", TokenType::BitwiseOr));

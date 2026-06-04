@@ -407,9 +407,30 @@ known_globals_.insert(name);
 // Execute persistently (preserves globals between REPL lines)
 // executePersistent saves/restores current_chunk; storeReplChunk already
 // set it to this chunk, so after execution current_chunk points to sharedChunk.
-auto result = vm_->executePersistent(*sharedChunk, "__main__");
+  auto result = vm_->executePersistent(*sharedChunk, "__main__");
 
-if (!result.isNull()) {
+  // Wrap FunctionObjId globals into closures so cross-chunk calls work.
+  // A FunctionObjId is just a raw index — meaningless in a different chunk.
+  // Closures carry their chunk pointer, making them safe to call from any REPL line.
+  auto& g = vm_->globals;
+  for (auto& [name, val] : g) {
+    if (val.isFunctionObjId()) {
+      uint32_t fnIdx = val.asFunctionObjId();
+      if (sharedChunk->getFunction(fnIdx)) {
+        auto ref = vm_->getHeap().allocateClosure(
+          compiler::GCHeap::RuntimeClosure{
+            .function_index = fnIdx,
+            .chunk_index = 0,
+            .chunk = sharedChunk.get(),
+            .module_globals = nullptr,
+            .upvalues = {}
+          });
+        val = compiler::Value::makeClosureId(ref.id);
+      }
+    }
+  }
+
+  if (!result.isNull()) {
 printValue(vm_->toString(result));
 }
     return true;

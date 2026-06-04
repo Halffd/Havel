@@ -803,6 +803,7 @@ target_include_directories(havel_toolkit_qt PRIVATE
 ${CMAKE_SOURCE_DIR}/src
 ${CMAKE_SOURCE_DIR}/include
 ${CMAKE_SOURCE_DIR}/src/extensions
+${CMAKE_SOURCE_DIR}/src/havel-lang
 ${UI_BACKEND_INCLUDES}
 )
 target_link_libraries(havel_toolkit_qt PRIVATE

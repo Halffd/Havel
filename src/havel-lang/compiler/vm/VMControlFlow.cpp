@@ -267,8 +267,9 @@ case OpCode::TAIL_CALL: {
                         found_host = true;
                         // Set found_via_module if the object is in globals (likely a module/namespace)
                         // BUT NOT if the receiver is a class/struct prototype — those need self passed
-                        bool isClassProto = instanceObj->get("__class") != nullptr ||
-                                             instanceObj->get("__struct") != nullptr;
+          bool isClassProto = instanceObj->get("__class") != nullptr ||
+                              instanceObj->get("__struct") != nullptr ||
+                              instanceObj->get("__is_class") != nullptr;
                         if (!isClassProto) {
                             for (const auto &g : globals) {
                                 if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {

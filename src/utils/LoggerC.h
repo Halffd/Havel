@@ -87,4 +87,22 @@ void HavelLogger_criticalf(HavelLogger* logger, const char* format, ...)
 }
 #endif
 
+// Convenience macros — work in both C and C++
+// Usage: HAVEL_LOG_DEBUG("message") or HAVEL_LOGF_DEBUG("count: %d", n)
+#define HAVEL_LOG_DEBUG(msg)   HavelLogger_debug(HavelLogger_getInstance(), msg)
+#define HAVEL_LOG_INFO(msg)    HavelLogger_info(HavelLogger_getInstance(), msg)
+#define HAVEL_LOG_WARN(msg)    HavelLogger_warning(HavelLogger_getInstance(), msg)
+#define HAVEL_LOG_ERROR(msg)   HavelLogger_error(HavelLogger_getInstance(), msg)
+#define HAVEL_LOG_FATAL(msg)   HavelLogger_fatal(HavelLogger_getInstance(), msg)
+#define HAVEL_LOG_CRITICAL(msg) HavelLogger_critical(HavelLogger_getInstance(), msg)
+
+#define HAVEL_LOGF_DEBUG(fmt, ...)   HavelLogger_debugf(HavelLogger_getInstance(), fmt, __VA_ARGS__)
+#define HAVEL_LOGF_INFO(fmt, ...)    HavelLogger_infof(HavelLogger_getInstance(), fmt, __VA_ARGS__)
+#define HAVEL_LOGF_WARN(fmt, ...)    HavelLogger_warningf(HavelLogger_getInstance(), fmt, __VA_ARGS__)
+#define HAVEL_LOGF_ERROR(fmt, ...)   HavelLogger_errorf(HavelLogger_getInstance(), fmt, __VA_ARGS__)
+#define HAVEL_LOGF_FATAL(fmt, ...)   HavelLogger_fatalf(HavelLogger_getInstance(), fmt, __VA_ARGS__)
+#define HAVEL_LOGF_CRITICAL(fmt, ...) HavelLogger_criticalf(HavelLogger_getInstance(), fmt, __VA_ARGS__)
+
+#define HAVEL_LOGF(level, fmt, ...) HavelLogger_logf(HavelLogger_getInstance(), level, fmt, __VA_ARGS__)
+
 #endif // HAVEL_LOGGER_C_H

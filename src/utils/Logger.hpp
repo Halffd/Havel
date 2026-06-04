@@ -207,11 +207,33 @@ private:
     HavelLogger* handle() const { return HavelLogger_getInstance(); }
 };
 
+#undef HAVEL_LOG_DEBUG
+#undef HAVEL_LOG_INFO
+#undef HAVEL_LOG_WARN
+#undef HAVEL_LOG_ERROR
+#undef HAVEL_LOG_FATAL
+#undef HAVEL_LOG_CRITICAL
+#undef HAVEL_LOGF_DEBUG
+#undef HAVEL_LOGF_INFO
+#undef HAVEL_LOGF_WARN
+#undef HAVEL_LOGF_ERROR
+#undef HAVEL_LOGF_FATAL
+#undef HAVEL_LOGF_CRITICAL
+#undef HAVEL_LOGF
+
 #define HAVEL_LOG_DEBUG(...) havel::Logger::getInstance().debug(__VA_ARGS__)
 #define HAVEL_LOG_INFO(...) havel::Logger::getInstance().info(__VA_ARGS__)
 #define HAVEL_LOG_WARN(...) havel::Logger::getInstance().warning(__VA_ARGS__)
 #define HAVEL_LOG_ERROR(...) havel::Logger::getInstance().error(__VA_ARGS__)
 #define HAVEL_LOG_FATAL(...) havel::Logger::getInstance().fatal(__VA_ARGS__)
+#define HAVEL_LOG_CRITICAL(...) havel::Logger::getInstance().critical(__VA_ARGS__)
+
+#define HAVEL_LOGF_DEBUG(fmt, ...) havel::Logger::getInstance().debug(fmt, __VA_ARGS__)
+#define HAVEL_LOGF_INFO(fmt, ...) havel::Logger::getInstance().info(fmt, __VA_ARGS__)
+#define HAVEL_LOGF_WARN(fmt, ...) havel::Logger::getInstance().warning(fmt, __VA_ARGS__)
+#define HAVEL_LOGF_ERROR(fmt, ...) havel::Logger::getInstance().error(fmt, __VA_ARGS__)
+#define HAVEL_LOGF_FATAL(fmt, ...) havel::Logger::getInstance().fatal(fmt, __VA_ARGS__)
+#define HAVEL_LOGF_CRITICAL(fmt, ...) havel::Logger::getInstance().critical(fmt, __VA_ARGS__)
 
 inline void log(const std::string& message) {
     Logger::getInstance().info(message);

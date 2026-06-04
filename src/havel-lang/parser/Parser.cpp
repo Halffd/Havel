@@ -2779,7 +2779,80 @@ position = savePos; // restore position
       }
     }
 
-    // Check if this is a hotkey (identifier followed by =>)
+    // Check if this is a chord hotkey: identifier & identifier => action
+  // or a modifier hotkey: identifier:up => action, identifier:down => action
+  // Scan forward to see if we hit => before any statement terminator
+  if (at(1).type == havel::TokenType::BitwiseAnd ||
+      at(1).type == havel::TokenType::Colon) {
+    size_t scanPos = 1;
+    bool foundArrow = false;
+    while (at(scanPos).type != havel::TokenType::EOF_TOKEN &&
+           at(scanPos).type != havel::TokenType::Semicolon &&
+           at(scanPos).type != havel::TokenType::CloseBrace) {
+      if (at(scanPos).type == havel::TokenType::Arrow) {
+        foundArrow = true;
+        break;
+      }
+      scanPos++;
+    }
+    if (foundArrow) {
+      // Build a hotkey string from the tokens: "RShift & WheelUp" or "numpad5:up"
+      auto hotkeyToken = advance(); // consume the first identifier
+      std::string hotkeyStr = hotkeyToken.value;
+      // Consume tokens up to =>
+      while (at().type != havel::TokenType::Arrow) {
+        if (at().type == havel::TokenType::BitwiseAnd) {
+          hotkeyStr += " & ";
+          advance();
+        } else if (at().type == havel::TokenType::Colon) {
+          hotkeyStr += ":";
+          advance();
+        } else if (at().type == havel::TokenType::Identifier ||
+                   at().type == havel::TokenType::Number ||
+                   at().type == havel::TokenType::Hotkey) {
+          hotkeyStr += at().value;
+          advance();
+        } else if (at().type == havel::TokenType::NewLine) {
+          advance(); // skip newlines in chord expressions
+        } else {
+          hotkeyStr += at().value;
+          advance();
+        }
+      }
+      advance(); // consume =>
+
+      std::unique_ptr<havel::ast::BlockStatement> action;
+      if (at().type == havel::TokenType::OpenBrace) {
+        action = parseBlockStatement(true);
+      } else {
+        auto expr = parseExpression();
+        action = makeNode<havel::ast::BlockStatement>();
+        action->body.push_back(
+          makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+      }
+
+      // Check for suffix condition
+      std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
+      if (at().type == havel::TokenType::If) {
+        advance();
+        suffixCondition = parseExpression();
+      }
+
+      auto binding = makeNode<havel::ast::HotkeyBinding>();
+      binding->hotkeys.push_back(
+        makeNode<havel::ast::HotkeyLiteral>(hotkeyStr));
+      binding->action = std::move(action);
+
+      if (suffixCondition) {
+        auto finalCondition = combineConditions(nullptr, std::move(suffixCondition));
+        return makeNode<havel::ast::ConditionalHotkey>(
+          std::move(finalCondition), std::move(binding));
+      }
+      return binding;
+    }
+  }
+
+  // Check if this is a hotkey (identifier followed by =>)
     // or if it has prefix conditions like: a when mode == "gaming" => action
     if (at(1).type == havel::TokenType::When ||
         at(1).type == havel::TokenType::If ||

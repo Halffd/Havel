@@ -823,11 +823,14 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
   
-void setGlobal(std::string name, Value value) {
-    auto key = name;
-    globals[std::move(name)] = std::move(value);
-    emitVariableChanged(key);
-  }
+    void setGlobal(std::string name, Value value) {
+        auto key = name;
+        bool isObj = value.isObjectId();
+        uint32_t oid = isObj ? value.asObjectId() : 0xFFFFFFFF;
+        fprintf(stderr, "[DBG-SET] name='%s' isObj=%d oid=%u\n", key.c_str(), (int)isObj, oid);
+        globals[std::move(name)] = std::move(value);
+        emitVariableChanged(key);
+    }
   void eraseGlobal(const std::string &name) {
     globals.erase(name);
   }

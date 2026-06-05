@@ -31,6 +31,6 @@ public:
   static size_t conditionalCount();
 };
 
-void registerHotkeyModule(havel::compiler::VMApi &api);
+void registerHotkeyModule(const havel::compiler::VMApi &api);
 
 } // namespace havel::stdlib

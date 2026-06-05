@@ -5,6 +5,6 @@
 
 namespace havel::stdlib {
 
-void registerMathModule(havel::compiler::VMApi &api);
+void registerMathModule(const havel::compiler::VMApi &api);
 
 } // namespace havel::stdlib

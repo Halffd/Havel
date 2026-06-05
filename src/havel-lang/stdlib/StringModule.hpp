@@ -8,6 +8,6 @@
 
 namespace havel::stdlib {
 
-void registerStringModule(havel::compiler::VMApi &api);
+void registerStringModule(const havel::compiler::VMApi &api);
 
 } // namespace havel::stdlib

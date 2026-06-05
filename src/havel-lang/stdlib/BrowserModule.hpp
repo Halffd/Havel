@@ -4,6 +4,6 @@
 
 namespace havel::stdlib {
 
-void registerBrowserModule(havel::compiler::VMApi &api);
+void registerBrowserModule(const havel::compiler::VMApi &api);
 
 } // namespace havel::stdlib

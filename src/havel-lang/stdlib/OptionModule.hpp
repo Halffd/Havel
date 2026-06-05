@@ -3,6 +3,6 @@
 
 namespace havel::stdlib {
 
-void registerOptionModule(havel::compiler::VMApi &api);
+void registerOptionModule(const havel::compiler::VMApi &api);
 
 } // namespace havel::stdlib

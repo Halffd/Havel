@@ -23,7 +23,7 @@
 #endif
 
 #ifdef HAVE_QT_EXTENSION
-#include "../clipboard/ClipboardManager.hpp"
+#include "../../extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #endif
 
 namespace havel::host {

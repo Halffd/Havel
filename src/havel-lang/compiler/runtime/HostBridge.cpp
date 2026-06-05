@@ -330,11 +330,9 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
       }
     }
 vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
-});
+  });
 
-havel::host::UIManager::instance().setExtensionApi(getHavelAPI());
-
-options_.host_functions["extension.load"] =
+  options_.host_functions["extension.load"] =
 [this](const std::vector<Value> &args) {
   if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
   extensionLoader_->loadExtensionWithInit(args[0].toString(), getHavelAPI());

@@ -14,8 +14,10 @@
 #include "ModulePlugin.h"
 #include "ToolkitPlugin.h"
 #include "extensions/HavelCAPI.h"
+#include "havel-lang/core/Value.hpp"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -44,7 +46,22 @@ struct ToolkitPlugin {
 
 class Loader {
 public:
-    Loader() : handle_(havel_loader_create()) {}
+  enum class SourceType {
+    UserSource,
+    StdlibSource,
+    PackageSource,
+    BytecodeCache,
+    Cached,
+    NativeExtension,
+  };
+
+  struct ResolvedModule {
+    SourceType type;
+    std::string resolvedPath;
+    std::string originalName;
+  };
+
+  Loader() : handle_(havel_loader_create()) {}
 
     ~Loader() {
         if (handle_) {
@@ -176,23 +193,36 @@ public:
         return havel_loader_get_handle(handle_, name.c_str());
     }
 
-    std::vector<std::string> getLoadedExtensions() const {
-        int count = 0;
-        char **names = havel_loader_list_loaded(handle_, &count);
-        std::vector<std::string> result;
-        result.reserve(count);
-        for (int i = 0; i < count; i++) {
-            result.emplace_back(names[i]);
-        }
-        havel_loader_free_names(names, count);
-        std::sort(result.begin(), result.end());
-        return result;
+  std::vector<std::string> getLoadedExtensions() const {
+    int count = 0;
+    char **names = havel_loader_list_loaded(handle_, &count);
+    std::vector<std::string> result;
+    result.reserve(count);
+    for (int i = 0; i < count; i++) {
+      result.emplace_back(names[i]);
     }
+    havel_loader_free_names(names, count);
+    std::sort(result.begin(), result.end());
+    return result;
+  }
 
-    HavelLoader *raw() const { return handle_; }
+ std::optional<ResolvedModule> resolve(const std::string &modulePath,
+ const std::string &scriptDir) const;
+ bool isCached(const std::string &key) const;
+ bool getCached(const std::string &key, core::Value *outValue) const;
+ void putCache(const std::string &key, core::Value value);
+ void clearCache();
+
+  void setStdlibPath(const std::string &path) { stdlibPath_ = path; }
+  void addScriptSearchPath(const std::string &path) { scriptSearchPaths_.push_back(path); }
+
+  HavelLoader *raw() const { return handle_; }
 
 private:
-    HavelLoader *handle_;
+  HavelLoader *handle_;
+  std::string stdlibPath_;
+  std::vector<std::string> scriptSearchPaths_;
+  std::map<std::string, core::Value> scriptCache_;
 };
 
 class Dynamic {

@@ -20,11 +20,11 @@ Loader::resolve(const std::string &modulePath,
 
 	if (fs::path(modulePath).is_absolute()) {
 		if (fs::exists(modulePath)) {
-			return ResolvedModule{ResolvedModule::UserSource, modulePath, modulePath};
+			return ResolvedModule{SourceType::UserSource, modulePath, modulePath};
 		}
 		fs::path hvcPath = fs::path(modulePath).replace_extension(".hvc");
 		if (fs::exists(hvcPath)) {
-			return ResolvedModule{ResolvedModule::BytecodeCache,
+			return ResolvedModule{SourceType::BytecodeCache,
 				fs::canonical(hvcPath).string(), modulePath};
 		}
 		return std::nullopt;
@@ -33,7 +33,7 @@ Loader::resolve(const std::string &modulePath,
 	if (modulePath.starts_with("./") || modulePath.starts_with("../")) {
 		fs::path resolved = fs::path(scriptDir) / modulePath;
 		if (fs::exists(resolved)) {
-			return ResolvedModule{ResolvedModule::UserSource,
+			return ResolvedModule{SourceType::UserSource,
 				fs::canonical(resolved).string(), modulePath};
 		}
 		fs::path hvcPath = fs::path(scriptDir) / (modulePath + ".hvc");
@@ -42,14 +42,14 @@ Loader::resolve(const std::string &modulePath,
 				(modulePath.substr(0, modulePath.size() - 3) + ".hvc");
 		}
 		if (fs::exists(hvcPath)) {
-			return ResolvedModule{ResolvedModule::BytecodeCache,
+			return ResolvedModule{SourceType::BytecodeCache,
 				fs::canonical(hvcPath).string(), modulePath};
 		}
 		return std::nullopt;
 	}
 
 	if (scriptCache_.count(modulePath) > 0) {
-		return ResolvedModule{ResolvedModule::Cached, "", modulePath};
+		return ResolvedModule{SourceType::Cached, "", modulePath};
 	}
 
 	auto pickHvOrHvc = [&](const fs::path &basePath) -> std::optional<ResolvedModule> {
@@ -61,18 +61,18 @@ Loader::resolve(const std::string &modulePath,
 			auto hvcTime = fs::last_write_time(hvcPath);
 			auto hvTime = fs::last_write_time(hvPath);
 			if (hvcTime >= hvTime) {
-				return ResolvedModule{ResolvedModule::BytecodeCache,
+				return ResolvedModule{SourceType::BytecodeCache,
 					fs::canonical(hvcPath).string(), modulePath};
 			}
-			return ResolvedModule{ResolvedModule::UserSource,
+			return ResolvedModule{SourceType::UserSource,
 				fs::canonical(hvPath).string(), modulePath};
 		}
 		if (hvcExists) {
-			return ResolvedModule{ResolvedModule::BytecodeCache,
+			return ResolvedModule{SourceType::BytecodeCache,
 				fs::canonical(hvcPath).string(), modulePath};
 		}
 		if (hvExists) {
-			return ResolvedModule{ResolvedModule::UserSource,
+			return ResolvedModule{SourceType::UserSource,
 				fs::canonical(hvPath).string(), modulePath};
 		}
 		return std::nullopt;
@@ -92,12 +92,12 @@ Loader::resolve(const std::string &modulePath,
 	if (!scriptDir.empty()) {
 		fs::path cachePath = fs::path(scriptDir) / "__cache__" / (name + ".hvc");
 		if (fs::exists(cachePath)) {
-			return ResolvedModule{ResolvedModule::BytecodeCache,
+			return ResolvedModule{SourceType::BytecodeCache,
 				fs::canonical(cachePath).string(), modulePath};
 		}
 		fs::path hbcPath = fs::path(scriptDir) / "__cache__" / (name + ".hbc");
 		if (fs::exists(hbcPath)) {
-			return ResolvedModule{ResolvedModule::BytecodeCache,
+			return ResolvedModule{SourceType::BytecodeCache,
 				fs::canonical(hbcPath).string(), modulePath};
 		}
 	}
@@ -111,18 +111,18 @@ Loader::resolve(const std::string &modulePath,
 			auto hvcTime = fs::last_write_time(stdlibHvcPath);
 			auto hvTime = fs::last_write_time(stdlibHvPath);
 			if (hvcTime >= hvTime) {
-				return ResolvedModule{ResolvedModule::BytecodeCache,
+				return ResolvedModule{SourceType::BytecodeCache,
 					fs::canonical(stdlibHvcPath).string(), modulePath};
 			}
-			return ResolvedModule{ResolvedModule::StdlibSource,
+			return ResolvedModule{SourceType::StdlibSource,
 				fs::canonical(stdlibHvPath).string(), modulePath};
 		}
 		if (hvcExists) {
-			return ResolvedModule{ResolvedModule::BytecodeCache,
+			return ResolvedModule{SourceType::BytecodeCache,
 				fs::canonical(stdlibHvcPath).string(), modulePath};
 		}
 		if (hvExists) {
-			return ResolvedModule{ResolvedModule::StdlibSource,
+			return ResolvedModule{SourceType::StdlibSource,
 				fs::canonical(stdlibHvPath).string(), modulePath};
 		}
 	}
@@ -137,18 +137,18 @@ Loader::resolve(const std::string &modulePath,
 			auto hvcTime = fs::last_write_time(pkgHvcPath);
 			auto hvTime = fs::last_write_time(pkgHvPath);
 			if (hvcTime >= hvTime) {
-				return ResolvedModule{ResolvedModule::BytecodeCache,
+				return ResolvedModule{SourceType::BytecodeCache,
 					fs::canonical(pkgHvcPath).string(), modulePath};
 			}
-			return ResolvedModule{ResolvedModule::PackageSource,
+			return ResolvedModule{SourceType::PackageSource,
 				fs::canonical(pkgHvPath).string(), modulePath};
 		}
 		if (hvcExists) {
-			return ResolvedModule{ResolvedModule::BytecodeCache,
+			return ResolvedModule{SourceType::BytecodeCache,
 				fs::canonical(pkgHvcPath).string(), modulePath};
 		}
 		if (hvExists) {
-			return ResolvedModule{ResolvedModule::PackageSource,
+			return ResolvedModule{SourceType::PackageSource,
 				fs::canonical(pkgHvPath).string(), modulePath};
 		}
 	}
@@ -169,13 +169,13 @@ Loader::resolve(const std::string &modulePath,
 
 		fs::path soPath = spDir / (name + ".so");
 		if (fs::exists(soPath)) {
-			return ResolvedModule{ResolvedModule::NativeExtension,
+			return ResolvedModule{SourceType::NativeExtension,
 				fs::canonical(soPath).string(), modulePath};
 		}
 
 		fs::path libPath = spDir / ("libhavel_" + name + ".so");
 		if (fs::exists(libPath)) {
-			return ResolvedModule{ResolvedModule::NativeExtension,
+			return ResolvedModule{SourceType::NativeExtension,
 				fs::canonical(libPath).string(), modulePath};
 		}
 	}

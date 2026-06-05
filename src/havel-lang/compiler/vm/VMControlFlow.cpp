@@ -233,12 +233,9 @@ case OpCode::TAIL_CALL: {
             modName = current_chunk->getString(modNameVal->asStringValId());
           }
         }
-if (!modName.empty()) {
-        ensureModuleLoaded(modName);
-        write(2, "LAZY_FIXUP modName=", 20);
-        write(2, modName.c_str(), modName.size());
-        write(2, "\n", 1);
-        auto git = globals.find(modName);
+  if (!modName.empty()) {
+  ensureModuleLoaded(modName);
+  auto git = globals.find(modName);
             if (git != globals.end() && git->second.isObjectId()) {
                 receiver = git->second;
                 instanceObj = heap_.object(receiver.asObjectId());

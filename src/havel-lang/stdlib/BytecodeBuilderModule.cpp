@@ -622,11 +622,10 @@ auto &vm = api.vm();
     auto saved_frame_arena = vm.frame_arena_;
     std::stack<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
-    auto saved_immutable_locals = vm.immutable_locals_;
-    auto saved_main_chunk = vm.getMainChunk();
-    fprintf(stderr, "[DBG-BCEP] bc.execute_persistent entry=%s, depth_before=%d, globals_before=%zu, myVar_before=%s\n", entry.c_str(), vm.bc_execute_depth_, vm.globals.size(), vm.globals.count("myVar") ? "present" : "absent");
+auto saved_immutable_locals = vm.immutable_locals_;
+  auto saved_main_chunk = vm.getMainChunk();
 
-// Move chunk out of builder into a shared_ptr so it survives any
+  // Move chunk out of builder into a shared_ptr so it survives any
 // bc.reset() calls during execution (e.g. from imported modules).
 // Replace the builder's chunk with a fresh empty one.
 auto exec_chunk = std::shared_ptr<BytecodeChunk>(g_builder.chunk.release());
@@ -647,9 +646,8 @@ vm.bc_execute_depth_--;
     vm.stack = std::move(saved_stack);
     vm.locals = std::move(saved_locals);
     vm.immutable_locals_ = std::move(saved_immutable_locals);
-    vm.setMainChunkShared(saved_main_chunk);
-    fprintf(stderr, "[DBG-BCEP] bc.execute_persistent DONE, depth_after=%d, globals_after=%zu, myVar_after=%s\n", vm.bc_execute_depth_, vm.globals.size(), vm.globals.count("myVar") ? "present" : "absent");
-    return result;
+vm.setMainChunkShared(saved_main_chunk);
+  return result;
 } catch (const std::exception &e) {
 vm.bc_execute_depth_--;
 vm.current_chunk = saved_chunk;
@@ -669,9 +667,8 @@ api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> V
     }
     auto name = api.resolveString(args[0]);
     auto &vm = api.vm();
-    auto result = vm.lookupGlobalByKey(name);
-    fprintf(stderr, "[DBG-GG] bc.get_global('%s') = %s, depth=%d, globals_size=%zu\n", name.c_str(), result.isNull() ? "null" : "found", vm.bc_execute_depth_, vm.globals.size());
-    return result;
+  auto result = vm.lookupGlobalByKey(name);
+  return result;
   });
 
     api.registerFunction("bc.set_global", [api](const std::vector<Value> &args) -> Value {

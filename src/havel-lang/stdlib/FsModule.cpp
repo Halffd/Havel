@@ -1124,7 +1124,7 @@ void registerFsModule(const VMApi &api) {
     api.setField(fsObj, "isLocked", api.makeFunctionRef("fs.isLocked"));
     api.setField(fsObj, "unlock", api.makeFunctionRef("fs.unlock"));
 
-  api.setGlobal("fs", fsObj);
+    api.setGlobal("fs", fsObj);
 }
 
 } // namespace havel::stdlib

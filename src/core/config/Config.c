@@ -207,7 +207,14 @@ HavelConfig* HavelConfig_getInstance(void) {
 static char* g_configDir = NULL;
 static char* g_mainConfig = NULL;
 static char* g_hotkeysDir = NULL;
-static pthread_mutex_t g_pathMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_pathMutex;
+static void __attribute__((constructor)) init_pathMutex(void) {
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutex_init(&g_pathMutex, &attr);
+  pthread_mutexattr_destroy(&attr);
+}
 
 static char* defaultConfigDir(void) {
     const char* home = getenv("HOME");

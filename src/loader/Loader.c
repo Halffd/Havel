@@ -92,6 +92,22 @@ void havel_loader_add_module_paths(HavelLoader *loader) {
 
     havel_loader_add_search_path(loader, "modules");
 
+    /* Add path relative to the running executable */
+    {
+        char exe_path[512];
+        ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+        if (len > 0) {
+            exe_path[len] = '\0';
+            char *last_slash = strrchr(exe_path, '/');
+            if (last_slash) {
+                *last_slash = '\0';
+                char buf[768];
+                snprintf(buf, sizeof(buf), "%s/modules", exe_path);
+                havel_loader_add_search_path(loader, buf);
+            }
+        }
+    }
+
     havel_loader_add_search_path(loader, "/usr/lib/havel/modules");
     havel_loader_add_search_path(loader, "/usr/local/lib/havel/modules");
 

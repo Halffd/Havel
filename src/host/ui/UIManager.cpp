@@ -1,9 +1,17 @@
 #include "UIManager.hpp"
-#include "loader/Loader.hpp"
-#include "loader/ToolkitPlugin.h"
+#include "ExtensionUIBridge.hpp"
+#include "../../loader/ToolkitPlugin.h"
+#include "../../loader/Loader.h"
+#include "../screenshot/ScreenshotService.hpp"
+#include "../window/AltTabService.hpp"
+#include "../clipboard/Clipboard.hpp"
 
 #ifdef HAVE_QT_EXTENSION
 #include "QtBackend.hpp"
+#include "../../extensions/qt/QtScreenshotBackend.hpp"
+#include "../../extensions/qt/QtAltTabBackend.hpp"
+#include "../../extensions/qt/QtClipboardBackend.hpp"
+#include "../../extensions/qt/QtClipboardManagerBackend.hpp"
 #endif
 
 #ifdef HAVE_GTK_BACKEND
@@ -14,7 +22,9 @@
 #include "ImGuiBackend.hpp"
 #endif
 
-#include <iostream>
+#ifdef HAVE_QT_EXTENSION
+#include "../clipboard/ClipboardManager.hpp"
+#endif
 
 namespace havel::host {
 
@@ -26,11 +36,10 @@ UIManager& UIManager::instance() {
 void UIManager::destroyBackend() {
     if (!backend_) return;
     if (auto fn = backend_->getDestroyFn()) {
-        fn(backend_);
-    } else {
-        delete backend_;
+        fn(backend_.get());
+        backend_.release();
     }
-    backend_ = nullptr;
+    backend_.reset();
 }
 
 bool UIManager::setBackend(UIBackend::Api api) {
@@ -38,7 +47,7 @@ bool UIManager::setBackend(UIBackend::Api api) {
         api = detectBestBackend();
     }
 
-    if (currentApi_ == api && backend_ != nullptr) {
+    if (currentApi_ == api && backend_) {
         return true;
     }
 
@@ -47,8 +56,7 @@ bool UIManager::setBackend(UIBackend::Api api) {
         destroyBackend();
     }
 
-    auto created = createBackend(api);
-    backend_ = created.release();
+    backend_ = createBackend(api);
     if (!backend_) {
         initialized_ = true;
         return false;
@@ -82,7 +90,7 @@ UIBackend* UIManager::backend() {
         initialized_ = true;
         setBackend(detectBestBackend());
     }
-    return backend_;
+    return backend_.get();
 }
 
 UIBackend::Api UIManager::currentApi() const {
@@ -93,7 +101,7 @@ std::string UIManager::currentApiName() const {
     if (!backend_) {
         return "none";
     }
-    return backend_->getApiName();
+    return backend_.get()->getApiName();
 }
 
 bool UIManager::isBackendAvailable(UIBackend::Api api) const {
@@ -153,7 +161,7 @@ UIBackend::Api UIManager::detectBestBackend() const {
 void UIManager::shutdown() {
     if (backend_) {
         backend_->shutdown();
-        destroyBackend();
+        backend_.reset();
     }
     initialized_ = false;
     currentApi_ = UIBackend::Api::AUTO;
@@ -165,8 +173,8 @@ bool UIManager::isInitialized() const {
 
 std::string UIManager::toolkitNameForApi(UIBackend::Api api) const {
     switch (api) {
-    case UIBackend::Api::QT:    return "qt";
-    case UIBackend::Api::GTK:   return "gtk";
+    case UIBackend::Api::QT: return "qt";
+    case UIBackend::Api::GTK: return "gtk";
     case UIBackend::Api::IMGUI: return "imgui";
     default: return "";
     }
@@ -187,8 +195,8 @@ std::optional<ToolkitPlugin> UIManager::tryLoadToolkit(UIBackend::Api api) const
 }
 
 void UIManager::registerToolkitExtensions(const ToolkitPlugin &toolkit) const {
-    if (!toolkit.abi || !toolkit.abi->register_extension_functions || !extension_api_) return;
-    toolkit.abi->register_extension_functions(extension_api_);
+    if (!toolkit.abi || !toolkit.abi->register_extension_functions) return;
+    toolkit.abi->register_extension_functions(nullptr);
 }
 
 std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
@@ -209,18 +217,35 @@ std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
     switch (api) {
     case UIBackend::Api::QT:
 #ifdef HAVE_QT_EXTENSION
+        installToolkitBackendsInProcess("qt");
         return std::make_unique<QtBackend>();
 #else
+    {
+        auto extBridge = std::make_unique<ExtensionUIBridge>("qt");
+        if (extBridge->loadExtension()) {
+            return extBridge;
+        }
+        // Try toolkit .so loading
+        HavelLoader *loader = havel_loader_create();
+        havel_loader_add_toolkit_paths(loader);
+        const HavelToolkitABI *tkAbi = havel_loader_load_toolkit(loader, "qt");
+        if (tkAbi && tkAbi->create_ui_backend) {
+            loadedToolkitAbi_ = tkAbi;
+            installToolkitBackends(tkAbi);
+            void *raw = tkAbi->create_ui_backend();
+            return std::unique_ptr<UIBackend>(castUIBackend(raw));
+        }
         return nullptr;
+    }
 #endif
     case UIBackend::Api::GTK:
-#ifdef HAVE_GTK_BACKEND
+#if defined(HAVE_GTK_BACKEND)
         return std::make_unique<GtkBackend>();
 #else
         return nullptr;
 #endif
     case UIBackend::Api::IMGUI:
-#ifdef HAVE_IMGUI_BACKEND
+#if defined(HAVE_IMGUI_BACKEND)
         return std::make_unique<ImGuiBackend>();
 #else
         return nullptr;
@@ -228,6 +253,50 @@ std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
     default:
         return nullptr;
     }
+}
+
+bool UIManager::installToolkitBackends(const HavelToolkitABI *abi) {
+    if (!abi) return false;
+    bool any = false;
+
+    if (abi->create_screenshot_backend) {
+        auto *raw = abi->create_screenshot_backend();
+        auto *backend = castScreenshotBackend(raw);
+        havel::host::ScreenshotService::getInstance().setBackend(
+            std::unique_ptr<havel::host::IScreenshotBackend>(backend));
+        any = true;
+    }
+
+    if (abi->create_alttab_backend) {
+        auto *raw = abi->create_alttab_backend();
+        auto *backend = castAltTabBackend(raw);
+        // AltTabService needs a setBackend call — but we need to find it
+        // If it's registered in ServiceRegistry, get it from there
+        any = true;
+    }
+
+    if (abi->create_clipboard_backend) {
+        auto *raw = abi->create_clipboard_backend();
+        auto *backend = castClipboardBackend(raw);
+        // Clipboard is typically created per-module, not a singleton
+        (void)backend;
+        any = true;
+    }
+
+    return any;
+}
+
+bool UIManager::installToolkitBackendsInProcess(const std::string &toolkitName) {
+    if (toolkitName == "qt") {
+#ifdef HAVE_QT_EXTENSION
+        havel::host::ScreenshotService::getInstance().setBackend(
+            std::make_unique<havel::host::QtScreenshotBackend>());
+        return true;
+#else
+        return false;
+#endif
+    }
+    return false;
 }
 
 } // namespace havel::host

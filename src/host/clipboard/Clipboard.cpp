@@ -24,7 +24,15 @@ Clipboard::Clipboard() {
   method_ = detectBestMethod();
 }
 
-Clipboard::~Clipboard() {}
+Clipboard::~Clipboard() = default;
+
+void Clipboard::setBackend(std::unique_ptr<IClipboardBackend> backend) {
+    backend_ = std::move(backend);
+}
+
+IClipboardBackend* Clipboard::backend() const {
+    return backend_.get();
+}
 
 void Clipboard::setMethod(Method method) {
   method_ = method;
@@ -62,7 +70,8 @@ Clipboard::Method Clipboard::detectBestMethod() {
 }
 
 std::string Clipboard::getText() const {
-  switch (method_) {
+    if (backend_) return backend_->getText();
+    switch (method_) {
   case Method::QT:
     return getTextQt();
   case Method::X11:
@@ -84,7 +93,8 @@ std::string Clipboard::getText() const {
 }
 
 bool Clipboard::setText(const std::string &text) {
-  switch (method_) {
+    if (backend_) return backend_->setText(text);
+    switch (method_) {
   case Method::QT:
     return setTextQt(text);
   case Method::X11:
@@ -309,8 +319,9 @@ bool Clipboard::setTextMacOS(const std::string &text) {
 // ============================================================================
 
 std::string Clipboard::getImage() const {
-  // Platform-specific image clipboard support
-  switch (method_) {
+    if (backend_) return backend_->getImage();
+    // Platform-specific image clipboard support
+    switch (method_) {
   case Method::QT:
     return getImageQt();
   case Method::X11:
@@ -326,7 +337,8 @@ std::string Clipboard::getImage() const {
 }
 
 bool Clipboard::setImage(const std::string &base64Png) {
-  switch (method_) {
+    if (backend_) return backend_->setImage(base64Png);
+    switch (method_) {
   case Method::QT:
     return setImageQt(base64Png);
   case Method::X11:
@@ -362,10 +374,8 @@ std::string Clipboard::getImageQt() const {
   QByteArray byteArray;
   QBuffer buffer(&byteArray);
   buffer.open(QIODevice::WriteOnly);
-  image.save(&buffer, "PNG");
-  return QByteArray::fromRawData(byteArray.constData(), byteArray.size())
-      .toBase64()
-      .toStdString();
+    image.save(&buffer, "PNG");
+    return byteArray.toBase64().toStdString();
 }
 
 bool Clipboard::setImageQt(const std::string &base64Png) {
@@ -394,8 +404,9 @@ bool Clipboard::setImageQt(const std::string &base64Png) {
 // ============================================================================
 
 std::vector<std::string> Clipboard::getFiles() const {
-  // Platform-specific file clipboard support
-  switch (method_) {
+    if (backend_) return backend_->getFiles();
+    // Platform-specific file clipboard support
+    switch (method_) {
   case Method::QT:
     return getFilesQt();
   case Method::X11:
@@ -411,7 +422,8 @@ std::vector<std::string> Clipboard::getFiles() const {
 }
 
 bool Clipboard::setFiles(const std::vector<std::string> &paths) {
-  switch (method_) {
+    if (backend_) return backend_->setFiles(paths);
+    switch (method_) {
   case Method::QT:
     return setFilesQt(paths);
   case Method::X11:

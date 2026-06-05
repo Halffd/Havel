@@ -2532,7 +2532,7 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
 }
 
 bool VM::ensureModuleLoaded(const std::string &name) {
-    auto it = lazy_modules_.find(name);
+	auto it = lazy_modules_.find(name);
     if (it == lazy_modules_.end()) {
         return false;
     }
@@ -2561,24 +2561,17 @@ bool VM::ensureModuleLoaded(const std::string &name) {
   return true;
     }
 
- VMApi api(*this);
- fprintf(stderr, "[DBG-ENSURE] before initFn for '%s', globals has %zu entries, has_bit=%d\n",
- name.c_str(), globals.size(), (int)(globals.find(name) != globals.end()));
- it->second.initFn(api);
- fprintf(stderr, "[DBG-ENSURE] after initFn for '%s', has_bit=%d, isObj=%d\n",
- name.c_str(), (int)(globals.find(name) != globals.end()),
- globals.find(name) != globals.end() ? (int)globals[name].isObjectId() : -1);
- it->second.loaded = true;
+    VMApi api(*this);
+    it->second.initFn(api);
+    it->second.loaded = true;
 
- // After init, globals[name] should now hold the real module object.
- // Clear the __lazy__ flag on it and cache it for future proxy fixups.
- auto git = globals.find(name);
- if (git != globals.end() && git->second.isObjectId()) {
- auto *obj = heap_.object(git->second.asObjectId());
- if (obj) {
- fprintf(stderr, "[DBG-ENSURE] obj at %p, fields=%zu, has_lazy=%d\n",
- (void*)obj, obj->size(), (int)(obj->get("__lazy__") != nullptr));
- auto *lf = obj->get("__lazy__");
+    // After init, globals[name] should now hold the real module object.
+    // Clear the __lazy__ flag on it and cache it for future proxy fixups.
+    auto git = globals.find(name);
+    if (git != globals.end() && git->second.isObjectId()) {
+        auto *obj = heap_.object(git->second.asObjectId());
+        if (obj) {
+            auto *lf = obj->get("__lazy__");
  if (lf && lf->isBool() && lf->asBool()) {
  obj->set("__lazy__", Value(false));
  }

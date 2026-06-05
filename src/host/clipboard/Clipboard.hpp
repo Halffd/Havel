@@ -9,8 +9,10 @@
 #pragma once
 
 #include "ClipboardInfo.hpp"
+#include "IClipboardBackend.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -37,6 +39,11 @@ public:
 
   Clipboard();
   ~Clipboard();
+
+  // Backend strategy
+  void setBackend(std::unique_ptr<IClipboardBackend> backend);
+  IClipboardBackend* backend() const;
+  bool hasBackend() const { return backend_ != nullptr; }
 
   // =========================================================================
   // Method selection
@@ -102,7 +109,7 @@ public:
   bool hasFiles() const;
 
 private:
-  // Cached pointer - no ownership
+  std::unique_ptr<IClipboardBackend> backend_;
   void *clipboard_ = nullptr;
   Method method_ = Method::AUTO;
 

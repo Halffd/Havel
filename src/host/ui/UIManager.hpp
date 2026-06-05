@@ -6,6 +6,8 @@
 #include <optional>
 #include <string>
 
+struct HavelToolkitABI;
+
 namespace havel::host {
 
 class UIManager {
@@ -29,10 +31,12 @@ public:
 
     bool isInitialized() const;
 
-    void setExtensionApi(void *api) { extension_api_ = api; }
-    void *getExtensionApi() const { return extension_api_; }
-
     void registerToolkitExtensions(const ToolkitPlugin &toolkit) const;
+
+  // Toolkit plugin backend installation
+  bool installToolkitBackends(const HavelToolkitABI *abi);
+  bool installToolkitBackendsInProcess(const std::string &toolkitName);
+  const HavelToolkitABI* loadedToolkitAbi() const { return loadedToolkitAbi_; }
 
 private:
     UIManager() = default;
@@ -40,10 +44,10 @@ private:
     UIManager(const UIManager &) = delete;
     UIManager &operator=(const UIManager &) = delete;
 
-    UIBackend *backend_ = nullptr;
+    std::unique_ptr<UIBackend> backend_;
     UIBackend::Api currentApi_ = UIBackend::Api::AUTO;
     bool initialized_ = false;
-    void *extension_api_ = nullptr;
+    const HavelToolkitABI *loadedToolkitAbi_ = nullptr;
 
     void destroyBackend();
 

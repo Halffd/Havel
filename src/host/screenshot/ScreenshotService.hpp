@@ -1,19 +1,19 @@
 #pragma once
+
+#include "IScreenshotBackend.hpp"
 #include <vector>
 #include <string>
-
-#ifdef HAVE_QT_EXTENSION
-#include <QImage>
-#include <QScreen>
+#include <memory>
 
 namespace havel::host {
 
 class ScreenshotService {
 public:
-    static ScreenshotService& getInstance() {
-        static ScreenshotService instance;
-        return instance;
-    }
+    static ScreenshotService& getInstance();
+
+    void setBackend(std::unique_ptr<IScreenshotBackend> backend);
+    IScreenshotBackend* backend() const;
+    bool hasBackend() const { return backend_ != nullptr; }
 
     std::vector<unsigned char> captureFullDesktop();
     std::vector<unsigned char> captureMonitor(int index);
@@ -21,14 +21,10 @@ public:
     std::vector<unsigned char> captureRegion(int x, int y, int width, int height);
     int getMonitorCount() const;
     std::vector<int> getMonitorGeometry(int index) const;
-    
-    // Internal helpers
-    std::vector<unsigned char> captureFromScreen(QScreen* screen);
-    std::vector<unsigned char> imageToRGBA(const QImage& image);
 
 private:
     ScreenshotService() = default;
+    std::unique_ptr<IScreenshotBackend> backend_;
 };
 
 } // namespace havel::host
-#endif // HAVE_QT_EXTENSION

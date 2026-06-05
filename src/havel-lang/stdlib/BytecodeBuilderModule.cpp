@@ -505,34 +505,48 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
     return Value::makeStringValId(static_cast<uint32_t>(args[0].asInt()));
 });
 
-	api.registerFunction("bc.add_upvalue", [](const std::vector<Value> &args) -> Value {
-		auto *fn = g_builder.currentFunc();
-		if (!fn) throw std::runtime_error("bc.add_upvalue: no current function");
-		if (args.size() < 2 || !args[0].isInt() || !args[1].isInt()) {
-			throw std::runtime_error("bc.add_upvalue: requires (index, captures_local)");
-		}
-		havel::compiler::UpvalueDescriptor desc;
-		desc.index = static_cast<uint32_t>(args[0].asInt());
-		desc.captures_local = args[1].asInt() != 0;
-    fn->upvalues.push_back(desc);
-    return Value::makeInt(static_cast<int64_t>(fn->upvalues.size() - 1));
+    api.registerFunction("bc.add_upvalue", [](const std::vector<Value> &args) -> Value {
+        auto *fn = g_builder.currentFunc();
+        if (!fn) throw std::runtime_error("bc.add_upvalue: no current function");
+        if (args.size() < 2 || !args[0].isInt() || !args[1].isInt()) {
+            throw std::runtime_error("bc.add_upvalue: requires (index, captures_local)");
+        }
+        uint32_t sourceIndex = static_cast<uint32_t>(args[0].asInt());
+        bool capturesLocal = args[1].asInt() != 0;
+        for (uint32_t i = 0; i < static_cast<uint32_t>(fn->upvalues.size()); i++) {
+            if (fn->upvalues[i].index == sourceIndex && fn->upvalues[i].captures_local == capturesLocal) {
+                return Value::makeInt(static_cast<int64_t>(i));
+            }
+        }
+        havel::compiler::UpvalueDescriptor desc;
+        desc.index = sourceIndex;
+        desc.captures_local = capturesLocal;
+        fn->upvalues.push_back(desc);
+        return Value::makeInt(static_cast<int64_t>(fn->upvalues.size() - 1));
     });
 
     api.registerFunction("bc.add_upvalue_to", [](const std::vector<Value> &args) -> Value {
-    if (args.size() < 3 || !args[0].isInt() || !args[1].isInt() || !args[2].isInt()) {
-        throw std::runtime_error("bc.add_upvalue_to: requires (funcIdx, index, captures_local)");
-    }
-    int64_t targetIdx = args[0].asInt();
-    if (targetIdx < 0 || targetIdx >= static_cast<int64_t>(g_builder.chunk->getFunctionCount())) {
-        throw std::runtime_error("bc.add_upvalue_to: funcIdx out of range");
-    }
- auto *targetFn = g_builder.chunk->getFunctionMutable(static_cast<uint32_t>(targetIdx));
- if (!targetFn) throw std::runtime_error("bc.add_upvalue_to: function not found at index " + std::to_string(targetIdx));
- havel::compiler::UpvalueDescriptor desc;
- desc.index = static_cast<uint32_t>(args[1].asInt());
- desc.captures_local = args[2].asInt() != 0;
- targetFn->upvalues.push_back(desc);
-    return Value::makeInt(static_cast<int64_t>(targetFn->upvalues.size() - 1));
+        if (args.size() < 3 || !args[0].isInt() || !args[1].isInt() || !args[2].isInt()) {
+            throw std::runtime_error("bc.add_upvalue_to: requires (funcIdx, index, captures_local)");
+        }
+        int64_t targetIdx = args[0].asInt();
+        if (targetIdx < 0 || targetIdx >= static_cast<int64_t>(g_builder.chunk->getFunctionCount())) {
+            throw std::runtime_error("bc.add_upvalue_to: funcIdx out of range");
+        }
+        auto *targetFn = g_builder.chunk->getFunctionMutable(static_cast<uint32_t>(targetIdx));
+        if (!targetFn) throw std::runtime_error("bc.add_upvalue_to: function not found at index " + std::to_string(targetIdx));
+        uint32_t sourceIndex = static_cast<uint32_t>(args[1].asInt());
+        bool capturesLocal = args[2].asInt() != 0;
+        for (uint32_t i = 0; i < static_cast<uint32_t>(targetFn->upvalues.size()); i++) {
+            if (targetFn->upvalues[i].index == sourceIndex && targetFn->upvalues[i].captures_local == capturesLocal) {
+                return Value::makeInt(static_cast<int64_t>(i));
+            }
+        }
+        havel::compiler::UpvalueDescriptor desc;
+        desc.index = sourceIndex;
+        desc.captures_local = capturesLocal;
+        targetFn->upvalues.push_back(desc);
+        return Value::makeInt(static_cast<int64_t>(targetFn->upvalues.size() - 1));
     });
 
     api.registerFunction("bc.set_default_value", [](const std::vector<Value> &args) -> Value {

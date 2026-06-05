@@ -88,7 +88,7 @@ void havel_loader_add_module_paths(HavelLoader *loader);
  * Returns HavelModuleABI* if valid, NULL if not found or incompatible. */
 const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *name);
 
-/* Platform: add toolkit plugin search paths */
+/* Toolkit plugin search paths */
 void havel_loader_add_toolkit_paths(HavelLoader *loader);
 
 /* Load a toolkit plugin by name.

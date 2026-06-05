@@ -823,19 +823,11 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
   
- void setGlobal(std::string name, Value value) {
- if (name == "bit" || name == "Bit") {
- fprintf(stderr, "[DBG-SETGLOBAL] name='%s' isObj=%d objId=%u\n",
- name.c_str(), (int)value.isObjectId(),
- value.isObjectId() ? value.asObjectId() : 0);
- auto *obj = value.isObjectId() ? heap_.object(value.asObjectId()) : nullptr;
- fprintf(stderr, "[DBG-SETGLOBAL] obj=%p fields=%zu has_lazy=%d\n",
- (void*)obj, obj ? obj->size() : 0,
- obj ? (int)(obj->get("__lazy__") != nullptr) : -1);
- }
- globals[std::move(name)] = std::move(value);
- emitVariableChanged(name);
- }
+void setGlobal(std::string name, Value value) {
+    auto key = name;
+    globals[std::move(name)] = std::move(value);
+    emitVariableChanged(key);
+  }
   void eraseGlobal(const std::string &name) {
     globals.erase(name);
   }
@@ -1013,8 +1005,9 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
     Value loadModule(const std::string& path);
   Value loadScript(const std::string& path);
 void registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn);
-bool ensureModuleLoaded(const std::string &name);
-bool isLazyModuleRegistered(const std::string &name) const;
+  bool ensureModuleLoaded(const std::string &name);
+  bool isLazyModuleRegistered(const std::string &name) const;
+  void activateLazyModule(const std::string &name);
 bool isLazyModuleLoaded(const std::string &name) const;
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }

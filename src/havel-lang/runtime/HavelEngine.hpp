@@ -159,13 +159,13 @@ vm_->setJITCompiler(jitCompiler_.get());
       t = havel::startup_now();
     }
   }
-        // Always ensure bytecodeBuilder is available for self-hosted compilation
+// Always ensure bytecodeBuilder is available for self-hosted compilation
 #if !defined(ENABLE_MODULE_PLUGINS)
-        if (!vm_->isLazyModuleRegistered("bytecodebuilder")) {
-            vm_->registerLazyModule("bytecodebuilder", [](compiler::VMApi &a) {
-                stdlib::registerBytecodeBuilderModule(a);
-            });
-        }
+  if (!vm_->isLazyModuleRegistered("bytecodeBuilder")) {
+    vm_->registerLazyModule("bytecodeBuilder", [](compiler::VMApi &a) {
+      stdlib::registerBytecodeBuilderModule(a);
+    });
+  }
 #endif
   vm_->resumeGC();
         modules_->install(

@@ -70,9 +70,12 @@ case OpCode::LOAD_GLOBAL: {
               modName = current_chunk->getString(modNameVal->asStringValId());
             }
           }
-          if (!modName.empty()) {
-            ensureModuleLoaded(modName);
-            // Re-lookup after loading (the module may have set aliases like "bc")
+                        if (!modName.empty()) {
+                            // Trigger lazy module loading if not yet loaded
+                            if (isLazyModuleRegistered(modName)) {
+                                ensureModuleLoaded(modName);
+                            }
+                            // Re-lookup after loading (the module may have set aliases like "bc")
             auto git2 = globals.find(name);
             if (git2 != globals.end()) {
               trackGlobalAccess(name);

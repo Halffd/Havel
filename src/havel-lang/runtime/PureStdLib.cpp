@@ -68,12 +68,12 @@ void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
         return;
     }
 
-    static const char *lazyModules[] = {
-        "regex", "time", "timer", "fs", "random", "debug",
-        "sys", "shell", "pointer", "fmt", "pack", "bit",
-        "option", "bytecodebuilder", "log",
-        "window", "display", "brightness", "app",
-    };
+  static const char *lazyModules[] = {
+    "regex", "time", "timer", "fs", "random", "debug",
+    "sys", "shell", "pointer", "fmt", "pack", "bit",
+    "option", "log",
+    "window", "display", "brightness", "app",
+  };
 
     for (auto name : lazyModules) {
         registerLazyFromPlugin(vm, name);
@@ -98,21 +98,20 @@ static const ModuleEntry eagerModules[] = {
 };
 
 static const ModuleEntry lazyModules[] = {
-    {"regex", stdlib::registerRegexModule},
-    {"time", stdlib::registerTimeModule},
-    {"timer", stdlib::registerTimerModule},
-    {"fs", stdlib::registerFsModule},
-    {"random", stdlib::registerRandomModule},
-    {"debug", stdlib::registerDebugModule},
-    {"sys", stdlib::registerSysModule},
-    {"shell", stdlib::registerShellModule},
-    {"pointer", stdlib::registerPointerModule},
-    {"fmt", stdlib::registerFormatModule},
-    {"pack", stdlib::registerPackModule},
-    {"bit", stdlib::registerBitModule},
-    {"option", stdlib::registerOptionModule},
-    {"bytecodebuilder", stdlib::registerBytecodeBuilderModule},
-    {"log", stdlib::registerLogModule},
+  {"regex", stdlib::registerRegexModule},
+  {"time", stdlib::registerTimeModule},
+  {"timer", stdlib::registerTimerModule},
+  {"fs", stdlib::registerFsModule},
+  {"random", stdlib::registerRandomModule},
+  {"debug", stdlib::registerDebugModule},
+  {"sys", stdlib::registerSysModule},
+  {"shell", stdlib::registerShellModule},
+  {"pointer", stdlib::registerPointerModule},
+  {"fmt", stdlib::registerFormatModule},
+  {"pack", stdlib::registerPackModule},
+  {"bit", stdlib::registerBitModule},
+  {"option", stdlib::registerOptionModule},
+  {"log", stdlib::registerLogModule},
 };
 
 void registerStdLibSet(compiler::VM &vm, bool coreOnly) {

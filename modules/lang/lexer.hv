@@ -140,7 +140,8 @@ SIMPLE_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\", 48: "\0", 36: "$", 
 AFTER_EXPR_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow"}
 AFTER_MINUS_NUMBER_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow"}
 REGEX_CONTEXT_TYPES = {"OpenParen", "OpenBracket", "OpenBrace", "Comma", "Assign", "Arrow", "And", "Or", "Not", "In", "Matches", "Tilde", "Colon", "Question", "Pipe", "NewLine", "Semicolon"}
-STATEMENT_START_TYPES = {"NewLine", "Semicolon", "Arrow", "OpenBrace", "CloseBrace"}
+  STATEMENT_START_TYPES = {"NewLine", "Semicolon", "Arrow", "OpenBrace", "CloseBrace"}
+  STATEMENT_START_NO_ARROW_TYPES = {"NewLine", "Semicolon", "CloseBrace", "EOF"}
 DOUBLE_PAREN_EXPR_TYPES = {"Identifier", "CloseParen", "CloseBracket", "String", "InterpolatedString", "MultilineString", "Number", "Plus", "Minus", "Multiply", "Divide", "Modulo", "Equals", "NotEquals", "Less", "Greater", "LessEquals", "GreaterEquals", "Comma", "Return", "Colon"}
 
 fn Lexer(source) {
@@ -164,18 +165,20 @@ fn Lexer(source) {
     fn current() {
         if idx < n { cpArr[idx][0] } else { -1 }
     }
-    fn advance() {
-        if idx >= n { return -1 }
-        c = cpArr[idx][0]
-        idx = idx + 1
-        if c == 10 {
-            line = line + 1
-            col = 1
-        } else {
-            col = col + 1
-        }
-        c
+  fn advance() {
+    if idx >= n { return -1 }
+    c = cpArr[idx][0]
+    idx = idx + 1
+    if c == 10 {
+      line = line + 1
+      col = 1
+    } else if c == 9 {
+      col = ((col + 7) / 8) * 8 + 1
+    } else {
+      col = col + 1
     }
+    c
+  }
     fn matchCp(expected) {
         if current() == expected { advance(); true } else { false }
     }
@@ -591,8 +594,12 @@ fn Lexer(source) {
             if next == 120 || next == 88 {
                 advance()
                 advance()
-                if isHexDigitCp(current()) {
-                    while isHexDigitCp(current()) { advance() }
+        if isHexDigitCp(current()) {
+          while isHexDigitCp(current()) || current() == 95 {
+            if current() == 95 && cp(1) != -1 && isHexDigitCp(cp(1)) { advance(); advance() }
+            else if isHexDigitCp(current()) { advance() }
+            else { break }
+          }
                 } else {
                     error("Invalid hex literal")
                 }
@@ -602,8 +609,12 @@ fn Lexer(source) {
             if next == 111 || next == 79 {
                 advance()
                 advance()
-                if isOctDigitCp(current()) {
-                    while isOctDigitCp(current()) { advance() }
+        if isOctDigitCp(current()) {
+          while isOctDigitCp(current()) || current() == 95 {
+            if current() == 95 && cp(1) != -1 && isOctDigitCp(cp(1)) { advance(); advance() }
+            else if isOctDigitCp(current()) { advance() }
+            else { break }
+          }
                 } else {
                     error("Invalid octal literal")
                 }
@@ -613,8 +624,12 @@ fn Lexer(source) {
             if next == 98 || next == 66 {
                 advance()
                 advance()
-                if isBinDigitCp(current()) {
-                    while isBinDigitCp(current()) { advance() }
+        if isBinDigitCp(current()) {
+          while isBinDigitCp(current()) || current() == 95 {
+            if current() == 95 && cp(1) != -1 && isBinDigitCp(cp(1)) { advance(); advance() }
+            else if isBinDigitCp(current()) { advance() }
+            else { break }
+          }
                 } else {
                     error("Invalid binary literal")
                 }
@@ -757,15 +772,22 @@ fn Lexer(source) {
             addToken("Hotkey", s)
         }
     }
-    fn _scan() {
-        while current() != -1 {
-            skipWhitespace()
-            if current() == -1 { break }
-            tokenStartCol = col
-            c = current()
+  fn _scan() {
+    tokenCount = 0
+    while current() != -1 {
+      loopStartIdx = idx
+      skipWhitespace()
+      if current() == -1 { break }
+      tokenStartCol = col
+      c = current()
+      tokenCount = tokenCount + 1
+      if tokenCount > 5000000 {
+        error("token limit exceeded (possible infinite loop)")
+        break
+      }
 
-            if c == 10 {
-                addToken("NewLine", "\n")
+      if c == 10 {
+        addToken("NewLine", "\n")
                 advance()
                 continue
             }
@@ -820,10 +842,25 @@ fn Lexer(source) {
                 scanNumber()
                 continue
             }
-        if isAlphaCp(c) {
-            scanIdentifier()
-            continue
+      if isAlphaCp(c) {
+        // F-key hotkey check: F followed by digit might be F1..F12
+        if c == 70 && isDigitCp(cp(1)) {
+          // Lookahead: if followed by assignment/space/tab/semicolon/comma, it's an identifier
+          la = 1
+          while idx + la < n && isDigitCp(cpArr[idx + la][0]) { la = la + 1 }
+          if idx + la < n {
+            after = cpArr[idx + la][0]
+            if after == 61 || after == 32 || after == 9 || after == 59 || after == 44 {
+              scanIdentifier()
+              continue
+            }
+          }
+          scanHotkey()
+        } else {
+          scanIdentifier()
         }
+        continue
+      }
             if c >= 0x80 {
                 if isUnicodeLetterCp(c) {
                     scanIdentifier()
@@ -895,12 +932,25 @@ fn Lexer(source) {
                 addToken("Assign", "=")
                 continue
             }
-            if c == 33 && cp(1) == 61 {
-                advance()
-                advance()
-                addToken("NotEquals", "!=")
-                continue
-            }
+      if c == 33 && cp(1) == 61 {
+        // At statement start, != can be a hotkey (Alt+Equals) if followed by =>
+        isStmtStart = tokens.len == 0
+        if !isStmtStart {
+          if STATEMENT_START_NO_ARROW_TYPES.has(tokens[tokens.len - 1].type) { isStmtStart = true }
+        }
+        if isStmtStart {
+          lk = idx + 2
+          while lk < n && (cpArr[lk][0] == 32 || cpArr[lk][0] == 9) { lk = lk + 1 }
+          if lk + 1 < n && cpArr[lk][0] == 61 && cpArr[lk + 1][0] == 62 {
+            scanHotkey()
+            continue
+          }
+        }
+        advance()
+        advance()
+        addToken("NotEquals", "!=")
+        continue
+      }
             if c == 33 && cp(1) == 123 {
                 advance()
                 advance()
@@ -1226,23 +1276,38 @@ fn Lexer(source) {
                 addToken("BitwiseAndAssign", "&=")
                 continue
             }
-            if c == 38 {
-                if inBitwiseExpr || afterExpression() {
-                    advance()
-                    addToken("BitwiseAnd", "&")
-                } else {
-                    s = "&"
-                    advance()
-                    while current() != -1 && current() != 10 && current() != 123 {
-                        if current() == 61 && cp(1) == 62 { break }
-                        s = s + string.fromCodePoint(current())
-                        advance()
-                    }
-                    addToken("Hotkey", s)
-                }
-                continue
-            }
-            if c == 124 && cp(1) == 124 {
+      if c == 38 {
+        if inBitwiseExpr || afterExpression() {
+          advance()
+          addToken("BitwiseAnd", "&")
+        } else {
+          s = "&"
+          advance()
+          while current() != -1 && current() != 10 && current() != 123 {
+            if current() == 61 && cp(1) == 62 { break }
+            s = s + string.fromCodePoint(current())
+            advance()
+          }
+          if s == "&" { addToken("BitwiseAnd", "&") }
+          else { addToken("Hotkey", s) }
+        }
+        continue
+      }
+            // | passthrough hotkey prefix at statement start
+      if c == 124 && !inBitwiseExpr {
+        isStmtStart = tokens.len == 0
+        if !isStmtStart {
+          if STATEMENT_START_NO_ARROW_TYPES.has(tokens[tokens.len - 1].type) { isStmtStart = true }
+        }
+        if isStmtStart {
+          nx = cp(1)
+          if nx != -1 && (isAlphaCp(nx) || nx == 43 || nx == 33 || nx == 94 || nx == 35 || nx == 64 || nx == 126 || nx == 36 || nx == 42) {
+            scanHotkey()
+            continue
+          }
+        }
+      }
+      if c == 124 && cp(1) == 124 {
                 advance()
                 advance()
                 addToken("Or", "||")
@@ -1276,23 +1341,24 @@ fn Lexer(source) {
                 addToken("BitwiseXorAssign", "^=")
                 continue
             }
-            // ^ - bitwise xor vs hotkey
-            if c == 94 {
-                if inBitwiseExpr || afterExpression() {
-                    advance()
-                    addToken("BitwiseXor", "^")
-                } else {
-                    s = "^"
-                    advance()
-                    while current() != -1 && current() != 10 && current() != 123 {
-                        if current() == 61 && cp(1) == 62 { break }
-                        s = s + string.fromCodePoint(current())
-                        advance()
-                    }
-                    addToken("Hotkey", s)
-                }
-                continue
-            }
+      // ^ - bitwise xor vs hotkey
+      if c == 94 {
+        if inBitwiseExpr || afterExpression() {
+          advance()
+          addToken("BitwiseXor", "^")
+        } else {
+          s = "^"
+          advance()
+          while current() != -1 && current() != 10 && current() != 123 {
+            if current() == 61 && cp(1) == 62 { break }
+            s = s + string.fromCodePoint(current())
+            advance()
+          }
+          if s == "^" { addToken("BitwiseXor", "^") }
+          else { addToken("Hotkey", s) }
+        }
+        continue
+      }
             // (( - DoubleOpenParen or two OpenParens
             if c == 40 && cp(1) == 40 && !inBitwiseExpr {
                 emitTwo = false
@@ -1422,24 +1488,29 @@ fn Lexer(source) {
                 addToken("AtAt", "@@")
                 continue
             }
-            // @ - context-aware: At vs hotkey
-            if c == 64 {
-                if afterExpression() || (cp(1) != -1 && cp(1) >= 97 && cp(1) <= 122) {
-                    advance()
-                    addToken("At", "@")
-                } else {
-                    advance()
-                    s = "@"
-                    while current() != -1 && isAlphaNumCp(current()) {
-                        s = s + string.fromCodePoint(current())
-                        advance()
-                    }
-                    if current() == 61 && cp(1) == 62 { addToken("Hotkey", s) }
-                    else if current() == 38 || current() == 58 { addToken("Hotkey", s) }
-                    else { addToken("At", "@") }
-                }
-                continue
-            }
+      // @ - context-aware: At vs hotkey
+      if c == 64 {
+        if afterExpression() || (cp(1) != -1 && cp(1) >= 97 && cp(1) <= 122) {
+          // Look ahead past identifier and whitespace to decide hotkey vs field access
+          lk = idx
+          while lk < n && (isAlphaNumCp(cpArr[lk][0]) || cpArr[lk][0] == 95) { lk = lk + 1 }
+          while lk < n && (cpArr[lk][0] == 32 || cpArr[lk][0] == 9) { lk = lk + 1 }
+          isHK = false
+          if lk + 1 < n && cpArr[lk][0] == 61 && cpArr[lk + 1][0] == 62 { isHK = true }
+          else if lk < n && cpArr[lk][0] == 38 { isHK = true }
+          else if lk < n && cpArr[lk][0] == 58 { isHK = true }
+          if isHK {
+            scanHotkey()
+          } else {
+            advance()
+            addToken("At", "@")
+          }
+        } else {
+          advance()
+          addToken("At", "@")
+        }
+        continue
+      }
             // # - context-aware: Length vs hotkey (with => lookahead)
             if c == 35 {
                 isStmtStart = tokens.len == 0
@@ -1481,18 +1552,25 @@ fn Lexer(source) {
                 }
                 continue
             }
-            if c == 95 {
-                if !isAlphaNumCp(cp(1)) {
-                    advance()
-                    addToken("Underscore", "_")
-                    continue
-                }
-                scanIdentifier()
-                continue
-            }
-            advance()
+      if c == 95 {
+        if !isAlphaNumCp(cp(1)) {
+          advance()
+          addToken("Underscore", "_")
+          continue
         }
-        addToken("EOF", "")
+        scanIdentifier()
+        continue
+      }
+      // Unrecognized character - report error
+      error("Unexpected character: " + string.fromCodePoint(c))
+      advance()
+      // Progress guard: ensure we always make forward progress
+      if idx == loopStartIdx && current() != -1 {
+        error("lexer made no progress")
+        advance()
+      }
+    }
+    addToken("EOF", "")
         {tokens: tokens, errors: errors}
     }
     {run: _scan}

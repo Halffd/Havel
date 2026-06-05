@@ -946,7 +946,7 @@ if (container.isSetId()) {
         modName = current_chunk->getString(modNameVal->asStringValId());
       }
     }
-    if (!modName.empty()) {
+if (!modName.empty()) {
       ensureModuleLoaded(modName);
       auto git = globals.find(modName);
       if (git != globals.end() && git->second.isObjectId()) {

@@ -304,21 +304,6 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   auto saved_globals = globals;
   auto saved_globals_stack = globals_stack_;
 
-// Unwind to root globals: the bottom of the stack holds the globals
-// that were active before any module closure swapped them.
-if (!globals_stack_.empty()) {
-    auto root_globals = std::move(globals_stack_.front());
-    globals_stack_.erase(globals_stack_.begin());
-    // Merge any REPL-defined globals from saved_globals into root globals
-    // so definitions from previous executePersistent calls are visible.
-    for (auto& [name, val] : saved_globals) {
-        if (root_globals.find(name) == root_globals.end()) {
-            root_globals[name] = std::move(val);
-        }
-    }
-    globals = std::move(root_globals);
-}
-
   // Clear stack and locals for this execution, but PRESERVE:
   // - globals (user-defined variables persist)
   // - heap (objects allocated by user persist)
@@ -359,28 +344,33 @@ if (!globals_stack_.empty()) {
 
     runDispatchLoop(0);
 
+    std::unordered_map<std::string, Value> lazyModuleUpdates;
+    for (const auto &[name, desc] : lazy_modules_) {
+        if (desc.loaded) {
+            auto git = globals.find(name);
+            if (git != globals.end()) {
+                lazyModuleUpdates[name] = git->second;
+            }
+        }
+    }
+
 // Merge post-execution globals back into saved_globals so new REPL
-// definitions (functions, variables) persist across executePersistent calls.
-for (auto& [name, val] : globals) {
+  // definitions (functions, variables) persist across executePersistent calls.
+  for (auto& [name, val] : globals) {
     saved_globals[name] = std::move(val);
-}
+  }
 
   // Restore globals state so the calling module context is unbroken
-  globals = std::move(saved_globals);
-  if (globals.count("myVar")) {
-    fprintf(stderr, "[DBG-EP] myVar found in globals after restore, depth=%d, size=%zu\n", bc_execute_depth_, globals.size());
-  } else {
-    fprintf(stderr, "[DBG-EP] myVar NOT found in globals after restore, depth=%d, size=%zu\n", bc_execute_depth_, globals.size());
-  }
-  globals_stack_ = std::move(saved_globals_stack);
+    globals = std::move(saved_globals);
+    globals_stack_ = std::move(saved_globals_stack);
 
-// Propagate lazy module objects to the restored globals
-for (const auto &[name, value] : lazyModuleUpdates) {
-  globals[name] = value;
-  if (name == "bytecodeBuilder") {
-    globals["bc"] = value;
+    // Propagate lazy module objects to the restored globals
+  for (const auto &[name, value] : lazyModuleUpdates) {
+    globals[name] = value;
+    if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
+      globals["bc"] = value;
+    }
   }
-}
 
   current_chunk = saved_chunk;
   resumeGC();
@@ -2124,9 +2114,8 @@ void VM::doReturn() {
 
   // Restore globals if this frame swapped them (module closure call)
   if (finished.owns_globals && !globals_stack_.empty()) {
-  globals = std::move(globals_stack_.back());
-  globals_stack_.pop_back();
-  fprintf(stderr, "[DBG-LM] loadModule restore globals, myVar=%s, size=%zu\n", globals.count("myVar") ? "present" : "absent", globals.size());
+    globals = std::move(globals_stack_.back());
+    globals_stack_.pop_back();
   }
 
  closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
@@ -2522,19 +2511,23 @@ std::string fnCapturedField = fieldPath;
 }
 
 void VM::registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn) {
-  lazy_modules_[name] = ModuleDescriptor{name, std::move(initFn), false};
+    auto it = lazy_modules_.find(name);
+    if (it != lazy_modules_.end()) {
+        return;
+    }
+    lazy_modules_[name] = ModuleDescriptor{name, std::move(initFn), false};
 
-  auto proxyObj = createHostObject();
-  auto *obj = heap_.object(proxyObj.id);
-  (*obj)["__lazy__"] = Value(true);
-  auto nameStr = createRuntimeString(name);
-  (*obj)["__module__"] = Value::makeStringId(nameStr.id);
-  globals[name] = Value::makeObjectId(proxyObj.id);
+    if (globals.find(name) == globals.end()) {
+        auto proxyObj = createHostObject();
+        auto *obj = heap_.object(proxyObj.id);
+        (*obj)["__lazy__"] = Value(true);
+        auto nameStr = createRuntimeString(name);
+        (*obj)["__module__"] = Value::makeStringId(nameStr.id);
+        globals[name] = Value::makeObjectId(proxyObj.id);
 
-  // Register well-known aliases so module code can reference them
-  // (e.g., "bc" is the alias for "bytecodeBuilder")
-  if (name == "bytecodeBuilder") {
-    globals["bc"] = Value::makeObjectId(proxyObj.id);
+    if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
+      globals["bc"] = Value::makeObjectId(proxyObj.id);
+    }
   }
 }
 
@@ -2558,9 +2551,9 @@ bool VM::ensureModuleLoaded(const std::string &name) {
         if (moduleLoader_.getCached(name, &cached) && cached.isObjectId()) {
           git->second = cached;
           // Also fixup well-known aliases
-          if (name == "bytecodeBuilder") {
-            globals["bc"] = cached;
-          }
+    if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
+      globals["bc"] = cached;
+    }
         }
       }
     }
@@ -2568,24 +2561,31 @@ bool VM::ensureModuleLoaded(const std::string &name) {
   return true;
     }
 
-    VMApi api(*this);
-    it->second.initFn(api);
-    it->second.loaded = true;
+ VMApi api(*this);
+ fprintf(stderr, "[DBG-ENSURE] before initFn for '%s', globals has %zu entries, has_bit=%d\n",
+ name.c_str(), globals.size(), (int)(globals.find(name) != globals.end()));
+ it->second.initFn(api);
+ fprintf(stderr, "[DBG-ENSURE] after initFn for '%s', has_bit=%d, isObj=%d\n",
+ name.c_str(), (int)(globals.find(name) != globals.end()),
+ globals.find(name) != globals.end() ? (int)globals[name].isObjectId() : -1);
+ it->second.loaded = true;
 
-    // After init, globals[name] should now hold the real module object.
-    // Clear the __lazy__ flag on it and cache it for future proxy fixups.
-    auto git = globals.find(name);
-    if (git != globals.end() && git->second.isObjectId()) {
-        auto *obj = heap_.object(git->second.asObjectId());
-        if (obj) {
-            auto *lf = obj->get("__lazy__");
-            if (lf && lf->isBool() && lf->asBool()) {
-                obj->set("__lazy__", Value(false));
-            }
-        }
-        // Cache the loaded module so stale proxies can be fixed later
-        moduleLoader_.putCache(name, git->second);
-    }
+ // After init, globals[name] should now hold the real module object.
+ // Clear the __lazy__ flag on it and cache it for future proxy fixups.
+ auto git = globals.find(name);
+ if (git != globals.end() && git->second.isObjectId()) {
+ auto *obj = heap_.object(git->second.asObjectId());
+ if (obj) {
+ fprintf(stderr, "[DBG-ENSURE] obj at %p, fields=%zu, has_lazy=%d\n",
+ (void*)obj, obj->size(), (int)(obj->get("__lazy__") != nullptr));
+ auto *lf = obj->get("__lazy__");
+ if (lf && lf->isBool() && lf->asBool()) {
+ obj->set("__lazy__", Value(false));
+ }
+ }
+ // Cache the loaded module so stale proxies can be fixed later
+ moduleLoader_.putCache(name, git->second);
+ }
 
     return true;
 }
@@ -2965,7 +2965,7 @@ Value VM::loadModule(const std::string& path) {
   for (const auto &[name, value] : lazyModuleUpdates) {
     globals[name] = value;
     // Propagate well-known aliases: bytecodeBuilder module also sets "bc"
-    if (name == "bytecodeBuilder") {
+    if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
       globals["bc"] = value;
     }
   }

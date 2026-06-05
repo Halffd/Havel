@@ -233,9 +233,12 @@ case OpCode::TAIL_CALL: {
             modName = current_chunk->getString(modNameVal->asStringValId());
           }
         }
-        if (!modName.empty()) {
-            ensureModuleLoaded(modName);
-            auto git = globals.find(modName);
+if (!modName.empty()) {
+        ensureModuleLoaded(modName);
+        write(2, "LAZY_FIXUP modName=", 20);
+        write(2, modName.c_str(), modName.size());
+        write(2, "\n", 1);
+        auto git = globals.find(modName);
             if (git != globals.end() && git->second.isObjectId()) {
                 receiver = git->second;
                 instanceObj = heap_.object(receiver.asObjectId());
@@ -390,8 +393,8 @@ all_args.insert(all_args.end(), args2.begin(), args2.end());
         std::string resolved_name = host_function_names_[host_func_idx];
 		auto fnIt = host_functions.find(resolved_name);
 			if (fnIt != host_functions.end()) {
-    Value result = fnIt->second(all_args);
-    pushStack(result);
+      Value result = fnIt->second(all_args);
+      pushStack(result);
     if (hot_func_cb_) {
       if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
         currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);

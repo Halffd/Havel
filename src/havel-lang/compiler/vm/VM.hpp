@@ -581,13 +581,13 @@ public:
         }
         return Value::makeNull();
     }
-    Value lookupGlobalByKey(const std::string& key) {
-        auto it = globals.find(key);
-        if (it != globals.end()) return it->second;
-        auto hostIt = host_function_globals_.find(key);
-        if (hostIt != host_function_globals_.end()) return hostIt->second;
-        return Value::makeNull();
-    }
+Value lookupGlobalByKey(const std::string& key) {
+    auto it = globals.find(key);
+    if (it != globals.end()) return it->second;
+    auto hostIt = host_function_globals_.find(key);
+    if (hostIt != host_function_globals_.end()) return hostIt->second;
+    return Value::makeNull();
+  }
 
     // Backedge loop detection
     void recordBackedgePublic(uint32_t ip) {
@@ -823,10 +823,19 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
   
-  void setGlobal(std::string name, Value value) {
-	globals[std::move(name)] = std::move(value);
-    emitVariableChanged(name);
-  }
+ void setGlobal(std::string name, Value value) {
+ if (name == "bit" || name == "Bit") {
+ fprintf(stderr, "[DBG-SETGLOBAL] name='%s' isObj=%d objId=%u\n",
+ name.c_str(), (int)value.isObjectId(),
+ value.isObjectId() ? value.asObjectId() : 0);
+ auto *obj = value.isObjectId() ? heap_.object(value.asObjectId()) : nullptr;
+ fprintf(stderr, "[DBG-SETGLOBAL] obj=%p fields=%zu has_lazy=%d\n",
+ (void*)obj, obj ? obj->size() : 0,
+ obj ? (int)(obj->get("__lazy__") != nullptr) : -1);
+ }
+ globals[std::move(name)] = std::move(value);
+ emitVariableChanged(name);
+ }
   void eraseGlobal(const std::string &name) {
     globals.erase(name);
   }

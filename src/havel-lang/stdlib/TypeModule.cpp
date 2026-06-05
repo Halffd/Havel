@@ -122,7 +122,7 @@ void registerTypeModule(const VMApi &api) {
  if (obj) {
  for (const auto& [name, value] : *obj) {
  if (name.empty() || name[0] == '_') continue;
-                        api.setGlobalIfNew(name, value);
+ api.setGlobal(name, value);
  }
  }
 

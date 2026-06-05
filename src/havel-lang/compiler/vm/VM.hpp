@@ -72,6 +72,7 @@ struct ModuleDescriptor {
     std::string name;
     std::function<void(class VMApi&)> initFn;
     bool loaded = false;
+    std::vector<std::string> aliases;
 };
 
 // ============================================================================
@@ -823,11 +824,11 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
   
-void setGlobal(std::string name, Value value) {
-    auto key = name;
-    globals[std::move(name)] = std::move(value);
-    emitVariableChanged(key);
-  }
+    void setGlobal(std::string name, Value value) {
+        auto key = name;
+        globals[std::move(name)] = std::move(value);
+        emitVariableChanged(key);
+    }
   void eraseGlobal(const std::string &name) {
     globals.erase(name);
   }
@@ -1004,7 +1005,7 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
 
     Value loadModule(const std::string& path);
   Value loadScript(const std::string& path);
-void registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn);
+void registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn, const std::vector<std::string> &aliases = {});
   bool ensureModuleLoaded(const std::string &name);
   bool isLazyModuleRegistered(const std::string &name) const;
   void activateLazyModule(const std::string &name);

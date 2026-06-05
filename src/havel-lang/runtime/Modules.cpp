@@ -418,55 +418,116 @@ void Modules::installHostFunctions() {
  }
  }
 
- static const char *lazyModules[] = {
- "regex", "time", "timer",
- #ifndef HAVEL_PURE_VM
- "hotkey",
- #endif
- "fs", "random", "log", "sys", "shell",
- "ptr", "fmt", "pack", "bit", "option", "bytecodeBuilder",
- #ifndef HAVEL_PURE_VM
- "http", "browser",
- "config", "window", "display", "help", "mouse", "automation",
- "image", "media", "app", "audio", "brightness", "filemanager",
- "io", "mapmanager", "mode", "ffi", "zoom",
- "alttab", "clipboard", "historyclipboard", "monitoringclipboard",
- #endif
- };
+    static const struct { const char *name; const char *aliases[8]; } lazyModules[] = {
+        {"regex", {}},
+        {"time", {}},
+        {"timer", {}},
+#ifndef HAVEL_PURE_VM
+        {"hotkey", {"Hotkey"}},
+#endif
+        {"fs", {}},
+        {"random", {}},
+        {"log", {"debug"}},
+        {"sys", {"system", "process", "jit"}},
+        {"shell", {}},
+        {"ptr", {}},
+        {"fmt", {}},
+        {"pack", {}},
+        {"bit", {}},
+        {"option", {}},
+        {"bytecodeBuilder", {"bc"}},
+#ifndef HAVEL_PURE_VM
+        {"http", {}},
+        {"browser", {}},
+        {"config", {"cfg", "conf"}},
+        {"window", {}},
+        {"display", {}},
+        {"help", {}},
+        {"mouse", {}},
+        {"automation", {"pixel"}},
+        {"image", {}},
+        {"media", {}},
+        {"app", {}},
+        {"audio", {}},
+        {"brightness", {}},
+        {"filemanager", {}},
+        {"io", {}},
+        {"mapmanager", {}},
+        {"mode", {}},
+        {"ffi", {}},
+        {"zoom", {}},
+        {"alttab", {}},
+        {"clipboard", {}},
+        {"historyclipboard", {"clipboardHistory"}},
+        {"monitoringclipboard", {"clipboardMonitor"}},
+        {"screenshot", {}},
+        {"textchunker", {}},
+        {"clipboardmgr", {"clipboardMgr"}},
+#endif
+    };
 
- for (auto name : lazyModules) {
- std::string modName(name);
- vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
- auto plugin = extensionLoader_->loadModulePlugin(modName);
- if (plugin) {
- plugin->register_fn(static_cast<void *>(&a));
- }
- });
- }
- #else
- registerPureStdLib(vm);
+    for (auto &entry : lazyModules) {
+        std::string modName(entry.name);
+        std::vector<std::string> aliases;
+        for (int i = 0; i < 8 && entry.aliases[i]; ++i) {
+            aliases.emplace_back(entry.aliases[i]);
+        }
+        vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
+            auto plugin = extensionLoader_->loadModulePlugin(modName);
+            if (plugin) {
+                plugin->register_fn(static_cast<void *>(&a));
+            }
+        }, aliases);
+    }
+#else
+    registerPureStdLib(vm);
 
- static const char *hostLazyModules[] = {
- #ifndef HAVEL_PURE_VM
- "hotkey",
- "http", "browser",
- "config", "window", "display", "help", "mouse", "automation",
- "image", "media", "app", "audio", "brightness", "filemanager",
- "io", "mapmanager", "mode", "ffi", "zoom",
- "alttab", "clipboard", "historyclipboard", "monitoringclipboard",
- #endif
- };
+    static const struct { const char *name; const char *aliases[8]; } hostLazyModules[] = {
+#ifndef HAVEL_PURE_VM
+        {"hotkey", {"Hotkey"}},
+        {"http", {}},
+        {"browser", {}},
+        {"config", {"cfg", "conf"}},
+        {"window", {}},
+        {"display", {}},
+        {"help", {}},
+        {"mouse", {}},
+        {"automation", {"pixel"}},
+        {"image", {}},
+        {"media", {}},
+        {"app", {}},
+        {"audio", {}},
+        {"brightness", {}},
+        {"filemanager", {}},
+        {"io", {}},
+        {"mapmanager", {}},
+        {"mode", {}},
+        {"ffi", {}},
+        {"zoom", {}},
+        {"alttab", {}},
+        {"clipboard", {}},
+        {"historyclipboard", {"clipboardHistory"}},
+        {"monitoringclipboard", {"clipboardMonitor"}},
+        {"screenshot", {}},
+        {"textchunker", {}},
+        {"clipboardmgr", {"clipboardMgr"}},
+#endif
+    };
 
- for (auto name : hostLazyModules) {
- std::string modName(name);
- vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
- auto plugin = extensionLoader_->loadModulePlugin(modName);
- if (plugin) {
- plugin->register_fn(static_cast<void *>(&a));
- }
- });
- }
- #endif
+    for (auto &entry : hostLazyModules) {
+        std::string modName(entry.name);
+        std::vector<std::string> aliases;
+        for (int i = 0; i < 8 && entry.aliases[i]; ++i) {
+            aliases.emplace_back(entry.aliases[i]);
+        }
+        vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
+            auto plugin = extensionLoader_->loadModulePlugin(modName);
+            if (plugin) {
+                plugin->register_fn(static_cast<void *>(&a));
+            }
+        }, aliases);
+    }
+#endif
  }
 
  void Modules::install(InstallProfile profile, bool eagerBridges) {

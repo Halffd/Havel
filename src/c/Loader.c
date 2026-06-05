@@ -280,7 +280,7 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
  char *path = find_library(loader, lib_name);
  if (!path) return NULL;
 
- void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+ void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
  if (!handle) {
   HAVEL_LOGF_ERROR("dlopen failed for module '%s': %s", name,
                     dlerror() ? dlerror() : "unknown");
@@ -347,7 +347,7 @@ const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char
  char *path = find_library(loader, lib_name);
  if (!path) return NULL;
 
- void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+ void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
  if (!handle) {
   HAVEL_LOGF_ERROR("dlopen failed for toolkit '%s': %s", name,
                     dlerror() ? dlerror() : "unknown");

@@ -350,27 +350,30 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
             auto git = globals.find(name);
             if (git != globals.end()) {
                 lazyModuleUpdates[name] = git->second;
+                for (const auto &alias : desc.aliases) {
+                    auto aliasIt = globals.find(alias);
+                    if (aliasIt != globals.end()) {
+                        lazyModuleUpdates[alias] = aliasIt->second;
+                    }
+                }
             }
         }
     }
 
-// Merge post-execution globals back into saved_globals so new REPL
-  // definitions (functions, variables) persist across executePersistent calls.
-  for (auto& [name, val] : globals) {
-    saved_globals[name] = std::move(val);
-  }
+    // Merge post-execution globals back into saved_globals so new REPL
+    // definitions (functions, variables) persist across executePersistent calls.
+    for (auto& [name, val] : globals) {
+        saved_globals[name] = std::move(val);
+    }
 
-  // Restore globals state so the calling module context is unbroken
+    // Restore globals state so the calling module context is unbroken
     globals = std::move(saved_globals);
     globals_stack_ = std::move(saved_globals_stack);
 
     // Propagate lazy module objects to the restored globals
-  for (const auto &[name, value] : lazyModuleUpdates) {
-    globals[name] = value;
-    if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
-      globals["bc"] = value;
+    for (const auto &[name, value] : lazyModuleUpdates) {
+        globals[name] = value;
     }
-  }
 
   current_chunk = saved_chunk;
   resumeGC();
@@ -1275,24 +1278,23 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  tail_call_depth_ = 0;
 
     // Handle host function call directly
- if (callee_value.isHostFuncId()) {
- uint32_t host_func_idx = callee_value.asHostFuncId();
- if (host_func_idx >= host_function_names_.size()) {
- COMPILER_THROW("Host function index out of range: " +
- std::to_string(host_func_idx));
- }
-
- const std::string &name = host_function_names_[host_func_idx];
- auto it = host_functions.find(name);
- if (it == host_functions.end()) {
- COMPILER_THROW("Host function not found: " + name);
- }
- gc_suspend_counter_++;
- Value result = it->second(args);
- gc_suspend_counter_--;
- pushStack(result);
- maybeCollectGarbage();
- return;
+if (callee_value.isHostFuncId()) {
+        uint32_t host_func_idx = callee_value.asHostFuncId();
+        if (host_func_idx >= host_function_names_.size()) {
+            COMPILER_THROW("Host function index out of range: " +
+                std::to_string(host_func_idx));
+        }
+        const std::string &name = host_function_names_[host_func_idx];
+        auto it = host_functions.find(name);
+        if (it == host_functions.end()) {
+            COMPILER_THROW("Host function not found: " + name);
+        }
+        gc_suspend_counter_++;
+    Value result = it->second(args);
+    gc_suspend_counter_--;
+    pushStack(result);
+    maybeCollectGarbage();
+    return;
   }
 
   if (frame_count_ >= max_call_depth_) {
@@ -2515,55 +2517,28 @@ bool VM::isLazyModuleRegistered(const std::string &name) const {
 return lazy_modules_.find(name) != lazy_modules_.end();
 }
 
-void VM::registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn) {
+void VM::registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn, const std::vector<std::string> &aliases) {
     auto it = lazy_modules_.find(name);
     if (it != lazy_modules_.end()) {
         return;
     }
-    lazy_modules_[name] = ModuleDescriptor{name, std::move(initFn), false};
+    lazy_modules_[name] = ModuleDescriptor{name, std::move(initFn), false, aliases};
 
-    if (globals.find(name) == globals.end()) {
-        auto proxyObj = createHostObject();
-        auto *obj = heap_.object(proxyObj.id);
-        (*obj)["__lazy__"] = Value(true);
-        auto nameStr = createRuntimeString(name);
-        (*obj)["__module__"] = Value::makeStringId(nameStr.id);
-        globals[name] = Value::makeObjectId(proxyObj.id);
+    auto makeProxy = [&](const std::string &globalName) {
+        if (globals.find(globalName) == globals.end()) {
+            auto proxyObj = createHostObject();
+            auto *obj = heap_.object(proxyObj.id);
+            (*obj)["__lazy__"] = Value(true);
+            auto nameStr = createRuntimeString(name);
+            (*obj)["__module__"] = Value::makeStringId(nameStr.id);
+            globals[globalName] = Value::makeObjectId(proxyObj.id);
+        }
+    };
 
-    if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
-      globals["bc"] = Value::makeObjectId(proxyObj.id);
+    makeProxy(name);
+    for (const auto &alias : aliases) {
+        makeProxy(alias);
     }
-  }
-}
-
-bool VM::ensureModuleLoaded(const std::string &name) {
- auto it = lazy_modules_.find(name);
- if (it == lazy_modules_.end()) return false;
- if (it->second.loaded) {
-  auto git = globals.find(name);
-  if (git != globals.end() && git->second.isObjectId()) {
-   auto *obj = heap_.object(git->second.asObjectId());
-   if (obj) {
-    auto *lf = obj->get("__lazy__");
-    if (lf && lf->isBool() && lf->asBool()) {
-     Value cached;
-     if (moduleLoader_.getCached(name, &cached) && cached.isObjectId()) {
-      git->second = cached;
-      if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
-       globals["bc"] = cached;
-      }
-     }
-    }
-   }
-  }
-  return true;
- }
- activateLazyModule(name);
- auto git = globals.find(name);
- if (git != globals.end()) {
-  moduleLoader_.putCache(name, git->second);
- }
- return true;
 }
 
 void VM::activateLazyModule(const std::string &name) {
@@ -2579,8 +2554,17 @@ void VM::activateLazyModule(const std::string &name) {
         if (postInitObj) {
             auto *lazyFlag = postInitObj->get("__lazy__");
             if (!lazyFlag || !lazyFlag->isBool() || !lazyFlag->asBool()) {
-                if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
-                    globals["bc"] = postInitIt->second;
+                for (const auto &alias : it->second.aliases) {
+                    auto aliasIt = globals.find(alias);
+                    if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
+                        auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
+                        if (aliasObj) {
+                            auto *alf = aliasObj->get("__lazy__");
+                            if (alf && alf->isBool() && alf->asBool()) {
+                                globals.erase(aliasIt);
+                            }
+                        }
+                    }
                 }
                 moduleLoader_.putCache(name, postInitIt->second);
                 return;
@@ -2609,13 +2593,28 @@ void VM::activateLazyModule(const std::string &name) {
     // Build namespace object from host function globals
     std::string prefix = name + ".";
     std::string usPrefix = name + "_";
-    std::string altPrefix;
-    if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
-        altPrefix = "bc.";
+    std::vector<std::string> aliasPrefixes;
+    for (const auto &alias : it->second.aliases) {
+        aliasPrefixes.push_back(alias + ".");
     }
+    auto matchesPrefix = [&](const std::string &fnName) -> bool {
+        if (fnName.rfind(prefix, 0) == 0 || fnName.rfind(usPrefix, 0) == 0) return true;
+        for (const auto &ap : aliasPrefixes) {
+            if (fnName.rfind(ap, 0) == 0) return true;
+        }
+        return false;
+    };
+    auto extractLocal = [&](const std::string &fnName) -> std::string {
+        if (fnName.rfind(prefix, 0) == 0) return fnName.substr(prefix.size());
+        if (fnName.rfind(usPrefix, 0) == 0) return fnName.substr(usPrefix.size());
+        for (const auto &ap : aliasPrefixes) {
+            if (fnName.rfind(ap, 0) == 0) return fnName.substr(ap.size());
+        }
+        return {};
+    };
     bool hasAny = false;
     for (const auto& [fnName, fnVal] : host_function_globals_) {
-        if (fnName.rfind(prefix, 0) == 0 || fnName.rfind(usPrefix, 0) == 0 || (!altPrefix.empty() && fnName.rfind(altPrefix, 0) == 0)) {
+        if (matchesPrefix(fnName)) {
             hasAny = true;
             break;
         }
@@ -2627,21 +2626,14 @@ void VM::activateLazyModule(const std::string &name) {
             (*nsObj)[k] = v;
         }
         for (const auto& [fnName, fnVal] : host_function_globals_) {
-            std::string localName;
-            if (fnName.rfind(prefix, 0) == 0) {
-                localName = fnName.substr(prefix.size());
-            } else if (fnName.rfind(usPrefix, 0) == 0) {
-                localName = fnName.substr(usPrefix.size());
-            } else if (!altPrefix.empty() && fnName.rfind(altPrefix, 0) == 0) {
-                localName = fnName.substr(altPrefix.size());
-            }
+            std::string localName = extractLocal(fnName);
             if (!localName.empty() && !nsObj->get(localName)) {
                 (*nsObj)[localName] = fnVal;
             }
         }
         globals[name] = Value::makeObjectId(nsRef.id);
-        if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
-            globals["bc"] = Value::makeObjectId(nsRef.id);
+        for (const auto &alias : it->second.aliases) {
+            globals[alias] = Value::makeObjectId(nsRef.id);
         }
     } else if (!savedFields.empty()) {
         auto nsRef = createHostObject();
@@ -2649,8 +2641,62 @@ void VM::activateLazyModule(const std::string &name) {
         for (auto& [k, v] : savedFields) {
             (*nsObj)[k] = v;
         }
- globals[name] = Value::makeObjectId(nsRef.id);
- }
+        globals[name] = Value::makeObjectId(nsRef.id);
+        }
+}
+
+bool VM::ensureModuleLoaded(const std::string &name) {
+    auto it = lazy_modules_.find(name);
+    if (it == lazy_modules_.end()) return false;
+    if (it->second.loaded) {
+        auto git = globals.find(name);
+        if (git != globals.end() && git->second.isObjectId()) {
+            auto *obj = heap_.object(git->second.asObjectId());
+            if (obj) {
+                auto *lf = obj->get("__lazy__");
+                if (lf && lf->isBool() && lf->asBool()) {
+                    Value cached;
+                    if (moduleLoader_.getCached(name, &cached) && cached.isObjectId()) {
+                        git->second = cached;
+                        for (const auto &alias : it->second.aliases) {
+                            auto aliasIt = globals.find(alias);
+                            if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
+                                auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
+                                if (aliasObj) {
+                                    auto *alf = aliasObj->get("__lazy__");
+                                    if (alf && alf->isBool() && alf->asBool()) {
+                                        globals.erase(aliasIt);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    activateLazyModule(name);
+    auto git = globals.find(name);
+    if (git != globals.end()) {
+        moduleLoader_.putCache(name, git->second);
+        auto modIt = lazy_modules_.find(name);
+        if (modIt != lazy_modules_.end()) {
+            for (const auto &alias : modIt->second.aliases) {
+                auto aliasIt = globals.find(alias);
+                if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
+                    auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
+                    if (aliasObj) {
+                        auto *alf = aliasObj->get("__lazy__");
+                        if (alf && alf->isBool() && alf->asBool()) {
+                            globals.erase(aliasIt);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return true;
 }
 
 Value VM::loadModule(const std::string& path) {
@@ -2996,31 +3042,34 @@ auto *obj = heap_.object(exportsObj.id);
   // during the module's execution (e.g., fs, sys) so we can propagate
   // them to the caller's globals — otherwise the caller still has
   // the stale lazy proxy objects.
-  std::unordered_map<std::string, Value> lazyModuleUpdates;
-  for (const auto &lm : lazy_modules_) {
-    if (lm.second.loaded) {
-      auto git = globals.find(lm.first);
-      if (git != globals.end() && git->second.isObjectId()) {
-        auto *obj = heap_.object(git->second.asObjectId());
-        if (obj && !obj->get("__lazy__")) {
-          // This module's global was replaced with the real object
-          // (no __lazy__ flag means it's the initialized namespace)
-          lazyModuleUpdates[lm.first] = git->second;
+    std::unordered_map<std::string, Value> lazyModuleUpdates;
+    for (const auto &lm : lazy_modules_) {
+        if (lm.second.loaded) {
+            auto git = globals.find(lm.first);
+            if (git != globals.end() && git->second.isObjectId()) {
+                auto *lmobj = heap_.object(git->second.asObjectId());
+                if (lmobj && !lmobj->get("__lazy__")) {
+                    lazyModuleUpdates[lm.first] = git->second;
+                    for (const auto &alias : lm.second.aliases) {
+                        auto aliasIt = globals.find(alias);
+                        if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
+                            auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
+                            if (aliasObj && !aliasObj->get("__lazy__")) {
+                                lazyModuleUpdates[alias] = aliasIt->second;
+                            }
+                        }
+                    }
+                }
+            }
         }
-      }
     }
-  }
-  globals = std::move(globals_stack_.back());
-  globals_stack_.pop_back();
-  // Propagate lazy module objects to the caller's globals
-  for (const auto &[name, value] : lazyModuleUpdates) {
-    globals[name] = value;
-    // Propagate well-known aliases: bytecodeBuilder module also sets "bc"
-    if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
-      globals["bc"] = value;
+    globals = std::move(globals_stack_.back());
+    globals_stack_.pop_back();
+    // Propagate lazy module objects to the caller's globals
+    for (const auto &[name, value] : lazyModuleUpdates) {
+        globals[name] = value;
     }
-  }
-  globals["_G"] = old_g;
+    globals["_G"] = old_g;
   globals_mirror_object_id_ = old_mirror_id;
     immutable_globals_ = saved_immutable_globals;
     stack = std::move(saved_stack);

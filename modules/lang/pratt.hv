@@ -4,29 +4,30 @@
 
 use { tokenize, TOKEN_TYPES, KEYWORDS, TID, TID_NAME } from "lexer"
 use { NODE_TYPES, BINARY_OPS, COMPOUND_ASSIGN_OPS, UNARY_OPS,
-	Program, BlockStatement, ExpressionStatement,
-	NumberLiteral, StringLiteral, BooleanLiteral, NullLiteral,
-	Identifier, BinaryExpression, UnaryExpression, UpdateExpression,
-	CallExpression, MemberExpression, IndexExpression,
-	AssignmentExpression, CompoundAssignment,
-	ArrayLiteral, ObjectLiteral, ObjectField, SpreadExpression,
-	IfStatement, WhileStatement, ForStatement, LoopStatement,
-	RepeatStatement, BreakStatement, ContinueStatement,
-	FnDeclaration, LambdaExpression, ReturnStatement,
-	LetDeclaration, ValDeclaration, UseStatement, ImportStatement,
-HotkeyBinding, BacktickExpression, ShellCommand, DoWhileStatement, WhenBlock,
-WithStatement, DecoratorStatement,
+Program, BlockStatement, ExpressionStatement,
+NumberLiteral, StringLiteral, BooleanLiteral, NullLiteral,
+Identifier, BinaryExpression, UnaryExpression, UpdateExpression,
+CallExpression, MemberExpression, IndexExpression,
+AssignmentExpression, CompoundAssignment,
+ArrayLiteral, ObjectLiteral, ObjectField, SpreadExpression,
+IfStatement, WhileStatement, DoWhileStatement, ForStatement, LoopStatement,
+RepeatStatement, BreakStatement, ContinueStatement,
+FnDeclaration, LambdaExpression, ReturnStatement,
+LetDeclaration, ValDeclaration, UseStatement, ImportStatement,
+HotkeyBinding, BacktickExpression, ShellCommand,
+RangeExpression, TernaryExpression, PipelineExpression,
+ThrowStatement, TryStatement, MatchExpression, MatchCase,
+InterpolatedString, RegexLiteral, AtExpression, AtAtExpression,
+CastExpression, HotkeyExpression,
+WhenBlock, WithStatement, DecoratorStatement,
 OnModeStatement, OffModeStatement, OnReloadStatement, OnStartStatement,
 OnTapStatement, OnComboStatement, OnKeyDownStatement, OnKeyUpStatement, OnMessageStatement,
 ModesBlock, ModeDefinition, ConfigSection, InputStatement, MultipleAssignment, QueryExpression,
-RangeExpression, TernaryExpression, PipelineExpression,
-	ThrowStatement, TryStatement, MatchExpression, MatchCase,
-	InterpolatedString, RegexLiteral, AtExpression, AtAtExpression, CastExpression, HotkeyExpression,
-	ConfigBlock, SleepStatement, DeferStatement, WaitExpression, WaitGroupExpression, ErrorNode,
+ConfigBlock, SleepStatement, DeferStatement, WaitExpression, WaitGroupExpression, ErrorNode,
 ClassDeclaration, StructDeclaration, EnumDeclaration, TraitDeclaration, ProtocolDeclaration, ImplDeclaration,
 TypeParam, isNode, prettyPrint } from "ast"
 
-// --- Binding power constants (matching C++ getBindingPower() values) ---
+// --- Binding power constants (matching C++ switch-based values) ---
 BP_NONE = 0
 BP_ASSIGN = 10
 BP_NULLISH = 20
@@ -82,10 +83,13 @@ RBP_TABLE[TID.LeftArrow] = 5; RBP_TABLE[TID.Arrow] = 5
 RBP_TABLE[TID.Power] = 130; RBP_TABLE[TID.Nullish] = 15; RBP_TABLE[TID.Question] = 10
 
 fn getBindingPower(ttype) {
-  if ttype == TID.Not: return 52
-  r = BP_TABLE[ttype]
-  if r != null: return r
-  return BP_NONE
+    if ttype == TID.Not {
+        if at(1).tid == TID.In { return 52 }
+        return BP_NONE
+    }
+    r = BP_TABLE[ttype]
+    if r != null: return r
+    return BP_NONE
 }
 
 // --- getRightBindingPower: lower rbp for right-associative operators ---
@@ -131,8 +135,7 @@ NUD_TOKENS[TID.Tilde] = true; NUD_TOKENS[TID.Hotkey] = true
 NUD_TOKENS[TID.Thread] = true; NUD_TOKENS[TID.Interval] = true; NUD_TOKENS[TID.Timeout] = true
 NUD_TOKENS[TID.Async] = true; NUD_TOKENS[TID.LeftArrow] = true; NUD_TOKENS[TID.CharLiteral] = true
 NUD_TOKENS[TID.Yield] = true; NUD_TOKENS[TID.Channel] = true; NUD_TOKENS[TID.Go] = true
-NUD_TOKENS[TID.WaitGroup] = true; NUD_TOKENS[TID.Wait] = true
-NUD_TOKENS[TID.From] = true
+NUD_TOKENS[TID.WaitGroup] = true; NUD_TOKENS[TID.Wait] = true; NUD_TOKENS[TID.From] = true
 
 // --- Keywords allowed as identifiers in expression context ---
 KEYWORD_IDENTS = {}
@@ -420,10 +423,7 @@ return ShellCommand(tok.value, true, l, c)
 else if tt == TID.InterpolatedString {
 return parseInterpolatedString(tok.value, l, c)
 }
-else if tt == TID.From {
-return parseQueryExpression(l, c)
-}
-else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.Spread and tt != TID.LeftArrow and tt != TID.Hotkey and tt != TID.Async and tt != TID.Yield and tt != TID.Channel and tt != TID.Go and tt != TID.Thread and tt != TID.Interval and tt != TID.Timeout and tt != TID.Hash and tt != TID.From) {
+else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer) {
 return Identifier(tok.value, l, c)
 }
 else if tt == TID.True {
@@ -508,7 +508,7 @@ field = advance()
 return AtExpression(field.value, l, c)
 }
 else {
-return AtExpression(null, l, c)
+return error("Expected field name after '@'", l, c)
 }
 }
 else if tt == TID.AtAt {
@@ -581,94 +581,6 @@ return WaitGroupExpression(l, c)
 else if tt == TID.Wait {
 target = parseExpr(140)
 return WaitExpression(target, l, c)
-}
-else if tt == TID.CharLiteral {
-ch = tok.value.len > 0 ? tok.value.sub(0, 1) : "\0"
-return NumberLiteral(str(ch.codePointAt(0)), l, c)
-}
-else if tt == TID.Spread {
-operand = parseExpr(140)
-return SpreadExpression(operand, l, c)
-}
-else if tt == TID.LeftArrow {
-argument = parseExpr(140)
-node = UnaryExpression("<-", argument, l, c)
-node.isAwait = true
-return node
-}
-else if tt == TID.Hotkey {
-return HotkeyExpression(tok.value, l, c)
-}
-else if tt == TID.Async {
-return Identifier("async", l, c)
-}
-else if tt == TID.Yield {
-if canStartExpr(current().tid) or current().tid == TID.Minus or current().tid == TID.Plus {
-value = parseExpr(0)
-node = UnaryExpression("yield", value, l, c)
-}
-else {
-node = Identifier("yield", l, c)
-}
-return node
-}
-else if tt == TID.Channel {
-if current().tid == TID.OpenBrace or current().tid == TID.Colon {
-body = parseBlock()
-return CallExpression(Identifier("channel", l, c), [LambdaExpression([], body, l, c)], [], l, c)
-}
-return Identifier("channel", l, c)
-}
-else if tt == TID.Go {
-if current().tid == TID.OpenBrace or current().tid == TID.Colon {
-body = parseBlock()
-return CallExpression(Identifier("go", l, c), [LambdaExpression([], body, l, c)], [], l, c)
-}
-expr = parseExpr(0)
-return CallExpression(Identifier("go", l, c), [expr], [], l, c)
-}
-else if tt == TID.Thread {
-if current().tid == TID.OpenParen {
-node = MemberExpression(Identifier("thread", l, c), "spawn", l, c)
-return node
-}
-if current().tid == TID.Dot {
-return Identifier("thread", l, c)
-}
-if current().tid == TID.OpenBrace or current().tid == TID.Colon {
-body = parseBlock()
-return CallExpression(Identifier("thread", l, c), [LambdaExpression([], body, l, c)], [], l, c)
-}
-return Identifier("thread", l, c)
-}
-else if tt == TID.Interval {
-if current().tid == TID.OpenParen {
-node = MemberExpression(Identifier("interval", l, c), "start", l, c)
-return node
-}
-if current().tid == TID.Dot {
-return Identifier("interval", l, c)
-}
-return Identifier("interval", l, c)
-}
-else if tt == TID.Timeout {
-if current().tid == TID.OpenParen {
-node = MemberExpression(Identifier("timeout", l, c), "start", l, c)
-return node
-}
-if current().tid == TID.Dot {
-return Identifier("timeout", l, c)
-}
-return Identifier("timeout", l, c)
-}
-else if tt == TID.Hash {
-if current().tid == TID.Identifier or current().tid == TID.Hotkey {
-combo = "#" + current().value
-advance()
-return HotkeyExpression(combo, l, c)
-}
-operand = parseExpr(140)
-return UnaryExpression("#", operand, l, c)
 }
 else {
 return error("Unexpected token in expression: " + tt, l, c)
@@ -754,29 +666,29 @@ else if tt == TID.Tilde or tt == TID.Matches {
 right = parseExpr(getRightBindingPower(tt))
 return BinaryExpression(left, "matches", right, l, c)
 }
-else if tt == TID.As {
-if current().tid == TID.Identifier {
-targetType = advance().value
-return CastExpression(left, targetType, l, c)
-}
-else {
-return error("Expected type name after 'as'", l, c)
-}
-}
 else if tt == TID.In {
 right = parseExpr(getRightBindingPower(TID.In))
 return BinaryExpression(left, "in", right, l, c)
 }
-else if tt == TID.Not {
-if current().tid == TID.In {
-advance()
-right = parseExpr(getRightBindingPower(TID.In))
-return BinaryExpression(left, "not in", right, l, c)
-}
-else {
-return left
-}
-}
+    else if tt == TID.Not {
+        if current().tid == TID.In {
+            advance()
+            right = parseExpr(getRightBindingPower(TID.In))
+            return BinaryExpression(left, "not in", right, l, c)
+        }
+        else {
+            return left
+        }
+    }
+    else if tt == TID.As {
+        if current().tid == TID.Identifier {
+            targetType = advance().value
+            return CastExpression(left, targetType, l, c)
+        }
+        else {
+            return error("Expected type name after 'as'", l, c)
+        }
+    }
 else if tt == TID.Less {
 right = parseExpr(getRightBindingPower(TID.Less))
 return BinaryExpression(left, "<", right, l, c)
@@ -922,7 +834,7 @@ else if tt == TID.Arrow {
 if inMatchExpr {
 return null
 }
-        if left == null or left.kind != "Identifier" {
+if left == null or left.kind != TID.Identifier {
 return error("Arrow function requires identifier parameter", l, c)
 }
 paramName = left.name
@@ -1137,37 +1049,9 @@ fn parseCallArgs() {
             parts.push(StringLiteral(buf, l, c))
 
   }
-return InterpolatedString(parts, l, c)
+  return InterpolatedString(parts, l, c)
 
-}
-// ===================================================================
-// QUERY EXPRESSION: from x in source where cond select transform
-// Desugars to: source | filter(x => cond) | map(x => transform)
-// ===================================================================
-fn parseQueryExpression(l, c) {
-advance() // consume 'from'
-if current().tid != TID.Identifier {
-return error("Expected variable name after 'from'", current().line, current().col)
-}
-varName = advance().value
-if current().tid != TID.In {
-return error("Expected 'in' after variable name in query expression", current().line, current().col)
-}
-advance() // consume 'in'
-source = parseExpr(BP_ASSIGN)
-whereClauses = []
-while current().tid == TID.Where {
-advance() // consume 'where'
-cond = parseExpr(BP_ASSIGN)
-whereClauses.push(cond)
-}
-selectClause = null
-if current().tid == TID.Select {
-advance() // consume 'select'
-selectClause = parseExpr(BP_ASSIGN)
-}
-return QueryExpression(varName, source, whereClauses, selectClause, l, c)
-}
+  }
     // ===================================================================
     // HELPER: Parenthesized expression or lambda
     // ===================================================================
@@ -1753,87 +1637,58 @@ fn parseStatement() {
             return parseHotkeyStatement()
 
         }
-// @identifier => block (hotkey syntax) or @decorator fn/class/let/val/const
-if tt == TID.At and at(1).tid == TID.Identifier {
-savePos = pos
-advance() // @
-advance() // identifier
-if current().tid == TID.Arrow {
-pos = savePos
-syncCur()
-return parseHotkeyStatement()
-}
-// Check for @decorator(args) syntax
-if current().tid == TID.OpenParen {
-depth = 1
-advance()
-while depth > 0 && notEOF() {
-if current().tid == TID.OpenParen: depth = depth + 1
-else if current().tid == TID.CloseParen: depth = depth - 1
-advance()
-}
-}
-skipNewlines()
-nextTid = current().tid
-pos = savePos
-syncCur()
-if nextTid == TID.Fn or nextTid == TID.Class or nextTid == TID.Let or nextTid == TID.Val or nextTid == TID.Const {
-return parseAtDecoratorStatement()
-}
-}
-// [decorator] syntax
-if tt == TID.OpenBracket {
-savePos = pos
-lookAhead = pos
-// Skip past [ident] or [ident(args)]
-lookAhead = lookAhead + 1
-if lookAhead < tokens.len && tokens[lookAhead].tid == TID.Identifier {
-lookAhead = lookAhead + 1
-// Skip optional (args)
-if lookAhead < tokens.len && tokens[lookAhead].tid == TID.OpenParen {
-d = 1
-lookAhead = lookAhead + 1
-while lookAhead < tokens.len && d > 0 {
-if tokens[lookAhead].tid == TID.OpenParen: d = d + 1
-else if tokens[lookAhead].tid == TID.CloseParen: d = d - 1
-lookAhead = lookAhead + 1
-}
-}
-if lookAhead < tokens.len && tokens[lookAhead].tid == TID.CloseBracket {
-lookAhead = lookAhead + 1
-while lookAhead < tokens.len && tokens[lookAhead].tid == TID.NewLine {
-lookAhead = lookAhead + 1
-}
-if lookAhead < tokens.len {
-laTid = tokens[lookAhead].tid
-if laTid == TID.Fn or laTid == TID.Class or laTid == TID.Let or laTid == TID.Val or laTid == TID.Const {
-return parseBracketDecoratorStatement()
-}
-}
-}
-}
-}
+        // @identifier => block (hotkey syntax)
+        if tt == TID.At and at(1).tid == TID.Identifier {
+            // Check if this is a hotkey: @id => ...
+            // Look ahead past the @ident for =>
+            savePos = pos
+            advance() // @
+            advance() // identifier
+            if current().tid == TID.Arrow {
+                pos = savePos
+                syncCur()
+                return parseHotkeyStatement()
+            }
+            pos = savePos
+            syncCur()
+
+        }
+        // Identifier + When/If/Arrow at statement start => hotkey
+        // e.g. F1 => { ... } or a when mode == "x" => { ... }
+        if tt == TID.Identifier {
+            nextTid = at(1).tid
+            if nextTid == TID.When || nextTid == TID.If || nextTid == TID.Arrow {
+                return parseHotkeyStatement()
+            }
+            // identifier = hotkey => action (e.g. dhk = d => { print @id })
+            if nextTid == TID.Assign {
+                at2 = at(2).tid
+                if at2 == TID.Hotkey || (at2 == TID.Identifier && at(3).tid == TID.Arrow) {
+                    return parseHotkeyAssignmentStatement()
+                }
+            }
+        }
         // Variable declarations
-    if tt == TID.Let {
-        return parseLetDecl(TID.Let)
-    }
-    if tt == TID.Val {
-        return parseLetDecl(TID.Val)
-    }
-    if tt == TID.Const {
-        return parseLetDecl(TID.Val) // const is alias for val
+        if tt == TID.Let {
+            return parseLetDecl("Let")
+        }
+        if tt == TID.Val {
+            return parseLetDecl("Val")
+        }
+        if tt == TID.Const {
+            return parseLetDecl("Val") // const is alias for val
 
         }
         // Control flow
         if tt == TID.If {
             return parseIfStatement()
         }
-if tt == TID.While {
-return parseWhileStatement()
-}
-if tt == TID.Do {
-return parseDoWhileStatement()
-}
+    if tt == TID.While {
+        return parseWhileStatement()
+    }
+    if tt == TID.Do {
+        return parseDoWhileStatement()
+    }
         if tt == TID.For {
             return parseForStatement()
         }
@@ -1915,34 +1770,30 @@ if tt == TID.Defer {
 	}
 }
         // DSL statements
-if tt == TID.On: return parseOnStatement()
-if tt == TID.Off: return parseOffModeStatement()
-if tt == TID.Mode: return parseModeBlockStatement()
-if tt == TID.When: return parseWhenBlockStatement()
-if tt == TID.With: return parseWithStatement()
-if tt == TID.Modes: return parseModesBlockStatement()
-if tt == TID.Group: return parseGroupStatement()
-if tt == TID.Signal: return parseSignalStatement()
-if tt == TID.Pool: return parsePoolStatement()
-if tt == TID.Devices: return parseDevicesBlockStatement()
+        if tt == TID.On: return parseOnStatement()
+        if tt == TID.Mode: return parseModeBlockStatement()
+        if tt == TID.Group: return parseGroupStatement()
+        if tt == TID.Signal: return parseSignalStatement()
+        if tt == TID.Pool: return parsePoolStatement()
+        if tt == TID.Devices: return parseDevicesBlockStatement()
 
-// Thread/Interval/Timeout sugar
-if tt == TID.Thread: return parseThreadStatement()
-if tt == TID.Interval: return parseIntervalStatement()
-if tt == TID.Timeout: return parseTimeoutStatement()
+        // Thread/Interval/Timeout sugar
+        if tt == TID.Thread: return parseThreadStatement()
+        if tt == TID.Interval: return parseIntervalStatement()
+        if tt == TID.Timeout: return parseTimeoutStatement()
 
-// Type declarations
-if tt == TID.Class { return parseClassDeclaration() }
-if tt == TID.Struct { return parseStructDeclaration() }
-if tt == TID.Enum { return parseEnumDeclaration() }
-if tt == TID.Trait { return parseTraitDeclaration() }
-if tt == TID.Prot { return parseProtocolDeclaration() }
-if tt == TID.Impl { return parseImplDeclaration() }
-// Expression statement
-expr = parseExpr(0)
-if expr == null: return null
-if expr.kind == "ErrorNode": return expr
-return ExpressionStatement(expr, l, c)
+ // Type declarations
+ if tt == TID.Class { return parseClassDeclaration() }
+ if tt == TID.Struct { return parseStructDeclaration() }
+ if tt == TID.Enum { return parseEnumDeclaration() }
+ if tt == TID.Trait { return parseTraitDeclaration() }
+ if tt == TID.Prot { return parseProtocolDeclaration() }
+ if tt == TID.Impl { return parseImplDeclaration() }
+        // Expression statement
+    expr = parseExpr(0)
+    if expr == null: return null
+    if expr.kind == "ErrorNode": return expr
+    return ExpressionStatement(expr, l, c)
 }
     // ===================================================================
     // STATEMENT: if
@@ -1997,83 +1848,60 @@ return IfStatement(condition, thenBranch, elseBranch, l, c)
     // ===================================================================
     // STATEMENT: while
     // ===================================================================
-    fn parseWhileStatement() {
-        l = current().line
-        c = current().col
-        advance() // consume 'while'
-        skipNewlines()
+fn parseWhileStatement() {
+    l = current().line
+    c = current().col
+    advance() // consume 'while'
+    skipNewlines()
 
-        prevSugar = allowBraceSugar
-        allowBraceSugar = false
-        condition = parseExpr(0)
-        allowBraceSugar = prevSugar
+    prevSugar = allowBraceSugar
+    allowBraceSugar = false
+    condition = parseExpr(0)
+    allowBraceSugar = prevSugar
 
-        skipNewlines()
+    skipNewlines()
 
-        body = null
-        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
-            body = parseBlock()
-        }
-        else {
-            body = parseStatement()
-            if body == null: body = BlockStatement([], l, c)
+    body = null
+    if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+        body = parseBlock()
+    }
+    else {
+        body = parseStatement()
+        if body == null: body = BlockStatement([], l, c)
 
-        }
-return WhileStatement(condition, body, l, c)
+    }
+    return WhileStatement(condition, body, l, c)
 
 }
-// ===================================================================
-// STATEMENT: do-while
-// ===================================================================
 fn parseDoWhileStatement() {
-l = current().line
-c = current().col
-advance() // consume 'do'
-skipNewlines()
+    l = current().line
+    c = current().col
+    advance() // consume 'do'
+    skipNewlines()
 
-body = null
-if current().tid == TID.OpenBrace {
-body = parseBlock()
-}
-else if current().tid == TID.Colon {
-body = parseBlock()
-}
-else {
-body = parseStatement()
-if body == null: body = BlockStatement([], l, c)
-}
-skipNewlines()
+    body = null
+    if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+        body = parseBlock()
+    }
+    else {
+        body = parseStatement()
+        if body == null: body = BlockStatement([], l, c)
+    }
 
-if current().tid != TID.While {
-return error("Expected 'while' after do-while body", current().line, current().col)
-}
-advance() // consume 'while'
-skipNewlines()
+    skipNewlines()
+    if current().tid != TID.While {
+        return error("Expected 'while' after 'do' block", current().line, current().col)
+    }
+    advance() // consume 'while'
+    skipNewlines()
 
-prevSugar = allowBraceSugar
-allowBraceSugar = false
-condition = parseExpr(0)
-allowBraceSugar = prevSugar
+    prevSugar = allowBraceSugar
+    allowBraceSugar = false
+    condition = parseExpr(0)
+    allowBraceSugar = prevSugar
 
-return DoWhileStatement(body, condition, l, c)
-}
-// ===================================================================
-// STATEMENT: when block
-// ===================================================================
-fn parseWhenBlockStatement() {
-l = current().line
-c = current().col
-advance() // consume 'when'
-skipNewlines()
+    return DoWhileStatement(body, condition, l, c)
 
-prevSugar = allowBraceSugar
-allowBraceSugar = false
-condition = parseExpr(0)
-allowBraceSugar = prevSugar
-skipNewlines()
-
-body = parseBlock()
-return WhenBlock(condition, body, l, c)
 }
     // ===================================================================
     // STATEMENT: for
@@ -2738,6 +2566,9 @@ fn parseUseStatement() {
 
             }
         }
+        else if current().tid == TID.Identifier {
+            key = advance().value
+        }
         skipNewlines()
 
         // Optional when/if prefix condition
@@ -2774,6 +2605,41 @@ fn parseUseStatement() {
 
     }
     // ===================================================================
+    // STATEMENT: hotkey assignment (identifier = hotkey => action)
+    // ===================================================================
+    fn parseHotkeyAssignmentStatement() {
+        l = current().line
+        c = current().col
+        target = Identifier(advance().value, l, c)
+        advance() // consume =
+        hkToken = advance()
+        key = hkToken.value
+        if hkToken.tid == TID.Identifier { key = hkToken.value }
+        condition = null
+        if current().tid == TID.When or current().tid == TID.If {
+            advance()
+            condition = parseExpr(BP_ASSIGN)
+        }
+        skipNewlines()
+        if current().tid == TID.Arrow {
+            advance()
+            skipNewlines()
+        }
+        body = null
+        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+            body = parseBlock()
+        }
+        else {
+            bodyExpr = parseExpr(0)
+            body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+        }
+        binding = HotkeyBinding(key, body, l, c)
+        if condition != null: binding.condition = condition
+        hkExpr = HotkeyExpression(binding, l, c)
+        assign = AssignmentExpression(target, hkExpr, "=", false, l, c)
+        ExpressionStatement(assign, l, c)
+    }
+    // ===================================================================
     // STATEMENT: config block
     // ===================================================================
     fn parseConfigBlockStatement() {
@@ -2787,154 +2653,34 @@ fn parseUseStatement() {
         return ConfigBlock(name, body, l, c)
 
     }
-// ===================================================================
-// STATEMENT: on (with all C++ variants)
-// ===================================================================
-fn parseOnStatement() {
-l = current().line
-c = current().col
-advance() // consume 'on'
-skipNewlines()
+    // ===================================================================
+    // STATEMENT: on
+    // ===================================================================
+    fn parseOnStatement() {
+        l = current().line
+        c = current().col
+        advance() // consume 'on'
+        skipNewlines()
+        // on <event> => body or on <event> { body }
+        event = advance().value
+        skipNewlines()
+        if current().tid == TID.Arrow {
+            advance()
+            skipNewlines()
+        }
+        body = null
+        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+            body = parseBlock()
+        }
+        else {
+            bodyExpr = parseExpr(0)
+            body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+        }
+        node = HotkeyBinding(event, body, l, c)
+        node.isEvent = true
+        node
 
-if current().tid == TID.Mode {
-return parseOnModeStatementBody(l, c)
-}
-if current().tid == TID.Identifier {
-kw = current().value
-if kw == "reload" {
-advance() // consume 'reload'
-skipNewlines()
-if current().tid != TID.OpenBrace {
-return error("Expected '{' after 'on reload'", current().line, current().col)
-}
-return OnReloadStatement(parseBlock(), l, c)
-}
-if kw == "start" {
-advance() // consume 'start'
-skipNewlines()
-if current().tid != TID.OpenBrace {
-return error("Expected '{' after 'on start'", current().line, current().col)
-}
-return OnStartStatement(parseBlock(), l, c)
-}
-if kw == "tap" or kw == "combo" {
-return parseOnTapOrComboStatement(l, c, kw)
-}
-if kw == "keydown" or kw == "keyup" {
-return parseOnKeyDownOrKeyUpStatement(l, c, kw)
-}
-// Generic message handler: on <identifier> { ... }
-msgVar = advance().value
-skipNewlines()
-if current().tid == TID.Arrow {
-advance()
-skipNewlines()
-}
-body = null
-if current().tid == TID.OpenBrace or current().tid == TID.Colon {
-body = parseBlock()
-}
-else {
-bodyExpr = parseExpr(0)
-body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-}
-return OnMessageStatement(msgVar, body, l, c)
-}
-return error("Expected 'mode', 'reload', 'start', 'tap', 'combo', 'keydown', 'keyup', or message variable after 'on'", current().line, current().col)
-}
-fn parseOnModeStatementBody(l, c) {
-advance() // consume 'mode'
-if current().tid != TID.Identifier {
-return error("Expected mode name after 'on mode'", current().line, current().col)
-}
-modeName = advance().value
-skipNewlines()
-if current().tid != TID.OpenBrace {
-return error("Expected '{' after mode name", current().line, current().col)
-}
-body = parseBlock()
-alternative = null
-skipNewlines()
-if current().tid == TID.Else {
-advance()
-skipNewlines()
-if current().tid == TID.OpenBrace {
-alternative = parseBlock()
-}
-}
-return OnModeStatement(modeName, body, alternative, l, c)
-}
-fn parseOnTapOrComboStatement(l, c, kw) {
-advance() // consume 'tap' or 'combo'
-if current().tid != TID.OpenParen {
-return error("Expected '(' after 'on " + kw + "'", current().line, current().col)
-}
-advance() // consume '('
-keyName = ""
-if current().tid == TID.Hotkey {
-keyName = advance().value
-}
-else if current().tid == TID.Identifier {
-keyName = advance().value
-}
-else {
-return error("Expected key name after 'on " + kw + " ('", current().line, current().col)
-}
-if current().tid != TID.CloseParen {
-return error("Expected ')' after key name", current().line, current().col)
-}
-advance() // consume ')'
-skipNewlines()
-if current().tid == TID.Arrow {
-advance()
-skipNewlines()
-}
-if current().tid != TID.OpenBrace {
-return error("Expected '{' to start action block", current().line, current().col)
-}
-body = parseBlock()
-if kw == "tap" {
-return OnTapStatement(keyName, body, l, c)
-}
-return OnComboStatement(keyName, body, l, c)
-}
-fn parseOnKeyDownOrKeyUpStatement(l, c, kw) {
-advance() // consume 'keydown' or 'keyup'
-skipNewlines()
-keys = []
-if current().tid == TID.OpenParen {
-advance() // consume '('
-while current().tid != TID.CloseParen && current().tid != TID.EOF {
-skipNewlines()
-if current().tid == TID.Hotkey {
-keys.push(advance().value)
-}
-else if current().tid == TID.Identifier {
-keys.push(advance().value)
-}
-else {
-break
-}
-skipNewlines()
-if current().tid == TID.CloseParen {
-advance()
-break
-}
-if current().tid == TID.Comma {
-advance()
-}
-}
-}
-skipNewlines()
-if current().tid != TID.OpenBrace {
-return error("Expected '{' to start action block", current().line, current().col)
-}
-body = parseBlock()
-if kw == "keydown" {
-return OnKeyDownStatement(keys, body, l, c)
-}
-return OnKeyUpStatement(keys, body, l, c)
-}
+    }
     // ===================================================================
     // STATEMENT: mode block
     // ===================================================================
@@ -3000,226 +2746,15 @@ return OnKeyUpStatement(keys, body, l, c)
     // ===================================================================
     // STATEMENT: devices block
     // ===================================================================
-fn parseDevicesBlockStatement() {
-l = current().line
-c = current().col
-advance() // consume 'devices'
-skipNewlines()
-body = parseBlock()
-return ConfigBlock("devices", body, l, c)
+    fn parseDevicesBlockStatement() {
+        l = current().line
+        c = current().col
+        advance() // consume 'devices'
+        skipNewlines()
+        body = parseBlock()
+        return ConfigBlock("devices", body, l, c)
 
-}
-// ===================================================================
-// STATEMENT: off mode
-// ===================================================================
-fn parseOffModeStatement() {
-l = current().line
-c = current().col
-advance() // consume 'off'
-skipNewlines()
-if current().tid != TID.Mode {
-return error("Expected 'mode' after 'off'", current().line, current().col)
-}
-advance() // consume 'mode'
-if current().tid != TID.Identifier {
-return error("Expected mode name after 'off mode'", current().line, current().col)
-}
-modeName = advance().value
-skipNewlines()
-if current().tid != TID.OpenBrace {
-return error("Expected '{' after mode name", current().line, current().col)
-}
-body = parseBlock()
-return OffModeStatement(modeName, body, l, c)
-}
-// ===================================================================
-// STATEMENT: with
-// ===================================================================
-fn parseWithStatement() {
-l = current().line
-c = current().col
-advance() // consume 'with'
-skipNewlines()
-if current().tid != TID.Identifier {
-return error("Expected object name after 'with'", current().line, current().col)
-}
-objectName = advance().value
-skipNewlines()
-if current().tid != TID.OpenBrace {
-return error("Expected '{' after with object name", current().line, current().col)
-}
-body = parseBlock()
-return WithStatement(objectName, body, l, c)
-}
-// ===================================================================
-// STATEMENT: modes block
-// ===================================================================
-fn parseModesBlockStatement() {
-l = current().line
-c = current().col
-advance() // consume 'modes'
-skipNewlines()
-if current().tid != TID.OpenBrace {
-return error("Expected '{' after 'modes'", current().line, current().col)
-}
-advance() // consume '{'
-modeList = []
-while current().tid != TID.CloseBrace && notEOF() {
-if current().tid == TID.NewLine { advance(); continue }
-if current().tid != TID.Identifier { break }
-modeName = advance().value
-skipNewlines()
-if current().tid != TID.OpenBrace {
-return error("Expected '{' after mode name", current().line, current().col)
-}
-advance() // consume '{'
-condition = null
-enterBlock = null
-exitBlock = null
-while current().tid != TID.CloseBrace && notEOF() {
-if current().tid == TID.NewLine or current().tid == TID.Semicolon { advance(); continue }
-if current().tid != TID.Identifier { break }
-kw = advance().value
-if kw == "condition" {
-if current().tid == TID.Assign or current().tid == TID.Colon {
-advance()
-}
-condition = parseExpr(0)
-}
-else if kw == "enter" {
-enterBlock = parseBlock()
-}
-else if kw == "exit" {
-exitBlock = parseBlock()
-}
-skipNewlines()
-}
-expect(TID.CloseBrace)
-modeList.push(ModeDefinition(modeName, condition, enterBlock, exitBlock))
-skipNewlines()
-}
-expect(TID.CloseBrace)
-return ModesBlock(modeList, l, c)
-}
-// ===================================================================
-// STATEMENT: @decorator
-// ===================================================================
-fn parseAtDecoratorStatement() {
-l = current().line
-c = current().col
-decorators = []
-while current().tid == TID.At && at(1).tid == TID.Identifier {
-advance() // consume '@'
-decoName = advance().value
-decoExpr = Identifier(decoName, l, c)
-if current().tid == TID.OpenParen {
-advance() // consume '('
-args = []
-while current().tid != TID.CloseParen && notEOF() {
-skipNewlines()
-if current().tid == TID.CloseParen { break }
-args.push(parseExpr(BP_ASSIGN))
-skipNewlines()
-if current().tid == TID.Comma { advance() }
-}
-expect(TID.CloseParen)
-decoExpr = CallExpression(decoExpr, args, null, l, c)
-}
-decorators.push(decoExpr)
-skipNewlines()
-}
-target = parseStatement()
-if target == null {
-return error("Expected declaration after @decorator", current().line, current().col)
-}
-return DecoratorStatement(decorators, target, l, c)
-}
-// ===================================================================
-// STATEMENT: [decorator]
-// ===================================================================
-fn parseBracketDecoratorStatement() {
-l = current().line
-c = current().col
-decorators = []
-while current().tid == TID.OpenBracket {
-advance() // consume '['
-if current().tid != TID.Identifier {
-return error("Expected decorator name after '['", current().line, current().col)
-}
-decoName = advance().value
-decoExpr = Identifier(decoName, l, c)
-if current().tid == TID.OpenParen {
-advance() // consume '('
-args = []
-while current().tid != TID.CloseParen && notEOF() {
-skipNewlines()
-if current().tid == TID.CloseParen { break }
-args.push(parseExpr(BP_ASSIGN))
-skipNewlines()
-if current().tid == TID.Comma { advance() }
-}
-expect(TID.CloseParen)
-decoExpr = CallExpression(decoExpr, args, null, l, c)
-}
-expect(TID.CloseBracket)
-decorators.push(decoExpr)
-skipNewlines()
-}
-target = parseStatement()
-if target == null {
-return error("Expected declaration after decorator", current().line, current().col)
-}
-return DecoratorStatement(decorators, target, l, c)
-}
-// ===================================================================
-// STATEMENT: config section
-// ===================================================================
-fn parseConfigSectionStatement() {
-l = current().line
-c = current().col
-sectionName = current().value
-advance() // consume identifier
-args = []
-while notEOF() && current().tid != TID.OpenBrace && current().tid != TID.NewLine {
-if current().tid == TID.Identifier || current().tid == TID.String || current().tid == TID.Number {
-args.push(advance().value)
-}
-else { break }
-}
-skipNewlines()
-pairs = parseKeyValueBlock()
-return ConfigSection(sectionName, args, pairs, l, c)
-}
-fn parseKeyValueBlock() {
-skipNewlines()
-if current().tid != TID.OpenBrace {
-return []
-}
-advance() // consume '{'
-pairs = []
-while current().tid != TID.CloseBrace && notEOF() {
-if current().tid == TID.NewLine or current().tid == TID.Semicolon { advance(); continue }
-if current().tid == TID.CloseBrace { break }
-key = null
-if current().tid == TID.Identifier {
-key = advance().value
-}
-else if current().tid == TID.String {
-key = advance().value
-}
-else { break }
-skipNewlines()
-if current().tid == TID.Assign or current().tid == TID.Colon {
-advance()
-}
-        v = parseExpr(0)
-        pairs.push({key: key, value: v})
-skipNewlines()
-if current().tid == TID.Comma { advance() }
-}
-expect(TID.CloseBrace)
-return pairs
-}
+    }
     // ===================================================================
     // STATEMENT: thread/interval/timeout sugar
     // ===================================================================
@@ -3374,34 +2909,28 @@ fn parseClassDeclaration() {
     if !isColonBody && current().tid == TID.Colon {
         isColonBody = true
     }
-fields = []
-methods = []
-colonBaseIndent = -1
-if isColonBody {
-  advance() // consume ':'
-  skipNewlines()
-  colonBaseIndent = current().col
-  _parseClassMembers(methods, fields, true, colonBaseIndent)
-} else if current().tid == TID.OpenBrace {
-  advance() // consume '{'
-  skipNewlines()
-  _parseClassMembers(methods, fields, false, -1)
-  if current().tid == TID.CloseBrace {
-    advance() // consume '}'
-  }
-}
-return ClassDeclaration(name, parentName, fields, methods, l, c, typeParams)
-
-}
-
-fn _parseClassMembers(methods, fields, isColonBody, colonBaseIndent) {
-  while notEOF() && current().tid != TID.CloseBrace && current().tid != TID.EOF {
-    skipNewlinesAndSemicolons()
-    if !notEOF() || current().tid == TID.CloseBrace || current().tid == TID.EOF { break }
-    // Dedent check: for colon-body classes, if current token column < base indent, class body is done
-    if isColonBody && colonBaseIndent > 0 && current().col < colonBaseIndent && current().col > 0 {
-      break
+    fields = []
+    methods = []
+    if isColonBody {
+        advance() // consume ':'
+        skipNewlines()
+        _parseClassMembers(methods, fields)
+    } else if current().tid == TID.OpenBrace {
+        advance() // consume '{'
+        skipNewlines()
+        _parseClassMembers(methods, fields)
+        if current().tid == TID.CloseBrace {
+            advance() // consume '}'
+        }
     }
+    return ClassDeclaration(name, parentName, fields, methods, l, c, typeParams)
+
+}
+
+fn _parseClassMembers(methods, fields) {
+	while notEOF() && current().tid != TID.CloseBrace && current().tid != TID.EOF {
+		skipNewlinesAndSemicolons()
+		if !notEOF() || current().tid == TID.CloseBrace || current().tid == TID.EOF { break }
 		tt = current().tid
 		if tt == TID.Fn {
 			m = _parseClassMethod()
@@ -3589,20 +3118,19 @@ fn parseStructDeclaration() {
             advance() // consume ')'
         }
     }
-  skipNewlines()
-  if current().tid == TID.OpenBrace {
-    advance() // consume '{'
     skipNewlines()
-    _parseClassMembers(methods, fields, false, -1)
-    if current().tid == TID.CloseBrace {
-      advance() // consume '}'
+    if current().tid == TID.OpenBrace {
+        advance() // consume '{'
+        skipNewlines()
+        _parseClassMembers(methods, fields)
+        if current().tid == TID.CloseBrace {
+            advance() // consume '}'
+        }
+    } else if current().tid == TID.Colon {
+        advance() // consume ':'
+        skipNewlines()
+        _parseClassMembers(methods, fields)
     }
-  } else if current().tid == TID.Colon {
-    advance() // consume ':'
-    skipNewlines()
-    colonBaseIndent = current().col
-    _parseClassMembers(methods, fields, true, colonBaseIndent)
-  }
     return StructDeclaration(name, fields, methods, null, l, c, typeParams)
 
 }

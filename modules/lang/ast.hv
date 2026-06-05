@@ -29,7 +29,7 @@ NODE_TYPES = {
     "ObjectLiteral": true,
     "ObjectField": true,
     "IfStatement": true,
-    "WhileStatement": true, "DoWhileStatement": true,
+    "WhileStatement": true,
     "ForStatement": true,
     "LoopStatement": true,
     "RepeatStatement": true,
@@ -56,7 +56,7 @@ NODE_TYPES = {
     "InterpolatedString": true,
     "RegexLiteral": true,
     "AtExpression": true,
-    "AtAtExpression": true, "CastExpression": true,
+    "AtAtExpression": true,
     "ConfigBlock": true,
   "SleepStatement": true,
   "ErrorNode": true,
@@ -68,14 +68,29 @@ NODE_TYPES = {
   "ImplDeclaration": true,
   "SetLiteral": true,
 "DeferStatement": true,
-"WaitExpression": true,
-"WaitGroupExpression": true,
-"WildcardPattern": true,
-"ArrayPattern": true,
-"ObjectPattern": true,
-"ConstructorPattern": true,
-"RangePattern": true,
-"OrPattern": true,
+    "WaitExpression": true,
+    "WaitGroupExpression": true,
+    "DoWhileStatement": true,
+    "WhenBlock": true,
+    "WithStatement": true,
+    "DecoratorStatement": true,
+    "OnModeStatement": true,
+    "OffModeStatement": true,
+    "OnReloadStatement": true,
+    "OnStartStatement": true,
+    "OnTapStatement": true,
+    "OnComboStatement": true,
+    "OnKeyDownStatement": true,
+    "OnKeyUpStatement": true,
+    "OnMessageStatement": true,
+    "ModesBlock": true,
+    "ModeDefinition": true,
+    "ConfigSection": true,
+    "InputStatement": true,
+    "MultipleAssignment": true,
+    "QueryExpression": true,
+    "CastExpression": true,
+    "HotkeyExpression": true,
 }
 
 BINARY_OPS = {
@@ -187,10 +202,6 @@ fn IfStatement(condition, then_branch, else_branch, line, col) {
 }
 fn WhileStatement(condition, body, line, col) {
     {kind: "WhileStatement", line: line, col: col, condition: condition, body: body}
-
-}
-fn DoWhileStatement(body, condition, line, col) {
-    {kind: "DoWhileStatement", line: line, col: col, body: body, condition: condition}
 
 }
 fn ForStatement(name, iterator, body, line, col) {
@@ -327,8 +338,88 @@ fn AtAtExpression(field, line, col) {
     {kind: "AtAtExpression", line: line, col: col, field: field}
 
 }
-fn CastExpression(expr, typeName, line, col) {
-    {kind: "CastExpression", line: line, col: col, expr: expr, typeName: typeName}
+fn CastExpression(expr, targetType, line, col) {
+    {kind: "CastExpression", line: line, col: col, expr: expr, targetType: targetType}
+
+}
+fn HotkeyExpression(key, line, col) {
+    {kind: "HotkeyExpression", line: line, col: col, key: key}
+
+}
+fn DoWhileStatement(body, condition, line, col) {
+    {kind: "DoWhileStatement", line: line, col: col, body: body, condition: condition}
+
+}
+fn WhenBlock(condition, body, line, col) {
+    {kind: "WhenBlock", line: line, col: col, condition: condition, body: body}
+
+}
+fn WithStatement(objectName, body, line, col) {
+    {kind: "WithStatement", line: line, col: col, objectName: objectName, body: body}
+
+}
+fn DecoratorStatement(decorators, target, line, col) {
+    {kind: "DecoratorStatement", line: line, col: col, decorators: decorators, target: target}
+
+}
+fn OnModeStatement(modeName, body, alternative, line, col) {
+    {kind: "OnModeStatement", line: line, col: col, modeName: modeName, body: body, alternative: alternative}
+
+}
+fn OffModeStatement(modeName, body, line, col) {
+    {kind: "OffModeStatement", line: line, col: col, modeName: modeName, body: body}
+
+}
+fn OnReloadStatement(body, line, col) {
+    {kind: "OnReloadStatement", line: line, col: col, body: body}
+
+}
+fn OnStartStatement(body, line, col) {
+    {kind: "OnStartStatement", line: line, col: col, body: body}
+
+}
+fn OnTapStatement(key, body, line, col) {
+    {kind: "OnTapStatement", line: line, col: col, key: key, body: body}
+
+}
+fn OnComboStatement(key, body, line, col) {
+    {kind: "OnComboStatement", line: line, col: col, key: key, body: body}
+
+}
+fn OnKeyDownStatement(keys, body, line, col) {
+    {kind: "OnKeyDownStatement", line: line, col: col, keys: keys, body: body}
+
+}
+fn OnKeyUpStatement(keys, body, line, col) {
+    {kind: "OnKeyUpStatement", line: line, col: col, keys: keys, body: body}
+
+}
+fn OnMessageStatement(msgVar, body, line, col) {
+    {kind: "OnMessageStatement", line: line, col: col, msgVar: msgVar, body: body}
+
+}
+fn ModesBlock(modeList, line, col) {
+    {kind: "ModesBlock", line: line, col: col, modes: modeList}
+
+}
+fn ModeDefinition(name, condition, enterBlock, exitBlock) {
+    {kind: "ModeDefinition", name: name, condition: condition, enter: enterBlock, exit: exitBlock}
+
+}
+fn ConfigSection(sectionName, args, pairs, line, col) {
+    {kind: "ConfigSection", line: line, col: col, sectionName: sectionName, args: args, pairs: pairs}
+
+}
+fn InputStatement(commands, line, col) {
+    {kind: "InputStatement", line: line, col: col, commands: commands}
+
+}
+fn MultipleAssignment(targets, value, line, col) {
+    {kind: "MultipleAssignment", line: line, col: col, targets: targets, value: value}
+
+}
+fn QueryExpression(varName, source, whereClauses, selectClause, line, col) {
+    {kind: "QueryExpression", line: line, col: col, varName: varName, source: source, whereClauses: whereClauses, selectClause: selectClause}
 
 }
 fn ConfigBlock(name, body, line, col) {
@@ -427,48 +518,8 @@ fn ImplDeclaration(typeName, traitName, funcs, line, col) {
   }
 
 }
-fn DelStatement(target, line, col) {
-  {kind: "DelStatement", line: line, col: col, target: target}
-
-}
-fn WithStatement(object, alias, body, line, col) {
-  {kind: "WithStatement", line: line, col: col, object: object, alias: alias, body: body}
-
-}
-fn DecoratorStatement(decorators, target, line, col) {
-  {kind: "DecoratorStatement", line: line, col: col, decorators: decorators, target: target}
-
-}
-fn InputStatement(commands, line, col) {
-  {kind: "InputStatement", line: line, col: col, commands: commands}
-
-}
 fn SetLiteral(elements, line, col) {
   {kind: "SetLiteral", line: line, col: col, elements: elements}
-
-}
-fn WildcardPattern(line, col) {
-  {kind: "WildcardPattern", line: line, col: col}
-
-}
-fn ArrayPattern(elements, rest, line, col) {
-  {kind: "ArrayPattern", line: line, col: col, elements: elements, rest: rest}
-
-}
-fn ObjectPattern(properties, line, col) {
-  {kind: "ObjectPattern", line: line, col: col, properties: properties}
-
-}
-fn ConstructorPattern(name, args, line, col) {
-  {kind: "ConstructorPattern", line: line, col: col, name: name, args: args}
-
-}
-fn RangePattern(start, end, line, col) {
-  {kind: "RangePattern", line: line, col: col, start: start, end: end}
-
-}
-fn OrPattern(alternatives, line, col) {
-  {kind: "OrPattern", line: line, col: col, alternatives: alternatives}
 
 }
 // --- AST utilities ---
@@ -678,14 +729,6 @@ fn prettyPrint(node, depth) {
         prettyPrint(node.body, depth + 2)
 
     }
-    else if k == "DoWhileStatement" {
-        print(prefix + "DoWhile:")
-        print(_indent(depth + 1) + "body:")
-        prettyPrint(node.body, depth + 2)
-        print(_indent(depth + 1) + "cond:")
-        prettyPrint(node.condition, depth + 2)
-
-    }
     else if k == "ForStatement" {
         print(prefix + "For(" + node.name + " in):")
         prettyPrint(node.iterator, depth + 1)
@@ -856,11 +899,6 @@ fn prettyPrint(node, depth) {
         print(prefix + "AtAt(." + node.field + ")")
 
     }
-    else if k == "CastExpression" {
-        print(prefix + "Cast(" + node.typeName + "):")
-        prettyPrint(node.expr, depth + 1)
-
-    }
     else if k == "ConfigBlock" {
         print(prefix + "Config(" + node.name + "):")
         prettyPrint(node.body, depth + 1)
@@ -940,9 +978,74 @@ else if k == "WaitGroupExpression" {
 	print(prefix + "WaitGroup()")
 
 }
-else if k == "ErrorNode" {
+    else if k == "ErrorNode" {
         print(prefix + "ERROR: " + node.msg)
 
+    }
+    else if k == "CastExpression" {
+        print(prefix + "Cast(" + node.targetType + "):")
+        prettyPrint(node.expr, depth + 1)
+    }
+    else if k == "HotkeyExpression" {
+        print(prefix + "Hotkey(" + node.key + ")")
+    }
+    else if k == "DoWhileStatement" {
+        print(prefix + "DoWhile:")
+        prettyPrint(node.body, depth + 1)
+        prettyPrint(node.condition, depth + 1)
+    }
+    else if k == "WhenBlock" {
+        print(prefix + "When:")
+        prettyPrint(node.condition, depth + 1)
+        prettyPrint(node.body, depth + 1)
+    }
+    else if k == "WithStatement" {
+        print(prefix + "With(" + node.objectName + "):")
+        prettyPrint(node.body, depth + 1)
+    }
+    else if k == "OnModeStatement" {
+        print(prefix + "OnMode(" + node.modeName + "):")
+        prettyPrint(node.body, depth + 1)
+    }
+    else if k == "OffModeStatement" {
+        print(prefix + "OffMode(" + node.modeName + "):")
+        prettyPrint(node.body, depth + 1)
+    }
+    else if k == "OnReloadStatement" {
+        print(prefix + "OnReload:")
+        prettyPrint(node.body, depth + 1)
+    }
+    else if k == "OnStartStatement" {
+        print(prefix + "OnStart:")
+        prettyPrint(node.body, depth + 1)
+    }
+    else if k == "ModesBlock" {
+        print(prefix + "Modes:")
+        for m in node.modes { prettyPrint(m, depth + 1) }
+    }
+    else if k == "ModeDefinition" {
+        print(prefix + "Mode(" + node.name + "):")
+        if node.condition != null { prettyPrint(node.condition, depth + 1) }
+        if node.enter != null { prettyPrint(node.enter, depth + 1) }
+        if node.exit != null { prettyPrint(node.exit, depth + 1) }
+    }
+    else if k == "DecoratorStatement" {
+        print(prefix + "Decorator:")
+        prettyPrint(node.target, depth + 1)
+    }
+    else if k == "MultipleAssignment" {
+        print(prefix + "MultiAssign:")
+        prettyPrint(node.value, depth + 1)
+    }
+    else if k == "QueryExpression" {
+        print(prefix + "Query(" + node.varName + "):")
+        prettyPrint(node.source, depth + 1)
+    }
+    else if k == "ConfigSection" {
+        print(prefix + "Config(" + node.sectionName + "):")
+    }
+    else if k == "InputStatement" {
+        print(prefix + "Input:")
     }
     else {
         print(prefix + "Unknown(" + k + ")")

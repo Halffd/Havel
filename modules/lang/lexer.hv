@@ -1,4 +1,4 @@
-// Havel lexer — pure Havel implementation
+// Havel lexer - pure Havel implementation
 // Tokenizes Havel source code into a list of {type, tid, value, line, col} objects
 // Uses codepoint array indexing for O(1) character access
 // tid = integer token type for fast parser dispatch (avoids string comparisons)
@@ -6,44 +6,44 @@
 
 // --- Token type integer IDs (for fast parser dispatch) ---
 TID = {
-Identifier: 1, Number: 2, String: 3, RegexString: 4, MultilineString: 5,
-InterpolatedString: 6, Backtick: 7, InterpolatedBacktick: 8, RegexLiteral: 9,
-Hotkey: 10, True: 11, False: 12, Null: 13,
-Let: 14, Val: 15, Const: 16, If: 17, Else: 18, While: 19, Do: 20,
-Switch: 21, For: 22, In: 23, Loop: 24, Break: 25, Continue: 26,
-Match: 27, Case: 28, Default: 29, Fn: 30, Op: 31, Return: 32, Ret: 33,
-Struct: 34, Class: 35, Enum: 36, Trait: 37, Prot: 38, Impl: 39, This: 40,
-Try: 41, Catch: 42, Finally: 43, Throw: 44,
-Thread: 45, Interval: 46, Timeout: 47, Yield: 48, Sleep: 49,
-Go: 50, Sync: 51, Async: 52, Channel: 53, Co: 54,
-Config: 55, Devices: 56, Modes: 57, Pool: 58, Signal: 59,
-Group: 60, On: 61, Off: 62, When: 63, Mode: 64, Repeat: 65,
-Dsl: 66, Del: 67, Import: 68, From: 69, As: 70, Use: 71,
-With: 72, Where: 73, Select: 74, And: 75, Or: 76, Not: 77,
-Is: 78, Matches: 79, WaitGroup: 80, Wait: 81, Defer: 82,
-ShellCommand: 83, ShellCommandCapture: 84,
-OpenParen: 85, CloseParen: 86, OpenBrace: 87, CloseBrace: 88,
-BangOpenBrace: 89, OpenBracket: 90, CloseBracket: 91,
-Dot: 92, Comma: 93, Semicolon: 94, Colon: 95, ColonColon: 96,
-Underscore: 97, DotDot: 98, DotDotEquals: 99, Spread: 100,
-Plus: 101, Minus: 102, Multiply: 103, Divide: 104, Modulo: 105,
-Power: 106, Backslash: 107, DoubleBackslash: 108, DoubleModulo: 109,
-BackslashAssign: 110, DoubleModuloAssign: 111,
-PlusPlus: 112, MinusMinus: 113,
-Equals: 114, NotEquals: 115, Less: 116, Greater: 117,
-LessEquals: 118, GreaterEquals: 119,
-Arrow: 120, ReturnType: 121, LeftArrow: 122, Assign: 123,
-PlusAssign: 124, MinusAssign: 125, MultiplyAssign: 126,
-DivideAssign: 127, ModuloAssign: 128, PowerAssign: 129,
-BitwiseAnd: 130, BitwiseOr: 131, BitwiseXor: 132,
-ShiftLeft: 133, ShiftRight: 134,
-BitwiseAndAssign: 135, BitwiseOrAssign: 136, BitwiseXorAssign: 137,
-ShiftLeftAssign: 138, ShiftRightAssign: 139,
-DoubleOpenParen: 140, DoubleCloseParen: 141,
-Nullish: 142, Question: 143, QuestionDot: 144,
+    Identifier: 1, Number: 2, String: 3, RegexString: 4, MultilineString: 5,
+    InterpolatedString: 6, Backtick: 7, InterpolatedBacktick: 8, RegexLiteral: 9,
+    Hotkey: 10, True: 11, False: 12, Null: 13,
+    Let: 14, Val: 15, Const: 16, If: 17, Else: 18, While: 19, Do: 20,
+    Switch: 21, For: 22, In: 23, Loop: 24, Break: 25, Continue: 26,
+    Match: 27, Case: 28, Default: 29, Fn: 30, Op: 31, Return: 32, Ret: 33,
+    Struct: 34, Class: 35, Enum: 36, Trait: 37, Prot: 38, Impl: 39, This: 40,
+    Try: 41, Catch: 42, Finally: 43, Throw: 44,
+    Thread: 45, Interval: 46, Timeout: 47, Yield: 48, Sleep: 49,
+    Go: 50, Sync: 51, Async: 52, Channel: 53, Co: 54,
+    Config: 55, Devices: 56, Modes: 57, Pool: 58, Signal: 59,
+    Group: 60, On: 61, Off: 62, When: 63, Mode: 64, Repeat: 65,
+    Dsl: 66, Del: 67, Import: 68, From: 69, As: 70, Use: 71,
+    With: 72, Where: 73, Select: 74, And: 75, Or: 76, Not: 77,
+    Is: 78, Matches: 79, WaitGroup: 80, Wait: 81, Defer: 82,
+    ShellCommand: 83, ShellCommandCapture: 84,
+    OpenParen: 85, CloseParen: 86, OpenBrace: 87, CloseBrace: 88,
+    BangOpenBrace: 89, OpenBracket: 90, CloseBracket: 91,
+    Dot: 92, Comma: 93, Semicolon: 94, Colon: 95, ColonColon: 96,
+    Underscore: 97, DotDot: 98, DotDotEquals: 99, Spread: 100,
+    Plus: 101, Minus: 102, Multiply: 103, Divide: 104, Modulo: 105,
+    Power: 106, Backslash: 107, DoubleBackslash: 108, DoubleModulo: 109,
+    BackslashAssign: 110, DoubleModuloAssign: 111,
+    PlusPlus: 112, MinusMinus: 113,
+    Equals: 114, NotEquals: 115, Less: 116, Greater: 117,
+    LessEquals: 118, GreaterEquals: 119,
+    Arrow: 120, ReturnType: 121, LeftArrow: 122, Assign: 123,
+    PlusAssign: 124, MinusAssign: 125, MultiplyAssign: 126,
+    DivideAssign: 127, ModuloAssign: 128, PowerAssign: 129,
+    BitwiseAnd: 130, BitwiseOr: 131, BitwiseXor: 132,
+    ShiftLeft: 133, ShiftRight: 134,
+    BitwiseAndAssign: 135, BitwiseOrAssign: 136, BitwiseXorAssign: 137,
+    ShiftLeftAssign: 138, ShiftRightAssign: 139,
+    DoubleOpenParen: 140, DoubleCloseParen: 141,
+    Nullish: 142, Question: 143, QuestionDot: 144,
     Tilde: 145, At: 146, AtAt: 147, SuperArrow: 148,
-    Pipe: 149, PipeRight: 150, Length: 151, NewLine: 152, EOF: 153,
-    CharLiteral: 154, Hash: 155,
+    Pipe: 149, PipeRight: 150, Length: 151, NewLine: 152, EOF: 153, CharLiteral: 154,
+    Hash: 155,
 }
 
 // --- Reverse mapping: integer ID -> string type name ---
@@ -55,1346 +55,1466 @@ TOKEN_TYPES = {}
 for k, v in TID { TOKEN_TYPES[k] = k }
 
 KEYWORDS = {
-"let": "Let",
-"val": "Val",
-"const": "Const",
-"if": "If",
-"else": "Else",
-"while": "While",
-"do": "Do",
-"switch": "Switch",
-"for": "For",
-"in": "In",
-"loop": "Loop",
-"break": "Break",
-"continue": "Continue",
-"match": "Match",
-"case": "Case",
-"default": "Default",
-"fn": "Fn",
-"op": "Op",
-"return": "Return",
-"ret": "Ret",
-"struct": "Struct",
-"class": "Class",
-"enum": "Enum",
-"trait": "Trait",
-"prot": "Prot",
-"impl": "Impl",
-"this": "This",
-"try": "Try",
-"catch": "Catch",
-"finally": "Finally",
-"throw": "Throw",
-"thread": "Thread",
-"interval": "Interval",
-"timeout": "Timeout",
-"yield": "Yield",
-"sleep": "Sleep",
-"go": "Go",
-"sync": "Sync",
-"async": "Async",
-"channel": "Channel",
-"co": "Co",
-"config": "Config",
-"devices": "Devices",
-"modes": "Modes",
-"pool": "Pool",
-"signal": "Signal",
-"group": "Group",
-"on": "On",
-"off": "Off",
-"when": "When",
-"mode": "Mode",
-"repeat": "Repeat",
-"dsl": "Dsl",
-"del": "Del",
-"import": "Import",
-"from": "From",
-"as": "As",
-"use": "Use",
-"with": "With",
-"where": "Where",
-"select": "Select",
-"true": "True",
-"false": "False",
-"null": "Null",
-"nil": "Null",
-"and": "And",
-"or": "Or",
-"not": "Not",
-"is": "Is",
-"matches": "Matches",
-"waitgroup": "WaitGroup",
-"wait": "Wait",
-"defer": "Defer",
+    "let": "Let", "val": "Val", "const": "Const",
+    "if": "If", "else": "Else", "while": "While", "do": "Do",
+    "switch": "Switch", "for": "For", "in": "In", "loop": "Loop",
+    "break": "Break", "continue": "Continue",
+    "match": "Match", "case": "Case", "default": "Default",
+    "fn": "Fn", "op": "Op", "return": "Return", "ret": "Ret",
+    "struct": "Struct", "class": "Class", "enum": "Enum",
+    "trait": "Trait", "prot": "Prot", "impl": "Impl", "this": "This",
+    "try": "Try", "catch": "Catch", "finally": "Finally", "throw": "Throw",
+    "thread": "Thread", "interval": "Interval", "timeout": "Timeout",
+    "yield": "Yield", "sleep": "Sleep",
+    "go": "Go", "sync": "Sync", "async": "Async", "channel": "Channel", "co": "Co",
+    "config": "Config", "devices": "Devices", "modes": "Modes",
+    "pool": "Pool", "signal": "Signal", "group": "Group",
+    "on": "On", "off": "Off", "when": "When", "mode": "Mode", "repeat": "Repeat",
+    "dsl": "Dsl", "del": "Del", "import": "Import", "from": "From",
+    "as": "As", "use": "Use", "with": "With", "where": "Where", "select": "Select",
+    "true": "True", "false": "False", "null": "Null", "nil": "Null",
+    "and": "And", "or": "Or", "not": "Not", "is": "Is", "matches": "Matches",
+    "waitgroup": "WaitGroup", "wait": "Wait", "defer": "Defer",
 }
 
 EXPRESSION_TOKENS = {
-"Number": true,
-"String": true,
-"InterpolatedString": true,
-"MultilineString": true,
-"Identifier": true,
-"True": true,
-"False": true,
-"Null": true,
-"CloseParen": true,
-"CloseBracket": true,
-"CloseBrace": true,
-"Length": true,
-"PlusPlus": true,
-"MinusMinus": true,
-"LeftArrow": true,
+    "Number", "String", "InterpolatedString", "MultilineString",
+    "Identifier", "True", "False", "Null",
+    "CloseParen", "CloseBracket", "CloseBrace",
+    "Length", "PlusPlus", "MinusMinus", "LeftArrow",
 }
 
 // --- Character classification (integer codepoint versions) ---
 
 fn isAlphaCp(cp) {
-(cp >= 97 and cp <= 122) or (cp >= 65 and cp <= 90) or cp == 95
-
+    (cp >= 97 && cp <= 122) || (cp >= 65 && cp <= 90) || cp == 95
 }
 fn isDigitCp(cp) {
-cp >= 48 and cp <= 57
-
+    cp >= 48 && cp <= 57
 }
 fn isAlphaNumCp(cp) {
-isAlphaCp(cp) or isDigitCp(cp)
-
+    isAlphaCp(cp) || isDigitCp(cp)
 }
 fn isHexDigitCp(cp) {
-isDigitCp(cp) or (cp >= 97 and cp <= 102) or (cp >= 65 and cp <= 70)
-
+    isDigitCp(cp) || (cp >= 97 && cp <= 102) || (cp >= 65 && cp <= 70)
 }
 fn isBinDigitCp(cp) {
-cp == 48 or cp == 49
-
+    cp == 48 || cp == 49
 }
 fn isOctDigitCp(cp) {
-cp >= 48 and cp <= 55
-
+    cp >= 48 && cp <= 55
 }
 fn isWhitespaceCp(cp) {
-cp == 32 or cp == 9 or cp == 13
-
+    cp == 32 || cp == 9 || cp == 13
 }
 fn isUnicodeLetterCp(cp) {
-if cp < 0x80: return false
-if cp >= 0x00C0 and cp <= 0x00D6: return true
-if cp >= 0x00D8 and cp <= 0x00F6: return true
-if cp >= 0x00F8 and cp <= 0x00FF: return true
-if cp >= 0x0100 and cp <= 0x017F: return true
-if cp >= 0x0180 and cp <= 0x024F: return true
-if cp >= 0x0400 and cp <= 0x04FF: return true
-if cp >= 0x0600 and cp <= 0x06FF: return true
-if cp >= 0x0900 and cp <= 0x097F: return true
-if cp >= 0xAC00 and cp <= 0xD7AF: return true
-if cp >= 0x4E00 and cp <= 0x9FFF: return true
-if cp >= 0x3040 and cp <= 0x309F: return true
-if cp >= 0x30A0 and cp <= 0x30FF: return true
-false
-
+    if cp < 0x80 { return false }
+    if cp >= 0x00C0 && cp <= 0x00D6 { return true }
+    if cp >= 0x00D8 && cp <= 0x00F6 { return true }
+    if cp >= 0x00F8 && cp <= 0x00FF { return true }
+    if cp >= 0x0100 && cp <= 0x017F { return true }
+    if cp >= 0x0180 && cp <= 0x024F { return true }
+    if cp >= 0x0400 && cp <= 0x04FF { return true }
+    if cp >= 0x0600 && cp <= 0x06FF { return true }
+    if cp >= 0x0900 && cp <= 0x097F { return true }
+    if cp >= 0xAC00 && cp <= 0xD7AF { return true }
+    if cp >= 0x4E00 && cp <= 0x9FFF { return true }
+    if cp >= 0x3040 && cp <= 0x309F { return true }
+    if cp >= 0x30A0 && cp <= 0x30FF { return true }
+    false
 }
 fn isUnicodeDigitCp(cp) {
-if cp < 0x80: return false
-if cp >= 0x0660 and cp <= 0x0669: return true
-if cp >= 0xFF10 and cp <= 0xFF19: return true
-false
-
+    if cp < 0x80 { return false }
+    if cp >= 0x0660 && cp <= 0x0669 { return true }
+    if cp >= 0xFF10 && cp <= 0xFF19 { return true }
+    false
 }
 fn isUnicodeIdentifierCharCp(cp) {
-if cp < 0: return false
-if cp < 0x80: return isAlphaNumCp(cp)
-isUnicodeLetterCp(cp) or isUnicodeDigitCp(cp)
-
+    if cp < 0 { return false }
+    if cp < 0x80 { return isAlphaNumCp(cp) }
+    isUnicodeLetterCp(cp) || isUnicodeDigitCp(cp)
 }
 
 SIMPLE_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\", 48: "\0", 36: "$", 123: "{", 125: "}"}
 
+AFTER_EXPR_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow"}
+AFTER_MINUS_NUMBER_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow"}
+REGEX_CONTEXT_TYPES = {"OpenParen", "OpenBracket", "OpenBrace", "Comma", "Assign", "Arrow", "And", "Or", "Not", "In", "Matches", "Tilde", "Colon", "Question", "Pipe", "NewLine", "Semicolon"}
+STATEMENT_START_TYPES = {"NewLine", "Semicolon", "Arrow", "OpenBrace", "CloseBrace"}
+DOUBLE_PAREN_EXPR_TYPES = {"Identifier", "CloseParen", "CloseBracket", "String", "InterpolatedString", "MultilineString", "Number", "Plus", "Minus", "Multiply", "Divide", "Modulo", "Equals", "NotEquals", "Less", "Greater", "LessEquals", "GreaterEquals", "Comma", "Return", "Colon"}
+
 fn Lexer(source) {
-  keywords = KEYWORDS
-  exprTokens = EXPRESSION_TOKENS
-  src = source
-  cpArr = string.toCodePointArray(source)
-  n = len(cpArr)
-  idx = 0
-  line = 1
-  col = 1
-  tokenStartCol = 1
-  tokens = []
-  errors = []
-  inBitwiseExpr = false
-  parenDepth = 0
+    keywords = KEYWORDS
+    src = source
+    cpArr = string.toCodePointArray(source)
+    n = len(cpArr)
+    idx = 0
+    line = 1
+    col = 1
+    tokenStartCol = 1
+    tokens = []
+    errors = []
+    inBitwiseExpr = false
+    parenDepth = 0
 
-  fn cp(offset) {
-    i = idx + offset
-    if i >= 0 and i < n: cpArr[i][0]
-    else: -1
-  }
-  fn current() {
-    if idx < n: cpArr[idx][0]
-    else: -1
-  }
-  fn advance() {
-    if idx >= n: return -1
-    c = cpArr[idx][0]
-    idx = idx + 1
-    if c == 10 {
-      line = line + 1
-      col = 1
+    fn cp(offset) {
+        i = idx + offset
+        if i >= 0 && i < n { cpArr[i][0] } else { -1 }
     }
-    else {
-      col = col + 1
+    fn current() {
+        if idx < n { cpArr[idx][0] } else { -1 }
     }
-    c
-  }
-  fn matchCp(expected) {
-    if current() == expected {
-      advance()
-      true
-    }
-    else {
-      false
-    }
-  }
-  fn bytePos() {
-    if idx < n: cpArr[idx][1]
-    else: src.len
-  }
-  fn idxAtByte(bp) {
-    lo = 0
-    hi = n - 1
-    while lo <= hi {
-      mid = (lo + hi) / 2
-      if cpArr[mid][1] < bp {
-        lo = mid + 1
-      }
-      else if cpArr[mid][1] > bp {
-        hi = mid - 1
-      }
-      else {
-        return mid
-      }
-    }
-    lo
-  }
- fn addToken(ttype, value) {
- tokens.push({type: ttype, tid: TID[ttype], value: value, line: line, col: tokenStartCol})
- }
-  fn error(msg) {
-    errors.push({msg: msg, line: line, col: col})
-  }
-fn skipWhitespace() {
-while isWhitespaceCp(current()) {
-advance()
-}
-
-}
-fn skipLineComment() {
-advance()
-advance()
-while current() != -1 and current() != 10 {
-advance()
-}
-
-}
-fn skipBlockComment() {
-advance()
-advance()
-depth = 1
-while depth > 0 and current() != -1 {
-if current() == 42 and cp(1) == 47 {
-advance()
-advance()
-depth = depth - 1
-}
-else if current() == 47 and cp(1) == 42 {
-advance()
-advance()
-depth = depth + 1
-}
-else {
-advance()
-}
-}
-}
-fn scanString(quote, isFString, isRegexString) {
-  advance()
-  contentStart = bytePos()
-  hasEscape = false
-  isInterpolated = false
-  if isFString {
-    isInterpolated = true
-  }
-  while current() != -1 and current() != quote and current() != 10 {
-    if current() == 92 {
-      hasEscape = true
-      break
-    }
-    if current() == 123 and isFString {
-      hasEscape = true
-      break
-    }
-    if current() == 36 {
-      hasEscape = true
-      break
-    }
-    advance()
-  }
-  if !hasEscape {
-    s = src.sub(contentStart, bytePos() - contentStart)
-    _endQuote = current()
-    if _endQuote == quote {
-      advance()
-    } else {
-      error("Unterminated string")
-    }
-    if isRegexString {
-      addToken("RegexString", s)
-    }
-    else if isInterpolated {
-      addToken("InterpolatedString", s)
-    }
-    else {
-      addToken("String", s)
-    }
-    return
-  }
-  idx = idxAtByte(contentStart)
-  s = ""
-  chunkStart = bytePos()
-  while current() != -1 and current() != quote and current() != 10 {
-    if current() == 92 {
-      if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-      chunkStart = bytePos()
-      advance()
-      c = current()
-      esc = SIMPLE_ESCAPES[c]
-      if esc != null { s = s + esc }
-      else if c == quote { s = s + string.fromCodePoint(quote) }
-      else if c == 120 {
-        h1 = cp(1)
-        h2 = cp(2)
-        if h1 != -1 and h2 != -1 and isHexDigitCp(h1) and isHexDigitCp(h2) {
-          advance()
-          advance()
-          advance()
-          s = s + "\\x" + string.fromCodePoint(h1) + string.fromCodePoint(h2)
+    fn advance() {
+        if idx >= n { return -1 }
+        c = cpArr[idx][0]
+        idx = idx + 1
+        if c == 10 {
+            line = line + 1
+            col = 1
+        } else {
+            col = col + 1
         }
-        else {
-          s = s + "\\x"
+        c
+    }
+    fn matchCp(expected) {
+        if current() == expected { advance(); true } else { false }
+    }
+    fn bytePos() {
+        if idx < n { cpArr[idx][1] } else { src.len }
+    }
+    fn idxAtByte(bp) {
+        lo = 0
+        hi = n - 1
+        while lo <= hi {
+            mid = (lo + hi) / 2
+            if cpArr[mid][1] < bp {
+                lo = mid + 1
+            } else if cpArr[mid][1] > bp {
+                hi = mid - 1
+            } else {
+                return mid
+            }
         }
-      }
-      else if c == 117 {
-        h1 = cp(1)
-        h2 = cp(2)
-        h3 = cp(3)
-        h4 = cp(4)
-        if h1 != -1 and h2 != -1 and h3 != -1 and h4 != -1 and isHexDigitCp(h1) and isHexDigitCp(h2) and isHexDigitCp(h3) and isHexDigitCp(h4) {
-          advance()
-          advance()
-          advance()
-          advance()
-          advance()
-          s = s + "\\u" + string.fromCodePoint(h1) + string.fromCodePoint(h2) + string.fromCodePoint(h3) + string.fromCodePoint(h4)
-        }
-        else {
-          s = s + "\\u"
-        }
-      }
-      else {
-        s = s + "\\" + string.fromCodePoint(c)
-      }
-      if c != -1 and c != 120 and c != 117 {
+        lo
+    }
+    fn addToken(ttype, value) {
+        tokens.push({type: ttype, tid: TID[ttype], value: value, line: line, col: tokenStartCol})
+    }
+    fn error(msg) {
+        errors.push({msg: msg, line: line, col: col})
+    }
+    fn skipWhitespace() {
+        while isWhitespaceCp(current()) { advance() }
+    }
+    fn skipLineComment() {
         advance()
-      }
-      chunkStart = bytePos()
-
-    }
-    else if current() == 123 and isFString {
-      if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-      chunkStart = bytePos()
-      isInterpolated = true
-      s = s + "{"
-      advance()
-      chunkStart = bytePos()
-    }
-    else if current() == 36 {
-      if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-      chunkStart = bytePos()
-      advance()
-      if current() != -1 and (isAlphaCp(current()) or current() == 95 or current() == 64) {
-        isInterpolated = true
-        s = s + "${"
-        s = s + string.fromCodePoint(current())
         advance()
-        while current() != -1 and (isAlphaNumCp(current()) or current() == 95) {
-          s = s + string.fromCodePoint(current())
-          advance()
-        }
-        if current() == 63 {
-          s = s + "?"
-          advance()
-        }
-        s = s + "}"
-      }
-      else {
-        s = s + "$"
-        continue
-      }
-      chunkStart = bytePos()
+        while current() != -1 && current() != 10 { advance() }
     }
-    else {
-      advance()
-    }
-  }
-  if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-  _endQuote = current()
-  if _endQuote == quote {
-    advance()
-  } else {
-    error("Unterminated string")
-
-  }
-  if isRegexString {
-    addToken("RegexString", s)
-  }
-  else if isInterpolated {
-    addToken("InterpolatedString", s)
-  }
-  else {
-    addToken("String", s)
-  }
-}
-fn scanMultilineString(quote, isFString) {
-  advance()
-  advance()
-  advance()
-
-  if current() == 10 {
-    advance()
-
-  }
-  s = ""
-  isInterpolated = isFString
-  chunkStart = bytePos()
-
-  while current() != -1 {
-    if current() == quote and cp(1) == quote and cp(2) == quote {
-      if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-      advance()
-      advance()
-      advance()
-      break
-
-    }
-    if current() == 92 {
-      if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-      chunkStart = bytePos()
-      advance()
-      c = current()
-      MLES_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\", 48: "\0"}
-      esc = MLES_ESCAPES[c]
-      if esc != null { s = s + esc; advance() }
-      else if c == quote { s = s + string.fromCodePoint(quote); advance() }
-      else { s = s + "\\" + string.fromCodePoint(c); advance() }
-      chunkStart = bytePos()
-    }
-    else if current() == 36 {
-      if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-      chunkStart = bytePos()
-      isInterpolated = true
-      s = s + "$"
-      advance()
-      if current() == 123 or current() == 64 or (current() != -1 and isAlphaCp(current())) {
-        s = s + string.fromCodePoint(current())
+    fn skipBlockComment() {
         advance()
-        while current() != -1 and isAlphaNumCp(current()) {
-          s = s + string.fromCodePoint(current())
-          advance()
-        }
-      }
-      else {
-        s = s + string.fromCodePoint(current())
         advance()
-      }
-      chunkStart = bytePos()
+        depth = 1
+        while depth > 0 && current() != -1 {
+            if current() == 42 && cp(1) == 47 {
+                advance()
+                advance()
+                depth = depth - 1
+            } else if current() == 47 && cp(1) == 42 {
+                advance()
+                advance()
+                depth = depth + 1
+            } else {
+                advance()
+            }
+        }
     }
-    else {
-      advance()
+    fn lastTokenType() {
+        if tokens.len > 0 { tokens[tokens.len - 1].type } else { "NewLine" }
     }
-  }
-  if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-  if isInterpolated {
-    addToken("InterpolatedString", s)
-  }
-  else {
-    addToken("MultilineString", s)
-
-  }
-}
-fn scanBacktick() {
-  advance()
-
-  isTriple = false
-  if current() == 96 and cp(1) == 96 {
-    isTriple = true
-    advance()
-    advance()
-
-  }
-  s = ""
-  isInterpolated = false
-  chunkStart = bytePos()
-
-  while current() != -1 {
-    if isTriple {
-      if current() == 96 and cp(1) == 96 and cp(2) == 96 {
+    fn afterExpression() {
+        AFTER_EXPR_TYPES.has(lastTokenType())
+    }
+    fn isHotkeyCharCp(cp) {
+        isAlphaNumCp(cp) || cp == 43 || cp == 45 || cp == 94 || cp == 33 || cp == 35 || cp == 64 || cp == 124 || cp == 42 || cp == 38 || cp == 58 || cp == 126 || cp == 36 || cp == 61 || cp == 46 || cp == 44 || cp == 47
+    }
+    fn decodeHexCp(cp) {
+        if cp >= 48 && cp <= 57 { return cp - 48 }
+        if cp >= 97 && cp <= 102 { return 10 + cp - 97 }
+        if cp >= 65 && cp <= 70 { return 10 + cp - 65 }
+        -1
+    }
+    fn processEscape() {
+        if current() == -1 { return "\\" }
+        c = current()
+        esc = SIMPLE_ESCAPES[c]
+        if esc != null {
+            advance()
+            if c == 36 || c == 123 || c == 125 { return esc }
+            return esc
+        }
+        if c == 34 || c == 39 {
+            q = advance()
+            return string.fromCodePoint(q)
+        }
+        if c == 120 {
+            advance()
+            h1 = current()
+            if h1 != -1 && isHexDigitCp(h1) {
+                h2 = cp(1)
+                if h2 != -1 && isHexDigitCp(h2) {
+                    advance()
+                    advance()
+                    cpv = decodeHexCp(h1) * 16 + decodeHexCp(h2)
+                    return string.fromCodePoint(cpv)
+                }
+                advance()
+                error("Invalid hex escape: \\x requires two hex digits")
+                return "\\x" + string.fromCodePoint(h1)
+            }
+            error("Invalid hex escape: \\x requires two hex digits")
+            return "\\x"
+        }
+        if c == 117 {
+            advance()
+            if current() == -1 {
+                error("Invalid unicode escape: \\u requires 4 hex digits")
+                return "\\u"
+            }
+            if current() == 123 {
+                error("\\u{...} not supported")
+                advance()
+                return "\\u{"
+            }
+            hexStr = ""
+            for i in 0..4 {
+                if current() != -1 && isHexDigitCp(current()) {
+                    hexStr = hexStr + string.fromCodePoint(current())
+                    advance()
+                } else {
+                    error("Invalid unicode escape: \\u requires 4 hex digits")
+                    return "\\u" + hexStr
+                }
+            }
+            cpv = 0
+            for i in 0..4 {
+                d = decodeHexCp(hexStr.codePointAt(i))
+                cpv = cpv * 16 + d
+            }
+            return string.fromCodePoint(cpv)
+        }
+        advance()
+        "\\" + string.fromCodePoint(c)
+    }
+    fn scanString(quote, isFString, isRegexString) {
+        advance()
+        s = ""
+        isInterpolated = false
+        if isFString { isInterpolated = true }
+        braceDepth = 0
+        chunkStart = bytePos()
+        while current() != -1 {
+            if braceDepth == 0 && current() == quote { break }
+            if braceDepth == 0 && current() == 92 {
+                if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                chunkStart = bytePos()
+                advance()
+                decoded = processEscape()
+                s = s + decoded
+                chunkStart = bytePos()
+            } else if current() == 36 && braceDepth == 0 {
+                nextCp = cp(1)
+                if isAlphaCp(nextCp) || nextCp == 95 || nextCp == 64 {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    isInterpolated = true
+                    s = s + string.fromCodePoint(advance())
+                    if isAlphaCp(current()) || current() == 95 {
+                        s = s + "{"
+                        while current() != -1 && (isAlphaNumCp(current()) || current() == 95) {
+                            s = s + string.fromCodePoint(current())
+                            advance()
+                        }
+                        if current() == 63 {
+                            s = s + string.fromCodePoint(current())
+                            advance()
+                        }
+                        s = s + "}"
+                    } else if current() == 64 {
+                        s = s + "{"
+                        s = s + string.fromCodePoint(advance())
+                        while current() != -1 && (isAlphaNumCp(current()) || current() == 95) {
+                            s = s + string.fromCodePoint(current())
+                            advance()
+                        }
+                        s = s + "}"
+                    }
+                    chunkStart = bytePos()
+                } else {
+                    s = s + string.fromCodePoint(advance())
+                    chunkStart = bytePos()
+                }
+            } else if isFString && current() == 123 && braceDepth == 0 {
+                if cp(1) != 123 {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    isInterpolated = true
+                    s = s + string.fromCodePoint(advance())
+                    braceDepth = braceDepth + 1
+                } else {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    advance()
+                    advance()
+                    s = s + "{"
+                }
+                chunkStart = bytePos()
+            } else if isFString && current() == 125 && braceDepth == 0 {
+                if cp(1) == 125 {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    advance()
+                    advance()
+                    s = s + "}"
+                } else {
+                    s = s + string.fromCodePoint(advance())
+                }
+                chunkStart = bytePos()
+            } else {
+                c = advance()
+                s = s + string.fromCodePoint(c)
+                if braceDepth > 0 {
+                    if c == 123 { braceDepth = braceDepth + 1 }
+                    else if c == 125 { braceDepth = braceDepth - 1 }
+                }
+                chunkStart = bytePos()
+            }
+        }
         if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-        advance()
-        advance()
-        advance()
-        break
-      }
-    }
-    else {
-      if current() == 96 {
-        if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-        advance()
-        break
-      }
-    }
-    if current() == 92 {
-      if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-      chunkStart = bytePos()
-      advance()
-      c = current()
-      BT_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\"}
-      esc = BT_ESCAPES[c]
-      if esc != null { s = s + esc; advance() }
-      else if c == 96 { s = s + "`"; advance() }
-      else { s = s + "\\" + string.fromCodePoint(c); advance() }
-      chunkStart = bytePos()
-    }
-    else if current() == 123 and isTriple {
-      if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-      chunkStart = bytePos()
-      isInterpolated = true
-      s = s + "{"
-      advance()
-      chunkStart = bytePos()
-    }
-    else if current() == 36 {
-      if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-      chunkStart = bytePos()
-      isInterpolated = true
-      s = s + "$"
-      advance()
-      if current() == 123 or current() == 64 or (current() != -1 and isAlphaCp(current())) {
-        s = s + string.fromCodePoint(current())
-        advance()
-        while current() != -1 and isAlphaNumCp(current()) {
-          s = s + string.fromCodePoint(current())
-          advance()
+        if current() == -1 {
+            error("Unterminated string")
+        } else {
+            advance()
         }
-      }
-      chunkStart = bytePos()
+        if isRegexString {
+            addToken("RegexString", s)
+        } else if isInterpolated {
+            addToken("InterpolatedString", s)
+        } else {
+            addToken("String", s)
+        }
     }
-    else {
-      advance()
+    fn scanMultilineString(quote, isFString) {
+        advance()
+        s = ""
+        isInterpolated = isFString
+        braceDepth = 0
+        if current() == 10 { advance() }
+        chunkStart = bytePos()
+        while current() != -1 {
+            if current() == quote && cp(1) == quote && cp(2) == quote { break }
+            if braceDepth == 0 && current() == 92 {
+                if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                chunkStart = bytePos()
+                advance()
+                decoded = processEscape()
+                s = s + decoded
+                chunkStart = bytePos()
+            } else if current() == 36 && braceDepth == 0 {
+                nextCp = cp(1)
+                if nextCp == 123 || isAlphaCp(nextCp) || nextCp == 95 || nextCp == 64 {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    isInterpolated = true
+                    s = s + string.fromCodePoint(advance())
+                    if current() == 123 {
+                        s = s + string.fromCodePoint(advance())
+                        braceDepth = braceDepth + 1
+                    } else if isAlphaCp(current()) || current() == 95 {
+                        s = s + "{"
+                        while current() != -1 && (isAlphaNumCp(current()) || current() == 95) {
+                            s = s + string.fromCodePoint(current())
+                            advance()
+                        }
+                        if current() == 63 {
+                            s = s + string.fromCodePoint(current())
+                            advance()
+                        }
+                        s = s + "}"
+                    } else if current() == 64 {
+                        s = s + "{"
+                        s = s + string.fromCodePoint(advance())
+                        while current() != -1 && (isAlphaNumCp(current()) || current() == 95) {
+                            s = s + string.fromCodePoint(current())
+                            advance()
+                        }
+                        s = s + "}"
+                    }
+                    chunkStart = bytePos()
+                } else {
+                    s = s + string.fromCodePoint(advance())
+                    chunkStart = bytePos()
+                }
+            } else if isFString && current() == 123 && braceDepth == 0 {
+                if cp(1) != 123 {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    isInterpolated = true
+                    s = s + string.fromCodePoint(advance())
+                    braceDepth = braceDepth + 1
+                } else {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    advance()
+                    advance()
+                    s = s + "{"
+                }
+                chunkStart = bytePos()
+            } else if isFString && current() == 125 && braceDepth == 0 {
+                if cp(1) == 125 {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    advance()
+                    advance()
+                    s = s + "}"
+                } else {
+                    s = s + string.fromCodePoint(advance())
+                }
+                chunkStart = bytePos()
+            } else {
+                c = advance()
+                s = s + string.fromCodePoint(c)
+                if braceDepth > 0 {
+                    if c == 123 { braceDepth = braceDepth + 1 }
+                    else if c == 125 { braceDepth = braceDepth - 1 }
+                }
+            }
+        }
+        if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+        if current() == -1 {
+            error("Unterminated multiline string")
+        } else {
+            advance()
+            advance()
+            advance()
+        }
+        if isInterpolated {
+            addToken("InterpolatedString", s)
+        } else {
+            addToken("MultilineString", s)
+        }
     }
-  }
-  if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-  if isInterpolated {
-    addToken("InterpolatedBacktick", s)
-}
-else {
-addToken("Backtick", s)
+    fn scanBacktick() {
+        advance()
+        isTriple = false
+        if current() == 96 && cp(1) == 96 {
+            isTriple = true
+            advance()
+            advance()
+        }
+        s = ""
+        isInterpolated = isTriple
+        braceDepth = 0
+        if isTriple && current() == 10 { advance() }
+        chunkStart = bytePos()
+        while current() != -1 {
+            if isTriple {
+                if current() == 96 && cp(1) == 96 && cp(2) == 96 { break }
+            } else {
+                if current() == 96 { break }
+            }
+            if braceDepth == 0 && current() == 92 {
+                if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                chunkStart = bytePos()
+                advance()
+                c = current()
+                BT_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\", 96: "`"}
+                esc = BT_ESCAPES[c]
+                if esc != null { s = s + esc; advance() }
+                else { s = s + "\\" + string.fromCodePoint(c); advance() }
+                chunkStart = bytePos()
+            } else if current() == 123 && isTriple && braceDepth == 0 {
+                if cp(1) != 123 {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    isInterpolated = true
+                    s = s + string.fromCodePoint(advance())
+                    braceDepth = braceDepth + 1
+                } else {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    advance()
+                    advance()
+                    s = s + "{"
+                }
+                chunkStart = bytePos()
+            } else if current() == 125 && isTriple && braceDepth == 0 {
+                if cp(1) == 125 {
+                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                    chunkStart = bytePos()
+                    advance()
+                    advance()
+                    s = s + "}"
+                } else {
+                    s = s + string.fromCodePoint(advance())
+                }
+                chunkStart = bytePos()
+            } else {
+                c = advance()
+                s = s + string.fromCodePoint(c)
+                if braceDepth > 0 {
+                    if c == 123 { braceDepth = braceDepth + 1 }
+                    else if c == 125 { braceDepth = braceDepth - 1 }
+                }
+            }
+        }
+        if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+        if current() == -1 {
+            error("Unterminated backtick string")
+        } else if isTriple {
+            advance()
+            advance()
+            advance()
+        } else {
+            advance()
+        }
+        if isInterpolated {
+            addToken("InterpolatedBacktick", s)
+        } else {
+            addToken("Backtick", s)
+        }
+    }
+    fn scanNumber() {
+        startPos = bytePos()
+        if current() == 48 {
+            next = cp(1)
+            if next == 120 || next == 88 {
+                advance()
+                advance()
+                if isHexDigitCp(current()) {
+                    while isHexDigitCp(current()) { advance() }
+                } else {
+                    error("Invalid hex literal")
+                }
+                addToken("Number", src.sub(startPos, bytePos() - startPos))
+                return
+            }
+            if next == 111 || next == 79 {
+                advance()
+                advance()
+                if isOctDigitCp(current()) {
+                    while isOctDigitCp(current()) { advance() }
+                } else {
+                    error("Invalid octal literal")
+                }
+                addToken("Number", src.sub(startPos, bytePos() - startPos))
+                return
+            }
+            if next == 98 || next == 66 {
+                advance()
+                advance()
+                if isBinDigitCp(current()) {
+                    while isBinDigitCp(current()) { advance() }
+                } else {
+                    error("Invalid binary literal")
+                }
+                addToken("Number", src.sub(startPos, bytePos() - startPos))
+                return
+            }
+        }
+        while isDigitCp(current()) {
+            advance()
+            if current() == 95 && isDigitCp(cp(1)) { advance() }
+        }
+        if current() == 46 && isDigitCp(cp(1)) {
+            advance()
+            while isDigitCp(current()) {
+                advance()
+                if current() == 95 && isDigitCp(cp(1)) { advance() }
+            }
+        }
+        if current() == 101 || current() == 69 {
+            advance()
+            if current() == 43 || current() == 45 { advance() }
+            while isDigitCp(current()) { advance() }
+        }
+        addToken("Number", src.sub(startPos, bytePos() - startPos))
+    }
+    fn scanIdentifier() {
+        startPos = bytePos()
+        while current() != -1 && isUnicodeIdentifierCharCp(current()) { advance() }
+        word = src.sub(startPos, bytePos() - startPos)
+        if current() == 63 && cp(1) != 46 {
+            word = word + string.fromCodePoint(current())
+            advance()
+        }
+        if keywords.has(word) {
+            addToken(keywords[word], word)
+        } else {
+            addToken("Identifier", word)
+        }
+    }
+    fn scanRegexLiteral() {
+        advance()
+        s = ""
+        while current() != -1 && current() != 47 {
+            if current() == 92 {
+                s = s + "\\"
+                advance()
+                if current() != -1 {
+                    s = s + string.fromCodePoint(current())
+                    advance()
+                }
+            } else {
+                s = s + string.fromCodePoint(current())
+                advance()
+            }
+        }
+        if current() == 47 {
+            advance()
+            while current() != -1 && isAlphaCp(current()) {
+                s = s + string.fromCodePoint(current())
+                advance()
+            }
+        }
+        addToken("RegexLiteral", s)
+    }
+    fn scanHotkey() {
+        s = ""
+        while current() != -1 {
+            c = current()
+            if c == 32 || c == 9 {
+                if s.find("&") != null {
+                    s = s + string.fromCodePoint(c)
+                    advance()
+                    continue
+                }
+                look = idx
+                while look < n {
+                    lcp = cpArr[look][0]
+                    if lcp != 32 && lcp != 9 { break }
+                    look = look + 1
+                }
+                if look < n {
+                    lcp = cpArr[look][0]
+                    if lcp == 38 || lcp == 58 {
+                        while idx < look {
+                            s = s + string.fromCodePoint(current())
+                            advance()
+                        }
+                        continue
+                    }
+                }
+                break
+            }
+            if c == 13 || c == 10 || c == 123 || c == 40 { break }
+            if c == 61 && cp(1) == 62 { break }
+            if !isHotkeyCharCp(c) { break }
+            s = s + string.fromCodePoint(c)
+            advance()
+        }
+        if s.len >= 2 && s[0] == "F"[0] {
+            allDigits = true
+            for i in 1..s.len {
+                ch = s.codePointAt(i)
+                if ch < 48 || ch > 57 { allDigits = false; break }
+            }
+            if allDigits {
+                fnum = int(s.sub(1))
+                if fnum != null && fnum >= 1 && fnum <= 12 {
+                    addToken("Hotkey", s)
+                    return
+                }
+            }
+        }
+        hasMod = false
+        if s.len > 0 {
+            if s.find("^") != null { hasMod = true }
+            if !hasMod && s.find("!") != null { hasMod = true }
+            if !hasMod && s.find("+") != null { hasMod = true }
+            if !hasMod && s.find("#") != null { hasMod = true }
+            if !hasMod && s.find("@") != null { hasMod = true }
+            if !hasMod && s.find("~") != null { hasMod = true }
+            if !hasMod && s.find("$") != null { hasMod = true }
+            if !hasMod && s.find("&") != null { hasMod = true }
+            if !hasMod && s.find(":") != null { hasMod = true }
+            if s[0] == "F"[0] { hasMod = true }
+        }
+        if hasMod {
+            addToken("Hotkey", s)
+            return
+        }
+        allAlphaNum = true
+        for i in 0..s.len {
+            ch = s.codePointAt(i)
+            if !isAlphaNumCp(ch) { allAlphaNum = false; break }
+        }
+        if allAlphaNum && s.len > 0 {
+            addToken("Hotkey", s)
+            return
+        }
+        if s.len > 0 {
+            addToken("Hotkey", s)
+        }
+    }
+    fn _scan() {
+        while current() != -1 {
+            skipWhitespace()
+            if current() == -1 { break }
+            tokenStartCol = col
+            c = current()
 
+            if c == 10 {
+                addToken("NewLine", "\n")
+                advance()
+                continue
+            }
+            if c == 47 && cp(1) == 47 {
+                if cp(2) == 42 { skipBlockComment() }
+                else { skipLineComment() }
+                continue
+            }
+            if c == 47 && cp(1) == 42 {
+                skipBlockComment()
+                continue
+            }
+            // String with prefix backtracking (C++ approach)
+            if c == 34 || c == 39 {
+                isFString = false
+                isRegexString = false
+                if tokens.len > 0 && lastTokenType() == "Identifier" {
+                    lastVal = tokens[tokens.len - 1].value
+                    if lastVal == "f" || lastVal == "F" {
+                        isFString = true
+                        tokens.pop()
+                    } else if lastVal == "u" || lastVal == "U" {
+                        tokens.pop()
+                    } else if lastVal == "r" || lastVal == "R" {
+                        isRegexString = true
+                        isFString = false
+                        tokens.pop()
+                    }
+                }
+        quote = c
+        if cp(1) == quote && cp(2) == quote {
+            advance()
+            advance()
+                    scanMultilineString(quote, isFString)
+                } else {
+                    scanString(quote, isFString, isRegexString)
+                }
+                continue
+            }
+            if c == 96 {
+                scanBacktick()
+                continue
+            }
+            // Minus: check for negative number context
+            canNegNum = (c == 45 && isDigitCp(cp(1)))
+            if canNegNum && tokens.len > 0 {
+                if AFTER_MINUS_NUMBER_TYPES.has(tokens[tokens.len - 1].type) {
+                    canNegNum = false
+                }
+            }
+            if isDigitCp(c) || canNegNum {
+                scanNumber()
+                continue
+            }
+        if isAlphaCp(c) {
+            scanIdentifier()
+            continue
+        }
+            if c >= 0x80 {
+                if isUnicodeLetterCp(c) {
+                    scanIdentifier()
+                    continue
+                }
+                advance()
+                continue
+            }
+            if c == 36 {
+                advance()
+                if current() == 33 {
+                    advance()
+                    addToken("ShellCommandCapture", "$!")
+                } else {
+                    addToken("ShellCommand", "$")
+                }
+                continue
+            }
+            if c == 58 && cp(1) == 58 {
+                advance()
+                advance()
+                addToken("ColonColon", "::")
+                continue
+            }
+            if c == 58 {
+                advance()
+                addToken("Colon", ":")
+                continue
+            }
+            if c == 46 && cp(1) == 46 && cp(2) == 46 {
+                advance()
+                advance()
+                advance()
+                addToken("Spread", "...")
+                continue
+            }
+            if c == 46 && cp(1) == 46 && cp(2) == 61 {
+                advance()
+                advance()
+                advance()
+                addToken("DotDotEquals", "..=")
+                continue
+            }
+            if c == 46 && cp(1) == 46 {
+                advance()
+                advance()
+                addToken("DotDot", "..")
+                continue
+            }
+            if c == 46 {
+                advance()
+                addToken("Dot", ".")
+                continue
+            }
+            if c == 61 && cp(1) == 62 {
+                advance()
+                advance()
+                addToken("Arrow", "=>")
+                continue
+            }
+            if c == 61 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("Equals", "==")
+                continue
+            }
+            if c == 61 {
+                advance()
+                addToken("Assign", "=")
+                continue
+            }
+            if c == 33 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("NotEquals", "!=")
+                continue
+            }
+            if c == 33 && cp(1) == 123 {
+                advance()
+                advance()
+                addToken("BangOpenBrace", "!{")
+                continue
+            }
+            // ! - context-aware: Not vs hotkey
+            if c == 33 {
+                nextCp = cp(1)
+                isIdentStart = false
+                if nextCp >= 97 && nextCp <= 122 { isIdentStart = true }
+                if nextCp >= 65 && nextCp <= 90 { isIdentStart = true }
+                if nextCp == 95 { isIdentStart = true }
+                if nextCp >= 48 && nextCp <= 57 { isIdentStart = true }
+                isNotCtx = afterExpression() || (nextCp != -1 && isIdentStart)
+                if isNotCtx {
+                    advance()
+                    addToken("Not", "!")
+                } else {
+                    advance()
+                    s = "!"
+                    while current() != -1 && current() != 10 && current() != 123 && current() != 40 {
+                        if current() == 61 && cp(1) == 62 { break }
+                        s = s + string.fromCodePoint(current())
+                        advance()
+                    }
+                    if s == "!" { addToken("Not", "!") }
+                    else { addToken("Hotkey", s) }
+                }
+                continue
+            }
+            if c == 60 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("LessEquals", "<=")
+                continue
+            }
+            if c == 60 && cp(1) == 45 {
+                advance()
+                advance()
+                addToken("LeftArrow", "<-")
+                continue
+            }
+            if c == 60 && cp(1) == 60 && cp(2) == 61 {
+                advance()
+                advance()
+                advance()
+                addToken("ShiftLeftAssign", "<<=")
+                continue
+            }
+            if c == 60 && cp(1) == 60 {
+                advance()
+                advance()
+                addToken("ShiftLeft", "<<")
+                continue
+            }
+            if c == 60 {
+                advance()
+                addToken("Less", "<")
+                continue
+            }
+            if c == 62 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("GreaterEquals", ">=")
+                continue
+            }
+            if c == 62 && cp(1) == 62 && cp(2) == 61 {
+                advance()
+                advance()
+                advance()
+                addToken("ShiftRightAssign", ">>=")
+                continue
+            }
+            if c == 62 && cp(1) == 62 {
+                advance()
+                advance()
+                addToken("ShiftRight", ">>")
+                continue
+            }
+            if c == 62 {
+                advance()
+                addToken("Greater", ">")
+                continue
+            }
+            if c == 45 && cp(1) == 62 {
+                advance()
+                advance()
+                addToken("ReturnType", "->")
+                continue
+            }
+            if c == 45 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("MinusAssign", "-=")
+                continue
+            }
+            if c == 45 && cp(1) == 45 {
+                advance()
+                advance()
+                addToken("MinusMinus", "--")
+                continue
+            }
+            // Plain minus (negative number already handled above)
+            if c == 45 {
+                advance()
+                addToken("Minus", "-")
+                continue
+            }
+            if c == 43 && cp(1) == 43 {
+                advance()
+                advance()
+                addToken("PlusPlus", "++")
+                continue
+            }
+            if c == 43 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("PlusAssign", "+=")
+                continue
+            }
+            // Plus: context-aware (operator vs hotkey modifier)
+            if c == 43 {
+                if afterExpression() {
+                    advance()
+                    addToken("Plus", "+")
+                } else {
+                    advance()
+                    s = "+"
+                    while current() != -1 && current() != 10 && current() != 123 && current() != 40 {
+                        if current() == 61 && cp(1) == 62 { break }
+                        if !isHotkeyCharCp(current()) { break }
+                        s = s + string.fromCodePoint(current())
+                        advance()
+                    }
+                    if s.len > 1 { addToken("Hotkey", s) }
+                    else { addToken("Plus", "+") }
+                }
+                continue
+            }
+            if c == 42 && cp(1) == 42 && cp(2) == 61 {
+                advance()
+                advance()
+                advance()
+                addToken("PowerAssign", "**=")
+                continue
+            }
+            if c == 42 && cp(1) == 42 {
+                advance()
+                advance()
+                addToken("Power", "**")
+                continue
+            }
+            if c == 42 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("MultiplyAssign", "*=")
+                continue
+            }
+            if c == 42 {
+                advance()
+                addToken("Multiply", "*")
+                continue
+            }
+            // Slash: hotkey detection, regex context, or divide
+            if c == 47 {
+                if cp(1) == 61 {
+                    advance()
+                    advance()
+                    addToken("DivideAssign", "/=")
+                    continue
+                }
+                if cp(1) != 47 && cp(1) != 42 {
+                    // Check for / => hotkey or /identifier => hotkey
+                    la = idx + 1
+                    while la < n && (cpArr[la][0] == 32 || cpArr[la][0] == 9) { la = la + 1 }
+                    isSlashHK = false
+                    hkEnd = 0
+                    identIsKeyword = false
+                    if la + 1 < n && cpArr[la][0] == 61 && cpArr[la + 1][0] == 62 {
+                        addToken("Hotkey", "/")
+                        advance()
+                        continue
+                    }
+                    if la < n && (isAlphaCp(cpArr[la][0]) || cpArr[la][0] == 95) {
+                        la2 = la
+                        idStart = la
+                        while la2 < n && (isAlphaNumCp(cpArr[la2][0]) || cpArr[la2][0] == 95) { la2 = la2 + 1 }
+                        if la2 < n && cpArr[la2][0] == 47 {
+                            // has closing /, likely regex literal, not hotkey
+                        } else {
+                            hasClosingSlash = false
+                            se2 = la2 + 200
+                            if se2 > n { se2 = n }
+                            for si in la2..se2 {
+                                if si + 1 > n { break }
+                                scp = cpArr[si][0]
+                                if scp == 47 && si > la { hasClosingSlash = true; break }
+                                if scp == 61 && cpArr[si + 1][0] == 62 { break }
+                                if scp == 10 { break }
+                            }
+                            if hasClosingSlash {
+                                // not hotkey
+                            } else {
+                                ident = src.sub(cpArr[idStart][1], cpArr[la2][1] - cpArr[idStart][1])
+                                if ident == "if" || ident == "when" { identIsKeyword = true }
+                                se = la2 + 200
+                                if se > n { se = n }
+                                foundArrow = false
+                                for si in la2..se {
+                                    if si + 1 >= n { break }
+                                    if cpArr[si][0] == 61 && cpArr[si + 1][0] == 62 { foundArrow = true; break }
+                                    if cpArr[si][0] == 10 { break }
+                                }
+                                if foundArrow {
+                                    isSlashHK = true
+                                    hkEnd = la2
+                                }
+                            }
+                        }
+                    }
+                    if isSlashHK {
+                        if identIsKeyword {
+                            addToken("Hotkey", "/")
+                            advance()
+                        } else {
+                            hkVal = src.sub(bytePos(), cpArr[hkEnd][1] - bytePos())
+                            advance()
+                            while idx < hkEnd { advance() }
+                            addToken("Hotkey", hkVal)
+                        }
+                        continue
+                    }
+                    // Regex context check
+                    isRegCtx = tokens.len == 0
+                    if !isRegCtx {
+                        if REGEX_CONTEXT_TYPES.has(tokens[tokens.len - 1].type) { isRegCtx = true }
+                    }
+                    if isRegCtx && !isDigitCp(cp(1)) {
+                        scanRegexLiteral()
+                        continue
+                    }
+                }
+                advance()
+                addToken("Divide", "/")
+                continue
+            }
+            if c == 37 && cp(1) == 37 && cp(2) == 61 {
+                advance()
+                advance()
+                advance()
+                addToken("DoubleModuloAssign", "%%=")
+                continue
+            }
+            if c == 37 && cp(1) == 37 {
+                advance()
+                advance()
+                addToken("DoubleModulo", "%%")
+                continue
+            }
+            if c == 37 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("ModuloAssign", "%=")
+                continue
+            }
+            if c == 37 {
+                advance()
+                addToken("Modulo", "%")
+                continue
+            }
+            if c == 92 && cp(1) == 92 && cp(2) == 61 {
+                advance()
+                advance()
+                advance()
+                addToken("BackslashAssign", "\\=")
+                continue
+            }
+            if c == 92 && cp(1) == 92 {
+                advance()
+                advance()
+                addToken("DoubleBackslash", "\\\\")
+                continue
+            }
+            if c == 92 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("BackslashAssign", "\\=")
+                continue
+            }
+            if c == 92 {
+                advance()
+                addToken("Backslash", "\\")
+                continue
+            }
+            if c == 63 && cp(1) == 63 {
+                advance()
+                advance()
+                addToken("Nullish", "??")
+                continue
+            }
+            if c == 63 && cp(1) == 46 {
+                advance()
+                advance()
+                addToken("QuestionDot", "?.")
+                continue
+            }
+            if c == 63 {
+                advance()
+                addToken("Question", "?")
+                continue
+            }
+            // & - bitwise vs hotkey
+            if c == 38 && cp(1) == 38 {
+                advance()
+                advance()
+                addToken("And", "&&")
+                continue
+            }
+            if c == 38 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("BitwiseAndAssign", "&=")
+                continue
+            }
+            if c == 38 {
+                if inBitwiseExpr || afterExpression() {
+                    advance()
+                    addToken("BitwiseAnd", "&")
+                } else {
+                    s = "&"
+                    advance()
+                    while current() != -1 && current() != 10 && current() != 123 {
+                        if current() == 61 && cp(1) == 62 { break }
+                        s = s + string.fromCodePoint(current())
+                        advance()
+                    }
+                    addToken("Hotkey", s)
+                }
+                continue
+            }
+            if c == 124 && cp(1) == 124 {
+                advance()
+                advance()
+                addToken("Or", "||")
+                continue
+            }
+            if c == 124 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("BitwiseOrAssign", "|=")
+                continue
+            }
+            if c == 124 && cp(1) == 62 {
+                advance()
+                advance()
+                addToken("PipeRight", "|>")
+                continue
+            }
+            if c == 124 {
+                if inBitwiseExpr || afterExpression() {
+                    advance()
+                    addToken("BitwiseOr", "|")
+                } else {
+                    advance()
+                    addToken("Pipe", "|")
+                }
+                continue
+            }
+            if c == 94 && cp(1) == 61 {
+                advance()
+                advance()
+                addToken("BitwiseXorAssign", "^=")
+                continue
+            }
+            // ^ - bitwise xor vs hotkey
+            if c == 94 {
+                if inBitwiseExpr || afterExpression() {
+                    advance()
+                    addToken("BitwiseXor", "^")
+                } else {
+                    s = "^"
+                    advance()
+                    while current() != -1 && current() != 10 && current() != 123 {
+                        if current() == 61 && cp(1) == 62 { break }
+                        s = s + string.fromCodePoint(current())
+                        advance()
+                    }
+                    addToken("Hotkey", s)
+                }
+                continue
+            }
+            // (( - DoubleOpenParen or two OpenParens
+            if c == 40 && cp(1) == 40 && !inBitwiseExpr {
+                emitTwo = false
+                if tokens.len > 0 {
+                    prevType = tokens[tokens.len - 1].type
+                    if DOUBLE_PAREN_EXPR_TYPES.has(prevType) {
+                        emitTwo = true
+                    }
+                    if !emitTwo && prevType == "Assign" {
+                        hasBOp = false
+                        lk = idx + 1
+                        dp = 2
+                        while lk < n && dp > 0 {
+                            lc = cpArr[lk][0]
+                            if lc == 40 { dp = dp + 1 }
+                            else if lc == 41 { dp = dp - 1; if dp == 0 { break } }
+                            else if dp == 2 && (lc == 38 || lc == 124 || lc == 94) {
+                                isDbl = false
+                                if lc == 38 && lk + 1 < n && cpArr[lk + 1][0] == 38 { isDbl = true }
+                                if lc == 124 && lk + 1 < n && cpArr[lk + 1][0] == 124 { isDbl = true }
+                                if !isDbl { hasBOp = true; break }
+                            }
+                            else if dp == 2 && lc == 60 && lk + 1 < n && cpArr[lk + 1][0] == 60 { hasBOp = true; break }
+                            else if dp == 2 && lc == 62 && lk + 1 < n && cpArr[lk + 1][0] == 62 { hasBOp = true; break }
+                            lk = lk + 1
+                        }
+                        if !hasBOp { emitTwo = true }
+                    }
+                }
+                if !emitTwo {
+                    // Lambda heuristic: comma at depth 2 or ) => at close
+                    lambdaFlag = false
+                    lk = idx + 1
+                    ldp = 2
+                    while lk < n && ldp > 0 {
+                        lc = cpArr[lk][0]
+                        if lc == 40 { ldp = ldp + 1 }
+                        else if lc == 41 {
+                            if ldp == 2 {
+                                nx = lk + 1
+                                while nx < n && (cpArr[nx][0] == 32 || cpArr[nx][0] == 9 || cpArr[nx][0] == 10) { nx = nx + 1 }
+                                if nx + 1 < n && cpArr[nx][0] == 61 && cpArr[nx + 1][0] == 62 {
+                                    lambdaFlag = true
+                                    break
+                                }
+                            }
+                            ldp = ldp - 1
+                        }
+                        else if lc == 44 && ldp == 2 { lambdaFlag = true; break }
+                        else if lc == 10 { break }
+                        lk = lk + 1
+                    }
+                    if lambdaFlag { emitTwo = true }
+                }
+                if emitTwo {
+                    addToken("OpenParen", "(")
+                    advance()
+                    addToken("OpenParen", "(")
+                    parenDepth = parenDepth + 2
+                    continue
+                }
+                advance()
+                inBitwiseExpr = true
+                parenDepth = 0
+                addToken("DoubleOpenParen", "((")
+                continue
+            }
+            if c == 40 {
+                advance()
+                parenDepth = parenDepth + 1
+                addToken("OpenParen", "(")
+                continue
+            }
+            if c == 41 && cp(1) == 41 && inBitwiseExpr {
+                advance()
+                advance()
+                inBitwiseExpr = false
+                addToken("DoubleCloseParen", "))")
+                continue
+            }
+            if c == 41 {
+                advance()
+                if parenDepth > 0 { parenDepth = parenDepth - 1 }
+                addToken("CloseParen", ")")
+                continue
+            }
+            if c == 91 {
+                advance()
+                addToken("OpenBracket", "[")
+                continue
+            }
+            if c == 93 {
+                advance()
+                addToken("CloseBracket", "]")
+                continue
+            }
+            if c == 123 {
+                advance()
+                addToken("OpenBrace", "{")
+                continue
+            }
+            if c == 125 {
+                advance()
+                addToken("CloseBrace", "}")
+                continue
+            }
+            if c == 44 {
+                advance()
+                addToken("Comma", ",")
+                continue
+            }
+            if c == 59 {
+                advance()
+                addToken("Semicolon", ";")
+                continue
+            }
+            if c == 64 && cp(1) == 45 && cp(2) == 62 {
+                advance()
+                advance()
+                advance()
+                addToken("SuperArrow", "@->")
+                continue
+            }
+            if c == 64 && cp(1) == 64 {
+                advance()
+                advance()
+                addToken("AtAt", "@@")
+                continue
+            }
+            // @ - context-aware: At vs hotkey
+            if c == 64 {
+                if afterExpression() || (cp(1) != -1 && cp(1) >= 97 && cp(1) <= 122) {
+                    advance()
+                    addToken("At", "@")
+                } else {
+                    advance()
+                    s = "@"
+                    while current() != -1 && isAlphaNumCp(current()) {
+                        s = s + string.fromCodePoint(current())
+                        advance()
+                    }
+                    if current() == 61 && cp(1) == 62 { addToken("Hotkey", s) }
+                    else if current() == 38 || current() == 58 { addToken("Hotkey", s) }
+                    else { addToken("At", "@") }
+                }
+                continue
+            }
+            // # - context-aware: Length vs hotkey (with => lookahead)
+            if c == 35 {
+                isStmtStart = tokens.len == 0
+                if !isStmtStart {
+                    if STATEMENT_START_TYPES.has(tokens[tokens.len - 1].type) { isStmtStart = true }
+                }
+                hasModPfx = (cp(1) != -1 && (cp(1) == 33 || cp(1) == 38 || cp(1) == 94))
+                hasKeyName = (cp(1) != -1 && isAlphaCp(cp(1)))
+                if isStmtStart || (hasModPfx && hasKeyName) {
+                    lk = idx
+                    while lk < n && isHotkeyCharCp(cpArr[lk][0]) { lk = lk + 1 }
+                    while lk < n && (cpArr[lk][0] == 32 || cpArr[lk][0] == 9) { lk = lk + 1 }
+                    hasArrow = (lk + 1 < n && cpArr[lk][0] == 61 && cpArr[lk + 1][0] == 62)
+                    if hasArrow {
+                        scanHotkey()
+                        continue
+                    }
+                }
+                advance()
+                addToken("Length", "#")
+                continue
+            }
+            // ~ - context-aware: Tilde vs hotkey
+            if c == 126 {
+                if inBitwiseExpr || afterExpression() {
+                    advance()
+                    addToken("Tilde", "~")
+                } else {
+                    advance()
+                    s = "~"
+                    while current() != -1 && current() != 10 && current() != 123 {
+                        if current() == 61 && cp(1) == 62 { break }
+                        if !isHotkeyCharCp(current()) { break }
+                        s = s + string.fromCodePoint(current())
+                        advance()
+                    }
+                    if s == "~" { addToken("Tilde", "~") }
+                    else { addToken("Hotkey", s) }
+                }
+                continue
+            }
+            if c == 95 {
+                if !isAlphaNumCp(cp(1)) {
+                    advance()
+                    addToken("Underscore", "_")
+                    continue
+                }
+                scanIdentifier()
+                continue
+            }
+            advance()
+        }
+        addToken("EOF", "")
+        {tokens: tokens, errors: errors}
+    }
+    {run: _scan}
 }
-}
-fn scanNumber() {
-startPos = bytePos()
 
-if current() == 48 {
-next = cp(1)
-if next == 120 or next == 88 {
-advance()
-advance()
-if isHexDigitCp(current()) {
-while isHexDigitCp(current()) {
-advance()
-}
-}
-else {
-error("Invalid hex literal")
-}
-addToken("Number", src.sub(startPos, bytePos() - startPos))
-return
-}
-else if next == 111 or next == 79 {
-advance()
-advance()
-if isOctDigitCp(current()) {
-while isOctDigitCp(current()) {
-advance()
-}
-}
-else {
-error("Invalid octal literal")
-}
-addToken("Number", src.sub(startPos, bytePos() - startPos))
-return
-}
-else if next == 98 or next == 66 {
-advance()
-advance()
-if isBinDigitCp(current()) {
-while isBinDigitCp(current()) {
-advance()
-}
-}
-else {
-error("Invalid binary literal")
-}
-addToken("Number", src.sub(startPos, bytePos() - startPos))
-return
-
-}
-}
-while isDigitCp(current()) {
-advance()
-if current() == 95 and isDigitCp(cp(1)) {
-advance()
-}
-}
-if current() == 46 and isDigitCp(cp(1)) {
-advance()
-while isDigitCp(current()) {
-advance()
-if current() == 95 and isDigitCp(cp(1)) {
-advance()
-}
-}
-}
-if current() == 101 or current() == 69 {
-advance()
-if current() == 43 or current() == 45 {
-advance()
-}
-while isDigitCp(current()) {
-advance()
-}
-}
-addToken("Number", src.sub(startPos, bytePos() - startPos))
-
-}
-fn scanIdentifier() {
-startPos = bytePos()
-while current() != -1 and isUnicodeIdentifierCharCp(current()) {
-advance()
-}
-word = src.sub(startPos, bytePos() - startPos)
-if keywords.has(word) {
-addToken(keywords[word], word)
-}
-else {
-addToken("Identifier", word)
-
-}
-}
-fn scanRegexLiteral() {
-advance()
-s = ""
-while current() != -1 and current() != 47 {
-if current() == 92 {
-s = s + "\\"
-advance()
-if current() != -1 {
-s = s + string.fromCodePoint(current())
-advance()
-}
-}
-else {
-s = s + string.fromCodePoint(current())
-advance()
-}
-}
-if current() == 47 {
-advance()
-while current() != -1 and isAlphaCp(current()) {
-s = s + string.fromCodePoint(current())
-advance()
-}
-}
-addToken("RegexLiteral", s)
-
-}
-fn scanHotkey() {
-s = ""
-while current() != -1 {
-c = current()
-if c == 13 or c == 10 or c == 123 or c == 40 {
-break
-}
-if c == 61 and cp(1) == 62 {
-break
-}
-s = s + string.fromCodePoint(c)
-advance()
-}
-if s.len > 0 {
-addToken("Hotkey", s)
-
-}
-}
-fn lastTokenType() {
-if tokens.len > 0: tokens[tokens.len - 1].type
-else: "NewLine"
-
-}
-fn afterExpression() {
-exprTokens.has(lastTokenType())
-
-}
-fn _scan() {
-while current() != -1 {
-skipWhitespace()
-if current() == -1 { break }
-tokenStartCol = col
-c = current()
-
-if c == 10 {
-addToken("NewLine", "\n")
-advance()
-continue
-}
-if c == 47 and cp(1) == 47 {
-if cp(2) == 42 {
-skipBlockComment()
-}
-else {
-skipLineComment()
-}
-continue
-}
-if c == 47 and cp(1) == 42 {
-skipBlockComment()
-continue
-}
-if (c == 114 or c == 82) and (cp(1) == 34 or cp(1) == 39) {
-advance()
-quote = current()
-scanString(quote, false, true)
-continue
-}
-if (c == 102 or c == 70) and (cp(1) == 34 or cp(1) == 39) {
-if cp(2) == cp(1) {
-advance()
-scanMultilineString(cp(0), true)
-continue
-}
-advance()
-quote = current()
-scanString(quote, true, false)
-continue
-}
-if (c == 34 or c == 39) and cp(1) == c and cp(2) == c {
-scanMultilineString(c, false)
-continue
-}
-if c == 34 or c == 39 {
-scanString(c, false, false)
-continue
-}
-if c == 96 {
-scanBacktick()
-continue
-}
-if isDigitCp(c) {
-scanNumber()
-continue
-}
-if isAlphaCp(c) {
-    scanIdentifier()
-continue
-}
-if c >= 0x80 {
-cp = c
-if isUnicodeLetterCp(cp) {
-scanIdentifier()
-continue
-}
-advance()
-continue
-}
-if c == 36 {
-advance()
-if current() == 33 {
-advance()
-addToken("ShellCommandCapture", "$!")
-}
-else {
-addToken("ShellCommand", "$")
-}
-continue
-}
-if c == 58 and cp(1) == 58 {
-advance()
-advance()
-addToken("ColonColon", "::")
-continue
-}
-if c == 58 {
-advance()
-addToken("Colon", ":")
-continue
-}
-if c == 46 and cp(1) == 46 and cp(2) == 46 {
-advance()
-advance()
-advance()
-addToken("Spread", "...")
-continue
-}
-if c == 46 and cp(1) == 46 and cp(2) == 61 {
-advance()
-advance()
-advance()
-addToken("DotDotEquals", "..=")
-continue
-}
-if c == 46 and cp(1) == 46 {
-advance()
-advance()
-addToken("DotDot", "..")
-continue
-}
-if c == 46 {
-advance()
-addToken("Dot", ".")
-continue
-}
-if c == 61 and cp(1) == 62 {
-advance()
-advance()
-addToken("Arrow", "=>")
-continue
-}
-if c == 61 and cp(1) == 61 {
-advance()
-advance()
-addToken("Equals", "==")
-continue
-}
-if c == 61 {
-advance()
-addToken("Assign", "=")
-continue
-}
-if c == 33 and cp(1) == 61 {
-advance()
-advance()
-addToken("NotEquals", "!=")
-continue
-}
-if c == 33 and cp(1) == 123 {
-advance()
-advance()
-addToken("BangOpenBrace", "!{")
-continue
-}
-if c == 33 {
-  nextCp = cp(1)
-  isIdentStart = false
-  if nextCp >= 97 and nextCp <= 122: isIdentStart = true
-  if nextCp >= 65 and nextCp <= 90: isIdentStart = true
-  if nextCp == 95: isIdentStart = true
-  if nextCp >= 48 and nextCp <= 57: isIdentStart = true
-isNotContext = afterExpression() or (nextCp != -1 and isIdentStart)
-  if isNotContext {
-    advance()
-    addToken("Not", "!")
-  }
-  else {
-    advance()
-s = "!"
-while current() != -1 and current() != 10 and current() != 123 and current() != 40 {
-if current() == 61 and cp(1) == 62 {
-break
-}
-s = s + string.fromCodePoint(current())
-advance()
-}
-if s == "!" {
-addToken("Not", "!")
-}
-else {
-addToken("Hotkey", s)
-}
-}
-continue
-}
-if c == 60 and cp(1) == 61 {
-advance()
-advance()
-addToken("LessEquals", "<=")
-continue
-}
-if c == 60 and cp(1) == 45 {
-advance()
-advance()
-addToken("LeftArrow", "<-")
-continue
-}
-if c == 60 and cp(1) == 60 and cp(2) == 61 {
-advance()
-advance()
-advance()
-addToken("ShiftLeftAssign", "<<=")
-continue
-}
-if c == 60 and cp(1) == 60 {
-advance()
-advance()
-addToken("ShiftLeft", "<<")
-continue
-}
-if c == 60 {
-advance()
-addToken("Less", "<")
-continue
-}
-if c == 62 and cp(1) == 61 {
-advance()
-advance()
-addToken("GreaterEquals", ">=")
-continue
-}
-if c == 62 and cp(1) == 62 and cp(2) == 61 {
-advance()
-advance()
-advance()
-addToken("ShiftRightAssign", ">>=")
-continue
-}
-if c == 62 and cp(1) == 62 {
-advance()
-advance()
-addToken("ShiftRight", ">>")
-continue
-}
-if c == 62 {
-advance()
-addToken("Greater", ">")
-continue
-}
-if c == 45 and cp(1) == 62 {
-advance()
-advance()
-addToken("ReturnType", "->")
-continue
-}
-if c == 45 and cp(1) == 61 {
-advance()
-advance()
-addToken("MinusAssign", "-=")
-continue
-}
-if c == 45 and cp(1) == 45 {
-advance()
-advance()
-addToken("MinusMinus", "--")
-continue
-}
-if c == 45 {
-advance()
-addToken("Minus", "-")
-continue
-}
-if c == 43 and cp(1) == 43 {
-advance()
-advance()
-addToken("PlusPlus", "++")
-continue
-}
-if c == 43 and cp(1) == 61 {
-advance()
-advance()
-addToken("PlusAssign", "+=")
-continue
-}
-if c == 43 {
-advance()
-addToken("Plus", "+")
-continue
-}
-if c == 42 and cp(1) == 42 and cp(2) == 61 {
-advance()
-advance()
-advance()
-addToken("PowerAssign", "**=")
-continue
-}
-if c == 42 and cp(1) == 42 {
-advance()
-advance()
-addToken("Power", "**")
-continue
-}
-if c == 42 and cp(1) == 61 {
-advance()
-advance()
-addToken("MultiplyAssign", "*=")
-continue
-}
-if c == 42 {
-advance()
-addToken("Multiply", "*")
-continue
-}
-if c == 47 {
-if cp(1) == 61 {
-advance()
-advance()
-addToken("DivideAssign", "/=")
-continue
-}
-if !afterExpression() {
-scanRegexLiteral()
-continue
-}
-advance()
-addToken("Divide", "/")
-continue
-}
-if c == 37 and cp(1) == 37 and cp(2) == 61 {
-advance()
-advance()
-advance()
-addToken("DoubleModuloAssign", "%%=")
-continue
-}
-if c == 37 and cp(1) == 37 {
-advance()
-advance()
-addToken("DoubleModulo", "%%")
-continue
-}
-if c == 37 and cp(1) == 61 {
-advance()
-advance()
-addToken("ModuloAssign", "%=")
-continue
-}
-if c == 37 {
-advance()
-addToken("Modulo", "%")
-continue
-}
-if c == 92 and cp(1) == 92 and cp(2) == 61 {
-advance()
-advance()
-advance()
-addToken("BackslashAssign", "\\=")
-continue
-}
-if c == 92 and cp(1) == 92 {
-advance()
-advance()
-addToken("DoubleBackslash", "\\\\")
-continue
-}
-if c == 92 and cp(1) == 61 {
-advance()
-advance()
-addToken("BackslashAssign", "\\=")
-continue
-}
-if c == 92 {
-advance()
-addToken("Backslash", "\\")
-continue
-}
-if c == 63 and cp(1) == 63 {
-advance()
-advance()
-addToken("Nullish", "??")
-continue
-}
-if c == 63 and cp(1) == 46 {
-advance()
-advance()
-addToken("QuestionDot", "?.")
-continue
-}
-if c == 63 {
-advance()
-addToken("Question", "?")
-continue
-}
-if c == 38 and cp(1) == 38 {
-advance()
-advance()
-addToken("And", "&&")
-continue
-}
-if c == 38 and cp(1) == 61 {
-advance()
-advance()
-addToken("BitwiseAndAssign", "&=")
-continue
-}
-if c == 38 {
-if inBitwiseExpr {
-advance()
-addToken("BitwiseAnd", "&")
-}
-else if afterExpression() {
-advance()
-addToken("BitwiseAnd", "&")
-}
-else {
-s = "&"
-advance()
-while current() != -1 and current() != 10 and current() != 123 {
-if current() == 61 and cp(1) == 62 {
-break
-}
-s = s + string.fromCodePoint(current())
-advance()
-}
-addToken("Hotkey", s)
-}
-continue
-}
-if c == 124 and cp(1) == 124 {
-advance()
-advance()
-addToken("Or", "||")
-continue
-}
-if c == 124 and cp(1) == 61 {
-advance()
-advance()
-addToken("BitwiseOrAssign", "|=")
-continue
-}
-if c == 124 and cp(1) == 62 {
-advance()
-advance()
-addToken("PipeRight", "|>")
-continue
-}
-if c == 124 {
-if inBitwiseExpr {
-advance()
-addToken("BitwiseOr", "|")
-}
-else if afterExpression() {
-advance()
-addToken("BitwiseOr", "|")
-}
-else {
-advance()
-addToken("Pipe", "|")
-}
-continue
-}
-if c == 94 and cp(1) == 61 {
-advance()
-advance()
-addToken("BitwiseXorAssign", "^=")
-continue
-}
-if c == 94 {
-if inBitwiseExpr {
-advance()
-addToken("BitwiseXor", "^")
-}
-else if afterExpression() {
-advance()
-addToken("BitwiseXor", "^")
-}
-else {
-s = "^"
-advance()
-while current() != -1 and current() != 10 and current() != 123 {
-if current() == 61 and cp(1) == 62 {
-break
-}
-s = s + string.fromCodePoint(current())
-advance()
-}
-addToken("Hotkey", s)
-}
-continue
-}
-if c == 40 and cp(1) == 40 {
-if !afterExpression() {
-advance()
-advance()
-inBitwiseExpr = true
-parenDepth = 0
-addToken("DoubleOpenParen", "((")
-continue
-}
-}
-if c == 40 {
-advance()
-parenDepth = parenDepth + 1
-addToken("OpenParen", "(")
-continue
-}
-if c == 41 and cp(1) == 41 and inBitwiseExpr {
-advance()
-advance()
-inBitwiseExpr = false
-addToken("DoubleCloseParen", "))")
-continue
-}
-if c == 41 {
-advance()
-if parenDepth > 0 {
-parenDepth = parenDepth - 1
-}
-addToken("CloseParen", ")")
-continue
-}
-if c == 91 {
-advance()
-addToken("OpenBracket", "[")
-continue
-}
-if c == 93 {
-advance()
-addToken("CloseBracket", "]")
-continue
-}
-if c == 123 {
-advance()
-addToken("OpenBrace", "{")
-continue
-}
-if c == 125 {
-advance()
-addToken("CloseBrace", "}")
-continue
-}
-if c == 44 {
-advance()
-addToken("Comma", ",")
-continue
-}
-if c == 59 {
-advance()
-addToken("Semicolon", ";")
-continue
-}
-if c == 64 and cp(1) == 45 and cp(2) == 62 {
-advance()
-advance()
-advance()
-addToken("SuperArrow", "@->")
-continue
-}
-if c == 64 and cp(1) == 64 {
-advance()
-advance()
-addToken("AtAt", "@@")
-continue
-}
-if c == 64 {
-if afterExpression() or (cp(1) != -1 and cp(1) >= 97 and cp(1) <= 122) {
-advance()
-addToken("At", "@")
-}
-else {
-advance()
-s = "@"
-while current() != -1 and isAlphaNumCp(current()) {
-s = s + string.fromCodePoint(current())
-advance()
-}
-if current() == 61 and cp(1) == 62 {
-addToken("Hotkey", s)
-}
-else if current() == 38 or current() == 58 {
-addToken("Hotkey", s)
-}
-else {
-addToken("At", "@")
-}
-}
-continue
-}
-if c == 35 {
-advance()
-nextCh = current()
-if afterExpression() or nextCh == 91 or nextCh == 123 or nextCh == 34 or nextCh == 39 or (nextCh != -1 and isAlphaCp(nextCh)) {
-addToken("Length", "#")
-}
-else {
-s = "#"
-while current() != -1 and current() != 10 and current() != 123 {
-if current() == 61 and cp(1) == 62 {
-break
-}
-s = s + string.fromCodePoint(current())
-advance()
-}
-if s == "#" {
-addToken("Length", "#")
-}
-else {
-addToken("Hotkey", s)
-}
-}
-continue
-}
-if c == 126 {
-advance()
-addToken("Tilde", "~")
-continue
-}
-if c == 95 {
-  if !isAlphaNumCp(cp(1)) {
-    advance()
-    addToken("Underscore", "_")
-    continue
-  }
-  scanIdentifier()
-  continue
-}
-advance()
-
-}
-addToken("EOF", "")
-{tokens: tokens, errors: errors}
-
-}
-{run: _scan}
-
-}
 fn tokenize(source) {
-lx = Lexer(source)
-result = lx.run()
-result.tokens
-
+    lx = Lexer(source)
+    result = lx.run()
+    result.tokens
 }
+
 fn tokenizeWithErrors(source) {
-lx = Lexer(source)
-result = lx.run()
-{tokens: result.tokens, errors: result.errors}
+    lx = Lexer(source)
+    result = lx.run()
+    {tokens: result.tokens, errors: result.errors}
+}
 
-}
 fn printTokens(tokens) {
-for t in tokens {
-typeStr = t.type
-valStr = t.value
-if valStr.len > 40 {
-valStr = valStr.sub(0, 37) + "..."
-}
-print(typeStr + " " + valStr)
-}
+    for t in tokens {
+        typeStr = t.type
+        valStr = t.value
+        if valStr.len > 40 { valStr = valStr.sub(0, 37) + "..." }
+        print(typeStr + " " + valStr)
+    }
 }

@@ -839,7 +839,7 @@ size_t HotkeyModule::conditionalCount() {
 #endif // HAVEL_PURE_VM
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(hotkey, "1.0.0", "Hotkey management stdlib module",
     havel::stdlib::registerHotkeyModule(*api);

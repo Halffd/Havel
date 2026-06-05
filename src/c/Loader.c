@@ -1,0 +1,434 @@
+/*
+ * Loader.c - Pure C dynamic library loader
+ *
+ * Python-style module loading via dlopen/dlsym.
+ * No C++ dependencies. No STL. Pure POSIX.
+ */
+
+#include "Loader.h"
+#include "ModulePlugin.h"
+#include "ToolkitPlugin.h"
+
+#include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#define HAVEL_MAX_SEARCH_PATHS 64
+#define HAVEL_MAX_LOADED 128
+
+struct HavelLoader {
+    char *search_paths[HAVEL_MAX_SEARCH_PATHS];
+    int search_path_count;
+    HavelLoadedModule loaded[HAVEL_MAX_LOADED];
+    int loaded_count;
+};
+
+static const char *suffix_platform(void) {
+#if defined(_WIN32)
+    return ".dll";
+#elif defined(__APPLE__)
+    return ".dylib";
+#else
+    return ".so";
+#endif
+}
+
+const char *havel_loader_suffix(void) {
+    return suffix_platform();
+}
+
+HavelLoader *havel_loader_create(void) {
+    HavelLoader *l = (HavelLoader *)calloc(1, sizeof(HavelLoader));
+    if (!l) return NULL;
+    havel_loader_add_standard_paths(l);
+    return l;
+}
+
+void havel_loader_destroy(HavelLoader *loader) {
+    if (!loader) return;
+    for (int i = 0; i < loader->search_path_count; i++) {
+        free(loader->search_paths[i]);
+    }
+    /* Do NOT dlclose handles - extensions stay loaded until process exit.
+     * dlclose + dangling function pointers = crash.
+     * Python does the same. */
+    free(loader);
+}
+
+const char *havel_loader_error(void) {
+    return dlerror();
+}
+
+void havel_loader_add_search_path(HavelLoader *loader, const char *path) {
+    if (!loader || !path) return;
+    if (loader->search_path_count >= HAVEL_MAX_SEARCH_PATHS) return;
+    loader->search_paths[loader->search_path_count++] = strdup(path);
+}
+
+void havel_loader_add_standard_paths(HavelLoader *loader) {
+    if (!loader) return;
+    havel_loader_add_search_path(loader, ".");
+
+    havel_loader_add_search_path(loader, "/usr/lib/havel/extensions");
+    havel_loader_add_search_path(loader, "/usr/local/lib/havel/extensions");
+
+    const char *home = getenv("HOME");
+    if (home) {
+        char buf[512];
+        snprintf(buf, sizeof(buf), "%s/.havel/extensions", home);
+        havel_loader_add_search_path(loader, buf);
+    }
+
+    const char *ext_dir = getenv("HAVEL_EXTENSION_DIR");
+    if (ext_dir) {
+        havel_loader_add_search_path(loader, ext_dir);
+    }
+}
+
+void havel_loader_add_module_paths(HavelLoader *loader) {
+    if (!loader) return;
+
+    havel_loader_add_search_path(loader, "modules");
+
+    /* Add path relative to the running executable */
+    {
+        char exe_path[512];
+        ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+        if (len > 0) {
+            exe_path[len] = '\0';
+            char *last_slash = strrchr(exe_path, '/');
+            if (last_slash) {
+                *last_slash = '\0';
+                char buf[768];
+                snprintf(buf, sizeof(buf), "%s/modules", exe_path);
+                havel_loader_add_search_path(loader, buf);
+            }
+        }
+    }
+
+    havel_loader_add_search_path(loader, "/usr/lib/havel/modules");
+    havel_loader_add_search_path(loader, "/usr/local/lib/havel/modules");
+
+    const char *home = getenv("HOME");
+    if (home) {
+        char buf[512];
+        snprintf(buf, sizeof(buf), "%s/.havel/modules", home);
+        havel_loader_add_search_path(loader, buf);
+    }
+
+    const char *mod_dir = getenv("HAVEL_MODULE_DIR");
+    if (mod_dir) {
+        havel_loader_add_search_path(loader, mod_dir);
+    }
+}
+
+static int file_exists(const char *path) {
+    return access(path, F_OK) == 0;
+}
+
+static char *find_library(HavelLoader *loader, const char *name) {
+    const char *suffix = suffix_platform();
+
+    for (int i = 0; i < loader->search_path_count; i++) {
+        const char *dir = loader->search_paths[i];
+        char buf[768];
+
+        /* Try: dir/name.so */
+        snprintf(buf, sizeof(buf), "%s/%s%s", dir, name, suffix);
+        if (file_exists(buf)) return strdup(buf);
+
+        /* Try: dir/libname.so */
+        snprintf(buf, sizeof(buf), "%s/lib%s%s", dir, name, suffix);
+        if (file_exists(buf)) return strdup(buf);
+    }
+
+    return NULL;
+}
+
+void *havel_loader_open(HavelLoader *loader, const char *path) {
+    if (!path) return NULL;
+    (void)loader;
+
+    void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
+    if (!handle) {
+        fprintf(stderr, "[Loader] dlopen failed for %s: %s\n",
+                path, dlerror() ? dlerror() : "unknown");
+    }
+    return handle;
+}
+
+void *havel_loader_load(HavelLoader *loader, const char *name) {
+    if (!loader || !name) return NULL;
+
+    /* Already loaded? */
+    for (int i = 0; i < loader->loaded_count; i++) {
+        if (strcmp(loader->loaded[i].name, name) == 0 && loader->loaded[i].is_loaded) {
+            return loader->loaded[i].handle;
+        }
+    }
+
+    char *path = find_library(loader, name);
+    if (!path) {
+        return NULL;
+    }
+
+    void *handle = havel_loader_open(loader, path);
+    if (!handle) {
+        free(path);
+        return NULL;
+    }
+
+    /* Register loaded module */
+    if (loader->loaded_count < HAVEL_MAX_LOADED) {
+        HavelLoadedModule *mod = &loader->loaded[loader->loaded_count++];
+        snprintf(mod->name, sizeof(mod->name), "%s", name);
+        snprintf(mod->path, sizeof(mod->path), "%s", path);
+        mod->handle = handle;
+        mod->is_loaded = 1;
+    }
+
+    free(path);
+    return handle;
+}
+
+void *havel_loader_sym(void *handle, const char *symbol) {
+    if (!handle || !symbol) return NULL;
+
+    dlerror(); /* clear */
+    void *sym = dlsym(handle, symbol);
+    if (!sym) {
+        const char *err = dlerror();
+        if (err) {
+            fprintf(stderr, "[Loader] dlsym failed for '%s': %s\n", symbol, err);
+        }
+    }
+    return sym;
+}
+
+void *havel_loader_import(HavelLoader *loader, const char *name, void *api) {
+    if (!loader || !name) return NULL;
+
+    /* Already loaded? */
+    for (int i = 0; i < loader->loaded_count; i++) {
+        if (strcmp(loader->loaded[i].name, name) == 0 && loader->loaded[i].is_loaded) {
+            return loader->loaded[i].handle;
+        }
+    }
+
+    char *path = find_library(loader, name);
+    if (!path) {
+        return NULL;
+    }
+
+    void *handle = havel_loader_open(loader, path);
+    if (!handle) {
+        free(path);
+        return NULL;
+    }
+
+    /* Try to call havel_extension_init if present */
+    HavelModuleInitFn init_fn = (HavelModuleInitFn)havel_loader_sym(handle, "havel_extension_init");
+    if (init_fn && api) {
+        init_fn(api);
+    }
+
+    /* Register loaded module */
+    if (loader->loaded_count < HAVEL_MAX_LOADED) {
+        HavelLoadedModule *mod = &loader->loaded[loader->loaded_count++];
+        snprintf(mod->name, sizeof(mod->name), "%s", name);
+        snprintf(mod->path, sizeof(mod->path), "%s", path);
+        mod->handle = handle;
+        mod->is_loaded = 1;
+    }
+
+    free(path);
+    return handle;
+}
+
+int havel_loader_is_loaded(HavelLoader *loader, const char *name) {
+    if (!loader || !name) return 0;
+    for (int i = 0; i < loader->loaded_count; i++) {
+        if (strcmp(loader->loaded[i].name, name) == 0 && loader->loaded[i].is_loaded) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void *havel_loader_get_handle(HavelLoader *loader, const char *name) {
+    if (!loader || !name) return NULL;
+    for (int i = 0; i < loader->loaded_count; i++) {
+        if (strcmp(loader->loaded[i].name, name) == 0 && loader->loaded[i].is_loaded) {
+            return loader->loaded[i].handle;
+        }
+    }
+    return NULL;
+}
+
+char **havel_loader_list_loaded(HavelLoader *loader, int *count) {
+    if (!loader || !count) return NULL;
+    *count = loader->loaded_count;
+
+    char **names = (char **)malloc(sizeof(char *) * (loader->loaded_count > 0 ? loader->loaded_count : 1));
+    if (!names) { *count = 0; return NULL; }
+
+    for (int i = 0; i < loader->loaded_count; i++) {
+        names[i] = strdup(loader->loaded[i].name);
+    }
+    return names;
+}
+
+void havel_loader_free_names(char **names, int count) {
+    if (!names) return;
+    for (int i = 0; i < count; i++) {
+        free(names[i]);
+    }
+    free(names);
+}
+
+void havel_loader_close(void *handle) {
+    if (handle) {
+        dlclose(handle);
+    }
+}
+
+const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *name) {
+    if (!loader || !name) return NULL;
+
+    /* Check if already loaded */
+    char lib_name[300];
+    snprintf(lib_name, sizeof(lib_name), "havel_mod_%s", name);
+
+    for (int i = 0; i < loader->loaded_count; i++) {
+        if (strcmp(loader->loaded[i].name, lib_name) == 0 && loader->loaded[i].is_loaded) {
+            /* Already loaded — get ABI from existing handle */
+            HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(loader->loaded[i].handle, "havel_module_info");
+            return info_fn ? info_fn() : NULL;
+        }
+    }
+
+    char *path = find_library(loader, lib_name);
+    if (!path) return NULL;
+
+    /* RTLD_NOW: resolve all symbols immediately so missing deps fail at load time.
+     * RTLD_GLOBAL: make symbols available for subsequent dlopen calls. */
+    void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+    if (!handle) {
+        fprintf(stderr, "[Loader] dlopen failed for module '%s': %s\n", name, dlerror() ? dlerror() : "unknown");
+        free(path);
+        return NULL;
+    }
+
+    HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(handle, "havel_module_info");
+    if (!info_fn) {
+        fprintf(stderr, "[Loader] module '%s': missing havel_module_info symbol\n", name);
+        free(path);
+        return NULL;
+    }
+
+    const HavelModuleABI *abi = info_fn();
+    if (!abi) {
+        fprintf(stderr, "[Loader] module '%s': havel_module_info returned NULL\n", name);
+        free(path);
+        return NULL;
+    }
+
+    if (abi->abi_version != HAVEL_MODULE_ABI_VERSION) {
+        fprintf(stderr, "[Loader] module '%s': ABI version mismatch (got %d, need %d)\n",
+                name, abi->abi_version, HAVEL_MODULE_ABI_VERSION);
+        free(path);
+        return NULL;
+    }
+
+    /* Register loaded module */
+    if (loader->loaded_count < HAVEL_MAX_LOADED) {
+        HavelLoadedModule *mod = &loader->loaded[loader->loaded_count++];
+        snprintf(mod->name, sizeof(mod->name), "%s", lib_name);
+        snprintf(mod->path, sizeof(mod->path), "%s", path);
+        mod->handle = handle;
+        mod->is_loaded = 1;
+    }
+
+    free(path);
+    return abi;
+}
+
+void havel_loader_add_toolkit_paths(HavelLoader *loader) {
+    if (!loader) return;
+
+    havel_loader_add_search_path(loader, "toolkits");
+
+    havel_loader_add_search_path(loader, "/usr/lib/havel/toolkits");
+    havel_loader_add_search_path(loader, "/usr/local/lib/havel/toolkits");
+
+    const char *home = getenv("HOME");
+    if (home) {
+        char buf[512];
+        snprintf(buf, sizeof(buf), "%s/.havel/toolkits", home);
+        havel_loader_add_search_path(loader, buf);
+    }
+
+    const char *tk_dir = getenv("HAVEL_TOOLKIT_DIR");
+    if (tk_dir) {
+        havel_loader_add_search_path(loader, tk_dir);
+    }
+}
+
+const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char *name) {
+    if (!loader || !name) return NULL;
+
+    /* Check if already loaded */
+    char lib_name[300];
+    snprintf(lib_name, sizeof(lib_name), "havel_toolkit_%s", name);
+
+    for (int i = 0; i < loader->loaded_count; i++) {
+        if (strcmp(loader->loaded[i].name, lib_name) == 0 && loader->loaded[i].is_loaded) {
+            havel_toolkit_info_fn info_fn = (havel_toolkit_info_fn)havel_loader_sym(loader->loaded[i].handle, "havel_toolkit_info");
+            return info_fn ? info_fn() : NULL;
+        }
+    }
+
+    char *path = find_library(loader, lib_name);
+    if (!path) return NULL;
+
+    void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+    if (!handle) {
+        fprintf(stderr, "[Loader] dlopen failed for toolkit '%s': %s\n", name, dlerror() ? dlerror() : "unknown");
+        free(path);
+        return NULL;
+    }
+
+    havel_toolkit_info_fn info_fn = (havel_toolkit_info_fn)havel_loader_sym(handle, "havel_toolkit_info");
+    if (!info_fn) {
+        fprintf(stderr, "[Loader] toolkit '%s': missing havel_toolkit_info symbol\n", name);
+        free(path);
+        return NULL;
+    }
+
+    const HavelToolkitABI *abi = info_fn();
+    if (!abi) {
+        fprintf(stderr, "[Loader] toolkit '%s': havel_toolkit_info returned NULL\n", name);
+        free(path);
+        return NULL;
+    }
+
+    if (abi->abi_version != HAVEL_TOOLKIT_ABI_VERSION) {
+        fprintf(stderr, "[Loader] toolkit '%s': ABI version mismatch (got %d, need %d)\n",
+                name, abi->abi_version, HAVEL_TOOLKIT_ABI_VERSION);
+        free(path);
+        return NULL;
+    }
+
+    if (loader->loaded_count < HAVEL_MAX_LOADED) {
+        HavelLoadedModule *mod = &loader->loaded[loader->loaded_count++];
+        snprintf(mod->name, sizeof(mod->name), "%s", lib_name);
+        snprintf(mod->path, sizeof(mod->path), "%s", path);
+        mod->handle = handle;
+        mod->is_loaded = 1;
+    }
+
+    free(path);
+    return abi;
+}

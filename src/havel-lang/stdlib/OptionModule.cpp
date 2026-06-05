@@ -68,7 +68,7 @@ void registerOptionModule(const VMApi &api) {
 } // namespace havel::stdlib
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(option, "1.0.0", "Option type stdlib module",
     havel::stdlib::registerOptionModule(*api);

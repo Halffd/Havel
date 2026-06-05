@@ -1,4 +1,4 @@
-#include "loader/ToolkitPlugin.h"
+#include "c/ToolkitPlugin.h"
 #include "extensions/qt/QtScreenshotBackend.hpp"
 #include "extensions/qt/QtAltTabBackend.hpp"
 #include "extensions/qt/QtClipboardBackend.hpp"

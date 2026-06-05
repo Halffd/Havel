@@ -1,4 +1,4 @@
-#include "loader/ToolkitPlugin.h"
+#include "c/ToolkitPlugin.h"
 #include "host/ui/ImGuiBackend.hpp"
 
 using namespace havel::host;

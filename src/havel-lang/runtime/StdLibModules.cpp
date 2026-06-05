@@ -1,7 +1,7 @@
 #include "havel-lang/compiler/runtime/HostBridge.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "loader/Loader.hpp"
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 namespace havel {
 

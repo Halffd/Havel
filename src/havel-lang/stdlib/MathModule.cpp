@@ -172,7 +172,7 @@ void registerMathModule(const VMApi &api) {
 } // namespace havel::stdlib
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(math, "1.0.0", "Math operations stdlib module",
     havel::stdlib::registerMathModule(*api);

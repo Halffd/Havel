@@ -248,7 +248,7 @@ void registerDisplayModule(const VMApi &api) {
 } // namespace havel::modules
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(display, "1.0.0", "Display management module",
     havel::modules::registerDisplayModule(*api);

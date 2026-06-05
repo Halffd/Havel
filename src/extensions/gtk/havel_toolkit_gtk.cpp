@@ -1,4 +1,4 @@
-#include "loader/ToolkitPlugin.h"
+#include "c/ToolkitPlugin.h"
 
 #ifdef HAVE_GTK_BACKEND
 #include <gtk/gtk.h>

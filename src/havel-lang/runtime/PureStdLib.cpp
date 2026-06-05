@@ -1,6 +1,6 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "loader/Loader.hpp"
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 #ifdef ENABLE_MODULE_PLUGINS
 // Plugin mode: load modules via dlopen

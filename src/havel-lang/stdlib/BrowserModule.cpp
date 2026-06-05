@@ -593,7 +593,7 @@ void registerBrowserModule(const VMApi &api) {
 } // namespace havel::stdlib
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(browser, "1.0.0", "Browser integration stdlib module",
     havel::stdlib::registerBrowserModule(*api);

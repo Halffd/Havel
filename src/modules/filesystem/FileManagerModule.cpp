@@ -239,7 +239,7 @@ void registerFileManagerModule(const VMApi& api) {
 } // namespace havel::modules
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(filemanager, "1.0.0", "File manager module",
     havel::modules::registerFileManagerModule(*api);

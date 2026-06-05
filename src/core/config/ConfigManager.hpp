@@ -7,7 +7,7 @@
  */
 #pragma once
 
-#include "core/config/Config.h"
+#include "c/Config.h"
 #include "utils/Logger.hpp"
 
 #include <algorithm>

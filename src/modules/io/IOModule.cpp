@@ -332,7 +332,7 @@ HAVEL_REGISTER_FUNCTION(api, "io.getMousePosition", [api](const auto& rawArgs) {
 } // namespace havel::modules
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(io, "1.0.0", "IO operations module",
     havel::modules::registerIOModule(*api);

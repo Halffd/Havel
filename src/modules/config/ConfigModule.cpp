@@ -177,7 +177,7 @@ void autoLoadConfig(const VMApi &api) { (void)api; }
 } // namespace havel::modules
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(config, "1.0.0", "Configuration module",
     havel::modules::registerConfigModule(*api);

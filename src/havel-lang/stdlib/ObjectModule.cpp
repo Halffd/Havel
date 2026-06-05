@@ -268,7 +268,7 @@ void registerObjectModule(const VMApi &api) {
 } // namespace havel::stdlib
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(object, "1.0.0", "Object operations stdlib module",
     havel::stdlib::registerObjectModule(*api);

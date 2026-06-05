@@ -1130,7 +1130,7 @@ void registerFsModule(const VMApi &api) {
 } // namespace havel::stdlib
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(fs, "1.0.0", "Filesystem operations stdlib module",
     havel::stdlib::registerFsModule(*api);

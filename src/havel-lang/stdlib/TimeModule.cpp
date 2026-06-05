@@ -227,7 +227,7 @@ void registerTimeModule(const VMApi &api) {
 } // namespace havel::stdlib
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(time, "1.0.0", "Time operations stdlib module",
     havel::stdlib::registerTimeModule(*api);

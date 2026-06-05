@@ -8,7 +8,7 @@
 #include "../compiler/vm/VMApi.hpp"
 #include "../parser/Parser.h"
 #include "../compiler/core/ByteCompiler.hpp"
-#include "../../loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
 namespace havel {

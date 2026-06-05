@@ -2561,17 +2561,17 @@ bool VM::ensureModuleLoaded(const std::string &name) {
   return true;
     }
 
-    VMApi api(*this);
-    it->second.initFn(api);
-    it->second.loaded = true;
+ VMApi api(*this);
+ it->second.initFn(api);
+ it->second.loaded = true;
 
-    // After init, globals[name] should now hold the real module object.
-    // Clear the __lazy__ flag on it and cache it for future proxy fixups.
-    auto git = globals.find(name);
-    if (git != globals.end() && git->second.isObjectId()) {
-        auto *obj = heap_.object(git->second.asObjectId());
-        if (obj) {
-            auto *lf = obj->get("__lazy__");
+ // After init, globals[name] should now hold the real module object.
+ // Clear the __lazy__ flag on it and cache it for future proxy fixups.
+ auto git = globals.find(name);
+ if (git != globals.end() && git->second.isObjectId()) {
+ auto *obj = heap_.object(git->second.asObjectId());
+ if (obj) {
+ auto *lf = obj->get("__lazy__");
  if (lf && lf->isBool() && lf->asBool()) {
  obj->set("__lazy__", Value(false));
  }

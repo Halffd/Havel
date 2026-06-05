@@ -824,15 +824,6 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     std::atomic<int> exit_code_{0};
   
  void setGlobal(std::string name, Value value) {
- if (name == "bit" || name == "Bit") {
- fprintf(stderr, "[DBG-SETGLOBAL] name='%s' isObj=%d objId=%u\n",
- name.c_str(), (int)value.isObjectId(),
- value.isObjectId() ? value.asObjectId() : 0);
- auto *obj = value.isObjectId() ? heap_.object(value.asObjectId()) : nullptr;
- fprintf(stderr, "[DBG-SETGLOBAL] obj=%p fields=%zu has_lazy=%d\n",
- (void*)obj, obj ? obj->size() : 0,
- obj ? (int)(obj->get("__lazy__") != nullptr) : -1);
- }
  globals[std::move(name)] = std::move(value);
  emitVariableChanged(name);
  }

@@ -305,6 +305,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/net/*.cpp"
     "src/core/process/*.cpp"
     "src/loader/*.c"
+ "src/loader/*.cpp"
     "src/host/async/*.cpp"
     "src/host/audio/*.cpp"
     "src/host/brightness/*.cpp"

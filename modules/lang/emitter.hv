@@ -232,23 +232,17 @@ fn emitExpr(emitter, node) {
     }
     if k == "BinaryExpression" {
         opr = node.oper
-        // Short-circuit: && and || skip right side when left determines result
-        if opr == "&&" {
-            emitExpr(emitter, node.left)
-            bc.emit("DUP")
-            jumpPastRight = bc.emit("JUMP_IF_FALSE", 0)
-            bc.emit("POP")
-            emitExpr(emitter, node.right)
-            bc.patch_jump(jumpPastRight, bc.instr_count())
+	// Non-short-circuit: && and || evaluate both sides (matching native compiler)
+	if opr == "&&" {
+		emitExpr(emitter, node.left)
+		emitExpr(emitter, node.right)
+		bc.emit("AND")
             return
         }
         if opr == "||" {
             emitExpr(emitter, node.left)
-            bc.emit("DUP")
-            jumpPastRight = bc.emit("JUMP_IF_TRUE", 0)
-            bc.emit("POP")
-            emitExpr(emitter, node.right)
-            bc.patch_jump(jumpPastRight, bc.instr_count())
+	emitExpr(emitter, node.right)
+	bc.emit("OR")
             return
         }
         if opr == "??" {
@@ -1502,21 +1496,22 @@ bc.emit("OBJECT_GET")
 		return
 
 	}
+
     if k == "WhileStatement" {
         loopTop = bc.instr_count()
         emitter.breakStack.push([])
         emitter.continueStack.push(loopTop)
-    emitExpr(emitter, node.condition)
-    exitJump = bc.emit("JUMP_IF_FALSE", 0)
-    // Push scope for body
-    oldWhileScope = emitter.scope
-    whileScope = Scope(oldWhileScope, null, null)
-    emitter.scope = whileScope
-    emitBlock(emitter, node.body)
-    oldWhileScope.count = whileScope.count
-    emitter.scope = oldWhileScope
-    bc.emit("JUMP", loopTop)
-    bc.patch_jump(exitJump, bc.instr_count())
+	emitExpr(emitter, node.condition)
+	exitJump = bc.emit("JUMP_IF_FALSE", 0)
+	// Push scope for body
+	oldWhileScope = emitter.scope
+	whileScope = Scope(oldWhileScope, null, null)
+	emitter.scope = whileScope
+	emitBlock(emitter, node.body)
+	oldWhileScope.count = whileScope.count
+	emitter.scope = oldWhileScope
+	bc.emit("JUMP", loopTop)
+	bc.patch_jump(exitJump, bc.instr_count())
         // Patch break jumps
         breakTarget = bc.instr_count()
         breakList = emitter.breakStack[#emitter.breakStack - 1]
@@ -1525,8 +1520,32 @@ bc.emit("OBJECT_GET")
             bc.patch_jump(breakList[i], breakTarget)
             i = i + 1
         emitter.breakStack.pop()
-    emitter.continueStack.pop()
-    return
+	emitter.continueStack.pop()
+	return
+}
+if k == "DoWhileStatement" {
+	loopTop = bc.instr_count()
+	emitter.breakStack.push([])
+	emitter.continueStack.push(loopTop)
+	// Push scope for body
+	oldScope = emitter.scope
+	doScope = Scope(oldScope, null, null)
+	emitter.scope = doScope
+	emitBlock(emitter, node.body)
+	oldScope.count = doScope.count
+	emitter.scope = oldScope
+	emitExpr(emitter, node.condition)
+	bc.emit("JUMP_IF_TRUE", loopTop)
+	// Patch break jumps
+	breakTarget = bc.instr_count()
+	breakList = emitter.breakStack[#emitter.breakStack - 1]
+	i = 0
+	while i < #breakList:
+		bc.patch_jump(breakList[i], breakTarget)
+		i = i + 1
+	emitter.breakStack.pop()
+	emitter.continueStack.pop()
+	return
 }
 
 if k == "DoWhileStatement" {
@@ -2880,29 +2899,19 @@ fn emitMatchExpr(emitter, node) {
   emitExpr(emitter, node.subject)
   discSlot = scopeDeclare(emitter.scope, "_match_disc")
   bc.emit("STORE_VAR", discSlot)
-  // Allocate a match slot to accumulate pattern results (like C++ compiler)
-  matchSlot = scopeDeclare(emitter.scope, "_match_ok")
-  // Compile each case
-  caseJumps = []
-  for c in node.cases {
-    // Initialize match slot to true
-    bc.emit("LOAD_CONST", bc.add_const(true))
-    bc.emit("STORE_VAR", matchSlot)
-    // Compile pattern match — leaves bool on stack
-    emitPatternMatch(emitter, c.pattern, discSlot)
-    // AND with match slot: LOAD_VAR matchSlot, <pattern_bool>, AND, STORE_VAR matchSlot
-    // Pattern bool is already on stack from emitPatternMatch
-    bc.emit("LOAD_VAR", matchSlot)
-    bc.emit("AND")
-    bc.emit("STORE_VAR", matchSlot)
-    // Check if all patterns matched
-    bc.emit("LOAD_VAR", matchSlot)
+	// Compile each case
+	caseJumps = []
+	for c in node.cases {
+		// Compile pattern match — leaves bool on stack
+		emitPatternMatch(emitter, c.pattern, discSlot)
     // If pattern doesn't match, jump to next case
     failJump = bc.emit("JUMP_IF_FALSE", 0)
+    bc.emit("POP")
     // Check guard if present
     if c.guard != null {
       emitExpr(emitter, c.guard)
       guardFailJump = bc.emit("JUMP_IF_FALSE", 0)
+      bc.emit("POP")
       // Emit result
       if c.body != null {
         if c.body.kind == "BlockStatement" {
@@ -3018,10 +3027,9 @@ fn emitPatternMatch(emitter, pattern, discSlot) {
         fieldIdx = bc.add_string(prop.key)
         bc.emit("LOAD_CONST", fieldIdx)
         bc.emit("OBJECT_GET")
-        patVal = prop.pattern != null ? prop.pattern : prop.value
-        if patVal != null {
-          if patVal.kind == "Identifier" {
-            bindSlot = scopeDeclare(emitter.scope, patVal.name)
+		if prop.value != null {
+			if prop.value.kind == "Identifier" {
+				bindSlot = scopeDeclare(emitter.scope, prop.value.name)
             bc.emit("DUP")
             bc.emit("STORE_VAR", bindSlot)
             bc.emit("IS_NULL")
@@ -3029,12 +3037,12 @@ fn emitPatternMatch(emitter, pattern, discSlot) {
             bc.emit("AND")
           }
           else {
-            emitExpr(emitter, patVal)
+			emitExpr(emitter, prop.value)
             bc.emit("EQ")
             bc.emit("AND")
           }
         }
-        if patVal == null {
+		if prop.value == null {
           bc.emit("IS_NULL")
           bc.emit("NOT")
           bc.emit("AND")
@@ -3193,37 +3201,15 @@ fn emitClassDeclaration(emitter, node) {
   }
   if node.definition.methods != null {
     prevClassName = emitter.currentClassName
-    prevParentName = emitter.currentParentClassName
-    emitter.currentClassName = node.name
-    if node.parentName != null && node.parentName != "" {
-      emitter.currentParentClassName = node.parentName
-    }
-    else {
-      emitter.currentParentClassName = ""
-    }
+		emitter.currentClassName = node.name
     for m in node.definition.methods {
       if m != null {
         emitClassMethodRegister(emitter, node.name, m)
       }
     }
     emitter.currentClassName = prevClassName
-    emitter.currentParentClassName = prevParentName
-  }
-  // Register protocol conformance: prot.impl(protocolName, className)
-  if node.protocolNames != null {
-    for protName in node.protocolNames {
-      if protName != null && protName != "" {
-        protSid = globalIdx(emitter, "prot.impl")
-        bc.emit("LOAD_GLOBAL", bc.str_id(protSid))
-        pnIdx = bc.add_string(protName)
-        bc.emit("LOAD_CONST", pnIdx)
-        cnIdx = bc.add_string(node.name)
-        bc.emit("LOAD_CONST", cnIdx)
-        bc.emit("CALL", 2)
-        bc.emit("POP")
-      }
-    }
-  }
+	emitter.currentClassName = prevClassName
+	}
 
 }
 
@@ -3354,81 +3340,8 @@ fn emitStructDeclaration(emitter, node) {
         bc.emit("CALL", 2)
         bc.emit("POP")
       }
-    }
-  }
-
+	}
 }
-
-fn emitEnumDeclaration(emitter, node) {
-  // enum.define("EnumName", ["V1", "V2"], [0, 1])
-  sid = globalIdx(emitter, "enum.define")
-  bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-  // Name
-  nameIdx = bc.add_string(node.name)
-  bc.emit("LOAD_CONST", nameIdx)
-  // Variant names
-  bc.emit("ARRAY_NEW")
-  if node.variants != null {
-    for v in node.variants {
-    vname = v
-    if type(v) == "object" {
-      if v.name != null { vname = v.name }
-    }
-      vidx = bc.add_string(vname)
-      bc.emit("LOAD_CONST", vidx)
-      bc.emit("ARRAY_PUSH")
-    }
-  }
-  // Payload counts (0 for all for now)
-  bc.emit("ARRAY_NEW")
-  if node.variants != null {
-    for v in node.variants {
-      bc.emit("LOAD_CONST", bc.add_const(0))
-      bc.emit("ARRAY_PUSH")
-    }
-  }
-  bc.emit("CALL", 3)
-  // Store enum object as global
-  nameSid = globalIdx(emitter, node.name)
-  bc.emit("STORE_GLOBAL", bc.str_id(nameSid))
-
-}
-
-fn emitImplDeclaration(emitter, node) {
-  // impl TypeName { fn method() {} } — register methods on the type
-  typeName = ""
-  if node.typeName != null {
-    if node.typeName.kind == "Identifier" {
-      typeName = node.typeName.name
-    }
-    if node.typeName.kind != "Identifier" {
-      if type(node.typeName) == "str" {
-        typeName = node.typeName
-      }
-    }
-  }
-  if node.funcs != null {
-    prevClassName = emitter.currentClassName
-    emitter.currentClassName = typeName
-    for m in node.funcs {
-      if m != null {
-        if m.name != null {
-          emitClassMethodRegister(emitter, typeName, m)
-        }
-      }
-    }
-    emitter.currentClassName = prevClassName
-  }
-  // Register protocol conformance: prot.impl(protocolName, typeName)
-  if node.protocolName != null {
-    protSid = globalIdx(emitter, "prot.impl")
-    bc.emit("LOAD_GLOBAL", bc.str_id(protSid))
-    protNameIdx = bc.add_string(node.protocolName)
-    bc.emit("LOAD_CONST", protNameIdx)
-    tnIdx = bc.add_string(typeName)
-    bc.emit("LOAD_CONST", tnIdx)
-    bc.emit("CALL", 2)
-    bc.emit("POP")
   }
 
 }
@@ -3474,23 +3387,7 @@ fn emitHotkeyBinding(emitter, node) {
  bc.emit("PUSH_NULL")
  bc.emit("RETURN")
   // Register the hotkey
-  // Check for inline condition (F1 when cond => { }) or when-block condition
-  hasCond = emitter.whenConditionFuncIndex != null
-  if node.condition != null && !hasCond {
-    // Compile the inline condition as a separate function
-    condScope = Scope(null)
-    emitter.scope = condScope
-    condChunkIdx = bc.func_new("hotkey_condition", 0, 16)
-    emitExpr(emitter, node.condition)
-    bc.emit("RETURN")
-    bc.set_local_count(scopeLocalCount(condScope))
-    emitter.scope = oldScope
-    hasCond = true
-  }
-  else if hasCond {
-    condChunkIdx = emitter.whenConditionFuncIndex
-  }
-  if hasCond {
+	if emitter.whenConditionFuncIndex != null {
     sid = globalIdx(emitter, "hotkey.register_conditional")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
     if node.key != null {
@@ -3506,10 +3403,10 @@ fn emitHotkeyBinding(emitter, node) {
       bc.emit("PUSH_NULL")
     }
     bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
-    bc.emit("LOAD_CONST", bc.add_const(condChunkIdx))
-    bc.emit("CALL", 3)
-  }
-  else {
+	bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
+	bc.emit("CALL", 3)
+	}
+	if emitter.whenConditionFuncIndex == null {
     sid = globalIdx(emitter, "hotkey.register")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
     if node.key != null {
@@ -3616,14 +3513,9 @@ fn compileCondHotkeyCondition(emitter, condition) {
 
 fn emitClosureBody(emitter, body, name) {
   oldScope = emitter.scope
-  fid = emitter.nextFuncId
-  emitter.nextFuncId = fid + 1
-  newScope = Scope(oldScope, fid, null)
-  emitter.scope = newScope
-  localCount = 16
-  bc.func_push()
-  funcIdx = bc.func_new(name, 0, localCount)
-  newScope.bcFuncIdx = funcIdx
+	newScope = Scope(oldScope)
+	emitter.scope = newScope
+	funcIdx = bc.func_new(name, 0, 16)
   if body != null {
     if body.kind == "BlockStatement" {
       for s in body.body {
@@ -3636,19 +3528,9 @@ fn emitClosureBody(emitter, body, name) {
   }
   bc.emit("PUSH_NULL")
   bc.emit("RETURN")
-  actualLocals = scopeLocalCount(newScope)
-  bc.set_local_count(actualLocals)
-  upcount = newScope.upcount
-  bc.func_pop()
-  emitter.scope = oldScope
-  if upcount > 0 {
-    bc.emit("CLOSURE", funcIdx)
-  }
-  else {
-    fnObj = bc.make_function_obj(funcIdx)
-    fnConstIdx = bc.add_const(fnObj)
-    bc.emit("LOAD_CONST", fnConstIdx)
-  }
+	bc.set_local_count(scopeLocalCount(newScope))
+	emitter.scope = oldScope
+	bc.emit("LOAD_CONST", bc.add_const(funcIdx))
 }
 
 fn emitWhenBlock(emitter, node) {

@@ -1275,52 +1275,24 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  tail_call_depth_ = 0;
 
     // Handle host function call directly
-if (callee_value.isHostFuncId()) {
-        uint32_t host_func_idx = callee_value.asHostFuncId();
-        if (host_func_idx >= host_function_names_.size()) {
-            COMPILER_THROW("Host function index out of range: " +
-                std::to_string(host_func_idx));
-    }
+ if (callee_value.isHostFuncId()) {
+ uint32_t host_func_idx = callee_value.asHostFuncId();
+ if (host_func_idx >= host_function_names_.size()) {
+ COMPILER_THROW("Host function index out of range: " +
+ std::to_string(host_func_idx));
+ }
 
-bool VM::ensureModuleLoaded(const std::string &name) {
-    auto it = lazy_modules_.find(name);
-    if (it == lazy_modules_.end()) return false;
-    if (it->second.loaded) {
-        // Module already loaded — globals might still have a stale proxy
-        // (e.g., after executePersistent restored pre-execution globals).
-        // Fix: replace proxy with cached module.
-        auto git = globals.find(name);
-        if (git != globals.end() && git->second.isObjectId()) {
-            auto *obj = heap_.object(git->second.asObjectId());
-            if (obj) {
-                auto *lf = obj->get("__lazy__");
-                if (lf && lf->isBool() && lf->asBool()) {
-                    Value cached;
-                    if (moduleLoader_.getCached(name, &cached) && cached.isObjectId()) {
-                        git->second = cached;
-                        if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
-                            globals["bc"] = cached;
-                        }
-                    }
-                }
-            }
-        }
-        return true;
-    }
-    activateLazyModule(name);
-    // Cache after activation so future proxy fixups can find it
-    auto git = globals.find(name);
-    if (git != globals.end()) {
-        moduleLoader_.putCache(name, git->second);
-    }
-    return true;
-}
-    gc_suspend_counter_++;
-    Value result = it->second(args);
-    gc_suspend_counter_--;
-    pushStack(result);
-    maybeCollectGarbage();
-    return;
+ const std::string &name = host_function_names_[host_func_idx];
+ auto it = host_functions.find(name);
+ if (it == host_functions.end()) {
+ COMPILER_THROW("Host function not found: " + name);
+ }
+ gc_suspend_counter_++;
+ Value result = it->second(args);
+ gc_suspend_counter_--;
+ pushStack(result);
+ maybeCollectGarbage();
+ return;
   }
 
   if (frame_count_ >= max_call_depth_) {
@@ -2564,6 +2536,36 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
   }
 }
 
+bool VM::ensureModuleLoaded(const std::string &name) {
+ auto it = lazy_modules_.find(name);
+ if (it == lazy_modules_.end()) return false;
+ if (it->second.loaded) {
+  auto git = globals.find(name);
+  if (git != globals.end() && git->second.isObjectId()) {
+   auto *obj = heap_.object(git->second.asObjectId());
+   if (obj) {
+    auto *lf = obj->get("__lazy__");
+    if (lf && lf->isBool() && lf->asBool()) {
+     Value cached;
+     if (moduleLoader_.getCached(name, &cached) && cached.isObjectId()) {
+      git->second = cached;
+      if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
+       globals["bc"] = cached;
+      }
+     }
+    }
+   }
+  }
+  return true;
+ }
+ activateLazyModule(name);
+ auto git = globals.find(name);
+ if (git != globals.end()) {
+  moduleLoader_.putCache(name, git->second);
+ }
+ return true;
+}
+
 void VM::activateLazyModule(const std::string &name) {
     auto it = lazy_modules_.find(name);
     if (it == lazy_modules_.end() || it->second.loaded) return;
@@ -2647,8 +2649,9 @@ void VM::activateLazyModule(const std::string &name) {
         for (auto& [k, v] : savedFields) {
             (*nsObj)[k] = v;
         }
-        globals[name] = Value::makeObjectId(nsRef.id);
-    }
+ globals[name] = Value::makeObjectId(nsRef.id);
+ }
+}
 
 Value VM::loadModule(const std::string& path) {
     // Check cache via canonical ModuleLoader

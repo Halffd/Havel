@@ -56,6 +56,9 @@ void *havel_loader_load(HavelLoader *loader, const char *name);
 /* Get symbol from a loaded handle. Returns pointer or NULL. */
 void *havel_loader_sym(void *handle, const char *symbol);
 
+/* Python-style attribute access — alias for havel_loader_sym. */
+void *havel_loader_attr(void *handle, const char *name);
+
 /* Import a module by name (python-style).
  * Like loader_load, but also calls havel_extension_init() if present.
  * Returns the dlopen handle or NULL. */

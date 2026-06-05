@@ -1,85 +1,152 @@
-// PureStdLib.cpp
-// Register ONLY pure stdlib modules with VM
-// Separated from StdLibModules.cpp to avoid pulling in
-// OS-dependent module symbols (havel_modules) when only
-// pure stdlib registration is needed (e.g., hvtest).
-
 #include "havel-lang/compiler/vm/VMApi.hpp"
+#include "loader/Loader.hpp"
+#include "loader/ModulePlugin.h"
 
-namespace havel::stdlib {
-void registerMathModule(const compiler::VMApi &api);
-void registerStringModule(const compiler::VMApi &api);
-void registerObjectModule(const compiler::VMApi &api);
-void registerTypeModule(const compiler::VMApi &api);
-void registerArrayModule(const compiler::VMApi &api);
-void registerRegexModule(const compiler::VMApi &api);
-
-void registerTimeModule(const compiler::VMApi &api);
-void registerTimerModule(const compiler::VMApi &api);
-void registerFsModule(const compiler::VMApi &api);
-void registerRandomModule(const compiler::VMApi &api);
-void registerDebugModule(const compiler::VMApi &api);
-void registerSysModule(const compiler::VMApi &api);
-void registerShellModule(const compiler::VMApi &api);
-void registerPointerModule(const compiler::VMApi &api);
-void registerFormatModule(const compiler::VMApi &api);
-void registerPackModule(const compiler::VMApi &api);
-void registerBitModule(const compiler::VMApi &api);
-void registerOptionModule(const compiler::VMApi &api);
-void registerBytecodeBuilderModule(const compiler::VMApi &api);
-void registerLogModule(const compiler::VMApi &api);
-} // namespace havel::stdlib
-
-namespace havel::modules {
-void registerWindowMonitorModule(const compiler::VMApi &api);
-void registerDisplayModule(const compiler::VMApi &api);
-void registerBrightnessModule(const compiler::VMApi &api);
-void registerAppModule(const compiler::VMApi &api);
-} // namespace havel::modules
+#ifdef ENABLE_MODULE_PLUGINS
+// Plugin mode: load modules via dlopen
+#else
+// Static mode: direct calls to registration functions
+#include "havel-lang/stdlib/MathModule.hpp"
+#include "havel-lang/stdlib/StringModule.hpp"
+#include "havel-lang/stdlib/ObjectModule.hpp"
+#include "havel-lang/stdlib/TypeModule.hpp"
+#include "havel-lang/stdlib/ArrayModule.hpp"
+#include "havel-lang/stdlib/RegexModule.hpp"
+#include "havel-lang/stdlib/TimeModule.hpp"
+#include "havel-lang/stdlib/TimerModule.hpp"
+#include "havel-lang/stdlib/FsModule.hpp"
+#include "havel-lang/stdlib/RandomModule.hpp"
+#include "havel-lang/stdlib/BitModule.hpp"
+#include "havel-lang/stdlib/PackModule.hpp"
+#include "havel-lang/stdlib/FormatModule.hpp"
+#include "havel-lang/stdlib/OptionModule.hpp"
+#include "havel-lang/stdlib/PointerModule.hpp"
+#include "havel-lang/stdlib/ShellModule.hpp"
+#include "havel-lang/stdlib/SysModule.hpp"
+#include "havel-lang/stdlib/LogModule.hpp"
+#include "havel-lang/stdlib/BytecodeBuilderModule.hpp"
+#endif
 
 namespace havel {
 
 namespace {
-void registerLazyStdlib(compiler::VM &vm) {
-  vm.registerLazyModule("regex", [](compiler::VMApi &api) { stdlib::registerRegexModule(api); });
-  vm.registerLazyModule("time", [](compiler::VMApi &api) { stdlib::registerTimeModule(api); });
-    vm.registerLazyModule("timer", [](compiler::VMApi &api) { stdlib::registerTimerModule(api); });
-    vm.registerLazyModule("fs", [](compiler::VMApi &api) { stdlib::registerFsModule(api); });
-    vm.registerLazyModule("random", [](compiler::VMApi &api) { stdlib::registerRandomModule(api); });
-    vm.registerLazyModule("debug", [](compiler::VMApi &api) { stdlib::registerDebugModule(api); });
-    vm.registerLazyModule("sys", [](compiler::VMApi &api) { stdlib::registerSysModule(api); });
-    vm.registerLazyModule("shell", [](compiler::VMApi &api) { stdlib::registerShellModule(api); });
-    vm.registerLazyModule("pointer", [](compiler::VMApi &api) { stdlib::registerPointerModule(api); });
-    vm.registerLazyModule("format", [](compiler::VMApi &api) { stdlib::registerFormatModule(api); });
-    vm.registerLazyModule("pack", [](compiler::VMApi &api) { stdlib::registerPackModule(api); });
-    vm.registerLazyModule("bit", [](compiler::VMApi &api) { stdlib::registerBitModule(api); });
-    vm.registerLazyModule("option", [](compiler::VMApi &api) { stdlib::registerOptionModule(api); });
-    vm.registerLazyModule("bytecodeBuilder", [](compiler::VMApi &api) { stdlib::registerBytecodeBuilderModule(api); });
-    vm.registerLazyModule("log", [](compiler::VMApi &api) { stdlib::registerLogModule(api); });
-    vm.registerLazyModule("window", [](compiler::VMApi &api) { modules::registerWindowMonitorModule(api); });
-    vm.registerLazyModule("display", [](compiler::VMApi &api) { modules::registerDisplayModule(api); });
-    vm.registerLazyModule("brightness", [](compiler::VMApi &api) { modules::registerBrightnessModule(api); });
-  vm.registerLazyModule("app", [](compiler::VMApi &api) { modules::registerAppModule(api); });
+
+#ifdef ENABLE_MODULE_PLUGINS
+
+static Loader &sharedLoader() {
+    static Loader loader;
+    static std::once_flag flag;
+    std::call_once(flag, [&]() { loader.addModulePaths(); });
+    return loader;
+}
+
+void registerLazyFromPlugin(compiler::VM &vm, const char *name) {
+    std::string modName(name);
+    vm.registerLazyModule(modName, [modName](compiler::VMApi &a) {
+        auto plugin = sharedLoader().loadModulePlugin(modName);
+        if (plugin) {
+            plugin->register_fn(static_cast<void *>(&a));
+        }
+    });
 }
 
 void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
     compiler::VMApi api(vm);
 
-    // Core modules: always eager (used by nearly every script)
-    stdlib::registerMathModule(api);
-    stdlib::registerStringModule(api);
-    stdlib::registerObjectModule(api);
-    stdlib::registerTypeModule(api);
-    stdlib::registerArrayModule(api);
+    static const char *eagerModules[] = {
+        "math", "string", "object", "type", "array",
+    };
+
+    for (auto name : eagerModules) {
+        auto plugin = sharedLoader().loadModulePlugin(name);
+        if (plugin) {
+            plugin->register_fn(static_cast<void *>(&api));
+        }
+    }
 
     if (coreOnly) {
         return;
     }
 
-    // Extended modules: lazy — init on first use
-    registerLazyStdlib(vm);
+    static const char *lazyModules[] = {
+        "regex", "time", "timer", "fs", "random", "debug",
+        "sys", "shell", "pointer", "fmt", "pack", "bit",
+        "option", "bytecodebuilder", "log",
+        "window", "display", "brightness", "app",
+    };
+
+    for (auto name : lazyModules) {
+        registerLazyFromPlugin(vm, name);
+    }
 }
-} // namespace
+
+#else
+
+using RegisterFn = void(*)(const compiler::VMApi &);
+
+struct ModuleEntry {
+    const char *name;
+    RegisterFn fn;
+};
+
+static const ModuleEntry eagerModules[] = {
+    {"math", stdlib::registerMathModule},
+    {"string", stdlib::registerStringModule},
+    {"object", stdlib::registerObjectModule},
+    {"type", stdlib::registerTypeModule},
+    {"array", stdlib::registerArrayModule},
+};
+
+static const ModuleEntry lazyModules[] = {
+    {"regex", stdlib::registerRegexModule},
+    {"time", stdlib::registerTimeModule},
+    {"timer", stdlib::registerTimerModule},
+    {"fs", stdlib::registerFsModule},
+    {"random", stdlib::registerRandomModule},
+    {"debug", stdlib::registerDebugModule},
+    {"sys", stdlib::registerSysModule},
+    {"shell", stdlib::registerShellModule},
+    {"pointer", stdlib::registerPointerModule},
+    {"fmt", stdlib::registerFormatModule},
+    {"pack", stdlib::registerPackModule},
+    {"bit", stdlib::registerBitModule},
+    {"option", stdlib::registerOptionModule},
+    {"bytecodebuilder", stdlib::registerBytecodeBuilderModule},
+    {"log", stdlib::registerLogModule},
+};
+
+void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
+  compiler::VMApi api(vm);
+
+  for (auto &e : eagerModules) {
+    e.fn(api);
+  }
+
+  // Always register bytecodeBuilder as lazy — needed for self-hosted compilation
+  {
+    std::string modName("bytecodeBuilder");
+    RegisterFn fn = stdlib::registerBytecodeBuilderModule;
+    vm.registerLazyModule(modName, [fn](compiler::VMApi &a) {
+      fn(a);
+    });
+  }
+
+  if (coreOnly) {
+    return;
+  }
+
+    for (auto &e : lazyModules) {
+        std::string modName(e.name);
+        RegisterFn fn = e.fn;
+        vm.registerLazyModule(modName, [fn](compiler::VMApi &a) {
+            fn(a);
+        });
+    }
+}
+
+#endif
+
+}
 
 void registerPureStdLib(compiler::VM &vm) {
     registerStdLibSet(vm, false);
@@ -89,4 +156,4 @@ void registerCoreStdLib(compiler::VM &vm) {
     registerStdLibSet(vm, true);
 }
 
-} // namespace havel
+}

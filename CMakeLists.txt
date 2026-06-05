@@ -18,7 +18,7 @@ option(ENABLE_IMGUI "Enable Dear ImGui native backend" OFF)
 option(ENABLE_QT "Enable Qt6 native backend (default)" ON)
 option(ENABLE_QT_UI_BACKEND "Build in-process Qt6 UI backend (fallback to dynamic extension)" ON)
 option(ENABLE_HEADLESS "Build without any GUI backend (server/headless mode)" OFF)
-option(ENABLE_MODULE_PLUGINS "Build stdlib/host modules as .so plugins" ON)
+option(ENABLE_MODULE_PLUGINS "Build stdlib/host modules as .so plugins" OFF)
 
 # ==============================================================================
 # COMPILER AND STANDARDS CONFIGURATION
@@ -337,15 +337,16 @@ list(APPEND CORE_SOURCES ${_HOST_CORE_SOURCES})
 
 # Non-Qt host files in Qt-dependency directories (always built)
 list(APPEND CORE_SOURCES
- "src/host/module/ModuleLoader.cpp"
- "src/host/module/ModularHostBridges.cpp"
- "src/host/ui/GtkBackend.cpp"
- "src/host/ui/ImGuiBackend.cpp"
- "src/host/ui/UIManager.cpp"
- "src/host/window/WindowService.cpp"
- "src/Havel.cpp"
- "src/core/config/Config.c"
- )
+"src/host/module/ModuleLoader.cpp"
+"src/host/module/ModularHostBridges.cpp"
+"src/host/ui/GtkBackend.cpp"
+"src/host/ui/ImGuiBackend.cpp"
+"src/host/ui/UIManager.cpp"
+"src/host/window/WindowService.cpp"
+"src/Havel.cpp"
+"src/core/config/Config.c"
+"src/modules/HostModules.cpp"
+)
 
 # Qt-dependent core sources (only built when in-process Qt backend is enabled)
 if(ENABLE_QT_UI_BACKEND)
@@ -394,9 +395,17 @@ list(REMOVE_ITEM HAVEL_LANG_SOURCES
         # Note: Disabled C API files (not implemented)
         # ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/module/HavelAPI.cpp
         # ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
-    )
-    
-    # Exclude BytecodeOrcJIT if LLVM is not enabled (it requires LLVM libraries)
+)
+
+# Exclude stdlib modules when building as plugins — they become havel_mod_*.so
+# Exception: HotkeyModule stays in main binary (host bridges use its C++ class directly)
+if(ENABLE_MODULE_PLUGINS)
+file(GLOB_RECURSE _STDLIB_MODULE_SOURCES "src/havel-lang/stdlib/*Module.cpp")
+list(REMOVE_ITEM _STDLIB_MODULE_SOURCES "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HotkeyModule.cpp")
+list(REMOVE_ITEM HAVEL_LANG_SOURCES ${_STDLIB_MODULE_SOURCES})
+endif()
+
+# Exclude BytecodeOrcJIT if LLVM is not enabled (it requires LLVM libraries)
     if(NOT ENABLE_LLVM)
         list(REMOVE_ITEM HAVEL_LANG_SOURCES
             ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
@@ -422,6 +431,7 @@ endif()
 
 # Host modules (language bindings to system managers)
 file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
+list(REMOVE_ITEM HOST_MODULES_SOURCES "${CMAKE_SOURCE_DIR}/src/modules/HostModules.cpp")
 # Remove Qt-dependent modules when in-process Qt UI backend is disabled
 if(NOT ENABLE_QT_UI_BACKEND)
   file(GLOB_RECURSE _QT_MODULES
@@ -928,11 +938,13 @@ set_source_files_properties(
     PROPERTIES COMPILE_FLAGS "-ftls-model=initial-exec"
 )
 target_compile_definitions(havel_core PRIVATE
-    $<$<BOOL:${ENABLE_LLVM}>:HAVEL_DEFAULT_LLVM_LINK_FLAGS=\"${HAVEL_LLVM_LINK_FLAGS}\">
+$<$<BOOL:${ENABLE_LLVM}>:HAVEL_DEFAULT_LLVM_LINK_FLAGS=\"${HAVEL_LLVM_LINK_FLAGS}\">
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
+if(NOT ENABLE_MODULE_PLUGINS)
 add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
-if(ENABLE_MODULE_PLUGINS)
-    set_target_properties(havel_modules PROPERTIES POSITION_INDEPENDENT_CODE ON)
+else()
+add_library(havel_modules INTERFACE)
 endif()
 target_link_libraries(havel_core PRIVATE fmt::fmt)
 if(ENABLE_QT_UI_BACKEND)
@@ -940,9 +952,12 @@ if(ENABLE_QT_UI_BACKEND)
 endif()
 
 # Shared configuration for the libraries
-set(_LIBS havel_core havel_modules)
+set(_LIBS havel_core)
+if(NOT ENABLE_MODULE_PLUGINS)
+list(APPEND _LIBS havel_modules)
+endif()
 if(ENABLE_QT_UI_BACKEND)
-  list(APPEND _LIBS havel_gui)
+list(APPEND _LIBS havel_gui)
 endif()
 foreach(lib ${_LIBS})
 target_include_directories(${lib} PRIVATE
@@ -985,12 +1000,12 @@ add_executable(havel
 )
 
 target_link_libraries(havel PRIVATE
-    -Wl,--start-group
-    $<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
-    havel_modules
-    $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
-    havel_core
-    -Wl,--end-group
+-Wl,--start-group
+$<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
+havel_modules
+$<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
+havel_core
+-Wl,--end-group
 )
 
 # ==============================================================================
@@ -1070,14 +1085,20 @@ target_include_directories(hvtest PRIVATE
 )
 
 target_compile_definitions(hvtest PRIVATE
-  $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 
 target_link_libraries(hvtest PRIVATE
-  -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-  ${COMMON_LIBS}
-  $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+-Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+${COMMON_LIBS}
+$<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
 )
+
+if(ENABLE_MODULE_PLUGINS)
+set_target_properties(hvtest PROPERTIES ENABLE_EXPORTS ON)
+target_link_options(hvtest PRIVATE -Wl,--export-dynamic)
+endif()
 
 add_executable(havel_api_test tests/test_embed_api.cpp)
 set_target_properties(havel_api_test PROPERTIES
@@ -1093,8 +1114,8 @@ target_include_directories(havel_api_test PRIVATE
   ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 target_link_libraries(havel_api_test PRIVATE
-  -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-  ${COMMON_LIBS}
+-Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+${COMMON_LIBS}
 )
 
 add_executable(brightness_test tests/test_brightness.cpp)
@@ -1111,9 +1132,16 @@ target_include_directories(brightness_test PRIVATE
   ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 target_link_libraries(brightness_test PRIVATE
-  -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-  ${COMMON_LIBS}
+-Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+${COMMON_LIBS}
 )
+
+if(ENABLE_MODULE_PLUGINS)
+set_target_properties(havel_api_test PROPERTIES ENABLE_EXPORTS ON)
+target_link_options(havel_api_test PRIVATE -Wl,--export-dynamic)
+set_target_properties(brightness_test PROPERTIES ENABLE_EXPORTS ON)
+target_link_options(brightness_test PRIVATE -Wl,--export-dynamic)
+endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
@@ -1218,10 +1246,11 @@ endif()
 
 # Compile definitions
 target_compile_definitions(havel PRIVATE
-    $<$<BOOL:${ENABLE_HAVEL_LANG}>:ENABLE_HAVEL_LANG>
-    $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
-    $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
-    $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
+$<$<BOOL:${ENABLE_HAVEL_LANG}>:ENABLE_HAVEL_LANG>
+$<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
+$<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
+$<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
     $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
     $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
     $<$<BOOL:${OpenCV_FOUND}>:HAVE_OPENCV>
@@ -1317,6 +1346,7 @@ havel_core
     
 target_compile_definitions(havel_lang PRIVATE
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
 $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
 $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>
@@ -1328,6 +1358,7 @@ $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
 
     target_compile_definitions(havel_lang_core PRIVATE
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
 $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
 $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>
@@ -1419,9 +1450,9 @@ add_havel_module_plugin(browser      ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/B
 add_havel_module_plugin(bytecodebuilder ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BytecodeBuilderModule.cpp)
 add_havel_module_plugin(fmt          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FormatModule.cpp)
 add_havel_module_plugin(fs           ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp)
-add_havel_module_plugin(hotkey       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HotkeyModule.cpp)
-add_havel_module_plugin(http         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
-add_havel_module_plugin(math         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/MathModule.cpp)
+add_havel_module_plugin(http ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
+# HotkeyModule stays in main binary — host bridges use its C++ class directly
+add_havel_module_plugin(math ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/MathModule.cpp)
 add_havel_module_plugin(object       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ObjectModule.cpp)
 add_havel_module_plugin(option       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/OptionModule.cpp)
 add_havel_module_plugin(pack         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/PackModule.cpp)
@@ -1459,7 +1490,8 @@ add_havel_module_plugin(mode         ${CMAKE_SOURCE_DIR}/src/modules/mode/ModeMo
 add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
 add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)
-add_havel_module_plugin(window       ${CMAKE_SOURCE_DIR}/src/modules/window/WindowMonitorModule.cpp)
+add_havel_module_plugin(window ${CMAKE_SOURCE_DIR}/src/modules/window/WindowMonitorModule.cpp)
+add_havel_module_plugin(zoom ${CMAKE_SOURCE_DIR}/src/modules/zoom/ZoomModule.cpp ${CMAKE_SOURCE_DIR}/src/modules/zoom/ZoomService.cpp)
 
 # Qt-dependent modules
 if(ENABLE_QT)
@@ -1512,11 +1544,11 @@ if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
         get_filename_component(test_name ${test_file} NAME_WE)
 
         add_executable(${test_name}
-            ${test_file}
-            ${CORE_SOURCES}
-            ${GUI_SOURCES}
-            ${HOST_MODULES_SOURCES}
-            $<$<BOOL:${ENABLE_HAVEL_LANG}>:${HAVEL_LANG_SOURCES}>
+                ${test_file}
+                ${CORE_SOURCES}
+                ${GUI_SOURCES}
+                $<$<NOT:$<BOOL:${ENABLE_MODULE_PLUGINS}>>:${HOST_MODULES_SOURCES}>
+                $<$<BOOL:${ENABLE_HAVEL_LANG}>:${HAVEL_LANG_SOURCES}>
         )
         
         target_include_directories(${test_name} PRIVATE

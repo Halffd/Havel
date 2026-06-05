@@ -180,15 +180,15 @@ ModuleLoader::resolve(const std::string& modulePath,
     }
   }
 
-  // 6. Check each user search path for name.hvc, name.hv, or name/name.hv
-  for (const auto& sp : searchPaths_) {
-    fs::path spDir(sp);
+    // 6. Check each user search path for name.hvc, name.hv, or name/name.hv
+    for (const auto& sp : searchPaths_) {
+        fs::path spDir(sp);
 
-    // Prefer .hvc if available and newer
-    fs::path hvPath = spDir / (name + ".hv");
-    fs::path hvcPath = spDir / (name + ".hvc");
-    bool hvcExists = fs::exists(hvcPath);
-    bool hvExists = fs::exists(hvPath);
+        // Prefer .hvc if available and newer
+        fs::path hvPath = spDir / (name + ".hv");
+        fs::path hvcPath = spDir / (name + ".hvc");
+        bool hvcExists = fs::exists(hvcPath);
+        bool hvExists = fs::exists(hvPath);
     if (hvcExists && hvExists) {
       auto hvcTime = fs::last_write_time(hvcPath);
       auto hvTime = fs::last_write_time(hvPath);

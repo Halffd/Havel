@@ -108,10 +108,6 @@ private:
     void initBridges();
     void installHostFunctions();
     void installStdLib();
-
-    static void tryPluginOrLazy(Modules &modules,
-                                const std::string &name,
-                                std::function<void(compiler::VMApi &)> staticInit);
 };
 
 void registerPureStdLib(compiler::VM &vm);

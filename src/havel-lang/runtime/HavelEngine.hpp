@@ -9,7 +9,10 @@
 #endif
 #include "HostAPI.hpp"
 #include "../../modules/HostModules.hpp"
+#ifndef ENABLE_MODULE_PLUGINS
 #include "../../modules/ffi/FFIModule.hpp"
+#endif
+#include "../stdlib/BytecodeBuilderModule.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../core/util/Env.hpp"
 #include "../runtime/concurrency/WatcherRegistry.hpp"
@@ -136,27 +139,35 @@ vm_->setJITCompiler(jitCompiler_.get());
             vm_->moduleLoader().addSearchPath(canonicalRoot);
         }
 
-        vm_->suspendGC();
-        if (leanStartup) {
-            if (config_.pureStdlib) {
-                havel::registerPureStdLib(*vm_);
-                havel::startup_timing_report("stdlib-register-pure", t);
-                t = havel::startup_now();
-#ifndef HAVEL_PURE_VM
-            {
-                compiler::VMApi ffiApi(*vm_);
-                modules::ffi::registerFFIModule(ffiApi);
-            }
-            havel::startup_timing_report("ffi-register", t);
-            t = havel::startup_now();
+  vm_->suspendGC();
+  if (leanStartup) {
+    if (config_.pureStdlib) {
+      havel::registerPureStdLib(*vm_);
+      havel::startup_timing_report("stdlib-register-pure", t);
+      t = havel::startup_now();
+#if !defined(HAVEL_PURE_VM) && !defined(ENABLE_MODULE_PLUGINS)
+      {
+        compiler::VMApi ffiApi(*vm_);
+        modules::ffi::registerFFIModule(ffiApi);
+      }
+      havel::startup_timing_report("ffi-register", t);
+      t = havel::startup_now();
 #endif
-            } else {
-                havel::registerCoreStdLib(*vm_);
-                havel::startup_timing_report("stdlib-register-core", t);
-                t = havel::startup_now();
-            }
+    } else {
+      havel::registerCoreStdLib(*vm_);
+      havel::startup_timing_report("stdlib-register-core", t);
+      t = havel::startup_now();
+    }
+  }
+        // Always ensure bytecodeBuilder is available for self-hosted compilation
+#if !defined(ENABLE_MODULE_PLUGINS)
+        if (!vm_->isLazyModuleRegistered("bytecodebuilder")) {
+            vm_->registerLazyModule("bytecodebuilder", [](compiler::VMApi &a) {
+                stdlib::registerBytecodeBuilderModule(a);
+            });
         }
-        vm_->resumeGC();
+#endif
+  vm_->resumeGC();
         modules_->install(
             leanStartup ? havel::InstallProfile::Core
                         : havel::InstallProfile::Full,

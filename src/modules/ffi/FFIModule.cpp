@@ -967,7 +967,7 @@ void registerFFIModule(const compiler::VMApi&) {
 #endif // HAVE_LIBFFI
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(ffi, "1.0.0", "Foreign function interface module",
 #ifdef HAVE_LIBFFI

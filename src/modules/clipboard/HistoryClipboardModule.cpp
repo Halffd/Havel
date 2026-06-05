@@ -197,7 +197,7 @@ void registerHistoryClipboardModule(const VMApi& api) {
 } // namespace havel::modules
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(historyclipboard, "1.0.0", "Clipboard history module",
     havel::modules::registerHistoryClipboardModule(*api);

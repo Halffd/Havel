@@ -1280,12 +1280,41 @@ if (callee_value.isHostFuncId()) {
         if (host_func_idx >= host_function_names_.size()) {
             COMPILER_THROW("Host function index out of range: " +
                 std::to_string(host_func_idx));
-        }
-        const std::string &name = host_function_names_[host_func_idx];
-        auto it = host_functions.find(name);
-    if (it == host_functions.end()) {
-      COMPILER_THROW("Host function not found: " + name);
     }
+
+bool VM::ensureModuleLoaded(const std::string &name) {
+    auto it = lazy_modules_.find(name);
+    if (it == lazy_modules_.end()) return false;
+    if (it->second.loaded) {
+        // Module already loaded — globals might still have a stale proxy
+        // (e.g., after executePersistent restored pre-execution globals).
+        // Fix: replace proxy with cached module.
+        auto git = globals.find(name);
+        if (git != globals.end() && git->second.isObjectId()) {
+            auto *obj = heap_.object(git->second.asObjectId());
+            if (obj) {
+                auto *lf = obj->get("__lazy__");
+                if (lf && lf->isBool() && lf->asBool()) {
+                    Value cached;
+                    if (moduleLoader_.getCached(name, &cached) && cached.isObjectId()) {
+                        git->second = cached;
+                        if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
+                            globals["bc"] = cached;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    activateLazyModule(name);
+    // Cache after activation so future proxy fixups can find it
+    auto git = globals.find(name);
+    if (git != globals.end()) {
+        moduleLoader_.putCache(name, git->second);
+    }
+    return true;
+}
     gc_suspend_counter_++;
     Value result = it->second(args);
     gc_suspend_counter_--;
@@ -2535,37 +2564,23 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
   }
 }
 
-            void VM::activateLazyModule(const std::string &name) {
-                auto it = lazy_modules_.find(name);
-                if (it == lazy_modules_.end() || it->second.loaded) return;
-                it->second.loaded = true;
-                auto api = VMApi(*this);
+void VM::activateLazyModule(const std::string &name) {
+    auto it = lazy_modules_.find(name);
+    if (it == lazy_modules_.end() || it->second.loaded) return;
+    it->second.loaded = true;
+    auto api = VMApi(*this);
     it->second.initFn(api);
 
-    // After initFn runs, check if it already replaced the proxy via setGlobal.
-    // Many modules (fs, string, bytecodeBuilder, etc.) call api.setGlobal(name, obj)
-    // inside their initFn, which replaces globals[name] with the fully-populated object.
-    // If that happened, skip the namespace rebuild below — the real module is already in place.
     auto postInitIt = globals.find(name);
-    fprintf(stderr, "[DBG-ACT] name='%s' postInit found=%d isObj=%d",
-            name.c_str(), (int)(postInitIt != globals.end()), (int)(postInitIt != globals.end() && postInitIt->second.isObjectId()));
-    if (postInitIt != globals.end() && postInitIt->second.isObjectId()) {
-        auto *postInitObj = heap_.object(postInitIt->second.asObjectId());
-        fprintf(stderr, " obj=%p fields=%zu has_lazy=%d",
-                (void*)postInitObj, postInitObj ? postInitObj->size() : 0,
-                postInitObj ? (int)(postInitObj->get("__lazy__") != nullptr) : -1);
-    }
-    fprintf(stderr, "\n");
     if (postInitIt != globals.end() && postInitIt->second.isObjectId()) {
         auto *postInitObj = heap_.object(postInitIt->second.asObjectId());
         if (postInitObj) {
             auto *lazyFlag = postInitObj->get("__lazy__");
             if (!lazyFlag || !lazyFlag->isBool() || !lazyFlag->asBool()) {
-                // initFn already replaced the proxy with a real module object.
-                // Ensure bc alias for bytecodeBuilder.
                 if (name == "bytecodeBuilder" || name == "bytecodebuilder") {
                     globals["bc"] = postInitIt->second;
                 }
+                moduleLoader_.putCache(name, postInitIt->second);
                 return;
             }
         }
@@ -2634,15 +2649,6 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
         }
         globals[name] = Value::makeObjectId(nsRef.id);
     }
-            }
-
-            bool VM::ensureModuleLoaded(const std::string &name) {
-                auto it = lazy_modules_.find(name);
-                if (it == lazy_modules_.end()) return false;
-                if (it->second.loaded) return true;
-                activateLazyModule(name);
-                return true;
-            }
 
 Value VM::loadModule(const std::string& path) {
     // Check cache via canonical ModuleLoader

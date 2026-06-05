@@ -71,7 +71,7 @@ void registerArrayModule(const VMApi &api) {
 } // namespace havel::stdlib
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(array, "1.0.0", "Array operations stdlib module",
     havel::stdlib::registerArrayModule(*api);

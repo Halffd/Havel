@@ -304,7 +304,8 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/io/*.cpp"
     "src/core/net/*.cpp"
     "src/core/process/*.cpp"
-    "src/loader/*.c"
+    "src/c/*.c"
+ "src/c/*.cpp"
  "src/loader/*.cpp"
     "src/host/async/*.cpp"
     "src/host/audio/*.cpp"
@@ -345,7 +346,7 @@ list(APPEND CORE_SOURCES
 "src/host/ui/UIManager.cpp"
 "src/host/window/WindowService.cpp"
 "src/Havel.cpp"
-"src/core/config/Config.c"
+ "src/c/Config.c"
 "src/modules/HostModules.cpp"
 )
 
@@ -1020,9 +1021,9 @@ set(LSP_SOURCES
  src/havel-lang/ast/AST.cpp
  src/havel-lang/lexer/Lexer.cpp
  src/havel-lang/parser/Parser.cpp
- src/utils/LoggerC.c
- src/core/config/Config.c
- src/loader/Loader.c
+ src/c/LoggerC.c
+ src/c/Config.c
+ src/c/Loader.c
  )
 
 add_executable(havel-lsp ${LSP_SOURCES})
@@ -1063,8 +1064,8 @@ set(HVTEST_SOURCES
  src/hvtest/main.cpp
  src/hvtest/smoke_runner.cpp
  src/hvtest/test_scheduler_rig.cpp
- src/utils/LoggerC.c
- src/core/config/Config.c
+ src/c/LoggerC.c
+ src/c/Config.c
  )
 
 add_executable(hvtest ${HVTEST_SOURCES})

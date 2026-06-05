@@ -10,9 +10,9 @@
  * single-library dlopen/dlsym usage.
  */
 
-#include "Loader.h"
-#include "ModulePlugin.h"
-#include "ToolkitPlugin.h"
+#include "c/Loader.h"
+#include "c/ModulePlugin.h"
+#include "c/ToolkitPlugin.h"
 #include "extensions/HavelCAPI.h"
 #include "havel-lang/core/Value.hpp"
 

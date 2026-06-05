@@ -633,7 +633,7 @@ void setupDynamicWindowGlobals(const VMApi &api, WindowMonitor *monitor) {
 } // namespace havel::modules
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(window, "1.0.0", "Window monitor module",
     havel::modules::registerWindowMonitorModule(*api);

@@ -250,7 +250,7 @@ void registerClipboardModule(const VMApi& api) {
 } // namespace havel::modules
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(clipboard, "1.0.0", "Clipboard operations module",
     havel::modules::registerClipboardModule(*api);

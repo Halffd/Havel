@@ -1,6 +1,6 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "loader/Loader.hpp"
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 #ifdef ENABLE_MODULE_PLUGINS
 // Plugin mode: load modules via dlopen
@@ -41,17 +41,17 @@ static Loader &sharedLoader() {
 }
 
 void registerLazyFromPlugin(compiler::VM &vm, const char *name) {
-    std::string modName(name);
-    vm.registerLazyModule(modName, [modName](compiler::VMApi &a) {
-        auto plugin = sharedLoader().loadModulePlugin(modName);
-        if (plugin) {
-            plugin->register_fn(static_cast<void *>(&a));
-        }
-    });
+ std::string modName(name);
+ vm.registerLazyModule(modName, [modName](compiler::VMApi &a) {
+ auto plugin = sharedLoader().loadModulePlugin(modName);
+ if (plugin) {
+ plugin->register_fn(static_cast<void *>(&a));
+ }
+ });
 }
 
-void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
-    compiler::VMApi api(vm);
+ void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
+ compiler::VMApi api(vm);
 
     static const char *eagerModules[] = {
         "math", "string", "object", "type", "array",
@@ -134,13 +134,13 @@ void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
     return;
   }
 
-    for (auto &e : lazyModules) {
-        std::string modName(e.name);
-        RegisterFn fn = e.fn;
-        vm.registerLazyModule(modName, [fn](compiler::VMApi &a) {
-            fn(a);
-        });
-    }
+ for (auto &e : lazyModules) {
+ std::string modName(e.name);
+ RegisterFn fn = e.fn;
+ vm.registerLazyModule(modName, [fn](compiler::VMApi &a) {
+ fn(a);
+ });
+ }
 }
 
 #endif

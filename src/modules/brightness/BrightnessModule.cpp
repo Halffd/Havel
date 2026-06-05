@@ -462,7 +462,7 @@ void registerBrightnessModule(const VMApi& api) {
 } // namespace havel::modules
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(brightness, "1.0.0", "Brightness control module",
     havel::modules::registerBrightnessModule(*api);

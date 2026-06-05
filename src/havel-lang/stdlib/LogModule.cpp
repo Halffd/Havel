@@ -361,7 +361,7 @@ api.setGlobal("debug", debugObj);
 #endif // HAVEL_CORE_PROFILE
 
 #ifdef HAVEL_MODULE_PLUGIN
-#include "loader/ModulePlugin.h"
+#include "c/ModulePlugin.h"
 HAVEL_MODULE_PLUGIN_IMPL(log, "1.0.0", "Logging stdlib module",
     havel::stdlib::registerLogModule(*api);
     havel::stdlib::registerDebugModule(*api);

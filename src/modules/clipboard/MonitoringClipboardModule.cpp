@@ -140,7 +140,7 @@ void registerMonitoringClipboardModule(const VMApi& api) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(monitoringclipboard, "1.0.0", "Clipboard monitoring module",
-    havel::modules::registerMonitoringClipboardModule(*api);
+HAVEL_MODULE_PLUGIN_IMPL_A1(monitoringclipboard, "1.0.0", "Clipboard monitoring module", "clipboardMonitor",
+havel::modules::registerMonitoringClipboardModule(*api);
 )
 #endif

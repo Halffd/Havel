@@ -423,6 +423,7 @@ void Havel::cleanup() noexcept {
 
   // Release ImageService handles (prevents leak when scripts don't call image.release)
   auto imgSvc = havel::host::ServiceRegistry::instance().get<havel::host::ImageService>();
+  // Note: This runs in main binary, so ServiceRegistry singleton is correct here.
   if (imgSvc) {
     imgSvc->releaseAll();
   }

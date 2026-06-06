@@ -1068,8 +1068,12 @@ private:
     uint32_t jit_active_closure_id_ = 0;
     std::function<void(VM&)> post_reset_setup_;
     int gc_suspend_counter_ = 0;
+    void* serviceRegistry_ = nullptr;
 
 public:
+    void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
+    void* getServiceRegistry() const { return serviceRegistry_; }
+
     void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }
 
     void suspendGC() { gc_suspend_counter_++; }

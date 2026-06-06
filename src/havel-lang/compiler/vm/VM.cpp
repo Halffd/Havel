@@ -1,6 +1,7 @@
 #include "VM.hpp"
 #include "VMInternals.hpp"
 #include "VMApi.hpp"
+#include "host/ServiceRegistry.hpp"
 #include <iostream>
 #include "../../../utils/Logger.hpp"
 #include "../../utils/ErrorPrinter.hpp"
@@ -2541,12 +2542,13 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
     }
 }
 
-void VM::activateLazyModule(const std::string &name) {
-    auto it = lazy_modules_.find(name);
-    if (it == lazy_modules_.end() || it->second.loaded) return;
-    it->second.loaded = true;
-    auto api = VMApi(*this);
-    it->second.initFn(api);
+ void VM::activateLazyModule(const std::string &name) {
+     auto it = lazy_modules_.find(name);
+     if (it == lazy_modules_.end() || it->second.loaded) return;
+     it->second.loaded = true;
+     auto api = VMApi(*this);
+     api.serviceRegistry = static_cast<::havel::host::ServiceRegistry*>(serviceRegistry_);
+     it->second.initFn(api);
 
     auto postInitIt = globals.find(name);
     if (postInitIt != globals.end() && postInitIt->second.isObjectId()) {

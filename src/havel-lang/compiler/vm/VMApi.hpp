@@ -10,12 +10,17 @@
 #include <utility>
 #include <functional>
 
+namespace havel::host {
+class ServiceRegistry;
+}
+
 namespace havel::compiler {
 
 using Value = ::havel::core::Value;
 
 struct VMApi {
   VM *vm_;
+  ::havel::host::ServiceRegistry* serviceRegistry = nullptr;
 
   VMApi(VM &vm) : vm_(&vm) {}
   VM &vm() const { return *vm_; }

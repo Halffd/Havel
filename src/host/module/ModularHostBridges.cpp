@@ -12,6 +12,7 @@
 #include "core/detect/HardwareDetector.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/IO.hpp"
+#include "core/io/EventListener.hpp"
 #include "core/mode/ModeManager.hpp"
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
@@ -844,8 +845,7 @@ Value IOBridge::handleSetLock(const std::vector<Value> &args,
         if (caps_set) {
             bool curr = (xkbState.locked_mods & LockMask) != 0;
             if (curr != caps_val) {
-                auto *display2 = havel::DisplayManager::GetDisplay();
-                KeyCode kc = XKeysymToKeycode(display2, XK_Caps_Lock);
+                KeyCode kc = XKeysymToKeycode(display, XK_Caps_Lock);
                 if (kc && ctx->io->GetIOBackend()) {
                     ctx->io->GetIOBackend()->PressKey(kc);
                     ctx->io->GetIOBackend()->ReleaseKey(kc);
@@ -855,8 +855,7 @@ Value IOBridge::handleSetLock(const std::vector<Value> &args,
         if (num_set) {
             bool curr = (xkbState.locked_mods & Mod2Mask) != 0;
             if (curr != num_val) {
-                auto *display2 = havel::DisplayManager::GetDisplay();
-                KeyCode kc = XKeysymToKeycode(display2, XK_Num_Lock);
+                KeyCode kc = XKeysymToKeycode(display, XK_Num_Lock);
                 if (kc && ctx->io->GetIOBackend()) {
                     ctx->io->GetIOBackend()->PressKey(kc);
                     ctx->io->GetIOBackend()->ReleaseKey(kc);
@@ -866,8 +865,7 @@ Value IOBridge::handleSetLock(const std::vector<Value> &args,
         if (scroll_set) {
             bool curr = (xkbState.locked_mods & Mod3Mask) != 0;
             if (curr != scroll_val) {
-                auto *display2 = havel::DisplayManager::GetDisplay();
-                KeyCode kc = XKeysymToKeycode(display2, XK_Scroll_Lock);
+                KeyCode kc = XKeysymToKeycode(display, XK_Scroll_Lock);
                 if (kc && ctx->io->GetIOBackend()) {
                     ctx->io->GetIOBackend()->PressKey(kc);
                     ctx->io->GetIOBackend()->ReleaseKey(kc);

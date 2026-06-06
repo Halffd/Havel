@@ -2570,7 +2570,6 @@ void VM::activateLazyModule(const std::string &name) {
     if (it == lazy_modules_.end() || it->second.loaded) return;
     it->second.loaded = true;
     auto api = VMApi(*this);
-    api.serviceRegistry = static_cast<::havel::host::ServiceRegistry*>(serviceRegistry_);
     it->second.initFn(api);
 
     auto postInitIt = globals.find(name);
@@ -2586,7 +2585,7 @@ void VM::activateLazyModule(const std::string &name) {
                         if (aliasObj) {
                             auto *alf = aliasObj->get("__lazy__");
                             if (alf && alf->isBool() && alf->asBool()) {
-                                globals.erase(aliasIt);
+                                globals[alias] = postInitIt->second;
                             }
                         }
                     }
@@ -2684,16 +2683,7 @@ bool VM::ensureModuleLoaded(const std::string &name) {
                     if (moduleLoader_.getCached(name, &cached) && cached.isObjectId()) {
                         git->second = cached;
                         for (const auto &alias : it->second.aliases) {
-                            auto aliasIt = globals.find(alias);
-                            if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
-                                auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
-                                if (aliasObj) {
-                                    auto *alf = aliasObj->get("__lazy__");
-                                    if (alf && alf->isBool() && alf->asBool()) {
-                                        globals.erase(aliasIt);
-                                    }
-                                }
-                            }
+                            globals[alias] = cached;
                         }
                     }
                 }
@@ -2708,16 +2698,7 @@ bool VM::ensureModuleLoaded(const std::string &name) {
         auto modIt = lazy_modules_.find(name);
         if (modIt != lazy_modules_.end()) {
             for (const auto &alias : modIt->second.aliases) {
-                auto aliasIt = globals.find(alias);
-                if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
-                    auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
-                    if (aliasObj) {
-                        auto *alf = aliasObj->get("__lazy__");
-                        if (alf && alf->isBool() && alf->asBool()) {
-                            globals.erase(aliasIt);
-                        }
-                    }
-                }
+                globals[alias] = git->second;
             }
         }
     }
@@ -3019,8 +3000,13 @@ Value VM::loadModule(const std::string& path) {
     // caller's chunk after restore, producing garbage.
     auto exportsObj = createHostObject();
 auto *obj = heap_.object(exportsObj.id);
-  auto moduleGlobalsSnapshot = globals;
-  int exportCount = 0;
+    auto moduleGlobalsSnapshot = globals;
+    {
+        auto _it = globals.find("emitClassDeclaration");
+        if (_it != globals.end()) std::fprintf(stderr, "[DBG-MOD] emitClassDeclaration found in module globals\n");
+        else std::fprintf(stderr, "[DBG-MOD] emitClassDeclaration NOT in module globals, size=%zu\n", globals.size());
+    }
+    int exportCount = 0;
     for (const auto& [name, value] : globals) {
         if (name.empty() || name[0] == '_') continue;
         // Skip inherited globals UNLESS the module redefined them

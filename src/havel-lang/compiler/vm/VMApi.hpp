@@ -22,7 +22,7 @@ struct VMApi {
   VM *vm_;
   ::havel::host::ServiceRegistry* serviceRegistry = nullptr;
 
-  VMApi(VM &vm) : vm_(&vm) {}
+  VMApi(VM &vm) : vm_(&vm), serviceRegistry(static_cast<::havel::host::ServiceRegistry*>(vm.getServiceRegistry())) {}
   VM &vm() const { return *vm_; }
 
   [[nodiscard]] VM::GCRoot root(const Value &value) const {

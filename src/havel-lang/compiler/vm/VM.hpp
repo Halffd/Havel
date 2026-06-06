@@ -72,6 +72,7 @@ struct ModuleDescriptor {
     std::string name;
     std::function<void(class VMApi&)> initFn;
     bool loaded = false;
+    std::vector<std::string> aliases;
 };
 
 // ============================================================================
@@ -281,6 +282,8 @@ struct CallFrame {
 std::shared_ptr<BytecodeChunk> main_chunk_;
 // Keep REPL chunks alive so closures/functions from previous lines remain valid
 std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
+// Keep persistent execution chunks alive so function objects remain valid
+std::vector<std::shared_ptr<BytecodeChunk>> persistent_chunks_;
 
 // Canonical module loader for path resolution and caching
 ModuleLoader moduleLoader_;
@@ -823,11 +826,11 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
   
-void setGlobal(std::string name, Value value) {
-    auto key = name;
-    globals[std::move(name)] = std::move(value);
-    emitVariableChanged(key);
-  }
+    void setGlobal(std::string name, Value value) {
+        auto key = name;
+        globals[std::move(name)] = std::move(value);
+        emitVariableChanged(key);
+    }
   void eraseGlobal(const std::string &name) {
     globals.erase(name);
   }
@@ -1004,7 +1007,7 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
 
     Value loadModule(const std::string& path);
   Value loadScript(const std::string& path);
-void registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn);
+void registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn, const std::vector<std::string> &aliases = {});
   bool ensureModuleLoaded(const std::string &name);
   bool isLazyModuleRegistered(const std::string &name) const;
   void activateLazyModule(const std::string &name);
@@ -1030,8 +1033,11 @@ bool isLazyModuleLoaded(const std::string &name) const;
   std::unordered_map<std::string, Value>& getGlobals() { return globals; }
   auto& hostFunctionGlobals() { return host_function_globals_; }
 void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
-  repl_chunks_.push_back(chunk);
-  current_chunk = chunk.get();
+repl_chunks_.push_back(chunk);
+current_chunk = chunk.get();
+}
+void storePersistentChunk(std::shared_ptr<BytecodeChunk> chunk) {
+persistent_chunks_.push_back(std::move(chunk));
 }
 
   // Resolve a Value that might be a string to an actual string
@@ -1067,8 +1073,12 @@ private:
     uint32_t jit_active_closure_id_ = 0;
     std::function<void(VM&)> post_reset_setup_;
     int gc_suspend_counter_ = 0;
+    void* serviceRegistry_ = nullptr;
 
 public:
+    void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
+    void* getServiceRegistry() const { return serviceRegistry_; }
+
     void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }
 
     void suspendGC() { gc_suspend_counter_++; }
@@ -1076,6 +1086,12 @@ public:
         if (--gc_suspend_counter_ <= 0) {
             gc_suspend_counter_ = 0;
             maybeCollectGarbage();
+        }
+    }
+    void resumeGCWithFullCollect() {
+        if (--gc_suspend_counter_ <= 0) {
+            gc_suspend_counter_ = 0;
+            collectGarbage();
         }
     }
     bool gcSuspended() const { return gc_suspend_counter_ > 0; }

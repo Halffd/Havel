@@ -605,8 +605,8 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
     vm.setMainChunkShared(saved_main_chunk);
     return result;
   } catch (const std::exception &e) {
-    vm.bc_execute_depth_--;
-    vm.current_chunk = saved_chunk;
+      vm.bc_execute_depth_--;
+      vm.current_chunk = saved_chunk;
     vm.frame_count_ = saved_frame_count;
     vm.frame_arena_ = std::move(saved_frame_arena);
     vm.stack = std::move(saved_stack);
@@ -618,72 +618,94 @@ api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Valu
 
 
 api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &args) -> Value {
-      if (g_builder.chunk->getFunctionCount() == 0) {
+    if (g_builder.chunk->getFunctionCount() == 0) {
         throw std::runtime_error("bc.execute_persistent: no functions in chunk");
-      }
-      std::string entry = "__main__";
-      if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
+    }
+    std::string entry = "__main__";
+    if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
         entry = api.resolveString(args[0]);
-      }
-	std::vector<Value> runArgs;
+    }
+    std::vector<Value> runArgs;
     for (size_t i = 1; i < args.size(); ++i) {
         runArgs.push_back(args[i]);
     }
 
-auto &vm = api.vm();
+    auto &vm = api.vm();
+    vm.suspendGC();
+
+    // Snapshot current globals BEFORE execution so we can diff after
+    auto pre_globals = vm.getGlobals();
+
     auto saved_chunk = vm.current_chunk;
     auto saved_frame_count = vm.frame_count_;
     auto saved_frame_arena = vm.frame_arena_;
     std::stack<Value> saved_stack = vm.stack;
     auto saved_locals = vm.locals;
-auto saved_immutable_locals = vm.immutable_locals_;
-  auto saved_main_chunk = vm.getMainChunk();
+    auto saved_immutable_locals = vm.immutable_locals_;
+    auto saved_main_chunk = vm.getMainChunk();
 
-  // Move chunk out of builder into a shared_ptr so it survives any
-// bc.reset() calls during execution (e.g. from imported modules).
-// Replace the builder's chunk with a fresh empty one.
-auto exec_chunk = std::shared_ptr<BytecodeChunk>(g_builder.chunk.release());
-g_builder.chunk = std::make_unique<BytecodeChunk>();
-g_builder.current_func_idx = -1;
-g_builder.saved_func_stack.clear();
+    // Move chunk out of builder into a shared_ptr so it survives any
+    // bc.reset() calls during execution (e.g. from imported modules).
+    // Replace the builder's chunk with a fresh empty one.
+    auto exec_chunk = std::shared_ptr<BytecodeChunk>(g_builder.chunk.release());
+    g_builder.chunk = std::make_unique<BytecodeChunk>();
+    g_builder.current_func_idx = -1;
+    g_builder.saved_func_stack.clear();
 
-vm.setMainChunkShared(exec_chunk);
-vm.current_chunk = exec_chunk.get();
+    vm.setMainChunkShared(exec_chunk);
+    vm.current_chunk = exec_chunk.get();
 
-try {
-vm.bc_execute_depth_++;
-auto result = vm.executePersistent(*exec_chunk, entry, runArgs);
-vm.bc_execute_depth_--;
-    vm.current_chunk = saved_chunk;
-    vm.frame_count_ = saved_frame_count;
-    vm.frame_arena_ = std::move(saved_frame_arena);
-    vm.stack = std::move(saved_stack);
-    vm.locals = std::move(saved_locals);
-    vm.immutable_locals_ = std::move(saved_immutable_locals);
-vm.setMainChunkShared(saved_main_chunk);
-  return result;
-} catch (const std::exception &e) {
-vm.bc_execute_depth_--;
-vm.current_chunk = saved_chunk;
-vm.frame_count_ = saved_frame_count;
-vm.frame_arena_ = std::move(saved_frame_arena);
-vm.stack = std::move(saved_stack);
-vm.locals = std::move(saved_locals);
-vm.immutable_locals_ = std::move(saved_immutable_locals);
-vm.setMainChunkShared(saved_main_chunk);
-    throw std::runtime_error(e.what());
-  }
-	});
+    try {
+        vm.bc_execute_depth_++;
+        auto result = vm.executePersistent(*exec_chunk, entry, runArgs);
+        vm.bc_execute_depth_--;
+        vm.storePersistentChunk(exec_chunk);
+
+        // Capture new/changed globals from the persistent execution.
+        // The module globals scope system will restore the caller's globals
+        // after this host function returns, overwriting vm.globals.
+        // We must persist new globals into host_function_globals_ which
+        // survives scope swaps and is checked by lookupGlobalByKey.
+        auto &post_globals = vm.getGlobals();
+        for (auto &[name, val] : post_globals) {
+            auto preIt = pre_globals.find(name);
+            if (preIt == pre_globals.end() || !(preIt->second == val)) {
+                vm.host_function_globals_[name] = val;
+            }
+        }
+
+        vm.current_chunk = saved_chunk;
+        vm.frame_count_ = saved_frame_count;
+        vm.frame_arena_ = std::move(saved_frame_arena);
+        vm.stack = std::move(saved_stack);
+        vm.locals = std::move(saved_locals);
+        vm.immutable_locals_ = std::move(saved_immutable_locals);
+        vm.setMainChunkShared(saved_main_chunk);
+        vm.resumeGCWithFullCollect();
+        return result;
+    } catch (const std::exception &e) {
+        vm.bc_execute_depth_--;
+        vm.current_chunk = saved_chunk;
+        vm.frame_count_ = saved_frame_count;
+        vm.frame_arena_ = std::move(saved_frame_arena);
+        vm.stack = std::move(saved_stack);
+        vm.locals = std::move(saved_locals);
+        vm.immutable_locals_ = std::move(saved_immutable_locals);
+        vm.setMainChunkShared(saved_main_chunk);
+        vm.resumeGCWithFullCollect();
+        throw std::runtime_error(e.what());
+    }
+});
 
 api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
-      throw std::runtime_error("bc.get_global: requires name (string)");
+        throw std::runtime_error("bc.get_global: requires name (string)");
     }
     auto name = api.resolveString(args[0]);
     auto &vm = api.vm();
-  auto result = vm.lookupGlobalByKey(name);
-  return result;
-  });
+    auto result = vm.lookupGlobalByKey(name);
+    return result;
+});
 
     api.registerFunction("bc.set_global", [api](const std::vector<Value> &args) -> Value {
         if (args.size() < 2 || (!args[0].isStringId() && !args[0].isStringValId())) {
@@ -944,41 +966,45 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
             runArgs.push_back(args[i]);
         }
 
-        auto &vm = api.vm();
-        auto saved_chunk = vm.current_chunk;
-        auto saved_frame_count = vm.frame_count_;
-        auto saved_frame_arena = vm.frame_arena_;
-        std::stack<Value> saved_stack = vm.stack;
-        auto saved_locals = vm.locals;
-        auto saved_immutable_locals = vm.immutable_locals_;
-        auto saved_main_chunk = vm.getMainChunk();
+      auto &vm = api.vm();
+      vm.suspendGC();
 
-        vm.setMainChunkShared(exec_chunk);
-        vm.current_chunk = exec_chunk.get();
+      auto saved_chunk = vm.current_chunk;
+      auto saved_frame_count = vm.frame_count_;
+      auto saved_frame_arena = vm.frame_arena_;
+      std::stack<Value> saved_stack = vm.stack;
+      auto saved_locals = vm.locals;
+      auto saved_immutable_locals = vm.immutable_locals_;
+      auto saved_main_chunk = vm.getMainChunk();
 
-        try {
-            vm.bc_execute_depth_++;
-            auto result = vm.executePersistent(*exec_chunk, entry, runArgs);
-            vm.bc_execute_depth_--;
-            vm.current_chunk = saved_chunk;
-            vm.frame_count_ = saved_frame_count;
-            vm.frame_arena_ = std::move(saved_frame_arena);
-            vm.stack = std::move(saved_stack);
-            vm.locals = std::move(saved_locals);
-            vm.immutable_locals_ = std::move(saved_immutable_locals);
-            vm.setMainChunkShared(saved_main_chunk);
-            return result;
-        } catch (const std::exception &e) {
-            vm.bc_execute_depth_--;
-            vm.current_chunk = saved_chunk;
-            vm.frame_count_ = saved_frame_count;
-            vm.frame_arena_ = std::move(saved_frame_arena);
-            vm.stack = std::move(saved_stack);
-            vm.locals = std::move(saved_locals);
-            vm.immutable_locals_ = std::move(saved_immutable_locals);
-            vm.setMainChunkShared(saved_main_chunk);
-            throw std::runtime_error(e.what());
-        }
+      vm.setMainChunkShared(exec_chunk);
+      vm.current_chunk = exec_chunk.get();
+
+      try {
+         vm.bc_execute_depth_++;
+         auto result = vm.executePersistent(*exec_chunk, entry, runArgs);
+         vm.bc_execute_depth_--;
+         vm.current_chunk = saved_chunk;
+         vm.frame_count_ = saved_frame_count;
+         vm.frame_arena_ = std::move(saved_frame_arena);
+         vm.stack = std::move(saved_stack);
+         vm.locals = std::move(saved_locals);
+      vm.immutable_locals_ = std::move(saved_immutable_locals);
+vm.setMainChunkShared(saved_main_chunk);
+vm.resumeGCWithFullCollect();
+return result;
+   } catch (const std::exception &e) {
+      vm.bc_execute_depth_--;
+      vm.current_chunk = saved_chunk;
+      vm.frame_count_ = saved_frame_count;
+      vm.frame_arena_ = std::move(saved_frame_arena);
+      vm.stack = std::move(saved_stack);
+      vm.locals = std::move(saved_locals);
+      vm.immutable_locals_ = std::move(saved_immutable_locals);
+      vm.setMainChunkShared(saved_main_chunk);
+      vm.resumeGCWithFullCollect();
+         throw std::runtime_error(e.what());
+      }
     });
 
     auto bcObj = api.makeObject();

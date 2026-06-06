@@ -5,7 +5,7 @@
 
 namespace havel {
 
-static void registerLazyFromPlugin(compiler::HostBridge &bridge, const char *name) {
+static void registerLazyFromPlugin(compiler::HostBridge &bridge, const char *name, const std::vector<std::string> &aliases = {}) {
     auto &vm = *bridge.context().vm;
     std::string modName(name);
     vm.registerLazyModule(modName, [&bridge, modName](compiler::VMApi &a) {
@@ -13,7 +13,7 @@ static void registerLazyFromPlugin(compiler::HostBridge &bridge, const char *nam
         if (plugin) {
             plugin->register_fn(static_cast<void *>(&a));
         }
-    });
+    }, aliases);
 }
 
 void registerStdLibWithVM(compiler::HostBridge &bridge) {
@@ -32,20 +32,53 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
         }
     }
 
-    static const char *lazyModules[] = {
-        "regex", "time", "timer",
-        "hotkey",
-        "fs", "random", "log", "sys", "shell",
-        "ptr", "fmt", "pack", "bit", "option", "bytecodebuilder",
-        "http", "browser",
-        "config", "window", "display", "help", "mouse", "automation",
-        "image", "media", "app", "audio", "brightness", "filemanager",
-        "io", "mapmanager", "mode", "ffi", "zoom",
-        "alttab", "clipboard", "historyclipboard", "monitoringclipboard",
+    static const struct { const char *name; const char *aliases[8]; } lazyModules[] = {
+        {"regex", {}},
+        {"time", {}},
+        {"timer", {}},
+        {"hotkey", {"Hotkey"}},
+        {"fs", {}},
+        {"random", {}},
+        {"log", {"debug"}},
+        {"sys", {"system", "process", "jit"}},
+        {"shell", {}},
+        {"ptr", {}},
+        {"fmt", {}},
+        {"pack", {}},
+        {"bit", {}},
+        {"option", {}},
+        {"bytecodebuilder", {"bc"}},
+        {"http", {}},
+        {"browser", {}},
+        {"config", {"cfg", "conf"}},
+        {"window", {}},
+        {"display", {}},
+        {"help", {}},
+        {"mouse", {}},
+        {"automation", {"pixel"}},
+        {"image", {}},
+        {"media", {}},
+        {"app", {}},
+        {"audio", {}},
+        {"brightness", {}},
+        {"filemanager", {}},
+        {"io", {}},
+        {"mapmanager", {}},
+        {"mode", {}},
+        {"ffi", {}},
+        {"zoom", {}},
+        {"alttab", {}},
+        {"clipboard", {}},
+        {"historyclipboard", {"clipboardHistory"}},
+        {"monitoringclipboard", {"clipboardMonitor"}},
     };
 
-    for (auto name : lazyModules) {
-        registerLazyFromPlugin(bridge, name);
+    for (auto &entry : lazyModules) {
+        std::vector<std::string> aliases;
+        for (int i = 0; i < 8 && entry.aliases[i]; ++i) {
+            aliases.emplace_back(entry.aliases[i]);
+        }
+        registerLazyFromPlugin(bridge, entry.name, aliases);
     }
 }
 

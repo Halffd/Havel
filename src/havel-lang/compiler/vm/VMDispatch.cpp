@@ -52,37 +52,37 @@ case OpCode::LOAD_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
 
-  // First check regular globals (user variables shadow host functions)
-  auto it = globals.find(name);
-  if (it != globals.end()) {
-    // Auto-load lazy module proxies on access
-    if (it->second.isObjectId()) {
-      auto *obj = heap_.object(it->second.asObjectId());
-      if (obj) {
-        auto *lf = obj->get("__lazy__");
-        if (lf && lf->isBool() && lf->asBool()) {
-          auto *modNameVal = obj->get("__module__");
-          std::string modName;
-          if (modNameVal) {
-            if (modNameVal->isStringId()) {
-              if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
-            } else if (modNameVal->isStringValId() && current_chunk) {
-              modName = current_chunk->getString(modNameVal->asStringValId());
+    // First check regular globals (user variables shadow host functions)
+    auto it = globals.find(name);
+    if (it != globals.end()) {
+        // Auto-load lazy module proxies on access
+        if (it->second.isObjectId()) {
+            auto *obj = heap_.object(it->second.asObjectId());
+            if (obj) {
+                auto *lf = obj->get("__lazy__");
+                if (lf && lf->isBool() && lf->asBool()) {
+                    auto *modNameVal = obj->get("__module__");
+                    std::string modName;
+                    if (modNameVal) {
+                        if (modNameVal->isStringId()) {
+                            if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
+                        } else if (modNameVal->isStringValId() && current_chunk) {
+                            modName = current_chunk->getString(modNameVal->asStringValId());
+                        }
+                    }
+                    if (!modName.empty()) {
+                        // Trigger lazy module loading if not yet loaded
+                        if (isLazyModuleRegistered(modName)) {
+                            ensureModuleLoaded(modName);
+                        }
+                        // Re-lookup after loading (the module may have set aliases like "bc")
+                        auto git2 = globals.find(name);
+                        if (git2 != globals.end()) {
+                            trackGlobalAccess(name);
+                            pushStack(git2->second);
+                    break;
+                }
             }
-          }
-                        if (!modName.empty()) {
-                            // Trigger lazy module loading if not yet loaded
-                            if (isLazyModuleRegistered(modName)) {
-                                ensureModuleLoaded(modName);
-                            }
-                            // Re-lookup after loading (the module may have set aliases like "bc")
-            auto git2 = globals.find(name);
-            if (git2 != globals.end()) {
-              trackGlobalAccess(name);
-              pushStack(git2->second);
-              break;
-            }
-          }
         }
       }
     }

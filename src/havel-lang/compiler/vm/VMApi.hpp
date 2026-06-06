@@ -10,12 +10,17 @@
 #include <utility>
 #include <functional>
 
+namespace havel::host {
+class ServiceRegistry;
+}
+
 namespace havel::compiler {
 
 using Value = ::havel::core::Value;
 
 struct VMApi {
   VM *vm_;
+  ::havel::host::ServiceRegistry* serviceRegistry = nullptr;
 
   VMApi(VM &vm) : vm_(&vm) {}
   VM &vm() const { return *vm_; }
@@ -32,7 +37,7 @@ struct VMApi {
         auto ref = vm().createRuntimeString(std::move(v));
         return Value::makeStringId(ref.id);
     }
-    Value makeObject() const { return Value::makeObjectId(vm().createHostObject().id); }
+    Value makeObject() const { auto ref = vm().createHostObject(); return Value::makeObjectId(ref.id); }
     Value makeArray() const { return Value::makeArrayId(vm().createHostArray().id); }
     Value makeFunctionRef(const std::string &name) const {
         return Value::makeHostFuncId(vm().getHostFunctionIndex(name));

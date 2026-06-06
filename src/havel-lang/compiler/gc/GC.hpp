@@ -348,13 +348,33 @@ bool isCollectionInProgress() const;
     void setStopTheWorldMode(bool v) { stop_the_world_ = v; }
     bool isStopTheWorld() const { return stop_the_world_; }
 
-    void maybeCollectGarbage(
-        const std::vector<Value> &stack_values,
-        const std::vector<Value> &locals,
-        const std::unordered_map<std::string, Value> &globals,
-        const std::vector<uint32_t> &active_closure_ids,
-        const std::function<std::optional<Value>(uint32_t)>
+void maybeCollectGarbage(
+    const std::vector<Value> &stack_values,
+    const std::vector<Value> &locals,
+    const std::unordered_map<std::string, Value> &globals,
+    const std::vector<uint32_t> &active_closure_ids,
+    const std::function<std::optional<Value>(uint32_t)>
         &open_local_reader);
+
+void abortIncrementalCollection() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    gc_state_ = IncrementalState::Idle;
+    mark_worklist_.clear();
+    marked_arrays_.clear();
+    marked_objects_.clear();
+    marked_sets_.clear();
+    marked_closures_.clear();
+    marked_strings_.clear();
+    marked_ranges_.clear();
+    marked_errors_.clear();
+    marked_enums_.clear();
+    marked_iterators_.clear();
+    marked_bound_methods_.clear();
+    sweep_keys_.clear();
+    sweep_index_ = 0;
+    sweep_phase_ = IncrementalState::Idle;
+    collection_requested_ = false;
+}
 
     void
     collectGarbage(const std::vector<Value> &stack_values,

@@ -1485,6 +1485,12 @@ add_havel_module_plugin(config       ${CMAKE_SOURCE_DIR}/src/modules/config/Conf
 add_havel_module_plugin(display      ${CMAKE_SOURCE_DIR}/src/modules/display/DisplayModule.cpp)
 add_havel_module_plugin(ffi          ${CMAKE_SOURCE_DIR}/src/modules/ffi/FFIModule.cpp
   EXTRA_DEFS $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>)
+target_sources(havel_mod_ffi PRIVATE
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFIMemory.cpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFICall.cpp
+  ${CMAKE_SOURCE_DIR}/src/havel-lang/ffi/FFITypes.cpp
+)
+target_link_libraries(havel_mod_ffi PRIVATE ${LIBFFI_LIBRARIES})
 add_havel_module_plugin(filemanager  ${CMAKE_SOURCE_DIR}/src/modules/filesystem/FileManagerModule.cpp)
 add_havel_module_plugin(help         ${CMAKE_SOURCE_DIR}/src/modules/help/HelpModule.cpp)
 add_havel_module_plugin(image        ${CMAKE_SOURCE_DIR}/src/modules/image/ImageModule.cpp)

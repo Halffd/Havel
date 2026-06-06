@@ -1,5 +1,6 @@
 #include "VM.hpp"
 #include "VMInternals.hpp"
+#include <unistd.h>
 #include "../../../utils/Logger.hpp"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../runtime/RuntimeSupport.hpp"

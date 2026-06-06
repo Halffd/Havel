@@ -16,14 +16,15 @@ void registerArrayPrototype(VM& vm) {
     vm.registerPrototypeMethodByName("array", method, "array." + method);
   };
 
-  regProto("len", 1, [&vm](const std::vector<Value>& args) {
-    if (args.empty()) return Value::makeInt(0);
-    if (args[0].isArrayId()) {
-      auto* arr = vm.getHeap().array(args[0].asArrayId());
-      return Value::makeInt(arr ? static_cast<int64_t>(arr->size()) : 0);
-    }
-    return Value::makeInt(0);
-  });
+   regProto("len", 1, [&vm](const std::vector<Value>& args) {
+      if (args.empty()) return Value::makeInt(0);
+      if (args[0].isArrayId()) {
+         auto* arr = vm.getHeap().array(args[0].asArrayId());
+         return Value::makeInt(arr ? static_cast<int64_t>(arr->size()) : 0);
+      }
+      return Value::makeInt(0);
+   });
+   vm.registerPrototypeMethodByName("array", "length", "array.len");
 
   regProto("push", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();

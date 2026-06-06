@@ -1117,6 +1117,10 @@ struct HotkeyBinding : public Statement {
   // (typically defined in "when mode suspend" blocks)
   bool suspend = false;
 
+  // Inline attributes: mode="name" policy="replace"
+  std::string mode;      // mode attribute (e.g. "default", "gaming")
+  std::string policy;    // policy attribute (drop/replace/queue/coalesce)
+
   HotkeyBinding() { kind = NodeType::HotkeyBinding; }
   HotkeyBinding(std::vector<std::unique_ptr<Expression>> hks,
                 std::unique_ptr<Statement> act)
@@ -1146,6 +1150,12 @@ struct HotkeyBinding : public Statement {
     }
     if (suspend) {
       result += ", suspend_exempt: true";
+    }
+    if (!mode.empty()) {
+      result += ", mode: " + mode;
+    }
+    if (!policy.empty()) {
+      result += ", policy: " + policy;
     }
     result += "}";
     return result;

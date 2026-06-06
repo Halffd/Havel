@@ -3337,13 +3337,44 @@ fn emitStructDeclaration(emitter, node) {
         cnIdx = bc.add_string(node.name)
         bc.emit("LOAD_CONST", cnIdx)
         bc.emit("CALL", 2)
-        bc.emit("POP")
-      }
+      bc.emit("POP")
       }
     }
   }
-  // ============================================================
-  // Hotkey binding emission
+}
+
+fn emitEnumDeclaration(emitter, node) {
+  sid = globalIdx(emitter, "enum.define")
+  bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+  nameIdx = bc.add_string(node.name)
+  bc.emit("LOAD_CONST", nameIdx)
+  // Variant names array
+  bc.emit("ARRAY_NEW")
+  if node.definition.variants != null {
+    for v in node.definition.variants {
+      vidx = bc.add_string(v.name)
+      bc.emit("LOAD_CONST", vidx)
+      bc.emit("ARRAY_PUSH")
+    }
+  }
+  // Payload counts array
+  bc.emit("ARRAY_NEW")
+  if node.definition.variants != null {
+    for v in node.definition.variants {
+      pc = 0
+      if v.payloadType != null { pc = 1 }
+      bc.emit("LOAD_CONST", bc.add_const(pc))
+      bc.emit("ARRAY_PUSH")
+    }
+  }
+  bc.emit("CALL", 3)
+  // Store as global
+  nameSid = globalIdx(emitter, node.name)
+  bc.emit("STORE_GLOBAL", bc.str_id(nameSid))
+}
+
+// ============================================================
+// Hotkey binding emission
 // ============================================================
 
 fn emitHotkeyBinding(emitter, node) {

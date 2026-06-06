@@ -57,10 +57,11 @@ void registerStringPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
-  regProto("len", 1, [&vm](const std::vector<Value>& args) {
-    if (args.empty()) return Value::makeInt(0);
-    return Value::makeInt(static_cast<int64_t>(extractString(vm, args[0]).size()));
-  });
+   regProto("len", 1, [&vm](const std::vector<Value>& args) {
+      if (args.empty()) return Value::makeInt(0);
+      return Value::makeInt(static_cast<int64_t>(extractString(vm, args[0]).size()));
+   });
+   vm.registerPrototypeMethodByName("string", "length", "string.len");
 
   regProto("upper", 1, [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();

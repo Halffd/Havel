@@ -57,51 +57,74 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
     }
     return "<string:" + std::to_string(value.asStringId()) + ">";
   }
-  if (value.isFunctionObjId()) {
-    // Function object from bytecode - use metadata for display
-    if (current_chunk) {
+   if (value.isFunctionObjId()) {
+      // Function object from bytecode - use metadata for display
       uint32_t idx = value.asFunctionObjId();
-      if (idx < current_chunk->getFunctionCount()) {
-        const auto *bf = current_chunk->getFunction(idx);
-        if (bf) {
-          std::string result = "<fn " + bf->name;
-          if (!bf->param_names.empty()) {
+      const BytecodeFunction *bf = nullptr;
+      if (current_chunk && idx < current_chunk->getFunctionCount()) {
+         bf = current_chunk->getFunction(idx);
+      }
+      if (!bf) {
+         for (const auto &pc : persistent_chunks_) {
+            if (idx < pc->getFunctionCount()) {
+               const auto *candidate = pc->getFunction(idx);
+               if (candidate && candidate->name != "__main__") {
+                  bf = candidate;
+                  break;
+               }
+            }
+         }
+      }
+      if (bf) {
+         std::string result = "<fn " + bf->name;
+         if (!bf->param_names.empty()) {
             result += "(";
             for (size_t i = 0; i < bf->param_names.size(); ++i) {
-              if (i > 0) result += ", ";
-              result += bf->param_names[i];
+               if (i > 0) result += ", ";
+               result += bf->param_names[i];
             }
             result += ")";
-          }
-          result += ">";
-          return result;
-        }
+         }
+         result += ">";
+         return result;
       }
-    }
-    return "<fn:" + std::to_string(value.asFunctionObjId()) + ">";
+      return "<fn:" + std::to_string(value.asFunctionObjId()) + ">";
   }
-  if (value.isClosureId()) {
-    // Closure - use metadata for display
-    auto *closure = heap_.closure(value.asClosureId());
-    if (closure && current_chunk) {
-      if (closure->function_index < current_chunk->getFunctionCount()) {
-        const auto *bf = current_chunk->getFunction(closure->function_index);
-        if (bf) {
-          std::string result = "<fn " + bf->name;
-          if (!bf->param_names.empty()) {
-            result += "(";
-            for (size_t i = 0; i < bf->param_names.size(); ++i) {
-              if (i > 0) result += ", ";
-              result += bf->param_names[i];
+   if (value.isClosureId()) {
+      // Closure - use metadata for display
+      auto *closure = heap_.closure(value.asClosureId());
+      if (closure) {
+         uint32_t idx = closure->function_index;
+         const BytecodeFunction *bf = nullptr;
+         if (current_chunk && idx < current_chunk->getFunctionCount()) {
+            bf = current_chunk->getFunction(idx);
+         }
+         if (!bf) {
+            for (const auto &pc : persistent_chunks_) {
+               if (idx < pc->getFunctionCount()) {
+                  const auto *candidate = pc->getFunction(idx);
+                  if (candidate && candidate->name != "__main__") {
+                     bf = candidate;
+                     break;
+                  }
+               }
             }
-            result += ")";
-          }
-          result += ">";
-          return result;
-        }
+         }
+         if (bf) {
+            std::string result = "<fn " + bf->name;
+            if (!bf->param_names.empty()) {
+               result += "(";
+               for (size_t i = 0; i < bf->param_names.size(); ++i) {
+                  if (i > 0) result += ", ";
+                  result += bf->param_names[i];
+               }
+               result += ")";
+            }
+            result += ">";
+            return result;
+         }
       }
-    }
-    return "<closure:" + std::to_string(value.asClosureId()) + ">";
+      return "<closure:" + std::to_string(value.asClosureId()) + ">";
   }
   if (value.isArrayId()) {
     auto *arr = heap_.array(value.asArrayId());

@@ -2560,9 +2560,28 @@ position = savePos; // restore position
 
     switch (at().type) {
   case havel::TokenType::Hotkey: {
-    // Parse hotkey with potential prefix conditions (when/if before =>)
-    auto hotkeyToken = at(); // Store the hotkey token
-    advance();               // consume the hotkey
+      // Parse hotkey with potential prefix conditions (when/if before =>)
+      auto hotkeyToken = at(); // Store the hotkey token
+      advance(); // consume the hotkey
+
+      // Parse optional inline attributes: mode="name" policy="replace"
+      std::string modeAttr;
+      std::string policyAttr;
+      while (at().type == havel::TokenType::Identifier) {
+        auto attrName = at().value;
+        if (attrName != "mode" && attrName != "policy") break;
+        advance(); // consume attribute name
+        if (at().type != havel::TokenType::Assign) break;
+        advance(); // consume '='
+        if (at().type != havel::TokenType::String) {
+          failAt(at(), "Expected string value for hotkey attribute '" + attrName + "'");
+          break;
+        }
+        auto attrValue = at().value;
+        advance(); // consume string value
+        if (attrName == "mode") modeAttr = attrValue;
+        else if (attrName == "policy") policyAttr = attrValue;
+      }
 
     // Check for prefix condition (before =>)
     std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
@@ -2604,6 +2623,8 @@ position = savePos; // restore position
       binding->hotkeys.push_back(
           makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
       binding->action = std::move(action);
+      binding->mode = modeAttr;
+      binding->policy = policyAttr;
 
       // Combine conditions if needed
       if (prefixCondition || suffixCondition) {

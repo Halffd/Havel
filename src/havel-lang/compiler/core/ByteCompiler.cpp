@@ -7208,6 +7208,17 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     emit(OpCode::POP);
   }
 
+  uint32_t modeSkipJump = 0;
+  if (!binding.mode.empty()) {
+    uint32_t modeStrId = addStringConstant("mode");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(modeStrId));
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(0)));
+    { uint32_t _sid = addStringConstant(binding.mode); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::EQ);
+    modeSkipJump = emitJump(OpCode::JUMP_IF_FALSE);
+    emit(OpCode::POP);
+  }
+
   emit(OpCode::LOAD_VAR, 0);
 
   {
@@ -7228,10 +7239,17 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     patchJump(skipActionJump,
               static_cast<uint32_t>(current_function->instructions.size()));
   }
+  if (!binding.mode.empty() && modeSkipJump > 0) {
+    patchJump(modeSkipJump,
+              static_cast<uint32_t>(current_function->instructions.size()));
+  }
 
   leaveFunction();
 
   uint32_t wrapperFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
+
+  // Build options object if policy attribute is set
+  bool hasPolicy = !binding.policy.empty();
 
   if (when_condition_func_index_.has_value()) {
     uint32_t strId = addStringConstant("hotkey.register_conditional");
@@ -7241,17 +7259,34 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
          addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
     emit(OpCode::LOAD_CONST,
          addConstant(Value::makeFunctionObjId(*when_condition_func_index_)));
-    emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+    if (hasPolicy) {
+      emit(OpCode::OBJECT_NEW);
+      { uint32_t _sid = addStringConstant(binding.policy); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      { uint32_t _sid = addStringConstant("policy"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      emit(OpCode::OBJECT_SET);
+      emit(OpCode::CALL, Value(static_cast<uint32_t>(4)));
+    } else {
+      emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+    }
   } else {
     uint32_t strId = addStringConstant("hotkey.register");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     compileExpression(*hotkeyExpr);
     emit(OpCode::LOAD_CONST,
          addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
-    emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+    if (hasPolicy) {
+      emit(OpCode::OBJECT_NEW);
+      { uint32_t _sid = addStringConstant(binding.policy); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      { uint32_t _sid = addStringConstant("policy"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      emit(OpCode::OBJECT_SET);
+      emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+    } else {
+      emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+    }
   }
+
   emit(OpCode::POP);
-  }
+}
 }
 
 // Compile hotkey binding as expression (returns context object on stack)
@@ -7302,6 +7337,17 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
     emit(OpCode::POP);
   }
 
+  uint32_t exprModeSkipJump = 0;
+  if (!binding.mode.empty()) {
+    uint32_t modeStrId = addStringConstant("mode");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(modeStrId));
+    emit(OpCode::CALL, Value(static_cast<uint32_t>(0)));
+    { uint32_t _sid = addStringConstant(binding.mode); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    emit(OpCode::EQ);
+    exprModeSkipJump = emitJump(OpCode::JUMP_IF_FALSE);
+    emit(OpCode::POP);
+  }
+
   emit(OpCode::LOAD_VAR, 0);
 
   {
@@ -7321,10 +7367,16 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
     patchJump(skipActionJump,
               static_cast<uint32_t>(current_function->instructions.size()));
   }
+  if (!binding.mode.empty() && exprModeSkipJump > 0) {
+    patchJump(exprModeSkipJump,
+              static_cast<uint32_t>(current_function->instructions.size()));
+  }
 
   leaveFunction();
 
   uint32_t wrapperFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
+
+  bool exprHasPolicy = !binding.policy.empty();
 
   if (when_condition_func_index_.has_value()) {
     uint32_t strId = addStringConstant("hotkey.register_conditional");
@@ -7334,14 +7386,30 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
          addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
     emit(OpCode::LOAD_CONST,
          addConstant(Value::makeFunctionObjId(*when_condition_func_index_)));
-    emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+    if (exprHasPolicy) {
+      emit(OpCode::OBJECT_NEW);
+      { uint32_t _sid = addStringConstant(binding.policy); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      { uint32_t _sid = addStringConstant("policy"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      emit(OpCode::OBJECT_SET);
+      emit(OpCode::CALL, Value(static_cast<uint32_t>(4)));
+    } else {
+      emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+    }
   } else {
     uint32_t strId = addStringConstant("hotkey.register");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     compileExpression(*hotkeyExpr);
     emit(OpCode::LOAD_CONST,
          addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
-    emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+    if (exprHasPolicy) {
+      emit(OpCode::OBJECT_NEW);
+      { uint32_t _sid = addStringConstant(binding.policy); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      { uint32_t _sid = addStringConstant("policy"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+      emit(OpCode::OBJECT_SET);
+      emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
+    } else {
+      emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+    }
   }
   // DON'T POP - leave context object on stack for assignment
   }

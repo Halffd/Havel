@@ -2873,20 +2873,21 @@ si = si + 1
 				bc.emit("PUSH_NULL")
 				bc.emit("RETURN")
 			}
-		}
-	}
+        }
+      }
+    }
     if n == 0 {
-        bc.emit("PUSH_NULL")
-        bc.emit("RETURN")
+      bc.emit("PUSH_NULL")
+      bc.emit("RETURN")
     }
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
-	if !skip_execute {
-		traceEmitter("execute_persistent " + entryName)
-		return bc.execute_persistent(entryName)
-	}
+    if !skip_execute {
+      traceEmitter("execute_persistent " + entryName)
+      return bc.execute_persistent(entryName)
+    }
 
-}
+  }
 
 // ============================================================
 // Match expression emission
@@ -3338,13 +3339,11 @@ fn emitStructDeclaration(emitter, node) {
         bc.emit("CALL", 2)
         bc.emit("POP")
       }
-	}
-}
+      }
+    }
   }
-
-}
-// ============================================================
-// Hotkey binding emission
+  // ============================================================
+  // Hotkey binding emission
 // ============================================================
 
 fn emitHotkeyBinding(emitter, node) {

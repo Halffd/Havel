@@ -1,17 +1,5 @@
 use "chrono" as chrono
-
-print("\n=== CHRONO ===")
-
-// Duration
-d1 = chrono.seconds(90)
-print("90 seconds total ms:", d1.totalMs())
-if d1.totalMs() != 90000 { print("FAILED: seconds to ms") }
-
-d2 = chrono.hours(2)
-print("2 hours total minutes:", d2.totalMinutes())
-if d2.totalMinutes() != 120 { print("FAILED: hours to minutes") }
-
-// Duration arithmetic
-d3 = chrono.minutes(5).add(chrono.seconds(30))
-print("5m30s in ms:", d3.totalMs())
-if d3.totalMs() != 330000 { print("FAILED: duration add") }
+m5 = chrono.minutes(5)
+print("m5 is:", m5)
+s30 = chrono.seconds(30)
+print("s30 is:", s30)

@@ -2086,38 +2086,40 @@ continue;
             continue;
         }
 
-        // Handle identifiers and potential hotkeys
-        if (isAlpha(c)) {
-      // Check if this might be a hotkey starting with F (F1..F12)
-      if (c == 'F' && isDigit(peek())) {
-        // Could be F-key hotkey, but check if it's followed by assignment or
-        // other non-hotkey syntax If next non-digit char is '=' or
-        // whitespace+identifier, treat as identifier
-        size_t lookahead = 1;
-        while (position + lookahead < source.length() &&
-               isDigit(source[position + lookahead])) {
-          lookahead++;
-        }
-        // If followed by assignment or space, it's likely an identifier
-        if (position + lookahead < source.length()) {
-          char after = source[position + lookahead];
-          if (after == '=' || after == ' ' || after == '\t' || after == ';' ||
-              after == ',') {
-            tokens.push_back(scanIdentifier());
-            continue;
-          }
-        }
-        tokens.push_back(scanHotkey());
-      } else {
-        tokens.push_back(scanIdentifier());
+  // Handle identifiers and potential hotkeys
+  if (isAlpha(c)) {
+    // Check if this might be a hotkey starting with F (F1..F12)
+    if (c == 'F' && isDigit(peek())) {
+      // Could be F-key hotkey, but check if it's followed by assignment or
+      // other non-hotkey syntax If next non-digit char is '=' or
+      // whitespace+identifier, treat as identifier
+      size_t lookahead = 1;
+      while (position + lookahead < source.length() &&
+             isDigit(source[position + lookahead])) {
+        lookahead++;
       }
-      continue;
-}
+      if (position + lookahead < source.length()) {
+        char after = source[position + lookahead];
+        if (after == '=' || after == ';' || after == ',') {
+          tokens.push_back(scanIdentifier());
+          continue;
+        }
+        if (after == ' ' || after == '\t') {
+          tokens.push_back(scanIdentifier());
+          continue;
+        }
+      }
+      tokens.push_back(scanHotkey());
+    } else {
+      tokens.push_back(scanIdentifier());
+    }
+    continue;
+  }
 
-// Progress guard: ensure we always make forward progress
-    assertProgress(loopStartPos, "tokenize");
+  // Progress guard: ensure we always make forward progress
+  assertProgress(loopStartPos, "tokenize");
 
-    // Handle unrecognized characters
+  // Handle unrecognized characters
     const size_t error_col = column > 0 ? column - 1 : 1;
     std::ostringstream repr;
     const unsigned char uc = static_cast<unsigned char>(c);

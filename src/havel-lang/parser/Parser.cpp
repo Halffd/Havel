@@ -553,8 +553,32 @@ case TokenType::PlusAssign:
   }
 }
 
-// Optimized Pratt parser with lookup tables
-namespace {
+  // Optimized Pratt parser with lookup tables
+  namespace {
+  bool isHotkeyIdentifier(const std::string &value) {
+    if (value.size() >= 2 && value[0] == 'F' && std::isdigit(value[1])) return true;
+    if (value == "numpad0" || value == "numpad1" || value == "numpad2" ||
+        value == "numpad3" || value == "numpad4" || value == "numpad5" ||
+        value == "numpad6" || value == "numpad7" || value == "numpad8" ||
+        value == "numpad9") return true;
+    if (value == "space" || value == "enter" || value == "tab" ||
+        value == "escape" || value == "esc" || value == "backspace" ||
+        value == "delete" || value == "insert" || value == "home" ||
+        value == "end" || value == "pageup" || value == "pagedown" ||
+        value == "capslock" || value == "numlock" || value == "scrolllock" ||
+        value == "lshift" || value == "rshift" || value == "lctrl" ||
+        value == "rctrl" || value == "lalt" || value == "ralt" ||
+        value == "lmeta" || value == "rmeta" || value == "super" ||
+        value == "menu" || value == "print" || value == "pause" ||
+        value == "up" || value == "down" || value == "left" || value == "right" ||
+        value == "wheelup" || value == "wheeldown" || value == "wheelleft" ||
+        value == "wheelright" || value == "btn0" || value == "btn1" ||
+        value == "btn2" || value == "btn3" || value == "btn4" ||
+        value == "numpadmult" || value == "numpadadd" ||
+        value == "numpadsub" || value == "numpaddiv" ||
+        value == "numpadenter" || value == "numpadsep") return true;
+    return false;
+  }
   // Token count - must be >= max TokenType enum value
   constexpr size_t TOKEN_TYPE_COUNT = 256;  // Power of 2 for cache efficiency
   
@@ -2734,7 +2758,104 @@ position = savePos; // restore position
         return makeNode<havel::ast::ExpressionStatement>(std::move(assign));
       }
 
-      // Sugar forms:
+      // Check for identifier-as-hotkey with optional attributes: F1 mode="x" policy="y" => { }
+  // This handles the case where the lexer tokenized F1 as Identifier (space after F-key)
+  {
+    size_t lookPos = 1;
+    bool foundAttr = false;
+    // Skip mode="..." and policy="..." attribute pairs
+    auto &tok0 = at(0);
+   auto &tok1 = at(1);
+   auto &tok2 = at(2);
+   auto &tok3 = at(3);
+   (void)tok0; (void)tok1; (void)tok2; (void)tok3;
+    while (at(lookPos).type == havel::TokenType::Identifier &&
+           (at(lookPos).value == "mode" || at(lookPos).value == "policy") &&
+           at(lookPos + 1).type == havel::TokenType::Assign &&
+           at(lookPos + 2).type == havel::TokenType::String) {
+      lookPos += 3;
+      foundAttr = true;
+    }
+    // Skip optional when/if condition
+    if (at(lookPos).type == havel::TokenType::When || at(lookPos).type == havel::TokenType::If) {
+      // Can't easily skip condition expression without parsing, just check for => after
+    }
+    if ((foundAttr || at(lookPos).type == havel::TokenType::Arrow) &&
+        isHotkeyIdentifier(at().value)) {
+      // This identifier is actually a hotkey with attributes
+      auto hotkeyToken = at();
+      hotkeyToken.type = havel::TokenType::Hotkey;
+      advance(); // consume the identifier-as-hotkey
+
+      // Parse optional inline attributes: mode="name" policy="replace"
+      std::string modeAttr;
+      std::string policyAttr;
+      while (at().type == havel::TokenType::Identifier) {
+        auto attrName = at().value;
+        if (attrName != "mode" && attrName != "policy") break;
+        advance(); // consume attribute name
+        if (at().type != havel::TokenType::Assign) break;
+        advance(); // consume '='
+        if (at().type != havel::TokenType::String) {
+          failAt(at(), "Expected string value for hotkey attribute '" + attrName + "'");
+          break;
+        }
+        auto attrValue = at().value;
+        advance(); // consume string value
+        if (attrName == "mode") modeAttr = attrValue;
+        else if (attrName == "policy") policyAttr = attrValue;
+      }
+
+      // Check for prefix condition
+      std::unique_ptr<havel::ast::Expression> prefixCondition = nullptr;
+      if (at().type == havel::TokenType::When) {
+        advance();
+        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+      } else if (at().type == havel::TokenType::If) {
+        advance();
+        prefixCondition = parsePrattExpression(bp(BindingPower::Assignment));
+      }
+
+      if (at().type == havel::TokenType::Arrow) {
+        advance(); // consume '=>'
+
+        std::unique_ptr<havel::ast::BlockStatement> action;
+        if (at().type == havel::TokenType::OpenBrace) {
+          action = parseBlockStatement(true);
+        } else {
+          auto expr = parseExpression();
+          action = makeNode<havel::ast::BlockStatement>();
+          action->body.push_back(
+              makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+        }
+
+        std::unique_ptr<havel::ast::Expression> suffixCondition = nullptr;
+        if (at().type == havel::TokenType::If) {
+          advance();
+          suffixCondition = parseExpression();
+        }
+
+        auto binding = makeNode<havel::ast::HotkeyBinding>();
+        binding->hotkeys.push_back(
+            makeNode<havel::ast::HotkeyLiteral>(hotkeyToken.value));
+        binding->action = std::move(action);
+        binding->mode = modeAttr;
+        binding->policy = policyAttr;
+
+        if (prefixCondition || suffixCondition) {
+          auto finalCondition = combineConditions(std::move(prefixCondition),
+                                                   std::move(suffixCondition));
+          return makeNode<havel::ast::ConditionalHotkey>(
+              std::move(finalCondition), std::move(binding));
+        }
+        return binding;
+      } else {
+        failAt(hotkeyToken, "Expected '=>' after hotkey with attributes");
+      }
+    }
+  }
+
+  // Sugar forms:
     // thread { ... } -> thread(fn() { ... })
     // interval <ms> { ... } -> interval(<ms>, fn() { ... })
     // timeout <ms> { ... } -> timeout(<ms>, fn() { ... })

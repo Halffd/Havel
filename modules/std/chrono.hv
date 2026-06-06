@@ -22,7 +22,7 @@ fn Duration(ms) {
     fn _totalDays() { self.ms / 86400000 }
 
     fn _add(other) {
-        print("DEBUG _add: self.ms =", self.ms, "other.ms =", other.ms)
+        print("DEBUG _add: self.ms =", self.ms, "other =", other, "other.ms =", other.ms)
         Duration(self.ms + other.ms)
     }
     fn _sub(other) { Duration(self.ms - other.ms) }

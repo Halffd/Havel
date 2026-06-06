@@ -1,5 +1,6 @@
 #include "VM.hpp"
 #include "VMInternals.hpp"
+#include <unistd.h>
 #include "../../../utils/Logger.hpp"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../runtime/RuntimeSupport.hpp"
@@ -949,6 +950,9 @@ if (container.isSetId()) {
     }
 if (!modName.empty()) {
       ensureModuleLoaded(modName);
+      write(2, "OBJGET_LAZY mod=", 17);
+      write(2, modName.c_str(), modName.size());
+      write(2, "\n", 1);
       auto git = globals.find(modName);
       if (git != globals.end() && git->second.isObjectId()) {
         auto *proxyObj = heap_.object(git->second.asObjectId());

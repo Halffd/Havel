@@ -440,7 +440,15 @@ void registerBrightnessModule(const VMApi& api) {
   });
 
   auto obj = api.makeObject();
-  api.setGlobal("brightness", obj);
+  // backcompat: calling brightness() is sugar for brightness.get()
+  api.registerFunction("brightness.default", 0, [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    auto svc = getService(api);
+    if (!svc) return Value::makeDouble(0.0);
+    int mi = !args.empty() ? monitorIndex(args, 0) : -1;
+    try { return Value::makeDouble(svc->getBrightness(mi)); }
+    catch (const std::exception& e) { debug("brightness.default error: {}", e.what()); return Value::makeDouble(0.0); }
+  });
   api.setField(obj, MODULE_MARKER, Value::makeBool(true));
   api.setField(obj, "get", api.makeFunctionRef("brightness.get"));
   api.setField(obj, "set", api.makeFunctionRef("brightness.set"));

@@ -199,8 +199,8 @@ void registerBitModule(const VMApi &api) {
 	api.setField(bitObj, "ror", api.makeFunctionRef("bit.ror"));
 	api.setField(bitObj, "getfield", api.makeFunctionRef("bit.getfield"));
 	api.setField(bitObj, "setfield", api.makeFunctionRef("bit.setfield"));
-	api.setGlobal("bit", bitObj);
-}
+ api.setGlobal("bit", bitObj);
+ }
 
 } // namespace havel::stdlib
 
@@ -208,6 +208,6 @@ void registerBitModule(const VMApi &api) {
 #include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(bit, "1.0.0", "Bitwise operations stdlib module",
-    havel::stdlib::registerBitModule(*api);
+ havel::stdlib::registerBitModule(*api);
 )
 #endif

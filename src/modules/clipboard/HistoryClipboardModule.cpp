@@ -199,7 +199,7 @@ void registerHistoryClipboardModule(const VMApi& api) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(historyclipboard, "1.0.0", "Clipboard history module",
-    havel::modules::registerHistoryClipboardModule(*api);
+HAVEL_MODULE_PLUGIN_IMPL_A1(historyclipboard, "1.0.0", "Clipboard history module", "clipboardHistory",
+havel::modules::registerHistoryClipboardModule(*api);
 )
 #endif

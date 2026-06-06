@@ -118,7 +118,7 @@ void registerAutomationModule(const VMApi &api) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(automation, "1.0.0", "UI automation module",
-    havel::modules::registerAutomationModule(*api);
+HAVEL_MODULE_PLUGIN_IMPL_A1(automation, "1.0.0", "UI automation module", "pixel",
+havel::modules::registerAutomationModule(*api);
 )
 #endif

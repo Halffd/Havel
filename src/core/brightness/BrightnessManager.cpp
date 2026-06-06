@@ -145,7 +145,7 @@ BrightnessManager::BrightnessManager() {
     displayMethod = "x11";
   }
 
-  BR_DEBUG("constructor end, displayMethod=%s", displayMethod.c_str());
+ BR_DEBUG("constructor end, displayMethod=%s", displayMethod.c_str());
 }
 
 void BrightnessManager::init() {

@@ -218,7 +218,7 @@ void registerTypeModule(const VMApi &api) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(type, "1.0.0", "Type introspection stdlib module",
+HAVEL_MODULE_PLUGIN_EAGER(type, "1.0.0", "Type introspection stdlib module",
     havel::stdlib::registerTypeModule(*api);
 )
 #endif

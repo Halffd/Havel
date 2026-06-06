@@ -1058,7 +1058,7 @@ api.setGlobal("bytecodeBuilder", bcObj);
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(bytecodebuilder, "1.0.0", "Bytecode builder stdlib module",
-    havel::stdlib::registerBytecodeBuilderModule(*api);
+HAVEL_MODULE_PLUGIN_IMPL_A1(bytecodebuilder, "1.0.0", "Bytecode builder stdlib module", "bc",
+havel::stdlib::registerBytecodeBuilderModule(*api);
 )
 #endif

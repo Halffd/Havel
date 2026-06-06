@@ -35,52 +35,39 @@ namespace {
 #ifdef ENABLE_MODULE_PLUGINS
 
 static Loader &sharedLoader() {
-    static Loader loader;
-    static std::once_flag flag;
-    std::call_once(flag, [&]() { loader.addModulePaths(); });
-    return loader;
+ static Loader loader;
+ static std::once_flag flag;
+ std::call_once(flag, [&]() { loader.addModulePaths(); });
+ return loader;
 }
 
-void registerLazyFromPlugin(compiler::VM &vm, const char *name) {
- std::string modName(name);
- vm.registerLazyModule(modName, [modName](compiler::VMApi &a) {
- auto plugin = sharedLoader().loadModulePlugin(modName);
+void registerLazyFromPlugin(compiler::VM &vm, const std::string &name,
+ const std::vector<std::string> &aliases = {}) {
+ vm.registerLazyModule(name, [name](compiler::VMApi &a) {
+ auto plugin = sharedLoader().loadModulePlugin(name);
  if (plugin) {
  plugin->register_fn(static_cast<void *>(&a));
  }
- });
+ }, aliases);
 }
 
- void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
+void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
  compiler::VMApi api(vm);
  api.serviceRegistry = &host::ServiceRegistry::instance();
  vm.setServiceRegistry(&host::ServiceRegistry::instance());
 
-    static const char *eagerModules[] = {
-        "math", "string", "object", "type", "array",
-    };
+ auto available = sharedLoader().scanModules();
 
-    for (auto name : eagerModules) {
-        auto plugin = sharedLoader().loadModulePlugin(name);
-        if (plugin) {
-            plugin->register_fn(static_cast<void *>(&api));
-        }
-    }
-
-    if (coreOnly) {
-        return;
-    }
-
-  static const char *lazyModules[] = {
-    "regex", "time", "timer", "fs", "random", "debug",
-    "sys", "shell", "pointer", "fmt", "pack", "bit",
-    "option", "log",
-    "window", "display", "brightness", "app",
-  };
-
-    for (auto name : lazyModules) {
-        registerLazyFromPlugin(vm, name);
-    }
+ for (auto &mod : available) {
+ if (mod.eager) {
+ auto plugin = sharedLoader().loadModulePlugin(mod.name);
+ if (plugin) {
+ plugin->register_fn(static_cast<void *>(&api));
+ }
+ } else if (!coreOnly) {
+ registerLazyFromPlugin(vm, mod.name, mod.aliases);
+ }
+ }
 }
 
 #else
@@ -101,22 +88,21 @@ static const ModuleEntry eagerModules[] = {
     {"array", stdlib::registerArrayModule, {}},
 };
 
-static const ModuleEntry lazyModules[] = {
-    {"regex", stdlib::registerRegexModule, {}},
-    {"time", stdlib::registerTimeModule, {}},
-    {"timer", stdlib::registerTimerModule, {}},
-    {"fs", stdlib::registerFsModule, {}},
-    {"random", stdlib::registerRandomModule, {}},
-    {"debug", stdlib::registerDebugModule, {}},
-    {"sys", stdlib::registerSysModule, {"system", "process", "jit"}},
-    {"shell", stdlib::registerShellModule, {}},
-    {"pointer", stdlib::registerPointerModule, {}},
-    {"fmt", stdlib::registerFormatModule, {}},
-    {"pack", stdlib::registerPackModule, {}},
-    {"bit", stdlib::registerBitModule, {}},
-    {"option", stdlib::registerOptionModule, {}},
-    {"log", stdlib::registerLogModule, {"debug"}},
-};
+ static const ModuleEntry lazyModules[] = {
+ {"regex", stdlib::registerRegexModule, {}},
+ {"time", stdlib::registerTimeModule, {}},
+ {"timer", stdlib::registerTimerModule, {}},
+ {"fs", stdlib::registerFsModule, {}},
+ {"random", stdlib::registerRandomModule, {}},
+ {"sys", stdlib::registerSysModule, {"system", "process", "jit"}},
+ {"shell", stdlib::registerShellModule, {}},
+ {"pointer", stdlib::registerPointerModule, {}},
+ {"fmt", stdlib::registerFormatModule, {}},
+ {"pack", stdlib::registerPackModule, {}},
+ {"bit", stdlib::registerBitModule, {}},
+ {"option", stdlib::registerOptionModule, {}},
+ {"log", stdlib::registerLogModule, {"debug"}},
+ };
 
 void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
     compiler::VMApi api(vm);

@@ -270,7 +270,7 @@ void registerObjectModule(const VMApi &api) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(object, "1.0.0", "Object operations stdlib module",
+HAVEL_MODULE_PLUGIN_EAGER(object, "1.0.0", "Object operations stdlib module",
     havel::stdlib::registerObjectModule(*api);
 )
 #endif

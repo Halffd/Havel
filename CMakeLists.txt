@@ -1023,7 +1023,7 @@ set(LSP_SOURCES
  src/havel-lang/parser/Parser.cpp
  src/c/LoggerC.c
  src/c/Config.c
- src/c/Loader.c
+ src/loader/Loader.c
  )
 
 add_executable(havel-lsp ${LSP_SOURCES})
@@ -1274,11 +1274,14 @@ if(ENABLE_HAVEL_LANG)
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/Compiler.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JIT.cpp
     )
-    # HostBridge.hpp inlines loadModule / isModuleAvailable → HostModuleLoader
-    list(APPEND HAVEL_LANG_LIB_SOURCES
-        ${CMAKE_SOURCE_DIR}/src/host/module/ModuleLoader.cpp
-  ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime/PureStdLib.cpp
-    )
+# HostBridge.hpp inlines loadModule / isModuleAvailable → HostModuleLoader
+list(APPEND HAVEL_LANG_LIB_SOURCES
+ ${CMAKE_SOURCE_DIR}/src/host/module/ModuleLoader.cpp
+ ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime/PureStdLib.cpp
+ ${CMAKE_SOURCE_DIR}/src/loader/Loader.c
+ ${CMAKE_SOURCE_DIR}/src/c/LoggerC.c
+ ${CMAKE_SOURCE_DIR}/src/c/Config.c
+)
     add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
 
     set(HAVEL_LANG_CORE_SOURCES ${HAVEL_LANG_LIB_SOURCES})

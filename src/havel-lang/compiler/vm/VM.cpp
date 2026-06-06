@@ -2565,12 +2565,15 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
     }
 }
 
-void VM::activateLazyModule(const std::string &name) {
-    auto it = lazy_modules_.find(name);
-    if (it == lazy_modules_.end() || it->second.loaded) return;
-    it->second.loaded = true;
-    auto api = VMApi(*this);
-    it->second.initFn(api);
+  void VM::activateLazyModule(const std::string &name) {
+      auto it = lazy_modules_.find(name);
+      if (it == lazy_modules_.end() || it->second.loaded) return;
+      it->second.loaded = true;
+      auto api = VMApi(*this);
+      fprintf(stderr, "[SR-DEBUG] activateLazyModule('%s'): this=%p serviceRegistry_=%p\n",
+          name.c_str(), (void*)this, (void*)serviceRegistry_);
+      fflush(stderr);
+      it->second.initFn(api);
 
     auto postInitIt = globals.find(name);
     if (postInitIt != globals.end() && postInitIt->second.isObjectId()) {

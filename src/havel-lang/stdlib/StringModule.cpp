@@ -443,7 +443,7 @@ void registerStringModule(const VMApi &api) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(string, "1.0.0", "String operations stdlib module",
+HAVEL_MODULE_PLUGIN_EAGER(string, "1.0.0", "String operations stdlib module",
     havel::stdlib::registerStringModule(*api);
 )
 #endif

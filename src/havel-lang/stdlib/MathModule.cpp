@@ -174,7 +174,7 @@ void registerMathModule(const VMApi &api) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(math, "1.0.0", "Math operations stdlib module",
+HAVEL_MODULE_PLUGIN_EAGER(math, "1.0.0", "Math operations stdlib module",
     havel::stdlib::registerMathModule(*api);
 )
 #endif

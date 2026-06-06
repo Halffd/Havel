@@ -5,6 +5,7 @@
 #include "../../host/app/AppService.hpp"
 #include "../../host/media/MediaService.hpp"
 #include "../../host/network/NetworkService.hpp"
+#include "../../host/ServiceRegistry.hpp"
 #include "../compiler/vm/VMApi.hpp"
 #include "../parser/Parser.h"
 #include "../compiler/core/ByteCompiler.hpp"
@@ -401,10 +402,12 @@ void Modules::installHostFunctions() {
 }
 
 void Modules::installStdLib() {
- auto &vm = *ctx_->vm;
- compiler::VMApi api(vm);
+    auto &vm = *ctx_->vm;
+    compiler::VMApi api(vm);
+    api.serviceRegistry = &host::ServiceRegistry::instance();
+    vm.setServiceRegistry(&host::ServiceRegistry::instance());
 
- extensionLoader_->addModulePaths();
+    extensionLoader_->addModulePaths();
 
 #ifdef ENABLE_MODULE_PLUGINS
  auto available = extensionLoader_->scanModules();

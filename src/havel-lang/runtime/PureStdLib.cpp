@@ -106,6 +106,8 @@ static const ModuleEntry eagerModules[] = {
 
 void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
     compiler::VMApi api(vm);
+    api.serviceRegistry = &host::ServiceRegistry::instance();
+    vm.setServiceRegistry(&host::ServiceRegistry::instance());
 
     for (auto &e : eagerModules) {
         e.fn(api);

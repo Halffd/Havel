@@ -2542,13 +2542,15 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
     }
 }
 
- void VM::activateLazyModule(const std::string &name) {
-     auto it = lazy_modules_.find(name);
-     if (it == lazy_modules_.end() || it->second.loaded) return;
-     it->second.loaded = true;
-     auto api = VMApi(*this);
-     api.serviceRegistry = static_cast<::havel::host::ServiceRegistry*>(serviceRegistry_);
-     it->second.initFn(api);
+  void VM::activateLazyModule(const std::string &name) {
+      auto it = lazy_modules_.find(name);
+      if (it == lazy_modules_.end() || it->second.loaded) return;
+      it->second.loaded = true;
+      auto api = VMApi(*this);
+      fprintf(stderr, "[SR-DEBUG] activateLazyModule('%s'): this=%p serviceRegistry_=%p\n",
+          name.c_str(), (void*)this, (void*)serviceRegistry_);
+      fflush(stderr);
+      it->second.initFn(api);
 
     auto postInitIt = globals.find(name);
     if (postInitIt != globals.end() && postInitIt->second.isObjectId()) {
@@ -2563,7 +2565,7 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
                         if (aliasObj) {
                             auto *alf = aliasObj->get("__lazy__");
                             if (alf && alf->isBool() && alf->asBool()) {
-                                globals.erase(aliasIt);
+                                globals[alias] = postInitIt->second;
                             }
                         }
                     }
@@ -2661,16 +2663,7 @@ bool VM::ensureModuleLoaded(const std::string &name) {
                     if (moduleLoader_.getCached(name, &cached) && cached.isObjectId()) {
                         git->second = cached;
                         for (const auto &alias : it->second.aliases) {
-                            auto aliasIt = globals.find(alias);
-                            if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
-                                auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
-                                if (aliasObj) {
-                                    auto *alf = aliasObj->get("__lazy__");
-                                    if (alf && alf->isBool() && alf->asBool()) {
-                                        globals.erase(aliasIt);
-                                    }
-                                }
-                            }
+                            globals[alias] = cached;
                         }
                     }
                 }
@@ -2685,16 +2678,7 @@ bool VM::ensureModuleLoaded(const std::string &name) {
         auto modIt = lazy_modules_.find(name);
         if (modIt != lazy_modules_.end()) {
             for (const auto &alias : modIt->second.aliases) {
-                auto aliasIt = globals.find(alias);
-                if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
-                    auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
-                    if (aliasObj) {
-                        auto *alf = aliasObj->get("__lazy__");
-                        if (alf && alf->isBool() && alf->asBool()) {
-                            globals.erase(aliasIt);
-                        }
-                    }
-                }
+                globals[alias] = git->second;
             }
         }
     }

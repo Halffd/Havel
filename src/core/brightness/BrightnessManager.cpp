@@ -497,11 +497,9 @@ bool BrightnessManager::setBrightnessAndShadowLift(const string &monitor,
 }
 // === SHADOW LIFT METHODS ===
 bool BrightnessManager::setShadowLift(const std::string &monitor, double lift) {
-  if (lift < 0.001)
-    lift = 0.0;
   if (lift > 4.0)
     lift = 4.0;
-  if (lift < 0.0 || lift > 4.0) {
+  if (lift < 0.0) {
     error("Shadow lift must be between 0.0 and 4.0, got: {:.3f}", lift);
     return false;
   }
@@ -1318,7 +1316,7 @@ bool BrightnessManager::increaseGamma(const string &monitor, int amount) {
   }
 }
 
-bool BrightnessManager::increaseShadowLift(int amount) {
+bool BrightnessManager::increaseShadowLift(double amount) {
   auto monitors = getConnectedMonitors();
   if (monitors.empty()) return false;
   bool success = false;
@@ -1328,7 +1326,7 @@ bool BrightnessManager::increaseShadowLift(int amount) {
   return success;
 }
 
-bool BrightnessManager::decreaseShadowLift(int amount) {
+bool BrightnessManager::decreaseShadowLift(double amount) {
   auto monitors = getConnectedMonitors();
   if (monitors.empty()) return false;
   bool success = false;
@@ -1338,21 +1336,21 @@ bool BrightnessManager::decreaseShadowLift(int amount) {
   return success;
 }
 
-bool BrightnessManager::increaseShadowLift(const string &monitor, int amount) {
+bool BrightnessManager::increaseShadowLift(const string &monitor, double amount) {
   return setShadowLift(monitor, shadowLift[monitor] + amount);
 }
 
-bool BrightnessManager::decreaseShadowLift(const string &monitor, int amount) {
+bool BrightnessManager::decreaseShadowLift(const string &monitor, double amount) {
   return setShadowLift(monitor, shadowLift[monitor] - amount);
 }
 
-bool BrightnessManager::increaseShadowLift(int monitorIndex, int amount) {
+bool BrightnessManager::increaseShadowLift(int monitorIndex, double amount) {
   auto monitorName = getMonitor(monitorIndex);
   if (monitorName.empty())
     return false;
   return setShadowLift(monitorName, shadowLift[monitorName] + amount);
 }
-bool BrightnessManager::decreaseShadowLift(int monitorIndex, int amount) {
+bool BrightnessManager::decreaseShadowLift(int monitorIndex, double amount) {
   auto monitorName = getMonitor(monitorIndex);
   if (monitorName.empty())
     return false;

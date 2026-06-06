@@ -145,9 +145,11 @@ void havel_loader_add_module_paths(HavelLoader *loader) {
   havel_loader_add_search_path(loader, buf);
  }
 
- const char *mod_dir = getenv("HAVEL_MODULE_DIR");
- if (mod_dir) havel_loader_add_search_path(loader, mod_dir);
+  const char *mod_dir = getenv("HAVEL_MODULE_DIR");
+  if (mod_dir) havel_loader_add_search_path(loader, mod_dir);
 }
+
+
 
 void havel_loader_add_toolkit_paths(HavelLoader *loader) {
  if (!loader) return;

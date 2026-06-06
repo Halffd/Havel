@@ -80,10 +80,30 @@ public:
                                const HostContext *ctx);
     static Value handleKeyUp(const std::vector<Value> &args,
                              const HostContext *ctx);
+    static Value handleGetKey(const std::vector<Value> &args,
+                              const HostContext *ctx);
+    static Value handleIsKeyPressed(const std::vector<Value> &args,
+                                    const HostContext *ctx);
     static Value handleGetExecutorMode(const std::vector<Value> &args,
                                        const HostContext *ctx);
     static Value handleSetExecutorMode(const std::vector<Value> &args,
                                        const HostContext *ctx);
+    static Value handleMouseState(const std::vector<Value> &args,
+                                   const HostContext *ctx);
+    static Value handleModifiers(const std::vector<Value> &args,
+                                  const HostContext *ctx);
+    static Value handleSendModifiers(const std::vector<Value> &args,
+                                      const HostContext *ctx);
+    static Value handleSetDevice(const std::vector<Value> &args,
+                                  const HostContext *ctx);
+    static Value handleDevice(const std::vector<Value> &args,
+                               const HostContext *ctx);
+    static Value handleSendKeyState(const std::vector<Value> &args,
+                                     const HostContext *ctx);
+    static Value handleSetLock(const std::vector<Value> &args,
+                                const HostContext *ctx);
+    static Value handleLocks(const std::vector<Value> &args,
+                              const HostContext *ctx);
 };
 /**
  * SystemBridge - File system and process control

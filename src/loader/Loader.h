@@ -87,6 +87,7 @@ void havel_loader_add_module_paths(HavelLoader *loader);
 
 const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *name);
 
+/* Toolkit plugin search paths */
 void havel_loader_add_toolkit_paths(HavelLoader *loader);
 
 const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char *name);

@@ -175,6 +175,9 @@ void IOBridge::install(PipelineOptions &options) {
     options.host_functions["io.mouseScroll"] = [ctx = ctx_](const auto &args) {
         return handleMouseScroll(args, ctx);
     };
+    options.host_functions["io.scroll"] = [ctx = ctx_](const auto &args) {
+        return handleMouseScroll(args, ctx);
+    };
     options.host_functions["io.mouseDown"] = [ctx = ctx_](const auto &args) {
         return handleMouseDown(args, ctx);
     };
@@ -220,12 +223,45 @@ void IOBridge::install(PipelineOptions &options) {
 options.host_functions["suspend"] = [ctx = ctx_](const auto &args) {
     return handleSuspend(args, ctx);
 };
-options.host_functions["io.getExecutorMode"] = [ctx = ctx_](const auto &args) {
-    return handleGetExecutorMode(args, ctx);
-};
-options.host_functions["io.setExecutorMode"] = [ctx = ctx_](const auto &args) {
-    return handleSetExecutorMode(args, ctx);
-};
+ options.host_functions["io.getExecutorMode"] = [ctx = ctx_](const auto &args) {
+     return handleGetExecutorMode(args, ctx);
+ };
+ options.host_functions["io.setExecutorMode"] = [ctx = ctx_](const auto &args) {
+     return handleSetExecutorMode(args, ctx);
+ };
+  options.host_functions["io.getKey"] = [ctx = ctx_](const auto &args) {
+      return handleGetKey(args, ctx);
+  };
+  options.host_functions["io.isKeyPressed"] = [ctx = ctx_](const auto &args) {
+      return handleIsKeyPressed(args, ctx);
+  };
+  options.host_functions["io.state"] = [ctx = ctx_](const auto &args) {
+      return handleGetKey(args, ctx);
+  };
+  options.host_functions["io.modifiers"] = [ctx = ctx_](const auto &args) {
+      return handleModifiers(args, ctx);
+  };
+  options.host_functions["io.sendModifiers"] = [ctx = ctx_](const auto &args) {
+      return handleSendModifiers(args, ctx);
+  };
+  options.host_functions["io.setDevice"] = [ctx = ctx_](const auto &args) {
+      return handleSetDevice(args, ctx);
+  };
+  options.host_functions["io.device"] = [ctx = ctx_](const auto &args) {
+      return handleDevice(args, ctx);
+  };
+  options.host_functions["io.sendKey"] = [ctx = ctx_](const auto &args) {
+      return handleSendKeyState(args, ctx);
+  };
+  options.host_functions["io.setLock"] = [ctx = ctx_](const auto &args) {
+      return handleSetLock(args, ctx);
+  };
+  options.host_functions["io.locks"] = [ctx = ctx_](const auto &args) {
+      return handleLocks(args, ctx);
+  };
+  options.host_functions["mouse.state"] = [ctx = ctx_](const auto &args) {
+      return handleMouseState(args, ctx);
+  };
 }
 
 Value IOBridge::handleSend(const std::vector<Value> &args,
@@ -496,6 +532,34 @@ Value IOBridge::handleKeyUp(const std::vector<Value> &args,
  return Value::makeBool(ioService.keyUp(key));
  }
 
+Value IOBridge::handleGetKey(const std::vector<Value> &args,
+  const HostContext *ctx) {
+ if (args.empty() || !ctx->io) return Value::makeBool(false);
+ std::string key;
+ if (args[0].isStringValId() || args[0].isStringId()) {
+ auto *vm = static_cast<VM *>(ctx->vm);
+ key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+ } else {
+ return Value::makeBool(false);
+ }
+ ::havel::host::IOService ioService(ctx->io);
+ return Value::makeBool(ioService.getKeyState(key));
+ }
+
+Value IOBridge::handleIsKeyPressed(const std::vector<Value> &args,
+  const HostContext *ctx) {
+ if (args.empty() || !ctx->io) return Value::makeBool(false);
+ std::string key;
+ if (args[0].isStringValId() || args[0].isStringId()) {
+ auto *vm = static_cast<VM *>(ctx->vm);
+ key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+ } else {
+ return Value::makeBool(false);
+ }
+ ::havel::host::IOService ioService(ctx->io);
+ return Value::makeBool(ioService.isKeyPressed(key));
+ }
+
 Value IOBridge::handleSuspend(const std::vector<Value> &,
                               const HostContext *ctx) {
     if (!ctx->io) return Value::makeBool(false);
@@ -536,6 +600,223 @@ Value IOBridge::handleSetExecutorMode(const std::vector<Value> &args,
     ::havel::host::IOService ioService(ctx->io);
     bool ok = ioService.setExecutorMode(modeStr);
     return Value::makeBool(ok);
+}
+
+Value IOBridge::handleMouseState(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+    (void)ctx;
+    int button = 1;
+    if (!args.empty()) {
+        if (args[0].isInt()) button = static_cast<int>(args[0].asInt());
+        else if (args[0].isStringId() || args[0].isStringValId()) {
+            auto *vm = static_cast<VM *>(ctx->vm);
+            std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+            button = static_cast<int>(::havel::host::MouseService::parseButton(btnStr));
+        }
+    }
+    auto display = havel::DisplayManager::GetDisplay();
+    if (!display) return Value::makeBool(false);
+    Window root, child;
+    int rootX, rootY, winX, winY;
+    unsigned int mask;
+    if (XQueryPointer(display, DefaultRootWindow(display), &root, &child, &rootX, &rootY, &winX, &winY, &mask)) {
+        bool pressed = false;
+        switch (button) {
+            case 1: pressed = (mask & Button1Mask) != 0; break;
+            case 2: pressed = (mask & Button3Mask) != 0; break;
+            case 3: pressed = (mask & Button2Mask) != 0; break;
+            case 4: pressed = (mask & Button4Mask) != 0; break;
+            case 5: pressed = (mask & Button5Mask) != 0; break;
+            default: pressed = (mask & Button1Mask) != 0; break;
+        }
+        return Value::makeBool(pressed);
+    }
+    return Value::makeBool(false);
+}
+
+Value IOBridge::handleModifiers(const std::vector<Value> &,
+                                 const HostContext *ctx) {
+    if (!ctx->io) return Value::makeInt(0);
+    ::havel::host::IOService ioService(ctx->io);
+    return Value::makeInt(ioService.getCurrentModifiers());
+}
+
+Value IOBridge::handleSendModifiers(const std::vector<Value> &args,
+                                     const HostContext *ctx) {
+    if (!ctx->io) return Value::makeBool(false);
+    std::string mods;
+    bool press = true;
+    if (!args.empty()) {
+        auto *vm = static_cast<VM *>(ctx->vm);
+        if (args[0].isStringId() || args[0].isStringValId())
+            mods = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        if (args.size() > 1) {
+            if (args[1].isBool()) press = args[1].asBool();
+            else if (args[1].isInt()) press = args[1].asInt() != 0;
+            else if (args[1].isStringId() || args[1].isStringValId()) {
+                std::string s = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+                press = (s != "release" && s != "up");
+            }
+        }
+    }
+    ::havel::host::IOService ioService(ctx->io);
+    if (mods.empty()) {
+        if (!press) {
+            ioService.keyUp("ctrl"); ioService.keyUp("shift");
+            ioService.keyUp("alt"); ioService.keyUp("super");
+        }
+        return Value::makeBool(true);
+    }
+    std::string lower = mods;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    std::vector<std::string> parts;
+    size_t start = 0, pos;
+    while ((pos = lower.find('+', start)) != std::string::npos) {
+        parts.push_back(lower.substr(start, pos - start));
+        start = pos + 1;
+    }
+    if (start < lower.size()) parts.push_back(lower.substr(start));
+    for (auto &p : parts) {
+        if (p == "ctrl" || p == "control") {
+            if (press) ioService.keyDown("ctrl"); else ioService.keyUp("ctrl");
+        } else if (p == "shift") {
+            if (press) ioService.keyDown("shift"); else ioService.keyUp("shift");
+        } else if (p == "alt") {
+            if (press) ioService.keyDown("alt"); else ioService.keyUp("alt");
+        } else if (p == "super" || p == "win" || p == "meta") {
+            if (press) ioService.keyDown("super"); else ioService.keyUp("super");
+        }
+    }
+    return Value::makeBool(true);
+}
+
+Value IOBridge::handleSetDevice(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+    if (args.empty() || !ctx->io) return Value::makeBool(false);
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string device;
+    if (args[0].isStringId() || args[0].isStringValId())
+        device = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    else return Value::makeBool(false);
+    std::string type;
+    if (args.size() > 1 && (args[1].isStringId() || args[1].isStringValId()))
+        type = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+    if (!type.empty() && type == "backend") {
+        ctx->io->SetInputBackend(device);
+        return Value::makeBool(true);
+    }
+    return Value::makeBool(ctx->io->AddDevice(device));
+}
+
+Value IOBridge::handleDevice(const std::vector<Value> &,
+                              const HostContext *ctx) {
+    if (!ctx->io) return Value::makeNull();
+    auto *vm = static_cast<VM *>(ctx->vm);
+    if (!vm) return Value::makeNull();
+    auto devices = ctx->io->GetDevices();
+    auto arr = vm->createHostObject();
+    vm->setHostObjectField(arr, "count", Value::makeInt(static_cast<int64_t>(devices.size())));
+    if (!devices.empty()) {
+        auto first = devices[0];
+        auto strRef = vm->getHeap().allocateString(first.path);
+        vm->setHostObjectField(arr, "path", Value::makeStringId(strRef.id));
+    }
+    return Value::makeObjectId(arr.id);
+}
+
+Value IOBridge::handleSendKeyState(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+    if (args.empty() || !ctx->io) return Value::makeBool(false);
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string key;
+    if (args[0].isStringId() || args[0].isStringValId())
+        key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    else return Value::makeBool(false);
+    if (args.size() < 2) {
+        ::havel::host::IOService ioService(ctx->io);
+        return Value::makeBool(ioService.sendKey(key));
+    }
+    bool press = true;
+    if (args[1].isBool()) press = args[1].asBool();
+    else if (args[1].isInt()) press = args[1].asInt() != 0;
+    else if (args[1].isStringId() || args[1].isStringValId()) {
+        std::string s = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+        if (s == "release" || s == "up") press = false;
+        else if (s == "click" || s == "tap") {
+            ::havel::host::IOService ioService(ctx->io);
+            return Value::makeBool(ioService.sendKey(key));
+        }
+    }
+    ::havel::host::IOService ioService(ctx->io);
+    if (press) return Value::makeBool(ioService.keyDown(key));
+    return Value::makeBool(ioService.keyUp(key));
+}
+
+Value IOBridge::handleSetLock(const std::vector<Value> &args,
+                               const HostContext *ctx) {
+    if (args.empty() || !ctx->io) return Value::makeBool(false);
+    auto *vm = static_cast<VM *>(ctx->vm);
+    if (!vm) return Value::makeBool(false);
+    auto display = havel::DisplayManager::GetDisplay();
+    if (!display) return Value::makeBool(false);
+    bool caps_set = false, num_set = false, scroll_set = false;
+    bool caps_val = false, num_val = false, scroll_val = false;
+    if (args[0].isObjectId()) {
+        ObjectRef id;
+        id.id = args[0].asObjectId();
+        auto capsField = vm->getHostObjectField(id, "caps");
+        if (!capsField.isNull()) { caps_set = true; caps_val = capsField.asBool(); }
+        auto numField = vm->getHostObjectField(id, "num");
+        if (!numField.isNull()) { num_set = true; num_val = numField.asBool(); }
+        auto scrollField = vm->getHostObjectField(id, "scroll");
+        if (!scrollField.isNull()) { scroll_set = true; scroll_val = scrollField.asBool(); }
+    }
+    XkbStateRec xkbState;
+    if (XkbGetState(display, XkbUseCoreKbd, &xkbState) != 0)
+        return Value::makeBool(false);
+    if (caps_set) {
+        bool curr = (xkbState.locked_mods & LockMask) != 0;
+        if (curr != caps_val) {
+            ctx->io->PressKey("Caps_Lock", true);
+            ctx->io->PressKey("Caps_Lock", false);
+        }
+    }
+    if (num_set) {
+        bool curr = (xkbState.locked_mods & Mod2Mask) != 0;
+        if (curr != num_val) {
+            ctx->io->PressKey("Num_Lock", true);
+            ctx->io->PressKey("Num_Lock", false);
+        }
+    }
+    if (scroll_set) {
+        bool curr = (xkbState.locked_mods & Mod3Mask) != 0;
+        if (curr != scroll_val) {
+            ctx->io->PressKey("Scroll_Lock", true);
+            ctx->io->PressKey("Scroll_Lock", false);
+        }
+    }
+    return Value::makeBool(true);
+}
+
+Value IOBridge::handleLocks(const std::vector<Value> &,
+                             const HostContext *ctx) {
+    auto *vm = static_cast<VM *>(ctx->vm);
+    if (!vm) return Value::makeNull();
+    auto display = havel::DisplayManager::GetDisplay();
+    bool caps = false, num = false, scroll = false;
+    if (display) {
+        XkbStateRec state;
+        if (XkbGetState(display, XkbUseCoreKbd, &state) == 0) {
+            caps = (state.locked_mods & LockMask) != 0;
+            num = (state.locked_mods & Mod2Mask) != 0;
+            scroll = (state.locked_mods & Mod3Mask) != 0;
+        }
+    }
+    auto obj = vm->createHostObject();
+    vm->setHostObjectField(obj, "caps", Value::makeBool(caps));
+    vm->setHostObjectField(obj, "num", Value::makeBool(num));
+    vm->setHostObjectField(obj, "scroll", Value::makeBool(scroll));
+    return Value::makeObjectId(obj.id);
 }
 
 // ============================================================================
@@ -647,10 +928,16 @@ void SystemBridge::install(PipelineOptions &options) {
  vm->setHostObjectField(
  mouseObj, "setAccel",
  Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setAccel")));
- vm->setHostObjectField(
- mouseObj, "setDPI",
- Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setDPI")));
- vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
+  vm->setHostObjectField(
+  mouseObj, "setDPI",
+  Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setDPI")));
+  vm->setHostObjectField(
+  mouseObj, "state",
+  Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.state")));
+  vm->setHostObjectField(
+  mouseObj, "scroll",
+  Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
+  vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
 
   // IO object
     auto ioObj = vm->createHostObject();
@@ -676,11 +963,20 @@ void SystemBridge::install(PipelineOptions &options) {
  vm->setHostObjectField(
  ioObj, "mouseMoveRel",
  Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseMoveRel")));
- vm->setHostObjectField(
- ioObj, "mouseScroll",
- Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseScroll")));
- vm->setHostObjectField(
- ioObj, "mouseDown",
+  vm->setHostObjectField(
+  ioObj, "mouseScroll",
+  Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseScroll")));
+  vm->setHostObjectField(
+  ioObj, "scroll",
+  Value::makeHostFuncId(vm->getHostFunctionIndex("io.scroll")));
+  vm->setHostObjectField(
+  ioObj, "getKey",
+  Value::makeHostFuncId(vm->getHostFunctionIndex("io.getKey")));
+  vm->setHostObjectField(
+  ioObj, "isKeyPressed",
+  Value::makeHostFuncId(vm->getHostFunctionIndex("io.isKeyPressed")));
+  vm->setHostObjectField(
+  ioObj, "mouseDown",
  Value::makeHostFuncId(vm->getHostFunctionIndex("io.mouseDown")));
  vm->setHostObjectField(
  ioObj, "mouseUp",
@@ -697,7 +993,30 @@ void SystemBridge::install(PipelineOptions &options) {
     vm->setHostObjectField(
         ioObj, "setExecutorMode",
         Value::makeHostFuncId(vm->getHostFunctionIndex("io.setExecutorMode")));
+    vm->setHostObjectField(
+        ioObj, "state",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.state")));
+    vm->setHostObjectField(
+        ioObj, "modifiers",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.modifiers")));
+    vm->setHostObjectField(
+        ioObj, "sendModifiers",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.sendModifiers")));
+    vm->setHostObjectField(
+        ioObj, "setDevice",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.setDevice")));
+    vm->setHostObjectField(
+        ioObj, "device",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.device")));
+    vm->setHostObjectField(
+        ioObj, "setLock",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.setLock")));
+    vm->setHostObjectField(
+        ioObj, "locks",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("io.locks")));
     vm->setGlobal("io", Value::makeObjectId(ioObj.id));
+    vm->setGlobal("scroll",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
   };
 
   // File operations

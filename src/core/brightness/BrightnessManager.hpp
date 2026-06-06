@@ -108,12 +108,12 @@ public:
   bool increaseGamma(const string &monitor, int amount);
   bool decreaseGamma(int monitorIndex, int amount);
   bool increaseGamma(int monitorIndex, int amount);
-  bool increaseShadowLift(int amount);
-  bool increaseShadowLift(const string &monitor, int amount);
-  bool increaseShadowLift(int monitorIndex, int amount);
-  bool decreaseShadowLift(int amount);
-  bool decreaseShadowLift(const string &monitor, int amount);
-  bool decreaseShadowLift(int monitorIndex, int amount);
+  bool increaseShadowLift(double amount);
+  bool increaseShadowLift(const string &monitor, double amount);
+  bool increaseShadowLift(int monitorIndex, double amount);
+  bool decreaseShadowLift(double amount);
+  bool decreaseShadowLift(const string &monitor, double amount);
+  bool decreaseShadowLift(int monitorIndex, double amount);
 
   // === SHADOW LIFT OVERLOADS ===
   bool setShadowLift(double lift); // All monitors, 0.0-4.0

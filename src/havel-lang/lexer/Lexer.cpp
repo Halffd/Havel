@@ -515,39 +515,41 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
         std::string decoded = processEscapeSequence(isFString, suppressInterp);
         value += decoded;
         if (suppressInterp) continue;
-} else if (c == '$' && braceDepth == 0) {
-                char next = peek(1);
-                if (isAlpha(next) || next == '_' || next == '@') {
-            hasInterpolation = true;
-            value += advance(); // $
+ } else if (c == '$' && braceDepth == 0) {
+ char next = peek(1);
+ if (isAlpha(next) || next == '_' || next == '@') {
+ hasInterpolation = true;
+ value += advance(); // $
 
-            if (isAlpha(peek()) || peek() == '_') {
-                value += '{';
-                while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
-                    value += advance();
-                }
-                if (!isAtEnd() && peek() == '?') {
-                    value += advance();
-                }
-                value += '}';
-            } else if (peek() == '@') {
-                value += '{';
-                value += advance(); // @
-                while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
-                    value += advance();
-                }
-                if (!isAtEnd() && peek() == '?') {
-                    value += advance();
-                }
-                value += '}';
-            }
-        } else {
-            value += advance(); // $ as literal
-        }
-    } else if (isFString && c == '{' && braceDepth == 0) {
- // F-string interpolation: {...}
- // Check if this is a format specifier (has :) or just an expression
- // Simple heuristic: if next char is not {, it's an interpolation
+ if (isAlpha(peek()) || peek() == '_') {
+ value += '{';
+ while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+ value += advance();
+ }
+ if (!isAtEnd() && peek() == '?') {
+ value += advance();
+ }
+ value += '}';
+ } else if (peek() == '@') {
+ value += '{';
+ value += advance(); // @
+ while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+ value += advance();
+ }
+ if (!isAtEnd() && peek() == '?') {
+ value += advance();
+ }
+ value += '}';
+ }
+ } else if (next == '{') {
+ hasInterpolation = true;
+ advance(); // consume $
+ value += '$';
+ // The { will be handled by the brace interpolation branch below
+ } else {
+ value += advance(); // $ as literal
+ }
+    } else if (c == '{' && braceDepth == 0) {
  if (peek(1) != '{') {
  hasInterpolation = true;
  value += advance(); // {
@@ -558,14 +560,12 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
  advance(); // second {
  value += '{';
  }
- } else if (isFString && c == '}' && braceDepth == 0) {
- // Check for escaped brace }}
+ } else if (c == '}' && braceDepth == 0) {
  if (peek(1) == '}') {
  advance(); // first }
  advance(); // second }
  value += '}';
  } else {
- // Single } in f-string without matching { - treat as literal
  value += advance();
  }
  } else {
@@ -678,20 +678,17 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
         } else {
             value += advance(); // $ as literal
         }
-    } else if (isFString && c == '{' && braceDepth == 0) {
- // F-string interpolation: {...}
+    } else if (c == '{' && braceDepth == 0) {
  if (peek(1) != '{') {
  hasInterpolation = true;
  value += advance(); // {
  braceDepth++;
  } else {
- // Escaped brace {{
  advance();
  advance();
  value += '{';
  }
- } else if (isFString && c == '}' && braceDepth == 0) {
- // Check for escaped brace }}
+ } else if (c == '}' && braceDepth == 0) {
  if (peek(1) == '}') {
  advance();
  advance();

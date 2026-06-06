@@ -197,11 +197,11 @@ fn parseResponse(conn) {
 // Client request
 // ===================================================================
 
-fn request(method, url, headers, body, timeout) {
+fn request(method, url, headers, body, timeoutMs) {
     if headers == null { headers = {} }
     parsed = parseUrl(url)
     
-    rawConn = tcp.connect(parsed.host, parsed.port, timeout)
+    rawConn = tcp.connect(parsed.host, parsed.port, timeoutMs)
     if rawConn == null { return null }
 
     conn = rawConn
@@ -239,22 +239,22 @@ fn request(method, url, headers, body, timeout) {
     res
 }
 
-fn get(url, headers, timeout) {
-    request("GET", url, headers, null, timeout)
+fn get(url, headers, timeoutMs) {
+    request("GET", url, headers, null, timeoutMs)
 }
 
-fn post(url, body, headers, timeout) {
+fn post(url, body, headers, timeoutMs) {
     if headers == null { headers = {} }
     if !headers.has("content-type") && !headers.has("Content-Type") {
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     }
-    request("POST", url, headers, body, timeout)
+    request("POST", url, headers, body, timeoutMs)
 }
 
-fn postJson(url, payload, headers, timeout) {
+fn postJson(url, payload, headers, timeoutMs) {
     if headers == null { headers = {} }
     headers["Content-Type"] = "application/json"
-    post(url, json.stringify(payload), headers, timeout)
+    post(url, json.stringify(payload), headers, timeoutMs)
 }
 
 // ===================================================================

@@ -1,0 +1,370 @@
+// sqlite.hv — SQLite3 database access via FFI
+//
+// Usage:
+//   use "sqlite" as sqlite
+//   db = sqlite.open("myapp.db")
+//   db.exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)")
+//   db.exec("INSERT INTO users (name, age) VALUES ('Alice', 30)")
+//   rows = db.query("SELECT * FROM users WHERE age > ?", [25])
+//   for row in rows { print(row.name, row.age) }
+//   db.close()
+
+use ffi
+
+// ============================================================
+// Load SQLite3 shared library
+// ============================================================
+
+_lib = ffi.open("libsqlite3.so")
+if _lib == null { _lib = ffi.open("libsqlite3.so.0") }
+if _lib == null { _lib = ffi.open("libsqlite3.dylib") }
+
+_sqlite3_open = null
+_sqlite3_close = null
+_sqlite3_prepare_v2 = null
+_sqlite3_step = null
+_sqlite3_finalize = null
+_sqlite3_column_count = null
+_sqlite3_column_name = null
+_sqlite3_column_type = null
+_sqlite3_column_int64 = null
+_sqlite3_column_double = null
+_sqlite3_column_text = null
+_sqlite3_column_blob = null
+_sqlite3_column_bytes = null
+_sqlite3_bind_int64 = null
+_sqlite3_bind_double = null
+_sqlite3_bind_text = null
+_sqlite3_bind_null = null
+_sqlite3_errmsg = null
+_sqlite3_last_insert_rowid = null
+_sqlite3_changes = null
+_sqlite3_exec = null
+_sqlite3_reset = null
+_sqlite3_clear_bindings = null
+
+if _lib != null {
+    _sqlite3_open       = ffi.sym(_lib, "sqlite3_open")
+    _sqlite3_close      = ffi.sym(_lib, "sqlite3_close")
+    _sqlite3_prepare_v2 = ffi.sym(_lib, "sqlite3_prepare_v2")
+    _sqlite3_step       = ffi.sym(_lib, "sqlite3_step")
+    _sqlite3_finalize   = ffi.sym(_lib, "sqlite3_finalize")
+    _sqlite3_column_count = ffi.sym(_lib, "sqlite3_column_count")
+    _sqlite3_column_name  = ffi.sym(_lib, "sqlite3_column_name")
+    _sqlite3_column_type  = ffi.sym(_lib, "sqlite3_column_type")
+    _sqlite3_column_int64 = ffi.sym(_lib, "sqlite3_column_int64")
+    _sqlite3_column_double = ffi.sym(_lib, "sqlite3_column_double")
+    _sqlite3_column_text  = ffi.sym(_lib, "sqlite3_column_text")
+    _sqlite3_column_blob  = ffi.sym(_lib, "sqlite3_column_blob")
+    _sqlite3_column_bytes = ffi.sym(_lib, "sqlite3_column_bytes")
+    _sqlite3_bind_int64   = ffi.sym(_lib, "sqlite3_bind_int64")
+    _sqlite3_bind_double  = ffi.sym(_lib, "sqlite3_bind_double")
+    _sqlite3_bind_text    = ffi.sym(_lib, "sqlite3_bind_text")
+    _sqlite3_bind_null    = ffi.sym(_lib, "sqlite3_bind_null")
+    _sqlite3_errmsg       = ffi.sym(_lib, "sqlite3_errmsg")
+    _sqlite3_last_insert_rowid = ffi.sym(_lib, "sqlite3_last_insert_rowid")
+    _sqlite3_changes      = ffi.sym(_lib, "sqlite3_changes")
+    _sqlite3_exec         = ffi.sym(_lib, "sqlite3_exec")
+    _sqlite3_reset        = ffi.sym(_lib, "sqlite3_reset")
+    _sqlite3_clear_bindings = ffi.sym(_lib, "sqlite3_clear_bindings")
+}
+
+// SQLite column types
+SQLITE_INTEGER = 1
+SQLITE_FLOAT   = 2
+SQLITE_TEXT    = 3
+SQLITE_BLOB    = 4
+SQLITE_NULL    = 5
+
+// SQLite result codes
+SQLITE_OK   = 0
+SQLITE_ROW  = 100
+SQLITE_DONE = 101
+
+SQLITE_TRANSIENT = -1
+
+// ============================================================
+// Internals
+// ============================================================
+
+fn _cstr(s) {
+    if s == null { return ffi.allocBytes(1) }
+    n = #s
+    buf = ffi.allocBytes(n + 1)
+    i = 0
+    while i < n {
+        ffi.set_i8(ffi.ptr_add(buf, i), ord(s[i:i+1]))
+        i += 1
+    }
+    ffi.set_i8(ffi.ptr_add(buf, n), 0)
+    buf
+}
+
+fn _readCstr(ptr) {
+    if ptr == null { return null }
+    result = ""
+    i = 0
+    while true {
+        b = ffi.get_u8(ffi.ptr_add(ptr, i))
+        if b == 0 { return result }
+        result = result + char(b)
+        i += 1
+        if i > 65535 { return result }
+    }
+    result
+}
+
+fn _bindParam(stmt, idx, v) {
+    if v == null {
+        ffi.call(_sqlite3_bind_null, "int32", ["pointer", "int32"], stmt, idx)
+    } else {
+        t = type.of(v)
+        if t == "int" {
+            ffi.call(_sqlite3_bind_int64, "int32", ["pointer", "int32", "int64"], stmt, idx, v)
+        } else if t == "number" {
+            ffi.call(_sqlite3_bind_double, "int32", ["pointer", "int32", "float64"], stmt, idx, v)
+        } else if t == "bool" {
+            n = 0
+            if v { n = 1 }
+            ffi.call(_sqlite3_bind_int64, "int32", ["pointer", "int32", "int64"], stmt, idx, n)
+        } else {
+            s = str(v)
+            cstr = _cstr(s)
+            ffi.call(_sqlite3_bind_text, "int32", ["pointer", "int32", "pointer", "int32", "int64"],
+                     stmt, idx, cstr, #s, SQLITE_TRANSIENT)
+            ffi.free(cstr)
+        }
+    }
+}
+
+fn _readColumn(stmt, col) {
+    colType = ffi.call(_sqlite3_column_type, "int32", ["pointer", "int32"], stmt, col)
+    if colType == SQLITE_INTEGER {
+        return ffi.call(_sqlite3_column_int64, "int64", ["pointer", "int32"], stmt, col)
+    }
+    if colType == SQLITE_FLOAT {
+        return ffi.call(_sqlite3_column_double, "float64", ["pointer", "int32"], stmt, col)
+    }
+    if colType == SQLITE_TEXT {
+        ptr = ffi.call(_sqlite3_column_text, "pointer", ["pointer", "int32"], stmt, col)
+        return _readCstr(ptr)
+    }
+    if colType == SQLITE_BLOB {
+        ptr = ffi.call(_sqlite3_column_blob, "pointer", ["pointer", "int32"], stmt, col)
+        n = ffi.call(_sqlite3_column_bytes, "int32", ["pointer", "int32"], stmt, col)
+        bytes = []
+        i = 0
+        while i < n {
+            bytes.push(ffi.get_u8(ffi.ptr_add(ptr, i)))
+            i += 1
+        }
+        return bytes
+    }
+    null // SQLITE_NULL
+}
+
+fn _getColumnNames(stmt) {
+    count = ffi.call(_sqlite3_column_count, "int32", ["pointer"], stmt)
+    names = []
+    i = 0
+    while i < count {
+        ptr = ffi.call(_sqlite3_column_name, "pointer", ["pointer", "int32"], stmt, i)
+        names.push(_readCstr(ptr))
+        i += 1
+    }
+    names
+}
+
+fn _stepRows(stmt, colNames) {
+    rows = []
+    colCount = #colNames
+    while true {
+        rc = ffi.call(_sqlite3_step, "int32", ["pointer"], stmt)
+        if rc == SQLITE_DONE { return rows }
+        if rc != SQLITE_ROW { return rows }
+
+        row = {}
+        i = 0
+        while i < colCount {
+            row[colNames[i]] = _readColumn(stmt, i)
+            i += 1
+        }
+        rows.push(row)
+    }
+    rows
+}
+
+// ============================================================
+// Database object
+// ============================================================
+
+fn Database(dbPtr) {
+    self = {ptr: dbPtr, closed: false}
+
+    fn _errmsg() {
+        ptr = ffi.call(_sqlite3_errmsg, "pointer", ["pointer"], self.ptr)
+        _readCstr(ptr)
+    }
+
+    fn _prepare(sql) {
+        if self.closed { return null }
+        sqlCstr = _cstr(sql)
+        stmtPtrPtr = ffi.allocBytes(8)
+        rc = ffi.call(_sqlite3_prepare_v2, "int32",
+                      ["pointer", "pointer", "int32", "pointer", "pointer"],
+                      self.ptr, sqlCstr, #sql, stmtPtrPtr, null)
+        ffi.free(sqlCstr)
+        if rc != SQLITE_OK {
+            ffi.free(stmtPtrPtr)
+            return null
+        }
+        stmt = ffi.get_ptr(stmtPtrPtr)
+        ffi.free(stmtPtrPtr)
+        stmt
+    }
+
+    fn _finalize(stmt) {
+        if stmt != null {
+            ffi.call(_sqlite3_finalize, "int32", ["pointer"], stmt)
+        }
+    }
+
+    // Execute a statement with optional parameters, returns rows array
+    fn _query(sql, params) {
+        if self.closed { return [] }
+        stmt = _prepare(sql)
+        if stmt == null { return [] }
+
+        // Bind parameters
+        if params != null {
+            i = 0
+            while i < #params {
+                _bindParam(stmt, i + 1, params[i])
+                i += 1
+            }
+        }
+
+        colNames = _getColumnNames(stmt)
+        rows = _stepRows(stmt, colNames)
+        _finalize(stmt)
+        rows
+    }
+
+    // Execute a statement, return number of changes
+    fn _exec(sql, params) {
+        if self.closed { return -1 }
+        stmt = _prepare(sql)
+        if stmt == null { return -1 }
+
+        if params != null {
+            i = 0
+            while i < #params {
+                _bindParam(stmt, i + 1, params[i])
+                i += 1
+            }
+        }
+
+        ffi.call(_sqlite3_step, "int32", ["pointer"], stmt)
+        _finalize(stmt)
+        ffi.call(_sqlite3_changes, "int32", ["pointer"], self.ptr)
+    }
+
+    // Last inserted rowid
+    fn _lastInsertId() {
+        if self.closed { return -1 }
+        ffi.call(_sqlite3_last_insert_rowid, "int64", ["pointer"], self.ptr)
+    }
+
+    // Convenience: get a single row or null
+    fn _get(sql, params) {
+        rows = _query(sql, params)
+        if #rows > 0 { return rows[0] }
+        null
+    }
+
+    // Convenience: get a single value from the first column of the first row
+    fn _scalar(sql, params) {
+        row = _get(sql, params)
+        if row == null { return null }
+        keys = row.keys()
+        if #keys == 0 { return null }
+        row[keys[0]]
+    }
+
+    // Transaction helpers
+    fn _begin() { _exec("BEGIN", null) }
+    fn _commit() { _exec("COMMIT", null) }
+    fn _rollback() { _exec("ROLLBACK", null) }
+
+    fn _transaction(cb) {
+        _begin()
+        result = null
+        ok = false
+        result = cb()
+        ok = true
+        if ok {
+            _commit()
+        } else {
+            _rollback()
+        }
+        result
+    }
+
+    fn _close() {
+        if !self.closed {
+            ffi.call(_sqlite3_close, "int32", ["pointer"], self.ptr)
+            self.closed = true
+        }
+    }
+
+    fn _isOpen() { !self.closed }
+
+    fn _errmsg2() { _errmsg() }
+
+    self.query = _query
+    self.exec = _exec
+    self.get = _get
+    self.scalar = _scalar
+    self.lastInsertId = _lastInsertId
+    self.begin = _begin
+    self.commit = _commit
+    self.rollback = _rollback
+    self.transaction = _transaction
+    self.close = _close
+    self.isOpen = _isOpen
+    self.errmsg = _errmsg2
+    self
+}
+
+// ============================================================
+// Public API
+// ============================================================
+
+// Open a database file; use ":memory:" for in-memory
+fn open(path) {
+    if _sqlite3_open == null {
+        print("ERROR: SQLite3 library not found. Install libsqlite3.")
+        return null
+    }
+    pathCstr = _cstr(path)
+    dbPtrPtr = ffi.allocBytes(8)
+    rc = ffi.call(_sqlite3_open, "int32", ["pointer", "pointer"], pathCstr, dbPtrPtr)
+    ffi.free(pathCstr)
+    if rc != SQLITE_OK {
+        ffi.free(dbPtrPtr)
+        return null
+    }
+    dbPtr = ffi.get_ptr(dbPtrPtr)
+    ffi.free(dbPtrPtr)
+    Database(dbPtr)
+}
+
+// Open an in-memory database (shortcut)
+fn memory() {
+    open(":memory:")
+}
+
+// Check if SQLite3 is available
+fn available() {
+    _lib != null
+}

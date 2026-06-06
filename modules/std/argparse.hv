@@ -1,0 +1,413 @@
+// argparse.hv — Clap-style CLI argument parser for Havel
+//
+// Usage:
+//   use "argparse" as argparse
+//
+//   cli = argparse.App("myapp", "1.0.0", "A helpful tool")
+//   cli.arg("--name", "-n", "Your name", "string", true)
+//   cli.arg("--count", "-c", "How many times", "int", false)
+//   cli.flag("--verbose", "-v", "Enable verbose output")
+//   cli.positional("file", "Input file path", true)
+//   parsed = cli.parse(app.args)
+//   if parsed == null { cli.help(); exit(1) }
+//   print("Hello,", parsed.name)
+
+// ============================================================
+// Internal helpers
+// ============================================================
+
+fn _padRight(s, width) {
+    while #s < width { s = s + " " }
+    s
+}
+
+fn _startsWith(s, prefix) {
+    if #s < #prefix { return false }
+    s[0:#prefix] == prefix
+}
+
+fn _stripLeadingDashes(s) {
+    i = 0
+    while i < #s {
+        if s[i:i+1] != "-" { return s[i:] }
+        i += 1
+    }
+    s
+}
+
+fn _camelKey(flag) {
+    // "--my-flag" -> "myFlag"
+    s = _stripLeadingDashes(flag)
+    result = ""
+    i = 0
+    upperNext = false
+    while i < #s {
+        ch = s[i:i+1]
+        if ch == "-" {
+            upperNext = true
+        } else {
+            if upperNext {
+                result = result + ch.upper()
+                upperNext = false
+            } else {
+                result = result + ch
+            }
+        }
+        i += 1
+    }
+    result
+}
+
+fn _coerce(rawVal, type_) {
+    if type_ == "int" { return int(rawVal) }
+    if type_ == "float" || type_ == "number" { return num(rawVal) }
+    if type_ == "bool" { return rawVal == "true" || rawVal == "1" || rawVal == "yes" }
+    rawVal // string by default
+}
+
+// ============================================================
+// App — argument parser builder
+// ============================================================
+
+fn App(name, version, description) {
+    self = {
+        name: name,
+        version: version,
+        description: description,
+        _args: [],      // named args {long, short, desc, type_, required, default_, key}
+        _flags: [],     // boolean flags {long, short, desc, key}
+        _positionals: [], // positional {name, desc, required}
+        _subcommands: {} // subcommand name -> App
+    }
+
+    // Named argument: --flag value
+    fn _arg(long, short, desc, type_, required, default_) {
+        if type_ == null { type_ = "string" }
+        if required == null { required = false }
+        key = _camelKey(long)
+        self._args.push({
+            long: long,
+            short: short,
+            desc: desc,
+            type_: type_,
+            required: required,
+            default_: default_,
+            key: key
+        })
+        self // for chaining
+    }
+
+    // Boolean flag: --flag (no value; presence = true)
+    fn _flag(long, short, desc) {
+        key = _camelKey(long)
+        self._flags.push({long: long, short: short, desc: desc, key: key})
+        self
+    }
+
+    // Positional argument (order matters)
+    fn _positional(name, desc, required) {
+        if required == null { required = false }
+        self._positionals.push({name: name, desc: desc, required: required})
+        self
+    }
+
+    // Subcommand — returns the sub-App for configuration
+    fn _subcommand(name, desc) {
+        sub = App(name, self.version, desc)
+        self._subcommands[name] = sub
+        sub
+    }
+
+    // ============================================================
+    // Parse
+    // ============================================================
+
+    fn _parse(rawArgs) {
+        if rawArgs == null { rawArgs = [] }
+        result = {}
+        errors = []
+        positionalIdx = [0]
+
+        // Set defaults
+        for arg in self._args {
+            if arg.default_ != null {
+                result[arg.key] = _coerce(str(arg.default_), arg.type_)
+            } else {
+                result[arg.key] = null
+            }
+        }
+        for flag in self._flags {
+            result[flag.key] = false
+        }
+
+        // Check for subcommand
+        if #rawArgs > 0 {
+            first = rawArgs[0]
+            if !_startsWith(first, "-") && self._subcommands.has(first) {
+                sub = self._subcommands[first]
+                subArgs = []
+                i = 1
+                while i < #rawArgs {
+                    subArgs.push(rawArgs[i])
+                    i += 1
+                }
+                subResult = sub._parse(subArgs)
+                if subResult == null { return null }
+                subResult["_subcommand"] = first
+                return subResult
+            }
+        }
+
+        // Main parse loop
+        i = 0
+        while i < #rawArgs {
+            tok = rawArgs[i]
+
+            // --help / -h
+            if tok == "--help" || tok == "-h" {
+                _help()
+                return null
+            }
+
+            // --version
+            if tok == "--version" {
+                print(self.name, self.version)
+                return null
+            }
+
+            // Long/short flag or arg
+            if _startsWith(tok, "-") {
+                matched = false
+
+                // Check flags first
+                for flag in self._flags {
+                    if tok == flag.long || tok == flag.short {
+                        result[flag.key] = true
+                        matched = true
+                    }
+                }
+
+                if !matched {
+                    // Check named args
+                    for arg in self._args {
+                        if tok == arg.long || tok == arg.short {
+                            if i + 1 >= #rawArgs {
+                                errors.push("Option " + tok + " requires a value")
+                            } else {
+                                i += 1
+                                result[arg.key] = _coerce(rawArgs[i], arg.type_)
+                            }
+                            matched = true
+                        }
+                    }
+                }
+
+                if !matched {
+                    // Check for --key=value form
+                    eqPos = _findEq(tok)
+                    if eqPos > 0 {
+                        key = tok[0:eqPos]
+                        rawVal = tok[eqPos+1:]
+                        for arg in self._args {
+                            if key == arg.long || key == arg.short {
+                                result[arg.key] = _coerce(rawVal, arg.type_)
+                                matched = true
+                            }
+                        }
+                    }
+                }
+
+                if !matched {
+                    errors.push("Unknown option: " + tok)
+                }
+
+            } else {
+                // Positional argument
+                pidx = positionalIdx[0]
+                if pidx < #self._positionals {
+                    pdef = self._positionals[pidx]
+                    result[pdef.name] = tok
+                    positionalIdx[0] = pidx + 1
+                } else {
+                    errors.push("Unexpected argument: " + tok)
+                }
+            }
+
+            i += 1
+        }
+
+        // Check required args
+        for arg in self._args {
+            if arg.required && (result[arg.key] == null) {
+                errors.push("Required option missing: " + arg.long)
+            }
+        }
+
+        // Check required positionals
+        pidx = positionalIdx[0]
+        j = pidx
+        while j < #self._positionals {
+            pdef = self._positionals[j]
+            if pdef.required {
+                errors.push("Required positional argument missing: " + pdef.name)
+            }
+            j += 1
+        }
+
+        if #errors > 0 {
+            for err in errors { print("error:", err) }
+            _help()
+            return null
+        }
+
+        result
+    }
+
+    fn _findEq(s) {
+        i = 0
+        while i < #s {
+            if s[i:i+1] == "=" { return i }
+            i += 1
+        }
+        -1
+    }
+
+    // ============================================================
+    // Help generation
+    // ============================================================
+
+    fn _help() {
+        print("Usage:", self.name, _buildUsageLine())
+        if self.description != null && #self.description > 0 {
+            print("")
+            print(self.description)
+        }
+
+        if #self._args > 0 || #self._flags > 0 {
+            print("")
+            print("Options:")
+            for flag in self._flags {
+                left = "  " + flag.long
+                if flag.short != null { left = left + ", " + flag.short }
+                print(_padRight(left, 28) + flag.desc)
+            }
+            for arg in self._args {
+                left = "  " + arg.long
+                if arg.short != null { left = left + ", " + arg.short }
+                left = left + " <" + arg.type_ + ">"
+                line = _padRight(left, 28) + arg.desc
+                if arg.required { line = line + "  [required]" }
+                if arg.default_ != null { line = line + "  [default: " + str(arg.default_) + "]" }
+                print(line)
+            }
+            print("  " + _padRight("--help, -h", 26) + "Print help")
+            print("  " + _padRight("--version", 26) + "Print version")
+        }
+
+        if #self._positionals > 0 {
+            print("")
+            print("Arguments:")
+            for p in self._positionals {
+                left = "  <" + p.name + ">"
+                line = _padRight(left, 28) + p.desc
+                if p.required { line = line + "  [required]" }
+                print(line)
+            }
+        }
+
+        if #self._subcommands.keys() > 0 {
+            print("")
+            print("Commands:")
+            for k in self._subcommands.keys() {
+                sub = self._subcommands[k]
+                left = "  " + k
+                print(_padRight(left, 28) + sub.description)
+            }
+        }
+    }
+
+    fn _buildUsageLine() {
+        parts = []
+        if #self._flags > 0 { parts.push("[OPTIONS]") }
+        for arg in self._args {
+            if arg.required {
+                parts.push(arg.long + " <" + arg.type_ + ">")
+            } else {
+                parts.push("[" + arg.long + " <" + arg.type_ + ">]")
+            }
+        }
+        for p in self._positionals {
+            if p.required {
+                parts.push("<" + p.name + ">")
+            } else {
+                parts.push("[" + p.name + "]")
+            }
+        }
+        if #self._subcommands.keys() > 0 { parts.push("<COMMAND>") }
+        result = ""
+        for part in parts {
+            if #result > 0 { result = result + " " }
+            result = result + part
+        }
+        result
+    }
+
+    self.arg = _arg
+    self.flag = _flag
+    self.positional = _positional
+    self.subcommand = _subcommand
+    self.parse = _parse
+    self.help = _help
+    self
+}
+
+// ============================================================
+// Quick parse — parses key=value and --flag style without configuration
+// ============================================================
+
+// Minimalist parser: no schema, just returns key->value map from args
+fn parseRaw(rawArgs) {
+    result = {}
+    positionals = []
+    if rawArgs == null { rawArgs = [] }
+    i = 0
+    while i < #rawArgs {
+        tok = rawArgs[i]
+        if tok[0:2] == "--" {
+            eqPos = -1
+            j = 2
+            while j < #tok {
+                if tok[j:j+1] == "=" { eqPos = j }
+                j += 1
+            }
+            if eqPos > 0 {
+                key = tok[2:eqPos]
+                rawVal = tok[eqPos+1:]
+                result[key] = rawVal
+            } else if i + 1 < #rawArgs && tok[2:3] != "-" {
+                nextTok = rawArgs[i+1]
+                if nextTok[0:1] != "-" {
+                    result[tok[2:]] = nextTok
+                    i += 1
+                } else {
+                    result[tok[2:]] = true
+                }
+            } else {
+                result[tok[2:]] = true
+            }
+        } else if tok[0:1] == "-" && #tok == 2 {
+            key = tok[1:2]
+            if i + 1 < #rawArgs && rawArgs[i+1][0:1] != "-" {
+                result[key] = rawArgs[i+1]
+                i += 1
+            } else {
+                result[key] = true
+            }
+        } else {
+            positionals.push(tok)
+        }
+        i += 1
+    }
+    result["_"] = positionals
+    result
+}

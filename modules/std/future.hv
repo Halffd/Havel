@@ -1,0 +1,334 @@
+// future.hv — Async/concurrent primitives for Havel
+//
+// Usage:
+//   use "future" as future
+//
+// Provides:
+//   Future — deferred value with then/catch/finally chaining
+//   Promise — completer for a Future
+//   all(futures) — wait for all futures
+//   any(futures) — first to resolve wins
+//   resolve(v)   — immediately resolved Future
+//   reject(e)    — immediately rejected Future
+//   timeout(fut, ms) — reject if not done within ms
+//   sleep(ms)    — resolved after ms delay
+
+// ============================================================
+// Internal state constants
+// ============================================================
+
+_PENDING  = "pending"
+_RESOLVED = "resolved"
+_REJECTED = "rejected"
+
+// ============================================================
+// Future — wraps an async computation
+// ============================================================
+
+// Future holds a state machine that runs eagerly on the event loop
+// via setTimeout(0). Because Havel's async relies on the event loop,
+// Futures integrate with the built-in setTimeout/async bridge.
+
+fn Future(executor) {
+    self = {
+        state: _PENDING,
+        value: null,
+        error: null,
+        _thenCallbacks: [],
+        _catchCallbacks: [],
+        _finallyCallbacks: []
+    }
+
+    fn _resolve(v) {
+        if self.state != _PENDING { return }
+        self.state = _RESOLVED
+        self.value = v
+        _flush()
+    }
+
+    fn _reject(err) {
+        if self.state != _PENDING { return }
+        self.state = _REJECTED
+        self.error = err
+        _flush()
+    }
+
+    fn _flush() {
+        if self.state == _RESOLVED {
+            for cb in self._thenCallbacks { cb(self.value) }
+        } else if self.state == _REJECTED {
+            for cb in self._catchCallbacks { cb(self.error) }
+        }
+        for cb in self._finallyCallbacks { cb() }
+        self._thenCallbacks = []
+        self._catchCallbacks = []
+        self._finallyCallbacks = []
+    }
+
+    fn _then(cb) {
+        nextFut = Future(null)
+        wrappedCb = fn(v) {
+            result = cb(v)
+            if result != null && type.of(result) == "object" && result.has("state") {
+                // Chain futures
+                result.then(fn(v) { nextFut._resolve(v) })
+                result.onError(fn(e) { nextFut._reject(e) })
+            } else {
+                nextFut._resolve(result)
+            }
+        }
+        if self.state == _RESOLVED {
+            wrappedCb(self.value)
+        } else if self.state == _PENDING {
+            self._thenCallbacks.push(wrappedCb)
+        }
+        nextFut
+    }
+
+    fn _catch(cb) {
+        nextFut = Future(null)
+        wrappedCb = fn(err) {
+            result = cb(err)
+            nextFut._resolve(result)
+        }
+        if self.state == _REJECTED {
+            wrappedCb(self.error)
+        } else if self.state == _PENDING {
+            self._catchCallbacks.push(wrappedCb)
+        }
+        // Propagate resolution through
+        if self.state == _RESOLVED {
+            nextFut._resolve(self.value)
+        } else if self.state == _PENDING {
+            self._thenCallbacks.push(fn(v) { nextFut._resolve(v) })
+        }
+        nextFut
+    }
+
+    fn _finally(cb) {
+        nextFut = Future(null)
+        wrapper = fn() {
+            cb()
+            if self.state == _RESOLVED { nextFut._resolve(self.value) }
+            else { nextFut._reject(self.error) }
+        }
+        if self.state != _PENDING {
+            wrapper()
+        } else {
+            self._finallyCallbacks.push(wrapper)
+        }
+        nextFut
+    }
+
+    fn _isPending()  { self.state == _PENDING }
+    fn _isDone()     { self.state != _PENDING }
+    fn _isResolved() { self.state == _RESOLVED }
+    fn _isRejected() { self.state == _REJECTED }
+
+    fn _get() {
+        if self.state == _RESOLVED { return self.value }
+        null
+    }
+
+    fn _getError() {
+        if self.state == _REJECTED { return self.error }
+        null
+    }
+
+    self._resolve = _resolve
+    self._reject = _reject
+    self.then = _then
+    self.onError = _catch
+    self.ensure = _finally
+    self.isPending = _isPending
+    self.isDone = _isDone
+    self.isResolved = _isResolved
+    self.isRejected = _isRejected
+    self.get = _get
+    self.getError = _getError
+
+    // Run executor synchronously if provided
+    if executor != null {
+        executor(_resolve, _reject)
+    }
+
+    self
+}
+
+// ============================================================
+// Promise — external resolve/reject handle
+// ============================================================
+
+fn Promise() {
+    fut = Future(null)
+    self = {future: fut}
+
+    fn _resolve(v) { fut._resolve(v) }
+    fn _reject(err)  { fut._reject(err) }
+    fn _future()     { fut }
+
+    self.resolve = _resolve
+    self.reject = _reject
+    self.future = _future
+    self
+}
+
+// ============================================================
+// Static constructors
+// ============================================================
+
+fn resolve(v) {
+    Future(fn(res, rej) { res(v) })
+}
+
+fn reject(err) {
+    Future(fn(res, rej) { rej(err) })
+}
+
+// ============================================================
+// Combinators
+// ============================================================
+
+// Waits for all futures to resolve; rejects if any rejects
+fn all(futures) {
+    if #futures == 0 { return resolve([]) }
+
+    outer = Promise()
+    results = []
+    i = 0
+    while i < #futures {
+        results.push(null)
+        i += 1
+    }
+    remaining = [#futures] // use array to allow mutation in closures
+
+    i = 0
+    while i < #futures {
+        idx = i
+        fut = futures[idx]
+        fut.then(fn(v) {
+            results[idx] = v
+            remaining[0] -= 1
+            if remaining[0] == 0 {
+                outer.resolve(results)
+            }
+        })
+        fut.onError(fn(err) {
+            outer.reject(err)
+        })
+        i += 1
+    }
+
+    outer.future()
+}
+
+// Resolves/rejects with first settled future
+fn any(futures) {
+    if #futures == 0 { return reject("No futures provided") }
+
+    outer = Promise()
+    done = [false]
+
+    for fut in futures {
+        fut.then(fn(v) {
+            if !done[0] {
+                done[0] = true
+                outer.resolve(v)
+            }
+        })
+        fut.onError(fn(err) {
+            if !done[0] {
+                done[0] = true
+                outer.reject(err)
+            }
+        })
+    }
+
+    outer.future()
+}
+
+// Settle: all futures resolved/rejected (never rejects)
+fn allSettled(futures) {
+    if #futures == 0 { return resolve([]) }
+
+    outer = Promise()
+    results = []
+    i = 0
+    while i < #futures {
+        results.push(null)
+        i += 1
+    }
+    remaining = [#futures]
+
+    i = 0
+    while i < #futures {
+        idx = i
+        fut = futures[idx]
+        fut.then(fn(v) {
+            results[idx] = {status: "fulfilled", value: v}
+            remaining[0] -= 1
+            if remaining[0] == 0 { outer.resolve(results) }
+        })
+        fut.onError(fn(err) {
+            results[idx] = {status: "rejected", reason: err}
+            remaining[0] -= 1
+            if remaining[0] == 0 { outer.resolve(results) }
+        })
+        i += 1
+    }
+
+    outer.future()
+}
+
+// ============================================================
+// Timer-based futures
+// ============================================================
+
+// Resolve after ms milliseconds (requires event loop)
+fn sleep(ms) {
+    outer = Promise()
+    setTimeout(fn() { outer.resolve(null) }, ms)
+    outer.future()
+}
+
+// Reject future if it doesn't resolve within ms
+fn withTimeout(fut, ms) {
+    outer = Promise()
+    done = [false]
+
+    fut.then(fn(v) {
+        if !done[0] {
+            done[0] = true
+            outer.resolve(v)
+        }
+    })
+    fut.onError(fn(err) {
+        if !done[0] {
+            done[0] = true
+            outer.reject(err)
+        }
+    })
+
+    setTimeout(fn() {
+        if !done[0] {
+            done[0] = true
+            outer.reject("timeout after " + ms + "ms")
+        }
+    }, ms)
+
+    outer.future()
+}
+
+// ============================================================
+// Deferred utility
+// ============================================================
+
+// Like Promise but more explicit: returns {resolve, reject, future}
+fn deferred() {
+    p = Promise()
+    {
+        resolve: p.resolve,
+        reject: p.reject,
+        future: p.future()
+    }
+}

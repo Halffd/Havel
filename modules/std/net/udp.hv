@@ -46,7 +46,7 @@ fn UDPSocket(fd, boundHost, boundPort) {
 
     fn _setNonBlocking() { sock.setNonBlocking(self.fd) }
 
-    fn _pollRead(timeout) { sock.pollRead(self.fd, timeout) }
+    fn _pollRead(timeoutMs) { sock.pollRead(self.fd, timeoutMs) }
 
     fn _isAlive() { !self.closed && self.fd >= 0 }
 

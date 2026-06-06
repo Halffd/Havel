@@ -21,8 +21,8 @@ fn _hexAt(i) {
 fn hexEncode(bytes) {
   result = ""
   for b in bytes {
-    hi = b / 16
-    lo = b % 16
+    hi = int(b / 16)
+    lo = int(b % 16)
     result = result + _hexAt(hi) + _hexAt(lo)
   }
   return result
@@ -109,17 +109,17 @@ fn base64Encode(bytes) {
     n = (b0 * 65536) + (b1 * 256) + b2
 
     // extract 4 sextets
-    s0 = (n / 262144) % 64
-    s1 = (n / 4096) % 64
+    s0 = int((n / 262144) % 64)
+    s1 = int((n / 4096) % 64)
     result = result + _b64At(s0) + _b64At(s1)
 
     if count == 3 {
-      s2 = (n / 64) % 64
-      s3 = n % 64
+      s2 = int((n / 64) % 64)
+      s3 = int(n % 64)
       result = result + _b64At(s2) + _b64At(s3)
     } else {
       if count == 2 {
-        s2 = (n / 64) % 64
+        s2 = int((n / 64) % 64)
         result = result + _b64At(s2) + "="
       } else {
         result = result + "=="
@@ -172,12 +172,12 @@ fn base64Decode(b64) {
       n = n + c3
     }
 
-    bytes.push((n / 65536) % 256)
+    bytes.push(int((n / 65536) % 256))
     if c2 >= 0 {
-      bytes.push((n / 256) % 256)
+      bytes.push(int((n / 256) % 256))
     }
     if c3 >= 0 {
-      bytes.push(n % 256)
+      bytes.push(int(n % 256))
     }
 
     i += 4
@@ -211,10 +211,10 @@ fn fnv1a(text) {
     hash = hash ^ chVal
     hash = (hash * 16777619) % 4294967296
   }
-  b0 = (hash / 16777216) % 256
-  b1 = (hash / 65536) % 256
-  b2 = (hash / 256) % 256
-  b3 = hash % 256
+  b0 = int((hash / 16777216) % 256)
+  b1 = int((hash / 65536) % 256)
+  b2 = int((hash / 256) % 256)
+  b3 = int(hash % 256)
   return hexEncode([b0, b1, b2, b3])
 }
 
@@ -225,10 +225,10 @@ fn djb2(text) {
     chVal = _charVal(ch)
     hash = ((hash * 33) + chVal) % 4294967296
   }
-  b0 = (hash / 16777216) % 256
-  b1 = (hash / 65536) % 256
-  b2 = (hash / 256) % 256
-  b3 = hash % 256
+  b0 = int((hash / 16777216) % 256)
+  b1 = int((hash / 65536) % 256)
+  b2 = int((hash / 256) % 256)
+  b3 = int(hash % 256)
   return hexEncode([b0, b1, b2, b3])
 }
 

@@ -116,10 +116,10 @@ fn WSConnection(conn, isClient) {
 // Client connect
 // ===================================================================
 
-fn connect(url, timeout) {
+fn connect(url, timeoutMs) {
     parsed = http.parseUrl(url)
     
-    rawConn = tcp.connect(parsed.host, parsed.port, timeout)
+    rawConn = tcp.connect(parsed.host, parsed.port, timeoutMs)
     if rawConn == null { return null }
 
     conn = rawConn

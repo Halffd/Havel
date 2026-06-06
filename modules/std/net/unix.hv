@@ -48,8 +48,8 @@ fn UnixConnection(fd, path) {
     }
 
     fn _setNonBlocking() { sock.setNonBlocking(self.fd) }
-    fn _pollRead(timeout) { sock.pollRead(self.fd, timeout) }
-    fn _pollWrite(timeout) { sock.pollWrite(self.fd, timeout) }
+    fn _pollRead(timeoutMs) { sock.pollRead(self.fd, timeoutMs) }
+    fn _pollWrite(timeoutMs) { sock.pollWrite(self.fd, timeoutMs) }
 
     self.send = _send
     self.recv = _recv
@@ -81,7 +81,7 @@ fn UnixServer(fd, path) {
         }
     }
 
-    fn _pollAccept(timeout) { sock.pollRead(self.fd, timeout) }
+    fn _pollAccept(timeoutMs) { sock.pollRead(self.fd, timeoutMs) }
 
     self.accept = _accept
     self.close = _close
@@ -93,11 +93,11 @@ fn UnixServer(fd, path) {
 // Public API
 // ===================================================================
 
-fn connect(path, timeout) {
+fn connect(path, timeoutMs) {
     fd = sock.create(sock.AF_UNIX, sock.SOCK_STREAM, 0)
     if fd < 0 { return null }
 
-    if timeout != null {
+    if timeoutMs != null {
         sock.setNonBlocking(fd)
   rc = sock.connect(fd, path, 0, sock.AF_UNIX)
   if rc < 0 {
@@ -106,7 +106,7 @@ fn connect(path, timeout) {
       sock.close(fd)
       return null
     }
-    if !sock.pollWrite(fd, timeout) {
+    if !sock.pollWrite(fd, timeoutMs) {
       sock.close(fd)
       return null
     }

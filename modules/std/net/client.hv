@@ -14,7 +14,7 @@ use "net/tls" as tls
 use "net/http" as http
 
 fn HTTPClient() {
-    self = {pool: [], maxIdleConns: 5, idleTimeout: 60000} // idleTimeout 60 seconds
+    self = {connections: [], maxIdleConns: 5, idleTimeout: 60000} // idleTimeout 60 seconds
 
     fn _getConn(parsedUrl) {
         // Clean up expired connections first
@@ -22,7 +22,7 @@ fn HTTPClient() {
         activePool = []
         targetConn = null
         
-        for entry in self.pool {
+        for entry in self.connections {
             if now - entry.lastUsed > self.idleTimeout {
                 entry.conn.close()
             } else if targetConn == null && entry.scheme == parsedUrl.scheme && entry.host == parsedUrl.host && entry.port == parsedUrl.port && entry.conn.isAlive() {
@@ -31,7 +31,7 @@ fn HTTPClient() {
                 activePool.push(entry)
             }
         }
-        self.pool = activePool
+        self.connections = activePool
 
         if targetConn != null {
             return targetConn
@@ -59,21 +59,21 @@ fn HTTPClient() {
             return
         }
 
-        if #self.pool >= self.maxIdleConns {
+        if #self.connections >= self.maxIdleConns {
             // Close oldest connection
-            oldest = self.pool[0]
+            oldest = self.connections[0]
             oldest.conn.close()
             // Shift
             newPool = []
             i = 1
-            while i < #self.pool {
-                newPool.push(self.pool[i])
+            while i < #self.connections {
+                newPool.push(self.connections[i])
                 i = i + 1
             }
-            self.pool = newPool
+            self.connections = newPool
         }
 
-        self.pool.push({
+        self.connections.push({
             scheme: parsedUrl.scheme,
             host: parsedUrl.host,
             port: parsedUrl.port,
@@ -129,10 +129,10 @@ fn HTTPClient() {
     fn _post(url, body, headers) { _request("POST", url, headers, body) }
 
     fn _close() {
-        for entry in self.pool {
+        for entry in self.connections {
             entry.conn.close()
         }
-        self.pool = []
+        self.connections = []
     }
 
     self.request = _request

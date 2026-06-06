@@ -1,0 +1,306 @@
+// test_new_stdlib.hv — Integration tests for html, chrono, sqlite, argparse, future
+
+// ============================================================
+// 1. HTML module
+// ============================================================
+use "html" as html
+
+print("=== HTML ===")
+
+// escape
+escaped = html.escape("<script>alert('xss')</script>")
+print("escape:", escaped)
+if !escaped.includes("&lt;") { print("FAILED: escape < missing") }
+if !escaped.includes("&gt;") { print("FAILED: escape > missing") }
+if !escaped.includes("&#39;") { print("FAILED: escape ' missing") }
+
+// unescape
+unescaped = html.unescape("&lt;b&gt;hello&lt;/b&gt;")
+print("unescape:", unescaped)
+if unescaped != "<b>hello</b>" { print("FAILED: unescape") }
+
+// tag
+div = html.tag("div", {class: "container", id: "main"}, "Hello World")
+print("tag:", div)
+if !div.includes("<div") { print("FAILED: tag missing <div") }
+if !div.includes("</div>") { print("FAILED: tag missing </div>") }
+
+// selfClose
+br = html.selfClose("br", null)
+print("selfClose:", br)
+if !br.includes("<br") { print("FAILED: selfClose missing <br") }
+
+// stripTags
+stripped = html.stripTags("<p>Hello <b>World</b></p>")
+print("stripTags:", stripped)
+if stripped != "Hello World" { print("FAILED: stripTags") }
+
+// template
+tmpl = "Hello, {{name}}! You have {{count}} messages."
+ctx = {name: "Alice", count: 3}
+rendered = html.template(tmpl, ctx)
+print("template:", rendered)
+if !rendered.includes("Alice") { print("FAILED: template name") }
+if !rendered.includes("3") { print("FAILED: template count") }
+
+// ul
+list = html.ul(["item1", "item2", "item3"])
+print("ul:", list)
+if !list.includes("<ul>") { print("FAILED: ul") }
+
+print("HTML tests passed!")
+
+// ============================================================
+// 2. Chrono module
+// ============================================================
+use "chrono" as chrono
+
+print("\n=== CHRONO ===")
+
+// Duration
+d1 = chrono.seconds(90)
+print("90 seconds total ms:", d1.totalMs())
+if d1.totalMs() != 90000 { print("FAILED: seconds to ms") }
+
+d2 = chrono.hours(2)
+print("2 hours total minutes:", d2.totalMinutes())
+if d2.totalMinutes() != 120 { print("FAILED: hours to minutes") }
+
+// Duration arithmetic
+d3 = chrono.minutes(5).add(chrono.seconds(30))
+print("5m30s in ms:", d3.totalMs())
+if d3.totalMs() != 330000 { print("FAILED: duration add") }
+
+// Duration string
+print("5m30s str:", d3.str())
+
+// DateTime from parts
+dt = chrono.fromParts(2024, 3, 15, 10, 30, 0, 0)
+print("year:", dt.year())
+print("month:", dt.month())
+print("day:", dt.day())
+print("hour:", dt.hour())
+print("minute:", dt.minute())
+if dt.year() != 2024 { print("FAILED: year") }
+if dt.month() != 3 { print("FAILED: month") }
+if dt.day() != 15 { print("FAILED: day") }
+
+// ISO string
+iso = dt.isoString()
+print("isoString:", iso)
+if !iso.includes("2024") { print("FAILED: iso year") }
+if !iso.includes("03") { print("FAILED: iso month") }
+if !iso.includes("15") { print("FAILED: iso day") }
+
+// Parse ISO
+dt2 = chrono.parse("2024-06-01T12:00:00Z")
+print("parsed year:", dt2.year())
+if dt2.year() != 2024 { print("FAILED: parse year") }
+if dt2.month() != 6 { print("FAILED: parse month") }
+
+// Comparison
+if dt.after(dt2) { print("FAILED: comparison — 2024-03 should be before 2024-06") }
+if !dt.before(dt2) { print("FAILED: before comparison") }
+
+// Leap year
+dt3 = chrono.fromParts(2000, 2, 29, 0, 0, 0, 0)
+print("2000-02-29 day:", dt3.day())
+if dt3.day() != 29 { print("FAILED: leap year day") }
+
+// Format
+formatted = dt.format("%Y/%m/%d %H:%M:%S")
+print("formatted:", formatted)
+if !formatted.includes("2024") { print("FAILED: format year") }
+
+// Stopwatch
+sw = chrono.stopwatch()
+elapsed = sw.elapsed()
+print("stopwatch elapsed ms:", elapsed.totalMs())
+
+// measure
+m = chrono.measure(fn() { 1 + 1 })
+print("measure result:", m.result, "elapsed:", m.elapsed.totalMs(), "ms")
+if m.result != 2 { print("FAILED: measure result") }
+
+print("Chrono tests passed!")
+
+// ============================================================
+// 3. SQLite module
+// ============================================================
+use "sqlite" as sqlite
+
+print("\n=== SQLITE ===")
+
+if !sqlite.available() {
+    print("SQLite3 library not available, skipping tests")
+} else {
+    db = sqlite.memory()
+    if db == null {
+        print("FAILED: could not open in-memory database")
+    } else {
+        // Create table
+        db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER, score REAL)")
+        print("Table created")
+
+        // Insert rows
+        db.exec("INSERT INTO users (name, age, score) VALUES (?, ?, ?)", ["Alice", 30, 9.5])
+        db.exec("INSERT INTO users (name, age, score) VALUES (?, ?, ?)", ["Bob", 25, 7.2])
+        db.exec("INSERT INTO users (name, age, score) VALUES (?, ?, ?)", ["Charlie", 35, 8.8])
+
+        lastId = db.lastInsertId()
+        print("lastInsertId:", lastId)
+        if lastId != 3 { print("FAILED: lastInsertId") }
+
+        // Query all rows
+        rows = db.query("SELECT * FROM users ORDER BY age")
+        print("rows:", #rows)
+        if #rows != 3 { print("FAILED: row count") }
+
+        for row in rows {
+            print("  row:", row.name, row.age, row.score)
+        }
+
+        // Query with WHERE
+        filtered = db.query("SELECT * FROM users WHERE age > ?", [28])
+        print("filtered (age > 28):", #filtered)
+        if #filtered != 2 { print("FAILED: filter") }
+
+        // get single row
+        alice = db.get("SELECT * FROM users WHERE name = ?", ["Alice"])
+        print("Alice:", alice.name, alice.age, alice.score)
+        if alice.name != "Alice" { print("FAILED: get name") }
+        if alice.age != 30 { print("FAILED: get age") }
+
+        // scalar
+        count = db.scalar("SELECT COUNT(*) FROM users")
+        print("count:", count)
+        if count != 3 { print("FAILED: scalar count") }
+
+        // Transaction
+        db.begin()
+        db.exec("INSERT INTO users (name, age, score) VALUES (?, ?, ?)", ["Dave", 20, 6.1])
+        db.rollback()
+
+        count2 = db.scalar("SELECT COUNT(*) FROM users")
+        print("count after rollback:", count2)
+        if count2 != 3 { print("FAILED: transaction rollback") }
+
+        // DELETE
+        changes = db.exec("DELETE FROM users WHERE name = ?", ["Bob"])
+        print("deleted rows:", changes)
+        if changes != 1 { print("FAILED: delete changes") }
+
+        db.close()
+        print("SQLite tests passed!")
+    }
+}
+
+// ============================================================
+// 4. Argparse module
+// ============================================================
+use "argparse" as argparse
+
+print("\n=== ARGPARSE ===")
+
+// Build a test CLI
+cli = argparse.App("myapp", "1.2.0", "A test application")
+cli.arg("--name", "-n", "Your name", "string", false, "World")
+cli.arg("--count", "-c", "Repeat count", "int", false, 1)
+cli.flag("--verbose", "-v", "Enable verbose output")
+cli.positional("file", "Input file path", false)
+
+// Parse a test argv
+parsed = cli.parse(["--name", "Alice", "--count", "3", "-v", "input.txt"])
+print("name:", parsed.name)
+print("count:", parsed.count)
+print("verbose:", parsed.verbose)
+print("file:", parsed.file)
+
+if parsed.name != "Alice" { print("FAILED: name") }
+if parsed.count != 3 { print("FAILED: count") }
+if !parsed.verbose { print("FAILED: verbose flag") }
+if parsed.file != "input.txt" { print("FAILED: positional file") }
+
+// Test defaults
+parsed2 = cli.parse([])
+print("default name:", parsed2.name)
+print("default count:", parsed2.count)
+if parsed2.name != "World" { print("FAILED: default name") }
+if parsed2.count != 1 { print("FAILED: default count") }
+if parsed2.verbose { print("FAILED: default verbose should be false") }
+
+// Test --key=value form
+parsed3 = cli.parse(["--name=Bob", "--count=5"])
+print("--name=Bob parsed:", parsed3.name)
+if parsed3.name != "Bob" { print("FAILED: --key=value form") }
+
+// parseRaw
+raw = argparse.parseRaw(["--foo", "bar", "--baz", "-x", "positional1"])
+print("raw foo:", raw["foo"])
+print("raw baz:", raw["baz"])
+print("raw x:", raw["x"])
+print("raw _:", raw["_"])
+if raw["foo"] != "bar" { print("FAILED: parseRaw foo") }
+if raw["baz"] != true { print("FAILED: parseRaw baz flag") }
+
+print("Argparse tests passed!")
+
+// ============================================================
+// 5. Future module (synchronous subset)
+// ============================================================
+use "future" as future
+
+print("\n=== FUTURE (sync) ===")
+
+// resolve/then
+f1 = future.resolve(42)
+print("f1 isResolved:", f1.isResolved())
+print("f1 get:", f1.get())
+if !f1.isResolved() { print("FAILED: resolve isResolved") }
+if f1.get() != 42 { print("FAILED: resolve get") }
+
+// reject/catch
+f2 = future.reject("oops")
+print("f2 isRejected:", f2.isRejected())
+print("f2 error:", f2.getError())
+if !f2.isRejected() { print("FAILED: reject isRejected") }
+if f2.getError() != "oops" { print("FAILED: reject getError") }
+
+// then chaining
+chained = future.resolve(10).then(fn(v) { v * 2 }).then(fn(v) { v + 1 })
+print("chained:", chained.get())
+if chained.get() != 21 { print("FAILED: then chaining") }
+
+// catch fallthrough
+caught = future.reject("err").onError(fn(e) { "recovered: " + e })
+print("caught:", caught.get())
+if caught.get() != "recovered: err" { print("FAILED: catch") }
+
+// all
+all = future.all([future.resolve(1), future.resolve(2), future.resolve(3)])
+print("all:", all.get())
+if #all.get() != 3 { print("FAILED: all size") }
+if all.get()[0] != 1 { print("FAILED: all[0]") }
+if all.get()[2] != 3 { print("FAILED: all[2]") }
+
+// any
+raceWinner = future.any([future.resolve("first"), future.resolve("second")])
+print("any:", raceWinner.get())
+if raceWinner.get() != "first" { print("FAILED: any") }
+
+// allSettled
+settled = future.allSettled([future.resolve("ok"), future.reject("fail")])
+print("allSettled:", #settled.get())
+if #settled.get() != 2 { print("FAILED: allSettled size") }
+if settled.get()[0].status != "fulfilled" { print("FAILED: allSettled[0] status") }
+if settled.get()[1].status != "rejected" { print("FAILED: allSettled[1] status") }
+
+// deferred
+d = future.deferred()
+d.resolve("hello from deferred")
+print("deferred:", d.future.get())
+if d.future.get() != "hello from deferred" { print("FAILED: deferred") }
+
+print("Future tests passed!")
+
+print("\n=== ALL NEW STDLIB TESTS PASSED ===")

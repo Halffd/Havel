@@ -1,0 +1,449 @@
+// chrono.hv — Rich date/time module built on the C++ time host bridge
+//
+// Usage:
+//   use "chrono" as chrono
+//
+// Provides:
+//   Duration objects, DateTime objects, parsing, formatting, arithmetic,
+//   comparison, timezone-naive operations.
+
+// ============================================================
+// Duration — represents a span of time in milliseconds
+// ============================================================
+
+fn Duration(ms) {
+    print("Duration constructor: ms =", ms)
+    self = {ms: ms}
+
+    fn _totalMs() { self.ms }
+    fn _totalSeconds() { self.ms / 1000 }
+    fn _totalMinutes() { self.ms / 60000 }
+    fn _totalHours() { self.ms / 3600000 }
+    fn _totalDays() { self.ms / 86400000 }
+
+    fn _add(other) {
+        print("DEBUG _add: self.ms =", self.ms, "other.ms =", other.ms)
+        Duration(self.ms + other.ms)
+    }
+    fn _sub(other) { Duration(self.ms - other.ms) }
+    fn _scale(factor) { Duration(self.ms * factor) }
+    fn _abs() {
+        if self.ms < 0 { Duration(-self.ms) }
+        else { Duration(self.ms) }
+    }
+    fn _isZero() { self.ms == 0 }
+    fn _isNeg() { self.ms < 0 }
+
+    fn _str() {
+        total = int(self.ms / 1000)
+        neg = total < 0
+        if neg { total = -total }
+        h = int(total / 3600)
+        m = int((total % 3600) / 60)
+        s = int(total % 60)
+        ms2 = int(self.ms % 1000)
+        if ms2 < 0 { ms2 = -ms2 }
+        prefix = ""
+        if neg { prefix = "-" }
+        hStr = str(h)
+        mStr = str(m)
+        sStr = str(s)
+        if #mStr < 2 { mStr = "0" + mStr }
+        if #sStr < 2 { sStr = "0" + sStr }
+        if ms2 > 0 {
+            msStr = str(ms2)
+            while #msStr < 3 { msStr = "0" + msStr }
+            prefix + hStr + "h" + mStr + "m" + sStr + "." + msStr + "s"
+        } else {
+            prefix + hStr + "h" + mStr + "m" + sStr + "s"
+        }
+    }
+
+    self.totalMs = _totalMs
+    self.totalSeconds = _totalSeconds
+    self.totalMinutes = _totalMinutes
+    self.totalHours = _totalHours
+    self.totalDays = _totalDays
+    self.add = _add
+    self.sub = _sub
+    self.scale = _scale
+    self.abs = _abs
+    self.isZero = _isZero
+    self.isNeg = _isNeg
+    self.str = _str
+    self
+}
+
+fn milliseconds(n) { Duration(n) }
+fn seconds(n) {
+    print("seconds: n =", n)
+    Duration(n * 1000)
+}
+fn minutes(n) { Duration(n * 60000) }
+fn hours(n) { Duration(n * 3600000) }
+fn days(n) { Duration(n * 86400000) }
+fn weeks(n) { Duration(n * 604800000) }
+
+// ============================================================
+// DateTime — wraps a Unix millisecond timestamp
+// ============================================================
+
+fn DateTime(ms) {
+    self = {ms: ms}
+
+    fn _year() {
+        // Days since epoch
+        d = int(self.ms / 86400000)
+        _daysToYear(d)
+    }
+
+    fn _month() {
+        d = int(self.ms / 86400000)
+        y = _daysToYear(d)
+        dy = d - _yearStart(y)
+        _dayToMonth(dy, _isLeap(y))
+    }
+
+    fn _day() {
+        d = int(self.ms / 86400000)
+        y = _daysToYear(d)
+        dy = d - _yearStart(y)
+        mo = _dayToMonth(dy, _isLeap(y))
+        dy - _monthStart(mo, _isLeap(y)) + 1
+    }
+
+    fn _hour() {
+        s = int(self.ms / 1000)
+        int((s % 86400) / 3600)
+    }
+
+    fn _minute() {
+        s = int(self.ms / 1000)
+        int((s % 3600) / 60)
+    }
+
+    fn _second() {
+        int((self.ms / 1000) % 60)
+    }
+
+    fn _millis() { int(self.ms % 1000) }
+
+    fn _weekday() {
+        // 1970-01-01 was a Thursday (4, Monday=0)
+        d = int(self.ms / 86400000)
+        (d + 3) % 7
+    }
+
+    fn _timestamp() { int(self.ms / 1000) }
+    fn _timestampMs() { self.ms }
+
+    fn _add(dur) { DateTime(self.ms + dur.ms) }
+    fn _sub(other) {
+        t = type.of(other)
+        if t == "object" {
+            if other.has("ms") {
+                // Could be Duration or DateTime
+                if other.has("year") {
+                    Duration(self.ms - other.ms)
+                } else {
+                    DateTime(self.ms - other.ms)
+                }
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+    }
+
+    fn _before(other) { self.ms < other.ms }
+    fn _after(other) { self.ms > other.ms }
+    fn _equal(other) { self.ms == other.ms }
+
+    fn _format(fmt) {
+        // Use host time formatting if available; else do a basic manual format
+        ts = int(self.ms / 1000)
+        y = _year()
+        mo = _month()
+        d = _day()
+        h = _hour()
+        mi = _minute()
+        sec = _second()
+        ms2 = _millis()
+        wdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        wdaysFull = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        monthsFull = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+        wd = _weekday()
+
+        result = fmt
+        // Pad helpers
+        yStr = str(y)
+        moStr = str(mo)
+        dStr = str(d)
+        hStr = str(h)
+        miStr = str(mi)
+        secStr = str(sec)
+        if #moStr < 2 { moStr = "0" + moStr }
+        if #dStr < 2 { dStr = "0" + dStr }
+        if #hStr < 2 { hStr = "0" + hStr }
+        if #miStr < 2 { miStr = "0" + miStr }
+        if #secStr < 2 { secStr = "0" + secStr }
+        while #yStr < 4 { yStr = "0" + yStr }
+
+        result = result.replace("%Y", yStr)
+        result = result.replace("%y", yStr[2:4])
+        result = result.replace("%m", moStr)
+        result = result.replace("%d", dStr)
+        result = result.replace("%H", hStr)
+        result = result.replace("%M", miStr)
+        result = result.replace("%S", secStr)
+        result = result.replace("%a", wdays[wd])
+        result = result.replace("%A", wdaysFull[wd])
+        result = result.replace("%b", months[mo - 1])
+        result = result.replace("%B", monthsFull[mo - 1])
+        result = result.replace("%j", str(int(self.ms / 86400000) - _yearStart(y)))
+        result = result.replace("%s", str(ts))
+        result = result.replace("%Z", "UTC")
+        result
+    }
+
+    fn _isoString() { _format("%Y-%m-%dT%H:%M:%SZ") }
+
+    fn _dateString() { _format("%Y-%m-%d") }
+
+    fn _timeString() { _format("%H:%M:%S") }
+
+    self.year = _year
+    self.month = _month
+    self.day = _day
+    self.hour = _hour
+    self.minute = _minute
+    self.second = _second
+    self.millis = _millis
+    self.weekday = _weekday
+    self.timestamp = _timestamp
+    self.timestampMs = _timestampMs
+    self.add = _add
+    self.sub = _sub
+    self.before = _before
+    self.after = _after
+    self.equal = _equal
+    self.format = _format
+    self.isoString = _isoString
+    self.dateString = _dateString
+    self.timeString = _timeString
+    self
+}
+
+// ============================================================
+// Calendar arithmetic helpers (Julian Day Number based)
+// ============================================================
+
+fn _isLeap(y) {
+    if y % 400 == 0 { return true }
+    if y % 100 == 0 { return false }
+    y % 4 == 0
+}
+
+// Days in month (1-indexed)
+fn _daysInMonth(m, leap) {
+    if m == 2 {
+        if leap { return 29 }
+        return 28
+    }
+    if m == 4 || m == 6 || m == 9 || m == 11 { return 30 }
+    31
+}
+
+// Day number of start of year y, counting from 1970-01-01 = 0
+fn _yearStart(y) {
+    if y == 1970 { return 0 }
+    if y > 1970 {
+        d = 0
+        i = 1970
+        while i < y {
+            if _isLeap(i) { d += 366 } else { d += 365 }
+            i += 1
+        }
+        return d
+    }
+    // Before 1970
+    d = 0
+    i = y
+    while i < 1970 {
+        if _isLeap(i) { d -= 366 } else { d -= 365 }
+        i += 1
+    }
+    d
+}
+
+// Year that contains day number d
+fn _daysToYear(d) {
+    if d >= 0 {
+        y = 1970
+        while true {
+            dpy = 365
+            if _isLeap(y) { dpy = 366 }
+            if d < dpy { return y }
+            d -= dpy
+            y += 1
+        }
+    } else {
+        y = 1969
+        while true {
+            dpy = 365
+            if _isLeap(y) { dpy = 366 }
+            d += dpy
+            if d >= 0 { return y }
+            y -= 1
+        }
+    }
+    1970
+}
+
+// Day offset within year (0-indexed) to month number (1-indexed)
+fn _dayToMonth(dy, leap) {
+    m = 1
+    while m <= 12 {
+        dm = _daysInMonth(m, leap)
+        if dy < dm { return m }
+        dy -= dm
+        m += 1
+    }
+    12
+}
+
+// Day offset of start of month (1-indexed) within a year
+fn _monthStart(mo, leap) {
+    total = 0
+    m = 1
+    while m < mo {
+        total += _daysInMonth(m, leap)
+        m += 1
+    }
+    total
+}
+
+// ============================================================
+// Public constructors
+// ============================================================
+
+// Current time
+fn now() {
+    ms = time.millis()
+    DateTime(ms)
+}
+
+// From Unix timestamp (seconds)
+fn fromTimestamp(ts) {
+    DateTime(ts * 1000)
+}
+
+// From Unix timestamp milliseconds
+fn fromTimestampMs(ms) {
+    DateTime(ms)
+}
+
+// From components — builds a UTC DateTime
+fn fromParts(year, month, day, hour, minute, second, ms) {
+    if hour == null { hour = 0 }
+    if minute == null { minute = 0 }
+    if second == null { second = 0 }
+    if ms == null { ms = 0 }
+
+    // Convert year/month/day to day number
+    ys = _yearStart(year)
+    leap = _isLeap(year)
+    ds = ys + _monthStart(month, leap) + (day - 1)
+    totalMs = ds * 86400000 + hour * 3600000 + minute * 60000 + second * 1000 + ms
+    DateTime(totalMs)
+}
+
+// Parse ISO 8601 — "2024-01-15T10:30:00Z" or "2024-01-15"
+fn parse(s) {
+    if s == null { return null }
+    if #s >= 10 {
+        year = int(s[0:4])
+        month = int(s[5:7])
+        day = int(s[8:10])
+        hour = 0
+        minute = 0
+        second = 0
+        if #s >= 19 {
+            hour = int(s[11:13])
+            minute = int(s[14:16])
+            second = int(s[17:19])
+        }
+        fromParts(year, month, day, hour, minute, second, 0)
+    } else {
+        null
+    }
+}
+
+// ============================================================
+// Measurement utilities
+// ============================================================
+
+fn stopwatch() {
+    startMs = time.millis()
+    self = {startMs: startMs}
+
+    fn _elapsed() { Duration(time.millis() - self.startMs) }
+    fn _reset() { self.startMs = time.millis() }
+
+    self.elapsed = _elapsed
+    self.reset = _reset
+    self
+}
+
+// Measure wall-clock time of a callable
+fn measure(cb) {
+    t0 = time.millis()
+    result = cb()
+    elapsed = Duration(time.millis() - t0)
+    {result: result, elapsed: elapsed}
+}
+
+// Sleep for a Duration
+fn sleep(dur) {
+    time.sleep(int(dur.ms))
+}
+
+// ============================================================
+// Weekday / month name helpers
+// ============================================================
+
+MONDAY    = 0
+TUESDAY   = 1
+WEDNESDAY = 2
+THURSDAY  = 3
+FRIDAY    = 4
+SATURDAY  = 5
+SUNDAY    = 6
+
+JANUARY   = 1
+FEBRUARY  = 2
+MARCH     = 3
+APRIL     = 4
+MAY       = 5
+JUNE      = 6
+JULY      = 7
+AUGUST    = 8
+SEPTEMBER = 9
+OCTOBER   = 10
+NOVEMBER  = 11
+DECEMBER  = 12
+
+fn weekdayName(wd) {
+    names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    if wd < 0 || wd > 6 { return null }
+    names[wd]
+}
+
+fn monthName(m) {
+    names = ["January", "February", "March", "April", "May", "June",
+             "July", "August", "September", "October", "November", "December"]
+    if m < 1 || m > 12 { return null }
+    names[m - 1]
+}

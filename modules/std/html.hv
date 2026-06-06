@@ -1,0 +1,349 @@
+// html.hv — HTML templating and generation
+//
+// Usage:
+//   use "html" as html
+//
+// Features:
+//   - escape(s)          — HTML-escape a string
+//   - unescape(s)        — Decode HTML entities
+//   - tag(name, attrs, content) — Build an HTML tag string
+//   - selfClose(name, attrs)    — Build a self-closing tag
+//   - template(tmpl, ctx)       — Mustache-style {{ key }} rendering
+//   - stripTags(s)        — Remove all HTML tags from a string
+//   - attrs(obj)          — Render an object as HTML attribute pairs
+
+// ============================================================
+// Escaping
+// ============================================================
+
+fn escape(s) {
+    if s == null { return "" }
+    s = str(s)
+    result = ""
+    i = 0
+    while i < #s {
+        ch = s[i:i+1]
+        if ch == "&"  { result = result + "&amp;" }
+        else if ch == "<"  { result = result + "&lt;" }
+        else if ch == ">"  { result = result + "&gt;" }
+        else if ch == "\"" { result = result + "&quot;" }
+        else if ch == "'"  { result = result + "&#39;" }
+        else { result = result + ch }
+        i += 1
+    }
+    result
+}
+
+fn unescape(s) {
+    if s == null { return "" }
+    // Simple entity replacement (covers common cases)
+    result = s.replace("/&amp;/",  "&")
+    result = result.replace("/&lt;/",   "<")
+    result = result.replace("/&gt;/",   ">")
+    result = result.replace("/&quot;/", "\"")
+    result = result.replace("/&#39;/",  "'")
+    result = result.replace("/&apos;/", "'")
+    result = result.replace("/&nbsp;/", " ")
+    result
+}
+
+// ============================================================
+// Attribute rendering
+// ============================================================
+
+fn attrs(obj) {
+    if obj == null { return "" }
+    result = ""
+    for k in obj.keys() {
+        v = obj[k]
+        if v == true {
+            result = result + " " + k
+        } else if v != false && v != null {
+            result = result + " " + k + "=\"" + escape(str(v)) + "\""
+        }
+    }
+    result
+}
+
+// ============================================================
+// Tag builders
+// ============================================================
+
+fn tag(name, attrObj, content) {
+    a = ""
+    if attrObj != null { a = attrs(attrObj) }
+    inner = ""
+    if content != null { inner = str(content) }
+    "<" + name + a + ">" + inner + "</" + name + ">"
+}
+
+fn selfClose(name, attrObj) {
+    a = ""
+    if attrObj != null { a = attrs(attrObj) }
+    "<" + name + a + " />"
+}
+
+// Convenience wrappers for common tags
+fn div(attrObj, content) { tag("div", attrObj, content) }
+fn span(attrObj, content) { tag("span", attrObj, content) }
+fn p(attrObj, content) { tag("p", attrObj, content) }
+fn h1(content) { tag("h1", null, content) }
+fn h2(content) { tag("h2", null, content) }
+fn h3(content) { tag("h3", null, content) }
+fn a(href, content, attrObj) {
+    a2 = {}
+    if attrObj != null {
+        for k in attrObj.keys() { a2[k] = attrObj[k] }
+    }
+    a2["href"] = href
+    tag("a", a2, content)
+}
+fn img(src, alt, attrObj) {
+    a2 = {}
+    if attrObj != null {
+        for k in attrObj.keys() { a2[k] = attrObj[k] }
+    }
+    a2["src"] = src
+    if alt != null { a2["alt"] = alt }
+    selfClose("img", a2)
+}
+fn input(type_, name, attrObj) {
+    a2 = {}
+    if attrObj != null {
+        for k in attrObj.keys() { a2[k] = attrObj[k] }
+    }
+    a2["type"] = type_
+    if name != null { a2["name"] = name }
+    selfClose("input", a2)
+}
+fn ul(items) {
+    inner = ""
+    for item in items { inner = inner + tag("li", null, item) }
+    tag("ul", null, inner)
+}
+fn ol(items) {
+    inner = ""
+    for item in items { inner = inner + tag("li", null, item) }
+    tag("ol", null, inner)
+}
+fn table(rows, headers) {
+    head = ""
+    if headers != null {
+        cells = ""
+        for h in headers { cells = cells + tag("th", null, escape(str(h))) }
+        head = tag("thead", null, tag("tr", null, cells))
+    }
+    body = ""
+    for row in rows {
+        cells = ""
+        for cell in row { cells = cells + tag("td", null, escape(str(cell))) }
+        body = body + tag("tr", null, cells)
+    }
+    tag("table", null, head + tag("tbody", null, body))
+}
+
+// ============================================================
+// Template engine — Mustache-style {{ key }} and {{{ raw }}}
+// ============================================================
+
+// Internal: find next {{ or {{{
+fn _findTag(tmpl, start) {
+    i = start
+    n = #tmpl
+    while i < n {
+        if tmpl[i:i+2] == "{{" { return i }
+        i += 1
+    }
+    -1
+}
+
+fn _renderValue(v) {
+    if v == null { return "" }
+    t = type(v)
+    if t == "bool" {
+        if v { return "true" }
+        return "false"
+    }
+    str(v)
+}
+
+// Resolve dot-notation key in context: "user.name" -> ctx.user.name
+fn _resolve(ctx, key) {
+    if ctx == null { return null }
+    key = key.trim()
+    if !key.includes(".") {
+        if type(ctx) == "object" && ctx.has(key) { return ctx[key] }
+        return null
+    }
+    // Dot-notation traversal
+    parts = key.split(".")
+    cur = ctx
+    for part in parts {
+        if cur == null { return null }
+        if type(cur) != "object" { return null }
+        if !cur.has(part) { return null }
+        cur = cur[part]
+    }
+    cur
+}
+
+// Render a Mustache-style template with context object
+// Supports: {{ key }} (escaped), {{{ key }}} (raw), {{#key}}...{{/key}} (sections), {{^key}}...{{/key}} (inverted)
+fn template(tmpl, ctx) {
+    if tmpl == null { return "" }
+    if ctx == null { ctx = {} }
+    _renderSection(tmpl, ctx, 0, #tmpl)
+}
+
+fn _renderSection(tmpl, ctx, start, end_) {
+    result = ""
+    i = start
+    while i < end_ {
+        pos = _findTag(tmpl, i)
+        if pos < 0 || pos >= end_ {
+            result = result + tmpl[i:end_]
+            i = end_
+        } else {
+            // Append literal before tag
+            result = result + tmpl[i:pos]
+            i = pos
+
+            // Detect triple vs double brace
+            raw = false
+            if i + 2 < end_ && tmpl[i:i+3] == "{{{" {
+                raw = true
+                i += 3
+            } else {
+                i += 2
+            }
+
+            // Find closing braces
+            closeStr = "}}"
+            if raw { closeStr = "}}}" }
+            closeLen = #closeStr
+            closePos = _findClose(tmpl, i, closeStr, end_)
+            if closePos < 0 {
+                result = result + tmpl[i:]
+                i = end_
+            } else {
+                tagContent = tmpl[i:closePos].trim()
+
+                // Section: #key
+                if #tagContent > 0 && tagContent[0:1] == "#" {
+                    sectionKey = tagContent[1:]
+                    sectionEnd = _findSectionEnd(tmpl, closePos + closeLen, sectionKey, end_)
+                    if sectionEnd < 0 {
+                        i = closePos + closeLen
+                    } else {
+                        sval = _resolve(ctx, sectionKey)
+                        sectionBody_start = closePos + closeLen
+                        sectionBody_end = sectionEnd
+                        // Find where {{/key}} ends
+                        closeTagLen = 2 + 1 + #sectionKey + 2 // {{/key}}
+                        i = sectionEnd + closeTagLen
+
+                        if sval != null && sval != false {
+                            t = type(sval)
+                            if t == "array" {
+                                for item in sval {
+                                    result = result + _renderSection(tmpl, item, sectionBody_start, sectionBody_end)
+                                }
+                            } else {
+                                subCtx = ctx
+                                if t == "object" { subCtx = sval }
+                                result = result + _renderSection(tmpl, subCtx, sectionBody_start, sectionBody_end)
+                            }
+                        }
+                    }
+                // Inverted section: ^key
+                } else if #tagContent > 0 && tagContent[0:1] == "^" {
+                    sectionKey = tagContent[1:]
+                    sectionEnd = _findSectionEnd(tmpl, closePos + closeLen, sectionKey, end_)
+                    if sectionEnd < 0 {
+                        i = closePos + closeLen
+                    } else {
+                        sval = _resolve(ctx, sectionKey)
+                        sectionBody_start = closePos + closeLen
+                        sectionBody_end = sectionEnd
+                        closeTagLen = 2 + 1 + #sectionKey + 2
+                        i = sectionEnd + closeTagLen
+
+                        isFalsy = sval == null || sval == false
+                        if !isFalsy && type(sval) == "array" { isFalsy = #sval == 0 }
+                        if isFalsy {
+                            result = result + _renderSection(tmpl, ctx, sectionBody_start, sectionBody_end)
+                        }
+                    }
+                // Comment: !
+                } else if #tagContent > 0 && tagContent[0:1] == "!" {
+                    i = closePos + closeLen
+
+                // Variable
+                } else {
+                    sval = _resolve(ctx, tagContent)
+                    rendered = _renderValue(sval)
+                    if raw {
+                        result = result + rendered
+                    } else {
+                        result = result + escape(rendered)
+                    }
+                    i = closePos + closeLen
+                }
+            }
+        }
+    }
+    result
+}
+
+fn _findClose(tmpl, start, closeStr, end_) {
+    i = start
+    csLen = #closeStr
+    while i + csLen <= end_ {
+        if tmpl[i:i+csLen] == closeStr { return i }
+        i += 1
+    }
+    -1
+}
+
+fn _findSectionEnd(tmpl, start, key, end_) {
+    searchFor = "{{/" + key + "}}"
+    sfLen = #searchFor
+    i = start
+    while i + sfLen <= end_ {
+        if tmpl[i:i+sfLen] == searchFor { return i }
+        i += 1
+    }
+    -1
+}
+
+// ============================================================
+// Strip tags
+// ============================================================
+
+fn stripTags(s) {
+    if s == null { return "" }
+    result = ""
+    i = 0
+    inTag = false
+    while i < #s {
+        ch = s[i:i+1]
+        if ch == "<" { inTag = true }
+        else if ch == ">" { inTag = false }
+        else if !inTag { result = result + ch }
+        i += 1
+    }
+    result
+}
+
+// ============================================================
+// Full page helpers
+// ============================================================
+
+fn doctype() { "<!DOCTYPE html>" }
+
+fn page(title, bodyContent, headExtra) {
+    head = tag("meta", {charset: "utf-8"}, null)
+    if headExtra != null { head = head + headExtra }
+    head = tag("head", null, head + tag("title", null, escape(title)))
+    tag("html", null, head + tag("body", null, bodyContent))
+}

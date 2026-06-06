@@ -78,8 +78,8 @@ fn TCPConnection(fd, remote) {
     fn _setKeepAlive() { sock.setKeepAlive(self.fd) }
     fn _setNonBlocking() { sock.setNonBlocking(self.fd) }
 
-    fn _pollRead(timeout) { sock.pollRead(self.fd, timeout) }
-    fn _pollWrite(timeout) { sock.pollWrite(self.fd, timeout) }
+    fn _pollRead(timeoutMs) { sock.pollRead(self.fd, timeoutMs) }
+    fn _pollWrite(timeoutMs) { sock.pollWrite(self.fd, timeoutMs) }
 
     fn _isAlive() { !self.closed && self.fd >= 0 }
 
@@ -118,7 +118,7 @@ fn TCPServer(fd, host, port) {
         }
     }
 
-    fn _pollAccept(timeout) { sock.pollRead(self.fd, timeout) }
+    fn _pollAccept(timeoutMs) { sock.pollRead(self.fd, timeoutMs) }
 
     fn _isAlive() { !self.closed && self.fd >= 0 }
 
@@ -133,7 +133,7 @@ fn TCPServer(fd, host, port) {
 // Public API
 // ===================================================================
 
-fn connect(host, port, timeout) {
+fn connect(host, port, timeoutMs) {
     // Resolve hostname if needed
     ip = host
     // Quick check: if first char is a digit, assume it's an IP
@@ -150,33 +150,33 @@ fn connect(host, port, timeout) {
 
     sock.setNoDelay(fd)
 
-    if timeout != null {
-        // Non-blocking connect with timeout
+    if timeoutMs != null {
+        // Non-blocking connect with timeoutMs
         sock.setNonBlocking(fd)
-		rc = sock.connect(fd, ip, port)
-		if rc < 0 {
-			// Check if connection is in progress (EINPROGRESS = 115)
-			e = sock._errno()
-			if e != 115 {
-				sock.close(fd)
-				return null
-			}
-			// Wait for writable
-			if !sock.pollWrite(fd, timeout) {
-				sock.close(fd)
-				return null
-			}
-			// Check for connect error
-			err = sock.getError(fd)
-			if err != 0 {
-				sock.close(fd)
-				return null
-			}
-		}
-		sock.setBlocking(fd)
-	} else {
-		rc = sock.connect(fd, ip, port)
-		if rc < 0 {
+        rc = sock.connect(fd, ip, port)
+        if rc < 0 {
+            // Check if connection is in progress (EINPROGRESS = 115)
+            e = sock._errno()
+            if e != 115 {
+                sock.close(fd)
+                return null
+            }
+            // Wait for writable
+            if !sock.pollWrite(fd, timeoutMs) {
+                sock.close(fd)
+                return null
+            }
+            // Check for connect error
+            err = sock.getError(fd)
+            if err != 0 {
+                sock.close(fd)
+                return null
+            }
+        }
+        sock.setBlocking(fd)
+    } else {
+        rc = sock.connect(fd, ip, port)
+        if rc < 0 {
             sock.close(fd)
             return null
         }

@@ -110,6 +110,7 @@ void VM::pushHostArrayValue(ArrayRef array_ref, Value value) {
     COMPILER_THROW("pushHostArrayValue unknown array id");
   }
   array->push_back(std::move(value));
+  heap_.bumpArrayVersion(array_ref.id);
 }
 
 // Array helpers
@@ -179,6 +180,7 @@ void VM::setHostArrayValue(ArrayRef array_ref, size_t index,
     }
   }
   (*array)[index] = std::move(value);
+  heap_.bumpArrayVersion(array_ref.id);
 }
 
 Value VM::popHostArrayValue(ArrayRef array_ref) {
@@ -187,6 +189,7 @@ Value VM::popHostArrayValue(ArrayRef array_ref) {
     return Value::makeNull();
   auto value = std::move(array->back());
   array->pop_back();
+  heap_.bumpArrayVersion(array_ref.id);
   return value;
   }
 
@@ -198,6 +201,7 @@ Value VM::popHostArrayValue(ArrayRef array_ref) {
   if (index > array->size())
   index = array->size();
   array->insert(array->begin() + index, std::move(value));
+  heap_.bumpArrayVersion(array_ref.id);
   }
 
   Value VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
@@ -206,6 +210,7 @@ Value VM::popHostArrayValue(ArrayRef array_ref) {
   return Value::makeNull();
   auto value = std::move((*array)[index]);
   array->erase(array->begin() + index);
+  heap_.bumpArrayVersion(array_ref.id);
   return value;
   }
 

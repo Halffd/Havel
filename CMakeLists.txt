@@ -306,7 +306,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/process/*.cpp"
     "src/c/*.c"
  "src/c/*.cpp"
- "src/loader/*.cpp"
+ "src/dl/*.cpp"
     "src/host/async/*.cpp"
     "src/host/audio/*.cpp"
     "src/host/brightness/*.cpp"
@@ -1023,7 +1023,7 @@ set(LSP_SOURCES
  src/havel-lang/parser/Parser.cpp
  src/c/LoggerC.c
  src/c/Config.c
- src/loader/Loader.c
+ src/dl/Loader.c
  )
 
 add_executable(havel-lsp ${LSP_SOURCES})
@@ -1278,7 +1278,7 @@ if(ENABLE_HAVEL_LANG)
 list(APPEND HAVEL_LANG_LIB_SOURCES
  ${CMAKE_SOURCE_DIR}/src/host/module/ModuleLoader.cpp
  ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime/PureStdLib.cpp
- ${CMAKE_SOURCE_DIR}/src/loader/Loader.c
+ ${CMAKE_SOURCE_DIR}/src/dl/Loader.c
  ${CMAKE_SOURCE_DIR}/src/c/LoggerC.c
  ${CMAKE_SOURCE_DIR}/src/c/Config.c
 )

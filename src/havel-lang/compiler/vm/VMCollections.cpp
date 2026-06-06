@@ -69,6 +69,7 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     }
 
     (*set)[keyStr] = value;
+    heap_.bumpSetVersion(id);
     // Don't push set back - the caller manages it
     break;
   }
@@ -89,6 +90,7 @@ bool VM::execCollectionOp(const Instruction &instruction) {
       COMPILER_THROW("Cannot modify frozen array (tuple)");
     }
     array->push_back(value);
+    heap_.bumpArrayVersion(id);
     pushStack(container);
     break;
   }
@@ -489,6 +491,7 @@ if (container.isSetId()) {
 		array->resize(idx_size + 1, Value::makeNull());
 	}
   (*array)[idx_size] = value;
+  heap_.bumpArrayVersion(container.asArrayId());
       break;
     }
 
@@ -515,8 +518,10 @@ if (container.isSetId()) {
       }
       if (present) {
         (*set)[*key] = Value::makeNull();
+        heap_.bumpSetVersion(container.asSetId());
       } else {
         set->erase(*key);
+        heap_.bumpSetVersion(container.asSetId());
       }
       break;
     }
@@ -1406,6 +1411,7 @@ if (!modName.empty()) {
         pushStack(Value::makeBool(false));
       } else {
         array->erase(array->begin() + static_cast<size_t>(idx));
+        heap_.bumpArrayVersion(container.asArrayId());
         pushStack(Value::makeBool(true));
       }
     } else if (container.isSetId()) {
@@ -1417,7 +1423,11 @@ if (!modName.empty()) {
       if (!key) {
         COMPILER_THROW("ARRAY_DEL expects string/number key for set");
       }
-      pushStack(Value::makeBool(set->erase(*key) > 0));
+      bool removed = set->erase(*key) > 0;
+      if (removed) {
+        heap_.bumpSetVersion(container.asSetId());
+      }
+      pushStack(Value::makeBool(removed));
     } else {
       COMPILER_THROW("ARRAY_DEL expects array/set container");
     }
@@ -1438,7 +1448,11 @@ if (!modName.empty()) {
     if (!key) {
       COMPILER_THROW("SET_DEL expects string/number key");
     }
-    pushStack(Value::makeBool(set->erase(*key) > 0));
+    bool removed = set->erase(*key) > 0;
+    if (removed) {
+      heap_.bumpSetVersion(setVal.asSetId());
+    }
+    pushStack(Value::makeBool(removed));
     break;
   }
 
@@ -1458,6 +1472,7 @@ if (!modName.empty()) {
     } else {
       pushStack(arr->back());
       arr->pop_back();
+      heap_.bumpArrayVersion(array.asArrayId());
     }
     break;
   }

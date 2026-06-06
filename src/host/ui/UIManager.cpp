@@ -1,7 +1,7 @@
 #include "UIManager.hpp"
 #include "ExtensionUIBridge.hpp"
 #include "c/ToolkitPlugin.h"
-#include "loader/Loader.h"
+#include "dl/Loader.h"
 #include "../screenshot/ScreenshotService.hpp"
 #include "../window/AltTabService.hpp"
 #include "../clipboard/Clipboard.hpp"

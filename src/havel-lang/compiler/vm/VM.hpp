@@ -6,6 +6,8 @@
 #include "../../runtime/HostContext.hpp"
 #include "../../runtime/ModuleLoader.hpp"
 
+namespace havel { class Loader; }
+
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -285,8 +287,11 @@ std::vector<std::shared_ptr<BytecodeChunk>> repl_chunks_;
 // Keep persistent execution chunks alive so function objects remain valid
 std::vector<std::shared_ptr<BytecodeChunk>> persistent_chunks_;
 
-// Canonical module loader for path resolution and caching
-ModuleLoader moduleLoader_;
+    // Canonical module loader for path resolution and caching
+    ModuleLoader moduleLoader_;
+
+    // Plugin loader for dynamic .so module discovery
+    havel::Loader *pluginLoader_ = nullptr;
 
 // Lazy module registry — descriptors are registered at startup,
 // init functions are called on first use (import/access)
@@ -566,6 +571,33 @@ public:
     uint64_t objectShapeVersion(uint32_t obj_id) const {
         auto *obj = heap_.object(obj_id);
         return obj ? obj->shape_version.load(std::memory_order_relaxed) : 0;
+    }
+
+    uint64_t arrayVersion(uint32_t array_id) const {
+        return heap_.arrayVersion(array_id);
+    }
+
+    uint64_t setVersion(uint32_t set_id) const {
+        return heap_.setVersion(set_id);
+    }
+
+    uint64_t objectLookupVersion(uint32_t obj_id) const {
+        uint64_t hash = 1469598103934665603ULL;
+        const GCHeap::ObjectEntry *current = heap_.object(obj_id);
+        for (size_t depth = 0; current && depth < 8; ++depth) {
+            const uint64_t version = current->shape_version.load(std::memory_order_relaxed);
+            hash ^= version + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+            auto *parent_val = current->get("__proto");
+            if (!parent_val) parent_val = current->get("__class");
+            if (!parent_val) parent_val = current->get("__struct");
+            if (!parent_val) parent_val = current->get("__parent");
+            if (parent_val && parent_val->isObjectId()) {
+                current = heap_.object(parent_val->asObjectId());
+            } else {
+                current = nullptr;
+            }
+        }
+        return hash;
     }
     Value objectGetWithClassChain(uint32_t obj_id, const std::string& key) {
         GCHeap::ObjectEntry *current_obj = heap_.object(obj_id);
@@ -1016,6 +1048,8 @@ bool isLazyModuleLoaded(const std::string &name) const;
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
 
     ModuleLoader& moduleLoader() { return moduleLoader_; }
+    void setPluginLoader(havel::Loader *loader) { pluginLoader_ = loader; }
+    havel::Loader *pluginLoader() const { return pluginLoader_; }
 
  // Get the current bytecode chunk (for execution contexts)
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }

@@ -19,24 +19,6 @@ namespace havel::compiler {
 
 HostModuleLoader::HostModuleLoader(const HostContext &ctx)
     : policy_(ExecutionPolicy::DefaultPolicy()) {
-  // Register built-in modules (metadata only - lazy loading)
-  registerBuiltin("io", {"io", "1.0", true, false, ""});
-  registerBuiltin("file", {"file", "1.0", true, false, ""});
-  registerBuiltin("process", {"process", "1.0", true, false, ""});
-  registerBuiltin("window", {"window", "1.0", true, false, ""});
-  registerBuiltin("hotkey", {"hotkey", "1.0", true, false, ""});
-  registerBuiltin("mode", {"mode", "1.0", true, false, ""});
-  registerBuiltin("clipboard", {"clipboard", "1.0", true, false, ""});
-  registerBuiltin("screenshot", {"screenshot", "1.0", true, false, ""});
-  registerBuiltin("audio", {"audio", "1.0", true, false, ""});
-  registerBuiltin("brightness", {"brightness", "1.0", true, false, ""});
-  registerBuiltin("automation", {"automation", "1.0", true, false, ""});
-  registerBuiltin("browser", {"browser", "1.0", true, false, ""});
-  registerBuiltin("textchunker", {"textchunker", "1.0", true, false, ""});
-  registerBuiltin("mapmanager", {"mapmanager", "1.0", true, false, ""});
-  registerBuiltin("alttab", {"alttab", "1.0", true, false, ""});
-
-  registerBuiltin("ui", {"ui", "1.0", true, false, ""});
 }
 
 HostModuleLoader::~HostModuleLoader() {

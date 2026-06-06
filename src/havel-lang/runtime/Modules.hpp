@@ -1,7 +1,7 @@
 #pragma once
 
 #include "HostContext.hpp"
-#include "loader/Loader.hpp"
+#include "dl/Loader.hpp"
 #include "../compiler/core/Pipeline.hpp"
 #include "../compiler/vm/VMApi.hpp"
 #include "../compiler/vm/VM.hpp"

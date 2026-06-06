@@ -7,7 +7,7 @@
  */
 
 #include "HavelCAPI.h"
-#include "loader/Loader.hpp"
+#include "dl/Loader.hpp"
 
 #include <unordered_map>
 #include <vector>

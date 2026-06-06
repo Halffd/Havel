@@ -1,6 +1,6 @@
 #pragma once
 
-#include "loader/Loader.hpp"
+#include "dl/Loader.hpp"
 #include "extensions/HavelCAPI.h"
 #include "../../../host/module/ExecutionPolicy.hpp"
 #include "../../../host/module/ModuleLoader.hpp"

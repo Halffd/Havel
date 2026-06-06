@@ -84,6 +84,12 @@ ObjectEntry &operator=(const ObjectEntry &) = delete;
                 return &it->second;
             return nullptr;
         }
+        const Value *get(const std::string &key) const {
+            auto it = data.find(key);
+            if (it != data.end())
+                return &it->second;
+            return nullptr;
+        }
 
     void set(const std::string &key, Value value) {
         auto [it, inserted] = data.insert_or_assign(key, std::move(value));
@@ -137,6 +143,19 @@ ObjectEntry &operator=(const ObjectEntry &) = delete;
     struct ArrayEntry {
         std::vector<Value> data;
         bool frozen = false;
+        std::atomic<uint64_t> version{1};
+
+        ArrayEntry() = default;
+        ArrayEntry(const ArrayEntry &o)
+            : data(o.data), frozen(o.frozen), version(o.version.load(std::memory_order_relaxed)) {}
+        ArrayEntry &operator=(const ArrayEntry &o) {
+            if (this != &o) {
+                data = o.data;
+                frozen = o.frozen;
+                version.store(o.version.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            }
+            return *this;
+        }
 
         void push_back(const Value &v) { if (!frozen) data.push_back(v); }
         void pop_back() { if (!frozen) data.pop_back(); }
@@ -247,7 +266,7 @@ struct WaitGroup {
     std::shared_ptr<UpvalueCell> createUpvalue(uint32_t index);
 
     ArrayRef allocateArray();
-    ObjectRef allocateObject(bool sorted = true);
+    ObjectRef allocateObject(bool sorted = false);
     SetRef allocateSet();
     RangeRef allocateRange(int64_t start, int64_t end, int64_t step);
     ErrorRef allocateError(const std::string &errorType,
@@ -300,6 +319,10 @@ struct WaitGroup {
     const ObjectEntry *object(uint32_t id) const;
     std::unordered_map<std::string, Value> *set(uint32_t id);
     const std::unordered_map<std::string, Value> *set(uint32_t id) const;
+    uint64_t setVersion(uint32_t id) const;
+    void bumpSetVersion(uint32_t id);
+    uint64_t arrayVersion(uint32_t id) const;
+    void bumpArrayVersion(uint32_t id);
     Range *range(uint32_t id);
     const Range *range(uint32_t id) const;
     Iterator *iterator(uint32_t id);
@@ -469,6 +492,7 @@ void snapshotSweepKeys();
     std::unordered_map<uint32_t, ArrayEntry> arrays_;
     std::unordered_map<uint32_t, ObjectEntry> objects_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, Value>> sets_;
+    std::unordered_map<uint32_t, uint64_t> set_versions_;
     std::unordered_map<uint32_t, Range> ranges_;
     std::unordered_map<uint32_t, ErrorObject> errors_;
     std::unordered_map<uint32_t, std::pair<uint32_t, std::vector<Value>>> enums_;

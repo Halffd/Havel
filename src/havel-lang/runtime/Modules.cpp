@@ -406,11 +406,11 @@ void Modules::installStdLib() {
     compiler::VMApi api(vm);
     api.serviceRegistry = &host::ServiceRegistry::instance();
     vm.setServiceRegistry(&host::ServiceRegistry::instance());
+    vm.setPluginLoader(extensionLoader_.get());
 
     extensionLoader_->addModulePaths();
 
-#ifdef ENABLE_MODULE_PLUGINS
- auto available = extensionLoader_->scanModules();
+    auto available = extensionLoader_->scanModules();
 
  for (auto &mod : available) {
  if (mod.eager) {
@@ -427,56 +427,7 @@ void Modules::installStdLib() {
  }
  }, mod.aliases);
  }
- }
-#else
- registerPureStdLib(vm);
-
- static const struct { const char *name; const char *aliases[8]; } hostLazyModules[] = {
-#ifndef HAVEL_PURE_VM
- {"hotkey", {"Hotkey"}},
- {"http", {}},
- {"browser", {}},
- {"config", {"cfg", "conf"}},
- {"window", {}},
- {"display", {}},
- {"help", {}},
- {"mouse", {}},
- {"automation", {"pixel"}},
- {"image", {}},
- {"media", {}},
- {"app", {}},
- {"audio", {}},
- {"brightness", {}},
- {"filemanager", {}},
- {"io", {}},
- {"mapmanager", {}},
- {"mode", {}},
- {"ffi", {}},
- {"zoom", {}},
- {"alttab", {}},
- {"clipboard", {}},
- {"historyclipboard", {"clipboardHistory"}},
- {"monitoringclipboard", {"clipboardMonitor"}},
- {"screenshot", {}},
- {"textchunker", {}},
- {"clipboardmgr", {"clipboardMgr"}},
-#endif
- };
-
- for (auto &entry : hostLazyModules) {
- std::string modName(entry.name);
- std::vector<std::string> aliases;
- for (int i = 0; i < 8 && entry.aliases[i]; ++i) {
- aliases.emplace_back(entry.aliases[i]);
- }
- vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
- auto plugin = extensionLoader_->loadModulePlugin(modName);
- if (plugin) {
- plugin->register_fn(static_cast<void *>(&a));
- }
- }, aliases);
- }
-#endif
+    }
 }
 
  void Modules::install(InstallProfile profile, bool eagerBridges) {

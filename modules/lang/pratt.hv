@@ -2337,11 +2337,11 @@ skipNewlines()
 
             }
         }
-        if keyword == TID.Let {
-return LetDeclaration(name, value, l, c)
-        }
-        else {
-            return ValDeclaration(name, value, l, c)
+    if keyword == "Let" {
+        return LetDeclaration(name, value, l, c)
+    }
+    else {
+        return ValDeclaration(name, value, l, c)
 
         }
     }

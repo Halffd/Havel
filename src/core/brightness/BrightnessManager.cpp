@@ -18,6 +18,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#define BR_DEBUG(fmt, ...) fprintf(stderr, "[BR-DEBUG] BrightnessManager " fmt "\n", ##__VA_ARGS__)
+
 #ifdef __WAYLAND__
 // Wayland protocols
 extern "C" {
@@ -118,12 +120,14 @@ static bool resetGammastep() {
 
 // === CONSTRUCTOR/DESTRUCTOR ===
 BrightnessManager::BrightnessManager() {
+  BR_DEBUG("constructor start");
   // Check if we're running under Wayland
   const char *wayland_display = getenv("WAYLAND_DISPLAY");
   const char *xdg_session_type = getenv("XDG_SESSION_TYPE");
 
   if (WindowManagerDetector::IsWayland()) {
     // Running under Wayland
+    BR_DEBUG("detected Wayland");
     try {
 #ifdef __WAYLAND__
       initializeWayland();
@@ -134,20 +138,20 @@ BrightnessManager::BrightnessManager() {
 #endif
     } catch (const std::exception &e) {
       error("Failed to initialize Wayland backend: " + std::string(e.what()));
-      // Fall back to X11 - don't store pointers as they can become invalid
       displayMethod = "x11";
     }
   } else {
-    // Default to X11 - don't store display pointers as they can become invalid
+    BR_DEBUG("not Wayland, using x11 default");
     displayMethod = "x11";
   }
 
-  // Defer monitor initialization until after X11 is confirmed ready
-  // The constructor was accessing X11 too early, causing segfaults
+  BR_DEBUG("constructor end, displayMethod=%s", displayMethod.c_str());
 }
 
 void BrightnessManager::init() {
+  BR_DEBUG("init() start");
   vector<string> monitors = getConnectedMonitors();
+  BR_DEBUG("init() getConnectedMonitors returned %zu monitors", monitors.size());
   if (!monitors.empty()) {
     primaryMonitor = monitors[0];
     for (string monitor : monitors) {

@@ -30,6 +30,9 @@
 #include "../host/network/NetworkService.hpp"
 #include "../host/mouse/MouseService.hpp"
 #include "../host/app/AppService.hpp"
+#include <cstdio>
+
+#define BR_DEBUG(fmt, ...) fprintf(stderr, "[BR-DEBUG] " fmt "\n", ##__VA_ARGS__)
 
 namespace havel {
 
@@ -59,6 +62,7 @@ void declareAllServices() {
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 							   const host::ServiceFilter& includes,
 							   const host::ServiceFilter& excludes) {
+	BR_DEBUG("initializeServiceRegistry called, hostAPI=%p", (void*)hostAPI.get());
 	if (!hostAPI) {
 		debug("initializeServiceRegistry: hostAPI is null, skipping service registration");
 		return;
@@ -142,8 +146,14 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 	}
 
 	if (hostAPI->GetBrightnessManager() && registry.shouldRegister("brightness", includes, excludes)) {
+		BR_DEBUG("registering BrightnessService with manager=%p", (void*)hostAPI->GetBrightnessManager());
 		auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
 		registry.registerService<host::BrightnessService>(brightnessService);
+		BR_DEBUG("BrightnessService registered, service count=%zu", registry.size());
+	} else {
+		BR_DEBUG("skipping BrightnessService: manager=%p shouldRegister=%d",
+			(void*)(hostAPI ? hostAPI->GetBrightnessManager() : nullptr),
+			registry.shouldRegister("brightness", includes, excludes));
 	}
 
 	if (registry.shouldRegister("filesystem", includes, excludes)) {

@@ -12,7 +12,6 @@
 // ============================================================
 
 fn Duration(ms) {
-    print("Duration constructor: ms =", ms)
     self = {ms: ms}
 
     fn _totalMs() { self.ms }
@@ -21,12 +20,21 @@ fn Duration(ms) {
     fn _totalHours() { self.ms / 3600000 }
     fn _totalDays() { self.ms / 86400000 }
 
-    fn _add(other) {
-        print("DEBUG _add: self.ms =", self.ms, "other =", other, "other.ms =", other.ms)
+    fn _add(a, b) {
+        other = a
+        if b != null { other = b }
         Duration(self.ms + other.ms)
     }
-    fn _sub(other) { Duration(self.ms - other.ms) }
-    fn _scale(factor) { Duration(self.ms * factor) }
+    fn _sub(a, b) {
+        other = a
+        if b != null { other = b }
+        Duration(self.ms - other.ms)
+    }
+    fn _scale(a, b) {
+        factor = a
+        if b != null { factor = b }
+        Duration(self.ms * factor)
+    }
     fn _abs() {
         if self.ms < 0 { Duration(-self.ms) }
         else { Duration(self.ms) }
@@ -75,10 +83,7 @@ fn Duration(ms) {
 }
 
 fn milliseconds(n) { Duration(n) }
-fn seconds(n) {
-    print("seconds: n =", n)
-    Duration(n * 1000)
-}
+fn seconds(n) { Duration(n * 1000) }
 fn minutes(n) { Duration(n * 60000) }
 fn hours(n) { Duration(n * 3600000) }
 fn days(n) { Duration(n * 86400000) }
@@ -137,9 +142,15 @@ fn DateTime(ms) {
     fn _timestamp() { int(self.ms / 1000) }
     fn _timestampMs() { self.ms }
 
-    fn _add(dur) { DateTime(self.ms + dur.ms) }
-    fn _sub(other) {
-        t = type.of(other)
+    fn _add(a, b) {
+        dur = a
+        if b != null { dur = b }
+        DateTime(self.ms + dur.ms)
+    }
+    fn _sub(a, b) {
+        other = a
+        if b != null { other = b }
+        t = type(other)
         if t == "object" {
             if other.has("ms") {
                 // Could be Duration or DateTime
@@ -156,11 +167,25 @@ fn DateTime(ms) {
         }
     }
 
-    fn _before(other) { self.ms < other.ms }
-    fn _after(other) { self.ms > other.ms }
-    fn _equal(other) { self.ms == other.ms }
+    fn _before(a, b) {
+        other = a
+        if b != null { other = b }
+        self.ms < other.ms
+    }
+    fn _after(a, b) {
+        other = a
+        if b != null { other = b }
+        self.ms > other.ms
+    }
+    fn _equal(a, b) {
+        other = a
+        if b != null { other = b }
+        self.ms == other.ms
+    }
 
-    fn _format(fmt) {
+    fn _format(a, b) {
+        fmt = a
+        if b != null { fmt = b }
         // Use host time formatting if available; else do a basic manual format
         ts = int(self.ms / 1000)
         y = _year()

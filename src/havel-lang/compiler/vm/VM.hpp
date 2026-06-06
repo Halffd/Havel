@@ -1001,7 +1001,7 @@ const std::vector<Value> &args);
     Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk);
 Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited);
   Value deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-                                const std::unordered_map<std::string, Value>& moduleGlobals,
+                                std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
                                 const std::string& canonicalKey, const std::string& fieldPath,
                                 int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
 
@@ -1037,8 +1037,15 @@ repl_chunks_.push_back(chunk);
 current_chunk = chunk.get();
 }
 void storePersistentChunk(std::shared_ptr<BytecodeChunk> chunk) {
-persistent_chunks_.push_back(std::move(chunk));
+        persistent_chunks_.push_back(std::move(chunk));
+        if (persistent_chunks_.size() > 64) {
+            persistent_chunks_.erase(persistent_chunks_.begin());
+        }
 }
+
+        void clearPersistentChunks() {
+            persistent_chunks_.clear();
+        }
 
   // Resolve a Value that might be a string to an actual string
   std::string resolveStringKey(const Value &value) const;

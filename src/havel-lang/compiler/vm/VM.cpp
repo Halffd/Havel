@@ -2260,7 +2260,7 @@ return Value::makeClosureId(closureRef.id);
 }
 
 Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
-                                const std::unordered_map<std::string, Value>& moduleGlobals,
+                                std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
                                 const std::string& canonicalKey, const std::string& fieldPath, int depth,
                                 std::unordered_set<uint32_t>* visitedPtr) {
   if (depth > 64) return value;
@@ -2285,7 +2285,7 @@ std::string fnCapturedField = fieldPath;
             auto savedGlobals = globals;
             auto savedMirrorId = globals_mirror_object_id_;
 Value savedG = globals["_G"];
-        globals = moduleGlobals;
+        globals = *moduleGlobals;
         current_chunk = moduleChunk.get();
     const auto* callee = moduleChunk->getFunction(funcIdx);
     if (!callee) {
@@ -2379,7 +2379,7 @@ Value savedG = globals["_G"];
         auto moduleChunk = chunk;
         auto closureGlobals = rc->module_globals
             ? rc->module_globals
-            : std::make_shared<std::unordered_map<std::string, Value>>(moduleGlobals);
+            : moduleGlobals;
         auto wrapperName = "$module_closure_" + canonicalKey + "_" + fieldPath;
         host_function_gc_roots_[wrapperName] = closureRootId;
         std::string capturedKey = canonicalKey;
@@ -2455,7 +2455,7 @@ Value savedG = globals["_G"];
         }
         Value result = popStack();
         if (bc_execute_depth_ == 0) {
-            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk), moduleChunk, *closureGlobals, capturedKey, capturedField + "_ret");
+            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk), moduleChunk, closureGlobals, capturedKey, capturedField + "_ret");
         }
         globals = std::move(savedGlobals);
  globals_mirror_object_id_ = savedMirrorId;
@@ -2719,6 +2719,11 @@ Value VM::loadModule(const std::string& path) {
 
     // Resolve the module path
     auto resolved = moduleLoader_.resolve(path, current_script_dir_);
+    if (resolved) {
+        fprintf(stderr, "DEBUG loadModule: path='%s' resolved to type=%d path='%s'\n",
+            path.c_str(), (int)resolved->type, resolved->canonicalPath.c_str());
+        fflush(stderr);
+    }
     if (resolved) {
         std::string canonicalKey = resolved->canonicalPath;
         
@@ -3003,7 +3008,7 @@ Value VM::loadModule(const std::string& path) {
     // caller's chunk after restore, producing garbage.
     auto exportsObj = createHostObject();
 auto *obj = heap_.object(exportsObj.id);
-    auto moduleGlobalsSnapshot = globals;
+    auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
     int exportCount = 0;
     for (const auto& [name, value] : globals) {
         if (name.empty() || name[0] == '_') continue;

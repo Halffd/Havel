@@ -81,7 +81,7 @@ return 0
 
 fn _isError(value) {
     if value == null { return true }
-    if type.of(value) == "array" {
+    if type(value) == "array" {
         if #value == 1 {
             if value[0] == 0 { return true }
 }
@@ -93,6 +93,7 @@ fn _parseValue() {
 _skipWS()
 if _pos >= _len { return null }
 _ch = _src[_pos:_pos+1]
+print("DEBUG _parseValue: _pos =", _pos, "_ch =", _ch)
 if _ch == "{" { return _parseObject() }
 if _ch == "[" { return _parseArray() }
 if _ch == "\"" { return _parseString() }
@@ -437,13 +438,13 @@ return _hex1((v / 4096) % 16) + _hex1((v / 256) % 16) + _hex1((v / 16) % 16) + _
 }
 
 fn _stringify(value, indent, depth) {
-    _t = type.of(value)
+    _t = type(value)
     if value == null { return "null" }
     if _t == "bool" {
         if value { return "true" }
         return "false"
     }
-    if _t == "number" || _t == "int" {
+    if _t == "float" || _t == "int" || _t == "number" {
         return str(value)
     }
     if _t == "string" {
@@ -555,8 +556,10 @@ _src = source
 _pos = 0
 _len = #source
 _result = _parseValue()
+print("DEBUG parse: _result =", _result, "_pos =", _pos, "_len =", _len)
 if _result == null { return null }
 _skipWS()
+print("DEBUG parse: after _skipWS, _pos =", _pos)
 if _pos != _len { return null }
 return _result
 }
@@ -564,7 +567,7 @@ return _result
 fn stringify(value, indent) {
 _ind = null
 if indent != null {
-if type.of(indent) == "number" || type.of(indent) == "int" {
+if type(indent) == "float" || type(indent) == "int" || type(indent) == "number" {
 if indent > 0 {
 _s = ""
 _i = 0

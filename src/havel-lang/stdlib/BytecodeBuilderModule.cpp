@@ -267,6 +267,11 @@ void registerBytecodeBuilderModule(const VMApi &api) {
         return Value::makeNull();
     });
 
+    api.registerFunction("bc.clear_stored", [](const std::vector<Value> &) -> Value {
+        g_builder.stored_chunks.clear();
+        return Value::makeNull();
+    });
+
 	api.registerFunction("bc.func_new", [api](const std::vector<Value> &args) -> Value {
     if (args.size() < 1 || (!args[0].isStringId() && !args[0].isStringValId())) {
         throw std::runtime_error("bc.func_new: requires name (string)");

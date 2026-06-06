@@ -65,11 +65,13 @@ fn Future(executor) {
         self._finallyCallbacks = []
     }
 
-    fn _then(cb) {
+    fn _then(a, b) {
+        cb = a
+        if b != null { cb = b }
         nextFut = Future(null)
         wrappedCb = fn(v) {
             result = cb(v)
-            if result != null && type.of(result) == "object" && result.has("state") {
+            if result != null && type(result) == "object" && result.has("state") {
                 // Chain futures
                 result.then(fn(v) { nextFut._resolve(v) })
                 result.onError(fn(e) { nextFut._reject(e) })
@@ -85,7 +87,9 @@ fn Future(executor) {
         nextFut
     }
 
-    fn _catch(cb) {
+    fn _catch(a, b) {
+        cb = a
+        if b != null { cb = b }
         nextFut = Future(null)
         wrappedCb = fn(err) {
             result = cb(err)
@@ -105,7 +109,9 @@ fn Future(executor) {
         nextFut
     }
 
-    fn _finally(cb) {
+    fn _finally(a, b) {
+        cb = a
+        if b != null { cb = b }
         nextFut = Future(null)
         wrapper = fn() {
             cb()

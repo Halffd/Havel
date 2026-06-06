@@ -1,5 +1,8 @@
+use "html" as html
+print("html loaded")
 use "chrono" as chrono
-m5 = chrono.minutes(5)
-print("m5 is:", m5)
-s30 = chrono.seconds(30)
-print("s30 is:", s30)
+print("chrono loaded")
+use "future" as future
+print("future loaded")
+use "json" as json
+print("json loaded")

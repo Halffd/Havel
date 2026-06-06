@@ -2758,17 +2758,12 @@ position = savePos; // restore position
         return makeNode<havel::ast::ExpressionStatement>(std::move(assign));
       }
 
-      // Check for identifier-as-hotkey with optional attributes: F1 mode="x" policy="y" => { }
+  // Check for identifier-as-hotkey with optional attributes: F1 mode="x" policy="y" => { }
   // This handles the case where the lexer tokenized F1 as Identifier (space after F-key)
   {
     size_t lookPos = 1;
     bool foundAttr = false;
     // Skip mode="..." and policy="..." attribute pairs
-    auto &tok0 = at(0);
-   auto &tok1 = at(1);
-   auto &tok2 = at(2);
-   auto &tok3 = at(3);
-   (void)tok0; (void)tok1; (void)tok2; (void)tok3;
     while (at(lookPos).type == havel::TokenType::Identifier &&
            (at(lookPos).value == "mode" || at(lookPos).value == "policy") &&
            at(lookPos + 1).type == havel::TokenType::Assign &&

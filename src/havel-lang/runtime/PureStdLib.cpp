@@ -1,6 +1,7 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "loader/Loader.hpp"
 #include "c/ModulePlugin.h"
+#include "host/ServiceRegistry.hpp"
 
 #ifdef ENABLE_MODULE_PLUGINS
 // Plugin mode: load modules via dlopen
@@ -34,70 +35,40 @@ namespace {
 #ifdef ENABLE_MODULE_PLUGINS
 
 static Loader &sharedLoader() {
-    static Loader loader;
-    static std::once_flag flag;
-    std::call_once(flag, [&]() { loader.addModulePaths(); });
-    return loader;
+ static Loader loader;
+ static std::once_flag flag;
+ std::call_once(flag, [&]() { loader.addModulePaths(); });
+ return loader;
 }
 
-void registerLazyFromPlugin(compiler::VM &vm, const char *name,
+void registerLazyFromPlugin(compiler::VM &vm, const std::string &name,
  const std::vector<std::string> &aliases = {}) {
- std::string modName(name);
- vm.registerLazyModule(modName, [modName](compiler::VMApi &a) {
- auto plugin = sharedLoader().loadModulePlugin(modName);
+ vm.registerLazyModule(name, [name](compiler::VMApi &a) {
+ auto plugin = sharedLoader().loadModulePlugin(name);
  if (plugin) {
  plugin->register_fn(static_cast<void *>(&a));
  }
  }, aliases);
- }
+}
 
- void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
+void registerStdLibSet(compiler::VM &vm, bool coreOnly) {
  compiler::VMApi api(vm);
+ api.serviceRegistry = &host::ServiceRegistry::instance();
+ vm.setServiceRegistry(&host::ServiceRegistry::instance());
 
- static const char *eagerModules[] = {
- "math", "string", "object", "type", "array",
- };
+ auto available = sharedLoader().scanModules();
 
- for (auto name : eagerModules) {
- auto plugin = sharedLoader().loadModulePlugin(name);
+ for (auto &mod : available) {
+ if (mod.eager) {
+ auto plugin = sharedLoader().loadModulePlugin(mod.name);
  if (plugin) {
  plugin->register_fn(static_cast<void *>(&api));
  }
- }
-
- if (coreOnly) {
- return;
- }
-
- static const struct { const char *name; const char *aliases[8]; } lazyModules[] = {
- {"regex", {}},
- {"time", {}},
- {"timer", {}},
- {"fs", {}},
- {"random", {}},
- {"log", {"debug"}},
- {"sys", {"system", "process", "jit"}},
- {"shell", {}},
- {"pointer", {}},
- {"fmt", {}},
- {"pack", {}},
- {"bit", {}},
- {"option", {}},
- {"bytecodeBuilder", {"bc"}},
- {"window", {}},
- {"display", {}},
- {"brightness", {}},
- {"app", {}},
- };
-
- for (auto &entry : lazyModules) {
- std::vector<std::string> aliases;
- for (int i = 0; i < 8 && entry.aliases[i]; ++i) {
- aliases.emplace_back(entry.aliases[i]);
- }
- registerLazyFromPlugin(vm, entry.name, aliases);
+ } else if (!coreOnly) {
+ registerLazyFromPlugin(vm, mod.name, mod.aliases);
  }
  }
+}
 
 #else
 

@@ -978,16 +978,19 @@ void IO::SendCharX11(char ch) {
     KeyCode keycode = XKeysymToKeycode(display, keysym);
     if (keycode == 0) return;
 
-    KeySym syms[4];
-    XGetKeyboardMapping(display, &keycode, 1, nullptr, syms, 4);
+    int syms_per_keycode = 0;
+    KeySym *syms = XGetKeyboardMapping(display, keycode, 1, &syms_per_keycode);
     bool needShift = false;
-    if (syms[0] != keysym) {
-        for (int i = 1; i < 4; ++i) {
-            if (syms[i] == keysym) {
-                needShift = (i == 1);
-                break;
+    if (syms) {
+        if (syms_per_keycode > 0 && syms[0] != keysym) {
+            for (int i = 1; i < syms_per_keycode; ++i) {
+                if (syms[i] == keysym) {
+                    needShift = (i == 1);
+                    break;
+                }
             }
         }
+        XFree(syms);
     }
 
     auto shiftKeycode = XKeysymToKeycode(display, XK_Shift_L);

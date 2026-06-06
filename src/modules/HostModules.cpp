@@ -58,8 +58,8 @@ void declareAllServices() {
 
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 							   const host::ServiceFilter& includes,
-							   const host::ServiceFilter& excludes) {
-	if (!hostAPI) {
+ const host::ServiceFilter& excludes) {
+ if (!hostAPI) {
 		debug("initializeServiceRegistry: hostAPI is null, skipping service registration");
 		return;
 	}
@@ -141,10 +141,10 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 		registry.registerService<host::AutomationService>(automationService);
 	}
 
-	if (hostAPI->GetBrightnessManager() && registry.shouldRegister("brightness", includes, excludes)) {
-		auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
-		registry.registerService<host::BrightnessService>(brightnessService);
-	}
+ if (hostAPI->GetBrightnessManager() && registry.shouldRegister("brightness", includes, excludes)) {
+ auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
+ registry.registerService<host::BrightnessService>(brightnessService);
+ }
 
 	if (registry.shouldRegister("filesystem", includes, excludes)) {
 		auto fsService = std::make_shared<host::FileSystemService>();

@@ -20,6 +20,7 @@
 #include "../runtime/concurrency/Fiber.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/io/IO.hpp"
+#include "core/brightness/BrightnessManager.hpp"
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -53,7 +54,9 @@ public:
 
     void initializeMinimal() {
         io_holder_ = std::make_shared<IO>();
-        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), nullptr, Configs::Get());
+        brightnessManager_ = std::make_shared<BrightnessManager>();
+        brightnessManager_->init();
+        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), nullptr, Configs::Get(), nullptr, brightnessManager_.get());
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
@@ -265,6 +268,7 @@ private:
 	EngineConfig config_;
     std::shared_ptr<compiler::VM> vm_;
     std::shared_ptr<IO> io_holder_;
+    std::shared_ptr<BrightnessManager> brightnessManager_;
 #ifdef HAVEL_ENABLE_LLVM
     std::unique_ptr<compiler::BytecodeOrcJIT> jitCompiler_;
 #endif

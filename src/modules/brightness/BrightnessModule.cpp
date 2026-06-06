@@ -3,6 +3,7 @@
 #include "host/ServiceRegistry.hpp"
 #include "host/brightness/BrightnessService.hpp"
 #include "utils/Logger.hpp"
+#include <cstdio>
 
 namespace havel::modules {
 
@@ -12,6 +13,8 @@ using host::BrightnessService;
 
 static const char* MODULE_MARKER = "__brightness_module";
 
+#define BR_DEBUG(fmt, ...) fprintf(stderr, "[BR-DEBUG] " fmt "\n", ##__VA_ARGS__)
+
 static bool isModuleObject(const VMApi& api, const Value& val) {
   if (!val.isObjectId()) return false;
   auto marker = api.getField(val, MODULE_MARKER);
@@ -20,14 +23,27 @@ static bool isModuleObject(const VMApi& api, const Value& val) {
 
 static std::vector<Value> stripReceiver(const VMApi& api, const std::vector<Value>& args) {
   if (!args.empty() && isModuleObject(api, args[0])) {
+    BR_DEBUG("stripReceiver: stripped receiver arg");
     return std::vector<Value>(args.begin() + 1, args.end());
   }
   return args;
 }
 
-static std::shared_ptr<BrightnessService> getService() {
-  auto svc = host::ServiceRegistry::instance().get<BrightnessService>();
-  if (!svc) debug("BrightnessModule: BrightnessService not available");
+static std::shared_ptr<BrightnessService> getService(const VMApi& api) {
+  if (!api.serviceRegistry) {
+    BR_DEBUG("getService: ServiceRegistry not available on VMApi");
+    return nullptr;
+  }
+  auto svc = api.serviceRegistry->get<BrightnessService>();
+  if (!svc) {
+    BR_DEBUG("getService: BrightnessService NOT registered in ServiceRegistry");
+    BR_DEBUG("getService: registered services:");
+    for (auto& info : api.serviceRegistry->listRegistered()) {
+      BR_DEBUG("getService:   - %s (group: %s)", info.name.c_str(), info.group.c_str());
+    }
+  } else {
+    BR_DEBUG("getService: BrightnessService FOUND in ServiceRegistry");
+  }
   return svc;
 }
 
@@ -52,12 +68,13 @@ static Value makeString(const VMApi& api, const std::string& s) {
 }
 
 void registerBrightnessModule(const VMApi& api) {
+  BR_DEBUG("registerBrightnessModule called - registering brightness functions");
   HAVEL_BEGIN_MODULE("Brightness");
 
   // brightness.get([monitor]) -> number
   HAVEL_REGISTER_FUNCTION(api, "brightness.get", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeDouble(0.0);
     int mi = monitorIndex(args);
     try { return Value::makeDouble(svc->getBrightness(mi)); }
@@ -68,7 +85,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.set", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.empty()) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     double level = toDouble(args[0], 0.5);
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
@@ -82,7 +99,7 @@ void registerBrightnessModule(const VMApi& api) {
     auto args = stripReceiver(api, rawArgs);
     double step = !args.empty() ? toDouble(args[0], 0.1) : 0.1;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeDouble(0.0);
     try { svc->increaseBrightness(step, mi); return Value::makeDouble(svc->getBrightness(mi)); }
     catch (const std::exception& e) { debug("brightness.increase error: {}", e.what()); return Value::makeDouble(0.0); }
@@ -93,7 +110,7 @@ void registerBrightnessModule(const VMApi& api) {
     auto args = stripReceiver(api, rawArgs);
     double step = !args.empty() ? toDouble(args[0], 0.1) : 0.1;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeDouble(0.0);
     try { svc->decreaseBrightness(step, mi); return Value::makeDouble(svc->getBrightness(mi)); }
     catch (const std::exception& e) { debug("brightness.decrease error: {}", e.what()); return Value::makeDouble(0.0); }
@@ -102,7 +119,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.getTemperature([monitor]) -> int
   HAVEL_REGISTER_FUNCTION(api, "brightness.getTemperature", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeInt(0);
     int mi = monitorIndex(args);
     try { return Value::makeInt(svc->getTemperature(mi)); }
@@ -113,7 +130,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.setTemperature", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.empty()) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     int temp = toInt(args[0], 6500);
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
@@ -127,7 +144,7 @@ void registerBrightnessModule(const VMApi& api) {
     auto args = stripReceiver(api, rawArgs);
     int amount = !args.empty() ? toInt(args[0], 200) : 200;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     try { svc->increaseTemperature(amount, mi); }
     catch (const std::exception& e) { debug("brightness.increaseTemperature error: {}", e.what()); }
@@ -139,7 +156,7 @@ void registerBrightnessModule(const VMApi& api) {
     auto args = stripReceiver(api, rawArgs);
     int amount = !args.empty() ? toInt(args[0], 200) : 200;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     try { svc->decreaseTemperature(amount, mi); }
     catch (const std::exception& e) { debug("brightness.decreaseTemperature error: {}", e.what()); }
@@ -150,7 +167,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.setGammaRGB", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 3) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     double r = toDouble(args[0], 1.0);
     double g = toDouble(args[1], 1.0);
@@ -164,7 +181,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.getGammaRGB([monitor]) -> {r, g, b}
   HAVEL_REGISTER_FUNCTION(api, "brightness.getGammaRGB", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return api.makeObject();
     int mi = monitorIndex(args);
     double r = 1.0;
@@ -184,7 +201,7 @@ void registerBrightnessModule(const VMApi& api) {
     auto args = stripReceiver(api, rawArgs);
     int amount = !args.empty() ? toInt(args[0], 100) : 100;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     try { svc->increaseGamma(amount, mi); }
     catch (const std::exception& e) { debug("brightness.increaseGamma error: {}", e.what()); }
@@ -196,7 +213,7 @@ void registerBrightnessModule(const VMApi& api) {
     auto args = stripReceiver(api, rawArgs);
     int amount = !args.empty() ? toInt(args[0], 100) : 100;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     try { svc->decreaseGamma(amount, mi); }
     catch (const std::exception& e) { debug("brightness.decreaseGamma error: {}", e.what()); }
@@ -206,7 +223,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.getShadowLift([monitor]) -> number
   HAVEL_REGISTER_FUNCTION(api, "brightness.getShadowLift", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeDouble(0.0);
     int mi = monitorIndex(args);
     try { return Value::makeDouble(svc->getShadowLift(mi)); }
@@ -217,7 +234,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.setShadowLift", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.empty()) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     double lift = toDouble(args[0], 0.0);
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
@@ -231,7 +248,7 @@ void registerBrightnessModule(const VMApi& api) {
     auto args = stripReceiver(api, rawArgs);
     int amount = !args.empty() ? toInt(args[0], 10) : 10;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     try { svc->increaseShadowLift(amount, mi); }
     catch (const std::exception& e) { debug("brightness.increaseShadowLift error: {}", e.what()); }
@@ -243,7 +260,7 @@ void registerBrightnessModule(const VMApi& api) {
     auto args = stripReceiver(api, rawArgs);
     int amount = !args.empty() ? toInt(args[0], 10) : 10;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     try { svc->decreaseShadowLift(amount, mi); }
     catch (const std::exception& e) { debug("brightness.decreaseShadowLift error: {}", e.what()); }
@@ -254,7 +271,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.setBrightnessAndRGB", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 4) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     double b = toDouble(args[0], 1.0);
     double r = toDouble(args[1], 1.0);
@@ -270,7 +287,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.setBrightnessAndTemperature", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 2) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     double b = toDouble(args[0], 1.0);
     int k = toInt(args[1], 6500);
@@ -284,7 +301,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.setBrightnessAndShadowLift", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 2) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     double b = toDouble(args[0], 1.0);
     double sl = toDouble(args[1], 0.0);
@@ -297,7 +314,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.enableDayNightMode(dayBrightness, nightBrightness, dayTemp, nightTemp, dayStart, nightStart [, intervalMinutes])
   HAVEL_REGISTER_FUNCTION(api, "brightness.enableDayNightMode", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     double db = args.size() > 0 ? toDouble(args[0], 1.0) : 1.0;
     double nb = args.size() > 1 ? toDouble(args[1], 0.3) : 0.3;
@@ -314,7 +331,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.disableDayNightMode()
   HAVEL_REGISTER_FUNCTION(api, "brightness.disableDayNightMode", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     try { svc->disableDayNightMode(); }
     catch (const std::exception& e) { debug("brightness.disableDayNightMode error: {}", e.what()); }
@@ -324,7 +341,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.isDayNightModeEnabled() -> bool
   HAVEL_REGISTER_FUNCTION(api, "brightness.isDayNightModeEnabled", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeBool(false);
     try { return Value::makeBool(svc->isDayNightModeEnabled()); }
     catch (const std::exception& e) { debug("brightness.isDayNightModeEnabled error: {}", e.what()); return Value::makeBool(false); }
@@ -334,7 +351,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.setDaySettings", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 2) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     double b = toDouble(args[0], 1.0);
     int t = toInt(args[1], 6500);
@@ -347,7 +364,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.setNightSettings", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 2) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     double b = toDouble(args[0], 0.3);
     int t = toInt(args[1], 3000);
@@ -360,7 +377,7 @@ void registerBrightnessModule(const VMApi& api) {
   HAVEL_REGISTER_FUNCTION(api, "brightness.setDayNightTiming", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 2) return Value::makeNull();
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeNull();
     int ds = toInt(args[0], 7);
     int ns = toInt(args[1], 20);
@@ -372,7 +389,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.switchToDay([monitor])
   HAVEL_REGISTER_FUNCTION(api, "brightness.switchToDay", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeBool(false);
     int mi = monitorIndex(args);
     try { return Value::makeBool(svc->switchToDay(mi)); }
@@ -382,7 +399,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.switchToNight([monitor])
   HAVEL_REGISTER_FUNCTION(api, "brightness.switchToNight", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeBool(false);
     int mi = monitorIndex(args);
     try { return Value::makeBool(svc->switchToNight(mi)); }
@@ -392,7 +409,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.isDay() -> bool
   HAVEL_REGISTER_FUNCTION(api, "brightness.isDay", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return Value::makeBool(false);
     try { return Value::makeBool(svc->isDay()); }
     catch (const std::exception& e) { debug("brightness.isDay error: {}", e.what()); return Value::makeBool(false); }
@@ -401,7 +418,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.getMonitors() -> [string]
   HAVEL_REGISTER_FUNCTION(api, "brightness.getMonitors", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc) return api.makeArray();
     try {
       auto names = svc->getConnectedMonitors();
@@ -415,7 +432,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.getMonitor(index) -> string
   HAVEL_REGISTER_FUNCTION(api, "brightness.getMonitor", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    auto svc = getService();
+    auto svc = getService(api);
     if (!svc || args.empty()) return makeString(api, "");
     int idx = toInt(args[0], 0);
     try { return makeString(api, svc->getMonitor(idx)); }

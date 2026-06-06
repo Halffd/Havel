@@ -1145,12 +1145,31 @@ bool BrightnessManager::setBrightness(const std::string &monitor,
         return false;
     }
     brightness = std::clamp(brightness, 0.0, 2.0);
-  bool success = true;
+    bool success = false;
 
-  for (const auto &monitor : getConnectedMonitors()) {
-    success &= setBrightness(monitor, brightness);
-  }
-  return success;
+    if (displayMethod == "wayland") {
+#ifdef __WAYLAND__
+        success = setBrightnessWayland(monitor, brightness);
+#else
+        error("Wayland support not compiled in!");
+        return false;
+#endif
+    } else {
+        success = setBrightnessGamma(monitor, brightness);
+    }
+
+    this->brightness[monitor] = brightness;
+
+    return success;
+}
+
+bool BrightnessManager::setBrightness(double brightness) {
+    bool success = true;
+
+    for (const auto &monitor : getConnectedMonitors()) {
+        success &= setBrightness(monitor, brightness);
+    }
+    return success;
 }
 
 // === BRIGHTNESS GETTERS ===
@@ -1532,14 +1551,14 @@ bool BrightnessManager::increaseBrightness(double amount) {
 		primaryMonitor = monitors[0];
 	}
 	double current = getBrightness(primaryMonitor);
-	double newBrightness = std::min(1.0, current + amount);
-	return setBrightness(newBrightness);
+double newBrightness = std::min(2.0, current + amount);
+    return setBrightness(newBrightness);
 }
 
 bool BrightnessManager::increaseBrightness(const std::string &monitor,
-	double amount) {
-	double current = getBrightness(monitor);
-	double newBrightness = std::min(1.0, current + amount);
+                                      double amount) {
+    double current = getBrightness(monitor);
+    double newBrightness = std::min(2.0, current + amount);
 	return setBrightness(monitor, newBrightness);
 }
 

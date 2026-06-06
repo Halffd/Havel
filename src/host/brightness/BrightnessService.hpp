@@ -27,6 +27,9 @@ public:
     // Gamma RGB
     void setGammaRGB(double red, double green, double blue, int monitorIndex = -1);
     void getGammaRGB(double& red, double& green, double& blue, int monitorIndex = -1) const;
+    double getGammaR(int monitorIndex = -1) const;
+    double getGammaG(int monitorIndex = -1) const;
+    double getGammaB(int monitorIndex = -1) const;
 
     // Gamma adjustment
     void increaseGamma(int amount, int monitorIndex = -1);
@@ -35,8 +38,8 @@ public:
     // Shadow lift
     double getShadowLift(int monitorIndex = -1) const;
     void setShadowLift(double lift, int monitorIndex = -1);
-    void increaseShadowLift(int amount, int monitorIndex = -1);
-    void decreaseShadowLift(int amount, int monitorIndex = -1);
+    void increaseShadowLift(double amount, int monitorIndex = -1);
+    void decreaseShadowLift(double amount, int monitorIndex = -1);
 
     // Combined operations
     void setBrightnessAndRGB(double brightness, double red, double green, double blue, int monitorIndex = -1);

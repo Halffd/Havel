@@ -86,6 +86,27 @@ void BrightnessService::getGammaRGB(double& red, double& green, double& blue, in
     red = c.red; green = c.green; blue = c.blue;
 }
 
+double BrightnessService::getGammaR(int monitorIndex) const {
+    BR_DEBUG("getGammaR(monitor=%d)", monitorIndex);
+    double r = 1.0, g = 1.0, b = 1.0;
+    getGammaRGB(r, g, b, monitorIndex);
+    return r;
+}
+
+double BrightnessService::getGammaG(int monitorIndex) const {
+    BR_DEBUG("getGammaG(monitor=%d)", monitorIndex);
+    double r = 1.0, g = 1.0, b = 1.0;
+    getGammaRGB(r, g, b, monitorIndex);
+    return g;
+}
+
+double BrightnessService::getGammaB(int monitorIndex) const {
+    BR_DEBUG("getGammaB(monitor=%d)", monitorIndex);
+    double r = 1.0, g = 1.0, b = 1.0;
+    getGammaRGB(r, g, b, monitorIndex);
+    return b;
+}
+
 void BrightnessService::increaseGamma(int amount, int monitorIndex) {
     BR_DEBUG("increaseGamma(amount=%d monitor=%d)", amount, monitorIndex);
     if (!m_manager) return;
@@ -113,15 +134,15 @@ void BrightnessService::setShadowLift(double lift, int monitorIndex) {
     else m_manager->setShadowLift(lift);
 }
 
-void BrightnessService::increaseShadowLift(int amount, int monitorIndex) {
-    BR_DEBUG("increaseShadowLift(amount=%d monitor=%d)", amount, monitorIndex);
+void BrightnessService::increaseShadowLift(double amount, int monitorIndex) {
+    BR_DEBUG("increaseShadowLift(amount=%f monitor=%d)", amount, monitorIndex);
     if (!m_manager) return;
     if (monitorIndex >= 0) m_manager->increaseShadowLift(monitorIndex, amount);
     else m_manager->increaseShadowLift(amount);
 }
 
-void BrightnessService::decreaseShadowLift(int amount, int monitorIndex) {
-    BR_DEBUG("decreaseShadowLift(amount=%d monitor=%d)", amount, monitorIndex);
+void BrightnessService::decreaseShadowLift(double amount, int monitorIndex) {
+    BR_DEBUG("decreaseShadowLift(amount=%f monitor=%d)", amount, monitorIndex);
     if (!m_manager) return;
     if (monitorIndex >= 0) m_manager->decreaseShadowLift(monitorIndex, amount);
     else m_manager->decreaseShadowLift(amount);

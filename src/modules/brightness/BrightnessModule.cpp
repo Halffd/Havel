@@ -178,6 +178,36 @@ void registerBrightnessModule(const VMApi& api) {
     return Value::makeNull();
   });
 
+  // brightness.getGammaR([monitor]) -> number
+  HAVEL_REGISTER_FUNCTION(api, "brightness.getGammaR", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    auto svc = getService(api);
+    if (!svc) return Value::makeDouble(1.0);
+    int mi = monitorIndex(args);
+    try { return Value::makeDouble(svc->getGammaR(mi)); }
+    catch (const std::exception& e) { debug("brightness.getGammaR error: {}", e.what()); return Value::makeDouble(1.0); }
+  });
+
+  // brightness.getGammaG([monitor]) -> number
+  HAVEL_REGISTER_FUNCTION(api, "brightness.getGammaG", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    auto svc = getService(api);
+    if (!svc) return Value::makeDouble(1.0);
+    int mi = monitorIndex(args);
+    try { return Value::makeDouble(svc->getGammaG(mi)); }
+    catch (const std::exception& e) { debug("brightness.getGammaG error: {}", e.what()); return Value::makeDouble(1.0); }
+  });
+
+  // brightness.getGammaB([monitor]) -> number
+  HAVEL_REGISTER_FUNCTION(api, "brightness.getGammaB", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    auto svc = getService(api);
+    if (!svc) return Value::makeDouble(1.0);
+    int mi = monitorIndex(args);
+    try { return Value::makeDouble(svc->getGammaB(mi)); }
+    catch (const std::exception& e) { debug("brightness.getGammaB error: {}", e.what()); return Value::makeDouble(1.0); }
+  });
+
   // brightness.getGammaRGB([monitor]) -> {r, g, b}
   HAVEL_REGISTER_FUNCTION(api, "brightness.getGammaRGB", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
@@ -246,7 +276,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.increaseShadowLift([amount [, monitor]])
   HAVEL_REGISTER_FUNCTION(api, "brightness.increaseShadowLift", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    int amount = !args.empty() ? toInt(args[0], 10) : 10;
+    double amount = !args.empty() ? toDouble(args[0], 0.1) : 0.1;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
     auto svc = getService(api);
     if (!svc) return Value::makeNull();
@@ -258,7 +288,7 @@ void registerBrightnessModule(const VMApi& api) {
   // brightness.decreaseShadowLift([amount [, monitor]])
   HAVEL_REGISTER_FUNCTION(api, "brightness.decreaseShadowLift", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    int amount = !args.empty() ? toInt(args[0], 10) : 10;
+    double amount = !args.empty() ? toDouble(args[0], 0.1) : 0.1;
     int mi = args.size() > 1 ? monitorIndex(args, 1) : -1;
     auto svc = getService(api);
     if (!svc) return Value::makeNull();
@@ -460,6 +490,9 @@ void registerBrightnessModule(const VMApi& api) {
   api.setField(obj, "decreaseTemperature", api.makeFunctionRef("brightness.decreaseTemperature"));
   api.setField(obj, "setGammaRGB", api.makeFunctionRef("brightness.setGammaRGB"));
   api.setField(obj, "getGammaRGB", api.makeFunctionRef("brightness.getGammaRGB"));
+  api.setField(obj, "getGammaR", api.makeFunctionRef("brightness.getGammaR"));
+  api.setField(obj, "getGammaG", api.makeFunctionRef("brightness.getGammaG"));
+  api.setField(obj, "getGammaB", api.makeFunctionRef("brightness.getGammaB"));
   api.setField(obj, "increaseGamma", api.makeFunctionRef("brightness.increaseGamma"));
   api.setField(obj, "decreaseGamma", api.makeFunctionRef("brightness.decreaseGamma"));
   api.setField(obj, "getShadowLift", api.makeFunctionRef("brightness.getShadowLift"));

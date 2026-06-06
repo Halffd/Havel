@@ -1140,33 +1140,36 @@ bool BrightnessManager::increaseTemperature(const std::string &monitor,
 // === BRIGHTNESS CONTROL METHODS ===
 bool BrightnessManager::setBrightness(const std::string &monitor,
                                       double brightness) {
-  brightness = std::clamp(brightness, 0.0, 2.0); // Allow over-brightening
-  bool success = false;
+    if (brightness < 0.0) {
+        error("Brightness must be >= 0.0, got: {:.3f}", brightness);
+        return false;
+    }
+    brightness = std::clamp(brightness, 0.0, 2.0);
+    bool success = false;
 
-  if (displayMethod == "wayland") {
+    if (displayMethod == "wayland") {
 #ifdef __WAYLAND__
-    success = setBrightnessWayland(monitor, brightness);
+        success = setBrightnessWayland(monitor, brightness);
 #else
-    error("Wayland support not compiled in!");
-    return false;
+        error("Wayland support not compiled in!");
+        return false;
 #endif
-  } else {
-    success = setBrightnessGamma(monitor, brightness);
-  }
+    } else {
+        success = setBrightnessGamma(monitor, brightness);
+    }
 
-  this->brightness[monitor] = brightness;
+    this->brightness[monitor] = brightness;
 
-  return success;
+    return success;
 }
 
 bool BrightnessManager::setBrightness(double brightness) {
-  brightness = std::clamp(brightness, 0.0, 2.0);
-  bool success = true;
+    bool success = true;
 
-  for (const auto &monitor : getConnectedMonitors()) {
-    success &= setBrightness(monitor, brightness);
-  }
-  return success;
+    for (const auto &monitor : getConnectedMonitors()) {
+        success &= setBrightness(monitor, brightness);
+    }
+    return success;
 }
 
 // === BRIGHTNESS GETTERS ===
@@ -1184,21 +1187,21 @@ double BrightnessManager::getBrightness(int monitorIndex) {
   return getBrightness(monitorName);
 }
 double BrightnessManager::getBrightness(const std::string &monitor) {
-	if (WindowManagerDetector::IsX11()) {
-		double xrandr_val = getBrightnessXrandr(monitor);
-		if (xrandr_val >= 0.0) return xrandr_val;
+    auto it = brightness.find(monitor);
+    if (it != brightness.end()) return it->second;
 
-		double gamma_val = getBrightnessGamma(monitor);
-		if (gamma_val > 0.0) return gamma_val;
+    if (WindowManagerDetector::IsX11()) {
+        double gamma_val = getBrightnessGamma(monitor);
+        if (gamma_val > 0.0) return gamma_val;
 
-		double sysfs_val = getBrightnessSysfs(monitor);
-		if (sysfs_val > 0.0) return sysfs_val;
+        double xrandr_val = getBrightnessXrandr(monitor);
+        if (xrandr_val >= 0.0) return xrandr_val;
 
-		auto it = brightness.find(monitor);
-		if (it != brightness.end()) return it->second;
+        double sysfs_val = getBrightnessSysfs(monitor);
+        if (sysfs_val > 0.0) return sysfs_val;
 
-		return 1.0;
-	}
+        return 1.0;
+    }
 #ifdef __WAYLAND__
 	else if (WindowManagerDetector::IsWayland()) {
 		auto it = brightness.find(monitor);
@@ -1548,14 +1551,14 @@ bool BrightnessManager::increaseBrightness(double amount) {
 		primaryMonitor = monitors[0];
 	}
 	double current = getBrightness(primaryMonitor);
-	double newBrightness = std::min(1.0, current + amount);
-	return setBrightness(newBrightness);
+double newBrightness = std::min(2.0, current + amount);
+    return setBrightness(newBrightness);
 }
 
 bool BrightnessManager::increaseBrightness(const std::string &monitor,
-	double amount) {
-	double current = getBrightness(monitor);
-	double newBrightness = std::min(1.0, current + amount);
+                                      double amount) {
+    double current = getBrightness(monitor);
+    double newBrightness = std::min(2.0, current + amount);
 	return setBrightness(monitor, newBrightness);
 }
 

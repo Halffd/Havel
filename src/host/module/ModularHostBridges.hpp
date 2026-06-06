@@ -88,8 +88,14 @@ public:
                                        const HostContext *ctx);
     static Value handleSetExecutorMode(const std::vector<Value> &args,
                                        const HostContext *ctx);
-    static Value handleMouseState(const std::vector<Value> &args,
-                                   const HostContext *ctx);
+static Value handleMouseState(const std::vector<Value> &args,
+    const HostContext *ctx);
+static Value handleMouseLastButton(const std::vector<Value> &args,
+    const HostContext *ctx);
+static Value handleMouseLastState(const std::vector<Value> &args,
+    const HostContext *ctx);
+static Value handleMouseButtons(const std::vector<Value> &args,
+    const HostContext *ctx);
     static Value handleModifiers(const std::vector<Value> &args,
                                   const HostContext *ctx);
     static Value handleSendModifiers(const std::vector<Value> &args,

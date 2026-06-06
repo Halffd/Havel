@@ -863,6 +863,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     {
       std::unique_lock<std::shared_mutex> lock(stateMutex);
       mouseButtonState[ev.code] = down;
+        lastButtonCode = ev.code;
+        lastButtonWasDown = down;
+        lastButtonTime = now;
 
       if (down) {
         int currentMods = GetCurrentModifiersMask();

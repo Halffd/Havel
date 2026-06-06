@@ -168,9 +168,13 @@ public:
 
   // Callback invoked when the event loop exits due to a shutdown signal
   // Used by embedders (e.g., Qt main loop) to unblock the main thread
-  void SetShutdownCallback(std::function<void()> cb) {
-    shutdownCallback_ = std::move(cb);
-  }
+void SetShutdownCallback(std::function<void()> cb) {
+        shutdownCallback_ = std::move(cb);
+    }
+
+    const std::map<int, bool> &GetMouseButtonState() const { return mouseButtonState; }
+    int GetLastButtonCode() const { return lastButtonCode; }
+    bool GetLastButtonWasDown() const { return lastButtonWasDown; }
 
 private:
   friend class IO;
@@ -283,6 +287,9 @@ private:
   std::unordered_map<int, int> comboPressedCount;
   int comboTimeWindow = 0; // milliseconds (0 = infinite)
   std::map<int, bool> mouseButtonState;
+    int lastButtonCode = 0;
+    bool lastButtonWasDown = false;
+    std::chrono::steady_clock::time_point lastButtonTime{};
   bool isProcessingWheelEvent = false;
   int currentWheelDirection = 0;
   std::chrono::steady_clock::time_point lastWheelUpTime{};

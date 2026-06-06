@@ -313,8 +313,8 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
     if (!path) return NULL;
 
     /* RTLD_NOW: resolve all symbols immediately so missing deps fail at load time.
-     * RTLD_GLOBAL: make symbols available for subsequent dlopen calls. */
-    void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+     * RTLD_LOCAL: keep symbols private to this module so dlsym(handle, ...) returns correct local functions. */
+    void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!handle) {
         fprintf(stderr, "[Loader] dlopen failed for module '%s': %s\n", name, dlerror() ? dlerror() : "unknown");
         free(path);
@@ -393,7 +393,7 @@ const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char
     char *path = find_library(loader, lib_name);
     if (!path) return NULL;
 
-    void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+    void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!handle) {
         fprintf(stderr, "[Loader] dlopen failed for toolkit '%s': %s\n", name, dlerror() ? dlerror() : "unknown");
         free(path);

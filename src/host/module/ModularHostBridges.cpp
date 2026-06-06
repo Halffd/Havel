@@ -235,9 +235,13 @@ options.host_functions["suspend"] = [ctx = ctx_](const auto &args) {
   options.host_functions["io.isKeyPressed"] = [ctx = ctx_](const auto &args) {
       return handleIsKeyPressed(args, ctx);
   };
-  options.host_functions["io.state"] = [ctx = ctx_](const auto &args) {
-      return handleGetKey(args, ctx);
-  };
+    options.host_functions["io.state"] = [ctx = ctx_](const auto &args) {
+        if (args.empty()) {
+            if (!ctx->io) return Value::makeBool(false);
+            return Value::makeBool(ctx->io->IsAnyKeyPressed());
+        }
+        return handleGetKey(args, ctx);
+    };
   options.host_functions["io.modifiers"] = [ctx = ctx_](const auto &args) {
       return handleModifiers(args, ctx);
   };
@@ -259,9 +263,18 @@ options.host_functions["suspend"] = [ctx = ctx_](const auto &args) {
   options.host_functions["io.locks"] = [ctx = ctx_](const auto &args) {
       return handleLocks(args, ctx);
   };
-  options.host_functions["mouse.state"] = [ctx = ctx_](const auto &args) {
-      return handleMouseState(args, ctx);
-  };
+options.host_functions["mouse.state"] = [ctx = ctx_](const auto &args) {
+    return handleMouseState(args, ctx);
+};
+options.host_functions["mouse.lastButton"] = [ctx = ctx_](const auto &args) {
+    return handleMouseLastButton(args, ctx);
+};
+options.host_functions["mouse.lastState"] = [ctx = ctx_](const auto &args) {
+    return handleMouseLastState(args, ctx);
+};
+options.host_functions["mouse.buttons"] = [ctx = ctx_](const auto &args) {
+    return handleMouseButtons(args, ctx);
+};
 }
 
 Value IOBridge::handleSend(const std::vector<Value> &args,
@@ -533,18 +546,47 @@ Value IOBridge::handleKeyUp(const std::vector<Value> &args,
  }
 
 Value IOBridge::handleGetKey(const std::vector<Value> &args,
-  const HostContext *ctx) {
- if (args.empty() || !ctx->io) return Value::makeBool(false);
- std::string key;
- if (args[0].isStringValId() || args[0].isStringId()) {
- auto *vm = static_cast<VM *>(ctx->vm);
- key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
- } else {
- return Value::makeBool(false);
- }
- ::havel::host::IOService ioService(ctx->io);
- return Value::makeBool(ioService.getKeyState(key));
- }
+                              const HostContext *ctx) {
+    if (args.empty() || !ctx->io) return Value::makeBool(false);
+    std::string key;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        auto *vm = static_cast<VM *>(ctx->vm);
+        key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    } else {
+        return Value::makeBool(false);
+    }
+    std::string lower = key;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    if (lower == "lbutton" || lower == "mouseleft" || lower == "mouse1" ||
+        lower == "rbutton" || lower == "mouseright" || lower == "mouse2" ||
+        lower == "mbutton" || lower == "mousemiddle" || lower == "mouse3" ||
+        lower == "xbutton1" || lower == "mouse4" ||
+        lower == "xbutton2" || lower == "mouse5") {
+        int button = 1;
+        if (lower == "rbutton" || lower == "mouseright" || lower == "mouse2") button = 3;
+        else if (lower == "mbutton" || lower == "mousemiddle" || lower == "mouse3") button = 2;
+        else if (lower == "xbutton1" || lower == "mouse4") button = 4;
+        else if (lower == "xbutton2" || lower == "mouse5") button = 5;
+        auto display = havel::DisplayManager::GetDisplay();
+        if (!display) return Value::makeBool(false);
+        Window root, child;
+        int rootX, rootY, winX, winY;
+        unsigned int mask;
+        if (XQueryPointer(display, DefaultRootWindow(display), &root, &child,
+                          &rootX, &rootY, &winX, &winY, &mask)) {
+            switch (button) {
+            case 1: return Value::makeBool((mask & Button1Mask) != 0);
+            case 2: return Value::makeBool((mask & Button2Mask) != 0);
+            case 3: return Value::makeBool((mask & Button3Mask) != 0);
+            case 4: return Value::makeBool((mask & Button4Mask) != 0);
+            case 5: return Value::makeBool((mask & Button5Mask) != 0);
+            }
+        }
+        return Value::makeBool(false);
+    }
+    ::havel::host::IOService ioService(ctx->io);
+    return Value::makeBool(ioService.getKeyState(key));
+}
 
 Value IOBridge::handleIsKeyPressed(const std::vector<Value> &args,
   const HostContext *ctx) {
@@ -632,6 +674,31 @@ Value IOBridge::handleMouseState(const std::vector<Value> &args,
         return Value::makeBool(pressed);
     }
     return Value::makeBool(false);
+}
+
+Value IOBridge::handleMouseLastButton(const std::vector<Value> &,
+    const HostContext *ctx) {
+    if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeInt(0);
+    auto *el = ctx->io->GetEventListener();
+    return Value::makeInt(el->GetLastButtonCode());
+}
+
+Value IOBridge::handleMouseLastState(const std::vector<Value> &,
+    const HostContext *ctx) {
+    if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeBool(false);
+    auto *el = ctx->io->GetEventListener();
+    return Value::makeBool(el->GetLastButtonWasDown());
+}
+
+Value IOBridge::handleMouseButtons(const std::vector<Value> &,
+    const HostContext *ctx) {
+    if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeInt(0);
+    auto *el = ctx->io->GetEventListener();
+    int pressed = 0;
+    for (const auto &[code, down] : el->GetMouseButtonState()) {
+        if (down) pressed++;
+    }
+    return Value::makeInt(pressed);
 }
 
 Value IOBridge::handleModifiers(const std::vector<Value> &,
@@ -774,27 +841,39 @@ Value IOBridge::handleSetLock(const std::vector<Value> &args,
     XkbStateRec xkbState;
     if (XkbGetState(display, XkbUseCoreKbd, &xkbState) != 0)
         return Value::makeBool(false);
-    if (caps_set) {
-        bool curr = (xkbState.locked_mods & LockMask) != 0;
-        if (curr != caps_val) {
-            ctx->io->PressKey("Caps_Lock", true);
-            ctx->io->PressKey("Caps_Lock", false);
+        if (caps_set) {
+            bool curr = (xkbState.locked_mods & LockMask) != 0;
+            if (curr != caps_val) {
+                auto *display2 = havel::DisplayManager::GetDisplay();
+                KeyCode kc = XKeysymToKeycode(display2, XK_Caps_Lock);
+                if (kc && ctx->io->GetIOBackend()) {
+                    ctx->io->GetIOBackend()->PressKey(kc);
+                    ctx->io->GetIOBackend()->ReleaseKey(kc);
+                }
+            }
         }
-    }
-    if (num_set) {
-        bool curr = (xkbState.locked_mods & Mod2Mask) != 0;
-        if (curr != num_val) {
-            ctx->io->PressKey("Num_Lock", true);
-            ctx->io->PressKey("Num_Lock", false);
+        if (num_set) {
+            bool curr = (xkbState.locked_mods & Mod2Mask) != 0;
+            if (curr != num_val) {
+                auto *display2 = havel::DisplayManager::GetDisplay();
+                KeyCode kc = XKeysymToKeycode(display2, XK_Num_Lock);
+                if (kc && ctx->io->GetIOBackend()) {
+                    ctx->io->GetIOBackend()->PressKey(kc);
+                    ctx->io->GetIOBackend()->ReleaseKey(kc);
+                }
+            }
         }
-    }
-    if (scroll_set) {
-        bool curr = (xkbState.locked_mods & Mod3Mask) != 0;
-        if (curr != scroll_val) {
-            ctx->io->PressKey("Scroll_Lock", true);
-            ctx->io->PressKey("Scroll_Lock", false);
+        if (scroll_set) {
+            bool curr = (xkbState.locked_mods & Mod3Mask) != 0;
+            if (curr != scroll_val) {
+                auto *display2 = havel::DisplayManager::GetDisplay();
+                KeyCode kc = XKeysymToKeycode(display2, XK_Scroll_Lock);
+                if (kc && ctx->io->GetIOBackend()) {
+                    ctx->io->GetIOBackend()->PressKey(kc);
+                    ctx->io->GetIOBackend()->ReleaseKey(kc);
+                }
+            }
         }
-    }
     return Value::makeBool(true);
 }
 
@@ -931,9 +1010,18 @@ void SystemBridge::install(PipelineOptions &options) {
   vm->setHostObjectField(
   mouseObj, "setDPI",
   Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.setDPI")));
-  vm->setHostObjectField(
-  mouseObj, "state",
-  Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.state")));
+vm->setHostObjectField(
+    mouseObj, "state",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.state")));
+vm->setHostObjectField(
+    mouseObj, "lastButton",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.lastButton")));
+vm->setHostObjectField(
+    mouseObj, "lastState",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.lastState")));
+vm->setHostObjectField(
+    mouseObj, "buttons",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.buttons")));
   vm->setHostObjectField(
   mouseObj, "scroll",
   Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));

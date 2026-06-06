@@ -734,81 +734,45 @@ void IO::removeSpecialCharacters(str &keyName) {
                 keyName.end());
 }
 bool IO::EmitClick(int btnCode, MouseAction action) {
-  // Use EventListener's uinput for all mouse events
-  if (eventListener) {
-    // Map integer button codes to proper mouse button codes
-    int mouseBtnCode = btnCode;
-    if (btnCode >= 1 && btnCode <= 9) {
-      // Map 1-9 to BTN_LEFT through BTN_9
-      mouseBtnCode = BTN_LEFT + (btnCode - 1);
-    }
+    int x11Button = btnCode;
+    if (btnCode >= 1 && btnCode <= 9) x11Button = btnCode;
 
-    // Send events through EventListener
+    auto doAction = [&](bool down) {
+        if (ioBackend) {
+            ioBackend->SendButton(x11Button, down);
+        }
+    };
+
     switch (action) {
     case MouseAction::Release:
-      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 0);
-      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-      return true;
-
+        doAction(false);
+        return true;
     case MouseAction::Hold:
-      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 1);
-      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-      return true;
-
-    case MouseAction::Click: // Click (FAST)
-      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 1);
-      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 0);
-      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-      return true;
-
+        doAction(true);
+        return true;
+    case MouseAction::Click:
+        doAction(true);
+        doAction(false);
+        return true;
     default:
-      error("Invalid mouse action: {}", static_cast<int>(action));
-      return false;
+        error("Invalid mouse action: {}", static_cast<int>(action));
+        return false;
     }
-  }
-
-  error("EmitClick: EventListener not available");
-  return false;
 }
 bool IO::MouseMove(int dx, int dy, int speed, float accel) {
-  // Use EventListener's uinput if available
-  if (eventListener) {
-    // Apply speed and acceleration (but NO sensitivity scaling)
-    if (speed <= 0)
-      speed = 1;
-    if (accel <= 0.0f)
-      accel = 1.0f;
-
-    // Apply acceleration curve
-    float acceleratedSpeed = speed * std::pow(accel, 1.5f);
-
-    // Calculate final movement
-    int actualDx = static_cast<int>(dx * acceleratedSpeed);
-    int actualDy = static_cast<int>(dy * acceleratedSpeed);
-
-    // Preserve direction for tiny movements
-    if (actualDx == 0 && dx != 0)
-      actualDx = (dx > 0) ? 1 : -1;
-    if (actualDy == 0 && dy != 0)
-      actualDy = (dy > 0) ? 1 : -1;
-
+    if (ioBackend) {
+        if (speed <= 0) speed = 1;
+        if (accel <= 0.0f) accel = 1.0f;
+        float acceleratedSpeed = speed * std::pow(accel, 1.5f);
+        int actualDx = static_cast<int>(dx * acceleratedSpeed);
+        int actualDy = static_cast<int>(dy * acceleratedSpeed);
+        if (actualDx == 0 && dx != 0) actualDx = (dx > 0) ? 1 : -1;
+        if (actualDy == 0 && dy != 0) actualDy = (dy > 0) ? 1 : -1;
         if (debugging::debug_io) debug("Mouse move: {} {}", actualDx, actualDy);
-
-    // Send using EventListener
-    if (actualDx != 0) {
-      eventListener->SendUinputEvent(EV_REL, REL_X, actualDx);
+        return ioBackend->MovePointer(actualDx, actualDy);
     }
-    if (actualDy != 0) {
-      eventListener->SendUinputEvent(EV_REL, REL_Y, actualDy);
-    }
-    // Send sync event
-    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-    return true;
-  }
-
-  error("MouseMove: EventListener not available");
-  return false;
+    error("MouseMove: no IOBackend available");
+    return false;
 }
 bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
   if (!eventListener) {
@@ -898,11 +862,38 @@ bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
 }
 
 bool IO::Scroll(double dy, double dx) {
-  if (!mouseController) {
-    error("Cannot scroll: MouseController not initialized");
-    return false;
-  }
-  return mouseController->Scroll(dy, dx);
+    if (ioBackend) {
+        int clicks = static_cast<int>(dy);
+        if (clicks > 0) {
+            for (int i = 0; i < clicks; i++) {
+                ioBackend->SendButton(4, true);
+                ioBackend->SendButton(4, false);
+            }
+        } else if (clicks < 0) {
+            for (int i = 0; i < -clicks; i++) {
+                ioBackend->SendButton(5, true);
+                ioBackend->SendButton(5, false);
+            }
+        }
+        int hclicks = static_cast<int>(dx);
+        if (hclicks > 0) {
+            for (int i = 0; i < hclicks; i++) {
+                ioBackend->SendButton(6, true);
+                ioBackend->SendButton(6, false);
+            }
+        } else if (hclicks < 0) {
+            for (int i = 0; i < -hclicks; i++) {
+                ioBackend->SendButton(7, true);
+                ioBackend->SendButton(7, false);
+            }
+        }
+        return true;
+    }
+    if (!mouseController) {
+        error("Cannot scroll: MouseController not initialized");
+        return false;
+    }
+    return mouseController->Scroll(dy, dx);
 }
 
 void IO::SetMouseSensitivity(double sensitivity) {
@@ -930,11 +921,12 @@ void IO::SetScrollSpeed(double speed) {
 double IO::GetScrollSpeed() const { return scrollSpeed; }
 
 std::pair<int, int> IO::GetMousePosition() {
-  if (!mouseController) {
-    error("Cannot get mouse position: MouseController not initialized");
-    return {0, 0};
-  }
-  return mouseController->GetPosition();
+    if (ioBackend) return ioBackend->GetCursorPosition();
+    if (!mouseController) {
+        error("Cannot get mouse position: MouseController not initialized");
+        return {0, 0};
+    }
+    return mouseController->GetPosition();
 }
 
 bool IO::InitializeXInput2() {
@@ -948,16 +940,66 @@ bool IO::SetHardwareMouseSensitivity(double sensitivity) {
 }
 
 void IO::SendX11Key(const std::string &keyName, bool press) {
-  Key keycode = GetKeyCode(keyName);
-  if (press) {
-    if (!TryPressKey(keycode)) return;
-  } else {
-    if (!TryReleaseKey(keycode)) return;
-  }
-  if (ioBackend) {
-    if (press) ioBackend->PressKey(keycode);
-    else ioBackend->ReleaseKey(keycode);
-  }
+    Key keycode = GetKeyCode(keyName);
+    if (keycode == 0) return;
+    if (press) {
+        if (!TryPressKey(keycode)) return;
+    } else {
+        if (!TryReleaseKey(keycode)) return;
+    }
+    if (ioBackend) {
+        if (press) ioBackend->PressKey(keycode);
+        else ioBackend->ReleaseKey(keycode);
+    }
+}
+
+void IO::SendCharX11(char ch) {
+    if (!ioBackend) return;
+    auto *display = DisplayManager::GetDisplay();
+    if (!display) return;
+
+    KeySym keysym;
+    if (ch == ' ') {
+        keysym = XK_space;
+    } else if (ch == '\n') {
+        keysym = XK_Return;
+    } else if (ch == '\t') {
+        keysym = XK_Tab;
+    } else if (ch == '\r') {
+        return;
+    } else {
+        keysym = XStringToKeysym(std::string(1, ch).c_str());
+        if (keysym == NoSymbol) {
+            keysym = XStringToKeysym(std::string(1, tolower(ch)).c_str());
+        }
+    }
+    if (keysym == NoSymbol) return;
+
+    KeyCode keycode = XKeysymToKeycode(display, keysym);
+    if (keycode == 0) return;
+
+    KeySym syms[4];
+    XGetKeyboardMapping(display, &keycode, 1, nullptr, syms, 4);
+    bool needShift = false;
+    if (syms[0] != keysym) {
+        for (int i = 1; i < 4; ++i) {
+            if (syms[i] == keysym) {
+                needShift = (i == 1);
+                break;
+            }
+        }
+    }
+
+    auto shiftKeycode = XKeysymToKeycode(display, XK_Shift_L);
+
+    if (needShift && shiftKeycode) {
+        ioBackend->PressKey(shiftKeycode);
+    }
+    ioBackend->PressKey(keycode);
+    ioBackend->ReleaseKey(keycode);
+    if (needShift && shiftKeycode) {
+        ioBackend->ReleaseKey(shiftKeycode);
+    }
 }
 // SendUInput removed - delegate to EventListener instead
 // EventListener now manages uinput through UinputDevice class
@@ -1039,163 +1081,55 @@ void IO::Send(cstr keys) {
     }
   }
 #else
-  // OPTIMIZATION #1: Pre-parse the key string once instead of scanning
-  // repeatedly
-  auto tokens = ParseKeyString(keys);
+    if (!ioBackend) {
+        error("IO::Send: no ioBackend available");
+        return;
+    }
 
-  // Linux implementation with state tracking and optimizations
-  bool useUinput = true;
-  bool useX11 = false;
-  std::vector<std::string> activeModifiers;
-  std::unordered_map<std::string, std::string> modifierKeys = {
-      {"ctrl", "LCtrl"},    {"rctrl", "RCtrl"}, {"shift", "LShift"},
-      {"rshift", "RShift"}, {"alt", "LAlt"},    {"ralt", "RAlt"},
-      {"meta", "LMeta"},    {"rmeta", "RMeta"},
-  };
+    for (size_t i = 0; i < keys.length(); ++i) {
+        if (keys[i] == '{') {
+            size_t end = keys.find('}', i);
+            if (end != std::string::npos) {
+                std::string seq = keys.substr(i + 1, end - i - 1);
+                std::string lower = seq;
+                std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
-  auto SendKeyImpl = [&](const std::string &keyName, bool down) {
-    if (useUinput || (!useX11 && globalEvdev)) {
-      // OPTIMIZATION #3: Cache keycode lookups to avoid repeated
-      // string->keycode conversions
-      int code = GetKeyCacheLookup(keyName);
-      if (Configs::Get().GetVerboseKeyLogging()) {
-        debug("Sending key: " + keyName + " (" + std::to_string(down) +
-             ") code: " + std::to_string(code));
-      }
-      if (code != -1) {
-        // Use EventListener's uinput if available, otherwise use old method
-        if (eventListener) {
-          eventListener->SendUinputEvent(EV_KEY, code, down ? 1 : 0);
-        } else {
-          SendUInput(code, down); // Fallback to old method
+                std::unordered_map<std::string, std::string> modifierKeys = {
+                    {"ctrl", "LCtrl"}, {"rctrl", "RCtrl"}, {"shift", "LShift"},
+                    {"rshift", "RShift"}, {"alt", "LAlt"}, {"ralt", "RAlt"},
+                    {"meta", "LMeta"}, {"rmeta", "RMeta"},
+                };
+
+                if (lower == "emergency_release" || lower == "panic") {
+                    EmergencyReleaseAllKeys();
+                } else if (lower.ends_with(" down") || lower.ends_with(":down")) {
+                    std::string mod = lower.substr(0, lower.size() - 5);
+                    if (modifierKeys.count(mod)) {
+                        SendX11Key(modifierKeys[mod], true);
+                    } else {
+                        SendX11Key(seq.substr(0, seq.size() - 5), true);
+                    }
+                } else if (lower.ends_with(" up") || lower.ends_with(":up")) {
+                    std::string mod = lower.substr(0, lower.size() - 3);
+                    if (modifierKeys.count(mod)) {
+                        SendX11Key(modifierKeys[mod], false);
+                    } else {
+                        SendX11Key(seq.substr(0, seq.size() - 3), false);
+                    }
+                } else {
+                    Key keycode = GetKeyCode(seq);
+                    if (keycode != 0) {
+                        ioBackend->PressKey(keycode);
+                        ioBackend->ReleaseKey(keycode);
+                    }
+                }
+                i = end;
+                continue;
+            }
         }
-      }
-    } else {
-      SendX11Key(keyName, down);
+
+        SendCharX11(keys[i]);
     }
-  };
-
-  auto SendKey = [&](const std::string &keyName, bool down) {
-    SendKeyImpl(keyName, down);
-  };
-
-  // Release interfering modifiers
-  std::set<std::string> toRelease;
-  if (eventListener) {
-    auto modState = eventListener->GetModifierState();
-    auto checkMod = [&](bool leftPressed, bool rightPressed,
-                        const std::string &leftKey,
-                        const std::string &rightKey) {
-      if (leftPressed)
-        toRelease.insert(leftKey);
-      if (rightPressed)
-        toRelease.insert(rightKey);
-    };
-    checkMod(modState.leftCtrl, modState.rightCtrl, "ctrl", "rctrl");
-    checkMod(modState.leftShift, modState.rightShift, "shift", "rshift");
-    checkMod(modState.leftAlt, modState.rightAlt, "alt", "ralt");
-    checkMod(modState.leftMeta, modState.rightMeta, "meta", "rmeta");
-  }
-
-  for (const auto &mod : toRelease) {
-        if (debugging::debug_io) debug("Releasing modifier: {}", mod);
-    SendKey(modifierKeys[mod], false);
-  }
-
-  // OPTIMIZATION #2: Process pre-parsed tokens instead of rescanning
-  bool shouldSleep = Configs::Get().Get<bool>("Advanced.SlowKeyDelay", false);
-
-  // OPTIMIZATION #5: Batch all uinput events for reduced syscall overhead
-  // Events are queued and flushed in a single write() call
-  if (eventListener) {
-    eventListener->BeginUinputBatch();
-  }
-
-  for (const auto &token : tokens) {
-    switch (token.type) {
-    case KeyToken::Modifier: {
-      if (token.value == "toggle_uinput") {
-        useUinput = !useUinput;
-        if (Configs::Get().GetVerboseKeyLogging())
-          debug(useUinput ? "Switched to uinput" : "Switched to X11");
-      } else if (token.value == "toggle_x11") {
-        useX11 = !useX11;
-        if (Configs::Get().GetVerboseKeyLogging())
-          debug(useX11 ? "Switched to X11" : "Switched to uinput");
-      } else if (modifierKeys.count(token.value)) {
-        SendKey(modifierKeys[token.value], true);
-        activeModifiers.push_back(token.value);
-      }
-      break;
-    }
-
-    case KeyToken::Special: {
-      if (token.value == "emergency_release" || token.value == "panic") {
-        EmergencyReleaseAllKeys();
-      }
-      break;
-    }
-
-    case KeyToken::ModifierDown: {
-      if (modifierKeys.count(token.value)) {
-        SendKey(modifierKeys[token.value], true);
-        activeModifiers.push_back(token.value);
-      } else {
-        SendKey(token.value, true);
-      }
-      break;
-    }
-
-    case KeyToken::ModifierUp: {
-      if (modifierKeys.count(token.value)) {
-        SendKey(modifierKeys[token.value], false);
-        activeModifiers.erase(std::remove(activeModifiers.begin(),
-                                          activeModifiers.end(), token.value),
-                              activeModifiers.end());
-      } else {
-        SendKey(token.value, false);
-      }
-      break;
-    }
-
-    case KeyToken::Key: {
-            if (Configs::Get().GetVerboseKeyLogging()) debug("Sending key: " + token.value);
-      SendKey(token.value, true);
-      // OPTIMIZATION #4: Only sleep if explicitly configured (removed default
-      // 100μs sleep)
-      if (shouldSleep) {
-        // Flush batch before sleep to ensure key is sent
-        if (eventListener) {
-          eventListener->EndUinputBatch();
-        }
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
-        // Resume batching after sleep
-        if (eventListener) {
-          eventListener->BeginUinputBatch();
-        }
-      }
-      SendKey(token.value, false);
-      break;
-    }
-    }
-  }
-
-  // Flush any remaining batched events
-  if (eventListener) {
-    eventListener->EndUinputBatch();
-  }
-
-  // Release all held modifiers (fail-safe)
-  for (const auto &mod : activeModifiers) {
-        if (modifierKeys.count(mod)) {
-            if (Configs::Get().GetVerboseKeyLogging()) debug("Releasing modifier: " + mod);
-            SendKey(modifierKeys[mod], false);
-        } else {
-            if (Configs::Get().GetVerboseKeyLogging()) debug("Releasing key: " + mod);
-      SendKey(mod, false);
-    }
-  }
-  activeModifiers.clear();
 #endif
 }
 

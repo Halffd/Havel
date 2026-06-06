@@ -235,12 +235,13 @@ public:
   // IOBackend access
   IOBackend *GetIOBackend() { return ioBackend.get(); }
 
-  // Key sending methods
-  void Send(Key key, bool down = true);
+    // Key sending methods
+    void Send(Key key, bool down = true);
 
-  void Send(cstr keys);
-  void SendUInput(int keycode, bool down);
-  void SendSpecific(const std::string &keys);
+    void Send(cstr keys);
+    void SendUInput(int keycode, bool down);
+    void SendSpecific(const std::string &keys);
+    void SendCharX11(char ch);
 
   // Text input - uses clipboard + paste (more reliable than key events)
   // BACKS UP AND RESTORES clipboard to avoid destroying user data

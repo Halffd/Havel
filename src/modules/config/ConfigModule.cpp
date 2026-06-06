@@ -90,67 +90,6 @@ Value configKeys(const VMApi &api, const std::vector<Value> &args) {
 void registerConfigModule(const VMApi &api) {
     auto configObj = api.makeObject();
     compiler::VM* vm = &api.vm();
-
-    auto registerFn = [&](const std::string &name, auto func) {
-        std::string fullName = "config." + name;
-        api.registerFunction(fullName, [vm, func](const std::vector<Value> &args) {
-            VMApi local_api(*vm);
-            return func(local_api, args);
-        });
-        api.setField(configObj, name, api.makeFunctionRef(fullName));
-    };
-
-    registerFn("get", configGet);
-    registerFn("set", configSet);
-    registerFn("keys", configKeys);
-    registerFn("list", configKeys); // Alias to avoid 'keys' shadowing if it happens
-
-    api.registerFunction("config.save", [](const std::vector<Value> &args) {
-        (void)args;
-        Configs::Get().ForceSave();
-        return Value::makeBool(true);
-    });
-    api.setField(configObj, "save", api.makeFunctionRef("config.save"));
-
-    api.registerFunction("config.load", [vm, configObj](const std::vector<Value> &args) {
-        VMApi api(*vm);
-        auto actual = getActualArgs(api, args);
-        if (!actual.empty()) {
-            std::string p = api.toString(actual[0]);
-            if (!p.empty() && p != "true" && p != "false") Configs::Get().SetPath(p);
-        }
-        Configs::Get().Load();
-        for (const auto &key : Configs::Get().GetAllKeys()) {
-            setNestedField(api, configObj, key, stringToValue(api, Configs::Get().Get<std::string>(key, "")));
-        }
-        return Value::makeBool(true);
-    });
-    api.setField(configObj, "load", api.makeFunctionRef("config.load"));
-
-    api.registerFunction("config.__call", [vm, configObj](const std::vector<Value> &args) {
-        VMApi api(*vm);
-        auto actual = getActualArgs(api, args);
-        if (actual.empty() || !actual[0].isObjectId()) return configObj;
-        std::function<void(Value, const std::string&)> merge;
-        merge = [&](Value obj, const std::string& prefix) {
-            for (const auto& key : api.getObjectKeys(obj)) {
-                Value val = api.getField(obj, key);
-                std::string full = prefix.empty() ? key : prefix + "." + key;
-                if (val.isObjectId()) merge(val, full);
-                else {
-                    Configs::Get().Set(full, api.toString(val), true);
-                    setNestedField(api, configObj, full, val);
-                }
-            }
-        };
-        merge(actual[0], "");
-        return configObj;
-    });
-    api.setField(configObj, "__call", api.makeFunctionRef("config.__call"));
-
-    api.setField(configObj, "__vivify", Value::makeInt(1));
-    api.setField(configObj, "__autosave_root", Value::makeInt(1));
-
     api.setGlobal("config", configObj);
     api.setGlobal("cfg", configObj);
     api.setGlobal("conf", configObj);

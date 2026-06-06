@@ -192,6 +192,20 @@ ArrayRef GCHeap::allocateArray() {
     return ArrayRef{.id = id};
 }
 
+uint64_t GCHeap::arrayVersion(uint32_t id) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    auto it = arrays_.find(id);
+    return it == arrays_.end() ? 0 : it->second.version.load(std::memory_order_relaxed);
+}
+
+void GCHeap::bumpArrayVersion(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    auto it = arrays_.find(id);
+    if (it != arrays_.end()) {
+        it->second.version.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
 ObjectRef GCHeap::allocateObject(bool sorted) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     size_t est = sizeof(ObjectEntry);
@@ -215,10 +229,19 @@ SetRef GCHeap::allocateSet() {
     checkHeapLimit(est);
     const uint32_t id = next_set_id_++;
     sets_[id] = {};
+    set_versions_[id] = 1;
     set_ages_[id] = 0;
     old_sets_.erase(id);
     addHeapBytes(est);
     return SetRef{.id = id};
+}
+
+void GCHeap::bumpSetVersion(uint32_t id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    auto it = set_versions_.find(id);
+    if (it != set_versions_.end()) {
+        ++it->second;
+    }
 }
 
 RangeRef GCHeap::allocateRange(int64_t start, int64_t end, int64_t step) {
@@ -470,6 +493,12 @@ const std::unordered_map<std::string, Value> *GCHeap::set(uint32_t id) const {
 std::lock_guard<std::recursive_mutex> lock(mutex_);
 auto it = sets_.find(id);
 return it == sets_.end() ? nullptr : &it->second;
+}
+
+uint64_t GCHeap::setVersion(uint32_t id) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    auto it = set_versions_.find(id);
+    return it == set_versions_.end() ? 0 : it->second;
 }
 
 GCHeap::Range *GCHeap::range(uint32_t id) {

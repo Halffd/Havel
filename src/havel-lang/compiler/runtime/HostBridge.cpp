@@ -221,14 +221,7 @@ void HostBridge::registerModeCallbacks(const std::string &modeName,
 
 void HostBridge::initBridges() {
 #ifdef HAVEL_CORE_PROFILE
-  // Core profile has no host bridges.
-  extensionLoader_ = std::make_unique<Loader>();
-  moduleLoader_.registerBuiltin("io", [](VM &) {}, {"io", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("window", [](VM &) {}, {"window", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("ui", [](VM &) {}, {"ui", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("audio", [](VM &) {}, {"audio", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("browser", [](VM &) {}, {"browser", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("automation", [](VM &) {}, {"automation", "1.0", true, false, ""});
+    extensionLoader_ = std::make_unique<Loader>();
 #else
   ioBridge_ = std::make_unique<IOBridge>(ctx_);
   systemBridge_ = std::make_unique<SystemBridge>(ctx_);
@@ -249,24 +242,9 @@ void HostBridge::initBridges() {
   if (ctx_->hotkeyManager) {
     ctx_->hotkeyManager->setEventQueue(concurrencyBridge_->eventQueue());
   }
-  automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
-  browserBridge_ = std::make_unique<BrowserBridge>(ctx_);
-  toolsBridge_ = std::make_unique<ToolsBridge>(ctx_);
-
-  // Lazy module registration hooks: module code is registered on first `use`.
-  moduleLoader_.registerBuiltin("io", [this](VM &) { ioBridge_->install(options_); },
-                                {"io", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("window", [this](VM &) { uiBridge_->install(options_); },
-                                {"window", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("ui", [this](VM &) { uiBridge_->install(options_); },
-                                {"ui", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("audio", [this](VM &) { audioBridge_->install(options_); },
-                                {"audio", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("browser", [this](VM &) { browserBridge_->install(options_); },
-                                {"browser", "1.0", true, false, ""});
-  moduleLoader_.registerBuiltin("automation",
-                                [this](VM &) { automationBridge_->install(options_); },
-                                {"automation", "1.0", true, false, ""});
+    automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
+    browserBridge_ = std::make_unique<BrowserBridge>(ctx_);
+    toolsBridge_ = std::make_unique<ToolsBridge>(ctx_);
 }
 #endif
 

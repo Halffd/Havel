@@ -16,6 +16,7 @@
 #include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
 #include "../../runtime/Modules.hpp"
+#include "dl/Loader.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -2674,7 +2675,22 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
 
 bool VM::ensureModuleLoaded(const std::string &name) {
     auto it = lazy_modules_.find(name);
-    if (it == lazy_modules_.end()) return false;
+    if (it == lazy_modules_.end()) {
+        // Fallback: try dynamic plugin discovery
+        if (pluginLoader_) {
+            auto plugin = pluginLoader_->loadModulePlugin(name);
+            if (plugin) {
+                VMApi api(*this);
+                plugin->register_fn(static_cast<void *>(&api));
+                auto git = globals.find(name);
+                if (git != globals.end()) {
+                    moduleLoader_.putCache(name, git->second);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
     if (it->second.loaded) {
         auto git = globals.find(name);
         if (git != globals.end() && git->second.isObjectId()) {

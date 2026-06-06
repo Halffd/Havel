@@ -7,7 +7,7 @@
  */
 
 #include "HavelCAPI.h"
-#include "loader/Loader.hpp"
+#include "dl/Loader.hpp"
 
 // Include Qt headers for proper type information
 #include <QApplication>

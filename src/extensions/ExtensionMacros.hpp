@@ -24,7 +24,7 @@
 #pragma once
 
 #include "HavelCAPI.h"
-#include "loader/Loader.hpp"
+#include "dl/Loader.hpp"
 #include "ExtensionAPI.hpp"
 #include <cstdio>
 

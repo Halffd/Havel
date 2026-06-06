@@ -920,24 +920,9 @@ int runStdlibCase(const std::string &name, const std::string &source,
     vm.moduleLoader().addSearchPath(canonicalRoot + "/app");
     vm.moduleLoader().addSearchPath(canonicalRoot);
 
-havel::registerPureStdLib(vm);
+    havel::registerPureStdLib(vm);
 
-vm.ensureModuleLoaded("regex");
-vm.ensureModuleLoaded("random");
-vm.ensureModuleLoaded("format");
-vm.ensureModuleLoaded("bit");
-vm.ensureModuleLoaded("pack");
-vm.ensureModuleLoaded("time");
-vm.ensureModuleLoaded("fs");
-vm.ensureModuleLoaded("debug");
-vm.ensureModuleLoaded("sys");
-vm.ensureModuleLoaded("shell");
-vm.ensureModuleLoaded("pointer");
-vm.ensureModuleLoaded("option");
-vm.ensureModuleLoaded("log");
-vm.ensureModuleLoaded("bytecodeBuilder");
-
-havel::compiler::PipelineOptions options;
+    havel::compiler::PipelineOptions options;
     options.compile_unit_name = name;
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
@@ -2190,7 +2175,8 @@ return ok
   // --- RandomModule: basic type/range checks ---
   // Random values can't be checked for exact values, but we can
   // verify return types and range constraints.
-  failures += runStdlibCase("random-randint-range", R"havel(
+    failures += runStdlibCase("random-randint-range", R"havel(
+use random
 // randint(1, 10) should return an int in [1, 10]
 v = randint(1, 10)
 ok = 1
@@ -2199,7 +2185,8 @@ if v > 10 { ok = 0 }
 return ok
 )havel", 1, dump_bytecode, snapshot_dir);
 
-  failures += runStdlibCase("random-rand-type", R"havel(
+    failures += runStdlibCase("random-rand-type", R"havel(
+use random
 // rand() returns a double in [0, 1)
 v = rand()
 // If it returns a double, comparing with 0 should work
@@ -2209,7 +2196,8 @@ if v >= 1 { ok = 0 }
 return ok
 )havel", 1, dump_bytecode, snapshot_dir);
 
-  failures += runStdlibCase("random-choice-from-array", R"havel(
+    failures += runStdlibCase("random-choice-from-array", R"havel(
+use random
 // choice picks from an array
 arr = [10, 20, 30]
 v = choice(arr)
@@ -2556,39 +2544,47 @@ return toNumber(false)
 // NOTE: regex_search(text, pattern) -- reversed arg order vs regex_match(pattern, text)
 // ================================================================
 
-failures += runStdlibCase("regex-match-true", R"havel(
+    failures += runStdlibCase("regex-match-true", R"havel(
+use regex
 return regex_match("hello.*", "hello world") ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
-failures += runStdlibCase("regex-match-false", R"havel(
+    failures += runStdlibCase("regex-match-false", R"havel(
+use regex
 return regex_match("^xyz$", "hello") ? 0 : 1
 )havel", 1, dump_bytecode, snapshot_dir);
 
-failures += runStdlibCase("regex-search-true", R"havel(
+    failures += runStdlibCase("regex-search-true", R"havel(
+use regex
 // regex_search takes (text, pattern) -- reversed from regex_match
 return regex_search("hello world", "wor") ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
-failures += runStdlibCase("regex-search-false", R"havel(
+    failures += runStdlibCase("regex-search-false", R"havel(
+use regex
 return regex_search("hello", "xyz") ? 0 : 1
 )havel", 1, dump_bytecode, snapshot_dir);
 
-failures += runStdlibCase("regex-replace", R"havel(
+    failures += runStdlibCase("regex-replace", R"havel(
+use regex
 s = regex_replace("world", "hello world", "earth")
 return s == "hello earth" ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
-failures += runStdlibCase("regex-extract", R"havel(
+    failures += runStdlibCase("regex-extract", R"havel(
+use regex
 arr = regex_extract("\\d+", "abc123def456")
 return arr.len
 )havel", 2, dump_bytecode, snapshot_dir);
 
-failures += runStdlibCase("regex-split", R"havel(
+    failures += runStdlibCase("regex-split", R"havel(
+use regex
 arr = regex_split(",", "a,b,c")
 return arr.len
 )havel", 3, dump_bytecode, snapshot_dir);
 
-failures += runStdlibCase("escape-regex", R"havel(
+    failures += runStdlibCase("escape-regex", R"havel(
+use regex
 s = escape_regex("a.b")
 // "a.b" -> "a\\.b" (escaped the dot)
 return #s

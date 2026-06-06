@@ -549,25 +549,28 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
  } else {
  value += advance(); // $ as literal
  }
-    } else if (c == '{' && braceDepth == 0) {
- if (peek(1) != '{') {
- hasInterpolation = true;
- value += advance(); // {
- braceDepth++; // Enter interpolation context
- } else {
- // Escaped brace {{ - consume both and add single {
- advance(); // first {
- advance(); // second {
- value += '{';
- }
- } else if (c == '}' && braceDepth == 0) {
- if (peek(1) == '}') {
- advance(); // first }
- advance(); // second }
- value += '}';
- } else {
- value += advance();
- }
+} else if (c == '{' && braceDepth == 0) {
+            if (isFString && peek(1) != '{') {
+                hasInterpolation = true;
+                value += advance(); // {
+                braceDepth++; // Enter interpolation context
+            } else if (isFString && peek(1) == '{') {
+                // Escaped brace {{ in f-string - consume both and add single {
+                advance(); // first {
+                advance(); // second {
+                value += '{';
+            } else {
+                // Non-f-string: bare { is literal (e.g. fmt.format placeholders)
+                value += advance();
+            }
+        } else if (c == '}' && braceDepth == 0) {
+            if (isFString && peek(1) == '}') {
+                advance(); // first }
+                advance(); // second }
+                value += '}';
+            } else {
+                value += advance();
+            }
  } else {
       // Regular character processing
       char consumed = advance();
@@ -678,24 +681,26 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
         } else {
             value += advance(); // $ as literal
         }
-    } else if (c == '{' && braceDepth == 0) {
- if (peek(1) != '{') {
- hasInterpolation = true;
- value += advance(); // {
- braceDepth++;
- } else {
- advance();
- advance();
- value += '{';
- }
- } else if (c == '}' && braceDepth == 0) {
- if (peek(1) == '}') {
- advance();
- advance();
- value += '}';
- } else {
- value += advance();
- }
+} else if (c == '{' && braceDepth == 0) {
+            if (isFString && peek(1) != '{') {
+                hasInterpolation = true;
+                value += advance(); // {
+                braceDepth++;
+            } else if (isFString && peek(1) == '{') {
+                advance();
+                advance();
+                value += '{';
+            } else {
+                value += advance();
+            }
+        } else if (c == '}' && braceDepth == 0) {
+            if (isFString && peek(1) == '}') {
+                advance();
+                advance();
+                value += '}';
+            } else {
+                value += advance();
+            }
  } else {
       char consumed = advance();
       value += consumed;

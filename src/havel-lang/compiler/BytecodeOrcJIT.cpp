@@ -500,6 +500,136 @@ uint64_t havel_vm_array_get(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits) 
   return vm->getHostArrayValue(ArrayRef{arr.asArrayId()}, static_cast<size_t>(idx.asInt())).rawBits();
 }
 
+uint64_t havel_vm_collection_get_raw(void* vm_ptr, uint64_t container_bits, uint64_t key_bits) {
+  if (!vm_ptr) return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value container, key_val;
+  std::memcpy(&container, &container_bits, sizeof(uint64_t));
+  std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+  auto indexFromRaw = [](const Value &v) -> std::optional<int64_t> {
+    if (v.isInt()) return v.asInt();
+    return std::nullopt;
+  };
+
+  if (container.isArrayId()) {
+    auto index = indexFromRaw(key_val);
+    if (!index) return Value::makeNull().rawBits();
+    auto* array = vm->getHeap().array(container.asArrayId());
+    if (!array) return Value::makeNull().rawBits();
+    int64_t idx = *index;
+    if (idx < 0) idx = static_cast<int64_t>(array->size()) + idx;
+    if (idx < 0 || static_cast<size_t>(idx) >= array->size()) return Value::makeNull().rawBits();
+    return (*array)[static_cast<size_t>(idx)].rawBits();
+  }
+
+  if (container.isSetId()) {
+    auto key = vm->resolveKeyPublic(key_val);
+    if (!key) return Value::makeBool(false).rawBits();
+    auto* set = vm->getHeap().set(container.asSetId());
+    if (!set) return Value::makeBool(false).rawBits();
+    return Value::makeBool(set->find(*key) != set->end()).rawBits();
+  }
+
+  if (container.isStringId() || container.isStringValId()) {
+    auto index = indexFromRaw(key_val);
+    if (!index) return Value::makeNull().rawBits();
+    std::string s;
+    if (container.isStringId()) {
+      auto *sp = vm->getHeap().string(container.asStringId());
+      if (sp) s = *sp;
+    } else if (container.isStringValId() && vm->getCurrentChunk()) {
+      s = vm->getCurrentChunk()->getString(container.asStringValId());
+    }
+    int64_t numCodepoints = 0;
+    size_t bytePos = 0;
+    while (bytePos < s.size()) {
+      unsigned char c = static_cast<unsigned char>(s[bytePos]);
+      size_t cpLen = 1;
+      if (c < 0x80) cpLen = 1;
+      else if ((c & 0xE0) == 0xC0) cpLen = 2;
+      else if ((c & 0xF0) == 0xE0) cpLen = 3;
+      else if ((c & 0xF8) == 0xF0) cpLen = 4;
+      if (bytePos + cpLen > s.size()) cpLen = 1;
+      numCodepoints++;
+      bytePos += cpLen;
+    }
+    int64_t idx = *index;
+    if (idx < 0) idx = numCodepoints + idx;
+    if (idx < 0 || idx >= numCodepoints) return Value::makeNull().rawBits();
+    size_t targetByte = 0;
+    int64_t cpIdx = 0;
+    while (cpIdx < idx && targetByte < s.size()) {
+      unsigned char c = static_cast<unsigned char>(s[targetByte]);
+      size_t cpLen = 1;
+      if (c < 0x80) cpLen = 1;
+      else if ((c & 0xE0) == 0xC0) cpLen = 2;
+      else if ((c & 0xF0) == 0xE0) cpLen = 3;
+      else if ((c & 0xF8) == 0xF0) cpLen = 4;
+      if (targetByte + cpLen > s.size()) cpLen = 1;
+      targetByte += cpLen;
+      cpIdx++;
+    }
+    size_t cpLen = 1;
+    if (targetByte < s.size()) {
+      unsigned char c = static_cast<unsigned char>(s[targetByte]);
+      if (c < 0x80) cpLen = 1;
+      else if ((c & 0xE0) == 0xC0) cpLen = 2;
+      else if ((c & 0xF0) == 0xE0) cpLen = 3;
+      else if ((c & 0xF8) == 0xF0) cpLen = 4;
+      if (targetByte + cpLen > s.size()) cpLen = 1;
+    }
+    auto ref = vm->getHeap().allocateString(s.substr(targetByte, cpLen));
+    return Value::makeStringId(ref.id).rawBits();
+  }
+
+  if (container.isObjectId()) {
+    auto key = vm->resolveKeyPublic(key_val);
+    if (!key) return Value::makeNull().rawBits();
+    if (container.asObjectId() == vm->globalsMirrorObjectId()) {
+      return vm->lookupGlobalByKey(*key).rawBits();
+    }
+    return vm->objectGetWithClassChain(container.asObjectId(), *key).rawBits();
+  }
+
+  return Value::makeNull().rawBits();
+}
+
+uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, uint64_t key_bits) {
+    struct CacheEntry {
+        uint64_t container_bits = 0;
+        uint64_t version = 0;
+        uint64_t key_bits = 0;
+        uint64_t value_bits = 0;
+        bool valid = false;
+    };
+
+    thread_local std::array<CacheEntry, 8> cache{};
+
+    if (!vm_ptr) return Value::makeNull().rawBits();
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value container, key_val;
+    std::memcpy(&container, &container_bits, sizeof(uint64_t));
+    std::memcpy(&key_val, &key_bits, sizeof(uint64_t));
+
+    uint64_t version = 0;
+    if (container.isArrayId()) version = vm->arrayVersion(container.asArrayId());
+    else if (container.isSetId()) version = vm->setVersion(container.asSetId());
+    else if (container.isObjectId()) version = vm->objectLookupVersion(container.asObjectId());
+    else if (container.isStringId() || container.isStringValId()) version = container_bits;
+
+    const size_t primary = static_cast<size_t>((container_bits ^ key_bits ^ (version >> 1)) & (cache.size() - 1));
+    for (size_t probe = 0; probe < cache.size(); ++probe) {
+        const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
+        if (entry.valid && entry.container_bits == container_bits && entry.version == version && entry.key_bits == key_bits) {
+            return entry.value_bits;
+        }
+    }
+
+    auto result_bits = havel_vm_collection_get_raw(vm_ptr, container_bits, key_bits);
+    cache[primary] = CacheEntry{container_bits, version, key_bits, result_bits, true};
+    return result_bits;
+}
+
 uint64_t havel_vm_array_set(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits, uint64_t val_bits) {
   if (!vm_ptr) return val_bits;
   auto* vm = static_cast<VM*>(vm_ptr);
@@ -610,7 +740,13 @@ uint64_t havel_vm_object_get_raw_ic(void* vm_ptr, uint64_t obj_bits, uint64_t ke
     if (!obj.isObjectId()) return Value::makeNull().rawBits();
 
     const uint32_t obj_id = obj.asObjectId();
-    const uint64_t version = vm->objectShapeVersion(obj_id);
+    if (obj_id == vm->globalsMirrorObjectId()) {
+        auto key_str = vm->resolveKeyPublic(key_val);
+        if (!key_str) return Value::makeNull().rawBits();
+        return vm->lookupGlobalByKey(*key_str).rawBits();
+    }
+
+    const uint64_t version = vm->objectLookupVersion(obj_id);
     const size_t primary = static_cast<size_t>((obj_id ^ key_bits ^ (key_bits >> 32)) & (cache.size() - 1));
     for (size_t probe = 0; probe < cache.size(); ++probe) {
         const auto &entry = cache[(primary + probe) & (cache.size() - 1)];
@@ -1140,6 +1276,7 @@ uint64_t havel_vm_array_pop(void* vm_ptr, uint64_t arr_bits) {
   if (!a || a->frozen || a->empty()) return Value::makeNull().rawBits();
   Value back = a->back();
   a->pop_back();
+  vm->getHeap().bumpArrayVersion(arr.asArrayId());
   return back.rawBits();
 }
 
@@ -1262,11 +1399,16 @@ uint64_t havel_vm_set_set(void* vm_ptr, uint64_t set_bits, uint64_t val_bits, ui
   if (!setVal.isSetId()) return Value::makeNull().rawBits();
   auto* s = vm->getHeap().set(setVal.asSetId());
   if (!s) return Value::makeNull().rawBits();
-        auto k = vm->resolveKeyPublic(key);
-        if (!k) return Value::makeNull().rawBits();
-        (*s)[*k] = val;
-        return Value::makeNull().rawBits();
-    }
+  auto k = vm->resolveKeyPublic(key);
+  if (!k) return Value::makeNull().rawBits();
+  if (s->find(*k) != s->end()) {
+    (*s)[*k] = val;
+  } else {
+    s->erase(*k);
+  }
+  vm->getHeap().bumpSetVersion(setVal.asSetId());
+  return Value::makeNull().rawBits();
+}
 
 uint64_t havel_vm_set_del(void* vm_ptr, uint64_t set_bits, uint64_t key_bits) {
     if (!vm_ptr) return Value::makeBool(false).rawBits();
@@ -1277,9 +1419,11 @@ uint64_t havel_vm_set_del(void* vm_ptr, uint64_t set_bits, uint64_t key_bits) {
     if (!setVal.isSetId()) return Value::makeBool(false).rawBits();
     auto* s = vm->getHeap().set(setVal.asSetId());
     if (!s) return Value::makeBool(false).rawBits();
-    auto k = vm->resolveKeyPublic(key);
+  auto k = vm->resolveKeyPublic(key);
   if (!k) return Value::makeBool(false).rawBits();
-  return Value::makeBool(s->erase(*k) > 0).rawBits();
+  s->erase(*k);
+  vm->getHeap().bumpSetVersion(setVal.asSetId());
+  return Value::makeNull().rawBits();
 }
 
 uint64_t havel_vm_range_step_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits, uint64_t step_bits) {
@@ -1995,6 +2139,8 @@ addSym("havel_vm_locals_base", reinterpret_cast<void*>(&havel_vm_locals_base));
 addSym("havel_vm_pow", reinterpret_cast<void*>(&havel_vm_pow));
 addSym("havel_vm_array_new", reinterpret_cast<void*>(&havel_vm_array_new));
 addSym("havel_vm_array_get", reinterpret_cast<void*>(&havel_vm_array_get));
+addSym("havel_vm_collection_get_raw", reinterpret_cast<void*>(&havel_vm_collection_get_raw));
+addSym("havel_vm_collection_get_raw_ic", reinterpret_cast<void*>(&havel_vm_collection_get_raw_ic));
 addSym("havel_vm_array_set", reinterpret_cast<void*>(&havel_vm_array_set));
 addSym("havel_vm_array_len", reinterpret_cast<void*>(&havel_vm_array_len));
 addSym("havel_vm_array_push", reinterpret_cast<void*>(&havel_vm_array_push));
@@ -4304,11 +4450,11 @@ case OpCode::LENGTH: {
     case OpCode::ARRAY_GET: {
         llvm::Value* idx = vstack.back(); vstack.pop_back();
         llvm::Value* arr = vstack.back(); vstack.pop_back();
-        llvm::Function* fnGet = module.getFunction("havel_vm_array_get");
+        llvm::Function* fnGet = module.getFunction("havel_vm_collection_get_raw_ic");
         if (!fnGet) {
             fnGet = llvm::Function::Create(
                 llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
-                llvm::Function::ExternalLinkage, "havel_vm_array_get", &module);
+                llvm::Function::ExternalLinkage, "havel_vm_collection_get_raw_ic", &module);
         }
         vstack.push_back(B.CreateCall(fnGet, {vmArg, arr, idx}));
         break;

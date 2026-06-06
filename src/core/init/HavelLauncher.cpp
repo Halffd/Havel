@@ -2183,6 +2183,30 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
   }
   outFile.close();
 
+  const auto writeCompanionCache = [&](const std::string &path) {
+    if (path.empty()) {
+      return;
+    }
+    const auto dot = path.find_last_of('.');
+    std::string cachePath = (dot == std::string::npos)
+        ? (path + ".hbc")
+        : (path.substr(0, dot) + ".hbc");
+    std::ofstream cacheOut(cachePath, std::ios::binary);
+    if (!cacheOut.is_open()) {
+      warn("Cannot open bytecode cache file: {}", cachePath);
+      return;
+    }
+    cacheOut.write(reinterpret_cast<const char*>(data.data()), data.size());
+    if (!cacheOut.good()) {
+      warn("Failed to write bytecode cache file: {}", cachePath);
+      return;
+    }
+    cacheOut.close();
+    info("Bytecode cache written to: {}", cachePath);
+  };
+
+  writeCompanionCache(outputPath);
+
   info("Build successful: {} ({} bytes)", outputPath, data.size());
   return 0;
 }

@@ -2284,9 +2284,9 @@ std::string fnCapturedField = fieldPath;
             auto* savedChunk = current_chunk;
             auto savedGlobals = globals;
             auto savedMirrorId = globals_mirror_object_id_;
-            Value savedG = globals["_G"];
-            globals = moduleGlobals;
-    current_chunk = moduleChunk.get();
+Value savedG = globals["_G"];
+        globals = moduleGlobals;
+        current_chunk = moduleChunk.get();
     const auto* callee = moduleChunk->getFunction(funcIdx);
     if (!callee) {
   globals = std::move(savedGlobals);
@@ -2969,8 +2969,8 @@ Value VM::loadModule(const std::string& path) {
         // Execute the module's bytecode (same heap, sandboxed globals)
         Value exec_result;
         try {
-            runDispatchLoop(0);
-            if (!stack.empty()) {
+ runDispatchLoop(0);
+ if (!stack.empty()) {
                 exec_result = stack.top();
                 stack.pop();
             }
@@ -3004,11 +3004,6 @@ Value VM::loadModule(const std::string& path) {
     auto exportsObj = createHostObject();
 auto *obj = heap_.object(exportsObj.id);
     auto moduleGlobalsSnapshot = globals;
-    {
-        auto _it = globals.find("emitClassDeclaration");
-        if (_it != globals.end()) std::fprintf(stderr, "[DBG-MOD] emitClassDeclaration found in module globals\n");
-        else std::fprintf(stderr, "[DBG-MOD] emitClassDeclaration NOT in module globals, size=%zu\n", globals.size());
-    }
     int exportCount = 0;
     for (const auto& [name, value] : globals) {
         if (name.empty() || name[0] == '_') continue;

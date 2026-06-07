@@ -434,10 +434,12 @@ list(REMOVE_ITEM HAVEL_LANG_SOURCES
 # Exception: StringModule is called from VMHostFunctions — must stay in static lib
 if(ENABLE_MODULE_PLUGINS)
 file(GLOB_RECURSE _STDLIB_MODULE_SOURCES "src/havel-lang/stdlib/*Module.cpp")
-list(REMOVE_ITEM _STDLIB_MODULE_SOURCES
-    "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HotkeyModule.cpp"
-    "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StringModule.cpp"
-)
+  list(REMOVE_ITEM _STDLIB_MODULE_SOURCES
+      "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HotkeyModule.cpp"
+      "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StringModule.cpp"
+      "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp"
+      "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BytecodeBuilderModule.cpp"
+  )
 list(REMOVE_ITEM HAVEL_LANG_SOURCES ${_STDLIB_MODULE_SOURCES})
 endif()
 

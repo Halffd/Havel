@@ -9,6 +9,7 @@
 #include "../runtime/EventQueue.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "stdlib/StringModule.hpp"
+#include "stdlib/FsModule.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -21,6 +22,10 @@ void VM::registerDefaultHostFunctions() {
     {
         VMApi api(*this);
     havel::stdlib::registerStringModule(api);
+  }
+  {
+    VMApi api(*this);
+    havel::stdlib::registerFsModule(api);
   }
   registerHostFunction("print", [this](const std::vector<Value> &args) {
     // Check if last arg is kwargs object (marked with __kwargs key)
@@ -2025,6 +2030,7 @@ void VM::registerDefaultPrototypes() {
     // Register "string" as a lazy module so that accessing "string"
     // as a global triggers namespace construction from string.* host functions.
     registerLazyModule("string", [](VMApi &) {});
+  registerLazyModule("fs", [](VMApi &) {});
   prototypes::registerArrayPrototype(*this);
   prototypes::registerNumberPrototype(*this);
   prototypes::registerBoolPrototype(*this);

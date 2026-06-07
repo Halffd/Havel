@@ -176,6 +176,10 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 
 	if (result) {
 		result->state = GoroutineState::Running;
+		{
+			std::lock_guard<std::mutex> wlock(result->wait_handle_mutex_);
+			result->wait_handle.clear();  // Clear stale suspension context before running
+		}
         current_.store(result, std::memory_order_release);
         if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}", 
                       result->id, result->name, (int)result->state.load());
@@ -188,7 +192,7 @@ void Scheduler::suspend(Scheduler::Goroutine* g, SuspensionReason reason) {
 	if (!g) return;
 
 	g->state = GoroutineState::Suspended;
-	g->suspension_reason = reason;
+	g->suspension_reason.store(reason, std::memory_order_release);
     ::havel::debug("[Scheduler] [YIELD] gid={} name='{}' reason={}", 
                   g->id, g->name, (int)reason);
 }
@@ -201,7 +205,11 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
 	}
 
 	g->state = GoroutineState::Runnable;
-	g->suspension_reason = SuspensionReason::None;
+	g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
+	{
+		std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+		g->wait_handle.clear();  // Clear stale suspension context
+	}
 
 	{
 		std::lock_guard<std::mutex> lock(priority_mutex_);
@@ -397,8 +405,11 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 void Scheduler::requeueFront(Goroutine* g) {
     if (!g) return;
     g->state = GoroutineState::Created;
-    g->suspension_reason = SuspensionReason::None;
-    g->wait_handle.clear();
+    g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+        g->wait_handle.clear();
+    }
     g->ip = 0;
     g->stack.clear();
     g->locals.clear();
@@ -407,10 +418,10 @@ void Scheduler::requeueFront(Goroutine* g) {
         for (const auto& arg : g->hotkey_args) {
             g->stack.push_back(arg);
         }
-        g->function_id = g->hotkey_function_id;
-        g->closure_id = g->hotkey_closure_id;
-    }
-    if (g->fiber) {
+    g->function_id = g->hotkey_function_id;
+    g->closure_id = g->hotkey_closure_id;
+  }
+  if (g->fiber) {
         g->fiber->stack.clear();
         g->fiber->call_stack.clear();
         if (g->persistent && !g->hotkey_args.empty()) {
@@ -491,7 +502,7 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
 
   if (g->state == GoroutineState::Suspended) {
     g->hotkey_retrigger.store(true, std::memory_order_release);
-    if (g->suspension_reason == SuspensionReason::HotkeyWait) {
+    if (g->suspension_reason.load(std::memory_order_acquire) == SuspensionReason::HotkeyWait) {
       // Idle/parked goroutine waiting for next trigger — wake it up
       requeueFront(g);
     }
@@ -545,13 +556,20 @@ size_t Scheduler::wakeSleepingGoroutines() {
     std::lock_guard<std::mutex> lock(goroutines_mutex_);
     for (auto& [id, g] : goroutines_) {
         if (g->state != GoroutineState::Suspended) continue;
-        if (g->suspension_reason != SuspensionReason::SleepWait) continue;
-    if (g->wait_handle.type != AwaitableType::SLEEP) continue;
-    if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) continue;
-    if (now < g->wait_handle.deadline) continue;
+        if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
+        {
+            std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+            if (g->wait_handle.type != AwaitableType::SLEEP) continue;
+            if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) continue;
+            if (now < g->wait_handle.deadline) continue;
+        }
 
         g->state = GoroutineState::Runnable;
-        g->suspension_reason = SuspensionReason::None;
+        g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+            g->wait_handle.clear();  // Clear stale sleep deadline and context
+        }
         woken++;
 
         std::lock_guard<std::mutex> plock(priority_mutex_);

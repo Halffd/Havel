@@ -133,10 +133,12 @@ struct WaitHandle {
     
     // Goroutine state machine (atomic for lock-free cross-thread reads)
     std::atomic<GoroutineState> state;
-    SuspensionReason suspension_reason;
+    std::atomic<SuspensionReason> suspension_reason;  // Atomic: read/written by VM and event threads
 
     // Unified suspension context (what we're waiting for)
+    // CAUTION: Multi-field struct accessed concurrently. Use wait_handle_mutex_ for protection.
     WaitHandle wait_handle;
+    std::mutex wait_handle_mutex_;  // Protects wait_handle from concurrent access
 
     // Timing information
     std::chrono::steady_clock::time_point created_time;
@@ -164,7 +166,7 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
 
     explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL)
         : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
-          state(GoroutineState::Created), suspension_reason(SuspensionReason::None),
+          state(GoroutineState::Created), suspension_reason{SuspensionReason::None},
           created_time(std::chrono::steady_clock::now()), parent_id(0),
 	max_instructions_per_tick(prio == FiberPriority::HOTKEY ? HOTKEY_MAX_INSTRUCTIONS : DEFAULT_MAX_INSTRUCTIONS),
 	priority(prio) {}

@@ -3524,8 +3524,7 @@ if hasMode {
 	modeKeyIdx = bc.add_string(node.mode)
 	bc.emit("LOAD_CONST", modeKeyIdx)
 	bc.emit("EQ")
-	modeSkipJumpIp = bc.instr_count()
-	bc.emit("JUMP_IF_FALSE", 0)
+	modeSkipJumpIp = bc.emit("JUMP_IF_FALSE", 0)
 }
 bc.emit("LOAD_VAR", 0)
 thisSid = globalIdx(emitter, "this")
@@ -3536,7 +3535,7 @@ bc.emit("SWAP")
 bc.emit("CALL", 1)
 bc.emit("POP")
 // Patch mode skip jump to land here
-if hasMode && modeSkipJumpIp >= 0 {
+if hasMode {
 	bc.patch_jump(modeSkipJumpIp, bc.instr_count())
 }
 bc.emit("PUSH_NULL")

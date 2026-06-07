@@ -9,7 +9,7 @@ class VNode {
     var ref = null
     var _element = null
 
-    fn new(tag, props, children) {
+    fn @(tag, props, children) {
         @tag = tag
         if props != null { @props = props }
         else { @props = {} }

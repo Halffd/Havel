@@ -1,0 +1,15 @@
+// Test: interval in sequential context (no hotkey)
+print "=== test interval ==="
+z = 0
+id = interval 50 {
+  z += 1
+  print f"interval: $z"
+  if z >= 5 {
+    print "stopping interval"
+    interval.stop(id)
+  }
+}
+print "registered interval, sleeping 500ms..."
+sleep(500)
+print f"final z: $z"
+print "done"

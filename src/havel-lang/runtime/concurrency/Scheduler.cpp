@@ -488,6 +488,12 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
   if (!newArgs.empty()) {
     g->hotkey_args = newArgs;
   }
+
+  if (g->state == GoroutineState::Suspended) {
+    g->hotkey_retrigger.store(true, std::memory_order_release);
+    return true;
+  }
+
   requeueFront(g);
   return true;
 }

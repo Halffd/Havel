@@ -1,0 +1,12 @@
+print("script start")
+x = 0
+interval 100 {
+    print("interval fired")
+    x = x + 1
+    if x >= 3 {
+        print("stopping interval")
+    }
+}
+print("after interval setup")
+sleep(500)
+print("script end, x:", x)

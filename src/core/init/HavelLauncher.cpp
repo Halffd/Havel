@@ -876,9 +876,9 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 			.stopOnError = cfg.stopOnError,
 			.leanMinimalStartup = cfg.minimalMode,
 			.pureStdlib = cfg.pureStdlib,
+            .vmConfig = cfg.vmConfig,
 			.serviceIncludes = cfg.serviceIncludes,
-.serviceExcludes = cfg.serviceExcludes,
-            .vmConfig = cfg.vmConfig
+			.serviceExcludes = cfg.serviceExcludes
         });
         engine.initializeMinimal();
         engine.execute(combinedCode, "__main__", combinedNames);
@@ -1170,9 +1170,9 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 			.stopOnError = cfg.stopOnError,
 			.leanMinimalStartup = cfg.minimalMode,
         .pureStdlib = cfg.pureStdlib,
+            .vmConfig = cfg.vmConfig,
             .serviceIncludes = cfg.serviceIncludes,
-            .serviceExcludes = cfg.serviceExcludes,
-            .vmConfig = cfg.vmConfig
+            .serviceExcludes = cfg.serviceExcludes
         });
         auto t0 = std::chrono::high_resolution_clock::now();
         engine.initializeMinimal();
@@ -1284,9 +1284,9 @@ int havel::init::HavelLauncher::runSelfHosted(const LaunchConfig &cfg) {
 		.stopOnError = cfg.stopOnError,
 		.leanMinimalStartup = true,
         .pureStdlib = true,
+            .vmConfig = cfg.vmConfig,
             .serviceIncludes = cfg.serviceIncludes,
-            .serviceExcludes = cfg.serviceExcludes,
-            .vmConfig = cfg.vmConfig
+            .serviceExcludes = cfg.serviceExcludes
         });
         engine.initializeMinimal();
 
@@ -1335,20 +1335,20 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
             .debugParser = cfg.debugParser,
             .debugAst = cfg.debugAst,
             .stopOnError = cfg.stopOnError,
-            .serviceIncludes = cfg.serviceIncludes,
-            .serviceExcludes = cfg.serviceExcludes,
-            .vmConfig = cfg.vmConfig
+            .vmConfig = cfg.vmConfig,
+			.serviceIncludes = cfg.serviceIncludes,
+			.serviceExcludes = cfg.serviceExcludes
         });
         engine.initializeMinimal();
-
-	info("Executing script code...");
+    
+        info("Executing script code...");
         try {
             engine.execute(combinedCode, "__main__", combinedNames.empty() ? "script" : combinedNames);
         } catch (const std::exception &e) {
             error("Script execution failed: {}", e.what());
             return 1;
         }
-
+    
         havel::repl::REPLConfig replConfig;
         replConfig.debugMode = cfg.debugMode;
         replConfig.stopOnError = cfg.stopOnError;
@@ -1564,19 +1564,40 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
     if (cfg.minimalMode) {
     info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
 
+    std::string combinedCode;
+    std::string combinedNames;
+    for (const auto& f : cfg.scriptFiles) {
+      std::string content = readScriptFile(f);
+      if (!content.empty()) {
+        combinedCode += content + "\n";
+        if (!combinedNames.empty()) combinedNames += " + ";
+        combinedNames += f;
+      } else {
+        error("Cannot open startup script: {}", f);
+      }
+    }
+
         havel::HavelEngine engine({
             .debugBytecode = cfg.debugBytecode,
             .debugLexer = cfg.debugLexer,
             .debugParser = cfg.debugParser,
             .debugAst = cfg.debugAst,
             .stopOnError = cfg.stopOnError,
-            .serviceIncludes = cfg.serviceIncludes,
-            .serviceExcludes = cfg.serviceExcludes,
-            .vmConfig = cfg.vmConfig
+            .vmConfig = cfg.vmConfig,
+			.serviceIncludes = cfg.serviceIncludes,
+			.serviceExcludes = cfg.serviceExcludes
         });
-	engine.initializeMinimal();
+        engine.initializeMinimal();
 
-	havel::repl::REPLConfig replConfig;
+        info("Executing script code...");
+        try {
+            engine.execute(combinedCode, "__main__", combinedNames.empty() ? "script" : combinedNames);
+        } catch (const std::exception &e) {
+            error("Script execution failed: {}", e.what());
+            return 1;
+        }
+
+        havel::repl::REPLConfig replConfig;
         replConfig.debugMode = cfg.debugMode;
         replConfig.stopOnError = cfg.stopOnError;
         replConfig.debugBytecode = cfg.debugBytecode;

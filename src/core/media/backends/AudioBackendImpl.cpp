@@ -150,14 +150,14 @@ void pw_on_registry_global(void *data, uint32_t id, uint32_t,
                             const char *type, uint32_t, const struct spa_dict *props);
 void pw_on_registry_global_remove(void *data, uint32_t id);
 
-static const struct pw_core_events pw_core_evt = {
-  PW_VERSION_CORE_EVENTS, .done = pw_on_core_sync, .error = pw_on_core_error,
+static constexpr struct pw_core_events pw_core_evt = {
+  .version = PW_VERSION_CORE_EVENTS, .done = pw_on_core_sync, .error = pw_on_core_error,
 };
-static const struct pw_node_events pw_node_evt = {
-  PW_VERSION_NODE_EVENTS, .info = pw_on_node_info,
+static constexpr struct pw_node_events pw_node_evt = {
+  .version = PW_VERSION_NODE_EVENTS, .info = pw_on_node_info,
 };
-static const struct pw_registry_events pw_registry_evt = {
-  PW_VERSION_REGISTRY_EVENTS, .global = pw_on_registry_global, .global_remove = pw_on_registry_global_remove,
+static constexpr struct pw_registry_events pw_registry_evt = {
+  .version = PW_VERSION_REGISTRY_EVENTS, .global = pw_on_registry_global, .global_remove = pw_on_registry_global_remove,
 };
 
 void pw_on_core_sync(void *data, uint32_t, int) {

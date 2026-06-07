@@ -109,29 +109,44 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 }
 
 Scheduler::Goroutine* Scheduler::pickNext() {
-	Goroutine* result = nullptr;
+  Goroutine* result = nullptr;
 
-	{
-		std::lock_guard<std::mutex> lock(priority_mutex_);
+  {
+    std::lock_guard<std::mutex> lock(priority_mutex_);
 
-		// Priority order: hotkey → normal → background
-		// Hotkey queue: immediate execution (keyboard/mouse interrupts)
-		while (!hotkey_queue_.empty()) {
-			auto* g = hotkey_queue_.front();
-			hotkey_queue_.pop_front();
+    if (debugging::debug_io) {
+      ::havel::debug("[Scheduler] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
+        hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
+    }
 
-			if (!g) continue;
-			if (g->state == GoroutineState::Done) continue;
-			if (g->fiber && g->fiber->state == FiberState::DONE) {
-				g->state = GoroutineState::Done;
-				continue;
-			}
-			if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
-				result = g;
-                if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}", g->id, (int)g->state.load());
-				break;
-			}
-		}
+    // Priority order: hotkey → normal → background
+    // Hotkey queue: immediate execution (keyboard/mouse interrupts)
+    while (!hotkey_queue_.empty()) {
+      auto* g = hotkey_queue_.front();
+      hotkey_queue_.pop_front();
+
+      if (!g) {
+        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: null goroutine in hotkey_queue, skipping");
+        continue;
+      }
+      if (g->state == GoroutineState::Done) {
+        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: gid={} state=Done, skipping", g->id);
+        continue;
+      }
+      if (g->fiber && g->fiber->state == FiberState::DONE) {
+        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: gid={} fiber=DONE, marking Done", g->id);
+        g->state = GoroutineState::Done;
+        continue;
+      }
+      if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
+        result = g;
+        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}",
+          g->id, static_cast<int>(g->state.load()));
+        break;
+      }
+      if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: gid={} state={} not runnable, continuing",
+        g->id, static_cast<int>(g->state.load()));
+    }
 
 		// Normal queue: standard cooperative tasks
 		if (!result) {

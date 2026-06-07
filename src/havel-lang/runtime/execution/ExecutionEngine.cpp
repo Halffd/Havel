@@ -74,6 +74,7 @@ ExecutionEngine::~ExecutionEngine() {
 
 bool ExecutionEngine::executeFrame() {
   if (!running_) {
+    ::havel::debug("[ExecutionEngine] executeFrame: running_=false, returning early");
     return false;
   }
 
@@ -83,14 +84,15 @@ bool ExecutionEngine::executeFrame() {
   if (!script_ready_.load(std::memory_order_acquire)) {
     // Still drain deferred callbacks (e.g. from IO thread) so they don't
     // accumulate, but skip goroutine scheduling/execution.
+    ::havel::debug("[ExecutionEngine] executeFrame: script_ready_=false, draining deferred only");
     scheduler_->drainDeferredCallbacks();
     return false;
   }
 
- try {
-        if (debug_mode_) {
-            std::cerr << "[ExecutionEngine] Entering executeFrame\n";
-        }
+  try {
+    if (debug_mode_) {
+      std::cerr << "[ExecutionEngine] Entering executeFrame\n";
+    }
     // STEP 1: Process all pending events
     // Events include: thread completions, timer fires, variable changes, etc.
     // Event handlers (registered in constructor) process each event
@@ -117,8 +119,10 @@ bool ExecutionEngine::executeFrame() {
 
 // STEP 2: Pick next runnable goroutine
     // The scheduler maintains a queue of RUNNABLE goroutines
+    ::havel::debug("[ExecutionEngine] executeFrame: calling pickNext");
     Scheduler::Goroutine* g = scheduler_->pickNext();
     if (!g) {
+        ::havel::debug("[ExecutionEngine] executeFrame: pickNext returned null (idle)");
         // No runnable goroutine - idle
         return false;
     }

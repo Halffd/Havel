@@ -512,9 +512,10 @@ void registerBrightnessModule(const VMApi& api) {
   api.setField(obj, "switchToNight", api.makeFunctionRef("brightness.switchToNight"));
   api.setField(obj, "isDay", api.makeFunctionRef("brightness.isDay"));
   api.setField(obj, "getMonitors", api.makeFunctionRef("brightness.getMonitors"));
-  api.setField(obj, "getMonitor", api.makeFunctionRef("brightness.getMonitor"));
+ api.setField(obj, "getMonitor", api.makeFunctionRef("brightness.getMonitor"));
+ api.setGlobal("brightness", obj);
 
-  HAVEL_END_MODULE();
+ HAVEL_END_MODULE();
 }
 
 } // namespace havel::modules

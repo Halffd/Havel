@@ -31,17 +31,17 @@ mouse.scroll(1, 0)
 mouse.scroll(-1, 0)
 
 print("Brightness and color temperature control")
-b = cfg.get("Display.DefaultBrightness", "1.0")
-sl = cfg.get("Display.DefaultShadowLift", "0.0")
-gr = cfg.get("Display.DefaultGammaR", "1.0")
-gg = cfg.get("Display.DefaultGammaG", "1.0")
-gb = cfg.get("Display.DefaultGammaB", "1.0")
-temp = cfg.get("Display.DefaultTemperature", "6500")
-print("Resetting brightness to defaults: " + b + " " + sl + " " + gr + " " + gg + " " + gb + " " + temp)
-brightness.set(b)
-brightness.setShadowLift(sl)
-brightness.setGammaRGB(gr, gg, gb)
-brightness.setTemperature(temp)
+b = "1.0"
+sl = "0.0"
+gr = "1.0"
+gg = "1.0"
+gb = "1.0"
+temp = "6500"
+print("Resetting brightness to defaults: {b} {sl} {gr} {gg} {gb} {temp}")
+brightness.set(num(b))
+brightness.setShadowLift(num(sl))
+brightness.setGammaRGB(num(gr), num(gg), num(gb))
+brightness.setTemperature(int(temp))
 
 print("Current brightness: " + brightness.get() + " ShadowLift: " + brightness.getShadowLift() + " GammaR: " + brightness.getGammaR() + " GammaG: " + brightness.getGammaG() + " GammaB: " + brightness.getGammaB() + " Temperature: " + brightness.getTemperature())
 

@@ -106,11 +106,29 @@ static Value handleMouseButtons(const std::vector<Value> &args,
                                const HostContext *ctx);
     static Value handleSendKeyState(const std::vector<Value> &args,
                                      const HostContext *ctx);
-    static Value handleSetLock(const std::vector<Value> &args,
-                                const HostContext *ctx);
-    static Value handleLocks(const std::vector<Value> &args,
-                              const HostContext *ctx);
-};
+ static Value handleSetLock(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleLocks(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleMouseReset(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleIoKeys(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleIoLastKey(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleIoLastState(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleIoLastDevice(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleIoLastModifiers(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleIoLastLocks(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleIoLastKeys(const std::vector<Value> &args,
+ const HostContext *ctx);
+ static Value handleIoReset(const std::vector<Value> &args,
+ const HostContext *ctx);
+ };
 /**
  * SystemBridge - File system and process control
  */

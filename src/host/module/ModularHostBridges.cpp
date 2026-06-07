@@ -860,6 +860,7 @@ Value IOBridge::handleIoReset(const std::vector<Value> &,
           ctx->io->GetIOBackend()->ReleaseKey(kc);
         }
       }
+      XSync(display, x11::XFalse);
     }
   }
   return Value::makeBool(true);

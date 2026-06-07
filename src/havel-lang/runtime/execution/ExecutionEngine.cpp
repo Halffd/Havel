@@ -109,13 +109,14 @@ bool ExecutionEngine::executeFrame() {
     // The scheduler maintains a queue of RUNNABLE goroutines
     Scheduler::Goroutine* g = scheduler_->pickNext();
     if (!g) {
-      // No runnable goroutine - idle
-      return false;
+        // No runnable goroutine - idle
+        return false;
     }
-    
-            if (debug_mode_) {
-                std::cerr << "[ExecutionEngine] Picked goroutine " << g->id << " (fiber " << (g->fiber ? g->fiber->id : 0) << ")\n";
-            }
+
+    if (g->persistent || debug_mode_) {
+        ::havel::debug("[ExecutionEngine] Picked goroutine gid={} persistent={} state={} fn={} closure={}",
+            g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
+    }
     
     // STEP 3: Load fiber state into VM's global execution state
     // For newly-created goroutines, use startGoroutineCall which resolves
@@ -370,10 +371,11 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
     }
  if (!g) return;
 
- // Persistent goroutines (hotkey system): re-suspend instead of Done.
- // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
- if (g->persistent) {
-   if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
+    // Persistent goroutines (hotkey system): re-suspend instead of Done.
+    // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
+    if (g->persistent) {
+        ::havel::debug("[ExecutionEngine] handleReturned: gid={} persistent retrigger={}", g->id, g->hotkey_retrigger.load(std::memory_order_acquire));
+        if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
      g->hotkey_retrigger.store(false, std::memory_order_release);
      scheduler_->requeueFront(g);
      if (scheduler_->current() == g) {

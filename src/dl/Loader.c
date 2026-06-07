@@ -332,7 +332,7 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
  char *path = find_library(loader, lib_name);
  if (!path) return NULL;
 
- void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+ void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
  if (!handle) {
   HAVEL_LOGF_ERROR("dlopen failed for module '%s': %s", name,
      dlerror() ? dlerror() : "unknown");
@@ -806,10 +806,10 @@ const HavelModuleABI *havel_loader_probe_module(HavelLoader *loader, const char 
  char *path = find_library(loader, lib_name);
  if (!path) return NULL;
 
- void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+ void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
  if (!handle) {
- free(path);
- return NULL;
+  free(path);
+  return NULL;
  }
 
  HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(handle, "havel_module_info");

@@ -1834,6 +1834,14 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
     return 1;
   }
 
+  const auto companionCachePath = [](const std::string &path) {
+    if (path.empty()) {
+      return std::string{};
+    }
+    const auto dot = path.find_last_of('.');
+    return dot == std::string::npos ? path + ".hbc" : path.substr(0, dot) + ".hbc";
+  };
+
   // Determine output path
   std::string outputPath = cfg.outputPath;
   if (outputPath.empty()) {
@@ -1851,6 +1859,37 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
   }
 
   info("Building: {} -> {}", primaryFile.empty() ? "input" : primaryFile, outputPath);
+
+  const std::string cachePath = companionCachePath(outputPath);
+  if (!primaryFile.empty() && !cachePath.empty()) {
+    std::error_code cacheEc;
+    std::error_code sourceEc;
+    const bool cacheExists = std::filesystem::exists(cachePath, cacheEc) && !cacheEc;
+    const bool sourceExists = std::filesystem::exists(primaryFile, sourceEc) && !sourceEc;
+    if (cacheExists && sourceExists) {
+      const auto cacheTime = std::filesystem::last_write_time(cachePath, cacheEc);
+      const auto sourceTime = std::filesystem::last_write_time(primaryFile, sourceEc);
+      if (!cacheEc && !sourceEc && cacheTime >= sourceTime) {
+        std::ifstream cacheIn(cachePath, std::ios::binary | std::ios::ate);
+        if (cacheIn.is_open()) {
+          std::streamsize size = cacheIn.tellg();
+          cacheIn.seekg(0, std::ios::beg);
+          std::vector<uint8_t> buffer(static_cast<size_t>(size));
+          if (cacheIn.read(reinterpret_cast<char *>(buffer.data()), size)) {
+            std::ofstream outFile(outputPath, std::ios::binary);
+            if (outFile.is_open()) {
+              outFile.write(reinterpret_cast<const char *>(buffer.data()), buffer.size());
+              if (outFile.good()) {
+                info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
+                info("Build successful: {} ({} bytes)", outputPath, buffer.size());
+                return 0;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 
   // Parse
   havel::parser::Parser parser{{
@@ -2208,10 +2247,7 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
     if (path.empty()) {
       return;
     }
-    const auto dot = path.find_last_of('.');
-    std::string cachePath = (dot == std::string::npos)
-        ? (path + ".hbc")
-        : (path.substr(0, dot) + ".hbc");
+    std::string cachePath = companionCachePath(path);
     std::ofstream cacheOut(cachePath, std::ios::binary);
     if (!cacheOut.is_open()) {
       warn("Cannot open bytecode cache file: {}", cachePath);

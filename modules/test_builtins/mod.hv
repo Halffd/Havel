@@ -1,0 +1,5 @@
+fn check() {
+  t = type("hello")
+  s = str(42)
+  t + s
+}

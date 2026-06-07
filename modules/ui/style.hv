@@ -83,11 +83,11 @@ fn cascade(matchedRules) {
       else { normal.push(d) }
       j += 1
     }
-    if #important > 0 {
-      result[prop] = important[#important - 1].value
-    } else if #normal > 0 {
-      result[prop] = normal[#normal - 1].value
-    }
+      if #important > 0 {
+        result[prop] = important[0].value
+      } else if #normal > 0 {
+        result[prop] = normal[0].value
+      }
     i += 1
   }
   result

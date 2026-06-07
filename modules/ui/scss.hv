@@ -368,30 +368,32 @@ class Compiler {
         i += 1
         continue
       }
-      if trimmed.includes("{") {
-        selector = self.extractSelector(trimmed)
-        selector = self.resolveVars(selector)
-        if parentSelector != "" {
-          if selector.includes("&") {
-            fullSelector = selector.replace("&", parentSelector)
-          } else {
-            fullSelector = parentSelector + " " + selector
-          }
+    if trimmed.includes("{") {
+      selector = self.extractSelector(trimmed)
+      selector = self.resolveVars(selector)
+      if parentSelector != "" {
+        if selector.includes("&") {
+          fullSelector = selector.replace("&", parentSelector)
         } else {
-          fullSelector = selector
+          fullSelector = parentSelector + " " + selector
         }
-        hasCloseBrace = trimmed.includes("}")
-        openBrace = -1
-        closeBrace = -1
-        j = 0
-        nt = #trimmed
-        while j < nt {
-          if trimmed[j:j+1] == "{" && openBrace < 0 { openBrace = j }
-          if trimmed[j:j+1] == "}" { closeBrace = j }
-          j += 1
+      } else {
+        fullSelector = selector
+      }
+      braceDepth = 0
+      j = 0
+      nt = #trimmed
+      while j < nt {
+        ch = trimmed[j:j+1]
+        if ch == "{" { braceDepth += 1 }
+        if ch == "}" { braceDepth -= 1 }
+        if braceDepth == 0 && ch == "}" {
+          j = nt
         }
-        isSingleLine = openBrace >= 0 && closeBrace > openBrace
-        if isSingleLine {
+        j += 1
+      }
+      isSingleLine = braceDepth == 0
+      if isSingleLine {
           @output = @output + fullSelector + " {\n"
           @indent += 1
           inlineBody = self.extractInlineBody(trimmed)

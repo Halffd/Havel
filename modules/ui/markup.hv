@@ -56,31 +56,43 @@ fn _sameKey(a, b) {
 
 fn diff(oldNode, newNode) {
   if oldNode == null && newNode == null { return [] }
-  if oldNode == null { return [{"type": "CREATE", "node": newNode}] }
-  if newNode == null { return [{"type": "REMOVE", "node": oldNode}] }
+  if oldNode == null {
+    r = {"type": "CREATE", "node": newNode}
+    return [r]
+  }
+  if newNode == null {
+    r = {"type": "REMOVE", "node": oldNode}
+    return [r]
+  }
   if isTextNode(oldNode) && isTextNode(newNode) {
     if str(oldNode) != str(newNode) {
-      return [{"type": "SET_TEXT", "value": str(newNode)}]
+      r = {"type": "SET_TEXT", "value": str(newNode)}
+      return [r]
     }
     return []
   }
   if isTextNode(oldNode) != isTextNode(newNode) {
-    return [{"type": "REPLACE", "oldNode": oldNode, "newNode": newNode}]
+    r = {"type": "REPLACE", "oldNode": oldNode, "newNode": newNode}
+    return [r]
   }
   if !isVNode(oldNode) || !isVNode(newNode) {
-    return [{"type": "REPLACE", "oldNode": oldNode, "newNode": newNode}]
+    r = {"type": "REPLACE", "oldNode": oldNode, "newNode": newNode}
+    return [r]
   }
   if oldNode.tag != newNode.tag {
-    return [{"type": "REPLACE", "oldNode": oldNode, "newNode": newNode}]
+    r = {"type": "REPLACE", "oldNode": oldNode, "newNode": newNode}
+    return [r]
   }
   patches = []
   propPatches = _diffProps(oldNode.props, newNode.props)
   if #propPatches > 0 {
-    patches.push({"type": "PROPS", "patches": propPatches})
+    pp = {"type": "PROPS", "patches": propPatches}
+    patches.push(pp)
   }
   childPatches = _diffChildren(oldNode.children, newNode.children)
   if #childPatches > 0 {
-    patches.push({"type": "CHILDREN", "patches": childPatches})
+    cp = {"type": "CHILDREN", "patches": childPatches}
+    patches.push(cp)
   }
   patches
 }
@@ -178,9 +190,16 @@ fn _applyPatch(node, p) {
       cp = cpList[j]
       if cp.type == "APPEND" {
         node.children.push(cp.node)
-      } else if cp.type == "REMOVE_AT" {
-        idx = cp.index
-        node.children = node.children.filter(fn(_, i) { i != idx })
+} else if cp.type == "REMOVE_AT" {
+          idx = cp.index
+          newChildren = []
+          ci = 0
+          cn = #node.children
+          while ci < cn {
+            if ci != idx { newChildren.push(node.children[ci]) }
+            ci += 1
+          }
+          node.children = newChildren
       } else if cp.type == "PATCH_AT" {
         node.children[cp.index] = patch(node.children[cp.index], cp.patches)
       }

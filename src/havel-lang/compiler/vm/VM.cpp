@@ -2573,29 +2573,29 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
       auto api = VMApi(*this);
       it->second.initFn(api);
 
-    auto postInitIt = globals.find(name);
-    if (postInitIt != globals.end() && postInitIt->second.isObjectId()) {
-        auto *postInitObj = heap_.object(postInitIt->second.asObjectId());
-        if (postInitObj) {
-            auto *lazyFlag = postInitObj->get("__lazy__");
-            if (!lazyFlag || !lazyFlag->isBool() || !lazyFlag->asBool()) {
-                for (const auto &alias : it->second.aliases) {
-                    auto aliasIt = globals.find(alias);
-                    if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
-                        auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
-                        if (aliasObj) {
-                            auto *alf = aliasObj->get("__lazy__");
-                            if (alf && alf->isBool() && alf->asBool()) {
-                                globals[alias] = postInitIt->second;
-                            }
-                        }
-                    }
-                }
-                moduleLoader_.putCache(name, postInitIt->second);
-                return;
-            }
-        }
-    }
+     auto postInitIt = globals.find(name);
+     if (postInitIt != globals.end() && postInitIt->second.isObjectId()) {
+         auto *postInitObj = heap_.object(postInitIt->second.asObjectId());
+         if (postInitObj) {
+             auto *lazyFlag = postInitObj->get("__lazy__");
+             if (!lazyFlag || !lazyFlag->isBool() || !lazyFlag->asBool()) {
+                 for (const auto &alias : it->second.aliases) {
+                     auto aliasIt = globals.find(alias);
+                     if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
+                         auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
+                         if (aliasObj) {
+                             auto *alf = aliasObj->get("__lazy__");
+                             if (alf && alf->isBool() && alf->asBool()) {
+                                 globals[alias] = postInitIt->second;
+                             }
+                         }
+                     }
+                 }
+                 moduleLoader_.putCache(name, postInitIt->second);
+                 return;
+             }
+         }
+     }
 
     // Fallback: initFn did NOT call setGlobal, so build namespace from host_function_globals_.
     // First, collect any extra fields from the surviving proxy object.
@@ -2714,7 +2714,10 @@ bool VM::ensureModuleLoaded(const std::string &name) {
         auto modIt = lazy_modules_.find(name);
         if (modIt != lazy_modules_.end()) {
             for (const auto &alias : modIt->second.aliases) {
-                globals[alias] = git->second;
+                auto aliasIt = globals.find(alias);
+                if (aliasIt == globals.end() || (aliasIt->second.isObjectId())) {
+                    globals[alias] = git->second;
+                }
             }
         }
     }

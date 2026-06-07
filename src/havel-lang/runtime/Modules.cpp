@@ -13,6 +13,7 @@
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
 #include "../../modules/brightness/BrightnessModule.hpp"
+#include "../../modules/ffi/FFIModule.hpp"
 #include <algorithm>
 
 namespace havel {
@@ -437,6 +438,14 @@ void Modules::installStdLib() {
     if (found == available.end()) {
         vm.registerLazyModule("brightness", [](compiler::VMApi &a) {
             havel::modules::registerBrightnessModule(a);
+        });
+    }
+
+    auto foundFfi = std::find_if(available.begin(), available.end(),
+        [](const auto &m) { return m.name == "ffi"; });
+    if (foundFfi == available.end()) {
+        vm.registerLazyModule("ffi", [](compiler::VMApi &a) {
+            havel::modules::ffi::registerFFIModule(a);
         });
     }
 }

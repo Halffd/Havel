@@ -1,371 +1,398 @@
 // _backend.hv - FFI bridge to havel_toolkit_*.so and havel_ui_shim.so
 // Pure Havel. Uses ffi to dlopen toolkit .so, create backend, and call all UIBackend methods.
+// All mutable state in Backend class instance to avoid module-level state bug.
 
-_shimHandle = null
-_toolkitHandle = null
-_backendPtr = null
-_abiPtr = null
-_initialized = false
+use "ffi" as ffi
+use "env" as env
 
-fn _shimPath() {
+class ShimState {
+  handle, fnInit, fnShutdown, fnWindow, fnPanel, fnModal,
+  fnText, fnLabel, fnImage, fnIcon, fnDivider, fnSpacer,
+  fnProgress, fnSpinner, fnBtn, fnInput, fnTextarea,
+  fnCheckbox, fnToggle, fnSlider, fnDropdown,
+  fnRow, fnCol, fnGrid, fnTable, fnFlex, fnScroll, fnCanvas,
+  fnMenu, fnMenuItem, fnMenuSeparator,
+  fnShow, fnHide, fnClose, fnRealize, fnAddChild,
+  fnSetTitle, fnSetSize, fnSetPos, fnSetStyle,
+  fnGetValue, fnSetValue,
+  fnCanvasFlush, fnCanvasClear, fnCanvasDrawLine,
+  fnCanvasDrawRect, fnCanvasDrawCircle,
+  fnCanvasSetPen, fnCanvasFill,
+  fnRunLoop, fnQuitLoop, fnPumpEvents,
+  fnAlert, fnConfirm, fnFilePicker, fnDirPicker, fnNotify,
+  fnTrayIcon, fnTrayMenu, fnTrayNotify,
+  fnTrayShow, fnTrayHide, fnTrayIsVisible,
+  fnTimerCreate, fnTimerStart, fnTimerStop, fnTimerDestroy,
+  fnSettingsCreate, fnSettingsDestroy,
+  fnSettingsSetValue, fnSettingsValue,
+  fnSettingsContains, fnSettingsRemove, fnSettingsSync,
+  fnColorPicker, fnFontPicker,
+  fnInputText, fnInputInt,
+  fnHasActiveWindows, fnIsAvailable,
+  fnGetApiName, fnSetAppMetadata, fnLastError,
+  toolkitHandle, initialized
+  fn @() {
+    @handle = null
+    @toolkitHandle = null
+    @initialized = false
+    @fnInit = null
+    @fnShutdown = null
+    @fnWindow = null
+    @fnPanel = null
+    @fnModal = null
+    @fnText = null
+    @fnLabel = null
+    @fnImage = null
+    @fnIcon = null
+    @fnDivider = null
+    @fnSpacer = null
+    @fnProgress = null
+    @fnSpinner = null
+    @fnBtn = null
+    @fnInput = null
+    @fnTextarea = null
+    @fnCheckbox = null
+    @fnToggle = null
+    @fnSlider = null
+    @fnDropdown = null
+    @fnRow = null
+    @fnCol = null
+    @fnGrid = null
+    @fnTable = null
+    @fnFlex = null
+    @fnScroll = null
+    @fnCanvas = null
+    @fnMenu = null
+    @fnMenuItem = null
+    @fnMenuSeparator = null
+    @fnShow = null
+    @fnHide = null
+    @fnClose = null
+    @fnRealize = null
+    @fnAddChild = null
+    @fnSetTitle = null
+    @fnSetSize = null
+    @fnSetPos = null
+    @fnSetStyle = null
+    @fnGetValue = null
+    @fnSetValue = null
+    @fnCanvasFlush = null
+    @fnCanvasClear = null
+    @fnCanvasDrawLine = null
+    @fnCanvasDrawRect = null
+    @fnCanvasDrawCircle = null
+    @fnCanvasSetPen = null
+    @fnCanvasFill = null
+    @fnRunLoop = null
+    @fnQuitLoop = null
+    @fnPumpEvents = null
+    @fnAlert = null
+    @fnConfirm = null
+    @fnFilePicker = null
+    @fnDirPicker = null
+    @fnNotify = null
+    @fnTrayIcon = null
+    @fnTrayMenu = null
+    @fnTrayNotify = null
+    @fnTrayShow = null
+    @fnTrayHide = null
+    @fnTrayIsVisible = null
+    @fnTimerCreate = null
+    @fnTimerStart = null
+    @fnTimerStop = null
+    @fnTimerDestroy = null
+    @fnSettingsCreate = null
+    @fnSettingsDestroy = null
+    @fnSettingsSetValue = null
+    @fnSettingsValue = null
+    @fnSettingsContains = null
+    @fnSettingsRemove = null
+    @fnSettingsSync = null
+    @fnColorPicker = null
+    @fnFontPicker = null
+    @fnInputText = null
+    @fnInputInt = null
+    @fnHasActiveWindows = null
+    @fnIsAvailable = null
+    @fnGetApiName = null
+    @fnSetAppMetadata = null
+    @fnLastError = null
+    @
+  }
+
+  fn shimPath() {
     dir = env.get("HAVEL_SHIM_DIR")
     if dir != null { return dir + "/havel_ui_shim.so" }
     build = env.get("HAVEL_BUILD_DIR")
     if build != null { return build + "/shims/havel_ui_shim.so" }
     "havel_ui_shim.so"
-}
+  }
 
-fn _toolkitPath(name) {
+  fn toolkitPath(name) {
     dir = env.get("HAVEL_TOOLKIT_DIR")
     if dir != null { return dir + "/havel_toolkit_" + name + ".so" }
     build = env.get("HAVEL_BUILD_DIR")
     if build != null { return build + "/toolkits/havel_toolkit_" + name + ".so" }
     "havel_toolkit_" + name + ".so"
-}
+  }
 
-fn _loadShim() {
-    if _shimHandle != null { return }
-    _shimHandle = ffi.open(_shimPath())
-    if _shimHandle == null {
-        print("ui._backend: failed to load shim: " + ffi.lastError())
+  fn loadShim() {
+    if @handle != null { return }
+    @handle = ffi.open(self.shimPath())
+    if @handle == null {
+      print("ui._backend: failed to load shim: " + ffi.lastError())
     }
-}
+  }
 
-fn _sym(name) {
-    _loadShim()
-    ffi.sym(_shimHandle, name)
-}
+  fn sym(name) {
+    self.loadShim()
+    ffi.sym(@handle, name)
+  }
 
-_fn_init = null
-_fn_shutdown = null
-_fn_window = null
-_fn_panel = null
-_fn_modal = null
-_fn_text = null
-_fn_label = null
-_fn_image = null
-_fn_icon = null
-_fn_divider = null
-_fn_spacer = null
-_fn_progress = null
-_fn_spinner = null
-_fn_btn = null
-_fn_input = null
-_fn_textarea = null
-_fn_checkbox = null
-_fn_toggle = null
-_fn_slider = null
-_fn_dropdown = null
-_fn_row = null
-_fn_col = null
-_fn_grid = null
-_fn_table = null
-_fn_flex = null
-_fn_scroll = null
-_fn_canvas = null
-_fn_menu = null
-_fn_menu_item = null
-_fn_menu_separator = null
-_fn_show = null
-_fn_hide = null
-_fn_close = null
-_fn_realize = null
-_fn_add_child = null
-_fn_set_title = null
-_fn_set_size = null
-_fn_set_pos = null
-_fn_set_style = null
-_fn_get_value = null
-_fn_set_value = null
-_fn_canvas_flush = null
-_fn_canvas_clear = null
-_fn_canvas_draw_line = null
-_fn_canvas_draw_rect = null
-_fn_canvas_draw_circle = null
-_fn_canvas_set_pen = null
-_fn_canvas_fill = null
-_fn_run_loop = null
-_fn_quit_loop = null
-_fn_pump_events = null
-_fn_alert = null
-_fn_confirm = null
-_fn_file_picker = null
-_fn_dir_picker = null
-_fn_notify = null
-_fn_tray_icon = null
-_fn_tray_menu = null
-_fn_tray_notify = null
-_fn_tray_show = null
-_fn_tray_hide = null
-_fn_tray_is_visible = null
-_fn_timer_create = null
-_fn_timer_start = null
-_fn_timer_stop = null
-_fn_timer_destroy = null
-_fn_settings_create = null
-_fn_settings_destroy = null
-_fn_settings_set_value = null
-_fn_settings_value = null
-_fn_settings_contains = null
-_fn_settings_remove = null
-_fn_settings_sync = null
-_fn_color_picker = null
-_fn_font_picker = null
-_fn_input_text = null
-_fn_input_int = null
-_fn_has_active_windows = null
-_fn_is_available = null
-_fn_get_api_name = null
-_fn_set_app_metadata = null
-_fn_last_error = null
-
-fn _resolveShimSyms() {
-    _fn_init = _sym("havel_ui_shim_init")
-    _fn_shutdown = _sym("havel_ui_shim_shutdown")
-    _fn_window = _sym("havel_ui_shim_window")
-    _fn_panel = _sym("havel_ui_shim_panel")
-    _fn_modal = _sym("havel_ui_shim_modal")
-    _fn_text = _sym("havel_ui_shim_text")
-    _fn_label = _sym("havel_ui_shim_label")
-    _fn_image = _sym("havel_ui_shim_image")
-    _fn_icon = _sym("havel_ui_shim_icon")
-    _fn_divider = _sym("havel_ui_shim_divider")
-    _fn_spacer = _sym("havel_ui_shim_spacer")
-    _fn_progress = _sym("havel_ui_shim_progress")
-    _fn_spinner = _sym("havel_ui_shim_spinner")
-    _fn_btn = _sym("havel_ui_shim_btn")
-    _fn_input = _sym("havel_ui_shim_input")
-    _fn_textarea = _sym("havel_ui_shim_textarea")
-    _fn_checkbox = _sym("havel_ui_shim_checkbox")
-    _fn_toggle = _sym("havel_ui_shim_toggle")
-    _fn_slider = _sym("havel_ui_shim_slider")
-    _fn_dropdown = _sym("havel_ui_shim_dropdown")
-    _fn_row = _sym("havel_ui_shim_row")
-    _fn_col = _sym("havel_ui_shim_col")
-    _fn_grid = _sym("havel_ui_shim_grid")
-    _fn_table = _sym("havel_ui_shim_table")
-    _fn_flex = _sym("havel_ui_shim_flex")
-    _fn_scroll = _sym("havel_ui_shim_scroll")
-    _fn_canvas = _sym("havel_ui_shim_canvas")
-    _fn_menu = _sym("havel_ui_shim_menu")
-    _fn_menu_item = _sym("havel_ui_shim_menu_item")
-    _fn_menu_separator = _sym("havel_ui_shim_menu_separator")
-    _fn_show = _sym("havel_ui_shim_show")
-    _fn_hide = _sym("havel_ui_shim_hide")
-    _fn_close = _sym("havel_ui_shim_close")
-    _fn_realize = _sym("havel_ui_shim_realize")
-    _fn_add_child = _sym("havel_ui_shim_add_child")
-    _fn_set_title = _sym("havel_ui_shim_set_title")
-    _fn_set_size = _sym("havel_ui_shim_set_size")
-    _fn_set_pos = _sym("havel_ui_shim_set_pos")
-    _fn_set_style = _sym("havel_ui_shim_set_style")
-    _fn_get_value = _sym("havel_ui_shim_get_value")
-    _fn_set_value = _sym("havel_ui_shim_set_value")
-    _fn_canvas_flush = _sym("havel_ui_shim_canvas_flush")
-    _fn_canvas_clear = _sym("havel_ui_shim_canvas_clear")
-    _fn_canvas_draw_line = _sym("havel_ui_shim_canvas_draw_line")
-    _fn_canvas_draw_rect = _sym("havel_ui_shim_canvas_draw_rect")
-    _fn_canvas_draw_circle = _sym("havel_ui_shim_canvas_draw_circle")
-    _fn_canvas_set_pen = _sym("havel_ui_shim_canvas_set_pen")
-    _fn_canvas_fill = _sym("havel_ui_shim_canvas_fill")
-    _fn_run_loop = _sym("havel_ui_shim_run_loop")
-    _fn_quit_loop = _sym("havel_ui_shim_quit_loop")
-    _fn_pump_events = _sym("havel_ui_shim_pump_events")
-    _fn_alert = _sym("havel_ui_shim_alert")
-    _fn_confirm = _sym("havel_ui_shim_confirm")
-    _fn_file_picker = _sym("havel_ui_shim_file_picker")
-    _fn_dir_picker = _sym("havel_ui_shim_dir_picker")
-    _fn_notify = _sym("havel_ui_shim_notify")
-    _fn_tray_icon = _sym("havel_ui_shim_tray_icon")
-    _fn_tray_menu = _sym("havel_ui_shim_tray_menu")
-    _fn_tray_notify = _sym("havel_ui_shim_tray_notify")
-    _fn_tray_show = _sym("havel_ui_shim_tray_show")
-    _fn_tray_hide = _sym("havel_ui_shim_tray_hide")
-    _fn_tray_is_visible = _sym("havel_ui_shim_tray_is_visible")
-    _fn_timer_create = _sym("havel_ui_shim_timer_create")
-    _fn_timer_start = _sym("havel_ui_shim_timer_start")
-    _fn_timer_stop = _sym("havel_ui_shim_timer_stop")
-    _fn_timer_destroy = _sym("havel_ui_shim_timer_destroy")
-    _fn_settings_create = _sym("havel_ui_shim_settings_create")
-    _fn_settings_destroy = _sym("havel_ui_shim_settings_destroy")
-    _fn_settings_set_value = _sym("havel_ui_shim_settings_set_value")
-    _fn_settings_value = _sym("havel_ui_shim_settings_value")
-    _fn_settings_contains = _sym("havel_ui_shim_settings_contains")
-    _fn_settings_remove = _sym("havel_ui_shim_settings_remove")
-    _fn_settings_sync = _sym("havel_ui_shim_settings_sync")
-    _fn_color_picker = _sym("havel_ui_shim_color_picker")
-    _fn_font_picker = _sym("havel_ui_shim_font_picker")
-    _fn_input_text = _sym("havel_ui_shim_input_text")
-    _fn_input_int = _sym("havel_ui_shim_input_int")
-    _fn_has_active_windows = _sym("havel_ui_shim_has_active_windows")
-    _fn_is_available = _sym("havel_ui_shim_is_available")
-    _fn_get_api_name = _sym("havel_ui_shim_get_api_name")
-    _fn_set_app_metadata = _sym("havel_ui_shim_set_app_metadata")
-    _fn_last_error = _sym("havel_ui_shim_last_error")
-}
-
-fn _callV(fn_ptr, retType, params) {
- ffi.call(fn_ptr, retType, params)
-}
-
-fn _call0(fn_ptr, retType, params) {
- ffi.call(fn_ptr, retType, params)
+  fn resolveShimSyms() {
+    @fnInit = self.sym("havel_ui_shim_init")
+    @fnShutdown = self.sym("havel_ui_shim_shutdown")
+    @fnWindow = self.sym("havel_ui_shim_window")
+    @fnPanel = self.sym("havel_ui_shim_panel")
+    @fnModal = self.sym("havel_ui_shim_modal")
+    @fnText = self.sym("havel_ui_shim_text")
+    @fnLabel = self.sym("havel_ui_shim_label")
+    @fnImage = self.sym("havel_ui_shim_image")
+    @fnIcon = self.sym("havel_ui_shim_icon")
+    @fnDivider = self.sym("havel_ui_shim_divider")
+    @fnSpacer = self.sym("havel_ui_shim_spacer")
+    @fnProgress = self.sym("havel_ui_shim_progress")
+    @fnSpinner = self.sym("havel_ui_shim_spinner")
+    @fnBtn = self.sym("havel_ui_shim_btn")
+    @fnInput = self.sym("havel_ui_shim_input")
+    @fnTextarea = self.sym("havel_ui_shim_textarea")
+    @fnCheckbox = self.sym("havel_ui_shim_checkbox")
+    @fnToggle = self.sym("havel_ui_shim_toggle")
+    @fnSlider = self.sym("havel_ui_shim_slider")
+    @fnDropdown = self.sym("havel_ui_shim_dropdown")
+    @fnRow = self.sym("havel_ui_shim_row")
+    @fnCol = self.sym("havel_ui_shim_col")
+    @fnGrid = self.sym("havel_ui_shim_grid")
+    @fnTable = self.sym("havel_ui_shim_table")
+    @fnFlex = self.sym("havel_ui_shim_flex")
+    @fnScroll = self.sym("havel_ui_shim_scroll")
+    @fnCanvas = self.sym("havel_ui_shim_canvas")
+    @fnMenu = self.sym("havel_ui_shim_menu")
+    @fnMenuItem = self.sym("havel_ui_shim_menu_item")
+    @fnMenuSeparator = self.sym("havel_ui_shim_menu_separator")
+    @fnShow = self.sym("havel_ui_shim_show")
+    @fnHide = self.sym("havel_ui_shim_hide")
+    @fnClose = self.sym("havel_ui_shim_close")
+    @fnRealize = self.sym("havel_ui_shim_realize")
+    @fnAddChild = self.sym("havel_ui_shim_add_child")
+    @fnSetTitle = self.sym("havel_ui_shim_set_title")
+    @fnSetSize = self.sym("havel_ui_shim_set_size")
+    @fnSetPos = self.sym("havel_ui_shim_set_pos")
+    @fnSetStyle = self.sym("havel_ui_shim_set_style")
+    @fnGetValue = self.sym("havel_ui_shim_get_value")
+    @fnSetValue = self.sym("havel_ui_shim_set_value")
+    @fnCanvasFlush = self.sym("havel_ui_shim_canvas_flush")
+    @fnCanvasClear = self.sym("havel_ui_shim_canvas_clear")
+    @fnCanvasDrawLine = self.sym("havel_ui_shim_canvas_draw_line")
+    @fnCanvasDrawRect = self.sym("havel_ui_shim_canvas_draw_rect")
+    @fnCanvasDrawCircle = self.sym("havel_ui_shim_canvas_draw_circle")
+    @fnCanvasSetPen = self.sym("havel_ui_shim_canvas_set_pen")
+    @fnCanvasFill = self.sym("havel_ui_shim_canvas_fill")
+    @fnRunLoop = self.sym("havel_ui_shim_run_loop")
+    @fnQuitLoop = self.sym("havel_ui_shim_quit_loop")
+    @fnPumpEvents = self.sym("havel_ui_shim_pump_events")
+    @fnAlert = self.sym("havel_ui_shim_alert")
+    @fnConfirm = self.sym("havel_ui_shim_confirm")
+    @fnFilePicker = self.sym("havel_ui_shim_file_picker")
+    @fnDirPicker = self.sym("havel_ui_shim_dir_picker")
+    @fnNotify = self.sym("havel_ui_shim_notify")
+    @fnTrayIcon = self.sym("havel_ui_shim_tray_icon")
+    @fnTrayMenu = self.sym("havel_ui_shim_tray_menu")
+    @fnTrayNotify = self.sym("havel_ui_shim_tray_notify")
+    @fnTrayShow = self.sym("havel_ui_shim_tray_show")
+    @fnTrayHide = self.sym("havel_ui_shim_tray_hide")
+    @fnTrayIsVisible = self.sym("havel_ui_shim_tray_is_visible")
+    @fnTimerCreate = self.sym("havel_ui_shim_timer_create")
+    @fnTimerStart = self.sym("havel_ui_shim_timer_start")
+    @fnTimerStop = self.sym("havel_ui_shim_timer_stop")
+    @fnTimerDestroy = self.sym("havel_ui_shim_timer_destroy")
+    @fnSettingsCreate = self.sym("havel_ui_shim_settings_create")
+    @fnSettingsDestroy = self.sym("havel_ui_shim_settings_destroy")
+    @fnSettingsSetValue = self.sym("havel_ui_shim_settings_set_value")
+    @fnSettingsValue = self.sym("havel_ui_shim_settings_value")
+    @fnSettingsContains = self.sym("havel_ui_shim_settings_contains")
+    @fnSettingsRemove = self.sym("havel_ui_shim_settings_remove")
+    @fnSettingsSync = self.sym("havel_ui_shim_settings_sync")
+    @fnColorPicker = self.sym("havel_ui_shim_color_picker")
+    @fnFontPicker = self.sym("havel_ui_shim_font_picker")
+    @fnInputText = self.sym("havel_ui_shim_input_text")
+    @fnInputInt = self.sym("havel_ui_shim_input_int")
+    @fnHasActiveWindows = self.sym("havel_ui_shim_has_active_windows")
+    @fnIsAvailable = self.sym("havel_ui_shim_is_available")
+    @fnGetApiName = self.sym("havel_ui_shim_get_api_name")
+    @fnSetAppMetadata = self.sym("havel_ui_shim_set_app_metadata")
+    @fnLastError = self.sym("havel_ui_shim_last_error")
+  }
 }
 
 class Backend {
-  uiBackend
-
+  uiBackend, shim
   fn @(toolkitName) {
-        _resolveShimSyms()
-        _toolkitHandle = ffi.open(_toolkitPath(toolkitName))
-        if _toolkitHandle == null {
-            print("ui._backend: failed to load toolkit: " + toolkitName)
-            return null
-        }
-        infoFn = ffi.sym(_toolkitHandle, "havel_toolkit_info")
-        if infoFn == null {
-            print("ui._backend: no havel_toolkit_info in " + toolkitName)
-            return null
-        }
-        _abiPtr = ffi.call(infoFn, "pointer", [])
-        if _abiPtr == null {
-            print("ui._backend: havel_toolkit_info returned null")
-            return null
-        }
-        createFnPtr = ffi.get_ptr(ffi.ptr_add(_abiPtr, 32))
-        if createFnPtr == null {
-            print("ui._backend: no create_ui_backend in ABI struct")
-            return null
-        }
-        @uiBackend = ffi.call(createFnPtr, "pointer", [])
-        if @uiBackend == null {
-            print("ui._backend: create_ui_backend returned null")
-            return null
-        }
-        ffi.call(_fn_init, "int32", ["pointer"], @uiBackend)
-  _initialized = true
+    @shim = ShimState.new()
+    @shim.resolveShimSyms()
+    @toolkitHandle = ffi.open(@shim.toolkitPath(toolkitName))
+    if @toolkitHandle == null {
+      print("ui._backend: failed to load toolkit: " + toolkitName)
+      return null
+    }
+    infoFn = ffi.sym(@toolkitHandle, "havel_toolkit_info")
+    if infoFn == null {
+      print("ui._backend: no havel_toolkit_info in " + toolkitName)
+      return null
+    }
+    abiPtr = ffi.call(infoFn, "pointer", [])
+    if abiPtr == null {
+      print("ui._backend: havel_toolkit_info returned null")
+      return null
+    }
+    createFnPtr = ffi.get_ptr(ffi.ptr_add(abiPtr, 32))
+    if createFnPtr == null {
+      print("ui._backend: no create_ui_backend in ABI struct")
+      return null
+    }
+    @uiBackend = ffi.call(createFnPtr, "pointer", [])
+    if @uiBackend == null {
+      print("ui._backend: create_ui_backend returned null")
+      return null
+    }
+    ffi.call(@shim.fnInit, "int32", ["pointer"], @uiBackend)
+    @shim.initialized = true
     self
   }
 
-    fn window(title) { _callV(_fn_window, "int64", ["pointer", "string"], @uiBackend, title) }
-    fn panel(side) { _callV(_fn_panel, "int64", ["pointer", "string"], @uiBackend, side) }
-    fn modal(title) { _callV(_fn_modal, "int64", ["pointer", "string"], @uiBackend, title) }
-    fn text(content) { _callV(_fn_text, "int64", ["pointer", "string"], @uiBackend, content) }
-    fn label(content) { _callV(_fn_label, "int64", ["pointer", "string"], @uiBackend, content) }
-    fn image(path) { _callV(_fn_image, "int64", ["pointer", "string"], @uiBackend, path) }
-    fn icon(name) { _callV(_fn_icon, "int64", ["pointer", "string"], @uiBackend, name) }
-    fn divider() { _callV(_fn_divider, "int64", ["pointer"], @uiBackend) }
-    fn spacer(size) { _callV(_fn_spacer, "int64", ["pointer", "int32"], @uiBackend, size) }
-    fn progress(value, max) { _callV(_fn_progress, "int64", ["pointer", "int32", "int32"], @uiBackend, value, max) }
-    fn spinner() { _callV(_fn_spinner, "int64", ["pointer"], @uiBackend) }
-    fn btn(label) { _callV(_fn_btn, "int64", ["pointer", "string"], @uiBackend, label) }
-    fn input(placeholder) { _callV(_fn_input, "int64", ["pointer", "string"], @uiBackend, placeholder) }
-    fn textarea(placeholder) { _callV(_fn_textarea, "int64", ["pointer", "string"], @uiBackend, placeholder) }
-    fn checkbox(label, checked) { _callV(_fn_checkbox, "int64", ["pointer", "string", "int32"], @uiBackend, label, checked) }
-    fn toggle(label, value) { _callV(_fn_toggle, "int64", ["pointer", "string", "int32"], @uiBackend, label, value) }
-    fn slider(min, max, value) { _callV(_fn_slider, "int64", ["pointer", "int32", "int32", "int32"], @uiBackend, min, max, value) }
-    fn dropdown(optionsCsv) { _callV(_fn_dropdown, "int64", ["pointer", "string"], @uiBackend, optionsCsv) }
-    fn row() { _callV(_fn_row, "int64", ["pointer"], @uiBackend) }
-    fn col() { _callV(_fn_col, "int64", ["pointer"], @uiBackend) }
-    fn grid(cols) { _callV(_fn_grid, "int64", ["pointer", "int32"], @uiBackend, cols) }
-    fn table(rows, cols) { _callV(_fn_table, "int64", ["pointer", "int32", "int32"], @uiBackend, rows, cols) }
-    fn flex(direction) { _callV(_fn_flex, "int64", ["pointer", "string"], @uiBackend, direction) }
-    fn scroll() { _callV(_fn_scroll, "int64", ["pointer"], @uiBackend) }
-    fn canvas(width, height) { _callV(_fn_canvas, "int64", ["pointer", "int32", "int32"], @uiBackend, width, height) }
-    fn menu(title) { _callV(_fn_menu, "int64", ["pointer", "string"], @uiBackend, title) }
-    fn menuItem(label, shortcut) { _callV(_fn_menu_item, "int64", ["pointer", "string", "string"], @uiBackend, label, shortcut) }
-    fn menuSeparator() { _callV(_fn_menu_separator, "int64", ["pointer"], @uiBackend) }
+  fn window(title) { ffi.call(@shim.fnWindow, "int64", ["pointer", "string"], @uiBackend, title) }
+  fn panel(side) { ffi.call(@shim.fnPanel, "int64", ["pointer", "string"], @uiBackend, side) }
+  fn modal(title) { ffi.call(@shim.fnModal, "int64", ["pointer", "string"], @uiBackend, title) }
+  fn text(content) { ffi.call(@shim.fnText, "int64", ["pointer", "string"], @uiBackend, content) }
+  fn label(content) { ffi.call(@shim.fnLabel, "int64", ["pointer", "string"], @uiBackend, content) }
+  fn image(path) { ffi.call(@shim.fnImage, "int64", ["pointer", "string"], @uiBackend, path) }
+  fn icon(name) { ffi.call(@shim.fnIcon, "int64", ["pointer", "string"], @uiBackend, name) }
+  fn divider() { ffi.call(@shim.fnDivider, "int64", ["pointer"], @uiBackend) }
+  fn spacer(size) { ffi.call(@shim.fnSpacer, "int64", ["pointer", "int32"], @uiBackend, size) }
+  fn progress(value, max) { ffi.call(@shim.fnProgress, "int64", ["pointer", "int32", "int32"], @uiBackend, value, max) }
+  fn spinner() { ffi.call(@shim.fnSpinner, "int64", ["pointer"], @uiBackend) }
+  fn btn(label) { ffi.call(@shim.fnBtn, "int64", ["pointer", "string"], @uiBackend, label) }
+  fn input(placeholder) { ffi.call(@shim.fnInput, "int64", ["pointer", "string"], @uiBackend, placeholder) }
+  fn textarea(placeholder) { ffi.call(@shim.fnTextarea, "int64", ["pointer", "string"], @uiBackend, placeholder) }
+  fn checkbox(label, checked) { ffi.call(@shim.fnCheckbox, "int64", ["pointer", "string", "int32"], @uiBackend, label, checked) }
+  fn toggle(label, value) { ffi.call(@shim.fnToggle, "int64", ["pointer", "string", "int32"], @uiBackend, label, value) }
+  fn slider(min, max, value) { ffi.call(@shim.fnSlider, "int64", ["pointer", "int32", "int32", "int32"], @uiBackend, min, max, value) }
+  fn dropdown(optionsCsv) { ffi.call(@shim.fnDropdown, "int64", ["pointer", "string"], @uiBackend, optionsCsv) }
+  fn row() { ffi.call(@shim.fnRow, "int64", ["pointer"], @uiBackend) }
+  fn col() { ffi.call(@shim.fnCol, "int64", ["pointer"], @uiBackend) }
+  fn grid(cols) { ffi.call(@shim.fnGrid, "int64", ["pointer", "int32"], @uiBackend, cols) }
+  fn table(rows, cols) { ffi.call(@shim.fnTable, "int64", ["pointer", "int32", "int32"], @uiBackend, rows, cols) }
+  fn flex(direction) { ffi.call(@shim.fnFlex, "int64", ["pointer", "string"], @uiBackend, direction) }
+  fn scroll() { ffi.call(@shim.fnScroll, "int64", ["pointer"], @uiBackend) }
+  fn canvas(width, height) { ffi.call(@shim.fnCanvas, "int64", ["pointer", "int32", "int32"], @uiBackend, width, height) }
+  fn menu(title) { ffi.call(@shim.fnMenu, "int64", ["pointer", "string"], @uiBackend, title) }
+  fn menuItem(label, shortcut) { ffi.call(@shim.fnMenuItem, "int64", ["pointer", "string", "string"], @uiBackend, label, shortcut) }
+  fn menuSeparator() { ffi.call(@shim.fnMenuSeparator, "int64", ["pointer"], @uiBackend) }
 
-    fn show(id) { ffi.call(_fn_show, "void", ["pointer", "int64"], @uiBackend, id) }
-    fn hide(id) { ffi.call(_fn_hide, "void", ["pointer", "int64"], @uiBackend, id) }
-    fn close(id) { ffi.call(_fn_close, "void", ["pointer", "int64"], @uiBackend, id) }
-    fn realize(id) { ffi.call(_fn_realize, "void", ["pointer", "int64"], @uiBackend, id) }
-    fn addChild(parentId, childId) { ffi.call(_fn_add_child, "void", ["pointer", "int64", "int64"], @uiBackend, parentId, childId) }
-    fn setTitle(id, title) { ffi.call(_fn_set_title, "void", ["pointer", "int64", "string"], @uiBackend, id, title) }
-    fn setSize(id, w, h) { ffi.call(_fn_set_size, "void", ["pointer", "int64", "int32", "int32"], @uiBackend, id, w, h) }
-    fn setPos(id, x, y) { ffi.call(_fn_set_pos, "void", ["pointer", "int64", "int32", "int32"], @uiBackend, id, x, y) }
-    fn setStyle(id, key, value) { ffi.call(_fn_set_style, "void", ["pointer", "int64", "string", "string"], @uiBackend, id, key, value) }
-    fn getValue(id) { ffi.call(_fn_get_value, "string", ["pointer", "int64"], @uiBackend, id) }
-    fn setValue(id, value) { ffi.call(_fn_set_value, "void", ["pointer", "int64", "string"], @uiBackend, id, value) }
+  fn show(id) { ffi.call(@shim.fnShow, "void", ["pointer", "int64"], @uiBackend, id) }
+  fn hide(id) { ffi.call(@shim.fnHide, "void", ["pointer", "int64"], @uiBackend, id) }
+  fn close(id) { ffi.call(@shim.fnClose, "void", ["pointer", "int64"], @uiBackend, id) }
+  fn realize(id) { ffi.call(@shim.fnRealize, "void", ["pointer", "int64"], @uiBackend, id) }
+  fn addChild(parentId, childId) { ffi.call(@shim.fnAddChild, "void", ["pointer", "int64", "int64"], @uiBackend, parentId, childId) }
+  fn setTitle(id, title) { ffi.call(@shim.fnSetTitle, "void", ["pointer", "int64", "string"], @uiBackend, id, title) }
+  fn setSize(id, w, h) { ffi.call(@shim.fnSetSize, "void", ["pointer", "int64", "int32", "int32"], @uiBackend, id, w, h) }
+  fn setPos(id, x, y) { ffi.call(@shim.fnSetPos, "void", ["pointer", "int64", "int32", "int32"], @uiBackend, id, x, y) }
+  fn setStyle(id, key, value) { ffi.call(@shim.fnSetStyle, "void", ["pointer", "int64", "string", "string"], @uiBackend, id, key, value) }
+  fn getValue(id) { ffi.call(@shim.fnGetValue, "string", ["pointer", "int64"], @uiBackend, id) }
+  fn setValue(id, value) { ffi.call(@shim.fnSetValue, "void", ["pointer", "int64", "string"], @uiBackend, id, value) }
 
-    fn canvasFlush(id) { ffi.call(_fn_canvas_flush, "void", ["pointer", "int64"], @uiBackend, id) }
-    fn canvasClear(id) { ffi.call(_fn_canvas_clear, "void", ["pointer", "int64"], @uiBackend, id) }
-    fn canvasDrawLine(id, x1, y1, x2, y2) { ffi.call(_fn_canvas_draw_line, "void", ["pointer", "int64", "int32", "int32", "int32", "int32"], @uiBackend, id, x1, y1, x2, y2) }
-    fn canvasDrawRect(id, x, y, w, h) { ffi.call(_fn_canvas_draw_rect, "void", ["pointer", "int64", "int32", "int32", "int32", "int32"], @uiBackend, id, x, y, w, h) }
-    fn canvasDrawCircle(id, cx, cy, r) { ffi.call(_fn_canvas_draw_circle, "void", ["pointer", "int64", "int32", "int32", "int32"], @uiBackend, id, cx, cy, r) }
-    fn canvasSetPen(id, r, g, b, width) { ffi.call(_fn_canvas_set_pen, "void", ["pointer", "int64", "int32", "int32", "int32", "int32"], @uiBackend, id, r, g, b, width) }
-    fn canvasFill(id, x, y) { ffi.call(_fn_canvas_fill, "void", ["pointer", "int64", "int32", "int32"], @uiBackend, id, x, y) }
+  fn canvasFlush(id) { ffi.call(@shim.fnCanvasFlush, "void", ["pointer", "int64"], @uiBackend, id) }
+  fn canvasClear(id) { ffi.call(@shim.fnCanvasClear, "void", ["pointer", "int64"], @uiBackend, id) }
+  fn canvasDrawLine(id, x1, y1, x2, y2) { ffi.call(@shim.fnCanvasDrawLine, "void", ["pointer", "int64", "int32", "int32", "int32", "int32"], @uiBackend, id, x1, y1, x2, y2) }
+  fn canvasDrawRect(id, x, y, w, h) { ffi.call(@shim.fnCanvasDrawRect, "void", ["pointer", "int64", "int32", "int32", "int32", "int32"], @uiBackend, id, x, y, w, h) }
+  fn canvasDrawCircle(id, cx, cy, r) { ffi.call(@shim.fnCanvasDrawCircle, "void", ["pointer", "int64", "int32", "int32", "int32"], @uiBackend, id, cx, cy, r) }
+  fn canvasSetPen(id, r, g, b, width) { ffi.call(@shim.fnCanvasSetPen, "void", ["pointer", "int64", "int32", "int32", "int32", "int32"], @uiBackend, id, r, g, b, width) }
+  fn canvasFill(id, x, y) { ffi.call(@shim.fnCanvasFill, "void", ["pointer", "int64", "int32", "int32"], @uiBackend, id, x, y) }
 
-    fn runLoop() { ffi.call(_fn_run_loop, "int32", ["pointer"], @uiBackend) }
-    fn quitLoop(code) { ffi.call(_fn_quit_loop, "void", ["pointer", "int32"], @uiBackend, code) }
-    fn pumpEvents(timeoutMs) { ffi.call(_fn_pump_events, "void", ["pointer", "int32"], @uiBackend, timeoutMs) }
+  fn runLoop() { ffi.call(@shim.fnRunLoop, "int32", ["pointer"], @uiBackend) }
+  fn quitLoop(code) { ffi.call(@shim.fnQuitLoop, "void", ["pointer", "int32"], @uiBackend, code) }
+  fn pumpEvents(timeoutMs) { ffi.call(@shim.fnPumpEvents, "void", ["pointer", "int32"], @uiBackend, timeoutMs) }
 
-    fn alert(msg) { ffi.call(_fn_alert, "void", ["pointer", "string"], @uiBackend, msg) }
-    fn confirm(msg) { ffi.call(_fn_confirm, "int32", ["pointer", "string"], @uiBackend, msg) }
-    fn filePicker(title) { ffi.call(_fn_file_picker, "string", ["pointer", "string"], @uiBackend, title) }
-    fn dirPicker(title) { ffi.call(_fn_dir_picker, "string", ["pointer", "string"], @uiBackend, title) }
-    fn notify(msg, type) { ffi.call(_fn_notify, "void", ["pointer", "string", "string"], @uiBackend, msg, type) }
+  fn alert(msg) { ffi.call(@shim.fnAlert, "void", ["pointer", "string"], @uiBackend, msg) }
+  fn confirm(msg) { ffi.call(@shim.fnConfirm, "int32", ["pointer", "string"], @uiBackend, msg) }
+  fn filePicker(title) { ffi.call(@shim.fnFilePicker, "string", ["pointer", "string"], @uiBackend, title) }
+  fn dirPicker(title) { ffi.call(@shim.fnDirPicker, "string", ["pointer", "string"], @uiBackend, title) }
+  fn notify(msg, type) { ffi.call(@shim.fnNotify, "void", ["pointer", "string", "string"], @uiBackend, msg, type) }
 
-    fn trayIcon(iconPath, tooltip) { ffi.call(_fn_tray_icon, "void", ["pointer", "string", "string"], @uiBackend, iconPath, tooltip) }
-    fn trayMenu(menuId) { ffi.call(_fn_tray_menu, "void", ["pointer", "int64"], @uiBackend, menuId) }
-    fn trayNotify(title, msg, iconType) { ffi.call(_fn_tray_notify, "void", ["pointer", "string", "string", "string"], @uiBackend, title, msg, iconType) }
-    fn trayShow() { ffi.call(_fn_tray_show, "void", ["pointer"], @uiBackend) }
-    fn trayHide() { ffi.call(_fn_tray_hide, "void", ["pointer"], @uiBackend) }
-    fn trayIsVisible() { ffi.call(_fn_tray_is_visible, "int32", ["pointer"], @uiBackend) }
+  fn trayIcon(iconPath, tooltip) { ffi.call(@shim.fnTrayIcon, "void", ["pointer", "string", "string"], @uiBackend, iconPath, tooltip) }
+  fn trayMenu(menuId) { ffi.call(@shim.fnTrayMenu, "void", ["pointer", "int64"], @uiBackend, menuId) }
+  fn trayNotify(title, msg, iconType) { ffi.call(@shim.fnTrayNotify, "void", ["pointer", "string", "string", "string"], @uiBackend, title, msg, iconType) }
+  fn trayShow() { ffi.call(@shim.fnTrayShow, "void", ["pointer"], @uiBackend) }
+  fn trayHide() { ffi.call(@shim.fnTrayHide, "void", ["pointer"], @uiBackend) }
+  fn trayIsVisible() { ffi.call(@shim.fnTrayIsVisible, "int32", ["pointer"], @uiBackend) }
 
-    fn timerCreate(intervalMs, singleShot) { ffi.call(_fn_timer_create, "int64", ["pointer", "int32", "int32"], @uiBackend, intervalMs, singleShot) }
-    fn timerStart(timerId) { ffi.call(_fn_timer_start, "void", ["pointer", "int64"], @uiBackend, timerId) }
-    fn timerStop(timerId) { ffi.call(_fn_timer_stop, "void", ["pointer", "int64"], @uiBackend, timerId) }
-    fn timerDestroy(timerId) { ffi.call(_fn_timer_destroy, "void", ["pointer", "int64"], @uiBackend, timerId) }
+  fn timerCreate(intervalMs, singleShot) { ffi.call(@shim.fnTimerCreate, "int64", ["pointer", "int32", "int32"], @uiBackend, intervalMs, singleShot) }
+  fn timerStart(timerId) { ffi.call(@shim.fnTimerStart, "void", ["pointer", "int64"], @uiBackend, timerId) }
+  fn timerStop(timerId) { ffi.call(@shim.fnTimerStop, "void", ["pointer", "int64"], @uiBackend, timerId) }
+  fn timerDestroy(timerId) { ffi.call(@shim.fnTimerDestroy, "void", ["pointer", "int64"], @uiBackend, timerId) }
 
-    fn settingsCreate(org, app) { ffi.call(_fn_settings_create, "pointer", ["pointer", "string", "string"], @uiBackend, org, app) }
-    fn settingsDestroy(s) { ffi.call(_fn_settings_destroy, "void", ["pointer", "pointer"], @uiBackend, s) }
-    fn settingsSetValue(s, key, value) { ffi.call(_fn_settings_set_value, "void", ["pointer", "pointer", "string", "string"], @uiBackend, s, key, value) }
-    fn settingsValue(s, key, defVal) { ffi.call(_fn_settings_value, "string", ["pointer", "pointer", "string", "string"], @uiBackend, s, key, defVal) }
-    fn settingsContains(s, key) { ffi.call(_fn_settings_contains, "int32", ["pointer", "pointer", "string"], @uiBackend, s, key) }
-    fn settingsRemove(s, key) { ffi.call(_fn_settings_remove, "void", ["pointer", "pointer", "string"], @uiBackend, s, key) }
-    fn settingsSync(s) { ffi.call(_fn_settings_sync, "void", ["pointer", "pointer"], @uiBackend, s) }
+  fn settingsCreate(org, app) { ffi.call(@shim.fnSettingsCreate, "pointer", ["pointer", "string", "string"], @uiBackend, org, app) }
+  fn settingsDestroy(s) { ffi.call(@shim.fnSettingsDestroy, "void", ["pointer", "pointer"], @uiBackend, s) }
+  fn settingsSetValue(s, key, value) { ffi.call(@shim.fnSettingsSetValue, "void", ["pointer", "pointer", "string", "string"], @uiBackend, s, key, value) }
+  fn settingsValue(s, key, defVal) { ffi.call(@shim.fnSettingsValue, "string", ["pointer", "pointer", "string", "string"], @uiBackend, s, key, defVal) }
+  fn settingsContains(s, key) { ffi.call(@shim.fnSettingsContains, "int32", ["pointer", "pointer", "string"], @uiBackend, s, key) }
+  fn settingsRemove(s, key) { ffi.call(@shim.fnSettingsRemove, "void", ["pointer", "pointer", "string"], @uiBackend, s, key) }
+  fn settingsSync(s) { ffi.call(@shim.fnSettingsSync, "void", ["pointer", "pointer"], @uiBackend, s) }
 
-    fn colorPicker(initial) { ffi.call(_fn_color_picker, "string", ["pointer", "string"], @uiBackend, initial) }
-    fn fontPicker(initial) { ffi.call(_fn_font_picker, "string", ["pointer", "string"], @uiBackend, initial) }
-fn inputText(title, label, defVal) { ffi.call(_fn_input_text, "string", ["pointer", "string", "string", "string"], @uiBackend, title, label, defVal) }
-fn inputInt(title, label, defVal, min, max, step) { ffi.call(_fn_input_int, "int64", ["pointer", "string", "string", "int32", "int32", "int32", "int32"], @uiBackend, title, label, defVal, min, max, step) }
+  fn colorPicker(initial) { ffi.call(@shim.fnColorPicker, "string", ["pointer", "string"], @uiBackend, initial) }
+  fn fontPicker(initial) { ffi.call(@shim.fnFontPicker, "string", ["pointer", "string"], @uiBackend, initial) }
+  fn inputText(title, label, defVal) { ffi.call(@shim.fnInputText, "string", ["pointer", "string", "string", "string"], @uiBackend, title, label, defVal) }
+  fn inputInt(title, label, defVal, min, max, step) { ffi.call(@shim.fnInputInt, "int64", ["pointer", "string", "string", "int32", "int32", "int32", "int32"], @uiBackend, title, label, defVal, min, max, step) }
 
-    fn hasActiveWindows() { ffi.call(_fn_has_active_windows, "int32", ["pointer"], @uiBackend) }
-    fn isAvailable() { ffi.call(_fn_is_available, "int32", ["pointer"], @uiBackend) }
-    fn getApiName() { ffi.call(_fn_get_api_name, "string", ["pointer"], @uiBackend) }
-    fn setAppMetadata(name, version, org, quitOnLast) { ffi.call(_fn_set_app_metadata, "void", ["pointer", "string", "string", "string", "int32"], @uiBackend, name, version, org, quitOnLast) }
+  fn hasActiveWindows() { ffi.call(@shim.fnHasActiveWindows, "int32", ["pointer"], @uiBackend) }
+  fn isAvailable() { ffi.call(@shim.fnIsAvailable, "int32", ["pointer"], @uiBackend) }
+  fn getApiName() { ffi.call(@shim.fnGetApiName, "string", ["pointer"], @uiBackend) }
+  fn setAppMetadata(name, version, org, quitOnLast) { ffi.call(@shim.fnSetAppMetadata, "void", ["pointer", "string", "string", "string", "int32"], @uiBackend, name, version, org, quitOnLast) }
 
-    fn shutdown() {
-        if @uiBackend != null {
-            ffi.call(_fn_shutdown, "void", ["pointer"], @uiBackend)
-        }
+  fn shutdown() {
+    if @uiBackend != null {
+      ffi.call(@shim.fnShutdown, "void", ["pointer"], @uiBackend)
     }
+  }
 
   fn destroy() {
-  self.shutdown()
-        if _toolkitHandle != null {
-            ffi.close(_toolkitHandle)
-            _toolkitHandle = null
-        }
-        if _shimHandle != null {
-            ffi.close(_shimHandle)
-            _shimHandle = null
-        }
-        @uiBackend = null
-        _initialized = false
+    self.shutdown()
+    if @toolkitHandle != null {
+      ffi.close(@toolkitHandle)
+      @toolkitHandle = null
     }
+    if @shim.handle != null {
+      ffi.close(@shim.handle)
+      @shim.handle = null
+    }
+    @uiBackend = null
+    @shim.initialized = false
+  }
 }
 
 fn detectToolkit() {
-    names = ["qt", "gtk", "imgui"]
-    for name in names {
-        path = _toolkitPath(name)
-        handle = ffi.open(path)
-        if handle != null {
-            ffi.close(handle)
-            return name
-        }
+  names = ["qt", "gtk", "imgui"]
+  s = ShimState.new()
+  i = 0
+  n = #names
+  while i < n {
+    path = s.toolkitPath(names[i])
+    handle = ffi.open(path)
+    if handle != null {
+      ffi.close(handle)
+      return names[i]
     }
-    ""
+    i += 1
+  }
+  ""
 }

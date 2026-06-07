@@ -751,3 +751,221 @@ fn groupNames() {
 	}
 	_groups.keys()
 }
+
+// ============================================================
+// Wayland compositor window interfaces
+// ============================================================
+
+use compositor
+
+// Safe fallback — never crashes, always logs
+class FallbackWindowInterface {
+	fn activeId() { 0 }
+	fn activeTitle() { "" }
+	fn activeClass() { "" }
+	fn list() { [] }
+	fn activate(id) { log.warn("window.activate: not supported on " + compositor.detect()); false }
+	fn close(id) { log.warn("window.close: not supported on " + compositor.detect()); false }
+	fn minimize(id) { log.warn("window.minimize: not supported on " + compositor.detect()); false }
+	fn maximize(id) { log.warn("window.maximize: not supported on " + compositor.detect()); false }
+	fn focus(id) { log.warn("window.focus: not supported on " + compositor.detect()); false }
+	fn moveToDesktop(id, d) { log.warn("window.moveToDesktop: not supported on " + compositor.detect()); false }
+	fn desktops() { [] }
+	fn currentDesktop() { -1 }
+	fn compositorName() { compositor.detect() }
+}
+
+class SwayWindowInterface {
+	fn _swaymsg(cmd) {
+		_r = shell.exec("swaymsg -t get_{} 2>/dev/null".format(cmd))
+		if _r.code != 0 { return null }
+		_r.stdout
+	}
+	fn _swaymsgRaw(cmd) {
+		_r = shell.exec("swaymsg {} 2>/dev/null".format(cmd))
+		_r.code == 0
+	}
+	fn activeId() {
+		_out = _swaymsg("tree")
+		if _out == null { return 0 }
+		_tree = json.parse(_out)
+		if _tree == null { return 0 }
+		_focused = _tree["focus"]
+		if _focused == null || #_focused == 0 { return 0 }
+		_focused[0]
+	}
+	fn activeTitle() {
+		_r = shell.exec("swaymsg -r -t get_tree | jq -r '.. | select(.focused?) | .name' 2>/dev/null")
+		if _r.code != 0 { return "" }
+		_r.stdout.trim()
+	}
+	fn activeClass() {
+		_r = shell.exec("swaymsg -r -t get_tree | jq -r '.. | select(.focused?) | .app_id // .window_properties.class // \"\"' 2>/dev/null")
+		if _r.code != 0 { return "" }
+		_r.stdout.trim()
+	}
+	fn list() {
+		_r = shell.exec("swaymsg -t get_tree | jq -r '[leaf | {id: .id, name: .name, app_id: .app_id, pid: .pid}]' 2>/dev/null")
+		if _r.code != 0 { return [] }
+		_val = json.parse(_r.stdout)
+		if _val == null { [] } else { _val }
+	}
+	fn activate(id) { _swaymsgRaw("[con_id={}] focus".format(id)) }
+	fn close(id) { _swaymsgRaw("[con_id={}] kill".format(id)) }
+	fn minimize(id) { false }
+	fn maximize(id) { _swaymsgRaw("[con_id={}] fullscreen toggle".format(id)) }
+	fn focus(id) { _swaymsgRaw("[con_id={}] focus".format(id)) }
+	fn moveToDesktop(id, d) { _swaymsgRaw("[con_id={}] move to workspace {}".format(id, d)) }
+	fn desktops() {
+		_r = shell.exec("swaymsg -t get_workspaces | jq -r '[.[] | .name]' 2>/dev/null")
+		if _r.code != 0 { return [] }
+		_val = json.parse(_r.stdout)
+		if _val == null { [] } else { _val }
+	}
+	fn currentDesktop() {
+		_r = shell.exec("swaymsg -t get_workspaces | jq -r '.[] | select(.focused) | .name' 2>/dev/null")
+		if _r.code != 0 { return -1 }
+		_out = _r.stdout.trim()
+		if _out == "" { -1 } else { _out }
+	}
+	fn compositorName() { "sway" }
+}
+
+class HyprlandWindowInterface {
+	fn _hyprctl(cmd) {
+		_r = shell.exec("hyprctl {} -j 2>/dev/null".format(cmd))
+		if _r.code != 0 { return null }
+		_r.stdout
+	}
+	fn _hyprctlRaw(cmd) {
+		_r = shell.exec("hyprctl {} 2>/dev/null".format(cmd))
+		_r.code == 0
+	}
+	fn activeId() {
+		_out = _hyprctl("activewindow")
+		if _out == null { return 0 }
+		_win = json.parse(_out)
+		if _win == null { return 0 }
+		_win["address"] ?? 0
+	}
+	fn activeTitle() {
+		_out = _hyprctl("activewindow")
+		if _out == null { return "" }
+		_win = json.parse(_out)
+		if _win == null { return "" }
+		_win["title"] ?? ""
+	}
+	fn activeClass() {
+		_out = _hyprctl("activewindow")
+		if _out == null { return "" }
+		_win = json.parse(_out)
+		if _win == null { return "" }
+		_win["class"] ?? ""
+	}
+	fn list() {
+		_out = _hyprctl("clients")
+		if _out == null { return [] }
+		_val = json.parse(_out)
+		if _val == null { [] } else { _val }
+	}
+	fn activate(addr) { _hyprctlRaw("dispatch focuswindow address:{}".format(addr)) }
+	fn close(addr) { _hyprctlRaw("dispatch killactive address:{}".format(addr)) }
+	fn minimize(addr) { _hyprctlRaw("dispatch movetoworkspace special:minimize address:{}".format(addr)) }
+	fn maximize(addr) { _hyprctlRaw("dispatch fullscreen 0 address:{}".format(addr)) }
+	fn focus(addr) { _hyprctlRaw("dispatch focuswindow address:{}".format(addr)) }
+	fn moveToDesktop(addr, d) { _hyprctlRaw("dispatch movetoworkspace {} address:{}".format(d, addr)) }
+	fn desktops() {
+		_out = _hyprctl("workspaces")
+		if _out == null { return [] }
+		_val = json.parse(_out)
+		if _val == null { [] } else { _val.map(fn(w) { w["name"] ?? str(w["id"]) }) }
+	}
+	fn currentDesktop() {
+		_out = _hyprctl("activeworkspace")
+		if _out == null { return -1 }
+		_ws = json.parse(_out)
+		if _ws == null { return -1 }
+		_ws["name"] ?? -1
+	}
+	fn compositorName() { "hyprland" }
+}
+
+class KdeWindowInterface {
+	fn _kdotool(cmd) {
+		_r = shell.exec("kdotool {} 2>/dev/null".format(cmd))
+		_r
+	}
+	fn _qdbus(path, method) {
+		_r = shell.exec("qdbus org.kde.KWin /KWin {} 2>/dev/null".format(method))
+		if _r.code != 0 { return null }
+		_r.stdout.trim()
+	}
+	fn activeId() {
+		_r = _kdotool("getactivewindow")
+		if _r.code != 0 { return 0 }
+		_val = _r.stdout.trim()
+		int(_val)
+	}
+	fn activeTitle() {
+		_r = _kdotool("getactivewindow")
+		if _r.code != 0 { return "" }
+		_wid = _r.stdout.trim()
+		_r2 = shell.exec("xdotool getwindowname {} 2>/dev/null".format(_wid))
+		if _r2.code != 0 { return "" }
+		_r2.stdout.trim()
+	}
+	fn activeClass() {
+		_r = shell.exec("xdotool getwindowclassname $(xdotool getactivewindow) 2>/dev/null")
+		if _r.code != 0 { return "" }
+		_r.stdout.trim()
+	}
+	fn list() { [] }
+	fn activate(id) { _r = _kdotool("windowactivate {}".format(id)); _r.code == 0 }
+	fn close(id) { _r = _kdotool("windowclose {}".format(id)); _r.code == 0 }
+	fn minimize(id) { _r = _kdotool("windowminimize {}".format(id)); _r.code == 0 }
+	fn maximize(id) {
+		shell.exec("qdbus org.kde.KWin /KWin setFullScreen {} true 2>/dev/null".format(id))
+		true
+	}
+	fn focus(id) { _r = _kdotool("windowactivate {}".format(id)); _r.code == 0 }
+	fn moveToDesktop(id, d) { false }
+	fn desktops() {
+		_r = shell.exec("qdbus org.kde.KWin /KWin getDesktops 2>/dev/null")
+		if _r.code != 0 { return [] }
+		_names = _r.stdout.trim().split("\n")
+		_names
+	}
+	fn currentDesktop() {
+		_out = _qdbus("", "currentDesktop")
+		if _out == null { return -1 }
+		int(_out)
+	}
+	fn compositorName() { "kde" }
+}
+
+// Factory — returns the appropriate interface for the running compositor
+_wlInterface = null
+
+fn getInterface() {
+	if _wlInterface != null { return _wlInterface }
+	_c = compositor.detect()
+	if _c == "hyprland" {
+		_wlInterface = HyprlandWindowInterface()
+	} else if _c == "sway" {
+		_wlInterface = SwayWindowInterface()
+	} else if _c == "kde" {
+		try { _wlInterface = KdeWindowInterface() }
+		catch { _wlInterface = FallbackWindowInterface() }
+	} else {
+		_wlInterface = FallbackWindowInterface()
+	}
+	_wlInterface
+}
+
+// Wayland-compatible module-level functions
+fn wlActiveId() { getInterface().activeId() }
+fn wlActiveTitle() { getInterface().activeTitle() }
+fn wlActiveClass() { getInterface().activeClass() }
+fn wlList() { getInterface().list() }
+fn wlDesktops() { getInterface().desktops() }
+fn wlCurrentDesktop() { getInterface().currentDesktop() }

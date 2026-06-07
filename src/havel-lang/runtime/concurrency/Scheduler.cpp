@@ -446,8 +446,8 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
                     g->state == GoroutineState::Created ||
                     g->state == GoroutineState::Running);
 
-  ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
-                 g->id, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending);
+    ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={} suspension_reason={}",
+        g->id, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending, static_cast<int>(g->suspension_reason));
 
   switch (g->hotkey_policy) {
   case HotkeyPolicy::Drop:
@@ -489,8 +489,15 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
     g->hotkey_args = newArgs;
   }
 
-  if (g->state == GoroutineState::Suspended) {
-    g->hotkey_retrigger.store(true, std::memory_order_release);
+    if (g->state == GoroutineState::Suspended) {
+        ::havel::debug("[Scheduler] wakeHotkey: gid={} is Suspended, reason={}", g->id, static_cast<int>(g->suspension_reason));
+        g->hotkey_retrigger.store(true, std::memory_order_release);
+        if (g->suspension_reason == SuspensionReason::HotkeyWait) {
+            ::havel::debug("[Scheduler] wakeHotkey: gid={} requeueFront (HotkeyWait)", g->id);
+            ::havel::debug("[Scheduler] wakeHotkey: gid={} falling through to requeueFront (state={})", g->id, static_cast<int>(g->state.load()));
+    requeueFront(g);
+        }
+    // else: mid-sleep or other suspension — just set flag, keep suspended
     return true;
   }
 

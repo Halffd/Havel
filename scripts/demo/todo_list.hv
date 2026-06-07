@@ -116,11 +116,18 @@ if h1Node != null {
   print(f"h1 style: {style.toStyleString(s)}")
 }
 
+class EventLog {
+  entries
+  fn @() { @entries = [] }
+  fn onAdd(data) { @entries.push("added: " + data) }
+  fn onRemove(data) { @entries.push("removed: " + data) }
+}
+
+elog = EventLog.new()
 em = events.EventEmitter.new()
-log = []
-em.listen("add", fn(data) { log.push("added: " + data) })
-em.listen("remove", fn(data) { log.push("removed: " + data) })
+em.listen("add", elog.onAdd)
+em.listen("remove", elog.onRemove)
 em.emit("add", "Build Havel apps")
 em.emit("remove", "Procrastinate")
 print("")
-print(f"Event log: {log}")
+print(f"Event log: {elog.entries}")

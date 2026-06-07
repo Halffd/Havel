@@ -1,158 +1,224 @@
 // style.hv - Style resolution and inheritance for Havel UI
 // Takes CSS rules + vdom, computes final styles per element
+use "ui/markup" as markup
+use "ui/css" as css
 
 INHERITED = {
-    "color": true, "font-family": true, "font-size": true, "font-weight": true,
-    "font-style": true, "line-height": true, "text-align": true, "text-indent": true,
-    "text-transform": true, "letter-spacing": true, "word-spacing": true,
-    "white-space": true, "visibility": true, "cursor": true, "direction": true,
-    "list-style": true, "list-style-type": true, "quotes": true
+  "color": true, "font-family": true, "font-size": true, "font-weight": true,
+  "font-style": true, "line-height": true, "text-align": true, "text-indent": true,
+  "text-transform": true, "letter-spacing": true, "word-spacing": true,
+  "white-space": true, "visibility": true, "cursor": true, "direction": true,
+  "list-style": true, "list-style-type": true, "quotes": true
 }
 
 INITIAL = {
-    "display": "block", "position": "static", "color": "black",
-    "background-color": "transparent", "font-size": "16px",
-    "font-family": "sans-serif", "font-weight": "normal",
-    "line-height": "1.5", "margin": "0", "padding": "0",
-    "border": "none", "width": "auto", "height": "auto",
-    "overflow": "visible", "opacity": "1", "z-index": "auto"
+  "display": "block", "position": "static", "color": "black",
+  "background-color": "transparent", "font-size": "16px",
+  "font-family": "sans-serif", "font-weight": "normal",
+  "line-height": "1.5", "margin": "0", "padding": "0",
+  "border": "none", "width": "auto", "height": "auto",
+  "overflow": "visible", "opacity": "1", "z-index": "auto"
 }
 
 TAG_DEFAULTS = {
-    "div": {display: "block"},
-    "span": {display: "inline"},
-    "button": {display: "inline-block", cursor: "pointer", "font-size": "inherit"},
-    "input": {display: "inline-block", cursor: "text"},
-    "textarea": {display: "inline-block"},
-    "label": {display: "inline"},
-    "img": {display: "inline-block"},
-    "p": {display: "block", margin: "1em 0"},
-    "h1": {display: "block", "font-size": "2em", "font-weight": "bold", margin: "0.67em 0"},
-    "h2": {display: "block", "font-size": "1.5em", "font-weight": "bold", margin: "0.83em 0"},
-    "h3": {display: "block", "font-size": "1.17em", "font-weight": "bold", margin: "1em 0"},
-    "a": {display: "inline", color: "blue", "text-decoration": "underline", cursor: "pointer"},
-    "ul": {display: "block", "list-style-type": "disc", "padding-left": "40px"},
-    "ol": {display: "block", "list-style-type": "decimal", "padding-left": "40px"},
-    "li": {display: "list-item"},
-    "table": {display: "table"},
-    "tr": {display: "table-row"},
-    "td": {display: "table-cell"},
-    "th": {display: "table-cell", "font-weight": "bold"},
-    "canvas": {display: "inline-block"},
-    "window": {display: "flex", "flex-direction": "column"},
-    "row": {display: "flex", "flex-direction": "row"},
-    "col": {display: "flex", "flex-direction": "column"},
-    "grid": {display: "grid"},
-    "scroll": {display: "block", overflow: "auto"}
+  "div": {"display": "block"},
+  "span": {"display": "inline"},
+  "button": {"display": "inline-block", "cursor": "pointer", "font-size": "inherit"},
+  "input": {"display": "inline-block", "cursor": "text"},
+  "textarea": {"display": "inline-block"},
+  "label": {"display": "inline"},
+  "img": {"display": "inline-block"},
+  "p": {"display": "block", "margin": "1em 0"},
+  "h1": {"display": "block", "font-size": "2em", "font-weight": "bold", "margin": "0.67em 0"},
+  "h2": {"display": "block", "font-size": "1.5em", "font-weight": "bold", "margin": "0.83em 0"},
+  "h3": {"display": "block", "font-size": "1.17em", "font-weight": "bold", "margin": "1em 0"},
+  "a": {"display": "inline", "color": "blue", "text-decoration": "underline", "cursor": "pointer"},
+  "ul": {"display": "block", "list-style-type": "disc", "padding-left": "40px"},
+  "ol": {"display": "block", "list-style-type": "decimal", "padding-left": "40px"},
+  "li": {"display": "list-item"},
+  "table": {"display": "table"},
+  "tr": {"display": "table-row"},
+  "td": {"display": "table-cell"},
+  "th": {"display": "table-cell", "font-weight": "bold"},
+  "canvas": {"display": "inline-block"},
+  "window": {"display": "flex", "flex-direction": "column"},
+  "row": {"display": "flex", "flex-direction": "row"},
+  "col": {"display": "flex", "flex-direction": "column"},
+  "grid": {"display": "grid"},
+  "scroll": {"display": "block", "overflow": "auto"}
 }
 
 fn cascade(matchedRules) {
-    result = {}
-    byProperty = {}
-    for entry in matchedRules {
-        rule = entry.rule
-        for decl in rule.declarations {
-            prop = decl.property
-            if !byProperty.has(prop) { byProperty[prop] = [] }
-            byProperty[prop].push(decl)
-        }
+  result = {}
+  byProperty = {}
+  i = 0
+  n = #matchedRules
+  while i < n {
+    entry = matchedRules[i]
+    rule = entry.rule
+    j = 0
+    nd = #rule.declarations
+    while j < nd {
+      decl = rule.declarations[j]
+      prop = decl.property
+      if !byProperty.has(prop) { byProperty[prop] = [] }
+      byProperty[prop].push(decl)
+      j += 1
     }
-    for prop in byProperty.keys() {
-        decls = byProperty[prop]
-        important = []
-        normal = []
-        for d in decls {
-            if d.important { important.push(d) }
-            else { normal.push(d) }
-        }
-        if #important > 0 {
-            result[prop] = important[#important - 1].value
-        } else if #normal > 0 {
-            result[prop] = normal[#normal - 1].value
-        }
+    i += 1
+  }
+  props = byProperty.keys()
+  i = 0
+  np = #props
+  while i < np {
+    prop = props[i]
+    decls = byProperty[prop]
+    important = []
+    normal = []
+    j = 0
+    nd = #decls
+    while j < nd {
+      d = decls[j]
+      if d.important { important.push(d) }
+      else { normal.push(d) }
+      j += 1
     }
-    result
+    if #important > 0 {
+      result[prop] = important[#important - 1].value
+    } else if #normal > 0 {
+      result[prop] = normal[#normal - 1].value
+    }
+    i += 1
+  }
+  result
 }
 
 fn inherit(parentStyles, childProps) {
-    result = {}
-    if parentStyles == null { return result }
-    for prop in parentStyles.keys() {
-        if INHERITED.has(prop) {
-            result[prop] = parentStyles[prop]
-        }
+  result = {}
+  if parentStyles == null { return result }
+  pkeys = parentStyles.keys()
+  i = 0
+  nk = #pkeys
+  while i < nk {
+    prop = pkeys[i]
+    if INHERITED.has(prop) {
+      result[prop] = parentStyles[prop]
     }
-    for prop in childProps.keys() {
-        result[prop] = childProps[prop]
-    }
-    result
+    i += 1
+  }
+  ckeys = childProps.keys()
+  i = 0
+  nk = #ckeys
+  while i < nk {
+    prop = ckeys[i]
+    result[prop] = childProps[prop]
+    i += 1
+  }
+  result
 }
 
 fn _tagDefaults(tag) {
-    if TAG_DEFAULTS.has(tag) { TAG_DEFAULTS[tag] }
-    else { {} }
+  if TAG_DEFAULTS.has(tag) { TAG_DEFAULTS[tag] }
+  else { {} }
 }
 
 fn compute(vdomNode, rules) {
-    if vdomNode == null { return {} }
-    if !markup.isVNode(vdomNode) { return {} }
-    defaults = _tagDefaults(vdomNode.tag)
-    matched = css.matchAny(rules, vdomNode)
-    cascaded = cascade(matched)
-    result = {}
-    for prop in defaults.keys() {
-        result[prop] = defaults[prop]
+  if vdomNode == null { return {} }
+  if !markup.isVNode(vdomNode) { return {} }
+  defaults = _tagDefaults(vdomNode.tag)
+  matched = css.matchAny(rules, vdomNode)
+  cascaded = cascade(matched)
+  result = {}
+  dkeys = defaults.keys()
+  i = 0
+  nk = #dkeys
+  while i < nk {
+    prop = dkeys[i]
+    result[prop] = defaults[prop]
+    i += 1
+  }
+  ckeys = cascaded.keys()
+  i = 0
+  nk = #ckeys
+  while i < nk {
+    prop = ckeys[i]
+    result[prop] = cascaded[prop]
+    i += 1
+  }
+  inlineStyle = vdomNode.props["style"]
+  if inlineStyle != null && type(inlineStyle) == "string" {
+    parts = str(inlineStyle).split(";")
+    i = 0
+    np = #parts
+    while i < np {
+      part = parts[i]
+      kv = part.split(":")
+      if #kv >= 2 {
+        k = kv[0].trim()
+        v = kv[1].trim()
+        if k != "" { result[k] = v }
+      }
+      i += 1
     }
-    for prop in cascaded.keys() {
-        result[prop] = cascaded[prop]
-    }
-    inlineStyle = vdomNode.props["style"]
-    if inlineStyle != null && type(inlineStyle) == "string" {
-        for part in str(inlineStyle).split(";") {
-            kv = part.split(":")
-            if #kv >= 2 {
-                k = kv[0].trim()
-                v = kv[1].trim()
-                if k != "" { result[k] = v }
-            }
-        }
-    }
-    result
+  }
+  result
 }
 
 fn resolveTree(root, rules) {
-    styles = {}
-    _resolveNode(root, rules, null, styles)
-    styles
+  styles = {}
+  _resolveNode(root, rules, null, styles)
+  styles
 }
 
 fn _resolveNode(node, rules, parentStyles, styles) {
-    if node == null { return }
-    if !markup.isVNode(node) { return }
-    computed = compute(node, rules)
-    if parentStyles != null {
-        computed = inherit(parentStyles, computed)
-    }
-    key = node.ref
-    if key == null { key = str(node._element) }
-    if key != null && key != "null" { styles[key] = computed }
-    for child in node.children {
-        _resolveNode(child, rules, computed, styles)
-    }
+  if node == null { return }
+  if !markup.isVNode(node) { return }
+  computed = compute(node, rules)
+  if parentStyles != null {
+    computed = inherit(parentStyles, computed)
+  }
+  key = node.ref
+  if key == null { key = str(node._element) }
+  if key != null && key != "null" { styles[key] = computed }
+  i = 0
+  n = #node.children
+  while i < n {
+    _resolveNode(node.children[i], rules, computed, styles)
+    i += 1
+  }
 }
 
 fn merge(base, override) {
-    result = {}
-    for k in base.keys() { result[k] = base[k] }
-    for k in override.keys() { result[k] = override[k] }
-    result
+  result = {}
+  bkeys = base.keys()
+  i = 0
+  nk = #bkeys
+  while i < nk {
+    k = bkeys[i]
+    result[k] = base[k]
+    i += 1
+  }
+  okeys = override.keys()
+  i = 0
+  nk = #okeys
+  while i < nk {
+    k = okeys[i]
+    result[k] = override[k]
+    i += 1
+  }
+  result
 }
 
 fn toStyleString(styles) {
-    if styles == null { return "" }
-    parts = []
-    for k in styles.keys() {
-        parts.push(k + ": " + styles[k])
-    }
-    parts.join("; ")
+  if styles == null { return "" }
+  parts = []
+  keys = styles.keys()
+  i = 0
+  nk = #keys
+  while i < nk {
+    k = keys[i]
+    parts.push(k + ": " + styles[k])
+    i += 1
+  }
+  parts.join("; ")
 }

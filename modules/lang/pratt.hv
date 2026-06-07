@@ -114,6 +114,58 @@ COMPOUND_ASSIGN_TOKENS[TID.BitwiseXorAssign] = "^="
 COMPOUND_ASSIGN_TOKENS[TID.ShiftLeftAssign] = "<<="
 COMPOUND_ASSIGN_TOKENS[TID.ShiftRightAssign] = ">>="
 
+// --- Check if identifier value is a hotkey key name ---
+HOTKEY_IDENT_NAMES = {
+	"space": true, "enter": true, "tab": true, "escape": true, "esc": true,
+	"backspace": true, "delete": true, "insert": true, "home": true,
+	"end": true, "pageup": true, "pagedown": true, "capslock": true,
+	"numlock": true, "scrolllock": true, "lshift": true, "rshift": true,
+	"lctrl": true, "rctrl": true, "lalt": true, "ralt": true,
+	"lmeta": true, "rmeta": true, "super": true, "menu": true,
+	"print": true, "pause": true, "up": true, "down": true,
+	"left": true, "right": true, "wheelup": true, "wheeldown": true,
+	"wheelleft": true, "wheelright": true,
+	"numpad0": true, "numpad1": true, "numpad2": true, "numpad3": true,
+	"numpad4": true, "numpad5": true, "numpad6": true, "numpad7": true,
+	"numpad8": true, "numpad9": true, "btn0": true, "btn1": true,
+	"btn2": true, "btn3": true, "btn4": true, "numpadmult": true,
+	"numpadadd": true, "numpadsub": true, "numpaddiv": true,
+	"numpadenter": true, "numpadsep": true,
+}
+fn isHotkeyIdentifier(value) {
+	if value.len >= 2 && value[0] == "F" {
+		rest = value.sub(1)
+		isDigit = true
+		i = 0
+		while i < rest.len {
+			ch = rest.sub(i, 1)
+			if ch < "0" || ch > "9" { isDigit = false; break }
+			i = i + 1
+		}
+		if isDigit { return true }
+	}
+	HOTKEY_IDENT_NAMES[value] != null
+}
+
+// --- Helper: parse mode="..." policy="..." attributes after hotkey key ---
+fn parseHotkeyAttrs() {
+	modeAttr = ""
+	policyAttr = ""
+	while current().tid == TID.Identifier && (current().value == "mode" || current().value == "policy") {
+		attrName = current().value
+		nextTid = at(1).tid
+		if nextTid != TID.Assign { break }
+		advance() // consume attr name
+		advance() // consume '='
+		if current().tid == TID.String {
+			attrValue = advance().value
+			if attrName == "mode" { modeAttr = attrValue }
+			else { policyAttr = attrValue }
+		}
+	}
+	{mode: modeAttr, policy: policyAttr}
+}
+
 // --- Token types that can start an expression (have nud) ---
 NUD_TOKENS = {}
 NUD_TOKENS[TID.Number] = true; NUD_TOKENS[TID.String] = true; NUD_TOKENS[TID.MultilineString] = true
@@ -1653,13 +1705,23 @@ fn parseStatement() {
             syncCur()
 
         }
-        // Identifier + When/If/Arrow at statement start => hotkey
-        // e.g. F1 => { ... } or a when mode == "x" => { ... }
-        if tt == TID.Identifier {
-            nextTid = at(1).tid
-            if nextTid == TID.When || nextTid == TID.If || nextTid == TID.Arrow {
-                return parseHotkeyStatement()
-            }
+	// Identifier + When/If/Arrow at statement start => hotkey
+	// e.g. F1 => { ... } or a when mode == "x" => { ... } or F1 mode="gaming" => { ... }
+	if tt == TID.Identifier {
+		nextTid = at(1).tid
+		if nextTid == TID.When || nextTid == TID.If || nextTid == TID.Arrow {
+			return parseHotkeyStatement()
+		}
+		// identifier mode="..." or policy="..." followed by => (hotkey with attrs)
+		if nextTid == TID.Identifier && (at(1).value == "mode" || at(1).value == "policy") && isHotkeyIdentifier(current().value) {
+			lookPos = 2
+			while at(lookPos).tid == TID.Identifier && (at(lookPos).value == "mode" || at(lookPos).value == "policy") && at(lookPos + 1).tid == TID.Assign && at(lookPos + 2).tid == TID.String {
+				lookPos = lookPos + 3
+			}
+			if at(lookPos).tid == TID.Arrow || at(lookPos).tid == TID.When || at(lookPos).tid == TID.If {
+				return parseHotkeyStatement()
+			}
+		}
             // identifier = hotkey => action (e.g. dhk = d => { print @id })
             if nextTid == TID.Assign {
                 at2 = at(2).tid
@@ -2566,12 +2628,18 @@ fn parseUseStatement() {
 
             }
         }
-        else if current().tid == TID.Identifier {
-            key = advance().value
-        }
-        skipNewlines()
+	else if current().tid == TID.Identifier {
+		key = advance().value
+	}
+	skipNewlines()
 
-        // Optional when/if prefix condition
+	// Parse optional inline attributes: mode="name" policy="replace"
+	attrs = parseHotkeyAttrs()
+	modeAttr = attrs.mode
+	policyAttr = attrs.policy
+	skipNewlines()
+
+	// Optional when/if prefix condition
         condition = null
         if current().tid == TID.When or current().tid == TID.If {
             advance()
@@ -2599,24 +2667,31 @@ fn parseUseStatement() {
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
         }
-        node = HotkeyBinding(key, body, l, c)
-        if condition != null: node.condition = condition
-        node
+	node = HotkeyBinding(key, body, l, c)
+	if condition != null: node.condition = condition
+	if modeAttr != "": node.mode = modeAttr
+	if policyAttr != "": node.policy = policyAttr
+	node
 
-    }
+}
     // ===================================================================
     // STATEMENT: hotkey assignment (identifier = hotkey => action)
     // ===================================================================
-    fn parseHotkeyAssignmentStatement() {
-        l = current().line
-        c = current().col
-        target = Identifier(advance().value, l, c)
-        advance() // consume =
-        hkToken = advance()
-        key = hkToken.value
-        if hkToken.tid == TID.Identifier { key = hkToken.value }
-        condition = null
-        if current().tid == TID.When or current().tid == TID.If {
+fn parseHotkeyAssignmentStatement() {
+	l = current().line
+	c = current().col
+	target = Identifier(advance().value, l, c)
+	advance() // consume =
+	hkToken = advance()
+	key = hkToken.value
+	if hkToken.tid == TID.Identifier { key = hkToken.value }
+	skipNewlines()
+	// Parse optional inline attributes: mode="name" policy="replace"
+	attrs = parseHotkeyAttrs()
+	modeAttr = attrs.mode
+	policyAttr = attrs.policy
+	condition = null
+	if current().tid == TID.When or current().tid == TID.If {
             advance()
             condition = parseExpr(BP_ASSIGN)
         }
@@ -2633,9 +2708,11 @@ fn parseUseStatement() {
             bodyExpr = parseExpr(0)
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
         }
-        binding = HotkeyBinding(key, body, l, c)
-        if condition != null: binding.condition = condition
-        hkExpr = HotkeyExpression(binding, l, c)
+	binding = HotkeyBinding(key, body, l, c)
+	if condition != null: binding.condition = condition
+	if modeAttr != "": binding.mode = modeAttr
+	if policyAttr != "": binding.policy = policyAttr
+	hkExpr = HotkeyExpression(binding, l, c)
         assign = AssignmentExpression(target, hkExpr, "=", false, l, c)
         ExpressionStatement(assign, l, c)
     }

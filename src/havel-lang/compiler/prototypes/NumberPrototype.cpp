@@ -22,6 +22,20 @@ void registerNumberPrototype(VM& vm) {
     vm.registerPrototypeMethodByName("int", method, "int." + method);
   };
 
+  regIntProto("abs", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    if (args[0].isInt()) return Value::makeInt(std::abs(args[0].asInt()));
+    if (args[0].isDouble()) return Value::makeDouble(std::abs(args[0].asDouble()));
+    return Value::makeNull();
+  });
+
+  regIntProto("to_string", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    int64_t v = args[0].isInt() ? args[0].asInt() : (args[0].isDouble() ? static_cast<int64_t>(args[0].asDouble()) : 0);
+    auto ref = vm.getHeap().allocateString(std::to_string(v));
+    return Value::makeStringId(ref.id);
+  });
+
   regIntProto("toHex", 1, [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     int64_t v = args[0].isInt() ? args[0].asInt() : (args[0].isDouble() ? static_cast<int64_t>(args[0].asDouble()) : 0);
@@ -168,6 +182,22 @@ void registerNumberPrototype(VM& vm) {
     vm.registerHostFunction("float." + method, arity, std::move(fn));
     vm.registerPrototypeMethodByName("float", method, "float." + method);
   };
+
+  regFloatProto("to_string", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    double v = args[0].isDouble() ? args[0].asDouble() : (args[0].isInt() ? static_cast<double>(args[0].asInt()) : 0.0);
+    std::ostringstream oss;
+    oss << v;
+    auto ref = vm.getHeap().allocateString(oss.str());
+    return Value::makeStringId(ref.id);
+  });
+
+  regFloatProto("abs", 1, [&vm](const std::vector<Value>& args) {
+    if (args.empty()) return Value::makeNull();
+    if (args[0].isDouble()) return Value::makeDouble(std::abs(args[0].asDouble()));
+    if (args[0].isInt()) return Value::makeDouble(std::abs(static_cast<double>(args[0].asInt())));
+    return Value::makeNull();
+  });
 
   regFloatProto("op_add", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();

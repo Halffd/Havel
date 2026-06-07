@@ -173,11 +173,11 @@ class Parser {
       if ch == "." {
         self.advance()
         name = self.readIdent()
-        parts.push({type: "class", value: name})
+        parts.push({"type": "class", "value": name})
       } else if ch == "#" {
         self.advance()
         name = self.readIdent()
-        parts.push({type: "id", value: name})
+        parts.push({"type": "id", "value": name})
       } else if ch == "[" {
         self.advance()
         attrName = self.readIdent()
@@ -219,14 +219,14 @@ class Parser {
         }
         self.skipWS()
         if self.at() == "]" { self.advance() }
-        parts.push({type: "attr", name: attrName, "op": oper, value: attrValue})
+        parts.push({"type": "attr", "name": attrName, "op": oper, "value": attrValue})
       } else if ch == ":" {
         self.advance()
         nxt = self.at()
         if nxt == ":" {
           self.advance()
           name = self.readIdent()
-          parts.push({type: "pseudo_element", value: name})
+          parts.push({"type": "pseudo_element", "value": name})
         } else {
           name = self.readIdent()
           args = ""
@@ -243,31 +243,31 @@ class Parser {
               p3 = @pos
             }
           }
-          parts.push({type: "pseudo", value: name, args: args})
+          parts.push({"type": "pseudo", "value": name, "args": args})
         }
       } else if ch == "*" {
         self.advance()
-        parts.push({type: "universal", value: "*"})
+        parts.push({"type": "universal", "value": "*"})
       } else if ch == ">" {
         self.advance()
         self.skipWSAndComments()
-        parts.push({type: "combinator", value: ">"})
+        parts.push({"type": "combinator", "value": ">"})
       } else if ch == "+" {
         self.advance()
         self.skipWSAndComments()
-        parts.push({type: "combinator", value: "+"})
+        parts.push({"type": "combinator", "value": "+"})
       } else if ch == "~" {
         self.advance()
         self.skipWSAndComments()
-        parts.push({type: "combinator", value: "~"})
+        parts.push({"type": "combinator", "value": "~"})
       } else {
         pk1 = self.peek(1)
         if self.isIdentStart(ch) {
           name = self.readIdent()
-          parts.push({type: "type", value: name})
+          parts.push({"type": "type", "value": name})
         } else if ch == "-" && self.isIdentStart(pk1) {
           name = self.readIdent()
-          parts.push({type: "type", value: name})
+          parts.push({"type": "type", "value": name})
         } else {
           self.advance()
         }
@@ -409,13 +409,17 @@ fn computeSpecificity(parts) {
   a = 0
   b = 0
   c = 0
-  for p in parts {
+  i = 0
+  n = #parts
+  while i < n {
+    p = parts[i]
     t = p.type
     if t == "id" { a = a + 1 }
     else if t == "class" { b = b + 1 }
     else if t == "attr" { b = b + 1 }
     else if t == "pseudo" { b = b + 1 }
     else if t == "type" { c = c + 1 }
+    i += 1
   }
   [a, b, c]
 }
@@ -423,7 +427,9 @@ fn computeSpecificity(parts) {
 fn selectorPartsToText(parts) {
   result = ""
   i = 0
-  for p in parts {
+  n = #parts
+  while i < n {
+    p = parts[i]
     if i > 0 && p.type != "combinator" {
       prev = parts[i - 1]
       if prev.type != "combinator" { result = result + " " }
@@ -470,8 +476,11 @@ fn _matchPart(part, node) {
     cls = node.props["class"]
     if cls == null { return false }
     classes = str(cls).split(" ")
-    for c in classes {
-      if c == part.value { return true }
+    i = 0
+    n = #classes
+    while i < n {
+      if classes[i] == part.value { return true }
+      i += 1
     }
     return false
   }
@@ -486,8 +495,12 @@ fn _matchPart(part, node) {
     if o == "" { return true }
     if o == "=" { return sval == part.value }
     if o == "~=" {
-      for w in sval.split(" ") {
-        if w == part.value { return true }
+      words = sval.split(" ")
+      i = 0
+      n = #words
+      while i < n {
+        if words[i] == part.value { return true }
+        i += 1
       }
       return false
     }
@@ -523,12 +536,17 @@ fn matchSelector(selector, node) {
   parts = selector.parts
   if #parts == 0 { return false }
   hasCombinator = false
-  for p in parts {
-    if p.type == "combinator" { hasCombinator = true }
+  i = 0
+  n = #parts
+  while i < n {
+    if parts[i].type == "combinator" { hasCombinator = true }
+    i += 1
   }
   if !hasCombinator {
-    for p in parts {
-      if !_matchPart(p, node) { return false }
+    i = 0
+    while i < n {
+      if !_matchPart(parts[i], node) { return false }
+      i += 1
     }
     return true
   }
@@ -553,12 +571,20 @@ fn _matchWithCombinators(parts, partIdx, node) {
 
 fn matchAny(rules, node) {
   matched = []
-  for rule in rules {
-    for sel in rule.selectors {
+  i = 0
+  nr = #rules
+  while i < nr {
+    rule = rules[i]
+    j = 0
+    ns = #rule.selectors
+    while j < ns {
+      sel = rule.selectors[j]
       if matchSelector(sel, node) {
-        matched.push({rule: rule, selector: sel})
+        matched.push({"rule": rule, "selector": sel})
       }
+      j += 1
     }
+    i += 1
   }
   _sortBySpecificity(matched)
   matched

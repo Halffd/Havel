@@ -2903,14 +2903,12 @@ fn emitMatchExpr(emitter, node) {
 	for c in node.cases {
 		// Compile pattern match — leaves bool on stack
 		emitPatternMatch(emitter, c.pattern, discSlot)
-    // If pattern doesn't match, jump to next case
-    failJump = bc.emit("JUMP_IF_FALSE", 0)
-    bc.emit("POP")
-    // Check guard if present
-    if c.guard != null {
-      emitExpr(emitter, c.guard)
-      guardFailJump = bc.emit("JUMP_IF_FALSE", 0)
-      bc.emit("POP")
+	// If pattern doesn't match, jump to next case
+		failJump = bc.emit("JUMP_IF_FALSE", 0)
+		// Check guard if present
+		if c.guard != null {
+			emitExpr(emitter, c.guard)
+			guardFailJump = bc.emit("JUMP_IF_FALSE", 0)
       // Emit result
       if c.body != null {
         if c.body.kind == "BlockStatement" {
@@ -3206,8 +3204,7 @@ fn emitClassDeclaration(emitter, node) {
         emitClassMethodRegister(emitter, node.name, m)
       }
     }
-    emitter.currentClassName = prevClassName
-	emitter.currentClassName = prevClassName
+		emitter.currentClassName = prevClassName
 	}
 
 }
@@ -3378,153 +3375,232 @@ fn emitEnumDeclaration(emitter, node) {
 // ============================================================
 
 fn emitHotkeyBinding(emitter, node) {
- // Compile action as a function
- oldScope = emitter.scope
- newScope = Scope(null)
- emitter.scope = newScope
- actionChunkIdx = bc.func_new("hotkey_action", 1, 16)
- // Store parameter (this) in local 0
- scopeDeclare(newScope, "this")
- // Compile body
- if node.body != null {
- if node.body.kind == "BlockStatement" {
- for s in node.body.body {
- emitStmt(emitter, s)
- }
- }
- else {
- emitStmt(emitter, node.body)
- }
- }
- bc.emit("PUSH_NULL")
- bc.emit("RETURN")
- bc.set_local_count(scopeLocalCount(newScope))
- emitter.scope = oldScope
- // Create wrapper that sets this context
- wrapperChunkIdx = bc.func_new("hotkey_wrapper", 1, 8)
- // Store param 0 as "this" global
- bc.emit("LOAD_VAR", 0)
- thisSid = globalIdx(emitter, "this")
- bc.emit("STORE_GLOBAL", bc.str_id(thisSid))
- // Load "this" and call action
- bc.emit("LOAD_GLOBAL", bc.str_id(thisSid))
- bc.emit("LOAD_CONST", bc.add_const(actionChunkIdx))
- bc.emit("SWAP")
- bc.emit("CALL", 1)
- bc.emit("POP")
- bc.emit("PUSH_NULL")
- bc.emit("RETURN")
-  // Register the hotkey
-	if emitter.whenConditionFuncIndex != null {
-    sid = globalIdx(emitter, "hotkey.register_conditional")
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    if node.key != null {
-      if type(node.key) == "str" {
-        keyIdx = bc.add_string(node.key)
-        bc.emit("LOAD_CONST", keyIdx)
-      }
-      else {
-        emitExpr(emitter, node.key)
-      }
-    }
-    else {
-      bc.emit("PUSH_NULL")
-    }
-    bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
-	bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
-	bc.emit("CALL", 3)
+// Compile action as a function
+oldScope = emitter.scope
+newScope = Scope(null)
+emitter.scope = newScope
+actionChunkIdx = bc.func_new("hotkey_action", 1, 16)
+// Store parameter (this) in local 0
+scopeDeclare(newScope, "this")
+// Compile body
+if node.body != null {
+	if node.body.kind == "BlockStatement" {
+		for s in node.body.body {
+			emitStmt(emitter, s)
+		}
 	}
-	if emitter.whenConditionFuncIndex == null {
-    sid = globalIdx(emitter, "hotkey.register")
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    if node.key != null {
-      if type(node.key) == "str" {
-        keyIdx = bc.add_string(node.key)
-        bc.emit("LOAD_CONST", keyIdx)
-      }
-      else {
-        emitExpr(emitter, node.key)
-      }
-    }
-    else {
-      bc.emit("PUSH_NULL")
-    }
-    bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
-    bc.emit("CALL", 2)
-  }
-  bc.emit("POP")
+	else {
+		emitStmt(emitter, node.body)
+	}
+}
+bc.emit("PUSH_NULL")
+bc.emit("RETURN")
+bc.set_local_count(scopeLocalCount(newScope))
+emitter.scope = oldScope
+// Create wrapper that sets this context
+wrapperChunkIdx = bc.func_new("hotkey_wrapper", 1, 8)
+// Mode guard: if mode attr is set, check mode() == "modeName"
+modeSkipJumpIp = -1
+hasMode = node.mode != null && node.mode != ""
+if hasMode {
+	modeSid = globalIdx(emitter, "mode")
+	bc.emit("LOAD_GLOBAL", bc.str_id(modeSid))
+	bc.emit("CALL", 0)
+	modeKeyIdx = bc.add_string(node.mode)
+	bc.emit("LOAD_CONST", modeKeyIdx)
+	bc.emit("EQ")
+	modeSkipJumpIp = bc.emit("JUMP_IF_FALSE", 0)
+}
+// Store param 0 as "this" global
+bc.emit("LOAD_VAR", 0)
+thisSid = globalIdx(emitter, "this")
+bc.emit("STORE_GLOBAL", bc.str_id(thisSid))
+// Load "this" and call action
+bc.emit("LOAD_GLOBAL", bc.str_id(thisSid))
+bc.emit("LOAD_CONST", bc.add_const(actionChunkIdx))
+bc.emit("SWAP")
+bc.emit("CALL", 1)
+bc.emit("POP")
+// Patch mode skip jump to land here (after action call, before return)
+if hasMode {
+	bc.patch_jump(modeSkipJumpIp, bc.instr_count())
+}
+bc.emit("PUSH_NULL")
+bc.emit("RETURN")
+// Register the hotkey
+hasPolicy = node.policy != null && node.policy != ""
+if emitter.whenConditionFuncIndex != null {
+	sid = globalIdx(emitter, "hotkey.register_conditional")
+	bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+	if node.key != null {
+		if type(node.key) == "str" {
+			keyIdx = bc.add_string(node.key)
+			bc.emit("LOAD_CONST", keyIdx)
+		}
+		else {
+			emitExpr(emitter, node.key)
+		}
+	}
+	else {
+		bc.emit("PUSH_NULL")
+	}
+	bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+	bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
+	if hasPolicy {
+		bc.emit("OBJECT_NEW")
+		polKeyIdx = bc.add_string(node.policy)
+		bc.emit("LOAD_CONST", polKeyIdx)
+		polNameIdx = bc.add_string("policy")
+		bc.emit("LOAD_CONST", polNameIdx)
+		bc.emit("OBJECT_SET")
+		bc.emit("CALL", 4)
+	}
+	else {
+		bc.emit("CALL", 3)
+	}
+}
+if emitter.whenConditionFuncIndex == null {
+	sid = globalIdx(emitter, "hotkey.register")
+	bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+	if node.key != null {
+		if type(node.key) == "str" {
+			keyIdx = bc.add_string(node.key)
+			bc.emit("LOAD_CONST", keyIdx)
+		}
+		else {
+			emitExpr(emitter, node.key)
+		}
+	}
+	else {
+		bc.emit("PUSH_NULL")
+	}
+	bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+	if hasPolicy {
+		bc.emit("OBJECT_NEW")
+		polKeyIdx = bc.add_string(node.policy)
+		bc.emit("LOAD_CONST", polKeyIdx)
+		polNameIdx = bc.add_string("policy")
+		bc.emit("LOAD_CONST", polNameIdx)
+		bc.emit("OBJECT_SET")
+		bc.emit("CALL", 3)
+	}
+	else {
+		bc.emit("CALL", 2)
+	}
+}
+bc.emit("POP")
 
 }
 
 
 fn emitHotkeyBindingExpr(emitter, node) {
-  oldScope = emitter.scope
-  newScope = Scope(null)
-  emitter.scope = newScope
-  actionChunkIdx = bc.func_new("hotkey_action", 1, 16)
-  scopeDeclare(newScope, "this")
-  if node.body != null {
-    if node.body.kind == "BlockStatement" {
-      for s in node.body.body {
-        emitStmt(emitter, s)
-      }
-    }
-    else {
-      emitStmt(emitter, node.body)
-    }
-  }
-  bc.emit("PUSH_NULL")
-  bc.emit("RETURN")
-  bc.set_local_count(scopeLocalCount(newScope))
-  emitter.scope = oldScope
-  wrapperChunkIdx = bc.func_new("hotkey_wrapper", 1, 8)
-  bc.emit("LOAD_VAR", 0)
-  thisSid = globalIdx(emitter, "this")
-  bc.emit("STORE_GLOBAL", bc.str_id(thisSid))
-  bc.emit("LOAD_GLOBAL", bc.str_id(thisSid))
-  bc.emit("LOAD_CONST", bc.add_const(actionChunkIdx))
-  bc.emit("SWAP")
-  bc.emit("CALL", 1)
-  bc.emit("POP")
-  bc.emit("PUSH_NULL")
-  bc.emit("RETURN")
-  if emitter.whenConditionFuncIndex != null {
-    sid = globalIdx(emitter, "hotkey.register_conditional")
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    if node.key != null {
-      if type(node.key) == "str" {
-        keyIdx = bc.add_string(node.key)
-        bc.emit("LOAD_CONST", keyIdx)
-      }
-      else {
-        emitExpr(emitter, node.key)
-      }
-    }
-    else {
-      bc.emit("PUSH_NULL")
-    }
-    bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
-    bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
-    bc.emit("CALL", 3)
-  }
-  if emitter.whenConditionFuncIndex == null {
-    sid = globalIdx(emitter, "hotkey.register")
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    if node.key != null {
-      if type(node.key) == "str" {
-        keyIdx = bc.add_string(node.key)
-        bc.emit("LOAD_CONST", keyIdx)
-      }
-      else {
-        emitExpr(emitter, node.key)
-      }
-    }
-    else {
-      bc.emit("PUSH_NULL")
-    }
-    bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
-    bc.emit("CALL", 2)
-  }
+oldScope = emitter.scope
+newScope = Scope(null)
+emitter.scope = newScope
+actionChunkIdx = bc.func_new("hotkey_action", 1, 16)
+scopeDeclare(newScope, "this")
+if node.body != null {
+	if node.body.kind == "BlockStatement" {
+		for s in node.body.body {
+			emitStmt(emitter, s)
+		}
+	}
+	else {
+		emitStmt(emitter, node.body)
+	}
+}
+bc.emit("PUSH_NULL")
+bc.emit("RETURN")
+bc.set_local_count(scopeLocalCount(newScope))
+emitter.scope = oldScope
+wrapperChunkIdx = bc.func_new("hotkey_wrapper", 1, 8)
+// Mode guard: if mode attr is set, check mode() == "modeName"
+modeSkipJumpIp = -1
+hasMode = node.mode != null && node.mode != ""
+if hasMode {
+	modeSid = globalIdx(emitter, "mode")
+	bc.emit("LOAD_GLOBAL", bc.str_id(modeSid))
+	bc.emit("CALL", 0)
+	modeKeyIdx = bc.add_string(node.mode)
+	bc.emit("LOAD_CONST", modeKeyIdx)
+	bc.emit("EQ")
+	modeSkipJumpIp = bc.instr_count()
+	bc.emit("JUMP_IF_FALSE", 0)
+}
+bc.emit("LOAD_VAR", 0)
+thisSid = globalIdx(emitter, "this")
+bc.emit("STORE_GLOBAL", bc.str_id(thisSid))
+bc.emit("LOAD_GLOBAL", bc.str_id(thisSid))
+bc.emit("LOAD_CONST", bc.add_const(actionChunkIdx))
+bc.emit("SWAP")
+bc.emit("CALL", 1)
+bc.emit("POP")
+// Patch mode skip jump to land here
+if hasMode && modeSkipJumpIp >= 0 {
+	bc.patch_jump(modeSkipJumpIp, bc.instr_count())
+}
+bc.emit("PUSH_NULL")
+bc.emit("RETURN")
+hasPolicy = node.policy != null && node.policy != ""
+if emitter.whenConditionFuncIndex != null {
+	sid = globalIdx(emitter, "hotkey.register_conditional")
+	bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+	if node.key != null {
+		if type(node.key) == "str" {
+			keyIdx = bc.add_string(node.key)
+			bc.emit("LOAD_CONST", keyIdx)
+		}
+		else {
+			emitExpr(emitter, node.key)
+		}
+	}
+	else {
+		bc.emit("PUSH_NULL")
+	}
+	bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+	bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
+	if hasPolicy {
+		bc.emit("OBJECT_NEW")
+		polKeyIdx = bc.add_string(node.policy)
+		bc.emit("LOAD_CONST", polKeyIdx)
+		polNameIdx = bc.add_string("policy")
+		bc.emit("LOAD_CONST", polNameIdx)
+		bc.emit("OBJECT_SET")
+		bc.emit("CALL", 4)
+	}
+	else {
+		bc.emit("CALL", 3)
+	}
+}
+if emitter.whenConditionFuncIndex == null {
+	sid = globalIdx(emitter, "hotkey.register")
+	bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+	if node.key != null {
+		if type(node.key) == "str" {
+			keyIdx = bc.add_string(node.key)
+			bc.emit("LOAD_CONST", keyIdx)
+		}
+		else {
+			emitExpr(emitter, node.key)
+		}
+	}
+	else {
+		bc.emit("PUSH_NULL")
+	}
+	bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+	if hasPolicy {
+		bc.emit("OBJECT_NEW")
+		polKeyIdx = bc.add_string(node.policy)
+		bc.emit("LOAD_CONST", polKeyIdx)
+		polNameIdx = bc.add_string("policy")
+		bc.emit("LOAD_CONST", polNameIdx)
+		bc.emit("OBJECT_SET")
+		bc.emit("CALL", 3)
+	}
+	else {
+		bc.emit("CALL", 2)
+	}
+}
 }
 
 fn compileCondHotkeyCondition(emitter, condition) {

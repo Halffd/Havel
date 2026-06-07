@@ -6500,6 +6500,21 @@ case ast::NodeType::OffModeStatement: {
         }
         break;
     }
+  case ast::NodeType::HotkeyBinding: {
+    const auto &hotkey = static_cast<const ast::HotkeyBinding &>(statement);
+    for (const auto &k : hotkey.hotkeys) {
+      if (k) collectLambdaExpressions(*k, out);
+    }
+    if (hotkey.action) collectLambdaExpressions(*hotkey.action, out);
+    if (hotkey.conditionExpr) collectLambdaExpressions(*hotkey.conditionExpr, out);
+    break;
+  }
+  case ast::NodeType::ConditionalHotkey: {
+    const auto &cond = static_cast<const ast::ConditionalHotkey &>(statement);
+    if (cond.condition) collectLambdaExpressions(*cond.condition, out);
+    if (cond.binding) collectLambdaExpressions(*cond.binding, out);
+    break;
+  }
     default:
     break;
   }
@@ -6710,9 +6725,37 @@ case ast::NodeType::SpreadPattern: {
       if (spreadPat.target) collectLambdaExpressions(*spreadPat.target, out);
       break;
     }
+case ast::NodeType::HotkeyExpression: {
+  const auto &hk = static_cast<const ast::HotkeyExpression &>(expression);
+  if (hk.binding) {
+    for (const auto &k : hk.binding->hotkeys) {
+      if (k) collectLambdaExpressions(*k, out);
+    }
+    if (hk.binding->action) collectLambdaExpressions(*hk.binding->action, out);
+    if (hk.binding->conditionExpr) collectLambdaExpressions(*hk.binding->conditionExpr, out);
+  }
+  break;
+}
 case ast::NodeType::GoExpression: {
   const auto &go_expr = static_cast<const ast::GoExpression &>(expression);
   if (go_expr.call) collectLambdaExpressions(*go_expr.call, out);
+  break;
+}
+case ast::NodeType::IntervalExpression: {
+  const auto &interval = static_cast<const ast::IntervalExpression &>(expression);
+  if (interval.intervalMs) collectLambdaExpressions(*interval.intervalMs, out);
+  if (interval.body) collectLambdaExpressions(*interval.body, out);
+  break;
+}
+case ast::NodeType::TimeoutExpression: {
+  const auto &timeout = static_cast<const ast::TimeoutExpression &>(expression);
+  if (timeout.delayMs) collectLambdaExpressions(*timeout.delayMs, out);
+  if (timeout.body) collectLambdaExpressions(*timeout.body, out);
+  break;
+}
+case ast::NodeType::ThreadExpression: {
+  const auto &thread = static_cast<const ast::ThreadExpression &>(expression);
+  if (thread.body) collectLambdaExpressions(*thread.body, out);
   break;
 }
 case ast::NodeType::WaitGroupExpression:

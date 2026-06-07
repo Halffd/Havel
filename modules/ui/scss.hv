@@ -2,8 +2,6 @@
 // Variables, nesting, mixins, @extend -> plain CSS
 // All state in class instance to avoid module-level mutable state bug
 
-use "ffi" as ffi
-
 class Compiler {
   vars, mixins, extends, output, indent
   fn @() {
@@ -30,12 +28,6 @@ class Compiler {
     @output
   }
 
-  fn compileFile(path) {
-    content = fs.read(path)
-    if content == null { return "" }
-    self.compile(content)
-  }
-
   fn splitLines(text) {
     result = []
     i = 0
@@ -56,18 +48,15 @@ class Compiler {
   }
 
   fn isMixinDecl(line) {
-    trimmed = line.trim()
-    trimmed.includes("@mixin")
+    line.trim().includes("@mixin")
   }
 
   fn isInclude(line) {
-    trimmed = line.trim()
-    trimmed.includes("@include")
+    line.trim().includes("@include")
   }
 
   fn isExtend(line) {
-    trimmed = line.trim()
-    trimmed.includes("@extend")
+    line.trim().includes("@extend")
   }
 
   fn isComment(line) {
@@ -77,14 +66,15 @@ class Compiler {
 
   fn parseVarDecl(line) {
     trimmed = line.trim()
-    name = ""
+    colonPos = -1
     i = 1
-    while i < #trimmed && trimmed[i:i+1] != ":" {
-      name = name + trimmed[i:i+1]
+    while i < #trimmed {
+      if trimmed[i:i+1] == ":" { colonPos = i; break }
       i += 1
     }
-    name = name.trim()
-    value = trimmed[i+1:].trim()
+    if colonPos < 0 { return }
+    name = trimmed[1:colonPos].trim()
+    value = trimmed[colonPos+1:].trim()
     value = self.resolveVars(value)
     @vars[name] = value
   }
@@ -100,6 +90,50 @@ class Compiler {
       i += 1
     }
     result
+  }
+
+  fn findOpenBrace(lines, startIdx, endIdx) {
+    i = startIdx
+    while i < endIdx {
+      line = lines[i]
+      if line.includes("{") { return i }
+      i += 1
+    }
+    -1
+  }
+
+  fn findBlockEnd(lines, openIdx) {
+    depth = 0
+    i = openIdx
+    n = #lines
+    while i < n {
+      line = lines[i]
+      j = 0
+      nl = #line
+      while j < nl {
+        ch = line[j:j+1]
+        if ch == "{" { depth += 1 }
+        else if ch == "}" {
+          depth -= 1
+          if depth == 0 { return i + 1 }
+        }
+        j += 1
+      }
+      i += 1
+    }
+    n
+  }
+
+  fn extractSelector(line) {
+    bracePos = -1
+    j = 0
+    n = #line
+    while j < n {
+      if line[j:j+1] == "{" { bracePos = j; break }
+      j += 1
+    }
+    if bracePos >= 0 { line[:bracePos].trim() }
+    else { line.trim() }
   }
 
   fn parseMixinDecl(lines, startIdx) {
@@ -147,27 +181,6 @@ class Compiler {
     }
     @mixins[name] = {"params": params, "body": bodyLines}
     bodyEnd
-  }
-
-  fn findBlockEnd(lines, openIdx) {
-    depth = 0
-    i = openIdx
-    while i < #lines {
-      line = lines[i]
-      j = 0
-      nl = #line
-      while j < nl {
-        ch = line[j:j+1]
-        if ch == "{" { depth += 1 }
-        else if ch == "}" {
-          depth -= 1
-          if depth == 0 { return i + 1 }
-        }
-        j += 1
-      }
-      i += 1
-    }
-    #lines
   }
 
   fn processInclude(line, parentSelector) {
@@ -222,23 +235,16 @@ class Compiler {
       }
       pi += 1
     }
-    lkeys = localVars.keys()
-    j = 0
-    nlk = #lkeys
-    while j < nlk {
-      vn = lkeys[j]
-      localVars[vn] = localVars[vn]
-      j += 1
-    }
     body = mixin.body
     j = 0
     nb = #body
     while j < nb {
       ml = body[j]
       processed = ml
+      lkeys = localVars.keys()
       k = 0
-      nk = #lkeys
-      while k < nk {
+      nlk = #lkeys
+      while k < nlk {
         vn = lkeys[k]
         processed = processed.replace("$" + vn, localVars[vn])
         k += 1
@@ -262,21 +268,40 @@ class Compiler {
   }
 
   fn emitLine(content, selector) {
-    if selector != "" {
-      ind = ""
-      i = 0
-      while i < @indent { ind = ind + " "; i += 1 }
-      @output = @output + ind + content + "\n"
-    } else {
-      @output = @output + content + "\n"
-    }
+    ind = ""
+    i = 0
+    while i < @indent { ind = ind + "  "; i += 1 }
+    @output = @output + ind + content + "\n"
   }
 
-  fn indentStr() {
-    s = ""
+  fn extractInlineBody(line) {
+    openPos = -1
+    closePos = -1
+    j = 0
+    n = #line
+    while j < n {
+      if line[j:j+1] == "{" && openPos < 0 { openPos = j }
+      if line[j:j+1] == "}" { closePos = j }
+      j += 1
+    }
+    if openPos >= 0 && closePos > openPos {
+      line[openPos+1:closePos].trim()
+    } else { "" }
+  }
+
+  fn processInlineDeclarations(bodyText, parentSelector) {
+    if bodyText == "" { return }
+    decls = bodyText.split(";")
     i = 0
-    while i < @indent { s = s + " "; i += 1 }
-    s
+    n = #decls
+    while i < n {
+      d = decls[i].trim()
+      if d != "" {
+        resolved = self.resolveVars(d)
+        self.emitLine(resolved + ";", parentSelector)
+      }
+      i += 1
+    }
   }
 
   fn processBlock(lines, startIdx, endIdx, parentSelector) {
@@ -301,9 +326,8 @@ class Compiler {
         i += 1
         continue
       }
-      hasBlock = trimmed.includes("{")
-      if hasBlock {
-        selector = trimmed.replace("{", "").trim()
+      if trimmed.includes("{") {
+        selector = self.extractSelector(trimmed)
         selector = self.resolveVars(selector)
         if parentSelector != "" {
           if selector.includes("&") {
@@ -314,18 +338,41 @@ class Compiler {
         } else {
           fullSelector = selector
         }
-        blockEnd = self.findBlockEnd(lines, i)
-        @output = @output + self.indentStr() + fullSelector + " {\n"
-        @indent += 1
-        self.processBlock(lines, i + 1, blockEnd - 1, fullSelector)
-        @indent -= 1
-        @output = @output + self.indentStr() + "}\n"
-        i = blockEnd
+        hasCloseBrace = trimmed.includes("}")
+        openBrace = -1
+        closeBrace = -1
+        j = 0
+        nt = #trimmed
+        while j < nt {
+          if trimmed[j:j+1] == "{" && openBrace < 0 { openBrace = j }
+          if trimmed[j:j+1] == "}" { closeBrace = j }
+          j += 1
+        }
+        isSingleLine = openBrace >= 0 && closeBrace > openBrace
+        if isSingleLine {
+          @output = @output + fullSelector + " {\n"
+          @indent += 1
+          inlineBody = self.extractInlineBody(trimmed)
+          self.processInlineDeclarations(inlineBody, fullSelector)
+          @indent -= 1
+          @output = @output + "}\n"
+          i += 1
+        } else {
+          blockEnd = self.findBlockEnd(lines, i)
+          @output = @output + fullSelector + " {\n"
+          @indent += 1
+          self.processBlock(lines, i + 1, blockEnd - 1, fullSelector)
+          @indent -= 1
+          @output = @output + "}\n"
+          i = blockEnd
+        }
         continue
       }
       if parentSelector != "" {
         resolved = self.resolveVars(trimmed)
-        @output = @output + self.indentStr() + resolved + "\n"
+        if !resolved.includes("}") {
+          self.emitLine(resolved, parentSelector)
+        }
       }
       i += 1
     }
@@ -338,18 +385,17 @@ class Compiler {
     while i < nt {
       target = targets[i]
       selectors = @extends[target]
-      if #selectors == 0 { i += 1; continue }
-      @output = @output + target + ", "
-      first = true
-      j = 0
-      ns = #selectors
-      while j < ns {
-        if !first { @output = @output + ", " }
-        @output = @output + selectors[j]
-        first = false
-        j += 1
+      if #selectors > 0 {
+        @output = @output + target + ", "
+        j = 0
+        ns = #selectors
+        while j < ns {
+          if j > 0 { @output = @output + ", " }
+          @output = @output + selectors[j]
+          j += 1
+        }
+        @output = @output + " {}\n"
       }
-      @output = @output + " {}\n"
       i += 1
     }
   }

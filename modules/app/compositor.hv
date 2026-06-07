@@ -1,0 +1,129 @@
+// compositor.hv — Wayland/X11 compositor and desktop environment detection
+// Provides: detect(), isWayland(), isX11(), name(), desktop(),
+// checkUinput(), uinputStatus()
+//
+// Usage:
+//   use compositor
+//   print(compositor.detect())      // "hyprland"
+//   print(compositor.isWayland())   // true
+//   print(compositor.checkUinput()) // {ok: true, err: ""}
+
+use env
+
+_cached = null
+
+fn detect() {
+	if _cached != null { return _cached }
+	if env.get("HYPRLAND_INSTANCE_SIGNATURE") != null {
+		_cached = "hyprland"
+		return _cached
+	}
+	if env.get("SWAYSOCK") != null {
+		_cached = "sway"
+		return _cached
+	}
+	_xdg = env.get("XDG_CURRENT_DESKTOP") ?? ""
+	_xdgLower = _xdg.lower()
+	if _xdgLower ~ "hyprland" {
+		_cached = "hyprland"
+		return _cached
+	}
+	if _xdgLower ~ "sway" {
+		_cached = "sway"
+		return _cached
+	}
+	if _xdgLower ~ "gnome" {
+		_cached = "gnome"
+		return _cached
+	}
+	if _xdgLower ~ "kde" {
+		_cached = "kde"
+		return _cached
+	}
+	if _xdgLower ~ "cinnamon" {
+		_cached = "cinnamon"
+		return _cached
+	}
+	if _xdgLower ~ "xfce" {
+		_cached = "xfce"
+		return _cached
+	}
+	if _xdgLower ~ "mate" {
+		_cached = "mate"
+		return _cached
+	}
+	if _xdgLower ~ "lxqt" {
+		_cached = "lxqt"
+		return _cached
+	}
+	_r = shell.exec("pgrep -x hyprland 2>/dev/null")
+	if _r.code == 0 { _cached = "hyprland"; return _cached }
+	_r = shell.exec("pgrep -x sway 2>/dev/null")
+	if _r.code == 0 { _cached = "sway"; return _cached }
+	_r = shell.exec("pgrep -x kwin_wayland 2>/dev/null")
+	if _r.code == 0 { _cached = "kde"; return _cached }
+	_r = shell.exec("pgrep -x gnome-shell 2>/dev/null")
+	if _r.code == 0 { _cached = "gnome"; return _cached }
+	_r = shell.exec("pgrep -x cinnamon 2>/dev/null")
+	if _r.code == 0 { _cached = "cinnamon"; return _cached }
+	_r = shell.exec("pgrep -x wayfire 2>/dev/null")
+	if _r.code == 0 { _cached = "wayfire"; return _cached }
+	_r = shell.exec("pgrep -x river 2>/dev/null")
+	if _r.code == 0 { _cached = "river"; return _cached }
+	if env.get("WAYLAND_DISPLAY") != null {
+		_cached = "wayland"
+		return _cached
+	}
+	if env.get("DISPLAY") != null {
+		_r = shell.exec("pgrep -x kwin_x11 2>/dev/null")
+		if _r.code == 0 { _cached = "kde"; return _cached }
+		_r = shell.exec("pgrep -x i3 2>/dev/null")
+		if _r.code == 0 { _cached = "i3"; return _cached }
+		_r = shell.exec("pgrep -x bspwm 2>/dev/null")
+		if _r.code == 0 { _cached = "bspwm"; return _cached }
+		_r = shell.exec("pgrep -x dwm 2>/dev/null")
+		if _r.code == 0 { _cached = "dwm"; return _cached }
+		_r = shell.exec("pgrep -x openbox 2>/dev/null")
+		if _r.code == 0 { _cached = "openbox"; return _cached }
+		_cached = "x11"
+		return _cached
+	}
+	_cached = "unknown"
+	_cached
+}
+
+fn isWayland() {
+	_c = detect()
+	_c == "hyprland" || _c == "sway" || _c == "gnome" || _c == "kde" || _c == "cinnamon" || _c == "wayfire" || _c == "river" || _c == "wayland"
+}
+
+fn isX11() {
+	_c = detect()
+	_c == "i3" || _c == "bspwm" || _c == "dwm" || _c == "openbox" || _c == "xfce" || _c == "mate" || _c == "lxqt" || _c == "x11"
+}
+
+fn name() { detect() }
+
+fn desktop() { env.get("XDG_CURRENT_DESKTOP") ?? "" }
+
+fn session() { env.get("XDG_SESSION_TYPE") ?? "" }
+
+fn reset() { _cached = null }
+
+fn checkUinput() {
+	if !fs.exists("/dev/uinput") {
+		return {ok: false, err: "uinput device not found — kernel uinput module required (modprobe uinput)"}
+	}
+	if !fs.writable("/dev/uinput") {
+		return {ok: false, err: "no write access to /dev/uinput — run: sudo usermod -aG input $USER"}
+	}
+	{ok: true, err: ""}
+}
+
+fn uinputStatus() {
+	_r = checkUinput()
+	if _r.ok {
+		return "uinput: available"
+	}
+	"uinput: {_r.err}"
+}

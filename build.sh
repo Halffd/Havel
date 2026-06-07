@@ -204,8 +204,11 @@ build() {
         -DCMAKE_LINKER=$llvm_base_dir/bin/ld.lld"
     fi
   cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
-  cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
-  cmake_cmd+=" -DENABLE_HEADLESS=${ENABLE_HEADLESS}"
+	cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
+	if [[ "$ENABLE_HAVEL_LANG" == "ON" ]]; then
+		cmake_cmd+=" -DENABLE_MODULE_PLUGINS=ON"
+	fi
+	cmake_cmd+=" -DENABLE_HEADLESS=${ENABLE_HEADLESS}"
   if [[ "$ENABLE_HEADLESS" == "ON" ]]; then
     cmake_cmd+=" -DENABLE_QT=OFF -DENABLE_QT_UI_BACKEND=OFF"
   fi

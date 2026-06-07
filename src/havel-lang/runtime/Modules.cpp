@@ -13,7 +13,7 @@
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
 #include "../../modules/brightness/BrightnessModule.hpp"
-#ifdef ENABLE_MODULE_PLUGINS
+#ifndef ENABLE_MODULE_PLUGINS
 #include "../../modules/ffi/FFIModule.hpp"
 #endif
 #include <algorithm>

@@ -687,11 +687,14 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     } else {
       keyDownTime.erase(originalCode);
       activeInputs.erase(originalCode);
-      physicalKeyStates[originalCode] = false;
-    }
-  }
+                physicalKeyStates[originalCode] = false;
+                }
+                lastKeyCode_ = originalCode;
+                lastKeyWasDown_ = down;
+                lastKeyModifiers_ = GetCurrentModifiersMask();
+            }
 
-  // Call raw key callbacks if registered
+            // Call raw key callbacks if registered
   if (down && keyDownCallback) {
     keyDownCallback(originalCode);
   } else if (!down && keyUpCallback) {

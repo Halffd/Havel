@@ -12,6 +12,9 @@
 #include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
+#include "../../modules/brightness/BrightnessModule.hpp"
+#include <algorithm>
+
 namespace havel {
 
 extern "C" HavelAPI *getHavelAPI(void);
@@ -419,14 +422,22 @@ void Modules::installStdLib() {
  plugin->register_fn(static_cast<void *>(&api));
  }
  } else {
- std::string modName = mod.name;
- vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
- auto plugin = extensionLoader_->loadModulePlugin(modName);
- if (plugin) {
- plugin->register_fn(static_cast<void *>(&a));
- }
- }, mod.aliases);
- }
+        std::string modName = mod.name;
+            vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
+                auto plugin = extensionLoader_->loadModulePlugin(modName);
+                if (plugin) {
+                    plugin->register_fn(static_cast<void *>(&a));
+                }
+            }, mod.aliases);
+        }
+    }
+
+    auto found = std::find_if(available.begin(), available.end(),
+        [](const auto &m) { return m.name == "brightness"; });
+    if (found == available.end()) {
+        vm.registerLazyModule("brightness", [](compiler::VMApi &a) {
+            havel::modules::registerBrightnessModule(a);
+        });
     }
 }
 

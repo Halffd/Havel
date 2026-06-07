@@ -2637,13 +2637,13 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
         }
         return {};
     };
-    bool hasAny = false;
-    for (const auto& [fnName, fnVal] : host_function_globals_) {
-        if (matchesPrefix(fnName)) {
-            hasAny = true;
-            break;
-        }
-    }
+ bool hasAny = false;
+ for (const auto& [fnName, fnVal] : host_function_globals_) {
+ if (matchesPrefix(fnName)) {
+ hasAny = true;
+ break;
+ }
+ }
     if (hasAny) {
         auto nsRef = createHostObject();
         auto *nsObj = heap_.object(nsRef.id);

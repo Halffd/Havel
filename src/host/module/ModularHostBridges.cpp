@@ -274,8 +274,35 @@ options.host_functions["mouse.lastState"] = [ctx = ctx_](const auto &args) {
     return handleMouseLastState(args, ctx);
 };
 options.host_functions["mouse.buttons"] = [ctx = ctx_](const auto &args) {
-    return handleMouseButtons(args, ctx);
-};
+ return handleMouseButtons(args, ctx);
+ };
+ options.host_functions["mouse.reset"] = [ctx = ctx_](const auto &args) {
+ return handleMouseReset(args, ctx);
+ };
+ options.host_functions["io.keys"] = [ctx = ctx_](const auto &args) {
+ return handleIoKeys(args, ctx);
+ };
+ options.host_functions["io.lastKey"] = [ctx = ctx_](const auto &args) {
+ return handleIoLastKey(args, ctx);
+ };
+ options.host_functions["io.lastState"] = [ctx = ctx_](const auto &args) {
+ return handleIoLastState(args, ctx);
+ };
+ options.host_functions["io.lastDevice"] = [ctx = ctx_](const auto &args) {
+ return handleIoLastDevice(args, ctx);
+ };
+ options.host_functions["io.lastModifiers"] = [ctx = ctx_](const auto &args) {
+ return handleIoLastModifiers(args, ctx);
+ };
+ options.host_functions["io.lastLocks"] = [ctx = ctx_](const auto &args) {
+ return handleIoLastLocks(args, ctx);
+ };
+ options.host_functions["io.lastKeys"] = [ctx = ctx_](const auto &args) {
+ return handleIoLastKeys(args, ctx);
+ };
+ options.host_functions["io.reset"] = [ctx = ctx_](const auto &args) {
+ return handleIoReset(args, ctx);
+ };
 }
 
 Value IOBridge::handleSend(const std::vector<Value> &args,
@@ -367,24 +394,36 @@ Value IOBridge::handleWait(const std::vector<Value> &args,
 }
 
 Value IOBridge::handleMouseClick(const std::vector<Value> &args,
-                                const HostContext *ctx) {
-    (void)ctx;
-    if (args.empty()) {
-        ::havel::host::MouseService::click();
-        return Value::makeBool(true);
-    }
-
-    auto button = ::havel::host::MouseService::Button::Left;
-    if (args[0].isStringValId() || args[0].isStringId()) {
-        auto *vm = static_cast<VM *>(ctx->vm);
-        std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
-        button = ::havel::host::MouseService::parseButton(btnStr);
-    } else if (args[0].isInt()) {
-        button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
-    }
-
-    ::havel::host::MouseService::click(button);
+                                      const HostContext *ctx) {
+  (void)ctx;
+  if (args.empty()) {
+    ::havel::host::MouseService::click();
     return Value::makeBool(true);
+  }
+
+  auto button = ::havel::host::MouseService::Button::Left;
+  if (args[0].isStringValId() || args[0].isStringId()) {
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    button = ::havel::host::MouseService::parseButton(btnStr);
+  } else if (args[0].isInt()) {
+    button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
+  }
+
+  if (args.size() >= 2 && (args[1].isStringValId() || args[1].isStringId())) {
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string action = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+    if (action == "down") {
+      ::havel::host::MouseService::press(button);
+      return Value::makeBool(true);
+    } else if (action == "up") {
+      ::havel::host::MouseService::release(button);
+      return Value::makeBool(true);
+    }
+  }
+
+  ::havel::host::MouseService::click(button);
+  return Value::makeBool(true);
 }
 
 Value IOBridge::handleMouseMoveTo(const std::vector<Value> &args,
@@ -702,6 +741,130 @@ Value IOBridge::handleMouseButtons(const std::vector<Value> &,
     return Value::makeInt(pressed);
 }
 
+Value IOBridge::handleMouseReset(const std::vector<Value> &,
+                                       const HostContext *ctx) {
+  if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeBool(false);
+  auto *el = ctx->io->GetEventListener();
+  el->ReleaseAllVirtualKeys();
+  return Value::makeBool(true);
+}
+
+Value IOBridge::handleIoKeys(const std::vector<Value> &,
+                                   const HostContext *ctx) {
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) return Value::makeNull();
+  if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeNull();
+  auto *el = ctx->io->GetEventListener();
+  auto arrRef = vm->getHeap().allocateArray();
+  auto *arr = vm->getHeap().array(arrRef.id);
+  for (const auto &[code, down] : el->GetEvdevKeyState()) {
+    if (down) {
+      std::string name = KeyMap::EvdevToString(code);
+      if (!name.empty()) {
+        auto ref = vm->getHeap().allocateString(name);
+        arr->push_back(Value::makeStringId(ref.id));
+      }
+    }
+  }
+  return Value::makeArrayId(arrRef.id);
+}
+
+Value IOBridge::handleIoLastKey(const std::vector<Value> &,
+                                      const HostContext *ctx) {
+  if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeNull();
+  auto *el = ctx->io->GetEventListener();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) return Value::makeNull();
+  int code = el->GetLastKeyCode();
+  if (code == 0) return Value::makeNull();
+  std::string name = KeyMap::EvdevToString(code);
+  auto ref = vm->getHeap().allocateString(name);
+  return Value::makeStringId(ref.id);
+}
+
+Value IOBridge::handleIoLastState(const std::vector<Value> &,
+                                       const HostContext *ctx) {
+  if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeBool(false);
+  auto *el = ctx->io->GetEventListener();
+  return Value::makeBool(el->GetLastKeyWasDown());
+}
+
+Value IOBridge::handleIoLastDevice(const std::vector<Value> &,
+                                         const HostContext *ctx) {
+  if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeNull();
+  auto *el = ctx->io->GetEventListener();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) return Value::makeNull();
+  auto ref = vm->getHeap().allocateString(el->GetLastKeyDevice());
+  return Value::makeStringId(ref.id);
+}
+
+Value IOBridge::handleIoLastModifiers(const std::vector<Value> &,
+                                           const HostContext *ctx) {
+  if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeInt(0);
+  auto *el = ctx->io->GetEventListener();
+  return Value::makeInt(el->GetLastKeyModifiers());
+}
+
+Value IOBridge::handleIoLastLocks(const std::vector<Value> &,
+                                        const HostContext *ctx) {
+  auto display = havel::DisplayManager::GetDisplay();
+  if (!display) return Value::makeInt(0);
+  XkbStateRec xkbState;
+  if (XkbGetState(display, XkbUseCoreKbd, &xkbState) != 0)
+    return Value::makeInt(0);
+  return Value::makeInt(static_cast<int64_t>(xkbState.locked_mods));
+}
+
+Value IOBridge::handleIoLastKeys(const std::vector<Value> &,
+                                       const HostContext *ctx) {
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) return Value::makeNull();
+  if (!ctx->io || !ctx->io->GetEventListener()) return Value::makeNull();
+  auto *el = ctx->io->GetEventListener();
+  auto arrRef = vm->getHeap().allocateArray();
+  auto *arr = vm->getHeap().array(arrRef.id);
+  for (const auto &[code, down] : el->GetEvdevKeyState()) {
+    if (down) {
+      std::string name = KeyMap::EvdevToString(code);
+      if (!name.empty()) {
+        auto ref = vm->getHeap().allocateString(name);
+        arr->push_back(Value::makeStringId(ref.id));
+      }
+    }
+  }
+  return Value::makeArrayId(arrRef.id);
+}
+
+Value IOBridge::handleIoReset(const std::vector<Value> &,
+                                    const HostContext *ctx) {
+  if (!ctx->io) return Value::makeBool(false);
+  if (ctx->io->GetEventListener()) {
+    ctx->io->GetEventListener()->ReleaseAllVirtualKeys();
+  }
+  if (ctx->io->GetIOBackend()) {
+    auto display = havel::DisplayManager::GetDisplay();
+    if (display) {
+      KeyCode keys[] = {
+        XKeysymToKeycode(display, XK_Shift_L),
+        XKeysymToKeycode(display, XK_Shift_R),
+        XKeysymToKeycode(display, XK_Control_L),
+        XKeysymToKeycode(display, XK_Control_R),
+        XKeysymToKeycode(display, XK_Alt_L),
+        XKeysymToKeycode(display, XK_Alt_R),
+        XKeysymToKeycode(display, XK_Super_L),
+        XKeysymToKeycode(display, XK_Super_R),
+      };
+      for (auto kc : keys) {
+        if (kc) {
+          ctx->io->GetIOBackend()->ReleaseKey(kc);
+        }
+      }
+    }
+  }
+  return Value::makeBool(true);
+}
+
 Value IOBridge::handleModifiers(const std::vector<Value> &,
                                  const HostContext *ctx) {
     if (!ctx->io) return Value::makeInt(0);
@@ -821,58 +984,70 @@ Value IOBridge::handleSendKeyState(const std::vector<Value> &args,
 }
 
 Value IOBridge::handleSetLock(const std::vector<Value> &args,
-                               const HostContext *ctx) {
-    if (args.empty() || !ctx->io) return Value::makeBool(false);
-    auto *vm = static_cast<VM *>(ctx->vm);
-    if (!vm) return Value::makeBool(false);
-    auto display = havel::DisplayManager::GetDisplay();
-    if (!display) return Value::makeBool(false);
-    bool caps_set = false, num_set = false, scroll_set = false;
-    bool caps_val = false, num_val = false, scroll_val = false;
-    if (args[0].isObjectId()) {
-        ObjectRef id;
-        id.id = args[0].asObjectId();
-        auto capsField = vm->getHostObjectField(id, "caps");
-        if (!capsField.isNull()) { caps_set = true; caps_val = capsField.asBool(); }
-        auto numField = vm->getHostObjectField(id, "num");
-        if (!numField.isNull()) { num_set = true; num_val = numField.asBool(); }
-        auto scrollField = vm->getHostObjectField(id, "scroll");
-        if (!scrollField.isNull()) { scroll_set = true; scroll_val = scrollField.asBool(); }
+                                   const HostContext *ctx) {
+  if (args.empty() || !ctx->io) return Value::makeBool(false);
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) return Value::makeBool(false);
+  auto display = havel::DisplayManager::GetDisplay();
+  if (!display) return Value::makeBool(false);
+  bool caps_set = false, num_set = false, scroll_set = false;
+  bool caps_val = false, num_val = false, scroll_val = false;
+  if (args[0].isObjectId()) {
+    ObjectRef id;
+    id.id = args[0].asObjectId();
+    auto capsField = vm->getHostObjectField(id, "caps");
+    if (!capsField.isNull()) { caps_set = true; caps_val = capsField.asBool(); }
+    auto numField = vm->getHostObjectField(id, "num");
+    if (!numField.isNull()) { num_set = true; num_val = numField.asBool(); }
+    auto scrollField = vm->getHostObjectField(id, "scroll");
+    if (!scrollField.isNull()) { scroll_set = true; scroll_val = scrollField.asBool(); }
+  } else if (args[0].isStringValId() || args[0].isStringId()) {
+    std::string lockName = vm->resolveStringKey(args[0]);
+    std::string lower = lockName;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    bool val = true;
+    if (args.size() >= 2) {
+      if (args[1].isBool()) val = args[1].asBool();
+      else if (args[1].isInt()) val = args[1].asInt() != 0;
     }
-    XkbStateRec xkbState;
-    if (XkbGetState(display, XkbUseCoreKbd, &xkbState) != 0)
-        return Value::makeBool(false);
-        if (caps_set) {
-            bool curr = (xkbState.locked_mods & LockMask) != 0;
-            if (curr != caps_val) {
-                KeyCode kc = XKeysymToKeycode(display, XK_Caps_Lock);
-                if (kc && ctx->io->GetIOBackend()) {
-                    ctx->io->GetIOBackend()->PressKey(kc);
-                    ctx->io->GetIOBackend()->ReleaseKey(kc);
-                }
-            }
-        }
-        if (num_set) {
-            bool curr = (xkbState.locked_mods & Mod2Mask) != 0;
-            if (curr != num_val) {
-                KeyCode kc = XKeysymToKeycode(display, XK_Num_Lock);
-                if (kc && ctx->io->GetIOBackend()) {
-                    ctx->io->GetIOBackend()->PressKey(kc);
-                    ctx->io->GetIOBackend()->ReleaseKey(kc);
-                }
-            }
-        }
-        if (scroll_set) {
-            bool curr = (xkbState.locked_mods & Mod3Mask) != 0;
-            if (curr != scroll_val) {
-                KeyCode kc = XKeysymToKeycode(display, XK_Scroll_Lock);
-                if (kc && ctx->io->GetIOBackend()) {
-                    ctx->io->GetIOBackend()->PressKey(kc);
-                    ctx->io->GetIOBackend()->ReleaseKey(kc);
-                }
-            }
-        }
-    return Value::makeBool(true);
+    if (lower == "caps" || lower == "capslock") { caps_set = true; caps_val = val; }
+    else if (lower == "num" || lower == "numlock") { num_set = true; num_val = val; }
+    else if (lower == "scroll" || lower == "scrolllock") { scroll_set = true; scroll_val = val; }
+  }
+  XkbStateRec xkbState;
+  if (XkbGetState(display, XkbUseCoreKbd, &xkbState) != 0)
+    return Value::makeBool(false);
+  if (caps_set) {
+    bool curr = (xkbState.locked_mods & LockMask) != 0;
+    if (curr != caps_val) {
+      KeyCode kc = XKeysymToKeycode(display, XK_Caps_Lock);
+      if (kc && ctx->io->GetIOBackend()) {
+        ctx->io->GetIOBackend()->PressKey(kc);
+        ctx->io->GetIOBackend()->ReleaseKey(kc);
+      }
+    }
+  }
+  if (num_set) {
+    bool curr = (xkbState.locked_mods & Mod2Mask) != 0;
+    if (curr != num_val) {
+      KeyCode kc = XKeysymToKeycode(display, XK_Num_Lock);
+      if (kc && ctx->io->GetIOBackend()) {
+        ctx->io->GetIOBackend()->PressKey(kc);
+        ctx->io->GetIOBackend()->ReleaseKey(kc);
+      }
+    }
+  }
+  if (scroll_set) {
+    bool curr = (xkbState.locked_mods & Mod3Mask) != 0;
+    if (curr != scroll_val) {
+      KeyCode kc = XKeysymToKeycode(display, XK_Scroll_Lock);
+      if (kc && ctx->io->GetIOBackend()) {
+        ctx->io->GetIOBackend()->PressKey(kc);
+        ctx->io->GetIOBackend()->ReleaseKey(kc);
+      }
+    }
+  }
+  return Value::makeBool(true);
 }
 
 Value IOBridge::handleLocks(const std::vector<Value> &,
@@ -1021,8 +1196,11 @@ vm->setHostObjectField(
     mouseObj, "buttons",
     Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.buttons")));
   vm->setHostObjectField(
-  mouseObj, "scroll",
-  Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
+mouseObj, "scroll",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
+  vm->setHostObjectField(
+    mouseObj, "reset",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.reset")));
   vm->setGlobal("mouse", Value::makeObjectId(mouseObj.id));
 
   // IO object
@@ -1098,9 +1276,33 @@ vm->setHostObjectField(
         ioObj, "setLock",
         Value::makeHostFuncId(vm->getHostFunctionIndex("io.setLock")));
     vm->setHostObjectField(
-        ioObj, "locks",
-        Value::makeHostFuncId(vm->getHostFunctionIndex("io.locks")));
-    vm->setGlobal("io", Value::makeObjectId(ioObj.id));
+ioObj, "locks",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.locks")));
+  vm->setHostObjectField(
+    ioObj, "keys",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.keys")));
+  vm->setHostObjectField(
+    ioObj, "lastKey",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.lastKey")));
+  vm->setHostObjectField(
+    ioObj, "lastState",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.lastState")));
+  vm->setHostObjectField(
+    ioObj, "lastDevice",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.lastDevice")));
+  vm->setHostObjectField(
+    ioObj, "lastModifiers",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.lastModifiers")));
+  vm->setHostObjectField(
+    ioObj, "lastLocks",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.lastLocks")));
+  vm->setHostObjectField(
+    ioObj, "lastKeys",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.lastKeys")));
+  vm->setHostObjectField(
+    ioObj, "reset",
+    Value::makeHostFuncId(vm->getHostFunctionIndex("io.reset")));
+  vm->setGlobal("io", Value::makeObjectId(ioObj.id));
     vm->setGlobal("scroll",
         Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
   };

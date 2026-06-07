@@ -172,9 +172,15 @@ void SetShutdownCallback(std::function<void()> cb) {
         shutdownCallback_ = std::move(cb);
     }
 
-    const std::map<int, bool> &GetMouseButtonState() const { return mouseButtonState; }
-    int GetLastButtonCode() const { return lastButtonCode; }
-    bool GetLastButtonWasDown() const { return lastButtonWasDown; }
+ const std::map<int, bool> &GetMouseButtonState() const { return mouseButtonState; }
+ int GetLastButtonCode() const { return lastButtonCode; }
+ bool GetLastButtonWasDown() const { return lastButtonWasDown; }
+ int GetLastKeyCode() const { return lastKeyCode_; }
+ bool GetLastKeyWasDown() const { return lastKeyWasDown_; }
+ const std::string &GetLastKeyDevice() const { return lastKeyDevice_; }
+ int GetLastKeyModifiers() const { return lastKeyModifiers_; }
+ int GetLastKeyLocks() const { return lastKeyLocks_; }
+ const std::map<int, bool> &GetEvdevKeyState() const { return evdevKeyState; }
 
 private:
   friend class IO;
@@ -286,10 +292,16 @@ private:
   std::unordered_map<int, std::vector<int>> combosByKey;
   std::unordered_map<int, int> comboPressedCount;
   int comboTimeWindow = 0; // milliseconds (0 = infinite)
-  std::map<int, bool> mouseButtonState;
-    int lastButtonCode = 0;
-    bool lastButtonWasDown = false;
-    std::chrono::steady_clock::time_point lastButtonTime{};
+ std::map<int, bool> mouseButtonState;
+ int lastButtonCode = 0;
+ bool lastButtonWasDown = false;
+ std::chrono::steady_clock::time_point lastButtonTime{};
+
+ int lastKeyCode_ = 0;
+ bool lastKeyWasDown_ = false;
+ std::string lastKeyDevice_;
+ int lastKeyModifiers_ = 0;
+ int lastKeyLocks_ = 0;
   bool isProcessingWheelEvent = false;
   int currentWheelDirection = 0;
   std::chrono::steady_clock::time_point lastWheelUpTime{};

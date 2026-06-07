@@ -162,13 +162,37 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     std::vector<Value> hotkey_args;
     HotkeyPolicy hotkey_policy = HotkeyPolicy::Queue;
     std::string hotkey_alias;
+    
+    // hotkey_retrigger flag - LIFECYCLE CONTRACT:
+    // ============================================
+    // SET BY: wakeHotkey() when a new trigger arrives while goroutine is Running/Runnable
+    //   - memory_order_release to make trigger visible to VM
+    //   - Does NOT immediately abort current execution
+    //   - Allows completion of current hotkey run (mid-loop), then automatically re-run
+    //
+    // READ BY: Fiber/VM execution engine at end of hotkey body (in loop/frame check)
+    //   - memory_order_acquire to see the flag from wakeHotkey()
+    //   - If true: reset goroutine state and re-run from start with new args
+    //   - Then MUST clear flag (store false) before re-executing
+    //
+    // CLEARED BY: External code (Fiber.cpp or VM loop) after processing retrigger
+    //   - CRITICAL: must use memory_order_release when clearing
+    //   - If not cleared: subsequent triggers will not work (flag stuck true)
+    //   - If not seen: triggers are silently dropped
+    //
+    // CONTRACT VIOLATION SYMPTOMS:
+    //   - Hotkey runs once then ignores all subsequent presses → flag not cleared
+    //   - Hotkey never runs on trigger → flag not set or not visible
+    //   - Crashes on stale data → flag persist across wrong contexts
+    //
     std::atomic<bool> hotkey_retrigger{false};
 
     explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL)
         : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
           state(GoroutineState::Created), suspension_reason{SuspensionReason::None},
-          created_time(std::chrono::steady_clock::now()), parent_id(0),
+          created_time(std::chrono::steady_clock::now()),
 	max_instructions_per_tick(prio == FiberPriority::HOTKEY ? HOTKEY_MAX_INSTRUCTIONS : DEFAULT_MAX_INSTRUCTIONS),
+	parent_id(0),
 	priority(prio) {}
 
     ~Goroutine(); // Defined in .cpp to avoid Fiber dependency
@@ -372,6 +396,11 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
   int deferredWakeupFd() const { return deferred_wakeup_fd_; }
 
   size_t drainDeferredCallbacks();
+
+  // Remove Done goroutines from the map (prevents memory leak)
+  // Called periodically by pickNext() and stop()
+  // @return Number of goroutines removed
+  size_t cleanupDoneGoroutines();
 
 private:
   Scheduler();

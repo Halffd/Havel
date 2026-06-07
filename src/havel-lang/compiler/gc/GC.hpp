@@ -1,6 +1,6 @@
 #pragma once
 
-#include "compiler/core/BytecodeIR.hpp"
+#include "../core/BytecodeIR.hpp"
 #include "../../runtime/concurrency/Thread.hpp"
 
 #include <algorithm>

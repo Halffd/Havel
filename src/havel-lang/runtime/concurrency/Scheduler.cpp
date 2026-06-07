@@ -183,6 +183,9 @@ Scheduler::Goroutine* Scheduler::pickNext() {
         current_.store(result, std::memory_order_release);
         if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}", 
                       result->id, result->name, (int)result->state.load());
+	} else {
+		// No runnable goroutines found. Periodic cleanup while idle.
+		cleanupDoneGoroutines();
 	}
 
 	return result;
@@ -264,6 +267,9 @@ void Scheduler::stop() {
 			g->state = GoroutineState::Done;
 		}
 	}
+	
+	// Clean up all Done goroutines
+	cleanupDoneGoroutines();
 }
 
 void Scheduler::waitAll() {
@@ -450,6 +456,18 @@ void Scheduler::requeueFront(Goroutine* g) {
     }
 }
 
+// Wake a persistent hotkey goroutine on trigger
+//
+// This function implements the hotkey scheduling policy and the hotkey_retrigger flag contract.
+// The flag is a cross-thread signaling mechanism:
+//   - Scheduler thread: sets flag when new trigger arrives during execution
+//   - VM thread: reads and clears flag at end of each hotkey body iteration
+//
+// See Goroutine::hotkey_retrigger documentation for full contract details.
+//
+// @param g Persistent goroutine to wake
+// @param newArgs Optional new arguments for the trigger
+// @return true if successfully queued (g->persistent || idle state), false if dropped
 bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
   if (!g) return false;
 
@@ -477,19 +495,21 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
     }
     break;
   case HotkeyPolicy::Coalesce:
-    if (isPending && !newArgs.empty()) {
-      g->hotkey_args = newArgs;
-      g->locals = newArgs;
-      if (g->fiber) {
-        g->fiber->stack.clear();
-        for (const auto& arg : newArgs) {
-          g->fiber->stack.push(arg);
+    // Coalesce: merge multiple triggers into one execution
+    // If pending: update args if provided, set retrigger flag, and return
+    // If suspended/idle: proceed to normal wake-up below
+    if (isPending) {
+      // Update args if new ones provided (otherwise keep existing)
+      if (!newArgs.empty()) {
+        g->hotkey_args = newArgs;
+        g->locals = newArgs;
+        if (g->fiber) {
+          g->fiber->stack.clear();
+          for (const auto& arg : newArgs) {
+            g->fiber->stack.push(arg);
+          }
         }
       }
-      g->hotkey_retrigger.store(true, std::memory_order_release);
-      return true;
-    }
-    if (isPending) {
       g->hotkey_retrigger.store(true, std::memory_order_release);
       return true;
     }
@@ -500,6 +520,10 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
     g->hotkey_args = newArgs;
   }
 
+  // NOTE: State may change between this check and requeueFront() due to concurrent VM thread.
+  // This is safe by design: the hotkey_retrigger flag ensures re-execution happens.
+  // If state changes from Suspended→Running before requeueFront(), the flag will be checked
+  // by the VM and the goroutine will retrigger at the appropriate point.
   if (g->state == GoroutineState::Suspended) {
     g->hotkey_retrigger.store(true, std::memory_order_release);
     if (g->suspension_reason.load(std::memory_order_acquire) == SuspensionReason::HotkeyWait) {
@@ -626,6 +650,29 @@ size_t Scheduler::drainDeferredCallbacks() {
   }
 
   return acts.size();
+}
+
+size_t Scheduler::cleanupDoneGoroutines() {
+  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  size_t removed = 0;
+  
+  // Find all Done goroutines and remove them
+  for (auto it = goroutines_.begin(); it != goroutines_.end(); ) {
+    auto& [id, g] = *it;
+    if (g && g->state == GoroutineState::Done) {
+      if (debugging::debug_io) {
+        ::havel::debug("[Scheduler] Cleanup: removing Done goroutine gid={} name='{}'", 
+                      g->id, g->name);
+      }
+      // unique_ptr will auto-delete the Goroutine and its Fiber
+      it = goroutines_.erase(it);
+      removed++;
+    } else {
+      ++it;
+    }
+  }
+  
+  return removed;
 }
 
 Scheduler::Goroutine* Scheduler::getHotkeyByAlias(const std::string& alias) {

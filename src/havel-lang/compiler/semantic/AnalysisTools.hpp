@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <mutex>
 #include "../../ast/AST.h"
-#include "compiler/core/BytecodeIR.hpp"
+#include "../core/BytecodeIR.hpp"
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>

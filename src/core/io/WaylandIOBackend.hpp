@@ -1,9 +1,15 @@
 #pragma once
 #include "IOBackend.hpp"
+#include "core/wayland/VirtualKeyboard.hpp"
+#include "core/wayland/VirtualPointer.hpp"
+#include "core/wayland/WaylandClipboardBackend.hpp"
+#include "core/wayland/ForeignToplevel.hpp"
+#include <memory>
 
 namespace havel {
 
 class EventListener;
+class WaylandProtocolClient;
 
 class WaylandIOBackend : public IOBackend {
 public:
@@ -43,8 +49,22 @@ public:
     int GetLockMask() const override { return 16; }
     int GetNumLockMask() override { return 0; }
 
+    VirtualKeyboard& virtualKeyboard() { return *vkb_; }
+    VirtualPointer& virtualPointer() { return *vptr_; }
+    WaylandClipboardBackend& clipboard() { return *clipboard_; }
+    ForeignToplevel& foreignToplevel() { return *toplevel_; }
+
 private:
     EventListener *eventListener_ = nullptr;
+    WaylandProtocolClient *protoClient_ = nullptr;
+
+    std::unique_ptr<VirtualKeyboard> vkb_;
+    std::unique_ptr<VirtualPointer> vptr_;
+    std::unique_ptr<WaylandClipboardBackend> clipboard_;
+    std::unique_ptr<ForeignToplevel> toplevel_;
+
+    bool useProtocolKb_ = false;
+    bool useProtocolPtr_ = false;
 };
 
 } // namespace havel

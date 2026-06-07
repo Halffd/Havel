@@ -788,9 +788,10 @@ if (event_queue_) event_queue_->processAll();
  threadObj->start(std::move(handler));
 
  // Store thread in GC heap and return wrapper object
- auto threadRef = heap_.allocateThreadObj(threadObj);
- *threadIdPtr = threadRef.id;
- return Value::makeThreadId(threadRef.id);
+        auto threadRef = heap_.allocateThreadObj(threadObj);
+        *threadIdPtr = threadRef.id;
+        thread_captured_closures_[threadRef.id] = closure;
+        return Value::makeThreadId(threadRef.id);
  });
 
   // thread.send(thread, message) - Send message to thread
@@ -909,10 +910,11 @@ if (event_queue_) event_queue_->processAll();
         };
         threadObj->start(std::move(handler));
         auto threadRef = heap_.allocateThreadObj(threadObj);
+        thread_captured_closures_[threadRef.id] = closure;
         return Value::makeThreadId(threadRef.id);
     });
 
-// interval(ms, closure) - Create repeating timer
+    // interval(ms, closure) - Create repeating timer
 registerHostFunction("interval", 2, [this](const std::vector<Value> &args) {
 if (args.size() < 2 || !args[0].isNumber()) {
 COMPILER_THROW("interval requires milliseconds and closure");
@@ -939,11 +941,12 @@ interval_results_[*intervalIdPtr] = result;
 }
 };
 
-auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
- auto intervalRef = heap_.allocateIntervalObj(intervalObj);
- *intervalIdPtr = intervalRef.id;
- return Value::makeIntervalId(intervalRef.id);
- });
+        auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
+        auto intervalRef = heap_.allocateIntervalObj(intervalObj);
+        *intervalIdPtr = intervalRef.id;
+        interval_captured_closures_[intervalRef.id] = closure;
+        return Value::makeIntervalId(intervalRef.id);
+    });
 
   // interval.pause(interval) - Pause interval
 registerHostFunction("interval.pause", 1, [this](const std::vector<Value> &args) {
@@ -1014,11 +1017,12 @@ interval_results_[*intervalIdPtr] = result;
 }
 }
 };
-auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
-auto intervalRef = heap_.allocateIntervalObj(intervalObj);
-*intervalIdPtr = intervalRef.id;
-return Value::makeIntervalId(intervalRef.id);
-});
+        auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
+        auto intervalRef = heap_.allocateIntervalObj(intervalObj);
+        *intervalIdPtr = intervalRef.id;
+        interval_captured_closures_[intervalRef.id] = closure;
+        return Value::makeIntervalId(intervalRef.id);
+    });
 
 // timeout(ms, closure) - Create one-shot delayed execution
 registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
@@ -1047,11 +1051,12 @@ timeout_results_[*timeoutIdPtr] = result;
 }
 };
 
-auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
- auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
- *timeoutIdPtr = timeoutRef.id;
- return Value::makeTimeoutId(timeoutRef.id);
- });
+        auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+        auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
+        *timeoutIdPtr = timeoutRef.id;
+        timeout_captured_closures_[timeoutRef.id] = closure;
+        return Value::makeTimeoutId(timeoutRef.id);
+    });
 
   // timeout.cancel(timeout) - Cancel timeout
   registerHostFunction("timeout.cancel", 1, [this](const std::vector<Value> &args) {
@@ -1092,11 +1097,12 @@ timeout_results_[*timeoutIdPtr] = result;
 }
 }
 };
-  auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
-  auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
-  *timeoutIdPtr = timeoutRef.id;
-  return Value::makeTimeoutId(timeoutRef.id);
-  });
+        auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+        auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
+        *timeoutIdPtr = timeoutRef.id;
+        timeout_captured_closures_[timeoutRef.id] = closure;
+        return Value::makeTimeoutId(timeoutRef.id);
+    });
 
   // WaitGroup host functions
   // waitgroup.add(wg, n) - Increment waitgroup counter

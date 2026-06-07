@@ -135,6 +135,7 @@ endif()
 # WAYLAND SUPPORT
 # ==============================================================================
 pkg_check_modules(WAYLAND REQUIRED wayland-client wayland-protocols)
+pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
 find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
 # Protocol generation setup
@@ -142,52 +143,81 @@ set(PROTOCOLS_DIR /usr/share/wayland-protocols)
 set(GENERATED_PROTO_DIR ${CMAKE_BINARY_DIR}/generated/wayland)
 file(MAKE_DIRECTORY ${GENERATED_PROTO_DIR})
 
-# Gamma control protocol
+# Helper function to generate Wayland protocol headers
+function(generate_wayland_protocol PROTO_NAME PROTO_XML)
+  set(PROTO_HEADER ${GENERATED_PROTO_DIR}/${PROTO_NAME}-client-protocol.h)
+  set(PROTO_CODE ${GENERATED_PROTO_DIR}/${PROTO_NAME}-protocol.c)
+  add_custom_command(
+    OUTPUT ${PROTO_HEADER} ${PROTO_CODE}
+    COMMAND ${WAYLAND_SCANNER} client-header ${PROTO_XML} ${PROTO_HEADER}
+    COMMAND ${WAYLAND_SCANNER} private-code ${PROTO_XML} ${PROTO_CODE}
+    DEPENDS ${PROTO_XML}
+    COMMENT "Generating ${PROTO_NAME} protocol headers"
+  )
+  set(PROTO_SOURCES ${PROTO_HEADER} ${PROTO_CODE} PARENT_SCOPE)
+endfunction()
+
+# Gamma control protocol (in-tree, wlroots)
 set(GAMMA_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-gamma-control-unstable-v1.xml)
-if(NOT EXISTS ${GAMMA_XML})
-    message(FATAL_ERROR "Gamma control protocol not found: ${GAMMA_XML}")
-endif()
+generate_wayland_protocol(wlr-gamma-control-unstable-v1 ${GAMMA_XML})
 
-set(GAMMA_HEADERS
-    ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-client-protocol.h
-    ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-protocol.c
-)
-
-add_custom_command(
-    OUTPUT ${GAMMA_HEADERS}
-    COMMAND ${WAYLAND_SCANNER} client-header ${GAMMA_XML} 
-        ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-client-protocol.h
-    COMMAND ${WAYLAND_SCANNER} private-code ${GAMMA_XML} 
-        ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-protocol.c
-    DEPENDS ${GAMMA_XML}
-    COMMENT "Generating gamma control protocol headers"
-)
-
-# XDG output protocol
+# XDG output protocol (system)
 set(XDG_XML ${PROTOCOLS_DIR}/unstable/xdg-output/xdg-output-unstable-v1.xml)
-if(NOT EXISTS ${XDG_XML})
-    message(FATAL_ERROR "XDG output protocol not found: ${XDG_XML}")
+generate_wayland_protocol(xdg-output-unstable-v1 ${XDG_XML})
+
+# Virtual keyboard protocol (in-tree, wlroots)
+set(VKB_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/virtual-keyboard-unstable-v1.xml)
+generate_wayland_protocol(virtual-keyboard-unstable-v1 ${VKB_XML})
+
+# Virtual pointer protocol (in-tree, wlroots)
+set(VPTR_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-virtual-pointer-unstable-v1.xml)
+generate_wayland_protocol(wlr-virtual-pointer-unstable-v1 ${VPTR_XML})
+
+# Foreign toplevel management protocol (in-tree, wlroots)
+set(FTL_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-foreign-toplevel-management-unstable-v1.xml)
+generate_wayland_protocol(wlr-foreign-toplevel-management-unstable-v1 ${FTL_XML})
+
+# WLR data control protocol (in-tree, wlroots)
+set(WDC_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-data-control-unstable-v1.xml)
+generate_wayland_protocol(wlr-data-control-unstable-v1 ${WDC_XML})
+
+# ext-data-control protocol (system, staging standard)
+set(EDC_XML ${PROTOCOLS_DIR}/staging/ext-data-control/ext-data-control-v1.xml)
+if(EXISTS ${EDC_XML})
+  generate_wayland_protocol(ext-data-control-v1 ${EDC_XML})
+  set(HAS_EXT_DATA_CONTROL TRUE)
+else()
+  set(HAS_EXT_DATA_CONTROL FALSE)
+  message(STATUS "ext-data-control-v1 not found in system protocols, using wlr-data-control fallback")
 endif()
-
-set(XDG_HEADERS
-    ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-client-protocol.h
-    ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-protocol.c
-)
-
-add_custom_command(
-    OUTPUT ${XDG_HEADERS}
-    COMMAND ${WAYLAND_SCANNER} client-header ${XDG_XML} 
-        ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-client-protocol.h
-    COMMAND ${WAYLAND_SCANNER} private-code ${XDG_XML} 
-        ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-protocol.c
-    DEPENDS ${XDG_XML}
-    COMMENT "Generating XDG output protocol headers"
-)
 
 # Create wayland protocols library
-add_library(wayland-protos STATIC ${GAMMA_HEADERS} ${XDG_HEADERS})
+set(ALL_PROTO_SOURCES
+  ${PROTO_SOURCES}
+  ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/virtual-keyboard-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/virtual-keyboard-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/wlr-virtual-pointer-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/wlr-virtual-pointer-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/wlr-foreign-toplevel-management-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/wlr-foreign-toplevel-management-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/wlr-data-control-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/wlr-data-control-unstable-v1-protocol.c
+)
+if(HAS_EXT_DATA_CONTROL)
+  list(APPEND ALL_PROTO_SOURCES
+    ${GENERATED_PROTO_DIR}/ext-data-control-v1-client-protocol.h
+    ${GENERATED_PROTO_DIR}/ext-data-control-v1-protocol.c
+  )
+endif()
+
+add_library(wayland-protos STATIC ${ALL_PROTO_SOURCES})
 target_include_directories(wayland-protos PUBLIC ${GENERATED_PROTO_DIR})
-target_link_libraries(wayland-protos PUBLIC ${WAYLAND_LIBRARIES})
+target_link_libraries(wayland-protos PUBLIC ${WAYLAND_LIBRARIES} ${XKBCOMMON_LIBRARIES})
+target_include_directories(wayland-protos PUBLIC ${XKBCOMMON_INCLUDE_DIRS})
 
 # ==============================================================================
 # QT6 GUI FRAMEWORK (CONDITIONAL - Default)
@@ -401,9 +431,13 @@ list(REMOVE_ITEM HAVEL_LANG_SOURCES
 
 # Exclude stdlib modules when building as plugins — they become havel_mod_*.so
 # Exception: HotkeyModule stays in main binary (host bridges use its C++ class directly)
+# Exception: StringModule is called from VMHostFunctions — must stay in static lib
 if(ENABLE_MODULE_PLUGINS)
 file(GLOB_RECURSE _STDLIB_MODULE_SOURCES "src/havel-lang/stdlib/*Module.cpp")
-list(REMOVE_ITEM _STDLIB_MODULE_SOURCES "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HotkeyModule.cpp")
+list(REMOVE_ITEM _STDLIB_MODULE_SOURCES
+    "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HotkeyModule.cpp"
+    "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StringModule.cpp"
+)
 list(REMOVE_ITEM HAVEL_LANG_SOURCES ${_STDLIB_MODULE_SOURCES})
 endif()
 
@@ -977,7 +1011,7 @@ add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
 else()
 add_library(havel_modules INTERFACE)
 endif()
-target_link_libraries(havel_core PRIVATE fmt::fmt)
+target_link_libraries(havel_core PRIVATE fmt::fmt wayland-protos)
 if(ENABLE_QT_UI_BACKEND)
   add_library(havel_gui STATIC ${GUI_SOURCES})
 endif()
@@ -1304,12 +1338,13 @@ if(ENABLE_HAVEL_LANG)
         ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/JIT.cpp
     )
 # HostBridge.hpp inlines loadModule / isModuleAvailable → HostModuleLoader
-list(APPEND HAVEL_LANG_LIB_SOURCES
- ${CMAKE_SOURCE_DIR}/src/host/module/ModuleLoader.cpp
- ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime/PureStdLib.cpp
- ${CMAKE_SOURCE_DIR}/src/dl/Loader.c
- ${CMAKE_SOURCE_DIR}/src/c/LoggerC.c
- ${CMAKE_SOURCE_DIR}/src/c/Config.c
+    list(APPEND HAVEL_LANG_LIB_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/host/module/ModuleLoader.cpp
+    ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime/PureStdLib.cpp
+    ${CMAKE_SOURCE_DIR}/src/dl/Loader.c
+    ${CMAKE_SOURCE_DIR}/src/c/LoggerC.c
+    ${CMAKE_SOURCE_DIR}/src/c/Config.c
+    ${CMAKE_SOURCE_DIR}/src/modules/brightness/BrightnessModule.cpp
 )
     add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
 
@@ -1532,6 +1567,13 @@ add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker
 add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)
 add_havel_module_plugin(window ${CMAKE_SOURCE_DIR}/src/modules/window/WindowMonitorModule.cpp)
 add_havel_module_plugin(zoom ${CMAKE_SOURCE_DIR}/src/modules/zoom/ZoomModule.cpp ${CMAKE_SOURCE_DIR}/src/modules/zoom/ZoomService.cpp)
+add_havel_module_plugin(wayland ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/WaylandModule.cpp)
+target_include_directories(havel_mod_wayland PRIVATE
+    ${CMAKE_BINARY_DIR}/generated/wayland
+)
+target_compile_definitions(havel_mod_wayland PRIVATE
+    $<$<BOOL:${HAS_EXT_DATA_CONTROL}>:HAS_EXT_DATA_CONTROL>
+)
 
 # Qt-dependent modules
 if(ENABLE_QT)

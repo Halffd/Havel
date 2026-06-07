@@ -4046,9 +4046,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
           advance(); // consume '('
 
           // Helper to parse comma-separated arguments
-          auto parseArgs = [this](std::string &x, std::string &y,
-                                  std::string &speed, std::string &accel,
-                                  std::string &button = *(new std::string())) {
+        auto parseArgs = [this](std::string &x, std::string &y,
+            std::string &speed, std::string &accel,
+            const std::string &button = "") {
             // Parse x argument
             if (at().type != havel::TokenType::CloseParen) {
               x = at().value;

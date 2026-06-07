@@ -54,8 +54,14 @@ testE2E("lt_false", "5 < 3", false)
 testE2E("ternary", "true ? 1 : 0", 1)
 
 // Test 11: Array literal
-r = testE2E("array", "[1, 2, 3]", null)
-// Arrays return as arrays, not simple equality — just check it doesn't crash
+ast = parse("[1, 2, 3]")
+em = Emitter()
+r = compileProgram(em, ast)
+if r != null && r.length() == 3 {
+    print("PASS array: " + str(r))
+} else {
+    print("FAIL array: expected array of length 3 got " + str(r))
+}
 
 // Test 12: Nested function
 testE2E("nested_fn", "fn add(a, b)\n  a + b\nadd(3, 4)", 7)

@@ -506,13 +506,19 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
     break;
   case HotkeyPolicy::Replace:
     if (isPending) {
-      g->hotkey_retrigger.store(true, std::memory_order_release);
+      if (!newArgs.empty()) {
+        g->hotkey_args = newArgs;
+      }
+      requeueFront(g);
       return true;
     }
     break;
   case HotkeyPolicy::Queue:
     if (isPending) {
-      g->hotkey_retrigger.store(true, std::memory_order_release);
+      if (!newArgs.empty()) {
+        g->hotkey_args = newArgs;
+      }
+      requeueFront(g);
       return true;
     }
     break;

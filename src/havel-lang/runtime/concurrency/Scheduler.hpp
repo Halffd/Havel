@@ -163,7 +163,7 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
   uint32_t hotkey_closure_id = 0;
   const class BytecodeChunk* hotkey_chunk = nullptr;
   std::vector<Value> hotkey_args;
-    HotkeyPolicy hotkey_policy = HotkeyPolicy::Queue;
+    HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;
     std::string hotkey_alias;
     
     // hotkey_retrigger flag - LIFECYCLE CONTRACT:

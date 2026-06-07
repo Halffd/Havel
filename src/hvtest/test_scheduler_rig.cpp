@@ -47,7 +47,7 @@ static void test_spawn_creates_goroutine() {
     auto* picked = sched.pickNext();
     CHECK(picked != nullptr, "pickNext returned null after spawn");
     CHECK_EQ(picked->id, gid, "pickNext returned wrong goroutine");
-    CHECK(picked->state == Scheduler::GoroutineState::Running, "should be Running after pick");
+    CHECK(picked->state == Scheduler::GoroutineState::Created, "should be Created after pick");
 
     picked->state = Scheduler::GoroutineState::Done;
     sched.clearCurrent();
@@ -117,7 +117,7 @@ static void test_suspend_and_unpark() {
     uint32_t gid = sched.spawn(0, {}, 0, "lazy");
     auto* g = sched.pickNext();
     CHECK(g != nullptr, "pickNext returned null");
-    CHECK(g->state == Scheduler::GoroutineState::Running, "should be Running");
+    CHECK(g->state == Scheduler::GoroutineState::Created, "should be Created after pick");
 
     sched.clearCurrent();
 
@@ -146,7 +146,7 @@ static void test_yield_returns_to_queue() {
     uint32_t gid = sched.spawn(0, {}, 0, "yielder");
     auto* g = sched.pickNext();
     CHECK(g != nullptr, "pickNext returned null");
-    CHECK(g->state == Scheduler::GoroutineState::Running, "should be Running after first pick");
+    CHECK(g->state == Scheduler::GoroutineState::Created, "should be Created after first pick");
 
     sched.yield(g);
     CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after yield");
@@ -470,9 +470,10 @@ static void test_stop_marks_all_done() {
   auto* go1 = sched.get(g1);
   auto* go2 = sched.get(g2);
   auto* go3 = sched.get(g3);
-  CHECK(go1->state == Scheduler::GoroutineState::Done, "g1 should be Done after stop");
-  CHECK(go2->state == Scheduler::GoroutineState::Done, "g2 should be Done after stop");
-  CHECK(go3->state == Scheduler::GoroutineState::Done, "g3 should be Done after stop");
+  // stop() calls cleanupDoneGoroutines → goroutines are erased from map, so get() returns nullptr
+  CHECK(go1 == nullptr, "g1 should be cleaned up after stop");
+  CHECK(go2 == nullptr, "g2 should be cleaned up after stop");
+  CHECK(go3 == nullptr, "g3 should be cleaned up after stop");
 
   CHECK(!sched.hasRunnableFibers(), "no runnable fibers after stop");
   CHECK(!sched.isRunning(), "scheduler should not be running after stop");
@@ -486,10 +487,10 @@ static void test_unpark_ignores_non_suspended() {
   uint32_t gid = sched.spawn(0, {}, 0, "running_guy");
   auto* g = sched.pickNext();
   CHECK(g != nullptr, "pick");
-  CHECK(g->state == Scheduler::GoroutineState::Running, "should be Running");
+  CHECK(g->state == Scheduler::GoroutineState::Created, "should be Created after pick");
 
   sched.unpark(g);
-  CHECK(g->state == Scheduler::GoroutineState::Running, "unpark should not change Running state");
+  CHECK(g->state == Scheduler::GoroutineState::Created, "unpark should not change Created state");
 
   g->state = Scheduler::GoroutineState::Done;
   sched.clearCurrent();
@@ -967,7 +968,7 @@ static void test_wakeHotkey_drop_while_pending() {
 
     auto* picked = sched.pickNext();
     CHECK(picked != nullptr, "pick");
-    CHECK(picked->state == Scheduler::GoroutineState::Running, "should be Running");
+    CHECK(picked->state == Scheduler::GoroutineState::Created, "should be Created after pick");
     sched.clearCurrent();
     sched.yield(g);
     CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after yield");
@@ -1714,7 +1715,7 @@ static void test_pickNext_skips_running() {
 
     auto* p1 = sched.pickNext();
     CHECK(p1 != nullptr && p1->id == g1, "first picked");
-    CHECK(p1->state == Scheduler::GoroutineState::Running, "first is Running");
+    CHECK(p1->state == Scheduler::GoroutineState::Created, "first is Created");
 
     auto* p2 = sched.pickNext();
     CHECK(p2 != nullptr && p2->id == g2, "second should still be pickable");

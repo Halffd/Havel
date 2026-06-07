@@ -357,7 +357,8 @@ const ::havel::Interval* interval(uint32_t id) const;
     size_t fullCollectionInterval() const { return full_collection_interval_; }
     void setPromotionAgeThreshold(uint8_t age) { promotion_age_threshold_ = age; }
     uint8_t promotionAgeThreshold() const { return promotion_age_threshold_; }
-uint64_t approxHeapBytes() const { return approx_heap_bytes_.load(std::memory_order_relaxed); }
+    uint64_t approxHeapBytes() const { return approx_heap_bytes_.load(std::memory_order_relaxed); }
+    uint64_t cachedObjectCount() const { return cached_object_count_.load(std::memory_order_relaxed); }
 bool isCollectionInProgress() const;
 
     uint64_t pinExternalRoot(const Value &value);
@@ -530,7 +531,8 @@ size_t allocation_budget_ = 65536;
 size_t allocations_since_last_ = 0;
 size_t recovered_in_cycle_ = 0;
 uint64_t heap_max_bytes_ = 4ULL * 1024 * 1024 * 1024;
-std::atomic<uint64_t> approx_heap_bytes_{0};
+    std::atomic<uint64_t> approx_heap_bytes_{0};
+    std::atomic<uint64_t> cached_object_count_{0};
 
     std::vector<Value> external_roots_;
     std::vector<bool> external_roots_active_;

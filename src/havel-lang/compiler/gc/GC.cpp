@@ -155,6 +155,7 @@ ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
     closure_ages_[id] = 0;
     old_closures_.erase(id);
     addHeapBytes(est);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return ClosureRef{.id = id};
 }
 
@@ -165,6 +166,7 @@ StringRef GCHeap::allocateString(std::string value) {
     const uint32_t id = next_string_id_++;
     strings_.emplace(id, std::move(value));
     addHeapBytes(est);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return StringRef{.id = id};
 }
 
@@ -189,6 +191,7 @@ ArrayRef GCHeap::allocateArray() {
     array_ages_[id] = 0;
     old_arrays_.erase(id);
     addHeapBytes(est);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return ArrayRef{.id = id};
 }
 
@@ -220,6 +223,7 @@ ObjectRef GCHeap::allocateObject(bool sorted) {
     object_ages_[id] = 0;
     old_objects_.erase(id);
     addHeapBytes(est);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return ObjectRef{.id = id, .sorted = sorted};
 }
 
@@ -233,6 +237,7 @@ SetRef GCHeap::allocateSet() {
     set_ages_[id] = 0;
     old_sets_.erase(id);
     addHeapBytes(est);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return SetRef{.id = id};
 }
 
@@ -255,6 +260,7 @@ size_t est = sizeof(Range);
     range.step = step;
     ranges_[id] = range;
     addHeapBytes(est);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return RangeRef{.id = id};
 }
 
@@ -267,6 +273,7 @@ size_t est = errorType.size() + message.size() + stackTrace.size() + sizeof(Erro
     const uint32_t id = next_error_id_++;
     errors_[id] = ErrorObject(errorType, message, stackTrace, line, column);
     addHeapBytes(est);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return ErrorRef{.id = id};
 }
 
@@ -300,6 +307,7 @@ size_t est = sizeof(Iterator);
 
     iterators_[id] = std::move(iter);
     addHeapBytes(est);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return IteratorRef{.id = id};
 }
 
@@ -319,6 +327,7 @@ EnumRef GCHeap::allocateEnum(uint32_t typeId, uint32_t tag, size_t payloadCount)
 std::lock_guard<std::recursive_mutex> lock(mutex_);
 const uint32_t id = next_enum_id_++;
     enums_[id] = {tag, std::vector<Value>(payloadCount, Value::makeNull())};
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return EnumRef{.id = id, .tag = tag, .typeId = typeId};
 }
 
@@ -532,6 +541,7 @@ size_t est = sizeof(BoundMethod);
     const uint32_t id = next_bound_method_id_++;
     bound_methods_[id] = BoundMethod{fn, self};
     addHeapBytes(est);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return BoundMethodRef{.id = id};
 }
 
@@ -593,49 +603,9 @@ std::optional<Value> GCHeap::externalRoot(uint64_t root_id) const {
 }
 
 GCHeap::Stats GCHeap::stats() const {
-    uint64_t heap_size = 0;
-    for (const auto &[_, array] : arrays_) {
-        heap_size += sizeof(array) +
-            static_cast<uint64_t>(array.size()) * sizeof(Value);
-    }
-    for (const auto &[_, object] : objects_) {
-        heap_size += sizeof(object);
-        for (const auto &[key, _] : object.data) {
-            heap_size += static_cast<uint64_t>(key.size()) + sizeof(Value);
-        }
-    }
-    for (const auto &[_, set] : sets_) {
-        heap_size += sizeof(set);
-        for (const auto &[key, _] : set) {
-            heap_size += static_cast<uint64_t>(key.size()) + sizeof(Value);
-        }
-    }
-    for (const auto &[_, closure] : closures_) {
-        heap_size += sizeof(closure);
-        heap_size += static_cast<uint64_t>(closure.upvalues.size()) *
-            sizeof(std::shared_ptr<UpvalueCell>);
-    }
-    for (const auto &[_, str] : strings_) {
-        heap_size += str.size();
-    }
-    for (const auto &[_, iter] : iterators_) {
-        heap_size += sizeof(iter) + iter.keys.size() * sizeof(std::string);
-    }
-    for (const auto &[_, err] : errors_) {
-        heap_size += err.errorType.size() + err.message.size() + err.stackTrace.size();
-    }
-    for (const auto &[_, co] : coroutines_) {
-        heap_size += co.stack.size() * sizeof(Value) + co.locals.size() * sizeof(Value);
-    }
-    for (const auto &[_, ch] : channels_) {
-        heap_size += ch.size() * sizeof(Value);
-    }
-
     return Stats{
-        .heap_size = heap_size,
-        .object_count = static_cast<uint64_t>(arrays_.size() + objects_.size() +
-            sets_.size() + closures_.size() + strings_.size() + iterators_.size() +
-            bound_methods_.size() + errors_.size() + coroutines_.size() + ranges_.size() + enums_.size()),
+        .heap_size = approx_heap_bytes_.load(std::memory_order_relaxed),
+        .object_count = cached_object_count_.load(std::memory_order_relaxed),
         .collections = collections_,
         .last_pause_ns = last_pause_ns_,
         .total_recovered = total_recovered_,
@@ -1007,26 +977,32 @@ void GCHeap::markStep(size_t &work_budget) {
             }
             continue;
         }
-  if (current.isClosureId()) {
-        auto it = closures_.find(current.asClosureId());
-		if (it == closures_.end()) {
-			continue;
-		}
-		for (const auto &cell : it->second.upvalues) {
-			if (!cell) {
-				continue;
-			}
-			if (cell->is_open) {
-				auto local_value = open_local_reader_snapshot_(cell->open_index);
-				if (local_value.has_value()) {
-					markReference(*local_value);
-				}
-			} else {
-				markReference(cell->closed_value);
-			}
-        }
-        continue;
-      }
+        if (current.isClosureId()) {
+                auto it = closures_.find(current.asClosureId());
+                if (it == closures_.end()) {
+                    continue;
+                }
+                for (const auto &cell : it->second.upvalues) {
+                    if (!cell) {
+                        continue;
+                    }
+                    if (cell->is_open) {
+                        uint32_t abs_index = cell->locals_base + cell->open_index;
+                        auto local_value = open_local_reader_snapshot_(abs_index);
+                        if (local_value.has_value()) {
+                            markReference(*local_value);
+                        }
+                    } else {
+                        markReference(cell->closed_value);
+                    }
+                }
+                if (it->second.module_globals) {
+                    for (const auto &[_, gv] : *it->second.module_globals) {
+                        markReference(gv);
+                    }
+                }
+                continue;
+            }
     }
 
     if (mark_worklist_.empty()) {
@@ -1067,6 +1043,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
             ages_map.erase(id);
             old_set.erase(id);
             recovered_in_cycle_++;
+            cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
         } else if (!is_old) {
             promote_fn(id);
         }
@@ -1100,7 +1077,9 @@ void GCHeap::sweepStep(size_t &work_budget) {
                     arrays_.erase(it);
                     array_ages_.erase(id);
                     old_arrays_.erase(id);
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                     recovered_in_cycle_++;
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                 } else if (!is_old) {
                     ageOrPromoteArray(id);
                 }
@@ -1145,6 +1124,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
                     old_objects_.erase(id);
                     recovered_in_cycle_++;
                 } else if (!is_old) {
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                     ageOrPromoteObject(id);
                 }
             }
@@ -1182,6 +1162,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
                     recovered_in_cycle_++;
                 } else if (!is_old) {
                     ageOrPromoteSet(id);
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                 }
             }
             if (sweep_index_ >= sweep_keys_.size()) {
@@ -1219,6 +1200,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 } else if (!is_old) {
                     ageOrPromoteClosure(id);
                 }
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
             }
             if (sweep_index_ >= sweep_keys_.size()) {
                 gc_state_ = IncrementalState::SweepStrings;
@@ -1256,6 +1238,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 ageOrPromoteString(id);
             }
         }
+                cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
         if (sweep_index_ >= sweep_keys_.size()) {
             gc_state_ = IncrementalState::SweepIterators;
             sweep_index_ = 0;
@@ -1283,6 +1266,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
         if (sweep_index_ >= sweep_keys_.size()) {
             gc_state_ = IncrementalState::SweepBoundMethods;
             sweep_index_ = 0;
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
         }
         break;
 
@@ -1308,6 +1292,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
             gc_state_ = IncrementalState::SweepRanges;
             sweep_index_ = 0;
         }
+                cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
         break;
 
     case IncrementalState::SweepRanges:
@@ -1333,6 +1318,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 sweep_index_ = 0;
             }
             break;
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
 
         case IncrementalState::SweepErrors:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
@@ -1358,6 +1344,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
             }
             break;
 
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
         case IncrementalState::SweepEnums:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
@@ -1383,6 +1370,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
             break;
 
         case IncrementalState::SweepCoroutines:
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
                 for (const auto &kv : coroutines_) {
@@ -1411,6 +1399,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
 
         case IncrementalState::SweepThreads:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                 sweep_keys_.clear();
                 for (const auto &kv : threads_) {
                     sweep_keys_.push_back(kv.first);
@@ -1439,6 +1428,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
         case IncrementalState::SweepIntervals:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                 for (const auto &kv : intervals_) {
                     sweep_keys_.push_back(kv.first);
                 }
@@ -1464,6 +1454,7 @@ recovered_in_cycle_++;
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
                 for (const auto &kv : timeouts_) {
+cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                     sweep_keys_.push_back(kv.first);
                 }
                 sweep_index_ = 0;
@@ -1489,6 +1480,7 @@ recovered_in_cycle_++;
                 sweep_keys_.clear();
                 for (const auto &kv : channels_) {
                     sweep_keys_.push_back(kv.first);
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                 }
                 sweep_index_ = 0;
                 sweep_phase_ = gc_state_;
@@ -1514,6 +1506,7 @@ case IncrementalState::SweepWaitGroups:
     for (const auto &kv : waitgroups_) {
       sweep_keys_.push_back(kv.first);
     }
+                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
     sweep_index_ = 0;
     sweep_phase_ = gc_state_;
   }
@@ -1587,11 +1580,9 @@ void GCHeap::completeCollection() {
         compactIfShrunk(closures_, 4);
     }
 
-if (debugging::debug_gc)
-std::cerr << "[GC] Collection complete: recovered " << recovered_in_cycle_
-<< " objects, new budget: " << allocation_budget_ << "\n";
-
-approx_heap_bytes_.store(stats().heap_size, std::memory_order_relaxed);
+    if (debugging::debug_gc)
+        std::cerr << "[GC] Collection complete: recovered " << recovered_in_cycle_
+                  << " objects, new budget: " << allocation_budget_ << "\n";
 }
 
 void GCHeap::ageOrPromoteArray(uint32_t id) {
@@ -1652,70 +1643,79 @@ std::shared_ptr<GCHeap::UpvalueCell> GCHeap::createUpvalue(uint32_t index) {
 }
 
 ThreadRef GCHeap::allocateThreadObj(std::shared_ptr<::havel::Thread> thread) {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-const uint32_t id = next_thread_id_++;
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const uint32_t id = next_thread_id_++;
     threads_.emplace(id, std::move(thread));
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return ThreadRef{.id = id};
 }
 
 IntervalRef GCHeap::allocateIntervalObj(std::shared_ptr<::havel::Interval> interval) {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-const uint32_t id = next_interval_id_++;
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const uint32_t id = next_interval_id_++;
     intervals_.emplace(id, std::move(interval));
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return IntervalRef{.id = id};
 }
 
 TimeoutRef GCHeap::allocateTimeoutObj(std::shared_ptr<::havel::Timeout> timeout) {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-const uint32_t id = next_timeout_id_++;
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const uint32_t id = next_timeout_id_++;
     timeouts_.emplace(id, std::move(timeout));
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return TimeoutRef{.id = id};
 }
 
 ChannelRef GCHeap::allocateChannel() {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-const uint32_t id = next_channel_id_++;
-  channels_[id] = {};
-  return ChannelRef{.id = id};
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const uint32_t id = next_channel_id_++;
+    channels_[id] = {};
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
+    return ChannelRef{.id = id};
 }
 
 GCHeap::WaitGroupRef GCHeap::allocateWaitGroup() {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-const uint32_t id = next_waitgroup_id_++;
-  waitgroups_[id] = std::make_unique<WaitGroup>();
-  return WaitGroupRef{.id = id};
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const uint32_t id = next_waitgroup_id_++;
+    waitgroups_[id] = std::make_unique<WaitGroup>();
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
+    return WaitGroupRef{.id = id};
 }
 
 uint32_t GCHeap::allocateThread() {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-const uint32_t id = next_thread_id_++;
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const uint32_t id = next_thread_id_++;
     threads_[id] = nullptr;
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return id;
 }
 
 uint32_t GCHeap::allocateInterval() {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-const uint32_t id = next_interval_id_++;
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const uint32_t id = next_interval_id_++;
     intervals_[id] = nullptr;
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return id;
 }
 
 uint32_t GCHeap::allocateTimeout() {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-const uint32_t id = next_timeout_id_++;
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const uint32_t id = next_timeout_id_++;
     timeouts_[id] = nullptr;
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return id;
 }
 
 uint32_t GCHeap::allocateCoroutine(uint32_t function_index, uint32_t chunk_index) {
-std::lock_guard<std::recursive_mutex> lock(mutex_);
-const uint32_t id = next_coroutine_id_++;
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const uint32_t id = next_coroutine_id_++;
     Coroutine co;
     co.function_index = function_index;
     co.chunk_index = chunk_index;
     co.ip = 0;
     co.state = Coroutine::Runnable;
     coroutines_[id] = std::move(co);
+    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
     return id;
 }
 

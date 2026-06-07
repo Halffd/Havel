@@ -29,7 +29,8 @@ static double numArg(const Value &v, double def = 0.0) {
     return def;
 }
 
-void registerWaylandModule(const VMApi &api) {
+void registerWaylandModule(const VMApi &apiRef) {
+    const auto &api = apiRef;
     auto &client = havel::WaylandProtocolClient::instance();
 
     api.registerFunction("wayland.connect", [&client](const std::vector<Value> &) {
@@ -40,7 +41,7 @@ void registerWaylandModule(const VMApi &api) {
         return Value::makeBool(client.isConnected());
     });
 
-    api.registerFunction("wayland.compositor", [&client](const std::vector<Value> &) {
+    api.registerFunction("wayland.compositor", [&api, &client](const std::vector<Value> &) {
         return api.makeString(client.compositorName());
     });
 
@@ -49,30 +50,29 @@ void registerWaylandModule(const VMApi &api) {
         return Value::makeNull();
     });
 
-    // --- info sub-object ---
     auto infoObj = api.makeObject();
 
-    api.registerFunction("wayland.info.protocols", [&client](const std::vector<Value> &) {
+    api.registerFunction("wayland.info.protocols", [&api, &client](const std::vector<Value> &) {
         auto arr = api.makeArray();
         for (const auto &proto : client.protocols()) {
             auto obj = api.makeObject();
             api.setField(obj, "name", api.makeString(proto.name));
-            api.setField(obj, "version", api.makeNumber(proto.version));
+            api.setField(obj, "version", Value::makeInt(static_cast<int64_t>(proto.version)));
             api.push(arr, obj);
         }
         return arr;
     });
 
-    api.registerFunction("wayland.info.outputs", [&client](const std::vector<Value> &) {
+    api.registerFunction("wayland.info.outputs", [&api, &client](const std::vector<Value> &) {
         auto arr = api.makeArray();
         for (const auto &out : client.outputs()) {
             auto obj = api.makeObject();
             api.setField(obj, "name", api.makeString(out.name));
-            api.setField(obj, "width", api.makeNumber(out.width));
-            api.setField(obj, "height", api.makeNumber(out.height));
-            api.setField(obj, "scale", api.makeNumber(out.scale));
-            api.setField(obj, "x", api.makeNumber(out.x));
-            api.setField(obj, "y", api.makeNumber(out.y));
+            api.setField(obj, "width", Value::makeInt(static_cast<int64_t>(out.width)));
+            api.setField(obj, "height", Value::makeInt(static_cast<int64_t>(out.height)));
+            api.setField(obj, "scale", Value::makeInt(static_cast<int64_t>(out.scale)));
+            api.setField(obj, "x", Value::makeInt(static_cast<int64_t>(out.x)));
+            api.setField(obj, "y", Value::makeInt(static_cast<int64_t>(out.y)));
             api.push(arr, obj);
         }
         return arr;
@@ -262,7 +262,7 @@ void registerWaylandModule(const VMApi &api) {
         return Value::makeBool(clipInit);
     });
 
-    api.registerFunction("wayland.clipboard.get_text", [](const std::vector<Value> &) {
+    api.registerFunction("wayland.clipboard.get_text", [&api](const std::vector<Value> &) {
         if (!clipInit || !clip) return api.makeString("");
         return api.makeString(clip->getText());
     });
@@ -282,7 +282,7 @@ void registerWaylandModule(const VMApi &api) {
         return Value::makeBool(clip->hasText());
     });
 
-    api.registerFunction("wayland.clipboard.get_primary", [](const std::vector<Value> &) {
+    api.registerFunction("wayland.clipboard.get_primary", [&api](const std::vector<Value> &) {
         if (!clipInit || !clip) return api.makeString("");
         return api.makeString(clip->getPrimaryText());
     });
@@ -312,12 +312,12 @@ void registerWaylandModule(const VMApi &api) {
         return Value::makeBool(tlInit);
     });
 
-    api.registerFunction("wayland.windows.list", [](const std::vector<Value> &) {
+    api.registerFunction("wayland.windows.list", [&api](const std::vector<Value> &) {
         if (!tlInit || !tl) return api.makeArray();
         auto arr = api.makeArray();
         for (const auto &w : tl->windows()) {
             auto obj = api.makeObject();
-            api.setField(obj, "id", api.makeNumber(w.id));
+            api.setField(obj, "id", Value::makeInt(static_cast<int64_t>(w.id)));
             api.setField(obj, "title", api.makeString(w.title));
             api.setField(obj, "app_id", api.makeString(w.appId));
             api.setField(obj, "active", Value::makeBool(w.active));
@@ -329,12 +329,12 @@ void registerWaylandModule(const VMApi &api) {
         return arr;
     });
 
-    api.registerFunction("wayland.windows.active", [](const std::vector<Value> &) {
+    api.registerFunction("wayland.windows.active", [&api](const std::vector<Value> &) {
         if (!tlInit || !tl) return Value::makeNull();
         auto w = tl->activeWindow();
         if (!w.handle) return Value::makeNull();
         auto obj = api.makeObject();
-        api.setField(obj, "id", api.makeNumber(w.id));
+        api.setField(obj, "id", Value::makeInt(static_cast<int64_t>(w.id)));
         api.setField(obj, "title", api.makeString(w.title));
         api.setField(obj, "app_id", api.makeString(w.appId));
         api.setField(obj, "active", Value::makeBool(w.active));

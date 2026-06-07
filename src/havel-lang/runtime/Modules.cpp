@@ -12,12 +12,7 @@
 #include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
-<<<<<<< HEAD
-// brightness module loaded via plugin
-=======
-#include "../../modules/brightness/BrightnessModule.hpp"
-#include "../../modules/ffi/FFIModule.hpp"
->>>>>>> havel3-io
+// brightness and ffi modules loaded via plugin
 #include <algorithm>
 
 namespace havel {

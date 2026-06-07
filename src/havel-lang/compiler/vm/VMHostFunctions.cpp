@@ -20,8 +20,8 @@ void VM::registerDefaultHostFunctions() {
     // Register string module host functions (toCodePointArray, etc.)
     {
         VMApi api(*this);
-        havel::stdlib::registerStringModule(api);
-    }
+    havel::stdlib::registerStringModule(api);
+  }
   registerHostFunction("print", [this](const std::vector<Value> &args) {
     // Check if last arg is kwargs object (marked with __kwargs key)
     std::string delim = " ";

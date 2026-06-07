@@ -13,7 +13,9 @@
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
 #include "../../modules/brightness/BrightnessModule.hpp"
+#ifdef ENABLE_MODULE_PLUGINS
 #include "../../modules/ffi/FFIModule.hpp"
+#endif
 #include <algorithm>
 
 namespace havel {
@@ -441,13 +443,17 @@ void Modules::installStdLib() {
         });
     }
 
-    auto foundFfi = std::find_if(available.begin(), available.end(),
-        [](const auto &m) { return m.name == "ffi"; });
-    if (foundFfi == available.end()) {
-        vm.registerLazyModule("ffi", [](compiler::VMApi &a) {
-            havel::modules::ffi::registerFFIModule(a);
-        });
-    }
+  auto foundFfi = std::find_if(available.begin(), available.end(),
+      [](const auto &m) { return m.name == "ffi"; });
+  if (foundFfi == available.end()) {
+#ifndef ENABLE_MODULE_PLUGINS
+      vm.registerLazyModule("ffi", [](compiler::VMApi &a) {
+          havel::modules::ffi::registerFFIModule(a);
+      });
+#else
+      vm.registerLazyModule("ffi", [](compiler::VMApi &) {});
+#endif
+  }
 }
 
  void Modules::install(InstallProfile profile, bool eagerBridges) {

@@ -221,6 +221,15 @@ void registerFsModule(const VMApi &api) {
             return Value::makeBool(fs::exists(path));
         });
 
+    // fs.writable
+    api.registerFunction(
+        "fs.writable", [api](const std::vector<Value> &args) {
+            if (args.empty())
+                return Value::makeBool(false);
+            std::string path = api.resolveString(args[0]);
+            return Value::makeBool(access(path.c_str(), W_OK) == 0);
+        });
+
     // fs.isDir
     api.registerFunction(
         "fs.isDir", [api](const std::vector<Value> &args) {
@@ -1087,7 +1096,8 @@ void registerFsModule(const VMApi &api) {
   // Create fs namespace object
   auto fsObj = api.makeObject();
 
-  api.setField(fsObj, "exists", api.makeFunctionRef("fs.exists"));
+    api.setField(fsObj, "exists", api.makeFunctionRef("fs.exists"));
+    api.setField(fsObj, "writable", api.makeFunctionRef("fs.writable"));
     api.setField(fsObj, "isDir", api.makeFunctionRef("fs.isDir"));
     api.setField(fsObj, "isFile", api.makeFunctionRef("fs.isFile"));
     api.setField(fsObj, "isSymlink", api.makeFunctionRef("fs.isSymlink"));

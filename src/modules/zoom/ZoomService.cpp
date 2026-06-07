@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstdlib>
+#include <unistd.h>
 
 #ifdef HAVE_X11
 #include <X11/Xlib.h>
@@ -393,15 +394,31 @@ IZoomBackend* ZoomService::backend() {
 	return backend_.get();
 }
 
+bool ZoomService::checkUinputPrereqs() {
+    if (access("/dev/uinput", F_OK) != 0) {
+        havel::Logger::getInstance().error("ZoomService: /dev/uinput not found — kernel uinput module required");
+        return false;
+    }
+    if (access("/dev/uinput", W_OK) != 0) {
+        havel::Logger::getInstance().error("ZoomService: no write access to /dev/uinput — run: sudo usermod -aG input $USER");
+        return false;
+    }
+    return true;
+}
+
 bool ZoomService::start() {
-	if (running_.load()) return true;
-	if (!backend()) {
-		havel::Logger::getInstance().error("ZoomService: no backend available, cannot start");
-		return false;
-	}
-	running_.store(true);
-	havel::Logger::getInstance().debug("ZoomService: started with " + backend()->name() + " backend");
-	return true;
+    if (running_.load()) return true;
+    if (!backend()) {
+        havel::Logger::getInstance().error("ZoomService: no backend available, cannot start");
+        return false;
+    }
+    auto *b = backend();
+    if (b && b->name() == "Generic" && !checkUinputPrereqs()) {
+        return false;
+    }
+    running_.store(true);
+    havel::Logger::getInstance().debug("ZoomService: started with " + backend()->name() + " backend");
+    return true;
 }
 
 void ZoomService::stop() {

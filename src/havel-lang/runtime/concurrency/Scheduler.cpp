@@ -491,6 +491,11 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
 
   if (g->state == GoroutineState::Suspended) {
     g->hotkey_retrigger.store(true, std::memory_order_release);
+    if (g->suspension_reason == SuspensionReason::HotkeyWait) {
+      // Idle/parked goroutine waiting for next trigger — wake it up
+      requeueFront(g);
+    }
+    // else: mid-sleep or other suspension — just set flag, keep suspended
     return true;
   }
 

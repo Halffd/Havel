@@ -148,8 +148,9 @@ private:
 	ZoomService();
 	~ZoomService();
 
-	void detectBackend();
-	IZoomBackend* backend();
+    void detectBackend();
+    IZoomBackend* backend();
+    bool checkUinputPrereqs();
 
 	std::atomic<bool> running_{false};
 	std::atomic<float> scale_{2.0f};

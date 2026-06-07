@@ -1,0 +1,126 @@
+use "ui/markup"
+use "ui/css"
+use "ui/style"
+use "ui/events"
+
+class State {
+  todos, nextId
+  fn @() {
+    @todos = []
+    @nextId = 1
+  }
+  fn addTodo(title) {
+    @todos.push({id: @nextId, title: title, done: false})
+    @nextId = @nextId + 1
+  }
+  fn removeTodo(id) {
+    @todos = @todos.filter(fn(t) { t.id != id })
+  }
+  fn toggleTodo(id) {
+    i = 0
+    n = #(@todos)
+    while i < n {
+      t = @todos[i]
+      if t.id == id {
+        t.done = !t.done
+        i = n
+      }
+      i += 1
+    }
+  }
+}
+
+fn renderTodoItem(t) {
+  cls = t.done ? "todo-item done" : "todo-item"
+  check = t.done ? "[x]" : "[ ]"
+  markup.h("li", {class: cls, key: str(t.id)}, [
+    markup.h("span", {class: "checkbox"}, [check]),
+    markup.h("span", {class: "title"}, [t.title]),
+    markup.h("span", {class: "id-badge"}, ["#" + str(t.id)])
+  ])
+}
+
+fn renderTodoList(todos) {
+  items = []
+  i = 0
+  n = #todos
+  while i < n {
+    items.push(renderTodoItem(todos[i]))
+    i += 1
+  }
+  markup.h("ul", {class: "todo-list"}, items)
+}
+
+fn renderStats(todos) {
+  total = #todos
+  done = 0
+  i = 0
+  while i < total {
+    if todos[i].done { done = done + 1 }
+    i += 1
+  }
+  pending = total - done
+  markup.h("div", {class: "stats"}, [
+    markup.h("span", null, ["Total: " + str(total)]),
+    markup.h("span", null, [" | Done: " + str(done)]),
+    markup.h("span", null, [" | Pending: " + str(pending)])
+  ])
+}
+
+fn renderApp(st) {
+  markup.h("div", {class: "app"}, [
+    markup.h("h1", null, ["Todo List"]),
+    renderStats(st.todos),
+    renderTodoList(st.todos),
+    markup.h("div", {class: "footer"}, [
+      markup.h("p", null, ["Built with Havel UI modules"])
+    ])
+  ])
+}
+
+st = State.new()
+st.addTodo("Learn Havel language")
+st.addTodo("Build VDOM todo app")
+st.addTodo("Test CSS parser")
+st.addTodo("Try style cascade")
+st.addTodo("Wire up events")
+st.toggleTodo(3)
+
+app = renderApp(st)
+html = markup.toHTML(app)
+print("=== Initial State ===")
+print(html)
+
+st.toggleTodo(1)
+st.removeTodo(2)
+st.addTodo("Write flashcard app")
+st.addTodo("Ship the release")
+
+app2 = renderApp(st)
+html2 = markup.toHTML(app2)
+print("")
+print("=== After Toggle + Remove + Add ===")
+print(html2)
+
+patches = markup.diff(app, app2)
+print("")
+print(f"VDOM Diff: {#patches} top-level patches")
+
+rules = css.parse(".app { font-family: sans-serif; max-width: 600px; } h1 { color: #333; border-bottom: 2px solid #3366cc; padding-bottom: 8px; } .todo-list { list-style: none; padding: 0; } .todo-item { display: flex; padding: 8px; border-bottom: 1px solid #eee; } .todo-item.done { color: #999; text-decoration: line-through; } .stats { padding: 8px; background: #f5f5f5; border-radius: 4px; margin: 8px 0; } .checkbox { cursor: pointer; }")
+
+print(f"CSS: Parsed {#rules} rules")
+
+h1Node = markup.findByTag(app, "h1")
+if h1Node != null {
+  s = style.compute(h1Node, rules)
+  print(f"h1 style: {style.toStyleString(s)}")
+}
+
+em = events.EventEmitter.new()
+log = []
+em.listen("add", fn(data) { log.push("added: " + data) })
+em.listen("remove", fn(data) { log.push("removed: " + data) })
+em.emit("add", "Build Havel apps")
+em.emit("remove", "Procrastinate")
+print("")
+print(f"Event log: {log}")

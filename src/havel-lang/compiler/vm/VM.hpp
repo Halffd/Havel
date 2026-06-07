@@ -329,10 +329,15 @@ void* last_suspension_context_ = nullptr;
  std::unordered_map<uint32_t, Fiber*> thread_wait_map_;
  mutable std::shared_mutex thread_wait_mutex_;
 
- // Thread/timeout/interval result storage for <- await
- std::unordered_map<uint32_t, Value> thread_results_;
- std::unordered_map<uint32_t, Value> timeout_results_;
- std::unordered_map<uint32_t, Value> interval_results_;
+    // Thread/timeout/interval result storage for <- await
+    std::unordered_map<uint32_t, Value> thread_results_;
+    std::unordered_map<uint32_t, Value> timeout_results_;
+    std::unordered_map<uint32_t, Value> interval_results_;
+
+    // Closures captured by timer/thread callbacks (invisible to GC otherwise)
+    std::unordered_map<uint32_t, Value> interval_captured_closures_;
+    std::unordered_map<uint32_t, Value> timeout_captured_closures_;
+    std::unordered_map<uint32_t, Value> thread_captured_closures_;
 
 	
  class EventQueue* event_queue_ = nullptr;
@@ -1066,10 +1071,13 @@ bool isLazyModuleLoaded(const std::string &name) const;
  const std::shared_ptr<BytecodeChunk>& getMainChunk() const { return main_chunk_; }
   std::unordered_map<std::string, Value>& getGlobals() { return globals; }
   auto& hostFunctionGlobals() { return host_function_globals_; }
-void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
-repl_chunks_.push_back(chunk);
-current_chunk = chunk.get();
-}
+    void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
+        repl_chunks_.push_back(chunk);
+        if (repl_chunks_.size() > 64) {
+            repl_chunks_.erase(repl_chunks_.begin());
+        }
+        current_chunk = chunk.get();
+    }
 void storePersistentChunk(std::shared_ptr<BytecodeChunk> chunk) {
         persistent_chunks_.push_back(std::move(chunk));
         if (persistent_chunks_.size() > 64) {

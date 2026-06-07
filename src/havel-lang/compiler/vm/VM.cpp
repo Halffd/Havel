@@ -102,14 +102,34 @@ VM::~VM() {
                   tier2_compile_count_.load(),
                   tier2_skip_duplicate_count_.load());
   }
-  for (auto &[name, rootId] : host_function_gc_roots_) {
+    for (auto &[name, rootId] : host_function_gc_roots_) {
         unpinExternalRoot(rootId);
     }
     host_function_gc_roots_.clear();
 
     if (heap_.externalRootCount() > 0) {
         ::havel::warning("[VM][GC] {} external roots still pinned at VM shutdown", heap_.externalRootCount());
-  }
+    }
+
+    module_chunks_.clear();
+    repl_chunks_.clear();
+    persistent_chunks_.clear();
+    backedge_counters_.clear();
+    tier1_compiled_.clear();
+    tier2_compiled_.clear();
+    protocol_contracts_.clear();
+    protocol_impls_.clear();
+    type_protocols_.clear();
+    overloaded_methods_.clear();
+    function_properties_.clear();
+    closure_properties_.clear();
+    hostfunc_properties_.clear();
+    direct_call_thunks_.clear();
+    coroutine_to_frame_.clear();
+    globals_stack_.clear();
+    thread_results_.clear();
+    timeout_results_.clear();
+    interval_results_.clear();
 }
 
 template <typename T> T VM::getValue(const Value &value) {
@@ -1966,14 +1986,67 @@ void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
 }
 
 std::vector<Value> VM::stackValuesForRoots() const {
-  std::vector<Value> values;
-  std::stack<Value> copy = stack;
-  values.reserve(copy.size());
-  while (!copy.empty()) {
-    values.push_back(copy.top());
-    copy.pop();
-  }
-  return values;
+    std::vector<Value> values;
+    std::stack<Value> copy = stack;
+    values.reserve(copy.size() + 64);
+    while (!copy.empty()) {
+        values.push_back(copy.top());
+        copy.pop();
+    }
+    for (const auto &gmap : globals_stack_) {
+        for (const auto &[_, v] : gmap) {
+            values.push_back(v);
+        }
+    }
+    for (const auto &[_, v] : thread_results_) {
+        values.push_back(v);
+    }
+    for (const auto &[_, v] : timeout_results_) {
+        values.push_back(v);
+    }
+    for (const auto &[_, v] : interval_results_) {
+        values.push_back(v);
+    }
+    for (const auto &[_, v] : interval_captured_closures_) {
+        values.push_back(v);
+    }
+    for (const auto &[_, v] : timeout_captured_closures_) {
+        values.push_back(v);
+    }
+    for (const auto &[_, v] : thread_captured_closures_) {
+        values.push_back(v);
+    }
+    for (const auto &[_, ov] : overloaded_methods_) {
+        for (const auto &v : ov) {
+            values.push_back(v);
+        }
+    }
+    for (const auto &[_, oref] : function_properties_) {
+        values.push_back(Value::makeObjectId(oref.id));
+    }
+    for (const auto &[_, oref] : closure_properties_) {
+        values.push_back(Value::makeObjectId(oref.id));
+    }
+    for (const auto &[_, oref] : hostfunc_properties_) {
+        values.push_back(Value::makeObjectId(oref.id));
+    }
+    for (const auto &[_, thunk] : direct_call_thunks_) {
+        for (const auto &call : thunk.calls) {
+            for (const auto &arg : call.args) {
+                values.push_back(arg);
+            }
+        }
+    }
+    if (current_exception_.isErrorId()) {
+        values.push_back(current_exception_);
+    }
+    for (const auto &pc : pending_calls) {
+        values.push_back(pc.fn);
+        for (const auto &arg : pc.args) {
+            values.push_back(arg);
+        }
+    }
+    return values;
 }
 
 std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
@@ -2014,17 +2087,15 @@ void VM::drainFinalizers() {
 }
 
 void VM::collectGarbage() {
-	if (gc_suspend_counter_ > 0) return;
-	auto stats_before = heap_.stats();
-   heap_.collectGarbage(stackValuesForRoots(), locals, globals,
-   activeClosureIdsForRoots(),
-   [this](uint32_t index) -> std::optional<Value> {
-      if (index >= locals.size()) {
-         return std::nullopt;
-      }
-      return locals[index];
-   });
-auto stats_after = heap_.stats();
+    if (gc_suspend_counter_ > 0) return;
+    heap_.collectGarbage(stackValuesForRoots(), locals, globals,
+        activeClosureIdsForRoots(),
+        [this](uint32_t index) -> std::optional<Value> {
+            if (index >= locals.size()) {
+                return std::nullopt;
+            }
+            return locals[index];
+        });
 }
 
 void VM::stepGarbageCollection(size_t work_budget) {

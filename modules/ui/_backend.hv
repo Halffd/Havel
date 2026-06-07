@@ -213,9 +213,9 @@ fn _call0(fn_ptr, retType, params) {
 }
 
 class Backend {
-    var uiBackend = null
+  uiBackend
 
-    fn new(toolkitName) {
+  fn @(toolkitName) {
         _resolveShimSyms()
         _toolkitHandle = ffi.open(_toolkitPath(toolkitName))
         if _toolkitHandle == null {
@@ -243,9 +243,9 @@ class Backend {
             return null
         }
         ffi.call(_fn_init, "int32", ["pointer"], @uiBackend)
-        _initialized = true
-        @
-    }
+  _initialized = true
+    self
+  }
 
     fn window(title) { _callV(_fn_window, "int64", ["pointer", "string"], @uiBackend, title) }
     fn panel(side) { _callV(_fn_panel, "int64", ["pointer", "string"], @uiBackend, side) }
@@ -342,8 +342,8 @@ fn inputInt(title, label, defVal, min, max, step) { ffi.call(_fn_input_int, "int
         }
     }
 
-    fn destroy() {
-        @shutdown()
+  fn destroy() {
+  self.shutdown()
         if _toolkitHandle != null {
             ffi.close(_toolkitHandle)
             _toolkitHandle = null

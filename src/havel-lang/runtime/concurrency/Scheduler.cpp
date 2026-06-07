@@ -434,10 +434,11 @@ void Scheduler::requeueFront(Goroutine* g) {
       for (const auto& arg : g->hotkey_args) {
         g->fiber->stack.push(arg);
       }
-      // Do NOT pushCall here — startGoroutineCall in executeFrame will
-      // set up the call frame with the correct chunk_ptr.  pushCall
-      // without a chunk creates a null chunk_ptr frame, causing
-      // loadFiberState to fall back to current_chunk which may be wrong.
+      g->fiber->pushCall(g->hotkey_function_id,
+        static_cast<uint32_t>(g->hotkey_args.size()),
+        g->hotkey_chunk);
+      auto& frame = g->fiber->currentFrame();
+      frame.closure_id = g->hotkey_closure_id;
     }
     g->fiber->state = FiberState::CREATED;
     g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;

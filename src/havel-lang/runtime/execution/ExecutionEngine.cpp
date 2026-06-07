@@ -129,34 +129,26 @@ bool ExecutionEngine::executeFrame() {
     }
     
   // STEP 3: Load fiber state into VM's global execution state
-  // For newly-created or reset goroutines, use startGoroutineCall which
-  // resolves the correct chunk (from closure if needed) and sets up the
-  // call frame.  For resuming goroutines, use loadFiberState which
-  // restores suspended state.
-  // NOTE: pickNext() already sets state to Running, so we cannot rely on
-  // g->state == Created here.  Instead, check the fiber's call_stack —
-  // if empty (or fiber in CREATED state), the goroutine needs fresh
-  // initialization via startGoroutineCall.
-  bool needsInit = !g->fiber ||
-                   g->fiber->call_stack.empty() ||
-                   g->fiber->state == FiberState::CREATED;
-  if (needsInit) {
-        bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
-        if (!ok) {
-            handleReturned(g);
-            stats_.goroutines_completed++;
-            stats_.frames_executed++;
-            return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
-        }
-        g->state = Scheduler::GoroutineState::Runnable;
-        // Sync VM state to fiber immediately so the fiber's call_stack
-        // has the correct chunk_ptr. The Fiber constructor initializes
-        // call_stack via pushCall() with chunk_ptr=nullptr; without this
-        // sync, the first loadFiberState would see null chunk_ptr.
-        if (g->fiber) {
-            vm_->saveFiberState(g->fiber);
-        }
-        } else if (g->fiber) {
+  // For newly-created goroutines, use startGoroutineCall which resolves
+  // the correct chunk (from closure if needed) and sets up the call frame.
+  // For resuming goroutines, use loadFiberState which restores suspended state.
+  if (g->state == Scheduler::GoroutineState::Created) {
+    bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+    if (!ok) {
+      handleReturned(g);
+      stats_.goroutines_completed++;
+      stats_.frames_executed++;
+      return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+    }
+    g->state = Scheduler::GoroutineState::Runnable;
+    // Sync VM state to fiber immediately so the fiber's call_stack
+    // has the correct chunk_ptr. The Fiber constructor initializes
+    // call_stack via pushCall() with chunk_ptr=nullptr; without this
+    // sync, the first loadFiberState would see null chunk_ptr.
+    if (g->fiber) {
+      vm_->saveFiberState(g->fiber);
+    }
+  } else if (g->fiber) {
             vm_->loadFiberState(g->fiber);
             // If resuming from an await suspension, replace the placeholder null
             // on the stack with the actual resume_value from the WaitHandle

@@ -1,5 +1,14 @@
 class Parser {
-  src
-  fn @(s) { @src = s }
-  fn get() { @src }
+  src, pos, len
+  fn @(s) { @src = s; @pos = 0; @len = #s }
+  fn at() {
+    p = @pos
+    s = @src
+    e = p + 1
+    s[p:e]
+  }
+  fn test() {
+    c = @at()
+    c
+  }
 }

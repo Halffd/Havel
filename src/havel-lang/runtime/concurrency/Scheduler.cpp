@@ -443,17 +443,23 @@ void Scheduler::requeueFront(Goroutine* g) {
     g->fiber->state = FiberState::CREATED;
     g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;
   }
-    ::havel::debug("[Scheduler] requeueFront: gid={} persistent={} fn={} closure={}",
-        g->id, g->persistent, g->function_id, g->closure_id);
+    ::havel::debug("[Scheduler] requeueFront: gid={} persistent={} fn={} closure={} priority={}",
+        g->id, g->persistent, g->function_id, g->closure_id, static_cast<int>(g->priority));
     {
-		std::lock_guard<std::mutex> lock(priority_mutex_);
-		if (g->priority == FiberPriority::HOTKEY) {
-			hotkey_queue_.push_front(g);
-		} else if (g->priority == FiberPriority::BACKGROUND) {
-			background_queue_.push_front(g);
-		} else {
-			runnable_queue_.push_front(g);
-		}
+    std::lock_guard<std::mutex> lock(priority_mutex_);
+    if (g->priority == FiberPriority::HOTKEY) {
+      hotkey_queue_.push_front(g);
+      ::havel::debug("[Scheduler] requeueFront: gid={} pushed to HOTKEY queue (size={})",
+        g->id, hotkey_queue_.size());
+    } else if (g->priority == FiberPriority::BACKGROUND) {
+      background_queue_.push_front(g);
+      ::havel::debug("[Scheduler] requeueFront: gid={} pushed to BACKGROUND queue (size={})",
+        g->id, background_queue_.size());
+    } else {
+      runnable_queue_.push_front(g);
+      ::havel::debug("[Scheduler] requeueFront: gid={} pushed to RUNNABLE queue (size={})",
+        g->id, runnable_queue_.size());
+    }
     }
 }
 
@@ -561,6 +567,9 @@ bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
 
 bool Scheduler::hasRunnableFibers() const {
   std::lock_guard<std::mutex> lock(priority_mutex_);
+  size_t hk = hotkey_queue_.size(), rn = runnable_queue_.size(), bg = background_queue_.size();
+  if (debugging::debug_io)
+    ::havel::debug("[Scheduler] hasRunnableFibers: hotkey={} runnable={} bg={}", hk, rn, bg);
   for (auto* g : hotkey_queue_) {
     if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
       return true;

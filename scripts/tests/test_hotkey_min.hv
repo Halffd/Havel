@@ -1,0 +1,8 @@
+x = 0
+F1 => {
+    print("F1 pressed")
+    x += 1
+    print(x)
+}
+print("registered F1")
+exit(0)

@@ -1,0 +1,12 @@
+z = 0
+interval 100 {
+    my_lambda = () => { print("hello from lambda") }
+    my_lambda()
+    z = z + 1
+    print("interval z:", z)
+    if z >= 3 {
+        print("done")
+    }
+}
+sleep(500)
+print("final z:", z)

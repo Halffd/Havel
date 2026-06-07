@@ -433,7 +433,7 @@ void Modules::installStdLib() {
     }
 
     // Brightness module loaded dynamically as .so plugin
-    // Fallback: register ffi as lazy module via plugin loader if scan missed it
+    // Fallback: register ffi and config as lazy modules via plugin loader if scan missed them
     auto foundFfi = std::find_if(available.begin(), available.end(),
         [](const auto &m) { return m.name == "ffi"; });
     if (foundFfi == available.end()) {
@@ -444,6 +444,18 @@ void Modules::installStdLib() {
                 plugin->register_fn(static_cast<void *>(&a));
             }
         });
+    }
+
+    auto foundConfig = std::find_if(available.begin(), available.end(),
+        [](const auto &m) { return m.name == "config"; });
+    if (foundConfig == available.end()) {
+        std::string configName = "config";
+        vm.registerLazyModule(configName, [this, configName](compiler::VMApi &a) {
+            auto plugin = extensionLoader_->loadModulePlugin(configName);
+            if (plugin) {
+                plugin->register_fn(static_cast<void *>(&a));
+            }
+        }, {"cfg", "conf"});
     }
 }
 

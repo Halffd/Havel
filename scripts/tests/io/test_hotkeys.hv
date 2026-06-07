@@ -7,7 +7,19 @@ f1 => {
 hotkey.register("p", fn() {
     print("pressed P")
 })
-a => print "hello"
+a => {
+    print "hello"
+    print(go fn(){
+        i = 0
+        loop {
+            print(i)
+            i += 1
+            if i > 100 {
+                return i
+            }
+        }
+    })
+}
 b => {
   try {
       print(rand())

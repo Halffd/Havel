@@ -12,7 +12,7 @@
 #include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
-#include "../../modules/brightness/BrightnessModule.hpp"
+// brightness module loaded via plugin
 #include <algorithm>
 
 namespace havel {
@@ -432,13 +432,7 @@ void Modules::installStdLib() {
         }
     }
 
-    auto found = std::find_if(available.begin(), available.end(),
-        [](const auto &m) { return m.name == "brightness"; });
-    if (found == available.end()) {
-        vm.registerLazyModule("brightness", [](compiler::VMApi &a) {
-            havel::modules::registerBrightnessModule(a);
-        });
-    }
+    // Brightness module loaded dynamically as havel_mod_brightness.so plugin
 }
 
  void Modules::install(InstallProfile profile, bool eagerBridges) {

@@ -8,7 +8,7 @@
 #include "../../runtime/concurrency/WatcherRegistry.hpp"
 #include "../runtime/EventQueue.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
-#include "stdlib/StringModule.hpp"
+// String module loaded via plugin
 
 #include <iostream>
 #include <sstream>
@@ -17,11 +17,7 @@ namespace havel::compiler {
 
 void VM::registerDefaultHostFunctions() {
   // Register print as both host function AND global (for closure access)
-    // Register string module host functions (toCodePointArray, etc.)
-    {
-        VMApi api(*this);
-        havel::stdlib::registerStringModule(api);
-    }
+    // String module is loaded dynamically as havel_mod_string.so plugin
   registerHostFunction("print", [this](const std::vector<Value> &args) {
     // Check if last arg is kwargs object (marked with __kwargs key)
     std::string delim = " ";

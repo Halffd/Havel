@@ -128,11 +128,19 @@ bool ExecutionEngine::executeFrame() {
             g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
     }
     
-    // STEP 3: Load fiber state into VM's global execution state
-    // For newly-created goroutines, use startGoroutineCall which resolves
-    // the correct chunk (from closure if needed) and sets up the call frame.
-    // For resuming goroutines, use loadFiberState which restores suspended state.
-    if (g->state == Scheduler::GoroutineState::Created) {
+  // STEP 3: Load fiber state into VM's global execution state
+  // For newly-created or reset goroutines, use startGoroutineCall which
+  // resolves the correct chunk (from closure if needed) and sets up the
+  // call frame.  For resuming goroutines, use loadFiberState which
+  // restores suspended state.
+  // NOTE: pickNext() already sets state to Running, so we cannot rely on
+  // g->state == Created here.  Instead, check the fiber's call_stack —
+  // if empty (or fiber in CREATED state), the goroutine needs fresh
+  // initialization via startGoroutineCall.
+  bool needsInit = !g->fiber ||
+                   g->fiber->call_stack.empty() ||
+                   g->fiber->state == FiberState::CREATED;
+  if (needsInit) {
         bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
         if (!ok) {
             handleReturned(g);
@@ -376,14 +384,24 @@ void ExecutionEngine::handleSuspended(Scheduler::Goroutine* g) {
 }
 
 void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
-    if (debug_mode_) {
-        std::cerr << "[ExecutionEngine] Goroutine completed execution\n";
-    }
- if (!g) return;
+  if (debug_mode_) {
+    std::cerr << "[ExecutionEngine] Goroutine completed execution\n";
+  }
+  if (!g) return;
 
-    // Persistent goroutines (hotkey system): re-suspend instead of Done.
-    // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
-    if (g->persistent) {
+  // Sanity: detect corrupted goroutine ID (should be sequential 1..N)
+  if (g->id == 0 || g->id > 100000) {
+    ::havel::error("[ExecutionEngine] handleReturned: corrupted goroutine gid={} persistent={} — skipping requeue to avoid crash",
+      g->id, g->persistent);
+    if (scheduler_->current() == g) {
+      scheduler_->clearCurrent();
+    }
+    return;
+  }
+
+  // Persistent goroutines (hotkey system): re-suspend instead of Done.
+  // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
+  if (g->persistent) {
         ::havel::debug("[ExecutionEngine] handleReturned: gid={} persistent retrigger={}", g->id, g->hotkey_retrigger.load(std::memory_order_acquire));
         if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
      g->hotkey_retrigger.store(false, std::memory_order_release);

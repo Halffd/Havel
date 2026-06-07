@@ -1,0 +1,5 @@
+class Parser {
+  src
+  fn @(s) { @src = s }
+  fn get() { @src }
+}

@@ -1,324 +1,405 @@
 // css.hv - CSS parser and selector matching for Havel UI
-// Recursive descent parser for CSS, specificity computation, matching
-
 use "ui/markup" as markup
 
 class Selector {
-  var parts = []
-  var specificity = [0, 0, 0]
-  var text = ""
-
-  fn new(parts, text) {
+  parts, specificity, text
+  fn @(parts, text) {
     @parts = parts
     @text = text
     @specificity = computeSpecificity(parts)
-    @
   }
 }
 
 class Declaration {
-  var property = ""
-  var value = ""
-  var important = false
-
-  fn new(property, value, important) {
+  property, value, important
+  fn @(property, value, important) {
     @property = property
     @value = value
     @important = important
-    @
   }
 }
 
 class Rule {
-  var selectors = []
-  var declarations = []
-
-  fn new(selectors, declarations) {
+  selectors, declarations
+  fn @(selectors, declarations) {
     @selectors = selectors
     @declarations = declarations
-    @
   }
 }
 
 class Parser {
-  var _src = ""
-  var _pos = 0
-  var _len = 0
-
-  fn new(src) {
-    @_src = src
-    @_pos = 0
-    @_len = #src
-    @
+  src, pos, len
+  fn @(src) {
+    @src = src
+    @pos = 0
+    @len = #src
   }
 
-  fn _at() {
-    p = @_pos
-    if p < @_len { e = p + 1; @_src[p:e] }
-    else { null }
+  fn at() {
+    p = @pos
+    l = @len
+    if p < l {
+      e = p + 1
+      s = @src
+      s[p:e]
+    } else { null }
   }
 
-  fn _peek(offset) {
-    i = @_pos + offset
-    if i < @_len { e = i + 1; @_src[i:e] }
-    else { null }
+  fn peek(offset) {
+    p = @pos
+    i = p + offset
+    l = @len
+    if i < l {
+      e = i + 1
+      s = @src
+      s[i:e]
+    } else { null }
   }
 
-  fn _advance() {
-    ch = @_at()
-    @_pos = @_pos + 1
+  fn advance() {
+    ch = @at()
+    @pos = @pos + 1
     ch
   }
 
-  fn _skipWS() {
-    while @_pos < @_len {
-      ch = @_at()
+  fn skipWS() {
+    p = @pos
+    l = @len
+    while p < l {
+      ch = @at()
       if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" || ch == "\f" {
-        @_pos = @_pos + 1
-      } else {
-        return
-      }
+        @pos = @pos + 1
+        p = @pos
+      } else { return }
     }
   }
 
-  fn _skipComment() {
-    while @_pos < @_len {
-      if @_at() == "/" && @_peek(1) == "*" {
-        @_pos = @_pos + 2
-        while @_pos < @_len {
-          if @_at() == "*" && @_peek(1) == "/" {
-            @_pos = @_pos + 2
+  fn skipComment() {
+    p = @pos
+    l = @len
+    while p < l {
+      ch = @at()
+      pk = @peek(1)
+      if ch == "/" && pk == "*" {
+        @pos = @pos + 2
+        p = @pos
+        while p < l {
+          ch2 = @at()
+          pk2 = @peek(1)
+          if ch2 == "*" && pk2 == "/" {
+            @pos = @pos + 2
+            p = @pos
             return
           }
-          @_pos = @_pos + 1
+          @pos = @pos + 1
+          p = @pos
         }
-      } else {
-        return
-      }
-      @_skipWS()
+      } else { return }
+      @skipWS()
+      p = @pos
     }
   }
 
-  fn _skipWSAndComments() {
-    while @_pos < @_len {
-      @_skipWS()
-      if @_at() == "/" && @_peek(1) == "*" {
-        @_skipComment()
-      } else {
-        return
-      }
+  fn skipWSAndComments() {
+    p = @pos
+    l = @len
+    while p < l {
+      @skipWS()
+      ch = @at()
+      pk = @peek(1)
+      if ch == "/" && pk == "*" {
+        @skipComment()
+        p = @pos
+      } else { return }
     }
   }
 
-  fn _isIdentStart(ch) {
+  fn isIdentStart(ch) {
     if ch == null { return false }
     (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_" || ch == "-"
   }
 
-  fn _isIdent(ch) {
+  fn isIdent(ch) {
     if ch == null { return false }
-    @_isIdentStart(ch) || (ch >= "0" && ch <= "9")
+    started = @isIdentStart(ch)
+    started || (ch >= "0" && ch <= "9")
   }
 
-  fn _readIdent() {
+  fn readIdent() {
     result = ""
-    ch = @_at()
-    if ch == "-" { result = "-"; @_advance() }
-    while @_pos < @_len {
-      ch = @_at()
-      if !@_isIdent(ch) { break }
-      result = result + @_advance()
+    ch = @at()
+    if ch == "-" { result = "-"; @advance() }
+    p = @pos
+    l = @len
+    while p < l {
+      ch = @at()
+      if !@isIdent(ch) { break }
+      result = result + @advance()
+      p = @pos
     }
     result
   }
 
-  fn _readString(quote) {
-    @_advance()
+  fn readString(quote) {
+    @advance()
     result = ""
-    while @_pos < @_len && @_at() != quote {
-      if @_at() == "\\" {
-        @_advance()
-        result = result + @_advance()
+    p = @pos
+    l = @len
+    ch = @at()
+    while p < l && ch != quote {
+      if ch == "\\" {
+        @advance()
+        result = result + @advance()
       } else {
-        result = result + @_advance()
+        result = result + @advance()
       }
+      p = @pos
+      ch = @at()
     }
-    if @_pos < @_len { @_advance() }
+    if p < l { @advance() }
     result
   }
 
-  fn _parseSelector() {
+  fn parseSelector() {
     parts = []
-    @_skipWSAndComments()
-    while @_pos < @_len && @_at() != "{" && @_at() != "," {
-      @_skipWSAndComments()
-      ch = @_at()
+    @skipWSAndComments()
+    p = @pos
+    l = @len
+    cur = @at()
+    while p < l && cur != "{" && cur != "," {
+      @skipWSAndComments()
+      ch = @at()
       if ch == null || ch == "{" || ch == "," { break }
       if ch == "." {
-        @_advance()
-        name = @_readIdent()
+        @advance()
+        name = @readIdent()
         parts.push({type: "class", value: name})
       } else if ch == "#" {
-        @_advance()
-        name = @_readIdent()
+        @advance()
+        name = @readIdent()
         parts.push({type: "id", value: name})
       } else if ch == "[" {
-        @_advance()
-        attrName = @_readIdent()
-        @_skipWS()
+        @advance()
+        attrName = @readIdent()
+        @skipWS()
         oper = ""
-        if @_at() == "=" { oper = "="; @_advance() }
-        else if @_at() == "~" && @_peek(1) == "=" { oper = "~="; @_pos = @_pos + 2 }
-        else if @_at() == "|" && @_peek(1) == "=" { oper = "|="; @_pos = @_pos + 2 }
-        else if @_at() == "^" && @_peek(1) == "=" { oper = "^="; @_pos = @_pos + 2 }
-        else if @_at() == "$" && @_peek(1) == "=" { oper = "$="; @_pos = @_pos + 2 }
-        else if @_at() == "*" && @_peek(1) == "=" { oper = "*="; @_pos = @_pos + 2 }
+        nxt = @at()
+        if nxt == "=" { oper = "="; @advance() }
+        else if nxt == "~" {
+          pk1 = @peek(1)
+          if pk1 == "=" { oper = "~="; @pos = @pos + 2 }
+        } else if nxt == "|" {
+          pk1 = @peek(1)
+          if pk1 == "=" { oper = "|="; @pos = @pos + 2 }
+        } else if nxt == "^" {
+          pk1 = @peek(1)
+          if pk1 == "=" { oper = "^="; @pos = @pos + 2 }
+        } else if nxt == "$" {
+          pk1 = @peek(1)
+          if pk1 == "=" { oper = "$="; @pos = @pos + 2 }
+        } else if nxt == "*" {
+          pk1 = @peek(1)
+          if pk1 == "=" { oper = "*="; @pos = @pos + 2 }
+        }
         attrValue = ""
         if oper != "" {
-          @_skipWS()
-        if ch == "\"" || ch == "'" {
-          attrValue = @_readString(ch)
+          @skipWS()
+          q = @at()
+          if q == "\"" || q == "'" {
+            attrValue = @readString(q)
           } else {
-            while @_pos < @_len && @_at() != "]" && @_at() != " " {
-              attrValue = attrValue + @_advance()
+            p2 = @pos
+            while p2 < l {
+              c = @at()
+              if c == "]" || c == " " { break }
+              attrValue = attrValue + @advance()
+              p2 = @pos
             }
           }
         }
-        @_skipWS()
-        if @_at() == "]" { @_advance() }
+        @skipWS()
+        if @at() == "]" { @advance() }
         parts.push({type: "attr", name: attrName, "op": oper, value: attrValue})
       } else if ch == ":" {
-        @_advance()
-        if @_at() == ":" {
-          @_advance()
-          name = @_readIdent()
+        @advance()
+        nxt = @at()
+        if nxt == ":" {
+          @advance()
+          name = @readIdent()
           parts.push({type: "pseudo_element", value: name})
         } else {
-          name = @_readIdent()
+          name = @readIdent()
           args = ""
-          if @_at() == "(" {
-            @_advance()
+          nxt2 = @at()
+          if nxt2 == "(" {
+            @advance()
             depth = 1
-            while @_pos < @_len && depth > 0 {
-              c = @_advance()
+            p3 = @pos
+            while p3 < l && depth > 0 {
+              c = @advance()
               if c == "(" { depth = depth + 1 }
               else if c == ")" { depth = depth - 1 }
               if depth > 0 { args = args + c }
+              p3 = @pos
             }
           }
           parts.push({type: "pseudo", value: name, args: args})
         }
       } else if ch == "*" {
-        @_advance()
+        @advance()
         parts.push({type: "universal", value: "*"})
       } else if ch == ">" {
-        @_advance()
-        @_skipWSAndComments()
+        @advance()
+        @skipWSAndComments()
         parts.push({type: "combinator", value: ">"})
       } else if ch == "+" {
-        @_advance()
-        @_skipWSAndComments()
+        @advance()
+        @skipWSAndComments()
         parts.push({type: "combinator", value: "+"})
       } else if ch == "~" {
-        @_advance()
-        @_skipWSAndComments()
+        @advance()
+        @skipWSAndComments()
         parts.push({type: "combinator", value: "~"})
-      } else if @_isIdentStart(ch) || (ch == "-" && @_isIdentStart(@_peek(1))) {
-        name = @_readIdent()
-        parts.push({type: "type", value: name})
       } else {
-        @_advance()
+        pk1 = @peek(1)
+        if @isIdentStart(ch) {
+          name = @readIdent()
+          parts.push({type: "type", value: name})
+        } else if ch == "-" && @isIdentStart(pk1) {
+          name = @readIdent()
+          parts.push({type: "type", value: name})
+        } else {
+          @advance()
+        }
       }
+      p = @pos
+      cur = @at()
     }
     start = 0
-    while start < #parts && parts[start].type == "combinator" {
+    n = #parts
+    while start < n {
+      pt = parts[start]
+      if pt.type != "combinator" { break }
       start = start + 1
     }
-    if start > 0 {
-      parts = parts[start:]
-    }
+    if start > 0 { parts = parts[start:] }
     parts
   }
 
-  fn _parseSelectorList() {
+  fn parseSelectorList() {
     selectors = []
-    @_skipWSAndComments()
-    while @_pos < @_len && @_at() != "{" {
-      parts = @_parseSelector()
+    @skipWSAndComments()
+    p = @pos
+    l = @len
+    cur = @at()
+    while p < l && cur != "{" {
+      parts = @parseSelector()
       if #parts > 0 {
         text = selectorPartsToText(parts)
         sel = Selector.new(parts, text)
         selectors.push(sel)
       }
-      @_skipWSAndComments()
-      if @_at() == "," {
-        @_advance()
-        @_skipWSAndComments()
-      } else {
-        break
-      }
+      @skipWSAndComments()
+      cur = @at()
+      if cur == "," {
+        @advance()
+        @skipWSAndComments()
+        cur = @at()
+      } else { break }
+      p = @pos
     }
     selectors
   }
 
-  fn _parseDeclarations() {
+  fn parseDeclarations() {
     decls = []
-    while @_pos < @_len && @_at() != "}" {
-      @_skipWSAndComments()
-      if @_at() == "}" { break }
-      prop = @_readIdent()
+    p = @pos
+    l = @len
+    cur = @at()
+    while p < l && cur != "}" {
+      @skipWSAndComments()
+      cur = @at()
+      if cur == "}" { break }
+      prop = @readIdent()
       if prop == "" {
-        if @_pos < @_len { @_advance() }
+        if p < l { @advance() }
+        p = @pos
         continue
       }
-      @_skipWSAndComments()
-      if @_at() != ":" { continue }
-      @_advance()
-      @_skipWS()
+      @skipWSAndComments()
+      cur2 = @at()
+      if cur2 != ":" {
+        p = @pos
+        continue
+      }
+      @advance()
+      @skipWS()
       value = ""
-      while @_pos < @_len && @_at() != ";" && @_at() != "}" {
-        if @_at() == "\"" || @_at() == "'" {
-          value = value + @_readString(@_at())
+      p2 = @pos
+      while p2 < l {
+        c = @at()
+        if c == ";" || c == "}" { break }
+        if c == "\"" || c == "'" {
+          value = value + @readString(c)
         } else {
-          value = value + @_advance()
+          value = value + @advance()
         }
+        p2 = @pos
       }
       value = value.trim()
       important = false
-      if #value > 10 && value[#value-10:] == "!important" {
-        important = true
-        value = value[:#value-10].trim()
-      } else if #value > 9 && value[#value-9:] == "!important" {
-        important = true
-        value = value[:#value-9].trim()
+      vl = #value
+      if vl > 10 {
+        tail = value[vl - 10:]
+        if tail == "!important" {
+          important = true
+          e = vl - 10
+          value = value[:e].trim()
+        }
       }
-      if @_at() == ";" { @_advance() }
+      if !important && vl > 9 {
+        tail = value[vl - 9:]
+        if tail == "!important" {
+          important = true
+          e = vl - 9
+          value = value[:e].trim()
+        }
+      }
+      if @at() == ";" { @advance() }
       if prop != "" && value != "" {
         decls.push(Declaration.new(prop, value, important))
       }
+      p = @pos
     }
     decls
   }
 
-  fn _parseRule() {
-    selectors = @_parseSelectorList()
-    @_skipWSAndComments()
-    if @_at() != "{" { return null }
-    @_advance()
-    decls = @_parseDeclarations()
-    if @_at() == "}" { @_advance() }
+  fn parseRule() {
+    selectors = @parseSelectorList()
+    @skipWSAndComments()
+    cur = @at()
+    if cur != "{" { return null }
+    @advance()
+    decls = @parseDeclarations()
+    cur2 = @at()
+    if cur2 == "}" { @advance() }
     if #selectors > 0 { Rule.new(selectors, decls) }
     else { null }
   }
 
   fn parseAll() {
     rules = []
-    while @_pos < @_len {
-      @_skipWSAndComments()
-      if @_pos >= @_len { break }
-      if @_at() == "}" { @_advance(); continue }
-      rule = @_parseRule()
+    p = @pos
+    l = @len
+    while p < l {
+      @skipWSAndComments()
+      p = @pos
+      if p >= l { break }
+      cur = @at()
+      if cur == "}" { @advance(); p = @pos; continue }
+      rule = @parseRule()
       if rule != null { rules.push(rule) }
+      p = @pos
     }
     rules
   }
@@ -329,12 +410,12 @@ fn computeSpecificity(parts) {
   b = 0
   c = 0
   for p in parts {
-    if p.type == "id" { a = a + 1 }
-    else if p.type == "class" { b = b + 1 }
-    else if p.type == "attr" { b = b + 1 }
-    else if p.type == "pseudo" { b = b + 1 }
-    else if p.type == "type" { c = c + 1 }
-    else if p.type == "universal" { c = c + 0 }
+    t = p.type
+    if t == "id" { a = a + 1 }
+    else if t == "class" { b = b + 1 }
+    else if t == "attr" { b = b + 1 }
+    else if t == "pseudo" { b = b + 1 }
+    else if t == "type" { c = c + 1 }
   }
   [a, b, c]
 }
@@ -347,21 +428,24 @@ fn selectorPartsToText(parts) {
       prev = parts[i - 1]
       if prev.type != "combinator" { result = result + " " }
     }
-    if p.type == "type" { result = result + p.value }
-    else if p.type == "class" { result = result + "." + p.value }
-    else if p.type == "id" { result = result + "#" + p.value }
-    else if p.type == "universal" { result = result + "*" }
-    else if p.type == "attr" {
+    t = p.type
+    if t == "type" { result = result + p.value }
+    else if t == "class" { result = result + "." + p.value }
+    else if t == "id" { result = result + "#" + p.value }
+    else if t == "universal" { result = result + "*" }
+    else if t == "attr" {
       result = result + "[" + p.name
-      if p.op != "" { result = result + p.op + p.value }
+      o = p.op
+      if o != "" { result = result + o + p.value }
       result = result + "]"
     }
-    else if p.type == "pseudo" {
+    else if t == "pseudo" {
       result = result + ":" + p.value
-      if p.args != "" { result = result + "(" + p.args + ")" }
+      a = p.args
+      if a != "" { result = result + "(" + a + ")" }
     }
-    else if p.type == "pseudo_element" { result = result + "::" + p.value }
-    else if p.type == "combinator" { result = result + " " + p.value + " " }
+    else if t == "pseudo_element" { result = result + "::" + p.value }
+    else if t == "combinator" { result = result + " " + p.value + " " }
     i += 1
   }
   result
@@ -379,9 +463,10 @@ fn parseFile(path) {
 }
 
 fn _matchPart(part, node) {
-  if part.type == "universal" { return true }
-  if part.type == "type" { return node.tag == part.value }
-  if part.type == "class" {
+  t = part.type
+  if t == "universal" { return true }
+  if t == "type" { return node.tag == part.value }
+  if t == "class" {
     cls = node.props["class"]
     if cls == null { return false }
     classes = str(cls).split(" ")
@@ -390,27 +475,35 @@ fn _matchPart(part, node) {
     }
     return false
   }
-  if part.type == "id" {
+  if t == "id" {
     return node.props["id"] == part.value
   }
-  if part.type == "attr" {
+  if t == "attr" {
     attrVal = node.props[part.name]
     if attrVal == null { return false }
     sval = str(attrVal)
-    if part.op == "" { return true }
-    if part.op == "=" { return sval == part.value }
-    if part.op == "~=" {
+    o = part.op
+    if o == "" { return true }
+    if o == "=" { return sval == part.value }
+    if o == "~=" {
       for w in sval.split(" ") {
         if w == part.value { return true }
       }
       return false
     }
-    if part.op == "^=" { return #sval >= #part.value && sval[:#part.value] == part.value }
-    if part.op == "$=" { return #sval >= #part.value && sval[#sval-#part.value:] == part.value }
-    if part.op == "*=" { return sval.includes(part.value) }
+    if o == "^=" {
+      vl = #part.value
+      return #sval >= vl && sval[:vl] == part.value
+    }
+    if o == "$=" {
+      vl = #part.value
+      el = #sval - vl
+      return #sval >= vl && sval[el:] == part.value
+    }
+    if o == "*=" { return sval.includes(part.value) }
     true
   }
-  if part.type == "pseudo" {
+  if t == "pseudo" {
     if part.value == "first-child" { return true }
     if part.value == "last-child" { return true }
     if part.value == "nth-child" {
@@ -419,8 +512,8 @@ fn _matchPart(part, node) {
     }
     true
   }
-  if part.type == "pseudo_element" { return false }
-  if part.type == "combinator" { return true }
+  if t == "pseudo_element" { return false }
+  if t == "combinator" { return true }
   false
 }
 
@@ -429,7 +522,6 @@ fn matchSelector(selector, node) {
   if !markup.isVNode(node) { return false }
   parts = selector.parts
   if #parts == 0 { return false }
-  lastIdx = #parts - 1
   hasCombinator = false
   for p in parts {
     if p.type == "combinator" { hasCombinator = true }
@@ -440,7 +532,7 @@ fn matchSelector(selector, node) {
     }
     return true
   }
-  _matchWithCombinators(parts, lastIdx, node)
+  _matchWithCombinators(parts, #parts - 1, node)
 }
 
 fn _matchWithCombinators(parts, partIdx, node) {
@@ -449,12 +541,12 @@ fn _matchWithCombinators(parts, partIdx, node) {
   if p.type == "combinator" { return _matchWithCombinators(parts, partIdx - 1, node) }
   if !_matchPart(p, node) { return false }
   if partIdx == 0 { return true }
-  if partIdx >= 2 && parts[partIdx - 1].type == "combinator" {
-    comb = parts[partIdx - 1].value
-    if comb == ">" {
-      return _matchWithCombinators(parts, partIdx - 2, node._parent)
+  if partIdx >= 2 {
+    prev = parts[partIdx - 1]
+    if prev.type == "combinator" {
+      parent = node._parent
+      return _matchWithCombinators(parts, partIdx - 2, parent)
     }
-    return _matchWithCombinators(parts, partIdx - 2, node._parent)
   }
   _matchWithCombinators(parts, partIdx - 1, node)
 }

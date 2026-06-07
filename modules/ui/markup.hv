@@ -1,0 +1,240 @@
+// markup.hv - Virtual DOM for Havel UI
+// h() hyperscript, diff, patch, tree walking
+
+class VNode {
+    var tag = ""
+    var props = {}
+    var children = []
+    var key = null
+    var ref = null
+    var _element = null
+
+    fn new(tag, props, children) {
+        @tag = tag
+        if props != null { @props = props }
+        else { @props = {} }
+        if children != null { @children = children }
+        else { @children = [] }
+        if @props.has("key") {
+            @key = @props["key"]
+            @props.delete("key")
+        }
+        if @props.has("ref") {
+            @ref = @props["ref"]
+            @props.delete("ref")
+        }
+        @
+    }
+}
+
+fn h(tag, props, children) {
+    VNode.new(tag, props, children)
+}
+
+fn text(content) {
+    content
+}
+
+fn isVNode(v) {
+    if v == null { return false }
+    type(v) == "object" && v.tag != null
+}
+
+fn isTextNode(v) {
+    type(v) == "string" || type(v) == "int" || type(v) == "float" || type(v) == "bool"
+}
+
+fn _keyOf(child) {
+    if isVNode(child) { return child.key }
+    null
+}
+
+fn _sameKey(a, b) {
+    ka = _keyOf(a)
+    kb = _keyOf(b)
+    if ka == null && kb == null { return true }
+    if ka == null || kb == null { return false }
+    ka == kb
+}
+
+fn diff(oldNode, newNode) {
+    if oldNode == null && newNode == null { return [] }
+    if oldNode == null { return [{type: "CREATE", node: newNode}] }
+    if newNode == null { return [{type: "REMOVE", node: oldNode}] }
+    if isTextNode(oldNode) && isTextNode(newNode) {
+        if str(oldNode) != str(newNode) {
+            return [{type: "SET_TEXT", value: str(newNode)}]
+        }
+        return []
+    }
+    if isTextNode(oldNode) != isTextNode(newNode) {
+        return [{type: "REPLACE", oldNode: oldNode, newNode: newNode}]
+    }
+    if !isVNode(oldNode) || !isVNode(newNode) {
+        return [{type: "REPLACE", oldNode: oldNode, newNode: newNode}]
+    }
+    if oldNode.tag != newNode.tag {
+        return [{type: "REPLACE", oldNode: oldNode, newNode: newNode}]
+    }
+    patches = []
+    propPatches = _diffProps(oldNode.props, newNode.props)
+    if #propPatches > 0 {
+        patches.push({type: "PROPS", patches: propPatches})
+    }
+    childPatches = _diffChildren(oldNode.children, newNode.children)
+    if #childPatches > 0 {
+        patches.push({type: "CHILDREN", patches: childPatches})
+    }
+    patches
+}
+
+fn _diffProps(oldProps, newProps) {
+    patches = []
+    allKeys = {}
+    for k in oldProps.keys() { allKeys[k] = true }
+    for k in newProps.keys() { allKeys[k] = true }
+    for k in allKeys.keys() {
+        hasOld = oldProps.has(k)
+        hasNew = newProps.has(k)
+        if hasOld && !hasNew {
+            patches.push({type: "REMOVE_PROP", key: k})
+        } else if !hasOld && hasNew {
+            patches.push({type: "SET_PROP", key: k, value: newProps[k]})
+        } else if hasOld && hasNew && oldProps[k] != newProps[k] {
+            patches.push({type: "SET_PROP", key: k, value: newProps[k]})
+        }
+    }
+    patches
+}
+
+fn _diffChildren(oldChildren, newChildren) {
+    patches = []
+    maxLen = #oldChildren
+    if #newChildren > maxLen { maxLen = #newChildren }
+    i = 0
+    while i < maxLen {
+        if i >= #oldChildren {
+            patches.push({type: "APPEND", index: i, node: newChildren[i]})
+        } else if i >= #newChildren {
+            patches.push({type: "REMOVE_AT", index: i})
+        } else {
+            childPatches = diff(oldChildren[i], newChildren[i])
+            if #childPatches > 0 {
+                patches.push({type: "PATCH_AT", index: i, patches: childPatches})
+            }
+        }
+        i += 1
+    }
+    patches
+}
+
+fn patch(node, patches) {
+    for p in patches {
+        node = _applyPatch(node, p)
+    }
+    node
+}
+
+fn _applyPatch(node, p) {
+    t = p.type
+    if t == "CREATE" { return p.node }
+    if t == "REMOVE" { return null }
+    if t == "REPLACE" { return p.newNode }
+    if t == "SET_TEXT" { return p.value }
+    if t == "PROPS" {
+        for pp in p.patches {
+            if pp.type == "SET_PROP" { node.props[pp.key] = pp.value }
+            else if pp.type == "REMOVE_PROP" { node.props.delete(pp.key) }
+        }
+        return node
+    }
+    if t == "CHILDREN" {
+        for cp in p.patches {
+            if cp.type == "APPEND" {
+                node.children.push(cp.node)
+            } else if cp.type == "REMOVE_AT" {
+                node.children.remove(cp.index)
+            } else if cp.type == "PATCH_AT" {
+                node.children[cp.index] = patch(node.children[cp.index], cp.patches)
+            }
+        }
+        return node
+    }
+    node
+}
+
+fn find(root, predicate) {
+    if root == null { return null }
+    if isVNode(root) {
+        if predicate(root) { return root }
+        for child in root.children {
+            result = find(child, predicate)
+            if result != null { return result }
+        }
+    }
+    null
+}
+
+fn findByKey(root, key) {
+    find(root, fn(n) { n.key == key })
+}
+
+fn findByRef(root, ref) {
+    find(root, fn(n) { n.ref == ref })
+}
+
+fn findByTag(root, tag) {
+    find(root, fn(n) { n.tag == tag })
+}
+
+fn findAll(root, predicate) {
+    results = []
+    _walkCollect(root, predicate, results)
+    results
+}
+
+fn _walkCollect(node, predicate, results) {
+    if node == null { return }
+    if isVNode(node) {
+        if predicate(node) { results.push(node) }
+        for child in node.children {
+            _walkCollect(child, predicate, results)
+        }
+    }
+}
+
+fn clone(node) {
+    if node == null { return null }
+    if isTextNode(node) { return node }
+    if !isVNode(node) { return node }
+    newChildren = []
+    for child in node.children {
+        newChildren.push(clone(child))
+    }
+    newProps = {}
+    for k in node.props.keys() {
+        newProps[k] = node.props[k]
+    }
+    VNode.new(node.tag, newProps, newChildren)
+}
+
+fn toHTML(node) {
+    if node == null { return "" }
+    if isTextNode(node) { return str(node) }
+    if !isVNode(node) { return str(node) }
+    attrs = ""
+    for k in node.props.keys() {
+        v = node.props[k]
+        if v == true { attrs = attrs + " " + k }
+        else if v != false && v != null { attrs = attrs + " " + k + "=\"" + str(v) + "\"" }
+    }
+    selfClosing = {"br": true, "hr": true, "img": true, "input": true, "meta": true, "link": true}
+    if selfClosing.has(node.tag) && #node.children == 0 {
+        return "<" + node.tag + attrs + " />"
+    }
+    inner = ""
+    for child in node.children {
+        inner = inner + toHTML(child)
+    }
+    "<" + node.tag + attrs + ">" + inner + "</" + node.tag + ">"
+}

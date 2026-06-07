@@ -1,0 +1,273 @@
+// events.hv - Event dispatch with capture/bubble phases for Havel UI
+
+class Event {
+    var type = ""
+    var target = null
+    var currentTarget = null
+    var data = {}
+    var propagationStopped = false
+    var immediateStopped = false
+    var defaultPrevented = false
+    var phase = 0
+    var timestamp = 0
+
+    CAPTURING = 1
+    AT_TARGET = 2
+    BUBBLING = 3
+
+    fn new(type, data) {
+        @type = type
+        @data = data != null ? data : {}
+        @timestamp = time.millis()
+        @
+    }
+
+    fn stopPropagation() {
+        @propagationStopped = true
+    }
+
+    fn stopImmediatePropagation() {
+        @propagationStopped = true
+        @immediateStopped = true
+    }
+
+    fn preventDefault() {
+        @defaultPrevented = true
+    }
+}
+
+_listeners = {}
+_globalListeners = []
+
+fn on(target, eventType, handler, options) {
+    opts = options != null ? options : {}
+    capture = opts.has("capture") ? opts.capture : false
+    once = opts.has("once") ? opts.once : false
+    passive = opts.has("passive") ? opts.passive : false
+    priority = opts.has("priority") ? opts.priority : 0
+
+    key = _targetKey(target)
+    if !_listeners.has(key) { _listeners[key] = {} }
+    if !_listeners[key].has(eventType) { _listeners[key][eventType] = [] }
+
+    entry = {
+        handler: handler,
+        capture: capture,
+        once: once,
+        passive: passive,
+        priority: priority,
+        target: target
+    }
+    list = _listeners[key][eventType]
+    list.push(entry)
+    _sortListeners(list)
+    entry
+}
+
+fn off(target, eventType, handler) {
+    key = _targetKey(target)
+    if !_listeners.has(key) { return false }
+    if !_listeners[key].has(eventType) { return false }
+    list = _listeners[key][eventType]
+    i = #list - 1
+    while i >= 0 {
+        if handler == null || list[i].handler == handler {
+            list.splice(i, 1)
+            return true
+        }
+        i -= 1
+    }
+    false
+}
+
+fn once(target, eventType, handler, options) {
+    opts = options != null ? options : {}
+    opts.once = true
+    on(target, eventType, handler, opts)
+}
+
+fn _targetKey(target) {
+    if target == null { return "__global__" }
+    if type(target) == "string" { return target }
+    if markup.isVNode(target) {
+        if target.ref != null { return "vnode:" + target.ref }
+        return "vnode:" + str(target._id)
+    }
+    str(target)
+}
+
+fn _sortListeners(list) {
+    n = #list
+    i = 0
+    while i < n - 1 {
+        j = 0
+        while j < n - i - 1 {
+            if list[j].priority < list[j + 1].priority {
+                tmp = list[j]
+                list[j] = list[j + 1]
+                list[j + 1] = tmp
+            }
+            j += 1
+        }
+        i += 1
+    }
+}
+
+fn _getAncestors(node) {
+    path = []
+    current = node
+    while current != null {
+        path.unshift(current)
+        if markup.isVNode(current) {
+            current = current._parent
+        } else {
+            break
+        }
+    }
+    path
+}
+
+fn dispatch(target, eventType, data) {
+    evt = Event.new(eventType, data)
+    evt.target = target
+    ancestors = _getAncestors(target)
+
+    for entry in _globalListeners {
+        if entry.type == eventType || entry.type == "*" {
+            evt.currentTarget = target
+            _invokeHandler(entry, evt)
+            if evt.immediateStopped { return evt }
+        }
+    }
+
+    evt.phase = Event.CAPTURING
+    for node in ancestors {
+        if evt.propagationStopped { break }
+        evt.currentTarget = node
+        _callListeners(node, eventType, evt, true)
+        if evt.immediateStopped { return evt }
+    }
+
+    if !evt.propagationStopped {
+        evt.phase = Event.AT_TARGET
+        evt.currentTarget = target
+        _callListeners(target, eventType, evt, false)
+        if evt.immediateStopped { return evt }
+    }
+
+    evt.phase = Event.BUBBLING
+    i = #ancestors - 1
+    while i >= 0 {
+        if evt.propagationStopped { break }
+        evt.currentTarget = ancestors[i]
+        _callListeners(ancestors[i], eventType, evt, false)
+        if evt.immediateStopped { return evt }
+        i -= 1
+    }
+
+    evt
+}
+
+fn _callListeners(target, eventType, evt, captureOnly) {
+    key = _targetKey(target)
+    if !_listeners.has(key) { return }
+    if !_listeners[key].has(eventType) { return }
+    list = _listeners[key][eventType]
+    toRemove = []
+    for entry in list {
+        if captureOnly && !entry.capture { continue }
+        if !captureOnly && entry.capture { continue }
+        _invokeHandler(entry, evt)
+        if entry.once { toRemove.push(entry) }
+        if evt.immediateStopped { break }
+    }
+    for entry in toRemove {
+        idx = list.indexOf(entry)
+        if idx >= 0 { list.splice(idx, 1) }
+    }
+}
+
+fn _invokeHandler(entry, evt) {
+    try {
+        if type(entry.handler) == "fn" {
+            entry.handler(evt)
+        }
+    } catch e {
+        print("event handler error: " + str(e))
+    }
+}
+
+fn addGlobalListener(eventType, handler) {
+    entry = {type: eventType, handler: handler}
+    _globalListeners.push(entry)
+    entry
+}
+
+fn removeGlobalListener(entry) {
+    i = _globalListeners.indexOf(entry)
+    if i >= 0 {
+        _globalListeners.splice(i, 1)
+        return true
+    }
+    false
+}
+
+fn clear(target) {
+    if target == null {
+        _listeners = {}
+        _globalListeners = []
+        return
+    }
+    key = _targetKey(target)
+    if _listeners.has(key) { _listeners[key] = {} }
+}
+
+fn listenerCount(target, eventType) {
+    key = _targetKey(target)
+    if !_listeners.has(key) { return 0 }
+    if !_listeners[key].has(eventType) { return 0 }
+    #_listeners[key][eventType]
+}
+
+class EventEmitter {
+    var _listeners = {}
+    var _onceListeners = []
+
+    fn new() { @ }
+
+    fn on(eventType, handler) {
+        if !@_listeners.has(eventType) { @_listeners[eventType] = [] }
+        @_listeners[eventType].push(handler)
+        @
+    }
+
+    fn off(eventType, handler) {
+        if !@_listeners.has(eventType) { return @ }
+        list = @_listeners[eventType]
+        i = list.indexOf(handler)
+        if i >= 0 { list.splice(i, 1) }
+        @
+    }
+
+    fn once(eventType, handler) {
+        wrapper = fn(evt) {
+            handler(evt)
+            @off(eventType, wrapper)
+        }
+        @on(eventType, wrapper)
+        @
+    }
+
+    fn emit(eventType, data) {
+        if !@_listeners.has(eventType) { return @ }
+        list = @_listeners[eventType]
+        for handler in list {
+            try {
+                handler(data)
+            } catch e {
+                print("emitter error: " + str(e))
+            }
+        }
+        @
+    }
+}

@@ -1,0 +1,307 @@
+// scss.hv - SCSS compiler for Havel UI
+// Variables, nesting, mixins, @extend → plain CSS
+
+_vars = {}
+_mixins = {}
+_extends = {}
+_output = ""
+_indent = 0
+
+fn _reset() {
+    _vars = {}
+    _mixins = {}
+    _extends = {}
+    _output = ""
+    _indent = 0
+}
+
+fn compile(scssText) {
+    _reset()
+    lines = _splitLines(scssText)
+    _processBlock(lines, 0, #lines, "")
+    _resolveExtends()
+    _output
+}
+
+fn compileFile(path) {
+    content = fs.read(path)
+    if content == null { return "" }
+    compile(content)
+}
+
+fn _splitLines(text) {
+    result = []
+    i = 0
+    n = #text
+    while i < n {
+        j = i
+        while j < n && text[j:j+1] != "\n" { j += 1 }
+        line = text[i:j]
+        if #line > 0 { result.push(line) }
+        i = j + 1
+    }
+    result
+}
+
+fn _isVarDecl(line) {
+    trimmed = line.trim()
+    #trimmed > 0 && trimmed[0:1] == "$" && trimmed.includes(":") && !trimmed.includes("(")
+}
+
+fn _isMixinDecl(line) {
+    trimmed = line.trim()
+    trimmed.includes("@mixin")
+}
+
+fn _isInclude(line) {
+    trimmed = line.trim()
+    trimmed.includes("@include")
+}
+
+fn _isExtend(line) {
+    trimmed = line.trim()
+    trimmed.includes("@extend")
+}
+
+fn _isComment(line) {
+    trimmed = line.trim()
+    #trimmed >= 2 && trimmed[0:2] == "//"
+}
+
+fn _parseVarDecl(line) {
+    trimmed = line.trim()
+    eqPos = trimmed.includes(":")
+    if !eqPos { return }
+    name = ""
+    i = 1
+    while i < #trimmed && trimmed[i:i+1] != ":" {
+        name = name + trimmed[i:i+1]
+        i += 1
+    }
+    name = name.trim()
+    value = trimmed[i+1:].trim()
+    value = _resolveVars(value)
+    _vars[name] = value
+}
+
+fn _resolveVars(text) {
+    result = text
+    for name in _vars.keys() {
+        result = result.replace("$" + name, _vars[name])
+    }
+    result
+}
+
+fn _parseMixinDecl(lines, startIdx) {
+    line = lines[startIdx].trim()
+    line = line.replace("@mixin ", "")
+    line = line.replace("@mixin", "")
+    parenPos = -1
+    i = 0
+    while i < #line {
+        if line[i:i+1] == "(" { parenPos = i; break }
+        i += 1
+    }
+    name = ""
+    params = []
+    if parenPos >= 0 {
+        name = line[:parenPos].trim()
+        paramStr = line[parenPos+1:]
+        endParen = -1
+        i = 0
+        while i < #paramStr {
+            if paramStr[i:i+1] == ")" { endParen = i; break }
+            i += 1
+        }
+        if endParen >= 0 {
+            paramStr = paramStr[:endParen]
+            for p in paramStr.split(",") {
+                pp = p.trim()
+                if pp != "" { params.push(pp) }
+            }
+        }
+    } else {
+        name = line.replace("{", "").trim()
+    }
+    bodyStart = startIdx + 1
+    bodyEnd = _findBlockEnd(lines, startIdx)
+    bodyLines = []
+    i = bodyStart
+    while i < bodyEnd - 1 {
+        bodyLines.push(lines[i])
+        i += 1
+    }
+    _mixins[name] = {params: params, body: bodyLines}
+    bodyEnd
+}
+
+fn _findBlockEnd(lines, openIdx) {
+    depth = 0
+    i = openIdx
+    while i < #lines {
+        for ch in lines[i] {
+            if ch == "{" { depth += 1 }
+            else if ch == "}" {
+                depth -= 1
+                if depth == 0 { return i + 1 }
+            }
+        }
+        i += 1
+    }
+    #lines
+}
+
+fn _processInclude(line, parentSelector) {
+    trimmed = line.trim()
+    trimmed = trimmed.replace("@include ", "")
+    trimmed = trimmed.replace("@include", "")
+    parenPos = -1
+    i = 0
+    while i < #trimmed {
+        if trimmed[i:i+1] == "(" { parenPos = i; break }
+        i += 1
+    }
+    name = ""
+    args = []
+    if parenPos >= 0 {
+        name = trimmed[:parenPos].trim()
+        argStr = trimmed[parenPos+1:]
+        endParen = -1
+        i = 0
+        while i < #argStr {
+            if argStr[i:i+1] == ")" { endParen = i; break }
+            i += 1
+        }
+        if endParen >= 0 {
+            argStr = argStr[:endParen]
+            for a in argStr.split(",") {
+                aa = a.trim()
+                if aa != "" { args.push(_resolveVars(aa)) }
+            }
+        }
+    } else {
+        name = trimmed.replace(";", "").trim()
+    }
+    mixin = _mixins[name]
+    if mixin == null { return }
+    localVars = {}
+    pi = 0
+    while pi < #mixin.params && pi < #args {
+        pName = mixin.params[pi]
+        if pName.includes(":") {
+            parts = pName.split(":")
+            pName = parts[0].trim()
+            if pi < #args { localVars[pName] = args[pi] }
+            else { localVars[pName] = parts[1].trim() }
+        } else {
+            pName = pName.replace("$", "")
+            if pi < #args { localVars[pName] = args[pi] }
+        }
+        pi += 1
+    }
+    for ml in mixin.body {
+        processed = ml
+        for vn in localVars.keys() {
+            processed = processed.replace("$" + vn, localVars[vn])
+        }
+        processed = _resolveVars(processed)
+        if _isVarDecl(processed) {
+            _parseVarDecl(processed)
+        } else if !_isComment(processed) && !_isMixinDecl(processed) {
+            _emitLine(processed, parentSelector)
+        }
+    }
+}
+
+fn _processExtend(line, parentSelector) {
+    trimmed = line.trim()
+    target = trimmed.replace("@extend ", "").replace("@extend", "").replace(";", "").trim()
+    if !_extends.has(target) { _extends[target] = [] }
+    list = _extends[target]
+    list.push(parentSelector)
+}
+
+fn _emitLine(content, selector) {
+    if selector != "" {
+        ind = ""
+        i = 0
+        while i < _indent { ind = ind + "  "; i += 1 }
+        _output = _output + ind + content + "\n"
+    } else {
+        _output = _output + content + "\n"
+    }
+}
+
+fn _indentStr() {
+    s = ""
+    i = 0
+    while i < _indent { s = s + "  "; i += 1 }
+    s
+}
+
+fn _processBlock(lines, startIdx, endIdx, parentSelector) {
+    i = startIdx
+    while i < endIdx {
+        line = lines[i]
+        trimmed = line.trim()
+        if #trimmed == 0 { i += 1; continue }
+        if _isComment(trimmed) { i += 1; continue }
+        if _isVarDecl(trimmed) { _parseVarDecl(trimmed); i += 1; continue }
+        if _isMixinDecl(trimmed) {
+            i = _parseMixinDecl(lines, i)
+            continue
+        }
+        if _isInclude(trimmed) {
+            _processInclude(trimmed, parentSelector)
+            i += 1
+            continue
+        }
+        if _isExtend(trimmed) {
+            _processExtend(trimmed, parentSelector)
+            i += 1
+            continue
+        }
+        hasBlock = trimmed.includes("{")
+        if hasBlock {
+            selector = trimmed.replace("{", "").trim()
+            selector = _resolveVars(selector)
+            if parentSelector != "" {
+                if selector.includes("&") {
+                    fullSelector = selector.replace("&", parentSelector)
+                } else {
+                    fullSelector = parentSelector + " " + selector
+                }
+            } else {
+                fullSelector = selector
+            }
+            blockEnd = _findBlockEnd(lines, i)
+            _output = _output + _indentStr() + fullSelector + " {\n"
+            _indent += 1
+            _processBlock(lines, i + 1, blockEnd - 1, fullSelector)
+            _indent -= 1
+            _output = _output + _indentStr() + "}\n"
+            i = blockEnd
+            continue
+        }
+        if parentSelector != "" {
+            resolved = _resolveVars(trimmed)
+            _output = _output + _indentStr() + resolved + "\n"
+        }
+        i += 1
+    }
+}
+
+fn _resolveExtends() {
+    for target in _extends.keys() {
+        selectors = _extends[target]
+        if #selectors == 0 { continue }
+        _output = _output + target + ", "
+        first = true
+        for s in selectors {
+            if !first { _output = _output + ", " }
+            _output = _output + s
+            first = false
+        }
+        _output = _output + " {}\n"
+    }
+}

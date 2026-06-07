@@ -925,6 +925,35 @@ target_link_options(havel_toolkit_imgui PRIVATE -fno-lto -Wl,--allow-shlib-undef
 endif() # IMGUI_BACKEND_AVAILABLE
 
 # ==============================================================================
+# UI SHIM (C ABI wrapper around UIBackend virtual methods for FFI)
+# ==============================================================================
+add_library(havel_ui_shim MODULE
+	src/extensions/shim/ui_shim.cpp
+)
+target_include_directories(havel_ui_shim PRIVATE
+	${CMAKE_SOURCE_DIR}/src
+	${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(havel_ui_shim PRIVATE
+	havel_extension_runtime
+	dl
+)
+target_compile_definitions(havel_ui_shim PRIVATE
+	HAVEL_MODULE_PLUGIN
+)
+set_target_properties(havel_ui_shim PROPERTIES
+	PREFIX ""
+	OUTPUT_NAME "havel_ui_shim"
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/shims"
+	CXX_STANDARD 23
+	CXX_VISIBILITY_PRESET default
+	VISIBILITY_INLINES_HIDDEN OFF
+	INTERPROCEDURAL_OPTIMIZATION OFF
+)
+target_compile_options(havel_ui_shim PRIVATE -fno-lto)
+target_link_options(havel_ui_shim PRIVATE -fno-lto -Wl,--allow-shlib-undefined)
+
+# ==============================================================================
 # MAIN EXECUTABLE
 # ==============================================================================
 add_library(havel_core STATIC ${CORE_SOURCES})

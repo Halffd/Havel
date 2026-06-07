@@ -6,6 +6,9 @@ f1 => {
 }
 hotkey.register("p", fn() {
     print("pressed P")
+    interval 1000 {
+        print(time.now())
+    }
 })
 a => {
     print "hello"

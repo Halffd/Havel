@@ -655,10 +655,8 @@ void ConditionalHotkeyManager::BatchUpdateConditionalHotkeys() {
   std::vector<int> toGrab;
   std::vector<int> toUngrab;
 
-  {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
-
     // Process all hotkeys - evaluate conditions and batch grab/ungrab
+    // NOTE: Caller (HotkeyManager::updateAllConditionalHotkeys) already holds hotkeyMutex
     for (auto& ch : conditionalHotkeys) {
       if (!ch.monitoringEnabled) continue;
 
@@ -679,7 +677,6 @@ void ConditionalHotkeyManager::BatchUpdateConditionalHotkeys() {
         ch.currentlyGrabbed = false;
         ch.lastConditionResult = false;
       }
-    }
   }
 
   // Apply grab/ungrab operations outside of lock

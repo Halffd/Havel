@@ -838,6 +838,8 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 
     bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
 
+    bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
+
     try {
         havel::compiler::PipelineOptions options = modules->options();
         options.compile_unit_name = combinedNames;

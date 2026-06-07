@@ -248,6 +248,13 @@ bool ExecutionEngine::executeFrame() {
     }
 
     // STEP 5: Save VM state back to fiber
+    // CRITICAL: If exit was requested during executeOneStep, the scheduler's
+    // stop() has already destroyed all goroutines (including g).  Do NOT
+    // touch g->fiber — it's freed memory.
+    if (vm_->exit_requested_.load()) {
+        stats_.frames_executed++;
+        return false;
+    }
     if (g->fiber) {
         vm_->saveFiberState(g->fiber);
     }

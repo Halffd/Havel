@@ -1,0 +1,605 @@
+// ui.hv - Widget library + backward-compat ui.* functions
+// Replaces C++ UIModule.cpp with pure Havel via FFI shim
+
+_backend = null
+_rules = []
+_styles = {}
+_pendingEvents = []
+
+fn init(toolkitName) {
+    name = toolkitName != null ? toolkitName : _backend_mod.detectToolkit()
+    if name == "" { return false }
+    _backend = _backend_mod.Backend.new(name)
+    _backend != null
+}
+
+fn _requireBackend() {
+    if _backend == null { init(null) }
+    _backend
+}
+
+class Element {
+    var id = -1
+    var _type = ""
+    var _children = []
+    var _parent = null
+    var _eventHandlers = {}
+
+    fn new(id, elementType) {
+        @id = id
+        @_type = elementType
+        @
+    }
+
+    fn add(child) {
+        b = _requireBackend()
+        if b == null { return @ }
+        if type(child) == "Element" {
+            b.addChild(@id, child.id)
+            @_children.push(child)
+            child._parent = @
+        }
+        @
+    }
+
+    fn show() {
+        b = _requireBackend()
+        if b != null { b.show(@id) }
+        @
+    }
+
+    fn hide() {
+        b = _requireBackend()
+        if b != null { b.hide(@id) }
+        @
+    }
+
+    fn close() {
+        b = _requireBackend()
+        if b != null { b.close(@id) }
+        @
+    }
+
+    fn setTitle(title) {
+        b = _requireBackend()
+        if b != null { b.setTitle(@id, title) }
+        @
+    }
+
+    fn setSize(w, h) {
+        b = _requireBackend()
+        if b != null { b.setSize(@id, w, h) }
+        @
+    }
+
+    fn setPos(x, y) {
+        b = _requireBackend()
+        if b != null { b.setPos(@id, x, y) }
+        @
+    }
+
+    fn on(eventType, handler) {
+        @_eventHandlers[eventType] = handler
+        @
+    }
+
+    fn style(key, value) {
+        b = _requireBackend()
+        if b != null { b.setStyle(@id, key, value) }
+        @
+    }
+
+    fn value(newVal) {
+        b = _requireBackend()
+        if b == null { return "" }
+        if newVal != null {
+            b.setValue(@id, str(newVal))
+            @
+        } else {
+            b.getValue(@id)
+        }
+    }
+}
+
+class Window : Element {
+    fn new(title, opts) {
+        b = _requireBackend()
+        id = b != null ? b.window(title != null ? title : "Window") : -1
+        super(id, "window")
+        if opts != null {
+            if opts.has("width") && opts.has("height") {
+                @setSize(opts.width, opts.height)
+            }
+        }
+        @
+    }
+}
+
+class Panel : Element {
+    fn new(side) {
+        b = _requireBackend()
+        id = b != null ? b.panel(side != null ? side : "left") : -1
+        super(id, "panel")
+        @
+    }
+}
+
+class Modal : Element {
+    fn new(title) {
+        b = _requireBackend()
+        id = b != null ? b.modal(title != null ? title : "Dialog") : -1
+        super(id, "modal")
+        @
+    }
+}
+
+class Btn : Element {
+    fn new(label) {
+        b = _requireBackend()
+        id = b != null ? b.btn(label != null ? label : "Button") : -1
+        super(id, "btn")
+        @
+    }
+}
+
+class Text : Element {
+    fn new(content) {
+        b = _requireBackend()
+        id = b != null ? b.text(content != null ? content : "") : -1
+        super(id, "text")
+        @
+    }
+}
+
+class Label : Element {
+    fn new(content) {
+        b = _requireBackend()
+        id = b != null ? b.label(content != null ? content : "") : -1
+        super(id, "label")
+        @
+    }
+}
+
+class Input : Element {
+    fn new(placeholder) {
+        b = _requireBackend()
+        id = b != null ? b.input(placeholder != null ? placeholder : "") : -1
+        super(id, "input")
+        @
+    }
+}
+
+class Textarea : Element {
+    fn new(placeholder) {
+        b = _requireBackend()
+        id = b != null ? b.textarea(placeholder != null ? placeholder : "") : -1
+        super(id, "textarea")
+        @
+    }
+}
+
+class Checkbox : Element {
+    fn new(label, checked) {
+        b = _requireBackend()
+        id = b != null ? b.checkbox(label != null ? label : "", checked != null ? checked : false) : -1
+        super(id, "checkbox")
+        @
+    }
+}
+
+class Toggle : Element {
+    fn new(label, value) {
+        b = _requireBackend()
+        id = b != null ? b.toggle(label != null ? label : "", value != null ? value : false) : -1
+        super(id, "toggle")
+        @
+    }
+}
+
+class Slider : Element {
+    fn new(min, max, value) {
+        b = _requireBackend()
+        mn = min != null ? min : 0
+        mx = max != null ? max : 100
+        v = value != null ? value : 0
+        id = b != null ? b.slider(mn, mx, v) : -1
+        super(id, "slider")
+        @
+    }
+}
+
+class Dropdown : Element {
+    fn new(options) {
+        b = _requireBackend()
+        csv = ""
+        if options != null {
+            first = true
+            for o in options {
+                if !first { csv = csv + "," }
+                csv = csv + str(o)
+                first = false
+            }
+        }
+        id = b != null ? b.dropdown(csv) : -1
+        super(id, "dropdown")
+        @
+    }
+}
+
+class Image : Element {
+    fn new(path) {
+        b = _requireBackend()
+        id = b != null ? b.image(path != null ? path : "") : -1
+        super(id, "image")
+        @
+    }
+}
+
+class Icon : Element {
+    fn new(name) {
+        b = _requireBackend()
+        id = b != null ? b.icon(name != null ? name : "") : -1
+        super(id, "icon")
+        @
+    }
+}
+
+class Divider : Element {
+    fn new() {
+        b = _requireBackend()
+        id = b != null ? b.divider() : -1
+        super(id, "divider")
+        @
+    }
+}
+
+class Spacer : Element {
+    fn new(size) {
+        b = _requireBackend()
+        id = b != null ? b.spacer(size != null ? size : 10) : -1
+        super(id, "spacer")
+        @
+    }
+}
+
+class Progress : Element {
+    fn new(value, max) {
+        b = _requireBackend()
+        v = value != null ? value : 0
+        m = max != null ? max : 100
+        id = b != null ? b.progress(v, m) : -1
+        super(id, "progress")
+        @
+    }
+}
+
+class Spinner : Element {
+    fn new() {
+        b = _requireBackend()
+        id = b != null ? b.spinner() : -1
+        super(id, "spinner")
+        @
+    }
+}
+
+class Row : Element {
+    fn new() {
+        b = _requireBackend()
+        id = b != null ? b.row() : -1
+        super(id, "row")
+        @
+    }
+}
+
+class Col : Element {
+    fn new() {
+        b = _requireBackend()
+        id = b != null ? b.col() : -1
+        super(id, "col")
+        @
+    }
+}
+
+class Grid : Element {
+    fn new(cols) {
+        b = _requireBackend()
+        id = b != null ? b.grid(cols != null ? cols : 2) : -1
+        super(id, "grid")
+        @
+    }
+}
+
+class Table : Element {
+    fn new(rows, cols) {
+        b = _requireBackend()
+        id = b != null ? b.table(rows != null ? rows : 0, cols != null ? cols : 0) : -1
+        super(id, "table")
+        @
+    }
+}
+
+class Flex : Element {
+    fn new(direction) {
+        b = _requireBackend()
+        id = b != null ? b.flex(direction != null ? direction : "row") : -1
+        super(id, "flex")
+        @
+    }
+}
+
+class Scroll : Element {
+    fn new() {
+        b = _requireBackend()
+        id = b != null ? b.scroll() : -1
+        super(id, "scroll")
+        @
+    }
+}
+
+class Canvas : Element {
+    fn new(width, height) {
+        b = _requireBackend()
+        id = b != null ? b.canvas(width != null ? width : 400, height != null ? height : 300) : -1
+        super(id, "canvas")
+        @
+    }
+
+    fn line(x1, y1, x2, y2) {
+        b = _requireBackend()
+        if b != null { b.canvasDrawLine(@id, x1, y1, x2, y2) }
+        @
+    }
+
+    fn rect(x, y, w, h) {
+        b = _requireBackend()
+        if b != null { b.canvasDrawRect(@id, x, y, w, h) }
+        @
+    }
+
+    fn circle(cx, cy, r) {
+        b = _requireBackend()
+        if b != null { b.canvasDrawCircle(@id, cx, cy, r) }
+        @
+    }
+
+    fn setPen(r, g, b, width) {
+        bk = _requireBackend()
+        if bk != null { bk.canvasSetPen(@id, r, g, b, width != null ? width : 1) }
+        @
+    }
+
+    fn fill(x, y) {
+        b = _requireBackend()
+        if b != null { b.canvasFill(@id, x, y) }
+        @
+    }
+
+    fn flush() {
+        b = _requireBackend()
+        if b != null { b.canvasFlush(@id) }
+        @
+    }
+
+    fn clear() {
+        b = _requireBackend()
+        if b != null { b.canvasClear(@id) }
+        @
+    }
+}
+
+class Menu : Element {
+    fn new(title) {
+        b = _requireBackend()
+        id = b != null ? b.menu(title != null ? title : "Menu") : -1
+        super(id, "menu")
+        @
+    }
+}
+
+class MenuItem : Element {
+    fn new(label, shortcut) {
+        b = _requireBackend()
+        id = b != null ? b.menuItem(label != null ? label : "Item", shortcut != null ? shortcut : "") : -1
+        super(id, "menuitem")
+        @
+    }
+}
+
+class MenuSeparator : Element {
+    fn new() {
+        b = _requireBackend()
+        id = b != null ? b.menuSeparator() : -1
+        super(id, "menuseparator")
+        @
+    }
+}
+
+// backward-compat ui.* function API
+fn window(title, opts) { Window.new(title, opts) }
+fn panel(side) { Panel.new(side) }
+fn modal(title) { Modal.new(title) }
+fn btn(label) { Btn.new(label) }
+fn text(content) { Text.new(content) }
+fn label(content) { Label.new(content) }
+fn input(placeholder) { Input.new(placeholder) }
+fn textarea(placeholder) { Textarea.new(placeholder) }
+fn checkbox(label, checked) { Checkbox.new(label, checked) }
+fn toggle(label, value) { Toggle.new(label, value) }
+fn slider(min, max, value) { Slider.new(min, max, value) }
+fn dropdown(options) { Dropdown.new(options) }
+fn image(path) { Image.new(path) }
+fn divider() { Divider.new() }
+fn spacer(size) { Spacer.new(size) }
+fn progress(value, max) { Progress.new(value, max) }
+fn spinner() { Spinner.new() }
+fn row() { Row.new() }
+fn col() { Col.new() }
+fn grid(cols) { Grid.new(cols) }
+fn table(rows, cols) { Table.new(rows, cols) }
+fn flex(direction) { Flex.new(direction) }
+fn scroll() { Scroll.new() }
+fn canvas(width, height) { Canvas.new(width, height) }
+fn menu(title) { Menu.new(title) }
+fn menuItem(label, shortcut) { MenuItem.new(label, shortcut) }
+fn menuSeparator() { MenuSeparator.new() }
+
+fn alert(msg) {
+    b = _requireBackend()
+    if b != null { b.alert(msg) }
+}
+
+fn confirm(msg) {
+    b = _requireBackend()
+    if b != null { b.confirm(msg) != 0 } { false }
+}
+
+fn filePicker(title) {
+    b = _requireBackend()
+    if b != null { b.filePicker(title) } { "" }
+}
+
+fn dirPicker(title) {
+    b = _requireBackend()
+    if b != null { b.dirPicker(title) } { "" }
+}
+
+fn notify(msg, type) {
+    b = _requireBackend()
+    if b != null { b.notify(msg, type != null ? type : "info") }
+}
+
+fn trayIcon(iconPath, tooltip) {
+    b = _requireBackend()
+    if b != null { b.trayIcon(iconPath, tooltip) }
+}
+
+fn trayMenu(menuId) {
+    b = _requireBackend()
+    if b != null { b.trayMenu(menuId) }
+}
+
+fn trayNotify(title, msg, iconType) {
+    b = _requireBackend()
+    if b != null { b.trayNotify(title, msg, iconType) }
+}
+
+fn trayShow() {
+    b = _requireBackend()
+    if b != null { b.trayShow() }
+}
+
+fn trayHide() {
+    b = _requireBackend()
+    if b != null { b.trayHide() }
+}
+
+fn setApi(name) {
+    init(name)
+}
+
+fn getApi() {
+    b = _requireBackend()
+    if b != null { b.getApiName() } { "" }
+}
+
+fn isAvailable() {
+    b = _requireBackend()
+    if b != null { b.isAvailable() != 0 } { false }
+}
+
+fn run() {
+    b = _requireBackend()
+    if b != null { b.runLoop() }
+}
+
+fn quit(code) {
+    b = _requireBackend()
+    if b != null { b.quitLoop(code != null ? code : 0) }
+}
+
+fn pump(timeoutMs) {
+    b = _requireBackend()
+    if b != null { b.pumpEvents(timeoutMs != null ? timeoutMs : 16) }
+}
+
+fn shutdown() {
+    if _backend != null {
+        _backend.destroy()
+        _backend = null
+    }
+}
+
+fn addStylesheet(cssText) {
+    newRules = css.parse(cssText)
+    for r in newRules { _rules.push(r) }
+}
+
+fn addStylesheetFile(path) {
+    newRules = css.parseFile(path)
+    for r in newRules { _rules.push(r) }
+}
+
+fn resolveStyles(element) {
+    style.compute(element, _rules)
+}
+
+fn render(vdom) {
+    root = vdom
+    if markup.isVNode(root) {
+        _renderNode(root, null)
+    }
+    root
+}
+
+fn _renderNode(node, parentId) {
+    if node == null { return }
+    if !markup.isVNode(node) { return }
+    el = _createElementFromVNode(node)
+    if el == null { return }
+    node._element = el
+    if parentId != null && _backend != null {
+        _backend.addChild(parentId, el.id)
+    }
+    for child in node.children {
+        if markup.isVNode(child) {
+            child._parent = node
+            _renderNode(child, el.id)
+        }
+    }
+    el
+}
+
+fn _createElementFromVNode(node) {
+    b = _requireBackend()
+    if b == null { return null }
+    tag = node.tag
+    if tag == "window" { Window.new(node.props.has("title") ? node.props.title : "Window", node.props) }
+    else if tag == "panel" { Panel.new(node.props.has("side") ? node.props.side : "left") }
+    else if tag == "modal" { Modal.new(node.props.has("title") ? node.props.title : "Dialog") }
+    else if tag == "button" || tag == "btn" { Btn.new(node.props.has("label") ? node.props.label : "") }
+    else if tag == "text" { Text.new(node.children.join("")) }
+    else if tag == "label" { Label.new(node.props.has("content") ? node.props.content : "") }
+    else if tag == "input" { Input.new(node.props.has("placeholder") ? node.props.placeholder : "") }
+    else if tag == "textarea" { Textarea.new(node.props.has("placeholder") ? node.props.placeholder : "") }
+    else if tag == "checkbox" { Checkbox.new(node.props.has("label") ? node.props.label : "", node.props.has("checked") ? node.props.checked : false) }
+    else if tag == "toggle" { Toggle.new(node.props.has("label") ? node.props.label : "", node.props.has("value") ? node.props.value : false) }
+    else if tag == "slider" { Slider.new(node.props.has("min") ? node.props.min : 0, node.props.has("max") ? node.props.max : 100, node.props.has("value") ? node.props.value : 0) }
+    else if tag == "dropdown" { Dropdown.new(node.props.has("options") ? node.props.options : []) }
+    else if tag == "image" || tag == "img" { Image.new(node.props.has("src") ? node.props.src : "") }
+    else if tag == "icon" { Icon.new(node.props.has("name") ? node.props.name : "") }
+    else if tag == "divider" || tag == "hr" { Divider.new() }
+    else if tag == "spacer" { Spacer.new(node.props.has("size") ? node.props.size : 10) }
+    else if tag == "progress" { Progress.new(node.props.has("value") ? node.props.value : 0, node.props.has("max") ? node.props.max : 100) }
+    else if tag == "spinner" { Spinner.new() }
+    else if tag == "row" { Row.new() }
+    else if tag == "col" { Col.new() }
+    else if tag == "grid" { Grid.new(node.props.has("cols") ? node.props.cols : 2) }
+    else if tag == "table" { Table.new(node.props.has("rows") ? node.props.rows : 0, node.props.has("cols") ? node.props.cols : 0) }
+    else if tag == "flex" { Flex.new(node.props.has("direction") ? node.props.direction : "row") }
+    else if tag == "scroll" { Scroll.new() }
+    else if tag == "canvas" { Canvas.new(node.props.has("width") ? node.props.width : 400, node.props.has("height") ? node.props.height : 300) }
+    else if tag == "menu" { Menu.new(node.props.has("title") ? node.props.title : "Menu") }
+    else if tag == "menuitem" { MenuItem.new(node.props.has("label") ? node.props.label : "", node.props.has("shortcut") ? node.props.shortcut : "") }
+    else if tag == "menuseparator" { MenuSeparator.new() }
+    else { null }
+}

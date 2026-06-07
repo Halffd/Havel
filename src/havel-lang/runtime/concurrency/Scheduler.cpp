@@ -409,9 +409,10 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 }
 
 void Scheduler::requeueFront(Goroutine* g) {
-    if (!g) return;
-    g->state = GoroutineState::Created;
-    g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
+  if (!g) return;
+  g->state = GoroutineState::Created;
+  g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
+  g->hotkey_retrigger.store(false, std::memory_order_release);
     {
         std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
         g->wait_handle.clear();
@@ -526,12 +527,14 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
   // If state changes from Suspended→Running before requeueFront(), the flag will be checked
   // by the VM and the goroutine will retrigger at the appropriate point.
   if (g->state == GoroutineState::Suspended) {
-    g->hotkey_retrigger.store(true, std::memory_order_release);
     if (g->suspension_reason.load(std::memory_order_acquire) == SuspensionReason::HotkeyWait) {
       // Idle/parked goroutine waiting for next trigger — wake it up
       requeueFront(g);
+    } else {
+      // Mid-sleep or other suspension — set retrigger flag so the
+      // goroutine re-runs after its current suspension resolves
+      g->hotkey_retrigger.store(true, std::memory_order_release);
     }
-    // else: mid-sleep or other suspension — just set flag, keep suspended
     return true;
   }
 

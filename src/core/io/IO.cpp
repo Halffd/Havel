@@ -135,8 +135,31 @@ std::vector<KeyToken> IO::ParseKeyString(const std::string &keys) {
       continue;
     }
 
-    // Skip whitespace
-    if (isspace(keys[i])) {
+    // Space → "space" key
+    if (keys[i] == ' ') {
+      KeyToken token;
+      token.type = KeyToken::Key;
+      token.value = "space";
+      token.down = true;
+      tokens.push_back(token);
+      ++i;
+      continue;
+    }
+    if (keys[i] == '\n' || keys[i] == '\r') {
+      KeyToken token;
+      token.type = KeyToken::Key;
+      token.value = "enter";
+      token.down = true;
+      tokens.push_back(token);
+      ++i;
+      continue;
+    }
+    if (keys[i] == '\t') {
+      KeyToken token;
+      token.type = KeyToken::Key;
+      token.value = "tab";
+      token.down = true;
+      tokens.push_back(token);
       ++i;
       continue;
     }
@@ -1047,83 +1070,29 @@ void IO::EmergencyReleaseAllKeys() {
 // OPTIMIZED: Method to send keys with state tracking and event batching
 void IO::Send(cstr keys) {
 #if defined(WINDOWS)
-  // Windows implementation unchanged
-  for (size_t i = 0; i < keys.length(); ++i) {
-    if (keys[i] == '{') {
-      size_t end = keys.find('}', i);
-      if (end != std::string::npos) {
-        std::string sequence = keys.substr(i + 1, end - i - 1);
-        if (sequence == "Alt down") {
-          keybd_event(VK_MENU, 0, 0, 0);
-        } else if (sequence == "Alt up") {
-          keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
-        } else if (sequence == "Ctrl down") {
-          keybd_event(VK_CONTROL, 0, 0, 0);
-        } else if (sequence == "Ctrl up") {
-          keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
-        } else if (sequence == "Shift down") {
-          keybd_event(VK_SHIFT, 0, 0, 0);
-        } else if (sequence == "Shift up") {
-          keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0);
-        } else {
-          int virtualKey = StringToVirtualKey(sequence);
-          if (virtualKey) {
-            keybd_event(virtualKey, 0, 0, 0);
-            keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0);
-          }
-        }
-        i = end;
-        continue;
-      }
-    }
-
-    int virtualKey = StringToVirtualKey(std::string(1, keys[i]));
-    if (virtualKey) {
-      keybd_event(virtualKey, 0, 0, 0);
-      keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0);
-    }
-  }
-#else
-    if (!ioBackend) {
-        error("IO::Send: no ioBackend available");
-        return;
-    }
-
+    // Windows implementation unchanged
     for (size_t i = 0; i < keys.length(); ++i) {
         if (keys[i] == '{') {
             size_t end = keys.find('}', i);
             if (end != std::string::npos) {
-                std::string seq = keys.substr(i + 1, end - i - 1);
-                std::string lower = seq;
-                std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-
-                std::unordered_map<std::string, std::string> modifierKeys = {
-                    {"ctrl", "LCtrl"}, {"rctrl", "RCtrl"}, {"shift", "LShift"},
-                    {"rshift", "RShift"}, {"alt", "LAlt"}, {"ralt", "RAlt"},
-                    {"meta", "LMeta"}, {"rmeta", "RMeta"},
-                };
-
-                if (lower == "emergency_release" || lower == "panic") {
-                    EmergencyReleaseAllKeys();
-                } else if (lower.ends_with(" down") || lower.ends_with(":down")) {
-                    std::string mod = lower.substr(0, lower.size() - 5);
-                    if (modifierKeys.count(mod)) {
-                        SendX11Key(modifierKeys[mod], true);
-                    } else {
-                        SendX11Key(seq.substr(0, seq.size() - 5), true);
-                    }
-                } else if (lower.ends_with(" up") || lower.ends_with(":up")) {
-                    std::string mod = lower.substr(0, lower.size() - 3);
-                    if (modifierKeys.count(mod)) {
-                        SendX11Key(modifierKeys[mod], false);
-                    } else {
-                        SendX11Key(seq.substr(0, seq.size() - 3), false);
-                    }
+                std::string sequence = keys.substr(i + 1, end - i - 1);
+                if (sequence == "Alt down") {
+                    keybd_event(VK_MENU, 0, 0, 0);
+                } else if (sequence == "Alt up") {
+                    keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+                } else if (sequence == "Ctrl down") {
+                    keybd_event(VK_CONTROL, 0, 0, 0);
+                } else if (sequence == "Ctrl up") {
+                    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+                } else if (sequence == "Shift down") {
+                    keybd_event(VK_SHIFT, 0, 0, 0);
+                } else if (sequence == "Shift up") {
+                    keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0);
                 } else {
-                    Key keycode = GetKeyCode(seq);
-                    if (keycode != 0) {
-                        ioBackend->PressKey(keycode);
-                        ioBackend->ReleaseKey(keycode);
+                    int virtualKey = StringToVirtualKey(sequence);
+                    if (virtualKey) {
+                        keybd_event(virtualKey, 0, 0, 0);
+                        keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0);
                     }
                 }
                 i = end;
@@ -1131,8 +1100,153 @@ void IO::Send(cstr keys) {
             }
         }
 
-        SendCharX11(keys[i]);
+        int virtualKey = StringToVirtualKey(std::string(1, keys[i]));
+        if (virtualKey) {
+            keybd_event(virtualKey, 0, 0, 0);
+            keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0);
+        }
     }
+#else
+    auto tokens = ParseKeyString(keys);
+
+    bool useUinput = true;
+    bool useX11 = false;
+    std::vector<std::string> activeModifiers;
+    std::unordered_map<std::string, std::string> modifierKeys = {
+        {"ctrl", "LCtrl"}, {"rctrl", "RCtrl"}, {"shift", "LShift"},
+        {"rshift", "RShift"}, {"alt", "LAlt"}, {"ralt", "RAlt"},
+        {"meta", "LMeta"}, {"rmeta", "RMeta"},
+    };
+
+    auto SendKeyImpl = [&](const std::string &keyName, bool down) {
+        if (useUinput || (!useX11 && globalEvdev)) {
+            int code = GetKeyCacheLookup(keyName);
+            if (Configs::Get().GetVerboseKeyLogging()) {
+                debug("Sending key: " + keyName + " (" + std::to_string(down) + ") code: " + std::to_string(code));
+            }
+            if (code != -1) {
+                if (eventListener) {
+                    eventListener->SendUinputEvent(EV_KEY, code, down ? 1 : 0);
+                } else {
+                    SendUInput(code, down);
+                }
+            }
+        } else {
+            SendX11Key(keyName, down);
+        }
+    };
+
+    auto SendKey = [&](const std::string &keyName, bool down) {
+        SendKeyImpl(keyName, down);
+    };
+
+    std::set<std::string> toRelease;
+    if (eventListener) {
+        auto modState = eventListener->GetModifierState();
+        auto checkMod = [&](bool leftPressed, bool rightPressed,
+                            const std::string &leftKey, const std::string &rightKey) {
+            if (leftPressed) toRelease.insert(leftKey);
+            if (rightPressed) toRelease.insert(rightKey);
+        };
+        checkMod(modState.leftCtrl, modState.rightCtrl, "ctrl", "rctrl");
+        checkMod(modState.leftShift, modState.rightShift, "shift", "rshift");
+        checkMod(modState.leftAlt, modState.rightAlt, "alt", "ralt");
+        checkMod(modState.leftMeta, modState.rightMeta, "meta", "rmeta");
+    }
+    for (const auto &mod : toRelease) {
+        if (debugging::debug_io) debug("Releasing modifier: {}", mod);
+        SendKey(modifierKeys[mod], false);
+    }
+
+    bool shouldSleep = Configs::Get().Get<bool>("Advanced.SlowKeyDelay", false);
+
+    if (eventListener) {
+        eventListener->BeginUinputBatch();
+    }
+
+    for (const auto &token : tokens) {
+        switch (token.type) {
+        case KeyToken::Modifier: {
+            if (token.value == "toggle_uinput") {
+                useUinput = !useUinput;
+                if (Configs::Get().GetVerboseKeyLogging())
+                    debug(useUinput ? "Switched to uinput" : "Switched to X11");
+            } else if (token.value == "toggle_x11") {
+                useX11 = !useX11;
+                if (Configs::Get().GetVerboseKeyLogging())
+                    debug(useX11 ? "Switched to X11" : "Switched to uinput");
+            } else if (modifierKeys.count(token.value)) {
+                SendKey(modifierKeys[token.value], true);
+                activeModifiers.push_back(token.value);
+            }
+            break;
+        }
+        case KeyToken::Special: {
+            if (token.value == "emergency_release" || token.value == "panic") {
+                EmergencyReleaseAllKeys();
+            }
+            break;
+        }
+        case KeyToken::ModifierDown: {
+            if (modifierKeys.count(token.value)) {
+                SendKey(modifierKeys[token.value], true);
+                activeModifiers.push_back(token.value);
+            } else {
+                SendKey(token.value, true);
+            }
+            break;
+        }
+        case KeyToken::ModifierUp: {
+            if (modifierKeys.count(token.value)) {
+                SendKey(modifierKeys[token.value], false);
+                activeModifiers.erase(
+                    std::remove(activeModifiers.begin(), activeModifiers.end(), token.value),
+                    activeModifiers.end());
+            } else {
+                SendKey(token.value, false);
+            }
+            break;
+        }
+        case KeyToken::Key: {
+            if (Configs::Get().GetVerboseKeyLogging())
+                debug("Sending key: " + token.value);
+            auto &val = token.value;
+            if (val.length() == 1 && isprint(static_cast<unsigned char>(val[0])) && ioBackend) {
+                SendCharX11(val[0]);
+            } else {
+                SendKey(val, true);
+                if (shouldSleep) {
+                    if (eventListener) {
+                        eventListener->EndUinputBatch();
+                    }
+                    std::this_thread::sleep_for(std::chrono::microseconds(100));
+                    if (eventListener) {
+                        eventListener->BeginUinputBatch();
+                    }
+                }
+                SendKey(val, false);
+            }
+            break;
+        }
+        }
+    }
+
+    if (eventListener) {
+        eventListener->EndUinputBatch();
+    }
+
+    for (const auto &mod : activeModifiers) {
+        if (modifierKeys.count(mod)) {
+            if (Configs::Get().GetVerboseKeyLogging())
+                debug("Releasing modifier: " + mod);
+            SendKey(modifierKeys[mod], false);
+        } else {
+            if (Configs::Get().GetVerboseKeyLogging())
+                debug("Releasing key: " + mod);
+            SendKey(mod, false);
+        }
+    }
+    activeModifiers.clear();
 #endif
 }
 

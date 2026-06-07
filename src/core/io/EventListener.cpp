@@ -2006,6 +2006,7 @@ bool EventListener::MatchGesturePattern(
 void EventListener::ReleaseAllVirtualKeys() {
   if (backend_) backend_->ReleaseAllVirtualKeys();
   pressedVirtualKeys.clear();
+  evdevKeyState.clear();
 }
 
 void EventListener::ForceUngrabAllDevices() {

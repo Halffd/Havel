@@ -12,7 +12,12 @@
 #include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
+<<<<<<< HEAD
 // brightness module loaded via plugin
+=======
+#include "../../modules/brightness/BrightnessModule.hpp"
+#include "../../modules/ffi/FFIModule.hpp"
+>>>>>>> havel3-io
 #include <algorithm>
 
 namespace havel {
@@ -432,7 +437,7 @@ void Modules::installStdLib() {
         }
     }
 
-    // Brightness module loaded dynamically as havel_mod_brightness.so plugin
+// Brightness and ffi modules loaded dynamically as .so plugins
 }
 
  void Modules::install(InstallProfile profile, bool eagerBridges) {

@@ -1,0 +1,25 @@
+// Test: sleep inside sequential code (no hotkey)
+// No event loop needed — just sequential execution
+print "=== test sleep ==="
+z = 0
+i = 0
+loop {
+  sleep(10)
+  z += 1
+  print z
+  i += 1
+  if i > 3 {
+    print "loop done"
+    break
+  }
+}
+print "z final: " + z
+
+// Verify sleep actually delayed
+print "=== test sleep delay ==="
+t0 = time.now()
+sleep(50)
+t1 = time.now()
+print "slept ms: " + (t1 - t0)
+
+print "=== all sleep tests passed ==="

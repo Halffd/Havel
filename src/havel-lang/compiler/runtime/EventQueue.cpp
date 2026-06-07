@@ -18,6 +18,8 @@ EventQueue::EventQueue() {
 }
 
 EventQueue::~EventQueue() {
+    shutdown_workers_.store(true, std::memory_order_release);
+    clear();
     if (wakeupFd_ >= 0) {
         close(wakeupFd_);
         wakeupFd_ = -1;
@@ -26,6 +28,7 @@ EventQueue::~EventQueue() {
 }
 
 void EventQueue::push(const Event& event) {
+    if (shutdown_workers_.load(std::memory_order_acquire)) return;
     events_.push(event);
     signalWakeup();
 }

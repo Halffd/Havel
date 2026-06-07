@@ -37,7 +37,7 @@ gr = "1.0"
 gg = "1.0"
 gb = "1.0"
 temp = "6500"
-print("Resetting brightness to defaults: {b} {sl} {gr} {gg} {gb} {temp}")
+print("Resetting brightness to defaults: " + b + " " + sl + " " + gr + " " + gg + " " + gb + " " + temp)
 brightness.set(num(b))
 brightness.setShadowLift(num(sl))
 brightness.setGammaRGB(num(gr), num(gg), num(gb))

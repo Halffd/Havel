@@ -57,7 +57,7 @@ class Parser {
   }
 
   fn advance() {
-    ch = @at()
+    ch = self.at()
     @pos = @pos + 1
     ch
   }
@@ -66,7 +66,7 @@ class Parser {
     p = @pos
     l = @len
     while p < l {
-      ch = @at()
+      ch = self.at()
       if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" || ch == "\f" {
         @pos = @pos + 1
         p = @pos
@@ -78,14 +78,14 @@ class Parser {
     p = @pos
     l = @len
     while p < l {
-      ch = @at()
-      pk = @peek(1)
+      ch = self.at()
+      pk = self.peek(1)
       if ch == "/" && pk == "*" {
         @pos = @pos + 2
         p = @pos
         while p < l {
-          ch2 = @at()
-          pk2 = @peek(1)
+          ch2 = self.at()
+          pk2 = self.peek(1)
           if ch2 == "*" && pk2 == "/" {
             @pos = @pos + 2
             p = @pos
@@ -95,7 +95,7 @@ class Parser {
           p = @pos
         }
       } else { return }
-      @skipWS()
+      self.skipWS()
       p = @pos
     }
   }
@@ -104,11 +104,11 @@ class Parser {
     p = @pos
     l = @len
     while p < l {
-      @skipWS()
-      ch = @at()
-      pk = @peek(1)
+      self.skipWS()
+      ch = self.at()
+      pk = self.peek(1)
       if ch == "/" && pk == "*" {
-        @skipComment()
+        self.skipComment()
         p = @pos
       } else { return }
     }
@@ -121,122 +121,122 @@ class Parser {
 
   fn isIdent(ch) {
     if ch == null { return false }
-    started = @isIdentStart(ch)
+    started = self.isIdentStart(ch)
     started || (ch >= "0" && ch <= "9")
   }
 
   fn readIdent() {
     result = ""
-    ch = @at()
-    if ch == "-" { result = "-"; @advance() }
+    ch = self.at()
+    if ch == "-" { result = "-"; self.advance() }
     p = @pos
     l = @len
     while p < l {
-      ch = @at()
-      if !@isIdent(ch) { break }
-      result = result + @advance()
+      ch = self.at()
+      if !self.isIdent(ch) { break }
+      result = result + self.advance()
       p = @pos
     }
     result
   }
 
   fn readString(quote) {
-    @advance()
+    self.advance()
     result = ""
     p = @pos
     l = @len
-    ch = @at()
+    ch = self.at()
     while p < l && ch != quote {
       if ch == "\\" {
-        @advance()
-        result = result + @advance()
+        self.advance()
+        result = result + self.advance()
       } else {
-        result = result + @advance()
+        result = result + self.advance()
       }
       p = @pos
-      ch = @at()
+      ch = self.at()
     }
-    if p < l { @advance() }
+    if p < l { self.advance() }
     result
   }
 
   fn parseSelector() {
     parts = []
-    @skipWSAndComments()
+    self.skipWSAndComments()
     p = @pos
     l = @len
-    cur = @at()
+    cur = self.at()
     while p < l && cur != "{" && cur != "," {
-      @skipWSAndComments()
-      ch = @at()
+      self.skipWSAndComments()
+      ch = self.at()
       if ch == null || ch == "{" || ch == "," { break }
       if ch == "." {
-        @advance()
-        name = @readIdent()
+        self.advance()
+        name = self.readIdent()
         parts.push({type: "class", value: name})
       } else if ch == "#" {
-        @advance()
-        name = @readIdent()
+        self.advance()
+        name = self.readIdent()
         parts.push({type: "id", value: name})
       } else if ch == "[" {
-        @advance()
-        attrName = @readIdent()
-        @skipWS()
+        self.advance()
+        attrName = self.readIdent()
+        self.skipWS()
         oper = ""
-        nxt = @at()
-        if nxt == "=" { oper = "="; @advance() }
+        nxt = self.at()
+        if nxt == "=" { oper = "="; self.advance() }
         else if nxt == "~" {
-          pk1 = @peek(1)
+          pk1 = self.peek(1)
           if pk1 == "=" { oper = "~="; @pos = @pos + 2 }
         } else if nxt == "|" {
-          pk1 = @peek(1)
+          pk1 = self.peek(1)
           if pk1 == "=" { oper = "|="; @pos = @pos + 2 }
         } else if nxt == "^" {
-          pk1 = @peek(1)
+          pk1 = self.peek(1)
           if pk1 == "=" { oper = "^="; @pos = @pos + 2 }
         } else if nxt == "$" {
-          pk1 = @peek(1)
+          pk1 = self.peek(1)
           if pk1 == "=" { oper = "$="; @pos = @pos + 2 }
         } else if nxt == "*" {
-          pk1 = @peek(1)
+          pk1 = self.peek(1)
           if pk1 == "=" { oper = "*="; @pos = @pos + 2 }
         }
         attrValue = ""
         if oper != "" {
-          @skipWS()
-          q = @at()
+          self.skipWS()
+          q = self.at()
           if q == "\"" || q == "'" {
-            attrValue = @readString(q)
+            attrValue = self.readString(q)
           } else {
             p2 = @pos
             while p2 < l {
-              c = @at()
+              c = self.at()
               if c == "]" || c == " " { break }
-              attrValue = attrValue + @advance()
+              attrValue = attrValue + self.advance()
               p2 = @pos
             }
           }
         }
-        @skipWS()
-        if @at() == "]" { @advance() }
+        self.skipWS()
+        if self.at() == "]" { self.advance() }
         parts.push({type: "attr", name: attrName, "op": oper, value: attrValue})
       } else if ch == ":" {
-        @advance()
-        nxt = @at()
+        self.advance()
+        nxt = self.at()
         if nxt == ":" {
-          @advance()
-          name = @readIdent()
+          self.advance()
+          name = self.readIdent()
           parts.push({type: "pseudo_element", value: name})
         } else {
-          name = @readIdent()
+          name = self.readIdent()
           args = ""
-          nxt2 = @at()
+          nxt2 = self.at()
           if nxt2 == "(" {
-            @advance()
+            self.advance()
             depth = 1
             p3 = @pos
             while p3 < l && depth > 0 {
-              c = @advance()
+              c = self.advance()
               if c == "(" { depth = depth + 1 }
               else if c == ")" { depth = depth - 1 }
               if depth > 0 { args = args + c }
@@ -246,34 +246,34 @@ class Parser {
           parts.push({type: "pseudo", value: name, args: args})
         }
       } else if ch == "*" {
-        @advance()
+        self.advance()
         parts.push({type: "universal", value: "*"})
       } else if ch == ">" {
-        @advance()
-        @skipWSAndComments()
+        self.advance()
+        self.skipWSAndComments()
         parts.push({type: "combinator", value: ">"})
       } else if ch == "+" {
-        @advance()
-        @skipWSAndComments()
+        self.advance()
+        self.skipWSAndComments()
         parts.push({type: "combinator", value: "+"})
       } else if ch == "~" {
-        @advance()
-        @skipWSAndComments()
+        self.advance()
+        self.skipWSAndComments()
         parts.push({type: "combinator", value: "~"})
       } else {
-        pk1 = @peek(1)
-        if @isIdentStart(ch) {
-          name = @readIdent()
+        pk1 = self.peek(1)
+        if self.isIdentStart(ch) {
+          name = self.readIdent()
           parts.push({type: "type", value: name})
-        } else if ch == "-" && @isIdentStart(pk1) {
-          name = @readIdent()
+        } else if ch == "-" && self.isIdentStart(pk1) {
+          name = self.readIdent()
           parts.push({type: "type", value: name})
         } else {
-          @advance()
+          self.advance()
         }
       }
       p = @pos
-      cur = @at()
+      cur = self.at()
     }
     start = 0
     n = #parts
@@ -288,23 +288,23 @@ class Parser {
 
   fn parseSelectorList() {
     selectors = []
-    @skipWSAndComments()
+    self.skipWSAndComments()
     p = @pos
     l = @len
-    cur = @at()
+    cur = self.at()
     while p < l && cur != "{" {
-      parts = @parseSelector()
+      parts = self.parseSelector()
       if #parts > 0 {
         text = selectorPartsToText(parts)
         sel = Selector.new(parts, text)
         selectors.push(sel)
       }
-      @skipWSAndComments()
-      cur = @at()
+      self.skipWSAndComments()
+      cur = self.at()
       if cur == "," {
-        @advance()
-        @skipWSAndComments()
-        cur = @at()
+        self.advance()
+        self.skipWSAndComments()
+        cur = self.at()
       } else { break }
       p = @pos
     }
@@ -315,34 +315,34 @@ class Parser {
     decls = []
     p = @pos
     l = @len
-    cur = @at()
+    cur = self.at()
     while p < l && cur != "}" {
-      @skipWSAndComments()
-      cur = @at()
+      self.skipWSAndComments()
+      cur = self.at()
       if cur == "}" { break }
-      prop = @readIdent()
+      prop = self.readIdent()
       if prop == "" {
-        if p < l { @advance() }
+        if p < l { self.advance() }
         p = @pos
         continue
       }
-      @skipWSAndComments()
-      cur2 = @at()
+      self.skipWSAndComments()
+      cur2 = self.at()
       if cur2 != ":" {
         p = @pos
         continue
       }
-      @advance()
-      @skipWS()
+      self.advance()
+      self.skipWS()
       value = ""
       p2 = @pos
       while p2 < l {
-        c = @at()
+        c = self.at()
         if c == ";" || c == "}" { break }
         if c == "\"" || c == "'" {
-          value = value + @readString(c)
+          value = value + self.readString(c)
         } else {
-          value = value + @advance()
+          value = value + self.advance()
         }
         p2 = @pos
       }
@@ -365,7 +365,7 @@ class Parser {
           value = value[:e].trim()
         }
       }
-      if @at() == ";" { @advance() }
+      if self.at() == ";" { self.advance() }
       if prop != "" && value != "" {
         decls.push(Declaration.new(prop, value, important))
       }
@@ -375,14 +375,14 @@ class Parser {
   }
 
   fn parseRule() {
-    selectors = @parseSelectorList()
-    @skipWSAndComments()
-    cur = @at()
+    selectors = self.parseSelectorList()
+    self.skipWSAndComments()
+    cur = self.at()
     if cur != "{" { return null }
-    @advance()
-    decls = @parseDeclarations()
-    cur2 = @at()
-    if cur2 == "}" { @advance() }
+    self.advance()
+    decls = self.parseDeclarations()
+    cur2 = self.at()
+    if cur2 == "}" { self.advance() }
     if #selectors > 0 { Rule.new(selectors, decls) }
     else { null }
   }
@@ -392,12 +392,12 @@ class Parser {
     p = @pos
     l = @len
     while p < l {
-      @skipWSAndComments()
+      self.skipWSAndComments()
       p = @pos
       if p >= l { break }
-      cur = @at()
-      if cur == "}" { @advance(); p = @pos; continue }
-      rule = @parseRule()
+      cur = self.at()
+      if cur == "}" { self.advance(); p = @pos; continue }
+      rule = self.parseRule()
       if rule != null { rules.push(rule) }
       p = @pos
     }

@@ -25,7 +25,7 @@ class Element {
     var _parent = null
     var _eventHandlers = {}
 
-    fn new(id, elementType) {
+    fn @(id, elementType) {
         @id = id
         @_type = elementType
         @
@@ -102,13 +102,13 @@ class Element {
 }
 
 class Window : Element {
-    fn new(title, opts) {
+    fn @(title, opts) {
         b = _requireBackend()
         id = b != null ? b.window(title != null ? title : "Window") : -1
         super(id, "window")
         if opts != null {
             if opts.has("width") && opts.has("height") {
-                @setSize(opts.width, opts.height)
+                self.setSize(opts.width, opts.height)
             }
         }
         @
@@ -116,7 +116,7 @@ class Window : Element {
 }
 
 class Panel : Element {
-    fn new(side) {
+    fn @(side) {
         b = _requireBackend()
         id = b != null ? b.panel(side != null ? side : "left") : -1
         super(id, "panel")
@@ -125,7 +125,7 @@ class Panel : Element {
 }
 
 class Modal : Element {
-    fn new(title) {
+    fn @(title) {
         b = _requireBackend()
         id = b != null ? b.modal(title != null ? title : "Dialog") : -1
         super(id, "modal")
@@ -134,7 +134,7 @@ class Modal : Element {
 }
 
 class Btn : Element {
-    fn new(label) {
+    fn @(label) {
         b = _requireBackend()
         id = b != null ? b.btn(label != null ? label : "Button") : -1
         super(id, "btn")
@@ -143,7 +143,7 @@ class Btn : Element {
 }
 
 class Text : Element {
-    fn new(content) {
+    fn @(content) {
         b = _requireBackend()
         id = b != null ? b.text(content != null ? content : "") : -1
         super(id, "text")
@@ -152,7 +152,7 @@ class Text : Element {
 }
 
 class Label : Element {
-    fn new(content) {
+    fn @(content) {
         b = _requireBackend()
         id = b != null ? b.label(content != null ? content : "") : -1
         super(id, "label")
@@ -161,7 +161,7 @@ class Label : Element {
 }
 
 class Input : Element {
-    fn new(placeholder) {
+    fn @(placeholder) {
         b = _requireBackend()
         id = b != null ? b.input(placeholder != null ? placeholder : "") : -1
         super(id, "input")
@@ -170,7 +170,7 @@ class Input : Element {
 }
 
 class Textarea : Element {
-    fn new(placeholder) {
+    fn @(placeholder) {
         b = _requireBackend()
         id = b != null ? b.textarea(placeholder != null ? placeholder : "") : -1
         super(id, "textarea")
@@ -179,7 +179,7 @@ class Textarea : Element {
 }
 
 class Checkbox : Element {
-    fn new(label, checked) {
+    fn @(label, checked) {
         b = _requireBackend()
         id = b != null ? b.checkbox(label != null ? label : "", checked != null ? checked : false) : -1
         super(id, "checkbox")
@@ -188,7 +188,7 @@ class Checkbox : Element {
 }
 
 class Toggle : Element {
-    fn new(label, value) {
+    fn @(label, value) {
         b = _requireBackend()
         id = b != null ? b.toggle(label != null ? label : "", value != null ? value : false) : -1
         super(id, "toggle")
@@ -197,7 +197,7 @@ class Toggle : Element {
 }
 
 class Slider : Element {
-    fn new(min, max, value) {
+    fn @(min, max, value) {
         b = _requireBackend()
         mn = min != null ? min : 0
         mx = max != null ? max : 100
@@ -209,7 +209,7 @@ class Slider : Element {
 }
 
 class Dropdown : Element {
-    fn new(options) {
+    fn @(options) {
         b = _requireBackend()
         csv = ""
         if options != null {
@@ -227,7 +227,7 @@ class Dropdown : Element {
 }
 
 class Image : Element {
-    fn new(path) {
+    fn @(path) {
         b = _requireBackend()
         id = b != null ? b.image(path != null ? path : "") : -1
         super(id, "image")
@@ -236,7 +236,7 @@ class Image : Element {
 }
 
 class Icon : Element {
-    fn new(name) {
+    fn @(name) {
         b = _requireBackend()
         id = b != null ? b.icon(name != null ? name : "") : -1
         super(id, "icon")
@@ -245,7 +245,7 @@ class Icon : Element {
 }
 
 class Divider : Element {
-    fn new() {
+    fn @() {
         b = _requireBackend()
         id = b != null ? b.divider() : -1
         super(id, "divider")
@@ -254,7 +254,7 @@ class Divider : Element {
 }
 
 class Spacer : Element {
-    fn new(size) {
+    fn @(size) {
         b = _requireBackend()
         id = b != null ? b.spacer(size != null ? size : 10) : -1
         super(id, "spacer")
@@ -263,7 +263,7 @@ class Spacer : Element {
 }
 
 class Progress : Element {
-    fn new(value, max) {
+    fn @(value, max) {
         b = _requireBackend()
         v = value != null ? value : 0
         m = max != null ? max : 100
@@ -274,7 +274,7 @@ class Progress : Element {
 }
 
 class Spinner : Element {
-    fn new() {
+    fn @() {
         b = _requireBackend()
         id = b != null ? b.spinner() : -1
         super(id, "spinner")
@@ -283,7 +283,7 @@ class Spinner : Element {
 }
 
 class Row : Element {
-    fn new() {
+    fn @() {
         b = _requireBackend()
         id = b != null ? b.row() : -1
         super(id, "row")
@@ -292,7 +292,7 @@ class Row : Element {
 }
 
 class Col : Element {
-    fn new() {
+    fn @() {
         b = _requireBackend()
         id = b != null ? b.col() : -1
         super(id, "col")
@@ -301,7 +301,7 @@ class Col : Element {
 }
 
 class Grid : Element {
-    fn new(cols) {
+    fn @(cols) {
         b = _requireBackend()
         id = b != null ? b.grid(cols != null ? cols : 2) : -1
         super(id, "grid")
@@ -310,7 +310,7 @@ class Grid : Element {
 }
 
 class Table : Element {
-    fn new(rows, cols) {
+    fn @(rows, cols) {
         b = _requireBackend()
         id = b != null ? b.table(rows != null ? rows : 0, cols != null ? cols : 0) : -1
         super(id, "table")
@@ -319,7 +319,7 @@ class Table : Element {
 }
 
 class Flex : Element {
-    fn new(direction) {
+    fn @(direction) {
         b = _requireBackend()
         id = b != null ? b.flex(direction != null ? direction : "row") : -1
         super(id, "flex")
@@ -328,7 +328,7 @@ class Flex : Element {
 }
 
 class Scroll : Element {
-    fn new() {
+    fn @() {
         b = _requireBackend()
         id = b != null ? b.scroll() : -1
         super(id, "scroll")
@@ -337,7 +337,7 @@ class Scroll : Element {
 }
 
 class Canvas : Element {
-    fn new(width, height) {
+    fn @(width, height) {
         b = _requireBackend()
         id = b != null ? b.canvas(width != null ? width : 400, height != null ? height : 300) : -1
         super(id, "canvas")
@@ -388,7 +388,7 @@ class Canvas : Element {
 }
 
 class Menu : Element {
-    fn new(title) {
+    fn @(title) {
         b = _requireBackend()
         id = b != null ? b.menu(title != null ? title : "Menu") : -1
         super(id, "menu")
@@ -397,7 +397,7 @@ class Menu : Element {
 }
 
 class MenuItem : Element {
-    fn new(label, shortcut) {
+    fn @(label, shortcut) {
         b = _requireBackend()
         id = b != null ? b.menuItem(label != null ? label : "Item", shortcut != null ? shortcut : "") : -1
         super(id, "menuitem")
@@ -406,7 +406,7 @@ class MenuItem : Element {
 }
 
 class MenuSeparator : Element {
-    fn new() {
+    fn @() {
         b = _requireBackend()
         id = b != null ? b.menuSeparator() : -1
         super(id, "menuseparator")

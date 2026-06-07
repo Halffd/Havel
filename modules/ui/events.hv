@@ -15,7 +15,7 @@ class Event {
     AT_TARGET = 2
     BUBBLING = 3
 
-    fn new(type, data) {
+    fn @(type, data) {
         @type = type
         @data = data != null ? data : {}
         @timestamp = time.millis()
@@ -233,7 +233,7 @@ class EventEmitter {
     var _listeners = {}
     var _onceListeners = []
 
-    fn new() { @ }
+    fn @() { @_listeners = {}; @_onceListeners = [] }
 
   fn listen(eventType, handler) {
     if !@_listeners.has(eventType) { @_listeners[eventType] = [] }
@@ -252,9 +252,9 @@ class EventEmitter {
   fn once(eventType, handler) {
     wrapper = fn(evt) {
       handler(evt)
-      @unlisten(eventType, wrapper)
+      self.unlisten(eventType, wrapper)
     }
-    @listen(eventType, wrapper)
+    self.listen(eventType, wrapper)
         @
     }
 

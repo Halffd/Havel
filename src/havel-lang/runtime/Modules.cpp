@@ -12,7 +12,7 @@
 #include "c/ModulePlugin.h"
 #include "../../core/hotkey/HotkeyManager.hpp"
 #include "../../extensions/HavelCAPI.h"
-// brightness and ffi modules loaded via plugin
+// ffi module loaded via plugin
 #include <algorithm>
 
 namespace havel {
@@ -432,7 +432,19 @@ void Modules::installStdLib() {
         }
     }
 
-// Brightness and ffi modules loaded dynamically as .so plugins
+    // Brightness module loaded dynamically as .so plugin
+    // Fallback: register ffi as lazy module via plugin loader if scan missed it
+    auto foundFfi = std::find_if(available.begin(), available.end(),
+        [](const auto &m) { return m.name == "ffi"; });
+    if (foundFfi == available.end()) {
+        std::string ffiName = "ffi";
+        vm.registerLazyModule(ffiName, [this, ffiName](compiler::VMApi &a) {
+            auto plugin = extensionLoader_->loadModulePlugin(ffiName);
+            if (plugin) {
+                plugin->register_fn(static_cast<void *>(&a));
+            }
+        });
+    }
 }
 
  void Modules::install(InstallProfile profile, bool eagerBridges) {

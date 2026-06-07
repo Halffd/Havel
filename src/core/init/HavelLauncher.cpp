@@ -5,6 +5,7 @@
 #include "core/config/ConfigManager.hpp"
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/runtime/Modules.hpp"
+#include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
@@ -702,12 +703,15 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
           options.vm_override = bytecodeVM;
           options.debugBytecode = cfg.debugBytecode;
 
-          try {
-            havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-            info("Execution completed successfully");
-          } catch (const std::exception &e) {
-            error("Execution error: {}", e.what());
-          }
+    try {
+        havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+        info("Execution completed successfully");
+    } catch (const std::exception &e) {
+        error("Execution error: {}", e.what());
+    }
+
+    auto *ee = havel_inst.getExecutionEngine();
+    if (ee) ee->setScriptReady(true);
         }
       }
 
@@ -836,14 +840,21 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 
     try {
         havel::compiler::PipelineOptions options = modules->options();
-      options.compile_unit_name = combinedNames;
-      options.vm_override = bytecodeVM;
-      options.debugBytecode = cfg.debugBytecode;
-      havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+        options.compile_unit_name = combinedNames;
+        options.vm_override = bytecodeVM;
+        options.debugBytecode = cfg.debugBytecode;
+        havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
     } catch (const std::exception &e) {
-      error("Execution error: {}", e.what());
-      return 1;
+        error("Execution error: {}", e.what());
+        return 1;
     }
+
+    // Signal the ExecutionEngine that the initial script is done and
+    // goroutine execution can begin.  Until this point executeFrame()
+    // is blocked to avoid concurrent VM state mutation from the event
+    // loop thread while the main thread is still running the script.
+    auto *ee = havel_inst.getExecutionEngine();
+    if (ee) ee->setScriptReady(true);
 
     if (hkManager) {
       hkManager->printHotkeys();
@@ -1398,12 +1409,15 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-      } catch (const std::exception &e) {
+    } catch (const std::exception &e) {
         error("Script execution error: {}", e.what());
         return 1;
-      }
+    }
 
-      // Print registered hotkeys
+    auto *ee = havel_inst.getExecutionEngine();
+    if (ee) ee->setScriptReady(true);
+
+    // Print registered hotkeys
       auto *hkManager = havel_inst.getHotkeyManagerPtr();
       if (hkManager) {
         hkManager->printHotkeys();

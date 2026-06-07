@@ -77,6 +77,16 @@ bool ExecutionEngine::executeFrame() {
     return false;
   }
 
+  // Do not execute goroutines while the main thread is still running the
+  // initial script (VM::execute).  Both paths touch the same VM state
+  // (stack, locals, heap) so concurrent access would corrupt memory.
+  if (!script_ready_.load(std::memory_order_acquire)) {
+    // Still drain deferred callbacks (e.g. from IO thread) so they don't
+    // accumulate, but skip goroutine scheduling/execution.
+    scheduler_->drainDeferredCallbacks();
+    return false;
+  }
+
  try {
         if (debug_mode_) {
             std::cerr << "[ExecutionEngine] Entering executeFrame\n";

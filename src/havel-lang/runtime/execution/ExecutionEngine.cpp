@@ -123,15 +123,19 @@ bool ExecutionEngine::executeFrame() {
         return false;
     }
 
-    if (g->persistent || debug_mode_) {
-        ::havel::debug("[ExecutionEngine] Picked goroutine gid={} persistent={} state={} fn={} closure={}",
-            g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
-    }
-    
+  if (g->persistent || debug_mode_) {
+    ::havel::debug("[ExecutionEngine] Picked goroutine gid={} persistent={} state={} fn={} closure={}",
+      g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
+  }
+
   // STEP 3: Load fiber state into VM's global execution state
-  // For newly-created goroutines, use startGoroutineCall which resolves
-  // the correct chunk (from closure if needed) and sets up the call frame.
-  // For resuming goroutines, use loadFiberState which restores suspended state.
+  // For newly-created goroutines (state == Created), use startGoroutineCall
+  // which resolves the correct chunk (from closure if needed) and sets up
+  // the call frame.  For resuming goroutines, use loadFiberState which
+  // restores suspended state.
+  // NOTE: pickNext no longer changes state to Running, so this check is
+  // reliable: Created → freshly requeued, needs startGoroutineCall.
+  // Runnable → yielded goroutine with saved fiber state.
   if (g->state == Scheduler::GoroutineState::Created) {
     bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
     if (!ok) {
@@ -159,6 +163,11 @@ bool ExecutionEngine::executeFrame() {
             }
         }
 
+
+    // State is Running for the duration of this frame's execution.
+    // Cross-thread consumers (wakeHotkey from IO thread) check
+    // isPending which includes Running.
+    g->state = Scheduler::GoroutineState::Running;
 
     // If this Fiber is a hotkey action (special marker function_id), execute the callback
     // instead of bytecode
@@ -318,8 +327,7 @@ vm_->clearSuspensionRequest();
 	return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
     
   } catch (const std::exception& e) {
-        ::havel::error("[ExecutionEngine] Exception in executeFrame: {}", e.what());
-    running_ = false;
+    ::havel::error("[ExecutionEngine] Exception in executeFrame: {}", e.what());
     return false;
   }
 }
@@ -380,16 +388,6 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
     std::cerr << "[ExecutionEngine] Goroutine completed execution\n";
   }
   if (!g) return;
-
-  // Sanity: detect corrupted goroutine ID (should be sequential 1..N)
-  if (g->id == 0 || g->id > 100000) {
-    ::havel::error("[ExecutionEngine] handleReturned: corrupted goroutine gid={} persistent={} — skipping requeue to avoid crash",
-      g->id, g->persistent);
-    if (scheduler_->current() == g) {
-      scheduler_->clearCurrent();
-    }
-    return;
-  }
 
   // Persistent goroutines (hotkey system): re-suspend instead of Done.
   // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.

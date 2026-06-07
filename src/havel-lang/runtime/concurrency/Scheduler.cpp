@@ -175,7 +175,6 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 	}
 
 	if (result) {
-		result->state = GoroutineState::Running;
 		{
 			std::lock_guard<std::mutex> wlock(result->wait_handle_mutex_);
 			result->wait_handle.clear();  // Clear stale suspension context before running

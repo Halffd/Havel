@@ -87,16 +87,73 @@ Value configKeys(const VMApi &api, const std::vector<Value> &args) {
     return arr;
 }
 
-void registerConfigModule(const VMApi &api) {
-    auto configObj = api.makeObject();
-    compiler::VM* vm = &api.vm();
-    api.setGlobal("config", configObj);
-    api.setGlobal("cfg", configObj);
-    api.setGlobal("conf", configObj);
+static Value configDispatch(const VMApi &api, const std::vector<Value> &args) {
+    if (args.empty()) {
+        throw std::runtime_error("cfg() requires a command (load, get, set, save, keys)");
+    }
+    std::string cmd = api.toString(args[0]);
+    if (cmd == "load") {
+        if (args.size() < 2) throw std::runtime_error("cfg.load() requires path");
+        Configs::Get().Load(api.toString(args[1]));
+        return Value::makeBool(true);
+    }
+    if (cmd == "get") {
+        return configGet(api, args);
+    }
+    if (cmd == "set") {
+        return configSet(api, args);
+    }
+    if (cmd == "save") {
+        return configSave(args);
+    }
+    if (cmd == "keys" || cmd == "list") {
+        return configKeys(api, args);
+    }
+    throw std::runtime_error("cfg(): unknown command '" + cmd + "'");
+}
 
+void registerConfigModule(const VMApi &api) {
+    // Register cfg as a standalone function for cfg("load", ...) dispatch
+    api.registerFunction("cfg", [api](const std::vector<Value> &args) {
+        return configDispatch(api, args);
+    });
+
+    // Register namespace methods for config.load(), config.get(), etc.
+    api.registerFunction("config.load", 1, [api](const std::vector<Value> &args) {
+        if (args.empty()) throw std::runtime_error("config.load() requires path");
+        Configs::Get().Load(api.toString(args[0]));
+        return Value::makeBool(true);
+    });
+    api.registerFunction("config.get", [api](const std::vector<Value> &args) {
+        return configGet(api, args);
+    });
+    api.registerFunction("config.set", [api](const std::vector<Value> &args) {
+        return configSet(api, args);
+    });
+    api.registerFunction("config.save", [](const std::vector<Value> &args) {
+        return configSave(args);
+    });
+    api.registerFunction("config.keys", [api](const std::vector<Value> &args) {
+        return configKeys(api, args);
+    });
+
+    // Create config object, populate with current config values, and attach methods
+    auto configObj = api.makeObject();
     for (const auto &key : Configs::Get().GetAllKeys()) {
         setNestedField(api, configObj, key, stringToValue(api, Configs::Get().Get<std::string>(key, "")));
     }
+    // Attach methods to config object so config.load(), config.get(), etc. work
+    api.setField(configObj, "load", api.makeFunctionRef("config.load"));
+    api.setField(configObj, "get", api.makeFunctionRef("config.get"));
+    api.setField(configObj, "set", api.makeFunctionRef("config.set"));
+    api.setField(configObj, "save", api.makeFunctionRef("config.save"));
+    api.setField(configObj, "keys", api.makeFunctionRef("config.keys"));
+
+    api.setGlobal("config", configObj);
+
+    // cfg is already registered as a host function above; conf points to same function
+    api.setGlobal("cfg", api.makeFunctionRef("cfg"));
+    api.setGlobal("conf", api.makeFunctionRef("cfg"));
 }
 
 static void setNestedField(const VMApi &api, Value obj, const std::string &key, Value value) {
@@ -119,6 +176,6 @@ void autoLoadConfig(const VMApi &api) { (void)api; }
 #include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL_A2(config, "1.0.0", "Configuration module", "cfg", "conf",
-havel::modules::registerConfigModule(*api);
+    havel::modules::registerConfigModule(*api);
 )
 #endif

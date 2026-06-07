@@ -1427,7 +1427,7 @@ else if (callee_value.isStringValId()) {
 	std::string instrInfo;
 	auto &cf = currentFrame();
 	if (cf.function && cf.ip < cf.function->instructions.size()) {
-		uint32_t start = cf.ip > 5 ? cf.ip - 5 : 0;
+		uint32_t start = cf.ip > 15 ? cf.ip - 15 : 0;
 		uint32_t end = std::min(cf.function->instructions.size(), static_cast<size_t>(cf.ip + 5));
 		for (uint32_t ii = start; ii < end; ++ii) {
 			auto &inst = cf.function->instructions[ii];
@@ -2571,9 +2571,6 @@ void VM::registerLazyModule(const std::string &name, std::function<void(class VM
       if (it == lazy_modules_.end() || it->second.loaded) return;
       it->second.loaded = true;
       auto api = VMApi(*this);
-      fprintf(stderr, "[SR-DEBUG] activateLazyModule('%s'): this=%p serviceRegistry_=%p\n",
-          name.c_str(), (void*)this, (void*)serviceRegistry_);
-      fflush(stderr);
       it->second.initFn(api);
 
     auto postInitIt = globals.find(name);
@@ -2735,11 +2732,6 @@ Value VM::loadModule(const std::string& path) {
 
     // Resolve the module path
     auto resolved = moduleLoader_.resolve(path, current_script_dir_);
-    if (resolved) {
-        fprintf(stderr, "DEBUG loadModule: path='%s' resolved to type=%d path='%s'\n",
-            path.c_str(), (int)resolved->type, resolved->canonicalPath.c_str());
-        fflush(stderr);
-    }
     if (resolved) {
         std::string canonicalKey = resolved->canonicalPath;
         
@@ -3026,8 +3018,8 @@ Value VM::loadModule(const std::string& path) {
 auto *obj = heap_.object(exportsObj.id);
     auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
     int exportCount = 0;
-    for (const auto& [name, value] : globals) {
-        if (name.empty() || name[0] == '_') continue;
+for (const auto& [name, value] : globals) {
+            if (name.empty() || name[0] == '_') continue;
         // Skip inherited globals UNLESS the module redefined them
         // (i.e., the value is different from what was inherited)
         if (inheritedGlobalNames.count(name)) {
@@ -3046,8 +3038,8 @@ auto *obj = heap_.object(exportsObj.id);
             }
         }
         Value materialized = deepMaterializeStrings(value, current_chunk);
-        materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
-            canonicalKey, name);
+            materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
+                canonicalKey, name);
         (*obj)[name] = materialized;
         exportCount++;
     }

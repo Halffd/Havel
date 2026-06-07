@@ -8,6 +8,7 @@
 #include "../../runtime/concurrency/WatcherRegistry.hpp"
 #include "../runtime/EventQueue.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
+#include "stdlib/StringModule.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -16,6 +17,11 @@ namespace havel::compiler {
 
 void VM::registerDefaultHostFunctions() {
   // Register print as both host function AND global (for closure access)
+    // Register string module host functions (toCodePointArray, etc.)
+    {
+        VMApi api(*this);
+        havel::stdlib::registerStringModule(api);
+    }
   registerHostFunction("print", [this](const std::vector<Value> &args) {
     // Check if last arg is kwargs object (marked with __kwargs key)
     std::string delim = " ";
@@ -2010,6 +2016,9 @@ void VM::registerDefaultPrototypes() {
     if (prototypes_registered_) return;
     prototypes_registered_ = true;
     prototypes::registerStringPrototype(*this);
+    // Register "string" as a lazy module so that accessing "string"
+    // as a global triggers namespace construction from string.* host functions.
+    registerLazyModule("string", [](VMApi &) {});
   prototypes::registerArrayPrototype(*this);
   prototypes::registerNumberPrototype(*this);
   prototypes::registerBoolPrototype(*this);

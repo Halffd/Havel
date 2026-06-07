@@ -1,0 +1,101 @@
+// terminal.hv — terminal control: send keys, open, clear, get output, paste, run commands
+// Wraps shell.*, io.sendKeys, and ANSI escape sequences for terminal interaction
+
+use shell
+
+// ============================================================
+// Sending input to terminals
+// ============================================================
+
+// send text as keystrokes to the active terminal window
+fn send(text) {
+  io.sendKeys(text)
+}
+
+// paste clipboard content as keystrokes into the active terminal
+fn paste() {
+  content = clipboard.get()
+  if content == null || content == "" { return false }
+  io.sendKeys(content)
+}
+
+// ============================================================
+// Opening terminals
+// ============================================================
+
+// open a new terminal window, optionally running a command
+fn open(command=null, term=null) {
+  if command != null {
+    if term != null {
+      return _openWithTerm(command, term)
+    }
+    return _openWithTerm(command, "")
+  }
+  if term != null {
+    return _openWithTerm("", term)
+  }
+  _openWithTerm("", "")
+}
+
+fn _openWithTerm(command, term) {
+  // detect available terminal emulator
+  emulators = ["gnome-terminal", "konsole", "xfce4-terminal", "alacritty", "kitty", "xterm", "lxterminal"]
+  chosen = ""
+  if term != null && term != "" {
+    chosen = term
+  } else {
+    for e in emulators {
+      r = shell.exec("which {e} 2>/dev/null")
+      if r.exitCode == 0 {
+        chosen = e
+        break
+      }
+    }
+    if chosen == "" { return null }
+  }
+
+  if command == null || command == "" {
+    if chosen == "gnome-terminal" {
+      return shell.run("gnome-terminal")
+    }
+    return shell.run("{chosen}")
+  }
+
+  // run command in new terminal
+  if chosen == "gnome-terminal" {
+    return shell.run("gnome-terminal -- sh -c '{command}; exec $SHELL'")
+  } else if chosen == "konsole" {
+    return shell.run("konsole -e sh -c '{command}; exec $SHELL'")
+  } else if chosen == "alacritty" {
+    return shell.run("alacritty -e sh -c '{command}; exec $SHELL'")
+  } else if chosen == "kitty" {
+    return shell.run("kitty sh -c '{command}; exec $SHELL'")
+  }
+  shell.run("{chosen} -e sh -c '{command}; exec $SHELL'")
+}
+
+// ============================================================
+// Screen control
+// ============================================================
+
+// clear the terminal screen (ANSI escape sequence)
+fn clear() {
+  print("\033[2J\033[H")
+}
+
+// ============================================================
+// Getting output
+// ============================================================
+
+// run a command and capture its output (returns {stdout, stderr, exitCode})
+fn get(command) {
+  shell.exec(command)
+}
+
+// run a command in a new terminal window (fire-and-forget, returns pid)
+fn run(command, term=null) {
+  if term != null {
+    return _openWithTerm(command, term)
+  }
+  _openWithTerm(command, "")
+}

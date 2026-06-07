@@ -144,12 +144,16 @@ bool VM::execBuiltinOp(const Instruction &instruction) {
  COMPILER_THROW("IMPORT expects valid string path");
  }
 
- // Check if module is already in globals (eager modules, previously loaded)
- auto git = globals.find(path);
- if (git != globals.end()) {
- pushStack(git->second);
- break;
- }
+            // Check if module is already in globals (eager modules, previously loaded)
+            // Only accept objects (namespace modules) and lazy proxies as pre-loaded.
+            // Host functions with the same name as a module should NOT short-circuit
+            // the module loading — they are unrelated (e.g., a "debug" host function
+            // conflicts with the "debug" .hv module).
+            auto git = globals.find(path);
+            if (git != globals.end() && (git->second.isObjectId() || git->second.isNull())) {
+                pushStack(git->second);
+                break;
+            }
  // Try capitalized variant
  std::string capPath = path;
  capPath[0] = static_cast<char>(toupper(static_cast<unsigned char>(capPath[0])));

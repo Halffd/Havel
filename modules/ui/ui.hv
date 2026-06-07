@@ -78,7 +78,7 @@ class Element {
         @
     }
 
-    fn on(eventType, handler) {
+    fn listen(eventType, handler) {
         @_eventHandlers[eventType] = handler
         @
     }

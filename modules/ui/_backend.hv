@@ -204,12 +204,12 @@ fn _resolveShimSyms() {
     _fn_last_error = _sym("havel_ui_shim_last_error")
 }
 
-fn _callV(fn_ptr, ret, params) {
-    ffi.call(fn_ptr, ret, params)
+fn _callV(fn_ptr, retType, params) {
+ ffi.call(fn_ptr, retType, params)
 }
 
-fn _call0(fn_ptr, ret, params) {
-    ffi.call(fn_ptr, ret, params)
+fn _call0(fn_ptr, retType, params) {
+ ffi.call(fn_ptr, retType, params)
 }
 
 class Backend {
@@ -321,15 +321,15 @@ class Backend {
     fn settingsCreate(org, app) { ffi.call(_fn_settings_create, "pointer", ["pointer", "string", "string"], @uiBackend, org, app) }
     fn settingsDestroy(s) { ffi.call(_fn_settings_destroy, "void", ["pointer", "pointer"], @uiBackend, s) }
     fn settingsSetValue(s, key, value) { ffi.call(_fn_settings_set_value, "void", ["pointer", "pointer", "string", "string"], @uiBackend, s, key, value) }
-    fn settingsValue(s, key, default) { ffi.call(_fn_settings_value, "string", ["pointer", "pointer", "string", "string"], @uiBackend, s, key, default) }
+    fn settingsValue(s, key, defVal) { ffi.call(_fn_settings_value, "string", ["pointer", "pointer", "string", "string"], @uiBackend, s, key, defVal) }
     fn settingsContains(s, key) { ffi.call(_fn_settings_contains, "int32", ["pointer", "pointer", "string"], @uiBackend, s, key) }
     fn settingsRemove(s, key) { ffi.call(_fn_settings_remove, "void", ["pointer", "pointer", "string"], @uiBackend, s, key) }
     fn settingsSync(s) { ffi.call(_fn_settings_sync, "void", ["pointer", "pointer"], @uiBackend, s) }
 
     fn colorPicker(initial) { ffi.call(_fn_color_picker, "string", ["pointer", "string"], @uiBackend, initial) }
     fn fontPicker(initial) { ffi.call(_fn_font_picker, "string", ["pointer", "string"], @uiBackend, initial) }
-    fn inputText(title, label, default) { ffi.call(_fn_input_text, "string", ["pointer", "string", "string", "string"], @uiBackend, title, label, default) }
-    fn inputInt(title, label, default, min, max, step) { ffi.call(_fn_input_int, "int64", ["pointer", "string", "string", "int32", "int32", "int32", "int32"], @uiBackend, title, label, default, min, max, step) }
+fn inputText(title, label, defVal) { ffi.call(_fn_input_text, "string", ["pointer", "string", "string", "string"], @uiBackend, title, label, defVal) }
+fn inputInt(title, label, defVal, min, max, step) { ffi.call(_fn_input_int, "int64", ["pointer", "string", "string", "int32", "int32", "int32", "int32"], @uiBackend, title, label, defVal, min, max, step) }
 
     fn hasActiveWindows() { ffi.call(_fn_has_active_windows, "int32", ["pointer"], @uiBackend) }
     fn isAvailable() { ffi.call(_fn_is_available, "int32", ["pointer"], @uiBackend) }

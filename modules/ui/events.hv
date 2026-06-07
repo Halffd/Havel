@@ -39,7 +39,7 @@ class Event {
 _listeners = {}
 _globalListeners = []
 
-fn on(target, eventType, handler, options) {
+fn listen(target, eventType, handler, options) {
     opts = options != null ? options : {}
     capture = opts.has("capture") ? opts.capture : false
     once = opts.has("once") ? opts.once : false
@@ -64,7 +64,7 @@ fn on(target, eventType, handler, options) {
     entry
 }
 
-fn off(target, eventType, handler) {
+fn unlisten(target, eventType, handler) {
     key = _targetKey(target)
     if !_listeners.has(key) { return false }
     if !_listeners[key].has(eventType) { return false }
@@ -83,7 +83,7 @@ fn off(target, eventType, handler) {
 fn once(target, eventType, handler, options) {
     opts = options != null ? options : {}
     opts.once = true
-    on(target, eventType, handler, opts)
+    listen(target, eventType, handler, opts)
 }
 
 fn _targetKey(target) {
@@ -235,26 +235,26 @@ class EventEmitter {
 
     fn new() { @ }
 
-    fn on(eventType, handler) {
-        if !@_listeners.has(eventType) { @_listeners[eventType] = [] }
-        @_listeners[eventType].push(handler)
-        @
-    }
+  fn listen(eventType, handler) {
+    if !@_listeners.has(eventType) { @_listeners[eventType] = [] }
+    @_listeners[eventType].push(handler)
+    @
+  }
 
-    fn off(eventType, handler) {
-        if !@_listeners.has(eventType) { return @ }
-        list = @_listeners[eventType]
-        i = list.indexOf(handler)
-        if i >= 0 { list.splice(i, 1) }
-        @
-    }
+  fn unlisten(eventType, handler) {
+    if !@_listeners.has(eventType) { return @ }
+    list = @_listeners[eventType]
+    i = list.indexOf(handler)
+    if i >= 0 { list.splice(i, 1) }
+    @
+  }
 
-    fn once(eventType, handler) {
-        wrapper = fn(evt) {
-            handler(evt)
-            @off(eventType, wrapper)
-        }
-        @on(eventType, wrapper)
+  fn once(eventType, handler) {
+    wrapper = fn(evt) {
+      handler(evt)
+      @unlisten(eventType, wrapper)
+    }
+    @listen(eventType, wrapper)
         @
     }
 

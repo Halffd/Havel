@@ -6,6 +6,7 @@
 #include "core/io/X11Adapter.hpp"
 #include <unistd.h>
 #include <cstring>
+#include <xkbcommon/xkbcommon.h>
 
 namespace havel {
 
@@ -247,8 +248,87 @@ void X11IOBackend::UpdateNumLockMask() {
 }
 
 int X11IOBackend::GetNumLockMask() {
-    UpdateNumLockMask();
-    return numlockMask_;
+  UpdateNumLockMask();
+  return numlockMask_;
+}
+
+int X11IOBackend::ToAbstractMask(int platformMask) const {
+  int result = 0;
+  if (platformMask & ShiftMask)   result |= ModifierMasks::SHIFT;
+  if (platformMask & ControlMask) result |= ModifierMasks::CONTROL;
+  if (platformMask & Mod1Mask)    result |= ModifierMasks::ALT;
+  if (platformMask & Mod4Mask)    result |= ModifierMasks::META;
+  if (platformMask & LockMask)    result |= ModifierMasks::LOCK;
+  if (platformMask & numlockMask_) result |= ModifierMasks::NUMLOCK;
+  return result;
+}
+
+int X11IOBackend::ToPlatformMask(int abstractMask) const {
+  int result = 0;
+  if (abstractMask & ModifierMasks::SHIFT) result |= ShiftMask;
+  if (abstractMask & ModifierMasks::CONTROL) result |= ControlMask;
+  if (abstractMask & ModifierMasks::ALT) result |= Mod1Mask;
+  if (abstractMask & ModifierMasks::META) result |= Mod4Mask;
+  if (abstractMask & ModifierMasks::LOCK) result |= LockMask;
+  if (abstractMask & ModifierMasks::NUMLOCK) result |= numlockMask_;
+  return result;
+}
+
+XkbCharMapping X11IOBackend::CharToKeycode(char32_t cp) {
+  static struct xkb_context *sXkbCtx = nullptr;
+  static struct xkb_keymap *sXkbKeymap = nullptr;
+  static struct xkb_state *sXkbState = nullptr;
+  static bool sXkbInit = false;
+  static bool sXkbFailed = false;
+
+  if (sXkbFailed) return {};
+  if (!sXkbInit) {
+    sXkbInit = true;
+    sXkbCtx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    if (!sXkbCtx) { sXkbFailed = true; return {}; }
+    struct xkb_rule_names rules = {};
+    rules.model = "pc105";
+    const char *layoutEnv = getenv("XKB_DEFAULT_LAYOUT");
+    const char *variantEnv = getenv("XKB_DEFAULT_VARIANT");
+    const char *optionsEnv = getenv("XKB_DEFAULT_OPTIONS");
+    const char *modelEnv = getenv("XKB_DEFAULT_MODEL");
+    const char *rulesEnv = getenv("XKB_DEFAULT_RULES");
+    if (layoutEnv) rules.layout = layoutEnv;
+    if (variantEnv) rules.variant = variantEnv;
+    if (optionsEnv) rules.options = optionsEnv;
+    if (modelEnv) rules.model = modelEnv;
+    if (rulesEnv) rules.rules = rulesEnv;
+    sXkbKeymap = xkb_keymap_new_from_names(sXkbCtx, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    if (!sXkbKeymap) { sXkbFailed = true; return {}; }
+    sXkbState = xkb_state_new(sXkbKeymap);
+    if (!sXkbState) { sXkbFailed = true; return {}; }
+  }
+
+  xkb_keysym_t keysym = xkb_utf32_to_keysym(cp);
+  if (keysym == XKB_KEY_NoSymbol) return {};
+
+  xkb_keycode_t minKc = xkb_keymap_min_keycode(sXkbKeymap);
+  xkb_keycode_t maxKc = xkb_keymap_max_keycode(sXkbKeymap);
+  xkb_layout_index_t numLayouts = xkb_keymap_num_layouts(sXkbKeymap);
+
+  for (xkb_keycode_t kc = minKc; kc <= maxKc; ++kc) {
+    for (xkb_layout_index_t layout = 0; layout < numLayouts; ++layout) {
+      xkb_level_index_t numLevels = xkb_keymap_num_levels_for_key(sXkbKeymap, kc, layout);
+      for (xkb_level_index_t level = 0; level < numLevels; ++level) {
+        const xkb_keysym_t *syms;
+        int numSyms = xkb_keymap_key_get_syms_by_level(sXkbKeymap, kc, layout, level, &syms);
+        for (int s = 0; s < numSyms; s++) {
+          if (syms[s] == keysym) {
+            XkbCharMapping result;
+            result.keycode = static_cast<int>(kc) - 8;
+            result.needsShift = (level >= 1);
+            return result;
+          }
+        }
+      }
+    }
+  }
+  return {};
 }
 
 } // namespace havel

@@ -37,12 +37,17 @@ public:
 
     void TypeText(const std::string &text) override;
 
-    int GetShiftMask() const override { return ShiftMask; }
-    int GetControlMask() const override { return ControlMask; }
-    int GetAltMask() const override { return Mod1Mask; }
-    int GetMetaMask() const override { return Mod4Mask; }
-    int GetLockMask() const override { return LockMask; }
-    int GetNumLockMask() override;
+  int GetShiftMask() const override { return ShiftMask; }
+  int GetControlMask() const override { return ControlMask; }
+  int GetAltMask() const override { return Mod1Mask; }
+  int GetMetaMask() const override { return Mod4Mask; }
+  int GetLockMask() const override { return LockMask; }
+  int GetNumLockMask() override;
+
+  int ToAbstractMask(int platformMask) const override;
+  int ToPlatformMask(int abstractMask) const override;
+
+  XkbCharMapping CharToKeycode(char32_t cp) override;
 
 private:
     Display *display_ = nullptr;

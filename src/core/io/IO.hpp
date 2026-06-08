@@ -5,7 +5,6 @@
 #include "HotkeyExecutor.hpp"
 #include "IOBackend.hpp"
 #include "KeyMap.hpp"
-#include "x11.h"
 #include "MouseController.hpp"
 #include "InputBackend.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
@@ -308,16 +307,15 @@ public:
   void setGlobalAltState(bool pressed);
   bool getGlobalAltState();
   void executeComboAction(const std::string &action);
-  // Access current modifier bitmask (ShiftMask|ControlMask|Mod1Mask|Mod4Mask)
   int GetCurrentModifiers() const {
     if (currentModifierState.leftCtrl || currentModifierState.rightCtrl)
-      return ControlMask;
+      return ModifierMasks::CONTROL;
     if (currentModifierState.leftShift || currentModifierState.rightShift)
-      return ShiftMask;
+      return ModifierMasks::SHIFT;
     if (currentModifierState.leftAlt || currentModifierState.rightAlt)
-      return Mod1Mask;
+      return ModifierMasks::ALT;
     if (currentModifierState.leftMeta || currentModifierState.rightMeta)
-      return Mod4Mask;
+      return ModifierMasks::META;
     return 0;
   }
   const ModifierState &GetModifierState() const { return currentModifierState; }
@@ -371,7 +369,7 @@ public:
                                              bool isEvdev);
   static KeyCode ParseKeyPart(const std::string &keyPart, bool isEvdev);
   static ParsedHotkey ParseHotkeyString(const std::string &rawInput);
-  static int ParseModifiers(std::string str);
+  int ParseModifiers(std::string str);
   static int ParseMouseButton(const std::string &str);
 
   void AssignHotkey(HotKey hotkey, int id);

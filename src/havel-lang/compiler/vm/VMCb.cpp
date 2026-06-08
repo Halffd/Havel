@@ -153,16 +153,22 @@ const std::string &alias) {
         return 0;
     }
 
-    uint32_t gid = scheduler_->spawn(function_index, args, closure_id, "hotkey-persistent", priority);
+uint32_t gid = scheduler_->spawn(function_index, args, closure_id, "hotkey-persistent", priority);
 
-    auto *g = scheduler_->get(gid);
-    if (g) {
-        g->persistent = true;
-        g->hotkey_function_id = function_index;
-        g->hotkey_closure_id = closure_id;
-        g->hotkey_args = args;
-  g->hotkey_policy = policy;
-  g->hotkey_alias = alias;
+auto *g = scheduler_->get(gid);
+if (g) {
+g->persistent = true;
+g->hotkey_function_id = function_index;
+g->hotkey_closure_id = closure_id;
+g->hotkey_args = args;
+g->hotkey_policy = policy;
+g->hotkey_alias = alias;
+
+auto thunk = buildDirectCallThunk(id);
+if (!thunk.calls.empty()) {
+g->hotkey_direct_thunk = true;
+storeDirectCallThunk(id, std::move(thunk));
+}
         // Park immediately: set Suspended so pickNext skips it until first trigger
         g->state = Scheduler::GoroutineState::Suspended;
         g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;

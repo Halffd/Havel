@@ -326,8 +326,8 @@ private:
       // Start and run this goroutine to completion
       // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
-        bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
-        if (ok) {
+        auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+        if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
           vm_->runDispatchLoopPublic(0);
           anyExecuted = true;

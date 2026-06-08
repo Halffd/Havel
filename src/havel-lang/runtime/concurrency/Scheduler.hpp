@@ -162,6 +162,8 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     std::vector<Value> hotkey_args;
     HotkeyPolicy hotkey_policy = HotkeyPolicy::Queue;
     std::string hotkey_alias;
+bool hotkey_direct_thunk = false; // true if DirectCallThunk exists for this callback
+uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
     
     // hotkey_retrigger flag - LIFECYCLE CONTRACT:
     // ============================================

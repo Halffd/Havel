@@ -280,12 +280,18 @@ fn inferStmt(node, env) {
     inferStmt(node.body, env)
     return
   }
-  if k == "ForStatement" {
-    inferExpr(node.iterator, env)
-    envSet(env, node.name, TYPE_UNKNOWN)
-    inferStmt(node.body, env)
-    return
-  }
+if k == "ForStatement" {
+inferExpr(node.iterator, env)
+envSet(env, node.name, TYPE_UNKNOWN)
+inferStmt(node.body, env)
+return
+}
+if k == "ForExpression" {
+inferExpr(node.iterable, env)
+envSet(env, node.binding, TYPE_UNKNOWN)
+inferExpr(node.expr, env)
+return TYPE_ARRAY
+}
   if k == "LoopStatement" { inferStmt(node.body, env); return }
   if k == "RepeatStatement" {
     inferExpr(node.count, env)

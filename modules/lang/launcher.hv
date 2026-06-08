@@ -128,43 +128,43 @@ fn parseArgs(args) {
             continue
         }
 
-        if arg == "--debug-bytecode" || arg == "-dbc" {
+        if arg == "--debug-bytecode" || arg == "-dbc" || arg == "--dbc" {
             setFlag("bytecode", true)
             i = i + 1
             continue
         }
 
-        if arg == "--debug-lexer" || arg == "-dl" {
+        if arg == "--debug-lexer" || arg == "-dl" || arg == "--dl" {
             setFlag("lexer", true)
             i = i + 1
             continue
         }
 
-        if arg == "--debug-parser" || arg == "-dp" {
+        if arg == "--debug-parser" || arg == "-dp" || arg == "--dp" {
             setFlag("parser", true)
             i = i + 1
             continue
         }
 
-if arg == "--debug-ast" || arg == "-da" {
+if arg == "--debug-ast" || arg == "-da" || arg == "--da" {
 setFlag("ast", true)
 i = i + 1
 continue
 }
 
-if arg == "--debug-emitter" || arg == "-de" {
+if arg == "--debug-emitter" || arg == "-de" || arg == "--de" {
 setFlag("emitter", true)
 i = i + 1
 continue
 }
 
-if arg == "--debug-scope" || arg == "-ds" {
+if arg == "--debug-scope" || arg == "-ds" || arg == "--ds" {
 setFlag("scope", true)
 i = i + 1
 continue
 }
 
-if arg == "--debug-gc" || arg == "-dgc" {
+if arg == "--debug-gc" || arg == "-dgc" || arg == "--dgc" {
 setFlag("gc", true)
 i = i + 1
 continue

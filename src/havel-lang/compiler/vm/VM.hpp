@@ -48,7 +48,23 @@ namespace havel::compiler {
 
 // Error handling with stack traces
 struct ScriptThrow final {
-    Value value;
+  Value value;
+};
+
+// JIT coroutine signal — thrown by JIT runtime stubs to exit native code
+// when a coroutine/scheduler opcode (YIELD, AWAIT, GO_ASYNC, FIBER_SLEEP,
+// YIELD_RESUME) requires returning control to the scheduler.
+// executeCompiled() catches this and translates it into a suspension request.
+struct JitCoroutineSignal final {
+  enum class Op : uint8_t {
+    YIELD,        // YIELD opcode hit
+    YIELD_RESUME, // YIELD_RESUME opcode hit
+    AWAIT,        // FIBER_AWAIT opcode hit
+    GO_ASYNC,     // GO_ASYNC opcode hit
+    SLEEP,        // FIBER_SLEEP opcode hit
+  };
+  Op op;
+  Value value;          // The value involved (yield value, awaitable, function ref, ms)
 };
 
 struct ScriptError final {
@@ -171,7 +187,7 @@ struct VMConfig {
     size_t timer_check_interval = 1000;
 };
 
-class VM : public BytecodeInterpreter {
+class __attribute__((visibility("default"))) VM : public BytecodeInterpreter {
 public:
 // Timer check callback - called periodically during script execution
 using TimerCheckFunction = std::function<void()>;
@@ -313,10 +329,11 @@ uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (U
   
   // When an operation needs to wait (thread.join, channel.recv, etc)
   // it sets these flags to signal the VM to suspend the current fiber
-bool suspension_requested_ = false; // True if suspension needed
-uint8_t suspension_reason_ = 0; // Why is it suspending? (SuspensionReason enum value)
-void* suspension_context_ = nullptr; // Context pointer (thread_id, channel*, etc)
-bool executing_in_fiber_ = false; // True when executeOneStep runs with non-null current_fiber
+  bool suspension_requested_ = false; // True if suspension needed
+  uint8_t suspension_reason_ = 0; // Why is it suspending? (SuspensionReason enum value)
+  void* suspension_context_ = nullptr; // Context pointer (thread_id, channel*, etc)
+  bool executing_in_fiber_ = false; // True when executeOneStep runs with non-null current_fiber
+  std::atomic<bool> jit_yield_requested_{false}; // Scheduler sets this to preempt JIT
 
 // Last suspension info preserved after runDispatchLoop exits
 // Used by processGoroutines to set WaitHandle on the goroutine
@@ -636,9 +653,9 @@ Value lookupGlobalByKey(const std::string& key) {
 
   // Direct invocation (bypasses stack, takes args as vector)
   Value invokeHostFunctionDirect(const std::string &name,
-                                  const std::vector<Value> &args);
+                                 const std::vector<Value> &args);
 
-VM();
+  VM();
 VM(const VMConfig& cfg);
 VM(const HostContext &ctx);
 VM(const HostContext &ctx, const VMConfig& cfg);
@@ -680,14 +697,16 @@ VM(const HostContext &ctx, const VMConfig& cfg);
     void saveFiberState(Fiber *fiber);
 
     // Initialize a newly-spawned goroutine for first execution
-    // Sets up the initial call frame, resolves chunk from closure if needed,
-    // and copies arguments into locals
-    // @param function_id Bytecode function index to execute
-    // @param closure_id Closure context (0 for plain functions)
-    // @param args Arguments to pass to the function
-    // @return true if initialization succeeded, false if function not found
-    bool startGoroutineCall(uint32_t function_id, uint32_t closure_id,
-                            const std::vector<Value> &args);
+// Sets up the initial call frame, resolves chunk from closure if needed,
+// and copies arguments into locals. If the function is JIT-compiled,
+// executes it via JIT directly and returns JITExecuted.
+// @param function_id Bytecode function index to execute
+// @param closure_id Closure context (0 for plain functions)
+// @param args Arguments to pass to the function
+// @return GoroutineCallResult indicating success and execution mode
+enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
+GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id,
+    const std::vector<Value> &args);
 
   
   // Track which fiber is waiting on a specific thread
@@ -803,8 +822,15 @@ VM(const HostContext &ctx, const VMConfig& cfg);
     suspension_reason_ = reason;
     suspension_context_ = context;
   }
-bool isSuspensionRequested() const { return suspension_requested_; }
-void clearSuspensionRequest() { suspension_requested_ = false; }
+  bool isSuspensionRequested() const { return suspension_requested_; }
+  void clearSuspensionRequest() { suspension_requested_ = false; }
+  // JIT yield-point: scheduler calls this to request preemption of
+  // a long-running JIT-compiled function. The JIT's havel_vm_check_yield()
+  // stub reads this flag and throws JitCoroutineSignal if set.
+  void requestJitYield() { jit_yield_requested_.store(true, std::memory_order_release); }
+  bool consumeJitYieldRequest() {
+    return jit_yield_requested_.exchange(false, std::memory_order_acq_rel);
+  }
 uint8_t getSuspensionReason() const { return suspension_reason_; }
 void* getSuspensionContext() const { return suspension_context_; }
 

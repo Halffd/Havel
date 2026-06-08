@@ -144,7 +144,7 @@ using Result =
  * - Real doubles pass through untouched (zero cost)
  * - Other types are encoded in the NaN mantissa space
  */
-struct Value {
+struct __attribute__((visibility("default"))) Value {
 private:
   uint64_t bits_;
 

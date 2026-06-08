@@ -484,8 +484,7 @@ if(NOT ENABLE_QT_UI_BACKEND)
 endif()
 
 # Explicitly add new modules (GLOB might not catch new files)
-list(APPEND HOST_MODULES_SOURCES "src/modules/zoom/ZoomService.cpp")
-list(APPEND HOST_MODULES_SOURCES "src/modules/zoom/ZoomModule.cpp")
+
 list(APPEND HOST_MODULES_SOURCES "src/modules/window/WindowMonitorModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/mouse/MouseModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/automation/AutomationModule.cpp")
@@ -1568,7 +1567,7 @@ add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/Mouse
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
 add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)
 add_havel_module_plugin(window ${CMAKE_SOURCE_DIR}/src/modules/window/WindowMonitorModule.cpp)
-add_havel_module_plugin(zoom ${CMAKE_SOURCE_DIR}/src/modules/zoom/ZoomModule.cpp ${CMAKE_SOURCE_DIR}/src/modules/zoom/ZoomService.cpp)
+
 add_havel_module_plugin(wayland ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/WaylandModule.cpp)
 target_include_directories(havel_mod_wayland PRIVATE
     ${CMAKE_BINARY_DIR}/generated/wayland
@@ -1593,6 +1592,9 @@ set_target_properties(havel PROPERTIES
   ENABLE_EXPORTS ON
 )
 target_link_options(havel PRIVATE -Wl,--export-dynamic)
+# -fvisibility=hidden + --gc-sections strips VM symbols that .so plugins need.
+# Remove gc-sections so dlopen(RTLD_NOW) can resolve them at runtime.
+target_link_options(havel PRIVATE -Wl,--no-gc-sections)
 endif()
 
 # Dedicated AOT core runtime shim (lean entrypoint surface for --profile core).
@@ -1860,12 +1862,15 @@ add_custom_target(regen-protocols
     DEPENDS ${GAMMA_HEADERS} ${XDG_HEADERS}
     COMMENT "Regenerating Wayland protocol files"
 )
-if(PULSEAUDIO_FOUND)
+  if(PULSEAUDIO_FOUND)
     target_compile_definitions(havel PRIVATE HAVE_PULSEAUDIO)
-endif()
-if(ALSA_FOUND)
+  endif()
+  if(ALSA_FOUND)
     target_compile_definitions(havel PRIVATE HAVE_ALSA)
-endif()
+  endif()
+  if(PIPEWIRE_FOUND)
+    target_compile_definitions(havel PRIVATE HAVE_PIPEWIRE)
+  endif()
 if(TARGET havel_lang)
     target_include_directories(havel_lang PRIVATE
         ${CMAKE_SOURCE_DIR}/src/havel-lang

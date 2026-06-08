@@ -121,15 +121,26 @@ bool ExecutionEngine::executeFrame() {
     // For newly-created goroutines, use startGoroutineCall which resolves
     // the correct chunk (from closure if needed) and sets up the call frame.
     // For resuming goroutines, use loadFiberState which restores suspended state.
-    if (g->state == Scheduler::GoroutineState::Created) {
-        bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
-        if (!ok) {
+if (g->state == Scheduler::GoroutineState::Created) {
+auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+if (call_result == VM::GoroutineCallResult::Failed) {
+handleReturned(g);
+stats_.goroutines_completed++;
+stats_.frames_executed++;
+return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+}
+        if (call_result == VM::GoroutineCallResult::JITExecuted) {
+            // JIT already ran the function to completion
+            if (g->fiber) {
+                vm_->saveFiberState(g->fiber);
+            }
             handleReturned(g);
             stats_.goroutines_completed++;
             stats_.frames_executed++;
+            vm_->garbageCollectionSafePoint();
             return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
         }
-        g->state = Scheduler::GoroutineState::Runnable;
+g->state = Scheduler::GoroutineState::Runnable;
         // Sync VM state to fiber immediately so the fiber's call_stack
         // has the correct chunk_ptr. The Fiber constructor initializes
         // call_stack via pushCall() with chunk_ptr=nullptr; without this
@@ -203,7 +214,15 @@ bool ExecutionEngine::executeFrame() {
         }
 
         for (;;) {
-            result = vm_->executeOneStep(g->fiber);
+          // Before running the next step, check if we're close to the tick
+          // budget limit. If so, request the JIT to yield at its next
+          // backedge check so long-running JIT functions don't monopolize
+          // the scheduler.
+          if (g->instructions_executed + 1 >= g->max_instructions_per_tick) {
+            vm_->requestJitYield();
+          }
+
+          result = vm_->executeOneStep(g->fiber);
 
             stats_.instructions_executed++;
             g->instructions_executed++;
@@ -223,13 +242,13 @@ bool ExecutionEngine::executeFrame() {
         }
     }
 
-    // STEP 5: Save VM state back to fiber
-    if (g->fiber) {
-        vm_->saveFiberState(g->fiber);
-    }
+// STEP 5: Save VM state back to fiber
+if (g->fiber) {
+vm_->saveFiberState(g->fiber);
+}
 
-    // STEP 6: Handle execution result
-    switch (result.type) {
+// STEP 6: Handle execution result
+switch (result.type) {
     case VMExecutionResult::YIELD:
         // Budget expired mid-execution — yield to scheduler, will resume next tick
         handleYield(g);

@@ -314,7 +314,7 @@ private:
 // ============================================================================
 // ValueSerializer - Serialize/deserialize values
 // ============================================================================
-class ValueSerializer {
+class __attribute__((visibility("default"))) ValueSerializer {
 public:
   enum class Format {
     Binary,

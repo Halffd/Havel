@@ -56,7 +56,7 @@ enum class HotkeyPolicy : uint8_t {
  * - runnable_queue_: Standard FIFO for normal cooperative tasks
  * - background_queue_: Only runs when higher priority queues empty
  */
-class Scheduler {
+class __attribute__((visibility("default"))) Scheduler {
 public:
   enum class GoroutineState {
     Created,         // Just spawned, not yet runnable

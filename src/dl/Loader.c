@@ -747,25 +747,46 @@ int havel_loader_resolve(HavelLoader *loader, const char *module_path,
    return 1;
  }
 
- const char *suffix = platform_suffix();
- for (int i = 0; i < loader->script_path_count; i++) {
-  const char *sp = loader->script_paths[i];
-  char so_path[1024];
-  snprintf(so_path, sizeof(so_path), "%s/%s%s", sp, name, suffix);
-  if (file_exists(so_path)) {
-   out->type = HAVEL_SOURCE_NATIVE_EXTENSION;
-   snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", so_path);
-   snprintf(out->original_name, sizeof(out->original_name), "%s", name);
-   return 1;
+  const char *suffix = platform_suffix();
+  for (int i = 0; i < loader->script_path_count; i++) {
+    const char *sp = loader->script_paths[i];
+    char so_path[1024];
+    snprintf(so_path, sizeof(so_path), "%s/%s%s", sp, name, suffix);
+    if (file_exists(so_path)) {
+      out->type = HAVEL_SOURCE_NATIVE_EXTENSION;
+      snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", so_path);
+      snprintf(out->original_name, sizeof(out->original_name), "%s", name);
+      return 1;
+    }
+    snprintf(so_path, sizeof(so_path), "%s/libhavel_%s%s", sp, name, suffix);
+    if (file_exists(so_path)) {
+      out->type = HAVEL_SOURCE_NATIVE_EXTENSION;
+      snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", so_path);
+      snprintf(out->original_name, sizeof(out->original_name), "%s", name);
+      return 1;
+    }
+    // Also try havel_mod_<name>.so (plugin naming convention)
+    snprintf(so_path, sizeof(so_path), "%s/havel_mod_%s%s", sp, name, suffix);
+    if (file_exists(so_path)) {
+      out->type = HAVEL_SOURCE_NATIVE_EXTENSION;
+      snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", so_path);
+      snprintf(out->original_name, sizeof(out->original_name), "%s", name);
+      return 1;
+    }
   }
-  snprintf(so_path, sizeof(so_path), "%s/libhavel_%s%s", sp, name, suffix);
-  if (file_exists(so_path)) {
-   out->type = HAVEL_SOURCE_NATIVE_EXTENSION;
-   snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", so_path);
-   snprintf(out->original_name, sizeof(out->original_name), "%s", name);
-   return 1;
+
+  // Also check search_paths (extension/module paths) for havel_mod_<name>.so
+  for (int i = 0; i < loader->search_path_count; i++) {
+    const char *sp = loader->search_paths[i];
+    char so_path[1024];
+    snprintf(so_path, sizeof(so_path), "%s/havel_mod_%s%s", sp, name, suffix);
+    if (file_exists(so_path)) {
+      out->type = HAVEL_SOURCE_NATIVE_EXTENSION;
+      snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", so_path);
+      snprintf(out->original_name, sizeof(out->original_name), "%s", name);
+      return 1;
+    }
   }
- }
 
  if (havel_loader_has_host_module(loader, name)) {
  out->type = HAVEL_SOURCE_HOST_BUILTIN;

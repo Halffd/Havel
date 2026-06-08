@@ -68,10 +68,12 @@ public:
     // ========================================================================
     // Search path management
     // ========================================================================
-    void addSearchPath(const std::string& path);
-    void setStdlibPath(const std::string& path);
-    const std::vector<std::string>& getSearchPaths() const { return searchPaths_; }
-    const std::string& getStdlibPath() const { return stdlibPath_; }
+  void addSearchPath(const std::string& path);
+  void addModuleSoPath(const std::string& path);
+  void setStdlibPath(const std::string& path);
+  const std::vector<std::string>& getSearchPaths() const { return searchPaths_; }
+  const std::vector<std::string>& getModuleSoPaths() const { return moduleSoPaths_; }
+  const std::string& getStdlibPath() const { return stdlibPath_; }
 
     // ========================================================================
     // Path resolution (priority-based)
@@ -110,9 +112,11 @@ public:
     void clearLoaded();
 
 private:
-    // Search paths for .hv module resolution
-    std::vector<std::string> searchPaths_;
-    std::string stdlibPath_;  // Bundled stdlib directory
+  // Search paths for .hv module resolution
+  std::vector<std::string> searchPaths_;
+  std::string stdlibPath_; // Bundled stdlib directory
+  // Search paths for native module .so resolution (havel_mod_<name>.so)
+  std::vector<std::string> moduleSoPaths_;
 
     // Module cache: canonicalKey -> export value (replaces old void* leaking cache)
     std::unordered_map<std::string, core::Value> cache_;

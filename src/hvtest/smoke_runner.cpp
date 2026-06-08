@@ -915,12 +915,13 @@ int runStdlibCase(const std::string &name, const std::string &source,
     }
     auto canonicalRoot = fs::exists(modulesRoot)
       ? fs::canonical(modulesRoot).string() : modulesRoot;
-    vm.moduleLoader().addSearchPath(canonicalRoot + "/lang");
-    vm.moduleLoader().addSearchPath(canonicalRoot + "/std");
-    vm.moduleLoader().addSearchPath(canonicalRoot + "/app");
-    vm.moduleLoader().addSearchPath(canonicalRoot);
+  vm.moduleLoader().addSearchPath(canonicalRoot + "/lang");
+  vm.moduleLoader().addSearchPath(canonicalRoot + "/std");
+  vm.moduleLoader().addSearchPath(canonicalRoot + "/app");
+  vm.moduleLoader().addSearchPath(canonicalRoot);
+  vm.moduleLoader().addModuleSoPath(canonicalRoot);
 
-    havel::registerPureStdLib(vm);
+  havel::registerPureStdLib(vm);
 
     havel::compiler::PipelineOptions options;
     options.compile_unit_name = name;
@@ -2825,13 +2826,14 @@ int runJitCase(const std::string &name, const std::string &source,
       }
       auto canonicalRoot = fs::exists(modulesRoot)
         ? fs::canonical(modulesRoot).string() : modulesRoot;
-      vm.moduleLoader().addSearchPath(canonicalRoot + "/lang");
-      vm.moduleLoader().addSearchPath(canonicalRoot + "/std");
-      vm.moduleLoader().addSearchPath(canonicalRoot + "/app");
-      vm.moduleLoader().addSearchPath(canonicalRoot);
-    }
+  vm.moduleLoader().addSearchPath(canonicalRoot + "/lang");
+  vm.moduleLoader().addSearchPath(canonicalRoot + "/std");
+  vm.moduleLoader().addSearchPath(canonicalRoot + "/app");
+  vm.moduleLoader().addSearchPath(canonicalRoot);
+  vm.moduleLoader().addModuleSoPath(canonicalRoot);
+}
 
-    ::havel::registerPureStdLib(vm);
+::havel::registerPureStdLib(vm);
     vm.setHotFunctionCallback(
         [&jit](const ::havel::compiler::BytecodeFunction &func) {
           jit.compileFunction(func);

@@ -122,7 +122,24 @@ bool ExecutionEngine::executeFrame() {
     // the correct chunk (from closure if needed) and sets up the call frame.
     // For resuming goroutines, use loadFiberState which restores suspended state.
 if (g->state == Scheduler::GoroutineState::Created) {
-auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+    // DirectCallThunk fast path: if the hotkey callback only calls
+    // host functions with pre-resolved args, skip VM dispatch entirely.
+    if (g->persistent && g->hotkey_direct_thunk) {
+        auto thunk = vm_->getDirectCallThunk(g->hotkey_callback_id);
+        if (!thunk.calls.empty()) {
+            vm_->executeDirectCallThunk(thunk);
+            if (g->fiber) {
+                vm_->saveFiberState(g->fiber);
+            }
+            handleReturned(g);
+            stats_.goroutines_completed++;
+            stats_.frames_executed++;
+            vm_->garbageCollectionSafePoint();
+            return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+        }
+    }
+
+    auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
 if (call_result == VM::GoroutineCallResult::Failed) {
 handleReturned(g);
 stats_.goroutines_completed++;

@@ -167,6 +167,7 @@ g->hotkey_alias = alias;
 auto thunk = buildDirectCallThunk(id);
 if (!thunk.calls.empty()) {
 g->hotkey_direct_thunk = true;
+g->hotkey_callback_id = id;
 storeDirectCallThunk(id, std::move(thunk));
 }
         // Park immediately: set Suspended so pickNext skips it until first trigger

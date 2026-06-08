@@ -12,7 +12,7 @@ namespace havel {
 class WaylandProtocolClient;
 class UinputDevice;
 
-class VirtualPointer {
+class __attribute__((visibility("default"))) VirtualPointer {
 public:
     explicit VirtualPointer(WaylandProtocolClient &client);
     ~VirtualPointer();

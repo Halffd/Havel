@@ -108,11 +108,35 @@ bool AudioService::setDefaultOutput(const std::string &device) {
 }
 
 std::string AudioService::getDefaultOutput() const {
-    return m_manager ? m_manager->getDefaultOutput() : "";
+  return m_manager ? m_manager->getDefaultOutput() : "";
+}
+
+std::string AudioService::getDefaultInput() const {
+  return m_manager ? m_manager->getDefaultInput() : "";
+}
+
+std::string AudioService::getBackendName() const {
+  return m_manager ? std::string(m_manager->getBackend() == AudioBackend::PIPEWIRE ? "PipeWire" :
+    m_manager->getBackend() == AudioBackend::PULSE ? "PulseAudio" :
+    m_manager->getBackend() == AudioBackend::ALSA ? "ALSA" :
+    m_manager->getBackend() == AudioBackend::WINDOWS ? "Windows" : "unknown") : "";
 }
 
 bool AudioService::playTestSound() {
-    return m_manager && m_manager->playTestSound();
+  return m_manager && m_manager->playTestSound();
+}
+
+bool AudioService::playSound(const std::string &soundFile) {
+  return m_manager && m_manager->playSound(soundFile);
+}
+
+bool AudioService::setApplicationVolume(const std::string &name, double volume) {
+  return m_manager && m_manager->setApplicationVolume(name, volume);
+}
+
+std::vector<havel::AudioManager::ApplicationInfo> AudioService::getApplications() const {
+  if (!m_manager) return {};
+  return m_manager->getApplications();
 }
 
 } // namespace havel::host

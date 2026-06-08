@@ -65,7 +65,7 @@ struct ProcessResult {
     std::string stderr = "";
 };
 
-class Launcher {
+class __attribute__((visibility("default"))) Launcher {
 public:
     // Core launching
     static ProcessResult run(const std::string& executable, 

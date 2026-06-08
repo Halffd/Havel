@@ -5,13 +5,12 @@
  */
 #pragma once
 
+#include "core/media/AudioManager.hpp"
 #include <string>
 #include <vector>
 #include <cstdint>
 
-namespace havel { 
-class AudioManager;
-struct AudioDevice;
+namespace havel {
 }
 
 namespace havel::host {
@@ -41,12 +40,21 @@ public:
     havel::AudioDevice findDeviceByName(const std::string &name) const;
     havel::AudioDevice findDeviceByIndex(uint32_t index) const;
 
-    // Default device control
-    bool setDefaultOutput(const std::string &device);
-    std::string getDefaultOutput() const;
+  // Default device control
+  bool setDefaultOutput(const std::string &device);
+  std::string getDefaultOutput() const;
+  std::string getDefaultInput() const;
 
-    // Sound
-    bool playTestSound();
+  // Backend info
+  std::string getBackendName() const;
+
+  // Sound
+  bool playTestSound();
+  bool playSound(const std::string &soundFile);
+
+  // Per-application volume
+  bool setApplicationVolume(const std::string &name, double volume);
+  std::vector<havel::AudioManager::ApplicationInfo> getApplications() const;
 
 private:
     havel::AudioManager* m_manager;

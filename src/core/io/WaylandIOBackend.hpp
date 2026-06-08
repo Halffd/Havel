@@ -42,12 +42,31 @@ public:
 
     void TypeText(const std::string &text) override;
 
-    int GetShiftMask() const override { return 1; }
-    int GetControlMask() const override { return 2; }
-    int GetAltMask() const override { return 4; }
-    int GetMetaMask() const override { return 8; }
-    int GetLockMask() const override { return 16; }
-    int GetNumLockMask() override { return 0; }
+  int GetShiftMask() const override { return 1; }
+  int GetControlMask() const override { return 2; }
+  int GetAltMask() const override { return 4; }
+  int GetMetaMask() const override { return 8; }
+  int GetLockMask() const override { return 16; }
+  int GetNumLockMask() override { return 0; }
+
+  int ToAbstractMask(int platformMask) const override {
+    int result = 0;
+    if (platformMask & GetShiftMask())   result |= ModifierMasks::SHIFT;
+    if (platformMask & GetControlMask()) result |= ModifierMasks::CONTROL;
+    if (platformMask & GetAltMask())     result |= ModifierMasks::ALT;
+    if (platformMask & GetMetaMask())    result |= ModifierMasks::META;
+    if (platformMask & GetLockMask())    result |= ModifierMasks::LOCK;
+    return result;
+  }
+  int ToPlatformMask(int abstractMask) const override {
+    int result = 0;
+    if (abstractMask & ModifierMasks::SHIFT)   result |= GetShiftMask();
+    if (abstractMask & ModifierMasks::CONTROL) result |= GetControlMask();
+    if (abstractMask & ModifierMasks::ALT)     result |= GetAltMask();
+    if (abstractMask & ModifierMasks::META)    result |= GetMetaMask();
+    if (abstractMask & ModifierMasks::LOCK)    result |= GetLockMask();
+    return result;
+  }
 
     VirtualKeyboard& virtualKeyboard() { return *vkb_; }
     VirtualPointer& virtualPointer() { return *vptr_; }

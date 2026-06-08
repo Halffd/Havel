@@ -1,0 +1,306 @@
+// zoom.hv — screen magnification via compositor D-Bus/IPC
+// Replaces C++ ZoomService/ZoomModule (539 lines of xdotool + void args + atomic floats)
+// with actual compositor zoom calls.
+//
+// Usage:
+//   use zoom from "zoom"
+//   zoom.start()
+//   zoom.in()
+//   zoom.to(3.0)
+//   zoom.reset()
+
+use { compositor } from "compositor"
+
+Nearest = 0
+Bilinear = 1
+Sharpen = 2
+Lanczos = 3
+
+state = {
+    scale: 2.0,
+    level: 1.0,
+    running: false,
+    followCursor: true,
+    locked: false,
+    invert: false,
+    brightness: 1.0,
+    contrast: 1.0,
+    filter: Nearest,
+    region: { x: 0, y: 0, w: 0, h: 0 },
+    backend: "none"
+}
+
+fn detectBackend() {
+    c = compositor.detect()
+    if c == "kde" {
+        _r = shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus 2>/dev/null")
+        if _r.exitCode == 0 {
+            state.backend = "kwin"
+            return
+        }
+    }
+    if c == "hyprland" {
+        state.backend = "hyprland"
+        return
+    }
+    if c == "gnome" {
+        _r = shell.exec("gdbus call --session --dest org.gnome.Magnifier --object-path /org/gnome/Magnifier --method org.gnome.Magnifier.isActive 2>/dev/null")
+        if _r.exitCode == 0 {
+            state.backend = "gnome"
+            return
+        }
+    }
+    if c == "cinnamon" {
+        _r = shell.exec("gdbus call --session --dest org.cinnamon.Muffin.Zoom --object-path /org/cinnamon/Muffin/Zoom --method org.cinnamon.Muffin.Zoom.GetZoomActive 2>/dev/null")
+        if _r.exitCode == 0 {
+            state.backend = "cinnamon"
+            return
+        }
+    }
+    state.backend = "none"
+}
+
+fn checkUinputPrereqs() { compositor.checkUinput() }
+
+fn start() {
+    if state.running { return true }
+    if state.backend == "none" { detectBackend() }
+    if state.backend == "none" {
+        log.error("zoom: no backend available, cannot start")
+        return false
+    }
+    if state.backend == "uinput" {
+        prereqs = checkUinputPrereqs()
+        if !prereqs.ok {
+            log.error("zoom: " + prereqs.err)
+            return false
+        }
+    }
+    state.running = true
+    state.level = 1.0
+    true
+}
+
+fn stop() {
+    if !state.running { return }
+    reset()
+    state.running = false
+}
+
+fn isRunning() { state.running }
+
+// --- KWin backend ---
+
+fn kwinZoomIn(step) {
+    shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus")
+}
+
+fn kwinZoomOut(step) {
+    shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
+}
+
+fn kwinZoomTo(level) {
+    shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus " + str(level))
+}
+
+fn kwinZoomReset() {
+    shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus")
+}
+
+fn kwinGetLevel() {
+    _r = shell.exec("qdbus org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
+    if _r.exitCode == 0 && _r.stdout != "" {
+        _v = num(_r.stdout.trim())
+        if _v != null { return _v }
+    }
+    state.level
+}
+
+// --- Hyprland backend ---
+
+fn hyprZoomTo(level) {
+    if level < 1.0 { level = 1.0 }
+    if level > 10.0 { level = 10.0 }
+    _r = shell.exec("hyprctl keyword cursor:zoom_factor " + str(level))
+    if _r.exitCode == 0 { state.level = level }
+    _r.exitCode == 0
+}
+
+// --- GNOME Magnifier backend ---
+
+fn gnomeActivate() {
+    shell.exec("gdbus call --session --dest org.gnome.Magnifier --object-path /org/gnome/Magnifier --method org.gnome.Magnifier.setActive true")
+}
+
+fn gnomeDeactivate() {
+    shell.exec("gdbus call --session --dest org.gnome.Magnifier --object-path /org/gnome/Magnifier --method org.gnome.Magnifier.setActive false")
+}
+
+fn gnomeSetMagFactor(level) {
+    shell.exec("gdbus call --session --dest org.gnome.Magnifier --object-path /org/gnome/Magnifier --method org.gnome.Magnifier.setMagFactor " + str(level) + " " + str(level))
+}
+
+fn gnomeZoomTo(level) {
+    if level < 1.0 { level = 1.0 }
+    if level > 15.0 { level = 15.0 }
+    if level <= 1.0 { return reset() }
+    _r = gnomeActivate()
+    _r = gnomeSetMagFactor(level)
+    if _r { state.level = level }
+    _r
+}
+
+// --- Cinnamon backend ---
+
+fn cinnamonZoomCall(method, args) {
+    cmd = "gdbus call --session --dest org.cinnamon.Muffin.Zoom --object-path /org/cinnamon/Muffin/Zoom --method " + method
+    if args != "" { cmd = cmd + " " + args }
+    shell.exec(cmd)
+}
+
+fn cinnamonZoomIn(step) {
+    _r = cinnamonZoomCall("org.cinnamon.Muffin.Zoom.ZoomIn", str(step))
+    if _r.exitCode == 0 { state.level = state.level + step }
+    _r.exitCode == 0
+}
+
+fn cinnamonZoomOut(step) {
+    _r = cinnamonZoomCall("org.cinnamon.Muffin.Zoom.ZoomOut", str(step))
+    if _r.exitCode == 0 { state.level = state.level - step; if state.level < 1.0 { state.level = 1.0 } }
+    _r.exitCode == 0
+}
+
+fn cinnamonZoomTo(level) {
+    if level < 1.0 { level = 1.0 }
+    if level > 16.0 { level = 16.0 }
+    _r = cinnamonZoomCall("org.cinnamon.Muffin.Zoom.SetZoomLevel", str(level))
+    if _r.exitCode == 0 { state.level = level }
+    _r.exitCode == 0
+}
+
+fn cinnamonZoomReset() {
+    _r = cinnamonZoomCall("org.cinnamon.Muffin.Zoom.ResetZoom", "")
+    if _r.exitCode == 0 { state.level = 1.0 }
+    _r.exitCode == 0
+}
+
+fn cinnamonGetLevel() {
+    _r = shell.exec("gdbus call --session --dest org.cinnamon.Muffin.Zoom --object-path /org/cinnamon/Muffin/Zoom --method org.cinnamon.Muffin.Zoom.GetZoomLevel")
+    if _r.exitCode == 0 && _r.stdout != "" {
+        _v = num(_r.stdout.trim())
+        if _v != null { return _v }
+    }
+    state.level
+}
+
+// --- Generic dispatch ---
+
+fn in(step) {
+    if !state.running { return false }
+    if state.backend == "kwin" { return kwinZoomIn(step) }
+    if state.backend == "hyprland" { return hyprZoomTo(state.level + step) }
+    if state.backend == "gnome" { state.level = state.level + step; return gnomeZoomTo(state.level) }
+    if state.backend == "cinnamon" { return cinnamonZoomIn(step) }
+    false
+}
+
+fn out(step) {
+    if !state.running { return false }
+    if state.backend == "kwin" { return kwinZoomOut(step) }
+    if state.backend == "hyprland" { return hyprZoomTo(state.level - step) }
+    if state.backend == "gnome" { state.level = state.level - step; return gnomeZoomTo(state.level) }
+    if state.backend == "cinnamon" { return cinnamonZoomOut(step) }
+    false
+}
+
+fn to(level) {
+    if !state.running { return false }
+    if state.backend == "kwin" { return kwinZoomTo(level) }
+    if state.backend == "hyprland" { return hyprZoomTo(level) }
+    if state.backend == "gnome" { return gnomeZoomTo(level) }
+    if state.backend == "cinnamon" { return cinnamonZoomTo(level) }
+    false
+}
+
+fn reset() {
+    if state.backend == "kwin" { return kwinZoomReset() }
+    if state.backend == "hyprland" { return hyprZoomTo(1.0) }
+    if state.backend == "gnome" { _r = gnomeDeactivate(); state.level = 1.0; return _r }
+    if state.backend == "cinnamon" { return cinnamonZoomReset() }
+    state.level = 1.0
+    true
+}
+
+fn getLevel() {
+    if state.backend == "kwin" { return kwinGetLevel() }
+    if state.backend == "cinnamon" { return cinnamonGetLevel() }
+    state.level
+}
+
+fn toggle() {
+    if state.level > 1.0 { return reset() }
+    to(state.scale)
+}
+
+fn setScale(s) { state.scale = s }
+fn getScale() { state.scale }
+
+fn setRegion(x, y, w, h) { state.region = { x: x, y: y, w: w, h: h } }
+fn getRegion() { state.region }
+
+fn setFilter(f) { state.filter = f }
+fn getFilter() { state.filter }
+
+fn setLocked(v) { state.locked = v }
+fn isLocked() { state.locked }
+
+fn setFollowCursor(v) { state.followCursor = v }
+fn isFollowCursor() { state.followCursor }
+
+fn setColorInvert(v) { state.invert = v }
+fn isColorInvert() { state.invert }
+
+fn setBrightness(v) { state.brightness = v }
+fn getBrightness() { state.brightness }
+
+fn setContrast(v) { state.contrast = v }
+fn getContrast() { state.contrast }
+
+fn pixelColor(x, y) {
+    _r = shell.exec("xdotool getactivewindow 2>/dev/null")
+    if _r.exitCode != 0 { return [0, 0, 0] }
+    _r = shell.exec("import -window root -crop 1x1+{x}+{y} -depth 8 txt:- 2>/dev/null")
+    if _r.exitCode != 0 { return [0, 0, 0] }
+    [0, 0, 0]
+}
+
+fn pixelColorHex(x, y) {
+    rgb = pixelColor(x, y)
+    hex = "#"
+    for c in rgb {
+        h = int(c)
+        if h < 16 { hex = hex + "0" }
+        hex = hex + string.format("%x", h)
+    }
+    hex
+}
+
+fn screenWidth() {
+    _r = shell.exec("xdpyinfo 2>/dev/null | grep dimensions")
+    if _r.exitCode == 0 && _r.stdout != "" {
+        _m = string.match(_r.stdout, "(\\d+)x")
+        if _m != null { return int(_m) }
+    }
+    0
+}
+
+fn screenHeight() {
+    _r = shell.exec("xdpyinfo 2>/dev/null | grep dimensions")
+    if _r.exitCode == 0 && _r.stdout != "" {
+        _m = string.match(_r.stdout, "x(\\d+)")
+        if _m != null { return int(_m) }
+    }
+    0
+}
+
+fn backendName() { state.backend }

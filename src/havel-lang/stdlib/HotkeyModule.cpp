@@ -3,10 +3,14 @@
 #include "core/hotkey/HotkeyManager.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
+#include "havel-lang/runtime/concurrency/Fiber.hpp"
 #include "../../utils/Logger.hpp"
 #include <mutex>
 #include <unordered_map>
 #include <chrono>
+#include <ctime>
+#include <sstream>
+#include <iomanip>
 
 using havel::compiler::Value;
 using havel::compiler::CallbackId;
@@ -27,7 +31,9 @@ struct HotkeyContextData {
     std::string combo;
     std::string modifiers;
     std::string state;
+    std::string date;
     int64_t addedAt;
+    uint32_t goroutine_id = 0;
     CallbackId callback;
     bool enabled;
     int64_t triggerCount = 0;
@@ -38,11 +44,48 @@ struct HotkeyContextData {
                       const std::string &info_, CallbackId callback_,
                       bool enabled_ = true)
         : id(id_), alias(alias_), key(key_), condition(condition_), info(info_),
-          combo(""), modifiers(""), state(enabled_ ? "enabled" : "disabled"),
+          combo(key_), modifiers(extractModifiers(key_)),
+          state(enabled_ ? "enabled" : "disabled"),
+          date(formatNow()),
           addedAt(std::chrono::duration_cast<std::chrono::milliseconds>(
                       std::chrono::steady_clock::now().time_since_epoch())
                       .count()),
           callback(callback_), enabled(enabled_) {}
+
+    static std::string extractModifiers(const std::string &key) {
+        static const char* mods[] = {"Ctrl", "Alt", "Shift", "Super", "CtrlL", "CtrlR", "AltL", "AltR", "ShiftL", "ShiftR"};
+        std::vector<std::string> found;
+        size_t pos = 0;
+        while (pos < key.size()) {
+            bool matched = false;
+            for (const char* m : mods) {
+                size_t len = strlen(m);
+                if (key.compare(pos, len, m) == 0) {
+                    if (pos + len < key.size() && key[pos + len] == '+') {
+                        found.push_back(m);
+                        pos += len + 1;
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            if (!matched) break;
+        }
+        if (found.empty()) return "";
+        std::string result = found[0];
+        for (size_t i = 1; i < found.size(); i++) result += "+" + found[i];
+        return result;
+    }
+
+    static std::string formatNow() {
+        auto now = std::chrono::system_clock::now();
+        auto time_t_now = std::chrono::system_clock::to_time_t(now);
+        std::tm tm_buf{};
+        localtime_r(&time_t_now, &tm_buf);
+        std::ostringstream oss;
+        oss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S");
+        return oss.str();
+    }
 };
 
 static std::unordered_map<std::string, std::unique_ptr<HotkeyContextData>>
@@ -73,13 +116,16 @@ static std::string extractHotkeyId(VM &vm, const Value &obj) {
     return resolveHotkeyId(vm, idValue);
 }
 
+static const char *policyToString(HotkeyPolicy p);
+static std::string goroutineStatusStr(Scheduler *sched, const std::string &alias);
+
 static Value createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
-                                        const std::string &alias,
-                                        const std::string &key,
-                                        const std::string &condition,
-                                        const std::string &info,
-                                        CallbackId callback,
-                                        bool enabled = true) {
+                      const std::string &alias,
+                      const std::string &key,
+                      const std::string &condition,
+                      const std::string &info,
+                      CallbackId callback,
+                      bool enabled = true) {
     auto contextObj = vm->createHostObject();
     auto guard = vm->makeRoot(Value::makeObjectId(contextObj.id));
 
@@ -89,11 +135,15 @@ static Value createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
             hotkeyId, alias, key, condition, info, callback, enabled);
     }
 
+    auto *ctx = getHotkeyContextData(hotkeyId);
+
     auto idStr = vm->createRuntimeString(hotkeyId);
     auto aliasStr = vm->createRuntimeString(alias);
     auto keyStr = vm->createRuntimeString(key);
     auto condStr = vm->createRuntimeString(condition);
     auto infoStr = vm->createRuntimeString(info);
+    auto modStr = vm->createRuntimeString(ctx ? ctx->modifiers : "");
+    auto dateStr = vm->createRuntimeString(ctx ? ctx->date : "");
 
     vm->setHostObjectField(contextObj, "id", Value::makeStringId(idStr.id));
     vm->setHostObjectField(contextObj, "alias", Value::makeStringId(aliasStr.id));
@@ -101,6 +151,34 @@ static Value createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
     vm->setHostObjectField(contextObj, "condition", Value::makeStringId(condStr.id));
     vm->setHostObjectField(contextObj, "info", Value::makeStringId(infoStr.id));
     vm->setHostObjectField(contextObj, "enabled", Value::makeBool(enabled));
+    vm->setHostObjectField(contextObj, "modifiers", Value::makeStringId(modStr.id));
+    vm->setHostObjectField(contextObj, "date", Value::makeStringId(dateStr.id));
+
+    auto *sched = vm->getScheduler();
+    HotkeyPolicy policy = HotkeyPolicy::Drop;
+    std::string statusStr = "registered";
+    uint32_t gid = 0;
+    if (sched && ctx) {
+        auto *g = sched->getHotkeyByAlias(alias);
+        if (g) {
+            policy = g->hotkey_policy;
+            gid = g->id;
+            switch (g->state.load()) {
+            case Scheduler::GoroutineState::Created: statusStr = "created"; break;
+            case Scheduler::GoroutineState::Runnable: statusStr = "runnable"; break;
+            case Scheduler::GoroutineState::Running: statusStr = "running"; break;
+            case Scheduler::GoroutineState::Suspended: statusStr = "suspended"; break;
+            case Scheduler::GoroutineState::Done: statusStr = "done"; break;
+            }
+            if (ctx) ctx->goroutine_id = g->id;
+        }
+    }
+
+    auto policyStr = vm->createRuntimeString(policyToString(policy));
+    auto statusRef = vm->createRuntimeString(statusStr);
+    vm->setHostObjectField(contextObj, "policy", Value::makeStringId(policyStr.id));
+    vm->setHostObjectField(contextObj, "status", Value::makeStringId(statusRef.id));
+    vm->setHostObjectField(contextObj, "goroutine_id", Value::makeInt(static_cast<int64_t>(gid)));
 
     auto typeStr = vm->createRuntimeString("Hotkey");
     vm->setHostObjectField(contextObj, "__class", Value::makeStringId(typeStr.id));
@@ -117,11 +195,70 @@ static HotkeyPolicy parsePolicy(const std::string &s) {
 
 static const char *policyToString(HotkeyPolicy p) {
     switch (p) {
-        case HotkeyPolicy::Replace: return "replace";
-        case HotkeyPolicy::Queue: return "queue";
-        case HotkeyPolicy::Coalesce: return "coalesce";
-        default: return "drop";
+    case HotkeyPolicy::Replace: return "replace";
+    case HotkeyPolicy::Queue: return "queue";
+    case HotkeyPolicy::Coalesce: return "coalesce";
+    default: return "drop";
     }
+}
+
+static std::string goroutineStatusStr(Scheduler *sched, const std::string &alias) {
+    if (!sched) return "registered";
+    auto *g = sched->getHotkeyByAlias(alias);
+    if (!g) return "registered";
+    switch (g->state.load()) {
+    case Scheduler::GoroutineState::Created: return "created";
+    case Scheduler::GoroutineState::Runnable: return "runnable";
+    case Scheduler::GoroutineState::Running: return "running";
+    case Scheduler::GoroutineState::Suspended: return "suspended";
+    case Scheduler::GoroutineState::Done: return "done";
+    }
+    return "unknown";
+}
+
+static Value rebuildHotkeyObject(VM &vm, const HotkeyContextData *ctx) {
+    if (!ctx) return Value::makeNull();
+    auto obj = vm.createHostObject();
+    auto guard = vm.makeRoot(Value::makeObjectId(obj.id));
+
+    auto idStr = vm.createRuntimeString(ctx->id);
+    auto aliasStr = vm.createRuntimeString(ctx->alias);
+    auto keyStr = vm.createRuntimeString(ctx->key);
+    auto condStr = vm.createRuntimeString(ctx->condition);
+    auto infoStr = vm.createRuntimeString(ctx->info);
+    auto modStr = vm.createRuntimeString(ctx->modifiers);
+    auto dateStr = vm.createRuntimeString(ctx->date);
+
+    vm.setHostObjectField(obj, "id", Value::makeStringId(idStr.id));
+    vm.setHostObjectField(obj, "alias", Value::makeStringId(aliasStr.id));
+    vm.setHostObjectField(obj, "key", Value::makeStringId(keyStr.id));
+    vm.setHostObjectField(obj, "condition", Value::makeStringId(condStr.id));
+    vm.setHostObjectField(obj, "info", Value::makeStringId(infoStr.id));
+    vm.setHostObjectField(obj, "enabled", Value::makeBool(ctx->enabled));
+    vm.setHostObjectField(obj, "modifiers", Value::makeStringId(modStr.id));
+    vm.setHostObjectField(obj, "date", Value::makeStringId(dateStr.id));
+
+    auto *sched = vm.getScheduler();
+    auto statusRef = vm.createRuntimeString(goroutineStatusStr(sched, ctx->alias));
+    vm.setHostObjectField(obj, "status", Value::makeStringId(statusRef.id));
+
+    HotkeyPolicy policy = HotkeyPolicy::Drop;
+    uint32_t gid = ctx->goroutine_id;
+    if (sched) {
+        auto *g = sched->getHotkeyByAlias(ctx->alias);
+        if (g) {
+            policy = g->hotkey_policy;
+            gid = g->id;
+        }
+    }
+    auto policyStr = vm.createRuntimeString(policyToString(policy));
+    vm.setHostObjectField(obj, "policy", Value::makeStringId(policyStr.id));
+    vm.setHostObjectField(obj, "goroutine_id", Value::makeInt(static_cast<int64_t>(gid)));
+
+    auto typeStr = vm.createRuntimeString("Hotkey");
+    vm.setHostObjectField(obj, "__class", Value::makeStringId(typeStr.id));
+
+    return Value::makeObjectId(obj.id);
 }
 
 void registerHotkeyModule(const VMApi &api) {
@@ -596,9 +733,235 @@ api.registerPrototypeMethod("Hotkey", "clearAll", 1, [&vm](const std::vector<Val
     auto infoStr = vm.createRuntimeString(newInfo);
     vm.setHostObjectField(objRef, "info", Value::makeStringId(infoStr.id));
     return Value::makeBool(true);
-  });
+});
 
-  // ===== Static Utility Methods (on Hotkey global) =====
+// ===== Live Property Getters =====
+
+// status - live goroutine state
+api.registerPrototypeMethod("Hotkey", "status", 1, [&vm](const std::vector<Value> &args) -> Value {
+    auto hotkeyId = extractHotkeyId(vm, args.empty() ? Value::makeNull() : args[0]);
+    if (hotkeyId.empty()) return Value::makeNull();
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeNull();
+    auto *sched = vm.getScheduler();
+    auto str = goroutineStatusStr(sched, ctx->alias);
+    auto ref = vm.createRuntimeString(str);
+    return Value::makeStringId(ref.id);
+});
+
+// policy - current hotkey policy
+api.registerPrototypeMethod("Hotkey", "policy", 1, [&vm](const std::vector<Value> &args) -> Value {
+    auto hotkeyId = extractHotkeyId(vm, args.empty() ? Value::makeNull() : args[0]);
+    if (hotkeyId.empty()) return Value::makeNull();
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeNull();
+    auto *sched = vm.getScheduler();
+    HotkeyPolicy policy = HotkeyPolicy::Drop;
+    if (sched) {
+        auto *g = sched->getHotkeyByAlias(ctx->alias);
+        if (g) policy = g->hotkey_policy;
+    }
+    auto ref = vm.createRuntimeString(policyToString(policy));
+    return Value::makeStringId(ref.id);
+});
+
+// date - registration date string
+api.registerPrototypeMethod("Hotkey", "date", 1, [&vm](const std::vector<Value> &args) -> Value {
+    auto hotkeyId = extractHotkeyId(vm, args.empty() ? Value::makeNull() : args[0]);
+    if (hotkeyId.empty()) return Value::makeNull();
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeNull();
+    auto ref = vm.createRuntimeString(ctx->date);
+    return Value::makeStringId(ref.id);
+});
+
+// goroutineId() - scheduler goroutine ID (live lookup)
+api.registerPrototypeMethod("Hotkey", "goroutineId", 1, [&vm](const std::vector<Value> &args) -> Value {
+    auto hotkeyId = extractHotkeyId(vm, args.empty() ? Value::makeNull() : args[0]);
+    if (hotkeyId.empty()) return Value::makeInt(0);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeInt(0);
+    auto *sched = vm.getScheduler();
+    if (!sched) return Value::makeInt(static_cast<int64_t>(ctx->goroutine_id));
+    auto *g = sched->getHotkeyByAlias(ctx->alias);
+    if (!g) return Value::makeInt(static_cast<int64_t>(ctx->goroutine_id));
+    return Value::makeInt(static_cast<int64_t>(g->id));
+});
+
+// ===== Action Methods =====
+
+// trigger() - programmatically trigger this hotkey
+api.registerPrototypeMethod("Hotkey", "trigger", 1, [&vm](const std::vector<Value> &args) -> Value {
+    auto hotkeyId = extractHotkeyId(vm, args.empty() ? Value::makeNull() : args[0]);
+    if (hotkeyId.empty()) return Value::makeBool(false);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    auto *sched = vm.getScheduler();
+    if (!sched) return Value::makeBool(false);
+    bool woke = sched->wakeHotkeyByAlias(ctx->alias);
+    if (woke) {
+        HotkeyModule::recordTrigger(hotkeyId);
+    }
+    return Value::makeBool(woke);
+});
+
+// stop() - stop the persistent goroutine (marks Done, disables OS hotkey)
+api.registerPrototypeMethod("Hotkey", "stop", 1, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto hotkeyId = extractHotkeyId(vm, args[0]);
+    if (hotkeyId.empty()) return Value::makeBool(false);
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    auto *sched = vm.getScheduler();
+    if (!sched) return Value::makeBool(false);
+    auto *g = sched->getHotkeyByAlias(ctx->alias);
+    if (!g) return Value::makeBool(false);
+    if (g->state.load() == Scheduler::GoroutineState::Done) return Value::makeBool(false);
+    g->persistent = false;
+    g->state.store(Scheduler::GoroutineState::Done);
+    if (g->fiber) g->fiber->markDone(Value::makeNull());
+    auto *hostCtx = vm.hostContext();
+    if (hostCtx && hostCtx->hotkeyManager) {
+        hostCtx->hotkeyManager->DisableHotkey(ctx->alias);
+    }
+    ctx->enabled = false;
+    ctx->state = "stopped";
+    vm.setHostObjectField(objRef, "enabled", Value::makeBool(false));
+    auto stRef = vm.createRuntimeString("stopped");
+    vm.setHostObjectField(objRef, "status", Value::makeStringId(stRef.id));
+    return Value::makeBool(true);
+});
+
+// resume() - unpark a suspended goroutine
+api.registerPrototypeMethod("Hotkey", "resume", 1, [&vm](const std::vector<Value> &args) -> Value {
+    auto hotkeyId = extractHotkeyId(vm, args.empty() ? Value::makeNull() : args[0]);
+    if (hotkeyId.empty()) return Value::makeBool(false);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    auto *sched = vm.getScheduler();
+    if (!sched) return Value::makeBool(false);
+    auto *g = sched->getHotkeyByAlias(ctx->alias);
+    if (!g) return Value::makeBool(false);
+    if (g->state.load() != Scheduler::GoroutineState::Suspended) return Value::makeBool(false);
+    sched->unpark(g);
+    return Value::makeBool(true);
+});
+
+// wait([timeout_ms]) - block until the goroutine finishes or suspends
+// NOTE: spins with yield because we're inside a host callback and cannot
+//       suspend the calling fiber mid-step. A proper await-based wait
+//       would require returning an awaitable from a VM opcode.
+api.registerPrototypeMethod("Hotkey", "wait", 1, [&vm](const std::vector<Value> &args) -> Value {
+    auto hotkeyId = extractHotkeyId(vm, args.empty() ? Value::makeNull() : args[0]);
+    if (hotkeyId.empty()) return Value::makeBool(false);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    auto *sched = vm.getScheduler();
+    if (!sched) return Value::makeBool(false);
+    auto *g = sched->getHotkeyByAlias(ctx->alias);
+    if (!g) return Value::makeBool(false);
+    auto state = g->state.load();
+    if (state == Scheduler::GoroutineState::Done ||
+        state == Scheduler::GoroutineState::Suspended ||
+        state == Scheduler::GoroutineState::Created) {
+        return Value::makeBool(true);
+    }
+    int64_t timeoutMs = 5000;
+    if (args.size() >= 2 && args[1].isInt()) {
+        timeoutMs = args[1].asInt();
+    }
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::microseconds(500));
+        state = g->state.load();
+        if (state == Scheduler::GoroutineState::Done ||
+            state == Scheduler::GoroutineState::Suspended ||
+            state == Scheduler::GoroutineState::Created) {
+            return Value::makeBool(true);
+        }
+    }
+    return Value::makeBool(false);
+});
+
+// edit(props) - update multiple hotkey properties at once
+// props is an object with optional keys: alias, key, policy, condition, info
+api.registerPrototypeMethod("Hotkey", "edit", 2, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.size() < 2 || !args[0].isObjectId() || !args[1].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+
+    bool changed = false;
+
+    auto aliasVal = vm.objectGetWithClassChain(args[1].asObjectId(), "alias");
+    if (aliasVal.isStringValId()) {
+        std::string newAlias = vm.resolveStringKey(aliasVal);
+        if (newAlias != ctx->alias) {
+            auto *sched = vm.getScheduler();
+            if (sched) {
+                auto *g = sched->getHotkeyByAlias(ctx->alias);
+                if (g) g->hotkey_alias = newAlias;
+            }
+            ctx->alias = newAlias;
+            auto s = vm.createRuntimeString(newAlias);
+            vm.setHostObjectField(objRef, "alias", Value::makeStringId(s.id));
+            changed = true;
+        }
+    }
+
+    auto keyVal = vm.objectGetWithClassChain(args[1].asObjectId(), "key");
+    if (keyVal.isStringValId()) {
+        std::string newKey = vm.resolveStringKey(keyVal);
+        ctx->key = newKey;
+        ctx->combo = newKey;
+        ctx->modifiers = HotkeyContextData::extractModifiers(newKey);
+        auto s = vm.createRuntimeString(newKey);
+        vm.setHostObjectField(objRef, "key", Value::makeStringId(s.id));
+        auto ms = vm.createRuntimeString(ctx->modifiers);
+        vm.setHostObjectField(objRef, "modifiers", Value::makeStringId(ms.id));
+        changed = true;
+    }
+
+    auto policyVal = vm.objectGetWithClassChain(args[1].asObjectId(), "policy");
+    if (policyVal.isStringValId()) {
+        std::string policyStr = vm.resolveStringKey(policyVal);
+        HotkeyPolicy policy = parsePolicy(policyStr);
+        auto *sched = vm.getScheduler();
+        if (sched) {
+            auto *g = sched->getHotkeyByAlias(ctx->alias);
+            if (g) sched->setHotkeyPolicy(g, policy);
+        }
+        auto s = vm.createRuntimeString(policyToString(policy));
+        vm.setHostObjectField(objRef, "policy", Value::makeStringId(s.id));
+        changed = true;
+    }
+
+    auto condVal = vm.objectGetWithClassChain(args[1].asObjectId(), "condition");
+    if (condVal.isStringValId()) {
+        std::string newCond = vm.resolveStringKey(condVal);
+        ctx->condition = newCond;
+        auto s = vm.createRuntimeString(newCond);
+        vm.setHostObjectField(objRef, "condition", Value::makeStringId(s.id));
+        changed = true;
+    }
+
+    auto infoVal = vm.objectGetWithClassChain(args[1].asObjectId(), "info");
+    if (infoVal.isStringValId()) {
+        std::string newInfo = vm.resolveStringKey(infoVal);
+        ctx->info = newInfo;
+        auto s = vm.createRuntimeString(newInfo);
+        vm.setHostObjectField(objRef, "info", Value::makeStringId(s.id));
+        changed = true;
+    }
+
+    return Value::makeBool(changed);
+});
+
+// ===== Static Utility Methods (on Hotkey global) =====
 
   // Hotkey.count() - total number of registered hotkey contexts
   api.registerPrototypeMethod("Hotkey", "count", 1, [&vm](const std::vector<Value> &args) -> Value {
@@ -606,85 +969,42 @@ api.registerPrototypeMethod("Hotkey", "clearAll", 1, [&vm](const std::vector<Val
     return Value::makeInt(static_cast<int64_t>(HotkeyModule::contextCount()));
   });
 
-  // Hotkey.findByAlias(alias) - find a hotkey context object by alias, or null
-  api.registerPrototypeMethod("Hotkey", "findByAlias", 2, [&vm](const std::vector<Value> &args) -> Value {
+// Hotkey.findByAlias(alias) - find a hotkey context object by alias, or null
+api.registerPrototypeMethod("Hotkey", "findByAlias", 2, [&vm](const std::vector<Value> &args) -> Value {
     if (args.size() < 2) return Value::makeNull();
     std::string alias = vm.resolveStringKey(args[1]);
     std::string hotkeyId = HotkeyModule::findByAlias(alias);
     if (hotkeyId.empty()) return Value::makeNull();
     auto *ctx = getHotkeyContextData(hotkeyId);
-    if (!ctx) return Value::makeNull();
-    auto contextObj = vm.createHostObject();
-    auto idStr = vm.createRuntimeString(ctx->id);
-    auto aliasStr = vm.createRuntimeString(ctx->alias);
-    auto keyStr = vm.createRuntimeString(ctx->key);
-    auto condStr = vm.createRuntimeString(ctx->condition);
-    auto infoStr = vm.createRuntimeString(ctx->info);
-    vm.setHostObjectField(contextObj, "id", Value::makeStringId(idStr.id));
-    vm.setHostObjectField(contextObj, "alias", Value::makeStringId(aliasStr.id));
-    vm.setHostObjectField(contextObj, "key", Value::makeStringId(keyStr.id));
-    vm.setHostObjectField(contextObj, "condition", Value::makeStringId(condStr.id));
-    vm.setHostObjectField(contextObj, "info", Value::makeStringId(infoStr.id));
-    vm.setHostObjectField(contextObj, "enabled", Value::makeBool(ctx->enabled));
-    auto typeStr = vm.createRuntimeString("Hotkey");
-    vm.setHostObjectField(contextObj, "__class", Value::makeStringId(typeStr.id));
-    return Value::makeObjectId(contextObj.id);
-  });
+    return rebuildHotkeyObject(vm, ctx);
+});
 
-  // Hotkey.findByKey(key) - find all hotkey contexts matching a key string
-  api.registerPrototypeMethod("Hotkey", "findByKey", 2, [&vm](const std::vector<Value> &args) -> Value {
+// Hotkey.findByKey(key) - find all hotkey contexts matching a key string
+api.registerPrototypeMethod("Hotkey", "findByKey", 2, [&vm](const std::vector<Value> &args) -> Value {
     if (args.size() < 2) return Value::makeNull();
     std::string key = vm.resolveStringKey(args[1]);
     auto ids = HotkeyModule::findByKey(key);
     auto arr = vm.createHostArray();
     for (const auto &hotkeyId : ids) {
-      auto *ctx = getHotkeyContextData(hotkeyId);
-      if (!ctx) continue;
-      auto contextObj = vm.createHostObject();
-      auto idStr = vm.createRuntimeString(ctx->id);
-      auto aliasStr = vm.createRuntimeString(ctx->alias);
-      auto keyStr = vm.createRuntimeString(ctx->key);
-      auto condStr = vm.createRuntimeString(ctx->condition);
-      auto infoStr = vm.createRuntimeString(ctx->info);
-      vm.setHostObjectField(contextObj, "id", Value::makeStringId(idStr.id));
-      vm.setHostObjectField(contextObj, "alias", Value::makeStringId(aliasStr.id));
-      vm.setHostObjectField(contextObj, "key", Value::makeStringId(keyStr.id));
-      vm.setHostObjectField(contextObj, "condition", Value::makeStringId(condStr.id));
-      vm.setHostObjectField(contextObj, "info", Value::makeStringId(infoStr.id));
-      vm.setHostObjectField(contextObj, "enabled", Value::makeBool(ctx->enabled));
-      auto typeStr = vm.createRuntimeString("Hotkey");
-      vm.setHostObjectField(contextObj, "__class", Value::makeStringId(typeStr.id));
-      vm.pushHostArrayValue(arr, Value::makeObjectId(contextObj.id));
+        auto *ctx = getHotkeyContextData(hotkeyId);
+        if (!ctx) continue;
+        vm.pushHostArrayValue(arr, rebuildHotkeyObject(vm, ctx));
     }
     return Value::makeArrayId(arr.id);
-  });
+});
 
-  // Hotkey.all() - return array of all registered hotkey context objects
-  api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &args) -> Value {
+// Hotkey.all() - return array of all registered hotkey context objects
+api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &args) -> Value {
     (void)args;
     auto ids = HotkeyModule::getAllIds();
     auto arr = vm.createHostArray();
     for (const auto &hotkeyId : ids) {
-      auto *ctx = getHotkeyContextData(hotkeyId);
-      if (!ctx) continue;
-      auto contextObj = vm.createHostObject();
-      auto idStr = vm.createRuntimeString(ctx->id);
-      auto aliasStr = vm.createRuntimeString(ctx->alias);
-      auto keyStr = vm.createRuntimeString(ctx->key);
-      auto condStr = vm.createRuntimeString(ctx->condition);
-      auto infoStr = vm.createRuntimeString(ctx->info);
-      vm.setHostObjectField(contextObj, "id", Value::makeStringId(idStr.id));
-      vm.setHostObjectField(contextObj, "alias", Value::makeStringId(aliasStr.id));
-      vm.setHostObjectField(contextObj, "key", Value::makeStringId(keyStr.id));
-      vm.setHostObjectField(contextObj, "condition", Value::makeStringId(condStr.id));
-      vm.setHostObjectField(contextObj, "info", Value::makeStringId(infoStr.id));
-      vm.setHostObjectField(contextObj, "enabled", Value::makeBool(ctx->enabled));
-      auto typeStr = vm.createRuntimeString("Hotkey");
-      vm.setHostObjectField(contextObj, "__class", Value::makeStringId(typeStr.id));
-      vm.pushHostArrayValue(arr, Value::makeObjectId(contextObj.id));
+        auto *ctx = getHotkeyContextData(hotkeyId);
+        if (!ctx) continue;
+        vm.pushHostArrayValue(arr, rebuildHotkeyObject(vm, ctx));
     }
     return Value::makeArrayId(arr.id);
-  });
+});
 
   // Hotkey.activeCount() - number of persistent hotkey goroutines that are running/runnable
   api.registerPrototypeMethod("Hotkey", "activeCount", 1, [&vm](const std::vector<Value> &args) -> Value {
@@ -827,12 +1147,33 @@ std::string HotkeyModule::findConditionalById(int condId) {
 }
 
 size_t HotkeyModule::conditionalCount() {
-  std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
-  size_t n = 0;
-  for (const auto &[id, data] : g_hotkeyContexts) {
-    if (id.rfind("condhk_", 0) == 0) n++;
-  }
-  return n;
+    std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
+    size_t n = 0;
+    for (const auto &[id, data] : g_hotkeyContexts) {
+        if (id.rfind("condhk_", 0) == 0) n++;
+    }
+    return n;
+}
+
+Value HotkeyModule::rebuildHotkeyContext(VM &vm, const std::string &hotkeyId) {
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    return rebuildHotkeyObject(vm, ctx);
+}
+
+void HotkeyModule::setGoroutineId(const std::string &hotkeyId, uint32_t gid) {
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (ctx) ctx->goroutine_id = gid;
+}
+
+std::string HotkeyModule::resolveUniqueId(const std::string &preferredId) {
+    std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
+    if (g_hotkeyContexts.count(preferredId) == 0) return preferredId;
+    size_t idx = g_hotkeyContexts.size();
+    std::string candidate = preferredId + "_" + std::to_string(idx);
+    while (g_hotkeyContexts.count(candidate) > 0) {
+        candidate = preferredId + "_" + std::to_string(++idx);
+    }
+    return candidate;
 }
 
 } // namespace havel::stdlib

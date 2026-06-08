@@ -1,4 +1,5 @@
 #include "ModuleLoader.hpp"
+#include "c/ModulePlugin.h"
 #include <filesystem>
 #include <iostream>
 #include <cstdlib>
@@ -16,7 +17,11 @@ ModuleLoader::~ModuleLoader() {
 }
 
 void ModuleLoader::addSearchPath(const std::string& path) {
-    searchPaths_.push_back(path);
+  searchPaths_.push_back(path);
+}
+
+void ModuleLoader::addModuleSoPath(const std::string& path) {
+  moduleSoPaths_.push_back(path);
 }
 
 void ModuleLoader::setStdlibPath(const std::string& path) {
@@ -234,24 +239,33 @@ ModuleLoader::resolve(const std::string& modulePath,
     }
   }
 
-    // 7. Check each search path for native extensions (.so)
-    for (const auto& sp : searchPaths_) {
-        fs::path spDir(sp);
+  // 7. Check each search path for native extensions (.so)
+  for (const auto& sp : searchPaths_) {
+    fs::path spDir(sp);
 
-        // Try name.so
-        fs::path soPath = spDir / (name + ".so");
-        if (fs::exists(soPath)) {
-            return ResolvedModule{ResolvedModule::NativeExtension,
-                                fs::canonical(soPath).string(), modulePath};
-        }
-
-        // Try libhavel_name.so
-        fs::path libPath = spDir / ("libhavel_" + name + ".so");
-        if (fs::exists(libPath)) {
-            return ResolvedModule{ResolvedModule::NativeExtension,
-                                fs::canonical(libPath).string(), modulePath};
-        }
+    // Try name.so
+    fs::path soPath = spDir / (name + ".so");
+    if (fs::exists(soPath)) {
+      return ResolvedModule{ResolvedModule::NativeExtension,
+        fs::canonical(soPath).string(), modulePath};
     }
+
+    // Try libhavel_name.so
+    fs::path libPath = spDir / ("libhavel_" + name + ".so");
+    if (fs::exists(libPath)) {
+      return ResolvedModule{ResolvedModule::NativeExtension,
+        fs::canonical(libPath).string(), modulePath};
+    }
+  }
+
+  // 7b. Check module .so paths for havel_mod_<name>.so (plugin naming convention)
+  for (const auto& sp : moduleSoPaths_) {
+    fs::path soPath = fs::path(sp) / ("havel_mod_" + name + ".so");
+    if (fs::exists(soPath)) {
+      return ResolvedModule{ResolvedModule::NativeExtension,
+        fs::canonical(soPath).string(), modulePath};
+    }
+  }
 
     // 8. Check for host builtin module
     if (hostFns_.count(name) > 0 || envModules_.count(name) > 0) {
@@ -286,48 +300,42 @@ void ModuleLoader::clearCache() {
 
 std::optional<ModuleLoader::NativeHandle>
 ModuleLoader::loadNativeExtension(const std::string& path) {
-    // Check if already loaded
-    auto it = nativeHandles_.find(path);
-    if (it != nativeHandles_.end()) {
-        return it->second;
-    }
+  auto it = nativeHandles_.find(path);
+  if (it != nativeHandles_.end()) {
+    return it->second;
+  }
 
 #ifndef _WIN32
-    // dlopen the .so file
-    void* handle = dlopen(path.c_str(), RTLD_LAZY);
-    if (!handle) {
-        std::cerr << "dlopen failed: " << dlerror() << std::endl;
-        return std::nullopt;
-    }
+  void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (!handle) {
+    std::cerr << "dlopen failed: " << dlerror() << std::endl;
+    return std::nullopt;
+  }
 
-    // Try to find havel_module_init symbol
-    using InitFn = void (*)(void);
-    InitFn init_fn = reinterpret_cast<InitFn>(dlsym(handle, "havel_module_init"));
-    if (init_fn) {
-        init_fn();
+  using InfoFn = const HavelModuleABI *(*)(void);
+  InfoFn info_fn = reinterpret_cast<InfoFn>(dlsym(handle, "havel_module_info"));
+  if (info_fn) {
+    const HavelModuleABI *abi = info_fn();
+    if (abi && abi->abi_version >= 1 &&
+        abi->abi_version <= HAVEL_MODULE_ABI_VERSION && abi->register_fn) {
+      // register_fn must be called with VMApi* from the VM
+      // For now just store the handle; the VM will call register_fn
     }
+  }
 #else
-    // Windows implementation (LoadLibrary)
-    HMODULE handle = LoadLibraryA(path.c_str());
-    if (!handle) {
-        std::cerr << "LoadLibrary failed: " << GetLastError() << std::endl;
-        return std::nullopt;
-    }
-
-    using InitFn = void (*)(void);
-    InitFn init_fn = reinterpret_cast<InitFn>(GetProcAddress(handle, "havel_module_init"));
-    if (init_fn) {
-        init_fn();
-    }
+  HMODULE handle = LoadLibraryA(path.c_str());
+  if (!handle) {
+    std::cerr << "LoadLibrary failed: " << GetLastError() << std::endl;
+    return std::nullopt;
+  }
 #endif
 
-    // Store handle
-    NativeHandle nh;
-    nh.dlHandle = static_cast<void*>(handle);
-    nh.name = path;
-    nativeHandles_[path] = nh;
+  NativeHandle nh;
+  nh.dlHandle = static_cast<void*>(handle);
+  nh.name = path;
+  nativeHandles_[path] = nh;
 
-    return nh;
+      return nh;
 }
 
 void ModuleLoader::unloadNativeExtensions() {

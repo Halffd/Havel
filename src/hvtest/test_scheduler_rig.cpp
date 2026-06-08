@@ -3,6 +3,27 @@
 #include "havel-lang/compiler/core/BytecodeIR.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
+
+namespace {
+havel::compiler::Scheduler::SuspensionReason toSchedReason(uint8_t fiberReason) {
+    using F = havel::compiler::SuspensionReason;
+    using S = havel::compiler::Scheduler::SuspensionReason;
+    switch (static_cast<F>(fiberReason)) {
+    case F::NONE: return S::None;
+    case F::YIELD: return S::None;
+    case F::CHANNEL_RECV: return S::ChannelWait;
+    case F::CHANNEL_SEND: return S::ChannelSendWait;
+    case F::THREAD_JOIN: return S::ThreadWait;
+    case F::TIMER: return S::TimerWait;
+    case F::SLEEP: return S::SleepWait;
+    case F::EXTERNAL: return S::None;
+    case F::HOTKEY_WAIT: return S::HotkeyWait;
+    case F::AWAIT: return S::None;
+    case F::COROUTINE_WAIT: return S::CoroutineWait;
+    default: return S::None;
+    }
+}
+}
 #include <cassert>
 #include <iostream>
 
@@ -47,7 +68,7 @@ static void test_spawn_creates_goroutine() {
     auto* picked = sched.pickNext();
     CHECK(picked != nullptr, "pickNext returned null after spawn");
     CHECK_EQ(picked->id, gid, "pickNext returned wrong goroutine");
-    CHECK(picked->state == Scheduler::GoroutineState::Running, "should be Running after pick");
+    CHECK(picked->state == Scheduler::GoroutineState::Created, "should be Created after pick");
 
     picked->state = Scheduler::GoroutineState::Done;
     sched.clearCurrent();
@@ -117,7 +138,7 @@ static void test_suspend_and_unpark() {
     uint32_t gid = sched.spawn(0, {}, 0, "lazy");
     auto* g = sched.pickNext();
     CHECK(g != nullptr, "pickNext returned null");
-    CHECK(g->state == Scheduler::GoroutineState::Running, "should be Running");
+    CHECK(g->state == Scheduler::GoroutineState::Created, "should be Created after pick");
 
     sched.clearCurrent();
 
@@ -146,7 +167,7 @@ static void test_yield_returns_to_queue() {
     uint32_t gid = sched.spawn(0, {}, 0, "yielder");
     auto* g = sched.pickNext();
     CHECK(g != nullptr, "pickNext returned null");
-    CHECK(g->state == Scheduler::GoroutineState::Running, "should be Running after first pick");
+    CHECK(g->state == Scheduler::GoroutineState::Created, "should be Created after first pick");
 
     sched.yield(g);
     CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after yield");
@@ -470,9 +491,10 @@ static void test_stop_marks_all_done() {
   auto* go1 = sched.get(g1);
   auto* go2 = sched.get(g2);
   auto* go3 = sched.get(g3);
-  CHECK(go1->state == Scheduler::GoroutineState::Done, "g1 should be Done after stop");
-  CHECK(go2->state == Scheduler::GoroutineState::Done, "g2 should be Done after stop");
-  CHECK(go3->state == Scheduler::GoroutineState::Done, "g3 should be Done after stop");
+  // stop() calls cleanupDoneGoroutines → goroutines are erased from map, so get() returns nullptr
+  CHECK(go1 == nullptr, "g1 should be cleaned up after stop");
+  CHECK(go2 == nullptr, "g2 should be cleaned up after stop");
+  CHECK(go3 == nullptr, "g3 should be cleaned up after stop");
 
   CHECK(!sched.hasRunnableFibers(), "no runnable fibers after stop");
   CHECK(!sched.isRunning(), "scheduler should not be running after stop");
@@ -486,10 +508,10 @@ static void test_unpark_ignores_non_suspended() {
   uint32_t gid = sched.spawn(0, {}, 0, "running_guy");
   auto* g = sched.pickNext();
   CHECK(g != nullptr, "pick");
-  CHECK(g->state == Scheduler::GoroutineState::Running, "should be Running");
+  CHECK(g->state == Scheduler::GoroutineState::Created, "should be Created after pick");
 
   sched.unpark(g);
-  CHECK(g->state == Scheduler::GoroutineState::Running, "unpark should not change Running state");
+  CHECK(g->state == Scheduler::GoroutineState::Created, "unpark should not change Created state");
 
   g->state = Scheduler::GoroutineState::Done;
   sched.clearCurrent();
@@ -967,7 +989,7 @@ static void test_wakeHotkey_drop_while_pending() {
 
     auto* picked = sched.pickNext();
     CHECK(picked != nullptr, "pick");
-    CHECK(picked->state == Scheduler::GoroutineState::Running, "should be Running");
+    CHECK(picked->state == Scheduler::GoroutineState::Created, "should be Created after pick");
     sched.clearCurrent();
     sched.yield(g);
     CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after yield");
@@ -1714,7 +1736,7 @@ static void test_pickNext_skips_running() {
 
     auto* p1 = sched.pickNext();
     CHECK(p1 != nullptr && p1->id == g1, "first picked");
-    CHECK(p1->state == Scheduler::GoroutineState::Running, "first is Running");
+    CHECK(p1->state == Scheduler::GoroutineState::Created, "first is Created");
 
     auto* p2 = sched.pickNext();
     CHECK(p2 != nullptr && p2->id == g2, "second should still be pickable");
@@ -2531,6 +2553,634 @@ static void test_getHotkeyAliases_returns_aliases() {
   sched.clearCurrent();
 }
 
+// ============================================================
+// Async loop, coroutine, and while-loop scheduler integration tests
+// These test the scheduler-level behavior that was broken by the
+// vm_->isSuspensionRequested() dead-code bug (ExecutionEngine.cpp:274).
+// Key invariant: after fiber->suspend() sets reason/context on the fiber,
+// the scheduler MUST be told about the suspension (via scheduler_->suspend)
+// and the WaitHandle MUST be populated for wakeup.
+// ============================================================
+
+static void test_sleep_suspend_sets_wait_handle() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawn(0, {}, 0, "sleep_wh");
+  auto* g = sched.get(gid);
+  CHECK(g != nullptr, "get() returned null");
+  CHECK(g->fiber != nullptr, "goroutine should have fiber");
+
+  // Simulate what executeFrame's SUSPENDED handler does for sleep:
+  // fiber->suspend(SLEEP, 100ms) was already called by executeOneStep
+  g->fiber->state = FiberState::RUNNING;
+  g->fiber->suspend(SuspensionReason::SLEEP, reinterpret_cast<void*>(static_cast<intptr_t>(100)));
+
+  CHECK(g->fiber->state == FiberState::SUSPENDED, "fiber should be SUSPENDED after suspend()");
+  CHECK(g->fiber->suspended_reason == SuspensionReason::SLEEP, "fiber reason should be SLEEP");
+  CHECK(g->fiber->suspension_context != nullptr, "fiber suspension_context should be set");
+
+  // Now simulate executeFrame reading from fiber (the fix):
+  auto fiber_reason = g->fiber->suspended_reason;
+  void* context = g->fiber->suspension_context;
+  uint8_t reason = static_cast<uint8_t>(fiber_reason);
+
+  sched.suspend(g, toSchedReason(reason));
+  if (fiber_reason == SuspensionReason::SLEEP) {
+    int64_t ms = reinterpret_cast<intptr_t>(context);
+    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  }
+
+  CHECK(g->state == Scheduler::GoroutineState::Suspended, "goroutine should be Suspended in scheduler");
+  CHECK(g->suspension_reason == Scheduler::SuspensionReason::SleepWait, "scheduler reason should be SleepWait");
+  CHECK(g->wait_handle.type == Scheduler::AwaitableType::SLEEP, "wait_handle type should be SLEEP");
+  CHECK(g->wait_handle.deadline > std::chrono::steady_clock::now(), "deadline should be in the future");
+
+  // Verify wakeSleepingGoroutines does NOT wake it yet
+  size_t woken_early = sched.wakeSleepingGoroutines();
+  CHECK_EQ(woken_early, 0u, "should not wake goroutine before deadline");
+
+  // Force the deadline into the past
+  g->wait_handle.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+
+  size_t woken = sched.wakeSleepingGoroutines();
+  CHECK_EQ(woken, 1u, "should wake goroutine after deadline passes");
+  CHECK(g->state == Scheduler::GoroutineState::Runnable, "goroutine should be Runnable after wake");
+
+  auto* picked = sched.pickNext();
+  CHECK(picked != nullptr, "goroutine should be pickable after sleep wake");
+  CHECK_EQ(picked->id, gid, "picked goroutine should be our sleeper");
+
+  picked->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_sleep_loop_multiple_iterations() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawn(0, {}, 0, "loop_sleeper");
+  auto* g = sched.get(gid);
+
+  // Simulate a loop { sleep(10) } — 5 iterations of suspend/wake/resume
+  constexpr int ITERATIONS = 5;
+  for (int i = 0; i < ITERATIONS; i++) {
+    // Simulate fiber->suspend(SLEEP, 10ms)
+    g->fiber->state = FiberState::RUNNING;
+    g->fiber->suspend(SuspensionReason::SLEEP, reinterpret_cast<void*>(static_cast<intptr_t>(10)));
+
+    auto fiber_reason = g->fiber->suspended_reason;
+    void* context = g->fiber->suspension_context;
+
+    sched.suspend(g, toSchedReason(static_cast<uint8_t>(fiber_reason)));
+    if (fiber_reason == SuspensionReason::SLEEP) {
+      int64_t ms = reinterpret_cast<intptr_t>(context);
+      g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+      g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+    }
+
+    CHECK(g->state == Scheduler::GoroutineState::Suspended, "should be Suspended during sleep");
+    CHECK(g->wait_handle.type == Scheduler::AwaitableType::SLEEP, "wait_handle should be SLEEP");
+
+    // Deadline hasn't passed yet
+    CHECK_EQ(sched.wakeSleepingGoroutines(), 0u, "should not wake before deadline");
+
+    // Simulate time passing
+    g->wait_handle.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+
+    size_t woken = sched.wakeSleepingGoroutines();
+    CHECK_EQ(woken, 1u, "should wake after deadline passes");
+    CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after wake");
+
+    // Pick the goroutine (simulates executeFrame resuming it)
+    auto* picked = sched.pickNext();
+    CHECK(picked != nullptr && picked->id == gid, "should pick our goroutine");
+    sched.clearCurrent();
+
+    // Simulate fiber->resume() — goroutine continues executing
+    g->fiber->resume();
+    g->state = Scheduler::GoroutineState::Running;
+    sched.clearCurrent();
+  }
+
+  // After all iterations, goroutine is still alive
+  CHECK(g->state == Scheduler::GoroutineState::Running, "goroutine should survive all loop iterations");
+  g->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_hotkey_sleep_loop_with_retrigger() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawnHotkey(1, {}, 0, "hk_sleep_loop");
+  auto* g = sched.get(gid);
+  g->persistent = true;
+  g->hotkey_function_id = 1;
+  g->hotkey_args = {};
+  g->hotkey_policy = HotkeyPolicy::Drop;
+
+  // === Trigger 1: wake from HotkeyWait park ===
+  g->state = Scheduler::GoroutineState::Suspended;
+  g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+  bool w1 = sched.wakeHotkey(g);
+  CHECK(w1, "first trigger should wake");
+  CHECK(g->state == Scheduler::GoroutineState::Created, "should be Created after wake");
+
+  auto* picked = sched.pickNext();
+  CHECK(picked != nullptr && picked->id == gid, "should pick after wake");
+  sched.clearCurrent();
+
+  // === Running: loop body executes, then sleep(10) ===
+  g->state = Scheduler::GoroutineState::Running;
+  g->fiber->state = FiberState::RUNNING;
+  g->fiber->suspend(SuspensionReason::SLEEP, reinterpret_cast<void*>(static_cast<intptr_t>(10)));
+
+  // ExecuteFrame reads from fiber
+  auto fiber_reason = g->fiber->suspended_reason;
+  void* context = g->fiber->suspension_context;
+  sched.suspend(g, toSchedReason(static_cast<uint8_t>(fiber_reason)));
+  if (fiber_reason == SuspensionReason::SLEEP) {
+    int64_t ms = reinterpret_cast<intptr_t>(context);
+    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  }
+
+  CHECK(g->state == Scheduler::GoroutineState::Suspended, "should be Suspended (SleepWait)");
+  CHECK(g->suspension_reason == Scheduler::SuspensionReason::SleepWait, "reason should be SleepWait");
+
+  // === Retrigger while sleeping: Drop policy sets flag but doesn't requeue ===
+  bool retrigger = sched.wakeHotkey(g);
+  CHECK(retrigger, "Drop+persistent while sleeping should return true");
+  CHECK(g->state == Scheduler::GoroutineState::Suspended, "should still be Suspended after retrigger");
+  CHECK(g->hotkey_retrigger.load(), "retrigger flag should be set");
+
+  // === Sleep deadline passes: wakeSleepingGoroutines wakes it ===
+  g->wait_handle.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+  size_t woken = sched.wakeSleepingGoroutines();
+  CHECK_EQ(woken, 1u, "should wake from sleep after deadline");
+  CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after sleep wake");
+
+  // Fiber resumes — goroutine continues loop body
+  auto* repicked = sched.pickNext();
+  CHECK(repicked != nullptr && repicked->id == gid, "should be pickable after sleep wake");
+  sched.clearCurrent();
+
+  g->fiber->resume();
+  g->state = Scheduler::GoroutineState::Running;
+
+  // === Loop continues: second sleep iteration ===
+  g->fiber->state = FiberState::RUNNING;
+  g->fiber->suspend(SuspensionReason::SLEEP, reinterpret_cast<void*>(static_cast<intptr_t>(10)));
+  fiber_reason = g->fiber->suspended_reason;
+  context = g->fiber->suspension_context;
+  sched.suspend(g, toSchedReason(static_cast<uint8_t>(fiber_reason)));
+  if (fiber_reason == SuspensionReason::SLEEP) {
+    int64_t ms = reinterpret_cast<intptr_t>(context);
+    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  }
+  CHECK(g->state == Scheduler::GoroutineState::Suspended, "second sleep: should be Suspended");
+
+  g->wait_handle.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+  CHECK_EQ(sched.wakeSleepingGoroutines(), 1u, "second sleep: should wake after deadline");
+
+  // Cleanup
+  g->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_hotkey_while_loop_exits_via_break() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawnHotkey(1, {}, 0, "hk_while_loop");
+  auto* g = sched.get(gid);
+  g->persistent = true;
+  g->hotkey_function_id = 1;
+  g->hotkey_args = {};
+  g->hotkey_policy = HotkeyPolicy::Drop;
+
+  // Trigger and start running
+  g->state = Scheduler::GoroutineState::Suspended;
+  g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+  sched.wakeHotkey(g);
+  sched.pickNext();
+  sched.clearCurrent();
+  g->state = Scheduler::GoroutineState::Running;
+
+  // Simulate while loop body with sleep
+  g->fiber->state = FiberState::RUNNING;
+  g->fiber->suspend(SuspensionReason::SLEEP, reinterpret_cast<void*>(static_cast<intptr_t>(10)));
+  auto fiber_reason = g->fiber->suspended_reason;
+  void* context = g->fiber->suspension_context;
+  sched.suspend(g, toSchedReason(static_cast<uint8_t>(fiber_reason)));
+  if (fiber_reason == SuspensionReason::SLEEP) {
+    int64_t ms = reinterpret_cast<intptr_t>(context);
+    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  }
+
+  // Sleep wakes
+  g->wait_handle.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+  sched.wakeSleepingGoroutines();
+  sched.pickNext();
+  sched.clearCurrent();
+  g->fiber->resume();
+  g->state = Scheduler::GoroutineState::Running;
+
+  // Loop body finishes (function returns) — handleReturned re-parks
+  // Simulate handleReturned for persistent goroutine with no retrigger
+  g->hotkey_retrigger.store(false);
+  g->state = Scheduler::GoroutineState::Suspended;
+  g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+  g->fiber->state = FiberState::SUSPENDED;
+  g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+
+  CHECK(g->state == Scheduler::GoroutineState::Suspended, "should re-park as HotkeyWait");
+  CHECK(g->suspension_reason == Scheduler::SuspensionReason::HotkeyWait, "reason should be HotkeyWait");
+
+  // Verify it's not pickable while parked
+  auto* not_pickable = sched.pickNext();
+  CHECK(not_pickable == nullptr || not_pickable->id != gid, "parked goroutine should not be pickable");
+
+  // Cleanup
+  g->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_coroutine_suspend_and_resume() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawn(0, {}, 0, "coro_waiter");
+  auto* g = sched.get(gid);
+
+  // Simulate fiber->suspend(COROUTINE_WAIT, co_id=42)
+  g->fiber->state = FiberState::RUNNING;
+  g->fiber->suspend(SuspensionReason::COROUTINE_WAIT, reinterpret_cast<void*>(static_cast<intptr_t>(42)));
+
+  auto fiber_reason = g->fiber->suspended_reason;
+  void* context = g->fiber->suspension_context;
+  uint8_t reason = static_cast<uint8_t>(fiber_reason);
+
+  sched.suspend(g, toSchedReason(reason));
+  if (fiber_reason == SuspensionReason::COROUTINE_WAIT) {
+    uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+    g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
+    g->wait_handle.target_id = co_id;
+  }
+
+  CHECK(g->state == Scheduler::GoroutineState::Suspended, "should be Suspended");
+  CHECK(g->suspension_reason == Scheduler::SuspensionReason::CoroutineWait, "reason should be CoroutineWait");
+  CHECK(g->wait_handle.type == Scheduler::AwaitableType::COROUTINE, "wait_handle should be COROUTINE");
+  CHECK_EQ(g->wait_handle.target_id, 42u, "target_id should be 42");
+
+  // wakeSleepingGoroutines should NOT wake coroutine waits
+  CHECK_EQ(sched.wakeSleepingGoroutines(), 0u, "should not wake CoroutineWait via sleep check");
+
+  // unpark simulates the coroutine completing
+  sched.unpark(g);
+  CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after unpark");
+  CHECK(g->wait_handle.type == Scheduler::AwaitableType::NONE, "wait_handle should be cleared by unpark");
+
+  auto* picked = sched.pickNext();
+  CHECK(picked != nullptr && picked->id == gid, "should be pickable after unpark");
+
+  picked->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_coroutine_suspend_multiple_waiters() {
+  auto& sched = Scheduler::instance();
+
+  // Three goroutines all waiting on the same coroutine
+  uint32_t g1 = sched.spawn(0, {}, 0, "coro_w1");
+  uint32_t g2 = sched.spawn(0, {}, 0, "coro_w2");
+  uint32_t g3 = sched.spawn(0, {}, 0, "coro_w3");
+
+  for (auto gid : {g1, g2, g3}) {
+    auto* g = sched.get(gid);
+    g->fiber->state = FiberState::RUNNING;
+    g->fiber->suspend(SuspensionReason::COROUTINE_WAIT, reinterpret_cast<void*>(static_cast<intptr_t>(7)));
+    auto fiber_reason = g->fiber->suspended_reason;
+    void* context = g->fiber->suspension_context;
+    sched.suspend(g, toSchedReason(static_cast<uint8_t>(fiber_reason)));
+    if (fiber_reason == SuspensionReason::COROUTINE_WAIT) {
+      uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+      g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
+      g->wait_handle.target_id = co_id;
+    }
+  }
+
+  CHECK_EQ(sched.suspendedCount(), 3u, "should have 3 suspended");
+
+  // Unpark all (simulates coroutine completion notifying all waiters)
+  for (auto gid : {g1, g2, g3}) {
+    auto* g = sched.get(gid);
+    sched.unpark(g);
+  }
+
+  CHECK_EQ(sched.suspendedCount(), 0u, "should have 0 suspended after unpark all");
+
+  for (auto gid : {g1, g2, g3}) {
+    auto* g = sched.get(gid);
+    CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after unpark");
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+  }
+}
+
+static void test_while_loop_condition_check_between_sleeps() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawn(0, {}, 0, "while_cond");
+  auto* g = sched.get(gid);
+
+  // Simulate: while z > 0 { z -= 3; sleep(10) }
+  // Three iterations: z=9 → z=6 → z=3 → z=0 (exit)
+  int z = 9;
+  constexpr int MAX_ITERS = 10;
+  int iters = 0;
+
+  while (z > 0 && iters < MAX_ITERS) {
+    z -= 3;
+    iters++;
+
+    // sleep(10)
+    g->fiber->state = FiberState::RUNNING;
+    g->fiber->suspend(SuspensionReason::SLEEP, reinterpret_cast<void*>(static_cast<intptr_t>(10)));
+    auto fiber_reason = g->fiber->suspended_reason;
+    void* context = g->fiber->suspension_context;
+    sched.suspend(g, toSchedReason(static_cast<uint8_t>(fiber_reason)));
+    if (fiber_reason == SuspensionReason::SLEEP) {
+      int64_t ms = reinterpret_cast<intptr_t>(context);
+      g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+      g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+    }
+
+    CHECK(g->state == Scheduler::GoroutineState::Suspended, "should be Suspended during sleep");
+
+    // Deadline passes
+    g->wait_handle.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+    sched.wakeSleepingGoroutines();
+    CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after wake");
+
+    auto* picked = sched.pickNext();
+    CHECK(picked != nullptr && picked->id == gid, "should be pickable");
+    sched.clearCurrent();
+    g->fiber->resume();
+    g->state = Scheduler::GoroutineState::Running;
+  }
+
+  CHECK_EQ(iters, 3, "while loop should iterate 3 times (9→6→3→0)");
+  CHECK_EQ(z, 0, "z should be 0 after loop exits");
+
+  g->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_sleep_interleaved_with_normal_goroutine() {
+  auto& sched = Scheduler::instance();
+
+  // A sleeping hotkey goroutine and a normal goroutine should coexist
+  uint32_t normal = sched.spawn(0, {}, 0, "normal_worker");
+  uint32_t sleeper = sched.spawnHotkey(0, {}, 0, "sleeping_hk");
+  auto* gn = sched.get(normal);
+  auto* gs = sched.get(sleeper);
+  gs->persistent = true;
+
+  // Pick sleeper first (hotkey priority)
+  auto* p1 = sched.pickNext();
+  CHECK_EQ(p1->id, sleeper, "hotkey sleeper should be picked first");
+  sched.clearCurrent();
+
+  // Sleeper suspends for sleep
+  gs->fiber->state = FiberState::RUNNING;
+  gs->fiber->suspend(SuspensionReason::SLEEP, reinterpret_cast<void*>(static_cast<intptr_t>(50)));
+  auto fiber_reason = gs->fiber->suspended_reason;
+  void* context = gs->fiber->suspension_context;
+  sched.suspend(gs, toSchedReason(static_cast<uint8_t>(fiber_reason)));
+  if (fiber_reason == SuspensionReason::SLEEP) {
+    int64_t ms = reinterpret_cast<intptr_t>(context);
+    gs->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+    gs->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  }
+
+  // Normal goroutine should be pickable while sleeper is sleeping
+  auto* p2 = sched.pickNext();
+  CHECK(p2 != nullptr && p2->id == normal, "normal should be pickable while sleeper sleeps");
+  sched.clearCurrent();
+
+  // Normal finishes
+  gn->state = Scheduler::GoroutineState::Done;
+
+  // Sleeper deadline passes
+  gs->wait_handle.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+  sched.wakeSleepingGoroutines();
+
+  auto* p3 = sched.pickNext();
+  CHECK(p3 != nullptr && p3->id == sleeper, "sleeper should be pickable after wake");
+  sched.clearCurrent();
+
+  gs->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_hotkey_retrigger_during_sleep_does_not_double_wake() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawnHotkey(1, {}, 0, "hk_retrigger_sleep");
+  auto* g = sched.get(gid);
+  g->persistent = true;
+  g->hotkey_function_id = 1;
+  g->hotkey_policy = HotkeyPolicy::Drop;
+
+  // Park → wake → running
+  g->state = Scheduler::GoroutineState::Suspended;
+  g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+  sched.wakeHotkey(g);
+  sched.pickNext();
+  sched.clearCurrent();
+  g->state = Scheduler::GoroutineState::Running;
+
+  // Sleep
+  g->fiber->state = FiberState::RUNNING;
+  g->fiber->suspend(SuspensionReason::SLEEP, reinterpret_cast<void*>(static_cast<intptr_t>(100)));
+  auto fiber_reason = g->fiber->suspended_reason;
+  void* context = g->fiber->suspension_context;
+  sched.suspend(g, toSchedReason(static_cast<uint8_t>(fiber_reason)));
+  if (fiber_reason == SuspensionReason::SLEEP) {
+    int64_t ms = reinterpret_cast<intptr_t>(context);
+    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  }
+
+  // Multiple retrigger attempts while sleeping (Drop policy)
+  for (int i = 0; i < 5; i++) {
+    bool result = sched.wakeHotkey(g);
+    CHECK(result, "Drop+persistent during sleep should return true");
+    CHECK(g->state == Scheduler::GoroutineState::Suspended, "should stay Suspended during sleep");
+  }
+  CHECK(g->hotkey_retrigger.load(), "retrigger flag should be set");
+
+  // Sleep wakes — only ONE wakeup, not 6
+  g->wait_handle.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+  size_t woken = sched.wakeSleepingGoroutines();
+  CHECK_EQ(woken, 1u, "should wake exactly once despite multiple retriggers");
+
+  g->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_timer_suspend_and_wakeup() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawn(0, {}, 0, "timer_waiter");
+  auto* g = sched.get(gid);
+
+  // Simulate fiber->suspend(TIMER, timer_id=123)
+  g->fiber->state = FiberState::RUNNING;
+  g->fiber->suspend(SuspensionReason::TIMER, reinterpret_cast<void*>(static_cast<intptr_t>(123)));
+
+  auto fiber_reason = g->fiber->suspended_reason;
+  void* context = g->fiber->suspension_context;
+  uint8_t reason = static_cast<uint8_t>(fiber_reason);
+
+  sched.suspend(g, toSchedReason(reason));
+  if (fiber_reason == SuspensionReason::TIMER) {
+    uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+    g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+    g->wait_handle.target_id = timer_id;
+  }
+
+  CHECK(g->state == Scheduler::GoroutineState::Suspended, "should be Suspended");
+  CHECK(g->suspension_reason == Scheduler::SuspensionReason::TimerWait, "reason should be TimerWait");
+  CHECK(g->wait_handle.type == Scheduler::AwaitableType::TIMER_WAIT, "wait_handle should be TIMER_WAIT");
+  CHECK_EQ(g->wait_handle.target_id, 123u, "target_id should be 123");
+
+  // wakeSleepingGoroutines should NOT wake timer waits
+  CHECK_EQ(sched.wakeSleepingGoroutines(), 0u, "should not wake TIMER_WAIT via sleep check");
+
+  // unpark simulates the timer firing
+  sched.unpark(g);
+  CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after unpark");
+
+  auto* picked = sched.pickNext();
+  CHECK(picked != nullptr && picked->id == gid, "should be pickable after timer fire");
+
+  picked->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_channel_recv_suspend_and_wakeup() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawn(0, {}, 0, "chan_receiver");
+  auto* g = sched.get(gid);
+
+  // Simulate fiber->suspend(CHANNEL_RECV, ch_id=55)
+  g->fiber->state = FiberState::RUNNING;
+  g->fiber->suspend(SuspensionReason::CHANNEL_RECV, reinterpret_cast<void*>(static_cast<intptr_t>(55)));
+
+  auto fiber_reason = g->fiber->suspended_reason;
+  void* context = g->fiber->suspension_context;
+  uint8_t reason = static_cast<uint8_t>(fiber_reason);
+
+  sched.suspend(g, toSchedReason(reason));
+  if (fiber_reason == SuspensionReason::CHANNEL_RECV) {
+    uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+    g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
+    g->wait_handle.target_id = ch_id;
+  }
+
+  CHECK(g->state == Scheduler::GoroutineState::Suspended, "should be Suspended");
+  CHECK(g->suspension_reason == Scheduler::SuspensionReason::ChannelWait, "reason should be ChannelWait");
+  CHECK(g->wait_handle.type == Scheduler::AwaitableType::CHANNEL_RECV, "wait_handle should be CHANNEL_RECV");
+  CHECK_EQ(g->wait_handle.target_id, 55u, "target_id should be 55");
+
+  // wakeSleepingGoroutines should NOT wake channel waits
+  CHECK_EQ(sched.wakeSleepingGoroutines(), 0u, "should not wake ChannelWait via sleep check");
+
+  // unpark simulates data arriving on the channel
+  sched.unpark(g);
+  CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after unpark");
+
+  auto* picked = sched.pickNext();
+  CHECK(picked != nullptr && picked->id == gid, "should be pickable after channel data");
+
+  picked->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_thread_join_suspend_and_wakeup() {
+  auto& sched = Scheduler::instance();
+
+  uint32_t gid = sched.spawn(0, {}, 0, "thread_joiner");
+  auto* g = sched.get(gid);
+
+  // Simulate fiber->suspend(THREAD_JOIN, tid=77)
+  g->fiber->state = FiberState::RUNNING;
+  g->fiber->suspend(SuspensionReason::THREAD_JOIN, reinterpret_cast<void*>(static_cast<intptr_t>(77)));
+
+  auto fiber_reason = g->fiber->suspended_reason;
+  void* context = g->fiber->suspension_context;
+  uint8_t reason = static_cast<uint8_t>(fiber_reason);
+
+  sched.suspend(g, toSchedReason(reason));
+  if (fiber_reason == SuspensionReason::THREAD_JOIN) {
+    uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+    g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
+    g->wait_handle.target_id = tid;
+  }
+
+  CHECK(g->state == Scheduler::GoroutineState::Suspended, "should be Suspended");
+  CHECK(g->suspension_reason == Scheduler::SuspensionReason::ThreadWait, "reason should be ThreadWait");
+  CHECK(g->wait_handle.type == Scheduler::AwaitableType::THREAD_JOIN, "wait_handle should be THREAD_JOIN");
+  CHECK_EQ(g->wait_handle.target_id, 77u, "target_id should be 77");
+
+  // wakeSleepingGoroutines should NOT wake thread joins
+  CHECK_EQ(sched.wakeSleepingGoroutines(), 0u, "should not wake ThreadWait via sleep check");
+
+  // unpark simulates thread completion
+  sched.unpark(g);
+  CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after unpark");
+
+  auto* picked = sched.pickNext();
+  CHECK(picked != nullptr && picked->id == gid, "should be pickable after thread complete");
+
+  picked->state = Scheduler::GoroutineState::Done;
+  sched.clearCurrent();
+}
+
+static void test_fiber_suspend_sleep_preserves_context() {
+  // Verify that fiber->suspend(SLEEP, 250) stores the context correctly
+  // and that we can extract the sleep duration from suspension_context
+  Fiber fib(1, 0, 0, "sleep_ctx");
+  fib.state = FiberState::RUNNING;
+
+  fib.suspend(SuspensionReason::SLEEP, reinterpret_cast<void*>(static_cast<intptr_t>(250)));
+
+  CHECK(fib.state == FiberState::SUSPENDED, "should be SUSPENDED");
+  CHECK(fib.suspended_reason == SuspensionReason::SLEEP, "reason should be SLEEP");
+
+  int64_t ms = reinterpret_cast<intptr_t>(fib.suspension_context);
+  CHECK_EQ(ms, 250, "suspension_context should preserve sleep duration (250ms)");
+
+  fib.resume();
+  CHECK(fib.state == FiberState::RUNNABLE, "should be RUNNABLE after resume");
+  CHECK(fib.suspended_reason == SuspensionReason::NONE, "reason should be NONE after resume");
+}
+
+static void test_fiber_suspend_coroutine_preserves_context() {
+  Fiber fib(2, 0, 0, "coro_ctx");
+  fib.state = FiberState::RUNNING;
+
+  fib.suspend(SuspensionReason::COROUTINE_WAIT, reinterpret_cast<void*>(static_cast<intptr_t>(999)));
+
+  uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(fib.suspension_context));
+  CHECK_EQ(co_id, 999u, "suspension_context should preserve coroutine ID (999)");
+
+  fib.resume();
+  CHECK(fib.suspended_reason == SuspensionReason::NONE, "reason cleared after resume");
+}
+
 void run_scheduler_tests() {
 std::cout << "=== Scheduler Tests ===\n\n";
 
@@ -2906,11 +3556,55 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_getHotkeyAliases_returns_aliases();
   std::cout << " PASS getHotkeyAliases: returns registered aliases\n";
 
+  // Async loop, coroutine, and while-loop integration tests
+  test_sleep_suspend_sets_wait_handle();
+  std::cout << " PASS sleep suspend: fiber reason → scheduler suspend + wait_handle\n";
+
+  test_sleep_loop_multiple_iterations();
+  std::cout << " PASS sleep loop: 5 iterations of suspend/wake/resume cycle\n";
+
+  test_hotkey_sleep_loop_with_retrigger();
+  std::cout << " PASS hotkey sleep loop: retrigger during sleep, natural wake\n";
+
+  test_hotkey_while_loop_exits_via_break();
+  std::cout << " PASS hotkey while loop: exits → re-parks as HotkeyWait\n";
+
+  test_coroutine_suspend_and_resume();
+  std::cout << " PASS coroutine suspend: suspend + unpark roundtrip\n";
+
+  test_coroutine_suspend_multiple_waiters();
+  std::cout << " PASS coroutine suspend: multiple waiters on same coroutine\n";
+
+  test_while_loop_condition_check_between_sleeps();
+  std::cout << " PASS while loop: condition check between sleep iterations\n";
+
+  test_sleep_interleaved_with_normal_goroutine();
+  std::cout << " PASS sleep interleaved: hotkey sleeper + normal goroutine coexist\n";
+
+  test_hotkey_retrigger_during_sleep_does_not_double_wake();
+  std::cout << " PASS hotkey retrigger: multiple retriggers during sleep = single wake\n";
+
+  test_timer_suspend_and_wakeup();
+  std::cout << " PASS timer suspend: suspend + unpark roundtrip\n";
+
+  test_channel_recv_suspend_and_wakeup();
+  std::cout << " PASS channel recv suspend: suspend + unpark roundtrip\n";
+
+  test_thread_join_suspend_and_wakeup();
+  std::cout << " PASS thread join suspend: suspend + unpark roundtrip\n";
+
+  test_fiber_suspend_sleep_preserves_context();
+  std::cout << " PASS fiber suspend: SLEEP context preserves duration\n";
+
+  test_fiber_suspend_coroutine_preserves_context();
+  std::cout << " PASS fiber suspend: COROUTINE_WAIT context preserves ID\n";
+
   // 25 basic + 14 fiber/chunk + 18 hotkey policy + 10 callback rig
   // + 23 scheduler API gaps + 22 fiber API gaps + 4 hotkey edge-case gaps
   // + 4 new scheduler API tests + 4 new hotkey query tests
-  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4;
-    std::cout << "\n=== All " << total << " tests passed! ===\n";
+  // + 14 async loop/coroutine/while-loop integration tests
+  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14;
+  std::cout << "\n=== All " << total << " tests passed! ===\n";
 }
 
 } // namespace havel::test

@@ -194,9 +194,9 @@ class Parser {
         } else if nxt == "^" {
           pk1 = self.peek(1)
           if pk1 == "=" { oper = "^="; @pos = @pos + 2 }
-        } else if nxt == "$" {
+        } else if nxt == "\$" {
           pk1 = self.peek(1)
-          if pk1 == "=" { oper = "$="; @pos = @pos + 2 }
+          if pk1 == "=" { oper = "\$="; @pos = @pos + 2 }
         } else if nxt == "*" {
           pk1 = self.peek(1)
           if pk1 == "=" { oper = "*="; @pos = @pos + 2 }
@@ -508,7 +508,7 @@ fn _matchPart(part, node) {
       vl = #part.value
       return #sval >= vl && sval[:vl] == part.value
     }
-    if o == "$=" {
+    if o == "\$=" {
       vl = #part.value
       el = #sval - vl
       return #sval >= vl && sval[el:] == part.value

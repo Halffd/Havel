@@ -251,11 +251,18 @@ void Havel::initialize(bool isStartup) {
             auto modulesPath = std::filesystem::path(exePath).parent_path()
                 / ".." / "modules";
             if (std::filesystem::exists(modulesPath)) {
-                auto canonicalRoot = std::filesystem::canonical(modulesPath).string();
-                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/lang");
-                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/std");
-                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/app");
-                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot);
+      auto canonicalRoot = std::filesystem::canonical(modulesPath).string();
+      bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+      bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/std");
+      bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/app");
+      bytecodeVM->moduleLoader().addSearchPath(canonicalRoot);
+
+      // Add module .so paths for havel_mod_<name>.so discovery
+                auto modulesDir = std::filesystem::path(exePath).parent_path() / ".." / "modules";
+      if (std::filesystem::exists(modulesDir)) {
+        bytecodeVM->moduleLoader().addModuleSoPath(
+          std::filesystem::canonical(modulesDir).string());
+      }
             }
         }
     }

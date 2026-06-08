@@ -44,19 +44,22 @@ class Compiler {
 
   fn isVarDecl(line) {
     trimmed = line.trim()
-    #trimmed > 0 && trimmed[0:1] == "$" && trimmed.includes(":") && !trimmed.includes("(")
+    #trimmed > 0 && trimmed[0:1] == "\$" && trimmed.includes(":") && !trimmed.includes("(")
   }
 
   fn isMixinDecl(line) {
-    line.trim().includes("@mixin")
+    trimmed = line.trim()
+    #trimmed >= 7 && trimmed[:7] == "@mixin"
   }
 
   fn isInclude(line) {
-    line.trim().includes("@include")
+    trimmed = line.trim()
+    #trimmed >= 9 && trimmed[:9] == "@include"
   }
 
   fn isExtend(line) {
-    line.trim().includes("@extend")
+    trimmed = line.trim()
+    #trimmed >= 8 && trimmed[:8] == "@extend"
   }
 
   fn isComment(line) {
@@ -86,7 +89,7 @@ class Compiler {
     n = #keys
     while i < n {
       name = keys[i]
-      result = result.replace("$" + name, @vars[name])
+      result = result.replace("\$" + name, @vars[name])
       i += 1
     }
     result
@@ -171,16 +174,47 @@ class Compiler {
     } else {
       name = line.replace("{", "").trim()
     }
-    bodyStart = startIdx + 1
-    bodyEnd = self.findBlockEnd(lines, startIdx)
-    bodyLines = []
-    i = bodyStart
-    while i < bodyEnd - 1 {
-      bodyLines.push(lines[i])
-      i += 1
+    hasOpenBrace = lines[startIdx].includes("{")
+    hasCloseBrace = lines[startIdx].includes("}")
+    if hasOpenBrace && hasCloseBrace {
+      openPos = -1
+      closePos = -1
+      rawLine = lines[startIdx]
+      j = 0
+      nl = #rawLine
+      while j < nl {
+        if rawLine[j:j+1] == "{" && openPos < 0 { openPos = j }
+        if rawLine[j:j+1] == "}" { closePos = j }
+        j += 1
+      }
+      if openPos >= 0 && closePos > openPos {
+        bodyText = rawLine[openPos+1:closePos].trim()
+        bodyLines = bodyText.split(";")
+        cleaned = []
+        j = 0
+        nb = #bodyLines
+        while j < nb {
+          bl = bodyLines[j].trim()
+          if bl != "" { cleaned.push(bl) }
+          j += 1
+        }
+        @mixins[name] = {"params": params, "body": cleaned}
+      } else {
+        @mixins[name] = {"params": params, "body": []}
+      }
+      startIdx + 1
+    } else {
+      bodyStart = startIdx + 1
+      bodyEnd = self.findBlockEnd(lines, startIdx)
+      bodyLines = []
+      i = bodyStart
+      while i < bodyEnd - 1 {
+        bodyLines.push(lines[i])
+        i += 1
+      }
+      @mixins[name] = {"params": params, "body": bodyLines}
+      bodyEnd
     }
-    @mixins[name] = {"params": params, "body": bodyLines}
-    bodyEnd
   }
 
   fn processInclude(line, parentSelector) {
@@ -230,7 +264,7 @@ class Compiler {
         if pi < #args { localVars[pName] = args[pi] }
         else { localVars[pName] = parts[1].trim() }
       } else {
-        pName = pName.replace("$", "")
+        pName = pName.replace("\$", "")
         if pi < #args { localVars[pName] = args[pi] }
       }
       pi += 1
@@ -246,7 +280,7 @@ class Compiler {
       nlk = #lkeys
       while k < nlk {
         vn = lkeys[k]
-        processed = processed.replace("$" + vn, localVars[vn])
+        processed = processed.replace("\$" + vn, localVars[vn])
         k += 1
       }
       processed = self.resolveVars(processed)
@@ -297,8 +331,16 @@ class Compiler {
     while i < n {
       d = decls[i].trim()
       if d != "" {
-        resolved = self.resolveVars(d)
-        self.emitLine(resolved + ";", parentSelector)
+        if self.isInclude(d) {
+          self.processInclude(d, parentSelector)
+        } else if self.isExtend(d) {
+          self.processExtend(d, parentSelector)
+        } else if self.isVarDecl(d) {
+          self.parseVarDecl(d)
+        } else {
+          resolved = self.resolveVars(d)
+          self.emitLine(resolved + ";", parentSelector)
+        }
       }
       i += 1
     }
@@ -326,30 +368,32 @@ class Compiler {
         i += 1
         continue
       }
-      if trimmed.includes("{") {
-        selector = self.extractSelector(trimmed)
-        selector = self.resolveVars(selector)
-        if parentSelector != "" {
-          if selector.includes("&") {
-            fullSelector = selector.replace("&", parentSelector)
-          } else {
-            fullSelector = parentSelector + " " + selector
-          }
+    if trimmed.includes("{") {
+      selector = self.extractSelector(trimmed)
+      selector = self.resolveVars(selector)
+      if parentSelector != "" {
+        if selector.includes("&") {
+          fullSelector = selector.replace("&", parentSelector)
         } else {
-          fullSelector = selector
+          fullSelector = parentSelector + " " + selector
         }
-        hasCloseBrace = trimmed.includes("}")
-        openBrace = -1
-        closeBrace = -1
-        j = 0
-        nt = #trimmed
-        while j < nt {
-          if trimmed[j:j+1] == "{" && openBrace < 0 { openBrace = j }
-          if trimmed[j:j+1] == "}" { closeBrace = j }
-          j += 1
+      } else {
+        fullSelector = selector
+      }
+      braceDepth = 0
+      j = 0
+      nt = #trimmed
+      while j < nt {
+        ch = trimmed[j:j+1]
+        if ch == "{" { braceDepth += 1 }
+        if ch == "}" { braceDepth -= 1 }
+        if braceDepth == 0 && ch == "}" {
+          j = nt
         }
-        isSingleLine = openBrace >= 0 && closeBrace > openBrace
-        if isSingleLine {
+        j += 1
+      }
+      isSingleLine = braceDepth == 0
+      if isSingleLine {
           @output = @output + fullSelector + " {\n"
           @indent += 1
           inlineBody = self.extractInlineBody(trimmed)

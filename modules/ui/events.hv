@@ -1,11 +1,11 @@
 // events.hv - Event dispatch with capture/bubble phases for Havel UI
 
+CAPTURING_PHASE = 1
+AT_TARGET_PHASE = 2
+BUBBLING_PHASE = 3
+
 class Event {
   type, target, currentTarget, data, propagationStopped, immediateStopped, defaultPrevented, phase, timestamp
-
-  CAPTURING = 1
-  AT_TARGET = 2
-  BUBBLING = 3
 
   fn @(eventType, eventData) {
     @type = eventType
@@ -32,188 +32,284 @@ class Event {
   }
 }
 
-_listeners = {}
-_globalListeners = []
+class EventBus {
+  _listeners, _globalListeners, _nextId
 
-fn listen(target, eventType, handler, options) {
-  opts = options != null ? options : {}
-  capture = opts.has("capture") ? opts.capture : false
-  once = opts.has("once") ? opts.once : false
-  passive = opts.has("passive") ? opts.passive : false
-  priority = opts.has("priority") ? opts.priority : 0
-
-  key = _targetKey(target)
-  if !_listeners.has(key) { _listeners[key] = {} }
-  if !_listeners[key].has(eventType) { _listeners[key][eventType] = [] }
-
-  entry = {
-    "handler": handler,
-    "capture": capture,
-    "once": once,
-    "passive": passive,
-    "priority": priority,
-    "target": target
+  fn @() {
+    @_listeners = {}
+    @_globalListeners = []
+    @_nextId = 1
   }
-  list = _listeners[key][eventType]
-  list.push(entry)
-  _sortListeners(list)
-  entry
-}
 
-fn unlisten(target, eventType, handler) {
-  key = _targetKey(target)
-  if !_listeners.has(key) { return false }
-  if !_listeners[key].has(eventType) { return false }
-  list = _listeners[key][eventType]
-  filtered = list.filter(fn(e) { handler == null || e.handler != handler })
-  _listeners[key][eventType] = filtered
-  true
-}
+  fn _targetKey(target) {
+    if target == null { return "__global__" }
+    t = type(target)
+    if t == "string" { return target }
+    str(target)
+  }
 
-fn once(target, eventType, handler, options) {
-  opts = options != null ? options : {}
-  opts.once = true
-  listen(target, eventType, handler, opts)
-}
-
-fn _targetKey(target) {
-  if target == null { return "__global__" }
-  if type(target) == "string" { return target }
-  str(target)
-}
-
-fn _sortListeners(list) {
-  n = #list
-  i = 0
-  while i < n - 1 {
-    j = 0
-    while j < n - i - 1 {
-      if list[j].priority < list[j + 1].priority {
-        tmp = list[j]
-        list[j] = list[j + 1]
-        list[j + 1] = tmp
+  fn _sortListeners(list) {
+    n = #list
+    i = 0
+    while i < n - 1 {
+      j = 0
+      while j < n - i - 1 {
+        if list[j].priority < list[j + 1].priority {
+          tmp = list[j]
+          list[j] = list[j + 1]
+          list[j + 1] = tmp
+        }
+        j += 1
       }
-      j += 1
+      i += 1
     }
-    i += 1
-  }
-}
-
-fn dispatch(target, eventType, data) {
-  evt = Event.new(eventType, data)
-  evt.target = target
-
-  i = 0
-  n = #_globalListeners
-  while i < n {
-    entry = _globalListeners[i]
-    if entry.type == eventType || entry.type == "*" {
-      evt.currentTarget = target
-      _invokeHandler(entry, evt)
-      if evt.immediateStopped { return evt }
-    }
-    i += 1
   }
 
-  evt.phase = Event.CAPTURING
-  evt.currentTarget = target
-  _callListeners(target, eventType, evt, true)
-  if evt.immediateStopped { return evt }
+  fn listen(target, eventType, handler, options) {
+    opts = options != null ? options : {}
+    capture = opts.has("capture") ? opts.capture : false
+    once = opts.has("once") ? opts.once : false
+    passive = opts.has("passive") ? opts.passive : false
+    priority = opts.has("priority") ? opts.priority : 0
 
-  if !evt.propagationStopped {
-    evt.phase = Event.AT_TARGET
+    key = self._targetKey(target)
+    if !@_listeners.has(key) { @_listeners[key] = {} }
+    if !@_listeners[key].has(eventType) { @_listeners[key][eventType] = [] }
+
+    id = @_nextId
+    @_nextId += 1
+    entry = {
+      "id": id,
+      "handler": handler,
+      "capture": capture,
+      "once": once,
+      "passive": passive,
+      "priority": priority,
+      "target": target
+    }
+    list = @_listeners[key][eventType]
+    list.push(entry)
+    self._sortListeners(list)
+    {"bus": self, "key": key, "eventType": eventType, "id": id}
+  }
+
+  fn unlisten(target, eventType, handler) {
+    key = self._targetKey(target)
+    if !@_listeners.has(key) { return false }
+    if !@_listeners[key].has(eventType) { return false }
+    list = @_listeners[key][eventType]
+    if handler == null { @_listeners[key][eventType] = []; return true }
+    newList = []
+    i = 0
+    n = #list
+    tgtStr = str(handler)
+    while i < n {
+      entry = list[i]
+      if str(entry.handler) != tgtStr { newList.push(entry) }
+      i += 1
+    }
+    @_listeners[key][eventType] = newList
+    true
+  }
+
+  fn once(target, eventType, handler, options) {
+    opts = options != null ? options : {}
+    opts.once = true
+    self.listen(target, eventType, handler, opts)
+  }
+
+  fn dispatch(target, eventType, data) {
+    evt = Event.new(eventType, data)
+    evt.target = target
+
+    i = 0
+    n = #@_globalListeners
+    while i < n {
+      entry = @_globalListeners[i]
+      eType = entry.type
+      if eType == eventType || eType == "*" {
+        evt.currentTarget = target
+        self._invokeHandler(entry, evt)
+        if evt.immediateStopped { return evt }
+      }
+      i += 1
+    }
+
+    evt.phase = CAPTURING_PHASE
     evt.currentTarget = target
-    _callListeners(target, eventType, evt, false)
+    self._callListeners(target, eventType, evt, true)
     if evt.immediateStopped { return evt }
+
+    if !evt.propagationStopped {
+      evt.phase = AT_TARGET_PHASE
+      evt.currentTarget = target
+    }
+
+    evt.phase = BUBBLING_PHASE
+    self._callListeners(target, eventType, evt, false)
+
+    evt
   }
 
-  evt.phase = Event.BUBBLING
-  _callListeners(target, eventType, evt, false)
-
-  evt
-}
-
-fn _callListeners(target, eventType, evt, captureOnly) {
-  key = _targetKey(target)
-  if !_listeners.has(key) { return }
-  if !_listeners[key].has(eventType) { return }
-  list = _listeners[key][eventType]
-  toRemove = []
-  i = 0
-  n = #list
-  while i < n {
-    entry = list[i]
-    if captureOnly && !entry.capture { i += 1; continue }
-    if !captureOnly && entry.capture { i += 1; continue }
-    _invokeHandler(entry, evt)
-    if entry.once { toRemove.push(entry) }
-    if evt.immediateStopped { i = n }
-    i += 1
+  fn _callListeners(target, eventType, evt, captureOnly) {
+    key = self._targetKey(target)
+    if !@_listeners.has(key) { return }
+    if !@_listeners[key].has(eventType) { return }
+    list = @_listeners[key][eventType]
+    toRemoveIds = []
+    i = 0
+    n = #list
+    while i < n {
+      entry = list[i]
+      isCapture = entry.capture
+      if captureOnly && !isCapture { i += 1; continue }
+      if !captureOnly && isCapture { i += 1; continue }
+      self._invokeHandler(entry, evt)
+      if entry.once { toRemoveIds.push(str(entry.handler)) }
+      if evt.immediateStopped { i = n }
+      i += 1
+    }
+    if #toRemoveIds > 0 {
+      newList = []
+      j = 0
+      m = #list
+      while j < m {
+        e = list[j]
+        found = false
+        k = 0
+        nk = #toRemoveIds
+        eHStr = str(e.handler)
+        while k < nk {
+          if eHStr == toRemoveIds[k] { found = true; k = nk }
+          k += 1
+        }
+        if !found { newList.push(e) }
+        j += 1
+      }
+      @_listeners[key][eventType] = newList
+    }
   }
-  if #toRemove > 0 {
-    _listeners[key][eventType] = list.filter(fn(e) { !toRemove.has(e) })
+
+  fn _invokeHandler(entry, evt) {
+    h = entry.handler
+    try {
+      h(evt)
+    } catch e {
+      print("event handler error: " + str(e))
+    }
   }
-}
 
-fn _invokeHandler(entry, evt) {
-  try {
-    entry.handler(evt)
-  } catch e {
-    print("event handler error: " + str(e))
+  fn addGlobalListener(eventType, handler) {
+    entry = {"type": eventType, "handler": handler}
+    @_globalListeners.push(entry)
+    entry
   }
-}
 
-fn addGlobalListener(eventType, handler) {
-  entry = {"type": eventType, "handler": handler}
-  _globalListeners.push(entry)
-  entry
-}
-
-fn removeGlobalListener(entry) {
-  _globalListeners = _globalListeners.filter(fn(e) { e != entry })
-  true
-}
-
-fn clear(target) {
-  if target == null {
-    _listeners = {}
-    _globalListeners = []
-    return
+  fn removeGlobalListener(entry) {
+    newList = []
+    i = 0
+    n = #@_globalListeners
+    tgtStr = str(entry)
+    while i < n {
+      e = @_globalListeners[i]
+      if str(e) != tgtStr { newList.push(e) }
+      i += 1
+    }
+    @_globalListeners = newList
+    true
   }
-  key = _targetKey(target)
-  if _listeners.has(key) { _listeners[key] = {} }
-}
 
-fn listenerCount(target, eventType) {
-  key = _targetKey(target)
-  if !_listeners.has(key) { return 0 }
-  if !_listeners[key].has(eventType) { return 0 }
-  #_listeners[key][eventType]
+  fn clear(target) {
+    if target == null {
+      @_listeners = {}
+      @_globalListeners = []
+      return
+    }
+    key = self._targetKey(target)
+    if @_listeners.has(key) { @_listeners[key] = {} }
+  }
+
+  fn listenerCount(target, eventType) {
+    key = self._targetKey(target)
+    if !@_listeners.has(key) { return 0 }
+    if !@_listeners[key].has(eventType) { return 0 }
+    #@_listeners[key][eventType]
+  }
 }
 
 class EventEmitter {
-  _listeners, _onceListeners
-  fn @() { @_listeners = {}; @_onceListeners = [] }
+  _listeners, _nextId
+  fn @() { @_listeners = {}; @_nextId = 1 }
 
   fn listen(eventType, handler) {
     if !@_listeners.has(eventType) { @_listeners[eventType] = [] }
-    @_listeners[eventType].push(handler)
+    id = @_nextId
+    @_nextId += 1
+    entry = {"id": id, "handler": handler}
+    @_listeners[eventType].push(entry)
+    {"emitter": self, "eventType": eventType, "id": id}
+  }
+
+  fn unlistenByToken(token) {
+    eventType = token.eventType
+    targetId = token.id
+    if !@_listeners.has(eventType) { return @ }
+    list = @_listeners[eventType]
+    newList = []
+    i = 0
+    n = #list
+    while i < n {
+      if list[i].id != targetId { newList.push(list[i]) }
+      i += 1
+    }
+    @_listeners[eventType] = newList
     @
   }
 
   fn unlisten(eventType, handler) {
     if !@_listeners.has(eventType) { return @ }
     list = @_listeners[eventType]
-    @_listeners[eventType] = list.filter(fn(h) { h != handler })
+    newList = []
+    i = 0
+    n = #list
+    while i < n {
+      kept = true
+      entry = list[i]
+      hStr = str(entry.handler)
+      tgtStr = str(handler)
+      if hStr == tgtStr { kept = false }
+      if kept { newList.push(entry) }
+      i += 1
+    }
+    @_listeners[eventType] = newList
     @
   }
 
   fn once(eventType, handler) {
+    emitter = self
+    id = @_nextId
+    @_nextId += 1
     wrapper = fn(evt) {
       handler(evt)
-      self.unlisten(eventType, wrapper)
+      emitter._removeById(eventType, id)
     }
-    self.listen(eventType, wrapper)
+    if !@_listeners.has(eventType) { @_listeners[eventType] = [] }
+    entry = {"id": id, "handler": wrapper}
+    @_listeners[eventType].push(entry)
+    {"emitter": self, "eventType": eventType, "id": id}
+  }
+
+  fn _removeById(eventType, targetId) {
+    if !@_listeners.has(eventType) { return @ }
+    list = @_listeners[eventType]
+    newList = []
+    i = 0
+    n = #list
+    while i < n {
+      if list[i].id != targetId { newList.push(list[i]) }
+      i += 1
+    }
+    @_listeners[eventType] = newList
     @
   }
 
@@ -223,8 +319,10 @@ class EventEmitter {
     i = 0
     n = #list
     while i < n {
+      entry = list[i]
+      h = entry.handler
       try {
-        list[i](data)
+        h(data)
       } catch e {
         print("emitter error: " + str(e))
       }
@@ -233,3 +331,5 @@ class EventEmitter {
     @
   }
 }
+
+bus = EventBus.new()

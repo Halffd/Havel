@@ -74,13 +74,25 @@ ExecutionEngine::~ExecutionEngine() {
 
 bool ExecutionEngine::executeFrame() {
   if (!running_) {
+    ::havel::debug("[ExecutionEngine] executeFrame: running_=false, returning early");
     return false;
   }
 
- try {
-        if (debug_mode_) {
-            std::cerr << "[ExecutionEngine] Entering executeFrame\n";
-        }
+  // Do not execute goroutines while the main thread is still running the
+  // initial script (VM::execute).  Both paths touch the same VM state
+  // (stack, locals, heap) so concurrent access would corrupt memory.
+  if (!script_ready_.load(std::memory_order_acquire)) {
+    // Still drain deferred callbacks (e.g. from IO thread) so they don't
+    // accumulate, but skip goroutine scheduling/execution.
+    ::havel::debug("[ExecutionEngine] executeFrame: script_ready_=false, draining deferred only");
+    scheduler_->drainDeferredCallbacks();
+    return false;
+  }
+
+  try {
+    if (debug_mode_) {
+      std::cerr << "[ExecutionEngine] Entering executeFrame\n";
+    }
     // STEP 1: Process all pending events
     // Events include: thread completions, timer fires, variable changes, etc.
     // Event handlers (registered in constructor) process each event
@@ -107,65 +119,62 @@ bool ExecutionEngine::executeFrame() {
 
 // STEP 2: Pick next runnable goroutine
     // The scheduler maintains a queue of RUNNABLE goroutines
+    ::havel::debug("[ExecutionEngine] executeFrame: calling pickNext");
     Scheduler::Goroutine* g = scheduler_->pickNext();
     if (!g) {
-      // No runnable goroutine - idle
-      return false;
+        ::havel::debug("[ExecutionEngine] executeFrame: pickNext returned null (idle)");
+        // No runnable goroutine - idle
+        return false;
     }
-    
-            if (debug_mode_) {
-                std::cerr << "[ExecutionEngine] Picked goroutine " << g->id << " (fiber " << (g->fiber ? g->fiber->id : 0) << ")\n";
-            }
-    
-    // STEP 3: Load fiber state into VM's global execution state
-    // For newly-created goroutines, use startGoroutineCall which resolves
-    // the correct chunk (from closure if needed) and sets up the call frame.
-    // For resuming goroutines, use loadFiberState which restores suspended state.
-if (g->state == Scheduler::GoroutineState::Created) {
-    // DirectCallThunk fast path: if the hotkey callback only calls
-    // host functions with pre-resolved args, skip VM dispatch entirely.
-    if (g->persistent && g->hotkey_direct_thunk) {
-        auto thunk = vm_->getDirectCallThunk(g->hotkey_callback_id);
-        if (!thunk.calls.empty()) {
-            vm_->executeDirectCallThunk(thunk);
-            if (g->fiber) {
-                vm_->saveFiberState(g->fiber);
-            }
-            handleReturned(g);
-            stats_.goroutines_completed++;
-            stats_.frames_executed++;
-            vm_->garbageCollectionSafePoint();
-            return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
-        }
-    }
+if (g->persistent || debug_mode_) {
+::havel::debug("[ExecutionEngine] Picked goroutine gid={} persistent={} state={} fn={} closure={}",
+g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
+}
 
-    auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+// STEP 3: Load fiber state into VM's global execution state
+// For newly-created goroutines, use startGoroutineCall which resolves
+// the correct chunk (from closure if needed) and sets up the call frame.
+// For resuming goroutines, use loadFiberState which restores suspended state.
+if (g->state == Scheduler::GoroutineState::Created) {
+// DirectCallThunk fast path: if the hotkey callback only calls
+// host functions with pre-resolved args, skip VM dispatch entirely.
+if (g->persistent && g->hotkey_direct_thunk) {
+auto thunk = vm_->getDirectCallThunk(g->hotkey_callback_id);
+if (!thunk.calls.empty()) {
+vm_->executeDirectCallThunk(thunk);
+if (g->fiber) {
+vm_->saveFiberState(g->fiber);
+}
+handleReturned(g);
+stats_.goroutines_completed++;
+stats_.frames_executed++;
+vm_->garbageCollectionSafePoint();
+return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+}
+}
+
+auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
 if (call_result == VM::GoroutineCallResult::Failed) {
 handleReturned(g);
 stats_.goroutines_completed++;
 stats_.frames_executed++;
 return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
 }
-        if (call_result == VM::GoroutineCallResult::JITExecuted) {
-            // JIT already ran the function to completion
-            if (g->fiber) {
-                vm_->saveFiberState(g->fiber);
-            }
-            handleReturned(g);
-            stats_.goroutines_completed++;
-            stats_.frames_executed++;
-            vm_->garbageCollectionSafePoint();
-            return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
-        }
+if (call_result == VM::GoroutineCallResult::JITExecuted) {
+if (g->fiber) {
+vm_->saveFiberState(g->fiber);
+}
+handleReturned(g);
+stats_.goroutines_completed++;
+stats_.frames_executed++;
+vm_->garbageCollectionSafePoint();
+return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+}
 g->state = Scheduler::GoroutineState::Runnable;
-        // Sync VM state to fiber immediately so the fiber's call_stack
-        // has the correct chunk_ptr. The Fiber constructor initializes
-        // call_stack via pushCall() with chunk_ptr=nullptr; without this
-        // sync, the first loadFiberState would see null chunk_ptr.
-        if (g->fiber) {
-            vm_->saveFiberState(g->fiber);
-        }
-        } else if (g->fiber) {
+if (g->fiber) {
+vm_->saveFiberState(g->fiber);
+}
+} else if (g->fiber) {
             vm_->loadFiberState(g->fiber);
             // If resuming from an await suspension, replace the placeholder null
             // on the stack with the actual resume_value from the WaitHandle
@@ -176,6 +185,11 @@ g->state = Scheduler::GoroutineState::Runnable;
             }
         }
 
+
+    // State is Running for the duration of this frame's execution.
+    // Cross-thread consumers (wakeHotkey from IO thread) check
+    // isPending which includes Running.
+    g->state = Scheduler::GoroutineState::Running;
 
     // If this Fiber is a hotkey action (special marker function_id), execute the callback
     // instead of bytecode
@@ -260,6 +274,13 @@ g->state = Scheduler::GoroutineState::Runnable;
     }
 
 // STEP 5: Save VM state back to fiber
+// CRITICAL: If exit was requested during executeOneStep, the scheduler's
+// stop() has already destroyed all goroutines (including g). Do NOT
+// touch g->fiber — it's freed memory.
+if (vm_->exit_requested_.load()) {
+stats_.frames_executed++;
+return false;
+}
 if (g->fiber) {
 vm_->saveFiberState(g->fiber);
 }
@@ -271,60 +292,50 @@ switch (result.type) {
         handleYield(g);
         break;
 
-        case VMExecutionResult::SUSPENDED:
-            // Fiber already suspended by VM::executeOneStep() — it called
-            // fiber->suspend() which set state=SUSPENDED and saved reason/context.
-            // Do NOT call fiber->suspend() again — that would throw since the
-            // fiber is already SUSPENDED.
-            if (vm_->isSuspensionRequested()) {
-                uint8_t reason = vm_->getSuspensionReason();
-                void* context = vm_->getSuspensionContext();
+  case VMExecutionResult::SUSPENDED: {
+      // Fiber already suspended by VM::executeOneStep() — it called
+      // fiber->suspend() which set state=SUSPENDED and saved reason/context.
+      // Do NOT call fiber->suspend() again — that would throw since the
+      // fiber is already SUSPENDED.
+      //
+      // NOTE: We read reason/context from g->fiber, NOT from vm_->isSuspensionRequested().
+      // executeOneStep clears suspension_requested_ before returning (VM.cpp:575),
+      // so vm_->isSuspensionRequested() is always false here — the old code was dead.
+      auto fiber_reason = g->fiber ? g->fiber->suspended_reason : SuspensionReason::NONE;
+      void* context = g->fiber ? g->fiber->suspension_context : nullptr;
+      uint8_t reason = static_cast<uint8_t>(fiber_reason);
 
-                scheduler_->suspend(g, toSchedulerReason(reason));
-          
-                // Special handling for SLEEP - set deadline via WaitHandle
-                if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
-                    // Context for sleep is the duration in milliseconds
-                    int64_t ms = reinterpret_cast<intptr_t>(context);
-                    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
-                    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-                }
-                // Handle COROUTINE_WAIT - set WaitHandle for coroutine await
-                if (reason == static_cast<uint8_t>(SuspensionReason::COROUTINE_WAIT)) {
-                    uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                    g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
-                    g->wait_handle.target_id = co_id;
-                }
-                // Handle THREAD_JOIN - set WaitHandle for thread join
-                if (reason == static_cast<uint8_t>(SuspensionReason::THREAD_JOIN)) {
-                    uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                    g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
-                    g->wait_handle.target_id = tid;
-                }
-                // Handle CHANNEL_RECV - set WaitHandle for channel receive
-                if (reason == static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV)) {
-                    uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                    g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
-                    g->wait_handle.target_id = ch_id;
-                }
-// Handle TIMER - set WaitHandle for timer/interval/timeout
-if (reason == static_cast<uint8_t>(SuspensionReason::TIMER)) {
-uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
-g->wait_handle.target_id = timer_id;
-}
-// Handle AWAIT - WaitHandle already set by the VM opcode handler
-// (FIBER_AWAIT sets wait_handle.type and target_id before requesting suspension)
-// No additional work needed here — the event handlers will find and unpark
-// the goroutine by its WaitHandle type/target_id.
+      scheduler_->suspend(g, toSchedulerReason(reason));
 
-vm_->clearSuspensionRequest();
-        }
-        
-        // Goroutine blocked on external event (channel, timer, thread)
-        // EventQueue will unpark it when condition is met
-        handleSuspended(g);
-        break;
+      if (fiber_reason == SuspensionReason::SLEEP) {
+        int64_t ms = reinterpret_cast<intptr_t>(context);
+        g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+        g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+      }
+      if (fiber_reason == SuspensionReason::COROUTINE_WAIT) {
+        uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+        g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
+        g->wait_handle.target_id = co_id;
+      }
+      if (fiber_reason == SuspensionReason::THREAD_JOIN) {
+        uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+        g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
+        g->wait_handle.target_id = tid;
+      }
+      if (fiber_reason == SuspensionReason::CHANNEL_RECV) {
+        uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+        g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
+        g->wait_handle.target_id = ch_id;
+      }
+      if (fiber_reason == SuspensionReason::TIMER) {
+        uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+        g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+        g->wait_handle.target_id = timer_id;
+      }
+
+      handleSuspended(g);
+      break;
+    }
         
       case VMExecutionResult::RETURNED:
         // Function returned - mark goroutine DONE
@@ -343,8 +354,7 @@ vm_->clearSuspensionRequest();
 	return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
     
   } catch (const std::exception& e) {
-        ::havel::error("[ExecutionEngine] Exception in executeFrame: {}", e.what());
-    running_ = false;
+    ::havel::error("[ExecutionEngine] Exception in executeFrame: {}", e.what());
     return false;
   }
 }
@@ -401,15 +411,16 @@ void ExecutionEngine::handleSuspended(Scheduler::Goroutine* g) {
 }
 
 void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
-    if (debug_mode_) {
-        std::cerr << "[ExecutionEngine] Goroutine completed execution\n";
-    }
- if (!g) return;
+  if (debug_mode_) {
+    std::cerr << "[ExecutionEngine] Goroutine completed execution\n";
+  }
+  if (!g) return;
 
- // Persistent goroutines (hotkey system): re-suspend instead of Done.
- // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
- if (g->persistent) {
-   if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
+  // Persistent goroutines (hotkey system): re-suspend instead of Done.
+  // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
+  if (g->persistent) {
+        ::havel::debug("[ExecutionEngine] handleReturned: gid={} persistent retrigger={}", g->id, g->hotkey_retrigger.load(std::memory_order_acquire));
+        if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
      g->hotkey_retrigger.store(false, std::memory_order_release);
      scheduler_->requeueFront(g);
      if (scheduler_->current() == g) {

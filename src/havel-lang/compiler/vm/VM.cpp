@@ -17,6 +17,8 @@
 #include "../../parser/Parser.h"
 #include "../../runtime/Modules.hpp"
 #include "dl/Loader.hpp"
+#include "c/ModulePlugin.h"
+#include <dlfcn.h>
 
 #include <chrono>
 #include <cmath>
@@ -2920,6 +2922,88 @@ Value VM::loadModule(const std::string& path) {
     COMPILER_THROW("Circular dependency detected: " + path);
   }
   modules_loading_.insert(canonicalKey);
+
+  // NativeExtension: load havel_mod_<name>.so via plugin loader
+  if (resolved->type == ModuleLoader::ResolvedModule::NativeExtension) {
+    std::string modName = resolved->moduleName;
+    bool registered = false;
+
+    // Try plugin loader (uses havel_mod_<name>.so ABI validation)
+    if (pluginLoader_) {
+      auto plugin = pluginLoader_->loadModulePlugin(modName);
+      if (plugin) {
+        VMApi api(*this);
+        plugin->register_fn(static_cast<void*>(&api));
+        registered = true;
+      }
+    }
+
+    // Fallback: dlopen directly and call havel_module_register
+    if (!registered) {
+      void *handle = dlopen(resolved->canonicalPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+      if (handle) {
+        using InfoFn = const HavelModuleABI *(*)(void);
+        InfoFn info_fn = reinterpret_cast<InfoFn>(dlsym(handle, "havel_module_info"));
+        if (info_fn) {
+          const HavelModuleABI *abi = info_fn();
+          if (abi && abi->abi_version >= 1 &&
+              abi->abi_version <= HAVEL_MODULE_ABI_VERSION && abi->register_fn) {
+            VMApi api(*this);
+            abi->register_fn(static_cast<void*>(&api));
+            registered = true;
+          }
+        }
+      }
+    }
+
+    if (!registered) {
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to load native extension: " + resolved->canonicalPath);
+    }
+
+    // Build exports object from registered host function globals
+    std::string prefix = modName + ".";
+    std::string usPrefix = modName + "_";
+    auto exportsObj = createHostObject();
+    auto *obj = heap_.object(exportsObj.id);
+    for (const auto& [fnName, fnVal] : host_function_globals_) {
+      std::string localName;
+      if (fnName.rfind(prefix, 0) == 0) {
+        localName = fnName.substr(prefix.size());
+      } else if (fnName.rfind(usPrefix, 0) == 0) {
+        localName = fnName.substr(usPrefix.size());
+      }
+      if (!localName.empty() && !obj->get(localName)) {
+        (*obj)[localName] = fnVal;
+      }
+    }
+    Value exports = Value::makeObjectId(exportsObj.id);
+
+    // Also check if the module set a global directly (e.g., api.setGlobal("ffi", obj))
+    auto git = globals.find(modName);
+    if (git != globals.end() && git->second.isObjectId()) {
+      auto *existingObj = heap_.object(git->second.asObjectId());
+      if (existingObj) {
+        // Merge host function globals into the existing object
+        for (const auto& [fnName, fnVal] : host_function_globals_) {
+          std::string localName;
+          if (fnName.rfind(prefix, 0) == 0) localName = fnName.substr(prefix.size());
+          else if (fnName.rfind(usPrefix, 0) == 0) localName = fnName.substr(usPrefix.size());
+          if (!localName.empty() && !existingObj->get(localName)) {
+            (*existingObj)[localName] = fnVal;
+          }
+        }
+        exports = git->second;
+      }
+    } else {
+      globals[modName] = exports;
+    }
+
+    moduleLoader_.putCache(path, exports);
+    moduleLoader_.putCache(canonicalKey, exports);
+    modules_loading_.erase(canonicalKey);
+    return exports;
+  }
 
   std::string prev_script_dir = current_script_dir_;
   std::shared_ptr<BytecodeChunk> chunk;

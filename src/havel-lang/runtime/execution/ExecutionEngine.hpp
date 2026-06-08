@@ -88,12 +88,15 @@ public:
 	WatcherRegistry* getWatcherRegistry() { return watcher_registry_.get(); }
 	const WatcherRegistry* getWatcherRegistry() const { return watcher_registry_.get(); }
 
-	void setConcurrencyBridge(ConcurrencyBridge* bridge) { concurrency_bridge_ = bridge; }
-	ConcurrencyBridge* getConcurrencyBridge() const { return concurrency_bridge_; }
+  void setConcurrencyBridge(ConcurrencyBridge* bridge) { concurrency_bridge_ = bridge; }
+  ConcurrencyBridge* getConcurrencyBridge() const { return concurrency_bridge_; }
 
-	EventQueue* getEventQueue() const { return event_queue_; }
-	VM* getVM() const { return vm_; }
-	Scheduler* getScheduler() const { return scheduler_; }
+  EventQueue* getEventQueue() const { return event_queue_; }
+  VM* getVM() const { return vm_; }
+  Scheduler* getScheduler() const { return scheduler_; }
+
+  void setScriptReady(bool ready) { script_ready_.store(ready, std::memory_order_release); }
+  bool isScriptReady() const { return script_ready_.load(std::memory_order_acquire); }
 
 private:
   // ========== CORE COMPONENTS ==========
@@ -105,8 +108,9 @@ private:
   
 	std::unique_ptr<WatcherRegistry> watcher_registry_;
 
-	// ========== STATE ==========
+  // ========== STATE ==========
   bool running_ = false;
+  std::atomic<bool> script_ready_{false};
   Stats stats_;
   bool debug_mode_ = false;
   

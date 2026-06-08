@@ -87,6 +87,7 @@ public:
 
 
     Modules *getModules() const { return modules_.get(); }
+  compiler::ExecutionEngine *getExecutionEngine() const { return executionEngine.get(); }
 
   // Friend declarations for HavelLauncher
   friend class HavelLauncher;

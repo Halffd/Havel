@@ -109,29 +109,44 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 }
 
 Scheduler::Goroutine* Scheduler::pickNext() {
-	Goroutine* result = nullptr;
+  Goroutine* result = nullptr;
 
-	{
-		std::lock_guard<std::mutex> lock(priority_mutex_);
+  {
+    std::lock_guard<std::mutex> lock(priority_mutex_);
 
-		// Priority order: hotkey → normal → background
-		// Hotkey queue: immediate execution (keyboard/mouse interrupts)
-		while (!hotkey_queue_.empty()) {
-			auto* g = hotkey_queue_.front();
-			hotkey_queue_.pop_front();
+    if (debugging::debug_io) {
+      ::havel::debug("[Scheduler] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
+        hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
+    }
 
-			if (!g) continue;
-			if (g->state == GoroutineState::Done) continue;
-			if (g->fiber && g->fiber->state == FiberState::DONE) {
-				g->state = GoroutineState::Done;
-				continue;
-			}
-			if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
-				result = g;
-                if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}", g->id, (int)g->state.load());
-				break;
-			}
-		}
+    // Priority order: hotkey → normal → background
+    // Hotkey queue: immediate execution (keyboard/mouse interrupts)
+    while (!hotkey_queue_.empty()) {
+      auto* g = hotkey_queue_.front();
+      hotkey_queue_.pop_front();
+
+      if (!g) {
+        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: null goroutine in hotkey_queue, skipping");
+        continue;
+      }
+      if (g->state == GoroutineState::Done) {
+        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: gid={} state=Done, skipping", g->id);
+        continue;
+      }
+      if (g->fiber && g->fiber->state == FiberState::DONE) {
+        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: gid={} fiber=DONE, marking Done", g->id);
+        g->state = GoroutineState::Done;
+        continue;
+      }
+      if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
+        result = g;
+        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}",
+          g->id, static_cast<int>(g->state.load()));
+        break;
+      }
+      if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: gid={} state={} not runnable, continuing",
+        g->id, static_cast<int>(g->state.load()));
+    }
 
 		// Normal queue: standard cooperative tasks
 		if (!result) {
@@ -175,7 +190,6 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 	}
 
 	if (result) {
-		result->state = GoroutineState::Running;
 		{
 			std::lock_guard<std::mutex> wlock(result->wait_handle_mutex_);
 			result->wait_handle.clear();  // Clear stale suspension context before running
@@ -409,9 +423,10 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 }
 
 void Scheduler::requeueFront(Goroutine* g) {
-    if (!g) return;
-    g->state = GoroutineState::Created;
-    g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
+  if (!g) return;
+  g->state = GoroutineState::Created;
+  g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
+  g->hotkey_retrigger.store(false, std::memory_order_release);
     {
         std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
         g->wait_handle.clear();
@@ -428,31 +443,38 @@ void Scheduler::requeueFront(Goroutine* g) {
     g->closure_id = g->hotkey_closure_id;
   }
   if (g->fiber) {
-        g->fiber->stack.clear();
-        g->fiber->call_stack.clear();
-        if (g->persistent && !g->hotkey_args.empty()) {
-            for (const auto& arg : g->hotkey_args) {
-                g->fiber->stack.push(arg);
-            }
-            g->fiber->pushCall(g->hotkey_function_id,
-                static_cast<uint32_t>(g->hotkey_args.size()));
-            auto& frame = g->fiber->currentFrame();
-            frame.closure_id = g->hotkey_closure_id;
-        }
-        g->fiber->state = FiberState::CREATED;
-        g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;
+    g->fiber->stack.clear();
+    g->fiber->call_stack.clear();
+    if (g->persistent && !g->hotkey_args.empty()) {
+      for (const auto& arg : g->hotkey_args) {
+        g->fiber->stack.push(arg);
+      }
+      g->fiber->pushCall(g->hotkey_function_id,
+        static_cast<uint32_t>(g->hotkey_args.size()),
+        g->hotkey_chunk);
+      auto& frame = g->fiber->currentFrame();
+      frame.closure_id = g->hotkey_closure_id;
     }
-    ::havel::debug("[Scheduler] requeueFront: gid={} persistent={} fn={} closure={}",
-        g->id, g->persistent, g->function_id, g->closure_id);
+    g->fiber->state = FiberState::CREATED;
+    g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;
+  }
+    ::havel::debug("[Scheduler] requeueFront: gid={} persistent={} fn={} closure={} priority={}",
+        g->id, g->persistent, g->function_id, g->closure_id, static_cast<int>(g->priority));
     {
-		std::lock_guard<std::mutex> lock(priority_mutex_);
-		if (g->priority == FiberPriority::HOTKEY) {
-			hotkey_queue_.push_front(g);
-		} else if (g->priority == FiberPriority::BACKGROUND) {
-			background_queue_.push_front(g);
-		} else {
-			runnable_queue_.push_front(g);
-		}
+    std::lock_guard<std::mutex> lock(priority_mutex_);
+    if (g->priority == FiberPriority::HOTKEY) {
+      hotkey_queue_.push_front(g);
+      ::havel::debug("[Scheduler] requeueFront: gid={} pushed to HOTKEY queue (size={})",
+        g->id, hotkey_queue_.size());
+    } else if (g->priority == FiberPriority::BACKGROUND) {
+      background_queue_.push_front(g);
+      ::havel::debug("[Scheduler] requeueFront: gid={} pushed to BACKGROUND queue (size={})",
+        g->id, background_queue_.size());
+    } else {
+      runnable_queue_.push_front(g);
+      ::havel::debug("[Scheduler] requeueFront: gid={} pushed to RUNNABLE queue (size={})",
+        g->id, runnable_queue_.size());
+    }
     }
 }
 
@@ -484,13 +506,19 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
     break;
   case HotkeyPolicy::Replace:
     if (isPending) {
-      g->hotkey_retrigger.store(true, std::memory_order_release);
+      if (!newArgs.empty()) {
+        g->hotkey_args = newArgs;
+      }
+      requeueFront(g);
       return true;
     }
     break;
   case HotkeyPolicy::Queue:
     if (isPending) {
-      g->hotkey_retrigger.store(true, std::memory_order_release);
+      if (!newArgs.empty()) {
+        g->hotkey_args = newArgs;
+      }
+      requeueFront(g);
       return true;
     }
     break;
@@ -525,12 +553,14 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
   // If state changes from Suspended→Running before requeueFront(), the flag will be checked
   // by the VM and the goroutine will retrigger at the appropriate point.
   if (g->state == GoroutineState::Suspended) {
-    g->hotkey_retrigger.store(true, std::memory_order_release);
     if (g->suspension_reason.load(std::memory_order_acquire) == SuspensionReason::HotkeyWait) {
       // Idle/parked goroutine waiting for next trigger — wake it up
       requeueFront(g);
+    } else {
+      // Mid-sleep or other suspension — set retrigger flag so the
+      // goroutine re-runs after its current suspension resolves
+      g->hotkey_retrigger.store(true, std::memory_order_release);
     }
-    // else: mid-sleep or other suspension — just set flag, keep suspended
     return true;
   }
 
@@ -558,6 +588,9 @@ bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
 
 bool Scheduler::hasRunnableFibers() const {
   std::lock_guard<std::mutex> lock(priority_mutex_);
+  size_t hk = hotkey_queue_.size(), rn = runnable_queue_.size(), bg = background_queue_.size();
+  if (debugging::debug_io)
+    ::havel::debug("[Scheduler] hasRunnableFibers: hotkey={} runnable={} bg={}", hk, rn, bg);
   for (auto* g : hotkey_queue_) {
     if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
       return true;

@@ -16,6 +16,8 @@ namespace havel::compiler {
 
 using ::havel::core::Value;
 
+class BytecodeChunk;
+
 /**
  * FiberPriority - Execution priority for scheduler
  *
@@ -156,11 +158,12 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     // Persistent goroutine: re-suspend instead of Done on completion
     // Used by hotkey system to avoid per-press goroutine allocation
     bool persistent = false;
-    // Hotkey reset fields (stored from registration for reuse)
-    uint32_t hotkey_function_id = 0;
-    uint32_t hotkey_closure_id = 0;
-    std::vector<Value> hotkey_args;
-    HotkeyPolicy hotkey_policy = HotkeyPolicy::Queue;
+  // Hotkey reset fields (stored from registration for reuse)
+  uint32_t hotkey_function_id = 0;
+  uint32_t hotkey_closure_id = 0;
+  const class BytecodeChunk* hotkey_chunk = nullptr;
+  std::vector<Value> hotkey_args;
+    HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;
     std::string hotkey_alias;
 bool hotkey_direct_thunk = false; // true if DirectCallThunk exists for this callback
 uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk

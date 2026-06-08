@@ -3630,7 +3630,7 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         return Value::makeNull();
     }
 
-    HotkeyPolicy policy = HotkeyPolicy::Queue;
+    HotkeyPolicy policy = HotkeyPolicy::Drop;
     if (args.size() >= 3 && args[2].isObjectId()) {
         auto policyVal = vm->objectGetWithClassChain(args[2].asObjectId(), "policy");
         if (policyVal.isStringValId()) {
@@ -3641,9 +3641,8 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         }
     }
 
-  // Generate unique hotkey ID
-  std::string hotkeyId =
-      "hotkey_" + std::to_string(std::hash<std::string>{}(hotkeyStr));
+    // Generate unique hotkey ID from the key/alias string
+    std::string hotkeyId = ::havel::stdlib::HotkeyModule::resolveUniqueId(hotkeyStr);
 
   // Register closure as a callback - this pins it as a GC root
   CallbackId callbackId = ctx->vm->registerCallback(args[1]);
@@ -3662,6 +3661,10 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
     // to find and trigger it even without a HotkeyManager (headless mode).
     uint32_t persistentGid = vm->createPersistentHotkeyCallback(
         callbackId, FiberPriority::HOTKEY, {hotkeyContext}, policy, hotkeyStr);
+
+    if (persistentGid != 0) {
+        ::havel::stdlib::HotkeyModule::setGoroutineId(hotkeyId, persistentGid);
+    }
 
     // If hotkeyManager is available, wire the OS callback to wake the persistent goroutine
     if (ctx->hotkeyManager) {
@@ -4000,35 +4003,24 @@ InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
 Value
 InputBridge::handleHotkeyList(const std::vector<Value> &args,
                                const HostContext *ctx) {
-  (void)args;
-  if (!ctx || !ctx->vm) {
-    return Value::makeNull();
-  }
-
-  auto *vm = static_cast<VM *>(ctx->vm);
-  auto result = vm->createHostArray();
-  auto resultGuard = vm->makeRoot(Value::makeArrayId(result.id));
-
-  if (ctx->hotkeyManager) {
-    auto hotkeys = ctx->hotkeyManager->getHotkeyList();
-    auto conditionalHotkeys = ctx->hotkeyManager->getConditionalHotkeyList();
-
-    for (const auto &hk : hotkeys) {
-      auto ctxObj = ::havel::stdlib::HotkeyModule::createHotkeyContext(
-          vm, "hotkey_" + std::to_string(hk.id), hk.alias, "", "",
-          hk.enabled ? "enabled" : "disabled", 0);
-      vm->pushHostArrayValue(result, ctxObj);
+    (void)args;
+    if (!ctx || !ctx->vm) {
+        return Value::makeNull();
     }
 
-    for (const auto &hk : conditionalHotkeys) {
-      auto ctxObj = ::havel::stdlib::HotkeyModule::createHotkeyContext(
-          vm, "hotkey_" + std::to_string(hk.id), hk.key, hk.key, hk.condition,
-          hk.active ? "active" : (hk.enabled ? "enabled" : "disabled"), 0);
-      vm->pushHostArrayValue(result, ctxObj);
-    }
-  }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    auto result = vm->createHostArray();
+    auto resultGuard = vm->makeRoot(Value::makeArrayId(result.id));
 
-  return Value::makeArrayId(result.id);
+    auto ids = ::havel::stdlib::HotkeyModule::getAllIds();
+    for (const auto &hotkeyId : ids) {
+        auto obj = ::havel::stdlib::HotkeyModule::rebuildHotkeyContext(*vm, hotkeyId);
+        if (obj.isObjectId()) {
+            vm->pushHostArrayValue(result, obj);
+        }
+    }
+
+    return Value::makeArrayId(result.id);
 }
 
 Value

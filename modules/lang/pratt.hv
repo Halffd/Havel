@@ -1537,6 +1537,156 @@ fn parseObjectPatternForMatch() {
   return ObjectPattern(properties, rest, l, c)
 }
 
+// ===================================================================
+// PATTERN PARSING — for match expressions
+// ===================================================================
+fn parsePattern() {
+  alternatives = []
+  first = parsePatternAtom()
+  if first == null { return null }
+  alternatives.push(first)
+  while current().tid == TID.Pipe || current().tid == TID.Or {
+    advance()
+    next = parsePatternAtom()
+    if next == null {
+      error("Expected pattern after '|'", current().line, current().col)
+      return alternatives[0]
+    }
+    alternatives.push(next)
+  }
+  if #alternatives == 1 { return alternatives[0] }
+  return OrPattern(alternatives, current().line, current().col)
+}
+
+fn parsePatternAtom() {
+  l = current().line
+  c = current().col
+
+  // Wildcard _ — may come as Identifier "_" or TID.Underscore
+  if current().tid == TID.Underscore || (current().tid == TID.Identifier && current().value == "_") {
+    advance()
+    return WildcardPattern(l, c)
+  }
+  // Array pattern [x, y, ..rest]
+  if current().tid == TID.OpenBracket {
+    return parseArrayPatternForMatch()
+  }
+  // Object pattern {x, y: z}
+  if current().tid == TID.OpenBrace {
+    return parseObjectPatternForMatch()
+  }
+  // Boolean/Null/Number/String/Char/Regex literals
+  if current().tid == TID.True { advance(); return BooleanLiteral(true, l, c) }
+  if current().tid == TID.False { advance(); return BooleanLiteral(false, l, c) }
+  if current().tid == TID.Null { advance(); return NullLiteral(l, c) }
+  if current().tid == TID.Number { return NumberLiteral(advance().value, l, c) }
+  if current().tid == TID.String || current().tid == TID.MultilineString { return StringLiteral(advance().value, l, c) }
+  if current().tid == TID.CharLiteral { advance(); return CharLiteral(current().value, l, c) }
+  if current().tid == TID.RegexLiteral { return StringLiteral(advance().value, l, c) }
+  // Identifier — could be variable binding or Constructor pattern Name(args)
+  if current().tid == TID.Identifier {
+    name = current().value
+    advance()
+    // Constructor pattern: Name(p1, p2, ...)
+    if current().tid == TID.OpenParen {
+      advance()
+      args = []
+      while current().tid != TID.CloseParen && notEOF() {
+        skipNewlines()
+        if current().tid == TID.CloseParen { break }
+        arg = parsePattern()
+        if arg != null { args.push(arg) }
+        skipNewlines()
+        if current().tid == TID.Comma { advance() }
+      }
+      if current().tid == TID.CloseParen { advance() }
+      return ConstructorPattern(name, args, l, c)
+    }
+    pat = Identifier(name, l, c)
+    // Range pattern: literal..=literal
+    if current().tid == TID.DotDotEquals {
+      advance()
+      endPat = parsePatternAtom()
+      if endPat == null {
+        error("Expected pattern after '..='", current().line, current().col)
+        return pat
+      }
+      return RangePattern(pat, endPat, l, c)
+    }
+    return pat
+  }
+  error("Expected pattern", l, c)
+  return null
+}
+
+fn parseArrayPatternForMatch() {
+  l = current().line
+  c = current().col
+  advance()
+  elements = []
+  rest = null
+  while notEOF() && current().tid != TID.CloseBracket {
+    skipNewlines()
+    if current().tid == TID.CloseBracket { break }
+    // Rest pattern: ..rest or ..
+    if current().tid == TID.DotDot {
+      advance()
+      if current().tid == TID.Identifier {
+        rest = Identifier(advance().value, current().line, current().col)
+      }
+      else {
+        rest = Identifier("_", l, c)
+      }
+      break
+    }
+    elements.push(parsePattern())
+    skipNewlines()
+    if current().tid == TID.Comma { advance() }
+  }
+  if current().tid == TID.CloseBracket { advance() }
+  return ArrayPattern(elements, rest, l, c)
+}
+
+fn parseObjectPatternForMatch() {
+  l = current().line
+  c = current().col
+  advance()
+  properties = []
+  rest = null
+  while notEOF() && current().tid != TID.CloseBrace {
+    skipNewlines()
+    if current().tid == TID.CloseBrace { break }
+    // Rest pattern: ...rest
+    if current().tid == TID.Spread {
+      advance()
+      if current().tid == TID.Identifier {
+        rest = Identifier(advance().value, current().line, current().col)
+      }
+      skipNewlines()
+      if current().tid == TID.Comma { advance() }
+      break
+    }
+    if current().tid != TID.Identifier {
+      error("Expected identifier in object pattern", current().line, current().col)
+      break
+    }
+    key = advance().value
+    pat = null
+    if current().tid == TID.Colon {
+      advance()
+      pat = parsePattern()
+    }
+    else {
+      pat = Identifier(key, l, c)
+    }
+    properties.push({key: key, value: pat})
+    skipNewlines()
+    if current().tid == TID.Comma { advance() }
+  }
+  if current().tid == TID.CloseBrace { advance() }
+  return ObjectPattern(properties, rest, l, c)
+}
+
 fn parseMatchCase() {
   l = current().line
   c = current().col
@@ -1555,7 +1705,7 @@ fn parseMatchCase() {
   while current().tid == TID.Comma {
     // Look ahead: if comma followed by 'if', it's a guard not another pattern
     if at(1).tid == TID.If { break }
-    advance() // consume ','
+    advance()
     pat = parsePattern()
     if pat != null && pat.kind != "WildcardPattern" { isDefault = false }
     patterns.push(pat)
@@ -1589,7 +1739,7 @@ fn parseMatchCase() {
 
   }
   // For single pattern, unwrap
-  if patterns.length() == 1 {
+  if #patterns == 1 {
     mc = MatchCase(patterns[0], guard, body, l, c)
   }
   else {
@@ -1599,7 +1749,8 @@ fn parseMatchCase() {
   mc
 
 }
-    // ===================================================================
+
+// ===================================================================
     // HELPER: If expression
     // ===================================================================
     fn parseIfExpr() {

@@ -103,6 +103,12 @@ NODE_TYPES = {
     "QueryExpression": true,
     "CastExpression": true,
     "HotkeyExpression": true,
+  "ArrayPattern": true,
+  "ObjectPattern": true,
+  "ConstructorPattern": true,
+  "OrPattern": true,
+  "WildcardPattern": true,
+  "RangePattern": true,
 }
 
 BINARY_OPS = {
@@ -219,8 +225,26 @@ fn ObjectField(key, value, line, col) {
 
 }
 fn SpreadExpression(value, line, col) {
-    {kind: "SpreadExpression", line: line, col: col, value: value}
+  {kind: "SpreadExpression", line: line, col: col, value: value}
 
+}
+fn WildcardPattern(line, col) {
+  {kind: "WildcardPattern", line: line, col: col}
+}
+fn ArrayPattern(elements, rest, line, col) {
+  {kind: "ArrayPattern", line: line, col: col, elements: elements, rest: rest}
+}
+fn ObjectPattern(properties, rest, line, col) {
+  {kind: "ObjectPattern", line: line, col: col, properties: properties, rest: rest}
+}
+fn ConstructorPattern(name, args, line, col) {
+  {kind: "ConstructorPattern", line: line, col: col, name: name, args: args}
+}
+fn OrPattern(alternatives, line, col) {
+  {kind: "OrPattern", line: line, col: col, alternatives: alternatives}
+}
+fn RangePattern(start, end, line, col) {
+  {kind: "RangePattern", line: line, col: col, start: start, end: end}
 }
 fn IfStatement(condition, then_branch, else_branch, line, col) {
     n = {kind: "IfStatement", line: line, col: col, condition: condition, then: then_branch}
@@ -347,12 +371,26 @@ fn TryStatement(try_block, catch_param, catch_block, finally_block, line, col) {
 
 }
 fn MatchExpression(subject, cases, line, col) {
-    {kind: "MatchExpression", line: line, col: col, subject: subject, cases: cases}
-
+  n = {kind: "MatchExpression", line: line, col: col, subject: subject, cases: cases}
+  if subject != null {
+    if subject.kind != null {
+      n.discriminants = [subject]
+    }
+    else {
+      n.discriminants = subject
+    }
+  }
+  n
 }
 fn MatchCase(pattern, guard, body, line, col) {
-    {kind: "MatchCase", line: line, col: col, pattern: pattern, guard: guard, body: body}
-
+  n = {kind: "MatchCase", line: line, col: col, pattern: pattern, guard: guard, body: body}
+  if pattern != null && pattern.kind == null {
+    n.patterns = pattern
+  }
+  else {
+    n.patterns = [pattern]
+  }
+  n
 }
 fn InterpolatedString(parts, line, col) {
     {kind: "InterpolatedString", line: line, col: col, parts: parts}
@@ -768,11 +806,55 @@ fn prettyPrint(node, depth) {
             }
         }
     }
-    else if k == "SpreadExpression" {
-        print(prefix + "Spread:")
-        prettyPrint(node.value, depth + 1)
+  else if k == "SpreadExpression" {
+    print(prefix + "Spread:")
+    prettyPrint(node.value, depth + 1)
 
+  }
+  else if k == "WildcardPattern" {
+    print(prefix + "_")
+  }
+  else if k == "ArrayPattern" {
+    print(prefix + "ArrayPattern:")
+    if node.elements != null {
+      for el in node.elements { prettyPrint(el, depth + 1) }
     }
+    if node.rest != null {
+      print(_indent(depth + 1) + "rest:")
+      prettyPrint(node.rest, depth + 2)
+    }
+  }
+  else if k == "ObjectPattern" {
+    print(prefix + "ObjectPattern:")
+    if node.properties != null {
+      for prop in node.properties {
+        print(_indent(depth + 1) + str(prop.key) + ":")
+        prettyPrint(prop.value, depth + 2)
+      }
+    }
+    if node.rest != null {
+      print(_indent(depth + 1) + "rest:")
+      prettyPrint(node.rest, depth + 2)
+    }
+  }
+  else if k == "ConstructorPattern" {
+    print(prefix + "ConstructorPattern(" + str(node.name) + "):")
+    if node.args != null {
+      for a in node.args { prettyPrint(a, depth + 1) }
+    }
+  }
+  else if k == "OrPattern" {
+    print(prefix + "OrPattern:")
+    if node.alternatives != null {
+      for alt in node.alternatives { prettyPrint(alt, depth + 1) }
+    }
+  }
+  else if k == "RangePattern" {
+    print(prefix + "RangePattern:")
+    prettyPrint(node.start, depth + 1)
+    print(_indent(depth + 1) + "..=")
+    prettyPrint(node.end, depth + 1)
+  }
     else if k == "IfStatement" {
         print(prefix + "If:")
         print(_indent(depth + 1) + "cond:")

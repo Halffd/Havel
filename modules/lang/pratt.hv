@@ -25,7 +25,8 @@ OnTapStatement, OnComboStatement, OnKeyDownStatement, OnKeyUpStatement, OnMessag
 ModesBlock, ModeDefinition, ConfigSection, InputStatement, MultipleAssignment, QueryExpression,
 ConfigBlock, SleepStatement, DeferStatement, WaitExpression, WaitGroupExpression, ErrorNode,
 ClassDeclaration, StructDeclaration, EnumDeclaration, TraitDeclaration, ProtocolDeclaration, ImplDeclaration,
-TypeParam, isNode, prettyPrint } from "ast"
+TypeParam, isNode, prettyPrint,
+WildcardPattern, ArrayPattern, ObjectPattern, ConstructorPattern, OrPattern, RangePattern } from "ast"
 
 // --- Binding power constants (matching C++ switch-based values) ---
 BP_NONE = 0
@@ -1321,115 +1322,283 @@ return expr
     // ===================================================================
     // HELPER: Match expression
     // ===================================================================
-    fn parseMatchExpr() {
-        l = current().line
-        c = current().col
+fn parseMatchExpr() {
+  l = current().line
+  c = current().col
 
-        subject = parseExpr(0)
-        skipNewlines()
+  // Parse discriminants (comma-separated before { or :)
+  prevSugar = allowBraceSugar
+  allowBraceSugar = false
+  discriminants = [parseExpr(0)]
+  while current().tid == TID.Comma {
+    // Look ahead: if comma followed by { or :, these are case delimiters not more discriminants
+    if at(1).tid == TID.OpenBrace || at(1).tid == TID.Colon { break }
+    advance()
+    discriminants.push(parseExpr(0))
+  }
+  allowBraceSugar = prevSugar
+  skipNewlines()
 
-        // Expect { or :
-        if current().tid == TID.OpenBrace {
-            advance()
-        }
-        else if current().tid == TID.Colon {
-            advance()
-        }
-        else {
-            return error("Expected '{' or ':' after match subject", l, c)
-
-        }
-        prevMatch = inMatchExpr
-        inMatchExpr = true
-
- cases = []
- defaultCase = null
- skipNewlines()
- while current().tid != TID.CloseBrace and notEOF() and current().tid != TID.EOF {
- skipNewlines()
- if current().tid == TID.CloseBrace: break
- mc = parseMatchCase()
- if mc != null {
- if mc.isDefault {
- defaultCase = mc.body
- } else {
- cases.push(mc)
- }
- }
- // Skip optional comma between cases
- if current().tid == TID.Comma {
- advance()
- }
- // Skip newlines and semicolons (case separators)
- while current().tid == TID.NewLine or current().tid == TID.Semicolon {
- advance()
- }
- }
- inMatchExpr = prevMatch
-
- if current().tid == TID.CloseBrace {
- advance()
-
- }
- node = MatchExpression(subject, cases, l, c)
- node.defaultCase = defaultCase
- node
+  // Expect { or :
+  if current().tid == TID.OpenBrace {
+    advance()
+  }
+  else if current().tid == TID.Colon {
+    advance()
+  }
+  else {
+    return error("Expected '{' or ':' after match subject", l, c)
 
   }
+  prevMatch = inMatchExpr
+  inMatchExpr = true
+
+  cases = []
+  defaultCase = null
+  skipNewlines()
+  while current().tid != TID.CloseBrace and notEOF() and current().tid != TID.EOF {
+    skipNewlines()
+    if current().tid == TID.CloseBrace: break
+    mc = parseMatchCase()
+    if mc != null {
+      if mc.isDefault {
+        defaultCase = mc.body
+      } else {
+        cases.push(mc)
+      }
+    }
+    // Skip optional comma between cases
+    if current().tid == TID.Comma {
+      advance()
+    }
+    // Skip newlines and semicolons (case separators)
+    while current().tid == TID.NewLine or current().tid == TID.Semicolon {
+      advance()
+    }
+  }
+  inMatchExpr = prevMatch
+
+  if current().tid == TID.CloseBrace {
+    advance()
+
+  }
+  node = MatchExpression(discriminants, cases, l, c)
+  node.defaultCase = defaultCase
+  node
+}
+// ===================================================================
+// PATTERN PARSING — for match expressions
+// ===================================================================
+fn parsePattern() {
+  alternatives = []
+  first = parsePatternAtom()
+  if first == null { return null }
+  alternatives.push(first)
+  while current().tid == TID.Pipe || current().tid == TID.Or {
+    advance()
+    next = parsePatternAtom()
+    if next == null {
+      error("Expected pattern after '|'", current().line, current().col)
+      return alternatives[0]
+    }
+    alternatives.push(next)
+  }
+  if alternatives.length() == 1 { return alternatives[0] }
+  return OrPattern(alternatives, current().line, current().col)
+}
+
+fn parsePatternAtom() {
+  l = current().line
+  c = current().col
+
+  // Wildcard _
+  if current().tid == TID.Underscore {
+    advance()
+    return WildcardPattern(l, c)
+  }
+  // Array pattern [x, y, ..rest]
+  if current().tid == TID.OpenBracket {
+    return parseArrayPatternForMatch()
+  }
+  // Object pattern {x, y: z}
+  if current().tid == TID.OpenBrace {
+    return parseObjectPatternForMatch()
+  }
+  // Boolean/Null/Number/String/Char/Regex literals
+  if current().tid == TID.True { advance(); return BooleanLiteral(true, l, c) }
+  if current().tid == TID.False { advance(); return BooleanLiteral(false, l, c) }
+  if current().tid == TID.Null { advance(); return NullLiteral(l, c) }
+  if current().tid == TID.Number { return NumberLiteral(advance().value, l, c) }
+  if current().tid == TID.String || current().tid == TID.MultilineString { return StringLiteral(advance().value, l, c) }
+  if current().tid == TID.CharLiteral { advance(); return CharLiteral(current().value, l, c) }
+  if current().tid == TID.RegexLiteral { return StringLiteral(advance().value, l, c) }
+  // Identifier — could be variable binding or Constructor pattern Name(args)
+  if current().tid == TID.Identifier {
+    name = current().value
+    advance()
+    // Constructor pattern: Name(p1, p2, ...)
+    if current().tid == TID.OpenParen {
+      advance() // consume '('
+      args = []
+      while current().tid != TID.CloseParen && notEOF() {
+        skipNewlines()
+        if current().tid == TID.CloseParen { break }
+        arg = parsePattern()
+        if arg != null { args.push(arg) }
+        skipNewlines()
+        if current().tid == TID.Comma { advance() }
+      }
+      if current().tid == TID.CloseParen { advance() }
+      return ConstructorPattern(name, args, l, c)
+    }
+    pat = Identifier(name, l, c)
+    // Range pattern: literal..=literal
+    if current().tid == TID.DotDotEquals {
+      advance()
+      endPat = parsePatternAtom()
+      if endPat == null {
+        error("Expected pattern after '..='", current().line, current().col)
+        return pat
+      }
+      return RangePattern(pat, endPat, l, c)
+    }
+    return pat
+  }
+  error("Expected pattern", l, c)
+  return null
+}
+
+fn parseArrayPatternForMatch() {
+  l = current().line
+  c = current().col
+  advance() // consume '['
+  elements = []
+  rest = null
+  while notEOF() && current().tid != TID.CloseBracket {
+    skipNewlines()
+    if current().tid == TID.CloseBracket { break }
+    // Rest pattern: ..rest or ..
+    if current().tid == TID.DotDot {
+      advance()
+      if current().tid == TID.Identifier {
+        rest = Identifier(advance().value, current().line, current().col)
+      }
+      else {
+        rest = Identifier("_", l, c)
+      }
+      break
+    }
+    elements.push(parsePattern())
+    skipNewlines()
+    if current().tid == TID.Comma { advance() }
+  }
+  if current().tid == TID.CloseBracket { advance() }
+  return ArrayPattern(elements, rest, l, c)
+}
+
+fn parseObjectPatternForMatch() {
+  l = current().line
+  c = current().col
+  advance() // consume '{'
+  properties = []
+  rest = null
+  while notEOF() && current().tid != TID.CloseBrace {
+    skipNewlines()
+    if current().tid == TID.CloseBrace { break }
+    // Rest pattern: ...rest
+    if current().tid == TID.Spread {
+      advance()
+      if current().tid == TID.Identifier {
+        rest = Identifier(advance().value, current().line, current().col)
+      }
+      skipNewlines()
+      if current().tid == TID.Comma { advance() }
+      break
+    }
+    if current().tid != TID.Identifier {
+      error("Expected identifier in object pattern", current().line, current().col)
+      break
+    }
+    key = advance().value
+    pat = null
+    if current().tid == TID.Colon {
+      advance() // consume ':'
+      pat = parsePattern()
+    }
+    else {
+      // Shorthand: {x} binds x to x
+      pat = Identifier(key, l, c)
+    }
+    properties.push({key: key, value: pat})
+    skipNewlines()
+    if current().tid == TID.Comma { advance() }
+  }
+  if current().tid == TID.CloseBrace { advance() }
+  return ObjectPattern(properties, rest, l, c)
+}
+
 fn parseMatchCase() {
- l = current().line
- c = current().col
+  l = current().line
+  c = current().col
 
- isDefault = false
- pattern = null
+  isDefault = false
+  patterns = []
 
- // Check for wildcard pattern _
- if current().tid == TID.Identifier and current().value == "_" {
- advance()
- pattern = Identifier("_", l, c)
- isDefault = true
- skipNewlines()
- } else {
- // Parse pattern as expression
- prevSugar = allowBraceSugar
- allowBraceSugar = false
- pattern = parseExpr(0)
- allowBraceSugar = prevSugar
- skipNewlines()
- }
+  // Parse first pattern using pattern parser
+  firstPat = parsePattern()
+  if firstPat != null && firstPat.kind == "WildcardPattern" {
+    isDefault = true
+  }
+  patterns.push(firstPat)
 
- // Optional guard: when expr or if expr
- guard = null
- if current().tid == TID.When or current().tid == TID.If {
- advance()
- guard = parseExpr(0)
- skipNewlines()
+  // Multi-discriminant: comma-separated patterns
+  while current().tid == TID.Comma {
+    // Look ahead: if comma followed by 'if', it's a guard not another pattern
+    if at(1).tid == TID.If { break }
+    advance() // consume ','
+    pat = parsePattern()
+    if pat != null && pat.kind != "WildcardPattern" { isDefault = false }
+    patterns.push(pat)
+  }
 
- }
- // Expect =>
- if current().tid == TID.Arrow {
- advance()
- } else {
- return error("Expected '=>' in match case", l, c)
+  // Optional guard: if expr
+  guard = null
+  if current().tid == TID.When || current().tid == TID.If {
+    advance()
+    guard = parseExpr(0)
+    skipNewlines()
+  }
 
- }
- skipNewlines()
+  // Expect =>
+  if current().tid == TID.Arrow {
+    advance()
+  } else {
+    return error("Expected '=>' in match case", l, c)
 
- // Body
- body = null
- if current().tid == TID.OpenBrace {
- body = parseBlock()
- }
- else {
- bodyExpr = parseExpr(0)
- body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+  }
+  skipNewlines()
 
- }
- mc = MatchCase(pattern, guard, body, l, c)
- mc.isDefault = isDefault
- mc
+  // Body
+  body = null
+  if current().tid == TID.OpenBrace {
+    body = parseBlock()
+  }
+  else {
+    bodyExpr = parseExpr(0)
+    body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
- }
+  }
+  // For single pattern, unwrap
+  if patterns.length() == 1 {
+    mc = MatchCase(patterns[0], guard, body, l, c)
+  }
+  else {
+    mc = MatchCase(patterns, guard, body, l, c)
+  }
+  mc.isDefault = isDefault
+  mc
+
+}
     // ===================================================================
     // HELPER: If expression
     // ===================================================================
@@ -1944,7 +2113,7 @@ if tt == TID.OpenBracket { return parseDecoratorStatement() }
 if tt == TID.Dsl {
   advance()
   if current().tid != TID.OpenBrace {
-    emitError("Expected '{' after 'dsl'", current().line, current().col)
+    error("Expected '{' after 'dsl'", current().line, current().col)
   }
   return parseBlockStatement()
 }
@@ -3667,66 +3836,8 @@ fn parseImplDeclaration() {
   if current().tid == TID.CloseBrace {
     advance() // consume '}'
   }
-  return ImplDeclaration(typeName, traitName, funcs, l, c)
+return ImplDeclaration(typeName, traitName, funcs, l, c)
 }
-    // ===================================================================
-    // PRODUCE AST — main entry point
-    // ===================================================================
-    fn produceAST() {
-        skipNewlines()
-        stmts = []
-
-        while notEOF() and current().tid != TID.EOF {
-            skipNewlinesAndSemicolons()
-            if !notEOF() or current().tid == TID.EOF: break
-
-            s = parseStatement()
-            if s != null and s.kind != "ErrorNode" {
-                stmts.push(s)
-            }
-            else if s != null and s.kind == "ErrorNode" {
-                // Skip past error token and continue
-                if pos < tokens.len: advance()
-            }
-            else {
-                // Null statement — skip
-                if pos < tokens.len: advance()
-
-}
-}
-return Program(stmts, 1, 1)
-
-}
-    // Return the parser interface
-    {
-    parseExpr: parseExpr,
-    parseStatement: parseStatement,
-    parseBlock: parseBlock,
-    produceAST: produceAST,
-    errors: errors,
-    pos: pos,
-    tokens: tokens,
-    }
-
-}
-// ===================================================================
-// PUBLIC API
-// ===================================================================
-
-fn parse(source) {
-  tokenList = tokenize(source)
-  p = Parser(tokenList)
-  ast = p.produceAST()
-  return {ast: ast, errors: p.errors}
-
-}
-fn parseTokens(tokenList) {
-  p = Parser(tokenList)
-  ast = p.produceAST()
-  return {ast: ast, errors: p.errors}
-
-}
-
 // ===================================================================
 // STATEMENT: when
 // ===================================================================
@@ -3741,7 +3852,7 @@ fn parseWhenBlockStatement() {
   allowBraceSugar = prevSugar
   skipNewlines()
   if current().tid != TID.OpenBrace {
-    emitError("Expected '{' after when condition", current().line, current().col)
+    error("Expected '{' after when condition", current().line, current().col)
   }
   advance() // consume '{'
   stmts = []
@@ -3774,14 +3885,14 @@ fn parseWithStatement() {
   if current().tid == TID.As {
     advance() // consume 'as'
     if current().tid != TID.Identifier {
-      emitError("Expected identifier after 'as'", current().line, current().col)
+      error("Expected identifier after 'as'", current().line, current().col)
     }
     aliasNode = Identifier(current().value, current().line, current().col)
     advance()
   }
   skipNewlines()
   if current().tid != TID.OpenBrace {
-    emitError("Expected '{' after with expression", current().line, current().col)
+    error("Expected '{' after with expression", current().line, current().col)
   }
   advance() // consume '{'
   stmts = []
@@ -3926,7 +4037,7 @@ fn parseDecoratorStatement() {
   while current().tid == TID.OpenBracket {
     advance() // consume '['
     if current().tid != TID.Identifier {
-      emitError("Expected decorator name after '['", current().line, current().col)
+      error("Expected decorator name after '['", current().line, current().col)
       break
     }
     decoName = Identifier(current().value, current().line, current().col)
@@ -3952,7 +4063,7 @@ fn parseDecoratorStatement() {
   }
   target = parseStatement()
   if target == null {
-    emitError("Expected declaration after decorator", current().line, current().col)
+    error("Expected declaration after decorator", current().line, current().col)
     return null
   }
   return DecoratorStatement(decorators, target, l, c)
@@ -3989,8 +4100,65 @@ fn parseAtDecoratorStatement() {
   }
   target = parseStatement()
   if target == null {
-    emitError("Expected declaration after @decorator", current().line, current().col)
+    error("Expected declaration after @decorator", current().line, current().col)
     return null
   }
   return DecoratorStatement(decorators, target, l, c)
+}
+// ===================================================================
+// PRODUCE AST — main entry point
+// ===================================================================
+    fn produceAST() {
+        skipNewlines()
+        stmts = []
+
+        while notEOF() and current().tid != TID.EOF {
+            skipNewlinesAndSemicolons()
+            if !notEOF() or current().tid == TID.EOF: break
+
+            s = parseStatement()
+            if s != null and s.kind != "ErrorNode" {
+                stmts.push(s)
+            }
+            else if s != null and s.kind == "ErrorNode" {
+                // Skip past error token and continue
+                if pos < tokens.len: advance()
+            }
+            else {
+                // Null statement — skip
+                if pos < tokens.len: advance()
+
+}
+}
+return Program(stmts, 1, 1)
+
+}
+    // Return the parser interface
+    {
+    parseExpr: parseExpr,
+    parseStatement: parseStatement,
+    parseBlock: parseBlock,
+    produceAST: produceAST,
+    errors: errors,
+    pos: pos,
+    tokens: tokens,
+    }
+
+}
+// ===================================================================
+// PUBLIC API
+// ===================================================================
+
+fn parse(source) {
+  tokenList = tokenize(source)
+  p = Parser(tokenList)
+  ast = p.produceAST()
+  return {ast: ast, errors: p.errors}
+
+}
+fn parseTokens(tokenList) {
+  p = Parser(tokenList)
+  ast = p.produceAST()
+  return {ast: ast, errors: p.errors}
+
 }

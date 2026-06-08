@@ -122,10 +122,10 @@ bool ExecutionEngine::executeFrame() {
     ::havel::debug("[ExecutionEngine] executeFrame: calling pickNext");
     Scheduler::Goroutine* g = scheduler_->pickNext();
     if (!g) {
-        ::havel::debug("[ExecutionEngine] executeFrame: pickNext returned null (idle)");
-        // No runnable goroutine - idle
-        return false;
-    }
+::havel::debug("[ExecutionEngine] executeFrame: pickNext returned null (idle)");
+// No runnable goroutine - idle
+return false;
+}
 if (g->persistent || debug_mode_) {
 ::havel::debug("[ExecutionEngine] Picked goroutine gid={} persistent={} state={} fn={} closure={}",
 g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);

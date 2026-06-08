@@ -69,59 +69,8 @@ public:
   static void clearContext();
 
 private:
-  // Thread-local storage for current context
-  
-  static thread_local ContextData current_context_;
-  static thread_local bool context_available_;
+static thread_local ContextData current_context_;
+static thread_local bool context_available_;
 };
 
-/**
- * Phase 2J: HotkeyActionStateSync
- * 
- * Manages state synchronization between hotkey conditions and actions.
- * 
- * Problem: Action Fiber may want to read globals set by condition
- * Solution: Provide safe access to global state during Fiber execution
- * 
- * Example:
- *   Mode changed to "gaming"
- *   → Hotkey condition evaluates to true
- *   → Sets global_mode = "gaming" (shared state)
- *   → Action Fiber reads mode via hotkey_state("mode")
- *   → Takes action (brightness, volume, etc)
- */
-class HotkeyActionStateSync {
-public:
-  using StateValue = std::string;  // For now, state is string-based
-  
-  /**
-   * Set a state value accessible to action Fibers
-   */
-  static void setState(const std::string& key, const StateValue& value);
-  
-  /**
-   * Get a state value (callable from Fiber)
-   */
-  static StateValue getState(const std::string& key);
-  
-  /**
-   * Check if state key exists
-   */
-  static bool hasState(const std::string& key);
-  
-  /**
-   * Get all state (for debugging)
-   */
-  static std::unordered_map<std::string, StateValue> getAllState();
-  
-  /**
-   * Clear all state (shutdown or reset)
-   */
-  static void clearAll();
-
-private:
-  // Global state accessible to action Fibers
-  static std::unordered_map<std::string, StateValue> state_;
-};
-
-}  // namespace havel
+} // namespace havel

@@ -93,7 +93,6 @@ fn _parseValue() {
 _skipWS()
 if _pos >= _len { return null }
 _ch = _src[_pos:_pos+1]
-print("DEBUG _parseValue: _pos =", _pos, "_ch =", _ch)
 if _ch == "{" { return _parseObject() }
 if _ch == "[" { return _parseArray() }
 if _ch == "\"" { return _parseString() }
@@ -556,10 +555,8 @@ _src = source
 _pos = 0
 _len = #source
 _result = _parseValue()
-print("DEBUG parse: _result =", _result, "_pos =", _pos, "_len =", _len)
 if _result == null { return null }
 _skipWS()
-print("DEBUG parse: after _skipWS, _pos =", _pos)
 if _pos != _len { return null }
 return _result
 }

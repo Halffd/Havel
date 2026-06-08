@@ -1,8 +1,11 @@
-use "html" as html
-print("html loaded")
-use "chrono" as chrono
-print("chrono loaded")
-use "future" as future
-print("future loaded")
 use "json" as json
-print("json loaded")
+
+// Test the global state: json module uses _src, _pos, _len as module-level vars
+// Those are initialized at module load time to empty strings.
+// When parse() is called, it reassigns them. But they might not be proper
+// mutable globals inside the module sandbox.
+
+// Simple parse test
+result = json.parse("{\"x\": 42}")
+print("result:", result)
+print("type:", type(result))

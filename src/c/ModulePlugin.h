@@ -29,14 +29,14 @@ extern "C" {
 #define HAVEL_MODULE_MAX_ALIASES 8
 
 typedef struct HavelModuleABI {
- int abi_version;
- const char *name;
- const char *version;
- const char *description;
- void (*register_fn)(void *vmapi);
- void (*cleanup_fn)(void);
- const char *aliases[HAVEL_MODULE_MAX_ALIASES];
- int eager;
+	int abi_version;
+	const char *name;
+	const char *version;
+	const char *description;
+	void (*register_fn)(void *vmapi);
+	void (*cleanup_fn)(void);
+	const char *aliases[HAVEL_MODULE_MAX_ALIASES];
+	int eager;
 } HavelModuleABI;
 
 typedef const HavelModuleABI *(*HavelModuleInfoFn)(void);
@@ -51,26 +51,28 @@ typedef void (*HavelModuleRegisterFn)(void *vmapi);
 
 #include "havel-lang/compiler/vm/VMApi.hpp"
 
+#define HAVEL_MODULE_EXPORT __attribute__((visibility("default")))
+
 #define HAVEL_MODULE_PLUGIN_IMPL(name, version_str, description_str, ...) \
-extern "C" void havel_module_register(void *vmapi_ptr); \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
- HAVEL_MODULE_ABI_VERSION, \
- #name, \
- version_str, \
- description_str, \
- havel_module_register, \
- nullptr, \
- {nullptr}, \
- 0 \
+	HAVEL_MODULE_ABI_VERSION, \
+	#name, \
+	version_str, \
+	description_str, \
+	havel_module_register, \
+	nullptr, \
+	{nullptr}, \
+	0 \
 }; \
-extern "C" const HavelModuleABI *havel_module_info(void) { \
- return &havel_mod_abi_##name; \
+extern "C" HAVEL_MODULE_EXPORT const HavelModuleABI *havel_module_info(void) { \
+	return &havel_mod_abi_##name; \
 } \
-extern "C" void havel_module_register(void *vmapi_ptr) { \
- auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
- if (api) { \
-  __VA_ARGS__ \
- } \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
+	auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
+	if (api) { \
+		__VA_ARGS__ \
+	} \
 }
 
 #define HAVEL_MODULE_ALIASES_0 {}
@@ -83,91 +85,91 @@ extern "C" void havel_module_register(void *vmapi_ptr) { \
 #define HAVEL_MODULE_ALIASES_7(a, b, c, d, e, f, g) {a, b, c, d, e, f, g, nullptr}
 
 #define HAVEL_MODULE_PLUGIN_IMPL_A1(name, version_str, description_str, a1, ...) \
-extern "C" void havel_module_register(void *vmapi_ptr); \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
- HAVEL_MODULE_ABI_VERSION, \
- #name, \
- version_str, \
- description_str, \
- havel_module_register, \
- nullptr, \
- {a1, nullptr}, \
- 0 \
+	HAVEL_MODULE_ABI_VERSION, \
+	#name, \
+	version_str, \
+	description_str, \
+	havel_module_register, \
+	nullptr, \
+	{a1, nullptr}, \
+	0 \
 }; \
-extern "C" const HavelModuleABI *havel_module_info(void) { \
- return &havel_mod_abi_##name; \
+extern "C" HAVEL_MODULE_EXPORT const HavelModuleABI *havel_module_info(void) { \
+	return &havel_mod_abi_##name; \
 } \
-extern "C" void havel_module_register(void *vmapi_ptr) { \
- auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
- if (api) { \
-  __VA_ARGS__ \
- } \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
+	auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
+	if (api) { \
+		__VA_ARGS__ \
+	} \
 }
 
 #define HAVEL_MODULE_PLUGIN_IMPL_A2(name, version_str, description_str, a1, a2, ...) \
-extern "C" void havel_module_register(void *vmapi_ptr); \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
- HAVEL_MODULE_ABI_VERSION, \
- #name, \
- version_str, \
- description_str, \
- havel_module_register, \
- nullptr, \
- {a1, a2, nullptr}, \
- 0 \
+	HAVEL_MODULE_ABI_VERSION, \
+	#name, \
+	version_str, \
+	description_str, \
+	havel_module_register, \
+	nullptr, \
+	{a1, a2, nullptr}, \
+	0 \
 }; \
-extern "C" const HavelModuleABI *havel_module_info(void) { \
- return &havel_mod_abi_##name; \
+extern "C" HAVEL_MODULE_EXPORT const HavelModuleABI *havel_module_info(void) { \
+	return &havel_mod_abi_##name; \
 } \
-extern "C" void havel_module_register(void *vmapi_ptr) { \
- auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
- if (api) { \
-  __VA_ARGS__ \
- } \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
+	auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
+	if (api) { \
+		__VA_ARGS__ \
+	} \
 }
 
 #define HAVEL_MODULE_PLUGIN_IMPL_A3(name, version_str, description_str, a1, a2, a3, ...) \
-extern "C" void havel_module_register(void *vmapi_ptr); \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
- HAVEL_MODULE_ABI_VERSION, \
- #name, \
- version_str, \
- description_str, \
- havel_module_register, \
- nullptr, \
- {a1, a2, a3, nullptr}, \
- 0 \
+	HAVEL_MODULE_ABI_VERSION, \
+	#name, \
+	version_str, \
+	description_str, \
+	havel_module_register, \
+	nullptr, \
+	{a1, a2, a3, nullptr}, \
+	0 \
 }; \
-extern "C" const HavelModuleABI *havel_module_info(void) { \
- return &havel_mod_abi_##name; \
+extern "C" HAVEL_MODULE_EXPORT const HavelModuleABI *havel_module_info(void) { \
+	return &havel_mod_abi_##name; \
 } \
-extern "C" void havel_module_register(void *vmapi_ptr) { \
- auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
- if (api) { \
-  __VA_ARGS__ \
- } \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
+	auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
+	if (api) { \
+		__VA_ARGS__ \
+	} \
 }
 
 #define HAVEL_MODULE_PLUGIN_EAGER(name, version_str, description_str, ...) \
-extern "C" void havel_module_register(void *vmapi_ptr); \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
- HAVEL_MODULE_ABI_VERSION, \
- #name, \
- version_str, \
- description_str, \
- havel_module_register, \
- nullptr, \
- {nullptr}, \
- 1 \
+	HAVEL_MODULE_ABI_VERSION, \
+	#name, \
+	version_str, \
+	description_str, \
+	havel_module_register, \
+	nullptr, \
+	{nullptr}, \
+	1 \
 }; \
-extern "C" const HavelModuleABI *havel_module_info(void) { \
- return &havel_mod_abi_##name; \
+extern "C" HAVEL_MODULE_EXPORT const HavelModuleABI *havel_module_info(void) { \
+	return &havel_mod_abi_##name; \
 } \
-extern "C" void havel_module_register(void *vmapi_ptr) { \
- auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
- if (api) { \
-  __VA_ARGS__ \
- } \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
+	auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
+	if (api) { \
+		__VA_ARGS__ \
+	} \
 }
 
 #endif

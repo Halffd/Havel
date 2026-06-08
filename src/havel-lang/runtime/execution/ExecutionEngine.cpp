@@ -266,60 +266,50 @@ bool ExecutionEngine::executeFrame() {
         handleYield(g);
         break;
 
-        case VMExecutionResult::SUSPENDED:
-            // Fiber already suspended by VM::executeOneStep() — it called
-            // fiber->suspend() which set state=SUSPENDED and saved reason/context.
-            // Do NOT call fiber->suspend() again — that would throw since the
-            // fiber is already SUSPENDED.
-            if (vm_->isSuspensionRequested()) {
-                uint8_t reason = vm_->getSuspensionReason();
-                void* context = vm_->getSuspensionContext();
+  case VMExecutionResult::SUSPENDED: {
+      // Fiber already suspended by VM::executeOneStep() — it called
+      // fiber->suspend() which set state=SUSPENDED and saved reason/context.
+      // Do NOT call fiber->suspend() again — that would throw since the
+      // fiber is already SUSPENDED.
+      //
+      // NOTE: We read reason/context from g->fiber, NOT from vm_->isSuspensionRequested().
+      // executeOneStep clears suspension_requested_ before returning (VM.cpp:575),
+      // so vm_->isSuspensionRequested() is always false here — the old code was dead.
+      auto fiber_reason = g->fiber ? g->fiber->suspended_reason : SuspensionReason::NONE;
+      void* context = g->fiber ? g->fiber->suspension_context : nullptr;
+      uint8_t reason = static_cast<uint8_t>(fiber_reason);
 
-                scheduler_->suspend(g, toSchedulerReason(reason));
-          
-                // Special handling for SLEEP - set deadline via WaitHandle
-                if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
-                    // Context for sleep is the duration in milliseconds
-                    int64_t ms = reinterpret_cast<intptr_t>(context);
-                    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
-                    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-                }
-                // Handle COROUTINE_WAIT - set WaitHandle for coroutine await
-                if (reason == static_cast<uint8_t>(SuspensionReason::COROUTINE_WAIT)) {
-                    uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                    g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
-                    g->wait_handle.target_id = co_id;
-                }
-                // Handle THREAD_JOIN - set WaitHandle for thread join
-                if (reason == static_cast<uint8_t>(SuspensionReason::THREAD_JOIN)) {
-                    uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                    g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
-                    g->wait_handle.target_id = tid;
-                }
-                // Handle CHANNEL_RECV - set WaitHandle for channel receive
-                if (reason == static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV)) {
-                    uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                    g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
-                    g->wait_handle.target_id = ch_id;
-                }
-// Handle TIMER - set WaitHandle for timer/interval/timeout
-if (reason == static_cast<uint8_t>(SuspensionReason::TIMER)) {
-uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
-g->wait_handle.target_id = timer_id;
-}
-// Handle AWAIT - WaitHandle already set by the VM opcode handler
-// (FIBER_AWAIT sets wait_handle.type and target_id before requesting suspension)
-// No additional work needed here — the event handlers will find and unpark
-// the goroutine by its WaitHandle type/target_id.
+      scheduler_->suspend(g, toSchedulerReason(reason));
 
-vm_->clearSuspensionRequest();
-        }
-        
-        // Goroutine blocked on external event (channel, timer, thread)
-        // EventQueue will unpark it when condition is met
-        handleSuspended(g);
-        break;
+      if (fiber_reason == SuspensionReason::SLEEP) {
+        int64_t ms = reinterpret_cast<intptr_t>(context);
+        g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+        g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+      }
+      if (fiber_reason == SuspensionReason::COROUTINE_WAIT) {
+        uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+        g->wait_handle.type = Scheduler::AwaitableType::COROUTINE;
+        g->wait_handle.target_id = co_id;
+      }
+      if (fiber_reason == SuspensionReason::THREAD_JOIN) {
+        uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+        g->wait_handle.type = Scheduler::AwaitableType::THREAD_JOIN;
+        g->wait_handle.target_id = tid;
+      }
+      if (fiber_reason == SuspensionReason::CHANNEL_RECV) {
+        uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+        g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
+        g->wait_handle.target_id = ch_id;
+      }
+      if (fiber_reason == SuspensionReason::TIMER) {
+        uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+        g->wait_handle.type = Scheduler::AwaitableType::TIMER_WAIT;
+        g->wait_handle.target_id = timer_id;
+      }
+
+      handleSuspended(g);
+      break;
+    }
         
       case VMExecutionResult::RETURNED:
         // Function returned - mark goroutine DONE

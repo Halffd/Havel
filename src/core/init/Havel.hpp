@@ -17,7 +17,6 @@ class HotkeyManager;
 class WindowManager;
 class AudioManager;
 class MPVController;
-class HotkeyConditionCompiler;
 struct HostContext;
 void blockAllSignals();
 class HavelLauncher;
@@ -130,10 +129,7 @@ private:
   std::unique_ptr<compiler::JITCompiler> jitCompiler;
 #endif
 
-  
-  
-  HotkeyConditionCompiler *conditionCompiler = nullptr;    
-  
+
 
   // Host context (persistent for VM lifetime)
   std::unique_ptr<HostContext> hostContext;

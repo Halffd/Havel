@@ -9,6 +9,8 @@
 
 namespace havel {
 
+namespace compiler { class VM; }
+
 // Forward declarations
 using pID = int;
 
@@ -114,6 +116,7 @@ public:
   virtual class ProcessManager *GetProcessManager() = 0;
   virtual class MapManager *GetMapManager() = 0;
   virtual class ModeManager *GetModeManager() = 0;
+ virtual class compiler::VM *GetVM() = 0;
 
   // Import manager for script imports
   virtual class ImportManager *GetImportManager() = 0;
@@ -125,6 +128,7 @@ public:
   virtual void SetHotkeyManager(class HotkeyManager *hm) = 0;
   virtual void SetIO(class IO *io) = 0;
   virtual void SetModeManager(class ModeManager *mm) = 0;
+ virtual void SetVM(class compiler::VM *vm) = 0;
 };
 
 /**
@@ -202,6 +206,7 @@ public:
   class ProcessManager *GetProcessManager() override;
   class MapManager *GetMapManager() override;
   class ModeManager *GetModeManager() override;
+ class compiler::VM *GetVM() override;
   class ImportManager *GetImportManager() override {
     return nullptr;
   } // TODO: implement
@@ -213,6 +218,7 @@ public:
   void SetHotkeyManager(class HotkeyManager *hm) override;
   void SetIO(class IO *io) override;
   void SetModeManager(class ModeManager *mm) override;
+ void SetVM(class compiler::VM *vm) override;
 
 private:
   class IO *io;
@@ -230,6 +236,7 @@ private:
   class ProcessManager *processManager;
   class MapManager *mapManager;
   class ModeManager *modeManager;
+ class compiler::VM *vm_ = nullptr;
 
   // Command line arguments
   std::vector<std::string> commandLineArgs;

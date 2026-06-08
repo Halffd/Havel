@@ -1,45 +1,27 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <queue>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <variant>
 #include <vector>
 
 namespace havel {
 
-// Forward declarations
 class IO;
 class EventListener;
 class WindowMonitor;
-class HotkeyConditionCompiler;
 class HotkeyActionWrapper;
-class HotkeyActionContext;
 
 namespace compiler {
 class EventQueue;
 class ExecutionEngine;
-class VM;
-class Scheduler;  
+class Scheduler;
 }
 
-/**
- * ConditionalHotkey - A hotkey with a condition
- *
- * Condition can be:
- * - String: evaluated via condition engine (e.g., "mode == 'gaming'")
- * - Function: direct C++ callback
- * 
- * Phase 2F: Integrated with reactive watcher system
- * - watcher_id: ID in WatcherRegistry (0 if not using reactive system)
- * - Condition changes trigger edge-detect watchers (false→true)
- */
 struct ConditionalHotkey {
   int id;
   std::string key;
@@ -49,196 +31,88 @@ struct ConditionalHotkey {
   bool currentlyGrabbed = false;
   bool lastConditionResult = false;
   bool monitoringEnabled = true;
-  bool async = false; // Execute action asynchronously via Scheduler/Fiber
-
-  std::unordered_set<std::string> dependencies; // Global variables the condition depends on
+  bool async = false;
+  std::unordered_set<std::string> dependencies;
 };
 
-// Stores the state of conditional hotkeys before suspension
 struct ConditionalHotkeyState {
   int id;
   bool wasGrabbed;
 };
 
-/**
- * ConditionalHotkeyManager manages hotkeys that have conditions attached to them.
- * It handles grabbing/ungrabbing hotkeys based on condition evaluation.
- * 
- * ARCHITECTURE: Event-driven (no background thread)
- * - Mode changes, window focus changes, etc. push reevaluation to EventQueue
- * - EventQueue processes all pending callbacks in the main event loop
- * - This ensures conditions have access to shared globals/heap/stack
- * - The main loop calls UpdateAllConditionalHotkeys() each frame
- */
 class ConditionalHotkeyManager {
 public:
   ConditionalHotkeyManager(std::shared_ptr<IO> io);
   ~ConditionalHotkeyManager();
 
-  // Register a conditional hotkey with string condition
   int AddConditionalHotkey(const std::string& key, const std::string& condition,
-                           std::function<void()> trueAction,
-                           std::function<void()> falseAction = nullptr,
-                           int id = 0,
-                           bool async = false);
+    std::function<void()> trueAction,
+    std::function<void()> falseAction = nullptr,
+    int id = 0, bool async = false);
 
-  // Register a conditional hotkey with function condition
   int AddConditionalHotkey(const std::string& key, std::function<bool()> condition,
-                           std::function<void()> trueAction,
-                           std::function<void()> falseAction = nullptr,
-                           int id = 0,
-                           bool async = false);
+    std::function<void()> trueAction,
+    std::function<void()> falseAction = nullptr,
+    int id = 0, bool async = false);
 
-  // Remove a conditional hotkey
   bool RemoveConditionalHotkey(int id);
-
-  // Enable/disable monitoring for a specific hotkey
   bool SetHotkeyMonitoring(int id, bool enabled);
-
-  // Get hotkey by ID
   ConditionalHotkey* FindHotkey(int id);
 
-  // Evaluate all conditional hotkeys (called from main event loop)
   void UpdateAllConditionalHotkeys();
-
-  // Evaluate only hotkeys that depend on the given variable
   void UpdateConditionalHotkeysForVariable(const std::string& var_name);
-
-  // Force update all hotkeys (immediate, bypasses cache)
   void ForceUpdateAllConditionalHotkeys();
-
-  // Reevaluate hotkeys based on current mode/state (called from EventQueue callback)
   void ReevaluateConditionalHotkeys();
-
-  // Schedule reevaluation via EventQueue (thread-safe, called from any thread)
   void ScheduleReevaluation();
 
-  // Set the event queue for scheduling reevaluation
   void setEventQueue(compiler::EventQueue* eq) { eventQueue_ = eq; }
-  
-  
   void registerVarChangedHandler();
-  
-  
-  // Allows hotkey conditions to be registered as watchers
-  void setExecutionEngine(compiler::ExecutionEngine* ee) { executionEngine_ = ee; }  
-  
-  void setConditionCompiler(class HotkeyConditionCompiler* compiler) { 
-    conditionCompiler_ = compiler;
-  }
-  // Suspend all conditional hotkeys (save state and ungrab all)
+
   bool Suspend();
-
-  // Resume all conditional hotkeys (restore state)
   bool Resume();
-
-  // Cleanup
   void Cleanup();
 
-  // Get/set enabled state
   bool IsEnabled() const { return enabled; }
   void SetEnabled(bool e) { enabled = e; }
 
-  // Mode management
   void SetMode(const std::string& newMode);
   std::string GetMode() const;
 
-  // Condition evaluation
   bool EvaluateCondition(const std::string& condition);
 
-  // Get access to hotkeys for direct manipulation
   std::vector<ConditionalHotkey>& GetHotkeys() { return conditionalHotkeys; }
   const std::vector<ConditionalHotkey>& GetHotkeys() const { return conditionalHotkeys; }
-
-  // Get mutex for thread-safe operations
   std::mutex& GetMutex() { return hotkeyMutex; }
 
-  // Set condition evaluation function
-  void SetConditionEvaluator(std::function<bool(const std::string&)> evaluator) {
-    conditionEvaluator = evaluator;
-  }
-
-  
-  void setBytecodeVM(compiler::VM* vm) { bytecodeVM_ = vm; }
-
-  // Set gaming mode checker
-  void SetGamingModeChecker(std::function<bool()> checker) {
-    isGamingModeActive = checker;
-  }
-
-  // Set mode manager for automatic mode updates
   void setModeManager(std::weak_ptr<class ModeManager> mgr) { modeManager = mgr; }
-
-  // Set window monitor for efficient window info caching
   void setWindowMonitor(std::shared_ptr<WindowMonitor> monitor) { windowMonitor = monitor; }
-
-  
   void setScheduler(class compiler::Scheduler* sched) { scheduler_ = sched; }
 
-  // Debug options
   bool verboseConditionLogging = false;
   bool verboseLogging = false;
 
 private:
-  std::shared_ptr<IO> io;  // Shared ownership
+  std::shared_ptr<IO> io;
   std::vector<ConditionalHotkey> conditionalHotkeys;
   std::vector<int> conditionalHotkeyIds;
-  std::vector<int> gamingHotkeyIds;
   std::vector<ConditionalHotkeyState> suspendedHotkeyStates;
 
-  std::mutex hotkeyMutex; // Protects conditionalHotkeys and related structures
+  std::mutex hotkeyMutex;
   std::atomic<bool> enabled{true};
   std::atomic<bool> wasSuspended{false};
 
-  // Event queue for scheduling reevaluation from any thread
   compiler::EventQueue* eventQueue_ = nullptr;
-  
-  
-  compiler::ExecutionEngine* executionEngine_ = nullptr;
-  
-  
   class compiler::Scheduler* scheduler_ = nullptr;
-  
-  
-  class HotkeyConditionCompiler* conditionCompiler_ = nullptr;
-  
-  
-  class compiler::VM* bytecodeVM_ = nullptr;
 
-  // Condition evaluation cache
-  struct CachedCondition {
-    bool result;
-    std::chrono::steady_clock::time_point timestamp;
-  };
-  std::unordered_map<std::string, CachedCondition> conditionCache;
-  std::mutex conditionCacheMutex;
-  static constexpr int CACHE_DURATION_MS = 50;
-
-  // Cleanup flag
-  std::atomic<bool> inCleanupMode{false};
-
-  // Condition evaluation function (can be overridden)
-  std::function<bool(const std::string&)> conditionEvaluator;
-
-  // Gaming mode checker
-  std::function<bool()> isGamingModeActive;
-
-  // Mode manager (weak reference to avoid circular dependency)
   std::weak_ptr<class ModeManager> modeManager;
-
-  // Window monitor for efficient window info caching
   std::shared_ptr<WindowMonitor> windowMonitor;
 
-  // Mode management
-  static std::mutex modeMutex;
-  static std::string currentMode;
+  compiler::ExecutionEngine* executionEngine_ = nullptr;
 
-  // Internal methods
   void UpdateConditionalHotkey(ConditionalHotkey& hotkey);
   void UpdateHotkeyState(ConditionalHotkey& hotkey, bool conditionMet);
   void BatchUpdateConditionalHotkeys();
   bool EvaluateConditionInternal(const std::string& condition);
-  void InvalidateConditionalHotkeys();
 };
 
 } // namespace havel

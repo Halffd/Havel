@@ -2,9 +2,7 @@
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
-#include "core/condition/HotkeyConditionCompiler.hpp"
 #include "core/hotkey/HotkeyActionWrapper.hpp"
-#include "core/hotkey/HotkeyActionContext.hpp"
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #include "core/brightness/BrightnessManager.hpp"
 #include "core/config/ConfigManager.hpp"
@@ -291,27 +289,15 @@ void Havel::initialize(bool isStartup) {
 	bytecodeVM->setScheduler(scheduler);
 
 
-if (hotkeyManager) {
+ if (hotkeyManager) {
  hotkeyManager->setEventQueue(eventQueue);
- hotkeyManager->getConditionalHotkeyManager().setExecutionEngine(executionEngine.get());
  hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
-    hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
-    
-    
-    hotkeyManager->getConditionalHotkeyManager().setScheduler(scheduler);
-    
-    
-    conditionCompiler = new HotkeyConditionCompiler();
-    hotkeyManager->getConditionalHotkeyManager().setConditionCompiler(conditionCompiler);
-    hotkeyManager->getConditionalHotkeyManager().setBytecodeVM(bytecodeVM.get());
-    
-    
-    // HotkeyActionWrapper uses static methods and doesn't need to be stored
-    
-    
-    // HotkeyActionContext::clearContext() and HotkeyActionStateSync::clearAll() are called
-    // from HotkeyActionContext.cpp static initialization if needed
-    if (debugging::debug_io) debug("Reactive hotkey system initialized");
+ hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
+
+
+ hotkeyManager->getConditionalHotkeyManager().setScheduler(scheduler);
+
+ if (debugging::debug_io) debug("Reactive hotkey system initialized");
     
     auto modeManager = hotkeyManager->getModeManager();
     if (modeManager) {
@@ -378,13 +364,7 @@ void Havel::cleanup() noexcept {
     hotkeyManager.reset();
   }
 
-  
-  if (conditionCompiler) {
-    if (debugging::debug_io) debug("Havel::cleanup() - deleting HotkeyConditionCompiler");
-    delete conditionCompiler;
-    conditionCompiler = nullptr;
-  }
-  
+
 
  // Stop ExecutionEngine and Scheduler BEFORE destroying VM
  if (executionEngine) {

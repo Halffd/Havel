@@ -64,9 +64,11 @@ FileManager *HostAPI::GetFileManager() { return fileManager; }
 ProcessManager *HostAPI::GetProcessManager() { return processManager; }
 MapManager *HostAPI::GetMapManager() { return mapManager; }
 ModeManager *HostAPI::GetModeManager() { return modeManager; }
+compiler::VM *HostAPI::GetVM() { return vm_; }
 void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }
 void HostAPI::SetIO(IO *newIo) { io = newIo; }
 void HostAPI::SetModeManager(ModeManager *mm) { modeManager = mm; }
+void HostAPI::SetVM(compiler::VM *vm) { vm_ = vm; }
 const std::vector<std::string> &HostAPI::GetCommandLineArgs() { return commandLineArgs; }
 
 } // namespace havel
@@ -230,6 +232,7 @@ FileManager *HostAPI::GetFileManager() { return fileManager; }
 ProcessManager *HostAPI::GetProcessManager() { return processManager; }
 MapManager *HostAPI::GetMapManager() { return mapManager; }
 ModeManager *HostAPI::GetModeManager() { return modeManager; }
+compiler::VM *HostAPI::GetVM() { return vm_; }
 
 // Update manager pointers (called after managers are created)
 void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }
@@ -237,6 +240,8 @@ void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }
 void HostAPI::SetIO(IO *newIo) { io = newIo; }
 
 void HostAPI::SetModeManager(ModeManager *mm) { modeManager = mm; }
+
+void HostAPI::SetVM(compiler::VM *vm) { vm_ = vm; }
 
 // Command line arguments access
 const std::vector<std::string> &HostAPI::GetCommandLineArgs() {

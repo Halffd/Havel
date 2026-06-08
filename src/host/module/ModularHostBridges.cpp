@@ -6366,29 +6366,27 @@ Value ModeBridge::handleRegister(const std::vector<Value> &args,
     };
   }
 
-  // onEnterFrom callback (transition from specific mode)
-  if (onEnterFromId != INVALID_CALLBACK_ID) {
-    mode.onEnterFrom = [vm, onEnterFromId](const std::string &fromMode) {
-      (void)fromMode;
-      try {
-        vm->invokeCallback(onEnterFromId);
-      } catch (...) {
-        // Callback failed, ignore
-      }
-    };
-  }
+ // onEnterFrom callback (transition from specific mode)
+ if (onEnterFromId != INVALID_CALLBACK_ID) {
+  mode.onEnterFrom = [vm, onEnterFromId](const std::string &fromMode) {
+   try {
+    auto ref = vm->createRuntimeString(fromMode);
+    vm->invokeCallback(onEnterFromId, {Value::makeStringId(ref.id)});
+   } catch (...) {
+   }
+  };
+ }
 
-  // onExitTo callback (transition to specific mode)
-  if (onExitToId != INVALID_CALLBACK_ID) {
-    mode.onExitTo = [vm, onExitToId](const std::string &toMode) {
-      (void)toMode;
-      try {
-        vm->invokeCallback(onExitToId);
-      } catch (...) {
-        // Callback failed, ignore
-      }
-    };
-  }
+ // onExitTo callback (transition to specific mode)
+ if (onExitToId != INVALID_CALLBACK_ID) {
+  mode.onExitTo = [vm, onExitToId](const std::string &toMode) {
+   try {
+    auto ref = vm->createRuntimeString(toMode);
+    vm->invokeCallback(onExitToId, {Value::makeStringId(ref.id)});
+   } catch (...) {
+   }
+  };
+ }
 
   // Register with ModeManager
   ctx->modeManager->defineMode(std::move(mode));

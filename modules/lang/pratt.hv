@@ -2703,10 +2703,28 @@ fn parseUseStatement() {
   return UseStatement(firstMod, [], l, c, {moduleNames: mods})
 
 }
-    // ===================================================================
-    // STATEMENT: hotkey binding
-    // ===================================================================
-    fn parseHotkeyStatement() {
+// --- Helper: parse mode="..." policy="..." attributes after hotkey key ---
+fn parseHotkeyAttrs() {
+  modeAttr = ""
+  policyAttr = ""
+  while current().tid == TID.Identifier && (current().value == "mode" || current().value == "policy") {
+    attrName = current().value
+    nextTid = at(1).tid
+    if nextTid != TID.Assign { break }
+    advance() // consume attr name
+    advance() // consume '='
+    if current().tid == TID.String {
+      attrValue = advance().value
+      if attrName == "mode" { modeAttr = attrValue }
+      else { policyAttr = attrValue }
+    }
+  }
+  {mode: modeAttr, policy: policyAttr}
+}
+// ===================================================================
+// STATEMENT: hotkey binding
+// ===================================================================
+fn parseHotkeyStatement() {
         l = current().line
         c = current().col
 

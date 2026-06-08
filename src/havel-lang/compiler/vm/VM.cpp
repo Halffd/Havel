@@ -928,6 +928,17 @@ VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t cl
     return GoroutineCallResult::Interpreter;
 }
 
+bool VM::executeDirectCallThunk(const DirectCallThunk& thunk) {
+    for (const auto& call : thunk.calls) {
+        if (call.host_func_idx >= host_function_names_.size()) return false;
+        const std::string& name = host_function_names_[call.host_func_idx];
+        auto it = host_functions.find(name);
+        if (it == host_functions.end()) return false;
+        it->second(call.args);
+    }
+    return true;
+}
+
 // ============================================================================
 
 // ============================================================================

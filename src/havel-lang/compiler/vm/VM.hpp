@@ -814,6 +814,10 @@ GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id
         direct_call_thunks_[id] = std::move(thunk);
     }
 
+    // Execute a DirectCallThunk: calls each host function directly without
+    // VM dispatch. Returns true if all calls succeeded.
+    bool executeDirectCallThunk(const DirectCallThunk& thunk);
+
   void garbageCollectionSafePoint(size_t work_budget = 0);
 
   

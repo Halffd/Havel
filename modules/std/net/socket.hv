@@ -487,8 +487,9 @@ fn resolve(host, family) {
     // struct addrinfo hint
     hint = ffi.allocBytes(48)
     ffi.memset(hint, 0, 48)
-    ffi.set_i32(hint, family) // ai_family
-    ffi.set_i32(ffi.ptr_add(hint, 4), SOCK_STREAM) // ai_socktype
+  ffi.set_i32(hint, 0) // ai_flags = 0
+  ffi.set_i32(ffi.ptr_add(hint, 4), family) // ai_family
+  ffi.set_i32(ffi.ptr_add(hint, 8), SOCK_STREAM) // ai_socktype
     resultPtr = ffi.allocBytes(8)
     ffi.memset(resultPtr, 0, 8)
   result = ffi.call(_getaddrinfo, "int32", ["pointer", "pointer", "pointer", "pointer"], _chost, 0, hint, resultPtr)
@@ -501,8 +502,8 @@ fn resolve(host, family) {
     addrs = []
     ai = ffi.get_ptr(resultPtr)
     while ai != 0 && ai != null {
-        // ai_family at offset 0
-        aiFam = ffi.get_i32(ai)
+    // ai_family at offset 4
+    aiFam = ffi.get_i32(ffi.ptr_add(ai, 4))
         // ai_addrlen at offset 16
         aiAddrLen = ffi.get_u32(ffi.ptr_add(ai, 16))
         // ai_addr at offset 24

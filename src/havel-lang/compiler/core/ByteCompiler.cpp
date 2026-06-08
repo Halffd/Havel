@@ -2565,17 +2565,26 @@ ByteCompiler::compileWithModuleLoader(const ast::Program &program,
 }
 
 void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
-    if (!statement.isFileImport) {
-        for (const auto &moduleName : statement.moduleNames) {
-            uint32_t name_sid = addStringConstant(moduleName);
-            emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
-            emit(OpCode::IMPORT);
-            std::string storeName = (!statement.alias.empty()) ? statement.alias : moduleName;
-            uint32_t store_sid = addStringConstant(storeName);
-            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(store_sid));
-        }
-        return;
+  if (!statement.isFileImport) {
+    if (statement.isWildcard) {
+      for (const auto &moduleName : statement.moduleNames) {
+        uint32_t name_sid = addStringConstant(moduleName);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+        emit(OpCode::IMPORT);
+        emit(OpCode::IMPORT_WILDCARD);
+      }
+    } else {
+      for (const auto &moduleName : statement.moduleNames) {
+        uint32_t name_sid = addStringConstant(moduleName);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(name_sid)));
+        emit(OpCode::IMPORT);
+        std::string storeName = (!statement.alias.empty()) ? statement.alias : moduleName;
+        uint32_t store_sid = addStringConstant(storeName);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(store_sid));
+      }
     }
+    return;
+  }
 
     if (statement.isFileImport) {
         uint32_t path_sid = addStringConstant(statement.filePath);

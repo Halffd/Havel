@@ -7289,13 +7289,29 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
         if (!alias.empty()) {
             stmt->alias = alias;
         }
+      return stmt;
+    }
+
+    // Check for wildcard: use module.*
+    while (at().type == havel::TokenType::NewLine) advance();
+    if (at().type == havel::TokenType::Dot) {
+      advance(); // consume '.'
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type == havel::TokenType::Multiply) {
+        advance(); // consume '*'
+        auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
+        stmt->isWildcard = true;
         return stmt;
+      } else {
+        failAt(at(), "Expected '*' after '.' in use statement");
+        return nullptr;
+      }
     }
 
     auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, moduleNames);
     stmt->alias = alias;
     return stmt;
-}
+  }
 
   if (at().type == havel::TokenType::OpenBrace) {
     advance(); // consume '{'

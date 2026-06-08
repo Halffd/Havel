@@ -122,7 +122,7 @@ size_t VM::getHostArrayLength(ArrayRef array_ref) {
 }
 
 Value VM::execLengthOp(Value v) {
- if (v.isObjectId()) {
+  if (v.isObjectId()) {
  Value opMethod = getHostObjectField(ObjectRef{v.asObjectId(), true}, "op_length");
  if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
  return callFunction(opMethod, {v});

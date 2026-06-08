@@ -5,7 +5,7 @@
 
 namespace havel::host {
 
-class IClipboardBackend {
+class __attribute__((visibility("default"))) IClipboardBackend {
 public:
     virtual ~IClipboardBackend() = default;
 

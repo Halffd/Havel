@@ -137,7 +137,7 @@ fn isUnicodeIdentifierCharCp(cp) {
 
 SIMPLE_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\", 48: "\0", 36: "$", 123: "{", 125: "}"}
 
-AFTER_EXPR_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow"}
+AFTER_EXPR_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "RegexString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow", "Not", "Or", "And", "Assign", "BitwiseOr", "BitwiseAnd", "BitwiseXor", "ShiftLeft", "ShiftRight", "OpenParen", "If", "While", "For", "In", "Matches", "Tilde", "Comma", "Dot", "Minus", "Fn", "Op"}
 AFTER_MINUS_NUMBER_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow"}
 REGEX_CONTEXT_TYPES = {"OpenParen", "OpenBracket", "OpenBrace", "Comma", "Assign", "Arrow", "And", "Or", "Not", "In", "Matches", "Tilde", "Colon", "Question", "Pipe", "NewLine", "Semicolon"}
   STATEMENT_START_TYPES = {"NewLine", "Semicolon", "Arrow", "OpenBrace", "CloseBrace"}
@@ -148,7 +148,7 @@ fn Lexer(source) {
     keywords = KEYWORDS
     src = source
     cpArr = string.toCodePointArray(source)
-    n = len(cpArr)
+    n = cpArr.length()
     idx = 0
     line = 1
     col = 1
@@ -694,84 +694,91 @@ fn Lexer(source) {
         }
         addToken("RegexLiteral", s)
     }
-    fn scanHotkey() {
-        s = ""
-        while current() != -1 {
-            c = current()
-            if c == 32 || c == 9 {
-                if s.find("&") != null {
-                    s = s + string.fromCodePoint(c)
-                    advance()
-                    continue
-                }
-                look = idx
-                while look < n {
-                    lcp = cpArr[look][0]
-                    if lcp != 32 && lcp != 9 { break }
-                    look = look + 1
-                }
-                if look < n {
-                    lcp = cpArr[look][0]
-                    if lcp == 38 || lcp == 58 {
-                        while idx < look {
-                            s = s + string.fromCodePoint(current())
-                            advance()
-                        }
-                        continue
-                    }
-                }
-                break
-            }
-            if c == 13 || c == 10 || c == 123 || c == 40 { break }
-            if c == 61 && cp(1) == 62 { break }
-            if !isHotkeyCharCp(c) { break }
-            s = s + string.fromCodePoint(c)
+fn scanHotkey() {
+  savedIdx = idx
+  savedLine = line
+  savedCol = col
+  s = ""
+  while current() != -1 {
+    c = current()
+    if c == 32 || c == 9 {
+      if s.find("&") != null {
+        s = s + string.fromCodePoint(c)
+        advance()
+        continue
+      }
+      look = idx
+      while look < n {
+        lcp = cpArr[look][0]
+        if lcp != 32 && lcp != 9 { break }
+        look = look + 1
+      }
+      if look < n {
+        lcp = cpArr[look][0]
+        if lcp == 38 || lcp == 58 {
+          while idx < look {
+            s = s + string.fromCodePoint(current())
             advance()
+          }
+          continue
         }
-        if s.len >= 2 && s[0] == "F"[0] {
-            allDigits = true
-            for i in 1..s.len {
-                ch = s.codePointAt(i)
-                if ch < 48 || ch > 57 { allDigits = false; break }
-            }
-            if allDigits {
-                fnum = int(s.sub(1))
-                if fnum != null && fnum >= 1 && fnum <= 12 {
-                    addToken("Hotkey", s)
-                    return
-                }
-            }
-        }
-        hasMod = false
-        if s.len > 0 {
-            if s.find("^") != null { hasMod = true }
-            if !hasMod && s.find("!") != null { hasMod = true }
-            if !hasMod && s.find("+") != null { hasMod = true }
-            if !hasMod && s.find("#") != null { hasMod = true }
-            if !hasMod && s.find("@") != null { hasMod = true }
-            if !hasMod && s.find("~") != null { hasMod = true }
-            if !hasMod && s.find("$") != null { hasMod = true }
-            if !hasMod && s.find("&") != null { hasMod = true }
-            if !hasMod && s.find(":") != null { hasMod = true }
-            if s[0] == "F"[0] { hasMod = true }
-        }
-        if hasMod {
-            addToken("Hotkey", s)
-            return
-        }
-        allAlphaNum = true
-        for i in 0..s.len {
-            ch = s.codePointAt(i)
-            if !isAlphaNumCp(ch) { allAlphaNum = false; break }
-        }
-        if allAlphaNum && s.len > 0 {
-            addToken("Hotkey", s)
-            return
-        }
-        if s.len > 0 {
-            addToken("Hotkey", s)
-        }
+      }
+      break
     }
+    if c == 13 || c == 10 || c == 123 || c == 40 { break }
+    if c == 61 && cp(1) == 62 { break }
+    if !isHotkeyCharCp(c) { break }
+    s = s + string.fromCodePoint(c)
+    advance()
+  }
+  if s.len >= 2 && s[0] == "F"[0] {
+    allDigits = true
+    for i in 1..s.len {
+      ch = s.codePointAt(i)
+      if ch < 48 || ch > 57 { allDigits = false; break }
+    }
+    if allDigits {
+      fnum = int(s.sub(1))
+      if fnum != null && fnum >= 1 && fnum <= 12 {
+        addToken("Hotkey", s)
+        return
+      }
+    }
+  }
+  hasMod = false
+  if s.len > 0 {
+    if s.find("^") != null { hasMod = true }
+    if !hasMod && s.find("!") != null { hasMod = true }
+    if !hasMod && s.find("+") != null { hasMod = true }
+    if !hasMod && s.find("#") != null { hasMod = true }
+    if !hasMod && s.find("@") != null { hasMod = true }
+    if !hasMod && s.find("~") != null { hasMod = true }
+    if !hasMod && s.find("$") != null { hasMod = true }
+    if !hasMod && s.find("&") != null { hasMod = true }
+    if !hasMod && s.find(":") != null { hasMod = true }
+    if s[0] == "F"[0] { hasMod = true }
+  }
+  if hasMod {
+    addToken("Hotkey", s)
+    return
+  }
+  allAlphaNum = true
+  for i in 0..s.len {
+    ch = s.codePointAt(i)
+    if !isAlphaNumCp(ch) { allAlphaNum = false; break }
+  }
+  if allAlphaNum && s.len > 0 {
+    addToken("Hotkey", s)
+    return
+  }
+  // Fallback: not a recognizable hotkey, rewind and treat as identifier
+  if s.len > 0 {
+    idx = savedIdx
+    line = savedLine
+    col = savedCol
+    scanIdentifier()
+  }
+}
   fn _scan() {
     tokenCount = 0
     while current() != -1 {
@@ -957,31 +964,45 @@ fn Lexer(source) {
                 addToken("BangOpenBrace", "!{")
                 continue
             }
-            // ! - context-aware: Not vs hotkey
-            if c == 33 {
-                nextCp = cp(1)
-                isIdentStart = false
-                if nextCp >= 97 && nextCp <= 122 { isIdentStart = true }
-                if nextCp >= 65 && nextCp <= 90 { isIdentStart = true }
-                if nextCp == 95 { isIdentStart = true }
-                if nextCp >= 48 && nextCp <= 57 { isIdentStart = true }
-                isNotCtx = afterExpression() || (nextCp != -1 && isIdentStart)
-                if isNotCtx {
-                    advance()
-                    addToken("Not", "!")
-                } else {
-                    advance()
-                    s = "!"
-                    while current() != -1 && current() != 10 && current() != 123 && current() != 40 {
-                        if current() == 61 && cp(1) == 62 { break }
-                        s = s + string.fromCodePoint(current())
-                        advance()
-                    }
-                    if s == "!" { addToken("Not", "!") }
-                    else { addToken("Hotkey", s) }
-                }
-                continue
-            }
+  // ! - context-aware: Not vs hotkey
+  if c == 33 {
+    nextCp = cp(1)
+    isIdentStart = false
+    if nextCp >= 97 && nextCp <= 122 { isIdentStart = true }
+    if nextCp >= 65 && nextCp <= 90 { isIdentStart = true }
+    if nextCp == 95 { isIdentStart = true }
+    if nextCp >= 48 && nextCp <= 57 { isIdentStart = true }
+    if afterExpression() {
+      advance()
+      addToken("Not", "!")
+    } else if isIdentStart {
+      // !ident could be a hotkey binding like !F1 => { } — scan ahead for =>
+      advance()
+      s = "!"
+      while current() != -1 && current() != 10 && current() != 123 && current() != 40 {
+        if current() == 61 && cp(1) == 62 { break }
+        s = s + string.fromCodePoint(current())
+        advance()
+      }
+      // Check if this is a hotkey binding (ends with =>)
+      if current() == 61 && cp(1) == 62 {
+        addToken("Hotkey", s)
+      } else {
+        addToken("Not", "!")
+      }
+    } else {
+      advance()
+      s = "!"
+      while current() != -1 && current() != 10 && current() != 123 && current() != 40 {
+        if current() == 61 && cp(1) == 62 { break }
+        s = s + string.fromCodePoint(current())
+        advance()
+      }
+      if s == "!" { addToken("Not", "!") }
+      else { addToken("Hotkey", s) }
+    }
+    continue
+  }
             if c == 60 && cp(1) == 61 {
                 advance()
                 advance()

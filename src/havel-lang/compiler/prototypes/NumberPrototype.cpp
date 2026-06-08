@@ -535,14 +535,14 @@ regProto("sortKey", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeNull();
   });
 
-  // len: {a:1, b:2}.len() -> 2
+  // len: {a:1, b:2}.len() -> 2; len(arr) -> arr.length; len(str) -> str.length
   regProto("len", 1, [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeInt(0);
     if (args[0].isObjectId()) {
       auto* obj = vm.getHeap().object(args[0].asObjectId());
       return Value::makeInt(obj ? static_cast<int64_t>(obj->size()) : 0);
     }
-    return Value::makeInt(0);
+    return vm.execLengthOp(args[0]);
   });
 
   // empty: {a:1, b:2}.empty() -> false

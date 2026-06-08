@@ -25,7 +25,7 @@ struct WindowStats {
   int x, y, width, height;
 };
 
-class WindowManager {
+class __attribute__((visibility("default"))) WindowManager {
 public:
   WindowManager();
   ~WindowManager() = default;

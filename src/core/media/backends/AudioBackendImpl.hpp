@@ -2,7 +2,6 @@
 #include "IAudioBackend.hpp"
 #include <atomic>
 #include <condition_variable>
-#include <future>
 #include <map>
 #include <mutex>
 #include <queue>
@@ -14,7 +13,12 @@
 #include <spa/param/audio/raw.h>
 #include <spa/param/props.h>
 #include <spa/pod/builder.h>
+#include <spa/pod/parser.h>
+#include <spa/utils/keys.h>
+#include <spa/utils/result.h>
+#include <spa/utils/string.h>
 #endif
+
 #ifdef HAVE_PULSEAUDIO
 #include <pulse/pulseaudio.h>
 #include <pulse/thread-mainloop.h>
@@ -25,6 +29,7 @@
 #include <pulse/stream.h>
 #include <pulse/subscribe.h>
 #endif
+
 #ifdef HAVE_ALSA
 #include <alsa/asoundlib.h>
 #include <alsa/mixer.h>
@@ -71,43 +76,27 @@ public:
   bool playTestSound() override;
   bool playSound(const std::string &soundFile) override;
 
-  // Public for friend callbacks
   AudioBackend activeBackend = AudioBackend::ALSA;
   AudioBackendMode backendMode = AudioBackendMode::Automatic;
   mutable std::vector<AudioDevice> cachedDevices;
   mutable std::mutex deviceMutex;
   std::string defaultOutputDevice, defaultInputDevice;
 
-private:
-  bool useCli_ = false;
-
-  // Native backend init
-  bool initNativePipeWire();
-  bool initNativePulseAudio();
-  bool initNativeAlsa();
-  bool initNativeWindows();
-
-  // CLI helpers
-  std::string cliExec(const std::string &cmd) const;
-  double cliGetVolume(const std::string &device) const;
-  bool cliSetVolume(const std::string &device, double volume) const;
-  bool cliSetMute(const std::string &device, bool muted) const;
-
-  // Native PipeWire
+  // === PipeWire native ===
 #ifdef HAVE_PIPEWIRE
-  friend void pw_on_core_sync(void *data, uint32_t id, int seq);
-  friend void pw_on_core_error(void *data, uint32_t id, int seq, int res, const char *msg);
-  friend void pw_on_node_info(void *data, const struct pw_node_info *info);
-  friend void pw_on_registry_global(void *data, uint32_t id, uint32_t permissions,
-                                     const char *type, uint32_t version, const struct spa_dict *props);
-  friend void pw_on_registry_global_remove(void *data, uint32_t id);
-
   struct PWNode {
     uint32_t id;
     std::string name, mediaClass, description;
-    double volume = 1.0; bool isMuted = false;
+    double volume = 1.0;
+    bool isMuted = false;
+    int nVolumeChannels = 0;
+    float channelVolumes[SPA_AUDIO_MAX_CHANNELS] = {};
     pw_proxy *proxy = nullptr;
-    spa_hook node_listener;
+  spa_hook node_listener;
+#if PW_MAJOR_VERSION > 0 || (PW_MAJOR_VERSION == 0 && PW_MINOR_VERSION >= 3 && PW_MICRO_VERSION >= 82)
+#else
+  pw_node_events node_events{};
+#endif
   };
 
   pw_thread_loop *pw_loop = nullptr;
@@ -123,47 +112,103 @@ private:
   std::condition_variable pw_cmd_cv;
   std::queue<std::function<void()>> pw_cmds;
   bool pw_running = false;
+  int pw_sync_seq = 0;
 
   void pwStart();
   void pwStop();
   void pwProcess();
-  void pwSetNodeVolume(uint32_t id, double vol);
-  void pwSetNodeMute(uint32_t id, bool mute);
+  void pwSyncWait();
+  uint32_t pwFindDefaultNode(bool input) const;
+  bool pwSetNodeVolume(uint32_t id, double vol);
+  bool pwSetNodeMute(uint32_t id, bool mute);
+  double pwGetNodeVolume(uint32_t id) const;
+  bool pwGetNodeMuted(uint32_t id) const;
+  std::vector<AudioDevice> pwGetDevices(bool input) const;
+  std::string pwGetDefault(bool input) const;
+  bool pwSetAppVolume(const std::string &appName, double vol);
+  double pwGetAppVolume(const std::string &appName) const;
+  std::vector<AudioManager::ApplicationInfo> pwGetApplications() const;
 #endif
 
-  // Native PulseAudio
+  // === PulseAudio native ===
 #ifdef HAVE_PULSEAUDIO
   pa_threaded_mainloop *pa_ml = nullptr;
   pa_context *pa_ctx = nullptr;
+  pa_subscription_mask_t pa_sub_mask = PA_SUBSCRIPTION_MASK_NULL;
 
   bool paInit();
+  void paCleanup();
   void paSetVolume(const std::string &device, double vol);
   double paGetVolume(const std::string &device);
   void paSetMute(const std::string &device, bool mute);
   bool paGetMuted(const std::string &device);
   std::vector<AudioDevice> paDevices(bool input);
+  std::string paGetDefault(bool input) const;
+  bool paSetAppVolume(const std::string &appName, double vol);
+  double paGetAppVolume(const std::string &appName) const;
+  std::vector<AudioManager::ApplicationInfo> paGetApplications() const;
+  std::string paGetActiveApplicationName() const;
 #endif
 
-  // Native ALSA
+  // === ALSA native ===
 #ifdef HAVE_ALSA
-  snd_mixer_t *alsa_mixer = nullptr;
-  snd_mixer_elem_t *alsa_elem = nullptr;
+  struct AlsaMixer {
+    std::string name;
+    snd_mixer_t *handle = nullptr;
+    snd_mixer_elem_t *elem = nullptr;
+    snd_mixer_selem_id_t *sid = nullptr;
+    bool hasPlayback = false;
+    bool hasCapture = false;
+  };
+
+  std::vector<AlsaMixer> alsa_mixers;
+  AlsaMixer *alsa_default_playback = nullptr;
+  AlsaMixer *alsa_default_capture = nullptr;
 
   bool alsaInit();
-  void alsaSetVolume(double vol);
-  double alsaGetVolume();
-  void alsaSetMute(bool mute);
-  bool alsaGetMuted();
+  void alsaCleanup();
+  AlsaMixer *findAlsaMixer(const std::string &device, bool capture) const;
+  bool alsaSetVolume(const std::string &device, double vol);
+  double alsaGetVolume(const std::string &device) const;
+  bool alsaSetMute(const std::string &device, bool mute);
+  bool alsaGetMuted(const std::string &device) const;
+  std::vector<AudioDevice> alsaGetDevices(bool input) const;
 #endif
 
-  // Windows native
+  // === Windows native ===
 #ifdef _WIN32
   bool winInit();
+  void winCleanup();
   float winGetVolume(const std::string &device);
   void winSetVolume(const std::string &device, float vol);
   bool winGetMuted(const std::string &device);
   void winSetMute(const std::string &device, bool mute);
+  std::vector<AudioDevice> winGetDevices(bool input) const;
+  std::string winGetDefault(bool input) const;
+  bool winSetAppVolume(const std::string &appName, double vol);
+  double winGetAppVolume(const std::string &appName) const;
+  std::vector<AudioManager::ApplicationInfo> winGetApplications() const;
 #endif
+
+private:
+  bool useCli_ = false;
+
+  bool initNativePipeWire();
+  bool initNativePulseAudio();
+  bool initNativeAlsa();
+  bool initNativeWindows();
+
+  std::string cliExec(const std::string &cmd) const;
+  double cliGetVolume(const std::string &device) const;
+  bool cliSetVolume(const std::string &device, double volume) const;
+  bool cliSetMute(const std::string &device, bool muted) const;
+  bool cliIsMuted(const std::string &device) const;
+  std::vector<AudioDevice> cliGetDevices(bool input) const;
+  std::string cliGetDefaultOutput() const;
+  std::string cliGetDefaultInput() const;
+  bool cliSetApplicationVolume(const std::string &appName, double volume) const;
+  double cliGetApplicationVolume(const std::string &appName) const;
+  std::vector<AudioManager::ApplicationInfo> cliGetApplications() const;
 };
 
 IAudioBackend *CreateAudioBackend(AudioBackend preferred);

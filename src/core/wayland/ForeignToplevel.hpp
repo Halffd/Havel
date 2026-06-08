@@ -34,7 +34,7 @@ struct ForeignToplevelWindow {
     struct zwlr_foreign_toplevel_handle_v1 *handle = nullptr;
 };
 
-class ForeignToplevel {
+class __attribute__((visibility("default"))) ForeignToplevel {
 public:
     explicit ForeignToplevel(WaylandProtocolClient &client);
     ~ForeignToplevel();

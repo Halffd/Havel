@@ -12,14 +12,14 @@ namespace havel {
 
 class IAudioBackend;
 
-enum class AudioBackend { PIPEWIRE, PULSE, ALSA, AUTO };
+enum class AudioBackend { PIPEWIRE, PULSE, ALSA, WINDOWS, AUTO };
 
 struct AudioDevice {
-    std::string name, description;
-    uint32_t index = 0;
-    bool isDefault = false, isMuted = false;
-    double volume = 1.0;
-    int channels = 2;
+  std::string name, description;
+  uint32_t index = 0;
+  bool isDefault = false, isMuted = false, isInput = false;
+  double volume = 1.0;
+  int channels = 2;
 };
 
 inline bool operator==(const AudioDevice &a, const AudioDevice &b) {

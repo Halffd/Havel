@@ -6,6 +6,7 @@
 #include "core/process/ProcessManager.hpp"
 #include "utils/DebugFlags.hpp"
 #include "InputBackend.hpp"
+#include <xkbcommon/xkbcommon.h>
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
@@ -37,6 +38,69 @@ static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 #include <string>
 #include <thread>
 #include <vector>
+
+struct XkbCharMapping {
+  int keycode = -1;
+  bool needsShift = false;
+};
+XkbCharMapping charToXkbKeycode(char32_t cp);
+
+XkbCharMapping charToXkbKeycode(char32_t cp) {
+  static struct xkb_context *sXkbCtx = nullptr;
+  static struct xkb_keymap *sXkbKeymap = nullptr;
+  static struct xkb_state *sXkbState = nullptr;
+  static bool sXkbInit = false;
+  static bool sXkbFailed = false;
+
+  if (sXkbFailed) return {};
+  if (!sXkbInit) {
+    sXkbInit = true;
+    sXkbCtx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    if (!sXkbCtx) { sXkbFailed = true; return {}; }
+    struct xkb_rule_names rules = {};
+    rules.model = "pc105";
+    const char *layoutEnv = getenv("XKB_DEFAULT_LAYOUT");
+    const char *variantEnv = getenv("XKB_DEFAULT_VARIANT");
+    const char *optionsEnv = getenv("XKB_DEFAULT_OPTIONS");
+    const char *modelEnv = getenv("XKB_DEFAULT_MODEL");
+    const char *rulesEnv = getenv("XKB_DEFAULT_RULES");
+    if (layoutEnv) rules.layout = layoutEnv;
+    if (variantEnv) rules.variant = variantEnv;
+    if (optionsEnv) rules.options = optionsEnv;
+    if (modelEnv) rules.model = modelEnv;
+    if (rulesEnv) rules.rules = rulesEnv;
+    sXkbKeymap = xkb_keymap_new_from_names(sXkbCtx, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    if (!sXkbKeymap) { sXkbFailed = true; return {}; }
+    sXkbState = xkb_state_new(sXkbKeymap);
+    if (!sXkbState) { sXkbFailed = true; return {}; }
+  }
+
+  xkb_keysym_t keysym = xkb_utf32_to_keysym(cp);
+  if (keysym == XKB_KEY_NoSymbol) return {};
+
+  xkb_keycode_t minKc = xkb_keymap_min_keycode(sXkbKeymap);
+  xkb_keycode_t maxKc = xkb_keymap_max_keycode(sXkbKeymap);
+  xkb_layout_index_t numLayouts = xkb_keymap_num_layouts(sXkbKeymap);
+
+  for (xkb_keycode_t kc = minKc; kc <= maxKc; ++kc) {
+    for (xkb_layout_index_t layout = 0; layout < numLayouts; ++layout) {
+      xkb_level_index_t numLevels = xkb_keymap_num_levels_for_key(sXkbKeymap, kc, layout);
+      for (xkb_level_index_t level = 0; level < numLevels; ++level) {
+        const xkb_keysym_t *syms;
+        int numSyms = xkb_keymap_key_get_syms_by_level(sXkbKeymap, kc, layout, level, &syms);
+        for (int s = 0; s < numSyms; s++) {
+          if (syms[s] == keysym) {
+            XkbCharMapping result;
+            result.keycode = static_cast<int>(kc) - 8;
+            result.needsShift = (level >= 1);
+            return result;
+          }
+        }
+      }
+    }
+  }
+  return {};
+}
 
 namespace havel {
 #if defined(WINDOWS)
@@ -1207,13 +1271,63 @@ void IO::Send(cstr keys) {
             }
             break;
         }
-        case KeyToken::Key: {
-            if (Configs::Get().GetVerboseKeyLogging())
-                debug("Sending key: " + token.value);
-            auto &val = token.value;
-            if (val.length() == 1 && isprint(static_cast<unsigned char>(val[0])) && ioBackend) {
-                SendCharX11(val[0]);
+      case KeyToken::Key: {
+        if (Configs::Get().GetVerboseKeyLogging())
+          debug("Sending key: " + token.value);
+        auto &val = token.value;
+        if (val.length() == 1 && isprint(static_cast<unsigned char>(val[0]))) {
+          char32_t cp = static_cast<unsigned char>(val[0]);
+          auto mapping = charToXkbKeycode(cp);
+          int code = mapping.keycode;
+          bool needsShift = mapping.needsShift;
+          if (code == -1) {
+            code = GetKeyCacheLookup(val);
+            needsShift = (isupper(static_cast<unsigned char>(val[0])));
+          }
+          if (code != -1) {
+            if (needsShift) {
+              int shiftCode = GetKeyCacheLookup("LShift");
+              if (shiftCode != -1) {
+                if (eventListener) {
+                  eventListener->SendUinputEvent(EV_KEY, shiftCode, 1);
+                } else {
+                  SendUInput(shiftCode, true);
+                }
+              }
+            }
+            if (eventListener) {
+              eventListener->SendUinputEvent(EV_KEY, code, 1);
             } else {
+              SendUInput(code, true);
+            }
+            if (shouldSleep) {
+              if (eventListener) {
+                eventListener->EndUinputBatch();
+              }
+              std::this_thread::sleep_for(std::chrono::microseconds(100));
+              if (eventListener) {
+                eventListener->BeginUinputBatch();
+              }
+            }
+            if (eventListener) {
+              eventListener->SendUinputEvent(EV_KEY, code, 0);
+            } else {
+              SendUInput(code, false);
+            }
+            if (needsShift) {
+              int shiftCode = GetKeyCacheLookup("LShift");
+              if (shiftCode != -1) {
+                if (eventListener) {
+                  eventListener->SendUinputEvent(EV_KEY, shiftCode, 0);
+                } else {
+                  SendUInput(shiftCode, false);
+                }
+              }
+            }
+          } else if (ioBackend) {
+            SendCharX11(val[0]);
+          }
+        } else {
                 SendKey(val, true);
                 if (shouldSleep) {
                     if (eventListener) {
@@ -2136,6 +2250,7 @@ Key IO::StringToButton(const std::string &buttonNameRaw) {
 
   return 0; // Invalid / unrecognized
 }
+
 Key IO::EvdevNameToKeyCode(std::string keyName) {
   removeSpecialCharacters(keyName);
   keyName = ToLower(keyName);

@@ -122,41 +122,59 @@ bool ExecutionEngine::executeFrame() {
     ::havel::debug("[ExecutionEngine] executeFrame: calling pickNext");
     Scheduler::Goroutine* g = scheduler_->pickNext();
     if (!g) {
-        ::havel::debug("[ExecutionEngine] executeFrame: pickNext returned null (idle)");
-        // No runnable goroutine - idle
-        return false;
-    }
+::havel::debug("[ExecutionEngine] executeFrame: pickNext returned null (idle)");
+// No runnable goroutine - idle
+return false;
+}
+if (g->persistent || debug_mode_) {
+::havel::debug("[ExecutionEngine] Picked goroutine gid={} persistent={} state={} fn={} closure={}",
+g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
+}
 
-  if (g->persistent || debug_mode_) {
-    ::havel::debug("[ExecutionEngine] Picked goroutine gid={} persistent={} state={} fn={} closure={}",
-      g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
-  }
+// STEP 3: Load fiber state into VM's global execution state
+// For newly-created goroutines, use startGoroutineCall which resolves
+// the correct chunk (from closure if needed) and sets up the call frame.
+// For resuming goroutines, use loadFiberState which restores suspended state.
+if (g->state == Scheduler::GoroutineState::Created) {
+// DirectCallThunk fast path: if the hotkey callback only calls
+// host functions with pre-resolved args, skip VM dispatch entirely.
+if (g->persistent && g->hotkey_direct_thunk) {
+auto thunk = vm_->getDirectCallThunk(g->hotkey_callback_id);
+if (!thunk.calls.empty()) {
+vm_->executeDirectCallThunk(thunk);
+if (g->fiber) {
+vm_->saveFiberState(g->fiber);
+}
+handleReturned(g);
+stats_.goroutines_completed++;
+stats_.frames_executed++;
+vm_->garbageCollectionSafePoint();
+return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+}
+}
 
-  // STEP 3: Load fiber state into VM's global execution state
-  // For newly-created goroutines (state == Created), use startGoroutineCall
-  // which resolves the correct chunk (from closure if needed) and sets up
-  // the call frame.  For resuming goroutines, use loadFiberState which
-  // restores suspended state.
-  // NOTE: pickNext no longer changes state to Running, so this check is
-  // reliable: Created → freshly requeued, needs startGoroutineCall.
-  // Runnable → yielded goroutine with saved fiber state.
-  if (g->state == Scheduler::GoroutineState::Created) {
-    bool ok = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
-    if (!ok) {
-      handleReturned(g);
-      stats_.goroutines_completed++;
-      stats_.frames_executed++;
-      return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
-    }
-    g->state = Scheduler::GoroutineState::Runnable;
-    // Sync VM state to fiber immediately so the fiber's call_stack
-    // has the correct chunk_ptr. The Fiber constructor initializes
-    // call_stack via pushCall() with chunk_ptr=nullptr; without this
-    // sync, the first loadFiberState would see null chunk_ptr.
-    if (g->fiber) {
-      vm_->saveFiberState(g->fiber);
-    }
-  } else if (g->fiber) {
+auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+if (call_result == VM::GoroutineCallResult::Failed) {
+handleReturned(g);
+stats_.goroutines_completed++;
+stats_.frames_executed++;
+return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+}
+if (call_result == VM::GoroutineCallResult::JITExecuted) {
+if (g->fiber) {
+vm_->saveFiberState(g->fiber);
+}
+handleReturned(g);
+stats_.goroutines_completed++;
+stats_.frames_executed++;
+vm_->garbageCollectionSafePoint();
+return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+}
+g->state = Scheduler::GoroutineState::Runnable;
+if (g->fiber) {
+vm_->saveFiberState(g->fiber);
+}
+} else if (g->fiber) {
             vm_->loadFiberState(g->fiber);
             // If resuming from an await suspension, replace the placeholder null
             // on the stack with the actual resume_value from the WaitHandle
@@ -227,7 +245,15 @@ bool ExecutionEngine::executeFrame() {
         }
 
         for (;;) {
-            result = vm_->executeOneStep(g->fiber);
+          // Before running the next step, check if we're close to the tick
+          // budget limit. If so, request the JIT to yield at its next
+          // backedge check so long-running JIT functions don't monopolize
+          // the scheduler.
+          if (g->instructions_executed + 1 >= g->max_instructions_per_tick) {
+            vm_->requestJitYield();
+          }
+
+          result = vm_->executeOneStep(g->fiber);
 
             stats_.instructions_executed++;
             g->instructions_executed++;
@@ -247,20 +273,20 @@ bool ExecutionEngine::executeFrame() {
         }
     }
 
-    // STEP 5: Save VM state back to fiber
-    // CRITICAL: If exit was requested during executeOneStep, the scheduler's
-    // stop() has already destroyed all goroutines (including g).  Do NOT
-    // touch g->fiber — it's freed memory.
-    if (vm_->exit_requested_.load()) {
-        stats_.frames_executed++;
-        return false;
-    }
-    if (g->fiber) {
-        vm_->saveFiberState(g->fiber);
-    }
+// STEP 5: Save VM state back to fiber
+// CRITICAL: If exit was requested during executeOneStep, the scheduler's
+// stop() has already destroyed all goroutines (including g). Do NOT
+// touch g->fiber — it's freed memory.
+if (vm_->exit_requested_.load()) {
+stats_.frames_executed++;
+return false;
+}
+if (g->fiber) {
+vm_->saveFiberState(g->fiber);
+}
 
-    // STEP 6: Handle execution result
-    switch (result.type) {
+// STEP 6: Handle execution result
+switch (result.type) {
     case VMExecutionResult::YIELD:
         // Budget expired mid-execution — yield to scheduler, will resume next tick
         handleYield(g);

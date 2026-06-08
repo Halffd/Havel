@@ -533,7 +533,7 @@ public:
 };
 
 // Bytecode interpreter interface
-class BytecodeInterpreter {
+class __attribute__((visibility("default"))) BytecodeInterpreter {
 public:
   virtual ~BytecodeInterpreter() = default;
   virtual Value execute(const BytecodeChunk &chunk, const std::string &function_name,

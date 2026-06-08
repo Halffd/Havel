@@ -157,10 +157,10 @@ void Modules::installHostFunctions() {
         return Value::makeStringId(ref.id);
     };
 
-    options_.host_functions["len"] = [this](const std::vector<Value> &args) {
-        if (args.empty()) return Value::makeInt(0);
-        return ctx_->vm->execLengthOp(args[0]);
-    };
+  options_.host_functions["len"] = [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeInt(0);
+    return ctx_->vm->execLengthOp(args[0]);
+  };
 
 #ifdef HAVEL_CORE_PROFILE
     return;

@@ -33,7 +33,7 @@ struct WaylandOutputInfo {
     int32_t y = 0;
 };
 
-class WaylandProtocolClient {
+class __attribute__((visibility("default"))) WaylandProtocolClient {
 public:
     static WaylandProtocolClient& instance();
 

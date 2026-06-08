@@ -24,7 +24,7 @@ struct ClipboardSourceState {
     std::string text;
 };
 
-class WaylandClipboardBackend : public host::IClipboardBackend {
+class __attribute__((visibility("default"))) WaylandClipboardBackend : public host::IClipboardBackend {
 public:
     explicit WaylandClipboardBackend(WaylandProtocolClient &client);
     ~WaylandClipboardBackend() override;

@@ -164,17 +164,19 @@ void registerObjectModule(const VMApi &api) {
         return Value::makeInt(count);
     });
 
-    // object.len(obj) - Alias for size
-    api.registerFunction("object.len", [api](const std::vector<Value>& args) {
-        if (args.empty()) throw std::runtime_error("object.len() requires object");
-        if (!args[0].isObjectId()) return Value::makeInt(0);
-        auto keys = api.getObjectKeys(args[0]);
-        int64_t count = 0;
-        for (const auto& k : keys) {
-            if (!isInternalKey(k)) count++;
-        }
-        return Value::makeInt(count);
-    });
+  // object.len(obj) - Alias for size, dispatches to execLengthOp for non-objects
+  api.registerFunction("object.len", [api](const std::vector<Value>& args) {
+    if (args.empty()) throw std::runtime_error("object.len() requires an argument");
+    if (!args[0].isObjectId()) {
+      return api.vm().execLengthOpPublic(args[0]);
+    }
+    auto keys = api.getObjectKeys(args[0]);
+    int64_t count = 0;
+    for (const auto& k : keys) {
+      if (!isInternalKey(k)) count++;
+    }
+    return Value::makeInt(count);
+  });
 
     // object.map(obj, func) - Map object values
     api.registerFunction("object.map", [api](const std::vector<Value>& args) {

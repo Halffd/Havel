@@ -4,7 +4,7 @@
 
 namespace havel {
 // In DisplayManager.hpp - Add monitor geometry methods:
-class DisplayManager {
+class __attribute__((visibility("default"))) DisplayManager {
     public:
         struct MonitorInfo {
             std::string name;

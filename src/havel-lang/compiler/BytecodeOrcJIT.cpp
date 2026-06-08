@@ -805,9 +805,12 @@ void havel_vm_object_delete_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bi
 }
 
 void havel_vm_backedge(void* vm_ptr, uint32_t ip) {
-    if (!vm_ptr) return;
-    auto* vm = static_cast<VM*>(vm_ptr);
-    vm->recordBackedgePublic(ip);
+  if (!vm_ptr) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  vm->recordBackedgePublic(ip);
+  if (vm->consumeJitYieldRequest()) {
+    throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD, Value::makeNull()};
+  }
 }
 
 #include "runtime/HavelEngine.hpp"
@@ -1033,13 +1036,26 @@ uint64_t havel_vm_channel_close(void* vm_ptr, uint64_t chan_bits) {
 }
 
 uint64_t havel_vm_yield(void* vm_ptr, uint64_t val_bits) {
-  // Yield in JIT context - just return the value
-  return val_bits;
+  Value v;
+  std::memcpy(&v, &val_bits, sizeof(uint64_t));
+  throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD, v};
 }
 
 uint64_t havel_vm_await(void* vm_ptr, uint64_t val_bits) {
-  // Await in JIT context - just return the value
-  return val_bits;
+  Value v;
+  std::memcpy(&v, &val_bits, sizeof(uint64_t));
+  throw JitCoroutineSignal{JitCoroutineSignal::Op::AWAIT, v};
+}
+
+// Yield-point check: called by JIT-compiled code at loop backedges.
+// If the scheduler has requested preemption, throws JitCoroutineSignal
+// to exit the JIT frame and return control to the scheduler.
+void havel_vm_check_yield(void* vm_ptr) {
+  if (!vm_ptr) return;
+  auto* vm = static_cast<VM*>(vm_ptr);
+  if (vm->consumeJitYieldRequest()) {
+    throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD, Value::makeNull()};
+  }
 }
 
 // String operations
@@ -1116,14 +1132,10 @@ uint64_t havel_vm_bit_rsh(uint64_t a_bits, uint64_t b_bits) {
   return Value::makeNull().rawBits();
 }
 
-// Fiber sleep in JIT/AOT context: can't suspend coroutine, so block the thread
 uint64_t havel_vm_fiber_sleep(void* vm_ptr, uint64_t ms_bits) {
-  if (!vm_ptr) return ms_bits;
   Value v;
   std::memcpy(&v, &ms_bits, sizeof(uint64_t));
-  int ms = v.isInt() ? static_cast<int>(v.asInt()) : 0;
-  if (ms > 0) std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-  return ms_bits;
+  throw JitCoroutineSignal{JitCoroutineSignal::Op::SLEEP, v};
 }
 
 // Host function call
@@ -1806,13 +1818,18 @@ void havel_vm_import_wildcard(void* vm_ptr, uint64_t exports_bits) {
 }
 
 uint64_t havel_vm_yield_resume(void* vm_ptr, uint64_t co_bits) {
-  if (!vm_ptr) return Value::makeNull().rawBits();
-  return Value::makeNull().rawBits();
+  Value v;
+  std::memcpy(&v, &co_bits, sizeof(uint64_t));
+  throw JitCoroutineSignal{JitCoroutineSignal::Op::YIELD_RESUME, v};
 }
 
 uint64_t havel_vm_go_async(void* vm_ptr, uint64_t fn_bits) {
   if (!vm_ptr) return Value::makeNull().rawBits();
-  return Value::makeNull().rawBits();
+  auto* vm = static_cast<VM*>(vm_ptr);
+  Value fn;
+  std::memcpy(&fn, &fn_bits, sizeof(uint64_t));
+  uint32_t gid = vm->spawnGoroutine(fn, {});
+  return Value::makeThreadId(gid).rawBits();
 }
 
 uint64_t havel_vm_spread(void* vm_ptr, uint64_t val_bits) {
@@ -2351,11 +2368,16 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
         return;
     }
 
-    // Coroutines are currently interpreter-only: JIT frame suspension/resume
-    // semantics are not preserved for YIELD/GO_ASYNC paths yet.
-    if (hasUnsupportedOpcodes(func)) {
-        return;
-    }
+  // Functions containing coroutine/scheduler opcodes are not JIT-compiled
+  // because JIT frames cannot be suspended mid-execution. These opcodes
+  // are handled by the interpreter which runs one instruction per step.
+  // Safety net: if a JIT function somehow reaches these opcodes (e.g.
+  // via dynamic dispatch), JitCoroutineSignal is thrown and callFunction()
+  // falls back to the interpreter path.
+  if (hasUnsupportedOpcodes(func)) {
+    return;
+  }
+
 
     const uint64_t func_hash = computeFunctionHash(func);
     auto cached = compile_cache_.find(func_hash);
@@ -2458,70 +2480,76 @@ void BytecodeOrcJIT::compileFunctionTier(const BytecodeFunction &func, uint8_t t
 
 Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
                                       const std::vector<Value> &args) {
-    auto it = fptrs_.find(func_name);
-    if (it == fptrs_.end()) return Value::makeNull();
+  auto it = fptrs_.find(func_name);
+  if (it == fptrs_.end()) return Value::makeNull();
 
-    typedef uint64_t (*NativeFunc)(void*, const Value*, uint32_t);
-    auto func = reinterpret_cast<NativeFunc>(it->second);
+  typedef uint64_t (*NativeFunc)(void*, const Value*, uint32_t);
+  auto func = reinterpret_cast<NativeFunc>(it->second);
 
-    try {
-        
-        // This avoids C stack growth during deep JIT recursion by returning 
-        // to this loop when a tail call is requested.
-        void* current_vm_ptr = static_cast<void*>(vm);
-        const Value* current_args_ptr = args.data();
-        uint32_t current_args_count = static_cast<uint32_t>(args.size());
-        
-        while (true) {
-            vm->setJitTailCall(false); // Reset flag before calling
-            
-            uint64_t res_bits =
-                func(static_cast<void*>(vm), current_args_ptr, current_args_count);
-            
-            // Check if a tail call occurred that we can handle in JIT
-            if (vm->hasJitTailCall()) {
-                const BytecodeFunction* next_func = vm->currentFunction();
-                if (next_func && isCompiled(next_func->name)) {
-                    // Stay in JIT: update function pointer and continue loop
-                    func = reinterpret_cast<NativeFunc>(fptrs_[next_func->name]);
-                    
-                    // Args for the tail call are already set up in the VM's locals array
-                    // by doTailCall. We need to pass them to the next JIT function.
-                    size_t lb = vm->currentLocalsBasePublic();
-                    current_args_ptr = vm->getLocalsPointerPublic(lb);
-                    current_args_count = next_func->param_count;
-                    
-                    continue; // Loop again with new function
-                }
-                
-                // If the next function is NOT JIT-compiled, return back to VM loop
-                // which will handle the interpreter execution.
-                return Value::makeNull(); 
-            }
+  try {
 
-            Value res;
-            std::memcpy(&res, &res_bits, sizeof(uint64_t));
-            return res;
+    // This avoids C stack growth during deep JIT recursion by returning
+    // to this loop when a tail call is requested.
+    void* current_vm_ptr = static_cast<void*>(vm);
+    const Value* current_args_ptr = args.data();
+    uint32_t current_args_count = static_cast<uint32_t>(args.size());
+
+    while (true) {
+      vm->setJitTailCall(false); // Reset flag before calling
+
+      uint64_t res_bits =
+        func(static_cast<void*>(vm), current_args_ptr, current_args_count);
+
+      // Check if a tail call occurred that we can handle in JIT
+      if (vm->hasJitTailCall()) {
+        const BytecodeFunction* next_func = vm->currentFunction();
+        if (next_func && isCompiled(next_func->name)) {
+          // Stay in JIT: update function pointer and continue loop
+          func = reinterpret_cast<NativeFunc>(fptrs_[next_func->name]);
+
+          // Args for the tail call are already set up in the VM's locals array
+          // by doTailCall. We need to pass them to the next JIT function.
+          size_t lb = vm->currentLocalsBasePublic();
+          current_args_ptr = vm->getLocalsPointerPublic(lb);
+          current_args_count = next_func->param_count;
+
+          continue; // Loop again with new function
         }
-    } catch (const ScriptThrow&) {
-        // Preserve script exception semantics so VM dispatch can route to
-        // TRY_ENTER handlers in active VM frames.
-        throw;
-    } catch (const std::exception& e) {
-        setLastError("runtime:" + func_name + ": " + std::string(e.what()));
-        if (show_warnings_) {
-            ::havel::warning("BytecodeOrcJIT runtime exception in '{}': {}", func_name, e.what());
-        }
-        vm->throwError(std::string("JIT exception in ") + func_name + ": " + e.what());
+
+        // If the next function is NOT JIT-compiled, return back to VM loop
+        // which will handle the interpreter execution.
         return Value::makeNull();
-    } catch (...) {
-        setLastError("runtime:" + func_name + ": unknown exception");
-        if (show_warnings_) {
-            ::havel::warning("BytecodeOrcJIT runtime exception in '{}': unknown exception", func_name);
-        }
-        vm->throwError(std::string("Unknown JIT exception in ") + func_name);
-        return Value::makeNull();
+      }
+
+      Value res;
+      std::memcpy(&res, &res_bits, sizeof(uint64_t));
+      return res;
     }
+  } catch (const JitCoroutineSignal&) {
+    // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, GO_ASYNC,
+    // FIBER_SLEEP, YIELD_RESUME) that requires interpreter-level frame
+    // management. Re-throw so callFunction() can fall back to the
+    // interpreter path for this function call.
+    throw;
+  } catch (const ScriptThrow&) {
+    // Preserve script exception semantics so VM dispatch can route to
+    // TRY_ENTER handlers in active VM frames.
+    throw;
+  } catch (const std::exception& e) {
+    setLastError("runtime:" + func_name + ": " + std::string(e.what()));
+    if (show_warnings_) {
+      ::havel::warning("BytecodeOrcJIT runtime exception in '{}': {}", func_name, e.what());
+    }
+    vm->throwError(std::string("JIT exception in ") + func_name + ": " + e.what());
+    return Value::makeNull();
+  } catch (...) {
+    setLastError("runtime:" + func_name + ": unknown exception");
+    if (show_warnings_) {
+      ::havel::warning("BytecodeOrcJIT runtime exception in '{}': unknown exception", func_name);
+    }
+    vm->throwError(std::string("Unknown JIT exception in ") + func_name);
+    return Value::makeNull();
+  }
 }
 
 bool BytecodeOrcJIT::isCompiled(const std::string &func_name) const {

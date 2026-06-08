@@ -52,10 +52,10 @@ case OpCode::LOAD_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
 
-    // First check regular globals (user variables shadow host functions)
-    auto it = globals.find(name);
-    if (it != globals.end()) {
-        // Auto-load lazy module proxies on access
+  // First check regular globals (user variables shadow host functions)
+  auto it = globals.find(name);
+  if (it != globals.end()) {
+    // Auto-load lazy module proxies on access
         if (it->second.isObjectId()) {
             auto *obj = heap_.object(it->second.asObjectId());
             if (obj) {

@@ -20,7 +20,7 @@ namespace havel {
 
 class IO;
 
-class ClipboardManager : public QMainWindow {
+class __attribute__((visibility("default"))) ClipboardManager : public QMainWindow {
     Q_OBJECT
 public:
     enum class ContentType { Unknown, Text, Markdown, Html, Image, FileList };

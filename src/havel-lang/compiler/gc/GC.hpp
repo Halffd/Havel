@@ -19,7 +19,7 @@
 
 namespace havel::compiler {
 
-class GCHeap {
+class __attribute__((visibility("default"))) GCHeap {
 public:
     friend class VM;
     struct Stats {

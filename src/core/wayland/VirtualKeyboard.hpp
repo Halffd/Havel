@@ -18,7 +18,7 @@ namespace havel {
 class WaylandProtocolClient;
 class UinputDevice;
 
-class VirtualKeyboard {
+class __attribute__((visibility("default"))) VirtualKeyboard {
 public:
     explicit VirtualKeyboard(WaylandProtocolClient &client);
     ~VirtualKeyboard();

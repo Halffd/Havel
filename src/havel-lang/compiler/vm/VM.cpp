@@ -848,8 +848,8 @@ void VM::saveFiberState(Fiber *fiber) {
   // Just ensure the fiber's state reflects current execution point
 }
 
-bool VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
-                            const std::vector<Value> &args) {
+VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
+    const std::vector<Value> &args) {
     // Clear VM state for fresh goroutine context
     while (!stack.empty()) stack.pop();
     locals.clear();
@@ -867,17 +867,34 @@ bool VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
 
     if (!resolve_chunk) {
         ::havel::error("[VM] startGoroutineCall: no chunk available for function {}", function_id);
-        return false;
+        return GoroutineCallResult::Failed;
     }
 
-    const auto *func = resolve_chunk->getFunction(function_id);
+    auto *func = resolve_chunk->getFunction(function_id);
     if (!func) {
         ::havel::error("[VM] startGoroutineCall: function {} not found in chunk ({} functions)",
-                       function_id, resolve_chunk->getFunctionCount());
-        return false;
+            function_id, resolve_chunk->getFunctionCount());
+        return GoroutineCallResult::Failed;
     }
 
     current_chunk = resolve_chunk;
+
+    func->execution_count++;
+    if (func->execution_count == 1000 && hot_func_cb_) {
+        hot_func_cb_(*func);
+    }
+
+    if (func->jit_compiled && jit_compiler_) {
+        uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
+        try {
+            jit_compiler_->executeCompiled(this, func->name, args);
+            setJITActiveClosurePublic(prev_jit_closure);
+            return GoroutineCallResult::JITExecuted;
+        } catch (const JitCoroutineSignal&) {
+            setJITActiveClosurePublic(prev_jit_closure);
+            // Fall through to interpreter path
+        }
+    }
 
     // Push args onto VM stack
     for (const auto &arg : args) {
@@ -910,6 +927,17 @@ bool VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
     }
     frame_count_++;
 
+    return GoroutineCallResult::Interpreter;
+}
+
+bool VM::executeDirectCallThunk(const DirectCallThunk& thunk) {
+    for (const auto& call : thunk.calls) {
+        if (call.host_func_idx >= host_function_names_.size()) return false;
+        const std::string& name = host_function_names_[call.host_func_idx];
+        auto it = host_functions.find(name);
+        if (it == host_functions.end()) return false;
+        it->second(call.args);
+    }
     return true;
 }
 
@@ -1303,7 +1331,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
  tail_call_depth_ = 0;
 
     // Handle host function call directly
-if (callee_value.isHostFuncId()) {
+    if (callee_value.isHostFuncId()) {
         uint32_t host_func_idx = callee_value.asHostFuncId();
         if (host_func_idx >= host_function_names_.size()) {
             COMPILER_THROW("Host function index out of range: " +
@@ -1484,23 +1512,28 @@ callee->execution_count++;
  if (callee->execution_count == 1000 && hot_func_cb_) {
  hot_func_cb_(*callee);
  }
- 
- 
- if (callee->jit_compiled && jit_compiler_) {
- uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
- try {
-   Value result = jit_compiler_->executeCompiled(this, callee->name, args);
-   setJITActiveClosurePublic(prev_jit_closure);
-   pushStack(result);
-   return;
- } catch (...) {
-   setJITActiveClosurePublic(prev_jit_closure);
-   throw;
- }
- }
- 
- 
-  // If so, create a coroutine object and return it instead of executing
+
+    if (callee->jit_compiled && jit_compiler_) {
+        uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
+        try {
+            Value result = jit_compiler_->executeCompiled(this, callee->name, args);
+            setJITActiveClosurePublic(prev_jit_closure);
+            pushStack(result);
+            return;
+        } catch (const JitCoroutineSignal&) {
+            // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
+            // that requires interpreter frame management. Fall back to
+            // the interpreter path below to execute this function call.
+            setJITActiveClosurePublic(prev_jit_closure);
+            // Fall through to normal interpreter call path
+        } catch (...) {
+            setJITActiveClosurePublic(prev_jit_closure);
+            throw;
+        }
+    }
+
+
+    // If so, create a coroutine object and return it instead of executing
 if (callee->is_generator) {
 // Create coroutine object for this generator function
 uint32_t coId = heap_.allocateCoroutine(function_index, 0);

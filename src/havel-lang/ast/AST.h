@@ -199,6 +199,7 @@ enum class NodeType {
   // Concurrency Primitives
   ThreadExpression,   // thread { ... }
   IntervalExpression, // interval 1000 { ... }
+  UpdateBlockExpression, // update 150 { ... }
   TimeoutExpression,  // timeout 1000 { ... }
   
   // Coroutines
@@ -728,6 +729,17 @@ struct IntervalExpression : public Expression {
         kind = NodeType::IntervalExpression;
     }
     std::string toString() const override { return "interval " + intervalMs->toString() + " { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct UpdateBlockExpression : public Expression {
+    std::unique_ptr<Expression> intervalMs;
+    std::unique_ptr<BlockStatement> body;
+    UpdateBlockExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+        : intervalMs(std::move(ms)), body(std::move(b)) {
+        kind = NodeType::UpdateBlockExpression;
+    }
+    std::string toString() const override { return "update " + intervalMs->toString() + " { ... }"; }
     void accept(ASTVisitor &visitor) const override;
 };
 
@@ -3363,6 +3375,7 @@ virtual void visitRangeExpression(const RangeExpression &node) = 0;
   // Concurrency primitives
   virtual void visitThreadExpression(const ThreadExpression &node) = 0;
   virtual void visitIntervalExpression(const IntervalExpression &node) = 0;
+  virtual void visitUpdateBlockExpression(const UpdateBlockExpression &node) = 0;
   virtual void visitTimeoutExpression(const TimeoutExpression &node) = 0;
  virtual void visitYieldExpression(const YieldExpression &node) = 0;
   virtual void visitGoStatement(const GoStatement &node) = 0;

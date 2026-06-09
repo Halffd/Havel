@@ -701,6 +701,11 @@ void IntervalExpression::accept(ASTVisitor &visitor) const {
   visitor.visitIntervalExpression(*this);
 }
 
+// UpdateBlockExpression accept method
+void UpdateBlockExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitUpdateBlockExpression(*this);
+}
+
 // TimeoutExpression accept method
 void TimeoutExpression::accept(ASTVisitor &visitor) const {
   visitor.visitTimeoutExpression(*this);

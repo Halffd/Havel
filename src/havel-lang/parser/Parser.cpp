@@ -737,6 +737,7 @@ can_start[static_cast<size_t>(RegexString)] = true;
     can_start[static_cast<size_t>(BangOpenBrace)] = true;
     can_start[static_cast<size_t>(Thread)] = true;
     can_start[static_cast<size_t>(Interval)] = true;
+    can_start[static_cast<size_t>(Update)] = true;
     can_start[static_cast<size_t>(Timeout)] = true;
     can_start[static_cast<size_t>(Async)] = true;
  can_start[static_cast<size_t>(LeftArrow)] = true;
@@ -1407,6 +1408,17 @@ case TokenType::Interval:
         return makeNodeAt<ast::Identifier>(token, token.value);
     }
     return parseIntervalExpression();
+
+case TokenType::Update:
+    if (at().type == TokenType::OpenParen) {
+        return makeNodeAt<ast::MemberExpression>(token,
+            makeNodeAt<ast::Identifier>(token, token.value),
+            makeNodeAt<ast::Identifier>(token, "register"));
+    }
+    if (at().type == TokenType::Dot) {
+        return makeNodeAt<ast::Identifier>(token, token.value);
+    }
+    return parseUpdateBlockExpression();
 
 case TokenType::Timeout:
     if (at().type == TokenType::OpenParen) {
@@ -2873,10 +2885,34 @@ position = savePos; // restore position
   }
 
   // Sugar forms:
+    // update <ms> { ... } -> update(<ms>, fn() { ... })
     // thread { ... } -> thread(fn() { ... })
     // interval <ms> { ... } -> interval(<ms>, fn() { ... })
     // timeout <ms> { ... } -> timeout(<ms>, fn() { ... })
     // ui { ... } -> desugared ui.create calls
+    if (at().value == "update" && at(1).type != havel::TokenType::OpenBrace && at(1).type != havel::TokenType::OpenParen) {
+        const std::string async_kind = at().value;
+        auto kw = at();
+        advance(); // consume "update"
+        auto delay = parseExpression();
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+        if (at().type != havel::TokenType::OpenBrace) {
+            failAt(at(), "Expected block body after " + async_kind + " delay");
+        }
+        auto body = parseBlockStatement();
+        auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
+        lambda->body = std::move(body);
+        std::vector<std::unique_ptr<havel::ast::Expression>> args;
+        args.push_back(std::move(delay));
+        args.push_back(std::move(lambda));
+        auto call = makeNodeAt<havel::ast::CallExpression>(kw,
+            makeNodeAt<havel::ast::Identifier>(kw, async_kind),
+            std::move(args));
+        return makeNodeAt<havel::ast::ExpressionStatement>(kw, std::move(call));
+    }
+
     if (at().value == "thread" && at(1).type == havel::TokenType::OpenBrace) {
         auto kw = at();
         advance(); // consume "thread"
@@ -10812,6 +10848,37 @@ std::unique_ptr<ast::Expression> Parser::parseIntervalExpression() {
     auto body = parseBlockStatement();
 
     return makeNode<ast::IntervalExpression>(std::move(intervalMs), std::move(body));
+}
+
+std::unique_ptr<ast::Expression> Parser::parseUpdateBlockExpression() {
+    // Note: parsePrattExpression already consumed 'update' via advance()
+    auto savedBraceSugar = context.allowBraceSugar;
+    context.allowBraceSugar = false;
+
+    std::unique_ptr<ast::Expression> intervalMs;
+
+    if (at().type == TokenType::OpenParen) {
+        advance();
+        intervalMs = parseExpression();
+        if (at().type != TokenType::CloseParen) {
+            failAt(at(), "Expected ')' after update duration");
+        }
+        advance();
+    } else if (at().type == TokenType::OpenBrace) {
+        failAt(at(), "Expected number or expression for update duration");
+    } else {
+        intervalMs = parseExpression();
+    }
+
+    context.allowBraceSugar = savedBraceSugar;
+
+    if (at().type != TokenType::OpenBrace) {
+        failAt(at(), "Expected '{' after update duration");
+    }
+
+    auto body = parseBlockStatement();
+
+    return makeNode<ast::UpdateBlockExpression>(std::move(intervalMs), std::move(body));
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseTimeoutExpression() {

@@ -193,7 +193,28 @@ if (g->persistent && g->state == Scheduler::GoroutineState::Created
 // For newly-created goroutines, use startGoroutineCall which resolves
 // the correct chunk (from closure if needed) and sets up the call frame.
 // For resuming goroutines, use loadFiberState which restores suspended state.
-if (g->state == Scheduler::GoroutineState::Created) {
+// Update goroutines always restart via startGoroutineCall (fresh each tick).
+
+if (g->update_interval_ms > 0) {
+    auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+    if (call_result == VM::GoroutineCallResult::Failed) {
+        g->update_interval_ms = 0;
+        handleReturned(g);
+        stats_.goroutines_completed++;
+        stats_.frames_executed++;
+        return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+    }
+    if (call_result == VM::GoroutineCallResult::JITExecuted) {
+        if (g->fiber) vm_->saveFiberState(g->fiber);
+        handleReturned(g);
+        stats_.goroutines_completed++;
+        stats_.frames_executed++;
+        vm_->garbageCollectionSafePoint();
+        return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+    }
+    g->state = Scheduler::GoroutineState::Runnable;
+    if (g->fiber) vm_->saveFiberState(g->fiber);
+} else if (g->state == Scheduler::GoroutineState::Created) {
 // DirectCallThunk fast path: if the hotkey callback only calls
 // host functions with pre-resolved args, skip VM dispatch entirely.
 if (g->persistent && g->hotkey_direct_thunk) {
@@ -506,31 +527,60 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
      return;
  }
 
- g->state = Scheduler::GoroutineState::Done;
- if (g->fiber) {
- g->fiber->state = FiberState::DONE;
+ // Update goroutines: reset and re-suspend with SleepWait
+ // On wake, executeFrame will use startGoroutineCall to restart from scratch.
+ if (g->update_interval_ms > 0) {
+     g->ip = 0;
+     g->stack.clear();
+     g->locals.clear();
+     auto deadline = std::chrono::steady_clock::now() +
+         std::chrono::milliseconds(g->update_interval_ms);
+     {
+         std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+         g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+         g->wait_handle.deadline = deadline;
+     }
+     g->state = Scheduler::GoroutineState::Suspended;
+     g->suspension_reason.store(Scheduler::SuspensionReason::SleepWait, std::memory_order_release);
+     if (scheduler_->current() == g) {
+         scheduler_->clearCurrent();
+     }
+     return;
  }
- if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
- HotkeyActionWrapper::unregisterCallback(g->fiber->id);
- }
- if (scheduler_->current() == g) {
- scheduler_->clearCurrent();
- }
+
+  g->state = Scheduler::GoroutineState::Done;
+  if (g->fiber) {
+    g->fiber->state = FiberState::DONE;
+  }
+  if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
+    HotkeyActionWrapper::unregisterCallback(g->fiber->id);
+  }
+  if (g->update_callback_id != 0) {
+    vm_->releaseCallback(g->update_callback_id);
+    g->update_callback_id = 0;
+  }
+  if (scheduler_->current() == g) {
+    scheduler_->clearCurrent();
+  }
 }
 
 void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& msg) {
-    if (debug_mode_) {
-        std::cerr << "[ExecutionEngine] Goroutine error: " << msg << "\n";
+  if (debug_mode_) {
+    std::cerr << "[ExecutionEngine] Goroutine error: " << msg << "\n";
+  }
+  if (g) {
+    g->state = Scheduler::GoroutineState::Done;
+    if (g->fiber) {
+      g->fiber->state = FiberState::DONE;
     }
- if (g) {
- g->state = Scheduler::GoroutineState::Done;
- if (g->fiber) {
- g->fiber->state = FiberState::DONE;
- }
- if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
- HotkeyActionWrapper::unregisterCallback(g->fiber->id);
- }
- }
+    if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
+      HotkeyActionWrapper::unregisterCallback(g->fiber->id);
+    }
+    if (g->update_callback_id != 0) {
+      vm_->releaseCallback(g->update_callback_id);
+      g->update_callback_id = 0;
+    }
+  }
  if (scheduler_->current() == g) {
  scheduler_->clearCurrent();
  }

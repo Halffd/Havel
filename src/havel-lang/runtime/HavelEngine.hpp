@@ -305,19 +305,17 @@ private:
       vm_->setCurrentChunkPublic(mainChunk.get());
     }
 
-    bool anyExecuted = false;
     int idleCycles = 0;
-    do {
-      anyExecuted = false;
-      sched->wakeSleepingGoroutines();
+    for (;;) {
+      if (vm_->exit_requested_.load()) break;
+      size_t woken = sched->wakeSleepingGoroutines();
       auto* g = sched->pickNext();
       if (!g) {
-        if (sched->suspendedCount() > 0) {
-          if (++idleCycles >= 100) break;
-          std::this_thread::sleep_for(std::chrono::milliseconds(10));
-          continue;
-        }
-        break;
+        size_t sc = sched->suspendedCount();
+        if (sc == 0) break;
+        if (++idleCycles >= 100) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        continue;
       }
       idleCycles = 0;
 
@@ -331,22 +329,41 @@ private:
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
           vm_->runDispatchLoopPublic(0);
-          anyExecuted = true;
-        }
-      } else if (g->state == compiler::Scheduler::GoroutineState::Runnable ||
-                 g->state == compiler::Scheduler::GoroutineState::Running) {
-        // Resumed goroutine (unparked from await/sleep)
-        if (g->fiber) {
-          vm_->loadFiberStatePublic(g->fiber);
-          // Replace placeholder null with actual resume_value
-          if (g->wait_handle.type != compiler::Scheduler::AwaitableType::NONE &&
-              g->wait_handle.type != compiler::Scheduler::AwaitableType::SLEEP) {
-            vm_->replaceStackTop(g->wait_handle.resume_value);
-            g->wait_handle.clear();
+        } else {
+          g->state = compiler::Scheduler::GoroutineState::Done;
+          if (g->update_callback_id != 0) {
+            vm_->releaseCallback(g->update_callback_id);
+            g->update_callback_id = 0;
           }
         }
-        vm_->runDispatchLoopPublic(0);
-        anyExecuted = true;
+      } else if (g->state == compiler::Scheduler::GoroutineState::Runnable ||
+        g->state == compiler::Scheduler::GoroutineState::Running) {
+        // Update goroutines restart via startGoroutineCall (fresh each tick)
+        if (g->update_interval_ms > 0) {
+          auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+          if (result != compiler::VM::GoroutineCallResult::Failed) {
+            g->state = compiler::Scheduler::GoroutineState::Runnable;
+            vm_->runDispatchLoopPublic(0);
+          } else {
+            g->state = compiler::Scheduler::GoroutineState::Done;
+            if (g->update_callback_id != 0) {
+              vm_->releaseCallback(g->update_callback_id);
+              g->update_callback_id = 0;
+            }
+          }
+        } else {
+          // Resumed goroutine (unparked from await/sleep)
+          if (g->fiber) {
+            vm_->loadFiberStatePublic(g->fiber);
+            // Replace placeholder null with actual resume_value
+            if (g->wait_handle.type != compiler::Scheduler::AwaitableType::NONE &&
+                g->wait_handle.type != compiler::Scheduler::AwaitableType::SLEEP) {
+              vm_->replaceStackTop(g->wait_handle.resume_value);
+              g->wait_handle.clear();
+            }
+          }
+          vm_->runDispatchLoopPublic(0);
+        }
       }
 
       // Check if the goroutine suspended (await/sleep) or finished
@@ -374,6 +391,21 @@ private:
         if (sched->current() == g) {
           sched->clearCurrent();
         }
+      } else if (g->update_interval_ms > 0) {
+        // Update goroutines: reset and re-suspend with SleepWait
+        sched->clearCurrent();
+        g->ip = 0;
+        g->stack.clear();
+        g->locals.clear();
+        auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::milliseconds(g->update_interval_ms);
+        {
+          std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+          g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+          g->wait_handle.deadline = deadline;
+        }
+        g->state = compiler::Scheduler::GoroutineState::Suspended;
+        g->suspension_reason.store(compiler::Scheduler::SuspensionReason::SleepWait, std::memory_order_release);
       } else if (g->persistent) {
         // Persistent goroutines (hotkey system): re-suspend instead of Done.
         g->state = compiler::Scheduler::GoroutineState::Suspended;
@@ -390,9 +422,21 @@ private:
         if (g->fiber) {
           g->fiber->state = compiler::FiberState::DONE;
         }
+        if (g->update_callback_id != 0) {
+          vm_->releaseCallback(g->update_callback_id);
+          g->update_callback_id = 0;
       }
-    } while (anyExecuted);
+    }
   }
+
+  // Clean up any remaining update goroutine GC roots
+  {
+    auto ids = sched->collectUpdateCallbackIds();
+    for (auto cbid : ids) {
+      vm_->releaseCallback(cbid);
+    }
+  }
+}
 };
 
 } // namespace havel

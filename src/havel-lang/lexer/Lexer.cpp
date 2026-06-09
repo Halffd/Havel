@@ -35,6 +35,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"throw", TokenType::Throw},
     {"thread", TokenType::Thread},
     {"interval", TokenType::Interval},
+    {"update", TokenType::Update},
     {"timeout", TokenType::Timeout},
     {"yield", TokenType::Yield},
     {"go", TokenType::Go},

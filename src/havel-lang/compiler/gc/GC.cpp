@@ -1051,8 +1051,12 @@ void GCHeap::sweepStep(size_t &work_budget) {
         return false;
     };
 
-    switch (gc_state_) {
-        case IncrementalState::SweepArrays:
+  switch (gc_state_) {
+  case IncrementalState::Idle:
+    break;
+  case IncrementalState::Mark:
+    break;
+  case IncrementalState::SweepArrays:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
                 for (const auto &kv : arrays_) {

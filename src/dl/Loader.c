@@ -9,9 +9,9 @@
  *
  * Script resolution via priority search:
  * havel_loader_resolve(l, "mymod", "/scripts", &out) ->
- *   1. cache  2. scriptDir/*.hv  3. __cache__/*.hvc
- *   4. stdlib/*.hv  5. ~/.havel/packages/  6. searchPaths
- *   7. *.so native  8. host builtin
+ * 1. cache 2. scriptDir glob.hv 3. __cache__ glob.hvc
+ * 4. stdlib glob.hv 5. ~/.havel/packages/ 6. searchPaths
+ * 7. .so native 8. host builtin
  *
  * Module plugins: havel_mod_<name>.so with ABI validation.
  * Toolkit plugins: havel_toolkit_<name>.so with ABI validation.

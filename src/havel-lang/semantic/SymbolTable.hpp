@@ -153,7 +153,7 @@ private:
   size_t currentScopeLevel_ = 0;
 
   // Memory address allocation
-  int64_t nextAddress_ = 0;
+    [[maybe_unused]] int64_t nextAddress_ = 0;
 
   // Symbol storage (arena-style)
   std::vector<std::unique_ptr<Symbol>> symbolStorage_;

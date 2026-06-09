@@ -113,7 +113,7 @@ private:
     HHOOK mouseHook_ = nullptr;
 #endif
 
-    int shutdownFd_ = -1;
+    [[maybe_unused]] int shutdownFd_ = -1;
     bool blockInput_ = false;
     uint32_t emergencyShutdownKey_ = 0;
 
@@ -125,8 +125,8 @@ private:
     std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> keyDownTime_;
     havel::ModifierState modifierState_;
     uint32_t modifiers_ = 0;
-    int32_t mouseX_ = 0;
-    int32_t mouseY_ = 0;
+    [[maybe_unused]] int32_t mouseX_ = 0;
+    [[maybe_unused]] int32_t mouseY_ = 0;
 
     std::unordered_map<uint32_t, uint32_t> keyRemaps_;
     std::unordered_map<uint32_t, uint32_t> activeRemaps_;

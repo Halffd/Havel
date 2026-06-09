@@ -687,7 +687,7 @@ void X11Adapter::BuildKeycodeMap() {
     XDisplayKeycodes(display_, &minCode, &maxCode);
 
     for (int kc = minCode; kc <= maxCode; ++kc) {
-        KeySym ks = XKeycodeToKeysym(display_, kc, 0);
+        KeySym ks = XkbKeycodeToKeysym(display_, kc, 0, 0);
         if (ks == NoSymbol) continue;
 
         uint32_t evdev = 0;

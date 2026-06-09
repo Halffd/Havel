@@ -353,7 +353,7 @@ void AltTabWindow::updateWindowList() {
     QWidget *windowWidget = new QWidget();
     windowWidget->setFixedSize(thumbnailWidth + 20, thumbnailHeight + 60);
     windowWidget->setStyleSheet(
-        i == currentIndex ? "background-color: rgba(70, 130, 180, 200); "
+                static_cast<int>(i) == currentIndex ? "background-color: rgba(70, 130, 180, 200); "
                             "border: 2px solid white; border-radius: 8px;"
                           : "background-color: rgba(60, 60, 60, 180); border: "
                             "1px solid gray; border-radius: 8px;");

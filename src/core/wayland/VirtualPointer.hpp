@@ -40,7 +40,7 @@ private:
     WaylandProtocolClient &client_;
     zwlr_virtual_pointer_v1 *vptr_ = nullptr;
     UinputDevice *uinput_ = nullptr;
-    uint32_t serial_ = 0;
+    [[maybe_unused]] uint32_t serial_ = 0;
 };
 
 } // namespace havel

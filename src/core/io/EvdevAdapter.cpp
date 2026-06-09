@@ -580,7 +580,7 @@ void EvdevAdapter::QueueEvent(int type, int code, int value) {
 
 void EvdevAdapter::EndBatch() {
     if (!batching_ || !uinput_) return;
-    batchBuffer_.push_back({.type = EV_SYN, .code = SYN_REPORT, .value = 0});
+        batchBuffer_.push_back({.time = {}, .type = EV_SYN, .code = SYN_REPORT, .value = 0});
     for (const auto &ev : batchBuffer_) {
         uinput_->SendEvent(ev.type, ev.code, ev.value);
     }

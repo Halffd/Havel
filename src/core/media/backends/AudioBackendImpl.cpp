@@ -526,11 +526,18 @@ bool AudioBackendImpl::initNativePipeWire() {
   pw_core_ = pw_context_connect(pw_context_, nullptr, 0);
   if (!pw_core_) { pw_context_destroy(pw_context_); pw_context_ = nullptr; pw_thread_loop_destroy(pw_loop); pw_loop = nullptr; return false; }
 
-  static const pw_core_events core_evt = {
-    .version = PW_VERSION_CORE_EVENTS,
-    .done = pw_on_core_sync_done,
-    .error = pw_on_core_error,
-  };
+    static const pw_core_events core_evt = {
+        .version = PW_VERSION_CORE_EVENTS,
+        .info = nullptr,
+        .done = pw_on_core_sync_done,
+        .ping = nullptr,
+        .error = pw_on_core_error,
+        .remove_id = nullptr,
+        .bound_id = nullptr,
+        .add_mem = nullptr,
+        .remove_mem = nullptr,
+        .bound_props = nullptr,
+    };
   pw_core_add_listener(pw_core_, &pw_core_listener, &core_evt, this);
 
   pw_registry_ = pw_core_get_registry(pw_core_, PW_VERSION_REGISTRY, 0);

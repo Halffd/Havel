@@ -61,7 +61,7 @@ public:
   void clearErrors() { errors_.clear(); }
 
 private:
-  ModuleLoader& loader_;
+    [[maybe_unused]] ModuleLoader& loader_;
   std::vector<std::filesystem::path> modulePaths_;
   std::unordered_map<std::string, ModuleInfo> moduleCache_;
   std::vector<std::string> loadingStack_;

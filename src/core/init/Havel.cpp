@@ -295,12 +295,16 @@ void Havel::initialize(bool isStartup) {
 
  if (debugging::debug_io) debug("Reactive hotkey system initialized");
     
-    auto modeManager = hotkeyManager->getModeManager();
-    if (modeManager) {
-      modeManager->setExecutionEngine(executionEngine.get());
-      modeManager->setEventQueue(eventQueue);
-      modeManager->registerVarChangedHandler();
-    }
+        auto modeManager = hotkeyManager->getModeManager();
+        if (modeManager) {
+            modeManager->setOnModeChanged([vm = bytecodeVM.get()](
+                const std::string &newMode, const std::string &) {
+                auto ref = vm->createRuntimeString(newMode);
+                vm->setGlobal("mode", havel::core::Value::makeStringId(ref.id));
+            });
+            auto ref = bytecodeVM->createRuntimeString(modeManager->getCurrentMode());
+            bytecodeVM->setGlobal("mode", havel::core::Value::makeStringId(ref.id));
+        }
   }
 
   // Set HostBridge pointer on EventListener for timer checking

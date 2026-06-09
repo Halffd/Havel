@@ -220,6 +220,7 @@ private:
   std::unique_ptr<ast::Expression> parseTernaryExpression();
   std::unique_ptr<ast::Expression> parseThreadExpression();
   std::unique_ptr<ast::Expression> parseIntervalExpression();
+  std::unique_ptr<ast::Expression> parseUpdateBlockExpression();
   std::unique_ptr<ast::Expression> parseTimeoutExpression();
   std::unique_ptr<ast::Expression> parseYieldExpression();
   std::unique_ptr<ast::Statement> parseGoStatement();

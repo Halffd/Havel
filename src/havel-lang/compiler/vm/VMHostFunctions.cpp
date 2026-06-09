@@ -1033,6 +1033,45 @@ interval_results_[*intervalIdPtr] = result;
         return Value::makeIntervalId(intervalRef.id);
     });
 
+    // update(ms, closure) - Create scheduler-managed periodic goroutine
+    registerHostFunction("update", 2, [this](const std::vector<Value>& args) {
+        if (args.size() < 2 || !args[0].isNumber()) {
+            COMPILER_THROW("update requires milliseconds and closure");
+        }
+        if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+            COMPILER_THROW("update requires a closure argument");
+        }
+
+        int ms = toInt(args[0]);
+        Value closure = args[1];
+
+        uint32_t function_id = 0;
+        uint32_t closure_id = 0;
+        if (closure.isFunctionObjId()) {
+            function_id = closure.asFunctionObjId();
+        } else if (closure.isClosureId()) {
+            closure_id = closure.asClosureId();
+            auto* closure_obj = heap_.closure(closure_id);
+            if (closure_obj) {
+                function_id = closure_obj->function_index;
+            }
+        }
+
+        if (!scheduler_) {
+            COMPILER_THROW("update requires a scheduler");
+        }
+
+    uint32_t goroutine_id = scheduler_->spawn(function_id, {}, closure_id, "update");
+    Scheduler::Goroutine* g = scheduler_->get(goroutine_id);
+    if (g) {
+      g->update_interval_ms = static_cast<uint32_t>(ms);
+      // Pin the closure as GC root so the goroutine can survive across GC cycles
+      g->update_callback_id = registerCallback(closure);
+    }
+
+        return Value::makeNull();
+    });
+
 // timeout(ms, closure) - Create one-shot delayed execution
 registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
  if (args.size() < 2 || !args[0].isNumber()) {

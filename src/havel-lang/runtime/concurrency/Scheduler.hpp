@@ -193,6 +193,10 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
     std::atomic<bool> hotkey_retrigger{false};
     uint32_t hotkey_condition_callback_id = 0;
 
+  // Update goroutine: periodic goroutine managed by scheduler
+  uint32_t update_interval_ms = 0;
+  uint64_t update_callback_id = 0; // GC external root ID (from registerCallback), 0 = none
+
     explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL)
         : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
           state(GoroutineState::Created), suspension_reason{SuspensionReason::None},
@@ -415,6 +419,9 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
   // Called periodically by pickNext() and stop()
   // @return Number of goroutines removed
   size_t cleanupDoneGoroutines();
+
+  // Collect all update callback IDs for GC root cleanup
+  std::vector<uint64_t> collectUpdateCallbackIds();
 
 private:
   Scheduler();

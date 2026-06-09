@@ -175,6 +175,7 @@ enum class TokenType {
   Throw,          // throw
   Thread,         // thread
   Interval,       // interval
+  Update,         // update
   Timeout,        // timeout
   Yield,          // yield
   Go, // go

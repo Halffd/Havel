@@ -1438,6 +1438,19 @@ if k == "AsyncExpression" {
     bc.emit("CALL", 2)
     return
   }
+  if k == "UpdateBlockExpression" {
+    sid = globalIdx(emitter, "update")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if node.intervalMs != null {
+      emitExpr(emitter, node.intervalMs)
+    }
+    else {
+      bc.emit("LOAD_CONST", bc.add_const(0))
+    }
+    emitClosureBody(emitter, node.body, "<update>")
+    bc.emit("CALL", 2)
+    return
+  }
   if k == "TimeoutExpression" {
     sid = globalIdx(emitter, "timeout.start")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))

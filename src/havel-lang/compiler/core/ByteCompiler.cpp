@@ -4867,6 +4867,10 @@ case ast::NodeType::UnaryExpression: {
     compileIntervalExpression(static_cast<const ast::IntervalExpression &>(expression));
     break;
 
+  case ast::NodeType::UpdateBlockExpression:
+    compileUpdateBlockExpression(static_cast<const ast::UpdateBlockExpression &>(expression));
+    break;
+
   case ast::NodeType::TimeoutExpression:
     compileTimeoutExpression(static_cast<const ast::TimeoutExpression &>(expression));
     break;
@@ -7700,7 +7704,28 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
  compileClosureBody(*expression.body, "<interval>");
 
  // Emit LOAD_GLOBAL + CALL to interval.start
- emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+  emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+}
+
+void ByteCompiler::compileUpdateBlockExpression(const ast::UpdateBlockExpression &expression) {
+  if (!expression.intervalMs) {
+    COMPILER_THROW("Update expression missing duration");
+  }
+
+  if (!expression.body) {
+    COMPILER_THROW("Update expression missing body");
+  }
+
+  {
+    uint32_t strId = addStringConstant("update");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+  }
+
+  compileExpression(*expression.intervalMs);
+
+  compileClosureBody(*expression.body, "<update>");
+
+  emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
 }
 
 void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expression) {

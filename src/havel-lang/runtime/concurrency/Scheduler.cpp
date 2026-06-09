@@ -733,6 +733,18 @@ size_t Scheduler::cleanupDoneGoroutines() {
   return removed;
 }
 
+std::vector<uint64_t> Scheduler::collectUpdateCallbackIds() {
+  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::vector<uint64_t> ids;
+  for (auto& [id, g] : goroutines_) {
+    if (g && g->update_callback_id != 0) {
+      ids.push_back(g->update_callback_id);
+      g->update_callback_id = 0;
+    }
+  }
+  return ids;
+}
+
 Scheduler::Goroutine* Scheduler::getHotkeyByAlias(const std::string& alias) {
     std::lock_guard<std::mutex> lock(goroutines_mutex_);
     for (auto& [id, g] : goroutines_) {

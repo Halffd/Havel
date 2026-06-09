@@ -13,7 +13,6 @@
 //   modes.list()                 // [{name: ..., priority: ..., active: ...}, ...]
 //   modes.time("gaming")         // ms spent in gaming mode
 //   modes.transitions("gaming")  // how many times entered
-//   modes.signalActive("steam")  // check a signal
 //   modes.define("gaming", 10, fn() { true }, fn() { ... }, fn() { ... })
 
 fn current() { mode.current() }
@@ -27,8 +26,6 @@ fn list() { mode.list() }
 fn time(name) { mode.time(name) }
 
 fn transitions(name) { mode.transitions(name) }
-
-fn signalActive(name) { mode.signalActive(name) }
 
 fn define(name, priority, condition, enter, exit) {
   mode.register(name, priority, condition, enter, exit, "", null, "", null)

@@ -550,6 +550,10 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
       fiber->state = FiberState::RUNNABLE;
     }
   }
+
+  if (vm_) {
+      vm_->processSignalBindings(var_name);
+  }
 }
 
 bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {

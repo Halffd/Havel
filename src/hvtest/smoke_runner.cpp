@@ -430,12 +430,10 @@ options.host_functions["thread.running"] = [&](const std::vector<Value> &args) {
 
  options.host_functions["interval"] = [&](const std::vector<Value> &args) {
  if (!vm_ptr || args.empty()) throw std::runtime_error("interval requires delay + callback");
- size_t cb_idx = 1;
- size_t delay_idx = 1;
- if (args.size() >= 3 && args[0].isObjectId()) {
- cb_idx = 2;
- delay_idx = 1;
- }
+size_t cb_idx = 1;
+if (args.size() >= 3 && args[0].isObjectId()) {
+cb_idx = 2;
+}
  if (args.size() <= cb_idx) throw std::runtime_error("interval requires delay + callback");
  int64_t iid = next_task_id++;
  std::string id = "interval-" + std::to_string(iid);

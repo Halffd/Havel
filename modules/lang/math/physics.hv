@@ -119,3 +119,20 @@ fn lorentz_factor(v) {
 fn relativistic_mass(rest_mass, v) { num(rest_mass) * lorentz_factor(v) }
 
 fn compton_wavelength(mass) { HPLANCK / (ME * num(mass)) }
+
+c = C
+g = G0
+e = ECHARGE
+me = ME
+mp = MP
+h = HPLANCK
+k = KB
+epsilon0 = EPS0
+mu0 = MU0
+alpha = ALPHA
+sigma = SIGMA
+a0 = A0
+re = RE
+Rinf = RINF
+u = U
+eV = EV

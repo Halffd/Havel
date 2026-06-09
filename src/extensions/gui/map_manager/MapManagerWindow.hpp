@@ -16,7 +16,9 @@
 // #include <QSplitter>
 // #include <QTabWidget>
 #include <memory>
+#ifndef Q_MOC_RUN
 #include "core/io/MapManager.hpp"
+#endif
 
 namespace havel {
 

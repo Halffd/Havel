@@ -7,52 +7,73 @@ namespace havel {
 
 class EventListener;
 
+struct XkbCharMapping {
+  int keycode = -1;
+  bool needsShift = false;
+};
+
+namespace ModifierMasks {
+constexpr int SHIFT   = (1 << 0);
+constexpr int CONTROL = (1 << 1);
+constexpr int ALT     = (1 << 2);
+constexpr int META    = (1 << 3);
+constexpr int LOCK    = (1 << 4);
+constexpr int NUMLOCK = (1 << 5);
+}
+
 class IOBackend {
 public:
-    virtual ~IOBackend() = default;
+  virtual ~IOBackend() = default;
 
-    virtual bool Initialize() = 0;
-    virtual void Cleanup() = 0;
-    virtual bool IsAvailable() const = 0;
-    virtual std::string GetName() const = 0;
+  virtual bool Initialize() = 0;
+  virtual void Cleanup() = 0;
+  virtual bool IsAvailable() const = 0;
+  virtual std::string GetName() const = 0;
 
-    // Key send (platform API — XTest, uinput, keybd_event)
-    virtual void PressKey(int keycode) = 0;
-    virtual void ReleaseKey(int keycode) = 0;
+  // Key send (platform API — XTest, uinput, keybd_event)
+  virtual void PressKey(int keycode) = 0;
+  virtual void ReleaseKey(int keycode) = 0;
 
-    // Mouse
-    virtual bool MovePointer(int dx, int dy) = 0;
-    virtual bool MovePointerTo(int x, int y) = 0;
-    virtual std::pair<int, int> GetCursorPosition() = 0;
-    virtual void SendButton(int button, bool down) = 0;
+  // Mouse
+  virtual bool MovePointer(int dx, int dy) = 0;
+  virtual bool MovePointerTo(int x, int y) = 0;
+  virtual std::pair<int, int> GetCursorPosition() = 0;
+  virtual void SendButton(int button, bool down) = 0;
 
-    // Hotkey registration (X11 XGrabKey)
-    virtual bool RegisterHotkey(int keycode, int modifiers, bool isButton) = 0;
-    virtual bool UnregisterHotkey(int keycode, int modifiers, bool isButton) = 0;
-    virtual void UnregisterAll() = 0;
-    virtual bool GrabKeyboard() = 0;
+  // Hotkey registration (X11 XGrabKey)
+  virtual bool RegisterHotkey(int keycode, int modifiers, bool isButton) = 0;
+  virtual bool UnregisterHotkey(int keycode, int modifiers, bool isButton) = 0;
+  virtual void UnregisterAll() = 0;
+  virtual bool GrabKeyboard() = 0;
 
-    // State queries
-    virtual bool IsKeyDown(int keycode) = 0;
-    virtual bool IsAnyKeyDown() = 0;
+  // State queries
+  virtual bool IsKeyDown(int keycode) = 0;
+  virtual bool IsAnyKeyDown() = 0;
 
-    // XInput2
-    virtual bool SetupXInput2() = 0;
-    virtual bool SetHardwareSensitivity(double sensitivity) = 0;
+  // XInput2
+  virtual bool SetupXInput2() = 0;
+  virtual bool SetHardwareSensitivity(double sensitivity) = 0;
 
-    // Text
-    virtual void TypeText(const std::string &text) = 0;
+  // Text
+  virtual void TypeText(const std::string &text) = 0;
 
-    // Modifier masks (platform-specific constants)
-    virtual int GetShiftMask() const = 0;
-    virtual int GetControlMask() const = 0;
-    virtual int GetAltMask() const = 0;
-    virtual int GetMetaMask() const = 0;
-    virtual int GetLockMask() const = 0;
-    virtual int GetNumLockMask() = 0;
+  // Modifier masks (platform-specific constants)
+  virtual int GetShiftMask() const = 0;
+  virtual int GetControlMask() const = 0;
+  virtual int GetAltMask() const = 0;
+  virtual int GetMetaMask() const = 0;
+  virtual int GetLockMask() const = 0;
+  virtual int GetNumLockMask() = 0;
 
-    // Factory
-    static std::unique_ptr<IOBackend> Create(EventListener *eventListener);
+  // Platform-to-abstract mask conversion
+  virtual int ToAbstractMask(int platformMask) const = 0;
+  virtual int ToPlatformMask(int abstractMask) const = 0;
+
+  // Character-to-keycode mapping (xkbcommon on X11, stub on others)
+  virtual XkbCharMapping CharToKeycode(char32_t cp) { return {}; }
+
+  // Factory
+  static std::unique_ptr<IOBackend> Create(EventListener *eventListener);
 };
 
 } // namespace havel

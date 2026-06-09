@@ -279,12 +279,12 @@ locals.clear();
     frame_count_++;
     locals.resize(entry->local_count);
 
- if (!args.empty()) {
- if (args.size() != entry->param_count) {
- COMPILER_THROW("Argument count mismatch for entry function '" +
- function_name + "' (expected " +
- std::to_string(entry->param_count) + ", got " +
- std::to_string(args.size()) + ")");
+	if (!args.empty()) {
+		if (args.size() != entry->param_count) {
+			COMPILER_THROW("Argument count mismatch for entry function '" +
+				function_name + "' (expected " +
+				std::to_string(entry->param_count) + ", got " +
+				std::to_string(args.size()) + ")");
  }
 
  for (uint32_t i = 0; i < entry->param_count; ++i) {
@@ -352,7 +352,7 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
     frame_count_++;
     locals.resize(entry->local_count);
 
-    if (!args.empty()) {
+	if (!args.empty()) {
         if (args.size() != entry->param_count) {
             COMPILER_THROW("Argument count mismatch for entry function '" +
                            function_name + "' (expected " +
@@ -1144,21 +1144,21 @@ if (suspension_requested_) {
     } catch (const std::runtime_error &e) {
       // Convert runtime errors to script exceptions so they can be caught
       // by script-level try/catch blocks
-std::string msg = e.what();
-if (frame_count_ > 0) {
-auto &frame = frame_arena_[frame_count_ - 1];
-if (frame.function &&
-frame.ip < frame.function->instruction_locations.size()) {
-const auto loc = nearestSourceLocation(*frame.function, frame.ip);
-if (loc.line > 0) {
-          if (!loc.filename.empty()) {
-            msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
-          } else {
-            msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+      std::string msg = e.what();
+      if (frame_count_ > 0) {
+        auto &frame = frame_arena_[frame_count_ - 1];
+        if (frame.function &&
+            frame.ip < frame.function->instruction_locations.size()) {
+          const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+          if (loc.line > 0) {
+            if (!loc.filename.empty()) {
+              msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
+            } else {
+              msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+            }
           }
         }
       }
-    }
       // Try to handle as script exception first
       Value exceptionValue = Value::makeStringId(heap_.allocateString(msg).id);
       if (handleScriptThrow(exceptionValue)) {
@@ -3166,7 +3166,7 @@ Value VM::loadModule(const std::string& path) {
     frame_count_++;
     locals.resize(entry->local_count);
 
-        // Execute the module's bytecode (same heap, sandboxed globals)
+	// Execute the module's bytecode (same heap, sandboxed globals)
         Value exec_result;
         try {
  runDispatchLoop(0);
@@ -3205,7 +3205,7 @@ Value VM::loadModule(const std::string& path) {
 auto *obj = heap_.object(exportsObj.id);
     auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
     int exportCount = 0;
-(void)exportCount;
+    (void)exportCount;
 for (const auto& [name, value] : globals) {
             if (name.empty() || name[0] == '_') continue;
         // Skip inherited globals UNLESS the module redefined them
@@ -3451,7 +3451,7 @@ Value VM::loadScript(const std::string& path) {
   frame_count_++;
   locals.resize(entry->local_count);
 
-  Value exec_result;
+	Value exec_result;
   try {
     runDispatchLoop(0);
     if (!stack.empty()) {

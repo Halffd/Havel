@@ -6,7 +6,6 @@
 #include "core/process/ProcessManager.hpp"
 #include "utils/DebugFlags.hpp"
 #include "InputBackend.hpp"
-#include <xkbcommon/xkbcommon.h>
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
@@ -38,69 +37,6 @@ static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 #include <string>
 #include <thread>
 #include <vector>
-
-struct XkbCharMapping {
-  int keycode = -1;
-  bool needsShift = false;
-};
-XkbCharMapping charToXkbKeycode(char32_t cp);
-
-XkbCharMapping charToXkbKeycode(char32_t cp) {
-  static struct xkb_context *sXkbCtx = nullptr;
-  static struct xkb_keymap *sXkbKeymap = nullptr;
-  static struct xkb_state *sXkbState = nullptr;
-  static bool sXkbInit = false;
-  static bool sXkbFailed = false;
-
-  if (sXkbFailed) return {};
-  if (!sXkbInit) {
-    sXkbInit = true;
-    sXkbCtx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    if (!sXkbCtx) { sXkbFailed = true; return {}; }
-    struct xkb_rule_names rules = {};
-    rules.model = "pc105";
-    const char *layoutEnv = getenv("XKB_DEFAULT_LAYOUT");
-    const char *variantEnv = getenv("XKB_DEFAULT_VARIANT");
-    const char *optionsEnv = getenv("XKB_DEFAULT_OPTIONS");
-    const char *modelEnv = getenv("XKB_DEFAULT_MODEL");
-    const char *rulesEnv = getenv("XKB_DEFAULT_RULES");
-    if (layoutEnv) rules.layout = layoutEnv;
-    if (variantEnv) rules.variant = variantEnv;
-    if (optionsEnv) rules.options = optionsEnv;
-    if (modelEnv) rules.model = modelEnv;
-    if (rulesEnv) rules.rules = rulesEnv;
-    sXkbKeymap = xkb_keymap_new_from_names(sXkbCtx, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
-    if (!sXkbKeymap) { sXkbFailed = true; return {}; }
-    sXkbState = xkb_state_new(sXkbKeymap);
-    if (!sXkbState) { sXkbFailed = true; return {}; }
-  }
-
-  xkb_keysym_t keysym = xkb_utf32_to_keysym(cp);
-  if (keysym == XKB_KEY_NoSymbol) return {};
-
-  xkb_keycode_t minKc = xkb_keymap_min_keycode(sXkbKeymap);
-  xkb_keycode_t maxKc = xkb_keymap_max_keycode(sXkbKeymap);
-  xkb_layout_index_t numLayouts = xkb_keymap_num_layouts(sXkbKeymap);
-
-  for (xkb_keycode_t kc = minKc; kc <= maxKc; ++kc) {
-    for (xkb_layout_index_t layout = 0; layout < numLayouts; ++layout) {
-      xkb_level_index_t numLevels = xkb_keymap_num_levels_for_key(sXkbKeymap, kc, layout);
-      for (xkb_level_index_t level = 0; level < numLevels; ++level) {
-        const xkb_keysym_t *syms;
-        int numSyms = xkb_keymap_key_get_syms_by_level(sXkbKeymap, kc, layout, level, &syms);
-        for (int s = 0; s < numSyms; s++) {
-          if (syms[s] == keysym) {
-            XkbCharMapping result;
-            result.keycode = static_cast<int>(kc) - 8;
-            result.needsShift = (level >= 1);
-            return result;
-          }
-        }
-      }
-    }
-  }
-  return {};
-}
 
 namespace havel {
 #if defined(WINDOWS)
@@ -1277,7 +1213,7 @@ void IO::Send(cstr keys) {
         auto &val = token.value;
         if (val.length() == 1 && isprint(static_cast<unsigned char>(val[0]))) {
           char32_t cp = static_cast<unsigned char>(val[0]);
-          auto mapping = charToXkbKeycode(cp);
+          auto mapping = ioBackend ? ioBackend->CharToKeycode(cp) : XkbCharMapping{};
           int code = mapping.keycode;
           bool needsShift = mapping.needsShift;
           if (code == -1) {
@@ -1604,13 +1540,13 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
         if (i + mod.size() == input.size() || input[i + mod.size()] == '+') {
           // Found text modifier
           if (mod == "ctrl") {
-            result.modifiers |= isEvdev ? (1 << 0) : ControlMask;
+            result.modifiers |= isEvdev ? (1 << 0) : ModifierMasks::CONTROL;
           } else if (mod == "shift") {
-            result.modifiers |= isEvdev ? (1 << 1) : ShiftMask;
+            result.modifiers |= isEvdev ? (1 << 1) : ModifierMasks::SHIFT;
           } else if (mod == "alt") {
-            result.modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
+            result.modifiers |= isEvdev ? (1 << 2) : ModifierMasks::ALT;
           } else if (mod == "meta" || mod == "win") {
-            result.modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
+            result.modifiers |= isEvdev ? (1 << 3) : ModifierMasks::META;
           }
 
           i += mod.size();
@@ -1645,18 +1581,18 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
     case '%':
       result.isX11 = true;
       break;
-    case '^':
-      result.modifiers |= isEvdev ? (1 << 0) : ControlMask;
-      break;
-    case '+':
-      result.modifiers |= isEvdev ? (1 << 1) : ShiftMask;
-      break;
-    case '!':
-      result.modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
-      break;
-    case '#':
-      result.modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
-      break;
+      case '^':
+        result.modifiers |= isEvdev ? (1 << 0) : ModifierMasks::CONTROL;
+        break;
+      case '+':
+        result.modifiers |= isEvdev ? (1 << 1) : ModifierMasks::SHIFT;
+        break;
+      case '!':
+        result.modifiers |= isEvdev ? (1 << 2) : ModifierMasks::ALT;
+        break;
+      case '#':
+        result.modifiers |= isEvdev ? (1 << 3) : ModifierMasks::META;
+        break;
     case '*':
       // Wildcard - ignore all current modifiers but don't set repeat=false
       result.wildcard = true;
@@ -2283,7 +2219,7 @@ void IO::AssignHotkey(HotKey hotkey, int id) {
   if (id == 0) id = ++hotkeyCount;
   hotkey.id = id;
   hotkeys[id] = hotkey;
-  if (ioBackend) ioBackend->RegisterHotkey(hotkey.key, hotkey.modifiers, false);
+  if (ioBackend) ioBackend->RegisterHotkey(hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers), false);
 }
 
 #ifdef WINDOWS
@@ -2291,7 +2227,6 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
   if (nCode == HC_ACTION && wParam == WM_KEYDOWN) {
     KBDLLHOOKSTRUCT *pKeyboard = (KBDLLHOOKSTRUCT *)lParam;
 
-    // Detect the state of modifier keys
     bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
     bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     bool altPressed = (GetKeyState(VK_MENU) & 0x8000) != 0;
@@ -2299,21 +2234,18 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                       (GetKeyState(VK_RWIN) & 0x8000) != 0;
     for (const auto &[id, hotkey] : hotkeys) {
       if (!hotkey.grab && hotkey.enabled) {
-        // Check if the virtual key matches and modifiers are valid
         if (pKeyboard->vkCode == static_cast<DWORD>(hotkey.key.virtualKey)) {
-          // Check if the required modifiers are pressed
           bool modifiersMatch =
-              ((hotkey.modifiers & MOD_SHIFT) ? shiftPressed : true) &&
-              ((hotkey.modifiers & MOD_CONTROL) ? ctrlPressed : true) &&
-              ((hotkey.modifiers & MOD_ALT) ? altPressed : true) &&
-              ((hotkey.modifiers & MOD_WIN) ? winPressed
-                                            : true); // Check Windows key
+              ((hotkey.modifiers & ModifierMasks::SHIFT) ? shiftPressed : true) &&
+              ((hotkey.modifiers & ModifierMasks::CONTROL) ? ctrlPressed : true) &&
+              ((hotkey.modifiers & ModifierMasks::ALT) ? altPressed : true) &&
+              ((hotkey.modifiers & ModifierMasks::META) ? winPressed : true);
 
           if (modifiersMatch) {
             if (hotkey.callback) {
-              hotkey.callback(); // Call the associated action
+              hotkey.callback();
             }
-            break; // Exit after the first match
+            break;
           }
         }
       }
@@ -2324,43 +2256,25 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 #endif
 
 int IO::ParseModifiers(str str) {
-  int modifiers = 0;
-#ifdef WINDOWS
-  if (str.find("+") != str::npos) {
-    modifiers |= MOD_SHIFT;
-    str.erase(str.find("+"), 1);
-  }
-  if (str.find("^") != str::npos) {
-    modifiers |= MOD_CONTROL;
-    str.erase(str.find("^"), 1);
-  }
-  if (str.find("!") != str::npos) {
-    modifiers |= MOD_ALT;
-    str.erase(str.find("!"), 1);
-  }
-  if (str.find("#") != str::npos) {
-    modifiers |= MOD_WIN;
-    str.erase(str.find("#"), 1);
-  }
-#else
+  int abstract = 0;
   if (str.find("+") != std::string::npos) {
-    modifiers |= ShiftMask;
+    abstract |= ModifierMasks::SHIFT;
     str.erase(str.find("+"), 1);
   }
   if (str.find("^") != std::string::npos) {
-    modifiers |= ControlMask;
+    abstract |= ModifierMasks::CONTROL;
     str.erase(str.find("^"), 1);
   }
   if (str.find("!") != std::string::npos) {
-    modifiers |= Mod1Mask;
+    abstract |= ModifierMasks::ALT;
     str.erase(str.find("!"), 1);
   }
   if (str.find("#") != std::string::npos) {
-    modifiers |= Mod4Mask; // For Meta/Windows
+    abstract |= ModifierMasks::META;
     str.erase(str.find("#"), 1);
   }
-#endif
-  return modifiers;
+  if (ioBackend) return ioBackend->ToPlatformMask(abstract);
+  return abstract;
 }
 bool IO::GetKeyState(const std::string &keyName) {
   if (eventListener) {
@@ -2485,7 +2399,7 @@ bool IO::GrabHotkey(int hotkeyId) {
     return false;
   }
   if (!hotkey.evdev && ioBackend) {
-    ioBackend->RegisterHotkey(hotkey.key, hotkey.modifiers, false);
+    ioBackend->RegisterHotkey(hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers), hotkey.type == HotkeyType::MouseButton);
   }
   hotkeys[hotkeyId].enabled = true;
   if (debugging::debug_hotkeys) debug("Grabbed hotkey: {}", hotkey.alias);
@@ -2513,9 +2427,9 @@ bool IO::UngrabHotkey(int hotkeyId) {
         break;
       }
     }
-    if (!hasOtherSameHotkey) {
-      ioBackend->UnregisterHotkey(hotkey.key, hotkey.modifiers, false);
-    }
+  if (!hasOtherSameHotkey) {
+    ioBackend->UnregisterHotkey(hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers), hotkey.type == HotkeyType::MouseButton);
+  }
   }
   hotkeys[hotkeyId].enabled = false;
   if (debugging::debug_hotkeys) debug("Ungrabbed hotkey: {}", hotkey.alias);

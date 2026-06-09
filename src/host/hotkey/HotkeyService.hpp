@@ -22,9 +22,7 @@ namespace havel::host {
 struct HotkeyInfo {
     int id = 0;
     std::string key;
-    std::string condition;
     bool enabled = false;
-    std::string type;  // "regular" or "conditional"
 };
 
 /**
@@ -71,21 +69,6 @@ public:
     /// @return vector of HotkeyInfo
     std::vector<HotkeyInfo> getHotkeyList() const;
 
-    // =========================================================================
-    // Contextual hotkeys (with conditions)
-    // =========================================================================
-
-    /// Register a contextual hotkey with string condition
-    /// @param key Key combination
-    /// @param condition Condition string
-    /// @param trueAction Callback when condition is true
-    /// @param falseAction Optional callback when condition is false
-    /// @param id Optional hotkey ID
-    /// @return hotkey ID on success, 0 on failure
-    int addContextualHotkey(const std::string& key, const std::string& condition,
-                            std::function<void()> trueAction,
-                            std::function<void()> falseAction = nullptr,
-                            int id = 0);
 
     // =========================================================================
     // Advanced KeyTap functionality
@@ -125,9 +108,6 @@ public:
 
     /// Toggle window focus tracking
     void toggleWindowFocusTracking();
-
-    /// Update all conditional hotkeys
-    void updateAllConditionalHotkeys();
 
     /// Get current mode
     /// @return current mode string

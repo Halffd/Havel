@@ -834,9 +834,10 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
         nullptr, nullptr, nullptr,
         hkManager ? hkManager->getModeManager().get() : nullptr,
         std::vector<std::string>{}));
-    havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
+havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
+hostAPI->SetVM(bytecodeVM);
 
-    bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
+bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
 
     bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
 
@@ -1453,9 +1454,10 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
           hkManager ? hkManager->getModeManager().get() : nullptr,
           std::vector<std::string>{}));
 
-		havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
+havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
+hostAPI->SetVM(bytecodeVM);
 
-		// Attach REPL to the existing VM from the Havel instance
+// Attach REPL to the existing VM from the Havel instance
       // (instead of initialize() which creates a new VM)
       repl.attach(bytecodeVM, havel_inst.getModules(), collectKnownGlobals(bytecodeVM));
 
@@ -1688,8 +1690,9 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
           hkManager ? hkManager->getModeManager().get() : nullptr,
           std::vector<std::string>{}));
 
-    havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
-    repl.attach(bytecodeVM, modules, collectKnownGlobals(bytecodeVM));
+havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
+hostAPI->SetVM(bytecodeVM);
+repl.attach(bytecodeVM, modules, collectKnownGlobals(bytecodeVM));
 
       // Run REPL
       return repl.run();

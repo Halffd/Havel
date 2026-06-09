@@ -66,10 +66,10 @@ namespace havel
   }
 
   HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
-      : io(io),
-        conditionalManager(io),
-        modeManager(std::make_shared<ModeManager>()),
-        activeConditionalHotkeys(nullptr)
+: activeConditionalHotkeys(nullptr),
+io(io),
+conditionalManager(io),
+modeManager(std::make_shared<ModeManager>())
   { // Will be set after conditionalManager is initialized
     // Now conditionalManager is initialized, safe to use
     activeConditionalHotkeys = &conditionalManager.GetHotkeys();

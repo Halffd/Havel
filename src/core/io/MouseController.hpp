@@ -81,8 +81,8 @@ private:
   double scrollAccumX = 0.0;
 
   // Current mouse position (for absolute movement)
-  int currentX = 0;
-  int currentY = 0;
+  [[maybe_unused]] int currentX = 0;
+  [[maybe_unused]] int currentY = 0;
 };
 
 } // namespace havel

@@ -25,7 +25,7 @@ private:
   bool keyHeld = false;
   bool combo = false;
   bool grabDown = true;
-  bool grabUp = true;
+  [[maybe_unused]] bool grabUp = true;
 
   // Helper to evaluate conditions
   bool evaluateCondition(

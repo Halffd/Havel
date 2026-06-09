@@ -477,7 +477,7 @@ void MapManager::RegisterMapping(const std::string &profileId,
 }
 
 void MapManager::UnregisterMapping(const std::string &profileId,
-                                   const Mapping &mapping) {
+                                     const Mapping &mapping) {
   auto profileIt = profiles.find(profileId);
   if (profileIt == profiles.end()) {
     return;
@@ -486,13 +486,13 @@ void MapManager::UnregisterMapping(const std::string &profileId,
   auto &profile = profileIt->second;
   auto mappingIt =
       std::find_if(profile.mappings.begin(), profile.mappings.end(),
-                   [&mapping](const Mapping &m) { return m.id == mapping.id; });
+                   [&](const Mapping &m) { return m.id == mapping.id; });
 
   if (mappingIt != profile.mappings.end()) {
     // Find and remove the hotkey ID for this mapping
     auto &hotkeyIds = profileHotkeyIds[profileId];
     auto hotkeyIt = std::find_if(hotkeyIds.begin(), hotkeyIds.end(),
-                                 [&mapping](int hotkeyId) {
+                                 [&](int hotkeyId) {
                                    // This would need to be implemented to track
                                    // hotkey IDs per mapping
                                    return false; // Placeholder
@@ -630,6 +630,7 @@ void MapManager::ExecuteMouseMovement(const Mapping &mapping, float axisValue) {
   if (mapping.acceleration) {
     movement *= std::abs(axisValue); // Quadratic acceleration
   }
+  (void)movement;
 
   // Move mouse (this would need IO support for relative mouse movement)
   // io->MoveMouse(static_cast<int>(movement), 0);

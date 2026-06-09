@@ -62,10 +62,8 @@ enum class TokenType {
   Config,
   Devices,
   Modes,
-  Pool,  // pool - hotkey pool declaration
-  Signal,
-  Group,
-  Struct, // struct
+ Pool, // pool - hotkey pool declaration
+ Struct, // struct
   Class,  // class
   Enum,   // enum
   Trait, // trait

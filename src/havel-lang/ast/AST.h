@@ -118,10 +118,8 @@ enum class NodeType {
   ConfigBlock,      // config { ... }
   DevicesBlock,     // devices { ... }
   ModesBlock,       // modes { ... }
-  ModeBlock,        // mode name { ... } (shorthand for when mode == "name")
-  SignalDefinition, // signal name = expression
-  GroupDefinition,  // group name { modes: [...] }
-  ConfigSection,    // any_identifier { ... }
+ ModeBlock, // mode name { ... } (shorthand for when mode == "name")
+ ConfigSection, // any_identifier { ... }
   IndexExpression,  // arr[0] or obj["key"]
   AtExpression,     // @field for self-assignment in methods
   AtAtExpression,   // @@field for class field access in methods
@@ -629,9 +627,27 @@ case BinaryOperator::Is:
       return "&";
     case BinaryOperator::BitwiseShiftLeft:
       return "<<";
-    case BinaryOperator::BitwiseShiftRight:
-      return ">>";
-    }
+        case BinaryOperator::BitwiseShiftRight:
+            return ">>";
+        case BinaryOperator::DivMod:
+            return "\\\\";
+        case BinaryOperator::Remainder:
+            return "%%";
+        case BinaryOperator::IntDivAssign:
+            return "\\=";
+        case BinaryOperator::RemainderAssign:
+            return "%%=";
+        case BinaryOperator::BitwiseAndAssign:
+            return "&=";
+        case BinaryOperator::BitwiseOrAssign:
+            return "|=";
+        case BinaryOperator::BitwiseXorAssign:
+            return "^=";
+        case BinaryOperator::BitwiseShiftLeftAssign:
+            return "<<=";
+        case BinaryOperator::BitwiseShiftRightAssign:
+            return ">>=";
+        }
     return "UNKNOWN_OPERATOR";
   }
   void accept(ASTVisitor &visitor) const override;
@@ -2801,40 +2817,6 @@ struct ModeBlock : public Statement {
 };
 
 // Signal Definition (signal name = expression)
-struct SignalDefinition : public Statement {
-  std::string name;
-  std::unique_ptr<Expression> condition;
-
-  SignalDefinition(const std::string &n, std::unique_ptr<Expression> cond)
-      : name(n), condition(std::move(cond)) {
-    kind = NodeType::SignalDefinition;
-  }
-
-  std::string toString() const override {
-    return "SignalDefinition{" + name + "}";
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
-
-// Group Definition (group name { modes: [...] })
-struct GroupDefinition : public Statement {
-  std::string name;
-  std::vector<std::string> modeNames;
-
-  GroupDefinition(const std::string &n, std::vector<std::string> modes)
-      : name(n), modeNames(std::move(modes)) {
-    kind = NodeType::GroupDefinition;
-  }
-
-  std::string toString() const override {
-    return "GroupDefinition{" + name + ", " + std::to_string(modeNames.size()) +
-           " modes}";
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
-
 // Generic Config Section (any_identifier { key = value })
 struct ConfigSection : public Statement {
   std::string name;
@@ -3359,10 +3341,8 @@ virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
   virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
   virtual void visitModesBlock(const ModesBlock &node) = 0;
-  virtual void visitModeBlock(const ModeBlock &node) = 0;
-  virtual void visitSignalDefinition(const SignalDefinition &node) = 0;
-  virtual void visitGroupDefinition(const GroupDefinition &node) = 0;
-  virtual void visitConfigSection(const ConfigSection &node) = 0;
+ virtual void visitModeBlock(const ModeBlock &node) = 0;
+ virtual void visitConfigSection(const ConfigSection &node) = 0;
   virtual void visitIndexExpression(const IndexExpression &node) = 0;
   virtual void visitAtExpression(const AtExpression &node) = 0;
   virtual void visitAtAtExpression(const AtAtExpression &node) = 0;
@@ -3637,19 +3617,11 @@ inline void ModesBlock::accept(ASTVisitor &visitor) const {
 }
 
 inline void ModeBlock::accept(ASTVisitor &visitor) const {
-  visitor.visitModeBlock(*this);
-}
-
-inline void SignalDefinition::accept(ASTVisitor &visitor) const {
-  visitor.visitSignalDefinition(*this);
-}
-
-inline void GroupDefinition::accept(ASTVisitor &visitor) const {
-  visitor.visitGroupDefinition(*this);
+ visitor.visitModeBlock(*this);
 }
 
 inline void ConfigSection::accept(ASTVisitor &visitor) const {
-  visitor.visitConfigSection(*this);
+ visitor.visitConfigSection(*this);
 }
 
 inline void IndexExpression::accept(ASTVisitor &visitor) const {

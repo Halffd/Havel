@@ -65,7 +65,7 @@ std::string sanitizeFileStem(const std::string &value) {
   return out;
 }
 
-std::string displayNameForUnit(const std::string &compile_unit_name) {
+[[maybe_unused]] std::string displayNameForUnit(const std::string &compile_unit_name) {
   return compile_unit_name.empty() ? "<memory>" : compile_unit_name;
 }
 
@@ -93,7 +93,7 @@ std::string sourceLineAt(const std::string &source, size_t one_based_line) {
   return {};
 }
 
-std::string formatCaretLine(size_t column, size_t length,
+[[maybe_unused]] std::string formatCaretLine(size_t column, size_t length,
                             const std::string &annotation) {
   const size_t safe_col = std::max<size_t>(1, column);
   const size_t safe_len = std::max<size_t>(1, length);
@@ -650,8 +650,20 @@ return "WAITGROUP_WAIT";
         return "FORMAT_BASE64_ENCODE";
     case OpCode::FORMAT_BASE64_DECODE:
         return "FORMAT_BASE64_DECODE";
-    case OpCode::NOP:
-        return "NOP";
+  case OpCode::NOP:
+    return "NOP";
+  case OpCode::BIT_AND:
+    return "BIT_AND";
+  case OpCode::BIT_OR:
+    return "BIT_OR";
+  case OpCode::BIT_XOR:
+    return "BIT_XOR";
+  case OpCode::BIT_LSH:
+    return "BIT_LSH";
+  case OpCode::BIT_RSH:
+    return "BIT_RSH";
+  case OpCode::BIT_NOT:
+    return "BIT_NOT";
   }
   return "UNKNOWN";
 }

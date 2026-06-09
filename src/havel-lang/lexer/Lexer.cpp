@@ -48,10 +48,8 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"del", TokenType::Del},
     {"config", TokenType::Config},
     {"devices", TokenType::Devices},
-    {"modes", TokenType::Modes},
-    {"signal", TokenType::Signal},
-    {"group", TokenType::Group},
-    {"struct", TokenType::Struct},
+ {"modes", TokenType::Modes},
+ {"struct", TokenType::Struct},
     {"class", TokenType::Class},
     {"enum", TokenType::Enum},
     {"trait", TokenType::Trait},
@@ -140,12 +138,11 @@ char Lexer::peek(size_t offset) const {
 }
 
 char Lexer::advance() {
-  if (isAtEnd())
+  if (isAtEnd()) {
     return '\0';
-
-    char current = source[position++];
-
-    if (current == '\n') {
+  }
+  char current = source[position++];
+  if (current == '\n') {
         line++;
         column = 1;
     } else if (current == '\t') {
@@ -916,11 +913,10 @@ Token Lexer::scanIdentifier() {
 }
 
 Token Lexer::scanHotkey() {
-  std::string hotkey;
-  size_t safetyPos = position;
-
-  // Include the already consumed character
-  hotkey += source[position - 1];
+std::string hotkey;
+size_t safetyPos [[maybe_unused]] = position;
+// Include the already consumed character
+hotkey += source[position - 1];
 
   // Continue consuming characters that are part of a hotkey until a terminator
   while (!isAtEnd()) {

@@ -417,29 +417,10 @@ void SemanticAnalyzer::visitStatement(const ast::Statement &stmt) {
     if (condHotkey.binding) {
       visitStatement(*condHotkey.binding);
     }
-    break;
-  }
+ break;
+ }
 
-  case ast::NodeType::SignalDefinition: {
-    const auto &signalDef = static_cast<const ast::SignalDefinition &>(stmt);
-
-    // Register signal name in symbol table
-    SymbolAttributes attrs;
-    attrs.isMutable = false;
-    attrs.isInitialized = true;
-    attrs.line = stmt.line;
-    attrs.column = stmt.column;
-    symbolTable_.define(signalDef.name, SymbolKind::Signal,
-                        HavelType::boolean(), attrs);
-
-    // Visit signal condition expression
-    if (signalDef.condition) {
-      visitExpression(*signalDef.condition);
-    }
-    break;
-  }
-
-  case ast::NodeType::WhenStatement: {
+ case ast::NodeType::WhenStatement: {
     const auto &whenStmt = static_cast<const ast::WhenStatement &>(stmt);
 
     // Visit the trigger condition

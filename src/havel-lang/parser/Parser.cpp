@@ -11,10 +11,10 @@ namespace havel::parser {
 
 static bool isKeywordToken(TokenType t) {
     switch (t) {
-    case TokenType::Group: case TokenType::Mode: case TokenType::Sync:
-    case TokenType::Class: case TokenType::Match: case TokenType::Select:
-    case TokenType::Where: case TokenType::Config: case TokenType::Devices:
-    case TokenType::Modes: case TokenType::Signal: case TokenType::Pool:
+ case TokenType::Mode: case TokenType::Sync:
+ case TokenType::Class: case TokenType::Match: case TokenType::Select:
+ case TokenType::Where: case TokenType::Config: case TokenType::Devices:
+ case TokenType::Modes: case TokenType::Pool:
     case TokenType::Repeat: case TokenType::On: case TokenType::Off:
     case TokenType::When: case TokenType::True: case TokenType::False:
     case TokenType::Null: case TokenType::Del: case TokenType::Trait:
@@ -1668,10 +1668,10 @@ case TokenType::Tilde: {
       }
       // Regular 'not' as unary - but this shouldn't happen in infix position
       // Just return left as-is (the not prefix is handled in nud)
-      return std::move(left);
-    }
+  return left;
+  }
 
-    case TokenType::Nullish: {
+  case TokenType::Nullish: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return makeNodeAt<ast::BinaryExpression>(token, 
           std::move(left), ast::BinaryOperator::Nullish, std::move(right));
@@ -3275,11 +3275,7 @@ case havel::TokenType::Struct:
       auto expr = parseExpression();
       return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
     }
-  case havel::TokenType::Signal:
-    return parseSignalDefinition();
-  case havel::TokenType::Group:
-    return parseGroupDefinition();
-  case havel::TokenType::Colon: {
+ case havel::TokenType::Colon: {
     return parseSleepStatement();
   }
   case havel::TokenType::ShellCommand:
@@ -5033,8 +5029,9 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
     // Support optional val/const/let prefix for fields.
     // Only consume as prefix if the next non-newline token is an identifier,
     // otherwise treat val/const/let as the field name itself.
-    bool isConst = false;
-    if (at().type == havel::TokenType::Val ||
+  bool isConst = false;
+  (void)isConst;
+  if (at().type == havel::TokenType::Val ||
         at().type == havel::TokenType::Const ||
         at().type == havel::TokenType::Let) {
         // Peek ahead past newlines to see if an identifier follows
@@ -9118,7 +9115,7 @@ Parser::parseCallExpression(std::unique_ptr<havel::ast::Expression> callee) {
   }
   advance(); // consume ')'
 
-  return std::move(call);
+    return call;
 }
 std::unique_ptr<havel::ast::Expression>
 Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
@@ -9126,16 +9123,16 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
   // Special case: if current token is '.' but next is '??', this is not a member access
   // Let the nullish coalescing handler deal with it
   if (at().type == havel::TokenType::Dot && at(1).type == havel::TokenType::Nullish) {
-    return std::move(object);
+    return object;
   }
 
   auto dotTok = at(); // Save token location before consuming
-  advance();          // consume '.'
+  advance(); // consume '.'
 
   // Special case: if next token is ??, this is not a member access
   // Let the nullish coalescing handler deal with it
   if (at().type == havel::TokenType::Nullish) {
-    return std::move(object);
+    return object;
   }
 
   // Property names can be identifiers or certain keywords
@@ -10430,102 +10427,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeBlock() {
                                                  std::move(statements));
 }
 
-// Parse signal definition: signal name = expression
-std::unique_ptr<havel::ast::Statement> Parser::parseSignalDefinition() {
-  advance(); // consume 'signal'
 
-  // Parse signal name
-  if (at().type != havel::TokenType::Identifier) {
-    failAt(at(), "Expected signal name after 'signal'");
-  }
-  std::string signalName = at().value;
-  advance();
-
-  // Parse '='
-  if (at().type != havel::TokenType::Assign &&
-      at().type != havel::TokenType::Colon) {
-    failAt(at(), "Expected '=' or ':' after signal name");
-  }
-  advance(); // consume '=' or ':'
-
-  // Parse condition expression
-  auto condition = parseExpression();
-
-  return makeNode<havel::ast::SignalDefinition>(signalName,
-                                                        std::move(condition));
-}
-
-// Parse group definition: group name { modes: [...] }
-std::unique_ptr<havel::ast::Statement> Parser::parseGroupDefinition() {
-  advance(); // consume 'group'
-
-  // Parse group name
-  if (at().type != havel::TokenType::Identifier) {
-    failAt(at(), "Expected group name after 'group'");
-  }
-  std::string groupName = at().value;
-  advance();
-
-  // Parse group block { modes: [...] }
-  if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after group name");
-  }
-  advance(); // consume '{'
-
-  std::vector<std::string> modeNames;
-
-  // Parse group contents
-  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Semicolon) {
-      advance();
-      continue;
-    }
-
-    if (at().type != havel::TokenType::Identifier) {
-      break;
-    }
-
-    std::string keyword = at().value;
-    advance();
-
-    if (keyword == "modes") {
-      if (at().type != havel::TokenType::Colon) {
-        failAt(at(), "Expected ':' after 'modes'");
-      }
-      advance(); // consume ':'
-
-      // Parse array of mode names
-      if (at().type != havel::TokenType::OpenBracket) {
-        failAt(at(), "Expected '[' after 'modes:'");
-      }
-      advance(); // consume '['
-
-      while (at().type != havel::TokenType::CloseBracket) {
-        if (at().type == havel::TokenType::Comma) {
-          advance();
-          continue;
-        }
-        if (at().type != havel::TokenType::Identifier &&
-            at().type != havel::TokenType::String) {
-          failAt(at(), "Expected mode name in group");
-        }
-        modeNames.push_back(at().value);
-        advance();
-      }
-      advance(); // consume ']'
-    } else {
-      failAt(at(), "Unknown keyword in group definition: " + keyword);
-    }
-  }
-
-  if (at().type != havel::TokenType::CloseBrace) {
-    failAt(at(), "Expected '}' to close group definition");
-  }
-  advance(); // consume '}'
-
-  return makeNode<havel::ast::GroupDefinition>(groupName, modeNames);
-}
 
 // Parse modes block (legacy): modes { name { ... } }
 std::unique_ptr<havel::ast::Statement> Parser::parseModesBlock() {

@@ -274,12 +274,8 @@ private:
   std::unique_ptr<ast::Statement> parseModeDefinition(); // mode name { ... }
   std::unique_ptr<ast::Statement>
   parseModeBlock(); // mode name { statements } (shorthand)
-  std::unique_ptr<ast::Statement> parseModesBlock(); // modes { ... }
-  std::unique_ptr<ast::Statement>
-  parseSignalDefinition(); // signal name = expression
-  std::unique_ptr<ast::Statement>
-  parseGroupDefinition(); // group name { modes: [...] }
-  std::unique_ptr<ast::Statement> parseConfigSection();
+ std::unique_ptr<ast::Statement> parseModesBlock(); // modes { ... }
+ std::unique_ptr<ast::Statement> parseConfigSection();
 
     // Type system parsers
     std::unique_ptr<ast::Statement> parseStructDeclaration();

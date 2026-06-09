@@ -12,6 +12,7 @@
 static uint32_t _compiler_err_line() { return 0; }
 static uint32_t _compiler_err_col() { return 0; }
 
+#undef COMPILER_THROW
 #define COMPILER_THROW(msg) \
   do { \
     ::havel::errors::ErrorReporter::instance().report( \
@@ -2020,8 +2021,8 @@ case ast::NodeType::TryExpression:
 
  for (const auto &modeDef : modesBlock.modes) {
  // Register mode with ModeManager at runtime
- // mode.register(name, priority, condition, enter, exit, onEnterFrom,
- // onExitTo, ...)
+ // mode.register(name, priority, condition, enter, exit, onEnterFromMode,
+ // onEnterFrom, onExitToMode, onExitTo)
 
  {
  uint32_t strId = addStringConstant("mode.register");
@@ -2030,60 +2031,101 @@ case ast::NodeType::TryExpression:
  // Load mode name
  { uint32_t _sid = addStringConstant(modeDef.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
 
-      // Load priority
-      emit(OpCode::LOAD_CONST,
-           addConstant(Value::makeInt(static_cast<int64_t>(modeDef.priority))));
+ // Load priority
+ emit(OpCode::LOAD_CONST,
+ addConstant(Value::makeInt(static_cast<int64_t>(modeDef.priority))));
 
-      // Compile condition expression (or null if not provided)
-      if (modeDef.condition) {
-        compileExpression(*modeDef.condition);
-      } else {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      }
+ // Compile condition expression (or null if not provided)
+ if (modeDef.condition) {
+ compileExpression(*modeDef.condition);
+ } else {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ }
 
-      // Create closures for enter/exit blocks
-      // For now, we'll compile them inline and create closures
-      // This is a simplified implementation - full implementation needs nested
-      // functions
+ // Compile enter block as a separate BytecodeFunction
+ if (modeDef.enterBlock) {
+ BytecodeFunction enterFn("mode_enter_" + modeDef.name);
+ enterFunction(std::move(enterFn));
+ for (const auto &stmt : modeDef.enterBlock->body) {
+ compileStatement(*stmt);
+ }
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::RETURN);
+ leaveFunction();
+ uint32_t enterIdx = static_cast<uint32_t>(compiled_functions.size() - 1);
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(enterIdx)));
+ } else {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ }
 
-      // Compile enter block as inline code wrapped in closure
-      if (modeDef.enterBlock) {
-        // Create a closure for enter block
-        // For simplicity, we'll emit a placeholder
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(0)));
-      } else {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      }
+ // Compile exit block as a separate BytecodeFunction
+ if (modeDef.exitBlock) {
+ BytecodeFunction exitFn("mode_exit_" + modeDef.name);
+ enterFunction(std::move(exitFn));
+ for (const auto &stmt : modeDef.exitBlock->body) {
+ compileStatement(*stmt);
+ }
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::RETURN);
+ leaveFunction();
+ uint32_t exitIdx = static_cast<uint32_t>(compiled_functions.size() - 1);
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(exitIdx)));
+ } else {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ }
 
-      // Compile exit block
-      if (modeDef.exitBlock) {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(0)));
-      } else {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      }
+ // Load onEnterFrom mode name (or null)
+ if (!modeDef.onEnterFrom.empty()) {
+ { uint32_t _sid = addStringConstant(modeDef.onEnterFrom); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ } else {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ }
 
-      // Load onEnterFrom mode name (or null)
-      if (!modeDef.onEnterFrom.empty()) {
-        { uint32_t _sid = addStringConstant(modeDef.onEnterFrom); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      } else {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      }
+ // Compile onEnterFrom block as a separate BytecodeFunction (1 param: fromMode)
+ if (modeDef.onEnterFromBlock) {
+ BytecodeFunction onEnterFromFn("mode_onEnterFrom_" + modeDef.name);
+ onEnterFromFn.param_count = 1;
+ enterFunction(std::move(onEnterFromFn));
+ for (const auto &stmt : modeDef.onEnterFromBlock->body) {
+ compileStatement(*stmt);
+ }
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::RETURN);
+ leaveFunction();
+ uint32_t onEnterFromIdx = static_cast<uint32_t>(compiled_functions.size() - 1);
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(onEnterFromIdx)));
+ } else {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ }
 
-      // Load onExitTo mode name (or null)
-      if (!modeDef.onExitTo.empty()) {
-        { uint32_t _sid = addStringConstant(modeDef.onExitTo); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      } else {
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-      }
+ // Load onExitTo mode name (or null)
+ if (!modeDef.onExitTo.empty()) {
+ { uint32_t _sid = addStringConstant(modeDef.onExitTo); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+ } else {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ }
 
-      // Load preventRetrigger flag (commented out - field doesn't exist)
-      // emit(OpCode::LOAD_CONST, addConstant(modeDef.preventRetrigger));
-      emit(OpCode::LOAD_CONST, Value::makeBool(false));
+ // Compile onExitTo block as a separate BytecodeFunction (1 param: toMode)
+ if (modeDef.onExitToBlock) {
+ BytecodeFunction onExitToFn("mode_onExitTo_" + modeDef.name);
+ onExitToFn.param_count = 1;
+ enterFunction(std::move(onExitToFn));
+ for (const auto &stmt : modeDef.onExitToBlock->body) {
+ compileStatement(*stmt);
+ }
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ emit(OpCode::RETURN);
+ leaveFunction();
+ uint32_t onExitToIdx = static_cast<uint32_t>(compiled_functions.size() - 1);
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(onExitToIdx)));
+ } else {
+ emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+ }
 
- // Call mode.register
- emit(OpCode::CALL, Value(static_cast<uint32_t>(8)));
+ // Call mode.register with 9 args
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(9)));
  emit(OpCode::POP); // Discard result
-    }
+ }
     break;
   }
 

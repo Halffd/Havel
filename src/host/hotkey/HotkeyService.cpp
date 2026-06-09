@@ -54,19 +54,6 @@ std::vector<HotkeyInfo> HotkeyService::getHotkeyList() const {
         info.id = hotkey.id;
         info.key = hotkey.alias;
         info.enabled = hotkey.enabled;
-        info.type = "regular";
-        result.push_back(info);
-    }
-
-    // Get conditional hotkeys
-    auto conditional = m_manager->getConditionalHotkeyList();
-    for (const auto& hotkey : conditional) {
-        HotkeyInfo info;
-        info.id = hotkey.id;
-        info.key = hotkey.key;
-        info.condition = hotkey.condition;
-        info.enabled = hotkey.enabled;
-        info.type = "conditional";
         result.push_back(info);
     }
 
@@ -76,22 +63,6 @@ std::vector<HotkeyInfo> HotkeyService::getHotkeyList() const {
 // =========================================================================
 // Contextual hotkeys
 // =========================================================================
-
-int HotkeyService::addContextualHotkey(const std::string& key,
-                                        const std::string& condition,
-                                        std::function<void()> trueAction,
-                                        std::function<void()> falseAction,
-                                        int id) {
-    if (!m_manager) return 0;
-
-    if (falseAction) {
-        return m_manager->AddContextualHotkey(
-            key, condition, trueAction, falseAction, id);
-    } else {
-        return m_manager->AddContextualHotkey(
-            key, condition, trueAction, nullptr, id);
-    }
-}
 
 // =========================================================================
 // Advanced KeyTap functionality
@@ -144,10 +115,6 @@ void HotkeyService::printActiveWindowInfo() {
 
 void HotkeyService::toggleWindowFocusTracking() {
     if (m_manager) m_manager->toggleWindowFocusTracking();
-}
-
-void HotkeyService::updateAllConditionalHotkeys() {
-    if (m_manager) m_manager->updateAllConditionalHotkeys();
 }
 
 std::string HotkeyService::getCurrentMode() const {

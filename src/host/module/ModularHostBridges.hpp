@@ -446,27 +446,6 @@ private:
   handleHotkeyRegister(const std::vector<Value> &args,
                        const HostContext *ctx);
   static Value
-  handleHotkeyRegisterConditional(const std::vector<Value> &args,
-                                  const HostContext *ctx);
-  static Value
-  handleHotkeyRemoveConditional(const std::vector<Value> &args,
-                                const HostContext *ctx);
-  static Value
-  handleHotkeyEnableConditional(const std::vector<Value> &args,
-                                const HostContext *ctx);
-  static Value
-  handleHotkeyDisableConditional(const std::vector<Value> &args,
-                                 const HostContext *ctx);
-  static Value
-  handleHotkeySetCondition(const std::vector<Value> &args,
-                           const HostContext *ctx);
-  static Value
-  handleHotkeyEvaluateCondition(const std::vector<Value> &args,
-                                const HostContext *ctx);
-  static Value
-  handleHotkeyConditionalList(const std::vector<Value> &args,
-                              const HostContext *ctx);
-  static Value
   handleHotkeyTrigger(const std::vector<Value> &args,
                       const HostContext *ctx);
   static Value
@@ -889,10 +868,8 @@ private:
                           const HostContext *ctx);
   static Value handleTime(const std::vector<Value> &args,
                           const HostContext *ctx);
-  static Value handleTransitions(const std::vector<Value> &args,
-                                 const HostContext *ctx);
-  static Value handleSignalActive(const std::vector<Value> &args,
-                                  const HostContext *ctx);
+    static Value handleTransitions(const std::vector<Value> &args,
+                                   const HostContext *ctx);
 };
 
 /**

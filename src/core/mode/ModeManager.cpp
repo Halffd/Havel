@@ -1,308 +1,134 @@
 #include "core/mode/ModeManager.hpp"
-#include "havel-lang/ast/AST.h"
-#include "havel-lang/compiler/runtime/EventQueue.hpp"
 #include "utils/Logger.hpp"
-#include "utils/DebugFlags.hpp"
-#include <algorithm>
 #include <chrono>
 
 namespace havel {
 
 ModeManager::~ModeManager() = default;
 
-void ModeManager::defineSignal(Signal signal) {
-  std::lock_guard<std::mutex> lock(modeMutex);
-  signalList.push_back(std::move(signal));
-}
-
 void ModeManager::defineMode(ModeDefinition mode) {
-  std::lock_guard<std::mutex> lock(modeMutex);
-  modes.push_back(std::move(mode));
-}
-
-void ModeManager::defineGroup(ModeGroup group) {
-  std::lock_guard<std::mutex> lock(modeMutex);
-  groups.push_back(std::move(group));
+    std::lock_guard<std::mutex> lock(modeMutex);
+    modes.push_back(std::move(mode));
 }
 
 std::string ModeManager::getCurrentMode() const {
-  std::lock_guard<std::mutex> lock(modeMutex);
-  return currentMode;
+    std::lock_guard<std::mutex> lock(modeMutex);
+    return currentMode;
 }
 
 std::string ModeManager::getPreviousMode() const {
-  std::lock_guard<std::mutex> lock(modeMutex);
-  return previousMode;
+    std::lock_guard<std::mutex> lock(modeMutex);
+    return previousMode;
 }
 
 void ModeManager::setMode(const std::string &modeName) {
-  ModeChangeCallback cb;
-  std::string oldMode;
-  std::string newMode;
-  {
-    std::lock_guard<std::mutex> lock(modeMutex);
+    ModeChangedCallback cb;
+    std::string oldMode;
+    std::string newMode;
+    {
+        std::lock_guard<std::mutex> lock(modeMutex);
 
-    if (currentMode == modeName) {
-      return; // No change
+        if (currentMode == modeName) {
+            return;
+        }
+
+        oldMode = currentMode;
+
+        for (auto &mode : modes) {
+            if (mode.name == currentMode && mode.isActive) {
+                mode.isActive = false;
+                if (mode.onExit) {
+                    mode.onExit();
+                }
+                if (mode.onExitTo) {
+                    mode.onExitTo(modeName);
+                }
+            }
+        }
+
+        previousMode = currentMode;
+        currentMode = modeName;
+        newMode = modeName;
+
+        for (auto &mode : modes) {
+            if (mode.name == modeName) {
+                mode.isActive = true;
+                mode.enterTime = std::chrono::steady_clock::now();
+                mode.transitionCount++;
+                if (mode.onEnter) {
+                    mode.onEnter();
+                }
+                if (mode.onEnterFrom) {
+                    mode.onEnterFrom(oldMode);
+                }
+                break;
+            }
+        }
+
+        info("Mode changed to '{}'", currentMode);
+        cb = onModeChanged_;
     }
 
-    oldMode = currentMode;
-
-    // Find and exit current mode
-    for (auto &mode : modes) {
-      if (mode.name == currentMode && mode.isActive) {
-        mode.isActive = false;
-        if (mode.onExit) {
-          mode.onExit();
-        }
-        if (mode.onExitTo) {
-          mode.onExitTo(modeName);
-        }
-      }
+    if (cb) {
+        cb(newMode, oldMode);
     }
-
-    // Set previous mode
-    previousMode = currentMode;
-    currentMode = modeName;
-    newMode = modeName;
-
-    // Find and enter new mode
-    for (auto &mode : modes) {
-      if (mode.name == modeName) {
-        mode.isActive = true;
-        mode.enterTime = std::chrono::steady_clock::now();
-        mode.transitionCount++;
-        if (mode.onEnter) {
-          mode.onEnter();
-        }
-        if (mode.onEnterFrom) {
-          mode.onEnterFrom(oldMode);
-        }
-        break;
-      }
-    }
-
-    // Trigger transition callbacks
-    triggerTransition(oldMode, modeName);
-    cb = onModeChange_;
-  }
-
-  if (cb) {
-    cb(newMode, oldMode);
-  }
 }
 
 std::chrono::milliseconds
 ModeManager::getModeTime(const std::string &modeName) const {
-  std::lock_guard<std::mutex> lock(modeMutex);
-  for (const auto &mode : modes) {
-    if (mode.name == modeName) {
-      auto total = mode.totalTime;
-      if (mode.isActive) {
-        total += std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - mode.enterTime);
-      }
-      return total;
+    std::lock_guard<std::mutex> lock(modeMutex);
+    for (const auto &mode : modes) {
+        if (mode.name == modeName) {
+            auto total = mode.totalTime;
+            if (mode.isActive) {
+                total += std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - mode.enterTime);
+            }
+            return total;
+        }
     }
-  }
-  return std::chrono::milliseconds(0);
+    return std::chrono::milliseconds(0);
 }
 
 int ModeManager::getModeTransitions(const std::string &modeName) const {
-  std::lock_guard<std::mutex> lock(modeMutex);
-  for (const auto &mode : modes) {
-    if (mode.name == modeName) {
-      return mode.transitionCount;
+    std::lock_guard<std::mutex> lock(modeMutex);
+    for (const auto &mode : modes) {
+        if (mode.name == modeName) {
+            return mode.transitionCount;
+        }
     }
-  }
-  return 0;
-}
-
-bool ModeManager::isSignalActive(const std::string &signalName) const {
-  std::lock_guard<std::mutex> lock(modeMutex);
-  for (const auto &signal : signalList) {
-    if (signal.name == signalName) {
-      return signal.value;
-    }
-  }
-  return false;
+    return 0;
 }
 
 void ModeManager::triggerEnter(ModeDefinition &mode) {
-  mode.isActive = true;
-  mode.enterTime = std::chrono::steady_clock::now();
-  mode.transitionCount++;
-  previousMode = currentMode;
-  currentMode = mode.name;
+    mode.isActive = true;
+    mode.enterTime = std::chrono::steady_clock::now();
+    mode.transitionCount++;
+    previousMode = currentMode;
+    currentMode = mode.name;
 
-  if (mode.onEnter) {
-    mode.onEnter();
-  }
-  if (mode.onEnterFrom && !previousMode.empty()) {
-    mode.onEnterFrom(previousMode);
-  }
+    if (mode.onEnter) {
+        mode.onEnter();
+    }
+    if (mode.onEnterFrom && !previousMode.empty()) {
+        mode.onEnterFrom(previousMode);
+    }
 }
 
 void ModeManager::triggerExit(ModeDefinition &mode) {
-  // Update total time
-  if (mode.isActive) {
-    mode.totalTime += std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - mode.enterTime);
-  }
-
-  mode.isActive = false;
-
-  if (mode.onExit) {
-    mode.onExit();
-  }
-  if (mode.onExitTo && !currentMode.empty()) {
-    mode.onExitTo(currentMode);
-  }
-}
-
-void ModeManager::triggerTransition(const std::string &fromMode,
-                                    const std::string &toMode) {
-  for (const auto &group : groups) {
-    bool wasInGroup = false;
-    bool nowInGroup = false;
-    for (const auto &modeName : group.modes) {
-      if (modeName == fromMode) wasInGroup = true;
-      if (modeName == toMode) nowInGroup = true;
-    }
-    if (wasInGroup && !nowInGroup && group.onExit) {
-      group.onExit();
-    }
-    if (!wasInGroup && nowInGroup && group.onEnter) {
-      group.onEnter();
-    }
-  }
-}
-
-void ModeManager::update(ExprEvaluator evaluator) {
-  ModeChangeCallback cb;
-  std::string oldMode;
-  std::string newMode;
-  bool modeChanged = false;
-
-  {
-    std::lock_guard<std::mutex> lock(modeMutex);
-
-    // First, update all signals
-    for (auto &signal : signalList) {
-      if (signal.conditionExpr && evaluator) {
-        signal.value = evaluator(*signal.conditionExpr);
-      }
+    if (mode.isActive) {
+        mode.totalTime += std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - mode.enterTime);
     }
 
-    std::string newActiveMode = currentMode;
+    mode.isActive = false;
 
-    if (debugging::debug_hotkeys) debug("ModeManager::update() - checking {} modes, current={}", modes.size(),
-      currentMode);
-
-    // Sort modes by priority (higher priority first)
-    std::vector<ModeDefinition *> sortedModes;
-    for (auto &mode : modes) {
-      sortedModes.push_back(&mode);
+    if (mode.onExit) {
+        mode.onExit();
     }
-    std::sort(sortedModes.begin(), sortedModes.end(),
-      [](const ModeDefinition *a, const ModeDefinition *b) {
-        return a->priority > b->priority;
-      });
-
-    // Check all mode conditions in priority order
-    for (auto *modePtr : sortedModes) {
-      auto &mode = *modePtr;
-      bool shouldActivate = false;
-      bool hasCondition = false;
-
-      // Try callback-based condition first
-      if (mode.conditionCallback) {
-        shouldActivate = mode.conditionCallback();
-        hasCondition = true;
-      }
-      // Fall back to AST-based condition if callback not available
-      else if (mode.conditionExpr && evaluator) {
-        shouldActivate = evaluator(*mode.conditionExpr);
-        hasCondition = true;
-      }
-
-      if (!hasCondition)
-        continue;
-
-      if (debugging::debug_hotkeys) debug(" Mode '{}' (priority {}) condition = {}", mode.name, mode.priority,
-        shouldActivate ? "true" : "false");
-
-      if (shouldActivate && !mode.isActive) {
-        // Mode condition met, activate it
-        // First exit current mode if different
-        if (currentMode != mode.name) {
-          for (auto &activeMode : modes) {
-            if (activeMode.isActive && activeMode.name != mode.name) {
-              if (debugging::debug_hotkeys) debug(" Exiting mode '{}'", activeMode.name);
-              triggerExit(activeMode);
-            }
-          }
-        }
-        if (debugging::debug_hotkeys) debug(" Entering mode '{}'", mode.name);
-        triggerEnter(mode);
-        modeChanged = true;
-        newActiveMode = mode.name;
-      } else if (!shouldActivate && mode.isActive && mode.name == currentMode) {
-        // Current mode condition no longer met
-        if (debugging::debug_hotkeys) debug(" Exiting mode '{}' (condition no longer met)", mode.name);
-        triggerExit(mode);
-        newActiveMode = "default";
-        modeChanged = true;
-      }
+    if (mode.onExitTo && !currentMode.empty()) {
+        mode.onExitTo(currentMode);
     }
-
-    // If no mode is active, switch to default
-    if (newActiveMode == "default" && currentMode != "default") {
-      for (auto &mode : modes) {
-        if (mode.isActive) {
-          if (debugging::debug_hotkeys) debug(" Exiting mode '{}' (no mode active)", mode.name);
-          triggerExit(mode);
-        }
-      }
-      previousMode = currentMode;
-      currentMode = "default";
-      modeChanged = true;
-    }
-
-    if (modeChanged) {
-      oldMode = previousMode;
-      newMode = currentMode;
-      info("Mode changed to '{}'", currentMode);
-      cb = onModeChange_;
-    }
-  }
-
-  if (cb) {
-    cb(newMode, oldMode);
-  }
-}
-
-void ModeManager::registerVarChangedHandler() {
-  
-  // When a global variable changes, reevaluate all mode conditions
-  // This enables event-driven mode condition checking
-  if (eventQueue_) {
-    // Register handler for VAR_CHANGED events
-        eventQueue_->onEvent(compiler::EventType::VAR_CHANGED,
-            [this](const compiler::Event& event) {
-                if (event.ptr) {
-                    delete static_cast<std::string*>(event.ptr);
-                }
-                if (debugging::debug_hotkeys) debug("VAR_CHANGED event - reevaluating mode conditions");
-          // Schedule reevaluation via a callback to avoid blocking
-          eventQueue_->push([this]() {
-            // Use cached evaluator if available, otherwise skip
-            // Full evaluation would need ExprEvaluator which may not be available
-            update();
-          });
-        });
-    if (debugging::debug_hotkeys) debug("ModeManager: Registered VAR_CHANGED handler for reactive mode updates");
-  }
 }
 
 } // namespace havel

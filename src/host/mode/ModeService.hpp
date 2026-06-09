@@ -26,10 +26,9 @@ std::string getCurrentMode() const;
 std::string getPreviousMode() const;
 void setMode(const std::string& modeName);
 
-void defineMode(const std::string& name,
-compiler::CallbackId conditionId,
-compiler::CallbackId enterId,
-compiler::CallbackId exitId);
+    void defineMode(const std::string& name,
+                    compiler::CallbackId enterId,
+                    compiler::CallbackId exitId);
 
 private:
 havel::IHostAPI* m_hostAPI;

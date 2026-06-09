@@ -461,11 +461,6 @@ private:
   std::mutex grabbedKeysMutex;
   bool blockAllInput = false;
 
-  struct ConditionalHotkeyState {
-    int id;
-    bool wasGrabbed;
-  };
-  std::vector<ConditionalHotkeyState> suspendedConditionalHotkeyStates;
   bool wasSuspended = false;
 
 public:

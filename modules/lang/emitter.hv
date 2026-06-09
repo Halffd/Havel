@@ -1841,7 +1841,28 @@ if k == "RepeatStatement" {
 		return
 
 	}
-if k == "LetDeclaration" {
+ if k == "LetDeclaration" {
+        if node.isSignal == true {
+            // signal binding: compile expression as re-evaluable function
+            sigScope = Scope(null)
+            prevSigScope = emitter.scope
+            emitter.scope = sigScope
+            bc.func_push()
+            sigChunkIdx = bc.func_new("signal_" + node.name, 0, 16)
+            emitExpr(emitter, node.value)
+            bc.emit("RETURN")
+            bc.set_local_count(0)
+            bc.func_pop()
+            emitter.scope = prevSigScope
+            nameIdx = bc.add_string(node.name)
+            sid = globalIdx(emitter, "signal.bind")
+            bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+            bc.emit("LOAD_CONST", nameIdx)
+            bc.emit("LOAD_CONST", bc.add_const(sigChunkIdx))
+            bc.emit("CALL", 2)
+            bc.emit("POP")
+            return
+        }
         localIdx = scopeDeclare(emitter.scope, node.name)
         if node.value != null {
             emitExpr(emitter, node.value)

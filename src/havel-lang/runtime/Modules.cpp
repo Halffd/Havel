@@ -107,12 +107,10 @@ bool Modules::import(const std::string &importSpec) {
 }
 
 void Modules::registerModeCallbacks(const std::string &modeName,
-                                     CallbackId conditionId,
-                                     CallbackId enterId,
-                                     CallbackId exitId) {
+                                        CallbackId enterId,
+                                        CallbackId exitId) {
     ModeBinding binding;
     binding.modeName = modeName;
-    binding.condition_id = conditionId;
     binding.enter_id = enterId;
     binding.exit_id = exitId;
     mode_bindings_[modeName] = std::move(binding);

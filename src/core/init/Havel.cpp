@@ -291,20 +291,20 @@ void Havel::initialize(bool isStartup) {
 
  if (hotkeyManager) {
  hotkeyManager->setEventQueue(eventQueue);
- hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
- hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
 
-
- hotkeyManager->getConditionalHotkeyManager().setScheduler(scheduler);
 
  if (debugging::debug_io) debug("Reactive hotkey system initialized");
     
-    auto modeManager = hotkeyManager->getModeManager();
-    if (modeManager) {
-      modeManager->setExecutionEngine(executionEngine.get());
-      modeManager->setEventQueue(eventQueue);
-      modeManager->registerVarChangedHandler();
-    }
+        auto modeManager = hotkeyManager->getModeManager();
+        if (modeManager) {
+            modeManager->setOnModeChanged([vm = bytecodeVM.get()](
+                const std::string &newMode, const std::string &) {
+                auto ref = vm->createRuntimeString(newMode);
+                vm->setGlobal("mode", havel::core::Value::makeStringId(ref.id));
+            });
+            auto ref = bytecodeVM->createRuntimeString(modeManager->getCurrentMode());
+            bytecodeVM->setGlobal("mode", havel::core::Value::makeStringId(ref.id));
+        }
   }
 
   // Set HostBridge pointer on EventListener for timer checking
@@ -514,7 +514,6 @@ void Havel::startPeriodicTimer() {
           std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck)
               .count() >= WINDOW_CHECK_INTERVAL_MS) {
         if (timerRunning && hotkeyManager) {
-          hotkeyManager->updateAllConditionalHotkeys();
         }
         lastWindowCheck = now;
       }
@@ -538,7 +537,6 @@ void Havel::stopPeriodicTimer() {
   timerCv.notify_one();
   if (timerThread && timerThread->joinable()) {
     // Try to join with a timeout — if the timer thread is stuck on a
-    // mutex inside updateAllConditionalHotkeys, detach to avoid deadlock.
     auto tid = timerThread->get_id();
     std::this_thread::sleep_for(std::chrono::milliseconds(PERIODIC_INTERVAL_MS + 50));
     if (timerThread->joinable()) {

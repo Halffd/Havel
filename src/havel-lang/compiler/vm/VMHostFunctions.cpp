@@ -1872,6 +1872,23 @@ registerHostFunction(
   return Value::makeStringId(strRef.id);
   });
 
+  registerHostFunction(
+      "signal.bind", [this](const std::vector<Value> &args) {
+          if (args.size() < 2)
+              COMPILER_THROW("signal.bind requires name and expression function");
+          if (!args[0].isStringValId() && !args[0].isStringId())
+              COMPILER_THROW("signal.bind first arg must be a string (signal name)");
+          if (!args[1].isFunctionObjId() && !args[1].isClosureId())
+              COMPILER_THROW("signal.bind second arg must be a function");
+
+          std::string name = resolveStringKey(args[0]);
+          uint32_t func_id = args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
+
+          registerSignal(name, func_id);
+
+          return Value::makeNull();
+      });
+
   registerHostFunction("gc_collect", 0, [this](const std::vector<Value> &) -> Value {
     collectGarbage();
     return Value::makeNull();

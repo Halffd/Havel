@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/condition/ConditionalHotkeyManager.hpp"
 #include "core/mode/ModeManager.hpp"
 #include "core/CallbackTypes.hpp"
 #include "core/MouseGestureTypes.hpp"
@@ -40,14 +39,6 @@ public:
     bool enabled = false;
   };
 
-  struct ConditionalHotkeyInfo {
-    int id = 0;
-    std::string key;
-    std::string condition;
-    bool enabled = false;
-    bool active = false;
-  };
-
   explicit HotkeyManager(std::shared_ptr<IO> io);
   HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &, AudioManager &,
                 ScreenshotManager *, BrightnessManager &,
@@ -65,34 +56,14 @@ public:
   bool GrabHotkey(int id);      // Grab hotkey by id
   bool UngrabHotkey(int id);    // Ungrab hotkey by id
 
-  int AddContextualHotkey(const std::string &key, const std::string &condition,
-                          std::function<void()> trueAction,
-                          std::function<void()> falseAction = nullptr,
-                          int id = 0);
-  int AddContextualHotkey(const std::string &key,
-                          std::function<bool()> condition,
-                          std::function<void()> trueAction,
-                          std::function<void()> falseAction = nullptr,
-                          int id = 0);
-  int AddGamingHotkey(const std::string &key, std::function<void()> trueAction,
-                      std::function<void()> falseAction = nullptr, int id = 0);
-
   void LoadHotkeyConfigurations();
   void ReloadConfigurations();
   void clearAllHotkeys();
   std::vector<HotkeyInfo> getHotkeyList() const;
-  std::vector<ConditionalHotkeyInfo> getConditionalHotkeyList() const;
   void printHotkeys() const;
 
-  void updateAllConditionalHotkeys();
-  void forceUpdateAllConditionalHotkeys();
-  void reevaluateConditionalHotkeys(IO &io);
-  void setConditionalHotkeysEnabled(bool enabled);
-  void setMode(const std::string& mode);  // Set current mode for conditional hotkeys
-  std::string getMode() const;  // Get current mode
  void setEventQueue(compiler::EventQueue* eq);
  compiler::EventQueue* getEventQueue() const { return eventQueue_; }
- std::mutex &getHotkeyMutex();
 
   // Test harness: programmatically trigger a hotkey by alias
   // Implementation in .cpp to avoid incomplete type issues
@@ -106,12 +77,12 @@ public:
   const std::shared_ptr<ModeManager>& getModeManager() const { return modeManager; }
 
   
-  ConditionalHotkeyManager& getConditionalHotkeyManager() { return conditionalManager; }
-  const ConditionalHotkeyManager& getConditionalHotkeyManager() const { return conditionalManager; }
-
   void loadDebugSettings();
   void applyDebugSettings();
   void cleanup();
+
+  void setMode(const std::string& mode);
+  std::string getMode() const;
 
   void toggleFakeDesktopOverlay();
   void showBlackOverlay();
@@ -130,14 +101,11 @@ static std::unordered_map<int, HotKey> &RegisteredHotkeys();
 // Internal: track registered hotkey callbacks for test triggering
 // Maps alias -> callback function
 std::unordered_map<std::string, std::function<void()>> testCallbacks_;
-std::vector<ConditionalHotkey>* activeConditionalHotkeys = nullptr;
-bool conditionalHotkeysEnabled = true;
 
 private:
   void initializeInputCallbacks();
 
   std::shared_ptr<IO> io;  // Shared ownership to ensure IO stays alive
-  ConditionalHotkeyManager conditionalManager;
   std::shared_ptr<ModeManager> modeManager;  // Shared ownership for mode management
   std::vector<AnyKeyPressCallback> anyKeyCallbacks;
   mutable std::mutex anyKeyCallbacksMutex;

@@ -481,6 +481,69 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
  }
 }
 
+Value VM::evaluateExpressionBytecode(uint32_t func_index, size_t ip) {
+    if (!current_chunk || func_index >= current_chunk->getFunctionCount()) {
+        return Value::makeNull();
+    }
+
+    std::stack<Value> saved_stack = stack;
+    size_t saved_frame_count = frame_count_;
+    auto saved_locals = locals;
+    auto saved_frame_arena = frame_arena_;
+
+    try {
+        (void)ip;
+        Value func_value = Value::makeFunctionObjId(func_index);
+        Value result = call(func_value, {});
+
+        stack = saved_stack;
+        frame_count_ = saved_frame_count;
+        locals = saved_locals;
+        frame_arena_ = saved_frame_arena;
+
+        return result;
+    } catch (...) {
+        stack = saved_stack;
+        frame_count_ = saved_frame_count;
+        locals = saved_locals;
+        frame_arena_ = saved_frame_arena;
+        return Value::makeNull();
+    }
+}
+
+void VM::registerSignal(const std::string& name, uint32_t func_id) {
+    auto tracker = std::make_shared<DependencyTracker>();
+    DependencyTrackerScope scope(tracker);
+
+    Value result = evaluateExpressionBytecode(func_id, 0);
+
+    auto deps = tracker->getGlobalDependencies();
+
+    setGlobal(name, result);
+
+    SignalBinding binding;
+    binding.name = name;
+    binding.func_id = func_id;
+    binding.ip = 0;
+    binding.dependencies = std::move(deps);
+    signalBindings_.push_back(std::move(binding));
+}
+
+void VM::processSignalBindings(const std::string& changed_var) {
+    for (auto& binding : signalBindings_) {
+        if (binding.dependencies.count(changed_var)) {
+            auto tracker = std::make_shared<DependencyTracker>();
+            DependencyTrackerScope scope(tracker);
+
+            Value result = evaluateExpressionBytecode(binding.func_id, 0);
+
+            binding.dependencies = tracker->getGlobalDependencies();
+
+            setGlobal(binding.name, result);
+        }
+    }
+}
+
 // ============================================================================
 
 // ============================================================================

@@ -3562,27 +3562,6 @@ void InputBridge::install(PipelineOptions &options) {
   options.host_functions["hotkey.register"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyRegister(args, ctx);
   };
-  options.host_functions["hotkey.register_conditional"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyRegisterConditional(args, ctx);
-  };
-  options.host_functions["hotkey.remove_conditional"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyRemoveConditional(args, ctx);
-  };
-  options.host_functions["hotkey.enable_conditional"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyEnableConditional(args, ctx);
-  };
-  options.host_functions["hotkey.disable_conditional"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyDisableConditional(args, ctx);
-  };
-  options.host_functions["hotkey.set_condition"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeySetCondition(args, ctx);
-  };
-  options.host_functions["hotkey.evaluate_condition"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyEvaluateCondition(args, ctx);
-  };
-  options.host_functions["hotkey.conditional_list"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyConditionalList(args, ctx);
-  };
   options.host_functions["hotkey.trigger"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyTrigger(args, ctx);
   };
@@ -3704,12 +3683,8 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                     }
                 });
             if (modeMgr && hotkeyMgr) {
-                ctx->hotkeyManager->AddContextualHotkey(
+                ctx->hotkeyManager->AddHotkey(
                     hotkeyStr,
-                    [modeMgr]() {
-                        std::string mode = modeMgr->getCurrentMode();
-                        return !mode.empty() && mode != "default";
-                    },
                     [vm, wakeHotkey]() {
                         auto *sched = vm->getScheduler();
                         if (!sched) return;
@@ -3737,221 +3712,10 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                         sched->deferToVM(std::move(spawnHotkey));
                     }
                 });
-            if (modeMgr && hotkeyMgr) {
-                ctx->hotkeyManager->AddContextualHotkey(
-                    hotkeyStr,
-                    [modeMgr]() {
-                        std::string mode = modeMgr->getCurrentMode();
-                        return !mode.empty() && mode != "default";
-                    },
-                    [vm, callbackId, hotkeyContext]() {
-                        auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
-                            uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
-                            if (gid == 0) {
-                                ::havel::error("[Hotkey] Contextual hotkey: failed to spawn goroutine for callback {}", callbackId);
-                            }
-                        };
-                        auto *sched = vm->getScheduler();
-                        if (sched && sched->isVMThread()) {
-                            spawnHotkey();
-                        } else if (sched) {
-                            sched->deferToVM(std::move(spawnHotkey));
-                        }
-                    });
-            }
         }
-    }
 
+    }
     return hotkeyContext;
-}
-
-Value InputBridge::handleHotkeyRegisterConditional(
-    const std::vector<Value> &args, const HostContext *ctx) {
-    // Args: [hotkey_string, callback_closure, condition_closure]
-    if (args.size() < 3) {
-        return Value::makeNull();
-    }
-
-    if (!ctx || !ctx->hotkeyManager || !ctx->vm || !ctx->io) {
-        return Value::makeNull();
-    }
-
-    auto *vm = static_cast<VM *>(ctx->vm);
-
-    std::string hotkeyStr;
-    if (args[0].isStringValId()) {
-        hotkeyStr = vm->resolveStringKey(args[0]);
-    } else {
-        return Value::makeNull();
-    }
-
-    std::string hotkeyId =
-        "condhk_" + std::to_string(std::hash<std::string>{}(hotkeyStr));
-
-    CallbackId callbackId = ctx->vm->registerCallback(args[1]);
-    CallbackId condCallbackId = ctx->vm->registerCallback(args[2]);
-
-    auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
-        vm, hotkeyId, hotkeyStr, hotkeyStr, "",
-        "Conditional hotkey via when block", callbackId);
-
-    if (hotkeyContext.isObjectId()) {
-        vm->pinExternalRoot(hotkeyContext);
-    }
-
-    auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
-
-    auto makeSpawn = [vm, callbackId, hotkeyContext]() {
-        auto spawnHotkey = [vm, callbackId, hotkeyContext]() {
-            uint32_t gid = vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {hotkeyContext});
-            if (gid == 0) {
-                ::havel::error("[Hotkey] Conditional hotkey: failed to spawn goroutine for callback {}", callbackId);
-            }
-        };
-        auto *sched = vm->getScheduler();
-        if (sched->isVMThread()) {
-            spawnHotkey();
-        } else {
-            sched->deferToVM(std::move(spawnHotkey));
-        }
-    };
-
-    auto trueAction = makeSpawn;
-
-    auto falseAction = []() {
-    };
-
- auto conditionFn = [vm, condCallbackId]() -> bool {
- try {
- Value result = vm->invokeCallback(condCallbackId, {});
- return result.asBool();
- } catch (...) {
- return false;
- }
- };
-
- int condHkId = condMgr.AddConditionalHotkey(hotkeyStr, conditionFn, trueAction,
- falseAction, 0, true);
-
- {
- auto tracker = std::make_shared<compiler::DependencyTracker>();
- compiler::DependencyTrackerScope scope(tracker);
- try {
- vm->invokeCallback(condCallbackId, {});
- } catch (...) {}
- auto deps = tracker->getGlobalDependencies();
- auto* ch = condMgr.FindHotkey(condHkId);
- if (ch) {
- ch->dependencies = std::move(deps);
- }
- }
-
- ctx->hotkeyManager->AddHotkey(hotkeyStr, trueAction);
-
-    return hotkeyContext;
-}
-
-Value InputBridge::handleHotkeyRemoveConditional(
-    const std::vector<Value> &args, const HostContext *ctx) {
-    if (args.size() < 1 || !ctx || !ctx->hotkeyManager) {
-        return Value::makeBool(false);
-    }
-    auto *vm = static_cast<VM *>(ctx->vm);
-    int id = static_cast<int>(args[0].asInt());
-    auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
-    bool ok = condMgr.RemoveConditionalHotkey(id);
-    if (ok) {
-        ::havel::stdlib::HotkeyModule::removeById("condhk_" + std::to_string(id));
-    }
-    return Value::makeBool(ok);
-}
-
-Value InputBridge::handleHotkeyEnableConditional(
-    const std::vector<Value> &args, const HostContext *ctx) {
-    if (args.size() < 1 || !ctx || !ctx->hotkeyManager) {
-        return Value::makeBool(false);
-    }
-    int id = static_cast<int>(args[0].asInt());
-    auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
-    return Value::makeBool(condMgr.SetHotkeyMonitoring(id, true));
-}
-
-Value InputBridge::handleHotkeyDisableConditional(
-    const std::vector<Value> &args, const HostContext *ctx) {
-    if (args.size() < 1 || !ctx || !ctx->hotkeyManager) {
-        return Value::makeBool(false);
-    }
-    int id = static_cast<int>(args[0].asInt());
-    auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
-    return Value::makeBool(condMgr.SetHotkeyMonitoring(id, false));
-}
-
-Value InputBridge::handleHotkeySetCondition(
-    const std::vector<Value> &args, const HostContext *ctx) {
-    if (args.size() < 2 || !ctx || !ctx->hotkeyManager || !ctx->vm) {
-        return Value::makeBool(false);
-    }
-    auto *vm = static_cast<VM *>(ctx->vm);
-    int id = static_cast<int>(args[0].asInt());
-    auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
-    auto *ch = condMgr.FindHotkey(id);
-    if (!ch) return Value::makeBool(false);
-    std::string newCondition = vm->resolveStringKey(args[1]);
-    ch->condition = newCondition;
-    condMgr.ScheduleReevaluation();
-    return Value::makeBool(true);
-}
-
-Value InputBridge::handleHotkeyEvaluateCondition(
-    const std::vector<Value> &args, const HostContext *ctx) {
-    if (args.size() < 1 || !ctx || !ctx->hotkeyManager) {
-        return Value::makeBool(false);
-    }
-    auto *vm = static_cast<VM *>(ctx->vm);
-    int id = static_cast<int>(args[0].asInt());
-    auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
-    auto *ch = condMgr.FindHotkey(id);
-    if (!ch) return Value::makeNull();
-    bool result = false;
-    if (std::holds_alternative<std::string>(ch->condition)) {
-        result = condMgr.EvaluateCondition(std::get<std::string>(ch->condition));
-    } else if (std::holds_alternative<std::function<bool()>>(ch->condition)) {
-        const auto &fn = std::get<std::function<bool()>>(ch->condition);
-        if (fn) result = fn();
-    }
-    return Value::makeBool(result);
-}
-
-Value InputBridge::handleHotkeyConditionalList(
-    const std::vector<Value> &args, const HostContext *ctx) {
-    (void)args;
-    if (!ctx || !ctx->hotkeyManager || !ctx->vm) {
-        return Value::makeNull();
-    }
-    auto *vm = static_cast<VM *>(ctx->vm);
-    auto result = vm->createHostArray();
-    auto resultGuard = vm->makeRoot(Value::makeArrayId(result.id));
-    auto &condMgr = ctx->hotkeyManager->getConditionalHotkeyManager();
-    auto &hotkeys = condMgr.GetHotkeys();
-    for (const auto &ch : hotkeys) {
-        auto obj = vm->createHostObject();
-        vm->setHostObjectField(obj, "id", Value::makeInt(ch.id));
-        auto keyStr = vm->createRuntimeString(ch.key);
-        vm->setHostObjectField(obj, "key", Value::makeStringId(keyStr.id));
-        std::string condStr;
-        if (std::holds_alternative<std::string>(ch.condition)) {
-            condStr = std::get<std::string>(ch.condition);
-        } else {
-            condStr = "<function>";
-        }
-        auto condRef = vm->createRuntimeString(condStr);
-        vm->setHostObjectField(obj, "condition", Value::makeStringId(condRef.id));
-        vm->setHostObjectField(obj, "enabled", Value::makeBool(ch.monitoringEnabled));
-        vm->setHostObjectField(obj, "active", Value::makeBool(ch.currentlyGrabbed));
-        vm->setHostObjectField(obj, "lastResult", Value::makeBool(ch.lastConditionResult));
-        vm->pushHostArrayValue(result, Value::makeObjectId(obj.id));
-    }
-    return Value::makeArrayId(result.id);
 }
 
 Value
@@ -6281,138 +6045,96 @@ void ModeBridge::install(PipelineOptions &options) {
   options.host_functions["mode.time"] = [ctx = ctx_](const auto &args) {
     return handleTime(args, ctx);
   };
-  options.host_functions["mode.transitions"] = [ctx = ctx_](const auto &args) {
-    return handleTransitions(args, ctx);
-  };
-  options.host_functions["mode.signalActive"] = [ctx = ctx_](const auto &args) {
-    return handleSignalActive(args, ctx);
-  };
+    options.host_functions["mode.transitions"] = [ctx = ctx_](const auto &args) {
+        return handleTransitions(args, ctx);
+    };
 }
 
 Value ModeBridge::handleRegister(const std::vector<Value> &args,
-                                         const HostContext *ctx) {
-  // Args: name, priority, condition, enter, exit, onEnterFromMode, onEnterFrom,
-  // onExitToMode, onExitTo
-  if (args.size() < 9) {
-    return Value::makeBool(false);
-  }
-
-  if (!ctx || !ctx->modeManager || !ctx->vm) {
-    return Value::makeBool(false);
-  }
-
-  // Get mode name
-  std::string modeName;
-  if (args[0].isStringValId() || args[0].isStringId()) {
-    auto *vm = static_cast<VM *>(ctx->vm);
-    modeName = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
-  } else {
-    return Value::makeBool(false);
-  }
-
-  // Get priority
-  int priority = 0;
-  if (args[1].isInt()) {
-    priority = static_cast<int>(args[1].asInt());
-  }
-
-  auto *vm = static_cast<VM *>(ctx->vm);
-
-  // Helper to register a callback from Value
-  auto registerCallbackIfValid = [&](const Value &val) -> CallbackId {
-    if (val.isClosureId() ||
-        val.isFunctionObjId()) {
-      return vm->registerCallback(val);
+                                      const HostContext *ctx) {
+    if (args.size() < 9) {
+        return Value::makeBool(false);
     }
-    return INVALID_CALLBACK_ID;
-  };
 
-  // Register callbacks
-  CallbackId conditionId = registerCallbackIfValid(args[2]);
-  CallbackId enterId = registerCallbackIfValid(args[3]);
-  CallbackId exitId = registerCallbackIfValid(args[4]);
-  CallbackId onEnterFromId = registerCallbackIfValid(args[6]);
-  CallbackId onExitToId = registerCallbackIfValid(args[8]);
+    if (!ctx || !ctx->modeManager || !ctx->vm) {
+        return Value::makeBool(false);
+    }
 
-  // Create mode definition
-  ::havel::ModeManager::ModeDefinition mode;
-  mode.name = modeName;
-  mode.priority = priority;
+    std::string modeName;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        auto *vm = static_cast<VM *>(ctx->vm);
+        modeName = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    } else {
+        return Value::makeBool(false);
+    }
 
-  // Condition callback - wraps the VM callback invocation
-  if (conditionId != INVALID_CALLBACK_ID) {
-    mode.conditionCallback = [vm, conditionId]() -> bool {
-      try {
-        auto result = vm->invokeCallback(conditionId);
-        // Convert result to boolean
-        if (result.isBool()) {
-          return result.asBool();
+    int priority = 0;
+    if (args[1].isInt()) {
+        priority = static_cast<int>(args[1].asInt());
+    }
+
+    auto *vm = static_cast<VM *>(ctx->vm);
+
+    auto registerCallbackIfValid = [&](const Value &val) -> CallbackId {
+        if (val.isClosureId() || val.isFunctionObjId()) {
+            return vm->registerCallback(val);
         }
-        if (result.isInt()) {
-          return result.asInt() != 0;
-        }
-        return false;
-      } catch (...) {
-        // Callback failed, treat as false
-        return false;
-      }
+        return INVALID_CALLBACK_ID;
     };
-  }
 
-  // Enter callback
-  if (enterId != INVALID_CALLBACK_ID) {
-    mode.onEnter = [vm, enterId]() {
-      try {
-        vm->invokeCallback(enterId);
-      } catch (...) {
-        // Callback failed, ignore
-      }
-    };
-  }
+    CallbackId enterId = registerCallbackIfValid(args[3]);
+    CallbackId exitId = registerCallbackIfValid(args[4]);
+    CallbackId onEnterFromId = registerCallbackIfValid(args[6]);
+    CallbackId onExitToId = registerCallbackIfValid(args[8]);
 
-  // Exit callback
-  if (exitId != INVALID_CALLBACK_ID) {
-    mode.onExit = [vm, exitId]() {
-      try {
-        vm->invokeCallback(exitId);
-      } catch (...) {
-        // Callback failed, ignore
-      }
-    };
-  }
+    ::havel::ModeManager::ModeDefinition mode;
+    mode.name = modeName;
+    mode.priority = priority;
 
- // onEnterFrom callback (transition from specific mode)
- if (onEnterFromId != INVALID_CALLBACK_ID) {
-  mode.onEnterFrom = [vm, onEnterFromId](const std::string &fromMode) {
-   try {
-    auto ref = vm->createRuntimeString(fromMode);
-    vm->invokeCallback(onEnterFromId, {Value::makeStringId(ref.id)});
-   } catch (...) {
-   }
-  };
- }
+    if (enterId != INVALID_CALLBACK_ID) {
+        mode.onEnter = [vm, enterId]() {
+            try {
+                vm->invokeCallback(enterId);
+            } catch (...) {
+            }
+        };
+    }
 
- // onExitTo callback (transition to specific mode)
- if (onExitToId != INVALID_CALLBACK_ID) {
-  mode.onExitTo = [vm, onExitToId](const std::string &toMode) {
-   try {
-    auto ref = vm->createRuntimeString(toMode);
-    vm->invokeCallback(onExitToId, {Value::makeStringId(ref.id)});
-   } catch (...) {
-   }
-  };
- }
+    if (exitId != INVALID_CALLBACK_ID) {
+        mode.onExit = [vm, exitId]() {
+            try {
+                vm->invokeCallback(exitId);
+            } catch (...) {
+            }
+        };
+    }
 
-  // Register with ModeManager
-  ctx->modeManager->defineMode(std::move(mode));
+    if (onEnterFromId != INVALID_CALLBACK_ID) {
+        mode.onEnterFrom = [vm, onEnterFromId](const std::string &fromMode) {
+            try {
+                auto ref = vm->createRuntimeString(fromMode);
+                vm->invokeCallback(onEnterFromId, {Value::makeStringId(ref.id)});
+            } catch (...) {
+            }
+        };
+    }
 
-  // Store callback IDs in HostBridge for cleanup
-  // This is stored in mode_bindings_ map
-    ctx->modules->registerModeCallbacks(modeName, conditionId, enterId,
-                                         exitId);
+    if (onExitToId != INVALID_CALLBACK_ID) {
+        mode.onExitTo = [vm, onExitToId](const std::string &toMode) {
+            try {
+                auto ref = vm->createRuntimeString(toMode);
+                vm->invokeCallback(onExitToId, {Value::makeStringId(ref.id)});
+            } catch (...) {
+            }
+        };
+    }
 
-  info("Mode registered: {} with priority {}", modeName, priority);
-  return Value::makeBool(true);
+    ctx->modeManager->defineMode(std::move(mode));
+
+    ctx->modules->registerModeCallbacks(modeName, enterId, exitId);
+
+    info("Mode registered: {} with priority {}", modeName, priority);
+    return Value::makeBool(true);
 }
 
 Value
@@ -6524,22 +6246,6 @@ ModeBridge::handleTransitions(const std::vector<Value> &args,
     return Value::makeInt(0);
   }
   return Value::makeInt(ctx->modeManager->getModeTransitions(modeName));
-}
-
-Value
-ModeBridge::handleSignalActive(const std::vector<Value> &args,
-                               const HostContext *ctx) {
-  if (!ctx || !ctx->modeManager || !ctx->vm || args.empty()) {
-    return Value::makeBool(false);
-  }
-  auto *vm = static_cast<VM *>(ctx->vm);
-  std::string signalName;
-  if (args[0].isStringValId() || args[0].isStringId()) {
-    signalName = vm->resolveStringKey(args[0]);
-  } else {
-    return Value::makeBool(false);
-  }
-  return Value::makeBool(ctx->modeManager->isSignalActive(signalName));
 }
 
 // ============================================================================

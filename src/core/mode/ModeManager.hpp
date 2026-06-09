@@ -1,173 +1,55 @@
 #pragma once
-#include <atomic>
+#include <chrono>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
 namespace havel {
 
-class IO;
-namespace compiler {
-class EventQueue;
-class ExecutionEngine;
-}
-
-// Forward declare - complete type needed only in .cpp
-namespace ast {
-struct Expression;
-}
-
-/**
- * ModeManager - Dynamic mode system for Havel
- *
- * Supports script-defined modes with:
- * - Dynamic conditions (AST expressions, evaluated directly)
- * - Enter/exit callbacks
- * - Mode transitions with previous mode tracking
- * - Priority-based mode switching
- * - Mode statistics and metrics
- * - Signal system for reactive programming
- *
- * Usage in Havel script:
- * ```havel
- * // Signals (facts about system)
- * signal steam_running = window.any(exe == "steam.exe")
- * signal gaming_focus = active.exe == "steam.exe"
- *
- * // Modes (high-level state)
- * mode gaming priority 10 {
- *     condition = gaming_focus
- *     enter { brightness(50); volume(80) }
- *     exit { brightness(100); volume(50) }
- *
- *     // Specific transitions
- *     on enter from "coding" { notify("leaving code for games") }
- *     on exit to "default" { run("killall steam") }
- * }
- *
- * // Reactions
- * when steam_running {
- *     notify("Steam launched")
- * }
- *
- * when mode == "gaming" {
- *     F1 => audio.mute()
- * }
- * ```
- */
 class ModeManager {
 public:
-  ModeManager() = default;
-  ~ModeManager();
+    ModeManager() = default;
+    ~ModeManager();
 
-  // Signal definition
-  struct Signal {
-    std::string name;
-    std::shared_ptr<ast::Expression> conditionExpr;
-    bool value = false;
-  };
+    struct ModeDefinition {
+        std::string name;
+        std::function<void()> onEnter;
+        std::function<void()> onExit;
+        std::function<void(const std::string &fromMode)> onEnterFrom;
+        std::function<void(const std::string &toMode)> onExitTo;
+        int priority = 0;
+        bool isActive = false;
+        std::chrono::steady_clock::time_point enterTime;
+        std::chrono::milliseconds totalTime{0};
+        int transitionCount = 0;
+    };
 
-  // Mode definition - stores AST via shared_ptr to prevent use-after-free
-  struct ModeDefinition {
-    std::string name;
-    std::shared_ptr<ast::Expression> conditionExpr; // shared_ptr! (AST-based)
-    std::function<bool()>
-        conditionCallback; // Callback-based condition (alternative to AST)
-    std::function<void()> onEnter;
-    std::function<void()> onExit;
-    std::function<void(const std::string &fromMode)>
-        onEnterFrom; // Called when entering from specific mode
-    std::function<void(const std::string &toMode)>
-        onExitTo;                     // Called when exiting to specific mode
-    std::function<void()> onClose;    // Called when active window closes
-    std::function<void()> onMinimize; // Called when active window minimizes
-    std::function<void()> onMaximize; // Called when active window maximizes
-    std::function<void()> onOpen;     // Called when new window opens
-    int priority = 0;
-    bool isActive = false;
-    std::chrono::steady_clock::time_point enterTime;
-    std::chrono::milliseconds totalTime{0}; // Total time spent in this mode
-    int transitionCount = 0;                // Number of times entered this mode
-    
-    
-    uint32_t watcher_id = 0;  // 0 = not using reactive system, else WatcherRegistry::WatcherId
-  };
+    void defineMode(ModeDefinition mode);
 
-  // Mode group for batch operations
-  struct ModeGroup {
-    std::string name;
-    std::vector<std::string> modes;
-    std::function<void()> onEnter;
-    std::function<void()> onExit;
-  };
+    std::string getCurrentMode() const;
+    std::string getPreviousMode() const;
 
-  // Register a signal
-  void defineSignal(Signal signal);
+    void setMode(const std::string &modeName);
 
-  // Register a mode definition
-  void defineMode(ModeDefinition mode);
+    const std::vector<ModeDefinition> &getModes() const { return modes; }
 
-  // Register a mode group
-  void defineGroup(ModeGroup group);
+    std::chrono::milliseconds getModeTime(const std::string &modeName) const;
+    int getModeTransitions(const std::string &modeName) const;
 
-  // Get current mode name
-  std::string getCurrentMode() const;
-
-  // Get previous mode name
-  std::string getPreviousMode() const;
-
-  // Set mode explicitly (user-triggered)
-  void setMode(const std::string &modeName);
-
-  // Update all mode conditions (called periodically)
-  // Pass evaluator function that evaluates AST expressions (optional if using
-  // callbacks)
-  using ExprEvaluator = std::function<bool(const ast::Expression &)>;
-  void update(ExprEvaluator evaluator = nullptr);
-
-  // Get all defined modes
-  const std::vector<ModeDefinition> &getModes() const { return modes; }
-
-  // Get mode statistics
-  std::chrono::milliseconds getModeTime(const std::string &modeName) const;
-  int getModeTransitions(const std::string &modeName) const;
-
-  // Check if signal is active
-  bool isSignalActive(const std::string &signalName) const;
-  
-  
-  // Allows mode conditions to be registered as watchers
-  void setExecutionEngine(compiler::ExecutionEngine* ee) { executionEngine_ = ee; }
-  
-  
-  void setEventQueue(compiler::EventQueue* eq) { eventQueue_ = eq; }
-
-  using ModeChangeCallback = std::function<void(const std::string &newMode, const std::string &oldMode)>;
-  void setOnModeChange(ModeChangeCallback cb) { onModeChange_ = std::move(cb); }
-
-  void registerVarChangedHandler();
+    using ModeChangedCallback = std::function<void(const std::string &newMode,
+                                                   const std::string &oldMode)>;
+    void setOnModeChanged(ModeChangedCallback cb) { onModeChanged_ = std::move(cb); }
 
 private:
-  std::vector<Signal> signalList;
-  std::vector<ModeDefinition> modes;
-  std::vector<ModeGroup> groups;
-  std::string currentMode;
-  std::string previousMode;
-  mutable std::mutex modeMutex;
-  
-  
-  compiler::ExecutionEngine* executionEngine_ = nullptr;
-  
-  
-  compiler::EventQueue* eventQueue_ = nullptr;
-  ModeChangeCallback onModeChange_;
+    std::vector<ModeDefinition> modes;
+    std::string currentMode;
+    std::string previousMode;
+    mutable std::mutex modeMutex;
+    ModeChangedCallback onModeChanged_;
 
-  void triggerEnter(ModeDefinition &mode);
-  void triggerExit(ModeDefinition &mode);
-  void triggerTransition(const std::string &fromMode,
-                         const std::string &toMode);
+    void triggerEnter(ModeDefinition &mode);
+    void triggerExit(ModeDefinition &mode);
 };
 
 } // namespace havel

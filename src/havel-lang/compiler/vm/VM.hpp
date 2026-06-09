@@ -372,7 +372,14 @@ void* last_suspension_context_ = nullptr;
  WatcherRegistry* watcher_registry_ = nullptr;
  Scheduler* scheduler_ = nullptr;
 
- 
+ struct SignalBinding {
+     std::string name;
+     uint32_t func_id;
+     size_t ip;
+     std::unordered_set<std::string> dependencies;
+ };
+ std::vector<SignalBinding> signalBindings_;
+
  void emitVariableChanged(const std::string& var_name);
   
   // Prototype system - methods on types (String, Array, Object)
@@ -676,7 +683,12 @@ VM(const HostContext &ctx, const VMConfig& cfg);
   // @param func_index The function index in bytecode (condition function)
   // @param ip Optional instruction pointer within function (default: 0)
   // @return Boolean result of condition evaluation
-  bool evaluateConditionBytecode(uint32_t func_index, uint32_t ip = 0);
+   bool evaluateConditionBytecode(uint32_t func_index, uint32_t ip = 0);
+
+   Value evaluateExpressionBytecode(uint32_t func_index, size_t ip = 0);
+
+   void registerSignal(const std::string& name, uint32_t func_id);
+   void processSignalBindings(const std::string& changed_var);
   
   
   // Execute exactly one bytecode instruction in the current fiber

@@ -861,7 +861,6 @@ bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
 
     if (hkManager) {
       hkManager->printHotkeys();
-      hkManager->updateAllConditionalHotkeys();
     }
 
     havel_inst.setShutdownCallback([] {
@@ -1424,8 +1423,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       auto *hkManager = havel_inst.getHotkeyManagerPtr();
       if (hkManager) {
         hkManager->printHotkeys();
-        hkManager->updateAllConditionalHotkeys();
-      }
+        }
       info("Script loaded. Hotkeys registered. Enter REPL...");
       
       // Create REPL with full host API

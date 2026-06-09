@@ -66,7 +66,6 @@ public:
     bool import(const std::string &importSpec);
 
     void registerModeCallbacks(const std::string &modeName,
-                               CallbackId conditionId,
                                CallbackId enterId,
                                CallbackId exitId);
 
@@ -97,7 +96,6 @@ private:
 
     struct ModeBinding {
         std::string modeName;
-        std::optional<CallbackId> condition_id;
         std::optional<CallbackId> enter_id;
         std::optional<CallbackId> exit_id;
     };

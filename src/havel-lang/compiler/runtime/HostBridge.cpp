@@ -66,7 +66,7 @@ HostBridge::HostBridge(const ::havel::HostContext &ctx,
 HostBridge::~HostBridge() = default;
 void HostBridge::shutdown() {}
 void HostBridge::clear() {}
-void HostBridge::registerModeCallbacks(const std::string &, CallbackId, CallbackId, CallbackId) {}
+void HostBridge::registerModeCallbacks(const std::string &, CallbackId, CallbackId) {}
 void HostBridge::initBridges() {}
 void HostBridge::install(InstallProfile, bool) {}
 void HostBridge::runVmSetup() {}
@@ -207,16 +207,13 @@ void HostBridge::clear() {
 }
 
 void HostBridge::registerModeCallbacks(const std::string &modeName,
-                                       CallbackId conditionId,
-                                       CallbackId enterId, CallbackId exitId) {
-  // Store the mode binding with callback IDs
-  ModeBinding binding;
-  binding.modeName = modeName;
-  binding.condition_id = conditionId;
-  binding.enter_id = enterId;
-  binding.exit_id = exitId;
-  mode_bindings_[modeName] = std::move(binding);
-  mode_definition_order_.push_back(modeName);
+                                           CallbackId enterId, CallbackId exitId) {
+    ModeBinding binding;
+    binding.modeName = modeName;
+    binding.enter_id = enterId;
+    binding.exit_id = exitId;
+    mode_bindings_[modeName] = std::move(binding);
+    mode_definition_order_.push_back(modeName);
 }
 
 void HostBridge::initBridges() {

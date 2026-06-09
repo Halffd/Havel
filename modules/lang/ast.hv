@@ -102,6 +102,7 @@ NODE_TYPES = {
     "MultipleAssignment": true,
     "QueryExpression": true,
     "CastExpression": true,
+ "HotkeyLiteral": true,
     "HotkeyExpression": true,
   "ArrayPattern": true,
   "ObjectPattern": true,
@@ -338,8 +339,8 @@ fn ImportStatement(module, names, line, col, opts) {
   }
   n
 }
-fn HotkeyBinding(key, body, line, col) {
-	{kind: "HotkeyBinding", line: line, col: col, key: key, body: body, mode: "", policy: ""}
+fn HotkeyBinding(hotkeys, action, line, col) {
+	{kind: "HotkeyBinding", line: line, col: col, hotkeys: hotkeys, key: null, action: action, body: action, mode: "", policy: ""}
 
 }
 fn BacktickExpression(command, line, col) {
@@ -410,6 +411,10 @@ fn AtAtExpression(field, line, col) {
 }
 fn CastExpression(expr, targetType, line, col) {
     {kind: "CastExpression", line: line, col: col, expr: expr, targetType: targetType}
+
+}
+fn HotkeyLiteral(combination, line, col) {
+ {kind: "HotkeyLiteral", line: line, col: col, combination: combination}
 
 }
 fn HotkeyExpression(key, line, col) {
@@ -961,11 +966,22 @@ prettyPrint(node.iterable, depth + 2)
 
     }
 	else if k == "HotkeyBinding" {
-		attr = ""
-		if node.mode != null && node.mode != "" { attr += " mode=" + node.mode }
-		if node.policy != null && node.policy != "" { attr += " policy=" + node.policy }
-		print(prefix + "Hotkey(" + node.key + attr + "):")
-		prettyPrint(node.body, depth + 1)
+ attr = ""
+ if node.mode != null && node.mode != "" { attr += " mode=" + node.mode }
+ if node.policy != null && node.policy != "" { attr += " policy=" + node.policy
+ keyStr = ""
+ if node.hotkeys != null && #node.hotkeys > 0 {
+  for h in node.hotkeys {
+   if keyStr != "": keyStr += ", "
+   if type(h) == "str": keyStr += h
+   else if h.kind == "HotkeyLiteral": keyStr += h.combination
+   else: keyStr += str(h)
+  }
+ }
+ else if node.key != null { keyStr = node.key }
+ print(prefix + "Hotkey(" + keyStr + attr + "):")
+ actionNode = node.action != null ? node.action : node.body
+ prettyPrint(actionNode, depth + 1)
 
 	}
     else if k == "BacktickExpression" {
@@ -1144,9 +1160,18 @@ else if k == "WaitGroupExpression" {
         print(prefix + "Cast(" + node.targetType + "):")
         prettyPrint(node.expr, depth + 1)
     }
-    else if k == "HotkeyExpression" {
-        print(prefix + "Hotkey(" + node.key + ")")
-    }
+else if k == "HotkeyLiteral" {
+ print(prefix + "HotkeyLiteral(" + node.combination + ")")
+ }
+ else if k == "HotkeyExpression" {
+ if node.key != null && type(node.key) != "str" && node.key.kind == "HotkeyBinding" {
+  print(prefix + "HotkeyExpr:")
+  prettyPrint(node.key, depth + 1)
+ }
+ else {
+  print(prefix + "Hotkey(" + node.key + ")")
+ }
+ }
     else if k == "DoWhileStatement" {
         print(prefix + "DoWhile:")
         prettyPrint(node.body, depth + 1)
@@ -1219,4 +1244,5 @@ else {
         print(prefix + "Unknown(" + k + ")")
 
     }
+}
 }

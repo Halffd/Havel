@@ -5,7 +5,7 @@
 #include "havel-lang/runtime/HostAPI.hpp"
 #include "../utils/Logger.hpp"
 #include "../host/ServiceRegistry.hpp"
-#include "../host/io/IOService.hpp"
+#include "../core/io/IO.hpp"
 #include "../host/hotkey/HotkeyService.hpp"
 #include "../host/window/WindowService.hpp"
 #include "../host/mode/ModeService.hpp"
@@ -38,7 +38,7 @@ namespace havel {
 
 void declareAllServices() {
 	auto& registry = host::ServiceRegistry::instance();
-	registry.declareService<host::IOService>("io", "core");
+  registry.declareService<IO>("io", "core");
 	registry.declareService<host::HotkeyService>("hotkey", "core");
 	registry.declareService<host::WindowService>("window", "core");
 	registry.declareService<host::ModeService>("mode", "core");
@@ -71,13 +71,14 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 	auto& registry = host::ServiceRegistry::instance();
 	declareAllServices();
 
-	if (hostAPI->GetIO() && registry.shouldRegister("io", includes, excludes)) {
-		auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
-		registry.registerService<host::IOService>(ioService);
-		host::MouseService::setIO(hostAPI->GetIO());
-	} else {
-		debug("initializeServiceRegistry: IO not available or excluded, skipping IO-dependent services");
-	}
+  if (hostAPI->GetIO() && registry.shouldRegister("io", includes, excludes)) {
+    auto* io_raw = hostAPI->GetIO();
+    auto io_ptr = std::shared_ptr<IO>(io_raw, [](IO*){});
+    registry.registerService<IO>(io_ptr);
+    host::MouseService::setIO(io_raw);
+  } else {
+    debug("initializeServiceRegistry: IO not available or excluded, skipping IO-dependent services");
+  }
 
 	if (hostAPI->GetHotkeyManager() && registry.shouldRegister("hotkey", includes, excludes)) {
 		auto hotkeyManager = hostAPI->GetHotkeyManager();

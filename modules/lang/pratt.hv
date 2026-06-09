@@ -18,7 +18,7 @@ HotkeyBinding, BacktickExpression, ShellCommand,
 RangeExpression, TernaryExpression, PipelineExpression,
 ThrowStatement, TryStatement, MatchExpression, MatchCase,
 InterpolatedString, RegexLiteral, AtExpression, AtAtExpression,
-CastExpression, HotkeyExpression,
+CastExpression, HotkeyExpression, HotkeyLiteral,
 WhenBlock, WithStatement, DecoratorStatement,
 OnModeStatement, OffModeStatement, OnReloadStatement, OnStartStatement,
 OnTapStatement, OnComboStatement, OnKeyDownStatement, OnKeyUpStatement, OnMessageStatement,
@@ -998,7 +998,7 @@ else if tt == TID.Arrow {
   binding = HotkeyBinding([], null, l, c)
   for el in left.elements {
    if el.kind == "HotkeyExpression" {
-    binding.hotkeys.push(HotkeyLiteral(el.combo, l, c))
+    binding.hotkeys.push(HotkeyLiteral(el.key, l, c))
    }
    else if el.kind == "Identifier" {
     binding.hotkeys.push(HotkeyLiteral(el.name, l, c))
@@ -1016,7 +1016,7 @@ else if tt == TID.Arrow {
  // Check if left is a HotkeyExpression: F1 => { ... }
  if left.kind == "HotkeyExpression" {
   binding = HotkeyBinding([], null, l, c)
-  binding.hotkeys.push(HotkeyLiteral(left.combo, l, c))
+  binding.hotkeys.push(HotkeyLiteral(left.key, l, c))
   if current().tid == TID.OpenBrace {
    binding.action = parseBlock()
   }
@@ -2064,27 +2064,26 @@ fn parseStatement() {
         }
 // @identifier => block (hotkey syntax) or @decorator
 if tt == TID.At and at(1).tid == TID.Identifier {
-  // Check if this is a hotkey: @id => ...
-  // Look ahead past the @ident for =>  or for decorator (@ident not followed by =>)
-  savePos = pos
-  advance() // @
-  decoName = current().value
-  advance() // identifier
-  if current().tid == TID.Arrow {
-    pos = savePos
-    syncCur()
-    return parseHotkeyStatement()
-  }
-  // @decorator: not followed by =>, parse as at-decorator
+ // Check if this is a hotkey: @id => ...
+ savePos = pos
+ advance() // @
+ advance() // identifier
+ if current().tid == TID.Arrow {
   pos = savePos
   syncCur()
-  // Check if this is @decorator before class/fn: look for non-=> continuation
-  if at(2).tid != TID.Arrow {
-    return parseAtDecoratorStatement()
-  }
-
-
-        }
+  return parseHotkeyStatement()
+ }
+ // @decorator: followed by fn/class/struct/def
+ skipNewlines()
+ if current().tid == TID.Fn || current().tid == TID.Class || current().tid == TID.Struct || current().tid == TID.Def {
+  pos = savePos
+  syncCur()
+  return parseAtDecoratorStatement()
+ }
+ // Otherwise @x is an expression (self-field access) — fall through
+ pos = savePos
+ syncCur()
+}
 	// Identifier + When/If/Arrow at statement start => hotkey
 	// e.g. F1 => { ... } or a when mode == "x" => { ... } or F1 mode="gaming" => { ... }
 	if tt == TID.Identifier {
@@ -3128,7 +3127,7 @@ fn parseHotkeyStatement() {
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
         }
-	node = HotkeyBinding(key, body, l, c)
+	node = HotkeyBinding([key], body, l, c)
 	if condition != null: node.condition = condition
 	if modeAttr != "": node.mode = modeAttr
 	if policyAttr != "": node.policy = policyAttr
@@ -3169,7 +3168,7 @@ fn parseHotkeyAssignmentStatement() {
             bodyExpr = parseExpr(0)
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
         }
-	binding = HotkeyBinding(key, body, l, c)
+	binding = HotkeyBinding([key], body, l, c)
 	if condition != null: binding.condition = condition
 	if modeAttr != "": binding.mode = modeAttr
 	if policyAttr != "": binding.policy = policyAttr

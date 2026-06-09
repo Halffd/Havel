@@ -17,7 +17,7 @@
  *     });
  *     
  *     // Register with service
- *     HAVEL_REGISTER_SERVICE_FUNCTION(api, "io.read", IOService, svc, args) {
+ * HAVEL_REGISTER_SERVICE_FUNCTION(api, "io.read", IO, svc, args) {
  *       HAVEL_ARG_CHECK(args, 1, "io.read() requires 1 argument: path");
  *       auto path = havel::toString(args[0]);
  *       auto result = svc->readFile(path);

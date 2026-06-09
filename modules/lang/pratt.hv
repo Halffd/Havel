@@ -464,6 +464,9 @@ return ShellCommand(tok.value, false, l, c)
 else if tt == TID.ShellCommandCapture {
 return ShellCommand(tok.value, true, l, c)
 }
+else if tt == TID.Hotkey {
+ return HotkeyExpression(tok.value, l, c)
+}
 else if tt == TID.InterpolatedString {
 return parseInterpolatedString(tok.value, l, c)
 }
@@ -987,23 +990,57 @@ return ForExpression(left, binding, iterable, l, c)
 }
 // Arrow function: param => body
 else if tt == TID.Arrow {
-if inMatchExpr {
-return null
-}
-if left == null or left.kind != TID.Identifier {
-return error("Arrow function requires identifier parameter", l, c)
-}
-paramName = left.name
-params = [paramName]
-body = null
-if current().tid == TID.OpenBrace {
-body = parseBlock()
-}
-else {
-bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
-body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-}
-return LambdaExpression(params, body, l, c)
+ if inMatchExpr {
+  return null
+ }
+ // Check if left is a tuple (hotkey binding): (F1, F2) => { ... }
+ if left.kind == "ArrayLiteral" && left.isTuple != null {
+  binding = HotkeyBinding([], null, l, c)
+  for el in left.elements {
+   if el.kind == "HotkeyExpression" {
+    binding.hotkeys.push(HotkeyLiteral(el.combo, l, c))
+   }
+   else if el.kind == "Identifier" {
+    binding.hotkeys.push(HotkeyLiteral(el.name, l, c))
+   }
+  }
+  if current().tid == TID.OpenBrace {
+   binding.action = parseBlock()
+  }
+  else {
+   bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+   binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+  }
+  return HotkeyExpression(binding, l, c)
+ }
+ // Check if left is a HotkeyExpression: F1 => { ... }
+ if left.kind == "HotkeyExpression" {
+  binding = HotkeyBinding([], null, l, c)
+  binding.hotkeys.push(HotkeyLiteral(left.combo, l, c))
+  if current().tid == TID.OpenBrace {
+   binding.action = parseBlock()
+  }
+  else {
+   bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+   binding.action = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+  }
+  return HotkeyExpression(binding, l, c)
+ }
+ // Single-parameter lambda: x => body
+ if left == null || left.kind != "Identifier" {
+  return error("Arrow function requires identifier parameter", l, c)
+ }
+ paramName = left.name
+ params = [paramName]
+ body = null
+ if current().tid == TID.OpenBrace {
+  body = parseBlock()
+ }
+ else {
+  bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+  body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+ }
+ return LambdaExpression(params, body, l, c)
 }
   else {
     return error("Unexpected token in infix position: " + tt, l, c)
@@ -1280,6 +1317,23 @@ fn parseCallArgs() {
     syncCur()
         skipNewlines()
         expr = parseExpr(0)
+skipNewlines()
+skipNewlines()
+// Check for tuple: (expr, expr, ...)
+if current().tid == TID.Comma {
+ elements = [expr]
+ while current().tid == TID.Comma {
+  advance() // consume comma
+  if current().tid == TID.CloseParen { break }
+  elements.push(parseExpr(0))
+  skipNewlines()
+ }
+ expect(TID.CloseParen)
+ // Return tuple as ArrayLiteral with isTuple flag
+ node = ArrayLiteral(elements, l, c)
+ node.isTuple = true
+ return node
+}
 skipNewlines()
 expect(TID.CloseParen)
 return expr
@@ -1790,6 +1844,23 @@ if isObjKeyType {
 
             }
 }
+// Block expression: { if/for/while/loop/val/let/fn/return/... }
+isBlockStart = (nextTok.tid == TID.If || nextTok.tid == TID.For || nextTok.tid == TID.While || nextTok.tid == TID.Loop || nextTok.tid == TID.Repeat || nextTok.tid == TID.Let || nextTok.tid == TID.Val || nextTok.tid == TID.Fn || nextTok.tid == TID.Return || nextTok.tid == TID.Throw || nextTok.tid == TID.Try || nextTok.tid == TID.Match || nextTok.tid == TID.Break || nextTok.tid == TID.Continue || nextTok.tid == TID.Defer)
+if isBlockStart {
+ advance() // consume {
+ skipNewlines()
+ stmts = []
+ while current().tid != TID.CloseBrace and notEOF() {
+  skipNewlines()
+  if current().tid == TID.CloseBrace: break
+  s = parseStatement()
+  if s != null { stmts.push(s) }
+  skipNewlines()
+ }
+ expect(TID.CloseBrace)
+ return BlockStatement(stmts, l, c)
+}
+
 // Default to object literal
 return parseObjectLiteral(false)
 

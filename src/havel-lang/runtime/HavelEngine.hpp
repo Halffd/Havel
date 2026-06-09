@@ -73,9 +73,10 @@ public:
         havel::startup_timing_report("host-context", t);
         t = havel::startup_now();
 
-        vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
-        hostContext_->vm = vm_.get();
-        havel::startup_timing_report("vm-create", t);
+vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
+hostContext_->vm = vm_.get();
+hostAPI->SetVM(vm_.get());
+havel::startup_timing_report("vm-create", t);
         t = havel::startup_now();
 
         // Set up scheduler for goroutine/thread support

@@ -1,7 +1,7 @@
 #pragma once
 
 namespace havel::compiler {
-class VMApi;
+struct VMApi;
 }
 
 namespace havel::stdlib {

@@ -167,7 +167,42 @@ void registerMathModule(const VMApi &api) {
 
   api.setGlobal("physics", physicsObj);
   api.setGlobal("Physics", physicsObj);
-}
+
+  // Load remaining pure-Havel math sidecars into namespace objects
+  // vec, num, stats, sci, special, set, symbolic
+  // Each sidecar defines top-level functions/structs as module exports.
+  // We merge those into a namespace object and set it as a global.
+  struct SidecarDef {
+    const char *modulePath;
+    const char *globalName;
+  };
+  const SidecarDef sidecars[] = {
+    {"math/vec",       "vec"},
+    {"math/num",       "num"},
+    {"math/stats",     "stats"},
+    {"math/sci",       "sci"},
+    {"math/special",   "special"},
+    {"math/set",       "set"},
+    {"math/symbolic",  "symbolic"},
+  };
+  for (const auto &sc : sidecars) {
+    Value exports;
+    try {
+      exports = vm.loadModule(sc.modulePath);
+    } catch (...) {
+      continue;
+    }
+    if (!exports.isObjectId()) continue;
+    auto *expObj = vm.getHeap().object(exports.asObjectId());
+    if (!expObj) continue;
+    auto nsObj = api.makeObject();
+    for (const auto& [name, value] : *expObj) {
+      if (name.empty() || name[0] == '_') continue;
+      api.setField(nsObj, name, value);
+    }
+    api.setGlobal(sc.globalName, nsObj);
+  }
+  }
 
 } // namespace havel::stdlib
 

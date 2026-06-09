@@ -130,35 +130,35 @@ void registerTypeModule(const VMApi &api) {
  // appear in host_function_globals_ (LOAD_GLOBAL fallback). This
  // ensures they're always available even when globals are swapped
  // to a module-local context (e.g., during executePersistent).
- api.registerFunction("isNumber", [&vm](const std::vector<Value> &args) {
+ api.registerFunction("isNumber", [](const std::vector<Value> &args) {
  if (args.empty()) throw std::runtime_error("isNumber() requires an argument");
  return Value(args[0].isInt() || args[0].isDouble());
  });
- api.registerFunction("isString", [&vm](const std::vector<Value> &args) {
+ api.registerFunction("isString", [](const std::vector<Value> &args) {
  if (args.empty()) throw std::runtime_error("isString() requires an argument");
  return Value(args[0].isStringValId());
  });
- api.registerFunction("isArray", [&vm](const std::vector<Value> &args) {
+ api.registerFunction("isArray", [](const std::vector<Value> &args) {
  if (args.empty()) throw std::runtime_error("isArray() requires an argument");
  return Value(args[0].isArrayId());
  });
- api.registerFunction("isObject", [&vm](const std::vector<Value> &args) {
+ api.registerFunction("isObject", [](const std::vector<Value> &args) {
  if (args.empty()) throw std::runtime_error("isObject() requires an argument");
  return Value(args[0].isObjectId());
  });
- api.registerFunction("isNull", [&vm](const std::vector<Value> &args) {
+ api.registerFunction("isNull", [](const std::vector<Value> &args) {
  if (args.empty()) throw std::runtime_error("isNull() requires an argument");
  return Value(args[0].isNull());
  });
- api.registerFunction("isBoolean", [&vm](const std::vector<Value> &args) {
+ api.registerFunction("isBoolean", [](const std::vector<Value> &args) {
  if (args.empty()) throw std::runtime_error("isBoolean() requires an argument");
  return Value::makeBool(args[0].isBool());
  });
- api.registerFunction("isEnum", [&vm](const std::vector<Value> &args) {
+ api.registerFunction("isEnum", [](const std::vector<Value> &args) {
  if (args.empty()) throw std::runtime_error("isEnum() requires an argument");
  return Value(args[0].isEnumId());
  });
- api.registerFunction("toString", [&vm](const std::vector<Value> &args) {
+ api.registerFunction("toString", [](const std::vector<Value> &args) {
  if (args.empty()) throw std::runtime_error("toString() requires an argument");
  const auto &arg = args[0];
  if (arg.isNull()) return Value::makeNull();
@@ -168,7 +168,7 @@ void registerTypeModule(const VMApi &api) {
  if (arg.isStringValId()) return arg;
  return Value::makeNull();
  });
- api.registerFunction("toNumber", [&vm](const std::vector<Value> &args) {
+ api.registerFunction("toNumber", [](const std::vector<Value> &args) {
  if (args.empty()) throw std::runtime_error("toNumber() requires an argument");
  const auto &arg = args[0];
  if (arg.isNull()) return Value::makeInt(0);

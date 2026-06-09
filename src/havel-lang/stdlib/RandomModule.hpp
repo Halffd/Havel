@@ -6,7 +6,7 @@
 
 namespace havel {
 namespace compiler {
-class VMApi;
+struct VMApi;
 }
 
 namespace stdlib {

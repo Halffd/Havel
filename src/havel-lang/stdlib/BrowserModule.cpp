@@ -45,7 +45,7 @@ static std::string httpGet(const std::string &url, int timeoutMs = 2000) {
   return (res == CURLE_OK) ? response : "";
 }
 
-static std::string httpPost(const std::string &url, const std::string &body, int timeoutMs = 5000) {
+[[maybe_unused]] static std::string httpPost(const std::string &url, const std::string &body, int timeoutMs = 5000) {
   ensureCurl();
   CURL *curl = curl_easy_init();
   if (!curl) return "";

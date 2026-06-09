@@ -324,16 +324,16 @@ void registerShellModule(const VMApi &api) {
   // ----------------------------------------------------------------------
   // shell.platform – returns OS identifier (e.g. "linux", "windows", "macos")
   // ----------------------------------------------------------------------
-  api.registerFunction("shell.platform",
-    [api](const std::vector<Value>&) {
-      return api.makeString(getPlatform());
+api.registerFunction("shell.platform",
+[&api](const std::vector<Value>&) {
+return api.makeString(getPlatform());
     });
 
   // ----------------------------------------------------------------------
   // shell.pid – current process ID
   // ----------------------------------------------------------------------
   api.registerFunction("shell.pid",
-    [api](const std::vector<Value>&) {
+      [](const std::vector<Value>&) {
 #ifdef _WIN32
       return Value::makeInt(static_cast<int64_t>(GetCurrentProcessId()));
 #else
@@ -503,7 +503,7 @@ if (!std::getline(std::cin, line))
   // shell.isatty – check if a file descriptor is a terminal (0=stdin, 1=stdout, 2=stderr)
   // ----------------------------------------------------------------------
   api.registerFunction("shell.isatty",
-    [api](const std::vector<Value> &args) {
+      [](const std::vector<Value> &args) {
       if (args.empty())
         return Value::makeBool(false);
       int fd = static_cast<int>(args[0].asInt());
@@ -519,7 +519,7 @@ if (!std::getline(std::cin, line))
   // shell.exit – terminate the program with a status code
   // ----------------------------------------------------------------------
   api.registerFunction("shell.exit",
-    [api](const std::vector<Value> &args) {
+      [](const std::vector<Value> &args) {
       int code = 0;
       if (!args.empty()) code = static_cast<int>(args[0].asInt());
       std::exit(code);

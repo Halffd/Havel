@@ -295,7 +295,7 @@ void registerHotkeyModule(const VMApi &api) {
         return vm.getHostObjectField(objRef, "info");
     });
 
-    api.registerPrototypeMethod("Hotkey", "callback", 1, [&vm](const std::vector<Value> &args) -> Value {
+    api.registerPrototypeMethod("Hotkey", "callback", 1, [](const std::vector<Value> &args) -> Value {
         return Value::makeNull();
     });
 
@@ -335,7 +335,7 @@ void registerHotkeyModule(const VMApi &api) {
     });
 
     // count() - number of times this hotkey has been triggered
-    api.registerPrototypeMethod("Hotkey", "count", 1, [&vm](const std::vector<Value> &args) -> Value {
+api.registerPrototypeMethod("Hotkey", "count", 1, [&vm](const std::vector<Value> &args) -> Value {
         auto hotkeyId = extractHotkeyId(vm, args.empty() ? Value::makeNull() : args[0]);
         if (hotkeyId.empty()) return Value::makeInt(0);
         auto *ctx = getHotkeyContextData(hotkeyId);
@@ -964,7 +964,7 @@ api.registerPrototypeMethod("Hotkey", "edit", 2, [&vm](const std::vector<Value> 
 // ===== Static Utility Methods (on Hotkey global) =====
 
   // Hotkey.count() - total number of registered hotkey contexts
-  api.registerPrototypeMethod("Hotkey", "count", 1, [&vm](const std::vector<Value> &args) -> Value {
+api.registerPrototypeMethod("Hotkey", "count", 1, [](const std::vector<Value> &args) -> Value {
     (void)args;
     return Value::makeInt(static_cast<int64_t>(HotkeyModule::contextCount()));
   });

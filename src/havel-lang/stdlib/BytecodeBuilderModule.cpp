@@ -935,7 +935,7 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
     return Value::makeInt(static_cast<int>(lvl));
     });
 
-    api.registerFunction("bc.store_chunk", [api](const std::vector<Value> &) -> Value {
+    api.registerFunction("bc.store_chunk", [](const std::vector<Value> &) -> Value {
         auto count = g_builder.chunk->getFunctionCount();
         if (count == 0) {
             throw std::runtime_error("bc.store_chunk: no functions in chunk");

@@ -22,7 +22,7 @@ void registerNumberPrototype(VM& vm) {
     vm.registerPrototypeMethodByName("int", method, "int." + method);
   };
 
-  regIntProto("abs", 1, [&vm](const std::vector<Value>& args) {
+  regIntProto("abs", 1, [](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isInt()) return Value::makeInt(std::abs(args[0].asInt()));
     if (args[0].isDouble()) return Value::makeDouble(std::abs(args[0].asDouble()));
@@ -57,7 +57,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
-  regIntProto("op_add", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_add", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() + b.asInt());
@@ -66,7 +66,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(av + bv);
   });
 
-  regIntProto("op_sub", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_sub", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() - b.asInt());
@@ -75,7 +75,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(av - bv);
   });
 
-  regIntProto("op_mul", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_mul", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() * b.asInt());
@@ -84,7 +84,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(av * bv);
   });
 
-  regIntProto("op_div", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_div", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) {
@@ -97,7 +97,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(av / bv);
   });
 
-  regIntProto("op_mod", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_mod", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() % b.asInt());
@@ -106,7 +106,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(std::fmod(av, bv));
   });
 
-  regIntProto("op_pow", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_pow", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
@@ -114,14 +114,14 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(std::pow(av, bv));
   });
 
-  regIntProto("op_neg", 1, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_neg", 1, [](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     auto a = args[0];
     if (a.isInt()) return Value::makeInt(-a.asInt());
     return Value::makeDouble(-(a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt())));
   });
 
-  regIntProto("op_eq", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_eq", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() == b.asInt());
@@ -131,7 +131,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av == bv);
   });
 
-  regIntProto("op_ne", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_ne", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(true);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() != b.asInt());
@@ -141,7 +141,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av != bv);
   });
 
-  regIntProto("op_lt", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_lt", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() < b.asInt());
@@ -150,7 +150,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av < bv);
   });
 
-  regIntProto("op_gt", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_gt", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() > b.asInt());
@@ -159,7 +159,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av > bv);
   });
 
-  regIntProto("op_le", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_le", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() <= b.asInt());
@@ -168,7 +168,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av <= bv);
   });
 
-  regIntProto("op_ge", 2, [&vm](const std::vector<Value>& args) {
+  regIntProto("op_ge", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() >= b.asInt());
@@ -192,14 +192,14 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeStringId(ref.id);
   });
 
-  regFloatProto("abs", 1, [&vm](const std::vector<Value>& args) {
+regFloatProto("abs", 1, [](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isDouble()) return Value::makeDouble(std::abs(args[0].asDouble()));
     if (args[0].isInt()) return Value::makeDouble(std::abs(static_cast<double>(args[0].asInt())));
     return Value::makeNull();
-  });
+});
 
-  regFloatProto("op_add", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_add", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() + b.asInt());
@@ -208,7 +208,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(av + bv);
   });
 
-  regFloatProto("op_sub", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_sub", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() - b.asInt());
@@ -217,7 +217,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(av - bv);
   });
 
-  regFloatProto("op_mul", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_mul", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeInt(a.asInt() * b.asInt());
@@ -226,7 +226,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(av * bv);
   });
 
-  regFloatProto("op_div", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_div", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
@@ -234,7 +234,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(av / bv);
   });
 
-  regFloatProto("op_mod", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_mod", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
@@ -242,7 +242,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(std::fmod(av, bv));
   });
 
-  regFloatProto("op_pow", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_pow", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto a = args[0], b = args[1];
     double av = a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt());
@@ -250,14 +250,14 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeDouble(std::pow(av, bv));
   });
 
-  regFloatProto("op_neg", 1, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_neg", 1, [](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     auto a = args[0];
     if (a.isInt()) return Value::makeInt(-a.asInt());
     return Value::makeDouble(-(a.isDouble() ? a.asDouble() : static_cast<double>(a.asInt())));
   });
 
-  regFloatProto("op_eq", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_eq", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() == b.asInt());
@@ -267,7 +267,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av == bv);
   });
 
-  regFloatProto("op_ne", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_ne", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(true);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() != b.asInt());
@@ -277,7 +277,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av != bv);
   });
 
-  regFloatProto("op_lt", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_lt", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() < b.asInt());
@@ -286,7 +286,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av < bv);
   });
 
-  regFloatProto("op_gt", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_gt", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() > b.asInt());
@@ -295,7 +295,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av > bv);
   });
 
-  regFloatProto("op_le", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_le", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() <= b.asInt());
@@ -304,7 +304,7 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av <= bv);
   });
 
-  regFloatProto("op_ge", 2, [&vm](const std::vector<Value>& args) {
+  regFloatProto("op_ge", 2, [](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     auto a = args[0], b = args[1];
     if (a.isInt() && b.isInt()) return Value::makeBool(a.asInt() >= b.asInt());
@@ -313,19 +313,19 @@ void registerNumberPrototype(VM& vm) {
     return Value::makeBool(av >= bv);
   });
 
-  regFloatProto("round", 1, [&vm](const std::vector<Value>& args) {
+  regFloatProto("round", 1, [](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     double v = args[0].isDouble() ? args[0].asDouble() : (args[0].isInt() ? static_cast<double>(args[0].asInt()) : 0.0);
     return Value::makeInt(static_cast<int64_t>(std::round(v)));
   });
 
-  regFloatProto("floor", 1, [&vm](const std::vector<Value>& args) {
+  regFloatProto("floor", 1, [](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     double v = args[0].isDouble() ? args[0].asDouble() : (args[0].isInt() ? static_cast<double>(args[0].asInt()) : 0.0);
     return Value::makeInt(static_cast<int64_t>(std::floor(v)));
   });
 
-  regFloatProto("ceil", 1, [&vm](const std::vector<Value>& args) {
+  regFloatProto("ceil", 1, [](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     double v = args[0].isDouble() ? args[0].asDouble() : (args[0].isInt() ? static_cast<double>(args[0].asInt()) : 0.0);
     return Value::makeInt(static_cast<int64_t>(std::ceil(v)));
@@ -678,7 +678,7 @@ regProto("sortKey", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeBool(!obj || obj->size() == 0);
   });
 
-  regProto("freeze", 1, [&vm](const std::vector<Value>& args) {
+  regProto("freeze", 1, [](const std::vector<Value>& args) {
     if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
     return args[0];
   });
@@ -859,7 +859,7 @@ regProto("sortKey", 2, [&vm](const std::vector<Value>& args) {
     return Value::makeObjectId(resultRef.id);
   });
 
-  regProto("unique", 1, [&vm](const std::vector<Value>& args) {
+  regProto("unique", 1, [](const std::vector<Value>& args) {
     if (args.empty() || !args[0].isObjectId()) return Value::makeNull();
     return args[0];
   });
@@ -1331,7 +1331,7 @@ void registerSetPrototype(VM& vm) {
         return Value::makeNull();
     });
 
-    regProto("toSet", 1, [&vm](const std::vector<Value>& args) {
+    regProto("toSet", 1, [](const std::vector<Value>& args) {
         if (args.empty()) return Value::makeNull();
         if (args[0].isSetId()) return args[0];
         return Value::makeNull();
@@ -1360,7 +1360,7 @@ void registerSetPrototype(VM& vm) {
     return Value::makeArrayId(arrRef.id);
   });
 
-  regProto("union", 2, [&vm, &setKeyFromValue](const std::vector<Value>& args) {
+regProto("union", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2 || !args[0].isSetId() || !args[1].isSetId()) return Value::makeNull();
     auto* s1 = vm.getHeap().set(args[0].asSetId());
     auto* s2 = vm.getHeap().set(args[1].asSetId());
@@ -1370,9 +1370,9 @@ void registerSetPrototype(VM& vm) {
     for (const auto& [k, v] : *s1) (*result)[k] = v;
     for (const auto& [k, v] : *s2) (*result)[k] = v;
     return Value::makeSetId(resultRef.id);
-  });
+});
 
-  regProto("intersection", 2, [&vm, &valueFromKey](const std::vector<Value>& args) {
+  regProto("intersection", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2 || !args[0].isSetId() || !args[1].isSetId()) return Value::makeNull();
     auto* s1 = vm.getHeap().set(args[0].asSetId());
     auto* s2 = vm.getHeap().set(args[1].asSetId());

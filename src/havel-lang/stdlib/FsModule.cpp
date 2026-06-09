@@ -614,7 +614,7 @@ void registerFsModule(const VMApi &api) {
             api.setField(watchObj, "callback", callback);
             api.setField(watchObj, "close", api.makeFunctionRef("fs._watchClose"));
   api.registerFunction("fs._watchClose_" + std::to_string(inotifyFd),
-                [&api, inotifyFd](const std::vector<Value> &) {
+                [inotifyFd](const std::vector<Value> &) {
                     close(inotifyFd);
                     return Value::makeBool(true);
                 });

@@ -192,7 +192,7 @@ void Modules::installHostFunctions() {
         }
     }
 
-    vm_setup_callbacks_.push_back([this](compiler::VM &vm) {
+    vm_setup_callbacks_.push_back([](compiler::VM &vm) {
         auto hotkeyObj = vm.createHostObject();
         for (const auto &name : {"register", "register_conditional", "remove_conditional",
                                   "enable_conditional", "disable_conditional", "set_condition",

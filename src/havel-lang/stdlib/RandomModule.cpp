@@ -78,7 +78,7 @@ static void seedFromEntropy() {
       seeds[i] = static_cast<std::seed_seq::result_type>(
           hash_mix(mixed, static_cast<uint64_t>(t)));
       // Tiny delay to ensure different clock readings
-      for (volatile int j = 0; j < 10; ++j)
+      for (int j = 0; j < 10; ++j)
         ;
     }
     std::seed_seq seq(std::begin(seeds), std::end(seeds));

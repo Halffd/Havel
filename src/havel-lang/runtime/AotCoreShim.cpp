@@ -41,5 +41,5 @@ extern "C" void* havel_vm_init_standalone_core(const char** strings, uint32_t co
     return vm.get();
 }
 #if defined(__GNUC__) || defined(__clang__)
-#pragma GCC visibility pop(default)
+#pragma GCC visibility pop
 #endif

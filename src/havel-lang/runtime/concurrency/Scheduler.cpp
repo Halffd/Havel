@@ -642,48 +642,71 @@ size_t Scheduler::wakeSleepingGoroutines() {
     return woken;
 }
 
-void Scheduler::deferToVM(DeferredAction fn) {
-  {
-    std::lock_guard<std::mutex> lock(deferred_mutex_);
-    deferred_actions_.push_back(std::move(fn));
-  }
-#ifndef _WIN32
-  if (deferred_wakeup_fd_ >= 0) {
-    uint64_t val = 1;
-    ssize_t ret = write(deferred_wakeup_fd_, &val, sizeof(val));
-    (void)ret;
-  }
-#endif
-}
+ void Scheduler::schedule(DeferredAction fn, FiberPriority priority) {
+   {
+     std::lock_guard<std::mutex> lock(deferred_mutex_);
+     switch (priority) {
+       case FiberPriority::HOTKEY:
+         deferred_hotkey_.push_back(std::move(fn));
+         break;
+       case FiberPriority::BACKGROUND:
+         deferred_background_.push_back(std::move(fn));
+         break;
+       default:
+         deferred_normal_.push_back(std::move(fn));
+         break;
+     }
+   }
+ #ifndef _WIN32
+   if (deferred_wakeup_fd_ >= 0) {
+     uint64_t val = 1;
+     ssize_t ret = write(deferred_wakeup_fd_, &val, sizeof(val));
+     (void)ret;
+   }
+ #endif
+ }
 
-size_t Scheduler::drainDeferredCallbacks() {
-  if (vm_thread_id_ == std::thread::id()) {
-    vm_thread_id_ = std::this_thread::get_id();
-  }
+ void Scheduler::deferToVM(DeferredAction fn) {
+   schedule(std::move(fn), FiberPriority::NORMAL);
+ }
 
-#ifndef _WIN32
-  if (deferred_wakeup_fd_ >= 0) {
-    uint64_t val;
-    while (read(deferred_wakeup_fd_, &val, sizeof(val)) == sizeof(val)) {}
-  }
-#endif
+ size_t Scheduler::drainDeferredCallbacks() {
+   if (vm_thread_id_ == std::thread::id()) {
+     vm_thread_id_ = std::this_thread::get_id();
+   }
 
-  std::deque<DeferredAction> acts;
-  {
-    std::lock_guard<std::mutex> lock(deferred_mutex_);
-    acts = std::move(deferred_actions_);
-  }
+ #ifndef _WIN32
+   if (deferred_wakeup_fd_ >= 0) {
+     uint64_t val;
+     while (read(deferred_wakeup_fd_, &val, sizeof(val)) == sizeof(val)) {}
+   }
+ #endif
 
-  for (auto& fn : acts) {
-    try {
-      fn();
-    } catch (const std::exception& e) {
-        ::havel::warn("Scheduler: deferred action threw: {}", e.what());
-    }
-  }
+   size_t drained = 0;
 
-  return acts.size();
-}
+   // Drain in priority order: hotkey → normal → background
+   auto drainOneQueue = [&](std::deque<DeferredAction>& queue) {
+     std::deque<DeferredAction> acts;
+     {
+       std::lock_guard<std::mutex> lock(deferred_mutex_);
+       acts = std::move(queue);
+     }
+     for (auto& fn : acts) {
+       try {
+         fn();
+         ++drained;
+       } catch (const std::exception& e) {
+         ::havel::warn("Scheduler: deferred action threw: {}", e.what());
+       }
+     }
+   };
+
+   drainOneQueue(deferred_hotkey_);
+   drainOneQueue(deferred_normal_);
+   drainOneQueue(deferred_background_);
+
+   return drained;
+ }
 
 size_t Scheduler::cleanupDoneGoroutines() {
   std::lock_guard<std::mutex> lock(goroutines_mutex_);

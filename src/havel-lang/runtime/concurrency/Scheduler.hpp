@@ -397,10 +397,17 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
 
   using DeferredAction = std::function<void()>;
 
+  /// Schedule a callback on the VM thread at the given priority.
+  /// Unlike deferToVM, schedule supports priority ordering.
+  /// All dispatch (hotkeys, timers, watchers, signals) should route through this.
+  void schedule(DeferredAction fn, FiberPriority priority = FiberPriority::NORMAL);
+
   void deferToVM(DeferredAction fn);
 
   int deferredWakeupFd() const { return deferred_wakeup_fd_; }
 
+  /// Drains deferred callbacks in priority order (hotkey → normal → background).
+  /// This is the ONLY drain method — schedule() and deferToVM() both feed into it.
   size_t drainDeferredCallbacks();
 
   // Remove Done goroutines from the map (prevents memory leak)
@@ -435,8 +442,11 @@ private:
   mutable std::mutex runnable_mutex_;
   std::deque<Goroutine*> runnable_;
 
-  // Deferred actions: thread-safe queue for cross-thread VM scheduling
-  std::deque<DeferredAction> deferred_actions_;
+  // Per-priority deferred action queues for unified scheduling
+  // schedule(priority) and deferToVM() both feed into these.
+  std::deque<DeferredAction> deferred_hotkey_;     // HOTKEY priority
+  std::deque<DeferredAction> deferred_normal_;     // NORMAL priority
+  std::deque<DeferredAction> deferred_background_; // BACKGROUND priority
   mutable std::mutex deferred_mutex_;
   int deferred_wakeup_fd_ = -1;
 

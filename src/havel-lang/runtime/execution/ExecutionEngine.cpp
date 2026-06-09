@@ -106,14 +106,6 @@ bool ExecutionEngine::executeFrame() {
         vm_->garbageCollectionSafePoint();
         vm_->drainFinalizers();
 
-    // STEP 1.5: Drain deferred callbacks from non-VM threads
-    // These are queued via scheduler->deferToVM() and must run on the VM thread
-    // (e.g. clipboard change callbacks, external event callbacks)
-    size_t deferred = scheduler_->drainDeferredCallbacks();
-            if (deferred > 0 && debug_mode_) {
-                std::cerr << "[ExecutionEngine] Drained " << deferred << " deferred callbacks\n";
-            }
-
 	// STEP 1.6: Wake sleeping goroutines whose sleep timer has expired
 	scheduler_->wakeSleepingGoroutines();
 
@@ -373,6 +365,14 @@ switch (result.type) {
     }
     
 	stats_.frames_executed++;
+
+	// Drain deferred callbacks after goroutine execution (lower priority).
+	// These are queued via schedule() or deferToVM() from event handlers or
+	// non-VM threads (e.g. clipboard change callbacks, external callbacks).
+	// By running them here, hotkey goroutines and event processing (above)
+	// always take priority over deferred work.
+	scheduler_->drainDeferredCallbacks();
+
 	vm_->garbageCollectionSafePoint();
 	return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
     

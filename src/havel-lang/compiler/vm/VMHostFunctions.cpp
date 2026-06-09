@@ -1868,9 +1868,20 @@ registerHostFunction(
  }
  }
 
-	auto strRef = heap_.allocateString("watcher_registered");
-	return Value::makeStringId(strRef.id);
-	});
+  auto strRef = heap_.allocateString("watcher_registered");
+  return Value::makeStringId(strRef.id);
+  });
+
+  registerHostFunction("gc_collect", 0, [this](const std::vector<Value> &) -> Value {
+    heap_.forceFullCollection(
+      stackValuesForRoots(), locals, globals,
+      activeClosureIdsForRoots(),
+      [this](uint32_t index) -> std::optional<Value> {
+        if (index >= locals.size()) return std::nullopt;
+        return locals[index];
+      });
+    return Value::makeNull();
+  });
 }
 
 void VM::registerDefaultHostGlobals() {

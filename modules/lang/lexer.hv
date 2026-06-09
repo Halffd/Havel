@@ -235,9 +235,13 @@ fn Lexer(source) {
     fn lastTokenType() {
         if tokens.len > 0 { tokens[tokens.len - 1].type } else { "NewLine" }
     }
-    fn afterExpression() {
-        AFTER_EXPR_TYPES.has(lastTokenType())
-    }
+  fn afterExpression() {
+    AFTER_EXPR_TYPES.has(lastTokenType()) || prevIsKeywordAfterDot()
+  }
+  fn prevIsKeywordAfterDot() {
+    if tokens.len < 2 { return false }
+    tokens[tokens.len - 2].type == "Dot"
+  }
     fn isHotkeyCharCp(cp) {
         isAlphaNumCp(cp) || cp == 43 || cp == 45 || cp == 94 || cp == 33 || cp == 35 || cp == 64 || cp == 124 || cp == 42 || cp == 38 || cp == 58 || cp == 126 || cp == 36 || cp == 61 || cp == 46 || cp == 44 || cp == 47
     }
@@ -979,7 +983,7 @@ fn scanHotkey() {
       // !ident could be a hotkey binding like !F1 => { } — scan ahead for =>
       advance()
       s = "!"
-      while current() != -1 && current() != 10 && current() != 123 && current() != 40 {
+      while current() != -1 && current() != 13 && current() != 10 && current() != 123 && current() != 40 {
         if current() == 61 && cp(1) == 62 { break }
         s = s + string.fromCodePoint(current())
         advance()
@@ -993,7 +997,7 @@ fn scanHotkey() {
     } else {
       advance()
       s = "!"
-      while current() != -1 && current() != 10 && current() != 123 && current() != 40 {
+      while current() != -1 && current() != 13 && current() != 10 && current() != 123 && current() != 40 {
         if current() == 61 && cp(1) == 62 { break }
         s = s + string.fromCodePoint(current())
         advance()
@@ -1101,7 +1105,7 @@ fn scanHotkey() {
                 } else {
                     advance()
                     s = "+"
-                    while current() != -1 && current() != 10 && current() != 123 && current() != 40 {
+      while current() != -1 && current() != 13 && current() != 10 && current() != 123 && current() != 40 {
                         if current() == 61 && cp(1) == 62 { break }
                         if !isHotkeyCharCp(current()) { break }
                         s = s + string.fromCodePoint(current())
@@ -1510,8 +1514,9 @@ fn scanHotkey() {
                 continue
             }
       // @ - context-aware: At vs hotkey
-      if c == 64 {
-        if afterExpression() || (cp(1) != -1 && cp(1) >= 97 && cp(1) <= 122) {
+  if c == 64 {
+    nextCp = cp(1)
+    if afterExpression() || (nextCp != -1 && (isAlphaCp(nextCp) || nextCp == 95)) {
           // Look ahead past identifier and whitespace to decide hotkey vs field access
           lk = idx
           while lk < n && (isAlphaNumCp(cpArr[lk][0]) || cpArr[lk][0] == 95) { lk = lk + 1 }

@@ -34,7 +34,6 @@
 #include "host/chunker/TextChunkerService.hpp"
 #include "host/filesystem/FileSystemService.hpp"
 #include "host/hotkey/HotkeyService.hpp"
-#include "host/io/IOService.hpp"
 #include "host/io/MapManagerService.hpp"
 #include "host/media/MediaService.hpp"
 #include "host/mouse/MouseService.hpp"
@@ -319,8 +318,8 @@ Value IOBridge::handleSend(const std::vector<Value> &args,
         return Value::makeBool(false);
     }
 
-    ::havel::host::IOService ioService(ctx->io);
-    return Value::makeBool(ioService.sendKeys(keys));
+	ctx->io->Send(keys.c_str());
+	return Value::makeBool(true);
 }
 
 Value IOBridge::handleSendKey(const std::vector<Value> &args,
@@ -337,8 +336,10 @@ Value IOBridge::handleSendKey(const std::vector<Value> &args,
         return Value::makeBool(false);
     }
 
-    ::havel::host::IOService ioService(ctx->io);
-    return Value::makeBool(ioService.sendKey(key));
+	ctx->io->SendX11Key(key, true);
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	ctx->io->SendX11Key(key, false);
+	return Value::makeBool(true);
 }
 
 Value IOBridge::handleSendText(const std::vector<Value> &args,
@@ -567,8 +568,8 @@ Value IOBridge::handleKeyDown(const std::vector<Value> &args,
  } else {
  return Value::makeBool(false);
  }
- ::havel::host::IOService ioService(ctx->io);
- return Value::makeBool(ioService.keyDown(key));
+	ctx->io->SendX11Key(key, true);
+	return Value::makeBool(true);
  }
 
 Value IOBridge::handleKeyUp(const std::vector<Value> &args,
@@ -581,8 +582,8 @@ Value IOBridge::handleKeyUp(const std::vector<Value> &args,
  } else {
  return Value::makeBool(false);
  }
- ::havel::host::IOService ioService(ctx->io);
- return Value::makeBool(ioService.keyUp(key));
+	ctx->io->SendX11Key(key, false);
+	return Value::makeBool(true);
  }
 
 Value IOBridge::handleGetKey(const std::vector<Value> &args,
@@ -624,8 +625,7 @@ Value IOBridge::handleGetKey(const std::vector<Value> &args,
         }
         return Value::makeBool(false);
     }
-    ::havel::host::IOService ioService(ctx->io);
-    return Value::makeBool(ioService.getKeyState(key));
+	return Value::makeBool(ctx->io->GetKeyState(key));
 }
 
 Value IOBridge::handleIsKeyPressed(const std::vector<Value> &args,
@@ -638,20 +638,18 @@ Value IOBridge::handleIsKeyPressed(const std::vector<Value> &args,
  } else {
  return Value::makeBool(false);
  }
- ::havel::host::IOService ioService(ctx->io);
- return Value::makeBool(ioService.isKeyPressed(key));
+	return Value::makeBool(ctx->io->IsKeyPressed(key));
  }
 
 Value IOBridge::handleSuspend(const std::vector<Value> &,
                               const HostContext *ctx) {
     if (!ctx->io) return Value::makeBool(false);
-    ::havel::host::IOService ioService(ctx->io);
-    if (ioService.isSuspended()) {
-        ioService.resume();
-        return Value::makeBool(false);
-    }
-    ioService.suspend();
-    return Value::makeBool(true);
+	if (ctx->io->IsSuspended()) {
+		ctx->io->Resume();
+		return Value::makeBool(false);
+	}
+	ctx->io->Suspend();
+	return Value::makeBool(true);
 }
 
 Value IOBridge::handleGetExecutorMode(const std::vector<Value> &,
@@ -659,12 +657,18 @@ Value IOBridge::handleGetExecutorMode(const std::vector<Value> &,
     if (!ctx->io) {
         return Value::makeNull();
     }
-    ::havel::host::IOService ioService(ctx->io);
-    auto *vm = static_cast<VM *>(ctx->vm);
-    std::string mode = ioService.getExecutorMode();
-    if (!vm) return Value::makeNull();
-    auto ref = vm->getHeap().allocateString(mode);
-    return Value::makeStringId(ref.id);
+	auto *vm = static_cast<VM *>(ctx->vm);
+	std::string mode;
+	switch (ctx->io->GetExecutorMode()) {
+	case ExecutorMode::Executor: mode = "executor"; break;
+	case ExecutorMode::Sync: mode = "sync"; break;
+	case ExecutorMode::Thread: mode = "thread"; break;
+	case ExecutorMode::Scheduler: mode = "scheduler"; break;
+	default: mode = "scheduler"; break;
+	}
+	if (!vm) return Value::makeNull();
+	auto ref = vm->getHeap().allocateString(mode);
+	return Value::makeStringId(ref.id);
 }
 
 Value IOBridge::handleSetExecutorMode(const std::vector<Value> &args,
@@ -679,9 +683,16 @@ Value IOBridge::handleSetExecutorMode(const std::vector<Value> &args,
     } else {
         return Value::makeBool(false);
     }
-    ::havel::host::IOService ioService(ctx->io);
-    bool ok = ioService.setExecutorMode(modeStr);
-    return Value::makeBool(ok);
+	std::string modeLower = modeStr;
+	std::transform(modeLower.begin(), modeLower.end(), modeLower.begin(), ::tolower);
+	ExecutorMode em;
+	if (modeLower == "executor") em = ExecutorMode::Executor;
+	else if (modeLower == "sync") em = ExecutorMode::Sync;
+	else if (modeLower == "thread") em = ExecutorMode::Thread;
+	else if (modeLower == "scheduler") em = ExecutorMode::Scheduler;
+	else return Value::makeBool(false);
+	ctx->io->SetExecutorMode(em);
+	return Value::makeBool(true);
 }
 
 Value IOBridge::handleMouseState(const std::vector<Value> &args,
@@ -869,8 +880,7 @@ Value IOBridge::handleIoReset(const std::vector<Value> &,
 Value IOBridge::handleModifiers(const std::vector<Value> &,
                                  const HostContext *ctx) {
     if (!ctx->io) return Value::makeInt(0);
-    ::havel::host::IOService ioService(ctx->io);
-    return Value::makeInt(ioService.getCurrentModifiers());
+	return Value::makeInt(ctx->io->GetCurrentModifiers());
 }
 
 Value IOBridge::handleSendModifiers(const std::vector<Value> &args,
@@ -891,35 +901,34 @@ Value IOBridge::handleSendModifiers(const std::vector<Value> &args,
             }
         }
     }
-    ::havel::host::IOService ioService(ctx->io);
-    if (mods.empty()) {
-        if (!press) {
-            ioService.keyUp("ctrl"); ioService.keyUp("shift");
-            ioService.keyUp("alt"); ioService.keyUp("super");
-        }
-        return Value::makeBool(true);
-    }
-    std::string lower = mods;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    std::vector<std::string> parts;
-    size_t start = 0, pos;
-    while ((pos = lower.find('+', start)) != std::string::npos) {
-        parts.push_back(lower.substr(start, pos - start));
-        start = pos + 1;
-    }
-    if (start < lower.size()) parts.push_back(lower.substr(start));
-    for (auto &p : parts) {
-        if (p == "ctrl" || p == "control") {
-            if (press) ioService.keyDown("ctrl"); else ioService.keyUp("ctrl");
-        } else if (p == "shift") {
-            if (press) ioService.keyDown("shift"); else ioService.keyUp("shift");
-        } else if (p == "alt") {
-            if (press) ioService.keyDown("alt"); else ioService.keyUp("alt");
-        } else if (p == "super" || p == "win" || p == "meta") {
-            if (press) ioService.keyDown("super"); else ioService.keyUp("super");
-        }
-    }
-    return Value::makeBool(true);
+	if (mods.empty()) {
+		if (!press) {
+			ctx->io->SendX11Key("ctrl", false); ctx->io->SendX11Key("shift", false);
+			ctx->io->SendX11Key("alt", false); ctx->io->SendX11Key("super", false);
+		}
+		return Value::makeBool(true);
+	}
+	std::string lower = mods;
+	std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+	std::vector<std::string> parts;
+	size_t start = 0, pos;
+	while ((pos = lower.find('+', start)) != std::string::npos) {
+		parts.push_back(lower.substr(start, pos - start));
+		start = pos + 1;
+	}
+	if (start < lower.size()) parts.push_back(lower.substr(start));
+	for (auto &p : parts) {
+		if (p == "ctrl" || p == "control") {
+			ctx->io->SendX11Key("ctrl", press);
+		} else if (p == "shift") {
+			ctx->io->SendX11Key("shift", press);
+		} else if (p == "alt") {
+			ctx->io->SendX11Key("alt", press);
+		} else if (p == "super" || p == "win" || p == "meta") {
+			ctx->io->SendX11Key("super", press);
+		}
+	}
+	return Value::makeBool(true);
 }
 
 Value IOBridge::handleSetDevice(const std::vector<Value> &args,
@@ -964,24 +973,28 @@ Value IOBridge::handleSendKeyState(const std::vector<Value> &args,
     if (args[0].isStringId() || args[0].isStringValId())
         key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
     else return Value::makeBool(false);
-    if (args.size() < 2) {
-        ::havel::host::IOService ioService(ctx->io);
-        return Value::makeBool(ioService.sendKey(key));
-    }
-    bool press = true;
-    if (args[1].isBool()) press = args[1].asBool();
-    else if (args[1].isInt()) press = args[1].asInt() != 0;
-    else if (args[1].isStringId() || args[1].isStringValId()) {
-        std::string s = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
-        if (s == "release" || s == "up") press = false;
-        else if (s == "click" || s == "tap") {
-            ::havel::host::IOService ioService(ctx->io);
-            return Value::makeBool(ioService.sendKey(key));
-        }
-    }
-    ::havel::host::IOService ioService(ctx->io);
-    if (press) return Value::makeBool(ioService.keyDown(key));
-    return Value::makeBool(ioService.keyUp(key));
+	if (args.size() < 2) {
+		ctx->io->SendX11Key(key, true);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		ctx->io->SendX11Key(key, false);
+		return Value::makeBool(true);
+	}
+	bool press = true;
+	if (args[1].isBool()) press = args[1].asBool();
+	else if (args[1].isInt()) press = args[1].asInt() != 0;
+	else if (args[1].isStringId() || args[1].isStringValId()) {
+		std::string s = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+		if (s == "release" || s == "up") press = false;
+		else if (s == "click" || s == "tap") {
+			ctx->io->SendX11Key(key, true);
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			ctx->io->SendX11Key(key, false);
+			return Value::makeBool(true);
+		}
+	}
+	if (press) { ctx->io->SendX11Key(key, true); return Value::makeBool(true); }
+	ctx->io->SendX11Key(key, false);
+	return Value::makeBool(true);
 }
 
 Value IOBridge::handleSetLock(const std::vector<Value> &args,

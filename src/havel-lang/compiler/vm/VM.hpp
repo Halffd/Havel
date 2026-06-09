@@ -276,6 +276,7 @@ struct CallFrame {
   std::vector<std::string> host_function_names_; // Index -> name mapping
   utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
     std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
+  std::vector<std::shared_ptr<std::unordered_map<std::string, Value>>> imported_module_globals_; // GC root for wrapped module functions
  
   
         // Function properties support (fn.prop = value for static state, memoization, etc.)

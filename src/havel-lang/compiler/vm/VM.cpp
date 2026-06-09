@@ -108,6 +108,7 @@ VM::~VM() {
         unpinExternalRoot(rootId);
     }
     host_function_gc_roots_.clear();
+  imported_module_globals_.clear();
 
     if (heap_.externalRootCount() > 0) {
         ::havel::warning("[VM][GC] {} external roots still pinned at VM shutdown", heap_.externalRootCount());
@@ -2075,9 +2076,31 @@ std::vector<Value> VM::stackValuesForRoots() const {
         values.push_back(pc.fn);
         for (const auto &arg : pc.args) {
             values.push_back(arg);
-        }
+  }
+  }
+  for (const auto &[_, chunk] : module_chunks_) {
+    if (!chunk) continue;
+    for (const auto &func : chunk->getAllFunctions()) {
+      for (const auto &constVal : func.constants) {
+        values.push_back(constVal);
+      }
     }
-    return values;
+  }
+  for (const auto &chunk : persistent_chunks_) {
+    if (!chunk) continue;
+    for (const auto &func : chunk->getAllFunctions()) {
+      for (const auto &constVal : func.constants) {
+        values.push_back(constVal);
+      }
+    }
+  }
+  for (const auto &mg : imported_module_globals_) {
+    if (!mg) continue;
+    for (const auto &[_, v] : *mg) {
+      values.push_back(v);
+    }
+  }
+  return values;
 }
 
 std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
@@ -2371,13 +2394,14 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
   if (depth == 0) { suspendGC(); suspendedGc = true; }
   auto resumeGcGuard = [&]() { if (suspendedGc) { resumeGC(); suspendedGc = false; } };
   if (value.isFunctionObjId() && chunk) {
-        uint32_t funcIdx = value.asFunctionObjId();
-        const auto* moduleFunc = chunk->getFunction(funcIdx);
-        uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
+    uint32_t funcIdx = value.asFunctionObjId();
+    const auto* moduleFunc = chunk->getFunction(funcIdx);
+    uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
     auto moduleChunk = chunk;
-auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
-std::string fnCapturedKey = canonicalKey;
-std::string fnCapturedField = fieldPath;
+    auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
+    std::string fnCapturedKey = canonicalKey;
+    std::string fnCapturedField = fieldPath;
+    imported_module_globals_.push_back(moduleGlobals);
     registerHostFunction(wrapperName,
         [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
             std::vector<Value> callArgs = args;

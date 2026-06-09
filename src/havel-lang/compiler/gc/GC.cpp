@@ -147,27 +147,29 @@ next_enum_id_ = 1;
 }
 
 ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    size_t est = sizeof(RuntimeClosure) + closure.upvalues.size() * sizeof(std::shared_ptr<UpvalueCell>);
-    checkHeapLimit(est);
-    const uint32_t id = next_closure_id_++;
-    closures_.emplace(id, std::move(closure));
-    closure_ages_[id] = 0;
-    old_closures_.erase(id);
-    addHeapBytes(est);
-    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
-    return ClosureRef{.id = id};
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  size_t est = sizeof(RuntimeClosure) + closure.upvalues.size() * sizeof(std::shared_ptr<UpvalueCell>);
+  checkHeapLimit(est);
+  const uint32_t id = next_closure_id_++;
+  closures_.emplace(id, std::move(closure));
+  closure_ages_[id] = 0;
+  old_closures_.erase(id);
+  addHeapBytes(est);
+  cached_object_count_.fetch_add(1, std::memory_order_relaxed);
+  allocations_since_last_++;
+  return ClosureRef{.id = id};
 }
 
 StringRef GCHeap::allocateString(std::string value) {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    size_t est = value.size() + 1;
-    checkHeapLimit(est);
-    const uint32_t id = next_string_id_++;
-    strings_.emplace(id, std::move(value));
-    addHeapBytes(est);
-    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
-    return StringRef{.id = id};
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  size_t est = value.size() + 1;
+  checkHeapLimit(est);
+  const uint32_t id = next_string_id_++;
+  strings_.emplace(id, std::move(value));
+  addHeapBytes(est);
+  cached_object_count_.fetch_add(1, std::memory_order_relaxed);
+  allocations_since_last_++;
+  return StringRef{.id = id};
 }
 
 std::string *GCHeap::string(uint32_t id) {
@@ -183,16 +185,17 @@ std::lock_guard<std::recursive_mutex> lock(mutex_);
 }
 
 ArrayRef GCHeap::allocateArray() {
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    size_t est = sizeof(ArrayEntry);
-    checkHeapLimit(est);
-    const uint32_t id = next_array_id_++;
-    arrays_[id] = {};
-    array_ages_[id] = 0;
-    old_arrays_.erase(id);
-    addHeapBytes(est);
-    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
-    return ArrayRef{.id = id};
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  size_t est = sizeof(ArrayEntry);
+  checkHeapLimit(est);
+  const uint32_t id = next_array_id_++;
+  arrays_[id] = {};
+  array_ages_[id] = 0;
+  old_arrays_.erase(id);
+  addHeapBytes(est);
+  cached_object_count_.fetch_add(1, std::memory_order_relaxed);
+  allocations_since_last_++;
+  return ArrayRef{.id = id};
 }
 
 uint64_t GCHeap::arrayVersion(uint32_t id) const {
@@ -223,8 +226,9 @@ ObjectRef GCHeap::allocateObject(bool sorted) {
     object_ages_[id] = 0;
     old_objects_.erase(id);
     addHeapBytes(est);
-    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
-    return ObjectRef{.id = id, .sorted = sorted};
+  cached_object_count_.fetch_add(1, std::memory_order_relaxed);
+  allocations_since_last_++;
+  return ObjectRef{.id = id, .sorted = sorted};
 }
 
 SetRef GCHeap::allocateSet() {
@@ -237,8 +241,9 @@ SetRef GCHeap::allocateSet() {
     set_ages_[id] = 0;
     old_sets_.erase(id);
     addHeapBytes(est);
-    cached_object_count_.fetch_add(1, std::memory_order_relaxed);
-    return SetRef{.id = id};
+  cached_object_count_.fetch_add(1, std::memory_order_relaxed);
+  allocations_since_last_++;
+  return SetRef{.id = id};
 }
 
 void GCHeap::bumpSetVersion(uint32_t id) {
@@ -613,17 +618,15 @@ GCHeap::Stats GCHeap::stats() const {
 }
 
 void GCHeap::maybeCollectGarbage(
-    const std::vector<Value> &stack_values,
-    const std::vector<Value> &locals,
-    const std::unordered_map<std::string, Value> &globals,
-    const std::vector<uint32_t> &active_closure_ids,
-    const std::function<std::optional<Value>(uint32_t)> &open_local_reader) {
+  const std::vector<Value> &stack_values,
+  const std::vector<Value> &locals,
+  const std::unordered_map<std::string, Value> &globals,
+  const std::vector<uint32_t> &active_closure_ids,
+  const std::function<std::optional<Value>(uint32_t)> &open_local_reader) {
 
-    allocations_since_last_++;
-
-    if (allocations_since_last_ >= allocation_budget_) {
-        collection_requested_ = true;
-    }
+  if (allocations_since_last_ >= allocation_budget_) {
+    collection_requested_ = true;
+  }
 
     if (collection_requested_) {
         if (stop_the_world_) {
@@ -676,8 +679,8 @@ void GCHeap::forceFullCollection(
     const std::vector<uint32_t> &active_closure_ids,
     const std::function<std::optional<Value>(uint32_t)> &open_local_reader) {
 
-    current_collection_full_ = true;
-    collectGarbage(stack_values, locals, globals, active_closure_ids, open_local_reader);
+  current_collection_full_ = true;
+  collectGarbage(stack_values, locals, globals, active_closure_ids, open_local_reader);
 }
 
 void GCHeap::stepGarbageCollection(
@@ -755,11 +758,11 @@ void GCHeap::startIncrementalCollection(
     recovered_in_cycle_ = 0;
     collection_requested_ = false;
 
-    if (minor_collections_since_full_ >= full_collection_interval_) {
-        current_collection_full_ = true;
-    }
+  if (minor_collections_since_full_ >= full_collection_interval_) {
+    current_collection_full_ = true;
+  }
 
-    gc_state_ = IncrementalState::Mark;
+  gc_state_ = IncrementalState::Mark;
     markRoots();
 
     if (debugging::debug_gc)
@@ -977,32 +980,39 @@ void GCHeap::markStep(size_t &work_budget) {
             }
             continue;
         }
-        if (current.isClosureId()) {
-                auto it = closures_.find(current.asClosureId());
-                if (it == closures_.end()) {
-                    continue;
-                }
-                for (const auto &cell : it->second.upvalues) {
-                    if (!cell) {
-                        continue;
-                    }
-                    if (cell->is_open) {
-                        uint32_t abs_index = cell->locals_base + cell->open_index;
-                        auto local_value = open_local_reader_snapshot_(abs_index);
-                        if (local_value.has_value()) {
-                            markReference(*local_value);
-                        }
-                    } else {
-                        markReference(cell->closed_value);
-                    }
-                }
-                if (it->second.module_globals) {
-                    for (const auto &[_, gv] : *it->second.module_globals) {
-                        markReference(gv);
-                    }
-                }
-                continue;
-            }
+  if (current.isClosureId()) {
+      auto it = closures_.find(current.asClosureId());
+      if (it == closures_.end()) {
+        continue;
+      }
+      for (const auto &cell : it->second.upvalues) {
+        if (!cell) {
+          continue;
+        }
+        if (cell->is_open) {
+          uint32_t abs_index = cell->locals_base + cell->open_index;
+          auto local_value = open_local_reader_snapshot_(abs_index);
+          if (local_value.has_value()) {
+            markReference(*local_value);
+          }
+        } else {
+          markReference(cell->closed_value);
+        }
+      }
+      if (it->second.module_globals) {
+        for (const auto &[_, gv] : *it->second.module_globals) {
+          markReference(gv);
+        }
+      }
+      if (it->second.chunk) {
+        for (const auto &func : it->second.chunk->getAllFunctions()) {
+          for (const auto &constVal : func.constants) {
+            markReference(constVal);
+          }
+        }
+      }
+      continue;
+    }
     }
 
     if (mark_worklist_.empty()) {
@@ -1044,6 +1054,7 @@ void GCHeap::sweepStep(size_t &work_budget) {
             old_set.erase(id);
             recovered_in_cycle_++;
             cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+            subHeapBytes(64);
         } else if (!is_old) {
             promote_fn(id);
         }
@@ -1077,14 +1088,14 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 const bool is_old = old_arrays_.find(id) != old_arrays_.end();
                 const bool can_collect = current_collection_full_ || !is_old;
 
-                if (can_collect && marked_arrays_.find(id) == marked_arrays_.end()) {
-                    arrays_.erase(it);
-                    array_ages_.erase(id);
-                    old_arrays_.erase(id);
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
-                    recovered_in_cycle_++;
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
-                } else if (!is_old) {
+      if (can_collect && marked_arrays_.find(id) == marked_arrays_.end()) {
+        arrays_.erase(it);
+        array_ages_.erase(id);
+        old_arrays_.erase(id);
+        cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+        subHeapBytes(64);
+        recovered_in_cycle_++;
+      } else if (!is_old) {
                     ageOrPromoteArray(id);
                 }
             }
@@ -1115,22 +1126,23 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 const bool is_old = old_objects_.find(id) != old_objects_.end();
                 const bool can_collect = current_collection_full_ || !is_old;
 
-            if (can_collect && marked_objects_.find(id) == marked_objects_.end()) {
-                auto *obj = object(id);
-                if (obj) {
-                    auto it = obj->find("op_destructor");
-                    if (it != obj->end() && (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId())) {
-                        finalizer_queue_.emplace_back(id, std::move(*obj));
-                    }
-                }
-                objects_.erase(it);
-                    object_ages_.erase(id);
-                    old_objects_.erase(id);
-                    recovered_in_cycle_++;
-                } else if (!is_old) {
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
-                    ageOrPromoteObject(id);
-                }
+    if (can_collect && marked_objects_.find(id) == marked_objects_.end()) {
+      auto *obj = object(id);
+      if (obj) {
+        auto it = obj->find("op_destructor");
+        if (it != obj->end() && (it->second.isFunctionObjId() || it->second.isClosureId() || it->second.isHostFuncId())) {
+          finalizer_queue_.emplace_back(id, std::move(*obj));
+        }
+      }
+      objects_.erase(it);
+      object_ages_.erase(id);
+      old_objects_.erase(id);
+      cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+      subHeapBytes(64);
+      recovered_in_cycle_++;
+    } else if (!is_old) {
+      ageOrPromoteObject(id);
+    }
             }
             if (sweep_index_ >= sweep_keys_.size()) {
                 gc_state_ = IncrementalState::SweepSets;
@@ -1159,15 +1171,16 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 const bool is_old = old_sets_.find(id) != old_sets_.end();
                 const bool can_collect = current_collection_full_ || !is_old;
 
-                if (can_collect && marked_sets_.find(id) == marked_sets_.end()) {
-                    sets_.erase(it);
-                    set_ages_.erase(id);
-                    old_sets_.erase(id);
-                    recovered_in_cycle_++;
-                } else if (!is_old) {
-                    ageOrPromoteSet(id);
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
-                }
+      if (can_collect && marked_sets_.find(id) == marked_sets_.end()) {
+        sets_.erase(it);
+        set_ages_.erase(id);
+        old_sets_.erase(id);
+        cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+        subHeapBytes(64);
+        recovered_in_cycle_++;
+      } else if (!is_old) {
+        ageOrPromoteSet(id);
+      }
             }
             if (sweep_index_ >= sweep_keys_.size()) {
                 gc_state_ = IncrementalState::SweepClosures;
@@ -1196,23 +1209,24 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 const bool is_old = old_closures_.find(id) != old_closures_.end();
                 const bool can_collect = current_collection_full_ || !is_old;
 
-                if (can_collect && marked_closures_.find(id) == marked_closures_.end()) {
-                    closures_.erase(it);
-                    closure_ages_.erase(id);
-                    old_closures_.erase(id);
-                    recovered_in_cycle_++;
-                } else if (!is_old) {
-                    ageOrPromoteClosure(id);
-                }
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
-            }
-            if (sweep_index_ >= sweep_keys_.size()) {
-                gc_state_ = IncrementalState::SweepStrings;
-                sweep_index_ = 0;
-            }
-            break;
+      if (can_collect && marked_closures_.find(id) == marked_closures_.end()) {
+        closures_.erase(it);
+        closure_ages_.erase(id);
+        old_closures_.erase(id);
+        cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+        subHeapBytes(64);
+        recovered_in_cycle_++;
+      } else if (!is_old) {
+        ageOrPromoteClosure(id);
+      }
+    }
+    if (sweep_index_ >= sweep_keys_.size()) {
+      gc_state_ = IncrementalState::SweepStrings;
+      sweep_index_ = 0;
+    }
+    break;
 
-    case IncrementalState::SweepStrings:
+  case IncrementalState::SweepStrings:
         if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
             sweep_keys_.clear();
             for (const auto &kv : strings_) {
@@ -1233,17 +1247,18 @@ void GCHeap::sweepStep(size_t &work_budget) {
             const bool is_old = old_strings_.find(id) != old_strings_.end();
             const bool can_collect = current_collection_full_ || !is_old;
 
-            if (can_collect && marked_strings_.find(id) == marked_strings_.end()) {
-                strings_.erase(it);
-                string_ages_.erase(id);
-                old_strings_.erase(id);
-                recovered_in_cycle_++;
-            } else if (!is_old) {
-                ageOrPromoteString(id);
-            }
-        }
-                cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
-        if (sweep_index_ >= sweep_keys_.size()) {
+    if (can_collect && marked_strings_.find(id) == marked_strings_.end()) {
+      strings_.erase(it);
+      string_ages_.erase(id);
+      old_strings_.erase(id);
+      cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+      subHeapBytes(64);
+      recovered_in_cycle_++;
+    } else if (!is_old) {
+      ageOrPromoteString(id);
+    }
+  }
+  if (sweep_index_ >= sweep_keys_.size()) {
             gc_state_ = IncrementalState::SweepIterators;
             sweep_index_ = 0;
         }
@@ -1270,7 +1285,6 @@ void GCHeap::sweepStep(size_t &work_budget) {
         if (sweep_index_ >= sweep_keys_.size()) {
             gc_state_ = IncrementalState::SweepBoundMethods;
             sweep_index_ = 0;
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
         }
         break;
 
@@ -1287,16 +1301,17 @@ void GCHeap::sweepStep(size_t &work_budget) {
             uint32_t id = sweep_keys_[sweep_index_++];
             work_budget--;
 
-            if (marked_bound_methods_.find(id) == marked_bound_methods_.end()) {
-                bound_methods_.erase(id);
-                recovered_in_cycle_++;
-            }
+          if (marked_bound_methods_.find(id) == marked_bound_methods_.end()) {
+            bound_methods_.erase(id);
+            cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+            subHeapBytes(64);
+            recovered_in_cycle_++;
+          }
         }
         if (sweep_index_ >= sweep_keys_.size()) {
-            gc_state_ = IncrementalState::SweepRanges;
-            sweep_index_ = 0;
+          gc_state_ = IncrementalState::SweepRanges;
+          sweep_index_ = 0;
         }
-                cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
         break;
 
     case IncrementalState::SweepRanges:
@@ -1312,19 +1327,20 @@ void GCHeap::sweepStep(size_t &work_budget) {
                 uint32_t id = sweep_keys_[sweep_index_++];
                 work_budget--;
 
-                if (marked_ranges_.find(id) == marked_ranges_.end()) {
-                    ranges_.erase(id);
-                    recovered_in_cycle_++;
-                }
+          if (marked_ranges_.find(id) == marked_ranges_.end()) {
+            ranges_.erase(id);
+            cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+            subHeapBytes(64);
+            recovered_in_cycle_++;
+          }
             }
             if (sweep_index_ >= sweep_keys_.size()) {
                 gc_state_ = IncrementalState::SweepErrors;
                 sweep_index_ = 0;
             }
-            break;
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+        break;
 
-        case IncrementalState::SweepErrors:
+      case IncrementalState::SweepErrors:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
                 for (const auto &kv : errors_) {
@@ -1339,6 +1355,8 @@ void GCHeap::sweepStep(size_t &work_budget) {
 
                 if (marked_errors_.find(id) == marked_errors_.end()) {
                     errors_.erase(id);
+              cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+              subHeapBytes(64);
                     recovered_in_cycle_++;
                 }
             }
@@ -1348,7 +1366,6 @@ void GCHeap::sweepStep(size_t &work_budget) {
             }
             break;
 
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
         case IncrementalState::SweepEnums:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
@@ -1364,6 +1381,8 @@ void GCHeap::sweepStep(size_t &work_budget) {
 
                 if (marked_enums_.find(id) == marked_enums_.end()) {
                     enums_.erase(id);
+              cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+              subHeapBytes(64);
                     recovered_in_cycle_++;
                 }
             }
@@ -1374,7 +1393,6 @@ void GCHeap::sweepStep(size_t &work_budget) {
             break;
 
         case IncrementalState::SweepCoroutines:
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
                 for (const auto &kv : coroutines_) {
@@ -1392,6 +1410,8 @@ void GCHeap::sweepStep(size_t &work_budget) {
                         continue;
                     }
                     coroutines_.erase(id);
+              cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+              subHeapBytes(64);
                     recovered_in_cycle_++;
                 }
             }
@@ -1403,7 +1423,6 @@ void GCHeap::sweepStep(size_t &work_budget) {
 
         case IncrementalState::SweepThreads:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                 sweep_keys_.clear();
                 for (const auto &kv : threads_) {
                     sweep_keys_.push_back(kv.first);
@@ -1420,6 +1439,8 @@ void GCHeap::sweepStep(size_t &work_budget) {
                         continue;
                     }
                     threads_.erase(id);
+              cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+              subHeapBytes(64);
                     recovered_in_cycle_++;
                 }
             }
@@ -1432,7 +1453,6 @@ void GCHeap::sweepStep(size_t &work_budget) {
         case IncrementalState::SweepIntervals:
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                 for (const auto &kv : intervals_) {
                     sweep_keys_.push_back(kv.first);
                 }
@@ -1445,6 +1465,8 @@ void GCHeap::sweepStep(size_t &work_budget) {
 
 if (marked_intervals_.find(id) == marked_intervals_.end()) {
 intervals_.erase(id);
+              cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+              subHeapBytes(64);
 recovered_in_cycle_++;
                 }
             }
@@ -1458,7 +1480,6 @@ recovered_in_cycle_++;
             if (sweep_index_ == 0 || sweep_phase_ != gc_state_) {
                 sweep_keys_.clear();
                 for (const auto &kv : timeouts_) {
-cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                     sweep_keys_.push_back(kv.first);
                 }
                 sweep_index_ = 0;
@@ -1470,6 +1491,8 @@ cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
 
                 if (marked_timeouts_.find(id) == marked_timeouts_.end()) {
                     timeouts_.erase(id);
+              cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+              subHeapBytes(64);
                     recovered_in_cycle_++;
                 }
             }
@@ -1484,7 +1507,6 @@ cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                 sweep_keys_.clear();
                 for (const auto &kv : channels_) {
                     sweep_keys_.push_back(kv.first);
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
                 }
                 sweep_index_ = 0;
                 sweep_phase_ = gc_state_;
@@ -1495,6 +1517,8 @@ cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
 
                 if (marked_channels_.find(id) == marked_channels_.end()) {
                     channels_.erase(id);
+            cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+            subHeapBytes(64);
                     recovered_in_cycle_++;
                 }
             }
@@ -1510,7 +1534,6 @@ case IncrementalState::SweepWaitGroups:
     for (const auto &kv : waitgroups_) {
       sweep_keys_.push_back(kv.first);
     }
-                    cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
     sweep_index_ = 0;
     sweep_phase_ = gc_state_;
   }
@@ -1520,6 +1543,8 @@ case IncrementalState::SweepWaitGroups:
 
     if (marked_waitgroups_.find(id) == marked_waitgroups_.end()) {
       waitgroups_.erase(id);
+              cached_object_count_.fetch_sub(1, std::memory_order_relaxed);
+              subHeapBytes(64);
       recovered_in_cycle_++;
     }
   }
@@ -1533,11 +1558,12 @@ break;
 
 void GCHeap::completeCollection() {
     const int64_t current_budget = static_cast<int64_t>(allocation_budget_);
-    const int64_t recovered = static_cast<int64_t>(recovered_in_cycle_);
-    int64_t next_budget = (2 * current_budget) - ((3 * recovered) / 2);
-    next_budget = std::clamp<int64_t>(next_budget,
-        static_cast<int64_t>(kMinAllocationBudget),
-        static_cast<int64_t>(kMaxAllocationBudget));
+  const int64_t recovered = static_cast<int64_t>(recovered_in_cycle_);
+  size_t surviving = cached_object_count_.load(std::memory_order_relaxed);
+  int64_t next_budget = static_cast<int64_t>(surviving) * 16;
+  next_budget = std::clamp<int64_t>(next_budget,
+    static_cast<int64_t>(kMinAllocationBudget),
+    static_cast<int64_t>(kMaxAllocationBudget));
 
     allocation_budget_ = static_cast<size_t>(next_budget);
     allocations_since_last_ = 0;

@@ -467,7 +467,40 @@ return ShellCommand(tok.value, true, l, c)
 else if tt == TID.InterpolatedString {
 return parseInterpolatedString(tok.value, l, c)
 }
-else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer) {
+ else if tt == TID.From {
+  // from x in source where pred select f -> PipelineExpression chain
+  if current().tid == TID.Identifier {
+   varName = advance().value
+   if current().tid == TID.In {
+    advance() // consume 'in'
+    source = parseExpr(getRightBindingPower(TID.From))
+    pipeline = source
+    while current().tid == TID.Where {
+     advance() // consume 'where'
+     condition = parseExpr(getRightBindingPower(TID.Where))
+     filterIdent = Identifier("filter", l, c)
+     param = varName
+     body = ExpressionStatement(condition, l, c)
+     lambda = LambdaExpression([param], body, l, c)
+     filterCall = CallExpression(filterIdent, [lambda], [], l, c)
+     pipeline = PipelineExpression(pipeline, filterCall, l, c)
+    }
+    if current().tid == TID.Select {
+     advance() // consume 'select'
+     transform = parseExpr(getRightBindingPower(TID.Select))
+     mapIdent = Identifier("map", l, c)
+     param = varName
+     body = ExpressionStatement(transform, l, c)
+     lambda = LambdaExpression([param], body, l, c)
+     mapCall = CallExpression(mapIdent, [lambda], [], l, c)
+     pipeline = PipelineExpression(pipeline, mapCall, l, c)
+    }
+    return pipeline
+   }
+  }
+  return Identifier(tok.value, l, c)
+ }
+else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From) {
 return Identifier(tok.value, l, c)
 }
 else if tt == TID.True {
@@ -493,11 +526,11 @@ syncCur()
 return disambiguateBrace()
 }
 else if tt == TID.BangOpenBrace {
-return parseObjectLiteral(true)
+return parseObjectLiteral(true, true)
 }
 else if tt == TID.Not {
 if current().tid == TID.OpenBrace {
-return parseObjectLiteral(true)
+return parseObjectLiteral(true, true)
 }
 else {
 operand = parseExpr(140)
@@ -1764,18 +1797,20 @@ return parseObjectLiteral(false)
     // ===================================================================
     // HELPER: Object literal
     // ===================================================================
-    fn parseObjectLiteral(unsorted) {
+    fn parseObjectLiteral(unsorted, alreadyConsumedOpenBrace) {
         l = current().line
         c = current().col
 
-        if current().tid == TID.BangOpenBrace {
-            advance() // consume !{
-        }
-        else {
-            expect(TID.OpenBrace)
+ if alreadyConsumedOpenBrace {
+  // token already consumed by caller
+ }
+ else if current().tid == TID.BangOpenBrace {
+  advance() // consume !{
+ }
+ else {
+  expect(TID.OpenBrace)
 
-        }
-        skipNewlines()
+ }
 
     fields = []
     while current().tid != TID.CloseBrace and notEOF() {
@@ -1924,6 +1959,32 @@ fn parseStatement() {
   tt = current().tid
   l = current().line
   c = current().col
+
+ // Multiple assignment: a, b = value
+ // Detect: Identifier, Identifier, ..., Assign
+ if tt == TID.Identifier && at(1).tid == TID.Comma {
+  savePos = pos
+  targets = []
+  // Collect comma-separated identifiers
+  while notEOF() {
+   if current().tid != TID.Identifier { break }
+   targets.push(Identifier(current().value, current().line, current().col))
+   advance()
+   skipNewlines()
+   if current().tid != TID.Comma { break }
+   advance() // consume comma
+   skipNewlines()
+  }
+  // Check if next is = (Assign)
+  if current().tid == TID.Assign {
+   advance() // consume =
+   value = parseExpr(0)
+   return MultipleAssignment(targets, value, l, c)
+  }
+  // Not multi-assign - restore position
+  pos = savePos
+  syncCur()
+ }
 
         // Hotkey binding: Hotkey token or @token => block
         if tt == TID.Hotkey {
@@ -2306,18 +2367,61 @@ fn parseDoWhileStatement() {
         c = current().col
         advance() // consume 'loop'
         skipNewlines()
+ skipNewlines()
 
-        body = null
-        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
-            body = parseBlock()
-        }
-        else {
-            body = parseStatement()
-            if body == null: body = BlockStatement([], l, c)
+ countExpr = null
+ condition = null
 
-        }
-        return LoopStatement(body, l, c)
+ // Check for loop count: loop 5 { ... } or loop n { ... }
+ if (current().tid == TID.Number or current().tid == TID.Identifier) && notEOF() {
+  savedPos = pos
+  // Peek: advance past count token, skip newlines, check for {
+  advance()
+  skipNewlines()
+  if current().tid == TID.OpenBrace {
+   // This is a count-based loop - restore and parse count expr
+   pos = savedPos
+   syncCur()
+   if current().tid == TID.Number {
+    countExpr = NumberLiteral(current().value, current().line, current().col)
+    advance()
+   }
+   else if current().tid == TID.Identifier {
+    countExpr = Identifier(current().value, current().line, current().col)
+    advance()
+   }
+   skipNewlines()
+  }
+  else {
+   // Not a count-based loop - restore position
+   pos = savedPos
+   syncCur()
+  }
+ }
 
+ // Check for "while condition"
+ if current().tid == TID.While {
+  advance() // consume 'while'
+  prevSugar = allowBraceSugar
+  allowBraceSugar = false
+  condition = parseExpr(0)
+  allowBraceSugar = prevSugar
+  skipNewlines()
+ }
+
+ body = null
+ if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+  body = parseBlock()
+ }
+ else {
+  body = parseStatement()
+  if body == null: body = BlockStatement([], l, c)
+
+ }
+ node = LoopStatement(body, l, c)
+ if countExpr != null { node.count = countExpr }
+ if condition != null { node.condition = condition }
+ return node
     }
     // ===================================================================
     // STATEMENT: repeat
@@ -3576,6 +3680,24 @@ fn parseStructDeclaration() {
         }
     }
     skipNewlines()
+ // Protocol conformance: struct Foo: ProtocolName [, Protocol2]
+ // Disambiguate: ':' followed by identifier on same line = protocol conformance
+ // ':' followed by newline (or non-identifier) = colon body
+ protocolNames = []
+ if current().tid == TID.Colon {
+  nextTok = at(1)
+  if nextTok.tid == TID.Identifier && nextTok.line == current().line {
+   advance() // consume ':'
+   protocolNames.push(advance().value)
+   while current().tid == TID.Comma {
+    advance() // consume ','
+    if current().tid != TID.Identifier {
+     return error("Expected protocol name after ','", l, c)
+    }
+    protocolNames.push(advance().value)
+   }
+  }
+ }
     if current().tid == TID.OpenBrace {
         advance() // consume '{'
         skipNewlines()
@@ -3588,7 +3710,7 @@ fn parseStructDeclaration() {
         skipNewlines()
         _parseClassMembers(methods, fields)
     }
-    return StructDeclaration(name, fields, methods, null, l, c, typeParams)
+    return StructDeclaration(name, fields, methods, protocolNames, l, c, typeParams)
 
 }
 

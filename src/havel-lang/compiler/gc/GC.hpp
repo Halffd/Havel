@@ -358,8 +358,19 @@ const ::havel::Interval* interval(uint32_t id) const;
     void setPromotionAgeThreshold(uint8_t age) { promotion_age_threshold_ = age; }
     uint8_t promotionAgeThreshold() const { return promotion_age_threshold_; }
     uint64_t approxHeapBytes() const { return approx_heap_bytes_.load(std::memory_order_relaxed); }
-    uint64_t cachedObjectCount() const { return cached_object_count_.load(std::memory_order_relaxed); }
-bool isCollectionInProgress() const;
+  uint64_t cachedObjectCount() const { return cached_object_count_.load(std::memory_order_relaxed); }
+  size_t oldArrayCount() const { return old_arrays_.size(); }
+  size_t oldObjectCount() const { return old_objects_.size(); }
+  size_t oldClosureCount() const { return old_closures_.size(); }
+  bool arrayExists(uint32_t id) const { return arrays_.find(id) != arrays_.end(); }
+  bool objectExists(uint32_t id) const { return objects_.find(id) != objects_.end(); }
+  bool closureExists(uint32_t id) const { return closures_.find(id) != closures_.end(); }
+  bool setExists(uint32_t id) const { return sets_.find(id) != sets_.end(); }
+  bool isMarkedArray(uint32_t id) const { return marked_arrays_.find(id) != marked_arrays_.end(); }
+  bool isMarkedObject(uint32_t id) const { return marked_objects_.find(id) != marked_objects_.end(); }
+  bool isMarkedClosure(uint32_t id) const { return marked_closures_.find(id) != marked_closures_.end(); }
+  const auto& closures() const { return closures_; }
+  bool isCollectionInProgress() const;
 
     uint64_t pinExternalRoot(const Value &value);
     bool unpinExternalRoot(uint64_t root_id);
@@ -527,7 +538,7 @@ void snapshotSweepKeys();
   uint32_t next_waitgroup_id_ = 1;
   uint32_t next_coroutine_id_ = 1;
 
-size_t allocation_budget_ = 65536;
+size_t allocation_budget_ = 8192;
 size_t allocations_since_last_ = 0;
 size_t recovered_in_cycle_ = 0;
 uint64_t heap_max_bytes_ = 4ULL * 1024 * 1024 * 1024;
@@ -546,8 +557,8 @@ uint64_t heap_max_bytes_ = 4ULL * 1024 * 1024 * 1024;
     bool collection_requested_ = false;
     bool current_collection_full_ = false;
     size_t minor_collections_since_full_ = 0;
-    size_t full_collection_interval_ = 8;
-    uint8_t promotion_age_threshold_ = 2;
+size_t full_collection_interval_ = 4;
+  uint8_t promotion_age_threshold_ = 4;
 
     std::vector<Value> mark_worklist_;
     std::unordered_set<uint32_t> marked_arrays_;

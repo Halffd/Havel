@@ -1873,6 +1873,11 @@ registerHostFunction(
   });
 
   registerHostFunction("gc_collect", 0, [this](const std::vector<Value> &) -> Value {
+    collectGarbage();
+    return Value::makeNull();
+  });
+
+  registerHostFunction("gc_collect_full", 0, [this](const std::vector<Value> &) -> Value {
     heap_.forceFullCollection(
       stackValuesForRoots(), locals, globals,
       activeClosureIdsForRoots(),
@@ -1881,6 +1886,212 @@ registerHostFunction(
         return locals[index];
       });
     return Value::makeNull();
+  });
+
+  registerHostFunction("gc_stats", 0, [this](const std::vector<Value> &) -> Value {
+    auto s = heap_.stats();
+    auto obj = createHostObject();
+    auto *o = heap_.object(obj.id);
+    (*o)["heap_size"] = Value::makeInt(static_cast<int64_t>(s.heap_size));
+    (*o)["object_count"] = Value::makeInt(static_cast<int64_t>(s.object_count));
+    (*o)["collections"] = Value::makeInt(static_cast<int64_t>(s.collections));
+    (*o)["last_pause_ns"] = Value::makeInt(static_cast<int64_t>(s.last_pause_ns));
+    (*o)["total_recovered"] = Value::makeInt(static_cast<int64_t>(s.total_recovered));
+    (*o)["locals_size"] = Value::makeInt(static_cast<int64_t>(locals.size()));
+    (*o)["stack_size"] = Value::makeInt(static_cast<int64_t>(stack.size()));
+    (*o)["frame_count"] = Value::makeInt(static_cast<int64_t>(frame_count_));
+    (*o)["globals_count"] = Value::makeInt(static_cast<int64_t>(globals.size()));
+    (*o)["old_arrays"] = Value::makeInt(static_cast<int64_t>(heap_.oldArrayCount()));
+    (*o)["old_objects"] = Value::makeInt(static_cast<int64_t>(heap_.oldObjectCount()));
+  (*o)["old_closures"] = Value::makeInt(static_cast<int64_t>(heap_.oldClosureCount()));
+  (*o)["total_closures"] = Value::makeInt(static_cast<int64_t>(heap_.closures().size()));
+  return Value::makeObjectId(obj.id);
+  });
+
+  registerHostFunction("gc_validate", 0, [this](const std::vector<Value> &) -> Value {
+    int invalid = 0;
+    int checked = 0;
+    int deep_invalid = 0;
+    for (const auto &[id, closure] : heap_.closures()) {
+      for (const auto &cell : closure.upvalues) {
+        if (!cell) continue;
+        checked++;
+        Value v;
+        if (cell->is_open) {
+          uint32_t abs_index = cell->locals_base + cell->open_index;
+          if (abs_index < locals.size()) {
+            v = locals[abs_index];
+          }
+        } else {
+          v = cell->closed_value;
+        }
+        if (v.isArrayId() && !heap_.arrayExists(v.asArrayId())) {
+          invalid++;
+        }
+        if (v.isObjectId() && !heap_.objectExists(v.asObjectId())) {
+          invalid++;
+        }
+        if (v.isClosureId() && !heap_.closureExists(v.asClosureId())) {
+          invalid++;
+        }
+        if (v.isSetId() && !heap_.setExists(v.asSetId())) {
+          invalid++;
+        }
+        // Deep check: values inside objects
+        if (v.isObjectId()) {
+          auto *obj = heap_.object(v.asObjectId());
+          if (obj) {
+            for (const auto &[k2, v2] : *obj) {
+              checked++;
+              if (v2.isArrayId() && !heap_.arrayExists(v2.asArrayId())) { deep_invalid++; }
+              if (v2.isObjectId() && !heap_.objectExists(v2.asObjectId())) { deep_invalid++; }
+              if (v2.isClosureId() && !heap_.closureExists(v2.asClosureId())) { deep_invalid++; }
+              if (v2.isSetId() && !heap_.setExists(v2.asSetId())) { deep_invalid++; }
+            }
+          }
+        }
+        if (v.isArrayId()) {
+          auto *arr = heap_.array(v.asArrayId());
+          if (arr) {
+            for (const auto &v2 : *arr) {
+              checked++;
+              if (v2.isArrayId() && !heap_.arrayExists(v2.asArrayId())) { deep_invalid++; }
+              if (v2.isObjectId() && !heap_.objectExists(v2.asObjectId())) { deep_invalid++; }
+              if (v2.isClosureId() && !heap_.closureExists(v2.asClosureId())) { deep_invalid++; }
+              if (v2.isSetId() && !heap_.setExists(v2.asSetId())) { deep_invalid++; }
+            }
+          }
+        }
+      }
+      if (closure.module_globals) {
+        for (const auto &[gname, gv] : *closure.module_globals) {
+          checked++;
+          if (gv.isArrayId() && !heap_.arrayExists(gv.asArrayId())) {
+            invalid++;
+            ::havel::warning("[gc_validate] module_global '{}' has dangling array {}", gname, gv.asArrayId());
+          }
+          if (gv.isObjectId() && !heap_.objectExists(gv.asObjectId())) {
+            invalid++;
+            ::havel::warning("[gc_validate] module_global '{}' has dangling object {}", gname, gv.asObjectId());
+          }
+          if (gv.isClosureId() && !heap_.closureExists(gv.asClosureId())) {
+            invalid++;
+            ::havel::warning("[gc_validate] module_global '{}' has dangling closure {}", gname, gv.asClosureId());
+          }
+          // Deep check module_global objects
+          if (gv.isObjectId()) {
+            auto *obj = heap_.object(gv.asObjectId());
+            if (obj) {
+              for (const auto &[k2, v2] : *obj) {
+                checked++;
+                if (v2.isArrayId() && !heap_.arrayExists(v2.asArrayId())) {
+                  deep_invalid++;
+                  ::havel::warning("[gc_validate] module_global '{}' object {} key '{}' has dangling array {}", gname, gv.asObjectId(), k2, v2.asArrayId());
+                }
+                if (v2.isObjectId() && !heap_.objectExists(v2.asObjectId())) {
+                  deep_invalid++;
+                  ::havel::warning("[gc_validate] module_global '{}' object {} key '{}' has dangling object {}", gname, gv.asObjectId(), k2, v2.asObjectId());
+                }
+                if (v2.isClosureId() && !heap_.closureExists(v2.asClosureId())) {
+                  deep_invalid++;
+                  ::havel::warning("[gc_validate] module_global '{}' object {} key '{}' has dangling closure {}", gname, gv.asObjectId(), k2, v2.asClosureId());
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    for (const auto &[gname, gv] : globals) {
+      checked++;
+      if (gv.isArrayId() && !heap_.arrayExists(gv.asArrayId())) {
+        invalid++;
+        ::havel::warning("[gc_validate] global '{}' has dangling array {}", gname, gv.asArrayId());
+      }
+      if (gv.isObjectId() && !heap_.objectExists(gv.asObjectId())) {
+        invalid++;
+        ::havel::warning("[gc_validate] global '{}' has dangling object {}", gname, gv.asObjectId());
+      }
+      if (gv.isClosureId() && !heap_.closureExists(gv.asClosureId())) {
+        invalid++;
+        ::havel::warning("[gc_validate] global '{}' has dangling closure {}", gname, gv.asClosureId());
+      }
+    }
+    auto obj = createHostObject();
+    auto *o = heap_.object(obj.id);
+    (*o)["checked"] = Value::makeInt(checked);
+    (*o)["invalid"] = Value::makeInt(invalid);
+    (*o)["deep_invalid"] = Value::makeInt(deep_invalid);
+    return Value::makeObjectId(obj.id);
+  });
+
+  registerHostFunction("gc_mark_check", 0, [this](const std::vector<Value> &) -> Value {
+    int unmarked = 0;
+    int total = 0;
+    for (const auto &[name, chunk] : module_chunks_) {
+      if (!chunk) continue;
+      for (const auto &func : chunk->getAllFunctions()) {
+        for (const auto &constVal : func.constants) {
+          if (constVal.isArrayId()) {
+            total++;
+            if (!heap_.isMarkedArray(constVal.asArrayId())) {
+              unmarked++;
+              if (unmarked <= 5) {
+                ::havel::warning("[gc_mark_check] unmarked array {} in module {} func {}", constVal.asArrayId(), name, func.name);
+              }
+            }
+          }
+          if (constVal.isObjectId()) {
+            total++;
+            if (!heap_.isMarkedObject(constVal.asObjectId())) {
+              unmarked++;
+              if (unmarked <= 5) {
+                ::havel::warning("[gc_mark_check] unmarked object {} in module {} func {}", constVal.asObjectId(), name, func.name);
+              }
+            }
+          }
+          if (constVal.isClosureId()) {
+            total++;
+            if (!heap_.isMarkedClosure(constVal.asClosureId())) {
+              unmarked++;
+              if (unmarked <= 5) {
+                ::havel::warning("[gc_mark_check] unmarked closure {} in module {} func {}", constVal.asClosureId(), name, func.name);
+              }
+            }
+          }
+        }
+      }
+    }
+    for (const auto &chunk : persistent_chunks_) {
+      if (!chunk) continue;
+      for (const auto &func : chunk->getAllFunctions()) {
+        for (const auto &constVal : func.constants) {
+          if (constVal.isArrayId()) {
+            total++;
+            if (!heap_.isMarkedArray(constVal.asArrayId())) {
+              unmarked++;
+              if (unmarked <= 5) {
+                ::havel::warning("[gc_mark_check] unmarked array {} in persistent func {}", constVal.asArrayId(), func.name);
+              }
+            }
+          }
+          if (constVal.isObjectId()) {
+            total++;
+            if (!heap_.isMarkedObject(constVal.asObjectId())) {
+              unmarked++;
+              if (unmarked <= 5) {
+                ::havel::warning("[gc_mark_check] unmarked object {} in persistent func {}", constVal.asObjectId(), func.name);
+              }
+            }
+          }
+        }
+      }
+    }
+    auto obj = createHostObject();
+    auto *o = heap_.object(obj.id);
+    (*o)["total"] = Value::makeInt(total);
+    (*o)["unmarked"] = Value::makeInt(unmarked);
+    return Value::makeObjectId(obj.id);
   });
 }
 
@@ -2041,7 +2252,8 @@ void VM::registerDefaultPrototypes() {
     // Register "string" as a lazy module so that accessing "string"
     // as a global triggers namespace construction from string.* host functions.
     registerLazyModule("string", [](VMApi &) {});
-  registerLazyModule("fs", [](VMApi &) {});
+  // fs is already registered statically via registerFsModule() at line 28
+        // Do NOT register an empty lazy stub that overrides it
   prototypes::registerArrayPrototype(*this);
   prototypes::registerNumberPrototype(*this);
   prototypes::registerBoolPrototype(*this);

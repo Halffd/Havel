@@ -34,13 +34,13 @@ static int64_t toInt(const Value &v, int64_t def = 0) {
     return def;
 }
 
-static double toDbl(const Value &v, double def = 0.0) {
+[[maybe_unused]] static double toDbl(const Value &v, double def = 0.0) {
     if (v.isDouble()) return v.asDouble();
     if (v.isInt()) return static_cast<double>(v.asInt());
     return def;
 }
 
-static std::string toStr(const VMApi &api, const Value &v) {
+[[maybe_unused]] static std::string toStr(const VMApi &api, const Value &v) {
     if (v.isNull()) return "";
     return api.toString(v);
 }

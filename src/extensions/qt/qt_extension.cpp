@@ -1465,13 +1465,13 @@ QWidget* getWidget(int64_t id) {
     return (it != g_widgets.end()) ? it->second : nullptr;
 }
 
-int64_t storeMenu(void* m) {
+[[maybe_unused]] int64_t storeMenu(void* m) {
     int64_t id = g_nextId++;
     g_menus[id] = m;
     return id;
 }
 
-void* getMenu(int64_t id) {
+[[maybe_unused]] void* getMenu(int64_t id) {
     auto it = g_menus.find(id);
     return (it != g_menus.end()) ? it->second : nullptr;
 }

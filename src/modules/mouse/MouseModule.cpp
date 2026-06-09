@@ -14,7 +14,7 @@ using compiler::Value;
 using compiler::VMApi;
 
 // Helper to convert Value to string
-static std::string toString(const Value &v) {
+[[maybe_unused]] static std::string toString(const Value &v) {
   if (v.isStringValId()) {
     // TODO: string pool lookup
     return "<string:" + std::to_string(v.asStringValId()) + ">";

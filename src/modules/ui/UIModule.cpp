@@ -370,8 +370,9 @@ static Value uiElementAdd(const VMApi &api, const std::vector<Value> &args) {
 }
 
 static Value uiElementShow(const VMApi &api, const std::vector<Value> &args) {
-  if (args.empty())
-    return Value::makeNull();
+if (args.empty()) {
+  return Value::makeNull();
+}
 
     auto elem = getElementFromObject(api, args[0]);
     if (elem) {
@@ -659,8 +660,9 @@ static Value uiElementOn(const VMApi &api, const std::vector<Value> &args) {
 // ============================================================================
 
 static Value uiElementStyle(const VMApi &api, const std::vector<Value> &args) {
-  if (args.size() < 3)
-    return args.empty() ? Value::makeNull() : args[0];
+if (args.size() < 3) {
+  return args.empty() ? Value::makeNull() : args[0];
+}
 
     auto elem = getElementFromObject(api, args[0]);
     if (elem) {
@@ -677,14 +679,16 @@ static Value uiElementStyle(const VMApi &api, const std::vector<Value> &args) {
 // ============================================================================
 
 static Value uiInputValue(const VMApi &api, const std::vector<Value> &args) {
-  if (args.empty())
-    return Value::makeNull();
+if (args.empty()) {
+  return Value::makeNull();
+}
 
-    auto elem = getElementFromObject(api, args[0]);
-    if (!elem)
-        return Value::makeNull();
+auto elem = getElementFromObject(api, args[0]);
+if (!elem) {
+  return Value::makeNull();
+}
 
-    auto *backend = requireUIBackend(api);
+auto *backend = requireUIBackend(api);
 
     if (args.size() == 1) {
         return api.makeString(backend->getValue(elem));

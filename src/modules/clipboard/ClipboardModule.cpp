@@ -42,7 +42,7 @@ static std::string toString(const VMApi& api, const Value& v) {
  return "";
 }
 
-static int toInt(const Value& v, int def = 0) {
+[[maybe_unused]] static int toInt(const Value& v, int def = 0) {
  if (v.isInt()) return static_cast<int>(v.asInt());
  if (v.isDouble()) return static_cast<int>(v.asDouble());
  return def;

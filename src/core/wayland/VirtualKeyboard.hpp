@@ -63,7 +63,7 @@ private:
     xkb_compose_table *composeTable_ = nullptr;
     xkb_compose_state *composeState_ = nullptr;
 
-    uint32_t serial_ = 0;
+    [[maybe_unused]] uint32_t serial_ = 0;
     std::unordered_set<uint32_t> pressedKeys_;
     uint32_t modsDepressed_ = 0;
     uint32_t modsLatched_ = 0;

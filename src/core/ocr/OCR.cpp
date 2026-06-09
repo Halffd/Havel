@@ -26,7 +26,7 @@ struct OCR::Impl {
 
 #ifdef HAVE_OPENCV
 
-OCR::OCR(const OCRConfig& cfg) : config(cfg), impl_(std::make_unique<Impl>()) {
+OCR::OCR(const OCRConfig& cfg) : impl_(std::make_unique<Impl>()), config(cfg) {
 #ifdef HAVE_TESSERACT
     impl_->tessApi = std::make_unique<tesseract::TessBaseAPI>();
     impl_->tessApi->SetPageSegMode(static_cast<tesseract::PageSegMode>(config.psm));

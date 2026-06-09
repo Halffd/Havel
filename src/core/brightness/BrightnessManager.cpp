@@ -99,23 +99,21 @@ static bool setGammastep(int temperature, double brightness = -1.0) {
   return false;
 }
 
-static bool resetGammastep() {
-  // Try gammastep first (-x disables gammastep)
-  auto result = Launcher::runShell("gammastep -x 2>&1");
-  if (result.success) {
-    info("Reset temperature via gammastep");
-    return true;
-  }
+[[maybe_unused]] static bool resetGammastep() {
+    auto result = Launcher::runShell("gammastep -x 2>&1");
+    if (result.success) {
+        info("Reset temperature via gammastep");
+        return true;
+    }
 
-  // Fallback to redshift
-  result = Launcher::runShell("redshift -x 2>&1");
-  if (result.success) {
-    info("Reset temperature via redshift");
-    return true;
-  }
+    result = Launcher::runShell("redshift -x 2>&1");
+    if (result.success) {
+        info("Reset temperature via redshift");
+        return true;
+    }
 
-  error("Failed to reset temperature via gammastep or redshift");
-  return false;
+    error("Failed to reset temperature via gammastep or redshift");
+    return false;
 }
 
 // === CONSTRUCTOR/DESTRUCTOR ===

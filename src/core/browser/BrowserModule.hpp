@@ -174,7 +174,7 @@ private:
   int cdpPort = 9222;
   int marionettePort = 2828;
   int currentTabId = -1;
-  int currentWindowId = -1;
+  [[maybe_unused]] int currentWindowId = -1;
   std::mutex mutex;
 
   // Cached data

@@ -45,25 +45,39 @@ static bool hasDecimalPart(const std::string& s) {
            s.find('E') != std::string::npos;
 }
 
-void Parser::reportError(const std::string &message) {
+  void Parser::reportError(const std::string &message) {
+  if (errors.size() >= MAX_PARSER_ERRORS) {
+    if (errors.size() == MAX_PARSER_ERRORS) {
+      CompilerError err(ErrorSeverity::Error, at().line, at().column,
+        "too many errors, stopping (" + std::to_string(MAX_PARSER_ERRORS) + " limit)");
+      errors.push_back(err);
+    }
+    throw ParseError(at().line, at().column, "parser error limit exceeded");
+  }
   CompilerError err(ErrorSeverity::Error, at().line, at().column, message);
   errors.push_back(err);
 
-  // Also report to unified ErrorReporter
   errors::ErrorReporter::instance().errorAt(
-      ::havel::errors::ErrorStage::Parser, message,
-      at().line, at().column, at().length);
-}
+  ::havel::errors::ErrorStage::Parser, message,
+  at().line, at().column, at().length);
+  }
 
-void Parser::reportErrorAt(const Token &token, const std::string &message) {
+  void Parser::reportErrorAt(const Token &token, const std::string &message) {
+  if (errors.size() >= MAX_PARSER_ERRORS) {
+    if (errors.size() == MAX_PARSER_ERRORS) {
+      CompilerError err(ErrorSeverity::Error, token.line, token.column,
+        "too many errors, stopping (" + std::to_string(MAX_PARSER_ERRORS) + " limit)");
+      errors.push_back(err);
+    }
+    throw ParseError(token.line, token.column, "parser error limit exceeded");
+  }
   CompilerError err(ErrorSeverity::Error, token.line, token.column, message);
   errors.push_back(err);
 
-  // Also report to unified ErrorReporter
   errors::ErrorReporter::instance().errorAt(
-      ::havel::errors::ErrorStage::Parser, message,
-      token.line, token.column, token.length);
-}
+  ::havel::errors::ErrorStage::Parser, message,
+  token.line, token.column, token.length);
+  }
 
 void Parser::reportWarning(const std::string &message) {
   CompilerError err(ErrorSeverity::Warning, at().line, at().column, message);
@@ -164,6 +178,14 @@ void Parser::synchronizeTo(havel::TokenType type) {
 
 // Record error without throwing - for error recovery
 void Parser::errorAt(const havel::Token &token, const std::string &message) {
+  if (errors.size() >= MAX_PARSER_ERRORS) {
+    if (errors.size() == MAX_PARSER_ERRORS) {
+      CompilerError err(ErrorSeverity::Error, token.line, token.column,
+        "too many errors, stopping (" + std::to_string(MAX_PARSER_ERRORS) + " limit)");
+      errors.push_back(err);
+    }
+    throw ParseError(token.line, token.column, "parser error limit exceeded");
+  }
   CompilerError err(ErrorSeverity::Error, token.line, token.column, message);
   errors.push_back(err);
 }

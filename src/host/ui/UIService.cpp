@@ -703,7 +703,7 @@ void UIService::wireCheckboxEvents(QCheckBox *checkbox,
     auto &handler = it->second;
     if (std::holds_alternative<ui::UIEventCallbackWithValue>(handler)) {
       auto callback = std::get<ui::UIEventCallbackWithValue>(handler);
-      QObject::connect(checkbox, &QCheckBox::stateChanged,
+        QObject::connect(checkbox, &QCheckBox::checkStateChanged,
                        [callback](int state) {
                          if (callback)
                            callback(state == Qt::Checked ? "true" : "false");
@@ -749,7 +749,7 @@ void UIService::wireDropdownEvents(QComboBox *dropdown,
       auto callback = std::get<ui::UIEventCallbackWithValue>(handler);
       QObject::connect(dropdown,
                        QOverload<int>::of(&QComboBox::currentIndexChanged),
-                       [callback, dropdown](int index) {
+                       [callback](int index) {
                          if (callback)
                            callback(std::to_string(index));
                        });

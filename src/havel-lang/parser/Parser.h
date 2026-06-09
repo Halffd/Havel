@@ -18,7 +18,8 @@ namespace havel::parser {
 // ============================================================================
 
 static constexpr size_t MAX_PARSER_TOKENS = 5'000'000; // Prevent infinite parsing
-static constexpr int MAX_PARSER_DEPTH = 512;           // Prevent stack overflow
+static constexpr int MAX_PARSER_DEPTH = 512; // Prevent stack overflow
+static constexpr size_t MAX_PARSER_ERRORS = 100; // Prevent unbounded error accumulation
 
 // ProgressGuard: RAII guard that asserts loop makes forward progress
 // Usage: at the top of a while loop body:

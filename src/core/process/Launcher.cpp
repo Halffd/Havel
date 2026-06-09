@@ -376,6 +376,7 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
         // Implement timeout with output reading
         auto start = std::chrono::steady_clock::now();
         bool timed_out = false;
+        (void)timed_out;
 
         while (true) {
           waitResult = waitpid(pid, &status, WNOHANG);
@@ -562,7 +563,7 @@ void cleanupProcess(int64_t pid) {
   }
 }
 
-void waitForProcess(int64_t pid, std::function<void(int)> callback) {
+    [[maybe_unused]] void waitForProcess(int64_t pid, std::function<void(int)> callback) {
   std::thread([pid, callback]() {
     int status = 0;
 #ifdef _WIN32

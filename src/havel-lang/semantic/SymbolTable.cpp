@@ -144,10 +144,16 @@ std::string Symbol::toString() const {
   case SymbolKind::Variant:
     oss << "variant";
     break;
-  case SymbolKind::Label:
-    oss << "label";
-    break;
-  }
+    case SymbolKind::Label:
+        oss << "label";
+        break;
+    case SymbolKind::Signal:
+        oss << "signal";
+        break;
+    case SymbolKind::TypeParameter:
+        oss << "typeparam";
+        break;
+    }
 
   if (attributes.type) {
     oss << ": " << attributes.type->toString();

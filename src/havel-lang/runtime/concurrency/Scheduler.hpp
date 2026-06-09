@@ -191,6 +191,7 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
     //   - Crashes on stale data → flag persist across wrong contexts
     //
     std::atomic<bool> hotkey_retrigger{false};
+    uint32_t hotkey_condition_callback_id = 0;
 
     explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL)
         : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
@@ -396,11 +397,19 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
 
   using DeferredAction = std::function<void()>;
 
+  /// Schedule a callback on the VM thread at the given priority.
+  /// Unlike deferToVM, schedule supports priority ordering.
+  /// All dispatch (hotkeys, timers, watchers, signals) should route through this.
+  void schedule(DeferredAction fn, FiberPriority priority = FiberPriority::NORMAL);
+
   void deferToVM(DeferredAction fn);
 
   int deferredWakeupFd() const { return deferred_wakeup_fd_; }
 
-  size_t drainDeferredCallbacks();
+  /// Drains deferred callbacks in priority order (hotkey → normal → background).
+  /// Default drains all priorities. Specify upTo to drain only up to a priority.
+  /// e.g. drainDeferredCallbacks(FiberPriority::NORMAL) drains HOTKEY + NORMAL.
+  size_t drainDeferredCallbacks(FiberPriority upTo = FiberPriority::BACKGROUND);
 
   // Remove Done goroutines from the map (prevents memory leak)
   // Called periodically by pickNext() and stop()
@@ -434,8 +443,11 @@ private:
   mutable std::mutex runnable_mutex_;
   std::deque<Goroutine*> runnable_;
 
-  // Deferred actions: thread-safe queue for cross-thread VM scheduling
-  std::deque<DeferredAction> deferred_actions_;
+  // Per-priority deferred action queues for unified scheduling
+  // schedule(priority) and deferToVM() both feed into these.
+  std::deque<DeferredAction> deferred_hotkey_;     // HOTKEY priority
+  std::deque<DeferredAction> deferred_normal_;     // NORMAL priority
+  std::deque<DeferredAction> deferred_background_; // BACKGROUND priority
   mutable std::mutex deferred_mutex_;
   int deferred_wakeup_fd_ = -1;
 

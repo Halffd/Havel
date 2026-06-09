@@ -3562,6 +3562,9 @@ void InputBridge::install(PipelineOptions &options) {
   options.host_functions["hotkey.register"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyRegister(args, ctx);
   };
+  options.host_functions["hotkey.register_conditional"] = [ctx = ctx_](const auto &args) {
+    return handleHotkeyRegisterConditional(args, ctx);
+  };
   options.host_functions["hotkey.trigger"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyTrigger(args, ctx);
   };
@@ -3715,6 +3718,93 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         }
 
     }
+    return hotkeyContext;
+}
+
+Value
+InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
+    const HostContext *ctx) {
+    // Args: [hotkey_string, action_closure, condition_closure]
+    if (args.size() < 3) return Value::makeNull();
+    if (!ctx || !ctx->vm) return Value::makeNull();
+
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string hotkeyStr;
+    if (args[0].isStringValId()) {
+        hotkeyStr = vm->resolveStringKey(args[0]);
+    } else {
+        return Value::makeNull();
+    }
+
+    if (!args[2].isFunctionObjId() && !args[2].isClosureId()) {
+        // If no valid condition, fall back to regular register (no condition gating)
+        return handleHotkeyRegister(args, ctx);
+    }
+
+    CallbackId actionCb = vm->registerCallback(args[1]);
+    CallbackId conditionCb = vm->registerCallback(args[2]);
+
+    std::string hotkeyId = ::havel::stdlib::HotkeyModule::resolveUniqueId(hotkeyStr);
+    auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
+        vm, hotkeyId, hotkeyStr, hotkeyStr, "",
+        "Conditional hotkey", actionCb);
+
+    if (hotkeyContext.isObjectId()) {
+        vm->pinExternalRoot(hotkeyContext);
+    }
+
+    uint32_t persistentGid = vm->createPersistentHotkeyCallback(
+        actionCb, FiberPriority::HOTKEY, {hotkeyContext}, HotkeyPolicy::Drop, hotkeyStr);
+
+    if (persistentGid != 0) {
+        ::havel::stdlib::HotkeyModule::setGoroutineId(hotkeyId, persistentGid);
+        auto *sched = vm->getScheduler();
+        if (sched) {
+            auto *g = sched->get(persistentGid);
+            if (g) {
+                g->hotkey_condition_callback_id = conditionCb;
+                ::havel::debug("[InputBridge] Conditional hotkey '{}' gid={} condition_cb={}",
+                    hotkeyStr, persistentGid, conditionCb);
+            }
+        }
+    }
+
+    if (ctx->hotkeyManager) {
+        if (persistentGid != 0) {
+            auto wakeHotkey = [vm, persistentGid, hotkeyStr]() {
+                auto *sched = vm->getScheduler();
+                if (!sched) return;
+                auto *g = sched->get(persistentGid);
+                if (!g) return;
+                sched->wakeHotkey(g);
+                ::havel::stdlib::HotkeyModule::recordTrigger(hotkeyStr);
+            };
+            ctx->hotkeyManager->AddHotkey(
+                hotkeyStr, [vm, wakeHotkey = std::move(wakeHotkey)]() {
+                    auto *sched = vm->getScheduler();
+                    if (!sched) return;
+                    if (sched->isVMThread()) {
+                        wakeHotkey();
+                    } else {
+                        sched->deferToVM(std::move(wakeHotkey));
+                    }
+                });
+        } else {
+            ctx->hotkeyManager->AddHotkey(
+                hotkeyStr, [vm, actionCb, hotkeyContext]() {
+                    auto spawnHotkey = [vm, actionCb, hotkeyContext]() {
+                        vm->spawnCallback(actionCb, FiberPriority::HOTKEY, {hotkeyContext});
+                    };
+                    auto *sched = vm->getScheduler();
+                    if (sched && sched->isVMThread()) {
+                        spawnHotkey();
+                    } else if (sched) {
+                        sched->deferToVM(std::move(spawnHotkey));
+                    }
+                });
+        }
+    }
+
     return hotkeyContext;
 }
 

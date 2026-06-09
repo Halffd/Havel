@@ -47,20 +47,52 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
   
   if (event_queue_) {
     event_queue_->onEvent(EventType::THREAD_COMPLETE, 
-        [this](const Event& event) { onThreadComplete(event); });
+        [this](const Event& event) {
+            uint32_t thread_id = event.data1;
+            scheduler_->schedule([this, thread_id]() {
+                onThreadComplete(thread_id);
+            }, FiberPriority::HOTKEY);
+        });
     
     
 event_queue_->onEvent(EventType::VAR_CHANGED,
-[this](const Event& event) { onVariableChanged(event); });
+[this](const Event& event) {
+    auto *name_ptr = static_cast<std::string*>(event.ptr);
+    std::string var_name = std::move(*name_ptr);
+    delete name_ptr;
+    scheduler_->schedule([this, var_name = std::move(var_name)]() {
+        onVariableChanged(var_name);
+    }, FiberPriority::HOTKEY);
+});
 
         event_queue_->onEvent(EventType::TIMER_FIRE,
-            [this](const Event& event) { onTimerFire(event); });
+            [this](const Event& event) {
+                auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
+                if (!payload) return;
+                Value closure = payload->first;
+                uint32_t timer_id = payload->second;
+                bool is_timeout = (event.data1 == 1);
+                delete payload;
+                scheduler_->schedule([this, timer_id, closure, is_timeout]() {
+                    onTimerFire(timer_id, closure, is_timeout);
+                }, FiberPriority::HOTKEY);
+            });
 
         event_queue_->onEvent(EventType::CHANNEL_RECV,
-            [this](const Event& event) { onChannelRecv(event); });
+            [this](const Event& event) {
+                uint32_t channel_id = event.data1;
+                scheduler_->schedule([this, channel_id]() {
+                    onChannelRecv(channel_id);
+                }, FiberPriority::NORMAL);
+            });
 
         event_queue_->onEvent(EventType::CHANNEL_SEND,
-            [this](const Event& event) { onChannelSend(event); });
+            [this](const Event& event) {
+                uint32_t channel_id = event.data1;
+                scheduler_->schedule([this, channel_id]() {
+                    onChannelSend(channel_id);
+                }, FiberPriority::NORMAL);
+            });
     }
 }
 
@@ -95,7 +127,8 @@ bool ExecutionEngine::executeFrame() {
     }
     // STEP 1: Process all pending events
     // Events include: thread completions, timer fires, variable changes, etc.
-    // Event handlers (registered in constructor) process each event
+    // Event handlers (registered in constructor) process each event.
+    // Handlers now use schedule() to queue callbacks instead of inline processing.
     if (event_queue_) {
       event_queue_->processAll();
         size_t processed = event_queue_->getEventsCount();
@@ -103,16 +136,18 @@ bool ExecutionEngine::executeFrame() {
                 std::cerr << "[ExecutionEngine] Processed " << processed << " events from event_queue_\n";
             }
     }
+
+    // STEP 1.5: Drain event-scheduled callbacks (HOTKEY + NORMAL priority)
+    // Event handlers call schedule() to queue watcher/signal/thread/timer work.
+    // Drain these BEFORE goroutine execution so watchers, signals, and
+    // unparked goroutines see the updated state in this tick.
+    size_t eventWork = scheduler_->drainDeferredCallbacks(FiberPriority::NORMAL);
+    if (eventWork > 0 && debug_mode_) {
+        std::cerr << "[ExecutionEngine] Drained " << eventWork << " event-scheduled callbacks\n";
+    }
+
         vm_->garbageCollectionSafePoint();
         vm_->drainFinalizers();
-
-    // STEP 1.5: Drain deferred callbacks from non-VM threads
-    // These are queued via scheduler->deferToVM() and must run on the VM thread
-    // (e.g. clipboard change callbacks, external event callbacks)
-    size_t deferred = scheduler_->drainDeferredCallbacks();
-            if (deferred > 0 && debug_mode_) {
-                std::cerr << "[ExecutionEngine] Drained " << deferred << " deferred callbacks\n";
-            }
 
 	// STEP 1.6: Wake sleeping goroutines whose sleep timer has expired
 	scheduler_->wakeSleepingGoroutines();
@@ -129,6 +164,29 @@ return false;
 if (g->persistent || debug_mode_) {
 ::havel::debug("[ExecutionEngine] Picked goroutine gid={} persistent={} state={} fn={} closure={}",
 g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
+}
+
+if (g->persistent && g->state == Scheduler::GoroutineState::Created
+    && g->hotkey_condition_callback_id != 0) {
+    auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
+    if (condVal) {
+        bool conditionMet = false;
+        try {
+            Value result = vm_->call(*condVal, {});
+            conditionMet = vm_->toBool(result);
+        } catch (...) {
+            conditionMet = false;
+        }
+        if (!conditionMet) {
+            g->state = Scheduler::GoroutineState::Suspended;
+            g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait, std::memory_order_release);
+            if (g->fiber) {
+                g->fiber->state = FiberState::SUSPENDED;
+                g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+            }
+            return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+        }
+    }
 }
 
 // STEP 3: Load fiber state into VM's global execution state
@@ -350,6 +408,14 @@ switch (result.type) {
     }
     
 	stats_.frames_executed++;
+
+	// Drain deferred callbacks after goroutine execution (lower priority).
+	// These are queued via schedule() or deferToVM() from event handlers or
+	// non-VM threads (e.g. clipboard change callbacks, external callbacks).
+	// By running them here, hotkey goroutines and event processing (above)
+	// always take priority over deferred work.
+	scheduler_->drainDeferredCallbacks();
+
 	vm_->garbageCollectionSafePoint();
 	return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
     
@@ -474,10 +540,7 @@ void ExecutionEngine::handleError(Scheduler::Goroutine* g, const std::string& ms
 
 // ============================================================================
 
-void ExecutionEngine::onThreadComplete(const Event& event) {
-    // Event payload: data1 = thread_id that completed
-    uint32_t thread_id = event.data1;
-
+void ExecutionEngine::onThreadComplete(uint32_t thread_id) {
     if (!vm_) {
         return;
     }
@@ -486,7 +549,6 @@ void ExecutionEngine::onThreadComplete(const Event& event) {
         std::cerr << "[ExecutionEngine] Thread " << thread_id << " completed (event-driven)\n";
     }
 
-    // Check if a goroutine is waiting on this thread via WaitHandle
     if (scheduler_) {
         Scheduler::Goroutine* g = scheduler_->findGoroutineByWaitTarget(
             Scheduler::AwaitableType::THREAD_JOIN, thread_id);
@@ -495,13 +557,11 @@ void ExecutionEngine::onThreadComplete(const Event& event) {
                 std::cerr << "[ExecutionEngine] Unparking goroutine " << g->id
                           << " waiting on thread " << thread_id << "\n";
             }
-            // Store the thread result as resume_value
             g->wait_handle.resume_value = vm_->getThreadResult(thread_id);
             scheduler_->unpark(g);
         }
     }
 
-    // Legacy: also handle fiber-only (non-goroutine) thread wait
     Fiber* waiting_fiber = vm_->getThreadWaitingFiber(thread_id);
     if (waiting_fiber) {
         if (debug_mode_) {
@@ -517,14 +577,10 @@ void ExecutionEngine::onThreadComplete(const Event& event) {
 
 // ============================================================================
 
-void ExecutionEngine::onVariableChanged(const Event& event) {
-  if (!event.ptr || !watcher_registry_) {
+void ExecutionEngine::onVariableChanged(const std::string& var_name) {
+  if (!watcher_registry_) {
     return;
   }
-
-  auto *name_ptr = static_cast<std::string*>(event.ptr);
-  const std::string var_name = *name_ptr;
-  delete name_ptr;
   
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine] Variable '" << var_name << "' changed, checking "
@@ -532,16 +588,13 @@ void ExecutionEngine::onVariableChanged(const Event& event) {
     }
   
   
-  // Returns list of fibers whose watchers fired (false→true edge)
   std::vector<Fiber*> fired_fibers = watcher_registry_->onVariableChanged(
       var_name,
       [this](uint32_t watcher_id) -> bool {
-        
         return evaluateCondition(watcher_id);
       }
   );
   
-  // Resume all fibers whose watchers fired
   for (Fiber* fiber : fired_fibers) {
     if (fiber && scheduler_) {
             if (debug_mode_) {
@@ -596,18 +649,9 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
   return result;
 }
 
-void ExecutionEngine::onTimerFire(const Event& event) {
-    auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
-    if (!payload) return;
-
-    Value closure = payload->first;
-    uint32_t timer_id = payload->second;
-    bool is_timeout = (event.data1 == 1);
-    delete payload;
-
+void ExecutionEngine::onTimerFire(uint32_t timer_id, Value closure, bool is_timeout) {
     if (!vm_) return;
 
-    // Check if a goroutine is waiting on this timer via WaitHandle
     if (scheduler_) {
         Scheduler::Goroutine* g = scheduler_->findGoroutineByWaitTarget(
             Scheduler::AwaitableType::TIMER_WAIT, timer_id);
@@ -616,7 +660,6 @@ void ExecutionEngine::onTimerFire(const Event& event) {
                 std::cerr << "[ExecutionEngine] Unparking goroutine " << g->id
                           << " waiting on timer " << timer_id << "\n";
             }
-            // Store the timer result as resume_value
             if (is_timeout) {
                 g->wait_handle.resume_value = vm_->getTimeoutResult(timer_id);
             } else {
@@ -626,7 +669,6 @@ void ExecutionEngine::onTimerFire(const Event& event) {
         }
     }
 
-    // Also call the timer callback for non-await usage
     try {
         Value result = vm_->callFunction(closure, {});
         if (is_timeout) {
@@ -639,17 +681,13 @@ void ExecutionEngine::onTimerFire(const Event& event) {
     }
 }
 
-void ExecutionEngine::onChannelRecv(const Event& event) {
-    // Event payload: data1 = channel_id that now has data available
-    uint32_t channel_id = event.data1;
-
+void ExecutionEngine::onChannelRecv(uint32_t channel_id) {
     if (!scheduler_) return;
 
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine] Channel " << channel_id << " has data available\n";
     }
 
-    // Find goroutine waiting for data on this channel
     Scheduler::Goroutine* g = scheduler_->findGoroutineByWaitTarget(
         Scheduler::AwaitableType::CHANNEL_RECV, channel_id);
     if (g) {
@@ -657,22 +695,17 @@ void ExecutionEngine::onChannelRecv(const Event& event) {
             std::cerr << "[ExecutionEngine] Unparking goroutine " << g->id
                       << " waiting on channel " << channel_id << " recv\n";
         }
-        // Resume value will be fetched from channel when goroutine resumes
         scheduler_->unpark(g);
     }
 }
 
-void ExecutionEngine::onChannelSend(const Event& event) {
-    // Event payload: data1 = channel_id that now has space available
-    uint32_t channel_id = event.data1;
-
+void ExecutionEngine::onChannelSend(uint32_t channel_id) {
     if (!scheduler_) return;
 
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine] Channel " << channel_id << " has space available\n";
     }
 
-    // Find goroutine waiting to send on this channel
     Scheduler::Goroutine* g = scheduler_->findGoroutineByWaitTarget(
         Scheduler::AwaitableType::CHANNEL_SEND, channel_id);
     if (g) {

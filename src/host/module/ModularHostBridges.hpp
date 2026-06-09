@@ -446,6 +446,9 @@ private:
   handleHotkeyRegister(const std::vector<Value> &args,
                        const HostContext *ctx);
   static Value
+  handleHotkeyRegisterConditional(const std::vector<Value> &args,
+                                  const HostContext *ctx);
+  static Value
   handleHotkeyTrigger(const std::vector<Value> &args,
                       const HostContext *ctx);
   static Value

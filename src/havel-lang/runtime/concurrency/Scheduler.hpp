@@ -191,6 +191,7 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
     //   - Crashes on stale data → flag persist across wrong contexts
     //
     std::atomic<bool> hotkey_retrigger{false};
+    uint32_t hotkey_condition_callback_id = 0;
 
     explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL)
         : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),

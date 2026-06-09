@@ -131,6 +131,29 @@ if (g->persistent || debug_mode_) {
 g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
 }
 
+if (g->persistent && g->state == Scheduler::GoroutineState::Created
+    && g->hotkey_condition_callback_id != 0) {
+    auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
+    if (condVal) {
+        bool conditionMet = false;
+        try {
+            Value result = vm_->call(*condVal, {});
+            conditionMet = vm_->toBool(result);
+        } catch (...) {
+            conditionMet = false;
+        }
+        if (!conditionMet) {
+            g->state = Scheduler::GoroutineState::Suspended;
+            g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait, std::memory_order_release);
+            if (g->fiber) {
+                g->fiber->state = FiberState::SUSPENDED;
+                g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+            }
+            return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+        }
+    }
+}
+
 // STEP 3: Load fiber state into VM's global execution state
 // For newly-created goroutines, use startGoroutineCall which resolves
 // the correct chunk (from closure if needed) and sets up the call frame.

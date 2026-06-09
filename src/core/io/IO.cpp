@@ -1313,39 +1313,6 @@ bool IO::Suspend() {
         }
       }
 
-      if (hotkeyManager) {
-        hotkeyManager->conditionalHotkeysEnabled = true;
-        hotkeyManager->setMode("default"); // Switch to default mode
-
-        // Restore conditional hotkeys to their original state before suspension
-        if (!suspendedConditionalHotkeyStates.empty()) {
-          std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
-          // Restore to the original state before suspension
-          for (const auto &state : suspendedConditionalHotkeyStates) {
-            auto &ch = *hotkeyManager->activeConditionalHotkeys;
-            auto it = std::find_if(ch.begin(), ch.end(),
-                                   [state](const auto &ch_item) {
-                                     return ch_item.id == state.id;
-                                   });
-            if (it != ch.end()) {
-              if (state.wasGrabbed && !it->currentlyGrabbed) {
-                // Previously grabbed, now restore
-                GrabHotkey(state.id);
-                it->currentlyGrabbed = true;
-              } else if (!state.wasGrabbed && it->currentlyGrabbed) {
-                // Previously not grabbed, now ungrab
-                UngrabHotkey(state.id);
-                it->currentlyGrabbed = false;
-              }
-            }
-          }
-          suspendedConditionalHotkeyStates.clear();
-        } else {
-          // No saved state, reevaluate as before
-          hotkeyManager->reevaluateConditionalHotkeys(*this);
-        }
-      }
-
       wasSuspended = false;
       isSuspended = false;
       return true;
@@ -1356,28 +1323,6 @@ bool IO::Suspend() {
             UngrabHotkey(id);
           }
           hotkey.enabled = false;
-        }
-      }
-
-      if (hotkeyManager) {
-        // Track the original state of conditional hotkeys before suspension and
-        // update their states
-        hotkeyManager->conditionalHotkeysEnabled = false;
-        hotkeyManager->setMode("suspend"); // Switch to suspend mode
-
-        std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
-        suspendedConditionalHotkeyStates.clear();
-        for (auto &ch : *hotkeyManager->activeConditionalHotkeys) {
-          ConditionalHotkeyState state;
-          state.id = ch.id;
-          state.wasGrabbed = ch.currentlyGrabbed;
-          suspendedConditionalHotkeyStates.push_back(state);
-
-          // Ungrab during suspension and update the state
-          if (ch.currentlyGrabbed) {
-            UngrabHotkey(ch.id);
-            ch.currentlyGrabbed = false;
-          }
         }
       }
 

@@ -66,29 +66,15 @@ namespace havel
   }
 
   HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
-: activeConditionalHotkeys(nullptr),
-io(io),
-conditionalManager(io),
+: io(io),
 modeManager(std::make_shared<ModeManager>())
-  { // Will be set after conditionalManager is initialized
-    // Now conditionalManager is initialized, safe to use
-    activeConditionalHotkeys = &conditionalManager.GetHotkeys();
-
- conditionalManager.SetEnabled(conditionalHotkeysEnabled);
-
- conditionalManager.setModeManager(modeManager);
-
-  modeManager->setOnModeChange([this](const std::string &newMode, const std::string &oldMode) {
-    conditionalManager.SetMode(newMode);
-  });
-
+{
   initializeInputCallbacks();
 }
 
   void HotkeyManager::setEventQueue(compiler::EventQueue *eq)
   {
     eventQueue_ = eq;
-    conditionalManager.setEventQueue(eq);
 
     // Register handler for hotkey trigger events
     if (eq)
@@ -210,40 +196,6 @@ modeManager(std::make_shared<ModeManager>())
     return false;
   }
 
-  int HotkeyManager::AddContextualHotkey(const std::string &key,
-                                         const std::string &condition,
-                                         std::function<void()> trueAction,
-                                         std::function<void()> falseAction,
-                                         int id)
-  {
-    return conditionalManager.AddConditionalHotkey(
-        key, condition, std::move(trueAction), std::move(falseAction), id);
-  }
-
-  int HotkeyManager::AddContextualHotkey(const std::string &key,
-                                         std::function<bool()> condition,
-                                         std::function<void()> trueAction,
-                                         std::function<void()> falseAction,
-                                         int id)
-  {
-    return conditionalManager.AddConditionalHotkey(
-        key, std::move(condition), std::move(trueAction),
-        std::move(falseAction), id);
-  }
-
-  int HotkeyManager::AddGamingHotkey(const std::string &key,
-                                     std::function<void()> trueAction,
-                                     std::function<void()> falseAction, int id)
-  {
-    // Use function condition instead of string - no mini-parser needed!
-    auto condition = [this]() -> bool
-    {
-      return conditionalManager.GetMode() == "gaming";
-    };
-    return AddContextualHotkey(key, std::move(condition), std::move(trueAction),
-                               std::move(falseAction), id);
-  }
-
   void HotkeyManager::LoadHotkeyConfigurations()
   {
     info("LoadHotkeyConfigurations: no static hotkey config loader implemented");
@@ -274,31 +226,6 @@ modeManager(std::make_shared<ModeManager>())
     for (const auto &[id, hotkey] : hotkeys)
     {
       list.push_back(HotkeyInfo{id, hotkey.alias, hotkey.enabled});
-    }
-    return list;
-  }
-
-  std::vector<HotkeyManager::ConditionalHotkeyInfo>
-  HotkeyManager::getConditionalHotkeyList() const
-  {
-    std::vector<ConditionalHotkeyInfo> list;
-    auto &manager = const_cast<ConditionalHotkeyManager &>(conditionalManager);
-    std::lock_guard<std::mutex> lock(manager.GetMutex());
-    list.reserve(activeConditionalHotkeys->size());
-    for (const auto &hotkey : *activeConditionalHotkeys)
-    {
-      std::string conditionString;
-      if (std::holds_alternative<std::string>(hotkey.condition))
-      {
-        conditionString = std::get<std::string>(hotkey.condition);
-      }
-      else
-      {
-        conditionString = "<function>";
-      }
-      list.push_back(ConditionalHotkeyInfo{hotkey.id, hotkey.key, conditionString,
-                                           hotkey.monitoringEnabled,
-                                           hotkey.currentlyGrabbed});
     }
     return list;
   }
@@ -348,48 +275,14 @@ modeManager(std::make_shared<ModeManager>())
     }
   }
 
-  void HotkeyManager::updateAllConditionalHotkeys()
-  {
-    std::lock_guard<std::mutex> lock(conditionalManager.GetMutex());
-    conditionalManager.SetEnabled(conditionalHotkeysEnabled);
-    conditionalManager.UpdateAllConditionalHotkeys();
-  }
-
-  void HotkeyManager::forceUpdateAllConditionalHotkeys()
-  {
-    std::lock_guard<std::mutex> lock(conditionalManager.GetMutex());
-    conditionalManager.SetEnabled(conditionalHotkeysEnabled);
-    conditionalManager.ForceUpdateAllConditionalHotkeys();
-  }
-
-  void HotkeyManager::reevaluateConditionalHotkeys(IO &)
-  {
-    std::lock_guard<std::mutex> lock(conditionalManager.GetMutex());
-    conditionalManager.SetEnabled(conditionalHotkeysEnabled);
-    conditionalManager.ReevaluateConditionalHotkeys();
-  }
-
-  void HotkeyManager::setConditionalHotkeysEnabled(bool enabled)
-  {
-    std::lock_guard<std::mutex> lock(conditionalManager.GetMutex());
-    conditionalHotkeysEnabled = enabled;
-    conditionalManager.SetEnabled(enabled);
-    conditionalManager.UpdateAllConditionalHotkeys();
-  }
-
-  std::mutex &HotkeyManager::getHotkeyMutex()
-  {
-    return conditionalManager.GetMutex();
-  }
-
   void HotkeyManager::setMode(const std::string &mode)
   {
-    conditionalManager.SetMode(mode);
+    if (modeManager) modeManager->setMode(mode);
   }
 
   std::string HotkeyManager::getMode() const
   {
-    return conditionalManager.GetMode();
+    return modeManager ? modeManager->getCurrentMode() : "default";
   }
 
   void HotkeyManager::loadDebugSettings() {}
@@ -414,14 +307,6 @@ modeManager(std::make_shared<ModeManager>())
       io->SetInputBlockCallback(nullptr);
     }
     inputCallbacksInitialized = false;
-
-    // Stop ConditionalHotkeyManager update loop BEFORE disabling
-    if (debugging::debug_hotkeys) debug("HotkeyManager::cleanup() - stopping ConditionalHotkeyManager");
-    conditionalManager.Cleanup();
-
-    // Original cleanup
-    conditionalHotkeysEnabled = false;
-    conditionalManager.SetEnabled(false);
 
     if (debugging::debug_hotkeys) debug("HotkeyManager::cleanup() - cleanup complete");
   }

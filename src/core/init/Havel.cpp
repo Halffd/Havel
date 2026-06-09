@@ -291,11 +291,7 @@ void Havel::initialize(bool isStartup) {
 
  if (hotkeyManager) {
  hotkeyManager->setEventQueue(eventQueue);
- hotkeyManager->getConditionalHotkeyManager().setEventQueue(eventQueue);
- hotkeyManager->getConditionalHotkeyManager().registerVarChangedHandler();
 
-
- hotkeyManager->getConditionalHotkeyManager().setScheduler(scheduler);
 
  if (debugging::debug_io) debug("Reactive hotkey system initialized");
     
@@ -514,7 +510,6 @@ void Havel::startPeriodicTimer() {
           std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck)
               .count() >= WINDOW_CHECK_INTERVAL_MS) {
         if (timerRunning && hotkeyManager) {
-          hotkeyManager->updateAllConditionalHotkeys();
         }
         lastWindowCheck = now;
       }
@@ -538,7 +533,6 @@ void Havel::stopPeriodicTimer() {
   timerCv.notify_one();
   if (timerThread && timerThread->joinable()) {
     // Try to join with a timeout — if the timer thread is stuck on a
-    // mutex inside updateAllConditionalHotkeys, detach to avoid deadlock.
     auto tid = timerThread->get_id();
     std::this_thread::sleep_for(std::chrono::milliseconds(PERIODIC_INTERVAL_MS + 50));
     if (timerThread->joinable()) {

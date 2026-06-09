@@ -47,7 +47,7 @@ void KeyTap::setup() {
     } else if (std::holds_alternative<std::string>(tapCondition)) {
         auto condStr = std::get<std::string>(tapCondition);
         if (!condStr.empty()) {
-            hotkeyManager->AddContextualHotkey(keyDown, condStr, [this]() {
+            hotkeyManager->AddHotkey(keyDown, [this]() {
                 keyHeld = true;
                 combo = false;
             });
@@ -77,7 +77,7 @@ void KeyTap::setup() {
     } else if (std::holds_alternative<std::string>(tapCondition)) {
         auto condStr = std::get<std::string>(tapCondition);
         if (!condStr.empty()) {
-            hotkeyManager->AddContextualHotkey(keyUp, condStr, [this]() {
+            hotkeyManager->AddHotkey(keyUp, [this]() {
                 if (keyHeld && !combo) {
                     onTap();   // clean tap
                 }

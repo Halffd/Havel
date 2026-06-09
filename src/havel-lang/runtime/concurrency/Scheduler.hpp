@@ -407,8 +407,9 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
   int deferredWakeupFd() const { return deferred_wakeup_fd_; }
 
   /// Drains deferred callbacks in priority order (hotkey → normal → background).
-  /// This is the ONLY drain method — schedule() and deferToVM() both feed into it.
-  size_t drainDeferredCallbacks();
+  /// Default drains all priorities. Specify upTo to drain only up to a priority.
+  /// e.g. drainDeferredCallbacks(FiberPriority::NORMAL) drains HOTKEY + NORMAL.
+  size_t drainDeferredCallbacks(FiberPriority upTo = FiberPriority::BACKGROUND);
 
   // Remove Done goroutines from the map (prevents memory leak)
   // Called periodically by pickNext() and stop()

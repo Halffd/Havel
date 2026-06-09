@@ -670,7 +670,7 @@ size_t Scheduler::wakeSleepingGoroutines() {
    schedule(std::move(fn), FiberPriority::NORMAL);
  }
 
- size_t Scheduler::drainDeferredCallbacks() {
+ size_t Scheduler::drainDeferredCallbacks(FiberPriority upTo) {
    if (vm_thread_id_ == std::thread::id()) {
      vm_thread_id_ = std::this_thread::get_id();
    }
@@ -684,7 +684,6 @@ size_t Scheduler::wakeSleepingGoroutines() {
 
    size_t drained = 0;
 
-   // Drain in priority order: hotkey → normal → background
    auto drainOneQueue = [&](std::deque<DeferredAction>& queue) {
      std::deque<DeferredAction> acts;
      {
@@ -701,9 +700,12 @@ size_t Scheduler::wakeSleepingGoroutines() {
      }
    };
 
-   drainOneQueue(deferred_hotkey_);
-   drainOneQueue(deferred_normal_);
-   drainOneQueue(deferred_background_);
+   if (static_cast<int>(upTo) >= static_cast<int>(FiberPriority::HOTKEY))
+     drainOneQueue(deferred_hotkey_);
+   if (static_cast<int>(upTo) >= static_cast<int>(FiberPriority::NORMAL))
+     drainOneQueue(deferred_normal_);
+   if (static_cast<int>(upTo) >= static_cast<int>(FiberPriority::BACKGROUND))
+     drainOneQueue(deferred_background_);
 
    return drained;
  }

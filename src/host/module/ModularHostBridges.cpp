@@ -5953,11 +5953,13 @@ Value
 DisplayBridge::handleGetPrimary(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
-  if (!ctx)
+  if (!ctx) {
     return Value::makeNull();
+  }
   auto *vm = static_cast<VM *>(ctx->vm);
-  if (!vm)
+  if (!vm) {
     return Value::makeNull();
+  }
 
     auto mon = ::havel::DisplayManager::GetPrimaryMonitor();
     auto obj = vm->createHostObject();

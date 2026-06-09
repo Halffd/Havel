@@ -92,7 +92,7 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 	}
 
 	if (hostAPI->GetModeManager() && registry.shouldRegister("mode", includes, excludes)) {
- auto modeService = std::make_shared<host::ModeService>(hostAPI->GetVM(), hostAPI->GetModeManager());
+ auto modeService = std::make_shared<host::ModeService>(hostAPI.get(), hostAPI->GetModeManager());
 		registry.registerService<host::ModeService>(modeService);
 	}
 

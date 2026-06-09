@@ -658,7 +658,7 @@ public:
   void install(PipelineOptions &options) override;
 
 private:
-  const HostContext *ctx_;
+  [[maybe_unused]] const HostContext *ctx_;
 };
 
 /**
@@ -718,7 +718,7 @@ public:
   void install(PipelineOptions &options) override;
 
 private:
-  const HostContext *ctx_;
+  [[maybe_unused]] const HostContext *ctx_;
 };
 
 /**

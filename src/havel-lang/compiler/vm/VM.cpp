@@ -272,9 +272,9 @@ locals.clear();
  executed_instructions_ = 0;
 
  if (frame_arena_.size() <= frame_count_) {
-        frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0});
+        frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}});
     } else {
-        frame_arena_[frame_count_] = CallFrame{entry, &chunk, 0, 0, 0};
+        frame_arena_[frame_count_] = CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}};
     }
     frame_count_++;
     locals.resize(entry->local_count);
@@ -345,9 +345,9 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   current_exception_ = nullptr;
 
     if (frame_arena_.size() <= frame_count_) {
-        frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0});
+        frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}});
     } else {
-        frame_arena_[frame_count_] = CallFrame{entry, &chunk, 0, 0, 0};
+        frame_arena_[frame_count_] = CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}};
     }
     frame_count_++;
     locals.resize(entry->local_count);
@@ -1144,17 +1144,13 @@ if (suspension_requested_) {
     } catch (const std::runtime_error &e) {
       // Convert runtime errors to script exceptions so they can be caught
       // by script-level try/catch blocks
-    std::string msg = e.what();
-    uint32_t line = 0;
-    uint32_t column = 0;
-    if (frame_count_ > 0) {
-      auto &frame = frame_arena_[frame_count_ - 1];
-      if (frame.function &&
-          frame.ip < frame.function->instruction_locations.size()) {
-        const auto loc = nearestSourceLocation(*frame.function, frame.ip);
-        line = loc.line;
-        column = loc.column;
-        if (loc.line > 0) {
+std::string msg = e.what();
+if (frame_count_ > 0) {
+auto &frame = frame_arena_[frame_count_ - 1];
+if (frame.function &&
+frame.ip < frame.function->instruction_locations.size()) {
+const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+if (loc.line > 0) {
           if (!loc.filename.empty()) {
             msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
           } else {
@@ -1403,9 +1399,9 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
 
       size_t coroutine_stack_depth = stack.size();
     if (frame_arena_.size() <= frame_count_) {
-        frame_arena_.push_back(CallFrame{func, current_chunk, co->ip, 0, co->closure_id});
+        frame_arena_.push_back(CallFrame{func, current_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}});
     } else {
-        frame_arena_[frame_count_] = CallFrame{func, current_chunk, co->ip, 0, co->closure_id};
+        frame_arena_[frame_count_] = CallFrame{func, current_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}};
     }
       frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
       frame_count_++;
@@ -2648,7 +2644,7 @@ bool VM::isLazyModuleRegistered(const std::string &name) const {
 return lazy_modules_.find(name) != lazy_modules_.end();
 }
 
-void VM::registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn, const std::vector<std::string> &aliases) {
+void VM::registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases) {
     auto it = lazy_modules_.find(name);
     if (it != lazy_modules_.end()) {
         return;
@@ -3163,9 +3159,9 @@ Value VM::loadModule(const std::string& path) {
     current_exception_ = nullptr;
 
     if (frame_arena_.size() <= frame_count_) {
-        frame_arena_.push_back(CallFrame{entry, chunk.get(), 0, 0, 0});
+        frame_arena_.push_back(CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}});
     } else {
-        frame_arena_[frame_count_] = CallFrame{entry, chunk.get(), 0, 0, 0};
+        frame_arena_[frame_count_] = CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}};
     }
     frame_count_++;
     locals.resize(entry->local_count);
@@ -3209,6 +3205,7 @@ Value VM::loadModule(const std::string& path) {
 auto *obj = heap_.object(exportsObj.id);
     auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
     int exportCount = 0;
+(void)exportCount;
 for (const auto& [name, value] : globals) {
             if (name.empty() || name[0] == '_') continue;
         // Skip inherited globals UNLESS the module redefined them
@@ -3447,9 +3444,9 @@ Value VM::loadScript(const std::string& path) {
   current_exception_ = nullptr;
 
   if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{entry, chunk.get(), 0, 0, 0});
+    frame_arena_.push_back(CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}});
   } else {
-    frame_arena_[frame_count_] = CallFrame{entry, chunk.get(), 0, 0, 0};
+    frame_arena_[frame_count_] = CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}};
   }
   frame_count_++;
   locals.resize(entry->local_count);

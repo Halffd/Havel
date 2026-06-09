@@ -520,7 +520,7 @@ if (event_queue_) event_queue_->processAll();
   });
 
   // callable(x) - Check if value can be called
-  registerHostFunction("callable", 1, [this](const std::vector<Value> &args) {
+  registerHostFunction("callable", 1, [](const std::vector<Value> &args) {
     if (args.empty()) return Value::makeBool(false);
     const auto &value = args[0];
     bool isCallable = value.isFunctionObjId() || value.isClosureId() ||
@@ -551,7 +551,7 @@ if (event_queue_) event_queue_->processAll();
   });
 
   // isIterable(x) - Check if value can be iterated
-  registerHostFunction("isIterable", 1, [this](const std::vector<Value> &args) {
+  registerHostFunction("isIterable", 1, [](const std::vector<Value> &args) {
     if (args.empty()) return Value::makeBool(false);
     const auto &value = args[0];
     bool isIterable = value.isArrayId() || value.isStringId() ||
@@ -562,7 +562,7 @@ if (event_queue_) event_queue_->processAll();
   });
 
   // isIndexable(x) - Check if value supports indexing
-  registerHostFunction("isIndexable", 1, [this](const std::vector<Value> &args) {
+  registerHostFunction("isIndexable", 1, [](const std::vector<Value> &args) {
     if (args.empty()) return Value::makeBool(false);
     const auto &value = args[0];
     bool isIndexable = value.isArrayId() || value.isStringId() ||
@@ -743,11 +743,11 @@ if (event_queue_) event_queue_->processAll();
     globals["function"] = Value::makeObjectId(funcProto.id);
   }
 
-    registerHostFunction("async.await", 1, [this](const std::vector<Value> &args) {
+    registerHostFunction("async.await", 1, [](const std::vector<Value> &args) {
         if (args.empty()) return Value::makeNull();
         return args[0];
     });
-    registerHostFunction("await", 1, [this](const std::vector<Value> &args) {
+    registerHostFunction("await", 1, [](const std::vector<Value> &args) {
         if (args.empty()) return Value::makeNull();
         return args[0];
     });
@@ -1510,7 +1510,7 @@ registerHostFunction(
                 EnumRef ref = heap_.allocateEnum(capturedTypeId, capturedTag, 0);
                 return Value::makeEnumId(ref.id, capturedTypeId);
             }();
-            registerHostFunction(fullName, 0, [this, singleton](const std::vector<Value> &) -> Value {
+            registerHostFunction(fullName, 0, [singleton](const std::vector<Value> &) -> Value {
                 return singleton;
             });
             enumObjPtr->set(variantName, singleton);

@@ -12,6 +12,7 @@
 #include <stdexcept>
 
 // Macro for throwing errors with source location info
+#undef COMPILER_THROW
 #define COMPILER_THROW(msg) \
   do { \
     ::havel::errors::ErrorReporter::instance().report( \

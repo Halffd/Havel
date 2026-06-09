@@ -146,7 +146,7 @@ options.host_functions["timeout.stop"] = options.host_functions["timeout_cancel"
 }
 
 Value ConcurrencyBridge::threadSpawn(const std::vector<Value> &args) {
-  if (args.empty() || !args[0].isClosureId() && !args[0].isFunctionObjId()) {
+  if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
     return Value::makeNull();
   }
 
@@ -262,13 +262,13 @@ Value ConcurrencyBridge::threadReceive(const std::vector<Value> &args) {
 }
 
 Value ConcurrencyBridge::intervalStart(const std::vector<Value> &args) {
-if (args.size() < 2 || !args[1].isClosureId() && !args[1].isFunctionObjId()) {
-return Value::makeNull();
-}
+  if (args.size() < 2 || (!args[1].isClosureId() && !args[1].isFunctionObjId())) {
+    return Value::makeNull();
+  }
 
-if (!vm_) return Value::makeNull();
+  if (!vm_) return Value::makeNull();
 
-int64_t interval_ms = 0;
+  int64_t interval_ms = 0;
 auto parsed = vm_->parseDuration(args[0]);
 if (!parsed) return Value::makeNull();
 interval_ms = *parsed;
@@ -339,13 +339,13 @@ return Value::makeNull();
 }
 
 Value ConcurrencyBridge::timeoutStart(const std::vector<Value> &args) {
-if (args.size() < 2 || !args[1].isClosureId() && !args[1].isFunctionObjId()) {
-return Value::makeNull();
-}
+  if (args.size() < 2 || (!args[1].isClosureId() && !args[1].isFunctionObjId())) {
+    return Value::makeNull();
+  }
 
-if (!vm_) return Value::makeNull();
+  if (!vm_) return Value::makeNull();
 
-auto parsed = vm_->parseDuration(args[0]);
+  auto parsed = vm_->parseDuration(args[0]);
 if (!parsed) return Value::makeNull();
 
 int ms = static_cast<int>(*parsed);

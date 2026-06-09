@@ -82,7 +82,7 @@ void HostBridge::checkTimers() {}
 #else
 
 // Helper: convert OpCode to string name (simplified subset for bytecode() display)
-static std::string opcodeNameStr(OpCode opcode) {
+[[maybe_unused]] static std::string opcodeNameStr(OpCode opcode) {
   switch (opcode) {
     case OpCode::LOAD_CONST: return "LOAD_CONST";
     case OpCode::LOAD_GLOBAL: return "LOAD_GLOBAL";
@@ -154,7 +154,7 @@ static std::string getTypeName(const Value &value) {
 }
 
 // Helper function to compare two Values for equality
-static bool valuesEqual(const Value &a, const Value &b) {
+[[maybe_unused]] static bool valuesEqual(const Value &a, const Value &b) {
   return a == b; // Value has operator==
 }
 
@@ -296,7 +296,7 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
     ::havel::modules::setupDynamicWindowGlobals(api, ctx_->windowMonitor);
   }
 
-  addVmSetup([this](VM &vm) {
+  addVmSetup([](VM &vm) {
     auto hotkeyObj = vm.createHostObject();
     for (const auto &name : {"register", "register_conditional", "remove_conditional",
                              "enable_conditional", "disable_conditional", "set_condition",

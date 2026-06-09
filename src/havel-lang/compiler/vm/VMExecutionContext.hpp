@@ -165,7 +165,7 @@ public:
   std::vector<Value> getGCRoots() const;
 
 private:
-  VM& parent_;
+  [[maybe_unused]] VM& parent_;
   const BytecodeChunk& chunk_;
 
   // Execution state

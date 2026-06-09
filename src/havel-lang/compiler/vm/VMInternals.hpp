@@ -12,6 +12,7 @@
 
 namespace havel::compiler {
 
+#undef COMPILER_THROW
 #define COMPILER_THROW(msg) \
 do { \
     ::havel::errors::ErrorReporter::instance().report( \

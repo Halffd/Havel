@@ -88,7 +88,7 @@ struct ScriptError final {
 // LAZY MODULE LOADING
 struct ModuleDescriptor {
     std::string name;
-    std::function<void(class VMApi&)> initFn;
+    std::function<void(struct VMApi&)> initFn;
     bool loaded = false;
     std::vector<std::string> aliases;
 };
@@ -554,9 +554,9 @@ public:
   }
     void pushFramePublic(const BytecodeFunction* function, size_t ip, size_t locals_base, uint32_t closure_id) {
         if (frame_count_ >= frame_arena_.size()) {
-            frame_arena_.push_back(CallFrame{function, nullptr, ip, locals_base, closure_id, {}});
-        } else {
-            frame_arena_[frame_count_] = CallFrame{function, nullptr, ip, locals_base, closure_id, {}};
+ frame_arena_.push_back(CallFrame{function, nullptr, ip, locals_base, closure_id, {}, {}, {}, {}});
+ } else {
+ frame_arena_[frame_count_] = CallFrame{function, nullptr, ip, locals_base, closure_id, {}, {}, {}, {}};
         }
         frame_count_++;
     }
@@ -1074,7 +1074,7 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
 
     Value loadModule(const std::string& path);
   Value loadScript(const std::string& path);
-void registerLazyModule(const std::string &name, std::function<void(class VMApi&)> initFn, const std::vector<std::string> &aliases = {});
+void registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases = {});
   bool ensureModuleLoaded(const std::string &name);
   bool isLazyModuleRegistered(const std::string &name) const;
   void activateLazyModule(const std::string &name);

@@ -75,7 +75,7 @@ public:
     class compiler::VM* getVM() const { return vm_; }
 
 private:
-  const ::havel::HostContext *ctx_;
+  [[maybe_unused]] const ::havel::HostContext *ctx_;
   class compiler::VM *vm_;
 
   // Thread pool management
@@ -135,7 +135,7 @@ std::chrono::steady_clock::time_point paused_at;
 };
   std::vector<Timer> timers_;
   std::mutex timers_mutex_;
-  uint32_t next_timer_id_ = 1;
+  [[maybe_unused]] uint32_t next_timer_id_ = 1;
 
   // Channels
   struct Channel {

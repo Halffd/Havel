@@ -21,45 +21,33 @@ if (m_manager) m_manager->setMode(modeName);
 }
 
 void ModeService::defineMode(const std::string& name,
-compiler::CallbackId conditionId,
-compiler::CallbackId enterId,
-compiler::CallbackId exitId) {
-auto* vm = m_hostAPI ? m_hostAPI->GetVM() : nullptr;
-if (!vm || !m_manager) return;
+                                 compiler::CallbackId enterId,
+                                 compiler::CallbackId exitId) {
+    auto* vm = m_hostAPI ? m_hostAPI->GetVM() : nullptr;
+    if (!vm || !m_manager) return;
 
-havel::ModeManager::ModeDefinition mode;
-mode.name = name;
+    havel::ModeManager::ModeDefinition mode;
+    mode.name = name;
 
-if (conditionId != compiler::INVALID_CALLBACK_ID) {
-mode.conditionCallback = [vm, id = conditionId]() -> bool {
-try {
-auto result = vm->invokeCallback(id);
-return result.asBool();
-} catch (...) {
-return false;
-}
-};
-}
+    if (enterId != compiler::INVALID_CALLBACK_ID) {
+        mode.onEnter = [vm, id = enterId]() {
+            try {
+                vm->invokeCallback(id);
+            } catch (...) {
+            }
+        };
+    }
 
-if (enterId != compiler::INVALID_CALLBACK_ID) {
-mode.onEnter = [vm, id = enterId]() {
-try {
-vm->invokeCallback(id);
-} catch (...) {
-}
-};
-}
+    if (exitId != compiler::INVALID_CALLBACK_ID) {
+        mode.onExit = [vm, id = exitId]() {
+            try {
+                vm->invokeCallback(id);
+            } catch (...) {
+            }
+        };
+    }
 
-if (exitId != compiler::INVALID_CALLBACK_ID) {
-mode.onExit = [vm, id = exitId]() {
-try {
-vm->invokeCallback(id);
-} catch (...) {
-}
-};
-}
-
-m_manager->defineMode(std::move(mode));
+    m_manager->defineMode(std::move(mode));
 }
 
 } // namespace havel::host

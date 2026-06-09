@@ -6032,138 +6032,96 @@ void ModeBridge::install(PipelineOptions &options) {
   options.host_functions["mode.time"] = [ctx = ctx_](const auto &args) {
     return handleTime(args, ctx);
   };
-  options.host_functions["mode.transitions"] = [ctx = ctx_](const auto &args) {
-    return handleTransitions(args, ctx);
-  };
-  options.host_functions["mode.signalActive"] = [ctx = ctx_](const auto &args) {
-    return handleSignalActive(args, ctx);
-  };
+    options.host_functions["mode.transitions"] = [ctx = ctx_](const auto &args) {
+        return handleTransitions(args, ctx);
+    };
 }
 
 Value ModeBridge::handleRegister(const std::vector<Value> &args,
-                                         const HostContext *ctx) {
-  // Args: name, priority, condition, enter, exit, onEnterFromMode, onEnterFrom,
-  // onExitToMode, onExitTo
-  if (args.size() < 9) {
-    return Value::makeBool(false);
-  }
-
-  if (!ctx || !ctx->modeManager || !ctx->vm) {
-    return Value::makeBool(false);
-  }
-
-  // Get mode name
-  std::string modeName;
-  if (args[0].isStringValId() || args[0].isStringId()) {
-    auto *vm = static_cast<VM *>(ctx->vm);
-    modeName = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
-  } else {
-    return Value::makeBool(false);
-  }
-
-  // Get priority
-  int priority = 0;
-  if (args[1].isInt()) {
-    priority = static_cast<int>(args[1].asInt());
-  }
-
-  auto *vm = static_cast<VM *>(ctx->vm);
-
-  // Helper to register a callback from Value
-  auto registerCallbackIfValid = [&](const Value &val) -> CallbackId {
-    if (val.isClosureId() ||
-        val.isFunctionObjId()) {
-      return vm->registerCallback(val);
+                                      const HostContext *ctx) {
+    if (args.size() < 9) {
+        return Value::makeBool(false);
     }
-    return INVALID_CALLBACK_ID;
-  };
 
-  // Register callbacks
-  CallbackId conditionId = registerCallbackIfValid(args[2]);
-  CallbackId enterId = registerCallbackIfValid(args[3]);
-  CallbackId exitId = registerCallbackIfValid(args[4]);
-  CallbackId onEnterFromId = registerCallbackIfValid(args[6]);
-  CallbackId onExitToId = registerCallbackIfValid(args[8]);
+    if (!ctx || !ctx->modeManager || !ctx->vm) {
+        return Value::makeBool(false);
+    }
 
-  // Create mode definition
-  ::havel::ModeManager::ModeDefinition mode;
-  mode.name = modeName;
-  mode.priority = priority;
+    std::string modeName;
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        auto *vm = static_cast<VM *>(ctx->vm);
+        modeName = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    } else {
+        return Value::makeBool(false);
+    }
 
-  // Condition callback - wraps the VM callback invocation
-  if (conditionId != INVALID_CALLBACK_ID) {
-    mode.conditionCallback = [vm, conditionId]() -> bool {
-      try {
-        auto result = vm->invokeCallback(conditionId);
-        // Convert result to boolean
-        if (result.isBool()) {
-          return result.asBool();
+    int priority = 0;
+    if (args[1].isInt()) {
+        priority = static_cast<int>(args[1].asInt());
+    }
+
+    auto *vm = static_cast<VM *>(ctx->vm);
+
+    auto registerCallbackIfValid = [&](const Value &val) -> CallbackId {
+        if (val.isClosureId() || val.isFunctionObjId()) {
+            return vm->registerCallback(val);
         }
-        if (result.isInt()) {
-          return result.asInt() != 0;
-        }
-        return false;
-      } catch (...) {
-        // Callback failed, treat as false
-        return false;
-      }
+        return INVALID_CALLBACK_ID;
     };
-  }
 
-  // Enter callback
-  if (enterId != INVALID_CALLBACK_ID) {
-    mode.onEnter = [vm, enterId]() {
-      try {
-        vm->invokeCallback(enterId);
-      } catch (...) {
-        // Callback failed, ignore
-      }
-    };
-  }
+    CallbackId enterId = registerCallbackIfValid(args[3]);
+    CallbackId exitId = registerCallbackIfValid(args[4]);
+    CallbackId onEnterFromId = registerCallbackIfValid(args[6]);
+    CallbackId onExitToId = registerCallbackIfValid(args[8]);
 
-  // Exit callback
-  if (exitId != INVALID_CALLBACK_ID) {
-    mode.onExit = [vm, exitId]() {
-      try {
-        vm->invokeCallback(exitId);
-      } catch (...) {
-        // Callback failed, ignore
-      }
-    };
-  }
+    ::havel::ModeManager::ModeDefinition mode;
+    mode.name = modeName;
+    mode.priority = priority;
 
- // onEnterFrom callback (transition from specific mode)
- if (onEnterFromId != INVALID_CALLBACK_ID) {
-  mode.onEnterFrom = [vm, onEnterFromId](const std::string &fromMode) {
-   try {
-    auto ref = vm->createRuntimeString(fromMode);
-    vm->invokeCallback(onEnterFromId, {Value::makeStringId(ref.id)});
-   } catch (...) {
-   }
-  };
- }
+    if (enterId != INVALID_CALLBACK_ID) {
+        mode.onEnter = [vm, enterId]() {
+            try {
+                vm->invokeCallback(enterId);
+            } catch (...) {
+            }
+        };
+    }
 
- // onExitTo callback (transition to specific mode)
- if (onExitToId != INVALID_CALLBACK_ID) {
-  mode.onExitTo = [vm, onExitToId](const std::string &toMode) {
-   try {
-    auto ref = vm->createRuntimeString(toMode);
-    vm->invokeCallback(onExitToId, {Value::makeStringId(ref.id)});
-   } catch (...) {
-   }
-  };
- }
+    if (exitId != INVALID_CALLBACK_ID) {
+        mode.onExit = [vm, exitId]() {
+            try {
+                vm->invokeCallback(exitId);
+            } catch (...) {
+            }
+        };
+    }
 
-  // Register with ModeManager
-  ctx->modeManager->defineMode(std::move(mode));
+    if (onEnterFromId != INVALID_CALLBACK_ID) {
+        mode.onEnterFrom = [vm, onEnterFromId](const std::string &fromMode) {
+            try {
+                auto ref = vm->createRuntimeString(fromMode);
+                vm->invokeCallback(onEnterFromId, {Value::makeStringId(ref.id)});
+            } catch (...) {
+            }
+        };
+    }
 
-  // Store callback IDs in HostBridge for cleanup
-  // This is stored in mode_bindings_ map
-    ctx->modules->registerModeCallbacks(modeName, conditionId, enterId,
-                                         exitId);
+    if (onExitToId != INVALID_CALLBACK_ID) {
+        mode.onExitTo = [vm, onExitToId](const std::string &toMode) {
+            try {
+                auto ref = vm->createRuntimeString(toMode);
+                vm->invokeCallback(onExitToId, {Value::makeStringId(ref.id)});
+            } catch (...) {
+            }
+        };
+    }
 
-  info("Mode registered: {} with priority {}", modeName, priority);
-  return Value::makeBool(true);
+    ctx->modeManager->defineMode(std::move(mode));
+
+    ctx->modules->registerModeCallbacks(modeName, enterId, exitId);
+
+    info("Mode registered: {} with priority {}", modeName, priority);
+    return Value::makeBool(true);
 }
 
 Value
@@ -6275,22 +6233,6 @@ ModeBridge::handleTransitions(const std::vector<Value> &args,
     return Value::makeInt(0);
   }
   return Value::makeInt(ctx->modeManager->getModeTransitions(modeName));
-}
-
-Value
-ModeBridge::handleSignalActive(const std::vector<Value> &args,
-                               const HostContext *ctx) {
-  if (!ctx || !ctx->modeManager || !ctx->vm || args.empty()) {
-    return Value::makeBool(false);
-  }
-  auto *vm = static_cast<VM *>(ctx->vm);
-  std::string signalName;
-  if (args[0].isStringValId() || args[0].isStringId()) {
-    signalName = vm->resolveStringKey(args[0]);
-  } else {
-    return Value::makeBool(false);
-  }
-  return Value::makeBool(ctx->modeManager->isSignalActive(signalName));
 }
 
 // ============================================================================

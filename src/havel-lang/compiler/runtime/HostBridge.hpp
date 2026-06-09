@@ -112,17 +112,14 @@ public:
   }
 
   // Mode callback registration
-  void registerModeCallbacks(const std::string &modeName,
-                             CallbackId conditionId, CallbackId enterId,
-                             CallbackId exitId);
+    void registerModeCallbacks(const std::string &modeName,
+                               CallbackId enterId, CallbackId exitId);
 
-  // Mode binding state (for mode system)
-  struct ModeBinding {
-    std::string modeName;
-    std::optional<CallbackId> condition_id;
-    std::optional<CallbackId> enter_id;
-    std::optional<CallbackId> exit_id;
-  };
+    struct ModeBinding {
+        std::string modeName;
+        std::optional<CallbackId> enter_id;
+        std::optional<CallbackId> exit_id;
+    };
 
 private:
   const ::havel::HostContext *ctx_;

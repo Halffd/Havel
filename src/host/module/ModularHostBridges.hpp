@@ -868,10 +868,8 @@ private:
                           const HostContext *ctx);
   static Value handleTime(const std::vector<Value> &args,
                           const HostContext *ctx);
-  static Value handleTransitions(const std::vector<Value> &args,
-                                 const HostContext *ctx);
-  static Value handleSignalActive(const std::vector<Value> &args,
-                                  const HostContext *ctx);
+    static Value handleTransitions(const std::vector<Value> &args,
+                                   const HostContext *ctx);
 };
 
 /**

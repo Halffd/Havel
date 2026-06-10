@@ -1066,9 +1066,9 @@ if (!modName.empty()) {
                 (*bObj)["self"] = object;
                 pushStack(Value::makeObjectId(boundObj.id));
             } else {
-                // Autovivification: if object has __vivify, auto-create sub-object
+                // Autovivification: if object has true/truthy __vivify, auto-create sub-object
                 auto* vivify = obj->get("__vivify");
-                if (vivify && !vivify->isNull() && !vivify->isBool()) {
+                if (vivify && !vivify->isNull() && (!vivify->isBool() || vivify->asBool())) {
                     // Create a new sub-object with same __vivify marker
                     auto subRef = heap_.allocateObject();
                     auto *subObj = heap_.object(subRef.id);

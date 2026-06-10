@@ -2884,6 +2884,14 @@ void VM::registerLazyModule(const std::string &name, std::function<void(struct V
 bool VM::ensureModuleLoaded(const std::string &name) {
     auto it = lazy_modules_.find(name);
     if (it == lazy_modules_.end()) {
+        // Check if name is an alias of a registered lazy module
+        for (const auto& [modName, desc] : lazy_modules_) {
+            for (const auto& alias : desc.aliases) {
+                if (alias == name) {
+                    return ensureModuleLoaded(modName);
+                }
+            }
+        }
         // Fallback: try dynamic plugin discovery
         if (pluginLoader_) {
             auto plugin = pluginLoader_->loadModulePlugin(name);

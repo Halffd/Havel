@@ -215,7 +215,6 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 }
 
 void EventListener::Stop() {
-    bool was_running = running.load();
     running.store(false);
     shutdown.store(true);
 
@@ -224,7 +223,7 @@ void EventListener::Stop() {
         write(shutdownFd, &val, sizeof(val));
     }
 
-    if (was_running && eventThread.joinable()) eventThread.join();
+    if (eventThread.joinable()) eventThread.join();
 
     ReleaseAllVirtualKeys();
 

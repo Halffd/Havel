@@ -1,0 +1,100 @@
+// modules/app/io.hv - Pure Havel IO sidecar
+// Wraps C++ shim functions (io._*) into public API with defaults and mode strings.
+// C++ shim: io._send, io._sendX11Key, io._map, io._remap, io._emergencyRelease,
+//   io._ungrabAll, io._suspend, io._resume, io._isSuspended, io._isKeyPressed,
+//   io._isShiftPressed, io._isCtrlPressed, io._isAltPressed, io._isWinPressed,
+//   io._getCurrentModifiers, io._setExecutorMode, io._getExecutorMode,
+//   io._mouseMove, io._mouseMoveTo, io._mouseClick, io._mouseDown, io._mouseUp,
+//   io._scroll, io._getMousePosition, io._setMouseSensitivity, io._getMouseSensitivity,
+//   io._sleepMs
+
+_modeMap = {
+  "scheduler": 0,
+  "executor": 1,
+  "sync": 2,
+  "thread": 3
+}
+
+_modeNames = ["scheduler", "executor", "sync", "thread"]
+
+fn _modeToInt(mode) {
+  m = mode.lower()
+  v = _modeMap[m]
+  if v != nil { v } else { 0 }
+}
+
+fn sendKeys(keys) { io._send(str(keys)) }
+
+fn sendKey(key) {
+  io._sendX11Key(str(key), true)
+  io._sleepMs(50)
+  io._sendX11Key(str(key), false)
+}
+
+fn keyDown(key) { io._sendX11Key(str(key), true) }
+
+fn keyUp(key) { io._sendX11Key(str(key), false) }
+
+fn map(src, dst) { io._map(str(src), str(dst)) }
+
+fn remap(src, dst) { io._remap(str(src), str(dst)) }
+
+fn block() { io._emergencyRelease() }
+
+fn unblock() { io._ungrabAll() }
+
+fn suspend() { io._suspend() }
+
+fn resume() { io._resume() }
+
+fn isSuspended() { io._isSuspended() }
+
+fn grab() { io._emergencyRelease() }
+
+fn ungrab() { io._ungrabAll() }
+
+fn emergencyRelease() { io._emergencyRelease() }
+
+fn isKeyPressed(key) { io._isKeyPressed(str(key)) }
+
+fn isShiftPressed() { io._isShiftPressed() }
+
+fn isCtrlPressed() { io._isCtrlPressed() }
+
+fn isAltPressed() { io._isAltPressed() }
+
+fn isWinPressed() { io._isWinPressed() }
+
+fn getCurrentModifiers() { io._getCurrentModifiers() }
+
+fn setExecutorMode(mode) { io._setExecutorMode(_modeToInt(mode)) }
+
+fn getExecutorMode() {
+  idx = io._getExecutorMode()
+  if idx >= 0 && idx < _modeNames.len() { _modeNames[idx] } else { "scheduler" }
+}
+
+fn mouseMove(dx, dy, speed) { io._mouseMove(dx, dy, speed || 1) }
+
+fn mouseMoveTo(x, y, speed) { io._mouseMoveTo(x, y, speed || 1) }
+
+fn mouseClick(button) { io._mouseClick(button || 1) }
+
+fn mouseDoubleClick(button) {
+  b = button || 1
+  io._mouseClick(b)
+  io._sleepMs(50)
+  io._mouseClick(b)
+}
+
+fn mousePress(button) { io._mouseDown(button || 1) }
+
+fn mouseRelease(button) { io._mouseUp(button || 1) }
+
+fn scroll(dy, dx) { io._scroll(dy || 0, dx || 0) }
+
+fn getMousePosition() { io._getMousePosition() }
+
+fn setMouseSensitivity(s) { io._setMouseSensitivity(s) }
+
+fn getMouseSensitivity() { io._getMouseSensitivity() }

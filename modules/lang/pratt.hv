@@ -2251,7 +2251,7 @@ if tt == TID.Greater { return parseInputStatement() }
       // Save position, scan through [id] or [id(args)] groups
       savePos = pos
       isDeco = false
-      for {
+      loop {
         advance() // consume '['
         if current().tid != TID.Identifier { break }
         advance() // consume identifier
@@ -2855,42 +2855,97 @@ skipNewlines()
     // ===================================================================
     // STATEMENT: let / val declaration
     // ===================================================================
-    fn parseLetDecl(keyword) {
-        l = current().line
-        c = current().col
-        advance() // consume 'let'/'val'/'const'
-        skipNewlines()
+fn parseLetDecl(keyword) {
+  l = current().line
+  c = current().col
+  advance() // consume 'let'/'val'/'const'
+  skipNewlines()
 
-        // Parse name(s) — may be destructuring
-        name = advance().value
-        skipNewlines()
+  pattern = null
+  name = null
 
-        value = null
-        if current().tid == TID.Assign {
-            advance()
-            skipNewlines()
-            value = parseExpr(0)
-        }
-        else if current().tid == TID.Colon {
-            // Type annotation without assignment
-            advance()
-            advance() // type name
-            skipNewlines()
-            if current().tid == TID.Assign {
-                advance()
-                skipNewlines()
-                value = parseExpr(0)
-
-            }
-        }
-    if keyword == "Let" {
-        return LetDeclaration(name, value, l, c)
+  // Array destructuring: let [a, b] = val
+  if current().tid == TID.OpenBracket {
+    pattern = parseArrayPatternForMatch()
+  }
+  // Tuple destructuring: let (a, b) = val
+  else if current().tid == TID.OpenParen {
+    advance() // consume '('
+    elements = []
+    while notEOF() && current().tid != TID.CloseParen {
+      skipNewlines()
+      if current().tid == TID.CloseParen { break }
+      if current().tid != TID.Identifier {
+        error("Expected identifier in tuple destructuring", current().line, current().col)
+        break
+      }
+      elements.push(Identifier(current().value, current().line, current().col))
+      advance()
+      skipNewlines()
+      if current().tid == TID.Comma { advance() }
     }
-    else {
-        return ValDeclaration(name, value, l, c)
-
+    if current().tid == TID.CloseParen { advance() }
+    pattern = ArrayPattern(elements, null, l, c)
+    pattern.isTuple = true
+  }
+  // Object destructuring: let {x, y} = val
+  else if current().tid == TID.OpenBrace {
+    pattern = parseObjectPatternForMatch()
+  }
+  // Identifier — simple or comma-separated
+  else if current().tid == TID.Identifier {
+    name = current().value
+    advance()
+    skipNewlines()
+    // Comma-separated: val a, b, c = value
+    if current().tid == TID.Comma {
+      elements = [Identifier(name, l, c)]
+      while current().tid == TID.Comma {
+        advance() // consume comma
+        skipNewlines()
+        if current().tid != TID.Identifier {
+          error("Expected identifier after comma", current().line, current().col)
+          break
         }
+        elements.push(Identifier(current().value, current().line, current().col))
+        advance()
+        skipNewlines()
+      }
+      pattern = ArrayPattern(elements, null, l, c)
+      name = null
     }
+  }
+  else {
+    error("Expected identifier, '[' or '{' after declaration", current().line, current().col)
+  }
+
+  skipNewlines()
+
+  // Type annotation
+  typeAnno = null
+  if current().tid == TID.Colon {
+    advance() // consume ':'
+    typeAnno = advance().value // type name
+    skipNewlines()
+  }
+
+  value = null
+  if current().tid == TID.Assign {
+    advance()
+    skipNewlines()
+    value = parseExpr(0)
+  }
+
+  if keyword == "Let" {
+    node = LetDeclaration(name, value, l, c)
+  }
+  else {
+    node = ValDeclaration(name, value, l, c)
+  }
+  if pattern != null { node.pattern = pattern }
+  if typeAnno != null { node.typeAnnotation = typeAnno }
+  node
+}
     // ===================================================================
     // STATEMENT: import
     // ===================================================================
@@ -3411,11 +3466,12 @@ fn parseOnKeyDownOrKeyUpStatement() {
   }
   keyword = current().value
   advance()
-  if keyword == "condition" {
-   if current().tid == TID.Assign || current().tid == TID.Colon {
-    advance()
-   }
-   condition = parseExpr(0)
+if keyword == "condition" {
+      if current().tid != TID.Assign && current().tid != TID.Colon {
+        error("Expected '=' or ':' after 'condition'", current().line, current().col)
+      }
+      advance()
+      condition = parseExpr(0)
   }
   else if keyword == "enter" {
    enterBlock = parseBlock()

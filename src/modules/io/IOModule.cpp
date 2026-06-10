@@ -1,3 +1,8 @@
+/* IOModule.cpp - Minimal C++ shim for IO module
+ * Raw passthrough host functions calling havel::IO* directly.
+ * Business logic (defaults, mode strings, error wrapping, double-click)
+ * lives in the pure-Havel sidecar modules/app/io.hv.
+ */
 #include "IOModule.hpp"
 #include "modules/ModuleMacros.hpp"
 #include "host/ServiceRegistry.hpp"
@@ -6,408 +11,262 @@
 #include "utils/Logger.hpp"
 #include <thread>
 #include <chrono>
-#include <algorithm>
-#include <cctype>
 
 namespace havel::modules {
 
 using compiler::Value;
 using compiler::VMApi;
 
-static const char* MODULE_MARKER = "__io_module";
-
-static bool isModuleObject(const VMApi& api, const Value& val) {
-  if (!val.isObjectId()) return false;
-  auto marker = api.getField(val, MODULE_MARKER);
-  return marker.isBool() && marker.asBool();
-}
-
-static std::vector<Value> stripReceiver(const VMApi& api, const std::vector<Value>& args) {
-  if (!args.empty() && isModuleObject(api, args[0])) {
-    return std::vector<Value>(args.begin() + 1, args.end());
-  }
-  return args;
-}
-
 static IO* getIO() {
-  auto io = host::ServiceRegistry::instance().get<IO>();
-  if (!io) debug("IOModule: IO not available");
-  return io.get();
+    auto io = host::ServiceRegistry::instance().get<IO>();
+    if (!io) debug("IOModule: IO not available");
+    return io.get();
 }
 
-static std::string toString(const VMApi& api, const Value& v) {
-  if (v.isStringId() || v.isStringValId()) return api.toString(v);
-  if (v.isNull()) return "";
-  if (v.isInt()) return std::to_string(v.asInt());
-  if (v.isDouble()) return std::to_string(v.asDouble());
-  if (v.isBool()) return v.asBool() ? "true" : "false";
-  return "";
-}
-
-static double toDouble(const Value& v, double def = 0.0) {
-  if (v.isDouble()) return v.asDouble();
-  if (v.isInt()) return static_cast<double>(v.asInt());
-  return def;
-}
-
-static ExecutorMode stringToExecutorMode(const std::string& mode) {
-  std::string modeLower = mode;
-  std::transform(modeLower.begin(), modeLower.end(), modeLower.begin(),
-    [](unsigned char c){ return std::tolower(c); });
-  if (modeLower == "executor") return ExecutorMode::Executor;
-  if (modeLower == "sync") return ExecutorMode::Sync;
-  if (modeLower == "thread") return ExecutorMode::Thread;
-  return ExecutorMode::Scheduler;
-}
-
-static const char* executorModeToString(ExecutorMode mode) {
-  switch (mode) {
-    case ExecutorMode::Executor: return "executor";
-    case ExecutorMode::Sync: return "sync";
-    case ExecutorMode::Thread: return "thread";
-    case ExecutorMode::Scheduler: return "scheduler";
-    default: return "scheduler";
-  }
+static std::string toStr(const VMApi& api, const Value& v) {
+    if (v.isStringId() || v.isStringValId()) return api.toString(v);
+    if (v.isInt()) return std::to_string(v.asInt());
+    if (v.isDouble()) return std::to_string(v.asDouble());
+    if (v.isBool()) return v.asBool() ? "true" : "false";
+    return "";
 }
 
 void registerIOModule(const VMApi& api) {
-  HAVEL_BEGIN_MODULE("IO");
+    HAVEL_BEGIN_MODULE("IO");
 
-  HAVEL_REGISTER_FUNCTION(api, "io.sendKeys", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.empty()) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { io->Send(toString(api, args[0]).c_str()); return Value::makeBool(true); }
-    catch (const std::exception& e) { debug("io.sendKeys error: {}", e.what()); return Value::makeBool(false); }
-  });
+    // --- Keyboard ---
+    api.registerFunction("io._send", [api](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        if (args.empty()) return Value::makeBool(false);
+        io->Send(toStr(api, args[0]).c_str());
+        return Value::makeBool(true);
+    });
 
-  HAVEL_REGISTER_FUNCTION(api, "io.sendKey", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.empty()) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
+    api.registerFunction("io._sendX11Key", [api](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        if (args.size() < 2) return Value::makeBool(false);
+        bool press = args[1].isBool() ? args[1].asBool() : args[1].asInt() != 0;
+        io->SendX11Key(toStr(api, args[0]), press);
+        return Value::makeBool(true);
+    });
+
+    api.registerFunction("io._map", [api](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        if (args.size() < 2) return Value::makeBool(false);
+        io->Map(toStr(api, args[0]), toStr(api, args[1]));
+        return Value::makeBool(true);
+    });
+
+    api.registerFunction("io._remap", [api](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        if (args.size() < 2) return Value::makeBool(false);
+        io->Remap(toStr(api, args[0]), toStr(api, args[1]));
+        return Value::makeBool(true);
+    });
+
+    // --- Emergency / grab ---
+    api.registerFunction("io._emergencyRelease", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeNull();
+        io->EmergencyReleaseAllKeys();
+        return Value::makeNull();
+    });
+
+    api.registerFunction("io._ungrabAll", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeNull();
+        io->UngrabAll();
+        return Value::makeNull();
+    });
+
+    // --- Suspend / resume ---
+    api.registerFunction("io._suspend", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        return Value::makeBool(io->Suspend());
+    });
+
+    api.registerFunction("io._resume", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        if (io->isSuspended) return Value::makeBool(io->Resume());
+        return Value::makeBool(true);
+    });
+
+    api.registerFunction("io._isSuspended", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        return Value::makeBool(io->IsSuspended());
+    });
+
+    // --- Key state ---
+    api.registerFunction("io._isKeyPressed", [api](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        if (args.empty()) return Value::makeBool(false);
+        return Value::makeBool(io->IsKeyPressed(toStr(api, args[0])));
+    });
+
+    api.registerFunction("io._isShiftPressed", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        return Value::makeBool(io->IsShiftPressed());
+    });
+
+    api.registerFunction("io._isCtrlPressed", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        return Value::makeBool(io->IsCtrlPressed());
+    });
+
+    api.registerFunction("io._isAltPressed", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        return Value::makeBool(io->IsAltPressed());
+    });
+
+    api.registerFunction("io._isWinPressed", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        return Value::makeBool(io->IsWinPressed());
+    });
+
+    api.registerFunction("io._getCurrentModifiers", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeInt(0);
+        return Value::makeInt(io->GetCurrentModifiers());
+    });
+
+    // --- Executor mode (int-based: 0=Scheduler, 1=Executor, 2=Sync, 3=Thread) ---
+    api.registerFunction("io._setExecutorMode", [](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        if (args.empty()) return Value::makeBool(false);
+        int m = args[0].isInt() ? args[0].asInt() : 0;
+        io->SetExecutorMode(static_cast<ExecutorMode>(m));
+        return Value::makeBool(true);
+    });
+
+    api.registerFunction("io._getExecutorMode", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeInt(0);
+        return Value::makeInt(static_cast<int>(io->GetExecutorMode()));
+    });
+
+    // --- Mouse ---
+    api.registerFunction("io._mouseMove", [](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        if (args.size() < 2) return Value::makeBool(false);
+        int dx = args[0].isInt() ? args[0].asInt() : 0;
+        int dy = args[1].isInt() ? args[1].asInt() : 0;
+        int speed = args.size() > 2 && args[2].isInt() ? args[2].asInt() : 1;
+        return Value::makeBool(io->MouseMove(dx, dy, speed));
+    });
+
+    api.registerFunction("io._mouseMoveTo", [](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        if (args.size() < 2) return Value::makeBool(false);
+        int x = args[0].isInt() ? args[0].asInt() : 0;
+        int y = args[1].isInt() ? args[1].asInt() : 0;
+        int speed = args.size() > 2 && args[2].isInt() ? args[2].asInt() : 1;
+        return Value::makeBool(io->MouseMoveTo(x, y, speed));
+    });
+
+    api.registerFunction("io._mouseClick", [](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
+        io->MouseClick(btn);
+        return Value::makeBool(true);
+    });
+
+    api.registerFunction("io._mouseDown", [](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
+        return Value::makeBool(io->MouseDown(btn));
+    });
+
+    api.registerFunction("io._mouseUp", [](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
+        return Value::makeBool(io->MouseUp(btn));
+    });
+
+    api.registerFunction("io._scroll", [](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeBool(false);
+        double dy = !args.empty() && (args[0].isDouble() || args[0].isInt())
+            ? (args[0].isDouble() ? args[0].asDouble() : static_cast<double>(args[0].asInt())) : 0.0;
+        double dx = args.size() > 1 && (args[1].isDouble() || args[1].isInt())
+            ? (args[1].isDouble() ? args[1].asDouble() : static_cast<double>(args[1].asInt())) : 0.0;
+        return Value::makeBool(io->Scroll(dy, dx));
+    });
+
+    api.registerFunction("io._getMousePosition", [api](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeNull();
+        auto pos = io->GetMousePosition();
+        auto arr = api.makeArray();
+        api.push(arr, Value::makeInt(pos.first));
+        api.push(arr, Value::makeInt(pos.second));
+        return arr;
+    });
+
+    api.registerFunction("io._setMouseSensitivity", [](const std::vector<Value>& args) {
+        auto* io = getIO(); if (!io) return Value::makeNull();
+        if (args.empty()) return Value::makeNull();
+        double s = args[0].isDouble() ? args[0].asDouble()
+            : args[0].isInt() ? static_cast<double>(args[0].asInt()) : 1.0;
+        io->SetMouseSensitivity(s);
+        return Value::makeNull();
+    });
+
+    api.registerFunction("io._getMouseSensitivity", [](const std::vector<Value>&) {
+        auto* io = getIO(); if (!io) return Value::makeDouble(1.0);
+        return Value::makeDouble(io->GetMouseSensitivity());
+    });
+
+    // --- Utility shim (for double-click timing) ---
+    api.registerFunction("io._sleepMs", [](const std::vector<Value>& args) {
+        if (args.empty()) return Value::makeNull();
+        int ms = args[0].isInt() ? args[0].asInt() : 0;
+        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+        return Value::makeNull();
+    });
+
+    // Build io namespace object with shim function refs
+    auto obj = api.makeObject();
+    api.setField(obj, "_send", api.makeFunctionRef("io._send"));
+    api.setField(obj, "_sendX11Key", api.makeFunctionRef("io._sendX11Key"));
+    api.setField(obj, "_map", api.makeFunctionRef("io._map"));
+    api.setField(obj, "_remap", api.makeFunctionRef("io._remap"));
+    api.setField(obj, "_emergencyRelease", api.makeFunctionRef("io._emergencyRelease"));
+    api.setField(obj, "_ungrabAll", api.makeFunctionRef("io._ungrabAll"));
+    api.setField(obj, "_suspend", api.makeFunctionRef("io._suspend"));
+    api.setField(obj, "_resume", api.makeFunctionRef("io._resume"));
+    api.setField(obj, "_isSuspended", api.makeFunctionRef("io._isSuspended"));
+    api.setField(obj, "_isKeyPressed", api.makeFunctionRef("io._isKeyPressed"));
+    api.setField(obj, "_isShiftPressed", api.makeFunctionRef("io._isShiftPressed"));
+    api.setField(obj, "_isCtrlPressed", api.makeFunctionRef("io._isCtrlPressed"));
+    api.setField(obj, "_isAltPressed", api.makeFunctionRef("io._isAltPressed"));
+    api.setField(obj, "_isWinPressed", api.makeFunctionRef("io._isWinPressed"));
+    api.setField(obj, "_getCurrentModifiers", api.makeFunctionRef("io._getCurrentModifiers"));
+    api.setField(obj, "_setExecutorMode", api.makeFunctionRef("io._setExecutorMode"));
+    api.setField(obj, "_getExecutorMode", api.makeFunctionRef("io._getExecutorMode"));
+    api.setField(obj, "_mouseMove", api.makeFunctionRef("io._mouseMove"));
+    api.setField(obj, "_mouseMoveTo", api.makeFunctionRef("io._mouseMoveTo"));
+    api.setField(obj, "_mouseClick", api.makeFunctionRef("io._mouseClick"));
+    api.setField(obj, "_mouseDown", api.makeFunctionRef("io._mouseDown"));
+    api.setField(obj, "_mouseUp", api.makeFunctionRef("io._mouseUp"));
+    api.setField(obj, "_scroll", api.makeFunctionRef("io._scroll"));
+    api.setField(obj, "_getMousePosition", api.makeFunctionRef("io._getMousePosition"));
+    api.setField(obj, "_setMouseSensitivity", api.makeFunctionRef("io._setMouseSensitivity"));
+    api.setField(obj, "_getMouseSensitivity", api.makeFunctionRef("io._getMouseSensitivity"));
+    api.setField(obj, "_sleepMs", api.makeFunctionRef("io._sleepMs"));
+    api.setGlobal("io", obj);
+
+    auto& vm = api.vm();
+    Value exports;
     try {
-      auto key = toString(api, args[0]);
-      io->SendX11Key(key, true);
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
-      io->SendX11Key(key, false);
-      return Value::makeBool(true);
-    } catch (const std::exception& e) { debug("io.sendKey error: {}", e.what()); return Value::makeBool(false); }
-  });
+        exports = vm.loadModule("app/io");
+    } catch (...) {}
 
-  HAVEL_REGISTER_FUNCTION(api, "io.keyDown", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.empty()) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { io->SendX11Key(toString(api, args[0]), true); return Value::makeBool(true); }
-    catch (const std::exception& e) { debug("io.keyDown error: {}", e.what()); return Value::makeBool(false); }
-  });
+    if (exports.isObjectId()) {
+        auto* expObj = vm.getHeap().object(exports.asObjectId());
+        if (expObj) {
+            for (const auto& [name, value] : *expObj) {
+                if (name.empty() || name[0] == '_') continue;
+                api.setField(obj, name, value);
+                api.setGlobal(name, value);
+            }
+        }
+    }
 
-  HAVEL_REGISTER_FUNCTION(api, "io.keyUp", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.empty()) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { io->SendX11Key(toString(api, args[0]), false); return Value::makeBool(true); }
-    catch (const std::exception& e) { debug("io.keyUp error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.map", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.size() < 2) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { io->Map(toString(api, args[0]), toString(api, args[1])); return Value::makeBool(true); }
-    catch (const std::exception& e) { debug("io.map error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.remap", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.size() < 2) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { io->Remap(toString(api, args[0]), toString(api, args[1])); return Value::makeBool(true); }
-    catch (const std::exception& e) { debug("io.remap error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.block", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeNull();
-    try { io->EmergencyReleaseAllKeys(); } catch (const std::exception& e) { debug("io.block error: {}", e.what()); }
-    return Value::makeNull();
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.unblock", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeNull();
-    try { io->UngrabAll(); } catch (const std::exception& e) { debug("io.unblock error: {}", e.what()); }
-    return Value::makeNull();
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.suspend", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->Suspend()); }
-    catch (const std::exception& e) { debug("io.suspend error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.resume", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try {
-      if (io->isSuspended) return Value::makeBool(io->Resume());
-      return Value::makeBool(true);
-    } catch (const std::exception& e) { debug("io.resume error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.isSuspended", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->IsSuspended()); }
-    catch (const std::exception& e) { return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.grab", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeNull();
-    try { io->EmergencyReleaseAllKeys(); } catch (const std::exception& e) { debug("io.grab error: {}", e.what()); }
-    return Value::makeNull();
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.ungrab", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeNull();
-    try { io->UngrabAll(); } catch (const std::exception& e) { debug("io.ungrab error: {}", e.what()); }
-    return Value::makeNull();
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.emergencyRelease", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeNull();
-    try { io->EmergencyReleaseAllKeys(); } catch (const std::exception& e) { debug("io.emergencyRelease error: {}", e.what()); }
-    return Value::makeNull();
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.isKeyPressed", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.empty()) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->IsKeyPressed(toString(api, args[0]))); }
-    catch (const std::exception& e) { return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.isShiftPressed", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->IsShiftPressed()); }
-    catch (const std::exception& e) { return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.isCtrlPressed", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->IsCtrlPressed()); }
-    catch (const std::exception& e) { return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.isAltPressed", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->IsAltPressed()); }
-    catch (const std::exception& e) { return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.isWinPressed", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->IsWinPressed()); }
-    catch (const std::exception& e) { return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.getCurrentModifiers", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeInt(0);
-    try { return Value::makeInt(io->GetCurrentModifiers()); }
-    catch (const std::exception& e) { return Value::makeInt(0); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.setExecutorMode", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.empty()) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try {
-      auto mode = stringToExecutorMode(toString(api, args[0]));
-      io->SetExecutorMode(mode);
-      return Value::makeBool(true);
-    } catch (const std::exception& e) { debug("io.setExecutorMode error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.getExecutorMode", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return api.makeString("scheduler");
-    try { return api.makeString(executorModeToString(io->GetExecutorMode())); }
-    catch (const std::exception& e) { return api.makeString("scheduler"); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.mouseMove", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.size() < 2) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    int dx = args[0].isInt() ? args[0].asInt() : 0;
-    int dy = args[1].isInt() ? args[1].asInt() : 0;
-    try { return Value::makeBool(io->MouseMove(dx, dy)); }
-    catch (const std::exception& e) { debug("io.mouseMove error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.mouseMoveTo", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.size() < 2) return Value::makeBool(false);
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    int x = args[0].isInt() ? args[0].asInt() : 0;
-    int y = args[1].isInt() ? args[1].asInt() : 0;
-    int speed = args.size() > 2 && args[2].isInt() ? args[2].asInt() : 1;
-    try { return Value::makeBool(io->MouseMoveTo(x, y, speed)); }
-    catch (const std::exception& e) { debug("io.mouseMoveTo error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.mouseClick", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    int button = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { io->MouseClick(button); return Value::makeBool(true); }
-    catch (const std::exception& e) { debug("io.mouseClick error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.mouseDoubleClick", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    int button = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try {
-      io->MouseClick(button);
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
-      io->MouseClick(button);
-      return Value::makeBool(true);
-    } catch (const std::exception& e) { debug("io.mouseDoubleClick error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.mousePress", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    int button = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->MouseDown(button)); }
-    catch (const std::exception& e) { debug("io.mousePress error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.mouseRelease", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    int button = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->MouseUp(button)); }
-    catch (const std::exception& e) { debug("io.mouseRelease error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.scroll", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    double dy = !args.empty() ? toDouble(args[0], 0.0) : 0.0;
-    double dx = args.size() > 1 ? toDouble(args[1], 0.0) : 0.0;
-    auto* io = getIO();
-    if (!io) return Value::makeBool(false);
-    try { return Value::makeBool(io->Scroll(dy, dx)); }
-    catch (const std::exception& e) { debug("io.scroll error: {}", e.what()); return Value::makeBool(false); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.getMousePosition", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeNull();
-    try {
-      auto pos = io->GetMousePosition();
-      auto arr = api.makeArray();
-      api.push(arr, Value::makeInt(pos.first));
-      api.push(arr, Value::makeInt(pos.second));
-      return arr;
-    } catch (const std::exception& e) { debug("io.getMousePosition error: {}", e.what()); return Value::makeNull(); }
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.setMouseSensitivity", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    if (args.empty()) return Value::makeNull();
-    auto* io = getIO();
-    if (!io) return Value::makeNull();
-    try { io->SetMouseSensitivity(toDouble(args[0], 1.0)); }
-    catch (const std::exception& e) { debug("io.setMouseSensitivity error: {}", e.what()); }
-    return Value::makeNull();
-  });
-
-  HAVEL_REGISTER_FUNCTION(api, "io.getMouseSensitivity", [api](const auto& rawArgs) {
-    auto args = stripReceiver(api, rawArgs);
-    auto* io = getIO();
-    if (!io) return Value::makeDouble(1.0);
-    try { return Value::makeDouble(io->GetMouseSensitivity()); }
-    catch (const std::exception& e) { return Value::makeDouble(1.0); }
-  });
-
-  auto obj = api.makeObject();
-  api.setGlobal("io", obj);
-  api.setField(obj, MODULE_MARKER, Value::makeBool(true));
-  api.setField(obj, "sendKeys", api.makeFunctionRef("io.sendKeys"));
-  api.setField(obj, "sendKey", api.makeFunctionRef("io.sendKey"));
-  api.setField(obj, "keyDown", api.makeFunctionRef("io.keyDown"));
-  api.setField(obj, "keyUp", api.makeFunctionRef("io.keyUp"));
-  api.setField(obj, "map", api.makeFunctionRef("io.map"));
-  api.setField(obj, "remap", api.makeFunctionRef("io.remap"));
-  api.setField(obj, "block", api.makeFunctionRef("io.block"));
-  api.setField(obj, "unblock", api.makeFunctionRef("io.unblock"));
-  api.setField(obj, "suspend", api.makeFunctionRef("io.suspend"));
-  api.setField(obj, "resume", api.makeFunctionRef("io.resume"));
-  api.setField(obj, "isSuspended", api.makeFunctionRef("io.isSuspended"));
-  api.setField(obj, "grab", api.makeFunctionRef("io.grab"));
-  api.setField(obj, "ungrab", api.makeFunctionRef("io.ungrab"));
-  api.setField(obj, "emergencyRelease", api.makeFunctionRef("io.emergencyRelease"));
-  api.setField(obj, "isKeyPressed", api.makeFunctionRef("io.isKeyPressed"));
-  api.setField(obj, "isShiftPressed", api.makeFunctionRef("io.isShiftPressed"));
-  api.setField(obj, "isCtrlPressed", api.makeFunctionRef("io.isCtrlPressed"));
-  api.setField(obj, "isAltPressed", api.makeFunctionRef("io.isAltPressed"));
-  api.setField(obj, "isWinPressed", api.makeFunctionRef("io.isWinPressed"));
-  api.setField(obj, "getCurrentModifiers", api.makeFunctionRef("io.getCurrentModifiers"));
-  api.setField(obj, "setExecutorMode", api.makeFunctionRef("io.setExecutorMode"));
-  api.setField(obj, "getExecutorMode", api.makeFunctionRef("io.getExecutorMode"));
-  api.setField(obj, "mouseMove", api.makeFunctionRef("io.mouseMove"));
-  api.setField(obj, "mouseMoveTo", api.makeFunctionRef("io.mouseMoveTo"));
-  api.setField(obj, "mouseClick", api.makeFunctionRef("io.mouseClick"));
-  api.setField(obj, "mouseDoubleClick", api.makeFunctionRef("io.mouseDoubleClick"));
-  api.setField(obj, "mousePress", api.makeFunctionRef("io.mousePress"));
-  api.setField(obj, "mouseRelease", api.makeFunctionRef("io.mouseRelease"));
-  api.setField(obj, "scroll", api.makeFunctionRef("io.scroll"));
-  api.setField(obj, "getMousePosition", api.makeFunctionRef("io.getMousePosition"));
-  api.setField(obj, "setMouseSensitivity", api.makeFunctionRef("io.setMouseSensitivity"));
-  api.setField(obj, "getMouseSensitivity", api.makeFunctionRef("io.getMouseSensitivity"));
-
-  HAVEL_END_MODULE();
+    HAVEL_END_MODULE();
 }
 
 } // namespace havel::modules
@@ -416,6 +275,6 @@ void registerIOModule(const VMApi& api) {
 #include "c/ModulePlugin.h"
 
 HAVEL_MODULE_PLUGIN_IMPL(io, "1.0.0", "IO operations module",
-  havel::modules::registerIOModule(*api);
+    havel::modules::registerIOModule(*api);
 )
 #endif

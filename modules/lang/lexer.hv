@@ -853,8 +853,14 @@ fn scanHotkey() {
                 scanNumber()
                 continue
             }
-      if isAlphaCp(c) {
-        // F-key hotkey check: F followed by digit might be F1..F12
+  if isAlphaCp(c) {
+    // Standalone underscore: _ not followed by alphanumeric
+    if c == 95 && !isAlphaNumCp(cp(1)) {
+      advance()
+      addToken("Underscore", "_")
+      continue
+    }
+    // F-key hotkey check: F followed by digit might be F1..F12
         if c == 70 && isDigitCp(cp(1)) {
           // Lookahead: if followed by assignment/space/tab/semicolon/comma, it's an identifier
           la = 1

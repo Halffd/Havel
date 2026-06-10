@@ -190,14 +190,14 @@ public:
     ~IO();
 
     // Public access methods for EventListener
-    EventListener *GetEventListener() { return eventListener.get(); }
-    ImportManager *GetImportManager() { return importManager.get(); }
+    EventListener *GetEventListener() { ensureBackend(); return eventListener.get(); }
+    ImportManager *GetImportManager() { ensureBackend(); return importManager.get(); }
     std::shared_ptr<ImportManager> getImportManagerShared() {
-        return importManager;
+        ensureBackend(); return importManager;
     }
 
  // InputBackend access (new adapter pattern)
-  InputBackend *GetInputBackend() { return inputBackend.get(); }
+  InputBackend *GetInputBackend() { ensureBackend(); return inputBackend.get(); }
   InputBackendType GetInputBackendType() const { return inputBackendType; }
   void SetInputBackend(const std::string &backendName);
 
@@ -232,7 +232,7 @@ public:
   std::string GetActiveWindowProcess();
 
   // IOBackend access
-  IOBackend *GetIOBackend() { return ioBackend.get(); }
+  IOBackend *GetIOBackend() { ensureBackend(); return ioBackend.get(); }
 
     // Key sending methods
     void Send(Key key, bool down = true);
@@ -485,6 +485,9 @@ public:
   std::timed_mutex hotkeyMutex;
   std::mutex blockedKeysMutex;
   std::map<int, bool> keyDownState;
+
+  mutable std::once_flag backendInitFlag_;
+  void ensureBackend();
 
   std::mutex remapMutex;
   std::unordered_map<int, int> activeRemaps;

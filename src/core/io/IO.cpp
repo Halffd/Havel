@@ -192,6 +192,7 @@ void IO::SendBatchedKeyEvents(const std::vector<input_event> &events) {
 }
 
 void IO::SendUInput(int keycode, bool down) {
+  ensureBackend();
   if (!eventListener) {
     warning("SendUInput called without EventListener");
     return;
@@ -321,6 +322,7 @@ std::string IO::getGamepadDevice() {
 }
 
 std::vector<std::string> IO::GetInputDevices() {
+  ensureBackend();
   std::vector<std::string> devices;
   std::string keyboardDevice = getKeyboardDevice();
   std::string mouseDevice = getMouseDevice();
@@ -347,14 +349,17 @@ std::vector<std::string> IO::GetInputDevices() {
 }
 
 std::string IO::GetActiveWindowTitle() {
+  ensureBackend();
   return WindowManager::GetActiveWindowTitle();
 }
 
 std::string IO::GetActiveWindowClass() {
+  ensureBackend();
   return WindowManager::GetActiveWindowClass();
 }
 
 std::string IO::GetActiveWindowProcess() {
+  ensureBackend();
   return WindowManager::GetActiveWindowProcess();
 }
 
@@ -392,7 +397,12 @@ void IO::listInputDevices() {
 
 // Updated constructor
 IO::IO() {
-  debug("[IO] Starting IO constructor...");
+  importManager = std::make_shared<ImportManager>();
+}
+
+void IO::ensureBackend() {
+  std::call_once(backendInitFlag_, [this]() {
+  debug("[IO] Starting IO backend init...");
   DisplayManager::Initialize();
   debug("[IO] DisplayManager initialized");
 
@@ -558,9 +568,11 @@ eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
         if (debugging::debug_io) debug("IOBackend initialized: {}", ioBackend->GetName());
     }
 #endif
+  });
 }
 
 void IO::SetInputBackend(const std::string &backendName) {
+    ensureBackend();
     InputBackendType type = InputBackendType::Unknown;
 
     if (backendName.empty() || backendName == "auto") {
@@ -591,6 +603,7 @@ void IO::SetInputBackend(const std::string &backendName) {
 
 // Backend device management
 std::vector<std::string> IO::ListDevices() {
+  ensureBackend();
     std::vector<std::string> result;
     if (inputBackend) {
         for (const auto &dev : inputBackend->EnumerateDevices()) {
@@ -601,6 +614,7 @@ std::vector<std::string> IO::ListDevices() {
 }
 
 bool IO::AddDevice(const std::string &path) {
+  ensureBackend();
     if (inputBackend) {
         return inputBackend->OpenDevice(path);
     }
@@ -608,6 +622,7 @@ bool IO::AddDevice(const std::string &path) {
 }
 
 bool IO::RemoveDevice(const std::string &path) {
+  ensureBackend();
     if (inputBackend) {
         inputBackend->CloseDevice(path);
         return true;
@@ -616,6 +631,7 @@ bool IO::RemoveDevice(const std::string &path) {
 }
 
 void IO::ClearDevices() {
+  ensureBackend();
     if (inputBackend) {
         auto devices = inputBackend->EnumerateDevices();
         for (const auto &dev : devices) {
@@ -625,6 +641,7 @@ void IO::ClearDevices() {
 }
 
 DeviceInfo IO::GetDevice(const std::string &path) {
+  ensureBackend();
     if (inputBackend) {
         auto devices = inputBackend->EnumerateDevices();
         for (const auto &dev : devices) {
@@ -635,6 +652,7 @@ DeviceInfo IO::GetDevice(const std::string &path) {
 }
 
 std::vector<DeviceInfo> IO::GetDevices() {
+  ensureBackend();
     if (inputBackend) {
         return inputBackend->EnumerateDevices();
     }
@@ -643,6 +661,7 @@ std::vector<DeviceInfo> IO::GetDevices() {
 
 // Evdev grab control
 bool IO::SetEvdevGrab(bool grab) {
+  ensureBackend();
     if (inputBackend) {
         if (grab) {
             auto devices = inputBackend->EnumerateDevices();
@@ -659,6 +678,7 @@ bool IO::SetEvdevGrab(bool grab) {
 }
 
 bool IO::GetEvdevGrab() const {
+  const_cast<IO*>(this)->ensureBackend();
     if (inputBackend) {
         return inputBackend->GetGrabbedDeviceCount() > 0;
     }
@@ -666,30 +686,36 @@ bool IO::GetEvdevGrab() const {
 }
 
 bool IO::ToggleEvdevGrab() {
+  ensureBackend();
     bool current = GetEvdevGrab();
     return SetEvdevGrab(!current);
 }
 
 // Key repeat settings
 void IO::SetRepeatInterval(int ms) {
+  ensureBackend();
     // Stored in config, used by EventListener
     Configs::Get().Set<int>("Input.RepeatInterval", ms);
 }
 
 int IO::GetRepeatInterval() const {
+  const_cast<IO*>(this)->ensureBackend();
     return Configs::Get().Get<int>("Input.RepeatInterval", 50);
 }
 
 void IO::SetAutoRepeat(bool enabled) {
+  ensureBackend();
     Configs::Get().Set<bool>("Input.AutoRepeat", enabled);
 }
 
 bool IO::GetAutoRepeat() const {
+  const_cast<IO*>(this)->ensureBackend();
     return Configs::Get().Get<bool>("Input.AutoRepeat", true);
 }
 
 // Mouse gesture methods
 void IO::AddGesture(int id, const std::string &pattern) {
+  ensureBackend();
     if (eventListener) {
         auto directions = eventListener->ParseGesturePattern(pattern);
         eventListener->RegisterGestureHotkey(id, directions);
@@ -697,12 +723,14 @@ void IO::AddGesture(int id, const std::string &pattern) {
 }
 
 void IO::AddGesture(int id, const std::vector<MouseGestureDirection> &directions) {
+  ensureBackend();
     if (eventListener) {
         eventListener->RegisterGestureHotkey(id, directions);
     }
 }
 
 void IO::RemoveGesture(int id) {
+  ensureBackend();
     // Gesture removal would need to be implemented in EventListener
     (void)id;
 }
@@ -712,10 +740,12 @@ std::vector<int> IO::GetGestures() const {
 }
 
 bool IO::HasGestures() const {
+  const_cast<IO*>(this)->ensureBackend();
     return false;
 }
 
 void IO::ClearGestures() {
+  ensureBackend();
     if (eventListener) {
         eventListener->ResetMouseGesture();
     }
@@ -724,6 +754,7 @@ void IO::ClearGestures() {
 IO::~IO() { cleanup(); }
 
 void IO::cleanup() {
+  ensureBackend();
   // Stop EventListener if using new event system
   if (eventListener) {
     eventListener->ForceUngrabAllDevices();
@@ -739,6 +770,7 @@ void IO::cleanup() {
 }
 
 void IO::UngrabAll() {
+  ensureBackend();
   if (ioBackend) ioBackend->UnregisterAll();
 }
 
@@ -757,6 +789,7 @@ void IO::removeSpecialCharacters(str &keyName) {
                 keyName.end());
 }
 bool IO::EmitClick(int btnCode, MouseAction action) {
+  ensureBackend();
     int x11Button = btnCode;
     if (btnCode >= 1 && btnCode <= 9) x11Button = btnCode;
 
@@ -783,6 +816,7 @@ bool IO::EmitClick(int btnCode, MouseAction action) {
     }
 }
 bool IO::MouseMove(int dx, int dy, int speed, float accel) {
+  ensureBackend();
     if (ioBackend) {
         if (speed <= 0) speed = 1;
         if (accel <= 0.0f) accel = 1.0f;
@@ -798,6 +832,7 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
     return false;
 }
 bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
+  ensureBackend();
   if (!eventListener) {
     error("MouseMoveTo: EventListener not available");
     return false;
@@ -869,6 +904,7 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
 }
 
 bool IO::ClickAt(int x, int y, int button, int speed, float accel) {
+  ensureBackend();
   if (!mouseController) {
     error("Cannot click: MouseController not initialized");
     return false;
@@ -877,6 +913,7 @@ bool IO::ClickAt(int x, int y, int button, int speed, float accel) {
 }
 
 bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
+  ensureBackend();
   if (!mouseController) {
     error("Cannot move mouse: MouseController not initialized");
     return false;
@@ -885,6 +922,7 @@ bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
 }
 
 bool IO::Scroll(double dy, double dx) {
+  ensureBackend();
     if (ioBackend) {
         int clicks = static_cast<int>(dy);
         if (clicks > 0) {
@@ -920,6 +958,7 @@ bool IO::Scroll(double dy, double dx) {
 }
 
 void IO::SetMouseSensitivity(double sensitivity) {
+  ensureBackend();
   mouseSensitivity = sensitivity;
   if (mouseController) {
     mouseController->SetSensitivity(sensitivity);
@@ -932,6 +971,7 @@ void IO::SetMouseSensitivity(double sensitivity) {
 double IO::GetMouseSensitivity() const { return mouseSensitivity; }
 
 void IO::SetScrollSpeed(double speed) {
+  ensureBackend();
   scrollSpeed = speed;
   if (mouseController) {
     mouseController->SetScrollSpeed(speed);
@@ -953,16 +993,19 @@ std::pair<int, int> IO::GetMousePosition() {
 }
 
 bool IO::InitializeXInput2() {
+  ensureBackend();
   if (ioBackend) return ioBackend->SetupXInput2();
   return false;
 }
 
 bool IO::SetHardwareMouseSensitivity(double sensitivity) {
+  ensureBackend();
   if (ioBackend) return ioBackend->SetHardwareSensitivity(sensitivity);
   return false;
 }
 
 void IO::SendX11Key(const std::string &keyName, bool press) {
+  ensureBackend();
     Key keycode = GetKeyCode(keyName);
     if (keycode == 0) return;
     if (press) {
@@ -977,6 +1020,7 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
 }
 
 void IO::SendCharX11(char ch) {
+  ensureBackend();
     if (!ioBackend) return;
     auto *display = DisplayManager::GetDisplay();
     if (!display) return;
@@ -1031,6 +1075,7 @@ void IO::SendCharX11(char ch) {
 // EventListener now manages uinput through UinputDevice class
 // State tracking implementation
 bool IO::TryPressKey(int keycode) {
+  ensureBackend();
   std::lock_guard<std::mutex> lock(keyStateMutex);
   if (pressedKeys.count(keycode)) {
     if (Configs::Get().GetVerboseKeyLogging())
@@ -1042,6 +1087,7 @@ bool IO::TryPressKey(int keycode) {
 }
 
 bool IO::TryReleaseKey(int keycode) {
+  ensureBackend();
   std::lock_guard<std::mutex> lock(keyStateMutex);
   if (!pressedKeys.count(keycode)) {
     if (Configs::Get().GetVerboseKeyLogging())
@@ -1054,6 +1100,7 @@ bool IO::TryReleaseKey(int keycode) {
 }
 
 void IO::EmergencyReleaseAllKeys() {
+  ensureBackend();
   std::lock_guard<std::mutex> lock(keyStateMutex);
     havel::warning("EMERGENCY: Releasing {} stuck keys", pressedKeys.size());
 
@@ -1069,6 +1116,7 @@ void IO::EmergencyReleaseAllKeys() {
 
 // OPTIMIZED: Method to send keys with state tracking and event batching
 void IO::Send(cstr keys) {
+  ensureBackend();
 #if defined(WINDOWS)
     // Windows implementation unchanged
     for (size_t i = 0; i < keys.length(); ++i) {
@@ -1301,6 +1349,7 @@ void IO::Send(cstr keys) {
 }
 
 bool IO::Suspend() {
+  ensureBackend();
   try {
     if (isSuspended) {
       // Resume (was suspended, now resuming)
@@ -1337,6 +1386,7 @@ bool IO::Suspend() {
 }
 // Method to suspend hotkeys
 bool IO::Suspend(int id) {
+  ensureBackend();
   auto it = hotkeys.find(id);
   if (it != hotkeys.end()) {
     it->second.enabled = false;
@@ -1347,6 +1397,7 @@ bool IO::Suspend(int id) {
 
 // Method to resume hotkeys
 bool IO::Resume(int id) {
+  ensureBackend();
   auto it = hotkeys.find(id);
   if (it != hotkeys.end()) {
     it->second.enabled = true;
@@ -1357,6 +1408,7 @@ bool IO::Resume(int id) {
 
 // Method to resume all hotkeys (alias for Suspend() when already suspended)
 bool IO::Resume() {
+  ensureBackend();
   return Suspend(); // Suspend() toggles, so call it again to resume
 }
 
@@ -1594,6 +1646,7 @@ KeyCode IO::ParseKeyPart(const std::string &keyPart, bool isEvdev) {
 
 // KeyTap method for on tap syntax
 void IO::KeyTap(const std::string &key, std::function<void()> tapAction) {
+  ensureBackend();
   if (!hotkeyManager) {
     error("KeyTap: hotkeyManager not initialized");
     return;
@@ -1616,6 +1669,7 @@ void IO::KeyTap(const std::string &key, std::function<void()> tapAction) {
 
 // KeyCombo method for on combo syntax
 void IO::KeyCombo(const std::string &key, std::function<void()> comboAction) {
+  ensureBackend();
   if (!hotkeyManager) {
     error("KeyCombo: hotkeyManager not initialized");
     return;
@@ -2072,6 +2126,7 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
 }
 // Method to control send
 void IO::ControlSend(const std::string &control, const std::string &keys) {
+  ensureBackend();
     if (debugging::debug_io) ::havel::debug("Control send: {} keys: {}", control, keys);
   wID hwnd = WindowManager::FindByTitle(control);
   if (!hwnd) {
@@ -2083,6 +2138,7 @@ void IO::ControlSend(const std::string &control, const std::string &keys) {
 // Send text using clipboard + paste (more reliable than key events for complex text)
 // BACKS UP AND RESTORES clipboard to avoid destroying user data
 void IO::SendText(const std::string &text) {
+  ensureBackend();
   if (text.empty()) return;
   if (ioBackend) ioBackend->TypeText(text);
 }
@@ -2156,11 +2212,13 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
 
 // Display a message box
 void IO::MsgBox(const std::string &message) {
+  ensureBackend();
  ::havel::info("Message Box: {}", message);
  }
 
 // Assign a hotkey to a specific ID
 void IO::AssignHotkey(HotKey hotkey, int id) {
+  ensureBackend();
   if (id == 0) id = ++hotkeyCount;
   hotkey.id = id;
   hotkeys[id] = hotkey;
@@ -2201,6 +2259,7 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 #endif
 
 int IO::ParseModifiers(str str) {
+  ensureBackend();
   int abstract = 0;
   if (str.find("+") != std::string::npos) {
     abstract |= ModifierMasks::SHIFT;
@@ -2222,6 +2281,7 @@ int IO::ParseModifiers(str str) {
   return abstract;
 }
 bool IO::GetKeyState(const std::string &keyName) {
+  ensureBackend();
   if (eventListener) {
     int keycode = KeyMap::FromString(keyName);
     if (keycode != 0) return eventListener->GetKeyState(keycode);
@@ -2234,12 +2294,14 @@ bool IO::GetKeyState(const std::string &keyName) {
 }
 
 bool IO::GetKeyState(int keycode) {
+  ensureBackend();
   if (eventListener) return eventListener->GetKeyState(keycode);
   if (ioBackend) return ioBackend->IsKeyDown(keycode);
   return false;
 }
 
 bool IO::IsAnyKeyPressed() {
+  ensureBackend();
   if (eventListener) {
     std::lock_guard<std::mutex> lk(keyStateMutex);
     for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
@@ -2251,6 +2313,7 @@ bool IO::IsAnyKeyPressed() {
 }
 
 bool IO::IsAnyKeyPressedExcept(const std::string &excludeKey) {
+  ensureBackend();
   if (eventListener) {
     int excludeKeycode = EvdevNameToKeyCode(excludeKey);
     std::lock_guard<std::mutex> lk(keyStateMutex);
@@ -2262,6 +2325,7 @@ bool IO::IsAnyKeyPressedExcept(const std::string &excludeKey) {
 }
 
 bool IO::IsAnyKeyPressedExcept(const std::vector<std::string> &excludeKeys) {
+  ensureBackend();
   if (eventListener) {
     std::set<int> excludeCodes;
     for (const auto &key : excludeKeys) {
@@ -2276,6 +2340,7 @@ bool IO::IsAnyKeyPressedExcept(const std::vector<std::string> &excludeKeys) {
   return false;
 }
 bool IO::IsShiftPressed() {
+  ensureBackend();
   if (eventListener) {
     auto modState = eventListener->GetModifierState();
     return modState.leftShift || modState.rightShift;
@@ -2284,6 +2349,7 @@ bool IO::IsShiftPressed() {
 }
 
 bool IO::IsCtrlPressed() {
+  ensureBackend();
   if (eventListener) {
     auto modState = eventListener->GetModifierState();
     return modState.leftCtrl || modState.rightCtrl;
@@ -2292,6 +2358,7 @@ bool IO::IsCtrlPressed() {
 }
 
 bool IO::IsAltPressed() {
+  ensureBackend();
   if (eventListener) {
     auto modState = eventListener->GetModifierState();
     return modState.leftAlt || modState.rightAlt;
@@ -2300,6 +2367,7 @@ bool IO::IsAltPressed() {
 }
 
 bool IO::IsWinPressed() {
+  ensureBackend();
   if (eventListener) {
     auto modState = eventListener->GetModifierState();
     return modState.leftMeta || modState.rightMeta;
@@ -2324,6 +2392,7 @@ Key IO::GetKeyCode(cstr keyName) {
   return keycode;
 }
 void IO::PressKey(const std::string &keyName, bool press) {
+  ensureBackend();
     if (debugging::debug_io) ::havel::debug("Pressing key: {} (press: {})", keyName, press);
   Key keycode = GetKeyCode(keyName);
   if (ioBackend) {
@@ -2333,6 +2402,7 @@ void IO::PressKey(const std::string &keyName, bool press) {
 }
 
 bool IO::GrabHotkey(int hotkeyId) {
+  ensureBackend();
   auto it = hotkeys.find(hotkeyId);
   if (it == hotkeys.end()) {
     warning("Hotkey ID not found: {}", hotkeyId);
@@ -2352,6 +2422,7 @@ bool IO::GrabHotkey(int hotkeyId) {
 }
 
 bool IO::UngrabHotkey(int hotkeyId) {
+  ensureBackend();
   auto it = hotkeys.find(hotkeyId);
   if (it == hotkeys.end()) {
     error("Hotkey ID not found: {}", hotkeyId);
@@ -2382,6 +2453,7 @@ bool IO::UngrabHotkey(int hotkeyId) {
 }
 
 void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
+  ensureBackend();
     if (debugging::debug_io) debug("IO::SetAnyKeyPressCallback called, eventListener={}",
         (void *)eventListener.get());
   if (!eventListener) {
@@ -2406,6 +2478,7 @@ void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
 }
 
 void IO::SetInputEventCallback(InputEventCallback callback) {
+  ensureBackend();
   if (!eventListener) {
     warn("IO::SetInputEventCallback: eventListener is null - callback will not "
          "be registered");
@@ -2436,10 +2509,14 @@ void IO::SetInputBlockCallback(
   }
 }
 
-HotkeyExecutor *IO::GetHotkeyExecutor() const { return hotkeyExecutor.get(); }
+HotkeyExecutor *IO::GetHotkeyExecutor() const {
+  const_cast<IO*>(this)->ensureBackend();
+  return hotkeyExecutor.get();
+}
 ExecutorMode IO::GetExecutorMode() const { return executorMode_.load(); }
 
 void IO::SetExecutorMode(ExecutorMode mode) {
+  ensureBackend();
     executorMode_.store(mode);
     if (eventListener) {
         eventListener->SetExecutorMode(mode);
@@ -2448,6 +2525,7 @@ void IO::SetExecutorMode(ExecutorMode mode) {
 }
 
 bool IO::GrabHotkeysByPrefix(const std::string &prefix) {
+  ensureBackend();
   bool success = true;
   for (const auto &[id, hotkey] : hotkeys) {
     if (hotkey.alias.find(prefix) == 0) {
@@ -2458,6 +2536,7 @@ bool IO::GrabHotkeysByPrefix(const std::string &prefix) {
 }
 
 bool IO::UngrabHotkeysByPrefix(const std::string &prefix) {
+  ensureBackend();
   bool success = true;
   for (const auto &[id, hotkey] : hotkeys) {
     if (hotkey.alias.find(prefix) == 0) {
@@ -2467,6 +2546,7 @@ bool IO::UngrabHotkeysByPrefix(const std::string &prefix) {
   return success;
 }
 bool IO::EnableHotkey(const std::string &keyName) {
+  ensureBackend();
   std::lock_guard<std::mutex> lock(hotkeySetMutex);
   bool found = false;
 
@@ -2487,6 +2567,7 @@ bool IO::EnableHotkey(const std::string &keyName) {
 }
 
 bool IO::DisableHotkey(const std::string &keyName) {
+  ensureBackend();
   std::lock_guard<std::mutex> lock(hotkeySetMutex);
   bool found = false;
 
@@ -2507,6 +2588,7 @@ bool IO::DisableHotkey(const std::string &keyName) {
 }
 
 bool IO::ToggleHotkey(const std::string &keyName) {
+  ensureBackend();
   std::lock_guard<std::mutex> lock(hotkeySetMutex);
   bool found = false;
 
@@ -2528,6 +2610,7 @@ bool IO::ToggleHotkey(const std::string &keyName) {
 }
 
 bool IO::RemoveHotkey(const std::string &keyName) {
+  ensureBackend();
   std::lock_guard<std::mutex> lock(hotkeySetMutex);
   bool found = false;
 
@@ -2552,6 +2635,7 @@ bool IO::RemoveHotkey(const std::string &keyName) {
 }
 
 bool IO::RemoveHotkey(int hotkeyId) {
+  ensureBackend();
   std::lock_guard<std::mutex> lock(hotkeySetMutex);
 
   auto it = hotkeys.find(hotkeyId);
@@ -2569,6 +2653,7 @@ bool IO::RemoveHotkey(int hotkeyId) {
 }
 
 void IO::Map(const std::string &from, const std::string &to) {
+  ensureBackend();
   int fromCode = EvdevNameToKeyCode(from);
   int toCode = EvdevNameToKeyCode(to);
   if (fromCode > 0 && toCode > 0) {
@@ -2584,6 +2669,7 @@ void IO::Map(const std::string &from, const std::string &to) {
 }
 
 void IO::Remap(const std::string &key1, const std::string &key2) {
+  ensureBackend();
   // Evdev remapping
   int code1 = EvdevNameToKeyCode(key1);
   int code2 = EvdevNameToKeyCode(key2);
@@ -2627,6 +2713,7 @@ bool IO::MatchEvdevModifiers(int expectedModifiers,
   return true;
 }
 bool IO::IsKeyRemappedTo(int targetKey) {
+  ensureBackend();
   for (const auto &[original, mapped] : activeRemaps) {
     if (mapped == targetKey)
       return true;
@@ -2636,11 +2723,13 @@ bool IO::IsKeyRemappedTo(int targetKey) {
 
 
 void havel::IO::setGlobalAltState(bool pressed) {
+  ensureBackend();
   globalAltPressed.store(pressed);
 }
 
 bool havel::IO::getGlobalAltState() { return globalAltPressed.load(); }
 void IO::executeComboAction(const std::string &action) {
+  ensureBackend();
     if (debugging::debug_hotkeys) debug("Executing combo action: {}", action);
 
   // Transform action to hotkey alias
@@ -2679,6 +2768,7 @@ void IO::executeComboAction(const std::string &action) {
 
 // Mouse button code conversion implementations
 int IO::GetMouseButtonCode(const std::string &arg) {
+  ensureBackend();
   std::string s = toLower(arg);
   if (s == "right")
     return BTN_RIGHT;
@@ -2705,6 +2795,7 @@ int IO::GetMouseButtonCode(const std::string &arg) {
 }
 
 int IO::GetMouseButtonCode(int idx) {
+  ensureBackend();
   switch (idx) {
   case 1:
     return BTN_LEFT;
@@ -2760,10 +2851,12 @@ MouseAction IO::GetMouseAction(int idx) {
 
 // Additional methods for HostAPI
 pID havel::IO::GetActiveWindowPID() {
+  ensureBackend();
   return WindowManager::GetActiveWindowPID();
 }
 
 void havel::IO::Scroll(int dy, int dx) {
+  ensureBackend();
   if (mouseController) {
     mouseController->Scroll(dy, dx);
   }

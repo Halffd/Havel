@@ -86,6 +86,8 @@ public:
 
 private:
     std::unique_ptr<IAudioBackend> backend_;
+    void ensureBackend();
+    std::once_flag backendInitFlag_;
     mutable std::vector<AudioDevice> cachedDevices;
     mutable std::mutex deviceMutex;
     std::string defaultOutputDevice;

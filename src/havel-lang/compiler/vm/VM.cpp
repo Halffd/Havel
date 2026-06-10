@@ -2934,7 +2934,15 @@ bool VM::ensureModuleLoaded(const std::string &name) {
         if (modIt != lazy_modules_.end()) {
             for (const auto &alias : modIt->second.aliases) {
                 auto aliasIt = globals.find(alias);
-                if (aliasIt == globals.end() || (aliasIt->second.isObjectId())) {
+                bool isProxy = false;
+                if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
+                    auto *obj = heap_.object(aliasIt->second.asObjectId());
+                    if (obj) {
+                        auto *lf = obj->get("__lazy__");
+                        isProxy = (lf && lf->isBool() && lf->asBool());
+                    }
+                }
+                if (aliasIt == globals.end() || isProxy) {
                     globals[alias] = git->second;
                 }
             }

@@ -13,24 +13,35 @@ AudioManager &AudioManager::get() {
 }
 
 AudioManager::AudioManager(AudioBackend) {
-  backend_.reset(CreateAudioBackend(AudioBackend::AUTO));
-  info("AudioManager proxy created, backend: {}", backend_ ? backend_->getName() : "none");
-  startMonitoring();
+  // Backend is initialized lazily on first use via ensureBackend()
 }
 
 AudioManager::~AudioManager() {
   stopMonitoring();
 }
 
+void AudioManager::ensureBackend() {
+  std::call_once(backendInitFlag_, [this]() {
+    backend_.reset(CreateAudioBackend(AudioBackend::AUTO));
+    if (backend_) {
+      info("Audio backend initialized: {}", backend_->getName());
+      startMonitoring();
+    } else {
+      warning("No audio backend available");
+    }
+  });
+}
+
 bool AudioManager::setVolume(double v) { return setVolume(getDefaultOutput(), v); }
 bool AudioManager::setVolume(const std::string &d, double v) {
+  ensureBackend();
   v = std::clamp(v, MIN_VOLUME, MAX_VOLUME);
   bool ok = backend_ && backend_->setVolume(d, v);
   if (ok && volumeCallback) volumeCallback(d, v);
   return ok;
 }
 double AudioManager::getVolume() { return getVolume(getDefaultOutput()); }
-double AudioManager::getVolume(const std::string &d) { return backend_ ? backend_->getVolume(d) : 1.0; }
+double AudioManager::getVolume(const std::string &d) { ensureBackend(); return backend_ ? backend_->getVolume(d) : 1.0; }
 bool AudioManager::increaseVolume(double a) { return setVolume(getVolume() + a); }
 bool AudioManager::increaseVolume(const std::string &d, double a) { return setVolume(d, getVolume(d) + a); }
 bool AudioManager::decreaseVolume(double a) { return setVolume(getVolume() - a); }
@@ -40,14 +51,16 @@ bool AudioManager::toggleMute() { return setMute(!isMuted()); }
 bool AudioManager::toggleMute(const std::string &d) { return setMute(d, !isMuted(d)); }
 bool AudioManager::setMute(bool m) { return setMute(getDefaultOutput(), m); }
 bool AudioManager::setMute(const std::string &d, bool m) {
+  ensureBackend();
   bool ok = backend_ && backend_->setMute(d, m);
   if (ok && muteCallback) muteCallback(d, m);
   return ok;
 }
 bool AudioManager::isMuted() { return isMuted(getDefaultOutput()); }
-bool AudioManager::isMuted(const std::string &d) { return backend_ && backend_->isMuted(d); }
+bool AudioManager::isMuted(const std::string &d) { ensureBackend(); return backend_ && backend_->isMuted(d); }
 
 const std::vector<AudioDevice> &AudioManager::getDevices() const {
+  // ensureBackend is non-const, so we skip it here — backend_ may be null, that's fine
   if (backend_) backend_->updateDeviceCache(cachedDevices);
   return cachedDevices;
 }
@@ -70,19 +83,22 @@ AudioDevice *AudioManager::findDeviceByIndex(uint32_t index) {
   return it != devs.end() ? const_cast<AudioDevice *>(&*it) : nullptr;
 }
 
-bool AudioManager::playTestSound() { return backend_ && backend_->playTestSound(); }
-bool AudioManager::playSound(const std::string &f) { return backend_ && backend_->playSound(f); }
+bool AudioManager::playTestSound() { ensureBackend(); return backend_ && backend_->playTestSound(); }
+bool AudioManager::playSound(const std::string &f) { ensureBackend(); return backend_ && backend_->playSound(f); }
 
 void AudioManager::setVolumeCallback(VolumeCallback cb) { volumeCallback = cb; }
 void AudioManager::setMuteCallback(MuteCallback cb) { muteCallback = cb; }
 void AudioManager::setDeviceCallback(DeviceCallback cb) { deviceCallback = cb; }
 
-bool AudioManager::setApplicationVolume(const std::string &n, double v) { return backend_ && backend_->setApplicationVolume(n, v); }
+bool AudioManager::setApplicationVolume(const std::string &n, double v) { ensureBackend(); return backend_ && backend_->setApplicationVolume(n, v); }
 double AudioManager::getApplicationVolume(const std::string &n) const { return backend_ ? backend_->getApplicationVolume(n) : 1.0; }
 std::vector<AudioManager::ApplicationInfo> AudioManager::getApplications() const { return backend_ ? backend_->getApplications() : std::vector<ApplicationInfo>(); }
 std::string AudioManager::getActiveApplicationName() const { return ""; }
 
-AudioBackend AudioManager::getBackend() const { return backend_ ? backend_->getType() : AudioBackend::ALSA; }
+AudioBackend AudioManager::getBackend() const {
+  if (!backend_) return AudioBackend::ALSA;
+  return backend_->getType();
+}
 
 void AudioManager::startMonitoring() {
   monitoring = true;

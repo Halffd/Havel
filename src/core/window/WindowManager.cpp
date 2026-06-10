@@ -22,14 +22,18 @@ WindowManager::WindowManager() {
   wmName = detector.GetWMName();
   wmType = detector.Detect();
   wmSupported = true;
+}
 
-  backend_->initialize();
+void WindowManager::ensureBackend() {
+  std::call_once(backendInitFlag_, [this]() {
+    backend_->initialize();
 
-  if (backend_->getDisplayServer() == DisplayServer::X11) {
-    InitializeX11();
-  }
+    if (backend_->getDisplayServer() == DisplayServer::X11) {
+      InitializeX11();
+    }
 
-  LoadGroupsFromConfig();
+    LoadGroupsFromConfig();
+  });
 }
 
 bool WindowManager::InitializeX11() {
@@ -58,47 +62,58 @@ void WindowManager::LoadGroupsFromConfig() {
 }
 
 wID WindowManager::GetActiveWindow() {
-  return get().backend_->getActiveWindow();
+  get().ensureBackend();
+  return get().getBackend().getActiveWindow();
 }
 
 pID WindowManager::GetActiveWindowPID() {
-  return get().backend_->getActiveWindowPID();
+  get().ensureBackend();
+  return get().getBackend().getActiveWindowPID();
 }
 
 std::string WindowManager::GetActiveWindowProcess() {
-  return get().backend_->getActiveWindowProcess();
+  get().ensureBackend();
+  return get().getBackend().getActiveWindowProcess();
 }
 
 std::string WindowManager::GetActiveWindowTitle() {
-  return get().backend_->getActiveWindowTitle();
+  get().ensureBackend();
+  return get().getBackend().getActiveWindowTitle();
 }
 
 pID WindowManager::GetWindowPID(wID id) {
-  return get().backend_->getWindowPID(id);
+  get().ensureBackend();
+  return get().getBackend().getWindowPID(id);
 }
 
 std::string WindowManager::GetWindowTitle(wID id) {
-  return get().backend_->getWindowTitle(id);
+  get().ensureBackend();
+  return get().getBackend().getWindowTitle(id);
 }
 
 std::string WindowManager::GetWindowClass(wID id) {
-  return get().backend_->getWindowClass(id);
+  get().ensureBackend();
+  return get().getBackend().getWindowClass(id);
 }
 
 wID WindowManager::GetwIDByPID(pID pid) {
-  return get().backend_->findWindowByPID(pid);
+  get().ensureBackend();
+  return get().getBackend().findWindowByPID(pid);
 }
 
 wID WindowManager::GetwIDByProcessName(cstr processName) {
-  return get().backend_->findWindowByProcessName(processName);
+  get().ensureBackend();
+  return get().getBackend().findWindowByProcessName(processName);
 }
 
 wID WindowManager::FindByClass(cstr className) {
-  return get().backend_->findWindowByClass(className);
+  get().ensureBackend();
+  return get().getBackend().findWindowByClass(className);
 }
 
 wID WindowManager::FindByTitle(cstr title) {
-  return get().backend_->findWindowByTitle(title);
+  get().ensureBackend();
+  return get().getBackend().findWindowByTitle(title);
 }
 
 wID WindowManager::Find(cstr identifier) {
@@ -135,7 +150,7 @@ wID WindowManager::FindWindowInGroup(cstr groupName) {
 
 wID WindowManager::NewWindow(cstr name, std::vector<int> *dimensions,
                               bool hide) {
-  return get().backend_->newWindow(name, dimensions, hide);
+  return get().getBackend().newWindow(name, dimensions, hide);
 }
 
 void WindowManager::AddGroup(cstr groupName, cstr identifier) {
@@ -171,11 +186,11 @@ std::string WindowManager::GetCurrentWMName() const { return wmName; }
 bool WindowManager::IsWMSupported() const { return wmSupported; }
 
 bool WindowManager::IsX11() {
-  return get().backend_->getDisplayServer() == DisplayServer::X11;
+  return get().getBackend().getDisplayServer() == DisplayServer::X11;
 }
 
 bool WindowManager::IsWayland() {
-  return get().backend_->getDisplayServer() == DisplayServer::Wayland;
+  return get().getBackend().getDisplayServer() == DisplayServer::Wayland;
 }
 
 std::string WindowManager::DetectWindowManager() const {
@@ -187,7 +202,7 @@ bool WindowManager::CheckWMProtocols() const {
 }
 
 void WindowManager::All() {
-  auto windows = get().backend_->getAllWindows();
+  auto windows = get().getBackend().getAllWindows();
   for (const auto &w : windows) {
     std::cout << "Window: id=" << w.id << " title='" << w.title
               << "' class='" << w.windowClass << "'" << std::endl;
@@ -207,30 +222,30 @@ str WindowManager::GetIdentifierValue(cstr identifier) {
 }
 
 str WindowManager::getProcessName(pid_t windowPID) {
-  return get().backend_->getProcessName(windowPID);
+  return get().getBackend().getProcessName(windowPID);
 }
 
 str WindowManager::getProcessCmdline(pid_t windowPID) {
-  return get().backend_->getProcessCmdline(windowPID);
+  return get().getBackend().getProcessCmdline(windowPID);
 }
 
 bool WindowManager::Resize(wID windowId, int width, int height,
                             bool fullscreen) {
-  return get().backend_->resizeWindow(windowId, width, height);
+  return get().getBackend().resizeWindow(windowId, width, height);
 }
 
 bool WindowManager::Move(wID windowId, int x, int y, bool centerOnScreen) {
   if (centerOnScreen) return Center(windowId);
-  return get().backend_->moveWindow(windowId, x, y);
+  return get().getBackend().moveWindow(windowId, x, y);
 }
 
 bool WindowManager::MoveResize(wID windowId, int x, int y, int width,
                                 int height) {
-  return get().backend_->moveResizeWindow(windowId, x, y, width, height);
+  return get().getBackend().moveResizeWindow(windowId, x, y, width, height);
 }
 
 bool WindowManager::Center(wID windowId) {
-  return get().backend_->centerWindow(windowId);
+  return get().getBackend().centerWindow(windowId);
 }
 
 bool WindowManager::MoveToCorner(wID windowId, const std::string &corner) {
@@ -238,7 +253,7 @@ bool WindowManager::MoveToCorner(wID windowId, const std::string &corner) {
   if (monitors.empty()) return false;
 
   auto &monitor = monitors[0];
-  Rect pos = get().backend_->getWindowPosition(windowId);
+  Rect pos = get().getBackend().getWindowPosition(windowId);
 
   int x = 0, y = 0;
   if (corner == "top-left" || corner == "tl") {
@@ -251,11 +266,11 @@ bool WindowManager::MoveToCorner(wID windowId, const std::string &corner) {
     x = monitor.x + monitor.width - pos.width;
     y = monitor.y + monitor.height - pos.height;
   }
-  return get().backend_->moveWindow(windowId, x, y);
+  return get().getBackend().moveWindow(windowId, x, y);
 }
 
 bool WindowManager::MoveToMonitor(wID windowId, int monitorIndex) {
-  return get().backend_->moveWindowToMonitor(windowId, monitorIndex);
+  return get().getBackend().moveWindowToMonitor(windowId, monitorIndex);
 }
 
 bool WindowManager::Center(const std::string &windowTitle) {
@@ -295,7 +310,7 @@ void WindowManager::MoveToCorners(int direction, int distance) {
     Move(win, distance, distance);
   } else if (direction == 2) {
     auto monitor = DisplayManager::GetPrimaryMonitor();
-    Rect pos = get().backend_->getWindowPosition(win);
+    Rect pos = get().getBackend().getWindowPosition(win);
     Move(win, monitor.width - pos.width - distance, distance);
   }
 }
@@ -316,36 +331,36 @@ void WindowManager::ResizeToCorner(int direction, int distance) {
 }
 
 void WindowManager::SnapWindow(wID windowId, int position) {
-  get().backend_->snapWindow(windowId, position);
+  get().getBackend().snapWindow(windowId, position);
 }
 
 void WindowManager::SnapWindowWithPadding(int position, int padding) {
   wID win = GetActiveWindow();
   if (!win) return;
-  get().backend_->snapWindow(win, position, padding);
+  get().getBackend().snapWindow(win, position, padding);
 }
 
 void WindowManager::ManageVirtualDesktops(int action) {
-  auto &backend = get().backend_;
+  auto &backend = get().getBackend();
   if (action == 1 || action == 2) {
-    int current = backend->getCurrentWorkspace();
-    auto workspaces = backend->getWorkspaces();
+    int current = backend.getCurrentWorkspace();
+    auto workspaces = backend.getWorkspaces();
     if (workspaces.empty()) return;
     int next = (action == 1) ? current + 1 : current - 1;
     if (next < 1) next = workspaces.size();
     if (next > static_cast<int>(workspaces.size())) next = 1;
-    backend->switchToWorkspace(next);
+    backend.switchToWorkspace(next);
   }
 }
 
 void WindowManager::ToggleAlwaysOnTop() {
   wID win = GetActiveWindow();
   if (!win) return;
-  get().backend_->setWindowAlwaysOnTop(win, true);
+  get().getBackend().setWindowAlwaysOnTop(win, true);
 }
 
 std::string WindowManager::GetActiveWindowClass() {
-  return get().backend_->getActiveWindowClass();
+  return get().getBackend().getActiveWindowClass();
 }
 
 void WindowManager::UpdatePreviousActiveWindow() {
@@ -359,11 +374,11 @@ void WindowManager::UpdatePreviousActiveWindow() {
 }
 
 void WindowManager::ToggleFullscreen(wID windowId) {
-  get().backend_->toggleWindowFullscreen(windowId);
+  get().getBackend().toggleWindowFullscreen(windowId);
 }
 
 bool WindowManager::IsWindowFullscreen(wID windowId) {
-  return get().backend_->isWindowFullscreen(windowId);
+  return get().getBackend().isWindowFullscreen(windowId);
 }
 
 void WindowManager::MoveWindowToNextMonitor() {
@@ -373,7 +388,7 @@ void WindowManager::MoveWindowToNextMonitor() {
   auto monitors = DisplayManager::GetMonitors();
   if (monitors.size() < 2) return;
 
-  Rect pos = get().backend_->getWindowPosition(win);
+  Rect pos = get().getBackend().getWindowPosition(win);
   if (pos.width == 0) return;
 
   bool isFullscreen = IsWindowFullscreen(win);
@@ -398,7 +413,7 @@ void WindowManager::MoveWindowToNextMonitor() {
 
 void WindowManager::AltTab() {
   UpdatePreviousActiveWindow();
-  auto windows = get().backend_->getAllWindows();
+  auto windows = get().getBackend().getAllWindows();
   if (windows.size() < 2) return;
 
   size_t currentIdx = 0;
@@ -412,7 +427,7 @@ void WindowManager::AltTab() {
 
   size_t nextIdx = (currentIdx + 1) % windows.size();
   if (windows[nextIdx].valid && windows[nextIdx].id != 0) {
-    get().backend_->focusWindow(static_cast<wID>(windows[nextIdx].id));
+    get().getBackend().focusWindow(static_cast<wID>(windows[nextIdx].id));
   }
 }
 
@@ -426,39 +441,39 @@ void WindowManager::RotateWindow() {}
 void WindowManager::WinClose() {
   wID win = GetActiveWindow();
   if (!win) return;
-  get().backend_->closeWindow(win);
+  get().getBackend().closeWindow(win);
 }
 
 void WindowManager::WinMinimize() {
   wID win = GetActiveWindow();
   if (!win) return;
-  get().backend_->minimizeWindow(win);
+  get().getBackend().minimizeWindow(win);
 }
 
 void WindowManager::WinMaximize() {
   wID win = GetActiveWindow();
   if (!win) return;
-  get().backend_->maximizeWindow(win);
+  get().getBackend().maximizeWindow(win);
 }
 
 void WindowManager::WinRestore() {
   wID win = GetActiveWindow();
   if (!win) return;
-  get().backend_->restoreWindow(win);
+  get().getBackend().restoreWindow(win);
 }
 
 void WindowManager::WinHide(wID win) {
-  get().backend_->hideWindow(win);
+  get().getBackend().hideWindow(win);
 }
 
 void WindowManager::WinShow(wID win) {
-  get().backend_->showWindow(win);
+  get().getBackend().showWindow(win);
 }
 
 void WindowManager::WinTransparent() {
   wID win = GetActiveWindow();
   if (!win) return;
-  get().backend_->setWindowOpacity(win, 0.8f);
+  get().getBackend().setWindowOpacity(win, 0.8f);
 }
 
 void WindowManager::WinMoveResize() {}
@@ -466,7 +481,7 @@ void WindowManager::WinMoveResize() {}
 void WindowManager::WinSetAlwaysOnTop(bool onTop) {
   wID win = GetActiveWindow();
   if (!win) return;
-  get().backend_->setWindowAlwaysOnTop(win, onTop);
+  get().getBackend().setWindowAlwaysOnTop(win, onTop);
 }
 
 void WindowManager::SendToMonitor(int monitorIndex) {
@@ -486,15 +501,15 @@ CompositorBridge *WindowManager::GetCompositorBridge() {
 }
 
 WindowInfo WindowManager::getActiveWindowInfo() {
-  return get().backend_->getActiveWindowInfo();
+  return get().getBackend().getActiveWindowInfo();
 }
 
 WindowInfo WindowManager::getWindowInfo(wID id) {
-  return get().backend_->getWindowInfo(id);
+  return get().getBackend().getWindowInfo(id);
 }
 
 std::vector<WindowInfo> WindowManager::getAllWindows() {
-  return get().backend_->getAllWindows();
+  return get().getBackend().getAllWindows();
 }
 
 uint64_t WindowManager::getActiveWindow() {
@@ -502,11 +517,11 @@ uint64_t WindowManager::getActiveWindow() {
 }
 
 bool WindowManager::focusWindow(uint64_t id) {
-  return get().backend_->focusWindow(static_cast<wID>(id));
+  return get().getBackend().focusWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::closeWindow(uint64_t id) {
-  return get().backend_->closeWindow(static_cast<wID>(id));
+  return get().getBackend().closeWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::moveWindow(uint64_t id, int x, int y) {
@@ -523,23 +538,23 @@ bool WindowManager::moveResizeWindow(uint64_t id, int x, int y,
 }
 
 bool WindowManager::maximizeWindow(uint64_t id) {
-  return get().backend_->maximizeWindow(static_cast<wID>(id));
+  return get().getBackend().maximizeWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::minimizeWindow(uint64_t id) {
-  return get().backend_->minimizeWindow(static_cast<wID>(id));
+  return get().getBackend().minimizeWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::restoreWindow(uint64_t id) {
-  return get().backend_->restoreWindow(static_cast<wID>(id));
+  return get().getBackend().restoreWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::hideWindow(uint64_t id) {
-  return get().backend_->hideWindow(static_cast<wID>(id));
+  return get().getBackend().hideWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::showWindow(uint64_t id) {
-  return get().backend_->showWindow(static_cast<wID>(id));
+  return get().getBackend().showWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::toggleFullscreen(uint64_t id) {
@@ -548,7 +563,7 @@ bool WindowManager::toggleFullscreen(uint64_t id) {
 }
 
 bool WindowManager::setFloating(uint64_t id, bool floating) {
-  return get().backend_->setWindowFloating(static_cast<wID>(id), floating);
+  return get().getBackend().setWindowFloating(static_cast<wID>(id), floating);
 }
 
 bool WindowManager::centerWindow(uint64_t id) {
@@ -556,31 +571,31 @@ bool WindowManager::centerWindow(uint64_t id) {
 }
 
 bool WindowManager::snapWindow(uint64_t id, int position) {
-  return get().backend_->snapWindow(static_cast<wID>(id), position);
+  return get().getBackend().snapWindow(static_cast<wID>(id), position);
 }
 
 bool WindowManager::moveWindowToWorkspace(uint64_t id, int workspace) {
-  return get().backend_->moveWindowToWorkspace(static_cast<wID>(id), workspace);
+  return get().getBackend().moveWindowToWorkspace(static_cast<wID>(id), workspace);
 }
 
 bool WindowManager::setAlwaysOnTop(uint64_t id, bool onTop) {
-  return get().backend_->setWindowAlwaysOnTop(static_cast<wID>(id), onTop);
+  return get().getBackend().setWindowAlwaysOnTop(static_cast<wID>(id), onTop);
 }
 
 bool WindowManager::moveWindowToMonitor(uint64_t id, int monitor) {
-  return get().backend_->moveWindowToMonitor(static_cast<wID>(id), monitor);
+  return get().getBackend().moveWindowToMonitor(static_cast<wID>(id), monitor);
 }
 
 std::vector<WorkspaceInfo> WindowManager::getWorkspaces() {
-  return get().backend_->getWorkspaces();
+  return get().getBackend().getWorkspaces();
 }
 
 bool WindowManager::switchToWorkspace(int workspace) {
-  return get().backend_->switchToWorkspace(workspace);
+  return get().getBackend().switchToWorkspace(workspace);
 }
 
 int WindowManager::getCurrentWorkspace() {
-  return get().backend_->getCurrentWorkspace();
+  return get().getBackend().getCurrentWorkspace();
 }
 
 std::vector<std::string> WindowManager::getGroupNames() {

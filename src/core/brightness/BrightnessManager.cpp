@@ -119,35 +119,37 @@ static bool setGammastep(int temperature, double brightness = -1.0) {
 // === CONSTRUCTOR/DESTRUCTOR ===
 BrightnessManager::BrightnessManager() {
   BR_DEBUG("constructor start");
-  // Check if we're running under Wayland
-  const char *wayland_display = getenv("WAYLAND_DISPLAY");
-  const char *xdg_session_type = getenv("XDG_SESSION_TYPE");
-
+  // Just detect the display method from env vars — no backend init
   if (WindowManagerDetector::IsWayland()) {
-    // Running under Wayland
     BR_DEBUG("detected Wayland");
-    try {
-#ifdef __WAYLAND__
-      initializeWayland();
-      displayMethod = "wayland";
-      if (debugging::debug_io) debug("Initialized Wayland backend");
-#else
-      error("Wayland support not compiled in!");
-#endif
-    } catch (const std::exception &e) {
-      error("Failed to initialize Wayland backend: " + std::string(e.what()));
-      displayMethod = "x11";
-    }
+    displayMethod = "wayland";
   } else {
     BR_DEBUG("not Wayland, using x11 default");
     displayMethod = "x11";
   }
-
- BR_DEBUG("constructor end, displayMethod=%s", displayMethod.c_str());
+  BR_DEBUG("constructor end, displayMethod=%s", displayMethod.c_str());
 }
 
 void BrightnessManager::init() {
   BR_DEBUG("init() start");
+
+  // Lazy Wayland backend init — deferred from constructor
+  if (displayMethod == "wayland") {
+    BR_DEBUG("lazy Wayland init");
+#ifdef __WAYLAND__
+    try {
+      initializeWayland();
+      if (debugging::debug_io) debug("Initialized Wayland backend");
+    } catch (const std::exception &e) {
+      error("Failed to initialize Wayland backend: " + std::string(e.what()));
+      displayMethod = "x11";
+    }
+#else
+    error("Wayland support not compiled in!");
+    displayMethod = "x11";
+#endif
+  }
+
   vector<string> monitors = getConnectedMonitors();
   BR_DEBUG("init() getConnectedMonitors returned %zu monitors", monitors.size());
   if (!monitors.empty()) {

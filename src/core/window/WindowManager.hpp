@@ -8,6 +8,7 @@
 #include "types.hpp"
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -149,11 +150,12 @@ public:
   static bool addWindowToGroup(uint64_t id, const std::string &groupName);
   static bool removeWindowFromGroup(uint64_t id, const std::string &groupName);
 
-  WindowBackend &getBackend() { return *backend_; }
+  WindowBackend &getBackend() { ensureBackend(); return *backend_; }
   const WindowBackend &getBackend() const { return *backend_; }
 
 private:
   bool InitializeX11();
+  void ensureBackend();
 
   std::string DetectWindowManager() const;
   bool CheckWMProtocols() const;
@@ -164,6 +166,7 @@ private:
 
   static wID previousActiveWindow;
   std::unique_ptr<WindowBackend> backend_;
+  std::once_flag backendInitFlag_;
 };
 
 } // namespace havel

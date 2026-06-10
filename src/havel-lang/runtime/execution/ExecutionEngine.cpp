@@ -645,14 +645,18 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
       }
   );
   
-  for (Fiber* fiber : fired_fibers) {
-    if (fiber && scheduler_) {
+    for (Fiber* fiber : fired_fibers) {
+        if (fiber && vm_) {
             if (debug_mode_) {
-                std::cerr << "[ExecutionEngine] Resuming fiber for fired watcher\n";
+                std::cerr << "[ExecutionEngine] Firing when body func=" << fiber->current_function_id << "\n";
             }
-      fiber->state = FiberState::RUNNABLE;
+            try {
+                Value body_func = Value::makeFunctionObjId(fiber->current_function_id);
+                vm_->call(body_func, {});
+            } catch (...) {
+            }
+        }
     }
-  }
 
   if (vm_) {
       vm_->processSignalBindings(var_name);

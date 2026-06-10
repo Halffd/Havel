@@ -544,7 +544,7 @@ eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
         if (debugging::debug_io) debug("Starting EventListener with {} devices (grab={})", devices.size(),
               grab);
         debug("[IO] About to call EventListener::Start()...");
-        eventListener->Start(devices, grab);
+        eventListener->Start(devices, grab, eventListenerThreaded_);
         debug("[IO] EventListener::Start() returned");
       } catch (const std::exception &e) {
         error("Failed to start unified EventListener: {}", e.what());
@@ -599,6 +599,16 @@ void IO::SetInputBackend(const std::string &backendName) {
     } else {
         error("Failed to create input backend type {}", static_cast<int>(type));
     }
+}
+
+void IO::SetEventListenerThreaded(bool threaded) {
+  eventListenerThreaded_ = threaded;
+}
+
+void IO::PumpOnce() {
+  if (eventListener) {
+    eventListener->PumpOnce();
+  }
 }
 
 // Backend device management

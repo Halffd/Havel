@@ -166,6 +166,10 @@ void REPL::setInputHandler(std::function<std::string(const std::string&)> handle
   inputHandler_ = std::move(handler);
 }
 
+void REPL::setPumpCallback(std::function<void()> callback) {
+  pumpCallback_ = std::move(callback);
+}
+
 std::string REPL::readLine(const std::string& prompt) {
     if (inputHandler_) {
         return inputHandler_(prompt);
@@ -653,7 +657,12 @@ int REPL::run() {
     
     // Execute accumulated input
     bool success = execute(accumulatedInput);
-    
+
+    // Pump event loop callback (e.g., EventListener) on same thread after each execution
+    if (pumpCallback_) {
+      pumpCallback_();
+    }
+
     // Reset for next input
     accumulatedInput.clear();
     

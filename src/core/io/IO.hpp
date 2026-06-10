@@ -200,6 +200,7 @@ public:
   InputBackend *GetInputBackend() { ensureBackend(); return inputBackend.get(); }
   InputBackendType GetInputBackendType() const { return inputBackendType; }
   void SetInputBackend(const std::string &backendName);
+  void SetEventListenerThreaded(bool threaded);
 
     // Backend device management
     std::vector<std::string> ListDevices();
@@ -233,6 +234,9 @@ public:
 
   // IOBackend access
   IOBackend *GetIOBackend() { ensureBackend(); return ioBackend.get(); }
+
+  // Pump the event listener once (for REPL on same thread)
+  void PumpOnce();
 
     // Key sending methods
     void Send(Key key, bool down = true);
@@ -486,8 +490,9 @@ public:
   std::mutex blockedKeysMutex;
   std::map<int, bool> keyDownState;
 
-  mutable std::once_flag backendInitFlag_;
+  mutable   std::once_flag backendInitFlag_;
   void ensureBackend();
+  bool eventListenerThreaded_ = true;
 
   std::mutex remapMutex;
   std::unordered_map<int, int> activeRemaps;

@@ -90,6 +90,9 @@ void Havel::initialize(bool isStartup) {
 
     // Initialize in dependency order
     io = std::make_shared<IO>();
+    if (replMode) {
+      io->SetEventListenerThreaded(false);
+    }
     auto t = havel::startup_now();
     havel::startup_timing_report("IO-create", t0);
   if (!io) {

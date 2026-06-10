@@ -195,10 +195,16 @@ fn emitExpr(emitter, node) {
     return
 
     }
-    if k == "StringLiteral" {
-        idx = bc.add_string(node.value)
-        bc.emit("LOAD_CONST", idx)
-        return
+	if k == "StringLiteral" {
+		if node.isRegex == true {
+			idx = bc.add_regex(node.value)
+			bc.emit("LOAD_CONST", idx)
+		}
+		else {
+			idx = bc.add_string(node.value)
+			bc.emit("LOAD_CONST", idx)
+		}
+		return
 
     }
     if k == "BooleanLiteral" {
@@ -230,21 +236,33 @@ fn emitExpr(emitter, node) {
     return
 
     }
-    if k == "BinaryExpression" {
-        opr = node.oper
-	// Non-short-circuit: && and || evaluate both sides (matching native compiler)
-	if opr == "&&" {
-		emitExpr(emitter, node.left)
-		emitExpr(emitter, node.right)
-		bc.emit("AND")
-            return
-        }
-        if opr == "||" {
-            emitExpr(emitter, node.left)
-	emitExpr(emitter, node.right)
-	bc.emit("OR")
-            return
-        }
+	if k == "BinaryExpression" {
+		opr = node.oper
+		// Short-circuit: && and || skip right side if left determines result
+		if opr == "&&" {
+			savedTail = emitter.inTailPosition
+			emitter.inTailPosition = false
+			emitExpr(emitter, node.left)
+			bc.emit("DUP")
+			jumpPastRight = bc.emit("JUMP_IF_FALSE", 0)
+			bc.emit("POP")
+			emitExpr(emitter, node.right)
+			emitter.inTailPosition = savedTail
+			bc.patch_jump(jumpPastRight, bc.instr_count())
+			return
+		}
+		if opr == "||" {
+			savedTail = emitter.inTailPosition
+			emitter.inTailPosition = false
+			emitExpr(emitter, node.left)
+			bc.emit("DUP")
+			jumpPastRight = bc.emit("JUMP_IF_TRUE", 0)
+			bc.emit("POP")
+			emitExpr(emitter, node.right)
+			emitter.inTailPosition = savedTail
+			bc.patch_jump(jumpPastRight, bc.instr_count())
+			return
+		}
         if opr == "??" {
  emitExpr(emitter, node.left)
  bc.emit("DUP")
@@ -315,16 +333,67 @@ if opr == "not in" {
     bc.emit("CALL", 2)
     return
   }
-  if opr == "+=" {
-    // config.append
-    sid = globalIdx(emitter, "config.append")
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    emitExpr(emitter, node.left)
-    emitExpr(emitter, node.right)
-    bc.emit("CALL", 2)
-  return
-}
-  savedTail = emitter.inTailPosition
+	if opr == "+=" {
+		// config.append
+		sid = globalIdx(emitter, "config.append")
+		bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+		emitExpr(emitter, node.left)
+		emitExpr(emitter, node.right)
+		bc.emit("CALL", 2)
+		return
+	}
+	// Constant folding for literal binary expressions
+	if opr == "+" && node.left.kind == "StringLiteral" && node.right.kind == "StringLiteral" {
+		folded = node.left.value + node.right.value
+		idx = bc.add_string(folded)
+		bc.emit("LOAD_CONST", idx)
+		return
+	}
+	if opr == "==" && node.left.kind == "StringLiteral" && node.right.kind == "StringLiteral" {
+		bc.emit("LOAD_CONST", bc.add_const(node.left.value == node.right.value))
+		return
+	}
+	if opr == "!=" && node.left.kind == "StringLiteral" && node.right.kind == "StringLiteral" {
+		bc.emit("LOAD_CONST", bc.add_const(node.left.value != node.right.value))
+		return
+	}
+	if node.left.kind == "NumberLiteral" && node.right.kind == "NumberLiteral" {
+		lvRaw = node.left.value
+		rvRaw = node.right.value
+		lv = lvRaw
+		rv = rvRaw
+		if type(lv) == "string" { lv = num(lv) }
+		if type(rv) == "string" { rv = num(rv) }
+		folded = null
+		if opr == "+" { folded = lv + rv }
+		if opr == "-" { folded = lv - rv }
+		if opr == "*" { folded = lv * rv }
+		if opr == "/" && rv != 0 { folded = lv / rv }
+		if opr == "%" && rv != 0 { folded = lv % rv }
+		if opr == "==" { bc.emit("LOAD_CONST", bc.add_const(lv == rv)); return }
+		if opr == "!=" { bc.emit("LOAD_CONST", bc.add_const(lv != rv)); return }
+		if opr == "<" { bc.emit("LOAD_CONST", bc.add_const(lv < rv)); return }
+		if opr == ">" { bc.emit("LOAD_CONST", bc.add_const(lv > rv)); return }
+		if opr == "<=" { bc.emit("LOAD_CONST", bc.add_const(lv <= rv)); return }
+		if opr == ">=" { bc.emit("LOAD_CONST", bc.add_const(lv >= rv)); return }
+		if folded != null {
+			// Preserve int type if neither literal had a decimal point or exponent
+			isInt = type(lvRaw) == "int" || (type(lvRaw) == "string" && !lvRaw.contains(".") && !lvRaw.contains("e") && !lvRaw.contains("E"))
+			isIntR = type(rvRaw) == "int" || (type(rvRaw) == "string" && !rvRaw.contains(".") && !rvRaw.contains("e") && !rvRaw.contains("E"))
+			if isInt && isIntR && opr != "/" {
+				bc.emit("LOAD_CONST", bc.add_const(int(folded)))
+			}
+			else {
+				bc.emit("LOAD_CONST", bc.add_const(folded))
+			}
+			return
+		}
+	}
+	if node.left.kind == "BooleanLiteral" && node.right.kind == "BooleanLiteral" {
+		if opr == "==" { bc.emit("LOAD_CONST", bc.add_const(node.left.value == node.right.value)); return }
+		if opr == "!=" { bc.emit("LOAD_CONST", bc.add_const(node.left.value != node.right.value)); return }
+	}
+	savedTail = emitter.inTailPosition
   emitter.inTailPosition = false
   emitExpr(emitter, node.left)
   emitExpr(emitter, node.right)
@@ -346,17 +415,20 @@ emitError("unknown binary opr: " + opr, node.line, node.col)
 return
 
 }
-if k == "UnaryExpression" {
-    emitExpr(emitter, node.operand)
-    opcodes = {"-": "NEGATE", "!": "NOT", "not": "NOT", "#": "LENGTH", "~": "BIT_NOT"}
-    oc = opcodes[node.oper]
-    if oc != null {
-      bc.emit(oc)
-    }
-    else {
-      emitError("unknown unary op: " + node.oper, node.line, node.col)
-    }
-    return
+	if k == "UnaryExpression" {
+		emitExpr(emitter, node.operand)
+		// Unary + is identity (no opcode needed)
+		if node.oper != "+" {
+			opcodes = {"-": "NEGATE", "!": "NOT", "not": "NOT", "#": "LENGTH", "~": "BIT_NOT"}
+			oc = opcodes[node.oper]
+			if oc != null {
+				bc.emit(oc)
+			}
+			else {
+				emitError("unknown unary op: " + node.oper, node.line, node.col)
+			}
+		}
+		return
 
   }
   if k == "UpdateExpression" {
@@ -629,26 +701,77 @@ if target.kind == "IndexExpression" {
       bc.emit("LOAD_VAR", tempIdx)
       return
     }
-    if target.kind == "AtExpression" {
-      fname = target.field
-      if fname.kind == "Identifier" { fname = fname.name }
-      tempVal = scopeLocalCount(emitter.scope)
-      emitter.scope.count = emitter.scope.count + 1
-      tempKey = scopeLocalCount(emitter.scope)
-      emitter.scope.count = emitter.scope.count + 1
-      emitExpr(emitter, node.value)
-      bc.emit("STORE_VAR", tempVal)
-      keyIdx = bc.add_string(fname)
-      bc.emit("LOAD_CONST", keyIdx)
-      bc.emit("STORE_VAR", tempKey)
-      bc.emit("LOAD_VAR", 0)
-      bc.emit("LOAD_VAR", tempVal)
-      bc.emit("LOAD_VAR", tempKey)
-      bc.emit("OBJECT_SET")
-      bc.emit("POP")
-      bc.emit("LOAD_VAR", tempVal)
-      return
-    }
+	// Array destructuring assignment: [a, b, c] = val
+	if target.kind == "ArrayLiteral" {
+		emitExpr(emitter, node.value)
+		tempSlot = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		bc.emit("STORE_VAR", tempSlot)
+		if target.elements != null {
+			i = 0
+			while i < #target.elements {
+				elem = target.elements[i]
+				if elem != null && elem.kind == "Identifier" {
+					bc.emit("LOAD_VAR", tempSlot)
+					bc.emit("LOAD_CONST", bc.add_const(i))
+					bc.emit("ARRAY_GET")
+					emitStoreVar(emitter, elem.name)
+				}
+				i = i + 1
+			}
+		}
+		bc.emit("LOAD_VAR", tempSlot)
+		return
+	}
+	// Object destructuring assignment: {key: alias} = val
+	if target.kind == "ObjectLiteral" {
+		emitExpr(emitter, node.value)
+		tempSlot = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		bc.emit("STORE_VAR", tempSlot)
+		if target.pairs != null {
+			for pair in target.pairs {
+				keyName = pair.key
+				alias = pair.value
+				if alias != null && alias.kind == "Identifier" {
+					aliasName = alias.name
+				}
+				else if alias == null {
+					aliasName = keyName
+				}
+				else {
+					aliasName = keyName
+				}
+				bc.emit("LOAD_VAR", tempSlot)
+				keyIdx = bc.add_string(keyName)
+				bc.emit("LOAD_CONST", keyIdx)
+				bc.emit("OBJECT_GET")
+				emitStoreVar(emitter, aliasName)
+			}
+		}
+		bc.emit("LOAD_VAR", tempSlot)
+		return
+	}
+	if target.kind == "AtExpression" {
+		fname = target.field
+		if fname.kind == "Identifier" { fname = fname.name }
+		tempVal = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		tempKey = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		emitExpr(emitter, node.value)
+		bc.emit("STORE_VAR", tempVal)
+		keyIdx = bc.add_string(fname)
+		bc.emit("LOAD_CONST", keyIdx)
+		bc.emit("STORE_VAR", tempKey)
+		bc.emit("LOAD_VAR", 0)
+		bc.emit("LOAD_VAR", tempVal)
+		bc.emit("LOAD_VAR", tempKey)
+		bc.emit("OBJECT_SET")
+		bc.emit("POP")
+		bc.emit("LOAD_VAR", tempVal)
+		return
+	}
     if target.kind == "AtAtExpression" {
       fname = target.field
       if fname.kind == "Identifier" { fname = fname.name }
@@ -674,100 +797,168 @@ if target.kind == "IndexExpression" {
       bc.emit("LOAD_VAR", tempVal)
       return
     }
-    emitError("unsupported assignment target: " + str(target.kind), node.line, node.col)
-        return
+	emitError("unsupported assignment target: " + str(target.kind), node.line, node.col)
+		return
 
-    }
-if k == "CompoundAssignment" {
-target = node.target
-    if target.kind == "Identifier" {
-        if target.globalScope == true {
-            bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
-        }
-        else {
-            emitLoadVar(emitter, target.name)
-        }
-        emitExpr(emitter, node.value)
-        opcodes = {
-            "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
-            "%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
-            "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
-            "<<=": "BIT_LSH", ">>=": "BIT_RSH",
-        }
-        oc = opcodes[node.oper]
-        if oc != null {
-            bc.emit(oc)
-        }
-        else {
-            emitError("unknown compound op: " + node.oper, node.line, node.col)
-        }
-        bc.emit("DUP")
-        if target.globalScope == true {
-            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
-        }
-        else {
-            emitStoreVar(emitter, target.name)
-        }
-    }
- else if target.kind == "MemberExpression" {
- // obj.prop += val → load obj, get prop, load val, op, set prop
- emitExpr(emitter, target.obj)
- bc.emit("DUP")
- keyIdx = bc.add_string(target.property)
- bc.emit("LOAD_CONST", keyIdx)
- bc.emit("OBJECT_GET")
- emitExpr(emitter, node.value)
- opcodes = {
- "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
- "%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
- "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
- "<<=": "BIT_LSH", ">>=": "BIT_RSH",
- }
-oc = opcodes[node.oper]
-if oc != null {
-bc.emit(oc)
-}
-else {
-emitError("unknown compound member op: " + node.oper, node.line, node.col)
-}
-  // Stack: [obj, result] — need [obj, result, key] for OBJECT_SET
-  keyIdx2 = bc.add_string(target.property)
-  bc.emit("LOAD_CONST", keyIdx2)
-  bc.emit("OBJECT_SET")
-}
-else if target.kind == "IndexExpression" {
-  // arr[i] += val → save arr, load arr[i], load val, op, save result, arr[i] = result
-  tempObj = scopeLocalCount(emitter.scope)
-  emitter.scope.count = emitter.scope.count + 1
-  tempIndex = scopeLocalCount(emitter.scope)
-  emitter.scope.count = emitter.scope.count + 1
-  tempResult = scopeLocalCount(emitter.scope)
-  emitter.scope.count = emitter.scope.count + 1
-  emitExpr(emitter, target.obj)
-  bc.emit("STORE_VAR", tempObj)
-  emitExpr(emitter, target.index)
-  bc.emit("STORE_VAR", tempIndex)
-  bc.emit("LOAD_VAR", tempObj)
-  bc.emit("LOAD_VAR", tempIndex)
-  bc.emit("ARRAY_GET")
-  emitExpr(emitter, node.value)
-  opcodes = {
-    "+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
-    "%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
-    "&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
-    "<<=": "BIT_LSH", ">>=": "BIT_RSH",
-  }
-  oc = opcodes[node.oper]
-  if oc != null { bc.emit(oc) }
-  else { emitError("unknown compound index op: " + node.oper, node.line, node.col) }
-  bc.emit("DUP")
-  bc.emit("STORE_VAR", tempResult)
-  bc.emit("LOAD_VAR", tempObj)
-  bc.emit("LOAD_VAR", tempIndex)
-  bc.emit("LOAD_VAR", tempResult)
-  bc.emit("ARRAY_SET")
-  bc.emit("LOAD_VAR", tempResult)
-}
+	}
+	// Multiple assignment: a, b, c = value
+	if k == "MultipleAssignment" {
+		emitExpr(emitter, node.value)
+		if node.targets != null {
+			for t in node.targets {
+				if t.kind == "Identifier" {
+					bc.emit("DUP")
+					if t.globalScope == true {
+						bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, t.name)))
+					}
+					else {
+						emitStoreVar(emitter, t.name)
+					}
+				}
+			}
+		}
+		return
+	}
+	if k == "CompoundAssignment" {
+		target = node.target
+		// In-place method names matching C++ emitCompound
+		inplaceMethods = {
+			"+=": "op_iadd", "-=": "op_isub", "*=": "op_imul", "/=": "op_idiv",
+			"%=": "op_imod", "**=": "op_ipow", "\\=": "op_iidiv", "%%=": "op_irem",
+			"&=": "op_iand", "|=": "op_ior", "^=": "op_ixor",
+			"<<=": "op_ilsh", ">>=": "op_irsh",
+		}
+		opcodes = {
+			"+=": "ADD", "-=": "SUB", "*=": "MUL", "/=": "DIV",
+			"%=": "MOD", "**=": "POW", "\\=": "INT_DIV", "%%=": "REMAINDER",
+			"&=": "BIT_AND", "|=": "BIT_OR", "^=": "BIT_XOR",
+			"<<=": "BIT_LSH", ">>=": "BIT_RSH",
+		}
+		inplaceMethod = inplaceMethods[node.oper]
+		oc = opcodes[node.oper]
+		if oc == null {
+			emitError("unknown compound op: " + node.oper, node.line, node.col)
+			return
+		}
+		if target.kind == "Identifier" {
+			if inplaceMethod != null {
+				// Try in-place operator first: value.op_iadd(rhs)
+				// If it returns null, fall back to desugared load+op+store
+				emitLoadVar(emitter, target.name)
+				emitExpr(emitter, node.value)
+				methodIdx = bc.add_chunk_string(inplaceMethod)
+				bc.emit("CALL_METHOD", bc.str_id(methodIdx), 1)
+				// Check if in-place returned null (not supported)
+				bc.emit("DUP")
+				fallbackJump = bc.emit("JUMP_IF_NULL", 0)
+				// In-place succeeded — object mutated in place, reload it
+				bc.emit("POP")
+				emitLoadVar(emitter, target.name)
+				bc.emit("DUP")
+				emitStoreVar(emitter, target.name)
+				endJump = bc.emit("JUMP", 0)
+				// Fallback: desugared load + op + store
+				bc.patch_jump(fallbackJump, bc.instr_count())
+				emitLoadVar(emitter, target.name)
+				emitExpr(emitter, node.value)
+				bc.emit(oc)
+				bc.emit("DUP")
+				emitStoreVar(emitter, target.name)
+				bc.patch_jump(endJump, bc.instr_count())
+				return
+			}
+			// No in-place method available — desugared form
+			if target.globalScope == true {
+				bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
+			}
+			else {
+				emitLoadVar(emitter, target.name)
+			}
+			emitExpr(emitter, node.value)
+			bc.emit(oc)
+			bc.emit("DUP")
+			if target.globalScope == true {
+				bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, target.name)))
+			}
+			else {
+				emitStoreVar(emitter, target.name)
+			}
+		}
+	else if target.kind == "MemberExpression" {
+		// obj.prop += val → try in-place op_iadd, fallback to load+op+store
+		if inplaceMethod != null {
+			emitExpr(emitter, target.obj)
+			bc.emit("DUP")
+			keyIdx = bc.add_string(target.property)
+			bc.emit("LOAD_CONST", keyIdx)
+			bc.emit("OBJECT_GET")
+			emitExpr(emitter, node.value)
+			methodIdx = bc.add_chunk_string(inplaceMethod)
+			bc.emit("CALL_METHOD", bc.str_id(methodIdx), 1)
+			// Check if in-place returned null
+			bc.emit("DUP")
+			fallbackJump = bc.emit("JUMP_IF_NULL", 0)
+			// In-place succeeded — POP result, reload original obj+prop value
+			bc.emit("POP")
+			emitExpr(emitter, target.obj)
+			keyIdx2 = bc.add_string(target.property)
+			bc.emit("LOAD_CONST", keyIdx2)
+			bc.emit("OBJECT_GET")
+			endJump = bc.emit("JUMP", 0)
+			// Fallback: desugared form
+			bc.patch_jump(fallbackJump, bc.instr_count())
+			emitExpr(emitter, target.obj)
+			bc.emit("DUP")
+			keyIdx3 = bc.add_string(target.property)
+			bc.emit("LOAD_CONST", keyIdx3)
+			bc.emit("OBJECT_GET")
+			emitExpr(emitter, node.value)
+			bc.emit(oc)
+			// Stack: [obj, result] — need [obj, result, key] for OBJECT_SET
+			keyIdx4 = bc.add_string(target.property)
+			bc.emit("LOAD_CONST", keyIdx4)
+			bc.emit("OBJECT_SET")
+			bc.patch_jump(endJump, bc.instr_count())
+		}
+		else {
+			// No in-place — desugared form
+			emitExpr(emitter, target.obj)
+			bc.emit("DUP")
+			keyIdx = bc.add_string(target.property)
+			bc.emit("LOAD_CONST", keyIdx)
+			bc.emit("OBJECT_GET")
+			emitExpr(emitter, node.value)
+			bc.emit(oc)
+			keyIdx2 = bc.add_string(target.property)
+			bc.emit("LOAD_CONST", keyIdx2)
+			bc.emit("OBJECT_SET")
+		}
+	}
+	else if target.kind == "IndexExpression" {
+		// arr[i] += val → save arr, load arr[i], load val, op, save result, arr[i] = result
+		tempObj = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		tempIndex = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		tempResult = scopeLocalCount(emitter.scope)
+		emitter.scope.count = emitter.scope.count + 1
+		emitExpr(emitter, target.obj)
+		bc.emit("STORE_VAR", tempObj)
+		emitExpr(emitter, target.index)
+		bc.emit("STORE_VAR", tempIndex)
+		bc.emit("LOAD_VAR", tempObj)
+		bc.emit("LOAD_VAR", tempIndex)
+		bc.emit("ARRAY_GET")
+		emitExpr(emitter, node.value)
+		bc.emit(oc)
+		bc.emit("DUP")
+		bc.emit("STORE_VAR", tempResult)
+		bc.emit("LOAD_VAR", tempObj)
+		bc.emit("LOAD_VAR", tempIndex)
+		bc.emit("LOAD_VAR", tempResult)
+		bc.emit("ARRAY_SET")
+		bc.emit("LOAD_VAR", tempResult)
+	}
 else if target.kind == "AtExpression" {
   // @field += val → load self.field, load val, op, store self.field
   fname = target.field
@@ -965,12 +1156,22 @@ if k == "TernaryExpression" {
         return
 
     }
-    if k == "MemberExpression" {
-        emitExpr(emitter, node.obj)
-        keyIdx = bc.add_string(node.property)
-        bc.emit("LOAD_CONST", keyIdx)
-        bc.emit("OBJECT_GET")
-        return
+	if k == "MemberExpression" {
+		emitExpr(emitter, node.obj)
+		// Optional chaining: obj?.prop → DUP + JUMP_IF_NULL before OBJECT_GET
+		if node.optional == true {
+			bc.emit("DUP")
+			optJump = bc.emit("JUMP_IF_NULL", 0)
+			keyIdx = bc.add_string(node.property)
+			bc.emit("LOAD_CONST", keyIdx)
+			bc.emit("OBJECT_GET")
+			bc.patch_jump(optJump, bc.instr_count())
+			return
+		}
+		keyIdx = bc.add_string(node.property)
+		bc.emit("LOAD_CONST", keyIdx)
+		bc.emit("OBJECT_GET")
+		return
 
     }
 if k == "RangeExpression" or k == "range" {
@@ -1216,30 +1417,43 @@ if k == "AtExpression" {
         return
     }
 
-    if k == "ShellCommand" {
-    // Shell command: $cmd or $!cmd
-    // Emit as call to shell.exec or shell.capture
-    if node.capture {
-      sid = globalIdx(emitter, "shell.capture")
-    }
-    else {
-      sid = globalIdx(emitter, "shell.exec")
-    }
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    cmdIdx = bc.add_string(node.command)
-    bc.emit("LOAD_CONST", cmdIdx)
-    bc.emit("CALL", 1)
-    return
+	if k == "ShellCommand" {
+		// Shell command: $cmd or $!cmd
+		// Emit as call to run() or runCapture() host functions
+		if node.capture {
+			sid = globalIdx(emitter, "runCapture")
+		}
+		else {
+			sid = globalIdx(emitter, "run")
+		}
+		bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+		cmdIdx = bc.add_string(node.command)
+		bc.emit("LOAD_CONST", cmdIdx)
+		bc.emit("CALL", 1)
+		// Handle pipe chain: $! cmd1 | cmd2 | ...
+		next = node.next
+		while next != null {
+			sid = globalIdx(emitter, "run")
+			bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+			if next.command != null {
+				cmdIdx = bc.add_string(next.command)
+				bc.emit("LOAD_CONST", cmdIdx)
+				bc.emit("CALL", 1)
+				bc.emit("POP")
+			}
+			next = next.next
+		}
+		return
 
-  }
-  if k == "BacktickExpression" {
-    // Backtick: `cmd` — same as ShellCommand without capture
-    sid = globalIdx(emitter, "shell.exec")
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    cmdIdx = bc.add_string(node.command)
-    bc.emit("LOAD_CONST", cmdIdx)
-    bc.emit("CALL", 1)
-    return
+	}
+	if k == "BacktickExpression" {
+		// Backtick: `cmd` — same as ShellCommand without capture
+		sid = globalIdx(emitter, "run")
+		bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+		cmdIdx = bc.add_string(node.command)
+		bc.emit("LOAD_CONST", cmdIdx)
+		bc.emit("CALL", 1)
+		return
 
   }
   if k == "MatchExpression" {
@@ -1734,36 +1948,11 @@ if k == "DoWhileStatement" {
 		bc.patch_jump(breakList[i], breakTarget)
 		i = i + 1
 	emitter.breakStack.pop()
-	emitter.continueStack.pop()
-	return
-}
+		emitter.continueStack.pop()
+		return
+	}
 
-if k == "DoWhileStatement" {
-    loopTop = bc.instr_count()
-    emitter.breakStack.push([])
-    emitter.continueStack.push(loopTop)
-    // Push scope for body
-    oldDoScope = emitter.scope
-    doScope = Scope(oldDoScope, null, null)
-    emitter.scope = doScope
-    emitBlock(emitter, node.body)
-    oldDoScope.count = doScope.count
-    emitter.scope = oldDoScope
-    emitExpr(emitter, node.condition)
-    bc.emit("JUMP_IF_TRUE", loopTop)
-    // Patch break jumps
-    breakTarget = bc.instr_count()
-    breakList = emitter.breakStack[#emitter.breakStack - 1]
-    i = 0
-    while i < #breakList:
-        bc.patch_jump(breakList[i], breakTarget)
-        i = i + 1
-    emitter.breakStack.pop()
-    emitter.continueStack.pop()
-    return
-}
-
-if k == "LoopStatement" {
+	if k == "LoopStatement" {
 	loopTop = bc.instr_count()
 	emitter.breakStack.push([])
 	emitter.continueStack.push(loopTop)
@@ -1854,58 +2043,161 @@ if k == "RepeatStatement" {
 		return
 
 	}
- if k == "LetDeclaration" {
-        if node.isSignal == true {
-            // signal binding: compile expression as re-evaluable function
-            sigScope = Scope(null)
-            prevSigScope = emitter.scope
-            emitter.scope = sigScope
-            bc.func_push()
-            sigChunkIdx = bc.func_new("signal_" + node.name, 0, 16)
-            emitExpr(emitter, node.value)
-            bc.emit("RETURN")
-            bc.set_local_count(0)
-            bc.func_pop()
-            emitter.scope = prevSigScope
-            nameIdx = bc.add_string(node.name)
-            sid = globalIdx(emitter, "signal.bind")
-            bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-            bc.emit("LOAD_CONST", nameIdx)
-            bc.emit("LOAD_CONST", bc.add_const(sigChunkIdx))
-            bc.emit("CALL", 2)
-            bc.emit("POP")
-            return
-        }
-        localIdx = scopeDeclare(emitter.scope, node.name)
-        if node.value != null {
-            emitExpr(emitter, node.value)
-        }
-        if node.value == null {
-            bc.emit("PUSH_NULL")
-        }
-        if localIdx >= 0 {
-            bc.emit("STORE_VAR", localIdx)
-        }
-        else {
-            bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-        }
-        return
+	if k == "LetDeclaration" {
+		if node.isSignal == true {
+			// signal binding: compile expression as re-evaluable function
+			sigScope = Scope(null)
+			prevSigScope = emitter.scope
+			emitter.scope = sigScope
+			bc.func_push()
+			sigChunkIdx = bc.func_new("signal_" + node.name, 0, 16)
+			emitExpr(emitter, node.value)
+			bc.emit("RETURN")
+			bc.set_local_count(0)
+			bc.func_pop()
+			emitter.scope = prevSigScope
+			nameIdx = bc.add_string(node.name)
+			sid = globalIdx(emitter, "signal.bind")
+			bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+			bc.emit("LOAD_CONST", nameIdx)
+			bc.emit("LOAD_CONST", bc.add_const(sigChunkIdx))
+			bc.emit("CALL", 2)
+			bc.emit("POP")
+			return
+		}
+		// Array destructuring: let [a, b, c] = val
+		if node.pattern != null && node.pattern.kind == "ArrayPattern" {
+			pat = node.pattern
+			emitExpr(emitter, node.value)
+			tempSlot = scopeDeclare(emitter.scope, "__destr_tmp__")
+			bc.emit("STORE_VAR", tempSlot)
+			if pat.elements != null {
+				i = 0
+				while i < #pat.elements {
+					elem = pat.elements[i]
+					if elem != null && elem.kind == "Identifier" {
+						bc.emit("LOAD_VAR", tempSlot)
+						bc.emit("LOAD_CONST", bc.add_const(i))
+						bc.emit("ARRAY_GET")
+						slot = scopeDeclare(emitter.scope, elem.name)
+						bc.emit("STORE_VAR", slot)
+					}
+					i = i + 1
+				}
+			}
+			return
+		}
+		// Object destructuring: let {key: alias} = val
+		if node.pattern != null && node.pattern.kind == "ObjectPattern" {
+			pat = node.pattern
+			emitExpr(emitter, node.value)
+			tempSlot = scopeDeclare(emitter.scope, "__destr_tmp__")
+			bc.emit("STORE_VAR", tempSlot)
+			if pat.properties != null {
+				for prop in pat.properties {
+					keyName = prop.key
+					alias = prop.value
+					if alias != null && alias.kind == "Identifier" {
+						aliasName = alias.name
+					}
+					else if alias == null {
+						// Shorthand: {key} → key is both key and alias
+						aliasName = keyName
+					}
+					else {
+						aliasName = keyName
+					}
+					bc.emit("LOAD_VAR", tempSlot)
+					keyIdx = bc.add_string(keyName)
+					bc.emit("LOAD_CONST", keyIdx)
+					bc.emit("OBJECT_GET")
+					slot = scopeDeclare(emitter.scope, aliasName)
+					bc.emit("STORE_VAR", slot)
+				}
+			}
+			return
+		}
+		localIdx = scopeDeclare(emitter.scope, node.name)
+		if node.value != null {
+			emitExpr(emitter, node.value)
+		}
+		if node.value == null {
+			bc.emit("PUSH_NULL")
+		}
+		if localIdx >= 0 {
+			bc.emit("STORE_VAR", localIdx)
+		}
+		else {
+			bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+		}
+		return
     }
-  if k == "ValDeclaration" {
-    localIdx = scopeDeclare(emitter.scope, node.name)
-    if node.value != null {
-      emitExpr(emitter, node.value)
-    }
-    if node.value == null {
-      bc.emit("PUSH_NULL")
-    }
-    if localIdx >= 0 {
-      bc.emit("STORE_IMMUT_VAR", localIdx)
-    }
-    else {
-      bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-    }
-    return
+	if k == "ValDeclaration" {
+		// Array destructuring: val [a, b, c] = val
+		if node.pattern != null && node.pattern.kind == "ArrayPattern" {
+			pat = node.pattern
+			emitExpr(emitter, node.value)
+			tempSlot = scopeDeclare(emitter.scope, "__destr_tmp__")
+			bc.emit("STORE_VAR", tempSlot)
+			if pat.elements != null {
+				i = 0
+				while i < #pat.elements {
+					elem = pat.elements[i]
+					if elem != null && elem.kind == "Identifier" {
+						bc.emit("LOAD_VAR", tempSlot)
+						bc.emit("LOAD_CONST", bc.add_const(i))
+						bc.emit("ARRAY_GET")
+						slot = scopeDeclare(emitter.scope, elem.name)
+						bc.emit("STORE_IMMUT_VAR", slot)
+					}
+					i = i + 1
+				}
+			}
+			return
+		}
+		// Object destructuring: val {key: alias} = val
+		if node.pattern != null && node.pattern.kind == "ObjectPattern" {
+			pat = node.pattern
+			emitExpr(emitter, node.value)
+			tempSlot = scopeDeclare(emitter.scope, "__destr_tmp__")
+			bc.emit("STORE_VAR", tempSlot)
+			if pat.properties != null {
+				for prop in pat.properties {
+					keyName = prop.key
+					alias = prop.value
+					if alias != null && alias.kind == "Identifier" {
+						aliasName = alias.name
+					}
+					else if alias == null {
+						aliasName = keyName
+					}
+					else {
+						aliasName = keyName
+					}
+					bc.emit("LOAD_VAR", tempSlot)
+					keyIdx = bc.add_string(keyName)
+					bc.emit("LOAD_CONST", keyIdx)
+					bc.emit("OBJECT_GET")
+					slot = scopeDeclare(emitter.scope, aliasName)
+					bc.emit("STORE_IMMUT_VAR", slot)
+				}
+			}
+			return
+		}
+		localIdx = scopeDeclare(emitter.scope, node.name)
+		if node.value != null {
+			emitExpr(emitter, node.value)
+		}
+		if node.value == null {
+			bc.emit("PUSH_NULL")
+		}
+		if localIdx >= 0 {
+			bc.emit("STORE_IMMUT_VAR", localIdx)
+		}
+		else {
+			bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+		}
+		return
   }
   if k == "FnDeclaration" {
     // Thread sugar: thread { body } parses as FnDeclaration with isThread=true
@@ -2635,9 +2927,9 @@ return
 			emitStmt(emitter, stmts[si])
 			si = si + 1
 		}
-		last = stmts[n - 1]
-    // Propagate tail position to last statement in block (only if already in tail position from outer context)
-    savedTail = emitter.inTailPosition
+	last = stmts[n - 1]
+	// Propagate tail position to last statement in block (only if already in tail position from outer context)
+	savedTail = emitter.inTailPosition
     if last.kind == "ReturnStatement" {
       emitter.inTailPosition = true
     }

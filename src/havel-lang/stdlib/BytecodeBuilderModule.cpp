@@ -405,7 +405,25 @@ api.registerFunction("bc.add_string", [api](const std::vector<Value> &args) -> V
   uint32_t idx = static_cast<uint32_t>(consts.size());
   consts.push_back(constVal);
   return Value::makeInt(static_cast<int64_t>(idx));
-});
+	});
+
+	api.registerFunction("bc.add_regex", [api](const std::vector<Value> &args) -> Value {
+		auto *fn = g_builder.currentFunc();
+		if (!fn) throw std::runtime_error("bc.add_regex: no current function");
+		if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
+			throw std::runtime_error("bc.add_regex: requires string value");
+		}
+		auto resolved = api.resolveString(args[0]);
+		uint32_t strId = g_builder.chunk->addString(resolved);
+		Value constVal = Value::makeRegexValId(strId);
+		auto &consts = fn->constants;
+		for (uint32_t i = 0; i < consts.size(); ++i) {
+			if (consts[i] == constVal) return Value::makeInt(static_cast<int64_t>(i));
+		}
+		uint32_t idx = static_cast<uint32_t>(consts.size());
+		consts.push_back(constVal);
+		return Value::makeInt(static_cast<int64_t>(idx));
+	});
 
 	api.registerFunction("bc.add_chunk_string", [api](const std::vector<Value> &args) -> Value {
     if (args.empty() || (!args[0].isStringId() && !args[0].isStringValId())) {
@@ -1019,8 +1037,9 @@ return result;
     api.setField(bcObj, "func_pop", api.makeFunctionRef("bc.func_pop"));
   api.setField(bcObj, "emit", api.makeFunctionRef("bc.emit"));
   api.setField(bcObj, "add_const", api.makeFunctionRef("bc.add_const"));
-  api.setField(bcObj, "add_string", api.makeFunctionRef("bc.add_string"));
-  api.setField(bcObj, "add_chunk_string", api.makeFunctionRef("bc.add_chunk_string"));
+	api.setField(bcObj, "add_string", api.makeFunctionRef("bc.add_string"));
+	api.setField(bcObj, "add_regex", api.makeFunctionRef("bc.add_regex"));
+	api.setField(bcObj, "add_chunk_string", api.makeFunctionRef("bc.add_chunk_string"));
     api.setField(bcObj, "patch_jump", api.makeFunctionRef("bc.patch_jump"));
     api.setField(bcObj, "patch_operand", api.makeFunctionRef("bc.patch_operand"));
   api.setField(bcObj, "set_local_count", api.makeFunctionRef("bc.set_local_count"));

@@ -953,6 +953,16 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
     return Value::makeInt(static_cast<int>(lvl));
     });
 
+    api.registerFunction("bc.suspend_gc", [api](const std::vector<Value> &) -> Value {
+        api.vm().suspendGC();
+        return Value::makeNull();
+    });
+
+    api.registerFunction("bc.resume_gc", [api](const std::vector<Value> &) -> Value {
+        api.vm().resumeGC();
+        return Value::makeNull();
+    });
+
     api.registerFunction("bc.store_chunk", [](const std::vector<Value> &) -> Value {
         auto count = g_builder.chunk->getFunctionCount();
         if (count == 0) {
@@ -1072,7 +1082,9 @@ api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
     api.setField(bcObj, "set_default_value", api.makeFunctionRef("bc.set_default_value"));
     api.setField(bcObj, "trace_execution", api.makeFunctionRef("bc.trace_execution"));
 	api.setField(bcObj, "log", api.makeFunctionRef("bc.log"));
-	api.setField(bcObj, "log_level", api.makeFunctionRef("bc.log_level"));
+    api.setField(bcObj, "log_level", api.makeFunctionRef("bc.log_level"));
+    api.setField(bcObj, "suspend_gc", api.makeFunctionRef("bc.suspend_gc"));
+    api.setField(bcObj, "resume_gc", api.makeFunctionRef("bc.resume_gc"));
 	api.setGlobal("bc", bcObj);
 api.setGlobal("bytecodeBuilder", bcObj);
 }

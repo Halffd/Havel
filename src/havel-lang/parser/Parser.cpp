@@ -3273,8 +3273,8 @@ case havel::TokenType::Struct:
       auto expr = parseExpression();
       return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
     }
-  case havel::TokenType::Mode:
-    if (at(1).type == havel::TokenType::Identifier || isKeywordToken(at(1).type)) {
+    case havel::TokenType::Mode:
+        if (at(1).type == havel::TokenType::Identifier || at(1).type == havel::TokenType::String || isKeywordToken(at(1).type)) {
       // Check if this is a simple mode block or full mode definition
       // Full definition: mode name [priority N] { condition/enter/exit/on ... }
       // Simple block: mode name { statements }
@@ -10293,16 +10293,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDevicesBlock() {
 // Parse single mode definition: mode name [priority N] { condition = ...; enter
 // { ... }; exit { ... } }
 std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
-  advance(); // consume 'mode'
+    advance(); // consume 'mode'
 
-  // Parse mode name
-  if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
-    failAt(at(), "Expected mode name after 'mode'");
-  }
-  std::string modeName = at().value;
-  advance();
+    // Parse mode name (identifier or string)
+    if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type) &&
+        at().type != havel::TokenType::String) {
+        failAt(at(), "Expected mode name after 'mode'");
+    }
+    std::string modeName = at().value;
+    advance();
 
-  // Parse optional priority
+    // Parse optional priority
   int priority = 0;
   if (at().type == havel::TokenType::Identifier && at().value == "priority") {
     advance(); // consume 'priority'
@@ -10368,28 +10369,29 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
       std::string eventType = at().value;
       advance();
 
-      if (eventType == "enter") {
-        if (at().type == havel::TokenType::Identifier && at().value == "from") {
-          advance(); // consume 'from'
-          if (at().type != havel::TokenType::String) {
-            failAt(at(), "Expected mode name string after 'from'");
-          }
-          onEnterFromMode = at().value;
-          advance();
-          onEnterFromBlock = parseBlockStatement();
-        } else {
-          // Simple 'on enter { ... }'
-          enterBlock = parseBlockStatement();
-        }
-      } else if (eventType == "exit") {
-        if (at().type == havel::TokenType::Identifier && at().value == "to") {
-          advance(); // consume 'to'
-          if (at().type != havel::TokenType::String) {
-            failAt(at(), "Expected mode name string after 'to'");
-          }
-          onExitToMode = at().value;
-          advance();
-          onExitToBlock = parseBlockStatement();
+        if (eventType == "enter") {
+            if (at().type == havel::TokenType::From ||
+                (at().type == havel::TokenType::Identifier && at().value == "from")) {
+                advance(); // consume 'from'
+                if (at().type != havel::TokenType::String) {
+                    failAt(at(), "Expected mode name string after 'from'");
+                }
+                onEnterFromMode = at().value;
+                advance();
+                onEnterFromBlock = parseBlockStatement();
+            } else {
+                // Simple 'on enter { ... }'
+                enterBlock = parseBlockStatement();
+            }
+        } else if (eventType == "exit") {
+            if (at().type == havel::TokenType::Identifier && at().value == "to") {
+                advance(); // consume 'to'
+                if (at().type != havel::TokenType::String) {
+                    failAt(at(), "Expected mode name string after 'to'");
+                }
+                onExitToMode = at().value;
+                advance();
+                onExitToBlock = parseBlockStatement();
         } else {
           // Simple 'on exit { ... }'
           exitBlock = parseBlockStatement();
@@ -10506,9 +10508,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModesBlock() {
       continue;
     }
 
-    // Parse mode name
-    if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected mode name");
+    // Parse mode name (identifier or string)
+    if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type) &&
+        at().type != havel::TokenType::String) {
+        failAt(at(), "Expected mode name after 'mode'");
     }
     std::string modeName = at().value;
     advance();

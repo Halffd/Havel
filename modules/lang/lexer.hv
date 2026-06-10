@@ -1398,10 +1398,10 @@ fn scanHotkey() {
                     if DOUBLE_PAREN_EXPR_TYPES.has(prevType) {
                         emitTwo = true
                     }
-                    if !emitTwo && prevType == "Assign" {
-                        hasBOp = false
-                        lk = idx + 1
-                        dp = 2
+  if !emitTwo && prevType == "Assign" {
+    hasBOp = false
+    lk = idx + 2
+    dp = 2
                         while lk < n && dp > 0 {
                             lc = cpArr[lk][0]
                             if lc == 40 { dp = dp + 1 }
@@ -1422,8 +1422,8 @@ fn scanHotkey() {
                 if !emitTwo {
                     // Lambda heuristic: comma at depth 2 or ) => at close
                     lambdaFlag = false
-                    lk = idx + 1
-                    ldp = 2
+  lk = idx + 2
+  ldp = 2
                     while lk < n && ldp > 0 {
                         lc = cpArr[lk][0]
                         if lc == 40 { ldp = ldp + 1 }
@@ -1444,18 +1444,20 @@ fn scanHotkey() {
                     }
                     if lambdaFlag { emitTwo = true }
                 }
-                if emitTwo {
-                    addToken("OpenParen", "(")
-                    advance()
-                    addToken("OpenParen", "(")
-                    parenDepth = parenDepth + 2
-                    continue
-                }
-                advance()
-                inBitwiseExpr = true
-                parenDepth = 0
-                addToken("DoubleOpenParen", "((")
-                continue
+  if emitTwo {
+    addToken("OpenParen", "(")
+    advance() // consume first '('
+    addToken("OpenParen", "(")
+    advance() // consume second '('
+    parenDepth = parenDepth + 2
+    continue
+  }
+  advance() // consume first '('
+  advance() // consume second '('
+  inBitwiseExpr = true
+  parenDepth = 0
+  addToken("DoubleOpenParen", "((")
+  continue
             }
             if c == 40 {
                 advance()

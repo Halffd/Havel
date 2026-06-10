@@ -5083,20 +5083,46 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 in_tail_position_ = saved_tail_position;
                 return;
             }
-            if (objIdent->symbol == "struct" && property->symbol == "set" &&
-                expression.args.size() == 3) {
-                compileExpression(*expression.args[0]); // struct instance
-                const auto* fieldLit =
-                    dynamic_cast<const ast::StringLiteral*>(expression.args[1].get());
-                if (!fieldLit) {
-                    COMPILER_THROW("struct.set requires literal string field name");
-                }
-                compileExpression(*expression.args[2]); // value
-                uint32_t field_sid = addStringConstant(fieldLit->value);
-                emit(OpCode::STRUCT_SET, Value::makeStringValId(field_sid));
-                in_tail_position_ = saved_tail_position;
-                return;
+        if (objIdent->symbol == "struct" && property->symbol == "set" &&
+            expression.args.size() == 3) {
+            compileExpression(*expression.args[0]); // struct instance
+            const auto* fieldLit =
+                dynamic_cast<const ast::StringLiteral*>(expression.args[1].get());
+            if (!fieldLit) {
+                COMPILER_THROW("struct.set requires literal string field name");
             }
+            compileExpression(*expression.args[2]); // value
+            uint32_t field_sid = addStringConstant(fieldLit->value);
+            emit(OpCode::STRUCT_SET, Value::makeStringValId(field_sid));
+            in_tail_position_ = saved_tail_position;
+            return;
+        }
+
+        // super.method(args) — call parent class method with current self
+        if (objIdent->symbol == "super") {
+            if (current_parent_class_name_.empty()) {
+                COMPILER_THROW("super call used outside a derived class method");
+            }
+
+            uint32_t parent_class_sid = addStringConstant(current_parent_class_name_);
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(parent_class_sid));
+
+            uint32_t method_sid = addStringConstant(property->symbol);
+            emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(method_sid)));
+            emit(OpCode::OBJECT_GET_RAW);
+
+            emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0)); // self
+            for (const auto &arg : expression.args) {
+                if (!arg) {
+                    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+                    continue;
+                }
+                compileExpression(*arg);
+            }
+            emit(OpCode::CALL, static_cast<uint32_t>(arg_count + 1));
+            in_tail_position_ = saved_tail_position;
+            return;
+        }
 
             // Stdlib intrinsic dispatch: math.sin(x) -> MATH_SIN, etc.
             {

@@ -1414,12 +1414,13 @@ registerHostFunction(
   // Initialize fields from positional arguments (fallback if no init method)
   const size_t provided = args.size() - 1 - offset;
 
-  // Look for init method on prototype (like class.new does)
-  Value initMethodVal = Value::makeNull();
-  auto* currentProto = proto;
-  while (currentProto) {
-    auto val = currentProto->get("init");
-    if (val) {
+        // Look for init method on prototype (like class.new does)
+        Value initMethodVal = Value::makeNull();
+        auto* currentProto = proto;
+        while (currentProto) {
+            auto val = currentProto->get("init");
+            if (!val) val = currentProto->get("new");
+            if (val) {
       initMethodVal = *val;
       break;
     }
@@ -1653,21 +1654,22 @@ currentProto = nullptr;
 }
 }
 
-Value initMethodVal = Value::makeNull();
-currentProto = heap_.object(protoVal.asObjectId());
-while (currentProto) {
-auto val = currentProto->get("init");
-if (val) {
-initMethodVal = *val;
-break;
-}
-auto parentVal = currentProto->get("__parent");
-if (parentVal && parentVal->isObjectId()) {
-currentProto = heap_.object(parentVal->asObjectId());
-} else {
-break;
-}
-}
+        Value initMethodVal = Value::makeNull();
+        currentProto = heap_.object(protoVal.asObjectId());
+        while (currentProto) {
+            auto val = currentProto->get("init");
+            if (!val) val = currentProto->get("new");
+            if (val) {
+                initMethodVal = *val;
+                break;
+            }
+            auto parentVal = currentProto->get("__parent");
+            if (parentVal && parentVal->isObjectId()) {
+                currentProto = heap_.object(parentVal->asObjectId());
+            } else {
+                break;
+            }
+        }
 
 if (!initMethodVal.isNull()) {
             std::vector<Value> ctor_args;

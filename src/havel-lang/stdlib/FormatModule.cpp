@@ -164,6 +164,7 @@ void registerFormatModule(const VMApi &api) {
                 api.setGlobal(name, value);
             }
         }
+    } else {
     }
 }
 

@@ -1396,7 +1396,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       replBackend->setApplicationMetadata(replMeta);
 
       std::vector<std::string> args;
-      havel::Havel havel_inst(false, combinedNames, false, true, args);
+      havel::Havel havel_inst(false, combinedNames, true, true, args);
       
       if (!havel_inst.isInitialized()) return 1;
       
@@ -1458,6 +1458,16 @@ hostAPI->SetVM(bytecodeVM);
 // Attach REPL to the existing VM from the Havel instance
       // (instead of initialize() which creates a new VM)
       repl.attach(bytecodeVM, havel_inst.getModules(), collectKnownGlobals(bytecodeVM));
+
+      // Pump EventListener on the REPL thread so event processing shares the same thread
+      {
+        auto *io = havel_inst.getIOPtr();
+        if (io) {
+          repl.setPumpCallback([io]() {
+            io->PumpOnce();
+          });
+        }
+      }
 
       // Enter REPL
       return repl.run();

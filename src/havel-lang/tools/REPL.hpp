@@ -118,6 +118,12 @@ public:
     void setPrintHandler(std::function<void(const std::string&)> handler);
 
     /**
+     * Set a pump callback called after each REPL execution.
+     * Used to drive event loops (e.g., EventListener) on the same thread.
+     */
+    void setPumpCallback(std::function<void()> callback);
+
+    /**
      * Set a custom input handler (for embedded use)
      */
     void setInputHandler(std::function<std::string(const std::string&)> handler);
@@ -179,6 +185,7 @@ private:
 
     // Handlers
     std::function<void(const std::string&)> printHandler_;
+    std::function<void()> pumpCallback_;
     std::function<std::string(const std::string&)> inputHandler_;
 
     // Execution context

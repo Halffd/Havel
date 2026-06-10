@@ -240,6 +240,7 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   std::vector<
       std::pair<std::unique_ptr<BytecodeFunction>, std::optional<uint32_t>>>
       saved_functions_;
+  std::vector<uint32_t> saved_next_local_index_;
   std::unordered_map<const ast::FunctionDeclaration *, uint32_t>
       function_indices_by_node_;
   std::unordered_map<const ast::ClassMethodDef *, uint32_t>

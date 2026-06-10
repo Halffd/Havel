@@ -7116,11 +7116,12 @@ void ByteCompiler::reserveLocalSlot(uint32_t slot) {
 }
 
 void ByteCompiler::enterFunction(BytecodeFunction &&function,
-		std::optional<uint32_t> slot) {
-	if (current_function) {
+                                     std::optional<uint32_t> slot) {
+  if (current_function) {
     // Save current function state for nesting
     saved_functions_.push_back(
         std::make_pair(std::move(current_function), current_function_slot_));
+    saved_next_local_index_.push_back(next_local_index);
   }
 
   current_function = std::make_unique<BytecodeFunction>(std::move(function));
@@ -7157,6 +7158,8 @@ void ByteCompiler::leaveFunction() {
     saved_functions_.pop_back();
     current_function = std::move(saved.first);
     current_function_slot_ = saved.second;
+    next_local_index = saved_next_local_index_.back();
+    saved_next_local_index_.pop_back();
   } else {
     resetLocals();
   }

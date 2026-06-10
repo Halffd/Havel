@@ -52,7 +52,9 @@ public:
   ~EventListener();
 
   bool Start(const std::vector<std::string> &devicePaths,
-             bool grabDevices = false);
+             bool grabDevices = false,
+             bool startThread = true);
+  void PumpOnce();
 
     void setModules(havel::Modules *modules);
   void setExecutionEngine(havel::compiler::ExecutionEngine *executionEngine);

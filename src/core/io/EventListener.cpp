@@ -173,7 +173,7 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
 }
 
 bool EventListener::Start(const std::vector<std::string> &devicePaths,
-                          bool grabDevices) {
+                          bool grabDevices, bool startThread) {
   if (running.load()) {
     warn("EventListener already running");
     return false;
@@ -209,7 +209,9 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 
   running.store(true);
   shutdown.store(false);
-  eventThread = std::thread(&EventListener::EventLoop, this);
+  if (startThread) {
+    eventThread = std::thread(&EventListener::EventLoop, this);
+  }
 
   return true;
 }
@@ -417,10 +419,48 @@ void EventListener::setHotkeyManager(HotkeyManager *manager) {
   hotkeyManager = manager;
 }
 
+void EventListener::PumpOnce() {
+    // Always drain pending input events (non-blocking) before anything else
+    if (backend_) {
+        backend_->PollEvents(0);
+    }
+
+    if (shutdown.load()) return;
+
+    if (executionEngine) {
+        if (modules_) modules_->checkTimers();
+        executionEngine->executeFrame();
+
+        auto* vm = executionEngine->getVM();
+        if (vm && vm->exit_requested_.load()) {
+            int code = vm->exit_code_.load();
+            shutdown.store(true);
+            running.store(false);
+            ForceUngrabAllDevices();
+            ReleaseAllVirtualKeys();
+#ifdef HAVE_QT_EXTENSION
+            QCoreApplication::exit(code);
+#endif
+            if (shutdownFd >= 0) {
+                uint64_t val = 1;
+                write(shutdownFd, &val, sizeof(val));
+            }
+            return;
+        }
+    } else if (modules_) {
+        modules_->checkTimers();
+    }
+
+    // Non-blocking poll for input events with short timeout
+    if (backend_) {
+        backend_->PollEvents(1);
+    }
+}
+
 void EventListener::EventLoop() {
     while (running.load() && !shutdown.load()) {
 
-        // Always drain pending input events (non-blocking) before anything else
+        // Drain pending input events (non-blocking) before anything else
         if (backend_) {
             backend_->PollEvents(0);
         }

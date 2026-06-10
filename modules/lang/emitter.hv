@@ -4,7 +4,9 @@
 
 use { Scope, scopeDeclare, scopeResolve, scopeLocalCount, scopeFindFuncRoot } from "scope"
 use { traceEmitter, isOn } from "debug"
+use { LambdaExpression, BlockStatement } from "ast"
 use "bytecodeBuilder"
+use { emitterError } from "error"
 
 fn charDigit(c) {
     // map single char to its digit value: 0-9, a-f, A-F
@@ -54,8 +56,8 @@ fn Emitter() {
 
 }
 fn emitError(msg, line, col) {
-
-}
+ emitterError(msg, line, col)
+ }
 fn globalIdx(emitter, name) {
     cidx = emitter.globals[name]
     if cidx != null {
@@ -2111,8 +2113,8 @@ if k == "RepeatStatement" {
 					keyIdx = bc.add_string(keyName)
 					bc.emit("LOAD_CONST", keyIdx)
 					bc.emit("OBJECT_GET")
-					slot = scopeDeclare(emitter.scope, aliasName)
-					bc.emit("STORE_VAR", slot)
+    slot = scopeDeclare(emitter.scope, aliasName)
+    bc.emit("STORE_IMMUT_VAR", slot)
 				}
 			}
 			return
@@ -2584,53 +2586,136 @@ if k == "HotkeyBinding" {
     bc.patch_jump(endJump, bc.instr_count())
     return
   }
-	if k == "ModesBlock" {
-		if node.modes != null {
-			for modeDef in node.modes {
-				sid = globalIdx(emitter, "mode.register")
-				bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-				mNameIdx = bc.add_string(modeDef.name)
-				bc.emit("LOAD_CONST", mNameIdx)
-				bc.emit("LOAD_CONST", bc.add_const(modeDef.priority != null ? modeDef.priority : 0))
-				if modeDef.condition != null {
-					emitExpr(emitter, modeDef.condition)
-				}
-				else {
-					bc.emit("PUSH_NULL")
-				}
-				if modeDef.enterBlock != null {
-					bc.emit("LOAD_CONST", bc.add_const(0))
-				}
-				else {
-					bc.emit("PUSH_NULL")
-				}
-				if modeDef.exitBlock != null {
-					bc.emit("LOAD_CONST", bc.add_const(0))
-				}
-				else {
-					bc.emit("PUSH_NULL")
-				}
-				if modeDef.onEnterFrom != null && modeDef.onEnterFrom != "" {
-					enterFromIdx = bc.add_string(modeDef.onEnterFrom)
-					bc.emit("LOAD_CONST", enterFromIdx)
-				}
-				else {
-					bc.emit("PUSH_NULL")
-				}
-				if modeDef.onExitTo != null && modeDef.onExitTo != "" {
-					exitToIdx = bc.add_string(modeDef.onExitTo)
-					bc.emit("LOAD_CONST", exitToIdx)
-				}
-				else {
-					bc.emit("PUSH_NULL")
-				}
-				bc.emit("LOAD_CONST", bc.add_const(false))
-				bc.emit("CALL", 8)
-				bc.emit("POP")
-			}
-		}
-		return
-	}
+if k == "ModesBlock" {
+ if node.modes != null {
+  for modeDef in node.modes {
+   sid = globalIdx(emitter, "mode.register")
+   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+   mNameIdx = bc.add_string(modeDef.name)
+   bc.emit("LOAD_CONST", mNameIdx)
+   bc.emit("LOAD_CONST", bc.add_const(modeDef.priority != null ? modeDef.priority : 0))
+   if modeDef.condition != null {
+    emitExpr(emitter, modeDef.condition)
+   }
+   else {
+    bc.emit("PUSH_NULL")
+   }
+   // Compile enter block as separate BytecodeFunction
+   if modeDef.enter != null {
+    enterScope = Scope(null)
+    savedScope = emitter.scope
+    emitter.scope = enterScope
+    enterIdx = bc.func_new("mode_enter_" + modeDef.name, 0, 16)
+    if modeDef.enter.kind == "BlockStatement" {
+     for s in modeDef.enter.body {
+      emitStmt(emitter, s)
+     }
+    }
+    else {
+     emitStmt(emitter, modeDef.enter)
+    }
+    bc.emit("PUSH_NULL")
+    bc.emit("RETURN")
+    bc.set_local_count(scopeLocalCount(enterScope))
+    emitter.scope = savedScope
+    bc.emit("LOAD_CONST", bc.add_const(enterIdx))
+   }
+   else {
+    bc.emit("PUSH_NULL")
+   }
+   // Compile exit block as separate BytecodeFunction
+   if modeDef.exit != null {
+    exitScope = Scope(null)
+    savedScope = emitter.scope
+    emitter.scope = exitScope
+    exitIdx = bc.func_new("mode_exit_" + modeDef.name, 0, 16)
+    if modeDef.exit.kind == "BlockStatement" {
+     for s in modeDef.exit.body {
+      emitStmt(emitter, s)
+     }
+    }
+    else {
+     emitStmt(emitter, modeDef.exit)
+    }
+    bc.emit("PUSH_NULL")
+    bc.emit("RETURN")
+    bc.set_local_count(scopeLocalCount(exitScope))
+    emitter.scope = savedScope
+    bc.emit("LOAD_CONST", bc.add_const(exitIdx))
+   }
+   else {
+    bc.emit("PUSH_NULL")
+   }
+   // onEnterFrom mode name
+   if modeDef.onEnterFrom != null && modeDef.onEnterFrom != "" {
+    enterFromIdx = bc.add_string(modeDef.onEnterFrom)
+    bc.emit("LOAD_CONST", enterFromIdx)
+   }
+   else {
+    bc.emit("PUSH_NULL")
+   }
+   // Compile onEnterFrom block as separate BytecodeFunction (1 param: fromMode)
+   if modeDef.onEnterFromBlock != null {
+    efScope = Scope(null)
+    savedScope = emitter.scope
+    emitter.scope = efScope
+    efIdx = bc.func_new("mode_onEnterFrom_" + modeDef.name, 1, 16)
+    scopeDeclare(efScope, "fromMode")
+    if modeDef.onEnterFromBlock.kind == "BlockStatement" {
+     for s in modeDef.onEnterFromBlock.body {
+      emitStmt(emitter, s)
+     }
+    }
+    else {
+     emitStmt(emitter, modeDef.onEnterFromBlock)
+    }
+    bc.emit("PUSH_NULL")
+    bc.emit("RETURN")
+    bc.set_local_count(scopeLocalCount(efScope))
+    emitter.scope = savedScope
+    bc.emit("LOAD_CONST", bc.add_const(efIdx))
+   }
+   else {
+    bc.emit("PUSH_NULL")
+   }
+   // onExitTo mode name
+   if modeDef.onExitTo != null && modeDef.onExitTo != "" {
+    exitToIdx = bc.add_string(modeDef.onExitTo)
+    bc.emit("LOAD_CONST", exitToIdx)
+   }
+   else {
+    bc.emit("PUSH_NULL")
+   }
+   // Compile onExitTo block as separate BytecodeFunction (1 param: toMode)
+   if modeDef.onExitToBlock != null {
+    etScope = Scope(null)
+    savedScope = emitter.scope
+    emitter.scope = etScope
+    etIdx = bc.func_new("mode_onExitTo_" + modeDef.name, 1, 16)
+    scopeDeclare(etScope, "toMode")
+    if modeDef.onExitToBlock.kind == "BlockStatement" {
+     for s in modeDef.onExitToBlock.body {
+      emitStmt(emitter, s)
+     }
+    }
+    else {
+     emitStmt(emitter, modeDef.onExitToBlock)
+    }
+    bc.emit("PUSH_NULL")
+    bc.emit("RETURN")
+    bc.set_local_count(scopeLocalCount(etScope))
+    emitter.scope = savedScope
+    bc.emit("LOAD_CONST", bc.add_const(etIdx))
+   }
+   else {
+    bc.emit("PUSH_NULL")
+   }
+   bc.emit("CALL", 9)
+   bc.emit("POP")
+  }
+ }
+ return
+ }
   if k == "GoStatement" {
     sid = globalIdx(emitter, "thread_spawn")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
@@ -2797,6 +2882,43 @@ if k == "HotkeyBinding" {
     emitInputStatement(emitter, node)
     return
   }
+if k == "SwitchStatement" {
+ if node.subject != null {
+  emitExpr(emitter, node.subject)
+  bc.emit("POP")
+ }
+ if node.cases != null {
+  for caseNode in node.cases {
+   if caseNode.body != null {
+    if caseNode.body.kind == "BlockStatement" {
+     for s in caseNode.body.body {
+      emitStmt(emitter, s)
+     }
+    }
+    else {
+     emitStmt(emitter, caseNode.body)
+    }
+   }
+  }
+ }
+ if node.defaultCase != null && node.defaultCase.body != null {
+  if node.defaultCase.body.kind == "BlockStatement" {
+   for s in node.defaultCase.body.body {
+    emitStmt(emitter, s)
+   }
+  }
+  else {
+   emitStmt(emitter, node.defaultCase.body)
+  }
+ }
+ return
+ }
+ if k == "OffModeStatement" {
+  if node.body != null {
+   emitStmt(emitter, node.body)
+  }
+  return
+ }
   emitError("unsupported stmt: " + k, node.line, node.col)
 
 }
@@ -3213,22 +3335,26 @@ fn emitUseStatement(emitter, node) {
     iAliases = node.importAliases
 if iNames != null {
 ii = 0
-while ii < #iNames {
-name = iNames[ii]
-alias = name
-if iAliases != null {
-if ii < #iAliases {
-alias = iAliases[ii]
-}
-}
-bc.emit("DUP")
-keyIdx = bc.add_string(name)
-bc.emit("LOAD_CONST", keyIdx)
-bc.emit("OBJECT_GET")
-sid = bc.add_chunk_string(alias)
-bc.emit("STORE_GLOBAL", bc.str_id(sid))
-ii = ii + 1
-}
+        while ii < #iNames {
+          name = iNames[ii]
+          if name == "*" && node.isWildcard == true {
+            bc.emit("IMPORT_WILDCARD")
+            return
+          }
+          alias = name
+          if iAliases != null {
+            if ii < #iAliases {
+              alias = iAliases[ii]
+            }
+          }
+          bc.emit("DUP")
+          keyIdx = bc.add_string(name)
+          bc.emit("LOAD_CONST", keyIdx)
+          bc.emit("OBJECT_GET")
+          sid = bc.add_chunk_string(alias)
+          bc.emit("STORE_GLOBAL", bc.str_id(sid))
+          ii = ii + 1
+        }
 }
     bc.emit("POP")
     return

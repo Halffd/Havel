@@ -1,0 +1,156 @@
+// modules/help/help.hv - Pure Havel help system
+// Replaces C++ HelpModule.cpp entirely
+
+_moduleDocs = {
+  array: {
+    description: "Array operations and utilities",
+    functions: {
+      "len(arr)": "Get array length",
+      "push(arr, value)": "Add value to end of array",
+      "pop(arr)": "Remove and return last element",
+      "has(arr, value)": "Check if array contains value",
+      "find(arr, value)": "Find index of value in array",
+      "map(arr, fn)": "Apply function to each element",
+      "filter(arr, fn)": "Filter array by predicate function",
+      "reduce(arr, fn, initial)": "Reduce array to single value",
+      "foreach(arr, fn)": "Execute function for each element",
+      "sort(arr)": "Sort array in ascending order",
+      "join(arr, sep)": "Join array elements with separator",
+    }
+  },
+  string: {
+    description: "String operations and utilities",
+    functions: {
+      "len(str)": "Get string length",
+      "trim(str)": "Remove leading/trailing whitespace",
+      "upper(str)": "Convert to uppercase",
+      "lower(str)": "Convert to lowercase",
+      "includes(str, substr)": "Check if string contains substring",
+      "startswith(str, prefix)": "Check if string starts with prefix",
+      "endswith(str, suffix)": "Check if string ends with suffix",
+      "split(str, delim)": "Split string by delimiter",
+      "join(arr, sep)": "Join array elements with separator",
+      "sub(str, start, len)": "Extract substring",
+      "replace(str, from, to)": "Replace all occurrences",
+    }
+  },
+  config: {
+    description: "Configuration file management",
+    functions: {
+      "get(key, default?)": "Get config value by key",
+      "set(key, value)": "Set config value",
+      "save()": "Save config to file",
+      "load()": "Reload config from file",
+      "getAll()": "Get all config as object",
+    }
+  },
+  window: {
+    description: "Window management and information",
+    functions: {
+      "activeTitle()": "Get active window title",
+      "activeClass()": "Get active window class",
+      "activeExe()": "Get active window executable",
+      "activePid()": "Get active window PID",
+      "active()": "Get all active window info as object",
+    }
+  },
+  type: {
+    description: "Type inspection and conversion",
+    functions: {
+      "of(value)": "Get type name of value",
+      "is(value, type)": "Check if value is of type",
+    }
+  },
+  any: {
+    description: "Generic operations for any type",
+    functions: {
+      "len(value)": "Get length (string, array, object)",
+      "has(value, key)": "Check if has key/property",
+      "find(value, item)": "Find item in collection",
+      "in(item, collection)": "Check membership",
+      "not_in(item, collection)": "Check non-membership",
+    }
+  },
+  system: {
+    description: "System operations",
+    functions: {
+      "gc()": "Run garbage collector",
+      "gcStats()": "Get GC statistics",
+    }
+  },
+  struct: {
+    description: "Struct/record operations",
+    functions: {
+      "define(name, fields)": "Define a new struct type",
+      "new(name, ...)": "Create new struct instance",
+      "get(struct, field)": "Get struct field value",
+      "set(struct, field, value)": "Set struct field value",
+    }
+  },
+  extension: {
+    description: "Dynamic extension loading",
+    functions: {
+      "load(name)": "Load extension by name",
+      "isLoaded(name)": "Check if extension is loaded",
+      "list()": "Get list of loaded extensions",
+      "addSearchPath(path)": "Add extension search path",
+    }
+  },
+  globals: {
+    description: "Global utility functions",
+    functions: {
+      "print(...)": "Print values to console",
+      "sleep(ms)": "Sleep for milliseconds",
+      "help()": "Show this help",
+      "help(\"module\")": "Show module documentation",
+      "help(\"module.func\")": "Show function documentation",
+    }
+  },
+}
+
+fn help(topic) {
+  if topic == nil {
+    lines = ["Havel Language Help", "===================", "", "Usage:",
+      "  help() - Show this help",
+      "  help(\"module\") - Show module documentation",
+      "  help(\"module.function\") - Show function documentation", "",
+      "Available Modules:"]
+    for name in _moduleDocs.keys() {
+      mod = _moduleDocs[name]
+      lines.push("  $name - ${mod.description}")
+    }
+    lines.push("")
+    lines.push("Use help(\"module\") for detailed module documentation.")
+    lines.join("\n")
+  } else {
+    dotPos = str(topic).indexOf(".")
+    if dotPos != -1 {
+      modName = str(topic).slice(0, dotPos)
+      funcName = str(topic).slice(dotPos + 1)
+      mod = _moduleDocs[modName]
+      if mod != nil {
+        for funcSig in mod.functions.keys() {
+          parenPos = funcSig.indexOf("(")
+          if parenPos != -1 && funcSig.slice(0, parenPos) == funcName {
+            return "$modName.$funcName\nUsage: $funcSig\nDescription: ${mod.functions[funcSig]}"
+          }
+        }
+        "Function '$funcName' not found in module '$modName'"
+      } else {
+        "Module '$modName' not found"
+      }
+    } else {
+      mod = _moduleDocs[str(topic)]
+      if mod != nil {
+        lines = ["$topic - ${mod.description}", "", "Functions:"]
+        for funcSig in mod.functions.keys() {
+          lines.push("  $funcSig - ${mod.functions[funcSig]}")
+        }
+        lines.join("\n")
+      } else {
+        available = _moduleDocs.keys().join(", ")
+        "Module '$topic' not found\nAvailable modules: $available"
+      }
+    }
+  }
+}

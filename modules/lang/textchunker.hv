@@ -1,0 +1,2 @@
+// modules/lang/textchunker.hv - entry point for `use textchunker`
+use { split, lines, words, chars, fixed, sentences, paragraphs, tokens, window } from "textchunker/textchunker"

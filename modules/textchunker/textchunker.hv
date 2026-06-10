@@ -1,0 +1,165 @@
+// modules/textchunker/textchunker.hv - Pure Havel text chunking module
+// Replaces C++ TextChunkerModule.cpp entirely
+
+fn _indexOfFrom(text, needle, start) {
+  if start >= text.len() { -1 } else {
+    sub = text.slice(start)
+    idx = sub.indexOf(needle)
+    if idx == -1 { -1 } else { start + idx }
+  }
+}
+
+fn split(text, delim) {
+  if delim == "" {
+    result = []
+    for i in 0..text.len() {
+      result.push(text.slice(i, i + 1))
+    }
+    result
+  } else {
+    result = []
+    pos = 0
+    while pos < text.len() {
+      found = _indexOfFrom(text, delim, pos)
+      if found == -1 {
+        result.push(text.slice(pos))
+        break
+      }
+      result.push(text.slice(pos, found))
+      pos = found + delim.len()
+    }
+    result
+  }
+}
+
+fn lines(text) {
+  split(text, "\n")
+}
+
+fn words(text) {
+  result = []
+  word = ""
+  for i in 0..text.len() {
+    c = text.slice(i, i + 1)
+    if c == " " || c == "\t" || c == "\n" || c == "\r" {
+      if word != "" {
+        result.push(word)
+        word = ""
+      }
+    } else {
+      word = word + c
+    }
+  }
+  if word != "" {
+    result.push(word)
+  }
+  result
+}
+
+fn chars(text, count) {
+  count = int(count)
+  if count <= 0 { count = 1 }
+  result = []
+  i = 0
+  while i < text.len() {
+    end = i + count
+    if end > text.len() { end = text.len() }
+    result.push(text.slice(i, end))
+    i = end
+  }
+  result
+}
+
+fn fixed(text, size) {
+  size = int(size)
+  if size <= 0 { size = 100 }
+  chars(text, size)
+}
+
+fn sentences(text) {
+  result = []
+  pos = 0
+  while pos < text.len() {
+    found = -1
+    for j in pos..text.len() {
+      c = text.slice(j, j + 1)
+      if c == "." || c == "!" || c == "?" {
+        found = j
+        break
+      }
+    }
+    if found == -1 {
+      if pos < text.len() {
+        result.push(text.slice(pos))
+      }
+      break
+    }
+    end = found + 1
+    while end < text.len() {
+      c = text.slice(end, end + 1)
+      if c != " " && c != "\t" && c != "\n" && c != "\r" { break }
+      end = end + 1
+    }
+    result.push(text.slice(pos, end))
+    pos = end
+  }
+  result
+}
+
+fn paragraphs(text) {
+  result = []
+  paragraph = ""
+  for line in text.split("\n") {
+    if line.trim() == "" {
+      if paragraph != "" {
+        result.push(paragraph)
+        paragraph = ""
+      }
+    } else {
+      if paragraph != "" {
+        paragraph = paragraph + "\n"
+      }
+      paragraph = paragraph + line
+    }
+  }
+  if paragraph != "" {
+    result.push(paragraph)
+  }
+  result
+}
+
+fn tokens(text, maxTokens, overlap) {
+  maxTokens = int(maxTokens)
+  overlap = int(overlap)
+  if maxTokens <= 0 { maxTokens = 512 }
+  if overlap < 0 { overlap = 0 }
+
+  maxChars = maxTokens * 4
+  overlapChars = overlap * 4
+
+  result = []
+  pos = 0
+  while pos < text.len() {
+    chunkSize = maxChars
+    if pos + chunkSize > text.len() { chunkSize = text.len() - pos }
+    result.push(text.slice(pos, pos + chunkSize))
+    if pos + chunkSize >= text.len() { break }
+    pos = pos + chunkSize - overlapChars
+  }
+  result
+}
+
+fn window(text, size, step) {
+  size = int(size)
+  step = int(step)
+  if size <= 0 { size = 100 }
+  if step <= 0 { step = 1 }
+
+  result = []
+  i = 0
+  while i + size <= text.len() {
+    result.push(text.slice(i, i + size))
+    i = i + step
+  }
+  result
+}

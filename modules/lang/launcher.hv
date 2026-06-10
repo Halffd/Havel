@@ -7,6 +7,7 @@ use { Emitter, compileProgram } from "emitter"
 use { inferProgram } from "types"
 use { loaderInit, loaderLoad, collectUseDeps, loaderSetScriptDir } from "loader"
 use { isOn, setFlag, parseDebugArgs, dumpAst, dumpBytecode, startTimer, endTimer, traceBytecode, traceEmitter } from "debug"
+use { hasErrors as emitterHasErrors, printAll as emitterPrintAll, clear as errorClear } from "error"
 
 bc = bytecodeBuilder
 
@@ -312,12 +313,13 @@ fn runScript(cfg) {
     compileProgram(emitter, result.ast, false, sourceFile, "__main__", false)
     if isOn("timing") { endTimer("compile") }
 
-    // Check for emitter errors
-    if hasErrors() {
-        printAll()
-        printSummary()
-        return 1
-    }
+	// Check for emitter errors
+	if hasErrors() || emitterHasErrors() {
+		printAll()
+		emitterPrintAll()
+		printSummary()
+		return 1
+	}
 
     // Bytecode debug dump
     dumpBytecode()
@@ -400,9 +402,13 @@ fn runSelfHosted(cfg) {
     em.func_idx = bc.func_count()
     safeName = sourceFile.replace("/", "_").replace(".", "_").replace("-", "_")
     mainEntry = "__init_" + safeName
-    result = compileProgram(em, result.ast, false, sourceFile, mainEntry, true)
-    if isOn("timing") { endTimer("compile") }
-    result
+	result = compileProgram(em, result.ast, false, sourceFile, mainEntry, true)
+	if isOn("timing") { endTimer("compile") }
+	if emitterHasErrors() {
+		emitterPrintAll()
+		return 1
+	}
+	result
 }
 
 fn runTests(cfg) {

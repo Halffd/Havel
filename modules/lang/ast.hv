@@ -95,7 +95,7 @@ NODE_TYPES = {
     "OnKeyDownStatement": true,
     "OnKeyUpStatement": true,
     "OnMessageStatement": true,
-    "ModesBlock": true,
+    "ModesBlock": true, "ModeBlock": true,
     "ModeDefinition": true,
     "ConfigSection": true,
     "InputStatement": true,
@@ -477,8 +477,13 @@ fn ModesBlock(modeList, line, col) {
     {kind: "ModesBlock", line: line, col: col, modes: modeList}
 
 }
+
+fn ModeBlock(modeName, body, line, col) {
+ {kind: "ModeBlock", line: line, col: col, modeName: modeName, statements: body.kind == "BlockStatement" ? body.body : [body]}
+
+}
 fn ModeDefinition(name, condition, enterBlock, exitBlock) {
-    {kind: "ModeDefinition", name: name, condition: condition, enter: enterBlock, exit: exitBlock}
+ {kind: "ModeDefinition", name: name, condition: condition, enter: enterBlock, exit: exitBlock, priority: 0, onEnterFrom: "", onExitTo: "", onEnterFromBlock: null, onExitToBlock: null}
 
 }
 fn ConfigSection(sectionName, args, pairs, line, col) {
@@ -1208,7 +1213,12 @@ prettyPrint(node.body, depth + 1)
         print(prefix + "Modes:")
         for m in node.modes { prettyPrint(m, depth + 1) }
     }
-    else if k == "ModeDefinition" {
+ else if k == "ModeBlock" {
+  print(prefix + "ModeBlock(" + node.modeName + "):")
+  if node.statements != null {
+   for s in node.statements { prettyPrint(s, depth + 1) }
+  }
+ }    else if k == "ModeDefinition" {
         print(prefix + "Mode(" + node.name + "):")
         if node.condition != null { prettyPrint(node.condition, depth + 1) }
         if node.enter != null { prettyPrint(node.enter, depth + 1) }

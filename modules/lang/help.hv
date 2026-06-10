@@ -1,0 +1,2 @@
+// modules/lang/help.hv - entry point for `use help`
+use { help } from "help/help"

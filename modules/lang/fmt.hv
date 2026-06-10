@@ -1,0 +1,2 @@
+// modules/lang/fmt.hv - entry point for `use fmt`
+use { hex, oct, bin, format } from "fmt/fmt"

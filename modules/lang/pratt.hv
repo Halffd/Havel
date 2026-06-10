@@ -19,14 +19,16 @@ RangeExpression, TernaryExpression, PipelineExpression,
 ThrowStatement, TryStatement, MatchExpression, MatchCase,
 InterpolatedString, RegexLiteral, AtExpression, AtAtExpression,
 CastExpression, HotkeyExpression, HotkeyLiteral,
-WhenBlock, WithStatement, DecoratorStatement,
+GoStatement, WhenBlock, WithStatement, DecoratorStatement,
 OnModeStatement, OffModeStatement, OnReloadStatement, OnStartStatement,
 OnTapStatement, OnComboStatement, OnKeyDownStatement, OnKeyUpStatement, OnMessageStatement,
-ModesBlock, ModeDefinition, ConfigSection, InputStatement, MultipleAssignment, QueryExpression,
+ModesBlock, ModeBlock, ModeDefinition, ConfigSection, InputStatement, MultipleAssignment, QueryExpression,
 ConfigBlock, SleepStatement, DeferStatement, WaitExpression, WaitGroupExpression, ErrorNode,
 ClassDeclaration, StructDeclaration, EnumDeclaration, TraitDeclaration, ProtocolDeclaration, ImplDeclaration,
 TypeParam, isNode, prettyPrint,
-WildcardPattern, ArrayPattern, ObjectPattern, ConstructorPattern, OrPattern, RangePattern } from "ast"
+WildcardPattern, ArrayPattern, ObjectPattern, ConstructorPattern, OrPattern, RangePattern,
+CharLiteral, ThisExpression, GoExpression, AsyncExpression, AwaitExpression, ChannelExpression,
+YieldExpression, WaitStatement, InputCommand } from "ast"
 
 // --- Binding power constants (matching C++ switch-based values) ---
 BP_NONE = 0
@@ -2033,25 +2035,25 @@ fn parseStatement() {
 
  // Multiple assignment: a, b = value
  // Detect: Identifier, Identifier, ..., Assign
- if tt == TID.Identifier && at(1).tid == TID.Comma {
-  savePos = pos
-  targets = []
-  // Collect comma-separated identifiers
-  while notEOF() {
-   if current().tid != TID.Identifier { break }
-   targets.push(Identifier(current().value, current().line, current().col))
-   advance()
-   skipNewlines()
-   if current().tid != TID.Comma { break }
-   advance() // consume comma
-   skipNewlines()
-  }
-  // Check if next is = (Assign)
-  if current().tid == TID.Assign {
-   advance() // consume =
-   value = parseExpr(0)
-   return MultipleAssignment(targets, value, l, c)
-  }
+	if tt == TID.Identifier && at(1).tid == TID.Comma {
+		savePos = pos
+		targets = []
+		// Collect comma-separated identifiers
+		while notEOF() {
+			if current().tid != TID.Identifier { break }
+			targets.push(Identifier(current().value, current().line, current().col))
+			advance()
+			skipNewlines()
+			if current().tid != TID.Comma { break }
+			advance() // consume comma
+			skipNewlines()
+		}
+		// Check if next is = (Assign)
+		if current().tid == TID.Assign {
+			advance() // consume =
+			value = parseExpr(0)
+			return ExpressionStatement(MultipleAssignment(targets, value, l, c), l, c)
+		}
   // Not multi-assign - restore position
   pos = savePos
   syncCur()
@@ -2213,6 +2215,7 @@ if tt == TID.Defer {
         // DSL statements
         if tt == TID.On: return parseOnStatement()
         if tt == TID.Mode: return parseModeBlockStatement()
+ if tt == TID.Modes: return parseModesBlockStatement()
         if tt == TID.Group: return parseGroupStatement()
         if tt == TID.Signal: return parseSignalStatement()
         if tt == TID.Pool: return parsePoolStatement()
@@ -2240,8 +2243,47 @@ if tt == TID.Go { return parseGoStatement() }
 if tt == TID.Wait { return parseWaitStatement() }
 // Input statement (> prefix)
 if tt == TID.Greater { return parseInputStatement() }
-// Decorator statement ([decorator])
-if tt == TID.OpenBracket { return parseDecoratorStatement() }
+  // Decorator statement ([decorator]) — disambiguate from array literal
+  if tt == TID.OpenBracket {
+    // C++ lookahead: [identifier] followed by declaration keyword = decorator
+    // [anything else] = expression (array literal or indexing)
+    if at(1).tid == TID.Identifier && (at(2).tid == TID.CloseBracket || at(2).tid == TID.OpenParen) {
+      // Save position, scan through [id] or [id(args)] groups
+      savePos = pos
+      isDeco = false
+      for {
+        advance() // consume '['
+        if current().tid != TID.Identifier { break }
+        advance() // consume identifier
+        if current().tid == TID.OpenParen {
+          advance()
+          parenD = 1
+          while notEOF() && parenD > 0 {
+            if current().tid == TID.OpenParen { parenD = parenD + 1 }
+            if current().tid == TID.CloseParen { parenD = parenD - 1 }
+            advance()
+          }
+        }
+        if current().tid == TID.CloseBracket { advance() }
+        else { break }
+        skipNewlines()
+        // Check if followed by declaration keyword
+        if current().tid == TID.Fn || current().tid == TID.Class || current().tid == TID.Let || current().tid == TID.Val {
+          isDeco = true
+          break
+        }
+        // Check for stacked decorator [deco1][deco2]
+        if current().tid == TID.OpenBracket && at(1).tid == TID.Identifier && (at(2).tid == TID.CloseBracket || at(2).tid == TID.OpenParen) {
+          continue
+        }
+        break
+      }
+      pos = savePos
+      syncCur()
+      if isDeco { return parseDecoratorStatement() }
+    }
+    // Fall through to expression statement (array literal)
+  }
 // Dsl block
 if tt == TID.Dsl {
   advance()
@@ -3315,20 +3357,174 @@ fn parseOnKeyDownOrKeyUpStatement() {
     // ===================================================================
     // STATEMENT: mode block
     // ===================================================================
-    fn parseModeBlockStatement() {
-        l = current().line
-        c = current().col
-        advance() // consume 'mode'
-        skipNewlines()
-        name = advance().value
-        skipNewlines()
-        body = parseBlock()
-        return ConfigBlock("mode:" + name, body, l, c)
+ fn parseModeBlockStatement() {
+ l = current().line
+ c = current().col
+ advance() // consume 'mode'
+ skipNewlines()
+ name = advance().value
+ skipNewlines()
+ // Parse optional priority
+ priority = 0
+ if current().tid == TID.Identifier && current().value == "priority" {
+  advance()
+  priority = int(advance().value)
+  skipNewlines()
+ }
+ // Disambiguate: if opening brace and first token is condition/enter/exit/on,
+ // it's a full mode definition. Otherwise it's a simple mode block.
+ if current().tid == TID.OpenBrace {
+  savedPos = pos
+  advance() // consume '{'
+  skipNewlines()
+  firstTok = current()
+  pos = savedPos
+  syncCur()
+  isFullDefinition = (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on")) || firstTok.tid == TID.On
+  if isFullDefinition {
+   return parseModeFullDefinition(name, priority, l, c)
+  }
+ }
+ // Simple mode block: mode name { statements }
+ body = parseBlock()
+ return ModeBlock(name, body, l, c)
 
+ }
+ fn parseModeFullDefinition(name, priority, l, c) {
+ advance() // consume '{'
+ skipNewlines()
+ condition = null
+ enterBlock = null
+ exitBlock = null
+ onEnterFrom = ""
+ onExitTo = ""
+ onEnterFromBlock = null
+ onExitToBlock = null
+ while current().tid != TID.CloseBrace && current().tid != TID.EOF {
+  if current().tid == TID.Newline || current().tid == TID.Semicolon {
+   advance()
+   continue
+  }
+  curTid = current().tid
+  if curTid != TID.Identifier && curTid != TID.On && curTid != TID.From {
+   break
+  }
+  keyword = current().value
+  advance()
+  if keyword == "condition" {
+   if current().tid == TID.Assign || current().tid == TID.Colon {
+    advance()
+   }
+   condition = parseExpr(0)
+  }
+  else if keyword == "enter" {
+   enterBlock = parseBlock()
+  }
+  else if keyword == "exit" {
+   exitBlock = parseBlock()
+  }
+  else if keyword == "on" {
+   if current().tid != TID.Identifier { break }
+   eventType = current().value
+   advance()
+   if eventType == "enter" {
+    if current().tid == TID.From || (current().tid == TID.Identifier && current().value == "from") {
+     advance()
+     onEnterFrom = current().value
+     advance()
+     onEnterFromBlock = parseBlock()
     }
-    // ===================================================================
-    // STATEMENT: group
-    // ===================================================================
+    else {
+     enterBlock = parseBlock()
+    }
+   }
+   else if eventType == "exit" {
+    if current().tid == TID.Identifier && current().value == "to" {
+     advance()
+     onExitTo = current().value
+     advance()
+     onExitToBlock = parseBlock()
+    }
+    else {
+     exitBlock = parseBlock()
+    }
+   }
+   else {
+    // on close/minimize/maximize/open — skip for now
+    parseBlock()
+   }
+  }
+  skipNewlines()
+ }
+ if current().tid == TID.CloseBrace { advance() }
+ modeDef = ModeDefinition(name, condition, enterBlock, exitBlock)
+ modeDef.priority = priority
+ modeDef.onEnterFrom = onEnterFrom
+ modeDef.onExitTo = onExitTo
+ modeDef.onEnterFromBlock = onEnterFromBlock
+ modeDef.onExitToBlock = onExitToBlock
+ return ModesBlock([modeDef])
+
+ }
+ fn parseModesBlockStatement() {
+ l = current().line
+ c = current().col
+ advance() // consume 'modes'
+ skipNewlines()
+ if current().tid != TID.OpenBrace {
+  return ConfigBlock("modes", parseBlock(), l, c)
+ }
+ advance() // consume '{'
+ skipNewlines()
+ modeDefs = []
+ while current().tid != TID.CloseBrace && current().tid != TID.EOF {
+  if current().tid == TID.Newline {
+   advance()
+   continue
+  }
+  if current().tid != TID.Identifier { break }
+  modeName = current().value
+  advance()
+  skipNewlines()
+  if current().tid != TID.OpenBrace { break }
+  advance() // consume '{'
+  skipNewlines()
+  condition = null
+  enterBlock = null
+  exitBlock = null
+  while current().tid != TID.CloseBrace && current().tid != TID.EOF {
+   if current().tid == TID.Newline || current().tid == TID.Semicolon {
+    advance()
+    continue
+   }
+   if current().tid != TID.Identifier { break }
+   keyword = current().value
+   advance()
+   if keyword == "condition" {
+    if current().tid == TID.Assign || current().tid == TID.Colon {
+     advance()
+    }
+    condition = parseExpr(0)
+   }
+   else if keyword == "enter" {
+    enterBlock = parseBlock()
+   }
+   else if keyword == "exit" {
+    exitBlock = parseBlock()
+   }
+   skipNewlines()
+  }
+  if current().tid == TID.CloseBrace { advance() }
+  modeDefs.push(ModeDefinition(modeName, condition, enterBlock, exitBlock))
+  skipNewlines()
+ }
+ if current().tid == TID.CloseBrace { advance() }
+ return ModesBlock(modeDefs)
+
+ }
+// ===================================================================
+ // STATEMENT: group
+ // ===================================================================
     fn parseGroupStatement() {
         l = current().line
         c = current().col

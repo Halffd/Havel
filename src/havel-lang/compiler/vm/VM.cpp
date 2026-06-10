@@ -2465,12 +2465,21 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
     std::string fnCapturedKey = canonicalKey;
     std::string fnCapturedField = fieldPath;
     imported_module_globals_.push_back(moduleGlobals);
-    registerHostFunction(wrapperName,
-        [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
-            std::vector<Value> callArgs = args;
-            if (callArgs.size() > paramCount && paramCount > 0) {
-                callArgs.erase(callArgs.begin());
-            }
+        registerHostFunction(wrapperName,
+            [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
+                std::vector<Value> callArgs = args;
+                // Don't strip the first arg for variadic functions —
+                // extra args get packed into the variadic array by the VM.
+                // Also don't strip for regular functions called with exact args.
+                // The erase was for method-style calls (self as arg 0) but
+                // module function exports are never method calls.
+                // We only strip if caller passed MORE args than the function
+                // has params AND it's not variadic (param 0 is the self arg).
+                auto* preCheckCallee = moduleChunk->getFunction(funcIdx);
+                bool isVariadic = preCheckCallee && preCheckCallee->variadic_param_index != UINT32_MAX;
+                if (!isVariadic && callArgs.size() > paramCount && paramCount > 0) {
+                    callArgs.erase(callArgs.begin());
+                }
             auto* savedChunk = current_chunk;
             auto savedGlobals = globals;
             auto savedMirrorId = globals_mirror_object_id_;
@@ -2504,26 +2513,39 @@ Value savedG = globals["_G"];
                         frame_arena_[frame_count_].locals_base = base;
                         frame_arena_[frame_count_].stack_depth = frame_stack_depth;
                     }
-                    frame_count_++;
-        for (uint32_t i = 0; i < callee->param_count; i++) {
-            if (i < callArgs.size()) {
-                Value argVal = callArgs[i];
-                if (savedChunk) {
-                    argVal = deepMaterializeStrings(argVal, savedChunk);
+                frame_count_++;
+                for (uint32_t i = 0; i < callee->param_count; i++) {
+                    if (callee->variadic_param_index != UINT32_MAX &&
+                        i == callee->variadic_param_index) {
+                        // Variadic parameter: pack remaining args into array
+                        auto arrRef = heap_.allocateArray();
+                        auto *arr = heap_.array(arrRef.id);
+                        for (size_t j = i; j < callArgs.size(); j++) {
+                            Value argVal = callArgs[j];
+                            if (savedChunk) {
+                                argVal = deepMaterializeStrings(argVal, savedChunk);
+                            }
+                            arr->push_back(std::move(argVal));
+                        }
+                        locals[base + i] = Value::makeArrayId(arrRef.id);
+                    } else if (i < callArgs.size()) {
+                        Value argVal = callArgs[i];
+                        if (savedChunk) {
+                            argVal = deepMaterializeStrings(argVal, savedChunk);
+                        }
+                        locals[base + i] = std::move(argVal);
+                    } else if (i < callee->default_values.size() &&
+                               callee->default_values[i].has_value()) {
+                        const auto &dv = callee->default_values[i].value();
+                        if (dv.isBool() && dv.asBool()) {
+                            locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
+                        } else {
+                            locals[base + i] = dv;
+                        }
+                    } else {
+                        locals[base + i] = Value::makeNull();
+                    }
                 }
-                locals[base + i] = std::move(argVal);
-            } else if (i < callee->default_values.size() &&
-                       callee->default_values[i].has_value()) {
-                const auto &dv = callee->default_values[i].value();
-                if (dv.isBool() && dv.asBool()) {
-                    locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
-                } else {
-                    locals[base + i] = dv;
-                }
-            } else {
-                locals[base + i] = Value::makeNull();
-            }
-        }
         try {
         runDispatchLoop(frame_count_ - 1);
         } catch (...) {

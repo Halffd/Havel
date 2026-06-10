@@ -535,18 +535,12 @@ void Havel::startPeriodicTimer() {
 void Havel::stopPeriodicTimer() {
   timerRunning = false;
   timerCv.notify_one();
-  if (timerThread && timerThread->joinable()) {
-    // Try to join with a timeout — if the timer thread is stuck on a
-    auto tid = timerThread->get_id();
+  if (timerThread) {
     std::this_thread::sleep_for(std::chrono::milliseconds(PERIODIC_INTERVAL_MS + 50));
     if (timerThread->joinable()) {
-      // Thread didn't finish — it's stuck on a blocking call.
-      // Detach it and let it finish on its own (it will exit cleanly
-      // once the blocking call returns and timerRunning is false).
-      warn("Periodic timer thread did not stop in time — detaching");
-      timerThread->detach();
-    } else {
       timerThread->join();
+    } else {
+      warn("Periodic timer thread already exited");
     }
   }
   timerThread.reset();

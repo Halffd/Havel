@@ -7,6 +7,7 @@
 #include "modules/ModuleMacros.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "core/io/IO.hpp"
+#include "core/io/EventListener.hpp"
 #include "core/io/HotkeyExecutor.hpp"
 #include "utils/Logger.hpp"
 #include <thread>
@@ -64,18 +65,38 @@ void registerIOModule(const VMApi& api) {
         return Value::makeBool(true);
     });
 
-    // --- Emergency / grab ---
-    api.registerFunction("io._emergencyRelease", [](const std::vector<Value>&) {
-        auto* io = getIO(); if (!io) return Value::makeNull();
-        io->EmergencyReleaseAllKeys();
-        return Value::makeNull();
-    });
+	// --- Emergency / grab ---
+	api.registerFunction("io._emergencyRelease", [](const std::vector<Value>&) {
+		auto* io = getIO(); if (!io) return Value::makeNull();
+		io->EmergencyReleaseAllKeys();
+		return Value::makeNull();
+	});
 
-    api.registerFunction("io._ungrabAll", [](const std::vector<Value>&) {
-        auto* io = getIO(); if (!io) return Value::makeNull();
-        io->UngrabAll();
-        return Value::makeNull();
-    });
+	api.registerFunction("io._ungrabAll", [](const std::vector<Value>&) {
+		auto* io = getIO(); if (!io) return Value::makeNull();
+		io->UngrabAll();
+		return Value::makeNull();
+	});
+
+	api.registerFunction("io._setEvdevGrab", [](const std::vector<Value>& args) {
+		auto* io = getIO(); if (!io) return Value::makeBool(false);
+		bool grab = !args.empty() && (args[0].isBool() ? args[0].asBool() : args[0].asInt() != 0);
+		return Value::makeBool(io->SetEvdevGrab(grab));
+	});
+
+	api.registerFunction("io._setBlockInput", [](const std::vector<Value>& args) {
+		auto* io = getIO(); if (!io) return Value::makeBool(false);
+		bool block = !args.empty() && (args[0].isBool() ? args[0].asBool() : args[0].asInt() != 0);
+		auto* el = io->GetEventListener();
+		if (!el) return Value::makeBool(false);
+		el->SetBlockInput(block);
+		return Value::makeBool(true);
+	});
+
+	api.registerFunction("io._getEvdevGrab", [](const std::vector<Value>&) {
+		auto* io = getIO(); if (!io) return Value::makeBool(false);
+		return Value::makeBool(io->GetEvdevGrab());
+	});
 
     // --- Suspend / resume ---
     api.registerFunction("io._suspend", [](const std::vector<Value>&) {
@@ -224,8 +245,11 @@ void registerIOModule(const VMApi& api) {
     api.setField(obj, "_sendX11Key", api.makeFunctionRef("io._sendX11Key"));
     api.setField(obj, "_map", api.makeFunctionRef("io._map"));
     api.setField(obj, "_remap", api.makeFunctionRef("io._remap"));
-    api.setField(obj, "_emergencyRelease", api.makeFunctionRef("io._emergencyRelease"));
-    api.setField(obj, "_ungrabAll", api.makeFunctionRef("io._ungrabAll"));
+	api.setField(obj, "_emergencyRelease", api.makeFunctionRef("io._emergencyRelease"));
+	api.setField(obj, "_ungrabAll", api.makeFunctionRef("io._ungrabAll"));
+	api.setField(obj, "_setEvdevGrab", api.makeFunctionRef("io._setEvdevGrab"));
+	api.setField(obj, "_setBlockInput", api.makeFunctionRef("io._setBlockInput"));
+	api.setField(obj, "_getEvdevGrab", api.makeFunctionRef("io._getEvdevGrab"));
     api.setField(obj, "_suspend", api.makeFunctionRef("io._suspend"));
     api.setField(obj, "_resume", api.makeFunctionRef("io._resume"));
     api.setField(obj, "_isSuspended", api.makeFunctionRef("io._isSuspended"));

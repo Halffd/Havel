@@ -1,12 +1,13 @@
 // modules/app/io.hv - Pure Havel IO sidecar
 // Wraps C++ shim functions (io._*) into public API with defaults and mode strings.
 // C++ shim: io._send, io._sendX11Key, io._map, io._remap, io._emergencyRelease,
-//   io._ungrabAll, io._suspend, io._resume, io._isSuspended, io._isKeyPressed,
-//   io._isShiftPressed, io._isCtrlPressed, io._isAltPressed, io._isWinPressed,
-//   io._getCurrentModifiers, io._setExecutorMode, io._getExecutorMode,
-//   io._mouseMove, io._mouseMoveTo, io._mouseClick, io._mouseDown, io._mouseUp,
-//   io._scroll, io._getMousePosition, io._setMouseSensitivity, io._getMouseSensitivity,
-//   io._sleepMs
+// io._ungrabAll, io._setEvdevGrab, io._setBlockInput, io._getEvdevGrab,
+// io._suspend, io._resume, io._isSuspended, io._isKeyPressed,
+// io._isShiftPressed, io._isCtrlPressed, io._isAltPressed, io._isWinPressed,
+// io._getCurrentModifiers, io._setExecutorMode, io._getExecutorMode,
+// io._mouseMove, io._mouseMoveTo, io._mouseClick, io._mouseDown, io._mouseUp,
+// io._scroll, io._getMousePosition, io._setMouseSensitivity, io._getMouseSensitivity,
+// io._sleepMs
 
 _modeMap = {
   "scheduler": 0,
@@ -39,9 +40,9 @@ fn map(src, dst) { io._map(str(src), str(dst)) }
 
 fn remap(src, dst) { io._remap(str(src), str(dst)) }
 
-fn block() { io._emergencyRelease() }
+fn block() { io._setBlockInput(true); io._setEvdevGrab(true) }
 
-fn unblock() { io._ungrabAll() }
+fn unblock() { io._setEvdevGrab(false); io._ungrabAll(); io._setBlockInput(false) }
 
 fn suspend() { io._suspend() }
 
@@ -49,9 +50,9 @@ fn resume() { io._resume() }
 
 fn isSuspended() { io._isSuspended() }
 
-fn grab() { io._emergencyRelease() }
+fn grab() { io._setEvdevGrab(true) }
 
-fn ungrab() { io._ungrabAll() }
+fn ungrab() { io._setEvdevGrab(false); io._ungrabAll() }
 
 fn emergencyRelease() { io._emergencyRelease() }
 

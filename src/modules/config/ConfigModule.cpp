@@ -112,23 +112,37 @@ static Value configDispatch(const VMApi &api, const std::vector<Value> &args) {
     throw std::runtime_error("cfg(): unknown command '" + cmd + "'");
 }
 
+static void setNestedField(const VMApi &api, Value obj, const std::string &key, Value value);
+
 void registerConfigModule(const VMApi &api) {
-    // Register cfg as a standalone function for cfg("load", ...) dispatch
-    api.registerFunction("cfg", [api](const std::vector<Value> &args) {
-        return configDispatch(api, args);
-    });
+    // Create config object first so load/set handlers can repopulate it
+    auto configObj = api.makeObject();
+    for (const auto &key : Configs::Get().GetAllKeys()) {
+        setNestedField(api, configObj, key, stringToValue(api, Configs::Get().Get<std::string>(key, "")));
+    }
+    // Enable autovivification: cfg.Debug.X = Y auto-creates an object at cfg.Debug
+    api.setField(configObj, "__vivify", Value::makeBool(true));
 
     // Register namespace methods for config.load(), config.get(), etc.
-    api.registerFunction("config.load", 1, [api](const std::vector<Value> &args) {
+    api.registerFunction("config.load", 1, [api, configObj](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("config.load() requires path");
         Configs::Get().Load(api.toString(args[0]));
+        // Repopulate config object from C-level Configs after load
+        for (const auto &key : Configs::Get().GetAllKeys()) {
+            setNestedField(api, configObj, key, stringToValue(api, Configs::Get().Get<std::string>(key, "")));
+        }
         return Value::makeBool(true);
     });
     api.registerFunction("config.get", [api](const std::vector<Value> &args) {
         return configGet(api, args);
     });
-    api.registerFunction("config.set", [api](const std::vector<Value> &args) {
-        return configSet(api, args);
+    api.registerFunction("config.set", [api, configObj](const std::vector<Value> &args) {
+        auto result = configSet(api, args);
+        // Repopulate config object from C-level Configs after set
+        for (const auto &key : Configs::Get().GetAllKeys()) {
+            setNestedField(api, configObj, key, stringToValue(api, Configs::Get().Get<std::string>(key, "")));
+        }
+        return result;
     });
     api.registerFunction("config.save", [](const std::vector<Value> &args) {
         return configSave(args);
@@ -137,23 +151,27 @@ void registerConfigModule(const VMApi &api) {
         return configKeys(api, args);
     });
 
-    // Create config object, populate with current config values, and attach methods
-    auto configObj = api.makeObject();
-    for (const auto &key : Configs::Get().GetAllKeys()) {
-        setNestedField(api, configObj, key, stringToValue(api, Configs::Get().Get<std::string>(key, "")));
-    }
     // Attach methods to config object so config.load(), config.get(), etc. work
     api.setField(configObj, "load", api.makeFunctionRef("config.load"));
     api.setField(configObj, "get", api.makeFunctionRef("config.get"));
     api.setField(configObj, "set", api.makeFunctionRef("config.set"));
     api.setField(configObj, "save", api.makeFunctionRef("config.save"));
     api.setField(configObj, "keys", api.makeFunctionRef("config.keys"));
+    // Propagate __vivify to config methods so the object itself behaves as a namespace
+    api.setField(configObj, "__vivify", Value::makeBool(true));
 
     api.setGlobal("config", configObj);
 
-    // cfg is already registered as a host function above; conf points to same function
-    api.setGlobal("cfg", api.makeFunctionRef("cfg"));
-    api.setGlobal("conf", api.makeFunctionRef("cfg"));
+    // cfg and conf point to the config object (not a HostFuncId) so that
+    // cfg.Debug.VerboseKeyLogging = DOLOG works via OBJECT_SET on a real object,
+    // and cfg.load(...) resolves "load" as a field on the object (CALL_METHOD).
+    api.setGlobal("cfg", configObj);
+    api.setGlobal("conf", configObj);
+
+    // Keep cfg host function for backward compatibility with cfg("load", ...) syntax
+    api.registerFunction("cfg", [api](const std::vector<Value> &args) {
+        return configDispatch(api, args);
+    });
 }
 
 static void setNestedField(const VMApi &api, Value obj, const std::string &key, Value value) {

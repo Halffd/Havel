@@ -19,6 +19,8 @@
 
 namespace havel::compiler {
 
+class BytecodeChunk;
+
 class __attribute__((visibility("default"))) GCHeap {
 public:
     friend class VM;
@@ -233,13 +235,14 @@ ObjectEntry &operator=(const ObjectEntry &) = delete;
         std::vector<Value> stack;
     };
 
-struct Coroutine {
-  enum State { Runnable, Waiting, Done };
+    struct Coroutine {
+        enum State { Runnable, Waiting, Done };
 
-  uint32_t function_index = 0;
-  uint32_t chunk_index = 0;
-  uint32_t ip = 0;
-  uint32_t closure_id = 0;
+        uint32_t function_index = 0;
+        uint32_t chunk_index = 0;
+        const BytecodeChunk *chunk = nullptr;
+        uint32_t ip = 0;
+        uint32_t closure_id = 0;
   std::vector<Value> stack;
   std::vector<Value> locals;
   std::vector<CallerFrame> caller_stack;

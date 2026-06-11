@@ -7920,12 +7920,12 @@ void ByteCompiler::collectUpvaluesFromExpr(const ast::Expression &expr, std::vec
 }
 
 void ByteCompiler::compileYieldExpression(const ast::YieldExpression &expression) {
-  // yield or yield(value) or yield(ms)
-  // For now, just push the value (coroutine yield is a VM-level operation)
-  
-  if (expression.value) {
+if (expression.value) {
+    bool saved_tail = in_tail_position_;
+    in_tail_position_ = false;
     compileExpression(*expression.value);
-  } else {
+    in_tail_position_ = saved_tail;
+} else {
     // No value - push null
     emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
   }

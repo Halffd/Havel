@@ -585,21 +585,21 @@ case OpCode::CLOSURE: {
       COMPILER_THROW("CLOSURE references unknown function index");
     }
 
-    GCHeap::RuntimeClosure closure;
-    closure.function_index = function_index;
-    closure.upvalues.reserve(target->upvalues.size());
-    for (const auto &descriptor : target->upvalues) {
-        if (descriptor.captures_local) {
-          uint32_t abs = this->toAbsoluteLocal(descriptor.index);
-          this->ensureLocalIndex(abs);
-          auto open_it = open_upvalues.find(abs);
-          if (open_it == open_upvalues.end()) {
-      auto cell = std::make_shared<GCHeap::UpvalueCell>();
-        cell->is_open = true;
-        cell->open_index = descriptor.index;
-        cell->locals_base = currentFrame().locals_base;
-        open_upvalues.emplace(abs, cell);
-            closure.upvalues.push_back(std::move(cell));
+GCHeap::RuntimeClosure closure;
+closure.function_index = function_index;
+closure.upvalues.reserve(target->upvalues.size());
+for (const auto &descriptor : target->upvalues) {
+if (descriptor.captures_local) {
+uint32_t abs = this->toAbsoluteLocal(descriptor.index);
+this->ensureLocalIndex(abs);
+auto open_it = open_upvalues.find(abs);
+if (open_it == open_upvalues.end()) {
+auto cell = std::make_shared<GCHeap::UpvalueCell>();
+cell->is_open = true;
+cell->open_index = descriptor.index;
+cell->locals_base = currentFrame().locals_base;
+open_upvalues.emplace(abs, cell);
+closure.upvalues.push_back(std::move(cell));
 } else {
 closure.upvalues.push_back(open_it->second);
 }

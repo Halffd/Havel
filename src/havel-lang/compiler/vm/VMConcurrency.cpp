@@ -210,13 +210,14 @@ case OpCode::TIMEOUT_START: {
             yield_value = popStack();
         }
 
-            if (current_coroutine_id_ != UINT32_MAX) {
-                auto *co = heap_.coroutine(current_coroutine_id_);
-                if (co) {
-                    co->ip = currentFrame().ip + 1;
-                    co->locals = locals;
+if (current_coroutine_id_ != UINT32_MAX) {
+auto *co = heap_.coroutine(current_coroutine_id_);
+if (co) {
+    auto saved_ip = currentFrame().ip;
+    co->ip = saved_ip + 1;
+    co->locals = locals;
 
-                    // Save coroutine's current stack
+    // Save coroutine's current stack
                     co->stack.clear();
                     {
                         std::vector<Value> tmp;

@@ -2307,6 +2307,10 @@ void VM::registerDefaultPrototypes() {
     if (prototypes_registered_) return;
     prototypes_registered_ = true;
     prototypes::registerStringPrototype(*this);
+    {
+        VMApi api(*this);
+        havel::stdlib::finalizeStringNamespace(api);
+    }
     // Register "string" as a lazy module so that accessing "string"
     // as a global triggers namespace construction from string.* host functions.
     registerLazyModule("string", [](VMApi &) {});

@@ -24,7 +24,6 @@
 #include <fstream>
 #include "../../../host/app/AppService.hpp"
 #include "../../../host/media/MediaService.hpp"
-#include "../../../host/network/NetworkService.hpp"
 
 extern "C" {
 

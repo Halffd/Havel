@@ -1,0 +1,155 @@
+fn xor(a, b) { bit._xor(a, b) }
+
+fn lshift(v, s) {
+    v = int(v)
+    s = int(s)
+    if s >= 0 { v << s } else { v >> -s }
+}
+
+fn rshift(v, s) { bit._rshift(v, s) }
+
+fn arshift(v, s) {
+    v = int(v)
+    s = int(s)
+    if s >= 0 { v >> s } else { v << -s }
+}
+
+fn test(v, p) {
+    v = int(v)
+    p = int(p)
+    if p < 0 { return false }
+    if p >= 64 { return false }
+    bit._and(bit._rshift(v, p), 1) == 1
+}
+
+fn set(v, p) {
+    v = int(v)
+    p = int(p)
+    if p < 0 { return v }
+    if p >= 64 { return v }
+    bit._or(v, 1 << p)
+}
+
+fn clear(v, p) {
+    v = int(v)
+    p = int(p)
+    if p < 0 { return v }
+    if p >= 64 { return v }
+    bit._and(v, bit._not(1 << p))
+}
+
+fn toggle(v, p) {
+    v = int(v)
+    p = int(p)
+    if p < 0 { return v }
+    if p >= 64 { return v }
+    flipped = 1 << p
+    bit._xor(v, flipped)
+}
+
+fn lsb(x) { bit._ctz(x) }
+
+fn msb(x) { bit._clz(x) }
+
+fn count(x) { bit._popcount(x) }
+
+fn parity(x) { bit._parity(x) }
+
+fn popcount(x) { bit._popcount(x) }
+
+fn ctz(x) { bit._ctz(x) }
+
+fn clz(x) { bit._clz(x) }
+
+fn rol(v, s) {
+    v = int(v)
+    s = int(s) & 63
+    if s == 0 { return v }
+    bit._or(v << s, bit._rshift(v, 64 - s))
+}
+
+fn ror(v, s) {
+    v = int(v)
+    s = int(s) & 63
+    if s == 0 { return v }
+    bit._or(bit._rshift(v, s), v << (64 - s))
+}
+
+fn _rangeOk(pos, w) {
+    if pos < 0 { return false }
+    if pos >= 64 { return false }
+    if w <= 0 { return false }
+    if pos + w > 64 { return false }
+    true
+}
+
+fn getfield(v, pos, w) {
+    v = int(v)
+    pos = int(pos)
+    w = int(w)
+    if !_rangeOk(pos, w) { return 0 }
+    mask = bit._not(0)
+    if w < 64 { mask = (1 << w) - 1 }
+    bit._and(bit._rshift(v, pos), mask)
+}
+
+fn setfield(v, pos, w, nv) {
+    v = int(v)
+    pos = int(pos)
+    w = int(w)
+    nv = int(nv)
+    if !_rangeOk(pos, w) { return v }
+    mask = bit._not(0)
+    if w < 64 { mask = (1 << w) - 1 }
+    bit._or(bit._and(v, bit._not(mask << pos)), bit._and(nv, mask) << pos)
+}
+
+fn bswap(x) { rol(x, 0) }
+
+fn rotl(x, s) { rol(x, s) }
+
+fn rotr(x, s) { ror(x, s) }
+
+fn mask(n) {
+    if n <= 0 { return 0 }
+    if n >= 48 { return bit._not(0) }
+    (1 << n) - 1
+}
+
+fn field(x, pos, width) { getfield(x, pos, width) }
+
+fn extract(x, pos, width) { getfield(x, pos, width) }
+
+fn replace(x, pos, width, val) { setfield(x, pos, width, val) }
+
+fn toBytes(x) {
+    result = []
+    v = int(x)
+    i = 0
+    while i < 8 {
+        result.push(bit._and(v, 0xFF))
+        v = rshift(v, 8)
+        i += 1
+    }
+    result
+}
+
+fn fromBytes(arr) {
+    result = 0
+    i = 0
+    while i < 6 && i < arr.len() {
+        result = bit._or(result, lshift(bit._and(int(arr[i]), 0xFF), i * 8))
+        i += 1
+    }
+    result
+}
+
+fn insert(x, pos, width, val) {
+    if pos + width > 47 { return x }
+    m = lshift(lshift(1, width) - 1, pos)
+    bit._or(bit._and(x, bit._not(m)), bit._and(lshift(val, pos), m))
+}
+
+bit["and"] = bit._and
+bit["or"] = bit._or
+bit["not"] = bit._not

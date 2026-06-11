@@ -1,0 +1,48 @@
+fn isNumber(x) { Type._isNumber(x) }
+
+fn isString(x) { Type._isString(x) }
+
+fn isArray(x) { Type._isArray(x) }
+
+fn isObject(x) { Type._isObject(x) }
+
+fn isNull(x) { Type._isNull(x) }
+
+fn isBoolean(x) { Type._isBoolean(x) }
+
+fn isEnum(x) { Type._isEnum(x) }
+
+fn newEnum(typeName, variantName, ...payload) { Type._newEnum(typeName, variantName, ...payload) }
+
+fn getVariant(e) { Type._getVariant(e) }
+
+fn getVariantPayload(e) { Type._getVariantPayload(e) }
+
+fn toString(x) {
+    if Type._isNull(x) { return nil }
+    if Type._isBoolean(x) { return x }
+    if Type._isNumber(x) { return x }
+    if Type._isString(x) { return x }
+    nil
+}
+
+fn toNumber(x) {
+    if Type._isNull(x) { return 0 }
+    if Type._isBoolean(x) { if x { 1 } else { 0 } }
+    else if Type._isNumber(x) { x }
+    else { 0 }
+}
+
+fn isInt(x) { type(x) == "int" }
+
+fn isFloat(x) { type(x) == "float" }
+
+fn isFunction(x) { t = type(x); t == "function" || t == "closure" || t == "fn" }
+
+fn isSet(x) { type(x) == "set" }
+
+fn isRange(x) { type(x) == "range" }
+
+fn isIterator(x) { type(x) == "iterator" }
+
+fn isCoroutine(x) { type(x) == "coroutine" }

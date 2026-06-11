@@ -4,7 +4,6 @@
 #include "../../host/module/ExecutionPolicy.hpp"
 #include "../../host/app/AppService.hpp"
 #include "../../host/media/MediaService.hpp"
-#include "../../host/network/NetworkService.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../compiler/vm/VMApi.hpp"
 #include "../parser/Parser.h"

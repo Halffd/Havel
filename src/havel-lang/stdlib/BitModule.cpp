@@ -1,4 +1,5 @@
 #include "BitModule.hpp"
+#include "../compiler/vm/VM.hpp"
 #include <cstdint>
 #include <stdexcept>
 
@@ -9,7 +10,6 @@ namespace havel::stdlib {
 
 #if defined(_MSC_VER)
 #include <intrin.h>
-
 static int popcount64(uint64_t v) { return static_cast<int>(__popcnt64(v)); }
 static int ctz64(uint64_t v) {
     unsigned long idx;
@@ -37,177 +37,112 @@ static int64_t getInt(const Value &v) {
 }
 
 void registerBitModule(const VMApi &api) {
-    api.registerFunction("bit.and", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.and() requires two arguments");
-        return Value(getInt(args[0]) & getInt(args[1]));
+    api.registerFunction("bit._popcount", [](const std::vector<Value> &args) {
+        if (args.empty()) throw std::runtime_error("bit._popcount() requires an argument");
+        return Value(static_cast<int64_t>(popcount64(
+            static_cast<uint64_t>(getInt(args[0])))));
     });
 
-    api.registerFunction("bit.or", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.or() requires two arguments");
-        return Value(getInt(args[0]) | getInt(args[1]));
-    });
-
-    api.registerFunction("bit.xor", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.xor() requires two arguments");
-        return Value(getInt(args[0]) ^ getInt(args[1]));
-    });
-
-    api.registerFunction("bit.not", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("bit.not() requires an argument");
-        return Value(~getInt(args[0]));
-    });
-
-    api.registerFunction("bit.lshift", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.lshift() requires value and shift");
-        int64_t v = getInt(args[0]);
-        int s = static_cast<int>(getInt(args[1]));
-        return Value(s >= 0 ? v << s : v >> (-s));
-    });
-
-    api.registerFunction("bit.rshift", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.rshift() requires value and shift");
-        uint64_t v = static_cast<uint64_t>(getInt(args[0]));
-        int s = static_cast<int>(getInt(args[1]));
-        return Value(static_cast<int64_t>(s >= 0 ? v >> s : v << (-s)));
-    });
-
-    api.registerFunction("bit.arshift", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.arshift() requires value and shift");
-        int64_t v = getInt(args[0]);
-        int s = static_cast<int>(getInt(args[1]));
-        return Value(s >= 0 ? v >> s : v << (-s));
-    });
-
-    api.registerFunction("bit.test", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.test() requires value and position");
-        int64_t v = getInt(args[0]);
-        int p = static_cast<int>(getInt(args[1]));
-        if (p < 0 || p >= 64) return Value(false);
-        return Value((v >> p) & 1);
-    });
-
-    api.registerFunction("bit.set", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.set() requires value and position");
-        int64_t v = getInt(args[0]);
-        int p = static_cast<int>(getInt(args[1]));
-        if (p < 0 || p >= 64) throw std::runtime_error("bit.set(): position out of range");
-        return Value(v | (int64_t(1) << p));
-    });
-
-    api.registerFunction("bit.clear", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.clear() requires value and position");
-        int64_t v = getInt(args[0]);
-        int p = static_cast<int>(getInt(args[1]));
-        if (p < 0 || p >= 64) throw std::runtime_error("bit.clear(): position out of range");
-        return Value(v & ~(int64_t(1) << p));
-    });
-
-    api.registerFunction("bit.toggle", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.toggle() requires value and position");
-        int64_t v = getInt(args[0]);
-        int p = static_cast<int>(getInt(args[1]));
-        if (p < 0 || p >= 64) throw std::runtime_error("bit.toggle(): position out of range");
-        return Value(v ^ (int64_t(1) << p));
-    });
-
-    api.registerFunction("bit.lsb", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("bit.lsb() requires an argument");
+    api.registerFunction("bit._ctz", [](const std::vector<Value> &args) {
+        if (args.empty()) throw std::runtime_error("bit._ctz() requires an argument");
         uint64_t v = static_cast<uint64_t>(getInt(args[0]));
         if (v == 0) return Value(static_cast<int64_t>(-1));
         return Value(static_cast<int64_t>(ctz64(v)));
     });
 
-    api.registerFunction("bit.msb", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("bit.msb() requires an argument");
+    api.registerFunction("bit._clz", [](const std::vector<Value> &args) {
+        if (args.empty()) throw std::runtime_error("bit._clz() requires an argument");
         uint64_t v = static_cast<uint64_t>(getInt(args[0]));
         if (v == 0) return Value(static_cast<int64_t>(-1));
         return Value(static_cast<int64_t>(63 - clz64(v)));
     });
 
-    api.registerFunction("bit.count", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("bit.count() requires an argument");
-        return Value(static_cast<int64_t>(popcount64(
-            static_cast<uint64_t>(getInt(args[0])))));
-    });
-
-    api.registerFunction("bit.parity", [](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("bit.parity() requires an argument");
+    api.registerFunction("bit._parity", [](const std::vector<Value> &args) {
+        if (args.empty()) throw std::runtime_error("bit._parity() requires an argument");
         return Value(static_cast<int64_t>(parity64(
             static_cast<uint64_t>(getInt(args[0])))));
     });
 
-    api.registerFunction("bit.rol", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.rol() requires value and shift");
+    api.registerFunction("bit._rshift", [](const std::vector<Value> &args) {
+        if (args.size() < 2) throw std::runtime_error("bit._rshift() requires value and shift");
         uint64_t v = static_cast<uint64_t>(getInt(args[0]));
-        int s = static_cast<int>(getInt(args[1])) & 63;
-        if (s == 0) return Value(static_cast<int64_t>(v));
-        return Value(static_cast<int64_t>((v << s) | (v >> (64 - s))));
+        int s = static_cast<int>(getInt(args[1]));
+        return Value(static_cast<int64_t>(s >= 0 ? v >> s : v << (-s)));
     });
 
-    api.registerFunction("bit.ror", [](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("bit.ror() requires value and shift");
-        uint64_t v = static_cast<uint64_t>(getInt(args[0]));
-        int s = static_cast<int>(getInt(args[1])) & 63;
-        if (s == 0) return Value(static_cast<int64_t>(v));
-        return Value(static_cast<int64_t>((v >> s) | (v << (64 - s))));
+    api.registerFunction("bit._and", [](const std::vector<Value> &args) {
+        if (args.size() < 2) throw std::runtime_error("bit._and() requires two arguments");
+        return Value(getInt(args[0]) & getInt(args[1]));
     });
 
-    api.registerFunction("bit.getfield", [](const std::vector<Value> &args) {
-        if (args.size() < 3)
-            throw std::runtime_error("bit.getfield() requires value, position, and width");
-        uint64_t v = static_cast<uint64_t>(getInt(args[0]));
-        int pos = static_cast<int>(getInt(args[1]));
-        int w = static_cast<int>(getInt(args[2]));
-        if (pos < 0 || pos >= 64 || w <= 0 || pos + w > 64)
-            throw std::runtime_error("bit.getfield(): position or width out of range");
-        uint64_t mask = (w >= 64) ? ~uint64_t(0) : (uint64_t(1) << w) - 1;
-        return Value(static_cast<int64_t>((v >> pos) & mask));
+    api.registerFunction("bit._or", [](const std::vector<Value> &args) {
+        if (args.size() < 2) throw std::runtime_error("bit._or() requires two arguments");
+        return Value(getInt(args[0]) | getInt(args[1]));
     });
 
-	api.registerFunction("bit.setfield", [](const std::vector<Value> &args) {
-		if (args.size() < 4)
-			throw std::runtime_error("bit.setfield() requires value, position, width, and newval");
-		uint64_t v = static_cast<uint64_t>(getInt(args[0]));
-		int pos = static_cast<int>(getInt(args[1]));
-		int w = static_cast<int>(getInt(args[2]));
-		uint64_t nv = static_cast<uint64_t>(getInt(args[3]));
-		if (pos < 0 || pos >= 64 || w <= 0 || pos + w > 64)
-			throw std::runtime_error("bit.setfield(): position or width out of range");
-		uint64_t mask = (w >= 64) ? ~uint64_t(0) : (uint64_t(1) << w) - 1;
-		v &= ~(mask << pos);
-		v |= (nv & mask) << pos;
-		return Value(static_cast<int64_t>(v));
-	});
+    api.registerFunction("bit._xor", [](const std::vector<Value> &args) {
+        if (args.size() < 2) throw std::runtime_error("bit._xor() requires two arguments");
+        return Value(getInt(args[0]) ^ getInt(args[1]));
+    });
 
-	auto bitObj = api.makeObject();
-	api.setField(bitObj, "and", api.makeFunctionRef("bit.and"));
-	api.setField(bitObj, "or", api.makeFunctionRef("bit.or"));
-	api.setField(bitObj, "xor", api.makeFunctionRef("bit.xor"));
-	api.setField(bitObj, "not", api.makeFunctionRef("bit.not"));
-	api.setField(bitObj, "lshift", api.makeFunctionRef("bit.lshift"));
-	api.setField(bitObj, "rshift", api.makeFunctionRef("bit.rshift"));
-	api.setField(bitObj, "arshift", api.makeFunctionRef("bit.arshift"));
-	api.setField(bitObj, "test", api.makeFunctionRef("bit.test"));
-	api.setField(bitObj, "set", api.makeFunctionRef("bit.set"));
-	api.setField(bitObj, "clear", api.makeFunctionRef("bit.clear"));
-	api.setField(bitObj, "toggle", api.makeFunctionRef("bit.toggle"));
-	api.setField(bitObj, "lsb", api.makeFunctionRef("bit.lsb"));
-	api.setField(bitObj, "msb", api.makeFunctionRef("bit.msb"));
-	api.setField(bitObj, "count", api.makeFunctionRef("bit.count"));
-	api.setField(bitObj, "parity", api.makeFunctionRef("bit.parity"));
-	api.setField(bitObj, "rol", api.makeFunctionRef("bit.rol"));
-	api.setField(bitObj, "ror", api.makeFunctionRef("bit.ror"));
-	api.setField(bitObj, "getfield", api.makeFunctionRef("bit.getfield"));
-	api.setField(bitObj, "setfield", api.makeFunctionRef("bit.setfield"));
- api.setGlobal("bit", bitObj);
- }
+    api.registerFunction("bit._not", [](const std::vector<Value> &args) {
+        if (args.empty()) throw std::runtime_error("bit._not() requires an argument");
+        return Value(~getInt(args[0]));
+    });
+
+    auto bitObj = api.makeObject();
+    api.setField(bitObj, "_popcount", api.makeFunctionRef("bit._popcount"));
+    api.setField(bitObj, "_ctz", api.makeFunctionRef("bit._ctz"));
+    api.setField(bitObj, "_clz", api.makeFunctionRef("bit._clz"));
+    api.setField(bitObj, "_parity", api.makeFunctionRef("bit._parity"));
+    api.setField(bitObj, "_rshift", api.makeFunctionRef("bit._rshift"));
+    api.setField(bitObj, "_and", api.makeFunctionRef("bit._and"));
+    api.setField(bitObj, "_or", api.makeFunctionRef("bit._or"));
+    api.setField(bitObj, "_xor", api.makeFunctionRef("bit._xor"));
+    api.setField(bitObj, "_not", api.makeFunctionRef("bit._not"));
+    api.setGlobal("bit", bitObj);
+
+    auto &vm = api.vm();
+    Value exports;
+    try {
+        exports = vm.loadModule("bit/bit");
+    } catch (...) {
+    }
+
+    if (exports.isObjectId()) {
+        auto *obj = vm.getHeap().object(exports.asObjectId());
+        if (obj) {
+            for (const auto& [name, value] : *obj) {
+                if (name.empty() || name[0] == '_') continue;
+                api.setField(bitObj, name, value);
+                api.setGlobal(name, value);
+            }
+        }
+    }
+}
 
 } // namespace havel::stdlib
 
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
-
-HAVEL_MODULE_PLUGIN_IMPL(bit, "1.0.0", "Bitwise operations stdlib module",
- havel::stdlib::registerBitModule(*api);
-)
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr);
+static const HavelModuleABI havel_mod_abi_bit = {
+    HAVEL_MODULE_ABI_VERSION,
+    "bit",
+    "1.0.0",
+    "Bitwise operations stdlib module",
+    havel_module_register,
+    nullptr,
+    {nullptr},
+    1
+};
+extern "C" HAVEL_MODULE_EXPORT const HavelModuleABI *havel_module_info(void) {
+    return &havel_mod_abi_bit;
+}
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) {
+    auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr);
+    if (api) {
+        havel::stdlib::registerBitModule(*api);
+    }
+}
 #endif

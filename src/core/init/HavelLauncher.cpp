@@ -1157,12 +1157,16 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 	struct sigaction sa;
 	sa.sa_flags = 0;
 	sigemptyset(&sa.sa_mask);
-	sa.sa_handler = [](int sig) { std::exit(0); };
-	sigaction(SIGINT, &sa, nullptr);
-	sigaction(SIGTERM, &sa, nullptr);
+        sa.sa_handler = [](int sig) { std::fprintf(stderr, "[LAUNCHER-DIAG] Signal %d received, exiting\n", sig); std::exit(0); };
+        sigaction(SIGINT, &sa, nullptr);
+        sigaction(SIGTERM, &sa, nullptr);
+        sigaction(SIGSEGV, &sa, nullptr);
 
-	// Debug.AutoExit support for pure script mode
-	if (Configs::Get().Get<bool>("Debug.AutoExit", false)) {
+    // Debug.AutoExit support for pure script mode
+    bool autoExit = Configs::Get().Get<bool>("Debug.AutoExit", false);
+    int autoExitDelay = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
+    std::fprintf(stderr, "[LAUNCHER-DIAG] AutoExit=%d delay=%d\n", autoExit, autoExitDelay);
+    if (autoExit) {
 		int delay = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
 		std::thread([delay]() {
 			std::this_thread::sleep_for(std::chrono::seconds(delay));

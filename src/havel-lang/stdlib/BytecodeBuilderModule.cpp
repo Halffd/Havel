@@ -3,6 +3,7 @@
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "utils/Logger.hpp"
+
 #include <fstream>
 
 using havel::compiler::BytecodeChunk;
@@ -261,10 +262,10 @@ static OpCode parseOpcode(const std::string &name) {
 
 void registerBytecodeBuilderModule(const VMApi &api) {
     api.registerFunction("bc.reset", [](const std::vector<Value> &) -> Value {
-        auto saved_chunks = std::move(g_builder.stored_chunks);
-        g_builder = BuilderState();
-        g_builder.stored_chunks = std::move(saved_chunks);
-        return Value::makeNull();
+    auto saved_chunks = std::move(g_builder.stored_chunks);
+    g_builder = BuilderState();
+    g_builder.stored_chunks = std::move(saved_chunks);
+    return Value::makeNull();
     });
 
     api.registerFunction("bc.clear_stored", [](const std::vector<Value> &) -> Value {
@@ -282,10 +283,10 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		if (args.size() > 1 && args[1].isInt()) params = static_cast<uint32_t>(args[1].asInt());
 		if (args.size() > 2 && args[2].isInt()) locals = static_cast<uint32_t>(args[2].asInt());
 
-		BytecodeFunction func(name, params, locals);
-		g_builder.chunk->addFunction(std::move(func));
-		g_builder.current_func_idx = static_cast<int32_t>(g_builder.chunk->getFunctionCount() - 1);
-		return Value::makeInt(static_cast<int64_t>(g_builder.current_func_idx));
+        BytecodeFunction func(name, params, locals);
+        g_builder.chunk->addFunction(std::move(func));
+        g_builder.current_func_idx = static_cast<int32_t>(g_builder.chunk->getFunctionCount() - 1);
+        return Value::makeInt(static_cast<int64_t>(g_builder.current_func_idx));
     });
 
     api.registerFunction("bc.func_push", [](const std::vector<Value> &args) -> Value {
@@ -549,12 +550,16 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
     });
 
     api.registerFunction("bc.add_upvalue_to", [](const std::vector<Value> &args) -> Value {
+            {
+        }
         if (args.size() < 3 || !args[0].isInt() || !args[1].isInt() || !args[2].isInt()) {
             throw std::runtime_error("bc.add_upvalue_to: requires (funcIdx, index, captures_local)");
         }
         int64_t targetIdx = args[0].asInt();
-        if (targetIdx < 0 || targetIdx >= static_cast<int64_t>(g_builder.chunk->getFunctionCount())) {
-            throw std::runtime_error("bc.add_upvalue_to: funcIdx out of range");
+        auto funcCount = g_builder.chunk->getFunctionCount();
+        {
+        }
+        if (targetIdx < 0 || targetIdx >= static_cast<int64_t>(funcCount)) {
         }
         auto *targetFn = g_builder.chunk->getFunctionMutable(static_cast<uint32_t>(targetIdx));
         if (!targetFn) throw std::runtime_error("bc.add_upvalue_to: function not found at index " + std::to_string(targetIdx));
@@ -586,10 +591,12 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
     return Value::makeBool(true);
 });
 
-api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Value {
-  if (g_builder.chunk->getFunctionCount() == 0) {
-    throw std::runtime_error("bc.execute: no functions in chunk");
-  }
+    api.registerFunction("bc.execute", [api](const std::vector<Value> &args) -> Value {
+        if (g_builder.chunk->getFunctionCount() == 0) {
+            throw std::runtime_error("bc.execute: no functions in chunk");
+        }
+        {
+        }
   std::string entry = "__main__";
   if (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) {
     entry = api.resolveString(args[0]);
@@ -667,11 +674,14 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
     auto saved_immutable_locals = vm.immutable_locals_;
     auto saved_main_chunk = vm.getMainChunk();
 
-    // Move chunk out of builder into a shared_ptr so it survives any
-    // bc.reset() calls during execution (e.g. from imported modules).
-    // Replace the builder's chunk with a fresh empty one.
-    auto exec_chunk = std::shared_ptr<BytecodeChunk>(g_builder.chunk.release());
-    g_builder.chunk = std::make_unique<BytecodeChunk>();
+        // Move chunk out of builder into a shared_ptr so it survives any
+        // bc.reset() calls during execution (e.g. from imported modules).
+        // Replace the builder's chunk with a fresh empty one.
+        auto old_chunk_ptr = (void*)g_builder.chunk.get();
+        auto exec_chunk = std::shared_ptr<BytecodeChunk>(g_builder.chunk.release());
+        g_builder.chunk = std::make_unique<BytecodeChunk>();
+        {
+        }
     g_builder.current_func_idx = -1;
     g_builder.saved_func_stack.clear();
 
@@ -974,6 +984,8 @@ api.registerFunction("bc.opcode_id", [api](const std::vector<Value> &args) -> Va
         g_builder.chunk = std::make_unique<BytecodeChunk>();
         g_builder.current_func_idx = -1;
         g_builder.saved_func_stack.clear();
+        {
+        }
         auto result = Value::makeInt(static_cast<int64_t>(id));
         return result;
     });

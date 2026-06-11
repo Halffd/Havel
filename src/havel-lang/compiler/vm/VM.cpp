@@ -1080,6 +1080,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         fast_path_counter++;
         if ((fast_path_counter & 4095) == 0) {
             if (exit_requested_.load()) {
+                std::fprintf(stderr, "[VM-DIAG] exit_requested_ is true at fast_path_counter=%zu frame_count_=%zu stop_frame_depth=%zu\n", fast_path_counter, frame_count_, stop_frame_depth);
                 break;
             }
             maybeCollectGarbage();
@@ -1247,6 +1248,11 @@ if (suspension_requested_) {
             }
         }
     }
+    if (exit_requested_.load()) {
+        std::fprintf(stderr, "[VM-DIAG] runDispatchLoop exiting due to exit_requested_ final frame_count_=%zu stop_frame_depth=%zu exit_code_=%d\n", frame_count_, stop_frame_depth, exit_code_.load());
+    } else {
+        std::fprintf(stderr, "[VM-DIAG] runDispatchLoop exiting normally frame_count_=%zu stop_frame_depth=%zu fast_path_counter=%zu\n", frame_count_, stop_frame_depth, fast_path_counter);
+    }
 }
 
 bool VM::handleScriptThrow(const Value &value) {
@@ -1397,8 +1403,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
             COMPILER_THROW("Host function index out of range: " +
                 std::to_string(host_func_idx));
         }
-        const std::string &name = host_function_names_[host_func_idx];
-        auto it = host_functions.find(name);
+            const std::string &name = host_function_names_[host_func_idx];
+            auto it = host_functions.find(name);
         if (it == host_functions.end()) {
             COMPILER_THROW("Host function not found: " + name);
         }
@@ -3433,6 +3439,9 @@ for (const auto& [name, value] : globals) {
     // Cache under both keys via canonical ModuleLoader
     moduleLoader_.putCache(path, exports);
     moduleLoader_.putCache(canonicalKey, exports);
+    // Also store in globals so GC scans it as a root
+    // (the module cache is not a GC root, so cached objects can be collected)
+    globals[path] = exports;
     modules_loading_.erase(canonicalKey);
 
     return exports;

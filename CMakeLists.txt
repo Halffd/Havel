@@ -1517,7 +1517,7 @@ add_havel_module_plugin(log          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/L
 add_havel_module_plugin(array        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ArrayModule.cpp)
 add_havel_module_plugin(bit          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BitModule.cpp)
 add_havel_module_plugin(browser      ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BrowserModule.cpp)
-add_havel_module_plugin(bytecodebuilder ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BytecodeBuilderModule.cpp)
+# add_havel_module_plugin(bytecodebuilder ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BytecodeBuilderModule.cpp)
 add_havel_module_plugin(fmt          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FormatModule.cpp)
 add_havel_module_plugin(fs           ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp)
 add_havel_module_plugin(http ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HttpModule.cpp)
@@ -1562,7 +1562,7 @@ add_havel_module_plugin(image        ${CMAKE_SOURCE_DIR}/src/modules/image/Image
 add_havel_module_plugin(io           ${CMAKE_SOURCE_DIR}/src/modules/io/IOModule.cpp)
 add_havel_module_plugin(mapmanager   ${CMAKE_SOURCE_DIR}/src/modules/mapmanager/MapManagerModule.cpp)
 add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/MediaModule.cpp)
-add_havel_module_plugin(mode         ${CMAKE_SOURCE_DIR}/src/modules/mode/ModeModule.cpp)
+
 add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
 add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)

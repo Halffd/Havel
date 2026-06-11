@@ -298,6 +298,15 @@ void ModuleLoader::clearCache() {
     cache_.clear();
 }
 
+std::vector<core::Value> ModuleLoader::cachedValues() const {
+    std::vector<core::Value> values;
+    values.reserve(cache_.size());
+    for (const auto& [key, val] : cache_) {
+        values.push_back(val);
+    }
+    return values;
+}
+
 std::optional<ModuleLoader::NativeHandle>
 ModuleLoader::loadNativeExtension(const std::string& path) {
   auto it = nativeHandles_.find(path);

@@ -6,10 +6,7 @@
 #include "../utils/Logger.hpp"
 #include "../host/ServiceRegistry.hpp"
 #include "../core/io/IO.hpp"
-#include "../host/hotkey/HotkeyService.hpp"
-#include "../host/window/WindowService.hpp"
-#include "../host/mode/ModeService.hpp"
-#include "../host/process/ProcessService.hpp"
+
 #ifdef HAVE_QT_EXTENSION
 #include "../host/clipboard/ClipboardService.hpp"
 #include "../host/clipboard/MonitoringClipboard.hpp"
@@ -19,15 +16,14 @@
 #include "../host/screenshot/ScreenshotService.hpp"
 #include "../host/automation/PixelAutomationService.hpp"
 #include "../host/automation/AutomationService.hpp"
-#include "../host/chunker/TextChunkerService.hpp"
-#include "../host/browser/BrowserService.hpp"
+
 #include "../host/io/MapManagerService.hpp"
 #include "../host/window/AltTabService.hpp"
-#include "../host/timer/TimerService.hpp"
+
 #include "../host/media/MediaService.hpp"
 #include "../host/image/ImageService.hpp"
 #include "../host/filesystem/FileSystemService.hpp"
-#include "../host/network/NetworkService.hpp"
+
 #include "../host/mouse/MouseService.hpp"
 #include "../host/app/AppService.hpp"
 #include <cstdio>
@@ -39,24 +35,16 @@ namespace havel {
 void declareAllServices() {
 	auto& registry = host::ServiceRegistry::instance();
   registry.declareService<IO>("io", "core");
-	registry.declareService<host::HotkeyService>("hotkey", "core");
-	registry.declareService<host::WindowService>("window", "core");
-	registry.declareService<host::ModeService>("mode", "core");
-	registry.declareService<host::ProcessService>("process", "core");
-	registry.declareService<host::ClipboardService>("clipboard", "qt");
-	registry.declareService<host::MonitoringClipboard>("monitoring-clipboard", "qt");
-	registry.declareService<host::TextChunkerService>("chunker", "util");
-	registry.declareService<host::BrowserService>("browser", "util");
-	registry.declareService<host::MapManagerService>("map-manager", "io");
-	registry.declareService<host::AltTabService>("alt-tab", "qt");
-	registry.declareService<host::TimerService>("timer", "util");
-	registry.declareService<host::AutomationService>("automation", "io");
-	registry.declareService<host::BrightnessService>("brightness", "core");
-	registry.declareService<host::FileSystemService>("filesystem", "util");
-	registry.declareService<host::ImageService>("image", "util");
-	registry.declareService<host::MediaService>("media", "util");
-	registry.declareService<host::AppService>("app", "util");
-	registry.declareService<host::NetworkService>("network", "util");
+  registry.declareService<host::ClipboardService>("clipboard", "qt");
+  registry.declareService<host::MonitoringClipboard>("monitoring-clipboard", "qt");
+  registry.declareService<host::MapManagerService>("map-manager", "io");
+  registry.declareService<host::AltTabService>("alt-tab", "qt");
+  registry.declareService<host::AutomationService>("automation", "io");
+  registry.declareService<host::BrightnessService>("brightness", "core");
+  registry.declareService<host::FileSystemService>("filesystem", "util");
+  registry.declareService<host::ImageService>("image", "util");
+  registry.declareService<host::MediaService>("media", "util");
+  registry.declareService<host::AppService>("app", "util");
 }
 
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
@@ -80,27 +68,6 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
     debug("initializeServiceRegistry: IO not available or excluded, skipping IO-dependent services");
   }
 
-	if (hostAPI->GetHotkeyManager() && registry.shouldRegister("hotkey", includes, excludes)) {
-		auto hotkeyManager = hostAPI->GetHotkeyManager();
-		auto hotkeyService = std::make_shared<host::HotkeyService>(
-			std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
-		registry.registerService<host::HotkeyService>(hotkeyService);
-	}
-
-	if (hostAPI->GetWindowManager() && registry.shouldRegister("window", includes, excludes)) {
-		auto windowService = std::make_shared<host::WindowService>(hostAPI->GetWindowManager());
-		registry.registerService<host::WindowService>(windowService);
-	}
-
-	if (hostAPI->GetModeManager() && registry.shouldRegister("mode", includes, excludes)) {
- auto modeService = std::make_shared<host::ModeService>(hostAPI.get(), hostAPI->GetModeManager());
-		registry.registerService<host::ModeService>(modeService);
-	}
-
-	if (hostAPI->GetProcessManager() && registry.shouldRegister("process", includes, excludes)) {
-		auto processService = std::make_shared<host::ProcessService>();
-		registry.registerService<host::ProcessService>(processService);
-	}
 
 #ifdef HAVE_QT_EXTENSION
 	if (registry.shouldRegister("clipboard", includes, excludes)) {
@@ -114,15 +81,6 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 	}
 #endif
 
-	if (registry.shouldRegister("chunker", includes, excludes)) {
-		auto chunkerService = std::make_shared<host::TextChunkerService>();
-		registry.registerService<host::TextChunkerService>(chunkerService);
-	}
-
-	if (registry.shouldRegister("browser", includes, excludes)) {
-		auto browserService = std::make_shared<host::BrowserService>();
-		registry.registerService<host::BrowserService>(browserService);
-	}
 
 	if (registry.shouldRegister("map-manager", includes, excludes)) {
 		auto mapManagerService = std::make_shared<host::MapManagerService>(hostAPI->GetIO() ? std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}) : std::shared_ptr<IO>());
@@ -136,10 +94,6 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 	}
 #endif
 
-	if (registry.shouldRegister("timer", includes, excludes)) {
-		auto timerService = std::make_shared<host::TimerService>();
-		registry.registerService<host::TimerService>(timerService);
-	}
 
 	if (hostAPI->GetIO() && registry.shouldRegister("automation", includes, excludes)) {
 		auto automationService = std::make_shared<host::AutomationService>(std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}));
@@ -189,14 +143,6 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 		}
 	}
 
-	if (registry.shouldRegister("network", includes, excludes)) {
-		try {
-			auto networkService = std::make_shared<host::NetworkService>();
-			registry.registerService<host::NetworkService>(networkService);
-		} catch (const std::exception& e) {
-			debug("initializeServiceRegistry: NetworkService failed: {}", e.what());
-		}
-	}
 
 	debug("ServiceRegistry initialized with {} services", registry.size());
 }

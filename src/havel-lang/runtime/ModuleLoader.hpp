@@ -89,6 +89,7 @@ public:
     bool getCached(const std::string& key, core::Value* outValue) const;
     void putCache(const std::string& key, core::Value value);
     void clearCache();
+    std::vector<core::Value> cachedValues() const;
 
     // ========================================================================
     // Native extension loading (.so via dlopen)

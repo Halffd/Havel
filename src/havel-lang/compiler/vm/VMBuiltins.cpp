@@ -151,9 +151,9 @@ bool VM::execBuiltinOp(const Instruction &instruction) {
     // conflicts with the "debug" .hv module).
     // Lazy proxy objects must be activated before use, so skip the short-circuit.
     auto git = globals.find(path);
-    if (git != globals.end() && git->second.isObjectId()) {
-        auto *preObj = heap_.object(git->second.asObjectId());
-        if (preObj) {
+        if (git != globals.end() && git->second.isObjectId()) {
+            auto *preObj = heap_.object(git->second.asObjectId());
+            if (preObj) {
             auto *preLazy = preObj->get("__lazy__");
             if (preLazy && preLazy->isBool() && preLazy->asBool()) {
                 // Lazy proxy — fall through to ensureModuleLoaded to activate it
@@ -172,14 +172,14 @@ bool VM::execBuiltinOp(const Instruction &instruction) {
  // Try capitalized variant
  std::string capPath = path;
  capPath[0] = static_cast<char>(toupper(static_cast<unsigned char>(capPath[0])));
- git = globals.find(capPath);
- if (git != globals.end()) {
- globals[path] = git->second;
+        git = globals.find(capPath);
+        if (git != globals.end()) {
+            globals[path] = git->second;
  pushStack(git->second);
  break;
  }
 
- if (ensureModuleLoaded(path)) {
+        if (ensureModuleLoaded(path)) {
  auto it = globals.find(path);
  if (it != globals.end()) {
  if (it->second.isObjectId()) {
@@ -207,10 +207,10 @@ bool VM::execBuiltinOp(const Instruction &instruction) {
  }
  }
 
- Value exports = loadModule(path);
- pushStack(exports);
- break;
- }
+        Value exports = loadModule(path);
+        pushStack(exports);
+        break;
+    }
 
     case OpCode::IMPORT_WILDCARD: {
         Value exports = popStack();

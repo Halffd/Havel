@@ -36,7 +36,6 @@
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #endif
 #include "core/process/Launcher.hpp"
-#include "host/process/ProcessService.hpp"
 #include "utils/SafeExec.hpp"
 
 using havel::compiler::Value;

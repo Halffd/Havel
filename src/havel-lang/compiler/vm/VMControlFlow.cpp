@@ -386,13 +386,13 @@ all_args.push_back(recv);
 all_args.insert(all_args.end(), args2.begin(), args2.end());
 }
 
-	if (found_host) {
-		if (host_func_idx < host_function_names_.size()) {
-        std::string resolved_name = host_function_names_[host_func_idx];
-		auto fnIt = host_functions.find(resolved_name);
-			if (fnIt != host_functions.end()) {
-      Value result = fnIt->second(all_args);
-      pushStack(result);
+            if (found_host) {
+                if (host_func_idx < host_function_names_.size()) {
+                    std::string resolved_name = host_function_names_[host_func_idx];
+                    auto fnIt = host_functions.find(resolved_name);
+                    if (fnIt != host_functions.end()) {
+                        Value result = fnIt->second(all_args);
+                        pushStack(result);
     if (hot_func_cb_) {
       if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
         currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);

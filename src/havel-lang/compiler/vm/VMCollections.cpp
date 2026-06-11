@@ -933,12 +933,12 @@ if (container.isSetId()) {
 			break;
 		}
 
-   auto objRef = ObjectRef{object.asObjectId(), true};
-   auto *obj = heap_.object(objRef.id);
-   if (!obj) {
-      auto stats = heap_.stats();
-      COMPILER_THROW("OBJECT_GET unknown object id");
-   }
+        auto objRef = ObjectRef{object.asObjectId(), true};
+        auto *obj = heap_.object(objRef.id);
+        if (!obj) {
+            auto stats = heap_.stats();
+            COMPILER_THROW("OBJECT_GET unknown object id");
+        }
 
   // Lazy module proxy trap: if object has __lazy__ flag,
   // trigger module initialization and replace with real namespace

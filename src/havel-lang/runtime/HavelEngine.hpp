@@ -188,21 +188,21 @@ vm_->setJITCompiler(jitCompiler_.get());
 
     if (hostContext_->eventQueue) {
                 vm_->setEventQueue(hostContext_->eventQueue);
-                hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
-                [this](const compiler::Event& event) {
-                    auto *name_ptr = static_cast<std::string*>(event.ptr);
-                    std::string var_name = std::move(*name_ptr);
-                    delete name_ptr;
-                    if (!watcher_registry_ || !vm_) return;
-                    auto fired = watcher_registry_->onVariableChanged(
-                        var_name, [this](uint32_t wid) -> bool {
-                            const auto* w = watcher_registry_->getWatcher(wid);
-                            if (!w) return false;
-                            auto tracker = std::make_shared<compiler::DependencyTracker>();
-                            compiler::DependencyTrackerScope scope(tracker);
-                            return vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
-                        });
-                    for (auto* fiber : fired) {
+hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
+    [this](const compiler::Event& event) {
+    auto *name_ptr = static_cast<std::string*>(event.ptr);
+    std::string var_name = std::move(*name_ptr);
+    delete name_ptr;
+    if (!watcher_registry_ || !vm_) return;
+    auto fired = watcher_registry_->onVariableChanged(
+        var_name, [this](uint32_t wid) -> bool {
+        const auto* w = watcher_registry_->getWatcher(wid);
+        if (!w) return false;
+        auto tracker = std::make_shared<compiler::DependencyTracker>();
+        compiler::DependencyTrackerScope scope(tracker);
+        return vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
+    });
+    for (auto* fiber : fired) {
                         if (fiber) {
                             try {
                                 compiler::Value body_func = compiler::Value::makeFunctionObjId(fiber->current_function_id);

@@ -70,12 +70,13 @@ void VM::registerDefaultHostFunctions() {
         std::cout << s;
       }
     }
-    std::cout << end;
-  return Value::makeNull();
-  });
+        std::cout << end;
+        std::cout.flush();
+        return Value::makeNull();
+    });
 
-  registerHostFunction("println", [this](const std::vector<Value> &args) {
-    for (size_t i = 0; i < args.size(); ++i) {
+    registerHostFunction("println", [this](const std::vector<Value> &args) {
+        for (size_t i = 0; i < args.size(); ++i) {
       if (i > 0) std::cout << " ";
       const auto &arg = args[i];
       if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
@@ -1863,55 +1864,49 @@ return Value::makeObjectId(instanceRef.id);
 	});
 
 registerHostFunction(
- "when.register", [this](const std::vector<Value> &args) {
- if (args.size() < 2) COMPILER_THROW("when.register requires condition_func_id and body_func_id");
- if (!args[0].isFunctionObjId() && !args[0].isClosureId())
- COMPILER_THROW("when.register first arg must be a function");
- if (!args[1].isFunctionObjId() && !args[1].isClosureId())
- COMPILER_THROW("when.register second arg must be a function");
+    "when.register", [this](const std::vector<Value> &args) {
+    if (args.size() < 2) COMPILER_THROW("when.register requires condition_func_id and body_func_id");
+    if (!args[0].isFunctionObjId() && !args[0].isClosureId())
+        COMPILER_THROW("when.register first arg must be a function");
+    if (!args[1].isFunctionObjId() && !args[1].isClosureId())
+        COMPILER_THROW("when.register second arg must be a function");
 
- uint32_t cond_func_id = args[0].isFunctionObjId() ? args[0].asFunctionObjId() : 0;
- uint32_t body_func_id = args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
+    uint32_t cond_func_id = args[0].isFunctionObjId() ? args[0].asFunctionObjId() : 0;
+    uint32_t body_func_id = args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
 
-	if (!watcher_registry_) {
-	return Value::makeNull();
-	}
+    if (!watcher_registry_) {
+        return Value::makeNull();
+    }
 
-	auto tracker = std::make_shared<DependencyTracker>();
-	DependencyTrackerScope scope(tracker);
+    auto tracker = std::make_shared<DependencyTracker>();
+    DependencyTrackerScope scope(tracker);
 
-	bool initial_result = evaluateConditionBytecode(cond_func_id, 0);
+    bool initial_result = evaluateConditionBytecode(cond_func_id, 0);
 
-	auto deps = tracker->getGlobalDependencies();
+    auto deps = tracker->getGlobalDependencies();
 
-	static std::atomic<uint32_t> next_when_fiber_id{20000};
-	uint32_t fiber_id = next_when_fiber_id.fetch_add(1, std::memory_order_relaxed);
-	auto fiber = std::make_unique<Fiber>(fiber_id, body_func_id, 0, "when_body");
-	fiber->state = FiberState::SUSPENDED;
+    static std::atomic<uint32_t> next_when_fiber_id{20000};
+    uint32_t fiber_id = next_when_fiber_id.fetch_add(1, std::memory_order_relaxed);
+    auto fiber = std::make_unique<Fiber>(fiber_id, body_func_id, 0, "when_body");
+    fiber->state = FiberState::SUSPENDED;
 
-	Fiber* raw_fiber = fiber.get();
+    Fiber* raw_fiber = fiber.get();
+    fiber.release();
 
-	if (scheduler_) {
-	uint32_t goroutine_id = scheduler_->spawn(body_func_id, {}, 0, "when_body");
-	scheduler_->attachFiber(goroutine_id, raw_fiber);
-	}
+    watcher_registry_->registerWatcher(
+        cond_func_id, 0, initial_result, deps, raw_fiber);
 
-	fiber.release();
+    if (initial_result) {
+        try {
+            Value body_func = Value::makeFunctionObjId(body_func_id);
+            call(body_func, {});
+        } catch (...) {
+        }
+    }
 
- watcher_registry_->registerWatcher(
- cond_func_id, 0, initial_result, deps, raw_fiber);
-
- if (initial_result) {
- try {
- Value body_func = Value::makeFunctionObjId(body_func_id);
- call(body_func, {});
- } catch (...) {
- }
- }
-
-  auto strRef = heap_.allocateString("watcher_registered");
-  return Value::makeStringId(strRef.id);
-  });
+    auto strRef = heap_.allocateString("watcher_registered");
+    return Value::makeStringId(strRef.id);
+});
 
   registerHostFunction(
       "signal.bind", [this](const std::vector<Value> &args) {

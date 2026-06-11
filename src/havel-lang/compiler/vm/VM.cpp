@@ -1079,10 +1079,9 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     while (frame_count_ > stop_frame_depth) {
         fast_path_counter++;
         if ((fast_path_counter & 4095) == 0) {
-            if (exit_requested_.load()) {
-                std::fprintf(stderr, "[VM-DIAG] exit_requested_ is true at fast_path_counter=%zu frame_count_=%zu stop_frame_depth=%zu\n", fast_path_counter, frame_count_, stop_frame_depth);
-                break;
-            }
+        if (exit_requested_.load()) {
+            break;
+        }
             maybeCollectGarbage();
         }
 
@@ -1247,11 +1246,6 @@ if (suspension_requested_) {
                 frame_arena_[active_frame_idx].ip++;
             }
         }
-    }
-    if (exit_requested_.load()) {
-        std::fprintf(stderr, "[VM-DIAG] runDispatchLoop exiting due to exit_requested_ final frame_count_=%zu stop_frame_depth=%zu exit_code_=%d\n", frame_count_, stop_frame_depth, exit_code_.load());
-    } else {
-        std::fprintf(stderr, "[VM-DIAG] runDispatchLoop exiting normally frame_count_=%zu stop_frame_depth=%zu fast_path_counter=%zu\n", frame_count_, stop_frame_depth, fast_path_counter);
     }
 }
 

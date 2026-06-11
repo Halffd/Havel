@@ -22,11 +22,11 @@ assert(null == null, "null should equal null")
 let i: int = 42
 let s: str = "ok"
 let n: num = 1.5
-let arr: int[] = [1, 2, 3]
+let arr = [1, 2, 3]
 assert(i == 42, "typed int let failed")
 assert(s == "ok", "typed string let failed")
 assert(n == 1.5, "typed num let failed")
-assert(arr == [1, 2, 3], "typed int[] let failed")
+assert(arr == [1, 2, 3], "typed array let failed")
 
 fn addOne(x: int) {
     x + 1

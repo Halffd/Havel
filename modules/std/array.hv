@@ -82,10 +82,14 @@ i += 1
 result
 }
 
-fn range(start, stop, step = nil) {
-arr = []
-if step == nil { step = 1 }
-if step > 0 {
+fn range(start, stop = nil, step = nil) {
+  if stop == nil {
+    stop = start
+    start = 0
+  }
+  if step == nil { step = 1 }
+  arr = []
+  if step > 0 {
     i = start
     while i < stop {
       arr.push(i)

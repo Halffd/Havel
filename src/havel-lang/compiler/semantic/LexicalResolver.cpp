@@ -216,8 +216,8 @@ void LexicalResolver::endFunction() {
     return;
   }
 
-  const auto &ctx = function_stack_.back();
-  if (ctx.owner) {
+const auto &ctx = function_stack_.back();
+if (ctx.owner) {
     if (ctx.owner->kind == ast::NodeType::FunctionDeclaration) {
       auto *fn = static_cast<const ast::FunctionDeclaration *>(ctx.owner);
       result_.function_upvalues[fn] = ctx.upvalues;

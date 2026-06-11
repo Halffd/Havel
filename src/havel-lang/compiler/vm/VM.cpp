@@ -1414,14 +1414,14 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
                              std::to_string(max_call_depth_) + " reached");
 	}
 
-	// Handle coroutine resume
-  if (callee_value.isCoroutineId()) {
-    uint32_t coId = callee_value.asCoroutineId();
-    auto *co = heap_.coroutine(coId);
-    if (!co) {
-      COMPILER_THROW("Coroutine not found: " + std::to_string(coId));
-    }
-    if (co->state == GCHeap::Coroutine::Done) {
+// Handle coroutine resume
+if (callee_value.isCoroutineId()) {
+uint32_t coId = callee_value.asCoroutineId();
+auto *co = heap_.coroutine(coId);
+if (!co) {
+    COMPILER_THROW("Coroutine not found: " + std::to_string(coId));
+}
+if (co->state == GCHeap::Coroutine::Done) {
       pushStack(Value::makeNull());
       return;
     }
@@ -1444,28 +1444,24 @@ void VM::doCall(Value callee_value, std::vector<Value> args,
                 }
                 co->caller_stack.push_back(std::move(cf));
             }
-            current_coroutine_id_ = coId;
+current_coroutine_id_ = coId;
 
-            // Push a frame for coroutine execution on the existing stack
-      const auto *chunk = current_chunk;
-      const auto *func = chunk ? chunk->getFunction(co->function_index) : nullptr;
-      if (!func) {
-        COMPILER_THROW("Function not found for coroutine");
-      }
+const auto *co_chunk = co->chunk ? co->chunk : current_chunk;
+const auto *func = co_chunk ? co_chunk->getFunction(co->function_index) : nullptr;
+if (!func) {
+COMPILER_THROW("Function not found for coroutine");
+}
 
-      // Restore coroutine's locals for execution
-      locals = co->locals;
+locals = co->locals;
 
-      // Coroutine switched into execution — its val declarations
-      // will repopulate immutable_locals_ during execution
-      immutable_locals_.clear();
+immutable_locals_.clear();
 
-      size_t coroutine_stack_depth = stack.size();
-    if (frame_arena_.size() <= frame_count_) {
-        frame_arena_.push_back(CallFrame{func, current_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}});
-    } else {
-        frame_arena_[frame_count_] = CallFrame{func, current_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}};
-    }
+size_t coroutine_stack_depth = stack.size();
+if (frame_arena_.size() <= frame_count_) {
+frame_arena_.push_back(CallFrame{func, co_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}});
+} else {
+frame_arena_[frame_count_] = CallFrame{func, co_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}};
+}
       frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
       frame_count_++;
 
@@ -1594,11 +1590,11 @@ callee->execution_count++;
 
     // If so, create a coroutine object and return it instead of executing
 if (callee->is_generator) {
-// Create coroutine object for this generator function
 uint32_t coId = heap_.allocateCoroutine(function_index, 0);
 auto *co = heap_.coroutine(coId);
 co->state = GCHeap::Coroutine::Runnable;
 co->closure_id = closure_id;
+co->chunk = resolve_chunk;
 
             // Save the caller's locals so nested generators can access outer frames' values
             {
@@ -1621,28 +1617,47 @@ co->closure_id = closure_id;
                     // Special case for nested generators: if the upvalue points to an outer frame,
                     // use the caller coroutine's caller_stack locals to access the value.
 if (closure_id != 0) {
-    auto *closure = heap_.closure(closure_id);
-    if (closure) {
-        for (auto &cell : closure->upvalues) {
-            if (cell && cell->is_open) {
-                uint32_t abs_index = cell->locals_base + cell->open_index;
-                
-                        std::vector<Value>* target_locals = &locals;
-                        if (current_coroutine_id_ != UINT32_MAX) {
-                            auto* caller_co = heap_.coroutine(current_coroutine_id_);
-                            if (caller_co && abs_index >= locals.size() && !caller_co->caller_stack.empty()) {
-                                target_locals = &caller_co->caller_stack.back().locals;
-                            }
-                        }
-                
-                if (abs_index < target_locals->size()) {
-                    cell->closed_value = (*target_locals)[abs_index];
+auto *closure = heap_.closure(closure_id);
+if (closure) {
+    for (auto &cell : closure->upvalues) {
+        if (cell && cell->is_open) {
+            uint32_t abs_index = cell->locals_base + cell->open_index;
+
+Value closed_val;
+bool found = false;
+
+if (abs_index < locals.size()) {
+    closed_val = locals[abs_index];
+    if (!closed_val.isNull()) {
+        found = true;
+    }
+}
+
+if (!found && current_coroutine_id_ != UINT32_MAX) {
+    auto* walker = heap_.coroutine(current_coroutine_id_);
+    while (walker && !found) {
+        for (auto cs_it = walker->caller_stack.rbegin();
+             cs_it != walker->caller_stack.rend() && !found; ++cs_it) {
+            if (abs_index < cs_it->locals.size()) {
+                closed_val = cs_it->locals[abs_index];
+                if (!closed_val.isNull()) {
+                    found = true;
                 }
-                cell->is_open = false;
-                open_upvalues.erase(abs_index);
             }
         }
+        if (walker->caller_stack.empty()) break;
+        uint32_t parent_id = walker->caller_stack.back().coroutine_id;
+        if (parent_id == current_coroutine_id_ || parent_id == UINT32_MAX) break;
+        walker = heap_.coroutine(parent_id);
     }
+}
+
+cell->closed_value = found ? closed_val : Value::makeNull();
+cell->is_open = false;
+open_upvalues.erase(abs_index);
+}
+}
+}
 }
 
 co->ip = 0;

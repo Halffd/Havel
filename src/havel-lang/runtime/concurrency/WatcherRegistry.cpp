@@ -1,4 +1,5 @@
 #include "WatcherRegistry.hpp"
+#include "Fiber.hpp"
 #include <algorithm>
 
 namespace havel::compiler {
@@ -8,6 +9,13 @@ namespace havel::compiler {
 // ============================================================================
 
 WatcherRegistry::WatcherRegistry() = default;
+
+WatcherRegistry::~WatcherRegistry() {
+    for (auto& [id, watcher] : watchers_) {
+        delete watcher.fiber;
+        watcher.fiber = nullptr;
+    }
+}
 
 WatcherRegistry::WatcherId WatcherRegistry::registerWatcher(
     uint32_t condition_func_id,
@@ -45,7 +53,7 @@ bool WatcherRegistry::unregisterWatcher(WatcherId watcher_id) {
     if (it == watchers_.end()) {
         return false;
     }
-    
+
     // Remove from reverse index
     const auto& dependencies = it->second.dependencies;
     for (const auto& var_name : dependencies) {
@@ -54,13 +62,17 @@ bool WatcherRegistry::unregisterWatcher(WatcherId watcher_id) {
         if (watcher_it != watchers_list.end()) {
             watchers_list.erase(watcher_it);
         }
-        
+
         // Clean up empty entries
         if (watchers_list.empty()) {
             var_to_watchers_.erase(var_name);
         }
     }
-    
+
+    // Delete owned fiber
+    delete it->second.fiber;
+    it->second.fiber = nullptr;
+
     // Remove watcher
     watchers_.erase(it);
     return true;

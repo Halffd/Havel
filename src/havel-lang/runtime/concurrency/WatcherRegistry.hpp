@@ -55,8 +55,8 @@ public:
     // Fiber will be resumed by ExecutionEngine event handler
     using WatcherBody = std::function<void(Fiber*)>;
     
-    WatcherRegistry();
-    ~WatcherRegistry() = default;
+WatcherRegistry();
+~WatcherRegistry();
     
     /**
      * Register a watcher (when statement)

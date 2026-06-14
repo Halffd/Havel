@@ -6,20 +6,20 @@
 
 namespace havel::utils {
 
-struct ExecResult {
-    int exitCode = -1;
-    std::string stdout_output;
-    std::string stderr_output;
+struct __attribute__((visibility("default"))) ExecResult {
+  int exitCode = -1;
+  std::string stdout_output;
+  std::string stderr_output;
 };
 
-bool execDetached(const std::vector<std::string>& argv);
+__attribute__((visibility("default"))) bool execDetached(const std::vector<std::string>& argv);
 
-std::optional<ExecResult> execSync(const std::vector<std::string>& argv);
+__attribute__((visibility("default"))) std::optional<ExecResult> execSync(const std::vector<std::string>& argv);
 
-std::optional<std::string> execCapture(const std::vector<std::string>& argv);
+__attribute__((visibility("default"))) std::optional<std::string> execCapture(const std::vector<std::string>& argv);
 
-std::vector<pid_t> findProcessesByName(const std::string& name);
+__attribute__((visibility("default"))) std::vector<pid_t> findProcessesByName(const std::string& name);
 
-bool processExistsByName(const std::string& name);
+__attribute__((visibility("default"))) bool processExistsByName(const std::string& name);
 
 } // namespace havel::utils

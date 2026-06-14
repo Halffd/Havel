@@ -343,6 +343,8 @@ if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
 }
 
 void Havel::cleanup() noexcept {
+  try {
+  std::call_once(cleanupOnce, [this]() {
   if (debugging::debug_io) debug("Havel::cleanup() - starting cleanup");
 
   // Force save config before everything else
@@ -427,6 +429,8 @@ void Havel::cleanup() noexcept {
   DisplayManager::Close();
 
   if (debugging::debug_io) debug("Havel::cleanup() - cleanup complete");
+  }); // std::call_once
+  } catch (...) {}
 }
 
 void Havel::exit() {

@@ -920,7 +920,7 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL_A3(sys, "1.0.0", "System operations stdlib module", "system", "process", "jit",
+HAVEL_MODULE_PLUGIN_EAGER_A3(sys, "1.0.0", "System operations stdlib module", "system", "process", "jit",
 havel::stdlib::registerSysModule(*api);
 )
 #endif

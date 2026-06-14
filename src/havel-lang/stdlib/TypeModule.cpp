@@ -126,6 +126,13 @@ void registerTypeModule(const VMApi &api) {
  }
  }
 
+    // globals["type"] was set by VM::loadModule's NativeExtension export path,
+    // which shadows the built-in type() host function. Overwrite it so that
+    // LOAD_GLOBAL (which checks globals first) finds the host function.
+    if (vm.hostFunctionGlobals().find("type") != vm.hostFunctionGlobals().end()) {
+        vm.getGlobals()["type"] = vm.hostFunctionGlobals()["type"];
+    }
+
  // Also register type-check functions as host functions so they
  // appear in host_function_globals_ (LOAD_GLOBAL fallback). This
  // ensures they're always available even when globals are swapped

@@ -410,15 +410,22 @@ void Modules::installStdLib() {
     extensionLoader_->addModulePaths();
 
     auto available = extensionLoader_->scanModules();
+    fprintf(stderr, "[MODULE-DBG] scanModules found %zu modules\n", available.size());
+    for (auto &mod : available) {
+        fprintf(stderr, "[MODULE-DBG]  module '%s' eager=%d\n", mod.name.c_str(), mod.eager);
+    }
 
- for (auto &mod : available) {
- if (mod.eager) {
- auto plugin = extensionLoader_->loadModulePlugin(mod.name);
- if (plugin) {
- plugin->register_fn(static_cast<void *>(&api));
- }
- } else {
-        std::string modName = mod.name;
+    for (auto &mod : available) {
+        if (mod.eager) {
+            fprintf(stderr, "[MODULE-DBG] Eagerly loading module '%s'\n", mod.name.c_str());
+            auto plugin = extensionLoader_->loadModulePlugin(mod.name);
+            if (plugin) {
+                plugin->register_fn(static_cast<void *>(&api));
+            } else {
+                fprintf(stderr, "[MODULE-DBG]  Failed to load eager module '%s'\n", mod.name.c_str());
+            }
+        } else {
+            std::string modName = mod.name;
             vm.registerLazyModule(modName, [this, modName](compiler::VMApi &a) {
                 auto plugin = extensionLoader_->loadModulePlugin(modName);
                 if (plugin) {

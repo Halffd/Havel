@@ -153,23 +153,45 @@ extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
 #define HAVEL_MODULE_PLUGIN_EAGER(name, version_str, description_str, ...) \
 extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
 static const HavelModuleABI havel_mod_abi_##name = { \
-	HAVEL_MODULE_ABI_VERSION, \
-	#name, \
-	version_str, \
-	description_str, \
-	havel_module_register, \
-	nullptr, \
-	{nullptr}, \
-	1 \
+    HAVEL_MODULE_ABI_VERSION, \
+    #name, \
+    version_str, \
+    description_str, \
+    havel_module_register, \
+    nullptr, \
+    {nullptr}, \
+    1 \
 }; \
 extern "C" HAVEL_MODULE_EXPORT const HavelModuleABI *havel_module_info(void) { \
-	return &havel_mod_abi_##name; \
+    return &havel_mod_abi_##name; \
 } \
 extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
-	auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
-	if (api) { \
-		__VA_ARGS__ \
-	} \
+    auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
+    if (api) { \
+        __VA_ARGS__ \
+    } \
+}
+
+#define HAVEL_MODULE_PLUGIN_EAGER_A3(name, version_str, description_str, a1, a2, a3, ...) \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr); \
+static const HavelModuleABI havel_mod_abi_##name = { \
+    HAVEL_MODULE_ABI_VERSION, \
+    #name, \
+    version_str, \
+    description_str, \
+    havel_module_register, \
+    nullptr, \
+    {a1, a2, a3, nullptr}, \
+    1 \
+}; \
+extern "C" HAVEL_MODULE_EXPORT const HavelModuleABI *havel_module_info(void) { \
+    return &havel_mod_abi_##name; \
+} \
+extern "C" HAVEL_MODULE_EXPORT void havel_module_register(void *vmapi_ptr) { \
+    auto *api = static_cast<havel::compiler::VMApi*>(vmapi_ptr); \
+    if (api) { \
+        __VA_ARGS__ \
+    } \
 }
 
 #endif

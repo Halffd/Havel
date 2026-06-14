@@ -57,7 +57,11 @@ MouseService::Action MouseService::parseAction(int action) {
 }
 
 void MouseService::click(Button button, Action action) {
-  if (!s_io) return;
+  if (!s_io) {
+    fprintf(stderr, "[MOUSE-DIAG] MouseService::click: s_io is NULL!\n");
+    return;
+  }
+  fprintf(stderr, "[MOUSE-DIAG] MouseService::click: s_io=%p btn=%d action=%d\n", (void*)s_io, (int)button, (int)action);
   int btn = static_cast<int>(button);
   switch (action) {
   case Action::Click:

@@ -10,7 +10,7 @@ class IO;
 
 namespace havel::host {
 
-class MouseService {
+class __attribute__((visibility("default"))) MouseService {
 public:
   enum class Button { Left = 1, Right = 2, Middle = 3, Back = 4, Forward = 5 };
   enum class Action { Click = 0, Press = 1, Release = 2 };

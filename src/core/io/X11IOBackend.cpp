@@ -91,7 +91,7 @@ std::pair<int, int> X11IOBackend::GetCursorPosition() {
 void X11IOBackend::SendButton(int button, bool down) {
     if (!display_) return;
     XTestFakeButtonEvent(display_, button, down ? x11::XTrue : x11::XFalse, CurrentTime);
-    XFlush(display_);
+    XSync(display_, x11::XFalse);
 }
 
 bool X11IOBackend::RegisterHotkey(int keycode, int modifiers, bool isButton) {

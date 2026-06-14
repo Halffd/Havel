@@ -147,6 +147,7 @@ private:
   // State
   std::atomic<bool> initialized{false};
   std::atomic<bool> shutdownRequested{false};
+  std::once_flag cleanupOnce;
   bool guiMode{false};
   bool replMode{false};
   std::string scriptFile;

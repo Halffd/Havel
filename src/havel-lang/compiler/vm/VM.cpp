@@ -3,6 +3,12 @@
 #include "VMApi.hpp"
 #include "host/ServiceRegistry.hpp"
 #include <iostream>
+
+#if defined(__GNUC__) || defined(__clang__)
+#define HAVE_COMPUTED_GOTO 1
+#else
+#define HAVE_COMPUTED_GOTO 0
+#endif
 #include "../../../utils/Logger.hpp"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../../runtime/concurrency/Thread.hpp"
@@ -1071,11 +1077,109 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   executing_in_fiber_ = false;
-  size_t fast_path_counter = 0;
   const bool has_instruction_limit = (max_instructions_ > 0);
   const bool has_timer = static_cast<bool>(timer_check_func_);
   const bool has_profiling = profiling_enabled_;
   const bool has_tracing = trace_execution_;
+
+  // Fast path: no profiling, no tracing, no instruction limit, no timer.
+  // The common case for compute-heavy scripts like self-hosted compilation.
+  // GC check, exit check, and pending calls are batched every 8192 instructions.
+  // Only suspension needs immediate handling; if it occurs, we fall through to slow path.
+  const bool use_fast_path = !has_profiling && !has_tracing && !has_instruction_limit && !has_timer;
+
+  if (use_fast_path) {
+#if HAVE_COMPUTED_GOTO
+    runDispatchFast(stop_frame_depth);
+    if (frame_count_ > stop_frame_depth && !exit_requested_.load()) {
+      // runDispatchFast returned due to suspension — fall through to slow path
+      goto slow_path;
+    }
+    return;
+#else
+    size_t counter = 0;
+    while (frame_count_ > stop_frame_depth) {
+      counter++;
+      if ((counter & 8191) == 0) {
+        if (exit_requested_.load()) break;
+        maybeCollectGarbage();
+        if (suspension_requested_) goto slow_path;
+        if (!pending_calls.empty()) {
+          processPendingCalls();
+          if (exit_requested_.load()) break;
+        }
+      }
+
+      size_t active_frame_idx = frame_count_ - 1;
+      const auto *function = frame_arena_[active_frame_idx].function;
+      const uint32_t ip = frame_arena_[active_frame_idx].ip;
+      const size_t entry_frame_count = frame_count_;
+
+      if (ip >= function->instructions.size()) {
+        stack.push(nullptr);
+        executeInstruction(Instruction{OpCode::RETURN});
+        continue;
+      }
+
+      const auto &instruction = function->instructions[ip];
+
+      try {
+        executeInstruction(instruction);
+      } catch (const ScriptThrow &thrown) {
+        if (!handleScriptThrow(thrown.value)) {
+          std::string stackTrace = buildStackTrace(frame_count_);
+          uint32_t line = 0, column = 0;
+          if (frame_count_ > 0) {
+            auto &frame = frame_arena_[frame_count_ - 1];
+            if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
+              const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+              line = loc.line; column = loc.column;
+            }
+          }
+          std::string errorMsg = "Uncaught exception: " + toString(thrown.value);
+          if (line > 0) {
+            errorMsg += " at line " + std::to_string(line);
+            if (column > 0) errorMsg += ":" + std::to_string(column);
+          }
+          throw ScriptError(thrown.value, errorMsg, stackTrace, line, column);
+        }
+        continue;
+      } catch (const std::runtime_error &e) {
+        std::string msg = e.what();
+        if (frame_count_ > 0) {
+          auto &frame = frame_arena_[frame_count_ - 1];
+          if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
+            const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+            if (loc.line > 0) {
+              if (!loc.filename.empty()) {
+                msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
+              } else {
+                msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+              }
+            }
+          }
+        }
+        Value exceptionValue = Value::makeStringId(heap_.allocateString(msg).id);
+        if (handleScriptThrow(exceptionValue)) continue;
+        throw std::runtime_error(msg);
+      }
+
+      if (suspension_requested_) goto slow_path;
+
+      if (frame_count_ > stop_frame_depth) {
+        active_frame_idx = frame_count_ - 1;
+        if (frame_count_ == entry_frame_count && frame_arena_[active_frame_idx].ip == ip) {
+          frame_arena_[active_frame_idx].ip++;
+        }
+      }
+    }
+    return;
+#endif // HAVE_COMPUTED_GOTO
+  }
+
+slow_path:
+  // Full dispatch loop with all checks (for timer/profiling/tracing/scheduler/fiber modes)
+  size_t fast_path_counter = 0;
     while (frame_count_ > stop_frame_depth) {
         fast_path_counter++;
         if ((fast_path_counter & 4095) == 0) {
@@ -1138,7 +1242,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       if ((fast_path_counter & 4095) == 0 && exit_requested_.load()) {
         break;
       }
-if (suspension_requested_) {
+ if (suspension_requested_) {
         uint8_t reason = suspension_reason_;
         void* ctx = suspension_context_;
         suspension_requested_ = false;
@@ -1213,14 +1317,14 @@ if (suspension_requested_) {
         auto &frame = frame_arena_[frame_count_ - 1];
         if (frame.function &&
             frame.ip < frame.function->instruction_locations.size()) {
-          const auto loc = nearestSourceLocation(*frame.function, frame.ip);
-          if (loc.line > 0) {
-            if (!loc.filename.empty()) {
-              msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
-            } else {
-              msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+            const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+            if (loc.line > 0) {
+              if (!loc.filename.empty()) {
+                msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
+              } else {
+                msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+              }
             }
-          }
         }
       }
       // Try to handle as script exception first

@@ -13,6 +13,7 @@ using havel::compiler::OpCode;
 using havel::compiler::SourceLocation;
 using havel::compiler::Value;
 using havel::compiler::VMApi;
+using havel::compiler::VM;
 
 namespace havel::stdlib {
 
@@ -694,16 +695,28 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
         vm.bc_execute_depth_--;
         vm.storePersistentChunk(exec_chunk);
 
-        // Capture new/changed globals from the persistent execution.
-        // The module globals scope system will restore the caller's globals
-        // after this host function returns, overwriting vm.globals.
-        // We must persist new globals into host_function_globals_ which
-        // survives scope swaps and is checked by lookupGlobalByKey.
         auto &post_globals = vm.getGlobals();
         for (auto &[name, val] : post_globals) {
             auto preIt = pre_globals.find(name);
             if (preIt == pre_globals.end() || !(preIt->second == val)) {
                 vm.host_function_globals_[name] = val;
+            }
+        }
+
+        // Before swapping chunks/GC, extract string content from any
+        // StringValId or heap-StringId result values. After GC runs
+        // these references may be invalidated.
+        std::string resultString;
+        bool resultIsString = false;
+        if (result.isStringId()) {
+            auto *s = vm.getStringPtr(result);
+            if (s) { resultString = *s; resultIsString = true; }
+        } else if (result.isStringValId()) {
+            const BytecodeChunk *chunk = vm.current_chunk;
+            if (!chunk && vm.getMainChunk()) chunk = vm.getMainChunk().get();
+            if (chunk) {
+                resultString = chunk->getString(result.asStringValId());
+                resultIsString = true;
             }
         }
 
@@ -715,6 +728,10 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
         vm.immutable_locals_ = std::move(saved_immutable_locals);
         vm.setMainChunkShared(saved_main_chunk);
         vm.resumeGCWithFullCollect();
+
+        if (resultIsString) {
+            result = Value::makeStringId(vm.createRuntimeString(std::move(resultString)).id);
+        }
         return result;
     } catch (const std::exception &e) {
         vm.bc_execute_depth_--;

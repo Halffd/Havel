@@ -29,7 +29,7 @@ namespace havel::host {
  * - Auto-key-presser: Repeatedly press key
  * - Chained tasks: Sequence of actions with delays
  */
-class AutomationService {
+class __attribute__((visibility("default"))) AutomationService {
 public:
     AutomationService(std::shared_ptr<IO> io);
     ~AutomationService();

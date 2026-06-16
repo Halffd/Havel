@@ -15,7 +15,7 @@ namespace havel {
 
 namespace havel::host {
 
-class AudioService {
+class __attribute__((visibility("default"))) AudioService {
 public:
     explicit AudioService(havel::AudioManager* manager);
     ~AudioService() = default;

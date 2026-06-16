@@ -16,7 +16,7 @@ struct AltTabInfo {
     bool active = false;
 };
 
-class AltTabService {
+class __attribute__((visibility("default"))) AltTabService {
 public:
     AltTabService();
     ~AltTabService();

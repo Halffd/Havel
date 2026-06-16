@@ -72,7 +72,7 @@ struct ImageMatch {
  * Uses Qt and OpenCV internally for screen capture and image processing.
  * Returns plain C++ types that HostBridge translates to VM types.
  */
-class PixelAutomationService {
+class __attribute__((visibility("default"))) PixelAutomationService {
 public:
     PixelAutomationService();
     ~PixelAutomationService();

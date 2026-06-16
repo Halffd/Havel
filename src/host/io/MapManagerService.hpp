@@ -32,7 +32,7 @@ namespace havel::host {
  * - Profiles (multiple mapping sets)
  * - Conditional mappings (based on window/process)
  */
-class MapManagerService {
+class __attribute__((visibility("default"))) MapManagerService {
 public:
     MapManagerService(std::shared_ptr<IO> io);
     ~MapManagerService();

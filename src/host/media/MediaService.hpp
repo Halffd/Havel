@@ -17,7 +17,7 @@ namespace havel::host {
  *
  * Uses MPRIS D-Bus interface to control media players.
  */
-class MediaService {
+class __attribute__((visibility("default"))) MediaService {
 public:
   MediaService();
   ~MediaService();

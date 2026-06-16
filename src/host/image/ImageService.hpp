@@ -21,7 +21,7 @@ struct ImageInfo {
     std::string format;
 };
 
-class ImageService {
+class __attribute__((visibility("default"))) ImageService {
 public:
     ImageService();
     ~ImageService();

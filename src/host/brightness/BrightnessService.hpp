@@ -7,7 +7,7 @@ namespace havel { class BrightnessManager; }
 
 namespace havel::host {
 
-class BrightnessService {
+class __attribute__((visibility("default"))) BrightnessService {
 public:
     explicit BrightnessService(havel::BrightnessManager* manager);
     ~BrightnessService() = default;

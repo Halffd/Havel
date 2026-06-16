@@ -30,7 +30,7 @@ struct SystemInfo {
 /**
  * AppService - Application and system information
  */
-class AppService {
+class __attribute__((visibility("default"))) AppService {
 public:
   AppService();
   ~AppService();

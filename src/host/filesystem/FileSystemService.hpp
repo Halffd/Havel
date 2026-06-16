@@ -36,7 +36,7 @@ struct FileInfo {
  * - file info (size, modified time)
  * - path operations (join, exists, etc.)
  */
-class FileSystemService {
+class __attribute__((visibility("default"))) FileSystemService {
 public:
     FileSystemService();
     ~FileSystemService();

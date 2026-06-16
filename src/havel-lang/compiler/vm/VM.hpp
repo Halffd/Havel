@@ -449,6 +449,10 @@ size_t tail_call_depth_ = 0;
     std::unordered_set<std::string> debug_function_breakpoints_;
     bool debug_break_on_throw_ = false;
     bool debug_break_on_uncaught_ = false;
+    std::atomic<bool> debug_pause_requested_{false};
+    std::string debug_last_break_file_;
+    uint32_t debug_last_break_line_ = 0;
+    size_t debug_last_break_depth_ = 0;
 
   template <typename T> T getValue(const Value &value);
  std::string toStringInternal(const Value &value,
@@ -849,6 +853,9 @@ GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id
   bool breakOnUncaught() const { return debug_break_on_uncaught_; }
 
   Value currentExceptionValue() const { return current_exception_; }
+
+  bool isPauseRequested() const { return debug_pause_requested_.load(); }
+  void requestPause() { debug_pause_requested_.store(true); }
 
   std::vector<DebugFrameInfo> getStackFrames() const;
   DebugFrameInfo getCurrentFrameInfo() const;

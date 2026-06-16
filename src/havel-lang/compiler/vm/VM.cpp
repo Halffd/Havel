@@ -4010,6 +4010,12 @@ bool VM::checkDebugBreak() {
     return false;
   }
 
+  // Pause requested: consume the flag and break
+  if (debug_pause_requested_.exchange(false)) {
+    debug_step_mode_ = DebugStepMode::Continue;
+    return true;
+  }
+
   if (frame_count_ == 0 || !frame_arena_[frame_count_ - 1].function) {
     return false;
   }
@@ -4046,8 +4052,27 @@ bool VM::checkDebugBreak() {
   std::string filename = loc.filename.empty() ? func->source_file : loc.filename;
   if (!filename.empty() && loc.line > 0) {
     if (hasBreakpoint(filename, loc.line)) {
+      if (debug_step_mode_ == DebugStepMode::Continue
+          && filename == debug_last_break_file_
+          && loc.line == debug_last_break_line_) {
+        return false;
+      }
+      debug_last_break_file_ = filename;
+      debug_last_break_line_ = loc.line;
+      debug_last_break_depth_ = frame_count_;
       return true;
     }
+  }
+
+  // Clear same-line suppression when we've moved past the breakpoint line
+  // in the same or parent frame (not in sub-function calls)
+  if (debug_step_mode_ == DebugStepMode::Continue
+      && debug_last_break_line_ > 0
+      && frame_count_ <= debug_last_break_depth_
+      && (filename != debug_last_break_file_ || loc.line != debug_last_break_line_)) {
+    debug_last_break_line_ = 0;
+    debug_last_break_file_.clear();
+    debug_last_break_depth_ = 0;
   }
 
   return false;

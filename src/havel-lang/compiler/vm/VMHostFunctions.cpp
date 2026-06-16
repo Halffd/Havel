@@ -2146,6 +2146,58 @@ registerHostFunction(
     (*o)["unmarked"] = Value::makeInt(unmarked);
     return Value::makeObjectId(obj.id);
   });
+
+  // Debug builtins
+
+  registerHostFunction("debugBreak", [this](const std::vector<Value>&) -> Value {
+    if (debugger_attached_ && debug_break_cb_) {
+      debug_break_cb_();
+    }
+    return Value::makeNull();
+  });
+
+  registerHostFunction("dumpStack", [this](const std::vector<Value>&) -> Value {
+    auto frames = getStackFrames();
+    for (auto& f : frames) {
+      std::cerr << "  #" << f.frame_depth << " " << f.function_name
+                << " at " << f.source_file << ":" << f.line << std::endl;
+    }
+    return Value::makeNull();
+  });
+
+  registerHostFunction("dumpLocals", [this](const std::vector<Value>&) -> Value {
+    auto vars = getLocals();
+    for (auto& v : vars) {
+      std::cerr << "  " << v.name << " : " << v.type << " = " << v.value << std::endl;
+    }
+    return Value::makeNull();
+  });
+
+  registerHostFunction("dumpGlobals", [this](const std::vector<Value>&) -> Value {
+    auto vars = getDebugGlobals();
+    size_t n = 0;
+    for (auto& v : vars) {
+      if (n++ >= 50) { std::cerr << "  ... (truncated)" << std::endl; break; }
+      std::cerr << "  " << v.name << " : " << v.type << " = " << v.value << std::endl;
+    }
+    return Value::makeNull();
+  });
+
+  registerHostFunction("sourceLocation", [this](const std::vector<Value>&) -> Value {
+    if (frame_count_ == 0) return Value::makeNull();
+    auto& frame = frame_arena_[frame_count_ - 1];
+    auto* func = frame.function;
+    if (!func) return Value::makeNull();
+    auto loc = nearestSourceLocation(*func, frame.ip);
+    std::string result = loc.filename.empty() ? func->source_file : loc.filename;
+    result += ":" + std::to_string(loc.line);
+    auto strId = heap_.allocateString(result);
+    return Value::makeStringId(strId.id);
+  });
+
+  registerHostFunction("frameCount", [this](const std::vector<Value>&) -> Value {
+    return Value::makeInt(static_cast<int64_t>(frame_count_));
+  });
 }
 
 void VM::registerDefaultHostGlobals() {

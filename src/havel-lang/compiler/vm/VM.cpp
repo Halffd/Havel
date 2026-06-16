@@ -955,11 +955,11 @@ VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t cl
     current_chunk = resolve_chunk;
 
     func->execution_count++;
-    if (func->execution_count == 1000 && hot_func_cb_) {
+    if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
         hot_func_cb_(*func);
     }
 
-    if (func->jit_compiled && jit_compiler_) {
+    if (func->jit_compiled && jit_compiler_ && !debugger_attached_) {
         uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
         try {
             jit_compiler_->executeCompiled(this, func->name, args);
@@ -1691,11 +1691,11 @@ if (!callee) {
 
 
 callee->execution_count++;
- if (callee->execution_count == 1000 && hot_func_cb_) {
+ if (callee->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
  hot_func_cb_(*callee);
  }
 
-    if (callee->jit_compiled && jit_compiler_) {
+    if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
         uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
         try {
             Value result = jit_compiler_->executeCompiled(this, callee->name, args);

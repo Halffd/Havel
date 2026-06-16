@@ -22,6 +22,7 @@
 #include <csignal>
 #include <atomic>
 #include <ctime>
+#include <cstdlib>
 #include <sys/stat.h>
 #include <poll.h>
 #include <unistd.h>
@@ -108,6 +109,13 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
     historyFilePath_ = resolveHistoryPath();
 
   initialized = true;
+
+  // Set up debug break callback (always, but gated by replDebugMode_)
+  vm_->setDebugBreakCallback([this]() {
+    if (replDebugMode_) {
+      replDebugCallback();
+    }
+  });
 }
 
 void REPL::attach(compiler::VM* existingVM,
@@ -141,6 +149,14 @@ void REPL::attach(compiler::VM* existingVM,
     historyFilePath_ = resolveHistoryPath();
 
   initialized = true;
+
+  // Set up debug break callback
+  vm_->setDebugBreakCallback([this]() {
+    if (replDebugMode_) {
+      replDebugCallback();
+    }
+  });
+
   info("REPL attached successfully");
 }
 
@@ -301,7 +317,7 @@ bool REPL::handleCommand(const std::string& input) {
 
     if (input == "help" || input == "?") {
         showHelp();
-        return false;
+        return true;
     }
 
     if (input == "clear" || input == ":clear") {
@@ -309,14 +325,27 @@ bool REPL::handleCommand(const std::string& input) {
         clear_history();
 #endif
         std::cout << "\033[2J\033[H" << std::flush;
-        return false;
+        return true;
     }
 
     if (input == ":bytecode" || input == ":bc") {
         config_.debugBytecode = !config_.debugBytecode;
         std::cout << "Bytecode debug: " << (config_.debugBytecode ? "ON" : "OFF") << "\n";
-        return false;
+        return true;
     }
+
+  if (input == ":debug") {
+    replDebugMode_ = !replDebugMode_;
+    if (replDebugMode_) {
+      vm_->attachDebugger();
+      vm_->setDebugStepMode(compiler::VM::DebugStepMode::StepInto);
+      std::cout << "Debug mode: ON (breakpoints and stepping enabled)\n";
+    } else {
+      vm_->setDebugStepMode(compiler::VM::DebugStepMode::Continue);
+      std::cout << "Debug mode: OFF\n";
+    }
+    return true;
+  }
 
   if (input == ":globals") {
     std::cout << "Known globals: ";
@@ -327,7 +356,7 @@ bool REPL::handleCommand(const std::string& input) {
       first = false;
     }
     std::cout << "\n";
-    return false;
+    return true;
   }
 
   if (input == ":classes") {
@@ -379,7 +408,7 @@ bool REPL::handleCommand(const std::string& input) {
   if (!any) {
     std::cout << "No classes, structs, protocols, or impls defined yet.\n";
   }
-  return false;
+  return true;
   }
 
   if (input == ":log") {
@@ -389,7 +418,7 @@ bool REPL::handleCommand(const std::string& input) {
       std::cout << "Output logging is disabled\n";
     }
     std::cout << "History file: " << historyFilePath_ << "\n";
-    return false;
+    return true;
   }
 
   if (input.rfind(":load ", 0) == 0 || input.rfind(":l ", 0) == 0) {
@@ -398,10 +427,10 @@ bool REPL::handleCommand(const std::string& input) {
     while (!filename.empty() && filename.back() == ' ') filename.pop_back();
     if (filename.empty()) {
       printError(":load requires a filename");
-      return false;
+      return true;
     }
     executeFile(filename);
-    return false;
+    return true;
   }
 
   return false; // Not a command
@@ -415,6 +444,7 @@ void REPL::showHelp() const {
     std::cout << "  help, ?          - Show this help\n";
     std::cout << "  clear, :clear    - Clear screen\n";
     std::cout << "  :bytecode, :bc   - Toggle bytecode debug output\n";
+  std::cout << "  :debug - Toggle interactive hvdb debug mode\n";
   std::cout << " :globals - Show known global variables\n";
   std::cout << " :classes - Show known classes, structs, protocols, and impls\n";
   std::cout << " :load <file>, :l <file> - Load and execute a script file\n";
@@ -439,6 +469,8 @@ bool REPL::execute(const std::string& code) {
     printError("REPL not initialized. Call initialize() first.");
     return false;
   }
+
+  currentCode_ = code;
 
   try {
     // Compile and execute only the new code
@@ -649,8 +681,9 @@ int REPL::run() {
     
     // Check for commands (only when not accumulating)
     if (accumulatedInput.empty()) {
-      if (handleCommand(line)) {
-        break;  // Exit command
+      bool wasCommand = handleCommand(line);
+      if (wasCommand) {
+        continue;  // Command was handled, don't accumulate
       }
     }
     
@@ -700,6 +733,98 @@ int REPL::run() {
     }
 
     return 0;
+}
+
+void REPL::replDebugCallback() {
+  auto info = vm_->getCurrentFrameInfo();
+  std::vector<std::string> sourceLines;
+  if (!currentCode_.empty()) {
+    std::istringstream stream(currentCode_);
+    std::string l;
+    while (std::getline(stream, l)) sourceLines.push_back(l);
+  }
+
+  std::cout << "\nBreakpoint";
+  if (!info.source_file.empty())
+    std::cout << " at " << info.source_file << ":" << info.line;
+  if (!info.function_name.empty())
+    std::cout << " in " << info.function_name;
+  std::cout << std::endl;
+
+  if (info.line > 0 && info.line <= sourceLines.size())
+    std::cout << "  " << info.line << ": " << sourceLines[info.line - 1] << "\n";
+
+  while (true) {
+    std::cout << "(hvdb) " << std::flush;
+    std::string line;
+    if (!std::getline(std::cin, line)) {
+      vm_->setDebugStepMode(compiler::VM::DebugStepMode::Continue);
+      break;
+    }
+    if (line.empty()) continue;
+
+    std::istringstream iss(line);
+    std::string cmd;
+    iss >> cmd;
+
+    if (cmd == "quit" || cmd == "q" || cmd == "exit") {
+      std::cout << "Exiting." << std::endl;
+      _Exit(0);
+    } else if (cmd == "help" || cmd == "h" || cmd == "?") {
+      std::cout << "  continue/c  Continue execution\n";
+      std::cout << "  step/s      Step into\n";
+      std::cout << "  next/n      Step over\n";
+      std::cout << "  fin/f       Step out\n";
+      std::cout << "  locals/l    Show locals\n";
+      std::cout << "  globals/g   Show globals\n";
+      std::cout << "  stack/bt    Show stack\n";
+      std::cout << "  print/eval <expr>  Evaluate expression\n";
+      std::cout << "  quit/q      Exit debugger\n";
+    } else if (cmd == "continue" || cmd == "c") {
+      vm_->setDebugStepMode(compiler::VM::DebugStepMode::Continue);
+      break;
+    } else if (cmd == "step" || cmd == "s" || cmd == "into") {
+      vm_->setDebugStepMode(compiler::VM::DebugStepMode::StepInto);
+      break;
+    } else if (cmd == "next" || cmd == "n" || cmd == "over") {
+      auto frames = vm_->getStackFrames();
+      vm_->setDebugStepMode(compiler::VM::DebugStepMode::StepOver);
+      vm_->setDebugStepFrameDepth(frames.empty() ? 0 : frames.back().frame_depth);
+      break;
+    } else if (cmd == "fin" || cmd == "f" || cmd == "out") {
+      auto frames = vm_->getStackFrames();
+      vm_->setDebugStepMode(compiler::VM::DebugStepMode::StepOut);
+      vm_->setDebugStepFrameDepth(frames.empty() ? 0 : frames.back().frame_depth);
+      break;
+    } else if (cmd == "locals" || cmd == "l") {
+      auto vars = vm_->getLocals();
+      if (vars.empty()) std::cout << "  (no locals)\n";
+      else for (auto& v : vars)
+        std::cout << "  " << v.name << " : " << v.type << " = " << v.value << "\n";
+    } else if (cmd == "globals" || cmd == "g") {
+      auto vars = vm_->getDebugGlobals();
+      size_t n = 0;
+      for (auto& v : vars) {
+        if (n++ >= 30) { std::cout << "  ... (truncated)\n"; break; }
+        std::cout << "  " << v.name << " : " << v.type << " = " << v.value << "\n";
+      }
+      if (vars.empty()) std::cout << "  (no globals)\n";
+    } else if (cmd == "stack" || cmd == "bt" || cmd == "trace") {
+      auto frames = vm_->getStackFrames();
+      if (frames.empty()) std::cout << "  (empty stack)\n";
+      else for (size_t i = 0; i < frames.size(); ++i)
+        std::cout << "  #" << i << " " << frames[i].function_name
+                  << " at " << frames[i].source_file << ":" << frames[i].line << "\n";
+    } else if (cmd == "print" || cmd == "p" || cmd == "eval") {
+      std::string expr; std::getline(iss >> std::ws, expr);
+      if (!expr.empty()) {
+        auto val = vm_->evaluateInFrame(expr);
+        std::cout << "  " << expr << " = " << vm_->toString(val) << "\n";
+      }
+    } else {
+      std::cout << "Unknown command. Type 'help'.\n";
+    }
+  }
 }
 
 void REPL::setupSignalHandlers() {

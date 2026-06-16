@@ -212,11 +212,18 @@ private:
     // Session start timestamp string
     std::string sessionStart_;
 
+    // Debug mode state
+    bool replDebugMode_ = false;
+    std::string currentCode_;
+
     // Write to output log if enabled
     void logOutput(const std::string& text);
 
     // Resolve history file path from config
     std::string resolveHistoryPath() const;
+
+    // Debug callback for hvdb mode
+    void replDebugCallback();
 
     friend void replSignalHandler(int sig);
 };

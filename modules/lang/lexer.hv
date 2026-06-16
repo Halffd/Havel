@@ -335,7 +335,7 @@ fn Lexer(source) {
                     if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
                     chunkStart = bytePos()
                     isInterpolated = true
-                    s = s + string.fromCodePoint(advance())
+                    advance()
                     if isAlphaCp(current()) || current() == 95 {
                         s = s + "{"
                         while current() != -1 && (isAlphaNumCp(current()) || current() == 95) {
@@ -361,13 +361,21 @@ fn Lexer(source) {
                     s = s + string.fromCodePoint(advance())
                     chunkStart = bytePos()
                 }
-            } else if isFString && current() == 123 && braceDepth == 0 {
+            } else if current() == 123 && braceDepth == 0 {
                 if cp(1) != 123 {
-                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-                    chunkStart = bytePos()
-                    isInterpolated = true
-                    s = s + string.fromCodePoint(advance())
-                    braceDepth = braceDepth + 1
+                    nx = cp(1)
+                    isExprStart = isAlphaCp(nx) || nx == 95 || nx == 64 || nx == 40 || nx == 36 || nx == 33 || nx == 45 || isDigitCp(nx) || nx == 34 || nx == 39 || nx == 91
+                    if nx == 125 || !isExprStart {
+                        s = s + string.fromCodePoint(advance())
+                        chunkStart = bytePos()
+                    } else {
+                        if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                        chunkStart = bytePos()
+                        isInterpolated = true
+                        s = s + string.fromCodePoint(advance())
+                        braceDepth = braceDepth + 1
+                        chunkStart = bytePos()
+                    }
                 } else {
                     if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
                     chunkStart = bytePos()
@@ -376,7 +384,7 @@ fn Lexer(source) {
                     s = s + "{"
                 }
                 chunkStart = bytePos()
-            } else if isFString && current() == 125 && braceDepth == 0 {
+            } else if current() == 125 && braceDepth == 0 {
                 if cp(1) == 125 {
                     if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
                     chunkStart = bytePos()
@@ -414,7 +422,7 @@ fn Lexer(source) {
     fn scanMultilineString(quote, isFString) {
         advance()
         s = ""
-        isInterpolated = isFString
+        isInterpolated = false
         braceDepth = 0
         if current() == 10 { advance() }
         chunkStart = bytePos()
@@ -429,15 +437,12 @@ fn Lexer(source) {
                 chunkStart = bytePos()
             } else if current() == 36 && braceDepth == 0 {
                 nextCp = cp(1)
-                if nextCp == 123 || isAlphaCp(nextCp) || nextCp == 95 || nextCp == 64 {
+                if isAlphaCp(nextCp) || nextCp == 95 || nextCp == 64 {
                     if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
                     chunkStart = bytePos()
                     isInterpolated = true
-                    s = s + string.fromCodePoint(advance())
-                    if current() == 123 {
-                        s = s + string.fromCodePoint(advance())
-                        braceDepth = braceDepth + 1
-                    } else if isAlphaCp(current()) || current() == 95 {
+                    advance()
+                    if isAlphaCp(current()) || current() == 95 {
                         s = s + "{"
                         while current() != -1 && (isAlphaNumCp(current()) || current() == 95) {
                             s = s + string.fromCodePoint(current())
@@ -462,13 +467,21 @@ fn Lexer(source) {
                     s = s + string.fromCodePoint(advance())
                     chunkStart = bytePos()
                 }
-            } else if isFString && current() == 123 && braceDepth == 0 {
+            } else if current() == 123 && braceDepth == 0 {
                 if cp(1) != 123 {
-                    if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
-                    chunkStart = bytePos()
-                    isInterpolated = true
-                    s = s + string.fromCodePoint(advance())
-                    braceDepth = braceDepth + 1
+                    nx = cp(1)
+                    isExprStart = isAlphaCp(nx) || nx == 95 || nx == 64 || nx == 40 || nx == 36 || nx == 33 || nx == 45 || isDigitCp(nx) || nx == 34 || nx == 39 || nx == 91
+                    if nx == 125 || !isExprStart {
+                        s = s + string.fromCodePoint(advance())
+                        chunkStart = bytePos()
+                    } else {
+                        if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
+                        chunkStart = bytePos()
+                        isInterpolated = true
+                        s = s + string.fromCodePoint(advance())
+                        braceDepth = braceDepth + 1
+                        chunkStart = bytePos()
+                    }
                 } else {
                     if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
                     chunkStart = bytePos()
@@ -477,7 +490,7 @@ fn Lexer(source) {
                     s = s + "{"
                 }
                 chunkStart = bytePos()
-            } else if isFString && current() == 125 && braceDepth == 0 {
+            } else if current() == 125 && braceDepth == 0 {
                 if cp(1) == 125 {
                     if chunkStart < bytePos() { s = s + src.sub(chunkStart, bytePos() - chunkStart) }
                     chunkStart = bytePos()

@@ -378,8 +378,11 @@ fn runSelfHosted(cfg) {
     inferProgram(result)
 
     // Initialize loader and pre-load all dependencies
-    // TODO: strip UseStatement nodes from AST before compiling main script,
-    //       otherwise IMPORT opcodes will re-load via C++ VM (double work)
+    // NOTE: UseStatement nodes remain in the AST; when the emitter generates
+    // IMPORT opcodes, the C++ IMPORT handler checks globals first and
+    // short-circuits if the module is already there (from loaderLoad).
+    // Stripping would avoid the redundant IMPORT opcodes but breaks
+    // named imports (use { x } from "mod") that need STORE_GLOBAL binding.
     if isOn("timing") { startTimer("loader") }
     loaderState = loaderInit()
     if #cfg.scriptFiles > 0 {

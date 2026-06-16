@@ -514,55 +514,61 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
         value += decoded;
         if (suppressInterp) continue;
  } else if (c == '$' && braceDepth == 0) {
- char next = peek(1);
- if (isAlpha(next) || next == '_' || next == '@') {
- hasInterpolation = true;
- value += advance(); // $
+  char next = peek(1);
+  if (isAlpha(next) || next == '_' || next == '@') {
+  hasInterpolation = true;
+  advance(); // consume $ without adding to value
 
- if (isAlpha(peek()) || peek() == '_') {
- value += '{';
- while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
- value += advance();
- }
- if (!isAtEnd() && peek() == '?') {
- value += advance();
- }
- value += '}';
- } else if (peek() == '@') {
- value += '{';
- value += advance(); // @
- while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
- value += advance();
- }
- if (!isAtEnd() && peek() == '?') {
- value += advance();
- }
- value += '}';
- }
- } else if (next == '{') {
- hasInterpolation = true;
- advance(); // consume $
- value += '$';
- // The { will be handled by the brace interpolation branch below
- } else {
- value += advance(); // $ as literal
- }
+  if (isAlpha(peek()) || peek() == '_') {
+  value += '{';
+  while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+  value += advance();
+  }
+  if (!isAtEnd() && peek() == '?') {
+  value += advance();
+  }
+  value += '}';
+  } else if (peek() == '@') {
+  value += '{';
+  value += advance(); // @
+  while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+  value += advance();
+  }
+  if (!isAtEnd() && peek() == '?') {
+  value += advance();
+  }
+  value += '}';
+  }
+   } else {
+   value += advance(); // $ as literal
+   }
+
 } else if (c == '{' && braceDepth == 0) {
-            if (isFString && peek(1) != '{') {
-                hasInterpolation = true;
-                value += advance(); // {
-                braceDepth++; // Enter interpolation context
-            } else if (isFString && peek(1) == '{') {
-                // Escaped brace {{ in f-string - consume both and add single {
+            if (peek(1) != '{') {
+                char nextCh = peek(1);
+                // Only treat { as interpolation start if followed by
+                // an expression-starting character (alpha, _, (, @, $, !, -, digit)
+                // Bare "{" or "{" followed by "}" are literal braces
+                bool isExprStart = isAlpha(nextCh) || nextCh == '_' || nextCh == '@'
+                    || nextCh == '(' || nextCh == '$' || nextCh == '!'
+                    || nextCh == '-' || isDigit(nextCh)
+                    || nextCh == '"' || nextCh == '\'' || nextCh == '[';
+                if (nextCh == '}' || !isExprStart) {
+                    // Literal { — not interpolation
+                    value += advance();
+                } else {
+                    hasInterpolation = true;
+                    value += advance(); // {
+                    braceDepth++; // Enter interpolation context
+                }
+            } else {
+                // Escaped brace {{ - consume both and add single {
                 advance(); // first {
                 advance(); // second {
                 value += '{';
-            } else {
-                // Non-f-string: bare { is literal (e.g. fmt.format placeholders)
-                value += advance();
             }
         } else if (c == '}' && braceDepth == 0) {
-            if (isFString && peek(1) == '}') {
+            if (peek(1) == '}') {
                 advance(); // first }
                 advance(); // second }
                 value += '}';
@@ -652,14 +658,11 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
         if (suppressInterp) continue;
     } else if (c == '$' && braceDepth == 0) {
         char next = peek();
-        if (next == '{' || isAlpha(next) || next == '_' || next == '@') {
+        if (isAlpha(next) || next == '_' || next == '@') {
             hasInterpolation = true;
             value += advance(); // $
 
-            if (peek() == '{') {
-                value += advance(); // {
-                braceDepth++;
-            } else if (isAlpha(peek()) || peek() == '_') {
+            if (isAlpha(peek()) || peek() == '_') {
                 value += '{';
                 while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
                     value += advance();
@@ -680,19 +683,17 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
             value += advance(); // $ as literal
         }
 } else if (c == '{' && braceDepth == 0) {
-            if (isFString && peek(1) != '{') {
+            if (peek(1) != '{') {
                 hasInterpolation = true;
                 value += advance(); // {
                 braceDepth++;
-            } else if (isFString && peek(1) == '{') {
+            } else {
                 advance();
                 advance();
                 value += '{';
-            } else {
-                value += advance();
             }
         } else if (c == '}' && braceDepth == 0) {
-            if (isFString && peek(1) == '}') {
+            if (peek(1) == '}') {
                 advance();
                 advance();
                 value += '}';

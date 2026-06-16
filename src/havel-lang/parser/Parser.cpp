@@ -910,42 +910,9 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       std::string currentLiteral;
       
       while (pos < value.length()) {
-        // Check for ${...} pattern (regular interpolated strings)
-        if (value[pos] == '$' && pos + 1 < value.length() && value[pos + 1] == '{') {
-          // Found interpolation start: ${
-          if (!currentLiteral.empty()) {
-            segments.emplace_back(currentLiteral);
-            currentLiteral.clear();
-          }
-          pos += 2; // skip ${
-          
-          // Find matching } (accounting for nested braces)
-          size_t braceDepth = 1;
-          size_t exprStart = pos;
-          while (pos < value.length() && braceDepth > 0) {
-            if (value[pos] == '{') braceDepth++;
-            else if (value[pos] == '}') braceDepth--;
-            if (braceDepth > 0) pos++;
-          }
-          
-          if (braceDepth == 0) {
-            // Extract expression string (excluding closing })
-            std::string exprStr = value.substr(exprStart, pos - exprStart);
-            // Parse the expression
-            auto expr = parseExpressionFromString(exprStr);
-            if (expr) {
-              segments.emplace_back(std::move(expr));
-            }
-            pos++; // skip }
-          } else {
-            // Unclosed interpolation - treat rest as literal
-            currentLiteral += value.substr(exprStart - 2);
-            break;
-          }
-        }
-        // Check for {...} pattern (f-strings) - but not ${ which is handled above
-        else if (value[pos] == '{' && !(pos > 0 && value[pos-1] == '$')) {
-          // Found f-string interpolation start: {
+        // Check for {...} pattern (interpolation in any string)
+        if (value[pos] == '{') {
+          // Found interpolation start: {
           if (!currentLiteral.empty()) {
             segments.emplace_back(currentLiteral);
             currentLiteral.clear();
@@ -995,31 +962,7 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     std::string currentLiteral;
 
     while (pos < value.length()) {
-      if (value[pos] == '$' && pos + 1 < value.length() && value[pos + 1] == '{') {
-        if (!currentLiteral.empty()) {
-          segments.emplace_back(currentLiteral);
-          currentLiteral.clear();
-        }
-        pos += 2;
-        size_t braceDepth = 1;
-        size_t exprStart = pos;
-        while (pos < value.length() && braceDepth > 0) {
-          if (value[pos] == '{') braceDepth++;
-          else if (value[pos] == '}') braceDepth--;
-          if (braceDepth > 0) pos++;
-        }
-        if (braceDepth == 0) {
-          std::string exprStr = value.substr(exprStart, pos - exprStart);
-          auto expr = parseExpressionFromString(exprStr);
-          if (expr) {
-            segments.emplace_back(std::move(expr));
-          }
-          pos++;
-        } else {
-          currentLiteral += value.substr(exprStart - 2);
-          break;
-        }
-      } else if (value[pos] == '{' && !(pos > 0 && value[pos-1] == '$')) {
+      if (value[pos] == '{') {
         if (!currentLiteral.empty()) {
           segments.emplace_back(currentLiteral);
           currentLiteral.clear();
@@ -8619,141 +8562,104 @@ return makeNode<havel::ast::StringLiteral>(tk.value, true);
 
   case havel::TokenType::InterpolatedString: {
     advance();
-    // Parse the interpolated string: "text ${expr} more text"
     std::vector<havel::ast::InterpolatedStringExpression::Segment> segments;
-    std::string str = tk.value;
+    const std::string &value = tk.value;
     size_t pos = 0;
+    std::string currentLiteral;
 
-    while (pos < str.length()) {
-      // Find next ${
-      size_t start = str.find("${", pos);
-
-      if (start == std::string::npos) {
-        // No more interpolations, add rest as string
-        if (pos < str.length()) {
-          segments.push_back(havel::ast::InterpolatedStringExpression::Segment(
-              str.substr(pos)));
+    while (pos < value.length()) {
+      if (value[pos] == '{') {
+        if (!currentLiteral.empty()) {
+          segments.push_back(havel::ast::InterpolatedStringExpression::Segment(currentLiteral));
+          currentLiteral.clear();
         }
-        break;
+        pos += 1;
+        size_t braceDepth = 1;
+        size_t exprStart = pos;
+        while (pos < value.length() && braceDepth > 0) {
+          if (value[pos] == '{') braceDepth++;
+          else if (value[pos] == '}') braceDepth--;
+          if (braceDepth > 0) pos++;
+        }
+        if (braceDepth == 0) {
+          std::string exprStr = value.substr(exprStart, pos - exprStart);
+          havel::Lexer exprLexer(exprStr);
+          auto exprTokens = exprLexer.tokenize();
+          auto savedTokens = tokens;
+          auto savedPos = position;
+          tokens = exprTokens;
+          position = 0;
+          auto expr = parseExpression();
+          tokens = savedTokens;
+          position = savedPos;
+          if (expr) {
+            segments.push_back(havel::ast::InterpolatedStringExpression::Segment(std::move(expr)));
+          }
+          pos++;
+        } else {
+          currentLiteral += value.substr(exprStart - 1);
+          break;
+        }
+      } else {
+        currentLiteral += value[pos++];
       }
-
-      // Add text before ${ as string segment
-      if (start > pos) {
-        segments.push_back(havel::ast::InterpolatedStringExpression::Segment(
-            str.substr(pos, start - pos)));
-      }
-
-      // Find matching }
-      size_t end = str.find('}', start + 2);
-      if (end == std::string::npos) {
-        failAt(tk, "Unclosed interpolation in string");
-      }
-
-      // Parse expression between ${ and }
-      std::string exprCode = str.substr(start + 2, end - start - 2);
-
-      // Create a mini-parser for the expression
-      havel::Lexer exprLexer(exprCode);
-      auto exprTokens = exprLexer.tokenize();
-
-      // Save current parser state
-      auto savedTokens = tokens;
-      auto savedPos = position;
-
-      // Parse the expression
-      tokens = exprTokens;
-      position = 0;
-      auto expr = parseExpression();
-
-      // Restore parser state
-      tokens = savedTokens;
-      position = savedPos;
-
-      segments.push_back(
-          havel::ast::InterpolatedStringExpression::Segment(std::move(expr)));
-
-      pos = end + 1;
     }
 
-        return makeNode<havel::ast::InterpolatedStringExpression>(
-            std::move(segments));
-        }
+    if (!currentLiteral.empty()) {
+      segments.push_back(havel::ast::InterpolatedStringExpression::Segment(currentLiteral));
+    }
+
+    return makeNode<havel::ast::InterpolatedStringExpression>(std::move(segments));
+  }
 
         case havel::TokenType::InterpolatedBacktick: {
             advance();
             std::vector<havel::ast::InterpolatedStringExpression::Segment> segments;
-            std::string str = tk.value;
+            const std::string &value = tk.value;
             size_t pos = 0;
+            std::string currentLiteral;
 
-            while (pos < str.length()) {
-                // Check for ${expr} pattern
-                size_t dollarBrace = str.find("${", pos);
-                // Check for {expr} pattern (bare brace, not preceded by $)
-                size_t bareBrace = std::string::npos;
-                for (size_t i = pos; i < str.length(); i++) {
-                    if (str[i] == '{' && (i == 0 || str[i-1] != '$')) {
-                        // Make sure this isn't inside a ${} we already found
-                        if (dollarBrace == std::string::npos || i < dollarBrace) {
-                            bareBrace = i;
-                            break;
+            while (pos < value.length()) {
+                if (value[pos] == '{') {
+                    if (!currentLiteral.empty()) {
+                        segments.push_back(havel::ast::InterpolatedStringExpression::Segment(currentLiteral));
+                        currentLiteral.clear();
+                    }
+                    pos += 1;
+                    size_t braceDepth = 1;
+                    size_t exprStart = pos;
+                    while (pos < value.length() && braceDepth > 0) {
+                        if (value[pos] == '{') braceDepth++;
+                        else if (value[pos] == '}') braceDepth--;
+                        if (braceDepth > 0) pos++;
+                    }
+                    if (braceDepth == 0) {
+                        std::string exprCode = value.substr(exprStart, pos - exprStart);
+                        havel::Lexer exprLexer(exprCode);
+                        auto exprTokens = exprLexer.tokenize();
+                        auto savedTokens = tokens;
+                        auto savedPos = position;
+                        tokens = exprTokens;
+                        position = 0;
+                        auto expr = parseExpression();
+                        tokens = savedTokens;
+                        position = savedPos;
+                        if (expr) {
+                            segments.push_back(
+                                havel::ast::InterpolatedStringExpression::Segment(std::move(expr)));
                         }
+                        pos++;
+                    } else {
+                        currentLiteral += value.substr(exprStart - 1);
+                        break;
                     }
-                }
-
-                // Determine which comes first
-                size_t nextInterp = std::string::npos;
-                bool isDollarBrace = false;
-                if (dollarBrace != std::string::npos && (bareBrace == std::string::npos || dollarBrace <= bareBrace)) {
-                    nextInterp = dollarBrace;
-                    isDollarBrace = true;
-                } else if (bareBrace != std::string::npos) {
-                    nextInterp = bareBrace;
-                    isDollarBrace = false;
-                }
-
-                if (nextInterp == std::string::npos) {
-                    if (pos < str.length()) {
-                        segments.push_back(havel::ast::InterpolatedStringExpression::Segment(
-                            str.substr(pos)));
-                    }
-                    break;
-                }
-
-                // Add text before interpolation as literal
-                if (nextInterp > pos) {
-                    segments.push_back(havel::ast::InterpolatedStringExpression::Segment(
-                        str.substr(pos, nextInterp - pos)));
-                }
-
-                // Skip ${ or {
-                size_t exprStart = isDollarBrace ? nextInterp + 2 : nextInterp + 1;
-
-                // Find matching } with brace depth tracking
-                size_t braceDepth = 1;
-                size_t i = exprStart;
-                while (i < str.length() && braceDepth > 0) {
-                    if (str[i] == '{') braceDepth++;
-                    else if (str[i] == '}') braceDepth--;
-                    if (braceDepth > 0) i++;
-                }
-
-                if (braceDepth == 0) {
-                    std::string exprCode = str.substr(exprStart, i - exprStart);
-                    havel::Lexer exprLexer(exprCode);
-                    auto exprTokens = exprLexer.tokenize();
-                    auto savedTokens = tokens;
-                    auto savedPos = position;
-                    tokens = exprTokens;
-                    position = 0;
-                    auto expr = parseExpression();
-                    tokens = savedTokens;
-                    position = savedPos;
-                    segments.push_back(
-                        havel::ast::InterpolatedStringExpression::Segment(std::move(expr)));
-                    pos = i + 1;
                 } else {
-                    failAt(tk, "Unclosed interpolation in backtick string");
+                    currentLiteral += value[pos++];
                 }
+            }
+
+            if (!currentLiteral.empty()) {
+                segments.push_back(havel::ast::InterpolatedStringExpression::Segment(currentLiteral));
             }
 
             auto interpExpr = makeNode<havel::ast::InterpolatedStringExpression>(

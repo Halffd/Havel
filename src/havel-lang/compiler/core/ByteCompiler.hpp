@@ -97,6 +97,9 @@ public:
   const std::vector<CompilerError> &errors() const { return errors_; }
   void setCollectErrors(bool collect) { collect_errors_ = collect; }
 
+  void setSourceFile(const std::string& f) { source_file_ = f; }
+  const std::string& sourceFile() const { return source_file_; }
+
   // Shadow helpers so COMPILER_THROW macro picks up member location
   uint32_t _compiler_err_line() const {
     return current_source_location_ ? current_source_location_->line : 0;
@@ -114,7 +117,7 @@ private:
         : compiler(owner), previous(owner->current_source_location_) {
         if (node.line > 0) {
             owner->current_source_location_ = SourceLocation{
-                "", static_cast<uint32_t>(node.line), static_cast<uint32_t>(node.column), static_cast<uint32_t>(node.length)};
+                owner->source_file_, static_cast<uint32_t>(node.line), static_cast<uint32_t>(node.column), static_cast<uint32_t>(node.length)};
         }
     }
     ~SourceLocationScope() { compiler->current_source_location_ = previous; }
@@ -305,6 +308,8 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
     std::vector<CompilerError> errors_;
 
     TypeCheckResult type_check_result_;
+
+    std::string source_file_;
 };
 
 } // namespace havel::compiler

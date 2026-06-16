@@ -13,6 +13,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "utils/ExitHandler.hpp"
 
 #ifndef _WIN32
   #include <unistd.h>
@@ -522,8 +523,7 @@ if (!std::getline(std::cin, line))
       [](const std::vector<Value> &args) {
       int code = 0;
       if (!args.empty()) code = static_cast<int>(args[0].asInt());
-      std::exit(code);
-      // unreachable
+      havel::exit(ExitReason::VmExit, code);
       return Value::makeNull();
     });
 

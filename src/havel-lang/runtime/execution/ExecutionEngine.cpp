@@ -426,6 +426,16 @@ switch (result.type) {
         // Exception occurred
         handleError(g, result.error_message);
         break;
+
+      case VMExecutionResult::DEBUG_BREAK:
+        if (g->fiber) {
+          vm_->saveFiberState(g->fiber);
+        }
+        if (debug_break_cb_) {
+          debug_break_cb_();
+        }
+        stats_.frames_executed++;
+        return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
     }
     
 	stats_.frames_executed++;

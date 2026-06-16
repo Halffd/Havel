@@ -796,5 +796,11 @@ regProtoVar("find", [&vm](const std::vector<Value>& args) {
     return makeString(vm, std::move(result));
   });
 
+  regProto("op_add", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    auto result = vm.toString(args[0]) + vm.toString(args[1]);
+    return makeString(vm, std::move(result));
+  });
+
 }
 } // namespace havel::compiler::prototypes

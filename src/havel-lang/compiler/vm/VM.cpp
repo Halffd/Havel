@@ -625,6 +625,11 @@ executing_in_fiber_ = true;
     // Process any pending callbacks that resulted from instruction
     processPendingCalls();
 
+    // Debugger breakpoint check
+    if (debugger_attached_ && checkDebugBreak()) {
+      return VMExecutionResult::DebugBreak();
+    }
+
     // Check if exit was requested during this instruction (from exit() host function)
     // Stop all goroutines immediately and return so the EventLoop shuts down cleanly
     if (exit_requested_.load()) {
@@ -1086,7 +1091,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   // The common case for compute-heavy scripts like self-hosted compilation.
   // GC check, exit check, and pending calls are batched every 8192 instructions.
   // Only suspension needs immediate handling; if it occurs, we fall through to slow path.
-  const bool use_fast_path = !has_profiling && !has_tracing && !has_instruction_limit && !has_timer;
+  const bool use_fast_path = !debugger_attached_ && !has_profiling && !has_tracing && !has_instruction_limit && !has_timer;
 
   if (use_fast_path) {
 #if HAVE_COMPUTED_GOTO
@@ -1162,6 +1167,10 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         Value exceptionValue = Value::makeStringId(heap_.allocateString(msg).id);
         if (handleScriptThrow(exceptionValue)) continue;
         throw std::runtime_error(msg);
+      }
+
+      if (debugger_attached_ && checkDebugBreak()) {
+        if (debug_break_cb_) debug_break_cb_();
       }
 
       if (suspension_requested_) goto slow_path;
@@ -1242,6 +1251,11 @@ slow_path:
       if ((fast_path_counter & 4095) == 0 && exit_requested_.load()) {
         break;
       }
+
+      if (debugger_attached_ && checkDebugBreak()) {
+        if (debug_break_cb_) debug_break_cb_();
+      }
+
  if (suspension_requested_) {
         uint8_t reason = suspension_reason_;
         void* ctx = suspension_context_;
@@ -1357,6 +1371,11 @@ bool VM::handleScriptThrow(const Value &value) {
   has_current_exception_ = true;
   current_exception_ = value;
 
+  // Exception breakpoint: break on throw
+  if (debugger_attached_ && debug_break_on_throw_) {
+    if (debug_break_cb_) debug_break_cb_();
+  }
+
   while (frame_count_ > 0) {
     auto &frame = frame_arena_[frame_count_ - 1];
     // Defensive check: ensure frame is valid
@@ -1423,6 +1442,9 @@ bool VM::handleScriptThrow(const Value &value) {
   }
 
   // No handler found - exception is uncaught
+  if (debugger_attached_ && debug_break_on_uncaught_) {
+    if (debug_break_cb_) debug_break_cb_();
+  }
   return false;
 }
 
@@ -1837,6 +1859,13 @@ co->ip = 0;
         }
     }
     frame_count_++;
+
+    // Function entry breakpoint check
+    if (debugger_attached_ && callee &&
+        debug_function_breakpoints_.count(callee->name) > 0) {
+      debug_step_mode_ = DebugStepMode::Continue;
+      if (debug_break_cb_) debug_break_cb_();
+    }
 
     // Clear per-frame immutable_locals_ on function entry.
     // Each function's STORE_IMMUT_VAR opcodes will repopulate
@@ -3851,6 +3880,187 @@ std::optional<Value> VM::getGlobalThreadSafe(const std::string &name) const {
   auto it = globals.find(name);
   if (it != globals.end()) return it->second;
   return std::nullopt;
+}
+
+// ============================================================================
+// DEBUGGER HOOKS
+// ============================================================================
+
+void VM::setBreakpoint(const std::string& file, uint32_t line) {
+  debug_breakpoints_[file].insert(line);
+}
+
+void VM::clearBreakpoint(const std::string& file, uint32_t line) {
+  auto it = debug_breakpoints_.find(file);
+  if (it != debug_breakpoints_.end()) {
+    it->second.erase(line);
+    if (it->second.empty()) debug_breakpoints_.erase(it);
+  }
+}
+
+void VM::clearAllBreakpoints() {
+  debug_breakpoints_.clear();
+}
+
+bool VM::hasBreakpoint(const std::string& file, uint32_t line) const {
+  auto it = debug_breakpoints_.find(file);
+  return it != debug_breakpoints_.end() && it->second.count(line) > 0;
+}
+
+std::vector<VM::DebugFrameInfo> VM::getStackFrames() const {
+  std::vector<DebugFrameInfo> frames;
+  for (size_t i = 0; i < frame_count_; ++i) {
+    auto& frame = frame_arena_[i];
+    DebugFrameInfo info;
+    if (frame.function) {
+      info.function_name = frame.function->name;
+      info.source_file = frame.function->source_file;
+      auto loc = nearestSourceLocation(*frame.function, frame.ip);
+      info.line = loc.line;
+      info.column = loc.column;
+    }
+    info.frame_depth = i;
+    frames.push_back(std::move(info));
+  }
+  return frames;
+}
+
+VM::DebugFrameInfo VM::getCurrentFrameInfo() const {
+  if (frame_count_ == 0) return {};
+  auto& frame = frame_arena_[frame_count_ - 1];
+  DebugFrameInfo info;
+  if (frame.function) {
+    info.function_name = frame.function->name;
+    info.source_file = frame.function->source_file;
+    auto loc = nearestSourceLocation(*frame.function, frame.ip);
+    info.line = loc.line;
+    info.column = loc.column;
+  }
+  info.frame_depth = frame_count_ - 1;
+  return info;
+}
+
+std::vector<VM::DebugVarInfo> VM::getLocals(int depth) {
+  std::vector<DebugVarInfo> vars;
+  size_t idx = (depth < 0 || static_cast<size_t>(depth) >= frame_count_)
+      ? frame_count_ - 1 : static_cast<size_t>(depth);
+  if (idx >= frame_count_ || !frame_arena_[idx].function) return vars;
+
+  auto& frame = frame_arena_[idx];
+  auto* func = frame.function;
+
+  for (uint32_t i = 0; i < func->local_count; ++i) {
+    size_t slot = frame.locals_base + i;
+    if (slot >= locals.size()) break;
+    DebugVarInfo var;
+    if (i < func->param_names.size()) {
+      var.name = func->param_names[i];
+    } else {
+      var.name = "$" + std::to_string(i);
+    }
+    var.type = getTypeName(locals[slot]);
+    var.value = toString(locals[slot]);
+    vars.push_back(std::move(var));
+  }
+  return vars;
+}
+
+std::vector<VM::DebugVarInfo> VM::getDebugGlobals() {
+  std::vector<DebugVarInfo> vars;
+  for (auto& [name, val] : globals) {
+    DebugVarInfo var;
+    var.name = name;
+    var.type = getTypeName(val);
+    var.value = toString(val);
+    vars.push_back(std::move(var));
+  }
+  return vars;
+}
+
+Value VM::evaluateInFrame(const std::string& expr, int depth) {
+  if (expr.empty()) return Value::makeNull();
+
+  // Check locals first
+  size_t idx = (depth < 0 || static_cast<size_t>(depth) >= frame_count_)
+      ? frame_count_ - 1 : static_cast<size_t>(depth);
+  if (idx < frame_count_ && frame_arena_[idx].function) {
+    auto& frame = frame_arena_[idx];
+    auto* func = frame.function;
+    for (uint32_t i = 0; i < func->local_count; ++i) {
+      size_t slot = frame.locals_base + i;
+      if (slot < locals.size() && i < func->param_names.size() &&
+          func->param_names[i] == expr) {
+        return locals[slot];
+      }
+    }
+  }
+
+  // Check globals
+  auto git = globals.find(expr);
+  if (git != globals.end()) return git->second;
+
+  auto hit = host_function_globals_.find(expr);
+  if (hit != host_function_globals_.end()) return hit->second;
+
+  return Value::makeNull();
+}
+
+bool VM::checkDebugBreak() {
+  if (!debugger_attached_ && debug_step_mode_ == DebugStepMode::Continue) {
+    return false;
+  }
+
+  if (frame_count_ == 0 || !frame_arena_[frame_count_ - 1].function) {
+    return false;
+  }
+
+  auto& frame = frame_arena_[frame_count_ - 1];
+  auto* func = frame.function;
+  auto loc = nearestSourceLocation(*func, frame.ip);
+
+  if (debug_step_mode_ == DebugStepMode::StepInto) {
+    if (loc.line > 0) {
+      debug_step_mode_ = DebugStepMode::Continue;
+      return true;
+    }
+    return false;
+  }
+
+  if (debug_step_mode_ == DebugStepMode::StepOver) {
+    if (loc.line > 0 && frame_count_ <= debug_step_frame_depth_) {
+      debug_step_mode_ = DebugStepMode::Continue;
+      return true;
+    }
+    return false;
+  }
+
+  if (debug_step_mode_ == DebugStepMode::StepOut) {
+    if (loc.line > 0 && frame_count_ < debug_step_frame_depth_) {
+      debug_step_mode_ = DebugStepMode::Continue;
+      return true;
+    }
+    return false;
+  }
+
+  // Breakpoint check - use instruction location filename or fall back to function source_file
+  std::string filename = loc.filename.empty() ? func->source_file : loc.filename;
+  if (!filename.empty() && loc.line > 0) {
+    if (hasBreakpoint(filename, loc.line)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void VM::attachDebugger() {
+  debugger_attached_ = true;
+}
+
+void VM::detachDebugger() {
+  debugger_attached_ = false;
+  debug_step_mode_ = DebugStepMode::Continue;
+  debug_breakpoints_.clear();
 }
 
 } // namespace havel::compiler

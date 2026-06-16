@@ -835,6 +835,7 @@ BytecodeSmokeResult runBytecodePipeline(
 
  ByteCompiler compiler;
  compiler.setTypeCheckResult(std::move(typeCheckResult));
+ compiler.setSourceFile(options.compile_unit_name);
  BytecodeSmokeResult result;
  std::unique_ptr<BytecodeChunk> chunk;
  try {

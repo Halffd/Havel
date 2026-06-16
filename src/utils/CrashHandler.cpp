@@ -1,4 +1,5 @@
 #include "CrashHandler.hpp"
+#include "ExitHandler.hpp"
 #include "Logger.hpp"
 #include <execinfo.h>
 #include <signal.h>
@@ -127,7 +128,7 @@ void panic(const std::string& message, bool generate_core_dump) {
         abort();
     }
     
-    _exit(134);
+    havel::exit(ExitReason::SignalCrash, 134);
 }
 
 void panicf(const char* format, ...) {

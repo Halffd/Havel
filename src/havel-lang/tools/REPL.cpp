@@ -23,6 +23,8 @@
 #include <atomic>
 #include <ctime>
 #include <sys/stat.h>
+#include <poll.h>
+#include <unistd.h>
 
 #ifdef HAVE_READLINE
 #include <readline/readline.h>
@@ -175,6 +177,23 @@ std::string REPL::readLine(const std::string& prompt) {
         return inputHandler_(prompt);
     }
 
+    if (pumpCallback_) {
+        while (true) {
+            struct pollfd pfd;
+            pfd.fd = STDIN_FILENO;
+            pfd.events = POLLIN;
+            pfd.revents = 0;
+            int ret = poll(&pfd, 1, 50);
+            if (ret > 0 && (pfd.revents & POLLIN)) {
+                break;
+            }
+            if (ret < 0 && errno != EINTR) {
+                break;
+            }
+            pumpCallback_();
+        }
+    }
+
 #ifdef HAVE_READLINE
     char* line = readline(prompt.c_str());
     if (line) {
@@ -182,7 +201,6 @@ std::string REPL::readLine(const std::string& prompt) {
         free(line);
         return result;
     }
-    // readline returns NULL on EOF (Ctrl-D)
     std::cin.setstate(std::ios::eofbit);
     return "";
 #else
@@ -190,7 +208,7 @@ std::string REPL::readLine(const std::string& prompt) {
     std::cout.flush();
     std::string line;
     if (!std::getline(std::cin, line)) {
-        return ""; // EOF
+        return "";
     }
     return line;
 #endif

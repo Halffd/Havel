@@ -563,6 +563,7 @@ api.registerFunction("window.getTitle", [api](const std::vector<Value> &args) {
     api.setField(windowObj, "info", api.makeFunctionRef("window.info"));
     api.setField(windowObj, "title", api.makeFunctionRef("window.title"));
     api.setField(windowObj, "className", api.makeFunctionRef("window.className"));
+    api.setField(windowObj, "class", api.makeFunctionRef("window.className"));
     api.setField(windowObj, "pid", api.makeFunctionRef("window.pid"));
     api.setField(windowObj, "exe", api.makeFunctionRef("window.exe"));
     api.setField(windowObj, "geometry", api.makeFunctionRef("window.geometry"));

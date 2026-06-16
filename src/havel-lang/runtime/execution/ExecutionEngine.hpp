@@ -84,6 +84,10 @@ public:
   void setDebugMode(bool enabled) { debug_mode_ = enabled; }
   bool getDebugMode() const { return debug_mode_; }
   
+  using DebugBreakCallback = std::function<void()>;
+  void setDebugBreakCallback(DebugBreakCallback cb) { debug_break_cb_ = std::move(cb); }
+  const DebugBreakCallback& getDebugBreakCallback() const { return debug_break_cb_; }
+  
   
 	WatcherRegistry* getWatcherRegistry() { return watcher_registry_.get(); }
 	const WatcherRegistry* getWatcherRegistry() const { return watcher_registry_.get(); }
@@ -113,6 +117,7 @@ private:
   std::atomic<bool> script_ready_{false};
   Stats stats_;
   bool debug_mode_ = false;
+  DebugBreakCallback debug_break_cb_;
   
   // ========== HELPER METHODS ==========
   void handleYield(Scheduler::Goroutine* g);

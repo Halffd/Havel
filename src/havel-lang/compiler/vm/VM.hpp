@@ -117,7 +117,8 @@ struct VMExecutionResult {
     YIELD,       // Instruction completed normally, return value on stack
     SUSPENDED,   // Fiber suspended (waiting for event), state frozen
     RETURNED,    // Function returned, value in result_value
-    ERROR        // Exception thrown, message in error_message
+    ERROR,       // Exception thrown, message in error_message
+    DEBUG_BREAK  // Breakpoint hit, debugger should take control
   };
   
   Type type;
@@ -153,6 +154,13 @@ struct VMExecutionResult {
     VMExecutionResult r;
     r.type = ERROR;
     r.error_message = msg;
+    r.result_value = Value();
+    return r;
+  }
+
+  static VMExecutionResult DebugBreak() {
+    VMExecutionResult r;
+    r.type = DEBUG_BREAK;
     r.result_value = Value();
     return r;
   }
@@ -235,6 +243,13 @@ using TimerCheckFunction = std::function<void()>;
   private:
     VM *vm_ = nullptr;
     uint64_t id_ = 0;
+  };
+
+  enum class DebugStepMode : uint8_t {
+    Continue,
+    StepInto,
+    StepOver,
+    StepOut
   };
 
 private:
@@ -423,6 +438,17 @@ size_t tail_call_depth_ = 0;
     TimerCheckFunction timer_check_func_;
     size_t instructions_since_timer_check_ = 0;
     size_t timer_check_interval_ = 1000;
+
+    // Debugger state
+    DebugStepMode debug_step_mode_ = DebugStepMode::Continue;
+    std::unordered_map<std::string, std::unordered_set<uint32_t>> debug_breakpoints_;
+    bool debugger_attached_ = false;
+    bool debug_break_on_step_ = false;
+    size_t debug_step_frame_depth_ = 0;
+    std::function<void()> debug_break_cb_;
+    std::unordered_set<std::string> debug_function_breakpoints_;
+    bool debug_break_on_throw_ = false;
+    bool debug_break_on_uncaught_ = false;
 
   template <typename T> T getValue(const Value &value);
  std::string toStringInternal(const Value &value,
@@ -783,6 +809,58 @@ GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id
   const std::string* getStringPtr(const Value &value) const;
   bool toBoolPublic(const Value &value);
   void setDebugMode(bool enabled) override;
+
+  struct DebugFrameInfo {
+    std::string function_name;
+    std::string source_file;
+    uint32_t line = 0;
+    uint32_t column = 0;
+    size_t frame_depth = 0;
+  };
+
+  struct DebugVarInfo {
+    std::string name;
+    std::string type;
+    std::string value;
+  };
+
+  DebugStepMode debugStepMode() const { return debug_step_mode_; }
+  void setDebugStepMode(DebugStepMode mode) { debug_step_mode_ = mode; }
+  void setDebugStepFrameDepth(size_t depth) { debug_step_frame_depth_ = depth; }
+
+  using DebugBreakCallback = std::function<void()>;
+  void setDebugBreakCallback(DebugBreakCallback cb) { debug_break_cb_ = std::move(cb); }
+
+  void setBreakpoint(const std::string& file, uint32_t line);
+  void clearBreakpoint(const std::string& file, uint32_t line);
+  void clearAllBreakpoints();
+  bool hasBreakpoint(const std::string& file, uint32_t line) const;
+
+  void setFunctionBreakpoint(const std::string& name) { debug_function_breakpoints_.insert(name); }
+  void clearFunctionBreakpoint(const std::string& name) { debug_function_breakpoints_.erase(name); }
+  void clearAllFunctionBreakpoints() { debug_function_breakpoints_.clear(); }
+  bool hasFunctionBreakpoint(const std::string& name) const {
+    return debug_function_breakpoints_.count(name) > 0;
+  }
+
+  void setBreakOnThrow(bool b) { debug_break_on_throw_ = b; }
+  bool breakOnThrow() const { return debug_break_on_throw_; }
+  void setBreakOnUncaught(bool b) { debug_break_on_uncaught_ = b; }
+  bool breakOnUncaught() const { return debug_break_on_uncaught_; }
+
+  Value currentExceptionValue() const { return current_exception_; }
+
+  std::vector<DebugFrameInfo> getStackFrames() const;
+  DebugFrameInfo getCurrentFrameInfo() const;
+  std::vector<DebugVarInfo> getLocals(int depth = -1);
+  std::vector<DebugVarInfo> getDebugGlobals();
+  Value evaluateInFrame(const std::string& expr, int depth = -1);
+
+  bool checkDebugBreak();
+  void attachDebugger();
+  void detachDebugger();
+  bool isDebuggerAttached() const { return debugger_attached_; }
+
   void registerHostFunction(const std::string &name,
                             BytecodeHostFunction function) override;
   void registerHostFunction(const std::string &name, size_t arity,

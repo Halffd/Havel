@@ -61,6 +61,9 @@ public:
   void initialize(bool isStartup);
   void cleanup() noexcept;
   void exit();
+  void performCleanup();
+
+  static void gracefulExit(int code = 0, bool fromSignal = false);
 
   // Shutdown callback for embedders (e.g., Qt event loop)
   void setShutdownCallback(std::function<void()> cb);

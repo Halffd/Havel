@@ -1,4 +1,5 @@
 #include "core/display/DisplayManager.hpp"
+#include "utils/ExitHandler.hpp"
 #include "utils/Logger.hpp"
 #include "x11.h"
 #include <X11/extensions/Xrandr.h>
@@ -27,9 +28,10 @@ void DisplayManager::Initialize() {
       root = DefaultRootWindow(display);
       XSetErrorHandler(X11ErrorHandler);
       XSetIOErrorHandler([](Display *display) -> int {
-        (void)display; // Mark as unused
+        (void)display;
         havel::fatal("X11 I/O Error - Display connection lost");
-        std::exit(EXIT_FAILURE);
+        havel::exit(ExitReason::Forced, EXIT_FAILURE);
+        return 0;
       });
       initialized = true;
     }

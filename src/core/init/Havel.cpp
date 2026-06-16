@@ -7,6 +7,7 @@
 #include "core/brightness/BrightnessManager.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/io/IO.hpp"
+#include "utils/ExitHandler.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/window/WindowManager.hpp"
 #include "core/automation/AutomationManager.hpp"
@@ -327,17 +328,17 @@ void Havel::initialize(bool isStartup) {
             throw std::runtime_error("Failed to open X11 display");
 }
 }
+havel::registerExitCleanup([this]() { performCleanup(); });
 havel::startup_timing_report("Havel::initialize TOTAL", t0);
 if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
 		std::thread([this]() {
 			auto s = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
 			std::this_thread::sleep_for(std::chrono::seconds(s));
 			if(!Configs::Get().Get<bool>("Debug.AutoExit", false)){
-				return; // AutoExit was disabled during the wait
+				return;
 			}
 			if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", s);
 			this->exit();
-			std::exit(0);
 		}).detach();
 	}
 }
@@ -433,15 +434,17 @@ void Havel::cleanup() noexcept {
   } catch (...) {}
 }
 
-void Havel::exit() {
+void Havel::gracefulExit(int code, bool fromSignal) {
+  havel::exit(fromSignal ? ExitReason::SignalInt : ExitReason::Normal, code);
+}
+
+void Havel::performCleanup() {
   if (shutdownRequested) {
     return;
   }
-
   shutdownRequested = true;
   info("Exit requested - starting graceful shutdown");
 
-  // Stop EventListener FIRST
   if (io && io->GetEventListener()) {
     info("Stopping EventListener before exit...");
     io->GetEventListener()->Stop();
@@ -449,9 +452,11 @@ void Havel::exit() {
   }
 
   cleanup();
+}
 
-  info("Exit requested - terminating process");
-  std::exit(0);
+void Havel::exit() {
+  performCleanup();
+  havel::exit(ExitReason::Normal, 0);
 }
 
 void Havel::setShutdownCallback(std::function<void()> cb) {
@@ -468,31 +473,14 @@ void Havel::setupSignalHandling() {
       sa.sa_flags = 0;
       sigemptyset(&sa.sa_mask);
       sa.sa_handler = [](int sig) {
-        switch (sig) {
-        case SIGINT:
-          info("Received SIGINT (Ctrl+C) - shutting down gracefully");
-          break;
-        case SIGTERM:
-          info("Received SIGTERM - shutting down gracefully");
-          break;
-        case SIGQUIT:
-          info("Received SIGQUIT - shutting down gracefully");
-          break;
-        case SIGABRT:
-          info("Received SIGABRT - aborting");
-          break;
-        case SIGSEGV:
-          info("Received SIGSEGV - segmentation fault");
-          break;
-        default:
-          info("Received signal {} - shutting down", sig);
-          break;
-        }
-        if (Havel::instance && !Havel::instance->isShutdownRequested()) {
-          Havel::instance->exit();
-        } else {
-          std::exit(0);
-        }
+        int code = (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
+        bool crash = (sig == SIGSEGV || sig == SIGABRT || sig == SIGBUS || sig == SIGILL || sig == SIGFPE);
+        havel::exit(crash ? ExitReason::SignalCrash
+                     : sig == SIGINT  ? ExitReason::SignalInt
+                     : sig == SIGTERM ? ExitReason::SignalTerm
+                     : sig == SIGQUIT ? ExitReason::SignalQuit
+                     : ExitReason::Forced,
+                    code);
       };
       sigaction(SIGINT, &sa, nullptr);
       sigaction(SIGTERM, &sa, nullptr);

@@ -1,4 +1,5 @@
 #include "core/init/HavelLauncher.hpp"
+#include "utils/ExitHandler.hpp"
 #include "utils/Logger.hpp"
 #include "utils/StartupTiming.hpp"
 #include "core/config/ConfigManager.hpp"
@@ -29,7 +30,7 @@ int main(int argc, char* argv[]) {
 
     XSetIOErrorHandler([](Display*) -> int {
         havel::error("X11 connection lost - exiting gracefully");
-        exit(1);
+        havel::exit(havel::ExitReason::Forced, 1);
         return 0;
     });
 

@@ -163,6 +163,7 @@ public:
 
   void ReleaseAllVirtualKeys();
   void ForceUngrabAllDevices();
+  void RequestGracefulShutdown();
 
   void SetupSignalHandling();
   void ProcessSignal();

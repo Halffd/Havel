@@ -65,7 +65,7 @@ public:
     void EndBatch() override {}
 
     void ReleaseAllKeys() override;
-    void ReleaseAllVirtualKeys() override {}
+    void ReleaseAllVirtualKeys() override { ReleaseAllKeys(); }
     void EmergencyReleaseAllKeys() override { ReleaseAllKeys(); }
 
     void SetBlockInput(bool block) override { blockInput_ = block; }

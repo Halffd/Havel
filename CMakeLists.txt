@@ -1233,6 +1233,69 @@ target_compile_options(hpkg PRIVATE -fno-lto)
 target_link_options(hpkg PRIVATE -fno-lto)
 endif()
 
+# ==============================================================================
+# HAVEL DEBUGGER (hvdb)
+# ==============================================================================
+if(ENABLE_HAVEL_LANG)
+add_executable(hvdb src/hvdb/hvdb.cpp)
+set_target_properties(hvdb PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+target_compile_options(hvdb PRIVATE -fno-lto)
+target_link_options(hvdb PRIVATE -fno-lto)
+target_include_directories(hvdb PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
+target_link_libraries(hvdb PRIVATE
+    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    ${COMMON_LIBS}
+)
+
+target_compile_definitions(hvdb PRIVATE
+$<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
+)
+
+if(ENABLE_MODULE_PLUGINS)
+set_target_properties(hvdb PROPERTIES ENABLE_EXPORTS ON)
+endif()
+endif()
+
+# ==============================================================================
+# HAVEL DAP SERVER (havel-dap)
+# ==============================================================================
+if(ENABLE_HAVEL_LANG)
+add_executable(havel-dap src/havel-dap/havel-dap.cpp)
+set_target_properties(havel-dap PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+target_compile_options(havel-dap PRIVATE -fno-lto)
+target_link_options(havel-dap PRIVATE -fno-lto)
+target_include_directories(havel-dap PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
+target_compile_definitions(havel-dap PRIVATE
+$<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
+)
+target_link_libraries(havel-dap PRIVATE
+    nlohmann_json::nlohmann_json
+    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    ${COMMON_LIBS}
+)
+if(ENABLE_MODULE_PLUGINS)
+set_target_properties(havel-dap PROPERTIES ENABLE_EXPORTS ON)
+endif()
+endif()
+
 # Set target properties
 set_target_properties(havel PROPERTIES
   CXX_STANDARD 23

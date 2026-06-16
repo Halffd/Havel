@@ -420,7 +420,12 @@ public:
   MouseAction GetMouseAction(MouseAction action) { return action; }
   MouseAction GetMouseAction(int idx);
   template <typename T, typename S> bool Click(T button, S action) {
-    int btnCode = GetMouseButtonCode(button);
+    int btnCode;
+    if constexpr (std::is_same_v<T, int>) {
+      btnCode = button;
+    } else {
+      btnCode = GetMouseButtonCode(button);
+    }
     MouseAction mouseAction = GetMouseAction(action);
     if constexpr (std::is_same_v<S, int>) {
       return EmitClick(btnCode, GetMouseAction(S(action)));

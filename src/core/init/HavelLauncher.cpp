@@ -3,6 +3,7 @@
 #include "core/init/Havel.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/config/ConfigManager.hpp"
+#include "utils/ExitHandler.hpp"
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
@@ -504,7 +505,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         break;
       } else if (arg == "--help" || arg == "-h") {
       showHelp();
-      exit(0);
+      havel::exit(ExitReason::Normal, 0);
     } else if (arg == "lexer") {
       cfg.mode = Mode::CLI;
       return cfg;
@@ -555,7 +556,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 		}
 		std::cout << "\nUse --enable-service <name> to include only specific services\n";
 		std::cout << "Use --disable-service <name> to exclude specific services\n";
-		exit(0);
+		havel::exit(ExitReason::Normal, 0);
 	}
 
 	// Resolve input backend: CLI arg > config > auto-detect
@@ -1157,7 +1158,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 	struct sigaction sa;
 	sa.sa_flags = 0;
 	sigemptyset(&sa.sa_mask);
-    sa.sa_handler = [](int sig) { std::exit(0); };
+    sa.sa_handler = [](int sig) { havel::exit(sig == SIGSEGV ? ExitReason::SignalCrash : ExitReason::SignalInt, 0); };
     sigaction(SIGINT, &sa, nullptr);
     sigaction(SIGTERM, &sa, nullptr);
     sigaction(SIGSEGV, &sa, nullptr);
@@ -1172,7 +1173,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 				return; // AutoExit was disabled during the wait
 			}
 			if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", delay);
-			std::exit(0);
+			havel::exit(ExitReason::Normal, 0);
 		}).detach();
 	}
 
@@ -1286,7 +1287,7 @@ int havel::init::HavelLauncher::runSelfHosted(const LaunchConfig &cfg) {
     struct sigaction sa;
     sa.sa_flags = 0;
     sigemptyset(&sa.sa_mask);
-    sa.sa_handler = [](int sig) { std::exit(0); };
+    sa.sa_handler = [](int sig) { havel::exit(ExitReason::SignalInt, 0); };
     sigaction(SIGINT, &sa, nullptr);
     sigaction(SIGTERM, &sa, nullptr);
 

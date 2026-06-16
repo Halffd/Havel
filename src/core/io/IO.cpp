@@ -4,7 +4,9 @@
 #include "core/hotkey/HotkeyManager.hpp"
 #include "KeyTap.hpp"
 #include "core/process/ProcessManager.hpp"
+#include "core/init/Havel.hpp"
 #include "utils/DebugFlags.hpp"
+#include "utils/ExitHandler.hpp"
 #include "InputBackend.hpp"
 
 // Global storage for KeyTap instances
@@ -805,7 +807,7 @@ bool IO::EmitClick(int btnCode, MouseAction action) {
 
     auto doAction = [&](bool down) {
         if (ioBackend) {
-            ioBackend->SendButton(x11Button, down);
+          ioBackend->SendButton(x11Button, down);
         }
     };
 
@@ -1424,11 +1426,8 @@ bool IO::Resume() {
 
 // Static method to exit the application
 void IO::ExitApp() {
-    warning("Static ExitApp called - initiating emergency shutdown sequence");
-
-  // This is a static method, so we can't access instance members directly
-  // However, we can use std::exit to ensure immediate termination
-  std::exit(0);
+    warning("Static ExitApp called - initiating graceful shutdown");
+    havel::exit(ExitReason::Normal, 0);
 }
 
 // Helper function to parse mouse button from string

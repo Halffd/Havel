@@ -6,6 +6,8 @@
 #include "core/config/ConfigManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/IO.hpp"
+#include "core/init/Havel.hpp"
+#include "utils/ExitHandler.hpp"
 #include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
 #include "havel-lang/runtime/Modules.hpp"
@@ -434,24 +436,16 @@ void EventListener::PumpOnce() {
         auto* vm = executionEngine->getVM();
         if (vm && vm->exit_requested_.load()) {
             int code = vm->exit_code_.load();
-            shutdown.store(true);
-            running.store(false);
-            ForceUngrabAllDevices();
-            ReleaseAllVirtualKeys();
 #ifdef HAVE_QT_EXTENSION
             QCoreApplication::exit(code);
 #endif
-            if (shutdownFd >= 0) {
-                uint64_t val = 1;
-                write(shutdownFd, &val, sizeof(val));
-            }
+            havel::exit(ExitReason::VmExit, code);
             return;
         }
     } else if (modules_) {
         modules_->checkTimers();
     }
 
-    // Non-blocking poll for input events with short timeout
     if (backend_) {
         backend_->PollEvents(1);
     }
@@ -460,7 +454,6 @@ void EventListener::PumpOnce() {
 void EventListener::EventLoop() {
     while (running.load() && !shutdown.load()) {
 
-        // Drain pending input events (non-blocking) before anything else
         if (backend_) {
             backend_->PollEvents(0);
         }
@@ -474,17 +467,10 @@ void EventListener::EventLoop() {
         auto* vm = executionEngine->getVM();
         if (vm && vm->exit_requested_.load()) {
             int code = vm->exit_code_.load();
-            shutdown.store(true);
-            running.store(false);
-            ForceUngrabAllDevices();
-            ReleaseAllVirtualKeys();
 #ifdef HAVE_QT_EXTENSION
             QCoreApplication::exit(code);
 #endif
-            if (shutdownFd >= 0) {
-                uint64_t val = 1;
-                write(shutdownFd, &val, sizeof(val));
-            }
+            havel::exit(ExitReason::VmExit, code);
             break;
         }
 } else if (modules_) {
@@ -1575,8 +1561,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
   if (down && emergencyShutdownKey != 0 && evdevCode == emergencyShutdownKey) {
     error("[EMERGENCY] HOTKEY TRIGGERED! Shutting down...");
-    running.store(false);
-    shutdown.store(true);
+    havel::exit(ExitReason::Forced, 0);
     return true;
   }
 
@@ -2052,6 +2037,16 @@ void EventListener::ForceUngrabAllDevices() {
   if (backend_) backend_->UngrabAllDevices();
 }
 
+void EventListener::RequestGracefulShutdown() {
+  ReleaseAllVirtualKeys();
+  running.store(false);
+  shutdown.store(true);
+  if (shutdownFd >= 0) {
+    uint64_t val = 1;
+    write(shutdownFd, &val, sizeof(val));
+  }
+}
+
 // Helper function to convert gesture pattern string to directions
 std::vector<MouseGestureDirection>
 EventListener::ParseGesturePattern(const std::string &patternStr) const {
@@ -2097,7 +2092,7 @@ void EventListener::SetupSignalHandling() {
   struct sigaction sa;
   sa.sa_flags = SA_RESTART;
   sigemptyset(&sa.sa_mask);
-  sa.sa_handler = [](int) { _exit(0); };
+  sa.sa_handler = [](int) { havel::exit(ExitReason::SignalInt, 0); };
   sigaction(SIGINT, &sa, nullptr);
 }
 
@@ -2128,8 +2123,7 @@ void EventListener::HandleSignal(int sig) {
     case SIGBUS:
     case SIGILL:
     case SIGFPE:
-        EmergencyUngrabAllEvdevSignalSafe();
-        _exit(sig + 128);
+        havel::exit(ExitReason::SignalCrash, sig + 128);
         break;
   default:
     if (debugging::debug_io) debug("Unknown signal received: {}", sig);
@@ -2147,17 +2141,22 @@ void EventListener::RequestShutdownFromSignal(int sig) {
 }
 
 void EventListener::SignalSafeShutdown(int sig, bool exitAfter) {
-    EmergencyUngrabAllEvdevSignalSafe();
-    running.store(false);
-    shutdown.store(true);
-    if (shutdownFd >= 0) {
-        uint64_t val = 1;
-        write(shutdownFd, &val, sizeof(val));
-    }
+    int exitCode =
+        (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
     if (exitAfter) {
-        int exitCode =
-            (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
-        _exit(exitCode);
+        ExitReason reason = sig == SIGINT  ? ExitReason::SignalInt
+                           : sig == SIGTERM ? ExitReason::SignalTerm
+                           : sig == SIGQUIT ? ExitReason::SignalQuit
+                           : ExitReason::SignalCrash;
+        havel::exit(reason, exitCode);
+    } else {
+        EmergencyUngrabAllEvdevSignalSafe();
+        running.store(false);
+        shutdown.store(true);
+        if (shutdownFd >= 0) {
+            uint64_t val = 1;
+            write(shutdownFd, &val, sizeof(val));
+        }
     }
 }
 

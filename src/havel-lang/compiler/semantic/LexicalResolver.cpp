@@ -1239,12 +1239,6 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
             global_variables_.count(binding->name) == 0) {
           shouldDeclareLocal = true;
         }
-        // Inside a function, assignment without :: should create a local,
-        // even if the name exists in global_variables_ (from top-level pre-scan).
-        // Use ::x = val to explicitly assign to a global from inside a function.
-        if (binding && binding->kind == ResolvedBindingKind::Global && insideFunction) {
-          shouldDeclareLocal = true;
-        }
         // If binding resolves to a Function or HostFunction name, declare as local
         // so that shadowing variables (e.g., _root = _root()) work correctly
     if (binding && (binding->kind == ResolvedBindingKind::Function ||

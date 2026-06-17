@@ -1884,6 +1884,8 @@ registerHostFunction(
     bool initial_result = evaluateConditionBytecode(cond_func_id, 0);
 
     auto deps = tracker->getGlobalDependencies();
+    auto fieldDeps = tracker->getFieldDependencies();
+    deps.insert(fieldDeps.begin(), fieldDeps.end());
 
     static std::atomic<uint32_t> next_when_fiber_id{20000};
     uint32_t fiber_id = next_when_fiber_id.fetch_add(1, std::memory_order_relaxed);

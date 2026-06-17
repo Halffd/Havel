@@ -1017,6 +1017,9 @@ if (!modName.empty()) {
         COMPILER_THROW("OBJECT_GET expects string/number/bool key");
     }
 
+    // Track field access for reactive when-block dependency tracking
+    trackFieldAccess(*key);
+
     Value found_val = Value::makeNull();
     GCHeap::ObjectEntry *current_obj = obj;
 
@@ -1188,6 +1191,7 @@ if (!modName.empty()) {
     }
     obj->set(*keyStr, value);
     globals[*keyStr] = value;
+    emitVariableChanged(*keyStr);
     pushStack(object);
     break;
   }
@@ -1197,6 +1201,7 @@ if (!modName.empty()) {
       COMPILER_THROW("OBJECT_SET unknown object id");
     }
     obj->set(*keyStr, value);
+    emitVariableChanged(*keyStr);
 
     // Auto-save: if object has __autosave_root, persist to config store
     auto* autoSaveRoot = obj->get("__autosave_root");

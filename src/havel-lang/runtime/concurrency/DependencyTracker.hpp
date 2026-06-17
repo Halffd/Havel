@@ -33,6 +33,9 @@ public:
     // Track access to a local variable
     void trackLocalAccess(const std::string& var_name);
     
+    // Track access to an object field (e.g., obj.x records field "x")
+    void trackFieldAccess(const std::string& field_name);
+    
     // Get all accessed variables
     std::unordered_set<std::string> getDependencies() const;
     
@@ -41,6 +44,9 @@ public:
     
     // Get only local variable dependencies
     std::unordered_set<std::string> getLocalDependencies() const;
+    
+    // Get only field dependencies
+    std::unordered_set<std::string> getFieldDependencies() const;
     
     // Clear all tracked dependencies
     void reset();
@@ -51,6 +57,7 @@ public:
 private:
     std::unordered_set<std::string> global_vars_;
     std::unordered_set<std::string> local_vars_;
+    std::unordered_set<std::string> field_vars_;
 };
 
 /**
@@ -93,6 +100,12 @@ inline void trackGlobalAccess(const std::string& var_name) {
 inline void trackLocalAccess(const std::string& var_name) {
     if (g_active_tracker) {
         g_active_tracker->trackLocalAccess(var_name);
+    }
+}
+
+inline void trackFieldAccess(const std::string& field_name) {
+    if (g_active_tracker) {
+        g_active_tracker->trackFieldAccess(field_name);
     }
 }
 

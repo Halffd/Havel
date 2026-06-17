@@ -1,0 +1,59 @@
+// Test: when blocks in different scopes
+//
+// Verifies:
+// 1. Top-level when with global — works (STORE_GLOBAL triggers VAR_CHANGED)
+// 2. when inside a function with global var — works (DependencyTracker records globals from any scope)
+// 3. when inside a nested block with global var — works
+// 4. when inside a function with local var — does NOT fire (no VAR_CHANGED for locals)
+
+count = 0
+result = "none"
+
+// Top-level when with global
+when count >= 3 && count < 6 {
+    result = "top-level fired at " + count
+    print(result)
+}
+
+// when inside a function tracking a global
+fn installInnerWhen() {
+    when count >= 6 {
+        print("inner when fired at count=" + count)
+        result = "inner fired at " + count
+    }
+}
+
+installInnerWhen()
+
+// when in a nested block with a global
+{
+    when count >= 9 {
+        print("block when fired at count=" + count)
+        result = "block fired at " + count
+    }
+}
+
+// when inside a function with a local — tracks the local,
+// but local writes don't emit VAR_CHANGED, so this never fires
+fn testLocalWhen() {
+    localVar = 0
+    when localVar > 0 {
+        print("LOCAL WHEN — this should NOT fire (locals don't trigger VAR_CHANGED)")
+        result = "ERROR: local when fired"
+    }
+    localVar = 42
+    print("set localVar=42 but when should NOT fire (VAR_CHANGED only for globals)")
+}
+
+testLocalWhen()
+
+// Drive changes via global
+loop {
+    count = count + 1
+    print("count=" + count)
+    sleep(50)
+    if count >= 12 {
+        print("final result=" + result)
+        exit(0)
+    }
+}

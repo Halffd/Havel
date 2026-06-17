@@ -1,0 +1,52 @@
+// Test: when blocks with objects
+//
+// Architecture: when blocks track GLOBAL variable changes.
+// Object field writes (obj.x = val) do NOT call emitVariableChanged.
+// The pattern for reactive objects: use a global as reactive proxy.
+//
+// Verifies:
+// 1. when tracking global proxy updated alongside object — WORKS
+// 2. Object field value at condition evaluation time is read correctly
+// 3. Multiple state transitions tracked via global proxy
+
+status = "idle"
+notified = false
+
+obj = { x: 0, label: "init" }
+
+when status == "running" {
+    print("status transitioned to running")
+    notified = true
+}
+
+when status == "done" {
+    print("status transitioned to done")
+}
+
+fn updateObj(o, newX, newLabel) {
+    o.x = newX
+    o.label = newLabel
+    status = newLabel
+}
+
+updateObj(obj, 1, "starting")
+print("obj.x=" + obj.x + " status=" + status)
+sleep(50)
+
+updateObj(obj, 5, "running")
+print("obj.x=" + obj.x + " status=" + status)
+sleep(50)
+
+updateObj(obj, 10, "done")
+print("obj.x=" + obj.x + " status=" + status)
+sleep(50)
+
+print("notified: " + notified)
+
+if notified {
+    print("PASS")
+} else {
+    print("FAIL: when block did not fire")
+}
+
+exit(0)

@@ -17,9 +17,14 @@ void DependencyTracker::trackLocalAccess(const std::string& var_name) {
     local_vars_.insert(var_name);
 }
 
+void DependencyTracker::trackFieldAccess(const std::string& field_name) {
+    field_vars_.insert(field_name);
+}
+
 std::unordered_set<std::string> DependencyTracker::getDependencies() const {
     std::unordered_set<std::string> result = global_vars_;
     result.insert(local_vars_.begin(), local_vars_.end());
+    result.insert(field_vars_.begin(), field_vars_.end());
     return result;
 }
 
@@ -31,13 +36,18 @@ std::unordered_set<std::string> DependencyTracker::getLocalDependencies() const 
     return local_vars_;
 }
 
+std::unordered_set<std::string> DependencyTracker::getFieldDependencies() const {
+    return field_vars_;
+}
+
 void DependencyTracker::reset() {
     global_vars_.clear();
     local_vars_.clear();
+    field_vars_.clear();
 }
 
 bool DependencyTracker::isActive() const {
-    return !global_vars_.empty() || !local_vars_.empty();
+    return !global_vars_.empty() || !local_vars_.empty() || !field_vars_.empty();
 }
 
 // ============================================================================

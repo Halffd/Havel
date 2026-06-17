@@ -36,6 +36,7 @@ namespace havel::repl {
 
 // Static member initialization
 std::atomic<bool> REPL::interrupted_{false};
+std::function<void()> REPL::pumpCallbackForHook_;
 
 // Signal handler for REPL (not static - declared as friend in header)
 void replSignalHandler(int sig) {
@@ -193,25 +194,13 @@ std::string REPL::readLine(const std::string& prompt) {
         return inputHandler_(prompt);
     }
 
-    if (pumpCallback_) {
-        while (true) {
-            struct pollfd pfd;
-            pfd.fd = STDIN_FILENO;
-            pfd.events = POLLIN;
-            pfd.revents = 0;
-            int ret = poll(&pfd, 1, 50);
-            if (ret > 0 && (pfd.revents & POLLIN)) {
-                break;
-            }
-            if (ret < 0 && errno != EINTR) {
-                break;
-            }
-            pumpCallback_();
-        }
-    }
-
 #ifdef HAVE_READLINE
+    // Install event hook so readline pumps events between keystrokes
+    pumpCallbackForHook_ = pumpCallback_;
+    rl_event_hook = rlEventHook;
     char* line = readline(prompt.c_str());
+    rl_event_hook = nullptr;
+    pumpCallbackForHook_ = nullptr;
     if (line) {
         std::string result(line);
         free(line);
@@ -223,11 +212,39 @@ std::string REPL::readLine(const std::string& prompt) {
     std::cout << prompt;
     std::cout.flush();
     std::string line;
-    if (!std::getline(std::cin, line)) {
-        return "";
+    while (true) {
+        struct pollfd pfd;
+        pfd.fd = STDIN_FILENO;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        int ret = poll(&pfd, 1, 50);
+        if (ret > 0) {
+            if (pfd.revents & POLLIN) {
+                char c = 0;
+                if (read(STDIN_FILENO, &c, 1) > 0) {
+                    if (c == '\n' || c == '\r') {
+                        break;
+                    }
+                    line += c;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        } else if (ret < 0 && errno != EINTR) {
+            break;
+        } else if (pumpCallback_) {
+            pumpCallback_();
+        }
     }
     return line;
 #endif
+}
+
+int REPL::rlEventHook() {
+    if (pumpCallbackForHook_) pumpCallbackForHook_();
+    return 0;
 }
 
 bool REPL::isInputComplete(const std::string& input) const {

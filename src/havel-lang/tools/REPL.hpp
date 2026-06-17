@@ -216,6 +216,10 @@ private:
     bool replDebugMode_ = false;
     std::string currentCode_;
 
+    // Readline event hook — pumps events between keystrokes
+    static std::function<void()> pumpCallbackForHook_;
+    static int rlEventHook();
+
     // Write to output log if enabled
     void logOutput(const std::string& text);
 

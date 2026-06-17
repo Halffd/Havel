@@ -52,6 +52,7 @@ public:
   bool RemoveHotkey(int id);  // Remove by id
   void EnableHotkey(const std::string &key);
   void DisableHotkey(const std::string &key);
+  bool SetHotkeyGrab(const std::string &alias, bool grab);
   void handleHotkeyTrigger(int hotkeyId);
   bool GrabHotkey(int id);      // Grab hotkey by id
   bool UngrabHotkey(int id);    // Ungrab hotkey by id

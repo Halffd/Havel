@@ -157,6 +157,24 @@ modeManager(std::make_shared<ModeManager>())
     return false;
   }
 
+  bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
+  {
+    std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    auto &hotkeys = RegisteredHotkeys();
+    for (auto &[id, hk] : hotkeys)
+    {
+      if (hk.alias == alias)
+      {
+        hk.grab = grab;
+        if (!grab && !hk.evdev) {
+          io->UngrabHotkey(id);
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool HotkeyManager::RemoveHotkey(int id)
   {
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());

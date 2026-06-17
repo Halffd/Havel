@@ -3789,6 +3789,11 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                         sched->deferToVM(std::move(wakeHotkey));
                     }
                 });
+            // Conditional hotkeys: don't grab the key at OS level.
+            // The condition gates only the action in ExecutionEngine,
+            // not the key consumption. Without this, the key is
+            // consumed on every window regardless of the condition.
+            ctx->hotkeyManager->SetHotkeyGrab(hotkeyStr, false);
         } else {
             ctx->hotkeyManager->AddHotkey(
                 hotkeyStr, [vm, actionCb, hotkeyContext]() {

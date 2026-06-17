@@ -12,7 +12,6 @@
 #include <iostream>
 #include <functional>
 #include "../../../host/module/ModularHostBridges.hpp"
-#include "../../../modules/window/WindowMonitorModule.hpp"
 #include "../../../host/ui/UIManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
@@ -37,14 +36,6 @@ HavelAPI *getHavelAPI(void) {
     return &api;
 }
 
-}
-
-namespace havel::modules {
-void setupDynamicWindowGlobals(const compiler::VMApi &api, WindowMonitor *monitor)
-#if defined(__GNUC__) || defined(__clang__)
-    __attribute__((weak))
-#endif
-;
 }
 
 namespace havel::compiler {
@@ -284,12 +275,6 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
     automationBridge_->install(options_);
     browserBridge_->install(options_);
     toolsBridge_->install(options_);
-  }
-
-  if (ctx_->windowMonitor && ctx_->vm && ::havel::modules::setupDynamicWindowGlobals) {
-    VM *vm = static_cast<VM *>(ctx_->vm);
-    VMApi api(*vm);
-    ::havel::modules::setupDynamicWindowGlobals(api, ctx_->windowMonitor);
   }
 
   addVmSetup([](VM &vm) {

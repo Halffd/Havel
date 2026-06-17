@@ -485,7 +485,6 @@ endif()
 
 # Explicitly add new modules (GLOB might not catch new files)
 
-list(APPEND HOST_MODULES_SOURCES "src/modules/window/WindowMonitorModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/mouse/MouseModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/automation/AutomationModule.cpp")
 if(ENABLE_QT_UI_BACKEND)
@@ -1629,8 +1628,6 @@ add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/Media
 add_havel_module_plugin(mouse        ${CMAKE_SOURCE_DIR}/src/modules/mouse/MouseModule.cpp)
 add_havel_module_plugin(textchunker  ${CMAKE_SOURCE_DIR}/src/modules/textchunker/TextChunkerModule.cpp)
 add_havel_module_plugin(ui           ${CMAKE_SOURCE_DIR}/src/modules/ui/UIModule.cpp)
-add_havel_module_plugin(window ${CMAKE_SOURCE_DIR}/src/modules/window/WindowMonitorModule.cpp)
-
 add_havel_module_plugin(wayland ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/WaylandModule.cpp)
 target_include_directories(havel_mod_wayland PRIVATE
     ${CMAKE_BINARY_DIR}/generated/wayland

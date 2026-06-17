@@ -25,7 +25,6 @@
 #include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
 #include "core/util/Env.hpp"
-#include "core/window/WindowMonitor.hpp"
 #include "core/net/NetworkManager.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "host/image/ImageService.hpp"

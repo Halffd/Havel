@@ -2338,11 +2338,6 @@ void VM::registerDefaultHostGlobals() {
     // called during VM initialization - do NOT register them here as this function
     // is called on every execute() invocation
 
-  // Register default window globals (these need to be reset per execution)
-  setGlobal("title", Value::makeNull());
-  setGlobal("exe", Value::makeNull());
-  setGlobal("pid", Value::makeInt(0));
-
   if (system_object_initializer_) {
     system_object_initializer_(this);
     }

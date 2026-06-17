@@ -50,8 +50,6 @@ class MPVController;
 namespace net {
 class NetworkManager;
 }
-class WindowMonitor;
-
 /**
  * Capability - Base interface for pluggable host functionality
  *
@@ -105,8 +103,6 @@ struct HostContext {
   class FileManager *fileManager = nullptr;
   class ProcessManager *processManager = nullptr;
   class net::NetworkManager *networkManager = nullptr;
-  class WindowMonitor *windowMonitor =
-      nullptr; // Window monitoring for dynamic variables
   class MPVController *mpvController = nullptr; // MPV media player controller
 
   // Event queue for thread-safe callback dispatch (from OS threads, timers, mode changes, etc)

@@ -181,14 +181,6 @@ void Modules::installHostFunctions() {
         toolsBridge_->install(options_);
     }
 
-    if (ctx_->windowMonitor && ctx_->vm) {
-        auto plugin = extensionLoader_->loadModulePlugin("window");
-        if (plugin) {
-            compiler::VMApi api(*vm);
-            plugin->register_fn(static_cast<void *>(&api));
-        }
-    }
-
     vm_setup_callbacks_.push_back([](compiler::VM &vm) {
         auto hotkeyObj = vm.createHostObject();
         for (const auto &name : {"register", "register_conditional", "trigger", "list"}) {

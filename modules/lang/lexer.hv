@@ -887,6 +887,14 @@ fn scanHotkey() {
                 continue
             }
             if c == 36 {
+                // Look ahead: if $ is followed by hotkey name then =>, treat as hotkey
+                hkLook = idx + 1
+                while hkLook < n && isHotkeyCharCp(cpArr[hkLook][0]) { hkLook = hkLook + 1 }
+                while hkLook < n && (cpArr[hkLook][0] == 32 || cpArr[hkLook][0] == 9) { hkLook = hkLook + 1 }
+                if hkLook + 1 < n && cpArr[hkLook][0] == 61 && cpArr[hkLook + 1][0] == 62 {
+                    scanHotkey()
+                    continue
+                }
                 advance()
                 if current() == 33 {
                     advance()

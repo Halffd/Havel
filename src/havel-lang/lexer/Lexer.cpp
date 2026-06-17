@@ -1834,6 +1834,21 @@ continue;
     // Handle shell command prefix: $ command (must be before hotkey handling)
     // But NOT if followed by => (which would make it a hotkey like $Esc =>)
     if (c == '$') {
+      // Look ahead: if $ is followed by a hotkey name and then =>,
+      // treat it as a hotkey (e.g., $Esc =>) instead of a shell command
+      {
+        size_t look = position;
+        while (look < source.length() && isHotkeyChar(source[look])) look++;
+        while (look < source.length() && (source[look] == ' ' || source[look] == '\t')) look++;
+        if (look + 1 < source.length() && source[look] == '=' && source[look + 1] == '>') {
+          tokens.push_back(scanHotkey());
+          if (debug_lexer) {
+            havel::debug("LEX: {}", tokens.back().toString());
+          }
+          continue;
+        }
+      }
+
       // Check for capture mode: $!
       bool captureOutput = false;
       if (!isAtEnd() && peek() == '!') {

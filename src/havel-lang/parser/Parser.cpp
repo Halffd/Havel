@@ -1461,6 +1461,26 @@ case TokenType::Timeout:
     case TokenType::Hotkey:
       return parseHotkeyExpression(token);
 
+    case TokenType::ShellCommand:
+    case TokenType::ShellCommandCapture: {
+        bool captureOutput = (token.type == TokenType::ShellCommandCapture);
+        while (at().type == TokenType::NewLine) {
+            advance();
+        }
+        std::unique_ptr<ast::Expression> cmdExpr;
+        if (at().type == TokenType::OpenParen ||
+            at().type == TokenType::OpenBracket) {
+            cmdExpr = parseExpression();
+        } else if (at().type == TokenType::Identifier ||
+                   at().type == TokenType::String ||
+                   at().type == TokenType::MultilineString) {
+            cmdExpr = parsePrimaryExpression();
+        } else {
+            failAt(token, "Shell command requires expression: $ (cmd), $! [array], or $! var");
+        }
+        return makeNodeAt<ast::ShellCommandExpression>(token, std::move(cmdExpr), captureOutput);
+    }
+
         case TokenType::Tilde: {
             if (at().type == TokenType::Identifier ||
                 at().type == TokenType::Hotkey) {

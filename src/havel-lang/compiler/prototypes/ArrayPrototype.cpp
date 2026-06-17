@@ -32,6 +32,7 @@ void registerArrayPrototype(VM& vm) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
       if (arr && !arr->frozen) {
         arr->push_back(args[1]);
+        vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length");
         return Value::makeInt(static_cast<int64_t>(arr->size()));
       }
     }
@@ -43,7 +44,9 @@ void registerArrayPrototype(VM& vm) {
         if (args[0].isArrayId()) {
             auto* arr = vm.getHeap().array(args[0].asArrayId());
             if (arr && !arr->frozen && !arr->empty()) {
-                auto val = arr->back(); arr->pop_back(); return val;
+                auto val = arr->back(); arr->pop_back();
+                vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length");
+                return val;
             }
         }
         return Value::makeNull();
@@ -53,7 +56,7 @@ void registerArrayPrototype(VM& vm) {
     if (args.size() < 2) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr && !arr->frozen) { arr->insert(arr->begin(), args[1]); return Value::makeInt(static_cast<int64_t>(arr->size())); }
+      if (arr && !arr->frozen) { arr->insert(arr->begin(), args[1]); vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length"); return Value::makeInt(static_cast<int64_t>(arr->size())); }
     }
     return Value::makeNull();
   });
@@ -62,7 +65,7 @@ void registerArrayPrototype(VM& vm) {
     if (args.empty()) return Value::makeNull();
     if (args[0].isArrayId()) {
       auto* arr = vm.getHeap().array(args[0].asArrayId());
-      if (arr && !arr->frozen && !arr->empty()) { auto val = arr->front(); arr->erase(arr->begin()); return val; }
+      if (arr && !arr->frozen && !arr->empty()) { auto val = arr->front(); arr->erase(arr->begin()); vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length"); return val; }
     }
     return Value::makeNull();
   });
@@ -76,6 +79,7 @@ void registerArrayPrototype(VM& vm) {
         if (idx < 0) idx = std::max(static_cast<int64_t>(0), static_cast<int64_t>(arr->size()) + idx + 1);
         if (idx >= 0 && static_cast<size_t>(idx) <= arr->size()) {
           arr->insert(arr->begin() + idx, args[2]);
+          vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length");
           return Value::makeInt(static_cast<int64_t>(arr->size()));
         }
       }
@@ -395,6 +399,7 @@ if (s) delim = *s;
       auto* arr = vm.getHeap().array(args[0].asArrayId());
       if (arr && !arr->frozen) {
         std::reverse(arr->begin(), arr->end());
+        vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length");
         return args[0];
       }
     }
@@ -433,6 +438,7 @@ if (s) delim = *s;
             return false;
           });
         }
+        vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length");
         return args[0];
       }
     }
@@ -495,6 +501,7 @@ if (s) delim = *s;
       auto* other = vm.getHeap().array(args[1].asArrayId());
       if (arr && !arr->frozen && other) {
         arr->insert(arr->end(), other->begin(), other->end());
+        vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length");
         return args[0];
       }
     }
@@ -510,6 +517,7 @@ if (s) delim = *s;
         for (auto it = arr->begin(); it != arr->end(); ++it) {
           if (vm.valuesEqualDeepPublic(*it, args[1])) {
             arr->erase(it);
+            vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length");
             return args[0];
           }
         }
@@ -525,6 +533,7 @@ if (s) delim = *s;
       auto* arr = vm.getHeap().array(args[0].asArrayId());
       if (arr && !arr->frozen) {
         arr->clear();
+        vm.emitVariableChanged("@A" + std::to_string(args[0].asArrayId()) + ":length");
       }
     }
     return args[0];

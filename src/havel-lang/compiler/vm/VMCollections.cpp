@@ -91,6 +91,7 @@ bool VM::execCollectionOp(const Instruction &instruction) {
     }
     array->push_back(value);
     heap_.bumpArrayVersion(id);
+    emitVariableChanged("@A" + std::to_string(id) + ":length");
     pushStack(container);
     break;
   }
@@ -373,6 +374,7 @@ case OpCode::ARRAY_GET: {
       frame2.function->type_feedback[frame2.ip].result_type_mask |= getFeedbackMask(result);
     }
   }
+  trackFieldAccess("@A" + std::to_string(container.asArrayId()) + ":[" + std::to_string(idx) + "]");
   pushStack(result);
   break;
 }
@@ -487,11 +489,16 @@ if (container.isSetId()) {
 	if (idx_size >= 100'000'000) {
 		COMPILER_THROW("ARRAY_SET index too large: " + std::to_string(idx));
 	}
-	if (idx_size >= array->size()) {
+	auto old_size = array->size();
+	if (idx_size >= old_size) {
 		array->resize(idx_size + 1, Value::makeNull());
 	}
   (*array)[idx_size] = value;
   heap_.bumpArrayVersion(container.asArrayId());
+  emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":[" + std::to_string(idx) + "]");
+  if (old_size != array->size()) {
+    emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":length");
+  }
       break;
     }
 
@@ -776,6 +783,7 @@ if (container.isSetId()) {
         if (key) {
             if (*key == "len" && array) {
                 pushStack(Value::makeInt(static_cast<int64_t>(array->size())));
+                trackFieldAccess("@A" + std::to_string(object.asArrayId()) + ":length");
                 break;
             }
             auto method = getPrototypeMethod(object, *key);
@@ -1017,8 +1025,7 @@ if (!modName.empty()) {
         COMPILER_THROW("OBJECT_GET expects string/number/bool key");
     }
 
-    // Track field access for reactive when-block dependency tracking
-    trackFieldAccess(*key);
+    trackFieldAccess("@O" + std::to_string(object.asObjectId()) + ":" + *key);
 
     Value found_val = Value::makeNull();
     GCHeap::ObjectEntry *current_obj = obj;
@@ -1201,7 +1208,7 @@ if (!modName.empty()) {
       COMPILER_THROW("OBJECT_SET unknown object id");
     }
     obj->set(*keyStr, value);
-    emitVariableChanged(*keyStr);
+    emitVariableChanged("@O" + std::to_string(object.asObjectId()) + ":" + *keyStr);
 
     // Auto-save: if object has __autosave_root, persist to config store
     auto* autoSaveRoot = obj->get("__autosave_root");
@@ -1417,6 +1424,7 @@ if (!modName.empty()) {
       } else {
         array->erase(array->begin() + static_cast<size_t>(idx));
         heap_.bumpArrayVersion(container.asArrayId());
+        emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":length");
         pushStack(Value::makeBool(true));
       }
     } else if (container.isSetId()) {
@@ -1478,6 +1486,7 @@ if (!modName.empty()) {
       pushStack(arr->back());
       arr->pop_back();
       heap_.bumpArrayVersion(array.asArrayId());
+      emitVariableChanged("@A" + std::to_string(array.asArrayId()) + ":length");
     }
     break;
   }

@@ -1,0 +1,43 @@
+print("=== test_when_array ===")
+
+a = [1, 2, 3]
+state = ""
+push_fired = false
+
+when a[0] > 5 {
+    print("a[0] threshold reached")
+    state = "a0_big"
+}
+
+when a.len > 3 {
+    print("array length increased")
+    state = "a_grew"
+    push_fired = true
+}
+
+when a.len <= 3 {
+    print("array length shrank")
+    state = "a_shrank"
+}
+
+a[0] = 10
+print("set a[0]=10")
+sleep(50)
+print("state after a[0]=10: " + state)
+if state != "a0_big" {
+    print("FAIL: a[0] ARRAY_SET did not trigger watcher")
+    exit(1)
+}
+
+state = ""
+a.push(4)
+print("pushed 4 to array")
+sleep(50)
+print("state after push: " + state)
+if state != "a_grew" {
+    print("FAIL: ARRAY_PUSH did not trigger length watcher")
+    exit(1)
+}
+
+print("PASS: array reactivity works")
+exit(0)

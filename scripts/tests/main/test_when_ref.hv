@@ -1,0 +1,21 @@
+print("=== test_when_ref ===")
+
+r = ref(0)
+fired = false
+
+when r._val > 5 {
+    print("ref threshold reached")
+    fired = true
+}
+
+r._val = 10
+print("set ref val to 10")
+sleep(50)
+print("fired: " + fired)
+if !fired {
+    print("FAIL: ref change did not trigger watcher")
+    exit(1)
+}
+
+print("PASS: ref reactivity works")
+exit(0)

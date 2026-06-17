@@ -1911,6 +1911,15 @@ registerHostFunction(
 });
 
   registerHostFunction(
+      "ref", [this](const std::vector<Value> &args) {
+    Value initial = args.empty() ? Value::makeNull() : args[0];
+    auto objRef = heap_.allocateObject();
+    auto* obj = heap_.object(objRef.id);
+    (*obj)["_val"] = initial;
+    return Value::makeObjectId(objRef.id);
+  });
+
+  registerHostFunction(
       "signal.bind", [this](const std::vector<Value> &args) {
           if (args.size() < 2)
               COMPILER_THROW("signal.bind requires name and expression function");

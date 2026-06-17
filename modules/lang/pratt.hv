@@ -1187,32 +1187,8 @@ fn parseCallArgs() {
         while i < value.len {
             ch = value.sub(i, 1)
 
-            // ${...} interpolation
-            if ch == "$" and i + 1 < value.len and value.sub(i + 1, 1) == "{" {
-                if buf.len > 0 {
-                    parts.push(StringLiteral(buf, l, c))
-                    buf = ""
-                }
-                i = i + 2
-                depth = 1
-                exprStr = ""
-                while i < value.len and depth > 0 {
-                    ch2 = value.sub(i, 1)
-                    if ch2 == "{": depth = depth + 1
-                    else if ch2 == "}": depth = depth - 1
-                    if depth > 0: exprStr = exprStr + ch2
-                    i = i + 1
-                }
-                // Parse the sub-expression by tokenizing and parsing
-                subTokens = tokenize(exprStr)
-                subParser = Parser(subTokens)
-                subExpr = subParser.parseExpr(0)
-                if subExpr != null: parts.push(subExpr)
-                else: parts.push(Identifier(exprStr, l, c))
-
-            }
-            // {...} f-string interpolation
-            else if ch == "{" and (i == 0 or value.sub(i - 1, 1) != "$") {
+            // {...} interpolation (works in all strings, not just f-strings)
+            if ch == "{" {
                 if buf.len > 0 {
                     parts.push(StringLiteral(buf, l, c))
                     buf = ""

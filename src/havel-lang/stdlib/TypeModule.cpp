@@ -84,9 +84,9 @@ void registerTypeModule(const VMApi &api) {
     }
 
     if (exports.isObjectId()) {
-        auto *obj = vm.getHeap().object(exports.asObjectId());
-        if (obj) {
-            for (const auto& [name, value] : *obj) {
+        auto *sidecarObj = vm.getHeap().object(exports.asObjectId());
+        if (sidecarObj) {
+            for (const auto& [name, value] : *sidecarObj) {
                 if (name.empty() || name[0] == '_') continue;
                 api.setField(typeObj, name, value);
             }
@@ -121,31 +121,6 @@ void registerTypeModule(const VMApi &api) {
         if (args.empty()) throw std::runtime_error("isEnum() requires an argument");
         return Value(args[0].isEnumId());
     });
-    api.registerFunction("newEnum", [api](const std::vector<Value> &args) {
-        if (args.size() < 2) throw std::runtime_error("newEnum() requires at least type name and variant name");
-        std::string typeName = api.toString(args[0]);
-        std::string variantName = api.toString(args[1]);
-        uint32_t typeId = api.registerEnumType(typeName, {variantName});
-        std::vector<Value> payload;
-        for (size_t i = 2; i < args.size(); ++i) payload.push_back(args[i]);
-        return api.makeEnum(typeId, 0, payload);
-    });
-    api.registerFunction("getVariant", [api](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isEnumId()) throw std::runtime_error("getVariant() requires an enum argument");
-        Value val = args[0];
-        return api.makeString(api.getEnumVariantName(val.asEnumTypeId(), api.getEnumTag(val)));
-    });
-    api.registerFunction("getVariantPayload", [api](const std::vector<Value> &args) {
-        if (args.empty() || !args[0].isEnumId()) throw std::runtime_error("getVariantPayload() requires an enum argument");
-        Value val = args[0];
-        uint32_t count = api.getEnumPayloadCount(val);
-        Value arr = api.makeArray();
-        for (uint32_t i = 0; i < count; ++i) {
-            api.push(arr, api.getEnumPayload(val, i));
-        }
-        return arr;
-    });
-
     api.registerFunction("toString", [](const std::vector<Value> &args) {
         if (args.empty()) throw std::runtime_error("toString() requires an argument");
         const auto &arg = args[0];
@@ -189,6 +164,27 @@ void registerTypeModule(const VMApi &api) {
         }
         return arr;
     });
+
+    api.setField(typeObj, "isNumber", api.makeFunctionRef("isNumber"));
+    api.setField(typeObj, "isString", api.makeFunctionRef("isString"));
+    api.setField(typeObj, "isArray", api.makeFunctionRef("isArray"));
+    api.setField(typeObj, "isObject", api.makeFunctionRef("isObject"));
+    api.setField(typeObj, "isNull", api.makeFunctionRef("isNull"));
+    api.setField(typeObj, "isBoolean", api.makeFunctionRef("isBoolean"));
+    api.setField(typeObj, "isEnum", api.makeFunctionRef("isEnum"));
+    api.setField(typeObj, "toString", api.makeFunctionRef("toString"));
+    api.setField(typeObj, "toNumber", api.makeFunctionRef("toNumber"));
+    api.setField(typeObj, "newEnum", api.makeFunctionRef("newEnum"));
+    api.setField(typeObj, "getVariant", api.makeFunctionRef("getVariant"));
+    api.setField(typeObj, "getVariantPayload", api.makeFunctionRef("getVariantPayload"));
+
+    api.setGlobal("Type", typeObj);
+    api.setGlobal("getVariant", api.makeFunctionRef("getVariant"));
+    api.setGlobal("newEnum", api.makeFunctionRef("newEnum"));
+
+    if (vm.hostFunctionGlobals().find("type") != vm.hostFunctionGlobals().end()) {
+        vm.getGlobals()["type"] = vm.hostFunctionGlobals()["type"];
+    }
 }
 
 } // namespace havel::stdlib

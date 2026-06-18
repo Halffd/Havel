@@ -3366,6 +3366,21 @@ Value VM::loadModule(const std::string& path) {
       current_script_dir_ = prev_script_dir;
       COMPILER_THROW("Module " + path + " compiler returned null chunk");
     }
+
+    // Auto-cache compiled chunk
+    try {
+        ValueSerializer serializer;
+        std::vector<uint8_t> data = serializer.serializeChunk(*chunk);
+        std::filesystem::path hvPath(resolved->canonicalPath);
+        std::filesystem::path hvcPath = hvPath.replace_extension(".hvc");
+        std::ofstream file(hvcPath, std::ios::binary);
+        if (file.is_open()) {
+            file.write(reinterpret_cast<const char*>(data.data()), data.size());
+            file.close();
+        }
+    } catch (...) {
+        // Cache failure is non-fatal
+    }
   }
 
     // Execute the module in a sandboxed globals context

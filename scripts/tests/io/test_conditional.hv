@@ -1,0 +1,74 @@
+Mode = mode
+mode = lmode = "default"
+title_ = ltitle = ""
+lclass = class_ = ""
+wid = lwid = 0
+wpid = lwpid = 0
+win = lastWin = null
+cmd = lcmd = ""
+
+Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
+when title_ ~ "onsole" {
+  print("Konsoloe is active")
+}
+when class_ ~ "mpv" {
+  print("MPV class is active")
+}
+when title_ ~ "mpv" {
+  print("MPV title is active")
+}
+when title_ ~ "hatterino" {
+  print("Chatterino is active")
+}
+p if title_ ~ "mpv" => play()
+^v if title_ ~ "hatterino" => print("Ctrl+V pressed in chatterino")
++s if mode == "gaming" => {  // Shift+S
+  winid = window.active().id
+  interval 100 {
+    if winid != window.active().id || io.getKey("f") { return }
+    send("{enter}")
+    sleep(100)
+    send("f")
+    move(1600, 900)
+    click()
+  }
+}
+if cfg?.General == null {
+  cfg.General = {}
+}
+cfg.General.Apps = "steam,lutris,mpv,konsole,hatterino"
+fn modeEval (win) {
+  titlelower = win.title.lower().trim()
+  classlower = win.class.lower().trim()
+  cmdlower = win.cmdline.lower().trim()
+  apps = cfg.General.Apps.lower().trim().split(",")
+  // print("apps: " + apps.join(","))
+  if (classlower in apps || titlelower in apps) && !(classlower in cfg.General.GamingExcludeClasses.lower().split(",") || titlelower in cfg.General.GamingExcludeTitles.lower().split(",")) && mode != "gaming" {
+    print(f"Gaming mode activated for window: $title_ (class: $class_)")
+    mode = "gaming"
+  } else if mode != "default" {
+    mode = "default"
+    print("Leaving mode to default")
+  }
+}
+hotkeyTest = hotkey.register_conditional("a", () => { "Gaming mode active" }, () => { res = mode == "gaming" || title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv: " + res); return res })
+dbgWin = true
+hks = null
+go fn update() {
+  loop {
+    win = window.active()
+    [title_, class_, cmd, wid, wpid] = [win.title, win.class, win.cmdline, win.id, win.pid]
+    if wid != lwid {
+      [ltitle, lclass, lcmd, lwid, lwpid] = [title_, class_, cmd, wid, wpid]
+      modeEval(win)
+      if dbgWin {
+         print(f"Active window changed: $title_ class: $class_ mode: $mode cmd: $cmd pid: $wpid id: $wid last: {lastWin ? lastWin.title_ : "none"}")
+      }
+      print("hotkeyTest: " + hotkeyTest)
+      print("hotkeyTest Is grabbed: " + hotkeyTest.grab + " Is enabled: " + hotkeyTest.enabled)
+      print("Hotkeys:")
+      hotkey.list()
+    }
+    sleep(1000)
+  }
+}

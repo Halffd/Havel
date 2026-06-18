@@ -537,10 +537,13 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     // No script, no REPL, no GUI flag - default to REPL mode
     cfg.mode = Mode::REPL;
   }
-	// Check for debug flags
-	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false)){
+	// Check for debug flags (but don't force minimal mode when --repl is explicitly used)
+	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false) && cfg.mode != Mode::SCRIPT_AND_REPL){
 		cfg.minimalMode = true;
 		debug("Debug.ForceMinimal is set - forcing minimal mode");
+	}
+	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false) && cfg.mode == Mode::SCRIPT_AND_REPL){
+		debug("Debug.ForceMinimal is set but --repl takes precedence");
 	}
 
 	// --list-services: print catalog and exit
@@ -702,7 +705,7 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
             havel::compiler::PipelineOptions options = modules->options();
           options.compile_unit_name = combinedNames;
           options.vm_override = bytecodeVM;
-          options.debugBytecode = cfg.debugBytecode;
+        options.debugBytecode = cfg.debugBytecode;
 
     try {
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
@@ -1399,7 +1402,9 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       replBackend->setApplicationMetadata(replMeta);
 
       std::vector<std::string> args;
-      havel::Havel havel_inst(false, combinedNames, true, true, args);
+      // Use EventListenerThreaded = true so the event loop runs and
+      // executeFrame() can process events. REPL interacts via the same thread.
+      havel::Havel havel_inst(false, combinedNames, false, true, args);
       
       if (!havel_inst.isInitialized()) return 1;
       
@@ -1407,6 +1412,11 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
     auto *modules = havel_inst.getModules();
 
     if (!bytecodeVM || !modules) return 1;
+
+    // Setup mirrors runScript: register service registry and set timer check
+    // before Pipeline execution to force slow dispatch path (workaround for
+    // fast-path stack corruption with CALL after LOAD_CONST sequence).
+    bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
 
     try {
         havel::compiler::PipelineOptions options = modules->options();

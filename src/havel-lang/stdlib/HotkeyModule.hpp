@@ -14,7 +14,9 @@ public:
     createHotkeyContext(havel::compiler::VM *vm, const std::string &hotkeyId,
                         const std::string &alias, const std::string &key,
                         const std::string &condition, const std::string &info,
-                        havel::compiler::CallbackId callback);
+                        havel::compiler::CallbackId callback,
+                        bool grab = false,
+                        havel::compiler::CallbackId condCb = 0);
 
     static havel::compiler::Value
     rebuildHotkeyContext(havel::compiler::VM &vm, const std::string &hotkeyId);

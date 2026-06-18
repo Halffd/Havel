@@ -3745,9 +3745,12 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
     CallbackId conditionCb = vm->registerCallback(args[2]);
 
     std::string hotkeyId = ::havel::stdlib::HotkeyModule::resolveUniqueId(hotkeyStr);
+    // Build a readable condition description from the callback ID
+    std::string condDesc = "conditional_fn:" + std::to_string(conditionCb);
+    // Conditional hotkeys don't grab at OS level by default
     auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
-        vm, hotkeyId, hotkeyStr, hotkeyStr, "",
-        "Conditional hotkey", actionCb);
+        vm, hotkeyId, hotkeyStr, hotkeyStr, condDesc,
+        "Conditional hotkey", actionCb, false, conditionCb);
 
     if (hotkeyContext.isObjectId()) {
         vm->pinExternalRoot(hotkeyContext);

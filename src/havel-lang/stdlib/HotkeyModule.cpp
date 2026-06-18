@@ -36,13 +36,16 @@ struct HotkeyContextData {
     uint32_t goroutine_id = 0;
     CallbackId callback;
     bool enabled;
+    bool grab = false;
+    CallbackId condition_callback = 0;
     int64_t triggerCount = 0;
     int64_t lastTriggeredAt = 0;
 
     HotkeyContextData(const std::string &id_, const std::string &alias_,
                       const std::string &key_, const std::string &condition_,
                       const std::string &info_, CallbackId callback_,
-                      bool enabled_ = true)
+                      bool enabled_ = true, bool grab_ = false,
+                      CallbackId condCb_ = 0)
         : id(id_), alias(alias_), key(key_), condition(condition_), info(info_),
           combo(key_), modifiers(extractModifiers(key_)),
           state(enabled_ ? "enabled" : "disabled"),
@@ -50,7 +53,8 @@ struct HotkeyContextData {
           addedAt(std::chrono::duration_cast<std::chrono::milliseconds>(
                       std::chrono::steady_clock::now().time_since_epoch())
                       .count()),
-          callback(callback_), enabled(enabled_) {}
+          callback(callback_), enabled(enabled_), grab(grab_),
+          condition_callback(condCb_) {}
 
     static std::string extractModifiers(const std::string &key) {
         static const char* mods[] = {"Ctrl", "Alt", "Shift", "Super", "CtrlL", "CtrlR", "AltL", "AltR", "ShiftL", "ShiftR"};
@@ -125,14 +129,16 @@ static Value createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
                       const std::string &condition,
                       const std::string &info,
                       CallbackId callback,
-                      bool enabled = true) {
+                      bool enabled = true,
+                      bool grab = false,
+                      CallbackId condCb = 0) {
     auto contextObj = vm->createHostObject();
     auto guard = vm->makeRoot(Value::makeObjectId(contextObj.id));
 
     {
         std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
         g_hotkeyContexts[hotkeyId] = std::make_unique<HotkeyContextData>(
-            hotkeyId, alias, key, condition, info, callback, enabled);
+            hotkeyId, alias, key, condition, info, callback, enabled, grab, condCb);
     }
 
     auto *ctx = getHotkeyContextData(hotkeyId);
@@ -151,6 +157,7 @@ static Value createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
     vm->setHostObjectField(contextObj, "condition", Value::makeStringId(condStr.id));
     vm->setHostObjectField(contextObj, "info", Value::makeStringId(infoStr.id));
     vm->setHostObjectField(contextObj, "enabled", Value::makeBool(enabled));
+    vm->setHostObjectField(contextObj, "grab", Value::makeBool(grab));
     vm->setHostObjectField(contextObj, "modifiers", Value::makeStringId(modStr.id));
     vm->setHostObjectField(contextObj, "date", Value::makeStringId(dateStr.id));
 
@@ -235,6 +242,7 @@ static Value rebuildHotkeyObject(VM &vm, const HotkeyContextData *ctx) {
     vm.setHostObjectField(obj, "condition", Value::makeStringId(condStr.id));
     vm.setHostObjectField(obj, "info", Value::makeStringId(infoStr.id));
     vm.setHostObjectField(obj, "enabled", Value::makeBool(ctx->enabled));
+    vm.setHostObjectField(obj, "grab", Value::makeBool(ctx->grab));
     vm.setHostObjectField(obj, "modifiers", Value::makeStringId(modStr.id));
     vm.setHostObjectField(obj, "date", Value::makeStringId(dateStr.id));
 
@@ -1050,6 +1058,30 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     return Value::makeArrayId(arr.id);
   });
 
+  // conditionFn - returns whether a condition function exists for this hotkey
+  api.registerPrototypeMethod("Hotkey", "conditionFn", 1, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    return Value::makeBool(ctx->condition_callback != 0);
+  });
+
+  // grab - returns the grab state of this hotkey
+  api.registerPrototypeMethod("Hotkey", "grab", 1, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    return Value::makeBool(ctx->grab);
+  });
+
   // Set prototype object as global "Hotkey" constructor
   auto hotkeyPrototype = api.makeObject();
   api.setGlobal("Hotkey", hotkeyPrototype);
@@ -1060,9 +1092,11 @@ Value HotkeyModule::createHotkeyContext(VM *vm, const std::string &hotkeyId,
                                          const std::string &key,
                                          const std::string &condition,
                                          const std::string &info,
-                                         CallbackId callback) {
+                                         CallbackId callback,
+                                         bool grab,
+                                         CallbackId condCb) {
     return createHotkeyContextObject(vm, hotkeyId, alias, key, condition, info,
-                                     callback);
+                                     callback, true, grab, condCb);
 }
 
 // Called when a hotkey fires — increment trigger count

@@ -117,9 +117,6 @@ void Modules::registerModeCallbacks(const std::string &modeName,
 }
 
 void Modules::initBridges() {
-#ifdef HAVEL_CORE_PROFILE
-    return;
-#else
     ioBridge_ = std::make_unique<compiler::IOBridge>(ctx_);
     systemBridge_ = std::make_unique<compiler::SystemBridge>(ctx_);
     uiBridge_ = std::make_unique<compiler::UIBridge>(ctx_);
@@ -140,7 +137,6 @@ void Modules::initBridges() {
     automationBridge_ = std::make_unique<compiler::AutomationBridge>(ctx_);
     browserBridge_ = std::make_unique<compiler::BrowserBridge>(ctx_);
     toolsBridge_ = std::make_unique<compiler::ToolsBridge>(ctx_);
-#endif
 }
 
 void Modules::installHostFunctions() {
@@ -154,32 +150,26 @@ void Modules::installHostFunctions() {
         return Value::makeStringId(ref.id);
     };
 
-  options_.host_functions["len"] = [this](const std::vector<Value> &args) {
+    options_.host_functions["len"] = [this](const std::vector<Value> &args) {
     if (args.empty()) return Value::makeInt(0);
     return ctx_->vm->execLengthOp(args[0]);
   };
 
-#ifdef HAVEL_CORE_PROFILE
-    return;
-#endif
-
-    if (profile_ == InstallProfile::Full) {
-        ioBridge_->install(options_);
-        systemBridge_->install(options_);
-        uiBridge_->install(options_);
-        inputBridge_->install(options_);
-        mediaBridge_->install(options_);
-        audioBridge_->install(options_);
-        mpvBridge_->install(options_);
-        displayBridge_->install(options_);
-        modeBridge_->install(options_);
-        timerBridge_->install(options_);
-        appBridge_->install(options_);
-        concurrencyBridge_->install(options_);
-        automationBridge_->install(options_);
-        browserBridge_->install(options_);
-        toolsBridge_->install(options_);
-    }
+    ioBridge_->install(options_);
+    systemBridge_->install(options_);
+    uiBridge_->install(options_);
+    inputBridge_->install(options_);
+    mediaBridge_->install(options_);
+    audioBridge_->install(options_);
+    mpvBridge_->install(options_);
+    displayBridge_->install(options_);
+    modeBridge_->install(options_);
+    timerBridge_->install(options_);
+    appBridge_->install(options_);
+    concurrencyBridge_->install(options_);
+    automationBridge_->install(options_);
+    browserBridge_->install(options_);
+    toolsBridge_->install(options_);
 
     vm_setup_callbacks_.push_back([](compiler::VM &vm) {
         auto hotkeyObj = vm.createHostObject();
@@ -446,15 +436,24 @@ void Modules::installStdLib() {
     }
 }
 
- void Modules::install(InstallProfile profile, bool eagerBridges) {
+  void Modules::install(InstallProfile profile, bool eagerBridges) {
     profile_ = profile;
 
     installStdLib();
     installHostFunctions();
 
+    // Register host functions on the VM before vm_setup_callbacks run.
+    // vm_setup_callbacks (e.g. hotkey object wiring) call getHostFunctionIndex
+    // to resolve function names to indices — this requires the functions to
+    // already be registered on the VM. Without this, hotkey.list() etc. are
+    // never set on the hotkey global object.
+    for (const auto &[name, fn] : options_.host_functions) {
+        ctx_->vm->registerHostFunction(name, fn);
+    }
+
     for (auto &setupFn : vm_setup_callbacks_) {
         setupFn(*ctx_->vm);
     }
-}
+ }
 
 } // namespace havel

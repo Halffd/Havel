@@ -172,9 +172,16 @@ if (g->persistent && g->state == Scheduler::GoroutineState::Created
     if (condVal) {
         bool conditionMet = false;
         try {
-            Value result = vm_->call(*condVal, {});
+            // Use callFunctionSync instead of call() because current_chunk
+            // may be null at this point (VM::execute() restores it to null
+            // on return, and this path runs before any goroutine has set it).
+            // callFunctionSync has a null-chunk fallback via main_chunk_.
+            Value result = vm_->callFunctionSync(*condVal, {});
             conditionMet = vm_->toBool(result);
-        } catch (...) {
+        } catch (const std::exception &e) {
+            if (debug_mode_) {
+                ::havel::debug("[ExecutionEngine] Condition callback exception: {}", e.what());
+            }
             conditionMet = false;
         }
         if (!conditionMet) {

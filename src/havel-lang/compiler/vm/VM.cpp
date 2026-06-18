@@ -436,53 +436,56 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
   //
   // Important: This runs in the current thread, not creating new fiber
   
-  if (!current_chunk) {
-    // No bytecode loaded - can't evaluate
+  // Fall back to main_chunk_ when current_chunk is null (e.g. when
+  // called from ExecutionEngine::executeFrame after executePersistent
+  // has returned and cleared current_chunk).
+  const BytecodeChunk *chunk = current_chunk;
+  if (!chunk && main_chunk_) {
+    chunk = main_chunk_.get();
+  }
+  if (!chunk) {
     return false;
   }
   
-  // Get function by index from current chunk
-  if (func_index >= current_chunk->getFunctionCount()) {
+  // Get function by index from resolved chunk
+  if (func_index >= chunk->getFunctionCount()) {
     return false;
   }
   
-  const auto *func_entry = current_chunk->getFunction(func_index);
+  const auto *func_entry = chunk->getFunction(func_index);
   if (!func_entry) {
     return false;
   }
-  
-  
-  // in VM::getGlobalThreadSafe(), so we don't need extra setup here
   
 // Save current stack state (conditions shouldn't consume/modify main stack)
  std::stack<Value> saved_stack = stack;
  size_t saved_frame_count = frame_count_;
  auto saved_locals = locals;
  auto saved_frame_arena = frame_arena_;
+ const BytecodeChunk *saved_chunk = current_chunk;
+ current_chunk = chunk;
 
  try {
  // Execute function and get result
- // We call the function through the normal call mechanism
  (void)ip;
  Value func_value = Value::makeFunctionObjId(func_index);
  Value result = call(func_value, {});
 
- // Convert result to boolean
  bool condition_result = toBool(result);
 
- // Restore stack
  stack = saved_stack;
  frame_count_ = saved_frame_count;
  locals = saved_locals;
  frame_arena_ = saved_frame_arena;
+ current_chunk = saved_chunk;
 
  return condition_result;
  } catch (...) {
- // Restore stack on error
  stack = saved_stack;
  frame_count_ = saved_frame_count;
  locals = saved_locals;
  frame_arena_ = saved_frame_arena;
+ current_chunk = saved_chunk;
  return false;
  }
 }

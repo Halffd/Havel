@@ -2646,7 +2646,7 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
             emit(OpCode::DUP);
             uint32_t key_sid = addStringConstant(name);
             emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(key_sid)));
-            emit(OpCode::OBJECT_GET);
+            emit(OpCode::OBJECT_GET_RAW);
             uint32_t global_sid = addStringConstant(alias);
             emit(OpCode::STORE_GLOBAL, Value::makeStringValId(global_sid));
         }

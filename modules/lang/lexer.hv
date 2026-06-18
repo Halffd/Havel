@@ -364,8 +364,8 @@ fn Lexer(source) {
             } else if current() == 123 && braceDepth == 0 {
                 if cp(1) != 123 {
                     nx = cp(1)
-                    isExprStart = isAlphaCp(nx) || nx == 95 || nx == 64 || nx == 40 || nx == 36 || nx == 33 || nx == 45 || isDigitCp(nx) || nx == 34 || nx == 39 || nx == 91
-                    if nx == 125 || !isExprStart {
+                    isExprStart = isAlphaCp(nx) || nx == 95 || nx == 64 || nx == 40 || nx == 36 || nx == 33 || nx == 45 || isDigitCp(nx) || nx == 91
+                    if nx == 125 || nx == quote || !isExprStart {
                         s = s + string.fromCodePoint(advance())
                         chunkStart = bytePos()
                     } else {
@@ -470,8 +470,8 @@ fn Lexer(source) {
             } else if current() == 123 && braceDepth == 0 {
                 if cp(1) != 123 {
                     nx = cp(1)
-                    isExprStart = isAlphaCp(nx) || nx == 95 || nx == 64 || nx == 40 || nx == 36 || nx == 33 || nx == 45 || isDigitCp(nx) || nx == 34 || nx == 39 || nx == 91
-                    if nx == 125 || !isExprStart {
+                    isExprStart = isAlphaCp(nx) || nx == 95 || nx == 64 || nx == 40 || nx == 36 || nx == 33 || nx == 45 || isDigitCp(nx) || nx == 91
+                    if nx == 125 || nx == quote || !isExprStart {
                         s = s + string.fromCodePoint(advance())
                         chunkStart = bytePos()
                     } else {

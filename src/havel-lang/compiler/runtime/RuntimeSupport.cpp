@@ -163,6 +163,8 @@ RuntimeTypeSystem::Type RuntimeTypeSystem::getType(const Value& value) {
   if (value.isObjectId()) return Type::Object;
   if (value.isFunctionObjId()) return Type::Function;
   if (value.isClosureId()) return Type::Closure;
+  if (value.isHostFuncId()) return Type::Function;
+  if (value.isBoundMethodId()) return Type::Function;
 
   if (value.isEnumId()) return Type::Enum;
   if (value.isIteratorId()) return Type::Iterator;

@@ -44,6 +44,7 @@ static std::string getTypeName(const Value &value) {
     if (value.isFunctionObjId()) return "function";
     if (value.isClosureId()) return "closure";
     if (value.isHostFuncId()) return "function";
+    if (value.isBoundMethodId()) return "function";
     return "unknown";
 }
 

@@ -552,8 +552,8 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
                 bool isExprStart = isAlpha(nextCh) || nextCh == '_' || nextCh == '@'
                     || nextCh == '(' || nextCh == '$' || nextCh == '!'
                     || nextCh == '-' || isDigit(nextCh)
-                    || nextCh == '"' || nextCh == '\'' || nextCh == '[';
-                if (nextCh == '}' || !isExprStart) {
+                    || nextCh == '[';
+                if (nextCh == '}' || nextCh == quote || !isExprStart) {
                     // Literal { — not interpolation
                     value += advance();
                 } else {

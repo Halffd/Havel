@@ -1050,17 +1050,7 @@ if (!modName.empty()) {
     }
 
         if (!found_val.isNull()) {
-            if (found_val.isHostFuncId()) {
-                pushStack(found_val);
-            } else if (found_val.isFunctionObjId() || found_val.isClosureId()) {
-                auto boundObj = heap_.allocateObject();
-                auto *bObj = heap_.object(boundObj.id);
-                (*bObj)["fn"] = found_val;
-                (*bObj)["self"] = object;
-                pushStack(Value::makeObjectId(boundObj.id));
-            } else {
-                pushStack(found_val);
-            }
+            pushStack(found_val);
     } else {
         // Built-in .len property returns key count for objects
         if (*key == "len") {

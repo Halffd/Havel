@@ -1632,7 +1632,7 @@ if (callee_value.isFunctionObjId()) {
  }
  } else {
             // Debug: identify what type the value actually is
-        std::string typeInfo = "unknown";
+            std::string typeInfo = "unknown";
         if (callee_value.isNull()) typeInfo = "null";
         else if (callee_value.isInt()) typeInfo = "int";
         else if (callee_value.isDouble()) typeInfo = "double";

@@ -223,7 +223,7 @@ bool VM::execBuiltinOp(const Instruction &instruction) {
         }
         for (const auto& [name, value] : *obj) {
             if (name.empty() || name[0] == '_') continue;
-globals[name] = value;
+ globals[name] = value;
             emitVariableChanged(name);
         }
         break;

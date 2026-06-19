@@ -438,6 +438,7 @@ file(GLOB_RECURSE _STDLIB_MODULE_SOURCES "src/havel-lang/stdlib/*Module.cpp")
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/HotkeyModule.cpp"
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StringModule.cpp"
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/FsModule.cpp"
+      "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StateModule.cpp"
       "${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/BytecodeBuilderModule.cpp"
   )
 list(REMOVE_ITEM HAVEL_LANG_SOURCES ${_STDLIB_MODULE_SOURCES})
@@ -1593,6 +1594,7 @@ add_havel_module_plugin(random       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/R
 add_havel_module_plugin(regex        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/RegexModule.cpp)
 add_havel_module_plugin(shell        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/ShellModule.cpp)
 add_havel_module_plugin(string       ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StringModule.cpp)
+add_havel_module_plugin(state        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/StateModule.cpp)
 add_havel_module_plugin(sys          ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/SysModule.cpp)
 add_havel_module_plugin(time         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/TimeModule.cpp)
 add_havel_module_plugin(timer        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/TimerModule.cpp)

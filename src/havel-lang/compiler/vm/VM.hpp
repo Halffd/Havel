@@ -507,8 +507,7 @@ size_t tail_call_depth_ = 0;
 	bool execControlFlowOp(const Instruction &instruction);
 	bool execBuiltinOp(const Instruction &instruction);
 
-  void doCall(Value callee_value, std::vector<Value> args,
-              bool advance_caller_ip = true);
+  void doCall(Value callee_value, std::vector<Value> args);
   void doTailCall(Value callee_value,
                   std::vector<Value> args); // TCO
   void runDispatchLoop(size_t stop_frame_depth);

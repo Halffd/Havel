@@ -206,7 +206,7 @@ void VM::scheduleCall(const Value &fn,
 void VM::processPendingCalls() {
   // Process all pending calls - just doCall, let outer loop execute
   for (auto &call : pending_calls) {
-    doCall(call.fn, call.args, false);
+    doCall(call.fn, call.args);
   }
   pending_calls.clear();
 }
@@ -224,7 +224,7 @@ Value VM::callFunctionSync(const Value &fn,
     }
 
     // Execute callback
-    doCall(fn, args, false);
+    doCall(fn, args);
     runDispatchLoop(savedFrameCount);
 
     current_chunk = saved_chunk;
@@ -1502,7 +1502,7 @@ Value VM::call(const Value &callee_value,
  }
 
  const size_t base_depth = frame_count_;
- doCall(callee_value, args, false);
+ doCall(callee_value, args);
  runDispatchLoop(base_depth);
 
  if (stack.empty()) {
@@ -1515,8 +1515,7 @@ Value VM::call(const Value &callee_value,
 
 void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
-void VM::doCall(Value callee_value, std::vector<Value> args,
- bool advance_caller_ip) {
+void VM::doCall(Value callee_value, std::vector<Value> args) {
  tail_call_depth_ = 0;
 
     // Handle host function call directly
@@ -1828,11 +1827,6 @@ co->ip = 0;
                              ", got " + std::to_string(args.size()) + ")");
   }
 
-    // Advance caller IP now so RETURN resumes at the next instruction.
-    if (advance_caller_ip && frame_count_ > 0) {
-        currentFrame().ip++;
-    }
-
  current_chunk = resolve_chunk;
 
   bool frame_owns_globals = false;
@@ -1950,7 +1944,7 @@ void VM::doTailCall(Value callee_value,
  }
 
     if (callee_value.isCoroutineId()) {
-        doCall(callee_value, std::move(args), false);
+        doCall(callee_value, std::move(args));
         return;
     }
 
@@ -1968,7 +1962,7 @@ void VM::doTailCall(Value callee_value,
             std::vector<Value> boundArgs;
             boundArgs.push_back(bm->self);
             boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-            doCall(bm->fn, std::move(boundArgs), false);
+            doCall(bm->fn, std::move(boundArgs));
             this->doReturn();
             return;
         }
@@ -2000,7 +1994,7 @@ void VM::doTailCall(Value callee_value,
                 std::vector<Value> callArgs;
                 callArgs.push_back(callee_value);
                 callArgs.insert(callArgs.end(), args.begin(), args.end());
-                doCall(callFn, std::move(callArgs), false);
+                doCall(callFn, std::move(callArgs));
                 this->doReturn();
                 return;
             }
@@ -2012,7 +2006,7 @@ void VM::doTailCall(Value callee_value,
                 std::vector<Value> boundArgs;
                 boundArgs.push_back(selfIt->second);
                 boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-                doCall(fnIt->second, std::move(boundArgs), false);
+                doCall(fnIt->second, std::move(boundArgs));
                 this->doReturn();
                 return;
             }
@@ -3371,15 +3365,15 @@ Value VM::loadModule(const std::string& path) {
     try {
         ValueSerializer serializer;
         std::vector<uint8_t> data = serializer.serializeChunk(*chunk);
-        std::filesystem::path hvPath(resolved->canonicalPath);
-        std::filesystem::path hvcPath = hvPath.replace_extension(".hvc");
+        std::filesystem::path hvSrcPath(resolved->canonicalPath);
+        std::filesystem::path hvcPath = hvSrcPath;
+        hvcPath.replace_extension(".hvc");
         std::ofstream file(hvcPath, std::ios::binary);
         if (file.is_open()) {
             file.write(reinterpret_cast<const char*>(data.data()), data.size());
             file.close();
         }
     } catch (...) {
-        // Cache failure is non-fatal
     }
   }
 

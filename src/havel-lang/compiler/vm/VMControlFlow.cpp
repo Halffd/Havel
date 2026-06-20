@@ -376,23 +376,24 @@ case OpCode::TAIL_CALL: {
   }
   Value recv = popStack();
 
-  // Prepare args
-  std::vector<Value> all_args;
-  if (isInstanceFunc || found_via_module) {
-all_args = args2;
-} else {
-all_args.reserve(arg_count + 1);
-all_args.push_back(recv);
-all_args.insert(all_args.end(), args2.begin(), args2.end());
-}
+    // Prepare args
+    std::vector<Value> all_args;
+    if (isInstanceFunc || found_via_module) {
+        all_args = args2;
+    } else {
+        all_args.reserve(arg_count + 1);
+        all_args.push_back(recv);
+        all_args.insert(all_args.end(), args2.begin(), args2.end());
+    }
 
-            if (found_host) {
-                if (host_func_idx < host_function_names_.size()) {
-                    std::string resolved_name = host_function_names_[host_func_idx];
-                    auto fnIt = host_functions.find(resolved_name);
-                    if (fnIt != host_functions.end()) {
-                        Value result = fnIt->second(all_args);
-                        pushStack(result);
+    if (found_host) {
+        if (host_func_idx < host_function_names_.size()) {
+            std::string resolved_name = host_function_names_[host_func_idx];
+            auto fnIt = host_functions.find(resolved_name);
+            if (fnIt != host_functions.end()) {
+                Value result = fnIt->second(all_args);
+                fprintf(stderr, "DBG CALL_METHOD: host func %s result_type=%s, isArrayId=%d, result_bits=%lu\n", resolved_name.c_str(), getTypeName(result).c_str(), result.isArrayId(), result.getTagBits());
+                pushStack(result);
     if (hot_func_cb_) {
       if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
         currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);
@@ -405,8 +406,9 @@ all_args.insert(all_args.end(), args2.begin(), args2.end());
         pushStack(Value::makeNull());
       }
     } else {
-      // Call VM function
-      doCall(vm_func, all_args, true);
+        // Call VM function
+        fprintf(stderr, "DBG CALL_METHOD: calling VM function, arg_count=%zu\n", all_args.size());
+        doCall(vm_func, all_args);
     }
     break;
   }

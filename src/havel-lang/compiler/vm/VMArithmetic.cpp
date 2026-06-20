@@ -779,6 +779,8 @@ void VM::execJumpIfFalse(const Instruction &instruction) {
     Value condition = popStack();
     if (!isTruthy(condition)) {
         currentFrame().ip = target;
+    } else {
+        currentFrame().ip++;
     }
 }
 
@@ -787,6 +789,8 @@ void VM::execJumpIfTrue(const Instruction &instruction) {
 	Value condition = popStack();
 	if (isTruthy(condition)) {
 		currentFrame().ip = target;
+	} else {
+		currentFrame().ip++;
 	}
 }
 

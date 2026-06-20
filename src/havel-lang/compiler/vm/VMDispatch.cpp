@@ -870,6 +870,8 @@ op_PUSH_NULL: {
 op_CALL: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    fprintf(stderr, "DBG op_CALL: ip=%u arg_count=%u frame_count=%zu stack_size=%zu\n", frm.ip-1, inst.operands.empty() ? 999u : inst.operands[0].asInt(), frame_count_, stack.size());
     try {
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {
@@ -1471,7 +1473,14 @@ op_default: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     frm.ip++;
+    if (inst.opcode == OpCode::ARRAY_MAP || inst.opcode == OpCode::CALL_METHOD || inst.opcode == OpCode::ARRAY_GET || inst.opcode == OpCode::DEFINE_FUNC || inst.opcode == OpCode::CLOSURE || inst.opcode == OpCode::CALL) {
+        fprintf(stderr, "DBG op_default: ip=%u op=%d frame_count=%zu stack_size=%zu\n", frm.ip-1, static_cast<int>(inst.opcode), frame_count_, stack.size());
+    }
     try {
+        if (inst.opcode == OpCode::ARRAY_GET) {
+            auto container = stack.top();
+            fprintf(stderr, "DBG ARRAY_GET: container_type=%s, isArrayId=%d, bits=%lu, stack_depth=%zu\n", getTypeName(container).c_str(), container.isArrayId(), container.getTagBits(), stack.size());
+        }
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {
         if (!handleScriptThrow(thrown.value)) {

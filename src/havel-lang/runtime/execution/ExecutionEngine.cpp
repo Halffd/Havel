@@ -701,6 +701,16 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
     return false;
   }
   
+  // If watcher has a specific chunk (e.g. module chunk), set current_chunk
+  // so evaluateConditionBytecode can resolve the condition function index.
+  const BytecodeChunk* saved_chunk = nullptr;
+  bool set_chunk = false;
+  if (watcher->condition_chunk) {
+    saved_chunk = vm_->getCurrentChunk();
+    vm_->setCurrentChunkPublic(watcher->condition_chunk);
+    set_chunk = true;
+  }
+  
   // Create scope to track global variable accesses
   // This will record which variables the condition depends on
   auto tracker = std::make_shared<DependencyTracker>();
@@ -711,6 +721,10 @@ bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {
       watcher->condition_func_id,
       watcher->condition_ip
   );
+  
+  if (set_chunk) {
+    vm_->setCurrentChunkPublic(saved_chunk);
+  }
   
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine::evaluateCondition] Watcher " << watcher_id

@@ -1191,11 +1191,14 @@ double BrightnessManager::getBrightness(const std::string &monitor) {
     if (it != brightness.end()) return it->second;
 
     if (WindowManagerDetector::IsX11()) {
-        double gamma_val = getBrightnessGamma(monitor);
-        if (gamma_val > 0.0) return gamma_val;
-
+        // XRandR output "Brightness" property is the authoritative value
+        // (defaults to 1.0, exactly matches `xrandr --brightness`).
+        // Check it first, then fall back to gamma ramp and sysfs.
         double xrandr_val = getBrightnessXrandr(monitor);
         if (xrandr_val >= 0.0) return xrandr_val;
+
+        double gamma_val = getBrightnessGamma(monitor);
+        if (gamma_val > 0.0) return gamma_val;
 
         double sysfs_val = getBrightnessSysfs(monitor);
         if (sysfs_val > 0.0) return sysfs_val;
@@ -1413,7 +1416,7 @@ double BrightnessManager::getBrightnessXrandr(const std::string &monitor) {
 				0, ~0, x11::XFalse, x11::XFalse, x11::XNone,
 				&actual_type, &actual_format, &nitems, &bytes_after, &prop_data) == 0 && prop_data) {
 				if (actual_format == 32 && nitems >= 1) {
-					long raw_value = *(long *)prop_data;
+					uint32_t raw_value = *reinterpret_cast<uint32_t *>(prop_data);
 					double normalized = (double)(raw_value - min_val) / (double)(max_val - min_val);
 					XFree(prop_data);
 					XFree(prop_info);

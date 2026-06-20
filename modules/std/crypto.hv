@@ -286,3 +286,575 @@ fn xorHex(dataHex, keyHex) {
   key = hexDecode(keyHex)
   return hexEncode(xorCrypt(data, key))
 }
+
+// ===================================================================
+// FFI: libsodium-backed cryptographic operations
+// NOTE: FFI alloc has a VM limitation (~15 alloc/call/free cycles).
+// Call signKeypair/boxKeypair early in your scripts.
+// ===================================================================
+
+// Module-level object holding FFI symbol pointers (initialized lazily by _ensureFfi)
+// Using an object avoids :: scope issues: all module functions can read/write _sym.*
+_sym = {
+  libsodium: 0, sodium_init: 0, randombytes_buf: 0,
+  crypto_hash_sha256: 0, crypto_hash_sha512: 0, crypto_generichash: 0,
+  crypto_auth_hmacsha256: 0,
+  crypto_secretbox_easy: 0, crypto_secretbox_open_easy: 0,
+  crypto_box_keypair: 0, crypto_box_easy: 0, crypto_box_open_easy: 0,
+  crypto_sign_keypair: 0, crypto_sign_detached: 0, crypto_sign_verify_detached: 0,
+  crypto_pwhash: 0, crypto_pwhash_str: 0, crypto_pwhash_str_verify: 0,
+  crypto_kdf_keygen: 0, crypto_kdf_derive_from_key: 0,
+  sodium_memzero: 0,
+  ffiReady: false
+}
+
+_t_p   = ["pointer"]
+_t_pp  = ["pointer", "pointer"]
+_t_pu  = ["pointer", "uint64"]
+_t_ppu = ["pointer", "pointer", "uint64"]
+_t_pup = ["pointer", "uint64", "pointer"]
+_t_ppppu = ["pointer", "pointer", "pointer", "pointer", "uint64"]
+_t_pppup  = ["pointer", "pointer", "pointer", "uint64", "pointer"]
+_t_ppupp  = ["pointer", "pointer", "uint64", "pointer", "pointer"]
+_t_pupupup = ["pointer", "uint64", "pointer", "uint64", "pointer", "uint64"]
+_t_ppupu   = ["pointer", "pointer", "uint64", "pointer", "uint64"]
+_t_ppuppp  = ["pointer", "pointer", "uint64", "pointer", "pointer", "pointer"]
+_t_pupupuu = ["pointer", "uint64", "pointer", "uint64", "pointer", "uint64", "uint64", "int32"]
+_t_puuu    = ["pointer", "uint64", "uint64", "uint64"]
+
+fn _ensureFfi() {
+  if _sym.ffiReady { return true }
+  h = ffi.open("libsodium.so.26")
+  if h == 0 { h = ffi.open("libsodium.so.25") }
+  if h == 0 { h = ffi.open("libsodium.so.23") }
+  if h == 0 { return false }
+  _sym.libsodium = h
+  _sym.sodium_init = ffi.sym(h, "sodium_init")
+  if _sym.sodium_init != 0 { ffi.call(_sym.sodium_init, "int32", []) }
+  _sym.randombytes_buf = ffi.sym(h, "randombytes_buf")
+  _sym.crypto_hash_sha256 = ffi.sym(h, "crypto_hash_sha256")
+  _sym.crypto_hash_sha512 = ffi.sym(h, "crypto_hash_sha512")
+  _sym.crypto_generichash = ffi.sym(h, "crypto_generichash")
+  _sym.crypto_auth_hmacsha256 = ffi.sym(h, "crypto_auth_hmacsha256")
+  _sym.crypto_secretbox_easy = ffi.sym(h, "crypto_secretbox_easy")
+  _sym.crypto_secretbox_open_easy = ffi.sym(h, "crypto_secretbox_open_easy")
+  _sym.crypto_box_keypair = ffi.sym(h, "crypto_box_keypair")
+  _sym.crypto_box_easy = ffi.sym(h, "crypto_box_easy")
+  _sym.crypto_box_open_easy = ffi.sym(h, "crypto_box_open_easy")
+  _sym.crypto_sign_keypair = ffi.sym(h, "crypto_sign_keypair")
+  _sym.crypto_sign_detached = ffi.sym(h, "crypto_sign_detached")
+  _sym.crypto_sign_verify_detached = ffi.sym(h, "crypto_sign_verify_detached")
+  _sym.crypto_pwhash = ffi.sym(h, "crypto_pwhash")
+  _sym.crypto_pwhash_str = ffi.sym(h, "crypto_pwhash_str")
+  _sym.crypto_pwhash_str_verify = ffi.sym(h, "crypto_pwhash_str_verify")
+  _sym.crypto_kdf_keygen = ffi.sym(h, "crypto_kdf_keygen")
+  _sym.crypto_kdf_derive_from_key = ffi.sym(h, "crypto_kdf_derive_from_key")
+  _sym.sodium_memzero = ffi.sym(h, "sodium_memzero")
+  _sym.ffiReady = true
+  true
+}
+
+fn _alloc(n) { ffi.allocBytes(n) }
+
+fn _toBuf(data) {
+  if type(data) == "array" {
+    n = #data
+    buf = ffi.allocBytes(n)
+    i = 0
+    while i < n {
+      ffi.set_u8(ffi.ptr_add(buf, i), data[i])
+      i += 1
+    }
+    return [buf, n]
+  }
+  [ffi.cstring(data), #data]
+}
+
+fn _hexFrom(buf, n) {
+  result = ""
+  i = 0
+  while i < n {
+    hi = ffi.get_u8(ffi.ptr_add(buf, i)) >> 4
+    lo = ffi.get_u8(ffi.ptr_add(buf, i)) & 15
+    result = result + _hexAt(hi) + _hexAt(lo)
+    i += 1
+  }
+  result
+}
+
+fn _randBuf(n) {
+  buf = _alloc(n)
+  if buf != 0 {
+    ffi.call(_sym.randombytes_buf, "void", _t_pu, buf, n)
+  }
+  buf
+}
+
+// =================== CSPRNG ===================
+
+fn randomBytes(n) {
+  if !_ensureFfi() { return null }
+  buf = _randBuf(n)
+  if buf == 0 { return null }
+  data = []
+  i = 0
+  while i < n {
+    data.push(ffi.get_u8(ffi.ptr_add(buf, i)))
+    i += 1
+  }
+  ffi.free(buf)
+  data
+}
+
+fn randomHex(n) {
+  if !_ensureFfi() { return null }
+  buf = _randBuf(n)
+  if buf == 0 { return null }
+  result = _hexFrom(buf, n)
+  ffi.free(buf)
+  result
+}
+
+// =================== SHA-256 ===================
+
+SHA256_BYTES = 32
+
+fn sha256(data) {
+  if !_ensureFfi() { return null }
+  mp = _toBuf(data)
+  if mp[0] == 0 { return null }
+  out = _alloc(SHA256_BYTES)
+  if out == 0 { ffi.free(mp[0]); return null }
+  ffi.call(_sym.crypto_hash_sha256, "int32", _t_ppu, out, mp[0], mp[1])
+  result = _hexFrom(out, SHA256_BYTES)
+  ffi.free(out)
+  ffi.free(mp[0])
+  result
+}
+
+// =================== SHA-512 ===================
+
+SHA512_BYTES = 64
+
+fn sha512(data) {
+  if !_ensureFfi() { return null }
+  mp = _toBuf(data)
+  if mp[0] == 0 { return null }
+  out = _alloc(SHA512_BYTES)
+  if out == 0 { ffi.free(mp[0]); return null }
+  ffi.call(_sym.crypto_hash_sha512, "int32", _t_ppu, out, mp[0], mp[1])
+  result = _hexFrom(out, SHA512_BYTES)
+  ffi.free(out)
+  ffi.free(mp[0])
+  result
+}
+
+// =================== BLAKE2b ===================
+
+fn blake2b(data, outLen) {
+  if !_ensureFfi() { return null }
+  if outLen == null { outLen = 64 }
+  mp = _toBuf(data)
+  if mp[0] == 0 { return null }
+  out = _alloc(outLen)
+  if out == 0 { ffi.free(mp[0]); return null }
+  ffi.call(_sym.crypto_generichash, "int32", _t_pupupup,
+           out, outLen, mp[0], mp[1], 0, 0)
+  result = _hexFrom(out, outLen)
+  ffi.free(out)
+  ffi.free(mp[0])
+  result
+}
+
+fn hash(data, outLen) { blake2b(data, outLen) }
+
+// =================== HMAC-SHA256 ===================
+
+fn hmacSha256(key, data) {
+  if !_ensureFfi() { return null }
+  kp = _toBuf(key)
+  dp = _toBuf(data)
+  if kp[0] == 0 || dp[0] == 0 {
+    if kp[0] != 0 { ffi.free(kp[0]) }
+    if dp[0] != 0 { ffi.free(dp[0]) }
+    return null
+  }
+  out = _alloc(64)
+  if out == 0 { ffi.free(kp[0]); ffi.free(dp[0]); return null }
+  rc = ffi.call(_sym.crypto_auth_hmacsha256, "int32", _t_ppupu,
+            out, dp[0], dp[1], kp[0], kp[1])
+  if rc != 0 { ffi.free(out); ffi.free(dp[0]); ffi.free(kp[0]); return null }
+  result = _hexFrom(out, 32)
+  ffi.free(out)
+  ffi.free(dp[0])
+  ffi.free(kp[0])
+  result
+}
+
+// =================== Symmetric Encryption ===================
+
+SECRETBOX_KEYBYTES = 32
+SECRETBOX_NONCEBYTES = 24
+
+fn secretKey() { randomHex(SECRETBOX_KEYBYTES) }
+
+fn secretNonce() { randomHex(SECRETBOX_NONCEBYTES) }
+
+fn _hexToBuf(hex) {
+  n = #hex
+  if n % 2 != 0 { return null }
+  nb = n / 2
+  buf = ffi.allocBytes(nb)
+  if buf == 0 { return null }
+  i = 0
+  while i < n {
+    byte = _hexVal(hex[i:i+1]) * 16 + _hexVal(hex[i+1:i+2])
+    ffi.set_u8(ffi.ptr_add(buf, i / 2), byte)
+    i += 2
+  }
+  [buf, nb]
+}
+
+fn secretBox(msg, nonceHex, keyHex) {
+  if !_ensureFfi() { return null }
+  np = _hexToBuf(nonceHex)
+  kp = _hexToBuf(keyHex)
+  mp = _toBuf(msg)
+  if np == null || kp == null || mp[0] == 0 {
+    if np != null { ffi.free(np[0]) }
+    if kp != null { ffi.free(kp[0]) }
+    if mp[0] != 0 { ffi.free(mp[0]) }
+    return null
+  }
+  mlen = mp[1]
+  out = _alloc(mlen + 16)
+  if out == 0 {
+    ffi.free(np[0]); ffi.free(kp[0]); ffi.free(mp[0])
+    return null
+  }
+  rc = ffi.call(_sym.crypto_secretbox_easy, "int32", _t_ppupp,
+                out, mp[0], mlen, np[0], kp[0])
+  ffi.free(mp[0])
+  ffi.free(kp[0])
+  ffi.free(np[0])
+  if rc != 0 { ffi.free(out); return null }
+  result = _hexFrom(out, mlen + 16)
+  ffi.free(out)
+  result
+}
+
+fn secretBoxOpen(ctHex, nonceHex, keyHex) {
+  if !_ensureFfi() { return null }
+  cp = _hexToBuf(ctHex)
+  np = _hexToBuf(nonceHex)
+  kp = _hexToBuf(keyHex)
+  if cp == null || np == null || kp == null {
+    if cp != null { ffi.free(cp[0]) }
+    if np != null { ffi.free(np[0]) }
+    if kp != null { ffi.free(kp[0]) }
+    return null
+  }
+  ctlen = cp[1]
+  out = _alloc(ctlen + 1)
+  if out == 0 {
+    ffi.free(cp[0]); ffi.free(np[0]); ffi.free(kp[0])
+    return null
+  }
+  rc = ffi.call(_sym.crypto_secretbox_open_easy, "int32", _t_ppupp,
+                out, cp[0], cp[1], np[0], kp[0])
+  ffi.free(cp[0])
+  ffi.free(np[0])
+  ffi.free(kp[0])
+  if rc != 0 { ffi.free(out); return null }
+  result = ffi.string(out, cp[1] - 16)
+  ffi.free(out)
+  result
+}
+
+
+
+fn uuid() {
+  if _ensureFfi() {
+    bytes = randomBytes(16)
+    if bytes != null {
+      b6 = (bytes[6] % 16) + 64
+      b8 = (bytes[8] % 64) + 128
+      h = hexEncode([
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5], b6, bytes[7],
+        b8, bytes[9], bytes[10], bytes[11],
+        bytes[12], bytes[13], bytes[14], bytes[15]
+      ])
+      return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+    }
+  }
+  uuidPure()
+}
+
+fn uuidPure() {
+  bytes = random.bytes(16)
+  b6 = (bytes[6] % 16) + 64
+  b8 = (bytes[8] % 64) + 128
+  h = hexEncode([
+    bytes[0], bytes[1], bytes[2], bytes[3],
+    bytes[4], bytes[5], b6, bytes[7],
+    b8, bytes[9], bytes[10], bytes[11],
+    bytes[12], bytes[13], bytes[14], bytes[15]
+  ])
+  h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
+// =================== Ed25519 Signatures ===================
+
+SIGN_PUBLICKEYBYTES = 32
+SIGN_SECRETKEYBYTES = 64
+SIGN_BYTES = 64
+
+fn signKeypair() {
+  if !_ensureFfi() { return null }
+  pk = _alloc(SIGN_PUBLICKEYBYTES)
+  sk = _alloc(SIGN_SECRETKEYBYTES)
+  if pk == 0 || sk == 0 {
+    if sk != 0 { ffi.free(sk) }
+    if pk != 0 { ffi.free(pk) }
+    return null
+  }
+  rc = ffi.call(_sym.crypto_sign_keypair, "int32", _t_pp, pk, sk)
+  if rc != 0 { ffi.free(sk); ffi.free(pk); return null }
+  pkHex = _hexFrom(pk, SIGN_PUBLICKEYBYTES)
+  skHex = _hexFrom(sk, SIGN_SECRETKEYBYTES)
+  ffi.free(sk)
+  ffi.free(pk)
+  {publicKey: pkHex, secretKey: skHex}
+}
+
+fn sign(msg, secretKeyHex) {
+  if !_ensureFfi() { return null }
+  kp = _hexToBuf(secretKeyHex)
+  mp = _toBuf(msg)
+  if kp == null || mp[0] == 0 {
+    if kp != null { ffi.free(kp[0]) }
+    if mp[0] != 0 { ffi.free(mp[0]) }
+    return null
+  }
+  sig = _alloc(SIGN_BYTES)
+  if sig == 0 { ffi.free(kp[0]); ffi.free(mp[0]); return null }
+  rc = ffi.call(_sym.crypto_sign_detached, "int32", _t_pppup,
+                sig, 0, mp[0], mp[1], kp[0])
+  ffi.free(kp[0])
+  ffi.free(mp[0])
+  if rc != 0 { ffi.free(sig); return null }
+  result = _hexFrom(sig, SIGN_BYTES)
+  ffi.free(sig)
+  result
+}
+
+fn signVerify(msg, sigHex, publicKeyHex) {
+  if !_ensureFfi() { return false }
+  sp = _hexToBuf(sigHex)
+  mp = _toBuf(msg)
+  pp = _hexToBuf(publicKeyHex)
+  if sp == null || mp[0] == 0 || pp == null {
+    if sp != null { ffi.free(sp[0]) }
+    if mp[0] != 0 { ffi.free(mp[0]) }
+    if pp != null { ffi.free(pp[0]) }
+    return false
+  }
+  rc = ffi.call(_sym.crypto_sign_verify_detached, "int32", _t_ppup,
+                sp[0], mp[0], mp[1], pp[0])
+  ffi.free(sp[0])
+  ffi.free(mp[0])
+  ffi.free(pp[0])
+  rc == 0
+}
+
+// =================== Public-Key Encryption ===================
+
+fn boxKeypair() {
+  if !_ensureFfi() { return null }
+  pk = _alloc(32)
+  sk = _alloc(32)
+  if pk == 0 || sk == 0 {
+    if sk != 0 { ffi.free(sk) }
+    if pk != 0 { ffi.free(pk) }
+    return null
+  }
+  rc = ffi.call(_sym.crypto_box_keypair, "int32", _t_pp, pk, sk)
+  if rc != 0 {
+    ffi.free(sk)
+    ffi.free(pk)
+    return null
+  }
+  pkHex = _hexFrom(pk, 32)
+  skHex = _hexFrom(sk, 32)
+  ffi.free(sk)
+  ffi.free(pk)
+  {publicKey: pkHex, secretKey: skHex}
+}
+
+fn boxNonce() { randomHex(24) }
+
+fn box(msg, nonceHex, theirPublicKeyHex, mySecretKeyHex) {
+  if !_ensureFfi() { return null }
+  np = _hexToBuf(nonceHex)
+  pp = _hexToBuf(theirPublicKeyHex)
+  sp = _hexToBuf(mySecretKeyHex)
+  mp = _toBuf(msg)
+  if np == null || pp == null || sp == null || mp[0] == 0 {
+    if np != null { ffi.free(np[0]) }
+    if pp != null { ffi.free(pp[0]) }
+    if sp != null { ffi.free(sp[0]) }
+    if mp[0] != 0 { ffi.free(mp[0]) }
+    return null
+  }
+  mlen = mp[1]
+  out = _alloc(mlen + 16)
+  if out == 0 {
+    ffi.free(np[0]); ffi.free(pp[0]); ffi.free(sp[0]); ffi.free(mp[0])
+    return null
+  }
+  rc = ffi.call(_sym.crypto_box_easy, "int32", _t_ppuppp,
+                out, mp[0], mlen, np[0], pp[0], sp[0])
+  ffi.free(np[0])
+  ffi.free(pp[0])
+  ffi.free(sp[0])
+  ffi.free(mp[0])
+  if rc != 0 { ffi.free(out); return null }
+  result = _hexFrom(out, mlen + 16)
+  ffi.free(out)
+  result
+}
+
+fn boxOpen(ctHex, nonceHex, theirPublicKeyHex, mySecretKeyHex) {
+  if !_ensureFfi() { return null }
+  cp = _hexToBuf(ctHex)
+  np = _hexToBuf(nonceHex)
+  pp = _hexToBuf(theirPublicKeyHex)
+  sp = _hexToBuf(mySecretKeyHex)
+  if cp == null || np == null || pp == null || sp == null {
+    if cp != null { ffi.free(cp[0]) }
+    if np != null { ffi.free(np[0]) }
+    if pp != null { ffi.free(pp[0]) }
+    if sp != null { ffi.free(sp[0]) }
+    return null
+  }
+  ctlen = cp[1]
+  if ctlen < 16 {
+    ffi.free(cp[0]); ffi.free(np[0]); ffi.free(pp[0]); ffi.free(sp[0])
+    return null
+  }
+  out = _alloc(ctlen - 16 + 1)
+  if out == 0 {
+    ffi.free(cp[0]); ffi.free(np[0]); ffi.free(pp[0]); ffi.free(sp[0])
+    return null
+  }
+  rc = ffi.call(_sym.crypto_box_open_easy, "int32", _t_ppuppp,
+                out, cp[0], cp[1], np[0], pp[0], sp[0])
+  ffi.free(cp[0])
+  ffi.free(np[0])
+  ffi.free(pp[0])
+  ffi.free(sp[0])
+  if rc != 0 { ffi.free(out); return null }
+  result = ffi.string(out, cp[1] - 16)
+  ffi.free(out)
+  result
+}
+
+// =================== Password Hashing ===================
+
+PW_SALTBYTES = 16
+PW_OPSLIMIT = 4
+PW_MEMLIMIT = 33554432
+PW_HASHLEN = 128
+PW_STRBYTES = 128
+
+fn pwSalt() { randomHex(PW_SALTBYTES) }
+
+fn pwHash(password, saltHex) {
+  if !_ensureFfi() { return null }
+  pp = _toBuf(password)
+  sp = _toBuf(saltHex)
+  if pp[0] == 0 || sp[0] == 0 {
+    if pp[0] != 0 { ffi.free(pp[0]) }
+    if sp[0] != 0 { ffi.free(sp[0]) }
+    return null
+  }
+  out = _alloc(PW_HASHLEN)
+  if out == 0 { ffi.free(pp[0]); ffi.free(sp[0]); return null }
+  rc = ffi.call(_sym.crypto_pwhash, "int32", _t_pupupuu,
+                out, PW_HASHLEN, pp[0], pp[1], sp[0],
+                PW_OPSLIMIT, PW_MEMLIMIT, 0)
+  ffi.free(pp[0])
+  ffi.free(sp[0])
+  if rc != 0 { ffi.free(out); return null }
+  result = _hexFrom(out, PW_HASHLEN)
+  ffi.free(out)
+  result
+}
+
+fn pwHashStr(password) {
+  if !_ensureFfi() { return null }
+  pp = _toBuf(password)
+  if pp[0] == 0 { return null }
+  out = _alloc(PW_STRBYTES)
+  if out == 0 { ffi.free(pp[0]); return null }
+  rc = ffi.call(_sym.crypto_pwhash_str, "int32", _t_puuu,
+                out, pp[0], PW_OPSLIMIT, PW_MEMLIMIT)
+  ffi.free(pp[0])
+  if rc != 0 { ffi.free(out); return null }
+  result = ffi.string(out)
+  ffi.free(out)
+  result
+}
+
+fn pwHashVerify(hashStr, password) {
+  if !_ensureFfi() { return false }
+  hp = _toBuf(hashStr)
+  pp = _toBuf(password)
+  if hp[0] == 0 || pp[0] == 0 {
+    if hp[0] != 0 { ffi.free(hp[0]) }
+    if pp[0] != 0 { ffi.free(pp[0]) }
+    return false
+  }
+  rc = ffi.call(_sym.crypto_pwhash_str_verify, "int32", _t_pp, hp[0], pp[0])
+  ffi.free(hp[0])
+  ffi.free(pp[0])
+  rc == 0
+}
+
+// =================== Key Derivation ===================
+
+fn kdfKeygen() {
+  if !_ensureFfi() { return null }
+  buf = ffi.allocBytes(32)
+  if buf == 0 { return null }
+  ffi.call(_sym.crypto_kdf_keygen, "void", _t_p, buf)
+  result = _hexFrom(buf, 32)
+  ffi.free(buf)
+  result
+}
+
+fn kdfDerive(masterKeyHex, ctx, subkeyId, outLen) {
+  if !_ensureFfi() { return null }
+  kp = _toBuf(masterKeyHex)
+  if kp[0] == 0 { return null }
+  ctxBuf = ffi.allocBytes(8)
+  if ctxBuf == 0 { ffi.free(kp[0]); return null }
+  i = 0
+  while i < 8 {
+    byte = 0
+    if i < #ctx { byte = ctx[i:i+1] }
+    ffi.set_u8(ffi.ptr_add(ctxBuf, i), byte)
+    i += 1
+  }
+  out = _alloc(outLen)
+  if out == 0 { ffi.free(kp[0]); ffi.free(ctxBuf); return null }
+  rc = ffi.call(_sym.crypto_kdf_derive_from_key, "int32", _t_ppup,
+                out, outLen, subkeyId, ctxBuf, kp[0])
+  ffi.free(kp[0])
+  ffi.free(ctxBuf)
+  if rc != 0 { ffi.free(out); return null }
+  result = _hexFrom(out, outLen)
+  ffi.free(out)
+  result
+}

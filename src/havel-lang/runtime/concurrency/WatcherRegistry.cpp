@@ -22,7 +22,8 @@ WatcherRegistry::WatcherId WatcherRegistry::registerWatcher(
     uint32_t condition_ip,
     bool condition_result,
     const std::unordered_set<std::string>& dependencies,
-    Fiber* fiber
+    Fiber* fiber,
+    const BytecodeChunk* condition_chunk
 ) {
     if (!fiber) {
         return INVALID_WATCHER;
@@ -38,7 +39,7 @@ WatcherRegistry::WatcherId WatcherRegistry::registerWatcher(
     
     watchers_.emplace(
         watcher_id,
-        Watcher(watcher_id, fiber, dependencies, condition_result, condition_func_id, condition_ip));
+        Watcher(watcher_id, fiber, dependencies, condition_result, condition_func_id, condition_ip, condition_chunk));
     
     // Register in reverse index: variable → watcher
     for (const auto& var_name : dependencies) {

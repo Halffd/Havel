@@ -1,0 +1,2 @@
+use crypto
+print("crypto module loaded successfully")

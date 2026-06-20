@@ -10,6 +10,7 @@
 #include "../prototypes/PrototypeRegistry.hpp"
 #include "stdlib/StringModule.hpp"
 #include "stdlib/FsModule.hpp"
+#include "stdlib/StateModule.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -26,6 +27,10 @@ void VM::registerDefaultHostFunctions() {
   {
     VMApi api(*this);
     havel::stdlib::registerFsModule(api);
+  }
+  {
+    VMApi api(*this);
+    havel::stdlib::registerStateModule(api);
   }
   registerHostFunction("print", [this](const std::vector<Value> &args) {
     // Check if last arg is kwargs object (marked with __kwargs key)
@@ -1896,7 +1901,7 @@ registerHostFunction(
     fiber.release();
 
     watcher_registry_->registerWatcher(
-        cond_func_id, 0, initial_result, deps, raw_fiber);
+        cond_func_id, 0, initial_result, deps, raw_fiber, current_chunk);
 
     if (initial_result) {
         try {

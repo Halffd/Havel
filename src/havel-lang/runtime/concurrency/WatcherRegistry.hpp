@@ -13,6 +13,7 @@ namespace havel::compiler {
 
 // Forward declarations
 class Fiber;
+class BytecodeChunk;
 
 /**
  * WatcherRegistry - Reactive watcher management with edge-triggered firing
@@ -73,7 +74,8 @@ WatcherRegistry();
         uint32_t condition_ip,
         bool condition_result,
         const std::unordered_set<std::string>& dependencies,
-        Fiber* fiber
+        Fiber* fiber,
+        const BytecodeChunk* condition_chunk = nullptr
     );
     
     /**
@@ -126,12 +128,14 @@ WatcherRegistry();
         
         uint32_t condition_func_id;  // Function ID in VM bytecode
         uint32_t condition_ip;       // Instruction pointer for condition
+        const BytecodeChunk* condition_chunk;  // Chunk containing condition (nullptr = use current/main_chunk_)
         
         Watcher(WatcherId id_, Fiber* f,
                 const std::unordered_set<std::string>& deps, bool result,
-                uint32_t func_id, uint32_t ip)
+                uint32_t func_id, uint32_t ip,
+                const BytecodeChunk* chunk = nullptr)
             : id(id_), fiber(f), dependencies(deps), last_result(result),
-              condition_func_id(func_id), condition_ip(ip) {}
+              condition_func_id(func_id), condition_ip(ip), condition_chunk(chunk) {}
     };
     
     /**

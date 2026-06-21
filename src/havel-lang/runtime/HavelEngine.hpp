@@ -272,12 +272,6 @@ vm_->addIntervalResult(timer_id, result);
         auto* sched = vm_->getScheduler();
         if (!sched) return;
 
-        // Ensure current_chunk is set for plain functions (not closures)
-        auto mainChunk = vm_->getMainChunk();
-        if (mainChunk) {
-            vm_->setCurrentChunkPublic(mainChunk.get());
-        }
-
         if (hostContext_->eventQueue) {
             hostContext_->eventQueue->processAll();
         }

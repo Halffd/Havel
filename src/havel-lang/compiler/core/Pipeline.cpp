@@ -979,6 +979,9 @@ for (const auto &stmt : program->body) {
     }
     try {
         vm->setMaxInstructions(options.max_instructions);
+        if (options.debugBytecode) {
+            vm->setTraceExecution(true);
+        }
         if (options.vm_override) {
  auto shared_chunk = std::shared_ptr<BytecodeChunk>(std::move(chunk));
  vm->storeMainChunk(shared_chunk);

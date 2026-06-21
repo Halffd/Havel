@@ -1,0 +1,9 @@
+// Diagnostic: test window.active() outside any goroutine
+w = window.active()
+print("window.active() result:")
+print(w)
+print("title:", w.title)
+print("class:", w.class)
+print("id:", w.id)
+print("pid:", w.pid)
+print("cmdline:", w.cmdline)

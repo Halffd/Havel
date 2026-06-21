@@ -24,6 +24,19 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
         case OpCode::CALL: {
             uint32_t arg_count = instruction.operands[0].asInt();
             if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+                uint32_t current_ip = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].ip : 0;
+                std::cerr << "CALL Underflow! Stack size: " << stack.size() << " Expected: " << (arg_count + 1) << " IP: " << current_ip << "\n";
+                // Temporary copy of the stack to print values
+                auto temp = stack;
+                std::vector<Value> stack_vals;
+                while (!temp.empty()) {
+                    stack_vals.push_back(temp.top());
+                    temp.pop();
+                }
+                std::cerr << "Stack values (top first):\n";
+                for (size_t i = 0; i < stack_vals.size(); ++i) {
+                    std::cerr << "  [" << i << "]: " << toString(stack_vals[i]) << "\n";
+                }
                 COMPILER_THROW("Stack underflow during CALL");
             }
 

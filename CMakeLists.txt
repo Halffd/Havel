@@ -20,8 +20,8 @@ option(ENABLE_QT_UI_BACKEND "Build in-process Qt6 UI backend (fallback to dynami
 option(ENABLE_HEADLESS "Build without any GUI backend (server/headless mode)" OFF)
 option(ENABLE_MODULE_PLUGINS "Build stdlib/host modules as .so plugins" OFF)
 
-set(CMAKE_PREFIX_PATH /usr ${CMAKE_PREFIX_PATH})
-set(Qt6_DIR /usr/lib/cmake/Qt6 CACHE PATH "Path to Qt6 CMake config" FORCE)
+# set(CMAKE_PREFIX_PATH /usr ${CMAKE_PREFIX_PATH})
+# set(Qt6_DIR /usr/lib/cmake/Qt6 CACHE PATH "Path to Qt6 CMake config" FORCE)
 # ==============================================================================
 # COMPILER AND STANDARDS CONFIGURATION
 # ==============================================================================

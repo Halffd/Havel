@@ -648,6 +648,8 @@ executing_in_fiber_ = true;
       if (frame_count_ == entry_frame_count &&
           frame_arena_[active_frame_idx].ip == ip) {
         frame_arena_[active_frame_idx].ip++;
+      } else if (frame_count_ > entry_frame_count) {
+        frame_arena_[entry_frame_count - 1].ip++;
       }
     }
 
@@ -1192,6 +1194,8 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         active_frame_idx = frame_count_ - 1;
         if (frame_count_ == entry_frame_count && frame_arena_[active_frame_idx].ip == ip) {
           frame_arena_[active_frame_idx].ip++;
+        } else if (frame_count_ > entry_frame_count) {
+          frame_arena_[entry_frame_count - 1].ip++;
         }
       }
     }
@@ -1375,6 +1379,8 @@ slow_path:
             active_frame_idx = frame_count_ - 1;
             if (frame_count_ == entry_frame_count && frame_arena_[active_frame_idx].ip == ip) {
                 frame_arena_[active_frame_idx].ip++;
+            } else if (frame_count_ > entry_frame_count) {
+                frame_arena_[entry_frame_count - 1].ip++;
             }
         }
     }

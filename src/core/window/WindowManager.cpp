@@ -501,14 +501,17 @@ CompositorBridge *WindowManager::GetCompositorBridge() {
 }
 
 WindowInfo WindowManager::getActiveWindowInfo() {
+  get().ensureBackend();
   return get().getBackend().getActiveWindowInfo();
 }
 
 WindowInfo WindowManager::getWindowInfo(wID id) {
+  get().ensureBackend();
   return get().getBackend().getWindowInfo(id);
 }
 
 std::vector<WindowInfo> WindowManager::getAllWindows() {
+  get().ensureBackend();
   return get().getBackend().getAllWindows();
 }
 
@@ -517,14 +520,17 @@ uint64_t WindowManager::getActiveWindow() {
 }
 
 bool WindowManager::focusWindow(uint64_t id) {
+  get().ensureBackend();
   return get().getBackend().focusWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::closeWindow(uint64_t id) {
+  get().ensureBackend();
   return get().getBackend().closeWindow(static_cast<wID>(id));
 }
 
 bool WindowManager::moveWindow(uint64_t id, int x, int y) {
+  get().ensureBackend();
   return Move(static_cast<wID>(id), x, y);
 }
 

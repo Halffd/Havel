@@ -1,5 +1,4 @@
 #include "UIManager.hpp"
-#include "ExtensionUIBridge.hpp"
 #include "c/ToolkitPlugin.h"
 #include "dl/Loader.h"
 #include "../screenshot/ScreenshotService.hpp"
@@ -7,6 +6,7 @@
 #include "../clipboard/Clipboard.hpp"
 
 #ifdef HAVE_QT_EXTENSION
+#include "ExtensionUIBridge.hpp"
 #include "QtBackend.hpp"
 #include "../../extensions/qt/QtScreenshotBackend.hpp"
 #include "../../extensions/qt/QtAltTabBackend.hpp"
@@ -220,23 +220,7 @@ std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
         installToolkitBackendsInProcess("qt");
         return std::make_unique<QtBackend>();
 #else
-    {
-        auto extBridge = std::make_unique<ExtensionUIBridge>("qt");
-        if (extBridge->loadExtension()) {
-            return extBridge;
-        }
-        // Try toolkit .so loading
-        HavelLoader *loader = havel_loader_create();
-        havel_loader_add_toolkit_paths(loader);
-        const HavelToolkitABI *tkAbi = havel_loader_load_toolkit(loader, "qt");
-        if (tkAbi && tkAbi->create_ui_backend) {
-            loadedToolkitAbi_ = tkAbi;
-            installToolkitBackends(tkAbi);
-            void *raw = tkAbi->create_ui_backend();
-            return std::unique_ptr<UIBackend>(castUIBackend(raw));
-        }
         return nullptr;
-    }
 #endif
     case UIBackend::Api::GTK:
 #if defined(HAVE_GTK_BACKEND)
@@ -256,6 +240,7 @@ std::unique_ptr<UIBackend> UIManager::createBackend(UIBackend::Api api) {
 }
 
 bool UIManager::installToolkitBackends(const HavelToolkitABI *abi) {
+#if defined(HAVE_QT_EXTENSION)
     if (!abi) return false;
     bool any = false;
 
@@ -270,20 +255,21 @@ bool UIManager::installToolkitBackends(const HavelToolkitABI *abi) {
     if (abi->create_alttab_backend) {
         auto *raw = abi->create_alttab_backend();
         auto *backend = castAltTabBackend(raw);
-        // AltTabService needs a setBackend call — but we need to find it
-        // If it's registered in ServiceRegistry, get it from there
         any = true;
     }
 
     if (abi->create_clipboard_backend) {
         auto *raw = abi->create_clipboard_backend();
         auto *backend = castClipboardBackend(raw);
-        // Clipboard is typically created per-module, not a singleton
         (void)backend;
         any = true;
     }
 
     return any;
+#else
+    (void)abi;
+    return false;
+#endif
 }
 
 bool UIManager::installToolkitBackendsInProcess(const std::string &toolkitName) {

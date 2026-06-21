@@ -166,8 +166,12 @@ modeManager(std::make_shared<ModeManager>())
       if (hk.alias == alias)
       {
         hk.grab = grab;
-        if (!grab && !hk.evdev) {
-          io->UngrabHotkey(id);
+        if (!hk.evdev) {
+          if (grab) {
+            io->GrabHotkey(id);
+          } else {
+            io->UngrabHotkey(id);
+          }
         }
         return true;
       }

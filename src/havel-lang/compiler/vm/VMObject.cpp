@@ -550,11 +550,68 @@ VM::getPrototypeMethod(const Value &value,
   } else if (value.isObjectId()) {
     typeName = "object";
     moduleName = "Object"; // Object module uses capital O
+
+    // Check if the object has a __class with a custom class name
+    // This enables prototype method dispatch for host objects like Hotkey
+    auto *obj = heap_.object(value.asObjectId());
+    if (obj) {
+      auto *classVal = obj->get("__class");
+      if (classVal) {
+        if (classVal->isStringValId() || classVal->isStringId()) {
+          uint32_t strIdx = classVal->isStringValId() ? classVal->asStringValId() : classVal->asStringId();
+          auto *classStr = heap_.string(strIdx);
+          if (classStr) {
+            // Use the class name for prototype lookup
+            auto classIt = prototypes_.find(*classStr);
+            if (classIt != prototypes_.end()) {
+              auto methodIt = classIt->second.find(methodName);
+              if (methodIt != classIt->second.end())
+                return methodIt->second;
+            }
+            // Also try lowercase
+            std::string lower = *classStr;
+            for (auto &c : lower) if (c >= 'A' && c <= 'Z') c += 32;
+            auto lowerIt = prototypes_.find(lower);
+            if (lowerIt != prototypes_.end()) {
+              auto methodIt = lowerIt->second.find(methodName);
+              if (methodIt != lowerIt->second.end())
+                return methodIt->second;
+            }
+            // Fallback: check globals for a global with the class name
+            auto globalIt = globals.find(*classStr);
+            if (globalIt != globals.end() && globalIt->second.isObjectId()) {
+              auto *classObj = heap_.object(globalIt->second.asObjectId());
+              if (classObj) {
+                auto *fnVal = classObj->get(methodName);
+                if (fnVal && fnVal->isHostFuncId()) {
+                  uint32_t idx = fnVal->asHostFuncId();
+                  if (classIt == prototypes_.end()) {
+                    prototypes_[*classStr][methodName] = idx;
+                  } else {
+                    classIt->second[methodName] = idx;
+                  }
+                  return idx;
+                }
+              }
+            }
+          }
+        } else if (classVal->isObjectId()) {
+          // __class is an object - walk it for methods
+          auto *classObj = heap_.object(classVal->asObjectId());
+          if (classObj) {
+            auto *fnVal = classObj->get(methodName);
+            if (fnVal && fnVal->isHostFuncId()) {
+              return fnVal->asHostFuncId();
+            }
+          }
+        }
+      }
+    }
   } else {
     return std::nullopt;
   }
 
-  // Look up method in prototype table
+  // Look up method in prototype table (primary type, e.g. "object")
   auto typeIt = prototypes_.find(typeName);
   if (typeIt != prototypes_.end()) {
     auto methodIt = typeIt->second.find(methodName);

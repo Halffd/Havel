@@ -321,8 +321,44 @@ case OpCode::TAIL_CALL: {
       }
     }
 
-	// 1. Try host prototype (for primitives and built-in object methods)
-	if (!found_host && vm_func.isNull()) {
+  // 0.8 Check __class string-based prototype (e.g., "Hotkey" for hotkey objects)
+  if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
+    auto *recvObj = heap_.object(receiver.asObjectId());
+    if (recvObj) {
+      auto *classVal = recvObj->get("__class");
+      if (classVal && (classVal->isStringValId() || classVal->isStringId())) {
+        uint32_t strIdx = classVal->isStringValId() ? classVal->asStringValId() : classVal->asStringId();
+        auto *classStr = heap_.string(strIdx);
+        if (classStr) {
+          // Try the class name directly (e.g., "Hotkey")
+          auto classIt = prototypes_.find(*classStr);
+          if (classIt != prototypes_.end()) {
+            auto methodIt = classIt->second.find(method_name);
+            if (methodIt != classIt->second.end()) {
+              host_func_idx = methodIt->second;
+              found_host = true;
+            }
+          }
+          // Also try lowercase
+          if (!found_host) {
+            std::string lower = *classStr;
+            for (auto &c : lower) if (c >= 'A' && c <= 'Z') c += 32;
+            auto lowerIt = prototypes_.find(lower);
+            if (lowerIt != prototypes_.end()) {
+              auto methodIt = lowerIt->second.find(method_name);
+              if (methodIt != lowerIt->second.end()) {
+                host_func_idx = methodIt->second;
+                found_host = true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 1. Try host prototype (for primitives and built-in object methods)
+  if (!found_host && vm_func.isNull()) {
 		auto typeIt = prototypes_.find(type_name);
 		if (typeIt != prototypes_.end()) {
 			auto methodIt = typeIt->second.find(method_name);
@@ -392,7 +428,6 @@ case OpCode::TAIL_CALL: {
             auto fnIt = host_functions.find(resolved_name);
             if (fnIt != host_functions.end()) {
                 Value result = fnIt->second(all_args);
-                fprintf(stderr, "DBG CALL_METHOD: host func %s result_type=%s, isArrayId=%d, result_bits=%lu\n", resolved_name.c_str(), getTypeName(result).c_str(), result.isArrayId(), result.getTagBits());
                 pushStack(result);
     if (hot_func_cb_) {
       if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
@@ -407,7 +442,6 @@ case OpCode::TAIL_CALL: {
       }
     } else {
         // Call VM function
-        fprintf(stderr, "DBG CALL_METHOD: calling VM function, arg_count=%zu\n", all_args.size());
         doCall(vm_func, all_args);
     }
     break;

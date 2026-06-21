@@ -1,6 +1,7 @@
 #include "ExecutionEngine.hpp"
 #include "../../../utils/Logger.hpp"
 #include "core/hotkey/HotkeyActionWrapper.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
 #include "../../common/Debug.hpp"
 #include "../concurrency/Fiber.hpp"
 #include "../concurrency/DependencyTracker.hpp"
@@ -645,39 +646,100 @@ void ExecutionEngine::onThreadComplete(uint32_t thread_id) {
 // ============================================================================
 
 void ExecutionEngine::onVariableChanged(const std::string& var_name) {
-  if (!watcher_registry_) {
-    return;
-  }
-  
     if (debug_mode_) {
         std::cerr << "[ExecutionEngine] Variable '" << var_name << "' changed, checking "
-                  << watcher_registry_->getWatcherCount() << " watchers\n";
+                  << (watcher_registry_ ? watcher_registry_->getWatcherCount() : 0) << " watchers\n";
     }
-  
-  
-  std::vector<Fiber*> fired_fibers = watcher_registry_->onVariableChanged(
-      var_name,
-      [this](uint32_t watcher_id) -> bool {
-        return evaluateCondition(watcher_id);
-      }
-  );
-  
-    for (Fiber* fiber : fired_fibers) {
-        if (fiber && vm_) {
-            if (debug_mode_) {
-                std::cerr << "[ExecutionEngine] Firing when body func=" << fiber->current_function_id << "\n";
+
+    // Re-evaluate when watchers
+    if (watcher_registry_) {
+        std::vector<Fiber*> fired_fibers = watcher_registry_->onVariableChanged(
+            var_name,
+            [this](uint32_t watcher_id) -> bool {
+                return evaluateCondition(watcher_id);
             }
-            try {
-                Value body_func = Value::makeFunctionObjId(fiber->current_function_id);
-                vm_->call(body_func, {});
-            } catch (...) {
+        );
+
+        for (Fiber* fiber : fired_fibers) {
+            if (fiber && vm_) {
+                if (debug_mode_) {
+                    std::cerr << "[ExecutionEngine] Firing when body func=" << fiber->current_function_id << "\n";
+                }
+                try {
+                    Value body_func = Value::makeFunctionObjId(fiber->current_function_id);
+                    vm_->call(body_func, {});
+                } catch (...) {
+                }
             }
         }
     }
 
-  if (vm_) {
-      vm_->processSignalBindings(var_name);
-  }
+    // Re-evaluate conditional hotkey goroutines
+    if (vm_ && scheduler_) {
+        scheduler_->forEachConditionalHotkey(
+            [this, &var_name](Scheduler::Goroutine* g) {
+                if (!g || g->state != Scheduler::GoroutineState::Suspended ||
+                    g->suspension_reason.load(std::memory_order_acquire) != Scheduler::SuspensionReason::HotkeyWait) {
+                    return;
+                }
+                // Check if this goroutine's condition depends on the changed variable
+                if (g->hotkey_condition_deps.empty() ||
+                    g->hotkey_condition_deps.count(var_name) == 0) {
+                    return;
+                }
+                // Re-evaluate condition with dependency tracking
+                auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
+                if (!condVal) return;
+
+                auto tracker = std::make_shared<DependencyTracker>();
+                DependencyTrackerScope scope(tracker);
+                bool conditionMet = false;
+                try {
+                    Value result = vm_->callFunctionSync(*condVal, {});
+                    conditionMet = vm_->toBool(result);
+                } catch (const std::exception &e) {
+                    if (debug_mode_) {
+                        std::cerr << "[ExecutionEngine] Hotkey condition exception: " << e.what() << "\n";
+                    }
+                }
+
+                // Update dependencies (condition may reference different vars now)
+                auto newDeps = tracker->getGlobalDependencies();
+                auto fieldDeps = tracker->getFieldDependencies();
+                newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+                g->hotkey_condition_deps = std::move(newDeps);
+
+                bool prev = g->hotkey_condition_last_result;
+                g->hotkey_condition_last_result = conditionMet;
+
+                // Edge-triggered: only act on transition
+                if (prev == conditionMet) return;
+
+                if (conditionMet) {
+                    // Condition became true: wake the goroutine and grab the hotkey
+                    if (!g->hotkey_condition_alias.empty()) {
+                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                        if (hm) {
+                            hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
+                        }
+                    }
+                    scheduler_->wakeHotkey(g);
+                } else {
+                    // Condition became false: ungrab the hotkey
+                    if (!g->hotkey_condition_alias.empty()) {
+                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                        if (hm) {
+                            hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
+                        }
+                    }
+                }
+            }
+        );
+    }
+
+    if (vm_) {
+        vm_->processSignalBindings(var_name);
+    }
 }
 
 bool ExecutionEngine::evaluateCondition(uint32_t watcher_id) {

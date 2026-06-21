@@ -1,12 +1,7 @@
 // crypto.hv - Havel stdlib crypto module
-// Pure-Havel cryptographic utilities using random.bytes and string
-// methods available in the module sandbox.
-//
-// Provides: hex encode/decode, base64 encode/decode, random token generation,
-// simple hash functions (FNV-1a, DJB2), UUID v4 generation.
-//
-// NOTE: These are NOT suitable for real security-critical applications.
-// They are provided for scripting convenience (tokens, IDs, checksums).
+// FFI-backed cryptographic utilities using libsodium.
+// Provides: sha256, sha512, blake2b, hmac, secretBox, sign, box, kdf, uuid, randomBytes
+use random
 
 // --- Hex Encoding ---
 

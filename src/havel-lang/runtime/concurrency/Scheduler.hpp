@@ -6,8 +6,10 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "../../core/Value.hpp"
@@ -193,6 +195,12 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
     std::atomic<bool> hotkey_retrigger{false};
     uint32_t hotkey_condition_callback_id = 0;
 
+    // Conditional hotkey reactivity: which variables the condition depends on,
+    // last evaluated result (for edge-triggered grab/ungrab), and alias
+    std::unordered_set<std::string> hotkey_condition_deps;
+    bool hotkey_condition_last_result = false;
+    std::string hotkey_condition_alias;
+
   // Update goroutine: periodic goroutine managed by scheduler
   uint32_t update_interval_ms = 0;
   uint64_t update_callback_id = 0; // GC external root ID (from registerCallback), 0 = none
@@ -311,6 +319,10 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
      * @return Goroutine pointer or nullptr if not found
      */
     Goroutine* findGoroutineByFiber(Fiber* fiber);
+
+    // Iterate goroutines with an active conditional hotkey condition
+    // Calls fn(g) for each goroutine where hotkey_condition_callback_id != 0
+    void forEachConditionalHotkey(std::function<void(Goroutine*)> fn);
 
     // ===== Scheduler Lifecycle =====
 

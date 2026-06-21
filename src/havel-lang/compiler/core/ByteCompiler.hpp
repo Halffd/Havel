@@ -296,9 +296,8 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
     std::vector<LoopInfo> loop_stack_;
 
   // Condition function index for hotkey.register_conditional.
-  // Set by ConditionalHotkey (^v if expr => {}) or by WhenStatement
-  // (when expr { ^v => {} }) before compileHotkeyBinding is called.
-  // Nullopt means compileHotkeyBinding emits hotkey.register (unconditional).
+  // Set by compileWhenBlock (when expr { ^v => {} }) before compileHotkeyBinding
+  // is called. Nullopt means compileHotkeyBinding emits hotkey.register (unconditional).
   std::optional<uint32_t> conditional_hotkey_condition_index_;
 
   // HostBridge for lazy module loading and permission checks

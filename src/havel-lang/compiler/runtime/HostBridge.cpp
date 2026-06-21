@@ -281,7 +281,7 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
 
   addVmSetup([](VM &vm) {
     auto hotkeyObj = vm.createHostObject();
-    for (const auto &name : {"register", "register_conditional", "trigger", "list"}) {
+    for (const auto &name : {"register", "trigger", "list"}) {
       std::string fn = std::string("hotkey.") + name;
       int idx = vm.getHostFunctionIndex(fn);
       if (idx >= 0) {

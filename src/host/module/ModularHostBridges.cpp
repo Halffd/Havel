@@ -3766,8 +3766,26 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
             auto *g = sched->get(persistentGid);
             if (g) {
                 g->hotkey_condition_callback_id = conditionCb;
-                ::havel::debug("[InputBridge] Conditional hotkey '{}' gid={} condition_cb={}",
-                    hotkeyStr, persistentGid, conditionCb);
+                g->hotkey_condition_alias = hotkeyStr;
+                // Evaluate condition to track variable dependencies
+                auto condVal = vm->externalRootValue(conditionCb);
+                if (condVal) {
+                    auto tracker = std::make_shared<havel::compiler::DependencyTracker>();
+                    havel::compiler::DependencyTrackerScope scope(tracker);
+                    bool initialResult = false;
+                    try {
+                        Value result = vm->callFunctionSync(*condVal, {});
+                        initialResult = vm->toBool(result);
+                    } catch (...) {
+                    }
+                    g->hotkey_condition_last_result = initialResult;
+                    auto deps = tracker->getGlobalDependencies();
+                    auto fieldDeps = tracker->getFieldDependencies();
+                    deps.insert(fieldDeps.begin(), fieldDeps.end());
+                    g->hotkey_condition_deps = std::move(deps);
+                }
+                ::havel::debug("[InputBridge] Conditional hotkey '{}' gid={} condition_cb={} deps={}",
+                    hotkeyStr, persistentGid, conditionCb, g->hotkey_condition_deps.size());
             }
         }
     }
@@ -3792,11 +3810,15 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                         sched->deferToVM(std::move(wakeHotkey));
                     }
                 });
-            // Conditional hotkeys: don't grab the key at OS level.
-            // The condition gates only the action in ExecutionEngine,
-            // not the key consumption. Without this, the key is
-            // consumed on every window regardless of the condition.
-            ctx->hotkeyManager->SetHotkeyGrab(hotkeyStr, false);
+            // Set grab state based on initial condition result
+            // onVariableChanged will update this dynamically on VAR_CHANGED events
+            if (persistentGid != 0) {
+                if (auto* sched = vm->getScheduler()) {
+                    if (auto* g = sched->get(persistentGid)) {
+                        ctx->hotkeyManager->SetHotkeyGrab(hotkeyStr, g->hotkey_condition_last_result);
+                    }
+                }
+            }
         } else {
             ctx->hotkeyManager->AddHotkey(
                 hotkeyStr, [vm, actionCb, hotkeyContext]() {

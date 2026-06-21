@@ -51,7 +51,11 @@ fn modeEval (win) {
     print("Leaving mode to default")
   }
 }
-hotkeyTest = hotkey.register_conditional("a", () => { "Gaming mode active" }, () => { res = mode == "gaming" || title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv: " + res); return res })
+a if mode == "gaming" || title_ ~ "mpv" => {
+  print("CONDITIONAL mode gaming or mpv: true")
+  "Gaming mode active"
+}
+hotkeyTest = lastHotkey  // populated by a handler
 dbgWin = true
 hks = null
 go fn update() {

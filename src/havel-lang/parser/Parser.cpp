@@ -2652,8 +2652,10 @@ position = savePos; // restore position
         // Combine prefix and suffix conditions with AND
         auto finalCondition = combineConditions(std::move(prefixCondition),
                                                 std::move(suffixCondition));
-        return makeNode<havel::ast::ConditionalHotkey>(
-            std::move(finalCondition), std::move(binding));
+        std::vector<std::unique_ptr<ast::Statement>> stmts;
+        stmts.push_back(std::move(binding));
+        return makeNode<havel::ast::WhenBlock>(
+            std::move(finalCondition), std::move(stmts));
       }
 
       // No conditions, return normal binding
@@ -2837,8 +2839,10 @@ position = savePos; // restore position
         if (prefixCondition || suffixCondition) {
           auto finalCondition = combineConditions(std::move(prefixCondition),
                                                    std::move(suffixCondition));
-          return makeNode<havel::ast::ConditionalHotkey>(
-              std::move(finalCondition), std::move(binding));
+          std::vector<std::unique_ptr<ast::Statement>> stmts;
+          stmts.push_back(std::move(binding));
+          return makeNode<havel::ast::WhenBlock>(
+              std::move(finalCondition), std::move(stmts));
         }
         return binding;
       } else {
@@ -2999,8 +3003,10 @@ binding->action = std::move(action);
 
 if (suffixCondition) {
 auto finalCondition = combineConditions(nullptr, std::move(suffixCondition));
-return makeNode<havel::ast::ConditionalHotkey>(
-std::move(finalCondition), std::move(binding));
+std::vector<std::unique_ptr<ast::Statement>> stmts;
+stmts.push_back(std::move(binding));
+return makeNode<havel::ast::WhenBlock>(
+std::move(finalCondition), std::move(stmts));
 }
 return binding;
 }
@@ -3058,8 +3064,10 @@ at(1).type == havel::TokenType::Arrow) {
           // Combine prefix and suffix conditions with AND
           auto finalCondition = combineConditions(std::move(prefixCondition),
                                                   std::move(suffixCondition));
-          return makeNode<havel::ast::ConditionalHotkey>(
-              std::move(finalCondition), std::move(binding));
+          std::vector<std::unique_ptr<ast::Statement>> stmts;
+          stmts.push_back(std::move(binding));
+          return makeNode<havel::ast::WhenBlock>(
+              std::move(finalCondition), std::move(stmts));
         }
 
         // No conditions, return normal binding

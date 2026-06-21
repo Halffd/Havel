@@ -1,7 +1,7 @@
-// Test conditional hotkeys: F2 if mode == "work" && class == "code" => { print("Coding at work") }
+// Test conditional hotkeys: F2 if mode == "work" && ctx == "code" => { print("Coding at work") }
 
-let mode = "work"
-let class = "code"
+mode = "work"
+ctx = "code"
 
 print "=== Testing Conditional Hotkeys ==="
 
@@ -11,13 +11,13 @@ f2 if mode == "work" => {
   print("F2 fired: Working mode active!")
 }
 
-print "Defining F3 if class == code..."
-f3 if class == "code" => {
+print "Defining F3 if ctx == code..."
+f3 if ctx == "code" => {
   print("F3 fired: Coding mode!")
 }
 
-print "Defining F4 if mode == work && class == code..."
-f4 if mode == "work" && class == "code" => {
+print "Defining F4 if mode == work && ctx == code..."
+f4 if mode == "work" && ctx == "code" => {
   print("F4 fired: Both conditions met!")
 }
 

@@ -11,6 +11,7 @@
 #include "stdlib/StringModule.hpp"
 #include "stdlib/FsModule.hpp"
 #include "stdlib/StateModule.hpp"
+#include "stdlib/HotkeyModule.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -31,6 +32,10 @@ void VM::registerDefaultHostFunctions() {
   {
     VMApi api(*this);
     havel::stdlib::registerStateModule(api);
+  }
+  {
+    VMApi api(*this);
+    havel::stdlib::registerHotkeyModule(api);
   }
   registerHostFunction("print", [this](const std::vector<Value> &args) {
     // Check if last arg is kwargs object (marked with __kwargs key)

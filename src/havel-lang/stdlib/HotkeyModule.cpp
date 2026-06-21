@@ -187,6 +187,15 @@ static Value createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
     vm->setHostObjectField(contextObj, "status", Value::makeStringId(statusRef.id));
     vm->setHostObjectField(contextObj, "goroutine_id", Value::makeInt(static_cast<int64_t>(gid)));
 
+    if (ctx) {
+        vm->setHostObjectField(contextObj, "triggerCount", Value::makeInt(ctx->triggerCount));
+        vm->setHostObjectField(contextObj, "lastTriggeredAt", Value::makeInt(ctx->lastTriggeredAt));
+    } else {
+        vm->setHostObjectField(contextObj, "triggerCount", Value::makeInt(0));
+        vm->setHostObjectField(contextObj, "lastTriggeredAt", Value::makeInt(0));
+    }
+
+    // Use __class string for prototype method dispatch
     auto typeStr = vm->createRuntimeString("Hotkey");
     vm->setHostObjectField(contextObj, "__class", Value::makeStringId(typeStr.id));
 
@@ -262,6 +271,8 @@ static Value rebuildHotkeyObject(VM &vm, const HotkeyContextData *ctx) {
     auto policyStr = vm.createRuntimeString(policyToString(policy));
     vm.setHostObjectField(obj, "policy", Value::makeStringId(policyStr.id));
     vm.setHostObjectField(obj, "goroutine_id", Value::makeInt(static_cast<int64_t>(gid)));
+    vm.setHostObjectField(obj, "triggerCount", Value::makeInt(ctx->triggerCount));
+    vm.setHostObjectField(obj, "lastTriggeredAt", Value::makeInt(ctx->lastTriggeredAt));
 
     auto typeStr = vm.createRuntimeString("Hotkey");
     vm.setHostObjectField(obj, "__class", Value::makeStringId(typeStr.id));

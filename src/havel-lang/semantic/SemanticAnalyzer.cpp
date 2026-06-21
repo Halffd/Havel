@@ -405,22 +405,24 @@ void SemanticAnalyzer::visitStatement(const ast::Statement &stmt) {
     break;
   }
 
-  case ast::NodeType::ConditionalHotkey: {
-    const auto &condHotkey = static_cast<const ast::ConditionalHotkey &>(stmt);
+  case ast::NodeType::WhenBlockStatement: {
+    const auto &whenBlock = static_cast<const ast::WhenBlock &>(stmt);
 
     // Visit the condition expression
-    if (condHotkey.condition) {
-      visitExpression(*condHotkey.condition);
+    if (whenBlock.condition) {
+      visitExpression(*whenBlock.condition);
     }
 
-    // Visit the wrapped hotkey binding (which will create its own scope)
-    if (condHotkey.binding) {
-      visitStatement(*condHotkey.binding);
+    // Visit each statement in a new scope
+    enterScope("when");
+    for (const auto &s : whenBlock.statements) {
+      if (s) visitStatement(*s);
     }
- break;
- }
+    exitScope();
+    break;
+  }
 
- case ast::NodeType::WhenStatement: {
+  case ast::NodeType::WhenStatement: {
     const auto &whenStmt = static_cast<const ast::WhenStatement &>(stmt);
 
     // Visit the trigger condition

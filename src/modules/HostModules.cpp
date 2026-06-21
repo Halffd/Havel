@@ -35,10 +35,14 @@ namespace havel {
 void declareAllServices() {
 	auto& registry = host::ServiceRegistry::instance();
   registry.declareService<IO>("io", "core");
-  registry.declareService<host::ClipboardService>("clipboard", "qt");
-  registry.declareService<host::MonitoringClipboard>("monitoring-clipboard", "qt");
+#if ENABLE_QT
+	registry.declareService<host::ClipboardService>("clipboard", "qt");
+	registry.declareService<host::MonitoringClipboard>("monitoring-clipboard", "qt");
+#endif
   registry.declareService<host::MapManagerService>("map-manager", "io");
-  registry.declareService<host::AltTabService>("alt-tab", "qt");
+#if ENABLE_QT
+	registry.declareService<host::AltTabService>("alt-tab", "qt");
+#endif
   registry.declareService<host::AutomationService>("automation", "io");
   registry.declareService<host::BrightnessService>("brightness", "core");
   registry.declareService<host::FileSystemService>("filesystem", "util");

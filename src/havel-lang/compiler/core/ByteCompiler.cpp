@@ -2493,26 +2493,6 @@ case ast::NodeType::UseStatement: {
     break;
   }
 
-case ast::NodeType::ConditionalHotkey: {
-            const auto &condHk = static_cast<const ast::ConditionalHotkey &>(statement);
-            if (condHk.binding && condHk.condition) {
-                BytecodeFunction conditionFn("condhotkey_condition");
-                enterFunction(std::move(conditionFn));
-                compileExpression(*condHk.condition);
-                emit(OpCode::RETURN);
-                leaveFunction();
-
-                uint32_t condFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
-                auto prevConditionIndex = conditional_hotkey_condition_index_;
-                conditional_hotkey_condition_index_ = condFuncIndex;
-                compileHotkeyBinding(*condHk.binding);
-                conditional_hotkey_condition_index_ = prevConditionIndex;
-            } else if (condHk.binding) {
-                compileHotkeyBinding(*condHk.binding);
-            }
-            break;
-        }
-
   default:
     COMPILER_THROW("Unsupported statement in bytecode compiler: " +
                              statement.toString());
@@ -6590,12 +6570,6 @@ case ast::NodeType::OffModeStatement: {
     if (hotkey.conditionExpr) collectLambdaExpressions(*hotkey.conditionExpr, out);
     break;
   }
-  case ast::NodeType::ConditionalHotkey: {
-    const auto &cond = static_cast<const ast::ConditionalHotkey &>(statement);
-    if (cond.condition) collectLambdaExpressions(*cond.condition, out);
-    if (cond.binding) collectLambdaExpressions(*cond.binding, out);
-    break;
-  }
     default:
     break;
   }
@@ -7234,7 +7208,6 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
     for (const auto &stmt : whenBlock.statements) {
         if (!stmt) continue;
         if (stmt->kind == ast::NodeType::HotkeyBinding ||
-            stmt->kind == ast::NodeType::ConditionalHotkey ||
             stmt->kind == ast::NodeType::HotkeyExpression) {
             hotkeyStmts.push_back(stmt.get());
         } else {

@@ -861,20 +861,6 @@ case ast::NodeType::BlockStatement: {
     break;
   }
 
-  case ast::NodeType::ConditionalHotkey: {
-    const auto &condHotkey =
-        static_cast<const ast::ConditionalHotkey &>(statement);
-    // Visit condition in current scope
-    if (condHotkey.condition) {
-      resolveExpression(*condHotkey.condition);
-    }
-    // Visit the wrapped hotkey binding (creates its own scope)
-    if (condHotkey.binding) {
-      resolveStatement(*condHotkey.binding);
-    }
-    break;
-  }
-
   // Type system declarations - register type names in scope
   case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =

@@ -1380,6 +1380,11 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
         havel::repl::REPL repl(replConfig);
         repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
 
+        // Pump goroutines on the REPL thread
+        repl.setPumpCallback([&engine]() {
+            engine.tickGoroutines();
+        });
+
         return repl.run();
     } else {
       info("Running scripts and starting REPL with full features...");
@@ -1402,9 +1407,8 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       replBackend->setApplicationMetadata(replMeta);
 
       std::vector<std::string> args;
-      // Use EventListenerThreaded = true so the event loop runs and
-      // executeFrame() can process events. REPL interacts via the same thread.
-      havel::Havel havel_inst(false, combinedNames, false, true, args);
+      // Use repl = true so EventListener is non-threaded and cooperative on REPL thread.
+      havel::Havel havel_inst(false, combinedNames, true, true, args);
       
       if (!havel_inst.isInitialized()) return 1;
       
@@ -1649,6 +1653,11 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
         havel::repl::REPL repl(replConfig);
         repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
 
+        // Pump goroutines on the REPL thread
+        repl.setPumpCallback([&engine]() {
+            engine.tickGoroutines();
+        });
+
         return repl.run();
     } else {
       info("Starting Havel REPL with full features (hotkeys, GUI)...");
@@ -1668,7 +1677,7 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
       // Create havel::Havel with full features
       std::vector<std::string> args;
-      havel::Havel havel_inst(false, "", false, true, args);
+      havel::Havel havel_inst(false, "", true, true, args);
       
       if (!havel_inst.isInitialized()) {
         error("Failed to initialize havel::Havel");
@@ -1714,6 +1723,19 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
 havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
 hostAPI->SetVM(bytecodeVM);
 repl.attach(bytecodeVM, modules, collectKnownGlobals(bytecodeVM));
+
+      auto *ee = havel_inst.getExecutionEngine();
+      if (ee) ee->setScriptReady(true);
+
+      // Pump EventListener on the REPL thread so event processing shares the same thread
+      {
+        auto *io = havel_inst.getIOPtr();
+        if (io) {
+          repl.setPumpCallback([io]() {
+            io->PumpOnce();
+          });
+        }
+      }
 
       // Run REPL
       return repl.run();

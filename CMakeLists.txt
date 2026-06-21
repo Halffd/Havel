@@ -227,6 +227,8 @@ if(ENABLE_QT AND UI_BACKEND MATCHES "^(QT|AUTO)$")
     set(CMAKE_AUTORCC ON) 
     set(CMAKE_AUTOUIC ON)
 
+    set(CMAKE_DISABLE_FIND_PACKAGE_Qt6Pdf TRUE)
+    set(QT_NO_PLUGINS ON)
     find_package(Qt6 COMPONENTS Core Widgets Gui Charts Test)
     
     if(Qt6_FOUND)

@@ -267,6 +267,141 @@ vm_->addIntervalResult(timer_id, result);
         return result.return_value;
     }
 
+    void tickGoroutines() {
+        if (!initialized_) return;
+        auto* sched = vm_->getScheduler();
+        if (!sched) return;
+
+        // Ensure current_chunk is set for plain functions (not closures)
+        auto mainChunk = vm_->getMainChunk();
+        if (mainChunk) {
+            vm_->setCurrentChunkPublic(mainChunk.get());
+        }
+
+        if (hostContext_->eventQueue) {
+            hostContext_->eventQueue->processAll();
+        }
+        sched->drainDeferredCallbacks(compiler::FiberPriority::NORMAL);
+
+        sched->wakeSleepingGoroutines();
+
+        // Execute runnable goroutines in a loop until none are left runnable in this tick
+        while (sched->hasRunnableFibers()) {
+            if (vm_->exit_requested_.load()) break;
+
+            auto* g = sched->pickNext();
+            if (!g) break;
+
+            // Set as current goroutine so VM opcodes can access it via scheduler_->current()
+            sched->setCurrent(g);
+
+            // Start and run this goroutine to completion/suspension
+            if (g->state == compiler::Scheduler::GoroutineState::Created) {
+                auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+                if (result != compiler::VM::GoroutineCallResult::Failed) {
+                    g->state = compiler::Scheduler::GoroutineState::Runnable;
+                    vm_->runDispatchLoopPublic(0);
+                } else {
+                    g->state = compiler::Scheduler::GoroutineState::Done;
+                    if (g->update_callback_id != 0) {
+                        vm_->releaseCallback(g->update_callback_id);
+                        g->update_callback_id = 0;
+                    }
+                }
+            } else if (g->state == compiler::Scheduler::GoroutineState::Runnable ||
+                       g->state == compiler::Scheduler::GoroutineState::Running) {
+                // Update goroutines restart via startGoroutineCall (fresh each tick)
+                if (g->update_interval_ms > 0) {
+                    auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+                    if (result != compiler::VM::GoroutineCallResult::Failed) {
+                        g->state = compiler::Scheduler::GoroutineState::Runnable;
+                        vm_->runDispatchLoopPublic(0);
+                    } else {
+                        g->state = compiler::Scheduler::GoroutineState::Done;
+                        if (g->update_callback_id != 0) {
+                            vm_->releaseCallback(g->update_callback_id);
+                            g->update_callback_id = 0;
+                        }
+                    }
+                } else {
+                    // Resumed goroutine (unparked from await/sleep)
+                    if (g->fiber) {
+                        vm_->loadFiberStatePublic(g->fiber);
+                        // Replace placeholder null with actual resume_value
+                        if (g->wait_handle.type != compiler::Scheduler::AwaitableType::NONE &&
+                            g->wait_handle.type != compiler::Scheduler::AwaitableType::SLEEP) {
+                            vm_->replaceStackTop(g->wait_handle.resume_value);
+                            g->wait_handle.clear();
+                        }
+                    }
+                    vm_->runDispatchLoopPublic(0);
+                }
+            }
+
+            // Check if the goroutine suspended (await/sleep) or finished
+            uint8_t lastReason = vm_->getLastSuspensionReason();
+            void* lastContext = vm_->getLastSuspensionContext();
+            if (lastReason != 0) {
+                // Goroutine suspended — save fiber state and mark as Suspended
+                vm_->clearLastSuspension();
+                if (g->fiber) {
+                    vm_->saveFiberStatePublic(g->fiber);
+                }
+                auto schedReason = toSchedulerReasonPublic(lastReason);
+                g->state = compiler::Scheduler::GoroutineState::Suspended;
+                g->suspension_reason = schedReason;
+                if (g->fiber) {
+                    g->fiber->state = compiler::FiberState::SUSPENDED;
+                    g->fiber->suspended_reason = static_cast<compiler::SuspensionReason>(lastReason);
+                }
+                // For SLEEP, set the deadline on the wait_handle
+                if (static_cast<compiler::SuspensionReason>(lastReason) == compiler::SuspensionReason::SLEEP) {
+                    auto ms = reinterpret_cast<intptr_t>(lastContext);
+                    g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+                    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+                }
+                if (sched->current() == g) {
+                    sched->clearCurrent();
+                }
+            } else if (g->update_interval_ms > 0) {
+                // Update goroutines: reset and re-suspend with SleepWait
+                sched->clearCurrent();
+                g->ip = 0;
+                g->stack.clear();
+                g->locals.clear();
+                auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::milliseconds(g->update_interval_ms);
+                {
+                    std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+                    g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+                    g->wait_handle.deadline = deadline;
+                }
+                g->state = compiler::Scheduler::GoroutineState::Suspended;
+                g->suspension_reason.store(compiler::Scheduler::SuspensionReason::SleepWait, std::memory_order_release);
+            } else if (g->persistent) {
+                // Persistent goroutines (hotkey system): re-suspend instead of Done.
+                g->state = compiler::Scheduler::GoroutineState::Suspended;
+                g->suspension_reason = compiler::Scheduler::SuspensionReason::HotkeyWait;
+                if (g->fiber) {
+                    g->fiber->state = compiler::FiberState::SUSPENDED;
+                    g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
+                }
+                if (sched->current() == g) {
+                    sched->clearCurrent();
+                }
+            } else {
+                g->state = compiler::Scheduler::GoroutineState::Done;
+                if (g->fiber) {
+                    g->fiber->state = compiler::FiberState::DONE;
+                }
+                if (g->update_callback_id != 0) {
+                    vm_->releaseCallback(g->update_callback_id);
+                    g->update_callback_id = 0;
+                }
+            }
+        }
+    }
+
     compiler::VM* vm() const { return vm_.get(); }
     Modules* modules() const { return modules_.get(); }
     bool isInitialized() const { return initialized_; }

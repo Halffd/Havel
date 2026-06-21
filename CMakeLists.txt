@@ -20,12 +20,14 @@ option(ENABLE_QT_UI_BACKEND "Build in-process Qt6 UI backend (fallback to dynami
 option(ENABLE_HEADLESS "Build without any GUI backend (server/headless mode)" OFF)
 option(ENABLE_MODULE_PLUGINS "Build stdlib/host modules as .so plugins" OFF)
 
+set(CMAKE_PREFIX_PATH /usr ${CMAKE_PREFIX_PATH})
+set(Qt6_DIR /usr/lib/cmake/Qt6 CACHE PATH "Path to Qt6 CMake config" FORCE)
 # ==============================================================================
 # COMPILER AND STANDARDS CONFIGURATION
 # ==============================================================================
 # Validate compiler choice
 if(USE_CLANG AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    message(WARNING 
+    message(WARNING
         "USE_CLANG is ON but compiler is ${CMAKE_CXX_COMPILER_ID}. "
         "Set CC=clang CXX=clang++ before running cmake for best results."
     )
@@ -71,7 +73,7 @@ endif()
 # ==============================================================================
 # Critical: LLVM requires Havel Lang
 if(ENABLE_LLVM AND NOT ENABLE_HAVEL_LANG)
-    message(STATUS 
+    message(STATUS
         "LLVM JIT compilation requires Havel Language support. "
         "Automatically enabling ENABLE_HAVEL_LANG."
     )
@@ -122,7 +124,7 @@ endif()
 
 # X11 extensions
 find_library(XTEST_LIB Xtst REQUIRED)
-find_library(XRANDR_LIB Xrandr REQUIRED)  
+find_library(XRANDR_LIB Xrandr REQUIRED)
 find_library(XINERAMA_LIB Xinerama REQUIRED)
 pkg_check_modules(XCOMPOSITE REQUIRED xcomposite)
 pkg_check_modules(XDAMAGE REQUIRED xdamage)
@@ -224,22 +226,20 @@ target_include_directories(wayland-protos PUBLIC ${XKBCOMMON_INCLUDE_DIRS})
 # ==============================================================================
 if(ENABLE_QT AND UI_BACKEND MATCHES "^(QT|AUTO)$")
     set(CMAKE_AUTOMOC ON)
-    set(CMAKE_AUTORCC ON) 
+    set(CMAKE_AUTORCC ON)
     set(CMAKE_AUTOUIC ON)
 
-    set(CMAKE_DISABLE_FIND_PACKAGE_Qt6Pdf TRUE)
-    set(QT_NO_PLUGINS ON)
     find_package(Qt6 COMPONENTS Core Widgets Gui Charts Test)
-    
+
     if(Qt6_FOUND)
         # Handle X11/Qt keyword conflicts in MOC
-        set(CMAKE_AUTOMOC_MOC_OPTIONS 
+        set(CMAKE_AUTOMOC_MOC_OPTIONS
             "-DMOC_PARSING"
             "-DNone=0L"
             "-DTrue=1"
             "-DFalse=0"
             "-DStatus=int"
-            "-DBool=int" 
+            "-DBool=int"
             "-DSuccess=0"
         )
         set(QT_BACKEND_AVAILABLE TRUE)
@@ -275,48 +275,48 @@ endif()
 if(ENABLE_LLVM AND ENABLE_HAVEL_LANG)
     message(STATUS "Searching for LLVM...")
     find_package(LLVM REQUIRED CONFIG)
-    
+
     if(LLVM_FOUND)
         message(STATUS "✓ LLVM ${LLVM_PACKAGE_VERSION} found")
-        
+
         # Use llvm-config directly for library information - it handles all dependencies
         execute_process(
             COMMAND llvm-config --libdir
             OUTPUT_VARIABLE LLVM_LIBDIR
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        
+
         execute_process(
             COMMAND llvm-config --libs all
             OUTPUT_VARIABLE LLVM_LINKFLAGS
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        
+
         execute_process(
             COMMAND llvm-config --system-libs
             OUTPUT_VARIABLE LLVM_SYSTEM_LIBS
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        
+
         # Combine all libraries - this returns raw flags like "-lLLVMCore -lLLVMSupport ..."
         set(LLVM_LIBS "${LLVM_LINKFLAGS} ${LLVM_SYSTEM_LIBS}")
         string(STRIP "${LLVM_LIBS}" LLVM_LIBS)
         separate_arguments(LLVM_LIBS) # Convert space-separated string to CMake list
         string(JOIN " " HAVEL_LLVM_LINK_FLAGS ${LLVM_LIBS})
-        
+
         # Add LLVM library search directory to linker search path
         if(LLVM_LIBDIR)
             link_directories(${LLVM_LIBDIR})
             message(STATUS "  LLVM lib directory: ${LLVM_LIBDIR}")
         endif()
-        
+
         message(STATUS "  LLVM link flags: ${LLVM_LINKFLAGS}")
-        
-        
+
+
     else()
-        message(FATAL_ERROR 
+        message(FATAL_ERROR
             "LLVM not found but ENABLE_LLVM=ON. Install LLVM development packages:\n"
-            "  Ubuntu/Debian: apt install llvm-dev libllvm-dev\n" 
+            "  Ubuntu/Debian: apt install llvm-dev libllvm-dev\n"
             "  Fedora/RHEL: dnf install llvm-devel\n"
             "  Arch: pacman -S llvm\n"
             "Or disable with -DENABLE_LLVM=OFF"
@@ -452,7 +452,7 @@ endif()
             ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/BytecodeOrcJIT.cpp
         )
     endif()
-    
+
     # -----------------------------------------------------------------------
     # Apply LLVM include fixes to BytecodeOrcJIT.cpp globally
     # This prevents LLVM 23's bare `namespace __detail` from polluting std::__detail
@@ -556,8 +556,8 @@ set(UI_BACKEND_INCLUDES "")
 
 if(UI_BACKEND STREQUAL "QT" AND QT_BACKEND_AVAILABLE AND ENABLE_QT_UI_BACKEND)
     # Qt6 include directories - use standard paths
-    list(APPEND UI_BACKEND_INCLUDES 
-        /usr/include/qt6 
+    list(APPEND UI_BACKEND_INCLUDES
+        /usr/include/qt6
         /usr/include/qt6/QtCore
         /usr/include/qt6/QtWidgets
         /usr/include/qt6/QtGui
@@ -617,16 +617,16 @@ endif()
 if(ENABLE_IMGUI OR UI_BACKEND STREQUAL "IMGUI")
     pkg_check_modules(GLFW3 glfw3)
     find_package(OpenGL)
-    
+
     # Find ImGui (typically bundled or system-installed)
     find_path(IMGUI_INCLUDE_DIR imgui.h
-        PATHS 
+        PATHS
             /usr/include/imgui
             /usr/local/include/imgui
             ${CMAKE_SOURCE_DIR}/third_party/imgui
             ${CMAKE_SOURCE_DIR}/vendor/imgui
     )
-    
+
     if(GLFW3_FOUND AND OpenGL_FOUND AND IMGUI_INCLUDE_DIR)
         set(IMGUI_BACKEND_AVAILABLE TRUE)
         set(ENABLE_QT OFF)  # Disable Qt when ImGui is selected
@@ -1421,7 +1421,7 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
   ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/LogModule.cpp
 )
     add_library(havel_lang_core STATIC ${HAVEL_LANG_CORE_SOURCES})
-    
+
     target_include_directories(havel_lang PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/include
@@ -1438,7 +1438,7 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
         # Note: LLVM_INCLUDE_DIRS intentionally omitted here - Qt headers cause issues
         # to prevent LLVM 23 namespace __detail from polluting std::__detail in all TUs.
     )
-    
+
 target_link_libraries(havel_lang PRIVATE
 ${COMMON_LIBS}
 $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
@@ -1478,7 +1478,7 @@ havel_core
         )
         target_compile_options(havel_lang PRIVATE -fno-lto)
     endif()
-    
+
 target_compile_definitions(havel_lang PRIVATE
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
@@ -1700,7 +1700,7 @@ if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
                 $<$<NOT:$<BOOL:${ENABLE_MODULE_PLUGINS}>>:${HOST_MODULES_SOURCES}>
                 $<$<BOOL:${ENABLE_HAVEL_LANG}>:${HAVEL_LANG_SOURCES}>
         )
-        
+
         target_include_directories(${test_name} PRIVATE
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/include
@@ -1720,18 +1720,18 @@ if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
             $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:/usr/include/qt6/QtWidgets>
             $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:/usr/include/qt6/QtGui>
         )
-        
+
 target_link_libraries(${test_name} PRIVATE
 ${COMMON_LIBS}
 GTest::gtest
-            GTest::gtest_main 
+            GTest::gtest_main
             Qt6::Test
             $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Widgets>
             $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:Qt6::Gui>
             havel_extension_runtime
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
         )
-        
+
         target_compile_definitions(${test_name} PRIVATE
             RUN_TESTS
             $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
@@ -1745,7 +1745,7 @@ GTest::gtest
             $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_GUI_LIB>
             $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_WIDGETS_LIB>
         )
-        
+
  # Add to CTest
  add_test(NAME ${test_name} COMMAND ${test_name})
 
@@ -1754,18 +1754,18 @@ GTest::gtest
  target_link_options(${test_name} PRIVATE --coverage)
  endif()
  endforeach()
-    
+
     # Special GUI test if it exists
     if(EXISTS "${CMAKE_SOURCE_DIR}/tests/TestGUI.cpp" AND ENABLE_QT_UI_BACKEND)
         add_executable(test_gui tests/TestGUI.cpp)
-        
+
 target_link_libraries(test_gui PRIVATE
 Qt6::Widgets
             Qt6::Test
-            GTest::gtest 
+            GTest::gtest
             GTest::gtest_main
         )
-        
+
         target_compile_definitions(test_gui PRIVATE RUN_TESTS)
         add_test(NAME test_gui COMMAND test_gui)
     endif()

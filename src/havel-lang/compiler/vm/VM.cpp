@@ -760,19 +760,29 @@ void VM::loadFiberState(Fiber *fiber) {
 
   // STEP 3: Restore locals from fiber's map into VM's vector
   // VM locals is a vector indexed by absolute position
-  // We iterate fiber's map and build the locals vector
+  // We iterate fiber's map and restore to the correct index
   if (!fiber->locals.empty()) {
     // Find the maximum local index to know how big to make locals vector
     size_t max_local = 0;
     for (const auto &[name, value] : fiber->locals) {
-      // For now, we just copy all values into a sequential vector
-      // TODO: If fiber->locals uses string keys, we may need a mapping
-      max_local++;
+      // Extract numeric index from "_local_N" key
+      if (name.find("_local_") == 0) {
+        size_t idx = std::stoull(name.substr(7));
+        if (idx > max_local) max_local = idx;
+      }
     }
     
-    locals.reserve(max_local);
+    // Resize locals to hold all saved locals in correct positions
+    locals.resize(max_local + 1, Value::makeNull());
+    
+    // Restore each local to its original position
     for (const auto &[name, value] : fiber->locals) {
-      locals.push_back(value);
+      if (name.find("_local_") == 0) {
+        size_t idx = std::stoull(name.substr(7));
+        if (idx < locals.size()) {
+          locals[idx] = value;
+        }
+      }
     }
   }
 

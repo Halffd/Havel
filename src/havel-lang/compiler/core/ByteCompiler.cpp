@@ -738,6 +738,13 @@ if (param->defaultValue.has_value()) {
         // Compile the last meaningful statement in tail position (implicit return)
         const auto &lastStmt = stmts[lastMeaningful];
         bool needsExplicitReturn = true;
+        
+        // Fix for loop implicit return: detect if the last statement is a loop and treat as tail position
+        bool isLoop = lastStmt && (lastStmt->kind == ast::NodeType::ForStatement ||
+                                   lastStmt->kind == ast::NodeType::WhileStatement ||
+                                   lastStmt->kind == ast::NodeType::LoopStatement ||
+                                   lastStmt->kind == ast::NodeType::DoWhileStatement);
+                                   
         if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
           const auto &exprStmt =
               static_cast<const ast::ExpressionStatement &>(*lastStmt);
@@ -749,8 +756,6 @@ if (param->defaultValue.has_value()) {
             if (wasTailCall()) {
               needsExplicitReturn = false;
             }
-          } else {
-            // Empty expression statement — will emit LOAD_CONST null + RETURN below
           }
         } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
           enterTailPosition();
@@ -758,8 +763,8 @@ if (param->defaultValue.has_value()) {
           exitTailPosition();
           needsExplicitReturn = false;
         } else if (lastStmt && (lastStmt->kind == ast::NodeType::IfStatement ||
-                                 lastStmt->kind == ast::NodeType::BlockStatement)) {
-          // If/Match/Block in tail position may return from all branches
+                                 lastStmt->kind == ast::NodeType::BlockStatement ||
+                                 isLoop)) {
           enterTailPosition();
           compileStatement(*lastStmt);
           exitTailPosition();

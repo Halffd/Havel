@@ -1483,6 +1483,9 @@ hostAPI->SetVM(bytecodeVM);
           repl.setPumpCallback([io]() {
             io->PumpOnce();
           });
+          repl.setUngrabCallback([io]() {
+            io->UngrabAll();
+          });
         }
       }
 
@@ -1733,6 +1736,9 @@ repl.attach(bytecodeVM, modules, collectKnownGlobals(bytecodeVM));
         if (io) {
           repl.setPumpCallback([io]() {
             io->PumpOnce();
+          });
+          repl.setUngrabCallback([io]() {
+            io->UngrabAll();
           });
         }
       }

@@ -2131,21 +2131,22 @@ static Value createWindowObject(
     const std::string &title = "", const std::string &windowClass = "",
     const std::string &exe = "", int pid = 0, const std::string &cmdline = "") {
   if (!vm || !ctx || !ctx->windowManager) {
-    ::havel::warn("[WindowManager] createWindowObject: missing vm/ctx/manager");
     return Value::makeNull();
   }
 
   VMApi api(*vm);
   auto obj = api.makeObject();
   api.setField(obj, "id", Value::makeInt(static_cast<int64_t>(windowId)));
-  api.setField(obj, "title", Value::makeNull());
-  api.setField(obj, "class", Value::makeNull());
-  api.setField(obj, "exe", Value::makeNull());
-  api.setField(obj, "pid", Value::makeInt(static_cast<int64_t>(pid)));
-  api.setField(obj, "cmd", Value::makeNull());
 
-  // Methods are shared - they take the object's id field as receiver
-  // win.close() compiles to: window.close(win)
+  // Data fields as methods: win.title(), win.class() etc.
+  // These query live data from the window manager using the window ID.
+  api.setField(obj, "title", api.makeFunctionRef("window._title"));
+  api.setField(obj, "class", api.makeFunctionRef("window._class"));
+  api.setField(obj, "exe", api.makeFunctionRef("window._exe"));
+  api.setField(obj, "pid", api.makeFunctionRef("window._pid"));
+  api.setField(obj, "cmd", api.makeFunctionRef("window.cmd"));
+
+  // Action methods
   api.setField(obj, "close", api.makeFunctionRef("window._close"));
   api.setField(obj, "hide", api.makeFunctionRef("window._hide"));
   api.setField(obj, "show", api.makeFunctionRef("window._show"));
@@ -2162,21 +2163,6 @@ static Value createWindowObject(
   api.setField(obj, "setAlwaysOnTop", api.makeFunctionRef("window._setAlwaysOnTop"));
   api.setField(obj, "pos", api.makeFunctionRef("window._pos"));
 
-  // Fetch initial values for data fields
-  auto getVal = [&](const std::string& name) {
-      int idx = vm->getHostFunctionIndex("window._" + name);
-      if (idx >= 0) {
-          Value fn = Value::makeHostFuncId(static_cast<uint32_t>(idx));
-          return vm->callFunction(fn, {Value::makeInt(static_cast<int64_t>(windowId))});
-      }
-      return Value::makeNull();
-  };
-
-  api.setField(obj, "title", getVal("title"));
-  api.setField(obj, "class", getVal("class"));
-  api.setField(obj, "exe", getVal("exe"));
-  api.setField(obj, "pid", getVal("pid"));
-
   return Value::makeObjectId(obj.asObjectId());
 }
 
@@ -2190,10 +2176,8 @@ UIBridge::handleWindowGetActive(const std::vector<Value> &args,
   ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
-    ::havel::warn("[UIBridge] handleWindowGetActive: active window info not valid");
     return Value::makeNull();
   }
-  ::havel::info("[UIBridge] handleWindowGetActive: valid window id={}", info.id);
   return createWindowObject(static_cast<VM *>(ctx->vm), ctx, info.id,
                             info.title, info.windowClass, info.exe, info.pid,
                             info.cmdline);

@@ -189,7 +189,15 @@ void REPL::setPumpCallback(std::function<void()> callback) {
   pumpCallback_ = std::move(callback);
 }
 
+void REPL::setUngrabCallback(std::function<void()> callback) {
+  ungrabCallback_ = std::move(callback);
+}
+
 std::string REPL::readLine(const std::string& prompt) {
+    // Ungrab all input devices before reading — X11 key grabs prevent
+    // keystrokes from reaching the terminal while readline is waiting.
+    if (ungrabCallback_) ungrabCallback_();
+
     if (inputHandler_) {
         return inputHandler_(prompt);
     }

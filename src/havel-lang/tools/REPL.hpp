@@ -124,6 +124,14 @@ public:
     void setPumpCallback(std::function<void()> callback);
 
     /**
+     * Set callback to ungrab all input devices before reading input.
+     * Called before each readline to release X11 key grabs so the terminal
+     * can receive keystrokes. After ungrab, the next pumpCallback_/executeFrame()
+     * will re-grab keys as needed by when-block conditions.
+     */
+    void setUngrabCallback(std::function<void()> callback);
+
+    /**
      * Set a custom input handler (for embedded use)
      */
     void setInputHandler(std::function<std::string(const std::string&)> handler);
@@ -186,6 +194,7 @@ private:
     // Handlers
     std::function<void(const std::string&)> printHandler_;
     std::function<void()> pumpCallback_;
+    std::function<void()> ungrabCallback_;
     std::function<std::string(const std::string&)> inputHandler_;
 
     // Execution context

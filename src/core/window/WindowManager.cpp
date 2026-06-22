@@ -502,11 +502,7 @@ CompositorBridge *WindowManager::GetCompositorBridge() {
 
 WindowInfo WindowManager::getActiveWindowInfo() {
   get().ensureBackend();
-  auto info = get().getBackend().getActiveWindowInfo();
-  if (!info.valid) {
-    ::havel::warn("[WindowManager] Active window info invalid or not found");
-  }
-  return info;
+  return get().getBackend().getActiveWindowInfo();
 }
 
 WindowInfo WindowManager::getWindowInfo(wID id) {

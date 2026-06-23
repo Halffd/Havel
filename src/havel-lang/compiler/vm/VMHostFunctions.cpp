@@ -254,7 +254,7 @@ void VM::registerDefaultHostFunctions() {
   });
 
   registerHostFunction(
-      "sleep_ms", 1, [](const std::vector<Value> &args) {
+      "sleep_ms", 1, [this](const std::vector<Value> &args) {
         if (!args[0].isInt()) {
           COMPILER_THROW(
               "sleep_ms expects exactly 1 integer argument");
@@ -265,7 +265,24 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW("sleep_ms duration cannot be negative");
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
+        if (scheduler_ && executing_in_fiber_) {
+          suspension_requested_ = true;
+          suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
+          suspension_context_ = reinterpret_cast<void*>(
+              static_cast<intptr_t>(duration_ms));
+          return Value::makeNull();
+        }
+
+        auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(duration_ms);
+        while (std::chrono::steady_clock::now() < deadline) {
+          if (exit_requested_.load()) return Value::makeNull();
+          processPendingEvents();
+          auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+              deadline - std::chrono::steady_clock::now());
+          auto chunk = std::min(static_cast<int64_t>(remaining.count()), int64_t(10));
+          if (chunk > 0) std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+        }
         return Value::makeNull();
       });
 
@@ -320,7 +337,7 @@ static_cast<intptr_t>(*duration_ms));
 return Value::makeNull();
 }
 
-        // No scheduler — fall back to blocking sleep with yields
+        // No scheduler — fall back to chunked sleep with event processing
         {
           const int SLEEP_CHUNK_MS = 10;
           auto end_time = std::chrono::steady_clock::now() +
@@ -331,12 +348,9 @@ return Value::makeNull();
                 end_time - std::chrono::steady_clock::now());
             auto chunk = std::min(static_cast<int>(remaining.count()), SLEEP_CHUNK_MS);
             if (chunk > 0) {
-              execution_mutex_.lock();
               std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
-              execution_mutex_.unlock();
             }
-if (timer_check_func_) timer_check_func_();
-if (event_queue_) event_queue_->processAll();
+            processPendingEvents();
           }
         }
         return Value::makeNull();

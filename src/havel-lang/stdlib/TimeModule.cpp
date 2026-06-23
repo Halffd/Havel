@@ -133,7 +133,7 @@ void registerTimeModule(const VMApi &api) {
             return Value::makeNull();
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+        api.chunkedSleep(ms);
         return Value::makeNull();
       });
 

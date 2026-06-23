@@ -979,6 +979,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
 	
  void setEventQueue(class EventQueue* eq);
 	class EventQueue* getEventQueue() { return event_queue_; }
+        void processPendingEvents();
 
 	void setWatcherRegistry(WatcherRegistry* wr) { watcher_registry_ = wr; }
 	WatcherRegistry* getWatcherRegistry() const { return watcher_registry_; }
@@ -988,6 +989,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
 
     // When true, the script requested program exit (via exit() host function)
     std::atomic<bool> exit_requested_{false};
+    bool exitRequested() const { return exit_requested_.load(); }
     // The exit code passed to the exit() function
     std::atomic<int> exit_code_{0};
   

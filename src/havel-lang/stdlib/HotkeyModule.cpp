@@ -892,7 +892,9 @@ api.registerPrototypeMethod("Hotkey", "wait", 1, [&vm](const std::vector<Value> 
     }
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::microseconds(500));
+        if (vm.exitRequested()) return Value::makeBool(false);
+        vm.processPendingEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         state = g->state.load();
         if (state == Scheduler::GoroutineState::Done ||
             state == Scheduler::GoroutineState::Suspended ||

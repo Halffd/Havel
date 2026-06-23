@@ -227,6 +227,10 @@ private:
 
     // Readline event hook — pumps events between keystrokes
     static std::function<void()> pumpCallbackForHook_;
+
+    // Callback-mode readline state
+    static std::string callbackLine_;
+    static bool callbackLineReady_;
     static int rlEventHook();
 
     // Write to output log if enabled

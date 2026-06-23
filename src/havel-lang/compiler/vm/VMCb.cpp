@@ -526,4 +526,9 @@ std::unique_ptr<BytecodeInterpreter> createVM() {
     return std::make_unique<VM>();
 }
 
+void VM::processPendingEvents() {
+  if (timer_check_func_) timer_check_func_();
+  if (event_queue_) event_queue_->processAll();
+}
+
 } // namespace havel::compiler

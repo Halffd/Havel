@@ -26,6 +26,7 @@
 #include <sys/stat.h>
 #include <poll.h>
 #include <unistd.h>
+#include <sys/select.h>
 
 #ifdef HAVE_READLINE
 #include <readline/readline.h>
@@ -37,6 +38,8 @@ namespace havel::repl {
 // Static member initialization
 std::atomic<bool> REPL::interrupted_{false};
 std::function<void()> REPL::pumpCallbackForHook_;
+std::string REPL::callbackLine_;
+bool REPL::callbackLineReady_ = false;
 
 // Signal handler for REPL (not static - declared as friend in header)
 void replSignalHandler(int sig) {
@@ -203,19 +206,58 @@ std::string REPL::readLine(const std::string& prompt) {
     }
 
 #ifdef HAVE_READLINE
-    // Install event hook so readline pumps events between keystrokes
+    // Use readline callback mode so we can pump events in our own
+    // select() loop instead of blocking inside readline().
+    // rl_event_hook only fires between keystrokes — if no key is
+    // pressed, readline blocks in poll/select on stdin and the hook
+    // never runs.  Callback mode lets us drive the loop and call
+    // PumpOnce() on every iteration, keeping goroutines and when-blocks
+    // alive while waiting for user input.
+
     pumpCallbackForHook_ = pumpCallback_;
-    rl_event_hook = rlEventHook;
-    char* line = readline(prompt.c_str());
-    rl_event_hook = nullptr;
-    pumpCallbackForHook_ = nullptr;
-    if (line) {
-        std::string result(line);
-        free(line);
-        return result;
+    callbackLine_.clear();
+    callbackLineReady_ = false;
+
+    rl_callback_handler_install(prompt.c_str(), [](char *line) {
+        if (line) {
+            callbackLine_ = line;
+            free(line);
+        } else {
+            callbackLine_.clear();
+        }
+        callbackLineReady_ = true;
+        rl_callback_handler_remove();
+    });
+
+    while (!callbackLineReady_) {
+        // Pump events every iteration so goroutines and when-blocks keep running
+        if (pumpCallback_) pumpCallback_();
+
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(STDIN_FILENO, &fds);
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 50000; // 50ms timeout — keeps event pump responsive
+        int ret = select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv);
+        if (ret > 0) {
+            rl_callback_read_char();
+        } else if (ret < 0 && errno != EINTR) {
+            break;
+        }
     }
-    std::cin.setstate(std::ios::eofbit);
-    return "";
+
+    pumpCallbackForHook_ = nullptr;
+
+    if (callbackLineReady_ && !callbackLine_.empty()) {
+        add_history(callbackLine_.c_str());
+    }
+
+    if (!callbackLineReady_) {
+        std::cin.setstate(std::ios::eofbit);
+        return "";
+    }
+    return callbackLine_;
 #else
     std::cout << prompt;
     std::cout.flush();

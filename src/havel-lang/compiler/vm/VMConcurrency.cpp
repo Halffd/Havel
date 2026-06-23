@@ -439,15 +439,16 @@ break;
  auto now = std::chrono::steady_clock::now();
  if (co->resume_at_time > now) {
  auto sleep_remaining = co->resume_at_time - now;
- while (std::chrono::steady_clock::now() < co->resume_at_time) {
- if (timer_check_func_) timer_check_func_();
- auto rem = co->resume_at_time - std::chrono::steady_clock::now();
- auto rem_ms = std::chrono::duration_cast<std::chrono::milliseconds>(rem);
- if (rem_ms.count() > 0) {
- std::this_thread::sleep_for(std::chrono::milliseconds(
- std::min(static_cast<int64_t>(1), rem_ms.count())));
- }
- }
+  while (std::chrono::steady_clock::now() < co->resume_at_time) {
+  if (exit_requested_.load()) break;
+  processPendingEvents();
+  auto rem = co->resume_at_time - std::chrono::steady_clock::now();
+  auto rem_ms = std::chrono::duration_cast<std::chrono::milliseconds>(rem);
+  auto chunk = std::min(static_cast<int64_t>(rem_ms.count()), int64_t(10));
+  if (chunk > 0) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+  }
+  }
  }
                         // Resume coroutine after sleep
                         co->state = GCHeap::Coroutine::Runnable;
@@ -600,15 +601,18 @@ if (awaitable.isIntervalId()) {
     break;
   }
 
-  // Non-scheduler context: busy-wait
+  // Non-scheduler context: polling wait with event processing
   while (interval_results_.find(iid) == interval_results_.end()) {
-    if (timer_check_func_) timer_check_func_();
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    if (exit_requested_.load()) { pushStack(Value::makeNull()); break; }
+    processPendingEvents();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+  if (!exit_requested_.load()) {
   auto it2 = interval_results_.find(iid);
   Value result = it2->second;
   interval_results_.erase(it2);
   pushStack(result);
+  }
   break;
 }
 
@@ -720,15 +724,17 @@ if (awaitable.isTimeoutId()) {
     break;
   }
 
-  // No scheduler — blocking sleep with timer processing
+  // No scheduler — blocking sleep with timer and event processing
   {
   auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
   while (std::chrono::steady_clock::now() < deadline) {
-  if (timer_check_func_) timer_check_func_();
+  if (exit_requested_.load()) break;
+  processPendingEvents();
   auto remaining = deadline - std::chrono::steady_clock::now();
   auto sleep_ms = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
-  if (sleep_ms.count() > 0) {
-  std::this_thread::sleep_for(std::chrono::milliseconds(std::min(static_cast<int64_t>(1), sleep_ms.count())));
+  auto chunk = std::min(static_cast<int64_t>(sleep_ms.count()), int64_t(10));
+  if (chunk > 0) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
   }
   }
   }

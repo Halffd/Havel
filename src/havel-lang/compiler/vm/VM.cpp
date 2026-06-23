@@ -1286,7 +1286,7 @@ slow_path:
             last_suspension_context_ = ctx;
             break;
           }
-          // Non-scheduler: blocking sleep inline
+          // Non-scheduler: blocking sleep inline with event processing
           int64_t ms = reinterpret_cast<intptr_t>(ctx);
           if (ms > 0) {
             const int CHUNK = 10;
@@ -1294,7 +1294,7 @@ slow_path:
                 std::chrono::milliseconds(ms);
             while (std::chrono::steady_clock::now() < deadline) {
               if (exit_requested_.load()) break;
-              if (timer_check_func_) timer_check_func_();
+              processPendingEvents();
               auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                   deadline - std::chrono::steady_clock::now());
               auto chunk = std::min(static_cast<int>(remaining.count()), CHUNK);

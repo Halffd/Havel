@@ -738,8 +738,8 @@ if (param->defaultValue.has_value()) {
         // Compile the last meaningful statement in tail position (implicit return)
         const auto &lastStmt = stmts[lastMeaningful];
         bool needsExplicitReturn = true;
-        
-        // Fix for loop implicit return: detect if the last statement is a loop and treat as tail position
+
+        // Fix: Detect if the last statement is a loop and treat as tail position
         bool isLoop = lastStmt && (lastStmt->kind == ast::NodeType::ForStatement ||
                                    lastStmt->kind == ast::NodeType::WhileStatement ||
                                    lastStmt->kind == ast::NodeType::LoopStatement ||
@@ -765,6 +765,7 @@ if (param->defaultValue.has_value()) {
         } else if (lastStmt && (lastStmt->kind == ast::NodeType::IfStatement ||
                                  lastStmt->kind == ast::NodeType::BlockStatement ||
                                  isLoop)) {
+          // If/Match/Block/Loop in tail position
           enterTailPosition();
           compileStatement(*lastStmt);
           exitTailPosition();

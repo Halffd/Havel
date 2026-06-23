@@ -548,187 +548,59 @@ default:
 __attribute__((hot, noinline))
 void VM::runDispatchFast(size_t stop_frame_depth) {
     static void* dispatch_table[256] = {
-        &&op_LOAD_CONST,        // 0
-        &&op_LOAD_GLOBAL,       // 1  (delegates to executeInstruction)
-        &&op_STORE_GLOBAL,      // 2  (delegates to executeInstruction)
-        &&op_STORE_IMMUT_GLOBAL,// 3  (delegates to executeInstruction)
-        &&op_LOAD_VAR,          // 4
-        &&op_STORE_VAR,         // 5
-        &&op_STORE_IMMUT_VAR,   // 6  (delegates to executeInstruction)
-        &&op_LOAD_UPVALUE,      // 7  (delegates to executeInstruction)
-        &&op_STORE_UPVALUE,     // 8  (delegates to executeInstruction)
-        &&op_POP,               // 9
-        &&op_DUP,               // 10
-        &&op_SWAP,              // 11
-        &&op_PUSH_NULL,         // 12
-        &&op_ADD,               // 13 (binary ops group)
-        &&op_SUB,               // 14 (binary ops group)
-        &&op_MUL,               // 15 (binary ops group)
-        &&op_DIV,               // 16 (binary ops group)
-        &&op_INT_DIV,           // 17 (binary ops group)
-        &&op_DIVMOD,            // 18 (binary ops group)
-        &&op_REMAINDER,         // 19 (binary ops group)
-        &&op_MOD,               // 20 (binary ops group)
-        &&op_POW,               // 21 (binary ops group)
-        &&op_default,           // 22  ADD_ASSIGN
-        &&op_default,           // 23  SUB_ASSIGN
-        &&op_default,           // 24  MUL_ASSIGN
-        &&op_default,           // 25  DIV_ASSIGN
-        &&op_default,           // 26  INT_DIV_ASSIGN
-        &&op_default,           // 27  REMAINDER_ASSIGN
-        &&op_default,           // 28  MOD_ASSIGN
-        &&op_default,           // 29  POW_ASSIGN
-        &&op_default,           // 30  BITWISE_AND_ASSIGN
-        &&op_default,           // 31  BITWISE_OR_ASSIGN
-        &&op_default,           // 32  BITWISE_XOR_ASSIGN
-        &&op_default,           // 33  SHIFT_LEFT_ASSIGN
-        &&op_default,           // 34  SHIFT_RIGHT_ASSIGN
-        &&op_INCLOCAL,          // 35
-        &&op_DECLOCAL,          // 36
-        &&op_INCLOCAL_POST,     // 37
-        &&op_DECLOCAL_POST,     // 38
-        &&op_EQ,                // 39 (binary ops group)
-        &&op_NEQ,               // 40 (binary ops group)
-        &&op_IS,                // 41 (binary ops group)
-        &&op_LT,                // 42 (binary ops group)
-        &&op_LTE,               // 43 (binary ops group)
-        &&op_GT,                // 44 (binary ops group)
-        &&op_GTE,               // 45 (binary ops group)
-        &&op_AND,               // 46 (logical ops group)
-        &&op_OR,                // 47 (logical ops group)
-        &&op_NOT,               // 48
-        &&op_NEGATE,            // 49
-        &&op_IS_NULL,           // 50
-        &&op_BIT_AND,           // 51 (binary ops group)
-        &&op_BIT_OR,            // 52 (binary ops group)
-        &&op_BIT_XOR,           // 53 (binary ops group)
-        &&op_BIT_LSH,           // 54 (binary ops group)
-        &&op_BIT_RSH,           // 55 (binary ops group)
-        &&op_BIT_NOT,           // 56
-        &&op_LENGTH,            // 57
-        &&op_JUMP,              // 58
-        &&op_JUMP_IF_FALSE,     // 59
-        &&op_JUMP_IF_TRUE,      // 60
-        &&op_JUMP_IF_NULL,      // 61
-        &&op_CALL,              // 62
-        &&op_default,           // 63  TAIL_CALL
-        &&op_default,           // 64  CALL_METHOD
-        &&op_RETURN,            // 65
-        &&op_default,           // 66  TRY_ENTER
-        &&op_default,           // 67  TRY_EXIT
-        &&op_default,           // 68  LOAD_EXCEPTION
-        &&op_default,           // 69  THROW
-        &&op_default,           // 70  DEFINE_FUNC
-        &&op_default,           // 71  CLOSURE
-        &&op_default,           // 72  ARRAY_NEW
-        &&op_default,           // 73  ARRAY_GET
-        &&op_default,           // 74  ARRAY_SET
-        &&op_default,           // 75  ARRAY_DEL
-        &&op_default,           // 76  ARRAY_PUSH
-        &&op_default,           // 77  ARRAY_LEN
-        &&op_default,           // 78  ARRAY_FREEZE
-        &&op_default,           // 79  SET_SET
-        &&op_default,           // 80  SET_DEL
-        &&op_default,           // 81  SET_HAS
-        &&op_default,           // 82  SET_NEW
-        &&op_default,           // 83  OBJECT_NEW
-        &&op_default,           // 84  OBJECT_GET
-        &&op_default,           // 85  OBJECT_SET
-        &&op_default,           // 86  OBJECT_DEL
-        &&op_default,           // 87  OBJECT_HAS
-        &&op_default,           // 88  STRING_NEW
-        &&op_default,           // 89  STRING_GET
-        &&op_default,           // 90  STRING_LEN
-        &&op_default,           // 91  STRING_CAT
-        &&op_default,           // 92  STRING_CMP
-        &&op_default,           // 93  STRING_FORMAT
-        &&op_default,           // 94  IMPORT
-        &&op_default,           // 95  IMPORT_WILDCARD
-        &&op_default,           // 96  HALT
-        &&op_default,           // 97  NOP
-        &&op_default,           // 98  DUP_N
-        &&op_default,           // 99  INCGLOBAL
-        &&op_default,           // 100 DECGLOBAL
-        &&op_default,           // 101 INCGLOBAL_POST
-        &&op_default,           // 102 DECGLOBAL_POST
-        &&op_default,           // 103 CALL_HOST
-        &&op_default,           // 104 CALL_HOST_NAMED
-        &&op_default,           // 105 MAKE_REGEX
-        &&op_default,           // 106 MAKE_ITERATOR
-        &&op_default,           // 107 ITER_NEXT
-        &&op_default,           // 108 STRING_BEGIN_INTERP
-        &&op_default,           // 109 STRING_END_INTERP
-        &&op_default,           // 110 YIELD
-        &&op_default,           // 111 RESUME
-        &&op_default,           // 112 GO
-        &&op_default,           // 113 CHANNEL_SEND
-        &&op_default,           // 114 CHANNEL_RECV
-        &&op_default,           // 115 CHANNEL_CLOSE
-        &&op_default,           // 116 WAITGROUP_ADD
-        &&op_default,           // 117 WAITGROUP_DONE
-        &&op_default,           // 118 WAITGROUP_WAIT
-        &&op_default,           // 119 LOCK
-        &&op_default,           // 120 UNLOCK
-        &&op_default,           // 121 SYNC
-        &&op_default,           // 122 ASYNC
-        &&op_default,           // 123 AWAIT
-        &&op_default,           // 124 SELECT
-        &&op_default,           // 125 DEFER
-        &&op_default,           // 126 RANGE_NEW
-        &&op_default,           // 127 RANGE_ITER
-        &&op_default,           // 128 TYPE_CHECK
-        &&op_default,           // 129 TYPE_CAST
-        &&op_default,           // 130 ISINSTANCE
-        &&op_default,           // 131 SUPER_CALL
-        &&op_default,           // 132 SPREAD
-        &&op_default,           // 133 REST
-        &&op_default,           // 134 DEFAULT_VALUE
-        &&op_default,           // 135 TUPLE_NEW
-        &&op_default,           // 136 MAKE_TUPLE
-        &&op_default,           // 137 TUPLE_GET
-        &&op_default,           // 138 TUPLE_SET
-        &&op_default,           // 139 TUPLE_LEN
-        &&op_default,           // 140 FPRINTF
-        &&op_default,           // 141 MAKE_SET
-        &&op_default,           // 142 STRING_UPPER
-        &&op_default,           // 143 STRING_LOWER
-        &&op_default,           // 144 STRING_TRIM
-        &&op_default,           // 145 STRING_SPLIT
-        &&op_default,           // 146 STRING_FIND
-        &&op_default,           // 147 STRING_SLICE
-        &&op_default,           // 148 STRING_REPEAT
-        &&op_default,           // 149 STRING_REPLACE
-        &&op_default,           // 150 STRING_STARTS
-        &&op_default,           // 151 STRING_ENDS
-        &&op_default,           // 152 STRING_CHARS
-        &&op_default,           // 153 ARRAY_SORT
-        &&op_default,           // 154 ARRAY_MAP
-        &&op_default,           // 155 ARRAY_FILTER
-        &&op_default,           // 156 ARRAY_REDUCE
-        &&op_default,           // 157 ARRAY_FIND
-        &&op_default,           // 158 ARRAY_ANY
-        &&op_default,           // 159 ARRAY_ALL
-        &&op_default,           // 160 ARRAY_FLAT
-        &&op_default,           // 161 ARRAY_FLATMAP
-        &&op_default,           // 162 ARRAY_REVERSE
-        &&op_default,           // 163 ARRAY_JOIN
-        &&op_default,           // 164 ARRAY_INCLUDES
-        &&op_default,           // 165 ARRAY_UNIQUE
-        &&op_default,           // 166 BIT_CLZ
-        &&op_default,           // 167 BIT_CTZ
-        &&op_default,           // 168 BIT_POPCNT
-        &&op_default,           // 169 BIT_BSWAP
-        &&op_default,           // 170 BIT_ROTL
-        &&op_default,           // 171 BIT_ROTR
-        &&op_default,           // 172 TIME_NOW
-        &&op_default,           // 173 FORMAT_HEX
-        &&op_default,           // 174 FORMAT_UNHEX
-        &&op_default,           // 175 FORMAT_BASE64_ENCODE
-        &&op_default,           // 176 FORMAT_BASE64_DECODE
-        &&op_default            // 177+ catch-all
+        [0 ... 255] = &&op_default,
+        [static_cast<uint8_t>(OpCode::LOAD_CONST)] = &&op_LOAD_CONST,
+        [static_cast<uint8_t>(OpCode::LOAD_GLOBAL)] = &&op_LOAD_GLOBAL,
+        [static_cast<uint8_t>(OpCode::STORE_GLOBAL)] = &&op_STORE_GLOBAL,
+        [static_cast<uint8_t>(OpCode::STORE_IMMUT_GLOBAL)] = &&op_STORE_IMMUT_GLOBAL,
+        [static_cast<uint8_t>(OpCode::LOAD_VAR)] = &&op_LOAD_VAR,
+        [static_cast<uint8_t>(OpCode::STORE_VAR)] = &&op_STORE_VAR,
+        [static_cast<uint8_t>(OpCode::STORE_IMMUT_VAR)] = &&op_STORE_IMMUT_VAR,
+        [static_cast<uint8_t>(OpCode::LOAD_UPVALUE)] = &&op_LOAD_UPVALUE,
+        [static_cast<uint8_t>(OpCode::STORE_UPVALUE)] = &&op_STORE_UPVALUE,
+        [static_cast<uint8_t>(OpCode::POP)] = &&op_POP,
+        [static_cast<uint8_t>(OpCode::DUP)] = &&op_DUP,
+        [static_cast<uint8_t>(OpCode::SWAP)] = &&op_SWAP,
+        [static_cast<uint8_t>(OpCode::PUSH_NULL)] = &&op_PUSH_NULL,
+        [static_cast<uint8_t>(OpCode::ADD)] = &&op_ADD,
+        [static_cast<uint8_t>(OpCode::SUB)] = &&op_SUB,
+        [static_cast<uint8_t>(OpCode::MUL)] = &&op_MUL,
+        [static_cast<uint8_t>(OpCode::DIV)] = &&op_DIV,
+        [static_cast<uint8_t>(OpCode::INT_DIV)] = &&op_INT_DIV,
+        [static_cast<uint8_t>(OpCode::DIVMOD)] = &&op_DIVMOD,
+        [static_cast<uint8_t>(OpCode::REMAINDER)] = &&op_REMAINDER,
+        [static_cast<uint8_t>(OpCode::MOD)] = &&op_MOD,
+        [static_cast<uint8_t>(OpCode::POW)] = &&op_POW,
+        [static_cast<uint8_t>(OpCode::INCLOCAL)] = &&op_INCLOCAL,
+        [static_cast<uint8_t>(OpCode::DECLOCAL)] = &&op_DECLOCAL,
+        [static_cast<uint8_t>(OpCode::INCLOCAL_POST)] = &&op_INCLOCAL_POST,
+        [static_cast<uint8_t>(OpCode::DECLOCAL_POST)] = &&op_DECLOCAL_POST,
+        [static_cast<uint8_t>(OpCode::EQ)] = &&op_EQ,
+        [static_cast<uint8_t>(OpCode::NEQ)] = &&op_NEQ,
+        [static_cast<uint8_t>(OpCode::IS)] = &&op_IS,
+        [static_cast<uint8_t>(OpCode::LT)] = &&op_LT,
+        [static_cast<uint8_t>(OpCode::LTE)] = &&op_LTE,
+        [static_cast<uint8_t>(OpCode::GT)] = &&op_GT,
+        [static_cast<uint8_t>(OpCode::GTE)] = &&op_GTE,
+        [static_cast<uint8_t>(OpCode::AND)] = &&op_AND,
+        [static_cast<uint8_t>(OpCode::OR)] = &&op_OR,
+        [static_cast<uint8_t>(OpCode::NOT)] = &&op_NOT,
+        [static_cast<uint8_t>(OpCode::NEGATE)] = &&op_NEGATE,
+        [static_cast<uint8_t>(OpCode::IS_NULL)] = &&op_IS_NULL,
+        [static_cast<uint8_t>(OpCode::BIT_AND)] = &&op_BIT_AND,
+        [static_cast<uint8_t>(OpCode::BIT_OR)] = &&op_BIT_OR,
+        [static_cast<uint8_t>(OpCode::BIT_XOR)] = &&op_BIT_XOR,
+        [static_cast<uint8_t>(OpCode::BIT_LSH)] = &&op_BIT_LSH,
+        [static_cast<uint8_t>(OpCode::BIT_RSH)] = &&op_BIT_RSH,
+        [static_cast<uint8_t>(OpCode::BIT_NOT)] = &&op_BIT_NOT,
+        [static_cast<uint8_t>(OpCode::LENGTH)] = &&op_LENGTH,
+        [static_cast<uint8_t>(OpCode::JUMP)] = &&op_JUMP,
+        [static_cast<uint8_t>(OpCode::JUMP_IF_FALSE)] = &&op_JUMP_IF_FALSE,
+        [static_cast<uint8_t>(OpCode::JUMP_IF_TRUE)] = &&op_JUMP_IF_TRUE,
+        [static_cast<uint8_t>(OpCode::JUMP_IF_NULL)] = &&op_JUMP_IF_NULL,
+        [static_cast<uint8_t>(OpCode::CALL)] = &&op_CALL,
+        [static_cast<uint8_t>(OpCode::RETURN)] = &&op_RETURN
     };
-    // Pad remaining entries (178-255) with default handler
-    for (int i = 178; i < 256; ++i) dispatch_table[i] = &&op_default;
 
     size_t counter = 0;
 
@@ -871,7 +743,6 @@ op_CALL: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     frm.ip++;
-    fprintf(stderr, "DBG op_CALL: ip=%u arg_count=%u frame_count=%zu stack_size=%zu\n", frm.ip-1, inst.operands.empty() ? 999u : inst.operands[0].asInt(), frame_count_, stack.size());
     try {
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {
@@ -1473,14 +1344,7 @@ op_default: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     frm.ip++;
-    if (inst.opcode == OpCode::ARRAY_MAP || inst.opcode == OpCode::CALL_METHOD || inst.opcode == OpCode::ARRAY_GET || inst.opcode == OpCode::DEFINE_FUNC || inst.opcode == OpCode::CLOSURE || inst.opcode == OpCode::CALL) {
-        fprintf(stderr, "DBG op_default: ip=%u op=%d frame_count=%zu stack_size=%zu\n", frm.ip-1, static_cast<int>(inst.opcode), frame_count_, stack.size());
-    }
     try {
-        if (inst.opcode == OpCode::ARRAY_GET) {
-            auto container = stack.top();
-            fprintf(stderr, "DBG ARRAY_GET: container_type=%s, isArrayId=%d, bits=%lu, stack_depth=%zu\n", getTypeName(container).c_str(), container.isArrayId(), container.getTagBits(), stack.size());
-        }
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {
         if (!handleScriptThrow(thrown.value)) {

@@ -352,12 +352,13 @@ case OpCode::ARRAY_GET: {
             if (!index) {
                 COMPILER_THROW("ARRAY_GET expects integer index");
             }
-      auto *array = heap_.array(container.asArrayId());
-      if (!array) {
-        COMPILER_THROW("ARRAY_GET unknown array id");
-      }
-      // Handle negative indices: -1 = last element, -2 = second to last, etc.
-      int64_t idx = *index;
+            auto *array = heap_.array(container.asArrayId());
+            if (!array) {
+                COMPILER_THROW("ARRAY_GET unknown array id");
+            }
+            // Handle negative indices: -1 = last element, -2 = second to last, etc.
+            int64_t idx = *index;
+
       if (idx < 0) {
         idx = static_cast<int64_t>(array->size()) + idx;
       }

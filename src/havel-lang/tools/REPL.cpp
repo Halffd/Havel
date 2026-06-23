@@ -1,20 +1,15 @@
-/*
- * REPL.cpp
- *
- * Bytecode VM-based REPL for Havel language.
- */
 #include "REPL.hpp"
 #include "../../utils/Logger.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../modules/HostModules.hpp"
 #include "../runtime/Modules.hpp"
 #include "../runtime/HostAPI.hpp"
-#include "../../utils/Logger.hpp"
 #include "../../utils/CrashHandler.hpp"
 #include "../parser/Parser.h"
 #include "utils/ErrorPrinter.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/DebugUtils.hpp"
+
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -32,6 +27,11 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #endif
+
+// ANSI Color codes
+#define PROMPT_COLOR "\033[1;32m" // Bold Green
+#define RESET_COLOR "\033[0m"
+#define CONT_COLOR "\033[1;34m"   // Bold Blue
 
 namespace havel::repl {
 
@@ -66,7 +66,13 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
     throw std::runtime_error("REPL requires valid IHostAPI");
   }
 
-  info("Initializing REPL with bytecode VM...");
+  // Configure Readline history
+  using_history();
+  read_history(".havel_history");
+
+  // Configure Readline history
+  using_history();
+  read_history(".havel_history");
 
   // Clear service registry (for REPL restarts)
   havel::host::ServiceRegistry::instance().clear();
@@ -505,7 +511,6 @@ bool REPL::handleCommand(const std::string& input) {
 
 void REPL::showHelp() const {
     std::cout << "Havel REPL Help\n";
-    std::cout << "===============\n\n";
     std::cout << "Commands:\n";
     std::cout << "  exit, quit, :q   - Exit REPL\n";
     std::cout << "  help, ?          - Show this help\n";
@@ -710,11 +715,11 @@ int REPL::run() {
 
     // Determine prompt
     std::string prompt = accumulatedInput.empty()
-        ? config_.prompt
-        : config_.continuePrompt;
+        ? (PROMPT_COLOR + config_.prompt + RESET_COLOR)
+        : (CONT_COLOR + config_.continuePrompt + RESET_COLOR);
     
-  // Read input
-  std::string line = readLine(prompt);
+    // Read input
+    std::string line = readLine(prompt);
 
   // Check for interrupt after read
   if (interrupted_.load()) {
@@ -760,7 +765,7 @@ int REPL::run() {
     } else {
       accumulatedInput += "\n" + line;
     }
-    
+
     // Check if input is complete
     if (!isInputComplete(accumulatedInput)) {
       continue;  // Need more input
@@ -784,10 +789,10 @@ int REPL::run() {
     // Reset for next input
     accumulatedInput.clear();
     
-        if (!success && config_.stopOnError) {
-            break; // Stop on error
-        }
+    if (!success && config_.stopOnError) {
+        break; // Stop on error
     }
+}
 
     logOutput("=== Havel REPL session ended at " + sessionStart_ + " ===\n");
 

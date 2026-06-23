@@ -57,7 +57,7 @@
                 },
                 {
                     "name": "keyword.declaration.havel",
-                    "match": "\\b(fn|let|struct|enum|on|off|when|mode|config|devices|modes)\\b"
+                    "match": "\\b(fn|let|struct|enum|on|off|when|mode|config|devices|modes|val)\\b"
                 },
                 {
                     "name": "keyword.exception.havel",
@@ -77,7 +77,7 @@
                 },
                 {
                     "name": "entity.name.type.havel",
-                    "match": "\\b(String|Int|Float|Bool|Array|Object|Function)\\b"
+                    "match": "\\b(str|int|num|bool|array|object|set|tuple|fn|nil)\\b"
                 }
             ]
         },

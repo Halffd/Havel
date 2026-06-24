@@ -157,6 +157,8 @@ void LanguageServer::handleMessage(const json& message) {
       sendMessage(makeResponse(id, handleDocumentSymbol(params)));
     } else if (method == "textDocument/completion") {
       sendMessage(makeResponse(id, handleCompletion(params)));
+    } else if (method == "textDocument/signatureHelp") {
+      sendMessage(makeResponse(id, handleSignatureHelp(params)));
     } else {
       ::havel::debug("LSP: Unhandled method: {}", method);
     }
@@ -499,6 +501,22 @@ json LanguageServer::handleCompletion(const json& params) {
 }
 
 
+json LanguageServer::handleSignatureHelp(const json& params) {
+  return {
+    {"signatures", {
+      {
+        {"label", "fn(arg1: int, arg2: str)"},
+        {"parameters", {
+          {{"label", "arg1: int"}},
+          {{"label", "arg2: str"}}
+        }}
+      }
+    }},
+    {"activeSignature", 0},
+    {"activeParameter", 0}
+  };
+}
+
 Position LanguageServer::toLSPPosition(size_t line, size_t column) {
   Position pos;
   pos.line = static_cast<int>(line);
@@ -530,6 +548,9 @@ json LanguageServer::getServerCapabilities() {
     {"documentSymbolProvider", {
       {"workDoneProgress", false},
       {"label", "Havel Symbols"}
+    }},
+    {"signatureHelpProvider", {
+      {"triggerCharacters", {"("}}
     }},
     {"completionProvider", {
         {"triggerCharacters", {"."}}

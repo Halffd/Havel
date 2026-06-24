@@ -2171,11 +2171,15 @@ UIBridge::handleWindowGetActive(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
   if (!ctx->windowManager || !ctx->vm) {
+    ::havel::warn("[UIBridge] handleWindowGetActive: windowManager={} vm={}",
+                 (void*)ctx->windowManager, (void*)ctx->vm);
     return Value::makeNull();
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
+    ::havel::warn("[UIBridge] handleWindowGetActive: info invalid (id={} title='{}' class='{}')",
+                 info.id, info.title, info.windowClass);
     return Value::makeNull();
   }
   return createWindowObject(static_cast<VM *>(ctx->vm), ctx, info.id,
@@ -2869,12 +2873,18 @@ Value UIBridge::handleWindowList(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowTitle(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
     return Value::makeNull();
   ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeNull();
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto activeInfo = winService.getActiveWindowInfo();
+    if (!activeInfo.valid) return Value::makeNull();
+    wid = activeInfo.id;
+  }
   auto info = winService.getWindowInfo(wid);
   if (!info.valid)
     return Value::makeNull();
@@ -2885,12 +2895,18 @@ Value UIBridge::handleWindowTitle(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowClass(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
     return Value::makeNull();
   ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeNull();
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto activeInfo = winService.getActiveWindowInfo();
+    if (!activeInfo.valid) return Value::makeNull();
+    wid = activeInfo.id;
+  }
   auto info = winService.getWindowInfo(wid);
   if (!info.valid)
     return Value::makeNull();
@@ -2901,12 +2917,18 @@ Value UIBridge::handleWindowClass(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowExe(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
     return Value::makeNull();
   ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeNull();
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto activeInfo = winService.getActiveWindowInfo();
+    if (!activeInfo.valid) return Value::makeNull();
+    wid = activeInfo.id;
+  }
   auto info = winService.getWindowInfo(wid);
   if (!info.valid)
     return Value::makeNull();
@@ -2917,12 +2939,18 @@ Value UIBridge::handleWindowExe(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowPid(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.empty() || !ctx->windowManager)
+  if (!ctx->windowManager)
     return Value::makeInt(0);
   ::havel::host::WindowService winService(ctx->windowManager);
-  uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
-  if (wid == 0)
-    return Value::makeInt(0);
+  uint64_t wid = 0;
+  if (!args.empty()) {
+    wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  }
+  if (wid == 0) {
+    auto activeInfo = winService.getActiveWindowInfo();
+    if (!activeInfo.valid) return Value::makeInt(0);
+    wid = activeInfo.id;
+  }
   auto info = winService.getWindowInfo(wid);
   if (!info.valid)
     return Value::makeInt(0);

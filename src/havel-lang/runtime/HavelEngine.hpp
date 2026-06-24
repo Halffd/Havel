@@ -22,6 +22,7 @@
 #include "core/config/ConfigManager.hpp"
 #include "core/io/IO.hpp"
 #include "core/brightness/BrightnessManager.hpp"
+#include "core/window/WindowManager.hpp"
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -57,7 +58,8 @@ public:
         io_holder_ = std::make_shared<IO>();
         brightnessManager_ = std::make_shared<BrightnessManager>();
         brightnessManager_->init();
-        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), nullptr, Configs::Get(), nullptr, brightnessManager_.get());
+        windowManager_ = std::make_shared<WindowManager>();
+        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), nullptr, Configs::Get(), windowManager_.get(), brightnessManager_.get());
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
@@ -422,6 +424,7 @@ private:
     std::shared_ptr<compiler::VM> vm_;
     std::shared_ptr<IO> io_holder_;
     std::shared_ptr<BrightnessManager> brightnessManager_;
+    std::shared_ptr<WindowManager> windowManager_;
 #ifdef HAVEL_ENABLE_LLVM
     std::unique_ptr<compiler::BytecodeOrcJIT> jitCompiler_;
 #endif

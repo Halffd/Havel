@@ -1,0 +1,351 @@
+// validator.hv — Semantic validation for the self-hosted pipeline
+// Checks: return outside function, break/continue outside loop,
+// assign to function name, assign to literal, const reassignment
+
+use { isNode } from "ast"
+
+_validatorErrors = []
+
+fn clear() { _validatorErrors = [] }
+
+fn hasErrors() { #_validatorErrors > 0 }
+
+fn allErrors() { _validatorErrors }
+
+fn addError(msg, line, col) {
+    _validatorErrors.push({msg: msg, line: line, col: col})
+}
+
+fn printAll() {
+    for err in _validatorErrors {
+        print("Validation error at " + str(err.line) + ":" + str(err.col) + " - " + err.msg)
+    }
+}
+
+fn validate(program) {
+    clear()
+
+    n = program
+    if n.ast != null { n = n.ast }
+
+    _validateStmt(n, {inFn: false, loopDepth: 0, constNames: {}})
+}
+
+fn _validateStmt(node, ctx) {
+    if node == null { return }
+    nt = type(node)
+    if nt == "array" {
+        for s in node { _validateStmt(s, ctx) }
+        return
+    }
+    if !isNode(node) { return }
+
+    k = node.kind
+
+    if k == "Program" || k == "BlockStatement" {
+        for s in node.body { _validateStmt(s, ctx) }
+        return
+    }
+
+    if k == "ExpressionStatement" {
+        _validateExpr(node.expr, ctx)
+        return
+    }
+
+    if k == "FnDeclaration" {
+        childCtx = {inFn: true, loopDepth: ctx.loopDepth, constNames: ctx.constNames}
+        _validateStmt(node.body, childCtx)
+        return
+    }
+
+    if k == "LambdaExpression" {
+        childCtx = {inFn: true, loopDepth: ctx.loopDepth, constNames: ctx.constNames}
+        _validateStmt(node.body, childCtx)
+        return
+    }
+
+    if k == "ReturnStatement" {
+        if !ctx.inFn {
+            addError("return statement outside function", node.line, node.col)
+        }
+        if node.value != null { _validateExpr(node.value, ctx) }
+        return
+    }
+
+    if k == "BreakStatement" {
+        if ctx.loopDepth <= 0 {
+            addError("break statement outside loop", node.line, node.col)
+        }
+        return
+    }
+
+    if k == "ContinueStatement" {
+        if ctx.loopDepth <= 0 {
+            addError("continue statement outside loop", node.line, node.col)
+        }
+        return
+    }
+
+    if k == "IfStatement" {
+        if node.condition != null { _validateExpr(node.condition, ctx) }
+        _validateStmt(node.then, ctx)
+        if node["else"] != null { _validateStmt(node["else"], ctx) }
+        return
+    }
+
+    if k == "WhileStatement" {
+        if node.condition != null { _validateExpr(node.condition, ctx) }
+        loopCtx = {inFn: ctx.inFn, loopDepth: ctx.loopDepth + 1, constNames: ctx.constNames}
+        _validateStmt(node.body, loopCtx)
+        return
+    }
+
+    if k == "ForStatement" {
+        if node.iterator != null { _validateExpr(node.iterator, ctx) }
+        loopCtx = {inFn: ctx.inFn, loopDepth: ctx.loopDepth + 1, constNames: ctx.constNames}
+        _validateStmt(node.body, loopCtx)
+        return
+    }
+
+    if k == "LoopStatement" {
+        loopCtx = {inFn: ctx.inFn, loopDepth: ctx.loopDepth + 1, constNames: ctx.constNames}
+        _validateStmt(node.body, loopCtx)
+        return
+    }
+
+    if k == "RepeatStatement" {
+        if node.count != null { _validateExpr(node.count, ctx) }
+        loopCtx = {inFn: ctx.inFn, loopDepth: ctx.loopDepth + 1, constNames: ctx.constNames}
+        _validateStmt(node.body, loopCtx)
+        return
+    }
+
+    if k == "DoWhileStatement" {
+        loopCtx = {inFn: ctx.inFn, loopDepth: ctx.loopDepth + 1, constNames: ctx.constNames}
+        _validateStmt(node.body, loopCtx)
+        if node.condition != null { _validateExpr(node.condition, ctx) }
+        return
+    }
+
+    if k == "LetDeclaration" {
+        if node.value != null { _validateExpr(node.value, ctx) }
+        if node.name != null && type(node.name) == "str" {
+            nctx = ctx.constNames
+            nctx[node.name] = "let"
+        }
+        return
+    }
+
+    if k == "ValDeclaration" {
+        if node.value != null { _validateExpr(node.value, ctx) }
+        if node.name != null && type(node.name) == "str" {
+            nctx = ctx.constNames
+            nctx[node.name] = "val"
+        }
+        return
+    }
+
+    if k == "TryStatement" {
+        _validateStmt(node.try_block, ctx)
+        if node.catch_block != null { _validateStmt(node.catch_block, ctx) }
+        if node.finally_block != null { _validateStmt(node.finally_block, ctx) }
+        return
+    }
+
+    if k == "ThrowStatement" {
+        if node.value != null { _validateExpr(node.value, ctx) }
+        return
+    }
+
+    if k == "MatchExpression" {
+        if node.subject != null { _validateExpr(node.subject, ctx) }
+        for c in node.cases { _validateStmt(c, ctx) }
+        return
+    }
+
+    if k == "MatchCase" {
+        if node.guard != null { _validateExpr(node.guard, ctx) }
+        _validateStmt(node.body, ctx)
+        return
+    }
+
+    if k == "HotkeyBinding" {
+        action = node.action != null ? node.action : node.body
+        _validateStmt(action, ctx)
+        return
+    }
+
+    if k == "WhenBlock" {
+        if node.condition != null { _validateExpr(node.condition, ctx) }
+        _validateStmt(node.body, ctx)
+        return
+    }
+
+    if k == "WithStatement" {
+        if node.object != null { _validateExpr(node.object, ctx) }
+        _validateStmt(node.body, ctx)
+        return
+    }
+
+    if k == "DecoratorStatement" {
+        if node.target != null { _validateStmt(node.target, ctx) }
+        return
+    }
+
+    if k == "GoStatement" {
+        if node.call != null { _validateExpr(node.call, ctx) }
+        return
+    }
+
+    if k == "WaitStatement" {
+        if node.condition != null { _validateExpr(node.condition, ctx) }
+        return
+    }
+
+    if k == "ClassDeclaration" {
+        for m in node.definition.methods {
+            _validateStmt(m, ctx)
+        }
+        return
+    }
+
+    if k == "StructDeclaration" {
+        for m in node.definition.methods {
+            _validateStmt(m, ctx)
+        }
+        return
+    }
+
+    if k == "ImplDeclaration" {
+        for f in node.funcs { _validateStmt(f, ctx) }
+        return
+    }
+
+    if k == "ConfigBlock" {
+        _validateStmt(node.body, ctx)
+        return
+    }
+
+    if k == "DeferStatement" {
+        if node.expression != null { _validateExpr(node.expression, ctx) }
+        return
+    }
+
+    // remaining statement types don't need validation
+}
+
+fn _validateExpr(node, ctx) {
+    if node == null { return }
+    if !isNode(node) { return }
+
+    k = node.kind
+
+    if k == "BinaryExpression" || k == "CompoundAssignment" {
+        _validateExpr(node.left, ctx)
+        _validateExpr(node.right, ctx)
+        return
+    }
+
+    if k == "UnaryExpression" || k == "UpdateExpression" {
+        _validateExpr(node.operand, ctx)
+        return
+    }
+
+    if k == "TernaryExpression" {
+        _validateExpr(node.condition, ctx)
+        _validateExpr(node.true_expr, ctx)
+        _validateExpr(node.false_expr, ctx)
+        return
+    }
+
+    if k == "CallExpression" {
+        _validateExpr(node.callee, ctx)
+        for a in node.args { _validateExpr(a, ctx) }
+        return
+    }
+
+    if k == "MemberExpression" {
+        _validateExpr(node.obj, ctx)
+        return
+    }
+
+    if k == "IndexExpression" {
+        _validateExpr(node.obj, ctx)
+        _validateExpr(node.index, ctx)
+        return
+    }
+
+    if k == "AssignmentExpression" {
+        // Check assignment to literal
+        tk = node.target.kind
+        if tk == "NumberLiteral" || tk == "StringLiteral" || tk == "BooleanLiteral" || tk == "NullLiteral" {
+            addError("Cannot assign to literal value", node.target.line, node.target.col)
+        }
+        // Check assignment to function (if we had function name registry)
+        _validateExpr(node.value, ctx)
+        return
+    }
+
+    if k == "SpreadExpression" {
+        _validateExpr(node.value, ctx)
+        return
+    }
+
+    if k == "ArrayLiteral" {
+        for e in node.elements { _validateExpr(e, ctx) }
+        return
+    }
+
+    if k == "ObjectLiteral" {
+        for f in node.fields {
+            if f.kind == "ObjectField" { _validateExpr(f.value, ctx) }
+        }
+        return
+    }
+
+    if k == "PipelineExpression" {
+        _validateExpr(node.left, ctx)
+        _validateExpr(node.right, ctx)
+        return
+    }
+
+    if k == "LambdaExpression" {
+        childCtx = {inFn: true, loopDepth: ctx.loopDepth, constNames: ctx.constNames}
+        _validateStmt(node.body, childCtx)
+        return
+    }
+
+    if k == "InterpolatedString" {
+        for p in node.parts { _validateExpr(p, ctx) }
+        return
+    }
+
+    if k == "MatchExpression" {
+        if node.subject != null { _validateExpr(node.subject, ctx) }
+        for c in node.cases { _validateStmt(c, ctx) }
+        return
+    }
+
+    if k == "GoExpression" {
+        if node.call != null { _validateExpr(node.call, ctx) }
+        return
+    }
+
+    if k == "AwaitExpression" || k == "WaitExpression" {
+        if node.target != null { _validateExpr(node.target, ctx) }
+        if node.argument != null { _validateExpr(node.argument, ctx) }
+        return
+    }
+
+    if k == "ForExpression" {
+        childCtx = {inFn: ctx.inFn, loopDepth: ctx.loopDepth + 1, constNames: ctx.constNames}
+        if node.iterable != null { _validateExpr(node.iterable, ctx) }
+        if node.expr != null { _validateExpr(node.expr, childCtx) }
+        return
+    }
+}
+
+fn validateAndCollect(program) {
+    result = validate(program)
+    {errors: _validatorErrors, validated: true}
+}

@@ -227,6 +227,7 @@ fn emitExpr(emitter, node) {
     }
   if k == "Identifier" {
     if node.globalScope == true {
+
       bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
     }
     else if node.name == "this" && emitter.currentClassName != null && emitter.currentClassName != "" {
@@ -1400,12 +1401,10 @@ if k == "AtExpression" {
     if k == "AtAtExpression" {
         if node.field != null {
             fname = node.field
-            if fname.kind == "Identifier" { fname = fname.name }
-            sid = globalIdx(emitter, "this")
+            if type(fname) == "object" && fname.kind == "Identifier" { fname = fname.name }
+            name = "__static__" + fname
+            sid = globalIdx(emitter, name)
             bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-            keyIdx = bc.add_string(fname)
-            bc.emit("LOAD_CONST", keyIdx)
-            bc.emit("OBJECT_GET")
         }
         else {
             emitError("@@ expression field must be identifier", node.line, node.col)
@@ -1413,6 +1412,7 @@ if k == "AtExpression" {
         return
     }
     if k == "CastExpression" {
+
         emitExpr(emitter, node.expr)
         typeIdx = bc.add_chunk_string(node.typeName)
         bc.emit("PROT_CAST", bc.str_id(typeIdx))
@@ -2127,10 +2127,10 @@ if k == "RepeatStatement" {
 			bc.emit("PUSH_NULL")
 		}
 		if localIdx >= 0 {
-			bc.emit("STORE_VAR", localIdx)
+			bc.emit(node.isStatic ? "STORE_IMMUT_GLOBAL" : "STORE_IMMUT_VAR", localIdx)
 		}
 		else {
-			bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+			bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.isStatic ? "__static__" + node.name : node.name)))
 		}
 		return
     }
@@ -2194,10 +2194,10 @@ if k == "RepeatStatement" {
 			bc.emit("PUSH_NULL")
 		}
 		if localIdx >= 0 {
-			bc.emit("STORE_IMMUT_VAR", localIdx)
+			bc.emit(node.isStatic ? "STORE_IMMUT_GLOBAL" : "STORE_IMMUT_VAR", localIdx)
 		}
 		else {
-			bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
+			bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.isStatic ? "__static__" + node.name : node.name)))
 		}
 		return
   }
@@ -2257,12 +2257,12 @@ if k == "RepeatStatement" {
       bc.emit("LOAD_CONST", fnConstIdx)
     }
     // Store the closure in the variable
-    if localIdx >= 0 {
-      bc.emit("STORE_VAR", localIdx)
-    }
-    else {
-      bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))
-    }
+		if localIdx >= 0 {
+			bc.emit(node.isStatic ? "STORE_IMMUT_GLOBAL" : "STORE_IMMUT_VAR", localIdx)
+		}
+		else {
+			bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.isStatic ? "__static__" + node.name : node.name)))
+		}
     return
 
 }

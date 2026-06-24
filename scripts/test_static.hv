@@ -1,0 +1,9 @@
+class Test {
+  @@count = 0
+  fn init() {
+    @@count = @@count + 1
+  }
+}
+
+t = Test()
+print(@@count)

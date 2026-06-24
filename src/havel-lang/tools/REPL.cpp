@@ -15,6 +15,7 @@
 #include "utils/ErrorPrinter.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/DebugUtils.hpp"
+#include "havel-lang/lexer/Lexer.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -32,6 +33,86 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #endif
+
+namespace {
+
+using havel::TokenType;
+
+const char* tokenColor(TokenType type) {
+    switch (type) {
+        case TokenType::Let: case TokenType::Val: case TokenType::Const:
+        case TokenType::If: case TokenType::Else: case TokenType::While:
+        case TokenType::For: case TokenType::In: case TokenType::Loop:
+        case TokenType::Break: case TokenType::Continue: case TokenType::Match:
+        case TokenType::Case: case TokenType::Default: case TokenType::Return:
+        case TokenType::Ret: case TokenType::Switch: case TokenType::When:
+        case TokenType::Go: case TokenType::Defer: case TokenType::Yield:
+        case TokenType::Try: case TokenType::Catch: case TokenType::Finally:
+        case TokenType::Throw: case TokenType::Import: case TokenType::From:
+        case TokenType::Use: case TokenType::As: case TokenType::With:
+        case TokenType::Where: case TokenType::Select: case TokenType::Del:
+        case TokenType::Sync: case TokenType::Async: case TokenType::Channel:
+        case TokenType::Wait: case TokenType::Co: case TokenType::Op:
+        case TokenType::Repeat: case TokenType::Pool: case TokenType::On:
+        case TokenType::Off: case TokenType::Mode:
+            return "\033[1;33m";
+        case TokenType::Struct: case TokenType::Class: case TokenType::Enum:
+        case TokenType::Trait: case TokenType::Prot: case TokenType::Impl:
+        case TokenType::Fn:
+            return "\033[1;34m";
+        case TokenType::True: case TokenType::False: case TokenType::Null:
+            return "\033[1;36m";
+        case TokenType::Number:
+            return "\033[0;35m";
+        case TokenType::String: case TokenType::MultilineString:
+        case TokenType::InterpolatedString: case TokenType::CharLiteral:
+            return "\033[0;32m";
+        case TokenType::Comment:
+            return "\033[2;37m";
+        default:
+            return nullptr;
+    }
+}
+
+std::string highlightSource(const std::string& source) {
+    if (source.empty()) return source;
+    havel::Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    std::string result;
+    size_t lastEnd = 0;
+    for (const auto& token : tokens) {
+        if (token.type == TokenType::EOF_TOKEN) break;
+        size_t tokLen = token.length;
+        size_t tokPos = source.find(token.raw, lastEnd);
+        if (tokPos == std::string::npos || tokPos < lastEnd) {
+            for (size_t i = 0; i < source.size(); ++i) {
+                if (source.substr(i, tokLen) == token.raw && i >= lastEnd) {
+                    tokPos = i;
+                    break;
+                }
+            }
+        }
+        if (tokPos == std::string::npos || tokPos < lastEnd) {
+            result += token.raw;
+            continue;
+        }
+        result += source.substr(lastEnd, tokPos - lastEnd);
+        auto* color = tokenColor(token.type);
+        if (color) {
+            result += color;
+            result += token.raw;
+            result += "\033[0m";
+        } else {
+            result += token.raw;
+        }
+        lastEnd = tokPos + tokLen;
+        if (lastEnd > source.size()) lastEnd = source.size();
+    }
+    result += source.substr(lastEnd);
+    return result;
+}
+
+} // anonymous namespace
 
 namespace havel::repl {
 
@@ -634,6 +715,8 @@ vm_->storeReplChunk(sharedChunk);
   }
 
   if (!result.isNull()) {
+    std::cout << highlightSource(code) << "\n";
+    std::cout << "  "; // indent
 printValue(vm_->toString(result));
 }
     return true;

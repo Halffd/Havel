@@ -281,12 +281,15 @@ vm_->addIntervalResult(timer_id, result);
 
         sched->wakeSleepingGoroutines();
 
-        // Execute runnable goroutines in a loop until none are left runnable in this tick
-        while (sched->hasRunnableFibers()) {
-            if (vm_->exit_requested_.load()) break;
+        // Execute at most one goroutine per tick so the REPL select loop
+        // can process stdin between ticks. Previously this loop drained ALL
+        // runnable goroutines, which froze the REPL when persistent hotkey
+        // or update goroutines kept getting requeued.
+        if (sched->hasRunnableFibers()) {
+            if (vm_->exit_requested_.load()) return;
 
             auto* g = sched->pickNext();
-            if (!g) break;
+            if (!g) return;
 
             // Set as current goroutine so VM opcodes can access it via scheduler_->current()
             sched->setCurrent(g);

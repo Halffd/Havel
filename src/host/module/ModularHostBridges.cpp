@@ -2139,11 +2139,11 @@ static Value createWindowObject(
   api.setField(obj, "id", Value::makeInt(static_cast<int64_t>(windowId)));
 
   // Snapshot properties: win.title, win.class etc.
-  api.setField(obj, "title", Value::makeString(title));
-  api.setField(obj, "class", Value::makeString(windowClass));
-  api.setField(obj, "exe", Value::makeString(exe));
+  api.setField(obj, "title", api.makeString(title));
+  api.setField(obj, "class", api.makeString(windowClass));
+  api.setField(obj, "exe", api.makeString(exe));
   api.setField(obj, "pid", Value::makeInt(static_cast<int64_t>(pid)));
-  api.setField(obj, "cmd", Value::makeString(cmdline));
+  api.setField(obj, "cmd", api.makeString(cmdline));
 
   // Action methods
   api.setField(obj, "close", api.makeFunctionRef("window._close"));
@@ -2202,9 +2202,8 @@ Value UIBridge::handleWindowCmd(const std::vector<Value> &args,
   if (!info.valid) {
     return Value::makeNull();
   }
-  // TODO: string pool integration - for now return null
-  (void)info;
-  return Value::makeNull();
+  auto ref = static_cast<VM *>(ctx->vm)->createRuntimeString(info.cmdline);
+  return Value::makeStringId(ref.id);
 }
 
 // Forward declaration - defined below

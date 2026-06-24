@@ -3512,6 +3512,9 @@ case ast::NodeType::AtExpression: {
     if (!fieldId) {
       COMPILER_THROW("@@ expression field must be an identifier");
     }
+    if (current_class_name_.empty()) {
+      COMPILER_THROW("@@ used outside of a class (did you mean ClassName." + fieldId->symbol + "?)");
+    }
     // Load class object (stored as global with class name)
     { uint32_t strId = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId)); };
     // Get the field from class object
@@ -4175,6 +4178,9 @@ case ast::NodeType::CastExpression: {
         } else {
             COMPILER_THROW("@@field assignment requires identifier");
         }
+        if (current_class_name_.empty()) {
+            COMPILER_THROW("@@ used outside of a class (did you mean ClassName." + field_name + "?)");
+        }
         // Stack: [value]
         // Load class object (stored as global with class name)
         { uint32_t _sid = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(_sid)); };
@@ -4382,6 +4388,9 @@ auto emitCompound = [&](OpCode math_op) {
           field_name = field_id->symbol;
         } else {
           COMPILER_THROW("@@field compound assignment requires identifier");
+        }
+        if (current_class_name_.empty()) {
+          COMPILER_THROW("@@ used outside of a class (did you mean ClassName." + field_name + "?)");
         }
         uint32_t temp_result = next_local_index;
         reserveLocalSlot(temp_result);
@@ -4636,6 +4645,9 @@ case ast::NodeType::CallExpression:
         field_name = field_id->symbol;
       } else {
         COMPILER_THROW("@@field update requires identifier");
+      }
+      if (current_class_name_.empty()) {
+        COMPILER_THROW("@@ used outside of a class (did you mean ClassName." + field_name + "?)");
       }
       // Load class.field
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant(current_class_name_)));

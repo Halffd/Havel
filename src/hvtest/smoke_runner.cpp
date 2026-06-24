@@ -268,7 +268,9 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
  else if (result.return_value.isCoroutineId()) val_desc = "coroutine:" + std::to_string(result.return_value.asCoroutineId());
  else if (result.return_value.isDouble()) val_desc = "double:" + std::to_string(result.return_value.asDouble());
 else if (result.return_value.isBool()) val_desc = "bool:" + std::to_string(result.return_value.asBool());
-else val_desc = "non-int";
+else if (result.return_value.isObjectId()) val_desc = "object:id=" + std::to_string(result.return_value.asObjectId());
+else if (result.return_value.isArrayId()) val_desc = "array";
+else val_desc = "other";
  std::cerr << "[FAIL] " << name << ": expected " << expected
  << " but got " << val_desc << std::endl;
  return 1;
@@ -1747,11 +1749,11 @@ return t == "int" ? 1 : 0
       fn increment() { @count++ }
       fn current() { @count }
     }
-    c = Counter(0)
-    c.increment()
-    c.increment()
-    c.increment()
-    return c.current()
+    inst = Counter(0)
+    inst.increment()
+    inst.increment()
+    inst.increment()
+    return inst.current()
   )havel", 3, dump_bytecode, snapshot_dir);
 
   failures += runCase("class-constructor", R"havel(

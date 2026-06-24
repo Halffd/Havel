@@ -294,7 +294,11 @@ case OpCode::TAIL_CALL: {
                         }
           } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
             vm_func = it->second;
-            isInstanceFunc = true;
+            // Method found as direct field on instance.
+            // For class instances (have __class), pass self; for module objects, don't.
+            bool isClassInstance = instanceObj->get("__class") != nullptr ||
+                                   instanceObj->get("__struct") != nullptr;
+            isInstanceFunc = !isClassInstance;
           }
         }
       }
@@ -322,6 +326,7 @@ case OpCode::TAIL_CALL: {
             break;
           } else if (methodVal->isFunctionObjId() || methodVal->isClosureId()) {
             vm_func = *methodVal;
+            isInstanceFunc = false;
             break;
           }
         }

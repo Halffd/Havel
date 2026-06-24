@@ -2138,13 +2138,12 @@ static Value createWindowObject(
   auto obj = api.makeObject();
   api.setField(obj, "id", Value::makeInt(static_cast<int64_t>(windowId)));
 
-  // Data fields as methods: win.title(), win.class() etc.
-  // These query live data from the window manager using the window ID.
-  api.setField(obj, "title", api.makeFunctionRef("window._title"));
-  api.setField(obj, "class", api.makeFunctionRef("window._class"));
-  api.setField(obj, "exe", api.makeFunctionRef("window._exe"));
-  api.setField(obj, "pid", api.makeFunctionRef("window._pid"));
-  api.setField(obj, "cmd", api.makeFunctionRef("window.cmd"));
+  // Snapshot properties: win.title, win.class etc.
+  api.setField(obj, "title", api.makeString(title));
+  api.setField(obj, "class", api.makeString(windowClass));
+  api.setField(obj, "exe", api.makeString(exe));
+  api.setField(obj, "pid", Value::makeInt(static_cast<int64_t>(pid)));
+  api.setField(obj, "cmd", api.makeString(cmdline));
 
   // Action methods
   api.setField(obj, "close", api.makeFunctionRef("window._close"));

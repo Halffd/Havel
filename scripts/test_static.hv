@@ -6,4 +6,4 @@ class Test {
 }
 
 t = Test()
-print(@@count)
+print(Test.count)

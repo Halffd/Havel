@@ -85,16 +85,16 @@ fn format(fmtStr, ...args) {
         close = _indexOfFrom(fmtStr, "}", i + 2)
         if close == -1 { close = fmtStr.len() }
         spec = fmtStr.slice(i + 2, close)
-            if argIdx < args.len() {
-              av = args[argIdx]
-              argIdx = argIdx + 1
-              if spec == "x" || spec == "hex" {
-                result = result + _toBase(int(av), 16, "")
-              } else if spec == "o" || spec == "oct" {
-                result = result + _toBase(int(av), 8, "")
-              } else if spec == "b" || spec == "bin" {
-                result = result + _toBase(int(av), 2, "")
-              } else {
+        if argIdx < args.len() {
+          av = args[argIdx]
+          argIdx = argIdx + 1
+          if spec == "x" || spec == "hex" {
+            result = result + _toBase(int(av), 16, "")
+          } else if spec == "o" || spec == "oct" {
+            result = result + _toBase(int(av), 8, "")
+          } else if spec == "b" || spec == "bin" {
+            result = result + _toBase(int(av), 2, "")
+          } else {
             result = result + str(av)
           }
         }

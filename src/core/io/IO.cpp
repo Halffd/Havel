@@ -540,7 +540,7 @@ eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
 
         globalEvdev = true;
         bool grab = Configs::Get().Get<bool>("Device.GrabDevices", true);
-        if (ProcessManager::isTraced()) {
+        if (ProcessManager::isTraced() || !eventListenerThreaded_) {
           grab = false;
         }
         if (debugging::debug_io) debug("Starting EventListener with {} devices (grab={})", devices.size(),

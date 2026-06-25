@@ -651,6 +651,23 @@ size_t Scheduler::wakeSleepingGoroutines() {
     return woken;
 }
 
+std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadline() const {
+    std::optional<std::chrono::steady_clock::time_point> earliest;
+    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    for (const auto& [id, g] : goroutines_) {
+        if (g->state != GoroutineState::Suspended) continue;
+        if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
+        std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+        if (g->wait_handle.type != AwaitableType::SLEEP) continue;
+        auto d = g->wait_handle.deadline;
+        if (d == std::chrono::steady_clock::time_point{}) continue;
+        if (!earliest || d < *earliest) {
+            earliest = d;
+        }
+    }
+    return earliest;
+}
+
  void Scheduler::schedule(DeferredAction fn, FiberPriority priority) {
    {
      std::lock_guard<std::mutex> lock(deferred_mutex_);

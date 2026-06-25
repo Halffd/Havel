@@ -465,7 +465,6 @@ private:
       vm_->setCurrentChunkPublic(mainChunk.get());
     }
 
-    int idleCycles = 0;
         for (;;) {
             if (vm_->exit_requested_.load()) break;
 
@@ -474,16 +473,22 @@ private:
             }
             sched->drainDeferredCallbacks(compiler::FiberPriority::NORMAL);
 
-            size_t woken = sched->wakeSleepingGoroutines();
+            sched->wakeSleepingGoroutines();
             auto* g = sched->pickNext();
       if (!g) {
         size_t sc = sched->suspendedCount();
         if (sc == 0) break;
-        if (++idleCycles >= 100) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // Check if any sleeping goroutine has a deadline that will wake it
+        auto deadline = sched->nextSleepDeadline();
+        if (!deadline) break; // No sleeping goroutines with deadlines — would hang forever
+        auto now = std::chrono::steady_clock::now();
+        if (*deadline <= now) continue; // Already expired, retry immediately
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(*deadline - now).count();
+        auto sleepMs = std::min(ms, 100L); // Cap at 100ms to stay responsive to exit_requested
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
         continue;
       }
-      idleCycles = 0;
+      
 
       // Set as current goroutine so VM opcodes can access it via scheduler_->current()
       sched->setCurrent(g);

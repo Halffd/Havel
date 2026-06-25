@@ -305,6 +305,7 @@ std::string REPL::readLine(const std::string& prompt) {
             free(line);
         } else {
             callbackLine_.clear();
+            std::cin.setstate(std::ios::eofbit);
         }
         callbackLineReady_ = true;
         rl_callback_handler_remove();
@@ -352,12 +353,14 @@ std::string REPL::readLine(const std::string& prompt) {
         if (ret > 0) {
             if (pfd.revents & POLLIN) {
                 char c = 0;
-                if (read(STDIN_FILENO, &c, 1) > 0) {
+                ssize_t n = read(STDIN_FILENO, &c, 1);
+                if (n > 0) {
                     if (c == '\n' || c == '\r') {
                         break;
                     }
                     line += c;
                 } else {
+                    if (n == 0) std::cin.setstate(std::ios::eofbit);
                     break;
                 }
             } else {

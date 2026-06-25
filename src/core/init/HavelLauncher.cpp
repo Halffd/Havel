@@ -1397,6 +1397,10 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       }
 
       auto* replBackend = host::UIManager::instance().backend();
+      if (!replBackend) {
+        error("No UI backend available. Use --minimal or --run for REPL without UI.");
+        return 1;
+      }
       host::UIBackend::ApplicationMetadata replMeta;
       replMeta.applicationName = "havel";
       replMeta.organizationName = "havel";
@@ -1669,6 +1673,10 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
       // Full mode - initialize Qt and havel::Havel
       auto* replBackend = host::UIManager::instance().backend();
+      if (!replBackend) {
+        error("No UI backend available. Use --minimal or --run for REPL without UI.");
+        return 1;
+      }
       host::UIBackend::ApplicationMetadata replMeta;
       replMeta.applicationName = "havel";
       replMeta.organizationName = "havel";

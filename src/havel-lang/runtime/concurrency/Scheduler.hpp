@@ -406,6 +406,9 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Wake sleeping goroutines whose resume_at_time has passed
     size_t wakeSleepingGoroutines();
 
+    // Earliest deadline among all sleeping goroutines. Empty optional if none sleeping.
+    std::optional<std::chrono::steady_clock::time_point> nextSleepDeadline() const;
+
   // ===== Deferred VM Callbacks =====
   // Thread-safe queue for callbacks from non-VM threads (e.g. monitoring thread).
   // The VM thread drains these via drainDeferredCallbacks() each tick.

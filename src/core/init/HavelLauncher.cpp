@@ -695,8 +695,7 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 
       // Execute with bytecode VM
       if (!combinedCode.empty()) {
-        auto *bytecodeVM =
-            reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
+        auto *bytecodeVM = havel_inst.getBytecodeVM();
         auto *modules = havel_inst.getModules();
 
         if (bytecodeVM && modules) {
@@ -842,8 +841,6 @@ havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExclud
 hostAPI->SetVM(bytecodeVM);
 
 bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
-
-    bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
 
     try {
         havel::compiler::PipelineOptions options = modules->options();
@@ -1688,7 +1685,7 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
       }
       
     // Get VM and modules from havel::Havel
-    auto *bytecodeVM = reinterpret_cast<havel::compiler::VM *>(havel_inst.getBytecodeVM());
+    auto *bytecodeVM = havel_inst.getBytecodeVM();
     auto *modules = havel_inst.getModules();
 
     if (!bytecodeVM || !modules) {

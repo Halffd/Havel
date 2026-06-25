@@ -114,9 +114,9 @@ std::string X11Backend::getActiveWindowClass() {
   XClassHint classHint;
   if (XGetClassHint(display, focusedWindow, &classHint) == 0) return "";
 
-  std::string className(classHint.res_class);
-  XFree(classHint.res_name);
-  XFree(classHint.res_class);
+  std::string className = classHint.res_class ? classHint.res_class : "";
+  if (classHint.res_name) XFree(classHint.res_name);
+  if (classHint.res_class) XFree(classHint.res_class);
   return className;
 }
 

@@ -605,7 +605,7 @@ void VM::runDispatchFast(size_t stop_frame_depth) {
     size_t counter = 0;
 
     // Fetch first instruction
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &frm = frame_arena_[frame_count_ - 1];
         if (frm.ip >= frm.function->instructions.size()) {
@@ -633,7 +633,7 @@ op_LOAD_CONST: {
             if (exit_requested_.load()) return;
         }
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -660,7 +660,7 @@ op_LOAD_VAR: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -690,7 +690,7 @@ op_STORE_VAR: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -711,7 +711,7 @@ op_POP: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -727,7 +727,7 @@ op_PUSH_NULL: {
     auto &frm = frame_arena_[frame_count_ - 1];
     frm.ip++;
     pushStack(Value::makeNull());
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -767,7 +767,7 @@ op_CALL: {
         }
     }
     if (suspension_requested_) goto slow_dispatch_fallback;
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -789,7 +789,7 @@ op_RETURN: {
     } catch (const std::runtime_error &e) {
         throw std::runtime_error(e.what());
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -826,7 +826,7 @@ op_LOAD_GLOBAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -857,7 +857,7 @@ op_STORE_GLOBAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -887,7 +887,7 @@ op_STORE_IMMUT_GLOBAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -913,7 +913,7 @@ op_STORE_IMMUT_VAR: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -935,7 +935,7 @@ op_LOAD_UPVALUE: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -957,7 +957,7 @@ op_STORE_UPVALUE: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -975,7 +975,7 @@ op_DUP: {
     Value value = popStack();
     pushStack(value);
     pushStack(value);
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -994,7 +994,7 @@ op_SWAP: {
     Value next = popStack();
     pushStack(top);
     pushStack(next);
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1028,7 +1028,7 @@ op_INCLOCAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1062,7 +1062,7 @@ op_DECLOCAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1093,7 +1093,7 @@ op_INCLOCAL_POST: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1124,7 +1124,7 @@ op_DECLOCAL_POST: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1152,7 +1152,7 @@ op_BIT_LSH: op_BIT_RSH: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1169,7 +1169,7 @@ op_AND: op_OR: {
     const auto &inst = frm.function->instructions[frm.ip];
     frm.ip++;
     execLogicalOp(inst.opcode);
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1186,7 +1186,7 @@ op_NOT: {
     frm.ip++;
     Value v = popStack();
     pushStack(!isTruthy(v));
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1205,7 +1205,7 @@ op_BIT_NOT: {
     if (v.isInt()) pushStack(~v.asInt());
     else if (v.isDouble()) pushStack(~static_cast<int64_t>(v.asDouble()));
     else COMPILER_THROW("Bitwise NOT requires integer operand");
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1221,7 +1221,7 @@ op_NEGATE: {
     auto &frm = frame_arena_[frame_count_ - 1];
     frm.ip++;
     execNegate();
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1237,7 +1237,7 @@ op_LENGTH: {
     auto &frm = frame_arena_[frame_count_ - 1];
     frm.ip++;
     pushStack(execLengthOp(popStack()));
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1253,7 +1253,7 @@ op_JUMP: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     execJump(inst);
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1269,7 +1269,7 @@ op_JUMP_IF_FALSE: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     execJumpIfFalse(inst);
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1285,7 +1285,7 @@ op_JUMP_IF_TRUE: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     execJumpIfTrue(inst);
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1302,7 +1302,7 @@ op_IS_NULL: {
     frm.ip++;
     Value value = popStack();
     pushStack(Value::makeBool(value.isNull()));
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1324,7 +1324,7 @@ op_JUMP_IF_NULL: {
     } else {
         frm.ip++;
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {
@@ -1367,7 +1367,7 @@ op_default: {
             if (exit_requested_.load()) return;
         }
     }
-    if (frame_count_ == 0) return;
+    if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
         if (f2.ip >= f2.function->instructions.size()) {

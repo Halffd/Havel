@@ -1,6 +1,7 @@
 #include "StringModule.hpp"
 #include "../compiler/vm/VM.hpp"
 #include <regex>
+#include <iostream>
 
 using havel::compiler::Value;
 using havel::compiler::VMApi;
@@ -120,6 +121,16 @@ void registerStringModule(const VMApi &api) {
     });
 
     api.registerFunction("replace", [api](const std::vector<Value>& args) {
+        std::cerr << "[DBG-replace] argc=" << args.size();
+        for (size_t i = 0; i < args.size() && i < 5; ++i) {
+            std::cerr << " args[" << i << "]=";
+            if (args[i].isStringValId()) std::cerr << "StringValId:" << args[i].asStringValId();
+            else if (args[i].isStringId()) std::cerr << "StringId:" << args[i].asStringId();
+            else if (args[i].isInt()) std::cerr << "int:" << args[i].asInt();
+            else if (args[i].isNull()) std::cerr << "null";
+            else std::cerr << "other";
+        }
+        std::cerr << std::endl;
         if (args.size() < 3)
             throw std::runtime_error("replace() requires string, pattern, and replacement");
         std::string s = api.toString(args[0]);

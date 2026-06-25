@@ -255,13 +255,13 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
 
- havel::compiler::VM *vm_ptr = nullptr;
- options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
- std::unordered_map<std::string, Value> thread_callbacks;
+  havel::compiler::VM *vm_ptr = nullptr;
+  options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
+  std::unordered_map<std::string, Value> thread_callbacks;
 
- const auto result =
+  const auto result =
         havel::compiler::runBytecodePipeline(source, "__main__", options);
- if (!equalsInt(result.return_value, expected)) {
+  if (!equalsInt(result.return_value, expected)) {
  std::string val_desc;
  if (result.return_value.isInt()) val_desc = std::to_string(result.return_value.asInt());
  else if (result.return_value.isNull()) val_desc = "null";
@@ -270,7 +270,12 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
 else if (result.return_value.isBool()) val_desc = "bool:" + std::to_string(result.return_value.asBool());
 else if (result.return_value.isObjectId()) val_desc = "object:id=" + std::to_string(result.return_value.asObjectId());
 else if (result.return_value.isArrayId()) val_desc = "array";
-else val_desc = "other";
+else if (result.return_value.isFunctionObjId()) val_desc = "func:id=" + std::to_string(result.return_value.asFunctionObjId());
+else if (result.return_value.isClosureId()) val_desc = "closure:id=" + std::to_string(result.return_value.asClosureId());
+else if (result.return_value.isHostFuncId()) val_desc = "hostfunc:id=" + std::to_string(result.return_value.asHostFuncId());
+else if (result.return_value.isStringValId()) val_desc = "string_val";
+else if (result.return_value.isStringId()) val_desc = "string_id";
+else val_desc = "other(raw=" + std::to_string(result.return_value.rawBits()) + ")";
  std::cerr << "[FAIL] " << name << ": expected " << expected
  << " but got " << val_desc << std::endl;
  return 1;

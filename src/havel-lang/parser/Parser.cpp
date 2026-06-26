@@ -1985,18 +1985,16 @@ start = parsePrattExpression(0);
 
       case TokenType::Pipe:
       case TokenType::PipeRight: {
-        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        auto pipeline = makeNodeAt<ast::PipelineExpression>(token, std::vector<std::unique_ptr<ast::Expression>>{});
+        pipeline->stages.push_back(std::move(left));
 
-      if (auto *call = dynamic_cast<ast::CallExpression*>(right.get())) {
-        call->args.push_back(std::move(left));
-        return right;
+        do {
+          auto stage = parseAssignmentExpression();
+          pipeline->stages.push_back(std::move(stage));
+        } while (at().type == TokenType::Pipe || at().type == TokenType::PipeRight);
+
+        return pipeline;
       }
-
-      std::vector<std::unique_ptr<ast::Expression>> args;
-      args.push_back(std::move(left));
-      return makeNodeAt<ast::CallExpression>(token, 
-          std::move(right), std::move(args));
-    }
 
     case TokenType::BitwiseOr: {
       auto right = parsePrattExpression(getRightBindingPower(token.type));
@@ -2417,6 +2415,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
     return parseReturnStatement();
 case havel::TokenType::Fn:
 if (at(1).type == havel::TokenType::OpenParen) {
+advance(); // consume 'fn' before parseLambdaExpression
 auto expr = parseLambdaExpression();
 if (at().type == havel::TokenType::Semicolon) advance();
 return makeNode<havel::ast::ExpressionStatement>(std::move(expr));
@@ -3126,6 +3125,7 @@ at(1).type == havel::TokenType::Arrow) {
     return parseOffModeStatement();
  case havel::TokenType::Fn:
  if (at(1).type == havel::TokenType::OpenParen) {
+ advance(); // consume 'fn' before parseLambdaExpression
  auto expr = parseLambdaExpression();
  if (at().type == havel::TokenType::Semicolon) advance();
  return makeNode<havel::ast::ExpressionStatement>(std::move(expr));

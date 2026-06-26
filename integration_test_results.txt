@@ -1,0 +1,17 @@
+
+=== script tests ===
+[PASS] /home/all/repos/havel/scripts/integration/int_classes_methods.hv (1324.85ms)
+[PASS] /home/all/repos/havel/scripts/integration/int_closures_hof.hv (1005.92ms)
+[PASS] /home/all/repos/havel/scripts/integration/int_collections_iter.hv (1087.61ms)
+[PASS] /home/all/repos/havel/scripts/integration/int_control_flow_errors.hv (844.069ms)
+[PASS] /home/all/repos/havel/scripts/integration/int_di_patterns.hv (1180.5ms)
+[FAIL] /home/all/repos/havel/scripts/integration/int_gof_patterns.hv (exit=1)
+[PASS] /home/all/repos/havel/scripts/integration/int_stdlib.hv (1066.4ms)
+[PASS] /home/all/repos/havel/scripts/integration/int_strings_utf8.hv (1009.82ms)
+[PASS] /home/all/repos/havel/scripts/integration/int_structs_data.hv (1670.64ms)
+[PASS] /home/all/repos/havel/scripts/integration/test_array_comprehensive.hv (1484.74ms)
+[FAIL] /home/all/repos/havel/scripts/integration/test_async_await.hv (exit=1)
+[PASS] /home/all/repos/havel/scripts/integration/test_audio.hv (932.93ms)
+[PASS] /home/all/repos/havel/scripts/integration/test_audio_min.hv (1075.87ms)
+[FAIL] /home/all/repos/havel/scripts/integration/test_audio_min2.hv (exit=1)
+[PASS] /home/all/repos/havel/scripts/integration/test_audio_min3.hv (866.306ms)

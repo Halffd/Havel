@@ -77,44 +77,49 @@ void VM::execBinaryOp(const Instruction &instruction) {
   }
 
 	if (isNull(left) || isNull(right)) {
-		bool result = false;
-		switch (instruction.opcode) {
-		case OpCode::EQ:
-			result = isNull(left) && isNull(right);
-			break;
-		case OpCode::NEQ:
-			result = !(isNull(left) && isNull(right));
-			break;
-		case OpCode::IS:
-			result = isNull(left) && isNull(right);
-			break;
-		case OpCode::LT:
-		case OpCode::LTE:
-		case OpCode::GT:
-		case OpCode::GTE:
-			result = false;
-			break;
-		case OpCode::ADD:
-		case OpCode::SUB:
-		case OpCode::MUL:
-		case OpCode::DIV:
-		case OpCode::MOD:
-		case OpCode::INT_DIV:
-		case OpCode::DIVMOD:
-		case OpCode::REMAINDER:
-		case OpCode::POW:
-		case OpCode::BIT_AND:
-		case OpCode::BIT_OR:
-		case OpCode::BIT_XOR:
-		case OpCode::BIT_LSH:
-		case OpCode::BIT_RSH:
-			pushStack(Value::makeNull());
+		if (instruction.opcode == OpCode::ADD &&
+		    (left.isStringValId() || left.isStringId() || right.isStringValId() || right.isStringId())) {
+			// string + null -> concat as "strnull", fall through to string branch
+		} else {
+			bool result = false;
+			switch (instruction.opcode) {
+			case OpCode::EQ:
+				result = isNull(left) && isNull(right);
+				break;
+			case OpCode::NEQ:
+				result = !(isNull(left) && isNull(right));
+				break;
+			case OpCode::IS:
+				result = isNull(left) && isNull(right);
+				break;
+			case OpCode::LT:
+			case OpCode::LTE:
+			case OpCode::GT:
+			case OpCode::GTE:
+				result = false;
+				break;
+			case OpCode::ADD:
+			case OpCode::SUB:
+			case OpCode::MUL:
+			case OpCode::DIV:
+			case OpCode::MOD:
+			case OpCode::INT_DIV:
+			case OpCode::DIVMOD:
+			case OpCode::REMAINDER:
+			case OpCode::POW:
+			case OpCode::BIT_AND:
+			case OpCode::BIT_OR:
+			case OpCode::BIT_XOR:
+			case OpCode::BIT_LSH:
+			case OpCode::BIT_RSH:
+				pushStack(Value::makeNull());
+				return;
+			default:
+				COMPILER_THROW("Invalid operation opcode with null");
+			}
+			pushStack(result);
 			return;
-		default:
-			COMPILER_THROW("Invalid operation opcode with null");
 		}
-		pushStack(result);
-		return;
 	}
 
         if (instruction.opcode == OpCode::EQ || instruction.opcode == OpCode::NEQ) {
@@ -179,15 +184,15 @@ void VM::execBinaryOp(const Instruction &instruction) {
 		case OpCode::SUB: pushStack(l - r); break;
 		case OpCode::MUL: pushStack(l * r); break;
 		case OpCode::DIV:
-			if (r == 0) COMPILER_THROW("Division by zero");
+			if (r == 0) COMPILER_THROW_AT("Division by zero", instruction);
 			pushStack(static_cast<double>(l) / static_cast<double>(r));
 			break;
 		case OpCode::INT_DIV:
-			if (r == 0) COMPILER_THROW("Division by zero");
+			if (r == 0) COMPILER_THROW_AT("Division by zero", instruction);
 			pushStack(l / r);
 			break;
 		case OpCode::DIVMOD:
-			if (r == 0) COMPILER_THROW("Division by zero");
+			if (r == 0) COMPILER_THROW_AT("Division by zero", instruction);
 			{
 				int64_t rem = l % r;
 				if (rem != 0 && ((rem < 0) != (r < 0))) rem += r;
@@ -200,11 +205,11 @@ void VM::execBinaryOp(const Instruction &instruction) {
 			}
 			break;
 		case OpCode::REMAINDER:
-			if (r == 0) COMPILER_THROW("Division by zero");
+			if (r == 0) COMPILER_THROW_AT("Division by zero", instruction);
 			pushStack(l % r);
 			break;
 		case OpCode::MOD:
-			if (r == 0) COMPILER_THROW("Modulo by zero");
+			if (r == 0) COMPILER_THROW_AT("Modulo by zero", instruction);
 			{
 				int64_t result = l % r;
 				if (result != 0 && ((result < 0) != (r < 0))) result += r;
@@ -248,19 +253,19 @@ void VM::execBinaryOp(const Instruction &instruction) {
 		case OpCode::SUB: pushStack(l - r); break;
 		case OpCode::MUL: pushStack(l * r); break;
 		case OpCode::DIV:
-			if (r == 0.0) COMPILER_THROW("Division by zero");
+			if (r == 0.0) COMPILER_THROW_AT("Division by zero", instruction);
 			pushStack(l / r);
 			break;
 		case OpCode::INT_DIV: {
 			int64_t divisor = static_cast<int64_t>(r);
-			if (divisor == 0) COMPILER_THROW("Division by zero");
+			if (divisor == 0) COMPILER_THROW_AT("Division by zero", instruction);
 			pushStack(static_cast<int64_t>(l) / divisor);
 			break;
 		}
 		case OpCode::DIVMOD:
 		{
 			int64_t ir = static_cast<int64_t>(r);
-			if (ir == 0) COMPILER_THROW("Division by zero");
+			if (ir == 0) COMPILER_THROW_AT("Division by zero", instruction);
 			int64_t il = static_cast<int64_t>(l);
 			int64_t rem = il % ir;
 			if (rem != 0 && ((rem < 0) != (ir < 0))) rem += ir;
@@ -275,12 +280,12 @@ void VM::execBinaryOp(const Instruction &instruction) {
 		case OpCode::REMAINDER:
 		{
 			int64_t divisor = static_cast<int64_t>(r);
-			if (divisor == 0) COMPILER_THROW("Division by zero");
+			if (divisor == 0) COMPILER_THROW_AT("Division by zero", instruction);
 			pushStack(static_cast<int64_t>(l) % divisor);
 		}
 		break;
 		case OpCode::MOD:
-			if (r == 0.0) COMPILER_THROW("Modulo by zero");
+			if (r == 0.0) COMPILER_THROW_AT("Modulo by zero", instruction);
 			{
 				double m = std::fmod(l, r);
 				if (m != 0.0 && ((m < 0.0) != (r < 0.0))) m += r;
@@ -365,6 +370,15 @@ void VM::execBinaryOp(const Instruction &instruction) {
 		case OpCode::LTE: pushStack(l <= r); break;
 		case OpCode::GT: pushStack(l > r); break;
 		case OpCode::GTE: pushStack(l >= r); break;
+		case OpCode::SUB: {
+			size_t pos = 0;
+			while ((pos = l.find(r, pos)) != std::string::npos) {
+				l.erase(pos, r.size());
+			}
+			auto strRef = heap_.allocateString(std::move(l));
+			pushStack(Value::makeStringId(strRef.id));
+			break;
+		}
 		default: COMPILER_THROW("Invalid string operation");
 		}
 		return;
@@ -675,7 +689,7 @@ void VM::execBinaryOp(const Instruction &instruction) {
 				auto objRef = heap_.allocateObject();
 				auto *obj = heap_.object(objRef.id);
 				double div = static_cast<double>(right.asInt());
-				if (div == 0) COMPILER_THROW("Division by zero");
+				if (div == 0) COMPILER_THROW_AT("Division by zero", instruction);
 				if (lobj) {
 					for (const auto& [k, v] : *lobj) {
 						if (v.isInt()) obj->set(k, Value::makeInt(static_cast<int64_t>(v.asInt() / div)));
@@ -695,7 +709,7 @@ void VM::execBinaryOp(const Instruction &instruction) {
 				auto objRef = heap_.allocateObject();
 				auto *obj = heap_.object(objRef.id);
 				int64_t mod = right.asInt();
-				if (mod == 0) COMPILER_THROW("Modulo by zero");
+				if (mod == 0) COMPILER_THROW_AT("Modulo by zero", instruction);
 				if (lobj) {
 					for (const auto& [k, v] : *lobj) {
 						if (v.isInt()) obj->set(k, Value::makeInt(v.asInt() % mod));

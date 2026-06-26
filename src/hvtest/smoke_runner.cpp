@@ -1685,6 +1685,64 @@ s = "hello" + " " + "world"
 return #s
 )havel", 11, dump_bytecode, snapshot_dir);
 
+  failures += runCase("string-concat-nonstring", R"havel(
+a = "x" + null
+return #a
+)havel", 5, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-replaceAll", R"havel(
+s = "a+b+c"
+r = s.replaceAll("+", ".")
+return #r
+)havel", 5, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-replace-plus", R"havel(
+r = "ab+c".replace("+", ".")
+return #r
+)havel", 4, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-replaceAll-plus", R"havel(
+r = "a+b+c".replaceAll("+", "")
+return #r
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-replace-plus-empty", R"havel(
+r = "a+b".replace("+", "")
+return #r
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-match-regex-plus", R"havel(
+pos = "a+b".match(r"\+")
+return pos
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-match-regex-as-receiver", R"havel(
+pos = r"\+".match("a+b")
+return pos
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-find-plus", R"havel(
+pos = "a+b".find("+")
+return pos
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-sub-remove", R"havel(
+s = "hello'world"
+r = s - "'"
+return #r
+)havel", 10, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-del-index", R"havel(
+s = "abc"
+s = s - "b"
+return #s
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-pipe-trim", R"havel(
+r = "  hi  " |> trim
+return #r
+)havel", 2, dump_bytecode, snapshot_dir);
+
   failures += runCase("string-index", R"havel(
 s = "hello"
 return s[0] == "h" ? 1 : 0
@@ -1709,6 +1767,16 @@ return s == "HELLO" ? 1 : 0
 
   failures += runCase("string-prototype-split", R"havel(
 parts = "a,b,c".split(",")
+return parts.len
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-split-empty-delim", R"havel(
+parts = "abc".split("")
+return parts.len
+)havel", 3, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-split-no-arg", R"havel(
+parts = "abc".split()
 return parts.len
 )havel", 3, dump_bytecode, snapshot_dir);
 
@@ -3145,3 +3213,20 @@ return x
 #endif // HAVEL_ENABLE_LLVM
 
 } // namespace hvtest
+
+  failures += runCase("string-filter-remove-chars", R"havel(
+x = "hello+world+test"
+result = x.split("").filter(fn(c) c != "+").join("")
+return #result
+)havel", 14, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-for-loop-remove", R"havel(
+x = "hello+world+test"
+result = ""
+for c in x {
+    if c != "+" {
+        result += c
+    }
+}
+return #result
+)havel", 14, dump_bytecode, snapshot_dir);

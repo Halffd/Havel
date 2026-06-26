@@ -174,7 +174,7 @@ case OpCode::TAIL_CALL: {
     bool found_via_module = false;
     bool isInstanceFunc = false;
     Value vm_func = Value::makeNull();
-    if (receiver.isStringValId() || receiver.isStringId()) {
+    if (receiver.isStringValId() || receiver.isStringId() || receiver.isRegexValId()) {
       type_name = "string";
     } else if (receiver.isInt()) {
       type_name = "int";

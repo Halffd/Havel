@@ -1418,6 +1418,34 @@ if (!modName.empty()) {
         emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":length");
         pushStack(Value::makeBool(true));
       }
+    } else if (container.isStringId()) {
+      auto *s = heap_.string(container.asStringId());
+      if (!s) {
+        COMPILER_THROW("ARRAY_DEL unknown string id");
+      }
+      auto index = indexFromValue(keyValue);
+      if (!index) {
+        COMPILER_THROW("ARRAY_DEL expects integer index for string");
+      }
+      int64_t idx = *index;
+      if (idx < 0) idx = static_cast<int64_t>(s->size()) + idx;
+      if (idx >= 0 && static_cast<size_t>(idx) < s->size()) {
+        s->erase(static_cast<size_t>(idx), 1);
+      }
+      pushStack(container);
+    } else if (container.isStringValId() && current_chunk) {
+      std::string s = current_chunk->getString(container.asStringValId());
+      auto index = indexFromValue(keyValue);
+      if (!index) {
+        COMPILER_THROW("ARRAY_DEL expects integer index for string");
+      }
+      int64_t idx = *index;
+      if (idx < 0) idx = static_cast<int64_t>(s.size()) + idx;
+      if (idx >= 0 && static_cast<size_t>(idx) < s.size()) {
+        s.erase(static_cast<size_t>(idx), 1);
+      }
+      auto ref = heap_.allocateString(std::move(s));
+      pushStack(ref.id >= 0 ? Value::makeStringId(ref.id) : Value::makeNull());
     } else if (container.isSetId()) {
       auto *set = heap_.set(container.asSetId());
       if (!set) {
@@ -1433,7 +1461,7 @@ if (!modName.empty()) {
       }
       pushStack(Value::makeBool(removed));
     } else {
-      COMPILER_THROW("ARRAY_DEL expects array/set container");
+      COMPILER_THROW("ARRAY_DEL expects array/set/string container");
     }
     break;
   }

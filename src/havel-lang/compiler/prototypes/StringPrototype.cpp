@@ -7,14 +7,15 @@ namespace havel::compiler::prototypes {
 // Helper: extract string from a Value
 static std::string extractString(VM& vm, const Value& v) {
   if (v.isStringValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(v.asStringValId());
+  if (v.isRegexValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(v.asRegexValId());
   if (v.isStringId() && vm.getHeap().string(v.asStringId())) return *vm.getHeap().string(v.asStringId());
   return "";
 }
 
-// Helper: extract string from args[i] with fallback
 static std::string extractStringArg(VM& vm, const std::vector<Value>& args, size_t i, const std::string& fallback) {
   if (i >= args.size()) return fallback;
   if (args[i].isStringValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asStringValId());
+  if (args[i].isRegexValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asRegexValId());
   if (args[i].isStringId() && vm.getHeap().string(args[i].asStringId())) return *vm.getHeap().string(args[i].asStringId());
   return fallback;
 }
@@ -93,10 +94,13 @@ void registerStringPrototype(VM& vm) {
     return Value::makeBool(!s.empty() && !sub.empty() && s.find(sub) != std::string::npos);
   });
 
-  regProto("split", 2, [&vm](const std::vector<Value>& args) {
+  regProtoVar("split", [&vm](const std::vector<Value>& args) {
     if (args.empty()) return Value::makeNull();
     std::string s = extractString(vm, args[0]);
-    std::string delim = extractStringArg(vm, args, 1, ",");
+    std::string delim;
+    if (args.size() > 1) {
+      delim = extractStringArg(vm, args, 1, "");
+    }
 
     // Check if delimiter is a regex string
     bool isRegex = !delim.empty() && delim.front() == '/' && delim.size() > 2 && delim.back() == '/';
@@ -120,6 +124,13 @@ void registerStringPrototype(VM& vm) {
     // Plain string split
     auto arrRef = vm.getHeap().allocateArray();
     auto* arr = vm.getHeap().array(arrRef.id);
+    if (delim.empty()) {
+      for (char c : s) {
+        char buf[2] = {c, '\0'};
+        arr->push_back(makeString(vm, buf));
+      }
+      return Value::makeArrayId(arrRef.id);
+    }
     size_t pos = 0, prev = 0;
     while ((pos = s.find(delim, prev)) != std::string::npos) {
       arr->push_back(makeString(vm, s.substr(prev, pos - prev)));
@@ -426,8 +437,9 @@ regProtoVar("find", [&vm](const std::vector<Value>& args) {
     std::string regexPattern;
     if (isRegexLiteral) {
       regexPattern = pattern.substr(1, pattern.size() - 2);
+    } else if (receiverIsPattern || argumentIsPattern) {
+      regexPattern = pattern;
     } else {
-      // Escape regex metacharacters for plain string matching
       regexPattern = std::regex_replace(pattern, std::regex(R"([.^$|()\[\]{}*+?])"), R"(\$&)");
     }
 
@@ -799,6 +811,47 @@ regProtoVar("find", [&vm](const std::vector<Value>& args) {
   regProto("op_add", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeNull();
     auto result = vm.toString(args[0]) + vm.toString(args[1]);
+    return makeString(vm, std::move(result));
+  });
+
+  regProto("op_sub", 2, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 2) return Value::makeNull();
+    std::string s = extractString(vm, args[0]);
+    std::string pattern = extractStringArg(vm, args, 1, "");
+    size_t pos = 0;
+    while ((pos = s.find(pattern, pos)) != std::string::npos) {
+      s.erase(pos, pattern.size());
+    }
+    return makeString(vm, std::move(s));
+  });
+
+  regProto("replaceAll", 3, [&vm](const std::vector<Value>& args) {
+    if (args.size() < 3) return Value::makeNull();
+    std::string s = extractString(vm, args[0]);
+    std::string pattern = extractStringArg(vm, args, 1, "");
+    std::string replacement = extractStringArg(vm, args, 2, "");
+
+    bool isRegex = !pattern.empty() && pattern.front() == '/' && pattern.size() > 2 && pattern.back() == '/';
+    if (isRegex) {
+      std::string regexPattern = pattern.substr(1, pattern.size() - 2);
+      try {
+        std::regex re(regexPattern);
+        std::string result = std::regex_replace(s, re, replacement, std::regex_constants::format_default);
+        return makeString(vm, std::move(result));
+      } catch (const std::regex_error&) {
+        return Value::makeNull();
+      }
+    }
+
+    if (pattern.empty()) return makeString(vm, s);
+    std::string result;
+    size_t pos = 0, prev = 0;
+    while ((pos = s.find(pattern, prev)) != std::string::npos) {
+      result.append(s, prev, pos - prev);
+      result.append(replacement);
+      prev = pos + pattern.size();
+    }
+    result.append(s, prev, std::string::npos);
     return makeString(vm, std::move(result));
   });
 

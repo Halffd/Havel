@@ -416,29 +416,24 @@ void VM::registerDefaultHostFunctions() {
     } else {
       COMPILER_THROW("fmt.b64decode() argument must be a string");
     }
-    static const int b64inv[256] = { /* fill */ };
-    static bool b64init = false;
-    if (!b64init) {
-      b64init = true;
-      const char *b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-      for (int i = 0; i < 64; i++) const_cast<int*>(b64inv)[static_cast<unsigned char>(b64[i])] = i;
-    }
+    int b64inv[256];
+    std::memset(b64inv, -1, sizeof(b64inv));
+    const char *b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for (int i = 0; i < 64; i++) b64inv[static_cast<unsigned char>(b64chars[i])] = i;
     auto arrRef = heap_.allocateArray();
     auto *arr = heap_.array(arrRef.id);
-    std::vector<uint8_t> bytes;
     int val = 0, bits = 0;
-    for (char c : input) {
+    for (unsigned char c : input) {
       if (c == '=') break;
-      int v = b64inv[static_cast<unsigned char>(c)];
+      int v = b64inv[c];
       if (v < 0) continue;
       val = (val << 6) | v;
       bits += 6;
       if (bits >= 8) {
         bits -= 8;
-        bytes.push_back(static_cast<uint8_t>((val >> bits) & 0xFF));
+        arr->push_back(Value::makeInt(static_cast<int64_t>((val >> bits) & 0xFF)));
       }
     }
-    for (auto b : bytes) arr->push_back(Value::makeInt(static_cast<int64_t>(b)));
     return Value::makeArrayId(arrRef.id);
   });
 

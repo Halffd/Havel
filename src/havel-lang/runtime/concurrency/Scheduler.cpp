@@ -697,20 +697,21 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
  }
 
  size_t Scheduler::drainDeferredCallbacks(FiberPriority upTo) {
-   if (vm_thread_id_ == std::thread::id()) {
-     vm_thread_id_ = std::this_thread::get_id();
-   }
+    if (vm_thread_id_ == std::thread::id()) {
+      vm_thread_id_ = std::this_thread::get_id();
+    }
 
- #ifndef _WIN32
-   if (deferred_wakeup_fd_ >= 0) {
-     uint64_t val;
-     while (read(deferred_wakeup_fd_, &val, sizeof(val)) == sizeof(val)) {}
-   }
- #endif
+  #ifndef _WIN32
+    if (deferred_wakeup_fd_ >= 0) {
+      uint64_t val;
+      while (read(deferred_wakeup_fd_, &val, sizeof(val)) == sizeof(val)) {}
+    }
+  #endif
 
-   size_t drained = 0;
+    size_t drained = 0;
+    ::havel::debug("[Scheduler] drainDeferredCallbacks(upTo={})", static_cast<int>(upTo));
 
-   auto drainOneQueue = [&](std::deque<DeferredAction>& queue) {
+    auto drainOneQueue = [&](std::deque<DeferredAction>& queue) {
      std::deque<DeferredAction> acts;
      {
        std::lock_guard<std::mutex> lock(deferred_mutex_);

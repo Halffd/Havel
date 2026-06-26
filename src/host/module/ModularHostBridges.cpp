@@ -3807,8 +3807,15 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                     deps.insert(fieldDeps.begin(), fieldDeps.end());
                     g->hotkey_condition_deps = std::move(deps);
                 }
-                ::havel::debug("[InputBridge] Conditional hotkey '{}' gid={} condition_cb={} deps={}",
-                    hotkeyStr, persistentGid, conditionCb, g->hotkey_condition_deps.size());
+                {
+                    std::string depStr;
+                    for (auto& d : g->hotkey_condition_deps) {
+                        if (!depStr.empty()) depStr += ", ";
+                        depStr += d;
+                    }
+                    ::havel::debug("[InputBridge] Conditional hotkey '{}' gid={} condition_cb={} deps={}: [{}]",
+                        hotkeyStr, persistentGid, conditionCb, g->hotkey_condition_deps.size(), depStr);
+                }
             }
         }
     }

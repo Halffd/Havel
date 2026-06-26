@@ -39,12 +39,8 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
     throw std::invalid_argument("ExecutionEngine requires non-null VM, Scheduler, and EventQueue");
   }
   
-  
   vm_->setEventQueue(eq);
-  
-  
   watcher_registry_ = std::make_unique<WatcherRegistry>();
-  
   
   if (event_queue_) {
     event_queue_->onEvent(EventType::THREAD_COMPLETE, 
@@ -55,17 +51,6 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
             }, FiberPriority::HOTKEY);
         });
     
-    
-event_queue_->onEvent(EventType::VAR_CHANGED,
-[this](const Event& event) {
-    auto *name_ptr = static_cast<std::string*>(event.ptr);
-    std::string var_name = std::move(*name_ptr);
-    delete name_ptr;
-    scheduler_->schedule([this, var_name = std::move(var_name)]() {
-        onVariableChanged(var_name);
-    }, FiberPriority::HOTKEY);
-});
-
         event_queue_->onEvent(EventType::TIMER_FIRE,
             [this](const Event& event) {
                 auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
@@ -646,10 +631,7 @@ void ExecutionEngine::onThreadComplete(uint32_t thread_id) {
 // ============================================================================
 
 void ExecutionEngine::onVariableChanged(const std::string& var_name) {
-    if (debug_mode_) {
-        std::cerr << "[ExecutionEngine] Variable '" << var_name << "' changed, checking "
-                  << (watcher_registry_ ? watcher_registry_->getWatcherCount() : 0) << " watchers\n";
-    }
+    ::havel::debug("[ExecutionEngine] onVariableChanged called for '{}'", var_name);
 
     // Re-evaluate when watchers
     if (watcher_registry_) {
@@ -676,17 +658,36 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
 
     // Re-evaluate conditional hotkey goroutines
     if (vm_ && scheduler_) {
+        ::havel::debug("[ExecutionEngine] onVariableChanged('{}'): scanning conditional hotkeys", var_name);
         scheduler_->forEachConditionalHotkey(
             [this, &var_name](Scheduler::Goroutine* g) {
-                if (!g || g->state != Scheduler::GoroutineState::Suspended ||
+                if (!g) {
+                    ::havel::debug("[ExecutionEngine]   gid=null: null goroutine");
+                    return;
+                }
+                int gstate = static_cast<int>(g->state.load());
+                int greason = static_cast<int>(g->suspension_reason.load(std::memory_order_acquire));
+                int wantState = static_cast<int>(Scheduler::GoroutineState::Suspended);
+                int wantReason = static_cast<int>(Scheduler::SuspensionReason::HotkeyWait);
+                if (g->state != Scheduler::GoroutineState::Suspended ||
                     g->suspension_reason.load(std::memory_order_acquire) != Scheduler::SuspensionReason::HotkeyWait) {
+                    ::havel::debug("[ExecutionEngine]   gid={}: state={} (want {}) reason={} (want {}) SKIP",
+                        g->id, gstate, wantState, greason, wantReason);
                     return;
                 }
                 // Check if this goroutine's condition depends on the changed variable
                 if (g->hotkey_condition_deps.empty() ||
                     g->hotkey_condition_deps.count(var_name) == 0) {
+                    std::string depStr;
+                    for (auto& d : g->hotkey_condition_deps) {
+                        if (!depStr.empty()) depStr += ", ";
+                        depStr += d;
+                    }
+                    ::havel::debug("[ExecutionEngine]   gid={}: deps=[{}] doesn't contain '{}' SKIP",
+                        g->id, depStr, var_name);
                     return;
                 }
+                ::havel::debug("[ExecutionEngine]   gid={}: re-evaluating condition (prev={})", g->id, g->hotkey_condition_last_result);
                 // Re-evaluate condition with dependency tracking
                 auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
                 if (!condVal) return;
@@ -711,6 +712,8 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
 
                 bool prev = g->hotkey_condition_last_result;
                 g->hotkey_condition_last_result = conditionMet;
+
+                ::havel::debug("[ExecutionEngine]   gid={}: prev={} cur={} -> {}", g->id, prev, conditionMet, (prev == conditionMet ? "no change (skip)" : "TRANSITION"));
 
                 // Edge-triggered: only act on transition
                 if (prev == conditionMet) return;

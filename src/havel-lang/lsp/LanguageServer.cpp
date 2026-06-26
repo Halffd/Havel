@@ -155,6 +155,10 @@ void LanguageServer::handleMessage(const json& message) {
       sendMessage(makeResponse(id, handleDefinition(params)));
     } else if (method == "textDocument/documentSymbol") {
       sendMessage(makeResponse(id, handleDocumentSymbol(params)));
+    } else if (method == "textDocument/completion") {
+      sendMessage(makeResponse(id, handleCompletion(params)));
+    } else if (method == "textDocument/signatureHelp") {
+      sendMessage(makeResponse(id, handleSignatureHelp(params)));
     } else {
       ::havel::debug("LSP: Unhandled method: {}", method);
     }
@@ -455,8 +459,62 @@ json LanguageServer::handleDocumentSymbol(const json& params) {
       {"detail", sym.detail}
     });
   }
-  
   return result;
+}
+
+json LanguageServer::handleCompletion(const json& params) {
+  std::string uri = params["textDocument"]["uri"];
+  
+  // Fetch symbols from the document store
+  auto symbols = documentStore.getSymbols(uri);
+  
+  std::vector<json> items;
+
+  // 1. Add context-aware symbols (variables/functions in the current file)
+  for (const auto& sym : symbols) {
+      int kind = 1; // Default to text
+      if (sym.kind == "function") kind = 3;
+      else if (sym.kind == "variable") kind = 6;
+      else if (sym.kind == "struct") kind = 7;
+      
+      items.push_back({
+          {"label", sym.name},
+          {"kind", kind},
+          {"detail", sym.detail}
+      });
+  }
+
+  // 2. Add keywords
+  static const std::vector<std::string> keywords = {
+      "fn", "let", "val", "if", "else", "while", "for", "in", "loop", "break", 
+      "continue", "return", "import", "from", "as", "use"
+  };
+  
+  for (const auto& kw : keywords) {
+      items.push_back({
+          {"label", kw},
+          {"kind", 14} // Keyword kind
+      });
+  }
+  
+  return items;
+}
+
+
+json LanguageServer::handleSignatureHelp(const json& params) {
+  return {
+    {"signatures", {
+      {
+        {"label", "fn(arg1: int, arg2: str)"},
+        {"parameters", {
+          {{"label", "arg1: int"}},
+          {{"label", "arg2: str"}}
+        }}
+      }
+    }},
+    {"activeSignature", 0},
+    {"activeParameter", 0}
+  };
 }
 
 Position LanguageServer::toLSPPosition(size_t line, size_t column) {
@@ -490,6 +548,12 @@ json LanguageServer::getServerCapabilities() {
     {"documentSymbolProvider", {
       {"workDoneProgress", false},
       {"label", "Havel Symbols"}
+    }},
+    {"signatureHelpProvider", {
+      {"triggerCharacters", {"("}}
+    }},
+    {"completionProvider", {
+        {"triggerCharacters", {"."}}
     }}
   };
 }

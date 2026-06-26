@@ -198,51 +198,248 @@ void VM::registerDefaultHostFunctions() {
     });
 
     // fmt(format_string, ...) - Python-style string formatting
+  registerHostFunction(
+      "fmt.format", [this](const std::vector<Value> &args) {
+        if (args.empty()) {
+          COMPILER_THROW("fmt.format() requires at least a format string");
+        }
+
+        std::string formatStr;
+        if (args[0].isStringValId() && current_chunk) {
+          formatStr = current_chunk->getString(args[0].asStringValId());
+        } else if (args[0].isStringId()) {
+          auto *s = heap_.string(args[0].asStringId());
+          if (s) formatStr = *s;
+        } else {
+          COMPILER_THROW("fmt.format() format must be a string");
+        }
+
+        std::vector<std::string> argStrings;
+        for (size_t i = 1; i < args.size(); ++i) {
+          argStrings.push_back(toString(args[i]));
+        }
+
+        // Parse format specifiers: {} and {:spec}
+        std::string result;
+        size_t argIndex = 0;
+        size_t pos = 0;
+
+        while (pos < formatStr.size()) {
+          size_t open = formatStr.find('{', pos);
+          if (open == std::string::npos) {
+            result += formatStr.substr(pos);
+            break;
+          }
+          result += formatStr.substr(pos, open - pos);
+
+          if (open + 1 < formatStr.size() && formatStr[open + 1] == '{') {
+            result += '{';
+            pos = open + 2;
+            continue;
+          }
+
+          size_t close = formatStr.find('}', open);
+          if (close == std::string::npos) {
+            result += formatStr.substr(open);
+            break;
+          }
+
+          std::string spec = formatStr.substr(open + 1, close - open - 1);
+          pos = close + 1;
+
+          std::string formatted;
+          if (argIndex < argStrings.size()) {
+            if (spec.empty()) {
+              formatted = argStrings[argIndex++];
+            } else if (spec[0] == ':') {
+              std::string fmtSpec = spec.substr(1);
+              std::string argVal = argStrings[argIndex++];
+
+              if (fmtSpec == "x" || fmtSpec == "X") {
+                try {
+                  long long val = std::stoll(argVal);
+                  std::stringstream ss;
+                  if (fmtSpec == "X") ss << std::uppercase;
+                  ss << std::hex << val;
+                  formatted = ss.str();
+                } catch (...) {
+                  formatted = argVal;
+                }
+              } else if (fmtSpec == "o") {
+                try {
+                  long long val = std::stoll(argVal);
+                  std::stringstream ss;
+                  ss << std::oct << val;
+                  formatted = ss.str();
+                } catch (...) {
+                  formatted = argVal;
+                }
+              } else if (fmtSpec == "b") {
+                try {
+                  long long val = std::stoll(argVal);
+                  std::string bin;
+                  if (val == 0) bin = "0";
+                  else {
+                    bool neg = val < 0;
+                    unsigned long long uval = neg ? -static_cast<unsigned long long>(val) : static_cast<unsigned long long>(val);
+                    while (uval > 0) { bin = static_cast<char>('0' + (uval & 1)) + bin; uval >>= 1; }
+                    if (neg) bin = "-" + bin;
+                  }
+                  formatted = bin;
+                } catch (...) {
+                  formatted = argVal;
+                }
+              } else if (fmtSpec.size() > 1 && (fmtSpec[0] == '>' || fmtSpec[0] == '<' || fmtSpec[0] == '^')) {
+                char align = fmtSpec[0];
+                int width = 0;
+                try { width = std::stoi(fmtSpec.substr(1)); } catch (...) {}
+                if (width > 0 && static_cast<int>(argVal.size()) < width) {
+                  int pad = width - static_cast<int>(argVal.size());
+                  if (align == '>') {
+                    formatted = std::string(pad, ' ') + argVal;
+                  } else if (align == '<') {
+                    formatted = argVal + std::string(pad, ' ');
+                  } else {
+                    int left = pad / 2, right = pad - left;
+                    formatted = std::string(left, ' ') + argVal + std::string(right, ' ');
+                  }
+                } else {
+                  formatted = argVal;
+                }
+              } else if (fmtSpec.size() > 1 && fmtSpec[0] == '0') {
+                int width = 0;
+                try { width = std::stoi(fmtSpec.substr(1)); } catch (...) {}
+                if (width > 0 && static_cast<int>(argVal.size()) < width) {
+                  formatted = std::string(width - argVal.size(), '0') + argVal;
+                } else {
+                  formatted = argVal;
+                }
+              } else if (fmtSpec.size() >= 2 && fmtSpec[fmtSpec.size()-1] == 'd') {
+                try {
+                  long long val = std::stoll(argVal);
+                  formatted = std::to_string(val);
+                } catch (...) { formatted = argVal; }
+              } else {
+                formatted = argVal;
+              }
+            } else {
+              formatted = argStrings[argIndex++];
+            }
+          } else {
+            formatted = "{}";
+          }
+          result += formatted;
+        }
+
+        return Value::makeStringId(heap_.allocateString(result).id);
+      });
+
   registerHostFunction("fmt", [this](const std::vector<Value> &args) {
     if (args.empty()) {
       COMPILER_THROW("fmt() requires at least a format string");
     }
-
-    // Get format string
-    if (!args[0].isStringValId()) {
-      COMPILER_THROW("fmt() format must be a string");
-    }
-    // TODO: string pool lookup
-    std::string formatStr = "<string:" + std::to_string(args[0].asStringValId()) + ">";
-
-    // Convert args to strings for formatting
-    std::vector<std::string> argStrings;
-    for (size_t i = 1; i < args.size(); ++i) {
-      argStrings.push_back(toString(args[i]));
-    }
-
-    // Simple format string processing: {} placeholders
-    std::string result;
-    size_t argIndex = 0;
-    size_t pos = 0;
-
-    while (pos < formatStr.size()) {
-      size_t placeholder = formatStr.find("{}", pos);
-      if (placeholder == std::string::npos) {
-        // No more placeholders, append rest of string
-        result += formatStr.substr(pos);
-        break;
-      }
-
-      // Append text before placeholder
-      result += formatStr.substr(pos, placeholder - pos);
-
-      // Replace placeholder with argument
-      if (argIndex < argStrings.size()) {
-        result += argStrings[argIndex++];
-      } else {
-        result += "{}"; // No more args, keep placeholder
-      }
-
-      pos = placeholder + 2; // Skip past {}
-    }
-
+    std::vector<Value> fmtArgs;
+    fmtArgs.push_back(args[0]);
+    for (size_t i = 1; i < args.size(); ++i) fmtArgs.push_back(args[i]);
+    auto fnIt = host_functions.find("fmt.format");
+    if (fnIt != host_functions.end()) return fnIt->second(fmtArgs);
     return Value::makeNull();
+  });
+
+  registerHostFunction("fmt.hex", [this](const std::vector<Value> &args) {
+    if (args.empty()) COMPILER_THROW("fmt.hex() requires an integer argument");
+    int64_t val = 0;
+    if (args[0].isInt()) val = args[0].asInt();
+    else if (args[0].isDouble()) val = static_cast<int64_t>(args[0].asDouble());
+    std::stringstream ss;
+    ss << "0x" << std::hex << val;
+    return Value::makeStringId(heap_.allocateString(ss.str()).id);
+  });
+
+  registerHostFunction("fmt.oct", [this](const std::vector<Value> &args) {
+    if (args.empty()) COMPILER_THROW("fmt.oct() requires an integer argument");
+    int64_t val = 0;
+    if (args[0].isInt()) val = args[0].asInt();
+    else if (args[0].isDouble()) val = static_cast<int64_t>(args[0].asDouble());
+    std::stringstream ss;
+    ss << "0o" << std::oct << val;
+    return Value::makeStringId(heap_.allocateString(ss.str()).id);
+  });
+
+  registerHostFunction("fmt.bin", [this](const std::vector<Value> &args) {
+    if (args.empty()) COMPILER_THROW("fmt.bin() requires an integer argument");
+    int64_t val = 0;
+    if (args[0].isInt()) val = args[0].asInt();
+    else if (args[0].isDouble()) val = static_cast<int64_t>(args[0].asDouble());
+    bool neg = val < 0;
+    unsigned long long uval = neg ? -static_cast<unsigned long long>(val) : static_cast<unsigned long long>(val);
+    std::string bin;
+    if (uval == 0) bin = "0";
+    else while (uval > 0) { bin = static_cast<char>('0' + (uval & 1)) + bin; uval >>= 1; }
+    if (neg) bin = "-" + bin;
+    return Value::makeStringId(heap_.allocateString("0b" + bin).id);
+  });
+
+  registerHostFunction("fmt.b64", [this](const std::vector<Value> &args) {
+    if (args.empty()) COMPILER_THROW("fmt.b64() requires a string argument");
+    std::string input;
+    if (args[0].isStringValId() && current_chunk) {
+      input = current_chunk->getString(args[0].asStringValId());
+    } else if (args[0].isStringId()) {
+      auto *s = heap_.string(args[0].asStringId());
+      if (s) input = *s;
+    } else {
+      COMPILER_THROW("fmt.b64() argument must be a string");
+    }
+    static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string result;
+    for (size_t i = 0; i < input.size(); i += 3) {
+      unsigned int n = static_cast<unsigned char>(input[i]) << 16;
+      if (i + 1 < input.size()) n |= static_cast<unsigned char>(input[i+1]) << 8;
+      if (i + 2 < input.size()) n |= static_cast<unsigned char>(input[i+2]);
+      result += b64[(n >> 18) & 0x3F];
+      result += b64[(n >> 12) & 0x3F];
+      result += (i + 1 < input.size()) ? b64[(n >> 6) & 0x3F] : '=';
+      result += (i + 2 < input.size()) ? b64[n & 0x3F] : '=';
+    }
+    return Value::makeStringId(heap_.allocateString(result).id);
+  });
+
+  registerHostFunction("fmt.b64decode", [this](const std::vector<Value> &args) {
+    if (args.empty()) COMPILER_THROW("fmt.b64decode() requires a string argument");
+    std::string input;
+    if (args[0].isStringValId() && current_chunk) {
+      input = current_chunk->getString(args[0].asStringValId());
+    } else if (args[0].isStringId()) {
+      auto *s = heap_.string(args[0].asStringId());
+      if (s) input = *s;
+    } else {
+      COMPILER_THROW("fmt.b64decode() argument must be a string");
+    }
+    static const int b64inv[256] = { /* fill */ };
+    static bool b64init = false;
+    if (!b64init) {
+      b64init = true;
+      const char *b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+      for (int i = 0; i < 64; i++) const_cast<int*>(b64inv)[static_cast<unsigned char>(b64[i])] = i;
+    }
+    auto arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
+    std::vector<uint8_t> bytes;
+    int val = 0, bits = 0;
+    for (char c : input) {
+      if (c == '=') break;
+      int v = b64inv[static_cast<unsigned char>(c)];
+      if (v < 0) continue;
+      val = (val << 6) | v;
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        bytes.push_back(static_cast<uint8_t>((val >> bits) & 0xFF));
+      }
+    }
+    for (auto b : bytes) arr->push_back(Value::makeInt(static_cast<int64_t>(b)));
+    return Value::makeArrayId(arrRef.id);
   });
 
   registerHostFunction("clock_ms", 0, [](const std::vector<Value> &) {
@@ -2283,6 +2480,15 @@ void VM::registerDefaultHostGlobals() {
 	setHostObjectField(prot_obj, "register", Value::makeHostFuncId(getHostFunctionIndex("prot.register")));
 	setHostObjectField(prot_obj, "impl", Value::makeHostFuncId(getHostFunctionIndex("prot.impl")));
   setGlobal("prot", Value::makeObjectId(prot_obj.id));
+
+  auto fmt_obj = heap_.allocateObject();
+  setHostObjectField(fmt_obj, "format", Value::makeHostFuncId(getHostFunctionIndex("fmt.format")));
+  setHostObjectField(fmt_obj, "hex", Value::makeHostFuncId(getHostFunctionIndex("fmt.hex")));
+  setHostObjectField(fmt_obj, "oct", Value::makeHostFuncId(getHostFunctionIndex("fmt.oct")));
+  setHostObjectField(fmt_obj, "bin", Value::makeHostFuncId(getHostFunctionIndex("fmt.bin")));
+  setHostObjectField(fmt_obj, "b64", Value::makeHostFuncId(getHostFunctionIndex("fmt.b64")));
+  setHostObjectField(fmt_obj, "b64decode", Value::makeHostFuncId(getHostFunctionIndex("fmt.b64decode")));
+  setGlobal("fmt", Value::makeObjectId(fmt_obj.id));
 
   // load() - script-level file loading
   setGlobal("load", Value::makeHostFuncId(getHostFunctionIndex("load")));

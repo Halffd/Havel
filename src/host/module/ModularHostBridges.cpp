@@ -2170,11 +2170,15 @@ UIBridge::handleWindowGetActive(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
   if (!ctx->windowManager || !ctx->vm) {
+    ::havel::warn("[UIBridge] handleWindowGetActive: windowManager={} vm={}",
+                 (void*)ctx->windowManager, (void*)ctx->vm);
     return Value::makeNull();
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
+    ::havel::warn("[UIBridge] handleWindowGetActive: info invalid (id={} title='{}' class='{}')",
+                 info.id, info.title, info.windowClass);
     return Value::makeNull();
   }
   return createWindowObject(static_cast<VM *>(ctx->vm), ctx, info.id,

@@ -738,6 +738,13 @@ if (param->defaultValue.has_value()) {
         // Compile the last meaningful statement in tail position (implicit return)
         const auto &lastStmt = stmts[lastMeaningful];
         bool needsExplicitReturn = true;
+
+        // Fix: Detect if the last statement is a loop and treat as tail position
+        bool isLoop = lastStmt && (lastStmt->kind == ast::NodeType::ForStatement ||
+                                   lastStmt->kind == ast::NodeType::WhileStatement ||
+                                   lastStmt->kind == ast::NodeType::LoopStatement ||
+                                   lastStmt->kind == ast::NodeType::DoWhileStatement);
+                                   
         if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
           const auto &exprStmt =
               static_cast<const ast::ExpressionStatement &>(*lastStmt);
@@ -749,8 +756,6 @@ if (param->defaultValue.has_value()) {
             if (wasTailCall()) {
               needsExplicitReturn = false;
             }
-          } else {
-            // Empty expression statement — will emit LOAD_CONST null + RETURN below
           }
         } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
           enterTailPosition();
@@ -758,8 +763,9 @@ if (param->defaultValue.has_value()) {
           exitTailPosition();
           needsExplicitReturn = false;
         } else if (lastStmt && (lastStmt->kind == ast::NodeType::IfStatement ||
-                                 lastStmt->kind == ast::NodeType::BlockStatement)) {
-          // If/Match/Block in tail position may return from all branches
+                                 lastStmt->kind == ast::NodeType::BlockStatement ||
+                                 isLoop)) {
+          // If/Match/Block/Loop in tail position
           enterTailPosition();
           compileStatement(*lastStmt);
           exitTailPosition();
@@ -3506,6 +3512,9 @@ case ast::NodeType::AtExpression: {
     if (!fieldId) {
       COMPILER_THROW("@@ expression field must be an identifier");
     }
+    if (current_class_name_.empty()) {
+      COMPILER_THROW("@@ used outside of a class (did you mean ClassName." + fieldId->symbol + "?)");
+    }
     // Load class object (stored as global with class name)
     { uint32_t strId = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId)); };
     // Get the field from class object
@@ -4169,6 +4178,9 @@ case ast::NodeType::CastExpression: {
         } else {
             COMPILER_THROW("@@field assignment requires identifier");
         }
+        if (current_class_name_.empty()) {
+            COMPILER_THROW("@@ used outside of a class (did you mean ClassName." + field_name + "?)");
+        }
         // Stack: [value]
         // Load class object (stored as global with class name)
         { uint32_t _sid = addStringConstant(current_class_name_); emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(_sid)); };
@@ -4376,6 +4388,9 @@ auto emitCompound = [&](OpCode math_op) {
           field_name = field_id->symbol;
         } else {
           COMPILER_THROW("@@field compound assignment requires identifier");
+        }
+        if (current_class_name_.empty()) {
+          COMPILER_THROW("@@ used outside of a class (did you mean ClassName." + field_name + "?)");
         }
         uint32_t temp_result = next_local_index;
         reserveLocalSlot(temp_result);
@@ -4630,6 +4645,9 @@ case ast::NodeType::CallExpression:
         field_name = field_id->symbol;
       } else {
         COMPILER_THROW("@@field update requires identifier");
+      }
+      if (current_class_name_.empty()) {
+        COMPILER_THROW("@@ used outside of a class (did you mean ClassName." + field_name + "?)");
       }
       // Load class.field
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant(current_class_name_)));

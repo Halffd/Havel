@@ -2089,14 +2089,17 @@ if tt == TID.At and at(1).tid == TID.Identifier {
         }
         // Variable declarations
         if tt == TID.Let {
-            return parseLetDecl("Let")
+            return parseLetDecl("Let", false)
         }
         if tt == TID.Val {
-            return parseLetDecl("Val")
+            return parseLetDecl("Val", false)
         }
         if tt == TID.Const {
-            return parseLetDecl("Val") // const is alias for val
-
+            return parseLetDecl("Val", false) // const is alias for val
+        }
+        if tt == TID.AtAt {
+            advance()
+            return parseLetDecl("Val", true)
         }
         // Control flow
         if tt == TID.If {
@@ -2831,7 +2834,7 @@ skipNewlines()
     // ===================================================================
     // STATEMENT: let / val declaration
     // ===================================================================
-fn parseLetDecl(keyword) {
+fn parseLetDecl(keyword, isStatic = false) {
   l = current().line
   c = current().col
   advance() // consume 'let'/'val'/'const'
@@ -2914,9 +2917,11 @@ fn parseLetDecl(keyword) {
 
   if keyword == "Let" {
     node = LetDeclaration(name, value, l, c)
+  node.isStatic = isStatic
   }
   else {
     node = ValDeclaration(name, value, l, c)
+  node.isStatic = isStatic
   }
   if pattern != null { node.pattern = pattern }
   if typeAnno != null { node.typeAnnotation = typeAnno }

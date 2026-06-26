@@ -95,6 +95,8 @@ private:
   json handleHover(const json& params);
   json handleDefinition(const json& params);
   json handleDocumentSymbol(const json& params);
+  json handleCompletion(const json& params);
+  json handleSignatureHelp(const json& params);
 
   // Analysis
   void analyzeDocument(const std::string& uri, const std::string& text);

@@ -269,13 +269,11 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--minimal" || arg == "-m") {
       // Minimal mode - no IO/hotkeys/GUI
       cfg.minimalMode = true;
-    } else if (arg == "--repl" || arg == "-r") {
+    } else if (arg == "--repl" || arg == "-r" || arg == "--interactive" || arg == "-i") {
       repl = true;
     } else if (arg == "--gui") {
       cfg.mode = Mode::DAEMON; // GUI mode is now DAEMON
     } else if (arg == "--full-repl" || arg == "-fr") {
-      // Full REPL with all features (hotkeys, GUI, etc.)
-      cfg.fullRepl = true;
       repl = true;
     } else if (arg == "--no-jit") {
       cfg.useJIT = false;
@@ -522,19 +520,10 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 
   // Determine mode based on flags and script file
   if (repl && !cfg.scriptFiles.empty()) {
-    // Script + REPL mode - full features by default
     cfg.mode = Mode::SCRIPT_AND_REPL;
-  } else if (repl && cfg.fullRepl) {
-    // Full REPL mode - full features even without script
-    cfg.mode = Mode::SCRIPT_AND_REPL;
-  } else if (repl && cfg.minimalMode) {
-    // Minimal REPL mode
-    cfg.mode = Mode::REPL;
   } else if (repl) {
-    // REPL only mode - full features by default
-    cfg.mode = Mode::SCRIPT_AND_REPL;
+    cfg.mode = Mode::REPL;
   } else if (cfg.scriptFiles.empty() && cfg.mode == Mode::DAEMON) {
-    // No script, no REPL, no GUI flag - default to REPL mode
     cfg.mode = Mode::REPL;
   }
 	// Check for debug flags (but don't force minimal mode when --repl is explicitly used)
@@ -1510,9 +1499,8 @@ std::cout << " --debug-hotkeys, -dhk Enable hotkey debugging\n";
   std::cout << " --error, -e Stop on first error/warning\n";
   std::cout << " --eval, -E CODE Run inline Havel code (minimal mode)\n";
   std::cout << " --minimal, -m Minimal mode (no IO/hotkeys/GUI)\n";
-  std::cout << "  --repl, -r          Start interactive REPL (full features)\n";
-  std::cout << "  --full-repl, -fr    Start REPL with ALL features (hotkeys, "
-               "GUI, etc.)\n";
+  std::cout << "  --repl, -r          Start interactive REPL (full runtime with hotkeys, GUI)\n";
+  std::cout << "  --interactive, -i   Same as --repl\n";
   std::cout << "  --gui               GUI-only mode (no hotkeys)\n";
   std::cout
         << " --run Run script in minimal mode (auto-enables -m)\n";
@@ -1565,8 +1553,8 @@ std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
   std::cout << "  havel                   - Start interactive REPL (full features)\n";
   std::cout << "  havel script.hv         - Run script with FULL features\n";
   std::cout << "  havel --repl script.hv    - Run script then REPL (FULL features)\n";
-  std::cout << "  havel --repl              - Start REPL with FULL features\n";
-  std::cout << "  havel --full-repl         - Start REPL with ALL features\n";
+  std::cout << "  havel --repl              - Start interactive REPL (full runtime)\n";
+  std::cout << "  havel -i                  - Same as --repl\n";
     std::cout << " havel --run script.hv - Run script in MINIMAL mode\n";
     std::cout << " havel --run --self-hosted script.hv - Run via pure Havel pipeline\n";
   std::cout << "  havel --test dir/         - Run all .hv files in directory\n";
@@ -1583,7 +1571,7 @@ std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
   std::cout << "  havel --target elf script.hv         - Emit standalone ELF executable\n";
   std::cout << " havel --minimal script.hv - Run script in MINIMAL mode\n";
   std::cout << " havel --eval 'print(1+2)' - Run inline code\n";
-  std::cout << " havel --repl --minimal - Start REPL in MINIMAL mode\n";
+  std::cout << " havel --repl --minimal - Start REPL in minimal mode (no GUI)\n";
   std::cout << "\nFull mode (default):\n";
   std::cout << "  All features enabled: hotkeys, GUI, display, IO, etc.\n";
   std::cout << "  Use for normal automation and hotkey scripts.\n";

@@ -83,7 +83,9 @@ void EventQueue::processAll() {
     }
 
     Event event;
+    size_t processed = 0;
     while (events_.pop(event)) {
+        processed++;
         try {
             if (event.type == EventType::LEGACY_CALLBACK) {
                 Callback* cb = static_cast<Callback*>(event.ptr);
@@ -98,7 +100,10 @@ void EventQueue::processAll() {
             } else {
                 auto handler_it = local_handlers.find(static_cast<uint8_t>(event.type));
                 if (handler_it != local_handlers.end() && handler_it->second) {
+                    ::havel::debug("[EventQueue] dispatching event type={}", static_cast<int>(event.type));
                     handler_it->second(event);
+                } else {
+                    ::havel::debug("[EventQueue] event type={} dropped (no handler)", static_cast<int>(event.type));
                 }
             }
         } catch (const std::exception& e) {
@@ -106,6 +111,9 @@ void EventQueue::processAll() {
         } catch (...) {
             ::havel::error("[EventQueue] Handler unknown exception");
         }
+    }
+    if (processed > 0) {
+        ::havel::debug("[EventQueue] processAll: processed {} events", processed);
     }
 }
 

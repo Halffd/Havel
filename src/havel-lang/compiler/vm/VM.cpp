@@ -2543,7 +2543,11 @@ while (stack.size() > finished.stack_depth) {
 
 
 void VM::emitVariableChanged(const std::string& var_name) {
-  if (!event_queue_ || !event_queue_->hasHandler(EventType::VAR_CHANGED)) return;
+  if (!event_queue_ || !event_queue_->hasHandler(EventType::VAR_CHANGED)) {
+    ::havel::debug("[VM] emitVariableChanged: '{}' SKIPPED (no handler)", var_name);
+    return;
+  }
+  ::havel::debug("[VM] emitVariableChanged: '{}' -> pushing VAR_CHANGED event", var_name);
   uint32_t var_hash = std::hash<std::string>{}(var_name);
   Event change_event(EventType::VAR_CHANGED, var_hash, new std::string(var_name));
   event_queue_->push(change_event);

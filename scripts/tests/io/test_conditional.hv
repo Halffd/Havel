@@ -51,10 +51,7 @@ fn modeEval (win) {
     print("Leaving mode to default")
   }
 }
-a if mode == "gaming" || title_ ~ "mpv" => {
-  print("CONDITIONAL mode gaming or mpv: true")
-  "Gaming mode active"
-}
+hotkeyTest = hotkey.register_conditional("a", () => { "Gaming mode active" }, () => { res = mode == "gaming" ||title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv:" + res); return res })
 dbgWin = true
 hks = null
 go fn update() {
@@ -67,9 +64,9 @@ go fn update() {
       if dbgWin {
          print(f"Active window changed: $title_ class: $class_ mode: $mode cmd: $cmd pid: $wpid id: $wid last: {lastWin ? lastWin.title_ : "none"}")
       }
-      print("hotkeyTest 'a' registered")
+      print("hotkeyTest: ", hotkeyTest)
       print("Hotkeys:")
-      hotkey.list()
+      print(hotkey.list())
     }
     sleep(1000)
   }

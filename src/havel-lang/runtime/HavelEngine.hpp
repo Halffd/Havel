@@ -22,6 +22,7 @@
 #include "core/config/ConfigManager.hpp"
 #include "core/io/IO.hpp"
 #include "core/brightness/BrightnessManager.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
 #include "core/window/WindowManager.hpp"
 #include <filesystem>
 #include <memory>
@@ -200,20 +201,68 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
         var_name, [this](uint32_t wid) -> bool {
         const auto* w = watcher_registry_->getWatcher(wid);
         if (!w) return false;
+        const compiler::BytecodeChunk* saved_chunk = nullptr;
+        bool set_chunk = false;
+        if (w->condition_chunk) {
+            saved_chunk = vm_->getCurrentChunk();
+            vm_->setCurrentChunkPublic(w->condition_chunk);
+            set_chunk = true;
+        }
         auto tracker = std::make_shared<compiler::DependencyTracker>();
         compiler::DependencyTrackerScope scope(tracker);
-        return vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
+        bool result = vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
+        if (set_chunk) vm_->setCurrentChunkPublic(saved_chunk);
+        return result;
     });
     for (auto* fiber : fired) {
-                        if (fiber) {
-                            try {
-                                compiler::Value body_func = compiler::Value::makeFunctionObjId(fiber->current_function_id);
-                                vm_->call(body_func, {});
-                            } catch (...) {}
-                        }
+        if (fiber) {
+            try {
+                compiler::Value body_func = compiler::Value::makeFunctionObjId(fiber->current_function_id);
+                vm_->call(body_func, {});
+            } catch (...) {}
+        }
+    }
+    vm_->processSignalBindings(var_name);
+    auto* sched = vm_->getScheduler();
+    if (sched) {
+        sched->forEachConditionalHotkey(
+            [this, &var_name, sched](compiler::Scheduler::Goroutine* g) {
+                if (!g) return;
+                if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
+                    g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+                if (g->hotkey_condition_deps.empty() ||
+                    g->hotkey_condition_deps.count(var_name) == 0) return;
+                auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
+                if (!condVal) return;
+                auto tracker = std::make_shared<compiler::DependencyTracker>();
+                compiler::DependencyTrackerScope scope(tracker);
+                bool conditionMet = false;
+                try {
+                    compiler::Value result = vm_->callFunctionSync(*condVal, {});
+                    conditionMet = vm_->toBool(result);
+                } catch (...) {}
+                auto newDeps = tracker->getGlobalDependencies();
+                auto fieldDeps = tracker->getFieldDependencies();
+                newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+                g->hotkey_condition_deps = std::move(newDeps);
+                bool prev = g->hotkey_condition_last_result;
+                g->hotkey_condition_last_result = conditionMet;
+                if (prev == conditionMet) return;
+                if (conditionMet) {
+                    if (!g->hotkey_condition_alias.empty()) {
+                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                        if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
                     }
-                    vm_->processSignalBindings(var_name);
-                });
+                    sched->wakeHotkey(g);
+                } else {
+                    if (!g->hotkey_condition_alias.empty()) {
+                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                        if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
+                    }
+                }
+            });
+    }
+});
                 hostContext_->eventQueue->onEvent(compiler::EventType::TIMER_FIRE,
 [this](const compiler::Event& event) {
 auto *payload = static_cast<std::pair<compiler::Value, uint32_t>*>(event.ptr);

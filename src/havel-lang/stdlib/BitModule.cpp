@@ -115,7 +115,6 @@ void registerBitModule(const VMApi &api) {
             for (const auto& [name, value] : *obj) {
                 if (name.empty() || name[0] == '_') continue;
                 api.setField(bitObj, name, value);
-                api.setGlobal(name, value);
             }
         }
     }

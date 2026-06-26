@@ -20,6 +20,17 @@ do { \
     throw std::runtime_error(msg); \
 } while (0)
 
+#define COMPILER_THROW_AT(msg, instr) \
+do { \
+    std::string _ct_msg = (msg); \
+    if ((instr).location.has_value() && (instr).location->line > 0) { \
+        _ct_msg += " at " + std::to_string((instr).location->line) + ":" + std::to_string((instr).location->column); \
+    } \
+    ::havel::errors::ErrorReporter::instance().report( \
+    HAVEL_ERROR(::havel::errors::ErrorStage::VM, _ct_msg)); \
+    throw std::runtime_error(_ct_msg); \
+} while (0)
+
 inline std::string operatorSymbolToMethodName(const std::string &sym) {
     static const std::unordered_map<std::string, std::string> map = {
         {"+", "op_add"}, {"-", "op_sub"}, {"*", "op_mul"}, {"/", "op_div"},

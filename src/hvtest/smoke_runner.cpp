@@ -1737,10 +1737,57 @@ s = s - "b"
 return #s
 )havel", 2, dump_bytecode, snapshot_dir);
 
+  failures += runCase("del-object-field", R"havel(
+obj = {a: 1, b: 2, c: 3}
+del obj.b
+return obj.a + obj.c
+)havel", 4, dump_bytecode, snapshot_dir);
+
+  failures += runCase("del-object-bracket", R"havel(
+obj = {x: 10, y: 20}
+del obj["y"]
+return obj.x
+)havel", 10, dump_bytecode, snapshot_dir);
+
+  failures += runCase("del-array-index", R"havel(
+arr = [10, 20, 30]
+del arr[1]
+return arr.len()
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runCase("del-set-key", R"havel(
+s = {1, 2, 3}
+del s[2]
+return s.len()
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runCase("del-variable", R"havel(
+x = 42
+del x
+return x == null ? 1 : 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
   failures += runCase("string-pipe-trim", R"havel(
 r = "  hi  " |> trim
 return #r
 )havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-filter-remove-chars", R"havel(
+x = "hello+world+test"
+result = x.split("").filter(fn(c) c != "+").join("")
+return #result
+)havel", 14, dump_bytecode, snapshot_dir);
+
+  failures += runCase("string-for-loop-remove", R"havel(
+x = "hello+world+test"
+result = ""
+for c in x {
+    if c != "+" {
+        result += c
+    }
+}
+return #result
+)havel", 14, dump_bytecode, snapshot_dir);
 
   failures += runCase("string-index", R"havel(
 s = "hello"
@@ -3212,20 +3259,3 @@ return x
 #endif // HAVEL_ENABLE_LLVM
 
 } // namespace hvtest
-
-  failures += runCase("string-filter-remove-chars", R"havel(
-x = "hello+world+test"
-result = x.split("").filter(fn(c) c != "+").join("")
-return #result
-)havel", 14, dump_bytecode, snapshot_dir);
-
-  failures += runCase("string-for-loop-remove", R"havel(
-x = "hello+world+test"
-result = ""
-for c in x {
-    if c != "+" {
-        result += c
-    }
-}
-return #result
-)havel", 14, dump_bytecode, snapshot_dir);

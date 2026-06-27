@@ -49,6 +49,8 @@ const char* tokenColor(TokenType type) {
         case TokenType::Wait: case TokenType::Co: case TokenType::Op:
         case TokenType::Repeat: case TokenType::Pool: case TokenType::On:
         case TokenType::Off: case TokenType::Mode:
+        case TokenType::Thread: case TokenType::Interval: case TokenType::Update:
+        case TokenType::Timeout: case TokenType::WaitGroup:
             return "\033[1;33m";
         case TokenType::Struct: case TokenType::Class: case TokenType::Enum:
         case TokenType::Trait: case TokenType::Prot: case TokenType::Impl:
@@ -60,9 +62,28 @@ const char* tokenColor(TokenType type) {
             return "\033[0;35m";
         case TokenType::String: case TokenType::MultilineString:
         case TokenType::InterpolatedString: case TokenType::CharLiteral:
+        case TokenType::InterpolatedBacktick: case TokenType::Backtick:
+        case TokenType::RegexString: case TokenType::RegexLiteral:
+        case TokenType::ShellCommand: case TokenType::ShellCommandCapture:
             return "\033[0;32m";
         case TokenType::Comment:
             return "\033[2;37m";
+        case TokenType::Equals: case TokenType::NotEquals:
+        case TokenType::Less: case TokenType::Greater:
+        case TokenType::LessEquals: case TokenType::GreaterEquals:
+        case TokenType::Or: case TokenType::Not:
+        case TokenType::Assign: case TokenType::PlusAssign:
+        case TokenType::MinusAssign: case TokenType::MultiplyAssign:
+        case TokenType::DivideAssign: case TokenType::ModuloAssign:
+        case TokenType::Matches: case TokenType::Tilde:
+        case TokenType::Nullish: case TokenType::Pipe:
+        case TokenType::PipeRight: case TokenType::ShiftRight:
+        case TokenType::ShiftLeft: case TokenType::LeftArrow:
+        case TokenType::SuperArrow: case TokenType::ColonColon:
+        case TokenType::Colon: case TokenType::Question:
+        case TokenType::QuestionDot: case TokenType::Spread:
+        case TokenType::Length:
+            return "\033[0;36m";
         default:
             return nullptr;
     }
@@ -73,45 +94,124 @@ std::string highlightSource(const std::string& source) {
     havel::Lexer lexer(source);
     auto tokens = lexer.tokenize();
     std::string result;
-    size_t lastEnd = 0;
+    size_t pos = 0;
     for (const auto& token : tokens) {
         if (token.type == TokenType::EOF_TOKEN) break;
-        size_t tokLen = token.length;
-        size_t tokPos = source.find(token.raw, lastEnd);
-        if (tokPos == std::string::npos || tokPos < lastEnd) {
-            for (size_t i = 0; i < source.size(); ++i) {
-                if (source.substr(i, tokLen) == token.raw && i >= lastEnd) {
-                    tokPos = i;
-                    break;
-                }
-            }
-        }
-        if (tokPos == std::string::npos || tokPos < lastEnd) {
-            result += token.raw;
-            continue;
-        }
-        result += source.substr(lastEnd, tokPos - lastEnd);
+        size_t tokStart = token.column - 1;
+        if (tokStart < pos) tokStart = pos;
+        if (tokStart > source.size()) tokStart = source.size();
+        size_t tokEnd = tokStart + token.length;
+        if (tokEnd > source.size()) tokEnd = source.size();
+        if (tokStart > pos) result += source.substr(pos, tokStart - pos);
         auto* color = tokenColor(token.type);
         if (color) {
             result += color;
-            result += token.raw;
+            result += source.substr(tokStart, tokEnd - tokStart);
             result += "\033[0m";
         } else {
-            result += token.raw;
+            result += source.substr(tokStart, tokEnd - tokStart);
         }
-        lastEnd = tokPos + tokLen;
-        if (lastEnd > source.size()) lastEnd = source.size();
+        pos = tokEnd;
     }
-    result += source.substr(lastEnd);
+    if (pos < source.size()) result += source.substr(pos);
+    return result;
+}
+
+std::string highlightForReadline(const char* line) {
+    if (!line || !line[0]) return line ? line : "";
+    std::string source(line);
+    havel::Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    std::string result;
+    size_t pos = 0;
+    for (const auto& token : tokens) {
+        if (token.type == TokenType::EOF_TOKEN) break;
+        size_t tokStart = token.column - 1;
+        if (tokStart < pos) tokStart = pos;
+        if (tokStart > source.size()) tokStart = source.size();
+        size_t tokEnd = tokStart + token.length;
+        if (tokEnd > source.size()) tokEnd = source.size();
+        if (tokStart > pos) result += source.substr(pos, tokStart - pos);
+        auto* color = tokenColor(token.type);
+        if (color) {
+            result += "\001";
+            result += color;
+            result += "\002";
+            result += source.substr(tokStart, tokEnd - tokStart);
+            result += "\001\033[0m\002";
+        } else {
+            result += source.substr(tokStart, tokEnd - tokStart);
+        }
+        pos = tokEnd;
+    }
+    if (pos < source.size()) result += source.substr(pos);
     return result;
 }
 
 } // anonymous namespace
 
-// ANSI Color codes
-#define PROMPT_COLOR "\033[1;32m" // Bold Green
-#define RESET_COLOR "\033[0m"
-#define CONT_COLOR "\033[1;34m"   // Bold Blue
+#ifdef HAVE_READLINE
+static int visible_length(const char *s) {
+    int len = 0;
+    while (s && *s) {
+        if (*s == '\001') { ++s; while (*s && *s != '\002') ++s; if (*s) ++s; }
+        else { ++len; ++s; }
+    }
+    return len;
+}
+
+extern "C" void havel_rl_redisplay() {
+    std::string highlighted = highlightForReadline(rl_line_buffer);
+    std::string prompt(rl_prompt ? rl_prompt : "");
+
+    int prompt_len = visible_length(rl_prompt);
+
+    int point_up_to = 0;
+    int hl_len = static_cast<int>(highlighted.size());
+    int vis_count = 0;
+    for (int i = 0; i < hl_len && vis_count < rl_point; ++i) {
+        if (highlighted[i] == '\001') {
+            while (i < hl_len && highlighted[i] != '\002') ++i;
+        } else {
+            ++vis_count;
+            point_up_to = i + 1;
+        }
+    }
+    if (vis_count < rl_point) point_up_to = hl_len;
+
+    int target_point = prompt_len + rl_point;
+    int full_len = prompt_len + visible_length(highlighted.c_str());
+
+    std::string full = prompt + highlighted;
+
+    fwrite("\r\033[K", 1, 4, rl_outstream);
+    fwrite(full.c_str(), 1, full.size(), rl_outstream);
+
+    if (full_len > 0) {
+        if (full_len % 80 == 0 && target_point == full_len) {
+            fwrite(" \010", 1, 2, rl_outstream);
+        }
+    }
+
+    char pos_buf[32];
+    if (target_point == 0) {
+        fwrite("\r", 1, 1, rl_outstream);
+    } else {
+        snprintf(pos_buf, sizeof(pos_buf), "\r\033[%dC", target_point);
+        fwrite(pos_buf, 1, strlen(pos_buf), rl_outstream);
+    }
+    fflush(rl_outstream);
+}
+
+extern "C" int havel_rl_getc(FILE *fp) {
+    return rl_getc(fp);
+}
+#endif
+
+// ANSI Color codes — wrapped in RL_PROMPT_START/END_IGNORE for readline
+#define PROMPT_COLOR "\001\033[1;32m\002"
+#define RESET_COLOR "\001\033[0m\002"
+#define CONT_COLOR "\001\033[1;34m\002"
 
 namespace havel::repl {
 
@@ -282,10 +382,21 @@ void REPL::setUngrabCallback(std::function<void()> callback) {
   ungrabCallback_ = std::move(callback);
 }
 
+void REPL::setResumeGrabsCallback(std::function<void()> callback) {
+  resumeGrabsCallback_ = std::move(callback);
+}
+
 std::string REPL::readLine(const std::string& prompt) {
-    // Ungrab all input devices before reading — X11 key grabs prevent
-    // keystrokes from reaching the terminal while readline is waiting.
+    // Suspend grabs and ungrab all input devices before reading —
+    // X11 key grabs prevent keystrokes from reaching the terminal.
+    // suspendGrabs() prevents PumpOnce/executeFrame from re-grabbing
+    // keys during the select() loop.
     if (ungrabCallback_) ungrabCallback_();
+
+    struct ResumeGuard {
+        std::function<void()>& cb;
+        ~ResumeGuard() { if (cb) cb(); }
+    } resumeGuard{resumeGrabsCallback_};
 
     if (inputHandler_) {
         return inputHandler_(prompt);
@@ -303,6 +414,11 @@ std::string REPL::readLine(const std::string& prompt) {
     pumpCallbackForHook_ = pumpCallback_;
     callbackLine_.clear();
     callbackLineReady_ = false;
+
+    rl_voidfunc_t *saved_redisplay = rl_redisplay_function;
+    rl_getc_func_t *saved_getc = rl_getc_function;
+    rl_redisplay_function = havel_rl_redisplay;
+    rl_getc_function = havel_rl_getc;
 
     rl_callback_handler_install(prompt.c_str(), [](char *line) {
         if (line) {
@@ -334,6 +450,8 @@ std::string REPL::readLine(const std::string& prompt) {
         }
     }
 
+    rl_redisplay_function = saved_redisplay;
+    rl_getc_function = saved_getc;
     pumpCallbackForHook_ = nullptr;
 
     if (callbackLineReady_ && !callbackLine_.empty()) {

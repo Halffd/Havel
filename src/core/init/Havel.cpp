@@ -1,6 +1,8 @@
 #include "core/init/Havel.hpp"
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
+#include "havel-lang/runtime/concurrency/Fiber.hpp"
+#include "havel-lang/runtime/concurrency/DependencyTracker.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include "core/hotkey/HotkeyActionWrapper.hpp"
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
@@ -291,6 +293,96 @@ void Havel::initialize(bool isStartup) {
 	bytecodeVM->setWatcherRegistry(executionEngine->getWatcherRegistry());
 	bytecodeVM->setScheduler(scheduler);
 
+	{
+		auto* eventQueue = hostContext->eventQueue;
+		auto* vm = bytecodeVM.get();
+		auto* watcherRegistry = executionEngine->getWatcherRegistry();
+		if (eventQueue && vm && watcherRegistry) {
+			fprintf(stderr, "[TRACE] REGISTERING VAR_CHANGED handler on EventQueue=%p\n", (void*)eventQueue);
+			eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
+				[vm, watcherRegistry, hostCtx = hostContext.get()](const compiler::Event& event) {
+				auto* name_ptr = static_cast<std::string*>(event.ptr);
+				if (!name_ptr) return;
+				std::string var_name = std::move(*name_ptr);
+				delete name_ptr;
+				auto fired = watcherRegistry->onVariableChanged(
+					var_name, [vm, watcherRegistry](uint32_t wid) -> bool {
+					const auto* w = watcherRegistry->getWatcher(wid);
+					if (!w) return false;
+					const compiler::BytecodeChunk* saved_chunk = nullptr;
+					bool set_chunk = false;
+					if (w->condition_chunk) {
+						saved_chunk = vm->getCurrentChunk();
+						vm->setCurrentChunkPublic(w->condition_chunk);
+						set_chunk = true;
+					}
+					auto tracker = std::make_shared<compiler::DependencyTracker>();
+					compiler::DependencyTrackerScope scope(tracker);
+					bool result = vm->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
+					if (set_chunk) vm->setCurrentChunkPublic(saved_chunk);
+					return result;
+				});
+				for (auto* fiber : fired) {
+					if (fiber) {
+						try {
+							compiler::Value body_func = compiler::Value::makeFunctionObjId(fiber->current_function_id);
+							vm->call(body_func, {});
+						} catch (...) {}
+					}
+				}
+				vm->processSignalBindings(var_name);
+				auto* sched = vm->getScheduler();
+				if (sched) {
+				sched->forEachConditionalHotkey(
+					[vm, hostCtx, &var_name, sched](compiler::Scheduler::Goroutine* g) {
+					if (!g) return;
+					fprintf(stderr, "[TRACE] VAR_CHANGED handler checking gid=%u state=%d reason=%d var='%s' deps_sz=%zu alias='%s'\n",
+						g->id, (int)g->state.load(), (int)g->suspension_reason.load(std::memory_order_acquire),
+						var_name.c_str(), g->hotkey_condition_deps.size(), g->hotkey_condition_alias.c_str());
+					if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
+						g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+					if (g->hotkey_condition_deps.empty() ||
+						g->hotkey_condition_deps.count(var_name) == 0) {
+						fprintf(stderr, "[TRACE]   -> skip: dep not found in {");
+						for (auto& d : g->hotkey_condition_deps) fprintf(stderr, "%s ", d.c_str());
+						fprintf(stderr, "}\n");
+						return;
+					}
+					fprintf(stderr, "[TRACE]   -> re-evaluating condition for '%s'\n", g->hotkey_condition_alias.c_str());
+					auto condVal = vm->externalRootValue(g->hotkey_condition_callback_id);
+					if (!condVal) { fprintf(stderr, "[TRACE]   -> condVal is null\n"); return; }
+						auto tracker = std::make_shared<compiler::DependencyTracker>();
+						compiler::DependencyTrackerScope scope(tracker);
+						bool conditionMet = false;
+						try {
+							compiler::Value result = vm->callFunctionSync(*condVal, {});
+							conditionMet = vm->toBool(result);
+						} catch (...) {}
+						auto newDeps = tracker->getGlobalDependencies();
+						auto fieldDeps = tracker->getFieldDependencies();
+						newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+						g->hotkey_condition_deps = std::move(newDeps);
+						bool prev = g->hotkey_condition_last_result;
+						g->hotkey_condition_last_result = conditionMet;
+					if (prev == conditionMet) { fprintf(stderr, "[TRACE]   -> condition unchanged (was=%d still=%d)\n", prev, conditionMet); return; }
+					fprintf(stderr, "[TRACE]   -> condition CHANGED: was=%d now=%d alias='%s'\n", prev, conditionMet, g->hotkey_condition_alias.c_str());
+					if (conditionMet) {
+						if (!g->hotkey_condition_alias.empty()) {
+							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
+							if (hm) { hm->SetHotkeyGrab(g->hotkey_condition_alias, true); fprintf(stderr, "[TRACE]   -> SetHotkeyGrab(%s, true)\n", g->hotkey_condition_alias.c_str()); }
+						}
+						sched->wakeHotkey(g);
+					} else {
+						if (!g->hotkey_condition_alias.empty()) {
+							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
+							if (hm) { hm->SetHotkeyGrab(g->hotkey_condition_alias, false); fprintf(stderr, "[TRACE]   -> SetHotkeyGrab(%s, false)\n", g->hotkey_condition_alias.c_str()); }
+						}
+					}
+					});
+				}
+			});
+		}
+	}
 
  if (hotkeyManager) {
  hotkeyManager->setEventQueue(eventQueue);

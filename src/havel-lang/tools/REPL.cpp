@@ -10,6 +10,8 @@
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/DebugUtils.hpp"
 #include "havel-lang/lexer/Lexer.hpp"
+#include "../runtime/concurrency/Scheduler.hpp"
+#include "../runtime/concurrency/Fiber.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -220,12 +222,16 @@ std::atomic<bool> REPL::interrupted_{false};
 std::function<void()> REPL::pumpCallbackForHook_;
 std::string REPL::callbackLine_;
 bool REPL::callbackLineReady_ = false;
+static compiler::VM* g_repl_vm = nullptr;
 
 // Signal handler for REPL (not static - declared as friend in header)
 void replSignalHandler(int sig) {
     if (sig == SIGINT) {
         REPL::interrupted_.store(true);
         requestStopAll();
+        if (g_repl_vm) {
+            g_repl_vm->exit_requested_.store(true);
+        }
     } else if (sig == SIGQUIT) {
         panic("SIGQUIT received (Ctrl-\\)", true);
     }
@@ -300,6 +306,8 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
 
   initialized = true;
 
+  g_repl_vm = vm_.get();
+
   // Set up debug break callback (always, but gated by replDebugMode_)
   vm_->setDebugBreakCallback([this]() {
     if (replDebugMode_) {
@@ -339,6 +347,8 @@ void REPL::attach(compiler::VM* existingVM,
     historyFilePath_ = resolveHistoryPath();
 
   initialized = true;
+
+  g_repl_vm = existingVM;
 
   // Set up debug break callback
   vm_->setDebugBreakCallback([this]() {
@@ -982,7 +992,43 @@ int REPL::run() {
 #endif
     
     // Execute accumulated input
+    bool wasInterrupted = interrupted_.load();
     bool success = execute(accumulatedInput);
+
+    // Handle Ctrl-C during execution: break from loops/goroutines
+    if (interrupted_.load()) {
+        interrupted_.store(false);
+        wasInterrupted = true;
+    }
+    if (wasInterrupted) {
+        if (vm_) vm_->exit_requested_.store(false);
+        clearStopRequest();
+        auto* sched = vm_ ? vm_->getScheduler() : nullptr;
+        if (sched) {
+            sched->forEachGoroutine([](compiler::Scheduler::Goroutine* g) {
+                if (g && g->persistent) {
+                    g->state = compiler::Scheduler::GoroutineState::Suspended;
+                    g->suspension_reason.store(
+                        compiler::Scheduler::SuspensionReason::HotkeyWait,
+                        std::memory_order_release);
+                    if (g->fiber) {
+                        g->fiber->state = compiler::FiberState::SUSPENDED;
+                        g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
+                    }
+                } else if (g && g->state != compiler::Scheduler::GoroutineState::Suspended) {
+                    g->state = compiler::Scheduler::GoroutineState::Done;
+                }
+            });
+        }
+        std::cout << "\nKeyboardInterrupt\n";
+        consecutiveInterrupts++;
+        if (consecutiveInterrupts >= 2) {
+            std::cout << "^C\nExiting...\n";
+            break;
+        }
+    } else {
+        consecutiveInterrupts = 0;
+    }
 
     // Pump event loop callback (e.g., EventListener) on same thread after each execution
     if (pumpCallback_) {

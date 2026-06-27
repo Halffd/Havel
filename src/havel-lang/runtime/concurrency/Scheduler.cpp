@@ -275,6 +275,13 @@ void Scheduler::forEachConditionalHotkey(std::function<void(Goroutine*)> fn) {
     }
 }
 
+void Scheduler::forEachGoroutine(std::function<void(Goroutine*)> fn) {
+    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    for (auto& [id, g] : goroutines_) {
+        if (g) fn(g.get());
+    }
+}
+
 void Scheduler::start() {
 	running_.store(true);
 	shutdown_.store(false);

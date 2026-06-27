@@ -392,3 +392,98 @@ See [mode-system.md](mode-system.md) for full details.
 | Function | Args | Returns | Description |
 |----------|------|---------|-------------|
 | `play(path)` | string | nil | Play audio file |
+
+---
+
+## Scheduler Debug
+
+Inspect scheduler state, goroutine list, and individual goroutine/fiber detail at runtime.
+
+### scheduler.info()
+
+Returns an object with scheduler summary.
+
+| Function | Args | Returns | Description |
+|----------|------|---------|-------------|
+| `scheduler.info()` | - | obj | Scheduler summary |
+| `scheduler.goroutines()` | - | array | List all goroutines |
+| `scheduler.goroutine(id)` | int | obj or nil | Goroutine by ID |
+
+### scheduler.info() fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `running` | bool | Scheduler is running |
+| `goroutine_count` | int | Total goroutines |
+| `runnable_count` | int | Runnable goroutines |
+| `suspended_count` | int | Suspended goroutines |
+| `running_count` | int | Currently executing |
+| `created_count` | int | Not-yet-scheduled |
+| `done_count` | int | Finished goroutines |
+| `hotkey_count` | int | Persistent hotkey goroutines |
+| `active_hotkey_count` | int | Active (Running/Runnable/Created) hotkeys |
+| `suspended_hotkey_count` | int | Suspended hotkey goroutines |
+| `hotkey_queue_size` | int | Hotkey priority queue length |
+| `normal_queue_size` | int | Normal priority queue length |
+| `background_queue_size` | int | Background queue length |
+| `deferred_hotkey_count` | int | Deferred hotkey callbacks pending |
+| `deferred_normal_count` | int | Deferred normal callbacks pending |
+| `deferred_background_count` | int | Deferred background callbacks pending |
+| `current_goroutine_id` | int | ID of running goroutine (0 if none) |
+| `default_tick_instructions` | int | Normal goroutine tick budget |
+| `hotkey_tick_instructions` | int | Hotkey goroutine tick budget |
+
+### scheduler.goroutine(id) fields
+
+Each goroutine object from `scheduler.goroutines()` or `scheduler.goroutine(id)`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | int | Goroutine ID |
+| `name` | string or nil | Debug name |
+| `state` | string | GoroutineState: Created, Runnable, Running, Suspended, Done |
+| `suspension_reason` | string | SuspensionReason: None, ChannelWait, ThreadWait, SleepWait, TimerWait, HotkeyWait, CoroutineWait, ChannelSendWait |
+| `priority` | string | FiberPriority: Hotkey, Normal, Background |
+| `wait_type` | string | AwaitableType: None, Sleep, ThreadJoin, ChannelRecv, ChannelSend, TimerWait, Coroutine, External |
+| `wait_target_id` | int | ID of awaited target |
+| `persistent` | bool | True for hotkey goroutines |
+| `hotkey_alias` | string or nil | Hotkey alias name |
+| `hotkey_policy` | string | HotkeyPolicy: Drop, Replace, Queue, Coalesce |
+| `parent_id` | int | Parent goroutine ID |
+| `instructions_executed` | int | Total instructions run |
+| `ip` | int | Current instruction pointer |
+| `has_fiber` | bool | Fiber attached |
+| `fiber` | obj or nil | Nested fiber info (see below) |
+
+### fiber sub-object fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | int | Fiber ID |
+| `state` | string | FiberState: CREATED, RUNNABLE, RUNNING, SUSPENDED(DONE) |
+| `suspension_reason` | string | Fiber SuspensionReason: NONE, YIELD, CHANNEL_RECV, CHANNEL_SEND, THREAD_JOIN, TIMER, SLEEP, EXTERNAL, HOTKEY_WAIT, AWAIT, COROUTINE_WAIT |
+| `call_stack_depth` | int | Number of call frames |
+| `stack_size` | int | Operand stack depth |
+| `had_error` | bool | Fiber errored |
+| `error` | string or nil | Error message if had_error |
+
+### Example
+
+```
+info = scheduler.info()
+print(info.goroutine_count)
+print(info.hotkey_queue_size)
+
+list = scheduler.goroutines()
+for g in list {
+    print(g.id, g.state, g.suspension_reason)
+    if g.has_fiber {
+        print(g.fiber.state, g.fiber.call_stack_depth)
+    }
+}
+
+g = scheduler.goroutine(3)
+if g != nil {
+    print(g.hotkey_alias, g.hotkey_policy)
+}
+```

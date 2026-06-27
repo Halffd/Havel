@@ -45,7 +45,7 @@ The `Scheduler` is a singleton (`Scheduler::instance()`) with three priority que
 ### Goroutine States
 
 ```
-Created → Runnable → Running → Suspended/Parked → Dead
+Created → Runnable → Running → Suspended → Done
 ```
 
 | State | Description |
@@ -53,22 +53,21 @@ Created → Runnable → Running → Suspended/Parked → Dead
 | Created | Just spawned, not yet queued |
 | Runnable | In scheduler queue, waiting to run |
 | Running | Currently executing |
-| Suspended | Yielded or awaiting |
-| Parked | Waiting on a specific resource (channel, thread, timer) |
-| Dead | Execution complete |
+| Suspended | Parked (waiting on channel, timer, thread, sleep, hotkey) |
+| Done | Execution complete |
 
-### Park Reasons
+### Suspension Reasons
 
 | Reason | Trigger |
 |--------|---------|
-| `THREAD_JOIN` | `wait threadRef` |
-| `CHANNEL_RECV` | `<- channelRef` (receive) |
-| `CHANNEL_SEND` | Channel send when buffer full |
-| `TIMER_WAIT` | `wait timerRef` |
-| `FIBER_SLEEP` | `FIBER_SLEEP` opcode |
-| `COND_WAIT` | Condition variable wait |
-
-The scheduler tracks parked goroutines via `park_map_`, keyed by `WaitTarget{AwaitableType, target_id}`. `findGoroutineByWaitTarget()` matches parked goroutines to their wait targets.
+| `None` | Not suspended |
+| `ChannelWait` | `receive()` on empty channel |
+| `ChannelSendWait` | `send()` to full channel |
+| `ThreadWait` | `wait threadRef` |
+| `SleepWait` | `sleep(ms)` |
+| `TimerWait` | `wait timerRef` / interval await |
+| `HotkeyWait` | Persistent hotkey goroutine parked between triggers |
+| `CoroutineWait` | Coroutines await |
 
 ---
 
@@ -91,25 +90,25 @@ Fiber:
 
 | State | Meaning |
 |-------|---------|
+| `CREATED` | Spawned but not yet scheduled |
 | `RUNNABLE` | Ready to execute |
 | `RUNNING` | Currently executing |
-| `SUSPENDED` | Paused (channel, timer, thread join) |
-| `DEAD` | Execution complete |
-| `YIELDED` | Explicitly yielded |
-| `ERROR` | Terminated by uncaught error |
+| `SUSPENDED` | Paused (channel, timer, thread join, sleep, hotkey) |
+| `DONE` | Execution complete |
 
 ### SuspensionReason
 
 | Reason | Description |
 |--------|-------------|
+| `NONE` | Not suspended |
 | `YIELD` | Explicit `yield` |
 | `CHANNEL_RECV` | Waiting to receive from channel |
 | `CHANNEL_SEND` | Waiting to send to full channel |
 | `THREAD_JOIN` | Waiting for thread to complete |
 | `TIMER` | Waiting for timer to fire |
 | `SLEEP` | Sleeping for duration |
-| `EXTERNAL` | External suspension |
-| `HOTKEY_WAIT` | Waiting for hotkey registration |
+| `EXTERNAL` | External system parked this fiber |
+| `HOTKEY_WAIT` | Parked waiting for hotkey trigger |
 | `AWAIT` | Generic await |
 | `COROUTINE_WAIT` | Waiting for coroutine |
 

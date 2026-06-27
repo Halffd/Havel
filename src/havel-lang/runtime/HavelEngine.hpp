@@ -57,10 +57,11 @@ public:
 
     void initializeMinimal() {
         io_holder_ = std::make_shared<IO>();
+        hotkeyManager_ = std::make_shared<HotkeyManager>(io_holder_);
         brightnessManager_ = std::make_shared<BrightnessManager>();
         brightnessManager_->init();
         windowManager_ = std::make_shared<WindowManager>();
-        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), nullptr, Configs::Get(), windowManager_.get(), brightnessManager_.get());
+        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get(), brightnessManager_.get());
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
@@ -475,6 +476,7 @@ private:
 	EngineConfig config_;
     std::shared_ptr<compiler::VM> vm_;
     std::shared_ptr<IO> io_holder_;
+    std::shared_ptr<HotkeyManager> hotkeyManager_;
     std::shared_ptr<BrightnessManager> brightnessManager_;
     std::shared_ptr<WindowManager> windowManager_;
 #ifdef HAVEL_ENABLE_LLVM

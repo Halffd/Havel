@@ -1469,12 +1469,17 @@ hostAPI->SetVM(bytecodeVM);
       // Pump EventListener on the REPL thread so event processing shares the same thread
       {
         auto *io = havel_inst.getIOPtr();
+        auto *hkManager = havel_inst.getHotkeyManagerPtr();
         if (io) {
           repl.setPumpCallback([io]() {
             io->PumpOnce();
           });
-          repl.setUngrabCallback([io]() {
-            io->UngrabAll();
+          repl.setUngrabCallback([io, hkManager]() {
+            if (hkManager) hkManager->suspendGrabs();
+            else io->UngrabAll();
+          });
+          repl.setResumeGrabsCallback([hkManager]() {
+            if (hkManager) hkManager->resumeGrabs();
           });
         }
       }
@@ -1726,12 +1731,17 @@ repl.attach(bytecodeVM, modules, collectKnownGlobals(bytecodeVM));
       // Pump EventListener on the REPL thread so event processing shares the same thread
       {
         auto *io = havel_inst.getIOPtr();
+        auto *hkManager = havel_inst.getHotkeyManagerPtr();
         if (io) {
           repl.setPumpCallback([io]() {
             io->PumpOnce();
           });
-          repl.setUngrabCallback([io]() {
-            io->UngrabAll();
+          repl.setUngrabCallback([io, hkManager]() {
+            if (hkManager) hkManager->suspendGrabs();
+            else io->UngrabAll();
+          });
+          repl.setResumeGrabsCallback([hkManager]() {
+            if (hkManager) hkManager->resumeGrabs();
           });
         }
       }

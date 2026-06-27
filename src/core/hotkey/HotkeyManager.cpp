@@ -159,7 +159,19 @@ modeManager(std::make_shared<ModeManager>())
 
   bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
   {
+    if (debugging::debug_hotkeys) debug("[HotkeyManager] SetHotkeyGrab alias='{}' grab={}", alias, grab);
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    if (grabsSuspended_) {
+      pendingGrabs_[alias] = grab;
+      auto &hotkeys = RegisteredHotkeys();
+      for (auto &[id, hk] : hotkeys) {
+        if (hk.alias == alias) {
+          hk.grab = grab;
+          break;
+        }
+      }
+      return true;
+    }
     auto &hotkeys = RegisteredHotkeys();
     for (auto &[id, hk] : hotkeys)
     {
@@ -177,6 +189,33 @@ modeManager(std::make_shared<ModeManager>())
       }
     }
     return false;
+  }
+
+  void HotkeyManager::suspendGrabs()
+  {
+    std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    grabsSuspended_ = true;
+    pendingGrabs_.clear();
+    if (io) {
+      io->UngrabAll();
+    }
+  }
+
+  void HotkeyManager::resumeGrabs()
+  {
+    std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+    grabsSuspended_ = false;
+    auto &hotkeys = RegisteredHotkeys();
+    for (auto &[id, hk] : hotkeys) {
+      if (!hk.evdev && hk.enabled) {
+        if (hk.grab) {
+          io->GrabHotkey(id);
+        } else {
+          io->UngrabHotkey(id);
+        }
+      }
+    }
+    pendingGrabs_.clear();
   }
 
   bool HotkeyManager::RemoveHotkey(int id)

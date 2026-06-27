@@ -53,6 +53,9 @@ public:
   void EnableHotkey(const std::string &key);
   void DisableHotkey(const std::string &key);
   bool SetHotkeyGrab(const std::string &alias, bool grab);
+
+  void suspendGrabs();
+  void resumeGrabs();
   void handleHotkeyTrigger(int hotkeyId);
   bool GrabHotkey(int id);      // Grab hotkey by id
   bool UngrabHotkey(int id);    // Ungrab hotkey by id
@@ -150,6 +153,8 @@ private:
  std::unordered_set<int> registeredGestureHotkeys;
  std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
     compiler::EventQueue* eventQueue_ = nullptr;
+  bool grabsSuspended_ = false;
+  std::unordered_map<std::string, bool> pendingGrabs_;
 };
 
 } // namespace havel

@@ -2144,6 +2144,7 @@ static Value createWindowObject(
   api.setField(obj, "exe", api.makeString(exe));
   api.setField(obj, "pid", Value::makeInt(static_cast<int64_t>(pid)));
   api.setField(obj, "cmd", api.makeString(cmdline));
+  api.setField(obj, "cmdline", api.makeString(cmdline));
 
   // Action methods
   api.setField(obj, "close", api.makeFunctionRef("window._close"));

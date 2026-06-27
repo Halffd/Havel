@@ -85,6 +85,13 @@ class Window {
 		if _path == "" { "" } else { _path }
 	}
 
+	fn cmdline() {
+		_p = @pid()
+		if _p == 0 { return "" }
+		_raw = fs.read("/proc/${_p}/cmdline")
+		if _raw == "" { "" } else { _raw.replace("\0", " ").trim() }
+	}
+
 	fn type() {
 		_d = _dpy()
 		if _d == 0 { return "normal" }
@@ -248,6 +255,7 @@ class Window {
 		_g = @geometry()
 		if _g == null { return null }
 		({id: @id, title: @title(), windowClass: @className(), pid: @pid(),
+			exe: @exe(), cmdline: @cmdline(),
 			x: _g.x, y: _g.y, width: _g.width, height: _g.height,
 			desktop: @desktop(), type: @type(), state: @states(),
 			isMinimized: @isMinimized(), isMaximized: @isMaximized(),

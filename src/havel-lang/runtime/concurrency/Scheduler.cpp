@@ -844,4 +844,119 @@ std::vector<std::string> Scheduler::getHotkeyAliases() const {
   return result;
 }
 
+std::vector<Scheduler::GoroutineInfo> Scheduler::getGoroutineList() const {
+  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::vector<GoroutineInfo> result;
+  result.reserve(goroutines_.size());
+  for (const auto& [id, g] : goroutines_) {
+    if (!g) continue;
+    GoroutineInfo info;
+    info.id = g->id;
+    info.name = g->name;
+    info.state = goroutineStateString(g->state.load());
+    info.suspension_reason = suspensionReasonString(g->suspension_reason.load());
+    info.priority = fiberPriorityString(g->priority);
+    {
+      std::lock_guard<std::mutex> whl(g->wait_handle_mutex_);
+      info.wait_type = awaitableTypeString(g->wait_handle.type);
+      info.wait_target_id = g->wait_handle.target_id;
+    }
+    info.persistent = g->persistent;
+    info.hotkey_alias = g->hotkey_alias;
+    info.hotkey_policy = hotkeyPolicyString(g->hotkey_policy);
+    info.parent_id = g->parent_id;
+    info.instructions_executed = g->instructions_executed;
+    info.ip = g->ip;
+    info.has_fiber = (g->fiber != nullptr);
+    if (g->fiber) {
+      info.fiber_id = g->fiber->id;
+      info.fiber_state = g->fiber->stateString();
+      info.fiber_suspension_reason = g->fiber->suspensionReasonString();
+      info.fiber_call_stack_depth = g->fiber->call_stack.size();
+      info.fiber_stack_size = g->fiber->stack.size();
+      info.fiber_had_error = g->fiber->had_error;
+      info.fiber_error_message = g->fiber->error_message;
+    }
+    result.push_back(std::move(info));
+  }
+  return result;
+}
+
+Scheduler::SchedulerSummary Scheduler::getSchedulerSummary() const {
+  SchedulerSummary s;
+  s.running = running_.load();
+  s.goroutine_count = goroutineCount();
+  s.runnable_count = runnableCount();
+  s.suspended_count = suspendedCount();
+  s.hotkey_count = hotkeyCount();
+  s.active_hotkey_count = activeHotkeyCount();
+  s.suspended_hotkey_count = suspendedHotkeyCount();
+  s.default_tick_instructions = default_tick_instructions_;
+  s.hotkey_tick_instructions = hotkey_tick_instructions_;
+  {
+    auto* cur = current_.load();
+    s.current_goroutine_id = cur ? cur->id : 0;
+  }
+  {
+    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    for (const auto& [id, g] : goroutines_) {
+      if (!g) continue;
+      auto st = g->state.load();
+      if (st == GoroutineState::Done) s.done_count++;
+      else if (st == GoroutineState::Created) s.created_count++;
+      else if (st == GoroutineState::Running) s.running_count++;
+    }
+  }
+  {
+    std::lock_guard<std::mutex> lock(priority_mutex_);
+    s.hotkey_queue_size = hotkey_queue_.size();
+    s.normal_queue_size = runnable_queue_.size();
+    s.background_queue_size = background_queue_.size();
+  }
+  {
+    std::lock_guard<std::mutex> lock(deferred_mutex_);
+    s.deferred_hotkey_count = deferred_hotkey_.size();
+    s.deferred_normal_count = deferred_normal_.size();
+    s.deferred_background_count = deferred_background_.size();
+  }
+  return s;
+}
+
+Scheduler::GoroutineInfo Scheduler::getGoroutineInfoById(uint32_t id) const {
+  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  auto it = goroutines_.find(id);
+  if (it == goroutines_.end() || !it->second) {
+    return GoroutineInfo{};
+  }
+  auto* g = it->second.get();
+  GoroutineInfo info;
+  info.id = g->id;
+  info.name = g->name;
+  info.state = goroutineStateString(g->state.load());
+  info.suspension_reason = suspensionReasonString(g->suspension_reason.load());
+  info.priority = fiberPriorityString(g->priority);
+  {
+    std::lock_guard<std::mutex> whl(g->wait_handle_mutex_);
+    info.wait_type = awaitableTypeString(g->wait_handle.type);
+    info.wait_target_id = g->wait_handle.target_id;
+  }
+  info.persistent = g->persistent;
+  info.hotkey_alias = g->hotkey_alias;
+  info.hotkey_policy = hotkeyPolicyString(g->hotkey_policy);
+  info.parent_id = g->parent_id;
+  info.instructions_executed = g->instructions_executed;
+  info.ip = g->ip;
+  info.has_fiber = (g->fiber != nullptr);
+  if (g->fiber) {
+    info.fiber_id = g->fiber->id;
+    info.fiber_state = g->fiber->stateString();
+    info.fiber_suspension_reason = g->fiber->suspensionReasonString();
+    info.fiber_call_stack_depth = g->fiber->call_stack.size();
+    info.fiber_stack_size = g->fiber->stack.size();
+    info.fiber_had_error = g->fiber->had_error;
+    info.fiber_error_message = g->fiber->error_message;
+  }
+  return info;
+}
+
 } // namespace havel::compiler

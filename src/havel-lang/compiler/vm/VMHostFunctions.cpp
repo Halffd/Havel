@@ -2425,6 +2425,129 @@ registerHostFunction(
   registerHostFunction("frameCount", [this](const std::vector<Value>&) -> Value {
     return Value::makeInt(static_cast<int64_t>(frame_count_));
   });
+
+  auto makeGoroutineInfoObject = [this](const Scheduler::GoroutineInfo& gi) -> Value {
+    auto objRef = heap_.allocateObject();
+    auto* o = heap_.object(objRef.id);
+    (*o)["id"] = Value::makeInt(static_cast<int64_t>(gi.id));
+    if (!gi.name.empty()) {
+      auto sid = heap_.allocateString(gi.name);
+      (*o)["name"] = Value::makeStringId(sid.id);
+    } else {
+      (*o)["name"] = Value::makeNull();
+    }
+    {
+      auto sid = heap_.allocateString(gi.state);
+      (*o)["state"] = Value::makeStringId(sid.id);
+    }
+    {
+      auto sid = heap_.allocateString(gi.suspension_reason);
+      (*o)["suspension_reason"] = Value::makeStringId(sid.id);
+    }
+    {
+      auto sid = heap_.allocateString(gi.priority);
+      (*o)["priority"] = Value::makeStringId(sid.id);
+    }
+    (*o)["persistent"] = Value::makeBool(gi.persistent);
+    if (!gi.hotkey_alias.empty()) {
+      auto sid = heap_.allocateString(gi.hotkey_alias);
+      (*o)["hotkey_alias"] = Value::makeStringId(sid.id);
+    } else {
+      (*o)["hotkey_alias"] = Value::makeNull();
+    }
+    {
+      auto sid = heap_.allocateString(gi.hotkey_policy);
+      (*o)["hotkey_policy"] = Value::makeStringId(sid.id);
+    }
+    (*o)["parent_id"] = Value::makeInt(static_cast<int64_t>(gi.parent_id));
+    (*o)["instructions_executed"] = Value::makeInt(static_cast<int64_t>(gi.instructions_executed));
+    (*o)["ip"] = Value::makeInt(static_cast<int64_t>(gi.ip));
+    {
+      auto sid = heap_.allocateString(gi.wait_type);
+      (*o)["wait_type"] = Value::makeStringId(sid.id);
+    }
+    (*o)["wait_target_id"] = Value::makeInt(static_cast<int64_t>(gi.wait_target_id));
+    (*o)["has_fiber"] = Value::makeBool(gi.has_fiber);
+    if (gi.has_fiber) {
+      auto fiberRef = heap_.allocateObject();
+      auto* f = heap_.object(fiberRef.id);
+      (*f)["id"] = Value::makeInt(static_cast<int64_t>(gi.fiber_id));
+      {
+        auto sid = heap_.allocateString(gi.fiber_state);
+        (*f)["state"] = Value::makeStringId(sid.id);
+      }
+      {
+        auto sid = heap_.allocateString(gi.fiber_suspension_reason);
+        (*f)["suspension_reason"] = Value::makeStringId(sid.id);
+      }
+      (*f)["call_stack_depth"] = Value::makeInt(static_cast<int64_t>(gi.fiber_call_stack_depth));
+      (*f)["stack_size"] = Value::makeInt(static_cast<int64_t>(gi.fiber_stack_size));
+      (*f)["had_error"] = Value::makeBool(gi.fiber_had_error);
+      if (!gi.fiber_error_message.empty()) {
+        auto sid = heap_.allocateString(gi.fiber_error_message);
+        (*f)["error"] = Value::makeStringId(sid.id);
+      } else {
+        (*f)["error"] = Value::makeNull();
+      }
+      (*o)["fiber"] = Value::makeObjectId(fiberRef.id);
+    } else {
+      (*o)["fiber"] = Value::makeNull();
+    }
+    return Value::makeObjectId(objRef.id);
+  };
+
+  registerHostFunction("scheduler.info", 0, [this, makeGoroutineInfoObject](const std::vector<Value>&) -> Value {
+    auto* sched = scheduler_;
+    if (!sched) return Value::makeNull();
+    auto s = sched->getSchedulerSummary();
+    auto objRef = heap_.allocateObject();
+    auto* o = heap_.object(objRef.id);
+    (*o)["running"] = Value::makeBool(s.running);
+    (*o)["goroutine_count"] = Value::makeInt(static_cast<int64_t>(s.goroutine_count));
+    (*o)["runnable_count"] = Value::makeInt(static_cast<int64_t>(s.runnable_count));
+    (*o)["suspended_count"] = Value::makeInt(static_cast<int64_t>(s.suspended_count));
+    (*o)["done_count"] = Value::makeInt(static_cast<int64_t>(s.done_count));
+    (*o)["created_count"] = Value::makeInt(static_cast<int64_t>(s.created_count));
+    (*o)["running_count"] = Value::makeInt(static_cast<int64_t>(s.running_count));
+    (*o)["hotkey_count"] = Value::makeInt(static_cast<int64_t>(s.hotkey_count));
+    (*o)["active_hotkey_count"] = Value::makeInt(static_cast<int64_t>(s.active_hotkey_count));
+    (*o)["suspended_hotkey_count"] = Value::makeInt(static_cast<int64_t>(s.suspended_hotkey_count));
+    (*o)["hotkey_queue_size"] = Value::makeInt(static_cast<int64_t>(s.hotkey_queue_size));
+    (*o)["normal_queue_size"] = Value::makeInt(static_cast<int64_t>(s.normal_queue_size));
+    (*o)["background_queue_size"] = Value::makeInt(static_cast<int64_t>(s.background_queue_size));
+    (*o)["deferred_hotkey_count"] = Value::makeInt(static_cast<int64_t>(s.deferred_hotkey_count));
+    (*o)["deferred_normal_count"] = Value::makeInt(static_cast<int64_t>(s.deferred_normal_count));
+    (*o)["deferred_background_count"] = Value::makeInt(static_cast<int64_t>(s.deferred_background_count));
+    (*o)["current_goroutine_id"] = Value::makeInt(static_cast<int64_t>(s.current_goroutine_id));
+    (*o)["default_tick_instructions"] = Value::makeInt(static_cast<int64_t>(s.default_tick_instructions));
+    (*o)["hotkey_tick_instructions"] = Value::makeInt(static_cast<int64_t>(s.hotkey_tick_instructions));
+    return Value::makeObjectId(objRef.id);
+  });
+
+  registerHostFunction("scheduler.goroutines", 0, [this, makeGoroutineInfoObject](const std::vector<Value>&) -> Value {
+    auto* sched = scheduler_;
+    if (!sched) return Value::makeNull();
+    auto list = sched->getGoroutineList();
+    auto arrRef = heap_.allocateArray();
+    auto* arr = heap_.array(arrRef.id);
+    for (auto& gi : list) {
+      arr->push_back(makeGoroutineInfoObject(gi));
+    }
+    return Value::makeArrayId(arrRef.id);
+  });
+
+  registerHostFunction("scheduler.goroutine", 1, [this, makeGoroutineInfoObject](const std::vector<Value>& args) -> Value {
+    auto* sched = scheduler_;
+    if (!sched) return Value::makeNull();
+    if (args.empty()) return Value::makeNull();
+    uint32_t id = 0;
+    if (args[0].isInt()) id = static_cast<uint32_t>(args[0].asInt());
+    else return Value::makeNull();
+    if (id == 0) return Value::makeNull();
+    auto gi = sched->getGoroutineInfoById(id);
+    if (gi.id == 0) return Value::makeNull();
+    return makeGoroutineInfoObject(gi);
+  });
 }
 
 void VM::registerDefaultHostGlobals() {
@@ -2484,6 +2607,12 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(fmt_obj, "b64", Value::makeHostFuncId(getHostFunctionIndex("fmt.b64")));
   setHostObjectField(fmt_obj, "b64decode", Value::makeHostFuncId(getHostFunctionIndex("fmt.b64decode")));
   setGlobal("fmt", Value::makeObjectId(fmt_obj.id));
+
+  auto scheduler_obj = heap_.allocateObject();
+  setHostObjectField(scheduler_obj, "info", Value::makeHostFuncId(getHostFunctionIndex("scheduler.info")));
+  setHostObjectField(scheduler_obj, "goroutines", Value::makeHostFuncId(getHostFunctionIndex("scheduler.goroutines")));
+  setHostObjectField(scheduler_obj, "goroutine", Value::makeHostFuncId(getHostFunctionIndex("scheduler.goroutine")));
+  setGlobal("scheduler", Value::makeObjectId(scheduler_obj.id));
 
   // load() - script-level file loading
   setGlobal("load", Value::makeHostFuncId(getHostFunctionIndex("load")));

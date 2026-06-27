@@ -256,7 +256,10 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
     options.write_snapshot_artifact = !snapshot_dir.empty();
 
   havel::compiler::VM *vm_ptr = nullptr;
-  options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
+  options.vm_setup = [&](havel::compiler::VM &vm) {
+    vm_ptr = &vm;
+    vm.setScheduler(&havel::compiler::Scheduler::instance());
+  };
   std::unordered_map<std::string, Value> thread_callbacks;
 
   const auto result =
@@ -2870,6 +2873,27 @@ for c in x {
 }
 return #result
 )havel", 14, dump_bytecode, snapshot_dir);
+
+  failures += runCase("scheduler-info", R"havel(
+info = scheduler.info()
+r = 0
+if info.goroutine_count >= 0 { r = r + 1 }
+if info.runnable_count >= 0 { r = r + 1 }
+if info.suspended_count >= 0 { r = r + 1 }
+if info.default_tick_instructions > 0 { r = r + 1 }
+return r
+)havel", 4, dump_bytecode, snapshot_dir);
+
+  failures += runCase("scheduler-goroutines", R"havel(
+list = scheduler.goroutines()
+return #list
+)havel", 0, dump_bytecode, snapshot_dir);
+
+  failures += runCase("scheduler-goroutine-by-id", R"havel(
+g = scheduler.goroutine(9999)
+if g == nil { return 1 }
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
 
 
 if (failures != 0) {

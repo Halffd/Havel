@@ -345,6 +345,64 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
 
   // ===== Diagnostics =====
 
+  static const char* goroutineStateString(GoroutineState s) {
+    switch (s) {
+      case GoroutineState::Created: return "Created";
+      case GoroutineState::Runnable: return "Runnable";
+      case GoroutineState::Running: return "Running";
+      case GoroutineState::Suspended: return "Suspended";
+      case GoroutineState::Done: return "Done";
+      default: return "Unknown";
+    }
+  }
+
+  static const char* suspensionReasonString(SuspensionReason r) {
+    switch (r) {
+      case SuspensionReason::None: return "None";
+      case SuspensionReason::ChannelWait: return "ChannelWait";
+      case SuspensionReason::ThreadWait: return "ThreadWait";
+      case SuspensionReason::SleepWait: return "SleepWait";
+      case SuspensionReason::TimerWait: return "TimerWait";
+      case SuspensionReason::HotkeyWait: return "HotkeyWait";
+      case SuspensionReason::CoroutineWait: return "CoroutineWait";
+      case SuspensionReason::ChannelSendWait: return "ChannelSendWait";
+      default: return "Unknown";
+    }
+  }
+
+  static const char* awaitableTypeString(AwaitableType t) {
+    switch (t) {
+      case AwaitableType::NONE: return "None";
+      case AwaitableType::SLEEP: return "Sleep";
+      case AwaitableType::THREAD_JOIN: return "ThreadJoin";
+      case AwaitableType::CHANNEL_RECV: return "ChannelRecv";
+      case AwaitableType::CHANNEL_SEND: return "ChannelSend";
+      case AwaitableType::TIMER_WAIT: return "TimerWait";
+      case AwaitableType::COROUTINE: return "Coroutine";
+      case AwaitableType::EXTERNAL: return "External";
+      default: return "Unknown";
+    }
+  }
+
+  static const char* fiberPriorityString(FiberPriority p) {
+    switch (p) {
+      case FiberPriority::HOTKEY: return "Hotkey";
+      case FiberPriority::NORMAL: return "Normal";
+      case FiberPriority::BACKGROUND: return "Background";
+      default: return "Unknown";
+    }
+  }
+
+  static const char* hotkeyPolicyString(HotkeyPolicy p) {
+    switch (p) {
+      case HotkeyPolicy::Drop: return "Drop";
+      case HotkeyPolicy::Replace: return "Replace";
+      case HotkeyPolicy::Queue: return "Queue";
+      case HotkeyPolicy::Coalesce: return "Coalesce";
+      default: return "Unknown";
+    }
+  }
+
   size_t goroutineCount() const;
   size_t runnableCount() const;
   size_t suspendedCount() const;
@@ -403,6 +461,56 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
 
   // Check if there are runnable fibers
     bool hasRunnableFibers() const;
+
+  struct GoroutineInfo {
+    uint32_t id = 0;
+    std::string name;
+    std::string state;
+    std::string suspension_reason;
+    std::string priority;
+    std::string wait_type;
+    uint32_t wait_target_id = 0;
+    bool persistent = false;
+    std::string hotkey_alias;
+    std::string hotkey_policy;
+    uint32_t parent_id = 0;
+    uint64_t instructions_executed = 0;
+    uint32_t ip = 0;
+    bool has_fiber = false;
+    uint32_t fiber_id = 0;
+    std::string fiber_state;
+    std::string fiber_suspension_reason;
+    size_t fiber_call_stack_depth = 0;
+    size_t fiber_stack_size = 0;
+    bool fiber_had_error = false;
+    std::string fiber_error_message;
+  };
+
+  struct SchedulerSummary {
+    bool running = false;
+    size_t goroutine_count = 0;
+    size_t runnable_count = 0;
+    size_t suspended_count = 0;
+    size_t done_count = 0;
+    size_t created_count = 0;
+    size_t running_count = 0;
+    size_t hotkey_count = 0;
+    size_t active_hotkey_count = 0;
+    size_t suspended_hotkey_count = 0;
+    size_t hotkey_queue_size = 0;
+    size_t normal_queue_size = 0;
+    size_t background_queue_size = 0;
+    size_t deferred_hotkey_count = 0;
+    size_t deferred_normal_count = 0;
+    size_t deferred_background_count = 0;
+    uint32_t current_goroutine_id = 0;
+    uint64_t default_tick_instructions = 0;
+    uint64_t hotkey_tick_instructions = 0;
+  };
+
+  std::vector<GoroutineInfo> getGoroutineList() const;
+  SchedulerSummary getSchedulerSummary() const;
+  GoroutineInfo getGoroutineInfoById(uint32_t id) const;
 
     // Wake sleeping goroutines whose resume_at_time has passed
     size_t wakeSleepingGoroutines();

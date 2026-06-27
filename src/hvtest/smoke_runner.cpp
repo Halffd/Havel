@@ -2854,6 +2854,22 @@ failures += runStdlibCase("debug-toggle-verbose-key", R"havel(
 v = debug.toggleVerboseKeyLogging()
 return isBoolean(v) ? 1 : 0
 )havel", 1, dump_bytecode, snapshot_dir);
+failures += runCase("string-filter-remove-chars", R"havel(
+x = "hello+world+test"
+result = x.split("").filter(fn(c) c != "+").join("")
+return #result
+)havel", 14, dump_bytecode, snapshot_dir);
+
+failures += runCase("string-for-loop-remove", R"havel(
+x = "hello+world+test"
+result = ""
+for c in x {
+    if c != "+" {
+        result += c
+    }
+}
+return #result
+)havel", 14, dump_bytecode, snapshot_dir);
 
 
 if (failures != 0) {
@@ -3212,20 +3228,3 @@ return x
 #endif // HAVEL_ENABLE_LLVM
 
 } // namespace hvtest
-
-  failures += runCase("string-filter-remove-chars", R"havel(
-x = "hello+world+test"
-result = x.split("").filter(fn(c) c != "+").join("")
-return #result
-)havel", 14, dump_bytecode, snapshot_dir);
-
-  failures += runCase("string-for-loop-remove", R"havel(
-x = "hello+world+test"
-result = ""
-for c in x {
-    if c != "+" {
-        result += c
-    }
-}
-return #result
-)havel", 14, dump_bytecode, snapshot_dir);

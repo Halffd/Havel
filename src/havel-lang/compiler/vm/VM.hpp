@@ -1244,6 +1244,7 @@ private:
     std::queue<BytecodeFunction> tier2_queue_;
     std::thread tier2_worker_;
     std::atomic<bool> tier2_worker_running_{false};
+    std::atomic<bool> vm_in_execute_{false};
     std::atomic<uint64_t> tier1_transition_count_{0};
     std::atomic<uint64_t> tier2_enqueue_count_{0};
     std::atomic<uint64_t> tier2_compile_count_{0};
@@ -1255,6 +1256,7 @@ private:
     void* serviceRegistry_ = nullptr;
 
 public:
+    bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire); }
     void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
     void* getServiceRegistry() const { return serviceRegistry_; }
 

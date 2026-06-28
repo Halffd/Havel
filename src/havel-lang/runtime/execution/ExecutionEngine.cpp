@@ -91,18 +91,22 @@ ExecutionEngine::~ExecutionEngine() {
 // ============================================================================
 
 bool ExecutionEngine::executeFrame() {
+  static int call_count = 0;
+  if (call_count < 3 || (call_count < 20 && script_ready_.load())) {
+    fprintf(stderr, "[EE-DIAG] executeFrame called running_=%d script_ready_=%d\n", running_, script_ready_.load());
+  }
+  call_count++;
   if (!running_) {
-    ::havel::debug("[ExecutionEngine] executeFrame: running_=false, returning early");
+    fprintf(stderr, "[EE-DIAG] executeFrame: running_=false, returning early\n");
     return false;
   }
 
-  // Do not execute goroutines while the main thread is still running the
-  // initial script (VM::execute).  Both paths touch the same VM state
-  // (stack, locals, heap) so concurrent access would corrupt memory.
   if (!script_ready_.load(std::memory_order_acquire)) {
-    // Still drain deferred callbacks (e.g. from IO thread) so they don't
-    // accumulate, but skip goroutine scheduling/execution.
-    ::havel::debug("[ExecutionEngine] executeFrame: script_ready_=false, draining deferred only");
+    scheduler_->drainDeferredCallbacks();
+    return false;
+  }
+
+  if (vm_->isInExecute()) {
     scheduler_->drainDeferredCallbacks();
     return false;
   }
@@ -140,17 +144,18 @@ bool ExecutionEngine::executeFrame() {
 
 // STEP 2: Pick next runnable goroutine
     // The scheduler maintains a queue of RUNNABLE goroutines
-    ::havel::debug("[ExecutionEngine] executeFrame: calling pickNext");
     Scheduler::Goroutine* g = scheduler_->pickNext();
     if (!g) {
-::havel::debug("[ExecutionEngine] executeFrame: pickNext returned null (idle)");
-// No runnable goroutine - idle
-return false;
-}
-if (g->persistent || debug_mode_) {
-::havel::debug("[ExecutionEngine] Picked goroutine gid={} persistent={} state={} fn={} closure={}",
-g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
-}
+      static int idle_count = 0;
+      if (idle_count < 10) {
+        fprintf(stderr, "[EE-DIAG] pickNext returned null (idle) runnable=%zu suspended=%zu\n",
+                scheduler_->runnableCount(), scheduler_->suspendedCount());
+        idle_count++;
+      }
+      return false;
+    }
+    fprintf(stderr, "[EE-DIAG] Picked goroutine gid=%d persistent=%d state=%d fn=%d closure=%d\n",
+            g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
 
 if (g->persistent && g->state == Scheduler::GoroutineState::Created
     && g->hotkey_condition_callback_id != 0) {

@@ -414,7 +414,9 @@ void EventListener::setModules(havel::Modules *m) {
 }
 
 void EventListener::setExecutionEngine(havel::compiler::ExecutionEngine *ee) {
+  fprintf(stderr, "[EL-DIAG] setExecutionEngine called ee=%p (was %p)\n", (void*)ee, (void*)executionEngine);
   executionEngine = ee;
+  fprintf(stderr, "[EL-DIAG] executionEngine now=%p\n", (void*)executionEngine);
 }
 
 void EventListener::setHotkeyManager(HotkeyManager *manager) {
@@ -452,6 +454,8 @@ void EventListener::PumpOnce() {
 }
 
 void EventListener::EventLoop() {
+    fprintf(stderr, "[EL-DIAG] EventLoop started, executionEngine=%p\n", (void*)executionEngine);
+    int null_check_count = 0;
     while (running.load() && !shutdown.load()) {
 
         if (backend_) {
@@ -460,7 +464,17 @@ void EventListener::EventLoop() {
 
         if (shutdown.load()) break;
 
+        if (null_check_count < 200 && !executionEngine) {
+            if (null_check_count % 50 == 0) {
+                fprintf(stderr, "[EL-DIAG] loop iter %d: executionEngine still null\n", null_check_count);
+            }
+            null_check_count++;
+        }
         if (executionEngine) {
+            if (null_check_count > 0) {
+                fprintf(stderr, "[EL-DIAG] executionEngine became non-null at iter %d ee=%p\n", null_check_count, (void*)executionEngine);
+                null_check_count = 0;
+            }
             if (modules_) modules_->checkTimers();
             executionEngine->executeFrame();
 

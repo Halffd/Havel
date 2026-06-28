@@ -1,0 +1,2 @@
+F1 => print("F1 pressed")
+print("hello")

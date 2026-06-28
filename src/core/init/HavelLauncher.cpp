@@ -324,8 +324,16 @@ parseScript(const std::string &code, const LaunchConfig &cfg) {
 
 static bool programHasHotkeys(const havel::ast::Program &program) {
   for (const auto &stmt : program.body) {
-    if (stmt && stmt->kind == havel::ast::NodeType::HotkeyBinding)
+    if (!stmt) continue;
+    if (stmt->kind == havel::ast::NodeType::HotkeyBinding)
       return true;
+    if (stmt->kind == havel::ast::NodeType::WhenBlockStatement) {
+      const auto &wb = static_cast<const havel::ast::WhenBlock &>(*stmt);
+      for (const auto &inner : wb.statements) {
+        if (inner && inner->kind == havel::ast::NodeType::HotkeyBinding)
+          return true;
+      }
+    }
   }
   return false;
 }
@@ -475,16 +483,16 @@ public:
             options.compile_unit_name = combinedNames;
             options.vm_override = bytecodeVM;
             options.debugBytecode = cfg.debugBytecode;
+            auto *ee = havel_inst.getExecutionEngine();
+            if (ee) ee->setScriptReady(true);
             try {
               havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
               info("Execution completed successfully");
             } catch (const std::exception &e) {
               error("Execution error: {}", e.what());
             }
-            auto *ee = havel_inst.getExecutionEngine();
-            if (ee) ee->setScriptReady(true);
-          }
-        }
+           }
+         }
 
         info("Havel started successfully - running in system tray");
         havel_inst.setShutdownCallback([] {
@@ -524,6 +532,7 @@ public:
     // Parse once to check for hotkey bindings
     auto program = parseScript(combinedCode, cfg);
     bool hasHotkeys = program && programHasHotkeys(*program);
+    fprintf(stderr, "[LAUNCHER] ScriptStrategy: hasHotkeys=%d program=%p\n", hasHotkeys, (void*)program.get());
 
     if (hasHotkeys) {
       // Full mode with UI backend
@@ -562,6 +571,9 @@ public:
       bytecodeVM->setTimerCheckFunction(
           [modules]() { modules->checkTimers(); });
 
+      auto *ee = havel_inst.getExecutionEngine();
+      if (ee) ee->setScriptReady(true);
+
       try {
         havel::compiler::PipelineOptions options = modules->options();
         options.compile_unit_name = combinedNames;
@@ -573,8 +585,6 @@ public:
         return 1;
       }
 
-      auto *ee = havel_inst.getExecutionEngine();
-      if (ee) ee->setScriptReady(true);
       if (hkManager) hkManager->printHotkeys();
       havel_inst.setShutdownCallback(
           [] { host::UIManager::instance().backend()->quitEventLoop(0); });
@@ -589,8 +599,7 @@ public:
     }
 
     // Headless mode
-    if (debugging::debug_io)
-      debug("Running combined scripts (headless): {}", combinedNames);
+    fprintf(stderr, "[LAUNCHER] ScriptStrategy: going headless (no hotkeys in AST)\n");
     try {
       havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();
@@ -806,6 +815,9 @@ public:
       bytecodeVM->setTimerCheckFunction(
           [modules]() { modules->checkTimers(); });
 
+      auto *ee = havel_inst.getExecutionEngine();
+      if (ee) ee->setScriptReady(true);
+
       try {
         havel::compiler::PipelineOptions options = modules->options();
         options.compile_unit_name = combinedNames;
@@ -816,9 +828,6 @@ public:
         error("Script execution error: {}", e.what());
         return 1;
       }
-
-      auto *ee = havel_inst.getExecutionEngine();
-      if (ee) ee->setScriptReady(true);
 
       auto *hkManager = havel_inst.getHotkeyManagerPtr();
       if (hkManager) hkManager->printHotkeys();

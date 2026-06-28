@@ -303,7 +303,9 @@ locals.clear();
     ::havel::debug("=== Executing function: {} ===", function_name);
   }
 
+ vm_in_execute_.store(true, std::memory_order_release);
  runDispatchLoop(0);
+ vm_in_execute_.store(false, std::memory_order_release);
 
  current_chunk = saved_chunk;
 

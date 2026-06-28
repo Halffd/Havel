@@ -52,7 +52,7 @@ fn modeEval (win) {
   }
 }
 hotkeyTest = hotkey.register_conditional("a", () => { "Gaming mode active" }, () => { res = mode == "gaming" ||title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv:" + res); return res })
-dbgWin = true
+dbgWin = 0
 hks = null
 go fn update() {
   loop {
@@ -70,5 +70,9 @@ go fn update() {
       print("Scheduler: ", scheduler.info(), scheduler.goroutines())
     }
     sleep(1000)
+    return
   }
+}
+timeout 5000 {
+  exit(0)
 }

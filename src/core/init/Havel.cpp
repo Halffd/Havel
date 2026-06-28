@@ -1,4 +1,5 @@
 #include "core/init/Havel.hpp"
+#include <cstdio>
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
@@ -84,6 +85,7 @@ Havel::~Havel() {
 }
 
 void Havel::initialize(bool isStartup) {
+    fprintf(stderr, "[HAVEL-INIT] initialize() called\n");
     if (debugging::debug_io) debug("Initializing HvC components...");
     if (debugging::debug_io) debug("isStartup: " + std::to_string(isStartup));
     if (debugging::debug_io) debug("GUI: " + std::to_string(guiMode));
@@ -393,6 +395,8 @@ void Havel::initialize(bool isStartup) {
   }
 
   // Set HostBridge pointer on EventListener for timer checking
+  fprintf(stderr, "[HAVEL-INIT] about to set EE on EventListener: io=%p el=%p ee=%p\n",
+          (void*)io.get(), io ? (void*)io->GetEventListener() : nullptr, (void*)executionEngine.get());
   if (io && io->GetEventListener()) {
             io->GetEventListener()->setModules(modules_.get());
   if (executionEngine) {

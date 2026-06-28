@@ -403,7 +403,7 @@ if opr == "not in" {
   emitter.inTailPosition = savedTail
   opcodes = {
   "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV",
-  "%": "MOD", "**": "POW", "\\": "INT_DIV", "\\\\": "INT_DIV", "%%": "REMAINDER",
+  "%": "MOD", "%%": "REMAINDER", "\\%": "DIVMOD", "**": "POW", "\\\\": "INT_DIV",
   "==": "EQ", "!=": "NEQ", "<": "LT", ">": "GT",
   "<=": "LTE", ">=": "GTE",
   "&": "BIT_AND", "|": "BIT_OR", "^": "BIT_XOR",
@@ -1955,6 +1955,71 @@ if k == "DoWhileStatement" {
 	}
 
 	if k == "LoopStatement" {
+	// Check for count-based loop: loop N { ... }
+	if node.count != null {
+		emitExpr(emitter, node.count)
+		countSlot = scopeDeclare(emitter.scope, "__loop_count__")
+		bc.emit("STORE_VAR", countSlot)
+		counterSlot = scopeDeclare(emitter.scope, "__loop_counter__")
+		bc.emit("LOAD_CONST", bc.add_const(0))
+		bc.emit("STORE_VAR", counterSlot)
+		loopTop = bc.instr_count()
+		emitter.breakStack.push([])
+		emitter.continueStack.push(loopTop)
+		oldLoopScope = emitter.scope
+		loopScope = Scope(oldLoopScope)
+		emitter.scope = loopScope
+		bc.emit("LOAD_VAR", counterSlot)
+		bc.emit("LOAD_VAR", countSlot)
+		bc.emit("LT")
+		endJump = bc.emit("JUMP_IF_FALSE", 0)
+		emitBlock(emitter, node.body)
+		oldLoopScope.count = loopScope.count
+		emitter.scope = oldLoopScope
+		bc.emit("LOAD_VAR", counterSlot)
+		bc.emit("LOAD_CONST", bc.add_const(1))
+		bc.emit("ADD")
+		bc.emit("STORE_VAR", counterSlot)
+		bc.emit("JUMP", loopTop)
+		breakTarget = bc.instr_count()
+		bc.patch_jump(endJump, breakTarget)
+		breakList = emitter.breakStack[#emitter.breakStack - 1]
+		i = 0
+		while i < #breakList:
+			bc.patch_jump(breakList[i], breakTarget)
+			i = i + 1
+		emitter.breakStack.pop()
+		emitter.continueStack.pop()
+		return
+	}
+
+	// Check for condition-based loop: loop while condition { ... }
+	if node.condition != null {
+		loopTop = bc.instr_count()
+		emitter.breakStack.push([])
+		emitter.continueStack.push(loopTop)
+		oldLoopScope = emitter.scope
+		loopScope = Scope(oldLoopScope)
+		emitter.scope = loopScope
+		emitExpr(emitter, node.condition)
+		endJump = bc.emit("JUMP_IF_FALSE", 0)
+		emitBlock(emitter, node.body)
+		oldLoopScope.count = loopScope.count
+		emitter.scope = oldLoopScope
+		bc.emit("JUMP", loopTop)
+		breakTarget = bc.instr_count()
+		bc.patch_jump(endJump, breakTarget)
+		breakList = emitter.breakStack[#emitter.breakStack - 1]
+		i = 0
+		while i < #breakList:
+			bc.patch_jump(breakList[i], breakTarget)
+			i = i + 1
+		emitter.breakStack.pop()
+		emitter.continueStack.pop()
+		return
+	}
+
+	// Infinite loop: loop { ... }
 	loopTop = bc.instr_count()
 	emitter.breakStack.push([])
 	emitter.continueStack.push(loopTop)
@@ -2114,7 +2179,7 @@ if k == "RepeatStatement" {
 					bc.emit("LOAD_CONST", keyIdx)
 					bc.emit("OBJECT_GET")
     slot = scopeDeclare(emitter.scope, aliasName)
-    bc.emit("STORE_IMMUT_VAR", slot)
+    bc.emit("STORE_VAR", slot)
 				}
 			}
 			return
@@ -2127,10 +2192,10 @@ if k == "RepeatStatement" {
 			bc.emit("PUSH_NULL")
 		}
 		if localIdx >= 0 {
-			bc.emit(node.isStatic ? "STORE_IMMUT_GLOBAL" : "STORE_IMMUT_VAR", localIdx)
+			bc.emit(node.isStatic ? "STORE_IMMUT_GLOBAL" : "STORE_VAR", localIdx)
 		}
 		else {
-			bc.emit("STORE_IMMUT_GLOBAL", bc.str_id(globalIdx(emitter, node.isStatic ? "__static__" + node.name : node.name)))
+			bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.isStatic ? "__static__" + node.name : node.name)))
 		}
 		return
     }
@@ -2832,7 +2897,7 @@ if k == "ModesBlock" {
       aliasName = node.alias
       if type(aliasName) == "object" { aliasName = aliasName.name }
       slot = scopeDeclare(emitter.scope, aliasName)
-      bc.emit("STORE_VAR", slot)
+      bc.emit("STORE_IMMUT_VAR", slot)
     }
     else {
       bc.emit("POP")

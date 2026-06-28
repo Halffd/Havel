@@ -1,39 +1,13 @@
-#pragma once
-#include <filesystem>
-#include <functional>
-#include <memory>
-#include <optional>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
-#include "core/Value.hpp"
-
-namespace havel {
-
-class Environment;
-class IHostAPI;
-class Interpreter;
-
-// Backward-compatible typedefs (from old ModuleLoader)
-using ModuleFn = std::function<void(Environment &)>;
-using InterpreterModuleFn = std::function<void(Environment &, Interpreter *)>;
-using HostModuleFn = std::function<void(Environment &, std::shared_ptr<IHostAPI>)>;
-
-// ============================================================================
-// ModuleLoader - Canonical module loading system
-// ============================================================================
-// Priority-based search:
-//   1. Check cache (already loaded?)
-//   2. Check __cache__/*.hbc (compiled bytecode cache)
-//   3. Check stdlib/*.hv (bundled source)
-//   4. Check ~/.havel/packages/ (user packages)
-//   5. Check module_search_paths_/*.hv (user paths)
-//   6. Check ./*.so (native extensions via dlopen)
-//   7. Error: module not found
-// ============================================================================
 class ModuleLoader {
 public:
+    // --- Default configuration ---
+    bool use_cpp_modules_ = false;
+    std::string self_hosted_modules_path_ = "";
+
+    // Setter methods
+    void setUseCppModules(bool use_cpp) { use_cpp_modules_ = use_cpp; }
+    void setSelfHostedPath(const std::string& path) { self_hosted_modules_path_ = path; }
+
     // --- Resolved module info ---
     struct ResolvedModule {
         enum Type {
@@ -85,7 +59,6 @@ public:
     // Module cache (for VM to store/retrieve loaded module exports)
     // ========================================================================
     bool isCached(const std::string& key) const;
-    // The cache stores core::Value objects by value (8-byte NaN boxes)
     bool getCached(const std::string& key, core::Value* outValue) const;
     void putCache(const std::string& key, core::Value value);
     void clearCache();
@@ -105,8 +78,8 @@ public:
     void addInterpreter(const std::string& name, InterpreterModuleFn fn);
     void addHost(const std::string& name, HostModuleFn fn);
     bool load(Environment& env, const std::string& name,
-              std::shared_ptr<IHostAPI> hostAPI = nullptr,
-              Interpreter* interpreter = nullptr);
+               std::shared_ptr<IHostAPI> hostAPI = nullptr,
+               Interpreter* interpreter = nullptr);
     bool has(const std::string& name) const;
     bool isLoaded(const std::string& name) const;
     std::vector<std::string> list() const;
@@ -119,19 +92,19 @@ private:
   // Search paths for native module .so resolution (havel_mod_<name>.so)
   std::vector<std::string> moduleSoPaths_;
 
-    // Module cache: canonicalKey -> export value (replaces old void* leaking cache)
-    std::unordered_map<std::string, core::Value> cache_;
+  // Module cache: canonicalKey -> export value (replaces old void* leaking cache)
+  std::unordered_map<std::string, core::Value> cache_;
 
-    // Native extension handles (for dlopen/dlclose)
-    std::unordered_map<std::string, NativeHandle> nativeHandles_;
+  // Native extension handles (for dlopen/dlclose)
+  std::unordered_map<std::string, NativeHandle> nativeHandles_;
 
-    // Backward compat: Environment-based module registry (deprecated)
-    std::unordered_map<std::string, ModuleFn> envModules_;
-    std::unordered_map<std::string, HostModuleFn> hostFns_;
-    std::unordered_map<std::string, InterpreterModuleFn> interpreterFns_;
-    std::unordered_map<std::string, bool> hostModuleFlags_;
-    std::unordered_map<std::string, bool> interpreterModuleFlags_;
-    std::unordered_set<std::string> envLoaded_;
+  // Backward compat: Environment-based module registry (deprecated)
+  std::unordered_map<std::string, ModuleFn> envModules_;
+  std::unordered_map<std::string, HostModuleFn> hostFns_;
+  std::unordered_map<std::string, InterpreterModuleFn> interpreterFns_;
+  std::unordered_map<std::string, bool> hostModuleFlags_;
+  std::unordered_map<std::string, bool> interpreterModuleFlags_;
+  std::unordered_set<std::string> envLoaded_;
 };
 
 } // namespace havel

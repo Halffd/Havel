@@ -47,16 +47,16 @@ struct LaunchConfig {
   bool debugBytecode = false;
   bool debugGc = false;
   bool debugEngine = false;
-  bool debugIo = false;
+bool debugIo = false;
   bool debugHotkeys = false;
   bool diffBytecode = false;
   bool stopOnError = false;
   bool fullRepl = false;
   bool minimalMode = false;
   bool pureStdlib = false;
-  bool selfHosted = false;
   bool lintOnly = false;
   bool buildOnly = false;
+  bool use_cpp_modules = false; // true to use C++ built-in modules, false to use self-hosted modules if available
   std::string outputPath;
   std::string outputLogFile;
   std::string historyFile;
@@ -97,15 +97,22 @@ public:
 
 class HavelLauncher {
 public:
-  int run(int argc, char *argv[]);
+   int run(int argc, char *argv[]);
+   void setSelfHostedConfig(bool useCpp, const std::string& selfHostedPath) {
+      use_cpp_modules_config_ = useCpp;
+      self_hosted_modules_path_config_ = selfHostedPath;
+   }
 
 private:
-  LaunchConfig parseArgs(int argc, char *argv[]);
-  std::unique_ptr<RunStrategy> createStrategy(const LaunchConfig &cfg);
-  void showHelp();
-  int runBuild(const LaunchConfig &cfg);
-  int runBytecodeFiles(const LaunchConfig &cfg,
-                       const std::vector<std::string> &hvcFiles);
+   LaunchConfig parseArgs(int argc, char *argv[]);
+   std::unique_ptr<RunStrategy> createStrategy(const LaunchConfig &cfg);
+   void showHelp();
+   int runBuild(const LaunchConfig &cfg);
+   int runBytecodeFiles(const LaunchConfig &cfg,
+                        const std::vector<std::string> &hvcFiles);
+
+   bool use_cpp_modules_config_ = false;
+   std::string self_hosted_modules_path_config_;
 };
 
 } // namespace havel::init

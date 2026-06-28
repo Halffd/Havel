@@ -52,8 +52,9 @@ fn modeEval (win) {
   }
 }
 hotkeyTest = hotkey.register_conditional("a", () => { "Gaming mode active" }, () => { res = mode == "gaming" ||title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv:" + res); return res })
-dbgWin = true
+dbgWin = 0
 hks = null
+i, lim = 0, 30
 go fn update() {
   loop {
     win = window.active()
@@ -63,6 +64,8 @@ go fn update() {
       modeEval(win)
       if dbgWin {
          print(f"Active window changed: $title_ class: $class_ mode: $mode cmd: $cmd pid: $wpid id: $wid last: {lastWin ? lastWin.title_ : "none"}")
+      } else {
+        p/rint("Window ID: $wid PID: $wpid")
       }
       print("hotkeyTest: ", hotkeyTest)
       print("Hotkeys:")
@@ -70,5 +73,15 @@ go fn update() {
       print("Scheduler: ", scheduler.info(), scheduler.goroutines())
     }
     sleep(1000)
+    i++
+    if i > lim {
+      return
+      exit(0)
+    }
   }
+}
+timeout lim * 3 * 1000 {
+  while hotkey.running():
+    sleep(500)
+  exit(0)
 }

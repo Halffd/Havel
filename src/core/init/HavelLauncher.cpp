@@ -1068,6 +1068,14 @@ int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
 
+    // Apply self-hosted config from main()
+    cfg.use_cpp_modules = use_cpp_modules_config_;
+    if (!self_hosted_modules_path_config_.empty()) {
+      // Store in a way accessible to strategies/VM
+      cfg.vmConfig.self_hosted_modules_path = self_hosted_modules_path_config_;
+      cfg.vmConfig.use_cpp_modules = use_cpp_modules_config_;
+    }
+
     if (cfg.target == LaunchConfig::Target::INTERPRET) {
       cfg.useJIT = false;
     } else if (cfg.target == LaunchConfig::Target::JIT) {

@@ -1381,11 +1381,13 @@ if (!modName.empty()) {
     Value keyValue = popStack();
     Value object = popStack();
     if (!object.isObjectId()) {
-      COMPILER_THROW("OBJECT_DELETE expects object");
+      pushStack(Value::makeBool(false));
+      break;
     }
     auto key = resolveKey(keyValue);
     if (!key) {
-      COMPILER_THROW("OBJECT_DELETE expects string/number/bool key");
+      pushStack(Value::makeBool(false));
+      break;
     }
     auto *obj = heap_.object(object.asObjectId());
     if (!obj) {
@@ -1407,6 +1409,9 @@ if (!modName.empty()) {
       auto *array = heap_.array(container.asArrayId());
       if (!array) {
         COMPILER_THROW("ARRAY_DEL unknown array id");
+      }
+      if (array->frozen) {
+        COMPILER_THROW("Cannot modify frozen array (tuple)");
       }
       int64_t idx = *index;
       if (idx < 0) idx = static_cast<int64_t>(array->size()) + idx;
@@ -1446,6 +1451,15 @@ if (!modName.empty()) {
       }
       auto ref = heap_.allocateString(std::move(s));
       pushStack(ref.id >= 0 ? Value::makeStringId(ref.id) : Value::makeNull());
+    } else if (container.isObjectId()) {
+      auto *obj = heap_.object(container.asObjectId());
+      auto key = resolveKey(keyValue);
+      if (!key || !obj) {
+        pushStack(Value::makeBool(false));
+      } else {
+        bool removed = obj->data.erase(*key) > 0;
+        pushStack(Value::makeBool(removed));
+      }
     } else if (container.isSetId()) {
       auto *set = heap_.set(container.asSetId());
       if (!set) {
@@ -1461,7 +1475,7 @@ if (!modName.empty()) {
       }
       pushStack(Value::makeBool(removed));
     } else {
-      COMPILER_THROW("ARRAY_DEL expects array/set/string container");
+      COMPILER_THROW("ARRAY_DEL expects array/set/object/string container");
     }
     break;
   }

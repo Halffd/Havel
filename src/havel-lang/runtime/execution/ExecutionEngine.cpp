@@ -154,6 +154,7 @@ g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->clos
 
 if (g->persistent && g->state == Scheduler::GoroutineState::Created
     && g->hotkey_condition_callback_id != 0) {
+    fprintf(stderr, "[EE] picked conditional hotkey gid=%d alias=%s condition_cb=%d\n", g->id, g->hotkey_condition_alias.c_str(), g->hotkey_condition_callback_id);
     auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
     if (condVal) {
         bool conditionMet = false;
@@ -171,6 +172,7 @@ if (g->persistent && g->state == Scheduler::GoroutineState::Created
             conditionMet = false;
         }
         if (!conditionMet) {
+            fprintf(stderr, "[EE] condition FALSE for gid=%d alias=%s - re-suspending\n", g->id, g->hotkey_condition_alias.c_str());
             g->state = Scheduler::GoroutineState::Suspended;
             g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait, std::memory_order_release);
             if (g->fiber) {
@@ -227,7 +229,8 @@ return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
 
 auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
 if (call_result == VM::GoroutineCallResult::Failed) {
-handleReturned(g);
+    fprintf(stderr, "[EE] startGoroutineCall FAILED gid=%d fn=%d closure=%d\n", g->id, g->function_id, g->closure_id);
+    handleReturned(g);
 stats_.goroutines_completed++;
 stats_.frames_executed++;
 return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
@@ -263,10 +266,15 @@ vm_->saveFiberState(g->fiber);
     // isPending which includes Running.
     g->state = Scheduler::GoroutineState::Running;
 
+    fprintf(stderr, "[EE] executing gid=%d persistent=%d fn=%d fiber=%d fiber_fn=%d instructions=%d\n",
+        g->id, g->persistent, g->function_id, g->fiber ? g->fiber->id : -1,
+        g->fiber ? g->fiber->current_function_id : -1, g->instructions_executed);
+
     // If this Fiber is a hotkey action (special marker function_id), execute the callback
     // instead of bytecode
     VMExecutionResult result;
 		if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
+            fprintf(stderr, "[EE] gid=%d is HOTKEY_ACTION_WRAPPER fiber=%d\n", g->id, g->fiber ? g->fiber->id : -1);
 
             if (debug_mode_) {
                 std::cerr << "[ExecutionEngine] Executing hotkey action Fiber " << g->fiber->id << "\n";

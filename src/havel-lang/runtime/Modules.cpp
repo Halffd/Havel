@@ -174,7 +174,7 @@ void Modules::installHostFunctions() {
 
     vm_setup_callbacks_.push_back([](compiler::VM &vm) {
         auto hotkeyObj = vm.createHostObject();
-        for (const auto &name : {"register", "trigger", "list"}) {
+        for (const auto &name : {"register", "register_conditional", "trigger", "list"}) {
             std::string fn = std::string("hotkey.") + name;
             int idx = vm.getHostFunctionIndex(fn);
             if (idx >= 0) {

@@ -100,11 +100,9 @@ void EventQueue::processAll() {
             } else {
                 auto handler_it = local_handlers.find(static_cast<uint8_t>(event.type));
                 if (handler_it != local_handlers.end() && handler_it->second) {
-                    fprintf(stderr, "[TRACE] EventQueue dispatching event type=%d (handlers=%zu)\n", static_cast<int>(event.type), local_handlers.size());
                     ::havel::debug("[EventQueue] dispatching event type={}", static_cast<int>(event.type));
                     handler_it->second(event);
                 } else {
-                    fprintf(stderr, "[TRACE] EventQueue event type=%d DROPPED (no handler, handlers=%zu)\n", static_cast<int>(event.type), local_handlers.size());
                     ::havel::debug("[EventQueue] event type={} dropped (no handler)", static_cast<int>(event.type));
                 }
             }

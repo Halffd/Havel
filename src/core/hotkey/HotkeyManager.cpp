@@ -159,6 +159,7 @@ modeManager(std::make_shared<ModeManager>())
 
   bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
   {
+    fprintf(stderr, "[HKMgr] SetHotkeyGrab alias='%s' grab=%d suspended=%d\n", alias.c_str(), grab, grabsSuspended_);
     if (debugging::debug_hotkeys) debug("[HotkeyManager] SetHotkeyGrab alias='{}' grab={}", alias, grab);
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
     if (grabsSuspended_) {

@@ -67,6 +67,7 @@ go fn update() {
       print("hotkeyTest: ", hotkeyTest)
       print("Hotkeys:")
       print(hotkey.list())
+      print("Scheduler: ", scheduler.info(), scheduler.goroutines())
     }
     sleep(1000)
   }

@@ -164,18 +164,916 @@ static void appendDefaultLlvmLinkLibraries(std::string &linkCmd) {
 }
 #endif
 
+// ─── Shared Helpers ──────────────────────────────────────────────
+
+static std::pair<std::string, std::string>
+loadScriptFiles(const std::vector<std::string> &files) {
+  std::string code;
+  std::string names;
+  for (const auto &f : files) {
+    std::string content = readScriptFile(f);
+    if (!content.empty()) {
+      code += content + "\n";
+      if (!names.empty()) names += " + ";
+      names += f;
+    }
+  }
+  return {code, names};
+}
+
+static void appendEval(std::string &code, std::string &names,
+                       const std::string &eval) {
+  if (!eval.empty()) {
+    code += eval + "\n";
+    if (!names.empty()) names += " + ";
+    names += "<eval>";
+  }
+}
+
+static void readFromStdIn(std::string &code, std::string &names) {
+  if (code.empty() && !isatty(STDIN_FILENO)) {
+    std::ostringstream ss;
+    ss << std::cin.rdbuf();
+    code = ss.str();
+    names = "<stdin>";
+  }
+}
+
+static havel::EngineConfig
+makeEngineConfig(const LaunchConfig &cfg) {
+  return {
+    .debugBytecode = cfg.debugBytecode,
+    .debugLexer = cfg.debugLexer,
+    .debugParser = cfg.debugParser,
+    .debugAst = cfg.debugAst,
+    .stopOnError = cfg.stopOnError,
+    .leanMinimalStartup = cfg.minimalMode,
+    .pureStdlib = cfg.pureStdlib,
+    .vmConfig = cfg.vmConfig,
+    .serviceIncludes = cfg.serviceIncludes,
+    .serviceExcludes = cfg.serviceExcludes
+  };
+}
+
+static havel::repl::REPLConfig
+makeREPLConfig(const LaunchConfig &cfg) {
+  havel::repl::REPLConfig replConfig;
+  replConfig.debugMode = cfg.debugMode;
+  replConfig.stopOnError = cfg.stopOnError;
+  replConfig.debugBytecode = cfg.debugBytecode;
+  replConfig.debugLexer = cfg.debugLexer;
+  replConfig.debugParser = cfg.debugParser;
+  replConfig.debugAst = cfg.debugAst;
+  replConfig.outputLogFile = cfg.outputLogFile;
+  replConfig.historyFile = cfg.historyFile;
+  return replConfig;
+}
+
+static std::shared_ptr<HostAPI>
+createHostAPI(havel::Havel &inst) {
+  auto *hkManager = inst.getHotkeyManagerPtr();
+  return std::make_shared<HostAPI>(
+      inst.getIOPtr(),
+      inst.getHotkeyManagerPtr(),
+      Configs::Get(),
+      inst.getWindowManagerPtr(),
+      inst.getBrightnessManager(),
+      inst.getAudioManager(),
+      nullptr, nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr,
+      hkManager ? hkManager->getModeManager().get() : nullptr,
+      std::vector<std::string>{});
+}
+
+static int runLint(const std::string &code, const std::string &primaryFile,
+                   const LaunchConfig &cfg) {
+  havel::parser::Parser parser{{
+    .lexer = cfg.debugLexer,
+    .parser = cfg.debugParser,
+    .ast = cfg.debugAst
+  }};
+  std::unique_ptr<havel::ast::Program> program;
+  try {
+    program = parser.produceAST(code);
+  } catch (const std::exception &) {}
+
+  if (parser.hasErrors()) {
+    for (const auto &err : parser.getErrors()) {
+      std::string sourceLine;
+      if (err.line > 0) {
+        std::istringstream ss(code);
+        std::string line;
+        for (size_t i = 1; i <= err.line; ++i) {
+          if (!std::getline(ss, line)) break;
+          if (i == err.line) { sourceLine = line; break; }
+        }
+      }
+      std::string formatted = havel::ErrorPrinter::formatError(
+          "error", err.message, primaryFile,
+          err.line, err.column, 1, sourceLine);
+      std::cerr << formatted;
+    }
+    error("Linting failed with {} error(s)", parser.getErrors().size());
+    return 1;
+  }
+
+  if (program) {
+    havel::compiler::ByteCompiler compiler;
+    compiler.setCollectErrors(true);
+    try {
+      auto chunk = compiler.compile(*program);
+      (void)chunk;
+    } catch (const std::exception &) {}
+    if (compiler.hasErrors()) {
+      for (const auto &err : compiler.errors()) {
+        std::string sourceLine;
+        if (err.line > 0) {
+          std::istringstream ss(code);
+          std::string line;
+          for (size_t i = 1; i <= err.line; ++i) {
+            if (!std::getline(ss, line)) break;
+            if (i == err.line) { sourceLine = line; break; }
+          }
+        }
+        std::string formatted = havel::ErrorPrinter::formatError(
+            "error", err.what(), primaryFile,
+            err.line, err.column, 1, sourceLine);
+        std::cerr << formatted;
+      }
+      error("Compilation failed with {} error(s)", compiler.errors().size());
+      return 1;
+    }
+  }
+  info("Linting successful");
+  return 0;
+}
+
+static std::unique_ptr<havel::ast::Program>
+parseScript(const std::string &code, const LaunchConfig &cfg) {
+  havel::parser::Parser parser{{
+    .lexer = cfg.debugLexer,
+    .parser = cfg.debugParser,
+    .ast = cfg.debugAst
+  }};
+  try {
+    return parser.produceAST(code);
+  } catch (const std::exception &) {
+    return nullptr;
+  }
+}
+
+static bool programHasHotkeys(const havel::ast::Program &program) {
+  for (const auto &stmt : program.body) {
+    if (stmt && stmt->kind == havel::ast::NodeType::HotkeyBinding)
+      return true;
+  }
+  return false;
+}
+
+static void installMinimalSignalHandlers() {
+  struct sigaction sa;
+  sa.sa_flags = 0;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_handler = [](int sig) {
+    havel::exit(
+        sig == SIGSEGV ? ExitReason::SignalCrash : ExitReason::SignalInt, 0);
+  };
+  sigaction(SIGINT, &sa, nullptr);
+  sigaction(SIGTERM, &sa, nullptr);
+  sigaction(SIGSEGV, &sa, nullptr);
+}
+
+static int runBytecodeFiles(const LaunchConfig &cfg,
+                            const std::vector<std::string> &hvcFiles) {
+  for (const auto &f : hvcFiles) {
+    std::ifstream file(f, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+      error("Cannot open bytecode file: {}", f);
+      return 2;
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> buffer(size);
+    if (!file.read(reinterpret_cast<char *>(buffer.data()), size)) {
+      error("Failed to read bytecode file: {}", f);
+      return 2;
+    }
+    havel::compiler::ValueSerializer serializer;
+    auto chunk = serializer.deserializeChunk(buffer);
+    if (!chunk) {
+      error("Failed to deserialize bytecode: {}", f);
+      return 2;
+    }
+    havel::HostContext ctx;
+    havel::compiler::VM tempVm;
+    ctx.vm = &tempVm;
+    auto bridge = havel::createModules(ctx);
+    auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
+    const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;
+#ifdef HAVEL_ENABLE_LLVM
+    std::unique_ptr<havel::compiler::BytecodeOrcJIT> jit;
+    if (cfg.useJIT) {
+      jit = std::make_unique<havel::compiler::BytecodeOrcJIT>();
+      jit->setDebugMode(cfg.debugJIT);
+      jit->setDumpIR(cfg.dumpIR);
+      jit->setDumpAsmToFile(cfg.outputAsmToFile);
+      jit->setShowWarnings(cfg.aotWarnings);
+      vm->setHotFunctionCallback(
+          [jit_ptr = jit.get()](const havel::compiler::BytecodeFunction &func) {
+            if (!jit_ptr->isCompiled(func.name))
+              jit_ptr->compileFunction(func);
+          });
+      vm->setJITCompiler(jit.get());
+    }
+#endif
+    bridge->install(
+        coreProfile ? havel::InstallProfile::Core
+                    : havel::InstallProfile::Full,
+        !coreProfile);
+    if (coreProfile) {
+      if (cfg.pureStdlib)
+        havel::registerPureStdLib(*vm);
+      else
+        havel::registerCoreStdLib(*vm);
+    }
+    for (const auto &[name, fn] : bridge->options().host_functions)
+      vm->registerHostFunction(name, fn);
+    info("Loaded bytecode file: {} ({} function(s))", f,
+         chunk->getFunctionCount());
+    if (cfg.debugBytecode)
+      info("Bytecode loaded successfully: {}", f);
+    auto chunkPtr =
+        std::make_shared<compiler::BytecodeChunk>(std::move(*chunk));
+    vm->setMainChunkShared(chunkPtr);
+    vm->setCurrentScriptDir(std::filesystem::path(f).parent_path().string());
+    if (!cfg.scriptArgs.empty()) {
+      auto arrRef = vm->createHostArray();
+      for (const auto &arg : cfg.scriptArgs) {
+        auto strRef = vm->createRuntimeString(arg);
+        vm->pushHostArrayValue(arrRef,
+                               havel::compiler::Value::makeStringId(strRef.id));
+      }
+      vm->setAppArgs(arrRef.id);
+    }
+    try {
+      auto result = vm->execute(*chunkPtr, "__main__");
+      (void)result;
+    } catch (const std::exception &e) {
+      error("Bytecode error in {}: {}", f, e.what());
+      bridge->shutdown();
+      return 1;
+    } catch (...) {
+      error("Unknown bytecode error in {}", f);
+      bridge->shutdown();
+      return 1;
+    }
+    bridge->shutdown();
+  }
+  return 0;
+}
+
+// ─── Strategy Classes ─────────────────────────────────────────────
+
+class DaemonStrategy : public RunStrategy {
+public:
+  int execute(const LaunchConfig &cfg, int argc, char *argv[]) override {
+    auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+
+    // LINT-ONLY MODE
+    if (cfg.lintOnly && !combinedCode.empty()) {
+      info("Linting scripts: {}", combinedNames);
+      return runLint(combinedCode, combinedNames.empty() ? "input" : combinedNames, cfg);
+    }
+
+    auto *backend = host::UIManager::instance().backend();
+    host::UIBackend::ApplicationMetadata meta;
+    meta.argc = &argc;
+    meta.argv = argv;
+    meta.applicationName = "havel";
+    meta.applicationVersion = "1.0";
+    meta.organizationName = "havel";
+    meta.quitOnLastWindowClosed = false;
+    backend->setApplicationMetadata(meta);
+
+    while (true) {
+      {
+        std::vector<std::string> args;
+        for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
+
+        havel::Havel havel_inst(cfg.isStartup, "", false, true, args);
+        if (!havel_inst.isInitialized()) {
+          error("Failed to initialize havel::Havel");
+          return 1;
+        }
+
+        if (!combinedCode.empty()) {
+          auto *bytecodeVM = havel_inst.getBytecodeVM();
+          auto *modules = havel_inst.getModules();
+          if (bytecodeVM && modules) {
+            info("Executing combined scripts with bytecode VM: {}", combinedNames);
+            havel::compiler::PipelineOptions options = modules->options();
+            options.compile_unit_name = combinedNames;
+            options.vm_override = bytecodeVM;
+            options.debugBytecode = cfg.debugBytecode;
+            try {
+              havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+              info("Execution completed successfully");
+            } catch (const std::exception &e) {
+              error("Execution error: {}", e.what());
+            }
+            auto *ee = havel_inst.getExecutionEngine();
+            if (ee) ee->setScriptReady(true);
+          }
+        }
+
+        info("Havel started successfully - running in system tray");
+        havel_inst.setShutdownCallback([] {
+          host::UIManager::instance().backend()->quitEventLoop(0);
+        });
+
+        int exitCode = backend->runEventLoop();
+        if (exitCode != 42) return exitCode;
+      }
+      backend->resetPerRunState();
+      info("Restart requested - relaunching application");
+    }
+  }
+};
+
+class ScriptStrategy : public RunStrategy {
+public:
+  int execute(const LaunchConfig &cfg, int argc, char *argv[]) override {
+    // Check for .hvc bytecode files
+    std::vector<std::string> hvcFiles, hvFiles;
+    for (const auto &f : cfg.scriptFiles) {
+      if (f.size() >= 4 && f.substr(f.size() - 4) == ".hvc")
+        hvcFiles.push_back(f);
+      else
+        hvFiles.push_back(f);
+    }
+    if (!hvcFiles.empty() && hvFiles.empty() && cfg.evalString.empty())
+      return runBytecodeFiles(cfg, hvcFiles);
+
+    auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+    appendEval(combinedCode, combinedNames, cfg.evalString);
+    if (combinedCode.empty()) {
+      error("No script code provided");
+      return 1;
+    }
+
+    // Parse once to check for hotkey bindings
+    auto program = parseScript(combinedCode, cfg);
+    bool hasHotkeys = program && programHasHotkeys(*program);
+
+    if (hasHotkeys) {
+      // Full mode with UI backend
+      if (debugging::debug_io)
+        debug("Hotkeys detected — using full execution mode");
+
+      auto *backend = host::UIManager::instance().backend();
+      host::UIBackend::ApplicationMetadata meta;
+      meta.applicationName = "havel";
+      meta.applicationVersion = "1.0";
+      meta.organizationName = "havel";
+      meta.quitOnLastWindowClosed = true;
+      backend->setApplicationMetadata(meta);
+
+      std::vector<std::string> args;
+      for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
+
+      havel::Havel havel_inst(false, combinedNames, false, true, args);
+      if (!havel_inst.isInitialized()) {
+        error("Failed to initialize havel::Havel");
+        return 1;
+      }
+
+      auto *bytecodeVM = havel_inst.getBytecodeVM();
+      auto *modules = havel_inst.getModules();
+      if (!bytecodeVM || !modules) {
+        error("Bytecode VM not available");
+        return 1;
+      }
+
+      auto *hkManager = havel_inst.getHotkeyManagerPtr();
+      auto hostAPI = createHostAPI(havel_inst);
+      havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
+                                         cfg.serviceExcludes);
+      hostAPI->SetVM(bytecodeVM);
+      bytecodeVM->setTimerCheckFunction(
+          [modules]() { modules->checkTimers(); });
+
+      try {
+        havel::compiler::PipelineOptions options = modules->options();
+        options.compile_unit_name = combinedNames;
+        options.vm_override = bytecodeVM;
+        options.debugBytecode = cfg.debugBytecode;
+        havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+      } catch (const std::exception &e) {
+        error("Execution error: {}", e.what());
+        return 1;
+      }
+
+      auto *ee = havel_inst.getExecutionEngine();
+      if (ee) ee->setScriptReady(true);
+      if (hkManager) hkManager->printHotkeys();
+      havel_inst.setShutdownCallback(
+          [] { host::UIManager::instance().backend()->quitEventLoop(0); });
+
+      if (!hkManager || hkManager->getHotkeyList().empty()) {
+        info("No hotkeys registered — exiting");
+        return 0;
+      }
+
+      info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
+      return backend->runEventLoop();
+    }
+
+    // Headless mode
+    if (debugging::debug_io)
+      debug("Running combined scripts (headless): {}", combinedNames);
+    try {
+      havel::HavelEngine engine(makeEngineConfig(cfg));
+      engine.initializeMinimal();
+      engine.execute(combinedCode, "__main__", combinedNames);
+      engine.shutdown();
+      return 0;
+    } catch (const std::exception &e) {
+      error("Execution error: {}", e.what());
+      return 1;
+    }
+  }
+};
+
+class ScriptOnlyStrategy : public RunStrategy {
+public:
+  int execute(const LaunchConfig &cfg, int argc, char *argv[]) override {
+    std::vector<std::string> hvcFiles, hvFiles;
+    for (const auto &f : cfg.scriptFiles) {
+      if (f.size() >= 4 && f.substr(f.size() - 4) == ".hvc")
+        hvcFiles.push_back(f);
+      else
+        hvFiles.push_back(f);
+    }
+    if (!hvcFiles.empty() && hvFiles.empty())
+      return runBytecodeFiles(cfg, hvcFiles);
+
+    auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+    appendEval(combinedCode, combinedNames, cfg.evalString);
+    readFromStdIn(combinedCode, combinedNames);
+    if (combinedCode.empty()) return 0;
+
+    havel::parser::Parser parser{{
+      .lexer = cfg.debugLexer,
+      .parser = cfg.debugParser,
+      .ast = cfg.debugAst
+    }};
+    std::unique_ptr<havel::ast::Program> program;
+    try {
+      program = parser.produceAST(combinedCode);
+    } catch (const std::exception &) {}
+
+    if (parser.hasErrors() || !program) {
+      for (const auto &err : parser.getErrors())
+        std::cerr << "Parse error: " << err.message << " at line " << err.line
+                  << " col " << err.column << std::endl;
+      error("Failed to parse script");
+      return 1;
+    }
+
+    if (programHasHotkeys(*program)) {
+      if (debugging::debug_io)
+        debug("Hotkey bindings detected - starting full IO/event loop");
+      LaunchConfig fullCfg = cfg;
+      fullCfg.mode = LaunchConfig::Mode::SCRIPT;
+      return ScriptStrategy().execute(fullCfg, argc, argv);
+    }
+
+    if (cfg.lintOnly) {
+      std::string primary = combinedNames.empty() ? "input" : combinedNames;
+      return runLint(combinedCode, primary, cfg);
+    }
+
+    if (debugging::debug_io)
+      debug("Running Havel scripts (pure mode): {}", combinedNames);
+
+    installMinimalSignalHandlers();
+
+    bool autoExit = Configs::Get().Get<bool>("Debug.AutoExit", false);
+    if (autoExit) {
+      int delay = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
+      std::thread([delay]() {
+        std::this_thread::sleep_for(std::chrono::seconds(delay));
+        if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) return;
+        if (debugging::debug_io)
+          debug("AutoExit enabled - exiting after {} seconds", delay);
+        havel::exit(ExitReason::Normal, 0);
+      }).detach();
+    }
+
+    try {
+      havel::HavelEngine engine(makeEngineConfig(cfg));
+      auto t0 = std::chrono::high_resolution_clock::now();
+      engine.initializeMinimal();
+
+      if (!cfg.scriptArgs.empty()) {
+        auto &vm = *engine.vm();
+        auto arrRef = vm.createHostArray();
+        for (const auto &arg : cfg.scriptArgs) {
+          auto strRef = vm.createRuntimeString(arg);
+          vm.pushHostArrayValue(
+              arrRef, havel::compiler::Value::makeStringId(strRef.id));
+        }
+        vm.setAppArgs(arrRef.id);
+      }
+
+      auto t1 = std::chrono::high_resolution_clock::now();
+      engine.execute(combinedCode, "__main__", combinedNames);
+      auto t2 = std::chrono::high_resolution_clock::now();
+      engine.shutdown();
+      auto t3 = std::chrono::high_resolution_clock::now();
+
+      if (cfg.debugMode) {
+        double init_ms =
+            std::chrono::duration<double, std::milli>(t1 - t0).count();
+        double exec_ms =
+            std::chrono::duration<double, std::milli>(t2 - t1).count();
+        double shut_ms =
+            std::chrono::duration<double, std::milli>(t3 - t2).count();
+        double total_ms =
+            std::chrono::duration<double, std::milli>(t3 - t0).count();
+        info("benchmark: init={:.1f}ms exec={:.1f}ms shutdown={:.1f}ms "
+             "total={:.1f}ms",
+             init_ms, exec_ms, shut_ms, total_ms);
+      }
+      return 0;
+    } catch (const std::exception &e) {
+      error("Bytecode error: {}", e.what());
+      return 1;
+    }
+  }
+};
+
+// Helper for all REPL strategies
+static int setupFullReplCommon(const LaunchConfig &cfg) {
+  auto *replBackend = host::UIManager::instance().backend();
+  if (!replBackend) {
+    error("No UI backend available. Use --minimal or --run for REPL without UI.");
+    return -1;
+  }
+  host::UIBackend::ApplicationMetadata meta;
+  meta.applicationName = "havel";
+  meta.organizationName = "havel";
+  meta.quitOnLastWindowClosed = false;
+  replBackend->setApplicationMetadata(meta);
+  return 0;
+}
+
+static int
+runMinimalReplLoop(havel::HavelEngine &engine, const LaunchConfig &cfg) {
+  havel::repl::REPL repl(makeREPLConfig(cfg));
+  repl.attach(engine.vm(), engine.modules(),
+              collectKnownGlobals(engine.vm()));
+  repl.setPumpCallback([&engine]() { engine.tickGoroutines(); });
+  return repl.run();
+}
+
+static int
+runFullReplLoop(const LaunchConfig &cfg, havel::Havel &havel_inst) {
+  auto *bytecodeVM = havel_inst.getBytecodeVM();
+  auto *modules = havel_inst.getModules();
+  if (!bytecodeVM || !modules) return 1;
+
+  havel::repl::REPL repl(makeREPLConfig(cfg));
+  auto hostAPI = createHostAPI(havel_inst);
+  havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
+                                     cfg.serviceExcludes);
+  hostAPI->SetVM(bytecodeVM);
+  repl.attach(bytecodeVM, havel_inst.getModules(),
+              collectKnownGlobals(bytecodeVM));
+
+  auto *io = havel_inst.getIOPtr();
+  auto *hkManager = havel_inst.getHotkeyManagerPtr();
+  if (io) {
+    repl.setPumpCallback([io]() { io->PumpOnce(); });
+    repl.setUngrabCallback([io, hkManager]() {
+      if (hkManager)
+        hkManager->suspendGrabs();
+      else
+        io->UngrabAll();
+    });
+    repl.setResumeGrabsCallback(
+        [hkManager]() { if (hkManager) hkManager->resumeGrabs(); });
+  }
+  return repl.run();
+}
+
+class ScriptAndReplStrategy : public RunStrategy {
+public:
+  int execute(const LaunchConfig &cfg, int argc, char *argv[]) override {
+    try {
+      auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+
+      if (cfg.minimalMode) {
+        if (cfg.scriptFiles.empty()) {
+          error("No script file provided");
+          return 1;
+        }
+        info("Running scripts and starting REPL in minimal mode...");
+        havel::HavelEngine engine(makeEngineConfig(cfg));
+        engine.initializeMinimal();
+        info("Executing script code...");
+        try {
+          engine.execute(combinedCode, "__main__",
+                         combinedNames.empty() ? "script" : combinedNames);
+        } catch (const std::exception &e) {
+          error("Script execution failed: {}", e.what());
+          return 1;
+        }
+        return runMinimalReplLoop(engine, cfg);
+      }
+
+      info("Running scripts and starting REPL with full features...");
+      if (setupFullReplCommon(cfg) != 0) return 1;
+
+      std::vector<std::string> args;
+      havel::Havel havel_inst(false, combinedNames, true, true, args);
+      if (!havel_inst.isInitialized()) return 1;
+
+      auto *bytecodeVM = havel_inst.getBytecodeVM();
+      auto *modules = havel_inst.getModules();
+      if (!bytecodeVM || !modules) return 1;
+
+      bytecodeVM->setTimerCheckFunction(
+          [modules]() { modules->checkTimers(); });
+
+      try {
+        havel::compiler::PipelineOptions options = modules->options();
+        options.compile_unit_name = combinedNames;
+        options.vm_override = bytecodeVM;
+        options.debugBytecode = cfg.debugBytecode;
+        havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+      } catch (const std::exception &e) {
+        error("Script execution error: {}", e.what());
+        return 1;
+      }
+
+      auto *ee = havel_inst.getExecutionEngine();
+      if (ee) ee->setScriptReady(true);
+
+      auto *hkManager = havel_inst.getHotkeyManagerPtr();
+      if (hkManager) hkManager->printHotkeys();
+      info("Script loaded. Hotkeys registered. Enter REPL...");
+
+      return runFullReplLoop(cfg, havel_inst);
+
+    } catch (const std::exception &e) {
+      error("Script+REPL error: {}", e.what());
+      return 1;
+    }
+  }
+};
+
+class ReplStrategy : public RunStrategy {
+public:
+  int execute(const LaunchConfig &cfg, int, char *[]) override {
+    try {
+      if (cfg.minimalMode) {
+        info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
+        auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+
+        havel::HavelEngine engine(makeEngineConfig(cfg));
+        engine.initializeMinimal();
+
+        if (!combinedCode.empty()) {
+          info("Executing script code...");
+          try {
+            engine.execute(combinedCode, "__main__",
+                           combinedNames.empty() ? "script" : combinedNames);
+          } catch (const std::exception &e) {
+            error("Script execution failed: {}", e.what());
+            return 1;
+          }
+        }
+
+        return runMinimalReplLoop(engine, cfg);
+      }
+
+      info("Starting Havel REPL with full features (hotkeys, GUI)...");
+      havel::debug("Running in REPL mode (full):");
+      havel::debug(" - GUI: enabled");
+      havel::debug(" - IO/Hotkeys: enabled");
+
+      if (setupFullReplCommon(cfg) != 0) return 1;
+
+      std::vector<std::string> args;
+      havel::Havel havel_inst(false, "", true, true, args);
+      if (!havel_inst.isInitialized()) {
+        error("Failed to initialize havel::Havel");
+        return 1;
+      }
+
+      return runFullReplLoop(cfg, havel_inst);
+
+    } catch (const std::exception &e) {
+      error("REPL error: {}", e.what());
+      return 1;
+    }
+  }
+};
+
+class SelfHostedStrategy : public RunStrategy {
+public:
+  int execute(const LaunchConfig &cfg, int, char *[]) override {
+    char selfBuf[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", selfBuf, sizeof(selfBuf) - 1);
+    std::string binDir;
+    if (len > 0) {
+      selfBuf[len] = '\0';
+      binDir = std::filesystem::path(selfBuf).parent_path().string();
+    }
+
+    std::vector<std::string> searchPaths = {
+        binDir + "/../modules/lang/launcher.hv",
+        binDir + "/../../modules/lang/launcher.hv",
+        "modules/lang/launcher.hv",
+        "../modules/lang/launcher.hv",
+        "../../modules/lang/launcher.hv",
+    };
+
+    std::string launcherPath;
+    for (const auto &candidate : searchPaths) {
+      std::error_code ec;
+      if (std::filesystem::exists(candidate, ec) && !ec) {
+        launcherPath = candidate;
+        break;
+      }
+    }
+    if (launcherPath.empty()) {
+      error("Cannot find modules/lang/launcher.hv");
+      return 1;
+    }
+
+    std::error_code ec;
+    auto absPath = std::filesystem::canonical(launcherPath, ec);
+    if (!ec) launcherPath = absPath.string();
+
+    std::string launcherCode = readScriptFile(launcherPath);
+    if (launcherCode.empty()) {
+      error("Cannot read launcher.hv at {}", launcherPath);
+      return 1;
+    }
+
+    std::vector<std::string> appArgList;
+    appArgList.push_back("--self-hosted");
+    for (const auto &f : cfg.scriptFiles) appArgList.push_back(f);
+    if (cfg.lintOnly) appArgList.push_back("--lint");
+    for (const auto &a : cfg.scriptArgs) appArgList.push_back(a);
+
+    if (debugging::debug_io)
+      debug("Self-hosted mode: launcher={}, args={}", launcherPath,
+            appArgList.size());
+
+    installMinimalSignalHandlers();
+
+    try {
+      havel::HavelEngine engine(makeEngineConfig(cfg));
+      engine.initializeMinimal();
+
+      auto &vm = *engine.vm();
+      auto arrRef = vm.createHostArray();
+      for (const auto &arg : appArgList) {
+        auto strRef = vm.createRuntimeString(arg);
+        vm.pushHostArrayValue(arrRef,
+                              havel::compiler::Value::makeStringId(strRef.id));
+      }
+      vm.setAppArgs(arrRef.id);
+
+      engine.execute(launcherCode, "__main__", launcherPath);
+      engine.shutdown();
+      return 0;
+    } catch (const std::exception &e) {
+      error("Self-hosted error: {}", e.what());
+      return 1;
+    }
+  }
+};
+
+class TestStrategy : public RunStrategy {
+public:
+  int execute(const LaunchConfig &cfg, int, char *[]) override {
+    if (cfg.testDir.empty()) {
+      error("No test directory specified. Usage: havel --test <directory>");
+      return 1;
+    }
+
+    std::vector<std::string> testFiles;
+    try {
+      for (const auto &entry :
+           std::filesystem::directory_iterator(cfg.testDir)) {
+        if (entry.is_regular_file()) {
+          std::string path = entry.path().string();
+          if (path.size() >= 3 && path.substr(path.size() - 3) == ".hv")
+            testFiles.push_back(path);
+        }
+      }
+    } catch (const std::exception &e) {
+      error("Failed to read test directory '{}': {}", cfg.testDir, e.what());
+      return 1;
+    }
+
+    if (testFiles.empty()) {
+      error("No .hv files found in '{}'", cfg.testDir);
+      return 1;
+    }
+
+    std::sort(testFiles.begin(), testFiles.end());
+
+    std::string selfPath = "/proc/self/exe";
+    char selfBuf[PATH_MAX];
+    ssize_t len = readlink(selfPath.c_str(), selfBuf, sizeof(selfBuf) - 1);
+    if (len == -1) selfPath = "havel";
+    else { selfBuf[len] = '\0'; selfPath = std::string(selfBuf); }
+
+    int passed = 0, failed = 0, total = static_cast<int>(testFiles.size());
+    info("Running {} tests from '{}'", total, cfg.testDir);
+
+    for (const auto &testFile : testFiles) {
+      std::string testName = testFile.substr(testFile.find_last_of('/') + 1);
+      std::string cmd = std::format("timeout {} {} --run {}", cfg.testTimeout,
+                                    selfPath, testFile);
+      FILE *pipe = popen(cmd.c_str(), "r");
+      if (!pipe) {
+        error("  FAIL {} - failed to run", testName);
+        failed++;
+        continue;
+      }
+      std::string output;
+      char buf[256];
+      while (fgets(buf, sizeof(buf), pipe)) output += buf;
+      int status = pclose(pipe);
+      int exitCode = WEXITSTATUS(status);
+
+      if (exitCode == 0) {
+        info("  PASS {}", testName);
+        passed++;
+      } else {
+        std::string errLine;
+        std::istringstream iss(output);
+        std::string line;
+        while (std::getline(iss, line)) {
+          if (line.find("[ERROR]") != std::string::npos ||
+              line.find("Error:") != std::string::npos) {
+            errLine = line;
+            errLine.erase(
+                std::remove(errLine.begin(), errLine.end(), '\r'),
+                errLine.end());
+            break;
+          }
+        }
+        if (exitCode == 124)
+          error("  FAIL {} - timeout ({}s)", testName, cfg.testTimeout);
+        else if (!errLine.empty()) {
+          size_t pos = errLine.find("[ERROR]");
+          if (pos != std::string::npos) errLine = errLine.substr(pos + 7);
+          else {
+            pos = errLine.find("Error:");
+            if (pos != std::string::npos) errLine = errLine.substr(pos + 6);
+          }
+          while (!errLine.empty() && errLine[0] == ' ') errLine.erase(0, 1);
+          error("  FAIL {} - {}", testName, errLine);
+        } else
+          error("  FAIL {} - exit code {}", testName, exitCode);
+        failed++;
+      }
+    }
+
+    std::cout << "\n";
+    info("Test Results:");
+    info("  Total:  {}", total);
+    info("  Passed: {}", passed);
+    info("  Failed: {}", failed);
+    return failed > 0 ? 1 : 0;
+  }
+};
+
+class CliStrategy : public RunStrategy {
+public:
+  int execute(const LaunchConfig &, int, char *[]) override {
+    error("CLI not available - interpreter removed");
+    return 1;
+  }
+};
+
 int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
 
-    // Target mode controls execution backend defaults.
-    if (cfg.target == Target::INTERPRET) {
+    if (cfg.target == LaunchConfig::Target::INTERPRET) {
       cfg.useJIT = false;
-    } else if (cfg.target == Target::JIT) {
+    } else if (cfg.target == LaunchConfig::Target::JIT) {
       cfg.useJIT = true;
     }
 
-    // Apply JIT settings to global config
     Configs::Get().Set("Compiler.JIT", cfg.useJIT ? "true" : "false");
     Configs::Get().Set("Compiler.DebugJIT", cfg.debugJIT ? "true" : "false");
     Configs::Get().Set("Compiler.DumpIR", cfg.dumpIR ? "true" : "false");
@@ -187,46 +1085,39 @@ int HavelLauncher::run(int argc, char *argv[]) {
     Configs::Get().Set("Compiler.JITTargetOS", cfg.targetOS);
 #endif
 
+    if (cfg.buildOnly) return runBuild(cfg);
 
-    if (cfg.buildOnly) {
-
-        return runBuild(cfg);
-    }
-
-    // Self-hosted mode: route through launcher.hv instead of C++ pipeline
     if (cfg.selfHosted) {
-        cfg.mode = Mode::SCRIPT_ONLY;
-        cfg.minimalMode = true;
-        cfg.pureStdlib = true;
-        return runSelfHosted(cfg);
+      cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
+      cfg.minimalMode = true;
+      cfg.pureStdlib = true;
     }
 
-    switch (cfg.mode) {
-    case Mode::DAEMON:
-      return runDaemon(cfg, argc, argv);
-    case Mode::SCRIPT:
-      return runScript(cfg, argc, argv);
-    case Mode::SCRIPT_ONLY:
-      return runScriptOnly(cfg, argc, argv);
-    case Mode::REPL:
-      return runRepl(cfg);
-    case Mode::SCRIPT_AND_REPL:
-      return runScriptAndRepl(cfg, argc, argv);
-    case Mode::TEST:
-      return runTest(cfg);
-    case Mode::CLI:
-      return runCli(argc, argv);
-    default:
-      error("Unknown mode");
-      return 1;
-    }
+    auto strategy = createStrategy(cfg);
+    return strategy->execute(cfg, argc, argv);
   } catch (const std::exception &e) {
     error("Fatal error: {}", e.what());
     return 1;
   }
 }
 
-HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
+std::unique_ptr<RunStrategy> HavelLauncher::createStrategy(const LaunchConfig &cfg) {
+  using Mode = LaunchConfig::Mode;
+  switch (cfg.mode) {
+  case Mode::DAEMON:          return std::make_unique<DaemonStrategy>();
+  case Mode::SCRIPT:          return std::make_unique<ScriptStrategy>();
+  case Mode::SCRIPT_ONLY:     return std::make_unique<ScriptOnlyStrategy>();
+  case Mode::REPL:            return std::make_unique<ReplStrategy>();
+  case Mode::SCRIPT_AND_REPL: return std::make_unique<ScriptAndReplStrategy>();
+  case Mode::TEST:            return std::make_unique<TestStrategy>();
+  case Mode::CLI:             return std::make_unique<CliStrategy>();
+  default:
+    error("Unknown mode");
+    return std::make_unique<CliStrategy>();
+  }
+}
+
+LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   LaunchConfig cfg;
   bool repl = false;
   for (int i = 1; i < argc; i++) {
@@ -272,13 +1163,13 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--repl" || arg == "-r" || arg == "--interactive" || arg == "-i") {
       repl = true;
     } else if (arg == "--gui") {
-      cfg.mode = Mode::DAEMON; // GUI mode is now DAEMON
+      cfg.mode = LaunchConfig::Mode::DAEMON; // GUI mode is now DAEMON
     } else if (arg == "--full-repl" || arg == "-fr") {
       repl = true;
     } else if (arg == "--no-jit") {
       cfg.useJIT = false;
-      if (cfg.target == Target::JIT) {
-        cfg.target = Target::INTERPRET;
+      if (cfg.target == LaunchConfig::Target::JIT) {
+        cfg.target = LaunchConfig::Target::INTERPRET;
       }
     } else if (arg == "--target") {
       if (i + 1 >= argc) {
@@ -287,30 +1178,30 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       }
       std::string target = argv[++i];
       if (target == "interpret") {
-        cfg.target = Target::INTERPRET;
+        cfg.target = LaunchConfig::Target::INTERPRET;
         cfg.useJIT = false;
       } else if (target == "jit") {
-        cfg.target = Target::JIT;
+        cfg.target = LaunchConfig::Target::JIT;
         cfg.useJIT = true;
       } else if (target == "aot") {
-        cfg.target = Target::AOT;
+        cfg.target = LaunchConfig::Target::AOT;
         cfg.buildOnly = true;
         cfg.emitObj = true;
         cfg.emitBinary = true;
       } else if (target == "asm") {
-        cfg.target = Target::ASM;
+        cfg.target = LaunchConfig::Target::ASM;
         cfg.buildOnly = true;
         cfg.emitAsm = true;
       } else if (target == "ir") {
-        cfg.target = Target::IR;
+        cfg.target = LaunchConfig::Target::IR;
         cfg.buildOnly = true;
         cfg.emitLLVM = true;
       } else if (target == "wasm") {
-        cfg.target = Target::WASM;
+        cfg.target = LaunchConfig::Target::WASM;
         cfg.buildOnly = true;
         cfg.emitWasm = true;
       } else if (target == "elf" || target == "bin") {
-        cfg.target = Target::ELF;
+        cfg.target = LaunchConfig::Target::ELF;
         cfg.buildOnly = true;
         cfg.emitElf = true;
         cfg.emitObj = true;
@@ -349,7 +1240,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--full-aot") {
       cfg.fullAot = true;
       cfg.buildOnly = true;
-      cfg.target = Target::AOT;
+      cfg.target = LaunchConfig::Target::AOT;
       cfg.emitLLVM = true;
       cfg.emitAsm = true;
       cfg.emitObj = true;
@@ -372,12 +1263,12 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   } else if (arg == "--eval" || arg == "-E") {
     if (i + 1 < argc) {
         cfg.evalString = argv[++i];
-            if (cfg.mode == Mode::DAEMON) cfg.mode = Mode::SCRIPT_ONLY;
+            if (cfg.mode == LaunchConfig::Mode::DAEMON) cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
             cfg.minimalMode = true;
             cfg.pureStdlib = true;
     }
 } else if (arg == "--run" || arg == "run") {
-                cfg.mode = Mode::SCRIPT_ONLY;
+                cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
                 cfg.minimalMode = true;
                 cfg.pureStdlib = true;
         } else if (arg == "--pure-stdlib") {
@@ -386,7 +1277,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
             cfg.selfHosted = true;
     } else if (arg == "--test" || arg == "-t") {
       // Test mode - run all .hv files in a directory
-        cfg.mode = Mode::TEST;
+        cfg.mode = LaunchConfig::Mode::TEST;
             cfg.minimalMode = true;
             cfg.pureStdlib = true;
       // Next argument should be the test directory
@@ -417,21 +1308,21 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 			cfg.outputPath = argv[++i];
 		}
 	} else if (arg == "--emit-llvm") {
-		cfg.target = Target::IR;
+		cfg.target = LaunchConfig::Target::IR;
 		cfg.emitLLVM = true;
 		cfg.buildOnly = true;
 		if (i + 1 < argc && argv[i + 1][0] != '-') {
 			cfg.scriptFiles.push_back(argv[++i]);
 		}
 	} else if (arg == "--emit-asm") {
-		cfg.target = Target::ASM;
+		cfg.target = LaunchConfig::Target::ASM;
 		cfg.emitAsm = true;
 		cfg.buildOnly = true;
 		if (i + 1 < argc && argv[i + 1][0] != '-') {
 			cfg.scriptFiles.push_back(argv[++i]);
 		}
 	} else if (arg == "--emit-obj") {
-		cfg.target = Target::AOT;
+		cfg.target = LaunchConfig::Target::AOT;
 		cfg.emitObj = true;
 		cfg.buildOnly = true;
 		if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -445,9 +1336,9 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 		if (i + 1 < argc) {
 			std::string syntax = argv[++i];
 			if (syntax == "intel") {
-				cfg.asmSyntax = AsmSyntax::INTEL;
+				cfg.asmSyntax = LaunchConfig::AsmSyntax::INTEL;
 			} else if (syntax == "att") {
-				cfg.asmSyntax = AsmSyntax::ATT;
+				cfg.asmSyntax = LaunchConfig::AsmSyntax::ATT;
 			} else {
 				error("Unknown assembly syntax: {}. Supported: intel, att", syntax);
 			}
@@ -505,33 +1396,33 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       showHelp();
       havel::exit(ExitReason::Normal, 0);
     } else if (arg == "lexer") {
-      cfg.mode = Mode::CLI;
+      cfg.mode = LaunchConfig::Mode::CLI;
       return cfg;
     } else {
       if (arg.size() < 3 || arg.substr(arg.size() - 3) != ".hv") {
         warning("Script file {} does not end with .hv extension", arg);
       }
       cfg.scriptFiles.push_back(arg);
-      if (cfg.mode == Mode::DAEMON) {
-        cfg.mode = Mode::SCRIPT;
+      if (cfg.mode == LaunchConfig::Mode::DAEMON) {
+        cfg.mode = LaunchConfig::Mode::SCRIPT;
       }
     }
   }
 
   // Determine mode based on flags and script file
   if (repl && !cfg.scriptFiles.empty()) {
-    cfg.mode = Mode::SCRIPT_AND_REPL;
+    cfg.mode = LaunchConfig::Mode::SCRIPT_AND_REPL;
   } else if (repl) {
-    cfg.mode = Mode::REPL;
-  } else if (cfg.scriptFiles.empty() && cfg.mode == Mode::DAEMON) {
-    cfg.mode = Mode::REPL;
+    cfg.mode = LaunchConfig::Mode::REPL;
+  } else if (cfg.scriptFiles.empty() && cfg.mode == LaunchConfig::Mode::DAEMON) {
+    cfg.mode = LaunchConfig::Mode::REPL;
   }
 	// Check for debug flags (but don't force minimal mode when --repl is explicitly used)
-	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false) && cfg.mode != Mode::SCRIPT_AND_REPL){
+	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false) && cfg.mode != LaunchConfig::Mode::SCRIPT_AND_REPL){
 		cfg.minimalMode = true;
 		debug("Debug.ForceMinimal is set - forcing minimal mode");
 	}
-	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false) && cfg.mode == Mode::SCRIPT_AND_REPL){
+	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false) && cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL){
 		debug("Debug.ForceMinimal is set but --repl takes precedence");
 	}
 
@@ -564,1328 +1455,68 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   return cfg;
 }
 
-int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
-  // Load scripts first
-  std::string combinedCode;
-  std::string combinedNames;
-  for (const auto& f : cfg.scriptFiles) {
-    std::string content = readScriptFile(f);
-    if (!content.empty()) {
-      combinedCode += content + "\n";
-      if (!combinedNames.empty()) combinedNames += " + ";
-      combinedNames += f;
-    } else {
-      error("Cannot open startup script: {}", f);
-    }
-  }
-
-  // LINT-ONLY MODE: Parse and type-check ONLY, skip ALL Qt/VM initialization
-  if (cfg.lintOnly && !combinedCode.empty()) {
-        info("Linting scripts: {}", combinedNames);
-    havel::parser::Parser parser{{
-      .lexer = cfg.debugLexer,
-      .parser = cfg.debugParser,
-      .ast = cfg.debugAst
-    }};
-    std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
-    std::unique_ptr<havel::ast::Program> program;
-    try {
-      program = parser.produceAST(combinedCode);
-    } catch (const std::exception& e) {
-      // Parser aborted due to too many errors — still print what we collected
-    }
-    if (parser.hasErrors()) {
-      for (const auto& err : parser.getErrors()) {
-        // Get source line content for pretty formatting
-        std::string sourceLine;
-        if (err.line > 0) {
-          std::istringstream ss(combinedCode);
-          std::string line;
-          for (size_t i = 1; i <= err.line; ++i) {
-            if (!std::getline(ss, line)) break;
-            if (i == err.line) { sourceLine = line; break; }
-          }
-        }
-        std::string formatted = havel::ErrorPrinter::formatError(
-            "error", err.message, primaryFile,
-            err.line, err.column, 1, sourceLine);
-        std::cerr << formatted;
-      }
-      error("Linting failed with {} error(s)", parser.getErrors().size());
-      return 1;
-    }
-    if (!program) {
-      error("Parser returned null AST");
-      return 1;
-    }
-
-    // Also run compiler in error-collection mode to catch compile errors
-    havel::compiler::ByteCompiler compiler;
-    compiler.setCollectErrors(true);
-    try {
-      auto chunk = compiler.compile(*program);
-      (void)chunk;
-    } catch (const std::exception& e) {
-      // Compiler aborted — still print what we collected
-    }
-    if (compiler.hasErrors()) {
-      for (const auto& err : compiler.errors()) {
-        std::string sourceLine;
-        if (err.line > 0) {
-          std::istringstream ss(combinedCode);
-          std::string line;
-          for (size_t i = 1; i <= err.line; ++i) {
-            if (!std::getline(ss, line)) break;
-            if (i == err.line) { sourceLine = line; break; }
-          }
-        }
-        std::string formatted = havel::ErrorPrinter::formatError(
-            "error", err.what(), primaryFile,
-            err.line, err.column, 1, sourceLine);
-        std::cerr << formatted;
-      }
-      error("Compilation failed with {} error(s)", compiler.errors().size());
-      return 1;
-    }
-
-    info("Linting successful");
-    return 0;
-  }
-
-  auto* backend = host::UIManager::instance().backend();
-
-  // Set application metadata BEFORE constructing havel::Havel
-  // (D2 precondition: ensureApp() must see the right metadata)
-  host::UIBackend::ApplicationMetadata meta;
-  meta.argc = &argc;
-  meta.argv = argv;
-  meta.applicationName = "havel";
-  meta.applicationVersion = "1.0";
-  meta.organizationName = "havel";
-  meta.quitOnLastWindowClosed = false; // Daemon keeps running without windows
-  backend->setApplicationMetadata(meta);
-
-  // Restart loop - QApplication is reused across iterations (D4)
-  while (true) {
-    // Scope block ensures havel_inst destructor runs BEFORE resetPerRunState
-    // (D4 mandatory ordering: Havel destructor sees live widget map)
-    {
-      std::vector<std::string> args;
-      for (int i = 0; i < argc; ++i) {
-        args.emplace_back(argv[i]);
-      }
-
-      havel::Havel havel_inst(cfg.isStartup, "", false, true, args);
-
-      if (!havel_inst.isInitialized()) {
-        error("Failed to initialize havel::Havel");
-        return 1;
-      }
-
-      // Execute with bytecode VM
-      if (!combinedCode.empty()) {
-        auto *bytecodeVM = havel_inst.getBytecodeVM();
-        auto *modules = havel_inst.getModules();
-
-        if (bytecodeVM && modules) {
-            info("Executing combined scripts with bytecode VM: {}", combinedNames);
-
-            havel::compiler::PipelineOptions options = modules->options();
-          options.compile_unit_name = combinedNames;
-          options.vm_override = bytecodeVM;
-        options.debugBytecode = cfg.debugBytecode;
-
-    try {
-        havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-        info("Execution completed successfully");
-    } catch (const std::exception &e) {
-        error("Execution error: {}", e.what());
-    }
-
-    auto *ee = havel_inst.getExecutionEngine();
-    if (ee) ee->setScriptReady(true);
-        }
-      }
-
-      info("Havel started successfully - running in system tray");
-
-      // Wire shutdown callback through UI module (D5)
-      havel_inst.setShutdownCallback([] {
-        host::UIManager::instance().backend()->quitEventLoop(0);
-      });
-
-      int exitCode = backend->runEventLoop();
-
-      // Handle restart exit code
-      if (exitCode != 42) {
-        return exitCode; // Normal exit
-      }
-      // havel_inst destructor runs here — sees live UIService widget map
-    }
-
-    // D4 step 2: reset per-run state after Havel destruction
-    backend->resetPerRunState();
-    info("Restart requested - relaunching application");
-  }
-}
-
-int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
-  // Unify .hvc execution path with runScriptOnly.
-  std::vector<std::string> hvcFiles;
-  std::vector<std::string> hvFiles;
-  for (const auto &f : cfg.scriptFiles) {
-    if (f.size() >= 4 && f.substr(f.size() - 4) == ".hvc") {
-      hvcFiles.push_back(f);
-    } else {
-      hvFiles.push_back(f);
-    }
-  }
-  if (!hvcFiles.empty() && hvFiles.empty() && cfg.evalString.empty()) {
-    return runBytecodeFiles(cfg, hvcFiles);
-  }
-
-  std::string combinedCode;
-  std::string combinedNames;
-  for (const auto& f : cfg.scriptFiles) {
-    std::string content = readScriptFile(f);
-    if (!content.empty()) {
-      combinedCode += content + "\n";
-      if (!combinedNames.empty()) combinedNames += " + ";
-      combinedNames += f;
-    } else {
-    error("Cannot open script file: {}", f);
-    return 2;
-    }
-  }
-  if (!cfg.evalString.empty()) {
-    combinedCode += cfg.evalString + "\n";
-    if (!combinedNames.empty()) combinedNames += " + ";
-    combinedNames += "<eval>";
-  }
-
-  if (combinedCode.empty()) {
-    error("No script code provided");
-    return 1;
-  }
-
-  // Parse once to check for hotkey bindings
-  havel::parser::Parser parser{{
-    .lexer = cfg.debugLexer,
-    .parser = cfg.debugParser,
-    .ast = cfg.debugAst
-  }};
-  std::unique_ptr<havel::ast::Program> program;
-  try {
-    program = parser.produceAST(combinedCode);
-  } catch (const std::exception& e) {}
-
-  // Helper: check for hotkey bindings in AST
-  auto checkHotkeys = [](const havel::ast::Program& prog) -> bool {
-    for (const auto& stmt : prog.body) {
-      if (stmt && stmt->kind == havel::ast::NodeType::HotkeyBinding) return true;
-    }
-    return false;
-  };
-  bool hasHotkeys = program && checkHotkeys(*program);
-
-  if (hasHotkeys) {
-    // Full mode with UI backend — needs IO, hotkeys, event loop
-    if (debugging::debug_io) debug("Hotkeys detected — using full execution mode");
-
-    auto* backend = host::UIManager::instance().backend();
-    host::UIBackend::ApplicationMetadata meta;
-    meta.applicationName = "havel";
-    meta.applicationVersion = "1.0";
-    meta.organizationName = "havel";
-    meta.quitOnLastWindowClosed = true;
-    backend->setApplicationMetadata(meta);
-
-    std::vector<std::string> args;
-    for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
-
-    havel::Havel havel_inst(false, combinedNames, false, true, args);
-    if (!havel_inst.isInitialized()) {
-      error("Failed to initialize havel::Havel");
-      return 1;
-    }
-
-    auto* bytecodeVM = havel_inst.getBytecodeVM();
-    auto* modules = havel_inst.getModules();
-    if (!bytecodeVM || !modules) {
-        error("Bytecode VM not available");
-        return 1;
-    }
-
-    auto* hkManager = havel_inst.getHotkeyManagerPtr();
-    auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
-        havel_inst.getIOPtr(), hkManager, Configs::Get(),
-        havel_inst.getWindowManagerPtr(),
-        havel_inst.getBrightnessManager(),
-        havel_inst.getAudioManager(),
-        nullptr, nullptr, nullptr, nullptr, nullptr,
-        nullptr, nullptr, nullptr,
-        hkManager ? hkManager->getModeManager().get() : nullptr,
-        std::vector<std::string>{}));
-havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
-hostAPI->SetVM(bytecodeVM);
-
-bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
-
-    try {
-        havel::compiler::PipelineOptions options = modules->options();
-        options.compile_unit_name = combinedNames;
-        options.vm_override = bytecodeVM;
-        options.debugBytecode = cfg.debugBytecode;
-        havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-    } catch (const std::exception &e) {
-        error("Execution error: {}", e.what());
-        return 1;
-    }
-
-    // Signal the ExecutionEngine that the initial script is done and
-    // goroutine execution can begin.  Until this point executeFrame()
-    // is blocked to avoid concurrent VM state mutation from the event
-    // loop thread while the main thread is still running the script.
-    auto *ee = havel_inst.getExecutionEngine();
-    if (ee) ee->setScriptReady(true);
-
-    if (hkManager) {
-      hkManager->printHotkeys();
-    }
-
-    havel_inst.setShutdownCallback([] {
-      host::UIManager::instance().backend()->quitEventLoop(0);
-    });
-
-    if (!hkManager || hkManager->getHotkeyList().empty()) {
-      info("No hotkeys registered — exiting");
-      return 0;
-    }
-
-    info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
-    int exitCode = backend->runEventLoop();
-    return exitCode;
-  }
-
-  // Headless mode — no UI backend, no hotkeys, pure bytecode execution
-  if (debugging::debug_io) debug("Running combined scripts (headless): {}", combinedNames);
-
-	try {
-		havel::HavelEngine engine({
-			.debugBytecode = cfg.debugBytecode,
-			.debugLexer = cfg.debugLexer,
-			.debugParser = cfg.debugParser,
-			.debugAst = cfg.debugAst,
-			.stopOnError = cfg.stopOnError,
-			.leanMinimalStartup = cfg.minimalMode,
-			.pureStdlib = cfg.pureStdlib,
-            .vmConfig = cfg.vmConfig,
-			.serviceIncludes = cfg.serviceIncludes,
-			.serviceExcludes = cfg.serviceExcludes
-        });
-        engine.initializeMinimal();
-        engine.execute(combinedCode, "__main__", combinedNames);
-		engine.shutdown();
-		return 0;
-  } catch (const std::exception &e) {
-    error("Execution error: {}", e.what());
-    return 1;
-  }
-}
-
-int havel::init::HavelLauncher::runBytecodeFiles(const LaunchConfig &cfg,
-                                                  const std::vector<std::string> &hvcFiles) {
-  // Load and execute .hvc bytecode files directly
-
-  for (const auto& f : hvcFiles) {
-    std::ifstream file(f, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-      error("Cannot open bytecode file: {}", f);
-      return 2;
-    }
-
-    std::streamsize size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::vector<uint8_t> buffer(size);
-    if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
-      error("Failed to read bytecode file: {}", f);
-      return 2;
-    }
-
-    havel::compiler::ValueSerializer serializer;
-    auto chunk = serializer.deserializeChunk(buffer);
-    if (!chunk) {
-      error("Failed to deserialize bytecode: {}", f);
-      return 2;
-    }
-
-    havel::HostContext ctx;
-    havel::compiler::VM tempVm;
-    ctx.vm = &tempVm;
-        auto bridge = havel::createModules(ctx);
-        // Register host functions with VM
-        auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
-        const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;
-#ifdef HAVEL_ENABLE_LLVM
-        std::unique_ptr<havel::compiler::BytecodeOrcJIT> jit;
-        if (cfg.useJIT) {
-            jit = std::make_unique<havel::compiler::BytecodeOrcJIT>();
-            jit->setDebugMode(cfg.debugJIT);
-            jit->setDumpIR(cfg.dumpIR);
-            jit->setDumpAsmToFile(cfg.outputAsmToFile);
-            jit->setShowWarnings(cfg.aotWarnings);
-            vm->setHotFunctionCallback([jit_ptr = jit.get()](const havel::compiler::BytecodeFunction &func) {
-                if (!jit_ptr->isCompiled(func.name)) {
-                    jit_ptr->compileFunction(func);
-                }
-            });
-            vm->setJITCompiler(jit.get());
-        }
-#endif
-        bridge->install(
-            coreProfile ? havel::InstallProfile::Core
-                        : havel::InstallProfile::Full,
-            !coreProfile);
-        if (coreProfile) {
-            if (cfg.pureStdlib) {
-                havel::registerPureStdLib(*vm);
-            } else {
-                havel::registerCoreStdLib(*vm);
-            }
-        }
-
-        for (const auto& [name, fn] : bridge->options().host_functions) {
-            vm->registerHostFunction(name, fn);
-        }
-
-    info("Loaded bytecode file: {} ({} function(s))", f, chunk->getFunctionCount());
-    if (cfg.debugBytecode) {
-      info("Bytecode loaded successfully: {}", f);
-    }
-
-// Set main_chunk_ so CLOSURE correctly decides whether to snapshot globals
-auto chunkPtr = std::make_shared<compiler::BytecodeChunk>(std::move(*chunk));
-vm->setMainChunkShared(chunkPtr);
-
-// Set script directory for module resolution (so `use` finds .hvc/.hv modules)
-vm->setCurrentScriptDir(std::filesystem::path(f).parent_path().string());
-
-    // Populate app.args with script arguments (after --)
-    if (!cfg.scriptArgs.empty()) {
-        auto arrRef = vm->createHostArray();
-        for (const auto& arg : cfg.scriptArgs) {
-            auto strRef = vm->createRuntimeString(arg);
-            vm->pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
-        }
-        vm->setAppArgs(arrRef.id);
-    }
-
-    // Execute __main__ function from this chunk directly to keep string/constant tables valid
-    try {
-        auto result = vm->execute(*chunkPtr, "__main__");
-      (void)result;
-    } catch (const std::exception &e) {
-      error("Bytecode error in {}: {}", f, e.what());
-      bridge->shutdown();
-      return 1;
-    } catch (...) {
-      error("Unknown bytecode error in {}", f);
-      bridge->shutdown();
-      return 1;
-    }
-
-    bridge->shutdown();
-  }
-
-  return 0;
-}
-
-// Helper: Check if AST contains any hotkey bindings
-static bool hasHotkeyBindings(const havel::ast::Program& program) {
-  for (const auto& stmt : program.body) {
-    if (stmt && stmt->kind == havel::ast::NodeType::HotkeyBinding) {
-      return true;
-    }
-  }
-  return false;
-}
-
-int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
-                                              char *argv[]) {
-  // Check if we have .hvc bytecode files
-  std::vector<std::string> hvcFiles;
-  std::vector<std::string> hvFiles;
-  for (const auto& f : cfg.scriptFiles) {
-    if (f.size() >= 4 && f.substr(f.size() - 4) == ".hvc") {
-      hvcFiles.push_back(f);
-    } else {
-      hvFiles.push_back(f);
-    }
-  }
-
-  // Pure bytecode execution: load and run .hvc files directly
-  if (!hvcFiles.empty() && hvFiles.empty()) {
-    return runBytecodeFiles(cfg, hvcFiles);
-  }
-
-  // Pure script execution without IO, hotkeys, display, or GUI
-  std::string combinedCode;
-  std::string combinedNames;
-  for (const auto& f : cfg.scriptFiles) {
-    std::string content = readScriptFile(f);
-    if (!content.empty()) {
-      combinedCode += content + "\n";
-      if (!combinedNames.empty()) combinedNames += " + ";
-      combinedNames += f;
-    } else {
-      error("Cannot open script file: {}", f);
-      return 2;
-    }
-  }
-  if (!cfg.evalString.empty()) {
-    combinedCode += cfg.evalString + "\n";
-    if (!combinedNames.empty()) combinedNames += " + ";
-    combinedNames += "<eval>";
-  }
-
-  // Read from stdin if piped and no other source
-  if (combinedCode.empty() && !isatty(STDIN_FILENO)) {
-    std::ostringstream ss;
-    ss << std::cin.rdbuf();
-    combinedCode = ss.str();
-    combinedNames = "<stdin>";
-  }
-
-  if (combinedCode.empty()) return 0;
-
-  // Parse script to check for hotkey bindings
-  havel::parser::Parser parser{{
-    .lexer = cfg.debugLexer,
-    .parser = cfg.debugParser,
-    .ast = cfg.debugAst
-  }};
-  std::unique_ptr<havel::ast::Program> program;
-  try {
-    program = parser.produceAST(combinedCode);
-  } catch (const std::exception& e) {
-    // Parser aborted
-  }
-
-    if (parser.hasErrors() || !program) {
-        for (const auto& err : parser.getErrors()) {
-            std::cerr << "Parse error: " << err.message << " at line " << err.line << " col " << err.column << std::endl;
-        }
-        error("Failed to parse script");
-        return 1;
-    }
-
-  // If hotkeys found, switch to SCRIPT mode (with full IO/event loop)
-  if (hasHotkeyBindings(*program)) {
-    if (debugging::debug_io) debug("Hotkey bindings detected - starting full IO/event loop");
-    LaunchConfig fullCfg = cfg;
-    fullCfg.mode = Mode::SCRIPT;
-    return runScript(fullCfg, argc, argv);
-  }
-
-  // LINT-ONLY MODE: type-check only, no execution
-  if (cfg.lintOnly) {
-    std::string primaryFile = combinedNames.empty() ? "input" : combinedNames;
-    if (parser.hasErrors()) {
-      for (const auto& err : parser.getErrors()) {
-        std::string sourceLine;
-        if (err.line > 0) {
-          std::istringstream ss(combinedCode);
-          std::string line;
-          for (size_t i = 1; i <= err.line; ++i) {
-            if (!std::getline(ss, line)) break;
-            if (i == err.line) { sourceLine = line; break; }
-          }
-        }
-        std::string formatted = havel::ErrorPrinter::formatError(
-            "error", err.message, primaryFile,
-            err.line, err.column, 1, sourceLine);
-        std::cerr << formatted;
-      }
-      error("Linting failed with {} error(s)", parser.getErrors().size());
-      return 1;
-    }
-    if (program) {
-      havel::compiler::ByteCompiler compiler;
-      compiler.setCollectErrors(true);
-      try {
-        auto chunk = compiler.compile(*program);
-        (void)chunk;
-      } catch (const std::exception& e) {}
-      if (compiler.hasErrors()) {
-        for (const auto& err : compiler.errors()) {
-          std::string sourceLine;
-          if (err.line > 0) {
-            std::istringstream ss(combinedCode);
-            std::string line;
-            for (size_t i = 1; i <= err.line; ++i) {
-              if (!std::getline(ss, line)) break;
-              if (i == err.line) { sourceLine = line; break; }
-            }
-          }
-          std::string formatted = havel::ErrorPrinter::formatError(
-              "error", err.what(), primaryFile,
-              err.line, err.column, 1, sourceLine);
-          std::cerr << formatted;
-        }
-        error("Compilation failed with {} error(s)", compiler.errors().size());
-        return 1;
-      }
-    }
-    info("Linting successful");
-    return 0;
-  }
-
-	if (debugging::debug_io) debug("Running Havel scripts (pure mode): {}", combinedNames);
-
-	// Set up signal handling ...
-	struct sigaction sa;
-	sa.sa_flags = 0;
-	sigemptyset(&sa.sa_mask);
-    sa.sa_handler = [](int sig) { havel::exit(sig == SIGSEGV ? ExitReason::SignalCrash : ExitReason::SignalInt, 0); };
-    sigaction(SIGINT, &sa, nullptr);
-    sigaction(SIGTERM, &sa, nullptr);
-    sigaction(SIGSEGV, &sa, nullptr);
-
-    // Debug.AutoExit support for pure script mode
-    bool autoExit = Configs::Get().Get<bool>("Debug.AutoExit", false);
-    if (autoExit) {
-		int delay = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
-		std::thread([delay]() {
-			std::this_thread::sleep_for(std::chrono::seconds(delay));
-			if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) {
-				return; // AutoExit was disabled during the wait
-			}
-			if (debugging::debug_io) debug("AutoExit enabled - exiting after {} seconds", delay);
-			havel::exit(ExitReason::Normal, 0);
-		}).detach();
-	}
-
-    try {
-	havel::HavelEngine engine({
-			.debugBytecode = cfg.debugBytecode,
-			.debugLexer = cfg.debugLexer,
-			.debugParser = cfg.debugParser,
-			.debugAst = cfg.debugAst,
-			.stopOnError = cfg.stopOnError,
-			.leanMinimalStartup = cfg.minimalMode,
-        .pureStdlib = cfg.pureStdlib,
-            .vmConfig = cfg.vmConfig,
-            .serviceIncludes = cfg.serviceIncludes,
-            .serviceExcludes = cfg.serviceExcludes
-        });
-        auto t0 = std::chrono::high_resolution_clock::now();
-        engine.initializeMinimal();
-
-        if (!cfg.scriptArgs.empty()) {
-            auto& vm = *engine.vm();
-            auto arrRef = vm.createHostArray();
-            for (const auto& arg : cfg.scriptArgs) {
-                auto strRef = vm.createRuntimeString(arg);
-                vm.pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
-            }
-            vm.setAppArgs(arrRef.id);
-        }
-
-        auto t1 = std::chrono::high_resolution_clock::now();
-        engine.execute(combinedCode, "__main__", combinedNames);
-        auto t2 = std::chrono::high_resolution_clock::now();
-        engine.shutdown();
-        auto t3 = std::chrono::high_resolution_clock::now();
-
-        if (cfg.debugMode) {
-            double init_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-            double exec_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
-            double shut_ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
-            double total_ms = std::chrono::duration<double, std::milli>(t3 - t0).count();
-            info("benchmark: init={:.1f}ms exec={:.1f}ms shutdown={:.1f}ms total={:.1f}ms",
-                 init_ms, exec_ms, shut_ms, total_ms);
-        }
-        return 0;
-	} catch (const std::exception &e) {
-		error("Bytecode error: {}", e.what());
-		return 1;
-	}
-}
-
-int havel::init::HavelLauncher::runSelfHosted(const LaunchConfig &cfg) {
-    // Find launcher.hv relative to the binary
-    // Binary lives in build-debug/ or build-release/, modules are at repo root
-    char selfBuf[PATH_MAX];
-    ssize_t len = readlink("/proc/self/exe", selfBuf, sizeof(selfBuf) - 1);
-    std::string binDir;
-    if (len > 0) {
-        selfBuf[len] = '\0';
-        std::filesystem::path p(selfBuf);
-        binDir = p.parent_path().string();
-    }
-
-    std::vector<std::string> searchPaths = {
-        binDir + "/../modules/lang/launcher.hv",
-        binDir + "/../../modules/lang/launcher.hv",
-        "modules/lang/launcher.hv",
-        "../modules/lang/launcher.hv",
-        "../../modules/lang/launcher.hv",
-    };
-
-    std::string launcherPath;
-    for (const auto& candidate : searchPaths) {
-        std::error_code ec;
-        if (std::filesystem::exists(candidate, ec) && !ec) {
-            launcherPath = candidate;
-            break;
-        }
-    }
-
-    if (launcherPath.empty()) {
-        error("Cannot find modules/lang/launcher.hv (searched relative to binary and cwd)");
-        return 1;
-    }
-
-    // Resolve to absolute path
-    std::error_code ec;
-    auto absPath = std::filesystem::canonical(launcherPath, ec);
-    if (!ec) launcherPath = absPath.string();
-
-    std::string launcherCode = readScriptFile(launcherPath);
-    if (launcherCode.empty()) {
-        error("Cannot read launcher.hv at {}", launcherPath);
-        return 1;
-    }
-
-    // Build app.args: --self-hosted <script files> [-- script args]
-    // launcher.hv's main() reads app.args and dispatches
-    std::vector<std::string> appArgList;
-    appArgList.push_back("--self-hosted");
-    for (const auto& f : cfg.scriptFiles) {
-        appArgList.push_back(f);
-    }
-    if (cfg.lintOnly) appArgList.push_back("--lint");
-    for (const auto& a : cfg.scriptArgs) {
-        appArgList.push_back(a);
-    }
-
-    if (debugging::debug_io) debug("Self-hosted mode: launcher={}, args={}", launcherPath, appArgList.size());
-
-    // Set up signal handling
-    struct sigaction sa;
-    sa.sa_flags = 0;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_handler = [](int sig) { havel::exit(ExitReason::SignalInt, 0); };
-    sigaction(SIGINT, &sa, nullptr);
-    sigaction(SIGTERM, &sa, nullptr);
-
-    try {
-	havel::HavelEngine engine({
-		.debugBytecode = cfg.debugBytecode,
-		.debugLexer = cfg.debugLexer,
-		.debugParser = cfg.debugParser,
-		.debugAst = cfg.debugAst,
-		.stopOnError = cfg.stopOnError,
-		.leanMinimalStartup = true,
-        .pureStdlib = true,
-            .vmConfig = cfg.vmConfig,
-            .serviceIncludes = cfg.serviceIncludes,
-            .serviceExcludes = cfg.serviceExcludes
-        });
-        engine.initializeMinimal();
-
-        // Populate app.args for launcher.hv
-        auto& vm = *engine.vm();
-        auto arrRef = vm.createHostArray();
-        for (const auto& arg : appArgList) {
-            auto strRef = vm.createRuntimeString(arg);
-            vm.pushHostArrayValue(arrRef, havel::compiler::Value::makeStringId(strRef.id));
-        }
-        vm.setAppArgs(arrRef.id);
-
-        engine.execute(launcherCode, "__main__", launcherPath);
-        engine.shutdown();
-        return 0;
-    } catch (const std::exception &e) {
-        error("Self-hosted error: {}", e.what());
-        return 1;
-    }
-}
-
-int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
-                                                 char *[]) {
-  try {
-    if (cfg.minimalMode) {
-      if (cfg.scriptFiles.empty()) {
-        error("No script file provided");
-        return 1;
-      }
-        info("Running scripts and starting REPL in minimal mode...");
-
-        std::string combinedCode;
-        std::string combinedNames;
-        for (const auto& f : cfg.scriptFiles) {
-            std::string content = readScriptFile(f);
-            if (!content.empty()) {
-                combinedCode += content + "\n";
-                if (!combinedNames.empty()) combinedNames += " + ";
-                combinedNames += f;
-            }
-    }
-
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError,
-            .vmConfig = cfg.vmConfig,
-			.serviceIncludes = cfg.serviceIncludes,
-			.serviceExcludes = cfg.serviceExcludes
-        });
-        engine.initializeMinimal();
-    
-        info("Executing script code...");
-        try {
-            engine.execute(combinedCode, "__main__", combinedNames.empty() ? "script" : combinedNames);
-        } catch (const std::exception &e) {
-            error("Script execution failed: {}", e.what());
-            return 1;
-        }
-    
-        havel::repl::REPLConfig replConfig;
-        replConfig.debugMode = cfg.debugMode;
-        replConfig.stopOnError = cfg.stopOnError;
-        replConfig.debugBytecode = cfg.debugBytecode;
-        replConfig.debugLexer = cfg.debugLexer;
-        replConfig.debugParser = cfg.debugParser;
-        replConfig.debugAst = cfg.debugAst;
-        replConfig.outputLogFile = cfg.outputLogFile;
-        replConfig.historyFile = cfg.historyFile;
-        havel::repl::REPL repl(replConfig);
-        repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
-
-        // Pump goroutines on the REPL thread
-        repl.setPumpCallback([&engine]() {
-            engine.tickGoroutines();
-        });
-
-        return repl.run();
-    } else {
-      info("Running scripts and starting REPL with full features...");
-      std::string combinedCode;
-      std::string combinedNames;
-      for (const auto& f : cfg.scriptFiles) {
-        std::string content = readScriptFile(f);
-        if (!content.empty()) {
-          combinedCode += content + "\n";
-          if (!combinedNames.empty()) combinedNames += " + ";
-          combinedNames += f;
-        }
-      }
-
-      auto* replBackend = host::UIManager::instance().backend();
-      if (!replBackend) {
-        error("No UI backend available. Use --minimal or --run for REPL without UI.");
-        return 1;
-      }
-      host::UIBackend::ApplicationMetadata replMeta;
-      replMeta.applicationName = "havel";
-      replMeta.organizationName = "havel";
-      replMeta.quitOnLastWindowClosed = false;
-      replBackend->setApplicationMetadata(replMeta);
-
-      std::vector<std::string> args;
-      // Use repl = true so EventListener is non-threaded and cooperative on REPL thread.
-      havel::Havel havel_inst(false, combinedNames, true, true, args);
-      
-      if (!havel_inst.isInitialized()) return 1;
-      
-    auto *bytecodeVM = havel_inst.getBytecodeVM();
-    auto *modules = havel_inst.getModules();
-
-    if (!bytecodeVM || !modules) return 1;
-
-    // Setup mirrors runScript: register service registry and set timer check
-    // before Pipeline execution to force slow dispatch path (workaround for
-    // fast-path stack corruption with CALL after LOAD_CONST sequence).
-    bytecodeVM->setTimerCheckFunction([modules]() { modules->checkTimers(); });
-
-    try {
-        havel::compiler::PipelineOptions options = modules->options();
-        options.compile_unit_name = combinedNames;
-        options.vm_override = bytecodeVM;
-        options.debugBytecode = cfg.debugBytecode;
-        havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
-    } catch (const std::exception &e) {
-        error("Script execution error: {}", e.what());
-        return 1;
-    }
-
-    auto *ee = havel_inst.getExecutionEngine();
-    if (ee) ee->setScriptReady(true);
-
-    // Print registered hotkeys
-      auto *hkManager = havel_inst.getHotkeyManagerPtr();
-      if (hkManager) {
-        hkManager->printHotkeys();
-        }
-      info("Script loaded. Hotkeys registered. Enter REPL...");
-      
-      // Create REPL with full host API
-        havel::repl::REPLConfig replConfig;
-        replConfig.debugMode = cfg.debugMode;
-        replConfig.stopOnError = cfg.stopOnError;
-        replConfig.debugBytecode = cfg.debugBytecode;
-        replConfig.debugLexer = cfg.debugLexer;
-        replConfig.debugParser = cfg.debugParser;
-        replConfig.debugAst = cfg.debugAst;
-        replConfig.outputLogFile = cfg.outputLogFile;
-        replConfig.historyFile = cfg.historyFile;
-
-        havel::repl::REPL repl(replConfig);
-      
-      // Create host API with full features
-        auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
-          havel_inst.getIOPtr(),
-          havel_inst.getHotkeyManagerPtr(),
-          Configs::Get(),
-          havel_inst.getWindowManagerPtr(),
-          havel_inst.getBrightnessManager(),
-          havel_inst.getAudioManager(),
-          nullptr, nullptr, nullptr, nullptr, nullptr,
-          nullptr, nullptr, nullptr,
-          hkManager ? hkManager->getModeManager().get() : nullptr,
-          std::vector<std::string>{}));
-
-havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
-hostAPI->SetVM(bytecodeVM);
-
-// Attach REPL to the existing VM from the Havel instance
-      // (instead of initialize() which creates a new VM)
-      repl.attach(bytecodeVM, havel_inst.getModules(), collectKnownGlobals(bytecodeVM));
-
-      // Pump EventListener on the REPL thread so event processing shares the same thread
-      {
-        auto *io = havel_inst.getIOPtr();
-        auto *hkManager = havel_inst.getHotkeyManagerPtr();
-        if (io) {
-          repl.setPumpCallback([io]() {
-            io->PumpOnce();
-          });
-          repl.setUngrabCallback([io, hkManager]() {
-            if (hkManager) hkManager->suspendGrabs();
-            else io->UngrabAll();
-          });
-          repl.setResumeGrabsCallback([hkManager]() {
-            if (hkManager) hkManager->resumeGrabs();
-          });
-        }
-      }
-
-      // Enter REPL
-      return repl.run();
-    }
-  } catch (const std::exception &e) {
-    error("Script+REPL error: {}", e.what());
-    return 1;
-  }
-}
-
 void havel::init::HavelLauncher::showHelp() {
-std::cout << " --debug-bytecode, -dbc Enable bytecode debugging\n";
-    std::cout << " --debug-gc, -dgc       Enable GC debugging\n";
-std::cout << " --debug-engine, -de Enable engine debugging\n";
-std::cout << " --debug-io, -dio Enable IO debugging\n";
-std::cout << " --debug-hotkeys, -dhk Enable hotkey debugging\n";
-  std::cout << "  --diff              Compare bytecode with previous run "
-               "(implies -dbc)\n";
-  std::cout << " --error, -e Stop on first error/warning\n";
-  std::cout << " --eval, -E CODE Run inline Havel code (minimal mode)\n";
-  std::cout << " --minimal, -m Minimal mode (no IO/hotkeys/GUI)\n";
-  std::cout << "  --repl, -r          Start interactive REPL (full runtime with hotkeys, GUI)\n";
-  std::cout << "  --interactive, -i   Same as --repl\n";
-  std::cout << "  --gui               GUI-only mode (no hotkeys)\n";
-  std::cout
-        << " --run Run script in minimal mode (auto-enables -m)\n";
-    std::cout
-        << " --self-hosted Run via pure Havel pipeline (launcher.hv)\n";
-  std::cout
-      << "  --test, -t          Run all .hv scripts in a directory\n";
-  std::cout << "  --lint              Check syntax and compilation errors\n";
-	std::cout << " --build Compile to .hvc bytecode file\n";
-	std::cout << " --output, -o PATH Set output path for --build\n";
-	std::cout << " --emit-llvm FILE Output LLVM IR (.ll) for AOT compilation\n";
-	std::cout << " --emit-asm FILE Output native assembly (.s) for AOT\n";
-	std::cout << " --emit-obj FILE Output object file (.o) for AOT linking\n";
-	std::cout << " --target <mode> Target backend: interpret|jit|aot|asm|ir|wasm|elf|bin\n";
-	std::cout << " --os <name> AOT/JIT target OS: native|linux|windows|macos|wasm\n";
-	std::cout << " --aot-warnings Enable AOT/JIT warning messages\n";
-	std::cout << " --no-aot-warnings Disable AOT/JIT warning messages\n";
-std::cout << " --link-lib <lib> Add linker library/flag (repeatable)\n";
-	std::cout << " --profile <name> AOT link profile: full|core\n";
-	std::cout << " --full-aot Emit llvm+asm+obj+shared+executable in one run\n";
-	std::cout << " --arch <triple> Set target architecture (e.g. x86_64-pc-linux-gnu)\n";
-	std::cout << " --syntax <type> Assembly syntax: att|intel\n";
-	std::cout << " --no-jit Disable JIT compilation\n";
-	std::cout << " --debug-jit, -djt Print LLVM IR and Assembly to console\n";
-	std::cout << " -S Output compiled IR and Assembly to files\n";
-	std::cout << " --input, -i TYPE Set input backend (evdev, x11, wayland, auto)\n";
-    std::cout << " --enable-service <name> Include only this service (repeatable)\n";
-    std::cout << " --disable-service <name> Exclude this service (repeatable)\n";
-    std::cout << " --list-services List all available services and exit\n";
-    std::cout << "\nVM Configuration:\n";
-    std::cout << " --heap-max <bytes> Max heap size in bytes (default 4GB)\n";
-    std::cout << " --gc-budget <n> GC allocation budget (default 65536)\n";
-    std::cout << " --gc-incremental Enable incremental GC\n";
-    std::cout << " --gc-stop-the-world Enable stop-the-world GC (disables incremental)\n";
-    std::cout << " --gc-full-interval <n> Minor collections between full GC (default 8)\n";
-    std::cout << " --gc-promotion-age <n> Generations before promotion (default 2)\n";
-    std::cout << " --max-call-depth <n> Max call stack depth (default 1024)\n";
-    std::cout << " --max-instructions <n> Execution instruction limit (0=unlimited)\n";
-    std::cout << " --tick-instructions <n> Goroutine instructions per tick (default 10000)\n";
-    std::cout << " --hotkey-tick-instructions <n> Hotkey goroutine tick budget (default 100000)\n";
-    std::cout << " --tier1-threshold <n> Tier1 JIT compile threshold (default 1000)\n";
-    std::cout << " --tier2-threshold <n> Tier2 JIT compile threshold (default 10000)\n";
-    std::cout << " --tiering Enable tiered JIT compilation\n";
-    std::cout << " --timer-interval <n> Instructions between timer checks (default 1000)\n";
-    std::cout << " --help, -h Show this help\n";
+  std::cout << R"(
+Usage: havel [options] <script.hv>
 
-  std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
-  std::cout << "If no arguments are provided, starts interactive REPL with full features.\n";
-  std::cout << "\nModes:\n";
-  std::cout << "  havel                   - Start interactive REPL (full features)\n";
-  std::cout << "  havel script.hv         - Run script with FULL features\n";
-  std::cout << "  havel --repl script.hv    - Run script then REPL (FULL features)\n";
-  std::cout << "  havel --repl              - Start interactive REPL (full runtime)\n";
-  std::cout << "  havel -i                  - Same as --repl\n";
-    std::cout << " havel --run script.hv - Run script in MINIMAL mode\n";
-    std::cout << " havel --run --self-hosted script.hv - Run via pure Havel pipeline\n";
-  std::cout << "  havel --test dir/         - Run all .hv files in directory\n";
-  std::cout << "  havel --lint script.hv    - Check for errors without running\n";
-  std::cout << "  havel --build script.hv   - Compile to bytecode (.hvc)\n";
-  std::cout << "  havel --build script.hv -o out.hvc  - Compile to specific file\n";
-  std::cout << "  havel --target interpret script.hv   - Run on bytecode interpreter\n";
-  std::cout << "  havel --target jit script.hv         - Run with LLVM JIT enabled\n";
-  std::cout << "  havel --target ir script.hv          - Emit LLVM IR (.ll)\n";
-  std::cout << "  havel --target asm script.hv         - Emit native assembly (.s)\n";
-  std::cout << "  havel --target aot script.hv         - Emit object (.o) + shared binary (.so)\n";
-  std::cout << "  havel --full-aot --os windows script.hv - Emit full AOT set for Windows\n";
-  std::cout << "  havel --target wasm script.hv        - Emit WebAssembly binary (.wasm)\n";
-  std::cout << "  havel --target elf script.hv         - Emit standalone ELF executable\n";
-  std::cout << " havel --minimal script.hv - Run script in MINIMAL mode\n";
-  std::cout << " havel --eval 'print(1+2)' - Run inline code\n";
-  std::cout << " havel --repl --minimal - Start REPL in minimal mode (no GUI)\n";
-  std::cout << "\nFull mode (default):\n";
-  std::cout << "  All features enabled: hotkeys, GUI, display, IO, etc.\n";
-  std::cout << "  Use for normal automation and hotkey scripts.\n";
-  std::cout << "\nMinimal mode (--minimal or --run):\n";
-  std::cout << "  Executes scripts without IO, hotkeys, display, or GUI.\n";
-  std::cout
-      << "  Useful for testing scripts that auto-exit or don't need input.\n";
-  std::cout << "  Example: havel --run scripts/test_types.hv\n";
-  std::cout << "\nREPL options:\n";
-  std::cout << "  --output-log PATH   Save REPL session output to file\n";
-  std::cout << "  --history-file PATH Read/write REPL history from/to file (default: ~/.havel_history)\n";
-  std::cout << "\nDebugging flags:\n";
-    std::cout << " --debug-bytecode Print bytecode to console\n";
-    std::cout << " --debug-gc       Print GC collection info\n";
-std::cout << " --debug-engine Print engine scheduling info\n";
-std::cout << " --debug-io Print IO subsystem info\n";
-std::cout << " --debug-hotkeys Print hotkey registration info\n";
-    std::cout << " --diff Compare bytecode with previous run\n";
-  std::cout << "  Snapshots saved to: /tmp/havel-bytecode/\n";
-}
+Options:
+  -h, --help          Show this help
+  -d, --debug         Enable debug mode
+  -dp, --debug-parser Enable parser debugging
+  -da, --debug-ast    Enable AST debugging
+  -dl, --debug-lexer  Enable lexer debugging
+  -dbc, --debug-bytecode  Enable bytecode debugging
+  -dgc, --debug-gc    Enable GC debugging
+  -de, --debug-engine Enable engine debugging
+  -dio, --debug-io    Enable IO debugging
+  -dhk, --debug-hotkeys Enable hotkey debugging
+  -e, --error         Stop on first error/warning
+  -E, --eval CODE     Run inline Havel code
+  -m, --minimal       Minimal mode (no IO/hotkeys/GUI)
+  -r, --repl          Start interactive REPL
+  -i, --interactive   Same as --repl
+  --run               Run script in minimal mode
+  --self-hosted       Run via pure Havel pipeline
+  -t, --test DIR      Run all .hv files in a directory
+  --lint FILE         Check syntax and compilation errors
+  --build FILE        Compile to bytecode (.hvc)
+  -o, --output PATH   Output path for --build
+  --emit-llvm FILE    Output LLVM IR (.ll)
+  --emit-asm FILE     Output native assembly (.s)
+  --emit-obj FILE     Output object file (.o)
+  --full-aot          Emit all artifacts in one run
+  --target MODE       Target: interpret|jit|aot|asm|ir|wasm|elf|bin
+  --os NAME           Target OS: native|linux|windows|macos|wasm
+  --arch TRIPLE       Target architecture
+  --syntax TYPE       Assembly syntax: att|intel
+  --no-jit            Disable JIT compilation
+  --debug-jit         Print LLVM IR and Assembly
+  --input TYPE        Input backend: evdev|x11|wayland|auto
+  --enable-service NAME  Include service
+  --disable-service NAME Exclude service
+  --list-services     List available services
 
-// REPL implementation using bytecode VM
-int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
-  try {
-    if (cfg.minimalMode) {
-    info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
+Modes:
+  havel                   - Start REPL (full features)
+  havel script.hv         - Run script (full features)
+  havel --run script.hv   - Run script (minimal mode)
+  havel --repl script.hv  - Run script then REPL
+  havel --test DIR        - Run tests in directory
+  havel --lint FILE       - Lint script without running
+  havel --build FILE      - Compile to bytecode
+  havel --target jit FILE - Run with JIT enabled
 
-    std::string combinedCode;
-    std::string combinedNames;
-    for (const auto& f : cfg.scriptFiles) {
-      std::string content = readScriptFile(f);
-      if (!content.empty()) {
-        combinedCode += content + "\n";
-        if (!combinedNames.empty()) combinedNames += " + ";
-        combinedNames += f;
-      } else {
-        error("Cannot open startup script: {}", f);
-      }
-    }
-
-        havel::HavelEngine engine({
-            .debugBytecode = cfg.debugBytecode,
-            .debugLexer = cfg.debugLexer,
-            .debugParser = cfg.debugParser,
-            .debugAst = cfg.debugAst,
-            .stopOnError = cfg.stopOnError,
-            .vmConfig = cfg.vmConfig,
-			.serviceIncludes = cfg.serviceIncludes,
-			.serviceExcludes = cfg.serviceExcludes
-        });
-        engine.initializeMinimal();
-
-        info("Executing script code...");
-        try {
-            engine.execute(combinedCode, "__main__", combinedNames.empty() ? "script" : combinedNames);
-        } catch (const std::exception &e) {
-            error("Script execution failed: {}", e.what());
-            return 1;
-        }
-
-        havel::repl::REPLConfig replConfig;
-        replConfig.debugMode = cfg.debugMode;
-        replConfig.stopOnError = cfg.stopOnError;
-        replConfig.debugBytecode = cfg.debugBytecode;
-        replConfig.debugLexer = cfg.debugLexer;
-        replConfig.debugParser = cfg.debugParser;
-        replConfig.debugAst = cfg.debugAst;
-        replConfig.outputLogFile = cfg.outputLogFile;
-        replConfig.historyFile = cfg.historyFile;
-
-        havel::repl::REPL repl(replConfig);
-        repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
-
-        // Pump goroutines on the REPL thread
-        repl.setPumpCallback([&engine]() {
-            engine.tickGoroutines();
-        });
-
-        return repl.run();
-    } else {
-      info("Starting Havel REPL with full features (hotkeys, GUI)...");
-      
-      // Debug: Show mode information
-        havel::debug("Running in REPL mode (full):");
-        havel::debug(" - GUI: enabled");
-        havel::debug(" - IO/Hotkeys: enabled");
-
-      // Full mode - initialize Qt and havel::Havel
-      auto* replBackend = host::UIManager::instance().backend();
-      if (!replBackend) {
-        error("No UI backend available. Use --minimal or --run for REPL without UI.");
-        return 1;
-      }
-      host::UIBackend::ApplicationMetadata replMeta;
-      replMeta.applicationName = "havel";
-      replMeta.organizationName = "havel";
-      replMeta.quitOnLastWindowClosed = false;
-      replBackend->setApplicationMetadata(replMeta);
-
-      // Create havel::Havel with full features
-      std::vector<std::string> args;
-      havel::Havel havel_inst(false, "", true, true, args);
-      
-      if (!havel_inst.isInitialized()) {
-        error("Failed to initialize havel::Havel");
-        return 1;
-      }
-      
-    // Get VM and modules from havel::Havel
-    auto *bytecodeVM = havel_inst.getBytecodeVM();
-    auto *modules = havel_inst.getModules();
-
-    if (!bytecodeVM || !modules) {
-        error("Bytecode VM or Modules not available");
-        return 1;
-    }
-      
-      // Create REPL with full host API
-        havel::repl::REPLConfig replConfig;
-        replConfig.debugMode = cfg.debugMode;
-        replConfig.stopOnError = cfg.stopOnError;
-        replConfig.debugBytecode = cfg.debugBytecode;
-        replConfig.debugLexer = cfg.debugLexer;
-        replConfig.debugParser = cfg.debugParser;
-        replConfig.debugAst = cfg.debugAst;
-        replConfig.outputLogFile = cfg.outputLogFile;
-        replConfig.historyFile = cfg.historyFile;
-
-        havel::repl::REPL repl(replConfig);
-
-        // Create host API with full features
-        auto *hkManager = havel_inst.getHotkeyManagerPtr();
-      auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
-          havel_inst.getIOPtr(),
-          havel_inst.getHotkeyManagerPtr(),
-          Configs::Get(),
-          havel_inst.getWindowManagerPtr(),
-          havel_inst.getBrightnessManager(),
-          havel_inst.getAudioManager(),
-          nullptr, nullptr, nullptr, nullptr, nullptr,
-          nullptr, nullptr, nullptr,
-          hkManager ? hkManager->getModeManager().get() : nullptr,
-          std::vector<std::string>{}));
-
-havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes, cfg.serviceExcludes);
-hostAPI->SetVM(bytecodeVM);
-repl.attach(bytecodeVM, modules, collectKnownGlobals(bytecodeVM));
-
-      auto *ee = havel_inst.getExecutionEngine();
-      if (ee) ee->setScriptReady(true);
-
-      // Pump EventListener on the REPL thread so event processing shares the same thread
-      {
-        auto *io = havel_inst.getIOPtr();
-        auto *hkManager = havel_inst.getHotkeyManagerPtr();
-        if (io) {
-          repl.setPumpCallback([io]() {
-            io->PumpOnce();
-          });
-          repl.setUngrabCallback([io, hkManager]() {
-            if (hkManager) hkManager->suspendGrabs();
-            else io->UngrabAll();
-          });
-          repl.setResumeGrabsCallback([hkManager]() {
-            if (hkManager) hkManager->resumeGrabs();
-          });
-        }
-      }
-
-      // Run REPL
-      return repl.run();
-    }
-  } catch (const std::exception &e) {
-    error("REPL error: {}", e.what());
-    return 1;
-  }
-}
-
-int havel::init::HavelLauncher::runTest(const LaunchConfig &cfg) {
-  if (cfg.testDir.empty()) {
-    error("No test directory specified. Usage: havel --test <directory>");
-    return 1;
-  }
-
-  // Find all .hv files in the directory
-  std::vector<std::string> testFiles;
-  try {
-    for (const auto &entry : std::filesystem::directory_iterator(cfg.testDir)) {
-      if (entry.is_regular_file()) {
-        std::string path = entry.path().string();
-        if (path.size() >= 3 && path.substr(path.size() - 3) == ".hv") {
-          testFiles.push_back(path);
-        }
-      }
-    }
-  } catch (const std::exception &e) {
-    error("Failed to read test directory '{}': {}", cfg.testDir, e.what());
-    return 1;
-  }
-
-  if (testFiles.empty()) {
-    error("No .hv files found in '{}'", cfg.testDir);
-    return 1;
-  }
-
-  // Sort for consistent output
-  std::sort(testFiles.begin(), testFiles.end());
-
-  // Get path to self for running tests
-  std::string selfPath = "/proc/self/exe";
-  char selfBuf[PATH_MAX];
-  ssize_t len = readlink(selfPath.c_str(), selfBuf, sizeof(selfBuf) - 1);
-  if (len == -1) {
-    // Fallback: try argv[0]
-    selfPath = "havel";
-  } else {
-    selfBuf[len] = '\0';
-    selfPath = std::string(selfBuf);
-  }
-
-  // Run each test as a subprocess with timeout
-  int passed = 0;
-  int failed = 0;
-  int total = static_cast<int>(testFiles.size());
-
-  info("Running {} tests from '{}'", total, cfg.testDir);
-
-  for (const auto &testFile : testFiles) {
-    std::string testName = testFile.substr(testFile.find_last_of('/') + 1);
-
-    // Run test as subprocess 
-    std::string cmd = std::format("timeout {} {} --run {}", cfg.testTimeout, selfPath, testFile);
-    FILE *pipe = popen(cmd.c_str(), "r");
-    if (!pipe) {
-      error("  FAIL {} - failed to run", testName);
-      failed++;
-      continue;
-    }
-
-    std::string output;
-    char buf[256];
-    while (fgets(buf, sizeof(buf), pipe)) {
-      output += buf;
-    }
-    int status = pclose(pipe);
-    int exitCode = WEXITSTATUS(status);
-
-    if (exitCode == 0) {
-      info("  PASS {}", testName);
-      passed++;
-    } else {
-      // Extract error message
-      std::string errLine;
-      std::istringstream iss(output);
-      std::string line;
-      while (std::getline(iss, line)) {
-        if (line.find("[ERROR]") != std::string::npos ||
-            line.find("Error:") != std::string::npos) {
-          errLine = line;
-          // Clean up ANSI/color codes
-          errLine.erase(std::remove(errLine.begin(), errLine.end(), '\r'), errLine.end());
-          break;
-        }
-      }
-      if (exitCode == 124) {
-        error("  FAIL {} - timeout (10s)", testName);
-      } else if (!errLine.empty()) {
-        // Extract just the error message after [ERROR] or Error:
-        size_t pos = errLine.find("[ERROR]");
-        if (pos != std::string::npos) {
-          errLine = errLine.substr(pos + 7);
-        } else {
-          pos = errLine.find("Error:");
-          if (pos != std::string::npos) {
-            errLine = errLine.substr(pos + 6);
-          }
-        }
-        // Trim leading space
-        while (!errLine.empty() && errLine[0] == ' ') errLine.erase(0, 1);
-        error("  FAIL {} - {}", testName, errLine);
-      } else {
-        error("  FAIL {} - exit code {}", testName, exitCode);
-      }
-      failed++;
-    }
-  }
-
-  // Print summary
-  std::cout << "\n";
-  info("Test Results:");
-  info("  Total:  {}", total);
-  info("  Passed: {}", passed);
-  info("  Failed: {}", failed);
-
-  if (failed > 0) {
-    error("{} test(s) failed", failed);
-    return 1;
-  }
-
-  info("All tests passed!");
-  return 0;
-}
-
-int havel::init::HavelLauncher::runCli(int, char *[]) {
-  error("CLI not available - interpreter removed");
-  return 1;
+VM Configuration:
+  --heap-max <bytes>     --gc-budget <n>      --gc-incremental
+  --gc-stop-the-world    --gc-full-interval   --gc-promotion-age
+  --max-call-depth       --max-instructions   --tick-instructions
+  --hotkey-tick-instructions --tier1-threshold  --tier2-threshold
+  --tiering              --timer-interval
+)" << std::flush;
 }
 
 int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
+
   // Build mode: compile .hv files to .hvc bytecode
   std::string combinedCode;
   std::string primaryFile;
@@ -2112,7 +1743,7 @@ for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
         info("AOT Target: {} ({})", target->getName(), targetTripleStr);
 
         llvm::TargetOptions opt;
-        if (cfg.asmSyntax == AsmSyntax::INTEL) {
+        if (cfg.asmSyntax == LaunchConfig::AsmSyntax::INTEL) {
             opt.MCOptions.OutputAsmVariant = 1;
         }
 

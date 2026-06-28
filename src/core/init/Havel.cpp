@@ -298,7 +298,6 @@ void Havel::initialize(bool isStartup) {
 		auto* vm = bytecodeVM.get();
 		auto* watcherRegistry = executionEngine->getWatcherRegistry();
 		if (eventQueue && vm && watcherRegistry) {
-			fprintf(stderr, "[TRACE] REGISTERING VAR_CHANGED handler on EventQueue=%p\n", (void*)eventQueue);
 			eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
 				[vm, watcherRegistry, hostCtx = hostContext.get()](const compiler::Event& event) {
 				auto* name_ptr = static_cast<std::string*>(event.ptr);
@@ -336,21 +335,12 @@ void Havel::initialize(bool isStartup) {
 				sched->forEachConditionalHotkey(
 					[vm, hostCtx, &var_name, sched](compiler::Scheduler::Goroutine* g) {
 					if (!g) return;
-					fprintf(stderr, "[TRACE] VAR_CHANGED handler checking gid=%u state=%d reason=%d var='%s' deps_sz=%zu alias='%s'\n",
-						g->id, (int)g->state.load(), (int)g->suspension_reason.load(std::memory_order_acquire),
-						var_name.c_str(), g->hotkey_condition_deps.size(), g->hotkey_condition_alias.c_str());
 					if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
 						g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
 					if (g->hotkey_condition_deps.empty() ||
-						g->hotkey_condition_deps.count(var_name) == 0) {
-						fprintf(stderr, "[TRACE]   -> skip: dep not found in {");
-						for (auto& d : g->hotkey_condition_deps) fprintf(stderr, "%s ", d.c_str());
-						fprintf(stderr, "}\n");
-						return;
-					}
-					fprintf(stderr, "[TRACE]   -> re-evaluating condition for '%s'\n", g->hotkey_condition_alias.c_str());
+						g->hotkey_condition_deps.count(var_name) == 0) return;
 					auto condVal = vm->externalRootValue(g->hotkey_condition_callback_id);
-					if (!condVal) { fprintf(stderr, "[TRACE]   -> condVal is null\n"); return; }
+					if (!condVal) return;
 						auto tracker = std::make_shared<compiler::DependencyTracker>();
 						compiler::DependencyTrackerScope scope(tracker);
 						bool conditionMet = false;
@@ -364,18 +354,18 @@ void Havel::initialize(bool isStartup) {
 						g->hotkey_condition_deps = std::move(newDeps);
 						bool prev = g->hotkey_condition_last_result;
 						g->hotkey_condition_last_result = conditionMet;
-					if (prev == conditionMet) { fprintf(stderr, "[TRACE]   -> condition unchanged (was=%d still=%d)\n", prev, conditionMet); return; }
-					fprintf(stderr, "[TRACE]   -> condition CHANGED: was=%d now=%d alias='%s'\n", prev, conditionMet, g->hotkey_condition_alias.c_str());
+					if (prev == conditionMet) return;
 					if (conditionMet) {
 						if (!g->hotkey_condition_alias.empty()) {
 							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
-							if (hm) { hm->SetHotkeyGrab(g->hotkey_condition_alias, true); fprintf(stderr, "[TRACE]   -> SetHotkeyGrab(%s, true)\n", g->hotkey_condition_alias.c_str()); }
+							fprintf(stderr, "[Havel] VAR_CHANGED condition TRUE for gid=%d alias=%s hm=%p\n", g->id, g->hotkey_condition_alias.c_str(), (void*)hm);
+							if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
 						}
 						sched->wakeHotkey(g);
 					} else {
 						if (!g->hotkey_condition_alias.empty()) {
 							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
-							if (hm) { hm->SetHotkeyGrab(g->hotkey_condition_alias, false); fprintf(stderr, "[TRACE]   -> SetHotkeyGrab(%s, false)\n", g->hotkey_condition_alias.c_str()); }
+							if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
 						}
 					}
 					});

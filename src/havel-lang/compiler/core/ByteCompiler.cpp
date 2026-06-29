@@ -3480,7 +3480,9 @@ case ast::NodeType::AtExpression: {
     bool isDirective = (fieldId->symbol == "disable" ||
                         fieldId->symbol == "enable" ||
                         fieldId->symbol == "remove" ||
-                        fieldId->symbol == "toggle");
+                        fieldId->symbol == "toggle" ||
+                        fieldId->symbol == "stop" ||
+                        fieldId->symbol == "cancel");
 
     // Load 'this' (slot 0 for instance methods, or LOAD_GLOBAL for non-class methods)
     if (!current_class_name_.empty()) {
@@ -7723,8 +7725,14 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
 
  compileClosureBody(*expression.body, "<interval>");
 
- // Emit LOAD_GLOBAL + CALL to interval.start
+  // Emit LOAD_GLOBAL + CALL to interval.start
   emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+
+  // Store interval ID as 'this' so @stop works inside the closure
+  {
+    uint32_t strId = addStringConstant("this");
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+  }
 }
 
 void ByteCompiler::compileUpdateBlockExpression(const ast::UpdateBlockExpression &expression) {
@@ -7768,8 +7776,14 @@ void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expres
 
  compileClosureBody(*expression.body, "<timeout>");
 
- // Emit LOAD_GLOBAL + CALL to timeout.start
- emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+  // Emit LOAD_GLOBAL + CALL to timeout.start
+  emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+
+  // Store timeout ID as 'this' so @stop/@cancel works inside the closure
+  {
+    uint32_t strId = addStringConstant("this");
+    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+  }
 }
 
 // Compile a closure body, resolving identifiers against the enclosing function's scope

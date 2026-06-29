@@ -1,3 +1,24 @@
+#pragma once
+#include <filesystem>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include "core/Value.hpp"
+
+namespace havel {
+
+class Environment;
+class IHostAPI;
+class Interpreter;
+
+using ModuleFn = std::function<void(Environment &)>;
+using InterpreterModuleFn = std::function<void(Environment &, Interpreter *)>;
+using HostModuleFn = std::function<void(Environment &, std::shared_ptr<IHostAPI>)>;
+
 class ModuleLoader {
 public:
     std::string self_hosted_modules_path_ = "";

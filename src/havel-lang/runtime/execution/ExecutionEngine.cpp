@@ -107,6 +107,11 @@ bool ExecutionEngine::executeFrame() {
   }
 
   if (vm_->isInExecute()) {
+    static int vme_skip_count = 0;
+    if (vme_skip_count < 3) {
+      fprintf(stderr, "[EE-DIAG] executeFrame: vm_in_execute=true, skipping goroutine processing (runnable=%zu)\n", scheduler_->runnableCount());
+      vme_skip_count++;
+    }
     scheduler_->drainDeferredCallbacks();
     return false;
   }

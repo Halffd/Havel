@@ -1,3 +1,26 @@
+#pragma once
+
+#include <memory>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include <cstdint>
+#include <functional>
+
+#include "../core/Value.hpp"
+
+namespace havel {
+
+// Forward declarations
+class Environment;
+class Interpreter;
+class IHostAPI;
+using ModuleFn = std::function<void(Environment&)>;
+using InterpreterModuleFn = std::function<void(Environment&, Interpreter*)>;
+using HostModuleFn = std::function<void(Environment&, std::shared_ptr<IHostAPI>)>;
+
 class ModuleLoader {
 public:
     // --- Default configuration ---

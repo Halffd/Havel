@@ -1,11 +1,7 @@
 class ModuleLoader {
 public:
-    // --- Default configuration ---
-    bool use_cpp_modules_ = false;
     std::string self_hosted_modules_path_ = "";
 
-    // Setter methods
-    void setUseCppModules(bool use_cpp) { use_cpp_modules_ = use_cpp; }
     void setSelfHostedPath(const std::string& path) { self_hosted_modules_path_ = path; }
 
     // --- Resolved module info ---

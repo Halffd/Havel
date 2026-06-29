@@ -322,8 +322,6 @@ std::vector<std::shared_ptr<BytecodeChunk>> persistent_chunks_;
     // Canonical module loader for path resolution and caching
     ModuleLoader moduleLoader_;
 
-    // Whether to use C++ built-in modules (true) or self-hosted modules (false)
-    bool use_cpp_modules_ = false;
     // Path to directory containing self-hosted module bytecode (e.g., "out/")
     std::string self_hosted_modules_path_;
 

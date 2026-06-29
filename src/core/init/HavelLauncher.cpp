@@ -1171,6 +1171,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
  } else if (arg == "--diff" || arg == "-diff") {
  cfg.diffBytecode = true;
  cfg.debugBytecode = true;
+    } else if (arg == "--diff-pipeline" && i + 1 < argc) {
+        cfg.diffPipelinePath = argv[++i];
     } else if (arg == "--error" || arg == "-e") {
       // Stop on first error/warning
       cfg.stopOnError = true;

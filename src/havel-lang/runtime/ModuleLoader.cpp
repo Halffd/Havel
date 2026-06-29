@@ -76,6 +76,21 @@ ModuleLoader::resolve(const std::string& modulePath,
     return ResolvedModule{ResolvedModule::Cached, "", modulePath};
   }
 
+  // 1b. Check self-hosted modules path first (compiled .hvc bytecode)
+  if (!self_hosted_modules_path_.empty()) {
+    fs::path selfHostedHvc = fs::path(self_hosted_modules_path_) / (name + ".hvc");
+    if (fs::exists(selfHostedHvc)) {
+      return ResolvedModule{ResolvedModule::BytecodeCache,
+                            fs::canonical(selfHostedHvc).string(), modulePath};
+    }
+    // Also try modules/lang/<name>.hvc subdirectory convention
+    fs::path langHvc = fs::path(self_hosted_modules_path_) / "modules" / "lang" / (name + ".hvc");
+    if (fs::exists(langHvc)) {
+      return ResolvedModule{ResolvedModule::BytecodeCache,
+                            fs::canonical(langHvc).string(), modulePath};
+    }
+  }
+
   // 2. Check script directory first for local modules:
   // scriptDir/name.hvc (prefer pre-compiled), then name.hv
   if (!scriptDir.empty()) {

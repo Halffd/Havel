@@ -56,7 +56,8 @@ bool debugIo = false;
   bool pureStdlib = false;
   bool lintOnly = false;
   bool buildOnly = false;
-  bool use_cpp_modules = false; // true to use C++ built-in modules, false to use self-hosted modules if available
+  bool use_cpp_modules = false; 
+  std::string diffPipelinePath; // Baseline path for pipeline diffing
   std::string outputPath;
   std::string outputLogFile;
   std::string historyFile;

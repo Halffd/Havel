@@ -3793,7 +3793,7 @@ case ast::NodeType::CastExpression: {
       COMPILER_THROW("Pipeline expression has no stages");
     }
 
-    // Compile first stage normally
+    // Compile first stage normally — leaves result on stack
     if (pipeline.stages[0]->kind == ast::NodeType::CallExpression) {
       const auto &call =
           static_cast<const ast::CallExpression &>(*pipeline.stages[0]);
@@ -3809,105 +3809,85 @@ case ast::NodeType::CastExpression: {
       compileExpression(*pipeline.stages[0]);
     }
 
-    // For each subsequent stage, apply enhanced pipeline rules
+    // For each subsequent stage, auto-curry the piped value as first arg
     for (size_t i = 1; i < pipeline.stages.size(); ++i) {
       auto &stage = pipeline.stages[i];
       if (!stage) {
         COMPILER_THROW("Pipeline stage is null");
       }
 
-      // Reserve temp slot for previous pipe value
+      // Store previous stage result for tap pass-through
       uint32_t pipe_temp = next_local_index;
       reserveLocalSlot(pipe_temp);
-      emit(OpCode::STORE_VAR, pipe_temp); // Store previous result
+      emit(OpCode::STORE_VAR, pipe_temp);
 
-      // Lambda expression: | x => x.isFile  (filter/map)
+      bool is_tap = false;
+
       if (stage->kind == ast::NodeType::LambdaExpression) {
-        // Load the piped value as argument
-        emit(OpCode::LOAD_VAR, pipe_temp);
-        // Compile and call the lambda
         compileExpression(*stage);
-        emit(OpCode::CALL, 1); // Call lambda with 1 arg (piped value)
+        emit(OpCode::LOAD_VAR, pipe_temp);
+        emit(OpCode::CALL, 1);
       }
-      // Call expression with explicit args: | find "ERROR"
-      // Auto-curry: prepend piped value as first arg
       else if (stage->kind == ast::NodeType::CallExpression) {
         const auto &call = static_cast<const ast::CallExpression &>(*stage);
-        // Load piped value first (as first argument - auto-curry)
-        emit(OpCode::LOAD_VAR, pipe_temp);
-        // Compile the callee
         if (call.callee) {
           compileExpression(*call.callee);
         }
-        // Add explicit arguments after piped value
+        emit(OpCode::LOAD_VAR, pipe_temp);
         for (const auto &arg : call.args) {
           if (arg)
             compileExpression(*arg);
         }
-        // Call with (1 + explicit_args) count
         emit(OpCode::CALL, static_cast<uint32_t>(1 + call.args.size()));
       }
- // Identifier: | print, | upper, etc.
- // Tap behavior: function receives value, we ensure pass-through
- else if (stage->kind == ast::NodeType::Identifier) {
- const auto &ident = static_cast<const ast::Identifier &>(*stage);
-
- if (ident.symbol == "print" || ident.symbol == "log" ||
- ident.symbol == "debug" || ident.symbol == "tap") {
- // Global function call: print(value), log(value), etc.
- uint32_t strId = addStringConstant(ident.symbol);
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- emit(OpCode::LOAD_VAR, pipe_temp);
- emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
-
- // Tap: if result is nil, restore pipe value
- uint32_t result_temp = next_local_index;
- reserveLocalSlot(result_temp);
- emit(OpCode::STORE_VAR, result_temp);
- emit(OpCode::LOAD_VAR, result_temp);
- emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
- emit(OpCode::LOAD_VAR, pipe_temp);
- } else {
- // Method call: value.upper(), value.len(), etc.
- emit(OpCode::LOAD_VAR, pipe_temp);
- uint32_t method_sid = addStringConstant(ident.symbol);
- emit(OpCode::CALL_METHOD, std::vector<Value>{
- Value::makeStringValId(method_sid),
- Value(static_cast<uint32_t>(0))});
- }
- }
-      // Member expression: | text.upper, | array.filter
+      else if (stage->kind == ast::NodeType::Identifier) {
+        const auto &ident = static_cast<const ast::Identifier &>(*stage);
+        is_tap = (ident.symbol == "print" || ident.symbol == "log" ||
+                  ident.symbol == "debug" || ident.symbol == "tap");
+        if (is_tap) {
+          uint32_t strId = addStringConstant(ident.symbol);
+          emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+          emit(OpCode::LOAD_VAR, pipe_temp);
+          emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+        } else {
+          // Method call on piped value: value.trim(), value.len(), etc.
+          emit(OpCode::LOAD_VAR, pipe_temp);
+          uint32_t method_sid = addStringConstant(ident.symbol);
+          emit(OpCode::CALL_METHOD, std::vector<Value>{
+              Value::makeStringValId(method_sid),
+              Value(static_cast<uint32_t>(0))});
+        }
+      }
       else if (stage->kind == ast::NodeType::MemberExpression) {
-        const auto &member = static_cast<const ast::MemberExpression &>(*stage);
-        emit(OpCode::LOAD_VAR, pipe_temp); // Load piped value
-        // Compile member access - the object is the piped value
         compileExpression(*stage);
-        // Call with piped value as first arg
-        emit(OpCode::CALL, 1);
-      }
-      // Default: compile expression and call with piped value
-      else {
         emit(OpCode::LOAD_VAR, pipe_temp);
+        emit(OpCode::CALL, 1);
+      }
+      else {
         compileExpression(*stage);
+        emit(OpCode::LOAD_VAR, pipe_temp);
         emit(OpCode::CALL, 1);
       }
 
-      // Void pass-through: if result is nil/none, restore previous pipe value
-      // This is handled at runtime - we emit code to check and restore
-      uint32_t stage_result = next_local_index;
-      reserveLocalSlot(stage_result);
-      emit(OpCode::STORE_VAR, stage_result);
-
-      // Load result and check if nil
-      emit(OpCode::LOAD_VAR, stage_result);
-      emit(OpCode::DUP);
-      emit(OpCode::LOAD_CONST, addConstant(Value::makeNull())); // nil
-
-      // If equal (both nil), restore pipe value
-      // For now, simplified: always have result, void functions
-      // should be marked in HostBridge to return previous value
-      emit(OpCode::LOAD_VAR, stage_result); // Use stage result
+      // Tap pass-through: if stage returned nil, forward the piped value
+      if (is_tap) {
+        uint32_t result_temp = next_local_index;
+        reserveLocalSlot(result_temp);
+        emit(OpCode::STORE_VAR, result_temp);
+        emit(OpCode::LOAD_VAR, result_temp);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+        emit(OpCode::EQ);
+        uint32_t notNilJump = emitJump(OpCode::JUMP_IF_FALSE);
+        // nil case: load pipe value
+        emit(OpCode::LOAD_VAR, pipe_temp);
+        uint32_t endJump = emitJump(OpCode::JUMP);
+        // not-nil case: reload result
+        patchJump(notNilJump, static_cast<uint32_t>(current_function->instructions.size()));
+        emit(OpCode::LOAD_VAR, result_temp);
+        patchJump(endJump, static_cast<uint32_t>(current_function->instructions.size()));
+      }
     }
+    // Pipeline result is on top of stack
     break;
   }
 

@@ -1988,15 +1988,39 @@ start = parsePrattExpression(0);
         auto pipeline = makeNodeAt<ast::PipelineExpression>(token, std::vector<std::unique_ptr<ast::Expression>>{});
         pipeline->stages.push_back(std::move(left));
 
-        do {
-          auto stage = parseAssignmentExpression();
-          pipeline->stages.push_back(std::move(stage));
-        } while (at().type == TokenType::Pipe || at().type == TokenType::PipeRight);
+        auto stage = parseAssignmentExpression();
+        pipeline->stages.push_back(std::move(stage));
+        while (at().type == TokenType::Pipe || at().type == TokenType::PipeRight || at().type == TokenType::BitwiseOr) {
+          advance();
+          auto nextStage = parseAssignmentExpression();
+          pipeline->stages.push_back(std::move(nextStage));
+        }
 
         return pipeline;
       }
 
     case TokenType::BitwiseOr: {
+      // Context-disambiguate: | after expression, followed by callable = pipeline
+      // Otherwise, bitwise OR (e.g., 0xF0 | 0x0F)
+      auto nextType = at().type;
+      bool isPipeline = (nextType == TokenType::Identifier ||
+                         nextType == TokenType::OpenParen ||
+                         nextType == TokenType::At ||
+                         nextType == TokenType::AtAt);
+      if (isPipeline) {
+        auto pipeline = makeNodeAt<ast::PipelineExpression>(token, std::vector<std::unique_ptr<ast::Expression>>{});
+        pipeline->stages.push_back(std::move(left));
+
+        auto stage = parseAssignmentExpression();
+        pipeline->stages.push_back(std::move(stage));
+        while (at().type == TokenType::BitwiseOr || at().type == TokenType::Pipe || at().type == TokenType::PipeRight) {
+          advance();
+          auto nextStage = parseAssignmentExpression();
+          pipeline->stages.push_back(std::move(nextStage));
+        }
+
+        return pipeline;
+      }
       auto right = parsePrattExpression(getRightBindingPower(token.type));
       return makeNodeAt<ast::BinaryExpression>(token, 
           std::move(left), ast::BinaryOperator::BitwiseOr, std::move(right));

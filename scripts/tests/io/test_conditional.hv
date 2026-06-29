@@ -7,6 +7,8 @@ wpid = lwpid = 0
 win = lastWin = null
 cmd = lcmd = ""
 
+timeout 5000 { exit(0) }
+
 Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
 when title_ ~ "onsole" {
   print("Konsoloe is active")
@@ -72,7 +74,4 @@ go fn update() {
     sleep(1000)
     return
   }
-}
-timeout 5000 {
-  exit(0)
 }

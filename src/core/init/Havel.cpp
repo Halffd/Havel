@@ -360,7 +360,6 @@ void Havel::initialize(bool isStartup) {
 					if (conditionMet) {
 						if (!g->hotkey_condition_alias.empty()) {
 							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
-							fprintf(stderr, "[Havel] VAR_CHANGED condition TRUE for gid=%d alias=%s hm=%p\n", g->id, g->hotkey_condition_alias.c_str(), (void*)hm);
 							if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
 						}
 						sched->wakeHotkey(g);

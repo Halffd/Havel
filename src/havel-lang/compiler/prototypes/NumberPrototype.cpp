@@ -10,7 +10,11 @@ namespace havel::compiler::prototypes {
 // Helper: extract string from args[i] with fallback
 static std::string extractStringArg(VM& vm, const std::vector<Value>& args, size_t i, const std::string& fallback) {
   if (i >= args.size()) return fallback;
-  if (args[i].isStringValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asStringValId());
+  if (args[i].isStringValId()) {
+      if (vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asStringValId());
+      auto mc = vm.getMainChunk();
+      if (mc) return mc->getString(args[i].asStringValId());
+  }
   if (args[i].isStringId() && vm.getHeap().string(args[i].asStringId())) return *vm.getHeap().string(args[i].asStringId());
   return fallback;
 }

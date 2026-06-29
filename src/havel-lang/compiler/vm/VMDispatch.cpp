@@ -101,7 +101,7 @@ case OpCode::LOAD_GLOBAL: {
     break;
   }
 
-        case OpCode::STORE_GLOBAL: {
+         case OpCode::STORE_GLOBAL: {
             if (instruction.operands.empty() ||
                 !instruction.operands[0].isStringValId()) {
                 COMPILER_THROW("STORE_GLOBAL expects string operand");
@@ -116,6 +116,20 @@ case OpCode::LOAD_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
   Value value = popStack();
+
+  // Materialize StringValId to heap StringId so cross-chunk reads work
+  if (value.isStringValId() || value.isRegexValId()) {
+      const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
+      if (matChunk) {
+          std::string s;
+          if (value.isStringValId()) s = matChunk->getString(value.asStringValId());
+          else if (value.isRegexValId()) s = matChunk->getString(value.asRegexValId());
+          if (!s.empty()) {
+              auto ref = heap_.allocateString(std::move(s));
+              value = Value::makeStringId(ref.id);
+          }
+      }
+  }
 
   if (immutable_globals_.count(name)) {
             auto existing = globals.find(name);
@@ -144,6 +158,34 @@ case OpCode::LOAD_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
         Value value = popStack();
+
+  // Materialize StringValId to heap StringId so cross-chunk reads work
+  if (value.isStringValId() || value.isRegexValId()) {
+      const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
+      if (matChunk) {
+          std::string s;
+          if (value.isStringValId()) s = matChunk->getString(value.asStringValId());
+          else if (value.isRegexValId()) s = matChunk->getString(value.asRegexValId());
+          if (!s.empty()) {
+              auto ref = heap_.allocateString(std::move(s));
+              value = Value::makeStringId(ref.id);
+          }
+      }
+  }
+
+  // Materialize StringValId to heap StringId so cross-chunk reads work
+  if (value.isStringValId() || value.isRegexValId()) {
+      const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
+      if (matChunk) {
+          std::string s;
+          if (value.isStringValId()) s = matChunk->getString(value.asStringValId());
+          else if (value.isRegexValId()) s = matChunk->getString(value.asRegexValId());
+          if (!s.empty()) {
+              auto ref = heap_.allocateString(std::move(s));
+              value = Value::makeStringId(ref.id);
+          }
+      }
+  }
 
         immutable_globals_.insert(name);
         globals[name] = value;

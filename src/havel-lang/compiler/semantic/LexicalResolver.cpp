@@ -1093,6 +1093,12 @@ case ast::NodeType::DeferStatement: {
         break;
     }
 
+  case ast::NodeType::GoStatement: {
+    const auto &goStmt = static_cast<const ast::GoStatement &>(statement);
+    if (goStmt.call) resolveExpression(*goStmt.call);
+    break;
+  }
+
     default:
   break;
   }

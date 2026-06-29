@@ -7,16 +7,32 @@ namespace havel::compiler::prototypes {
 
 // Helper: extract string from a Value
 static std::string extractString(VM& vm, const Value& v) {
-  if (v.isStringValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(v.asStringValId());
-  if (v.isRegexValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(v.asRegexValId());
+  if (v.isStringValId()) {
+      if (vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(v.asStringValId());
+      auto mc = vm.getMainChunk();
+      if (mc) return mc->getString(v.asStringValId());
+  }
+  if (v.isRegexValId()) {
+      if (vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(v.asRegexValId());
+      auto mc = vm.getMainChunk();
+      if (mc) return mc->getString(v.asRegexValId());
+  }
   if (v.isStringId() && vm.getHeap().string(v.asStringId())) return *vm.getHeap().string(v.asStringId());
   return "";
 }
 
 static std::string extractStringArg(VM& vm, const std::vector<Value>& args, size_t i, const std::string& fallback) {
   if (i >= args.size()) return fallback;
-  if (args[i].isStringValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asStringValId());
-  if (args[i].isRegexValId() && vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asRegexValId());
+  if (args[i].isStringValId()) {
+      if (vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asStringValId());
+      auto mc = vm.getMainChunk();
+      if (mc) return mc->getString(args[i].asStringValId());
+  }
+  if (args[i].isRegexValId()) {
+      if (vm.getCurrentChunk()) return vm.getCurrentChunk()->getString(args[i].asRegexValId());
+      auto mc = vm.getMainChunk();
+      if (mc) return mc->getString(args[i].asRegexValId());
+  }
   if (args[i].isStringId() && vm.getHeap().string(args[i].asStringId())) return *vm.getHeap().string(args[i].asStringId());
   return fallback;
 }
@@ -92,8 +108,6 @@ void registerStringPrototype(VM& vm) {
   regProto("includes", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     std::string s = extractString(vm, args[0]), sub = extractStringArg(vm, args, 1, "");
-    fprintf(stderr, "[STR-DBG] includes: s='%s' sub='%s' s.empty=%d sub.empty=%d find=%zu cur_chunk=%p\n",
-        s.c_str(), sub.c_str(), s.empty(), sub.empty(), s.find(sub), vm.getCurrentChunk());
     return Value::makeBool(!s.empty() && !sub.empty() && s.find(sub) != std::string::npos);
   });
 

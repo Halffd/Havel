@@ -56,7 +56,6 @@ bool debugIo = false;
   bool pureStdlib = false;
   bool lintOnly = false;
   bool buildOnly = false;
-  bool use_cpp_modules = false; 
   std::string diffPipelinePath; // Baseline path for pipeline diffing
   std::string outputPath;
   std::string outputLogFile;
@@ -99,10 +98,9 @@ public:
 class HavelLauncher {
 public:
    int run(int argc, char *argv[]);
-   void setSelfHostedConfig(bool useCpp, const std::string& selfHostedPath) {
-      use_cpp_modules_config_ = useCpp;
-      self_hosted_modules_path_config_ = selfHostedPath;
-   }
+    void setSelfHostedConfig(const std::string& selfHostedPath) {
+       self_hosted_modules_path_config_ = selfHostedPath;
+    }
 
 private:
    LaunchConfig parseArgs(int argc, char *argv[]);
@@ -111,8 +109,8 @@ private:
    int runBuild(const LaunchConfig &cfg);
    int runBytecodeFiles(const LaunchConfig &cfg,
                         const std::vector<std::string> &hvcFiles);
+   int diffPipeline(const LaunchConfig &cfg);
 
-   bool use_cpp_modules_config_ = false;
    std::string self_hosted_modules_path_config_;
 };
 

@@ -13,35 +13,27 @@ namespace fs = std::filesystem;
 int main(int argc, char* argv[]) {
     auto t0 = havel::startup_now();
     
-    // Determine self-hosted modules path (default: out/ relative to executable)
     std::string selfHostedPath;
-    bool useCppModules = false;
     
-    // Parse --cpp flag early
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--cpp") {
-            useCppModules = true;
-        } else if (arg == "--self-hosted-path" && i + 1 < argc) {
+        if (arg == "--self-hosted-path" && i + 1 < argc) {
             selfHostedPath = argv[++i];
         }
     }
     
-    // Default: use self-hosted modules from out/ directory
-    if (!useCppModules && selfHostedPath.empty()) {
-        // Try to determine executable path
+    if (selfHostedPath.empty()) {
         try {
             auto exePath = fs::read_symlink("/proc/self/exe");
-            selfHostedPath = (exePath.parent_path() / "out").string();
+            selfHostedPath = (exePath.parent_path().parent_path() / "out").string();
         } catch (...) {
-            // Fallback to current directory
             selfHostedPath = "./out";
         }
     }
     
     if (argc >= 2 && std::string(argv[1]) == "lexer") {
         havel::init::HavelLauncher launcher;
-        launcher.setSelfHostedConfig(useCppModules, selfHostedPath);
+        launcher.setSelfHostedConfig(selfHostedPath);
         return launcher.run(argc, argv);
     }
 
@@ -68,6 +60,6 @@ int main(int argc, char* argv[]) {
     havel::startup_timing_report("main-pre-run", t0);
 
     havel::init::HavelLauncher launcher;
-    launcher.setSelfHostedConfig(useCppModules, selfHostedPath);
+    launcher.setSelfHostedConfig(selfHostedPath);
     return launcher.run(argc, argv);
 }

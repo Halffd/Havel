@@ -48,6 +48,7 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <map>
 #include <chrono>
 #include <thread>
 #include <unordered_set>
@@ -1078,11 +1079,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
     LaunchConfig cfg = parseArgs(argc, argv);
 
     // Apply self-hosted config from main()
-    cfg.use_cpp_modules = use_cpp_modules_config_;
     if (!self_hosted_modules_path_config_.empty()) {
-      // Store in a way accessible to strategies/VM
       cfg.vmConfig.self_hosted_modules_path = self_hosted_modules_path_config_;
-      cfg.vmConfig.use_cpp_modules = use_cpp_modules_config_;
     }
 
     if (cfg.target == LaunchConfig::Target::INTERPRET) {
@@ -1104,10 +1102,18 @@ int HavelLauncher::run(int argc, char *argv[]) {
 
     if (cfg.buildOnly) return runBuild(cfg);
 
-    if (cfg.selfHosted) {
-      cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
-      cfg.minimalMode = true;
-      cfg.pureStdlib = true;
+    if (!cfg.vmConfig.self_hosted_modules_path.empty()) {
+      namespace fs = std::filesystem;
+      fs::path langDir = fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
+      if (fs::exists(langDir) && !fs::is_empty(langDir)) {
+        cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
+        cfg.minimalMode = true;
+        cfg.pureStdlib = true;
+      }
+    }
+
+    if (!cfg.diffPipelinePath.empty()) {
+      return diffPipeline(cfg);
     }
 
     auto strategy = createStrategy(cfg);
@@ -1293,7 +1299,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         } else if (arg == "--pure-stdlib") {
             cfg.pureStdlib = true;
         } else if (arg == "--self-hosted") {
-            cfg.selfHosted = true;
+            cfg.minimalMode = true;
+            cfg.pureStdlib = true;
     } else if (arg == "--test" || arg == "-t") {
       // Test mode - run all .hv files in a directory
         cfg.mode = LaunchConfig::Mode::TEST;
@@ -1987,6 +1994,65 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
 
   info("Build successful: {} ({} bytes)", outputPath, data.size());
   return 0;
+}
+
+int HavelLauncher::diffPipeline(const LaunchConfig &cfg) {
+  namespace fs = std::filesystem;
+  std::string currentPath = cfg.vmConfig.self_hosted_modules_path;
+  if (currentPath.empty()) {
+    try {
+      auto exePath = fs::read_symlink("/proc/self/exe");
+      currentPath = (exePath.parent_path().parent_path() / "out").string();
+    } catch (...) {
+      currentPath = "./out";
+    }
+  }
+  const std::string &baselinePath = cfg.diffPipelinePath;
+
+  auto collectHvc = [](const fs::path &dir) -> std::map<std::string, std::vector<uint8_t>> {
+    std::map<std::string, std::vector<uint8_t>> files;
+    if (!fs::exists(dir)) return files;
+    for (auto &entry : fs::recursive_directory_iterator(dir)) {
+      if (!entry.is_regular_file()) continue;
+      auto ext = entry.path().extension().string();
+      if (ext != ".hvc" && ext != ".hbc") continue;
+      auto rel = fs::relative(entry.path(), dir).string();
+      std::ifstream f(entry.path(), std::ios::binary);
+      std::vector<uint8_t> data((std::istreambuf_iterator<char>(f)),
+                                 std::istreambuf_iterator<char>());
+      files[rel] = std::move(data);
+    }
+    return files;
+  };
+
+  info("Diffing pipeline: current=out({}), baseline={}", currentPath, baselinePath);
+  auto current = collectHvc(currentPath);
+  auto baseline = collectHvc(baselinePath);
+
+  int added = 0, removed = 0, changed = 0, unchanged = 0;
+
+  for (auto &[name, data] : current) {
+    auto it = baseline.find(name);
+    if (it == baseline.end()) {
+      info("+ {}", name);
+      added++;
+    } else if (data != it->second) {
+      info("~ {}", name);
+      changed++;
+    } else {
+      unchanged++;
+    }
+  }
+  for (auto &[name, data] : baseline) {
+    if (current.find(name) == current.end()) {
+      info("- {}", name);
+      removed++;
+    }
+  }
+
+  info("Pipeline diff: {} added, {} removed, {} changed, {} unchanged",
+       added, removed, changed, unchanged);
+  return (added || removed || changed) ? 1 : 0;
 }
 
 // DEBUG

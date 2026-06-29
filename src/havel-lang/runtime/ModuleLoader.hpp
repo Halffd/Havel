@@ -1,34 +1,28 @@
 #pragma once
-
+#include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <cstdint>
-#include <functional>
-
-#include "../core/Value.hpp"
+#include "core/Value.hpp"
 
 namespace havel {
 
-// Forward declarations
 class Environment;
-class Interpreter;
 class IHostAPI;
-using ModuleFn = std::function<void(Environment&)>;
-using InterpreterModuleFn = std::function<void(Environment&, Interpreter*)>;
-using HostModuleFn = std::function<void(Environment&, std::shared_ptr<IHostAPI>)>;
+class Interpreter;
+
+using ModuleFn = std::function<void(Environment &)>;
+using InterpreterModuleFn = std::function<void(Environment &, Interpreter *)>;
+using HostModuleFn = std::function<void(Environment &, std::shared_ptr<IHostAPI>)>;
 
 class ModuleLoader {
 public:
-    // --- Default configuration ---
-    bool use_cpp_modules_ = false;
     std::string self_hosted_modules_path_ = "";
 
-    // Setter methods
-    void setUseCppModules(bool use_cpp) { use_cpp_modules_ = use_cpp; }
     void setSelfHostedPath(const std::string& path) { self_hosted_modules_path_ = path; }
 
     // --- Resolved module info ---

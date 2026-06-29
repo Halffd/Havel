@@ -150,7 +150,7 @@ continue;
 std::this_thread::sleep_for(std::chrono::milliseconds(intervalMs));
 
 if (stopped.load() || paused.load()) {
-continue;
+break;
 }
 
 try {

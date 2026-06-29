@@ -1241,7 +1241,29 @@ if (!modName.empty()) {
 		Value key_value = popStack();
 		Value object = popStack();
 
-		if (!object.isObjectId()) {
+if (object.isIntervalId()) {
+      auto key = resolveKey(key_value);
+      if (key && (*key == "stop" || *key == "cancel")) {
+        auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex("interval.stop")), object);
+        pushStack(Value::makeBoundMethodId(bmRef.id));
+      } else {
+        pushStack(Value::makeNull());
+      }
+      break;
+    }
+
+    if (object.isTimeoutId()) {
+      auto key = resolveKey(key_value);
+      if (key && (*key == "stop" || *key == "cancel")) {
+        auto bmRef = heap_.allocateBoundMethod(Value::makeHostFuncId(getHostFunctionIndex("timeout.stop")), object);
+        pushStack(Value::makeBoundMethodId(bmRef.id));
+      } else {
+        pushStack(Value::makeNull());
+      }
+      break;
+    }
+
+    if (!object.isObjectId()) {
 			pushStack(Value::makeNull());
 			break;
 		}

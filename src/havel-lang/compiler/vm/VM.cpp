@@ -63,6 +63,10 @@ VM::VM(const VMConfig& cfg) {
     heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
     heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
     timer_check_interval_ = cfg.timer_check_interval;
+    if (!cfg.self_hosted_modules_path.empty()) {
+        self_hosted_modules_path_ = cfg.self_hosted_modules_path;
+        moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
+    }
     registerDefaultHostFunctions();
 }
 
@@ -83,6 +87,10 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig& cfg) {
     heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
     heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
     timer_check_interval_ = cfg.timer_check_interval;
+    if (!cfg.self_hosted_modules_path.empty()) {
+        self_hosted_modules_path_ = cfg.self_hosted_modules_path;
+        moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
+    }
     registerDefaultHostFunctions();
 }
 

@@ -1,0 +1,10 @@
+title_ = "Konsole"
+
+Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
+
+print("title_ = " + title_)
+print("test: " + (title_ ~ "onsole"))
+
+timeout 3000 {
+  exit(0)
+}

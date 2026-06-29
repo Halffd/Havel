@@ -1,4 +1,5 @@
 #include "PrototypeRegistry.hpp"
+#include <cstdio>
 #include <regex>
 #include <sstream>
 
@@ -91,6 +92,8 @@ void registerStringPrototype(VM& vm) {
   regProto("includes", 2, [&vm](const std::vector<Value>& args) {
     if (args.size() < 2) return Value::makeBool(false);
     std::string s = extractString(vm, args[0]), sub = extractStringArg(vm, args, 1, "");
+    fprintf(stderr, "[STR-DBG] includes: s='%s' sub='%s' s.empty=%d sub.empty=%d find=%zu cur_chunk=%p\n",
+        s.c_str(), sub.c_str(), s.empty(), sub.empty(), s.find(sub), vm.getCurrentChunk());
     return Value::makeBool(!s.empty() && !sub.empty() && s.find(sub) != std::string::npos);
   });
 

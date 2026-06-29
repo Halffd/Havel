@@ -1,0 +1,12 @@
+title_ = ""
+
+Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
+
+go fn {
+  sleep(100)
+  ::title_ = "Konsole"
+}
+
+timeout 5000 {
+  exit(0)
+}

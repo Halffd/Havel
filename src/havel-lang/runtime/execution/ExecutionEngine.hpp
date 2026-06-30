@@ -118,14 +118,17 @@ private:
   Stats stats_;
   bool debug_mode_ = false;
   DebugBreakCallback debug_break_cb_;
+  bool inline_yield_active_ = false;
+  std::unique_ptr<Fiber> main_script_fiber_;
   
   // ========== HELPER METHODS ==========
   void handleYield(Scheduler::Goroutine* g);
   void handleSuspended(Scheduler::Goroutine* g);
   void handleReturned(Scheduler::Goroutine* g);
   void handleError(Scheduler::Goroutine* g, const std::string& msg);
-  
-  
+  void processGoroutinesInline();
+
+
     void onThreadComplete(uint32_t thread_id);
     void onVariableChanged(const std::string& var_name);
     void onTimerFire(uint32_t timer_id, Value closure, bool is_timeout);

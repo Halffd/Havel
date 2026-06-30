@@ -40,6 +40,7 @@ ExecutionEngine::ExecutionEngine(VM* vm, Scheduler* sched, EventQueue* eq)
   }
   
   vm_->setEventQueue(eq);
+  vm_->setYieldCallback([this]() { processGoroutinesInline(); });
   watcher_registry_ = std::make_unique<WatcherRegistry>();
   
   if (event_queue_) {
@@ -897,6 +898,102 @@ void ExecutionEngine::onChannelSend(uint32_t channel_id) {
         }
         scheduler_->unpark(g);
     }
+}
+
+void ExecutionEngine::processGoroutinesInline() {
+    if (inline_yield_active_) return;
+    if (!scheduler_ || scheduler_->runnableCount() == 0) return;
+
+    inline_yield_active_ = true;
+
+    if (!main_script_fiber_) {
+        main_script_fiber_ = std::make_unique<Fiber>(0, 0);
+    }
+
+    vm_->saveFiberState(main_script_fiber_.get());
+
+    scheduler_->drainDeferredCallbacks();
+    scheduler_->wakeSleepingGoroutines();
+
+    const int budget = 512;
+    int executed = 0;
+
+    while (executed < budget) {
+        Scheduler::Goroutine* g = scheduler_->pickNext();
+        if (!g) break;
+
+        g->state = Scheduler::GoroutineState::Running;
+
+        if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
+            auto* action = HotkeyActionWrapper::getCallback(g->fiber->id);
+            if (action && *action) {
+                try { (*action)(); } catch (...) {}
+            }
+            if (g->fiber) vm_->saveFiberState(g->fiber);
+            handleReturned(g);
+            stats_.goroutines_completed++;
+            executed++;
+            continue;
+        }
+
+        if (g->state == Scheduler::GoroutineState::Created) {
+            auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+            if (call_result == VM::GoroutineCallResult::Failed ||
+                call_result == VM::GoroutineCallResult::JITExecuted) {
+                if (g->fiber) vm_->saveFiberState(g->fiber);
+                handleReturned(g);
+                stats_.goroutines_completed++;
+                executed++;
+                continue;
+            }
+            g->state = Scheduler::GoroutineState::Runnable;
+            if (g->fiber) vm_->saveFiberState(g->fiber);
+        } else if (g->fiber) {
+            vm_->loadFiberState(g->fiber);
+        }
+
+        g->state = Scheduler::GoroutineState::Running;
+        if (g->fiber) g->fiber->state = FiberState::RUNNING;
+
+        for (int i = 0; i < 64; ++i) {
+            auto result = vm_->executeOneStep(g->fiber);
+            g->instructions_executed++;
+            executed++;
+            if (result.type != VMExecutionResult::YIELD) {
+                if (g->fiber) vm_->saveFiberState(g->fiber);
+                switch (result.type) {
+                    case VMExecutionResult::RETURNED:
+                        handleReturned(g);
+                        stats_.goroutines_completed++;
+                        break;
+                    case VMExecutionResult::SUSPENDED:
+                        handleSuspended(g);
+                        break;
+                    case VMExecutionResult::ERROR:
+                        handleError(g, result.error_message);
+                        break;
+                    default:
+                        handleYield(g);
+                        break;
+                }
+                break;
+            }
+            if (g->instructions_executed >= g->max_instructions_per_tick) {
+                g->instructions_executed = 0;
+                if (g->fiber) vm_->saveFiberState(g->fiber);
+                g->state = Scheduler::GoroutineState::Runnable;
+                scheduler_->requeueFront(g);
+                break;
+            }
+            if (vm_->exit_requested_.load()) break;
+        }
+
+        if (vm_->exit_requested_.load()) break;
+    }
+
+    vm_->loadFiberState(main_script_fiber_.get());
+
+    inline_yield_active_ = false;
 }
 
 } // namespace havel::compiler

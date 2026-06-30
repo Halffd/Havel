@@ -356,6 +356,7 @@ uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (U
   void* suspension_context_ = nullptr; // Context pointer (thread_id, channel*, etc)
   bool executing_in_fiber_ = false; // True when executeOneStep runs with non-null current_fiber
   std::atomic<bool> jit_yield_requested_{false}; // Scheduler sets this to preempt JIT
+  std::function<void()> yield_callback_; // Called periodically to allow scheduler goroutine processing
 
 // Last suspension info preserved after runDispatchLoop exits
 // Used by processGoroutines to set WaitHandle on the goroutine
@@ -518,6 +519,11 @@ size_t tail_call_depth_ = 0;
                   std::vector<Value> args); // TCO
   void runDispatchLoop(size_t stop_frame_depth);
   void runDispatchFast(size_t stop_frame_depth);
+  inline void periodicYieldCheck() {
+      if (yield_callback_) {
+          yield_callback_();
+      }
+  }
   bool handleScriptThrow(const Value &value);
   std::string buildStackTrace(size_t frame_count) const;
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
@@ -939,7 +945,9 @@ GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id
   bool consumeJitYieldRequest() {
     return jit_yield_requested_.exchange(false, std::memory_order_acq_rel);
   }
-uint8_t getSuspensionReason() const { return suspension_reason_; }
+  void setYieldCallback(std::function<void()> cb) { yield_callback_ = std::move(cb); }
+  bool hasYieldCallback() const { return static_cast<bool>(yield_callback_); }
+ uint8_t getSuspensionReason() const { return suspension_reason_; }
 void* getSuspensionContext() const { return suspension_context_; }
 
 uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }

@@ -1134,6 +1134,9 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         if (exit_requested_.load()) break;
         maybeCollectGarbage();
         if (suspension_requested_) goto slow_path;
+        if (yield_callback_) {
+            yield_callback_();
+        }
         if (!pending_calls.empty()) {
           processPendingCalls();
           if (exit_requested_.load()) break;
@@ -1223,6 +1226,9 @@ slow_path:
             break;
         }
             maybeCollectGarbage();
+            if (yield_callback_) {
+                yield_callback_();
+            }
         }
 
     if (has_instruction_limit) {
@@ -1315,11 +1321,11 @@ slow_path:
         } else {
           // Non-SLEEP suspension (thread join, channel recv, await, etc.)
           // Save suspension info for processGoroutines to read, then break
-          last_suspension_reason_ = reason;
-          last_suspension_context_ = ctx;
-          break;
-        }
-      }
+           last_suspension_reason_ = reason;
+           last_suspension_context_ = ctx;
+           break;
+         }
+       }
     } catch (const ScriptThrow &thrown) {
       if (!handleScriptThrow(thrown.value)) {
         // Build stack trace for uncaught exception
@@ -1379,7 +1385,7 @@ slow_path:
 
     processPendingCalls();
       if (exit_requested_.load()) {
-        break;
+          break;
       }
 
         // CRITICAL: Re-fetch frame AFTER executeInstruction (vector may have

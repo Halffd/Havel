@@ -670,6 +670,7 @@ op_LOAD_CONST: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
         if (!pending_calls.empty()) {
             processPendingCalls();
             if (exit_requested_.load()) return;
@@ -701,6 +702,7 @@ op_LOAD_VAR: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -731,6 +733,7 @@ op_STORE_VAR: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -752,6 +755,7 @@ op_POP: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -803,6 +807,7 @@ op_CALL: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
         if (!pending_calls.empty()) {
             processPendingCalls();
             if (exit_requested_.load()) return;
@@ -867,6 +872,7 @@ op_LOAD_GLOBAL: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -898,6 +904,7 @@ op_STORE_GLOBAL: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -928,6 +935,7 @@ op_STORE_IMMUT_GLOBAL: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -954,6 +962,7 @@ op_STORE_IMMUT_VAR: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -976,6 +985,7 @@ op_LOAD_UPVALUE: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -998,6 +1008,7 @@ op_STORE_UPVALUE: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1069,6 +1080,7 @@ op_INCLOCAL: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1103,6 +1115,7 @@ op_DECLOCAL: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1134,6 +1147,7 @@ op_INCLOCAL_POST: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1165,6 +1179,7 @@ op_DECLOCAL_POST: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1193,6 +1208,7 @@ op_BIT_LSH: op_BIT_RSH: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1404,6 +1420,7 @@ op_default: {
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
+        periodicYieldCheck();
         if (!pending_calls.empty()) {
             processPendingCalls();
             if (exit_requested_.load()) return;

@@ -200,7 +200,7 @@ void optimizeJumps();  // Jump threading optimization
   void compileLoopStatement(const ast::LoopStatement &statement);
   void compileBlockStatement(const ast::BlockStatement &block);
   // Closure body compilation helpers
-  void compileClosureBody(const ast::Statement &body, const std::string &name);
+  void compileClosureBody(const ast::Statement &body, const std::string &name, std::optional<uint32_t> capturedIntervalIdSlot = std::nullopt);
 void collectUpvaluesFromBody(const ast::Statement &stmt, std::vector<UpvalueDescriptor> &upvalues);
 void collectUpvaluesFromExpr(const ast::Expression &expr, std::vector<UpvalueDescriptor> &upvalues);
 std::optional<std::string> getCalleeName(const ast::Expression &callee) const;

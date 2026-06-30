@@ -450,6 +450,7 @@ struct BytecodeFunction {
   std::string source_file;               // Source file path
   uint32_t source_line = 0;              // Definition line number
   bool is_generator = false;             
+  bool is_timer_closure = false;
   
   
   mutable std::vector<TypeFeedback> type_feedback;

@@ -1,0 +1,36 @@
+// Integration test: stress test nested intervals and rapid @stop
+// Verifies fix for timer hang (using condition_variable) and @stop resolution
+
+t = 0
+// Nested interval stress test
+interval 20 {
+    t++
+    if t % 5 == 0 {
+        // Nested interval
+        interval 10 {
+            @stop // Stop inner interval
+        }
+    }
+    if t > 50 {
+        @stop // Stop outer interval
+    }
+}
+
+// Rapid @stop test
+interval 10 {
+    @stop
+}
+
+// Timeout test
+timeout 100 {
+    print("timeout fired")
+}
+
+// Wait for all to finish
+sleep(1500)
+print(t)
+if t >= 50 {
+    print("SUCCESS")
+} else {
+    print("FAIL: t={t}")
+}

@@ -83,6 +83,8 @@ private:
   std::atomic<bool> running{true};
   std::atomic<bool> paused{false};
   std::atomic<bool> stopped{false};
+  std::mutex mutex;
+  std::condition_variable cv;
 };
 
 /**
@@ -107,6 +109,8 @@ private:
   int timeoutMs;
   std::function<void()> callback;
   std::atomic<bool> cancelled{false};
+  std::mutex mutex;
+  std::condition_variable cv;
 };
 
 /**

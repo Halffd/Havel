@@ -128,12 +128,13 @@ void Interval::resume() {
 }
 
 void Interval::stop() {
-if (!running.load()) {
-return;
-}
+  if (!running.load()) {
+    return;
+  }
   
   stopped.store(true);
   running.store(false);
+  cv.notify_all(); // Wake up the thread
   
   if (thread.joinable()) {
     thread.join();
@@ -141,24 +142,33 @@ return;
 }
 
 void Interval::timerLoop() {
-while (running.load() && !stopped.load()) {
-if (paused.load()) {
-std::this_thread::sleep_for(std::chrono::milliseconds(10));
-continue;
-}
+  std::unique_lock<std::mutex> lock(mutex);
+  while (running.load() && !stopped.load()) {
+    if (paused.load()) {
+      cv.wait(lock);
+      continue;
+    }
 
-std::this_thread::sleep_for(std::chrono::milliseconds(intervalMs));
+    if (cv.wait_for(lock, std::chrono::milliseconds(intervalMs), [this] {
+      return stopped.load() || paused.load();
+    })) {
+      // Woken up by stop or pause
+      continue;
+    }
+    
+    // Timer fired
+    if (stopped.load()) {
+      break;
+    }
 
-if (stopped.load() || paused.load()) {
-break;
-}
-
-try {
-callback();
-} catch (const std::exception &e) {
-::havel::error("[Interval] Callback exception: {}", e.what());
-}
-}
+    try {
+      lock.unlock();
+      callback();
+      lock.lock();
+    } catch (const std::exception &e) {
+      ::havel::error("[Interval] Callback exception: {}", e.what());
+    }
+  }
 }
 
 // ============================================================================
@@ -171,9 +181,7 @@ Timeout::Timeout(int timeoutMs, std::function<void()> callback)
 }
 
 Timeout::~Timeout() {
-  if (thread.joinable()) {
-    thread.join();
-  }
+  cancel();
 }
 
 void Timeout::cancel() {
@@ -182,6 +190,7 @@ void Timeout::cancel() {
   }
   
   cancelled.store(true);
+  cv.notify_all(); // Wake up the thread
   
   if (thread.joinable()) {
     thread.join();
@@ -189,18 +198,23 @@ void Timeout::cancel() {
 }
 
 void Timeout::timerLoop() {
-  // Wait for timeout duration
-  std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
+  std::unique_lock<std::mutex> lock(mutex);
   
-  if (cancelled.load()) {
+  // Wait for timeout duration or cancellation
+  if (cv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [this] {
+    return cancelled.load();
+  })) {
+    // Cancelled
     return;
   }
   
   // Execute callback once
   try {
+    lock.unlock();
     callback();
+    lock.lock();
   } catch (const std::exception &e) {
-        ::havel::error("[Timeout] Callback exception: {}", e.what());
+    ::havel::error("[Timeout] Callback exception: {}", e.what());
   }
 }
 

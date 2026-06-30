@@ -584,6 +584,20 @@ if (container.isSetId()) {
     Value key_value = popStack();
     Value object = popStack();
 
+    // Handle interval/timeout objects
+    if (object.isIntervalId() || object.isTimeoutId()) {
+      auto key = resolveKey(key_value);
+      if (key && (*key == "stop" || *key == "cancel")) {
+        auto bmRef = heap_.allocateBoundMethod(
+            Value::makeHostFuncId(getHostFunctionIndex(object.isIntervalId() ? "interval.stop" : "timeout.stop")),
+            object);
+        pushStack(Value::makeBoundMethodId(bmRef.id));
+      } else {
+        pushStack(Value::makeNull());
+      }
+      break;
+    }
+
     // Handle function objects - support fn.name, fn.arity, fn.params, fn.prop
     if (object.isFunctionObjId()) {
       uint32_t funcIdx = object.asFunctionObjId();

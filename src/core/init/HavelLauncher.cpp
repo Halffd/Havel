@@ -1298,6 +1298,15 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
                 cfg.pureStdlib = true;
         } else if (arg == "--pure-stdlib") {
             cfg.pureStdlib = true;
+        } else if (arg == "--convert" && i + 1 < argc) {
+            cfg.mode = LaunchConfig::Mode::CLI;
+            cfg.buildOnly = true;
+            std::string target = argv[++i];
+            if (target == "jit") { cfg.target = LaunchConfig::Target::JIT; }
+            else if (target == "aot") { cfg.target = LaunchConfig::Target::AOT; cfg.emitBinary = true; }
+            else if (target == "asm") { cfg.target = LaunchConfig::Target::ASM; cfg.emitAsm = true; }
+            else if (target == "ir") { cfg.target = LaunchConfig::Target::IR; cfg.emitLLVM = true; }
+            else { error("Unknown conversion target: {}", target); }
         } else if (arg == "--self-hosted") {
             cfg.minimalMode = true;
             cfg.pureStdlib = true;
@@ -1546,18 +1555,26 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
   // Build mode: compile .hv files to .hvc bytecode
   std::string combinedCode;
   std::string primaryFile;
-  for (const auto& f : cfg.scriptFiles) {
-    std::string content = readScriptFile(f);
-    if (!content.empty()) {
-      combinedCode += content + "\n";
-      if (primaryFile.empty()) primaryFile = f;
-    } else {
-      error("Cannot open script file: {}", f);
-      return 1;
-    }
+  bool isBytecode = false;
+  
+  if (cfg.scriptFiles.size() == 1 && cfg.scriptFiles[0].size() >= 4 && 
+      cfg.scriptFiles[0].substr(cfg.scriptFiles[0].size() - 4) == ".hvc") {
+      isBytecode = true;
+      primaryFile = cfg.scriptFiles[0];
+  } else {
+      for (const auto& f : cfg.scriptFiles) {
+        std::string content = readScriptFile(f);
+        if (!content.empty()) {
+          combinedCode += content + "\n";
+          if (primaryFile.empty()) primaryFile = f;
+        } else {
+          error("Cannot open script file: {}", f);
+          return 1;
+        }
+      }
   }
 
-  if (combinedCode.empty()) {
+  if (combinedCode.empty() && !isBytecode) {
     error("No script files to build");
     return 1;
   }
@@ -1589,7 +1606,7 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
   info("Building: {} -> {}", primaryFile.empty() ? "input" : primaryFile, outputPath);
 
   const std::string cachePath = companionCachePath(outputPath);
-  if (!primaryFile.empty() && !cachePath.empty()) {
+  if (!isBytecode && !primaryFile.empty() && !cachePath.empty()) {
     std::error_code cacheEc;
     std::error_code sourceEc;
     const bool cacheExists = std::filesystem::exists(cachePath, cacheEc) && !cacheEc;
@@ -1619,56 +1636,81 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
     }
   }
 
-  // Parse
-  havel::parser::Parser parser{{
-    .lexer = cfg.debugLexer,
-    .parser = cfg.debugParser,
-    .ast = cfg.debugAst
-  }};
-  std::unique_ptr<havel::ast::Program> program;
-  try {
-    program = parser.produceAST(combinedCode);
-  } catch (const std::exception& e) {
-    error("Parse error: {}", e.what());
-    return 1;
-  }
-  if (parser.hasErrors()) {
-    for (const auto& err : parser.getErrors()) {
-      std::string formatted = havel::ErrorPrinter::formatError(
-          "error", err.message, primaryFile,
-          err.line, err.column, 1, "");
-      std::cerr << formatted;
-    }
-    error("Build failed with {} parse error(s)", parser.getErrors().size());
-    return 1;
-  }
-  if (!program) {
-    error("Parser returned null AST");
-    return 1;
+  std::unique_ptr<havel::compiler::BytecodeChunk> chunk;
+
+  if (isBytecode) {
+      std::ifstream hvcFile(primaryFile, std::ios::binary | std::ios::ate);
+      if (!hvcFile.is_open()) {
+          error("Cannot open bytecode file: {}", primaryFile);
+          return 1;
+      }
+      std::streamsize size = hvcFile.tellg();
+      hvcFile.seekg(0, std::ios::beg);
+      std::vector<uint8_t> buffer(static_cast<size_t>(size));
+      if (!hvcFile.read(reinterpret_cast<char *>(buffer.data()), size)) {
+          error("Failed to read bytecode file: {}", primaryFile);
+          return 1;
+      }
+      havel::compiler::ValueSerializer serializer;
+      auto deserializedChunk = serializer.deserializeChunk(buffer);
+      if (!deserializedChunk) {
+          error("Failed to deserialize bytecode file: {}", primaryFile);
+          return 1;
+      }
+      chunk = std::make_unique<havel::compiler::BytecodeChunk>(std::move(*deserializedChunk));
+      info("Loaded bytecode from {}", primaryFile);
+  } else {
+      // Parse
+      havel::parser::Parser parser{{
+        .lexer = cfg.debugLexer,
+        .parser = cfg.debugParser,
+        .ast = cfg.debugAst
+      }};
+      std::unique_ptr<havel::ast::Program> program;
+      try {
+        program = parser.produceAST(combinedCode);
+      } catch (const std::exception& e) {
+        error("Parse error: {}", e.what());
+        return 1;
+      }
+      if (parser.hasErrors()) {
+        for (const auto& err : parser.getErrors()) {
+          std::string formatted = havel::ErrorPrinter::formatError(
+              "error", err.message, primaryFile,
+              err.line, err.column, 1, "");
+          std::cerr << formatted;
+        }
+        error("Build failed with {} parse error(s)", parser.getErrors().size());
+        return 1;
+      }
+      if (!program) {
+        error("Parser returned null AST");
+        return 1;
+      }
+
+      // Compile to bytecode
+      havel::compiler::ByteCompiler compiler;
+      if (cfg.debugBytecode) {
+        compiler.setCollectErrors(true);
+      }
+      try {
+        chunk = compiler.compile(*program);
+      } catch (const std::exception& e) {
+        error("Compile error: {}", e.what());
+        return 1;
+      }
+      if (compiler.hasErrors()) {
+        for (const auto& err : compiler.errors()) {
+          std::string formatted = havel::ErrorPrinter::formatError(
+              "error", err.what(), primaryFile,
+              err.line, err.column, 1, "");
+          std::cerr << formatted;
+        }
+        error("Build failed with {} compile error(s)", compiler.errors().size());
+        return 1;
+      }
   }
 
-  // Compile to bytecode
-  havel::compiler::ByteCompiler compiler;
-  if (cfg.debugBytecode) {
-    compiler.setCollectErrors(true);
-  }
-  std::unique_ptr<havel::compiler::BytecodeChunk> chunk;
-  try {
-    chunk = compiler.compile(*program);
-  } catch (const std::exception& e) {
-    error("Compile error: {}", e.what());
-    return 1;
-  }
-  if (compiler.hasErrors()) {
-    for (const auto& err : compiler.errors()) {
-      std::string formatted = havel::ErrorPrinter::formatError(
-          "error", err.what(), primaryFile,
-          err.line, err.column, 1, "");
-      std::cerr << formatted;
-    }
-    error("Build failed with {} compile error(s)", compiler.errors().size());
-    return 1;
-  }
   if (!chunk) {
     error("Compiler returned null chunk");
     return 1;

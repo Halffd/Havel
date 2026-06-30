@@ -3488,6 +3488,9 @@ case ast::NodeType::AtExpression: {
     if (!current_class_name_.empty()) {
       // Class instance method: 'this' is in local slot 0
       emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+    } else if (isDirective && current_function->is_timer_closure) {
+        // Inside interval/timeout closure: interval ID is in the first upvalue
+        emit(OpCode::LOAD_UPVALUE, static_cast<uint32_t>(0));
     } else {
       // Non-class context: fall back to global (for hotkey directives)
       uint32_t strId = addStringConstant("this");
@@ -7700,19 +7703,21 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
  uint32_t strId = addStringConstant("interval.start");
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
  }
- // Compile the interval duration
- compileExpression(*expression.intervalMs);
+  // Compile the interval duration
+  compileExpression(*expression.intervalMs);
 
- compileClosureBody(*expression.body, "<interval>");
+  // Reserve local slot for interval ID before compiling closure body so it can be captured
+  uint32_t idSlot = next_local_index++;
+
+  compileClosureBody(*expression.body, "<interval>", idSlot);
 
   // Emit LOAD_GLOBAL + CALL to interval.start
   emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
 
-  // Store interval ID as 'this' so @stop works inside the closure
-  {
-    uint32_t strId = addStringConstant("this");
-    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-  }
+  // Store interval ID in a local slot so @stop works inside the closure
+  emit(OpCode::DUP);
+  emit(OpCode::STORE_VAR, idSlot);
+
 }
 
 void ByteCompiler::compileUpdateBlockExpression(const ast::UpdateBlockExpression &expression) {
@@ -7751,26 +7756,34 @@ void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expres
  uint32_t strId = addStringConstant("timeout.start");
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
  }
- // Compile the delay duration
- compileExpression(*expression.delayMs);
+  // Compile the delay duration
+  compileExpression(*expression.delayMs);
 
- compileClosureBody(*expression.body, "<timeout>");
+  // Reserve local slot for timeout ID before compiling closure body
+  uint32_t idSlot = next_local_index++;
+
+  compileClosureBody(*expression.body, "<timeout>", idSlot);
 
   // Emit LOAD_GLOBAL + CALL to timeout.start
   emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
 
-  // Store timeout ID as 'this' so @stop/@cancel works inside the closure
-  {
-    uint32_t strId = addStringConstant("this");
-    emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
-  }
+  // Store timeout ID in a local slot so @stop works inside the closure
+  emit(OpCode::DUP);
+  emit(OpCode::STORE_VAR, idSlot);
+
 }
 
 // Compile a closure body, resolving identifiers against the enclosing function's scope
-void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::string &name) {
+void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::string &name, std::optional<uint32_t> capturedIntervalIdSlot) {
   // Collect all identifiers in the body that reference enclosing scope variables
   std::vector<UpvalueDescriptor> upvalues;
   collectUpvaluesFromBody(body, upvalues);
+
+  if (capturedIntervalIdSlot.has_value()) {
+    // Add the captured interval/timeout ID as an upvalue
+    upvalues.insert(upvalues.begin(), {*capturedIntervalIdSlot, true});
+    current_function->is_timer_closure = true;
+  }
 
   uint32_t funcIndex = compiled_functions.size();
   BytecodeFunction bf(name, 0, 0);
@@ -7784,7 +7797,11 @@ void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::str
   leaveFunction();
 
   // Load the function object
-  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+  if (!upvalues.empty()) {
+      emit(OpCode::CLOSURE, Value::makeInt(static_cast<int64_t>(funcIndex)));
+  } else {
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+  }
 }
 
 void ByteCompiler::collectUpvaluesFromBody(const ast::Statement &stmt, std::vector<UpvalueDescriptor> &upvalues) {

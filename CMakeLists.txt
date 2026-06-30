@@ -1236,18 +1236,31 @@ target_link_options(hpkg PRIVATE -fno-lto)
 endif()
 
 # ==============================================================================
-# HAVEL DEBUGGER (hvdb)
+# HAVEL DEBUGGER (hvdb) & DUMPER (hvdump)
 # ==============================================================================
 if(ENABLE_HAVEL_LANG)
 add_executable(hvdb src/hvdb/hvdb.cpp)
+add_executable(hvdump src/hvtools/hvdump.cpp)
 set_target_properties(hvdb PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
+set_target_properties(hvdump PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
 target_compile_options(hvdb PRIVATE -fno-lto)
+target_compile_options(hvdump PRIVATE -fno-lto)
 target_link_options(hvdb PRIVATE -fno-lto)
+target_link_options(hvdump PRIVATE -fno-lto)
 target_include_directories(hvdb PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
+target_include_directories(hvdump PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/havel-lang
@@ -1256,14 +1269,23 @@ target_link_libraries(hvdb PRIVATE
     -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
     ${COMMON_LIBS}
 )
+target_link_libraries(hvdump PRIVATE
+    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    ${COMMON_LIBS}
+)
 
 target_compile_definitions(hvdb PRIVATE
+$<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
+)
+target_compile_definitions(hvdump PRIVATE
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 
 if(ENABLE_MODULE_PLUGINS)
 set_target_properties(hvdb PROPERTIES ENABLE_EXPORTS ON)
+set_target_properties(hvdump PROPERTIES ENABLE_EXPORTS ON)
 endif()
 endif()
 

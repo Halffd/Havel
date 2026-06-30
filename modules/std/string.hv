@@ -171,3 +171,9 @@ fn isSpace(s) {
   }
   true
 }
+
+// Newly migrated string utilities
+fn fromCodePoint(cp) {
+    if cp < 0 { return "" }
+    return chr(cp)
+}

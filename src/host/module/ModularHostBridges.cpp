@@ -102,6 +102,11 @@ std::mutex g_async_mutex;
 std::mutex g_vm_invoke_mutex;
 std::atomic<uint64_t> g_next_task_id{1};
 std::unordered_map<std::string, AsyncTaskRecord> g_async_tasks;
+
+static std::string strVal(const Value &v, const compiler::VM *vm) {
+    if (vm && (v.isStringValId() || v.isStringId())) return vm->resolveStringKey(v);
+    return v.toString();
+}
 std::unordered_map<std::string, ChannelRecord> g_async_channels;
 std::unordered_map<std::string, ThreadRecord> g_threads;
 std::unordered_map<std::string, TimerRecord> g_timers;
@@ -313,7 +318,7 @@ Value IOBridge::handleSend(const std::vector<Value> &args,
     std::string keys;
     if (args[0].isStringValId() || args[0].isStringId()) {
         auto *vm = static_cast<VM *>(ctx->vm);
-        keys = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        keys = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
     } else {
         return Value::makeBool(false);
     }
@@ -331,7 +336,7 @@ Value IOBridge::handleSendKey(const std::vector<Value> &args,
     std::string key;
     if (args[0].isStringValId() || args[0].isStringId()) {
         auto *vm = static_cast<VM *>(ctx->vm);
-        key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        key = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
     } else {
         return Value::makeBool(false);
     }
@@ -405,7 +410,7 @@ Value IOBridge::handleMouseClick(const std::vector<Value> &args,
   auto button = ::havel::host::MouseService::Button::Left;
   if (args[0].isStringValId() || args[0].isStringId()) {
     auto *vm = static_cast<VM *>(ctx->vm);
-    std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    std::string btnStr = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
     button = ::havel::host::MouseService::parseButton(btnStr);
   } else if (args[0].isInt()) {
     button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
@@ -413,7 +418,7 @@ Value IOBridge::handleMouseClick(const std::vector<Value> &args,
 
   if (args.size() >= 2 && (args[1].isStringValId() || args[1].isStringId())) {
     auto *vm = static_cast<VM *>(ctx->vm);
-    std::string action = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+    std::string action = vm ? vm->resolveStringKey(args[1]) : strVal(args[1], ctx ? ctx->vm : nullptr);
     if (action == "down") {
       ::havel::host::MouseService::press(button);
       return Value::makeBool(true);
@@ -489,7 +494,7 @@ Value IOBridge::handleMouseDown(const std::vector<Value> &args,
     auto button = ::havel::host::MouseService::Button::Left;
     if (args[0].isStringValId() || args[0].isStringId()) {
         auto *vm = static_cast<VM *>(ctx->vm);
-        std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        std::string btnStr = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
         button = ::havel::host::MouseService::parseButton(btnStr);
     } else if (args[0].isInt()) {
         button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
@@ -510,7 +515,7 @@ Value IOBridge::handleMouseUp(const std::vector<Value> &args,
     auto button = ::havel::host::MouseService::Button::Left;
     if (args[0].isStringValId() || args[0].isStringId()) {
         auto *vm = static_cast<VM *>(ctx->vm);
-        std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        std::string btnStr = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
         button = ::havel::host::MouseService::parseButton(btnStr);
     } else if (args[0].isInt()) {
         button = ::havel::host::MouseService::parseButton(static_cast<int>(args[0].asInt()));
@@ -564,7 +569,7 @@ Value IOBridge::handleKeyDown(const std::vector<Value> &args,
  std::string key;
  if (args[0].isStringValId() || args[0].isStringId()) {
  auto *vm = static_cast<VM *>(ctx->vm);
- key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+ key = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
  } else {
  return Value::makeBool(false);
  }
@@ -578,7 +583,7 @@ Value IOBridge::handleKeyUp(const std::vector<Value> &args,
  std::string key;
  if (args[0].isStringValId() || args[0].isStringId()) {
  auto *vm = static_cast<VM *>(ctx->vm);
- key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+ key = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
  } else {
  return Value::makeBool(false);
  }
@@ -592,7 +597,7 @@ Value IOBridge::handleGetKey(const std::vector<Value> &args,
     std::string key;
     if (args[0].isStringValId() || args[0].isStringId()) {
         auto *vm = static_cast<VM *>(ctx->vm);
-        key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        key = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
     } else {
         return Value::makeBool(false);
     }
@@ -634,7 +639,7 @@ Value IOBridge::handleIsKeyPressed(const std::vector<Value> &args,
  std::string key;
  if (args[0].isStringValId() || args[0].isStringId()) {
  auto *vm = static_cast<VM *>(ctx->vm);
- key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+ key = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
  } else {
  return Value::makeBool(false);
  }
@@ -679,7 +684,7 @@ Value IOBridge::handleSetExecutorMode(const std::vector<Value> &args,
     auto *vm = static_cast<VM *>(ctx->vm);
     std::string modeStr;
     if (args[0].isStringValId() || args[0].isStringId()) {
-        modeStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        modeStr = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
     } else {
         return Value::makeBool(false);
     }
@@ -703,7 +708,7 @@ Value IOBridge::handleMouseState(const std::vector<Value> &args,
         if (args[0].isInt()) button = static_cast<int>(args[0].asInt());
         else if (args[0].isStringId() || args[0].isStringValId()) {
             auto *vm = static_cast<VM *>(ctx->vm);
-            std::string btnStr = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+            std::string btnStr = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
             button = static_cast<int>(::havel::host::MouseService::parseButton(btnStr));
         }
     }
@@ -891,12 +896,12 @@ Value IOBridge::handleSendModifiers(const std::vector<Value> &args,
     if (!args.empty()) {
         auto *vm = static_cast<VM *>(ctx->vm);
         if (args[0].isStringId() || args[0].isStringValId())
-            mods = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+            mods = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
         if (args.size() > 1) {
             if (args[1].isBool()) press = args[1].asBool();
             else if (args[1].isInt()) press = args[1].asInt() != 0;
             else if (args[1].isStringId() || args[1].isStringValId()) {
-                std::string s = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+                std::string s = vm ? vm->resolveStringKey(args[1]) : strVal(args[1], ctx ? ctx->vm : nullptr);
                 press = (s != "release" && s != "up");
             }
         }
@@ -937,11 +942,11 @@ Value IOBridge::handleSetDevice(const std::vector<Value> &args,
     auto *vm = static_cast<VM *>(ctx->vm);
     std::string device;
     if (args[0].isStringId() || args[0].isStringValId())
-        device = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        device = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
     else return Value::makeBool(false);
     std::string type;
     if (args.size() > 1 && (args[1].isStringId() || args[1].isStringValId()))
-        type = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+        type = vm ? vm->resolveStringKey(args[1]) : strVal(args[1], ctx ? ctx->vm : nullptr);
     if (!type.empty() && type == "backend") {
         ctx->io->SetInputBackend(device);
         return Value::makeBool(true);
@@ -971,7 +976,7 @@ Value IOBridge::handleSendKeyState(const std::vector<Value> &args,
     auto *vm = static_cast<VM *>(ctx->vm);
     std::string key;
     if (args[0].isStringId() || args[0].isStringValId())
-        key = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        key = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
     else return Value::makeBool(false);
 	if (args.size() < 2) {
 		ctx->io->SendX11Key(key, true);
@@ -983,7 +988,7 @@ Value IOBridge::handleSendKeyState(const std::vector<Value> &args,
 	if (args[1].isBool()) press = args[1].asBool();
 	else if (args[1].isInt()) press = args[1].asInt() != 0;
 	else if (args[1].isStringId() || args[1].isStringValId()) {
-		std::string s = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+		std::string s = vm ? vm->resolveStringKey(args[1]) : strVal(args[1], ctx ? ctx->vm : nullptr);
 		if (s == "release" || s == "up") press = false;
 		else if (s == "click" || s == "tap") {
 			ctx->io->SendX11Key(key, true);
@@ -1512,7 +1517,7 @@ SystemBridge::handleProcessFind(const std::vector<Value> &args,
   std::string name;
   if (args[0].isStringValId() || args[0].isStringId()) {
     auto *vm = static_cast<VM *>(ctx->vm);
-    name = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    name = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
   } else {
     throw std::runtime_error("process.find() requires a string argument");
   }
@@ -1542,7 +1547,7 @@ SystemBridge::handleProcessExists(const std::vector<Value> &args,
   std::string name;
   if (args[0].isStringValId() || args[0].isStringId()) {
     auto *vm = static_cast<VM *>(ctx->vm);
-    name = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    name = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
   } else {
     throw std::runtime_error("process.exists() requires a string or number");
   }
@@ -1565,7 +1570,7 @@ SystemBridge::handleProcessKill(const std::vector<Value> &args,
   std::string sig;
   if (args[1].isStringValId() || args[1].isStringId()) {
     auto *vm = static_cast<VM *>(ctx->vm);
-    sig = vm ? vm->resolveStringKey(args[1]) : args[1].toString();
+    sig = vm ? vm->resolveStringKey(args[1]) : strVal(args[1], ctx ? ctx->vm : nullptr);
   } else {
     throw std::runtime_error("process.kill() requires a string signal");
   }
@@ -1620,7 +1625,7 @@ SystemBridge::handleProcessRun(const std::vector<Value> &args,
   std::string cmd;
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   if (args[0].isStringValId() || args[0].isStringId()) {
-    cmd = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    cmd = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
   } else if (args[0].isArrayId()) {
     auto arr = ArrayRef{args[0].asArrayId()};
     size_t len = vm->getHostArrayLength(arr);
@@ -1662,7 +1667,7 @@ SystemBridge::handleProcessRunCapture(const std::vector<Value> &args,
   std::string cmd;
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   if (args[0].isStringValId() || args[0].isStringId()) {
-    cmd = vm ? vm->toString(args[0]) : args[0].toString();
+    cmd = vm ? vm->toString(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
   } else if (args[0].isArrayId()) {
     auto arr = ArrayRef{args[0].asArrayId()};
     size_t len = vm->getHostArrayLength(arr);
@@ -1691,7 +1696,7 @@ SystemBridge::handleProcessRunDetached(const std::vector<Value> &args,
   std::string cmd;
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   if (args[0].isStringValId() || args[0].isStringId()) {
-    cmd = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+    cmd = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
   } else if (args[0].isArrayId()) {
     auto arr = ArrayRef{args[0].asArrayId()};
     size_t len = vm->getHostArrayLength(arr);
@@ -3567,7 +3572,7 @@ Value UIBridge::handleGUINotify(const std::vector<Value> &args,
   int durationMs = 0;
 
   if (args.size() > 2 && args[2].isStringValId()) {
-    icon = args[2].toString();
+    icon = strVal(args[2], ctx ? ctx->vm : nullptr);
   }
   if (args.size() > 3 && args[3].isInt()) {
     durationMs = static_cast<int>(args[3].asInt());
@@ -4175,7 +4180,7 @@ AsyncBridge::handleAsyncAwait(const std::vector<Value> &args,
     throw std::runtime_error("async.await() requires a string task ID");
   }
 
-  std::string taskId = args[0].toString();
+  std::string taskId = strVal(args[0], ctx ? ctx->vm : nullptr);
 
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
@@ -4203,7 +4208,7 @@ AsyncBridge::handleAsyncCancel(const std::vector<Value> &args,
     throw std::runtime_error("async.cancel() requires a string task ID");
   }
 
-  std::string taskId = args[0].toString();
+  std::string taskId = strVal(args[0], ctx ? ctx->vm : nullptr);
 
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
@@ -4230,7 +4235,7 @@ AsyncBridge::handleAsyncIsRunning(const std::vector<Value> &args,
     throw std::runtime_error("async.isRunning() requires a string task ID");
   }
 
-  std::string taskId = args[0].toString();
+  std::string taskId = strVal(args[0], ctx ? ctx->vm : nullptr);
 
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
@@ -4256,7 +4261,7 @@ AsyncBridge::handleChannelCreate(const std::vector<Value> &args,
     throw std::runtime_error("async.channel() requires a string name");
   }
 
-  std::string name = args[0].toString();
+  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
 
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
@@ -4278,7 +4283,7 @@ AsyncBridge::handleChannelSend(const std::vector<Value> &args,
     throw std::runtime_error("async.send() requires a string channel name");
   }
 
-  std::string name = args[0].toString();
+  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
 
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
@@ -4303,7 +4308,7 @@ AsyncBridge::handleChannelReceive(const std::vector<Value> &args,
     throw std::runtime_error("async.receive() requires a string channel name");
   }
 
-  std::string name = args[0].toString();
+  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
 
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
@@ -4329,7 +4334,7 @@ AsyncBridge::handleChannelTryReceive(const std::vector<Value> &args,
         "async.tryReceive() requires a string channel name");
   }
 
-  std::string name = args[0].toString();
+  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
 
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
@@ -4355,7 +4360,7 @@ AsyncBridge::handleChannelClose(const std::vector<Value> &args,
         "async.channel.close() requires a string channel name");
   }
 
-  std::string name = args[0].toString();
+  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
 
   {
     std::lock_guard<std::mutex> lock(g_async_mutex);
@@ -5189,7 +5194,7 @@ AudioBridge::handleGetVolume(const std::vector<Value> &args,
   }
   // Check for device-specific overload: getVolume(device)
   if (!args.empty() && args[0].isStringValId()) {
-    std::string device = args[0].toString();
+    std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
     return Value::makeDouble(ctx->audioManager->getVolume(device));
   }
   // Default device
@@ -5210,7 +5215,7 @@ AudioBridge::handleSetVolume(const std::vector<Value> &args,
   // Check for (device, volume) overload
   if (args.size() >= 2) {
     if (args[0].isStringValId()) {
-      std::string device = args[0].toString();
+      std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
       double volume = 1.0;
       if (args[1].isDouble()) {
         volume = args[1].asDouble();
@@ -5243,7 +5248,7 @@ Value AudioBridge::handleIsMuted(const std::vector<Value> &args,
   }
   // Check for device-specific overload: isMuted(device)
   if (!args.empty() && args[0].isStringValId()) {
-    std::string device = args[0].toString();
+    std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
     return Value::makeBool(ctx->audioManager->isMuted(device));
   }
   // Default device
@@ -5259,7 +5264,7 @@ Value AudioBridge::handleSetMute(const std::vector<Value> &args,
   if (args.size() >= 2) {
     if (args[0].isStringValId() &&
         args[1].isBool()) {
-      std::string device = args[0].toString();
+      std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
       bool muted = args[1].asBool();
       return Value::makeBool(ctx->audioManager->setMute(device, muted));
     }
@@ -5280,7 +5285,7 @@ AudioBridge::handleToggleMute(const std::vector<Value> &args,
   }
   // Check for device-specific overload: toggleMute(device)
   if (!args.empty() && args[0].isStringValId()) {
-    std::string device = args[0].toString();
+    std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
     return Value::makeBool(ctx->audioManager->toggleMute(device));
   }
   // Default device
@@ -5368,7 +5373,7 @@ AudioBridge::handleFindDeviceByName(const std::vector<Value> &args,
   if (args.empty() || !args[0].isStringValId()) {
     throw std::runtime_error("audio.findDeviceByName() requires a name string");
   }
-  std::string name = args[0].toString();
+  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
 
   auto *dev = ctx->audioManager->findDeviceByName(name);
   if (!dev) {
@@ -5405,7 +5410,7 @@ AudioBridge::handleSetDefaultOutput(const std::vector<Value> &args,
   if (args.empty() || !args[0].isStringValId()) {
     throw std::runtime_error("audio.setDefaultOutput() requires a device name");
   }
-  std::string device = args[0].toString();
+  std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
   return Value::makeBool(ctx->audioManager->setDefaultOutput(device));
 }
 
@@ -5445,7 +5450,7 @@ AudioBridge::handleIncreaseVolume(const std::vector<Value> &args,
   if (args.size() >= 2) {
     // (device, amount)
     if (args[0].isStringValId()) {
-      device = args[0].toString();
+      device = strVal(args[0], ctx ? ctx->vm : nullptr);
     }
     if (args[1].isDouble()) {
       amount = args[1].asDouble();
@@ -5459,7 +5464,7 @@ AudioBridge::handleIncreaseVolume(const std::vector<Value> &args,
     } else if (args[0].isInt()) {
       amount = static_cast<double>(args[0].asInt());
     } else if (args[0].isStringValId()) {
-      device = args[0].toString();
+      device = strVal(args[0], ctx ? ctx->vm : nullptr);
     }
   }
 
@@ -5484,7 +5489,7 @@ AudioBridge::handleDecreaseVolume(const std::vector<Value> &args,
   if (args.size() >= 2) {
     // (device, amount)
     if (args[0].isStringValId()) {
-      device = args[0].toString();
+      device = strVal(args[0], ctx ? ctx->vm : nullptr);
     }
     if (args[1].isDouble()) {
       amount = args[1].asDouble();
@@ -5498,7 +5503,7 @@ AudioBridge::handleDecreaseVolume(const std::vector<Value> &args,
     } else if (args[0].isInt()) {
       amount = static_cast<double>(args[0].asInt());
     } else if (args[0].isStringValId()) {
-      device = args[0].toString();
+      device = strVal(args[0], ctx ? ctx->vm : nullptr);
     }
   }
 
@@ -5638,7 +5643,7 @@ Value MPVBridge::handleSeek(const std::vector<Value> &args,
     throw std::runtime_error("mpv.seek() requires a seconds argument");
   }
   if (args[0].isStringValId()) {
-    std::string seconds = args[0].toString();
+    std::string seconds = strVal(args[0], ctx ? ctx->vm : nullptr);
     ctx->mpvController->SendCommand({"seek", seconds});
   } else if (args[0].isInt()) {
     int seconds = static_cast<int>(args[0].asInt());
@@ -5658,7 +5663,7 @@ Value MPVBridge::handleSubSeek(const std::vector<Value> &args,
     throw std::runtime_error("mpv.subSeek() requires an index argument");
   }
   if (args[0].isStringValId()) {
-    std::string index = args[0].toString();
+    std::string index = strVal(args[0], ctx ? ctx->vm : nullptr);
     ctx->mpvController->SendCommand({"sub-seek", index});
   } else if (args[0].isInt()) {
     int index = static_cast<int>(args[0].asInt());
@@ -5718,7 +5723,7 @@ Value MPVBridge::handleCycle(const std::vector<Value> &args,
   if (args.empty() || !args[0].isStringValId()) {
     throw std::runtime_error("mpv.cycle() requires a property name");
   }
-  std::string property = args[0].toString();
+  std::string property = strVal(args[0], ctx ? ctx->vm : nullptr);
   ctx->mpvController->Cycle(property);
   return Value::makeBool(true);
 }
@@ -5743,7 +5748,7 @@ Value MPVBridge::handleIPCSet(const std::vector<Value> &args,
   if (args.empty() || !args[0].isStringValId()) {
     throw std::runtime_error("mpv.ipcSet() requires a socket path");
   }
-  std::string path = args[0].toString();
+  std::string path = strVal(args[0], ctx ? ctx->vm : nullptr);
   ctx->mpvController->SetIPC(path);
   return Value::makeBool(true);
 }
@@ -5783,7 +5788,7 @@ Value MPVBridge::handleCmd(const std::vector<Value> &args,
   std::vector<std::string> cmd;
   for (const auto &arg : args) {
     if (arg.isStringValId()) {
-      cmd.push_back(arg.toString());
+       cmd.push_back(strVal(arg, ctx ? ctx->vm : nullptr));
     } else if (arg.isInt()) {
       cmd.push_back(std::to_string(arg.asInt()));
     } else if (arg.isDouble()) {
@@ -6099,12 +6104,12 @@ Value ConfigBridge::handleGet(const std::vector<Value> &args,
     throw std::runtime_error("config.get() key must be a string");
   }
 
-  std::string key = args[0].toString();
+  std::string key = strVal(args[0], ctx ? ctx->vm : nullptr);
   auto &config = ::havel::Configs::Get();
 
   // Return value based on default type
   if (args[1].isStringValId()) {
-    std::string def = args[1].toString();
+    std::string def = strVal(args[1], ctx ? ctx->vm : nullptr);
     // TODO: string pool integration - for now return null
     (void)config; (void)key; (void)def;
     return Value::makeNull();
@@ -6133,14 +6138,14 @@ Value ConfigBridge::handleSet(const std::vector<Value> &args,
     throw std::runtime_error("config.set() key must be a string");
   }
 
-  std::string key = args[0].toString();
+  std::string key = strVal(args[0], ctx ? ctx->vm : nullptr);
   auto &config = ::havel::Configs::Get();
 
   bool save = (args.size() > 2 && args[2].isBool() &&
                args[2].asBool());
 
   if (args[1].isStringValId()) {
-    config.Set(key, args[1].toString(), save);
+    config.Set(key, strVal(args[1], ctx ? ctx->vm : nullptr), save);
   } else if (args[1].isInt()) {
     config.Set(key, args[1].asInt(), save);
   } else if (args[1].isDouble()) {
@@ -6214,7 +6219,7 @@ Value ModeBridge::handleRegister(const std::vector<Value> &args,
     std::string modeName;
     if (args[0].isStringValId() || args[0].isStringId()) {
         auto *vm = static_cast<VM *>(ctx->vm);
-        modeName = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+        modeName = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
     } else {
         return Value::makeBool(false);
     }
@@ -6311,7 +6316,7 @@ Value ModeBridge::handleSet(const std::vector<Value> &args,
     throw std::runtime_error("mode.set() requires a mode name string");
   }
   auto *vm = static_cast<VM *>(ctx->vm);
-  std::string modeName = vm ? vm->resolveStringKey(args[0]) : args[0].toString();
+  std::string modeName = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
   ctx->modeManager->setMode(modeName);
   if (ctx->hotkeyManager) {
     ctx->hotkeyManager->setMode(modeName);

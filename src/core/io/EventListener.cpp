@@ -152,10 +152,10 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
     struct input_event ev;
     ev.type = EV_REL;
     ev.code = REL_X;
-    ev.value = static_cast<int>(me.dx * mouseSensitivity);
+    ev.value = static_cast<int>(me.dx);
     ProcessMouseEvent(ev);
     ev.code = REL_Y;
-    ev.value = static_cast<int>(me.dy * mouseSensitivity);
+    ev.value = static_cast<int>(me.dy);
     ProcessMouseEvent(ev);
     SendUinputEvent(EV_SYN, SYN_REPORT, 0);
   } else if (me.type == MouseEvent::Type::Button) {
@@ -1055,11 +1055,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
   } else if (ev.type == EV_REL) {
     // Mouse movement
     if (ev.code == REL_X || ev.code == REL_Y) {
-      double scaledValue = ev.value * IO::mouseSensitivity;
-      if (debugging::debug_io) debug("Mouse MOVE: axis={}, value={}, scaled={}, sensitivity={}",
-            ev.code == REL_X ? "X" : "Y", ev.value, scaledValue,
-            IO::mouseSensitivity);
-      int32_t scaledInt = static_cast<int32_t>(scaledValue);
+      int32_t scaledInt = ev.value;
+      if (debugging::debug_io) debug("Mouse MOVE: axis={}, value={}",
+            ev.code == REL_X ? "X" : "Y", ev.value);
       if (inputEventCallback) {
         InputEvent event;
         event.kind = InputEventKind::MouseMove;

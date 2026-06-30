@@ -55,7 +55,7 @@ public:
     std::unordered_set<uint32_t> GetPressedKeys() const override;
 
     bool SupportsGrab() const override { return true; }
-    bool SupportsSynthesis() const override { return true; }
+    bool SupportsSynthesis() const override { return uinput_ != nullptr; }
 
     bool SendKeyEvent(uint32_t code, bool down) override;
     bool SendMouseEvent(const MouseEvent &event) override;
@@ -502,7 +502,14 @@ uint32_t EvdevAdapter::GetModifiers() const {
 }
 
 bool EvdevAdapter::SendKeyEvent(uint32_t code, bool down) {
-    if (!uinput_) return false;
+    if (!uinput_) {
+        static bool logged = false;
+        if (!logged) {
+            error("EvdevAdapter::SendKeyEvent: uinput not available, event dropped (code={} down={})", code, down);
+            logged = true;
+        }
+        return false;
+    }
 
     uinput_->SendEvent(EV_KEY, code, down ? 1 : 0);
     uinput_->SendEvent(EV_SYN, SYN_REPORT, 0);

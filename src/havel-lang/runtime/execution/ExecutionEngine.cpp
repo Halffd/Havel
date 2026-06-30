@@ -173,7 +173,7 @@ if (g->persistent && g->state == Scheduler::GoroutineState::Created
             auto val = vm_->getGlobalThreadSafe(dep);
             if (val.has_value()) {
                 fprintf(stderr, "[EE-COND] dep '%s' = '%s'\n",
-                    dep.c_str(), val->toString().c_str());
+                    dep.c_str(), vm_->toString(*val).c_str());
             } else {
                 fprintf(stderr, "[EE-COND] dep '%s' NOT FOUND in globals\n", dep.c_str());
             }
@@ -187,7 +187,7 @@ if (g->persistent && g->state == Scheduler::GoroutineState::Created
             // on return, and this path runs before any goroutine has set it).
             // callFunctionSync has a null-chunk fallback via main_chunk_.
             Value result = vm_->callFunctionSync(*condVal, {});
-            fprintf(stderr, "[EE-COND] gid=%d alias=%s result=%s isBool=%d isNull=%d\n", g->id, g->hotkey_condition_alias.c_str(), result.toString().c_str(), result.isBool(), result.isNull());
+            fprintf(stderr, "[EE-COND] gid=%d alias=%s result=%s isBool=%d isNull=%d\n", g->id, g->hotkey_condition_alias.c_str(), vm_->toString(result).c_str(), result.isBool(), result.isNull());
             conditionMet = vm_->toBool(result);
         } catch (const std::exception &e) {
             if (debug_mode_) {

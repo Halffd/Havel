@@ -11,8 +11,8 @@ using havel::compiler::VMApi;
 
 namespace havel::stdlib {
 
-static std::string strArg(const Value &v) {
-    if (v.isStringId() || v.isStringValId()) return v.toString();
+static std::string strArg(const VMApi &api, const Value &v) {
+    if (v.isStringId() || v.isStringValId()) return api.resolveString(v);
     if (v.isInt()) return std::to_string(v.asInt());
     return "";
 }
@@ -134,33 +134,33 @@ void registerWaylandModule(const VMApi &apiRef) {
         return Value::makeBool(true);
     });
 
-    api.registerFunction("wayland.keyboard.type", [](const std::vector<Value> &args) {
+    api.registerFunction("wayland.keyboard.type", [&api](const std::vector<Value> &args) {
         if (!kbInit || !vkb || args.empty()) return Value::makeBool(false);
-        vkb->typeText(strArg(args[0]));
+        vkb->typeText(strArg(api, args[0]));
         return Value::makeBool(true);
     });
 
-    api.registerFunction("wayland.keyboard.press_name", [](const std::vector<Value> &args) {
+    api.registerFunction("wayland.keyboard.press_name", [&api](const std::vector<Value> &args) {
         if (!kbInit || !vkb || args.empty()) return Value::makeBool(false);
-        vkb->pressKeyByName(strArg(args[0]));
+        vkb->pressKeyByName(strArg(api, args[0]));
         return Value::makeBool(true);
     });
 
-    api.registerFunction("wayland.keyboard.release_name", [](const std::vector<Value> &args) {
+    api.registerFunction("wayland.keyboard.release_name", [&api](const std::vector<Value> &args) {
         if (!kbInit || !vkb || args.empty()) return Value::makeBool(false);
-        vkb->releaseKeyByName(strArg(args[0]));
+        vkb->releaseKeyByName(strArg(api, args[0]));
         return Value::makeBool(true);
     });
 
-    api.registerFunction("wayland.keyboard.tap_name", [](const std::vector<Value> &args) {
+    api.registerFunction("wayland.keyboard.tap_name", [&api](const std::vector<Value> &args) {
         if (!kbInit || !vkb || args.empty()) return Value::makeBool(false);
-        vkb->tapKeyByName(strArg(args[0]));
+        vkb->tapKeyByName(strArg(api, args[0]));
         return Value::makeBool(true);
     });
 
-    api.registerFunction("wayland.keyboard.keycode", [](const std::vector<Value> &args) {
+    api.registerFunction("wayland.keyboard.keycode", [&api](const std::vector<Value> &args) {
         if (!kbInit || !vkb || args.empty()) return Value::makeInt(0);
-        return Value::makeInt(static_cast<int64_t>(vkb->keyNameToKeycode(strArg(args[0]))));
+        return Value::makeInt(static_cast<int64_t>(vkb->keyNameToKeycode(strArg(api, args[0]))));
     });
 
     auto kbObj = api.makeObject();
@@ -234,10 +234,10 @@ void registerWaylandModule(const VMApi &apiRef) {
         return Value::makeBool(vptr->scrollDiscrete(dy, dx));
     });
 
-    api.registerFunction("wayland.mouse.button_name_to_code", [](const std::vector<Value> &args) {
+    api.registerFunction("wayland.mouse.button_name_to_code", [&api](const std::vector<Value> &args) {
         if (args.empty()) return Value::makeInt(0);
         return Value::makeInt(static_cast<int64_t>(
-            havel::VirtualPointer::buttonNameToLinux(strArg(args[0]))));
+            havel::VirtualPointer::buttonNameToLinux(strArg(api, args[0]))));
     });
 
     auto ptrObj = api.makeObject();
@@ -267,9 +267,9 @@ void registerWaylandModule(const VMApi &apiRef) {
         return api.makeString(clip->getText());
     });
 
-    api.registerFunction("wayland.clipboard.set_text", [](const std::vector<Value> &args) {
+    api.registerFunction("wayland.clipboard.set_text", [&api](const std::vector<Value> &args) {
         if (!clipInit || !clip || args.empty()) return Value::makeBool(false);
-        return Value::makeBool(clip->setText(strArg(args[0])));
+        return Value::makeBool(clip->setText(strArg(api, args[0])));
     });
 
     api.registerFunction("wayland.clipboard.clear", [](const std::vector<Value> &) {
@@ -287,9 +287,9 @@ void registerWaylandModule(const VMApi &apiRef) {
         return api.makeString(clip->getPrimaryText());
     });
 
-    api.registerFunction("wayland.clipboard.set_primary", [](const std::vector<Value> &args) {
+    api.registerFunction("wayland.clipboard.set_primary", [&api](const std::vector<Value> &args) {
         if (!clipInit || !clip || args.empty()) return Value::makeBool(false);
-        return Value::makeBool(clip->setPrimaryText(strArg(args[0])));
+        return Value::makeBool(clip->setPrimaryText(strArg(api, args[0])));
     });
 
     auto clipObj = api.makeObject();

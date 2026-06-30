@@ -311,13 +311,15 @@ vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
   options_.host_functions["extension.load"] =
 [this](const std::vector<Value> &args) {
   if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
-  extensionLoader_->loadExtensionWithInit(args[0].toString(), getHavelAPI());
-  return Value(extensionLoader_->isLoaded(args[0].toString()));
+  auto name = ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString();
+  extensionLoader_->loadExtensionWithInit(name, getHavelAPI());
+  return Value(extensionLoader_->isLoaded(name));
 };
   options_.host_functions["extension.isLoaded"] =
       [this](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
-        return Value(extensionLoader_->isLoaded(args[0].toString()));
+        auto name = ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString();
+        return Value(extensionLoader_->isLoaded(name));
       };
   options_.host_functions["extension.list"] =
       [this](const std::vector<Value> &args) {
@@ -335,7 +337,7 @@ vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
   options_.host_functions["extension.addSearchPath"] =
       [this](const std::vector<Value> &args) {
         if (args.empty() || !args[0].isStringValId()) return Value::makeBool(false);
-        extensionLoader_->addSearchPath(args[0].toString());
+        extensionLoader_->addSearchPath(ctx_->vm ? ctx_->vm->resolveStringKey(args[0]) : args[0].toString());
         return Value::makeBool(true);
       };
 
@@ -383,7 +385,7 @@ vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
 
   options_.host_functions["eval"] = [this](const std::vector<Value> &args) {
     if (args.empty() || !ctx_ || !ctx_->vm) return Value::makeNull();
-    std::string code = args[0].toString();
+    std::string code = ctx_->vm->resolveStringKey(args[0]);
     if (code.empty()) return Value::makeNull();
     try {
       parser::Parser parser;
@@ -466,8 +468,8 @@ vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
 
   options_.host_functions["defun"] = [this](const std::vector<Value> &args) {
     if (args.size() < 3 || !ctx_ || !ctx_->vm) return Value::makeNull();
-    std::string typeName = args[0].toString();
-    std::string methodName = args[1].toString();
+    std::string typeName = ctx_->vm->resolveStringKey(args[0]);
+    std::string methodName = ctx_->vm->resolveStringKey(args[1]);
     if (typeName.empty() || methodName.empty()) return Value::makeNull();
     Value fn = args[2];
     const BytecodeChunk *fnChunk = ctx_->vm->getCurrentChunk();
@@ -494,7 +496,7 @@ vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
     if (args[0].isObjectId() && args[1].isStringValId()) {
       auto *obj = ctx_->vm->getHeap().object(args[0].asObjectId());
       if (obj) {
-        std::string key = args[1].toString();
+        std::string key = ctx_->vm->resolveStringKey(args[1]);
         if (!key.empty()) {
           obj->erase(key);
           return Value::makeBool(true);

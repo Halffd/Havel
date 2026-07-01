@@ -2,4 +2,4 @@ use "net/address" as addr
 
 print("Resolving localhost...")
 localhostIP = addr.resolve("localhost")
-print("Resolved localhost to: {localhostIP}")
+print("Resolved localhost to: $localhostIP")

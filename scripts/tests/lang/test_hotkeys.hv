@@ -2,7 +2,7 @@ x = ['a', '~', 'c', 0]
 f1 => {
    if #x < 1 return
    xv = x.pop()
-   io.send(f"xxxxx {xv}")
+   io.send("xxxxx $xv")
 }
 hotkey.register("p", fn() {
     print("pressed P")
@@ -39,7 +39,7 @@ RShift => {
   print 'zoom'
   while z > 0 {
     z -= 3
-    print f"-{z}"
+    print "-$z"
     sleep(80)
   }
 }

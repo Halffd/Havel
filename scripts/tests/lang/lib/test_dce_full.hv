@@ -37,4 +37,4 @@ whileFalse = {kind: "WhileStatement", condition: falseLit, body: thenBlock, line
 r4 = deadCodeElim(whileFalse)
 check("while false returns null", r4.kind, "NullLiteral")
 
-print("\n{passes} passed, {fails} failed")
+print("\n$passes passed, $fails failed")

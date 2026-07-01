@@ -180,7 +180,7 @@ fn loadImage(path) {
   ffi.free(_path_cs)
   if _read == 0 {
     _err = _wandError(_wand)
-    if _err != "" { print(f"imagick: {_err}") }
+    if _err != "" { print("imagick: $_err") }
     ffi.call(_DestroyMagickWand, "int32", _t_p, _wand)
     return null
   }

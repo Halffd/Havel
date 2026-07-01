@@ -13,7 +13,7 @@ fn testDeferWithThrow() {
 try {
   testDeferWithThrow()
 } catch e {
-  log.push("caught: {e}")
+  log.push("caught: $e")
 }
 
 print(log)

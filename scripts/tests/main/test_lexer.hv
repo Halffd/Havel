@@ -14,8 +14,8 @@ let str3=''';pgk,.l m,kijmyt,k5r6kl5!!@#$%^&*()_+KJUGBNM<>?:|}|"{
 } ['[[['_'dsefrt566%^&**~``````れｔｂｈじゃへひほふさせしそすかけきこくぁぇぃぉぅぱｓぺぴぽぷーたっつぁ！＠＃＄％＾＆＊（）＿＋ ｋれ４ｔｒ５ｙ６つり６ｔっｇｆｒｇｙ５おえれてつさめ｛｝”｜１２４６４３７８９０−]]]']'''
 
 // f-strings
-let str4 = f"!@#$$%%&()|[]]<>:;'QWERTYUIOPASDFGHJKL:ZXCVB NM<> - {str1} -"
-let str5 = f'!@#$$%%&()|[]]<>:;QWERTYUIOPASDFGHJKL:ZXCVB NM<> 01234567890-=_+ - {str2} -'
+let str4 = "!@#$$%%&()|[]]<>:;'QWERTYUIOPASDFGHJKL:ZXCVB NM<> - $str1 -"
+let str5 = "!@#$$%%&()|[]]<>:;QWERTYUIOPASDFGHJKL:ZXCVB NM<> 01234567890-=_+ - $str2 -"
 
 // Many languages
 let str6 = f"""
@@ -23,7 +23,7 @@ let str6 = f"""
 qwfpgjlQWFPHJKHqwertyuiop[]asdfghj[]iu章啦藕片欧文【❳
 】】、、=-12【‘人生破录取’】صثقفغعهخحبللاالربؤلا ىةؤىلا|ئءؤربللاىاةتضصثقفغعهخحج1234567890-لاتنمحلتقةنومخ/5فلبىرةنولهفغ6فتقن5بخ5عفتنبمخيحستنمق5غغقثخثحجلغاجعحطجدا
 हगकतदुवपोॆेंमनवलस,करपुि्ॆॆंमिुबपहगदचच़ॉटटयच1234567890-=!@#$%^&*()_+
-{str1} {str2} {[str1, str2, str3, str4]} {str4 + str5}
+$str1 $str2 ${[str1, str2, str3, str4]} ${str4 + str5}
 """
 /* f strings with $ format */
 let str7 = f"$str1 $str2 $str3 $str4 $str5 $str6"
@@ -93,15 +93,15 @@ print(f"Ratio: {err1 / err2:.2f}x {'(better)' if err2 < err1 else '(worse)'}")
 
 for i, st in [str1,str2,str3,str4,str5,str6,str7,str8,str9]
 {
-    print(f"""
- - String {i}:  {st}
+    print("""
+ - String $i:  $st
 
 
 """)
 }
 // Test python code string
-let cmd = f"""python << 'EOF'
-{str9}
+let cmd = """python << 'EOF'
+$str9
 EOF"""
 
 run(cmd)

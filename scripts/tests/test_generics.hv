@@ -3,7 +3,7 @@
 
 pass = 0
 fail = 0
-fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print("FAIL $n: got $a, expected $e") } }
 
 // 1. generic struct with type parameter
 struct Box(T) {
@@ -97,4 +97,4 @@ w = Wrapper(Box(77))
 check("generic-nested", w.value().get(), 77)
 
 // summary
-print(f"\nGenerics: {pass} passed, {fail} failed")
+print("\nGenerics: $pass passed, $fail failed")

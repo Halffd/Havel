@@ -1,0 +1,15 @@
+// minimal go test
+print("start")
+
+go fn() {
+    print("goroutine 1: hello")
+}
+
+n = 0
+loop {
+    n += 1
+    if n >= 1000000 {
+        print("main loop done: n=$n")
+        exit(0)
+    }
+}

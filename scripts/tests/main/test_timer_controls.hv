@@ -4,7 +4,7 @@ print("=== Timer Controls Test ===")
 counter = 0
 t1 = interval(100, fn() {
     counter = counter + 1
-    print("tick {counter}")
+    print("tick $counter")
 })
 
 sleep(350)
@@ -16,7 +16,7 @@ t1.resume()
 sleep(350)
 print("Stopping interval...")
 t1.stop()
-print("Final counter: {counter}")
+print("Final counter: $counter")
 
 print("")
 print("=== Timeout Test ===")

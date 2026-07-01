@@ -7,14 +7,14 @@ F1 => {
     print("f1 pressed")
     interval 1000 {
         count += 1
-        print(f"count: {count}")
+        print("count: $count")
     }
 }
 F2 => {
     print("f2 pressed")
     interval 1000 {
         count += 5
-        print(f"count: {count}")
+        print("count: $count")
     }
 }
 Backspace => {

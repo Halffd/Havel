@@ -36,7 +36,7 @@ localhostIP = addr.resolve("localhost")
 if localhostIP == null {
     print("WARNING: 'localhost' DNS resolution returned null. Network config might be missing.")
 } else {
-    print("2. DNS resolution passed! (localhost -> {localhostIP})")
+    print("2. DNS resolution passed! (localhost -> $localhostIP)")
 }
 
 // 3. Test HTTP & TCP Mock Connection
@@ -55,9 +55,9 @@ print("3. Web Application Framework instantiation passed!")
 // 4. Test WebSocket Accept Key Handshake
 expectedKey = wsproto.acceptKey("dGhlIHNhbXBsZSBub25jZQ==")
 if expectedKey == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" {
-    print("4. WebSocket Accept Key generation passed! ({expectedKey})")
+    print("4. WebSocket Accept Key generation passed! ($expectedKey)")
 } else {
-    print("FAILED: WebSocket Accept Key generation (expected s3pPLMBiTxaQ9kYGzzhZRbK+xOo=, got {expectedKey})")
+    print("FAILED: WebSocket Accept Key generation (expected s3pPLMBiTxaQ9kYGzzhZRbK+xOo=, got $expectedKey)")
 }
 
 // 5. Test JSON-RPC Server Method Registration

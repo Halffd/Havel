@@ -1,6 +1,6 @@
 pass = 0
 fail = 0
-fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL $n: got $a, expected $e") } }
 
 // 1. large array creation and ops
 arr = []
@@ -94,5 +94,5 @@ b = [...a, ...a]
 check("spread-double", b, [1, 2, 3, 1, 2, 3])
 check("spread-double-len", #b, 6)
 
-print(f"stress-collections: {pass} passed, {fail} failed")
+print("stress-collections: $pass passed, $fail failed")
 exit(fail)

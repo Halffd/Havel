@@ -509,7 +509,7 @@ check("spread in array", has_spread)
 // ============================================================
 // 41. String interpolation
 // ============================================================
-r = parse('"hello {name}"')
+r = parse('"hello $name"')
 e = firstExpr(r.ast)
 check("interpolated string kind", e.kind == "InterpolatedString")
 

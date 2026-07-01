@@ -32,5 +32,5 @@ print(t)
 if t >= 50 {
     print("SUCCESS")
 } else {
-    print("FAIL: t={t}")
+    print("FAIL: t=$t")
 }

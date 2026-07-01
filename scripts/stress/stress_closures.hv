@@ -1,6 +1,6 @@
 pass = 0
 fail = 0
-fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL $n: got $a, expected $e") } }
 
 // 1. deeply nested closures (5 levels)
 fn f0(n) {
@@ -94,5 +94,5 @@ for i in 0..9 {
 }
 check("fn-in-obj-loop", total, 90)
 
-print(f"stress-closures: {pass} passed, {fail} failed")
+print("stress-closures: $pass passed, $fail failed")
 exit(fail)

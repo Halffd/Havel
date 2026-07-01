@@ -5,7 +5,7 @@ class Point {
     @y = y
   }
   fn show() {
-    print("{@x},{@y}")
+    print("${@x},${@y}")
   }
 }
 

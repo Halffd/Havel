@@ -7,7 +7,7 @@ code1 = 'use math\nval x = math.abs(-42)\nprint(x)'
 emitter1 = Emitter()
 ast1 = parse(code1)
 if ast1.errors != null && #ast1.errors > 0 {
-  print("FAIL test1 parse: {ast1.errors}")
+  print("FAIL test1 parse: ${ast1.errors}")
 }
 else {
   typed1 = inferProgram(emitter1, ast1)
@@ -16,7 +16,7 @@ else {
     print("PASS test1: bare use math")
   }
   else {
-    print("FAIL test1: compile returned {result1}")
+    print("FAIL test1: compile returned $result1")
   }
 }
 
@@ -25,7 +25,7 @@ code2 = 'use { abs } from "math"\nprint(abs(-7))'
 emitter2 = Emitter()
 ast2 = parse(code2)
 if ast2.errors != null && #ast2.errors > 0 {
-  print("FAIL test2 parse: {ast2.errors}")
+  print("FAIL test2 parse: ${ast2.errors}")
 }
 else {
   typed2 = inferProgram(emitter2, ast2)
@@ -34,7 +34,7 @@ else {
     print("PASS test2: named use { abs } from math")
   }
   else {
-    print("FAIL test2: compile returned {result2}")
+    print("FAIL test2: compile returned $result2")
   }
 }
 
@@ -43,7 +43,7 @@ code3 = 'use * from "math"\nprint(abs(-3))'
 emitter3 = Emitter()
 ast3 = parse(code3)
 if ast3.errors != null && #ast3.errors > 0 {
-  print("FAIL test3 parse: {ast3.errors}")
+  print("FAIL test3 parse: ${ast3.errors}")
 }
 else {
   typed3 = inferProgram(emitter3, ast3)
@@ -52,7 +52,7 @@ else {
     print("PASS test3: wildcard use * from math")
   }
   else {
-    print("FAIL test3: compile returned {result3}")
+    print("FAIL test3: compile returned $result3")
   }
 }
 
@@ -61,7 +61,7 @@ code4 = 'use "math" as m\nprint(m.abs(-9))'
 emitter4 = Emitter()
 ast4 = parse(code4)
 if ast4.errors != null && #ast4.errors > 0 {
-  print("FAIL test4 parse: {ast4.errors}")
+  print("FAIL test4 parse: ${ast4.errors}")
 }
 else {
   typed4 = inferProgram(emitter4, ast4)
@@ -70,6 +70,6 @@ else {
     print("PASS test4: use file as alias")
   }
   else {
-    print("FAIL test4: compile returned {result4}")
+    print("FAIL test4: compile returned $result4")
   }
 }

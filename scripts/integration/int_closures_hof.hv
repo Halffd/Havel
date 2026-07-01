@@ -10,7 +10,7 @@ fn check(name, actual, expected) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {name}: got {actual}, expected {expected}")
+    print("FAIL $name: got $actual, expected $expected")
   }
 }
 
@@ -121,5 +121,5 @@ while i < 5 {
 }
 check("loop-closure-ref", fns[3](), 4)
 
-print(f"closures-hof: {pass} passed, {fail} failed")
+print("closures-hof: $pass passed, $fail failed")
 exit(fail)

@@ -4,7 +4,7 @@
 
 pass = 0
 fail = 0
-fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print("FAIL $n: got $a, expected $e") } }
 
 // 1. basic struct construction and field access
 struct Point {
@@ -204,5 +204,5 @@ sc2.addOne()
 check("struct-indep-1", sc1.getCount(), 1)
 check("struct-indep-2", sc2.getCount(), 2)
 
-print(f"structs-data: {pass} passed, {fail} failed")
+print("structs-data: $pass passed, $fail failed")
 exit(fail)

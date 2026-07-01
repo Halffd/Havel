@@ -9,7 +9,7 @@ fn check(n, a, e) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {n}: got {a}, expected {e}")
+    print("FAIL $n: got $a, expected $e")
   }
 }
 
@@ -18,7 +18,7 @@ fn checkTrue(n, a) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {n}: expected true, got {a}")
+    print("FAIL $n: expected true, got $a")
   }
 }
 
@@ -217,13 +217,13 @@ testSingleton()
 // --- Adapter ---
 class PayXPTO {
   fn pay(card, amount) {
-    f"XPTO: {card} paid {amount}"
+    "XPTO: $card paid $amount"
   }
 }
 
 class ABCService {
   fn process(card, amount) {
-    f"ABC: paid {amount}"
+    "ABC: paid $amount"
   }
 }
 
@@ -252,7 +252,7 @@ class TextRenderer {
 }
 
 class WidgetRenderer {
-  fn render(t) { f"[WIDGET] {t}" }
+  fn render(t) { "[WIDGET] $t" }
 }
 
 class TextArea {
@@ -274,7 +274,7 @@ testBridge()
 class File {
   name: str
   fn @(n) { @name = n }
-  fn delete() { f"Deleting {@name}" }
+  fn delete() { "Deleting ${@name}" }
   fn encrypt() {
     // simple caesar shift
     result = ""
@@ -341,7 +341,7 @@ class CastleFacade {
   castle
   fn @() { @castle = Castle() }
   fn goodNight() {
-    f"Disarmed, { @castle.disarm() } -> Lights: { @castle.lightsOff() } -> Fire: { @castle.fireOff() } -> Armed: { @castle.arm() }"
+    "Disarmed, ${@castle.disarm()} -> Lights: ${@castle.lightsOff()} -> Fire: ${@castle.fireOff()} -> Armed: ${@castle.arm()}"
   }
 }
 
@@ -386,9 +386,9 @@ fn testProxy() {
   cache = {}
   cache["key"] = null
   fn readPath(p, cache, real) {
-    if cache[p] != null { f"[CACHE] {cache[p]}" }
+    if cache[p] != null { "[CACHE] ${cache[p]}" }
     else {
-      v = f"Content of {p}"
+      v = "Content of $p"
       cache[p] = v
       v
     }
@@ -453,8 +453,8 @@ testChain()
 class Adventurer {
   hp
   fn @() { @hp = 100 }
-  fn attack() { f"Attack! HP={@hp}" }
-  fn heal() { @hp = @hp + 20; if @hp > 100 { @hp = 100 }; f"Heal! HP={@hp}" }
+  fn attack() { "Attack! HP=${@hp}" }
+  fn heal() { @hp = @hp + 20; if @hp > 100 { @hp = 100 }; "Heal! HP=${@hp}" }
 }
 
 class AttackCmd {
@@ -686,14 +686,14 @@ fn calcExpr(e) {
   else { 0 }
 }
 
-fn printInt(n) { f"{n.n}" }
+fn printInt(n) { "${n.n}" }
 
 fn printAdd(n) {
-  f"({printExpr(n.left)}+{printExpr(n.right)})"
+  "(${printExpr(n.left)}+${printExpr(n.right)})"
 }
 
 fn printMul(n) {
-  f"({printExpr(n.left)}*{printExpr(n.right)})"
+  "(${printExpr(n.left)}*${printExpr(n.right)})"
 }
 
 fn printExpr(e) {
@@ -724,11 +724,11 @@ testCoupling()
 
 // --- Cohesion ---
 class StatementService {
-  fn generate(account) { f"Statement for {account}" }
+  fn generate(account) { "Statement for $account" }
 }
 
 class EmailService {
-  fn send(dest, msg) { f"Email to {dest}: {msg}" }
+  fn send(dest, msg) { "Email to $dest: $msg" }
 }
 
 fn testCohesion() {
@@ -741,7 +741,7 @@ testCohesion()
 
 // --- Controller ---
 class ReservationService {
-  fn reserve(flight) { f"Reserved {flight}" }
+  fn reserve(flight) { "Reserved $flight" }
 }
 
 class FlightController {
@@ -816,11 +816,11 @@ testInfoExpert()
 
 // --- Polymorphism ---
 class AlphaBroker {
-  fn pay(card, amount) { f"Alpha:{card}:{amount}" }
+  fn pay(card, amount) { "Alpha:$card:$amount" }
 }
 
 class BetaBroker {
-  fn pay(card, amount) { f"Beta:{card}:{amount}" }
+  fn pay(card, amount) { "Beta:$card:$amount" }
 }
 
 class PaymentClient {
@@ -886,5 +886,5 @@ fn testProtectedVariation() {
 testProtectedVariation()
 
 // ======================== SUMMARY ========================
-print(f"\n=== Results: {pass} passed, {fail} failed ===")
+print("\n=== Results: $pass passed, $fail failed ===")
 if fail > 0 { exit(1) }

@@ -3,7 +3,7 @@
 
 pass = 0
 fail = 0
-fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print("FAIL $n: got $a, expected $e") } }
 
 // 1. array creation and access
 arr = [10, 20, 30, 40, 50]
@@ -102,5 +102,5 @@ check("arr-obj-ages", ages.sum(), 55)
 result = [1,2,3,4,5,6,7,8,9,10].filter((x) => x % 2 == 0).map((x) => x * x).reduce((a,b) => a + b, 0)
 check("chain-filter-map-reduce", result, 220)
 
-print(f"collections-iter: {pass} passed, {fail} failed")
+print("collections-iter: $pass passed, $fail failed")
 exit(fail)

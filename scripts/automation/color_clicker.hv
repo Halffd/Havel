@@ -11,7 +11,7 @@ fn autoClickOnColor(targetR, targetG, targetB, tolerance, interval) {
     _color = pixel.getPixelUnderMouse()
     if _color != null && pixel.colorsMatch(_color, _target, tolerance) {
       automation.click(1)
-      print(f"Clicked! Color: {_color.hex}")
+      print("Clicked! Color: ${_color.hex}")
     }
     sleep(interval)
   }

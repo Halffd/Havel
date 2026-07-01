@@ -9,7 +9,7 @@ fn check(n, a, e) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {n}: got {a}, expected {e}")
+    print("FAIL $n: got $a, expected $e")
   }
 }
 
@@ -55,5 +55,5 @@ fn echo(x) {
 
 check("no-arg-factory", echo("hello"), "hello")
 
-print(f"int-decorator-factory: {pass} passed, {fail} failed")
+print("int-decorator-factory: $pass passed, $fail failed")
 exit(fail)

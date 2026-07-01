@@ -64,7 +64,7 @@ go fn update() {
       [ltitle, lclass, lcmd, lwid, lwpid] = [title_, class_, cmd, wid, wpid]
       modeEval(win)
       if dbgWin {
-         print(f"Active window changed: $title_ class: $class_ mode: $mode cmd: $cmd pid: $wpid id: $wid last: {lastWin ? lastWin.title_ : "none"}")
+         print("Active window changed: $title_ class: $class_ mode: $mode cmd: $cmd pid: $wpid id: $wid last: ${lastWin ? lastWin.title_ : "none"}")
       }
       print("hotkeyTest: ", hotkeyTest)
       print("Hotkeys:")

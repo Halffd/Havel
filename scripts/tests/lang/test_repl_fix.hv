@@ -2,7 +2,7 @@
 
 [log]
 fn greet(name)
-  f"hello {name}"
+  "hello $name"
 
 print greet("world")
 
@@ -11,7 +11,7 @@ class Point
     @x = x
     @y = y
   fn toString()
-    f"Point({@x}, {@y})"
+    "Point(${@x}, ${@y})"
 
 p = Point.new(3, 4)
 print p

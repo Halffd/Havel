@@ -8,7 +8,7 @@ cfg.Mouse = {}
 
 // Mock section function
 fn MySection(obj) {
-    print("MySection called with: {obj}")
+    print("MySection called with: $obj")
 }
 
 config {
@@ -21,9 +21,9 @@ config {
   Mouse.DPI = 400
 }
 
-print("IO.Executor: {cfg.IO.Executor}")
-print("General.Terminal: {cfg.General.Terminal}")
-print("General.GamingApps: {cfg.General.GamingApps}")
+print("IO.Executor: ${cfg.IO.Executor}")
+print("General.Terminal: ${cfg.General.Terminal}")
+print("General.GamingApps: ${cfg.General.GamingApps}")
 
 mode gaming {
   condition = true

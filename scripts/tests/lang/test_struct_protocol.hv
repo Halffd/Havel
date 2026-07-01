@@ -10,7 +10,7 @@ struct Shape : Drawable {
 
 impl Drawable for Shape {
   fn draw(self) {
-    print("drawing at {self.x},{self.y}")
+    print("drawing at ${self.x},${self.y}")
   }
 }
 

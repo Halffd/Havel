@@ -4,7 +4,7 @@
 
 pass = 0
 fail = 0
-fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print("FAIL $n: got $a, expected $e") } }
 
 // 1. basic string methods
 check("len", "hello".len(), 5)
@@ -32,10 +32,10 @@ check("concat-multi", "a" + "b" + "c", "abc")
 // 4. f-string interpolation
 x = 42
 s = "world"
-check("fstring-var", f"hello {s}", "hello world")
-check("fstring-int", f"x={x}", "x=42")
-check("fstring-expr", f"{x+1}", "43")
-check("fstring-multi", f"{x} and {x*2}", "42 and 84")
+check("fstring-var", "hello $s", "hello world")
+check("fstring-int", "x=$x", "x=42")
+check("fstring-expr", "${x+1}", "43")
+check("fstring-multi", "$x and ${x*2}", "42 and 84")
 
 // 5. split and join
 check("split-join", "a-b-c".split("-").join(","), "a,b,c")
@@ -75,5 +75,5 @@ check("str-arr-join", words.join(" "), "hello world")
 check("str-arr-contains", words.includes("hello"), true)
 check("str-arr-contains-f", words.includes("xyz"), false)
 
-print(f"strings-utf8: {pass} passed, {fail} failed")
+print("strings-utf8: $pass passed, $fail failed")
 exit(fail)

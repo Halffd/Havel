@@ -10,7 +10,7 @@ fn check(n, a, e) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {n}: got {a}, expected {e}")
+    print(f"FAIL $n: got $a, expected $e")
   }
 }
 
@@ -188,5 +188,5 @@ check("offset-factory", getRaw(), 0)
 // - @identity fn foo() { 1 } → "Undefined variable: 'this'"
 // - [deco_a][deco_b] fn f() → only deco_b runs, deco_a silently skipped
 
-print(f"stress-decorators: {pass} passed, {fail} failed")
+print("stress-decorators: $pass passed, $fail failed")
 exit(fail)

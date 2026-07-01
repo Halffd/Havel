@@ -23,7 +23,7 @@ print("\n3. Object iteration:")
 obj = {"a": 1, "b": 2, "c": 3}
 for entry, n in obj {
   print(f"  key: $entry")
-  print(f"  2nd: {n}")
+  print("  2nd: $n")
 }
 for entry in obj {
   print(f"  entry: $entry")

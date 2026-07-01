@@ -14,7 +14,7 @@ if im == null || im == 0 {
 w = cv.width(im)
 h = cv.height(im)
 c = cv.channels(im)
-print(f"Image: {w}x{h}x{c}")
+print("Image: ${w}x${h}x${c}")
 assert w == 800
 assert h == 600
 assert c == 3

@@ -5,9 +5,9 @@ use "./lib/automation.hv" as automation
 use "./lib/imagick.hv" as imagick
 
 print("=== pixel ===")
-print(f"DISPLAY: {shell.getenv('DISPLAY')}")
+print("DISPLAY: ${shell.getenv('DISPLAY')}")
 _dpy = pixel.display()
-print(f"display ptr: {ffi.ptr_to_uint(_dpy)}")
+print("display ptr: ${ffi.ptr_to_uint(_dpy)}")
 
 _pos = pixel.getMousePos()
 print("mouse:")
@@ -50,14 +50,14 @@ _img = null
 for _p in _imgPaths {
   _img = imagick.loadImage(_p)
   if _img != null {
-    print(f"loaded: {_p}")
+    print("loaded: $_p")
     break
   }
 }
 print("loadImage:")
 print(_img)
 if _img != null {
-  print(f"size: {_img.width}x{_img.height}")
+  print("size: ${_img.width}x${_img.height}")
   _hit = imagick.findColor(_img, "#1793d1", 40)
   print("findColor arch blue:")
   print(_hit)

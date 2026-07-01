@@ -17,14 +17,14 @@ let response = http.get(url, {
   }
 })
 if response.ok {
-    print(f"Success! Length: {response.body.len}")
+    print("Success! Length: ${response.body.len}")
     try {
       print(response.json())
     } catch {
       print "not json"
     }
 } else {
-    print(f"Failed: {response.status}")
+    print("Failed: ${response.status}")
 }
 print("")
 
@@ -58,14 +58,14 @@ let postResp = http.post(postUrl, postBody, {
   verify_ssl: true
 })
 if postResp.ok {
-  print(f"POST Success! Status: {postResp.status}")
+  print("POST Success! Status: ${postResp.status}")
   try {
     print(postResp.json())
   } catch {
     print("POST not json")
   }
 } else {
-  print(f"POST Failed: {postResp.status}")
+  print("POST Failed: ${postResp.status}")
 }
 print("")
 
@@ -78,10 +78,10 @@ let putResp = http.put(putUrl, putBody, {
   timeout: 3000
 })
 if putResp.ok {
-  print(f"PUT Success! Status: {putResp.status}")
+  print("PUT Success! Status: ${putResp.status}")
   print(putResp.body)
 } else {
-  print(f"PUT Failed: {putResp.status}")
+  print("PUT Failed: ${putResp.status}")
 }
 print("")
 
@@ -93,10 +93,10 @@ let patchResp = http.patch(patchUrl, patchBody, {
   headers: { "Content-Type": "application/json" }
 })
 if patchResp.ok {
-  print(f"PATCH Success! Status: {patchResp.status}")
+  print("PATCH Success! Status: ${patchResp.status}")
   print(patchResp.body)
 } else {
-  print(f"PATCH Failed: {patchResp.status}")
+  print("PATCH Failed: ${patchResp.status}")
 }
 print("")
 
@@ -107,10 +107,10 @@ let deleteResp = http.delete(deleteUrl, {
   timeout: 5000
 })
 if deleteResp.ok {
-  print(f"DELETE Success! Status: {deleteResp.status}")
+  print("DELETE Success! Status: ${deleteResp.status}")
   print(deleteResp.body)
 } else {
-  print(f"DELETE Failed: {deleteResp.status}")
+  print("DELETE Failed: ${deleteResp.status}")
 }
 print("")
 
@@ -121,11 +121,11 @@ let headResp = http.head(headUrl, {
   timeout: 2000
 })
 if headResp.ok {
-  print(f"HEAD Success! Status: {headResp.status}")
+  print("HEAD Success! Status: ${headResp.status}")
   print("HEAD Headers:")
   print(headResp.headers)
 } else {
-  print(f"HEAD Failed: {headResp.status}")
+  print("HEAD Failed: ${headResp.status}")
 }
 print("")
 
@@ -138,14 +138,14 @@ if fs.exists(testUploadPath) {
     timeout: 7000
   })
   if uploadResp.ok {
-    print(f"UPLOAD Success! Status: {uploadResp.status}")
+    print("UPLOAD Success! Status: ${uploadResp.status}")
     try {
       print(uploadResp.json())
     } catch {
       print("UPLOAD not json")
     }
   } else {
-    print(f"UPLOAD Failed: {uploadResp.status}")
+    print("UPLOAD Failed: ${uploadResp.status}")
   }
 } else {
   print("Test upload file does not exist, skipping http.upload test.")
@@ -156,7 +156,7 @@ print("")
 print("10. Testing network.ping:")
 let pingResult = network.ping("httpbin.org", 2500)
 if pingResult != null {
-  print(f"Ping httpbin.org: {pingResult} ms")
+  print("Ping httpbin.org: $pingResult ms")
 } else {
   print("Ping timed out or failed.")
 }

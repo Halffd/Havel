@@ -10,7 +10,7 @@ fn check(n, a, e) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {n}: got {a}, expected {e}")
+    print("FAIL $n: got $a, expected $e")
   }
 }
 
@@ -135,5 +135,5 @@ check("graph-fetch1", repo.fetch(1), "data-1")
 check("graph-fetch2", repo.fetch(2), "data-2")
 check("graph-hits", repo.getCacheHits(), 2)
 
-print(f"integration-di: {pass} passed, {fail} failed")
+print("integration-di: $pass passed, $fail failed")
 exit(fail)

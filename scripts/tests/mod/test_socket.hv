@@ -1,0 +1,11 @@
+use "net/socket" as sock
+
+fn main() {
+    print("Creating socket...")
+    
+    print("Closing socket...")
+    sock.close(fd)
+    print("Done")
+}
+
+main()

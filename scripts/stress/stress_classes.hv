@@ -7,7 +7,7 @@ fn check(n, a, e) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {n}: got {a}, expected {e}")
+    print(f"FAIL $n: got $a, expected $e")
   }
 }
 
@@ -204,5 +204,5 @@ obj = {a: TaggedItem("x", 1), b: TaggedItem("y", 2)}
 check("obj-class-a", obj.a.getTag(), "x")
 check("obj-class-b", obj.b.getVal(), 2)
 
-print(f"stress-classes: {pass} passed, {fail} failed")
+print("stress-classes: $pass passed, $fail failed")
 exit(fail)

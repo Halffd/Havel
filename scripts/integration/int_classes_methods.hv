@@ -10,7 +10,7 @@ fn check(name, actual, expected) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {name}: got {actual}, expected {expected}")
+    print("FAIL $name: got $actual, expected $expected")
   }
 }
 
@@ -187,5 +187,5 @@ fac = Factory(3)
 tripler = fac.makeMultiplier()
 check("method-returns-fn", tripler(7), 21)
 
-print(f"classes-methods: {pass} passed, {fail} failed")
+print("classes-methods: $pass passed, $fail failed")
 exit(fail)

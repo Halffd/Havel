@@ -13,7 +13,7 @@ fn check(n, a, e) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {n}: got {a}, expected {e}")
+    print(f"FAIL $n: got $a, expected $e")
   }
 }
 
@@ -59,11 +59,11 @@ impl Measurable for Widget {
 }
 
 impl Renderable for Widget {
-  fn render() { f"Widget({@w}x{@h})" }
+  fn render() { "Widget(${@w}x${@h})" }
 }
 
 impl Storable for Widget {
-  fn save() { f"saved:w={@w},h={@h}" }
+  fn save() { "saved:w=${@w},h=${@h}" }
 }
 
 impl Serializable for Widget {}
@@ -155,7 +155,7 @@ impl Measurable for Box {
 }
 
 impl Storable for Box {
-  fn save() { f"box:{@width}x{@height}x{@depth}" }
+  fn save() { "box:${@width}x${@height}x${@depth}" }
 }
 
 b = Box(3, 4, 5)
@@ -216,5 +216,5 @@ check("impl-write-double", wid2.getWidth(), 40)
 // - OpCode::PROT_CHECK/PROT_CAST exist in VM but ByteCompiler never emits them
 // - CastExpression AST node exists but ByteCompiler has no handler for `as`
 
-print(f"stress-protocols: {pass} passed, {fail} failed")
+print("stress-protocols: $pass passed, $fail failed")
 exit(fail)

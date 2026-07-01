@@ -7,7 +7,7 @@ fn check(n, a, e) {
     pass += 1
   } else {
     fail += 1
-    print(f"FAIL {n}: got {a}, expected {e}")
+    print(f"FAIL $n: got $a, expected $e")
   }
 }
 
@@ -231,5 +231,5 @@ while fib_n < 15 {
 }
 check("fib-while", fib_a, 610)
 
-print(f"stress-control: {pass} passed, {fail} failed")
+print("stress-control: $pass passed, $fail failed")
 exit(fail)

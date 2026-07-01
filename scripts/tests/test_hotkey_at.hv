@@ -9,7 +9,7 @@ dhk=test_key => {
 
 print "about to trigger"
 result = hotkey.trigger("test_key")
-print f"trigger result: {result}"
+print "trigger result: $result"
 sleep(1000)
 print "after sleep"
 exit(0)

@@ -4,7 +4,7 @@
 
 pass = 0
 fail = 0
-fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print("FAIL $n: got $a, expected $e") } }
 
 // 1. if/else
 x = 10
@@ -161,5 +161,5 @@ obj = {a: 1, b: 2, c: 3}
 del obj.a
 check("del-key", #(obj.keys()), 2)
 
-print(f"control-flow-errors: {pass} passed, {fail} failed")
+print("control-flow-errors: $pass passed, $fail failed")
 exit(fail)

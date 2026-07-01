@@ -90,10 +90,10 @@ print("  Car kinetic energy:", E_kinetic, "J");
 // Test 7: Format with scientific notation
 print("7. Testing formatted output...");
 
-print("  Speed of light formatted: {c:.2e} m/s");
-print("  Electron charge formatted: {e:.2e} C");
-print("  Planck constant formatted: {h:.2e} J⋅s");
-print("  Gravitational force formatted: {F_gravity:.2e} N");
+print("  Speed of light formatted: ${c:.2e} m/s");
+print("  Electron charge formatted: ${e:.2e} C");
+print("  Planck constant formatted: ${h:.2e} J⋅s");
+print("  Gravitational force formatted: ${F_gravity:.2e} N");
 
 print("=== Physics Constants Test Complete ===");
 print("");

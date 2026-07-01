@@ -1,7 +1,7 @@
 // Test generics with bounds
 pass = 0
 fail = 0
-fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print("FAIL $n: got $a, expected $e") } }
 
 // Test 1: class with single bound
 class Calculator(T: Number) {
@@ -70,4 +70,4 @@ st.push(20)
 check("unbounded-stack-len", st.len(), 2)
 check("unbounded-stack-pop", st.pop(), 20)
 
-print(f"\nGenerics bounds: {pass} passed, {fail} failed")
+print("\nGenerics bounds: $pass passed, $fail failed")

@@ -3,7 +3,7 @@
 
 pass = 0
 fail = 0
-fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print(f"FAIL {n}: got {a}, expected {e}") } }
+fn check(n, a, e) { if a == e { pass += 1 } else { fail += 1; print("FAIL $n: got $a, expected $e") } }
 
 // 1. Type module
 check("type-isNumber-int", Type.isNumber(42), true)
@@ -66,5 +66,5 @@ obj.d = 40
 check("obj-mut-add", obj.d, 40)
 check("obj-keys-after-add", #(obj.keys()), 4)
 
-print(f"stdlib-modules: {pass} passed, {fail} failed")
+print("stdlib-modules: $pass passed, $fail failed")
 exit(fail)

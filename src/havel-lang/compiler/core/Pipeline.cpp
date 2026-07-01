@@ -9,6 +9,7 @@
 #include "../../utils/ErrorPrinter.hpp"
 #include "../../errors/ErrorSystem.h"
 
+#include "../../stdlib/RuntimeErrorTracker.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -994,6 +995,7 @@ for (const auto &stmt : program->body) {
             ::havel::errors::ErrorStage::VM, e.message,
             static_cast<size_t>(std::max(1, static_cast<int>(e.line))),
             static_cast<size_t>(std::max(1, static_cast<int>(e.column))));
+        ::havel::stdlib::notifyRuntimeError(e.message);
         if (e.line > 0) {
             throw std::runtime_error(formatDiagnostic(
                 "RuntimeError", e.message, options.compile_unit_name, source,
@@ -1004,6 +1006,7 @@ for (const auto &stmt : program->body) {
     } catch (const std::exception &e) {
         ::havel::errors::ErrorReporter::instance().error(
             ::havel::errors::ErrorStage::VM, e.what());
+        ::havel::stdlib::notifyRuntimeError(e.what());
         throw std::runtime_error(enrichRuntimeError(e.what(), options.compile_unit_name, source));
     }
   return result;

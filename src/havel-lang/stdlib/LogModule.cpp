@@ -11,6 +11,7 @@ void registerDebugModule(const VMApi &) {}
 
 } // namespace havel::stdlib
 #else
+#include "RuntimeErrorTracker.hpp"
 #include "../../utils/Logger.hpp"
 #include "core/config/ConfigManager.hpp"
 #include <fstream>
@@ -334,6 +335,22 @@ if (args.empty()) return Value::makeNull();
 return args[0];
 });
 
+api.registerFunction("debug.minimal", [](const std::vector<Value> &) -> Value {
+  return Value::makeBool(Configs::Get().Get<bool>("Debug.ForceMinimal", false));
+});
+
+api.registerFunction("debug.errorCount", [](const std::vector<Value> &) -> Value {
+  return Value::makeInt(static_cast<int64_t>(runtimeErrorCount()));
+});
+
+api.registerFunction("debug.errors", [api](const std::vector<Value> &args) -> Value {
+  auto arr = api.makeArray();
+  for (const auto &err : runtimeErrorsList()) {
+    api.push(arr, api.makeString(err));
+  }
+  return arr;
+});
+
 auto debugObj = api.makeObject();
 api.setField(debugObj, "toggleVerboseConditionLogging", api.makeFunctionRef("debug.toggleVerboseConditionLogging"));
 api.setField(debugObj, "toggleVerboseKeyLogging", api.makeFunctionRef("debug.toggleVerboseKeyLogging"));
@@ -354,6 +371,9 @@ api.setField(debugObj, "dumpBytecode", api.makeFunctionRef("debug.dumpBytecode")
 api.setField(debugObj, "startTimer", api.makeFunctionRef("debug.startTimer"));
 api.setField(debugObj, "endTimer", api.makeFunctionRef("debug.endTimer"));
 api.setField(debugObj, "colorize", api.makeFunctionRef("debug.colorize"));
+api.setField(debugObj, "minimal", api.makeFunctionRef("debug.minimal"));
+api.setField(debugObj, "errorCount", api.makeFunctionRef("debug.errorCount"));
+api.setField(debugObj, "errors", api.makeFunctionRef("debug.errors"));
 api.setGlobal("debug", debugObj);
 }
 

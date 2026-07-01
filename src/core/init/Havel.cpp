@@ -398,6 +398,9 @@ void Havel::initialize(bool isStartup) {
           (void*)io.get(), io ? (void*)io->GetEventListener() : nullptr, (void*)executionEngine.get());
   if (io && io->GetEventListener()) {
             io->GetEventListener()->setModules(modules_.get());
+            io->GetEventListener()->setDeferredSendFlush([ioPtr = io.get()](){
+                ioPtr->FlushPendingSends();
+            });
   if (executionEngine) {
     io->GetEventListener()->setExecutionEngine(executionEngine.get());
     if (debugging::debug_io) debug("ExecutionEngine integrated into EventListener main loop");

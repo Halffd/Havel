@@ -1,6 +1,8 @@
 // HotkeyExecutor.hpp
 #pragma once
 #include "utils/Logger.hpp"
+
+#include "havel-lang/stdlib/RuntimeErrorTracker.hpp"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -25,6 +27,9 @@ enum class ExecutorMode {
 
 class HotkeyExecutor {
 public:
+  static bool isInHotkeyCallback();
+  static void setInHotkeyCallback(bool v);
+
   struct SubmitResult {
     bool accepted; // false if queue full or shutting down
   };
@@ -135,22 +140,19 @@ private:
       }
 
       try {
+        setInHotkeyCallback(true);
         t->fn();
       } catch (const havel::compiler::ScriptError &e) {
-        // Capture error message
         t->errorMessage = std::string("ScriptError: ") + e.what();
-        
-        // Call custom error callback if set
+        havel::stdlib::notifyRuntimeError(e.message);
         if (t->errorCallback) {
           t->errorCallback(t->errorMessage);
         } else {
-          // Default: print to stderr
                 havel::error("[HotkeyExecutor] {}", t->errorMessage);
         }
       } catch (const std::exception &e) {
-        // Capture error message
         t->errorMessage = std::string("Exception: ") + e.what();
-        
+        havel::stdlib::notifyRuntimeError(e.what());
         if (t->errorCallback) {
           t->errorCallback(t->errorMessage);
         } else {
@@ -158,13 +160,14 @@ private:
         }
       } catch (...) {
         t->errorMessage = "Unknown exception in hotkey execution";
-        
+        havel::stdlib::notifyRuntimeError(t->errorMessage);
         if (t->errorCallback) {
           t->errorCallback(t->errorMessage);
         } else {
                 havel::error("[HotkeyExecutor] {}", t->errorMessage);
         }
       }
+      setInHotkeyCallback(false);
 
       try {
         t->prom->set_value();

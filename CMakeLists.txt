@@ -1433,6 +1433,7 @@ if(ENABLE_HAVEL_LANG)
     ${CMAKE_SOURCE_DIR}/src/c/LoggerC.c
     ${CMAKE_SOURCE_DIR}/src/c/Config.c
     ${CMAKE_SOURCE_DIR}/src/modules/brightness/BrightnessModule.cpp
+    ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/RuntimeErrorTracker.cpp
 )
     add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
 

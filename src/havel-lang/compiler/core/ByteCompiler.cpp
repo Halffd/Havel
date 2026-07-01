@@ -7958,36 +7958,78 @@ if (expression.value) {
  }
 
 void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
-// go func() -> thread_spawn(func()) — spawns goroutine, discards thread handle
+  if (!statement.call) {
+    COMPILER_THROW("Go statement missing call expression");
+  }
 
-if (!statement.call) {
-COMPILER_THROW("Go statement missing call expression");
-}
+  if (statement.call->kind != ast::NodeType::CallExpression) {
+    uint32_t strId = addStringConstant("thread_spawn");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    compileExpression(*statement.call);
+    emit(OpCode::CALL, static_cast<uint32_t>(1));
+    emit(OpCode::POP);
+    return;
+  }
 
-{
-uint32_t strId = addStringConstant("thread_spawn");
-emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-}
-compileExpression(*statement.call);
-emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
-emit(OpCode::POP);
+  // go fn(args) -> wrap call in a zero-arg closure so call happens in goroutine
+  // compileCallExpression is invoked INSIDE the closure, so all identifier
+  // bindings (Function, Global, HostFunction) resolve correctly at closure-creation
+  // time.  Local bindings in args would NOT work because the closure has no shared
+  // frame — this path is used for simple named-function calls.
+  const auto &call = static_cast<const ast::CallExpression &>(*statement.call);
+  uint32_t funcIndex = compiled_functions.size();
+  BytecodeFunction bf("<go>", 0, 0);
+  enterFunction(std::move(bf), funcIndex);
+
+  bool saved_tail = in_tail_position_;
+  in_tail_position_ = false;
+  compileCallExpression(call);
+  in_tail_position_ = saved_tail;
+
+  emit(OpCode::RETURN);
+  leaveFunction();
+
+  {
+    uint32_t strId = addStringConstant("thread_spawn");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+  }
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+  emit(OpCode::CALL, static_cast<uint32_t>(1));
+  emit(OpCode::POP);
 }
 
 void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {
-  // go expr -> call thread_spawn(expr)
-  // Returns a thread object with .join(), .send() methods
-  
   if (!expression.call) {
     COMPILER_THROW("Go expression missing call expression");
   }
-  
- // Compile the expression/function being spawned
- {
- uint32_t strId = addStringConstant("thread_spawn");
- emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
- }
- compileExpression(*expression.call);
- emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+
+  if (expression.call->kind != ast::NodeType::CallExpression) {
+    uint32_t strId = addStringConstant("thread_spawn");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    compileExpression(*expression.call);
+    emit(OpCode::CALL, static_cast<uint32_t>(1));
+    return;
+  }
+
+  const auto &call = static_cast<const ast::CallExpression &>(*expression.call);
+  uint32_t funcIndex = compiled_functions.size();
+  BytecodeFunction bf("<go>", 0, 0);
+  enterFunction(std::move(bf), funcIndex);
+
+  bool saved_tail = in_tail_position_;
+  in_tail_position_ = false;
+  compileCallExpression(call);
+  in_tail_position_ = saved_tail;
+
+  emit(OpCode::RETURN);
+  leaveFunction();
+
+  {
+    uint32_t strId = addStringConstant("thread_spawn");
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+  }
+  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+  emit(OpCode::CALL, static_cast<uint32_t>(1));
 }
 
 // Compile del target: del variable, del obj.field, del arr[index], del set[key]

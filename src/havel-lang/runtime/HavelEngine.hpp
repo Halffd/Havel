@@ -87,6 +87,9 @@ havel::startup_timing_report("vm-create", t);
         // Set up scheduler for goroutine/thread support
         vm_->setScheduler(&compiler::Scheduler::instance());
 
+        // Set up yield callback so goroutines run during main script execution
+        vm_->setYieldCallback([this]() { processGoroutinesInline(); });
+
         // Apply VMConfig scheduler settings
         compiler::Scheduler::instance().setDefaultTickInstructions(
             config_.vmConfig.goroutine_tick_instructions,
@@ -486,6 +489,8 @@ private:
     std::shared_ptr<Modules> modules_;
     std::unique_ptr<compiler::WatcherRegistry> watcher_registry_;
     bool initialized_ = false;
+    std::unique_ptr<compiler::Fiber> main_script_fiber_;
+    bool inline_yield_active_ = false;
 
   static compiler::Scheduler::SuspensionReason toSchedulerReasonPublic(uint8_t fiberReason) {
     using F = compiler::SuspensionReason;
@@ -504,6 +509,91 @@ private:
     case F::COROUTINE_WAIT: return S::CoroutineWait;
     default: return S::None;
     }
+  }
+
+  void processGoroutinesInline() {
+    if (inline_yield_active_) return;
+    auto* sched = vm_->getScheduler();
+    if (!sched || sched->runnableCount() == 0) return;
+
+    if (!main_script_fiber_) {
+      main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0);
+    }
+    vm_->saveFiberStatePublic(main_script_fiber_.get());
+
+    sched->drainDeferredCallbacks();
+    sched->wakeSleepingGoroutines();
+
+    const int budget = 512;
+    int executed = 0;
+
+    while (executed < budget) {
+      auto* g = sched->pickNext();
+      if (!g) break;
+
+      if (g->state == compiler::Scheduler::GoroutineState::Created) {
+        auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+        if (call_result == compiler::VM::GoroutineCallResult::Failed ||
+            call_result == compiler::VM::GoroutineCallResult::JITExecuted) {
+          if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+          g->state = compiler::Scheduler::GoroutineState::Done;
+          executed++;
+          continue;
+        }
+        g->state = compiler::Scheduler::GoroutineState::Runnable;
+        if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+      } else if (g->fiber) {
+        vm_->loadFiberStatePublic(g->fiber);
+      }
+
+      g->state = compiler::Scheduler::GoroutineState::Running;
+      if (g->fiber) g->fiber->state = compiler::FiberState::RUNNING;
+
+      for (int i = 0; i < 64; ++i) {
+        auto result = vm_->executeOneStep(g->fiber);
+        g->instructions_executed++;
+        executed++;
+        if (result.type != compiler::VMExecutionResult::YIELD) {
+          if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+          switch (result.type) {
+            case compiler::VMExecutionResult::RETURNED:
+              g->state = compiler::Scheduler::GoroutineState::Done;
+              if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
+              break;
+            case compiler::VMExecutionResult::SUSPENDED:
+              if (g->fiber) g->fiber->state = compiler::FiberState::SUSPENDED;
+              g->state = compiler::Scheduler::GoroutineState::Suspended;
+              break;
+            case compiler::VMExecutionResult::ERROR:
+              g->state = compiler::Scheduler::GoroutineState::Done;
+              if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
+              break;
+            default:
+              sched->yield(g);
+              break;
+          }
+          break;
+        }
+        if (g->instructions_executed >= g->max_instructions_per_tick) {
+          g->instructions_executed = 0;
+          if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+          sched->yield(g);
+          break;
+        }
+        if (vm_->exit_requested_.load()) break;
+      }
+
+      if (g->state == compiler::Scheduler::GoroutineState::Running) {
+        if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+        sched->yield(g);
+      }
+
+      if (vm_->exit_requested_.load()) break;
+    }
+
+    vm_->loadFiberStatePublic(main_script_fiber_.get());
+
+    inline_yield_active_ = false;
   }
 
   void processGoroutines() {

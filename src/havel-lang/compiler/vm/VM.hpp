@@ -519,11 +519,11 @@ size_t tail_call_depth_ = 0;
                   std::vector<Value> args); // TCO
   void runDispatchLoop(size_t stop_frame_depth);
   void runDispatchFast(size_t stop_frame_depth);
-  inline void periodicYieldCheck() {
-      if (yield_callback_) {
-          yield_callback_();
-      }
-  }
+   inline void periodicYieldCheck() {
+       if (yield_callback_) {
+           yield_callback_();
+       }
+   }
   bool handleScriptThrow(const Value &value);
   std::string buildStackTrace(size_t frame_count) const;
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);

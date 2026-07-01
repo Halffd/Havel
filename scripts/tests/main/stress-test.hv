@@ -21,32 +21,23 @@ Backspace => {
     print("backspace pressed")
     count = 0
 }
-F3 => {
-    run("gnome-terminal")
-}
-F4 => {
-    run("google-chrome")
+
+go fn() {
+    print("goroutine 1: hello from go")
+    loop {
+        print("goroutine 1: tick")
+        sleep(500)
+    }
 }
 
 go fn() {
-    run("firefox")
-}
-go fn() {
-    run("python3 -m http.server 8000")
-}
-go fn() {
-    loop {
-       print(time.now())
-  }
-}
-fn recorder() {
-    i = 0
-    loop {
-        screenshot.full(f"/tmp/screenshot{i}.png")
-        sleep(1000)
+    print("goroutine 2: hello from go")
+    n = 0
+    while true {
+        n += 1
     }
 }
-go recorder()
+
 n = 0
 while true {
    n += 1

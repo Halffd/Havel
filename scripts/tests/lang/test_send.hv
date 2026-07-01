@@ -4,7 +4,7 @@ fn msH(ms) {
 fn hMs(h) { h * 3600000.0 }
 
 let delayH = 0.0
-let delayM = 0.0  
+let delayM = 0.0
 let delayS = 1.0
 let delayMs = 0.0
 let delay = (delayH * 3600000) + (delayM * 60000) + (delayS * 1000) + delayMs
@@ -56,6 +56,6 @@ for i in 0..it {
     print(i, " : ", p)
     xx(delay, p)
 }
-send("{enter}")
+send("end{enter}")
 send("{lalt:down}{left}{lalt:up}")
 send("^{d}")

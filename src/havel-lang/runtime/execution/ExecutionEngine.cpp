@@ -922,8 +922,6 @@ void ExecutionEngine::processGoroutinesInline() {
         Scheduler::Goroutine* g = scheduler_->pickNext();
         if (!g) break;
 
-        g->state = Scheduler::GoroutineState::Running;
-
         if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
             auto* action = HotkeyActionWrapper::getCallback(g->fiber->id);
             if (action && *action) {
@@ -981,11 +979,15 @@ void ExecutionEngine::processGoroutinesInline() {
             if (g->instructions_executed >= g->max_instructions_per_tick) {
                 g->instructions_executed = 0;
                 if (g->fiber) vm_->saveFiberState(g->fiber);
-                g->state = Scheduler::GoroutineState::Runnable;
-                scheduler_->requeueFront(g);
+                handleYield(g);
                 break;
             }
             if (vm_->exit_requested_.load()) break;
+        }
+
+        if (g->state == Scheduler::GoroutineState::Running) {
+            if (g->fiber) vm_->saveFiberState(g->fiber);
+            handleYield(g);
         }
 
         if (vm_->exit_requested_.load()) break;

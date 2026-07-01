@@ -1227,7 +1227,11 @@ slow_path:
         }
             maybeCollectGarbage();
             if (yield_callback_) {
-                yield_callback_();
+                try {
+                    yield_callback_();
+                } catch (const std::exception& e) {
+                } catch (...) {
+                }
             }
         }
 

@@ -140,15 +140,6 @@ void EventListener::OnBackendKeyEvent(const KeyEvent &ke) {
 
 void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
   if (blockInput.load() && me.type != MouseEvent::Type::Wheel) return;
-  if (blockInput.load() && me.type == MouseEvent::Type::Wheel) {
-    struct input_event ev;
-    ev.type = EV_REL;
-    ev.code = REL_WHEEL;
-    ev.value = me.wheel;
-    SendUinputEvent(EV_REL, ev.code, ev.value);
-    SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-    return;
-  }
   if (debugging::debug_hotkeys) {
     if (me.type == MouseEvent::Type::Button)
       debug("[Mouse] OnBackendMouseEvent: button={} down={}", me.button, me.down);
@@ -178,8 +169,10 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
     ev.type = EV_REL;
     ev.code = REL_WHEEL;
     ev.value = me.wheel;
+    fprintf(stderr, "[WHEEL-DBG] OnBackendMouseEvent: wheel=%d blockInput=%d\n", me.wheel, blockInput.load());
     ProcessMouseEvent(ev);
     SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    fprintf(stderr, "[WHEEL-DBG] SYN sent\n");
   }
 }
 
@@ -673,7 +666,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         shouldBlock = inputBlockCallback(event);
       }
 
-      if (!shouldBlock && !blockInput.load()) {
+      if (!shouldBlock) {
         double scaledValue = ev.value * IO::scrollSpeed;
         int32_t scaledInt = static_cast<int32_t>(scaledValue);
         if (scaledInt == 0 && ev.value != 0 && IO::scrollSpeed >= 1.0) {
@@ -1289,7 +1282,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       }
 
       // Apply scroll speed and forward if not blocked
-      if (!shouldBlock && !blockInput.load()) {
+      if (!shouldBlock) {
         double scaledValue = ev.value * IO::scrollSpeed;
         int32_t scaledInt = static_cast<int32_t>(std::round(scaledValue));
 
@@ -1297,11 +1290,11 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           scaledInt = (ev.value > 0) ? 1 : -1;
         }
 
-        if (debugging::debug_io) debug("Forwarding wheel: raw={} scaled={} blocked={} scrollSpeed={}",
-              ev.value, scaledInt, shouldBlock, IO::scrollSpeed);
+        fprintf(stderr, "[WHEEL-DBG] ProcessMouseEvent: forwarding wheel code=%d val=%d scaled=%d shouldBlock=%d blockInput=%d\n",
+                ev.code, ev.value, scaledInt, shouldBlock, blockInput.load());
         SendUinputEvent(EV_REL, ev.code, scaledInt);
       } else {
-        if (debugging::debug_io) debug("Wheel BLOCKED");
+        fprintf(stderr, "[WHEEL-DBG] ProcessMouseEvent: wheel BLOCKED shouldBlock=%d\n", shouldBlock);
       }
     }
     // Other relative events

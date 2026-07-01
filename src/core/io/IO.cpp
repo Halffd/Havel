@@ -1269,69 +1269,38 @@ void IO::Send(cstr keys) {
         if (Configs::Get().GetVerboseKeyLogging())
           debug("Sending key: " + token.value);
         auto &val = token.value;
-        if (val.length() == 1 && isprint(static_cast<unsigned char>(val[0]))) {
-          char32_t cp = static_cast<unsigned char>(val[0]);
-          auto mapping = ioBackend ? ioBackend->CharToKeycode(cp) : XkbCharMapping{};
-          int code = mapping.keycode;
-          bool needsShift = mapping.needsShift;
-          if (code == -1) {
-            code = GetKeyCacheLookup(val);
-            needsShift = (isupper(static_cast<unsigned char>(val[0])));
-          }
-          if (code != -1) {
-            if (needsShift) {
-              int shiftCode = GetKeyCacheLookup("LShift");
-              if (shiftCode != -1) {
-                if (eventListener) {
-                  eventListener->SendUinputEvent(EV_KEY, shiftCode, 1);
-                } else {
-                  SendUInput(shiftCode, true);
-                }
-              }
-            }
+        bool isUpper = (val.length() == 1 && isupper(static_cast<unsigned char>(val[0])));
+        if (isUpper) {
+          int shiftCode = GetKeyCacheLookup("LShift");
+          if (shiftCode != -1) {
             if (eventListener) {
-              eventListener->SendUinputEvent(EV_KEY, code, 1);
+              eventListener->SendUinputEvent(EV_KEY, shiftCode, 1);
             } else {
-              SendUInput(code, true);
+              SendUInput(shiftCode, true);
             }
-            if (eventListener) {
-              eventListener->EndUinputBatch();
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            if (eventListener) {
-              eventListener->BeginUinputBatch();
-            }
-            if (eventListener) {
-              eventListener->SendUinputEvent(EV_KEY, code, 0);
-            } else {
-              SendUInput(code, false);
-            }
-            if (needsShift) {
-              int shiftCode = GetKeyCacheLookup("LShift");
-              if (shiftCode != -1) {
-                if (eventListener) {
-                  eventListener->SendUinputEvent(EV_KEY, shiftCode, 0);
-                } else {
-                  SendUInput(shiftCode, false);
-                }
-              }
-            }
-          } else if (ioBackend) {
-            SendCharX11(val[0]);
           }
-        } else {
-                SendKey(val, true);
-                if (eventListener) {
-                    eventListener->EndUinputBatch();
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                if (eventListener) {
-                    eventListener->BeginUinputBatch();
-                }
-                SendKey(val, false);
-            }
-            break;
         }
+        SendKey(val, true);
+        if (eventListener) {
+          eventListener->EndUinputBatch();
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (eventListener) {
+          eventListener->BeginUinputBatch();
+        }
+        SendKey(val, false);
+        if (isUpper) {
+          int shiftCode = GetKeyCacheLookup("LShift");
+          if (shiftCode != -1) {
+            if (eventListener) {
+              eventListener->SendUinputEvent(EV_KEY, shiftCode, 0);
+            } else {
+              SendUInput(shiftCode, false);
+            }
+          }
+        }
+        break;
+      }
         }
     }
 

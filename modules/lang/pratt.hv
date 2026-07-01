@@ -1324,6 +1324,11 @@ return expr
         l = current().line
         c = current().col
 
+        name = null
+        if current().tid == TID.Identifier {
+            name = advance().value
+        }
+
         // fn(params) => body  or  fn params => body
         params = []
         if current().tid == TID.OpenParen {
@@ -1364,7 +1369,7 @@ return expr
             expect(TID.CloseParen)
         }
         else if current().tid == TID.Identifier {
-            params.push(advance().value)
+            params.push({name: advance().value})
 
         }
         // Optional => (fn(x) body and fn(x) => body both valid)
@@ -1381,7 +1386,7 @@ return expr
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
   }
-  return LambdaExpression(params, body, l, c)
+  return LambdaExpression(name, params, body, l, c)
 
   }
     // ===================================================================

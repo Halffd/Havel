@@ -285,8 +285,8 @@ fn FnDeclaration(name, params, body, line, col, typeParams) {
     {kind: "FnDeclaration", line: line, col: col, name: name, params: params, body: body, typeParams: typeParams}
 
 }
-fn LambdaExpression(params, body, line, col) {
-    {kind: "LambdaExpression", line: line, col: col, params: params, body: body}
+fn LambdaExpression(name, params, body, line, col) {
+    {kind: "LambdaExpression", line: line, col: col, name: name, params: params, body: body}
 
 }
 fn ReturnStatement(value, line, col) {
@@ -929,7 +929,9 @@ prettyPrint(node.iterable, depth + 2)
     }
     else if k == "LambdaExpression" {
         params = node.params.join(", ")
-        print(prefix + "Lambda(" + params + "):")
+        name = ""
+        if node.name != null { name = " " + node.name }
+        print(prefix + "Lambda(" + name + params + "):")
         prettyPrint(node.body, depth + 1)
 
     }

@@ -137,6 +137,8 @@ private:
         int fd = -1;
         bool grabbed = false;
         uint32_t capabilities = 0;
+        int32_t pending_wheel_hi_res = 0;
+        int32_t pending_hwheel_hi_res = 0;
     };
 
     enum Capability : uint32_t {
@@ -324,6 +326,15 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
 
     char name[256] = "Unknown";
     ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+
+    std::string lowerName(name);
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+    if (lowerName.find("havel-virtual") != std::string::npos ||
+        lowerName.find("havel uinput") != std::string::npos) {
+        close(fd);
+        debug("EvdevAdapter: Skipping own virtual device {} ({})", name, path);
+        return false;
+    }
 
     Device dev;
     dev.path = path;
@@ -844,8 +855,18 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
             MouseEvent event;
             event.type = MouseEvent::Type::Wheel;
             event.wheel = scaled;
+            event.code = ev.code;
             event.modifiers = modifiers_;
             event.timestamp = now;
+#ifdef REL_WHEEL_HI_RES
+            if (ev.code == REL_WHEEL) {
+                event.wheel_hi_res = dev.pending_wheel_hi_res;
+                dev.pending_wheel_hi_res = 0;
+            } else if (ev.code == REL_HWHEEL) {
+                event.wheel_hi_res = dev.pending_hwheel_hi_res;
+                dev.pending_hwheel_hi_res = 0;
+            }
+#endif
             mouseCallback_(event);
         }
 
@@ -853,7 +874,24 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
             SendUinputEvent(EV_REL, ev.code, scaled);
             SendSync();
         }
-    } else {
+    }
+#ifdef REL_WHEEL_HI_RES
+    else if (ev.code == REL_WHEEL_HI_RES) {
+        dev.pending_wheel_hi_res = ev.value;
+        if (!mouseCallback_ && !blockInput_.load()) {
+            SendUinputEvent(EV_REL, ev.code, ev.value);
+            SendSync();
+        }
+    }
+    else if (ev.code == REL_HWHEEL_HI_RES) {
+        dev.pending_hwheel_hi_res = ev.value;
+        if (!mouseCallback_ && !blockInput_.load()) {
+            SendUinputEvent(EV_REL, ev.code, ev.value);
+            SendSync();
+        }
+    }
+#endif
+    else {
         if (!mouseCallback_ && !blockInput_.load()) {
             SendUinputEvent(EV_REL, ev.code, ev.value);
             SendSync();

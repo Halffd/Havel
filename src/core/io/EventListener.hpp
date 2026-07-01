@@ -59,6 +59,7 @@ public:
     void setModules(havel::Modules *modules);
   void setExecutionEngine(havel::compiler::ExecutionEngine *executionEngine);
   void setHotkeyManager(HotkeyManager *manager);
+  void setDeferredSendFlush(std::function<void()> flushFn);
 
   std::map<int, bool> evdevKeyState;
 
@@ -160,6 +161,7 @@ public:
   InputEventCallback inputEventCallback = nullptr;
   std::function<bool(const InputEvent &)> inputBlockCallback = nullptr;
   std::function<void()> inputNotificationCallback = nullptr;
+  std::function<void()> deferredSendFlush_ = nullptr;
 
   void ReleaseAllVirtualKeys();
   void ForceUngrabAllDevices();
@@ -215,7 +217,7 @@ private:
 
   void EventLoop();
   void ProcessKeyboardEvent(const input_event &ev);
-  void ProcessMouseEvent(const input_event &ev);
+  void ProcessMouseEvent(const input_event &ev, int32_t hiResVal = 0);
 
   // Hotkey evaluation helpers (legacy; kept for compatibility)
   bool EvaluateHotkeys(int evdevCode, bool down, bool repeat);

@@ -167,12 +167,10 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
   } else if (me.type == MouseEvent::Type::Wheel) {
     struct input_event ev;
     ev.type = EV_REL;
-    ev.code = REL_WHEEL;
+    ev.code = me.code ? me.code : REL_WHEEL;
     ev.value = me.wheel;
-    fprintf(stderr, "[WHEEL-DBG] OnBackendMouseEvent: wheel=%d blockInput=%d\n", me.wheel, blockInput.load());
-    ProcessMouseEvent(ev);
+    ProcessMouseEvent(ev, me.wheel_hi_res);
     SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-    fprintf(stderr, "[WHEEL-DBG] SYN sent\n");
   }
 }
 
@@ -416,13 +414,15 @@ void EventListener::setModules(havel::Modules *m) {
 }
 
 void EventListener::setExecutionEngine(havel::compiler::ExecutionEngine *ee) {
-  fprintf(stderr, "[EL-DIAG] setExecutionEngine called ee=%p (was %p)\n", (void*)ee, (void*)executionEngine);
   executionEngine = ee;
-  fprintf(stderr, "[EL-DIAG] executionEngine now=%p\n", (void*)executionEngine);
 }
 
 void EventListener::setHotkeyManager(HotkeyManager *manager) {
   hotkeyManager = manager;
+}
+
+void EventListener::setDeferredSendFlush(std::function<void()> flushFn) {
+  deferredSendFlush_ = std::move(flushFn);
 }
 
 void EventListener::PumpOnce() {
@@ -430,6 +430,7 @@ void EventListener::PumpOnce() {
     if (backend_) {
         backend_->PollEvents(0);
     }
+    if (deferredSendFlush_) deferredSendFlush_();
 
     if (shutdown.load()) return;
 
@@ -453,30 +454,20 @@ void EventListener::PumpOnce() {
     if (backend_) {
         backend_->PollEvents(1);
     }
+    if (deferredSendFlush_) deferredSendFlush_();
 }
 
 void EventListener::EventLoop() {
-    fprintf(stderr, "[EL-DIAG] EventLoop started, executionEngine=%p\n", (void*)executionEngine);
-    int null_check_count = 0;
     while (running.load() && !shutdown.load()) {
 
         if (backend_) {
             backend_->PollEvents(0);
         }
+        if (deferredSendFlush_) deferredSendFlush_();
 
         if (shutdown.load()) break;
 
-        if (null_check_count < 200 && !executionEngine) {
-            if (null_check_count % 50 == 0) {
-                fprintf(stderr, "[EL-DIAG] loop iter %d: executionEngine still null\n", null_check_count);
-            }
-            null_check_count++;
-        }
         if (executionEngine) {
-            if (null_check_count > 0) {
-                fprintf(stderr, "[EL-DIAG] executionEngine became non-null at iter %d ee=%p\n", null_check_count, (void*)executionEngine);
-                null_check_count = 0;
-            }
             if (modules_) modules_->checkTimers();
             executionEngine->executeFrame();
 
@@ -497,6 +488,7 @@ void EventListener::EventLoop() {
         if (backend_) {
             backend_->PollEvents(10);
         }
+        if (deferredSendFlush_) deferredSendFlush_();
 
         if (shutdown.load()) break;
 
@@ -891,7 +883,7 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
  * 3. Applies sensitivity scaling (mouse movement, scroll speed)
  * 4. Forwards events to uinput (unless blocked by a grabbed hotkey)
  */
-void EventListener::ProcessMouseEvent(const input_event &ev) {
+void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
   // Notify that input was received (for watchdog)
   if (inputNotificationCallback) {
     inputNotificationCallback();
@@ -1290,13 +1282,25 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           scaledInt = (ev.value > 0) ? 1 : -1;
         }
 
-        fprintf(stderr, "[WHEEL-DBG] ProcessMouseEvent: forwarding wheel code=%d val=%d scaled=%d shouldBlock=%d blockInput=%d\n",
-                ev.code, ev.value, scaledInt, shouldBlock, blockInput.load());
+        if (debugging::debug_io) debug("Forwarding wheel: raw={} scaled={} blocked={} scrollSpeed={}",
+              ev.value, scaledInt, shouldBlock, IO::scrollSpeed);
+#ifdef REL_WHEEL_HI_RES
+        if (hiResVal != 0) {
+          int hiResCode = (ev.code == REL_WHEEL) ? REL_WHEEL_HI_RES : REL_HWHEEL_HI_RES;
+          SendUinputEvent(EV_REL, hiResCode, hiResVal);
+        }
+#endif
         SendUinputEvent(EV_REL, ev.code, scaledInt);
       } else {
-        fprintf(stderr, "[WHEEL-DBG] ProcessMouseEvent: wheel BLOCKED shouldBlock=%d\n", shouldBlock);
+        if (debugging::debug_io) debug("Wheel BLOCKED");
       }
     }
+#ifdef REL_WHEEL_HI_RES
+    // High-resolution wheel events — handled above in sync with REL_WHEEL
+    else if (ev.code == REL_WHEEL_HI_RES || ev.code == REL_HWHEEL_HI_RES) {
+      // Ignored here because EvdevAdapter buffers and delegates to the main REL_WHEEL event
+    }
+#endif
     // Other relative events
     else {
       if (!blockInput.load()) {

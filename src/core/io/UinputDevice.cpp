@@ -53,6 +53,12 @@ bool UinputDevice::Setup() {
     ioctl(uinputFd, UI_SET_RELBIT, REL_Y);
     ioctl(uinputFd, UI_SET_RELBIT, REL_WHEEL);
     ioctl(uinputFd, UI_SET_RELBIT, REL_HWHEEL);
+#ifdef REL_WHEEL_HI_RES
+    ioctl(uinputFd, UI_SET_RELBIT, REL_WHEEL_HI_RES);
+#endif
+#ifdef REL_HWHEEL_HI_RES
+    ioctl(uinputFd, UI_SET_RELBIT, REL_HWHEEL_HI_RES);
+#endif
 
     // Setup device
     struct uinput_user_dev usetup = {};

@@ -47,6 +47,8 @@ struct MouseEvent {
     int32_t absoluteY = 0;
     uint32_t modifiers = 0;
     std::chrono::steady_clock::time_point timestamp;
+    uint32_t code = 0;
+    int32_t wheel_hi_res = 0;
 };
 
 struct DeviceInfo {

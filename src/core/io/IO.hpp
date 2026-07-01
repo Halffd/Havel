@@ -457,6 +457,17 @@ public:
   static std::vector<KeyToken> ParseKeyString(const std::string &keys);
   void SendBatchedKeyEvents(const std::vector<input_event> &events);
 
+  // Deferred send queue — prevents injection during hotkey callback
+  struct PendingSend {
+    std::string keys;
+  };
+  std::vector<PendingSend> pendingSends_;
+  std::mutex pendingSendMutex_;
+
+public:
+  void DeferSend(const std::string &keys);
+  void FlushPendingSends();
+
 private:
   std::atomic<bool> globalAltPressed{false};
   std::mutex emergencyMutex;

@@ -366,7 +366,11 @@ std::vector<Device> Device::getAllDevices() {
         if (line.empty()) {
             if (!currentBlock.empty()) {
                 Device device = parseDeviceBlock(currentBlock);
-                if (!device.name.empty() && !device.eventPath.empty()) {
+                std::string lower = device.name;
+                std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                bool isOwnVirtual = lower.find("havel-virtual") != std::string::npos ||
+                                    lower.find("havel uinput") != std::string::npos;
+                if (!device.name.empty() && !device.eventPath.empty() && !isOwnVirtual) {
                     devices.push_back(device);
                 }
                 currentBlock.clear();
@@ -379,7 +383,11 @@ std::vector<Device> Device::getAllDevices() {
     // Handle last block
     if (!currentBlock.empty()) {
         Device device = parseDeviceBlock(currentBlock);
-        if (!device.name.empty() && !device.eventPath.empty()) {
+        std::string lower = device.name;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        bool isOwnVirtual = lower.find("havel-virtual") != std::string::npos ||
+                            lower.find("havel uinput") != std::string::npos;
+        if (!device.name.empty() && !device.eventPath.empty() && !isOwnVirtual) {
             devices.push_back(device);
         }
     }

@@ -507,15 +507,8 @@ bool BrightnessManager::setShadowLift(const std::string &monitor, double lift) {
   // Store the shadow lift value for this monitor
   shadowLift[monitor] = lift;
 
-  // Get current gamma values
-  RGBColor currentGamma = getGammaRGB(monitor);
-
-  // Apply shadow lift
-  RGBColor liftedGamma = applyShadowLift(currentGamma, lift);
-
-  // Set the modified gamma
-  return setGammaRGB(monitor, liftedGamma.red, liftedGamma.green,
-                     liftedGamma.blue);
+  // applyAllSettings handles shadow lift inline — no need to bake into gammaRGB
+  return applyAllSettings(monitor);
 }
 
 bool BrightnessManager::setShadowLift(double lift) {
@@ -1017,17 +1010,13 @@ bool BrightnessManager::setTemperature(const std::string &monitor, int kelvin) {
     // If gammastep fails, fall through to setGammaRGB
   }
 
-  RGBColor rgb = kelvinToRGB(kelvin);
-  if (debugging::debug_io) debug("Converted {}K to RGB: ({}, {}, {})", kelvin, rgb.red, rgb.green,
-        rgb.blue);
-
-  // setGammaRGB will call applyAllSettings
-  bool success = setGammaRGB(monitor, rgb.red, rgb.green, rgb.blue);
+  // Store temp and apply via applyAllSettings — avoids caching temp tint into gammaRGB
+  bool success = applyAllSettings(monitor);
   if (success) {
-    if (debugging::debug_io) debug("Temperature set successfully to {}K on monitor '{}' via GammaRGB",
+    if (debugging::debug_io) debug("Temperature set successfully to {}K on monitor '{}'",
           kelvin, monitor);
   } else {
-    error("Failed to set temperature on monitor '{}' via GammaRGB", monitor);
+    error("Failed to set temperature on monitor '{}'", monitor);
   }
 
   return success;
@@ -1060,9 +1049,9 @@ bool BrightnessManager::setBrightnessAndTemperature(double brightness,
     }
   }
 
-  auto rgb = kelvinToRGB(kelvin);
   temperature[primaryMonitor] = kelvin;
-  return setBrightnessAndRGB(brightness, rgb.red, rgb.green, rgb.blue);
+  this->brightness[primaryMonitor] = brightness;
+  return applyAllSettings(primaryMonitor);
 }
 
 bool BrightnessManager::setBrightnessAndTemperature(const std::string &monitor,
@@ -1077,9 +1066,9 @@ bool BrightnessManager::setBrightnessAndTemperature(const std::string &monitor,
     }
   }
 
-  auto rgb = kelvinToRGB(kelvin);
   temperature[monitor] = kelvin;
-  return setBrightnessAndRGB(monitor, brightness, rgb.red, rgb.green, rgb.blue);
+  this->brightness[monitor] = brightness;
+  return applyAllSettings(monitor);
 }
 
 // === RGB GAMMA METHODS ===
@@ -1191,18 +1180,16 @@ double BrightnessManager::getBrightness(const std::string &monitor) {
     if (it != brightness.end()) return it->second;
 
     if (WindowManagerDetector::IsX11()) {
-        // XRandR output "Brightness" property is the authoritative value
-        // (defaults to 1.0, exactly matches `xrandr --brightness`).
-        // Check it first, then fall back to gamma ramp and sysfs.
+        // XRandR output "Brightness" property (set by `xrandr --brightness`).
         double xrandr_val = getBrightnessXrandr(monitor);
         if (xrandr_val >= 0.0) return xrandr_val;
 
-        double gamma_val = getBrightnessGamma(monitor);
-        if (gamma_val > 0.0) return gamma_val;
-
+        // Sysfs backlight is the actual hardware brightness.
         double sysfs_val = getBrightnessSysfs(monitor);
         if (sysfs_val > 0.0) return sysfs_val;
 
+        // Gamma ramp average is not a brightness measurement — skip it.
+        // Default to 1.0 (system default, no change).
         return 1.0;
     }
 #ifdef __WAYLAND__

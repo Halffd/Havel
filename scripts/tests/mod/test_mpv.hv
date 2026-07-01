@@ -1,0 +1,18 @@
+use "app/mpv" as mp
+
+fn main() {
+    val m = mp.MPV()
+    print(m.isConnected())
+    m.reconnect()
+    print("Is connected?", m.isConnected())
+    p = m.isPlaying()
+    print("Is Playing?",  p)
+    sleep(200)
+    m.playPause()
+    sleep(100)
+    p = m.isPlaying()
+    print("Is Playing?",  p)
+    print("Done", m.cmd)
+}
+
+main()

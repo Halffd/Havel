@@ -112,6 +112,8 @@ fn MPV(socketPath) {
     self.subSeekPrev = fn() { _cmd(self.conn, ["sub-seek", -1]) }
     self.subSeekNext = fn() { _cmd(self.conn, ["sub-seek", 1]) }
     self.subSeekCurrent = fn() { _cmd(self.conn, ["sub-seek", 0]) }
+    self.cmd = _cmd
+    self.isPlaying = fn() { _cmd(self.conn, ["get_property", "pause"]) }
     self.copySubtitle = fn() { _cmd(self.conn, ["script-binding", "copy_current_subtitle"]) }
 
     self.nextAudio = fn() { _cmd(self.conn, ["cycle", "audio"]) }

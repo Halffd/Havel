@@ -139,7 +139,16 @@ void EventListener::OnBackendKeyEvent(const KeyEvent &ke) {
 }
 
 void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
-  if (blockInput.load()) return;
+  if (blockInput.load() && me.type != MouseEvent::Type::Wheel) return;
+  if (blockInput.load() && me.type == MouseEvent::Type::Wheel) {
+    struct input_event ev;
+    ev.type = EV_REL;
+    ev.code = REL_WHEEL;
+    ev.value = me.wheel;
+    SendUinputEvent(EV_REL, ev.code, ev.value);
+    SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    return;
+  }
   if (debugging::debug_hotkeys) {
     if (me.type == MouseEvent::Type::Button)
       debug("[Mouse] OnBackendMouseEvent: button={} down={}", me.button, me.down);
@@ -671,6 +680,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
           scaledInt = (ev.value > 0) ? 1 : -1;
         }
         SendUinputEvent(EV_REL, ev.code, scaledInt);
+        SendUinputEvent(EV_SYN, SYN_REPORT, 0);
       }
       return;
     }

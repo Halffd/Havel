@@ -1218,10 +1218,8 @@ void IO::Send(cstr keys) {
         SendKey(modifierKeys[mod], false);
     }
 
-    bool shouldSleep = Configs::Get().Get<bool>("Advanced.SlowKeyDelay", false);
-
     if (eventListener) {
-        eventListener->BeginUinputBatch();
+      eventListener->BeginUinputBatch();
     }
 
     for (const auto &token : tokens) {
@@ -1296,14 +1294,12 @@ void IO::Send(cstr keys) {
             } else {
               SendUInput(code, true);
             }
-            if (shouldSleep) {
-              if (eventListener) {
-                eventListener->EndUinputBatch();
-              }
-              std::this_thread::sleep_for(std::chrono::microseconds(100));
-              if (eventListener) {
-                eventListener->BeginUinputBatch();
-              }
+            if (eventListener) {
+              eventListener->EndUinputBatch();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (eventListener) {
+              eventListener->BeginUinputBatch();
             }
             if (eventListener) {
               eventListener->SendUinputEvent(EV_KEY, code, 0);
@@ -1325,14 +1321,12 @@ void IO::Send(cstr keys) {
           }
         } else {
                 SendKey(val, true);
-                if (shouldSleep) {
-                    if (eventListener) {
-                        eventListener->EndUinputBatch();
-                    }
-                    std::this_thread::sleep_for(std::chrono::microseconds(100));
-                    if (eventListener) {
-                        eventListener->BeginUinputBatch();
-                    }
+                if (eventListener) {
+                    eventListener->EndUinputBatch();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                if (eventListener) {
+                    eventListener->BeginUinputBatch();
                 }
                 SendKey(val, false);
             }

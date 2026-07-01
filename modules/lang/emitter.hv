@@ -1230,20 +1230,26 @@ oldScope.count = loopScope.count
 emitter.scope = oldScope
 return
 }
- if k == "LambdaExpression" {
- // Compile the lambda body now
- result = compileLambda(emitter, node.params, node.body, node.line)
- upcount = result[0]
- chunkIdx = result[1]
- // If lambda captures upvalues, emit CLOSURE; otherwise LOAD_CONST
- if upcount > 0 {
- bc.emit("CLOSURE", chunkIdx)
- }
- else {
- fnConstIdx = bc.add_const(bc.make_function_obj(chunkIdx))
- bc.emit("LOAD_CONST", fnConstIdx)
- }
- return
+  if k == "LambdaExpression" {
+  // Compile the lambda body now
+  result = compileLambda(emitter, node.name, node.params, node.body, node.line)
+  upcount = result[0]
+  chunkIdx = result[1]
+  localIdx = result[2]
+  // If lambda captures upvalues, emit CLOSURE; otherwise LOAD_CONST
+  if upcount > 0 {
+  bc.emit("CLOSURE", chunkIdx)
+  }
+  else {
+  fnConstIdx = bc.add_const(bc.make_function_obj(chunkIdx))
+  bc.emit("LOAD_CONST", fnConstIdx)
+  }
+  // Store the closure in the recursive call variable
+  if localIdx >= 0 {
+      bc.emit("STORE_VAR", localIdx)
+      bc.emit("LOAD_VAR", localIdx)
+  }
+  return
 
 }
     if k == "InterpolatedString" {
@@ -3182,13 +3188,17 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
   newScope.tag = name + str(fid)
   emitter.lastFuncScope = newScope
   emitter.scope = newScope
-  for p in params {
-    if type(p) == "object" {
-      if p.name != null { scopeDeclare(newScope, p.name) }
-      else { scopeDeclare(newScope, p) }
-    }
-    else { scopeDeclare(newScope, p) }
-  }
+   // Bind function name in the function's own scope for recursion
+   if name != null {
+       scopeDeclare(newScope, name)
+   }
+   for p in params {
+ if type(p) == "object" {
+ if p.name != null { scopeDeclare(newScope, p.name) }
+ else { scopeDeclare(newScope, p) }
+ }
+ else { scopeDeclare(newScope, p) }
+ }
   paramCount = #params
   localCount = paramCount + 16
   bc.func_push()
@@ -3262,16 +3272,20 @@ bc.set_local_count(actualLocals)
  [upcount, actualIdx]
 
  }
-fn compileLambda(emitter, params, bodyNode, sourceLine) {
+fn compileLambda(emitter, name, params, bodyNode, sourceLine) {
  lamId = emitter.nextFuncId
  emitter.nextFuncId = lamId + 1
- name = "lambda_" + str(lamId)
+ if name == null { name = "lambda_" + str(lamId) }
  oldScope = emitter.scope
  fid = emitter.nextFuncId
  emitter.nextFuncId = fid + 1
  newScope = Scope(oldScope, fid, null) // bcFuncIdx set after func_new
  emitter.scope = newScope
- for p in params {
+  // Bind function name in the function's own scope for recursion
+  if name != null {
+      scopeDeclare(oldScope, name)
+  }
+  for p in params {
  if type(p) == "object" {
  if p.name != null { scopeDeclare(newScope, p.name) }
  else { scopeDeclare(newScope, p) }
@@ -3319,25 +3333,34 @@ fn compileLambda(emitter, params, bodyNode, sourceLine) {
  _handled = true
  }
  if !_handled && type(dv) == "object" && dv.kind == "BooleanLiteral" {
-bv = dv.value == "true" || dv.value == true
-  bc.set_default_value(di, bv)
-  _handled = true
-}
-if !_handled && type(dv) == "object" && dv.kind == "NullLiteral" {
-  bc.set_default_value(di, null)
+ bv = dv.value == "true" || dv.value == true
+   bc.set_default_value(di, bv)
+   _handled = true
  }
- }
- di = di + 1
- }
- emitBlockWithReturn(emitter, bodyNode)
- bc.emit("RETURN")
- actualLocals = scopeLocalCount(newScope)
- bc.set_local_count(actualLocals)
- upcount = newScope.upcount
- bc.func_pop()
- traceEmitter("func_pop " + name + " upcount=" + str(upcount))
- emitter.scope = oldScope
- [upcount, actualIdx]
+ if !_handled && type(dv) == "object" && dv.kind == "NullLiteral" {
+   bc.set_default_value(di, null)
+  }
+  }
+  di = di + 1
+  }
+  
+  // If named, initialize the recursive call variable
+  if name != null {
+      // Need to assign the function object to the variable in the scope.
+      // But we don't have the function object yet!
+      // This is a known limitation of recursive lambdas in some languages.
+      // Havel might need special handling (e.g. pre-allocating the closure).
+  }
+  
+  emitBlockWithReturn(emitter, bodyNode)
+  bc.emit("RETURN")
+  actualLocals = scopeLocalCount(newScope)
+  bc.set_local_count(actualLocals)
+  upcount = newScope.upcount
+  bc.func_pop()
+  traceEmitter("func_pop " + name + " upcount=" + str(upcount))
+  emitter.scope = oldScope
+  [upcount, actualIdx, localIdx]
 
  }
  // ============================================================

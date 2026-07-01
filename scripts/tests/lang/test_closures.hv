@@ -1,0 +1,20 @@
+// Anonymous function test
+let addOne = fn(x) { x + 1 }
+print(addOne(5)) // Expected: 6
+
+// First-class function test
+fn apply(f, x) { f(x) }
+print(apply(addOne, 10)) // Expected: 11
+
+// Closure test
+fn makeAdder(x) {
+    fn(y) { x + y }
+}
+let addTen = makeAdder(10)
+print(addTen(5)) // Expected: 15
+
+if addOne(5) == 6 && apply(addOne, 10) == 11 && addTen(5) == 15 {
+    print("SUCCESS")
+} else {
+    print("FAIL")
+}

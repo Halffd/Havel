@@ -1,0 +1,31 @@
+// modules/std/mpv.hv
+// MPV IPC module for Havel
+use "socket" as s
+
+// Persistent configuration
+var socket_path = "/tmp/mpvsocket"
+
+fn set_socket(path) {
+    socket_path = path
+}
+
+// Low-level IPC call
+fn send(json_cmd) {
+    // AF_UNIX = 1, SOCK_STREAM = 1
+    let sock = s.create(1, 1, 0) 
+    
+    if s.connect(sock, socket_path) {
+        s.send(sock, json_cmd + "\n")
+        s.close(sock)
+    } else {
+        print("mpv.hv: failed to connect to " + socket_path)
+    }
+}
+
+// High-level command helper
+fn cmd(command_list) {
+    // This assumes a simple way to convert lists to JSON,
+    // or we just accept raw JSON strings from the user
+    // to match your existing logic.
+    send('{ "command": ' + command_list + ' }')
+}

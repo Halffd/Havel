@@ -1,0 +1,31 @@
+use ffi
+
+ffi.cdef("
+    double parallel_sum(double* arr, int n);
+    double dot_product(double* a, double* b, int n);
+    void parallel_fill(double* arr, int n, double val);
+")
+
+omp = ffi.load("libomp.so")
+
+// Test 1: Parallel sum
+arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+sum = omp.parallel_sum(arr, len(arr))
+print("Sum: " + sum)
+
+// Test 2: Dot product
+a = [1, 2, 3, 4, 5]
+b = [6, 7, 8, 9, 10]
+dot = omp.dot_product(a, b, #a)
+print("Dot product: " + dot)
+
+// Test 3: Parallel fill
+arr2 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+omp.parallel_fill(arr2, len(arr2), 42)
+print("Filled array: " + arr2)
+
+// Test 4: Manual loop with OpenMP (via FFI)
+fn parallel_for(arr, fnc) {
+    // Havel goroutines + FFI parallel work
+    print(arr, fnc)
+}

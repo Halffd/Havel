@@ -1,0 +1,14 @@
+let factorial = fn fact(n) {
+    if n == 0 { 1 }
+    else { n * fact(n - 1) }
+}
+print(factorial(5))
+
+let outer = fn outer(n) {
+    let inner = fn inner(m) {
+        if m == 0 { 1 }
+        else { m * inner(m - 1) }
+    }
+    inner(n)
+}
+print(outer(5))

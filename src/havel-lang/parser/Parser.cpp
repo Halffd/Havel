@@ -910,35 +910,32 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
       std::string currentLiteral;
       
       while (pos < value.length()) {
-        // Check for {...} pattern (interpolation in any string)
-        if (value[pos] == '{') {
-          // Found interpolation start: {
+        // Check for \x01...\x02 pattern (interpolation marker)
+        if (value[pos] == '\x01') {
+          // Found interpolation start
           if (!currentLiteral.empty()) {
             segments.emplace_back(currentLiteral);
             currentLiteral.clear();
           }
-          pos += 1; // skip {
+          pos += 1; // skip \x01
           
-          // Find matching } (accounting for nested braces)
-          size_t braceDepth = 1;
+          // Find matching \x02 (accounting for nested markers)
+          size_t markerDepth = 1;
           size_t exprStart = pos;
-          while (pos < value.length() && braceDepth > 0) {
-            if (value[pos] == '{') braceDepth++;
-            else if (value[pos] == '}') braceDepth--;
-            if (braceDepth > 0) pos++;
+          while (pos < value.length() && markerDepth > 0) {
+            if (value[pos] == '\x01') markerDepth++;
+            else if (value[pos] == '\x02') markerDepth--;
+            if (markerDepth > 0) pos++;
           }
           
-          if (braceDepth == 0) {
-            // Extract expression string (excluding closing })
+          if (markerDepth == 0) {
             std::string exprStr = value.substr(exprStart, pos - exprStart);
-            // Parse the expression
             auto expr = parseExpressionFromString(exprStr);
             if (expr) {
               segments.emplace_back(std::move(expr));
             }
-            pos++; // skip }
+            pos++; // skip \x02
           } else {
-            // Unclosed interpolation - treat rest as literal
             currentLiteral += value.substr(exprStart - 1);
             break;
           }
@@ -947,7 +944,6 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
         }
       }
       
-      // Add remaining literal
       if (!currentLiteral.empty()) {
         segments.emplace_back(currentLiteral);
       }
@@ -8620,20 +8616,20 @@ return makeNode<havel::ast::StringLiteral>(tk.value, true);
     std::string currentLiteral;
 
     while (pos < value.length()) {
-      if (value[pos] == '{') {
+      if (value[pos] == '\x01') {
         if (!currentLiteral.empty()) {
           segments.push_back(havel::ast::InterpolatedStringExpression::Segment(currentLiteral));
           currentLiteral.clear();
         }
         pos += 1;
-        size_t braceDepth = 1;
+        size_t markerDepth = 1;
         size_t exprStart = pos;
-        while (pos < value.length() && braceDepth > 0) {
-          if (value[pos] == '{') braceDepth++;
-          else if (value[pos] == '}') braceDepth--;
-          if (braceDepth > 0) pos++;
+        while (pos < value.length() && markerDepth > 0) {
+          if (value[pos] == '\x01') markerDepth++;
+          else if (value[pos] == '\x02') markerDepth--;
+          if (markerDepth > 0) pos++;
         }
-        if (braceDepth == 0) {
+        if (markerDepth == 0) {
           std::string exprStr = value.substr(exprStart, pos - exprStart);
           havel::Lexer exprLexer(exprStr);
           auto exprTokens = exprLexer.tokenize();

@@ -1831,7 +1831,7 @@ return parts.len
 
   failures += runCase("string-interpolation", R"havel(
     x = 42
-    s = f"x={x}"
+    s = "x=$x"
     return #s
   )havel", 4, dump_bytecode, snapshot_dir);
 

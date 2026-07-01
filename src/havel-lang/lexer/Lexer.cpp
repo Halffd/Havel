@@ -540,21 +540,26 @@ Token Lexer::scanString(bool isFString, bool isRegexString, bool isRawString, ch
         if (suppressInterp) continue;
  } else if (c == '$' && braceDepth == 0) {
   char next = peek(1);
-  if (isAlpha(next) || next == '_' || next == '@') {
+  if (next == '{') {
+    // ${expr} syntax
+    hasInterpolation = true;
+    advance(); // consume $
+    advance(); // consume {
+    value += '\x01'; // start interpolation marker
+    braceDepth++;
+  } else if (isAlpha(next) || next == '_' || next == '@') {
   hasInterpolation = true;
-  advance(); // consume $ without adding to value
+  advance(); // consume $
+  value += '\x01'; // start interpolation marker
 
   if (isAlpha(peek()) || peek() == '_') {
-  value += '{';
   while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
   value += advance();
   }
   if (!isAtEnd() && peek() == '?') {
   value += advance();
   }
-  value += '}';
   } else if (peek() == '@') {
-  value += '{';
   value += advance(); // @
   while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
   value += advance();
@@ -562,30 +567,16 @@ Token Lexer::scanString(bool isFString, bool isRegexString, bool isRawString, ch
   if (!isAtEnd() && peek() == '?') {
   value += advance();
   }
-  value += '}';
   }
-   } else {
-   value += advance(); // $ as literal
-   }
+  value += '\x02'; // end interpolation marker
+    } else {
+    value += advance(); // $ as literal
+    }
 
 } else if (c == '{' && braceDepth == 0) {
             if (peek(1) != '{') {
-                char nextCh = peek(1);
-                // Only treat { as interpolation start if followed by
-                // an expression-starting character (alpha, _, (, @, $, !, -, digit)
-                // Bare "{" or "{" followed by "}" are literal braces
-                bool isExprStart = isAlpha(nextCh) || nextCh == '_' || nextCh == '@'
-                    || nextCh == '(' || nextCh == '$' || nextCh == '!'
-                    || nextCh == '-' || isDigit(nextCh)
-                    || nextCh == '[';
-                if (nextCh == '}' || nextCh == quote || !isExprStart) {
-                    // Literal { — not interpolation
-                    value += advance();
-                } else {
-                    hasInterpolation = true;
-                    value += advance(); // {
-                    braceDepth++; // Enter interpolation context
-                }
+                // Literal { — not interpolation. Use ${expr} or $var.
+                value += advance();
             } else {
                 // Escaped brace {{ - consume both and add single {
                 advance(); // first {
@@ -603,15 +594,23 @@ Token Lexer::scanString(bool isFString, bool isRegexString, bool isRawString, ch
  } else {
       // Regular character processing
       char consumed = advance();
-      value += consumed;
 
       if (braceDepth > 0) {
         if (consumed == '{') {
-          // Track nested braces within interpolation (e.g., object literals)
           braceDepth++;
+          value += consumed;
         } else if (consumed == '}') {
           braceDepth--;
+          if (braceDepth == 0) {
+            value += '\x02'; // end interpolation marker
+          } else {
+            value += consumed;
+          }
+        } else {
+          value += consumed;
         }
+      } else {
+        value += consumed;
       }
     }
     // Progress guard: ensure we always make forward progress in string scanning
@@ -682,36 +681,42 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
         value += decoded;
         if (suppressInterp) continue;
     } else if (c == '$' && braceDepth == 0) {
-        char next = peek();
-        if (isAlpha(next) || next == '_' || next == '@') {
+        char next = peek(1);
+        if (next == '{') {
+            // ${expr} syntax
             hasInterpolation = true;
-            value += advance(); // $
+            advance(); // consume $
+            advance(); // consume {
+            value += '\x01'; // start interpolation marker
+            braceDepth++;
+        } else if (isAlpha(next) || next == '_' || next == '@') {
+            hasInterpolation = true;
+            advance(); // consume $
+            value += '\x01'; // start interpolation marker
 
             if (isAlpha(peek()) || peek() == '_') {
-                value += '{';
                 while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
                     value += advance();
                 }
                 if (!isAtEnd() && peek() == '?') {
                     value += advance();
                 }
-                value += '}';
             } else if (peek() == '@') {
-                value += '{';
                 value += advance(); // @
                 while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
                     value += advance();
                 }
-                value += '}';
+                if (!isAtEnd() && peek() == '?') {
+                    value += advance();
+                }
             }
+            value += '\x02'; // end interpolation marker
         } else {
             value += advance(); // $ as literal
         }
 } else if (c == '{' && braceDepth == 0) {
             if (peek(1) != '{') {
-                hasInterpolation = true;
-                value += advance(); // {
-                braceDepth++;
+                value += advance(); // literal {
             } else {
                 advance();
                 advance();
@@ -727,14 +732,23 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
             }
  } else {
       char consumed = advance();
-      value += consumed;
 
       if (braceDepth > 0) {
         if (consumed == '{') {
           braceDepth++;
+          value += consumed;
         } else if (consumed == '}') {
           braceDepth--;
+          if (braceDepth == 0) {
+            value += '\x02'; // end interpolation marker
+          } else {
+            value += consumed;
+          }
+        } else {
+          value += consumed;
         }
+      } else {
+        value += consumed;
       }
     }
   }

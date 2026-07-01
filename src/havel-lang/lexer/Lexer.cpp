@@ -486,7 +486,7 @@ std::string Lexer::processEscapeSequence(bool isFString, bool &suppressInterpola
     }
 }
 
-Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
+Token Lexer::scanString(bool isFString, bool isRegexString, bool isRawString, char quote) {
     std::string value;
     std::string raw;
     bool hasInterpolation = false;
@@ -496,6 +496,31 @@ Token Lexer::scanString(bool isFString, bool isRegexString, char quote) {
     size_t stringStartPos = position;
     size_t stringStartLine = line;
     size_t stringStartColumn = column;
+
+    // Raw strings: no escape sequences, no interpolation
+    if (isRawString) {
+        while (!isAtEnd()) {
+            char c = peek();
+            if (c == quote) break;
+            raw += c;
+            advance();
+            value += c;
+            assertProgress(stringStartPos, "raw string literal");
+        }
+        if (isAtEnd()) {
+            line = stringStartLine;
+            column = stringStartColumn;
+            reportError("Unterminated string");
+            line = stringStartLine;
+            column = stringStartColumn;
+            return makeToken(value, TokenType::String);
+        }
+        advance(); // consume closing quote
+        raw = std::string(1, quote) + raw + std::string(1, quote);
+        return makeToken(value, TokenType::String, raw);
+    }
+
+
   while (!isAtEnd()) {
     char c = peek();
 
@@ -1120,6 +1145,7 @@ if (isDigit(c) || canBeNegativeNumber) {
         char quote = c;
         bool isFString = false;
         bool isRegexString = false;
+        bool isRawString = false;
         if (!tokens.empty() && tokens.back().type == TokenType::Identifier) {
             if (tokens.back().value == "f" || tokens.back().value == "F") {
                 isFString = true;
@@ -1129,6 +1155,10 @@ if (isDigit(c) || canBeNegativeNumber) {
                 tokens.pop_back();
             } else if (tokens.back().value == "r" || tokens.back().value == "R") {
                 isRegexString = true;
+                isFString = false;
+                tokens.pop_back();
+            } else if (tokens.back().value == "raw" || tokens.back().value == "RAW") {
+                isRawString = true;
                 isFString = false;
                 tokens.pop_back();
             }
@@ -1141,7 +1171,7 @@ if (isDigit(c) || canBeNegativeNumber) {
             advance();
             tokens.push_back(scanMultilineString(isFString, quote));
         } else {
-            tokens.push_back(scanString(isFString, isRegexString, quote));
+            tokens.push_back(scanString(isFString, isRegexString, isRawString, quote));
         }
         if (debug_lexer) {
                 havel::debug("LEX: {}", tokens.back().toString());

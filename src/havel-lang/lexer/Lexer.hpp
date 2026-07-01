@@ -277,7 +277,7 @@ bool isAtEnd() const;
                   const std::string &raw = "");
 
   Token scanNumber();
-  Token scanString(bool isFString = false, bool isRegexString = false, char quote = '"');
+  Token scanString(bool isFString = false, bool isRegexString = false, bool isRawString = false, char quote = '"');
   Token scanMultilineString(bool isFString = false, char quote = '"');
   Token scanBacktick(bool isMultiline = false);
   Token scanRegexLiteral();

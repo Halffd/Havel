@@ -3926,38 +3926,6 @@ InputBridge::handleHotkeyOnAnyKey(const std::vector<Value> &args,
 }
 
 Value
-InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
-                                 const HostContext *ctx) {
-    if (!ctx || !ctx->vm) {
-        return Value::makeBool(false);
-    }
-
-    if (args.empty() || !args[0].isStringValId()) {
-        return Value::makeBool(false);
-    }
-
-    auto *vm = static_cast<VM *>(ctx->vm);
-    std::string alias = vm->resolveStringKey(args[0]);
-
-    ::havel::debug("[ModularHostBridges] hotkey.trigger('{}')", alias);
-
-    // Wake persistent hotkey goroutines via scheduler
-    bool woke_persistent = false;
-    if (auto *sched = vm->getScheduler(); sched) {
-        woke_persistent = sched->wakeHotkeyByAlias(alias);
-    }
-
-    // Only trigger via HotkeyManager if no persistent goroutine was woken
-    // (persistent goroutines are scheduler-managed; HotkeyManager triggers
-    // are for the legacy non-scheduler callback path)
-    if (!woke_persistent && ctx->hotkeyManager) {
-        ctx->hotkeyManager->triggerForTest(alias);
-    }
-
-    return Value::makeBool(true);
-}
-
-Value
 InputBridge::handleHotkeyList(const std::vector<Value> &args,
                                const HostContext *ctx) {
     (void)args;
@@ -3978,6 +3946,34 @@ InputBridge::handleHotkeyList(const std::vector<Value> &args,
     }
 
     return Value::makeArrayId(result.id);
+}
+
+Value
+InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+    if (!ctx || !ctx->vm) {
+        return Value::makeBool(false);
+    }
+
+    if (args.empty() || !args[0].isStringValId()) {
+        return Value::makeBool(false);
+    }
+
+    auto *vm = static_cast<VM *>(ctx->vm);
+    std::string alias = vm->resolveStringKey(args[0]);
+
+    ::havel::debug("[ModularHostBridges] hotkey.trigger('{}')", alias);
+
+    bool woke_persistent = false;
+    if (auto *sched = vm->getScheduler(); sched) {
+        woke_persistent = sched->wakeHotkeyByAlias(alias);
+    }
+
+    if (!woke_persistent && ctx->hotkeyManager) {
+        ctx->hotkeyManager->triggerForTest(alias);
+    }
+
+    return Value::makeBool(true);
 }
 
 Value

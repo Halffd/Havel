@@ -849,11 +849,21 @@ if (!mouseCallback_ && !blockInput_.load()) {
             event.timestamp = now;
 #ifdef REL_WHEEL_HI_RES
             if (ev.code == REL_WHEEL) {
+                if (dev.pending_wheel_hi_res != 0 &&
+                    ((ev.value > 0 && dev.pending_wheel_hi_res < 0) ||
+                     (ev.value < 0 && dev.pending_wheel_hi_res > 0))) {
+                    dev.pending_wheel_hi_res = 0;
+                }
                 event.wheel_hi_res = dev.pending_wheel_hi_res;
                 debug("[WHEEL] REL_WHEEL code={} value={} hi_res={}",
                       ev.code, ev.value, dev.pending_wheel_hi_res);
                 dev.pending_wheel_hi_res = 0;
             } else if (ev.code == REL_HWHEEL) {
+                if (dev.pending_hwheel_hi_res != 0 &&
+                    ((ev.value > 0 && dev.pending_hwheel_hi_res < 0) ||
+                     (ev.value < 0 && dev.pending_hwheel_hi_res > 0))) {
+                    dev.pending_hwheel_hi_res = 0;
+                }
                 event.wheel_hi_res = dev.pending_hwheel_hi_res;
                 debug("[WHEEL] REL_HWHEEL code={} value={} hi_res={}",
                       ev.code, ev.value, dev.pending_hwheel_hi_res);

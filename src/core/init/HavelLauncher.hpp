@@ -17,7 +17,8 @@ struct LaunchConfig {
     REPL,
     SCRIPT_AND_REPL,
     CLI,
-    TEST
+    TEST,
+    SELF_HOSTED
   };
 
   enum class Target {

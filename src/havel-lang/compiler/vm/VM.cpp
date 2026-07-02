@@ -2748,11 +2748,12 @@ Value savedG = globals["_G"];
             result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
                 moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
         }
+        *moduleGlobals = std::move(globals);
         globals = std::move(savedGlobals);
-  globals_mirror_object_id_ = savedMirrorId;
-  globals["_G"] = savedG;
-  current_chunk = savedChunk;
-  return result;
+        globals_mirror_object_id_ = savedMirrorId;
+        globals["_G"] = savedG;
+        current_chunk = savedChunk;
+        return result;
     });
         uint32_t hostIdx = host_function_globals_[wrapperName].asHostFuncId();
         resumeGcGuard();

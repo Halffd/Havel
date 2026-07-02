@@ -916,6 +916,7 @@ public:
       binDir = std::filesystem::path(selfBuf).parent_path().string();
     }
 
+    // Find modules/lang/ source directory
     std::vector<std::string> searchPaths = {
         binDir + "/../modules/lang/launcher.hv",
         binDir + "/../../modules/lang/launcher.hv",
@@ -941,6 +942,41 @@ public:
     auto absPath = std::filesystem::canonical(launcherPath, ec);
     if (!ec) launcherPath = absPath.string();
 
+    namespace fs = std::filesystem;
+    fs::path langDir = fs::path(launcherPath).parent_path();
+    fs::path outDir = langDir.parent_path().parent_path() / "out" / "modules" / "lang";
+
+    bool hasHvc = fs::exists(outDir) && !fs::is_empty(outDir);
+    if (!hasHvc) {
+      info("Self-hosted: compiling modules/lang/ to {}", outDir.string());
+      std::vector<std::string> hvFiles;
+      for (auto &entry : fs::directory_iterator(langDir)) {
+        if (entry.path().extension() == ".hv") {
+          hvFiles.push_back(entry.path().string());
+        }
+      }
+      if (hvFiles.empty()) {
+        error("No .hv files found in {}", langDir.string());
+        return 1;
+      }
+      fs::create_directories(outDir);
+
+      havel::HavelEngine compileEngine(makeEngineConfig(cfg));
+      compileEngine.initializeMinimal();
+      for (const auto &hvf : hvFiles) {
+        std::string code = readScriptFile(hvf);
+        if (code.empty()) continue;
+        fs::path hvcPath = outDir / (fs::path(hvf).stem().string() + ".hvc");
+        try {
+          compileEngine.compileToFile(code, hvcPath.string());
+        } catch (const std::exception &e) {
+          error("Self-hosted: failed to compile {}: {}", hvf, e.what());
+        }
+      }
+      compileEngine.shutdown();
+      hasHvc = fs::exists(outDir) && !fs::is_empty(outDir);
+    }
+
     std::string launcherCode = readScriptFile(launcherPath);
     if (launcherCode.empty()) {
       error("Cannot read launcher.hv at {}", launcherPath);
@@ -953,11 +989,13 @@ public:
     if (cfg.lintOnly) appArgList.push_back("--lint");
     for (const auto &a : cfg.scriptArgs) appArgList.push_back(a);
 
-    if (debugging::debug_io)
-      debug("Self-hosted mode: launcher={}, args={}", launcherPath,
-            appArgList.size());
-
     installMinimalSignalHandlers();
+
+    if (hasHvc) {
+      info("Engine: self-hosted (Havel) [{}]", outDir.string());
+    } else {
+      info("Engine: compiled (C++)");
+    }
 
     try {
       havel::HavelEngine engine(makeEngineConfig(cfg));
@@ -1116,7 +1154,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
 
     if (cfg.buildOnly) return runBuild(cfg);
 
-    if (!cfg.vmConfig.self_hosted_modules_path.empty()) {
+    if (cfg.mode != LaunchConfig::Mode::SELF_HOSTED && !cfg.vmConfig.self_hosted_modules_path.empty()) {
       namespace fs = std::filesystem;
       fs::path langDir = fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
       if (fs::exists(langDir) && !fs::is_empty(langDir)) {
@@ -1148,6 +1186,7 @@ std::unique_ptr<RunStrategy> HavelLauncher::createStrategy(const LaunchConfig &c
   case Mode::SCRIPT_AND_REPL: return std::make_unique<ScriptAndReplStrategy>();
   case Mode::TEST:            return std::make_unique<TestStrategy>();
   case Mode::CLI:             return std::make_unique<CliStrategy>();
+  case Mode::SELF_HOSTED:     return std::make_unique<SelfHostedStrategy>();
   default:
     error("Unknown mode");
     return std::make_unique<CliStrategy>();
@@ -1323,6 +1362,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
             else if (target == "ir") { cfg.target = LaunchConfig::Target::IR; cfg.emitLLVM = true; }
             else { error("Unknown conversion target: {}", target); }
         } else if (arg == "--self-hosted") {
+            cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
             cfg.minimalMode = true;
             cfg.pureStdlib = true;
     } else if (arg == "--test" || arg == "-t") {

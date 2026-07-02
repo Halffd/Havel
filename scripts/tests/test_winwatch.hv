@@ -1,0 +1,185 @@
+// winwatch module test suite
+
+_fail = 0
+
+fn check(cond, msg) {
+    if !cond {
+        print("FAIL: $msg")
+        _fail = _fail + 1
+    } else {
+        print("ok: $msg")
+    }
+}
+
+fn isObj(v) { v != null && type(v) == "object" }
+
+// ============================================================
+// 1. Module loads and API surface
+// ============================================================
+
+use "app/winwatch" as ww
+
+check(ww != null, "module loaded")
+
+check(ww.tick != null, "has tick")
+check(ww.active != null, "has active")
+check(ww.onChange != null, "has onChange")
+check(ww.offChange != null, "has offChange")
+check(ww.currentMode != null, "has currentMode")
+check(ww.setMode != null, "has setMode")
+check(ww.setModeEval != null, "has setModeEval")
+check(ww.onMode != null, "has onMode")
+check(ww.offMode != null, "has offMode")
+check(ww.inClass != null, "has inClass")
+check(ww.inTitle != null, "has inTitle")
+check(ww.check != null, "has check")
+
+// ============================================================
+// 2. Default state
+// ============================================================
+
+check(ww.currentMode() == "default", "default mode is default")
+
+_a = ww.active()
+check(isObj(_a), "active() returns object")
+check(_a.title != null, "active.title exists")
+check(_a.class != null, "active.class exists")
+check(_a.cmdline != null, "active.cmdline exists")
+check(_a.id != null, "active.id exists")
+check(_a.pid != null, "active.pid exists")
+
+// ============================================================
+// 3. Mode set/get
+// ============================================================
+
+ww.setMode("gaming")
+check(ww.currentMode() == "gaming", "setMode gaming")
+
+ww.setMode("default")
+check(ww.currentMode() == "default", "setMode back to default")
+
+ww.setMode("coding")
+check(ww.currentMode() == "coding", "setMode coding")
+ww.setMode("default")
+
+// ============================================================
+// 4. setModeEval — register and trigger
+// ============================================================
+
+_wm = ""
+ww.setModeEval(fn(win) {
+    if win.title.find("onsole") != null { return "terminal" }
+    if win.class.find("mpv") != null { return "media" }
+    "default"
+})
+check(ww.currentMode() == "default", "modeEval registered, mode still default")
+
+ww.setModeEval(fn(win) {
+    if win.title == "test_app" { return "custom" }
+    "fallback"
+})
+check(ww.currentMode() == "default", "mode unchanged after eval reset")
+
+ww.setMode("testing")
+check(ww.currentMode() == "testing", "setMode still works after setModeEval")
+ww.setMode("default")
+
+// ============================================================
+// 5. onChange callbacks
+// ============================================================
+
+_cbRan = false
+_cbWin = null
+_cbPrev = null
+
+_cb = fn(win, prev) {
+    _cbRan = true
+    _cbWin = win
+    _cbPrev = prev
+}
+
+_id1 = ww.onChange(_cb)
+check(_id1 != null, "onChange returns id")
+check(_id1 >= 1, "onChange id positive")
+
+_id2 = ww.onChange(_cb)
+check(_id2 > _id1, "second onChange gets new id")
+
+ww.offChange(_cb)
+
+_cb2Ran = false
+_cb2 = fn(win, prev) { _cb2Ran = true }
+ww.onChange(_cb2)
+
+ww.offChange(_cb2)
+ww.offChange(_cb)
+
+check(true, "onChange/offChange lifecycle ok")
+
+// ============================================================
+// 6. onMode callbacks
+// ============================================================
+
+_modeCbRan = false
+_modeVal = ""
+_modePrev = null
+
+_mcb = fn(m, prev) {
+    _modeCbRan = true
+    _modeVal = m
+    _modePrev = prev
+}
+
+_mid = ww.onMode(_mcb)
+check(_mid != null, "onMode returns id")
+check(_mid >= 1, "onMode id positive")
+
+ww.setMode("music")
+check(ww.currentMode() == "music", "setMode music")
+ww.setMode("default")
+
+ww.offMode(_mcb)
+check(true, "onMode/offMode lifecycle ok")
+
+// ============================================================
+// 7. inClass / inTitle
+// ============================================================
+
+check(ww.inClass("") == false, "inClass empty string returns false")
+check(ww.inClass(null) == false, "inClass null returns false")
+check(ww.inTitle("") == false, "inTitle empty string returns false")
+check(ww.inTitle(null) == false, "inTitle null returns false")
+
+// ============================================================
+// 8. check() multi-field predicate
+// ============================================================
+
+check(ww.check({class: "anything"}) == false, "check class mismatch")
+check(ww.check({title: "anything"}) == false, "check title mismatch")
+check(ww.check({mode: "default"}) == true, "check mode match")
+check(ww.check({mode: "bogus"}) == false, "check mode mismatch")
+check(ww.check({}) == true, "check empty opts matches everything")
+
+// ============================================================
+// 9. Edge cases — null/empty callbacks
+// ============================================================
+
+ww.offChange(fn(w, p) {})
+check(true, "offChange with unregistered cb")
+
+ww.offMode(fn(m, p) {})
+check(true, "offMode with unregistered cb")
+
+ww.setModeEval(null)
+check(true, "setModeEval(null)")
+
+// ============================================================
+// Summary
+// ============================================================
+
+if _fail == 0 {
+    print("all winwatch.* tests passed!")
+} else {
+    print("$_fail test(s) FAILED")
+    exit(1)
+}

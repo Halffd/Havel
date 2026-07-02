@@ -1,0 +1,88 @@
+// winwatch.hv — Active window monitoring with mode evaluation
+// Provides: tick, active, onChange, offChange,
+// currentMode, setMode, setModeEval, onMode, offMode,
+// inClass, inTitle, check
+
+use window
+
+_win = {title: "", class: "", cmdline: "", id: 0, pid: 0}
+_prev = {title: "", class: "", cmdline: "", id: 0, pid: 0}
+
+_mode = "default"
+_modeEval = null
+_onChangeFns = []
+_onModeFns = []
+
+fn _snapshot() {
+    _w = window.active()
+    if _w == 0 { return null }
+    _info = window.info(_w)
+    {title: _info.title, class: _info.class, cmdline: _info.cmdline,
+     id: _info.id, pid: _info.pid}
+}
+
+fn _changed(a, b) { a.id != b.id || a.title != b.title || a.class != b.class }
+
+fn tick() {
+    _snap = _snapshot()
+    if _snap == null { return }
+    if _changed(_snap, _win) {
+        _prev = _win
+        _win = _snap
+        for _fn in _onChangeFns { _fn(_win, _prev) }
+        if _modeEval != null {
+            _newMode = _modeEval(_win)
+            if _newMode != _mode {
+                _mode = _newMode
+                for _fn in _onModeFns { _fn(_mode, _prev) }
+            }
+        }
+    }
+}
+
+fn active() { _win }
+
+fn onChange(cb) {
+    _onChangeFns.push(cb)
+    _onChangeFns.len
+}
+
+fn offChange(cb) {
+    _new = []
+    for _f in _onChangeFns { if _f != cb { _new.push(_f) } }
+    _onChangeFns = _new
+}
+
+fn currentMode() { _mode }
+
+fn setMode(m) { _mode = m }
+
+fn setModeEval(cb) { _modeEval = cb }
+
+fn onMode(cb) {
+    _onModeFns.push(cb)
+    _onModeFns.len
+}
+
+fn offMode(cb) {
+    _new = []
+    for _f in _onModeFns { if _f != cb { _new.push(_f) } }
+    _onModeFns = _new
+}
+
+fn inClass(class) {
+    if class == null || class == "" { return false }
+    _win.class.find(class) >= 0
+}
+
+fn inTitle(title) {
+    if title == null || title == "" { return false }
+    _win.title.find(title) >= 0
+}
+
+fn check(opts) {
+    if opts.class != null && !inClass(opts.class) { return false }
+    if opts.title != null && !inTitle(opts.title) { return false }
+    if opts.mode != null && _mode != opts.mode { return false }
+    true
+}

@@ -7,11 +7,11 @@ wpid = lwpid = 0
 win = lastWin = null
 cmd = lcmd = ""
 
-timeout 5000 { exit(0) }
+timeout 8000 { exit(0) }
 
 Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
 when title_ ~ "onsole" {
-  print("Konsoloe is active")
+  print("Konsole is active")
 }
 when class_ ~ "mpv" {
   print("MPV class is active")
@@ -53,7 +53,8 @@ fn modeEval (win) {
     print("Leaving mode to default")
   }
 }
-hotkeyTest = hotkey.register_conditional("a", () => { "Gaming mode active" }, () => { res = mode == "gaming" ||title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv:" + res); return res })
+hotkeyTest = hotkey.register_conditional("a", () => { print "Gaming/mpv mode active" }, () => { res = mode == "gaming" || title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv:" + res); return res })
+hotkeyTest2 = hotkey.register_conditional("b", () => { print "On terminal" }, () => { res = title_ ~ "onsole"; print("CONDITIONAL title onsole:" + res); return res })
 dbgWin = 0
 hks = null
 go fn update() {
@@ -67,11 +68,11 @@ go fn update() {
          print("Active window changed: $title_ class: $class_ mode: $mode cmd: $cmd pid: $wpid id: $wid last: ${lastWin ? lastWin.title_ : "none"}")
       }
       print("hotkeyTest: ", hotkeyTest)
+      print("hotkeyTest2: ", hotkeyTest2)
       print("Hotkeys:")
       print(hotkey.list())
       print("Scheduler: ", scheduler.info(), scheduler.goroutines())
     }
     sleep(1000)
-    return
   }
 }

@@ -26,6 +26,7 @@
 #include "c/ModulePlugin.h"
 #include <dlfcn.h>
 
+#include "../../stdlib/LogModule.hpp"
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -690,6 +691,7 @@ executing_in_fiber_ = true;
 
   } catch (const ScriptThrow &thrown) {
     // Handle script-thrown exceptions
+    ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
     if (!handleScriptThrow(thrown.value)) {
       std::string stackTrace = buildStackTrace(frame_count_);
   uint32_t line = 0, column = 0;
@@ -1159,6 +1161,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       try {
         executeInstruction(instruction);
       } catch (const ScriptThrow &thrown) {
+        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
         if (!handleScriptThrow(thrown.value)) {
           std::string stackTrace = buildStackTrace(frame_count_);
           uint32_t line = 0, column = 0;
@@ -1331,6 +1334,7 @@ slow_path:
          }
        }
     } catch (const ScriptThrow &thrown) {
+      ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
       if (!handleScriptThrow(thrown.value)) {
         // Build stack trace for uncaught exception
         std::string stackTrace = buildStackTrace(frame_count_);

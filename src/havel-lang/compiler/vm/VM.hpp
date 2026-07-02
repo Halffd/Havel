@@ -1245,6 +1245,7 @@ private:
     bool jit_tail_call_occurred_ = false;
 
     uint32_t app_args_array_id_ = 0;
+    std::vector<std::string> program_args_;
     std::function<void()> restart_callback_;
     HotFunctionCallback hot_func_cb_;
     JITCompiler* jit_compiler_ = nullptr;
@@ -1300,6 +1301,8 @@ public:
       setHostObjectField(ref, "args", Value::makeArrayId(array_id));
     }
   }
+  void setProgramArgs(const std::vector<std::string>& args) { program_args_ = args; }
+  const std::vector<std::string>& getProgramArgs() const { return program_args_; }
   void setRestartCallback(std::function<void()> cb) { restart_callback_ = std::move(cb); }
   std::recursive_mutex& getExecutionMutex() const { return execution_mutex_; }
 };

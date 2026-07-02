@@ -13,6 +13,7 @@
 #include <iostream>
 #include <set>
 #include <sstream>
+#include "../../stdlib/LogModule.hpp"
 
 #if defined(__GNUC__) && !defined(__clang__)
 #define HAVE_COMPUTED_GOTO 1
@@ -792,11 +793,13 @@ op_CALL: {
     try {
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {
+        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
         if (!handleScriptThrow(thrown.value)) {
             throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
         }
     } catch (const std::runtime_error &e) {
         Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+        ::havel::stdlib::notifyRuntimeError(e.what());
         if (handleScriptThrow(exceptionValue)) {
             // caught
         } else {
@@ -830,10 +833,12 @@ op_RETURN: {
     try {
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {
+        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
         if (!handleScriptThrow(thrown.value)) {
             throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
         }
     } catch (const std::runtime_error &e) {
+        ::havel::stdlib::notifyRuntimeError(e.what());
         throw std::runtime_error(e.what());
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
@@ -857,11 +862,13 @@ op_LOAD_GLOBAL: {
     try {
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {
+        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
         if (!handleScriptThrow(thrown.value)) {
             throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
         }
     } catch (const std::runtime_error &e) {
         Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+        ::havel::stdlib::notifyRuntimeError(e.what());
         if (handleScriptThrow(exceptionValue)) {
             // caught - continue
         } else {
@@ -894,6 +901,7 @@ op_STORE_GLOBAL: {
         executeInstruction(inst);
     } catch (const std::runtime_error &e) {
         Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+        ::havel::stdlib::notifyRuntimeError(e.what());
         if (handleScriptThrow(exceptionValue)) {
             // caught
         } else {
@@ -926,6 +934,7 @@ op_STORE_IMMUT_GLOBAL: {
         executeInstruction(inst);
     } catch (const std::runtime_error &e) {
         Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+        ::havel::stdlib::notifyRuntimeError(e.what());
         if (handleScriptThrow(exceptionValue)) {
         } else {
             throw std::runtime_error(e.what());
@@ -1405,11 +1414,13 @@ op_default: {
     try {
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {
+        ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
         if (!handleScriptThrow(thrown.value)) {
             throw ScriptError(thrown.value, "Uncaught exception", "", 0, 0);
         }
     } catch (const std::runtime_error &e) {
         Value exceptionValue = Value::makeStringId(heap_.allocateString(e.what()).id);
+        ::havel::stdlib::notifyRuntimeError(e.what());
         if (handleScriptThrow(exceptionValue)) {
         } else {
             throw std::runtime_error(e.what());

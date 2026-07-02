@@ -1150,6 +1150,12 @@ void SystemBridge::install(PipelineOptions &options) {
     vm->setHostObjectField(
         processObj, "exit",
         Value::makeHostFuncId(vm->getHostFunctionIndex("sys.exit")));
+    vm->setHostObjectField(
+        processObj, "pid",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.pid")));
+    vm->setHostObjectField(
+        processObj, "ppid",
+        Value::makeHostFuncId(vm->getHostFunctionIndex("process.ppid")));
     vm->setGlobal("process", Value::makeObjectId(processObj.id));
 
     // Extension object

@@ -15,6 +15,10 @@
 
 #include <iostream>
 #include <sstream>
+#include <climits>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace havel::compiler {
 
@@ -2617,26 +2621,55 @@ void VM::registerDefaultHostGlobals() {
   // load() - script-level file loading
   setGlobal("load", Value::makeHostFuncId(getHostFunctionIndex("load")));
 
-  // app global object with args and restart
-// Merge with existing app object if AppModule already registered one
+  // app global object with args, path, cwd, restart
+  // Merge with existing app object if AppModule already registered one
   {
-    Value argsVal = app_args_array_id_ != 0 ? Value::makeArrayId(app_args_array_id_) : Value::makeNull();
+    Value argsVal;
+    if (app_args_array_id_ != 0) {
+      argsVal = Value::makeArrayId(app_args_array_id_);
+    } else {
+      auto emptyArr = heap_.allocateArray();
+      argsVal = Value::makeArrayId(emptyArr.id);
+    }
+
+    std::string exePath;
+#ifndef _WIN32
+    char selfBuf[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", selfBuf, sizeof(selfBuf) - 1);
+    if (len > 0) {
+      selfBuf[len] = '\0';
+      exePath = selfBuf;
+    }
+#else
+    char winBuf[MAX_PATH];
+    DWORD wlen = GetModuleFileNameA(nullptr, winBuf, MAX_PATH);
+    if (wlen > 0) exePath = winBuf;
+#endif
+    Value pathVal = exePath.empty() ? Value::makeNull() : Value::makeStringId(createRuntimeString(exePath).id);
+    Value cwdVal = Value::makeStringId(createRuntimeString(std::filesystem::current_path().string()).id);
+
     auto appIt = globals.find("app");
     if (appIt != globals.end() && appIt->second.isObjectId()) {
       ObjectRef existingRef{appIt->second.asObjectId(), true};
       auto* existingObj = heap_.object(existingRef.id);
       if (existingObj) {
         setHostObjectField(existingRef, "args", argsVal);
+        setHostObjectField(existingRef, "path", pathVal);
+        setHostObjectField(existingRef, "cwd", cwdVal);
         setHostObjectField(existingRef, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       } else {
         auto app_obj = heap_.allocateObject();
         setHostObjectField(app_obj, "args", argsVal);
+        setHostObjectField(app_obj, "path", pathVal);
+        setHostObjectField(app_obj, "cwd", cwdVal);
         setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
         setGlobal("app", Value::makeObjectId(app_obj.id));
       }
     } else {
       auto app_obj = heap_.allocateObject();
       setHostObjectField(app_obj, "args", argsVal);
+      setHostObjectField(app_obj, "path", pathVal);
+      setHostObjectField(app_obj, "cwd", cwdVal);
       setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       setGlobal("app", Value::makeObjectId(app_obj.id));
     }

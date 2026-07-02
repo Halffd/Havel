@@ -415,6 +415,13 @@ static int runBytecodeFiles(const LaunchConfig &cfg,
         std::make_shared<compiler::BytecodeChunk>(std::move(*chunk));
     vm->setMainChunkShared(chunkPtr);
     vm->setCurrentScriptDir(std::filesystem::path(f).parent_path().string());
+    {
+      std::vector<std::string> pargs;
+      pargs.reserve(1 + cfg.scriptArgs.size());
+      pargs.push_back(cfg.programName);
+      pargs.insert(pargs.end(), cfg.scriptArgs.begin(), cfg.scriptArgs.end());
+      vm->setProgramArgs(pargs);
+    }
     if (!cfg.scriptArgs.empty()) {
       auto arrRef = vm->createHostArray();
       for (const auto &arg : cfg.scriptArgs) {
@@ -694,6 +701,13 @@ public:
               arrRef, havel::compiler::Value::makeStringId(strRef.id));
         }
         vm.setAppArgs(arrRef.id);
+      }
+      {
+        std::vector<std::string> pargs;
+        pargs.reserve(1 + cfg.scriptArgs.size());
+        pargs.push_back(cfg.programName);
+        pargs.insert(pargs.end(), cfg.scriptArgs.begin(), cfg.scriptArgs.end());
+        engine.vm()->setProgramArgs(pargs);
       }
 
       auto t1 = std::chrono::high_resolution_clock::now();
@@ -1142,6 +1156,7 @@ std::unique_ptr<RunStrategy> HavelLauncher::createStrategy(const LaunchConfig &c
 
 LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   LaunchConfig cfg;
+  if (argc > 0) cfg.programName = argv[0];
   bool repl = false;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];

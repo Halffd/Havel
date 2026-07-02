@@ -39,6 +39,7 @@ struct LaunchConfig {
   Mode mode = Mode::DAEMON;
   std::vector<std::string> scriptFiles;
   std::vector<std::string> scriptArgs;
+  std::string programName;
   bool isStartup = false;
   bool debugMode = false;
   bool debugParser = false;

@@ -181,7 +181,7 @@ int main(int argc, char* argv[]) {
                 debugger_continue = true;
             }
             // --- Display ---
-            else if (cmd == "locals" || cmd == "l") {
+            else if (cmd == "locals") {
                 auto vars = vm.getLocals(selected_frame);
                 if (vars.empty()) std::cout << "  (no locals)\n";
                 else for (auto& v : vars)

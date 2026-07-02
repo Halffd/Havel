@@ -46,6 +46,35 @@ Complete reference for all built-in host functions available in Havel scripts.
 | `io.getExecutorMode()` | - | string | Current executor mode |
 | `io.setExecutorMode(mode)` | string | bool | Set executor mode |
 
+### IO Event Listeners
+
+| Function | Callback Args | Description |
+|----------|-------------|-------------|
+| `io.onKeyDown(callback)` | `(keyCode: int)` | Fires on any key press |
+| `io.onKeyUp(callback)` | `(keyCode: int)` | Fires on any key release |
+| `io.onKey(callback)` | `(keyName: string)` | Fires on any key press or release, passes key name |
+| `io.onButton(callback)` | `(button: int, down: bool)` | Fires on mouse button press or release |
+| `io.onMouse(callback)` | `(dx: int, dy: int)` | Fires on mouse movement |
+| `io.onEvent(callback)` | `(kind: int, code: int, value: int)` | Fires on every raw input event |
+
+The callback runs in a background goroutine. Events are deferred and dispatched from the main event loop — safe to call IO functions (`io.send`, `io.mouseMove`, etc.) inside callbacks.
+
+### Example
+
+```
+use app/io
+
+io.onKeyDown fn(keyCode) {
+    print "key pressed: " + str(keyCode)
+}
+
+io.onKey fn(keyName) {
+    if keyName == "Enter" {
+        print "Enter pressed"
+    }
+}
+```
+
 ---
 
 ## Window Management

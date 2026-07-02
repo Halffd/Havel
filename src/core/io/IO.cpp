@@ -546,7 +546,7 @@ eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
             Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
 
         globalEvdev = true;
-        bool grab = Configs::Get().Get<bool>("Device.GrabDevices", true);
+        bool grab = Configs::Get().Get<bool>("Device.GrabDevices", false);
         if (ProcessManager::isTraced() || !eventListenerThreaded_) {
           grab = false;
         }

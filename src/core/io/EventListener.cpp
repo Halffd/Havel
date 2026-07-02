@@ -104,6 +104,9 @@ void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths
 
   auto type = backend_->GetType();
 
+  backend_->SetKeyCallback([this](const KeyEvent &ke) { OnBackendKeyEvent(ke); });
+  backend_->SetMouseCallback([this](const MouseEvent &me) { OnBackendMouseEvent(me); });
+
   if (type == InputBackendType::Evdev || type == InputBackendType::X11) {
     for (const auto &path : devicePaths) {
       if (!backend_->OpenDevice(path)) {
@@ -115,9 +118,6 @@ void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths
       }
     }
   }
-
-  backend_->SetKeyCallback([this](const KeyEvent &ke) { OnBackendKeyEvent(ke); });
-  backend_->SetMouseCallback([this](const MouseEvent &me) { OnBackendMouseEvent(me); });
 
   if (backend_->GetDeviceCount() == 0) {
     error("EventListener: No input devices available");
@@ -139,7 +139,15 @@ void EventListener::OnBackendKeyEvent(const KeyEvent &ke) {
 }
 
 void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
-  if (blockInput.load() && me.type != MouseEvent::Type::Wheel) return;
+  if (blockInput.load()) {
+    if (debugging::debug_io) debug("[WHEEL] OnBackendMouseEvent blocked (blockInput=true) type={}", static_cast<int>(me.type));
+    return;
+  }
+  if (debugging::debug_io) {
+    if (me.type == MouseEvent::Type::Wheel)
+      debug("[WHEEL] OnBackendMouseEvent wheel={} hi_res={} code={}",
+            me.wheel, me.wheel_hi_res, me.code);
+  }
   if (debugging::debug_hotkeys) {
     if (me.type == MouseEvent::Type::Button)
       debug("[Mouse] OnBackendMouseEvent: button={} down={}", me.button, me.down);
@@ -158,12 +166,14 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
     ev.value = static_cast<int>(me.dy);
     ProcessMouseEvent(ev);
     SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    for (auto &cb : mouseMoveListeners) cb(me.dx, me.dy);
   } else if (me.type == MouseEvent::Type::Button) {
     struct input_event ev;
     ev.type = EV_KEY;
     ev.code = me.button;
     ev.value = me.down ? 1 : 0;
     ProcessMouseEvent(ev);
+    for (auto &cb : mouseButtonListeners) cb(me.button, me.down);
   } else if (me.type == MouseEvent::Type::Wheel) {
     struct input_event ev;
     ev.type = EV_REL;
@@ -628,7 +638,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         shouldBlock = inputBlockCallback(event);
       }
 
-      if (!shouldBlock && !blockInput.load()) {
+      if (!shouldBlock && !blockInput.load() && grabDevices) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);
       }
 
@@ -658,7 +668,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         shouldBlock = inputBlockCallback(event);
       }
 
-      if (!shouldBlock) {
+      if (!shouldBlock && grabDevices) {
         double scaledValue = ev.value * IO::scrollSpeed;
         int32_t scaledInt = static_cast<int32_t>(scaledValue);
         if (scaledInt == 0 && ev.value != 0 && IO::scrollSpeed >= 1.0) {
@@ -698,7 +708,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
       currentMouseY = ev.value;
     }
 
-    if (!shouldBlock && !blockInput.load()) {
+    if (!shouldBlock && !blockInput.load() && grabDevices) {
       SendUinputEvent(ev.type, ev.code, ev.value);
     }
     return;
@@ -764,6 +774,15 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     anyKeyPressCallback(event.keyName);
   }
 
+  // Multi-listeners
+  if (down) {
+    for (auto &cb : keyDownListeners) cb(originalCode);
+  } else {
+    for (auto &cb : keyUpListeners) cb(originalCode);
+  }
+  for (auto &cb : keyListeners) cb(event.keyName);
+  for (auto &cb : eventListeners) cb(event);
+
   if (inputEventCallback) {
     inputEventCallback(event);
   }
@@ -780,7 +799,9 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     return;
   }
 
-  SendUinputEvent(EV_KEY, mappedCode, ev.value);
+  if (grabDevices) {
+    SendUinputEvent(EV_KEY, mappedCode, ev.value);
+  }
 }
 
 bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
@@ -1040,10 +1061,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
     }
 
     // Forward if not blocked
-    if (!shouldBlock && !blockInput.load()) {
+    if (!shouldBlock && !blockInput.load() && grabDevices) {
       SendUinputEvent(EV_KEY, ev.code, ev.value);
-    } else if (!down) {
-      // Always release to prevent stuck buttons
+    } else if (!down && grabDevices) {
       SendUinputEvent(EV_KEY, ev.code, 0);
     }
 
@@ -1116,7 +1136,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
         QueueMouseMovementHotkey(virtualKey);
       }
 
-      if (!blockInput.load()) {
+      if (!blockInput.load() && grabDevices) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);
       }
 
@@ -1274,7 +1294,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
       }
 
       // Apply scroll speed and forward if not blocked
-      if (!shouldBlock) {
+      if (!shouldBlock && grabDevices) {
         double scaledValue = ev.value * IO::scrollSpeed;
         int32_t scaledInt = static_cast<int32_t>(std::round(scaledValue));
 
@@ -1282,7 +1302,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
           scaledInt = (ev.value > 0) ? 1 : -1;
         }
 
-        if (debugging::debug_io) debug("Forwarding wheel: raw={} scaled={} blocked={} scrollSpeed={}",
+        if (debugging::debug_io) debug("[WHEEL] ProcessMouseEvent: shouldBlock={} raw={} scaled={} hiResVal={} scrollSpeed={}",
               ev.value, scaledInt, shouldBlock, IO::scrollSpeed);
 #ifdef REL_WHEEL_HI_RES
         if (hiResVal != 0) {
@@ -1298,7 +1318,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);
 #endif
       } else {
-        if (debugging::debug_io) debug("Wheel BLOCKED");
+        if (debugging::debug_io) debug("[WHEEL] WHEEL BLOCKED by hotkey shouldBlock={}", shouldBlock);
       }
     }
 #ifdef REL_WHEEL_HI_RES
@@ -1309,9 +1329,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
 #endif
     // Other relative events
     else {
-      if (!blockInput.load()) {
-        SendUinputEvent(ev.type, ev.code, ev.value);
-      }
+    if (!blockInput.load() && grabDevices) {
+      SendUinputEvent(ev.type, ev.code, ev.value);
+    }
     }
 
   } else if (ev.type == EV_ABS) {
@@ -1330,7 +1350,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
     } else if (ev.code == ABS_Y) {
       currentMouseY = ev.value;
     }
-    if (!blockInput.load()) {
+    if (!blockInput.load() && grabDevices) {
       SendUinputEvent(ev.type, ev.code, ev.value);
     }
   }

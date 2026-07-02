@@ -144,6 +144,14 @@ public:
     keyUpCallback = std::move(callback);
   }
 
+  // Multi-listener registration
+  void AddKeyDownListener(std::function<void(int keyCode)> cb) { keyDownListeners.push_back(std::move(cb)); }
+  void AddKeyUpListener(std::function<void(int keyCode)> cb) { keyUpListeners.push_back(std::move(cb)); }
+  void AddKeyListener(std::function<void(const std::string &key)> cb) { keyListeners.push_back(std::move(cb)); }
+  void AddMouseButtonListener(std::function<void(uint32_t button, bool down)> cb) { mouseButtonListeners.push_back(std::move(cb)); }
+  void AddMouseMoveListener(std::function<void(int dx, int dy)> cb) { mouseMoveListeners.push_back(std::move(cb)); }
+  void AddEventListener(std::function<void(const InputEvent &)> cb) { eventListeners.push_back(std::move(cb)); }
+
   void SetHotkeyExecutor(HotkeyExecutor *executor) {
     hotkeyExecutor = executor;
   }
@@ -162,6 +170,14 @@ public:
   std::function<bool(const InputEvent &)> inputBlockCallback = nullptr;
   std::function<void()> inputNotificationCallback = nullptr;
   std::function<void()> deferredSendFlush_ = nullptr;
+
+  // Multi-listener support for Havel script callbacks
+  std::vector<std::function<void(int keyCode)>> keyDownListeners;
+  std::vector<std::function<void(int keyCode)>> keyUpListeners;
+  std::vector<std::function<void(const std::string &key)>> keyListeners;
+  std::vector<std::function<void(uint32_t button, bool down)>> mouseButtonListeners;
+  std::vector<std::function<void(int dx, int dy)>> mouseMoveListeners;
+  std::vector<std::function<void(const InputEvent &)>> eventListeners;
 
   void ReleaseAllVirtualKeys();
   void ForceUngrabAllDevices();

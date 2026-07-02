@@ -825,11 +825,11 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
             mouseCallback_(event);
         }
 
-        if (!mouseCallback_ && !blockInput_.load()) {
-            SendUinputEvent(EV_REL, ev.code, scaled);
+if (!mouseCallback_ && !blockInput_.load()) {
+            debug("[MOVEMENT] EvdevAdapter fallback uinput: type={} code={} value={}", ev.type, ev.code, ev.value);
+            SendUinputEvent(EV_REL, ev.code, ev.value);
             SendSync();
         }
-
     } else if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
         int32_t scaled = static_cast<int32_t>(ev.value * scrollSpeed_);
         if (scaled == 0 && ev.value != 0) scaled = (ev.value > 0) ? 1 : -1;
@@ -850,11 +850,17 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
 #ifdef REL_WHEEL_HI_RES
             if (ev.code == REL_WHEEL) {
                 event.wheel_hi_res = dev.pending_wheel_hi_res;
+                debug("[WHEEL] REL_WHEEL code={} value={} hi_res={}",
+                      ev.code, ev.value, dev.pending_wheel_hi_res);
                 dev.pending_wheel_hi_res = 0;
             } else if (ev.code == REL_HWHEEL) {
                 event.wheel_hi_res = dev.pending_hwheel_hi_res;
+                debug("[WHEEL] REL_HWHEEL code={} value={} hi_res={}",
+                      ev.code, ev.value, dev.pending_hwheel_hi_res);
                 dev.pending_hwheel_hi_res = 0;
             }
+#else
+            debug("[WHEEL] code={} value={} (no hi-res)", ev.code, ev.value);
 #endif
             mouseCallback_(event);
         }
@@ -866,15 +872,19 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
     }
 #ifdef REL_WHEEL_HI_RES
     else if (ev.code == REL_WHEEL_HI_RES) {
+        debug("[WHEEL] REL_WHEEL_HI_RES value={} pending={}", ev.value, dev.pending_wheel_hi_res);
         dev.pending_wheel_hi_res = ev.value;
         if (!mouseCallback_ && !blockInput_.load()) {
+            debug("[WHEEL] EvdevAdapter fallback REL_WHEEL_HI_RES uinput: value={}", ev.value);
             SendUinputEvent(EV_REL, ev.code, ev.value);
             SendSync();
         }
     }
     else if (ev.code == REL_HWHEEL_HI_RES) {
+        debug("[WHEEL] REL_HWHEEL_HI_RES value={} pending={}", ev.value, dev.pending_hwheel_hi_res);
         dev.pending_hwheel_hi_res = ev.value;
         if (!mouseCallback_ && !blockInput_.load()) {
+            debug("[WHEEL] EvdevAdapter fallback REL_HWHEEL_HI_RES uinput: value={}", ev.value);
             SendUinputEvent(EV_REL, ev.code, ev.value);
             SendSync();
         }
@@ -882,6 +892,7 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
 #endif
     else {
         if (!mouseCallback_ && !blockInput_.load()) {
+            debug("[REL] EvdevAdapter fallback uinput: type={} code={} value={}", ev.type, ev.code, ev.value);
             SendUinputEvent(EV_REL, ev.code, ev.value);
             SendSync();
         }
@@ -908,7 +919,7 @@ void EvdevAdapter::ProcessAbsoluteEvent(Device &dev, const input_event &ev) {
             mouseCallback_(event);
         }
 
-        if (!mouseCallback_ && !blockInput_.load()) {
+if (!mouseCallback_ && !blockInput_.load()) {
             SendUinputEvent(EV_ABS, ev.code, ev.value);
             SendSync();
         }

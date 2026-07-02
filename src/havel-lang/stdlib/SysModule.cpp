@@ -135,7 +135,8 @@ void registerSysModule(const VMApi &api) {
                        [api](const std::vector<Value> &args) {
                          (void)args;
   auto arr = api.makeArray();
-  (void)arr;
+  for (const auto& a : api.vm().getProgramArgs())
+    api.push(arr, api.makeString(a));
   return arr;
                        });
 
@@ -195,6 +196,42 @@ void registerSysModule(const VMApi &api) {
                          return Value(static_cast<int64_t>(getppid()));
 #else
                          // Best-effort parent PID on Windows via ToolHelp snapshot.
+                         DWORD current = GetCurrentProcessId();
+                         DWORD parent = 0;
+                         HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+                         if (snapshot != INVALID_HANDLE_VALUE) {
+                           PROCESSENTRY32 pe{};
+                           pe.dwSize = sizeof(pe);
+                           if (Process32First(snapshot, &pe)) {
+                             do {
+                               if (pe.th32ProcessID == current) {
+                                 parent = pe.th32ParentProcessID;
+                                 break;
+                               }
+                             } while (Process32Next(snapshot, &pe));
+                           }
+                           CloseHandle(snapshot);
+                         }
+                         return Value(static_cast<int64_t>(parent));
+#endif
+                       });
+
+  api.registerFunction("process.pid",
+                       [](const std::vector<Value> &args) {
+                         (void)args;
+#ifndef _WIN32
+                         return Value(static_cast<int64_t>(getpid()));
+#else
+                         return Value(static_cast<int64_t>(GetCurrentProcessId()));
+#endif
+                       });
+
+  api.registerFunction("process.ppid",
+                       [](const std::vector<Value> &args) {
+                         (void)args;
+#ifndef _WIN32
+                         return Value(static_cast<int64_t>(getppid()));
+#else
                          DWORD current = GetCurrentProcessId();
                          DWORD parent = 0;
                          HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -912,6 +949,8 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
   api.setField(processObj, "wait", api.makeFunctionRef("process.wait"));
     api.setField(processObj, "killObj", api.makeFunctionRef("process.killObj"));
     api.setField(processObj, "exit", api.makeFunctionRef("sys.exit"));
+    api.setField(processObj, "pid", api.makeFunctionRef("process.pid"));
+    api.setField(processObj, "ppid", api.makeFunctionRef("process.ppid"));
     api.setGlobal("process", processObj);
 }
 

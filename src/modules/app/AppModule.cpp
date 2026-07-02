@@ -215,6 +215,10 @@ void registerAppModule(const VMApi& api) {
   if (existingAppIt != api.vm().getGlobals().end() && existingAppIt->second.isObjectId()) {
     Value existingArgs = api.getField(existingAppIt->second, "args");
     api.setField(obj, "args", existingArgs);
+    Value existingPath = api.getField(existingAppIt->second, "path");
+    if (!existingPath.isNull()) api.setField(obj, "path", existingPath);
+    Value existingCwd = api.getField(existingAppIt->second, "cwd");
+    if (!existingCwd.isNull()) api.setField(obj, "cwd", existingCwd);
   } else {
     api.setField(obj, "args", Value::makeNull());
   }

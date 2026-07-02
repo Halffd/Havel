@@ -481,6 +481,24 @@ static Value
     static Value
     handleHotkeyOnAnyKey(const std::vector<Value> &args,
                          const HostContext *ctx);
+    static Value
+    handleIOOnKeyDown(const std::vector<Value> &args,
+                      const HostContext *ctx);
+    static Value
+    handleIOOnKeyUp(const std::vector<Value> &args,
+                    const HostContext *ctx);
+    static Value
+    handleIOOnKey(const std::vector<Value> &args,
+                  const HostContext *ctx);
+    static Value
+    handleIOOnButton(const std::vector<Value> &args,
+                     const HostContext *ctx);
+    static Value
+    handleIOOnMouse(const std::vector<Value> &args,
+                    const HostContext *ctx);
+    static Value
+    handleIOOnEvent(const std::vector<Value> &args,
+                    const HostContext *ctx);
   };
 
 /**

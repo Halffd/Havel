@@ -3637,6 +3637,24 @@ void InputBridge::install(PipelineOptions &options) {
     options.host_functions["hotkey.onAnyKey"] = [ctx = ctx_](const auto &args) {
         return handleHotkeyOnAnyKey(args, ctx);
     };
+    options.host_functions["io.onKeyDown"] = [ctx = ctx_](const auto &args) {
+        return handleIOOnKeyDown(args, ctx);
+    };
+    options.host_functions["io.onKeyUp"] = [ctx = ctx_](const auto &args) {
+        return handleIOOnKeyUp(args, ctx);
+    };
+    options.host_functions["io.onKey"] = [ctx = ctx_](const auto &args) {
+        return handleIOOnKey(args, ctx);
+    };
+    options.host_functions["io.onButton"] = [ctx = ctx_](const auto &args) {
+        return handleIOOnButton(args, ctx);
+    };
+    options.host_functions["io.onMouse"] = [ctx = ctx_](const auto &args) {
+        return handleIOOnMouse(args, ctx);
+    };
+    options.host_functions["io.onEvent"] = [ctx = ctx_](const auto &args) {
+        return handleIOOnEvent(args, ctx);
+    };
 }
 
 Value
@@ -3960,6 +3978,134 @@ InputBridge::handleHotkeyList(const std::vector<Value> &args,
     }
 
     return Value::makeArrayId(result.id);
+}
+
+Value
+InputBridge::handleIOOnKeyDown(const std::vector<Value> &args,
+                               const HostContext *ctx) {
+    if (args.size() < 1 || !ctx || !ctx->vm || !ctx->io) {
+        return Value::makeBool(false);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    CallbackId callbackId = ctx->vm->registerCallback(args[0]);
+    auto *el = ctx->io->GetEventListener();
+    if (!el) return Value::makeBool(false);
+    el->AddKeyDownListener([vm, callbackId](int) {
+        auto *sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, callbackId]() {
+            vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {});
+        });
+    });
+    return Value::makeBool(true);
+}
+
+Value
+InputBridge::handleIOOnKeyUp(const std::vector<Value> &args,
+                             const HostContext *ctx) {
+    if (args.size() < 1 || !ctx || !ctx->vm || !ctx->io) {
+        return Value::makeBool(false);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    CallbackId callbackId = ctx->vm->registerCallback(args[0]);
+    auto *el = ctx->io->GetEventListener();
+    if (!el) return Value::makeBool(false);
+    el->AddKeyUpListener([vm, callbackId](int) {
+        auto *sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, callbackId]() {
+            vm->spawnCallback(callbackId, FiberPriority::HOTKEY, {});
+        });
+    });
+    return Value::makeBool(true);
+}
+
+Value
+InputBridge::handleIOOnKey(const std::vector<Value> &args,
+                           const HostContext *ctx) {
+    if (args.size() < 1 || !ctx || !ctx->vm || !ctx->io) {
+        return Value::makeBool(false);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    CallbackId callbackId = ctx->vm->registerCallback(args[0]);
+    auto *el = ctx->io->GetEventListener();
+    if (!el) return Value::makeBool(false);
+    el->AddKeyListener([vm, callbackId](const std::string &key) {
+        auto *sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, callbackId, key]() {
+            auto keyRef = vm->createRuntimeString(key);
+            vm->spawnCallback(callbackId, FiberPriority::HOTKEY,
+                              {Value::makeStringId(keyRef.id)});
+        });
+    });
+    return Value::makeBool(true);
+}
+
+Value
+InputBridge::handleIOOnButton(const std::vector<Value> &args,
+                              const HostContext *ctx) {
+    if (args.size() < 1 || !ctx || !ctx->vm || !ctx->io) {
+        return Value::makeBool(false);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    CallbackId callbackId = ctx->vm->registerCallback(args[0]);
+    auto *el = ctx->io->GetEventListener();
+    if (!el) return Value::makeBool(false);
+    el->AddMouseButtonListener([vm, callbackId](uint32_t button, bool down) {
+        auto *sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, callbackId, button, down]() {
+            vm->spawnCallback(callbackId, FiberPriority::HOTKEY,
+                              {Value::makeInt(static_cast<int64_t>(button)),
+                               Value::makeBool(down)});
+        });
+    });
+    return Value::makeBool(true);
+}
+
+Value
+InputBridge::handleIOOnMouse(const std::vector<Value> &args,
+                             const HostContext *ctx) {
+    if (args.size() < 1 || !ctx || !ctx->vm || !ctx->io) {
+        return Value::makeBool(false);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    CallbackId callbackId = ctx->vm->registerCallback(args[0]);
+    auto *el = ctx->io->GetEventListener();
+    if (!el) return Value::makeBool(false);
+    el->AddMouseMoveListener([vm, callbackId](int dx, int dy) {
+        auto *sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, callbackId, dx, dy]() {
+            vm->spawnCallback(callbackId, FiberPriority::BACKGROUND,
+                              {Value::makeInt(dx), Value::makeInt(dy)});
+        });
+    });
+    return Value::makeBool(true);
+}
+
+Value
+InputBridge::handleIOOnEvent(const std::vector<Value> &args,
+                             const HostContext *ctx) {
+    if (args.size() < 1 || !ctx || !ctx->vm || !ctx->io) {
+        return Value::makeBool(false);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    CallbackId callbackId = ctx->vm->registerCallback(args[0]);
+    auto *el = ctx->io->GetEventListener();
+    if (!el) return Value::makeBool(false);
+    el->AddEventListener([vm, callbackId](const InputEvent &event) {
+        auto *sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, callbackId, event]() {
+            vm->spawnCallback(callbackId, FiberPriority::BACKGROUND,
+                              {Value::makeInt(static_cast<int64_t>(event.kind)),
+                               Value::makeInt(event.code),
+                               Value::makeInt(event.value)});
+        });
+    });
+    return Value::makeBool(true);
 }
 
 Value

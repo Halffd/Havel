@@ -120,73 +120,34 @@ Scheduler::Goroutine* Scheduler::pickNext() {
     }
 
     // Priority order: hotkey → normal → background
-    // Hotkey queue: immediate execution (keyboard/mouse interrupts)
-    while (!hotkey_queue_.empty()) {
-      auto* g = hotkey_queue_.front();
-      hotkey_queue_.pop_front();
-
-      if (!g) {
-        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: null goroutine in hotkey_queue, skipping");
-        continue;
+    // Each queue: rotate non-runnable entries to back instead of discarding.
+    // This prevents goroutines from being lost if the state changes between
+    // enqueue and pickNext (e.g. suspend() while still in queue).
+    auto popRunnable = [&](std::deque<Goroutine*>& q, const char* label) -> Goroutine* {
+      size_t limit = q.size();
+      for (size_t i = 0; i < limit && !q.empty(); i++) {
+        auto* g = q.front();
+        q.pop_front();
+        if (!g) continue;
+        if (g->state == GoroutineState::Done) continue;
+        if (g->fiber && g->fiber->state == FiberState::DONE) {
+          g->state = GoroutineState::Done;
+          continue;
+        }
+        if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
+          if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected {} gid={} state={}",
+            label, g->id, static_cast<int>(g->state.load()));
+          return g;
+        }
+        // Non-runnable but not garbage: rotate to back
+        q.push_back(g);
       }
-      if (g->state == GoroutineState::Done) {
-        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: gid={} state=Done, skipping", g->id);
-        continue;
-      }
-      if (g->fiber && g->fiber->state == FiberState::DONE) {
-        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: gid={} fiber=DONE, marking Done", g->id);
-        g->state = GoroutineState::Done;
-        continue;
-      }
-      if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
-        result = g;
-        if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected HOTKEY gid={} state={}",
-          g->id, static_cast<int>(g->state.load()));
-        break;
-      }
-      if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: gid={} state={} not runnable, continuing",
-        g->id, static_cast<int>(g->state.load()));
-    }
+      return nullptr;
+    };
 
-		// Normal queue: standard cooperative tasks
-		if (!result) {
-			while (!runnable_queue_.empty()) {
-				auto* g = runnable_queue_.front();
-				runnable_queue_.pop_front();
-
-				if (!g) continue;
-				if (g->state == GoroutineState::Done) continue;
-				if (g->fiber && g->fiber->state == FiberState::DONE) {
-					g->state = GoroutineState::Done;
-					continue;
-				}
-				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
-					result = g;
-                    if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected RUNNABLE gid={} state={}", g->id, (int)g->state.load());
-					break;
-				}
-			}
-		}
-
-		// Background queue: low-priority work
-		if (!result) {
-			while (!background_queue_.empty()) {
-				auto* g = background_queue_.front();
-				background_queue_.pop_front();
-
-				if (!g) continue;
-				if (g->state == GoroutineState::Done) continue;
-				if (g->fiber && g->fiber->state == FiberState::DONE) {
-					g->state = GoroutineState::Done;
-					continue;
-				}
-				if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
-					result = g;
-                    if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected BACKGROUND gid={} state={}", g->id, (int)g->state.load());
-					break;
-				}
-			}
-		}
+    result = popRunnable(hotkey_queue_, "HOTKEY");
+    if (!result) result = popRunnable(runnable_queue_, "RUNNABLE");
+    if (!result) result = popRunnable(background_queue_, "BACKGROUND");
 	}
 
 	if (result) {
@@ -450,8 +411,11 @@ void Scheduler::requeueFront(Goroutine* g) {
     g->ip = 0;
     g->stack.clear();
     g->locals.clear();
+    g->stack.reserve(64);
     if (g->persistent && !g->hotkey_args.empty()) {
+        g->locals.reserve(g->hotkey_args.size());
         g->locals = g->hotkey_args;
+        g->stack.reserve(g->hotkey_args.size());
         for (const auto& arg : g->hotkey_args) {
             g->stack.push_back(arg);
         }
@@ -461,7 +425,10 @@ void Scheduler::requeueFront(Goroutine* g) {
   if (g->fiber) {
     g->fiber->stack.clear();
     g->fiber->call_stack.clear();
+    g->fiber->stack.reserve(64);
+    g->fiber->call_stack.reserve(4);
     if (g->persistent && !g->hotkey_args.empty()) {
+      g->fiber->stack.reserve(g->hotkey_args.size());
       for (const auto& arg : g->hotkey_args) {
         g->fiber->stack.push(arg);
       }
@@ -626,32 +593,44 @@ size_t Scheduler::wakeSleepingGoroutines() {
     auto now = std::chrono::steady_clock::now();
     size_t woken = 0;
 
-    std::lock_guard<std::mutex> lock(goroutines_mutex_);
-    for (auto& [id, g] : goroutines_) {
-        if (g->state != GoroutineState::Suspended) continue;
-        if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
-        {
-            std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
-            if (g->wait_handle.type != AwaitableType::SLEEP) continue;
-            if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) continue;
-            if (now < g->wait_handle.deadline) continue;
-        }
+    // Collect woken goroutines first under goroutines_mutex_,
+    // then enqueue under priority_mutex_ separately to avoid
+    // lock ordering violation (priority_mutex_ must not be
+    // acquired while holding goroutines_mutex_).
+    std::vector<Goroutine*> toWake;
+    {
+        std::lock_guard<std::mutex> lock(goroutines_mutex_);
+        for (auto& [id, g] : goroutines_) {
+            if (g->state != GoroutineState::Suspended) continue;
+            if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
+            {
+                std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+                if (g->wait_handle.type != AwaitableType::SLEEP) continue;
+                if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) continue;
+                if (now < g->wait_handle.deadline) continue;
+            }
 
-        g->state = GoroutineState::Runnable;
-        g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
-        {
-            std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
-            g->wait_handle.clear();  // Clear stale sleep deadline and context
+            g->state = GoroutineState::Runnable;
+            g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+                g->wait_handle.clear();
+            }
+            toWake.push_back(g.get());
+            woken++;
         }
-        woken++;
+    }
 
+    if (!toWake.empty()) {
         std::lock_guard<std::mutex> plock(priority_mutex_);
-        if (g->priority == FiberPriority::HOTKEY) {
-            hotkey_queue_.push_back(g.get());
-        } else if (g->priority == FiberPriority::BACKGROUND) {
-            background_queue_.push_back(g.get());
-        } else {
-            runnable_queue_.push_back(g.get());
+        for (auto* g : toWake) {
+            if (g->priority == FiberPriority::HOTKEY) {
+                hotkey_queue_.push_back(g);
+            } else if (g->priority == FiberPriority::BACKGROUND) {
+                background_queue_.push_back(g);
+            } else {
+                runnable_queue_.push_back(g);
+            }
         }
     }
 

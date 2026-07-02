@@ -4,6 +4,7 @@
 #include "havel-lang/runtime/HostContext.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
+#include "havel-lang/runtime/concurrency/DependencyTracker.hpp"
 #include "../../utils/Logger.hpp"
 #include <mutex>
 #include <unordered_map>
@@ -19,6 +20,8 @@ using havel::compiler::VM;
 using havel::compiler::VMApi;
 using havel::compiler::Scheduler;
 using havel::compiler::HotkeyPolicy;
+using havel::compiler::INVALID_CALLBACK_ID;
+using havel::compiler::BytecodeChunk;
 
 namespace havel::stdlib {
 
@@ -1093,6 +1096,224 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     auto *ctx = getHotkeyContextData(hotkeyId);
     if (!ctx) return Value::makeBool(false);
     return Value::makeBool(ctx->grab);
+  });
+
+  // ===== Dynamic Update Methods =====
+
+  // setCondition(newConditionFn) - update the condition function for this hotkey
+  api.registerPrototypeMethod("Hotkey", "setCondition", 2, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.size() < 2 || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    if (!args[1].isFunctionObjId() && !args[1].isClosureId()) return Value::makeBool(false);
+
+    CallbackId newCondCb = vm.registerCallback(args[1]);
+    if (newCondCb == INVALID_CALLBACK_ID) return Value::makeBool(false);
+
+    auto *sched = vm.getScheduler();
+    if (!sched) { vm.releaseCallback(newCondCb); return Value::makeBool(false); }
+    auto *g = sched->get(ctx->goroutine_id);
+    if (!g) { vm.releaseCallback(newCondCb); return Value::makeBool(false); }
+
+    if (ctx->condition_callback != 0) vm.releaseCallback(ctx->condition_callback);
+
+    g->hotkey_condition_callback_id = newCondCb;
+    ctx->condition_callback = newCondCb;
+
+    auto condVal = vm.externalRootValue(newCondCb);
+    if (condVal) {
+      auto tracker = std::make_shared<compiler::DependencyTracker>();
+      compiler::DependencyTrackerScope scope(tracker);
+      bool result = false;
+      try {
+        Value r = vm.callFunctionSync(*condVal, {});
+        result = vm.toBool(r);
+      } catch (...) { result = false; }
+      g->hotkey_condition_last_result = result;
+      auto deps = tracker->getGlobalDependencies();
+      auto fieldDeps = tracker->getFieldDependencies();
+      deps.insert(fieldDeps.begin(), fieldDeps.end());
+      g->hotkey_condition_deps = std::move(deps);
+
+      auto *hostCtx = vm.hostContext();
+      if (hostCtx && hostCtx->hotkeyManager)
+        hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, result);
+    }
+
+    auto condStr = vm.createRuntimeString("custom:" + std::to_string(newCondCb));
+    vm.setHostObjectField(objRef, "condition", Value::makeStringId(condStr.id));
+    return Value::makeBool(true);
+  });
+
+  // setExpression(newActionFn) - update the action/body for this hotkey
+  api.registerPrototypeMethod("Hotkey", "setExpression", 2, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.size() < 2 || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    if (!args[1].isFunctionObjId() && !args[1].isClosureId()) return Value::makeBool(false);
+
+    CallbackId newCb = vm.registerCallback(args[1]);
+    if (newCb == INVALID_CALLBACK_ID) return Value::makeBool(false);
+
+    auto *sched = vm.getScheduler();
+    if (!sched) { vm.releaseCallback(newCb); return Value::makeBool(false); }
+    auto *g = sched->get(ctx->goroutine_id);
+    if (!g) { vm.releaseCallback(newCb); return Value::makeBool(false); }
+
+    uint32_t function_index = 0;
+    uint32_t closure_id = 0;
+    const BytecodeChunk* chunk = nullptr;
+
+    auto closure = vm.externalRootValue(newCb);
+    if (!closure) { vm.releaseCallback(newCb); return Value::makeBool(false); }
+
+    if (closure->isFunctionObjId()) {
+      function_index = closure->asFunctionObjId();
+    } else if (closure->isClosureId()) {
+      closure_id = closure->asClosureId();
+      auto *closureObj = vm.getHeap().closure(closure_id);
+      if (!closureObj) { vm.releaseCallback(newCb); return Value::makeBool(false); }
+      function_index = closureObj->function_index;
+      if (closureObj->chunk) chunk = closureObj->chunk;
+    } else {
+      vm.releaseCallback(newCb);
+      return Value::makeBool(false);
+    }
+
+    if (ctx->callback != 0) vm.releaseCallback(ctx->callback);
+
+    g->hotkey_function_id = function_index;
+    g->hotkey_closure_id = closure_id;
+    g->hotkey_chunk = chunk;
+    g->hotkey_callback_id = newCb;
+
+    auto thunk = vm.buildDirectCallThunk(newCb);
+    if (!thunk.calls.empty()) {
+      g->hotkey_direct_thunk = true;
+      vm.storeDirectCallThunk(newCb, std::move(thunk));
+    } else {
+      g->hotkey_direct_thunk = false;
+    }
+
+    ctx->callback = newCb;
+    return Value::makeBool(true);
+  });
+
+  // ===== Standalone update function =====
+
+  // hotkey.update(keyOrAlias, newCondition?, newAction?)
+  api.registerFunction("hotkey.update", [&vm](const std::vector<Value> &args) -> Value {
+    if (args.empty()) return Value::makeBool(false);
+    auto keyOrAlias = vm.resolveStringKey(args[0]);
+    if (keyOrAlias.empty()) return Value::makeBool(false);
+
+    std::string hotkeyId;
+    {
+      std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
+      for (auto &[id, data] : g_hotkeyContexts) {
+        if (data && (data->alias == keyOrAlias || data->key == keyOrAlias)) {
+          hotkeyId = id;
+          break;
+        }
+      }
+    }
+    if (hotkeyId.empty()) return Value::makeBool(false);
+
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+
+    auto *sched = vm.getScheduler();
+    if (!sched) return Value::makeBool(false);
+    auto *g = sched->get(ctx->goroutine_id);
+    if (!g) return Value::makeBool(false);
+
+    bool changed = false;
+
+    if (args.size() > 1 && !args[1].isNull() && (args[1].isFunctionObjId() || args[1].isClosureId())) {
+      CallbackId newCondCb = vm.registerCallback(args[1]);
+      if (newCondCb != INVALID_CALLBACK_ID) {
+        if (ctx->condition_callback != 0) vm.releaseCallback(ctx->condition_callback);
+
+        g->hotkey_condition_callback_id = newCondCb;
+        ctx->condition_callback = newCondCb;
+
+        auto condVal = vm.externalRootValue(newCondCb);
+        if (condVal) {
+          auto tracker = std::make_shared<compiler::DependencyTracker>();
+          compiler::DependencyTrackerScope scope(tracker);
+          bool result = false;
+          try {
+            Value r = vm.callFunctionSync(*condVal, {});
+            result = vm.toBool(r);
+          } catch (...) { result = false; }
+          g->hotkey_condition_last_result = result;
+          auto deps = tracker->getGlobalDependencies();
+          auto fieldDeps = tracker->getFieldDependencies();
+          deps.insert(fieldDeps.begin(), fieldDeps.end());
+          g->hotkey_condition_deps = std::move(deps);
+
+          auto *hostCtx = vm.hostContext();
+          if (hostCtx && hostCtx->hotkeyManager)
+            hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, result);
+        }
+        changed = true;
+      }
+    }
+
+    if (args.size() > 2 && !args[2].isNull() && (args[2].isFunctionObjId() || args[2].isClosureId())) {
+      CallbackId newCb = vm.registerCallback(args[2]);
+      if (newCb != INVALID_CALLBACK_ID) {
+        uint32_t function_index = 0;
+        uint32_t closure_id = 0;
+        const BytecodeChunk* chunk = nullptr;
+
+        auto closure = vm.externalRootValue(newCb);
+        if (closure) {
+          if (closure->isFunctionObjId()) {
+            function_index = closure->asFunctionObjId();
+          } else if (closure->isClosureId()) {
+            closure_id = closure->asClosureId();
+            auto *closureObj = vm.getHeap().closure(closure_id);
+            if (closureObj) {
+              function_index = closureObj->function_index;
+              if (closureObj->chunk) chunk = closureObj->chunk;
+            }
+          }
+        }
+
+        if (function_index != 0 || closure_id != 0) {
+          if (ctx->callback != 0) vm.releaseCallback(ctx->callback);
+
+          g->hotkey_function_id = function_index;
+          g->hotkey_closure_id = closure_id;
+          g->hotkey_chunk = chunk;
+          g->hotkey_callback_id = newCb;
+
+          auto thunk = vm.buildDirectCallThunk(newCb);
+          if (!thunk.calls.empty()) {
+            g->hotkey_direct_thunk = true;
+            vm.storeDirectCallThunk(newCb, std::move(thunk));
+          } else {
+            g->hotkey_direct_thunk = false;
+          }
+
+          ctx->callback = newCb;
+          changed = true;
+        } else {
+          vm.releaseCallback(newCb);
+        }
+      }
+    }
+
+    return Value::makeBool(changed);
   });
 
   // Set prototype object as global "Hotkey" constructor

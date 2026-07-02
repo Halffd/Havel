@@ -579,31 +579,20 @@ void EvdevAdapter::RemoveKeyRemap(uint32_t from) {
 }
 
 void EvdevAdapter::BeginBatch() {
+    if (!uinput_) return;
     batching_ = true;
-    batchBuffer_.clear();
+    uinput_->BeginBatch();
 }
 
 void EvdevAdapter::QueueEvent(int type, int code, int value) {
     if (!batching_ || !uinput_) return;
-    input_event ev = {};
-    ev.type = type;
-    ev.code = code;
-    ev.value = value;
-    batchBuffer_.push_back(ev);
-
-    if (batchBuffer_.size() >= MAX_BATCH_SIZE) {
-        EndBatch();
-    }
+    uinput_->SendEvent(type, code, value);
 }
 
 void EvdevAdapter::EndBatch() {
     if (!batching_ || !uinput_) return;
-        batchBuffer_.push_back({.time = {}, .type = EV_SYN, .code = SYN_REPORT, .value = 0});
-    for (const auto &ev : batchBuffer_) {
-        uinput_->SendEvent(ev.type, ev.code, ev.value);
-    }
+    uinput_->EndBatch();
     batching_ = false;
-    batchBuffer_.clear();
 }
 
 void EvdevAdapter::ReleaseAllKeys() {
@@ -854,7 +843,7 @@ void EvdevAdapter::ProcessRelativeEvent(Device &dev, const input_event &ev) {
         if (mouseCallback_) {
             MouseEvent event;
             event.type = MouseEvent::Type::Wheel;
-            event.wheel = scaled;
+            event.wheel = ev.value;
             event.code = ev.code;
             event.modifiers = modifiers_;
             event.timestamp = now;

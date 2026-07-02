@@ -1287,10 +1287,16 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
 #ifdef REL_WHEEL_HI_RES
         if (hiResVal != 0) {
           int hiResCode = (ev.code == REL_WHEEL) ? REL_WHEEL_HI_RES : REL_HWHEEL_HI_RES;
-          SendUinputEvent(EV_REL, hiResCode, hiResVal);
+          BeginUinputBatch();
+          QueueUinputEvent(EV_REL, hiResCode, hiResVal);
+          QueueUinputEvent(EV_REL, ev.code, scaledInt);
+          EndUinputBatch();
+        } else {
+          SendUinputEvent(EV_REL, ev.code, scaledInt);
         }
-#endif
+#else
         SendUinputEvent(EV_REL, ev.code, scaledInt);
+#endif
       } else {
         if (debugging::debug_io) debug("Wheel BLOCKED");
       }

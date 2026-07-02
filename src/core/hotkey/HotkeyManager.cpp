@@ -168,6 +168,7 @@ modeManager(std::make_shared<ModeManager>())
       for (auto &[id, hk] : hotkeys) {
         if (hk.alias == alias) {
           hk.grab = grab;
+          hk.enabled = grab;
           break;
         }
       }
@@ -179,6 +180,7 @@ modeManager(std::make_shared<ModeManager>())
       if (hk.alias == alias)
       {
         hk.grab = grab;
+        hk.enabled = grab;
         if (!hk.evdev) {
           if (grab) {
             io->GrabHotkey(id);

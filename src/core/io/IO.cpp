@@ -942,6 +942,9 @@ bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
 
 bool IO::Scroll(double dy, double dx) {
   ensureBackend();
+    if (mouseController) {
+        return mouseController->Scroll(dy, dx);
+    }
     if (ioBackend) {
         int clicks = static_cast<int>(dy);
         if (clicks > 0) {
@@ -969,11 +972,8 @@ bool IO::Scroll(double dy, double dx) {
         }
         return true;
     }
-    if (!mouseController) {
-        error("Cannot scroll: MouseController not initialized");
-        return false;
-    }
-    return mouseController->Scroll(dy, dx);
+    error("Cannot scroll: MouseController not initialized");
+    return false;
 }
 
 void IO::SetMouseSensitivity(double sensitivity) {
@@ -2388,21 +2388,34 @@ void IO::PressKey(const std::string &keyName, bool press) {
 }
 
 bool IO::GrabHotkey(int hotkeyId) {
+  fprintf(stderr, "[IO-GrabHotkey] id=%d enter\n", hotkeyId);
   ensureBackend();
   auto it = hotkeys.find(hotkeyId);
   if (it == hotkeys.end()) {
+    fprintf(stderr, "[IO-GrabHotkey] id=%d NOT FOUND in hotkeys\n", hotkeyId);
     warning("Hotkey ID not found: {}", hotkeyId);
     return false;
   }
   const HotKey &hotkey = it->second;
+  fprintf(stderr, "[IO-GrabHotkey] id=%d alias='%s' key=%d mods=%d evdev=%d enabled=%d\n",
+          hotkeyId, hotkey.alias.c_str(), hotkey.key, hotkey.modifiers, hotkey.evdev, hotkey.enabled);
   if (hotkey.key == 0) {
+    fprintf(stderr, "[IO-GrabHotkey] id=%d INVALID keycode=0\n", hotkeyId);
     warning("Invalid keycode for hotkey: {}", hotkey.alias);
     return false;
   }
   if (!hotkey.evdev && ioBackend) {
-    ioBackend->RegisterHotkey(hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers), hotkey.type == HotkeyType::MouseButton);
+    fprintf(stderr, "[IO-GrabHotkey] id=%d calling ioBackend->RegisterHotkey(key=%d, mods=%d)\n",
+            hotkeyId, hotkey.key, hotkey.modifiers);
+    bool regOk = ioBackend->RegisterHotkey(hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers), hotkey.type == HotkeyType::MouseButton);
+    fprintf(stderr, "[IO-GrabHotkey] id=%d RegisterHotkey returned %d\n", hotkeyId, regOk);
+  } else if (hotkey.evdev) {
+    fprintf(stderr, "[IO-GrabHotkey] id=%d evdev=true, skipping backend register\n", hotkeyId);
+  } else {
+    fprintf(stderr, "[IO-GrabHotkey] id=%d ioBackend is null!\n", hotkeyId);
   }
   hotkeys[hotkeyId].enabled = true;
+  fprintf(stderr, "[IO-GrabHotkey] id=%d alias='%s' DONE enabled=true\n", hotkeyId, hotkey.alias.c_str());
   if (debugging::debug_hotkeys) debug("Grabbed hotkey: {}", hotkey.alias);
   return true;
 }

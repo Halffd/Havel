@@ -134,8 +134,10 @@ DECLOCAL_POST,  // local-- (postfix decrement)
   JUMP_IF_NULL, // Jump only if null or undefined (for ?? operator)
 CALL,
   CALL_DYN,  // Dynamic arg count from stack (for spread args)
+  CALL_SPREAD, // Spread call: combine literal args + spread array + call
   TAIL_CALL, // Tail call optimization - reuse current frame
-	CALL_METHOD, // Dispatch method call based on value type (no boxing)
+  CALL_METHOD, // Dispatch method call based on value type (no boxing)
+  CALL_METHOD_SPREAD, // Method call with dynamic spread: combine args + lookup + call
   RETURN,
   TRY_ENTER,      // Install exception handler (catch ip)
   TRY_EXIT,       // Remove active exception handler

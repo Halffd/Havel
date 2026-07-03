@@ -1,0 +1,26 @@
+sum = fn(a, b, c) a + b + c
+
+arr = [1, 2, 3]
+result = sum(...arr)
+print("sum(...arr) = $result")
+
+// lit_before + dynamic spread
+result2 = sum(10, ...arr)
+print("sum(10, ...arr) = $result2")
+
+// lit_before + spread + lit_after  
+result3 = sum(10, ...arr, 100)
+print("sum(10, ...arr, 100) = $result3")
+
+// spread + lit_after
+result4 = sum(...arr, 100)
+print("sum(...arr, 100) = $result4")
+
+// empty array spread
+empty = []
+result5 = sum(...empty, 1, 2)
+print("sum(empty..., 1, 2) = $result5")
+
+// normal call still works
+result6 = sum(5, 6, 7)
+print("sum(5,6,7) = $result6")

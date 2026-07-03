@@ -463,6 +463,9 @@ case OpCode::ADD:
       // (use VMDispatch goto table for dynamic calls)
       COMPILER_THROW("CALL_DYN not supported in execution context");
       break;
+    case OpCode::CALL_SPREAD:
+      COMPILER_THROW("CALL_SPREAD not supported in execution context");
+      break;
     case OpCode::RETURN:
       executeReturn();
       break;

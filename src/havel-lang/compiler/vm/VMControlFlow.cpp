@@ -36,6 +36,51 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
             }
             break;
         }
+        case OpCode::CALL_SPREAD: {
+            if (instruction.operands.size() < 2 ||
+                !instruction.operands[0].isInt() ||
+                !instruction.operands[1].isInt()) {
+                COMPILER_THROW("CALL_SPREAD expects operands: <uint32 lit_before, uint32 lit_after>");
+            }
+            uint32_t lit_before = instruction.operands[0].asInt();
+            uint32_t lit_after = instruction.operands[1].asInt();
+            if (stack.size() < lit_before + lit_after + 2) {
+                COMPILER_THROW("Stack underflow during CALL_SPREAD");
+            }
+            {
+            // Pop lit_after values (in reverse)
+            std::vector<Value> after_args(lit_after);
+            for (uint32_t i = 0; i < lit_after; ++i) {
+                after_args[lit_after - 1 - i] = popStack();
+            }
+            // Pop and expand the spread array
+            Value array_val = popStack();
+            std::vector<Value> spread_elements;
+            if (array_val.isArrayId()) {
+                auto *arr = heap_.array(array_val.asArrayId());
+                if (arr) {
+                    spread_elements.reserve(arr->size());
+                    for (auto &elem : *arr) {
+                        spread_elements.push_back(elem);
+                    }
+                }
+            }
+            // Pop lit_before values (in reverse)
+            std::vector<Value> before_args(lit_before);
+            for (uint32_t i = 0; i < lit_before; ++i) {
+                before_args[lit_before - 1 - i] = popStack();
+            }
+            Value callee_value = popStack();
+            // Combine: before_args + spread_elements + after_args
+            std::vector<Value> all_args;
+            all_args.reserve(lit_before + spread_elements.size() + lit_after);
+            for (auto &a : before_args) all_args.push_back(a);
+            for (auto &a : spread_elements) all_args.push_back(a);
+            for (auto &a : after_args) all_args.push_back(a);
+            doCall(callee_value, std::move(all_args));
+            }
+            break;
+        }
         case OpCode::CALL: {
             uint32_t arg_count = instruction.operands[0].asInt();
             if (stack.size() < static_cast<size_t>(arg_count) + 1) {
@@ -476,6 +521,328 @@ case OpCode::TAIL_CALL: {
     } else {
         // Call VM function
         doCall(vm_func, all_args);
+    }
+    break;
+  }
+
+  case OpCode::CALL_METHOD_SPREAD: {
+    if (instruction.operands.size() != 3 ||
+        !instruction.operands[0].isStringValId() ||
+        !instruction.operands[1].isInt() ||
+        !instruction.operands[2].isInt()) {
+      COMPILER_THROW("CALL_METHOD_SPREAD expects operands: <string method_name, uint32 lit_before, uint32 lit_after>");
+    }
+
+    uint32_t strIndex = instruction.operands[0].asStringValId();
+    const auto &cf_cmsp = currentFrame();
+    const BytecodeChunk* resolveChunkCMSP = cf_cmsp.chunk ? cf_cmsp.chunk : current_chunk;
+    std::string method_name;
+    if (resolveChunkCMSP) {
+        method_name = resolveChunkCMSP->getString(strIndex);
+    }
+    method_name = operatorSymbolToMethodName(method_name);
+    uint32_t lit_before = instruction.operands[1].asInt();
+    uint32_t lit_after = instruction.operands[2].asInt();
+
+    if (stack.size() < lit_before + lit_after + 2) {
+      COMPILER_THROW("Stack underflow during CALL_METHOD_SPREAD");
+    }
+
+    // Pop lit_after args (in reverse order)
+    std::vector<Value> after_args(lit_after);
+    for (uint32_t i = 0; i < lit_after; ++i) {
+        after_args[lit_after - 1 - i] = popStack();
+    }
+
+    // Pop and expand spread array
+    Value array_val = popStack();
+    std::vector<Value> spread_elements;
+    if (array_val.isArrayId()) {
+        auto *arr = heap_.array(array_val.asArrayId());
+        if (arr) {
+            spread_elements.reserve(arr->size());
+            for (auto &elem : *arr) {
+                spread_elements.push_back(elem);
+            }
+        }
+    }
+
+    // Pop lit_before args (in reverse order)
+    std::vector<Value> before_args(lit_before);
+    for (uint32_t i = 0; i < lit_before; ++i) {
+        before_args[lit_before - 1 - i] = popStack();
+    }
+
+    // Pop receiver
+    Value receiver = popStack();
+
+    // Combine: lit_before + expanded + lit_after
+    std::vector<Value> all_args;
+    all_args.reserve(lit_before + spread_elements.size() + lit_after);
+    for (auto &a : before_args) all_args.push_back(a);
+    for (auto &a : spread_elements) all_args.push_back(a);
+    for (auto &a : after_args) all_args.push_back(a);
+
+    // Determine type name for dispatch
+    std::string type_name;
+    uint32_t host_func_idx = 0;
+    bool found_host = false;
+    bool found_via_module = false;
+    bool isInstanceFunc = false;
+    Value vm_func = Value::makeNull();
+    if (receiver.isStringValId() || receiver.isStringId() || receiver.isRegexValId()) {
+      type_name = "string";
+    } else if (receiver.isInt()) {
+      type_name = "int";
+    } else if (receiver.isDouble()) {
+      type_name = "float";
+    } else if (receiver.isBool()) {
+      type_name = "bool";
+    } else if (receiver.isArrayId()) {
+      type_name = "array";
+    } else if (receiver.isObjectId()) {
+      type_name = "object";
+    } else if (receiver.isSetId()) {
+      type_name = "set";
+    } else if (receiver.isThreadId()) {
+      type_name = "thread";
+    } else if (receiver.isIntervalId()) {
+      type_name = "interval";
+    } else if (receiver.isTimeoutId()) {
+      type_name = "timeout";
+    } else if (receiver.isWaitGroupId()) {
+      type_name = "waitgroup";
+    } else if (receiver.isRangeId()) {
+      type_name = "range";
+    } else if (receiver.isHostFuncId()) {
+        std::string receiver_name;
+        if (receiver.asHostFuncId() < host_function_names_.size()) {
+            receiver_name = host_function_names_[receiver.asHostFuncId()];
+        }
+        std::string dotted_name = receiver_name + "." + method_name;
+        for (size_t i = 0; i < host_function_names_.size(); ++i) {
+            if (host_function_names_[i] == dotted_name) {
+                host_func_idx = static_cast<uint32_t>(i);
+                found_host = true;
+                found_via_module = true;
+                break;
+            }
+        }
+        if (!found_host) {
+            pushStack(Value::makeNull());
+            break;
+        }
+    } else {
+        pushStack(Value::makeNull());
+        break;
+    }
+
+    // 0. Object instance field lookup
+    if (receiver.isObjectId()) {
+        auto *instanceObj = heap_.object(receiver.asObjectId());
+        if (instanceObj) {
+            auto *lazyFlag = instanceObj->get("__lazy__");
+            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+                auto *modNameVal = instanceObj->get("__module__");
+                std::string modName;
+                if (modNameVal) {
+                    if (modNameVal->isStringId()) {
+                        if (auto *s = heap_.string(modNameVal->asStringId())) modName = *s;
+                    } else if (modNameVal->isStringValId() && current_chunk) {
+                        modName = current_chunk->getString(modNameVal->asStringValId());
+                    }
+                }
+                if (!modName.empty()) {
+                    ensureModuleLoaded(modName);
+                    auto git = globals.find(modName);
+                    if (git != globals.end() && git->second.isObjectId()) {
+                        receiver = git->second;
+                        instanceObj = heap_.object(receiver.asObjectId());
+                    } else {
+                        std::string capModName = modName;
+                        capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
+                        git = globals.find(capModName);
+                        if (git != globals.end() && git->second.isObjectId()) {
+                            globals[modName] = git->second;
+                            receiver = git->second;
+                            instanceObj = heap_.object(receiver.asObjectId());
+                        }
+                    }
+                    if (!instanceObj) {
+                        pushStack(Value::makeNull());
+                        break;
+                    }
+                }
+            }
+            if (instanceObj) {
+                auto it = instanceObj->find(method_name);
+                if (it != instanceObj->end()) {
+                    if (it->second.isHostFuncId()) {
+                        host_func_idx = it->second.asHostFuncId();
+                        found_host = true;
+                        bool isClassProto = instanceObj->get("__class") != nullptr ||
+                                            instanceObj->get("__struct") != nullptr ||
+                                            instanceObj->get("__is_class") != nullptr;
+                        if (!isClassProto) {
+                            for (const auto &g : globals) {
+                                if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
+                                    found_via_module = true;
+                                    break;
+                                }
+                            }
+                        }
+                    } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
+                        vm_func = it->second;
+                        bool isClassInstance = instanceObj->get("__class") != nullptr ||
+                                               instanceObj->get("__struct") != nullptr;
+                        isInstanceFunc = !isClassInstance;
+                    }
+                }
+            }
+        }
+
+        // 0.5 Check __class/__struct prototype
+        if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
+            auto *classProto = heap_.object(receiver.asObjectId());
+            if (classProto) {
+                auto *classVal = classProto->get("__class");
+                if (!classVal) classVal = classProto->get("__struct");
+                if (classVal && classVal->isObjectId()) {
+                    classProto = heap_.object(classVal->asObjectId());
+                } else {
+                    classProto = nullptr;
+                }
+            }
+            while (classProto) {
+                auto *methodVal = classProto->get(method_name);
+                if (methodVal) {
+                    if (methodVal->isHostFuncId()) {
+                        host_func_idx = methodVal->asHostFuncId();
+                        found_host = true;
+                        break;
+                    } else if (methodVal->isFunctionObjId() || methodVal->isClosureId()) {
+                        vm_func = *methodVal;
+                        isInstanceFunc = false;
+                        break;
+                    }
+                }
+                auto *parentVal = classProto->get("__parent");
+                if (parentVal && parentVal->isObjectId()) {
+                    classProto = heap_.object(parentVal->asObjectId());
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // 0.8 String-based class prototype
+        if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
+            auto *recvObj = heap_.object(receiver.asObjectId());
+            if (recvObj) {
+                auto *classVal = recvObj->get("__class");
+                if (classVal && (classVal->isStringValId() || classVal->isStringId())) {
+                    uint32_t strIdx = classVal->isStringValId() ? classVal->asStringValId() : classVal->asStringId();
+                    auto *classStr = heap_.string(strIdx);
+                    if (classStr) {
+                        auto classIt = prototypes_.find(*classStr);
+                        if (classIt != prototypes_.end()) {
+                            auto methodIt = classIt->second.find(method_name);
+                            if (methodIt != classIt->second.end()) {
+                                host_func_idx = methodIt->second;
+                                found_host = true;
+                            }
+                        }
+                        if (!found_host) {
+                            std::string lower = *classStr;
+                            for (auto &c : lower) if (c >= 'A' && c <= 'Z') c += 32;
+                            auto lowerIt = prototypes_.find(lower);
+                            if (lowerIt != prototypes_.end()) {
+                                auto methodIt = lowerIt->second.find(method_name);
+                                if (methodIt != lowerIt->second.end()) {
+                                    host_func_idx = methodIt->second;
+                                    found_host = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 1. Host prototype
+    if (!found_host && vm_func.isNull()) {
+        auto typeIt = prototypes_.find(type_name);
+        if (typeIt != prototypes_.end()) {
+            auto methodIt = typeIt->second.find(method_name);
+            if (methodIt != typeIt->second.end()) {
+                host_func_idx = methodIt->second;
+                found_host = true;
+            }
+        }
+    }
+
+    // 1.5 Module object monkey-patched methods
+    if (!found_host && vm_func.isNull()) {
+        std::string capName = type_name;
+        if (!capName.empty()) capName[0] = static_cast<char>(toupper(capName[0]));
+        for (const auto &modName : {type_name, capName}) {
+            auto modIt = globals.find(modName);
+            if (modIt != globals.end() && modIt->second.isObjectId()) {
+                auto *modObj = heap_.object(modIt->second.asObjectId());
+                if (modObj) {
+                    auto *val = modObj->get(method_name);
+                    if (val) {
+                        if (val->isHostFuncId()) {
+                            host_func_idx = val->asHostFuncId();
+                            found_host = true;
+                            break;
+                        } else if (val->isFunctionObjId() || val->isClosureId()) {
+                            vm_func = *val;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!found_host && vm_func.isNull()) {
+        pushStack(Value::makeNull());
+        break;
+    }
+
+    // Prepare args
+    std::vector<Value> call_args;
+    uint32_t arg_count = static_cast<uint32_t>(all_args.size());
+    if (isInstanceFunc || found_via_module) {
+        call_args = all_args;
+    } else {
+        call_args.reserve(arg_count + 1);
+        call_args.push_back(receiver);
+        call_args.insert(call_args.end(), all_args.begin(), all_args.end());
+    }
+
+    if (found_host) {
+        if (host_func_idx < host_function_names_.size()) {
+            std::string resolved_name = host_function_names_[host_func_idx];
+            auto fnIt = host_functions.find(resolved_name);
+            if (fnIt != host_functions.end()) {
+                Value result = fnIt->second(call_args);
+                pushStack(result);
+                if (hot_func_cb_) {
+                    if (currentFrame().ip < currentFrame().function->type_feedback.size()) {
+                        currentFrame().function->type_feedback[currentFrame().ip].result_type_mask |= getFeedbackMask(result);
+                    }
+                }
+            } else {
+                pushStack(Value::makeNull());
+            }
+        } else {
+            pushStack(Value::makeNull());
+        }
+    } else {
+        doCall(vm_func, call_args);
     }
     break;
   }

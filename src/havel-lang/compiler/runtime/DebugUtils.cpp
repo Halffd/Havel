@@ -658,6 +658,7 @@ case OpCode::INT_DIV: return "INT_DIV";
   case OpCode::JUMP_IF_NULL: return "JUMP_IF_NULL";
   case OpCode::CALL: return "CALL";
 	case OpCode::CALL_DYN: return "CALL_DYN";
+	case OpCode::CALL_SPREAD: return "CALL_SPREAD";
 	case OpCode::TAIL_CALL: return "TAIL_CALL";
 	case OpCode::CALL_METHOD: return "CALL_METHOD";
   case OpCode::RETURN: return "RETURN";

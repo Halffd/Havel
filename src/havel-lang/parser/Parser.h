@@ -331,6 +331,7 @@ private:
   std::unique_ptr<ast::Statement> parseTryStatement();
   std::unique_ptr<ast::Statement> parseThrowStatement();
   std::unique_ptr<ast::Statement> parseDelStatement();
+  std::unique_ptr<ast::Statement> parseDSLSleep();
   std::unique_ptr<ast::Statement> parseUIDeclaration();
   void parseUIElementDeclaration(
       const std::string &parentVar, bool addToParent,

@@ -3096,6 +3096,11 @@ at(1).type == havel::TokenType::Arrow) {
       }
     }
 
+    // Colon-number DSL: :100 -> sleep(100)
+    if (at().type == havel::TokenType::Colon && at(1).type == havel::TokenType::Number) {
+      return parseDSLSleep();
+    }
+
     // Not a hotkey binding, parse as expression
     auto expr = parseExpression();
 
@@ -11158,6 +11163,45 @@ std::unique_ptr<havel::ast::Expression> Parser::parseWaitExpression() {
   auto target = parsePrattExpression(bp(BindingPower::Prefix));
   auto expr = makeNode<havel::ast::WaitExpression>(std::move(target));
   return expr;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseDSLSleep() {
+  advance(); // consume ':'
+  auto msToken = at();
+  advance(); // consume number
+  int64_t ms = std::stoll(msToken.value);
+
+  // sleep(NUMBER) call
+  std::vector<std::unique_ptr<havel::ast::Expression>> sleepArgs;
+  sleepArgs.push_back(
+      makeNode<havel::ast::NumberLiteral>((double)ms));
+  auto sleepCall = makeNode<havel::ast::CallExpression>(
+      makeNode<havel::ast::Identifier>("sleep"), std::move(sleepArgs));
+
+  // If there's no more tokens on this line, return just sleep()
+  if (at().type == havel::TokenType::NewLine ||
+      at().type == havel::TokenType::Semicolon ||
+      at().type == havel::TokenType::EOF_TOKEN ||
+      at().type == havel::TokenType::CloseBrace) {
+    auto stmt = makeNode<havel::ast::ExpressionStatement>(std::move(sleepCall));
+    if (at().type == havel::TokenType::Semicolon) advance();
+    return stmt;
+  }
+
+  // Parse the rest of the line as a command expression
+  // e.g., :100 lmb -> sleep(100) then lmb as separate expression
+  auto cmdExpr = parseExpression();
+
+  // Wrap both in a block: { sleep(ms); cmdExpr }
+  auto block = makeNode<havel::ast::BlockStatement>();
+  block->body.push_back(
+      makeNode<havel::ast::ExpressionStatement>(std::move(sleepCall)));
+  block->body.push_back(
+      makeNode<havel::ast::ExpressionStatement>(std::move(cmdExpr)));
+
+  if (at().type == havel::TokenType::Semicolon) advance();
+
+  return block;
 }
 
 } // namespace havel::parser

@@ -290,6 +290,25 @@ DirectCallThunk VM::buildDirectCallThunk(CallbackId id) {
             sim.push_back(std::nullopt); // return value not known
             break;
         }
+        case OpCode::CALL_DYN: {
+            if (sim.empty()) { ok = false; break; }
+            auto nv = sim.back(); sim.pop_back();
+            if (!nv || !nv->isInt()) { ok = false; break; }
+            uint32_t n = static_cast<uint32_t>(nv->asInt());
+            if (sim.size() < n + 1) { ok = false; break; }
+            std::vector<Value> args(n);
+            for (uint32_t i = 0; i < n; ++i) {
+                auto v = sim.back(); sim.pop_back();
+                if (!v) { ok = false; break; }
+                args[n - 1 - i] = *v;
+            }
+            if (!ok) break;
+            auto callee = sim.back(); sim.pop_back();
+            if (!callee || !callee->isHostFuncId()) { ok = false; break; }
+            thunk.calls.push_back({callee->asHostFuncId(), std::move(args)});
+            sim.push_back(std::nullopt);
+            break;
+        }
 
         case OpCode::CALL_METHOD: {
             if (instr.operands.size() < 2 ||

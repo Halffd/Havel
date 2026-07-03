@@ -4916,6 +4916,7 @@ case ast::NodeType::UnaryExpression: {
 
 void ByteCompiler::compileCallExpression(
     const ast::CallExpression &expression) {
+  bool hasDynamicSpread = false;
   if (!expression.callee) {
     COMPILER_THROW("Call expression missing callee");
   }
@@ -5185,11 +5186,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  totalArgs++;
  }
  }
- } else {
- compileExpression(*arg);
- totalArgs++;
- }
- } else {
+} else {
+  compileExpression(*arg);
+  totalArgs++;
+  hasDynamicSpread = true;
+  }
+  } else {
  compileExpression(*arg);
  totalArgs++;
  }
@@ -5337,11 +5339,12 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  totalArgs++;
  }
  }
- } else {
- compileExpression(*arg);
- totalArgs++;
- }
- } else {
+} else {
+  compileExpression(*arg);
+  totalArgs++;
+  hasDynamicSpread = true;
+  }
+  } else {
  compileExpression(*arg);
  totalArgs++;
  }
@@ -5513,10 +5516,9 @@ if (in_tail_position_ && try_depth_ == 0) {
           }
         }
       } else {
-        // Dynamic spread not yet supported - skip for now
-        // TODO: Implement runtime spread expansion
-        COMPILER_THROW("Spread operator in function calls only "
-                                 "supports array literals for now");
+        compileExpression(*spread.target);
+        emit(OpCode::SPREAD_CALL);
+        hasDynamicSpread = true;
       }
     } else {
       compileExpression(*arg);
@@ -5556,7 +5558,12 @@ if (in_tail_position_ && try_depth_ == 0 &&
       }
     }
 
-  emit(OpCode::CALL, actualArgCount);
+  if (hasDynamicSpread) {
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(actualArgCount)));
+    emit(OpCode::CALL_DYN);
+  } else {
+    emit(OpCode::CALL, actualArgCount);
+  }
 }
 
 void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {

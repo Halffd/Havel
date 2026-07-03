@@ -36,6 +36,51 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
             }
             break;
         }
+        case OpCode::CALL_SPREAD: {
+            if (instruction.operands.size() < 2 ||
+                !instruction.operands[0].isInt() ||
+                !instruction.operands[1].isInt()) {
+                COMPILER_THROW("CALL_SPREAD expects operands: <uint32 lit_before, uint32 lit_after>");
+            }
+            uint32_t lit_before = instruction.operands[0].asInt();
+            uint32_t lit_after = instruction.operands[1].asInt();
+            if (stack.size() < lit_before + lit_after + 2) {
+                COMPILER_THROW("Stack underflow during CALL_SPREAD");
+            }
+            {
+            // Pop lit_after values (in reverse)
+            std::vector<Value> after_args(lit_after);
+            for (uint32_t i = 0; i < lit_after; ++i) {
+                after_args[lit_after - 1 - i] = popStack();
+            }
+            // Pop and expand the spread array
+            Value array_val = popStack();
+            std::vector<Value> spread_elements;
+            if (array_val.isArrayId()) {
+                auto *arr = heap_.array(array_val.asArrayId());
+                if (arr) {
+                    spread_elements.reserve(arr->size());
+                    for (auto &elem : *arr) {
+                        spread_elements.push_back(elem);
+                    }
+                }
+            }
+            // Pop lit_before values (in reverse)
+            std::vector<Value> before_args(lit_before);
+            for (uint32_t i = 0; i < lit_before; ++i) {
+                before_args[lit_before - 1 - i] = popStack();
+            }
+            Value callee_value = popStack();
+            // Combine: before_args + spread_elements + after_args
+            std::vector<Value> all_args;
+            all_args.reserve(lit_before + spread_elements.size() + lit_after);
+            for (auto &a : before_args) all_args.push_back(a);
+            for (auto &a : spread_elements) all_args.push_back(a);
+            for (auto &a : after_args) all_args.push_back(a);
+            doCall(callee_value, std::move(all_args));
+            }
+            break;
+        }
         case OpCode::CALL: {
             uint32_t arg_count = instruction.operands[0].asInt();
             if (stack.size() < static_cast<size_t>(arg_count) + 1) {

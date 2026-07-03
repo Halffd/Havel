@@ -309,6 +309,11 @@ DirectCallThunk VM::buildDirectCallThunk(CallbackId id) {
             sim.push_back(std::nullopt);
             break;
         }
+        case OpCode::CALL_SPREAD: {
+            // Dynamic spread not supported in callback thunk compilation
+            ok = false;
+            break;
+        }
 
         case OpCode::CALL_METHOD: {
             if (instr.operands.size() < 2 ||

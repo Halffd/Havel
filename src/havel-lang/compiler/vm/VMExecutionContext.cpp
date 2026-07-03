@@ -458,6 +458,11 @@ case OpCode::ADD:
     case OpCode::CALL:
       executeCall(static_cast<uint32_t>(instruction.operands[0].asInt()));
       break;
+    case OpCode::CALL_DYN:
+      // CALL_DYN not supported in execution context
+      // (use VMDispatch goto table for dynamic calls)
+      COMPILER_THROW("CALL_DYN not supported in execution context");
+      break;
     case OpCode::RETURN:
       executeReturn();
       break;

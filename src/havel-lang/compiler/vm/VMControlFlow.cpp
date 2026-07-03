@@ -21,6 +21,21 @@ namespace havel::compiler {
 
 bool VM::execControlFlowOp(const Instruction &instruction) {
 	switch (instruction.opcode) {
+        case OpCode::CALL_DYN: {
+            uint32_t arg_count = popStack().asInt();
+            if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+                COMPILER_THROW("Stack underflow during CALL_DYN");
+            }
+            {
+            std::vector<Value> args(arg_count);
+            for (uint32_t i = 0; i < arg_count; ++i) {
+                args[arg_count - 1 - i] = popStack();
+            }
+            Value callee_value = popStack();
+            doCall(callee_value, std::move(args));
+            }
+            break;
+        }
         case OpCode::CALL: {
             uint32_t arg_count = instruction.operands[0].asInt();
             if (stack.size() < static_cast<size_t>(arg_count) + 1) {

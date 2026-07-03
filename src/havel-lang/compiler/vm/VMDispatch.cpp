@@ -642,6 +642,7 @@ void VM::runDispatchFast(size_t stop_frame_depth) {
         [static_cast<uint8_t>(OpCode::JUMP_IF_TRUE)] = &&op_JUMP_IF_TRUE,
         [static_cast<uint8_t>(OpCode::JUMP_IF_NULL)] = &&op_JUMP_IF_NULL,
         [static_cast<uint8_t>(OpCode::CALL)] = &&op_CALL,
+        [static_cast<uint8_t>(OpCode::CALL_DYN)] = &&op_CALL,
         [static_cast<uint8_t>(OpCode::RETURN)] = &&op_RETURN
     };
 

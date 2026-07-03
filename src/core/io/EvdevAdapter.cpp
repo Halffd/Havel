@@ -854,6 +854,9 @@ if (!mouseCallback_ && !blockInput_.load()) {
                      (ev.value < 0 && dev.pending_wheel_hi_res > 0))) {
                     dev.pending_wheel_hi_res = 0;
                 }
+                if (dev.pending_wheel_hi_res == 0) {
+                    dev.pending_wheel_hi_res = ev.value * 120;
+                }
                 event.wheel_hi_res = dev.pending_wheel_hi_res;
                 debug("[WHEEL] REL_WHEEL code={} value={} hi_res={}",
                       ev.code, ev.value, dev.pending_wheel_hi_res);
@@ -863,6 +866,9 @@ if (!mouseCallback_ && !blockInput_.load()) {
                     ((ev.value > 0 && dev.pending_hwheel_hi_res < 0) ||
                      (ev.value < 0 && dev.pending_hwheel_hi_res > 0))) {
                     dev.pending_hwheel_hi_res = 0;
+                }
+                if (dev.pending_hwheel_hi_res == 0) {
+                    dev.pending_hwheel_hi_res = ev.value * 120;
                 }
                 event.wheel_hi_res = dev.pending_hwheel_hi_res;
                 debug("[WHEEL] REL_HWHEEL code={} value={} hi_res={}",
@@ -883,7 +889,7 @@ if (!mouseCallback_ && !blockInput_.load()) {
 #ifdef REL_WHEEL_HI_RES
     else if (ev.code == REL_WHEEL_HI_RES) {
         debug("[WHEEL] REL_WHEEL_HI_RES value={} pending={}", ev.value, dev.pending_wheel_hi_res);
-        dev.pending_wheel_hi_res = ev.value;
+        dev.pending_wheel_hi_res += ev.value;
         if (!mouseCallback_ && !blockInput_.load()) {
             debug("[WHEEL] EvdevAdapter fallback REL_WHEEL_HI_RES uinput: value={}", ev.value);
             SendUinputEvent(EV_REL, ev.code, ev.value);
@@ -892,7 +898,7 @@ if (!mouseCallback_ && !blockInput_.load()) {
     }
     else if (ev.code == REL_HWHEEL_HI_RES) {
         debug("[WHEEL] REL_HWHEEL_HI_RES value={} pending={}", ev.value, dev.pending_hwheel_hi_res);
-        dev.pending_hwheel_hi_res = ev.value;
+        dev.pending_hwheel_hi_res += ev.value;
         if (!mouseCallback_ && !blockInput_.load()) {
             debug("[WHEEL] EvdevAdapter fallback REL_HWHEEL_HI_RES uinput: value={}", ev.value);
             SendUinputEvent(EV_REL, ev.code, ev.value);

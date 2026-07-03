@@ -9,5 +9,5 @@ v = {1,2,3,4,5}
 v.add(0)  
 v.union({2,3,4,5,6,7}) 
 arr = v | list | push 3 | reversed | unique | print
-a = arr | sort | x => return x * 4 | print // should be inferred to mapmap
+a = arr | sort | x => x * 4 | print // should be inferred to mapmap
 print(arr, a, delim="\n")       

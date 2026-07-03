@@ -693,6 +693,10 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
 
     // Re-evaluate conditional hotkey goroutines
     if (vm_ && scheduler_) {
+        static thread_local int hk_reeval_depth = 0;
+        if (hk_reeval_depth > 0) return;
+        struct DepthGuard { ~DepthGuard() { --hk_reeval_depth; } } dg;
+        ++hk_reeval_depth;
         struct HotkeyAction {
             std::string alias;
             bool grab;

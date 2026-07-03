@@ -5180,21 +5180,14 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
  }
 
  if (method_has_dynamic_spread) {
-     // Method call with dynamic spread: resolve method, use CALL_SPREAD
-     emit(OpCode::DUP);
-     { Value _key = addConstant(Value::makeStringValId(addStringConstant(property->symbol))); emit(OpCode::LOAD_CONST, _key); }
-     emit(OpCode::OBJECT_GET);
-     emit(OpCode::SWAP);
-     // Stack: [method_fn] [receiver]
-
-     uint32_t lit_before = 1; // receiver as first arg
-     uint32_t lit_after = 0;
-     bool found_sp = false;
-     uint32_t total_dyn_spreads = 0;
+     // Method call with dynamic spread: use CALL_METHOD_SPREAD
+     uint32_t cm_lit_before = 0;
+     uint32_t cm_lit_after = 0;
+     bool cm_found_sp = false;
      for (const auto &arg : expression.args) {
          if (!arg) {
              emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-             if (found_sp) lit_after++; else lit_before++;
+             if (cm_found_sp) cm_lit_after++; else cm_lit_before++;
              continue;
          }
          if (arg->kind == ast::NodeType::SpreadExpression) {
@@ -5202,25 +5195,25 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
              if (sp.target && sp.target->kind == ast::NodeType::ArrayLiteral) {
                  const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*sp.target);
                  for (const auto &elem : arrLit.elements) {
-                     if (elem) { compileExpression(*elem); if (found_sp) lit_after++; else lit_before++; }
+                     if (elem) { compileExpression(*elem); if (cm_found_sp) cm_lit_after++; else cm_lit_before++; }
                  }
              } else {
                  compileExpression(*sp.target);
-                 found_sp = true;
-                 total_dyn_spreads++;
+                 cm_found_sp = true;
              }
          } else {
              compileExpression(*arg);
-             if (found_sp) lit_after++; else lit_before++;
+             if (cm_found_sp) cm_lit_after++; else cm_lit_before++;
          }
-     }
-     if (total_dyn_spreads > 1) {
-         COMPILER_THROW("Only one dynamic spread argument supported in method calls");
      }
      if (hasKwargs) {
          COMPILER_THROW("Dynamic spread with keyword arguments not supported yet");
      }
-     emit(OpCode::CALL_SPREAD, std::vector<Value>{Value::makeInt(lit_before), Value::makeInt(lit_after)});
+     { uint32_t _sid = addStringConstant(property->symbol);
+     emit(OpCode::CALL_METHOD_SPREAD, std::vector<Value>{
+         Value::makeStringValId(_sid),
+         Value::makeInt(cm_lit_before),
+         Value::makeInt(cm_lit_after)}); }
      in_tail_position_ = saved_tail_position;
      return;
  }
@@ -5300,19 +5293,13 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         if (member.isOptional) {
             COMPILER_THROW("Dynamic spread not supported with optional chaining");
         }
-        emit(OpCode::DUP);
-        { Value _key = addConstant(Value::makeStringValId(addStringConstant(property->symbol))); emit(OpCode::LOAD_CONST, _key); }
-        emit(OpCode::OBJECT_GET);
-        emit(OpCode::SWAP);
-
-        uint32_t lit_before = 1;
-        uint32_t lit_after = 0;
-        bool found_sp = false;
-        uint32_t total_dyn = 0;
+        uint32_t cm_lit_before = 0;
+        uint32_t cm_lit_after = 0;
+        bool cm_found_sp = false;
         for (const auto &arg : expression.args) {
             if (!arg) {
                 emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-                if (found_sp) lit_after++; else lit_before++;
+                if (cm_found_sp) cm_lit_after++; else cm_lit_before++;
                 continue;
             }
             if (arg->kind == ast::NodeType::SpreadExpression) {
@@ -5320,25 +5307,25 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 if (sp.target && sp.target->kind == ast::NodeType::ArrayLiteral) {
                     const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*sp.target);
                     for (const auto &elem : arrLit.elements) {
-                        if (elem) { compileExpression(*elem); if (found_sp) lit_after++; else lit_before++; }
+                        if (elem) { compileExpression(*elem); if (cm_found_sp) cm_lit_after++; else cm_lit_before++; }
                     }
                 } else {
                     compileExpression(*sp.target);
-                    found_sp = true;
-                    total_dyn++;
+                    cm_found_sp = true;
                 }
             } else {
                 compileExpression(*arg);
-                if (found_sp) lit_after++; else lit_before++;
+                if (cm_found_sp) cm_lit_after++; else cm_lit_before++;
             }
-        }
-        if (total_dyn > 1) {
-            COMPILER_THROW("Only one dynamic spread argument supported in method calls");
         }
         if (hasKwargs) {
             COMPILER_THROW("Dynamic spread with keyword arguments not supported yet");
         }
-        emit(OpCode::CALL_SPREAD, std::vector<Value>{Value::makeInt(lit_before), Value::makeInt(lit_after)});
+        { uint32_t _sid = addStringConstant(property->symbol);
+        emit(OpCode::CALL_METHOD_SPREAD, std::vector<Value>{
+            Value::makeStringValId(_sid),
+            Value::makeInt(cm_lit_before),
+            Value::makeInt(cm_lit_after)}); }
         in_tail_position_ = saved_tail_position;
         return;
     }

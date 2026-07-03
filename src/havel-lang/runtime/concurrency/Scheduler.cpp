@@ -480,6 +480,12 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
                     g->state == GoroutineState::Created ||
                     g->state == GoroutineState::Running);
 
+  fprintf(stderr, "[Sched-wakeHotkey] gid=%d alias='%s' state=%d policy=%d isPending=%d "
+          "running=%d runnable=%zu hotkey_q=%zu suspended=%zu\n",
+          g->id, g->hotkey_alias.c_str(), static_cast<int>(g->state.load()),
+          static_cast<int>(g->hotkey_policy), isPending,
+          running_.load(), runnableCount(), hotkey_queue_.size(), suspendedCount());
+
   ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
                  g->id, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending);
 

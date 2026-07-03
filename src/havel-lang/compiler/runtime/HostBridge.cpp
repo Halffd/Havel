@@ -93,6 +93,7 @@ void HostBridge::checkTimers() {}
     case OpCode::RETURN: return "RETURN";
 	case OpCode::CALL: return "CALL";
 	case OpCode::CALL_DYN: return "CALL_DYN";
+	case OpCode::CALL_SPREAD: return "CALL_SPREAD";
 	case OpCode::JUMP: return "JUMP";
     case OpCode::JUMP_IF_FALSE: return "JUMP_IF_FALSE";
     case OpCode::OBJECT_NEW: return "OBJECT_NEW";

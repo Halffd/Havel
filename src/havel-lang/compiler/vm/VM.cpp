@@ -2744,7 +2744,7 @@ Value savedG = globals["_G"];
         if (locals.size() > savedLocalsSize) {
             locals.resize(savedLocalsSize);
         }
-        if (bc_execute_depth_ == 0) {
+if (bc_execute_depth_ == 0) {
             result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
                 moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
         }

@@ -229,8 +229,14 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
     vm_->processSignalBindings(var_name);
     auto* sched = vm_->getScheduler();
     if (sched) {
+        struct HotkeyAction {
+            std::string alias;
+            bool grab;
+            uint32_t gid;
+        };
+        std::vector<HotkeyAction> pendingActions;
         sched->forEachConditionalHotkey(
-            [this, &var_name, sched](compiler::Scheduler::Goroutine* g) {
+            [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
                 if (!g) return;
                 if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
                     g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
@@ -252,19 +258,16 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
                 bool prev = g->hotkey_condition_last_result;
                 g->hotkey_condition_last_result = conditionMet;
                 if (prev == conditionMet) return;
-                if (conditionMet) {
-                    if (!g->hotkey_condition_alias.empty()) {
-                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-                        if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
-                    }
-                    sched->wakeHotkey(g);
-                } else {
-                    if (!g->hotkey_condition_alias.empty()) {
-                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-                        if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
-                    }
-                }
+                pendingActions.push_back({g->hotkey_condition_alias, conditionMet, g->id});
             });
+        for (auto& act : pendingActions) {
+            if (!act.alias.empty()) {
+                auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
+            }
+            auto* g = sched->get(act.gid);
+            if (g && act.grab) sched->wakeHotkey(g);
+        }
     }
 });
                 hostContext_->eventQueue->onEvent(compiler::EventType::TIMER_FIRE,

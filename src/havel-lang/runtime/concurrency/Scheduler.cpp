@@ -228,11 +228,17 @@ Scheduler::Goroutine* Scheduler::findGoroutineByFiber(Fiber* fiber) {
 }
 
 void Scheduler::forEachConditionalHotkey(std::function<void(Goroutine*)> fn) {
-    std::lock_guard<std::mutex> lock(goroutines_mutex_);
-    for (auto& [id, g] : goroutines_) {
-        if (g && g->hotkey_condition_callback_id != 0) {
-            fn(g.get());
+    std::vector<Goroutine*> candidates;
+    {
+        std::lock_guard<std::mutex> lock(goroutines_mutex_);
+        for (auto& [id, g] : goroutines_) {
+            if (g && g->hotkey_condition_callback_id != 0) {
+                candidates.push_back(g.get());
+            }
         }
+    }
+    for (auto* g : candidates) {
+        fn(g);
     }
 }
 

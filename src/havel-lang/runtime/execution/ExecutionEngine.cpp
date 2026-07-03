@@ -693,9 +693,15 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
 
     // Re-evaluate conditional hotkey goroutines
     if (vm_ && scheduler_) {
+        struct HotkeyAction {
+            std::string alias;
+            bool grab;
+            uint32_t gid;
+        };
+        std::vector<HotkeyAction> pendingActions;
         ::havel::debug("[ExecutionEngine] onVariableChanged('{}'): scanning conditional hotkeys", var_name);
         scheduler_->forEachConditionalHotkey(
-            [this, &var_name](Scheduler::Goroutine* g) {
+            [this, &var_name, &pendingActions](Scheduler::Goroutine* g) {
                 if (!g) {
                     ::havel::debug("[ExecutionEngine]   gid=null: null goroutine");
                     return;
@@ -753,26 +759,17 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
                 // Edge-triggered: only act on transition
                 if (prev == conditionMet) return;
 
-                if (conditionMet) {
-                    // Condition became true: wake the goroutine and grab the hotkey
-                    if (!g->hotkey_condition_alias.empty()) {
-                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-                        if (hm) {
-                            hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
-                        }
-                    }
-                    scheduler_->wakeHotkey(g);
-                } else {
-                    // Condition became false: ungrab the hotkey
-                    if (!g->hotkey_condition_alias.empty()) {
-                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-                        if (hm) {
-                            hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
-                        }
-                    }
-                }
+                pendingActions.push_back({g->hotkey_condition_alias, conditionMet, g->id});
             }
         );
+        for (auto& act : pendingActions) {
+            if (!act.alias.empty()) {
+                auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
+            }
+            auto* g = scheduler_->get(act.gid);
+            if (g && act.grab) scheduler_->wakeHotkey(g);
+        }
     }
 
     if (vm_) {

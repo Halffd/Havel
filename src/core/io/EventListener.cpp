@@ -108,12 +108,16 @@ void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths
   backend_->SetMouseCallback([this](const MouseEvent &me) { OnBackendMouseEvent(me); });
 
   if (type == InputBackendType::Evdev || type == InputBackendType::X11) {
+    bool canGrab = grab && backend_->SupportsSynthesis();
+    if (grab && !backend_->SupportsSynthesis()) {
+      warn("EventListener: uinput not available, disabling grab to avoid input lockup");
+    }
     for (const auto &path : devicePaths) {
       if (!backend_->OpenDevice(path)) {
         error("EventListener: Failed to open device: {}", path);
         continue;
       }
-      if (grab && !backend_->GrabDevice(path)) {
+      if (canGrab && !backend_->GrabDevice(path)) {
         error("EventListener: Failed to grab device: {}", path);
       }
     }

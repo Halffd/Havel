@@ -5505,7 +5505,6 @@ if (in_tail_position_ && try_depth_ == 0) {
     }
     if (arg->kind == ast::NodeType::SpreadExpression) {
       const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
-      // Handle spread over array literal: expand at compile time
       if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
         const auto &arrLit =
             static_cast<const ast::ArrayLiteral &>(*spread.target);

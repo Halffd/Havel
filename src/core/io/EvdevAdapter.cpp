@@ -831,8 +831,15 @@ if (!mouseCallback_ && !blockInput_.load()) {
             SendSync();
         }
     } else if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
-        int32_t scaled = static_cast<int32_t>(ev.value * scrollSpeed_);
-        if (scaled == 0 && ev.value != 0) scaled = (ev.value > 0) ? 1 : -1;
+        // EvdevAdapter applies scrollSpeed_ only when forwarding via uinput
+        // directly (no mouseCallback). When mouseCallback is set, EventListener
+        // handles scaling via IO::scrollSpeed — do not scale here to avoid
+        // double-scaling.
+        int32_t raw = ev.value;
+        int32_t scaled = mouseCallback_ ? raw
+            : static_cast<int32_t>(ev.value * scrollSpeed_);
+        if (!mouseCallback_ && scaled == 0 && ev.value != 0)
+            scaled = (ev.value > 0) ? 1 : -1;
 
         {
             std::unique_lock<std::shared_mutex> lock(stateMutex_);

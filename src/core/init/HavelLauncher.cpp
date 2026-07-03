@@ -908,6 +908,8 @@ public:
 class SelfHostedStrategy : public RunStrategy {
 public:
   int execute(const LaunchConfig &cfg, int, char *[]) override {
+    info("Engine: self-hosted (Havel)");
+
     char selfBuf[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", selfBuf, sizeof(selfBuf) - 1);
     std::string binDir;
@@ -916,7 +918,6 @@ public:
       binDir = std::filesystem::path(selfBuf).parent_path().string();
     }
 
-    // Find modules/lang/ source directory
     std::vector<std::string> searchPaths = {
         binDir + "/../modules/lang/launcher.hv",
         binDir + "/../../modules/lang/launcher.hv",
@@ -942,41 +943,6 @@ public:
     auto absPath = std::filesystem::canonical(launcherPath, ec);
     if (!ec) launcherPath = absPath.string();
 
-    namespace fs = std::filesystem;
-    fs::path langDir = fs::path(launcherPath).parent_path();
-    fs::path outDir = langDir.parent_path().parent_path() / "out" / "modules" / "lang";
-
-    bool hasHvc = fs::exists(outDir) && !fs::is_empty(outDir);
-    if (!hasHvc) {
-      info("Self-hosted: compiling modules/lang/ to {}", outDir.string());
-      std::vector<std::string> hvFiles;
-      for (auto &entry : fs::directory_iterator(langDir)) {
-        if (entry.path().extension() == ".hv") {
-          hvFiles.push_back(entry.path().string());
-        }
-      }
-      if (hvFiles.empty()) {
-        error("No .hv files found in {}", langDir.string());
-        return 1;
-      }
-      fs::create_directories(outDir);
-
-      havel::HavelEngine compileEngine(makeEngineConfig(cfg));
-      compileEngine.initializeMinimal();
-      for (const auto &hvf : hvFiles) {
-        std::string code = readScriptFile(hvf);
-        if (code.empty()) continue;
-        fs::path hvcPath = outDir / (fs::path(hvf).stem().string() + ".hvc");
-        try {
-          compileEngine.compileToFile(code, hvcPath.string());
-        } catch (const std::exception &e) {
-          error("Self-hosted: failed to compile {}: {}", hvf, e.what());
-        }
-      }
-      compileEngine.shutdown();
-      hasHvc = fs::exists(outDir) && !fs::is_empty(outDir);
-    }
-
     std::string launcherCode = readScriptFile(launcherPath);
     if (launcherCode.empty()) {
       error("Cannot read launcher.hv at {}", launcherPath);
@@ -990,12 +956,6 @@ public:
     for (const auto &a : cfg.scriptArgs) appArgList.push_back(a);
 
     installMinimalSignalHandlers();
-
-    if (hasHvc) {
-      info("Engine: self-hosted (Havel) [{}]", outDir.string());
-    } else {
-      info("Engine: compiled (C++)");
-    }
 
     try {
       havel::HavelEngine engine(makeEngineConfig(cfg));
@@ -1161,6 +1121,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
         cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
         cfg.minimalMode = true;
         cfg.pureStdlib = true;
+      } else {
+        info("Engine: compiled (C++)");
       }
     }
 

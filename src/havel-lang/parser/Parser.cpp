@@ -1804,7 +1804,7 @@ case TokenType::Tilde: {
         std::vector<ast::KeywordArg> kwargs;
 
         // Parse arguments
-        while (at().type != TokenType::CloseParen) {
+        while (notEOF() && at().type != TokenType::CloseParen) {
             // Skip newlines before each argument
             while (at().type == TokenType::NewLine) { advance(); }
             if (at().type == TokenType::CloseParen) { break; }
@@ -2196,7 +2196,7 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
   if (at().type == TokenType::OpenParen) {
     advance(); // consume '('
 
-    while (at().type != TokenType::CloseParen) {
+    while (notEOF() && at().type != TokenType::CloseParen) {
       if (!params.empty() && at().type == TokenType::Comma) {
         advance();
         continue;
@@ -5828,7 +5828,7 @@ void Parser::parseUIElementDeclaration(
         advance(); // consume '('
 
         std::vector<std::unique_ptr<havel::ast::Expression>> methodArgs;
-        while (at().type != havel::TokenType::CloseParen) {
+        while (notEOF() && at().type != havel::TokenType::CloseParen) {
           methodArgs.push_back(parseExpression());
           if (at().type == havel::TokenType::Comma) {
             advance();

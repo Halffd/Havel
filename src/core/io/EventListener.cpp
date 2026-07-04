@@ -91,6 +91,7 @@ EventListener::~EventListener() {
 }
 
 void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths, bool grab) {
+  (void)grab; // grab is now handled in Start() after event loop is ready
   backend_ = InputBackend::Create(InputBackendType::Evdev);
   if (!backend_) {
     error("EventListener: Failed to create input backend");
@@ -108,17 +109,9 @@ void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths
   backend_->SetMouseCallback([this](const MouseEvent &me) { OnBackendMouseEvent(me); });
 
   if (type == InputBackendType::Evdev || type == InputBackendType::X11) {
-    bool canGrab = grab && backend_->SupportsSynthesis();
-    if (grab && !backend_->SupportsSynthesis()) {
-      warn("EventListener: uinput not available, disabling grab to avoid input lockup");
-    }
     for (const auto &path : devicePaths) {
       if (!backend_->OpenDevice(path)) {
         error("EventListener: Failed to open device: {}", path);
-        continue;
-      }
-      if (canGrab && !backend_->GrabDevice(path)) {
-        error("EventListener: Failed to grab device: {}", path);
       }
     }
   }
@@ -205,9 +198,55 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
     return false;
   }
 
-  InitInputBackend(devicePaths, grabDevices);
+  // 1. Initialize backend (opens devices, NO grab yet)
+  InitInputBackend(devicePaths, false);
 
   ResetInputState();
+
+  running.store(true);
+  shutdown.store(false);
+  if (startThread) {
+    try {
+      eventThread = std::thread(&EventListener::EventLoop, this);
+      // Wait for event loop to be ready
+      for (int i = 0; i < 100 && !eventLoopReady_.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      if (!eventLoopReady_.load()) {
+        error("EventListener: Event loop failed to start within 1 second");
+        running.store(false);
+        if (backend_) {
+          backend_->Shutdown();
+        }
+        return false;
+      }
+    } catch (const std::exception &e) {
+      error("EventListener: Failed to start event thread: {}", e.what());
+      running.store(false);
+      if (backend_) {
+        backend_->Shutdown();
+      }
+      return false;
+    }
+  }
+
+  // 2. NOW grab devices (after event loop is running)
+  if (grabDevices && backend_) {
+    bool canGrab = grabDevices && backend_->SupportsSynthesis();
+    if (grabDevices && !backend_->SupportsSynthesis()) {
+      warn("EventListener: uinput not available, disabling grab to avoid input lockup");
+    }
+    if (canGrab) {
+      debug("EventListener: Grabbing devices after event loop ready");
+      for (const auto &path : devicePaths) {
+        if (!backend_->GrabDevice(path)) {
+          error("EventListener: Failed to grab device: {}", path);
+        } else {
+          debug("EventListener: Grabbed device: {}", path);
+        }
+      }
+    }
+  }
 
   // Seed key state from kernel — query all currently-pressed keys via EVIOCGKEY
   if (backend_) {
@@ -221,12 +260,6 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
               UpdateModifierState(RemapKey(static_cast<int>(code), true), true);
           }
       }
-  }
-
-  running.store(true);
-  shutdown.store(false);
-  if (startThread) {
-    eventThread = std::thread(&EventListener::EventLoop, this);
   }
 
   return true;
@@ -257,6 +290,10 @@ void EventListener::Stop() {
 }
 
 bool EventListener::SetupUinput() {
+  return backend_ && backend_->SupportsSynthesis();
+}
+
+bool EventListener::SupportsSynthesis() const {
   return backend_ && backend_->SupportsSynthesis();
 }
 
@@ -472,10 +509,16 @@ void EventListener::PumpOnce() {
 }
 
 void EventListener::EventLoop() {
+    if (debugging::debug_io) debug("EventListener: EventLoop started, running={}", running.load());
+    eventLoopReady_.store(false);
+    int loopCount = 0;
     while (running.load() && !shutdown.load()) {
 
         if (backend_) {
             backend_->PollEvents(0);
+        }
+        if (!eventLoopReady_.load()) {
+            eventLoopReady_.store(true);
         }
         if (deferredSendFlush_) deferredSendFlush_();
 
@@ -510,6 +553,15 @@ void EventListener::EventLoop() {
         if (executionEngine && executionEngine->getScheduler() &&
             executionEngine->getScheduler()->hasRunnableFibers()) {
             continue;
+        }
+
+        // Periodic device re-check (every ~5 seconds) to handle hotplug/disconnect
+        loopCount++;
+        if (loopCount >= 500) { // 500 * 10ms = 5 seconds
+            loopCount = 0;
+            if (backend_) {
+                backend_->RecheckDevices();
+            }
         }
 
     fd_set readfds;
@@ -1307,7 +1359,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
         }
 
         if (debugging::debug_io) debug("[WHEEL] ProcessMouseEvent: shouldBlock={} raw={} scaled={} hiResVal={} scrollSpeed={}",
-              ev.value, scaledInt, shouldBlock, IO::scrollSpeed);
+              shouldBlock, ev.value, scaledInt, hiResVal, IO::scrollSpeed);
 #ifdef REL_WHEEL_HI_RES
         if (hiResVal != 0) {
           int hiResCode = (ev.code == REL_WHEEL) ? REL_WHEEL_HI_RES : REL_HWHEEL_HI_RES;
@@ -1334,7 +1386,11 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
     // Other relative events
     else {
     if (!blockInput.load() && grabDevices) {
-      SendUinputEvent(ev.type, ev.code, ev.value);
+      if (SupportsSynthesis()) {
+        SendUinputEvent(ev.type, ev.code, ev.value);
+      } else {
+        warn("EventListener: grab active but uinput unavailable, dropping event type={} code={}", ev.type, ev.code);
+      }
     }
     }
 
@@ -2120,6 +2176,7 @@ void EventListener::ResetInputState() {
   std::unique_lock<std::shared_mutex> lock(stateMutex);
   activeInputs.clear();
   physicalKeyStates.clear();
+  evdevKeyState.clear();
   keyDownTime.clear();
   modifierState = ModifierState();
 }

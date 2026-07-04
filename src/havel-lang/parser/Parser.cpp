@@ -2338,6 +2338,10 @@ Parser::produceAST(const std::string &sourceCode) {
       CompilerError err(ErrorSeverity::Error, e.line, e.column, e.what());
       errors.push_back(err);
       synchronize(); // Recover to next safe point
+      // If we've reached EOF during recovery, stop parsing
+      if (!notEOF()) {
+        break;
+      }
     }
 
     // Forward progress guarantee - if we didn't advance, force advance

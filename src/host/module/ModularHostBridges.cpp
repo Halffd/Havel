@@ -476,9 +476,10 @@ Value IOBridge::handleMouseScroll(const std::vector<Value> &args,
     }
 
     int dy = args[0].isInt() ? static_cast<int>(args[0].asInt()) :
-             args[0].isDouble() ? static_cast<int>(args[0].asDouble()) : 0;
+                 args[0].isDouble() ? static_cast<int>(args[0].asDouble()) : 0;
     int dx = args.size() > 1 && args[1].isInt() ? static_cast<int>(args[1].asInt()) : 0;
 
+    if (debugging::debug_io) debug("[HOST] mouse.scroll dy={} dx={}", dy, dx);
     ::havel::host::MouseService::scroll(dy, dx);
     return Value::makeBool(true);
 }

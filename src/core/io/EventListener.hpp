@@ -102,6 +102,7 @@ public:
   };
 
   bool SetupUinput();
+  bool SupportsSynthesis() const;
   void SendUinputEvent(int type, int code, int value);
   void BeginUinputBatch();
   void QueueUinputEvent(int type, int code, int value);
@@ -326,7 +327,7 @@ private:
   bool isProcessingWheelEvent = false;
   int currentWheelDirection = 0;
   std::chrono::steady_clock::time_point lastWheelUpTime{};
-  std::chrono::steady_clock::time_point lastWheelDownTime{};
+std::chrono::steady_clock::time_point lastWheelDownTime{};
   MouseGestureEngine mouseGestureEngine;
   std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
   mutable std::shared_mutex movementHotkeyMutex;
@@ -337,7 +338,10 @@ private:
   bool grabDevices = false;
   MouseMovementCallback mouseMovementCallback;
 
-// HotkeyExecutor for thread-safe callback execution
+  // Event loop synchronization
+  std::atomic<bool> eventLoopReady_{false};
+
+  // HotkeyExecutor for thread-safe callback execution
 HotkeyExecutor *hotkeyExecutor = nullptr;
 ExecutorMode executorMode_ = ExecutorMode::Scheduler;
 std::mutex hotkeyExecMutex;

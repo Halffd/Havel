@@ -1065,7 +1065,7 @@ if k == "TernaryExpression" {
       bc.emit("STORE_VAR", resultSlot)
       for el in node.elements {
         if el.kind == "SpreadExpression" {
-          emitExpr(emitter, el.target)
+          emitExpr(emitter, el.value)
           spreadSlot = scopeDeclare(emitter.scope, "__spread_arr__")
           bc.emit("STORE_VAR", spreadSlot)
           // Get length

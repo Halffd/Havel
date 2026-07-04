@@ -2,6 +2,7 @@
 #include "KeyMap.hpp"
 #include "UinputDevice.hpp"
 #include "utils/Logger.hpp"
+#include "utils/DebugFlags.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -48,6 +49,7 @@ public:
 
     int GetPollFd() const override;
     bool PollEvents(int timeoutMs) override;
+    void RecheckDevices();
 
     std::pair<int, int> GetMousePosition() const override;
     bool GetKeyState(uint32_t code) const override;
@@ -441,6 +443,10 @@ int EvdevAdapter::GetPollFd() const {
 }
 
 bool EvdevAdapter::PollEvents(int timeoutMs) {
+    static std::atomic<bool> firstPoll{true};
+    if (firstPoll.exchange(false)) {
+        if (havel::debugging::debug_io) havel::debug("EvdevAdapter: PollEvents first call, timeoutMs={} devices={}", timeoutMs, devices_.size());
+    }
     std::vector<struct pollfd> pfds;
 
     {
@@ -448,7 +454,7 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
         pfds.reserve(devices_.size() + 1);
         for (const auto &dev : devices_) {
             if (dev.fd >= 0) {
-                pfds.push_back({.fd = dev.fd, .events = POLLIN, .revents = 0});
+                pfds.push_back({.fd = dev.fd, .events = POLLIN | POLLERR | POLLHUP, .revents = 0});
             }
         }
     }
@@ -472,16 +478,36 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
     }
 
     std::vector<std::pair<size_t, input_event>> events;
+    std::vector<size_t> deadDevices;
 
     {
         std::lock_guard<std::mutex> lock(devicesMutex_);
         for (size_t i = 0; i < pfds.size() && i < devices_.size(); ++i) {
-            if (!(pfds[i].revents & POLLIN)) continue;
+            short revents = pfds[i].revents;
+            if (revents & (POLLERR | POLLHUP)) {
+                // Device disconnected or error
+                deadDevices.push_back(i);
+                continue;
+            }
+            if (!(revents & POLLIN)) continue;
             if (devices_[i].fd < 0) continue;
 
             input_event ev;
             while (read(devices_[i].fd, &ev, sizeof(ev)) == sizeof(ev)) {
                 events.emplace_back(i, ev);
+            }
+        }
+    }
+
+    // Handle dead devices
+    if (!deadDevices.empty()) {
+        std::lock_guard<std::mutex> lock(devicesMutex_);
+        for (size_t idx : deadDevices) {
+            if (idx < devices_.size() && devices_[idx].fd >= 0) {
+                if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), removing", devices_[idx].path, devices_[idx].fd);
+                close(devices_[idx].fd);
+                devices_[idx].fd = -1;
+                devices_[idx].path.clear();
             }
         }
     }
@@ -494,6 +520,37 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
     }
 
     return true;
+}
+
+void EvdevAdapter::RecheckDevices() {
+    std::lock_guard<std::mutex> lock(devicesMutex_);
+    
+    // Re-enumerate devices and reopen any that have disappeared
+    std::vector<DeviceInfo> currentDevices = EnumerateDevices();
+    std::unordered_set<std::string> currentPaths;
+    for (const auto &info : currentDevices) {
+        currentPaths.insert(info.path);
+    }
+    
+    // Check for disconnected devices
+    for (auto &dev : devices_) {
+        if (dev.fd >= 0 && currentPaths.find(dev.path) == currentPaths.end()) {
+            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), marking for reconnect", dev.path, dev.fd);
+            close(dev.fd);
+            dev.fd = -1;
+        }
+    }
+    
+    // Reopen disconnected devices
+    for (auto &dev : devices_) {
+        if (dev.fd < 0 && !dev.path.empty()) {
+            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Attempting to reopen device {}", dev.path);
+            int fd = open(dev.path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+            if (fd >= 0) {
+                dev.fd = fd;
+            }
+        }
+    }
 }
 
 std::pair<int, int> EvdevAdapter::GetMousePosition() const {

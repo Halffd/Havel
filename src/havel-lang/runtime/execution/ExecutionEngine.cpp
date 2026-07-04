@@ -916,7 +916,10 @@ void ExecutionEngine::processGoroutinesInline() {
     vm_->saveFiberState(main_script_fiber_.get());
 
     scheduler_->drainDeferredCallbacks();
-    scheduler_->wakeSleepingGoroutines();
+    // NOTE: wakeSleepingGoroutines() is called in executeFrame() before pickNext().
+    // Skipping it here avoids re-entrant lock on goroutines_mutex_ when called
+    // from yield callback during condition evaluation (forEachConditionalHotkey or pick-time).
+    // scheduler_->wakeSleepingGoroutines();
 
     const int budget = 512;
     int executed = 0;

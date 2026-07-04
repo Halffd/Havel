@@ -306,77 +306,75 @@ void Havel::initialize(bool isStartup) {
 				if (!name_ptr) return;
 				std::string var_name = std::move(*name_ptr);
 				delete name_ptr;
+				auto fired = watcherRegistry->onVariableChanged(
+					var_name, [vm, watcherRegistry](uint32_t wid) -> bool {
+					const auto* w = watcherRegistry->getWatcher(wid);
+					if (!w) return false;
+					const compiler::BytecodeChunk* saved_chunk = nullptr;
+					bool set_chunk = false;
+					if (w->condition_chunk) {
+						saved_chunk = vm->getCurrentChunk();
+						vm->setCurrentChunkPublic(w->condition_chunk);
+						set_chunk = true;
+					}
+					auto tracker = std::make_shared<compiler::DependencyTracker>();
+					compiler::DependencyTrackerScope scope(tracker);
+					bool result = vm->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
+					if (set_chunk) vm->setCurrentChunkPublic(saved_chunk);
+					return result;
+				});
+				std::vector<uint32_t> fired_func_ids;
+				for (auto* fiber : fired) {
+					if (fiber) {
+						fired_func_ids.push_back(fiber->current_function_id);
+					}
+				}
+				for (auto func_id : fired_func_ids) {
+					try {
+						compiler::Value body_func = compiler::Value::makeFunctionObjId(func_id);
+						vm->call(body_func, {});
+					} catch (...) {}
+				}
+				vm->processSignalBindings(var_name);
 				auto* sched = vm->getScheduler();
-				if (!sched) return;
-				sched->schedule([vm, watcherRegistry, hostCtx, sched, var_name = std::move(var_name)]() {
-					std::lock_guard<std::recursive_mutex> lock(vm->getExecutionMutex());
-					auto fired = watcherRegistry->onVariableChanged(
-						var_name, [vm, watcherRegistry](uint32_t wid) -> bool {
-						const auto* w = watcherRegistry->getWatcher(wid);
-						if (!w) return false;
-						const compiler::BytecodeChunk* saved_chunk = nullptr;
-						bool set_chunk = false;
-						if (w->condition_chunk) {
-							saved_chunk = vm->getCurrentChunk();
-							vm->setCurrentChunkPublic(w->condition_chunk);
-							set_chunk = true;
-						}
+				if (sched) {
+				sched->forEachConditionalHotkey(
+					[vm, hostCtx, &var_name, sched](compiler::Scheduler::Goroutine* g) {
+					if (!g) return;
+					if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
+						g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+					if (g->hotkey_condition_deps.empty() ||
+						g->hotkey_condition_deps.count(var_name) == 0) return;
+					auto condVal = vm->externalRootValue(g->hotkey_condition_callback_id);
+					if (!condVal) return;
 						auto tracker = std::make_shared<compiler::DependencyTracker>();
 						compiler::DependencyTrackerScope scope(tracker);
-						bool result = vm->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
-						if (set_chunk) vm->setCurrentChunkPublic(saved_chunk);
-						return result;
-					});
-					std::vector<uint32_t> fired_func_ids;
-					for (auto* fiber : fired) {
-						if (fiber) {
-							fired_func_ids.push_back(fiber->current_function_id);
-						}
-					}
-					for (auto func_id : fired_func_ids) {
+						bool conditionMet = false;
 						try {
-							compiler::Value body_func = compiler::Value::makeFunctionObjId(func_id);
-							vm->call(body_func, {});
+							compiler::Value result = vm->callFunctionSync(*condVal, {});
+							conditionMet = vm->toBool(result);
 						} catch (...) {}
-					}
-					vm->processSignalBindings(var_name);
-					sched->forEachConditionalHotkey(
-						[vm, hostCtx, &var_name, sched](compiler::Scheduler::Goroutine* g) {
-						if (!g) return;
-						if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
-							g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
-						if (g->hotkey_condition_deps.empty() ||
-							g->hotkey_condition_deps.count(var_name) == 0) return;
-						auto condVal = vm->externalRootValue(g->hotkey_condition_callback_id);
-						if (!condVal) return;
-							auto tracker = std::make_shared<compiler::DependencyTracker>();
-							compiler::DependencyTrackerScope scope(tracker);
-							bool conditionMet = false;
-							try {
-								compiler::Value result = vm->callFunctionSync(*condVal, {});
-								conditionMet = vm->toBool(result);
-							} catch (...) {}
-							auto newDeps = tracker->getGlobalDependencies();
-							auto fieldDeps = tracker->getFieldDependencies();
-							newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-							g->hotkey_condition_deps = std::move(newDeps);
-							bool prev = g->hotkey_condition_last_result;
-							g->hotkey_condition_last_result = conditionMet;
-						if (prev == conditionMet) return;
-						if (conditionMet) {
-							if (!g->hotkey_condition_alias.empty()) {
-								auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
-								if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
-							}
-							sched->wakeHotkey(g);
-						} else {
-							if (!g->hotkey_condition_alias.empty()) {
-								auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
-								if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
-							}
+						auto newDeps = tracker->getGlobalDependencies();
+						auto fieldDeps = tracker->getFieldDependencies();
+						newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+						g->hotkey_condition_deps = std::move(newDeps);
+						bool prev = g->hotkey_condition_last_result;
+						g->hotkey_condition_last_result = conditionMet;
+					if (prev == conditionMet) return;
+					if (conditionMet) {
+						if (!g->hotkey_condition_alias.empty()) {
+							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
+							if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
 						}
-						});
-				}, compiler::FiberPriority::HOTKEY);
+						sched->wakeHotkey(g);
+					} else {
+						if (!g->hotkey_condition_alias.empty()) {
+							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
+							if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
+						}
+					}
+					});
+				}
 			});
 		}
 	}

@@ -1212,6 +1212,26 @@ if (!modName.empty()) {
     if (!obj) {
       COMPILER_THROW("OBJECT_SET unknown object id");
     }
+
+    // Property setter interception: if object has __class and prototype
+    // defines __set_<field>, call that method with (this, value) instead
+    // of plain dict mutation. This lets host objects like Hotkey react
+    // to `m.enabled = false` / `m.grab = true` dynamically.
+    {
+      auto *classVal = obj->get("__class");
+      if (classVal && (classVal->isStringValId() || classVal->isStringId())) {
+        std::string setterName = "__set_" + *keyStr;
+        auto setter = getPrototypeMethod(object, setterName);
+        if (setter) {
+          try {
+            callHostFunction(Value::makeHostFuncId(*setter), {object, value});
+          } catch (...) {}
+          pushStack(object);
+          break;
+        }
+      }
+    }
+
     obj->set(*keyStr, value);
     emitVariableChanged("@O" + std::to_string(object.asObjectId()) + ":" + *keyStr);
 

@@ -1207,6 +1207,55 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     return Value::makeBool(true);
   });
 
+  // __set_enabled — property setter interceptor for `m.enabled = bool`
+  // Calls EnableHotkey/DisableHotkey so OS grab state stays in sync
+  api.registerPrototypeMethod("Hotkey", "__set_enabled", 2, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.size() < 2 || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+
+    bool enable = vm.toBoolPublic(args[1]);
+    auto *hostCtx = vm.hostContext();
+    if (hostCtx && hostCtx->hotkeyManager) {
+      if (enable) {
+        hostCtx->hotkeyManager->EnableHotkey(ctx->alias);
+      } else {
+        hostCtx->hotkeyManager->DisableHotkey(ctx->alias);
+      }
+    }
+    ctx->enabled = enable;
+    ctx->state = enable ? "enabled" : "disabled";
+    vm.setHostObjectField(objRef, "enabled", Value::makeBool(enable));
+    auto strRef = vm.createRuntimeString(ctx->state);
+    vm.setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
+    return args[1];
+  });
+
+  // __set_grab — property setter interceptor for `m.grab = bool`
+  // Calls SetHotkeyGrab so OS grab state stays in sync
+  api.registerPrototypeMethod("Hotkey", "__set_grab", 2, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.size() < 2 || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+
+    bool grab = vm.toBoolPublic(args[1]);
+    auto *hostCtx = vm.hostContext();
+    if (hostCtx && hostCtx->hotkeyManager) {
+      hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, grab);
+    }
+    ctx->grab = grab;
+    vm.setHostObjectField(objRef, "grab", Value::makeBool(grab));
+    return args[1];
+  });
+
   // ===== Standalone update function =====
 
   // hotkey.update(keyOrAlias, newCondition?, newAction?)

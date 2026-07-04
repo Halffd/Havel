@@ -198,11 +198,47 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
     return false;
   }
 
-  // 1. Initialize backend (opens devices, NO grab yet)
+  // 1. Initialize backend (opens devices, drains pending events)
   InitInputBackend(devicePaths, false);
 
   ResetInputState();
 
+  // 2. Grab devices BEFORE event loop starts
+  //    This ensures no events are read on ungrabbed devices, preventing
+  //    races where the EventLoop sees events that also reach the system
+  if (grabDevices && backend_) {
+    if (!backend_->SupportsSynthesis()) {
+      warn("EventListener: uinput not available, disabling grab to avoid input lockup");
+      this->grabDevices = false;
+    }
+    if (this->grabDevices) {
+      debug("EventListener: Grabbing devices before event loop");
+      for (const auto &path : devicePaths) {
+        if (!backend_->GrabDevice(path)) {
+          error("EventListener: Failed to grab device: {}", path);
+        } else {
+          debug("EventListener: Grabbed device: {}", path);
+        }
+      }
+    }
+  }
+
+  // 3. Seed key state from kernel BEFORE event loop starts
+  //    Queries all currently-pressed keys via EVIOCGKEY
+  if (backend_) {
+    auto pressed = backend_->GetPressedKeys();
+    if (!pressed.empty()) {
+      debug("[EventListener] Seeding {} pressed keys from kernel state", pressed.size());
+      std::unique_lock<std::shared_mutex> lock(stateMutex);
+      for (uint32_t code : pressed) {
+        evdevKeyState[code] = true;
+        physicalKeyStates[code] = true;
+        UpdateModifierState(RemapKey(static_cast<int>(code), true), true);
+      }
+    }
+  }
+
+  // 4. Start event loop thread (if threaded)
   running.store(true);
   shutdown.store(false);
   if (startThread) {
@@ -228,38 +264,6 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
       }
       return false;
     }
-  }
-
-  // 2. NOW grab devices (after event loop is running)
-  if (grabDevices && backend_) {
-    bool canGrab = grabDevices && backend_->SupportsSynthesis();
-    if (grabDevices && !backend_->SupportsSynthesis()) {
-      warn("EventListener: uinput not available, disabling grab to avoid input lockup");
-    }
-    if (canGrab) {
-      debug("EventListener: Grabbing devices after event loop ready");
-      for (const auto &path : devicePaths) {
-        if (!backend_->GrabDevice(path)) {
-          error("EventListener: Failed to grab device: {}", path);
-        } else {
-          debug("EventListener: Grabbed device: {}", path);
-        }
-      }
-    }
-  }
-
-  // Seed key state from kernel — query all currently-pressed keys via EVIOCGKEY
-  if (backend_) {
-      auto pressed = backend_->GetPressedKeys();
-      if (!pressed.empty()) {
-          debug("[EventListener] Seeding {} pressed keys from kernel state", pressed.size());
-          std::unique_lock<std::shared_mutex> lock(stateMutex);
-          for (uint32_t code : pressed) {
-              evdevKeyState[code] = true;
-              physicalKeyStates[code] = true;
-              UpdateModifierState(RemapKey(static_cast<int>(code), true), true);
-          }
-      }
   }
 
   return true;

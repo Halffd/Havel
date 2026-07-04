@@ -224,6 +224,7 @@ void VM::processPendingCalls() {
 // Minimal state isolation: just save/restore stack size
 Value VM::callFunctionSync(const Value &fn,
                                const std::vector<Value> &args) {
+    std::lock_guard<std::recursive_mutex> lock(execution_mutex_);
     size_t savedStackSize = stack.size();
     size_t savedFrameCount = frame_count_;
 
@@ -232,7 +233,6 @@ Value VM::callFunctionSync(const Value &fn,
         current_chunk = main_chunk_.get();
     }
 
-    // Execute callback
     doCall(fn, args);
     runDispatchLoop(savedFrameCount);
 

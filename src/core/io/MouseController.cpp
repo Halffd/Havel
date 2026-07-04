@@ -252,8 +252,8 @@ bool MouseController::Scroll(double dy, double dx) {
     return false;
   }
 
-  if (debugging::debug_io) debug("MouseController::Scroll dy={} dx={} scrollSpeed={}", dy, dx,
-        scrollSpeed);
+  if (debugging::debug_io) debug("MouseController::Scroll dy={} dx={} scrollSpeed={} uinput={}", dy, dx,
+        scrollSpeed, eventListener->SupportsSynthesis());
   // Apply scroll speed and accumulate
   if (dy != 0.0) {
     scrollAccumY += dy * scrollSpeed;
@@ -266,12 +266,30 @@ bool MouseController::Scroll(double dy, double dx) {
   int emitY = static_cast<int>(scrollAccumY);
   int emitX = static_cast<int>(scrollAccumX);
 
-  // Only emit if non-zero
+  bool sent = false;
   if (emitY != 0) {
-    eventListener->SendUinputEvent(EV_REL, REL_WHEEL, emitY);
+    if (eventListener->SupportsSynthesis()) {
+      eventListener->SendUinputEvent(EV_REL, REL_WHEEL, emitY);
+      #ifdef REL_WHEEL_HI_RES
+      eventListener->SendUinputEvent(EV_REL, REL_WHEEL_HI_RES, emitY * 120);
+      #endif
+      if (debugging::debug_io) debug("MouseController::Scroll sent REL_WHEEL={}", emitY);
+      sent = true;
+    }
   }
   if (emitX != 0) {
-    eventListener->SendUinputEvent(EV_REL, REL_HWHEEL, emitX);
+    if (eventListener->SupportsSynthesis()) {
+      eventListener->SendUinputEvent(EV_REL, REL_HWHEEL, emitX);
+      #ifdef REL_HWHEEL_HI_RES
+      eventListener->SendUinputEvent(EV_REL, REL_HWHEEL_HI_RES, emitX * 120);
+      #endif
+      if (debugging::debug_io) debug("MouseController::Scroll sent REL_HWHEEL={}", emitX);
+      sent = true;
+    }
+  }
+
+  if (!sent && (emitY != 0 || emitX != 0)) {
+    warn("MouseController::Scroll: uinput not available (check /dev/uinput permissions), scroll dropped");
   }
 
   // Subtract emitted values from accumulation
@@ -279,9 +297,12 @@ bool MouseController::Scroll(double dy, double dx) {
   scrollAccumX -= emitX;
 
   // Sync event
-  eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+  if (sent) {
+    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    if (debugging::debug_io) debug("MouseController::Scroll sent SYN_REPORT");
+  }
 
-  return true;
+  return sent;
 }
 
 void MouseController::SetSensitivity(double s) { sensitivity = s; }

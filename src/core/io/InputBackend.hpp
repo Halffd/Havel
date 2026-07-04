@@ -148,6 +148,9 @@ public:
     // Query currently-pressed keys from kernel (used at startup to seed state)
     virtual std::unordered_set<uint32_t> GetPressedKeys() const { return {}; }
 
+    // Hotplug/reconnect handling
+    virtual void RecheckDevices() {}
+
     // Active input tracking
     virtual const std::unordered_map<uint32_t, ActiveInput>& GetActiveInputs() const {
         static std::unordered_map<uint32_t, ActiveInput> empty;

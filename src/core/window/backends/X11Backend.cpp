@@ -124,6 +124,28 @@ std::string X11Backend::getWindowTitle(wID id) {
   if (id == 0) return "";
   Display *display = DisplayManager::GetDisplay();
   if (!display) return "";
+
+  // Try _NET_WM_NAME first (UTF-8, modern standard)
+  Atom netWmNameAtom = XInternAtom(display, "_NET_WM_NAME", x11::XFalse);
+  Atom utf8StringAtom = XInternAtom(display, "UTF8_STRING", x11::XFalse);
+  if (netWmNameAtom != x11::XNone) {
+    Atom actualType;
+    int actualFormat;
+    unsigned long nitems, bytesAfter;
+    unsigned char *prop = nullptr;
+    if (XGetWindowProperty(display, id, netWmNameAtom, 0, 1024, x11::XFalse,
+                            utf8StringAtom, &actualType, &actualFormat, &nitems,
+                            &bytesAfter, &prop) == x11::XSuccess) {
+      if (prop && nitems > 0) {
+        std::string title(reinterpret_cast<char *>(prop));
+        XFree(prop);
+        return title;
+      }
+      if (prop) XFree(prop);
+    }
+  }
+
+  // Fallback to legacy WM_NAME
   char *windowName = nullptr;
   if (XFetchName(display, id, &windowName) && windowName) {
     std::string title(windowName);
@@ -701,11 +723,7 @@ std::vector<WindowInfo> X11Backend::getAllWindows() {
     for (unsigned int i = 0; i < nChildren; i++) {
       WindowInfo info;
       info.id = childrenReturn[i];
-      char *windowName = nullptr;
-      if (XFetchName(display, childrenReturn[i], &windowName)) {
-        info.title = windowName ? windowName : "";
-        XFree(windowName);
-      }
+      info.title = getWindowTitle(childrenReturn[i]);
       XClassHint classHint;
       if (XGetClassHint(display, childrenReturn[i], &classHint)) {
         info.windowClass = classHint.res_class ? classHint.res_class : "";

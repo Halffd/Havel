@@ -213,7 +213,9 @@ private:
   handleWindowResize(const std::vector<Value> &args,
                      const HostContext *ctx);
   static Value handleWindowMove(const std::vector<Value> &args,
-                                        const HostContext *ctx);
+                                         const HostContext *ctx);
+  static Value handleWindowMoveRel(const std::vector<Value> &args,
+                                   const HostContext *ctx);
   static Value
   handleWindowMoveToMonitor(const std::vector<Value> &args,
                             const HostContext *ctx);

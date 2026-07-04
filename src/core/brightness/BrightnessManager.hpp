@@ -298,6 +298,12 @@ private:
   vector<string> monitors;
   std::map<string, RGBColor> gammaRGB;
   std::map<string, double> shadowLift;
+
+  // ORIGINAL gamma ramps captured at init (one per monitor)
+  std::map<string, std::vector<unsigned short>> originalGammaRed;
+  std::map<string, std::vector<unsigned short>> originalGammaGreen;
+  std::map<string, std::vector<unsigned short>> originalGammaBlue;
+  std::map<string, int> originalGammaSize;
 };
 
 } // namespace havel

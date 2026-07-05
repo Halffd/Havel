@@ -119,6 +119,7 @@ declare -A BUILD_CONFIGS=(
   [13]="Release,OFF,ON,OFF,ON,build-headless"
   [14]="Debug,OFF,ON,OFF,ON,build-headless"
   [15]="Release,ON,ON,OFF,ON,build-headless"
+  [16]="Debug,OFF,ON,OFF,OFF,build-tsan"
 )
 
 if [[ "$BUILD_MODE" =~ ^[0-9]+$ ]] && [[ -n "${BUILD_CONFIGS[$BUILD_MODE]:-}" ]]; then
@@ -164,6 +165,7 @@ show_config() {
   13) echo -e " ${YELLOW}→${NC} Release headless (no Qt/GUI)" ;;
   14) echo -e " ${YELLOW}→${NC} Debug headless minimal (no Qt/GUI)" ;;
   15) echo -e " ${YELLOW}→${NC} Release headless with tests (no Qt/GUI)" ;;
+  16) echo -e " ${YELLOW}→${NC} Debug with ThreadSanitizer (no ASAN)" ;;
   esac
 }
 
@@ -211,6 +213,9 @@ build() {
 	cmake_cmd+=" -DENABLE_HEADLESS=${ENABLE_HEADLESS}"
   if [[ "$ENABLE_HEADLESS" == "ON" ]]; then
     cmake_cmd+=" -DENABLE_QT=OFF -DENABLE_QT_UI_BACKEND=OFF"
+  fi
+  if [[ "$BUILD_MODE" == "16" ]]; then
+    cmake_cmd+=" -DENABLE_TSAN=ON"
   fi
   cmake_cmd+=" ${SCRIPT_DIR}"
 

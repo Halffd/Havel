@@ -8,6 +8,7 @@ option(USE_CLANG "Force use of Clang compiler" ON)
 option(ENABLE_LLVM "Enable LLVM JIT compilation" OFF)
 option(ENABLE_TESTS "Enable building tests" ON)
 option(ENABLE_HAVEL_LANG "Enable Havel language compilation" ON)
+option(ENABLE_TSAN "Enable ThreadSanitizer (mutually exclusive with ASAN/UBSAN)" OFF)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 
 # UI Backend Options
@@ -1351,8 +1352,13 @@ target_precompile_headers(havel PRIVATE
 
  # Sanitizers - only for Debug builds to reduce binary size
  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
- target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
- target_link_options(havel PRIVATE -fsanitize=address,undefined)
+ if(ENABLE_TSAN)
+   target_compile_options(havel PRIVATE -fsanitize=thread -fno-omit-frame-pointer -g)
+   target_link_options(havel PRIVATE -fsanitize=thread)
+ else()
+   target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+   target_link_options(havel PRIVATE -fsanitize=address,undefined)
+ endif()
  endif()
 
  # Coverage instrumentation (mutually exclusive with sanitizers in CI)

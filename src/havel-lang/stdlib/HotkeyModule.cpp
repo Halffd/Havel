@@ -12,6 +12,7 @@
 #include <ctime>
 #include <sstream>
 #include <iomanip>
+#include <cstdio>
 
 using havel::compiler::Value;
 using havel::compiler::CallbackId;

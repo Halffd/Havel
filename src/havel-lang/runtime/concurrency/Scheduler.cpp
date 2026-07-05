@@ -666,6 +666,7 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
 
  void Scheduler::schedule(DeferredAction fn, FiberPriority priority) {
    {
+     std::lock_guard lock(deferred_mutex_);
      switch (priority) {
        case FiberPriority::HOTKEY:
          deferred_hotkey_.push_back(std::move(fn));
@@ -705,11 +706,20 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
 
     size_t drained = 0;
 
-    auto drainOneQueue = [&](std::deque<DeferredAction>& queue) {
-     std::deque<DeferredAction> acts;
-     {
-       acts = std::move(queue);
-     }
+    std::deque<DeferredAction> hotkey_acts;
+    std::deque<DeferredAction> normal_acts;
+    std::deque<DeferredAction> background_acts;
+    {
+      std::lock_guard lock(deferred_mutex_);
+      if (static_cast<int>(upTo) >= static_cast<int>(FiberPriority::HOTKEY))
+        hotkey_acts = std::move(deferred_hotkey_);
+      if (static_cast<int>(upTo) >= static_cast<int>(FiberPriority::NORMAL))
+        normal_acts = std::move(deferred_normal_);
+      if (static_cast<int>(upTo) >= static_cast<int>(FiberPriority::BACKGROUND))
+        background_acts = std::move(deferred_background_);
+    }
+
+    auto drainOneQueue = [&](std::deque<DeferredAction>& acts) {
      for (auto& fn : acts) {
        try {
          fn();
@@ -720,12 +730,9 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
      }
    };
 
-   if (static_cast<int>(upTo) >= static_cast<int>(FiberPriority::HOTKEY))
-     drainOneQueue(deferred_hotkey_);
-   if (static_cast<int>(upTo) >= static_cast<int>(FiberPriority::NORMAL))
-     drainOneQueue(deferred_normal_);
-   if (static_cast<int>(upTo) >= static_cast<int>(FiberPriority::BACKGROUND))
-     drainOneQueue(deferred_background_);
+   drainOneQueue(hotkey_acts);
+   drainOneQueue(normal_acts);
+   drainOneQueue(background_acts);
 
    return drained;
  }

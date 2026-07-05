@@ -431,7 +431,7 @@ vm_->addIntervalResult(timer_id, result);
                 auto deadline = std::chrono::steady_clock::now() +
                     std::chrono::milliseconds(g->update_interval_ms);
                 {
-                    std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+                    std::lock_guard wlock(g->wait_handle_mutex_);
                     g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
                     g->wait_handle.deadline = deadline;
                 }
@@ -719,7 +719,7 @@ private:
         auto deadline = std::chrono::steady_clock::now() +
             std::chrono::milliseconds(g->update_interval_ms);
         {
-          std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+          std::lock_guard wlock(g->wait_handle_mutex_);
           g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
           g->wait_handle.deadline = deadline;
         }

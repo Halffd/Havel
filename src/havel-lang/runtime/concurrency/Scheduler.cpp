@@ -76,12 +76,12 @@ uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
 	uint32_t g_id = g->id;
 
 	{
-		std::lock_guard<std::mutex> lock(goroutines_mutex_);
+		std::lock_guard lock(goroutines_mutex_);
 		goroutines_[g_id] = std::move(g);
 	}
 
 	{
-		std::lock_guard<std::mutex> lock(priority_mutex_);
+		std::lock_guard lock(priority_mutex_);
 		if (priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_front(goroutines_[g_id].get());
             if (debugging::debug_io) ::havel::debug("[Scheduler] [PUSH FRONT] gid={} name='{}' priority=HOTKEY", g_id, name);
@@ -102,8 +102,6 @@ Scheduler::Goroutine* Scheduler::current() {
 }
 
 Scheduler::Goroutine* Scheduler::get(uint32_t id) {
-	fprintf(stderr, "[LK-get] lock goroutines_mutex_\n"); fflush(stderr);
-	std::lock_guard<std::mutex> lock(goroutines_mutex_);
 	auto it = goroutines_.find(id);
 	if (it != goroutines_.end()) {
 		return it->second.get();
@@ -115,8 +113,6 @@ Scheduler::Goroutine* Scheduler::pickNext() {
   Goroutine* result = nullptr;
 
 {
-    fprintf(stderr, "[LK-pickNext] lock priority_mutex_\n"); fflush(stderr);
-    std::lock_guard<std::mutex> lock(priority_mutex_);
 
     if (debugging::debug_io) {
       ::havel::debug("[Scheduler] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
@@ -156,8 +152,6 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 
 	if (result) {
 		{
-			fprintf(stderr, "[LK-waitHandle] lock wait_handle_mutex_\n"); fflush(stderr);
-			std::lock_guard<std::mutex> wlock(result->wait_handle_mutex_);
 			result->wait_handle.clear();  // Clear stale suspension context before running
 		}
         current_.store(result, std::memory_order_release);
@@ -190,13 +184,11 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
 	g->state = GoroutineState::Runnable;
 	g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
 	{
-		fprintf(stderr, "[LK-waitHandle] lock wait_handle_mutex_\n"); fflush(stderr);
-		std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
 		g->wait_handle.clear();  // Clear stale suspension context
 	}
 
 	{
-		std::lock_guard<std::mutex> lock(priority_mutex_);
+		std::lock_guard lock(priority_mutex_);
 		if (g->priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_back(g);
             ::havel::debug("[Scheduler] [UNPARK] gid={} name='{}' to HOTKEY queue", g->id, g->name);
@@ -211,7 +203,7 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
 }
 
 Scheduler::Goroutine* Scheduler::findGoroutineByWaitTarget(AwaitableType type, uint32_t target_id) {
-    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    std::lock_guard lock(goroutines_mutex_);
     for (auto& [id, g] : goroutines_) {
         if (g->state == GoroutineState::Suspended &&
             g->wait_handle.type == type &&
@@ -224,7 +216,7 @@ Scheduler::Goroutine* Scheduler::findGoroutineByWaitTarget(AwaitableType type, u
 
 Scheduler::Goroutine* Scheduler::findGoroutineByFiber(Fiber* fiber) {
     if (!fiber) return nullptr;
-    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    std::lock_guard lock(goroutines_mutex_);
     for (auto& [id, g] : goroutines_) {
         if (g->fiber == fiber) {
             return g.get();
@@ -235,14 +227,12 @@ Scheduler::Goroutine* Scheduler::findGoroutineByFiber(Fiber* fiber) {
 
 void Scheduler::forEachConditionalHotkey(std::function<void(Goroutine*)> fn) {
     if (g_in_conditional_hotkey_eval) {
-        fprintf(stderr, "[Scheduler] forEachConditionalHotkey: re-entrant call, skipping\n"); fflush(stderr);
         return;
     }
     g_in_conditional_hotkey_eval = true;
     std::vector<Goroutine*> candidates;
     {
-        fprintf(stderr, "[LK-foreach] lock goroutines_mutex_\n"); fflush(stderr);
-        std::lock_guard<std::mutex> lock(goroutines_mutex_);
+        std::lock_guard lock(goroutines_mutex_);
         for (auto& [id, g] : goroutines_) {
             if (g && g->hotkey_condition_callback_id != 0) {
                 candidates.push_back(g.get());
@@ -256,7 +246,7 @@ void Scheduler::forEachConditionalHotkey(std::function<void(Goroutine*)> fn) {
 }
 
 void Scheduler::forEachGoroutine(std::function<void(Goroutine*)> fn) {
-    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    std::lock_guard lock(goroutines_mutex_);
     for (auto& [id, g] : goroutines_) {
         if (g) fn(g.get());
     }
@@ -272,7 +262,7 @@ void Scheduler::stop() {
 	running_.store(false);
 
 	{
-		std::lock_guard<std::mutex> lock(goroutines_mutex_);
+		std::lock_guard lock(goroutines_mutex_);
 		for (auto& [id, g] : goroutines_) {
 			g->state = GoroutineState::Done;
 		}
@@ -286,7 +276,7 @@ void Scheduler::waitAll() {
 	while (running_.load()) {
 		size_t active = 0;
 		{
-			std::lock_guard<std::mutex> lock(goroutines_mutex_);
+			std::lock_guard lock(goroutines_mutex_);
 			for (const auto& [id, g] : goroutines_) {
 				if (g->state != GoroutineState::Done) {
 					active++;
@@ -303,13 +293,11 @@ void Scheduler::waitAll() {
 }
 
 size_t Scheduler::goroutineCount() const {
-	std::lock_guard<std::mutex> lock(goroutines_mutex_);
+	std::lock_guard lock(goroutines_mutex_);
 	return goroutines_.size();
 }
 
 size_t Scheduler::runnableCount() const {
-  fprintf(stderr, "[LK-runnableCount] lock priority_mutex_\n"); fflush(stderr);
-  std::lock_guard<std::mutex> lock(priority_mutex_);
   size_t count = 0;
   for (auto* g : hotkey_queue_) {
     if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
@@ -327,7 +315,7 @@ size_t Scheduler::runnableCount() const {
 }
 
 size_t Scheduler::suspendedCount() const {
-	std::lock_guard<std::mutex> lock(goroutines_mutex_);
+	std::lock_guard lock(goroutines_mutex_);
 	size_t count = 0;
 	for (const auto& [id, g] : goroutines_) {
 		if (g->state == GoroutineState::Suspended) {
@@ -338,7 +326,7 @@ size_t Scheduler::suspendedCount() const {
 }
 
 void Scheduler::attachFiber(uint32_t goroutine_id, Fiber* fiber) {
-	std::lock_guard<std::mutex> lock(goroutines_mutex_);
+	std::lock_guard lock(goroutines_mutex_);
 	auto it = goroutines_.find(goroutine_id);
 	if (it != goroutines_.end()) {
 		it->second->fiber = fiber;
@@ -354,8 +342,6 @@ void Scheduler::yield(Goroutine* g) {
 	}
 	g->state = GoroutineState::Runnable;
 
-	fprintf(stderr, "[LK-yield] lock priority_mutex_\n"); fflush(stderr);
-	std::lock_guard<std::mutex> lock(priority_mutex_);
 	if (g->priority == FiberPriority::HOTKEY) {
 		hotkey_queue_.push_back(g);
 	} else if (g->priority == FiberPriority::BACKGROUND) {
@@ -377,7 +363,7 @@ void Scheduler::yieldCurrentAndCheckTimers() {
 	g->state = GoroutineState::Runnable;
 
 	{
-		std::lock_guard<std::mutex> lock(priority_mutex_);
+		std::lock_guard lock(priority_mutex_);
 		if (g->priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_back(g);
 		} else if (g->priority == FiberPriority::BACKGROUND) {
@@ -404,12 +390,10 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 
 	uint32_t g_id = g->id;
 	{
-		std::lock_guard<std::mutex> lock(goroutines_mutex_);
+		std::lock_guard lock(goroutines_mutex_);
 		goroutines_[g_id] = std::move(g);
 	}
 	{
-		fprintf(stderr, "[LK-addActionFiber] lock priority_mutex_\n"); fflush(stderr);
-		std::lock_guard<std::mutex> lock(priority_mutex_);
 		// Hotkey fibers are prepended for immediate execution
 		if (priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_front(goroutines_[g_id].get());
@@ -427,8 +411,6 @@ void Scheduler::requeueFront(Goroutine* g) {
   g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
   g->hotkey_retrigger.store(false, std::memory_order_release);
     {
-        fprintf(stderr, "[LK-waitHandle] lock wait_handle_mutex_\n"); fflush(stderr);
-        std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
         g->wait_handle.clear();
     }
     g->ip = 0;
@@ -467,8 +449,6 @@ void Scheduler::requeueFront(Goroutine* g) {
     ::havel::debug("[Scheduler] requeueFront: gid={} persistent={} fn={} closure={} priority={}",
         g->id, g->persistent, g->function_id, g->closure_id, static_cast<int>(g->priority));
 {
-		fprintf(stderr, "[LK-addFiber-priority] lock priority_mutex_\n"); fflush(stderr);
-		std::lock_guard<std::mutex> lock(priority_mutex_);
     if (g->priority == FiberPriority::HOTKEY) {
       hotkey_queue_.push_front(g);
       ::havel::debug("[Scheduler] requeueFront: gid={} pushed to HOTKEY queue (size={})",
@@ -584,7 +564,7 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
 bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
     std::vector<Goroutine*> toWake;
     {
-        std::lock_guard<std::mutex> lock(goroutines_mutex_);
+        std::lock_guard lock(goroutines_mutex_);
         for (auto& [id, g] : goroutines_) {
             if (g && g->persistent && g->hotkey_alias == alias) {
                 toWake.push_back(g.get());
@@ -600,8 +580,6 @@ bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
 }
 
 bool Scheduler::hasRunnableFibers() const {
-  fprintf(stderr, "[LK-hasRunnable] lock priority_mutex_\n"); fflush(stderr);
-  std::lock_guard<std::mutex> lock(priority_mutex_);
   size_t hk = hotkey_queue_.size(), rn = runnable_queue_.size(), bg = background_queue_.size();
   if (debugging::debug_io)
     ::havel::debug("[Scheduler] hasRunnableFibers: hotkey={} runnable={} bg={}", hk, rn, bg);
@@ -626,11 +604,9 @@ size_t Scheduler::wakeSleepingGoroutines() {
     // while collecting candidates, then released before calling the callback).
     // If the callback yields, processGoroutinesInline() may call us.
     if (g_in_conditional_hotkey_eval) {
-        fprintf(stderr, "[LK-wakeSleep] SKIP - in conditional eval\n"); fflush(stderr);
         return 0;
     }
 
-    fprintf(stderr, "[LK-wakeSleep] lock goroutines_mutex_\n"); fflush(stderr);
     auto now = std::chrono::steady_clock::now();
     size_t woken = 0;
 
@@ -640,13 +616,12 @@ size_t Scheduler::wakeSleepingGoroutines() {
     // acquired while holding goroutines_mutex_).
     std::vector<Goroutine*> toWake;
     {
-        std::lock_guard<std::mutex> lock(goroutines_mutex_);
+        std::lock_guard lock(goroutines_mutex_);
         for (auto& [id, g] : goroutines_) {
             if (g->state != GoroutineState::Suspended) continue;
             if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
             {
-                fprintf(stderr, "[LK-waitHandle] lock wait_handle_mutex_\n"); fflush(stderr);
-                std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+                std::lock_guard wlock(g->wait_handle_mutex_);
                 if (g->wait_handle.type != AwaitableType::SLEEP) continue;
                 if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) continue;
                 if (now < g->wait_handle.deadline) continue;
@@ -655,8 +630,7 @@ size_t Scheduler::wakeSleepingGoroutines() {
             g->state = GoroutineState::Runnable;
             g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
             {
-                fprintf(stderr, "[LK-waitHandle] lock wait_handle_mutex_\n"); fflush(stderr);
-                std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+                std::lock_guard wlock(g->wait_handle_mutex_);
                 g->wait_handle.clear();
             }
             toWake.push_back(g.get());
@@ -665,8 +639,7 @@ size_t Scheduler::wakeSleepingGoroutines() {
     }
 
     if (!toWake.empty()) {
-        fprintf(stderr, "[LK-wakeSleep-prio] lock priority_mutex_\n"); fflush(stderr);
-        std::lock_guard<std::mutex> plock(priority_mutex_);
+        std::lock_guard plock(priority_mutex_);
         for (auto* g : toWake) {
             if (g->priority == FiberPriority::HOTKEY) {
                 hotkey_queue_.push_back(g);
@@ -683,12 +656,10 @@ size_t Scheduler::wakeSleepingGoroutines() {
 
 std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadline() const {
     std::optional<std::chrono::steady_clock::time_point> earliest;
-    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    std::lock_guard lock(goroutines_mutex_);
     for (const auto& [id, g] : goroutines_) {
         if (g->state != GoroutineState::Suspended) continue;
         if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
-        fprintf(stderr, "[LK-waitHandle] lock wait_handle_mutex_\n"); fflush(stderr);
-        std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
         if (g->wait_handle.type != AwaitableType::SLEEP) continue;
         auto d = g->wait_handle.deadline;
         if (d == std::chrono::steady_clock::time_point{}) continue;
@@ -701,8 +672,6 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
 
  void Scheduler::schedule(DeferredAction fn, FiberPriority priority) {
    {
-     fprintf(stderr, "[LK-deferred] lock deferred_mutex_\n"); fflush(stderr);
-     std::lock_guard<std::mutex> lock(deferred_mutex_);
      switch (priority) {
        case FiberPriority::HOTKEY:
          deferred_hotkey_.push_back(std::move(fn));
@@ -745,8 +714,6 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
     auto drainOneQueue = [&](std::deque<DeferredAction>& queue) {
      std::deque<DeferredAction> acts;
      {
-       fprintf(stderr, "[LK-deferred] lock deferred_mutex_\n"); fflush(stderr);
-       std::lock_guard<std::mutex> lock(deferred_mutex_);
        acts = std::move(queue);
      }
      for (auto& fn : acts) {
@@ -770,8 +737,6 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
  }
 
 size_t Scheduler::cleanupDoneGoroutines() {
-  fprintf(stderr, "[LK-cleanup] lock goroutines_mutex_\n"); fflush(stderr);
-  std::lock_guard<std::mutex> lock(goroutines_mutex_);
   size_t removed = 0;
   
   // Find all Done goroutines and remove them
@@ -794,7 +759,7 @@ size_t Scheduler::cleanupDoneGoroutines() {
 }
 
 std::vector<uint64_t> Scheduler::collectUpdateCallbackIds() {
-  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::lock_guard lock(goroutines_mutex_);
   std::vector<uint64_t> ids;
   for (auto& [id, g] : goroutines_) {
     if (g && g->update_callback_id != 0) {
@@ -806,7 +771,7 @@ std::vector<uint64_t> Scheduler::collectUpdateCallbackIds() {
 }
 
 Scheduler::Goroutine* Scheduler::getHotkeyByAlias(const std::string& alias) {
-    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    std::lock_guard lock(goroutines_mutex_);
     for (auto& [id, g] : goroutines_) {
         if (g && g->persistent && g->hotkey_alias == alias) {
             return g.get();
@@ -826,7 +791,7 @@ HotkeyPolicy Scheduler::getHotkeyPolicy(Goroutine* g) const {
 }
 
 size_t Scheduler::hotkeyCount() const {
-  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::lock_guard lock(goroutines_mutex_);
   size_t count = 0;
   for (const auto& [id, g] : goroutines_) {
     if (g && g->persistent) count++;
@@ -835,7 +800,7 @@ size_t Scheduler::hotkeyCount() const {
 }
 
 size_t Scheduler::activeHotkeyCount() const {
-  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::lock_guard lock(goroutines_mutex_);
   size_t count = 0;
   for (const auto& [id, g] : goroutines_) {
     if (g && g->persistent &&
@@ -849,7 +814,7 @@ size_t Scheduler::activeHotkeyCount() const {
 }
 
 size_t Scheduler::suspendedHotkeyCount() const {
-  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::lock_guard lock(goroutines_mutex_);
   size_t count = 0;
   for (const auto& [id, g] : goroutines_) {
     if (g && g->persistent && g->state == GoroutineState::Suspended) {
@@ -860,7 +825,7 @@ size_t Scheduler::suspendedHotkeyCount() const {
 }
 
 std::vector<std::string> Scheduler::getHotkeyAliases() const {
-  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::lock_guard lock(goroutines_mutex_);
   std::vector<std::string> result;
   for (const auto& [id, g] : goroutines_) {
     if (g && g->persistent && !g->hotkey_alias.empty()) {
@@ -871,7 +836,7 @@ std::vector<std::string> Scheduler::getHotkeyAliases() const {
 }
 
 std::vector<Scheduler::GoroutineInfo> Scheduler::getGoroutineList() const {
-  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::lock_guard lock(goroutines_mutex_);
   std::vector<GoroutineInfo> result;
   result.reserve(goroutines_.size());
   for (const auto& [id, g] : goroutines_) {
@@ -883,8 +848,6 @@ std::vector<Scheduler::GoroutineInfo> Scheduler::getGoroutineList() const {
     info.suspension_reason = suspensionReasonString(g->suspension_reason.load());
     info.priority = fiberPriorityString(g->priority);
     {
-      fprintf(stderr, "[LK-waitHandle] lock wait_handle_mutex_\n"); fflush(stderr);
-      std::lock_guard<std::mutex> whl(g->wait_handle_mutex_);
       info.wait_type = awaitableTypeString(g->wait_handle.type);
       info.wait_target_id = g->wait_handle.target_id;
     }
@@ -925,7 +888,7 @@ Scheduler::SchedulerSummary Scheduler::getSchedulerSummary() const {
     s.current_goroutine_id = cur ? cur->id : 0;
   }
   {
-    std::lock_guard<std::mutex> lock(goroutines_mutex_);
+    std::lock_guard lock(goroutines_mutex_);
     for (const auto& [id, g] : goroutines_) {
       if (!g) continue;
       auto st = g->state.load();
@@ -935,15 +898,11 @@ Scheduler::SchedulerSummary Scheduler::getSchedulerSummary() const {
     }
   }
 {
-		fprintf(stderr, "[LK-getSummary] lock priority_mutex_\n"); fflush(stderr);
-		std::lock_guard<std::mutex> lock(priority_mutex_);
     s.hotkey_queue_size = hotkey_queue_.size();
     s.normal_queue_size = runnable_queue_.size();
     s.background_queue_size = background_queue_.size();
   }
   {
-    fprintf(stderr, "[LK-deferred] lock deferred_mutex_\n"); fflush(stderr);
-    std::lock_guard<std::mutex> lock(deferred_mutex_);
     s.deferred_hotkey_count = deferred_hotkey_.size();
     s.deferred_normal_count = deferred_normal_.size();
     s.deferred_background_count = deferred_background_.size();
@@ -952,7 +911,7 @@ Scheduler::SchedulerSummary Scheduler::getSchedulerSummary() const {
 }
 
 Scheduler::GoroutineInfo Scheduler::getGoroutineInfoById(uint32_t id) const {
-  std::lock_guard<std::mutex> lock(goroutines_mutex_);
+  std::lock_guard lock(goroutines_mutex_);
   auto it = goroutines_.find(id);
   if (it == goroutines_.end() || !it->second) {
     return GoroutineInfo{};
@@ -965,8 +924,6 @@ Scheduler::GoroutineInfo Scheduler::getGoroutineInfoById(uint32_t id) const {
   info.suspension_reason = suspensionReasonString(g->suspension_reason.load());
   info.priority = fiberPriorityString(g->priority);
   {
-    fprintf(stderr, "[LK-waitHandle] lock wait_handle_mutex_\n"); fflush(stderr);
-    std::lock_guard<std::mutex> whl(g->wait_handle_mutex_);
     info.wait_type = awaitableTypeString(g->wait_handle.type);
     info.wait_target_id = g->wait_handle.target_id;
   }

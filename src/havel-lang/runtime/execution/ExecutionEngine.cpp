@@ -94,11 +94,9 @@ ExecutionEngine::~ExecutionEngine() {
 bool ExecutionEngine::executeFrame() {
   static int call_count = 0;
   if (call_count < 3 || (call_count < 20 && script_ready_.load())) {
-    fprintf(stderr, "[EE-DIAG] executeFrame called running_=%d script_ready_=%d\n", running_, script_ready_.load());
   }
   call_count++;
   if (!running_) {
-    fprintf(stderr, "[EE-DIAG] executeFrame: running_=false, returning early\n");
     return false;
   }
 
@@ -110,9 +108,6 @@ bool ExecutionEngine::executeFrame() {
   if (vm_->isInExecute()) {
     static int vme_skip_count = 0;
     if (vme_skip_count < 3) {
-      fprintf(stderr, "[EE-DIAG] executeFrame: vm_in_execute=true, skipping goroutine processing "
-              "(runnable=%zu suspended=%zu)\n",
-              scheduler_->runnableCount(), scheduler_->suspendedCount());
       vme_skip_count++;
     }
     scheduler_->drainDeferredCallbacks();
@@ -156,29 +151,21 @@ bool ExecutionEngine::executeFrame() {
     if (!g) {
       static int idle_count = 0;
       if (idle_count < 10) {
-        fprintf(stderr, "[EE-DIAG] pickNext returned null (idle) runnable=%zu suspended=%zu\n",
-                scheduler_->runnableCount(), scheduler_->suspendedCount());
         idle_count++;
       }
       return false;
     }
-    fprintf(stderr, "[EE-DIAG] Picked goroutine gid=%d persistent=%d state=%d fn=%d closure=%d\n",
-            g->id, g->persistent, static_cast<int>(g->state.load()), g->function_id, g->closure_id);
+
 
 if (g->persistent && g->state == Scheduler::GoroutineState::Created
     && g->hotkey_condition_callback_id != 0) {
-    fprintf(stderr, "[EE] picked conditional hotkey gid=%d alias=%s condition_cb=%d\n", g->id, g->hotkey_condition_alias.c_str(), g->hotkey_condition_callback_id);
     auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
-    fprintf(stderr, "[EE-COND] gid=%d alias=%s condCb=%d condVal=%p\n", g->id, g->hotkey_condition_alias.c_str(), g->hotkey_condition_callback_id, condVal ? &*condVal : nullptr);
     // Print watched global variables for debugging conditional hotkeys
     if (!g->hotkey_condition_deps.empty()) {
         for (const auto& dep : g->hotkey_condition_deps) {
             auto val = vm_->getGlobalThreadSafe(dep);
             if (val.has_value()) {
-                fprintf(stderr, "[EE-COND] dep '%s' = '%s'\n",
-                    dep.c_str(), vm_->toString(*val).c_str());
             } else {
-                fprintf(stderr, "[EE-COND] dep '%s' NOT FOUND in globals\n", dep.c_str());
             }
         }
     }
@@ -190,7 +177,6 @@ if (g->persistent && g->state == Scheduler::GoroutineState::Created
             // on return, and this path runs before any goroutine has set it).
             // callFunctionSync has a null-chunk fallback via main_chunk_.
             Value result = vm_->callFunctionSync(*condVal, {});
-            fprintf(stderr, "[EE-COND] gid=%d alias=%s result=%s isBool=%d isNull=%d\n", g->id, g->hotkey_condition_alias.c_str(), vm_->toString(result).c_str(), result.isBool(), result.isNull());
             conditionMet = vm_->toBool(result);
         } catch (const std::exception &e) {
             if (debug_mode_) {
@@ -199,7 +185,6 @@ if (g->persistent && g->state == Scheduler::GoroutineState::Created
             conditionMet = false;
         }
         if (!conditionMet) {
-            fprintf(stderr, "[EE] condition FALSE for gid=%d alias=%s - re-suspending\n", g->id, g->hotkey_condition_alias.c_str());
             g->state = Scheduler::GoroutineState::Suspended;
             g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait, std::memory_order_release);
             if (g->fiber) {
@@ -256,7 +241,6 @@ return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
 
 auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
 if (call_result == VM::GoroutineCallResult::Failed) {
-    fprintf(stderr, "[EE] startGoroutineCall FAILED gid=%d fn=%d closure=%d\n", g->id, g->function_id, g->closure_id);
     handleReturned(g);
 stats_.goroutines_completed++;
 stats_.frames_executed++;
@@ -293,16 +277,10 @@ vm_->saveFiberState(g->fiber);
     // isPending which includes Running.
     g->state = Scheduler::GoroutineState::Running;
 
-    fprintf(stderr, "[EE] executing gid=%d persistent=%d fn=%d fiber=%d fiber_fn=%d instructions=%d\n",
-        g->id, g->persistent, g->function_id, g->fiber ? g->fiber->id : -1,
-        g->fiber ? g->fiber->current_function_id : -1, g->instructions_executed);
-
     // If this Fiber is a hotkey action (special marker function_id), execute the callback
     // instead of bytecode
     VMExecutionResult result;
 		if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
-            fprintf(stderr, "[EE] gid=%d is HOTKEY_ACTION_WRAPPER fiber=%d\n", g->id, g->fiber ? g->fiber->id : -1);
-
             if (debug_mode_) {
                 std::cerr << "[ExecutionEngine] Executing hotkey action Fiber " << g->fiber->id << "\n";
             }
@@ -574,7 +552,7 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
      auto deadline = std::chrono::steady_clock::now() +
          std::chrono::milliseconds(g->update_interval_ms);
      {
-         std::lock_guard<std::mutex> wlock(g->wait_handle_mutex_);
+         std::lock_guard wlock(g->wait_handle_mutex_);
          g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
          g->wait_handle.deadline = deadline;
      }

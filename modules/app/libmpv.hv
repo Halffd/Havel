@@ -1,0 +1,317 @@
+use ffi
+use "../std/json.hv" as json
+
+
+// ======================================================
+// Event Bus (signals / slots)
+// ======================================================
+class EventBus {
+    @listeners = {}
+
+    fn init() {
+        @listeners = {}
+    }
+
+    fn on(event, fn_handler) {
+        if !@listeners.has(event) {
+            @listeners[event] = []
+        }
+        @listeners[event].push(fn_handler)
+    }
+
+    fn emit(event, data) {
+        if !@listeners.has(event) { return }
+
+        for h in @listeners[event] {
+            h(data)
+        }
+    }
+}
+
+
+// ======================================================
+// Simple Future (for async commands)
+// ======================================================
+class Future {
+    @done = false
+    @value = null
+    @waiters = []
+
+    fn init() {
+        @done = false
+        @waiters = []
+    }
+
+    fn resolve(v) {
+        if @done { return }
+        @done = true
+        @value = v
+
+        for w in @waiters {
+            w(v)
+        }
+    }
+
+    fn then(fn_handler) {
+        if @done {
+            fn_handler(@value)
+        } else {
+            @waiters.push(fn_handler)
+        }
+    }
+
+    fn get() {
+        @value
+    }
+}
+
+
+// ======================================================
+// Command queue (prevents race conditions)
+// ======================================================
+class CommandQueue {
+    @queue = []
+    @running = false
+
+    fn init() {
+        @queue = []
+        @running = false
+    }
+
+    fn push(fn_task) {
+        @queue.push(fn_task)
+        @run()
+    }
+
+    fn run() {
+        if @running { return }
+        @running = true
+
+        thread.spawn(fn() {
+            while @queue.len > 0 {
+                task = @queue.shift()
+                task()
+            }
+            @running = false
+        })
+    }
+}
+
+
+// ======================================================
+// libmpv bindings
+// ======================================================
+mpv_create = ffi.c("mpv_create")
+mpv_initialize = ffi.c("mpv_initialize")
+mpv_terminate_destroy = ffi.c("mpv_terminate_destroy")
+
+mpv_command = ffi.c("mpv_command")
+mpv_get_property_string = ffi.c("mpv_get_property_string")
+mpv_set_property_string = ffi.c("mpv_set_property_string")
+mpv_wait_event = ffi.c("mpv_wait_event")
+mpv_observe_property = ffi.c("mpv_observe_property")
+
+MPV_EVENT_PROPERTY_CHANGE = 2
+MPV_EVENT_FILE_LOADED = 4
+MPV_EVENT_END_FILE = 7
+MPV_EVENT_SEEK = 8
+
+
+// ======================================================
+// Playlist model (reactive array)
+// ======================================================
+class Playlist {
+    @items = []
+    @index = 0
+    @bus
+
+    fn init(bus) {
+        @bus = bus
+        @items = []
+        @index = 0
+    }
+
+    fn set(list) {
+        @items = list
+        @index = 0
+        @bus.emit("playlist:update", @items)
+    }
+
+    fn add(item) {
+        @items.push(item)
+        @bus.emit("playlist:update", @items)
+    }
+
+    fn next() {
+        if @index < @items.len - 1 {
+            @index++
+        }
+        @bus.emit("playlist:change", @current())
+    }
+
+    fn prev() {
+        if @index > 0 {
+            @index--
+        }
+        @bus.emit("playlist:change", @current())
+    }
+
+    fn current() {
+        @items[@index]
+    }
+}
+
+
+// ======================================================
+// Main MPV reactive engine
+// ======================================================
+class MPV {
+
+    @ctx
+    @bus
+    @queue
+    @playlist
+
+    @props = {}
+    @eventLoopRunning = false
+
+
+    fn init() {
+        @bus = EventBus()
+        @queue = CommandQueue()
+        @playlist = Playlist(@bus)
+
+        @ctx = mpv_create()
+        mpv_initialize(@ctx)
+
+        @startEventLoop()
+    }
+
+
+    // -----------------------------------------
+    // core async command (future-based)
+    // -----------------------------------------
+    fn cmd(args) {
+        fut = Future()
+
+        @queue.push(fn() {
+            res = mpv_command(@ctx, args)
+            fut.resolve(res)
+        })
+
+        return fut
+    }
+
+
+    // -----------------------------------------
+    // property API (cached + reactive)
+    // -----------------------------------------
+    fn get(name) {
+        return @props[name]
+    }
+
+    fn set(name, value) {
+        mpv_set_property_string(@ctx, name, value)
+        @props[name] = value
+        @bus.emit("property:" + name, value)
+    }
+
+    fn observe(name) {
+        mpv_observe_property(@ctx, 1, name, 0)
+    }
+
+
+    // -----------------------------------------
+    // playback API (async-safe)
+    // -----------------------------------------
+    fn loadfile(path) {
+        return @cmd(["loadfile", path])
+    }
+
+    fn playPause() {
+        return @cmd(["cycle", "pause"])
+    }
+
+    fn seek(sec) {
+        return @cmd(["seek", sec, "relative"])
+    }
+
+    fn setVolume(v) {
+        return @cmd(["set", "volume", v])
+    }
+
+
+    // -----------------------------------------
+    // reactive computed state
+    // -----------------------------------------
+    fn timePos() {
+        return @get("time-pos")
+    }
+
+    fn duration() {
+        return @get("duration")
+    }
+
+    fn isPaused() {
+        return @get("pause")
+    }
+
+
+    // -----------------------------------------
+    // event system
+    // -----------------------------------------
+    fn on(ev, fn_handler) {
+        @bus.on(ev, fn_handler)
+    }
+
+
+    // -----------------------------------------
+    // event loop (libmpv stream)
+    // -----------------------------------------
+    fn startEventLoop() {
+        if @eventLoopRunning { return }
+        @eventLoopRunning = true
+
+        thread.spawn(fn() {
+            while @eventLoopRunning {
+
+                ev = mpv_wait_event(@ctx, 0.2)
+                if ev == null { continue }
+
+                if ev.event_id == MPV_EVENT_FILE_LOADED {
+                    @bus.emit("file-loaded", ev)
+                }
+
+                if ev.event_id == MPV_EVENT_SEEK {
+                    @bus.emit("seek", ev)
+                }
+
+                if ev.event_id == MPV_EVENT_END_FILE {
+                    @bus.emit("end-file", ev)
+                }
+
+                if ev.event_id == MPV_EVENT_PROPERTY_CHANGE {
+                    name = ev.name
+                    value = ev.data
+
+                    @props[name] = value
+                    @bus.emit("property:" + name, value)
+                }
+            }
+        })
+    }
+
+
+    fn stop() {
+        @eventLoopRunning = false
+        mpv_terminate_destroy(@ctx)
+    }
+
+
+    // -----------------------------------------
+    // playlist binding
+    // -----------------------------------------
+    fn playlist() {
+        return @playlist
+    }
+}

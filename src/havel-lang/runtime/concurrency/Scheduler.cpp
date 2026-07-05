@@ -4,6 +4,9 @@
 #include "utils/DebugFlags.hpp"
 #include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 #ifndef _WIN32
@@ -771,21 +774,33 @@ size_t Scheduler::cleanupDoneGoroutines() {
   // Hold both locks for the whole cleanup so no concurrent thread can
   // enqueue a pointer we're about to delete. Lock order: priority_mutex_
   // first, then goroutines_mutex_ (per the ordering rule in the header).
+  auto t_start = std::chrono::steady_clock::now();
+  auto t_start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      t_start.time_since_epoch()).count();
+  std::thread::id caller = std::this_thread::get_id();
   std::lock_guard plock(priority_mutex_);
   std::lock_guard glock(goroutines_mutex_);
   size_t removed = 0;
   for (auto it = goroutines_.begin(); it != goroutines_.end();) {
     auto& [id, g] = *it;
     if (g && g->state == GoroutineState::Done) {
-      auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-          std::chrono::steady_clock::now().time_since_epoch()).count();
-      ::havel::debug("[Scheduler] [ERASE] gid={} t={}", g->id, now_ns);
       removeFromQueues(g.get());
       goroutines_.erase(it);
       ++removed;
     } else {
       ++it;
     }
+  }
+  // Diagnostic logging gated by HAVEL_TRACE_CLEANUP. Bypasses the spdlog
+  // debug-level filter so traces are visible even at INFO log level.
+  if (std::getenv("HAVEL_TRACE_CLEANUP")) {
+    auto t_end = std::chrono::steady_clock::now();
+    auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        t_end - t_start).count();
+    fprintf(stderr, "[Scheduler] [CLEANUP] removed=%zu remaining=%zu dur=%lldus caller_tid=0x%llx t=%lld\n",
+            removed, goroutines_.size(), (long long)dur_us,
+            (unsigned long long)*reinterpret_cast<uint64_t*>(&caller),
+            (long long)t_start_ns);
   }
   return removed;
 }

@@ -562,6 +562,17 @@ private:
   // LOCK ORDERING: priority_mutex_ must NEVER be acquired while holding
   // goroutines_mutex_. If both are needed, acquire priority_mutex_ first,
   // or release goroutines_mutex_ before calling yield()/unpark()/addActionFiber().
+  //
+  // THREAD-AFFINITY CONTRACT:
+  // The scheduling queues (hotkey_queue_, runnable_queue_, background_queue_)
+  // and the goroutines_ map are mutated primarily from the VM/scheduler
+  // thread. The locks on these methods exist to defend against occasional
+  // cross-thread producers (an input thread enqueueing a deferred hotkey
+  // wake via wakeHotkeyByAlias -> unpark, or a worker host function calling
+  // spawn). Cross-thread producers MUST go through deferred_* queues or
+  // through these locked entry points. Helpers like removeFromQueues()
+  // require the caller to already hold priority_mutex_; they intentionally
+  // do not re-lock.
 
   // Goroutine storage and queues
   std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;

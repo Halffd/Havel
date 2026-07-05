@@ -699,7 +699,7 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
                     return;
                 }
                 // Check if this goroutine's condition depends on the changed variable
-                if (g->hotkey_condition_deps.empty() ||
+                if (!g->hotkey_condition_deps.empty() &&
                     g->hotkey_condition_deps.count(var_name) == 0) {
                     std::string depStr;
                     for (auto& d : g->hotkey_condition_deps) {

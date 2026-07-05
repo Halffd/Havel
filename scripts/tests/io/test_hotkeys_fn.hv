@@ -1,0 +1,44 @@
+glob = `date`
+fn hk1(val1 = 0, val2 = []){
+    fn show(){
+        print("val1: $val1")
+        print("val2: $val2")
+    }
+    a => {
+        val2.push(val1 + #val2)
+        show()
+    }
+    b => {
+        val1 = val2
+        show()
+    }
+    print(#hotkeys, hotkeys)
+}
+fn hk2(x){
+    c => {
+        print(glob + x)
+    }
+    print(#hotkeys, hotkeys)
+}
+f1 => {
+    hk1(1, [0])
+}
+f2 => {
+    hk2("hello")
+}
+f3 => {
+    hotkeys = hotkey.list()
+    for i, hk in hotkeys {
+        print("Disabling $i - $hk")
+        hotkey.disable(hk.id)
+    }
+}
+f4 => {
+    hotkeys = hotkey.list()
+    for i, hk in hotkeys {
+        print("Removing $i - $hk")
+        hotkey.remove(hk.id)
+    }
+}
+hotkeys = hotkey.list()
+print(#hotkeys, hotkeys)

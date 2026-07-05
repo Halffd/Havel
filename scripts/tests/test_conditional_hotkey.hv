@@ -1,0 +1,13 @@
+title_ = ""
+m = lwin => play()
+m.enabled = false
+m.grab = false
+when title_ ~ "window" {
+  print("On gaming")
+  m.enabled = true
+  m.grab = true
+}
+sleep(500)
+title_ = "window"
+sleep(100)
+print(m, m.enabled, m.grab)

@@ -925,22 +925,7 @@ int UIService::runEventLoop() {
   eventLoopRunning_ = true;
   eventLoopExitCode_ = 0;
 
-  // Start idle timer for goroutine scheduling
-  QTimer *idleTimer = nullptr;
-  if (idleCallback_) {
-    idleTimer = new QTimer();
-    QObject::connect(idleTimer, &QTimer::timeout, [this]() {
-      if (idleCallback_) idleCallback_();
-    });
-    idleTimer->start(50); // 50ms interval
-  }
-
   int result = QApplication::exec();
-
-  if (idleTimer) {
-    idleTimer->stop();
-    delete idleTimer;
-  }
 
   eventLoopRunning_ = false;
   return result;

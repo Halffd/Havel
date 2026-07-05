@@ -740,7 +740,7 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
     }
   #endif
 
-    size_t drained = 0;static_cast<int>(upTo));
+    size_t drained = 0;
 
     auto drainOneQueue = [&](std::deque<DeferredAction>& queue) {
      std::deque<DeferredAction> acts;

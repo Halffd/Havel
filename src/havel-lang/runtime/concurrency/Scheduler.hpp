@@ -6,7 +6,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <recursive_mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -562,14 +561,14 @@ private:
 
   // Goroutine storage and queues
   std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;
-  mutable std::recursive_mutex goroutines_mutex_;
+  mutable std::mutex goroutines_mutex_;
   uint32_t next_goroutine_id_ = 1;
 
   // Priority queues: hotkey fibers are prepended (immediate), normal/fg fibers use FIFO
   std::deque<Goroutine*> hotkey_queue_;    // HOTKEY priority (prepended)
   std::deque<Goroutine*> runnable_queue_;  // NORMAL priority (FIFO)
   std::deque<Goroutine*> background_queue_; // BACKGROUND priority
-  mutable std::recursive_mutex priority_mutex_;
+  mutable std::mutex priority_mutex_;
 
   // Legacy compatibility: single runnable queue (for older code)
   mutable std::mutex runnable_mutex_;

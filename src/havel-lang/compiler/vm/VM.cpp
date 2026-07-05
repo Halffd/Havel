@@ -1642,6 +1642,8 @@ uint32_t function_index = 0;
 uint32_t closure_id = 0;
 const BytecodeChunk *resolve_chunk = current_chunk;
 std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
+::havel::error("[VM-DEBUG] doCall callee: isFuncObj={} isClosure={}", 
+    callee_value.isFunctionObjId(), callee_value.isClosureId());
 if (callee_value.isFunctionObjId()) {
             function_index = callee_value.asFunctionObjId();
             if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {

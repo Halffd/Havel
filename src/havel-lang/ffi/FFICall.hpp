@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cerrno>
 #include <memory>
 #include <string>
 #include <vector>
@@ -42,6 +43,11 @@ public:
     static bool register_declaration(const struct FFIDeclaration& decl);
 
     static void clear_cif_cache();
+
+    // errno captured immediately after the last ffi_call() invocation.
+    // Thread-local so concurrent FFI calls don't interfere.
+    static int get_last_errno();
+    static void set_last_errno(int e);
 
 #ifdef HAVE_LIBFFI
     static ffi_type* to_ffi_type(std::shared_ptr<FFIType> type);
@@ -86,6 +92,7 @@ public:
 private:
 	static std::unordered_map<void*, std::string> libraries_;
 	static std::mutex library_mutex_;
+	static thread_local int last_errno_;
 	static std::mutex callback_mutex_;
     static std::unordered_map<void*, std::unique_ptr<CallbackData>> callbacks_;
     static std::mutex cif_mutex_;

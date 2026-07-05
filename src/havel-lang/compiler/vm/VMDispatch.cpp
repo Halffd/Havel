@@ -375,6 +375,9 @@ case OpCode::LOAD_UPVALUE: {
 uint32_t upvalue_index = instruction.operands[0].asInt();
 uint32_t closure_id = currentFrame().closure_id;
 if (closure_id == 0) {
+::havel::error("[VM-DEBUG] LOAD_UPVALUE failed: closure_id=0 upvalue_idx={} frame_count={} func='{}'", 
+    upvalue_index, frame_count_, 
+    currentFrame().function ? currentFrame().function->name : "?");
 COMPILER_THROW("LOAD_UPVALUE used without active closure");
 }
 auto *closure = heap_.closure(closure_id);

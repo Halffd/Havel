@@ -804,14 +804,30 @@ static Value ffiPtrToUint(const compiler::VMApi& api, const std::vector<Value>& 
 
 static Value ffiLastError(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
-    return Value(static_cast<int64_t>(errno));
+    // Use the errno captured immediately after the last ffi_call() returned,
+    // before any C++ dispatch machinery could clobber it.
+    return Value(static_cast<int64_t>(FFICall::get_last_errno()));
+}
+
+static Value ffiErrno(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    return Value(static_cast<int64_t>(FFICall::get_last_errno()));
+}
+
+static Value ffiStrerror(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    int e = args.empty() ? FFICall::get_last_errno()
+                         : static_cast<int>(args[0].asInt64());
+    return api.makeString(std::string(strerror(e)));
 }
 
 static Value ffiClearError(const compiler::VMApi& api, const std::vector<Value>& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
+    FFICall::set_last_errno(0);
     errno = 0;
     return Value::makeNull();
 }
+
 
 // ============================================================================
 // Module registration
@@ -893,6 +909,8 @@ void registerFFIModule(const compiler::VMApi& api) {
   // Platform
     reg("ffi.lastError", ffiLastError);
     reg("ffi.clearError", ffiClearError);
+    reg("ffi.errno", ffiErrno);
+    reg("ffi.strerror", ffiStrerror);
 
     // Build module object
     auto ffiObj = api.makeObject();
@@ -949,6 +967,8 @@ void registerFFIModule(const compiler::VMApi& api) {
   api.setField(ffiObj, "ptr_to_uint", api.makeFunctionRef("ffi.ptr_to_uint"));
   api.setField(ffiObj, "lastError", api.makeFunctionRef("ffi.lastError"));
     api.setField(ffiObj, "clearError", api.makeFunctionRef("ffi.clearError"));
+    api.setField(ffiObj, "errno", api.makeFunctionRef("ffi.errno"));
+    api.setField(ffiObj, "strerror", api.makeFunctionRef("ffi.strerror"));
 
     api.setGlobal("ffi", ffiObj);
 }

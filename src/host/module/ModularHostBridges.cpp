@@ -3776,6 +3776,15 @@ void InputBridge::install(PipelineOptions &options) {
   options.host_functions["hotkey.register_conditional"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyRegisterConditional(args, ctx);
   };
+  options.host_functions["hotkey.enable"] = [ctx = ctx_](const auto &args) {
+    return handleHotkeyEnable(args, ctx);
+  };
+  options.host_functions["hotkey.disable"] = [ctx = ctx_](const auto &args) {
+    return handleHotkeyDisable(args, ctx);
+  };
+  options.host_functions["hotkey.remove"] = [ctx = ctx_](const auto &args) {
+    return handleHotkeyRemove(args, ctx);
+  };
   options.host_functions["hotkey.trigger"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyTrigger(args, ctx);
   };
@@ -3832,6 +3841,26 @@ void InputBridge::install(PipelineOptions &options) {
         return handleIOOnEvent(args, ctx);
     };
 }
+
+namespace {
+std::string resolveHotkeyTargetId(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+    if (args.empty() || !ctx || !ctx->vm) return {};
+    auto *vm = static_cast<VM *>(ctx->vm);
+    if (args[0].isObjectId()) {
+        auto objRef = ObjectRef{args[0].asObjectId(), true};
+        auto idValue = vm->getHostObjectField(objRef, "id");
+        if (!idValue.isNull()) {
+            return ::havel::stdlib::HotkeyModule::findByAlias(vm->resolveStringKey(idValue));
+        }
+        return {};
+    }
+    if (args[0].isStringValId() || args[0].isStringId()) {
+        return ::havel::stdlib::HotkeyModule::findByAlias(vm->resolveStringKey(args[0]));
+    }
+    return {};
+}
+} // namespace
 
 Value
 InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
@@ -4102,6 +4131,60 @@ InputBridge::handleHotkeyOnAnyKey(const std::vector<Value> &args,
 }
 
 Value
+InputBridge::handleHotkeyEnable(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+    if (args.empty() || !ctx || !ctx->vm) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyTargetId(args, ctx);
+    if (hotkeyId.empty()) return Value::makeBool(false);
+
+    auto *vm = static_cast<VM *>(ctx->vm);
+    auto *hostCtx = vm->hostContext();
+    if (!hostCtx || !hostCtx->hotkeyManager) return Value::makeBool(false);
+
+    std::string alias = ::havel::stdlib::HotkeyModule::resolveAlias(hotkeyId);
+    if (alias.empty()) alias = hotkeyId;
+    hostCtx->hotkeyManager->EnableHotkey(alias);
+    ::havel::stdlib::HotkeyModule::setEnabled(hotkeyId, true);
+    return Value::makeBool(true);
+}
+
+Value
+InputBridge::handleHotkeyDisable(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+    if (args.empty() || !ctx || !ctx->vm) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyTargetId(args, ctx);
+    if (hotkeyId.empty()) return Value::makeBool(false);
+
+    auto *vm = static_cast<VM *>(ctx->vm);
+    auto *hostCtx = vm->hostContext();
+    if (!hostCtx || !hostCtx->hotkeyManager) return Value::makeBool(false);
+
+    std::string alias = ::havel::stdlib::HotkeyModule::resolveAlias(hotkeyId);
+    if (alias.empty()) alias = hotkeyId;
+    hostCtx->hotkeyManager->DisableHotkey(alias);
+    ::havel::stdlib::HotkeyModule::setEnabled(hotkeyId, false);
+    return Value::makeBool(true);
+}
+
+Value
+InputBridge::handleHotkeyRemove(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+    if (args.empty() || !ctx || !ctx->vm) return Value::makeBool(false);
+    auto hotkeyId = resolveHotkeyTargetId(args, ctx);
+    if (hotkeyId.empty()) return Value::makeBool(false);
+
+    auto *vm = static_cast<VM *>(ctx->vm);
+    auto *hostCtx = vm->hostContext();
+    if (!hostCtx || !hostCtx->hotkeyManager) return Value::makeBool(false);
+
+    std::string alias = ::havel::stdlib::HotkeyModule::resolveAlias(hotkeyId);
+    if (alias.empty()) alias = hotkeyId;
+    hostCtx->hotkeyManager->RemoveHotkey(alias);
+    bool removed = ::havel::stdlib::HotkeyModule::removeById(hotkeyId);
+    return Value::makeBool(removed);
+}
+
+Value
 InputBridge::handleHotkeyList(const std::vector<Value> &args,
                                const HostContext *ctx) {
     (void)args;
@@ -4131,12 +4214,14 @@ InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
         return Value::makeBool(false);
     }
 
-    if (args.empty() || !args[0].isStringValId()) {
+    auto hotkeyId = resolveHotkeyTargetId(args, ctx);
+    if (hotkeyId.empty()) {
         return Value::makeBool(false);
     }
 
     auto *vm = static_cast<VM *>(ctx->vm);
-    std::string alias = vm->resolveStringKey(args[0]);
+    std::string alias = ::havel::stdlib::HotkeyModule::resolveAlias(hotkeyId);
+    if (alias.empty()) alias = hotkeyId;
 
     ::havel::debug("[ModularHostBridges] hotkey.trigger('{}')", alias);
 

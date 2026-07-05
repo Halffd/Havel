@@ -25,9 +25,11 @@ public:
     static size_t contextCount();
 
     static std::string findByAlias(const std::string &alias);
+    static std::string resolveAlias(const std::string &value);
     static std::vector<std::string> findByKey(const std::string &key);
     static std::vector<std::string> getAllIds();
     static bool removeById(const std::string &hotkeyId);
+    static bool setEnabled(const std::string &hotkeyId, bool enabled);
     static void resetTriggerCount(const std::string &hotkeyId);
     static int64_t getAge(const std::string &hotkeyId);
     static int64_t getElapsed(const std::string &hotkeyId);

@@ -895,6 +895,7 @@ void ExecutionEngine::processGoroutinesInline() {
 
     inline_yield_active_ = true;
 
+    try {
     if (!main_script_fiber_) {
         main_script_fiber_ = std::make_unique<Fiber>(0, 0);
     }
@@ -1008,6 +1009,9 @@ void ExecutionEngine::processGoroutinesInline() {
         }
 
         if (vm_->exit_requested_.load()) break;
+    }
+    } catch (...) {
+        // Reset inline_yield_active_ on any throw so scheduling isn't frozen.
     }
 
     vm_->loadFiberState(main_script_fiber_.get());

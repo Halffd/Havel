@@ -245,7 +245,15 @@ Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
   }
 
   doCall(fn, args);
-  runDispatchLoop(savedFrameCount);
+  try {
+    runDispatchLoop(savedFrameCount);
+  } catch (...) {
+    current_chunk = saved_chunk;
+    while (stack.size() > savedStackSize) {
+      stack.pop();
+    }
+    throw;
+  }
 
   current_chunk = saved_chunk;
 
@@ -323,7 +331,13 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   }
 
   vm_in_execute_.store(true, std::memory_order_release);
-  runDispatchLoop(0);
+  try {
+    runDispatchLoop(0);
+  } catch (...) {
+    vm_in_execute_.store(false, std::memory_order_release);
+    current_chunk = saved_chunk;
+    throw;
+  }
   vm_in_execute_.store(false, std::memory_order_release);
 
   current_chunk = saved_chunk;

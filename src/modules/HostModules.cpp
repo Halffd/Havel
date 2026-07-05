@@ -49,6 +49,7 @@ void declareAllServices() {
   registry.declareService<host::ImageService>("image", "util");
   registry.declareService<host::MediaService>("media", "util");
   registry.declareService<host::AppService>("app", "util");
+  registry.declareService<host::PixelAutomationService>("pixel", "util");
 }
 
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
@@ -144,6 +145,15 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 			registry.registerService<host::AppService>(appService);
 		} catch (const std::exception& e) {
 			debug("initializeServiceRegistry: AppService failed: {}", e.what());
+		}
+	}
+
+	if (registry.shouldRegister("pixel", includes, excludes)) {
+		try {
+			auto pixelService = std::make_shared<host::PixelAutomationService>();
+			registry.registerService<host::PixelAutomationService>(pixelService);
+		} catch (const std::exception& e) {
+			debug("initializeServiceRegistry: PixelAutomationService failed: {}", e.what());
 		}
 	}
 

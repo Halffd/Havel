@@ -416,18 +416,17 @@ api.registerPrototypeMethod("Hotkey", "count", 1, [&vm](const std::vector<Value>
         auto *ctx = getHotkeyContextDataMutable(hotkeyId);
         if (!ctx) return Value::makeBool(false);
 
-	auto *hostCtx = vm.hostContext();
-	if (hostCtx && hostCtx->hotkeyManager) {
-		hostCtx->hotkeyManager->EnableHotkey(ctx->alias);
-		ctx->enabled = true;
-		ctx->state = "enabled";
-		vm.setHostObjectField(objRef, "enabled", Value::makeBool(true));
-		auto strRef = vm.createRuntimeString("enabled");
-		vm.setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
-		return Value::makeBool(true);
-	}
-	return Value::makeBool(false);
-});
+        auto *hostCtx = vm.hostContext();
+        if (hostCtx && hostCtx->hotkeyManager) {
+            hostCtx->hotkeyManager->EnableHotkey(ctx->alias);
+        }
+        ctx->enabled = true;
+        ctx->state = "enabled";
+        vm.setHostObjectField(objRef, "enabled", Value::makeBool(true));
+        auto strRef = vm.createRuntimeString("enabled");
+        vm.setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
+        return Value::makeBool(true);
+    });
 
 // disable() - disable this hotkey
 api.registerPrototypeMethod("Hotkey", "disable", 1, [&vm](const std::vector<Value> &args) -> Value {
@@ -442,14 +441,13 @@ api.registerPrototypeMethod("Hotkey", "disable", 1, [&vm](const std::vector<Valu
 	auto *hostCtx = vm.hostContext();
 	if (hostCtx && hostCtx->hotkeyManager) {
 		hostCtx->hotkeyManager->DisableHotkey(ctx->alias);
-		ctx->enabled = false;
-		ctx->state = "disabled";
-		vm.setHostObjectField(objRef, "enabled", Value::makeBool(false));
-		auto strRef = vm.createRuntimeString("disabled");
-		vm.setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
-		return Value::makeBool(true);
 	}
-	return Value::makeBool(false);
+	ctx->enabled = false;
+	ctx->state = "disabled";
+	vm.setHostObjectField(objRef, "enabled", Value::makeBool(false));
+	auto strRef = vm.createRuntimeString("disabled");
+	vm.setHostObjectField(objRef, "state", Value::makeStringId(strRef.id));
+	return Value::makeBool(true);
 });
 
 // toggle() - toggle enabled/disabled
@@ -492,14 +490,14 @@ api.registerPrototypeMethod("Hotkey", "remove", 1, [&vm](const std::vector<Value
 	auto *hostCtx = vm.hostContext();
 	if (hostCtx && hostCtx->hotkeyManager) {
 		std::string alias = ctx ? ctx->alias : hotkeyId;
-		bool success = hostCtx->hotkeyManager->RemoveHotkey(alias);
-		if (success) {
-                std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
-                g_hotkeyContexts.erase(hotkeyId);
-            }
-            return Value::makeBool(success);
-        }
-        return Value::makeBool(false);
+		hostCtx->hotkeyManager->RemoveHotkey(alias);
+	}
+	bool removed = false;
+	{
+		std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
+		removed = g_hotkeyContexts.erase(hotkeyId) > 0;
+	}
+	return Value::makeBool(removed);
     });
 
     // setPolicy(policy_str) - change the hotkey policy at runtime
@@ -1400,8 +1398,20 @@ size_t HotkeyModule::contextCount() {
 
 std::string HotkeyModule::findByAlias(const std::string &alias) {
   std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
+  if (g_hotkeyContexts.count(alias) > 0) return alias;
   for (const auto &[id, data] : g_hotkeyContexts) {
     if (data && data->alias == alias) return id;
+  }
+  return "";
+}
+
+std::string HotkeyModule::resolveAlias(const std::string &value) {
+  std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
+  auto it = g_hotkeyContexts.find(value);
+  if (it != g_hotkeyContexts.end() && it->second) return it->second->alias;
+  for (const auto &[id, data] : g_hotkeyContexts) {
+    if (!data) continue;
+    if (data->alias == value || data->key == value) return data->alias;
   }
   return "";
 }
@@ -1429,6 +1439,14 @@ std::vector<std::string> HotkeyModule::getAllIds() {
 bool HotkeyModule::removeById(const std::string &hotkeyId) {
   std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
   return g_hotkeyContexts.erase(hotkeyId) > 0;
+}
+
+bool HotkeyModule::setEnabled(const std::string &hotkeyId, bool enabled) {
+  auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+  if (!ctx) return false;
+  ctx->enabled = enabled;
+  ctx->state = enabled ? "enabled" : "disabled";
+  return true;
 }
 
 void HotkeyModule::resetTriggerCount(const std::string &hotkeyId) {

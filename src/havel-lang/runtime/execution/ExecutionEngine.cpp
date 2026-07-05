@@ -883,10 +883,19 @@ void ExecutionEngine::onChannelSend(uint32_t channel_id) {
 
 void ExecutionEngine::processGoroutinesInline() {
     if (inline_yield_active_) return;
-    if (!scheduler_ || scheduler_->runnableCount() == 0) return;
+    if (!scheduler_) return;
+
+    // Wake sleeping goroutines BEFORE checking runnableCount.
+    // Otherwise a suspended goroutine (e.g. sleep(500)) will never be woken:
+    // runnableCount() is 0 while the goroutine is sleeping, so we'd return
+    // early and never reach wakeSleepingGoroutines(). The IO thread's
+    // executeFrame() also can't help because isInExecute() is true.
+    scheduler_->wakeSleepingGoroutines();
+    if (scheduler_->runnableCount() == 0) return;
 
     inline_yield_active_ = true;
 
+    try {
     if (!main_script_fiber_) {
         main_script_fiber_ = std::make_unique<Fiber>(0, 0);
     }
@@ -894,7 +903,6 @@ void ExecutionEngine::processGoroutinesInline() {
     vm_->saveFiberState(main_script_fiber_.get());
 
     scheduler_->drainDeferredCallbacks();
-    scheduler_->wakeSleepingGoroutines();
 
     const int budget = 512;
     int executed = 0;
@@ -1001,6 +1009,9 @@ void ExecutionEngine::processGoroutinesInline() {
         }
 
         if (vm_->exit_requested_.load()) break;
+    }
+    } catch (...) {
+        // Reset inline_yield_active_ on any throw so scheduling isn't frozen.
     }
 
     vm_->loadFiberState(main_script_fiber_.get());

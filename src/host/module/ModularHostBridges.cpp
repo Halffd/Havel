@@ -3772,8 +3772,9 @@ void InputBridge::install(PipelineOptions &options) {
   options.host_functions["hotkey.register"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyRegister(args, ctx);
   };
+  // Unified alias for register_conditional
   options.host_functions["hotkey.register_conditional"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyRegisterConditional(args, ctx);
+    return handleHotkeyRegister(args, ctx);
   };
   options.host_functions["hotkey.enable"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyEnable(args, ctx);

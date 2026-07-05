@@ -23,11 +23,14 @@ namespace havel::host {
 UIService::UIService() = default;
 
 UIService::~UIService() {
-  // Clean up windows
+  // Clean up windows. Use deleteLater() so the QWidget is destroyed on the
+  // Qt event loop thread after any pending posted events for it drain —
+  // direct delete races QDBusConnection/QXcbEventQueue threads that may
+  // still hold a reference to the object's internal state.
   for (auto &[id, window] : windows_) {
     if (window) {
       window->close();
-      delete window;
+      window->deleteLater();
     }
   }
   windows_.clear();
@@ -55,7 +58,7 @@ void UIService::resetPerRunState() {
   for (auto &[id, window] : windows_) {
     if (window) {
       window->close();
-      delete window;
+      window->deleteLater();
     }
   }
   windows_.clear();
@@ -925,22 +928,7 @@ int UIService::runEventLoop() {
   eventLoopRunning_ = true;
   eventLoopExitCode_ = 0;
 
-  // Start idle timer for goroutine scheduling
-  QTimer *idleTimer = nullptr;
-  if (idleCallback_) {
-    idleTimer = new QTimer();
-    QObject::connect(idleTimer, &QTimer::timeout, [this]() {
-      if (idleCallback_) idleCallback_();
-    });
-    idleTimer->start(50); // 50ms interval
-  }
-
   int result = QApplication::exec();
-
-  if (idleTimer) {
-    idleTimer->stop();
-    delete idleTimer;
-  }
 
   eventLoopRunning_ = false;
   return result;
@@ -1457,7 +1445,7 @@ void UIService::timerSetSingleShot(int64_t timerId, bool singleShot) {
 void UIService::timerDestroy(int64_t timerId) {
     auto it = timers_.find(timerId);
     if (it != timers_.end()) {
-        delete it->second;
+        it->second->deleteLater();
         timers_.erase(it);
     }
 }
@@ -1467,7 +1455,7 @@ void *UIService::settingsCreate(const std::string &org, const std::string &app) 
 }
 
 void UIService::settingsDestroy(void *settings) {
-    delete static_cast<QSettings*>(settings);
+    static_cast<QSettings*>(settings)->deleteLater();
 }
 
 void UIService::settingsSetValue(void *settings, const std::string &key, const std::string &value) {

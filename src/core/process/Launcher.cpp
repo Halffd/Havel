@@ -68,6 +68,14 @@ ProcessResult Launcher::run(const std::string &executable,
 
 ProcessResult Launcher::run(const std::string &commandLine,
                             const LaunchParams &params) {
+  if (params.method == Method::Shell || isShellCommand(commandLine)) {
+    LaunchParams shellParams = params;
+    shellParams.method = Method::Shell;
+    printf("DEBUG: Shell command detected: %s\n", commandLine.c_str());
+    debug("Running command as shell: " + commandLine);
+    return executeShell(commandLine, shellParams);
+  }
+
   auto args = parseCommandLine(commandLine);
   if (args.empty()) {
     return {-1, -1, false, "Invalid command line"};
@@ -1081,8 +1089,12 @@ Launcher::parseCommandLine(const std::string &cmdLine) {
   return args;
 }
 
+bool Launcher::isShellCommand(const std::string& cmd) {
+    return cmd.find_first_of("|><&();") != std::string::npos;
+}
+
 std::string Launcher::buildCommandLine(const std::string &executable,
-                                       const std::vector<std::string> &args) {
+                                        const std::vector<std::string> &args) {
   // Resolve the executable path
   std::string resolvedExe = resolveExecutable(executable);
   std::string command = escapeArgument(resolvedExe);

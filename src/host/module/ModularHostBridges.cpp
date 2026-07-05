@@ -3924,13 +3924,13 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
         auto *hotkeyMgr = ctx->hotkeyManager;
 
         if (persistentGid != 0) {
-            auto wakeHotkey = [vm, persistentGid, hotkeyStr]() {
+            auto wakeHotkey = [vm, persistentGid, hotkeyId]() {
                 auto *sched = vm->getScheduler();
                 if (!sched) return;
                 auto *g = sched->get(persistentGid);
                 if (!g) return;
                 sched->wakeHotkey(g);
-                ::havel::stdlib::HotkeyModule::recordTrigger(hotkeyStr);
+                ::havel::stdlib::HotkeyModule::recordTrigger(hotkeyId);
             };
             ctx->hotkeyManager->AddHotkey(
                 hotkeyStr, [vm, wakeHotkey = std::move(wakeHotkey)]() {
@@ -4056,13 +4056,13 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
 
     if (ctx->hotkeyManager) {
         if (persistentGid != 0) {
-            auto wakeHotkey = [vm, persistentGid, hotkeyStr]() {
+            auto wakeHotkey = [vm, persistentGid, hotkeyId]() {
                 auto *sched = vm->getScheduler();
                 if (!sched) return;
                 auto *g = sched->get(persistentGid);
                 if (!g) return;
                 sched->wakeHotkey(g);
-                ::havel::stdlib::HotkeyModule::recordTrigger(hotkeyStr);
+                ::havel::stdlib::HotkeyModule::recordTrigger(hotkeyId);
             };
             ctx->hotkeyManager->AddHotkey(
                 hotkeyStr, [vm, wakeHotkey = std::move(wakeHotkey)]() {
@@ -4174,11 +4174,12 @@ InputBridge::handleHotkeyRemove(const std::vector<Value> &args,
 
     auto *vm = static_cast<VM *>(ctx->vm);
     auto *hostCtx = vm->hostContext();
-    if (!hostCtx || !hostCtx->hotkeyManager) return Value::makeBool(false);
 
     std::string alias = ::havel::stdlib::HotkeyModule::resolveAlias(hotkeyId);
     if (alias.empty()) alias = hotkeyId;
-    hostCtx->hotkeyManager->RemoveHotkey(alias);
+    if (hostCtx && hostCtx->hotkeyManager) {
+        hostCtx->hotkeyManager->RemoveHotkey(alias);
+    }
     bool removed = ::havel::stdlib::HotkeyModule::removeById(hotkeyId);
     return Value::makeBool(removed);
 }

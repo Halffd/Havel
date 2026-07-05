@@ -544,6 +544,10 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
   // @return Number of goroutines removed
   size_t cleanupDoneGoroutines();
 
+  // Remove a goroutine's raw pointer from all scheduling queues.
+  // Caller must hold priority_mutex_.
+  void removeFromQueues(Goroutine* g);
+
   // Collect all update callback IDs for GC root cleanup
   std::vector<uint64_t> collectUpdateCallbackIds();
 

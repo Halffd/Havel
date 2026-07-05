@@ -3,6 +3,7 @@
 #include "../../../utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
 #include <algorithm>
+#include <cassert>
 #include <thread>
 #include <vector>
 #ifndef _WIN32
@@ -132,10 +133,13 @@ Scheduler::Goroutine* Scheduler::pickNext() {
         if (!g) continue;
         // UAF defense: cleanupDoneGoroutines purges queue entries before
         // erasing the Goroutine. If we ever pop a Done goroutine here, a
-        // purge was skipped — log loudly so it's caught in testing.
+        // purge was skipped — log loudly with timestamp so we can match
+        // it against [ERASE] entries to confirm queue poisoning.
         if (g->state == GoroutineState::Done) {
-          ::havel::warning("[Scheduler] pickNext: popped Done gid={} from {} queue (queue poisoning suspected)",
-                           g->id, label);
+          auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+              std::chrono::steady_clock::now().time_since_epoch()).count();
+          ::havel::warning("[Scheduler] [POP-DONE] gid={} t={} from {} queue (queue poisoning suspected)",
+                           g->id, now_ns, label);
           continue;
         }
         if (g->fiber && g->fiber->state == FiberState::DONE) {
@@ -162,6 +166,14 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 	}
 
 	if (result) {
+		// UAF guard: the goroutine we just popped must still be alive in
+		// the map and not Done. cleanupDoneGoroutines purges queue entries
+		// before erasing, so a failure here means a purge was skipped.
+		assert(result->state != GoroutineState::Done);
+		{
+			std::lock_guard glock(goroutines_mutex_);
+			assert(goroutines_.count(result->id) == 1);
+		}
 		{
 			result->wait_handle.clear();  // Clear stale suspension context before running
 		}
@@ -628,6 +640,8 @@ size_t Scheduler::wakeSleepingGoroutines() {
     {
         std::lock_guard lock(goroutines_mutex_);
         for (auto& [id, g] : goroutines_) {
+            assert(g != nullptr);
+            assert(g->state != GoroutineState::Done);
             if (g->state != GoroutineState::Suspended) continue;
             if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
             {
@@ -754,58 +768,37 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
  }
 
 size_t Scheduler::cleanupDoneGoroutines() {
-  // Two-phase cleanup to avoid use-after-free:
-  //   Phase 1 (goroutines_mutex_): collect Done goroutine pointers.
-  //   Phase 2 (priority_mutex_): remove their raw pointers from all queues.
-  //   Phase 3 (goroutines_mutex_): erase from map, which deletes the
-  //          unique_ptr and frees the Goroutine.
-  // Lock ordering rule: never hold goroutines_mutex_ while acquiring
-  // priority_mutex_. Done state is terminal, so no concurrent thread
-  // will re-enqueue between phases.
-  std::vector<Goroutine*> done_ptrs;
-  {
-    std::lock_guard glock(goroutines_mutex_);
-    for (auto& [id, g] : goroutines_) {
-      if (g && g->state == GoroutineState::Done) {
-        done_ptrs.push_back(g.get());
-      }
-    }
-  }
-  if (done_ptrs.empty()) return 0;
-
-  auto purge = [this](std::deque<Goroutine*>& q, Goroutine* target) {
-    for (auto it = q.begin(); it != q.end();) {
-      if (*it == target) it = q.erase(it);
-      else ++it;
-    }
-  };
-  {
-    std::lock_guard plock(priority_mutex_);
-    for (auto* g : done_ptrs) {
-      purge(hotkey_queue_, g);
-      purge(runnable_queue_, g);
-      purge(background_queue_, g);
-    }
-  }
-
+  // Hold both locks for the whole cleanup so no concurrent thread can
+  // enqueue a pointer we're about to delete. Lock order: priority_mutex_
+  // first, then goroutines_mutex_ (per the ordering rule in the header).
+  std::lock_guard plock(priority_mutex_);
+  std::lock_guard glock(goroutines_mutex_);
   size_t removed = 0;
-  {
-    std::lock_guard glock(goroutines_mutex_);
-    for (auto it = goroutines_.begin(); it != goroutines_.end();) {
-      auto& [id, g] = *it;
-      if (g && g->state == GoroutineState::Done) {
-        if (debugging::debug_io) {
-          ::havel::debug("[Scheduler] Cleanup: removing Done goroutine gid={} name='{}'",
-                         g->id, g->name);
-        }
-        goroutines_.erase(it);
-        ++removed;
-      } else {
-        ++it;
-      }
+  for (auto it = goroutines_.begin(); it != goroutines_.end();) {
+    auto& [id, g] = *it;
+    if (g && g->state == GoroutineState::Done) {
+      auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now().time_since_epoch()).count();
+      ::havel::debug("[Scheduler] [ERASE] gid={} t={}", g->id, now_ns);
+      removeFromQueues(g.get());
+      goroutines_.erase(it);
+      ++removed;
+    } else {
+      ++it;
     }
   }
   return removed;
+}
+
+void Scheduler::removeFromQueues(Goroutine* g) {
+  // Caller must hold priority_mutex_.
+  if (!g) return;
+  auto purge = [&](std::deque<Goroutine*>& q) {
+    q.erase(std::remove(q.begin(), q.end(), g), q.end());
+  };
+  purge(hotkey_queue_);
+  purge(runnable_queue_);
+  purge(background_queue_);
 }
 
 std::vector<uint64_t> Scheduler::collectUpdateCallbackIds() {

@@ -244,7 +244,7 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
                 if (!g) return;
                 if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
                     g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
-                if (g->hotkey_condition_deps.empty() ||
+                if (!g->hotkey_condition_deps.empty() &&
                     g->hotkey_condition_deps.count(var_name) == 0) return;
                 auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
                 if (!condVal) return;

@@ -98,6 +98,7 @@ case OpCode::LOAD_GLOBAL: {
     break;
   }
 
+    trackGlobalAccess(name);
     COMPILER_THROW("Undefined variable: '" + name + "'");
     break;
   }

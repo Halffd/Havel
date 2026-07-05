@@ -7445,10 +7445,28 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     if (!hotkeyExpr)
       continue;
 
+        // Collect upvalues captured by the hotkey action body, as resolved
+        // by LexicalResolver for the action's nested function context. Each
+        // descriptor's index is the enclosing-scope local slot, with
+        // captures_local=true, so the wrapper closure captures it directly
+        // from the OUTER frame.
+        std::vector<UpvalueDescriptor> wrapperUpvalues;
+        auto hkIt = lexical_resolution_.hotkey_binding_upvalues.find(&binding);
+        if (hkIt != lexical_resolution_.hotkey_binding_upvalues.end()) {
+            wrapperUpvalues = hkIt->second;
+        }
+        // The action function runs INSIDE the wrapper, so its upvalues point
+        // at the wrapper's captured upvalues by position (captures_local=false).
+        std::vector<UpvalueDescriptor> actionUpvalues;
+        for (size_t i = 0; i < wrapperUpvalues.size(); ++i) {
+            actionUpvalues.push_back({static_cast<uint32_t>(i), false});
+        }
+
         // Create a function that wraps the action with @ context injection
         // The action will receive @ as its first parameter
         BytecodeFunction hotkeyActionFn("hotkey_action");
         hotkeyActionFn.param_count = 1;
+        hotkeyActionFn.upvalues = actionUpvalues;
         enterFunction(std::move(hotkeyActionFn));
 
         // Compile the action statement/expression
@@ -7461,7 +7479,7 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
         }
       } else if (auto *exprStmt =
                      dynamic_cast<const ast::ExpressionStatement *>(
-                         binding.action.get())) {
+                        binding.action.get())) {
         // Single expression - compile and return
         compileExpression(*exprStmt->expression);
         emit(OpCode::RETURN);
@@ -7477,8 +7495,10 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
   leaveFunction();
 
   uint32_t actionFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
+  bool actionHasUpvalues = !actionUpvalues.empty();
 
   BytecodeFunction hotkeyWrapperFn("hotkey_wrapper", 1, 1);
+  hotkeyWrapperFn.upvalues = wrapperUpvalues;
   enterFunction(std::move(hotkeyWrapperFn));
   next_local_index = 1;
 
@@ -7509,8 +7529,12 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId2));
   }
 
-  emit(OpCode::LOAD_CONST,
-       addConstant(Value::makeFunctionObjId(actionFuncIndex)));
+  if (actionHasUpvalues) {
+      emit(OpCode::CLOSURE, Value::makeInt(static_cast<int64_t>(actionFuncIndex)));
+  } else {
+      emit(OpCode::LOAD_CONST,
+           addConstant(Value::makeFunctionObjId(actionFuncIndex)));
+  }
   emit(OpCode::SWAP);
   emit(OpCode::CALL, static_cast<uint32_t>(1));
 
@@ -7532,12 +7556,20 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
   // Build options object if policy attribute is set
   bool hasPolicy = !binding.policy.empty();
 
+  auto emitLoadWrapper = [&]() {
+      if (!wrapperUpvalues.empty()) {
+          emit(OpCode::CLOSURE, Value::makeInt(static_cast<int64_t>(wrapperFuncIndex)));
+      } else {
+          emit(OpCode::LOAD_CONST,
+               addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+      }
+  };
+
   if (conditional_hotkey_condition_index_.has_value()) {
     uint32_t strId = addStringConstant("hotkey.register_conditional");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     compileExpression(*hotkeyExpr);
-    emit(OpCode::LOAD_CONST,
-         addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+    emitLoadWrapper();
     emit(OpCode::LOAD_CONST,
          addConstant(Value::makeFunctionObjId(*conditional_hotkey_condition_index_)));
     if (hasPolicy) {
@@ -7553,8 +7585,7 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
     uint32_t strId = addStringConstant("hotkey.register");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     compileExpression(*hotkeyExpr);
-    emit(OpCode::LOAD_CONST,
-         addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+    emitLoadWrapper();
     if (hasPolicy) {
       emit(OpCode::OBJECT_NEW);
       { uint32_t _sid = addStringConstant(binding.policy); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
@@ -7579,9 +7610,23 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
     if (!hotkeyExpr)
       continue;
 
+    // Collect upvalues captured by the hotkey action body (resolved by
+    // LexicalResolver). Each descriptor's index is the enclosing-scope local
+    // slot, captures_local=true.
+    std::vector<UpvalueDescriptor> wrapperUpvalues;
+    auto hkIt = lexical_resolution_.hotkey_binding_upvalues.find(&binding);
+    if (hkIt != lexical_resolution_.hotkey_binding_upvalues.end()) {
+        wrapperUpvalues = hkIt->second;
+    }
+    std::vector<UpvalueDescriptor> actionUpvalues;
+    for (size_t i = 0; i < wrapperUpvalues.size(); ++i) {
+        actionUpvalues.push_back({static_cast<uint32_t>(i), false});
+    }
+
     // Create a function that wraps the action with @ context injection
     BytecodeFunction hotkeyActionFn("hotkey_action");
     hotkeyActionFn.param_count = 1;
+    hotkeyActionFn.upvalues = actionUpvalues;
     enterFunction(std::move(hotkeyActionFn));
 
     if (binding.action) {
@@ -7592,7 +7637,7 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
         }
       } else if (auto *exprStmt =
                      dynamic_cast<const ast::ExpressionStatement *>(
-                         binding.action.get())) {
+                        binding.action.get())) {
         compileExpression(*exprStmt->expression);
         emit(OpCode::RETURN);
       } else {
@@ -7606,8 +7651,10 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
   leaveFunction();
 
   uint32_t actionFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
+  bool actionHasUpvalues = !actionUpvalues.empty();
 
   BytecodeFunction hotkeyWrapperFn("hotkey_wrapper", 1, 1);
+  hotkeyWrapperFn.upvalues = wrapperUpvalues;
   enterFunction(std::move(hotkeyWrapperFn));
   next_local_index = 1;
 
@@ -7638,8 +7685,12 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId2));
   }
 
-  emit(OpCode::LOAD_CONST,
-       addConstant(Value::makeFunctionObjId(actionFuncIndex)));
+  if (actionHasUpvalues) {
+      emit(OpCode::CLOSURE, Value::makeInt(static_cast<int64_t>(actionFuncIndex)));
+  } else {
+      emit(OpCode::LOAD_CONST,
+           addConstant(Value::makeFunctionObjId(actionFuncIndex)));
+  }
   emit(OpCode::SWAP);
   emit(OpCode::CALL, static_cast<uint32_t>(1));
   emit(OpCode::POP);
@@ -7659,12 +7710,20 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
 
   bool exprHasPolicy = !binding.policy.empty();
 
+  auto emitLoadWrapper = [&]() {
+      if (!wrapperUpvalues.empty()) {
+          emit(OpCode::CLOSURE, Value::makeInt(static_cast<int64_t>(wrapperFuncIndex)));
+      } else {
+          emit(OpCode::LOAD_CONST,
+               addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+      }
+  };
+
   if (conditional_hotkey_condition_index_.has_value()) {
     uint32_t strId = addStringConstant("hotkey.register_conditional");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     compileExpression(*hotkeyExpr);
-    emit(OpCode::LOAD_CONST,
-         addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+    emitLoadWrapper();
     emit(OpCode::LOAD_CONST,
          addConstant(Value::makeFunctionObjId(*conditional_hotkey_condition_index_)));
     if (exprHasPolicy) {
@@ -7680,8 +7739,7 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
     uint32_t strId = addStringConstant("hotkey.register");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     compileExpression(*hotkeyExpr);
-    emit(OpCode::LOAD_CONST,
-         addConstant(Value::makeFunctionObjId(wrapperFuncIndex)));
+    emitLoadWrapper();
     if (exprHasPolicy) {
       emit(OpCode::OBJECT_NEW);
       { uint32_t _sid = addStringConstant(binding.policy); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };

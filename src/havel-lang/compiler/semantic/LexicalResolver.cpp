@@ -239,6 +239,12 @@ if (ctx.owner) {
     // ThreadExpression/IntervalExpression/TimeoutExpression: identifiers in
     // their bodies are resolved and stored in identifier_bindings, so
     // ByteCompiler can find them via bindingFor().
+    // HotkeyBinding: upvalues stored in hotkey_binding_upvalues so compileHotkeyBinding
+    // can emit a CLOSURE that captures enclosing-scope locals (not via bindingFor).
+    else if (ctx.owner->kind == ast::NodeType::HotkeyBinding) {
+      auto *hk = static_cast<const ast::HotkeyBinding *>(ctx.owner);
+      result_.hotkey_binding_upvalues[hk] = ctx.upvalues;
+    }
   } else {
     result_.main_local_count = ctx.next_slot;
   }
@@ -851,12 +857,16 @@ case ast::NodeType::BlockStatement: {
 
   case ast::NodeType::HotkeyBinding: {
     const auto &hotkey = static_cast<const ast::HotkeyBinding &>(statement);
-    // Create isolated scope for hotkey action
-    beginScope();
+    // Hotkey action is compiled as its own function (hotkey_action) so that it
+    // can capture upvalues from the enclosing scope. Push a function context so
+    // that identifiers in the action body resolve as Upvalue (not Local) bindings.
     if (hotkey.action) {
+      beginFunction(&hotkey);
+      beginScope();
       resolveStatement(*hotkey.action);
+      endScope();
+      endFunction();
     }
-    endScope();
     break;
   }
 

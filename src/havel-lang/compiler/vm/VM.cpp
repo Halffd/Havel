@@ -1,6 +1,6 @@
 #include "VM.hpp"
-#include "VMApi.hpp"
 #include "VMInternals.hpp"
+#include "VMApi.hpp"
 #include "host/ServiceRegistry.hpp"
 #include <iostream>
 
@@ -10,24 +10,23 @@
 #define HAVE_COMPUTED_GOTO 0
 #endif
 #include "../../../utils/Logger.hpp"
+#include "../../utils/ErrorPrinter.hpp"
+#include "../../runtime/concurrency/Thread.hpp"
+#include "../../runtime/concurrency/Fiber.hpp"
+#include "../../runtime/concurrency/DependencyTracker.hpp"
+#include "../../runtime/concurrency/WatcherRegistry.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
+#include "../runtime/EventQueue.hpp"
+#include "../runtime/RuntimeSupport.hpp"
+#include "compiler/core/ByteCompiler.hpp"
 #include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
 #include "../../runtime/Modules.hpp"
-#include "../../runtime/concurrency/DependencyTracker.hpp"
-#include "../../runtime/concurrency/Fiber.hpp"
-#include "../../runtime/concurrency/Scheduler.hpp"
-#include "../../runtime/concurrency/Thread.hpp"
-#include "../../runtime/concurrency/WatcherRegistry.hpp"
-#include "../../utils/ErrorPrinter.hpp"
-#include "../runtime/EventQueue.hpp"
-#include "../runtime/RuntimeSupport.hpp"
-#include "c/ModulePlugin.h"
-#include "compiler/core/ByteCompiler.hpp"
 #include "dl/Loader.hpp"
+#include "c/ModulePlugin.h"
 #include <dlfcn.h>
 
 #include "../../stdlib/LogModule.hpp"
-#include "havel-lang/compiler/runtime/DebugUtils.hpp"
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -35,74 +34,65 @@
 #include <functional>
 #include <mutex>
 #include <optional>
-#include <queue>
 #include <regex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <queue>
+#include "havel-lang/compiler/runtime/DebugUtils.hpp"
 
-#include "../../stdlib/ShellModule.hpp"
 #include "VMApi.hpp"
+#include "../../stdlib/ShellModule.hpp"
 #include "core/config/ConfigManager.hpp"
 
 namespace havel::compiler {
 
 VM::VM() : VM(VMConfig{}) {}
 
-VM::VM(const VMConfig &cfg) {
-  vm_config_ = cfg;
-  tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
-  tier1_threshold_ = cfg.tier1_threshold > 0
-                         ? cfg.tier1_threshold
-                         : envU64("HAVEL_TIER1_THRESHOLD", 1000);
-  tier2_threshold_ = cfg.tier2_threshold > 0
-                         ? cfg.tier2_threshold
-                         : envU64("HAVEL_TIER2_THRESHOLD", 10000);
-  tier2_flush_on_shutdown_ =
-      cfg.tier2_flush_on_shutdown || envU64("HAVEL_TIER2_FLUSH", 0) != 0;
-  max_call_depth_ = cfg.max_call_depth;
-  max_instructions_ = cfg.max_instructions;
-  heap_.setAllocationBudget(cfg.gc_budget);
-  heap_.setHeapMaxBytes(cfg.heap_max_bytes);
-  heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
-  heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
-  heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
-  timer_check_interval_ = cfg.timer_check_interval;
-  if (!cfg.self_hosted_modules_path.empty()) {
-    self_hosted_modules_path_ = cfg.self_hosted_modules_path;
-    moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
-  }
-  registerDefaultHostFunctions();
+VM::VM(const VMConfig& cfg) {
+    vm_config_ = cfg;
+    tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
+    tier1_threshold_ = cfg.tier1_threshold > 0 ? cfg.tier1_threshold : envU64("HAVEL_TIER1_THRESHOLD", 1000);
+    tier2_threshold_ = cfg.tier2_threshold > 0 ? cfg.tier2_threshold : envU64("HAVEL_TIER2_THRESHOLD", 10000);
+    tier2_flush_on_shutdown_ = cfg.tier2_flush_on_shutdown || envU64("HAVEL_TIER2_FLUSH", 0) != 0;
+    max_call_depth_ = cfg.max_call_depth;
+    max_instructions_ = cfg.max_instructions;
+    heap_.setAllocationBudget(cfg.gc_budget);
+    heap_.setHeapMaxBytes(cfg.heap_max_bytes);
+    heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
+    heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
+    heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
+    timer_check_interval_ = cfg.timer_check_interval;
+    if (!cfg.self_hosted_modules_path.empty()) {
+        self_hosted_modules_path_ = cfg.self_hosted_modules_path;
+        moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
+    }
+    registerDefaultHostFunctions();
 }
 
 VM::VM(const ::havel::HostContext &ctx) : VM(ctx, VMConfig{}) {}
 
-VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
-  vm_config_ = cfg;
-  tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
-  tier1_threshold_ = cfg.tier1_threshold > 0
-                         ? cfg.tier1_threshold
-                         : envU64("HAVEL_TIER1_THRESHOLD", 1000);
-  tier2_threshold_ = cfg.tier2_threshold > 0
-                         ? cfg.tier2_threshold
-                         : envU64("HAVEL_TIER2_THRESHOLD", 10000);
-  tier2_flush_on_shutdown_ =
-      cfg.tier2_flush_on_shutdown || envU64("HAVEL_TIER2_FLUSH", 0) != 0;
-  context_ = &ctx;
-  max_call_depth_ = cfg.max_call_depth;
-  max_instructions_ = cfg.max_instructions;
-  heap_.setAllocationBudget(cfg.gc_budget);
-  heap_.setHeapMaxBytes(cfg.heap_max_bytes);
-  heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
-  heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
-  heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
-  timer_check_interval_ = cfg.timer_check_interval;
-  if (!cfg.self_hosted_modules_path.empty()) {
-    self_hosted_modules_path_ = cfg.self_hosted_modules_path;
-    moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
-  }
-  registerDefaultHostFunctions();
+VM::VM(const ::havel::HostContext &ctx, const VMConfig& cfg) {
+    vm_config_ = cfg;
+    tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
+    tier1_threshold_ = cfg.tier1_threshold > 0 ? cfg.tier1_threshold : envU64("HAVEL_TIER1_THRESHOLD", 1000);
+    tier2_threshold_ = cfg.tier2_threshold > 0 ? cfg.tier2_threshold : envU64("HAVEL_TIER2_THRESHOLD", 10000);
+    tier2_flush_on_shutdown_ = cfg.tier2_flush_on_shutdown || envU64("HAVEL_TIER2_FLUSH", 0) != 0;
+    context_ = &ctx;
+    max_call_depth_ = cfg.max_call_depth;
+    max_instructions_ = cfg.max_instructions;
+    heap_.setAllocationBudget(cfg.gc_budget);
+    heap_.setHeapMaxBytes(cfg.heap_max_bytes);
+    heap_.setStopTheWorldMode(cfg.gc_stop_the_world);
+    heap_.setFullCollectionInterval(cfg.gc_full_collection_interval);
+    heap_.setPromotionAgeThreshold(cfg.gc_promotion_age);
+    timer_check_interval_ = cfg.timer_check_interval;
+    if (!cfg.self_hosted_modules_path.empty()) {
+        self_hosted_modules_path_ = cfg.self_hosted_modules_path;
+        moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
+    }
+    registerDefaultHostFunctions();
 }
 
 void VM::setMaxCallDepth(size_t value) { max_call_depth_ = value; }
@@ -116,51 +106,48 @@ VM::~VM() {
         std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
         empty = tier2_queue_.empty() && tier2_queued_or_compiling_.empty();
       }
-      if (empty)
-        break;
+      if (empty) break;
       std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
   }
   tier2_worker_running_.store(false);
-  if (tier2_worker_.joinable())
-    tier2_worker_.join();
+  if (tier2_worker_.joinable()) tier2_worker_.join();
   if (tiering_enabled_) {
-    ::havel::info("[tiering] transitions: tier1={} tier2_enqueued={} "
-                  "tier2_compiled={} tier2_dup_skipped={}",
-                  tier1_transition_count_.load(), tier2_enqueue_count_.load(),
+    ::havel::info("[tiering] transitions: tier1={} tier2_enqueued={} tier2_compiled={} tier2_dup_skipped={}",
+                  tier1_transition_count_.load(),
+                  tier2_enqueue_count_.load(),
                   tier2_compile_count_.load(),
                   tier2_skip_duplicate_count_.load());
   }
-  for (auto &[name, rootId] : host_function_gc_roots_) {
-    unpinExternalRoot(rootId);
-  }
-  host_function_gc_roots_.clear();
+    for (auto &[name, rootId] : host_function_gc_roots_) {
+        unpinExternalRoot(rootId);
+    }
+    host_function_gc_roots_.clear();
   imported_module_globals_.clear();
 
-  if (heap_.externalRootCount() > 0) {
-    ::havel::warning("[VM][GC] {} external roots still pinned at VM shutdown",
-                     heap_.externalRootCount());
-  }
+    if (heap_.externalRootCount() > 0) {
+        ::havel::warning("[VM][GC] {} external roots still pinned at VM shutdown", heap_.externalRootCount());
+    }
 
-  module_chunks_.clear();
-  repl_chunks_.clear();
-  persistent_chunks_.clear();
-  backedge_counters_.clear();
-  tier1_compiled_.clear();
-  tier2_compiled_.clear();
-  protocol_contracts_.clear();
-  protocol_impls_.clear();
-  type_protocols_.clear();
-  overloaded_methods_.clear();
-  function_properties_.clear();
-  closure_properties_.clear();
-  hostfunc_properties_.clear();
-  direct_call_thunks_.clear();
-  coroutine_to_frame_.clear();
-  globals_stack_.clear();
-  thread_results_.clear();
-  timeout_results_.clear();
-  interval_results_.clear();
+    module_chunks_.clear();
+    repl_chunks_.clear();
+    persistent_chunks_.clear();
+    backedge_counters_.clear();
+    tier1_compiled_.clear();
+    tier2_compiled_.clear();
+    protocol_contracts_.clear();
+    protocol_impls_.clear();
+    type_protocols_.clear();
+    overloaded_methods_.clear();
+    function_properties_.clear();
+    closure_properties_.clear();
+    hostfunc_properties_.clear();
+    direct_call_thunks_.clear();
+    coroutine_to_frame_.clear();
+    globals_stack_.clear();
+    thread_results_.clear();
+    timeout_results_.clear();
+    interval_results_.clear();
 }
 
 template <typename T> T VM::getValue(const Value &value) {
@@ -195,7 +182,7 @@ VM::CallFrame &VM::currentFrame() {
 }
 
 Value VM::getConstant(uint32_t index) {
-  auto &consts = currentFrame().function->constants;
+  auto& consts = currentFrame().function->constants;
   if (index >= consts.size()) {
     return Value::makeNull();
   }
@@ -219,7 +206,8 @@ void VM::restoreState(const ExecutionState &state) {
   frame_count_ = state.frame_count;
 }
 
-void VM::scheduleCall(const Value &fn, const std::vector<Value> &args,
+void VM::scheduleCall(const Value &fn,
+                      const std::vector<Value> &args,
                       Value &result, bool &completed) {
   pending_calls.push_back({fn, args, &result, &completed});
 }
@@ -234,20 +222,22 @@ void VM::processPendingCalls() {
 
 // Synchronous call for host functions - executes callback and returns result
 // Minimal state isolation: just save/restore stack size
-Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
-  std::lock_guard<std::recursive_mutex> lock(execution_mutex_);
-  size_t savedStackSize = stack.size();
-  size_t savedFrameCount = frame_count_;
+Value VM::callFunctionSync(const Value &fn,
+                               const std::vector<Value> &args) {
+    std::lock_guard<std::recursive_mutex> lock(execution_mutex_);
+    size_t savedStackSize = stack.size();
+    size_t savedFrameCount = frame_count_;
 
-  const BytecodeChunk *saved_chunk = current_chunk;
-  if (!current_chunk && main_chunk_) {
-    current_chunk = main_chunk_.get();
-  }
+    const BytecodeChunk *saved_chunk = current_chunk;
+    if (!current_chunk && main_chunk_) {
+        current_chunk = main_chunk_.get();
+    }
 
-  doCall(fn, args);
-  runDispatchLoop(savedFrameCount);
+    doCall(fn, args);
+    runDispatchLoop(savedFrameCount);
 
-  current_chunk = saved_chunk;
+    current_chunk = saved_chunk;
+
 
   // Get result from stack top
   Value result;
@@ -266,10 +256,12 @@ Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
   return result;
 }
 
-Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
-                  const std::vector<Value> &args) {
-  const BytecodeChunk *saved_chunk = current_chunk;
-  current_chunk = &chunk;
+
+Value VM::execute(const BytecodeChunk &chunk,
+ const std::string &function_name,
+ const std::vector<Value> &args) {
+ const BytecodeChunk *saved_chunk = current_chunk;
+ current_chunk = &chunk;
 
   const auto *entry = chunk.getFunction(function_name);
   if (!entry) {
@@ -277,69 +269,67 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   }
 
   while (!stack.empty()) {
-    stack.pop();
-  }
-  locals.clear();
-  frame_count_ = 0;
+        stack.pop();
+    }
+locals.clear();
+	frame_count_ = 0;
 
-  if (gc_suspend_counter_ == 0)
-    collectGarbage();
+	if (gc_suspend_counter_ == 0) collectGarbage();
 
-  open_upvalues.clear();
-  has_current_exception_ = false;
-  current_exception_ = nullptr;
+	open_upvalues.clear();
+    has_current_exception_ = false;
+    current_exception_ = nullptr;
   registerDefaultHostGlobals();
   host_globals_registered_ = true;
   if (post_reset_setup_) {
-    post_reset_setup_(*this);
-  }
-  opcode_counts_.fill(0);
-  executed_instructions_ = 0;
-
-  if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}});
-  } else {
-    frame_arena_[frame_count_] =
-        CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}};
-  }
-  frame_count_++;
-  locals.resize(entry->local_count);
-
-  if (!args.empty()) {
-    if (args.size() != entry->param_count) {
-      COMPILER_THROW("Argument count mismatch for entry function '" +
-                     function_name + "' (expected " +
-                     std::to_string(entry->param_count) + ", got " +
-                     std::to_string(args.size()) + ")");
+        post_reset_setup_(*this);
     }
+    opcode_counts_.fill(0);
+ executed_instructions_ = 0;
 
-    for (uint32_t i = 0; i < entry->param_count; ++i) {
-      locals[i] = args[i];
+ if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}});
+    } else {
+        frame_arena_[frame_count_] = CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}};
     }
-  }
+    frame_count_++;
+    locals.resize(entry->local_count);
+
+	if (!args.empty()) {
+		if (args.size() != entry->param_count) {
+			COMPILER_THROW("Argument count mismatch for entry function '" +
+				function_name + "' (expected " +
+				std::to_string(entry->param_count) + ", got " +
+				std::to_string(args.size()) + ")");
+ }
+
+ for (uint32_t i = 0; i < entry->param_count; ++i) {
+ locals[i] = args[i];
+ }
+ }
 
   if (debug_mode) {
     ::havel::debug("=== Executing function: {} ===", function_name);
   }
 
-  vm_in_execute_.store(true, std::memory_order_release);
-  runDispatchLoop(0);
-  vm_in_execute_.store(false, std::memory_order_release);
+ vm_in_execute_.store(true, std::memory_order_release);
+ runDispatchLoop(0);
+ vm_in_execute_.store(false, std::memory_order_release);
 
-  current_chunk = saved_chunk;
+ current_chunk = saved_chunk;
 
-  if (stack.empty()) {
-    return nullptr;
-  }
+ if (stack.empty()) {
+ return nullptr;
+ }
 
-  Value result = stack.top();
-  stack.pop();
-  return result;
-}
+ Value result = stack.top();
+ stack.pop();
+ return result;
+ }
 
 Value VM::executePersistent(const BytecodeChunk &chunk,
-                            const std::string &function_name,
-                            const std::vector<Value> &args) {
+                             const std::string &function_name,
+                             const std::vector<Value> &args) {
   const BytecodeChunk *saved_chunk = current_chunk;
   current_chunk = &chunk;
 
@@ -348,22 +338,20 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
     COMPILER_THROW("Function not found: " + function_name);
   }
 
-  suspendGC();
+   suspendGC();
 
-  // Save globals state (we may be inside a module closure that swapped
-  // globals). The persistent execution needs root-level globals that
-  // contain all host-registered globals (Type.isArray, math.PI, etc).
-  auto saved_globals = globals;
-  auto saved_globals_stack = globals_stack_;
+   // Save globals state (we may be inside a module closure that swapped
+   // globals). The persistent execution needs root-level globals that
+   // contain all host-registered globals (Type.isArray, math.PI, etc).
+   auto saved_globals = globals;
+   auto saved_globals_stack = globals_stack_;
 
-  // The caller (bc.execute_persistent host function) saves/restores
-  // locals, stack, and frames. We only clear them here for the
-  // persistent execution context.
-  while (!stack.empty()) {
-    stack.pop();
-  }
-  locals.clear();
-  frame_count_ = 0;
+   // The caller (bc.execute_persistent host function) saves/restores
+   // locals, stack, and frames. We only clear them here for the
+   // persistent execution context.
+   while (!stack.empty()) { stack.pop(); }
+   locals.clear();
+   frame_count_ = 0;
   // DON'T reset heap - preserves user globals
   if (!host_globals_registered_) {
     registerDefaultHostGlobals();
@@ -374,82 +362,81 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   has_current_exception_ = false;
   current_exception_ = nullptr;
 
-  if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}});
-  } else {
-    frame_arena_[frame_count_] =
-        CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}};
-  }
-  frame_count_++;
-  locals.resize(entry->local_count);
-
-  if (!args.empty()) {
-    if (args.size() != entry->param_count) {
-      COMPILER_THROW("Argument count mismatch for entry function '" +
-                     function_name + "' (expected " +
-                     std::to_string(entry->param_count) + ", got " +
-                     std::to_string(args.size()) + ")");
+    if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}});
+    } else {
+        frame_arena_[frame_count_] = CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}};
     }
+    frame_count_++;
+    locals.resize(entry->local_count);
 
-    for (uint32_t i = 0; i < entry->param_count; ++i) {
-      locals[i] = args[i];
-    }
-  }
-
-  runDispatchLoop(0);
-
-  std::unordered_map<std::string, Value> lazyModuleUpdates;
-  for (const auto &[name, desc] : lazy_modules_) {
-    if (desc.loaded) {
-      auto git = globals.find(name);
-      if (git != globals.end()) {
-        lazyModuleUpdates[name] = git->second;
-        for (const auto &alias : desc.aliases) {
-          auto aliasIt = globals.find(alias);
-          if (aliasIt != globals.end()) {
-            lazyModuleUpdates[alias] = aliasIt->second;
-          }
+	if (!args.empty()) {
+        if (args.size() != entry->param_count) {
+            COMPILER_THROW("Argument count mismatch for entry function '" +
+                           function_name + "' (expected " +
+                           std::to_string(entry->param_count) + ", got " +
+                           std::to_string(args.size()) + ")");
         }
-      }
+
+        for (uint32_t i = 0; i < entry->param_count; ++i) {
+            locals[i] = args[i];
+        }
     }
-  }
 
-  // Merge post-execution globals back into saved_globals so new REPL
-  // definitions (functions, variables) persist across executePersistent calls.
-  for (auto &[name, val] : globals) {
-    saved_globals[name] = std::move(val);
-  }
+    runDispatchLoop(0);
 
-  // Restore globals state so the calling module context is unbroken
-  globals = std::move(saved_globals);
-  globals_stack_ = std::move(saved_globals_stack);
+    std::unordered_map<std::string, Value> lazyModuleUpdates;
+    for (const auto &[name, desc] : lazy_modules_) {
+        if (desc.loaded) {
+            auto git = globals.find(name);
+            if (git != globals.end()) {
+                lazyModuleUpdates[name] = git->second;
+                for (const auto &alias : desc.aliases) {
+                    auto aliasIt = globals.find(alias);
+                    if (aliasIt != globals.end()) {
+                        lazyModuleUpdates[alias] = aliasIt->second;
+                    }
+                }
+            }
+        }
+    }
 
-  // Propagate lazy module objects to the restored globals
-  for (const auto &[name, value] : lazyModuleUpdates) {
-    globals[name] = value;
-  }
+    // Merge post-execution globals back into saved_globals so new REPL
+    // definitions (functions, variables) persist across executePersistent calls.
+    for (auto& [name, val] : globals) {
+        saved_globals[name] = std::move(val);
+    }
 
-  // Capture return value from the persistent execution's stack before
-  // the host function restores the caller's state.
-  Value persistent_result;
-  if (!stack.empty()) {
-    persistent_result = stack.top();
-    stack.pop();
-  }
+    // Restore globals state so the calling module context is unbroken
+    globals = std::move(saved_globals);
+    globals_stack_ = std::move(saved_globals_stack);
 
-  current_chunk = saved_chunk;
-  resumeGC();
+    // Propagate lazy module objects to the restored globals
+    for (const auto &[name, value] : lazyModuleUpdates) {
+        globals[name] = value;
+    }
 
-  return persistent_result;
+   // Capture return value from the persistent execution's stack before
+   // the host function restores the caller's state.
+   Value persistent_result;
+   if (!stack.empty()) {
+      persistent_result = stack.top();
+      stack.pop();
+   }
+
+   current_chunk = saved_chunk;
+   resumeGC();
+
+   return persistent_result;
 }
 
-// ============================================================================
-
+ // ============================================================================
+ 
 // ============================================================================
 
 bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
-
-  //
+  
+  // 
   // Used by WatcherRegistry::onVariableChanged() to re-evaluate
   // reactive conditions when watched variables change.
   //
@@ -459,7 +446,7 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
   // 3. Return top of stack as boolean
   //
   // Important: This runs in the current thread, not creating new fiber
-
+  
   // Fall back to main_chunk_ when current_chunk is null (e.g. when
   // called from ExecutionEngine::executeFrame after executePersistent
   // has returned and cleared current_chunk).
@@ -470,118 +457,119 @@ bool VM::evaluateConditionBytecode(uint32_t func_index, uint32_t ip) {
   if (!chunk) {
     return false;
   }
-
+  
   // Get function by index from resolved chunk
   if (func_index >= chunk->getFunctionCount()) {
     return false;
   }
-
+  
   const auto *func_entry = chunk->getFunction(func_index);
   if (!func_entry) {
     return false;
   }
+  
+// Save current stack state (conditions shouldn't consume/modify main stack)
+ std::stack<Value> saved_stack = stack;
+ size_t saved_frame_count = frame_count_;
+ auto saved_locals = locals;
+ auto saved_frame_arena = frame_arena_;
+ const BytecodeChunk *saved_chunk = current_chunk;
+ current_chunk = chunk;
 
-  // Save current stack state (conditions shouldn't consume/modify main stack)
-  std::stack<Value> saved_stack = stack;
-  size_t saved_frame_count = frame_count_;
-  auto saved_locals = locals;
-  auto saved_frame_arena = frame_arena_;
-  const BytecodeChunk *saved_chunk = current_chunk;
-  current_chunk = chunk;
+ try {
+ // Execute function and get result
+ (void)ip;
+ Value func_value = Value::makeFunctionObjId(func_index);
+ Value result = call(func_value, {});
 
-  try {
-    // Execute function and get result
-    (void)ip;
-    Value func_value = Value::makeFunctionObjId(func_index);
-    Value result = call(func_value, {});
+ bool condition_result = toBool(result);
 
-    bool condition_result = toBool(result);
+ stack = saved_stack;
+ frame_count_ = saved_frame_count;
+ locals = saved_locals;
+ frame_arena_ = saved_frame_arena;
+ current_chunk = saved_chunk;
 
-    stack = saved_stack;
-    frame_count_ = saved_frame_count;
-    locals = saved_locals;
-    frame_arena_ = saved_frame_arena;
-    current_chunk = saved_chunk;
-
-    return condition_result;
-  } catch (...) {
-    stack = saved_stack;
-    frame_count_ = saved_frame_count;
-    locals = saved_locals;
-    frame_arena_ = saved_frame_arena;
-    current_chunk = saved_chunk;
-    return false;
-  }
+ return condition_result;
+ } catch (...) {
+ stack = saved_stack;
+ frame_count_ = saved_frame_count;
+ locals = saved_locals;
+ frame_arena_ = saved_frame_arena;
+ current_chunk = saved_chunk;
+ return false;
+ }
 }
 
 Value VM::evaluateExpressionBytecode(uint32_t func_index, size_t ip) {
-  if (!current_chunk || func_index >= current_chunk->getFunctionCount()) {
-    return Value::makeNull();
-  }
-
-  std::stack<Value> saved_stack = stack;
-  size_t saved_frame_count = frame_count_;
-  auto saved_locals = locals;
-  auto saved_frame_arena = frame_arena_;
-
-  try {
-    (void)ip;
-    Value func_value = Value::makeFunctionObjId(func_index);
-    Value result = call(func_value, {});
-
-    stack = saved_stack;
-    frame_count_ = saved_frame_count;
-    locals = saved_locals;
-    frame_arena_ = saved_frame_arena;
-
-    return result;
-  } catch (...) {
-    stack = saved_stack;
-    frame_count_ = saved_frame_count;
-    locals = saved_locals;
-    frame_arena_ = saved_frame_arena;
-    return Value::makeNull();
-  }
-}
-
-void VM::registerSignal(const std::string &name, uint32_t func_id) {
-  auto tracker = std::make_shared<DependencyTracker>();
-  DependencyTrackerScope scope(tracker);
-
-  Value result = evaluateExpressionBytecode(func_id, 0);
-
-  auto deps = tracker->getGlobalDependencies();
-
-  setGlobal(name, result);
-
-  SignalBinding binding;
-  binding.name = name;
-  binding.func_id = func_id;
-  binding.ip = 0;
-  binding.dependencies = std::move(deps);
-  signalBindings_.push_back(std::move(binding));
-}
-
-void VM::processSignalBindings(const std::string &changed_var) {
-  for (auto &binding : signalBindings_) {
-    if (binding.dependencies.count(changed_var)) {
-      auto tracker = std::make_shared<DependencyTracker>();
-      DependencyTrackerScope scope(tracker);
-
-      Value result = evaluateExpressionBytecode(binding.func_id, 0);
-
-      binding.dependencies = tracker->getGlobalDependencies();
-
-      setGlobal(binding.name, result);
+    if (!current_chunk || func_index >= current_chunk->getFunctionCount()) {
+        return Value::makeNull();
     }
-  }
+
+    std::stack<Value> saved_stack = stack;
+    size_t saved_frame_count = frame_count_;
+    auto saved_locals = locals;
+    auto saved_frame_arena = frame_arena_;
+
+    try {
+        (void)ip;
+        Value func_value = Value::makeFunctionObjId(func_index);
+        Value result = call(func_value, {});
+
+        stack = saved_stack;
+        frame_count_ = saved_frame_count;
+        locals = saved_locals;
+        frame_arena_ = saved_frame_arena;
+
+        return result;
+    } catch (...) {
+        stack = saved_stack;
+        frame_count_ = saved_frame_count;
+        locals = saved_locals;
+        frame_arena_ = saved_frame_arena;
+        return Value::makeNull();
+    }
+}
+
+void VM::registerSignal(const std::string& name, uint32_t func_id) {
+    auto tracker = std::make_shared<DependencyTracker>();
+    DependencyTrackerScope scope(tracker);
+
+    Value result = evaluateExpressionBytecode(func_id, 0);
+
+    auto deps = tracker->getGlobalDependencies();
+
+    setGlobal(name, result);
+
+    SignalBinding binding;
+    binding.name = name;
+    binding.func_id = func_id;
+    binding.ip = 0;
+    binding.dependencies = std::move(deps);
+    signalBindings_.push_back(std::move(binding));
+}
+
+void VM::processSignalBindings(const std::string& changed_var) {
+    for (auto& binding : signalBindings_) {
+        if (binding.dependencies.count(changed_var)) {
+            auto tracker = std::make_shared<DependencyTracker>();
+            DependencyTrackerScope scope(tracker);
+
+            Value result = evaluateExpressionBytecode(binding.func_id, 0);
+
+            binding.dependencies = tracker->getGlobalDependencies();
+
+            setGlobal(binding.name, result);
+        }
+    }
 }
 
 // ============================================================================
 
 // ============================================================================
 
-VMExecutionResult::VMExecutionResult() : type(YIELD), result_value(nullptr) {}
+VMExecutionResult::VMExecutionResult()
+    : type(YIELD), result_value(nullptr) {}
 
 // ============================================================================
 
@@ -591,7 +579,7 @@ VMExecutionResult::VMExecutionResult() : type(YIELD), result_value(nullptr) {}
 // instruction in the current fiber, then returns control to the main loop.
 //
 // Key guarantee: No blocking. Always returns immediately after one instruction.
-//
+// 
 // Integration pattern in main loop:
 //   while (scheduler.hasRunnable()) {
 //     result = vm.executeOneStep(scheduler.current());
@@ -600,14 +588,14 @@ VMExecutionResult::VMExecutionResult() : type(YIELD), result_value(nullptr) {}
 //
 
 VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
-  if (!current_fiber) {
-    return VMExecutionResult::Error("No current fiber");
-  }
+if (!current_fiber) {
+return VMExecutionResult::Error("No current fiber");
+}
 
-  executing_in_fiber_ = true;
+executing_in_fiber_ = true;
 
-  // For now, execute from current VM state
-
+// For now, execute from current VM state
+  
   // Check if we have frames to execute
   if (frame_count_ == 0) {
     return VMExecutionResult::Suspended();
@@ -656,13 +644,11 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
       return VMExecutionResult::DebugBreak();
     }
 
-    // Check if exit was requested during this instruction (from exit() host
-    // function) Stop all goroutines immediately and return so the EventLoop
-    // shuts down cleanly
+    // Check if exit was requested during this instruction (from exit() host function)
+    // Stop all goroutines immediately and return so the EventLoop shuts down cleanly
     if (exit_requested_.load()) {
-      if (scheduler_)
-        scheduler_->stop();
-      return VMExecutionResult::Returned(nullptr);
+        if (scheduler_) scheduler_->stop();
+        return VMExecutionResult::Returned(nullptr);
     }
 
     // Increment IP if the instruction didn't modify it (no CALL/RETURN)
@@ -683,18 +669,16 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
 
       // Suspend the current fiber with the stored reason and context
       // The context pointer contains thread_id or other relevant data
-      void *context = suspension_context_;
-      SuspensionReason reason =
-          static_cast<SuspensionReason>(suspension_reason_);
-      suspension_reason_ = 0;
+      void* context = suspension_context_;
+      SuspensionReason reason = static_cast<SuspensionReason>(suspension_reason_);
       suspension_context_ = nullptr;
 
       if (current_fiber) {
         current_fiber->suspend(reason, context);
 
+
         if (reason == SuspensionReason::THREAD_JOIN) {
-          uint32_t thread_id =
-              static_cast<uint32_t>(reinterpret_cast<uintptr_t>(context));
+          uint32_t thread_id = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(context));
           registerThreadWait(thread_id, current_fiber);
         }
       }
@@ -710,26 +694,23 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
     if (!handleScriptThrow(thrown.value)) {
       std::string stackTrace = buildStackTrace(frame_count_);
-      uint32_t line = 0, column = 0;
-      std::string srcFile;
-      if (frame_count_ > 0) {
-        auto &frame = frame_arena_[frame_count_ - 1];
-        if (frame.function &&
-            frame.ip < frame.function->instruction_locations.size()) {
-          const auto loc = nearestSourceLocation(*frame.function, frame.ip);
-          line = loc.line;
-          column = loc.column;
-          srcFile = loc.filename;
-        }
-      }
-      std::string errorMsg = "Uncaught exception: " + toString(thrown.value);
-      if (line > 0 && !srcFile.empty()) {
-        errorMsg = ::havel::ErrorPrinter::formatErrorFromFile(
-            "Runtime Error", errorMsg, srcFile, (size_t)line, (size_t)column,
-            0);
-      } else if (line > 0) {
-        errorMsg += " at line " + std::to_string(line);
-      }
+  uint32_t line = 0, column = 0;
+  std::string srcFile;
+  if (frame_count_ > 0) {
+    auto &frame = frame_arena_[frame_count_ - 1];
+    if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
+      const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+      line = loc.line;
+      column = loc.column;
+      srcFile = loc.filename;
+    }
+  }
+  std::string errorMsg = "Uncaught exception: " + toString(thrown.value);
+  if (line > 0 && !srcFile.empty()) {
+    errorMsg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", errorMsg, srcFile, (size_t)line, (size_t)column, 0);
+  } else if (line > 0) {
+    errorMsg += " at line " + std::to_string(line);
+  }
       return VMExecutionResult::Error(errorMsg);
     }
     // Exception was caught and handled
@@ -739,17 +720,13 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
     std::string msg = e.what();
     if (frame_count_ > 0) {
       auto &frame = frame_arena_[frame_count_ - 1];
-      if (frame.function &&
-          frame.ip < frame.function->instruction_locations.size()) {
+      if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
         const auto loc = nearestSourceLocation(*frame.function, frame.ip);
         if (loc.line > 0) {
           if (!loc.filename.empty()) {
-            msg = ::havel::ErrorPrinter::formatErrorFromFile(
-                "Runtime Error", msg, loc.filename, (size_t)loc.line,
-                (size_t)loc.column, (size_t)loc.length);
+            msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", msg, loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
           } else {
-            msg += " at " + std::to_string(loc.line) + ":" +
-                   std::to_string(loc.column);
+            msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
           }
         }
       }
@@ -768,13 +745,13 @@ VMExecutionResult VM::executeOneStep(Fiber *current_fiber) {
 
 /**
  * loadFiberState - Copy fiber's suspended state into VM's global state
- *
+ * 
  * Called before executeOneStep() to restore a fiber that is resuming.
  * @param fiber The Fiber being resumed (must have suspended state)
  */
 void VM::loadFiberState(Fiber *fiber) {
   if (!fiber) {
-    return; // No-op for null fiber
+    return;  // No-op for null fiber
   }
 
   // STEP 1: Clear VM's current execution state
@@ -805,14 +782,13 @@ void VM::loadFiberState(Fiber *fiber) {
       // Extract numeric index from "_local_N" key
       if (name.find("_local_") == 0) {
         size_t idx = std::stoull(name.substr(7));
-        if (idx > max_local)
-          max_local = idx;
+        if (idx > max_local) max_local = idx;
       }
     }
-
+    
     // Resize locals to hold all saved locals in correct positions
     locals.resize(max_local + 1, Value::makeNull());
-
+    
     // Restore each local to its original position
     for (const auto &[name, value] : fiber->locals) {
       if (name.find("_local_") == 0) {
@@ -838,24 +814,18 @@ void VM::loadFiberState(Fiber *fiber) {
     const BytecodeChunk *resolve_chunk = fiber_frame.chunk_ptr;
     if (fiber_frame.function_id == 0xFFFFFFFF) {
       vm_frame.function = nullptr; // Special marker for hotkey action
-    } else if (resolve_chunk &&
-               fiber_frame.function_id < resolve_chunk->getFunctionCount()) {
+    } else if (resolve_chunk && fiber_frame.function_id < resolve_chunk->getFunctionCount()) {
       vm_frame.function = resolve_chunk->getFunction(fiber_frame.function_id);
       vm_frame.chunk = resolve_chunk;
-    } else if (current_chunk &&
-               fiber_frame.function_id < current_chunk->getFunctionCount()) {
+    } else if (current_chunk && fiber_frame.function_id < current_chunk->getFunctionCount()) {
       // Fallback: resolve from current chunk if no saved chunk
       vm_frame.function = current_chunk->getFunction(fiber_frame.function_id);
       vm_frame.chunk = current_chunk;
-      ::havel::debug("[VM] loadFiberState: No saved chunk, resolved function "
-                     "{} from current chunk",
-                     fiber_frame.function_id);
+      ::havel::debug("[VM] loadFiberState: No saved chunk, resolved function {} from current chunk", fiber_frame.function_id);
     }
 
     if (!vm_frame.function && fiber_frame.function_id != 0xFFFFFFFF) {
-      ::havel::warn(
-          "[VM] loadFiberState: Could not resolve function {} (chunk_ptr={})",
-          fiber_frame.function_id, (void *)resolve_chunk);
+      ::havel::warn("[VM] loadFiberState: Could not resolve function {} (chunk_ptr={})", fiber_frame.function_id, (void*)resolve_chunk);
     }
 
     vm_frame.ip = fiber_frame.ip;
@@ -866,10 +836,13 @@ void VM::loadFiberState(Fiber *fiber) {
 
     // Convert try_stack: both have same structure but different types
     vm_frame.try_stack.clear();
-    for (const auto &handler : fiber_frame.try_stack) {
-      vm_frame.try_stack.push_back(
-          VM::TryHandler{handler.catch_ip, handler.finally_ip,
-                         handler.finally_return_ip, handler.stack_depth});
+    for (const auto& handler : fiber_frame.try_stack) {
+      vm_frame.try_stack.push_back(VM::TryHandler{
+        handler.catch_ip,
+        handler.finally_ip,
+        handler.finally_return_ip,
+        handler.stack_depth
+      });
     }
 
     frame_count_++;
@@ -891,23 +864,23 @@ void VM::loadFiberState(Fiber *fiber) {
 
 /**
  * saveFiberState - Copy VM's current execution state back to fiber
- *
+ * 
  * Called after executeOneStep() to persist the fiber's progress.
  * Preserves all state so the fiber can be resumed later.
  * @param fiber The Fiber being suspended (receives current VM state)
  */
 void VM::saveFiberState(Fiber *fiber) {
   if (!fiber) {
-    return; // No-op for null fiber
+    return;  // No-op for null fiber
   }
 
   // STEP 1: Save operand stack from VM back to fiber's stack
   fiber->stack.clear();
-
+  
   // Convert VM's std::stack<Value> to fiber's FiberStack
   // std::stack is LIFO, so we need to extract in reverse order
   std::vector<Value> temp_values;
-  auto temp_stack = stack; // Copy the stack
+  auto temp_stack = stack;  // Copy the stack
   while (!temp_stack.empty()) {
     temp_values.push_back(temp_stack.top());
     temp_stack.pop();
@@ -920,26 +893,25 @@ void VM::saveFiberState(Fiber *fiber) {
   // STEP 2: Save locals from VM's vector back to fiber's map
   fiber->locals.clear();
   for (size_t i = 0; i < locals.size(); ++i) {
-
+    
     std::string key = "_local_" + std::to_string(i);
     fiber->locals[key] = locals[i];
   }
 
-  // STEP 3: Save call stack from VM back to fiber's call_stack
+  // STEP 3: Save call stack from VM back to fiber's call_stack  
   fiber->call_stack.clear();
   for (size_t i = 0; i < frame_count_; ++i) {
     const auto &vm_frame = frame_arena_[i];
-
+    
     // We need to create instances of the Fiber CallFrame type
-    // The type in fiber->call_stack is havel::compiler::CallFrame (from
-    // Fiber.hpp) We're currently inside VM class scope, so we need to
-    // explicitly qualify
-
+    // The type in fiber->call_stack is havel::compiler::CallFrame (from Fiber.hpp)
+    // We're currently inside VM class scope, so we need to explicitly qualify
+    
     // Get the correct CallFrame type from what fiber expects
     // by using a typedef based on fiber's vector
     using FiberCallFrameType = typename decltype(fiber->call_stack)::value_type;
     using TryHandlerType = typename FiberCallFrameType::TryHandler;
-
+    
     FiberCallFrameType fiber_cf;
     fiber_cf.ip = vm_frame.ip;
     fiber_cf.locals_base = vm_frame.locals_base;
@@ -949,20 +921,22 @@ void VM::saveFiberState(Fiber *fiber) {
     fiber_cf.owns_globals = vm_frame.owns_globals;
     fiber_cf.chunk_ptr = vm_frame.chunk;
     if (vm_frame.function && vm_frame.chunk) {
-      fiber_cf.function_id =
-          vm_frame.chunk->getFunctionIndex(vm_frame.function);
+      fiber_cf.function_id = vm_frame.chunk->getFunctionIndex(vm_frame.function);
     } else {
       fiber_cf.function_id = 0;
     }
-
+    
     // Convert try_stack: both have same structure but different types
     fiber_cf.try_stack.clear();
-    for (const auto &vm_handler : vm_frame.try_stack) {
-      fiber_cf.try_stack.push_back(
-          TryHandlerType{vm_handler.catch_ip, vm_handler.finally_ip,
-                         vm_handler.finally_return_ip, vm_handler.stack_depth});
+    for (const auto& vm_handler : vm_frame.try_stack) {
+      fiber_cf.try_stack.push_back(TryHandlerType{
+          vm_handler.catch_ip,
+          vm_handler.finally_ip,
+          vm_handler.finally_return_ip,
+          vm_handler.stack_depth
+      });
     }
-
+    
     fiber->call_stack.push_back(fiber_cf);
   }
 
@@ -976,104 +950,97 @@ void VM::saveFiberState(Fiber *fiber) {
   // Just ensure the fiber's state reflects current execution point
 }
 
-VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id,
-                                               uint32_t closure_id,
-                                               const std::vector<Value> &args) {
-  // Clear VM state for fresh goroutine context
-  while (!stack.empty())
-    stack.pop();
-  locals.clear();
-  immutable_locals_.clear();
-  frame_count_ = 0;
+VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
+    const std::vector<Value> &args) {
+    // Clear VM state for fresh goroutine context
+    while (!stack.empty()) stack.pop();
+    locals.clear();
+    immutable_locals_.clear();
+    frame_count_ = 0;
 
-  // Resolve chunk: closures carry their defining chunk
-  const BytecodeChunk *resolve_chunk = current_chunk;
-  if (closure_id > 0) {
-    auto *closure = heap_.closure(closure_id);
-    if (closure && closure->chunk) {
-      resolve_chunk = closure->chunk;
+    // Resolve chunk: closures carry their defining chunk
+    const BytecodeChunk *resolve_chunk = current_chunk;
+    if (closure_id > 0) {
+        auto *closure = heap_.closure(closure_id);
+        if (closure && closure->chunk) {
+            resolve_chunk = closure->chunk;
+        }
     }
-  }
 
-  if (!resolve_chunk) {
-    ::havel::error(
-        "[VM] startGoroutineCall: no chunk available for function {}",
-        function_id);
-    return GoroutineCallResult::Failed;
-  }
-
-  auto *func = resolve_chunk->getFunction(function_id);
-  if (!func) {
-    ::havel::error("[VM] startGoroutineCall: function {} not found in chunk "
-                   "({} functions)",
-                   function_id, resolve_chunk->getFunctionCount());
-    return GoroutineCallResult::Failed;
-  }
-
-  current_chunk = resolve_chunk;
-
-  func->execution_count++;
-  if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
-    hot_func_cb_(*func);
-  }
-
-  if (func->jit_compiled && jit_compiler_ && !debugger_attached_) {
-    uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
-    try {
-      jit_compiler_->executeCompiled(this, func->name, args);
-      setJITActiveClosurePublic(prev_jit_closure);
-      return GoroutineCallResult::JITExecuted;
-    } catch (const JitCoroutineSignal &) {
-      setJITActiveClosurePublic(prev_jit_closure);
-      // Fall through to interpreter path
+    if (!resolve_chunk) {
+        ::havel::error("[VM] startGoroutineCall: no chunk available for function {}", function_id);
+        return GoroutineCallResult::Failed;
     }
-  }
 
-  // Push args onto VM stack
-  for (const auto &arg : args) {
-    stack.push(arg);
-  }
+    auto *func = resolve_chunk->getFunction(function_id);
+    if (!func) {
+        ::havel::error("[VM] startGoroutineCall: function {} not found in chunk ({} functions)",
+            function_id, resolve_chunk->getFunctionCount());
+        return GoroutineCallResult::Failed;
+    }
 
-  // Set up locals with room for params + locals
-  size_t needed = std::max(func->local_count, func->param_count);
-  locals.resize(needed, nullptr);
+    current_chunk = resolve_chunk;
 
-  // Copy args into local slots
-  for (uint32_t i = 0; i < func->param_count && i < args.size(); ++i) {
-    locals[i] = args[i];
-  }
+    func->execution_count++;
+    if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
+        hot_func_cb_(*func);
+    }
 
-  // Set up the initial call frame
-  size_t stack_depth = stack.size();
-  CallFrame cf;
-  cf.function = func;
-  cf.chunk = resolve_chunk;
-  cf.ip = 0;
-  cf.locals_base = 0;
-  cf.closure_id = closure_id;
-  cf.stack_depth = static_cast<uint32_t>(stack_depth);
+    if (func->jit_compiled && jit_compiler_ && !debugger_attached_) {
+        uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
+        try {
+            jit_compiler_->executeCompiled(this, func->name, args);
+            setJITActiveClosurePublic(prev_jit_closure);
+            return GoroutineCallResult::JITExecuted;
+        } catch (const JitCoroutineSignal&) {
+            setJITActiveClosurePublic(prev_jit_closure);
+            // Fall through to interpreter path
+        }
+    }
 
-  if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(std::move(cf));
-  } else {
-    frame_arena_[frame_count_] = std::move(cf);
-  }
-  frame_count_++;
+    // Push args onto VM stack
+    for (const auto &arg : args) {
+        stack.push(arg);
+    }
 
-  return GoroutineCallResult::Interpreter;
+    // Set up locals with room for params + locals
+    size_t needed = std::max(func->local_count, func->param_count);
+    locals.resize(needed, nullptr);
+
+    // Copy args into local slots
+    for (uint32_t i = 0; i < func->param_count && i < args.size(); ++i) {
+        locals[i] = args[i];
+    }
+
+    // Set up the initial call frame
+    size_t stack_depth = stack.size();
+    CallFrame cf;
+    cf.function = func;
+    cf.chunk = resolve_chunk;
+    cf.ip = 0;
+    cf.locals_base = 0;
+    cf.closure_id = closure_id;
+    cf.stack_depth = static_cast<uint32_t>(stack_depth);
+
+    if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(std::move(cf));
+    } else {
+        frame_arena_[frame_count_] = std::move(cf);
+    }
+    frame_count_++;
+
+    return GoroutineCallResult::Interpreter;
 }
 
-bool VM::executeDirectCallThunk(const DirectCallThunk &thunk) {
-  for (const auto &call : thunk.calls) {
-    if (call.host_func_idx >= host_function_names_.size())
-      return false;
-    const std::string &name = host_function_names_[call.host_func_idx];
-    auto it = host_functions.find(name);
-    if (it == host_functions.end())
-      return false;
-    it->second(call.args);
-  }
-  return true;
+bool VM::executeDirectCallThunk(const DirectCallThunk& thunk) {
+    for (const auto& call : thunk.calls) {
+        if (call.host_func_idx >= host_function_names_.size()) return false;
+        const std::string& name = host_function_names_[call.host_func_idx];
+        auto it = host_functions.find(name);
+        if (it == host_functions.end()) return false;
+        it->second(call.args);
+    }
+    return true;
 }
 
 // ============================================================================
@@ -1084,7 +1051,7 @@ void VM::registerThreadWait(uint32_t thread_id, Fiber *fiber) {
   if (!fiber) {
     return;
   }
-
+  
   std::unique_lock<std::shared_mutex> lock(thread_wait_mutex_);
   thread_wait_map_[thread_id] = fiber;
 }
@@ -1096,20 +1063,19 @@ void VM::registerThreadWait(uint32_t thread_id, Fiber *fiber) {
 VM::CallerInfo VM::getCallerInfo(int depth) const {
   CallerInfo info;
   // Frame 0 is current function, so caller is at frame_count_ - 2 - depth
-  if (frame_count_ < 2)
-    return info;
+  if (frame_count_ < 2) return info;
 
   int targetFrame = static_cast<int>(frame_count_) - 2 - depth;
   if (targetFrame < 0 || static_cast<size_t>(targetFrame) >= frame_count_) {
     return info;
   }
 
-  const auto &frame = frame_arena_[static_cast<size_t>(targetFrame)];
+  const auto& frame = frame_arena_[static_cast<size_t>(targetFrame)];
   if (frame.function) {
     info.function = frame.function->name;
     uint32_t ip = frame.ip;
     if (ip < frame.function->instruction_locations.size()) {
-      const auto &loc = frame.function->instruction_locations[ip];
+      const auto& loc = frame.function->instruction_locations[ip];
       info.line = loc.line;
       info.column = loc.column;
     }
@@ -1118,7 +1084,7 @@ VM::CallerInfo VM::getCallerInfo(int depth) const {
   return info;
 }
 
-Fiber *VM::getThreadWaitingFiber(uint32_t thread_id) const {
+Fiber* VM::getThreadWaitingFiber(uint32_t thread_id) const {
   std::shared_lock<std::shared_mutex> lock(thread_wait_mutex_);
   auto it = thread_wait_map_.find(thread_id);
   return it != thread_wait_map_.end() ? it->second : nullptr;
@@ -1133,7 +1099,7 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
   std::shared_lock<std::shared_mutex> lock(thread_wait_mutex_);
   std::vector<uint32_t> result;
   result.reserve(thread_wait_map_.size());
-  for (const auto &[thread_id, fiber] : thread_wait_map_) {
+  for (const auto& [thread_id, fiber] : thread_wait_map_) {
     if (fiber) {
       result.push_back(thread_id);
     }
@@ -1150,12 +1116,9 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
 
   // Fast path: no profiling, no tracing, no instruction limit, no timer.
   // The common case for compute-heavy scripts like self-hosted compilation.
-  // GC check, exit check, and pending calls are batched every 8192
-  // instructions. Only suspension needs immediate handling; if it occurs, we
-  // fall through to slow path.
-  const bool use_fast_path = !debugger_attached_ && !has_profiling &&
-                             !has_tracing && !has_instruction_limit &&
-                             !has_timer;
+  // GC check, exit check, and pending calls are batched every 8192 instructions.
+  // Only suspension needs immediate handling; if it occurs, we fall through to slow path.
+  const bool use_fast_path = !debugger_attached_ && !has_profiling && !has_tracing && !has_instruction_limit && !has_timer;
 
   if (use_fast_path) {
 #if HAVE_COMPUTED_GOTO
@@ -1170,18 +1133,15 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     while (frame_count_ > stop_frame_depth) {
       counter++;
       if ((counter & 8191) == 0) {
-        if (exit_requested_.load())
-          break;
+        if (exit_requested_.load()) break;
         maybeCollectGarbage();
-        if (suspension_requested_)
-          goto slow_path;
+        if (suspension_requested_) goto slow_path;
         if (yield_callback_) {
-          yield_callback_();
+            yield_callback_();
         }
         if (!pending_calls.empty()) {
           processPendingCalls();
-          if (exit_requested_.load())
-            break;
+          if (exit_requested_.load()) break;
         }
       }
 
@@ -1207,19 +1167,15 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
           uint32_t line = 0, column = 0;
           if (frame_count_ > 0) {
             auto &frame = frame_arena_[frame_count_ - 1];
-            if (frame.function &&
-                frame.ip < frame.function->instruction_locations.size()) {
+            if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
               const auto loc = nearestSourceLocation(*frame.function, frame.ip);
-              line = loc.line;
-              column = loc.column;
+              line = loc.line; column = loc.column;
             }
           }
-          std::string errorMsg =
-              "Uncaught exception: " + toString(thrown.value);
+          std::string errorMsg = "Uncaught exception: " + toString(thrown.value);
           if (line > 0) {
             errorMsg += " at line " + std::to_string(line);
-            if (column > 0)
-              errorMsg += ":" + std::to_string(column);
+            if (column > 0) errorMsg += ":" + std::to_string(column);
           }
           throw ScriptError(thrown.value, errorMsg, stackTrace, line, column);
         }
@@ -1228,40 +1184,31 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         std::string msg = e.what();
         if (frame_count_ > 0) {
           auto &frame = frame_arena_[frame_count_ - 1];
-          if (frame.function &&
-              frame.ip < frame.function->instruction_locations.size()) {
+          if (frame.function && frame.ip < frame.function->instruction_locations.size()) {
             const auto loc = nearestSourceLocation(*frame.function, frame.ip);
             if (loc.line > 0) {
               if (!loc.filename.empty()) {
-                msg = ::havel::ErrorPrinter::formatErrorFromFile(
-                    "Runtime Error", std::string(e.what()), loc.filename,
-                    (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
+                msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
               } else {
-                msg += " at " + std::to_string(loc.line) + ":" +
-                       std::to_string(loc.column);
+                msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
               }
             }
           }
         }
-        Value exceptionValue =
-            Value::makeStringId(heap_.allocateString(msg).id);
-        if (handleScriptThrow(exceptionValue))
-          continue;
+        Value exceptionValue = Value::makeStringId(heap_.allocateString(msg).id);
+        if (handleScriptThrow(exceptionValue)) continue;
         throw std::runtime_error(msg);
       }
 
       if (debugger_attached_ && checkDebugBreak()) {
-        if (debug_break_cb_)
-          debug_break_cb_();
+        if (debug_break_cb_) debug_break_cb_();
       }
 
-      if (suspension_requested_)
-        goto slow_path;
+      if (suspension_requested_) goto slow_path;
 
       if (frame_count_ > stop_frame_depth) {
         active_frame_idx = frame_count_ - 1;
-        if (frame_count_ == entry_frame_count &&
-            frame_arena_[active_frame_idx].ip == ip) {
+        if (frame_count_ == entry_frame_count && frame_arena_[active_frame_idx].ip == ip) {
           frame_arena_[active_frame_idx].ip++;
         } else if (frame_count_ > entry_frame_count) {
           frame_arena_[entry_frame_count - 1].ip++;
@@ -1273,31 +1220,29 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   }
 
 slow_path:
-  // Full dispatch loop with all checks (for
-  // timer/profiling/tracing/scheduler/fiber modes)
+  // Full dispatch loop with all checks (for timer/profiling/tracing/scheduler/fiber modes)
   size_t fast_path_counter = 0;
-  while (frame_count_ > stop_frame_depth) {
-    fast_path_counter++;
-    if ((fast_path_counter & 4095) == 0) {
-      if (exit_requested_.load()) {
-        break;
-      }
-      maybeCollectGarbage();
-      if (yield_callback_) {
-        try {
-          yield_callback_();
-        } catch (const std::exception &e) {
-        } catch (...) {
+    while (frame_count_ > stop_frame_depth) {
+        fast_path_counter++;
+        if ((fast_path_counter & 4095) == 0) {
+        if (exit_requested_.load()) {
+            break;
         }
-      }
-    }
+            maybeCollectGarbage();
+            if (yield_callback_) {
+                try {
+                    yield_callback_();
+                } catch (const std::exception& e) {
+                } catch (...) {
+                }
+            }
+        }
 
     if (has_instruction_limit) {
       executed_instructions_++;
       if (executed_instructions_ > max_instructions_) {
         throw std::runtime_error("VM instruction limit exceeded (" +
-                                 std::to_string(max_instructions_) +
-                                 ") - possible infinite loop");
+          std::to_string(max_instructions_) + ") - possible infinite loop");
       }
     }
 
@@ -1310,6 +1255,7 @@ slow_path:
     }
 
     size_t active_frame_idx = frame_count_ - 1;
+
     const auto *function = frame_arena_[active_frame_idx].function;
     uint32_t ip = frame_arena_[active_frame_idx].ip;
     size_t entry_frame_count = frame_count_;
@@ -1328,39 +1274,39 @@ slow_path:
         executed_instructions_++;
       }
       if (has_tracing && current_chunk) {
-        auto funcName =
-            function->name.empty() ? std::string("<anon>") : function->name;
-        BytecodeDisassembler::Options opts;
-        opts.showLineNumbers = false;
-        opts.showSourceLocations = true;
-        opts.showConstantPool = false;
-        opts.showFunctionInfo = false;
-        opts.useLabels = true;
-        auto disasm = BytecodeDisassembler(*current_chunk)
-                          .formatInstruction(ip, instruction, opts);
-        std::fprintf(stderr, "\033[2m[trace] %3u %s:%u  %s\033[0m\n",
-                     static_cast<unsigned>(frame_count_), funcName.c_str(),
-                     static_cast<unsigned>(ip), disasm.c_str());
-      }
-      executeInstruction(instruction);
+                auto funcName = function->name.empty() ? std::string("<anon>") : function->name;
+                BytecodeDisassembler::Options opts;
+                opts.showLineNumbers = false;
+                opts.showSourceLocations = true;
+                opts.showConstantPool = false;
+                opts.showFunctionInfo = false;
+                opts.useLabels = true;
+                auto disasm = BytecodeDisassembler(*current_chunk).formatInstruction(
+                    ip, instruction, opts);
+                std::fprintf(stderr, "\033[2m[trace] %3u %s:%u  %s\033[0m\n",
+                             static_cast<unsigned>(frame_count_), funcName.c_str(),
+                             static_cast<unsigned>(ip), disasm.c_str());
+            }
+            executeInstruction(instruction);
       if ((fast_path_counter & 4095) == 0 && exit_requested_.load()) {
         break;
       }
 
       if (debugger_attached_ && checkDebugBreak()) {
-        if (debug_break_cb_)
-          debug_break_cb_();
+        if (debug_break_cb_) debug_break_cb_();
       }
-      if (suspension_requested_) {
+
+ if (suspension_requested_) {
         uint8_t reason = suspension_reason_;
-        void *ctx = suspension_context_;
+        void* ctx = suspension_context_;
         suspension_requested_ = false;
-        suspension_reason_ = 0;
         suspension_context_ = nullptr;
-        last_suspension_reason_ = reason;
-        last_suspension_context_ = ctx;
         if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
           if (scheduler_) {
+            // In scheduler/goroutine context: break out so processGoroutines
+            // can set the deadline on the WaitHandle and suspend properly
+            last_suspension_reason_ = reason;
+            last_suspension_context_ = ctx;
             break;
           }
           // Non-scheduler: blocking sleep inline with event processing
@@ -1368,23 +1314,25 @@ slow_path:
           if (ms > 0) {
             const int CHUNK = 10;
             auto deadline = std::chrono::steady_clock::now() +
-                            std::chrono::milliseconds(ms);
+                std::chrono::milliseconds(ms);
             while (std::chrono::steady_clock::now() < deadline) {
-              if (exit_requested_.load())
-                break;
+              if (exit_requested_.load()) break;
               processPendingEvents();
-              auto remaining =
-                  std::chrono::duration_cast<std::chrono::milliseconds>(
-                      deadline - std::chrono::steady_clock::now());
+              auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  deadline - std::chrono::steady_clock::now());
               auto chunk = std::min(static_cast<int>(remaining.count()), CHUNK);
               if (chunk > 0)
                 std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
             }
           }
         } else {
-          break;
-        }
-      }
+          // Non-SLEEP suspension (thread join, channel recv, await, etc.)
+          // Save suspension info for processGoroutines to read, then break
+           last_suspension_reason_ = reason;
+           last_suspension_context_ = ctx;
+           break;
+         }
+       }
     } catch (const ScriptThrow &thrown) {
       ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
       if (!handleScriptThrow(thrown.value)) {
@@ -1404,7 +1352,8 @@ slow_path:
           }
         }
 
-        std::string errorMsg = "Uncaught exception: " + toString(thrown.value);
+        std::string errorMsg =
+            "Uncaught exception: " + toString(thrown.value);
         if (line > 0) {
           errorMsg += " at line " + std::to_string(line);
           if (column > 0) {
@@ -1423,46 +1372,42 @@ slow_path:
         auto &frame = frame_arena_[frame_count_ - 1];
         if (frame.function &&
             frame.ip < frame.function->instruction_locations.size()) {
-          const auto loc = nearestSourceLocation(*frame.function, frame.ip);
-          if (loc.line > 0) {
-            if (!loc.filename.empty()) {
-              msg = ::havel::ErrorPrinter::formatErrorFromFile(
-                  "Runtime Error", std::string(e.what()), loc.filename,
-                  (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
-            } else {
-              msg += " at " + std::to_string(loc.line) + ":" +
-                     std::to_string(loc.column);
+            const auto loc = nearestSourceLocation(*frame.function, frame.ip);
+            if (loc.line > 0) {
+              if (!loc.filename.empty()) {
+                msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
+              } else {
+                msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+              }
             }
-          }
         }
       }
       // Try to handle as script exception first
       Value exceptionValue = Value::makeStringId(heap_.allocateString(msg).id);
       if (handleScriptThrow(exceptionValue)) {
-        continue; // Exception was caught by script-level handler
+        continue;  // Exception was caught by script-level handler
       }
       // No script handler found - treat as uncaught runtime error
       throw std::runtime_error(msg);
     }
 
     processPendingCalls();
-    if (exit_requested_.load()) {
-      break;
-    }
-
-    // CRITICAL: Re-fetch frame AFTER executeInstruction (vector may have
-    // reallocated). Only increment IP if the frame count didn't change
-    // (no CALL/RETURN) and the instruction didn't modify IP itself.
-    if (frame_count_ > stop_frame_depth) {
-      active_frame_idx = frame_count_ - 1;
-      if (frame_count_ == entry_frame_count &&
-          frame_arena_[active_frame_idx].ip == ip) {
-        frame_arena_[active_frame_idx].ip++;
-      } else if (frame_count_ > entry_frame_count) {
-        frame_arena_[entry_frame_count - 1].ip++;
+      if (exit_requested_.load()) {
+          break;
       }
+
+        // CRITICAL: Re-fetch frame AFTER executeInstruction (vector may have
+        // reallocated). Only increment IP if the frame count didn't change
+        // (no CALL/RETURN) and the instruction didn't modify IP itself.
+        if (frame_count_ > stop_frame_depth) {
+            active_frame_idx = frame_count_ - 1;
+            if (frame_count_ == entry_frame_count && frame_arena_[active_frame_idx].ip == ip) {
+                frame_arena_[active_frame_idx].ip++;
+            } else if (frame_count_ > entry_frame_count) {
+                frame_arena_[entry_frame_count - 1].ip++;
+            }
+        }
     }
-  }
 }
 
 bool VM::handleScriptThrow(const Value &value) {
@@ -1471,8 +1416,7 @@ bool VM::handleScriptThrow(const Value &value) {
 
   // Exception breakpoint: break on throw
   if (debugger_attached_ && debug_break_on_throw_) {
-    if (debug_break_cb_)
-      debug_break_cb_();
+    if (debug_break_cb_) debug_break_cb_();
   }
 
   while (frame_count_ > 0) {
@@ -1490,7 +1434,7 @@ bool VM::handleScriptThrow(const Value &value) {
       // If it is, something went wrong - reset to empty stack
       size_t target_depth = handler.stack_depth;
       if (target_depth > stack.size()) {
-        target_depth = 0; // Reset to empty if corrupted
+        target_depth = 0;  // Reset to empty if corrupted
       }
       while (stack.size() > target_depth) {
         stack.pop();
@@ -1498,15 +1442,32 @@ bool VM::handleScriptThrow(const Value &value) {
 
       // Jump to catch block (finally is compiled into the catch block if it
       // exists)
-      frame.ip = handler.catch_ip;
-      // Run deferred closures for this frame before resuming at catch
-      auto deferred_copy = frame.defer_stack;
-      frame.defer_stack.clear();
+        frame.ip = handler.catch_ip;
+        // Run deferred closures for this frame before resuming at catch
+        auto deferred_copy = frame.defer_stack;
+        frame.defer_stack.clear();
+        while (!deferred_copy.empty()) {
+          Value defer_fn = deferred_copy.back();
+          deferred_copy.pop_back();
+          if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
+            try {
+              callFunction(defer_fn, {});
+            } catch (...) {
+              // Swallow exceptions in deferred code during exception unwinding
+            }
+          }
+        }
+        return true;
+      }
+
+      auto finished = frame;
+      // Run deferred closures for this unwound frame
+      auto deferred_copy = finished.defer_stack;
+      finished.defer_stack.clear();
       while (!deferred_copy.empty()) {
         Value defer_fn = deferred_copy.back();
         deferred_copy.pop_back();
-        if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() ||
-            defer_fn.isHostFuncId()) {
+        if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
           try {
             callFunction(defer_fn, {});
           } catch (...) {
@@ -1514,26 +1475,7 @@ bool VM::handleScriptThrow(const Value &value) {
           }
         }
       }
-      return true;
-    }
-
-    auto finished = frame;
-    // Run deferred closures for this unwound frame
-    auto deferred_copy = finished.defer_stack;
-    finished.defer_stack.clear();
-    while (!deferred_copy.empty()) {
-      Value defer_fn = deferred_copy.back();
-      deferred_copy.pop_back();
-      if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() ||
-          defer_fn.isHostFuncId()) {
-        try {
-          callFunction(defer_fn, {});
-        } catch (...) {
-          // Swallow exceptions in deferred code during exception unwinding
-        }
-      }
-    }
-    frame_count_--;
+      frame_count_--;
 
     closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
                        static_cast<uint32_t>(locals.size()));
@@ -1544,8 +1486,7 @@ bool VM::handleScriptThrow(const Value &value) {
 
   // No handler found - exception is uncaught
   if (debugger_attached_ && debug_break_on_uncaught_) {
-    if (debug_break_cb_)
-      debug_break_cb_();
+    if (debug_break_cb_) debug_break_cb_();
   }
   return false;
 }
@@ -1592,43 +1533,44 @@ std::string VM::buildStackTrace(size_t frame_count) const {
   return trace;
 }
 
-Value VM::call(const Value &callee_value, const std::vector<Value> &args) {
-  std::lock_guard<std::recursive_mutex> lock(execution_mutex_);
-  if (!current_chunk) {
-    COMPILER_THROW(
-        "VM::call requires an active bytecode chunk (run execute first)");
-  }
+Value VM::call(const Value &callee_value,
+ const std::vector<Value> &args) {
+ std::lock_guard<std::recursive_mutex> lock(execution_mutex_);
+ if (!current_chunk) {
+ COMPILER_THROW(
+ "VM::call requires an active bytecode chunk (run execute first)");
+ }
 
-  const size_t base_depth = frame_count_;
-  doCall(callee_value, args);
-  runDispatchLoop(base_depth);
+ const size_t base_depth = frame_count_;
+ doCall(callee_value, args);
+ runDispatchLoop(base_depth);
 
-  if (stack.empty()) {
-    return nullptr;
-  }
-  Value result = stack.top();
-  stack.pop();
-  return result;
+ if (stack.empty()) {
+ return nullptr;
+ }
+ Value result = stack.top();
+ stack.pop();
+ return result;
 }
 
 void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(Value callee_value, std::vector<Value> args) {
-  tail_call_depth_ = 0;
+ tail_call_depth_ = 0;
 
-  // Handle host function call directly
-  if (callee_value.isHostFuncId()) {
-    uint32_t host_func_idx = callee_value.asHostFuncId();
-    if (host_func_idx >= host_function_names_.size()) {
-      COMPILER_THROW("Host function index out of range: " +
-                     std::to_string(host_func_idx));
-    }
-    const std::string &name = host_function_names_[host_func_idx];
-    auto it = host_functions.find(name);
-    if (it == host_functions.end()) {
-      COMPILER_THROW("Host function not found: " + name);
-    }
-    gc_suspend_counter_++;
+    // Handle host function call directly
+    if (callee_value.isHostFuncId()) {
+        uint32_t host_func_idx = callee_value.asHostFuncId();
+        if (host_func_idx >= host_function_names_.size()) {
+            COMPILER_THROW("Host function index out of range: " +
+                std::to_string(host_func_idx));
+        }
+            const std::string &name = host_function_names_[host_func_idx];
+            auto it = host_functions.find(name);
+        if (it == host_functions.end()) {
+            COMPILER_THROW("Host function not found: " + name);
+        }
+        gc_suspend_counter_++;
     Value result = it->second(args);
     gc_suspend_counter_--;
     pushStack(result);
@@ -1638,1495 +1580,1230 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
 
   if (frame_count_ >= max_call_depth_) {
     COMPILER_THROW("Stack overflow: maximum call depth " +
-                   std::to_string(max_call_depth_) + " reached");
-  }
+                             std::to_string(max_call_depth_) + " reached");
+	}
 
-  // Handle coroutine resume
-  if (callee_value.isCoroutineId()) {
-    uint32_t coId = callee_value.asCoroutineId();
-    auto *co = heap_.coroutine(coId);
-    if (!co) {
-      COMPILER_THROW("Coroutine not found: " + std::to_string(coId));
-    }
-    if (co->state == GCHeap::Coroutine::Done) {
+// Handle coroutine resume
+if (callee_value.isCoroutineId()) {
+uint32_t coId = callee_value.asCoroutineId();
+auto *co = heap_.coroutine(coId);
+if (!co) {
+    COMPILER_THROW("Coroutine not found: " + std::to_string(coId));
+}
+if (co->state == GCHeap::Coroutine::Done) {
       pushStack(Value::makeNull());
       return;
     }
 
-    {
-      GCHeap::CallerFrame cf;
-      cf.coroutine_id = current_coroutine_id_;
-      cf.frame_count = frame_count_;
-      cf.ip = currentFrame().ip + 1;
-      cf.locals = locals;
-      {
-        std::vector<Value> tmp;
-        while (!stack.empty()) {
-          tmp.push_back(stack.top());
-          stack.pop();
-        }
-        for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
-          cf.stack.push_back(*it);
-        }
-      }
-      co->caller_stack.push_back(std::move(cf));
-    }
-    current_coroutine_id_ = coId;
+            {
+                GCHeap::CallerFrame cf;
+                cf.coroutine_id = current_coroutine_id_;
+                cf.frame_count = frame_count_;
+                cf.ip = currentFrame().ip + 1;
+                cf.locals = locals;
+                {
+                    std::vector<Value> tmp;
+                    while (!stack.empty()) {
+                        tmp.push_back(stack.top());
+                        stack.pop();
+                    }
+                    for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+                        cf.stack.push_back(*it);
+                    }
+                }
+                co->caller_stack.push_back(std::move(cf));
+            }
+current_coroutine_id_ = coId;
 
-    const auto *co_chunk = co->chunk ? co->chunk : current_chunk;
-    const auto *func =
-        co_chunk ? co_chunk->getFunction(co->function_index) : nullptr;
-    if (!func) {
-      COMPILER_THROW("Function not found for coroutine");
-    }
+const auto *co_chunk = co->chunk ? co->chunk : current_chunk;
+const auto *func = co_chunk ? co_chunk->getFunction(co->function_index) : nullptr;
+if (!func) {
+COMPILER_THROW("Function not found for coroutine");
+}
 
-    locals = co->locals;
+locals = co->locals;
 
-    immutable_locals_.clear();
+immutable_locals_.clear();
 
-    size_t coroutine_stack_depth = stack.size();
-    if (frame_arena_.size() <= frame_count_) {
-      frame_arena_.push_back(
-          CallFrame{func, co_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}});
-    } else {
-      frame_arena_[frame_count_] =
-          CallFrame{func, co_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}};
-    }
-    frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
-    frame_count_++;
+size_t coroutine_stack_depth = stack.size();
+if (frame_arena_.size() <= frame_count_) {
+frame_arena_.push_back(CallFrame{func, co_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}});
+} else {
+frame_arena_[frame_count_] = CallFrame{func, co_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}};
+}
+      frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
+      frame_count_++;
 
     co->state = GCHeap::Coroutine::Runnable;
     return;
   }
 
-  uint32_t function_index = 0;
-  uint32_t closure_id = 0;
-  const BytecodeChunk *resolve_chunk = current_chunk;
-  std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
-  if (callee_value.isFunctionObjId()) {
-    function_index = callee_value.asFunctionObjId();
-    if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
-      if (main_chunk_ && main_chunk_->getFunction(function_index)) {
-        resolve_chunk = main_chunk_.get();
-      } else {
-        for (auto &pc : persistent_chunks_) {
-          if (pc && pc->getFunction(function_index)) {
-            resolve_chunk = pc.get();
-            break;
-          }
-          uint32_t function_index = 0;
-          uint32_t closure_id = 0;
-          const BytecodeChunk *resolve_chunk = current_chunk;
-          std::shared_ptr<std::unordered_map<std::string, Value>>
-              closure_globals;
-          ::havel::error("[VM-DEBUG] doCall callee: isFuncObj={} isClosure={}",
-                         callee_value.isFunctionObjId(),
-                         callee_value.isClosureId());
-          if (callee_value.isFunctionObjId()) {
+uint32_t function_index = 0;
+uint32_t closure_id = 0;
+const BytecodeChunk *resolve_chunk = current_chunk;
+std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
+if (callee_value.isFunctionObjId()) {
             function_index = callee_value.asFunctionObjId();
             if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
-              if (main_chunk_ && main_chunk_->getFunction(function_index)) {
-                resolve_chunk = main_chunk_.get();
-              } else {
-                for (auto &pc : persistent_chunks_) {
-                  if (pc && pc->getFunction(function_index)) {
-                    resolve_chunk = pc.get();
-                    break;
-                  }
+                if (main_chunk_ && main_chunk_->getFunction(function_index)) {
+                    resolve_chunk = main_chunk_.get();
+                } else {
+                    for (auto& pc : persistent_chunks_) {
+                        if (pc && pc->getFunction(function_index)) {
+                            resolve_chunk = pc.get();
+                            break;
+                        }
+                    }
                 }
-              }
             }
-          } else if (callee_value.isClosureId()) {
-            closure_id = callee_value.asClosureId();
-            auto *closure = heap_.closure(closure_id);
-            if (!closure) {
-              COMPILER_THROW("Closure not found for call (id=" +
-                             std::to_string(closure_id) + ")");
-            }
-            function_index = closure->function_index;
-            if (closure->chunk) {
-              resolve_chunk = closure->chunk;
-            }
-            if (closure->module_globals) {
-              closure_globals = closure->module_globals;
-            }
-          } else {
+        } else if (callee_value.isClosureId()) {
+		closure_id = callee_value.asClosureId();
+		auto *closure = heap_.closure(closure_id);
+		if (!closure) {
+			COMPILER_THROW("Closure not found for call (id=" + std::to_string(closure_id) + ")");
+		}
+		function_index = closure->function_index;
+ if (closure->chunk) {
+ resolve_chunk = closure->chunk;
+ }
+ if (closure->module_globals) {
+ closure_globals = closure->module_globals;
+ }
+ } else {
             // Debug: identify what type the value actually is
             std::string typeInfo = "unknown";
-            if (callee_value.isNull())
-              typeInfo = "null";
-            else if (callee_value.isInt())
-              typeInfo = "int";
-            else if (callee_value.isDouble())
-              typeInfo = "double";
-            else if (callee_value.isBool())
-              typeInfo = "bool";
-            else if (callee_value.isStringValId()) {
-              typeInfo =
-                  current_chunk
-                      ? std::string("string_val_id='") +
-                            current_chunk->getString(
-                                callee_value.asStringValId()) +
-                            "'"
-                      : std::string("string_val_id=<") +
-                            std::to_string(callee_value.asStringValId()) + ">";
-            } else if (callee_value.isStringId()) {
-              auto *sp = heap_.string(callee_value.asStringId());
-              typeInfo = sp ? std::string("string_id='") + *sp + "'"
-                            : std::string("string_id=<") +
-                                  std::to_string(callee_value.asStringId()) +
-                                  ">";
-            } else if (callee_value.isObjectId())
-              typeInfo = "object_id";
-            else if (callee_value.isArrayId())
-              typeInfo = "array_id";
-            else if (callee_value.isHostFuncId())
-              typeInfo = "host_func_id";
-            else if (callee_value.isFunctionObjId())
-              typeInfo = "function_obj_id";
-            else if (callee_value.isClosureId())
-              typeInfo = "closure_id (unexpected)";
-            else if (callee_value.isCoroutineId())
-              typeInfo = "coroutine_id (should have been caught)";
-            // Dump call stack for debugging
-            std::string frameInfo;
-            for (int fi = static_cast<int>(frame_count_) - 1;
-                 fi >= 0 && fi >= static_cast<int>(frame_count_) - 8; --fi) {
-              auto &fr = frame_arena_[fi];
-              std::string fname = fr.function ? fr.function->name : "<anon>";
-              frameInfo += "  frame[" + std::to_string(fi) + "] " + fname +
-                           " ip=" + std::to_string(fr.ip) + "\n";
-            }
-            // Dump instructions around the failing IP
-            std::string instrInfo;
-            auto &cf = currentFrame();
-            if (cf.function && cf.ip < cf.function->instructions.size()) {
-              uint32_t start = cf.ip > 15 ? cf.ip - 15 : 0;
-              uint32_t end = std::min(cf.function->instructions.size(),
-                                      static_cast<size_t>(cf.ip + 5));
-              for (uint32_t ii = start; ii < end; ++ii) {
-                auto &inst = cf.function->instructions[ii];
-                std::string marker = (ii == cf.ip) ? " >>> " : "     ";
-                instrInfo += marker + std::to_string(ii) + ": op=" +
-                             std::to_string(static_cast<int>(inst.opcode));
-                for (size_t oi = 0; oi < inst.operands.size(); ++oi) {
-                  instrInfo += " op" + std::to_string(oi) + "=";
-                  if (inst.operands[oi].isStringValId() && resolve_chunk) {
-                    instrInfo += "'" +
-                                 resolve_chunk->getString(
-                                     inst.operands[oi].asStringValId()) +
-                                 "'";
-                  } else {
-                    instrInfo += inst.operands[oi].toString();
-                  }
-                }
-                instrInfo += "\n";
-              }
-            }
-            COMPILER_THROW(
-                "CALL expects function or closure as callee (got " + typeInfo +
-                ") [callee_bits=" + std::to_string(callee_value.rawBits()) +
-                ", ip=" + std::to_string(currentFrame().ip) +
-                "]\nCall stack:\n" + frameInfo + "Instructions:\n" + instrInfo);
-          }
+        if (callee_value.isNull()) typeInfo = "null";
+        else if (callee_value.isInt()) typeInfo = "int";
+        else if (callee_value.isDouble()) typeInfo = "double";
+        else if (callee_value.isBool()) typeInfo = "bool";
+else if (callee_value.isStringValId()) {
+		typeInfo = current_chunk ? std::string("string_val_id='") + current_chunk->getString(callee_value.asStringValId()) + "'"
+		                         : std::string("string_val_id=<") + std::to_string(callee_value.asStringValId()) + ">";
+	}
+	else if (callee_value.isStringId()) {
+		auto *sp = heap_.string(callee_value.asStringId());
+		typeInfo = sp ? std::string("string_id='") + *sp + "'" : std::string("string_id=<") + std::to_string(callee_value.asStringId()) + ">";
+	}
+	else if (callee_value.isObjectId()) typeInfo = "object_id";
+	else if (callee_value.isArrayId()) typeInfo = "array_id";
+	else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
+	else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
+	else if (callee_value.isClosureId()) typeInfo = "closure_id (unexpected)";
+	else if (callee_value.isCoroutineId()) typeInfo = "coroutine_id (should have been caught)";
+	// Dump call stack for debugging
+	std::string frameInfo;
+	for (int fi = static_cast<int>(frame_count_) - 1; fi >= 0 && fi >= static_cast<int>(frame_count_) - 8; --fi) {
+		auto &fr = frame_arena_[fi];
+		std::string fname = fr.function ? fr.function->name : "<anon>";
+		frameInfo += "  frame[" + std::to_string(fi) + "] " + fname + " ip=" + std::to_string(fr.ip) + "\n";
+	}
+	// Dump instructions around the failing IP
+	std::string instrInfo;
+	auto &cf = currentFrame();
+	if (cf.function && cf.ip < cf.function->instructions.size()) {
+		uint32_t start = cf.ip > 15 ? cf.ip - 15 : 0;
+		uint32_t end = std::min(cf.function->instructions.size(), static_cast<size_t>(cf.ip + 5));
+		for (uint32_t ii = start; ii < end; ++ii) {
+			auto &inst = cf.function->instructions[ii];
+			std::string marker = (ii == cf.ip) ? " >>> " : "     ";
+			instrInfo += marker + std::to_string(ii) + ": op=" + std::to_string(static_cast<int>(inst.opcode));
+			for (size_t oi = 0; oi < inst.operands.size(); ++oi) {
+				instrInfo += " op" + std::to_string(oi) + "=";
+				if (inst.operands[oi].isStringValId() && resolve_chunk) {
+					instrInfo += "'" + resolve_chunk->getString(inst.operands[oi].asStringValId()) + "'";
+				} else {
+					instrInfo += inst.operands[oi].toString();
+				}
+			}
+			instrInfo += "\n";
+		}
+	}
+	COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ") [callee_bits=" + std::to_string(callee_value.rawBits()) + ", ip=" + std::to_string(currentFrame().ip) + "]\nCall stack:\n" + frameInfo + "Instructions:\n" + instrInfo);
+    }
 
-          if (!resolve_chunk) {
-            COMPILER_THROW("No chunk available for function call");
-          }
-
-          const auto *callee = resolve_chunk->getFunction(function_index);
-          if (!callee) {
-            COMPILER_THROW("Function index not found: " +
-                           std::to_string(function_index));
-          }
-
-          callee->execution_count++;
-          if (callee->execution_count == 1000 && hot_func_cb_ &&
-              !debugger_attached_) {
-            hot_func_cb_(*callee);
-          }
-
-          if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
-            uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
-            try {
-              Value result =
-                  jit_compiler_->executeCompiled(this, callee->name, args);
-              setJITActiveClosurePublic(prev_jit_closure);
-              pushStack(result);
-              return;
-            } catch (const JitCoroutineSignal &) {
-              // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
-              // that requires interpreter frame management. Fall back to
-              // the interpreter path below to execute this function call.
-              setJITActiveClosurePublic(prev_jit_closure);
-// Fall through to normal interpreter call path
-            } catch (...) {
-              setJITActiveClosurePublic(prev_jit_closure);
-              throw;
-            }
-          }
-        }
-      }
-      else if (callee_value.isClosureId()) {
-        closure_id = callee_value.asClosureId();
-        auto *closure = heap_.closure(closure_id);
-        if (!closure) {
-          COMPILER_THROW("Closure not found for call (id=" +
-                         std::to_string(closure_id) + ")");
-        }
-        function_index = closure->function_index;
-        if (closure->chunk) {
-          resolve_chunk = closure->chunk;
-        }
-        if (closure->module_globals) {
-          closure_globals = closure->module_globals;
-        }
-      }
-      else {
-        // Debug: identify what type the value actually is
-        std::string typeInfo = "unknown";
-        if (callee_value.isNull())
-          typeInfo = "null";
-        else if (callee_value.isInt())
-          typeInfo = "int";
-        else if (callee_value.isDouble())
-          typeInfo = "double";
-        else if (callee_value.isBool())
-          typeInfo = "bool";
-        else if (callee_value.isStringValId()) {
-          typeInfo =
-              current_chunk
-                  ? std::string("string_val_id='") +
-                        current_chunk->getString(callee_value.asStringValId()) +
-                        "'"
-                  : std::string("string_val_id=<") +
-                        std::to_string(callee_value.asStringValId()) + ">";
-        } else if (callee_value.isStringId()) {
-          auto *sp = heap_.string(callee_value.asStringId());
-          typeInfo = sp ? std::string("string_id='") + *sp + "'"
-                        : std::string("string_id=<") +
-                              std::to_string(callee_value.asStringId()) + ">";
-        } else if (callee_value.isObjectId())
-          typeInfo = "object_id";
-        else if (callee_value.isArrayId())
-          typeInfo = "array_id";
-        else if (callee_value.isHostFuncId())
-          typeInfo = "host_func_id";
-        else if (callee_value.isFunctionObjId())
-          typeInfo = "function_obj_id";
-        else if (callee_value.isClosureId())
-          typeInfo = "closure_id (unexpected)";
-        else if (callee_value.isCoroutineId())
-          typeInfo = "coroutine_id (should have been caught)";
-        // Dump call stack for debugging
-        std::string frameInfo;
-        for (int fi = static_cast<int>(frame_count_) - 1;
-             fi >= 0 && fi >= static_cast<int>(frame_count_) - 8; --fi) {
-          auto &fr = frame_arena_[fi];
-          std::string fname = fr.function ? fr.function->name : "<anon>";
-          frameInfo += "  frame[" + std::to_string(fi) + "] " + fname +
-                       " ip=" + std::to_string(fr.ip) + "\n";
-        }
-        // Dump instructions around the failing IP
-        std::string instrInfo;
-        auto &cf = currentFrame();
-        if (cf.function && cf.ip < cf.function->instructions.size()) {
-          uint32_t start = cf.ip > 15 ? cf.ip - 15 : 0;
-          uint32_t end = std::min(cf.function->instructions.size(),
-                                  static_cast<size_t>(cf.ip + 5));
-          for (uint32_t ii = start; ii < end; ++ii) {
-            auto &inst = cf.function->instructions[ii];
-            std::string marker = (ii == cf.ip) ? " >>> " : "     ";
-            instrInfo += marker + std::to_string(ii) + ": op=" +
-                         std::to_string(static_cast<int>(inst.opcode));
-            for (size_t oi = 0; oi < inst.operands.size(); ++oi) {
-              instrInfo += " op" + std::to_string(oi) + "=";
-              if (inst.operands[oi].isStringValId() && resolve_chunk) {
-                instrInfo += "'" +
-                             resolve_chunk->getString(
-                                 inst.operands[oi].asStringValId()) +
-                             "'";
-              } else {
-                instrInfo += inst.operands[oi].toString();
-              }
-            }
-            instrInfo += "\n";
-          }
-        }
-        COMPILER_THROW(
-            "CALL expects function or closure as callee (got " + typeInfo +
-            ") [callee_bits=" + std::to_string(callee_value.rawBits()) +
-            ", ip=" + std::to_string(currentFrame().ip) + "]\nCall stack:\n" +
-            frameInfo + "Instructions:\n" + instrInfo);
-      }
-
-      if (!resolve_chunk) {
+    if (!resolve_chunk) {
         COMPILER_THROW("No chunk available for function call");
-      }
+    }
 
-      const auto *callee = resolve_chunk->getFunction(function_index);
-      if (!callee) {
-        COMPILER_THROW("Function index not found: " +
-                       std::to_string(function_index));
-      }
+const auto *callee = resolve_chunk->getFunction(function_index);
+if (!callee) {
+    COMPILER_THROW("Function index not found: " +
+        std::to_string(function_index));
+}
 
-      callee->execution_count++;
-      if (callee->execution_count == 1000 && hot_func_cb_ &&
-          !debugger_attached_) {
-        hot_func_cb_(*callee);
-      }
 
-      if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
+callee->execution_count++;
+ if (callee->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
+ hot_func_cb_(*callee);
+ }
+
+    if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
         uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
         try {
-          Value result =
-              jit_compiler_->executeCompiled(this, callee->name, args);
-          setJITActiveClosurePublic(prev_jit_closure);
-          pushStack(result);
-          return;
-        } catch (const JitCoroutineSignal &) {
-          // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
-          // that requires interpreter frame management. Fall back to
-          // the interpreter path below to execute this function call.
-          setJITActiveClosurePublic(prev_jit_closure);
-          // Fall through to normal interpreter call path
+            Value result = jit_compiler_->executeCompiled(this, callee->name, args);
+            setJITActiveClosurePublic(prev_jit_closure);
+            pushStack(result);
+            return;
+        } catch (const JitCoroutineSignal&) {
+            // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
+            // that requires interpreter frame management. Fall back to
+            // the interpreter path below to execute this function call.
+            setJITActiveClosurePublic(prev_jit_closure);
+            // Fall through to normal interpreter call path
         } catch (...) {
-          setJITActiveClosurePublic(prev_jit_closure);
-          throw;
+            setJITActiveClosurePublic(prev_jit_closure);
+            throw;
         }
-      }
+    }
 
-      // If so, create a coroutine object and return it instead of executing
-      if (callee->is_generator) {
-        uint32_t coId = heap_.allocateCoroutine(function_index, 0);
-        auto *co = heap_.coroutine(coId);
-        co->state = GCHeap::Coroutine::Runnable;
-        co->closure_id = closure_id;
-        co->chunk = resolve_chunk;
 
-        // Save the caller's locals so nested generators can access outer
-        // frames' values
-        {
-          GCHeap::CallerFrame cf;
-          cf.coroutine_id = current_coroutine_id_;
-          cf.frame_count = frame_count_;
-          cf.ip = 0;
-          cf.locals = locals;
-          co->caller_stack.push_back(std::move(cf));
-        }
+    // If so, create a coroutine object and return it instead of executing
+if (callee->is_generator) {
+uint32_t coId = heap_.allocateCoroutine(function_index, 0);
+auto *co = heap_.coroutine(coId);
+co->state = GCHeap::Coroutine::Runnable;
+co->closure_id = closure_id;
+co->chunk = resolve_chunk;
 
-        // Generators should NOT copy parent's locals into their own locals.
-        // The generator's locals are for its own variables only.
-        // Upvalues are accessed through the closure, not through copied locals.
-        co->locals.resize(std::max(callee->local_count, callee->param_count),
-                          nullptr);
+            // Save the caller's locals so nested generators can access outer frames' values
+            {
+                GCHeap::CallerFrame cf;
+                cf.coroutine_id = current_coroutine_id_;
+                cf.frame_count = frame_count_;
+                cf.ip = 0;
+                cf.locals = locals;
+                co->caller_stack.push_back(std::move(cf));
+            }
 
-        // Close all open upvalues in the closure by copying their current
-        // values. For generators, upvalues must be closed because the generator
-        // runs in its own isolated locals context and can't access outer
-        // frames' locals directly. Special case for nested generators: if the
-        // upvalue points to an outer frame, use the caller coroutine's
-        // caller_stack locals to access the value.
-        if (closure_id != 0) {
-          auto *closure = heap_.closure(closure_id);
-          if (closure) {
-            for (auto &cell : closure->upvalues) {
-              if (cell && cell->is_open) {
-                uint32_t abs_index = cell->locals_base + cell->open_index;
+// Generators should NOT copy parent's locals into their own locals.
+// The generator's locals are for its own variables only.
+// Upvalues are accessed through the closure, not through copied locals.
+ co->locals.resize(std::max(callee->local_count, callee->param_count), nullptr);
 
-                Value closed_val;
-                bool found = false;
+// Close all open upvalues in the closure by copying their current values.
+// For generators, upvalues must be closed because the generator runs in its own
+// isolated locals context and can't access outer frames' locals directly.
+                    // Special case for nested generators: if the upvalue points to an outer frame,
+                    // use the caller coroutine's caller_stack locals to access the value.
+if (closure_id != 0) {
+auto *closure = heap_.closure(closure_id);
+if (closure) {
+    for (auto &cell : closure->upvalues) {
+        if (cell && cell->is_open) {
+            uint32_t abs_index = cell->locals_base + cell->open_index;
 
-                if (abs_index < locals.size()) {
-                  closed_val = locals[abs_index];
-                  if (!closed_val.isNull()) {
+Value closed_val;
+bool found = false;
+
+if (abs_index < locals.size()) {
+    closed_val = locals[abs_index];
+    if (!closed_val.isNull()) {
+        found = true;
+    }
+}
+
+if (!found && current_coroutine_id_ != UINT32_MAX) {
+    auto* walker = heap_.coroutine(current_coroutine_id_);
+    while (walker && !found) {
+        for (auto cs_it = walker->caller_stack.rbegin();
+             cs_it != walker->caller_stack.rend() && !found; ++cs_it) {
+            if (abs_index < cs_it->locals.size()) {
+                closed_val = cs_it->locals[abs_index];
+                if (!closed_val.isNull()) {
                     found = true;
-                  }
                 }
-
-                if (!found && current_coroutine_id_ != UINT32_MAX) {
-                  auto *walker = heap_.coroutine(current_coroutine_id_);
-                  while (walker && !found) {
-                    for (auto cs_it = walker->caller_stack.rbegin();
-                         cs_it != walker->caller_stack.rend() && !found;
-                         ++cs_it) {
-                      if (abs_index < cs_it->locals.size()) {
-                        closed_val = cs_it->locals[abs_index];
-                        if (!closed_val.isNull()) {
-                          found = true;
-                        }
-                      }
-                    }
-                    if (walker->caller_stack.empty())
-                      break;
-                    uint32_t parent_id =
-                        walker->caller_stack.back().coroutine_id;
-                    if (parent_id == current_coroutine_id_ ||
-                        parent_id == UINT32_MAX)
-                      break;
-                    walker = heap_.coroutine(parent_id);
-                  }
-                }
-
-                cell->closed_value = found ? closed_val : Value::makeNull();
-                cell->is_open = false;
-                open_upvalues.erase(abs_index);
-              }
             }
-          }
         }
+        if (walker->caller_stack.empty()) break;
+        uint32_t parent_id = walker->caller_stack.back().coroutine_id;
+        if (parent_id == current_coroutine_id_ || parent_id == UINT32_MAX) break;
+        walker = heap_.coroutine(parent_id);
+    }
+}
 
-        co->ip = 0;
+cell->closed_value = found ? closed_val : Value::makeNull();
+cell->is_open = false;
+open_upvalues.erase(abs_index);
+}
+}
+}
+}
 
-        // Copy args into coroutine locals (same as normal call)
-        size_t base = 0;
-        for (uint32_t i = 0; i < callee->param_count; i++) {
-          if (i < args.size()) {
-            co->locals[base + i] = std::move(args[i]);
-          } else if (i < callee->default_values.size() &&
-                     callee->default_values[i]) {
-            co->locals[base + i] = (*callee->default_values[i]);
-          }
-        }
+co->ip = 0;
 
-        Value coroutineValue = Value::makeCoroutineId(coId);
-        pushStack(coroutineValue);
-        return;
-      }
-
-      // Debug
-      (void)callee_value;
-
-      // Allow fewer arguments than parameters (for default parameters)
-      // For variadic functions, allow MORE arguments than parameters
-      // Silently drop excess args for non-variadic functions (callback-safe)
-      if (callee->variadic_param_index == UINT32_MAX &&
-          args.size() > callee->param_count) {
-        args.resize(callee->param_count);
-      }
-
-      // For variadic functions, require at least as many args as non-variadic
-      // params
-      if (callee->variadic_param_index != UINT32_MAX &&
-          args.size() < callee->variadic_param_index) {
-        COMPILER_THROW("Argument count mismatch calling function index " +
-                       std::to_string(function_index) + " (expected at least " +
-                       std::to_string(callee->variadic_param_index) + ", got " +
-                       std::to_string(args.size()) + ")");
-      }
-
-      current_chunk = resolve_chunk;
-
-      bool frame_owns_globals = false;
-      if (closure_globals) {
-        globals_stack_.push_back(std::move(globals));
-        globals = *closure_globals;
-        frame_owns_globals = true;
-      }
-
-      size_t base = locals.size();
-      size_t stack_depth = stack.size(); // Save current stack depth
-      size_t needed_locals = std::max(callee->local_count, callee->param_count);
-      locals.resize(base + needed_locals, nullptr);
-      {
-        CallFrame cf;
-        cf.function = callee;
-        cf.chunk = resolve_chunk;
-        cf.ip = 0;
-        cf.locals_base = base;
-        cf.closure_id = closure_id;
-        cf.owns_globals = frame_owns_globals;
-        cf.stack_depth = static_cast<uint32_t>(stack_depth);
-        if (frame_arena_.size() <= frame_count_) {
-          frame_arena_.push_back(std::move(cf));
-        } else {
-          frame_arena_[frame_count_] = std::move(cf);
-        }
-      }
-      frame_count_++;
-
-      // Function entry breakpoint check
-      if (debugger_attached_ && callee &&
-          debug_function_breakpoints_.count(callee->name) > 0) {
-        debug_step_mode_ = DebugStepMode::Continue;
-        if (debug_break_cb_)
-          debug_break_cb_();
-      }
-
-      // Clear per-frame immutable_locals_ on function entry.
-      // Each function's STORE_IMMUT_VAR opcodes will repopulate
-      // this set with absolute indices valid for this frame's locals.
-      immutable_locals_.clear();
-
-      // Initialize parameter slots: provided args first, then defaults
-      // Handle variadic parameters: pack extra args into array
-
-      // Check if last arg is a kwargs object (marked with __kwargs key)
-      bool has_kwargs = false;
-      auto *kwargs_obj = heap_.object(0);
-      if (!args.empty() && args.back().isObjectId()) {
-        kwargs_obj = heap_.object(args.back().asObjectId());
-        if (kwargs_obj) {
-          auto itMarker = kwargs_obj->find("__kwargs");
-          if (itMarker != kwargs_obj->end()) {
-            has_kwargs = true;
-          }
-          if (has_kwargs) {
-            kwargs_obj->erase("__kwargs");
-            args.pop_back();
-          } else {
-            kwargs_obj = heap_.object(0);
-          }
-        }
-      }
-
-      for (uint32_t i = 0; i < callee->param_count; i++) {
-        if (callee->variadic_param_index != UINT32_MAX &&
-            i == callee->variadic_param_index) {
-          // Variadic parameter: pack remaining args into array
-          auto arrRef = heap_.allocateArray();
-          auto *arr = heap_.array(arrRef.id);
-          for (size_t j = i; j < args.size(); j++) {
-            arr->push_back(std::move(args[j]));
-          }
-          locals[base + i] = Value::makeArrayId(arrRef.id);
-        } else if (i < args.size()) {
-          locals[base + i] = std::move(args[i]);
-        } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
-          auto it = kwargs_obj->find(callee->param_names[i]);
-          if (it != kwargs_obj->end()) {
-            locals[base + i] = it->second;
-          } else if (i < callee->default_values.size() &&
-                     callee->default_values[i].has_value()) {
-            const auto &dv = callee->default_values[i].value();
-            // Sentinel: bool(true) means "fresh empty array" for arr=[]
-            // defaults
-            if (dv.isBool() && dv.asBool()) {
-              locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
-            } else {
-              locals[base + i] = dv;
-            }
-          } else {
-            locals[base + i] = nullptr;
-          }
-        } else if (i < callee->default_values.size() &&
-                   callee->default_values[i].has_value()) {
-          const auto &dv = callee->default_values[i].value();
-          // Sentinel: bool(true) means "fresh empty array" for arr=[] defaults
-          if (dv.isBool() && dv.asBool()) {
-            locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
-          } else {
-            locals[base + i] = dv;
-          }
-        } else {
-          locals[base + i] = nullptr; // No arg provided, no default
-        }
+    // Copy args into coroutine locals (same as normal call)
+    size_t base = 0;
+    for (uint32_t i = 0; i < callee->param_count; i++) {
+      if (i < args.size()) {
+        co->locals[base + i] = std::move(args[i]);
+      } else if (i < callee->default_values.size() && callee->default_values[i]) {
+        co->locals[base + i] = (*callee->default_values[i]);
       }
     }
 
-    void VM::doTailCall(Value callee_value, std::vector<Value> args) {
-      tail_call_depth_++;
-      if (frame_count_ + tail_call_depth_ >= max_call_depth_) {
-        tail_call_depth_ = 0;
-        COMPILER_THROW("Stack overflow: maximum call depth " +
-                       std::to_string(max_call_depth_) + " reached");
-      }
+    Value coroutineValue = Value::makeCoroutineId(coId);
+    pushStack(coroutineValue);
+    return;
+  }
 
-      if (callee_value.isCoroutineId()) {
+  // Debug
+  (void)callee_value;
+
+    // Allow fewer arguments than parameters (for default parameters)
+    // For variadic functions, allow MORE arguments than parameters
+    // Silently drop excess args for non-variadic functions (callback-safe)
+    if (callee->variadic_param_index == UINT32_MAX && args.size() > callee->param_count) {
+        args.resize(callee->param_count);
+    }
+
+  // For variadic functions, require at least as many args as non-variadic
+  // params
+  if (callee->variadic_param_index != UINT32_MAX &&
+      args.size() < callee->variadic_param_index) {
+    COMPILER_THROW("Argument count mismatch calling function index " +
+                             std::to_string(function_index) +
+                             " (expected at least " +
+                             std::to_string(callee->variadic_param_index) +
+                             ", got " + std::to_string(args.size()) + ")");
+  }
+
+ current_chunk = resolve_chunk;
+
+  bool frame_owns_globals = false;
+  if (closure_globals) {
+    globals_stack_.push_back(std::move(globals));
+    globals = *closure_globals;
+    frame_owns_globals = true;
+  }
+
+ size_t base = locals.size();
+ size_t stack_depth = stack.size(); // Save current stack depth
+ size_t needed_locals = std::max(callee->local_count, callee->param_count);
+ locals.resize(base + needed_locals, nullptr);
+ {
+ CallFrame cf;
+ cf.function = callee;
+ cf.chunk = resolve_chunk;
+ cf.ip = 0;
+ cf.locals_base = base;
+ cf.closure_id = closure_id;
+ cf.owns_globals = frame_owns_globals;
+ cf.stack_depth = static_cast<uint32_t>(stack_depth);
+        if (frame_arena_.size() <= frame_count_) {
+            frame_arena_.push_back(std::move(cf));
+        } else {
+            frame_arena_[frame_count_] = std::move(cf);
+        }
+    }
+    frame_count_++;
+
+    // Function entry breakpoint check
+    if (debugger_attached_ && callee &&
+        debug_function_breakpoints_.count(callee->name) > 0) {
+      debug_step_mode_ = DebugStepMode::Continue;
+      if (debug_break_cb_) debug_break_cb_();
+    }
+
+    // Clear per-frame immutable_locals_ on function entry.
+    // Each function's STORE_IMMUT_VAR opcodes will repopulate
+    // this set with absolute indices valid for this frame's locals.
+    immutable_locals_.clear();
+
+  // Initialize parameter slots: provided args first, then defaults
+  // Handle variadic parameters: pack extra args into array
+  
+                // Check if last arg is a kwargs object (marked with __kwargs key)
+                bool has_kwargs = false;
+                auto *kwargs_obj = heap_.object(0);
+                if (!args.empty() && args.back().isObjectId()) {
+                    kwargs_obj = heap_.object(args.back().asObjectId());
+                    if (kwargs_obj) {
+                        auto itMarker = kwargs_obj->find("__kwargs");
+                        if (itMarker != kwargs_obj->end()) {
+                            has_kwargs = true;
+                        }
+                        if (has_kwargs) {
+                            kwargs_obj->erase("__kwargs");
+                            args.pop_back();
+                        } else {
+                            kwargs_obj = heap_.object(0);
+                        }
+                    }
+                }
+
+    for (uint32_t i = 0; i < callee->param_count; i++) {
+        if (callee->variadic_param_index != UINT32_MAX &&
+            i == callee->variadic_param_index) {
+            // Variadic parameter: pack remaining args into array
+      auto arrRef = heap_.allocateArray();
+      auto *arr = heap_.array(arrRef.id);
+      for (size_t j = i; j < args.size(); j++) {
+        arr->push_back(std::move(args[j]));
+      }
+      locals[base + i] = Value::makeArrayId(arrRef.id);
+    } else if (i < args.size()) {
+      locals[base + i] = std::move(args[i]);
+    } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
+      auto it = kwargs_obj->find(callee->param_names[i]);
+      if (it != kwargs_obj->end()) {
+        locals[base + i] = it->second;
+      } else if (i < callee->default_values.size() &&
+                 callee->default_values[i].has_value()) {
+        const auto &dv = callee->default_values[i].value();
+        // Sentinel: bool(true) means "fresh empty array" for arr=[] defaults
+        if (dv.isBool() && dv.asBool()) {
+          locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
+        } else {
+          locals[base + i] = dv;
+        }
+      } else {
+        locals[base + i] = nullptr;
+      }
+    } else if (i < callee->default_values.size() &&
+               callee->default_values[i].has_value()) {
+      const auto &dv = callee->default_values[i].value();
+      // Sentinel: bool(true) means "fresh empty array" for arr=[] defaults
+      if (dv.isBool() && dv.asBool()) {
+        locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
+      } else {
+        locals[base + i] = dv;
+      }
+    } else {
+      locals[base + i] = nullptr; // No arg provided, no default
+    }
+  }
+}
+
+void VM::doTailCall(Value callee_value,
+ std::vector<Value> args) {
+ tail_call_depth_++;
+ if (frame_count_ + tail_call_depth_ >= max_call_depth_) {
+ tail_call_depth_ = 0;
+ COMPILER_THROW("Stack overflow: maximum call depth " +
+ std::to_string(max_call_depth_) + " reached");
+ }
+
+    if (callee_value.isCoroutineId()) {
         doCall(callee_value, std::move(args));
         return;
-      }
+    }
 
-      if (callee_value.isHostFuncId()) {
+    if (callee_value.isHostFuncId()) {
         Value result = callHostFunction(callee_value, args);
         pushStack(result);
         this->doReturn();
         return;
-      }
+    }
 
-      // Handle bound methods (lightweight BoundMethod struct)
-      if (callee_value.isBoundMethodId()) {
+    // Handle bound methods (lightweight BoundMethod struct)
+    if (callee_value.isBoundMethodId()) {
         auto *bm = heap_.boundMethod(callee_value.asBoundMethodId());
-        if (bm && (bm->fn.isHostFuncId() || bm->fn.isFunctionObjId() ||
-                   bm->fn.isClosureId())) {
-          std::vector<Value> boundArgs;
-          boundArgs.push_back(bm->self);
-          boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-          doCall(bm->fn, std::move(boundArgs));
-          this->doReturn();
-          return;
+        if (bm && (bm->fn.isHostFuncId() || bm->fn.isFunctionObjId() || bm->fn.isClosureId())) {
+            std::vector<Value> boundArgs;
+            boundArgs.push_back(bm->self);
+            boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+            doCall(bm->fn, std::move(boundArgs));
+            this->doReturn();
+            return;
         }
-      }
+    }
 
-      // Handle callable objects (Lua-style __call / op_call)
-      if (callee_value.isObjectId()) {
+    // Handle callable objects (Lua-style __call / op_call)
+    if (callee_value.isObjectId()) {
         auto *obj = heap_.object(callee_value.asObjectId());
         if (obj) {
-          Value callFn = Value::makeNull();
-          auto *search = obj;
-          while (search) {
-            auto *val = search->get("__call");
-            if (!val)
-              val = search->get("op_call");
-            if (val) {
-              callFn = *val;
-              break;
+            Value callFn = Value::makeNull();
+            auto* search = obj;
+            while (search) {
+                auto* val = search->get("__call");
+                if (!val) val = search->get("op_call");
+                if (val) {
+                    callFn = *val;
+                    break;
+                }
+                auto* parentVal = search->get("__proto");
+                if (!parentVal) parentVal = search->get("__class");
+                if (!parentVal) parentVal = search->get("__parent");
+                if (parentVal && parentVal->isObjectId()) {
+                    search = heap_.object(parentVal->asObjectId());
+                } else {
+                    break;
+                }
             }
-            auto *parentVal = search->get("__proto");
-            if (!parentVal)
-              parentVal = search->get("__class");
-            if (!parentVal)
-              parentVal = search->get("__parent");
-            if (parentVal && parentVal->isObjectId()) {
-              search = heap_.object(parentVal->asObjectId());
-            } else {
-              break;
+            if (!callFn.isNull() && (callFn.isFunctionObjId() || callFn.isClosureId() || callFn.isHostFuncId())) {
+                std::vector<Value> callArgs;
+                callArgs.push_back(callee_value);
+                callArgs.insert(callArgs.end(), args.begin(), args.end());
+                doCall(callFn, std::move(callArgs));
+                this->doReturn();
+                return;
             }
-          }
-          if (!callFn.isNull() &&
-              (callFn.isFunctionObjId() || callFn.isClosureId() ||
-               callFn.isHostFuncId())) {
-            std::vector<Value> callArgs;
-            callArgs.push_back(callee_value);
-            callArgs.insert(callArgs.end(), args.begin(), args.end());
-            doCall(callFn, std::move(callArgs));
-            this->doReturn();
-            return;
-          }
-          // Handle bound method objects
-          auto fnIt = obj->find("fn");
-          auto selfIt = obj->find("self");
-          if (fnIt != obj->end() && selfIt != obj->end() &&
-              (fnIt->second.isHostFuncId() || fnIt->second.isFunctionObjId() ||
-               fnIt->second.isClosureId())) {
-            std::vector<Value> boundArgs;
-            boundArgs.push_back(selfIt->second);
-            boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-            doCall(fnIt->second, std::move(boundArgs));
-            this->doReturn();
-            return;
-          }
+            // Handle bound method objects
+            auto fnIt = obj->find("fn");
+            auto selfIt = obj->find("self");
+            if (fnIt != obj->end() && selfIt != obj->end() &&
+                (fnIt->second.isHostFuncId() || fnIt->second.isFunctionObjId() || fnIt->second.isClosureId())) {
+                std::vector<Value> boundArgs;
+                boundArgs.push_back(selfIt->second);
+                boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+                doCall(fnIt->second, std::move(boundArgs));
+                this->doReturn();
+                return;
+            }
         }
         COMPILER_THROW("TAIL_CALL: object is not callable");
-      }
+    }
 
-      const BytecodeChunk *resolve_chunk = current_chunk;
-      uint32_t function_index = 0;
-      uint32_t closure_id = 0;
-      std::shared_ptr<std::unordered_map<std::string, Value>>
-          tail_closure_globals;
-      if (callee_value.isFunctionObjId()) {
-        function_index = callee_value.asFunctionObjId();
-        if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
-          if (main_chunk_ && main_chunk_->getFunction(function_index)) {
-            resolve_chunk = main_chunk_.get();
-          } else {
-            for (auto &pc : persistent_chunks_) {
-              if (pc && pc->getFunction(function_index)) {
-                resolve_chunk = pc.get();
-                break;
-              }
+ const BytecodeChunk *resolve_chunk = current_chunk;
+ uint32_t function_index = 0;
+ uint32_t closure_id = 0;
+ std::shared_ptr<std::unordered_map<std::string, Value>> tail_closure_globals;
+if (callee_value.isFunctionObjId()) {
+            function_index = callee_value.asFunctionObjId();
+            if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
+                if (main_chunk_ && main_chunk_->getFunction(function_index)) {
+                    resolve_chunk = main_chunk_.get();
+                } else {
+                    for (auto& pc : persistent_chunks_) {
+                        if (pc && pc->getFunction(function_index)) {
+                            resolve_chunk = pc.get();
+                            break;
+                        }
+                    }
+                }
             }
-          }
-        }
-      } else if (callee_value.isClosureId()) {
-        closure_id = callee_value.asClosureId();
-        auto *closure = heap_.closure(closure_id);
-        if (!closure) {
-          COMPILER_THROW("Closure not found: " + std::to_string(closure_id));
-        }
-        function_index = closure->function_index;
-        if (closure->chunk) {
-          resolve_chunk = closure->chunk;
-        }
-        if (closure->module_globals) {
-          tail_closure_globals = closure->module_globals;
-        }
-      } else {
-        std::string typeInfo = "unknown";
-        if (callee_value.isNull())
-          typeInfo = "null";
-        else if (callee_value.isInt())
-          typeInfo = "int";
-        else if (callee_value.isDouble())
-          typeInfo = "double";
-        else if (callee_value.isBool())
-          typeInfo = "bool";
-        else if (callee_value.isStringValId()) {
-          typeInfo =
-              current_chunk
-                  ? std::string("string_val_id='") +
-                        current_chunk->getString(callee_value.asStringValId()) +
-                        "'"
-                  : std::string("string_val_id=<") +
-                        std::to_string(callee_value.asStringValId()) + ">";
-        } else if (callee_value.isStringId()) {
-          auto *sp = heap_.string(callee_value.asStringId());
-          typeInfo = sp ? std::string("string_id='") + *sp + "'"
-                        : std::string("string_id=<") +
-                              std::to_string(callee_value.asStringId()) + ">";
-        } else if (callee_value.isArrayId())
-          typeInfo = "array_id";
-        else if (callee_value.isEnumId())
-          typeInfo = "enum_id";
-        COMPILER_THROW(
-            "TAIL_CALL expects function, closure, or callable object as "
-            "callee (got " +
-            typeInfo + ")");
-      }
+        } else if (callee_value.isClosureId()) {
+ closure_id = callee_value.asClosureId();
+ auto *closure = heap_.closure(closure_id);
+ if (!closure) {
+ COMPILER_THROW("Closure not found: " +
+ std::to_string(closure_id));
+ }
+ function_index = closure->function_index;
+ if (closure->chunk) {
+ resolve_chunk = closure->chunk;
+ }
+ if (closure->module_globals) {
+ tail_closure_globals = closure->module_globals;
+ }
+ } else {
+ std::string typeInfo = "unknown";
+ if (callee_value.isNull()) typeInfo = "null";
+        else if (callee_value.isInt()) typeInfo = "int";
+        else if (callee_value.isDouble()) typeInfo = "double";
+        else if (callee_value.isBool()) typeInfo = "bool";
+else if (callee_value.isStringValId()) {
+		typeInfo = current_chunk ? std::string("string_val_id='") + current_chunk->getString(callee_value.asStringValId()) + "'"
+		                         : std::string("string_val_id=<") + std::to_string(callee_value.asStringValId()) + ">";
+	}
+	else if (callee_value.isStringId()) {
+		auto *sp = heap_.string(callee_value.asStringId());
+		typeInfo = sp ? std::string("string_id='") + *sp + "'" : std::string("string_id=<") + std::to_string(callee_value.asStringId()) + ">";
+	}
+	else if (callee_value.isArrayId()) typeInfo = "array_id";
+	else if (callee_value.isEnumId()) typeInfo = "enum_id";
+	COMPILER_THROW("TAIL_CALL expects function, closure, or callable object as callee (got " + typeInfo + ")");
+    }
 
-      if (!resolve_chunk) {
+    if (!resolve_chunk) {
         COMPILER_THROW("No chunk available for tail call");
-      }
+    }
 
-      const auto *callee = resolve_chunk->getFunction(function_index);
-      if (!callee) {
+    const auto *callee = resolve_chunk->getFunction(function_index);
+    if (!callee) {
         COMPILER_THROW("Function index not found: " +
                        std::to_string(function_index));
+  }
+
+  // Allow fewer arguments than parameters (for default parameters)
+  // For variadic functions, allow MORE arguments than parameters
+  if (callee->variadic_param_index == UINT32_MAX &&
+      args.size() > callee->param_count) {
+    COMPILER_THROW(
+        "Argument count mismatch for tail call to function index " +
+        std::to_string(function_index) + " (expected at most " +
+        std::to_string(callee->param_count) + ", got " +
+        std::to_string(args.size()) + ")");
+  }
+
+  // For variadic functions, require at least as many args as non-variadic
+  // params
+  if (callee->variadic_param_index != UINT32_MAX &&
+      args.size() < callee->variadic_param_index) {
+    COMPILER_THROW(
+        "Argument count mismatch for tail call to function index " +
+        std::to_string(function_index) + " (expected at least " +
+        std::to_string(callee->variadic_param_index) + ", got " +
+        std::to_string(args.size()) + ")");
+  }
+
+    // TCO: Reuse current frame - update function, reset IP, adjust locals
+    auto &current_frame = currentFrame();
+    size_t old_base = current_frame.locals_base;
+
+    // Close open upvalues for current frame before reusing it
+    // Otherwise closures capturing locals from this frame see corrupted data
+    // when the new function overwrites those local slots
+    closeFrameUpvalues(static_cast<uint32_t>(old_base),
+                       static_cast<uint32_t>(locals.size()));
+
+ // Update frame to point to new function
+ current_frame.function = callee;
+ current_frame.chunk = resolve_chunk;
+ current_frame.ip = 0;
+ current_frame.closure_id = closure_id;
+ current_chunk = resolve_chunk;
+ if (tail_closure_globals) {
+ if (!current_frame.owns_globals) {
+ globals_stack_.push_back(std::move(globals));
+ current_frame.owns_globals = true;
+ }
+    globals = *tail_closure_globals;
+ }
+ // Keep same locals base
+
+  // Resize locals if needed (reuse existing space)
+  size_t new_locals_needed = old_base + callee->local_count;
+  if (locals.size() < new_locals_needed) {
+    locals.resize(new_locals_needed, nullptr);
+  }
+
+  // Tail-call reuses the same frame but a different function; the new
+  // function's val declarations will repopulate immutable_locals_
+  immutable_locals_.clear();
+
+  // Check if last arg is a kwargs object (marked with __kwargs key)
+  bool has_kwargs = false;
+  auto *kwargs_obj = heap_.object(0);
+  if (!args.empty() && args.back().isObjectId()) {
+    kwargs_obj = heap_.object(args.back().asObjectId());
+    if (kwargs_obj) {
+      auto itMarker = kwargs_obj->find("__kwargs");
+      if (itMarker != kwargs_obj->end()) {
+        has_kwargs = true;
       }
-
-      // Allow fewer arguments than parameters (for default parameters)
-      // For variadic functions, allow MORE arguments than parameters
-      if (callee->variadic_param_index == UINT32_MAX &&
-          args.size() > callee->param_count) {
-        COMPILER_THROW(
-            "Argument count mismatch for tail call to function index " +
-            std::to_string(function_index) + " (expected at most " +
-            std::to_string(callee->param_count) + ", got " +
-            std::to_string(args.size()) + ")");
-      }
-
-      // For variadic functions, require at least as many args as non-variadic
-      // params
-      if (callee->variadic_param_index != UINT32_MAX &&
-          args.size() < callee->variadic_param_index) {
-        COMPILER_THROW(
-            "Argument count mismatch for tail call to function index " +
-            std::to_string(function_index) + " (expected at least " +
-            std::to_string(callee->variadic_param_index) + ", got " +
-            std::to_string(args.size()) + ")");
-      }
-
-      // TCO: Reuse current frame - update function, reset IP, adjust locals
-      auto &current_frame = currentFrame();
-      size_t old_base = current_frame.locals_base;
-
-      // Close open upvalues for current frame before reusing it
-      // Otherwise closures capturing locals from this frame see corrupted data
-      // when the new function overwrites those local slots
-      closeFrameUpvalues(static_cast<uint32_t>(old_base),
-                         static_cast<uint32_t>(locals.size()));
-
-      // Update frame to point to new function
-      current_frame.function = callee;
-      current_frame.chunk = resolve_chunk;
-      current_frame.ip = 0;
-      current_frame.closure_id = closure_id;
-      current_chunk = resolve_chunk;
-      if (tail_closure_globals) {
-        if (!current_frame.owns_globals) {
-          globals_stack_.push_back(std::move(globals));
-          current_frame.owns_globals = true;
-        }
-        globals = *tail_closure_globals;
-      }
-      // Keep same locals base
-
-      // Resize locals if needed (reuse existing space)
-      size_t new_locals_needed = old_base + callee->local_count;
-      if (locals.size() < new_locals_needed) {
-        locals.resize(new_locals_needed, nullptr);
-      }
-
-      // Tail-call reuses the same frame but a different function; the new
-      // function's val declarations will repopulate immutable_locals_
-      immutable_locals_.clear();
-
-      // Check if last arg is a kwargs object (marked with __kwargs key)
-      bool has_kwargs = false;
-      auto *kwargs_obj = heap_.object(0);
-      if (!args.empty() && args.back().isObjectId()) {
-        kwargs_obj = heap_.object(args.back().asObjectId());
-        if (kwargs_obj) {
-          auto itMarker = kwargs_obj->find("__kwargs");
-          if (itMarker != kwargs_obj->end()) {
-            has_kwargs = true;
-          }
-          if (has_kwargs) {
-            kwargs_obj->erase("__kwargs");
-            args.pop_back();
-          } else {
-            kwargs_obj = heap_.object(0);
-          }
-        }
-      }
-
-      // Set up arguments in the reused frame (at old_base): provided args
-      // first, then kwargs, then defaults Handle variadic parameters: pack
-      // extra args into array
-      for (uint32_t i = 0; i < callee->param_count; i++) {
-        if (callee->variadic_param_index != UINT32_MAX &&
-            i == callee->variadic_param_index) {
-          // Variadic parameter: pack remaining args into array
-          auto arrRef = heap_.allocateArray();
-          auto *arr = heap_.array(arrRef.id);
-          for (size_t j = i; j < args.size(); j++) {
-            arr->push_back(std::move(args[j]));
-          }
-          locals[old_base + i] = Value::makeArrayId(arrRef.id);
-        } else if (i < args.size()) {
-          locals[old_base + i] = std::move(args[i]);
-        } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
-          auto it = kwargs_obj->find(callee->param_names[i]);
-          if (it != kwargs_obj->end()) {
-            locals[old_base + i] = it->second;
-          } else if (i < callee->default_values.size() &&
-                     callee->default_values[i].has_value()) {
-            const auto &dv = callee->default_values[i].value();
-            if (dv.isBool() && dv.asBool()) {
-              locals[old_base + i] =
-                  Value::makeArrayId(heap_.allocateArray().id);
-            } else {
-              locals[old_base + i] = dv;
-            }
-          } else {
-            locals[old_base + i] = nullptr;
-          }
-        } else if (i < callee->default_values.size() &&
-                   callee->default_values[i].has_value()) {
-          locals[old_base + i] = callee->default_values[i].value();
-        } else {
-          locals[old_base + i] = nullptr;
-        }
-      }
-
-      // Clear remaining locals from old function
-      // Start after callee's params (which may include defaults set above),
-      // not after the provided args count
-      for (size_t i = old_base + callee->param_count; i < new_locals_needed;
-           i++) {
-        locals[i] = nullptr;
+      if (has_kwargs) {
+        kwargs_obj->erase("__kwargs");
+        args.pop_back();
+      } else {
+        kwargs_obj = heap_.object(0);
       }
     }
+  }
 
-    void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
-      if (locals_end < locals_base) {
-        return;
+  // Set up arguments in the reused frame (at old_base): provided args first,
+  // then kwargs, then defaults Handle variadic parameters: pack extra args into array
+  for (uint32_t i = 0; i < callee->param_count; i++) {
+    if (callee->variadic_param_index != UINT32_MAX &&
+        i == callee->variadic_param_index) {
+      // Variadic parameter: pack remaining args into array
+      auto arrRef = heap_.allocateArray();
+      auto *arr = heap_.array(arrRef.id);
+      for (size_t j = i; j < args.size(); j++) {
+        arr->push_back(std::move(args[j]));
       }
-
-      std::vector<uint32_t> to_close;
-      to_close.reserve(open_upvalues.size());
-      for (const auto &[index, _] : open_upvalues) {
-        if (index >= locals_base && index < locals_end) {
-          to_close.push_back(index);
-        }
-      }
-
-      for (uint32_t index : to_close) {
-        auto it = open_upvalues.find(index);
-        if (it == open_upvalues.end() || !it->second) {
-          continue;
-        }
-        auto &cell = it->second;
-        if (index < locals.size()) {
-          cell->closed_value = locals[index];
+      locals[old_base + i] = Value::makeArrayId(arrRef.id);
+    } else if (i < args.size()) {
+      locals[old_base + i] = std::move(args[i]);
+    } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
+      auto it = kwargs_obj->find(callee->param_names[i]);
+      if (it != kwargs_obj->end()) {
+        locals[old_base + i] = it->second;
+      } else if (i < callee->default_values.size() &&
+                 callee->default_values[i].has_value()) {
+        const auto &dv = callee->default_values[i].value();
+        if (dv.isBool() && dv.asBool()) {
+          locals[old_base + i] = Value::makeArrayId(heap_.allocateArray().id);
         } else {
-          cell->closed_value = nullptr;
+          locals[old_base + i] = dv;
         }
-        cell->is_open = false;
-        open_upvalues.erase(it);
+      } else {
+        locals[old_base + i] = nullptr;
       }
+    } else if (i < callee->default_values.size() &&
+               callee->default_values[i].has_value()) {
+      locals[old_base + i] = callee->default_values[i].value();
+    } else {
+      locals[old_base + i] = nullptr;
     }
+  }
 
-    std::vector<Value> VM::stackValuesForRoots() const {
-      std::vector<Value> values;
-      std::stack<Value> copy = stack;
-      values.reserve(copy.size() + 64);
-      while (!copy.empty()) {
+  // Clear remaining locals from old function
+  // Start after callee's params (which may include defaults set above),
+  // not after the provided args count
+  for (size_t i = old_base + callee->param_count; i < new_locals_needed; i++) {
+    locals[i] = nullptr;
+  }
+}
+
+void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
+  if (locals_end < locals_base) {
+    return;
+  }
+
+  std::vector<uint32_t> to_close;
+  to_close.reserve(open_upvalues.size());
+  for (const auto &[index, _] : open_upvalues) {
+    if (index >= locals_base && index < locals_end) {
+      to_close.push_back(index);
+    }
+  }
+
+  for (uint32_t index : to_close) {
+    auto it = open_upvalues.find(index);
+    if (it == open_upvalues.end() || !it->second) {
+      continue;
+    }
+      auto &cell = it->second;
+    if (index < locals.size()) {
+      cell->closed_value = locals[index];
+    } else {
+      cell->closed_value = nullptr;
+    }
+    cell->is_open = false;
+    open_upvalues.erase(it);
+  }
+}
+
+std::vector<Value> VM::stackValuesForRoots() const {
+    std::vector<Value> values;
+    std::stack<Value> copy = stack;
+    values.reserve(copy.size() + 64);
+    while (!copy.empty()) {
         values.push_back(copy.top());
         copy.pop();
-      }
-      for (const auto &gmap : globals_stack_) {
+    }
+    for (const auto &gmap : globals_stack_) {
         for (const auto &[_, v] : gmap) {
-          values.push_back(v);
+            values.push_back(v);
         }
-      }
-      for (const auto &[_, v] : thread_results_) {
+    }
+    for (const auto &[_, v] : thread_results_) {
         values.push_back(v);
-      }
-      for (const auto &[_, v] : timeout_results_) {
+    }
+    for (const auto &[_, v] : timeout_results_) {
         values.push_back(v);
-      }
-      for (const auto &[_, v] : interval_results_) {
+    }
+    for (const auto &[_, v] : interval_results_) {
         values.push_back(v);
-      }
-      for (const auto &[_, v] : interval_captured_closures_) {
+    }
+    for (const auto &[_, v] : interval_captured_closures_) {
         values.push_back(v);
-      }
-      for (const auto &[_, v] : timeout_captured_closures_) {
+    }
+    for (const auto &[_, v] : timeout_captured_closures_) {
         values.push_back(v);
-      }
-      for (const auto &[_, v] : thread_captured_closures_) {
+    }
+    for (const auto &[_, v] : thread_captured_closures_) {
         values.push_back(v);
-      }
-      for (const auto &[_, ov] : overloaded_methods_) {
+    }
+    for (const auto &[_, ov] : overloaded_methods_) {
         for (const auto &v : ov) {
-          values.push_back(v);
+            values.push_back(v);
         }
-      }
-      for (const auto &[_, oref] : function_properties_) {
+    }
+    for (const auto &[_, oref] : function_properties_) {
         values.push_back(Value::makeObjectId(oref.id));
-      }
-      for (const auto &[_, oref] : closure_properties_) {
+    }
+    for (const auto &[_, oref] : closure_properties_) {
         values.push_back(Value::makeObjectId(oref.id));
-      }
-      for (const auto &[_, oref] : hostfunc_properties_) {
+    }
+    for (const auto &[_, oref] : hostfunc_properties_) {
         values.push_back(Value::makeObjectId(oref.id));
-      }
-      for (const auto &[_, thunk] : direct_call_thunks_) {
+    }
+    for (const auto &[_, thunk] : direct_call_thunks_) {
         for (const auto &call : thunk.calls) {
-          for (const auto &arg : call.args) {
-            values.push_back(arg);
-          }
+            for (const auto &arg : call.args) {
+                values.push_back(arg);
+            }
         }
-      }
-      if (current_exception_.isErrorId()) {
+    }
+    if (current_exception_.isErrorId()) {
         values.push_back(current_exception_);
-      }
-      for (const auto &pc : pending_calls) {
+    }
+    for (const auto &pc : pending_calls) {
         values.push_back(pc.fn);
         for (const auto &arg : pc.args) {
-          values.push_back(arg);
-        }
+            values.push_back(arg);
+  }
+  }
+  for (const auto &[_, chunk] : module_chunks_) {
+    if (!chunk) continue;
+    for (const auto &func : chunk->getAllFunctions()) {
+      for (const auto &constVal : func.constants) {
+        values.push_back(constVal);
       }
-      for (const auto &[_, chunk] : module_chunks_) {
-        if (!chunk)
-          continue;
-        for (const auto &func : chunk->getAllFunctions()) {
-          for (const auto &constVal : func.constants) {
-            values.push_back(constVal);
-          }
-        }
-      }
-      for (const auto &chunk : persistent_chunks_) {
-        if (!chunk)
-          continue;
-        for (const auto &func : chunk->getAllFunctions()) {
-          for (const auto &constVal : func.constants) {
-            values.push_back(constVal);
-          }
-        }
-      }
-      for (const auto &mg : imported_module_globals_) {
-        if (!mg)
-          continue;
-        for (const auto &[_, v] : *mg) {
-          values.push_back(v);
-        }
-      }
-      return values;
     }
-
-    std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
-      std::vector<uint32_t> closure_ids;
-      closure_ids.reserve(frame_count_);
-      for (size_t i = 0; i < frame_count_; ++i) {
-        const auto &frame = frame_arena_[i];
-        if (frame.closure_id != 0) {
-          closure_ids.push_back(frame.closure_id);
-        }
+  }
+  for (const auto &chunk : persistent_chunks_) {
+    if (!chunk) continue;
+    for (const auto &func : chunk->getAllFunctions()) {
+      for (const auto &constVal : func.constants) {
+        values.push_back(constVal);
       }
-      return closure_ids;
     }
-
-    void VM::maybeCollectGarbage() {
-      if (gc_suspend_counter_ > 0)
-        return;
-      heap_.maybeCollectGarbage(stackValuesForRoots(), locals, globals,
-                                activeClosureIdsForRoots(),
-                                [this](uint32_t index) -> std::optional<Value> {
-                                  if (index >= locals.size()) {
-                                    return std::nullopt;
-                                  }
-                                  return locals[index];
-                                });
+  }
+  for (const auto &mg : imported_module_globals_) {
+    if (!mg) continue;
+    for (const auto &[_, v] : *mg) {
+      values.push_back(v);
     }
+  }
+  return values;
+}
 
-    void VM::drainFinalizers() {
-      auto finalizers = heap_.drainFinalizers();
-      for (auto &[objId, entry] : finalizers) {
+std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
+  std::vector<uint32_t> closure_ids;
+  closure_ids.reserve(frame_count_);
+  for (size_t i = 0; i < frame_count_; ++i) {
+    const auto &frame = frame_arena_[i];
+    if (frame.closure_id != 0) {
+      closure_ids.push_back(frame.closure_id);
+    }
+  }
+  return closure_ids;
+}
+
+void VM::maybeCollectGarbage() {
+	if (gc_suspend_counter_ > 0) return;
+	heap_.maybeCollectGarbage(
+   stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
+   [this](uint32_t index) -> std::optional<Value> {
+      if (index >= locals.size()) {
+         return std::nullopt;
+      }
+      return locals[index];
+   });
+}
+
+void VM::drainFinalizers() {
+    auto finalizers = heap_.drainFinalizers();
+    for (auto &[objId, entry] : finalizers) {
         auto *val = entry.get("op_destructor");
-        if (val && (val->isFunctionObjId() || val->isClosureId() ||
-                    val->isHostFuncId())) {
-          try {
-            callFunctionSync(*val, {Value::makeObjectId(objId)});
-          } catch (...) {
-          }
+        if (val && (val->isFunctionObjId() || val->isClosureId() || val->isHostFuncId())) {
+            try {
+                callFunctionSync(*val, {Value::makeObjectId(objId)});
+            } catch (...) {
+            }
         }
-      }
     }
+}
 
-    void VM::collectGarbage() {
-      if (gc_suspend_counter_ > 0)
-        return;
-      heap_.collectGarbage(stackValuesForRoots(), locals, globals,
-                           activeClosureIdsForRoots(),
-                           [this](uint32_t index) -> std::optional<Value> {
-                             if (index >= locals.size()) {
-                               return std::nullopt;
-                             }
-                             return locals[index];
-                           });
-    }
-
-    void VM::stepGarbageCollection(size_t work_budget) {
-      heap_.stepGarbageCollection(
-          stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
-          [this](uint32_t index) -> std::optional<Value> {
+void VM::collectGarbage() {
+    if (gc_suspend_counter_ > 0) return;
+    heap_.collectGarbage(stackValuesForRoots(), locals, globals,
+        activeClosureIdsForRoots(),
+        [this](uint32_t index) -> std::optional<Value> {
             if (index >= locals.size()) {
-              return std::nullopt;
+                return std::nullopt;
             }
             return locals[index];
-          },
-          work_budget);
-    }
+        });
+}
 
-    void VM::garbageCollectionSafePoint(size_t work_budget) {
-      if (active_hotkey_executions_.load(std::memory_order_acquire) != 0) {
-        return;
-      }
-      stepGarbageCollection(work_budget);
-    }
-
-    // ============================================================================
-    // Stack helpers - extracted from executeInstruction to reduce stack frame
-    // size
-    // ============================================================================
-
-    Value VM::popStack() {
-      if (stack.empty()) {
-        if (frame_count_ > 0) {
-          const auto &frame = currentFrame();
-          ::havel::error("Stack underflow in function '{}' at IP {}",
-                         frame.function->name, frame.ip);
-          if (frame.ip < frame.function->instructions.size()) {
-            const auto &instr = frame.function->instructions[frame.ip];
-            ::havel::error("Offending Instruction: IP {} OpCode {}", frame.ip,
-                           static_cast<int>(instr.opcode));
-          }
+void VM::stepGarbageCollection(size_t work_budget) {
+  heap_.stepGarbageCollection(
+      stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
+      [this](uint32_t index) -> std::optional<Value> {
+        if (index >= locals.size()) {
+          return std::nullopt;
         }
-        COMPILER_THROW("Stack underflow");
-      }
-      Value value = stack.top();
-      stack.pop();
-      return value;
-    }
+        return locals[index];
+      },
+      work_budget);
+}
 
-    void VM::pushStack(Value value) {
-      if (stack.size() >= 1'000'000) {
-        COMPILER_THROW("Expression stack overflow");
-      }
-      stack.push(std::move(value));
-    }
+void VM::garbageCollectionSafePoint(size_t work_budget) {
+  if (active_hotkey_executions_.load(std::memory_order_acquire) != 0) {
+    return;
+  }
+  stepGarbageCollection(work_budget);
+}
 
-    uint32_t VM::toAbsoluteLocal(uint32_t local_index) {
-      size_t base = frame_count_ > 0 ? currentFrame().locals_base : 0;
-      size_t result = base + local_index;
-      // Defensive: check for overflow or excessive index
-      if (result > 1000000 || result > UINT32_MAX) {
-        COMPILER_THROW(
-            "Local variable index overflow: base=" + std::to_string(base) +
-            ", local=" + std::to_string(local_index));
-      }
-      return static_cast<uint32_t>(result);
-    }
+// ============================================================================
+// Stack helpers - extracted from executeInstruction to reduce stack frame size
+// ============================================================================
 
-    void VM::ensureLocalIndex(uint32_t absolute_index) {
-      if (absolute_index >= locals.size()) {
-        // Defensive: prevent overflow when absolute_index is near UINT32_MAX
-        // Also prevent excessive resizing (sanity check: max 1M locals)
-        if (absolute_index > 1000000) {
-          COMPILER_THROW("Local variable index too large: " +
-                         std::to_string(absolute_index));
-        }
-        size_t new_size = static_cast<size_t>(absolute_index) + 1;
-        locals.resize(new_size, nullptr);
+Value VM::popStack() {
+  if (stack.empty()) {
+    if (frame_count_ > 0) {
+      const auto &frame = currentFrame();
+      ::havel::error("Stack underflow in function '{}' at IP {}", frame.function->name, frame.ip);
+      if (frame.ip < frame.function->instructions.size()) {
+        const auto &instr = frame.function->instructions[frame.ip];
+        ::havel::error("Offending Instruction: IP {} OpCode {}", frame.ip, static_cast<int>(instr.opcode));
       }
     }
+    COMPILER_THROW("Stack underflow");
+  }
+  Value value = stack.top();
+  stack.pop();
+  return value;
+}
 
-    void VM::doReturn() {
-      tail_call_depth_ = 0;
-      if (frame_count_ == 0) {
-        return;
+void VM::pushStack(Value value) {
+	if (stack.size() >= 1'000'000) {
+		COMPILER_THROW("Expression stack overflow");
+	}
+	stack.push(std::move(value));
+}
+
+uint32_t VM::toAbsoluteLocal(uint32_t local_index) {
+  size_t base = frame_count_ > 0 ? currentFrame().locals_base : 0;
+  size_t result = base + local_index;
+  // Defensive: check for overflow or excessive index
+  if (result > 1000000 || result > UINT32_MAX) {
+    COMPILER_THROW("Local variable index overflow: base=" + std::to_string(base) +
+                   ", local=" + std::to_string(local_index));
+  }
+  return static_cast<uint32_t>(result);
+}
+
+void VM::ensureLocalIndex(uint32_t absolute_index) {
+  if (absolute_index >= locals.size()) {
+    // Defensive: prevent overflow when absolute_index is near UINT32_MAX
+    // Also prevent excessive resizing (sanity check: max 1M locals)
+    if (absolute_index > 1000000) {
+      COMPILER_THROW("Local variable index too large: " + std::to_string(absolute_index));
+    }
+    size_t new_size = static_cast<size_t>(absolute_index) + 1;
+    locals.resize(new_size, nullptr);
+  }
+}
+
+void VM::doReturn() {
+  tail_call_depth_ = 0;
+  if (frame_count_ == 0) {
+    return;
+  }
+
+  // Execute deferred closures in reverse order (LIFO)
+  // Copy the defer stack first since callFunction may reallocate frame_arena_
+  auto deferred_copy = frame_arena_[frame_count_ - 1].defer_stack;
+  frame_arena_[frame_count_ - 1].defer_stack.clear();
+  while (!deferred_copy.empty()) {
+    Value defer_fn = deferred_copy.back();
+    deferred_copy.pop_back();
+    if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() || defer_fn.isHostFuncId()) {
+      try {
+        callFunction(defer_fn, {});
+      } catch (...) {
+        // Swallow exceptions in deferred code to allow remaining defers to run
       }
+    }
+  }
 
-      // Execute deferred closures in reverse order (LIFO)
-      // Copy the defer stack first since callFunction may reallocate
-      // frame_arena_
-      auto deferred_copy = frame_arena_[frame_count_ - 1].defer_stack;
-      frame_arena_[frame_count_ - 1].defer_stack.clear();
-      while (!deferred_copy.empty()) {
-        Value defer_fn = deferred_copy.back();
-        deferred_copy.pop_back();
-        if (defer_fn.isClosureId() || defer_fn.isFunctionObjId() ||
-            defer_fn.isHostFuncId()) {
-          try {
-            callFunction(defer_fn, {});
-          } catch (...) {
-            // Swallow exceptions in deferred code to allow remaining defers to
-            // run
-          }
-        }
-      }
-
-      Value ret = nullptr;
-      if (!stack.empty()) {
+    Value ret = nullptr;
+    if (!stack.empty()) {
         ret = popStack();
-      }
+    }
 
-      // Materialize chunk-relative StringValId values into heap-stable StringId
-      // while current_chunk still points to the callee's chunk. StringValId is
-      // a chunk-local index — after restoring the parent frame's chunk it would
-      // resolve to the wrong string. Deep walk handles objects/arrays too.
-      if (current_chunk &&
-          (ret.isStringValId() || ret.isObjectId() || ret.isArrayId())) {
+    // Materialize chunk-relative StringValId values into heap-stable StringId
+    // while current_chunk still points to the callee's chunk. StringValId is
+    // a chunk-local index — after restoring the parent frame's chunk it would
+    // resolve to the wrong string. Deep walk handles objects/arrays too.
+    if (current_chunk && (ret.isStringValId() || ret.isObjectId() || ret.isArrayId())) {
         ret = deepMaterializeStrings(ret, current_chunk);
-      }
+    }
 
-      auto finished = frame_arena_[frame_count_ - 1];
-      frame_count_--;
+ auto finished = frame_arena_[frame_count_ - 1];
+ frame_count_--;
 
-      // Restore current_chunk from parent frame
-      if (frame_count_ > 0) {
-        current_chunk = frame_arena_[frame_count_ - 1].chunk;
-      }
+ // Restore current_chunk from parent frame
+ if (frame_count_ > 0) {
+ current_chunk = frame_arena_[frame_count_ - 1].chunk;
+ }
 
-      // Restore globals if this frame swapped them (module closure call)
-      if (finished.owns_globals && !globals_stack_.empty()) {
-        globals = std::move(globals_stack_.back());
-        globals_stack_.pop_back();
-      }
+  // Restore globals if this frame swapped them (module closure call)
+  if (finished.owns_globals && !globals_stack_.empty()) {
+    globals = std::move(globals_stack_.back());
+    globals_stack_.pop_back();
+  }
 
-      closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
-                         static_cast<uint32_t>(locals.size()));
+ closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+ static_cast<uint32_t>(locals.size()));
 
-      if (locals.size() >= finished.locals_base) {
-        locals.resize(finished.locals_base);
-      }
+if (locals.size() >= finished.locals_base) {
+    locals.resize(finished.locals_base);
+}
 
-      // immutable_locals_ stores absolute indices into the locals vector.
-      // After returning from a frame and truncating locals, those indices
-      // are stale — clear them so the parent frame's val declarations
-      // can be re-established on next function entry.
-      immutable_locals_.clear();
+// immutable_locals_ stores absolute indices into the locals vector.
+// After returning from a frame and truncating locals, those indices
+// are stale — clear them so the parent frame's val declarations
+// can be re-established on next function entry.
+immutable_locals_.clear();
 
-      // Restore expression stack to the depth at call time, preserving return
-      // value
-      while (stack.size() > finished.stack_depth) {
-        popStack();
-      }
+// Restore expression stack to the depth at call time, preserving return value
+while (stack.size() > finished.stack_depth) {
+    popStack();
+}
 
-      if (current_coroutine_id_ != UINT32_MAX) {
-        auto *co = heap_.coroutine(current_coroutine_id_);
-        if (co) {
-          co->state = GCHeap::Coroutine::Done;
-          if (!co->caller_stack.empty()) {
-            auto &caller = co->caller_stack.back();
-            frame_count_ = caller.frame_count;
-            locals = caller.locals;
-            immutable_locals_.clear();
-            current_coroutine_id_ = caller.coroutine_id;
+            if (current_coroutine_id_ != UINT32_MAX) {
+                auto *co = heap_.coroutine(current_coroutine_id_);
+                if (co) {
+                    co->state = GCHeap::Coroutine::Done;
+                    if (!co->caller_stack.empty()) {
+                        auto &caller = co->caller_stack.back();
+                        frame_count_ = caller.frame_count;
+                        locals = caller.locals;
+                        immutable_locals_.clear();
+                        current_coroutine_id_ = caller.coroutine_id;
 
-            currentFrame().ip = caller.ip;
+                        currentFrame().ip = caller.ip;
 
-            stack = std::stack<Value>();
-            for (auto it = caller.stack.begin(); it != caller.stack.end();
-                 ++it) {
-              stack.push(*it);
+                        stack = std::stack<Value>();
+                        for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
+                            stack.push(*it);
+                        }
+
+                        co->caller_stack.pop_back();
+                    }
+                }
             }
 
-            co->caller_stack.pop_back();
-          }
-        }
-      }
+    pushStack(ret);
+}
 
-      pushStack(ret);
-    }
 
-    void VM::emitVariableChanged(const std::string &var_name) {
-      if (!event_queue_ || !event_queue_->hasHandler(EventType::VAR_CHANGED)) {
-        ::havel::debug("[VM] emitVariableChanged: '{}' SKIPPED (no handler)",
-                       var_name);
-        return;
-      }
-      ::havel::debug(
-          "[VM] emitVariableChanged: '{}' -> pushing VAR_CHANGED event",
-          var_name);
-      uint32_t var_hash = std::hash<std::string>{}(var_name);
-      Event change_event(EventType::VAR_CHANGED, var_hash,
-                         new std::string(var_name));
-      event_queue_->push(change_event);
-    }
 
-    void VM::throwError(const std::string &msg) { COMPILER_THROW(msg); }
 
-    Value VM::deepMaterializeStrings(Value value, const BytecodeChunk *chunk) {
-      std::unordered_set<uint32_t> visited;
-      return deepMaterializeStrings(value, chunk, visited);
-    }
+void VM::emitVariableChanged(const std::string& var_name) {
+  if (!event_queue_ || !event_queue_->hasHandler(EventType::VAR_CHANGED)) {
+    ::havel::debug("[VM] emitVariableChanged: '{}' SKIPPED (no handler)", var_name);
+    return;
+  }
+  ::havel::debug("[VM] emitVariableChanged: '{}' -> pushing VAR_CHANGED event", var_name);
+  uint32_t var_hash = std::hash<std::string>{}(var_name);
+  Event change_event(EventType::VAR_CHANGED, var_hash, new std::string(var_name));
+  event_queue_->push(change_event);
+}
 
-    Value VM::deepMaterializeStrings(Value value, const BytecodeChunk *chunk,
-                                     std::unordered_set<uint32_t> &visited) {
-      if (!chunk)
-        return value;
+void VM::throwError(const std::string &msg) {
+  COMPILER_THROW(msg);
+}
 
-      if (value.isStringValId()) {
-        auto strRef =
-            heap_.allocateString(chunk->getString(value.asStringValId()));
-        return Value::makeStringId(strRef.id);
-      }
 
-      if (value.isFunctionObjId() && chunk != current_chunk) {
-        auto closureRef = heap_.allocateClosure(
-            GCHeap::RuntimeClosure{.function_index = value.asFunctionObjId(),
-                                   .chunk_index = 0,
-                                   .chunk = chunk,
-                                   .module_globals = nullptr,
-                                   .upvalues = {}});
-        return Value::makeClosureId(closureRef.id);
-      }
+Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk) {
+    std::unordered_set<uint32_t> visited;
+    return deepMaterializeStrings(value, chunk, visited);
+}
 
-      if (value.isObjectId()) {
-        auto *obj = heap_.object(value.asObjectId());
-        if (!obj)
-          return value;
+Value VM::deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unordered_set<uint32_t>& visited) {
+    if (!chunk) return value;
+
+if (value.isStringValId()) {
+auto strRef = heap_.allocateString(chunk->getString(value.asStringValId()));
+return Value::makeStringId(strRef.id);
+}
+
+if (value.isFunctionObjId() && chunk != current_chunk) {
+auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+.function_index = value.asFunctionObjId(),
+.chunk_index = 0,
+.chunk = chunk,
+.module_globals = nullptr,
+.upvalues = {}});
+return Value::makeClosureId(closureRef.id);
+}
+
+    if (value.isObjectId()) {
+        auto* obj = heap_.object(value.asObjectId());
+        if (!obj) return value;
         uint32_t objId = value.asObjectId();
-        if (visited.count(objId))
-          return value;
+        if (visited.count(objId)) return value;
         visited.insert(objId);
         std::vector<std::pair<std::string, Value>> entries;
-        for (auto &[k, v] : *obj) {
-          Value mat_key_v = deepMaterializeStrings(v, chunk, visited);
-          entries.emplace_back(k, mat_key_v);
+        for (auto& [k, v] : *obj) {
+            Value mat_key_v = deepMaterializeStrings(v, chunk, visited);
+            entries.emplace_back(k, mat_key_v);
         }
-        for (auto &[k, v] : entries) {
-          (*obj)[k] = std::move(v);
-        }
-        return value;
-      }
-
-      if (value.isArrayId()) {
-        auto *arr = heap_.array(value.asArrayId());
-        if (!arr)
-          return value;
-        uint32_t arrId = value.asArrayId();
-        if (visited.count(arrId))
-          return value;
-        visited.insert(arrId);
-        for (auto &elem : *arr) {
-          elem = deepMaterializeStrings(elem, chunk, visited);
+        for (auto& [k, v] : entries) {
+            (*obj)[k] = std::move(v);
         }
         return value;
-      }
-
-      return value;
     }
 
-    Value VM::deepWrapModuleFunctions(
-        Value value, std::shared_ptr<BytecodeChunk> chunk,
-        std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
-        const std::string &canonicalKey, const std::string &fieldPath,
-        int depth, std::unordered_set<uint32_t> *visitedPtr) {
-      if (depth > 64)
-        return value;
-      bool suspendedGc = false;
-      if (depth == 0) {
-        suspendGC();
-        suspendedGc = true;
-      }
-      auto resumeGcGuard = [&]() {
-        if (suspendedGc) {
-          resumeGC();
-          suspendedGc = false;
+    if (value.isArrayId()) {
+        auto* arr = heap_.array(value.asArrayId());
+        if (!arr) return value;
+        uint32_t arrId = value.asArrayId();
+        if (visited.count(arrId)) return value;
+        visited.insert(arrId);
+        for (auto& elem : *arr) {
+            elem = deepMaterializeStrings(elem, chunk, visited);
         }
-      };
-      if (value.isFunctionObjId() && chunk) {
-        uint32_t funcIdx = value.asFunctionObjId();
-        const auto *moduleFunc = chunk->getFunction(funcIdx);
-        uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
-        auto moduleChunk = chunk;
-        auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
-        std::string fnCapturedKey = canonicalKey;
-        std::string fnCapturedField = fieldPath;
-        imported_module_globals_.push_back(moduleGlobals);
-        registerHostFunction(
-            wrapperName,
-            [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName,
-             fnCapturedKey,
-             fnCapturedField](const std::vector<Value> &args) -> Value {
-              std::vector<Value> callArgs = args;
-              auto *preCheckCallee = moduleChunk->getFunction(funcIdx);
-              bool isVariadic =
-                  preCheckCallee &&
-                  preCheckCallee->variadic_param_index != UINT32_MAX;
-              if (!isVariadic && callArgs.size() > paramCount &&
-                  paramCount > 0) {
-                callArgs.erase(callArgs.begin());
-              }
-              auto *savedChunk = current_chunk;
-              auto savedGlobals = globals;
-              auto savedMirrorId = globals_mirror_object_id_;
-              Value savedG = globals["_G"];
-              globals = *moduleGlobals;
-              current_chunk = moduleChunk.get();
-              const auto *callee = moduleChunk->getFunction(funcIdx);
-              if (!callee) {
-                globals = std::move(savedGlobals);
-                globals_mirror_object_id_ = savedMirrorId;
-                globals["_G"] = savedG;
-                current_chunk = savedChunk;
-                return Value::makeNull();
-              }
-              size_t base = locals.size();
-              size_t savedLocalsSize = base;
-              locals.resize(base + callee->local_count, nullptr);
-              uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
-              if (frame_arena_.size() <= frame_count_) {
-                CallFrame cf;
-                cf.function = callee;
-                cf.chunk = moduleChunk.get();
-                cf.ip = 0;
-                cf.locals_base = base;
-                cf.stack_depth = frame_stack_depth;
-                frame_arena_.push_back(std::move(cf));
-              } else {
-                frame_arena_[frame_count_].function = callee;
-                frame_arena_[frame_count_].chunk = moduleChunk.get();
-                frame_arena_[frame_count_].ip = 0;
-                frame_arena_[frame_count_].locals_base = base;
-                frame_arena_[frame_count_].stack_depth = frame_stack_depth;
-              }
-              frame_count_++;
-              for (uint32_t i = 0; i < callee->param_count; i++) {
-                if (callee->variadic_param_index != UINT32_MAX &&
-                    i == callee->variadic_param_index) {
-                  // Variadic parameter: pack remaining args into array
-                  auto arrRef = heap_.allocateArray();
-                  auto *arr = heap_.array(arrRef.id);
-                  for (size_t j = i; j < callArgs.size(); j++) {
-                    Value argVal = callArgs[j];
-                    if (savedChunk) {
-                      argVal = deepMaterializeStrings(argVal, savedChunk);
+        return value;
+    }
+
+    return value;
+}
+
+Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> chunk,
+                                std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobals,
+                                const std::string& canonicalKey, const std::string& fieldPath, int depth,
+                                std::unordered_set<uint32_t>* visitedPtr) {
+  if (depth > 64) return value;
+  bool suspendedGc = false;
+  if (depth == 0) { suspendGC(); suspendedGc = true; }
+  auto resumeGcGuard = [&]() { if (suspendedGc) { resumeGC(); suspendedGc = false; } };
+  if (value.isFunctionObjId() && chunk) {
+    uint32_t funcIdx = value.asFunctionObjId();
+    const auto* moduleFunc = chunk->getFunction(funcIdx);
+    uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
+    auto moduleChunk = chunk;
+    auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
+    std::string fnCapturedKey = canonicalKey;
+    std::string fnCapturedField = fieldPath;
+    imported_module_globals_.push_back(moduleGlobals);
+registerHostFunction(wrapperName,
+    [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
+    std::vector<Value> callArgs = args;
+    auto* preCheckCallee = moduleChunk->getFunction(funcIdx);
+    bool isVariadic = preCheckCallee && preCheckCallee->variadic_param_index != UINT32_MAX;
+    if (!isVariadic && callArgs.size() > paramCount && paramCount > 0) {
+                    callArgs.erase(callArgs.begin());
+                }
+            auto* savedChunk = current_chunk;
+            auto savedGlobals = globals;
+            auto savedMirrorId = globals_mirror_object_id_;
+Value savedG = globals["_G"];
+        globals = *moduleGlobals;
+        current_chunk = moduleChunk.get();
+    const auto* callee = moduleChunk->getFunction(funcIdx);
+    if (!callee) {
+  globals = std::move(savedGlobals);
+  globals_mirror_object_id_ = savedMirrorId;
+    globals["_G"] = savedG;
+    current_chunk = savedChunk;
+    return Value::makeNull();
+    }
+    size_t base = locals.size();
+                    size_t savedLocalsSize = base;
+                    locals.resize(base + callee->local_count, nullptr);
+                    uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
+                    if (frame_arena_.size() <= frame_count_) {
+                        CallFrame cf;
+                        cf.function = callee;
+                        cf.chunk = moduleChunk.get();
+                        cf.ip = 0;
+                        cf.locals_base = base;
+                        cf.stack_depth = frame_stack_depth;
+                        frame_arena_.push_back(std::move(cf));
+                    } else {
+                        frame_arena_[frame_count_].function = callee;
+                        frame_arena_[frame_count_].chunk = moduleChunk.get();
+                        frame_arena_[frame_count_].ip = 0;
+                        frame_arena_[frame_count_].locals_base = base;
+                        frame_arena_[frame_count_].stack_depth = frame_stack_depth;
                     }
-                    arr->push_back(std::move(argVal));
-                  }
-                  locals[base + i] = Value::makeArrayId(arrRef.id);
-                } else if (i < callArgs.size()) {
-                  Value argVal = callArgs[i];
-                  if (savedChunk) {
-                    argVal = deepMaterializeStrings(argVal, savedChunk);
-                  }
-                  locals[base + i] = std::move(argVal);
-                } else if (i < callee->default_values.size() &&
-                           callee->default_values[i].has_value()) {
-                  const auto &dv = callee->default_values[i].value();
-                  if (dv.isBool() && dv.asBool()) {
-                    locals[base + i] =
-                        Value::makeArrayId(heap_.allocateArray().id);
-                  } else {
-                    locals[base + i] = dv;
-                  }
-                } else {
-                  locals[base + i] = Value::makeNull();
+                frame_count_++;
+                for (uint32_t i = 0; i < callee->param_count; i++) {
+                    if (callee->variadic_param_index != UINT32_MAX &&
+                        i == callee->variadic_param_index) {
+                        // Variadic parameter: pack remaining args into array
+                        auto arrRef = heap_.allocateArray();
+                        auto *arr = heap_.array(arrRef.id);
+                        for (size_t j = i; j < callArgs.size(); j++) {
+                            Value argVal = callArgs[j];
+                            if (savedChunk) {
+                                argVal = deepMaterializeStrings(argVal, savedChunk);
+                            }
+                            arr->push_back(std::move(argVal));
+                        }
+                        locals[base + i] = Value::makeArrayId(arrRef.id);
+                    } else if (i < callArgs.size()) {
+                        Value argVal = callArgs[i];
+                        if (savedChunk) {
+                            argVal = deepMaterializeStrings(argVal, savedChunk);
+                        }
+                        locals[base + i] = std::move(argVal);
+                    } else if (i < callee->default_values.size() &&
+                               callee->default_values[i].has_value()) {
+                        const auto &dv = callee->default_values[i].value();
+                        if (dv.isBool() && dv.asBool()) {
+                            locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
+                        } else {
+                            locals[base + i] = dv;
+                        }
+                    } else {
+                        locals[base + i] = Value::makeNull();
+                    }
                 }
-              }
-              try {
-                runDispatchLoop(frame_count_ - 1);
-              } catch (...) {
-                if (locals.size() > savedLocalsSize) {
-                  locals.resize(savedLocalsSize);
-                }
-                globals = std::move(savedGlobals);
-                globals_mirror_object_id_ = savedMirrorId;
-                globals["_G"] = savedG;
-                current_chunk = savedChunk;
-                throw;
-              }
-              Value result = popStack();
-              if (locals.size() > savedLocalsSize) {
-                locals.resize(savedLocalsSize);
-              }
-              if (bc_execute_depth_ == 0) {
-                result = deepWrapModuleFunctions(
-                    deepMaterializeStrings(result, current_chunk), moduleChunk,
-                    moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
-              }
-              *moduleGlobals = std::move(globals);
-              globals = std::move(savedGlobals);
-              globals_mirror_object_id_ = savedMirrorId;
-              globals["_G"] = savedG;
-              current_chunk = savedChunk;
-              return result;
-            });
+        try {
+        runDispatchLoop(frame_count_ - 1);
+        } catch (...) {
+          if (locals.size() > savedLocalsSize) {
+            locals.resize(savedLocalsSize);
+          }
+          globals = std::move(savedGlobals);
+          globals_mirror_object_id_ = savedMirrorId;
+          globals["_G"] = savedG;
+          current_chunk = savedChunk;
+          throw;
+        }
+        Value result = popStack();
+        if (locals.size() > savedLocalsSize) {
+            locals.resize(savedLocalsSize);
+        }
+if (bc_execute_depth_ == 0) {
+            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk),
+                moduleChunk, moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
+        }
+        *moduleGlobals = std::move(globals);
+        globals = std::move(savedGlobals);
+        globals_mirror_object_id_ = savedMirrorId;
+        globals["_G"] = savedG;
+        current_chunk = savedChunk;
+        return result;
+    });
         uint32_t hostIdx = host_function_globals_[wrapperName].asHostFuncId();
         resumeGcGuard();
         return Value::makeHostFuncId(hostIdx);
-      }
+    }
 
-      if (value.isClosureId() && chunk) {
+    if (value.isClosureId() && chunk) {
         uint32_t closureId = value.asClosureId();
-        auto *rc = heap_.closure(closureId);
-        if (!rc || !rc->chunk) {
-          resumeGcGuard();
-          return value;
-        }
-        if (rc->chunk != chunk.get()) {
-          resumeGcGuard();
-          return value;
-        }
+        auto* rc = heap_.closure(closureId);
+        if (!rc || !rc->chunk) { resumeGcGuard(); return value; }
+        if (rc->chunk != chunk.get()) { resumeGcGuard(); return value; }
 
-        // Pin the closure as a GC root so the host function wrapper
+// Pin the closure as a GC root so the host function wrapper
         // can safely reference it by ID across GC cycles.
-        uint64_t closureRootId =
-            pinExternalRoot(Value::makeClosureId(closureId));
+        uint64_t closureRootId = pinExternalRoot(Value::makeClosureId(closureId));
 
         uint32_t funcIdx = rc->function_index;
         auto moduleChunk = chunk;
-        auto closureGlobals =
-            rc->module_globals ? rc->module_globals : moduleGlobals;
+        auto closureGlobals = rc->module_globals
+            ? rc->module_globals
+            : moduleGlobals;
         auto wrapperName = "$module_closure_" + canonicalKey + "_" + fieldPath;
         host_function_gc_roots_[wrapperName] = closureRootId;
         std::string capturedKey = canonicalKey;
-        std::string capturedField = fieldPath;
-        registerHostFunction(
-            wrapperName,
-            [this, closureId, funcIdx, moduleChunk, closureGlobals, wrapperName,
-             capturedKey,
-             capturedField](const std::vector<Value> &args) -> Value {
-              auto *rc2 = heap_.closure(closureId);
-              if (!rc2 || !rc2->chunk)
-                return Value::makeNull();
+    std::string capturedField = fieldPath;
+    registerHostFunction(wrapperName,
+        [this, closureId, funcIdx, moduleChunk, closureGlobals, wrapperName, capturedKey, capturedField](const std::vector<Value>& args) -> Value {
+            auto* rc2 = heap_.closure(closureId);
+            if (!rc2 || !rc2->chunk) return Value::makeNull();
 
-              auto *savedChunk = current_chunk;
-              auto savedGlobals = globals;
-              auto savedMirrorId = globals_mirror_object_id_;
-              Value savedG = globals["_G"];
-              globals = *closureGlobals;
-              current_chunk = moduleChunk.get();
+            auto* savedChunk = current_chunk;
+            auto savedGlobals = globals;
+            auto savedMirrorId = globals_mirror_object_id_;
+            Value savedG = globals["_G"];
+    globals = *closureGlobals;
+    current_chunk = moduleChunk.get();
 
-              const auto *callee = moduleChunk->getFunction(funcIdx);
-              if (!callee) {
+            const auto* callee = moduleChunk->getFunction(funcIdx);
+            if (!callee) {
                 globals = std::move(savedGlobals);
                 globals_mirror_object_id_ = savedMirrorId;
                 globals["_G"] = savedG;
                 current_chunk = savedChunk;
                 return Value::makeNull();
-              }
+            }
 
-              size_t base = locals.size();
-              locals.resize(base + callee->local_count, nullptr);
-              uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
-              if (frame_arena_.size() <= frame_count_) {
+            size_t base = locals.size();
+            locals.resize(base + callee->local_count, nullptr);
+            uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
+            if (frame_arena_.size() <= frame_count_) {
                 CallFrame cf;
                 cf.function = callee;
                 cf.chunk = moduleChunk.get();
@@ -3136,7 +2813,7 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
                 cf.stack_depth = frame_stack_depth;
                 cf.owns_globals = true;
                 frame_arena_.push_back(std::move(cf));
-              } else {
+            } else {
                 frame_arena_[frame_count_].function = callee;
                 frame_arena_[frame_count_].chunk = moduleChunk.get();
                 frame_arena_[frame_count_].ip = 0;
@@ -3144,720 +2821,660 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
                 frame_arena_[frame_count_].closure_id = closureId;
                 frame_arena_[frame_count_].stack_depth = frame_stack_depth;
                 frame_arena_[frame_count_].owns_globals = true;
-              }
-              frame_count_++;
+            }
+            frame_count_++;
 
-              for (uint32_t i = 0; i < callee->param_count; i++) {
-                if (callee->variadic_param_index != UINT32_MAX &&
-                    i == callee->variadic_param_index) {
-                  auto arrRef = heap_.allocateArray();
-                  auto *arr = heap_.array(arrRef.id);
-                  for (size_t j = i; j < args.size(); j++) {
+        for (uint32_t i = 0; i < callee->param_count; i++) {
+            if (callee->variadic_param_index != UINT32_MAX &&
+                i == callee->variadic_param_index) {
+                auto arrRef = heap_.allocateArray();
+                auto* arr = heap_.array(arrRef.id);
+                for (size_t j = i; j < args.size(); j++) {
                     Value argVal = args[j];
                     if (savedChunk) {
-                      argVal = deepMaterializeStrings(argVal, savedChunk);
+                        argVal = deepMaterializeStrings(argVal, savedChunk);
                     }
                     arr->push_back(std::move(argVal));
-                  }
-                  locals[base + i] = Value::makeArrayId(arrRef.id);
-                } else if (i < args.size()) {
-                  Value argVal = args[i];
-                  if (savedChunk) {
+                }
+                locals[base + i] = Value::makeArrayId(arrRef.id);
+            } else if (i < args.size()) {
+                Value argVal = args[i];
+                if (savedChunk) {
                     argVal = deepMaterializeStrings(argVal, savedChunk);
-                  }
-                  locals[base + i] = std::move(argVal);
-                } else if (i < callee->default_values.size() &&
-                           callee->default_values[i].has_value()) {
-                  const auto &dv = callee->default_values[i].value();
-                  if (dv.isBool() && dv.asBool()) {
-                    locals[base + i] =
-                        Value::makeArrayId(heap_.allocateArray().id);
-                  } else {
-                    locals[base + i] = dv;
-                  }
+                }
+                locals[base + i] = std::move(argVal);
+            } else if (i < callee->default_values.size() &&
+                       callee->default_values[i].has_value()) {
+                const auto& dv = callee->default_values[i].value();
+                if (dv.isBool() && dv.asBool()) {
+                    locals[base + i] = Value::makeArrayId(heap_.allocateArray().id);
                 } else {
-                  locals[base + i] = Value::makeNull();
+                    locals[base + i] = dv;
                 }
-              }
+            } else {
+                locals[base + i] = Value::makeNull();
+            }
+        }
 
-              try {
-                runDispatchLoop(frame_count_ - 1);
-              } catch (...) {
-                if (locals.size() > base) {
-                  locals.resize(base);
-                }
-                globals = std::move(savedGlobals);
-                globals_mirror_object_id_ = savedMirrorId;
-                globals["_G"] = savedG;
-                current_chunk = savedChunk;
-                throw;
-              }
-              Value result = popStack();
-              if (bc_execute_depth_ == 0) {
-                result = deepWrapModuleFunctions(
-                    deepMaterializeStrings(result, current_chunk), moduleChunk,
-                    closureGlobals, capturedKey, capturedField + "_ret");
-              }
-              globals = std::move(savedGlobals);
-              globals_mirror_object_id_ = savedMirrorId;
-              globals["_G"] = savedG;
-              current_chunk = savedChunk;
-              return result;
-            });
+        try {
+        runDispatchLoop(frame_count_ - 1);
+        } catch (...) {
+          if (locals.size() > base) {
+            locals.resize(base);
+          }
+          globals = std::move(savedGlobals);
+          globals_mirror_object_id_ = savedMirrorId;
+          globals["_G"] = savedG;
+          current_chunk = savedChunk;
+          throw;
+        }
+        Value result = popStack();
+        if (bc_execute_depth_ == 0) {
+            result = deepWrapModuleFunctions(deepMaterializeStrings(result, current_chunk), moduleChunk, closureGlobals, capturedKey, capturedField + "_ret");
+        }
+        globals = std::move(savedGlobals);
+ globals_mirror_object_id_ = savedMirrorId;
+ globals["_G"] = savedG;
+ current_chunk = savedChunk;
+ return result;
+ });
         uint32_t hostIdx = host_function_globals_[wrapperName].asHostFuncId();
         resumeGcGuard();
         return Value::makeHostFuncId(hostIdx);
-      }
+    }
 
-      if (value.isObjectId()) {
-        uint32_t objId = value.asObjectId();
-        if (visitedPtr && visitedPtr->count(objId)) {
-          resumeGcGuard();
-          return value;
-        }
-        auto *srcObj = heap_.object(objId);
-        if (!srcObj) {
-          resumeGcGuard();
-          return value;
-        }
-        bool anyWrapped = false;
-        std::vector<std::pair<std::string, Value>> entries;
-        entries.reserve(srcObj->size());
-        std::unordered_set<uint32_t> localVisited;
-        if (!visitedPtr)
-          visitedPtr = &localVisited;
-        visitedPtr->insert(objId);
-        for (const auto &[k, v] : *srcObj) {
-          Value wrapped = deepWrapModuleFunctions(
-              v, chunk, moduleGlobals, canonicalKey,
-              fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1,
-              visitedPtr);
-          if (!(wrapped == v))
-            anyWrapped = true;
-          entries.emplace_back(k, std::move(wrapped));
-        }
-        if (!anyWrapped) {
-          visitedPtr->erase(objId);
-          resumeGcGuard();
-          return value;
-        }
-        ObjectRef copyRef = createHostObject();
-        auto *copyObj = heap_.object(copyRef.id);
-        for (auto &[k, v] : entries) {
-          (*copyObj)[k] = std::move(v);
-        }
-        visitedPtr->erase(objId);
-        resumeGcGuard();
-        return Value::makeObjectId(copyRef.id);
-      }
-
-      if (value.isArrayId()) {
-        uint32_t arrId = value.asArrayId();
-        if (visitedPtr && visitedPtr->count(arrId)) {
-          resumeGcGuard();
-          return value;
-        }
-        auto *srcArr = heap_.array(arrId);
-        if (!srcArr) {
-          resumeGcGuard();
-          return value;
-        }
-        bool anyWrapped = false;
-        std::vector<Value> elements;
-        elements.reserve(srcArr->size());
-        std::unordered_set<uint32_t> localVisited;
-        if (!visitedPtr)
-          visitedPtr = &localVisited;
-        visitedPtr->insert(arrId);
-        for (size_t i = 0; i < srcArr->size(); i++) {
-          Value wrapped = deepWrapModuleFunctions(
-              (*srcArr)[i], chunk, moduleGlobals, canonicalKey,
-              fieldPath + "[" + std::to_string(i) + "]", depth + 1, visitedPtr);
-          if (!(wrapped == (*srcArr)[i]))
-            anyWrapped = true;
-          elements.push_back(std::move(wrapped));
-        }
-        if (!anyWrapped) {
-          visitedPtr->erase(arrId);
-          resumeGcGuard();
-          return value;
-        }
-        ArrayRef copyRef = createHostArray();
-        auto *copyArr = heap_.array(copyRef.id);
-        copyArr->reserve(elements.size());
-        for (auto &elem : elements) {
-          copyArr->push_back(std::move(elem));
-        }
-        visitedPtr->erase(arrId);
-        resumeGcGuard();
-        return Value::makeArrayId(copyRef.id);
-      }
-
+  if (value.isObjectId()) {
+    uint32_t objId = value.asObjectId();
+    if (visitedPtr && visitedPtr->count(objId)) { resumeGcGuard(); return value; }
+    auto* srcObj = heap_.object(objId);
+    if (!srcObj) { resumeGcGuard(); return value; }
+    bool anyWrapped = false;
+    std::vector<std::pair<std::string, Value>> entries;
+    entries.reserve(srcObj->size());
+    std::unordered_set<uint32_t> localVisited;
+    if (!visitedPtr) visitedPtr = &localVisited;
+    visitedPtr->insert(objId);
+    for (const auto& [k, v] : *srcObj) {
+      Value wrapped = deepWrapModuleFunctions(v, chunk, moduleGlobals, canonicalKey,
+        fieldPath.empty() ? k : (fieldPath + "." + k), depth + 1, visitedPtr);
+      if (!(wrapped == v)) anyWrapped = true;
+      entries.emplace_back(k, std::move(wrapped));
+    }
+    if (!anyWrapped) {
+      visitedPtr->erase(objId);
       resumeGcGuard();
       return value;
     }
-
-    bool VM::isLazyModuleRegistered(const std::string &name) const {
-      return lazy_modules_.find(name) != lazy_modules_.end();
+    ObjectRef copyRef = createHostObject();
+    auto* copyObj = heap_.object(copyRef.id);
+    for (auto& [k, v] : entries) {
+      (*copyObj)[k] = std::move(v);
     }
+    visitedPtr->erase(objId);
+    resumeGcGuard();
+    return Value::makeObjectId(copyRef.id);
+  }
 
-    void VM::registerLazyModule(const std::string &name,
-                                std::function<void(struct VMApi &)> initFn,
-                                const std::vector<std::string> &aliases) {
-      auto it = lazy_modules_.find(name);
-      if (it != lazy_modules_.end()) {
+  if (value.isArrayId()) {
+    uint32_t arrId = value.asArrayId();
+    if (visitedPtr && visitedPtr->count(arrId)) { resumeGcGuard(); return value; }
+    auto* srcArr = heap_.array(arrId);
+    if (!srcArr) { resumeGcGuard(); return value; }
+    bool anyWrapped = false;
+    std::vector<Value> elements;
+    elements.reserve(srcArr->size());
+    std::unordered_set<uint32_t> localVisited;
+    if (!visitedPtr) visitedPtr = &localVisited;
+    visitedPtr->insert(arrId);
+    for (size_t i = 0; i < srcArr->size(); i++) {
+      Value wrapped = deepWrapModuleFunctions((*srcArr)[i], chunk, moduleGlobals, canonicalKey,
+        fieldPath + "[" + std::to_string(i) + "]", depth + 1, visitedPtr);
+      if (!(wrapped == (*srcArr)[i])) anyWrapped = true;
+      elements.push_back(std::move(wrapped));
+    }
+    if (!anyWrapped) {
+      visitedPtr->erase(arrId);
+      resumeGcGuard();
+      return value;
+    }
+    ArrayRef copyRef = createHostArray();
+    auto* copyArr = heap_.array(copyRef.id);
+    copyArr->reserve(elements.size());
+    for (auto& elem : elements) {
+      copyArr->push_back(std::move(elem));
+    }
+    visitedPtr->erase(arrId);
+    resumeGcGuard();
+    return Value::makeArrayId(copyRef.id);
+  }
+
+    resumeGcGuard();
+    return value;
+}
+
+bool VM::isLazyModuleRegistered(const std::string &name) const {
+return lazy_modules_.find(name) != lazy_modules_.end();
+}
+
+void VM::registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases) {
+    auto it = lazy_modules_.find(name);
+    if (it != lazy_modules_.end()) {
         return;
-      }
-      lazy_modules_[name] =
-          ModuleDescriptor{name, std::move(initFn), false, aliases};
+    }
+    lazy_modules_[name] = ModuleDescriptor{name, std::move(initFn), false, aliases};
 
-      auto makeProxy = [&](const std::string &globalName) {
+    auto makeProxy = [&](const std::string &globalName) {
         if (globals.find(globalName) == globals.end()) {
-          auto proxyObj = createHostObject();
-          auto *obj = heap_.object(proxyObj.id);
-          (*obj)["__lazy__"] = Value(true);
-          auto nameStr = createRuntimeString(name);
-          (*obj)["__module__"] = Value::makeStringId(nameStr.id);
-          globals[globalName] = Value::makeObjectId(proxyObj.id);
+            auto proxyObj = createHostObject();
+            auto *obj = heap_.object(proxyObj.id);
+            (*obj)["__lazy__"] = Value(true);
+            auto nameStr = createRuntimeString(name);
+            (*obj)["__module__"] = Value::makeStringId(nameStr.id);
+            globals[globalName] = Value::makeObjectId(proxyObj.id);
         }
-      };
+    };
 
-      makeProxy(name);
-      for (const auto &alias : aliases) {
+    makeProxy(name);
+    for (const auto &alias : aliases) {
         makeProxy(alias);
-      }
     }
+}
 
-    void VM::activateLazyModule(const std::string &name) {
+  void VM::activateLazyModule(const std::string &name) {
       auto it = lazy_modules_.find(name);
-      if (it == lazy_modules_.end() || it->second.loaded)
-        return;
+      if (it == lazy_modules_.end() || it->second.loaded) return;
       it->second.loaded = true;
       auto api = VMApi(*this);
       it->second.initFn(api);
 
-      auto postInitIt = globals.find(name);
-      if (postInitIt != globals.end() && postInitIt->second.isObjectId()) {
-        auto *postInitObj = heap_.object(postInitIt->second.asObjectId());
-        if (postInitObj) {
-          auto *lazyFlag = postInitObj->get("__lazy__");
-          if (!lazyFlag || !lazyFlag->isBool() || !lazyFlag->asBool()) {
-            for (const auto &alias : it->second.aliases) {
-              auto aliasIt = globals.find(alias);
-              if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
-                auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
-                if (aliasObj) {
-                  auto *alf = aliasObj->get("__lazy__");
-                  if (alf && alf->isBool() && alf->asBool()) {
-                    globals[alias] = postInitIt->second;
-                  }
-                }
-              }
-            }
-            moduleLoader_.putCache(name, postInitIt->second);
-            return;
-          }
-        }
-      }
+     auto postInitIt = globals.find(name);
+     if (postInitIt != globals.end() && postInitIt->second.isObjectId()) {
+         auto *postInitObj = heap_.object(postInitIt->second.asObjectId());
+         if (postInitObj) {
+             auto *lazyFlag = postInitObj->get("__lazy__");
+             if (!lazyFlag || !lazyFlag->isBool() || !lazyFlag->asBool()) {
+                 for (const auto &alias : it->second.aliases) {
+                     auto aliasIt = globals.find(alias);
+                     if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
+                         auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
+                         if (aliasObj) {
+                             auto *alf = aliasObj->get("__lazy__");
+                             if (alf && alf->isBool() && alf->asBool()) {
+                                 globals[alias] = postInitIt->second;
+                             }
+                         }
+                     }
+                 }
+                 moduleLoader_.putCache(name, postInitIt->second);
+                 return;
+             }
+         }
+     }
 
-      // Fallback: initFn did NOT call setGlobal, so build namespace from
-      // host_function_globals_. First, collect any extra fields from the
-      // surviving proxy object.
-      std::vector<std::pair<std::string, Value>> savedFields;
-      auto proxyIt = globals.find(name);
-      if (proxyIt != globals.end() && proxyIt->second.isObjectId()) {
+    // Fallback: initFn did NOT call setGlobal, so build namespace from host_function_globals_.
+    // First, collect any extra fields from the surviving proxy object.
+    std::vector<std::pair<std::string, Value>> savedFields;
+    auto proxyIt = globals.find(name);
+    if (proxyIt != globals.end() && proxyIt->second.isObjectId()) {
         auto *proxyObj = heap_.object(proxyIt->second.asObjectId());
         if (proxyObj) {
-          auto *lazyFlag = proxyObj->get("__lazy__");
-          if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
-            for (auto &[k, v] : *proxyObj) {
-              if (k != "__lazy__" && k != "__module__") {
-                savedFields.emplace_back(k, v);
-              }
+            auto *lazyFlag = proxyObj->get("__lazy__");
+            if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
+                for (auto& [k, v] : *proxyObj) {
+                    if (k != "__lazy__" && k != "__module__") {
+                        savedFields.emplace_back(k, v);
+                    }
+                }
+                globals.erase(proxyIt);
             }
-            globals.erase(proxyIt);
-          }
         }
-      }
-      // Build namespace object from host function globals
-      std::string prefix = name + ".";
-      std::string usPrefix = name + "_";
-      std::vector<std::string> aliasPrefixes;
-      for (const auto &alias : it->second.aliases) {
+    }
+    // Build namespace object from host function globals
+    std::string prefix = name + ".";
+    std::string usPrefix = name + "_";
+    std::vector<std::string> aliasPrefixes;
+    for (const auto &alias : it->second.aliases) {
         aliasPrefixes.push_back(alias + ".");
-      }
-      auto matchesPrefix = [&](const std::string &fnName) -> bool {
-        if (fnName.rfind(prefix, 0) == 0 || fnName.rfind(usPrefix, 0) == 0)
-          return true;
+    }
+    auto matchesPrefix = [&](const std::string &fnName) -> bool {
+        if (fnName.rfind(prefix, 0) == 0 || fnName.rfind(usPrefix, 0) == 0) return true;
         for (const auto &ap : aliasPrefixes) {
-          if (fnName.rfind(ap, 0) == 0)
-            return true;
+            if (fnName.rfind(ap, 0) == 0) return true;
         }
         return false;
-      };
-      auto extractLocal = [&](const std::string &fnName) -> std::string {
-        if (fnName.rfind(prefix, 0) == 0)
-          return fnName.substr(prefix.size());
-        if (fnName.rfind(usPrefix, 0) == 0)
-          return fnName.substr(usPrefix.size());
+    };
+    auto extractLocal = [&](const std::string &fnName) -> std::string {
+        if (fnName.rfind(prefix, 0) == 0) return fnName.substr(prefix.size());
+        if (fnName.rfind(usPrefix, 0) == 0) return fnName.substr(usPrefix.size());
         for (const auto &ap : aliasPrefixes) {
-          if (fnName.rfind(ap, 0) == 0)
-            return fnName.substr(ap.size());
+            if (fnName.rfind(ap, 0) == 0) return fnName.substr(ap.size());
         }
         return {};
-      };
-      bool hasAny = false;
-      for (const auto &[fnName, fnVal] : host_function_globals_) {
-        if (matchesPrefix(fnName)) {
-          hasAny = true;
-          break;
-        }
-      }
-      if (hasAny) {
+    };
+ bool hasAny = false;
+ for (const auto& [fnName, fnVal] : host_function_globals_) {
+ if (matchesPrefix(fnName)) {
+ hasAny = true;
+ break;
+ }
+ }
+    if (hasAny) {
         auto nsRef = createHostObject();
         auto *nsObj = heap_.object(nsRef.id);
-        for (auto &[k, v] : savedFields) {
-          (*nsObj)[k] = v;
+        for (auto& [k, v] : savedFields) {
+            (*nsObj)[k] = v;
         }
-        for (const auto &[fnName, fnVal] : host_function_globals_) {
-          std::string localName = extractLocal(fnName);
-          if (!localName.empty() && !nsObj->get(localName)) {
-            (*nsObj)[localName] = fnVal;
-          }
+        for (const auto& [fnName, fnVal] : host_function_globals_) {
+            std::string localName = extractLocal(fnName);
+            if (!localName.empty() && !nsObj->get(localName)) {
+                (*nsObj)[localName] = fnVal;
+            }
         }
         globals[name] = Value::makeObjectId(nsRef.id);
         for (const auto &alias : it->second.aliases) {
-          globals[alias] = Value::makeObjectId(nsRef.id);
+            globals[alias] = Value::makeObjectId(nsRef.id);
         }
-      } else if (!savedFields.empty()) {
+    } else if (!savedFields.empty()) {
         auto nsRef = createHostObject();
         auto *nsObj = heap_.object(nsRef.id);
-        for (auto &[k, v] : savedFields) {
-          (*nsObj)[k] = v;
+        for (auto& [k, v] : savedFields) {
+            (*nsObj)[k] = v;
         }
         globals[name] = Value::makeObjectId(nsRef.id);
-      }
-    }
+        }
+}
 
-    bool VM::ensureModuleLoaded(const std::string &name) {
-      auto it = lazy_modules_.find(name);
-      if (it == lazy_modules_.end()) {
+bool VM::ensureModuleLoaded(const std::string &name) {
+    auto it = lazy_modules_.find(name);
+    if (it == lazy_modules_.end()) {
         // Check if name is an alias of a registered lazy module
-        for (const auto &[modName, desc] : lazy_modules_) {
-          for (const auto &alias : desc.aliases) {
-            if (alias == name) {
-              return ensureModuleLoaded(modName);
+        for (const auto& [modName, desc] : lazy_modules_) {
+            for (const auto& alias : desc.aliases) {
+                if (alias == name) {
+                    return ensureModuleLoaded(modName);
+                }
             }
-          }
         }
         // Fallback: try dynamic plugin discovery
         if (pluginLoader_) {
-          auto plugin = pluginLoader_->loadModulePlugin(name);
-          if (plugin) {
-            VMApi api(*this);
-            plugin->register_fn(static_cast<void *>(&api));
-            auto git = globals.find(name);
-            if (git != globals.end()) {
-              moduleLoader_.putCache(name, git->second);
+            auto plugin = pluginLoader_->loadModulePlugin(name);
+            if (plugin) {
+                VMApi api(*this);
+                plugin->register_fn(static_cast<void *>(&api));
+                auto git = globals.find(name);
+                if (git != globals.end()) {
+                    moduleLoader_.putCache(name, git->second);
+                }
+                return true;
             }
-            return true;
-          }
         }
         return false;
-      }
-      if (it->second.loaded) {
+    }
+    if (it->second.loaded) {
         auto git = globals.find(name);
         if (git != globals.end() && git->second.isObjectId()) {
-          auto *obj = heap_.object(git->second.asObjectId());
-          if (obj) {
-            auto *lf = obj->get("__lazy__");
-            if (lf && lf->isBool() && lf->asBool()) {
-              Value cached;
-              if (moduleLoader_.getCached(name, &cached) &&
-                  cached.isObjectId()) {
-                git->second = cached;
-                for (const auto &alias : it->second.aliases) {
-                  globals[alias] = cached;
+            auto *obj = heap_.object(git->second.asObjectId());
+            if (obj) {
+                auto *lf = obj->get("__lazy__");
+                if (lf && lf->isBool() && lf->asBool()) {
+                    Value cached;
+                    if (moduleLoader_.getCached(name, &cached) && cached.isObjectId()) {
+                        git->second = cached;
+                        for (const auto &alias : it->second.aliases) {
+                            globals[alias] = cached;
+                        }
+                    }
                 }
-              }
             }
-          }
         }
         return true;
-      }
-      activateLazyModule(name);
-      auto git = globals.find(name);
-      if (git != globals.end()) {
+    }
+    activateLazyModule(name);
+    auto git = globals.find(name);
+    if (git != globals.end()) {
         moduleLoader_.putCache(name, git->second);
         auto modIt = lazy_modules_.find(name);
         if (modIt != lazy_modules_.end()) {
-          for (const auto &alias : modIt->second.aliases) {
-            auto aliasIt = globals.find(alias);
-            bool isProxy = false;
-            if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
-              auto *obj = heap_.object(aliasIt->second.asObjectId());
-              if (obj) {
-                auto *lf = obj->get("__lazy__");
-                isProxy = (lf && lf->isBool() && lf->asBool());
-              }
+            for (const auto &alias : modIt->second.aliases) {
+                auto aliasIt = globals.find(alias);
+                bool isProxy = false;
+                if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
+                    auto *obj = heap_.object(aliasIt->second.asObjectId());
+                    if (obj) {
+                        auto *lf = obj->get("__lazy__");
+                        isProxy = (lf && lf->isBool() && lf->asBool());
+                    }
+                }
+                if (aliasIt == globals.end() || isProxy) {
+                    globals[alias] = git->second;
+                }
             }
-            if (aliasIt == globals.end() || isProxy) {
-              globals[alias] = git->second;
-            }
-          }
         }
-      }
-      return true;
     }
+    return true;
+}
 
-    Value VM::loadModule(const std::string &path) {
-      // Check cache via canonical ModuleLoader
-      if (moduleLoader_.isCached(path)) {
-        Value cachedVal;
-        if (moduleLoader_.getCached(path, &cachedVal)) {
-          return cachedVal;
-        }
-      }
+Value VM::loadModule(const std::string& path) {
+    // Check cache via canonical ModuleLoader
+  if (moduleLoader_.isCached(path)) {
+    Value cachedVal;
+    if (moduleLoader_.getCached(path, &cachedVal)) {
+      return cachedVal;
+    }
+  }
 
-      // Resolve the module path
-      auto resolved = moduleLoader_.resolve(path, current_script_dir_);
-      if (resolved) {
+    // Resolve the module path
+    auto resolved = moduleLoader_.resolve(path, current_script_dir_);
+    if (resolved) {
         std::string canonicalKey = resolved->canonicalPath;
-
+        
         // Check cache by resolved path
         if (moduleLoader_.isCached(canonicalKey)) {
-          Value cachedVal;
-          if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
-            Value exports = cachedVal;
-            // Also cache under the original key for faster lookup next time
+            Value cachedVal;
+            if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
+                Value exports = cachedVal;
+                // Also cache under the original key for faster lookup next time
+                moduleLoader_.putCache(path, exports);
+                return exports;
+            }
+        }
+    }
+
+            if (!resolved) {
+                // Check lazy modules — activate if registered
+                auto lazyIt = lazy_modules_.find(path);
+                if (lazyIt != lazy_modules_.end()) {
+                    activateLazyModule(path);
+                    auto it = globals.find(path);
+                    if (it != globals.end()) {
+                        moduleLoader_.putCache(path, it->second);
+                        return it->second;
+                    }
+                }
+
+            std::string prefix = path + ".";
+            std::string usPrefix = path + "_";
+            bool hasNamespace = false;
+            for (const auto& [name, value] : host_function_globals_) {
+                if (name.rfind(prefix, 0) == 0 || name.rfind(usPrefix, 0) == 0) { hasNamespace = true; break; }
+            }
+            if (hasNamespace || (context_ && context_->modules && context_->modules->loadModule(path))) {
+                auto exportsObj = createHostObject();
+                auto *obj = heap_.object(exportsObj.id);
+                for (const auto& [name, value] : host_function_globals_) {
+                    std::string localName;
+                    if (name.rfind(prefix, 0) == 0) {
+                        localName = name.substr(prefix.size());
+                    } else if (name.rfind(usPrefix, 0) == 0) {
+                        localName = name.substr(usPrefix.size());
+                    }
+                    if (!localName.empty() && !obj->get(localName)) {
+                        (*obj)[localName] = value;
+                    }
+                }
+            Value exports = Value::makeObjectId(exportsObj.id);
             moduleLoader_.putCache(path, exports);
             return exports;
-          }
-        }
-      }
-
-      if (!resolved) {
-        // Check lazy modules — activate if registered
-        auto lazyIt = lazy_modules_.find(path);
-        if (lazyIt != lazy_modules_.end()) {
-          activateLazyModule(path);
-          auto it = globals.find(path);
-          if (it != globals.end()) {
-            moduleLoader_.putCache(path, it->second);
-            return it->second;
-          }
-        }
-
-        std::string prefix = path + ".";
-        std::string usPrefix = path + "_";
-        bool hasNamespace = false;
-        for (const auto &[name, value] : host_function_globals_) {
-          if (name.rfind(prefix, 0) == 0 || name.rfind(usPrefix, 0) == 0) {
-            hasNamespace = true;
-            break;
-          }
-        }
-        if (hasNamespace || (context_ && context_->modules &&
-                             context_->modules->loadModule(path))) {
-          auto exportsObj = createHostObject();
-          auto *obj = heap_.object(exportsObj.id);
-          for (const auto &[name, value] : host_function_globals_) {
-            std::string localName;
-            if (name.rfind(prefix, 0) == 0) {
-              localName = name.substr(prefix.size());
-            } else if (name.rfind(usPrefix, 0) == 0) {
-              localName = name.substr(usPrefix.size());
-            }
-            if (!localName.empty() && !obj->get(localName)) {
-              (*obj)[localName] = value;
-            }
-          }
-          Value exports = Value::makeObjectId(exportsObj.id);
-          moduleLoader_.putCache(path, exports);
-          return exports;
         }
         // Fallback: try modules/ directory relative to executable
         {
-          std::filesystem::path modulesPath;
-          std::error_code ec;
-          auto exePath = std::filesystem::read_symlink("/proc/self/exe", ec);
-          if (!ec && !exePath.empty()) {
-            modulesPath =
-                exePath.parent_path() / ".." / "modules" / (path + ".hv");
-          } else {
-            modulesPath = std::filesystem::path("modules") / (path + ".hv");
-          }
-          if (std::filesystem::exists(modulesPath, ec)) {
-            resolved = ModuleLoader::ResolvedModule{
-                ModuleLoader::ResolvedModule::UserSource,
-                std::filesystem::canonical(modulesPath, ec).string(), path};
-          }
+            std::filesystem::path modulesPath;
+            std::error_code ec;
+            auto exePath = std::filesystem::read_symlink("/proc/self/exe", ec);
+            if (!ec && !exePath.empty()) {
+                modulesPath = exePath.parent_path() / ".." / "modules" / (path + ".hv");
+            } else {
+                modulesPath = std::filesystem::path("modules") / (path + ".hv");
+            }
+            if (std::filesystem::exists(modulesPath, ec)) {
+                resolved = ModuleLoader::ResolvedModule{
+                    ModuleLoader::ResolvedModule::UserSource,
+                    std::filesystem::canonical(modulesPath, ec).string(),
+                    path
+                };
+            }
         }
         if (!resolved) {
-          COMPILER_THROW("Module not found: " + path);
+            COMPILER_THROW("Module not found: " + path);
         }
+    }
+
+  std::string canonicalKey = resolved->canonicalPath;
+
+  // Circular dependency detection
+  if (modules_loading_.count(canonicalKey)) {
+    COMPILER_THROW("Circular dependency detected: " + path);
+  }
+  modules_loading_.insert(canonicalKey);
+
+  // NativeExtension: load havel_mod_<name>.so via plugin loader
+  if (resolved->type == ModuleLoader::ResolvedModule::NativeExtension) {
+    std::string modName = resolved->moduleName;
+    bool registered = false;
+
+    // Try plugin loader (uses havel_mod_<name>.so ABI validation)
+    if (pluginLoader_) {
+      auto plugin = pluginLoader_->loadModulePlugin(modName);
+      if (plugin) {
+        VMApi api(*this);
+        plugin->register_fn(static_cast<void*>(&api));
+        registered = true;
       }
+    }
 
-      std::string canonicalKey = resolved->canonicalPath;
-
-      // Circular dependency detection
-      if (modules_loading_.count(canonicalKey)) {
-        COMPILER_THROW("Circular dependency detected: " + path);
-      }
-      modules_loading_.insert(canonicalKey);
-
-      // NativeExtension: load havel_mod_<name>.so via plugin loader
-      if (resolved->type == ModuleLoader::ResolvedModule::NativeExtension) {
-        std::string modName = resolved->moduleName;
-        bool registered = false;
-
-        // Try plugin loader (uses havel_mod_<name>.so ABI validation)
-        if (pluginLoader_) {
-          auto plugin = pluginLoader_->loadModulePlugin(modName);
-          if (plugin) {
+    // Fallback: dlopen directly and call havel_module_register
+    if (!registered) {
+      void *handle = dlopen(resolved->canonicalPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+      if (handle) {
+        using InfoFn = const HavelModuleABI *(*)(void);
+        InfoFn info_fn = reinterpret_cast<InfoFn>(dlsym(handle, "havel_module_info"));
+        if (info_fn) {
+          const HavelModuleABI *abi = info_fn();
+          if (abi && abi->abi_version >= 1 &&
+              abi->abi_version <= HAVEL_MODULE_ABI_VERSION && abi->register_fn) {
             VMApi api(*this);
-            plugin->register_fn(static_cast<void *>(&api));
+            abi->register_fn(static_cast<void*>(&api));
             registered = true;
           }
         }
+      }
+    }
 
-        // Fallback: dlopen directly and call havel_module_register
-        if (!registered) {
-          void *handle =
-              dlopen(resolved->canonicalPath.c_str(), RTLD_NOW | RTLD_LOCAL);
-          if (handle) {
-            using InfoFn = const HavelModuleABI *(*)(void);
-            InfoFn info_fn =
-                reinterpret_cast<InfoFn>(dlsym(handle, "havel_module_info"));
-            if (info_fn) {
-              const HavelModuleABI *abi = info_fn();
-              if (abi && abi->abi_version >= 1 &&
-                  abi->abi_version <= HAVEL_MODULE_ABI_VERSION &&
-                  abi->register_fn) {
-                VMApi api(*this);
-                abi->register_fn(static_cast<void *>(&api));
-                registered = true;
-              }
-            }
-          }
-        }
+    if (!registered) {
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to load native extension: " + resolved->canonicalPath);
+    }
 
-        if (!registered) {
-          modules_loading_.erase(canonicalKey);
-          COMPILER_THROW("Failed to load native extension: " +
-                         resolved->canonicalPath);
-        }
+    // Build exports object from registered host function globals
+    std::string prefix = modName + ".";
+    std::string usPrefix = modName + "_";
+    auto exportsObj = createHostObject();
+    auto *obj = heap_.object(exportsObj.id);
+    for (const auto& [fnName, fnVal] : host_function_globals_) {
+      std::string localName;
+      if (fnName.rfind(prefix, 0) == 0) {
+        localName = fnName.substr(prefix.size());
+      } else if (fnName.rfind(usPrefix, 0) == 0) {
+        localName = fnName.substr(usPrefix.size());
+      }
+      if (!localName.empty() && !obj->get(localName)) {
+        (*obj)[localName] = fnVal;
+      }
+    }
+    Value exports = Value::makeObjectId(exportsObj.id);
 
-        // Build exports object from registered host function globals
-        std::string prefix = modName + ".";
-        std::string usPrefix = modName + "_";
-        auto exportsObj = createHostObject();
-        auto *obj = heap_.object(exportsObj.id);
-        for (const auto &[fnName, fnVal] : host_function_globals_) {
+    // Also check if the module set a global directly (e.g., api.setGlobal("ffi", obj))
+    auto git = globals.find(modName);
+    if (git != globals.end() && git->second.isObjectId()) {
+      auto *existingObj = heap_.object(git->second.asObjectId());
+      if (existingObj) {
+        // Merge host function globals into the existing object
+        for (const auto& [fnName, fnVal] : host_function_globals_) {
           std::string localName;
-          if (fnName.rfind(prefix, 0) == 0) {
-            localName = fnName.substr(prefix.size());
-          } else if (fnName.rfind(usPrefix, 0) == 0) {
-            localName = fnName.substr(usPrefix.size());
-          }
-          if (!localName.empty() && !obj->get(localName)) {
-            (*obj)[localName] = fnVal;
+          if (fnName.rfind(prefix, 0) == 0) localName = fnName.substr(prefix.size());
+          else if (fnName.rfind(usPrefix, 0) == 0) localName = fnName.substr(usPrefix.size());
+          if (!localName.empty() && !existingObj->get(localName)) {
+            (*existingObj)[localName] = fnVal;
           }
         }
-        Value exports = Value::makeObjectId(exportsObj.id);
-
-        // Also check if the module set a global directly (e.g.,
-        // api.setGlobal("ffi", obj))
-        auto git = globals.find(modName);
-        if (git != globals.end() && git->second.isObjectId()) {
-          auto *existingObj = heap_.object(git->second.asObjectId());
-          if (existingObj) {
-            // Merge host function globals into the existing object
-            for (const auto &[fnName, fnVal] : host_function_globals_) {
-              std::string localName;
-              if (fnName.rfind(prefix, 0) == 0)
-                localName = fnName.substr(prefix.size());
-              else if (fnName.rfind(usPrefix, 0) == 0)
-                localName = fnName.substr(usPrefix.size());
-              if (!localName.empty() && !existingObj->get(localName)) {
-                (*existingObj)[localName] = fnVal;
-              }
-            }
-            exports = git->second;
-          }
-        } else {
-          globals[modName] = exports;
-        }
-
-        moduleLoader_.putCache(path, exports);
-        moduleLoader_.putCache(canonicalKey, exports);
-        modules_loading_.erase(canonicalKey);
-        return exports;
+        exports = git->second;
       }
+    } else {
+      globals[modName] = exports;
+    }
 
-      std::string prev_script_dir = current_script_dir_;
-      std::shared_ptr<BytecodeChunk> chunk;
+    moduleLoader_.putCache(path, exports);
+    moduleLoader_.putCache(canonicalKey, exports);
+    modules_loading_.erase(canonicalKey);
+    return exports;
+  }
 
-      if (resolved->type == ModuleLoader::ResolvedModule::BytecodeCache) {
-        // Load pre-compiled .hvc bytecode
-        std::ifstream file(resolved->canonicalPath,
-                           std::ios::binary | std::ios::ate);
-        if (!file.is_open()) {
-          modules_loading_.erase(canonicalKey);
-          COMPILER_THROW("Failed to open bytecode file: " +
-                         resolved->canonicalPath);
-        }
-        std::streamsize size = file.tellg();
-        file.seekg(0, std::ios::beg);
-        std::vector<uint8_t> buffer(size);
-        if (!file.read(reinterpret_cast<char *>(buffer.data()), size)) {
-          modules_loading_.erase(canonicalKey);
-          COMPILER_THROW("Failed to read bytecode file: " +
-                         resolved->canonicalPath);
-        }
+  std::string prev_script_dir = current_script_dir_;
+  std::shared_ptr<BytecodeChunk> chunk;
+
+  if (resolved->type == ModuleLoader::ResolvedModule::BytecodeCache) {
+    // Load pre-compiled .hvc bytecode
+    std::ifstream file(resolved->canonicalPath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to open bytecode file: " + resolved->canonicalPath);
+    }
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> buffer(size);
+    if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to read bytecode file: " + resolved->canonicalPath);
+    }
+    ValueSerializer serializer;
+    auto deserialized = serializer.deserializeChunk(buffer);
+    if (!deserialized) {
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to deserialize bytecode: " + resolved->canonicalPath);
+    }
+    chunk = std::make_shared<BytecodeChunk>(std::move(*deserialized));
+    current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
+  } else {
+    // Read source file and compile
+    std::ifstream file(resolved->canonicalPath);
+    if (!file.is_open()) {
+      modules_loading_.erase(canonicalKey);
+      COMPILER_THROW("Failed to open module file: " + resolved->canonicalPath);
+    }
+    std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    // Set script directory for relative imports within the module
+    current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
+
+    // Compile the module source using the real parser + ByteCompiler pipeline
+    // (CompilationPipeline is a stub — we must use the same path as runBytecodePipeline)
+    parser::Parser parser{{}};
+    std::unique_ptr<ast::Program> program;
+    try {
+      program = parser.produceAST(source);
+    } catch (const ::havel::LexError &e) {
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path + " lexer error: " + e.what());
+    } catch (const ::havel::parser::ParseError &e) {
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path + " parse error: " + e.what());
+    }
+    if (!program || parser.hasErrors()) {
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      std::string errors;
+      if (parser.hasErrors()) {
+        for (const auto &err : parser.getErrors()) errors += err.message + "\n";
+      }
+      COMPILER_THROW("Module " + path + " failed to parse: " + errors);
+    }
+
+    ByteCompiler compiler;
+
+    try {
+      chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
+    } catch (const std::exception &e) {
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path + " compilation error: " + std::string(e.what()));
+    }
+    if (!chunk) {
+      modules_loading_.erase(canonicalKey);
+      current_script_dir_ = prev_script_dir;
+      COMPILER_THROW("Module " + path + " compiler returned null chunk");
+    }
+
+    // Auto-cache compiled chunk
+    try {
         ValueSerializer serializer;
-        auto deserialized = serializer.deserializeChunk(buffer);
-        if (!deserialized) {
-          modules_loading_.erase(canonicalKey);
-          COMPILER_THROW("Failed to deserialize bytecode: " +
-                         resolved->canonicalPath);
-        }
-        chunk = std::make_shared<BytecodeChunk>(std::move(*deserialized));
-        current_script_dir_ = std::filesystem::path(resolved->canonicalPath)
-                                  .parent_path()
-                                  .string();
-      } else {
-        // Read source file and compile
-        std::ifstream file(resolved->canonicalPath);
-        if (!file.is_open()) {
-          modules_loading_.erase(canonicalKey);
-          COMPILER_THROW("Failed to open module file: " +
-                         resolved->canonicalPath);
-        }
-        std::string source((std::istreambuf_iterator<char>(file)),
-                           std::istreambuf_iterator<char>());
-
-        // Set script directory for relative imports within the module
-        current_script_dir_ = std::filesystem::path(resolved->canonicalPath)
-                                  .parent_path()
-                                  .string();
-
-        // Compile the module source using the real parser + ByteCompiler
-        // pipeline (CompilationPipeline is a stub — we must use the same path
-        // as runBytecodePipeline)
-        parser::Parser parser{{}};
-        std::unique_ptr<ast::Program> program;
-        try {
-          program = parser.produceAST(source);
-        } catch (const ::havel::LexError &e) {
-          modules_loading_.erase(canonicalKey);
-          current_script_dir_ = prev_script_dir;
-          COMPILER_THROW("Module " + path + " lexer error: " + e.what());
-        } catch (const ::havel::parser::ParseError &e) {
-          modules_loading_.erase(canonicalKey);
-          current_script_dir_ = prev_script_dir;
-          COMPILER_THROW("Module " + path + " parse error: " + e.what());
-        }
-        if (!program || parser.hasErrors()) {
-          modules_loading_.erase(canonicalKey);
-          current_script_dir_ = prev_script_dir;
-          std::string errors;
-          if (parser.hasErrors()) {
-            for (const auto &err : parser.getErrors())
-              errors += err.message + "\n";
-          }
-          COMPILER_THROW("Module " + path + " failed to parse: " + errors);
-        }
-
-        ByteCompiler compiler;
-
-        try {
-          chunk = std::shared_ptr<BytecodeChunk>(
-              compiler.compile(*program).release());
-        } catch (const std::exception &e) {
-          modules_loading_.erase(canonicalKey);
-          current_script_dir_ = prev_script_dir;
-          COMPILER_THROW("Module " + path +
-                         " compilation error: " + std::string(e.what()));
-        }
-        if (!chunk) {
-          modules_loading_.erase(canonicalKey);
-          current_script_dir_ = prev_script_dir;
-          COMPILER_THROW("Module " + path + " compiler returned null chunk");
-        }
-
-        // Auto-cache compiled chunk
-        try {
-          ValueSerializer serializer;
-          std::vector<uint8_t> data = serializer.serializeChunk(*chunk);
-          std::filesystem::path hvSrcPath(resolved->canonicalPath);
-          std::filesystem::path hvcPath = hvSrcPath;
-          hvcPath.replace_extension(".hvc");
-          std::ofstream file(hvcPath, std::ios::binary);
-          if (file.is_open()) {
-            file.write(reinterpret_cast<const char *>(data.data()),
-                       data.size());
+        std::vector<uint8_t> data = serializer.serializeChunk(*chunk);
+        std::filesystem::path hvSrcPath(resolved->canonicalPath);
+        std::filesystem::path hvcPath = hvSrcPath;
+        hvcPath.replace_extension(".hvc");
+        std::ofstream file(hvcPath, std::ios::binary);
+        if (file.is_open()) {
+            file.write(reinterpret_cast<const char*>(data.data()), data.size());
             file.close();
-          }
-        } catch (...) {
         }
-      }
+    } catch (...) {
+    }
+  }
 
-      // Execute the module in a sandboxed globals context
-      // Save current globals state
-      globals_stack_.push_back(globals);
-      auto saved_immutable_globals = immutable_globals_;
-      auto old_mirror_id = globals_mirror_object_id_;
-      Value old_g = globals["_G"];
+    // Execute the module in a sandboxed globals context
+  // Save current globals state
+  globals_stack_.push_back(globals);
+    auto saved_immutable_globals = immutable_globals_;
+    auto old_mirror_id = globals_mirror_object_id_;
+    Value old_g = globals["_G"];
 
-      // Save caller's execution state (stack, locals, frames, chunk, exception)
-      auto saved_stack = stack;
-      auto saved_locals = locals;
-      auto saved_frame_count = frame_count_;
-      auto saved_frames = frame_arena_;
-      const BytecodeChunk *saved_chunk = current_chunk;
-      bool saved_exception = has_current_exception_;
-      Value saved_exception_val = current_exception_;
+    // Save caller's execution state (stack, locals, frames, chunk, exception)
+    auto saved_stack = stack;
+    auto saved_locals = locals;
+    auto saved_frame_count = frame_count_;
+    auto saved_frames = frame_arena_;
+    const BytecodeChunk *saved_chunk = current_chunk;
+    bool saved_exception = has_current_exception_;
+    Value saved_exception_val = current_exception_;
 
-      // Fresh globals for the module — populate with host globals so
-      // the module can call print(), len(), str, etc.
-      std::unordered_set<std::string> inheritedGlobalNames;
-      std::unordered_map<std::string, Value> inheritedGlobalValues;
-      globals.clear();
-      // Register host function globals into sandbox (print, len, str, etc.)
-      for (const auto &[name, value] : host_function_globals_) {
+  // Fresh globals for the module — populate with host globals so
+  // the module can call print(), len(), str, etc.
+  std::unordered_set<std::string> inheritedGlobalNames;
+  std::unordered_map<std::string, Value> inheritedGlobalValues;
+  globals.clear();
+    // Register host function globals into sandbox (print, len, str, etc.)
+    for (const auto& [name, value] : host_function_globals_) {
         globals[name] = value;
         inheritedGlobalNames.insert(name);
         inheritedGlobalValues[name] = value;
-      }
-      // Also carry over namespace objects (fs, sys, math, etc.) from the
-      // caller's globals so module code can call fs.read(), sys.cwd(), etc.
-      auto &callerGlobals = globals_stack_.back();
-      for (const auto &[name, value] : callerGlobals) {
-        if (name.empty() || name[0] == '_')
-          continue;
-        if (globals.count(name))
-          continue; // don't overwrite host function globals
+    }
+    // Also carry over namespace objects (fs, sys, math, etc.) from the
+    // caller's globals so module code can call fs.read(), sys.cwd(), etc.
+    auto &callerGlobals = globals_stack_.back();
+    for (const auto& [name, value] : callerGlobals) {
+        if (name.empty() || name[0] == '_') continue;
+        if (globals.count(name)) continue; // don't overwrite host function globals
         if (value.isObjectId()) {
-          globals[name] = value;
-          inheritedGlobalNames.insert(name);
-          inheritedGlobalValues[name] = value;
+            globals[name] = value;
+            inheritedGlobalNames.insert(name);
+            inheritedGlobalValues[name] = value;
         }
-      }
-      auto g_obj = createHostObject();
-      globals_mirror_object_id_ = g_obj.id;
-      globals["_G"] = Value::makeObjectId(g_obj.id);
-      // Also register the _G mirror with host function entries
-      for (const auto &[name, value] : host_function_globals_) {
+    }
+    auto g_obj = createHostObject();
+    globals_mirror_object_id_ = g_obj.id;
+    globals["_G"] = Value::makeObjectId(g_obj.id);
+    // Also register the _G mirror with host function entries
+    for (const auto& [name, value] : host_function_globals_) {
         setHostObjectField(g_obj, name, value);
-      }
+    }
 
-      // Set up the module's execution context WITHOUT resetting the heap.
-      // execute() would call heap_.reset() which destroys the caller's objects.
-      // Instead, we set up the call frame directly (like executePersistent).
-      current_chunk = chunk.get();
-      const auto *entry = chunk->getFunction("__main__");
-      if (!entry) {
+    // Set up the module's execution context WITHOUT resetting the heap.
+    // execute() would call heap_.reset() which destroys the caller's objects.
+    // Instead, we set up the call frame directly (like executePersistent).
+    current_chunk = chunk.get();
+    const auto *entry = chunk->getFunction("__main__");
+    if (!entry) {
         // Restore everything on error
         globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
@@ -3875,35 +3492,32 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
         current_script_dir_ = prev_script_dir;
         modules_loading_.erase(canonicalKey);
         COMPILER_THROW("Module " + path + " has no __main__ function");
-      }
+    }
 
-      while (!stack.empty())
-        stack.pop();
-      locals.clear();
-      frame_count_ = 0;
-      open_upvalues.clear();
-      has_current_exception_ = false;
-      current_exception_ = nullptr;
+    while (!stack.empty()) stack.pop();
+    locals.clear();
+    frame_count_ = 0;
+    open_upvalues.clear();
+    has_current_exception_ = false;
+    current_exception_ = nullptr;
 
-      if (frame_arena_.size() <= frame_count_) {
-        frame_arena_.push_back(
-            CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}});
-      } else {
-        frame_arena_[frame_count_] =
-            CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}};
-      }
-      frame_count_++;
-      locals.resize(entry->local_count);
+    if (frame_arena_.size() <= frame_count_) {
+        frame_arena_.push_back(CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}});
+    } else {
+        frame_arena_[frame_count_] = CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}};
+    }
+    frame_count_++;
+    locals.resize(entry->local_count);
 
-      // Execute the module's bytecode (same heap, sandboxed globals)
-      Value exec_result;
-      try {
-        runDispatchLoop(0);
-        if (!stack.empty()) {
-          exec_result = stack.top();
-          stack.pop();
-        }
-      } catch (...) {
+	// Execute the module's bytecode (same heap, sandboxed globals)
+        Value exec_result;
+        try {
+ runDispatchLoop(0);
+ if (!stack.empty()) {
+                exec_result = stack.top();
+                stack.pop();
+            }
+        } catch (...) {
         // Restore caller's globals and execution state on error
         globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
@@ -3921,654 +3535,614 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
         current_script_dir_ = prev_script_dir;
         modules_loading_.erase(canonicalKey);
         throw;
-      }
+    }
 
-      // Keep module chunk alive so exported functions can reference it
-      module_chunks_[canonicalKey] = chunk;
+    // Keep module chunk alive so exported functions can reference it
+    module_chunks_[canonicalKey] = chunk;
 
-      // Materialize chunk-relative values into heap-stable values before
-      // restoring the caller's chunk. StringValId and FunctionObjId are
-      // indices into the *module's* chunk — they'd resolve against the
-      // caller's chunk after restore, producing garbage.
-      auto exportsObj = createHostObject();
-      auto *obj = heap_.object(exportsObj.id);
-      auto moduleGlobalsSnapshot =
-          std::make_shared<std::unordered_map<std::string, Value>>(globals);
-      int exportCount = 0;
-      (void)exportCount;
-      for (const auto &[name, value] : globals) {
-        if (name.empty() || name[0] == '_')
-          continue;
+    // Materialize chunk-relative values into heap-stable values before
+    // restoring the caller's chunk. StringValId and FunctionObjId are
+    // indices into the *module's* chunk — they'd resolve against the
+    // caller's chunk after restore, producing garbage.
+    auto exportsObj = createHostObject();
+auto *obj = heap_.object(exportsObj.id);
+    auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    int exportCount = 0;
+    (void)exportCount;
+for (const auto& [name, value] : globals) {
+            if (name.empty() || name[0] == '_') continue;
         // Skip inherited globals UNLESS the module redefined them
         // (i.e., the value is different from what was inherited)
         if (inheritedGlobalNames.count(name)) {
-          auto it = inheritedGlobalValues.find(name);
-          if (it != inheritedGlobalValues.end()) {
-            const auto &inheritedVal = it->second;
-            // If value is identical to what was inherited, skip it
-            // Use raw comparison: same type + same ID/index
-            bool same = false;
-            if (inheritedVal.isHostFuncId() && value.isHostFuncId() &&
-                inheritedVal.asHostFuncId() == value.asHostFuncId())
-              same = true;
-            else if (inheritedVal.isObjectId() && value.isObjectId() &&
-                     inheritedVal.asObjectId() == value.asObjectId())
-              same = true;
-            else if (inheritedVal.isInt() && value.isInt() &&
-                     inheritedVal.asInt() == value.asInt())
-              same = true;
-            else if (inheritedVal.isStringId() && value.isStringId() &&
-                     inheritedVal.asStringId() == value.asStringId())
-              same = true;
-            else if (inheritedVal.isNull() && value.isNull())
-              same = true;
-            if (same)
-              continue;
-          }
+            auto it = inheritedGlobalValues.find(name);
+            if (it != inheritedGlobalValues.end()) {
+                const auto& inheritedVal = it->second;
+                // If value is identical to what was inherited, skip it
+                // Use raw comparison: same type + same ID/index
+                bool same = false;
+                if (inheritedVal.isHostFuncId() && value.isHostFuncId() && inheritedVal.asHostFuncId() == value.asHostFuncId()) same = true;
+                else if (inheritedVal.isObjectId() && value.isObjectId() && inheritedVal.asObjectId() == value.asObjectId()) same = true;
+                else if (inheritedVal.isInt() && value.isInt() && inheritedVal.asInt() == value.asInt()) same = true;
+                else if (inheritedVal.isStringId() && value.isStringId() && inheritedVal.asStringId() == value.asStringId()) same = true;
+                else if (inheritedVal.isNull() && value.isNull()) same = true;
+                if (same) continue;
+            }
         }
         Value materialized = deepMaterializeStrings(value, current_chunk);
-        materialized = deepWrapModuleFunctions(
-            materialized, chunk, moduleGlobalsSnapshot, canonicalKey, name);
+            materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
+                canonicalKey, name);
         (*obj)[name] = materialized;
         exportCount++;
-      }
-      Value exports = Value::makeObjectId(exportsObj.id);
+    }
+    Value exports = Value::makeObjectId(exportsObj.id);
 
-      // Merge C++ host module globals (e.g., math.ceil, math.sqrt) into exports
-      // when a .hv module shadows a native module. The .hv module's own exports
-      // take priority; host functions are only added for missing keys.
-      {
+    // Merge C++ host module globals (e.g., math.ceil, math.sqrt) into exports
+    // when a .hv module shadows a native module. The .hv module's own exports
+    // take priority; host functions are only added for missing keys.
+    {
         std::string prefix = path + ".";
-        for (const auto &[name, value] : host_function_globals_) {
-          if (name.rfind(prefix, 0) != 0)
-            continue;
-          std::string localName = name.substr(prefix.size());
-          if (!obj->get(localName)) {
-            (*obj)[localName] = value;
-          }
-        }
-      }
-
-      // Restore caller's globals and execution state
-      // But first, capture any lazy module objects that were initialized
-      // during the module's execution (e.g., fs, sys) so we can propagate
-      // them to the caller's globals — otherwise the caller still has
-      // the stale lazy proxy objects.
-      std::unordered_map<std::string, Value> lazyModuleUpdates;
-      for (const auto &lm : lazy_modules_) {
-        if (lm.second.loaded) {
-          auto git = globals.find(lm.first);
-          if (git != globals.end() && git->second.isObjectId()) {
-            auto *lmobj = heap_.object(git->second.asObjectId());
-            if (lmobj && !lmobj->get("__lazy__")) {
-              lazyModuleUpdates[lm.first] = git->second;
-              for (const auto &alias : lm.second.aliases) {
-                auto aliasIt = globals.find(alias);
-                if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
-                  auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
-                  if (aliasObj && !aliasObj->get("__lazy__")) {
-                    lazyModuleUpdates[alias] = aliasIt->second;
-                  }
-                }
-              }
+        for (const auto& [name, value] : host_function_globals_) {
+            if (name.rfind(prefix, 0) != 0) continue;
+            std::string localName = name.substr(prefix.size());
+            if (!obj->get(localName)) {
+                (*obj)[localName] = value;
             }
-          }
         }
-      }
-      globals = std::move(globals_stack_.back());
-      globals_stack_.pop_back();
-      // Propagate lazy module objects to the caller's globals
-      for (const auto &[name, value] : lazyModuleUpdates) {
+    }
+
+  // Restore caller's globals and execution state
+  // But first, capture any lazy module objects that were initialized
+  // during the module's execution (e.g., fs, sys) so we can propagate
+  // them to the caller's globals — otherwise the caller still has
+  // the stale lazy proxy objects.
+    std::unordered_map<std::string, Value> lazyModuleUpdates;
+    for (const auto &lm : lazy_modules_) {
+        if (lm.second.loaded) {
+            auto git = globals.find(lm.first);
+            if (git != globals.end() && git->second.isObjectId()) {
+                auto *lmobj = heap_.object(git->second.asObjectId());
+                if (lmobj && !lmobj->get("__lazy__")) {
+                    lazyModuleUpdates[lm.first] = git->second;
+                    for (const auto &alias : lm.second.aliases) {
+                        auto aliasIt = globals.find(alias);
+                        if (aliasIt != globals.end() && aliasIt->second.isObjectId()) {
+                            auto *aliasObj = heap_.object(aliasIt->second.asObjectId());
+                            if (aliasObj && !aliasObj->get("__lazy__")) {
+                                lazyModuleUpdates[alias] = aliasIt->second;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    globals = std::move(globals_stack_.back());
+    globals_stack_.pop_back();
+    // Propagate lazy module objects to the caller's globals
+    for (const auto &[name, value] : lazyModuleUpdates) {
         globals[name] = value;
-      }
-      globals["_G"] = old_g;
-      globals_mirror_object_id_ = old_mirror_id;
-      immutable_globals_ = saved_immutable_globals;
-      stack = std::move(saved_stack);
-      locals = std::move(saved_locals);
-      immutable_locals_.clear();
-      frame_count_ = saved_frame_count;
-      frame_arena_ = std::move(saved_frames);
-      current_chunk = saved_chunk;
-      has_current_exception_ = saved_exception;
-      current_exception_ = saved_exception_val;
-      current_script_dir_ = prev_script_dir;
-
-      // Cache under both keys via canonical ModuleLoader
-      moduleLoader_.putCache(path, exports);
-      moduleLoader_.putCache(canonicalKey, exports);
-      // Also store in globals so GC scans it as a root
-      // (the module cache is not a GC root, so cached objects can be collected)
-      globals[path] = exports;
-      modules_loading_.erase(canonicalKey);
-
-      return exports;
     }
+    globals["_G"] = old_g;
+  globals_mirror_object_id_ = old_mirror_id;
+    immutable_globals_ = saved_immutable_globals;
+    stack = std::move(saved_stack);
+    locals = std::move(saved_locals);
+    immutable_locals_.clear();
+    frame_count_ = saved_frame_count;
+    frame_arena_ = std::move(saved_frames);
+    current_chunk = saved_chunk;
+    has_current_exception_ = saved_exception;
+    current_exception_ = saved_exception_val;
+    current_script_dir_ = prev_script_dir;
 
-    Value VM::loadScript(const std::string &path) {
-      auto resolved = moduleLoader_.resolve(path, current_script_dir_);
-      if (!resolved) {
-        std::filesystem::path directPath(path);
-        std::error_code ec;
-        if (std::filesystem::exists(directPath, ec)) {
-          resolved = ModuleLoader::ResolvedModule{
-              ModuleLoader::ResolvedModule::UserSource,
-              std::filesystem::canonical(directPath, ec).string(), path};
-        }
-      }
-      if (!resolved) {
-        COMPILER_THROW("load: file not found: " + path);
-      }
+    // Cache under both keys via canonical ModuleLoader
+    moduleLoader_.putCache(path, exports);
+    moduleLoader_.putCache(canonicalKey, exports);
+    // Also store in globals so GC scans it as a root
+    // (the module cache is not a GC root, so cached objects can be collected)
+    globals[path] = exports;
+    modules_loading_.erase(canonicalKey);
 
-      std::string canonicalKey = resolved->canonicalPath;
+    return exports;
+}
 
-      if (modules_loading_.count(canonicalKey)) {
-        COMPILER_THROW("load: circular dependency: " + path);
-      }
-      modules_loading_.insert(canonicalKey);
-
-      std::string prev_script_dir = current_script_dir_;
-      std::shared_ptr<BytecodeChunk> chunk;
-
-      std::ifstream file(resolved->canonicalPath);
-      if (!file.is_open()) {
-        modules_loading_.erase(canonicalKey);
-        COMPILER_THROW("load: cannot open file: " + resolved->canonicalPath);
-      }
-      std::string source((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
-      current_script_dir_ =
-          std::filesystem::path(resolved->canonicalPath).parent_path().string();
-
-      parser::Parser parser{{}};
-      std::unique_ptr<ast::Program> program;
-      try {
-        program = parser.produceAST(source);
-      } catch (const ::havel::LexError &e) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        COMPILER_THROW("load: lexer error in " + path + ": " + e.what());
-      } catch (const ::havel::parser::ParseError &e) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        COMPILER_THROW("load: parse error in " + path + ": " + e.what());
-      }
-      if (!program || parser.hasErrors()) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        std::string errors;
-        if (parser.hasErrors()) {
-          for (const auto &err : parser.getErrors())
-            errors += err.message + "\n";
-        }
-        COMPILER_THROW("load: failed to parse " + path + ": " + errors);
-      }
-
-      ByteCompiler compiler;
-      try {
-        chunk = std::shared_ptr<BytecodeChunk>(
-            compiler.compile(*program).release());
-      } catch (const std::exception &e) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        COMPILER_THROW("load: compilation error in " + path + ": " +
-                       std::string(e.what()));
-      }
-      if (!chunk) {
-        modules_loading_.erase(canonicalKey);
-        current_script_dir_ = prev_script_dir;
-        COMPILER_THROW("load: compiler returned null chunk for " + path);
-      }
-
-      // Register protocol/impl info from AST with VM
-      for (const auto &stmt : program->body) {
-        if (!stmt)
-          continue;
-        if (stmt->kind == ast::NodeType::ProtocolDeclaration) {
-          const auto &protDecl =
-              static_cast<const ast::ProtocolDeclaration &>(*stmt);
-          std::unordered_set<std::string> methodNames;
-          for (const auto &method : protDecl.methods) {
-            if (method && method->name)
-              methodNames.insert(method->name->symbol);
-          }
-          if (protDecl.name)
-            registerProtocol(protDecl.name->symbol, methodNames);
-        }
-        if (stmt->kind == ast::NodeType::TraitDeclaration) {
-          const auto &traitDecl =
-              static_cast<const ast::TraitDeclaration &>(*stmt);
-          std::unordered_set<std::string> methodNames;
-          for (const auto &method : traitDecl.methods) {
-            if (method && method->name)
-              methodNames.insert(method->name->symbol);
-          }
-          if (traitDecl.name)
-            registerProtocol(traitDecl.name->symbol, methodNames);
-        }
-        if (stmt->kind == ast::NodeType::ImplDeclaration) {
-          const auto &implDecl =
-              static_cast<const ast::ImplDeclaration &>(*stmt);
-          std::string traitName =
-              implDecl.traitName ? implDecl.traitName->symbol : "";
-          std::string typeName =
-              implDecl.typeName ? implDecl.typeName->symbol : "";
-          if (!traitName.empty() && !typeName.empty()) {
-            registerProtocolImpl(traitName, typeName);
-          }
-        }
-      }
-
-      // Keep the chunk alive so closures/functions from this script remain
-      // valid
-      module_chunks_[canonicalKey] = chunk;
-
-      // Execute in caller's global scope (like executePersistent, not
-      // sandboxed) Save caller's execution state
-      auto saved_stack = stack;
-      auto saved_locals = locals;
-      auto saved_frame_count = frame_count_;
-      auto saved_frames = frame_arena_;
-      const BytecodeChunk *saved_chunk = current_chunk;
-      bool saved_exception = has_current_exception_;
-      Value saved_exception_val = current_exception_;
-
-      // Record pre-existing globals so we can wrap new function values
-      std::unordered_set<std::string> preExistingGlobals;
-      for (const auto &[name, value] : globals) {
-        preExistingGlobals.insert(name);
-      }
-
-      current_chunk = chunk.get();
-      const auto *entry = chunk->getFunction("__main__");
-      if (!entry) {
-        stack = std::move(saved_stack);
-        locals = std::move(saved_locals);
-        immutable_locals_.clear();
-        frame_count_ = saved_frame_count;
-        frame_arena_ = std::move(saved_frames);
-        current_chunk = saved_chunk;
-        has_current_exception_ = saved_exception;
-        current_exception_ = saved_exception_val;
-        current_script_dir_ = prev_script_dir;
-        modules_loading_.erase(canonicalKey);
-        COMPILER_THROW("load: script " + path + " has no __main__ function");
-      }
-
-      while (!stack.empty())
-        stack.pop();
-      locals.clear();
-      frame_count_ = 0;
-      open_upvalues.clear();
-      has_current_exception_ = false;
-      current_exception_ = nullptr;
-
-      if (frame_arena_.size() <= frame_count_) {
-        frame_arena_.push_back(
-            CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}});
-      } else {
-        frame_arena_[frame_count_] =
-            CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}};
-      }
-      frame_count_++;
-      locals.resize(entry->local_count);
-
-      Value exec_result;
-      try {
-        runDispatchLoop(0);
-        if (!stack.empty()) {
-          exec_result = stack.top();
-          stack.pop();
-        }
-      } catch (...) {
-        stack = std::move(saved_stack);
-        locals = std::move(saved_locals);
-        immutable_locals_.clear();
-        frame_count_ = saved_frame_count;
-        frame_arena_ = std::move(saved_frames);
-        current_chunk = saved_chunk;
-        has_current_exception_ = saved_exception;
-        current_exception_ = saved_exception_val;
-        current_script_dir_ = prev_script_dir;
-        modules_loading_.erase(canonicalKey);
-        throw;
-      }
-
-      // Wrap new FunctionObjId globals into closures so they survive chunk
-      // switch
-      for (auto &[name, val] : globals) {
-        if (val.isFunctionObjId() && !preExistingGlobals.count(name)) {
-          uint32_t fnIdx = val.asFunctionObjId();
-          if (chunk->getFunction(fnIdx)) {
-            auto ref = heap_.allocateClosure(
-                GCHeap::RuntimeClosure{.function_index = fnIdx,
-                                       .chunk_index = 0,
-                                       .chunk = chunk.get(),
-                                       .module_globals = nullptr,
-                                       .upvalues = {}});
-            val = Value::makeClosureId(ref.id);
-          }
-        }
-      }
-
-      // Restore caller's execution state (but keep the merged globals)
-      stack = std::move(saved_stack);
-      locals = std::move(saved_locals);
-      immutable_locals_.clear();
-      frame_count_ = saved_frame_count;
-      frame_arena_ = std::move(saved_frames);
-      current_chunk = saved_chunk;
-      has_current_exception_ = saved_exception;
-      current_exception_ = saved_exception_val;
-      current_script_dir_ = prev_script_dir;
-
-      modules_loading_.erase(canonicalKey);
-
-      return Value::makeBool(true);
+Value VM::loadScript(const std::string& path) {
+  auto resolved = moduleLoader_.resolve(path, current_script_dir_);
+  if (!resolved) {
+    std::filesystem::path directPath(path);
+    std::error_code ec;
+    if (std::filesystem::exists(directPath, ec)) {
+      resolved = ModuleLoader::ResolvedModule{
+        ModuleLoader::ResolvedModule::UserSource,
+        std::filesystem::canonical(directPath, ec).string(),
+        path
+      };
     }
+  }
+  if (!resolved) {
+    COMPILER_THROW("load: file not found: " + path);
+  }
 
-    Value VM::runInContext(const std::string &source, Value context) {
-      globals_stack_.push_back(globals);
-      auto old_mirror_id = globals_mirror_object_id_;
-      Value old_g = globals["_G"];
+  std::string canonicalKey = resolved->canonicalPath;
 
-      if (context.isNull()) {
-        globals.clear();
-        auto g_obj = createHostObject();
-        globals_mirror_object_id_ = g_obj.id;
-        globals["_G"] = Value::makeObjectId(g_obj.id);
-      } else if (context.isObjectId()) {
-        globals.clear();
-        globals_mirror_object_id_ = context.asObjectId();
-        globals["_G"] = context;
-      } else {
-        globals_stack_.pop_back();
-        throwError("runInContext: context must be null or object");
-        return Value::makeNull();
-      }
+  if (modules_loading_.count(canonicalKey)) {
+    COMPILER_THROW("load: circular dependency: " + path);
+  }
+  modules_loading_.insert(canonicalKey);
 
-      parser::Parser parser{{}};
-      std::unique_ptr<ast::Program> program;
-      try {
-        program = parser.produceAST(source);
-      } catch (const ::havel::LexError &) {
-        globals = std::move(globals_stack_.back());
-        globals_stack_.pop_back();
-        globals["_G"] = old_g;
-        globals_mirror_object_id_ = old_mirror_id;
-        return Value::makeNull();
-      } catch (const ::havel::parser::ParseError &) {
-        globals = std::move(globals_stack_.back());
-        globals_stack_.pop_back();
-        globals["_G"] = old_g;
-        globals_mirror_object_id_ = old_mirror_id;
-        return Value::makeNull();
-      }
-      if (!program || parser.hasErrors()) {
-        globals = std::move(globals_stack_.back());
-        globals_stack_.pop_back();
-        globals["_G"] = old_g;
-        globals_mirror_object_id_ = old_mirror_id;
-        return Value::makeNull();
-      }
+  std::string prev_script_dir = current_script_dir_;
+  std::shared_ptr<BytecodeChunk> chunk;
 
-      ByteCompiler compiler;
+  std::ifstream file(resolved->canonicalPath);
+  if (!file.is_open()) {
+    modules_loading_.erase(canonicalKey);
+    COMPILER_THROW("load: cannot open file: " + resolved->canonicalPath);
+  }
+  std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
 
-      std::shared_ptr<BytecodeChunk> chunk;
-      try {
-        chunk = std::shared_ptr<BytecodeChunk>(
-            compiler.compile(*program).release());
-      } catch (const std::exception &) {
-        globals = std::move(globals_stack_.back());
-        globals_stack_.pop_back();
-        globals["_G"] = old_g;
-        globals_mirror_object_id_ = old_mirror_id;
-        return Value::makeNull();
-      }
-      if (!chunk) {
-        globals = std::move(globals_stack_.back());
-        globals_stack_.pop_back();
-        globals["_G"] = old_g;
-        globals_mirror_object_id_ = old_mirror_id;
-        return Value::makeNull();
-      }
-
-      Value exec_result = execute(*chunk, "__main__");
-
-      globals = std::move(globals_stack_.back());
-      globals_stack_.pop_back();
-      globals["_G"] = old_g;
-      globals_mirror_object_id_ = old_mirror_id;
-
-      return exec_result;
+  parser::Parser parser{{}};
+  std::unique_ptr<ast::Program> program;
+  try {
+    program = parser.produceAST(source);
+  } catch (const ::havel::LexError &e) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: lexer error in " + path + ": " + e.what());
+  } catch (const ::havel::parser::ParseError &e) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: parse error in " + path + ": " + e.what());
+  }
+  if (!program || parser.hasErrors()) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    std::string errors;
+    if (parser.hasErrors()) {
+      for (const auto &err : parser.getErrors()) errors += err.message + "\n";
     }
+    COMPILER_THROW("load: failed to parse " + path + ": " + errors);
+  }
 
-    void VM::setGlobalThreadSafe(const std::string &name, Value value) {
-      std::unique_lock lock(globals_mutex_);
-      globals[name] = std::move(value);
+  ByteCompiler compiler;
+  try {
+    chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
+  } catch (const std::exception &e) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: compilation error in " + path + ": " + std::string(e.what()));
+  }
+  if (!chunk) {
+    modules_loading_.erase(canonicalKey);
+    current_script_dir_ = prev_script_dir;
+    COMPILER_THROW("load: compiler returned null chunk for " + path);
+  }
+
+  // Register protocol/impl info from AST with VM
+  for (const auto &stmt : program->body) {
+    if (!stmt) continue;
+    if (stmt->kind == ast::NodeType::ProtocolDeclaration) {
+      const auto &protDecl = static_cast<const ast::ProtocolDeclaration &>(*stmt);
+      std::unordered_set<std::string> methodNames;
+      for (const auto &method : protDecl.methods) {
+        if (method && method->name) methodNames.insert(method->name->symbol);
+      }
+      if (protDecl.name) registerProtocol(protDecl.name->symbol, methodNames);
     }
-
-    std::optional<Value> VM::getGlobalThreadSafe(const std::string &name)
-        const {
-      std::shared_lock lock(globals_mutex_);
-      auto it = globals.find(name);
-      if (it != globals.end())
-        return it->second;
-      return std::nullopt;
+    if (stmt->kind == ast::NodeType::TraitDeclaration) {
+      const auto &traitDecl = static_cast<const ast::TraitDeclaration &>(*stmt);
+      std::unordered_set<std::string> methodNames;
+      for (const auto &method : traitDecl.methods) {
+        if (method && method->name) methodNames.insert(method->name->symbol);
+      }
+      if (traitDecl.name) registerProtocol(traitDecl.name->symbol, methodNames);
     }
-
-    // ============================================================================
-    // DEBUGGER HOOKS
-    // ============================================================================
-
-    void VM::setBreakpoint(const std::string &file, uint32_t line) {
-      debug_breakpoints_[file].insert(line);
-    }
-
-    void VM::clearBreakpoint(const std::string &file, uint32_t line) {
-      auto it = debug_breakpoints_.find(file);
-      if (it != debug_breakpoints_.end()) {
-        it->second.erase(line);
-        if (it->second.empty())
-          debug_breakpoints_.erase(it);
+    if (stmt->kind == ast::NodeType::ImplDeclaration) {
+      const auto &implDecl = static_cast<const ast::ImplDeclaration &>(*stmt);
+      std::string traitName = implDecl.traitName ? implDecl.traitName->symbol : "";
+      std::string typeName = implDecl.typeName ? implDecl.typeName->symbol : "";
+      if (!traitName.empty() && !typeName.empty()) {
+        registerProtocolImpl(traitName, typeName);
       }
     }
+  }
 
-    void VM::clearAllBreakpoints() { debug_breakpoints_.clear(); }
+  // Keep the chunk alive so closures/functions from this script remain valid
+  module_chunks_[canonicalKey] = chunk;
 
-    bool VM::hasBreakpoint(const std::string &file, uint32_t line) const {
-      auto it = debug_breakpoints_.find(file);
-      return it != debug_breakpoints_.end() && it->second.count(line) > 0;
+  // Execute in caller's global scope (like executePersistent, not sandboxed)
+  // Save caller's execution state
+  auto saved_stack = stack;
+  auto saved_locals = locals;
+  auto saved_frame_count = frame_count_;
+  auto saved_frames = frame_arena_;
+  const BytecodeChunk *saved_chunk = current_chunk;
+  bool saved_exception = has_current_exception_;
+  Value saved_exception_val = current_exception_;
+
+  // Record pre-existing globals so we can wrap new function values
+  std::unordered_set<std::string> preExistingGlobals;
+  for (const auto& [name, value] : globals) {
+    preExistingGlobals.insert(name);
+  }
+
+  current_chunk = chunk.get();
+  const auto *entry = chunk->getFunction("__main__");
+  if (!entry) {
+    stack = std::move(saved_stack);
+    locals = std::move(saved_locals);
+    immutable_locals_.clear();
+    frame_count_ = saved_frame_count;
+    frame_arena_ = std::move(saved_frames);
+    current_chunk = saved_chunk;
+    has_current_exception_ = saved_exception;
+    current_exception_ = saved_exception_val;
+    current_script_dir_ = prev_script_dir;
+    modules_loading_.erase(canonicalKey);
+    COMPILER_THROW("load: script " + path + " has no __main__ function");
+  }
+
+  while (!stack.empty()) stack.pop();
+  locals.clear();
+  frame_count_ = 0;
+  open_upvalues.clear();
+  has_current_exception_ = false;
+  current_exception_ = nullptr;
+
+  if (frame_arena_.size() <= frame_count_) {
+    frame_arena_.push_back(CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}});
+  } else {
+    frame_arena_[frame_count_] = CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}};
+  }
+  frame_count_++;
+  locals.resize(entry->local_count);
+
+	Value exec_result;
+  try {
+    runDispatchLoop(0);
+    if (!stack.empty()) {
+      exec_result = stack.top();
+      stack.pop();
     }
+  } catch (...) {
+    stack = std::move(saved_stack);
+    locals = std::move(saved_locals);
+    immutable_locals_.clear();
+    frame_count_ = saved_frame_count;
+    frame_arena_ = std::move(saved_frames);
+    current_chunk = saved_chunk;
+    has_current_exception_ = saved_exception;
+    current_exception_ = saved_exception_val;
+    current_script_dir_ = prev_script_dir;
+    modules_loading_.erase(canonicalKey);
+    throw;
+  }
 
-    std::vector<VM::DebugFrameInfo> VM::getStackFrames() const {
-      std::vector<DebugFrameInfo> frames;
-      for (size_t i = 0; i < frame_count_; ++i) {
-        auto &frame = frame_arena_[i];
-        DebugFrameInfo info;
-        if (frame.function) {
-          info.function_name = frame.function->name;
-          info.source_file = frame.function->source_file;
-          auto loc = nearestSourceLocation(*frame.function, frame.ip);
-          info.line = loc.line;
-          info.column = loc.column;
-        }
-        info.frame_depth = i;
-        frames.push_back(std::move(info));
+  // Wrap new FunctionObjId globals into closures so they survive chunk switch
+  for (auto& [name, val] : globals) {
+    if (val.isFunctionObjId() && !preExistingGlobals.count(name)) {
+      uint32_t fnIdx = val.asFunctionObjId();
+      if (chunk->getFunction(fnIdx)) {
+        auto ref = heap_.allocateClosure(
+          GCHeap::RuntimeClosure{
+            .function_index = fnIdx,
+            .chunk_index = 0,
+            .chunk = chunk.get(),
+            .module_globals = nullptr,
+            .upvalues = {}
+          });
+        val = Value::makeClosureId(ref.id);
       }
-      return frames;
     }
+  }
 
-    VM::DebugFrameInfo VM::getCurrentFrameInfo() const {
-      if (frame_count_ == 0)
-        return {};
-      auto &frame = frame_arena_[frame_count_ - 1];
-      DebugFrameInfo info;
-      if (frame.function) {
-        info.function_name = frame.function->name;
-        info.source_file = frame.function->source_file;
-        auto loc = nearestSourceLocation(*frame.function, frame.ip);
-        info.line = loc.line;
-        info.column = loc.column;
-      }
-      info.frame_depth = frame_count_ - 1;
-      return info;
+  // Restore caller's execution state (but keep the merged globals)
+  stack = std::move(saved_stack);
+  locals = std::move(saved_locals);
+  immutable_locals_.clear();
+  frame_count_ = saved_frame_count;
+  frame_arena_ = std::move(saved_frames);
+  current_chunk = saved_chunk;
+  has_current_exception_ = saved_exception;
+  current_exception_ = saved_exception_val;
+  current_script_dir_ = prev_script_dir;
+
+  modules_loading_.erase(canonicalKey);
+
+  return Value::makeBool(true);
+}
+
+Value VM::runInContext(const std::string& source, Value context) {
+  globals_stack_.push_back(globals);
+  auto old_mirror_id = globals_mirror_object_id_;
+  Value old_g = globals["_G"];
+
+  if (context.isNull()) {
+    globals.clear();
+    auto g_obj = createHostObject();
+    globals_mirror_object_id_ = g_obj.id;
+    globals["_G"] = Value::makeObjectId(g_obj.id);
+  } else if (context.isObjectId()) {
+    globals.clear();
+    globals_mirror_object_id_ = context.asObjectId();
+    globals["_G"] = context;
+  } else {
+    globals_stack_.pop_back();
+    throwError("runInContext: context must be null or object");
+    return Value::makeNull();
+  }
+
+ parser::Parser parser{{}};
+ std::unique_ptr<ast::Program> program;
+ try {
+ program = parser.produceAST(source);
+ } catch (const ::havel::LexError &) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ } catch (const ::havel::parser::ParseError &) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ }
+ if (!program || parser.hasErrors()) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ }
+
+	ByteCompiler compiler;
+
+	std::shared_ptr<BytecodeChunk> chunk;
+ try {
+ chunk = std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
+ } catch (const std::exception &) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ }
+ if (!chunk) {
+ globals = std::move(globals_stack_.back());
+ globals_stack_.pop_back();
+ globals["_G"] = old_g;
+ globals_mirror_object_id_ = old_mirror_id;
+ return Value::makeNull();
+ }
+
+ Value exec_result = execute(*chunk, "__main__");
+
+  globals = std::move(globals_stack_.back());
+  globals_stack_.pop_back();
+  globals["_G"] = old_g;
+  globals_mirror_object_id_ = old_mirror_id;
+
+  return exec_result;
+}
+
+void VM::setGlobalThreadSafe(const std::string &name, Value value) {
+  std::unique_lock lock(globals_mutex_);
+  globals[name] = std::move(value);
+}
+
+std::optional<Value> VM::getGlobalThreadSafe(const std::string &name) const {
+  std::shared_lock lock(globals_mutex_);
+  auto it = globals.find(name);
+  if (it != globals.end()) return it->second;
+  return std::nullopt;
+}
+
+// ============================================================================
+// DEBUGGER HOOKS
+// ============================================================================
+
+void VM::setBreakpoint(const std::string& file, uint32_t line) {
+  debug_breakpoints_[file].insert(line);
+}
+
+void VM::clearBreakpoint(const std::string& file, uint32_t line) {
+  auto it = debug_breakpoints_.find(file);
+  if (it != debug_breakpoints_.end()) {
+    it->second.erase(line);
+    if (it->second.empty()) debug_breakpoints_.erase(it);
+  }
+}
+
+void VM::clearAllBreakpoints() {
+  debug_breakpoints_.clear();
+}
+
+bool VM::hasBreakpoint(const std::string& file, uint32_t line) const {
+  auto it = debug_breakpoints_.find(file);
+  return it != debug_breakpoints_.end() && it->second.count(line) > 0;
+}
+
+std::vector<VM::DebugFrameInfo> VM::getStackFrames() const {
+  std::vector<DebugFrameInfo> frames;
+  for (size_t i = 0; i < frame_count_; ++i) {
+    auto& frame = frame_arena_[i];
+    DebugFrameInfo info;
+    if (frame.function) {
+      info.function_name = frame.function->name;
+      info.source_file = frame.function->source_file;
+      auto loc = nearestSourceLocation(*frame.function, frame.ip);
+      info.line = loc.line;
+      info.column = loc.column;
     }
+    info.frame_depth = i;
+    frames.push_back(std::move(info));
+  }
+  return frames;
+}
 
-    std::vector<VM::DebugVarInfo> VM::getLocals(int depth) {
-      std::vector<DebugVarInfo> vars;
-      size_t idx = (depth < 0 || static_cast<size_t>(depth) >= frame_count_)
-                       ? frame_count_ - 1
-                       : static_cast<size_t>(depth);
-      if (idx >= frame_count_ || !frame_arena_[idx].function)
-        return vars;
+VM::DebugFrameInfo VM::getCurrentFrameInfo() const {
+  if (frame_count_ == 0) return {};
+  auto& frame = frame_arena_[frame_count_ - 1];
+  DebugFrameInfo info;
+  if (frame.function) {
+    info.function_name = frame.function->name;
+    info.source_file = frame.function->source_file;
+    auto loc = nearestSourceLocation(*frame.function, frame.ip);
+    info.line = loc.line;
+    info.column = loc.column;
+  }
+  info.frame_depth = frame_count_ - 1;
+  return info;
+}
 
-      auto &frame = frame_arena_[idx];
-      auto *func = frame.function;
+std::vector<VM::DebugVarInfo> VM::getLocals(int depth) {
+  std::vector<DebugVarInfo> vars;
+  size_t idx = (depth < 0 || static_cast<size_t>(depth) >= frame_count_)
+      ? frame_count_ - 1 : static_cast<size_t>(depth);
+  if (idx >= frame_count_ || !frame_arena_[idx].function) return vars;
 
-      for (uint32_t i = 0; i < func->local_count; ++i) {
-        size_t slot = frame.locals_base + i;
-        if (slot >= locals.size())
-          break;
-        DebugVarInfo var;
-        if (i < func->param_names.size()) {
-          var.name = func->param_names[i];
-        } else {
-          var.name = "$" + std::to_string(i);
-        }
-        var.type = getTypeName(locals[slot]);
-        var.value = toString(locals[slot]);
-        vars.push_back(std::move(var));
-      }
-      return vars;
+  auto& frame = frame_arena_[idx];
+  auto* func = frame.function;
+
+  for (uint32_t i = 0; i < func->local_count; ++i) {
+    size_t slot = frame.locals_base + i;
+    if (slot >= locals.size()) break;
+    DebugVarInfo var;
+    if (i < func->param_names.size()) {
+      var.name = func->param_names[i];
+    } else {
+      var.name = "$" + std::to_string(i);
     }
+    var.type = getTypeName(locals[slot]);
+    var.value = toString(locals[slot]);
+    vars.push_back(std::move(var));
+  }
+  return vars;
+}
 
-    std::vector<VM::DebugVarInfo> VM::getDebugGlobals() {
-      std::vector<DebugVarInfo> vars;
-      for (auto &[name, val] : globals) {
-        DebugVarInfo var;
-        var.name = name;
-        var.type = getTypeName(val);
-        var.value = toString(val);
-        vars.push_back(std::move(var));
+std::vector<VM::DebugVarInfo> VM::getDebugGlobals() {
+  std::vector<DebugVarInfo> vars;
+  for (auto& [name, val] : globals) {
+    DebugVarInfo var;
+    var.name = name;
+    var.type = getTypeName(val);
+    var.value = toString(val);
+    vars.push_back(std::move(var));
+  }
+  return vars;
+}
+
+Value VM::evaluateInFrame(const std::string& expr, int depth) {
+  if (expr.empty()) return Value::makeNull();
+
+  // Check locals first
+  size_t idx = (depth < 0 || static_cast<size_t>(depth) >= frame_count_)
+      ? frame_count_ - 1 : static_cast<size_t>(depth);
+  if (idx < frame_count_ && frame_arena_[idx].function) {
+    auto& frame = frame_arena_[idx];
+    auto* func = frame.function;
+    for (uint32_t i = 0; i < func->local_count; ++i) {
+      size_t slot = frame.locals_base + i;
+      if (slot < locals.size() && i < func->param_names.size() &&
+          func->param_names[i] == expr) {
+        return locals[slot];
       }
-      return vars;
     }
+  }
 
-    Value VM::evaluateInFrame(const std::string &expr, int depth) {
-      if (expr.empty())
-        return Value::makeNull();
+  // Check globals
+  auto git = globals.find(expr);
+  if (git != globals.end()) return git->second;
 
-      // Check locals first
-      size_t idx = (depth < 0 || static_cast<size_t>(depth) >= frame_count_)
-                       ? frame_count_ - 1
-                       : static_cast<size_t>(depth);
-      if (idx < frame_count_ && frame_arena_[idx].function) {
-        auto &frame = frame_arena_[idx];
-        auto *func = frame.function;
-        for (uint32_t i = 0; i < func->local_count; ++i) {
-          size_t slot = frame.locals_base + i;
-          if (slot < locals.size() && i < func->param_names.size() &&
-              func->param_names[i] == expr) {
-            return locals[slot];
-          }
-        }
-      }
+  auto hit = host_function_globals_.find(expr);
+  if (hit != host_function_globals_.end()) return hit->second;
 
-      // Check globals
-      auto git = globals.find(expr);
-      if (git != globals.end())
-        return git->second;
+  return Value::makeNull();
+}
 
-      auto hit = host_function_globals_.find(expr);
-      if (hit != host_function_globals_.end())
-        return hit->second;
+bool VM::checkDebugBreak() {
+  if (!debugger_attached_ && debug_step_mode_ == DebugStepMode::Continue) {
+    return false;
+  }
 
-      return Value::makeNull();
-    }
+  // Pause requested: consume the flag and break
+  if (debug_pause_requested_.exchange(false)) {
+    debug_step_mode_ = DebugStepMode::Continue;
+    return true;
+  }
 
-    bool VM::checkDebugBreak() {
-      if (!debugger_attached_ && debug_step_mode_ == DebugStepMode::Continue) {
-        return false;
-      }
+  if (frame_count_ == 0 || !frame_arena_[frame_count_ - 1].function) {
+    return false;
+  }
 
-      // Pause requested: consume the flag and break
-      if (debug_pause_requested_.exchange(false)) {
-        debug_step_mode_ = DebugStepMode::Continue;
-        return true;
-      }
+  auto& frame = frame_arena_[frame_count_ - 1];
+  auto* func = frame.function;
+  auto loc = nearestSourceLocation(*func, frame.ip);
 
-      if (frame_count_ == 0 || !frame_arena_[frame_count_ - 1].function) {
-        return false;
-      }
-
-      auto &frame = frame_arena_[frame_count_ - 1];
-      auto *func = frame.function;
-      auto loc = nearestSourceLocation(*func, frame.ip);
-
-      if (debug_step_mode_ == DebugStepMode::StepInto) {
-        if (loc.line > 0) {
-          debug_step_mode_ = DebugStepMode::Continue;
-          return true;
-        }
-        return false;
-      }
-
-      if (debug_step_mode_ == DebugStepMode::StepOver) {
-        if (loc.line > 0 && frame_count_ <= debug_step_frame_depth_) {
-          debug_step_mode_ = DebugStepMode::Continue;
-          return true;
-        }
-        return false;
-      }
-
-      if (debug_step_mode_ == DebugStepMode::StepOut) {
-        if (loc.line > 0 && frame_count_ < debug_step_frame_depth_) {
-          debug_step_mode_ = DebugStepMode::Continue;
-          return true;
-        }
-        return false;
-      }
-
-      // Breakpoint check - use instruction location filename or fall back to
-      // function source_file
-      std::string filename =
-          loc.filename.empty() ? func->source_file : loc.filename;
-      if (!filename.empty() && loc.line > 0) {
-        if (hasBreakpoint(filename, loc.line)) {
-          if (debug_step_mode_ == DebugStepMode::Continue &&
-              filename == debug_last_break_file_ &&
-              loc.line == debug_last_break_line_) {
-            return false;
-          }
-          debug_last_break_file_ = filename;
-          debug_last_break_line_ = loc.line;
-          debug_last_break_depth_ = frame_count_;
-          return true;
-        }
-      }
-
-      // Clear same-line suppression when we've moved past the breakpoint line
-      // in the same or parent frame (not in sub-function calls)
-      if (debug_step_mode_ == DebugStepMode::Continue &&
-          debug_last_break_line_ > 0 &&
-          frame_count_ <= debug_last_break_depth_ &&
-          (filename != debug_last_break_file_ ||
-           loc.line != debug_last_break_line_)) {
-        debug_last_break_line_ = 0;
-        debug_last_break_file_.clear();
-        debug_last_break_depth_ = 0;
-      }
-
-      return false;
-    }
-
-    void VM::attachDebugger() { debugger_attached_ = true; }
-
-    void VM::detachDebugger() {
-      debugger_attached_ = false;
+  if (debug_step_mode_ == DebugStepMode::StepInto) {
+    if (loc.line > 0) {
       debug_step_mode_ = DebugStepMode::Continue;
-      debug_breakpoints_.clear();
+      return true;
     }
+    return false;
+  }
 
-  } // namespace havel::compiler
+  if (debug_step_mode_ == DebugStepMode::StepOver) {
+    if (loc.line > 0 && frame_count_ <= debug_step_frame_depth_) {
+      debug_step_mode_ = DebugStepMode::Continue;
+      return true;
+    }
+    return false;
+  }
+
+  if (debug_step_mode_ == DebugStepMode::StepOut) {
+    if (loc.line > 0 && frame_count_ < debug_step_frame_depth_) {
+      debug_step_mode_ = DebugStepMode::Continue;
+      return true;
+    }
+    return false;
+  }
+
+  // Breakpoint check - use instruction location filename or fall back to function source_file
+  std::string filename = loc.filename.empty() ? func->source_file : loc.filename;
+  if (!filename.empty() && loc.line > 0) {
+    if (hasBreakpoint(filename, loc.line)) {
+      if (debug_step_mode_ == DebugStepMode::Continue
+          && filename == debug_last_break_file_
+          && loc.line == debug_last_break_line_) {
+        return false;
+      }
+      debug_last_break_file_ = filename;
+      debug_last_break_line_ = loc.line;
+      debug_last_break_depth_ = frame_count_;
+      return true;
+    }
+  }
+
+  // Clear same-line suppression when we've moved past the breakpoint line
+  // in the same or parent frame (not in sub-function calls)
+  if (debug_step_mode_ == DebugStepMode::Continue
+      && debug_last_break_line_ > 0
+      && frame_count_ <= debug_last_break_depth_
+      && (filename != debug_last_break_file_ || loc.line != debug_last_break_line_)) {
+    debug_last_break_line_ = 0;
+    debug_last_break_file_.clear();
+    debug_last_break_depth_ = 0;
+  }
+
+  return false;
+}
+
+void VM::attachDebugger() {
+  debugger_attached_ = true;
+}
+
+void VM::detachDebugger() {
+  debugger_attached_ = false;
+  debug_step_mode_ = DebugStepMode::Continue;
+  debug_breakpoints_.clear();
+}
+
+} // namespace havel::compiler

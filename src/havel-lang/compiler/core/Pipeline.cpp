@@ -1,13 +1,13 @@
 #include "Pipeline.hpp"
 #include "../../../utils/Logger.hpp"
 
-#include "ByteCompiler.hpp"
-#include "../vm/VM.hpp"
-#include "../semantic/TypeChecker.hpp"
+#include "../../errors/ErrorSystem.h"
 #include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
 #include "../../utils/ErrorPrinter.hpp"
-#include "../../errors/ErrorSystem.h"
+#include "../semantic/TypeChecker.hpp"
+#include "../vm/VM.hpp"
+#include "ByteCompiler.hpp"
 
 #include "../../stdlib/RuntimeErrorTracker.hpp"
 #include <algorithm>
@@ -22,11 +22,12 @@
 
 // Macro for throwing errors with source location info
 // Reports to unified ErrorReporter before throwing
-#define COMPILER_THROW(msg) \
-  do { \
-    ::havel::errors::ErrorReporter::instance().report( \
-        HAVEL_ERROR(::havel::errors::ErrorStage::Compiler, msg)); \
-    throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" + std::to_string(__LINE__) + "]"); \
+#define COMPILER_THROW(msg)                                                    \
+  do {                                                                         \
+    ::havel::errors::ErrorReporter::instance().report(                         \
+        HAVEL_ERROR(::havel::errors::ErrorStage::Compiler, msg));              \
+    throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" +        \
+                             std::to_string(__LINE__) + "]");                  \
   } while (0)
 
 namespace havel::compiler {
@@ -66,7 +67,8 @@ std::string sanitizeFileStem(const std::string &value) {
   return out;
 }
 
-[[maybe_unused]] std::string displayNameForUnit(const std::string &compile_unit_name) {
+[[maybe_unused]] std::string
+displayNameForUnit(const std::string &compile_unit_name) {
   return compile_unit_name.empty() ? "<memory>" : compile_unit_name;
 }
 
@@ -95,7 +97,7 @@ std::string sourceLineAt(const std::string &source, size_t one_based_line) {
 }
 
 [[maybe_unused]] std::string formatCaretLine(size_t column, size_t length,
-                            const std::string &annotation) {
+                                             const std::string &annotation) {
   const size_t safe_col = std::max<size_t>(1, column);
   const size_t safe_len = std::max<size_t>(1, length);
   std::string out = "   | ";
@@ -114,29 +116,33 @@ std::string formatDiagnostic(const std::string &kind,
                              const std::string &source, size_t line,
                              size_t column, size_t length,
                              const std::string &annotation = "") {
-  std::string file_path = compile_unit_name.empty() ? "<memory>" : compile_unit_name;
+  std::string file_path =
+      compile_unit_name.empty() ? "<memory>" : compile_unit_name;
   std::string source_line = sourceLineAt(source, line);
-  return ::havel::ErrorPrinter::formatError(kind, message + (annotation.empty() ? "" : " (" + annotation + ")"), file_path, line, column, length, source_line);
+  return ::havel::ErrorPrinter::formatError(
+      kind, message + (annotation.empty() ? "" : " (" + annotation + ")"),
+      file_path, line, column, length, source_line);
 }
 
 std::string enrichRuntimeError(const std::string &runtime_error,
-                                const std::string &compile_unit_name,
-                                const std::string &source) {
-    static const std::regex at_re(R"((.*) at ([0-9]+):([0-9]+))");
-    std::smatch match;
-    if (!std::regex_match(runtime_error, match, at_re) || match.size() < 4) {
-        return runtime_error;
-    }
+                               const std::string &compile_unit_name,
+                               const std::string &source) {
+  static const std::regex at_re(R"((.*) at ([0-9]+):([0-9]+))");
+  std::smatch match;
+  if (!std::regex_match(runtime_error, match, at_re) || match.size() < 4) {
+    return runtime_error;
+  }
 
-    const std::string message = match[1].str();
-    const size_t line = static_cast<size_t>(std::stoul(match[2].str()));
-    const size_t column = static_cast<size_t>(std::stoul(match[3].str()));
+  const std::string message = match[1].str();
+  const size_t line = static_cast<size_t>(std::stoul(match[2].str()));
+  const size_t column = static_cast<size_t>(std::stoul(match[3].str()));
 
-    std::string file_path = compile_unit_name.empty() ? "<memory>" : compile_unit_name;
-    std::string source_line = sourceLineAt(source, line);
+  std::string file_path =
+      compile_unit_name.empty() ? "<memory>" : compile_unit_name;
+  std::string source_line = sourceLineAt(source, line);
 
-    return ::havel::ErrorPrinter::formatError(
-        "Runtime Error", message, file_path, line, column, 1, source_line);
+  return ::havel::ErrorPrinter::formatError("Runtime Error", message, file_path,
+                                            line, column, 1, source_line);
 }
 
 std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
@@ -170,10 +176,9 @@ std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
     }
     declarations.emplace_back(identifier->symbol, slot);
   }
-  std::sort(declarations.begin(), declarations.end(),
-            [](const auto &lhs, const auto &rhs) {
-              return lhs.first < rhs.first;
-            });
+  std::sort(
+      declarations.begin(), declarations.end(),
+      [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
   for (const auto &[symbol, slot] : declarations) {
     out << symbol << " => slot=" << slot << "\n";
   }
@@ -186,10 +191,9 @@ std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
         (function && function->name) ? function->name->symbol : "<anonymous>";
     captures.emplace_back(fn, vars);
   }
-  std::sort(captures.begin(), captures.end(),
-            [](const auto &lhs, const auto &rhs) {
-              return lhs.first < rhs.first;
-            });
+  std::sort(
+      captures.begin(), captures.end(),
+      [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
   for (const auto &[fn, vars] : captures) {
     out << fn << " => [";
     for (size_t i = 0; i < vars.size(); ++i) {
@@ -248,16 +252,16 @@ std::string opcodeName(OpCode opcode) {
     return "LOAD_CONST";
   case OpCode::LOAD_GLOBAL:
     return "LOAD_GLOBAL";
-case OpCode::STORE_GLOBAL:
-        return "STORE_GLOBAL";
-    case OpCode::STORE_IMMUT_GLOBAL:
-        return "STORE_IMMUT_GLOBAL";
-    case OpCode::LOAD_VAR:
-        return "LOAD_VAR";
-    case OpCode::STORE_VAR:
-        return "STORE_VAR";
-    case OpCode::STORE_IMMUT_VAR:
-        return "STORE_IMMUT_VAR";
+  case OpCode::STORE_GLOBAL:
+    return "STORE_GLOBAL";
+  case OpCode::STORE_IMMUT_GLOBAL:
+    return "STORE_IMMUT_GLOBAL";
+  case OpCode::LOAD_VAR:
+    return "LOAD_VAR";
+  case OpCode::STORE_VAR:
+    return "STORE_VAR";
+  case OpCode::STORE_IMMUT_VAR:
+    return "STORE_IMMUT_VAR";
   case OpCode::LOAD_UPVALUE:
     return "LOAD_UPVALUE";
   case OpCode::STORE_UPVALUE:
@@ -276,9 +280,9 @@ case OpCode::STORE_GLOBAL:
     return "SUB";
   case OpCode::MUL:
     return "MUL";
-    case OpCode::DIV:
-        return "DIV";
-case OpCode::INT_DIV:
+  case OpCode::DIV:
+    return "DIV";
+  case OpCode::INT_DIV:
     return "INT_DIV";
   case OpCode::DIVMOD:
     return "DIVMOD";
@@ -342,12 +346,12 @@ case OpCode::INT_DIV:
     return "OR";
   case OpCode::NOT:
     return "NOT";
-	case OpCode::NEGATE:
-		return "NEGATE";
-	case OpCode::IS_NULL:
-		return "IS_NULL";
-	case OpCode::LENGTH:
-		return "LENGTH";
+  case OpCode::NEGATE:
+    return "NEGATE";
+  case OpCode::IS_NULL:
+    return "IS_NULL";
+  case OpCode::LENGTH:
+    return "LENGTH";
   case OpCode::JUMP:
     return "JUMP";
   case OpCode::JUMP_IF_FALSE:
@@ -359,8 +363,8 @@ case OpCode::INT_DIV:
   case OpCode::CALL:
     return "CALL";
   case OpCode::TAIL_CALL:
-	return "TAIL_CALL";
-	case OpCode::CALL_METHOD:
+    return "TAIL_CALL";
+  case OpCode::CALL_METHOD:
     return "CALL_METHOD";
   case OpCode::RETURN:
     return "RETURN";
@@ -503,10 +507,10 @@ case OpCode::INT_DIV:
     return "LOAD_CLASS_PROTO";
   case OpCode::CALL_SUPER:
     return "CALL_SUPER";
-    case OpCode::IMPORT:
-        return "IMPORT";
-    case OpCode::IMPORT_WILDCARD:
-        return "IMPORT_WILDCARD";
+  case OpCode::IMPORT:
+    return "IMPORT";
+  case OpCode::IMPORT_WILDCARD:
+    return "IMPORT_WILDCARD";
   case OpCode::STRUCT_NEW:
     return "STRUCT_NEW";
   case OpCode::STRUCT_GET:
@@ -537,120 +541,120 @@ case OpCode::INT_DIV:
     return "YIELD";
   case OpCode::YIELD_RESUME:
     return "YIELD_RESUME";
- case OpCode::GO_ASYNC:
- return "GO_ASYNC";
- case OpCode::FIBER_AWAIT:
- return "FIBER_AWAIT";
- case OpCode::FIBER_SLEEP:
- return "FIBER_SLEEP";
-case OpCode::CHANNEL_NEW:
-return "CHANNEL_NEW";
-case OpCode::CHANNEL_SEND:
-return "CHANNEL_SEND";
-case OpCode::CHANNEL_RECEIVE:
-return "CHANNEL_RECEIVE";
-case OpCode::CHANNEL_CLOSE:
-return "CHANNEL_CLOSE";
-case OpCode::DEFER_PUSH:
-return "DEFER_PUSH";
-case OpCode::WAITGROUP_NEW:
-return "WAITGROUP_NEW";
-case OpCode::WAITGROUP_ADD:
-return "WAITGROUP_ADD";
-case OpCode::WAITGROUP_DONE:
-return "WAITGROUP_DONE";
-case OpCode::WAITGROUP_WAIT:
-return "WAITGROUP_WAIT";
-    case OpCode::BEGIN_MODULE:
-        return "BEGIN_MODULE";
-    case OpCode::END_MODULE:
-        return "END_MODULE";
-    case OpCode::MATH_SIN:
-        return "MATH_SIN";
-    case OpCode::MATH_COS:
-        return "MATH_COS";
-    case OpCode::MATH_TAN:
-        return "MATH_TAN";
-    case OpCode::MATH_ASIN:
-        return "MATH_ASIN";
-    case OpCode::MATH_ACOS:
-        return "MATH_ACOS";
-    case OpCode::MATH_ATAN:
-        return "MATH_ATAN";
-    case OpCode::MATH_ATAN2:
-        return "MATH_ATAN2";
-    case OpCode::MATH_SINH:
-        return "MATH_SINH";
-    case OpCode::MATH_COSH:
-        return "MATH_COSH";
-    case OpCode::MATH_TANH:
-        return "MATH_TANH";
-    case OpCode::MATH_SQRT:
-        return "MATH_SQRT";
-    case OpCode::MATH_LOG:
-        return "MATH_LOG";
-    case OpCode::MATH_LOG2:
-        return "MATH_LOG2";
-    case OpCode::MATH_LOG10:
-        return "MATH_LOG10";
-    case OpCode::MATH_EXP:
-        return "MATH_EXP";
-    case OpCode::MATH_CEIL:
-        return "MATH_CEIL";
-    case OpCode::MATH_FLOOR:
-        return "MATH_FLOOR";
-    case OpCode::MATH_ROUND:
-        return "MATH_ROUND";
-    case OpCode::MATH_ABS:
-        return "MATH_ABS";
-    case OpCode::OBJECT_FREEZE:
-        return "OBJECT_FREEZE";
-    case OpCode::OBJECT_SEAL:
-        return "OBJECT_SEAL";
-    case OpCode::OBJECT_IS_FROZEN:
-        return "OBJECT_IS_FROZEN";
-    case OpCode::OBJECT_IS_SEALED:
-        return "OBJECT_IS_SEALED";
-    case OpCode::OBJECT_SIZE:
-        return "OBJECT_SIZE";
-    case OpCode::OBJECT_ASSIGN:
-        return "OBJECT_ASSIGN";
-    case OpCode::STRING_REVERSE:
-        return "STRING_REVERSE";
-    case OpCode::STRING_REPEAT:
-        return "STRING_REPEAT";
-    case OpCode::STRING_TRIM_START:
-        return "STRING_TRIM_START";
-    case OpCode::STRING_TRIM_END:
-        return "STRING_TRIM_END";
-    case OpCode::STRING_INCLUDES:
-        return "STRING_INCLUDES";
-    case OpCode::STRING_PAD_START:
-        return "STRING_PAD_START";
-    case OpCode::STRING_PAD_END:
-        return "STRING_PAD_END";
-    case OpCode::BIT_POPCOUNT:
-        return "BIT_POPCOUNT";
-    case OpCode::BIT_CTZ:
-        return "BIT_CTZ";
-    case OpCode::BIT_CLZ:
-        return "BIT_CLZ";
-    case OpCode::BIT_BSWAP:
-        return "BIT_BSWAP";
-    case OpCode::BIT_ROTL:
-        return "BIT_ROTL";
-    case OpCode::BIT_ROTR:
-        return "BIT_ROTR";
-    case OpCode::TIME_NOW:
-        return "TIME_NOW";
-    case OpCode::FORMAT_HEX:
-        return "FORMAT_HEX";
-    case OpCode::FORMAT_UNHEX:
-        return "FORMAT_UNHEX";
-    case OpCode::FORMAT_BASE64_ENCODE:
-        return "FORMAT_BASE64_ENCODE";
-    case OpCode::FORMAT_BASE64_DECODE:
-        return "FORMAT_BASE64_DECODE";
+  case OpCode::GO_ASYNC:
+    return "GO_ASYNC";
+  case OpCode::FIBER_AWAIT:
+    return "FIBER_AWAIT";
+  case OpCode::FIBER_SLEEP:
+    return "FIBER_SLEEP";
+  case OpCode::CHANNEL_NEW:
+    return "CHANNEL_NEW";
+  case OpCode::CHANNEL_SEND:
+    return "CHANNEL_SEND";
+  case OpCode::CHANNEL_RECEIVE:
+    return "CHANNEL_RECEIVE";
+  case OpCode::CHANNEL_CLOSE:
+    return "CHANNEL_CLOSE";
+  case OpCode::DEFER_PUSH:
+    return "DEFER_PUSH";
+  case OpCode::WAITGROUP_NEW:
+    return "WAITGROUP_NEW";
+  case OpCode::WAITGROUP_ADD:
+    return "WAITGROUP_ADD";
+  case OpCode::WAITGROUP_DONE:
+    return "WAITGROUP_DONE";
+  case OpCode::WAITGROUP_WAIT:
+    return "WAITGROUP_WAIT";
+  case OpCode::BEGIN_MODULE:
+    return "BEGIN_MODULE";
+  case OpCode::END_MODULE:
+    return "END_MODULE";
+  case OpCode::MATH_SIN:
+    return "MATH_SIN";
+  case OpCode::MATH_COS:
+    return "MATH_COS";
+  case OpCode::MATH_TAN:
+    return "MATH_TAN";
+  case OpCode::MATH_ASIN:
+    return "MATH_ASIN";
+  case OpCode::MATH_ACOS:
+    return "MATH_ACOS";
+  case OpCode::MATH_ATAN:
+    return "MATH_ATAN";
+  case OpCode::MATH_ATAN2:
+    return "MATH_ATAN2";
+  case OpCode::MATH_SINH:
+    return "MATH_SINH";
+  case OpCode::MATH_COSH:
+    return "MATH_COSH";
+  case OpCode::MATH_TANH:
+    return "MATH_TANH";
+  case OpCode::MATH_SQRT:
+    return "MATH_SQRT";
+  case OpCode::MATH_LOG:
+    return "MATH_LOG";
+  case OpCode::MATH_LOG2:
+    return "MATH_LOG2";
+  case OpCode::MATH_LOG10:
+    return "MATH_LOG10";
+  case OpCode::MATH_EXP:
+    return "MATH_EXP";
+  case OpCode::MATH_CEIL:
+    return "MATH_CEIL";
+  case OpCode::MATH_FLOOR:
+    return "MATH_FLOOR";
+  case OpCode::MATH_ROUND:
+    return "MATH_ROUND";
+  case OpCode::MATH_ABS:
+    return "MATH_ABS";
+  case OpCode::OBJECT_FREEZE:
+    return "OBJECT_FREEZE";
+  case OpCode::OBJECT_SEAL:
+    return "OBJECT_SEAL";
+  case OpCode::OBJECT_IS_FROZEN:
+    return "OBJECT_IS_FROZEN";
+  case OpCode::OBJECT_IS_SEALED:
+    return "OBJECT_IS_SEALED";
+  case OpCode::OBJECT_SIZE:
+    return "OBJECT_SIZE";
+  case OpCode::OBJECT_ASSIGN:
+    return "OBJECT_ASSIGN";
+  case OpCode::STRING_REVERSE:
+    return "STRING_REVERSE";
+  case OpCode::STRING_REPEAT:
+    return "STRING_REPEAT";
+  case OpCode::STRING_TRIM_START:
+    return "STRING_TRIM_START";
+  case OpCode::STRING_TRIM_END:
+    return "STRING_TRIM_END";
+  case OpCode::STRING_INCLUDES:
+    return "STRING_INCLUDES";
+  case OpCode::STRING_PAD_START:
+    return "STRING_PAD_START";
+  case OpCode::STRING_PAD_END:
+    return "STRING_PAD_END";
+  case OpCode::BIT_POPCOUNT:
+    return "BIT_POPCOUNT";
+  case OpCode::BIT_CTZ:
+    return "BIT_CTZ";
+  case OpCode::BIT_CLZ:
+    return "BIT_CLZ";
+  case OpCode::BIT_BSWAP:
+    return "BIT_BSWAP";
+  case OpCode::BIT_ROTL:
+    return "BIT_ROTL";
+  case OpCode::BIT_ROTR:
+    return "BIT_ROTR";
+  case OpCode::TIME_NOW:
+    return "TIME_NOW";
+  case OpCode::FORMAT_HEX:
+    return "FORMAT_HEX";
+  case OpCode::FORMAT_UNHEX:
+    return "FORMAT_UNHEX";
+  case OpCode::FORMAT_BASE64_ENCODE:
+    return "FORMAT_BASE64_ENCODE";
+  case OpCode::FORMAT_BASE64_DECODE:
+    return "FORMAT_BASE64_DECODE";
   case OpCode::NOP:
     return "NOP";
   case OpCode::BIT_AND:
@@ -677,7 +681,8 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
     if (!function.param_names.empty()) {
       out << " // params: ";
       for (size_t p = 0; p < function.param_names.size(); ++p) {
-        if (p > 0) out << ", ";
+        if (p > 0)
+          out << ", ";
         out << function.param_names[p];
         if (p < function.default_values.size() && function.default_values[p]) {
           out << "=" << formatValue(*function.default_values[p]);
@@ -708,16 +713,17 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
     for (size_t i = 0; i < function.instructions.size(); ++i) {
       // Mark try/catch ranges
       for (const auto &[try_start, try_end] : tryBlocks) {
-        if (i == try_start) out << "  ┌─ try ─\n";
+        if (i == try_start)
+          out << "  ┌─ try ─\n";
       }
 
-      out << "  " << i << ": "
-          << opcodeName(function.instructions[i].opcode);
+      out << "  " << i << ": " << opcodeName(function.instructions[i].opcode);
       for (size_t j = 0; j < function.instructions[i].operands.size(); ++j) {
         const auto &op = function.instructions[i].operands[j];
         out << (j == 0 ? " " : ", ");
         if (op.isStringValId()) {
-          out << "str[" << op.asStringValId() << "]=\"" << chunk.getString(op.asStringValId()) << "\"";
+          out << "str[" << op.asStringValId() << "]=\""
+              << chunk.getString(op.asStringValId()) << "\"";
         } else {
           out << formatValue(op);
         }
@@ -729,7 +735,8 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
       out << "\n";
 
       for (const auto &[try_start, try_end] : tryBlocks) {
-        if (i == try_end) out << "  └─ end try ─\n";
+        if (i == try_end)
+          out << "  └─ end try ─\n";
       }
     }
 
@@ -738,7 +745,8 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
       for (size_t c = 0; c < function.constants.size(); ++c) {
         const auto &cv = function.constants[c];
         if (cv.isStringValId()) {
-          out << "  [" << c << "] \"" << chunk.getString(cv.asStringValId()) << "\"\n";
+          out << "  [" << c << "] \"" << chunk.getString(cv.asStringValId())
+              << "\"\n";
         } else {
           out << "  [" << c << "] " << formatValue(cv) << "\n";
         }
@@ -749,9 +757,9 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
 }
 } // namespace
 
-BytecodeSmokeResult runBytecodePipeline(
-    const std::string &source, const std::string &entry_function,
-    const PipelineOptions &options) {
+BytecodeSmokeResult runBytecodePipeline(const std::string &source,
+                                        const std::string &entry_function,
+                                        const PipelineOptions &options) {
   auto writeSnapshotArtifact = [&](const BytecodeSmokeResult &result,
                                    const std::string &error) {
     if (!options.write_snapshot_artifact || options.snapshot_dir.empty()) {
@@ -765,7 +773,7 @@ BytecodeSmokeResult runBytecodePipeline(
     std::ofstream out(artifact_path.string(), std::ios::trunc);
     if (!out.is_open()) {
       COMPILER_THROW("Failed to open snapshot artifact: " +
-                               artifact_path.string());
+                     artifact_path.string());
     }
     out << "=== RESOLVER SNAPSHOT ===\n";
     out << result.snapshot.resolver << "\n";
@@ -785,72 +793,75 @@ BytecodeSmokeResult runBytecodePipeline(
   try {
     program = parser.produceAST(source);
   } catch (const ::havel::LexError &e) {
-    COMPILER_THROW(formatDiagnostic(
-        "LexerError", e.what(), options.compile_unit_name, source, e.line,
-        e.column, e.length, "unexpected token"));
+    COMPILER_THROW(formatDiagnostic("LexerError", e.what(),
+                                    options.compile_unit_name, source, e.line,
+                                    e.column, e.length, "unexpected token"));
   } catch (const ::havel::parser::ParseError &e) {
-    COMPILER_THROW(formatDiagnostic(
-        "ParseError", e.what(), options.compile_unit_name, source, e.line,
-        e.column, e.length, "here"));
+    COMPILER_THROW(formatDiagnostic("ParseError", e.what(),
+                                    options.compile_unit_name, source, e.line,
+                                    e.column, e.length, "here"));
   }
   if (!program) {
-    COMPILER_THROW(
-        "Bytecode pipeline failed: parser returned null AST");
+    COMPILER_THROW("Bytecode pipeline failed: parser returned null AST");
   }
-    if (parser.hasErrors()) {
-      std::string allErrors;
-      for (const auto &err : parser.getErrors()) {
-        if (err.severity != ErrorSeverity::Error) continue;
-        allErrors += formatDiagnostic(
-            "ParseError", err.message, options.compile_unit_name, source,
-            err.line, err.column, 1, "");
-      }
-      COMPILER_THROW(allErrors);
-    }
+  if (parser.hasErrors()) {
+    std::string allErrors;
     for (const auto &err : parser.getErrors()) {
-      if (err.severity == ErrorSeverity::Warning) {
-        std::cerr << formatDiagnostic(
-            "Warning", err.message, options.compile_unit_name, source,
-            err.line, err.column, 1, "") << std::endl;
-      }
+      if (err.severity != ErrorSeverity::Error)
+        continue;
+      allErrors +=
+          formatDiagnostic("ParseError", err.message, options.compile_unit_name,
+                           source, err.line, err.column, 1, "");
     }
+    COMPILER_THROW(allErrors);
+  }
+  for (const auto &err : parser.getErrors()) {
+    if (err.severity == ErrorSeverity::Warning) {
+      std::cerr << formatDiagnostic("Warning", err.message,
+                                    options.compile_unit_name, source, err.line,
+                                    err.column, 1, "")
+                << std::endl;
+    }
+  }
 
- TypeChecker typeChecker;
- auto typeCheckResult = typeChecker.check(*program);
- if (!typeCheckResult.errors.empty()) {
-     std::string allTypeErrors;
-     for (const auto &err : typeCheckResult.errors) {
-         allTypeErrors += "TypeError: " + err + "\n";
-         ::havel::errors::ErrorReporter::instance().error(
-             ::havel::errors::ErrorStage::Compiler, err);
-     }
-     if (!allTypeErrors.empty()) {
-         COMPILER_THROW(allTypeErrors);
-     }
- }
- for (const auto &warn : typeCheckResult.warnings) {
-     std::cerr << formatDiagnostic(
-         "TypeWarning", warn, options.compile_unit_name, source,
-         0, 0, 0, "") << std::endl;
- }
+  TypeChecker typeChecker;
+  auto typeCheckResult = typeChecker.check(*program);
+  if (!typeCheckResult.errors.empty()) {
+    std::string allTypeErrors;
+    for (const auto &err : typeCheckResult.errors) {
+      allTypeErrors += "TypeError: " + err + "\n";
+      ::havel::errors::ErrorReporter::instance().error(
+          ::havel::errors::ErrorStage::Compiler, err);
+    }
+    if (!allTypeErrors.empty()) {
+      COMPILER_THROW(allTypeErrors);
+    }
+  }
+  for (const auto &warn : typeCheckResult.warnings) {
+    std::cerr << formatDiagnostic("TypeWarning", warn,
+                                  options.compile_unit_name, source, 0, 0, 0,
+                                  "")
+              << std::endl;
+  }
 
- ByteCompiler compiler;
- compiler.setTypeCheckResult(std::move(typeCheckResult));
- compiler.setSourceFile(options.compile_unit_name);
- BytecodeSmokeResult result;
- std::unique_ptr<BytecodeChunk> chunk;
- try {
+  ByteCompiler compiler;
+  compiler.setTypeCheckResult(std::move(typeCheckResult));
+  compiler.setSourceFile(options.compile_unit_name);
+  BytecodeSmokeResult result;
+  std::unique_ptr<BytecodeChunk> chunk;
+  try {
     chunk = compiler.compile(*program);
     if (!chunk) {
       COMPILER_THROW(
           "Bytecode smoke pipeline failed: compiler returned null chunk");
     }
-    result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
+    result.snapshot.resolver =
+        formatResolverSnapshot(compiler.lexicalResolution());
     result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
- if (options.debugBytecode) {
- std::cerr << "=== BYTECODE ===\n" << result.snapshot.bytecode;
- }
- result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
+    if (options.debugBytecode) {
+      std::cerr << "=== BYTECODE ===\n" << result.snapshot.bytecode;
+    }
+    result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
   } catch (const std::exception &e) {
     std::string formatted = e.what();
     static const std::regex unresolved_re(
@@ -865,8 +876,10 @@ BytecodeSmokeResult runBytecodePipeline(
     if (std::regex_search(formatted, unresolved_match, unresolved_re) &&
         unresolved_match.size() >= 4) {
       const std::string symbol = unresolved_match[1].str();
-      const size_t line = static_cast<size_t>(std::stoul(unresolved_match[2].str()));
-      const size_t column = static_cast<size_t>(std::stoul(unresolved_match[3].str()));
+      const size_t line =
+          static_cast<size_t>(std::stoul(unresolved_match[2].str()));
+      const size_t column =
+          static_cast<size_t>(std::stoul(unresolved_match[3].str()));
       formatted = formatDiagnostic(
           "SemanticError", "undefined variable '" + symbol + "'",
           options.compile_unit_name, source, line, column,
@@ -874,30 +887,36 @@ BytecodeSmokeResult runBytecodePipeline(
     } else if (std::regex_search(formatted, duplicate_match, duplicate_re) &&
                duplicate_match.size() >= 4) {
       const std::string symbol = duplicate_match[1].str();
-      const size_t line = static_cast<size_t>(std::stoul(duplicate_match[2].str()));
-      const size_t column = static_cast<size_t>(std::stoul(duplicate_match[3].str()));
+      const size_t line =
+          static_cast<size_t>(std::stoul(duplicate_match[2].str()));
+      const size_t column =
+          static_cast<size_t>(std::stoul(duplicate_match[3].str()));
       formatted = formatDiagnostic(
           "SemanticError", "duplicate declaration '" + symbol + "'",
           options.compile_unit_name, source, line, column,
           std::max<size_t>(1, symbol.size()), "already defined in this scope");
-    } else if (std::regex_search(formatted, missing_binding_match, missing_binding_re) &&
+    } else if (std::regex_search(formatted, missing_binding_match,
+                                 missing_binding_re) &&
                missing_binding_match.size() >= 4) {
       const std::string symbol = missing_binding_match[1].str();
-      const size_t line = static_cast<size_t>(std::stoul(missing_binding_match[2].str()));
-      const size_t column = static_cast<size_t>(std::stoul(missing_binding_match[3].str()));
+      const size_t line =
+          static_cast<size_t>(std::stoul(missing_binding_match[2].str()));
+      const size_t column =
+          static_cast<size_t>(std::stoul(missing_binding_match[3].str()));
       formatted = formatDiagnostic(
           "SemanticError", "undefined variable '" + symbol + "'",
           options.compile_unit_name, source, line, column,
           std::max<size_t>(1, symbol.size()), "not found in this scope");
     }
-    result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
+    result.snapshot.resolver =
+        formatResolverSnapshot(compiler.lexicalResolution());
     // Try to emit partial bytecode even if compilation failed
     chunk = compiler.takeCurrentChunk();
     if (chunk && !chunk->getAllFunctions().empty()) {
       result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
- if (options.debugBytecode) {
- std::cerr << "=== BYTECODE ===\n" << result.snapshot.bytecode;
- }
+      if (options.debugBytecode) {
+        std::cerr << "=== BYTECODE ===\n" << result.snapshot.bytecode;
+      }
     } else {
       result.snapshot.bytecode = "<no bytecode generated>";
     }
@@ -911,46 +930,42 @@ BytecodeSmokeResult runBytecodePipeline(
     vm->registerHostFunction(name, fn);
     // registerHostFunction already adds to globals
   }
-    if (options.vm_setup) {
-        vm->setPostResetSetup([&setup = options.vm_setup](VM &vm) {
-            setup(vm);
-        });
-    }
-// Register protocols and impls from AST with VM
-for (const auto &stmt : program->body) {
-  if (!stmt) continue;
-  if (stmt->kind == ast::NodeType::ProtocolDeclaration) {
-    const auto &protDecl =
-        static_cast<const ast::ProtocolDeclaration &>(*stmt);
-    std::unordered_set<std::string> methodNames;
-    for (const auto &method : protDecl.methods) {
-      if (method && method->name) {
-        methodNames.insert(method->name->symbol);
+  if (options.vm_setup) {
+    vm->setPostResetSetup([&setup = options.vm_setup](VM &vm) { setup(vm); });
+  }
+  // Register protocols and impls from AST with VM
+  for (const auto &stmt : program->body) {
+    if (!stmt)
+      continue;
+    if (stmt->kind == ast::NodeType::ProtocolDeclaration) {
+      const auto &protDecl =
+          static_cast<const ast::ProtocolDeclaration &>(*stmt);
+      std::unordered_set<std::string> methodNames;
+      for (const auto &method : protDecl.methods) {
+        if (method && method->name) {
+          methodNames.insert(method->name->symbol);
+        }
+      }
+      if (protDecl.name) {
+        vm->registerProtocol(protDecl.name->symbol, methodNames);
       }
     }
-    if (protDecl.name) {
-      vm->registerProtocol(protDecl.name->symbol, methodNames);
-    }
-  }
-  if (stmt->kind == ast::NodeType::ImplDeclaration) {
-    const auto &implDecl =
-        static_cast<const ast::ImplDeclaration &>(*stmt);
-    std::string traitName =
-        implDecl.traitName ? implDecl.traitName->symbol : "";
-    std::string typeName =
-        implDecl.typeName ? implDecl.typeName->symbol : "";
+    if (stmt->kind == ast::NodeType::ImplDeclaration) {
+      const auto &implDecl = static_cast<const ast::ImplDeclaration &>(*stmt);
+      std::string traitName =
+          implDecl.traitName ? implDecl.traitName->symbol : "";
+      std::string typeName = implDecl.typeName ? implDecl.typeName->symbol : "";
       if (!traitName.empty() && !typeName.empty()) {
         vm->registerProtocolImpl(traitName, typeName);
       }
     }
     if (stmt->kind == ast::NodeType::ClassDeclaration) {
-    const auto &classDecl =
-        static_cast<const ast::ClassDeclaration &>(*stmt);
-    for (const auto &protoName : classDecl.protocolNames) {
-      vm->registerProtocolImpl(protoName, classDecl.name);
+      const auto &classDecl = static_cast<const ast::ClassDeclaration &>(*stmt);
+      for (const auto &protoName : classDecl.protocolNames) {
+        vm->registerProtocolImpl(protoName, classDecl.name);
+      }
     }
-  }
-  if (stmt->kind == ast::NodeType::StructDeclaration) {
+    if (stmt->kind == ast::NodeType::StructDeclaration) {
       const auto &structDecl =
           static_cast<const ast::StructDeclaration &>(*stmt);
       for (const auto &protoName : structDecl.protocolNames) {
@@ -959,56 +974,61 @@ for (const auto &stmt : program->body) {
     }
   }
   // Set up system object initializer to run after execute() initializes state
-    if (options.system_object_initializer) {
-        vm->setSystemObjectInitializer(options.system_object_initializer);
+  if (options.system_object_initializer) {
+    vm->setSystemObjectInitializer(options.system_object_initializer);
+  }
+  // Set script directory for relative imports (use compile_unit_name if it's a
+  // file path)
+  if (!options.compile_unit_name.empty() &&
+      options.compile_unit_name != "unit" &&
+      options.compile_unit_name != "script") {
+    namespace fs = std::filesystem;
+    std::string name = options.compile_unit_name;
+    auto plusPos = name.find(" + ");
+    if (plusPos != std::string::npos)
+      name = name.substr(0, plusPos);
+    fs::path p(name);
+    if (p.is_absolute() && fs::exists(p)) {
+      vm->setCurrentScriptDir(fs::canonical(p).parent_path().string());
+    } else if (!p.is_absolute()) {
+      fs::path resolved = fs::current_path() / p;
+      if (fs::exists(resolved)) {
+        vm->setCurrentScriptDir(fs::canonical(resolved).parent_path().string());
+      }
     }
-    // Set script directory for relative imports (use compile_unit_name if it's a file path)
-    if (!options.compile_unit_name.empty() && options.compile_unit_name != "unit" && options.compile_unit_name != "script") {
-        namespace fs = std::filesystem;
-        std::string name = options.compile_unit_name;
-        auto plusPos = name.find(" + ");
-        if (plusPos != std::string::npos) name = name.substr(0, plusPos);
-        fs::path p(name);
-        if (p.is_absolute() && fs::exists(p)) {
-            vm->setCurrentScriptDir(fs::canonical(p).parent_path().string());
-        } else if (!p.is_absolute()) {
-            fs::path resolved = fs::current_path() / p;
-            if (fs::exists(resolved)) {
-                vm->setCurrentScriptDir(fs::canonical(resolved).parent_path().string());
-            }
-        }
+  }
+  try {
+    vm->setMaxInstructions(options.max_instructions);
+    if (options.debugBytecode) {
+      vm->setTraceExecution(true);
     }
-    try {
-        vm->setMaxInstructions(options.max_instructions);
-        if (options.debugBytecode) {
-            vm->setTraceExecution(true);
-        }
-        if (options.vm_override) {
- auto shared_chunk = std::shared_ptr<BytecodeChunk>(std::move(chunk));
- vm->storeMainChunk(shared_chunk);
- result.return_value = vm->execute(*shared_chunk, entry_function);
- } else {
- result.return_value = vm->execute(*chunk, entry_function);
- }
-} catch (const ScriptError &e) {
-        ::havel::errors::ErrorReporter::instance().errorAt(
-            ::havel::errors::ErrorStage::VM, e.message,
-            static_cast<size_t>(std::max(1, static_cast<int>(e.line))),
-            static_cast<size_t>(std::max(1, static_cast<int>(e.column))));
-        ::havel::stdlib::notifyRuntimeError(e.message);
-        if (e.line > 0) {
-            throw std::runtime_error(formatDiagnostic(
-                "RuntimeError", e.message, options.compile_unit_name, source,
-                static_cast<size_t>(e.line), std::max<size_t>(1, e.column),
-                1, "uncaught throw"));
-        }
-        throw std::runtime_error(e.message);
-    } catch (const std::exception &e) {
-        ::havel::errors::ErrorReporter::instance().error(
-            ::havel::errors::ErrorStage::VM, e.what());
-        ::havel::stdlib::notifyRuntimeError(e.what());
-        throw std::runtime_error(enrichRuntimeError(e.what(), options.compile_unit_name, source));
+    if (options.vm_override) {
+      auto shared_chunk = std::shared_ptr<BytecodeChunk>(std::move(chunk));
+      vm->storeMainChunk(shared_chunk);
+      result.return_value = vm->execute(*shared_chunk, entry_function);
+    } else {
+      result.return_value = vm->execute(*chunk, entry_function);
     }
+  } catch (const ScriptError &e) {
+    ::havel::errors::ErrorReporter::instance().errorAt(
+        ::havel::errors::ErrorStage::VM, e.message,
+        static_cast<size_t>(std::max(1, static_cast<int>(e.line))),
+        static_cast<size_t>(std::max(1, static_cast<int>(e.column))));
+    ::havel::stdlib::notifyRuntimeError(e.message);
+    if (e.line > 0) {
+      throw std::runtime_error(
+          formatDiagnostic("RuntimeError", e.message, options.compile_unit_name,
+                           source, static_cast<size_t>(e.line),
+                           std::max<size_t>(1, e.column), 1, "uncaught throw"));
+    }
+    throw std::runtime_error(e.message);
+  } catch (const std::exception &e) {
+    ::havel::errors::ErrorReporter::instance().error(
+        ::havel::errors::ErrorStage::VM, e.what());
+    ::havel::stdlib::notifyRuntimeError(e.what());
+    throw std::runtime_error(
+        enrichRuntimeError(e.what(), options.compile_unit_name, source));
+  }
   return result;
 }
 

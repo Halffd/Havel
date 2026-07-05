@@ -114,6 +114,9 @@ public:
   std::string dirPicker(const std::string &title = "Select directory");
   void notify(const std::string &message, const std::string &type = "info");
 
+  // Idle callback - called periodically during event loop
+  void setIdleCallback(std::function<void()> cb) { idleCallback_ = std::move(cb); }
+
   // Event pumping (call this to process Qt events)
   void pumpEvents(int timeoutMs = 0);
 
@@ -247,6 +250,9 @@ private:
 
   // Count of open windows
   int openWindowCount_ = 0;
+
+  // Idle callback
+  std::function<void()> idleCallback_;
 
   // System Tray
   QSystemTrayIcon *trayIcon_ = nullptr;

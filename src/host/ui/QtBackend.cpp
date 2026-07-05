@@ -205,6 +205,11 @@ void QtBackend::resetPerRunState() {
     service_->resetPerRunState();
 }
 
+void QtBackend::setIdleCallback(std::function<void()> cb) {
+    if (!service_) return;
+    service_->setIdleCallback(std::move(cb));
+}
+
 bool QtBackend::hasActiveWindows() const {
     return service_->hasActiveWindows();
 }

@@ -100,6 +100,7 @@ public:
     void quitEventLoop(int exitCode = 0) override;
     void setApplicationMetadata(const ApplicationMetadata& meta) override;
     void resetPerRunState() override;
+    void setIdleCallback(std::function<void()> cb) override;
 
     // Window state
     bool hasActiveWindows() const override;
@@ -149,6 +150,7 @@ private:
     std::unordered_map<std::string, bool> elementOpen_; // for windows
     std::vector<std::string> windowStack_;
     std::function<void()> onAllWindowsClosedCallback_;
+    std::function<void()> idleCallback_;
     
     // ImGui-specific storage
     std::unordered_map<std::string, int> intValues_;

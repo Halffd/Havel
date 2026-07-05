@@ -117,6 +117,9 @@ public:
     virtual int runEventLoop() = 0;
     virtual void quitEventLoop(int exitCode = 0) = 0;
 
+    // Idle callback - called periodically during event loop (e.g. for goroutine scheduling)
+    virtual void setIdleCallback(std::function<void()> cb) { (void)cb; }
+
     virtual void setApplicationMetadata(const ApplicationMetadata& meta) = 0;
 
     virtual void resetPerRunState() = 0;

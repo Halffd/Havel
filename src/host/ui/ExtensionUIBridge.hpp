@@ -95,6 +95,7 @@ public:
   void quitEventLoop(int exitCode = 0) override;
   void setApplicationMetadata(const ApplicationMetadata& meta) override;
   void resetPerRunState() override;
+  void setIdleCallback(std::function<void()> cb) override;
 
   bool hasActiveWindows() const override;
   void onAllWindowsClosed(std::function<void()> callback) override;

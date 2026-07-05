@@ -109,6 +109,7 @@ public:
     void quitEventLoop(int exitCode = 0) override;
     void setApplicationMetadata(const ApplicationMetadata& meta) override;
     void resetPerRunState() override;
+    void setIdleCallback(std::function<void()> cb) override;
 
     // Window state
     bool hasActiveWindows() const override;
@@ -146,6 +147,8 @@ private:
     UIBackend::ApplicationMetadata appMeta_;
     bool initialized_ = false;
     bool trayVisible_ = false;
+    std::function<void()> idleCallback_;
+    unsigned int idleSourceId_ = 0;
 
     // GTK helper methods
     GtkWidget* createWindowInternal(const std::string &title, bool modal = false);

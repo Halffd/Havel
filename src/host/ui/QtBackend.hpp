@@ -95,6 +95,7 @@ public:
 
     void setApplicationMetadata(const ApplicationMetadata& meta) override;
     void resetPerRunState() override;
+    void setIdleCallback(std::function<void()> cb) override;
 
     // Window state
     bool hasActiveWindows() const override;

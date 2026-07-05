@@ -1,59 +1,59 @@
-#include "Havel.hpp"
 #include "HavelLauncher.hpp"
-#include "core/init/Havel.hpp"
-#include "core/hotkey/HotkeyManager.hpp"
+#include "Havel.hpp"
 #include "core/config/ConfigManager.hpp"
-#include "utils/ExitHandler.hpp"
+#include "core/hotkey/HotkeyManager.hpp"
+#include "core/init/Havel.hpp"
+#include "core/util/Env.hpp"
 #include "havel-lang/common/Debug.hpp"
-#include "havel-lang/runtime/Modules.hpp"
-#include "havel-lang/runtime/execution/ExecutionEngine.hpp"
-#include "havel-lang/compiler/core/Pipeline.hpp"
-#include "havel-lang/compiler/core/ByteCompiler.hpp"
-#include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
+#include "havel-lang/compiler/core/ByteCompiler.hpp"
+#include "havel-lang/compiler/core/Pipeline.hpp"
+#include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
-#include "havel-lang/runtime/HostAPI.hpp"
-#include "havel-lang/tools/REPL.hpp"
 #include "havel-lang/runtime/HavelEngine.hpp"
+#include "havel-lang/runtime/HostAPI.hpp"
+#include "havel-lang/runtime/Modules.hpp"
+#include "havel-lang/runtime/execution/ExecutionEngine.hpp"
+#include "havel-lang/tools/REPL.hpp"
 #include "havel-lang/utils/ErrorPrinter.hpp"
 #include "modules/HostModules.hpp"
-#include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
-#include "core/util/Env.hpp"
+#include "utils/ExitHandler.hpp"
+#include "utils/Logger.hpp"
 
 #ifdef HAVEL_ENABLE_LLVM
 // LLVM headers for AOT
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
-#include <llvm/TargetParser/Host.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
-#include <llvm/MC/TargetRegistry.h>
-#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/TargetParser/Host.h>
 #endif
 
 #include "host/ui/UIManager.hpp"
-#include <csignal>
+#include <algorithm>
+#include <chrono>
 #include <climits>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <sstream>
-#include <algorithm>
 #include <map>
-#include <chrono>
-#include <thread>
-#include <unordered_set>
+#include <sstream>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
+#include <unordered_set>
 
 #ifdef HAVE_READLINE
 #include <readline/history.h>
@@ -113,36 +113,47 @@ static std::string normalizeTargetOS(std::string os) {
   std::transform(os.begin(), os.end(), os.begin(), [](unsigned char c) {
     return static_cast<char>(std::tolower(c));
   });
-  if (os == "win") return "windows";
-  if (os == "mac" || os == "darwin") return "macos";
+  if (os == "win")
+    return "windows";
+  if (os == "mac" || os == "darwin")
+    return "macos";
   return os;
 }
 
 static std::string mapTargetTripleForOS(const std::string &requestedOS,
                                         const std::string &fallbackTriple) {
   std::string os = normalizeTargetOS(requestedOS);
-  if (os.empty() || os == "native") return fallbackTriple;
+  if (os.empty() || os == "native")
+    return fallbackTriple;
   llvm::Triple hostTriple(fallbackTriple);
   std::string arch = hostTriple.getArchName().str();
-  if (arch.empty()) arch = "x86_64";
-  if (os == "linux") return arch + "-pc-linux-gnu";
-  if (os == "windows") return arch + "-pc-windows-msvc";
-  if (os == "macos") return arch + "-apple-darwin";
-  if (os == "wasm") return "wasm32-unknown-unknown";
+  if (arch.empty())
+    arch = "x86_64";
+  if (os == "linux")
+    return arch + "-pc-linux-gnu";
+  if (os == "windows")
+    return arch + "-pc-windows-msvc";
+  if (os == "macos")
+    return arch + "-apple-darwin";
+  if (os == "wasm")
+    return "wasm32-unknown-unknown";
   return fallbackTriple;
 }
 
 static std::string sharedLibraryExtensionForOS(const std::string &requestedOS) {
   const std::string os = normalizeTargetOS(requestedOS);
-  if (os == "windows") return ".dll";
-  if (os == "macos") return ".dylib";
+  if (os == "windows")
+    return ".dll";
+  if (os == "macos")
+    return ".dylib";
   return ".so";
 }
 
 static void appendLinkLibraries(std::string &linkCmd,
                                 const std::vector<std::string> &libs) {
   for (const auto &lib : libs) {
-    if (lib.empty()) continue;
+    if (lib.empty())
+      continue;
     if (lib.rfind("-l", 0) == 0 || lib.rfind("-L", 0) == 0 ||
         lib.rfind("/", 0) == 0 || lib.rfind(".", 0) == 0) {
       linkCmd += " " + lib;
@@ -175,7 +186,8 @@ loadScriptFiles(const std::vector<std::string> &files) {
     std::string content = readScriptFile(f);
     if (!content.empty()) {
       code += content + "\n";
-      if (!names.empty()) names += " + ";
+      if (!names.empty())
+        names += " + ";
       names += f;
     }
   }
@@ -186,7 +198,8 @@ static void appendEval(std::string &code, std::string &names,
                        const std::string &eval) {
   if (!eval.empty()) {
     code += eval + "\n";
-    if (!names.empty()) names += " + ";
+    if (!names.empty())
+      names += " + ";
     names += "<eval>";
   }
 }
@@ -200,24 +213,20 @@ static void readFromStdIn(std::string &code, std::string &names) {
   }
 }
 
-static havel::EngineConfig
-makeEngineConfig(const LaunchConfig &cfg) {
-  return {
-    .debugBytecode = cfg.debugBytecode,
-    .debugLexer = cfg.debugLexer,
-    .debugParser = cfg.debugParser,
-    .debugAst = cfg.debugAst,
-    .stopOnError = cfg.stopOnError,
-    .leanMinimalStartup = cfg.minimalMode,
-    .pureStdlib = cfg.pureStdlib,
-    .vmConfig = cfg.vmConfig,
-    .serviceIncludes = cfg.serviceIncludes,
-    .serviceExcludes = cfg.serviceExcludes
-  };
+static havel::EngineConfig makeEngineConfig(const LaunchConfig &cfg) {
+  return {.debugBytecode = cfg.debugBytecode,
+          .debugLexer = cfg.debugLexer,
+          .debugParser = cfg.debugParser,
+          .debugAst = cfg.debugAst,
+          .stopOnError = cfg.stopOnError,
+          .leanMinimalStartup = cfg.minimalMode,
+          .pureStdlib = cfg.pureStdlib,
+          .vmConfig = cfg.vmConfig,
+          .serviceIncludes = cfg.serviceIncludes,
+          .serviceExcludes = cfg.serviceExcludes};
 }
 
-static havel::repl::REPLConfig
-makeREPLConfig(const LaunchConfig &cfg) {
+static havel::repl::REPLConfig makeREPLConfig(const LaunchConfig &cfg) {
   havel::repl::REPLConfig replConfig;
   replConfig.debugMode = cfg.debugMode;
   replConfig.stopOnError = cfg.stopOnError;
@@ -230,17 +239,12 @@ makeREPLConfig(const LaunchConfig &cfg) {
   return replConfig;
 }
 
-static std::shared_ptr<HostAPI>
-createHostAPI(havel::Havel &inst) {
+static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
   auto *hkManager = inst.getHotkeyManagerPtr();
   return std::make_shared<HostAPI>(
-      inst.getIOPtr(),
-      inst.getHotkeyManagerPtr(),
-      Configs::Get(),
-      inst.getWindowManagerPtr(),
-      inst.getBrightnessManager(),
-      inst.getAudioManager(),
-      nullptr, nullptr, nullptr, nullptr, nullptr,
+      inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
+      inst.getWindowManagerPtr(), inst.getBrightnessManager(),
+      inst.getAudioManager(), nullptr, nullptr, nullptr, nullptr, nullptr,
       nullptr, nullptr, nullptr,
       hkManager ? hkManager->getModeManager().get() : nullptr,
       std::vector<std::string>{});
@@ -248,15 +252,14 @@ createHostAPI(havel::Havel &inst) {
 
 static int runLint(const std::string &code, const std::string &primaryFile,
                    const LaunchConfig &cfg) {
-  havel::parser::Parser parser{{
-    .lexer = cfg.debugLexer,
-    .parser = cfg.debugParser,
-    .ast = cfg.debugAst
-  }};
+  havel::parser::Parser parser{{.lexer = cfg.debugLexer,
+                                .parser = cfg.debugParser,
+                                .ast = cfg.debugAst}};
   std::unique_ptr<havel::ast::Program> program;
   try {
     program = parser.produceAST(code);
-  } catch (const std::exception &) {}
+  } catch (const std::exception &) {
+  }
 
   if (parser.hasErrors()) {
     for (const auto &err : parser.getErrors()) {
@@ -265,13 +268,17 @@ static int runLint(const std::string &code, const std::string &primaryFile,
         std::istringstream ss(code);
         std::string line;
         for (size_t i = 1; i <= err.line; ++i) {
-          if (!std::getline(ss, line)) break;
-          if (i == err.line) { sourceLine = line; break; }
+          if (!std::getline(ss, line))
+            break;
+          if (i == err.line) {
+            sourceLine = line;
+            break;
+          }
         }
       }
-      std::string formatted = havel::ErrorPrinter::formatError(
-          "error", err.message, primaryFile,
-          err.line, err.column, 1, sourceLine);
+      std::string formatted =
+          havel::ErrorPrinter::formatError("error", err.message, primaryFile,
+                                           err.line, err.column, 1, sourceLine);
       std::cerr << formatted;
     }
     error("Linting failed with {} error(s)", parser.getErrors().size());
@@ -284,7 +291,8 @@ static int runLint(const std::string &code, const std::string &primaryFile,
     try {
       auto chunk = compiler.compile(*program);
       (void)chunk;
-    } catch (const std::exception &) {}
+    } catch (const std::exception &) {
+    }
     if (compiler.hasErrors()) {
       for (const auto &err : compiler.errors()) {
         std::string sourceLine;
@@ -292,13 +300,17 @@ static int runLint(const std::string &code, const std::string &primaryFile,
           std::istringstream ss(code);
           std::string line;
           for (size_t i = 1; i <= err.line; ++i) {
-            if (!std::getline(ss, line)) break;
-            if (i == err.line) { sourceLine = line; break; }
+            if (!std::getline(ss, line))
+              break;
+            if (i == err.line) {
+              sourceLine = line;
+              break;
+            }
           }
         }
         std::string formatted = havel::ErrorPrinter::formatError(
-            "error", err.what(), primaryFile,
-            err.line, err.column, 1, sourceLine);
+            "error", err.what(), primaryFile, err.line, err.column, 1,
+            sourceLine);
         std::cerr << formatted;
       }
       error("Compilation failed with {} error(s)", compiler.errors().size());
@@ -311,11 +323,9 @@ static int runLint(const std::string &code, const std::string &primaryFile,
 
 static std::unique_ptr<havel::ast::Program>
 parseScript(const std::string &code, const LaunchConfig &cfg) {
-  havel::parser::Parser parser{{
-    .lexer = cfg.debugLexer,
-    .parser = cfg.debugParser,
-    .ast = cfg.debugAst
-  }};
+  havel::parser::Parser parser{{.lexer = cfg.debugLexer,
+                                .parser = cfg.debugParser,
+                                .ast = cfg.debugAst}};
   try {
     return parser.produceAST(code);
   } catch (const std::exception &) {
@@ -325,7 +335,8 @@ parseScript(const std::string &code, const LaunchConfig &cfg) {
 
 static bool programHasHotkeys(const havel::ast::Program &program) {
   for (const auto &stmt : program.body) {
-    if (!stmt) continue;
+    if (!stmt)
+      continue;
     if (stmt->kind == havel::ast::NodeType::HotkeyBinding)
       return true;
     if (stmt->kind == havel::ast::NodeType::WhenBlockStatement) {
@@ -395,10 +406,9 @@ static int runBytecodeFiles(const LaunchConfig &cfg,
       vm->setJITCompiler(jit.get());
     }
 #endif
-    bridge->install(
-        coreProfile ? havel::InstallProfile::Core
-                    : havel::InstallProfile::Full,
-        !coreProfile);
+    bridge->install(coreProfile ? havel::InstallProfile::Core
+                                : havel::InstallProfile::Full,
+                    !coreProfile);
     if (coreProfile) {
       if (cfg.pureStdlib)
         havel::registerPureStdLib(*vm);
@@ -458,7 +468,8 @@ public:
     // LINT-ONLY MODE
     if (cfg.lintOnly && !combinedCode.empty()) {
       info("Linting scripts: {}", combinedNames);
-      return runLint(combinedCode, combinedNames.empty() ? "input" : combinedNames, cfg);
+      return runLint(combinedCode,
+                     combinedNames.empty() ? "input" : combinedNames, cfg);
     }
 
     auto *backend = host::UIManager::instance().backend();
@@ -474,7 +485,8 @@ public:
     while (true) {
       {
         std::vector<std::string> args;
-        for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
+        for (int i = 0; i < argc; ++i)
+          args.emplace_back(argv[i]);
 
         havel::Havel havel_inst(cfg.isStartup, "", false, true, args);
         if (!havel_inst.isInitialized()) {
@@ -486,29 +498,36 @@ public:
           auto *bytecodeVM = havel_inst.getBytecodeVM();
           auto *modules = havel_inst.getModules();
           if (bytecodeVM && modules) {
-            info("Executing combined scripts with bytecode VM: {}", combinedNames);
+            info("Executing combined scripts with bytecode VM: {}",
+                 combinedNames);
             havel::compiler::PipelineOptions options = modules->options();
             options.compile_unit_name = combinedNames;
             options.vm_override = bytecodeVM;
             options.debugBytecode = cfg.debugBytecode;
             auto *ee = havel_inst.getExecutionEngine();
-            if (ee) ee->setScriptReady(true);
+            if (ee)
+              ee->setScriptReady(true);
             try {
-              havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+              havel::compiler::runBytecodePipeline(combinedCode, "__main__",
+                                                   options);
               info("Execution completed successfully");
             } catch (const std::exception &e) {
               error("Execution error: {}", e.what());
             }
-           }
-         }
+          }
+        }
 
         info("Havel started successfully - running in system tray");
-        havel_inst.setShutdownCallback([] {
-          host::UIManager::instance().backend()->quitEventLoop(0);
-        });
+        havel_inst.setShutdownCallback(
+            [] { host::UIManager::instance().backend()->quitEventLoop(0); });
+
+        if (auto *io = havel_inst.getIO()) {
+          backend->setIdleCallback([io]() { io->PumpOnce(); });
+        }
 
         int exitCode = backend->runEventLoop();
-        if (exitCode != 42) return exitCode;
+        if (exitCode != 42)
+          return exitCode;
       }
       backend->resetPerRunState();
       info("Restart requested - relaunching application");
@@ -540,7 +559,8 @@ public:
     // Parse once to check for hotkey bindings
     auto program = parseScript(combinedCode, cfg);
     bool hasHotkeys = program && programHasHotkeys(*program);
-    fprintf(stderr, "[LAUNCHER] ScriptStrategy: hasHotkeys=%d program=%p\n", hasHotkeys, (void*)program.get());
+    fprintf(stderr, "[LAUNCHER] ScriptStrategy: hasHotkeys=%d program=%p\n",
+            hasHotkeys, (void *)program.get());
 
     if (hasHotkeys) {
       // Full mode with UI backend
@@ -556,7 +576,8 @@ public:
       backend->setApplicationMetadata(meta);
 
       std::vector<std::string> args;
-      for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
+      for (int i = 0; i < argc; ++i)
+        args.emplace_back(argv[i]);
 
       havel::Havel havel_inst(false, combinedNames, false, true, args);
       if (!havel_inst.isInitialized()) {
@@ -574,13 +595,14 @@ public:
       auto *hkManager = havel_inst.getHotkeyManagerPtr();
       auto hostAPI = createHostAPI(havel_inst);
       havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
-                                         cfg.serviceExcludes);
+                                       cfg.serviceExcludes);
       hostAPI->SetVM(bytecodeVM);
       bytecodeVM->setTimerCheckFunction(
           [modules]() { modules->checkTimers(); });
 
       auto *ee = havel_inst.getExecutionEngine();
-      if (ee) ee->setScriptReady(true);
+      if (ee)
+        ee->setScriptReady(true);
 
       try {
         havel::compiler::PipelineOptions options = modules->options();
@@ -593,9 +615,12 @@ public:
         return 1;
       }
 
-      if (hkManager) hkManager->printHotkeys();
       havel_inst.setShutdownCallback(
           [] { host::UIManager::instance().backend()->quitEventLoop(0); });
+
+      if (auto *io = havel_inst.getIO()) {
+        backend->setIdleCallback([io]() { io->PumpOnce(); });
+      }
 
       if (!hkManager || hkManager->getHotkeyList().empty()) {
         info("No hotkeys registered — exiting");
@@ -607,7 +632,8 @@ public:
     }
 
     // Headless mode
-    fprintf(stderr, "[LAUNCHER] ScriptStrategy: going headless (no hotkeys in AST)\n");
+    fprintf(stderr,
+            "[LAUNCHER] ScriptStrategy: going headless (no hotkeys in AST)\n");
     try {
       havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();
@@ -637,17 +663,17 @@ public:
     auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
     appendEval(combinedCode, combinedNames, cfg.evalString);
     readFromStdIn(combinedCode, combinedNames);
-    if (combinedCode.empty()) return 0;
+    if (combinedCode.empty())
+      return 0;
 
-    havel::parser::Parser parser{{
-      .lexer = cfg.debugLexer,
-      .parser = cfg.debugParser,
-      .ast = cfg.debugAst
-    }};
+    havel::parser::Parser parser{{.lexer = cfg.debugLexer,
+                                  .parser = cfg.debugParser,
+                                  .ast = cfg.debugAst}};
     std::unique_ptr<havel::ast::Program> program;
     try {
       program = parser.produceAST(combinedCode);
-    } catch (const std::exception &) {}
+    } catch (const std::exception &) {
+    }
 
     if (parser.hasErrors() || !program) {
       for (const auto &err : parser.getErrors())
@@ -680,7 +706,8 @@ public:
       int delay = Configs::Get().Get<int>("Debug.AutoExitDelay", 15);
       std::thread([delay]() {
         std::this_thread::sleep_for(std::chrono::seconds(delay));
-        if (!Configs::Get().Get<bool>("Debug.AutoExit", false)) return;
+        if (!Configs::Get().Get<bool>("Debug.AutoExit", false))
+          return;
         if (debugging::debug_io)
           debug("AutoExit enabled - exiting after {} seconds", delay);
         havel::exit(ExitReason::Normal, 0);
@@ -741,7 +768,8 @@ public:
 static int setupFullReplCommon(const LaunchConfig &cfg) {
   auto *replBackend = host::UIManager::instance().backend();
   if (!replBackend) {
-    error("No UI backend available. Use --minimal or --run for REPL without UI.");
+    error(
+        "No UI backend available. Use --minimal or --run for REPL without UI.");
     return -1;
   }
   host::UIBackend::ApplicationMetadata meta;
@@ -752,25 +780,24 @@ static int setupFullReplCommon(const LaunchConfig &cfg) {
   return 0;
 }
 
-static int
-runMinimalReplLoop(havel::HavelEngine &engine, const LaunchConfig &cfg) {
+static int runMinimalReplLoop(havel::HavelEngine &engine,
+                              const LaunchConfig &cfg) {
   havel::repl::REPL repl(makeREPLConfig(cfg));
-  repl.attach(engine.vm(), engine.modules(),
-              collectKnownGlobals(engine.vm()));
+  repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
   repl.setPumpCallback([&engine]() { engine.tickGoroutines(); });
   return repl.run();
 }
 
-static int
-runFullReplLoop(const LaunchConfig &cfg, havel::Havel &havel_inst) {
+static int runFullReplLoop(const LaunchConfig &cfg, havel::Havel &havel_inst) {
   auto *bytecodeVM = havel_inst.getBytecodeVM();
   auto *modules = havel_inst.getModules();
-  if (!bytecodeVM || !modules) return 1;
+  if (!bytecodeVM || !modules)
+    return 1;
 
   havel::repl::REPL repl(makeREPLConfig(cfg));
   auto hostAPI = createHostAPI(havel_inst);
   havel::initializeServiceRegistry(hostAPI, cfg.serviceIncludes,
-                                     cfg.serviceExcludes);
+                                   cfg.serviceExcludes);
   hostAPI->SetVM(bytecodeVM);
   repl.attach(bytecodeVM, havel_inst.getModules(),
               collectKnownGlobals(bytecodeVM));
@@ -785,8 +812,10 @@ runFullReplLoop(const LaunchConfig &cfg, havel::Havel &havel_inst) {
       else
         io->UngrabAll();
     });
-    repl.setResumeGrabsCallback(
-        [hkManager]() { if (hkManager) hkManager->resumeGrabs(); });
+    repl.setResumeGrabsCallback([hkManager]() {
+      if (hkManager)
+        hkManager->resumeGrabs();
+    });
   }
   return repl.run();
 }
@@ -817,21 +846,25 @@ public:
       }
 
       info("Running scripts and starting REPL with full features...");
-      if (setupFullReplCommon(cfg) != 0) return 1;
+      if (setupFullReplCommon(cfg) != 0)
+        return 1;
 
       std::vector<std::string> args;
       havel::Havel havel_inst(false, combinedNames, true, true, args);
-      if (!havel_inst.isInitialized()) return 1;
+      if (!havel_inst.isInitialized())
+        return 1;
 
       auto *bytecodeVM = havel_inst.getBytecodeVM();
       auto *modules = havel_inst.getModules();
-      if (!bytecodeVM || !modules) return 1;
+      if (!bytecodeVM || !modules)
+        return 1;
 
       bytecodeVM->setTimerCheckFunction(
           [modules]() { modules->checkTimers(); });
 
       auto *ee = havel_inst.getExecutionEngine();
-      if (ee) ee->setScriptReady(true);
+      if (ee)
+        ee->setScriptReady(true);
 
       try {
         havel::compiler::PipelineOptions options = modules->options();
@@ -845,7 +878,8 @@ public:
       }
 
       auto *hkManager = havel_inst.getHotkeyManagerPtr();
-      if (hkManager) hkManager->printHotkeys();
+      if (hkManager)
+        hkManager->printHotkeys();
       info("Script loaded. Hotkeys registered. Enter REPL...");
 
       return runFullReplLoop(cfg, havel_inst);
@@ -887,7 +921,8 @@ public:
       havel::debug(" - GUI: enabled");
       havel::debug(" - IO/Hotkeys: enabled");
 
-      if (setupFullReplCommon(cfg) != 0) return 1;
+      if (setupFullReplCommon(cfg) != 0)
+        return 1;
 
       std::vector<std::string> args;
       havel::Havel havel_inst(false, "", true, true, args);
@@ -941,7 +976,8 @@ public:
 
     std::error_code ec;
     auto absPath = std::filesystem::canonical(launcherPath, ec);
-    if (!ec) launcherPath = absPath.string();
+    if (!ec)
+      launcherPath = absPath.string();
 
     std::string launcherCode = readScriptFile(launcherPath);
     if (launcherCode.empty()) {
@@ -951,9 +987,12 @@ public:
 
     std::vector<std::string> appArgList;
     appArgList.push_back("--self-hosted");
-    for (const auto &f : cfg.scriptFiles) appArgList.push_back(f);
-    if (cfg.lintOnly) appArgList.push_back("--lint");
-    for (const auto &a : cfg.scriptArgs) appArgList.push_back(a);
+    for (const auto &f : cfg.scriptFiles)
+      appArgList.push_back(f);
+    if (cfg.lintOnly)
+      appArgList.push_back("--lint");
+    for (const auto &a : cfg.scriptArgs)
+      appArgList.push_back(a);
 
     installMinimalSignalHandlers();
 
@@ -1013,8 +1052,12 @@ public:
     std::string selfPath = "/proc/self/exe";
     char selfBuf[PATH_MAX];
     ssize_t len = readlink(selfPath.c_str(), selfBuf, sizeof(selfBuf) - 1);
-    if (len == -1) selfPath = "havel";
-    else { selfBuf[len] = '\0'; selfPath = std::string(selfBuf); }
+    if (len == -1)
+      selfPath = "havel";
+    else {
+      selfBuf[len] = '\0';
+      selfPath = std::string(selfBuf);
+    }
 
     int passed = 0, failed = 0, total = static_cast<int>(testFiles.size());
     info("Running {} tests from '{}'", total, cfg.testDir);
@@ -1031,7 +1074,8 @@ public:
       }
       std::string output;
       char buf[256];
-      while (fgets(buf, sizeof(buf), pipe)) output += buf;
+      while (fgets(buf, sizeof(buf), pipe))
+        output += buf;
       int status = pclose(pipe);
       int exitCode = WEXITSTATUS(status);
 
@@ -1046,9 +1090,8 @@ public:
           if (line.find("[ERROR]") != std::string::npos ||
               line.find("Error:") != std::string::npos) {
             errLine = line;
-            errLine.erase(
-                std::remove(errLine.begin(), errLine.end(), '\r'),
-                errLine.end());
+            errLine.erase(std::remove(errLine.begin(), errLine.end(), '\r'),
+                          errLine.end());
             break;
           }
         }
@@ -1056,12 +1099,15 @@ public:
           error("  FAIL {} - timeout ({}s)", testName, cfg.testTimeout);
         else if (!errLine.empty()) {
           size_t pos = errLine.find("[ERROR]");
-          if (pos != std::string::npos) errLine = errLine.substr(pos + 7);
+          if (pos != std::string::npos)
+            errLine = errLine.substr(pos + 7);
           else {
             pos = errLine.find("Error:");
-            if (pos != std::string::npos) errLine = errLine.substr(pos + 6);
+            if (pos != std::string::npos)
+              errLine = errLine.substr(pos + 6);
           }
-          while (!errLine.empty() && errLine[0] == ' ') errLine.erase(0, 1);
+          while (!errLine.empty() && errLine[0] == ' ')
+            errLine.erase(0, 1);
           error("  FAIL {} - {}", testName, errLine);
         } else
           error("  FAIL {} - exit code {}", testName, exitCode);
@@ -1104,19 +1150,24 @@ int HavelLauncher::run(int argc, char *argv[]) {
     Configs::Get().Set("Compiler.JIT", cfg.useJIT ? "true" : "false");
     Configs::Get().Set("Compiler.DebugJIT", cfg.debugJIT ? "true" : "false");
     Configs::Get().Set("Compiler.DumpIR", cfg.dumpIR ? "true" : "false");
-    Configs::Get().Set("Compiler.OutputAsm", cfg.outputAsmToFile ? "true" : "false");
-    Configs::Get().Set("Compiler.JITWarnings", cfg.aotWarnings ? "true" : "false");
+    Configs::Get().Set("Compiler.OutputAsm",
+                       cfg.outputAsmToFile ? "true" : "false");
+    Configs::Get().Set("Compiler.JITWarnings",
+                       cfg.aotWarnings ? "true" : "false");
 #ifdef HAVEL_ENABLE_LLVM
     Configs::Get().Set("Compiler.JITTargetOS", normalizeTargetOS(cfg.targetOS));
 #else
     Configs::Get().Set("Compiler.JITTargetOS", cfg.targetOS);
 #endif
 
-    if (cfg.buildOnly) return runBuild(cfg);
+    if (cfg.buildOnly)
+      return runBuild(cfg);
 
-    if (cfg.mode != LaunchConfig::Mode::SELF_HOSTED && !cfg.vmConfig.self_hosted_modules_path.empty()) {
+    if (cfg.mode != LaunchConfig::Mode::SELF_HOSTED &&
+        !cfg.vmConfig.self_hosted_modules_path.empty()) {
       namespace fs = std::filesystem;
-      fs::path langDir = fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
+      fs::path langDir =
+          fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
       if (fs::exists(langDir) && !fs::is_empty(langDir)) {
         cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
         cfg.minimalMode = true;
@@ -1138,17 +1189,26 @@ int HavelLauncher::run(int argc, char *argv[]) {
   }
 }
 
-std::unique_ptr<RunStrategy> HavelLauncher::createStrategy(const LaunchConfig &cfg) {
+std::unique_ptr<RunStrategy>
+HavelLauncher::createStrategy(const LaunchConfig &cfg) {
   using Mode = LaunchConfig::Mode;
   switch (cfg.mode) {
-  case Mode::DAEMON:          return std::make_unique<DaemonStrategy>();
-  case Mode::SCRIPT:          return std::make_unique<ScriptStrategy>();
-  case Mode::SCRIPT_ONLY:     return std::make_unique<ScriptOnlyStrategy>();
-  case Mode::REPL:            return std::make_unique<ReplStrategy>();
-  case Mode::SCRIPT_AND_REPL: return std::make_unique<ScriptAndReplStrategy>();
-  case Mode::TEST:            return std::make_unique<TestStrategy>();
-  case Mode::CLI:             return std::make_unique<CliStrategy>();
-  case Mode::SELF_HOSTED:     return std::make_unique<SelfHostedStrategy>();
+  case Mode::DAEMON:
+    return std::make_unique<DaemonStrategy>();
+  case Mode::SCRIPT:
+    return std::make_unique<ScriptStrategy>();
+  case Mode::SCRIPT_ONLY:
+    return std::make_unique<ScriptOnlyStrategy>();
+  case Mode::REPL:
+    return std::make_unique<ReplStrategy>();
+  case Mode::SCRIPT_AND_REPL:
+    return std::make_unique<ScriptAndReplStrategy>();
+  case Mode::TEST:
+    return std::make_unique<TestStrategy>();
+  case Mode::CLI:
+    return std::make_unique<CliStrategy>();
+  case Mode::SELF_HOSTED:
+    return std::make_unique<SelfHostedStrategy>();
   default:
     error("Unknown mode");
     return std::make_unique<CliStrategy>();
@@ -1157,7 +1217,8 @@ std::unique_ptr<RunStrategy> HavelLauncher::createStrategy(const LaunchConfig &c
 
 LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   LaunchConfig cfg;
-  if (argc > 0) cfg.programName = argv[0];
+  if (argc > 0)
+    cfg.programName = argv[0];
   bool repl = false;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
@@ -1167,41 +1228,42 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug" || arg == "-d") {
       cfg.debugMode = true;
       Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
- } else if (arg == "--debug-parser" || arg == "-dp") {
- debugging::debug_parser = true;
- cfg.debugParser = true;
- } else if (arg == "--debug-ast" || arg == "-da") {
- debugging::debug_ast = true;
- cfg.debugAst = true;
- } else if (arg == "--debug-lexer" || arg == "-dl") {
- debugging::debug_lexer = true;
- cfg.debugLexer = true;
- } else if (arg == "--debug-bytecode" || arg == "-dbc") {
- cfg.debugBytecode = true;
-} else if (arg == "--debug-gc" || arg == "-dgc") {
-            debugging::debug_gc = true;
-            cfg.debugGc = true;
-        } else if (arg == "--debug-engine" || arg == "-de") {
-            debugging::debug_engine = true;
-            cfg.debugEngine = true;
-        } else if (arg == "--debug-io" || arg == "-dio") {
-            debugging::debug_io = true;
-            cfg.debugIo = true;
-        } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
-            debugging::debug_hotkeys = true;
-            cfg.debugHotkeys = true;
- } else if (arg == "--diff" || arg == "-diff") {
- cfg.diffBytecode = true;
- cfg.debugBytecode = true;
+    } else if (arg == "--debug-parser" || arg == "-dp") {
+      debugging::debug_parser = true;
+      cfg.debugParser = true;
+    } else if (arg == "--debug-ast" || arg == "-da") {
+      debugging::debug_ast = true;
+      cfg.debugAst = true;
+    } else if (arg == "--debug-lexer" || arg == "-dl") {
+      debugging::debug_lexer = true;
+      cfg.debugLexer = true;
+    } else if (arg == "--debug-bytecode" || arg == "-dbc") {
+      cfg.debugBytecode = true;
+    } else if (arg == "--debug-gc" || arg == "-dgc") {
+      debugging::debug_gc = true;
+      cfg.debugGc = true;
+    } else if (arg == "--debug-engine" || arg == "-de") {
+      debugging::debug_engine = true;
+      cfg.debugEngine = true;
+    } else if (arg == "--debug-io" || arg == "-dio") {
+      debugging::debug_io = true;
+      cfg.debugIo = true;
+    } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
+      debugging::debug_hotkeys = true;
+      cfg.debugHotkeys = true;
+    } else if (arg == "--diff" || arg == "-diff") {
+      cfg.diffBytecode = true;
+      cfg.debugBytecode = true;
     } else if (arg == "--diff-pipeline" && i + 1 < argc) {
-        cfg.diffPipelinePath = argv[++i];
+      cfg.diffPipelinePath = argv[++i];
     } else if (arg == "--error" || arg == "-e") {
       // Stop on first error/warning
       cfg.stopOnError = true;
     } else if (arg == "--minimal" || arg == "-m") {
       // Minimal mode - no IO/hotkeys/GUI
       cfg.minimalMode = true;
-    } else if (arg == "--repl" || arg == "-r" || arg == "--interactive" || arg == "-i") {
+    } else if (arg == "--repl" || arg == "-r" || arg == "--interactive" ||
+               arg == "-i") {
       repl = true;
     } else if (arg == "--gui") {
       cfg.mode = LaunchConfig::Mode::DAEMON; // GUI mode is now DAEMON
@@ -1247,12 +1309,14 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         cfg.emitElf = true;
         cfg.emitObj = true;
       } else {
-        error("Unknown --target '{}'. Expected: interpret, jit, aot, asm, ir, wasm, elf, bin", target);
+        error("Unknown --target '{}'. Expected: interpret, jit, aot, asm, ir, "
+              "wasm, elf, bin",
+              target);
       }
- } else if (arg == "--debug-jit" || arg == "-djt") {
-            cfg.debugJIT = true;
-            cfg.dumpIR = true;
-            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+    } else if (arg == "--debug-jit" || arg == "-djt") {
+      cfg.debugJIT = true;
+      cfg.dumpIR = true;
+      Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
     } else if (arg == "-S") {
       cfg.outputAsmToFile = true;
       cfg.dumpIR = true;
@@ -1288,50 +1352,60 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.emitBinary = true;
       cfg.emitElf = true;
 
-  } else if (arg == "--config" || arg == "-c") {
-    // Config file path
-    if (i + 1 < argc) {
-      Configs::SetPath(argv[++i]);
-    }
-  } else if (arg == "--output-log") {
-    if (i + 1 < argc) {
-      cfg.outputLogFile = argv[++i];
-    }
-  } else if (arg == "--history-file") {
-    if (i + 1 < argc) {
-      cfg.historyFile = argv[++i];
-    }
-  } else if (arg == "--eval" || arg == "-E") {
-    if (i + 1 < argc) {
+    } else if (arg == "--config" || arg == "-c") {
+      // Config file path
+      if (i + 1 < argc) {
+        Configs::SetPath(argv[++i]);
+      }
+    } else if (arg == "--output-log") {
+      if (i + 1 < argc) {
+        cfg.outputLogFile = argv[++i];
+      }
+    } else if (arg == "--history-file") {
+      if (i + 1 < argc) {
+        cfg.historyFile = argv[++i];
+      }
+    } else if (arg == "--eval" || arg == "-E") {
+      if (i + 1 < argc) {
         cfg.evalString = argv[++i];
-            if (cfg.mode == LaunchConfig::Mode::DAEMON) cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
-            cfg.minimalMode = true;
-            cfg.pureStdlib = true;
-    }
-} else if (arg == "--run" || arg == "run") {
-                cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
-                cfg.minimalMode = true;
-                cfg.pureStdlib = true;
-        } else if (arg == "--pure-stdlib") {
-            cfg.pureStdlib = true;
-        } else if (arg == "--convert" && i + 1 < argc) {
-            cfg.mode = LaunchConfig::Mode::CLI;
-            cfg.buildOnly = true;
-            std::string target = argv[++i];
-            if (target == "jit") { cfg.target = LaunchConfig::Target::JIT; }
-            else if (target == "aot") { cfg.target = LaunchConfig::Target::AOT; cfg.emitBinary = true; }
-            else if (target == "asm") { cfg.target = LaunchConfig::Target::ASM; cfg.emitAsm = true; }
-            else if (target == "ir") { cfg.target = LaunchConfig::Target::IR; cfg.emitLLVM = true; }
-            else { error("Unknown conversion target: {}", target); }
-        } else if (arg == "--self-hosted") {
-            cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
-            cfg.minimalMode = true;
-            cfg.pureStdlib = true;
+        if (cfg.mode == LaunchConfig::Mode::DAEMON)
+          cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
+        cfg.minimalMode = true;
+        cfg.pureStdlib = true;
+      }
+    } else if (arg == "--run" || arg == "run") {
+      cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
+      cfg.minimalMode = true;
+      cfg.pureStdlib = true;
+    } else if (arg == "--pure-stdlib") {
+      cfg.pureStdlib = true;
+    } else if (arg == "--convert" && i + 1 < argc) {
+      cfg.mode = LaunchConfig::Mode::CLI;
+      cfg.buildOnly = true;
+      std::string target = argv[++i];
+      if (target == "jit") {
+        cfg.target = LaunchConfig::Target::JIT;
+      } else if (target == "aot") {
+        cfg.target = LaunchConfig::Target::AOT;
+        cfg.emitBinary = true;
+      } else if (target == "asm") {
+        cfg.target = LaunchConfig::Target::ASM;
+        cfg.emitAsm = true;
+      } else if (target == "ir") {
+        cfg.target = LaunchConfig::Target::IR;
+        cfg.emitLLVM = true;
+      } else {
+        error("Unknown conversion target: {}", target);
+      }
+    } else if (arg == "--self-hosted") {
+      cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
+      cfg.minimalMode = true;
+      cfg.pureStdlib = true;
     } else if (arg == "--test" || arg == "-t") {
       // Test mode - run all .hv files in a directory
-        cfg.mode = LaunchConfig::Mode::TEST;
-            cfg.minimalMode = true;
-            cfg.pureStdlib = true;
+      cfg.mode = LaunchConfig::Mode::TEST;
+      cfg.minimalMode = true;
+      cfg.pureStdlib = true;
       // Next argument should be the test directory
       if (i + 1 < argc) {
         cfg.testDir = argv[++i];
@@ -1340,10 +1414,10 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         try {
           cfg.testTimeout = std::stoi(argv[i + 1]);
-          i++;        
-        } catch (const std::exception&) {
+          i++;
+        } catch (const std::exception &) {
           // Not a number, ignore
-        }   
+        }
       }
     } else if (arg == "--lint") {
       cfg.lintOnly = true;
@@ -1355,96 +1429,109 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       if (i + 1 < argc) {
         cfg.scriptFiles.push_back(argv[++i]);
       }
-	} else if (arg == "--output" || arg == "-o") {
-		if (i + 1 < argc) {
-			cfg.outputPath = argv[++i];
-		}
-	} else if (arg == "--emit-llvm") {
-		cfg.target = LaunchConfig::Target::IR;
-		cfg.emitLLVM = true;
-		cfg.buildOnly = true;
-		if (i + 1 < argc && argv[i + 1][0] != '-') {
-			cfg.scriptFiles.push_back(argv[++i]);
-		}
-	} else if (arg == "--emit-asm") {
-		cfg.target = LaunchConfig::Target::ASM;
-		cfg.emitAsm = true;
-		cfg.buildOnly = true;
-		if (i + 1 < argc && argv[i + 1][0] != '-') {
-			cfg.scriptFiles.push_back(argv[++i]);
-		}
-	} else if (arg == "--emit-obj") {
-		cfg.target = LaunchConfig::Target::AOT;
-		cfg.emitObj = true;
-		cfg.buildOnly = true;
-		if (i + 1 < argc && argv[i + 1][0] != '-') {
-			cfg.scriptFiles.push_back(argv[++i]);
-		}
-	} else if (arg == "--arch") {
-		if (i + 1 < argc) {
-			cfg.arch = argv[++i];
-		}
-	} else if (arg == "--syntax") {
-		if (i + 1 < argc) {
-			std::string syntax = argv[++i];
-			if (syntax == "intel") {
-				cfg.asmSyntax = LaunchConfig::AsmSyntax::INTEL;
-			} else if (syntax == "att") {
-				cfg.asmSyntax = LaunchConfig::AsmSyntax::ATT;
-			} else {
-				error("Unknown assembly syntax: {}. Supported: intel, att", syntax);
-			}
-		}
-	} else if (arg == "--input" || arg == "-i") {
-		if (i + 1 < argc) {
-			cfg.inputBackend = argv[++i];
-		}
-	} else if (arg == "--enable-service") {
-		if (i + 1 < argc) {
-			cfg.serviceIncludes.insert(argv[++i]);
-		}
-	} else if (arg == "--disable-service") {
-		if (i + 1 < argc) {
-			cfg.serviceExcludes.insert(argv[++i]);
-		}
-    } else if (arg == "--list-services") {
-        cfg.listServices = true;
-    } else if (arg == "--heap-max") {
-        if (i + 1 < argc) cfg.vmConfig.heap_max_bytes = std::stoull(argv[++i]);
-    } else if (arg == "--gc-budget") {
-        if (i + 1 < argc) cfg.vmConfig.gc_budget = std::stoul(argv[++i]);
-    } else if (arg == "--gc-incremental") {
-        cfg.vmConfig.gc_incremental = true;
-    } else if (arg == "--gc-stop-the-world") {
-        cfg.vmConfig.gc_stop_the_world = true;
-        cfg.vmConfig.gc_incremental = false;
-    } else if (arg == "--gc-full-interval") {
-        if (i + 1 < argc) cfg.vmConfig.gc_full_collection_interval = std::stoul(argv[++i]);
-    } else if (arg == "--gc-promotion-age") {
-        if (i + 1 < argc) cfg.vmConfig.gc_promotion_age = static_cast<uint8_t>(std::stoul(argv[++i]));
-    } else if (arg == "--max-call-depth") {
-        if (i + 1 < argc) cfg.vmConfig.max_call_depth = std::stoul(argv[++i]);
-    } else if (arg == "--max-instructions") {
-        if (i + 1 < argc) cfg.vmConfig.max_instructions = std::stoull(argv[++i]);
-    } else if (arg == "--tick-instructions") {
-        if (i + 1 < argc) cfg.vmConfig.goroutine_tick_instructions = std::stoull(argv[++i]);
-    } else if (arg == "--hotkey-tick-instructions") {
-        if (i + 1 < argc) cfg.vmConfig.goroutine_hotkey_tick_instructions = std::stoull(argv[++i]);
-    } else if (arg == "--tier1-threshold") {
-        if (i + 1 < argc) cfg.vmConfig.tier1_threshold = std::stoull(argv[++i]);
-    } else if (arg == "--tier2-threshold") {
-        if (i + 1 < argc) cfg.vmConfig.tier2_threshold = std::stoull(argv[++i]);
-    } else if (arg == "--tiering") {
-        cfg.vmConfig.tiering_enabled = true;
-    } else if (arg == "--timer-interval") {
-        if (i + 1 < argc) cfg.vmConfig.timer_check_interval = std::stoul(argv[++i]);
-    } else if (arg == "--") {
-        // Everything after -- is script arguments (app.args), not flags
-        for (int j = i + 1; j < argc; j++) {
-          cfg.scriptArgs.push_back(argv[j]);
+    } else if (arg == "--output" || arg == "-o") {
+      if (i + 1 < argc) {
+        cfg.outputPath = argv[++i];
+      }
+    } else if (arg == "--emit-llvm") {
+      cfg.target = LaunchConfig::Target::IR;
+      cfg.emitLLVM = true;
+      cfg.buildOnly = true;
+      if (i + 1 < argc && argv[i + 1][0] != '-') {
+        cfg.scriptFiles.push_back(argv[++i]);
+      }
+    } else if (arg == "--emit-asm") {
+      cfg.target = LaunchConfig::Target::ASM;
+      cfg.emitAsm = true;
+      cfg.buildOnly = true;
+      if (i + 1 < argc && argv[i + 1][0] != '-') {
+        cfg.scriptFiles.push_back(argv[++i]);
+      }
+    } else if (arg == "--emit-obj") {
+      cfg.target = LaunchConfig::Target::AOT;
+      cfg.emitObj = true;
+      cfg.buildOnly = true;
+      if (i + 1 < argc && argv[i + 1][0] != '-') {
+        cfg.scriptFiles.push_back(argv[++i]);
+      }
+    } else if (arg == "--arch") {
+      if (i + 1 < argc) {
+        cfg.arch = argv[++i];
+      }
+    } else if (arg == "--syntax") {
+      if (i + 1 < argc) {
+        std::string syntax = argv[++i];
+        if (syntax == "intel") {
+          cfg.asmSyntax = LaunchConfig::AsmSyntax::INTEL;
+        } else if (syntax == "att") {
+          cfg.asmSyntax = LaunchConfig::AsmSyntax::ATT;
+        } else {
+          error("Unknown assembly syntax: {}. Supported: intel, att", syntax);
         }
-        break;
-      } else if (arg == "--help" || arg == "-h") {
+      }
+    } else if (arg == "--input" || arg == "-i") {
+      if (i + 1 < argc) {
+        cfg.inputBackend = argv[++i];
+      }
+    } else if (arg == "--enable-service") {
+      if (i + 1 < argc) {
+        cfg.serviceIncludes.insert(argv[++i]);
+      }
+    } else if (arg == "--disable-service") {
+      if (i + 1 < argc) {
+        cfg.serviceExcludes.insert(argv[++i]);
+      }
+    } else if (arg == "--list-services") {
+      cfg.listServices = true;
+    } else if (arg == "--heap-max") {
+      if (i + 1 < argc)
+        cfg.vmConfig.heap_max_bytes = std::stoull(argv[++i]);
+    } else if (arg == "--gc-budget") {
+      if (i + 1 < argc)
+        cfg.vmConfig.gc_budget = std::stoul(argv[++i]);
+    } else if (arg == "--gc-incremental") {
+      cfg.vmConfig.gc_incremental = true;
+    } else if (arg == "--gc-stop-the-world") {
+      cfg.vmConfig.gc_stop_the_world = true;
+      cfg.vmConfig.gc_incremental = false;
+    } else if (arg == "--gc-full-interval") {
+      if (i + 1 < argc)
+        cfg.vmConfig.gc_full_collection_interval = std::stoul(argv[++i]);
+    } else if (arg == "--gc-promotion-age") {
+      if (i + 1 < argc)
+        cfg.vmConfig.gc_promotion_age =
+            static_cast<uint8_t>(std::stoul(argv[++i]));
+    } else if (arg == "--max-call-depth") {
+      if (i + 1 < argc)
+        cfg.vmConfig.max_call_depth = std::stoul(argv[++i]);
+    } else if (arg == "--max-instructions") {
+      if (i + 1 < argc)
+        cfg.vmConfig.max_instructions = std::stoull(argv[++i]);
+    } else if (arg == "--tick-instructions") {
+      if (i + 1 < argc)
+        cfg.vmConfig.goroutine_tick_instructions = std::stoull(argv[++i]);
+    } else if (arg == "--hotkey-tick-instructions") {
+      if (i + 1 < argc)
+        cfg.vmConfig.goroutine_hotkey_tick_instructions =
+            std::stoull(argv[++i]);
+    } else if (arg == "--tier1-threshold") {
+      if (i + 1 < argc)
+        cfg.vmConfig.tier1_threshold = std::stoull(argv[++i]);
+    } else if (arg == "--tier2-threshold") {
+      if (i + 1 < argc)
+        cfg.vmConfig.tier2_threshold = std::stoull(argv[++i]);
+    } else if (arg == "--tiering") {
+      cfg.vmConfig.tiering_enabled = true;
+    } else if (arg == "--timer-interval") {
+      if (i + 1 < argc)
+        cfg.vmConfig.timer_check_interval = std::stoul(argv[++i]);
+    } else if (arg == "--") {
+      // Everything after -- is script arguments (app.args), not flags
+      for (int j = i + 1; j < argc; j++) {
+        cfg.scriptArgs.push_back(argv[j]);
+      }
+      break;
+    } else if (arg == "--help" || arg == "-h") {
       showHelp();
       havel::exit(ExitReason::Normal, 0);
     } else if (arg == "lexer") {
@@ -1466,43 +1553,49 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     cfg.mode = LaunchConfig::Mode::SCRIPT_AND_REPL;
   } else if (repl) {
     cfg.mode = LaunchConfig::Mode::REPL;
-  } else if (cfg.scriptFiles.empty() && cfg.mode == LaunchConfig::Mode::DAEMON) {
+  } else if (cfg.scriptFiles.empty() &&
+             cfg.mode == LaunchConfig::Mode::DAEMON) {
     cfg.mode = LaunchConfig::Mode::REPL;
   }
-	// Check for debug flags (but don't force minimal mode when --repl is explicitly used)
-	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false) && cfg.mode != LaunchConfig::Mode::SCRIPT_AND_REPL){
-		cfg.minimalMode = true;
-		debug("Debug.ForceMinimal is set - forcing minimal mode");
-	}
-	if(Configs::Get().Get<bool>("Debug.ForceMinimal", false) && cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL){
-		debug("Debug.ForceMinimal is set but --repl takes precedence");
-	}
+  // Check for debug flags (but don't force minimal mode when --repl is
+  // explicitly used)
+  if (Configs::Get().Get<bool>("Debug.ForceMinimal", false) &&
+      cfg.mode != LaunchConfig::Mode::SCRIPT_AND_REPL) {
+    cfg.minimalMode = true;
+    debug("Debug.ForceMinimal is set - forcing minimal mode");
+  }
+  if (Configs::Get().Get<bool>("Debug.ForceMinimal", false) &&
+      cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL) {
+    debug("Debug.ForceMinimal is set but --repl takes precedence");
+  }
 
-	// --list-services: print catalog and exit
-	if (cfg.listServices) {
-		havel::declareAllServices();
-		auto& reg = host::ServiceRegistry::instance();
-		auto all = reg.listServices();
-		std::cout << "Available services:\n";
-		for (auto& info : all) {
-			std::cout << "  " << info.name;
-			if (!info.group.empty()) std::cout << " [" << info.group << "]";
-			std::cout << "\n";
-		}
-		std::cout << "\nUse --enable-service <name> to include only specific services\n";
-		std::cout << "Use --disable-service <name> to exclude specific services\n";
-		havel::exit(ExitReason::Normal, 0);
-	}
+  // --list-services: print catalog and exit
+  if (cfg.listServices) {
+    havel::declareAllServices();
+    auto &reg = host::ServiceRegistry::instance();
+    auto all = reg.listServices();
+    std::cout << "Available services:\n";
+    for (auto &info : all) {
+      std::cout << "  " << info.name;
+      if (!info.group.empty())
+        std::cout << " [" << info.group << "]";
+      std::cout << "\n";
+    }
+    std::cout
+        << "\nUse --enable-service <name> to include only specific services\n";
+    std::cout << "Use --disable-service <name> to exclude specific services\n";
+    havel::exit(ExitReason::Normal, 0);
+  }
 
-	// Resolve input backend: CLI arg > config > auto-detect
-	if (cfg.inputBackend.empty()) {
-		cfg.inputBackend = Configs::Get().Get<std::string>("Input.Backend", "auto");
-	}
-	if (cfg.inputBackend == "auto") {
-		cfg.inputBackend = ""; // Will be resolved by auto-detection
-	}
+  // Resolve input backend: CLI arg > config > auto-detect
+  if (cfg.inputBackend.empty()) {
+    cfg.inputBackend = Configs::Get().Get<std::string>("Input.Backend", "auto");
+  }
+  if (cfg.inputBackend == "auto") {
+    cfg.inputBackend = ""; // Will be resolved by auto-detection
+  }
 
-	// Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
+  // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
 
   return cfg;
 }
@@ -1573,22 +1666,23 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
   std::string combinedCode;
   std::string primaryFile;
   bool isBytecode = false;
-  
-  if (cfg.scriptFiles.size() == 1 && cfg.scriptFiles[0].size() >= 4 && 
+
+  if (cfg.scriptFiles.size() == 1 && cfg.scriptFiles[0].size() >= 4 &&
       cfg.scriptFiles[0].substr(cfg.scriptFiles[0].size() - 4) == ".hvc") {
-      isBytecode = true;
-      primaryFile = cfg.scriptFiles[0];
+    isBytecode = true;
+    primaryFile = cfg.scriptFiles[0];
   } else {
-      for (const auto& f : cfg.scriptFiles) {
-        std::string content = readScriptFile(f);
-        if (!content.empty()) {
-          combinedCode += content + "\n";
-          if (primaryFile.empty()) primaryFile = f;
-        } else {
-          error("Cannot open script file: {}", f);
-          return 1;
-        }
+    for (const auto &f : cfg.scriptFiles) {
+      std::string content = readScriptFile(f);
+      if (!content.empty()) {
+        combinedCode += content + "\n";
+        if (primaryFile.empty())
+          primaryFile = f;
+      } else {
+        error("Cannot open script file: {}", f);
+        return 1;
       }
+    }
   }
 
   if (combinedCode.empty() && !isBytecode) {
@@ -1601,7 +1695,8 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
       return std::string{};
     }
     const auto dot = path.find_last_of('.');
-    return dot == std::string::npos ? path + ".hbc" : path.substr(0, dot) + ".hbc";
+    return dot == std::string::npos ? path + ".hbc"
+                                    : path.substr(0, dot) + ".hbc";
   };
 
   // Determine output path
@@ -1620,17 +1715,22 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
     }
   }
 
-  info("Building: {} -> {}", primaryFile.empty() ? "input" : primaryFile, outputPath);
+  info("Building: {} -> {}", primaryFile.empty() ? "input" : primaryFile,
+       outputPath);
 
   const std::string cachePath = companionCachePath(outputPath);
   if (!isBytecode && !primaryFile.empty() && !cachePath.empty()) {
     std::error_code cacheEc;
     std::error_code sourceEc;
-    const bool cacheExists = std::filesystem::exists(cachePath, cacheEc) && !cacheEc;
-    const bool sourceExists = std::filesystem::exists(primaryFile, sourceEc) && !sourceEc;
+    const bool cacheExists =
+        std::filesystem::exists(cachePath, cacheEc) && !cacheEc;
+    const bool sourceExists =
+        std::filesystem::exists(primaryFile, sourceEc) && !sourceEc;
     if (cacheExists && sourceExists) {
-      const auto cacheTime = std::filesystem::last_write_time(cachePath, cacheEc);
-      const auto sourceTime = std::filesystem::last_write_time(primaryFile, sourceEc);
+      const auto cacheTime =
+          std::filesystem::last_write_time(cachePath, cacheEc);
+      const auto sourceTime =
+          std::filesystem::last_write_time(primaryFile, sourceEc);
       if (!cacheEc && !sourceEc && cacheTime >= sourceTime) {
         std::ifstream cacheIn(cachePath, std::ios::binary | std::ios::ate);
         if (cacheIn.is_open()) {
@@ -1640,10 +1740,12 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
           if (cacheIn.read(reinterpret_cast<char *>(buffer.data()), size)) {
             std::ofstream outFile(outputPath, std::ios::binary);
             if (outFile.is_open()) {
-              outFile.write(reinterpret_cast<const char *>(buffer.data()), buffer.size());
+              outFile.write(reinterpret_cast<const char *>(buffer.data()),
+                            buffer.size());
               if (outFile.good()) {
                 info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
-                info("Build successful: {} ({} bytes)", outputPath, buffer.size());
+                info("Build successful: {} ({} bytes)", outputPath,
+                     buffer.size());
                 return 0;
               }
             }
@@ -1656,76 +1758,73 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
   std::unique_ptr<havel::compiler::BytecodeChunk> chunk;
 
   if (isBytecode) {
-      std::ifstream hvcFile(primaryFile, std::ios::binary | std::ios::ate);
-      if (!hvcFile.is_open()) {
-          error("Cannot open bytecode file: {}", primaryFile);
-          return 1;
-      }
-      std::streamsize size = hvcFile.tellg();
-      hvcFile.seekg(0, std::ios::beg);
-      std::vector<uint8_t> buffer(static_cast<size_t>(size));
-      if (!hvcFile.read(reinterpret_cast<char *>(buffer.data()), size)) {
-          error("Failed to read bytecode file: {}", primaryFile);
-          return 1;
-      }
-      havel::compiler::ValueSerializer serializer;
-      auto deserializedChunk = serializer.deserializeChunk(buffer);
-      if (!deserializedChunk) {
-          error("Failed to deserialize bytecode file: {}", primaryFile);
-          return 1;
-      }
-      chunk = std::make_unique<havel::compiler::BytecodeChunk>(std::move(*deserializedChunk));
-      info("Loaded bytecode from {}", primaryFile);
+    std::ifstream hvcFile(primaryFile, std::ios::binary | std::ios::ate);
+    if (!hvcFile.is_open()) {
+      error("Cannot open bytecode file: {}", primaryFile);
+      return 1;
+    }
+    std::streamsize size = hvcFile.tellg();
+    hvcFile.seekg(0, std::ios::beg);
+    std::vector<uint8_t> buffer(static_cast<size_t>(size));
+    if (!hvcFile.read(reinterpret_cast<char *>(buffer.data()), size)) {
+      error("Failed to read bytecode file: {}", primaryFile);
+      return 1;
+    }
+    havel::compiler::ValueSerializer serializer;
+    auto deserializedChunk = serializer.deserializeChunk(buffer);
+    if (!deserializedChunk) {
+      error("Failed to deserialize bytecode file: {}", primaryFile);
+      return 1;
+    }
+    chunk = std::make_unique<havel::compiler::BytecodeChunk>(
+        std::move(*deserializedChunk));
+    info("Loaded bytecode from {}", primaryFile);
   } else {
-      // Parse
-      havel::parser::Parser parser{{
-        .lexer = cfg.debugLexer,
-        .parser = cfg.debugParser,
-        .ast = cfg.debugAst
-      }};
-      std::unique_ptr<havel::ast::Program> program;
-      try {
-        program = parser.produceAST(combinedCode);
-      } catch (const std::exception& e) {
-        error("Parse error: {}", e.what());
-        return 1;
+    // Parse
+    havel::parser::Parser parser{{.lexer = cfg.debugLexer,
+                                  .parser = cfg.debugParser,
+                                  .ast = cfg.debugAst}};
+    std::unique_ptr<havel::ast::Program> program;
+    try {
+      program = parser.produceAST(combinedCode);
+    } catch (const std::exception &e) {
+      error("Parse error: {}", e.what());
+      return 1;
+    }
+    if (parser.hasErrors()) {
+      for (const auto &err : parser.getErrors()) {
+        std::string formatted = havel::ErrorPrinter::formatError(
+            "error", err.message, primaryFile, err.line, err.column, 1, "");
+        std::cerr << formatted;
       }
-      if (parser.hasErrors()) {
-        for (const auto& err : parser.getErrors()) {
-          std::string formatted = havel::ErrorPrinter::formatError(
-              "error", err.message, primaryFile,
-              err.line, err.column, 1, "");
-          std::cerr << formatted;
-        }
-        error("Build failed with {} parse error(s)", parser.getErrors().size());
-        return 1;
-      }
-      if (!program) {
-        error("Parser returned null AST");
-        return 1;
-      }
+      error("Build failed with {} parse error(s)", parser.getErrors().size());
+      return 1;
+    }
+    if (!program) {
+      error("Parser returned null AST");
+      return 1;
+    }
 
-      // Compile to bytecode
-      havel::compiler::ByteCompiler compiler;
-      if (cfg.debugBytecode) {
-        compiler.setCollectErrors(true);
+    // Compile to bytecode
+    havel::compiler::ByteCompiler compiler;
+    if (cfg.debugBytecode) {
+      compiler.setCollectErrors(true);
+    }
+    try {
+      chunk = compiler.compile(*program);
+    } catch (const std::exception &e) {
+      error("Compile error: {}", e.what());
+      return 1;
+    }
+    if (compiler.hasErrors()) {
+      for (const auto &err : compiler.errors()) {
+        std::string formatted = havel::ErrorPrinter::formatError(
+            "error", err.what(), primaryFile, err.line, err.column, 1, "");
+        std::cerr << formatted;
       }
-      try {
-        chunk = compiler.compile(*program);
-      } catch (const std::exception& e) {
-        error("Compile error: {}", e.what());
-        return 1;
-      }
-      if (compiler.hasErrors()) {
-        for (const auto& err : compiler.errors()) {
-          std::string formatted = havel::ErrorPrinter::formatError(
-              "error", err.what(), primaryFile,
-              err.line, err.column, 1, "");
-          std::cerr << formatted;
-        }
-        error("Build failed with {} compile error(s)", compiler.errors().size());
-        return 1;
-      }
+      error("Build failed with {} compile error(s)", compiler.errors().size());
+      return 1;
+    }
   }
 
   if (!chunk) {
@@ -1733,287 +1832,312 @@ int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
     return 1;
   }
 
-info("Compilation successful, {} functions", chunk->getFunctionCount());
+  info("Compilation successful, {} functions", chunk->getFunctionCount());
 
 #ifdef HAVEL_ENABLE_LLVM
-// Handle AOT LLVM output
-if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary || cfg.emitElf) {
+  // Handle AOT LLVM output
+  if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm ||
+      cfg.emitBinary || cfg.emitElf) {
     // Import LLVM JIT for translation
     havel::compiler::BytecodeOrcJIT jit;
     jit.setShowWarnings(cfg.aotWarnings);
     jit.setLinkedLibraries(cfg.linkLibs);
     if (cfg.emitLLVM || cfg.debugJIT) {
-        jit.setDumpIR(true);
+      jit.setDumpIR(true);
     }
     const std::string normalizedOS = normalizeTargetOS(cfg.targetOS);
     if (normalizedOS == "linux") {
-        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Linux);
+      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Linux);
     } else if (normalizedOS == "windows") {
-        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Windows);
+      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Windows);
     } else if (normalizedOS == "macos") {
-        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::MacOS);
+      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::MacOS);
     } else if (normalizedOS == "wasm") {
-        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Wasm);
+      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Wasm);
     } else {
-        jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Native);
+      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Native);
     }
 
     // Generate LLVM IR for each function
     llvm::LLVMContext ctx;
     auto module = std::make_unique<llvm::Module>(primaryFile + "_module", ctx);
 
-for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-    const auto* func = chunk->getFunction(i);
-    if (func && !havel::compiler::BytecodeOrcJIT::hasUnsupportedOpcodes(*func)) {
+    for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+      const auto *func = chunk->getFunction(i);
+      if (func &&
+          !havel::compiler::BytecodeOrcJIT::hasUnsupportedOpcodes(*func)) {
         jit.translate(*func, *module);
-    } else if (func && cfg.aotWarnings) {
-        warn("AOT: skipping function '{}' — contains async/concurrency opcodes not supported in AOT",
+      } else if (func && cfg.aotWarnings) {
+        warn("AOT: skipping function '{}' — contains async/concurrency opcodes "
+             "not supported in AOT",
              func->name);
+      }
     }
-}
 
     // Verify module
     if (llvm::verifyModule(*module, &llvm::errs())) {
-        std::string failPath = "/tmp/havel_aot_verify_fail.ll";
-        std::error_code ec;
-        llvm::raw_fd_ostream failOut(failPath, ec, llvm::sys::fs::OF_None);
-        if (!ec) {
-            module->print(failOut, nullptr);
-            error("LLVM IR verification failed (dumped to {})", failPath);
-        } else {
-            error("LLVM IR verification failed");
-        }
-        return 1;
+      std::string failPath = "/tmp/havel_aot_verify_fail.ll";
+      std::error_code ec;
+      llvm::raw_fd_ostream failOut(failPath, ec, llvm::sys::fs::OF_None);
+      if (!ec) {
+        module->print(failOut, nullptr);
+        error("LLVM IR verification failed (dumped to {})", failPath);
+      } else {
+        error("LLVM IR verification failed");
+      }
+      return 1;
     }
 
     // Determine output base path
-    std::string aotOutput = cfg.outputPath.empty() ? primaryFile : cfg.outputPath;
-    if (aotOutput.size() >= 3 && aotOutput.rfind(".hv") == aotOutput.size() - 3) {
-        aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
+    std::string aotOutput =
+        cfg.outputPath.empty() ? primaryFile : cfg.outputPath;
+    if (aotOutput.size() >= 3 &&
+        aotOutput.rfind(".hv") == aotOutput.size() - 3) {
+      aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
     }
     if (aotOutput.empty()) {
-        aotOutput = "output";
+      aotOutput = "output";
     }
 
     if (cfg.emitLLVM) {
-        std::string llPath = aotOutput + ".ll";
-        std::error_code ec;
-        llvm::raw_fd_ostream out(llPath, ec, llvm::sys::fs::OF_None);
-        if (ec) {
-            error("Cannot open output file: {}", llPath);
-            return 1;
-        }
-        module->print(out, nullptr);
-        info("LLVM IR written to: {}", llPath);
+      std::string llPath = aotOutput + ".ll";
+      std::error_code ec;
+      llvm::raw_fd_ostream out(llPath, ec, llvm::sys::fs::OF_None);
+      if (ec) {
+        error("Cannot open output file: {}", llPath);
+        return 1;
+      }
+      module->print(out, nullptr);
+      info("LLVM IR written to: {}", llPath);
     }
 
     if (cfg.emitAsm || cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
-        // Initialize target for native code gen
-        llvm::InitializeNativeTarget();
-        llvm::InitializeNativeTargetAsmPrinter();
-        llvm::InitializeNativeTargetAsmParser();
+      // Initialize target for native code gen
+      llvm::InitializeNativeTarget();
+      llvm::InitializeNativeTargetAsmPrinter();
+      llvm::InitializeNativeTargetAsmParser();
 
-        std::string targetTripleStr = cfg.arch.empty()
-            ? mapTargetTripleForOS(cfg.targetOS, llvm::sys::getDefaultTargetTriple())
-            : cfg.arch;
-        llvm::Triple targetTriple(targetTripleStr);
-        module->setTargetTriple(targetTriple);
+      std::string targetTripleStr =
+          cfg.arch.empty()
+              ? mapTargetTripleForOS(cfg.targetOS,
+                                     llvm::sys::getDefaultTargetTriple())
+              : cfg.arch;
+      llvm::Triple targetTriple(targetTripleStr);
+      module->setTargetTriple(targetTriple);
 
-        std::string err;
-        auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
-        if (!target) {
-            error("Cannot find target: {}", err);
-            return 1;
+      std::string err;
+      auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
+      if (!target) {
+        error("Cannot find target: {}", err);
+        return 1;
+      }
+      info("AOT Target: {} ({})", target->getName(), targetTripleStr);
+
+      llvm::TargetOptions opt;
+      if (cfg.asmSyntax == LaunchConfig::AsmSyntax::INTEL) {
+        opt.MCOptions.OutputAsmVariant = 1;
+      }
+
+      auto targetMachine =
+          target->createTargetMachine(targetTriple, llvm::sys::getHostCPUName(),
+                                      "", opt, llvm::Reloc::PIC_);
+
+      module->setDataLayout(targetMachine->createDataLayout());
+
+      std::string nativeObjPath;
+
+      if (cfg.emitAsm) {
+        std::string asmPath = aotOutput + ".s";
+        std::error_code ec;
+        llvm::raw_fd_ostream out(asmPath, ec, llvm::sys::fs::OF_None);
+        if (ec) {
+          error("Cannot open output file: {}", asmPath);
+          return 1;
         }
-        info("AOT Target: {} ({})", target->getName(), targetTripleStr);
+        llvm::legacy::PassManager pm;
+        if (targetMachine->addPassesToEmitFile(
+                pm, out, nullptr, llvm::CodeGenFileType::AssemblyFile)) {
+          error("Target '{}' cannot emit assembly", targetTripleStr);
+          return 1;
+        }
+        pm.run(*module);
+        info("Assembly written to: {}", asmPath);
+      }
 
-        llvm::TargetOptions opt;
-        if (cfg.asmSyntax == LaunchConfig::AsmSyntax::INTEL) {
-            opt.MCOptions.OutputAsmVariant = 1;
+      if (cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
+        nativeObjPath = aotOutput + ".o";
+        std::error_code ec;
+        llvm::raw_fd_ostream out(nativeObjPath, ec, llvm::sys::fs::OF_None);
+        if (ec) {
+          error("Cannot open output file: {}", nativeObjPath);
+          return 1;
+        }
+        llvm::legacy::PassManager pm;
+        if (targetMachine->addPassesToEmitFile(
+                pm, out, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+          error("Target '{}' cannot emit object files", targetTripleStr);
+          return 1;
+        }
+        pm.run(*module);
+        info("Object file written to: {}", nativeObjPath);
+      }
+
+      const bool coreProfile = (cfg.profile == "core");
+
+      if (cfg.emitBinary) {
+        const std::string shExt = sharedLibraryExtensionForOS(cfg.targetOS);
+        std::string soPath = aotOutput + shExt;
+        std::string linkCmd;
+        if (normalizeTargetOS(cfg.targetOS) == "windows") {
+          linkCmd =
+              "clang++ -shared \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
+        } else if (normalizeTargetOS(cfg.targetOS) == "macos") {
+          linkCmd = "clang++ -dynamiclib \"" + nativeObjPath + "\" -o \"" +
+                    soPath + "\"";
+        } else {
+          linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" +
+                    soPath + "\"";
+        }
+        if (!coreProfile) {
+          appendLinkLibraries(linkCmd, jit.linkedLibraries());
+          if (jit.linkedLibraries().empty()) {
+            appendDefaultLlvmLinkLibraries(linkCmd);
+          }
+        }
+        int linkRc = std::system(linkCmd.c_str());
+        if (linkRc != 0) {
+          error("Failed to link native shared binary with command: {}",
+                linkCmd);
+          return 1;
+        }
+        info("Native shared binary written to: {}", soPath);
+      }
+
+      if (cfg.emitElf) {
+        const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
+        std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
+        std::string stubPath = aotOutput + "_stub.cpp";
+        {
+          std::ofstream stub(stubPath);
+          const std::string initSymbol = coreProfile
+                                             ? "havel_vm_init_standalone_core"
+                                             : "havel_vm_init_standalone";
+          stub
+              << "#include <cstdint>\n"
+              << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n"
+              << "extern \"C\" void* " << initSymbol
+              << "(const char**, uint32_t);\n"
+              << "int main() {\n"
+              << "    const char* strings[] = {\n";
+          const auto &chunkStrings = chunk->getAllStrings();
+          for (size_t i = 0; i < chunkStrings.size(); ++i) {
+            const std::string &s = chunkStrings[i];
+            // Escape string
+            std::string escaped;
+            for (char c : s) {
+              if (c == '"')
+                escaped += "\\\"";
+              else if (c == '\\')
+                escaped += "\\\\";
+              else if (c == '\n')
+                escaped += "\\n";
+              else
+                escaped += c;
+            }
+            stub << "        \"" << escaped << "\",\n";
+          }
+          stub << "    };\n"
+               << "    void* vm = " << initSymbol << "(strings, "
+               << chunkStrings.size() << ");\n"
+               << "    uint64_t dummy_args[1024];\n"
+               << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
+                  "0x7ffb000000000000ULL;\n"
+               << "    __main__(vm, dummy_args, 0);\n"
+               << "    return 0;\n"
+               << "}\n";
         }
 
-        auto targetMachine = target->createTargetMachine(
-            targetTriple, llvm::sys::getHostCPUName(), "", opt, llvm::Reloc::PIC_);
-
-        module->setDataLayout(targetMachine->createDataLayout());
-
-        std::string nativeObjPath;
-
-        if (cfg.emitAsm) {
-            std::string asmPath = aotOutput + ".s";
-            std::error_code ec;
-            llvm::raw_fd_ostream out(asmPath, ec, llvm::sys::fs::OF_None);
-            if (ec) {
-                error("Cannot open output file: {}", asmPath);
-                return 1;
-            }
-            llvm::legacy::PassManager pm;
-            if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
-                llvm::CodeGenFileType::AssemblyFile)) {
-                error("Target '{}' cannot emit assembly", targetTripleStr);
-                return 1;
-            }
-            pm.run(*module);
-            info("Assembly written to: {}", asmPath);
+        std::string linkCmd;
+        if (targetWindows) {
+          linkCmd = "clang++ \"" + stubPath + "\" \"" + nativeObjPath +
+                    "\" -o \"" + binPath + "\"";
+        } else {
+          linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" +
+                    nativeObjPath + "\" -o \"" + binPath + "\"";
+          std::string exePath = Env::executable();
+          if (!exePath.empty()) {
+            std::string libDir =
+                std::filesystem::path(exePath).parent_path().string();
+            linkCmd += " -L\"" + libDir + "\"";
+          }
+          if (coreProfile) {
+            linkCmd += " -lhavel_aot_core_shim -lhavel_lang_core";
+          } else {
+            linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+          }
         }
-
-        if (cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
-            nativeObjPath = aotOutput + ".o";
-            std::error_code ec;
-            llvm::raw_fd_ostream out(nativeObjPath, ec, llvm::sys::fs::OF_None);
-            if (ec) {
-                error("Cannot open output file: {}", nativeObjPath);
-                return 1;
-            }
-            llvm::legacy::PassManager pm;
-            if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
-                llvm::CodeGenFileType::ObjectFile)) {
-                error("Target '{}' cannot emit object files", targetTripleStr);
-                return 1;
-            }
-            pm.run(*module);
-            info("Object file written to: {}", nativeObjPath);
+        appendLinkLibraries(linkCmd, jit.linkedLibraries());
+        if (jit.linkedLibraries().empty()) {
+          appendDefaultLlvmLinkLibraries(linkCmd);
         }
-
-        const bool coreProfile = (cfg.profile == "core");
-
-        if (cfg.emitBinary) {
-            const std::string shExt = sharedLibraryExtensionForOS(cfg.targetOS);
-            std::string soPath = aotOutput + shExt;
-            std::string linkCmd;
-            if (normalizeTargetOS(cfg.targetOS) == "windows") {
-                linkCmd = "clang++ -shared \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
-            } else if (normalizeTargetOS(cfg.targetOS) == "macos") {
-                linkCmd = "clang++ -dynamiclib \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
-            } else {
-                linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
-            }
-            if (!coreProfile) {
-                appendLinkLibraries(linkCmd, jit.linkedLibraries());
-                if (jit.linkedLibraries().empty()) {
-                    appendDefaultLlvmLinkLibraries(linkCmd);
-                }
-            }
-            int linkRc = std::system(linkCmd.c_str());
-            if (linkRc != 0) {
-                error("Failed to link native shared binary with command: {}", linkCmd);
-                return 1;
-            }
-            info("Native shared binary written to: {}", soPath);
+        int linkRc = std::system(linkCmd.c_str());
+        if (linkRc != 0) {
+          error("Failed to link native AOT executable with command: {}",
+                linkCmd);
+          std::filesystem::remove(stubPath);
+          return 1;
         }
-
-        if (cfg.emitElf) {
-            const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
-            std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
-            std::string stubPath = aotOutput + "_stub.cpp";
-            {
-                std::ofstream stub(stubPath);
-                const std::string initSymbol = coreProfile
-                    ? "havel_vm_init_standalone_core"
-                    : "havel_vm_init_standalone";
-                stub << "#include <cstdint>\n"
-                     << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n"
-                     << "extern \"C\" void* " << initSymbol << "(const char**, uint32_t);\n"
-                     << "int main() {\n"
-                     << "    const char* strings[] = {\n";
-                const auto& chunkStrings = chunk->getAllStrings();
-                for (size_t i = 0; i < chunkStrings.size(); ++i) {
-                    const std::string& s = chunkStrings[i];
-                    // Escape string
-                    std::string escaped;
-                    for (char c : s) {
-                        if (c == '"') escaped += "\\\"";
-                        else if (c == '\\') escaped += "\\\\";
-                        else if (c == '\n') escaped += "\\n";
-                        else escaped += c;
-                    }
-                    stub << "        \"" << escaped << "\",\n";
-                }
-                stub << "    };\n"
-                     << "    void* vm = " << initSymbol << "(strings, " << chunkStrings.size() << ");\n"
-                     << "    uint64_t dummy_args[1024];\n"
-                     << "    for(int i=0; i<1024; ++i) dummy_args[i] = 0x7ffb000000000000ULL;\n"
-                     << "    __main__(vm, dummy_args, 0);\n"
-                     << "    return 0;\n"
-                     << "}\n";
-            }
-
-            std::string linkCmd;
-            if (targetWindows) {
-                linkCmd = "clang++ \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\"";
-            } else {
-                linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" + nativeObjPath + "\" -o \"" + binPath + "\"";
-                std::string exePath = Env::executable();
-                if (!exePath.empty()) {
-                    std::string libDir = std::filesystem::path(exePath).parent_path().string();
-                    linkCmd += " -L\"" + libDir + "\"";
-                }
-                if (coreProfile) {
-                    linkCmd += " -lhavel_aot_core_shim -lhavel_lang_core";
-                } else {
-                    linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
-                }
-            }
-            appendLinkLibraries(linkCmd, jit.linkedLibraries());
-            if (jit.linkedLibraries().empty()) {
-                appendDefaultLlvmLinkLibraries(linkCmd);
-            }
-            int linkRc = std::system(linkCmd.c_str());
-            if (linkRc != 0) {
-                error("Failed to link native AOT executable with command: {}", linkCmd);
-                std::filesystem::remove(stubPath);
-                return 1;
-            }
-            info("Native AOT executable written to: {}", binPath);
-            std::filesystem::remove(stubPath);
-        }
+        info("Native AOT executable written to: {}", binPath);
+        std::filesystem::remove(stubPath);
+      }
     }
 
     if (cfg.emitWasm) {
-        std::string targetTripleStr = "wasm32-unknown-unknown";
-        llvm::Triple targetTriple(targetTripleStr);
-        module->setTargetTriple(targetTriple);
+      std::string targetTripleStr = "wasm32-unknown-unknown";
+      llvm::Triple targetTriple(targetTripleStr);
+      module->setTargetTriple(targetTriple);
 
-        std::string err;
-        auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
-        if (!target) {
-            error("Cannot find WebAssembly target: {}", err);
-            return 1;
-        }
+      std::string err;
+      auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
+      if (!target) {
+        error("Cannot find WebAssembly target: {}", err);
+        return 1;
+      }
 
-        llvm::TargetOptions opt;
-        auto targetMachine = target->createTargetMachine(
-            targetTriple, "generic", "", opt, llvm::Reloc::PIC_);
+      llvm::TargetOptions opt;
+      auto targetMachine = target->createTargetMachine(
+          targetTriple, "generic", "", opt, llvm::Reloc::PIC_);
 
-        module->setDataLayout(targetMachine->createDataLayout());
+      module->setDataLayout(targetMachine->createDataLayout());
 
-        std::string wasmPath = aotOutput + ".wasm";
-        std::error_code ec;
-        llvm::raw_fd_ostream out(wasmPath, ec, llvm::sys::fs::OF_None);
-        if (ec) {
-            error("Cannot open output file: {}", wasmPath);
-            return 1;
-        }
-        llvm::legacy::PassManager pm;
-        if (targetMachine->addPassesToEmitFile(pm, out, nullptr,
-            llvm::CodeGenFileType::ObjectFile)) {
-            error("Target '{}' cannot emit WebAssembly object", targetTripleStr);
-            return 1;
-        }
-        pm.run(*module);
-        info("WebAssembly binary written to: {}", wasmPath);
+      std::string wasmPath = aotOutput + ".wasm";
+      std::error_code ec;
+      llvm::raw_fd_ostream out(wasmPath, ec, llvm::sys::fs::OF_None);
+      if (ec) {
+        error("Cannot open output file: {}", wasmPath);
+        return 1;
+      }
+      llvm::legacy::PassManager pm;
+      if (targetMachine->addPassesToEmitFile(
+              pm, out, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+        error("Target '{}' cannot emit WebAssembly object", targetTripleStr);
+        return 1;
+      }
+      pm.run(*module);
+      info("WebAssembly binary written to: {}", wasmPath);
     }
 
     return 0;
-}
+  }
 #else
-if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary) {
+  if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm ||
+      cfg.emitBinary) {
     error("AOT compilation requires LLVM support. Rebuild with ENABLE_LLVM=ON");
     return 1;
-}
+  }
 #endif
 
-// Serialize and write bytecode
+  // Serialize and write bytecode
   havel::compiler::ValueSerializer serializer;
   auto data = serializer.serializeChunk(*chunk);
 
@@ -2023,7 +2147,7 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
     error("Cannot open output file: {}", outputPath);
     return 1;
   }
-  outFile.write(reinterpret_cast<const char*>(data.data()), data.size());
+  outFile.write(reinterpret_cast<const char *>(data.data()), data.size());
   if (!outFile.good()) {
     error("Failed to write output file: {}", outputPath);
     return 1;
@@ -2040,7 +2164,7 @@ if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm || cfg.emitBinary
       warn("Cannot open bytecode cache file: {}", cachePath);
       return;
     }
-    cacheOut.write(reinterpret_cast<const char*>(data.data()), data.size());
+    cacheOut.write(reinterpret_cast<const char *>(data.data()), data.size());
     if (!cacheOut.good()) {
       warn("Failed to write bytecode cache file: {}", cachePath);
       return;
@@ -2068,23 +2192,28 @@ int HavelLauncher::diffPipeline(const LaunchConfig &cfg) {
   }
   const std::string &baselinePath = cfg.diffPipelinePath;
 
-  auto collectHvc = [](const fs::path &dir) -> std::map<std::string, std::vector<uint8_t>> {
+  auto collectHvc =
+      [](const fs::path &dir) -> std::map<std::string, std::vector<uint8_t>> {
     std::map<std::string, std::vector<uint8_t>> files;
-    if (!fs::exists(dir)) return files;
+    if (!fs::exists(dir))
+      return files;
     for (auto &entry : fs::recursive_directory_iterator(dir)) {
-      if (!entry.is_regular_file()) continue;
+      if (!entry.is_regular_file())
+        continue;
       auto ext = entry.path().extension().string();
-      if (ext != ".hvc" && ext != ".hbc") continue;
+      if (ext != ".hvc" && ext != ".hbc")
+        continue;
       auto rel = fs::relative(entry.path(), dir).string();
       std::ifstream f(entry.path(), std::ios::binary);
       std::vector<uint8_t> data((std::istreambuf_iterator<char>(f)),
-                                 std::istreambuf_iterator<char>());
+                                std::istreambuf_iterator<char>());
       files[rel] = std::move(data);
     }
     return files;
   };
 
-  info("Diffing pipeline: current=out({}), baseline={}", currentPath, baselinePath);
+  info("Diffing pipeline: current=out({}), baseline={}", currentPath,
+       baselinePath);
   auto current = collectHvc(currentPath);
   auto baseline = collectHvc(baselinePath);
 
@@ -2109,8 +2238,8 @@ int HavelLauncher::diffPipeline(const LaunchConfig &cfg) {
     }
   }
 
-  info("Pipeline diff: {} added, {} removed, {} changed, {} unchanged",
-       added, removed, changed, unchanged);
+  info("Pipeline diff: {} added, {} removed, {} changed, {} unchanged", added,
+       removed, changed, unchanged);
   return (added || removed || changed) ? 1 : 0;
 }
 

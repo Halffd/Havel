@@ -362,6 +362,10 @@ void ExtensionUIBridge::resetPerRunState() {
   elements_.clear();
 }
 
+void ExtensionUIBridge::setIdleCallback(std::function<void()> cb) {
+  (void)cb;
+}
+
 void ExtensionUIBridge::pumpEvents(int timeoutMs) {
   (void)timeoutMs;
 }

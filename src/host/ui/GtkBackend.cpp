@@ -593,13 +593,30 @@ void GtkBackend::pumpEvents(int timeoutMs) {
     }
 }
 
+static gboolean onIdleTimer(gpointer data) {
+  auto *cb = static_cast<std::function<void()>*>(data);
+  if (*cb) (*cb)();
+  return G_SOURCE_CONTINUE;
+}
+
 int GtkBackend::runEventLoop() {
   if (!initialized_) return 1;
   loop_ = g_main_loop_new(nullptr, false);
   if (!loop_) return 1;
+
+  if (idleCallback_) {
+    idleSourceId_ = g_timeout_add(50, onIdleTimer, &idleCallback_);
+  }
+
   g_main_loop_run(loop_);
   g_main_loop_unref(loop_);
   loop_ = nullptr;
+
+  if (idleSourceId_ > 0) {
+    g_source_remove(idleSourceId_);
+    idleSourceId_ = 0;
+  }
+
   return 0;
 }
 
@@ -617,6 +634,10 @@ void GtkBackend::setApplicationMetadata(const ApplicationMetadata& meta) {
 void GtkBackend::resetPerRunState() {
   widgets_.clear();
   onAllWindowsClosedCallback_ = nullptr;
+}
+
+void GtkBackend::setIdleCallback(std::function<void()> cb) {
+  idleCallback_ = std::move(cb);
 }
 
 bool GtkBackend::hasActiveWindows() const {

@@ -648,6 +648,7 @@ int ImGuiBackend::runEventLoop() {
 
   while (running_ && !glfwWindowShouldClose(window_)) {
     pumpEvents(0);
+    if (idleCallback_) idleCallback_();
     if (!running_) break;
     glfwWaitEventsTimeout(1.0 / targetFps_);
   }
@@ -663,6 +664,10 @@ void ImGuiBackend::quitEventLoop(int exitCode) {
 
 void ImGuiBackend::setApplicationMetadata(const ApplicationMetadata& meta) {
   appMeta_ = meta;
+}
+
+void ImGuiBackend::setIdleCallback(std::function<void()> cb) {
+  idleCallback_ = std::move(cb);
 }
 
 void ImGuiBackend::resetPerRunState() {

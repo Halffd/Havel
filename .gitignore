@@ -91,3 +91,4 @@ session*
 *.S
 .sisyphus
 AGENTS.md
+out

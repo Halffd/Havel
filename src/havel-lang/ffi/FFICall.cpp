@@ -25,6 +25,11 @@ std::mutex FFICall::callback_mutex_;
 std::unordered_map<void*, std::unique_ptr<FFICall::CallbackData>> FFICall::callbacks_;
 std::mutex FFICall::cif_mutex_;
 std::unordered_map<FFICall::CifKey, FFICall::CifEntry, FFICall::CifKeyHash> FFICall::cif_cache_;
+thread_local int FFICall::last_errno_ = 0;
+
+int FFICall::get_last_errno() { return last_errno_; }
+void FFICall::set_last_errno(int e) { last_errno_ = e; }
+
 
 static ffi_type* to_ffi_type_internal(FFITypeKind kind) {
     switch (kind) {
@@ -372,7 +377,10 @@ Value FFICall::call_native(void* fn_ptr,
     std::memset(ffi_ret_ptr, 0, alloc_size);
     std::vector<void*> ffi_args(arg_ptrs.begin(), arg_ptrs.end());
 
+    errno = 0;
     ffi_call(entry.cif.get(), reinterpret_cast<void(*)()>(fn_ptr), ffi_ret_ptr, ffi_args.data());
+    last_errno_ = errno;  // capture before any C++ cleanup clobbers it
+
 
     return FFIMemory::to_havel(ffi_ret_ptr, return_type);
 }

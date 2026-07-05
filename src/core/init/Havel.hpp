@@ -16,7 +16,6 @@ class IO;
 class HotkeyManager;
 class WindowManager;
 class AudioManager;
-class MPVController;
 struct HostContext;
 void blockAllSignals();
 class HavelLauncher;
@@ -79,7 +78,6 @@ public:
   HotkeyManager *getHotkeyManager() const { return hotkeyManager.get(); }
   BrightnessManager *getBrightnessManager() const { return brightnessManager.get(); }
   AudioManager *getAudioManager() const { return audioManager.get(); }
-  MPVController *getMPV() const { return mpv.get(); }
   automation::AutomationManager *getAutomationManager() const { return automationManager.get(); }
   compiler::VM *getBytecodeVM() const { return bytecodeVM.get(); }
   // Additional getters for HavelLauncher
@@ -119,7 +117,6 @@ private:
   std::shared_ptr<HotkeyManager> hotkeyManager;
   std::shared_ptr<BrightnessManager> brightnessManager;
   std::shared_ptr<AudioManager> audioManager;
-  std::shared_ptr<MPVController> mpv;
   std::shared_ptr<automation::AutomationManager> automationManager;
   std::shared_ptr<net::NetworkManager> networkManager;
 

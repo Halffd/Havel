@@ -222,6 +222,11 @@ fn _addrSize(family) {
     else { SOCKADDR_IN_SIZE }
 }
 
+fn _unixAddrSize(path) {
+    size = 2 + #path + 1
+    if size > SOCKADDR_UN_SIZE { SOCKADDR_UN_SIZE } else { size }
+}
+
 fn _buildAddr(family, host, port) {
     if family == AF_INET6 { _buildSockaddrIn6(host, port) }
     else if family == AF_UNIX { _buildSockaddrUn(host) }
@@ -261,7 +266,9 @@ fn bind(fd, host, port, family) {
     if family == null { family = AF_INET }
     addr = _buildAddr(family, host, port)
     if addr == null { return -1 }
-  result = ffi.call(_bind, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrSize(family))
+  addrSize = _addrSize(family)
+  if family == AF_UNIX { addrSize = _unixAddrSize(host) }
+  result = ffi.call(_bind, "int32", ["int32", "pointer", "uint32"], fd, addr, addrSize)
   ffi.free(addr)
   result
 }
@@ -289,7 +296,9 @@ fn connect(fd, host, port, family) {
     if family == null { family = AF_INET }
     addr = _buildAddr(family, host, port)
     if addr == null { return -1 }
-  result = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrSize(family))
+  addrSize = _addrSize(family)
+  if family == AF_UNIX { addrSize = _unixAddrSize(host) }
+  result = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, addrSize)
   ffi.free(addr)
   result
 }
@@ -349,7 +358,9 @@ fn sendto(fd, data, host, port, family, flags) {
         ffi.free(buf)
         return -1
     }
-    sent = ffi.call(_sendto, "int64", ["int32", "pointer", "uint64", "int32", "pointer", "uint32"], fd, buf, n, flags, addr, _addrSize(family))
+    addrSize = _addrSize(family)
+    if family == AF_UNIX { addrSize = _unixAddrSize(host) }
+    sent = ffi.call(_sendto, "int64", ["int32", "pointer", "uint64", "int32", "pointer", "uint32"], fd, buf, n, flags, addr, addrSize)
     ffi.free(buf)
     ffi.free(addr)
     sent

@@ -45,7 +45,6 @@ class PixelAutomation;
 class AutomationManager;
 class FileManager;
 class ProcessManager;
-class MPVController;
 
 namespace net {
 class NetworkManager;
@@ -103,7 +102,6 @@ struct HostContext {
   class FileManager *fileManager = nullptr;
   class ProcessManager *processManager = nullptr;
   class net::NetworkManager *networkManager = nullptr;
-  class MPVController *mpvController = nullptr; // MPV media player controller
 
   // Event queue for thread-safe callback dispatch (from OS threads, timers, mode changes, etc)
   class compiler::EventQueue *eventQueue = nullptr;

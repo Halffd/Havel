@@ -778,53 +778,6 @@ private:
 };
 
 /**
- * MPVBridge - MPV media player control
- */
-class MPVBridge : public BridgeModule {
-public:
-  explicit MPVBridge(const HostContext *ctx) : ctx_(ctx) {}
-  void install(PipelineOptions &options) override;
-
-private:
-  const HostContext *ctx_;
-  static Value handleVolumeUp(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-  static Value handleVolumeDown(const std::vector<Value> &args,
-                                        const HostContext *ctx);
-  static Value handleToggleMute(const std::vector<Value> &args,
-                                        const HostContext *ctx);
-  static Value handleStop(const std::vector<Value> &args,
-                                  const HostContext *ctx);
-  static Value handleNext(const std::vector<Value> &args,
-                                  const HostContext *ctx);
-  static Value handlePrevious(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-  static Value handleSeek(const std::vector<Value> &args,
-                                  const HostContext *ctx);
-  static Value handleSubSeek(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-  static Value handleAddSpeed(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-  static Value handleAddSubScale(const std::vector<Value> &args,
-                                         const HostContext *ctx);
-  static Value handleAddSubDelay(const std::vector<Value> &args,
-                                         const HostContext *ctx);
-  static Value handleCycle(const std::vector<Value> &args,
-                                   const HostContext *ctx);
-  static Value
-  handleCopySubtitle(const std::vector<Value> &args,
-                     const HostContext *ctx);
-  static Value handleIPCSet(const std::vector<Value> &args,
-                                    const HostContext *ctx);
-  static Value handleIPCRestart(const std::vector<Value> &args,
-                                        const HostContext *ctx);
-  static Value handleScreenshot(const std::vector<Value> &args,
-                                        const HostContext *ctx);
-  static Value handleCmd(const std::vector<Value> &args,
-                                 const HostContext *ctx);
-};
-
-/**
  * DisplayBridge - Display/monitor info
  */
 class DisplayBridge : public BridgeModule {

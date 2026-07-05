@@ -21,7 +21,6 @@
 #endif
 #include "core/display/DisplayManager.hpp"
 #include "core/mode/ModeManager.hpp"
-#include "core/media/MPVController.hpp"
 #include "core/media/AudioManager.hpp"
 #include "core/io/EventListener.hpp"
 #include "core/io/KeyTap.hpp"
@@ -114,14 +113,6 @@ void Havel::initialize(bool isStartup) {
     windowManager = std::make_shared<WindowManager>();
     havel::startup_timing_report("WindowManager-create", t);
     t = havel::startup_now();
-
-
-
-    mpv = std::make_shared<MPVController>();
-    mpv->Initialize();
-    havel::startup_timing_report("MPVController-init", t);
-    t = havel::startup_now();
-
     audioManager = std::make_shared<AudioManager>(AudioBackend::AUTO);
     havel::startup_timing_report("AudioManager-init", t);
     t = havel::startup_now();
@@ -152,7 +143,6 @@ void Havel::initialize(bool isStartup) {
   hostContext->brightnessManager = brightnessManager.get();
   hostContext->audioManager = audioManager.get();
   hostContext->networkManager = networkManager.get();
-  hostContext->mpvController = mpv.get();
 
     // Create VM
         bytecodeVM = std::make_unique<compiler::VM>(*hostContext);
@@ -497,9 +487,6 @@ void Havel::cleanup() noexcept {
   }
   if (audioManager) {
     audioManager.reset();
-  }
-  if (mpv) {
-    mpv.reset();
   }
   if (windowManager) {
     windowManager.reset();

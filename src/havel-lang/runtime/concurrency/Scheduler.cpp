@@ -145,9 +145,12 @@ Scheduler::Goroutine* Scheduler::pickNext() {
       return nullptr;
     };
 
-    result = popRunnable(hotkey_queue_, "HOTKEY");
-    if (!result) result = popRunnable(runnable_queue_, "RUNNABLE");
-    if (!result) result = popRunnable(background_queue_, "BACKGROUND");
+    {
+      std::lock_guard lock(priority_mutex_);
+      result = popRunnable(hotkey_queue_, "HOTKEY");
+      if (!result) result = popRunnable(runnable_queue_, "RUNNABLE");
+      if (!result) result = popRunnable(background_queue_, "BACKGROUND");
+    }
 	}
 
 	if (result) {
@@ -342,12 +345,15 @@ void Scheduler::yield(Goroutine* g) {
 	}
 	g->state = GoroutineState::Runnable;
 
-	if (g->priority == FiberPriority::HOTKEY) {
-		hotkey_queue_.push_back(g);
-	} else if (g->priority == FiberPriority::BACKGROUND) {
-		background_queue_.push_back(g);
-	} else {
-		runnable_queue_.push_back(g);
+	{
+		std::lock_guard lock(priority_mutex_);
+		if (g->priority == FiberPriority::HOTKEY) {
+			hotkey_queue_.push_back(g);
+		} else if (g->priority == FiberPriority::BACKGROUND) {
+			background_queue_.push_back(g);
+		} else {
+			runnable_queue_.push_back(g);
+		}
 	}
 }
 
@@ -395,6 +401,7 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 	}
 	{
 		// Hotkey fibers are prepended for immediate execution
+		std::lock_guard lock(priority_mutex_);
 		if (priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_front(goroutines_[g_id].get());
 		} else if (priority == FiberPriority::BACKGROUND) {
@@ -449,6 +456,7 @@ void Scheduler::requeueFront(Goroutine* g) {
     ::havel::debug("[Scheduler] requeueFront: gid={} persistent={} fn={} closure={} priority={}",
         g->id, g->persistent, g->function_id, g->closure_id, static_cast<int>(g->priority));
 {
+    std::lock_guard lock(priority_mutex_);
     if (g->priority == FiberPriority::HOTKEY) {
       hotkey_queue_.push_front(g);
       ::havel::debug("[Scheduler] requeueFront: gid={} pushed to HOTKEY queue (size={})",
@@ -739,23 +747,24 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
 
 size_t Scheduler::cleanupDoneGoroutines() {
   size_t removed = 0;
-  
-  // Find all Done goroutines and remove them
+  // goroutines_ map mutation needs goroutines_mutex_. Queues hold raw
+  // Goroutine* pointers into the map; concurrent queue users are protected
+  // separately by priority_mutex_. Lock ordering: take goroutines_mutex_
+  // only (no priority_mutex_ held) per "atomic state transition" rule.
+  std::lock_guard glock(goroutines_mutex_);
   for (auto it = goroutines_.begin(); it != goroutines_.end(); ) {
-    auto& [id, g] = *it;
-    if (g && g->state == GoroutineState::Done) {
-      if (debugging::debug_io) {
-        ::havel::debug("[Scheduler] Cleanup: removing Done goroutine gid={} name='{}'", 
-                      g->id, g->name);
+      auto& [id, g] = *it;
+      if (g && g->state == GoroutineState::Done) {
+          if (debugging::debug_io) {
+              ::havel::debug("[Scheduler] Cleanup: removing Done goroutine gid={} name='{}'",
+                             g->id, g->name);
+          }
+          goroutines_.erase(it);
+          removed++;
+      } else {
+          ++it;
       }
-      // unique_ptr will auto-delete the Goroutine and its Fiber
-      it = goroutines_.erase(it);
-      removed++;
-    } else {
-      ++it;
-    }
   }
-  
   return removed;
 }
 

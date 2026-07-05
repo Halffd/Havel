@@ -236,6 +236,10 @@ public:
 
   static const std::unordered_map<std::string, TokenType> KEYWORDS;
 
+  // Unified soft-identifier policy: keywords allowed as names (method/param/field).
+  // Mirrors the parameter-name accept list so methods and bindings share one rule.
+  static bool isSoftIdentifier(TokenType t);
+
 private:
   std::string source;
   size_t position = 0;

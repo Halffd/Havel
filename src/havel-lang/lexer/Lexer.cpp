@@ -2209,4 +2209,36 @@ void Lexer::printTokens(const std::vector<Token> &tokens) const {
     havel::debug("===================");
 }
 
+bool Lexer::isSoftIdentifier(TokenType t) {
+  return t == TokenType::Identifier ||
+         t == TokenType::On ||
+         t == TokenType::Off ||
+         t == TokenType::When ||
+         t == TokenType::Mode ||
+         t == TokenType::Val ||
+         t == TokenType::Class ||
+         t == TokenType::Struct ||
+         t == TokenType::Enum ||
+         t == TokenType::Trait ||
+         t == TokenType::Prot ||
+         t == TokenType::Repeat ||
+         t == TokenType::Go ||
+         t == TokenType::Thread ||
+         t == TokenType::Timeout ||
+         t == TokenType::Interval ||
+         t == TokenType::Channel ||
+         t == TokenType::Sync ||
+         t == TokenType::Async ||
+         t == TokenType::Wait ||
+         t == TokenType::WaitGroup ||
+         t == TokenType::Defer ||
+         t == TokenType::Co ||
+         t == TokenType::Yield ||
+         t == TokenType::Pool ||
+         t == TokenType::Config ||
+         t == TokenType::Devices ||
+         t == TokenType::Modes ||
+         t == TokenType::Update;
+}
+
 } // namespace havel

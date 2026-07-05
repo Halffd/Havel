@@ -1859,11 +1859,10 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
               // that requires interpreter frame management. Fall back to
               // the interpreter path below to execute this function call.
               setJITActiveClosurePublic(prev_jit_closure);
-              // Fall through to normal interpreter call path
+// Fall through to normal interpreter call path
             } catch (...) {
               setJITActiveClosurePublic(prev_jit_closure);
               throw;
->>>>>>> origin/main
             }
           }
         }

@@ -3522,7 +3522,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     auto keyword = at();
     advance(); // consume "fn"
 
-  if (at().type != havel::TokenType::Identifier) {
+  if (!havel::Lexer::isSoftIdentifier(at().type)) {
     if (havel::Lexer::KEYWORDS.count(at().value)) {
       failAt(at(), "Cannot use reserved keyword '" + at().value +
                        "' as function name");
@@ -3615,16 +3615,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
       }
       pattern = makeIdentifier(advance());
       isVariadic = true;
- } else if (at().type == havel::TokenType::Identifier || at().type == havel::TokenType::Underscore) {
- pattern = makeIdentifier(advance());
- } else if (at().type == havel::TokenType::Class || at().type == havel::TokenType::Struct ||
- at().type == havel::TokenType::Enum || at().type == havel::TokenType::Mode ||
- at().type == havel::TokenType::Val || at().type == havel::TokenType::On ||
- at().type == havel::TokenType::Off || at().type == havel::TokenType::When ||
- at().type == havel::TokenType::Timeout || at().type == havel::TokenType::Thread ||
- at().type == havel::TokenType::Interval || at().type == havel::TokenType::Channel ||
- at().type == havel::TokenType::Go || at().type == havel::TokenType::Repeat) {
- pattern = makeIdentifier(advance());
+} else if (at().type == havel::TokenType::Identifier || at().type == havel::TokenType::Underscore ||
+               havel::Lexer::isSoftIdentifier(at().type)) {
+  pattern = makeIdentifier(advance());
  } else if (at().type == havel::TokenType::Fn) {
  failAt(at(), "'fn' cannot be used as a parameter name (reserved for lambda syntax)");
  } else {
@@ -4703,8 +4696,8 @@ Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
         if (isOp) {
 			advance();
 		} else {
-			// Regular method - expect identifier
-			if (at().type != havel::TokenType::Identifier) {
+			// Regular method - expect identifier or soft keyword
+			if (!havel::Lexer::isSoftIdentifier(at().type)) {
 				failAt(at(), "Expected method name, operator, or special syntax after 'fn'");
 			}
 			methodName = advance().value;
@@ -5028,8 +5021,8 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
         if (isOp) {
 			advance();
 		} else {
-			// Regular method - expect identifier
-			if (at().type != havel::TokenType::Identifier) {
+			// Regular method - expect identifier or soft keyword
+			if (!havel::Lexer::isSoftIdentifier(at().type)) {
 				failAt(at(), "Expected method name, operator, or special syntax after 'fn'");
 			}
 			methodName = advance().value;

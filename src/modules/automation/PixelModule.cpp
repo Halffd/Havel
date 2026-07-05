@@ -21,6 +21,7 @@
 #include "modules/ModuleMacros.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "host/automation/PixelAutomationService.hpp"
+#include "core/io/IO.hpp"
 #include "utils/Logger.hpp"
 
 namespace havel::modules {
@@ -28,6 +29,12 @@ namespace havel::modules {
 using compiler::Value;
 using compiler::VMApi;
 using host::PixelAutomationService;
+
+static std::pair<int, int> currentMousePos() {
+    auto io = host::ServiceRegistry::instance().get<IO>();
+    if (!io) return {0, 0};
+    return io->GetMousePosition();
+}
 
 static const char* PIXEL_MODULE_MARKER = "__pixel_module";
 
@@ -149,49 +156,88 @@ static host::Color parseColor(const VMApi& api, const Value& v) {
 void registerPixelModule(const VMApi& api) {
     HAVEL_BEGIN_MODULE("Pixel");
 
-    // pixel.get(x, y) -> {r, g, b, a, hex}
+    // pixel.get - defaults to cursor if no coords
     HAVEL_REGISTER_FUNCTION(api, "pixel.get", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
-        if (args.size() < 2) return Value::makeNull();
         auto svc = getPixelService();
         if (!svc) return Value::makeNull();
-        int x = toInt(args[0]);
-        int y = toInt(args[1]);
-        auto color = svc->getPixel(x, y);
+        int px = 0;
+        int py = 0;
+        if (args.size() >= 2) {
+            px = toInt(args[0]);
+            py = toInt(args[1]);
+        } else {
+            auto pos = currentMousePos();
+            px = pos.first;
+            py = pos.second;
+        }
+        auto color = svc->getPixel(px, py);
         return colorToValue(api, color);
     });
 
-    // pixel.match(x, y, color, tolerance?) -> bool
+    // pixel.match - at cursor if first arg is color; explicit if first two are coords
     HAVEL_REGISTER_FUNCTION(api, "pixel.match", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
-        if (args.size() < 3) return Value::makeBool(false);
+        if (args.empty()) return Value::makeBool(false);
         auto svc = getPixelService();
         if (!svc) return Value::makeBool(false);
-        int x = toInt(args[0]);
-        int y = toInt(args[1]);
-        int tolerance = args.size() > 3 ? toInt(args[3], 0) : 0;
-        if (args[2].isStringId() || args[2].isStringValId()) {
-            return Value::makeBool(svc->pixelMatch(x, y, toString(api, args[2]), tolerance));
+
+        int px = 0;
+        int py = 0;
+        int argIdx = 0;
+        if (args[0].isStringId() || args[0].isStringValId() || args[0].isObjectId()) {
+            auto pos = currentMousePos();
+            px = pos.first;
+            py = pos.second;
+            argIdx = 0;
+        } else if (args.size() >= 3) {
+            px = toInt(args[0]);
+            py = toInt(args[1]);
+            argIdx = 2;
+        } else {
+            return Value::makeBool(false);
         }
-        auto color = parseColor(api, args[2]);
-        return Value::makeBool(svc->pixelMatch(x, y, color, tolerance));
+
+        int tolerance = args.size() > static_cast<size_t>(argIdx) + 1 ? toInt(args[argIdx + 1], 0) : 0;
+
+        if (args[argIdx].isStringId() || args[argIdx].isStringValId()) {
+            return Value::makeBool(svc->pixelMatch(px, py, toString(api, args[argIdx]), tolerance));
+        }
+        auto color = parseColor(api, args[argIdx]);
+        return Value::makeBool(svc->pixelMatch(px, py, color, tolerance));
     });
 
-    // pixel.wait(x, y, color, tolerance?, timeout?) -> bool
+    // pixel.wait - at cursor if first arg is color; explicit if first two are coords
     HAVEL_REGISTER_FUNCTION(api, "pixel.wait", [api](const auto& rawArgs) {
         auto args = stripReceiver(api, rawArgs);
-        if (args.size() < 3) return Value::makeBool(false);
+        if (args.empty()) return Value::makeBool(false);
         auto svc = getPixelService();
         if (!svc) return Value::makeBool(false);
-        int x = toInt(args[0]);
-        int y = toInt(args[1]);
-        int tolerance = args.size() > 3 ? toInt(args[3], 0) : 0;
-        int timeout = args.size() > 4 ? toInt(args[4], 5000) : 5000;
-        if (args[2].isStringId() || args[2].isStringValId()) {
-            return Value::makeBool(svc->waitPixel(x, y, toString(api, args[2]), tolerance, timeout));
+
+        int px = 0;
+        int py = 0;
+        int argIdx = 0;
+        if (args[0].isStringId() || args[0].isStringValId() || args[0].isObjectId()) {
+            auto pos = currentMousePos();
+            px = pos.first;
+            py = pos.second;
+            argIdx = 0;
+        } else if (args.size() >= 3) {
+            px = toInt(args[0]);
+            py = toInt(args[1]);
+            argIdx = 2;
+        } else {
+            return Value::makeBool(false);
         }
-        auto color = parseColor(api, args[2]);
-        return Value::makeBool(svc->waitPixel(x, y, color, tolerance, timeout));
+
+        int tolerance = args.size() > static_cast<size_t>(argIdx) + 1 ? toInt(args[argIdx + 1], 0) : 0;
+        int timeout = args.size() > static_cast<size_t>(argIdx) + 2 ? toInt(args[argIdx + 2], 5000) : 5000;
+
+        if (args[argIdx].isStringId() || args[argIdx].isStringValId()) {
+            return Value::makeBool(svc->waitPixel(px, py, toString(api, args[argIdx]), tolerance, timeout));
+        }
+        auto color = parseColor(api, args[argIdx]);
+        return Value::makeBool(svc->waitPixel(px, py, color, tolerance, timeout));
     });
 
     // pixel.findImage(path, region?, threshold?) -> {found, x, y, w, h, confidence, centerX, centerY}

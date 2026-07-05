@@ -230,7 +230,16 @@ static std::string goroutineStatusStr(Scheduler *sched, const std::string &alias
     case Scheduler::GoroutineState::Created: return "created";
     case Scheduler::GoroutineState::Runnable: return "runnable";
     case Scheduler::GoroutineState::Running: return "running";
-    case Scheduler::GoroutineState::Suspended: return "suspended";
+    case Scheduler::GoroutineState::Suspended: {
+        // A persistent hotkey goroutine that is parked waiting for its first
+        // (or next) trigger reports "registered" rather than "suspended".
+        if (g->persistent &&
+            g->suspension_reason.load(std::memory_order_acquire) ==
+                Scheduler::SuspensionReason::HotkeyWait) {
+            return "registered";
+        }
+        return "suspended";
+    }
     case Scheduler::GoroutineState::Done: return "done";
     }
     return "unknown";

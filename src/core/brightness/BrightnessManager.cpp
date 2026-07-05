@@ -162,6 +162,9 @@ void BrightnessManager::init() {
       shadowLift[monitor] = 0.0;
 
       if (WindowManagerDetector::IsX11()) {
+        // Capture the FULL original gamma ramp for this monitor at init
+        captureOriginalGammaRamp(monitor);
+
         RGBColor realGamma = getGammaXrandrRGB(monitor);
         gammaRGB[monitor] = realGamma;
         if (realGamma.red > 0.0 && realGamma.green > 0.0 && realGamma.blue > 0.0) {
@@ -629,6 +632,46 @@ double BrightnessManager::extractBrightnessFromGammaRamp(
   return clamped_brightness;
 }
 
+void BrightnessManager::captureOriginalGammaRamp(const std::string &monitor) {
+  if (!getX11Display()) return;
+
+  DisplayManager::MonitorInfo monitorInfo =
+      DisplayManager::GetMonitorByName(monitor);
+  if (monitorInfo.id == 0 || monitorInfo.crtc_id == 0) {
+    error("Monitor '{}' not found or is not active for captureOriginalGammaRamp.", monitor);
+    return;
+  }
+
+  int gamma_size = XRRGetCrtcGammaSize(getX11Display(), monitorInfo.crtc_id);
+  if (gamma_size <= 0) {
+    error("Monitor '{}' has invalid gamma size: {}", monitor, gamma_size);
+    return;
+  }
+
+  XRRCrtcGamma *crtc_gamma =
+      XRRGetCrtcGamma(getX11Display(), monitorInfo.crtc_id);
+  if (!crtc_gamma) {
+    error("Failed to get gamma ramp for monitor '{}'", monitor);
+    return;
+  }
+
+  // Store the full gamma ramp
+  originalGammaSize[monitor] = gamma_size;
+  originalGammaRed[monitor].resize(gamma_size);
+  originalGammaGreen[monitor].resize(gamma_size);
+  originalGammaBlue[monitor].resize(gamma_size);
+
+  for (int i = 0; i < gamma_size; ++i) {
+    originalGammaRed[monitor][i] = crtc_gamma->red[i];
+    originalGammaGreen[monitor][i] = crtc_gamma->green[i];
+    originalGammaBlue[monitor][i] = crtc_gamma->blue[i];
+  }
+
+  XRRFreeGamma(crtc_gamma);
+
+  if (debugging::debug_io) debug("Captured original gamma ramp for '{}': size={}", monitor, gamma_size);
+}
+
 /**
  * Gets current brightness for specified monitor using X11/XRandR
  * Handles all resource cleanup automatically via RAII wrapper
@@ -792,27 +835,64 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
   if (gamma_size > 0) {
     XRRCrtcGamma *gamma = XRRAllocGamma(gamma_size);
     if (gamma) {
+      // Use captured original gamma ramp as base if available
+      bool haveOriginal = originalGammaSize.count(monitor) &&
+                          originalGammaSize[monitor] == gamma_size &&
+                          !originalGammaRed[monitor].empty();
+
+      if (!haveOriginal) {
+        // Capture it now if not already captured
+        captureOriginalGammaRamp(monitor);
+        haveOriginal = originalGammaSize.count(monitor) &&
+                        originalGammaSize[monitor] == gamma_size &&
+                        !originalGammaRed[monitor].empty();
+      }
+
       // Generate combined gamma ramps
       for (int j = 0; j < gamma_size; ++j) {
-        double normalized = (double)j / (gamma_size - 1);
+        double redValue, greenValue, blueValue;
 
-        // Apply gamma curve first
-        RGBColor gammaValue = {std::pow(normalized, 1.0 / currentGamma.red),
-                               std::pow(normalized, 1.0 / currentGamma.green),
-                               std::pow(normalized, 1.0 / currentGamma.blue)};
+        if (haveOriginal) {
+          // Start from the ORIGINAL hardware gamma ramp
+          double origRed = (double)originalGammaRed[monitor][j] / 65535.0;
+          double origGreen = (double)originalGammaGreen[monitor][j] / 65535.0;
+          double origBlue = (double)originalGammaBlue[monitor][j] / 65535.0;
 
-        // Apply shadow lift (lifts dark areas, preserves highlights)
-        RGBColor liftedValue = {
-            gammaValue.red + currentShadowLift * (1.0 - gammaValue.red),
-            gammaValue.green + currentShadowLift * (1.0 - gammaValue.green),
-            gammaValue.blue + currentShadowLift * (1.0 - gammaValue.blue)};
+          // Apply gamma correction on top of original
+          RGBColor gammaValue = {std::pow(origRed, 1.0 / currentGamma.red),
+                                 std::pow(origGreen, 1.0 / currentGamma.green),
+                                 std::pow(origBlue, 1.0 / currentGamma.blue)};
 
-        // Apply temperature tint and brightness
-        double redValue = liftedValue.red * tempColor.red * currentBrightness;
-        double greenValue =
-            liftedValue.green * tempColor.green * currentBrightness;
-        double blueValue =
-            liftedValue.blue * tempColor.blue * currentBrightness;
+          // Apply shadow lift
+          RGBColor liftedValue = {
+              gammaValue.red + currentShadowLift * (1.0 - gammaValue.red),
+              gammaValue.green + currentShadowLift * (1.0 - gammaValue.green),
+              gammaValue.blue + currentShadowLift * (1.0 - gammaValue.blue)};
+
+          // Apply temperature tint and brightness
+          redValue = liftedValue.red * tempColor.red * currentBrightness;
+          greenValue = liftedValue.green * tempColor.green * currentBrightness;
+          blueValue = liftedValue.blue * tempColor.blue * currentBrightness;
+        } else {
+          // Fallback: synthesize from scratch (old behavior)
+          double normalized = (double)j / (gamma_size - 1);
+
+          // Apply gamma curve first
+          RGBColor gammaValue = {std::pow(normalized, 1.0 / currentGamma.red),
+                                 std::pow(normalized, 1.0 / currentGamma.green),
+                                 std::pow(normalized, 1.0 / currentGamma.blue)};
+
+          // Apply shadow lift (lifts dark areas, preserves highlights)
+          RGBColor liftedValue = {
+              gammaValue.red + currentShadowLift * (1.0 - gammaValue.red),
+              gammaValue.green + currentShadowLift * (1.0 - gammaValue.green),
+              gammaValue.blue + currentShadowLift * (1.0 - gammaValue.blue)};
+
+          // Apply temperature tint and brightness
+          redValue = liftedValue.red * tempColor.red * currentBrightness;
+          greenValue = liftedValue.green * tempColor.green * currentBrightness;
+          blueValue = liftedValue.blue * tempColor.blue * currentBrightness;
+        }
 
         // Convert to 16-bit values and clamp
         gamma->red[j] =
@@ -826,7 +906,7 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
       XRRSetCrtcGamma(getX11Display(), monitorInfo.crtc_id, gamma);
       XFlush(getX11Display());
       XRRFreeGamma(gamma);
-      if (debugging::debug_io) debug("applyAllSettings('{}'): gamma ramp set successfully", monitor);
+      if (debugging::debug_io) debug("applyAllSettings('{}'): gamma ramp set successfully (base: {})", monitor, haveOriginal ? "original" : "synthesized");
       return true;
     }
   }
@@ -1532,8 +1612,9 @@ BrightnessManager::getGammaXrandrRGB(const std::string &monitor) {
     }
   }
 
-  return {1.0, 1.0, 1.0};
+return {1.0, 1.0, 1.0};
 }
+
 bool BrightnessManager::increaseBrightness(double amount) {
 	if (primaryMonitor.empty()) {
 		auto monitors = getConnectedMonitors();

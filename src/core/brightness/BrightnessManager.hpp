@@ -123,10 +123,11 @@ public:
   double getShadowLift(const string &monitor);
   double getShadowLift(int monitorIndex);
 
-  // === X11 SPECIFIC METHODS ===
+// === X11 SPECIFIC METHODS ===
   double getCurrentBrightnessX11(const std::string &monitor_name);
   double extractBrightnessFromGammaRamp(XRRCrtcGamma *gamma,
-                                        const std::string &monitor_name) const;
+                                         const std::string &monitor_name) const;
+  void captureOriginalGammaRamp(const std::string &monitor);
 
   // === COMBINED OPERATIONS ===
   bool setBrightnessAndRGB(double brightness, double red, double green,

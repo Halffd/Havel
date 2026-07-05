@@ -26,6 +26,7 @@ fn _strToBuf(s) {
 
 fn _buildAddr(path) {
     addr = ffi.allocBytes(SOCKADDR_UN_SIZE)
+    // allocBytes already zeroes the memory, but be explicit for clarity
     ffi.set_i16(addr, AF_UNIX)
     i = 0
     n = #path
@@ -33,21 +34,36 @@ fn _buildAddr(path) {
         ffi.set_i8(ffi.ptr_add(addr, 2 + i), ord(path[i:i+1]))
         i = i + 1
     }
-    if i < 108 {
-        ffi.set_i8(ffi.ptr_add(addr, 2 + i), 0)
-    }
+    // NUL terminator written at addr+2+i (already zero from alloc, but explicit)
     addr
+}
+
+fn _addrLen(path) {
+    // Use exact size: sa_family (2 bytes) + path + NUL terminator
+    // Linux recommends this over always passing 110
+    n = #path
+    if n > 107 { n = 107 }
+    2 + n + 1
 }
 
 fn UnixSocket() {
     self = {fd: -1, connected: false, path: ""}
 
-    fn _doConnect(path) {
+    fn _doConnect(self, path) {
         if self.connected { self.close() }
         fd = ffi.call(_socket, "int32", ["int32", "int32", "int32"], AF_UNIX, SOCK_STREAM, 0)
-        if fd < 0 { return false }
+        if fd < 0 {
+            _se = ffi.errno()
+            _ss = ffi.strerror(_se)
+            print("[socket] socket() failed, errno=${_se} (${_ss})")
+            return false
+        }
+
         addr = _buildAddr(path)
-        _ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, SOCKADDR_UN_SIZE)
+        alen = _addrLen(path)
+        _ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, alen)
+
+        _err = ffi.errno()
         ffi.free(addr)
         if _ret == 0 {
             self.fd = fd
@@ -55,11 +71,14 @@ fn UnixSocket() {
             self.path = path
             return true
         }
+        _estr = ffi.strerror(_err)
+        print("[socket] connect() failed, ret=${_ret} errno=${_err} (${_estr})")
+
         ffi.call(_close, "int32", ["int32"], fd)
         false
     }
 
-    fn _doSend(data) {
+    fn _doSend(self, data) {
         if self.connected == false { return -1 }
         n = #data
         buf = _strToBuf(data)
@@ -68,7 +87,7 @@ fn UnixSocket() {
         sent
     }
 
-    fn _doRecv(maxSize) {
+    fn _doRecv(self, maxSize) {
         if self.connected == false { return "" }
         if maxSize == null { maxSize = 8192 }
         buf = ffi.allocBytes(maxSize)
@@ -86,7 +105,7 @@ fn UnixSocket() {
         result
     }
 
-    fn _doClose() {
+    fn _doClose(self) {
         if self.fd >= 0 {
             ffi.call(_close, "int32", ["int32"], self.fd)
             self.fd = -1
@@ -94,7 +113,7 @@ fn UnixSocket() {
         self.connected = false
     }
 
-    fn _isAlive() {
+    fn _isAlive(self) {
         self.connected && self.fd >= 0
     }
 
@@ -113,10 +132,11 @@ fn create() {
 fn connect(fd, path) {
     if fd < 0 { return false }
     addr = _buildAddr(path)
-    _ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, SOCKADDR_UN_SIZE)
+    _ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrLen(path))
     ffi.free(addr)
     _ret == 0
 }
+
 
 fn send(fd, data) {
     if fd < 0 || data == null { return -1 }

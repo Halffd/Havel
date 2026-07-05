@@ -278,8 +278,12 @@ void EventListener::Stop() {
         write(shutdownFd, &val, sizeof(val));
     }
 
-    if (eventThread.joinable() && eventThread.get_id() != std::this_thread::get_id()) {
-        eventThread.join();
+    if (eventThread.joinable()) {
+        if (eventThread.get_id() == std::this_thread::get_id()) {
+            eventThread.detach();
+        } else {
+            eventThread.join();
+        }
     }
 
     ReleaseAllVirtualKeys();

@@ -115,7 +115,45 @@ fn MPV(socketPath) {
     self.cmd = _cmd
     self.isPlaying = fn(self) { _cmd(self.conn, ["get_property", "pause"]) }
     self.copySubtitle = fn(self) { _cmd(self.conn, ["script-binding", "copy_current_subtitle"]) }
+// ----- Speed control (additive, not multiplicative) -----
+self.addSpeed = fn(self, delta) {
+    // delta: e.g., -0.1 or 0.1
+    _cmd(self.conn, ["add", "speed", delta])
+}
 
+// ----- Generic cycle command -----
+self.cycle = fn(self, property) {
+    _cmd(self.conn, ["cycle", property])
+}
+
+// ----- Screenshot -----
+self.screenshot = fn(self) {
+    _cmd(self.conn, ["screenshot"])
+}
+
+// ----- IPC socket switching -----
+self.ipcSet = fn(self, path) {
+    self.conn.path = path
+    self.reconnect(path)
+}
+
+self.ipcReset = fn(self) {
+    self.ipcSet(DEFAULT_SOCKET)
+}
+
+// ----- Play (resume if paused) -----
+self.play = fn(self) {
+    _cmd(self.conn, ["set", "pause", "no"])
+}
+
+// ----- Optional: get/set property helpers -----
+self.getProperty = fn(self, name) {
+    _cmd(self.conn, ["get_property", name])
+}
+
+self.setProperty = fn(self, name, value) {
+    _cmd(self.conn, ["set", "name", value])
+}
     self.nextAudio = fn(self) { _cmd(self.conn, ["cycle", "audio"]) }
     self.prevAudio = fn(self) { _cmd(self.conn, ["cycle", "audio", "down"]) }
 

@@ -245,7 +245,15 @@ Value VM::callFunctionSync(const Value &fn, const std::vector<Value> &args) {
   }
 
   doCall(fn, args);
-  runDispatchLoop(savedFrameCount);
+  try {
+    runDispatchLoop(savedFrameCount);
+  } catch (...) {
+    current_chunk = saved_chunk;
+    while (stack.size() > savedStackSize) {
+      stack.pop();
+    }
+    throw;
+  }
 
   current_chunk = saved_chunk;
 
@@ -323,7 +331,13 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   }
 
   vm_in_execute_.store(true, std::memory_order_release);
-  runDispatchLoop(0);
+  try {
+    runDispatchLoop(0);
+  } catch (...) {
+    vm_in_execute_.store(false, std::memory_order_release);
+    current_chunk = saved_chunk;
+    throw;
+  }
   vm_in_execute_.store(false, std::memory_order_release);
 
   current_chunk = saved_chunk;
@@ -1714,161 +1728,10 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
             resolve_chunk = pc.get();
             break;
           }
-          uint32_t function_index = 0;
-          uint32_t closure_id = 0;
-          const BytecodeChunk *resolve_chunk = current_chunk;
-          std::shared_ptr<std::unordered_map<std::string, Value>>
-              closure_globals;
-          ::havel::error("[VM-DEBUG] doCall callee: isFuncObj={} isClosure={}",
-                         callee_value.isFunctionObjId(),
-                         callee_value.isClosureId());
-          if (callee_value.isFunctionObjId()) {
-            function_index = callee_value.asFunctionObjId();
-            if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
-              if (main_chunk_ && main_chunk_->getFunction(function_index)) {
-                resolve_chunk = main_chunk_.get();
-              } else {
-                for (auto &pc : persistent_chunks_) {
-                  if (pc && pc->getFunction(function_index)) {
-                    resolve_chunk = pc.get();
-                    break;
-                  }
-                }
-              }
-            }
-          } else if (callee_value.isClosureId()) {
-            closure_id = callee_value.asClosureId();
-            auto *closure = heap_.closure(closure_id);
-            if (!closure) {
-              COMPILER_THROW("Closure not found for call (id=" +
-                             std::to_string(closure_id) + ")");
-            }
-            function_index = closure->function_index;
-            if (closure->chunk) {
-              resolve_chunk = closure->chunk;
-            }
-            if (closure->module_globals) {
-              closure_globals = closure->module_globals;
-            }
-          } else {
-            // Debug: identify what type the value actually is
-            std::string typeInfo = "unknown";
-            if (callee_value.isNull())
-              typeInfo = "null";
-            else if (callee_value.isInt())
-              typeInfo = "int";
-            else if (callee_value.isDouble())
-              typeInfo = "double";
-            else if (callee_value.isBool())
-              typeInfo = "bool";
-            else if (callee_value.isStringValId()) {
-              typeInfo =
-                  current_chunk
-                      ? std::string("string_val_id='") +
-                            current_chunk->getString(
-                                callee_value.asStringValId()) +
-                            "'"
-                      : std::string("string_val_id=<") +
-                            std::to_string(callee_value.asStringValId()) + ">";
-            } else if (callee_value.isStringId()) {
-              auto *sp = heap_.string(callee_value.asStringId());
-              typeInfo = sp ? std::string("string_id='") + *sp + "'"
-                            : std::string("string_id=<") +
-                                  std::to_string(callee_value.asStringId()) +
-                                  ">";
-            } else if (callee_value.isObjectId())
-              typeInfo = "object_id";
-            else if (callee_value.isArrayId())
-              typeInfo = "array_id";
-            else if (callee_value.isHostFuncId())
-              typeInfo = "host_func_id";
-            else if (callee_value.isFunctionObjId())
-              typeInfo = "function_obj_id";
-            else if (callee_value.isClosureId())
-              typeInfo = "closure_id (unexpected)";
-            else if (callee_value.isCoroutineId())
-              typeInfo = "coroutine_id (should have been caught)";
-            // Dump call stack for debugging
-            std::string frameInfo;
-            for (int fi = static_cast<int>(frame_count_) - 1;
-                 fi >= 0 && fi >= static_cast<int>(frame_count_) - 8; --fi) {
-              auto &fr = frame_arena_[fi];
-              std::string fname = fr.function ? fr.function->name : "<anon>";
-              frameInfo += "  frame[" + std::to_string(fi) + "] " + fname +
-                           " ip=" + std::to_string(fr.ip) + "\n";
-            }
-            // Dump instructions around the failing IP
-            std::string instrInfo;
-            auto &cf = currentFrame();
-            if (cf.function && cf.ip < cf.function->instructions.size()) {
-              uint32_t start = cf.ip > 15 ? cf.ip - 15 : 0;
-              uint32_t end = std::min(cf.function->instructions.size(),
-                                      static_cast<size_t>(cf.ip + 5));
-              for (uint32_t ii = start; ii < end; ++ii) {
-                auto &inst = cf.function->instructions[ii];
-                std::string marker = (ii == cf.ip) ? " >>> " : "     ";
-                instrInfo += marker + std::to_string(ii) + ": op=" +
-                             std::to_string(static_cast<int>(inst.opcode));
-                for (size_t oi = 0; oi < inst.operands.size(); ++oi) {
-                  instrInfo += " op" + std::to_string(oi) + "=";
-                  if (inst.operands[oi].isStringValId() && resolve_chunk) {
-                    instrInfo += "'" +
-                                 resolve_chunk->getString(
-                                     inst.operands[oi].asStringValId()) +
-                                 "'";
-                  } else {
-                    instrInfo += inst.operands[oi].toString();
-                  }
-                }
-                instrInfo += "\n";
-              }
-            }
-            COMPILER_THROW(
-                "CALL expects function or closure as callee (got " + typeInfo +
-                ") [callee_bits=" + std::to_string(callee_value.rawBits()) +
-                ", ip=" + std::to_string(currentFrame().ip) +
-                "]\nCall stack:\n" + frameInfo + "Instructions:\n" + instrInfo);
-          }
-
-          if (!resolve_chunk) {
-            COMPILER_THROW("No chunk available for function call");
-          }
-
-          const auto *callee = resolve_chunk->getFunction(function_index);
-          if (!callee) {
-            COMPILER_THROW("Function index not found: " +
-                           std::to_string(function_index));
-          }
-
-          callee->execution_count++;
-          if (callee->execution_count == 1000 && hot_func_cb_ &&
-              !debugger_attached_) {
-            hot_func_cb_(*callee);
-          }
-
-          if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
-            uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
-            try {
-              Value result =
-                  jit_compiler_->executeCompiled(this, callee->name, args);
-              setJITActiveClosurePublic(prev_jit_closure);
-              pushStack(result);
-              return;
-            } catch (const JitCoroutineSignal &) {
-              // JIT hit a coroutine/scheduler opcode (YIELD, AWAIT, etc.)
-              // that requires interpreter frame management. Fall back to
-              // the interpreter path below to execute this function call.
-              setJITActiveClosurePublic(prev_jit_closure);
-              // Fall through to normal interpreter call path
-            } catch (...) {
-              setJITActiveClosurePublic(prev_jit_closure);
-              throw;
->>>>>>> origin/main
-            }
-          }
         }
       }
-      else if (callee_value.isClosureId()) {
+    }
+  } else if (callee_value.isClosureId()) {
         closure_id = callee_value.asClosureId();
         auto *closure = heap_.closure(closure_id);
         if (!closure) {

@@ -567,10 +567,38 @@ private:
               g->state = compiler::Scheduler::GoroutineState::Done;
               if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
               break;
-            case compiler::VMExecutionResult::SUSPENDED:
-              if (g->fiber) g->fiber->state = compiler::FiberState::SUSPENDED;
-              g->state = compiler::Scheduler::GoroutineState::Suspended;
+            case compiler::VMExecutionResult::SUSPENDED: {
+              auto fiber_reason = g->fiber ? g->fiber->suspended_reason : compiler::SuspensionReason::NONE;
+              void* context = g->fiber ? g->fiber->suspension_context : nullptr;
+              uint8_t reason = static_cast<uint8_t>(fiber_reason);
+              sched->suspend(g, toSchedulerReasonPublic(reason));
+              if (fiber_reason == compiler::SuspensionReason::SLEEP) {
+                int64_t ms = reinterpret_cast<intptr_t>(context);
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+                g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+              }
+              if (fiber_reason == compiler::SuspensionReason::COROUTINE_WAIT) {
+                uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::COROUTINE;
+                g->wait_handle.target_id = co_id;
+              }
+              if (fiber_reason == compiler::SuspensionReason::THREAD_JOIN) {
+                uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::THREAD_JOIN;
+                g->wait_handle.target_id = tid;
+              }
+              if (fiber_reason == compiler::SuspensionReason::CHANNEL_RECV) {
+                uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::CHANNEL_RECV;
+                g->wait_handle.target_id = ch_id;
+              }
+              if (fiber_reason == compiler::SuspensionReason::TIMER) {
+                uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::TIMER_WAIT;
+                g->wait_handle.target_id = timer_id;
+              }
               break;
+            }
             case compiler::VMExecutionResult::ERROR:
               g->state = compiler::Scheduler::GoroutineState::Done;
               if (g->fiber) g->fiber->state = compiler::FiberState::DONE;

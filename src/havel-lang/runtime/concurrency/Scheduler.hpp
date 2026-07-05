@@ -570,10 +570,6 @@ private:
   std::deque<Goroutine*> background_queue_; // BACKGROUND priority
   mutable std::mutex priority_mutex_;
 
-  // Legacy compatibility: single runnable queue (for older code)
-  mutable std::mutex runnable_mutex_;
-  std::deque<Goroutine*> runnable_;
-
   // Per-priority deferred action queues for unified scheduling
   // schedule(priority) and deferToVM() both feed into these.
   std::deque<DeferredAction> deferred_hotkey_;     // HOTKEY priority

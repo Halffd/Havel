@@ -130,7 +130,14 @@ Scheduler::Goroutine* Scheduler::pickNext() {
         auto* g = q.front();
         q.pop_front();
         if (!g) continue;
-        if (g->state == GoroutineState::Done) continue;
+        // UAF defense: cleanupDoneGoroutines purges queue entries before
+        // erasing the Goroutine. If we ever pop a Done goroutine here, a
+        // purge was skipped — log loudly so it's caught in testing.
+        if (g->state == GoroutineState::Done) {
+          ::havel::warning("[Scheduler] pickNext: popped Done gid={} from {} queue (queue poisoning suspected)",
+                           g->id, label);
+          continue;
+        }
         if (g->fiber && g->fiber->state == FiberState::DONE) {
           g->state = GoroutineState::Done;
           continue;

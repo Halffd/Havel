@@ -4,6 +4,7 @@
 #include "utils/DebugFlags.hpp"
 #include <algorithm>
 #include <thread>
+#include <vector>
 #ifndef _WIN32
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -746,24 +747,56 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
  }
 
 size_t Scheduler::cleanupDoneGoroutines() {
+  // Two-phase cleanup to avoid use-after-free:
+  //   Phase 1 (goroutines_mutex_): collect Done goroutine pointers.
+  //   Phase 2 (priority_mutex_): remove their raw pointers from all queues.
+  //   Phase 3 (goroutines_mutex_): erase from map, which deletes the
+  //          unique_ptr and frees the Goroutine.
+  // Lock ordering rule: never hold goroutines_mutex_ while acquiring
+  // priority_mutex_. Done state is terminal, so no concurrent thread
+  // will re-enqueue between phases.
+  std::vector<Goroutine*> done_ptrs;
+  {
+    std::lock_guard glock(goroutines_mutex_);
+    for (auto& [id, g] : goroutines_) {
+      if (g && g->state == GoroutineState::Done) {
+        done_ptrs.push_back(g.get());
+      }
+    }
+  }
+  if (done_ptrs.empty()) return 0;
+
+  auto purge = [this](std::deque<Goroutine*>& q, Goroutine* target) {
+    for (auto it = q.begin(); it != q.end();) {
+      if (*it == target) it = q.erase(it);
+      else ++it;
+    }
+  };
+  {
+    std::lock_guard plock(priority_mutex_);
+    for (auto* g : done_ptrs) {
+      purge(hotkey_queue_, g);
+      purge(runnable_queue_, g);
+      purge(background_queue_, g);
+    }
+  }
+
   size_t removed = 0;
-  // goroutines_ map mutation needs goroutines_mutex_. Queues hold raw
-  // Goroutine* pointers into the map; concurrent queue users are protected
-  // separately by priority_mutex_. Lock ordering: take goroutines_mutex_
-  // only (no priority_mutex_ held) per "atomic state transition" rule.
-  std::lock_guard glock(goroutines_mutex_);
-  for (auto it = goroutines_.begin(); it != goroutines_.end(); ) {
+  {
+    std::lock_guard glock(goroutines_mutex_);
+    for (auto it = goroutines_.begin(); it != goroutines_.end();) {
       auto& [id, g] = *it;
       if (g && g->state == GoroutineState::Done) {
-          if (debugging::debug_io) {
-              ::havel::debug("[Scheduler] Cleanup: removing Done goroutine gid={} name='{}'",
-                             g->id, g->name);
-          }
-          goroutines_.erase(it);
-          removed++;
+        if (debugging::debug_io) {
+          ::havel::debug("[Scheduler] Cleanup: removing Done goroutine gid={} name='{}'",
+                         g->id, g->name);
+        }
+        goroutines_.erase(it);
+        ++removed;
       } else {
-          ++it;
+        ++it;
       }
+    }
   }
   return removed;
 }

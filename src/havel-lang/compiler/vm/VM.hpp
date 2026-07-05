@@ -1270,10 +1270,24 @@ private:
     int gc_suspend_counter_ = 0;
     void* serviceRegistry_ = nullptr;
 
-public:
-    bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire); }
-    void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
-    void* getServiceRegistry() const { return serviceRegistry_; }
+ public:
+     bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire); }
+     void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
+     void* getServiceRegistry() const { return serviceRegistry_; }
+
+     // RAII guard for vm_in_execute_. Ensures the flag is cleared on
+     // exception escape, preventing executeFrame() from being permanently
+     // locked out (ExecutionEngine.cpp:108 returns early while true).
+     struct ExecuteGuard {
+       std::atomic<bool>& flag;
+       explicit ExecuteGuard(std::atomic<bool>& f) : flag(f) {
+         flag.store(true, std::memory_order_release);
+       }
+       ~ExecuteGuard() { flag.store(false, std::memory_order_release); }
+       ExecuteGuard(const ExecuteGuard&) = delete;
+       ExecuteGuard& operator=(const ExecuteGuard&) = delete;
+     };
+
 
     void setPostResetSetup(std::function<void(VM&)> cb) { post_reset_setup_ = std::move(cb); }
 

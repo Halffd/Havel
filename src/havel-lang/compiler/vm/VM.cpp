@@ -330,16 +330,15 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
     ::havel::debug("=== Executing function: {} ===", function_name);
   }
 
-  vm_in_execute_.store(true, std::memory_order_release);
-  try {
-    runDispatchLoop(0);
-  } catch (...) {
-    vm_in_execute_.store(false, std::memory_order_release);
-    current_chunk = saved_chunk;
-    throw;
+  {
+    ExecuteGuard guard(vm_in_execute_);
+    try {
+      runDispatchLoop(0);
+    } catch (...) {
+      current_chunk = saved_chunk;
+      throw;
+    }
   }
-  vm_in_execute_.store(false, std::memory_order_release);
-
   current_chunk = saved_chunk;
 
   if (stack.empty()) {

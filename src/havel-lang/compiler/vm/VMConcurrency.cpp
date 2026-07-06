@@ -671,47 +671,59 @@ if (awaitable.isTimeoutId()) {
  break;
  }
 
- case OpCode::FIBER_SLEEP: {
- Value ms_val = popStack();
- int ms = toInt(ms_val);
+case OpCode::FIBER_SLEEP: {
+  Value ms_val = popStack();
+  int ms = toInt(ms_val);
 
- if (current_coroutine_id_ != UINT32_MAX) {
- // Inside a coroutine: yield with a resume time
- auto *co = heap_.coroutine(current_coroutine_id_);
- if (co && frame_count_ > 0) {
- co->ip = currentFrame().ip + 1;
- co->locals = locals;
- co->state = GCHeap::Coroutine::Waiting;
- co->resume_at_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  if (current_coroutine_id_ != UINT32_MAX) {
+    // Inside a coroutine: yield with a resume time
+    auto *co = heap_.coroutine(current_coroutine_id_);
+    if (co && frame_count_ > 0) {
+      // Save VM's stack to coroutine's stack before yielding
+      co->stack.clear();
+      {
+        std::vector<Value> tmp;
+        while (!stack.empty()) {
+          tmp.push_back(stack.top());
+          stack.pop();
+        }
+        for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+          co->stack.push_back(*it);
+        }
+      }
+      co->ip = currentFrame().ip + 1;
+      co->locals = locals;
+      co->state = GCHeap::Coroutine::Waiting;
+      co->resume_at_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
 
- auto finished = frame_arena_[frame_count_ - 1];
- frame_count_--;
+      auto finished = frame_arena_[frame_count_ - 1];
+      frame_count_--;
 
- closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
- static_cast<uint32_t>(locals.size()));
-  if (locals.size() >= finished.locals_base) {
-  locals.resize(finished.locals_base);
+      closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+                         static_cast<uint32_t>(locals.size()));
+      if (locals.size() >= finished.locals_base) {
+        locals.resize(finished.locals_base);
+      }
+
+      // Stale immutable_locals_ indices from the old frame are invalid
+      // after locals truncation; clear for the parent frame to repopulate
+      immutable_locals_.clear();
+
+      if (!co->caller_stack.empty()) {
+          auto &caller = co->caller_stack.back();
+          frame_count_ = caller.frame_count;
+          locals = caller.locals;
+          immutable_locals_.clear();
+          current_coroutine_id_ = caller.coroutine_id;
+         currentFrame().ip = caller.ip;
+          co->caller_stack.pop_back();
+      }
+
+      pushStack(Value::makeNull());
+
+      return true;
+    }
   }
-
-  // Stale immutable_locals_ indices from the old frame are invalid
-  // after locals truncation; clear for the parent frame to repopulate
-  immutable_locals_.clear();
-
-                     if (!co->caller_stack.empty()) {
-                         auto &caller = co->caller_stack.back();
-                         frame_count_ = caller.frame_count;
-                         locals = caller.locals;
-                         immutable_locals_.clear();
-                         current_coroutine_id_ = caller.coroutine_id;
-                        currentFrame().ip = caller.ip;
-                        co->caller_stack.pop_back();
-                    }
-
-		pushStack(Value::makeNull());
-
-		return true;
- }
- }
 
   // Main fiber: suspend goroutine via scheduler if available,
   // otherwise fall back to blocking sleep

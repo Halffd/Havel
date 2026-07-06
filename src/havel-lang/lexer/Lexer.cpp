@@ -1957,8 +1957,9 @@ continue;
       bool isHotkey = false;
       if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
         isHotkey = true; // @identifier =>
-      } else if (look < source.size() && source[look] == '&') {
-        isHotkey = true; // @identifier & ... (compound hotkey)
+      } else if (look < source.size() && source[look] == '&' && 
+                 (look + 1 >= source.size() || source[look + 1] != '&')) {
+        isHotkey = true; // @identifier & ... (compound hotkey), but not &&
       } else if (look < source.size() && source[look] == ':') {
         isHotkey = true; // @identifier:timing
       }

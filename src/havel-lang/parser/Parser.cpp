@@ -5030,26 +5030,63 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
 	}
 	}
 
-	// Parse parameters
+// Parse parameters
 	if (at().type != havel::TokenType::OpenParen) {
 		failAt(at(), "Expected '(' after method name");
 	}
 	advance(); // consume '('
 
 	std::vector<std::unique_ptr<ast::FunctionParameter>> params;
-      while (at().type != havel::TokenType::CloseParen && notEOF()) {
-        // Skip newlines and comments
-        if (at().type == havel::TokenType::NewLine ||
-            at().type == havel::TokenType::Comment) {
+	      while (at().type != havel::TokenType::CloseParen && notEOF()) {
+	        // Skip newlines and comments
+	        if (at().type == havel::TokenType::NewLine ||
+	            at().type == havel::TokenType::Comment) {
+	          advance();
+	          continue;
+	        }
+
+	        // Check for variadic parameter: ...args
+	        bool isVariadic = false;
+	        std::unique_ptr<havel::ast::Expression> pattern;
+
+	        if (at().type == havel::TokenType::Spread) {
+	          advance(); // consume '...'
+	          if (at().type != havel::TokenType::Identifier) {
+	            failAt(at(), "Expected identifier after '...' in variadic parameter");
+	          }
+	          pattern = makeIdentifier(advance());
+	          isVariadic = true;
+	} else if (at().type == havel::TokenType::Identifier || at().type == havel::TokenType::Underscore ||
+	               havel::Lexer::isSoftIdentifier(at().type)) {
+	  pattern = makeIdentifier(advance());
+	 } else if (at().type == havel::TokenType::Fn) {
+	 failAt(at(), "'fn' cannot be used as a parameter name (reserved for lambda syntax)");
+	 } else {
+	 failAt(at(), "Expected identifier or '...' in parameter list");
+	    }
+
+	    // Check for type annotation (paramName: Type)
+	    std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
+	    if (at().type == havel::TokenType::Colon) {
+	      advance(); // consume ':'
+	      typeAnnotation = parseTypeAnnotation();
+	    }
+
+	    // Check for default value
+	    std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
+	    if (at().type == havel::TokenType::Assign) {
+	      advance(); // consume '='
+	      defaultValue = parseExpression();
+	    }
+
+	    params.push_back(makeNode<havel::ast::FunctionParameter>(
+	        std::move(pattern), std::move(defaultValue), std::move(typeAnnotation),
+	        isVariadic));
+
+        while (at().type == havel::TokenType::NewLine) {
           advance();
-          continue;
         }
 
-        if (at().type == havel::TokenType::Identifier) {
-          auto paramName = makeIdentifier(advance());
-          params.push_back(
-              makeNode<ast::FunctionParameter>(std::move(paramName)));
-        }
         if (at().type == havel::TokenType::Comma) {
           advance();
         } else if (at().type != havel::TokenType::CloseParen) {

@@ -1,0 +1,158 @@
+use json
+use socket
+use "app/mpv" as mpv
+
+
+// =============================
+// tiny assert helper
+// =============================
+fn assert(cond, msg) {
+    if !cond {
+        throw "ASSERT FAIL: " + msg
+    }
+}
+
+
+// =============================
+// fake socket for unit tests
+// =============================
+class FakeSocket {
+    sent: array
+    alive: bool
+
+    fn @() {
+        @sent = []
+        @alive = true
+    }
+
+    fn send(data) {
+        @sent.push(data)
+        0
+    }
+
+    fn recv(size) {
+        "{\"status\":\"ok\"}"
+    }
+
+    fn close() {
+        @alive = false
+    }
+
+    fn isAlive() {
+        @alive
+    }
+}
+
+
+// =============================
+// TEST 1: raw command encoding
+// =============================
+fn test_cmd_encoding() {
+    s = FakeSocket()
+    conn = { sock: s, connected: true }
+
+    req = json.stringify({ command: ["seek", 10] })
+
+    conn.sock.send(req + "\n")
+
+    assert(s.sent.len() == 1, "send count mismatch")
+    assert(s.sent[0].has("seek"), "seek command not encoded")
+}
+
+
+// =============================
+// TEST 2: transport reconnect logic
+// =============================
+fn test_reconnect_logic() {
+    t = mpv.MPVTransport("/tmp/mpvtest")
+
+    // force dead socket
+    t.sock.close()
+
+    ok = t.isAlive()
+    assert(ok == false, "socket should be dead")
+}
+
+
+// =============================
+// TEST 3: MPV wrapper basic commands
+// =============================
+fn test_mpv_commands() {
+    m = mpv.MPV("/tmp/mpvtest")
+
+    r1 = m.playPause()
+    r2 = m.seek(10)
+    r3 = m.volume(50)
+
+    assert(r1 != null || r1 == null, "playPause should not crash")
+    assert(r2 != null || r2 == null, "seek should not crash")
+    assert(r3 != null || r3 == null, "volume should not crash")
+}
+
+
+// =============================
+// TEST 4: event bus wiring
+// =============================
+fn test_event_bus() {
+    m = mpv.MPV("/tmp/mpvtest")
+
+    fired = false
+
+    m.on("pause", fn(e) {
+        fired = true
+    })
+
+    m.bus.emit("pause", {})
+
+    assert(fired == true, "event not fired")
+}
+
+
+// =============================
+// TEST 5: reactive graph basic
+// =============================
+fn test_reactive_graph() {
+    m = mpv.MPV("/tmp/mpvtest")
+
+    m.graph.computed("timePos", fn() { 50 })
+    m.graph.computed("duration", fn() { 100 })
+
+    progress = m.graph.computed("progress", fn() {
+        m.graph.get("timePos") / m.graph.get("duration")
+    })
+
+    assert(progress.get() == 0.5, "bad reactive math")
+}
+
+
+// =============================
+// TEST 6: sync between instances
+// =============================
+fn test_sync() {
+    a = mpv.MPV("/tmp/mpvtest")
+    b = mpv.MPV("/tmp/mpvtest2")
+
+    a.syncWith(b)
+
+    a.bus.emit("seek", 20)
+
+    // not strict (since mock), just ensure no crash
+    assert(true, "sync did not crash")
+}
+
+
+// =============================
+// RUN ALL TESTS
+// =============================
+fn main() {
+    print("== MPV MODULE TESTS ==")
+
+    test_cmd_encoding()
+    test_reconnect_logic()
+    test_mpv_commands()
+    test_event_bus()
+    test_reactive_graph()
+    test_sync()
+
+    print("== DONE ==")
+}

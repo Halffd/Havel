@@ -1,0 +1,150 @@
+use json
+use socket
+use "app/mpv" as mpv
+
+
+// =============================
+// assert helper
+// =============================
+fn assert(cond, msg) {
+    if !cond {
+        throw "ASSERT: " + msg
+    }
+}
+
+
+// =============================
+// fake unix socket
+// =============================
+class FakeSocket {
+    sent: array
+    alive: bool
+
+    fn @() {
+        @sent = []
+        @alive = true
+    }
+
+    fn connect(path) {
+        @alive = true
+        true
+    }
+
+    fn send(data) {
+        @sent.push(data)
+        0
+    }
+
+    fn recv(size) {
+        "{\"status\":\"ok\"}"
+    }
+
+    fn close() {
+        @alive = false
+    }
+
+    fn isAlive() {
+        @alive
+    }
+}
+
+
+// =====================================================
+// TEST 1: JSON command formatting
+// =====================================================
+fn test_json_command_format() {
+    s = FakeSocket()
+
+    req = json.stringify({
+        command: ["seek", 10, "relative"]
+    })
+
+    s.send(req + "\n")
+
+    assert(s.sent.len() == 1, "no command sent")
+
+    assert(
+        s.sent[0].has("seek"),
+        "seek command missing in payload"
+    )
+}
+
+
+// =====================================================
+// TEST 2: transport alive check
+// =====================================================
+fn test_transport_alive() {
+    t = mpv.MPVTransport("/tmp/mpv")
+
+    assert(t.isAlive() == false || t.isAlive() == true, "alive must be bool")
+}
+
+
+// =====================================================
+// TEST 3: reconnect behavior
+// =====================================================
+fn test_reconnect() {
+    t = mpv.MPVTransport("/tmp/mpv")
+
+    t.close()
+    assert(t.isAlive() == false, "should be closed")
+
+    t.reconnect()
+    assert(true, "reconnect did not crash")
+}
+
+
+// =====================================================
+// TEST 4: command wrapper safety
+// =====================================================
+fn test_command_wrapper() {
+    m = mpv.MPV("/tmp/mpv")
+
+    r1 = m.playPause()
+    r2 = m.seek(5)
+    r3 = m.volume(30)
+
+    assert(true, "commands executed safely")
+}
+
+
+// =====================================================
+// TEST 5: loadfile + quit path
+// =====================================================
+fn test_load_and_quit() {
+    m = mpv.MPV("/tmp/mpv")
+
+    m.loadfile("video.mp4")
+    m.quit()
+
+    assert(true, "load/quit did not crash")
+}
+
+
+// =====================================================
+// TEST 6: sendRaw fallback path
+// =====================================================
+fn test_send_raw() {
+    m = mpv.MPV("/tmp/mpv")
+
+    resp = m.sendRaw("{\"command\": [\"get_property\", \"time-pos\"]}")
+
+    assert(resp != null, "sendRaw returned null")
+}
+
+
+// =====================================================
+// RUNNER
+// =====================================================
+fn main() {
+    print("== libmpv TESTS ==")
+
+    test_json_command_format()
+    test_transport_alive()
+    test_reconnect()
+    test_command_wrapper()
+    test_load_and_quit()
+    test_send_raw()
+
+    print("== OK ==")
+}

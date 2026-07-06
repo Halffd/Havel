@@ -6,9 +6,9 @@ fn task(name) {
 }
 
 print("=== Testing thread_spawn ===")
-let t1 = go task("A")
-let t2 = go task("B")
-let tLambda = go {
+t1 = go task("A")
+t2 = go task("B")
+tLambda = go {
   print("Lambda task started")
   run("sleep 2") // Simulate some work by sleeping for 2 seconds
   print("Lambda task completed")
@@ -21,7 +21,7 @@ t2.join()
 tLambda.join()
 
 print("Threads joined")
-let t3N = 0
+t3N = 0
 fn receiver() {
   on msg {
     print("Received: " + msg)
@@ -35,7 +35,7 @@ fn receiver() {
   }
 }
 
-let t3 = go receiver
+t3 = go receiver
 sleep(500) // Give the receiver some time to start
 print("t3N: ", t3N)
 t3.send("Hello from main!")
@@ -46,7 +46,7 @@ if t3N > 0 {
   print("Message passing test FAILED")
 }
 
-let n4 = 0
+n4 = 0
 go {
   while true {
     n4 = n4 + 1
@@ -57,7 +57,7 @@ go {
 }
 
 {
-  let [tx, rx] = channel()
+  [tx, rx] = channel()
 
   go {
       print("waiting")
@@ -71,8 +71,8 @@ go {
 print("=== Phase 1 tests completed ===")
 
 print("=== Testing interval and timeout ===")
-let counter = 0
-let intv = interval 500 {
+counter = 0
+intv = interval 500 {
   counter = counter + 1
   print("Interval tick: " + str(counter))
 }
@@ -83,9 +83,9 @@ sleep(2200)
 print("Stopping interval")
 intv.stop()
 
-let timeout_triggered = false
-let n = 0
-let tim = timeout 1000 {
+timeout_triggered = false
+n = 0
+tim = timeout 1000 {
   timeout_triggered = true
   n++
   print("Timeout triggered!")
@@ -102,8 +102,8 @@ if timeout_triggered {
 print(n)
 print("=== Testing timeout_cancel ===")
 
-let timeout_triggered2 = false
-let tim2 = timeout 2000 {
+timeout_triggered2 = false
+tim2 = timeout 2000 {
   timeout_triggered2 = true
   n++
   print("This should not print")
@@ -123,26 +123,26 @@ if !timeout_triggered2 {
 print("Starting interval pause/resume test...")
 
 counter = 0
-let expected_final_value = 5
-let i2 = 50
-let i3 = 120
-let intv2 = interval i2 {
+expected_final_value = 5
+i2 = 50
+i3 = 120
+intv2 = interval i2 {
   counter = counter + 1
   print("Interval 2 tick: " + str(counter))
 }
-let intv3 = interval i3 {
+intv3 = interval i3 {
   counter = counter - 1
   print("Interval 3 tick: " + str(counter))
 }
-let offset = 3 // Offset to account for the initial ticks before pausing
+offset = 3 // Offset to account for the initial ticks before pausing
 /*
 i2 = 50
 i3 = 120
 1000 / i2 = 20 ticks of i2
 1000 / i3 = 8.33 ticks of i3
-20 * i3 = 2400 ms 
+20 * i3 = 2400 ms
 The formula is: (1000 / i2) * i3 = 2400 ms for 20 ticks of i2 and 8.33 ticks of i3, which should result in a counter value of 20 - 8.33 = 11.67 (approximately). After pausing interval 2, we should see the counter decrease by about 8.33 ticks of interval 3, resulting in a counter value of around 3.34 before resuming interval 2. After resuming, we should see the counter increase again by about 20 ticks of interval 2, resulting in a final counter value of around 23.34 before stopping both intervals. Offsetting by 4 to account for the initial ticks before pausing, we expect the final counter value to be around 19.34, which would indicate that the pause and resume functionality is working correctly.
-At the end of the test, we expect the counter to be around 5, which would indicate that the pause and resume functionality is working correctly. 
+At the end of the test, we expect the counter to be around 5, which would indicate that the pause and resume functionality is working correctly.
 */
 print("Interval 2 and 3 started, waiting for ticks...")
 sleep(1000 + offset) // Wait for a few ticks of both intervals before pausing
@@ -162,8 +162,8 @@ if counter == expected_final_value {
   print("Interval pause/resume test PASSED")
 } else {
   // if around 5, then it's likely that the pause and resume functionality is working correctly, but there may be some timing variations. If it's significantly less than 5, it may indicate that the pause functionality is not working correctly, and if it's significantly greater than 5, it may indicate that the resume functionality is not working correctly.
-  
-  let diff = abs(counter - expected_final_value)
+
+  diff = abs(counter - expected_final_value)
   if diff <= 2 {
       print("PASS (within tolerance)")
   } else {
@@ -178,7 +178,7 @@ if counter == expected_final_value {
 print("=== Phase 2 tests completed ===")
 {
   print("=== Testing channels + timeout ===")
-  let [tx, rx] = channel()
+  [tx, rx] = channel()
 
   timeout 500 {
       tx.send("ok")
@@ -200,7 +200,7 @@ fn generator() {
   sleep(100) // Simulate some work
   return "done"
 }
-let gen = generator()
+gen = generator()
 print("Generator created, resuming...")
 print("Yielded value: " + str(next gen)) // Should print 1
 print("Yielded value: " + str(next gen)) // Should print 2
@@ -217,7 +217,7 @@ fn simple_yield() {
 
 print("Testing simple yield function...")
 // The yield will return the value to the caller
-let co = simple_yield()
+co = simple_yield()
 print("Yield returned: " + next result) // Should print "yielded value"
 print("Resuming coroutine...")
 next result // Should print "After yield"
@@ -225,7 +225,7 @@ next result // Should print "After yield"
 print("=== Testing coroutine with state ===")
 
 fn counter() {
-  let i = 0
+  i = 0
   while i < 3 {
     i = i + 1
     yield i
@@ -235,7 +235,7 @@ fn counter() {
 
 print("Testing counter coroutine...")
 
-let count = counter()
+count = counter()
 for i in 1..3 {
   print("Counter yielded: " + str(next count)) // Should print 1, then 2, then 3
 }
@@ -245,21 +245,21 @@ print("=== Phase 3 tests completed ===")
 
 print("=== Testing channels ===")
 // Channel creation
-let [tx, rx] = channel()        // unbounded (or bounded with .bounded())
-let [tx, rx] = channel(10)      // bounded with capacity 10
+[tx, rx] = channel()        // unbounded (or bounded with .bounded())
+[tx, rx] = channel(10)      // bounded with capacity 10
 
 // Send
 tx.send(42)
 tx.send("hello")
 
 // Receive (blocks)
-let val = rx.recv()
+val = rx.recv()
 
 // Try receive (non-blocking)
-let val = rx.try()  // returns null if empty
+val = rx.try()  // returns null if empty
 
 // Receive with timeout
-let val = rx.timeout(1000)  // wait 1 second
+val = rx.timeout(1000)  // wait 1 second
 
 // Channel properties
 print(rx.len())    // items waiting
@@ -284,19 +284,19 @@ select {
 }
 
 print("=== Testing multiple receivers ===")
-let [tx, rx] = channel()
-let rx2 = rx.clone()  // multiple receivers
+[tx, rx] = channel()
+rx2 = rx.clone()  // multiple receivers
 
 go {
     loop {
-        let val = rx2.recv()
+        val = rx2.recv()
         print("Worker 1: " + val)
     }
 }
 
 go {
     loop {
-        let val = rx.recv()
+        val = rx.recv()
         print("Worker 2: " + val)
     }
 }
@@ -317,7 +317,7 @@ fn outer() {
     print("This runs after inner yields")
 }
 
-let gen = outer()
+gen = outer()
 print(next gen)  // 42
 
 // Solution: yield to nearest generator context
@@ -330,7 +330,7 @@ fn outer() {
     yield 44          // From outer()
 }
 
-let g = outer()
+g = outer()
 print(next g)  // 42
 print(next g)  // 43
 print(next g)  // 44
@@ -348,7 +348,7 @@ fn broken() {
     yield 2  // Never reached
 }
 
-let gen = broken()
+gen = broken()
 print(next gen)  // 1
 
 // Error propagation
@@ -366,7 +366,7 @@ if gen.dead() {
 // Propagate error to parent
 fn parent() {
     try {
-        let child = broken()
+        child = broken()
         next child
         next child  // Error propagates here
     } catch e {
@@ -376,13 +376,13 @@ fn parent() {
 
 // Example: using a coroutine as a generator
 fn count_up_to(n) {
-    let i = 0
+    i = 0
     while i < n {
         yield i
         i = i + 1
     }
 }
-let counter = count_up_to(5)
+counter = count_up_to(5)
 for val in counter {
     print(val)  // Should print 0, 1, 2, 3
 }

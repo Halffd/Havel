@@ -53,6 +53,7 @@ class MPVConnection {
         @path = path
         @sock = socket.UnixSocket()
         @connected = @sock.connect(path)
+        @
     }
 
     fn reconnect() {
@@ -89,6 +90,7 @@ class MPV {
         @bus = EventBus()
 
         @startReceiver()
+        @
     }
 
     // -------------------------
@@ -196,6 +198,13 @@ class MPV {
 
 
     // -------------------------
+    // event bus delegation
+    // -------------------------
+    fn on(event, fn_handler) {
+        @bus.on(event, fn_handler)
+    }
+
+    // -------------------------
     // playback controls
     // -------------------------
     fn playPause() { _cmd(["cycle", "pause"]) }
@@ -237,6 +246,10 @@ class MPV {
     }
 
     fn setVolume(level) {
+        _cmd(["set", "volume", level])
+    }
+
+    fn volume(level) {
         _cmd(["set", "volume", level])
     }
 
@@ -286,13 +299,187 @@ class MPV {
         _cmd(["get_property", name])
     }
 
+    fn isPlaying() {
+        _cmd(["get_property", "pause"])
+    }
+
     fn observeProperty(name, fn_handler) {
         @bus.on("property:" + name, fn_handler)
     }
 
 
     // -------------------------
-    // raw escape hatch
+    // subtitle scaling
+    // -------------------------
+    fn subScaleUp(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "sub-scale", delta])
+    }
+
+    fn subScaleDown(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "sub-scale", -delta])
+    }
+
+    // -------------------------
+    // subtitle delay
+    // -------------------------
+    fn subDelayForward(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "sub-delay", delta])
+    }
+
+    fn subDelayBackward(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "sub-delay", -delta])
+    }
+
+    // -------------------------
+    // subtitle seek
+    // -------------------------
+    fn subSeek(dir) { _cmd(["sub-seek", dir]) }
+    fn subSeekPrev() { _cmd(["sub-seek", -1]) }
+    fn subSeekNext() { _cmd(["sub-seek", 1]) }
+    fn subSeekCurrent() { _cmd(["sub-seek", 0]) }
+
+    // -------------------------
+    // secondary subtitles
+    // -------------------------
+    fn toggleSecondarySubs() { _cmd(["cycle", "secondary-sub-visibility"]) }
+
+    // -------------------------
+    // subtitle copy
+    // -------------------------
+    fn copySubtitle() { _cmd(["script-binding", "copy_current_subtitle"]) }
+
+    // -------------------------
+    // speed control (additive, not multiplicative)
+    // -------------------------
+    fn addSpeed(delta) {
+        _cmd(["add", "speed", delta])
+    }
+
+    // -------------------------
+    // generic cycle command
+    // -------------------------
+    fn cycle(property) {
+        _cmd(["cycle", property])
+    }
+
+    // -------------------------
+    // screenshot
+    // -------------------------
+    fn screenshot() {
+        _cmd(["screenshot"])
+    }
+
+    // -------------------------
+    // IPC socket switching
+    // -------------------------
+    fn ipcSet(path) {
+        @conn.path = path
+        @conn.reconnect(path)
+    }
+
+    fn ipcReset() {
+        @ipcSet(DEFAULT_SOCKET)
+    }
+
+    // -------------------------
+    // play (resume if paused)
+    // -------------------------
+    fn play() {
+        _cmd(["set", "pause", "no"])
+    }
+
+    // -------------------------
+    // optional: get/set property helpers
+    // -------------------------
+    fn setProperty(name, value) {
+        _cmd(["set", name, value])
+    }
+
+    // -------------------------
+    // audio
+    // -------------------------
+    fn nextAudio() { _cmd(["cycle", "audio"]) }
+    fn prevAudio() { _cmd(["cycle", "audio", "down"]) }
+
+    fn audioDelayUp(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "audio-delay", delta])
+    }
+
+    fn audioDelayDown(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "audio-delay", -delta])
+    }
+
+    // -------------------------
+    // fullscreen / ontop
+    // -------------------------
+    fn toggleFullscreen() { _cmd(["cycle", "fullscreen"]) }
+    fn toggleOntop() { _cmd(["cycle", "ontop"]) }
+
+    // -------------------------
+    // zoom
+    // -------------------------
+    fn zoomIn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "video-zoom", delta])
+    }
+
+    fn zoomOut(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "video-zoom", -delta])
+    }
+
+    fn resetZoom() { _cmd(["set", "video-zoom", 0]) }
+
+    // -------------------------
+    // pan
+    // -------------------------
+    fn panX(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "video-pan-x", delta])
+    }
+
+    fn panY(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "video-pan-y", delta])
+    }
+
+    fn resetPan() {
+        _cmd(["set", "video-pan-x", 0])
+        _cmd(["set", "video-pan-y", 0])
+    }
+
+    // -------------------------
+    // playlist
+    // -------------------------
+    fn playlistNext() { _cmd(["playlist-next"]) }
+    fn playlistPrev() { _cmd(["playlist-prev"]) }
+    fn playlistClear() { _cmd(["playlist-clear"]) }
+    fn playlistRemove(index) { _cmd(["playlist-remove", index]) }
+    fn playlistMove(src, dst) { _cmd(["playlist-move", src, dst]) }
+
+    // -------------------------
+    // chapter
+    // -------------------------
+    fn nextChapter() { _cmd(["add", "chapter", 1]) }
+    fn prevChapter() { _cmd(["add", "chapter", -1]) }
+    fn setChapter(ch) { _cmd(["set", "chapter", ch]) }
+
+    // -------------------------
+    // script message
+    // -------------------------
+    fn scriptMessage(name, args) {
+        cmd = ["script-message", name]
+        _cmd(cmd)
+    }
+
+    // -------------------------
+    // send raw json
     // -------------------------
     fn sendRaw(jsonStr) {
         if !@conn.alive() {
@@ -306,4 +493,127 @@ class MPV {
         @conn.sock.send(jsonStr + "\n")
         @conn.sock.recv(8192)
     }
+
+    // -------------------------
+    // copy subtitle
+    // -------------------------
+    fn copySubtitle() { _cmd(["script-binding", "copy_current_subtitle"]) }
+
+    // -------------------------
+    // speed control (additive)
+    // -------------------------
+    fn addSpeed(delta) {
+        _cmd(["add", "speed", delta])
+    }
+
+    // -------------------------
+    // generic cycle
+    // -------------------------
+    fn cycle(property) {
+        _cmd(["cycle", property])
+    }
+
+    // -------------------------
+    // screenshot
+    // -------------------------
+    fn screenshot() {
+        _cmd(["screenshot"])
+    }
+
+    // -------------------------
+    // IPC socket switching
+    // -------------------------
+    fn ipcSet(path) {
+        @conn.path = path
+        @conn.reconnect(path)
+    }
+
+    fn ipcReset() {
+        @ipcSet(DEFAULT_SOCKET)
+    }
+
+    // -------------------------
+    // play (resume if paused)
+    // -------------------------
+    fn play() {
+        _cmd(["set", "pause", "no"])
+    }
+
+    // -------------------------
+    // property helpers
+    // -------------------------
+    fn setProperty(name, value) {
+        _cmd(["set", name, value])
+    }
+
+    // -------------------------
+    // audio
+    // -------------------------
+    fn nextAudio() { _cmd(["cycle", "audio"]) }
+    fn prevAudio() { _cmd(["cycle", "audio", "down"]) }
+
+    fn audioDelayUp(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "audio-delay", delta])
+    }
+
+    fn audioDelayDown(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "audio-delay", -delta])
+    }
+
+    // -------------------------
+    // fullscreen / ontop
+    // -------------------------
+    fn toggleFullscreen() { _cmd(["cycle", "fullscreen"]) }
+    fn toggleOntop() { _cmd(["cycle", "ontop"]) }
+
+    // -------------------------
+    // zoom
+    // -------------------------
+    fn zoomIn(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "video-zoom", delta])
+    }
+
+    fn zoomOut(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "video-zoom", -delta])
+    }
+
+    fn resetZoom() { _cmd(["set", "video-zoom", 0]) }
+
+    // -------------------------
+    // pan
+    // -------------------------
+    fn panX(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "video-pan-x", delta])
+    }
+
+    fn panY(delta) {
+        if delta == null { delta = 0.1 }
+        _cmd(["add", "video-pan-y", delta])
+    }
+
+    fn resetPan() {
+        _cmd(["set", "video-pan-x", 0])
+        _cmd(["set", "video-pan-y", 0])
+    }
+
+    // -------------------------
+    // playlist
+    // -------------------------
+    fn playlistNext() { _cmd(["playlist-next"]) }
+    fn playlistPrev() { _cmd(["playlist-prev"]) }
+    fn playlistClear() { _cmd(["playlist-clear"]) }
+    fn playlistRemove(index) { _cmd(["playlist-remove", index]) }
+    fn playlistMove(src, dst) { _cmd(["playlist-move", src, dst]) }
+
+    // -------------------------
+    // chapter
+    // -------------------------
+    fn nextChapter() { _cmd(["add", "chapter", 1]) }
+    fn prevChapter() { _cmd(["add", "chapter", -1]) }
+    fn setChapter(ch) { _cmd(["set", "chapter", ch]) }
 }

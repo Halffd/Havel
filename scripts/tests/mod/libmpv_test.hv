@@ -148,3 +148,5 @@ fn main() {
 
     print("== OK ==")
 }
+
+main()

@@ -1,0 +1,15 @@
+// Test pixel module
+use pixel
+
+val color = pixel.get(100, 100)
+print("pixel.get(100, 100): " + color)
+
+val matched = pixel.match(100, 100, "#FF0000", 0)
+print("pixel.match(100, 100, #FF0000): " + matched)
+
+// Test at cursor
+val cursorColor = pixel.get()
+print("pixel.get() at cursor: " + cursorColor)
+
+val cursorMatch = pixel.match("#FF0000", 0)
+print("pixel.match(#FF0000) at cursor: " + cursorMatch)

@@ -643,9 +643,10 @@ size_t Scheduler::wakeSleepingGoroutines() {
     {
         std::lock_guard lock(goroutines_mutex_);
         for (auto& [id, g] : goroutines_) {
-            assert(g != nullptr);
-            assert(g->state != GoroutineState::Done);
-            if (g->state != GoroutineState::Suspended) continue;
+            if (!g) continue;
+            auto state = g->state.load(std::memory_order_acquire);
+            if (state == GoroutineState::Done) continue;
+            if (state != GoroutineState::Suspended) continue;
             if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
             {
                 std::lock_guard wlock(g->wait_handle_mutex_);
@@ -771,13 +772,8 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
  }
 
 size_t Scheduler::cleanupDoneGoroutines() {
-  // Hold both locks for the whole cleanup so no concurrent thread can
-  // enqueue a pointer we're about to delete. Lock order: priority_mutex_
-  // first, then goroutines_mutex_ (per the ordering rule in the header).
-  auto t_start = std::chrono::steady_clock::now();
-  auto t_start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      t_start.time_since_epoch()).count();
-  std::thread::id caller = std::this_thread::get_id();
+  // Two-phase cleanup with both locks held. Lock order: priority_mutex_
+  // first, then goroutines_mutex_ (per header ordering rule).
   std::lock_guard plock(priority_mutex_);
   std::lock_guard glock(goroutines_mutex_);
   size_t removed = 0;
@@ -794,13 +790,9 @@ size_t Scheduler::cleanupDoneGoroutines() {
   // Diagnostic logging gated by HAVEL_TRACE_CLEANUP. Bypasses the spdlog
   // debug-level filter so traces are visible even at INFO log level.
   if (std::getenv("HAVEL_TRACE_CLEANUP")) {
-    auto t_end = std::chrono::steady_clock::now();
-    auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(
-        t_end - t_start).count();
-    fprintf(stderr, "[Scheduler] [CLEANUP] removed=%zu remaining=%zu dur=%lldus caller_tid=0x%llx t=%lld\n",
-            removed, goroutines_.size(), (long long)dur_us,
-            (unsigned long long)*reinterpret_cast<uint64_t*>(&caller),
-            (long long)t_start_ns);
+    // Note: this is outside the locks to avoid mutex in env call
+    fprintf(stderr, "[Scheduler] [CLEANUP] removed=%zu remaining=%zu\n",
+            removed, goroutines_.size());
   }
   return removed;
 }

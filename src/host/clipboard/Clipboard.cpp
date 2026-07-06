@@ -396,10 +396,5 @@ bool Clipboard::setImageQt(const std::string &base64Png) {
   return true;
 }
 
-bool Clipboard::hasImage() const { return !getImage().empty(); }
-
-bool Clipboard::clear() { return setText(""); }
-
-bool Clipboard::hasText() const { return !getText().empty(); }
 
 } // namespace havel::host

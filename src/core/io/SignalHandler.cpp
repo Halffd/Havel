@@ -1,5 +1,6 @@
 #include "SignalHandler.hpp"
 #include "EventListener.hpp"
+#include "InputBackend.hpp"
 #include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
 #include <cerrno>
@@ -32,6 +33,13 @@ void SignalHandler::SignalCleanupHandler(int sig) {
   gSignalFlag.store(sig, std::memory_order_relaxed);
 }
 
+static void FatalSignalHandler(int sig) {
+    EmergencyUngrabAllEvdevSignalSafe();
+    signal(sig, SIG_DFL);
+    raise(sig);
+    _exit(128 + sig);
+}
+
 int SignalHandler::GetSignalFlag() {
   return gSignalFlag.load(std::memory_order_relaxed);
 }
@@ -44,16 +52,19 @@ void SignalHandler::InstallAsyncHandlers() {
   struct sigaction sa;
   sa.sa_flags = SA_RESTART;
   sigemptyset(&sa.sa_mask);
-  sa.sa_handler = SignalCleanupHandler;
 
-  // Catch all termination and interrupt signals
-  sigaction(SIGTERM, &sa, nullptr);   // Termination
-  sigaction(SIGQUIT, &sa, nullptr);   // Quit
+  // Fatal signals: emergency ungrab then re-raise with SIG_DFL
+  sa.sa_handler = FatalSignalHandler;
   sigaction(SIGABRT, &sa, nullptr);   // Abort
   sigaction(SIGSEGV, &sa, nullptr);   // Segmentation fault
   sigaction(SIGILL, &sa, nullptr);    // Illegal instruction
   sigaction(SIGFPE, &sa, nullptr);    // Floating point exception
   sigaction(SIGBUS, &sa, nullptr);    // Bus error
+
+  // Non-fatal signals: just set flag
+  sa.sa_handler = SignalCleanupHandler;
+  sigaction(SIGTERM, &sa, nullptr);   // Termination
+  sigaction(SIGQUIT, &sa, nullptr);   // Quit
   sigaction(SIGPIPE, &sa, nullptr);   // Broken pipe
   sigaction(SIGALRM, &sa, nullptr);   // Alarm clock
   sigaction(SIGUSR1, &sa, nullptr);   // User-defined 1

@@ -422,16 +422,6 @@ void IO::ensureBackend() {
   KeyMap::Initialize();
   debug("[IO] KeyMap initialized");
 
-  // Register cleanup handler to ensure evdev ungrab on exit
-    static bool cleanupRegistered = false;
-    if (!cleanupRegistered) {
-        std::atexit([]() {
-            if (debugging::debug_io) debug("atexit: forcing evdev ungrab on process exit");
-            EmergencyUngrabAllEvdev();
-        });
-        cleanupRegistered = true;
-    }
-
   // Read process priority and thread count from config
   int processPriority = Configs::Get().Get<int>(
       "Advanced.ProcessPriority", 0); // -20 (highest) to 19 (lowest)
@@ -774,11 +764,6 @@ IO::~IO() { cleanup(); }
 
 void IO::cleanup() {
   ensureBackend();
-  // Stop EventListener if using new event system
-  if (eventListener) {
-    eventListener->ForceUngrabAllDevices();
-    eventListener->Stop();
-  }
 
   // IOBackend cleanup (X11 ungrab, etc.)
   if (ioBackend) {

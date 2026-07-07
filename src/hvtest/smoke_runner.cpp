@@ -1437,7 +1437,7 @@ co fn outer() {
 return <-outer()
 )havel", 21, dump_bytecode, snapshot_dir);
 
- failures += runCase("await-fiber-sleep", R"havel(
+ failures += runAsyncCase("await-fiber-sleep", R"havel(
 co fn sleeper() {
  <-sleep(1)
  return 42

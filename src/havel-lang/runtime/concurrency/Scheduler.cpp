@@ -173,30 +173,33 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 	}
 
 	if (result) {
-		// UAF guard: the goroutine we just popped must still be alive in
-		// the map and not Done. cleanupDoneGoroutines purges queue entries
-		// before erasing, so a failure here means a purge was skipped.
-		assert(result->state != GoroutineState::Done);
-		{
-			std::lock_guard glock(goroutines_mutex_);
-			assert(goroutines_.count(result->id) == 1);
+		if (result->state == GoroutineState::Done) {
+			// Raced with markGoroutineDone — skip. popRunnable already
+			// filters Done entries (lines 145-150), but the state can
+			// flip between its check and here.
+			result = nullptr;
+		} else {
+			{
+				std::lock_guard glock(goroutines_mutex_);
+				assert(goroutines_.count(result->id) == 1);
+			}
+			result->wait_handle.clear();
+			current_.store(result, std::memory_order_release);
+			if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}",
+						  result->id, result->name, (int)result->state.load());
+			if (trace_cycle) {
+			  fprintf(stderr, "[CYCLE] pickNext -> gid=%u state=%d\n",
+					  result->id, (int)result->state.load());
+			}
 		}
- 		{
- 			result->wait_handle.clear();  // Clear stale suspension context before running
- 		}
-        current_.store(result, std::memory_order_release);
-        if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}", 
-                      result->id, result->name, (int)result->state.load());
-        if (trace_cycle) {
-          fprintf(stderr, "[CYCLE] pickNext -> gid=%u state=%d\n",
-                  result->id, (int)result->state.load());
-        }
-	} else {
+	}
+
+	if (!result) {
 		// No runnable goroutines found. Periodic cleanup while idle.
-        size_t removed = cleanupDoneGoroutines();
-        if (trace_cycle) {
-          fprintf(stderr, "[CYCLE] pickNext -> nullptr (cleanup removed=%zu)\n", removed);
-        }
+		size_t removed = cleanupDoneGoroutines();
+		if (trace_cycle) {
+		  fprintf(stderr, "[CYCLE] pickNext -> nullptr (cleanup removed=%zu)\n", removed);
+		}
 	}
 
 	return result;
@@ -870,25 +873,41 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
  }
 
 size_t Scheduler::cleanupDoneGoroutines() {
-  // Two-phase cleanup with both locks held. Lock order: priority_mutex_
-  // first, then goroutines_mutex_ (per header ordering rule).
-  std::lock_guard plock(priority_mutex_);
-  std::lock_guard glock(goroutines_mutex_);
-  size_t removed = 0;
-  for (auto it = goroutines_.begin(); it != goroutines_.end();) {
-    auto& [id, g] = *it;
-    if (g && g->state == GoroutineState::Done) {
-      removeFromQueues(g.get());
-      it = goroutines_.erase(it);  // erase returns iterator to next element
-      ++removed;
-    } else {
-      ++it;
+  // Phase 1: collect Done goroutines under goroutines_mutex_ only
+  std::vector<Goroutine*> done_list;
+  {
+    std::lock_guard glock(goroutines_mutex_);
+    for (auto& [id, g] : goroutines_) {
+      if (g && g->state == GoroutineState::Done) {
+        done_list.push_back(g.get());
+      }
     }
   }
-  // Diagnostic logging gated by HAVEL_TRACE_CLEANUP. Bypasses the spdlog
-  // debug-level filter so traces are visible even at INFO log level.
+
+  // Phase 2: remove from queues under priority_mutex_ only
+  {
+    std::lock_guard plock(priority_mutex_);
+    for (auto* g : done_list) {
+      removeFromQueues(g);
+    }
+  }
+
+  // Phase 3: erase from map under goroutines_mutex_ only
+  size_t removed = 0;
+  {
+    std::lock_guard glock(goroutines_mutex_);
+    for (auto it = goroutines_.begin(); it != goroutines_.end();) {
+      if (it->second && it->second->state == GoroutineState::Done) {
+        it = goroutines_.erase(it);
+        ++removed;
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  // Diagnostic logging gated by HAVEL_TRACE_CLEANUP.
   if (std::getenv("HAVEL_TRACE_CLEANUP")) {
-    // Note: this is outside the locks to avoid mutex in env call
     fprintf(stderr, "[Scheduler] [CLEANUP] removed=%zu remaining=%zu\n",
             removed, goroutines_.size());
   }

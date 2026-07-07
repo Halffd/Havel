@@ -1108,17 +1108,19 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
 }
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
-  executing_in_fiber_ = false;
+  static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
+  bool saved_fiber_flag = executing_in_fiber_;
   const bool has_instruction_limit = (max_instructions_ > 0);
   const bool has_timer = static_cast<bool>(timer_check_func_);
   const bool has_profiling = profiling_enabled_;
   const bool has_tracing = trace_execution_;
 
-  // Fast path: no profiling, no tracing, no instruction limit, no timer.
-  // The common case for compute-heavy scripts like self-hosted compilation.
-  // GC check, exit check, and pending calls are batched every 8192 instructions.
-  // Only suspension needs immediate handling; if it occurs, we fall through to slow path.
   const bool use_fast_path = !debugger_attached_ && !has_profiling && !has_tracing && !has_instruction_limit && !has_timer;
+
+  if (_trace) {
+    fprintf(stderr, "[CYCLE] runDispatchLoop: use_fast_path=%d has_timer=%d has_inst_limit=%d trace=%d yield_cb=%d\n",
+            (int)use_fast_path, (int)has_timer, (int)has_instruction_limit, (int)has_tracing, yield_callback_ ? 1 : 0);
+  }
 
   if (use_fast_path) {
 #if HAVE_COMPUTED_GOTO
@@ -1127,6 +1129,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       // runDispatchFast returned due to suspension — fall through to slow path
       goto slow_path;
     }
+    executing_in_fiber_ = saved_fiber_flag;
     return;
 #else
     size_t counter = 0;
@@ -1191,9 +1194,10 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
                 msg = ::havel::ErrorPrinter::formatErrorFromFile("Runtime Error", std::string(e.what()), loc.filename, (size_t)loc.line, (size_t)loc.column, (size_t)loc.length);
               } else {
                 msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
-              }
-            }
-          }
+        }
+    }
+    executing_in_fiber_ = saved_fiber_flag;
+}
         }
         Value exceptionValue = Value::makeStringId(heap_.allocateString(msg).id);
         if (handleScriptThrow(exceptionValue)) continue;
@@ -1215,6 +1219,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         }
       }
     }
+    executing_in_fiber_ = saved_fiber_flag;
     return;
 #endif // HAVE_COMPUTED_GOTO
   }
@@ -1305,6 +1310,15 @@ slow_path:
           if (scheduler_) {
             // In scheduler/goroutine context: break out so processGoroutines
             // can set the deadline on the WaitHandle and suspend properly
+            // Advance IP past the current instruction (result was already pushed)
+            if (frame_count_ > stop_frame_depth) {
+                auto idx = frame_count_ - 1;
+                if (frame_count_ == entry_frame_count && frame_arena_[idx].ip == ip) {
+                    frame_arena_[idx].ip++;
+                } else if (frame_count_ > entry_frame_count) {
+                    frame_arena_[entry_frame_count - 1].ip++;
+                }
+            }
             last_suspension_reason_ = reason;
             last_suspension_context_ = ctx;
             break;
@@ -1328,6 +1342,15 @@ slow_path:
         } else {
           // Non-SLEEP suspension (thread join, channel recv, await, etc.)
           // Save suspension info for processGoroutines to read, then break
+          // Advance IP past the current instruction (result was already pushed)
+          if (frame_count_ > stop_frame_depth) {
+              auto idx = frame_count_ - 1;
+              if (frame_count_ == entry_frame_count && frame_arena_[idx].ip == ip) {
+                  frame_arena_[idx].ip++;
+              } else if (frame_count_ > entry_frame_count) {
+                  frame_arena_[entry_frame_count - 1].ip++;
+              }
+          }
            last_suspension_reason_ = reason;
            last_suspension_context_ = ctx;
            break;

@@ -548,6 +548,14 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
   // Caller must hold priority_mutex_.
   void removeFromQueues(Goroutine* g);
 
+  // Atomically mark a goroutine Done and purge it from all scheduling queues.
+  // Use this instead of writing `g->state = Done` directly when the goroutine
+  // may currently be enqueued (e.g. a hotkey cancel firing while parked for
+  // the next trigger). Bare state writes without a queue purge leave a stale
+  // pointer in the queue and trip the [POP-DONE] assertion in pickNext().
+  // Safe to call from any thread; acquires priority_mutex_ internally.
+  void markGoroutineDone(Goroutine* g);
+
   // Collect all update callback IDs for GC root cleanup
   std::vector<uint64_t> collectUpdateCallbackIds();
 

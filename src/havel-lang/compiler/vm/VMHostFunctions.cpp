@@ -520,6 +520,14 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW("sleep(): duration cannot be negative");
         }
 
+{
+  static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
+  if (_trace) {
+    fprintf(stderr, "[CYCLE] sleep host: scheduler_=%d executing_in_fiber_=%d duration=%ldms\n",
+            scheduler_ != nullptr, (int)executing_in_fiber_, (long)*duration_ms);
+  }
+}
+
 if (scheduler_ && executing_in_fiber_) {
 // Use the VM's goroutine suspension mechanism instead of blocking.
 // This lets the scheduler put the goroutine to sleep and resume it

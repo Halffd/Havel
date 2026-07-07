@@ -270,6 +270,12 @@ bool EvdevAdapter::Init() {
 void EvdevAdapter::Shutdown() {
     running_ = false;
 
+    // Wake up PollEvents if it's blocked in poll()
+    if (shutdownFd_ >= 0) {
+        uint64_t val = 1;
+        write(shutdownFd_, &val, sizeof(val));
+    }
+
     ReleaseAllVirtualKeys();
     UngrabAllDevices();
 

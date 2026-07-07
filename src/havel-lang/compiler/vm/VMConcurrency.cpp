@@ -511,26 +511,28 @@ break;
  }
  }
 
- Value result;
- if (co->state == GCHeap::Coroutine::Done && !stack.empty()) {
- result = popStack();
- } else if (co->state == GCHeap::Coroutine::Done) {
- result = co->stack.empty() ? Value::makeNull() : co->stack.back();
- } else if (co->state == GCHeap::Coroutine::Waiting && !stack.empty()) {
- result = popStack();
- } else {
- result = awaitable;
- }
+Value result;
+  if (co->state == GCHeap::Coroutine::Done && !stack.empty()) {
+    result = popStack();
+  } else if (co->state == GCHeap::Coroutine::Done) {
+    result = co->stack.empty() ? Value::makeNull() : co->stack.back();
+  } else if (co->state == GCHeap::Coroutine::Waiting && !stack.empty()) {
+    result = popStack();
+  } else {
+    result = awaitable;
+  }
 
- stack = saved.stack;
- frame_count_ = saved.frame_count;
- locals = saved.locals;
- immutable_locals_.clear();
- frame_arena_ = saved.frame_arena;
- current_coroutine_id_ = saved.current_coroutine_id;
+  // Restore saved VM state
+  stack = saved.stack;
+  frame_count_ = saved.frame_count;
+  locals = saved.locals;
+  immutable_locals_.clear();
+  frame_arena_ = saved.frame_arena;
+  current_coroutine_id_ = saved.current_coroutine_id;
 
- pushStack(result);
- break;
+  // Push the coroutine's return value
+  pushStack(result);
+  break;
  }
 
 // <- thread_id: join the thread, return its result

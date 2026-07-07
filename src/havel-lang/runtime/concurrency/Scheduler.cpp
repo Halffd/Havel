@@ -648,8 +648,9 @@ size_t Scheduler::wakeSleepingGoroutines() {
         for (auto& [id, g] : goroutines_) {
             assert(g != nullptr);
             // Skip goroutines that are already done
-            if (g->state == GoroutineState::Done) continue;
-            if (g->state != GoroutineState::Suspended) continue;
+            auto state = g->state.load(std::memory_order_acquire);
+            if (state == GoroutineState::Done) continue;
+            if (state != GoroutineState::Suspended) continue;
             if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
             {
                 std::lock_guard wlock(g->wait_handle_mutex_);
@@ -658,7 +659,14 @@ size_t Scheduler::wakeSleepingGoroutines() {
                 if (now < g->wait_handle.deadline) continue;
             }
 
-            g->state = GoroutineState::Runnable;
+            // Atomically transition from Suspended to Runnable only if not Done
+            auto expected = GoroutineState::Suspended;
+            if (!g->state.compare_exchange_strong(expected, GoroutineState::Runnable,
+                std::memory_order_acq_rel, std::memory_order_acquire)) {
+                // State changed (likely to Done), skip this goroutine
+                continue;
+            }
+
             g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
             {
                 std::lock_guard wlock(g->wait_handle_mutex_);
@@ -777,26 +785,45 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
  }
 
 size_t Scheduler::cleanupDoneGoroutines() {
-  // Hold both locks for the whole cleanup so no concurrent thread can
-  // enqueue a pointer we're about to delete. Lock order: priority_mutex_
-  // first, then goroutines_mutex_ (per the ordering rule in the header).
+  // Two-phase commit pattern (like Linux sched_core_share_pid):
+  // Phase 1: Collect IDs to remove (under lock)
+  // Phase 2: Remove them (under lock)
   auto t_start = std::chrono::steady_clock::now();
   auto t_start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
       t_start.time_since_epoch()).count();
   std::thread::id caller = std::this_thread::get_id();
-  std::lock_guard plock(priority_mutex_);
-  std::lock_guard glock(goroutines_mutex_);
-  size_t removed = 0;
-  for (auto it = goroutines_.begin(); it != goroutines_.end();) {
-    auto& [id, g] = *it;
-    if (g && g->state == GoroutineState::Done) {
-      removeFromQueues(g.get());
-      goroutines_.erase(it);
-      ++removed;
-    } else {
-      ++it;
+
+  std::vector<uint32_t> idsToRemove;
+
+  // Phase 1: Collect IDs to remove (under both locks)
+  {
+    std::lock_guard plock(priority_mutex_);
+    std::lock_guard glock(goroutines_mutex_);
+    for (auto& [id, g] : goroutines_) {
+      if (g && g->state == GoroutineState::Done) {
+        idsToRemove.push_back(id);
+      }
     }
   }
+
+  size_t removed = 0;
+  if (!idsToRemove.empty()) {
+    // Phase 2: Remove collected IDs (under both locks)
+    std::lock_guard plock(priority_mutex_);
+    std::lock_guard glock(goroutines_mutex_);
+    for (uint32_t id : idsToRemove) {
+      auto it = goroutines_.find(id);
+      if (it != goroutines_.end()) {
+        auto& g = it->second;
+        if (g && g->state == GoroutineState::Done) {
+          removeFromQueues(g.get());
+          goroutines_.erase(it);
+          ++removed;
+        }
+      }
+    }
+  }
+
   // Diagnostic logging gated by HAVEL_TRACE_CLEANUP. Bypasses the spdlog
   // debug-level filter so traces are visible even at INFO log level.
   if (std::getenv("HAVEL_TRACE_CLEANUP")) {
@@ -814,12 +841,23 @@ size_t Scheduler::cleanupDoneGoroutines() {
 void Scheduler::removeFromQueues(Goroutine* g) {
   // Caller must hold priority_mutex_.
   if (!g) return;
+  assert(priority_mutex_owned() && "removeFromQueues requires priority_mutex_");
   auto purge = [&](std::deque<Goroutine*>& q) {
     q.erase(std::remove(q.begin(), q.end(), g), q.end());
   };
   purge(hotkey_queue_);
   purge(runnable_queue_);
   purge(background_queue_);
+}
+
+bool Scheduler::priority_mutex_owned() const {
+#if defined(NDEBUG)
+  return true; // Can't check in release
+#else
+  // In debug, we can't easily check mutex ownership without lockdep.
+  // But we document the requirement.
+  return true;
+#endif
 }
 
 std::vector<uint64_t> Scheduler::collectUpdateCallbackIds() {

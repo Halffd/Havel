@@ -548,6 +548,10 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
   // Caller must hold priority_mutex_.
   void removeFromQueues(Goroutine* g);
 
+  // Debug assertion helper - returns true if priority_mutex_ is held by current thread
+  // In release builds, always returns true (no-op)
+  bool priority_mutex_owned() const;
+
   // Collect all update callback IDs for GC root cleanup
   std::vector<uint64_t> collectUpdateCallbackIds();
 

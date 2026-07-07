@@ -1,0 +1,26 @@
+// Test: goroutine sleep loop with event loop
+// Uses hotkey to keep event loop alive
+
+tick_count = 0
+
+fn updater() {
+  loop {
+    tick_count += 1
+    print("updater iteration: {tick_count}")
+    if tick_count >= 5 {
+      print("updater: done, exiting")
+      exit(0)
+    }
+    sleep(500)
+  }
+}
+
+print("starting updater goroutine...")
+go updater()
+
+// Keep event loop alive with a hotkey that never fires
+F12 => {
+  print("F12 pressed - but we won't press it")
+}
+
+print("test will auto-exit after 5 iterations")

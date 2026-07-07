@@ -15,7 +15,7 @@ fn test_yield_and_resume() {
     return 42
   }
 
-  let g = generator()
+  g = generator()
   assert(g() == 1, "First yield should return 1")
   assert(g() == 2, "Second yield should return 2")
   assert(g() == 3, "Third yield should return 3")
@@ -33,7 +33,7 @@ fn test_state_preservation() {
   print("Test 2: State preservation")
 
   fn counter() {
-    let i = 0
+    i = 0
     while i < 5 {
       i = i + 1
       yield i
@@ -41,7 +41,7 @@ fn test_state_preservation() {
     return i
   }
 
-  let c = counter()
+  c = counter()
   assert(c() == 1, "First call: i=1")
   assert(c() == 2, "Second call: i=2")
   assert(c() == 3, "Third call: i=3")
@@ -66,7 +66,7 @@ fn test_yield_in_loop() {
     return "done"
   }
 
-  let l = loop_gen()
+  l = loop_gen()
   assert(l() == 1, "Loop iteration 1")
   assert(l() == 2, "Loop iteration 2")
   assert(l() == 3, "Loop iteration 3")
@@ -90,14 +90,14 @@ fn test_nested_yields() {
   }
 
   fn outer() {
-    let x = inner()
+    x = inner()
     yield x()
     yield x()
-    let result = x()
+    result = x()
     return result
   }
 
-  let o = outer()
+  o = outer()
   assert(o() == "inner1", "Inner first yield")
   assert(o() == "inner2", "Inner second yield")
   assert(o() == "inner_done", "Inner return value")
@@ -113,7 +113,7 @@ test_nested_yields()
 fn test_concurrent_generators() {
   print("Test 5: Concurrent generators")
 
-  let results = []
+  results = []
 
   fn gen1() {
     for i in 1..3 {
@@ -129,8 +129,8 @@ fn test_concurrent_generators() {
     }
   }
 
-  let g1 = gen1()
-  let g2 = gen2()
+  g1 = gen1()
+  g2 = gen2()
 
   // Interleave execution
   g1()
@@ -161,7 +161,7 @@ fn test_fiber_death() {
     return "done"
   }
 
-  let f = short_gen()
+  f = short_gen()
   assert(f() == 1, "First call returns yield")
   assert(f() == "done", "Second call returns final value")
   assert(f() == null, "Third call returns null (dead)")
@@ -180,7 +180,7 @@ fn test_error_in_generator() {
   fn error_gen() {
     yield 1
     try {
-      let x = 1 / 0
+      x = 1 / 0
       yield x
     } catch e {
       yield "error caught"
@@ -188,7 +188,7 @@ fn test_error_in_generator() {
     return "recovered"
   }
 
-  let e = error_gen()
+  e = error_gen()
   assert(e() == 1, "First yield succeeds")
   assert(e() == "error caught", "Exception caught, yields recovery")
   assert(e() == "recovered", "Generator continues after error")
@@ -209,7 +209,7 @@ fn test_deep_stack() {
   }
 
   fn depth2() {
-    let x = depth3()
+    x = depth3()
     yield x()
     yield "d2"
     yield x()
@@ -217,18 +217,18 @@ fn test_deep_stack() {
   }
 
   fn depth1() {
-    let y = depth2()
+    y = depth2()
     yield y()
     yield "d1"
     yield y()
     return y()
   }
 
-  let d = depth1()
-  let r1 = d()
-  let r2 = d()
-  let r3 = d()
-  let r4 = d()
+  d = depth1()
+  r1 = d()
+  r2 = d()
+  r3 = d()
+  r4 = d()
 
 assert(r1 == "d3-1", "Deep yield 1")
 assert(r2 == "d1", "Shallow yield")

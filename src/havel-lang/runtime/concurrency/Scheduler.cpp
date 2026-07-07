@@ -55,51 +55,49 @@ Scheduler::Goroutine::~Goroutine() {
 }
 
 uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
- 	uint32_t closure_id, const std::string& name, FiberPriority priority) {
+  	uint32_t closure_id, const std::string& name, FiberPriority priority) {
     auto g = std::make_unique<Scheduler::Goroutine>(next_goroutine_id_++, name, priority);
     g->function_id = function_id;
     g->closure_id = closure_id;
     g->state = GoroutineState::Created;
     g->max_instructions_per_tick = (priority == FiberPriority::HOTKEY) ? hotkey_tick_instructions_ : default_tick_instructions_;
 
-    if (debugging::debug_io) ::havel::debug("[Scheduler] SPAWN: gid={} name='{}' func_id={} closure_id={} priority={}", 
+    if (debugging::debug_io) ::havel::debug("[Scheduler] SPAWN: gid={} name='{}' func_id={} closure_id={} priority={}",
                   g->id, name, function_id, closure_id, (int)priority);
 
- 	g->fiber = new Fiber(g->id, function_id, 0, name);
-	if (closure_id > 0) {
-		auto& frame = g->fiber->currentFrame();
-		frame.closure_id = closure_id;
-		frame.arg_count = static_cast<uint32_t>(args.size());
-	}
+    g->fiber = new Fiber(g->id, function_id, 0, name);
+    if (closure_id > 0) {
+        auto& frame = g->fiber->currentFrame();
+        frame.closure_id = closure_id;
+        frame.arg_count = static_cast<uint32_t>(args.size());
+    }
 
-	g->locals = args;
+    g->locals = args;
 
-	for (const auto& arg : args) {
-		g->fiber->stack.push(arg);
-	}
+    for (const auto& arg : args) {
+        g->fiber->stack.push(arg);
+    }
 
-	uint32_t g_id = g->id;
+    uint32_t g_id = g->id;
 
-	{
-		std::lock_guard lock(goroutines_mutex_);
-		goroutines_[g_id] = std::move(g);
-	}
-
-	{
-		std::lock_guard lock(priority_mutex_);
-		if (priority == FiberPriority::HOTKEY) {
-			hotkey_queue_.push_front(goroutines_[g_id].get());
+    // Lock in consistent order: priority_mutex_ first, then goroutines_mutex_
+    {
+        std::lock_guard plock(priority_mutex_);
+        std::lock_guard glock(goroutines_mutex_);
+        goroutines_[g_id] = std::move(g);
+        if (priority == FiberPriority::HOTKEY) {
+            hotkey_queue_.push_front(goroutines_[g_id].get());
             if (debugging::debug_io) ::havel::debug("[Scheduler] [PUSH FRONT] gid={} name='{}' priority=HOTKEY", g_id, name);
-		} else if (priority == FiberPriority::BACKGROUND) {
-			background_queue_.push_back(goroutines_[g_id].get());
+        } else if (priority == FiberPriority::BACKGROUND) {
+            background_queue_.push_back(goroutines_[g_id].get());
             if (debugging::debug_io) ::havel::debug("[Scheduler] [PUSH BACK] gid={} name='{}' priority=BACKGROUND", g_id, name);
-		} else {
-			runnable_queue_.push_back(goroutines_[g_id].get());
+        } else {
+            runnable_queue_.push_back(goroutines_[g_id].get());
             if (debugging::debug_io) ::havel::debug("[Scheduler] [PUSH BACK] gid={} name='{}' priority=NORMAL", g_id, name);
-		}
-	}
+        }
+    }
 
-	return g_id;
+    return g_id;
 }
 
 Scheduler::Goroutine* Scheduler::current() {
@@ -192,12 +190,17 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 }
 
 void Scheduler::suspend(Scheduler::Goroutine* g, SuspensionReason reason) {
-	if (!g) return;
+  if (!g) return;
 
-	g->state = GoroutineState::Suspended;
-	g->suspension_reason.store(reason, std::memory_order_release);
-    ::havel::debug("[Scheduler] [YIELD] gid={} name='{}' reason={}", 
-                  g->id, g->name, (int)reason);
+  if (g->state == GoroutineState::Done) return;
+
+  g->state = GoroutineState::Suspended;
+  g->suspension_reason.store(reason, std::memory_order_release);
+  ::havel::debug("[Scheduler] [YIELD] gid={} name='{}' reason={}", 
+                g->id, g->name, (int)reason);
+
+  // Remove from queues immediately since it's no longer runnable
+  removeFromQueues(g);
 }
 
 void Scheduler::unpark(Scheduler::Goroutine* g) {
@@ -437,6 +440,15 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 
 void Scheduler::requeueFront(Goroutine* g) {
   if (!g) return;
+  // Defense in depth: a Done goroutine must not be resurrected. Persistent
+  // hotkey goroutines cycle Ready->Running->Suspended(HotkeyWait) and never
+  // reach Done; a Done goroutine here means a non-persistent goroutine whose
+  // fiber has exited. Re-arming it would push a stale pointer into the run
+  // queues. The primary guard is in wakeHotkey(); this is a backstop.
+  if (g->state == GoroutineState::Done) {
+    ::havel::warn("[Scheduler] requeueFront: gid={} state=Done -> refusing to requeue", g->id);
+    return;
+  }
   g->state = GoroutineState::Created;
   g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
   g->hotkey_retrigger.store(false, std::memory_order_release);
@@ -510,6 +522,16 @@ void Scheduler::requeueFront(Goroutine* g) {
 // @return true if successfully queued (g->persistent || idle state), false if dropped
 bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
   if (!g) return false;
+
+  // Done goroutines must never be re-enqueued. Persistent hotkey goroutines
+  // never reach Done (handleReturned re-suspends them as HotkeyWait), so a
+  // Done state here means a non-persistent goroutine that finished and is
+  // awaiting cleanupDoneGoroutines(). Re-enqueuing it would poison the run
+  // queues and trip the UAF assertion in pickNext(). See Scheduler.cpp:173.
+  if (g->state == GoroutineState::Done) {
+    ::havel::debug("[Scheduler] wakeHotkey: gid={} state=Done -> ignoring trigger (awaiting cleanup)", g->id);
+    return false;
+  }
 
   bool isPending = (g->state == GoroutineState::Runnable ||
                     g->state == GoroutineState::Created ||
@@ -643,9 +665,10 @@ size_t Scheduler::wakeSleepingGoroutines() {
     {
         std::lock_guard lock(goroutines_mutex_);
         for (auto& [id, g] : goroutines_) {
-            assert(g != nullptr);
-            assert(g->state != GoroutineState::Done);
-            if (g->state != GoroutineState::Suspended) continue;
+            if (!g) continue;
+            auto state = g->state.load(std::memory_order_acquire);
+            if (state == GoroutineState::Done) continue;
+            if (state != GoroutineState::Suspended) continue;
             if (g->suspension_reason.load(std::memory_order_acquire) != SuspensionReason::SleepWait) continue;
             {
                 std::lock_guard wlock(g->wait_handle_mutex_);
@@ -668,6 +691,8 @@ size_t Scheduler::wakeSleepingGoroutines() {
     if (!toWake.empty()) {
         std::lock_guard plock(priority_mutex_);
         for (auto* g : toWake) {
+            // Set resume value for sleep (returns null)
+            g->wait_handle.resume_value = Value::makeNull();
             if (g->priority == FiberPriority::HOTKEY) {
                 hotkey_queue_.push_back(g);
             } else if (g->priority == FiberPriority::BACKGROUND) {
@@ -771,13 +796,8 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
  }
 
 size_t Scheduler::cleanupDoneGoroutines() {
-  // Hold both locks for the whole cleanup so no concurrent thread can
-  // enqueue a pointer we're about to delete. Lock order: priority_mutex_
-  // first, then goroutines_mutex_ (per the ordering rule in the header).
-  auto t_start = std::chrono::steady_clock::now();
-  auto t_start_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      t_start.time_since_epoch()).count();
-  std::thread::id caller = std::this_thread::get_id();
+  // Two-phase cleanup with both locks held. Lock order: priority_mutex_
+  // first, then goroutines_mutex_ (per header ordering rule).
   std::lock_guard plock(priority_mutex_);
   std::lock_guard glock(goroutines_mutex_);
   size_t removed = 0;
@@ -794,13 +814,9 @@ size_t Scheduler::cleanupDoneGoroutines() {
   // Diagnostic logging gated by HAVEL_TRACE_CLEANUP. Bypasses the spdlog
   // debug-level filter so traces are visible even at INFO log level.
   if (std::getenv("HAVEL_TRACE_CLEANUP")) {
-    auto t_end = std::chrono::steady_clock::now();
-    auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(
-        t_end - t_start).count();
-    fprintf(stderr, "[Scheduler] [CLEANUP] removed=%zu remaining=%zu dur=%lldus caller_tid=0x%llx t=%lld\n",
-            removed, goroutines_.size(), (long long)dur_us,
-            (unsigned long long)*reinterpret_cast<uint64_t*>(&caller),
-            (long long)t_start_ns);
+    // Note: this is outside the locks to avoid mutex in env call
+    fprintf(stderr, "[Scheduler] [CLEANUP] removed=%zu remaining=%zu\n",
+            removed, goroutines_.size());
   }
   return removed;
 }

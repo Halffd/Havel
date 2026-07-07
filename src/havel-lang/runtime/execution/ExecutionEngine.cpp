@@ -142,19 +142,19 @@ bool ExecutionEngine::executeFrame() {
         vm_->garbageCollectionSafePoint();
         vm_->drainFinalizers();
 
-	// STEP 1.6: Wake sleeping goroutines whose sleep timer has expired
+// STEP 1.6: Wake sleeping goroutines whose sleep timer has expired
 	scheduler_->wakeSleepingGoroutines();
 
-// STEP 2: Pick next runnable goroutine
-    // The scheduler maintains a queue of RUNNABLE goroutines
-    Scheduler::Goroutine* g = scheduler_->pickNext();
-    if (!g) {
-      static int idle_count = 0;
-      if (idle_count < 10) {
-        idle_count++;
-      }
-      return false;
-    }
+	// STEP 2: Pick next runnable goroutine
+	// The scheduler maintains a queue of RUNNABLE goroutines
+	Scheduler::Goroutine* g = scheduler_->pickNext();
+	if (!g) {
+		static int idle_count = 0;
+		if (idle_count < 10) {
+			idle_count++;
+		}
+		return false;
+	}
 
 
 if (g->persistent && g->state == Scheduler::GoroutineState::Created
@@ -264,8 +264,7 @@ vm_->saveFiberState(g->fiber);
             vm_->loadFiberState(g->fiber);
             // If resuming from an await suspension, replace the placeholder null
             // on the stack with the actual resume_value from the WaitHandle
-            if (g->wait_handle.type != Scheduler::AwaitableType::NONE &&
-                g->wait_handle.type != Scheduler::AwaitableType::SLEEP) {
+            if (g->wait_handle.type != Scheduler::AwaitableType::NONE) {
                 vm_->replaceStackTop(g->wait_handle.resume_value);
                 g->wait_handle.clear();
             }

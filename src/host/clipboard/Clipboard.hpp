@@ -128,6 +128,10 @@ private:
   bool setTextWindows(const std::string &text);
   bool setTextMacOS(const std::string &text);
 
+  // Timeout helper functions
+  std::string runWithTimeout(const std::string& cmd, int timeoutMs = 2000) const;
+  bool setTextWithTimeout(const std::string& text, const std::string& cmd, int timeoutMs) const;
+
   // Image implementations
   std::string getImageQt() const;
   bool setImageQt(const std::string &base64Png);

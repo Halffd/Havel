@@ -82,22 +82,39 @@ static const char* infoTypeToString(host::ClipboardInfo::Type t) {
 void registerClipboardModule(const VMApi& api) {
  HAVEL_BEGIN_MODULE("Clipboard");
 
- HAVEL_REGISTER_FUNCTION(api, "clipboard.get", [api](const auto& rawArgs) {
- auto args = stripReceiver(api, rawArgs);
- auto svc = getService();
- if (!svc) return api.makeString("");
- try { return api.makeString(svc->getText()); }
- catch (const std::exception& e) { debug("clipboard.get error: {}", e.what()); return api.makeString(""); }
- });
+HAVEL_REGISTER_FUNCTION(api, "clipboard.get", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    auto svc = getService();
+    if (!svc) return api.makeString("");
+    try { return api.makeString(svc->getText()); }
+    catch (const std::exception& e) { debug("clipboard.get error: {}", e.what()); return api.makeString(""); }
+  });
 
- HAVEL_REGISTER_FUNCTION(api, "clipboard.set", [api](const auto& rawArgs) {
- auto args = stripReceiver(api, rawArgs);
- if (args.empty()) return Value::makeBool(false);
- auto svc = getService();
- if (!svc) return Value::makeBool(false);
- try { return Value::makeBool(svc->setText(toString(api, args[0]))); }
- catch (const std::exception& e) { debug("clipboard.set error: {}", e.what()); return Value::makeBool(false); }
- });
+  HAVEL_REGISTER_FUNCTION(api, "clipboard.getText", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    auto svc = getService();
+    if (!svc) return api.makeString("");
+    try { return api.makeString(svc->getText()); }
+    catch (const std::exception& e) { debug("clipboard.getText error: {}", e.what()); return api.makeString(""); }
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "clipboard.set", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    if (args.empty()) return Value::makeBool(false);
+    auto svc = getService();
+    if (!svc) return Value::makeBool(false);
+    try { return Value::makeBool(svc->setText(toString(api, args[0]))); }
+    catch (const std::exception& e) { debug("clipboard.set error: {}", e.what()); return Value::makeBool(false); }
+  });
+
+  HAVEL_REGISTER_FUNCTION(api, "clipboard.setText", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    if (args.empty()) return Value::makeBool(false);
+    auto svc = getService();
+    if (!svc) return Value::makeBool(false);
+    try { return Value::makeBool(svc->setText(toString(api, args[0]))); }
+    catch (const std::exception& e) { debug("clipboard.setText error: {}", e.what()); return Value::makeBool(false); }
+  });
 
  HAVEL_REGISTER_FUNCTION(api, "clipboard.clear", [api](const auto& rawArgs) {
  auto args = stripReceiver(api, rawArgs);
@@ -229,8 +246,10 @@ void registerClipboardModule(const VMApi& api) {
  auto obj = api.makeObject();
  api.setGlobal("clipboard", obj);
  api.setField(obj, MODULE_MARKER, Value::makeBool(true));
- api.setField(obj, "get", api.makeFunctionRef("clipboard.get"));
- api.setField(obj, "set", api.makeFunctionRef("clipboard.set"));
+api.setField(obj, "get", api.makeFunctionRef("clipboard.get"));
+  api.setField(obj, "set", api.makeFunctionRef("clipboard.set"));
+  api.setField(obj, "getText", api.makeFunctionRef("clipboard.getText"));
+  api.setField(obj, "setText", api.makeFunctionRef("clipboard.setText"));
  api.setField(obj, "clear", api.makeFunctionRef("clipboard.clear"));
  api.setField(obj, "hasText", api.makeFunctionRef("clipboard.hasText"));
  api.setField(obj, "setMethod", api.makeFunctionRef("clipboard.setMethod"));

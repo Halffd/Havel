@@ -2193,6 +2193,13 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
   // We already consumed 'fn', now parse parameters and body
   std::vector<std::unique_ptr<ast::FunctionParameter>> params;
 
+  // Handle optional function name: fn name() { ... }
+  // In expression context (e.g. go fn update() { ... }), the name token
+  // appears before the parameter list. The name can be an identifier or keyword.
+  if (at().type != TokenType::OpenParen && at(1).type == TokenType::OpenParen) {
+    advance(); // consume the function name
+  }
+
   if (at().type == TokenType::OpenParen) {
     advance(); // consume '('
 

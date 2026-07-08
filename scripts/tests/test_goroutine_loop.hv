@@ -1,0 +1,39 @@
+dbg = true
+
+fn tick() {
+  loop {
+    t++
+    if dbg {
+      print("tick iteration: {t}")
+    }
+    if t % 20 == 0 {
+      print("--- tick at iteration {t} ---")
+    }
+    sleep(100)
+  }
+}
+
+fn runner() {
+  print("starting runner...")
+  fn tick2() {
+    loop {
+      t2++
+      if t2 % 100 == 0 {
+        print("runner iteration: {t2}")
+      }
+      sleep(50)
+    }
+  }
+
+  go tick2()
+  print("runner started tick2, waiting...")
+  sleep(2000)
+  print("runner done")
+}
+
+print("starting goroutine loop test...")
+go tick()
+go runner()
+print("goroutines spawned, will sleep 30s...")
+sleep(30000)
+print("done, goroutines=", scheduler.goroutines())

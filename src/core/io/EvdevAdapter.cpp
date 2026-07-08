@@ -174,7 +174,7 @@ private:
     bool initialized_ = false;
     std::vector<Device> devices_;
     std::unordered_set<int> grabbedFds_;
-    mutable std::mutex devicesMutex_;
+    mutable std::recursive_mutex devicesMutex_;
     mutable std::shared_mutex stateMutex_;
 
     // Signal-safe grabbed FD tracking: lock-free array for async-signal-safe ungrab.
@@ -280,7 +280,7 @@ void EvdevAdapter::Shutdown() {
     UngrabAllDevices();
 
     {
-        std::lock_guard<std::mutex> lock(devicesMutex_);
+        std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
         for (auto &dev : devices_) {
             if (dev.fd >= 0) {
                 close(dev.fd);
@@ -352,7 +352,7 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
     DrainDeviceEvents(dev);
 
     {
-        std::lock_guard<std::mutex> lock(devicesMutex_);
+        std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
         devices_.push_back(std::move(dev));
     }
 
@@ -361,7 +361,7 @@ bool EvdevAdapter::OpenDevice(const std::string &path) {
 }
 
 void EvdevAdapter::CloseDevice(const std::string &path) {
-    std::lock_guard<std::mutex> lock(devicesMutex_);
+    std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     auto it = std::find_if(devices_.begin(), devices_.end(),
                            [&](const Device &d) { return d.path == path; });
     if (it != devices_.end()) {
@@ -376,7 +376,7 @@ void EvdevAdapter::CloseDevice(const std::string &path) {
 }
 
 bool EvdevAdapter::GrabDevice(const std::string &path) {
-    std::lock_guard<std::mutex> lock(devicesMutex_);
+    std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     auto it = std::find_if(devices_.begin(), devices_.end(),
         [&](const Device &d) { return d.path == path; });
     if (it == devices_.end() || it->fd < 0) return false;
@@ -401,7 +401,7 @@ bool EvdevAdapter::GrabDevice(const std::string &path) {
 }
 
 void EvdevAdapter::UngrabDevice(const std::string &path) {
-    std::lock_guard<std::mutex> lock(devicesMutex_);
+    std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     auto it = std::find_if(devices_.begin(), devices_.end(),
                            [&](const Device &d) { return d.path == path; });
     if (it != devices_.end() && it->grabbed) {
@@ -413,7 +413,7 @@ void EvdevAdapter::UngrabDevice(const std::string &path) {
 }
 
 void EvdevAdapter::UngrabAllDevices() {
-    std::lock_guard<std::mutex> lock(devicesMutex_);
+    std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     for (auto &dev : devices_) {
         if (dev.grabbed && dev.fd >= 0) {
             ioctl(dev.fd, EVIOCGRAB, 0);
@@ -456,7 +456,7 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
     std::vector<struct pollfd> pfds;
 
     {
-        std::lock_guard<std::mutex> lock(devicesMutex_);
+        std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
         pfds.reserve(devices_.size() + 1);
         for (const auto &dev : devices_) {
             if (dev.fd >= 0) {
@@ -487,7 +487,7 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
     std::vector<size_t> deadDevices;
 
     {
-        std::lock_guard<std::mutex> lock(devicesMutex_);
+        std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
         for (size_t i = 0; i < pfds.size() && i < devices_.size(); ++i) {
             short revents = pfds[i].revents;
             if (revents & (POLLERR | POLLHUP)) {
@@ -507,7 +507,7 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
 
     // Handle dead devices
     if (!deadDevices.empty()) {
-        std::lock_guard<std::mutex> lock(devicesMutex_);
+        std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
         for (size_t idx : deadDevices) {
             if (idx < devices_.size() && devices_[idx].fd >= 0) {
                 if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), removing", devices_[idx].path, devices_[idx].fd);
@@ -519,9 +519,19 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
     }
 
     for (auto &[idx, ev] : events) {
-        std::lock_guard<std::mutex> lock(devicesMutex_);
-        if (idx < devices_.size()) {
-            ProcessEvent(devices_[idx], ev);
+        Device devCopy;
+        {
+            std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
+            if (idx >= devices_.size()) continue;
+            devCopy = devices_[idx];
+        }
+        ProcessEvent(devCopy, ev);
+        {
+            std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
+            if (idx < devices_.size()) {
+                devices_[idx].pending_wheel_hi_res = devCopy.pending_wheel_hi_res;
+                devices_[idx].pending_hwheel_hi_res = devCopy.pending_hwheel_hi_res;
+            }
         }
     }
 
@@ -529,7 +539,7 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
 }
 
 void EvdevAdapter::RecheckDevices() {
-    std::lock_guard<std::mutex> lock(devicesMutex_);
+    std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     
     // Re-enumerate devices and reopen any that have disappeared
     std::vector<DeviceInfo> currentDevices = EnumerateDevices();
@@ -1150,7 +1160,7 @@ void EvdevAdapter::ReleasePressedKeys(Device &dev) {
 
 std::unordered_set<uint32_t> EvdevAdapter::GetPressedKeys() const {
     std::unordered_set<uint32_t> pressed;
-    std::lock_guard<std::mutex> lock(devicesMutex_);
+    std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     for (const auto &dev : devices_) {
         if (dev.fd < 0) continue;
         if (!(dev.capabilities & CAP_KEYBOARD)) continue;

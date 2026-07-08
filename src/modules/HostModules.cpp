@@ -74,8 +74,7 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
   }
 
 
-#ifdef HAVE_QT_EXTENSION
-	if (registry.shouldRegister("clipboard", includes, excludes)) {
+if (registry.shouldRegister("clipboard", includes, excludes)) {
 		auto clipboardService = std::make_shared<host::ClipboardService>();
 		registry.registerService<host::ClipboardService>(clipboardService);
 	}
@@ -84,7 +83,6 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 		auto monitoringClipboard = std::make_shared<host::MonitoringClipboard>();
 		registry.registerService<host::MonitoringClipboard>(monitoringClipboard);
 	}
-#endif
 
 
 	if (registry.shouldRegister("map-manager", includes, excludes)) {

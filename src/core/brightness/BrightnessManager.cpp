@@ -1224,7 +1224,12 @@ bool BrightnessManager::setBrightness(const std::string &monitor,
         return false;
 #endif
     } else {
-        success = setBrightnessGamma(monitor, brightness);
+        // Try XRandR property first for hardware brightness
+        success = setBrightnessXrandr(monitor, brightness);
+        // Fallback or combine with gamma adjustment if XRandR fails or doesn't cover everything
+        if (!success) {
+            success = setBrightnessGamma(monitor, brightness);
+        }
     }
 
     this->brightness[monitor] = brightness;

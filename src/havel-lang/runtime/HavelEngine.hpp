@@ -359,7 +359,7 @@ vm_->addIntervalResult(timer_id, result);
                 auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
                 if (result != compiler::VM::GoroutineCallResult::Failed) {
                     g->state = compiler::Scheduler::GoroutineState::Runnable;
-                    vm_->runDispatchLoopPublic(0);
+                    { compiler::Fiber* _sf = vm_->current_executing_fiber_; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = _sf; }
                 } else {
                     g->state = compiler::Scheduler::GoroutineState::Done;
                     if (g->update_callback_id != 0) {
@@ -374,7 +374,7 @@ vm_->addIntervalResult(timer_id, result);
                     auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
                     if (result != compiler::VM::GoroutineCallResult::Failed) {
                         g->state = compiler::Scheduler::GoroutineState::Runnable;
-                        vm_->runDispatchLoopPublic(0);
+                        { compiler::Fiber* _sf = vm_->current_executing_fiber_; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = _sf; }
                     } else {
                         g->state = compiler::Scheduler::GoroutineState::Done;
                         if (g->update_callback_id != 0) {
@@ -393,7 +393,7 @@ vm_->addIntervalResult(timer_id, result);
                             g->wait_handle.clear();
                         }
                     }
-                    vm_->runDispatchLoopPublic(0);
+                    { compiler::Fiber* _sf = vm_->current_executing_fiber_; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = _sf; }
                 }
             }
 
@@ -519,6 +519,12 @@ private:
   }
 
   void processGoroutinesInline() {
+    static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
+    if (_trace) {
+      auto* _s = vm_->getScheduler();
+      fprintf(stderr, "[CYCLE] processGoroutinesInline: enter inline_yield_active_=%d runnableCount=%zu\n",
+              (int)inline_yield_active_, _s ? _s->runnableCount() : 0);
+    }
     if (inline_yield_active_) return;
     auto* sched = vm_->getScheduler();
     if (!sched || sched->runnableCount() == 0) return;
@@ -681,7 +687,7 @@ private:
         auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
-          vm_->runDispatchLoopPublic(0);
+          { compiler::Fiber* _sf = vm_->current_executing_fiber_; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = _sf; }
         } else {
           g->state = compiler::Scheduler::GoroutineState::Done;
           if (g->update_callback_id != 0) {
@@ -696,7 +702,7 @@ private:
           auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
           if (result != compiler::VM::GoroutineCallResult::Failed) {
             g->state = compiler::Scheduler::GoroutineState::Runnable;
-            vm_->runDispatchLoopPublic(0);
+            { compiler::Fiber* _sf = vm_->current_executing_fiber_; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = _sf; }
           } else {
             g->state = compiler::Scheduler::GoroutineState::Done;
             if (g->update_callback_id != 0) {
@@ -715,7 +721,7 @@ private:
               g->wait_handle.clear();
             }
           }
-          vm_->runDispatchLoopPublic(0);
+          { compiler::Fiber* _sf = vm_->current_executing_fiber_; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = _sf; }
         }
       }
 

@@ -1,0 +1,34 @@
+use "app/mpv" as mp
+use "std/json" as json
+mpv = mp.MPV()
+print("mpv.isConnected(): " + mpv.isConnected())
+
+fn playCtl(){
+    run("playerctl play-pause")
+}
+fn play(direct = false) {
+  if fs.exists("/tmp/mpvsocket") {
+    print("MPV socket exists")
+    if process.exists("mpv") {
+      print("MPV process exists")
+      if direct {
+        cmd = json.stringify({ "command": [ "cycle", "pause" ] })
+        ply = "echo '$cmd' | socat - /tmp/mpvsocket"
+        print(ply)
+        print(run(ply))
+      } else {
+        mpv.playPause()
+      }
+    } else {
+      print("MPV process does not exist")
+      playCtl()
+    }
+  } else {
+    print("MPV socket does not exist")
+    playCtl()
+  }
+}
+play()
+sleep(1600)
+print("direct")
+play(true)

@@ -1516,19 +1516,66 @@ double BrightnessManager::getGammaXrandr(const std::string &monitor) {
     XRRCrtcGamma *crtc_gamma =
         XRRGetCrtcGamma(getX11Display(), monitorInfo.crtc_id);
     if (crtc_gamma) {
-      // Calculate average gamma from the ramp (simplified)
-      // In reality, you'd want to analyze the curve more carefully
-      double red_gamma =
-          (double)crtc_gamma->red[static_cast<int>(gamma_size / 2)] / 65535.0;
-      double green_gamma =
-          (double)crtc_gamma->green[static_cast<int>(gamma_size / 2)] / 65535.0;
-      double blue_gamma =
-          (double)crtc_gamma->blue[static_cast<int>(gamma_size / 2)] / 65535.0;
+      // Extract gamma by fitting a power law to the gamma ramp
+      // The gamma ramp is a lookup table: output[input] where input = i/(size-1)
+      // Gamma is the exponent in the power law: output = input^gamma
+      // We fit this by sampling multiple points and doing linear regression on log-log scale
 
-      double gamma = (red_gamma + green_gamma + blue_gamma) / 3.0;
+      double sum_log_x = 0.0, sum_log_y_r = 0.0, sum_log_y_g = 0.0, sum_log_y_b = 0.0;
+      double sum_log_x2 = 0.0;
+      double sum_log_x_log_y_r = 0.0, sum_log_x_log_y_g = 0.0, sum_log_x_log_y_b = 0.0;
+      int valid_samples = 0;
+
+      // Sample multiple points along the ramp (skip 0 and use at least 10 points)
+      int samples = std::min(gamma_size, 64);
+      for (int i = 1; i < samples; ++i) {
+        int idx = (i * (gamma_size - 1)) / (samples - 1);
+        double x = static_cast<double>(idx) / (gamma_size - 1);
+        if (x <= 0.0 || x >= 1.0) continue;
+
+        double yr = static_cast<double>(crtc_gamma->red[idx]) / 65535.0;
+        double yg = static_cast<double>(crtc_gamma->green[idx]) / 65535.0;
+        double yb = static_cast<double>(crtc_gamma->blue[idx]) / 65535.0;
+
+        if (yr <= 0.0 || yg <= 0.0 || yb <= 0.0) continue;
+
+        double log_x = std::log(x);
+        double log_yr = std::log(yr);
+        double log_yg = std::log(yg);
+        double log_yb = std::log(yb);
+
+        sum_log_x += log_x;
+        sum_log_y_r += log_yr;
+        sum_log_y_g += log_yg;
+        sum_log_y_b += log_yb;
+        sum_log_x2 += log_x * log_x;
+        sum_log_x_log_y_r += log_x * log_yr;
+        sum_log_x_log_y_g += log_x * log_yg;
+        sum_log_x_log_y_b += log_x * log_yb;
+        valid_samples++;
+      }
+
+      double gamma = 1.0;
+      if (valid_samples >= 3) {
+        // Linear regression on log-log scale: log(y) = gamma * log(x) + c
+        // gamma = (n*sum(xy) - sum(x)*sum(y)) / (n*sum(x^2) - sum(x)^2)
+        int n = valid_samples;
+        double gamma_r = (n * sum_log_x_log_y_r - sum_log_x * sum_log_y_r) /
+                         (n * sum_log_x2 - sum_log_x * sum_log_x);
+        double gamma_g = (n * sum_log_x_log_y_g - sum_log_x * sum_log_y_g) /
+                         (n * sum_log_x2 - sum_log_x * sum_log_x);
+        double gamma_b = (n * sum_log_x_log_y_b - sum_log_x * sum_log_y_b) /
+                         (n * sum_log_x2 - sum_log_x * sum_log_x);
+
+        // Average the three channels
+        double gamma_avg = (gamma_r + gamma_g + gamma_b) / 3.0;
+        gamma_avg = std::clamp(gamma_avg, 0.1, 10.0); // Sanity bounds
+
+        XRRFreeGamma(crtc_gamma);
+        return gamma_avg;
+      }
 
       XRRFreeGamma(crtc_gamma);
-      return gamma;
     }
   }
 

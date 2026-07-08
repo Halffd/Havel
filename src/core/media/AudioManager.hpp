@@ -7,6 +7,7 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <optional>
 
 namespace havel {
 
@@ -55,6 +56,10 @@ public:
 
     const std::vector<AudioDevice> &getDevices() const;
     std::vector<AudioDevice> getOutputDevices() const;
+    std::vector<AudioDevice> getInputDevices() const;
+    // Snapshot helpers — return copies (thread-safe; monitor thread mutates
+    // cachedDevices under deviceMutex).
+    std::vector<AudioDevice> getDevicesSnapshot() const;
 
     std::string getDefaultOutput() const;
     std::string getDefaultInput() const;
@@ -62,6 +67,10 @@ public:
 
     AudioDevice *findDeviceByName(const std::string &name);
     AudioDevice *findDeviceByIndex(uint32_t index);
+    // Caller owns the returned pointer; use delete on it, or prefer
+    // the by-value variants below.
+    std::optional<AudioDevice> findDeviceByNameValue(const std::string &name) const;
+    std::optional<AudioDevice> findDeviceByIndexValue(uint32_t index) const;
 
     bool playTestSound();
     bool playSound(const std::string &soundFile);
@@ -82,7 +91,7 @@ public:
     AudioBackend getBackend() const;
     static constexpr double DEFAULT_VOLUME_STEP = 0.05;
     static constexpr double MIN_VOLUME = 0.0;
-    double MAX_VOLUME = 1.5;
+    static constexpr double MAX_VOLUME = 1.5;
 
 private:
     std::unique_ptr<IAudioBackend> backend_;
@@ -101,6 +110,7 @@ private:
     VolumeCallback volumeCallback;
     MuteCallback muteCallback;
     DeviceCallback deviceCallback;
+    mutable std::mutex callbackMutex;
 
     template<typename... Args> void debug(const std::string &fmt, Args &&... args) { Logger::getInstance().debug("[AudioManager] " + fmt, std::forward<Args>(args)...); }
     template<typename... Args> void info(const std::string &fmt, Args &&... args) { Logger::getInstance().info("[AudioManager] " + fmt, std::forward<Args>(args)...); }

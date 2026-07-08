@@ -165,13 +165,11 @@ void BrightnessManager::init() {
         // Capture the FULL original gamma ramp for this monitor at init
         captureOriginalGammaRamp(monitor);
 
-        RGBColor realGamma = getGammaXrandrRGB(monitor);
-        gammaRGB[monitor] = realGamma;
-        if (realGamma.red > 0.0 && realGamma.green > 0.0 && realGamma.blue > 0.0) {
-          temperature[monitor] = rgbToKelvin(realGamma);
-        } else {
-          temperature[monitor] = 6500;
-        }
+        // B8: initialize to neutral gamma exponent (1.0) and default temperature.
+        // Do NOT derive gammaRGB/temperature from mid-ramp luminance — that conflates
+        // the gamma *exponent* (what applyAllSettings expects) with a luminance sample.
+        gammaRGB[monitor] = {1.0, 1.0, 1.0};
+        temperature[monitor] = 6500;
       } else {
         gammaRGB[monitor] = {1.0, 1.0, 1.0};
         temperature[monitor] = 6500;
@@ -500,18 +498,22 @@ bool BrightnessManager::setBrightnessAndShadowLift(const string &monitor,
 }
 // === SHADOW LIFT METHODS ===
 bool BrightnessManager::setShadowLift(const std::string &monitor, double lift) {
-  if (lift > 4.0)
-    lift = 4.0;
+  if (lift > 4.0) {
+    error("Shadow lift must be <= 4.0, got: {:.3f}", lift);
+    return false;
+  }
   if (lift < 0.0) {
-    error("Shadow lift must be between 0.0 and 4.0, got: {:.3f}", lift);
+    error("Shadow lift must be >= 0.0, got: {:.3f}", lift);
     return false;
   }
 
-  // Store the shadow lift value for this monitor
-  shadowLift[monitor] = lift;
-
   // applyAllSettings handles shadow lift inline — no need to bake into gammaRGB
-  return applyAllSettings(monitor);
+  if (applyAllSettings(monitor)) {
+    // B5/B23: only cache on success
+    shadowLift[monitor] = lift;
+    return true;
+  }
+  return false;
 }
 
 bool BrightnessManager::setShadowLift(double lift) {
@@ -528,13 +530,12 @@ double BrightnessManager::getShadowLift(int monitorIndex) {
   return getShadowLift(monitorName);
 }
 double BrightnessManager::getShadowLift(const string &monitor) {
-  // Return the stored shadow lift value, or 0.0 if not set
+  // Return the stored shadow lift value, or 0.0 if not set.
+  // B21: do NOT mutate the map in a getter.
   auto it = shadowLift.find(monitor);
   if (it != shadowLift.end()) {
     return it->second;
   }
-  // Initialize to 0.0 if not set
-  shadowLift[monitor] = 0.0;
   return 0.0;
 }
 
@@ -727,6 +728,8 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
   const char *property_names[] = {"Brightness", "brightness", "Backlight",
                                   "BACKLIGHT", nullptr};
 
+  bool written = false;
+
   for (int prop_idx = 0; property_names[prop_idx] != nullptr; prop_idx++) {
     Atom brightness_atom =
         XInternAtom(getX11Display(), property_names[prop_idx], x11::XFalse);
@@ -737,7 +740,7 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
 
       if (prop_info) {
         if (prop_info->num_values >= 2) {
-          // Has min/max range
+          // Has min/max range — write integer in [min,max]
           int32_t brightness_value = static_cast<int32_t>(
               brightness * (prop_info->values[1] - prop_info->values[0]) +
               prop_info->values[0]);
@@ -745,21 +748,24 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
           XRRChangeOutputProperty(
               getX11Display(), monitorInfo.id, brightness_atom, XA_INTEGER, 32,
               PropModeReplace, (unsigned char *)&brightness_value, 1);
-        } else {
-          // No range - assume it's a float value
-          if (strcmp(property_names[prop_idx], "Brightness") == 0) {
-            // Store float as int bits
-            float float_brightness = (float)brightness;
-            int32_t int_bits = *((int32_t *)&float_brightness);
-            XRRChangeOutputProperty(
-                getX11Display(), monitorInfo.id, brightness_atom, XA_INTEGER,
-                32, PropModeReplace, (unsigned char *)&int_bits, 1);
-          }
+          written = true;
+        } else if (strcmp(property_names[prop_idx], "Brightness") == 0) {
+          // No range — assume float in [0,1] as per X11 convention.
+          // B7: use memcpy to avoid strict-aliasing UB.
+          float float_brightness = (float)brightness;
+          int32_t int_bits;
+          std::memcpy(&int_bits, &float_brightness, sizeof(int_bits));
+
+          XRRChangeOutputProperty(
+              getX11Display(), monitorInfo.id, brightness_atom, XA_INTEGER,
+              32, PropModeReplace, (unsigned char *)&int_bits, 1);
+          written = true;
         }
 
         XFlush(getX11Display());
         XFree(prop_info);
-        return true;
+
+        if (written) return true;
       }
     }
   }
@@ -771,12 +777,14 @@ bool BrightnessManager::setBrightnessGamma(const std::string &monitor,
   if (!getX11Display())
     return false;
 
-  brightness = std::clamp(brightness, 0.0, 2.0);
+  // B4: clamp to [0,1] to match gamma ramp brightness multiplier range.
+  brightness = std::clamp(brightness, 0.0, 1.0);
 
-  // Store brightness for this monitor
-  this->brightness[monitor] = brightness;
+  bool ok = applyAllSettings(monitor);
+  // B23: only cache on success.
+  if (ok) this->brightness[monitor] = brightness;
 
-  return applyAllSettings(monitor);
+  return ok;
 }
 
 bool BrightnessManager::setGammaXrandrRGB(const std::string &monitor,
@@ -852,7 +860,7 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
       for (int j = 0; j < gamma_size; ++j) {
         double redValue, greenValue, blueValue;
 
-        if (haveOriginal) {
+if (haveOriginal) {
           // Start from the ORIGINAL hardware gamma ramp
           double origRed = (double)originalGammaRed[monitor][j] / 65535.0;
           double origGreen = (double)originalGammaGreen[monitor][j] / 65535.0;
@@ -863,11 +871,8 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
                                  std::pow(origGreen, 1.0 / currentGamma.green),
                                  std::pow(origBlue, 1.0 / currentGamma.blue)};
 
-          // Apply shadow lift
-          RGBColor liftedValue = {
-              gammaValue.red + currentShadowLift * (1.0 - gammaValue.red),
-              gammaValue.green + currentShadowLift * (1.0 - gammaValue.green),
-              gammaValue.blue + currentShadowLift * (1.0 - gammaValue.blue)};
+          // B10: use applyShadowLift instead of trivial inline math
+          RGBColor liftedValue = applyShadowLift(gammaValue, currentShadowLift);
 
           // Apply temperature tint and brightness
           redValue = liftedValue.red * tempColor.red * currentBrightness;
@@ -882,11 +887,8 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
                                  std::pow(normalized, 1.0 / currentGamma.green),
                                  std::pow(normalized, 1.0 / currentGamma.blue)};
 
-          // Apply shadow lift (lifts dark areas, preserves highlights)
-          RGBColor liftedValue = {
-              gammaValue.red + currentShadowLift * (1.0 - gammaValue.red),
-              gammaValue.green + currentShadowLift * (1.0 - gammaValue.green),
-              gammaValue.blue + currentShadowLift * (1.0 - gammaValue.blue)};
+          // B10: use applyShadowLift instead of trivial inline math
+          RGBColor liftedValue = applyShadowLift(gammaValue, currentShadowLift);
 
           // Apply temperature tint and brightness
           redValue = liftedValue.red * tempColor.red * currentBrightness;
@@ -1035,33 +1037,29 @@ bool BrightnessManager::setTemperature(int kelvin) {
   // For Wayland, use gammastep directly with current brightness
   if (displayMethod == "wayland") {
     if (debugging::debug_io) debug("Using gammastep for Wayland temperature control");
-    if (setGammastep(kelvin, brightness[primaryMonitor])) {
-      for (const auto &monitor : getConnectedMonitors()) {
-        temperature[monitor] = kelvin;
-        if (debugging::debug_io) debug("  Set monitor '{}' temperature to {}K", monitor, kelvin);
+    bool all_ok = true;
+    for (const auto &monitor : getConnectedMonitors()) {
+      if (setGammastep(kelvin, brightness[monitor])) {
+        temperature[monitor] = kelvin;  // cache only on success
+      } else {
+        all_ok = false;
       }
-      if (debugging::debug_io) debug("Temperature set successfully via gammastep");
-      return true;
     }
-    if (debugging::debug_io) debug("gammastep failed, falling through to applyAllSettings");
-    // If gammastep fails, fall through to applyAllSettings
+    return all_ok;
   }
 
   bool success = true;
   for (const auto &monitor : getConnectedMonitors()) {
-    temperature[monitor] = kelvin;
     RGBColor rgb = kelvinToRGB(kelvin);
     if (debugging::debug_io) debug("  Monitor '{}' - {}K converts to RGB({:.3f}, {:.3f}, {:.3f})",
           monitor, kelvin, rgb.red, rgb.green, rgb.blue);
     if (debugging::debug_io) debug("  Applying settings to monitor '{}' with {}K temperature", monitor,
           kelvin);
-    success &= applyAllSettings(monitor);
-  }
-
-  if (success) {
-    if (debugging::debug_io) debug("Temperature set successfully for all monitors");
-  } else {
-    error("Failed to set temperature for one or more monitors");
+    if (applyAllSettings(monitor)) {
+      temperature[monitor] = kelvin;  // cache only on success
+    } else {
+      success = false;
+    }
   }
 
   return success;
@@ -1073,33 +1071,26 @@ bool BrightnessManager::setTemperature(const std::string &monitor, int kelvin) {
   if (debugging::debug_io) debug("BrightnessManager::setTemperature('{}', {}) - clamped to {}K", monitor,
         kelvin, kelvin);
 
-  // Always cache the requested temperature so getTemperature returns it
-  temperature[monitor] = kelvin;
-
   // For Wayland, use gammastep directly with current brightness
   if (displayMethod == "wayland") {
     if (debugging::debug_io) debug("Using gammastep for Wayland temperature control on monitor '{}'",
           monitor);
     if (setGammastep(kelvin, brightness[monitor])) {
-      if (debugging::debug_io) debug("Temperature set successfully to {}K on monitor '{}'", kelvin,
-            monitor);
+      temperature[monitor] = kelvin;  // cache only on success
       return true;
     }
     if (debugging::debug_io) debug("gammastep failed for monitor '{}', falling through to setGammaRGB",
           monitor);
-    // If gammastep fails, fall through to setGammaRGB
   }
 
   // Store temp and apply via applyAllSettings — avoids caching temp tint into gammaRGB
-  bool success = applyAllSettings(monitor);
-  if (success) {
-    if (debugging::debug_io) debug("Temperature set successfully to {}K on monitor '{}'",
-          kelvin, monitor);
-  } else {
-    error("Failed to set temperature on monitor '{}'", monitor);
+  if (applyAllSettings(monitor)) {
+    temperature[monitor] = kelvin;  // cache only on success
+    return true;
   }
 
-  return success;
+  error("Failed to set temperature on monitor '{}'", monitor);
+  return false;
 }
 
 // === COMBINED OPERATIONS ===
@@ -1120,18 +1111,11 @@ bool BrightnessManager::setBrightnessAndRGB(const std::string &monitor,
 
 bool BrightnessManager::setBrightnessAndTemperature(double brightness,
                                                     int kelvin) {
-  // For Wayland, use gammastep directly with both parameters
-  if (displayMethod == "wayland") {
-    if (setGammastep(kelvin, brightness)) {
-      temperature[primaryMonitor] = kelvin;
-      this->brightness[primaryMonitor] = brightness;
-      return true;
-    }
+  bool success = true;
+  for (const auto &monitor : getConnectedMonitors()) {
+    success &= setBrightnessAndTemperature(monitor, brightness, kelvin);
   }
-
-  temperature[primaryMonitor] = kelvin;
-  this->brightness[primaryMonitor] = brightness;
-  return applyAllSettings(primaryMonitor);
+  return success;
 }
 
 bool BrightnessManager::setBrightnessAndTemperature(const std::string &monitor,
@@ -1162,25 +1146,34 @@ bool BrightnessManager::setGammaRGB(double red, double green, double blue) {
 
 bool BrightnessManager::setGammaRGB(const std::string &monitor, double red,
                                     double green, double blue) {
-  // Always cache the requested gamma so getGammaRGB returns it
-  gammaRGB[monitor] = {red, green, blue};
+  // Clamp inputs
+  red = std::clamp(red, 0.1, 10.0);
+  green = std::clamp(green, 0.1, 10.0);
+  blue = std::clamp(blue, 0.1, 10.0);
 
+  bool success = false;
   if (displayMethod == "wayland") {
 #ifdef __WAYLAND__
     if (setGammaWaylandRGB(monitor, red, green, blue)) {
-      return true;
+      success = true;
+    } else {
+      // Fallback to gammastep/redshift if Wayland gamma control fails
+      info("Wayland gamma control failed, trying gammastep/redshift fallback");
+      RGBColor rgb = {red, green, blue};
+      int temperature = rgbToKelvin(rgb);
+      success = setGammastep(temperature, brightness[monitor]);
     }
-    // Fallback to gammastep/redshift if Wayland gamma control fails
-    info("Wayland gamma control failed, trying gammastep/redshift fallback");
 #endif
-    // Use gammastep/redshift as fallback for Wayland
-    // Calculate temperature from RGB values
-    RGBColor rgb = {red, green, blue};
-    int temperature = rgbToKelvin(rgb);
-    return setGammastep(temperature, brightness[monitor]);
   } else {
-    return setGammaXrandrRGB(monitor, red, green, blue);
+    success = setGammaXrandrRGB(monitor, red, green, blue);
   }
+
+  // Only cache on success, and keep temperature cache in sync (B11).
+  if (success) {
+    gammaRGB[monitor] = {red, green, blue};
+    temperature[monitor] = rgbToKelvin({red, green, blue});
+  }
+  return success;
 }
 
 // === TEMPERATURE INCREMENT METHODS ===
@@ -1213,7 +1206,9 @@ bool BrightnessManager::setBrightness(const std::string &monitor,
         error("Brightness must be >= 0.0, got: {:.3f}", brightness);
         return false;
     }
-    brightness = std::clamp(brightness, 0.0, 2.0);
+    // B4: clamp to [0,1] to match xrandr "Brightness" property range.
+    // Values >1.0 are only meaningful on gamma ramp; xrandr property caps at 1.
+    brightness = std::clamp(brightness, 0.0, 1.0);
     bool success = false;
 
     if (displayMethod == "wayland") {
@@ -1224,15 +1219,16 @@ bool BrightnessManager::setBrightness(const std::string &monitor,
         return false;
 #endif
     } else {
-        // Try XRandR property first for hardware brightness
-        success = setBrightnessXrandr(monitor, brightness);
-        // Fallback or combine with gamma adjustment if XRandR fails or doesn't cover everything
+        // Try gamma ramp first (composes brightness + temperature + gamma + shadowLift)
+        // Falls back to xrandr property if gamma fails.
+        success = setBrightnessGamma(monitor, brightness);
         if (!success) {
-            success = setBrightnessGamma(monitor, brightness);
+            success = setBrightnessXrandr(monitor, brightness);
         }
     }
 
-    this->brightness[monitor] = brightness;
+    // B5/B23: only cache on success so getBrightness never lies.
+    if (success) this->brightness[monitor] = brightness;
 
     return success;
 }
@@ -1251,13 +1247,17 @@ double BrightnessManager::getBrightness() {
 	auto monitors = getConnectedMonitors();
 	if (monitors.empty()) return 1.0;
 	if (primaryMonitor.empty()) primaryMonitor = monitors[0];
-	return getBrightness(monitors[0]);
+	// B3: respect primaryMonitor instead of always using monitors[0]
+	return getBrightness(primaryMonitor);
 }
 
 double BrightnessManager::getBrightness(int monitorIndex) {
   auto monitorName = getMonitor(monitorIndex);
+  // B15: invalid monitor should return the standard 1.0 "no data" sentinel,
+  // not 0.0 (which would be interpreted as "fully dark" by callers like
+  // increaseBrightness -> std::max(0.0, current - amount)).
   if (monitorName.empty())
-    return 0.0;
+    return 1.0;
   return getBrightness(monitorName);
 }
 double BrightnessManager::getBrightness(const std::string &monitor) {
@@ -1271,22 +1271,19 @@ double BrightnessManager::getBrightness(const std::string &monitor) {
 
         // Sysfs backlight is the actual hardware brightness.
         double sysfs_val = getBrightnessSysfs(monitor);
-        if (sysfs_val > 0.0) return sysfs_val;
+        if (sysfs_val >= 0.0) return sysfs_val;  // B19: sysfs returns -1.0 on failure now
 
         // Gamma ramp average is not a brightness measurement — skip it.
         // Default to 1.0 (system default, no change).
         return 1.0;
     }
 #ifdef __WAYLAND__
-	else if (WindowManagerDetector::IsWayland()) {
-		auto it = brightness.find(monitor);
-		if (it != brightness.end()) {
-			return it->second;
-		}
-		return 1.0;
-	}
+    else if (WindowManagerDetector::IsWayland()) {
+        // B18: cache lookup already failed at line 1261-1262; no need to redo.
+        return 1.0;
+    }
 #endif
-	return 0.0;
+    return 1.0;  // B17: consistent "no data" sentinel is 1.0 (not 0.0)
 }
 
 // === GAMMA GETTERS ===
@@ -1397,9 +1394,11 @@ bool BrightnessManager::increaseGamma(const string &monitor, int amount) {
 bool BrightnessManager::increaseShadowLift(double amount) {
   auto monitors = getConnectedMonitors();
   if (monitors.empty()) return false;
-  bool success = false;
+  bool success = true;
   for (auto& m : monitors) {
-    if (setShadowLift(m, shadowLift[m] + amount)) success = true;
+    // Use getShadowLift to avoid default-insert on miss; failure on any
+    // monitor makes overall success false (AND semantics like setShadowLift).
+    success &= setShadowLift(m, getShadowLift(m) + amount);
   }
   return success;
 }
@@ -1407,19 +1406,19 @@ bool BrightnessManager::increaseShadowLift(double amount) {
 bool BrightnessManager::decreaseShadowLift(double amount) {
   auto monitors = getConnectedMonitors();
   if (monitors.empty()) return false;
-  bool success = false;
+  bool success = true;
   for (auto& m : monitors) {
-    if (setShadowLift(m, shadowLift[m] - amount)) success = true;
+    success &= setShadowLift(m, getShadowLift(m) - amount);
   }
   return success;
 }
 
 bool BrightnessManager::increaseShadowLift(const string &monitor, double amount) {
-  return setShadowLift(monitor, shadowLift[monitor] + amount);
+  return setShadowLift(monitor, getShadowLift(monitor) + amount);
 }
 
 bool BrightnessManager::decreaseShadowLift(const string &monitor, double amount) {
-  return setShadowLift(monitor, shadowLift[monitor] - amount);
+  return setShadowLift(monitor, getShadowLift(monitor) - amount);
 }
 
 bool BrightnessManager::increaseShadowLift(int monitorIndex, double amount) {
@@ -1450,15 +1449,16 @@ double BrightnessManager::getBrightnessSysfs(const std::string &monitor) {
         "/max_brightness");
 
     if (brightness_file.is_open() && max_brightness_file.is_open()) {
-      int current, max;
+      int current = 0, max = 0;
       brightness_file >> current;
       max_brightness_file >> max;
 
-      return (double)current / max;
+      if (brightness_file && max_brightness_file && max > 0)
+        return (double)current / max;
     }
   }
 
-	return 0.0; // Couldn't read
+  return -1.0; // B19: sentinel for "could not read" (distinct from 0.0 = backlight off)
 }
 
 double BrightnessManager::getBrightnessXrandr(const std::string &monitor) {
@@ -1492,7 +1492,7 @@ double BrightnessManager::getBrightnessXrandr(const std::string &monitor) {
 					double normalized = (double)(raw_value - min_val) / (double)(max_val - min_val);
 					XFree(prop_data);
 					XFree(prop_info);
-					return std::clamp(normalized, 0.0, 2.0);
+					return std::clamp(normalized, 0.0, 1.0);
 				}
 				XFree(prop_data);
 			}
@@ -1655,9 +1655,9 @@ BrightnessManager::getGammaXrandrRGB(const std::string &monitor) {
       // Get RGB values from middle of gamma ramp
       int mid = gamma_size / 2;
       RGBColor rgb;
-      rgb.red = (double)crtc_gamma->red[mid] / 65535.0;
-      rgb.green = (double)crtc_gamma->green[mid] / 65535.0;
-      rgb.blue = (double)crtc_gamma->blue[mid] / 65535.0;
+      rgb.red = std::clamp((double)crtc_gamma->red[mid] / 65535.0, 0.1, 10.0);
+      rgb.green = std::clamp((double)crtc_gamma->green[mid] / 65535.0, 0.1, 10.0);
+      rgb.blue = std::clamp((double)crtc_gamma->blue[mid] / 65535.0, 0.1, 10.0);
 
       XRRFreeGamma(crtc_gamma);
       return rgb;
@@ -1674,14 +1674,14 @@ bool BrightnessManager::increaseBrightness(double amount) {
 		primaryMonitor = monitors[0];
 	}
 	double current = getBrightness(primaryMonitor);
-double newBrightness = std::min(2.0, current + amount);
+    double newBrightness = std::min(1.0, current + amount);
     return setBrightness(newBrightness);
 }
 
 bool BrightnessManager::increaseBrightness(const std::string &monitor,
-                                      double amount) {
+                                       double amount) {
     double current = getBrightness(monitor);
-    double newBrightness = std::min(2.0, current + amount);
+    double newBrightness = std::min(1.0, current + amount);
 	return setBrightness(monitor, newBrightness);
 }
 
@@ -1777,62 +1777,75 @@ bool BrightnessManager::setGammaWaylandRGB(double red, double green,
 
 // === DAY/NIGHT AUTOMATION ===
 void BrightnessManager::enableDayNightMode(const DayNightSettings &settings) {
-  std::lock_guard<std::mutex> lock(settingsMutex);
-  dayNightSettings = settings;
-  dayNightSettings.autoAdjust = true;
-
-  // Stop existing thread if running
+  // Stop existing worker thread WITHOUT holding settingsMutex — otherwise
+  // dayNightThread->join() can deadlock if the worker is blocked waiting
+  // for settingsMutex inside applyCurrentTimeSettings(). Snapshot settings,
+  // set stop flag, join, then write under the lock.
   if (dayNightThread) {
-    stopDayNightThread = true;
+    stopDayNightThread.store(true, std::memory_order_release);
     dayNightThread->join();
+    dayNightThread.reset();
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(settingsMutex);
+    dayNightSettings = settings;
+    dayNightSettings.autoAdjust = true;
   }
 
   // Start new thread
-  stopDayNightThread = false;
+  stopDayNightThread.store(false, std::memory_order_release);
   dayNightThread =
       std::make_unique<std::thread>([this]() { dayNightWorkerThread(); });
 
-  // Save settings to config
-  Configs::Get().Set("Brightness.DayNightAutoAdjust",
-                     dayNightSettings.autoAdjust);
-  Configs::Get().Set("Brightness.DayStartHour", dayNightSettings.dayStartHour);
-  Configs::Get().Set("Brightness.NightStartHour",
-                     dayNightSettings.nightStartHour);
-  Configs::Get().Set("Brightness.DayBrightness",
-                     dayNightSettings.dayBrightness);
-  Configs::Get().Set("Brightness.NightBrightness",
-                     dayNightSettings.nightBrightness);
-  Configs::Get().Set("Brightness.DayTemperature",
-                     dayNightSettings.dayTemperature);
-  Configs::Get().Set("Brightness.NightTemperature",
-                     dayNightSettings.nightTemperature);
+  // Save settings to config (read under lock to capture applied values)
+  {
+    std::lock_guard<std::mutex> lock(settingsMutex);
+    Configs::Get().Set("Brightness.DayNightAutoAdjust",
+                       dayNightSettings.autoAdjust);
+    Configs::Get().Set("Brightness.DayStartHour", dayNightSettings.dayStartHour);
+    Configs::Get().Set("Brightness.NightStartHour",
+                       dayNightSettings.nightStartHour);
+    Configs::Get().Set("Brightness.DayBrightness",
+                       dayNightSettings.dayBrightness);
+    Configs::Get().Set("Brightness.NightBrightness",
+                       dayNightSettings.nightBrightness);
+    Configs::Get().Set("Brightness.DayTemperature",
+                       dayNightSettings.dayTemperature);
+    Configs::Get().Set("Brightness.NightTemperature",
+                       dayNightSettings.nightTemperature);
+  }
 }
 
 void BrightnessManager::disableDayNightMode() {
-  // Apply day settings when disabling (or default values)
-  int dayTemp = 6500;     // Default day temperature
-  double dayBright = 1.0; // Default day brightness
+  // B16: order matters — set autoAdjust=false and stop flag FIRST under lock,
+  // join the worker thread, THEN apply day settings. Otherwise the worker
+  // can preempt between cache-write and flag-set, applying night settings
+  // right before we disable.
+  {
+    std::lock_guard<std::mutex> lock(settingsMutex);
+    dayNightSettings.autoAdjust = false;
+    stopDayNightThread.store(true, std::memory_order_release);
+  }
 
+  if (dayNightThread && dayNightThread->joinable()) {
+    dayNightThread->join();
+    dayNightThread.reset();
+  }
+
+  // Apply day settings once the worker thread is no longer running.
+  int dayTemp = 6500;
+  double dayBright = 1.0;
   {
     std::lock_guard<std::mutex> lock(settingsMutex);
     dayTemp = dayNightSettings.dayTemperature;
     dayBright = dayNightSettings.dayBrightness;
   }
 
-  // For Wayland, use gammastep to apply day settings
   if (displayMethod == "wayland") {
     setGammastep(dayTemp, dayBright);
-  }
-
-  {
-    std::lock_guard<std::mutex> lock(settingsMutex);
-    dayNightSettings.autoAdjust = false;
-    stopDayNightThread = true;
-  }
-
-  if (dayNightThread && dayNightThread->joinable()) {
-    dayNightThread->join();
-    dayNightThread.reset();
+  } else {
+    setBrightnessAndTemperature(dayBright, dayTemp);
   }
 }
 
@@ -1848,63 +1861,92 @@ bool BrightnessManager::isDay() {
          currentHour < dayNightSettings.nightStartHour;
 }
 
+// Inlined snapshot version that assumes settingsMutex is already held by caller.
+// Calling isDay() from applyCurrentTimeSettings() while it holds settingsMutex
+// would re-lock the non-recursive mutex — deadlock.
+static bool isDayLocked(const BrightnessManager::DayNightSettings &s) {
+  auto now = std::chrono::system_clock::now();
+  auto time_t = std::chrono::system_clock::to_time_t(now);
+  auto *tm = std::localtime(&time_t);
+  if (!tm) return true;
+  return tm->tm_hour >= s.dayStartHour && tm->tm_hour < s.nightStartHour;
+}
+
 void BrightnessManager::dayNightWorkerThread() {
-  while (!stopDayNightThread) {
+  while (!stopDayNightThread.load(std::memory_order_acquire)) {
     applyCurrentTimeSettings();
 
-    // Sleep for the check interval
-    std::this_thread::sleep_for(dayNightSettings.checkInterval);
+    // Sleep for the check interval, copied under lock (B14: data race fix).
+    std::chrono::minutes interval;
+    {
+      std::lock_guard<std::mutex> lock(settingsMutex);
+      interval = dayNightSettings.checkInterval;
+    }
+    // Wake every minute to re-check stop flag for prompt disable (B15).
+    auto end = std::chrono::steady_clock::now() + interval;
+    while (!stopDayNightThread.load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < end) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
   }
 }
 
 void BrightnessManager::applyCurrentTimeSettings() {
-  std::lock_guard<std::mutex> lock(settingsMutex);
-
-  if (!dayNightSettings.autoAdjust)
-    return;
-
-  if (isDay()) {
-    setBrightnessAndTemperature(dayNightSettings.dayBrightness,
-                                dayNightSettings.dayTemperature);
-    if (Configs::Get().GetVerboseWindowLogging()) {
-      info("Applied day settings: brightness=" +
-           std::to_string(dayNightSettings.dayBrightness) +
-           ", temp=" + std::to_string(dayNightSettings.dayTemperature) + "K");
+  // B1: Snapshot settings under lock, then release before X11 round-trips
+  // (setBrightnessAndTemperature calls setBrightnessXrandr -> XFlush).
+  bool isDayFlag;
+  double bri;
+  int temp;
+  {
+    std::lock_guard<std::mutex> lock(settingsMutex);
+    if (!dayNightSettings.autoAdjust)
+      return;
+    isDayFlag = isDayLocked(dayNightSettings);
+    if (isDayFlag) {
+      bri = dayNightSettings.dayBrightness;
+      temp = dayNightSettings.dayTemperature;
+    } else {
+      bri = dayNightSettings.nightBrightness;
+      temp = dayNightSettings.nightTemperature;
     }
-  } else {
-    setBrightnessAndTemperature(dayNightSettings.nightBrightness,
-                                dayNightSettings.nightTemperature);
-    if (Configs::Get().GetVerboseWindowLogging()) {
-      info("Applied night settings: brightness=" +
-           std::to_string(dayNightSettings.nightBrightness) +
-           ", temp=" + std::to_string(dayNightSettings.nightTemperature) + "K");
-    }
+  }
+
+  setBrightnessAndTemperature(bri, temp);
+
+  if (Configs::Get().GetVerboseWindowLogging()) {
+    info(std::string("Applied ") + (isDayFlag ? "day" : "night") +
+         " settings: brightness=" + std::to_string(bri) +
+         ", temp=" + std::to_string(temp) + "K");
   }
 }
 
 // === MANUAL DAY/NIGHT SWITCHING ===
 bool BrightnessManager::switchToDay() {
-  std::lock_guard<std::mutex> lock(settingsMutex);
-  return setBrightnessAndTemperature(dayNightSettings.dayBrightness,
-                                     dayNightSettings.dayTemperature);
+  double b; int t;
+  { std::lock_guard<std::mutex> lock(settingsMutex);
+    b = dayNightSettings.dayBrightness; t = dayNightSettings.dayTemperature; }
+  return setBrightnessAndTemperature(b, t);
 }
 
 bool BrightnessManager::switchToNight() {
-  std::lock_guard<std::mutex> lock(settingsMutex);
-  return setBrightnessAndTemperature(dayNightSettings.nightBrightness,
-                                     dayNightSettings.nightTemperature);
+  double b; int t;
+  { std::lock_guard<std::mutex> lock(settingsMutex);
+    b = dayNightSettings.nightBrightness; t = dayNightSettings.nightTemperature; }
+  return setBrightnessAndTemperature(b, t);
 }
 
 bool BrightnessManager::switchToDay(const std::string &monitor) {
-  std::lock_guard<std::mutex> lock(settingsMutex);
-  return setBrightnessAndTemperature(monitor, dayNightSettings.dayBrightness,
-                                     dayNightSettings.dayTemperature);
+  double b; int t;
+  { std::lock_guard<std::mutex> lock(settingsMutex);
+    b = dayNightSettings.dayBrightness; t = dayNightSettings.dayTemperature; }
+  return setBrightnessAndTemperature(monitor, b, t);
 }
 
 bool BrightnessManager::switchToNight(const std::string &monitor) {
-  std::lock_guard<std::mutex> lock(settingsMutex);
-  return setBrightnessAndTemperature(monitor, dayNightSettings.nightBrightness,
-                                     dayNightSettings.nightTemperature);
+  double b; int t;
+  { std::lock_guard<std::mutex> lock(settingsMutex);
+    b = dayNightSettings.nightBrightness; t = dayNightSettings.nightTemperature; }
+  return setBrightnessAndTemperature(monitor, b, t);
 }
 
 // === CONFIGURATION HELPERS ===
@@ -2060,17 +2102,21 @@ bool BrightnessManager::switchToNight(int monitorIndex) {
   return switchToNight(monitorName);
 }
 
+// B2: remove unconditional stubs that conflict with __WAYLAND__ definitions.
+// Guard them so only the non-Wayland build sees them.
+#ifndef __WAYLAND__
 bool BrightnessManager::setBrightnessWayland(const std::string &output,
                                              double brightness) {
-  // This is a stub implementation - will be filled in later
-  return true; // Return success for now
+  // Not compiled with Wayland support — cannot control brightness.
+  return false;
 }
 
 bool BrightnessManager::setGammaWaylandRGB(const std::string &output, double r,
                                            double g, double b) {
-  // This is a stub implementation - will be filled in later
-  return true; // Return success for now
+  // Not compiled with Wayland support — cannot control gamma.
+  return false;
 }
+#endif // __WAYLAND__
 
 Display *BrightnessManager::getX11Display() const {
   if (displayMethod != "x11") {

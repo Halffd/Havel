@@ -47,10 +47,7 @@ double AudioService::getActiveAppVolume() const {
     if (!m_manager) return 0.0;
     auto name = m_manager->getActiveApplicationName();
     if (name.empty()) {
-        auto apps = m_manager->getApplications();
-        if (!apps.empty()) {
-            return apps[0].volume;
-        }
+        // No active app — return master volume (NOT arbitrary apps[0])
         return m_manager->getVolume();
     }
     return m_manager->getApplicationVolume(name);
@@ -67,7 +64,7 @@ void AudioService::increaseActiveAppVolume(double amount) {
     }
     if (!name.empty()) {
         double vol = m_manager->getApplicationVolume(name);
-        m_manager->setApplicationVolume(name, std::min(vol + amount, 1.0));
+        m_manager->setApplicationVolume(name, std::clamp(vol + amount, 0.0, 1.5));
     }
 }
 
@@ -82,7 +79,7 @@ void AudioService::decreaseActiveAppVolume(double amount) {
     }
     if (!name.empty()) {
         double vol = m_manager->getApplicationVolume(name);
-        m_manager->setApplicationVolume(name, std::max(vol - amount, 0.0));
+        m_manager->setApplicationVolume(name, std::clamp(vol - amount, 0.0, 1.5));
     }
 }
 
@@ -94,13 +91,19 @@ std::vector<havel::AudioDevice> AudioService::getAllDevices() const {
 havel::AudioDevice AudioService::findDeviceByName(const std::string &name) const {
     if (!m_manager) return {};
     auto *dev = m_manager->findDeviceByName(name);
-    return dev ? *dev : havel::AudioDevice{};
+    if (!dev) return {};
+    havel::AudioDevice copy = *dev;
+    delete dev;
+    return copy;
 }
 
 havel::AudioDevice AudioService::findDeviceByIndex(uint32_t index) const {
     if (!m_manager) return {};
     auto *dev = m_manager->findDeviceByIndex(index);
-    return dev ? *dev : havel::AudioDevice{};
+    if (!dev) return {};
+    havel::AudioDevice copy = *dev;
+    delete dev;
+    return copy;
 }
 
 bool AudioService::setDefaultOutput(const std::string &device) {

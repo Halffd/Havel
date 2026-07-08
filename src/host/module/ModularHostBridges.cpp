@@ -5771,6 +5771,7 @@ AudioBridge::handleFindDeviceByIndex(const std::vector<Value> &args,
   vm->setHostObjectField(obj, "channels",
                          Value::makeInt(static_cast<int64_t>(dev->channels)));
 
+  delete dev;
   return Value::makeObjectId(obj.id);
 }
 
@@ -5792,6 +5793,7 @@ AudioBridge::handleFindDeviceByName(const std::vector<Value> &args,
 
   auto *vm = static_cast<VM *>(ctx->vm);
   if (!vm) {
+    delete dev;
     return Value::makeNull();
   }
 
@@ -5808,6 +5810,7 @@ AudioBridge::handleFindDeviceByName(const std::vector<Value> &args,
   vm->setHostObjectField(obj, "channels",
                          Value::makeInt(static_cast<int64_t>(dev->channels)));
 
+  delete dev;
   return Value::makeObjectId(obj.id);
 }
 

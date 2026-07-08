@@ -461,7 +461,7 @@ void VM::registerDefaultHostFunctions() {
           COMPILER_THROW("sleep_ms duration cannot be negative");
         }
 
-        if (scheduler_ && executing_in_fiber_) {
+        if (scheduler_ && current_executing_fiber_) {
           suspension_requested_ = true;
           suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
           suspension_context_ = reinterpret_cast<void*>(
@@ -474,6 +474,9 @@ void VM::registerDefaultHostFunctions() {
         while (std::chrono::steady_clock::now() < deadline) {
           if (exit_requested_.load()) return Value::makeNull();
           processPendingEvents();
+          if (yield_callback_) {
+            yield_callback_();
+          }
           auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
               deadline - std::chrono::steady_clock::now());
           auto chunk = std::min(static_cast<int64_t>(remaining.count()), int64_t(10));
@@ -523,12 +526,12 @@ void VM::registerDefaultHostFunctions() {
 {
   static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
   if (_trace) {
-    fprintf(stderr, "[CYCLE] sleep host: scheduler_=%d executing_in_fiber_=%d duration=%ldms\n",
-            scheduler_ != nullptr, (int)executing_in_fiber_, (long)*duration_ms);
+    fprintf(stderr, "[CYCLE] sleep host: scheduler_=%d current_executing_fiber_=%p duration=%ldms\n",
+            scheduler_ != nullptr, (void*)current_executing_fiber_, (long)*duration_ms);
   }
 }
 
-if (scheduler_ && executing_in_fiber_) {
+if (scheduler_ && current_executing_fiber_) {
 // Use the VM's goroutine suspension mechanism instead of blocking.
 // This lets the scheduler put the goroutine to sleep and resume it
 // after the duration, allowing the event loop to process input
@@ -555,6 +558,9 @@ return Value::makeNull();
               std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
             }
             processPendingEvents();
+            if (yield_callback_) {
+              yield_callback_();
+            }
           }
         }
         return Value::makeNull();

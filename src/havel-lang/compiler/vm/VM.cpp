@@ -592,13 +592,13 @@ if (!current_fiber) {
 return VMExecutionResult::Error("No current fiber");
 }
 
-executing_in_fiber_ = true;
+current_executing_fiber_ = current_fiber;
 
 // For now, execute from current VM state
   
   // Check if we have frames to execute
   if (frame_count_ == 0) {
-    executing_in_fiber_ = false;
+    current_executing_fiber_ = nullptr;
     return VMExecutionResult::Suspended();
   }
 
@@ -616,15 +616,15 @@ executing_in_fiber_ = true;
       // After RETURN, check frame count to determine if function returned
       if (frame_count_ < entry_frame_count) {
         if (stack.empty()) {
-          executing_in_fiber_ = false;
+          current_executing_fiber_ = nullptr;
           return VMExecutionResult::Returned(nullptr);
         }
         Value ret_val = stack.top();
         stack.pop();
-        executing_in_fiber_ = false;
+        current_executing_fiber_ = nullptr;
         return VMExecutionResult::Returned(ret_val);
       }
-      executing_in_fiber_ = false;
+      current_executing_fiber_ = nullptr;
       return VMExecutionResult::Yield(nullptr);
     }
 
@@ -645,7 +645,7 @@ executing_in_fiber_ = true;
 
     // Debugger breakpoint check
     if (debugger_attached_ && checkDebugBreak()) {
-      executing_in_fiber_ = false;
+      current_executing_fiber_ = nullptr;
       return VMExecutionResult::DebugBreak();
     }
 
@@ -653,7 +653,7 @@ executing_in_fiber_ = true;
     // Stop all goroutines immediately and return so the EventLoop shuts down cleanly
     if (exit_requested_.load()) {
         if (scheduler_) scheduler_->stop();
-        executing_in_fiber_ = false;
+        current_executing_fiber_ = nullptr;
         return VMExecutionResult::Returned(nullptr);
     }
 
@@ -689,12 +689,12 @@ executing_in_fiber_ = true;
         }
       }
 
-      executing_in_fiber_ = false;
+      current_executing_fiber_ = nullptr;
       return VMExecutionResult::Suspended();
     }
 
     // Return normal yield (instruction completed successfully)
-    executing_in_fiber_ = false;
+    current_executing_fiber_ = nullptr;
     return VMExecutionResult::Yield(nullptr);
 
   } catch (const ScriptThrow &thrown) {
@@ -719,11 +719,11 @@ executing_in_fiber_ = true;
   } else if (line > 0) {
     errorMsg += " at line " + std::to_string(line);
   }
-      executing_in_fiber_ = false;
+      current_executing_fiber_ = nullptr;
       return VMExecutionResult::Error(errorMsg);
     }
     // Exception was caught and handled
-    executing_in_fiber_ = false;
+    current_executing_fiber_ = nullptr;
     return VMExecutionResult::Yield(nullptr);
 
   } catch (const std::runtime_error &e) {
@@ -741,14 +741,14 @@ executing_in_fiber_ = true;
         }
       }
     }
-    executing_in_fiber_ = false;
+    current_executing_fiber_ = nullptr;
     return VMExecutionResult::Error(msg);
   } catch (const std::exception &e) {
-    executing_in_fiber_ = false;
+    current_executing_fiber_ = nullptr;
     return VMExecutionResult::Error(std::string("VM exception: ") + e.what());
   }
 
-  executing_in_fiber_ = false;
+  current_executing_fiber_ = nullptr;
   return VMExecutionResult::Yield(nullptr);
 }
 
@@ -1122,7 +1122,7 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
-  bool saved_fiber_flag = executing_in_fiber_;
+  Fiber* saved_fiber_flag = current_executing_fiber_;
   const bool has_instruction_limit = (max_instructions_ > 0);
   const bool has_timer = static_cast<bool>(timer_check_func_);
   const bool has_profiling = profiling_enabled_;
@@ -1142,7 +1142,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       // runDispatchFast returned due to suspension — fall through to slow path
       goto slow_path;
     }
-    executing_in_fiber_ = saved_fiber_flag;
+    current_executing_fiber_ = saved_fiber_flag;
     return;
 #else
     size_t counter = 0;
@@ -1209,7 +1209,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
                 msg += " at " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
         }
     }
-    executing_in_fiber_ = saved_fiber_flag;
+    current_executing_fiber_ = saved_fiber_flag;
 }
         }
         Value exceptionValue = Value::makeStringId(heap_.allocateString(msg).id);
@@ -1232,7 +1232,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         }
       }
     }
-    executing_in_fiber_ = saved_fiber_flag;
+    current_executing_fiber_ = saved_fiber_flag;
     return;
 #endif // HAVE_COMPUTED_GOTO
   }

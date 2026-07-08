@@ -207,51 +207,71 @@ void VM::restoreState(const ExecutionState &state) {
 }
 
 void VM::scheduleCall(const Value &fn,
-                      const std::vector<Value> &args,
-                      Value &result, bool &completed) {
+                       const std::vector<Value> &args,
+                       Value &result, bool &completed) {
+  std::lock_guard<std::mutex> lock(pending_calls_mutex_);
   pending_calls.push_back({fn, args, &result, &completed});
+  // Note: notify not needed since processPendingCalls is called from dispatch loop
 }
 
 void VM::processPendingCalls() {
-  // Process all pending calls - just doCall, let outer loop execute
-  for (auto &call : pending_calls) {
-    doCall(call.fn, call.args);
+  std::vector<PendingCall> calls_to_process;
+  {
+    std::lock_guard<std::mutex> lock(pending_calls_mutex_);
+    calls_to_process = std::move(pending_calls);
+    pending_calls.clear();
   }
-  pending_calls.clear();
+
+  // Process all pending calls - just doCall, let outer loop execute
+  for (auto &call : calls_to_process) {
+    doCall(call.fn, call.args);
+    if (call.completed) {
+      *call.completed = true;
+    }
+  }
 }
 
 // Synchronous call for host functions - executes callback and returns result
-// Minimal state isolation: just save/restore stack size
+// Uses full state save/restore to avoid nested dispatch loop corruption
 Value VM::callFunctionSync(const Value &fn,
                                const std::vector<Value> &args) {
-    std::lock_guard<std::recursive_mutex> lock(execution_mutex_);
-    size_t savedStackSize = stack.size();
-    size_t savedFrameCount = frame_count_;
+  // Save complete VM execution state
+  auto saved_stack = stack;
+  auto saved_locals = locals;
+  auto saved_frame_arena = frame_arena_;
+  size_t saved_frame_count = frame_count_;
+  const BytecodeChunk *saved_chunk = current_chunk;
+  auto saved_open_upvalues = open_upvalues;
+  bool saved_exception = has_current_exception_;
+  Value saved_exception_val = current_exception_;
+  size_t saved_gc_suspend = gc_suspend_counter_;
 
-    const BytecodeChunk *saved_chunk = current_chunk;
-    if (!current_chunk && main_chunk_) {
-        current_chunk = main_chunk_.get();
-    }
+  const BytecodeChunk *outer_chunk = current_chunk;
+  if (!current_chunk && main_chunk_) {
+    current_chunk = main_chunk_.get();
+  }
 
-    doCall(fn, args);
-    runDispatchLoop(savedFrameCount);
+  // Execute the call
+  doCall(fn, args);
+  runDispatchLoop(saved_frame_count);
 
-    current_chunk = saved_chunk;
-
-
-  // Get result from stack top
+  // Get result from stack top BEFORE restoring state
   Value result;
-  if (stack.empty()) {
-    result = nullptr;
-  } else {
+  if (!stack.empty()) {
     result = stack.top();
     stack.pop();
   }
 
-  // Just ensure stack is at expected size
-  while (stack.size() > savedStackSize) {
-    stack.pop();
-  }
+  // Restore all VM state
+  stack = std::move(saved_stack);
+  locals = std::move(saved_locals);
+  frame_arena_ = std::move(saved_frame_arena);
+  frame_count_ = saved_frame_count;
+  current_chunk = outer_chunk;
+  open_upvalues = std::move(saved_open_upvalues);
+  has_current_exception_ = saved_exception;
+  current_exception_ = saved_exception_val;
+  gc_suspend_counter_ = saved_gc_suspend;
 
   return result;
 }

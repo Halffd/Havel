@@ -513,9 +513,19 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
     }
 
     for (auto &[idx, ev] : events) {
-        std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-        if (idx < devices_.size()) {
-            ProcessEvent(devices_[idx], ev);
+        Device devCopy;
+        {
+            std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
+            if (idx >= devices_.size()) continue;
+            devCopy = devices_[idx];
+        }
+        ProcessEvent(devCopy, ev);
+        {
+            std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
+            if (idx < devices_.size()) {
+                devices_[idx].pending_wheel_hi_res = devCopy.pending_wheel_hi_res;
+                devices_[idx].pending_hwheel_hi_res = devCopy.pending_hwheel_hi_res;
+            }
         }
     }
 

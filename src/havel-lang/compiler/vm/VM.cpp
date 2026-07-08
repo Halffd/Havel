@@ -598,6 +598,7 @@ executing_in_fiber_ = true;
   
   // Check if we have frames to execute
   if (frame_count_ == 0) {
+    executing_in_fiber_ = false;
     return VMExecutionResult::Suspended();
   }
 
@@ -615,12 +616,15 @@ executing_in_fiber_ = true;
       // After RETURN, check frame count to determine if function returned
       if (frame_count_ < entry_frame_count) {
         if (stack.empty()) {
+          executing_in_fiber_ = false;
           return VMExecutionResult::Returned(nullptr);
         }
         Value ret_val = stack.top();
         stack.pop();
+        executing_in_fiber_ = false;
         return VMExecutionResult::Returned(ret_val);
       }
+      executing_in_fiber_ = false;
       return VMExecutionResult::Yield(nullptr);
     }
 
@@ -641,6 +645,7 @@ executing_in_fiber_ = true;
 
     // Debugger breakpoint check
     if (debugger_attached_ && checkDebugBreak()) {
+      executing_in_fiber_ = false;
       return VMExecutionResult::DebugBreak();
     }
 
@@ -648,6 +653,7 @@ executing_in_fiber_ = true;
     // Stop all goroutines immediately and return so the EventLoop shuts down cleanly
     if (exit_requested_.load()) {
         if (scheduler_) scheduler_->stop();
+        executing_in_fiber_ = false;
         return VMExecutionResult::Returned(nullptr);
     }
 
@@ -683,10 +689,12 @@ executing_in_fiber_ = true;
         }
       }
 
+      executing_in_fiber_ = false;
       return VMExecutionResult::Suspended();
     }
 
     // Return normal yield (instruction completed successfully)
+    executing_in_fiber_ = false;
     return VMExecutionResult::Yield(nullptr);
 
   } catch (const ScriptThrow &thrown) {
@@ -711,9 +719,11 @@ executing_in_fiber_ = true;
   } else if (line > 0) {
     errorMsg += " at line " + std::to_string(line);
   }
+      executing_in_fiber_ = false;
       return VMExecutionResult::Error(errorMsg);
     }
     // Exception was caught and handled
+    executing_in_fiber_ = false;
     return VMExecutionResult::Yield(nullptr);
 
   } catch (const std::runtime_error &e) {
@@ -731,11 +741,14 @@ executing_in_fiber_ = true;
         }
       }
     }
+    executing_in_fiber_ = false;
     return VMExecutionResult::Error(msg);
   } catch (const std::exception &e) {
+    executing_in_fiber_ = false;
     return VMExecutionResult::Error(std::string("VM exception: ") + e.what());
   }
 
+  executing_in_fiber_ = false;
   return VMExecutionResult::Yield(nullptr);
 }
 
@@ -2342,6 +2355,9 @@ std::vector<Value> VM::stackValuesForRoots() const {
     }
     if (current_exception_.isErrorId()) {
         values.push_back(current_exception_);
+    }
+    if (current_coroutine_id_ != UINT32_MAX) {
+        values.push_back(Value::makeCoroutineId(current_coroutine_id_));
     }
     for (const auto &pc : pending_calls) {
         values.push_back(pc.fn);

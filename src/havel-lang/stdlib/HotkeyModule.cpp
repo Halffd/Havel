@@ -849,7 +849,10 @@ api.registerPrototypeMethod("Hotkey", "stop", 1, [&vm](const std::vector<Value> 
     if (!g) return Value::makeBool(false);
     if (g->state.load() == Scheduler::GoroutineState::Done) return Value::makeBool(false);
     g->persistent = false;
-    g->state.store(Scheduler::GoroutineState::Done);
+    // Use markGoroutineDone so the goroutine is also purged from any queue
+    // it may be parked in. A bare state=Done here would leave a stale pointer
+    // in hotkey_queue_ and trip the POP-DONE assertion on the next pickNext.
+    sched->markGoroutineDone(g);
     if (g->fiber) g->fiber->markDone(Value::makeNull());
     auto *hostCtx = vm.hostContext();
     if (hostCtx && hostCtx->hotkeyManager) {

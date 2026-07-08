@@ -142,19 +142,19 @@ bool ExecutionEngine::executeFrame() {
         vm_->garbageCollectionSafePoint();
         vm_->drainFinalizers();
 
-	// STEP 1.6: Wake sleeping goroutines whose sleep timer has expired
+// STEP 1.6: Wake sleeping goroutines whose sleep timer has expired
 	scheduler_->wakeSleepingGoroutines();
 
-// STEP 2: Pick next runnable goroutine
-    // The scheduler maintains a queue of RUNNABLE goroutines
-    Scheduler::Goroutine* g = scheduler_->pickNext();
-    if (!g) {
-      static int idle_count = 0;
-      if (idle_count < 10) {
-        idle_count++;
-      }
-      return false;
-    }
+	// STEP 2: Pick next runnable goroutine
+	// The scheduler maintains a queue of RUNNABLE goroutines
+	Scheduler::Goroutine* g = scheduler_->pickNext();
+	if (!g) {
+		static int idle_count = 0;
+		if (idle_count < 10) {
+			idle_count++;
+		}
+		return false;
+	}
 
 
 if (g->persistent && g->state == Scheduler::GoroutineState::Created
@@ -1014,6 +1014,7 @@ void ExecutionEngine::processGoroutinesInline() {
     }
 
     vm_->loadFiberState(main_script_fiber_.get());
+    vm_->current_executing_fiber_ = main_script_fiber_.get();
 
     inline_yield_active_ = false;
 }

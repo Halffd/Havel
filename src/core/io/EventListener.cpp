@@ -72,20 +72,9 @@ EventListener::EventListener() {
   signalHandler = std::make_unique<SignalHandler>(this);
   signalHandler->InstallAsyncHandlers();
   shutdownFd = eventfd(0, EFD_NONBLOCK);
-
-  // Register atexit handler for emergency cleanup
-    static bool atexitRegistered = false;
-    if (!atexitRegistered) {
-        std::atexit([]() {
-            if (debugging::debug_io) debug("atexit: emergency evdev ungrab");
-            EmergencyUngrabAllEvdev();
-        });
-        atexitRegistered = true;
-    }
 }
 
 EventListener::~EventListener() {
-  if (backend_) backend_->UngrabAllDevices();
   Stop();
   if (shutdownFd >= 0) close(shutdownFd);
 }

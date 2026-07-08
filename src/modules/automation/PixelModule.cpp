@@ -174,6 +174,10 @@ void registerPixelModule(const VMApi& api) {
             py = pos.second;
         }
         auto color = svc->getPixel(px, py);
+        // If capture fails (returns black or transparent), return null
+        if (color.r == 0 && color.g == 0 && color.b == 0 && color.a == 0) {
+            return Value::makeNull();
+        }
         return colorToValue(api, color);
     });
 

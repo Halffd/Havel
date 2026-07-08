@@ -16,12 +16,88 @@
 #include <QUrl>
 #endif
 #include <cstdlib>
+#include <chrono>
+#include <thread>
+#include <future>
+#include <mutex>
 
 namespace havel::host {
 
 Clipboard::Clipboard() {
   // Auto-detect best method
   method_ = detectBestMethod();
+}
+
+// Run external command with timeout (in milliseconds)
+std::string Clipboard::runWithTimeout(const std::string& cmd, int timeoutMs) const {
+  std::promise<std::string> promise;
+  auto future = promise.get_future();
+  
+  std::thread([this, &promise, cmd]() {
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) {
+      promise.set_value("");
+      return;
+    }
+    char buffer[4096];
+    std::string result;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+      result += buffer;
+    }
+    pclose(pipe);
+    if (!result.empty() && result.back() == '\n') {
+      result.pop_back();
+    }
+    promise.set_value(result);
+  }).detach();
+  
+  if (future.wait_for(std::chrono::milliseconds(2000)) == std::future_status::ready) {
+    return future.get();
+  }
+  return "";
+}
+
+bool Clipboard::setTextWithTimeout(const std::string& text, const std::string& cmd, int timeoutMs) const {
+  std::promise<bool> promise;
+  auto future = promise.get_future();
+  
+  std::thread([this, &promise, text, cmd]() {
+    FILE* pipe = popen(cmd.c_str(), "w");
+    if (!pipe) {
+      promise.set_value(false);
+      return;
+    }
+    fputs(text.c_str(), pipe);
+    int ret = pclose(pipe);
+    promise.set_value(ret == 0);
+  }).detach();
+  
+  if (future.wait_for(std::chrono::milliseconds(timeoutMs)) == std::future_status::ready) {
+    return future.get();
+  }
+  return false;
+}
+
+Clipboard::Method Clipboard::detectBestMethod() {
+  // Check environment variables for display server
+  const char *waylandDisplay = std::getenv("WAYLAND_DISPLAY");
+  const char *display = std::getenv("DISPLAY");
+
+  if (waylandDisplay) {
+    // Wayland session
+    return Method::WAYLAND;
+  } else if (display) {
+    // X11 session
+    return Method::X11;
+  }
+
+  // Default to Qt if available
+  if (QGuiApplication::instance()) {
+    return Method::QT;
+  }
+
+  // Fallback to external commands
+  return Method::EXTERNAL;
 }
 
 Clipboard::~Clipboard() = default;
@@ -47,72 +123,69 @@ void Clipboard::setMethod(Method method) {
   }
 }
 
-Clipboard::Method Clipboard::detectBestMethod() {
-  // Check environment variables for display server
-  const char *waylandDisplay = std::getenv("WAYLAND_DISPLAY");
-  const char *display = std::getenv("DISPLAY");
-
-  if (waylandDisplay) {
-    // Wayland session
-    return Method::WAYLAND;
-  } else if (display) {
-    // X11 session
-    return Method::X11;
-  }
-
-  // Default to Qt if available
-  if (QGuiApplication::instance()) {
-    return Method::QT;
-  }
-
-  // Fallback to external commands
-  return Method::EXTERNAL;
-}
-
 std::string Clipboard::getText() const {
-    if (backend_) return backend_->getText();
-    switch (method_) {
-  case Method::QT:
-    return getTextQt();
-  case Method::X11:
-    return getTextX11();
-  case Method::WAYLAND:
-    return getTextWayland();
-  case Method::EXTERNAL:
+    // 1. Try backend first
+    if (backend_) {
+        std::string result = backend_->getText();
+        if (!result.empty()) return result;
+    }
+    
+    // 1. Qt (if built and available)
+    if (method_ == Method::QT || method_ == Method::AUTO) {
+        std::string result = getTextQt();
+        if (!result.empty()) return result;
+    }
+    
+    // 2. Wayland native
+    if (method_ == Method::WAYLAND || method_ == Method::AUTO) {
+        std::string result = getTextWayland();
+        if (!result.empty()) return result;
+    }
+    
+    // 3. X11 native
+    if (method_ == Method::X11 || method_ == Method::AUTO) {
+        std::string result = getTextX11();
+        if (!result.empty()) return result;
+    }
+    
+    // 4. External commands (copyq, xclip, wl-copy)
+    if (method_ == Method::EXTERNAL || method_ == Method::AUTO) {
+        std::string result = getTextExternal();
+        if (!result.empty()) return result;
+    }
+    
+    // Platform-specific fallback
     return getTextExternal();
-  case Method::WINDOWS:
-    return getTextWindows();
-  case Method::MACOS:
-    return getTextMacOS();
-  case Method::AUTO:
-  default:
-    // Auto-detect and retry
-    const_cast<Clipboard *>(this)->method_ = detectBestMethod();
-    return getText();
-  }
 }
 
 bool Clipboard::setText(const std::string &text) {
-    if (backend_) return backend_->setText(text);
-    switch (method_) {
-  case Method::QT:
-    return setTextQt(text);
-  case Method::X11:
-    return setTextX11(text);
-  case Method::WAYLAND:
-    return setTextWayland(text);
-  case Method::EXTERNAL:
+    // 1. Try backend first
+    if (backend_) {
+        if (backend_->setText(text)) return true;
+    }
+    
+    // 1. Qt (if built and available)
+    if (method_ == Method::QT || method_ == Method::AUTO) {
+        if (setTextQt(text)) return true;
+    }
+    
+    // 2. Wayland native
+    if (method_ == Method::WAYLAND || method_ == Method::AUTO) {
+        if (setTextWayland(text)) return true;
+    }
+    
+    // 3. X11 native
+    if (method_ == Method::X11 || method_ == Method::AUTO) {
+        if (setTextX11(text)) return true;
+    }
+    
+    // 5. External commands (copyq, xclip, wl-copy)
+    if (method_ == Method::EXTERNAL || method_ == Method::AUTO) {
+        if (setTextExternal(text)) return true;
+    }
+    
+    // Platform-specific fallback
     return setTextExternal(text);
-  case Method::WINDOWS:
-    return setTextWindows(text);
-  case Method::MACOS:
-    return setTextMacOS(text);
-  case Method::AUTO:
-  default:
-    // Auto-detect and retry
-    method_ = detectBestMethod();
-    return setText(text);
-  }
 }
 
 bool Clipboard::clear() { return setText(""); }
@@ -151,39 +224,13 @@ bool Clipboard::setTextQt(const std::string &text) {
 // ============================================================================
 
 std::string Clipboard::getTextX11() const {
-  // Use xclip or xsel if available
-  FILE *pipe = popen(
-      "xclip -selection clipboard -o 2>/dev/null || xsel -b 2>/dev/null", "r");
-  if (!pipe) {
-    return "";
-  }
-
-  char buffer[4096];
-  std::string result;
-  while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-    result += buffer;
-  }
-  pclose(pipe);
-
-  // Remove trailing newline if present
-  if (!result.empty() && result.back() == '\n') {
-    result.pop_back();
-  }
-
-  return result;
+  // Use xclip or xsel if available with timeout
+  return runWithTimeout("xclip -selection clipboard -o 2>/dev/null || xsel -b 2>/dev/null", 2000);
 }
 
 bool Clipboard::setTextX11(const std::string &text) {
-  // Use xclip or xsel if available
-  FILE *pipe = popen(
-      "xclip -selection clipboard 2>/dev/null || xsel -b 2>/dev/null", "w");
-  if (!pipe) {
-    return false;
-  }
-
-  fputs(text.c_str(), pipe);
-  pclose(pipe);
-  return true;
+  // Use xclip or xsel if available with timeout
+  return setTextWithTimeout(text, "xclip -selection clipboard 2>/dev/null || xsel -b 2>/dev/null", 2000);
 }
 
 // ============================================================================
@@ -191,37 +238,13 @@ bool Clipboard::setTextX11(const std::string &text) {
 // ============================================================================
 
 std::string Clipboard::getTextWayland() const {
-  // Use wl-paste if available
-  FILE *pipe = popen("wl-paste 2>/dev/null", "r");
-  if (!pipe) {
-    return "";
-  }
-
-  char buffer[4096];
-  std::string result;
-  while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-    result += buffer;
-  }
-  pclose(pipe);
-
-  // Remove trailing newline if present
-  if (!result.empty() && result.back() == '\n') {
-    result.pop_back();
-  }
-
-  return result;
+  // Use wl-paste if available with timeout
+  return runWithTimeout("wl-paste 2>/dev/null", 2000);
 }
 
 bool Clipboard::setTextWayland(const std::string &text) {
-  // Use wl-copy if available
-  FILE *pipe = popen("wl-copy 2>/dev/null", "w");
-  if (!pipe) {
-    return false;
-  }
-
-  fputs(text.c_str(), pipe);
-  pclose(pipe);
-  return true;
+  // Use wl-copy if available with timeout
+  return setTextWithTimeout(text, "wl-copy 2>/dev/null", 2000);
 }
 
 // ============================================================================
@@ -281,37 +304,13 @@ bool Clipboard::setTextWindows(const std::string &text) {
 // ============================================================================
 
 std::string Clipboard::getTextMacOS() const {
-  // macOS pbcopy/pbpaste commands
-  FILE *pipe = popen("pbpaste 2>/dev/null", "r");
-  if (!pipe) {
-    return "";
-  }
-
-  char buffer[4096];
-  std::string result;
-  while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-    result += buffer;
-  }
-  pclose(pipe);
-
-  // Remove trailing newline if present
-  if (!result.empty() && result.back() == '\n') {
-    result.pop_back();
-  }
-
-  return result;
+  // macOS pbcopy/pbpaste commands with timeout
+  return runWithTimeout("pbpaste 2>/dev/null", 2000);
 }
 
 bool Clipboard::setTextMacOS(const std::string &text) {
-  // macOS pbcopy command
-  FILE *pipe = popen("pbcopy 2>/dev/null", "w");
-  if (!pipe) {
-    return false;
-  }
-
-  fputs(text.c_str(), pipe);
-  pclose(pipe);
-  return true;
+  // macOS pbcopy command with timeout
+  return setTextWithTimeout(text, "pbcopy 2>/dev/null", 2000);
 }
 
 // ============================================================================
@@ -374,8 +373,8 @@ std::string Clipboard::getImageQt() const {
   QByteArray byteArray;
   QBuffer buffer(&byteArray);
   buffer.open(QIODevice::WriteOnly);
-    image.save(&buffer, "PNG");
-    return byteArray.toBase64().toStdString();
+  image.save(&buffer, "PNG");
+  return byteArray.toBase64().toStdString();
 }
 
 bool Clipboard::setImageQt(const std::string &base64Png) {
@@ -387,144 +386,15 @@ bool Clipboard::setImageQt(const std::string &base64Png) {
     return false;
   }
 
-  QByteArray byteArray =
-      QByteArray::fromBase64(QByteArray::fromStdString(base64Png));
+  QByteArray byteArray = QByteArray::fromBase64(QString::fromStdString(base64Png).toUtf8());
   QImage image;
   image.loadFromData(byteArray, "PNG");
   if (image.isNull()) {
     return false;
   }
-
   cb->setImage(image);
   return true;
 }
 
-// ============================================================================
-// File Support
-// ============================================================================
-
-std::vector<std::string> Clipboard::getFiles() const {
-    if (backend_) return backend_->getFiles();
-    // Platform-specific file clipboard support
-    switch (method_) {
-  case Method::QT:
-    return getFilesQt();
-  case Method::X11:
-  case Method::WAYLAND:
-  case Method::EXTERNAL:
-  case Method::WINDOWS:
-  case Method::MACOS:
-  case Method::AUTO:
-  default:
-    // Not yet implemented for these methods
-    return {};
-  }
-}
-
-bool Clipboard::setFiles(const std::vector<std::string> &paths) {
-    if (backend_) return backend_->setFiles(paths);
-    switch (method_) {
-  case Method::QT:
-    return setFilesQt(paths);
-  case Method::X11:
-  case Method::WAYLAND:
-  case Method::EXTERNAL:
-  case Method::WINDOWS:
-  case Method::MACOS:
-  case Method::AUTO:
-  default:
-    // Not yet implemented for these methods
-    (void)paths;
-    return false;
-  }
-}
-
-bool Clipboard::hasFiles() const { return !getFiles().empty(); }
-
-// ============================================================================
-// ClipboardInfo Support
-// ============================================================================
-
-ClipboardInfo Clipboard::getInfo() const {
-  ClipboardInfo info;
-
-  // Try to get text first
-  std::string text = getText();
-  if (!text.empty()) {
-    info.type = ClipboardInfo::Type::TEXT;
-    info.content = text;
-    info.size = text.size();
-    info.mimeType = "text/plain";
-    return info;
-  }
-
-  // Try to get image
-  std::string image = getImage();
-  if (!image.empty()) {
-    info.type = ClipboardInfo::Type::IMAGE;
-    info.content = image;
-    info.size = image.size();
-    info.mimeType = "image/png";
-    return info;
-  }
-
-  // Try to get files
-  std::vector<std::string> files = getFiles();
-  if (!files.empty()) {
-    info.type = ClipboardInfo::Type::FILES;
-    info.files = files;
-    info.size = 0; // Size would require stat calls
-    info.mimeType = "text/uri-list";
-    return info;
-  }
-
-  // Empty clipboard
-  info.type = ClipboardInfo::Type::EMPTY;
-  return info;
-}
-
-// Qt File Implementation
-std::vector<std::string> Clipboard::getFilesQt() const {
-  auto *cb = static_cast<QClipboard *>(clipboard_);
-  if (!cb && QGuiApplication::instance()) {
-    cb = QGuiApplication::clipboard();
-  }
-  if (!cb) {
-    return {};
-  }
-
-  const QMimeData *mimeData = cb->mimeData();
-  if (!mimeData || !mimeData->hasUrls()) {
-    return {};
-  }
-
-  std::vector<std::string> files;
-  for (const QUrl &url : mimeData->urls()) {
-    if (url.isLocalFile()) {
-      files.push_back(url.toLocalFile().toStdString());
-    }
-  }
-  return files;
-}
-
-bool Clipboard::setFilesQt(const std::vector<std::string> &paths) {
-  auto *cb = static_cast<QClipboard *>(clipboard_);
-  if (!cb && QGuiApplication::instance()) {
-    cb = QGuiApplication::clipboard();
-  }
-  if (!cb) {
-    return false;
-  }
-
-  QList<QUrl> urls;
-  for (const auto &path : paths) {
-    urls.append(QUrl::fromLocalFile(QString::fromStdString(path)));
-  }
-
-  QMimeData *mimeData = new QMimeData();
-  mimeData->setUrls(urls);
-  cb->setMimeData(mimeData);
-  return true;
-}
 
 } // namespace havel::host

@@ -1,0 +1,32 @@
+fn findById(list, targetId) {
+  for item in list {
+    if item.id == targetId {
+      return item
+    }
+  }
+  return null
+}
+
+hk = hotkey.register("hotkey_host_api", fn() {})
+assert(hk != null, "register should return a hotkey context")
+assert(hk.id != null, "registered hotkey should expose an id")
+assert(hk.condition == "", "regular hotkeys should default to an empty condition")
+
+entries = hotkey.list()
+found = findById(entries, hk.id)
+assert(found != null, "hotkey.list() should include the registered hotkey")
+assert(found.enable() == true, "hotkey.list() entries should support enable()")
+assert(found.disable() == true, "hotkey.list() entries should support disable()")
+assert(found.trigger() == true, "hotkey.list() entries should support trigger()")
+assert(found.remove() == true, "hotkey.list() entries should support remove()")
+
+standalone = hotkey.register("hotkey_host_api_direct", fn() {})
+assert(standalone != null, "standalone registration should be created")
+assert(hotkey.disable(standalone.id) == true, "hotkey.disable() should work")
+assert(hotkey.enable(standalone.id) == true, "hotkey.enable() should work")
+assert(hotkey.trigger(standalone.id) == true, "hotkey.trigger() should work")
+assert(hotkey.remove(standalone.id) == true, "hotkey.remove() should work")
+
+cond = hotkey.register_conditional("hotkey_cond", fn() {}, fn() { return true })
+assert(cond != null, "register_conditional should return a hotkey context")
+assert(cond.condition != "", "conditional hotkeys should preserve a non-empty condition")

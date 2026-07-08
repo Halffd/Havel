@@ -553,6 +553,15 @@ std::unique_ptr<BytecodeInterpreter> createVM() {
 void VM::processPendingEvents() {
   if (timer_check_func_) timer_check_func_();
   if (event_queue_) event_queue_->processAll();
+  // Drive scheduler sleep wakeups. Without this, a goroutine that suspends
+  // via FIBER_SLEEP (which sets wait_handle.deadline) will never be promoted
+  // back to Runnable while the MAIN script is blocking inside the chunked
+  // sleep loop in VMHostFunctions.cpp's "sleep" host function. That loop
+  // only calls processPendingEvents() between chunks; promoting here lets
+  // the next yield_callback_/pickNext observe the woken goroutine.
+  if (scheduler_) {
+    scheduler_->wakeSleepingGoroutines();
+  }
 }
 
 } // namespace havel::compiler

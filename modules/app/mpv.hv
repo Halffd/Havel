@@ -1,217 +1,472 @@
 use socket
 use "../std/json.hv" as json
 
-DEFAULT_SOCKET = "/tmp/mpvsocket"
-DEFAULT_RECV_TIMEOUT_MS = 2000
+class MPV {
+    // connection state
+    @path
+    @sock
+    @connected = false
+    @receiverRunning = false
+    @recvBuffer = ""
 
-fn _cmd(conn, args) {
-    if conn == null || conn.connected == false {
-        return null
-    }
-    req = json.stringify({command: args})
-    sent = conn.sock.send(req + "\n")
-    if sent < 0 {
-        return null
-    }
-    conn.sock.setRecvTimeout(DEFAULT_RECV_TIMEOUT_MS)
-    resp = conn.sock.recv(8192)
-    if resp == "" {
-        return null
-    }
-    resp
-}
+    // async request tracking
+    @nextRequestId = 1
+    @pending = {}
 
-fn MPV(socketPath) {
-    if socketPath == null { socketPath = DEFAULT_SOCKET }
+    // event system
+    @listeners = {}
 
-    sock = socket.UnixSocket()
-    ok = sock.connect(socketPath)
-    conn = {sock: sock, path: socketPath, connected: ok}
-    self = {conn: conn}
+    // cached properties
+    @pause = false
+    @timePos = 0
+    @duration = 0
+    @volume = 100
+    @speed = 1.0
+    @filename = ""
+    @fullscreen = false
 
-    self.reconnect = fn(path) {
-        if path == null { path = self.conn.path }
-        s = socket.UnixSocket()
-        ok = s.connect(path)
-        self.conn.sock = s
-        self.conn.path = path
-        self.conn.connected = ok
-        ok
+    // computed values
+    @progress = 0
+
+    fn @(path="/tmp/mpvsocket") {
+        @path = path
+        @connect()
+        @observeDefaults()
+        @startReceiver()
     }
 
-    self.isConnected = fn() { self.conn.connected && self.conn.sock.isAlive() }
-    self.close = fn() { self.conn.sock.close(); self.conn.connected = false }
-
-    self.playPause = fn() { _cmd(self.conn, ["cycle", "pause"]) }
-    self.play = fn() { _cmd(self.conn, ["set", "pause", "no"]) }
-    self.stop = fn() { _cmd(self.conn, ["stop"]) }
-    self.next = fn() { _cmd(self.conn, ["playlist-next"]) }
-    self.previous = fn() { _cmd(self.conn, ["playlist-prev"]) }
-    self.loadfile = fn(url) { _cmd(self.conn, ["loadfile", url]) }
-    self.quit = fn() { _cmd(self.conn, ["quit"]) }
-
-    self.seek = fn(seconds, seekMode) {
-        if seekMode == null { seekMode = "relative" }
-        _cmd(self.conn, ["seek", seconds, seekMode])
+    fn connect() {
+        @sock = socket.UnixSocket()
+        @connected = @sock.connect(@path)
+        @connected
     }
 
-    self.seekForward = fn() { _cmd(self.conn, ["seek", 3]) }
-    self.seekBackward = fn() { _cmd(self.conn, ["seek", -3]) }
-    self.seekAbsolute = fn(seconds) { _cmd(self.conn, ["seek", seconds, "absolute"]) }
-    self.seekPercent = fn(pct) { _cmd(self.conn, ["seek", pct, "absolute-percent"]) }
-
-    self.volumeUp = fn(delta) {
-        if delta == null { delta = 5 }
-        _cmd(self.conn, ["add", "volume", delta])
+    fn reconnect() {
+        if @sock != null {
+            @sock.close()
+        }
+        @connected = false
+        @connect()
+        // Re-register observers after reconnect
+        if @connected {
+            @observeDefaults()
+        }
     }
 
-    self.volumeDown = fn(delta) {
-        if delta == null { delta = 5 }
-        _cmd(self.conn, ["add", "volume", -delta])
+    fn ensureConnection() {
+        if !@connected {
+            @reconnect()
+        }
+        @connected
     }
 
-    self.setVolume = fn(level) { _cmd(self.conn, ["set", "volume", level]) }
-    self.toggleMute = fn() { _cmd(self.conn, ["cycle", "mute"]) }
-
-    self.speedUp = fn(factor) {
-        if factor == null { factor = 1.1 }
-        _cmd(self.conn, ["multiply", "speed", factor])
+    fn on(event, cb) {
+        if !@listeners.has(event) {
+            @listeners[event] = []
+        }
+        @listeners[event].push(cb)
     }
 
-    self.slowDown = fn(factor) {
-        if factor == null { factor = 1.1 }
-        _cmd(self.conn, ["multiply", "speed", 1.0 / factor])
+    fn emit(event, data=null) {
+        if !@listeners.has(event) {
+            return
+        }
+        for cb in @listeners[event] {
+            cb(data)
+        }
     }
 
-    self.setSpeed = fn(speed) { _cmd(self.conn, ["set", "speed", speed]) }
-    self.resetSpeed = fn() { _cmd(self.conn, ["set", "speed", 1.0]) }
-
-    self.toggleSubs = fn() { _cmd(self.conn, ["cycle", "sub-visibility"]) }
-    self.toggleSecondarySubs = fn() { _cmd(self.conn, ["cycle", "secondary-sub-visibility"]) }
-    self.nextSubtitle = fn() { _cmd(self.conn, ["cycle", "sub"]) }
-    self.prevSubtitle = fn() { _cmd(self.conn, ["cycle", "sub", "down"]) }
-
-    self.subScaleUp = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "sub-scale", delta])
+    fn requestId() {
+        id = @nextRequestId
+        @nextRequestId += 1
+        id
     }
 
-    self.subScaleDown = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "sub-scale", -delta])
+    fn send(command) {
+        if !@ensureConnection() {
+            return null
+        }
+        rid = @requestId()
+        req = {
+            command: command,
+            request_id: rid
+        }
+        payload = json.stringify(req) + "\n"
+        sent = @sock.send(payload)
+        if sent < 0 {
+            @reconnect()
+            sent = @sock.send(payload)
+            if sent < 0 {
+                return null
+            }
+        }
+        @pending[rid] = null
+        rid
     }
 
-    self.subDelayForward = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "sub-delay", delta])
+    fn cmd(command) {
+        rid = @send(command)
+        if rid == null {
+            return null
+        }
+        while @pending[rid] == null {
+            sleep(0.001)
+        }
+        result = @pending[rid]
+        delete @pending[rid]
+        result
     }
 
-    self.subDelayBackward = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "sub-delay", -delta])
+    fn startReceiver() {
+        if @receiverRunning {
+            return
+        }
+        @receiverRunning = true
+        thread.spawn(fn() {
+            while true {
+                if !@ensureConnection() {
+                    sleep(1)
+                    continue
+                }
+                chunk = @sock.recv(8192)
+                if chunk == "" {
+                    @connected = false
+                    sleep(1)
+                    continue
+                }
+                @recvBuffer += chunk
+                while @recvBuffer.has("\n") {
+                    idx = @recvBuffer.find("\n")
+                    line = @recvBuffer.sub(0, idx)
+                    @recvBuffer = @recvBuffer.sub(idx + 1)
+                    if line.trim() == "" {
+                        continue
+                    }
+                    msg = json.parse(line)
+                    if msg.has("request_id") {
+                        @pending[msg.request_id] = msg
+                    }
+                    else if msg.has("event") {
+                        @handleEvent(msg)
+                    }
+                }
+            }
+        })
     }
 
-    self.subSeek = fn(dir) { _cmd(self.conn, ["sub-seek", dir]) }
-    self.subSeekPrev = fn() { _cmd(self.conn, ["sub-seek", -1]) }
-    self.subSeekNext = fn() { _cmd(self.conn, ["sub-seek", 1]) }
-    self.subSeekCurrent = fn() { _cmd(self.conn, ["sub-seek", 0]) }
-
-    self.isPlaying = fn() { _cmd(self.conn, ["get_property", "pause"]) }
-    self.copySubtitle = fn() { _cmd(self.conn, ["script-binding", "copy_current_subtitle"]) }
-
-    // ----- Speed control (additive) -----
-    self.addSpeed = fn(delta) { _cmd(self.conn, ["add", "speed", delta]) }
-
-    // ----- Generic cycle command -----
-    self.cycle = fn(property) { _cmd(self.conn, ["cycle", property]) }
-
-    // ----- Screenshot -----
-    self.screenshot = fn() { _cmd(self.conn, ["screenshot"]) }
-
-    // ----- IPC socket switching -----
-    self.ipcSet = fn(path) {
-        self.conn.path = path
-        self.reconnect(path)
+    fn handleEvent(msg) {
+        ev = msg.event
+        if ev == "property-change" {
+            name = msg.name
+            if name == "pause" {
+                @pause = msg.data
+            }
+            else if name == "time-pos" {
+                @timePos = msg.data
+            }
+            else if name == "duration" {
+                @duration = msg.data
+            }
+            else if name == "volume" {
+                @volume = msg.data
+            }
+            else if name == "speed" {
+                @speed = msg.data
+            }
+            else if name == "filename" {
+                @filename = msg.data
+            }
+            else if name == "fullscreen" {
+                @fullscreen = msg.data
+            }
+            @emit("property-change", msg)
+        }
+        else if ev == "pause" {
+            @pause = msg.data
+        }
+        else if ev == "seek" {
+            @emit("seek", msg)
+        }
+        else if ev == "file-loaded" {
+            @filename = @getProperty("filename")
+            @emit("file-loaded", @filename)
+        }
+        else if ev == "playback-restart" {
+            @emit("playback-restart")
+        }
+        @emit(ev, msg)
     }
 
-    self.ipcReset = fn() { self.ipcSet(DEFAULT_SOCKET) }
-
-    // ----- Optional: get/set property helpers -----
-    self.getProperty = fn(name) { _cmd(self.conn, ["get_property", name]) }
-
-    self.setProperty = fn(name, value) {
-        _cmd(self.conn, ["set", name, value])
+    fn observeDefaults() {
+        @observe("pause")
+        @observe("time-pos")
+        @observe("duration")
+        @observe("volume")
+        @observe("speed")
+        @observe("filename")
+        @observe("fullscreen")
     }
 
-    self.nextAudio = fn() { _cmd(self.conn, ["cycle", "audio"]) }
-    self.prevAudio = fn() { _cmd(self.conn, ["cycle", "audio", "down"]) }
-
-    self.audioDelayUp = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "audio-delay", delta])
+    fn observe(name) {
+        @send([
+            "observe_property",
+            0,
+            name
+        ])
     }
 
-    self.audioDelayDown = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "audio-delay", -delta])
+    fn getProperty(name) {
+        resp = @cmd([
+            "get_property",
+            name
+        ])
+        if resp == null {
+            return null
+        }
+        resp.data
     }
 
-    self.toggleFullscreen = fn() { _cmd(self.conn, ["cycle", "fullscreen"]) }
-    self.toggleOntop = fn() { _cmd(self.conn, ["cycle", "ontop"]) }
-
-    self.zoomIn = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "video-zoom", delta])
+    fn setProperty(name, value) {
+        @cmd([
+            "set_property",
+            name,
+            value
+        ])
     }
 
-    self.zoomOut = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "video-zoom", -delta])
+    fn playPause() {
+        @cmd(["cycle", "pause"])
     }
 
-    self.resetZoom = fn() { _cmd(self.conn, ["set", "video-zoom", 0]) }
-
-    self.panX = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "video-pan-x", delta])
+    fn stop() {
+        @cmd(["stop"])
     }
 
-    self.panY = fn(delta) {
-        if delta == null { delta = 0.1 }
-        _cmd(self.conn, ["add", "video-pan-y", delta])
+    fn quit() {
+        @cmd(["quit"])
     }
 
-    self.resetPan = fn() {
-        _cmd(self.conn, ["set", "video-pan-x", 0])
-        _cmd(self.conn, ["set", "video-pan-y", 0])
+    fn loadfile(file) {
+        @cmd(["loadfile", file])
     }
 
-    self.playlistNext = fn() { _cmd(self.conn, ["playlist-next"]) }
-    self.playlistPrev = fn() { _cmd(self.conn, ["playlist-prev"]) }
-    self.playlistClear = fn() { _cmd(self.conn, ["playlist-clear"]) }
-    self.playlistRemove = fn(index) { _cmd(self.conn, ["playlist-remove", index]) }
-    self.playlistMove = fn(src, dst) { _cmd(self.conn, ["playlist-move", src, dst]) }
+    fn append(file) {
+        @cmd(["loadfile", file, "append"])
+    }
 
-    self.nextChapter = fn() { _cmd(self.conn, ["add", "chapter", 1]) }
-    self.prevChapter = fn() { _cmd(self.conn, ["add", "chapter", -1]) }
-    self.setChapter = fn(ch) { _cmd(self.conn, ["set", "chapter", ch]) }
+    fn next() {
+        @cmd(["playlist-next"])
+    }
 
-    // raw helpers
-    self.cmd = _cmd
-    self.getProperty = fn(name) { _cmd(self.conn, ["get_property", name]) }
+    fn previous() {
+        @cmd(["playlist-prev"])
+    }
 
-    self.scriptMessage = fn(name, args) {
+    fn seek(seconds) {
+        @cmd([
+            "seek",
+            seconds,
+            "relative"
+        ])
+    }
+
+    fn seekAbsolute(seconds) {
+        @cmd([
+            "seek",
+            seconds,
+            "absolute"
+        ])
+    }
+
+    fn seekPercent(percent) {
+        @cmd([
+            "seek",
+            percent,
+            "absolute-percent"
+        ])
+    }
+
+    fn volumeUp(delta=5) {
+        @cmd([
+            "add",
+            "volume",
+            delta
+        ])
+    }
+
+    fn volumeDown(delta=5) {
+        @cmd([
+            "add",
+            "volume",
+            -delta
+        ])
+    }
+
+    fn setVolume(v) {
+        @cmd([
+            "set",
+            "volume",
+            v
+        ])
+    }
+
+    fn toggleMute() {
+        @cmd([
+            "cycle",
+            "mute"
+        ])
+    }
+
+    fn speedUp(f=1.1) {
+        @cmd([
+            "multiply",
+            "speed",
+            f
+        ])
+    }
+
+    fn slowDown(f=1.1) {
+        @cmd([
+            "multiply",
+            "speed",
+            1.0 / f
+        ])
+    }
+
+    fn resetSpeed() {
+        @setProperty(
+            "speed",
+            1.0
+        )
+    }
+
+    fn toggleFullscreen() {
+        @cmd([
+            "cycle",
+            "fullscreen"
+        ])
+    }
+
+    fn toggleOntop() {
+        @cmd([
+            "cycle",
+            "ontop"
+        ])
+    }
+
+    fn nextSubtitle() {
+        @cmd([
+            "cycle",
+            "sub"
+        ])
+    }
+
+    fn prevSubtitle() {
+        @cmd([
+            "cycle",
+            "sub",
+            "down"
+        ])
+    }
+
+    fn toggleSubs() {
+        @cmd([
+            "cycle",
+            "sub-visibility"
+        ])
+    }
+
+    fn nextAudio() {
+        @cmd([
+            "cycle",
+            "audio"
+        ])
+    }
+
+    fn prevAudio() {
+        @cmd([
+            "cycle",
+            "audio",
+            "down"
+        ])
+    }
+
+    fn screenshot() {
+        @cmd([
+            "screenshot"
+        ])
+    }
+
+    fn scriptMessage(name, args=[]) {
         cmd = ["script-message", name]
-        if args != null { cmd = cmd + args }
-        _cmd(self.conn, cmd)
+        for a in args {
+            cmd.push(a)
+        }
+        @cmd(cmd)
     }
 
-    self.sendRaw = fn(jsonStr) {
-        if self.conn == null || self.conn.connected == false { return null }
-        self.conn.sock.setRecvTimeout(DEFAULT_RECV_TIMEOUT_MS)
-        self.conn.sock.send(jsonStr + "\n")
-        self.conn.sock.recv(8192)
+    fn sendRaw(raw) {
+        @sock.send(raw + "\n")
     }
 
-    self
+    fn bindProgress(cb) {
+        @on("property-change", fn(_) {
+            if @duration > 0 {
+                @progress = @timePos / @duration
+                cb(@progress)
+            }
+        })
+    }
+
+    fn addSpeed(delta) {
+        @cmd([
+            "add",
+            "speed",
+            delta
+        ])
+    }
+
+    fn addSubScale(delta) {
+        @cmd([
+            "add",
+            "sub-scale",
+            delta
+        ])
+    }
+
+    fn addSubDelay(delta) {
+        @cmd([
+            "add",
+            "sub-delay",
+            delta
+        ])
+    }
+
+    fn subSeek(dir) {
+        @cmd([
+            "sub-seek",
+            dir
+        ])
+    }
+
+    fn ipcSet(path) {
+        @path = path
+        @reconnect(path)
+    }
+
+    fn ipcReset() {
+        @ipcSet("/tmp/mpvsocket")
+    }
+
+    fn copySubtitle() {
+        @scriptMessage("copy_current_subtitle")
+    }
+
+    fn close() {
+        @receiverRunning = false
+        if @sock != null {
+            @sock.close()
+        }
+        @connected = false
+    }
 }

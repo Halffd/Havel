@@ -7,7 +7,10 @@ wpid = lwpid = 0
 win = lastWin = null
 cmd = lcmd = ""
 
-timeout 8000 { exit(0) }
+timeout 35000 {
+    print("35 seconds passed, exiting")
+    exit(0)
+}
 
 Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
 when title_ ~ "onsole" {
@@ -57,8 +60,19 @@ hotkeyTest = hotkey.register_conditional("a", () => { print "Gaming/mpv mode act
 hotkeyTest2 = hotkey.register_conditional("b", () => { print "On terminal" }, () => { res = title_ ~ "onsole"; print("CONDITIONAL title onsole:" + res); return res })
 dbgWin = 0
 hks = null
+tickGo = 0
+tickOut = 0
+print("STARTING GOROUTINE")
 go fn update() {
   loop {
+    tickGo++
+    print("[IN GOROUTINE] tick=$tickGo")
+    if(tickGo > 5 && tickOut < 5){
+        print("[ERROR] ONLY GOROUTINE RUNNING $tickGo > $tickOut")
+        if(tickOut == 0){
+            print("[ERROR] OUTSIDE LOOP NEVER RAN $tickOut")
+        }
+    }
     win = window.active()
     [title_, class_, cmd, wid, wpid] = [win.title, win.class, win.cmdline, win.id, win.pid]
     if wid != lwid {
@@ -75,4 +89,13 @@ go fn update() {
     }
     sleep(1000)
   }
+}
+print("LINE93: STARTING OUTSIDE LOOP")
+loop {
+    tickOut++
+    println("[OUTSIDE GOROUTINE] tick=$tickOut")
+    if(tickOut > 20 && tickGo <= 20){
+        print("[ERROR] GOROUTINE HANG $tickGo < $tickOut")
+    }
+    sleep(1000)
 }

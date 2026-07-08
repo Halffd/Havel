@@ -946,6 +946,7 @@ GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id
     return jit_yield_requested_.exchange(false, std::memory_order_acq_rel);
   }
   void setYieldCallback(std::function<void()> cb) { yield_callback_ = std::move(cb); }
+  void setExecutingInFiber(bool v) { executing_in_fiber_ = v; }
   bool hasYieldCallback() const { return static_cast<bool>(yield_callback_); }
  uint8_t getSuspensionReason() const { return suspension_reason_; }
 void* getSuspensionContext() const { return suspension_context_; }

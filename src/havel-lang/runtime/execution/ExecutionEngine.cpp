@@ -1014,6 +1014,7 @@ void ExecutionEngine::processGoroutinesInline() {
     }
 
     vm_->loadFiberState(main_script_fiber_.get());
+    vm_->setExecutingInFiber(true);
 
     inline_yield_active_ = false;
 }

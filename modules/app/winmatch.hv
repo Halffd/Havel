@@ -1,0 +1,132 @@
+// winmatch.hv — Window matching and mode system (pure Havel)
+// Replaces C++ ModeManager + modes.hv with in-language mode tracking.
+// Usage:
+//   use "app/winmatch" as winmatch
+//   winmatch.define("gaming", fn(w) { w.class.find("Steam") >= 0 })
+//   winmatch.tick()
+//   winmatch.current()  // "gaming"
+//   winmatch.check({class: "Steam", mode: "gaming"})
+
+use window
+
+_mode = "default"
+_prevMode = ""
+_modes = {}
+_ordered = []
+_onModeFns = []
+_onChangeFns = []
+
+_win = {title: "", class: "", exe: "", id: 0, pid: 0}
+_prev = {title: "", class: "", exe: "", id: 0, pid: 0}
+
+fn _snapshot() {
+    _w = window.active()
+    if _w == 0 { return null }
+    _info = window.info(_w)
+    {title: _info.title, class: _info.class, exe: _info.exe,
+     id: _info.id, pid: _info.pid}
+}
+
+fn _changed(a, b) {
+    a.id != b.id || a.title != b.title || a.class != b.class
+}
+
+fn current() { _mode }
+
+fn previous() { _prevMode }
+
+fn set(name) {
+    if name == _mode { return }
+    _prevMode = _mode
+    _mode = name
+    for _fn in _onModeFns { _fn(_mode, _prevMode) }
+}
+
+fn define(name, condition) {
+    if _modes[name] == null {
+        _ordered.push(name)
+    }
+    _modes[name] = {name: name, condition: condition}
+}
+
+fn undefine(name) {
+    _modes[name] = null
+    _new = []
+    for _m in _ordered { if _m != name { _new.push(_m) } }
+    _ordered = _new
+}
+
+fn _eval() {
+    for _name in _ordered {
+        _def = _modes[_name]
+        if _def != null && _def.condition(_win) {
+            return _name
+        }
+    }
+    "default"
+}
+
+fn tick() {
+    _snap = _snapshot()
+    if _snap == null { return }
+
+    if _changed(_snap, _win) {
+        _prev = _win
+        _win = _snap
+        for _fn in _onChangeFns { _fn(_win, _prev) }
+
+        _newMode = _eval()
+        if _newMode != _mode {
+            _prevMode = _mode
+            _mode = _newMode
+            for _fn in _onModeFns { _fn(_mode, _prevMode) }
+        }
+    }
+}
+
+fn active() { _win }
+
+fn inClass(class) {
+    if class == null || class == "" { return false }
+    _win.class.find(class) >= 0
+}
+
+fn inTitle(title) {
+    if title == null || title == "" { return false }
+    _win.title.find(title) >= 0
+}
+
+fn inExe(exe) {
+    if exe == null || exe == "" { return false }
+    _win.exe.find(exe) >= 0
+}
+
+fn check(opts) {
+    if opts.class != null && !inClass(opts.class) { return false }
+    if opts.title != null && !inTitle(opts.title) { return false }
+    if opts.exe != null && !inExe(opts.exe) { return false }
+    if opts.mode != null && _mode != opts.mode { return false }
+    true
+}
+
+fn onChange(cb) {
+    _onChangeFns.push(cb)
+    _onChangeFns.len
+}
+
+fn offChange(cb) {
+    _new = []
+    for _f in _onChangeFns { if _f != cb { _new.push(_f) } }
+    _onChangeFns = _new
+}
+
+fn onMode(cb) {
+    _onModeFns.push(cb)
+    _onModeFns.len
+}
+
+fn offMode(cb) {
+    _new = []
+    for _f in _onModeFns { if _f != cb { _new.push(_f) } }
+    _onModeFns = _new
+}

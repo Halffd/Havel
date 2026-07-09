@@ -412,6 +412,23 @@ fn get(monitorIndex) {
   _val
 }
 
+fn getHardwareBrightness(monitorIndex) {
+  _mi = monitorIndex
+  if _mi == null { _mi = -1 }
+  _val = _readBacklightDDC(_mi)
+  if _val < 0 && _mi < 0 { _val = _readBacklightSysfs() }
+  if _val < 0 { _val = 1.0 }
+  _val
+}
+
+fn getXrandrBrightness(monitorIndex) {
+  _mi = monitorIndex
+  if _mi == null { _mi = -1 }
+  _val = _readBacklightXRandR(_mi)
+  if _val < 0 { _val = 1.0 }
+  _val
+}
+
 fn set(value, monitorIndex) {
   _mi = monitorIndex
   if _mi == null { _mi = -1 }

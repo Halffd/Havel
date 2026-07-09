@@ -72,10 +72,17 @@ EventListener::EventListener() {
   signalHandler = std::make_unique<SignalHandler>(this);
   signalHandler->InstallAsyncHandlers();
   shutdownFd = eventfd(0, EFD_NONBLOCK);
+
+  static bool atexitRegistered = false;
+  if (!atexitRegistered) {
+    std::atexit([]() { EmergencyUngrabAllEvdev(); });
+    atexitRegistered = true;
+  }
 }
 
 EventListener::~EventListener() {
   Stop();
+  if (backend_) backend_->UngrabAllDevices();
   if (shutdownFd >= 0) close(shutdownFd);
 }
 
@@ -2161,6 +2168,7 @@ void EventListener::ForceUngrabAllDevices() {
 
 void EventListener::RequestGracefulShutdown() {
   ReleaseAllVirtualKeys();
+  if (backend_) backend_->UngrabAllDevices();
   running.store(false);
   shutdown.store(true);
   if (shutdownFd >= 0) {

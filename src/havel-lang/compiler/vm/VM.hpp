@@ -487,6 +487,7 @@ size_t tail_call_depth_ = 0;
     bool *completed;       // Flag to signal completion
   };
   std::vector<PendingCall> pending_calls;
+  std::mutex pending_calls_mutex_;
   void scheduleCall(const Value &fn,
                     const std::vector<Value> &args,
                     Value &result, bool &completed);

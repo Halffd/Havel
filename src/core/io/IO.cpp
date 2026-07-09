@@ -765,6 +765,11 @@ IO::~IO() { cleanup(); }
 void IO::cleanup() {
   ensureBackend();
 
+  if (eventListener) {
+    eventListener->Stop();
+    eventListener->ForceUngrabAllDevices();
+  }
+
   // IOBackend cleanup (X11 ungrab, etc.)
   if (ioBackend) {
     ioBackend->Cleanup();

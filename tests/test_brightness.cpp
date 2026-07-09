@@ -442,6 +442,17 @@ static void test_setBrightness_clamps_to_0_1() {
 
 int main() {
     std::cout << "=== Brightness Manager Unit Tests ===" << std::endl;
+    std::cout << "\n⚠️  WARNING: This test modifies REAL hardware monitor settings (brightness, gamma, temperature, shadowLift)." << std::endl;
+    std::cout << "⚠️  It may leave your screen white/corrupted if interrupted." << std::endl;
+    std::cout << "⚠️  Only run on a machine with a VISIBLE monitor you can physically access." << std::endl;
+    std::cout << "⚠️  Have SSH access ready for recovery." << std::endl;
+    std::cout << "\nContinue? [y/N] " << std::flush;
+    std::string response;
+    std::getline(std::cin, response);
+    if (response.empty() || (response[0] != 'y' && response[0] != 'Y')) {
+        std::cout << "Aborted." << std::endl;
+        return 0;
+    }
 
     test_construct_init();
     test_invalid_monitor_index();

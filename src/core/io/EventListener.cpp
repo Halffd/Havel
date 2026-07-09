@@ -646,6 +646,9 @@ void EventListener::EventLoop() {
     if (signalFd >= 0 && FD_ISSET(signalFd, &readfds)) {
       struct signalfd_siginfo fdsi;
       ssize_t s = read(signalFd, &fdsi, sizeof(fdsi));
+      if (s < 0 && errno == EAGAIN) {
+        continue;
+      }
       if (s == sizeof(fdsi)) {
         if (fdsi.ssi_signo == SIGINT || fdsi.ssi_signo == SIGTERM) {
           if (debugging::debug_io) debug("Received shutdown signal {}", fdsi.ssi_signo);

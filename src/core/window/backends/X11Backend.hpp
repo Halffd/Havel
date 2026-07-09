@@ -1,7 +1,9 @@
 #pragma once
 #include "core/window/WindowBackend.hpp"
 #include "core/display/DisplayManager.hpp"
+#include <chrono>
 #include <optional>
+#include <unordered_map>
 
 namespace havel {
 
@@ -80,6 +82,27 @@ private:
   std::string wmName;
   bool wmSupported{false};
   WindowManagerDetector::WMType wmType{};
+
+  struct ActiveWindowCache {
+    wID id{0};
+    std::string title;
+    std::string className;
+    std::chrono::steady_clock::time_point lastUpdate;
+  };
+  ActiveWindowCache activeCache_;
+  static constexpr auto CACHE_TTL = std::chrono::milliseconds(50);
+
+  bool cacheValid() const {
+    return std::chrono::steady_clock::now() - activeCache_.lastUpdate < CACHE_TTL;
+  }
+
+  struct WindowInfoCache {
+    std::string title;
+    std::string className;
+    std::chrono::steady_clock::time_point lastUpdate;
+  };
+  std::unordered_map<wID, WindowInfoCache> windowInfoCache_;
+  static constexpr auto WINDOW_CACHE_TTL = std::chrono::milliseconds(200);
 
   struct ActiveWindowContext {
     Display *display;

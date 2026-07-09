@@ -58,6 +58,10 @@ std::optional<X11Backend::ActiveWindowContext> X11Backend::GetActiveWindowContex
 }
 
 wID X11Backend::getActiveWindow() {
+  if (cacheValid() && activeCache_.id != 0) {
+    return activeCache_.id;
+  }
+
   Display *display = DisplayManager::GetDisplay();
   if (!display) {
     if (!InitializeX11()) return 0;
@@ -82,6 +86,13 @@ wID X11Backend::getActiveWindow() {
       XFree(prop);
     }
   }
+
+  if (activeWindow != activeCache_.id) {
+    activeCache_.id = activeWindow;
+    activeCache_.title.clear();
+    activeCache_.className.clear();
+  }
+  activeCache_.lastUpdate = std::chrono::steady_clock::now();
   return activeWindow;
 }
 
@@ -97,12 +108,19 @@ std::string X11Backend::getActiveWindowProcess() {
 }
 
 std::string X11Backend::getActiveWindowTitle() {
+  if (cacheValid() && !activeCache_.title.empty()) {
+    return activeCache_.title;
+  }
   wID active_win = getActiveWindow();
   if (active_win == 0) return "";
-  return getWindowTitle(active_win);
+  activeCache_.title = getWindowTitle(active_win);
+  return activeCache_.title;
 }
 
 std::string X11Backend::getActiveWindowClass() {
+  if (cacheValid() && !activeCache_.className.empty()) {
+    return activeCache_.className;
+  }
   Display *display = DisplayManager::GetDisplay();
   if (!display) return "";
 
@@ -117,17 +135,32 @@ std::string X11Backend::getActiveWindowClass() {
   std::string className = classHint.res_class ? classHint.res_class : "";
   if (classHint.res_name) XFree(classHint.res_name);
   if (classHint.res_class) XFree(classHint.res_class);
+
+  if (!className.empty()) {
+    activeCache_.className = className;
+  }
+  activeCache_.lastUpdate = std::chrono::steady_clock::now();
   return className;
 }
 
 std::string X11Backend::getWindowTitle(wID id) {
   if (id == 0) return "";
+
+  {
+    auto it = windowInfoCache_.find(id);
+    if (it != windowInfoCache_.end() &&
+        std::chrono::steady_clock::now() - it->second.lastUpdate < WINDOW_CACHE_TTL) {
+      return it->second.title;
+    }
+  }
+
   Display *display = DisplayManager::GetDisplay();
   if (!display) return "";
 
   // Try _NET_WM_NAME first (UTF-8, modern standard)
   Atom netWmNameAtom = XInternAtom(display, "_NET_WM_NAME", x11::XFalse);
   Atom utf8StringAtom = XInternAtom(display, "UTF8_STRING", x11::XFalse);
+  std::string title;
   if (netWmNameAtom != x11::XNone) {
     Atom actualType;
     int actualFormat;
@@ -137,22 +170,24 @@ std::string X11Backend::getWindowTitle(wID id) {
                             utf8StringAtom, &actualType, &actualFormat, &nitems,
                             &bytesAfter, &prop) == x11::XSuccess) {
       if (prop && nitems > 0) {
-        std::string title(reinterpret_cast<char *>(prop));
+        title = std::string(reinterpret_cast<char *>(prop));
         XFree(prop);
-        return title;
+      } else {
+        if (prop) XFree(prop);
       }
-      if (prop) XFree(prop);
     }
   }
 
-  // Fallback to legacy WM_NAME
-  char *windowName = nullptr;
-  if (XFetchName(display, id, &windowName) && windowName) {
-    std::string title(windowName);
-    XFree(windowName);
-    return title;
+  if (title.empty()) {
+    char *windowName = nullptr;
+    if (XFetchName(display, id, &windowName) && windowName) {
+      title = std::string(windowName);
+      XFree(windowName);
+    }
   }
-  return "";
+
+  windowInfoCache_[id] = {title, {}, std::chrono::steady_clock::now()};
+  return title;
 }
 
 pID X11Backend::getWindowPID(wID id) {
@@ -180,6 +215,15 @@ pID X11Backend::getWindowPID(wID id) {
 
 std::string X11Backend::getWindowClass(wID id) {
   if (id == 0) return "";
+
+  {
+    auto it = windowInfoCache_.find(id);
+    if (it != windowInfoCache_.end() &&
+        std::chrono::steady_clock::now() - it->second.lastUpdate < WINDOW_CACHE_TTL) {
+      return it->second.className;
+    }
+  }
+
   Display *display = DisplayManager::GetDisplay();
   if (!display) return "";
 
@@ -196,6 +240,10 @@ std::string X11Backend::getWindowClass(wID id) {
     windowClass += classHint.res_name;
     XFree(classHint.res_name);
   }
+
+  auto &entry = windowInfoCache_[id];
+  entry.className = windowClass;
+  entry.lastUpdate = std::chrono::steady_clock::now();
   return windowClass;
 }
 

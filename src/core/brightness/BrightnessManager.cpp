@@ -1265,13 +1265,22 @@ double BrightnessManager::getBrightness(const std::string &monitor) {
     if (it != brightness.end()) return it->second;
 
     if (WindowManagerDetector::IsX11()) {
-        // XRandR output "Brightness" property (set by `xrandr --brightness`).
-        double xrandr_val = getBrightnessXrandr(monitor);
-        if (xrandr_val >= 0.0) return xrandr_val;
-
-        // Sysfs backlight is the actual hardware brightness.
+        // Sysfs backlight is the ACTUAL hardware brightness.
+        // XRandR "Brightness" property only reflects values set by xrandr --brightness.
+        // Check sysfs FIRST to get real hardware state.
         double sysfs_val = getBrightnessSysfs(monitor);
-        if (sysfs_val >= 0.0) return sysfs_val;  // B19: sysfs returns -1.0 on failure now
+        if (sysfs_val >= 0.0) {
+            hardwareBrightness[monitor] = sysfs_val;
+            return sysfs_val;  // B19: sysfs returns -1.0 on failure now
+        }
+
+        // XRandR output "Brightness" property (set by `xrandr --brightness`).
+        // Only use if user explicitly changed it (value != 1.0).
+        double xrandr_val = getBrightnessXrandr(monitor);
+        if (xrandr_val >= 0.0 && xrandr_val != 1.0) {
+            xrandrBrightness[monitor] = xrandr_val;
+            return xrandr_val;
+        }
 
         // Gamma ramp average is not a brightness measurement — skip it.
         // Default to 1.0 (system default, no change).
@@ -1284,6 +1293,40 @@ double BrightnessManager::getBrightness(const std::string &monitor) {
     }
 #endif
     return 1.0;  // B17: consistent "no data" sentinel is 1.0 (not 0.0)
+}
+
+// === SEPARATE HARDWARE vs XRANDR BRIGHTNESS GETTERS ===
+
+// Returns actual backlight level from sysfs [0,1], or -1.0 if unavailable
+double BrightnessManager::getHardwareBrightness(const string &monitor) {
+    if (WindowManagerDetector::IsX11()) {
+        double val = getBrightnessSysfs(monitor);
+        if (val >= 0.0) hardwareBrightness[monitor] = val;
+        return val;
+    }
+    return -1.0;
+}
+
+// Returns xrandr --brightness property value [0,1], or -1.0 if unavailable/default
+double BrightnessManager::getXrandrBrightness(const string &monitor) {
+    if (WindowManagerDetector::IsX11()) {
+        double val = getBrightnessXrandr(monitor);
+        if (val >= 0.0) xrandrBrightness[monitor] = val;
+        return val;
+    }
+    return -1.0;
+}
+
+double BrightnessManager::getHardwareBrightness(int monitorIndex) {
+    auto monitorName = getMonitor(monitorIndex);
+    if (monitorName.empty()) return -1.0;
+    return getHardwareBrightness(monitorName);
+}
+
+double BrightnessManager::getXrandrBrightness(int monitorIndex) {
+    auto monitorName = getMonitor(monitorIndex);
+    if (monitorName.empty()) return -1.0;
+    return getXrandrBrightness(monitorName);
 }
 
 // === GAMMA GETTERS ===

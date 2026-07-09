@@ -17,6 +17,18 @@ double BrightnessService::getBrightness(int monitorIndex) const {
     return monitorIndex >= 0 ? m_manager->getBrightness(monitorIndex) : m_manager->getBrightness();
 }
 
+double BrightnessService::getHardwareBrightness(int monitorIndex) const {
+    BR_DEBUG("getHardwareBrightness(monitor=%d)", monitorIndex);
+    if (!m_manager) return -1.0;
+    return monitorIndex >= 0 ? m_manager->getHardwareBrightness(monitorIndex) : m_manager->getHardwareBrightness("");
+}
+
+double BrightnessService::getXrandrBrightness(int monitorIndex) const {
+    BR_DEBUG("getXrandrBrightness(monitor=%d)", monitorIndex);
+    if (!m_manager) return -1.0;
+    return monitorIndex >= 0 ? m_manager->getXrandrBrightness(monitorIndex) : m_manager->getXrandrBrightness("");
+}
+
 void BrightnessService::setBrightness(double brightness, int monitorIndex) {
     BR_DEBUG("setBrightness(b=%f monitor=%d)", brightness, monitorIndex);
     if (!m_manager) return;

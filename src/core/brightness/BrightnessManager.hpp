@@ -85,6 +85,10 @@ public:
   double getBrightness();
   double getBrightness(const string &monitor);
   double getBrightness(int monitorIndex);
+  double getHardwareBrightness(const string &monitor);
+  double getHardwareBrightness(int monitorIndex);
+  double getXrandrBrightness(const string &monitor);
+  double getXrandrBrightness(int monitorIndex);
   // === RGB GAMMA OVERLOADS ===
   bool setGammaRGB(double red, double green, double blue); // All monitors
   bool setGammaRGB(const string &monitor, double red, double green,
@@ -264,6 +268,8 @@ private:
   bool setBrightnessXrandr(double brightness);
   double getBrightnessXrandr(const string &monitor);
   double getBrightnessSysfs(const string &monitor);
+  double getHardwareBrightness(const string &monitor);  // sysfs actual backlight
+  double getXrandrBrightness(const string &monitor);    // xrandr --brightness property
 
   bool setGammaXrandrRGB(const string &monitor, double red, double green,
                          double blue);
@@ -294,7 +300,9 @@ private:
   mutex settingsMutex;
 
   // Current state tracking
-  std::map<string, double> brightness;
+  std::map<string, double> brightness;        // combined/effective brightness (for backward compat)
+  std::map<string, double> hardwareBrightness; // actual backlight level from sysfs [0,1]
+  std::map<string, double> xrandrBrightness;   // xrandr --brightness property [0,1]
   std::map<string, int> temperature;
   vector<string> monitors;
   std::map<string, RGBColor> gammaRGB;

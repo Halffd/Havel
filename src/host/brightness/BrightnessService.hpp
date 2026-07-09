@@ -14,6 +14,8 @@ public:
 
     // Brightness
     double getBrightness(int monitorIndex = -1) const;
+    double getHardwareBrightness(int monitorIndex = -1) const;
+    double getXrandrBrightness(int monitorIndex = -1) const;
     void setBrightness(double brightness, int monitorIndex = -1);
     void increaseBrightness(double step, int monitorIndex = -1);
     void decreaseBrightness(double step, int monitorIndex = -1);

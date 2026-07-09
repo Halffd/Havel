@@ -81,6 +81,26 @@ void registerBrightnessModule(const VMApi& api) {
     catch (const std::exception& e) { debug("brightness.get error: {}", e.what()); return Value::makeDouble(0.0); }
   });
 
+  // brightness.getHardwareBrightness([monitor]) -> number (sysfs backlight)
+  HAVEL_REGISTER_FUNCTION(api, "brightness.getHardwareBrightness", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    auto svc = getService(api);
+    if (!svc) return Value::makeDouble(-1.0);
+    int mi = monitorIndex(args);
+    try { return Value::makeDouble(svc->getHardwareBrightness(mi)); }
+    catch (const std::exception& e) { debug("brightness.getHardwareBrightness error: {}", e.what()); return Value::makeDouble(-1.0); }
+  });
+
+  // brightness.getXrandrBrightness([monitor]) -> number (xrandr --brightness property)
+  HAVEL_REGISTER_FUNCTION(api, "brightness.getXrandrBrightness", [api](const auto& rawArgs) {
+    auto args = stripReceiver(api, rawArgs);
+    auto svc = getService(api);
+    if (!svc) return Value::makeDouble(-1.0);
+    int mi = monitorIndex(args);
+    try { return Value::makeDouble(svc->getXrandrBrightness(mi)); }
+    catch (const std::exception& e) { debug("brightness.getXrandrBrightness error: {}", e.what()); return Value::makeDouble(-1.0); }
+  });
+
   // brightness.set(value [, monitor])
   HAVEL_REGISTER_FUNCTION(api, "brightness.set", [api](const auto& rawArgs) {
     auto args = stripReceiver(api, rawArgs);
@@ -481,6 +501,8 @@ void registerBrightnessModule(const VMApi& api) {
   });
   api.setField(obj, MODULE_MARKER, Value::makeBool(true));
   api.setField(obj, "get", api.makeFunctionRef("brightness.get"));
+  api.setField(obj, "getHardwareBrightness", api.makeFunctionRef("brightness.getHardwareBrightness"));
+  api.setField(obj, "getXrandrBrightness", api.makeFunctionRef("brightness.getXrandrBrightness"));
   api.setField(obj, "set", api.makeFunctionRef("brightness.set"));
   api.setField(obj, "increase", api.makeFunctionRef("brightness.increase"));
   api.setField(obj, "decrease", api.makeFunctionRef("brightness.decrease"));

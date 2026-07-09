@@ -354,7 +354,7 @@ uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (U
   bool suspension_requested_ = false; // True if suspension needed
   uint8_t suspension_reason_ = 0; // Why is it suspending? (SuspensionReason enum value)
   void* suspension_context_ = nullptr; // Context pointer (thread_id, channel*, etc)
-  bool executing_in_fiber_ = false; // True when executeOneStep runs with non-null current_fiber
+  Fiber* current_executing_fiber_ = nullptr; // Set when executing inside a fiber context
   std::atomic<bool> jit_yield_requested_{false}; // Scheduler sets this to preempt JIT
   std::function<void()> yield_callback_; // Called periodically to allow scheduler goroutine processing
 

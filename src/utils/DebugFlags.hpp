@@ -6,5 +6,6 @@ namespace havel::debugging {
 inline bool debug_io = false;
 inline bool debug_hotkeys = false;
 inline bool debug_evdev = false;
+inline bool debug_event_listener = false;
 
 }

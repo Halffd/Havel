@@ -73,20 +73,16 @@ EventListener::EventListener() {
   signalHandler->InstallAsyncHandlers();
   shutdownFd = eventfd(0, EFD_NONBLOCK);
 
-  // Register atexit handler for emergency cleanup
-    static bool atexitRegistered = false;
-    if (!atexitRegistered) {
-        std::atexit([]() {
-            if (debugging::debug_io) debug("atexit: emergency evdev ungrab");
-            EmergencyUngrabAllEvdev();
-        });
-        atexitRegistered = true;
-    }
+  static bool atexitRegistered = false;
+  if (!atexitRegistered) {
+    std::atexit([]() { EmergencyUngrabAllEvdev(); });
+    atexitRegistered = true;
+  }
 }
 
 EventListener::~EventListener() {
-  if (backend_) backend_->UngrabAllDevices();
   Stop();
+  if (backend_) backend_->UngrabAllDevices();
   if (shutdownFd >= 0) close(shutdownFd);
 }
 
@@ -188,6 +184,18 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
     return false;
   }
 
+  // Read grab delay from config (in milliseconds)
+  int grabDelayMs = 0;
+  try {
+    auto& config = havel::Configs::Get();
+    grabDelayMs = config.Get<int>("IO.GrabDelay", 0);
+  } catch (...) {
+    // Config not available, use default (0)
+  }
+
+  // Read debug flag for event listener
+  bool debugEventListener = havel::debugging::debug_event_listener;
+
   this->grabDevices = grabDevices;
 
   SetupSignalHandling();
@@ -219,6 +227,12 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
         } else {
           debug("EventListener: Grabbed device: {}", path);
         }
+      }
+      
+      // Add grab delay if configured - allows grab to settle before event loop starts
+      if (grabDelayMs > 0) {
+        if (havel::debugging::debug_event_listener) debug("EventListener: Waiting {}ms for grab to settle", grabDelayMs);
+        std::this_thread::sleep_for(std::chrono::milliseconds(grabDelayMs));
       }
     }
   }
@@ -2154,6 +2168,7 @@ void EventListener::ForceUngrabAllDevices() {
 
 void EventListener::RequestGracefulShutdown() {
   ReleaseAllVirtualKeys();
+  if (backend_) backend_->UngrabAllDevices();
   running.store(false);
   shutdown.store(true);
   if (shutdownFd >= 0) {

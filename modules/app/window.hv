@@ -745,6 +745,311 @@ fn findByPid(pidVal) {
 	null
 }
 
+// ============================================================
+// Spec-based window finding — supports "title chrome", "class steam",
+// "cmd konsole", "pid 1234", "id 10000", etc.
+// ============================================================
+
+fn _parseSpec(spec) {
+	if spec == "" { return null }
+	_parts = spec.split(" ")
+	if #_parts < 2 { return {type: "title", value: spec, substring: true} }
+	_prefix = _parts[0].toLowerCase()
+	_value = _parts.slice(1).join(" ")
+	if _prefix == "title" { return {type: "title", value: _value, substring: true} }
+	else if _prefix == "class" { return {type: "class", value: _value, substring: true} }
+	else if _prefix == "cmd" { return {type: "cmd", value: _value, substring: true} }
+	else if _prefix == "exe" { return {type: "exe", value: _value, substring: true} }
+	else if _prefix == "pid" { return {type: "pid", value: int(_value)} }
+	else if _prefix == "id" { return {type: "id", value: int(_value)} }
+	else { return {type: "title", value: spec, substring: true} }
+}
+
+fn _matchWindow(_w, _spec) {
+	if _spec.type == "title" {
+		_title = _w.title().toLowerCase()
+		if _spec.substring { return _title.contains(_spec.value.toLowerCase()) }
+		return _title == _spec.value.toLowerCase()
+	}
+	else if _spec.type == "class" {
+		_class = _w.className().toLowerCase()
+		if _spec.substring { return _class.contains(_spec.value.toLowerCase()) }
+		return _class == _spec.value.toLowerCase()
+	}
+	else if _spec.type == "cmd" {
+		_cmd = _w.cmdline().toLowerCase()
+		if _spec.substring { return _cmd.contains(_spec.value.toLowerCase()) }
+		return _cmd == _spec.value.toLowerCase()
+	}
+	else if _spec.type == "exe" {
+		_exe = _w.exe().toLowerCase()
+		if _spec.substring { return _exe.contains(_spec.value.toLowerCase()) }
+		return _exe == _spec.value.toLowerCase()
+	}
+	else if _spec.type == "pid" {
+		return _w.pid() == _spec.value
+	}
+	else if _spec.type == "id" {
+		return _w.id == _spec.value
+	}
+	false
+}
+
+fn findBySpec(spec) {
+	_spec = _parseSpec(spec)
+	if _spec == null { return null }
+	for _id in _allWindows() {
+		_w = Window(_id)
+		if _matchWindow(_w, _spec) { return _w }
+	}
+	null
+}
+
+fn findAllBySpec(spec) {
+	_spec = _parseSpec(spec)
+	if _spec == null { return [] }
+	_results = []
+	for _id in _allWindows() {
+		_w = Window(_id)
+		if _matchWindow(_w, _spec) { _results.push(_w) }
+	}
+	_results
+}
+
+// ============================================================
+// Spec-aware module-level functions
+// ============================================================
+
+fn _resolveTarget(target) {
+	if typeof(target) == "int" { return Window(target) }
+	_w = findBySpec(target)
+	_w
+}
+
+// ============================================================
+// Spec-aware module-level window operations
+// ============================================================
+
+fn activate(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.activate()
+}
+
+fn close(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.close()
+}
+
+fn minimize(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.minimize()
+}
+
+fn maximize(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.maximize()
+}
+
+fn focus(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.activate()
+}
+
+fn closeWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.close()
+}
+
+fn killWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.kill()
+}
+
+fn minimizeWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.minimize()
+}
+
+fn maximizeWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.maximize()
+}
+
+fn restoreWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.restore()
+}
+
+fn focusWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.activate()
+}
+
+fn raiseWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.raise()
+}
+
+fn lowerWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.lower()
+}
+
+fn hideWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.hide()
+}
+
+fn showWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.show()
+}
+
+fn closeAllBySpec(spec) {
+	_wins = findAllBySpec(spec)
+	for _w in _wins {
+		_w.close()
+	}
+}
+
+fn minimizeAllBySpec(spec) {
+	_wins = findAllBySpec(spec)
+	for _w in _wins {
+		_w.minimize()
+	}
+}
+
+fn maximizeAllBySpec(spec) {
+	_wins = findAllBySpec(spec)
+	for _w in _wins {
+		_w.maximize()
+	}
+}
+
+fn focusAllBySpec(spec) {
+	_wins = findAllBySpec(spec)
+	for _w in _wins {
+		_w.activate()
+	}
+}
+
+fn moveToDesktop(target, desktopNum) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveToDesktop(desktopNum)
+}
+
+fn setOpacity(target, value) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.opacity(value)
+}
+
+fn moveWindow(target, x, y) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.move(x, y)
+}
+
+fn resizeWindow(target, w, h) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.resize(w, h)
+}
+
+fn moveResizeWindow(target, x, y, w, h) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveResize(x, y, w, h)
+}
+
+fn centerWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.center()
+}
+
+fn moveToCorner(target, corner) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveToCorner(corner)
+}
+
+fn moveToMonitor(target, monitorIndex) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveToMonitor(monitorIndex)
+}
+
+fn snapWindow(target, position) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.snap(position)
+}
+
+fn moveToDesktopSpec(target, desktopNum) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.moveToDesktop(desktopNum)
+}
+
+fn fullscreenWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.fullscreen()
+}
+
+fn toggleFullscreenWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.toggleFullscreen()
+}
+
+fn alwaysOnTopWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.alwaysOnTop()
+}
+
+fn alwaysOnBottomWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.alwaysOnBottom()
+}
+
+fn floatingWindow(target) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.floating()
+}
+
+fn opacityWindow(target, value) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.opacity(value)
+}
+
+fn snapWindow(target, position) {
+	_w = _resolveTarget(target)
+	if _w == null { return false }
+	_w.snap(position)
+}
+
 fn groupNames() {
 	_wins = _allWindows()
 	_groups = {}

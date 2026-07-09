@@ -355,13 +355,6 @@ modeManager(std::make_shared<ModeManager>())
 
   void HotkeyManager::cleanup()
   {
-    // Stop EventListener FIRST to prevent callbacks during cleanup
-    if (io && io->GetEventListener())
-    {
-      if (debugging::debug_hotkeys) debug("HotkeyManager::cleanup() - stopping EventListener");
-      io->GetEventListener()->Stop();
-    }
-
     // Clear callbacks in IO to prevent dangling this pointers
     if (io)
     {

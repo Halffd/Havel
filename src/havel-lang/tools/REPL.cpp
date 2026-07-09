@@ -152,6 +152,18 @@ std::string highlightForReadline(const char* line) {
 
 } // anonymous namespace
 
+// Helper to parse boolean values for :set command
+static bool parseBool(const std::string& value, const std::string& option) {
+  if (value.empty()) return true;  // Default to ON if no value given
+  std::string v = value;
+  std::transform(v.begin(), v.end(), v.begin(), ::tolower);
+  if (v == "on" || v == "true" || v == "1" || v == "yes" || v == "y") return true;
+  if (v == "off" || v == "false" || v == "0" || v == "no" || v == "n") return false;
+  // If it's not a recognized boolean, default to true and warn
+  std::cerr << "[REPL] Warning: unrecognized value for " << option << ": " << value << " (using ON)\n";
+  return true;
+  }
+
 #ifdef HAVE_READLINE
 static int visible_length(const char *s) {
     int len = 0;
@@ -695,15 +707,101 @@ bool REPL::handleCommand(const std::string& input) {
   return true;
   }
 
-  if (input == ":log") {
-    if (outputLog_.is_open()) {
-      std::cout << "Output log: " << config_.outputLogFile << "\n";
-    } else {
-      std::cout << "Output logging is disabled\n";
+if (input == ":log") {
+      if (outputLog_.is_open()) {
+        std::cout << "Output log: " << config_.outputLogFile << "\n";
+      } else {
+        std::cout << "Output logging is disabled\n";
+      }
+      std::cout << "History file: " << historyFilePath_ << "\n";
+      return true;
     }
-    std::cout << "History file: " << historyFilePath_ << "\n";
-    return true;
-  }
+
+    if (input.rfind(":set", 0) == 0) {
+      std::string rest = input.substr(4);
+      while (!rest.empty() && rest.front() == ' ') rest.erase(0, 1);
+      if (rest.empty()) {
+        // Show all settings
+        std::cout << "Current settings:\n";
+        std::cout << "  bytecode: " << (config_.debugBytecode ? "ON" : "OFF") << "\n";
+        std::cout << "  parser: " << (config_.debugParser ? "ON" : "OFF") << "\n";
+        std::cout << "  ast: " << (config_.debugAst ? "ON" : "OFF") << "\n";
+        std::cout << "  lexer: " << (config_.debugLexer ? "ON" : "OFF") << "\n";
+        std::cout << "  bytecode: " << (config_.debugBytecode ? "ON" : "OFF") << "\n";
+        std::cout << "  prompt: \"" << config_.prompt << "\"\n";
+        std::cout << "  continuePrompt: \"" << config_.continuePrompt << "\"\n";
+        std::cout << "  outputLogFile: " << (config_.outputLogFile.empty() ? "(none)" : config_.outputLogFile) << "\n";
+        std::cout << "  historyFile: " << config_.historyFile << "\n";
+        return true;
+      }
+      // Parse set option
+      size_t spacePos = rest.find(' ');
+      std::string option = rest.substr(0, spacePos);
+      std::string value = (spacePos != std::string::npos) ? rest.substr(spacePos + 1) : "";
+      while (!value.empty() && value.front() == ' ') value.erase(0, 1);
+      
+      if (option == "bytecode") {
+        config_.debugBytecode = parseBool(value, "bytecode");
+        std::cout << "Bytecode debug: " << (config_.debugBytecode ? "ON" : "OFF") << "\n";
+        return true;
+      }
+      if (option == "parser") {
+        config_.debugParser = parseBool(value, "parser");
+        std::cout << "Parser debug: " << (config_.debugParser ? "ON" : "OFF") << "\n";
+        return true;
+      }
+      if (option == "ast") {
+        config_.debugAst = parseBool(value, "ast");
+        std::cout << "AST debug: " << (config_.debugAst ? "ON" : "OFF") << "\n";
+        return true;
+      }
+      if (option == "lexer") {
+        config_.debugLexer = parseBool(value, "lexer");
+        std::cout << "Lexer debug: " << (config_.debugLexer ? "ON" : "OFF") << "\n";
+        return true;
+      }
+      if (option == "bytecode") {
+        config_.debugBytecode = parseBool(value, "bytecode");
+        std::cout << "Bytecode debug: " << (config_.debugBytecode ? "ON" : "OFF") << "\n";
+        return true;
+      }
+      if (option == "prompt") {
+        config_.prompt = value;
+        std::cout << "Prompt set to: \"" << config_.prompt << "\"\n";
+        return true;
+      }
+      if (option == "continuePrompt") {
+        config_.continuePrompt = value;
+        std::cout << "Continue prompt set to: \"" << config_.continuePrompt << "\"\n";
+        return true;
+      }
+      if (option == "outputLogFile") {
+        config_.outputLogFile = value;
+        if (!value.empty()) {
+          if (outputLog_.is_open()) outputLog_.close();
+          outputLog_.open(value, std::ios::app);
+          if (!outputLog_.is_open()) {
+            printError("Failed to open output log file: " + value);
+          } else {
+            std::cout << "Output log file set to: " << value << "\n";
+          }
+        } else {
+          if (outputLog_.is_open()) outputLog_.close();
+          std::cout << "Output logging disabled\n";
+        }
+        return true;
+      }
+      if (option == "historyFile") {
+        config_.historyFile = value;
+        if (!value.empty()) {
+          historyFilePath_ = value;
+        }
+        std::cout << "History file set to: " << value << "\n";
+        return true;
+      }
+      printError("Unknown option: " + option);
+      return true;
+    }
 
   if (input.rfind(":load ", 0) == 0 || input.rfind(":l ", 0) == 0) {
     std::string filename = input.substr(input.find(' ') + 1);
@@ -754,6 +852,11 @@ bool REPL::execute(const std::string& code) {
   }
 
   currentCode_ = code;
+
+  // Check for REPL commands first
+  if (handleCommand(code)) {
+    return true;
+  }
 
   try {
     // Compile and execute only the new code

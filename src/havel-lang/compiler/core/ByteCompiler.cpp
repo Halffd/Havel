@@ -1536,7 +1536,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
                 // TCO: Don't POP if in tail position (value is return value)
                 // Also don't POP after yield expression - yield value is returned to caller
                 bool is_yield = expr_stmt.expression->kind == ast::NodeType::YieldExpression;
-                if (!in_tail_position_ && !is_yield) {
+                if (!tail_before && !is_yield) {
                     emit(OpCode::POP);
       }
     }

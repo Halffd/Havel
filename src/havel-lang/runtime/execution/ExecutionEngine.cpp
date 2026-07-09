@@ -264,8 +264,7 @@ vm_->saveFiberState(g->fiber);
             vm_->loadFiberState(g->fiber);
             // If resuming from an await suspension, replace the placeholder null
             // on the stack with the actual resume_value from the WaitHandle
-            if (g->wait_handle.type != Scheduler::AwaitableType::NONE &&
-                g->wait_handle.type != Scheduler::AwaitableType::SLEEP) {
+            if (g->wait_handle.type != Scheduler::AwaitableType::NONE) {
                 vm_->replaceStackTop(g->wait_handle.resume_value);
                 g->wait_handle.clear();
             }

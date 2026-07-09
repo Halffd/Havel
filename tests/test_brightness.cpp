@@ -11,6 +11,38 @@
 
 using namespace havel;
 
+// Save/restore hardware state to prevent leaving screen white/corrupted
+struct MonitorState {
+    std::string monitor;
+    double brightness = 1.0;
+    double gammaR = 1.0, gammaG = 1.0, gammaB = 1.0;
+    int temperature = 6500;
+    double shadowLift = 0.0;
+    bool valid = false;
+
+    explicit MonitorState(BrightnessManager &m, const std::string &mon) : monitor(mon) {
+        if (mon.empty()) return;
+        auto mons = m.getConnectedMonitors();
+        if (std::find(mons.begin(), mons.end(), mon) == mons.end()) return;
+        brightness = m.getBrightness(mon);
+        auto g = m.getGammaRGB(mon);
+        gammaR = g.red; gammaG = g.green; gammaB = g.blue;
+        temperature = m.getTemperature(mon);
+        shadowLift = m.getShadowLift(mon);
+        valid = true;
+    }
+
+    ~MonitorState() {
+        if (!valid) return;
+        BrightnessManager mgr;
+        mgr.init();
+        mgr.setBrightness(monitor, brightness);
+        mgr.setGammaRGB(monitor, gammaR, gammaG, gammaB);
+        mgr.setTemperature(monitor, temperature);
+        mgr.setShadowLift(monitor, shadowLift);
+    }
+};
+
 static int passed = 0;
 static int failed = 0;
 
@@ -91,6 +123,13 @@ static void test_setBrightness_doesnt_crash() {
     TEST("setBrightness doesn't crash");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS();
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.setBrightness(0.5);
     mgr.setBrightness("", 0.5);
     mgr.setBrightness("nonexistent", 1.0);
@@ -123,6 +162,13 @@ static void test_setGammaRGB_doesnt_crash() {
     TEST("setGammaRGB doesn't crash");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS();
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.setGammaRGB(1.0, 1.0, 1.0);
     mgr.setGammaRGB("", 1.0, 1.0, 1.0);
     mgr.setGammaRGB("nonexistent", 1.0, 1.0, 1.0);
@@ -139,6 +185,7 @@ static void test_gammaRGB_cache_stores_and_retrieves_values() {
         return;
     }
     std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.setGammaRGB(m, 0.8, 0.7, 0.9);
     auto g = mgr.getGammaRGB(m);
     CHECK_EQ(g.red, 0.8);
@@ -161,6 +208,13 @@ static void test_setTemperature_doesnt_crash() {
     TEST("setTemperature doesn't crash");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS();
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.setTemperature(6500);
     mgr.setTemperature("", 6500);
     mgr.setTemperature("nonexistent", 6500);
@@ -193,6 +247,13 @@ static void test_setShadowLift_doesnt_crash() {
     TEST("setShadowLift doesn't crash");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS();
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.setShadowLift(0.5);
     mgr.setShadowLift("", 0.5);
     mgr.setShadowLift("nonexistent", 0.5);
@@ -209,6 +270,7 @@ static void test_shadowLift_cache_stores_and_retrieves_values() {
         return;
     }
     std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.setShadowLift(m, 0.3);
     double lift = mgr.getShadowLift(m);
     CHECK_EQ(lift, 0.3);
@@ -219,6 +281,13 @@ static void test_increase_decreaseGamma_doesnt_crash() {
     TEST("increase/decreaseGamma doesn't crash");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS(); // skip if no real monitors
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.increaseGamma(10);
     mgr.decreaseGamma(5);
     mgr.increaseGamma(50);
@@ -230,6 +299,13 @@ static void test_increase_decreaseShadowLift_doesnt_crash() {
     TEST("increase/decreaseShadowLift doesn't crash");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS(); // skip if no real monitors
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.increaseShadowLift(10);
     mgr.decreaseShadowLift(5);
     PASS();
@@ -239,6 +315,13 @@ static void test_combined_setBrightnessAndRGB_operations_dont_crash() {
     TEST("combined setBrightnessAnd* operations don't crash");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS(); // skip if no real monitors
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.setBrightnessAndRGB(0.5, 1.0, 1.0, 1.0);
     mgr.setBrightnessAndTemperature(0.5, 6500);
     mgr.setBrightnessAndShadowLift(0.5, 0.2);
@@ -249,6 +332,13 @@ static void test_day_night_mode_enable_and_disable() {
     TEST("day/night mode enable and disable");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS(); // skip if no real monitors
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     BrightnessManager::DayNightSettings settings;
     settings.dayBrightness = 1.0;
     settings.nightBrightness = 0.3;
@@ -267,6 +357,13 @@ static void test_switchToDay_switchToNight_dont_crash() {
     TEST("switchToDay/switchToNight don't crash");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS(); // skip if no real monitors
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.switchToDay();
     mgr.switchToNight();
     PASS();
@@ -309,6 +406,13 @@ static void test_setTemperature_accepts_boundary_values() {
     TEST("setTemperature accepts boundary values");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS(); // skip if no real monitors
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     mgr.setTemperature(1000);
     mgr.setTemperature(40000);
     PASS();
@@ -318,12 +422,19 @@ static void test_setBrightness_clamps_to_0_1() {
     TEST("setBrightness clamps to [0, 1]");
     BrightnessManager mgr;
     mgr.init();
+    auto monitors = mgr.getConnectedMonitors();
+    if (monitors.empty()) {
+        PASS(); // skip if no real monitors
+        return;
+    }
+    std::string m = monitors[0];
+    MonitorState restore(mgr, m);
     // Negative brightness errors (not clamps) — returns false
-    CHECK_FALSE(mgr.setBrightness(-0.5));
+    CHECK_FALSE(mgr.setBrightness(m, -0.5));
     // Values >1.0 clamp to 1.0
-    CHECK_TRUE(mgr.setBrightness(2.5));
+    CHECK_TRUE(mgr.setBrightness(m, 2.5));
     // Cache should store the clamped value
-    CHECK_EQ(mgr.getBrightness(""), 1.0);  // primary monitor
+    CHECK_EQ(mgr.getBrightness(m), 1.0);
     PASS();
 }
 
@@ -356,6 +467,18 @@ int main() {
     test_cached_temperature_and_shadowLift_survive_init();
     test_setTemperature_accepts_boundary_values();
     test_setBrightness_clamps_to_0_1();
+
+    // Global cleanup: restore defaults on all monitors
+    {
+        BrightnessManager cleanup;
+        cleanup.init();
+        for (const auto &mon : cleanup.getConnectedMonitors()) {
+            cleanup.setBrightness(mon, 1.0);
+            cleanup.setGammaRGB(mon, 1.0, 1.0, 1.0);
+            cleanup.setTemperature(mon, 6500);
+            cleanup.setShadowLift(mon, 0.0);
+        }
+    }
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===" << std::endl;
     return failed == 0 ? 0 : 1;

@@ -268,8 +268,6 @@ private:
   bool setBrightnessXrandr(double brightness);
   double getBrightnessXrandr(const string &monitor);
   double getBrightnessSysfs(const string &monitor);
-  double getHardwareBrightness(const string &monitor);  // sysfs actual backlight
-  double getXrandrBrightness(const string &monitor);    // xrandr --brightness property
 
   bool setGammaXrandrRGB(const string &monitor, double red, double green,
                          double blue);

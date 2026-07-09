@@ -47,6 +47,7 @@ fn _addrLen(path) {
 }
 
 fn UnixSocket() {
+    print("[socket] UnixSocket() called")
     self = {fd: -1, connected: false, path: ""}
 
     fn _doConnect(self, path) {
@@ -69,6 +70,7 @@ fn UnixSocket() {
             self.fd = fd
             self.connected = true
             self.path = path
+            print("[socket] connected ok fd=${fd}")
             return true
         }
         _estr = ffi.strerror(_err)

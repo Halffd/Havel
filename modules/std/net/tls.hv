@@ -19,29 +19,35 @@ _ssl = ffi.open("libssl.so.3")
 if _ssl == null { _ssl = ffi.open("libssl.so.1.1") }
 if _ssl == null { _ssl = ffi.open("libssl.so") }
 
-if _ssl == null {
-    // Graceful fallback warning, but we define the functions to return error
+_crypto = ffi.open("libcrypto.so.3")
+if _crypto == null { _crypto = ffi.open("libcrypto.so.1.1") }
+if _crypto == null { _crypto = ffi.open("libcrypto.so") }
+
+_sslAvailable = _ssl != null && _crypto != null
+
+if !_sslAvailable {
+    // Graceful degradation - define stub functions that return null
     print("WARNING: OpenSSL library not found. TLS/SSL will not be available.")
 }
 
-_TLS_method           = ffi.sym(_ssl, "TLS_method")
-_TLS_client_method    = ffi.sym(_ssl, "TLS_client_method")
-_TLS_server_method    = ffi.sym(_ssl, "TLS_server_method")
-_SSL_CTX_new          = ffi.sym(_ssl, "SSL_CTX_new")
-_SSL_CTX_free         = ffi.sym(_ssl, "SSL_CTX_free")
-_SSL_new              = ffi.sym(_ssl, "SSL_new")
-_SSL_free             = ffi.sym(_ssl, "SSL_free")
-_SSL_set_fd           = ffi.sym(_ssl, "SSL_set_fd")
-_SSL_connect          = ffi.sym(_ssl, "SSL_connect")
-_SSL_accept           = ffi.sym(_ssl, "SSL_accept")
-_SSL_write            = ffi.sym(_ssl, "SSL_write")
-_SSL_read             = ffi.sym(_ssl, "SSL_read")
-_SSL_shutdown         = ffi.sym(_ssl, "SSL_shutdown")
-_SSL_get_error        = ffi.sym(_ssl, "SSL_get_error")
+_TLS_method           = _sslAvailable ? ffi.sym(_ssl, "TLS_method") : null
+_TLS_client_method    = _sslAvailable ? ffi.sym(_ssl, "TLS_client_method") : null
+_TLS_server_method    = _sslAvailable ? ffi.sym(_ssl, "TLS_server_method") : null
+_SSL_CTX_new          = _sslAvailable ? ffi.sym(_ssl, "SSL_CTX_new") : null
+_SSL_CTX_free         = _sslAvailable ? ffi.sym(_ssl, "SSL_CTX_free") : null
+_SSL_new              = _sslAvailable ? ffi.sym(_ssl, "SSL_new") : null
+_SSL_free             = _sslAvailable ? ffi.sym(_ssl, "SSL_free") : null
+_SSL_set_fd           = _sslAvailable ? ffi.sym(_ssl, "SSL_set_fd") : null
+_SSL_connect          = _sslAvailable ? ffi.sym(_ssl, "SSL_connect") : null
+_SSL_accept           = _sslAvailable ? ffi.sym(_ssl, "SSL_accept") : null
+_SSL_write            = _sslAvailable ? ffi.sym(_ssl, "SSL_write") : null
+_SSL_read             = _sslAvailable ? ffi.sym(_ssl, "SSL_read") : null
+_SSL_shutdown         = _sslAvailable ? ffi.sym(_ssl, "SSL_shutdown") : null
+_SSL_get_error        = _sslAvailable ? ffi.sym(_ssl, "SSL_get_error") : null
 
-_SSL_CTX_use_certificate_file = ffi.sym(_ssl, "SSL_CTX_use_certificate_file")
-_SSL_CTX_use_PrivateKey_file  = ffi.sym(_ssl, "SSL_CTX_use_PrivateKey_file")
-_SSL_CTX_check_private_key    = ffi.sym(_ssl, "SSL_CTX_check_private_key")
+_SSL_CTX_use_certificate_file = _sslAvailable ? ffi.sym(_ssl, "SSL_CTX_use_certificate_file") : null
+_SSL_CTX_use_PrivateKey_file  = _sslAvailable ? ffi.sym(_ssl, "SSL_CTX_use_PrivateKey_file") : null
+_SSL_CTX_check_private_key    = _sslAvailable ? ffi.sym(_ssl, "SSL_CTX_check_private_key") : null
 
 SSL_FILETYPE_PEM = 1
 
@@ -74,10 +80,12 @@ fn _bufToStr(buf, n) {
 // ===================================================================
 
 fn TLSConnection(sslCtx, sslPtr, tcpConn) {
+    if !_sslAvailable { return null }
+    
     self = {ctx: sslCtx, ssl: sslPtr, conn: tcpConn, closed: false}
 
     fn _send(data) {
-        if self.closed || _ssl == null { return -1 }
+        if self.closed { return -1 }
         n = #data
         buf = _strToBuf(data)
         // int SSL_write(SSL *ssl, const void *buf, int num)
@@ -87,7 +95,7 @@ fn TLSConnection(sslCtx, sslPtr, tcpConn) {
     }
 
     fn _recv(maxSize) {
-        if self.closed || _ssl == null { return null }
+        if self.closed { return null }
         if maxSize == null { maxSize = 4096 }
         buf = ffi.allocBytes(maxSize)
         // int SSL_read(SSL *ssl, void *buf, int num)
@@ -132,7 +140,7 @@ fn TLSConnection(sslCtx, sslPtr, tcpConn) {
 
     fn _close() {
         if !self.closed {
-            if _ssl != null && self.ssl != 0 {
+            if _sslAvailable && self.ssl != 0 {
                 ffi.call(_SSL_shutdown, "int32", ["pointer"], self.ssl)
                 ffi.call(_SSL_free, "void", ["pointer"], self.ssl)
             }
@@ -157,10 +165,12 @@ fn TLSConnection(sslCtx, sslPtr, tcpConn) {
 // ===================================================================
 
 fn TLSServer(sslCtx, tcpServer) {
+    if !_sslAvailable { return null }
+    
     self = {ctx: sslCtx, server: tcpServer, closed: false}
 
     fn _accept() {
-        if self.closed || _ssl == null { return null }
+        if self.closed { return null }
         tcpConn = self.server.accept()
         if tcpConn == null { return null }
 
@@ -173,8 +183,8 @@ fn TLSServer(sslCtx, tcpServer) {
         ffi.call(_SSL_set_fd, "int32", ["pointer", "int32"], sslPtr, tcpConn.fd)
         
         // int SSL_accept(SSL *ssl)
-  rc = ffi.call(_SSL_accept, "int32", ["pointer"], sslPtr)
-  if rc <= 0 {
+        rc = ffi.call(_SSL_accept, "int32", ["pointer"], sslPtr)
+        if rc <= 0 {
             ffi.call(_SSL_free, "void", ["pointer"], sslPtr)
             tcpConn.close()
             return null
@@ -186,7 +196,7 @@ fn TLSServer(sslCtx, tcpServer) {
     fn _close() {
         if !self.closed {
             self.server.close()
-            if _ssl != null && self.ctx != 0 {
+            if _sslAvailable && self.ctx != 0 {
                 ffi.call(_SSL_CTX_free, "void", ["pointer"], self.ctx)
             }
             self.closed = true
@@ -206,7 +216,7 @@ fn TLSServer(sslCtx, tcpServer) {
 // ===================================================================
 
 fn connect(tcpConn) {
-    if _ssl == null || tcpConn == null { return null }
+    if !_sslAvailable || tcpConn == null { return null }
 
     // Create SSL Context
     method = ffi.call(_TLS_client_method, "pointer", [])
@@ -224,8 +234,8 @@ fn connect(tcpConn) {
     ffi.call(_SSL_set_fd, "int32", ["pointer", "int32"], sslPtr, tcpConn.fd)
 
     // int SSL_connect(SSL *ssl)
-  rc = ffi.call(_SSL_connect, "int32", ["pointer"], sslPtr)
-  if rc <= 0 {
+    rc = ffi.call(_SSL_connect, "int32", ["pointer"], sslPtr)
+    if rc <= 0 {
         ffi.call(_SSL_free, "void", ["pointer"], sslPtr)
         ffi.call(_SSL_CTX_free, "void", ["pointer"], ctx)
         return null
@@ -235,7 +245,7 @@ fn connect(tcpConn) {
 }
 
 fn listen(tcpServer, certFile, keyFile) {
-    if _ssl == null || tcpServer == null { return null }
+    if !_sslAvailable || tcpServer == null { return null }
 
     method = ffi.call(_TLS_server_method, "pointer", [])
     if method == 0 || method == null { return null }

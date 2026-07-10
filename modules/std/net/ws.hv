@@ -172,7 +172,7 @@ fn connect(url, timeoutMs) {
 // ===================================================================
 
 fn WSServer(host, port) {
-    self = {host: host, port: port, connHandler: null, tcpServer: null, running: false}
+    self = {host: host, port: port, connHandler: null, tcpServer: null, running: false, acceptTimeoutMs: 1000}
 
     fn _onConnection(handler) {
         self.connHandler = handler
@@ -233,10 +233,25 @@ fn WSServer(host, port) {
 
         wsConn = WSConnection(client, false)
         if self.connHandler != null {
-            // Launch in a background thread or let the handler loop
-            // In Havel VM scheduler, fiber runtime handles co-operative multi-tasking
-            // We spawn a goroutine if the platform supports it, or call the handler
-            self.connHandler(wsConn)
+            // Handle each connection in a goroutine
+            go {
+                self.connHandler(wsConn)
+            }
+        }
+    }
+
+    fn _acceptLoop() {
+        while self.running {
+            ready = sock.pollRead(self.tcpServer.fd, self.acceptTimeoutMs)
+            if !self.running { break }
+            if ready {
+                client = sock.accept(self.tcpServer.fd)
+                if client != null && client.fd >= 0 {
+                    go {
+                        _handleUpgrade(TCPConnection(client.fd, client.remote))
+                    }
+                }
+            }
         }
     }
 
@@ -244,11 +259,9 @@ fn WSServer(host, port) {
         self.tcpServer = tcp.listen(self.host, self.port)
         if self.tcpServer == null { return false }
         self.running = true
-        while self.running {
-            client = self.tcpServer.accept()
-            if client != null {
-                _handleUpgrade(client)
-            }
+        
+        go {
+            _acceptLoop()
         }
         true
     }

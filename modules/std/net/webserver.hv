@@ -18,6 +18,8 @@
 
 use "net/http" as http
 use "fsuv" as fs
+use "net/tcp" as tcp
+use "net/socket" as sock
 use json
 
 // ===================================================================
@@ -290,113 +292,124 @@ fn WebApplication() {
     }
 
     fn _listen(host, port) {
-        srv = http.server(host, port)
-        if srv == null { return false }
+        self.tcpServer = tcp.listen(host, port)
+        if self.tcpServer == null { return false }
+        self.running = true
         
-        srv.setDefault(fn(httpReq) {
-            res = WebResponse(srv.tcpServer.accept()) // wait, actually http server creates res inside default handler
-            // But our http server doesn't pass the connection.
-            // Oh! Let's adapt HTTPServer to pass a clean request/response handler.
-            // Actually, we can just run http.server directly in a customized loop inside webserver.
-            // Let's implement the HTTP connection accept loop here directly!
-        })
+        // Accept loop with timeout for graceful shutdown
+        self.acceptTimeoutMs = 1000
         
-        // Let's build a clean, custom HTTP listen loop so we are fully in control!
-        use "net/tcp" as tcp
-        tcpSrv = tcp.listen(host, port)
-        if tcpSrv == null { return false }
-        
-        while true {
-            client = tcpSrv.accept()
-            if client != null {
-                // Read Request-Line
-                reqLine = client.recvLine()
-                if reqLine != null && #reqLine > 0 {
-                    parts = []
-                    curr = ""
-                    i = 0
-                    while i < #reqLine {
-                        c = reqLine[i:i+1]
-                        if c == " " {
-                            if #curr > 0 { parts.push(curr); curr = "" }
-                        } else {
-                            curr = curr + c
+        go {
+            while self.running {
+                ready = sock.pollRead(self.tcpServer.fd, self.acceptTimeoutMs)
+                if !self.running { break }
+                if ready {
+                    client = sock.accept(self.tcpServer.fd)
+                    if client != null && client.fd >= 0 {
+                        // Handle request in a goroutine for concurrency
+                        go {
+                            _handleClient(TCPConnection(client.fd, client.remote))
                         }
-                        i = i + 1
-                    }
-                    if #curr > 0 { parts.push(curr) }
-
-                    if #parts >= 2 {
-                        method = parts[0]
-                        fullPath = parts[1]
-                        
-                        path = fullPath
-                        queryStr = ""
-                        qIdx = -1
-                        j = 0
-                        while j < #fullPath {
-                            if fullPath[j:j+1] == "?" { qIdx = j; break }
-                            j = j + 1
-                        }
-                        if qIdx >= 0 {
-                            path = fullPath[0:qIdx]
-                            queryStr = fullPath[qIdx+1:#fullPath]
-                        }
-
-                        // Read headers
-                        headers = {}
-                        while true {
-                            line = client.recvLine()
-                            if line == null || #line == 0 { break }
-
-                            colonIdx = -1
-                            j = 0
-                            while j < #line {
-                                if line[j:j+1] == ":" { colonIdx = j; break }
-                                j = j + 1
-                            }
-
-                            if colonIdx > 0 {
-                                k = line[0:colonIdx]
-                                v = line[colonIdx+1:#line]
-                                start = 0
-                                while start < #v && v[start:start+1] == " " { start = start + 1 }
-                                headers[k.lower()] = v[start:#v]
-                            }
-                        }
-
-                        // Read body
-                        body = ""
-                        if headers.has("content-length") {
-                            clStr = headers["content-length"]
-                            cl = 0
-                            j = 0
-                            while j < #clStr {
-                                cl = cl * 10 + ord(clStr[j:j+1]) - ord("0")
-                                j = j + 1
-                            }
-                            body = client.recv(cl)
-                        }
-
-                        req = {
-                            method: method,
-                            path: path,
-                            queryStr: queryStr,
-                            query: parseQueryParams(queryStr),
-                            headers: headers,
-                            body: body,
-                            params: {}
-                        }
-                        
-                        res = WebResponse(client)
-                        
-                        _dispatch(req, res)
                     }
                 }
-                client.close()
             }
         }
         true
+    }
+
+    fn _handleClient(client) {
+        // Read Request-Line
+        reqLine = client.recvLine()
+        if reqLine == null || #reqLine == 0 { client.close(); return }
+
+        // Parse Request-Line e.g., "GET /index.html HTTP/1.1"
+        parts = []
+        curr = ""
+        i = 0
+        while i < #reqLine {
+            c = reqLine[i:i+1]
+            if c == " " {
+                if #curr > 0 { parts.push(curr); curr = "" }
+            } else {
+                curr = curr + c
+            }
+            i = i + 1
+        }
+        if #curr > 0 { parts.push(curr) }
+
+        if #parts < 2 { client.close(); return }
+        method = parts[0]
+        fullPath = parts[1]
+
+        // Parse path & query string
+        path = fullPath
+        queryStr = ""
+        qIdx = -1
+        j = 0
+        while j < #fullPath {
+            if fullPath[j:j+1] == "?" {
+                qIdx = j
+                break
+            }
+            j = j + 1
+        }
+        if qIdx >= 0 {
+            path = fullPath[0:qIdx]
+            queryStr = fullPath[qIdx+1:#fullPath]
+        }
+
+        // Read headers
+        headers = {}
+        while true {
+            line = client.recvLine()
+            if line == null || #line == 0 { break }
+
+            colonIdx = -1
+            j = 0
+            while j < #line {
+                if line[j:j+1] == ":" {
+                    colonIdx = j
+                    break
+                }
+                j = j + 1
+            }
+
+            if colonIdx > 0 {
+                k = line[0:colonIdx]
+                v = line[colonIdx+1:#line]
+                start = 0
+                while start < #v && v[start:start+1] == " " { start = start + 1 }
+                headers[k.lower()] = v[start:#v]
+            }
+        }
+
+        // Read Body
+        body = ""
+        if headers.has("content-length") {
+            clStr = headers["content-length"]
+            cl = 0
+            j = 0
+            while j < #clStr {
+                cl = cl * 10 + ord(clStr[j:j+1]) - ord("0")
+                j = j + 1
+            }
+            body = client.recv(cl)
+        }
+
+        req = {method: method, path: path, query: queryStr, headers: headers, body: body}
+        
+        // Dispatch request
+        _dispatch(req, WebResponse(client))
+        
+        // Ensure response was sent
+        client.close()
+    }
+
+    fn _stop() {
+        self.running = false
+        if self.tcpServer != null {
+            self.tcpServer.close()
+        }
     }
 
     self.use = _use
@@ -406,6 +419,7 @@ fn WebApplication() {
     self.delete = _delete
     self.static = _static
     self.listen = _listen
+    self.stop = _stop
     self
 }
 

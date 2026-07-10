@@ -274,7 +274,7 @@ fn response(status, contentType, body, headers) {
 // ===================================================================
 
 fn HTTPServer(host, port) {
-    self = {host: host, port: port, routes: {}, defaultHandler: null, running: false, tcpServer: null}
+    self = {host: host, port: port, routes: {}, defaultHandler: null, running: false, tcpServer: null, acceptTimeoutMs: 1000}
 
     fn _route(method, path, handler) {
         key = "{method}:{path}"
@@ -404,16 +404,34 @@ fn HTTPServer(host, port) {
         }
     }
 
+    fn _acceptLoop() {
+        while self.running {
+            // Use poll to wait for incoming connections with timeout
+            // This allows the loop to check self.running periodically
+            ready = sock.pollRead(self.tcpServer.fd, self.acceptTimeoutMs)
+            if !self.running { break }
+            if ready {
+                client = sock.accept(self.tcpServer.fd)
+                if client != null && client.fd >= 0 {
+                    // Handle each connection in a goroutine for concurrency
+                    go {
+                        conn = TCPConnection(client.fd, client.remote)
+                        _handleRequest(conn)
+                        conn.close()
+                    }
+                }
+            }
+        }
+    }
+
     fn _start() {
         self.tcpServer = tcp.listen(self.host, self.port)
         if self.tcpServer == null { return false }
         self.running = true
-        while self.running {
-            client = self.tcpServer.accept()
-            if client != null {
-                _handleRequest(client)
-                client.close()
-            }
+        
+        // Spawn accept loop in a goroutine
+        go {
+            _acceptLoop()
         }
         true
     }

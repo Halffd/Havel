@@ -1022,6 +1022,10 @@ void ByteCompiler::compileClassMethod(
   // Bind user parameters to slots.
   // For instance methods: slots 1..N (slot 0 is self)
   // For class methods: slots 0..N-1 (no self)
+  // For instance methods, add nullopt for self slot in default_values
+  if (!is_class_method) {
+    current_function->default_values.push_back(std::nullopt);
+  }
   for (size_t i = 0; i < method.parameters.size(); ++i) {
     const auto &param = method.parameters[i];
     if (!param || !param->pattern) {
@@ -1032,6 +1036,43 @@ void ByteCompiler::compileClassMethod(
     compileParameterPattern(*param->pattern, method_param_slot);
     if (param->isVariadic) {
       current_function->variadic_param_index = method_param_slot;
+    }
+    // Store default value if present
+    if (param->defaultValue.has_value()) {
+      const auto &defaultExpr = param->defaultValue.value();
+      if (defaultExpr->kind == ast::NodeType::NumberLiteral) {
+        const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
+        if (num.was_written_as_float) {
+          current_function->default_values.push_back(Value::makeDouble(num.value));
+        } else if (isIntegerLiteral(num.value)) {
+          current_function->default_values.push_back(Value::makeInt(static_cast<int64_t>(num.value)));
+        } else {
+          current_function->default_values.push_back(Value::makeDouble(num.value));
+        }
+      } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
+        const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
+        uint32_t strId = addStringConstant(str.value);
+        current_function->default_values.push_back(
+            Value::makeStringValId(strId));
+      } else if (defaultExpr->kind == ast::NodeType::BooleanLiteral) {
+        const auto &boolean =
+            static_cast<const ast::BooleanLiteral &>(*defaultExpr);
+        current_function->default_values.push_back(
+            Value::makeBool(boolean.value));
+      } else if (defaultExpr->kind == ast::NodeType::ArrayLiteral) {
+        const auto &arr =
+            static_cast<const ast::ArrayLiteral &>(*defaultExpr);
+        if (arr.elements.empty()) {
+          current_function->default_values.push_back(
+              Value::makeBool(true));
+        } else {
+          current_function->default_values.push_back(std::nullopt);
+        }
+      } else {
+        current_function->default_values.push_back(std::nullopt);
+      }
+    } else {
+      current_function->default_values.push_back(std::nullopt);
     }
 }
 
@@ -1291,10 +1332,47 @@ void ByteCompiler::compileDefaultMethodBody(
 		}
 		const uint32_t method_param_slot = static_cast<uint32_t>(i + 1);
 		compileParameterPattern(*param->pattern, method_param_slot);
-		if (param->isVariadic) {
-			current_function->variadic_param_index = method_param_slot;
-		}
-	}
+        if (param->isVariadic) {
+      current_function->variadic_param_index = method_param_slot;
+    }
+    // Store default value if present
+    if (param->defaultValue.has_value()) {
+      const auto &defaultExpr = param->defaultValue.value();
+      if (defaultExpr->kind == ast::NodeType::NumberLiteral) {
+        const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
+        if (num.was_written_as_float) {
+          current_function->default_values.push_back(Value::makeDouble(num.value));
+        } else if (isIntegerLiteral(num.value)) {
+          current_function->default_values.push_back(Value::makeInt(static_cast<int64_t>(num.value)));
+        } else {
+          current_function->default_values.push_back(Value::makeDouble(num.value));
+        }
+      } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
+        const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
+        uint32_t strId = addStringConstant(str.value);
+        current_function->default_values.push_back(
+            Value::makeStringValId(strId));
+      } else if (defaultExpr->kind == ast::NodeType::BooleanLiteral) {
+        const auto &boolean =
+            static_cast<const ast::BooleanLiteral &>(*defaultExpr);
+        current_function->default_values.push_back(
+            Value::makeBool(boolean.value));
+      } else if (defaultExpr->kind == ast::NodeType::ArrayLiteral) {
+        const auto &arr =
+            static_cast<const ast::ArrayLiteral &>(*defaultExpr);
+        if (arr.elements.empty()) {
+          current_function->default_values.push_back(
+              Value::makeBool(true));
+        } else {
+          current_function->default_values.push_back(std::nullopt);
+        }
+      } else {
+        current_function->default_values.push_back(std::nullopt);
+      }
+    } else {
+      current_function->default_values.push_back(std::nullopt);
+    }
+}
 
 	if (traitMethod.defaultBody) {
 		const auto &stmts = traitMethod.defaultBody->body;
@@ -2288,8 +2366,19 @@ case ast::NodeType::ClassDeclaration: {
         emit(OpCode::ARRAY_PUSH);
       }
     }
- // Arity: name(1) + instance_fields(1) + parent(1) + class_fields(1) = 4
- uint32_t define_arity = 4;
+    // Instance field defaults (@field = value) - object map of name → value
+    emit(OpCode::OBJECT_NEW);
+    for (const auto &field : classDecl.definition.fields) {
+      if (!field.isClassField && field.defaultValue.has_value()) {
+        const auto &defaultExpr = field.defaultValue.value();
+        // Compile the default value expression
+        compileExpression(*defaultExpr);
+        { uint32_t _sid = addStringConstant(field.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_SET);
+      }
+    }
+ // Arity: name(1) + instance_fields(1) + parent(1) + class_fields(1) + field_defaults(1) = 5
+ uint32_t define_arity = 5;
  emit(OpCode::CALL, Value(define_arity));
     // Store the type_id in a global variable so constructor calls work
     {
@@ -5377,6 +5466,50 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
             }
             in_tail_position_ = saved_tail_position;
             return;
+  }
+
+  // Handle @method() — equivalent to self.method(), use CALL_METHOD
+  if (expression.callee->kind == ast::NodeType::AtExpression) {
+    const auto &atExpr = static_cast<const ast::AtExpression &>(*expression.callee);
+    auto *fieldId = dynamic_cast<const ast::Identifier *>(atExpr.field.get());
+    if (fieldId) {
+      // Load 'this' (self) as receiver
+      if (!current_class_name_.empty()) {
+        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
+      } else {
+        uint32_t strId = addStringConstant("this");
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+      }
+      // Compile args
+      uint32_t totalArgs = 0;
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
+          totalArgs++;
+          continue;
+        }
+        compileExpression(*arg);
+        totalArgs++;
+      }
+      if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
+        { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+        emit(OpCode::OBJECT_SET);
+        for (const auto &kwarg : expression.kwargs) {
+          compileExpression(*kwarg.value);
+          { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+          emit(OpCode::OBJECT_SET);
+        }
+        totalArgs++;
+      }
+      uint32_t method_sid = addStringConstant(fieldId->symbol);
+      emit(OpCode::CALL_METHOD, std::vector<Value>{
+        Value::makeStringValId(method_sid),
+        Value(totalArgs)});
+      in_tail_position_ = saved_tail_position;
+      return;
+    }
   }
 
   if (expression.callee->kind == ast::NodeType::Identifier) {

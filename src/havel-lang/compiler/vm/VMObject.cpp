@@ -152,13 +152,13 @@ Value VM::execLengthOp(Value v) {
  auto typeIt = prototypes_.find("set");
  if (typeIt != prototypes_.end()) {
  auto methodIt = typeIt->second.find("len");
- if (methodIt != typeIt->second.end()) {
- auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
- if (fnIt != host_functions.end()) return fnIt->second({v});
- }
- }
- }
- COMPILER_THROW("Length operator requires array, string, object, or set");
+  if (methodIt != typeIt->second.end()) {
+  auto fnIt = host_functions.find(host_function_names_[methodIt->second]);
+  if (fnIt != host_functions.end()) return fnIt->second({v});
+  }
+  }
+  }
+  COMPILER_THROW("Length operator requires array, string, object, or set");
 }
 
 Value VM::getHostArrayValue(ArrayRef array_ref, size_t index) {

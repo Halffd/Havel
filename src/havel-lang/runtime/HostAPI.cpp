@@ -16,15 +16,14 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  PixelAutomation *pixelAutomation,
                  AutomationManager *automationManager, FileManager *fileManager,
                  ProcessManager *processManager, MapManager *mapManager,
-                 ModeManager *modeManager,
-                 const std::vector<std::string> &commandLineArgs)
+                const std::vector<std::string> &commandLineArgs)
     : io(io), hotkeyManager(hotkeyManager), config(config),
       windowManager(windowManager), brightnessManager(brightnessManager),
       audioManager(audioManager), guiManager(guiManager),
       screenshotManager(screenshotManager), clipboardManager(clipboardManager),
       pixelAutomation(pixelAutomation), automationManager(automationManager),
       fileManager(fileManager), processManager(processManager),
-      mapManager(mapManager), modeManager(modeManager),
+      mapManager(mapManager),
       commandLineArgs(commandLineArgs) {}
 
 std::string HostAPI::GetActiveWindowTitle() { return ""; }
@@ -63,11 +62,9 @@ AutomationManager *HostAPI::GetAutomationManager() { return automationManager; }
 FileManager *HostAPI::GetFileManager() { return fileManager; }
 ProcessManager *HostAPI::GetProcessManager() { return processManager; }
 MapManager *HostAPI::GetMapManager() { return mapManager; }
-ModeManager *HostAPI::GetModeManager() { return modeManager; }
 compiler::VM *HostAPI::GetVM() { return vm_; }
 void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }
 void HostAPI::SetIO(IO *newIo) { io = newIo; }
-void HostAPI::SetModeManager(ModeManager *mm) { modeManager = mm; }
 void HostAPI::SetVM(compiler::VM *vm) { vm_ = vm; }
 const std::vector<std::string> &HostAPI::GetCommandLineArgs() { return commandLineArgs; }
 
@@ -102,15 +99,14 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  PixelAutomation *pixelAutomation,
                  AutomationManager *automationManager, FileManager *fileManager,
                  ProcessManager *processManager, MapManager *mapManager,
-                 ModeManager *modeManager,
-                 const std::vector<std::string> &commandLineArgs)
+                const std::vector<std::string> &commandLineArgs)
     : io(io), hotkeyManager(hotkeyManager), config(config),
       windowManager(windowManager), brightnessManager(brightnessManager),
       audioManager(audioManager), guiManager(guiManager),
       screenshotManager(screenshotManager), clipboardManager(clipboardManager),
       pixelAutomation(pixelAutomation), automationManager(automationManager),
       fileManager(fileManager), processManager(processManager),
-      mapManager(mapManager), modeManager(modeManager),
+      mapManager(mapManager),
       commandLineArgs(commandLineArgs) {}
 
 // IWindowAPI implementation
@@ -231,15 +227,12 @@ AutomationManager *HostAPI::GetAutomationManager() { return automationManager; }
 FileManager *HostAPI::GetFileManager() { return fileManager; }
 ProcessManager *HostAPI::GetProcessManager() { return processManager; }
 MapManager *HostAPI::GetMapManager() { return mapManager; }
-ModeManager *HostAPI::GetModeManager() { return modeManager; }
 compiler::VM *HostAPI::GetVM() { return vm_; }
 
 // Update manager pointers (called after managers are created)
 void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }
 
 void HostAPI::SetIO(IO *newIo) { io = newIo; }
-
-void HostAPI::SetModeManager(ModeManager *mm) { modeManager = mm; }
 
 void HostAPI::SetVM(compiler::VM *vm) { vm_ = vm; }
 

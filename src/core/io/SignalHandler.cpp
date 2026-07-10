@@ -123,7 +123,7 @@ bool SignalHandler::SetupSignalfd() {
     return false;
   }
 
-  signalFd = signalfd(-1, &signalMask, SFD_CLOEXEC);
+  signalFd = signalfd(-1, &signalMask, SFD_CLOEXEC | SFD_NONBLOCK);
   if (signalFd == -1) {
     error("Failed to create signalfd: {}", strerror(errno));
     return false;
@@ -141,6 +141,9 @@ void SignalHandler::ProcessSignal() {
 
   struct signalfd_siginfo si;
   ssize_t s = read(signalFd, &si, sizeof(si));
+  if (s < 0 && errno == EAGAIN) {
+    return;
+  }
   if (s != sizeof(si)) {
     error("Failed to read from signalfd: {}", strerror(errno));
     return;

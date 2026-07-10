@@ -292,6 +292,7 @@ struct CallFrame {
     std::unordered_set<uint32_t> immutable_locals_; // val-declared local indices (per-frame)
   utils::RobinHoodHashMap<std::string, BytecodeHostFunction> host_functions;
   std::vector<std::string> host_function_names_; // Index -> name mapping
+  std::unordered_set<uint32_t> host_function_wants_self_; // Host function indices whose first param is "self"
   utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
     std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
   std::vector<std::shared_ptr<std::unordered_map<std::string, Value>>> imported_module_globals_; // GC root for wrapped module functions

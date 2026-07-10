@@ -246,7 +246,6 @@ static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
       inst.getWindowManagerPtr(), inst.getBrightnessManager(),
       inst.getAudioManager(), nullptr, nullptr, nullptr, nullptr, nullptr,
       nullptr, nullptr, nullptr,
-      hkManager ? hkManager->getModeManager().get() : nullptr,
       std::vector<std::string>{});
 }
 

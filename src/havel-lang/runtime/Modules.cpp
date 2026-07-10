@@ -63,8 +63,6 @@ Modules::Modules(const HostContext &ctx, const compiler::ExecutionPolicy &policy
 Modules::~Modules() { shutdown(); }
 
 void Modules::shutdown() {
-    mode_bindings_.clear();
-    mode_definition_order_.clear();
     options_.host_functions.clear();
     vm_setup_callbacks_.clear();
     ioBridge_.reset();
@@ -103,17 +101,6 @@ bool Modules::import(const std::string &importSpec) {
     if (!ctx_ || !ctx_->vm) return false;
     auto result = ctx_->vm->loadModule(importSpec);
     return !result.isNull();
-}
-
-void Modules::registerModeCallbacks(const std::string &modeName,
-                                        CallbackId enterId,
-                                        CallbackId exitId) {
-    ModeBinding binding;
-    binding.modeName = modeName;
-    binding.enter_id = enterId;
-    binding.exit_id = exitId;
-    mode_bindings_[modeName] = std::move(binding);
-    mode_definition_order_.push_back(modeName);
 }
 
 void Modules::initBridges() {

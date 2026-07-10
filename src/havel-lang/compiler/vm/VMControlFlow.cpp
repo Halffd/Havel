@@ -233,6 +233,8 @@ case OpCode::TAIL_CALL: {
     bool found_host = false;
     bool found_via_module = false;
     bool isInstanceFunc = false;
+    bool isClassNewCall = false;
+    Value classProtoForNew = Value::makeNull();
     Value vm_func = Value::makeNull();
     if (receiver.isStringValId() || receiver.isStringId() || receiver.isRegexValId()) {
       type_name = "string";
@@ -333,18 +335,21 @@ case OpCode::TAIL_CALL: {
                 }
             }
         }
-        if (instanceObj) {
+if (instanceObj) {
         auto it = instanceObj->find(method_name);
         if (it != instanceObj->end()) {
                     if (it->second.isHostFuncId()) {
                         host_func_idx = it->second.asHostFuncId();
                         found_host = true;
+                        // If this host function wants self (its first param is "self"), force self pass.
+                        bool wantsSelf = host_function_wants_self_.count(host_func_idx) > 0;
                         // Set found_via_module if the object is in globals (likely a module/namespace)
                         // BUT NOT if the receiver is a class/struct prototype — those need self passed
-          bool isClassProto = instanceObj->get("__class") != nullptr ||
-                              instanceObj->get("__struct") != nullptr ||
-                              instanceObj->get("__is_class") != nullptr;
-                        if (!isClassProto) {
+                        // BUT NOT if the wrapped host function wants self (instance method style)
+                        bool isClassProto = instanceObj->get("__class") != nullptr ||
+                                          instanceObj->get("__struct") != nullptr ||
+                                          instanceObj->get("__is_class") != nullptr;
+                        if (!isClassProto && !wantsSelf) {
                             for (const auto &g : globals) {
                                 if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
                                     found_via_module = true;
@@ -355,10 +360,58 @@ case OpCode::TAIL_CALL: {
           } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
             vm_func = it->second;
             // Method found as direct field on instance.
-            // For class instances (have __class), pass self; for module objects, don't.
+            // For class instances (have __class), pass self.
+            // For non-class objects: pass self only if the function expects self (first param named "self").
             bool isClassInstance = instanceObj->get("__class") != nullptr ||
                                    instanceObj->get("__struct") != nullptr;
-            isInstanceFunc = !isClassInstance;
+            if (isClassInstance) {
+              isInstanceFunc = false;  // self will be passed in arg prep
+            } else {
+              // Check if function's first param is "self"
+              bool wantsSelf = false;
+              const BytecodeFunction* bf = nullptr;
+              if (it->second.isFunctionObjId()) {
+                if (current_chunk) bf = current_chunk->getFunction(it->second.asFunctionObjId());
+                if (!bf && main_chunk_) bf = main_chunk_->getFunction(it->second.asFunctionObjId());
+                if (!bf) {
+                  for (auto& pc : persistent_chunks_) {
+                    if (pc && pc->getFunction(it->second.asFunctionObjId())) { bf = pc->getFunction(it->second.asFunctionObjId()); break; }
+                  }
+                }
+                if (!bf) {
+                  for (auto& [_, mc] : module_chunks_) {
+                    if (mc && mc->getFunction(it->second.asFunctionObjId())) { bf = mc->getFunction(it->second.asFunctionObjId()); break; }
+                  }
+                }
+              } else if (it->second.isClosureId()) {
+                auto *closure = heap_.closure(it->second.asClosureId());
+                if (closure && closure->chunk) {
+                  bf = closure->chunk->getFunction(closure->function_index);
+                }
+              }
+              if (bf && !bf->param_names.empty() && bf->param_names[0] == "self") {
+                wantsSelf = true;
+              }
+              isInstanceFunc = !wantsSelf;
+            }
+          } else if (it->second.isObjectId()) {
+            // Check if it's a class prototype (has __is_class = true)
+            auto *fieldObj = heap_.object(it->second.asObjectId());
+            if (fieldObj) {
+              auto *isClassVal = fieldObj->get("__is_class");
+              if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
+                // It's a class prototype - invoke class.new on it
+                // Look up "new" method on the class prototype
+                auto *newMethod = fieldObj->get("new");
+                if (newMethod && newMethod->isHostFuncId()) {
+                  host_func_idx = newMethod->asHostFuncId();
+                  found_host = true;
+                  // class.new expects (classProto, ...args)
+                  isClassNewCall = true;
+                  classProtoForNew = it->second;
+                }
+              }
+            }
           }
         }
       }
@@ -492,7 +545,12 @@ case OpCode::TAIL_CALL: {
 
     // Prepare args
     std::vector<Value> all_args;
-    if (isInstanceFunc || found_via_module) {
+    if (isClassNewCall) {
+        // class.new expects (classProto, ...args)
+        all_args.reserve(arg_count + 1);
+        all_args.push_back(classProtoForNew);
+        all_args.insert(all_args.end(), args2.begin(), args2.end());
+    } else if (isInstanceFunc || found_via_module) {
         all_args = args2;
     } else {
         all_args.reserve(arg_count + 1);

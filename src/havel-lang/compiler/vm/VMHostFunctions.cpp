@@ -1857,6 +1857,7 @@ registerHostFunction(
   registerHostFunction(
       "class.define", [this](const std::vector<Value> &args) {
         if (!current_chunk) COMPILER_THROW("class.define requires active chunk");
+        if (args.size() < 4) COMPILER_THROW("class.define requires at least 4 arguments");
 
         auto protoRef = heap_.allocateObject();
         auto* proto = heap_.object(protoRef.id);
@@ -1882,14 +1883,20 @@ registerHostFunction(
         }
 
  // Check for class fields (@@fields)
-if (args.size() > arg_idx && args[arg_idx].isArrayId()) {
-proto->set("__class_fields", args[arg_idx]);
-}
+ if (args.size() > arg_idx && args[arg_idx].isArrayId()) {
+ proto->set("__class_fields", args[arg_idx]);
+ arg_idx++;
+ }
 
-proto->set("new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
-proto->set("method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
+ // Check for instance field defaults (@field = value)
+ if (args.size() > arg_idx && args[arg_idx].isObjectId()) {
+   proto->set("__field_defaults", args[arg_idx]);
+ }
 
-return Value::makeObjectId(protoRef.id);
+ proto->set("new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
+ proto->set("method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
+
+ return Value::makeObjectId(protoRef.id);
       });
 
 registerHostFunction(
@@ -1934,6 +1941,18 @@ for (const auto& f : *fields) {
 std::string fName = current_chunk->getString(f.asStringValId());
 instance->set(fName, Value::makeNull());
 }
+}
+// Apply instance field defaults (@field = value) if present
+auto defaultsVal = currentProto->get("__field_defaults");
+if (defaultsVal && defaultsVal->isObjectId()) {
+  auto* defaultsObj = heap_.object(defaultsVal->asObjectId());
+  if (defaultsObj) {
+    for (const auto& [defName, defVal] : *defaultsObj) {
+      if (!defVal.isNull()) {
+        instance->set(defName, defVal);
+      }
+    }
+  }
 }
 auto parentVal = currentProto->get("__parent");
 if (parentVal && parentVal->isObjectId()) {

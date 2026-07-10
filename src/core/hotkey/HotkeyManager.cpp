@@ -66,8 +66,7 @@ namespace havel
   }
 
   HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
-: io(io),
-modeManager(std::make_shared<ModeManager>())
+: io(io)
 {
   initializeInputCallbacks();
 }
@@ -341,12 +340,12 @@ modeManager(std::make_shared<ModeManager>())
 
   void HotkeyManager::setMode(const std::string &mode)
   {
-    if (modeManager) modeManager->setMode(mode);
+    currentMode_ = mode;
   }
 
   std::string HotkeyManager::getMode() const
   {
-    return modeManager ? modeManager->getCurrentMode() : "default";
+    return currentMode_.empty() ? "default" : currentMode_;
   }
 
   void HotkeyManager::loadDebugSettings() {}

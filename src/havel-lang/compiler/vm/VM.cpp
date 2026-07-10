@@ -1698,7 +1698,7 @@ uint32_t function_index = 0;
 uint32_t closure_id = 0;
 const BytecodeChunk *resolve_chunk = current_chunk;
 std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
-if (callee_value.isFunctionObjId()) {
+ if (callee_value.isFunctionObjId()) {
             function_index = callee_value.asFunctionObjId();
             if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
                 if (main_chunk_ && main_chunk_->getFunction(function_index)) {
@@ -1707,6 +1707,14 @@ if (callee_value.isFunctionObjId()) {
                     for (auto& pc : persistent_chunks_) {
                         if (pc && pc->getFunction(function_index)) {
                             resolve_chunk = pc.get();
+                            break;
+                        }
+                    }
+                }
+                if (!resolve_chunk->getFunction(function_index)) {
+                    for (auto& [_, mc] : module_chunks_) {
+                        if (mc && mc->getFunction(function_index)) {
+                            resolve_chunk = mc.get();
                             break;
                         }
                     }
@@ -2114,7 +2122,7 @@ void VM::doTailCall(Value callee_value,
  uint32_t function_index = 0;
  uint32_t closure_id = 0;
  std::shared_ptr<std::unordered_map<std::string, Value>> tail_closure_globals;
-if (callee_value.isFunctionObjId()) {
+ if (callee_value.isFunctionObjId()) {
             function_index = callee_value.asFunctionObjId();
             if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
                 if (main_chunk_ && main_chunk_->getFunction(function_index)) {
@@ -2123,6 +2131,14 @@ if (callee_value.isFunctionObjId()) {
                     for (auto& pc : persistent_chunks_) {
                         if (pc && pc->getFunction(function_index)) {
                             resolve_chunk = pc.get();
+                            break;
+                        }
+                    }
+                }
+                if (!resolve_chunk->getFunction(function_index)) {
+                    for (auto& [_, mc] : module_chunks_) {
+                        if (mc && mc->getFunction(function_index)) {
+                            resolve_chunk = mc.get();
                             break;
                         }
                     }
@@ -2708,6 +2724,7 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
     uint32_t funcIdx = value.asFunctionObjId();
     const auto* moduleFunc = chunk->getFunction(funcIdx);
     uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
+    bool wantsSelf = moduleFunc && !moduleFunc->param_names.empty() && moduleFunc->param_names[0] == "self";
     auto moduleChunk = chunk;
     auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
     std::string fnCapturedKey = canonicalKey;
@@ -2815,6 +2832,9 @@ if (bc_execute_depth_ == 0) {
         return result;
     });
         uint32_t hostIdx = host_function_globals_[wrapperName].asHostFuncId();
+        if (wantsSelf) {
+          host_function_wants_self_.insert(hostIdx);
+        }
         resumeGcGuard();
         return Value::makeHostFuncId(hostIdx);
     }
@@ -2830,6 +2850,8 @@ if (bc_execute_depth_ == 0) {
         uint64_t closureRootId = pinExternalRoot(Value::makeClosureId(closureId));
 
         uint32_t funcIdx = rc->function_index;
+        const auto* closureFunc = chunk->getFunction(funcIdx);
+        bool wantsSelfClosure = closureFunc && !closureFunc->param_names.empty() && closureFunc->param_names[0] == "self";
         auto moduleChunk = chunk;
         auto closureGlobals = rc->module_globals
             ? rc->module_globals
@@ -2938,6 +2960,9 @@ if (bc_execute_depth_ == 0) {
  return result;
  });
         uint32_t hostIdx = host_function_globals_[wrapperName].asHostFuncId();
+        if (wantsSelfClosure) {
+          host_function_wants_self_.insert(hostIdx);
+        }
         resumeGcGuard();
         return Value::makeHostFuncId(hostIdx);
     }

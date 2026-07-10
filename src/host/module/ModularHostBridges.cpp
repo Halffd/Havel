@@ -13,7 +13,7 @@
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/IO.hpp"
 #include "core/io/EventListener.hpp"
-#include "core/mode/ModeManager.hpp"
+
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/common/GUIManager.hpp"
@@ -3772,9 +3772,8 @@ void InputBridge::install(PipelineOptions &options) {
   options.host_functions["hotkey.register"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyRegister(args, ctx);
   };
-  // Unified alias for register_conditional
   options.host_functions["hotkey.register_conditional"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyRegister(args, ctx);
+    return handleHotkeyRegisterConditional(args, ctx);
   };
   options.host_functions["hotkey.enable"] = [ctx = ctx_](const auto &args) {
     return handleHotkeyEnable(args, ctx);
@@ -3921,9 +3920,6 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
 
     // If hotkeyManager is available, wire the OS callback to wake the persistent goroutine
     if (ctx->hotkeyManager) {
-        auto *modeMgr = ctx->modeManager;
-        auto *hotkeyMgr = ctx->hotkeyManager;
-
         if (persistentGid != 0) {
             auto wakeHotkey = [vm, persistentGid, hotkeyId]() {
                 auto *sched = vm->getScheduler();
@@ -3943,19 +3939,6 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
                         sched->deferToVM(std::move(wakeHotkey));
                     }
                 });
-            if (modeMgr && hotkeyMgr) {
-                ctx->hotkeyManager->AddHotkey(
-                    hotkeyStr,
-                    [vm, wakeHotkey]() {
-                        auto *sched = vm->getScheduler();
-                        if (!sched) return;
-                        if (sched->isVMThread()) {
-                            wakeHotkey();
-                        } else {
-                            sched->deferToVM(wakeHotkey);
-                        }
-                    });
-            }
         } else {
             // Fallback: spawn a new goroutine per keypress
             ctx->hotkeyManager->AddHotkey(
@@ -6290,21 +6273,34 @@ Value ConfigBridge::handleSave(const std::vector<Value> &args,
 // ModeBridge Implementation
 // ============================================================================
 
+namespace {
+struct SimpleModeState {
+    std::string current;
+    std::string previous;
+};
+SimpleModeState &modeState() {
+    static SimpleModeState state;
+    return state;
+}
+} // namespace
+
 void ModeBridge::install(PipelineOptions &options) {
-  // mode() - returns current mode name (for comparisons like mode == "gaming")
+  // mode() - returns current mode name string
+  // Does NOT set globals["mode"] — would shadow host function ref,
+  // breaking mode.set / mode.current CALL_METHOD dispatch.
+  // Reactive when blocks use mode() and LOAD_GLOBAL tracks "mode"
+  // via trackGlobalAccess even for host function lookups.
   options.host_functions["mode"] = [ctx = ctx_](const auto &args) {
     (void)args;
-    if (!ctx || !ctx->modeManager) {
-      return Value::makeNull();
-    }
+    if (!ctx || !ctx->vm) return Value::makeNull();
     auto *vm = static_cast<VM *>(ctx->vm);
-    if (!vm) return Value::makeNull();
-    std::string current = ctx->modeManager->getCurrentMode();
-    auto ref = vm->getHeap().allocateString(current);
+    std::string cur = modeState().current;
+    if (cur.empty()) cur = "default";
+    auto ref = vm->getHeap().allocateString(cur);
     return Value::makeStringId(ref.id);
   };
-  options.host_functions["mode.register"] = [ctx = ctx_](const auto &args) {
-    return handleRegister(args, ctx);
+  options.host_functions["mode.register"] = [](const auto &) {
+    return Value::makeBool(false);
   };
   options.host_functions["mode.current"] = [ctx = ctx_](const auto &args) {
     return handleGetCurrent(args, ctx);
@@ -6316,129 +6312,47 @@ void ModeBridge::install(PipelineOptions &options) {
     return handleGetPrevious(args, ctx);
   };
   options.host_functions["mode.list"] = [ctx = ctx_](const auto &args) {
-    return handleList(args, ctx);
+    (void)args; (void)ctx;
+    return Value::makeArrayId(0);
   };
-  options.host_functions["mode.time"] = [ctx = ctx_](const auto &args) {
-    return handleTime(args, ctx);
+  options.host_functions["mode.time"] = [](const auto &) {
+    return Value::makeInt(0);
   };
-    options.host_functions["mode.transitions"] = [ctx = ctx_](const auto &args) {
-        return handleTransitions(args, ctx);
+    options.host_functions["mode.transitions"] = [](const auto &) {
+        return Value::makeInt(0);
     };
 }
 
-Value ModeBridge::handleRegister(const std::vector<Value> &args,
-                                      const HostContext *ctx) {
-    if (args.size() < 9) {
-        return Value::makeBool(false);
-    }
-
-    if (!ctx || !ctx->modeManager || !ctx->vm) {
-        return Value::makeBool(false);
-    }
-
-    std::string modeName;
-    if (args[0].isStringValId() || args[0].isStringId()) {
-        auto *vm = static_cast<VM *>(ctx->vm);
-        modeName = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
-    } else {
-        return Value::makeBool(false);
-    }
-
-    int priority = 0;
-    if (args[1].isInt()) {
-        priority = static_cast<int>(args[1].asInt());
-    }
-
-    auto *vm = static_cast<VM *>(ctx->vm);
-
-    auto registerCallbackIfValid = [&](const Value &val) -> CallbackId {
-        if (val.isClosureId() || val.isFunctionObjId()) {
-            return vm->registerCallback(val);
-        }
-        return INVALID_CALLBACK_ID;
-    };
-
-    CallbackId enterId = registerCallbackIfValid(args[3]);
-    CallbackId exitId = registerCallbackIfValid(args[4]);
-    CallbackId onEnterFromId = registerCallbackIfValid(args[6]);
-    CallbackId onExitToId = registerCallbackIfValid(args[8]);
-
-    ::havel::ModeManager::ModeDefinition mode;
-    mode.name = modeName;
-    mode.priority = priority;
-
-    if (enterId != INVALID_CALLBACK_ID) {
-        mode.onEnter = [vm, enterId]() {
-            try {
-                vm->invokeCallback(enterId);
-            } catch (...) {
-            }
-        };
-    }
-
-    if (exitId != INVALID_CALLBACK_ID) {
-        mode.onExit = [vm, exitId]() {
-            try {
-                vm->invokeCallback(exitId);
-            } catch (...) {
-            }
-        };
-    }
-
-    if (onEnterFromId != INVALID_CALLBACK_ID) {
-        mode.onEnterFrom = [vm, onEnterFromId](const std::string &fromMode) {
-            try {
-                auto ref = vm->createRuntimeString(fromMode);
-                vm->invokeCallback(onEnterFromId, {Value::makeStringId(ref.id)});
-            } catch (...) {
-            }
-        };
-    }
-
-    if (onExitToId != INVALID_CALLBACK_ID) {
-        mode.onExitTo = [vm, onExitToId](const std::string &toMode) {
-            try {
-                auto ref = vm->createRuntimeString(toMode);
-                vm->invokeCallback(onExitToId, {Value::makeStringId(ref.id)});
-            } catch (...) {
-            }
-        };
-    }
-
-    ctx->modeManager->defineMode(std::move(mode));
-
-    ctx->modules->registerModeCallbacks(modeName, enterId, exitId);
-
-    info("Mode registered: {} with priority {}", modeName, priority);
-    return Value::makeBool(true);
+Value ModeBridge::handleRegister(const std::vector<Value> &,
+                                      const HostContext *) {
+    return Value::makeBool(false);
 }
 
 Value
 ModeBridge::handleGetCurrent(const std::vector<Value> &args,
                               const HostContext *ctx) {
   (void)args;
-  if (!ctx || !ctx->modeManager) {
-    return Value::makeNull();
-  }
+  if (!ctx || !ctx->vm) return Value::makeNull();
   auto *vm = static_cast<VM *>(ctx->vm);
-  if (!vm) return Value::makeNull();
-  std::string current = ctx->modeManager->getCurrentMode();
-  auto ref = vm->getHeap().allocateString(current);
+  std::string cur = modeState().current;
+  if (cur.empty()) cur = "default";
+  auto ref = vm->getHeap().allocateString(cur);
   return Value::makeStringId(ref.id);
 }
 
 Value ModeBridge::handleSet(const std::vector<Value> &args,
                             const HostContext *ctx) {
-  if (!ctx || !ctx->modeManager) {
-    return Value::makeBool(false);
-  }
   if (args.empty() || (!args[0].isStringValId() && !args[0].isStringId())) {
     throw std::runtime_error("mode.set() requires a mode name string");
   }
   auto *vm = static_cast<VM *>(ctx->vm);
   std::string modeName = vm ? vm->resolveStringKey(args[0]) : strVal(args[0], ctx ? ctx->vm : nullptr);
-  ctx->modeManager->setMode(modeName);
-  if (ctx->hotkeyManager) {
+  modeState().previous = modeState().current;
+  modeState().current = modeName;
+  if (vm) {
+    vm->emitVariableChanged("mode");
+  }
+  if (ctx && ctx->hotkeyManager) {
     ctx->hotkeyManager->setMode(modeName);
   }
   return Value::makeBool(true);
@@ -6448,80 +6362,27 @@ Value
 ModeBridge::handleGetPrevious(const std::vector<Value> &args,
                                const HostContext *ctx) {
   (void)args;
-  if (!ctx || !ctx->modeManager) {
-    return Value::makeNull();
-  }
-  auto *vm = static_cast<VM *>(ctx->vm);
-  if (!vm) return Value::makeNull();
-  std::string previous = ctx->modeManager->getPreviousMode();
-  auto ref = vm->getHeap().allocateString(previous);
+  if (!ctx || !ctx->vm) return Value::makeNull();
+  auto ref = static_cast<VM *>(ctx->vm)->getHeap().allocateString(modeState().previous);
   return Value::makeStringId(ref.id);
 }
 
 Value
-ModeBridge::handleList(const std::vector<Value> &args,
-                       const HostContext *ctx) {
-  (void)args;
-  if (!ctx || !ctx->modeManager || !ctx->vm) {
-    return Value::makeNull();
-  }
-  auto *vm = static_cast<VM *>(ctx->vm);
-  auto result = vm->createHostArray();
-  auto resultGuard = vm->makeRoot(Value::makeArrayId(result.id));
-
-  for (const auto &mode : ctx->modeManager->getModes()) {
-    auto obj = vm->createHostObject();
-    auto nameRef = vm->createRuntimeString(mode.name);
-    vm->setHostObjectField(obj, "name", Value::makeStringId(nameRef.id));
-    vm->setHostObjectField(obj, "priority", Value::makeInt(mode.priority));
-    vm->setHostObjectField(obj, "active", Value::makeBool(mode.isActive));
-    vm->setHostObjectField(obj, "transitions", Value::makeInt(mode.transitionCount));
-    auto totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       mode.totalTime)
-                       .count();
-    if (mode.isActive) {
-      totalMs += std::chrono::duration_cast<std::chrono::milliseconds>(
-                     std::chrono::steady_clock::now() - mode.enterTime)
-                     .count();
-    }
-    vm->setHostObjectField(obj, "timeMs", Value::makeInt(totalMs));
-    vm->pushHostArrayValue(result, Value::makeObjectId(obj.id));
-  }
-
-  return Value::makeArrayId(result.id);
+ModeBridge::handleList(const std::vector<Value> &,
+                       const HostContext *) {
+  return Value::makeArrayId(0);
 }
 
 Value
-ModeBridge::handleTime(const std::vector<Value> &args,
-                       const HostContext *ctx) {
-  if (!ctx || !ctx->modeManager || !ctx->vm || args.empty()) {
-    return Value::makeInt(0);
-  }
-  auto *vm = static_cast<VM *>(ctx->vm);
-  std::string modeName;
-  if (args[0].isStringValId() || args[0].isStringId()) {
-    modeName = vm->resolveStringKey(args[0]);
-  } else {
-    return Value::makeInt(0);
-  }
-  auto ms = ctx->modeManager->getModeTime(modeName);
-  return Value::makeInt(ms.count());
+ModeBridge::handleTime(const std::vector<Value> &,
+                       const HostContext *) {
+  return Value::makeInt(0);
 }
 
 Value
-ModeBridge::handleTransitions(const std::vector<Value> &args,
-                              const HostContext *ctx) {
-  if (!ctx || !ctx->modeManager || !ctx->vm || args.empty()) {
-    return Value::makeInt(0);
-  }
-  auto *vm = static_cast<VM *>(ctx->vm);
-  std::string modeName;
-  if (args[0].isStringValId() || args[0].isStringId()) {
-    modeName = vm->resolveStringKey(args[0]);
-  } else {
-    return Value::makeInt(0);
-  }
-  return Value::makeInt(ctx->modeManager->getModeTransitions(modeName));
+ModeBridge::handleTransitions(const std::vector<Value> &,
+                              const HostContext *) {
+  return Value::makeInt(0);
 }
 
 // ============================================================================

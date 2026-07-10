@@ -115,7 +115,6 @@ public:
   virtual class FileManager *GetFileManager() = 0;
   virtual class ProcessManager *GetProcessManager() = 0;
   virtual class MapManager *GetMapManager() = 0;
-  virtual class ModeManager *GetModeManager() = 0;
  virtual class compiler::VM *GetVM() = 0;
 
   // Import manager for script imports
@@ -127,7 +126,6 @@ public:
   // Update manager pointers (called after managers are created)
   virtual void SetHotkeyManager(class HotkeyManager *hm) = 0;
   virtual void SetIO(class IO *io) = 0;
-  virtual void SetModeManager(class ModeManager *mm) = 0;
  virtual void SetVM(class compiler::VM *vm) = 0;
 };
 
@@ -148,9 +146,8 @@ public:
           class AutomationManager *automationManager = nullptr,
           class FileManager *fileManager = nullptr,
           class ProcessManager *processManager = nullptr,
-          class MapManager *mapManager = nullptr,
-          class ModeManager *modeManager = nullptr,
-          const std::vector<std::string> &commandLineArgs = {});
+           class MapManager *mapManager = nullptr,
+           const std::vector<std::string> &commandLineArgs = {});
 
   // IWindowAPI implementation
   std::string GetActiveWindowTitle() override;
@@ -205,7 +202,6 @@ public:
   class FileManager *GetFileManager() override;
   class ProcessManager *GetProcessManager() override;
   class MapManager *GetMapManager() override;
-  class ModeManager *GetModeManager() override;
  class compiler::VM *GetVM() override;
   class ImportManager *GetImportManager() override {
     return nullptr;
@@ -217,7 +213,6 @@ public:
   // Update manager pointers (called after managers are created)
   void SetHotkeyManager(class HotkeyManager *hm) override;
   void SetIO(class IO *io) override;
-  void SetModeManager(class ModeManager *mm) override;
  void SetVM(class compiler::VM *vm) override;
 
 private:
@@ -235,7 +230,6 @@ private:
   class FileManager *fileManager;
   class ProcessManager *processManager;
   class MapManager *mapManager;
-  class ModeManager *modeManager;
  class compiler::VM *vm_ = nullptr;
 
   // Command line arguments

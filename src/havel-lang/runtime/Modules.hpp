@@ -64,10 +64,6 @@ public:
     bool loadModule(const std::string &name);
     bool import(const std::string &importSpec);
 
-    void registerModeCallbacks(const std::string &modeName,
-                               CallbackId enterId,
-                               CallbackId exitId);
-
 private:
     const HostContext *ctx_;
     compiler::PipelineOptions options_;
@@ -92,13 +88,6 @@ private:
     std::unique_ptr<compiler::BrowserBridge> browserBridge_;
     std::unique_ptr<compiler::ToolsBridge> toolsBridge_;
 
-    struct ModeBinding {
-        std::string modeName;
-        std::optional<CallbackId> enter_id;
-        std::optional<CallbackId> exit_id;
-    };
-    std::unordered_map<std::string, ModeBinding> mode_bindings_;
-    std::vector<std::string> mode_definition_order_;
     std::vector<std::function<void(compiler::VM &)>> vm_setup_callbacks_;
 
     void initBridges();

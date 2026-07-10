@@ -42,4 +42,10 @@ BytecodeSmokeResult runBytecodePipeline(
     const std::string &source, const std::string &entry_function,
     const PipelineOptions &options);
 
+// Compile source to bytecode chunk without executing.
+std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
+    const std::string &source,
+    const std::string &entry_function = "__main__",
+    const PipelineOptions &options = PipelineOptions{});
+
 } // namespace havel::compiler

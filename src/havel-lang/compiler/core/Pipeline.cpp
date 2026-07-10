@@ -1032,9 +1032,64 @@ BytecodeSmokeResult runBytecodePipeline(const std::string &source,
   return result;
 }
 
-BytecodeSmokeResult runBytecodePipeline(const std::string &source,
-                                        const std::string &entry_function) {
-  return runBytecodePipeline(source, entry_function, PipelineOptions{});
+std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
+    const std::string &source,
+    const std::string &entry_function,
+    const PipelineOptions &options) {
+  parser::Parser parser{{.lexer = ::havel::debugging::debug_lexer,
+                         .parser = ::havel::debugging::debug_parser,
+                         .ast = ::havel::debugging::debug_ast}};
+  std::unique_ptr<ast::Program> program;
+  try {
+    program = parser.produceAST(source);
+  } catch (const ::havel::LexError &e) {
+    COMPILER_THROW(formatDiagnostic("LexerError", e.what(),
+                                    options.compile_unit_name, source, e.line,
+                                    e.column, e.length, "unexpected token"));
+  } catch (const ::havel::parser::ParseError &e) {
+    COMPILER_THROW(formatDiagnostic("ParseError", e.what(),
+                                    options.compile_unit_name, source, e.line,
+                                    e.column, e.length, "here"));
+  }
+  if (!program) {
+    COMPILER_THROW("Bytecode pipeline failed: parser returned null AST");
+  }
+  if (parser.hasErrors()) {
+    std::string allErrors;
+    for (const auto &err : parser.getErrors()) {
+      if (err.severity != ErrorSeverity::Error)
+        continue;
+      allErrors +=
+          formatDiagnostic("ParseError", err.message, options.compile_unit_name,
+                           source, err.line, err.column, 1, "");
+    }
+    COMPILER_THROW(allErrors);
+  }
+
+  TypeChecker typeChecker;
+  auto typeCheckResult = typeChecker.check(*program);
+  if (!typeCheckResult.errors.empty()) {
+    std::string allTypeErrors;
+    for (const auto &err : typeCheckResult.errors) {
+      allTypeErrors += "TypeError: " + err + "\n";
+      ::havel::errors::ErrorReporter::instance().error(
+          ::havel::errors::ErrorStage::Compiler, err);
+    }
+    if (!allTypeErrors.empty()) {
+      COMPILER_THROW(allTypeErrors);
+    }
+  }
+
+  ByteCompiler compiler;
+  compiler.setTypeCheckResult(std::move(typeCheckResult));
+  compiler.setSourceFile(options.compile_unit_name);
+
+  auto chunk = compiler.compile(*program);
+  if (!chunk) {
+    COMPILER_THROW("Bytecode compilation failed");
+  }
+
+  return chunk;
 }
 
 } // namespace havel::compiler

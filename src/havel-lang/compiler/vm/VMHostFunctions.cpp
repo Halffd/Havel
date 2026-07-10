@@ -12,6 +12,7 @@
 #include "stdlib/FsModule.hpp"
 #include "stdlib/StateModule.hpp"
 #include "stdlib/HotkeyModule.hpp"
+#include "../core/Pipeline.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -565,6 +566,59 @@ return Value::makeNull();
         }
         return Value::makeNull();
       });
+
+  // eval(code_string) - Parse and execute Havel code at runtime
+  // Returns the result of the last expression
+  registerHostFunction("eval", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeNull();
+    std::string code = toString(args[0]);
+    if (code.empty()) return Value::makeNull();
+
+    havel::compiler::PipelineOptions options;
+    options.compile_unit_name = "<eval>";
+    options.debugBytecode = false;
+    options.max_instructions = max_instructions_;
+
+    std::unique_ptr<havel::compiler::BytecodeChunk> chunk;
+    try {
+      chunk = havel::compiler::compileToBytecodeChunk(code, "__main__", options);
+    } catch (const std::exception &e) {
+      COMPILER_THROW(std::string("eval(): ") + e.what());
+    }
+
+    // Execute using executePersistent which preserves globals/heap/state
+    Value ret;
+    try {
+      ret = executePersistent(*chunk, "__main__", {});
+    } catch (const std::exception &e) {
+      COMPILER_THROW(std::string("eval(): runtime error: ") + e.what());
+    }
+    return ret;
+  });
+
+  // apply(fn, args_array) - Call function with arguments from array
+  // apply(fn, [arg1, arg2, ...]) -> result
+  registerHostFunction("apply", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2) {
+      COMPILER_THROW("apply() requires a function and an array of arguments");
+    }
+    Value fn = args[0];
+    if (!args[1].isArrayId()) {
+      COMPILER_THROW("apply() second argument must be an array");
+    }
+    auto *arr = heap_.array(args[1].asArrayId());
+    if (!arr) {
+      COMPILER_THROW("apply(): invalid array reference");
+    }
+
+    std::vector<Value> callArgs;
+    callArgs.reserve(arr->size());
+    for (const auto &arg : *arr) {
+      callArgs.push_back(arg);
+    }
+
+    return callFunction(args[0], callArgs);
+  });
 
   // Type conversion builtins
   registerHostFunction("int", 1, [this](const std::vector<Value> &args) {

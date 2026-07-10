@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/mode/ModeManager.hpp"
 #include "core/CallbackTypes.hpp"
 #include "core/MouseGestureTypes.hpp"
 #include "core/io/MouseGestureEngine.hpp"
@@ -76,10 +75,6 @@ public:
   // Test harness: get current queue sizes
   void getQueueStatsForTest(size_t &total, size_t &enabled) const;
 
-  // ModeManager access
-  std::shared_ptr<ModeManager>& getModeManager() { return modeManager; }
-  const std::shared_ptr<ModeManager>& getModeManager() const { return modeManager; }
-
   
   void loadDebugSettings();
   void applyDebugSettings();
@@ -110,7 +105,7 @@ private:
   void initializeInputCallbacks();
 
   std::shared_ptr<IO> io;  // Shared ownership to ensure IO stays alive
-  std::shared_ptr<ModeManager> modeManager;  // Shared ownership for mode management
+  std::string currentMode_;
   std::vector<AnyKeyPressCallback> anyKeyCallbacks;
   mutable std::mutex anyKeyCallbacksMutex;
   bool inputCallbacksInitialized = false;

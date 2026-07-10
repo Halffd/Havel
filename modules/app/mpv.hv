@@ -29,7 +29,6 @@ class MPV {
     @progress = 0
 
     fn @(path="/tmp/mpvsocket") {
-        print("[mpv] constructor called, path=@", path)
         @path = path
         @connect()
         @observeDefaults()
@@ -37,11 +36,8 @@ class MPV {
     }
 
     fn connect() {
-        print("[mpv] connect() called, path=@", @path)
         @sock = socket.UnixSocket()
-        print("[mpv] socket created, connecting...")
         @connected = @sock.connect(@path)
-        print("[mpv] connected=@", @connected)
         @connected
     }
 

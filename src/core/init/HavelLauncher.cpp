@@ -1163,6 +1163,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return runBuild(cfg);
 
     if (cfg.mode != LaunchConfig::Mode::SELF_HOSTED &&
+        cfg.mode != LaunchConfig::Mode::SCRIPT_AND_REPL &&
+        cfg.mode != LaunchConfig::Mode::REPL &&
         !cfg.vmConfig.self_hosted_modules_path.empty()) {
       namespace fs = std::filesystem;
       fs::path langDir =

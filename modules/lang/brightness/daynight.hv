@@ -5,6 +5,7 @@
 //   daynight.enable(1.0, 0.3, 6500, 3000, 7, 20, 5)
 
 use time
+use * from "./brightness.hv"
 
 _dayEnabled = false
 _dayBrightness = 1.0
@@ -34,8 +35,6 @@ fn _isDaytime() {
 fn _apply() {
   if !_dayEnabled return
   day = _isDaytime()
-  if day == _isDay return  // no change
-  _isDay = day
   if day {
     setBrightness(_dayBrightness)
     setTemperature(_dayTemp)
@@ -72,13 +71,13 @@ fn isDay() { _isDay }
 fn setDaySettings(brightness, temp) {
   _dayBrightness = brightness
   _dayTemp = temp
-  if _dayEnabled && _isDay { _apply() }
+  if _dayEnabled && _isDaytime() { _apply() }
 }
 
 fn setNightSettings(brightness, temp) {
   _nightBrightness = brightness
   _nightTemp = temp
-  if _dayEnabled && !_isDay { _apply() }
+  if _dayEnabled && !_isDaytime() { _apply() }
 }
 
 fn setDayTiming(dayStart, nightStart) {

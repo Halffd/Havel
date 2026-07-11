@@ -5,9 +5,8 @@
 // increaseGamma, decreaseGamma, getShadowLift, setShadowLift,
 // increaseShadowLift, decreaseShadowLift, setBrightnessAndRGB,
 // setBrightnessAndTemperature, setBrightnessAndShadowLift,
-// enableDayNightMode, disableDayNightMode, isDayNightModeEnabled,
-// setDaySettings, setNightSettings, setDayNightTiming,
-// switchToDay, switchToNight, isDay, getMonitors, getMonitor, getGamma, setGamma
+// getHardwareBrightness, getXrandrBrightness, getMonitors, getMonitor,
+// getGamma, setGamma
 
 use ffi
 use display
@@ -95,18 +94,6 @@ _originalGammaRed = {}  // monitor name -> [unsigned short]
 _originalGammaGreen = {}
 _originalGammaBlue = {}
 _originalGammaSize = {} // monitor name -> int
-
-// Day/night state
-_dayNightEnabled = false
-_dayBrightness = 1.0
-_nightBrightness = 0.3
-_dayTemp = 6500
-_nightTemp = 3000
-_dayStart = 7
-_nightStart = 20
-_intervalMinutes = 5
-_dayTimer = null
-_isDayTime = true
 
 // === Helper functions ===
 fn _clamp(v, lo, hi) {
@@ -485,7 +472,7 @@ fn _getSysfsBrightness() {
   maxPath = lines[1].trim()
   if blPath == "" || maxPath == "" { return -1.0 }
   blStr = fs.read(blPath).trim()
-  maxStr = fs.readfile(maxPath).trim()
+  maxStr = fs.read(maxPath).trim()
   if blStr == "" || maxStr == "" { return -1.0 }
   cur = num(blStr)
   max = num(maxStr)
@@ -495,7 +482,7 @@ fn _getSysfsBrightness() {
 fn _setSysfsBrightness(value) {
   maxPath = _shell("ls /sys/class/backlight/*/max_brightness 2>/dev/null | head -1")
   if maxPath == "" { return false }
-  maxStr = fs.readfile(maxPath).trim()
+  maxStr = fs.read(maxPath).trim()
   if maxStr == "" { return false }
   maxVal = int(maxStr)
   if maxVal <= 0 { return false }
@@ -653,6 +640,51 @@ fn getBrightness(monitorIndex) {
   br
 }
 
+fn getHardwareBrightness(monitorIndex) {
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return -1.0 }
+  // Try sysfs first
+  val = _getSysfsBrightness()
+  if val >= 0 { return val }
+  // Fallback: Xrandr backlight property
+  val = _getBacklightProp(monName)
+  if val >= 0 { return val }
+  -1.0
+}
+
+fn getXrandrBrightness(monitorIndex) {
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return -1.0 }
+  // Parse xrandr --verbose
+  out = _shell("xrandr --verbose --query")
+  if out == "" { return -1.0 }
+  lines = out.split("\n")
+  foundMon = false
+  i = 0
+  while i < #lines {
+    line = lines[i]
+    if line.startsWith(monName + " ") || line.startsWith(monName + "\t") {
+      foundMon = true
+    }
+    if foundMon && line.find("Brightness:") >= 0 {
+      parts = line.split(":")
+      if #parts >= 2 {
+        return _clamp(num(parts[1].trim()), 0.0, 2.0)
+      }
+    }
+    if foundMon && line != "" && !line.startsWith("\t") && !line.startsWith(" ") && line != monName + " connected" {
+      // next monitor section starts — stop if we passed ours
+      foundMon = false
+    }
+    i = i + 1
+  }
+  -1.0
+}
+
 fn setBrightness(value, monitorIndex) {
   mi = monitorIndex
   if mi == null { mi = -1 }
@@ -666,8 +698,7 @@ fn setBrightness(value, monitorIndex) {
 fn increaseBrightness(step, monitorIndex) {
   mi = monitorIndex
   if mi == null { mi = -1 }
-  if step == null { step = DEFAULT_BRIGHTNESS_AMOUNT }
-  if step <= 0.1 { step = 0.1 }
+  if step == null || step <= 0 { step = DEFAULT_BRIGHTNESS_AMOUNT }
   monName = _getMonitorName(mi)
   if monName == "" { return }
   cur = getBrightness(mi)
@@ -861,131 +892,6 @@ fn setBrightnessAndShadowLift(brightnessVal, shadowLiftVal, monitorIndex) {
   setBrightness(brightnessVal, monitorIndex)
   setShadowLift(shadowLiftVal, monitorIndex)
 }
-
-// === Day/Night Automation ===
-fn _checkDayNight() {
-  if !_dayNightEnabled { return }
-  hour = time.hour()
-  if hour >= _dayStart && hour < _nightStart {
-    if !_isDayTime {
-      _isDayTime = true
-      for mon in _monitors {
-        _cachedBrightness.set(mon.name, _dayBrightness)
-        _temperature.set(mon.name, _dayTemp)
-        _applySettings(mon.name)
-      }
-    }
-  } else {
-    if _isDayTime {
-      _isDayTime = false
-      for mon in _monitors {
-        _cachedBrightness.set(mon.name, _nightBrightness)
-        _temperature.set(mon.name, _nightTemp)
-        _applySettings(mon.name)
-      }
-    }
-  }
-}
-
-fn enableDayNightMode(dayBrightnessVal, nightBrightnessVal, dayTempVal, nightTempVal, dayStartVal, nightStartVal, intervalMinutesVal) {
-  if dayBrightnessVal == null { dayBrightnessVal = 1.0 }
-  if nightBrightnessVal == null { nightBrightnessVal = 0.3 }
-  if dayTempVal == null { dayTempVal = 6500 }
-  if nightTempVal == null { nightTempVal = 3000 }
-  if dayStartVal == null { dayStartVal = 7 }
-  if nightStartVal == null { nightStartVal = 20 }
-  if intervalMinutesVal == null { intervalMinutesVal = 5 }
-
-  _dayBrightness = dayBrightnessVal
-  _nightBrightness = nightBrightnessVal
-  _dayTemp = dayTempVal
-  _nightTemp = nightTempVal
-  _dayStart = dayStartVal
-  _nightStart = nightStartVal
-  _intervalMinutes = intervalMinutesVal
-  _dayNightEnabled = true
-  _isDayTime = true
-
-  // Stop existing timer
-  if _dayTimer != null { _dayTimer.stop(); _dayTimer = null }
-
-  // Check immediately
-  _checkDayNight()
-
-  // Start interval timer
-  _dayTimer = interval(_intervalMinutes * 60 * 1000) {
-    _checkDayNight()
-  }
-}
-
-fn disableDayNightMode() {
-  _dayNightEnabled = false
-  if _dayTimer != null { _dayTimer.stop(); _dayTimer = null }
-  // Reset to day settings
-  for mon in _monitors {
-    _cachedBrightness.set(mon.name, _dayBrightness)
-    _temperature.set(mon.name, _dayTemp)
-    _applySettings(mon.name)
-  }
-}
-
-fn isDayNightModeEnabled() { _dayNightEnabled }
-
-fn setDaySettings(brightnessVal, temperatureVal) {
-  _dayBrightness = brightnessVal
-  _dayTemp = temperatureVal
-  if _dayNightEnabled && _isDayTime {
-    for mon in _monitors {
-      _cachedBrightness.set(mon.name, brightnessVal)
-      _temperature.set(mon.name, temperatureVal)
-      _applySettings(mon.name)
-    }
-  }
-}
-
-fn setNightSettings(brightnessVal, temperatureVal) {
-  _nightBrightness = brightnessVal
-  _nightTemp = temperatureVal
-  if _dayNightEnabled && !_isDayTime {
-    for mon in _monitors {
-      _cachedBrightness.set(mon.name, brightnessVal)
-      _temperature.set(mon.name, temperatureVal)
-      _applySettings(mon.name)
-    }
-  }
-}
-
-fn setDayNightTiming(dayStartVal, nightStartVal) {
-  _dayStart = _clamp(dayStartVal, 0, 23)
-  _nightStart = _clamp(nightStartVal, 0, 23)
-  if _dayNightEnabled { _checkDayNight() }
-}
-
-fn switchToDay(monitorIndex) {
-  mi = monitorIndex
-  if mi == null { mi = -1 }
-  monName = _getMonitorName(mi)
-  if monName == "" { return false }
-  _isDayTime = true
-  _cachedBrightness.set(monName, _dayBrightness)
-  _temperature.set(monName, _dayTemp)
-  _applySettings(monName)
-  true
-}
-
-fn switchToNight(monitorIndex) {
-  mi = monitorIndex
-  if mi == null { mi = -1 }
-  monName = _getMonitorName(mi)
-  if monName == "" { return false }
-  _isDayTime = false
-  _cachedBrightness.set(monName, _nightBrightness)
-  _temperature.set(monName, _nightTemp)
-  _applySettings(monName)
-  true
-}
-
-fn isDay() { _isDayTime }
 
 fn getMonitors() {
   names = []

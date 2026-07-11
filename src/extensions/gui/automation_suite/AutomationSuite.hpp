@@ -13,7 +13,6 @@ class IO;  // Forward declare IO
 class SettingsWindow;
 class ClipboardManager;  // Forward declare - lazy init
 class ScreenshotManager;  // Forward declare - lazy init
-class BrightnessPanel;  // Forward declare - lazy init
 class AutomationSuite : public QObject {
     Q_OBJECT
 
@@ -25,7 +24,6 @@ public:
     // Lazy initialization - only creates GUI if QApplication exists
     ClipboardManager* getClipboardManager();
     ScreenshotManager* getScreenshotManager();
-    BrightnessPanel* getBrightnessManager();
     PixelAutomation* getPixelAutomation() const { return pixelAutomation.get(); }
 
     void setIO(IO* io) { this->io = io; }
@@ -45,7 +43,6 @@ private:
     // ALL lazy-initialized GUI components
     ClipboardManager* clipboardMgr = nullptr;
     ScreenshotManager* screenshotMgr = nullptr;
-    BrightnessPanel* brightnessMgr = nullptr;
     std::unique_ptr<PixelAutomation> pixelAutomation;
     QSystemTrayIcon* trayIcon = nullptr;  // Lazy
     QMenu* trayMenu = nullptr;  // Lazy

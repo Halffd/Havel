@@ -2,7 +2,6 @@
 #include "qt.hpp"
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
-#include "extensions/gui/brightness_panel/BrightnessPanel.hpp"
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QGroupBox>
@@ -52,13 +51,6 @@ void SettingsWindow::setupUI() {
     });
     componentsLayout->addWidget(screenshotBtn);
 
-    auto* brightnessBtn = new QPushButton("Brightness Manager", this);
-    connect(brightnessBtn, &QPushButton::clicked, [this]() {
-        if (auto* bm = automationSuite->getBrightnessManager()) {
-            bm->show();
-        }
-    });
-    componentsLayout->addWidget(brightnessBtn);
     
     mainLayout->addWidget(componentsGroup);
     

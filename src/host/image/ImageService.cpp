@@ -148,7 +148,11 @@ int64_t ImageService::rotate(int64_t handle, double angle) {
     auto* img = impl_->get(handle);
     if (!img) return 0;
     cv::Point2f center(img->cols / 2.0f, img->rows / 2.0f);
-    cv::Mat rot = cv::getRotationMatrix2D(center, angle, 1.0);
+    double rad = angle * CV_PI / 180.0;
+    double s = sin(rad), c = cos(rad);
+    cv::Mat rot = (cv::Mat_<double>(2, 3) << c, -s, 0, s, c, 0);
+    rot.at<double>(0, 2) += center.x - (center.x * c - center.y * s);
+    rot.at<double>(1, 2) += center.y - (center.x * s + center.y * c);
     cv::Mat result;
     cv::warpAffine(*img, result, rot, img->size());
     return impl_->store(result);

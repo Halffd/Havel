@@ -2,7 +2,6 @@
 #include "qt.hpp"
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
-#include "extensions/gui/brightness_panel/BrightnessPanel.hpp"
 #include "core/automation/PixelAutomation.hpp"
 #include <QApplication>
 #include <QMenu>
@@ -61,20 +60,8 @@ ScreenshotManager* AutomationSuite::getScreenshotManager() {
     return screenshotMgr;
 }
 
-BrightnessPanel* AutomationSuite::getBrightnessManager() {
-    // Lazy initialization - only create if QApplication exists
-    if (!brightnessMgr) {
-        if (!QApplication::instance()) {
-            qWarning() << "Warning: BrightnessPanel requested but no QApplication exists";
-            return nullptr;
-        }
-        brightnessMgr = new BrightnessPanel();
-    }
-    return brightnessMgr;
-}
-
 AutomationSuite::AutomationSuite(IO* io, QObject *parent)
-    : QObject(parent), io(io), clipboardMgr(nullptr), screenshotMgr(nullptr), brightnessMgr(nullptr) {
+    : QObject(parent), io(io), clipboardMgr(nullptr), screenshotMgr(nullptr) {
     // DON'T create ANY GUI components in constructor - ALL lazy init
     // Non-GUI components can be created here
     pixelAutomation = std::make_unique<PixelAutomation>();
@@ -97,9 +84,6 @@ void AutomationSuite::ensureTrayIcon() {
         });
         trayMenu->addAction("Screenshots", [this]() {
             if (auto* sm = getScreenshotManager()) sm->show();
-        });
-        trayMenu->addAction("Brightness", [this]() {
-            if (auto* bm = getBrightnessManager()) bm->show();
         });
         trayMenu->addSeparator();
         trayMenu->addAction("Settings", [this]() { showSettings(); });

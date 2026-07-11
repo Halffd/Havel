@@ -11,7 +11,6 @@
 #include <vector>
 
 namespace havel {
-class BrightnessManager;
 class IO;
 class HotkeyManager;
 class WindowManager;
@@ -76,7 +75,6 @@ public:
   IO *getIO() const { return io.get(); }
   WindowManager *getWindowManager() const { return windowManager.get(); }
   HotkeyManager *getHotkeyManager() const { return hotkeyManager.get(); }
-  BrightnessManager *getBrightnessManager() const { return brightnessManager.get(); }
   AudioManager *getAudioManager() const { return audioManager.get(); }
   automation::AutomationManager *getAutomationManager() const { return automationManager.get(); }
   compiler::VM *getBytecodeVM() const { return bytecodeVM.get(); }
@@ -115,7 +113,6 @@ private:
   std::shared_ptr<IO> io;
   std::shared_ptr<WindowManager> windowManager;
   std::shared_ptr<HotkeyManager> hotkeyManager;
-  std::shared_ptr<BrightnessManager> brightnessManager;
   std::shared_ptr<AudioManager> audioManager;
   std::shared_ptr<automation::AutomationManager> automationManager;
   std::shared_ptr<net::NetworkManager> networkManager;

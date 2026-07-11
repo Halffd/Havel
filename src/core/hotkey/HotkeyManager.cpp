@@ -83,11 +83,7 @@ namespace havel
     }
   }
 
-  HotkeyManager::HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &,
-                               AudioManager &, ScreenshotManager *,
-                               BrightnessManager &,
-                               std::shared_ptr<net::NetworkManager>)
-      : HotkeyManager(io) {}
+  // Unused multi-param constructor removed (was legacy API)
 
   HotkeyManager::~HotkeyManager() { cleanup(); }
 

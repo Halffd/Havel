@@ -7,7 +7,6 @@
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
 #include "core/hotkey/HotkeyActionWrapper.hpp"
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
-#include "core/brightness/BrightnessManager.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/io/IO.hpp"
 #include "utils/ExitHandler.hpp"
@@ -116,11 +115,6 @@ void Havel::initialize(bool isStartup) {
     havel::startup_timing_report("AudioManager-init", t);
     t = havel::startup_now();
 
-    brightnessManager = std::make_shared<BrightnessManager>();
-    brightnessManager->init();
-    havel::startup_timing_report("BrightnessManager-init", t);
-    t = havel::startup_now();
-
     automationManager = std::make_shared<automation::AutomationManager>(io);
     havel::startup_timing_report("AutomationManager-create", t);
     t = havel::startup_now();
@@ -139,7 +133,6 @@ void Havel::initialize(bool isStartup) {
   hostContext->io = io.get();
   hostContext->windowManager = windowManager.get();
   hostContext->hotkeyManager = hotkeyManager.get();
-  hostContext->brightnessManager = brightnessManager.get();
   hostContext->audioManager = audioManager.get();
   hostContext->networkManager = networkManager.get();
 
@@ -469,9 +462,6 @@ void Havel::cleanup() noexcept {
   // Destroy other components
   if (automationManager) {
     automationManager.reset();
-  }
-  if (brightnessManager) {
-    brightnessManager.reset();
   }
   if (audioManager) {
     audioManager.reset();

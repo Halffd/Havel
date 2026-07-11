@@ -9,7 +9,6 @@ namespace havel {
 
 HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  WindowManager *windowManager,
-                 BrightnessManager *brightnessManager,
                  AudioManager *audioManager, GUIManager *guiManager,
                  ScreenshotManager *screenshotManager,
                  ClipboardManager *clipboardManager,
@@ -18,7 +17,7 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  ProcessManager *processManager, MapManager *mapManager,
                 const std::vector<std::string> &commandLineArgs)
     : io(io), hotkeyManager(hotkeyManager), config(config),
-      windowManager(windowManager), brightnessManager(brightnessManager),
+      windowManager(windowManager),
       audioManager(audioManager), guiManager(guiManager),
       screenshotManager(screenshotManager), clipboardManager(clipboardManager),
       pixelAutomation(pixelAutomation), automationManager(automationManager),
@@ -52,7 +51,6 @@ Configs &HostAPI::GetConfig() { return config; }
 IO *HostAPI::GetIO() { return io; }
 HotkeyManager *HostAPI::GetHotkeyManager() { return hotkeyManager; }
 WindowManager *HostAPI::GetWindowManager() { return windowManager; }
-BrightnessManager *HostAPI::GetBrightnessManager() { return brightnessManager; }
 AudioManager *HostAPI::GetAudioManager() { return audioManager; }
 GUIManager *HostAPI::GetGUIManager() { return guiManager; }
 ScreenshotManager *HostAPI::GetScreenshotManager() { return screenshotManager; }
@@ -71,7 +69,6 @@ const std::vector<std::string> &HostAPI::GetCommandLineArgs() { return commandLi
 } // namespace havel
 #else
 #include "ImportManager.hpp"
-#include "core/brightness/BrightnessManager.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/IO.hpp"
@@ -92,7 +89,6 @@ namespace havel {
 
 HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  WindowManager *windowManager,
-                 BrightnessManager *brightnessManager,
                  AudioManager *audioManager, GUIManager *guiManager,
                  ScreenshotManager *screenshotManager,
                  ClipboardManager *clipboardManager,
@@ -101,7 +97,7 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  ProcessManager *processManager, MapManager *mapManager,
                 const std::vector<std::string> &commandLineArgs)
     : io(io), hotkeyManager(hotkeyManager), config(config),
-      windowManager(windowManager), brightnessManager(brightnessManager),
+      windowManager(windowManager),
       audioManager(audioManager), guiManager(guiManager),
       screenshotManager(screenshotManager), clipboardManager(clipboardManager),
       pixelAutomation(pixelAutomation), automationManager(automationManager),
@@ -217,7 +213,6 @@ Configs &HostAPI::GetConfig() { return config; }
 IO *HostAPI::GetIO() { return io; }
 HotkeyManager *HostAPI::GetHotkeyManager() { return hotkeyManager; }
 WindowManager *HostAPI::GetWindowManager() { return windowManager; }
-BrightnessManager *HostAPI::GetBrightnessManager() { return brightnessManager; }
 AudioManager *HostAPI::GetAudioManager() { return audioManager; }
 GUIManager *HostAPI::GetGUIManager() { return guiManager; }
 ScreenshotManager *HostAPI::GetScreenshotManager() { return screenshotManager; }

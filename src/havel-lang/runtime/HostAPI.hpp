@@ -105,7 +105,6 @@ public:
   virtual class IO *GetIO() = 0;
   virtual class HotkeyManager *GetHotkeyManager() = 0;
   virtual class WindowManager *GetWindowManager() = 0;
-  virtual class BrightnessManager *GetBrightnessManager() = 0;
   virtual class AudioManager *GetAudioManager() = 0;
   virtual class GUIManager *GetGUIManager() = 0;
   virtual class ScreenshotManager *GetScreenshotManager() = 0;
@@ -137,7 +136,6 @@ class HostAPI : public IHostAPI {
 public:
   HostAPI(class IO *io, class HotkeyManager *hotkeyManager,
           class Configs &config, class WindowManager *windowManager = nullptr,
-          class BrightnessManager *brightnessManager = nullptr,
           class AudioManager *audioManager = nullptr,
           class GUIManager *guiManager = nullptr,
           class ScreenshotManager *screenshotManager = nullptr,
@@ -192,7 +190,6 @@ public:
   class IO *GetIO() override;
   class HotkeyManager *GetHotkeyManager() override;
   class WindowManager *GetWindowManager() override;
-  class BrightnessManager *GetBrightnessManager() override;
   class AudioManager *GetAudioManager() override;
   class GUIManager *GetGUIManager() override;
   class ScreenshotManager *GetScreenshotManager() override;
@@ -220,7 +217,6 @@ private:
   class HotkeyManager *hotkeyManager;
   class Configs &config;
   class WindowManager *windowManager;
-  class BrightnessManager *brightnessManager;
   class AudioManager *audioManager;
   class GUIManager *guiManager;
   class ScreenshotManager *screenshotManager;

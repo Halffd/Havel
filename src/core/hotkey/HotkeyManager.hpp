@@ -24,7 +24,6 @@ class MPVController;
 class AudioManager;
 class Interpreter;
 class ScreenshotManager;
-class BrightnessManager;
 
 namespace net {
 class NetworkManager;
@@ -39,9 +38,6 @@ public:
   };
 
   explicit HotkeyManager(std::shared_ptr<IO> io);
-  HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &, AudioManager &,
-                ScreenshotManager *, BrightnessManager &,
-                std::shared_ptr<net::NetworkManager>);
   ~HotkeyManager();
 
   bool AddHotkey(const std::string &key, std::function<void()> callback);

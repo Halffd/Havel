@@ -12,7 +12,6 @@
 #include "../host/clipboard/MonitoringClipboard.hpp"
 #endif
 #include "../host/audio/AudioService.hpp"
-#include "../host/brightness/BrightnessService.hpp"
 #include "../host/screenshot/ScreenshotService.hpp"
 #include "../host/automation/PixelAutomationService.hpp"
 #include "../host/automation/AutomationService.hpp"
@@ -44,7 +43,6 @@ void declareAllServices() {
 	registry.declareService<host::AltTabService>("alt-tab", "qt");
 #endif
   registry.declareService<host::AutomationService>("automation", "io");
-  registry.declareService<host::BrightnessService>("brightness", "core");
   registry.declareService<host::FileSystemService>("filesystem", "util");
   registry.declareService<host::ImageService>("image", "util");
   registry.declareService<host::MediaService>("media", "util");
@@ -103,17 +101,6 @@ if (registry.shouldRegister("clipboard", includes, excludes)) {
 		registry.registerService<host::AutomationService>(automationService);
 	}
 
-	if (hostAPI->GetBrightnessManager() && registry.shouldRegister("brightness", includes, excludes)) {
-		BR_DEBUG("registering BrightnessService with manager=%p", (void*)hostAPI->GetBrightnessManager());
-		auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
-		registry.registerService<host::BrightnessService>(brightnessService);
-		BR_DEBUG("BrightnessService registered, service count=%zu", registry.size());
-	} else {
-		BR_DEBUG("skipping BrightnessService: manager=%p shouldRegister=%d",
-			(void*)(hostAPI ? hostAPI->GetBrightnessManager() : nullptr),
-			registry.shouldRegister("brightness", includes, excludes));
-	}
-
 	if (registry.shouldRegister("filesystem", includes, excludes)) {
 		auto fsService = std::make_shared<host::FileSystemService>();
 		registry.registerService<host::FileSystemService>(fsService);
@@ -169,7 +156,6 @@ havel::HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI) {
 	ctx.io = hostAPI ? hostAPI->GetIO() : nullptr;
 	ctx.hotkeyManager = hostAPI ? hostAPI->GetHotkeyManager() : nullptr;
 	ctx.windowManager = hostAPI ? hostAPI->GetWindowManager() : nullptr;
-	ctx.brightnessManager = hostAPI ? hostAPI->GetBrightnessManager() : nullptr;
 	ctx.audioManager = hostAPI ? hostAPI->GetAudioManager() : nullptr;
 	ctx.guiManager = hostAPI ? hostAPI->GetGUIManager() : nullptr;
 	ctx.screenshotManager = hostAPI ? hostAPI->GetScreenshotManager() : nullptr;

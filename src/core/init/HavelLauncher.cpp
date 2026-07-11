@@ -243,7 +243,7 @@ static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
   auto *hkManager = inst.getHotkeyManagerPtr();
   return std::make_shared<HostAPI>(
       inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
-      inst.getWindowManagerPtr(), inst.getBrightnessManager(),
+      inst.getWindowManagerPtr(),
       inst.getAudioManager(), nullptr, nullptr, nullptr, nullptr, nullptr,
       nullptr, nullptr, nullptr,
       std::vector<std::string>{});

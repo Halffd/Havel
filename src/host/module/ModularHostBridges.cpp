@@ -29,7 +29,6 @@
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #endif
 #include "host/automation/AutomationService.hpp"
-#include "host/brightness/BrightnessService.hpp"
 #include "host/browser/BrowserService.hpp"
 #include "host/chunker/TextChunkerService.hpp"
 #include "host/filesystem/FileSystemService.hpp"

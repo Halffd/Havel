@@ -1,0 +1,88 @@
+// daynight.hv — day/night brightness automation
+// Wraps brightness.hv with time-based switching
+// Usage:
+//   use * from "daynight"
+//   daynight.enable(1.0, 0.3, 6500, 3000, 7, 20, 5)
+
+use time
+
+_dayEnabled = false
+_dayBrightness = 1.0
+_nightBrightness = 0.3
+_dayTemp = 6500
+_nightTemp = 3000
+_dayStart = 7
+_nightStart = 20
+_isDay = true
+_timer = null
+
+fn _clamp(v, lo, hi) {
+  if v < lo { lo }
+  else if v > hi { hi }
+  else { v }
+}
+
+fn _isDaytime() {
+  hour = time.hour()
+  if _dayStart <= _nightStart {
+    hour >= _dayStart && hour < _nightStart
+  } else {
+    hour >= _dayStart || hour < _nightStart
+  }
+}
+
+fn _apply() {
+  if !_dayEnabled return
+  day = _isDaytime()
+  if day == _isDay return  // no change
+  _isDay = day
+  if day {
+    setBrightness(_dayBrightness)
+    setTemperature(_dayTemp)
+  } else {
+    setBrightness(_nightBrightness)
+    setTemperature(_nightTemp)
+  }
+}
+
+fn enable(dayBrightness, nightBrightness, dayTemp, nightTemp, dayStart, nightStart, intervalMinutes) {
+  _dayBrightness = dayBrightness
+  _nightBrightness = nightBrightness
+  _dayTemp = dayTemp
+  _nightTemp = nightTemp
+  _dayStart = _clamp(dayStart, 0, 23)
+  _nightStart = _clamp(nightStart, 0, 23)
+  _isDay = _isDaytime()
+  _dayEnabled = true
+  if _timer != null { _timer.stop(); _timer = null }
+  _apply()
+  ms = intervalMinutes * 60 * 1000
+  _timer = interval(ms) { _apply() }
+}
+
+fn disable() {
+  _dayEnabled = false
+  if _timer != null { _timer.stop(); _timer = null }
+}
+
+fn isEnabled() { _dayEnabled }
+
+fn isDay() { _isDay }
+
+fn setDaySettings(brightness, temp) {
+  _dayBrightness = brightness
+  _dayTemp = temp
+  if _dayEnabled && _isDay { _apply() }
+}
+
+fn setNightSettings(brightness, temp) {
+  _nightBrightness = brightness
+  _nightTemp = temp
+  if _dayEnabled && !_isDay { _apply() }
+}
+
+fn setDayTiming(dayStart, nightStart) {
+  _dayStart = _clamp(dayStart, 0, 23)
+  _nightStart = _clamp(nightStart, 0, 23)
+  if _dayEnabled { _apply() }
+}

@@ -1187,30 +1187,7 @@ target_link_libraries(havel_api_test PRIVATE
 ${COMMON_LIBS}
 )
 
-add_executable(brightness_test tests/test_brightness.cpp)
-set_target_properties(brightness_test PROPERTIES
-  CXX_STANDARD 23
-  CXX_STANDARD_REQUIRED ON
-  CXX_EXTENSIONS OFF
-)
-target_compile_options(brightness_test PRIVATE -fno-lto)
-target_link_options(brightness_test PRIVATE -fno-lto)
-target_include_directories(brightness_test PRIVATE
-  ${CMAKE_SOURCE_DIR}/src
-  ${CMAKE_SOURCE_DIR}/include
-  ${CMAKE_SOURCE_DIR}/src/havel-lang
-)
-target_link_libraries(brightness_test PRIVATE
--Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-${COMMON_LIBS}
-)
-
-if(ENABLE_MODULE_PLUGINS)
-set_target_properties(havel_api_test PROPERTIES ENABLE_EXPORTS ON)
-target_link_options(havel_api_test PRIVATE -Wl,--export-dynamic)
-set_target_properties(brightness_test PROPERTIES ENABLE_EXPORTS ON)
-target_link_options(brightness_test PRIVATE -Wl,--export-dynamic)
-endif()
+# brightness_test disabled - replaced by modules/lang/brightness/brightness.hv (FFI-based)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
@@ -1438,7 +1415,6 @@ if(ENABLE_HAVEL_LANG)
     ${CMAKE_SOURCE_DIR}/src/dl/Loader.c
     ${CMAKE_SOURCE_DIR}/src/c/LoggerC.c
     ${CMAKE_SOURCE_DIR}/src/c/Config.c
-    ${CMAKE_SOURCE_DIR}/src/modules/brightness/BrightnessModule.cpp
     ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/RuntimeErrorTracker.cpp
 )
     add_library(havel_lang STATIC ${HAVEL_LANG_LIB_SOURCES})
@@ -1637,7 +1613,6 @@ add_havel_module_plugin(app          ${CMAKE_SOURCE_DIR}/src/modules/app/AppModu
 add_havel_module_plugin(audio        ${CMAKE_SOURCE_DIR}/src/modules/audio/AudioModule.cpp)
 add_havel_module_plugin(automation   ${CMAKE_SOURCE_DIR}/src/modules/automation/AutomationModule.cpp)
 add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp)
-add_havel_module_plugin(brightness   ${CMAKE_SOURCE_DIR}/src/modules/brightness/BrightnessModule.cpp)
 add_havel_module_plugin(clipboard    ${CMAKE_SOURCE_DIR}/src/modules/clipboard/ClipboardModule.cpp)
 add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/HistoryClipboardModule.cpp)
 add_havel_module_plugin(monitoringclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/MonitoringClipboardModule.cpp)

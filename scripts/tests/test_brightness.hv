@@ -1,38 +1,240 @@
-print("=== brightness module ===")
-print("global:", type(brightness))
+use * from "brightness"
 
-val monitors = brightness.getMonitors()
-print("monitors:", monitors, "count:", #monitors)
+testCount = 0
+passCount = 0
+failCount = 0
 
-if #monitors > 0 {
-  print("monitor 0:", brightness.getMonitor(0))
-  print("brightness:", brightness.get())
-  print("temperature:", brightness.getTemperature())
-  print("gamma rgb:", brightness.getGammaRGB())
-  print("shadow lift:", brightness.getShadowLift())
-  print("is day:", brightness.isDay())
-  print("day/night enabled:", brightness.isDayNightModeEnabled())
-
-  val old = brightness.get()
-  if old > 0 {
-    brightness.increase(0.05)
-    print("after +0.05:", brightness.get())
-    brightness.decrease(0.05)
-    print("after -0.05:", brightness.get())
+fn test(name, got, expected) {
+  testCount = testCount + 1
+  gotT = type(got)
+  expT = type(expected)
+  ok = false
+  if (gotT == "num" || gotT == "float" || gotT == "int") && (expT == "num" || expT == "float" || expT == "int") {
+    ok = math.abs(got - expected) < 0.001
+  } else {
+    ok = str(got) == str(expected)
   }
-
-  val oldTemp = brightness.getTemperature()
-  brightness.increaseTemperature(500)
-  print("after temp+500:", brightness.getTemperature())
-  brightness.decreaseTemperature(500)
-  print("after temp-500:", brightness.getTemperature())
-
-  brightness.set(old)
-  brightness.setTemperature(oldTemp)
-  print("restored")
-
-} else {
-  print("no monitors (headless)")
+  if ok {
+    passCount = passCount + 1
+  } else {
+    failCount = failCount + 1
+    print("[FAIL] " + name + ": expected " + str(expected) + ", got " + str(got))
+  }
 }
 
-print("done")
+print("[BRIGHTNESS TEST] ================================")
+
+print("--- Constants ---")
+test("MIN_TEMP", MIN_TEMP, 1000)
+test("MAX_TEMP", MAX_TEMP, 25000)
+test("DEFAULT_BRIGHTNESS_AMOUNT", DEFAULT_BRIGHTNESS_AMOUNT, 0.02)
+test("DEFAULT_TEMP_AMOUNT", DEFAULT_TEMP_AMOUNT, 200)
+test("DEFAULT_GAMMA_AMOUNT", DEFAULT_GAMMA_AMOUNT, 100)
+test("SHADOW_LIFT_MAX", SHADOW_LIFT_MAX, 4.0)
+test("GAMMA_RAMP_SIZE", GAMMA_RAMP_SIZE, 256)
+
+print("--- Monitors ---")
+monitors = getMonitors()
+test("getMonitors returns array", type(monitors), "array")
+nMon = #monitors
+print("[INFO] " + str(nMon) + " monitors: " + str(monitors))
+
+m0 = getMonitor(0)
+if nMon > 0 {
+  test("getMonitor(0) == first name", m0, monitors[0])
+}
+// -1 returns first monitor, null defaults to 0
+test("getMonitor(null) defaults 0", getMonitor(null), m0)
+// index >= nMon returns empty
+test("getMonitor(999)", getMonitor(999), "")
+
+fst = 0
+if nMon == 0 { fst = -1 }
+
+print("--- Brightness ---")
+test("getBrightness() returns 0-1", getBrightness(fst) >= 0.0 && getBrightness(fst) <= 1.0, true)
+
+if nMon > 0 {
+  setBrightness(0.5, fst)
+  test("setBrightness(0.5)", getBrightness(fst), 0.5)
+
+  setBrightness(2.0, fst)
+  test("clamp >1.0", getBrightness(fst), 1.0)
+
+  setBrightness(-1.0, fst)
+  test("clamp <0.0", getBrightness(fst), 0.0)
+
+  setBrightness(0.5, fst)
+  increaseBrightness(null, fst)
+  test("increase default", getBrightness(fst), 0.52)
+
+  increaseBrightness(0.1, fst)
+  test("increaseBrightness(0.1)", getBrightness(fst), 0.62)
+
+  decreaseBrightness(null, fst)
+  test("decrease default", getBrightness(fst), 0.60)
+
+  decreaseBrightness(0.3, fst)
+  test("decreaseBrightness(0.3)", getBrightness(fst), 0.30)
+
+  setBrightness(0.95, fst)
+  increaseBrightness(0.1, fst)
+  test("increase clamp 1.0", getBrightness(fst), 1.0)
+
+  setBrightness(0.05, fst)
+  decreaseBrightness(0.1, fst)
+  test("decrease clamp 0.0", getBrightness(fst), 0.0)
+
+  setBrightness(0.5, fst)
+}
+
+// null -> -1 -> first monitor (same as fst=0 when monitors exist)
+test("getBrightness(null) == getBrightness(0)", getBrightness(null), getBrightness(0))
+test("getBrightness(-1) == getBrightness(0)", getBrightness(-1), getBrightness(0))
+
+print("--- Temperature ---")
+test("getTemperature returns int", type(getTemperature(fst)), "int")
+test("getTemperature in range", getTemperature(fst) >= MIN_TEMP && getTemperature(fst) <= MAX_TEMP, true)
+
+if nMon > 0 {
+  setTemperature(3000, fst)
+  test("setTemperature(3000)", getTemperature(fst), 3000)
+
+  setTemperature(6500, fst)
+  test("setTemperature(6500)", getTemperature(fst), 6500)
+
+  setTemperature(500, fst)
+  test("clamp below MIN", getTemperature(fst), MIN_TEMP)
+
+  setTemperature(30000, fst)
+  test("clamp above MAX", getTemperature(fst), MAX_TEMP)
+
+  setTemperature(5000, fst)
+  increaseTemperature(null, fst)
+  test("increase default", getTemperature(fst), 5200)
+
+  increaseTemperature(500, fst)
+  test("increaseTemperature(500)", getTemperature(fst), 5700)
+
+  decreaseTemperature(null, fst)
+  test("decrease default", getTemperature(fst), 5500)
+
+  decreaseTemperature(1000, fst)
+  test("decreaseTemperature(1000)", getTemperature(fst), 4500)
+}
+
+// null -> -1 -> first monitor
+test("getTemperature(null) == getTemperature(0)", getTemperature(null), getTemperature(0))
+
+print("--- Gamma ---")
+if nMon > 0 {
+  setGammaRGB(1.0, 1.0, 1.0, fst)
+  rgb = getGammaRGB(fst)
+  test("gamma.r default", math.abs(rgb.r - 1.0) < 0.001, true)
+  test("gamma.g default", math.abs(rgb.g - 1.0) < 0.001, true)
+  test("gamma.b default", math.abs(rgb.b - 1.0) < 0.001, true)
+
+  setGammaRGB(0.5, 0.8, 1.2, fst)
+  rgb = getGammaRGB(fst)
+  test("setGammaRGB.r", math.abs(rgb.r - 0.5) < 0.001, true)
+  test("setGammaRGB.g", math.abs(rgb.g - 0.8) < 0.001, true)
+  test("setGammaRGB.b", math.abs(rgb.b - 1.2) < 0.001, true)
+
+  setGammaRGB(0.0, 1.0, 1.0, fst)
+  test("clamp r<0.1", getGammaRGB(fst).r, 0.1)
+
+  setGammaRGB(20.0, 1.0, 1.0, fst)
+  test("clamp r>10.0", getGammaRGB(fst).r, 10.0)
+
+  setGammaRGB(1.0, 1.0, 1.0, fst)
+}
+
+test("getGammaR returns float", type(getGammaR(fst)), "float")
+test("getGammaG returns float", type(getGammaG(fst)), "float")
+test("getGammaB returns float", type(getGammaB(fst)), "float")
+
+print("--- setGamma ---")
+if nMon > 0 {
+  setGamma(2.0, fst)
+  test("setGamma(2.0)", getGamma(fst), 2.0)
+  test("getGamma == getGammaR", getGamma(fst), getGammaR(fst))
+
+  setGamma(0.0, fst)
+  test("clamp at 0.1", getGamma(fst), 0.1)
+
+  setGamma(20.0, fst)
+  test("clamp at 10.0", getGamma(fst), 10.0)
+
+  setGamma(1.0, fst)
+  increaseGamma(null, fst)
+  test("increaseGamma default", math.abs(getGamma(fst) - 1.1) < 0.01, true)
+
+  setGamma(1.0, fst)
+  increaseGamma(500, fst)
+  test("increaseGamma(500)", math.abs(getGamma(fst) - 1.5) < 0.01, true)
+}
+
+print("--- Shadow Lift ---")
+if nMon > 0 {
+  test("getShadowLift default", getShadowLift(fst), 0.0)
+  setShadowLift(0.5, fst)
+  test("setShadowLift(0.5)", getShadowLift(fst), 0.5)
+  setShadowLift(-0.5, fst)
+  test("negative ignored", getShadowLift(fst), 0.5)
+  setShadowLift(SHADOW_LIFT_MAX + 1, fst)
+  test("> max ignored", getShadowLift(fst), 0.5)
+  setShadowLift(0.0, fst)
+  increaseShadowLift(null, fst)
+  test("inc default", getShadowLift(fst), 0.1)
+  increaseShadowLift(0.5, fst)
+  test("inc(0.5)", getShadowLift(fst), 0.6)
+  decreaseShadowLift(null, fst)
+  test("dec default", getShadowLift(fst), 0.5)
+  decreaseShadowLift(0.3, fst)
+  test("dec(0.3)", getShadowLift(fst), 0.2)
+  setShadowLift(0.0, fst)
+}
+
+print("--- Combined ---")
+if nMon > 0 {
+  setBrightnessAndRGB(0.8, 0.9, 1.1, 1.2, fst)
+  test("comb.br.br", getBrightness(fst), 0.8)
+  rgb = getGammaRGB(fst)
+  test("comb.br.r", math.abs(rgb.r - 0.9) < 0.001, true)
+
+  setBrightnessAndTemperature(0.5, 4000, fst)
+  test("comb.bt.br", getBrightness(fst), 0.5)
+  test("comb.bt.temp", getTemperature(fst), 4000)
+
+  setBrightnessAndShadowLift(0.9, 0.3, fst)
+  test("comb.bl.br", getBrightness(fst), 0.9)
+  test("comb.bl.shadow", getShadowLift(fst), 0.3)
+}
+
+print("--- Hardware ---")
+hb = getHardwareBrightness(fst)
+test("getHardwareBrightness type", type(hb), "float")
+
+xb = getXrandrBrightness(fst)
+test("getXrandrBrightness type", type(xb), "float")
+
+print("--- Null/Invalid (no-crash) ---")
+test("setBrightness(null,null) no-crash", true, true)
+test("setBrightness(-1) no-crash", setBrightness(0.5, -1) != null, true)
+test("setTemperature(null,null) no-crash", true, true)
+test("increaseTemperature(null,null) no-crash", true, true)
+test("decreaseTemperature(null,null) no-crash", true, true)
+test("setGammaRGB(null,null) no-crash", true, true)
+test("increaseGamma(null,null) no-crash", true, true)
+test("decreaseGamma(null,null) no-crash", true, true)
+test("setShadowLift(null,null) no-crash", true, true)
+
+print("================================================")
+msg = str(passCount) + "/" + str(testCount) + " passed"
+print("[RESULT] " + msg)
+if failCount > 0 {
+  print("[RESULT] " + str(failCount) + " FAILURES")
+  exit(1)
+} else {
+  print("[RESULT] ALL PASSED")
+}

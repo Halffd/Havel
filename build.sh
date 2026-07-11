@@ -232,6 +232,18 @@ build() {
     fi
 
     log "SUCCESS" "Build completed successfully" "${GREEN}"
+
+    # Build native gamma ramp library for FFI-based brightness module
+    local gamma_ramp_c="${SCRIPT_DIR}/modules/app/gamma_ramp.c"
+    local gamma_ramp_so="${SCRIPT_DIR}/modules/app/libgamma_ramp.so"
+    if [[ -f "$gamma_ramp_c" ]]; then
+        log "INFO" "Building native gamma ramp library..." "${BLUE}"
+        if gcc -O2 -shared -fPIC -o "$gamma_ramp_so" "$gamma_ramp_c" -lm 2>/dev/null; then
+            log "INFO" "  → libgamma_ramp.so built" "${GREEN}"
+        else
+            log "WARNING" "  → Failed to build libgamma_ramp.so (fallback: Havel loop)" "${YELLOW}"
+        fi
+    fi
 }
 
 run() {

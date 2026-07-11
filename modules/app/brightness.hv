@@ -1,702 +1,984 @@
-// brightness.hv — Brightness, gamma, temperature, and day/night control
+// brightness.hv — full replacement for C++ BrightnessManager
+// Uses FFI for X11/Xrandr gamma ramp control, shell for sysfs/gammastep
 // Provides: get, set, increase, decrease, getTemperature, setTemperature,
-// increaseTemperature, decreaseTemperature, setGammaRGB, getGammaRGB,
+// increaseTemperature, decreaseTemperature, getGammaRGB, setGammaRGB,
 // increaseGamma, decreaseGamma, getShadowLift, setShadowLift,
 // increaseShadowLift, decreaseShadowLift, setBrightnessAndRGB,
 // setBrightnessAndTemperature, setBrightnessAndShadowLift,
-// enableDayNightMode, disableDayNightMode, isDayNightModeEnabled,
-// setDaySettings, setNightSettings, setDayNightTiming,
-// switchToDay, switchToNight, isDay, getMonitors, getMonitor
-//
-// Wraps the C++ BrightnessService host functions for .hv usage
+// getHardwareBrightness, getXrandrBrightness, getMonitors, getMonitor,
+// getGamma, setGamma
 
 use ffi
 use display
+use shell
+use fs
+use math
 
+// === Constants ===
+MIN_TEMP = 1000
+MAX_TEMP = 25000
+DEFAULT_BRIGHTNESS_AMOUNT = 0.02
+DEFAULT_TEMP_AMOUNT = 200
+DEFAULT_GAMMA_AMOUNT = 100
+GAMMA_RAMP_SIZE = 256
+SHADOW_LIFT_MAX = 4.0
+
+// === Library loading ===
+_x11 = ffi.open("libX11.so.6")
 _xrandr = ffi.open("libXrandr.so.2")
-if _xrandr == 0 { _xrandr = ffi.open("libXrandr.so") }
+_c = ffi.open("libc.so.6")
 
-_XRRGetScreenResourcesCurrent = 0
-_XRRFreeScreenResources = 0
-_XRRSetOutputProperty = 0
-_XRRGetOutputProperty = 0
-_XRRGetOutputInfo = 0
-_XRRFreeOutputInfo = 0
-_XRRGetCrtcInfo = 0
-_XRRFreeCrtcInfo = 0
+// === X11 function symbols ===
+_XOpenDisplay = 0; _XDefaultScreen = 0; _XRootWindow = 0; _XInternAtom = 0
+_XFlush = 0; _XCloseDisplay = 0; _XSynchronize = 0
+_XScreenNumberOfScreen = 0
+_XRRGetScreenResourcesCurrent = 0; _XRRFreeScreenResources = 0
+_XRRGetOutputInfo = 0; _XRRFreeOutputInfo = 0
+_XRRGetCrtcInfo = 0; _XRRFreeCrtcInfo = 0
 _XRRGetOutputPrimary = 0
-_hasXRandR = false
+_XRRGetCrtcGammaSize = 0; _XRRGetCrtcGamma = 0; _XRRSetCrtcGamma = 0
+_XRRAllocGamma = 0; _XRRFreeGamma = 0
+_XRRChangeOutputProperty = 0; _XRRGetOutputProperty = 0; _XRRQueryOutputProperty = 0
+_XFree = 0
+_hasXRR = false
+_fillGammaRamp = 0
+
+fn _loadNativeRampBuilder() {
+  lib = ffi.open("modules/app/libgamma_ramp.so")
+  if lib == 0 { return false }
+  _fillGammaRamp = ffi.sym(lib, "fill_gamma_ramp")
+  _fillGammaRamp != 0
+}
 
 if _xrandr != 0 {
   _XRRGetScreenResourcesCurrent = ffi.sym(_xrandr, "XRRGetScreenResourcesCurrent")
   _XRRFreeScreenResources = ffi.sym(_xrandr, "XRRFreeScreenResources")
-  _XRRSetOutputProperty = ffi.sym(_xrandr, "XRRSetOutputProperty")
-  _XRRGetOutputProperty = ffi.sym(_xrandr, "XRRGetOutputProperty")
   _XRRGetOutputInfo = ffi.sym(_xrandr, "XRRGetOutputInfo")
   _XRRFreeOutputInfo = ffi.sym(_xrandr, "XRRFreeOutputInfo")
   _XRRGetCrtcInfo = ffi.sym(_xrandr, "XRRGetCrtcInfo")
   _XRRFreeCrtcInfo = ffi.sym(_xrandr, "XRRFreeCrtcInfo")
   _XRRGetOutputPrimary = ffi.sym(_xrandr, "XRRGetOutputPrimary")
-  if _XRRGetScreenResourcesCurrent != 0 { _hasXRandR = true }
+  _XRRGetCrtcGammaSize = ffi.sym(_xrandr, "XRRGetCrtcGammaSize")
+  _XRRGetCrtcGamma = ffi.sym(_xrandr, "XRRGetCrtcGamma")
+  _XRRSetCrtcGamma = ffi.sym(_xrandr, "XRRSetCrtcGamma")
+  _XRRAllocGamma = ffi.sym(_xrandr, "XRRAllocGamma")
+  _XRRFreeGamma = ffi.sym(_xrandr, "XRRFreeGamma")
+  _XRRChangeOutputProperty = ffi.sym(_xrandr, "XRRChangeOutputProperty")
+  _XRRGetOutputProperty = ffi.sym(_xrandr, "XRRGetOutputProperty")
+  _XRRQueryOutputProperty = ffi.sym(_xrandr, "XRRQueryOutputProperty")
+  if _XRRGetScreenResourcesCurrent != 0 { _hasXRR = true }
 }
 
-_Brightness_atom = 0
-_Backlight_atom = 0
-_BACKLIGHT_atom = 0
-_atoms_initialized = false
-
-fn _ensureAtoms() {
-  if _atoms_initialized { return }
-  _d = display.open()
-  if _d == 0 { return }
-  _Brightness_atom = x11.internAtom(_d, "Brightness", 1)
-  _Backlight_atom = x11.internAtom(_d, "BACKLIGHT", 1)
-  _BACKLIGHT_atom = x11.internAtom(_d, "_BACKLIGHT", 1)
-  _atoms_initialized = true
+if _x11 != 0 {
+  _XOpenDisplay = ffi.sym(_x11, "XOpenDisplay")
+  _XDefaultScreen = ffi.sym(_x11, "XDefaultScreen")
+  _XRootWindow = ffi.sym(_x11, "XRootWindow")
+  _XInternAtom = ffi.sym(_x11, "XInternAtom")
+  _XFlush = ffi.sym(_x11, "XFlush")
+  _XCloseDisplay = ffi.sym(_x11, "XCloseDisplay")
+  _XSynchronize = ffi.sym(_x11, "XSynchronize")
 }
 
-fn _shell(cmd) {
-  _r = shell.exec(cmd + " 2>/dev/null")
-  _r.stdout
+if _c != 0 {
+  _XFree = ffi.sym(_c, "free")
+  // libX11's XFree might be different, try libX11 too
+  if _XFree == 0 && _x11 != 0 {
+    _XFree = ffi.sym(_x11, "XFree")
+  }
 }
 
-fn _ddcutil(args) {
-  _out = _shell("ddcutil " + args)
-  _out
-}
+// === Atom cache ===
+_BrightnessAtom = 0
 
-_ddcutil_available = false
-_ddc_check = _shell("which ddcutil")
-if _ddc_check != "" { _ddcutil_available = true }
+// === State tracking ===
+_display = 0
+_displayRefCount = 0
+_monitors = []          // [{name, crtc, output, conn}]
+_monitorIndexByName = {}
+_temperature = {}       // monitor name -> int
+_gammaRGB = {}          // monitor name -> {r, g, b}
+_shadowLift = {}        // monitor name -> double
+_originalGammaRed = {}  // monitor name -> [unsigned short]
+_originalGammaGreen = {}
+_originalGammaBlue = {}
+_originalGammaSize = {} // monitor name -> int
+_gammaRampCache = {}    // cacheKey -> {red: [u16], green: [u16], blue: [u16], gammaSize: int}
 
+// === Helper functions ===
 fn _clamp(v, lo, hi) {
   if v < lo { lo }
   else if v > hi { hi }
   else { v }
 }
 
-fn _readBacklightXRandR(monitorIndex) {
-  if !_hasXRandR { return -1.0 }
-  _d = display.open()
-  if _d == 0 { return -1.0 }
-  _root = x11.rootWindow(_d)
-  if _root == 0 { return -1.0 }
-  _res = ffi.call(_XRRGetScreenResourcesCurrent, "pointer", ["pointer", "uint64"], _d, _root)
-  if _res == 0 { return -1.0 }
-  _noutput = ffi.get_i32(ffi.ptr_add(_res, 12))
-  _outputs_ptr = ffi.get_u64(ffi.ptr_add(_res, 24))
-  _primary_output = ffi.call(_XRRGetOutputPrimary, "uint64", ["pointer", "uint64"], _d, _root)
-  _result = -1.0
-  _i = 0
-  _found = false
-  while _i < _noutput && !_found {
-    _output_id = ffi.get_u64(ffi.ptr_add(_outputs_ptr, _i * 4))
-    _output_info = ffi.call(_XRRGetOutputInfo, "pointer", ["pointer", "pointer", "uint64"], _d, _res, _output_id)
-    if _output_info != 0 {
-      _connection = ffi.get_i32(ffi.ptr_add(_output_info, 12))
-      _crtc = ffi.get_u64(ffi.ptr_add(_output_info, 16))
-      if _connection == 0 && _crtc != 0 {
-        if _i == monitorIndex || (monitorIndex < 0 && _output_id == _primary_output) {
-          _ensureAtoms()
-          _range = ffi.allocBytes(8)
-          _cur = ffi.allocBytes(8)
-          _nitems = ffi.allocBytes(4)
-          _after = ffi.allocBytes(4)
-          _type_ptr = ffi.allocBytes(8)
-          _fmt_ptr = ffi.allocBytes(4)
-          _prop_ptr = ffi.allocBytes(8)
-          _atom = _Backlight_atom
-          if _atom == 0 { _atom = _BACKLIGHT_atom }
-          _rcode = ffi.call(_XRRGetOutputProperty, "int32",
-            ["pointer", "uint64", "uint64", "uint64", "int64", "int64", "int32", "uint64",
-             "pointer", "pointer", "pointer", "pointer", "pointer", "pointer"],
-            _d, _output_id, _atom, 0, 4, 0, 0,
-            _type_ptr, _fmt_ptr, _nitems, _after, _range, _cur, _prop_ptr)
-          if _rcode == 0 && ffi.get_i32(_nitems) >= 2 {
-            _min_val = ffi.get_i32(_range)
-            _max_val = ffi.get_i32(ffi.ptr_add(_range, 4))
-            _cur_val = ffi.get_i32(_cur)
-            if _max_val > _min_val {
-              _result = num(_cur_val - _min_val) / num(_max_val - _min_val)
-            }
-            _found = true
-          }
-          ffi.free(_range)
-          ffi.free(_cur)
-          ffi.free(_nitems)
-          ffi.free(_after)
-          ffi.free(_type_ptr)
-          ffi.free(_fmt_ptr)
-          ffi.free(_prop_ptr)
-        }
-      }
-      ffi.call(_XRRFreeOutputInfo, "void", ["pointer"], _output_info)
-    }
-    _i = _i + 1
-  }
-  ffi.call(_XRRFreeScreenResources, "void", ["pointer"], _res)
-  _result
+fn _shell(cmd) {
+  r = shell.exec(cmd + " 2>/dev/null")
+  if r.success { r.stdout.trim() } else { "" }
 }
 
-fn _setBacklightXRandR(monitorIndex, value) {
-  if !_hasXRandR { return false }
-  _d = display.open()
-  if _d == 0 { return false }
-  _root = x11.rootWindow(_d)
-  if _root == 0 { return false }
-  _res = ffi.call(_XRRGetScreenResourcesCurrent, "pointer", ["pointer", "uint64"], _d, _root)
-  if _res == 0 { return false }
-  _noutput = ffi.get_i32(ffi.ptr_add(_res, 12))
-  _outputs_ptr = ffi.get_u64(ffi.ptr_add(_res, 24))
-  _primary_output = ffi.call(_XRRGetOutputPrimary, "uint64", ["pointer", "uint64"], _d, _root)
-  _result = false
-  _i = 0
-  _found = false
-  while _i < _noutput && !_found {
-    _output_id = ffi.get_u64(ffi.ptr_add(_outputs_ptr, _i * 4))
-    _output_info = ffi.call(_XRRGetOutputInfo, "pointer", ["pointer", "pointer", "uint64"], _d, _res, _output_id)
-    if _output_info != 0 {
-      _connection = ffi.get_i32(ffi.ptr_add(_output_info, 12))
-      _crtc = ffi.get_u64(ffi.ptr_add(_output_info, 16))
-      if _connection == 0 && _crtc != 0 {
-        if _i == monitorIndex || (monitorIndex < 0 && _output_id == _primary_output) {
-          _ensureAtoms()
-          _range = ffi.allocBytes(8)
-          _cur = ffi.allocBytes(8)
-          _nitems = ffi.allocBytes(4)
-          _after = ffi.allocBytes(4)
-          _type_ptr = ffi.allocBytes(8)
-          _fmt_ptr = ffi.allocBytes(4)
-          _prop_ptr = ffi.allocBytes(8)
-          _atom = _Backlight_atom
-          if _atom == 0 { _atom = _BACKLIGHT_atom }
-          _rcode = ffi.call(_XRRGetOutputProperty, "int32",
-            ["pointer", "uint64", "uint64", "uint64", "int64", "int64", "int32", "uint64",
-             "pointer", "pointer", "pointer", "pointer", "pointer", "pointer"],
-            _d, _output_id, _atom, 0, 4, 0, 0,
-            _type_ptr, _fmt_ptr, _nitems, _after, _range, _cur, _prop_ptr)
-          if _rcode == 0 && ffi.get_i32(_nitems) >= 2 {
-            _min_val = ffi.get_i32(_range)
-            _max_val = ffi.get_i32(ffi.ptr_add(_range, 4))
-            if _max_val > _min_val {
-              _new_val = int(_clamp(value, 0.0, 1.0) * (_max_val - _min_val)) + _min_val
-              _new_data = ffi.allocBytes(4)
-              ffi.set_i32(_new_data, _new_val)
-              ffi.call(_XRRSetOutputProperty, "int32",
-                ["pointer", "uint64", "uint64", "uint64", "int32", "int32", "pointer", "int32"],
-                _d, _output_id, _atom, 32, 0, _new_data, 1)
-              ffi.free(_new_data)
-              _result = true
-            }
-            _found = true
-          }
-          ffi.free(_range)
-          ffi.free(_cur)
-          ffi.free(_nitems)
-          ffi.free(_after)
-          ffi.free(_type_ptr)
-          ffi.free(_fmt_ptr)
-          ffi.free(_prop_ptr)
-        }
-      }
-      ffi.call(_XRRFreeOutputInfo, "void", ["pointer"], _output_info)
-    }
-    _i = _i + 1
-  }
-  ffi.call(_XRRFreeScreenResources, "void", ["pointer"], _res)
-  _result
-}
-
-fn _readBacklightDDC(monitorIndex) {
-  if !_ddcutil_available { return -1.0 }
-  _disp = ""
-  if monitorIndex >= 1 {
-    _disp = " --display " + str(monitorIndex + 1)
-  }
-  _out = _ddcutil("getvcp 10" + _disp)
-  _lines = _out.split("\n")
-  for _line in _lines {
-    _pos = _line.find("current value")
-    if _pos != null {
-      _after = _line[_pos + 14:#_line].trim()
-      _comma = _after.find(",")
-      if _comma == null { _comma = _after.find(" ") }
-      if _comma != null {
-        _val_str = _after[0:_comma].trim()
-        _max_str = _after[_comma + 1:#_after].trim()
-        _val = num(_val_str)
-        _max = num(_max_str)
-        if _max > 0 { return _val / _max }
-      }
+// === Display management ===
+fn _openDisplay() {
+  if _display == 0 {
+    _display = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
+    if _display == 0 {
+      print("[brightness] Failed to open X display")
+      return false
     }
   }
-  -1.0
-}
-
-fn _setBacklightDDC(monitorIndex, value) {
-  if !_ddcutil_available { return false }
-  _disp = ""
-  if monitorIndex >= 1 {
-    _disp = " --display " + str(monitorIndex + 1)
-  }
-  _pct = int(_clamp(value, 0.0, 1.0) * 100)
-  _out = _ddcutil("setvcp 10 " + str(_pct) + _disp)
-  _out != ""
-}
-
-fn _readBacklightSysfs() {
-  _r = _shell("cat /sys/class/backlight/*/brightness 2>/dev/null | head -1")
-  _m = _shell("cat /sys/class/backlight/*/max_brightness 2>/dev/null | head -1")
-  if _r != "" && _m != "" {
-    _cur = num(_r.trim())
-    _max = num(_m.trim())
-    if _max > 0 { return _cur / _max }
-  }
-  -1.0
-}
-
-fn _setBacklightSysfs(value) {
-  _max_path = _shell("ls /sys/class/backlight/*/max_brightness 2>/dev/null | head -1").trim()
-  if _max_path == "" { return false }
-  _max_str = fs.readfile(_max_path)
-  if _max_str == "" { return false }
-  _max = int(_max_str.trim())
-  if _max <= 0 { return false }
-  _dir = _max_path[0:_max_path.rfind("/")]
-  _bl_path = _dir + "/brightness"
-  _new_val = int(_clamp(value, 0.0, 1.0) * _max)
-  _shell("echo " + str(_new_val) + " | tee " + _bl_path + " >/dev/null")
+  _displayRefCount = _displayRefCount + 1
   true
 }
 
-_xf86vm = ffi.open("libXxf86vm.so.1")
-if _xf86vm == 0 { _xf86vm = ffi.open("libXxf86vm.so") }
-
-_XF86VidModeGetGamma = 0
-_XF86VidModeSetGamma = 0
-_XF86VidModeGetScreenSize = 0
-_hasXF86VM = false
-
-if _xf86vm != 0 {
-  _XF86VidModeGetGamma = ffi.sym(_xf86vm, "XF86VidModeGetGamma")
-  _XF86VidModeSetGamma = ffi.sym(_xf86vm, "XF86VidModeSetGamma")
-  _XF86VidModeGetScreenSize = ffi.sym(_xf86vm, "XF86VidModeGetScreenSize")
-  if _XF86VidModeGetGamma != 0 { _hasXF86VM = true }
-}
-
-fn _getGammaXF86VM() {
-  if !_hasXF86VM { return {r: 1.0, g: 1.0, b: 1.0} }
-  _d = display.open()
-  if _d == 0 { return {r: 1.0, g: 1.0, b: 1.0} }
-  _scr = x11.defaultScreen(_d)
-  _gamma_size = 12
-  _buf = ffi.allocBytes(_gamma_size)
-  _rcode = ffi.call(_XF86VidModeGetGamma, "int32", ["pointer", "int32", "pointer"], _d, _scr, _buf)
-  _r = 1.0; _g = 1.0; _b = 1.0
-  if _rcode != 0 {
-    _r = num(ffi.get_float(_buf))
-    _g = num(ffi.get_float(ffi.ptr_add(_buf, 4)))
-    _b = num(ffi.get_float(ffi.ptr_add(_buf, 8)))
+fn _closeDisplay() {
+  _displayRefCount = _displayRefCount - 1
+  if _displayRefCount <= 0 {
+    if _display != 0 {
+      ffi.call(_XCloseDisplay, "int32", ["pointer"], _display)
+      _display = 0
+    }
+    _displayRefCount = 0
   }
-  ffi.free(_buf)
-  ({r: _r, g: _g, b: _b})
 }
 
-fn _setGammaXF86VM(r, g, b) {
-  if !_hasXF86VM { return false }
-  _d = display.open()
-  if _d == 0 { return false }
-  _scr = x11.defaultScreen(_d)
-  _buf = ffi.allocBytes(12)
-  ffi.set_float(_buf, r)
-  ffi.set_float(ffi.ptr_add(_buf, 4), g)
-  ffi.set_float(ffi.ptr_add(_buf, 8), b)
-  _rcode = ffi.call(_XF86VidModeSetGamma, "int32", ["pointer", "int32", "pointer"], _d, _scr, _buf)
-  ffi.free(_buf)
-  x11.flush(_d)
-  _rcode != 0
+fn _rootWindow() {
+  if _display == 0 { return 0 }
+  scr = ffi.call(_XDefaultScreen, "int32", ["pointer"], _display)
+  root = ffi.call(_XRootWindow, "uint64", ["pointer", "int32"], _display, scr)
+  root
 }
 
-_xvidmode = ffi.open("libXxf86vm.so.1")
-if _xvidmode == 0 { _xvidmode = ffi.open("libXxf86vm.so") }
-
-_XF86VidModeSetGammaRamp = 0
-_XF86VidModeGetGammaRamp = 0
-_XF86VidModeGetGammaRampSize = 0
-_hasGammaRamp = false
-
-if _xvidmode != 0 {
-  _XF86VidModeSetGammaRamp = ffi.sym(_xvidmode, "XF86VidModeSetGammaRamp")
-  _XF86VidModeGetGammaRamp = ffi.sym(_xvidmode, "XF86VidModeGetGammaRamp")
-  _XF86VidModeGetGammaRampSize = ffi.sym(_xvidmode, "XF86VidModeGetGammaRampSize")
-  if _XF86VidModeSetGammaRamp != 0 { _hasGammaRamp = true }
+fn _internAtom(name) {
+  if _display == 0 { return 0 }
+  cs = ffi.cstring(name)
+  atom = ffi.call(_XInternAtom, "uint64", ["pointer", "pointer", "int32"], _display, cs, 0)
+  ffi.free(cs)
+  atom
 }
 
-fn _getGammaRampSize() {
-  if !_hasGammaRamp { return 0 }
-  _d = display.open()
-  if _d == 0 { return 0 }
-  _scr = x11.defaultScreen(_d)
-  _size_ptr = ffi.allocBytes(4)
-  ffi.call(_XF86VidModeGetGammaRampSize, "int32", ["pointer", "int32", "pointer"], _d, _scr, _size_ptr)
-  _size = ffi.get_i32(_size_ptr)
-  ffi.free(_size_ptr)
-  _size
+fn _flush() {
+  if _display != 0 {
+    ffi.call(_XFlush, "int32", ["pointer"], _display)
+  }
 }
 
-fn _kelvinToRGB(kelvin) {
-  _temp = num(kelvin) / 100.0
-  _r = 0.0; _g = 0.0; _b = 0.0
-  if _temp <= 66 {
-    _r = 255.0
-    _g = 99.4708025861 * num.log(_temp) - 161.1195681661
-    if _temp <= 19 {
-      _b = 0.0
+// === Monitor enumeration ===
+fn _enumMonitors() {
+  _monitors = []
+  _monitorIndexByName = {}
+  if !_hasXRR { return }
+  if !_openDisplay() { return }
+
+  root = _rootWindow()
+  if root == 0 { _closeDisplay(); return }
+
+  res = ffi.call(_XRRGetScreenResourcesCurrent, "pointer", ["pointer", "uint64"], _display, root)
+  if res == 0 { _closeDisplay(); return }
+
+  noutput = ffi.get_i32(ffi.ptr_add(res, 32))      // XRRScreenResources.noutput
+  outputsPtr = ffi.get_ptr(ffi.ptr_add(res, 40))    // XRRScreenResources.outputs
+  primaryOutput = ffi.call(_XRRGetOutputPrimary, "uint64", ["pointer", "uint64"], _display, root)
+
+  i = 0
+  while i < noutput {
+    outputId = ffi.get_u64(ffi.ptr_add(outputsPtr, i * 8))
+    oinfo = ffi.call(_XRRGetOutputInfo, "pointer", ["pointer", "pointer", "uint64"], _display, res, outputId)
+    if oinfo != 0 {
+      conn = ffi.get_u16(ffi.ptr_add(oinfo, 48))    // XRROutputInfo.connection
+      crtc = ffi.get_u64(ffi.ptr_add(oinfo, 8))     // XRROutputInfo.crtc
+      namePtr = ffi.get_ptr(ffi.ptr_add(oinfo, 16)) // XRROutputInfo.name
+      nameLen = ffi.get_i32(ffi.ptr_add(oinfo, 24)) // XRROutputInfo.nameLen
+      monName = ""
+      if namePtr != 0 {
+        monName = ffi.string(namePtr, nameLen)
+      }
+      if conn == 0 && crtc != 0 && monName != "" {
+        _monitors.push({name: monName, crtc: crtc, output: outputId, primary: outputId == primaryOutput})
+        _monitorIndexByName.set(monName, #_monitors - 1)
+      }
+      ffi.call(_XRRFreeOutputInfo, "void", ["pointer"], oinfo)
+    }
+    i = i + 1
+  }
+  ffi.call(_XRRFreeScreenResources, "void", ["pointer"], res)
+  _closeDisplay()
+}
+
+// === Xrandr gamma ramp operations ===
+fn _applyGammaRamp(monitorName, brightness, gammaR, gammaG, gammaB, tempK, shadowLiftVal) {
+  if !_hasXRR { return false }
+  if !_openDisplay() { return false }
+
+  mi = _monitorIndexByName.get(monitorName)
+  if mi == null || mi < 0 { _closeDisplay(); return false }
+  mon = _monitors[mi]
+  if mon.crtc == 0 { _closeDisplay(); return false }
+
+  root = _rootWindow()
+  if root == 0 { _closeDisplay(); return false }
+
+  // Get gamma ramp size
+  gammaSize = ffi.call(_XRRGetCrtcGammaSize, "int32", ["pointer", "uint64"], _display, mon.crtc)
+  if gammaSize <= 0 { gammaSize = GAMMA_RAMP_SIZE }
+
+  // Allocate gamma ramp
+  gamma = ffi.call(_XRRAllocGamma, "pointer", ["int32"], gammaSize)
+  if gamma == 0 { _closeDisplay(); return false }
+
+  // Read pointer to ramp data from struct
+  redPtr = ffi.get_ptr(ffi.ptr_add(gamma, 8))   // XRRCrtcGamma.red
+  greenPtr = ffi.get_ptr(ffi.ptr_add(gamma, 16)) // XRRCrtcGamma.green
+  bluePtr = ffi.get_ptr(ffi.ptr_add(gamma, 24))  // XRRCrtcGamma.blue
+
+  if _fillGammaRamp != 0 {
+    ffi.call(_fillGammaRamp, "void",
+      ["pointer", "pointer", "pointer", "int32", "double", "double", "double", "double", "double", "double"],
+      redPtr, greenPtr, bluePtr, gammaSize, brightness, gammaR, gammaG, gammaB, tempK, shadowLiftVal)
+  } else {
+    // Fallback: Havel loop with cache
+    cacheKey = monitorName + "|" + str(brightness) + "|" + str(gammaR) + "|" + str(gammaG) + "|" + str(gammaB) + "|" + str(tempK) + "|" + str(shadowLiftVal)
+    cached = _gammaRampCache.get(cacheKey)
+
+    if cached != null && cached.gammaSize == gammaSize {
+      j = 0
+      while j < gammaSize {
+        ffi.set_u16(ffi.ptr_add(redPtr, j * 2), cached.red[j])
+        ffi.set_u16(ffi.ptr_add(greenPtr, j * 2), cached.green[j])
+        ffi.set_u16(ffi.ptr_add(bluePtr, j * 2), cached.blue[j])
+        j = j + 1
+      }
     } else {
-      _b = 138.5177312231 * num.log(_temp - 10.0) - 305.0447927307
+      // Temperature to RGB tint
+      tempColor = _kelvinToRGB(tempK)
+
+      // Cache orig arrays outside loop
+      haveOrig = false
+      origR = []; origG = []; origB = []
+      origSize = _originalGammaSize.get(monitorName)
+      if origSize != null && origSize == gammaSize {
+        haveOrig = true
+        origR = _originalGammaRed.get(monitorName)
+        origG = _originalGammaGreen.get(monitorName)
+        origB = _originalGammaBlue.get(monitorName)
+      }
+
+      // Pre-compute invariants
+      invGammaR = 1.0 / gammaR; invGammaG = 1.0 / gammaG; invGammaB = 1.0 / gammaB
+      skipGamma = math.abs(gammaR - 1.0) < 0.001 && math.abs(gammaG - 1.0) < 0.001 && math.abs(gammaB - 1.0) < 0.001
+      skipShadow = shadowLiftVal <= 0.0001
+
+      cacheRed = []; cacheGreen = []; cacheBlue = []
+
+      // Build gamma ramps
+      j = 0
+      while j < gammaSize {
+        if haveOrig {
+          normR = num(origR[j]) / 65535.0
+          normG = num(origG[j]) / 65535.0
+          normB = num(origB[j]) / 65535.0
+          if skipGamma {
+            gammaRampR = normR; gammaRampG = normG; gammaRampB = normB
+          } else {
+            gammaRampR = math.pow(normR, invGammaR)
+            gammaRampG = math.pow(normG, invGammaG)
+            gammaRampB = math.pow(normB, invGammaB)
+          }
+        } else {
+          norm = num(j) / num(gammaSize - 1)
+          if skipGamma {
+            gammaRampR = norm; gammaRampG = norm; gammaRampB = norm
+          } else {
+            gammaRampR = math.pow(norm, invGammaR)
+            gammaRampG = math.pow(norm, invGammaG)
+            gammaRampB = math.pow(norm, invGammaB)
+          }
+        }
+        if !skipShadow {
+          lifted = _applyShadowLiftColor(gammaRampR, gammaRampG, gammaRampB, shadowLiftVal)
+          gammaRampR = lifted.r; gammaRampG = lifted.g; gammaRampB = lifted.b
+        }
+        redVal = gammaRampR * tempColor.r * brightness
+        greenVal = gammaRampG * tempColor.g * brightness
+        blueVal = gammaRampB * tempColor.b * brightness
+        ri = int(_clamp(redVal * 65535.0, 0.0, 65535.0))
+        gi = int(_clamp(greenVal * 65535.0, 0.0, 65535.0))
+        bi = int(_clamp(blueVal * 65535.0, 0.0, 65535.0))
+        ffi.set_u16(ffi.ptr_add(redPtr, j * 2), ri)
+        ffi.set_u16(ffi.ptr_add(greenPtr, j * 2), gi)
+        ffi.set_u16(ffi.ptr_add(bluePtr, j * 2), bi)
+        cacheRed.push(ri); cacheGreen.push(gi); cacheBlue.push(bi)
+        j = j + 1
+      }
+
+      _gammaRampCache.set(cacheKey, {red: cacheRed, green: cacheGreen, blue: cacheBlue, gammaSize: gammaSize})
+    }
+  }
+
+  // Set gamma ramp
+  ffi.call(_XRRSetCrtcGamma, "void", ["pointer", "uint64", "pointer"], _display, mon.crtc, gamma)
+  _flush()
+  ffi.call(_XRRFreeGamma, "void", ["pointer"], gamma)
+  _closeDisplay()
+  true
+}
+
+fn _captureOriginalGamma(monitorName) {
+  if !_hasXRR { return }
+  if !_openDisplay() { return }
+
+  mi = _monitorIndexByName.get(monitorName)
+  if mi == null || mi < 0 { _closeDisplay(); return }
+  mon = _monitors[mi]
+  if mon.crtc == 0 { _closeDisplay(); return }
+
+  gammaSize = ffi.call(_XRRGetCrtcGammaSize, "int32", ["pointer", "uint64"], _display, mon.crtc)
+  if gammaSize <= 0 { _closeDisplay(); return }
+
+  gamma = ffi.call(_XRRGetCrtcGamma, "pointer", ["pointer", "uint64"], _display, mon.crtc)
+  if gamma == 0 { _closeDisplay(); return }
+
+  redPtr = ffi.get_ptr(ffi.ptr_add(gamma, 8))
+  greenPtr = ffi.get_ptr(ffi.ptr_add(gamma, 16))
+  bluePtr = ffi.get_ptr(ffi.ptr_add(gamma, 24))
+
+  rArr = []; gArr = []; bArr = []
+  i = 0
+  while i < gammaSize {
+    rArr.push(ffi.get_u16(ffi.ptr_add(redPtr, i * 2)))
+    gArr.push(ffi.get_u16(ffi.ptr_add(greenPtr, i * 2)))
+    bArr.push(ffi.get_u16(ffi.ptr_add(bluePtr, i * 2)))
+    i = i + 1
+  }
+
+  _originalGammaRed.set(monitorName, rArr)
+  _originalGammaGreen.set(monitorName, gArr)
+  _originalGammaBlue.set(monitorName, bArr)
+  _originalGammaSize.set(monitorName, gammaSize)
+
+  ffi.call(_XRRFreeGamma, "void", ["pointer"], gamma)
+  _closeDisplay()
+}
+
+fn _readCurrentGamma(monitorName) {
+  if !_hasXRR { return {r: 1.0, g: 1.0, b: 1.0} }
+  if !_openDisplay() { return {r: 1.0, g: 1.0, b: 1.0} }
+
+  mi = _monitorIndexByName.get(monitorName)
+  if mi == null || mi < 0 { _closeDisplay(); return {r: 1.0, g: 1.0, b: 1.0} }
+  mon = _monitors[mi]
+  if mon.crtc == 0 { _closeDisplay(); return {r: 1.0, g: 1.0, b: 1.0} }
+
+  gamma = ffi.call(_XRRGetCrtcGamma, "pointer", ["pointer", "uint64"], _display, mon.crtc)
+  if gamma == 0 { _closeDisplay(); return {r: 1.0, g: 1.0, b: 1.0} }
+
+  gammaSize = ffi.get_i32(gamma)  // size at offset 0
+  redPtr = ffi.get_ptr(ffi.ptr_add(gamma, 8))
+  greenPtr = ffi.get_ptr(ffi.ptr_add(gamma, 16))
+  bluePtr = ffi.get_ptr(ffi.ptr_add(gamma, 24))
+
+  // Use middle of ramp for gamma estimation
+  mid = gammaSize / 2
+  r = _clamp(num(ffi.get_u16(ffi.ptr_add(redPtr, mid * 2))) / 65535.0, 0.1, 10.0)
+  g = _clamp(num(ffi.get_u16(ffi.ptr_add(greenPtr, mid * 2))) / 65535.0, 0.1, 10.0)
+  b = _clamp(num(ffi.get_u16(ffi.ptr_add(bluePtr, mid * 2))) / 65535.0, 0.1, 10.0)
+
+  ffi.call(_XRRFreeGamma, "void", ["pointer"], gamma)
+  _closeDisplay()
+  {r: r, g: g, b: b}
+}
+
+fn _getGammaRampBrightness(monitorName) {
+  if !_hasXRR { return -1.0 }
+  if !_openDisplay() { return -1.0 }
+
+  mi = _monitorIndexByName.get(monitorName)
+  if mi == null || mi < 0 { _closeDisplay(); return -1.0 }
+  mon = _monitors[mi]
+  if mon.crtc == 0 { _closeDisplay(); return -1.0 }
+
+  gamma = ffi.call(_XRRGetCrtcGamma, "pointer", ["pointer", "uint64"], _display, mon.crtc)
+  if gamma == 0 { _closeDisplay(); return -1.0 }
+
+  gammaSize = ffi.get_i32(gamma)
+  redPtr = ffi.get_ptr(ffi.ptr_add(gamma, 8))
+
+  total = 0.0
+  j = 0
+  while j < gammaSize {
+    total = total + num(ffi.get_u16(ffi.ptr_add(redPtr, j * 2)))
+    j = j + 1
+  }
+
+  brightness = total / (num(gammaSize) * 65535.0)
+  ffi.call(_XRRFreeGamma, "void", ["pointer"], gamma)
+  _closeDisplay()
+  brightness
+}
+
+// === Xrandr backlight property operations ===
+fn _getBacklightProp(monitorName) {
+  if !_hasXRR { return -1.0 }
+  if !_openDisplay() { return -1.0 }
+
+  mi = _monitorIndexByName.get(monitorName)
+  if mi == null || mi < 0 { _closeDisplay(); return -1.0 }
+  mon = _monitors[mi]
+
+  root = _rootWindow()
+  if root == 0 { _closeDisplay(); return -1.0 }
+
+  if _BrightnessAtom == 0 {
+    _BrightnessAtom = _internAtom("Brightness")
+  }
+  if _BrightnessAtom == 0 { _closeDisplay(); return -1.0 }
+
+  // Allocate out params
+  typePtr = ffi.allocBytes(8)
+  fmtPtr = ffi.allocBytes(4)
+  nitemsPtr = ffi.allocBytes(4)
+  afterPtr = ffi.allocBytes(4)
+  dataPtr = ffi.allocBytes(8)
+
+  result = ffi.call(_XRRGetOutputProperty, "int32",
+    ["pointer", "uint64", "uint64",
+     "uint64", "int64", "int64", "int32", "uint64",
+     "pointer", "pointer", "pointer", "pointer", "pointer"],
+    _display, mon.output, _BrightnessAtom, 0, 8, 0, 0,
+    typePtr, fmtPtr, nitemsPtr, afterPtr, dataPtr)
+
+  v = -1.0
+  if result == 0 {
+    fmt = ffi.get_i32(fmtPtr)
+    nitems = ffi.get_i32(nitemsPtr)
+    data = ffi.get_ptr(dataPtr)
+    if data != 0 && fmt == 32 && nitems >= 1 {
+      raw = ffi.get_u32(data)
+      if nitems >= 2 {
+        minVal = ffi.get_u32(data)
+        maxVal = ffi.get_u32(ffi.ptr_add(data, 4))
+        if maxVal > minVal {
+          v = num(raw) / num(maxVal - minVal)
+        }
+      } else {
+        // Treat as float
+        v = num(raw) / 65535.0
+      }
+    }
+    if data != 0 { ffi.call(_XFree, "void", ["pointer"], data) }
+  }
+
+  ffi.free(typePtr); ffi.free(fmtPtr)
+  ffi.free(nitemsPtr); ffi.free(afterPtr); ffi.free(dataPtr)
+  _closeDisplay()
+  v
+}
+
+fn _setBacklightProp(monitorName, vue) {
+  if !_hasXRR { return false }
+  if !_openDisplay() { return false }
+
+  mi = _monitorIndexByName.get(monitorName)
+  if mi == null || mi < 0 { _closeDisplay(); return false }
+  mon = _monitors[mi]
+
+  if _BrightnessAtom == 0 {
+    _BrightnessAtom = _internAtom("Brightness")
+  }
+  if _BrightnessAtom == 0 { _closeDisplay(); return false }
+
+  v = _clamp(vue, 0.0, 1.0)
+  data = ffi.allocBytes(4)
+  ffi.set_u32(data, int(v * 65535))
+
+  ffi.call(_XRRChangeOutputProperty, "int32",
+    ["pointer", "uint64", "uint64", "uint64", "int32", "int32", "pointer", "int32"],
+    _display, mon.output, _BrightnessAtom, 32, 0, data, 1)
+  _flush()
+
+  ffi.free(data)
+  _closeDisplay()
+  true
+}
+
+// === Sysfs backlight fallback ===
+fn _getSysfsBrightness() {
+  paths = shell.exec("ls /sys/class/backlight/*/brightness 2>/dev/null; ls /sys/class/backlight/*/max_brightness 2>/dev/null")
+  if !paths.success { return -1.0 }
+  lines = paths.stdout.trim().split("\n")
+  if #lines < 2 { return -1.0 }
+  blPath = lines[0].trim()
+  maxPath = lines[1].trim()
+  if blPath == "" || maxPath == "" { return -1.0 }
+  blStr = fs.read(blPath).trim()
+  maxStr = fs.read(maxPath).trim()
+  if blStr == "" || maxStr == "" { return -1.0 }
+  cur = num(blStr)
+  max = num(maxStr)
+  if max > 0 { cur / max } else { -1.0 }
+}
+
+fn _setSysfsBrightness(vue) {
+  maxPath = _shell("ls /sys/class/backlight/*/max_brightness 2>/dev/null | head -1")
+  if maxPath == "" { return false }
+  maxStr = fs.read(maxPath).trim()
+  if maxStr == "" { return false }
+  maxVal = int(maxStr)
+  if maxVal <= 0 { return false }
+  dir = maxPath[0:maxPath.rfind("/")]
+  blPath = dir + "/brightness"
+  newVal = int(_clamp(vue, 0.0, 1.0) * maxVal)
+  r = shell.exec("echo " + str(newVal) + " | tee " + blPath + " >/dev/null 2>&1")
+  r.success
+}
+
+// === Gammastep/redshift fallback ===
+fn _setGammastep(kelvin, brightnessVal) {
+  // Don't pass brightness for now as it complicates the command
+  if brightnessVal == null { brightnessVal = -1.0 }
+  cmd = "gammastep -P -l 0:0 -t " + str(kelvin) + ":" + str(kelvin) + " -o"
+  if brightnessVal > 0.0 {
+    cmd = cmd + " -b " + str(brightnessVal) + ":" + str(brightnessVal)
+  }
+  r = shell.exec(cmd + " 2>&1")
+  if !r.success {
+    r = shell.exec("redshift -O " + str(kelvin) + " 2>&1")
+  }
+  r.success
+}
+
+fn _resetGammastep() {
+  r = shell.exec("gammastep -x 2>&1")
+  if !r.success {
+    r = shell.exec("redshift -x 2>&1")
+  }
+  r.success
+}
+
+// === Color math ===
+fn _kelvinToRGB(kelvin) {
+  k = _clamp(kelvin, MIN_TEMP, MAX_TEMP)
+  temp = num(k) / 100.0
+
+  if temp <= 66.0 {
+    r = 255.0
+    g = 99.4708025861 * math.log(temp) - 161.1195681661
+    g = _clamp(g, 0.0, 255.0)
+    if temp <= 19.0 { b = 0.0 }
+    else {
+      b = 138.5177312231 * math.log(temp - 10.0) - 305.0447927307
+      b = _clamp(b, 0.0, 255.0)
     }
   } else {
-    _r = 329.698727446 * num.pow(_temp - 60.0, -0.1332047592)
-    _g = 288.1221695283 * num.pow(_temp - 60.0, -0.0755148492)
-    _b = 255.0
+    r = 329.698727446 * math.pow(temp - 60.0, -0.1332047592)
+    r = _clamp(r, 0.0, 255.0)
+    g = 288.1221695283 * math.pow(temp - 60.0, -0.0755148492)
+    g = _clamp(g, 0.0, 255.0)
+    b = 255.0
   }
-  _r = _clamp(_r, 0.0, 255.0) / 255.0
-  _g = _clamp(_g, 0.0, 255.0) / 255.0
-  _b = _clamp(_b, 0.0, 255.0) / 255.0
-  ({r: _r, g: _g, b: _b})
+
+  {r: r / 255.0, g: g / 255.0, b: b / 255.0}
 }
 
 fn _rgbToKelvin(r, g, b) {
-  _temp = 1000
-  _best = 1000000.0
-  _result = 6500
-  while _temp <= 40000 {
-    _c = _kelvinToRGB(_temp)
-    _dr = _c.r - r
-    _dg = _c.g - g
-    _db = _c.b - b
-    _dist = _dr * _dr + _dg * _dg + _db * _db
-    if _dist < _best {
-      _best = _dist
-      _result = _temp
-    }
-    _temp = _temp + 100
+  if r > 0.04045 {
+    linR = math.pow((r + 0.055) / 1.055, 2.4)
+  } else {
+    linR = r / 12.92
   }
-  _result
+  if g > 0.04045 {
+    linG = math.pow((g + 0.055) / 1.055, 2.4)
+  } else {
+    linG = g / 12.92
+  }
+  if b > 0.04045 {
+    linB = math.pow((b + 0.055) / 1.055, 2.4)
+  } else {
+    linB = b / 12.92
+  }
+
+  X = linR * 0.4124 + linG * 0.3576 + linB * 0.1805
+  Y = linR * 0.2126 + linG * 0.7152 + linB * 0.0722
+  Z = linR * 0.0193 + linG * 0.1192 + linB * 0.9505
+
+  denom = X + Y + Z
+  if denom <= 0.0 { return 6500 }
+  x = X / denom
+  y = Y / denom
+
+  n = (x - 0.3320) / (0.1858 - y)
+  cct = 437 * math.pow(n, 3) + 3601 * math.pow(n, 2) + 6861 * n + 5517
+  int(cct)
 }
 
-_cached_brightness = {}
-_cached_temperature = 6500
-_cached_gamma = {r: 1.0, g: 1.0, b: 1.0}
-_cached_shadow_lift = 0.0
+// === Shadow lift ===
+fn _applyShadowLiftColor(r, g, b, lift) {
+  if lift <= 0.0001 { return {r: r, g: g, b: b} }
 
-_day_night_enabled = false
-_day_brightness = 1.0
-_night_brightness = 0.3
-_day_temp = 6500
-_night_temp = 3000
-_day_start = 7
-_night_start = 20
-_is_day = true
+  fn processChannel(ch) {
+    norm = _clamp(ch, 0.0, 1.0)
+    effLift = lift
+    // Gamma adjustment
+    gammaAdj = 1.0 / (1.0 + effLift)
+    gammaLifted = math.pow(norm, gammaAdj)
+    additiveLifted = effLift * (1.0 - norm)
+    _clamp(gammaLifted + additiveLifted, 0.0, 1.0)
+  }
 
-fn get(monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  if _cached_brightness.has(str(_mi)) { return _cached_brightness.get(str(_mi)) }
-  _val = -1.0
-  _val = _readBacklightXRandR(_mi)
-  if _val < 0 { _val = _readBacklightDDC(_mi) }
-  if _val < 0 && _mi < 0 { _val = _readBacklightSysfs() }
-  if _val < 0 { _val = 1.0 }
-  _cached_brightness.set(str(_mi), _val)
-  _val
+  {r: processChannel(r), g: processChannel(g), b: processChannel(b)}
+}
+
+// === State helpers ===
+fn _getMonitorName(mi) {
+  if mi == null || mi < 0 {
+    if #_monitors > 0 { _monitors[0].name } else { "" }
+  } else {
+    if mi >= 0 && mi < #_monitors { _monitors[mi].name } else { "" }
+  }
+}
+
+fn _applySettings(monitorName) {
+  br = _cachedBrightness.get(monitorName)
+  if br == null { br = 1.0 }
+  gammaRGB = _gammaRGB.get(monitorName)
+  if gammaRGB == null { gammaRGB = {r: 1.0, g: 1.0, b: 1.0} }
+  temp = _temperature.get(monitorName)
+  if temp == null { temp = 6500 }
+  sl = _shadowLift.get(monitorName)
+  if sl == null { sl = 0.0 }
+  _applyGammaRamp(monitorName, br, gammaRGB.r, gammaRGB.g, gammaRGB.b, temp, sl)
+}
+
+// === Cached state ===
+// These mirror the host module state
+_cachedBrightness = {}
+_cachedTemperature = 6500
+
+// === Initialization ===
+fn init() {
+  _loadNativeRampBuilder()
+  _enumMonitors()
+  for mon in _monitors {
+    _temperature.set(mon.name, 6500)
+    _gammaRGB.set(mon.name, {r: 1.0, g: 1.0, b: 1.0})
+    _shadowLift.set(mon.name, 0.0)
+    _cachedBrightness.set(mon.name, 1.0)
+    // Capture original gamma ramp
+    _captureOriginalGamma(mon.name)
+  }
+  if #_monitors > 0 { _cachedTemperature = 6500 }
+}
+
+// === Public API ===
+
+fn getBrightness(monitorIndex) {
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return 1.0 }
+  // Try cache first
+  cached = _cachedBrightness.get(monName)
+  if cached != null { return cached }
+  // Try reading back from display
+  br = _getGammaRampBrightness(monName)
+  if br < 0 { br = _getBacklightProp(monName) }
+  if br < 0 { br = _getSysfsBrightness() }
+  if br < 0 { br = 1.0 }
+  _cachedBrightness.set(monName, br)
+  br
 }
 
 fn getHardwareBrightness(monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _val = _readBacklightDDC(_mi)
-  if _val < 0 && _mi < 0 { _val = _readBacklightSysfs() }
-  if _val < 0 { _val = 1.0 }
-  _val
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return -1.0 }
+  // Try sysfs first
+  v = _getSysfsBrightness()
+  if v >= 0 { return v }
+  // Fallback: Xrandr backlight property
+  v = _getBacklightProp(monName)
+  if v >= 0 { return v }
+  -1.0
 }
 
 fn getXrandrBrightness(monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _val = _readBacklightXRandR(_mi)
-  if _val < 0 { _val = 1.0 }
-  _val
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return -1.0 }
+  // Parse xrandr --verbose
+  out = _shell("xrandr --verbose --query")
+  if out == "" { return -1.0 }
+  lines = out.split("\n")
+  foundMon = false
+  i = 0
+  while i < #lines {
+    line = lines[i]
+    if line.startsWith(monName + " ") || line.startsWith(monName + "\t") {
+      foundMon = true
+    }
+    if foundMon && line.find("Brightness:") >= 0 {
+      parts = line.split(":")
+      if #parts >= 2 {
+        return _clamp(num(parts[1].trim()), 0.0, 2.0)
+      }
+    }
+    if foundMon && line != "" && !line.startsWith("\t") && !line.startsWith(" ") && line != monName + " connected" {
+      // next monitor section starts — stop if we passed ours
+      foundMon = false
+    }
+    i = i + 1
+  }
+  -1.0
 }
 
-fn set(value, monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _v = _clamp(value, 0.0, 1.0)
-  _ok = _setBacklightXRandR(_mi, _v)
-  if !_ok { _ok = _setBacklightDDC(_mi, _v) }
-  if !_ok && _mi < 0 { _ok = _setBacklightSysfs(_v) }
-  _cached_brightness.set(str(_mi), _v)
-  _ok
+fn setBrightness(vue, monitorIndex) {
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  if mi < 0 {
+    i = 0
+    while i < #_monitors {
+      setBrightness(vue, i)
+      i = i + 1
+    }
+  } else {
+    monName = _getMonitorName(mi)
+    if monName == "" { return }
+    v = _clamp(vue, 0.0, 1.0)
+    _cachedBrightness.set(monName, v)
+    _applySettings(monName)
+  }
 }
 
-fn increase(step, monitorIndex) {
-  _s = step
-  if _s == null { _s = 0.1 }
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _cur = get(_mi)
-  _new = _clamp(_cur + _s, 0.0, 1.0)
-  set(_new, _mi)
-  _new
+fn increaseBrightness(step, monitorIndex) {
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  if step == null || step <= 0 { step = DEFAULT_BRIGHTNESS_AMOUNT }
+  if mi < 0 {
+    i = 0
+    while i < #_monitors {
+      increaseBrightness(step, i)
+      i = i + 1
+    }
+  } else {
+    monName = _getMonitorName(mi)
+    if monName == "" { return }
+    cur = getBrightness(mi)
+    newVal = _clamp(cur + step, 0.0, 1.0)
+    setBrightness(newVal, mi)
+  }
 }
 
-fn decrease(step, monitorIndex) {
-  _s = step
-  if _s == null { _s = 0.1 }
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _cur = get(_mi)
-  _new = _clamp(_cur - _s, 0.0, 1.0)
-  set(_new, _mi)
-  _new
+fn decreaseBrightness(step, monitorIndex) {
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  if step == null { step = DEFAULT_BRIGHTNESS_AMOUNT }
+  if mi < 0 {
+    i = 0
+    while i < #_monitors {
+      decreaseBrightness(step, i)
+      i = i + 1
+    }
+  } else {
+    monName = _getMonitorName(mi)
+    if monName == "" { return }
+    cur = getBrightness(mi)
+    newVal = _clamp(cur - step, 0.0, 1.0)
+    setBrightness(newVal, mi)
+  }
 }
 
 fn getTemperature(monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _gamma = getGammaRGB(_mi)
-  _rgbToKelvin(_gamma.r, _gamma.g, _gamma.b)
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return 6500 }
+  t = _temperature.get(monName)
+  if t != null { t } else { 6500 }
 }
 
-fn setTemperature(temp, monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _t = temp
-  if _t < 1000 { _t = 1000 }
-  if _t > 40000 { _t = 40000 }
-  _rgb = _kelvinToRGB(_t)
-  _brightness = get(_mi)
-  setGammaRGB(_rgb.r * _brightness, _rgb.g * _brightness, _rgb.b * _brightness, _mi)
-  _cached_temperature = _t
+fn setTemperature(kelvin, monitorIndex) {
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return }
+  k = int(_clamp(kelvin, MIN_TEMP, MAX_TEMP))
+  _temperature.set(monName, k)
+  _cachedTemperature = k
+  _applySettings(monName)
 }
 
 fn increaseTemperature(amount, monitorIndex) {
-  _a = amount
-  if _a == null { _a = 200 }
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _cur = getTemperature(_mi)
-  setTemperature(_cur + _a, _mi)
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  if amount == null { amount = DEFAULT_TEMP_AMOUNT }
+  monName = _getMonitorName(mi)
+  if monName == "" { return }
+  cur = getTemperature(mi)
+  setTemperature(cur + amount, mi)
 }
 
 fn decreaseTemperature(amount, monitorIndex) {
-  _a = amount
-  if _a == null { _a = 200 }
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _cur = getTemperature(_mi)
-  setTemperature(_cur - _a, _mi)
-}
-
-fn getGammaRGB(monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _result = _getGammaXF86VM()
-  _cached_gamma = _result
-  _result
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  if amount == null { amount = DEFAULT_TEMP_AMOUNT }
+  monName = _getMonitorName(mi)
+  if monName == "" { return }
+  cur = getTemperature(mi)
+  setTemperature(cur - amount, mi)
 }
 
 fn setGammaRGB(r, g, b, monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _ok = _setGammaXF86VM(r, g, b)
-  _cached_gamma = {r: r, g: g, b: b}
-  _ok
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return }
+  gr = _clamp(r, 0.1, 10.0)
+  gg = _clamp(g, 0.1, 10.0)
+  gb = _clamp(b, 0.1, 10.0)
+  _gammaRGB.set(monName, {r: gr, g: gg, b: gb})
+  _applySettings(monName)
+}
+
+fn getGammaRGB(monitorIndex) {
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return {r: 1.0, g: 1.0, b: 1.0} }
+  cached = _gammaRGB.get(monName)
+  if cached != null { cached }
+  else {
+    // Read from display
+    rgb = _readCurrentGamma(monName)
+    _gammaRGB.set(monName, rgb)
+    rgb
+  }
+}
+
+fn getGammaR(monitorIndex) {
+  rgb = getGammaRGB(monitorIndex)
+  if rgb != null { rgb.r } else { 1.0 }
+}
+
+fn getGammaG(monitorIndex) {
+  rgb = getGammaRGB(monitorIndex)
+  if rgb != null { rgb.g } else { 1.0 }
+}
+
+fn getGammaB(monitorIndex) {
+  rgb = getGammaRGB(monitorIndex)
+  if rgb != null { rgb.b } else { 1.0 }
+}
+
+fn getGamma(monitorIndex) {
+  getGammaR(monitorIndex)
+}
+
+fn setGamma(gamma, monitorIndex) {
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  g = _clamp(gamma, 0.1, 10.0)
+  setGammaRGB(g, g, g, mi)
 }
 
 fn increaseGamma(amount, monitorIndex) {
-  _a = amount
-  if _a == null { _a = 100 }
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _g = getGammaRGB(_mi)
-  _step = num(_a) / 1000.0
-  setGammaRGB(_clamp(_g.r + _step, 0.0, 1.0), _clamp(_g.g + _step, 0.0, 1.0), _clamp(_g.b + _step, 0.0, 1.0), _mi)
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  if amount == null { amount = DEFAULT_GAMMA_AMOUNT }
+  monName = _getMonitorName(mi)
+  if monName == "" { return }
+  cur = getGammaRGB(mi)
+  step = num(amount) / 1000.0
+  setGammaRGB(cur.r + step, cur.g + step, cur.b + step, mi)
 }
 
 fn decreaseGamma(amount, monitorIndex) {
-  _a = amount
-  if _a == null { _a = 100 }
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _g = getGammaRGB(_mi)
-  _step = num(_a) / 1000.0
-  setGammaRGB(_clamp(_g.r - _step, 0.0, 1.0), _clamp(_g.g - _step, 0.0, 1.0), _clamp(_g.b - _step, 0.0, 1.0), _mi)
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  if amount == null { amount = DEFAULT_GAMMA_AMOUNT }
+  monName = _getMonitorName(mi)
+  if monName == "" { return }
+  cur = getGammaRGB(mi)
+  step = num(amount) / 1000.0
+  setGammaRGB(math.max(0.1, cur.r - step), math.max(0.1, cur.g - step), math.max(0.1, cur.b - step), mi)
 }
 
 fn getShadowLift(monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _cached_shadow_lift
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return 0.0 }
+  v = _shadowLift.get(monName)
+  if v != null { v } else { 0.0 }
 }
 
 fn setShadowLift(lift, monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _v = _clamp(lift, 0.0, 1.0)
-  _g = getGammaRGB(_mi)
-  _lift_r = _g.r + _v * (1.0 - _g.r)
-  _lift_g = _g.g + _v * (1.0 - _g.g)
-  _lift_b = _g.b + _v * (1.0 - _g.b)
-  setGammaRGB(_lift_r, _lift_g, _lift_b, _mi)
-  _cached_shadow_lift = _v
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return }
+  if lift > SHADOW_LIFT_MAX {
+    print("[brightness] Shadow lift must be <= " + str(SHADOW_LIFT_MAX) + ", got: " + str(lift))
+    return
+  }
+  if lift < 0.0 {
+    print("[brightness] Shadow lift must be >= 0.0, got: " + str(lift))
+    return
+  }
+  _shadowLift.set(monName, lift)
+  _applySettings(monName)
 }
 
 fn increaseShadowLift(amount, monitorIndex) {
-  _a = amount
-  if _a == null { _a = 10 }
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _step = num(_a) / 100.0
-  _cur = _cached_shadow_lift
-  setShadowLift(_clamp(_cur + _step, 0.0, 1.0), _mi)
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  if amount == null { amount = 0.1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return }
+  cur = getShadowLift(mi)
+  setShadowLift(_clamp(cur + amount, 0.0, SHADOW_LIFT_MAX), mi)
 }
 
 fn decreaseShadowLift(amount, monitorIndex) {
-  _a = amount
-  if _a == null { _a = 10 }
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _step = num(_a) / 100.0
-  _cur = _cached_shadow_lift
-  setShadowLift(_clamp(_cur - _step, 0.0, 1.0), _mi)
+  mi = monitorIndex
+  if mi == null { mi = -1 }
+  if amount == null { amount = 0.1 }
+  monName = _getMonitorName(mi)
+  if monName == "" { return }
+  cur = getShadowLift(mi)
+  setShadowLift(_clamp(cur - amount, 0.0, SHADOW_LIFT_MAX), mi)
 }
 
-fn setBrightnessAndRGB(brightness, r, g, b, monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  set(brightness, _mi)
-  setGammaRGB(r, g, b, _mi)
+fn setBrightnessAndRGB(brightnessVal, r, g, b, monitorIndex) {
+  setBrightness(brightnessVal, monitorIndex)
+  setGammaRGB(r, g, b, monitorIndex)
 }
 
-fn setBrightnessAndTemperature(brightness, kelvin, monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  set(brightness, _mi)
-  setTemperature(kelvin, _mi)
+fn setBrightnessAndTemperature(brightnessVal, kelvin, monitorIndex) {
+  setBrightness(brightnessVal, monitorIndex)
+  setTemperature(kelvin, monitorIndex)
 }
 
-fn setBrightnessAndShadowLift(brightness, shadowLift, monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  set(brightness, _mi)
-  setShadowLift(shadowLift, _mi)
+fn setBrightnessAndShadowLift(brightnessVal, shadowLiftVal, monitorIndex) {
+  setBrightness(brightnessVal, monitorIndex)
+  setShadowLift(shadowLiftVal, monitorIndex)
 }
-
-fn _checkDayNight() {
-  if !_day_night_enabled { return }
-  _hour = time.hour()
-  if _hour >= _day_start && _hour < _night_start {
-    if !_is_day {
-      _is_day = true
-      set(_day_brightness)
-      setTemperature(_day_temp)
-    }
-  } else {
-    if _is_day {
-      _is_day = false
-      set(_night_brightness)
-      setTemperature(_night_temp)
-    }
-  }
-}
-
-fn enableDayNightMode(dayBrightness, nightBrightness, dayTemp, nightTemp, dayStart, nightStart, intervalMinutes) {
-  _db = dayBrightness
-  if _db == null { _db = 1.0 }
-  _nb = nightBrightness
-  if _nb == null { _nb = 0.3 }
-  _dt = dayTemp
-  if _dt == null { _dt = 6500 }
-  _nt = nightTemp
-  if _nt == null { _nt = 3000 }
-  _ds = dayStart
-  if _ds == null { _ds = 7 }
-  _ns = nightStart
-  if _ns == null { _ns = 20 }
-  _ci = intervalMinutes
-  if _ci == null { _ci = 5 }
-
-  _day_brightness = _db
-  _night_brightness = _nb
-  _day_temp = _dt
-  _night_temp = _nt
-  _day_start = _ds
-  _night_start = _ns
-  _day_night_enabled = true
-  _checkDayNight()
-}
-
-fn disableDayNightMode() {
-  _day_night_enabled = false
-}
-
-fn isDayNightModeEnabled() { _day_night_enabled }
-
-fn setDaySettings(brightness, temperature) {
-  _day_brightness = brightness
-  _day_temp = temperature
-  if _day_night_enabled && _is_day {
-    set(brightness)
-    setTemperature(temperature)
-  }
-}
-
-fn setNightSettings(brightness, temperature) {
-  _night_brightness = brightness
-  _night_temp = temperature
-  if _day_night_enabled && !_is_day {
-    set(brightness)
-    setTemperature(temperature)
-  }
-}
-
-fn setDayNightTiming(dayStart, nightStart) {
-  _day_start = dayStart
-  _night_start = nightStart
-  if _day_night_enabled { _checkDayNight() }
-}
-
-fn switchToDay(monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _is_day = true
-  set(_day_brightness, _mi)
-  setTemperature(_day_temp, _mi)
-  true
-}
-
-fn switchToNight(monitorIndex) {
-  _mi = monitorIndex
-  if _mi == null { _mi = -1 }
-  _is_day = false
-  set(_night_brightness, _mi)
-  setTemperature(_night_temp, _mi)
-  true
-}
-
-fn isDay() { _is_day }
 
 fn getMonitors() {
-  _mons = display.monitors()
-  _names = []
-  for _m in _mons { _names.push(_m.name) }
-  _names
+  names = []
+  for mon in _monitors { names.push(mon.name) }
+  names
 }
 
 fn getMonitor(index) {
-  _mons = display.monitors()
-  if index < 0 || index >= #_mons { "" }
-  else { _mons[index].name }
+  if index == null { index = 0 }
+  if index >= 0 && index < #_monitors { _monitors[index].name } else { "" }
 }
+
+// === Backward-compat aliases (old C++ BrightnessManager API) ===
+fn get(mi) { getBrightness(mi) }
+fn set(v, mi) { setBrightness(v, mi) }
+fn increase(amount, mi) { increaseBrightness(amount, mi) }
+fn decrease(amount, mi) { decreaseBrightness(amount, mi) }
+
+// === Full initialization ===
+init()

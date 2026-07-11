@@ -5,7 +5,7 @@
 //   daynight.enable(1.0, 0.3, 6500, 3000, 7, 20, 5)
 
 use time
-use * from "./brightness.hv"
+use * from "brightness"
 
 _dayEnabled = false
 _dayBrightness = 1.0
@@ -56,7 +56,7 @@ fn enable(dayBrightness, nightBrightness, dayTemp, nightTemp, dayStart, nightSta
   if _timer != null { _timer.stop(); _timer = null }
   _apply()
   ms = intervalMinutes * 60 * 1000
-  _timer = interval(ms) { _apply() }
+  _timer = interval(ms, fn() { _apply() })
 }
 
 fn disable() {

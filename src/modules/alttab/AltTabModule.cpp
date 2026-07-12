@@ -8,7 +8,7 @@ namespace havel::modules {
 
 using compiler::Value;
 using compiler::VMApi;
-using host::AltTabService;
+using havel::AltTabService;
 
 static const char* MODULE_MARKER = "__alttab_module";
 
@@ -31,7 +31,7 @@ static std::shared_ptr<AltTabService> getService() {
   return svc;
 }
 
-static Value altTabInfoToObject(const VMApi& api, const host::AltTabInfo& info) {
+static Value altTabInfoToObject(const VMApi& api, const AltTabInfo& info) {
   auto obj = api.makeObject();
   api.setField(obj, "title", api.makeString(info.title));
   api.setField(obj, "className", api.makeString(info.className));
@@ -44,7 +44,7 @@ static Value altTabInfoToObject(const VMApi& api, const host::AltTabInfo& info) 
 void registerAltTabModule(const VMApi& api) {
   HAVEL_BEGIN_MODULE("AltTab");
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.show", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.show", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeNull();
@@ -52,7 +52,7 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.hide", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.hide", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeNull();
@@ -60,7 +60,7 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.toggle", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.toggle", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeNull();
@@ -68,7 +68,7 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.next", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.next", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeNull();
@@ -76,7 +76,7 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.previous", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.previous", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeNull();
@@ -84,7 +84,7 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.select", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.select", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeNull();
@@ -92,7 +92,7 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.refresh", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.refresh", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeNull();
@@ -100,7 +100,7 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.getWindows", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.getWindows", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return api.makeArray();
@@ -114,14 +114,14 @@ void registerAltTabModule(const VMApi& api) {
     } catch (const std::exception& e) { debug("alttab.getWindows error: {}", e.what()); return api.makeArray(); }
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.getWindowCount", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.getWindowCount", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeInt(0);
     try { return Value::makeInt(svc->getWindowCount()); } catch (const std::exception& e) { return Value::makeInt(0); }
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.setThumbnailSize", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.setThumbnailSize", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 2) return Value::makeNull();
     auto svc = getService();
@@ -132,21 +132,21 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.getThumbnailWidth", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.getThumbnailWidth", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeInt(0);
     try { return Value::makeInt(svc->getThumbnailWidth()); } catch (const std::exception& e) { return Value::makeInt(0); }
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.getThumbnailHeight", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.getThumbnailHeight", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeInt(0);
     try { return Value::makeInt(svc->getThumbnailHeight()); } catch (const std::exception& e) { return Value::makeInt(0); }
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.setMaxVisibleWindows", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.setMaxVisibleWindows", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     if (args.empty()) return Value::makeNull();
     auto svc = getService();
@@ -156,14 +156,14 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.getMaxVisibleWindows", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.getMaxVisibleWindows", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeInt(0);
     try { return Value::makeInt(svc->getMaxVisibleWindows()); } catch (const std::exception& e) { return Value::makeInt(0); }
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.setAnimationsEnabled", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.setAnimationsEnabled", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     if (args.empty()) return Value::makeNull();
     auto svc = getService();
@@ -173,7 +173,7 @@ void registerAltTabModule(const VMApi& api) {
     return Value::makeNull();
   });
 
-  HAVEL_REGISTER_FUNCTION(api, "alttab.isAnimationsEnabled", [api](const auto& rawArgs) {
+  HAVEL_REGISTER_FUNCTION(api, "alttab.isAnimationsEnabled", [api](const std::vector<Value>& rawArgs) -> Value {
     auto args = stripReceiver(api, rawArgs);
     auto svc = getService();
     if (!svc) return Value::makeBool(false);

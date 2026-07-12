@@ -176,7 +176,7 @@ VM::VM(bool leanStartup) : impl(std::make_unique<Impl>()) {
         auto io = std::make_shared<IO>();
         auto hostAPI = std::make_shared<HostAPI>(io.get(), nullptr, Configs::Get(),
                                                  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                                 nullptr, nullptr, nullptr, nullptr, std::vector<std::string>{});
+                                                 nullptr, nullptr, std::vector<std::string>{});
         impl->engine->initializeFull(hostAPI, leanStartup);
     }
     impl->initialized = true;

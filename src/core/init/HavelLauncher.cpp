@@ -93,7 +93,7 @@ static std::string readScriptFile(const std::string &path) {
 }
 
 static std::unordered_set<std::string>
-havel::init::collectKnownGlobals(const havel::compiler::VM *vm) {
+collectKnownGlobals(const havel::compiler::VM *vm) {
   std::unordered_set<std::string> globals;
   if (!vm) {
     return globals;
@@ -213,7 +213,7 @@ static void readFromStdIn(std::string &code, std::string &names) {
   }
 }
 
-static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg) {
+static havel::EngineConfig makeEngineConfig(const LaunchConfig &cfg) {
   return {.debugBytecode = cfg.debugBytecode,
           .debugLexer = cfg.debugLexer,
           .debugParser = cfg.debugParser,
@@ -226,7 +226,7 @@ static havel::EngineConfig makeEngineConfig(const havel::init::LaunchConfig cons
           .serviceExcludes = cfg.serviceExcludes};
 }
 
-static havel::repl::REPLConfig makeREPLConfig(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg) {
+static havel::repl::REPLConfig makeREPLConfig(const LaunchConfig &cfg) {
   havel::repl::REPLConfig replConfig;
   replConfig.debugMode = cfg.debugMode;
   replConfig.stopOnError = cfg.stopOnError;
@@ -243,14 +243,12 @@ static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
   auto *hkManager = inst.getHotkeyManagerPtr();
   return std::make_shared<HostAPI>(
       inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
-      inst.getWindowManagerPtr(),
-      inst.getAudioManager(), nullptr, nullptr, nullptr, nullptr, nullptr,
-      nullptr, nullptr, nullptr,
-      std::vector<std::string>{});
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, std::vector<std::string>{});
 }
 
 static int runLint(const std::string &code, const std::string &primaryFile,
-                   const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg) {
+                   const LaunchConfig &cfg) {
   havel::parser::Parser parser{{.lexer = cfg.debugLexer,
                                 .parser = cfg.debugParser,
                                 .ast = cfg.debugAst}};
@@ -321,7 +319,7 @@ static int runLint(const std::string &code, const std::string &primaryFile,
 }
 
 static std::unique_ptr<havel::ast::Program>
-parseScript(const std::string &code, const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg) {
+parseScript(const std::string &code, const LaunchConfig &cfg) {
   havel::parser::Parser parser{{.lexer = cfg.debugLexer,
                                 .parser = cfg.debugParser,
                                 .ast = cfg.debugAst}};
@@ -362,7 +360,7 @@ static void installMinimalSignalHandlers() {
   sigaction(SIGSEGV, &sa, nullptr);
 }
 
-static int runBytecodeFiles(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg,
+static int runBytecodeFiles(const LaunchConfig &cfg,
                             const std::vector<std::string> &hvcFiles) {
   for (const auto &f : hvcFiles) {
     std::ifstream file(f, std::ios::binary | std::ios::ate);
@@ -461,7 +459,7 @@ static int runBytecodeFiles(const havel::init::LaunchConfig const havel::init::L
 
 class DaemonStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg, int argc, char *argv[]) override {
+  int execute(const LaunchConfig &cfg, int argc, char *argv[]) override {
     auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
 
     // LINT-ONLY MODE
@@ -536,7 +534,7 @@ public:
 
 class ScriptStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg, int argc, char *argv[]) override {
+  int execute(const LaunchConfig &cfg, int argc, char *argv[]) override {
     // Check for .hvc bytecode files
     std::vector<std::string> hvcFiles, hvFiles;
     for (const auto &f : cfg.scriptFiles) {
@@ -648,7 +646,7 @@ public:
 
 class ScriptOnlyStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg, int argc, char *argv[]) override {
+  int execute(const LaunchConfig &cfg, int argc, char *argv[]) override {
     std::vector<std::string> hvcFiles, hvFiles;
     for (const auto &f : cfg.scriptFiles) {
       if (f.size() >= 4 && f.substr(f.size() - 4) == ".hvc")
@@ -764,7 +762,7 @@ public:
 };
 
 // Helper for all REPL strategies
-static int setupFullReplCommon(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg) {
+static int setupFullReplCommon(const LaunchConfig &cfg) {
   auto *replBackend = host::UIManager::instance().backend();
   if (!replBackend) {
     error(
@@ -780,14 +778,14 @@ static int setupFullReplCommon(const havel::init::LaunchConfig const havel::init
 }
 
 static int runMinimalReplLoop(havel::HavelEngine &engine,
-                              const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg) {
+                              const LaunchConfig &cfg) {
   havel::repl::REPL repl(makeREPLConfig(cfg));
-  repl.attach(engine.vm(), engine.modules(), havel::init::collectKnownGlobals(engine.vm()));
+  repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
   repl.setPumpCallback([&engine]() { engine.tickGoroutines(); });
   return repl.run();
 }
 
-static int runFullReplLoop(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg, havel::Havel &havel_inst) {
+static int runFullReplLoop(const LaunchConfig &cfg, havel::Havel &havel_inst) {
   auto *bytecodeVM = havel_inst.getBytecodeVM();
   auto *modules = havel_inst.getModules();
   if (!bytecodeVM || !modules)
@@ -799,7 +797,7 @@ static int runFullReplLoop(const havel::init::LaunchConfig const havel::init::La
                                    cfg.serviceExcludes);
   hostAPI->SetVM(bytecodeVM);
   repl.attach(bytecodeVM, havel_inst.getModules(),
-              havel::init::collectKnownGlobals(bytecodeVM));
+              collectKnownGlobals(bytecodeVM));
 
   auto *io = havel_inst.getIOPtr();
   auto *hkManager = havel_inst.getHotkeyManagerPtr();
@@ -821,7 +819,7 @@ static int runFullReplLoop(const havel::init::LaunchConfig const havel::init::La
 
 class ScriptAndReplStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg, int argc, char *argv[]) override {
+  int execute(const LaunchConfig &cfg, int argc, char *argv[]) override {
     try {
       auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
 
@@ -892,7 +890,7 @@ public:
 
 class ReplStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg, int, char *[]) override {
+  int execute(const LaunchConfig &cfg, int, char *[]) override {
     try {
       if (cfg.minimalMode) {
         info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
@@ -941,7 +939,7 @@ public:
 
 class SelfHostedStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg, int, char *[]) override {
+  int execute(const LaunchConfig &cfg, int, char *[]) override {
     info("Engine: self-hosted (Havel)");
 
     char selfBuf[PATH_MAX];
@@ -1020,7 +1018,7 @@ public:
 
 class TestStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg, int, char *[]) override {
+  int execute(const LaunchConfig &cfg, int, char *[]) override {
     if (cfg.testDir.empty()) {
       error("No test directory specified. Usage: havel --test <directory>");
       return 1;
@@ -1125,7 +1123,7 @@ public:
 
 class CliStrategy : public RunStrategy {
 public:
-  int execute(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &, int, char *[]) override {
+  int execute(const LaunchConfig &, int, char *[]) override {
     error("CLI not available - interpreter removed");
     return 1;
   }
@@ -1163,8 +1161,6 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return runBuild(cfg);
 
     if (cfg.mode != LaunchConfig::Mode::SELF_HOSTED &&
-        cfg.mode != LaunchConfig::Mode::SCRIPT_AND_REPL &&
-        cfg.mode != LaunchConfig::Mode::REPL &&
         !cfg.vmConfig.self_hosted_modules_path.empty()) {
       namespace fs = std::filesystem;
       fs::path langDir =
@@ -1191,7 +1187,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
 }
 
 std::unique_ptr<RunStrategy>
-HavelLauncher::createStrategy(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg) {
+HavelLauncher::createStrategy(const LaunchConfig &cfg) {
   using Mode = LaunchConfig::Mode;
   switch (cfg.mode) {
   case Mode::DAEMON:
@@ -1661,7 +1657,7 @@ VM Configuration:
 )" << std::flush;
 }
 
-int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg) {
+int havel::init::HavelLauncher::runBuild(const LaunchConfig &cfg) {
 
   // Build mode: compile .hv files to .hvc bytecode
   std::string combinedCode;
@@ -2180,7 +2176,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig const h
   return 0;
 }
 
-int HavelLauncher::diffPipeline(const havel::init::LaunchConfig const havel::init::LaunchConfig const LaunchConfig &cfg) {
+int HavelLauncher::diffPipeline(const LaunchConfig &cfg) {
   namespace fs = std::filesystem;
   std::string currentPath = cfg.vmConfig.self_hosted_modules_path;
   if (currentPath.empty()) {

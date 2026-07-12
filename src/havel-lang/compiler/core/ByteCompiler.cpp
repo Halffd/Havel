@@ -846,6 +846,11 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
 
   enterFunction(std::move(bf), index_it->second);
 
+  // Clear class context so @field compiles to LOAD_GLOBAL "this"
+  // instead of LOAD_VAR 0 (lambda's uninitialized slot 0)
+  const std::string saved_class_name = std::move(current_class_name_);
+  current_class_name_.clear();
+
   auto upvalues_it = lexical_resolution_.lambda_upvalues.find(&lambda);
   if (upvalues_it != lexical_resolution_.lambda_upvalues.end()) {
     current_function->upvalues = upvalues_it->second;
@@ -951,6 +956,7 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
   }
 
   leaveFunction();
+  current_class_name_ = std::move(saved_class_name);
 }
 
 void ByteCompiler::compileClassMethod(
@@ -8160,10 +8166,15 @@ void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::str
 
   enterFunction(std::move(bf), funcIndex);
 
+  // Clear class context so @field compiles to LOAD_GLOBAL "this"
+  const std::string saved_class_name = std::move(current_class_name_);
+  current_class_name_.clear();
+
   compileStatement(body);
 
   emit(OpCode::RETURN);
   leaveFunction();
+  current_class_name_ = std::move(saved_class_name);
 
   // Load the function object
   if (!upvalues.empty()) {
@@ -8350,6 +8361,10 @@ void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
   BytecodeFunction bf("<go>", 0, 0);
   enterFunction(std::move(bf), funcIndex);
 
+  // Clear class context so @ resolves via LOAD_GLOBAL "this" in goroutine
+  const std::string saved_class_name_go = std::move(current_class_name_);
+  current_class_name_.clear();
+
   bool saved_tail = in_tail_position_;
   in_tail_position_ = false;
   compileCallExpression(call);
@@ -8357,6 +8372,7 @@ void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
 
   emit(OpCode::RETURN);
   leaveFunction();
+  current_class_name_ = std::move(saved_class_name_go);
 
   {
     uint32_t strId = addStringConstant("thread_spawn");
@@ -8385,6 +8401,10 @@ void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {
   BytecodeFunction bf("<go>", 0, 0);
   enterFunction(std::move(bf), funcIndex);
 
+  // Clear class context so @ resolves via LOAD_GLOBAL "this" in goroutine
+  const std::string saved_class_name_go = std::move(current_class_name_);
+  current_class_name_.clear();
+
   bool saved_tail = in_tail_position_;
   in_tail_position_ = false;
   compileCallExpression(call);
@@ -8392,6 +8412,7 @@ void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {
 
   emit(OpCode::RETURN);
   leaveFunction();
+  current_class_name_ = std::move(saved_class_name_go);
 
   {
     uint32_t strId = addStringConstant("thread_spawn");

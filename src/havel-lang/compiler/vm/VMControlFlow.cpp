@@ -578,6 +578,18 @@ if (instanceObj) {
       }
     } else {
         // Call VM function
+        if (method_name == "close") {
+            std::cerr << "CALL_METHOD close: vm_func=" << vm_func.toString()
+                << " isInstanceFunc=" << isInstanceFunc
+                << " found_via_module=" << found_via_module
+                << " arg_count=" << arg_count
+                << " recv=" << recv.toString()
+                << " all_args.size=" << all_args.size();
+            for (size_t ai = 0; ai < all_args.size(); ai++) {
+                std::cerr << " arg[" << ai << "]=" << all_args[ai].toString();
+            }
+            std::cerr << std::endl;
+        }
         doCall(vm_func, all_args);
     }
     break;

@@ -1192,6 +1192,35 @@ if (!modName.empty()) {
     }
 
 	if (!object.isObjectId()) {
+		{
+			std::cerr << "OBJECT_SET: object=" << object.toString()
+				<< " key=" << *keyStr
+				<< " value=" << value.toString()
+				<< " frame_count=" << frame_count_
+				<< " locals_size=" << locals.size()
+				<< " stack_depth=" << stack.size()
+				<< std::endl;
+			size_t maxFrames = std::min(static_cast<size_t>(frame_count_), frame_arena_.size());
+			for (size_t fi = 0; fi < maxFrames; fi++) {
+				auto &fr = frame_arena_[fi];
+				std::string fname = fr.function ? fr.function->name : "<anon>";
+				std::string localVals;
+				if (fr.function && fr.locals_base < locals.size()) {
+					uint32_t lc = std::max(fr.function->param_count, fr.function->local_count);
+					for (uint32_t li = 0; li < lc && fr.locals_base + li < locals.size(); li++) {
+						if (li > 0) localVals += ", ";
+						localVals += std::to_string(li) + "=" + locals[fr.locals_base + li].toString();
+					}
+				} else if (fr.function) {
+					localVals = "(lb=" + std::to_string(fr.locals_base) + " >= locals.size=" + std::to_string(locals.size()) + ")";
+				}
+				std::cerr << "  frame[" << fi << "] " << fname << " ip=" << fr.ip
+					<< " lb=" << fr.locals_base
+					<< " cl=" << fr.closure_id
+					<< " loc=[" << localVals << "]"
+					<< std::endl;
+			}
+		}
 		COMPILER_THROW("OBJECT_SET expects object container");
 	}
 

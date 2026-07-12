@@ -1,0 +1,56 @@
+use * from "daynight"
+
+testCount = 0
+passCount = 0
+failCount = 0
+
+fn test(name, got, expected) {
+  testCount = testCount + 1
+  ok = false
+  if type(got) == type(expected) {
+    if type(got) == "num" && type(expected) == "num" {
+      ok = math.abs(got - expected) < 0.001
+    } else {
+      ok = str(got) == str(expected)
+    }
+  }
+  if ok {
+    passCount = passCount + 1
+  } else {
+    failCount = failCount + 1
+    print("[FAIL] " + name + ": expected " + str(expected) + ", got " + str(got))
+  }
+}
+
+print("[DAYNIGHT TEST] ================================")
+
+test("isEnabled initially false", isEnabled(), false)
+test("isDay returns bool", type(isDay()), "bool")
+
+enable(1.0, 0.3, 6500, 3000, 7, 20, 60)
+test("enable() works", isEnabled(), true)
+
+setDaySettings(0.9, 5500)
+test("setDaySettings no crash", true, true)
+
+setNightSettings(0.2, 2500)
+test("setNightSettings no crash", true, true)
+
+setDayTiming(8, 21)
+test("setDayTiming no crash", true, true)
+
+disable()
+test("disable() works", isEnabled(), false)
+
+enable(1.0, 0.3, 6500, 3000, 8, 22, 30)
+test("re-enable works", isEnabled(), true)
+disable()
+test("disable after re-enable", isEnabled(), false)
+
+print("================================================")
+print("[RESULT] " + str(passCount) + "/" + str(testCount) + " passed")
+if failCount > 0 {
+  print("[RESULT] " + str(failCount) + " FAILURES")
+} else {
+  print("[RESULT] ALL PASSED")
+}

@@ -102,7 +102,7 @@ fn test_event_bus() {
         fired = true
     })
 
-    m.bus.emit("pause", {})
+    m.emit("pause", {})
 
     assert(fired == true, "event not fired")
 }

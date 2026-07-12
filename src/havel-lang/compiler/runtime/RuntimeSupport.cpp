@@ -665,6 +665,15 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk)
         append(&func.param_count, sizeof(func.param_count));
         append(&func.local_count, sizeof(func.local_count));
 
+        // Serialize param_names
+        uint32_t numParamNames = static_cast<uint32_t>(func.param_names.size());
+        append(&numParamNames, sizeof(numParamNames));
+        for (const auto& name : func.param_names) {
+            uint32_t len = static_cast<uint32_t>(name.size());
+            append(&len, sizeof(len));
+            if (!name.empty()) append(name.data(), len);
+        }
+
         // Constants (per-function)
         uint32_t numConsts = static_cast<uint32_t>(func.constants.size());
         append(&numConsts, sizeof(numConsts));
@@ -818,7 +827,25 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     if (!read(&param_count, sizeof(param_count))) return std::nullopt;
     if (!read(&local_count, sizeof(local_count))) return std::nullopt;
 
+        // Read param_names
+        uint32_t numParamNames = 0;
+        if (!read(&numParamNames, sizeof(numParamNames))) return std::nullopt;
+        std::vector<std::string> param_names;
+        param_names.reserve(numParamNames);
+        for (uint32_t i = 0; i < numParamNames; ++i) {
+            uint32_t len = 0;
+            if (!read(&len, sizeof(len))) return std::nullopt;
+            std::string name(len, '\0');
+            if (len > 0) {
+                if (pos + len > data.size()) return std::nullopt;
+                std::memcpy(name.data(), data.data() + pos, len);
+                pos += len;
+            }
+            param_names.push_back(std::move(name));
+        }
+
         BytecodeFunction func(funcName, param_count, local_count);
+        func.param_names = std::move(param_names);
 
         // Constants (per-function)
         uint32_t numConsts = 0;

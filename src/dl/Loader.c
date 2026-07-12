@@ -317,52 +317,59 @@ void havel_loader_close(void *handle) {
 }
 
 const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *name) {
- if (!loader || !name) return NULL;
+  if (!loader || !name) return NULL;
 
- char lib_name[300];
- snprintf(lib_name, sizeof(lib_name), "havel_mod_%s", name);
+  char lib_name[300];
+  snprintf(lib_name, sizeof(lib_name), "havel_mod_%s", name);
 
- for (int i = 0; i < loader->loaded_count; i++) {
-  if (strcmp(loader->loaded[i].name, lib_name) == 0 && loader->loaded[i].is_loaded) {
-   HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(loader->loaded[i].handle, "havel_module_info");
-   return info_fn ? info_fn() : NULL;
+  for (int i = 0; i < loader->loaded_count; i++) {
+   if (strcmp(loader->loaded[i].name, lib_name) == 0 && loader->loaded[i].is_loaded) {
+    HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(loader->loaded[i].handle, "havel_module_info");
+    HAVEL_LOGF_INFO("havel_loader_load_module: %s already loaded, returning existing ABI", name);
+    return info_fn ? info_fn() : NULL;
+   }
   }
- }
 
- char *path = find_library(loader, lib_name);
- if (!path) return NULL;
+  char *path = find_library(loader, lib_name);
+  if (!path) {
+    HAVEL_LOGF_ERROR("havel_loader_load_module: library not found for %s", name);
+    return NULL;
+  }
 
- void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
- if (!handle) {
-  HAVEL_LOGF_ERROR("dlopen failed for module '%s': %s", name,
-     dlerror() ? dlerror() : "unknown");
+  HAVEL_LOGF_INFO("havel_loader_load_module: dlopen %s for %s", path, name);
+  void *handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
+  if (!handle) {
+   HAVEL_LOGF_ERROR("dlopen failed for module '%s': %s", name,
+      dlerror() ? dlerror() : "unknown");
+   free(path);
+   return NULL;
+  }
+
+  HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(handle, "havel_module_info");
+  if (!info_fn) {
+   HAVEL_LOGF_ERROR("module '%s': missing havel_module_info", name);
+   free(path);
+   return NULL;
+  }
+
+  const HavelModuleABI *abi = info_fn();
+  HAVEL_LOGF_INFO("havel_loader_load_module: %s abi=%p register_fn=%p", name, (void*)abi, abi ? (void*)abi->register_fn : NULL);
+  if (!abi) {
+   HAVEL_LOGF_ERROR("module '%s': havel_module_info returned NULL", name);
+   free(path);
+   return NULL;
+  }
+
+  if (abi->abi_version < 1 || abi->abi_version > HAVEL_MODULE_ABI_VERSION) {
+  HAVEL_LOGF_ERROR("module '%s': ABI mismatch (got %d, need 1-%d)", name, abi->abi_version, HAVEL_MODULE_ABI_VERSION);
   free(path);
   return NULL;
- }
+  }
 
- HavelModuleInfoFn info_fn = (HavelModuleInfoFn)havel_loader_sym(handle, "havel_module_info");
- if (!info_fn) {
-  HAVEL_LOGF_ERROR("module '%s': missing havel_module_info", name);
+  register_loaded(loader, lib_name, path, handle);
+  HAVEL_LOGF_INFO("havel_loader_load_module: %s registered successfully", name);
   free(path);
-  return NULL;
- }
-
- const HavelModuleABI *abi = info_fn();
- if (!abi) {
-  HAVEL_LOGF_ERROR("module '%s': havel_module_info returned NULL", name);
-  free(path);
-  return NULL;
- }
-
- if (abi->abi_version < 1 || abi->abi_version > HAVEL_MODULE_ABI_VERSION) {
- HAVEL_LOGF_ERROR("module '%s': ABI mismatch (got %d, need 1-%d)", name, abi->abi_version, HAVEL_MODULE_ABI_VERSION);
- free(path);
- return NULL;
- }
-
- register_loaded(loader, lib_name, path, handle);
- free(path);
- return abi;
+  return abi;
 }
 
 const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char *name) {

@@ -3576,17 +3576,19 @@ case ast::NodeType::AtExpression: {
     // Load 'this' (slot 0 for instance methods, or LOAD_GLOBAL for non-class methods)
     if (!current_class_name_.empty()) {
       // Class instance method: 'this' is in local slot 0
+      fprintf(stderr, "[AtExpression] loading self (slot 0) for field '%s', current_class='%s'\n",
+              fieldId->symbol.c_str(), current_class_name_.c_str());
       emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
     } else if (isDirective && current_function->is_timer_closure) {
-        // Inside interval/timeout closure: interval ID is in the first upvalue
-        emit(OpCode::LOAD_UPVALUE, static_cast<uint32_t>(0));
+      // Inside interval/timeout closure: interval ID is in the first upvalue
+      emit(OpCode::LOAD_UPVALUE, static_cast<uint32_t>(0));
     } else {
       // Non-class context: fall back to global (for hotkey directives)
-      uint32_t strId = addStringConstant("this");
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(addStringConstant("this")));
     }
     // Get the field/method from this
     { uint32_t _sid = addStringConstant(fieldId->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
+    fprintf(stderr, "[AtExpression] emitting OBJECT_GET for field '%s'\n", fieldId->symbol.c_str());
     emit(OpCode::OBJECT_GET);
 
     // If it's a directive method, call it

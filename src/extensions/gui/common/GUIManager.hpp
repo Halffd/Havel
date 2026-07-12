@@ -1,7 +1,7 @@
 #pragma once
 #include "qt.hpp"
 
-#include "core/window/WindowManager.hpp"
+// #include "core/window/WindowManager.hpp"
 // #include <QApplication>
 // #include <QDialog>
 // #include <QGenericArgument>
@@ -30,8 +30,13 @@ namespace havel {
 class GUIManager : public QObject {
   Q_OBJECT
 public:
-  GUIManager(WindowManager &windowMgr);
+  GUIManager();
   ~GUIManager();
+
+  GUIManager(const GUIManager&) = delete;
+  GUIManager& operator=(const GUIManager&) = delete;
+  GUIManager(GUIManager&&) = delete;
+  GUIManager& operator=(GUIManager&&) = delete;
 
   // Initialize GUI (call after QApplication created)
   void initialize();
@@ -195,7 +200,7 @@ public:
                               const std::string &defaultColor = "#ffffff");
 
 private:
-  WindowManager &windowManager;
+  // WindowManager &windowManager;
 
   // Track custom windows
   std::unordered_map<uint64_t, QWidget *> customWindows;

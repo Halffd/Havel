@@ -1,6 +1,5 @@
 #include "AutoRunner.hpp"
 #include "../../utils/Timer.hpp"
-#include "core/window/WindowManager.hpp"
 #include <stdexcept>
 #include <utility>
 #include "utils/Logger.hpp"
@@ -48,16 +47,16 @@ namespace havel::automation
         // JUST hold the keys down - no spamming needed!
         io_->Send("{" + direction_ + ":down}");
 
-        auto winId = WindowManager::GetActiveWindow();
+auto winId = 0; // WindowManager::GetActiveWindow();
         timer = TimerManager::SetTimer(1700, [this, winId]()
                                        {
-          if (WindowManager::GetActiveWindow() != winId) {
-              ::havel::info("Window changed, stopping F timer");
-              if (timer) {
-                  TimerManager::StopTimer(timer);
-                  timer = nullptr;
-              }
-              io_->Send("{" + direction_ + ":up}");
+            if (0 != winId) { // WindowManager::GetActiveWindow() != winId
+                ::havel::info("Window changed, stopping F timer");
+                if (timer) {
+                    TimerManager::StopTimer(timer);
+                    timer = nullptr;
+                }
+                io_->Send("{" + direction_ + ":up}");
               io_->Send("{LShift:up}");
               return;
           }

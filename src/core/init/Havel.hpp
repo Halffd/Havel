@@ -13,8 +13,6 @@
 namespace havel {
 class IO;
 class HotkeyManager;
-class WindowManager;
-class AudioManager;
 struct HostContext;
 void blockAllSignals();
 class HavelLauncher;
@@ -73,15 +71,12 @@ public:
 
   // Component accessors
   IO *getIO() const { return io.get(); }
-  WindowManager *getWindowManager() const { return windowManager.get(); }
   HotkeyManager *getHotkeyManager() const { return hotkeyManager.get(); }
-  AudioManager *getAudioManager() const { return audioManager.get(); }
   automation::AutomationManager *getAutomationManager() const { return automationManager.get(); }
   compiler::VM *getBytecodeVM() const { return bytecodeVM.get(); }
   // Additional getters for HavelLauncher
   HotkeyManager* getHotkeyManagerPtr() const { return hotkeyManager.get(); }
   IO* getIOPtr() const { return io.get(); }
-  WindowManager* getWindowManagerPtr() const { return windowManager.get(); }
 
 
     Modules *getModules() const { return modules_.get(); }
@@ -111,9 +106,7 @@ private:
 
   // Core components
   std::shared_ptr<IO> io;
-  std::shared_ptr<WindowManager> windowManager;
   std::shared_ptr<HotkeyManager> hotkeyManager;
-  std::shared_ptr<AudioManager> audioManager;
   std::shared_ptr<automation::AutomationManager> automationManager;
   std::shared_ptr<net::NetworkManager> networkManager;
 
@@ -144,7 +137,7 @@ private:
   // State
   std::atomic<bool> initialized{false};
   std::atomic<bool> shutdownRequested{false};
-  std::once_flag cleanupOnce;
+  bool cleanupDone = false;
   bool guiMode{false};
   bool replMode{false};
   std::string scriptFile;

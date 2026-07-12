@@ -70,7 +70,6 @@ void Modules::shutdown() {
     uiBridge_.reset();
     inputBridge_.reset();
     mediaBridge_.reset();
-    audioBridge_.reset();
     displayBridge_.reset();
     configBridge_.reset();
     modeBridge_.reset();
@@ -109,7 +108,6 @@ void Modules::initBridges() {
     uiBridge_ = std::make_unique<compiler::UIBridge>(ctx_);
     inputBridge_ = std::make_unique<compiler::InputBridge>(ctx_);
     mediaBridge_ = std::make_unique<compiler::MediaBridge>(ctx_);
-    audioBridge_ = std::make_unique<compiler::AudioBridge>(ctx_);
     displayBridge_ = std::make_unique<compiler::DisplayBridge>(ctx_);
     configBridge_ = std::make_unique<compiler::ConfigBridge>(ctx_);
     modeBridge_ = std::make_unique<compiler::ModeBridge>(ctx_);
@@ -146,7 +144,6 @@ void Modules::installHostFunctions() {
     uiBridge_->install(options_);
     inputBridge_->install(options_);
     mediaBridge_->install(options_);
-    audioBridge_->install(options_);
     displayBridge_->install(options_);
     modeBridge_->install(options_);
     timerBridge_->install(options_);

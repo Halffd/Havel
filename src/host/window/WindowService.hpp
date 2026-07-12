@@ -14,9 +14,24 @@
 
 // Use existing WindowInfo from window query
 namespace havel {
-struct WindowInfo;
+struct WindowInfo {
+    uint64_t id = 0;
+    std::string title;
+    std::string className;
+    std::string exe;
+    int pid = 0;
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    bool minimized = false;
+    bool maximized = false;
+    bool fullscreen = false;
+    bool valid = false;
+    std::string cmdline;
+};
 struct WorkspaceInfo;
-class WindowManager;
+
 } // namespace havel
 
 namespace havel::host {
@@ -34,7 +49,7 @@ using ::havel::WorkspaceInfo;
  */
 class WindowService {
 public:
-  explicit WindowService(havel::WindowManager *manager);
+  explicit WindowService();
   ~WindowService() = default;
 
   // =========================================================================

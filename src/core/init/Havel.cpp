@@ -11,7 +11,6 @@
 #include "core/io/IO.hpp"
 #include "utils/ExitHandler.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
-#include "core/window/WindowManager.hpp"
 #include "core/automation/AutomationManager.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/StartupTiming.hpp"
@@ -19,7 +18,6 @@
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
 #endif
 #include "core/display/DisplayManager.hpp"
-#include "core/media/AudioManager.hpp"
 #include "core/io/EventListener.hpp"
 #include "core/io/KeyTap.hpp"
 #include "utils/Logger.hpp"
@@ -108,13 +106,6 @@ void Havel::initialize(bool isStartup) {
         throw std::runtime_error("Failed to create HotkeyManager");
     }
 
-    windowManager = std::make_shared<WindowManager>();
-    havel::startup_timing_report("WindowManager-create", t);
-    t = havel::startup_now();
-    audioManager = std::make_shared<AudioManager>(AudioBackend::AUTO);
-    havel::startup_timing_report("AudioManager-init", t);
-    t = havel::startup_now();
-
     automationManager = std::make_shared<automation::AutomationManager>(io);
     havel::startup_timing_report("AutomationManager-create", t);
     t = havel::startup_now();
@@ -131,9 +122,7 @@ void Havel::initialize(bool isStartup) {
   // Create host context
   hostContext = std::make_unique<HostContext>();
   hostContext->io = io.get();
-  hostContext->windowManager = windowManager.get();
   hostContext->hotkeyManager = hotkeyManager.get();
-  hostContext->audioManager = audioManager.get();
   hostContext->networkManager = networkManager.get();
 
     // Create VM
@@ -384,13 +373,8 @@ void Havel::initialize(bool isStartup) {
 #else
   info("Havel language disabled");
 #endif
-    if (WindowManagerDetector::IsX11()) {
-        Display *display = DisplayManager::GetDisplay();
-        if (!display) {
-            throw std::runtime_error("Failed to open X11 display");
-}
-}
-havel::registerExitCleanup([this]() { performCleanup(); });
+    // WindowManagerDetector::IsX11() check removed - using pure Havel window module
+    havel::registerExitCleanup([this]() { performCleanup(); });
 havel::startup_timing_report("Havel::initialize TOTAL", t0);
 if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
 		std::thread([this]() {
@@ -406,9 +390,10 @@ if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
 }
 
 void Havel::cleanup() noexcept {
+  if (cleanupDone) return;
+  cleanupDone = true;
   try {
-  std::call_once(cleanupOnce, [this]() {
-  if (debugging::debug_io) debug("Havel::cleanup() - starting cleanup");
+    if (debugging::debug_io) debug("Havel::cleanup() - starting cleanup");
 
   // Force save config before everything else
   try {
@@ -459,34 +444,27 @@ void Havel::cleanup() noexcept {
             modules_.reset();
         }
 
-  // Destroy other components
-  if (automationManager) {
-    automationManager.reset();
-  }
-  if (audioManager) {
-    audioManager.reset();
-  }
-  if (windowManager) {
-    windowManager.reset();
-  }
+    // Destroy other components
+    if (automationManager) {
+      automationManager.reset();
+    }
 
-  // Release ImageService handles (prevents leak when scripts don't call image.release)
-  auto imgSvc = havel::host::ServiceRegistry::instance().get<havel::host::ImageService>();
-  // Note: This runs in main binary, so ServiceRegistry singleton is correct here.
-  if (imgSvc) {
-    imgSvc->releaseAll();
-  }
+    // Release ImageService handles (prevents leak when scripts don't call image.release)
+    auto imgSvc = havel::host::ServiceRegistry::instance().get<havel::host::ImageService>();
+    // Note: This runs in main binary, so ServiceRegistry singleton is correct here.
+    if (imgSvc) {
+      imgSvc->releaseAll();
+    }
 
-  // Destroy IO LAST
-  if (io) {
-    io->cleanup();
-    io.reset();
-  }
+    // Destroy IO LAST
+    if (io) {
+      io->cleanup();
+      io.reset();
+    }
 
-  DisplayManager::Close();
+    DisplayManager::Close();
 
-  if (debugging::debug_io) debug("Havel::cleanup() - cleanup complete");
-  }); // std::call_once
+    if (debugging::debug_io) debug("Havel::cleanup() - cleanup complete");
   } catch (...) {}
 }
 

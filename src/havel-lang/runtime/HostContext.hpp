@@ -35,7 +35,6 @@ class Modules;
 class IO;
 class HotkeyManager;
 class WindowManager;
-class AudioManager;
 class GUIManager;
 class ScreenshotManager;
 class ClipboardManager;
@@ -89,7 +88,6 @@ struct HostContext {
   class IO *io = nullptr;
   class WindowManager *windowManager = nullptr;
   class HotkeyManager *hotkeyManager = nullptr;
-  class AudioManager *audioManager = nullptr;
   class GUIManager *guiManager = nullptr;
   class ScreenshotManager *screenshotManager = nullptr;
   class ClipboardManager *clipboardManager = nullptr;

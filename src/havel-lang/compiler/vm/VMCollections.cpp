@@ -1263,6 +1263,9 @@ if (!modName.empty()) {
 
     obj->set(*keyStr, value);
     emitVariableChanged("@O" + std::to_string(object.asObjectId()) + ":" + *keyStr);
+    if ((*keyStr == "close" || *keyStr == "connect") && value.isFunctionObjId()) {
+        std::cerr << "OBJECT_SET " << *keyStr << " = funcobj:" << value.asFunctionObjId() << " on object " << object.asObjectId() << std::endl;
+    }
 
     // Auto-save: if object has __autosave_root, persist to config store
     auto* autoSaveRoot = obj->get("__autosave_root");

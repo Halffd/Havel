@@ -359,6 +359,9 @@ if (instanceObj) {
                         }
           } else if (it->second.isFunctionObjId() || it->second.isClosureId()) {
             vm_func = it->second;
+            if (method_name == "close" && it->second.isFunctionObjId()) {
+                std::cerr << "CALL_METHOD: found close on obj " << receiver.asObjectId() << " = funcobj:" << it->second.asFunctionObjId() << std::endl;
+            }
             // Method found as direct field on instance.
             // For class instances (have __class), pass self.
             // For non-class objects: pass self only if the function expects self (first param named "self").

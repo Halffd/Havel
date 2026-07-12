@@ -154,7 +154,7 @@ havel::HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI) {
 
 	ctx.io = hostAPI ? hostAPI->GetIO() : nullptr;
 	ctx.hotkeyManager = hostAPI ? hostAPI->GetHotkeyManager() : nullptr;
-	ctx.windowManager = hostAPI ? hostAPI->GetWindowManager() : nullptr;
+	ctx.windowManager = nullptr;
 	ctx.guiManager = hostAPI ? hostAPI->GetGUIManager() : nullptr;
 	ctx.screenshotManager = hostAPI ? hostAPI->GetScreenshotManager() : nullptr;
 	ctx.clipboardManager = hostAPI ? hostAPI->GetClipboardManager() : nullptr;

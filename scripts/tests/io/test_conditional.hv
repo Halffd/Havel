@@ -12,7 +12,18 @@ timeout 35000 {
     exit(0)
 }
 
-Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
+enterHk = Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
+enter2Hk = ~Enter if !(title_ ~ "onsole") => print("Enter pressed OU8TSIDE konsole")
+tHk = #t if true => print("Meta+t pressed")
+fHk = +f if false => print("Error")
+nHk = !n if 1 + 2 == 4 - 1 => print("Alt+n pressed")
+oHk = ~!o if {} == {} => print("Alt+o non-grab pressed")
+xHk = |x if #"x" == 1 => print("X non repeat pressed")
+assert(tHk.grab == true, "true FAIL")
+assert(fHk.grab == false, "false FAIL")
+assert(nHk.grab == true, "Arithmetic FAIL")
+assert(oHk.grab == true, "Equality FAIL")
+assert(xHk.grab == true, "Length FAIL")
 when title_ ~ "onsole" {
   print("Konsole is active")
 }
@@ -25,8 +36,8 @@ when title_ ~ "mpv" {
 when title_ ~ "hatterino" {
   print("Chatterino is active")
 }
-p if title_ ~ "mpv" => play()
-^v if title_ ~ "hatterino" => print("Ctrl+V pressed in chatterino")
+pHk = p if title_ ~ "mpv" => print("P pressed in mpv")
+vHk = ^v if title_ ~ "hatterino" => print("Ctrl+V pressed in chatterino")
 +s if mode == "gaming" => {  // Shift+S
   winid = window.active().id
   interval 100 {
@@ -56,23 +67,48 @@ fn modeEval (win) {
     print("Leaving mode to default")
   }
 }
-hotkeyTest = hotkey.register_conditional("a", () => { print "Gaming/mpv mode active" }, () => { res = mode == "gaming" || title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv:" + res); return res })
-hotkeyTest2 = hotkey.register_conditional("b", () => { print "On terminal" }, () => { res = title_ ~ "onsole"; print("CONDITIONAL title onsole:" + res); return res })
+condGaming = () => { res = mode == "gaming" || title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv:" + res); return res }
+condConsole = () => { res = title_ ~ "onsole"; print("CONDITIONAL title onsole:" + res); return res }
+hotkeyTest = hotkey.register_conditional("a", () => { print "Gaming/mpv mode active" }, condGaming)
+hotkeyTest2 = hotkey.register_conditional("b", () => { print "On terminal" }, condConsole)
+fn test() {
+    print("title: $title_")
+    print("UNCONDITIONAL P PRRESSED, CONDITIONAL P STATUS: ", pHk)
+    print("hotkeyTest: ", hotkeyTest)
+    print("hotkeyTest2: ", hotkeyTest2)
+    print("enterHk: ", enterHk)
+    print("enter2Hk: ", enter2Hk)
+    if title_ ~ "hatterino" && (!vHk.enabled || !vHk.grab) {
+        print("ERROR [^v] - IN WINDOW BUT ^v NOT ENABLED")
+    }
+    if title_ ~ "onsole" && (!enterHk.enabled || !enterHk.grab) {
+        print("ERROR [Enter] - IN WINDOW BUT ENTER NOT ENABLED")
+    }
+
+    if !(title_ ~ "onsole") && (!enter2Hk.enabled || !enter2Hk.grab) {
+        print("ERROR [Enter] - OUTSIDE WINDOW BUT ~ENTER NOT ACTIVE")
+    }
+    if title_ ~ "onsole" && enter2Hk.grab {
+        print("ERROR [Enter] - IN WINDOW BUT ~ENTER IS GRABBING")
+    }
+    if title_ ~ "mpv" && (!pHk.enabled || !pHk.grab) {
+        print("ERROR [p] - IN MPV BUT P HOTKEY NOT ENABLED")
+    }
+    if condGaming() && (!hotkeyTest.enabled || !hotkeyTest.grab) {
+        print("ERROR [a] CONDITION hotkeyTest NOT WORKING")
+    }
+    if condConsole() && (!hotkeyTest2.enabled || !hotkeyTest2.grab) {
+        print("ERROR [b] CONDITION hotkeyTest2 NOT WORKING")
+    }
+
+    print("")
+}
+o => test()
 dbgWin = 0
 hks = null
-tickGo = 0
-tickOut = 0
-print("STARTING GOROUTINE")
-go fn update() {
-  loop {
-    tickGo++
-    print("[IN GOROUTINE] tick=$tickGo")
-    if(tickGo > 5 && tickOut < 5){
-        print("[ERROR] ONLY GOROUTINE RUNNING $tickGo > $tickOut")
-        if(tickOut == 0){
-            print("[ERROR] OUTSIDE LOOP NEVER RAN $tickOut")
-        }
-    }
+tick = 0
+fn onTick() {
+    print("[UPDATE] tick=$tick")
     win = window.active()
     [title_, class_, cmd, wid, wpid] = [win.title, win.class, win.cmdline, win.id, win.pid]
     if wid != lwid {
@@ -81,21 +117,15 @@ go fn update() {
       if dbgWin {
          print("Active window changed: $title_ class: $class_ mode: $mode cmd: $cmd pid: $wpid id: $wid last: ${lastWin ? lastWin.title_ : "none"}")
       }
-      print("hotkeyTest: ", hotkeyTest)
-      print("hotkeyTest2: ", hotkeyTest2)
       print("Hotkeys:")
       print(hotkey.list())
-      print("Scheduler: ", scheduler.info(), scheduler.goroutines())
+      test()
     }
-    sleep(1000)
-  }
 }
-print("LINE93: STARTING OUTSIDE LOOP")
+print("STARTING MAIN LOOP")
 loop {
-    tickOut++
-    println("[OUTSIDE GOROUTINE] tick=$tickOut")
-    if(tickOut > 20 && tickGo <= 20){
-        print("[ERROR] GOROUTINE HANG $tickGo < $tickOut")
-    }
+    tick++
+    println("[LOOP] tick=$tick")
+    onTick()
     sleep(1000)
 }

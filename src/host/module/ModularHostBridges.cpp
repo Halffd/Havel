@@ -3896,7 +3896,7 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
   // Create hotkey context object using HotkeyModule
     auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
         vm, hotkeyId, hotkeyStr, hotkeyStr, "",
-        "Hotkey registered via hotkey.register", callbackId);
+        "Hotkey registered via hotkey.register", callbackId, true);
 
     if (hotkeyContext.isObjectId()) {
         vm->pinExternalRoot(hotkeyContext);
@@ -4058,6 +4058,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                 if (auto* sched = vm->getScheduler()) {
                     if (auto* g = sched->get(persistentGid)) {
                         ctx->hotkeyManager->SetHotkeyGrab(hotkeyStr, g->hotkey_condition_last_result);
+                        ::havel::stdlib::HotkeyModule::setGrab(*vm, hotkeyStr, g->hotkey_condition_last_result);
                     }
                 }
             }

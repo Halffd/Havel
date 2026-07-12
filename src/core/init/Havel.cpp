@@ -26,6 +26,7 @@
 #include "core/net/NetworkManager.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "host/image/ImageService.hpp"
+#include "havel-lang/stdlib/HotkeyModule.hpp"
 #include <csignal>
 #include <cstdlib>
 #include <algorithm>
@@ -266,6 +267,45 @@ void Havel::initialize(bool isStartup) {
 	bytecodeVM->setWatcherRegistry(executionEngine->getWatcherRegistry());
 	bytecodeVM->setScheduler(scheduler);
 
+	// Synchronous hotkey condition re-evaluation on variable change
+	bytecodeVM->setOnVarChangedSync([this](const std::string& var_name) {
+		if (!scheduler || !bytecodeVM) return;
+		auto* vm_ = bytecodeVM.get();
+		scheduler->forEachConditionalHotkey(
+			[vm_, this, &var_name](compiler::Scheduler::Goroutine* g) {
+			if (!g) return;
+			if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
+				g->suspension_reason.load(std::memory_order_acquire)
+				!= compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+			if (g->hotkey_condition_deps.empty() ||
+				g->hotkey_condition_deps.count(var_name) == 0) return;
+			auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
+			if (!condVal) return;
+			auto tracker = std::make_shared<compiler::DependencyTracker>();
+			compiler::DependencyTrackerScope scope(tracker);
+			bool conditionMet = false;
+			try {
+				compiler::Value result = vm_->callFunctionSync(*condVal, {});
+				conditionMet = vm_->toBool(result);
+			} catch (...) {}
+			auto newDeps = tracker->getGlobalDependencies();
+			auto fieldDeps = tracker->getFieldDependencies();
+			newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+			g->hotkey_condition_deps = std::move(newDeps);
+			bool prev = g->hotkey_condition_last_result;
+			g->hotkey_condition_last_result = conditionMet;
+			if (prev == conditionMet) return;
+			if (conditionMet) {
+				if (!g->hotkey_condition_alias.empty())
+					::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, true);
+				scheduler->wakeHotkey(g);
+			} else {
+				if (!g->hotkey_condition_alias.empty())
+					::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, false);
+			}
+		});
+	});
+
 	{
 		auto* eventQueue = hostContext->eventQueue;
 		auto* vm = bytecodeVM.get();
@@ -294,18 +334,6 @@ void Havel::initialize(bool isStartup) {
 					if (set_chunk) vm->setCurrentChunkPublic(saved_chunk);
 					return result;
 				});
-				std::vector<uint32_t> fired_func_ids;
-				for (auto* fiber : fired) {
-					if (fiber) {
-						fired_func_ids.push_back(fiber->current_function_id);
-					}
-				}
-				for (auto func_id : fired_func_ids) {
-					try {
-						compiler::Value body_func = compiler::Value::makeFunctionObjId(func_id);
-						vm->call(body_func, {});
-					} catch (...) {}
-				}
 				vm->processSignalBindings(var_name);
 				auto* sched = vm->getScheduler();
 				if (sched) {
@@ -336,15 +364,29 @@ void Havel::initialize(bool isStartup) {
 						if (!g->hotkey_condition_alias.empty()) {
 							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
 							if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
+							::havel::stdlib::HotkeyModule::setGrab(*vm, g->hotkey_condition_alias, true);
 						}
 						sched->wakeHotkey(g);
 					} else {
 						if (!g->hotkey_condition_alias.empty()) {
 							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
 							if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
+							::havel::stdlib::HotkeyModule::setGrab(*vm, g->hotkey_condition_alias, false);
 						}
 					}
 					});
+				}
+				std::vector<uint32_t> fired_func_ids;
+				for (auto* fiber : fired) {
+					if (fiber) {
+						fired_func_ids.push_back(fiber->current_function_id);
+					}
+				}
+				for (auto func_id : fired_func_ids) {
+					try {
+						compiler::Value body_func = compiler::Value::makeFunctionObjId(func_id);
+						vm->call(body_func, {});
+					} catch (...) {}
 				}
 			});
 		}

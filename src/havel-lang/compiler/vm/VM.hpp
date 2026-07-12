@@ -1003,6 +1003,11 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
 	void setScheduler(Scheduler* sched) { scheduler_ = sched; }
  	Scheduler* getScheduler() const { return scheduler_; }
 
+        std::function<void(const std::string&)> on_var_changed_sync_;
+        std::atomic<bool> on_var_changed_busy_{false};
+
+        void setOnVarChangedSync(std::function<void(const std::string&)> cb) { on_var_changed_sync_ = std::move(cb); }
+
     // When true, the script requested program exit (via exit() host function)
     std::atomic<bool> exit_requested_{false};
     bool exitRequested() const { return exit_requested_.load(); }

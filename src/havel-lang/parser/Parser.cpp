@@ -2734,10 +2734,13 @@ position = savePos; // restore position
 
       // Check for hotkey assignment: identifier = hotkey => action
       // e.g., dhk = d => { print @id }
+      // Also handles identifier = hotkey if condition => action
       if (at(1).type == havel::TokenType::Assign &&
           (at(2).type == havel::TokenType::Hotkey ||
            (at(2).type == havel::TokenType::Identifier &&
-            at(3).type == havel::TokenType::Arrow))) {
+            (at(3).type == havel::TokenType::Arrow ||
+             at(3).type == havel::TokenType::If ||
+             at(3).type == havel::TokenType::When)))) {
         auto target = makeIdentifier(advance()); // consume LHS identifier
         advance(); // consume '='
 

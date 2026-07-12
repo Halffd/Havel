@@ -7579,8 +7579,9 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
     conditional_hotkey_condition_index_ = prevConditionIndex;
 }
 
-// Compile hotkey binding: hotkey => action
+  // Compile hotkey binding: hotkey => action
 void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
+  bool standaloneCond = binding.conditionExpr && !conditional_hotkey_condition_index_.has_value();
   // For each hotkey in the binding
   for (const auto &hotkeyExpr : binding.hotkeys) {
     if (!hotkeyExpr)
@@ -7644,7 +7645,7 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
   next_local_index = 1;
 
   uint32_t skipActionJump = 0;
-  if (binding.conditionExpr) {
+  if (binding.conditionExpr && !standaloneCond) {
     compileExpression(*binding.conditionExpr);
     skipActionJump = emitJump(OpCode::JUMP_IF_FALSE);
     emit(OpCode::POP);
@@ -7694,8 +7695,16 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
 
   uint32_t wrapperFuncIndex = static_cast<uint32_t>(compiled_functions.size() - 1);
 
-  // Build options object if policy attribute is set
   bool hasPolicy = !binding.policy.empty();
+
+  if (standaloneCond) {
+    BytecodeFunction standaloneCondFn("standalone_cond");
+    standaloneCondFn.param_count = 0;
+    enterFunction(std::move(standaloneCondFn));
+    compileExpression(*binding.conditionExpr);
+    emit(OpCode::RETURN);
+    leaveFunction();
+  }
 
   auto emitLoadWrapper = [&]() {
       if (!wrapperUpvalues.empty()) {
@@ -7706,13 +7715,17 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
       }
   };
 
-  if (conditional_hotkey_condition_index_.has_value()) {
+  auto useCondIndex = conditional_hotkey_condition_index_.has_value()
+      ? conditional_hotkey_condition_index_
+      : (standaloneCond ? std::optional<uint32_t>(compiled_functions.size() - 1) : std::nullopt);
+
+  if (useCondIndex.has_value()) {
     uint32_t strId = addStringConstant("hotkey.register_conditional");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     compileExpression(*hotkeyExpr);
     emitLoadWrapper();
     emit(OpCode::LOAD_CONST,
-         addConstant(Value::makeFunctionObjId(*conditional_hotkey_condition_index_)));
+         addConstant(Value::makeFunctionObjId(*useCondIndex)));
     if (hasPolicy) {
       emit(OpCode::OBJECT_NEW);
       { uint32_t _sid = addStringConstant(binding.policy); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
@@ -7746,6 +7759,7 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
 // This is a variant of compileHotkeyBinding that leaves the result on the stack
 // instead of popping it, so it can be used as an assignment RHS.
 void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
+  bool standaloneCond = binding.conditionExpr && !conditional_hotkey_condition_index_.has_value();
   // For each hotkey in the binding
   for (const auto &hotkeyExpr : binding.hotkeys) {
     if (!hotkeyExpr)
@@ -7800,7 +7814,7 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
   next_local_index = 1;
 
   uint32_t skipActionJump = 0;
-  if (binding.conditionExpr) {
+  if (binding.conditionExpr && !standaloneCond) {
     compileExpression(*binding.conditionExpr);
     skipActionJump = emitJump(OpCode::JUMP_IF_FALSE);
     emit(OpCode::POP);
@@ -7851,6 +7865,15 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
 
   bool exprHasPolicy = !binding.policy.empty();
 
+  if (standaloneCond) {
+    BytecodeFunction standaloneCondFn("standalone_cond");
+    standaloneCondFn.param_count = 0;
+    enterFunction(std::move(standaloneCondFn));
+    compileExpression(*binding.conditionExpr);
+    emit(OpCode::RETURN);
+    leaveFunction();
+  }
+
   auto emitLoadWrapper = [&]() {
       if (!wrapperUpvalues.empty()) {
           emit(OpCode::CLOSURE, Value::makeInt(static_cast<int64_t>(wrapperFuncIndex)));
@@ -7860,13 +7883,17 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
       }
   };
 
-  if (conditional_hotkey_condition_index_.has_value()) {
+  auto useCondIndex = conditional_hotkey_condition_index_.has_value()
+      ? conditional_hotkey_condition_index_
+      : (standaloneCond ? std::optional<uint32_t>(compiled_functions.size() - 1) : std::nullopt);
+
+  if (useCondIndex.has_value()) {
     uint32_t strId = addStringConstant("hotkey.register_conditional");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     compileExpression(*hotkeyExpr);
     emitLoadWrapper();
     emit(OpCode::LOAD_CONST,
-         addConstant(Value::makeFunctionObjId(*conditional_hotkey_condition_index_)));
+         addConstant(Value::makeFunctionObjId(*useCondIndex)));
     if (exprHasPolicy) {
       emit(OpCode::OBJECT_NEW);
       { uint32_t _sid = addStringConstant(binding.policy); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };

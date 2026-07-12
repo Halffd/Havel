@@ -2645,6 +2645,10 @@ while (stack.size() > finished.stack_depth) {
 
 
 void VM::emitVariableChanged(const std::string& var_name) {
+  if (on_var_changed_sync_ && !on_var_changed_busy_.exchange(true)) {
+    on_var_changed_sync_(var_name);
+    on_var_changed_busy_ = false;
+  }
   if (!event_queue_ || !event_queue_->hasHandler(EventType::VAR_CHANGED)) {
     ::havel::debug("[VM] emitVariableChanged: '{}' SKIPPED (no handler)", var_name);
     return;

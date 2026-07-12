@@ -5,6 +5,7 @@
 #include "../../common/Debug.hpp"
 #include "../concurrency/Fiber.hpp"
 #include "../concurrency/DependencyTracker.hpp"
+#include "havel-lang/stdlib/HotkeyModule.hpp"
 #include <iostream>
 
 namespace havel::compiler {
@@ -747,6 +748,7 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
             if (!act.alias.empty()) {
                 auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
                 if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
+                ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
             }
             auto* g = scheduler_->get(act.gid);
             if (g && act.grab) scheduler_->wakeHotkey(g);

@@ -1050,6 +1050,32 @@ hotkey.find(':') != std::string::npos || hotkey[0] == 'F')) {
   return scanIdentifier();
 }
 
+bool Lexer::isHotkeyLookahead() {
+    size_t look = position;
+    while (look < source.size() && isHotkeyChar(source[look])) look++;
+    while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) look++;
+    if (look + 1 < source.size() && source[look] == '=' && source[look+1] == '>')
+        return true;
+    if (look + 2 < source.size() && source[look] == 'i' && source[look+1] == 'f') {
+        look += 2;
+        while (look + 1 < source.size()) {
+            if (source[look] == '=' && source[look+1] == '>') return true;
+            look++;
+        }
+        return false;
+    }
+    if (look + 4 < source.size() && source[look] == 'w' && source[look+1] == 'h' &&
+        source[look+2] == 'e' && source[look+3] == 'n') {
+        look += 4;
+        while (look + 1 < source.size()) {
+            if (source[look] == '=' && source[look+1] == '>') return true;
+            look++;
+        }
+        return false;
+    }
+    return false;
+}
+
 std::vector<Token> Lexer::tokenize() {
   std::vector<Token> tokens;
   size_t tokenCount = 0;
@@ -1077,8 +1103,9 @@ std::vector<Token> Lexer::tokenize() {
     // Handle # as length operator or hotkey modifier
     if (c == '#') {
       bool isStatementStart = tokens.empty();
+      TokenType prevType = TokenType::EOF_TOKEN;
       if (!isStatementStart) {
-        TokenType prevType = tokens.back().type;
+        prevType = tokens.back().type;
         if (debug_lexer) {
           havel::debug("[DEBUG] # char at line {} col {}. Prev token type: {} value: '{}'", 
                        line, column, static_cast<int>(prevType), tokens.back().value);
@@ -1090,28 +1117,16 @@ std::vector<Token> Lexer::tokenize() {
                             prevType == TokenType::CloseBrace);
       }
 
-      // Hotkey modifier detection: # at statement start OR followed by modifier keys
       bool hasModifierPrefix = (!isAtEnd() && (peek() == '!' || peek() == '&' || peek() == '^'));
       bool hasKeyName = (!isAtEnd() && isAlpha(peek()));
-      
-      if (isStatementStart || (hasModifierPrefix && hasKeyName)) {
-        // Look ahead to see if it's actually followed by '=>' (a hotkey binding)
-        size_t look = position;
-        while (look < source.length() && isHotkeyChar(source[look])) {
-          look++;
+      bool afterAssign = (prevType == TokenType::Assign && hasKeyName && isHotkeyLookahead());
+
+      if (isStatementStart || afterAssign || (hasModifierPrefix && hasKeyName && isHotkeyLookahead())) {
+        tokens.push_back(scanHotkey());
+        if (debug_lexer) {
+          havel::debug("LEX: hotkey modifier {}", tokens.back().toString());
         }
-        while (look < source.length() && (source[look] == ' ' || source[look] == '\t')) {
-          look++;
-        }
-        bool hasArrow = (look + 1 < source.length() && source[look] == '=' && source[look+1] == '>');
-        
-        if (hasArrow) {
-          tokens.push_back(scanHotkey());
-          if (debug_lexer) {
-            havel::debug("LEX: hotkey modifier {}", tokens.back().toString());
-          }
-          continue;
-        }
+        continue;
       }
 
       // If it's not a hotkey, it's the length operator
@@ -1734,6 +1749,11 @@ continue;
 // as bitwise OR operator rather than pipeline
 if (c == '|' && !tokens.empty()) {
 TokenType prevType = tokens.back().type;
+// After Assign, check if this is a hotkey binding (|x if => or |x =>)
+if (prevType == TokenType::Assign && !isAtEnd() && isHotkeyLookahead()) {
+  tokens.push_back(scanHotkey());
+  continue;
+}
 if (prevType == TokenType::Number ||
 prevType == TokenType::Identifier ||
 prevType == TokenType::String ||
@@ -2026,7 +2046,7 @@ continue;
         }
         continue;
     }
- if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
+  if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$' || c == '|') {
  // Special case: !{ for unsorted object literals
  if (c == '!' && peek() == '{') {
  advance(); // consume '{'
@@ -2036,71 +2056,88 @@ continue;
  }
  continue;
  }
- // Special case: ! followed by _ or lowercase letter is NOT operator,
- // not a hotkey modifier (e.g., !_m, !x vs !F1, !Esc)
- // UNLESS it's followed by => which indicates a hotkey binding
- bool isHotkeyBinding = false;
- if (c == '!' && (peek() == '_' || (peek() != 0 && std::islower(static_cast<unsigned char>(peek()))))) {
-   size_t look = position;
-   while (look < source.size() && (isAlphaNumeric(source[look]) || source[look] == '_')) look++;
-   while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) look++;
-   if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
-     isHotkeyBinding = true;
-   }
+  // Special case: ! followed by _ or lowercase letter is NOT operator,
+  // not a hotkey modifier (e.g., !_m, !x vs !F1, !Esc)
+  // UNLESS it's followed by => which indicates a hotkey binding
+  bool isHotkeyBinding = false;
+  if (c == '!' && (peek() == '_' || (peek() != 0 && std::islower(static_cast<unsigned char>(peek()))))) {
+    if (isHotkeyLookahead()) {
+      isHotkeyBinding = true;
+    }
  }
 
  if (c == '!' && !isHotkeyBinding && (peek() == '_' || (peek() != 0 && std::islower(static_cast<unsigned char>(peek()))))) {
    // Fall through to SINGLE_CHAR_TOKENS to get Not token
  } else if (c == '~' && inBitwiseExpr) {
    // Fall through to SINGLE_CHAR_TOKENS for Tilde
-    } else if ((c == '+' || c == '!' || c == '~' || c == '^' || c == '@') && !tokens.empty()) {
-      TokenType prevType = tokens.back().type;
-      // If previous token suggests expression context, treat as operator
-      // Exclude CloseBrace - after } we're at statement level (could be
-      // hotkey) Include statement starters that are followed by expressions
-      // (if, while, for, etc.)
-      // Also: keyword tokens after Dot are property accesses (x.mode + y),
-      // so check if token-before-previous is Dot
-      bool prevIsKeywordAfterDot = (tokens.size() >= 2 &&
-        tokens[tokens.size() - 2].type == TokenType::Dot);
-      if (prevType == TokenType::Number ||
-          prevType == TokenType::Identifier ||
-          prevType == TokenType::String ||
-          prevType == TokenType::InterpolatedString ||
-          prevType == TokenType::MultilineString ||
-          prevType == TokenType::RegexString ||
-          prevType == TokenType::CloseParen ||
-          prevType == TokenType::OpenParen ||
-          prevType == TokenType::CloseBracket ||
-          prevType == TokenType::Not ||
-          prevType == TokenType::Or ||
-          prevType == TokenType::And ||
-          prevType == TokenType::Assign ||
-          prevType == TokenType::If ||
-          prevType == TokenType::While ||
-          prevType == TokenType::For ||
-          prevType == TokenType::In ||
-          prevType == TokenType::Matches ||
-          prevType == TokenType::Tilde ||
-          prevType == TokenType::Comma ||
-          prevType == TokenType::Dot ||
-          prevType == TokenType::BitwiseOr ||
-          prevType == TokenType::BitwiseXor ||
-          prevType == TokenType::BitwiseAnd ||
-          prevType == TokenType::ShiftLeft ||
-          prevType == TokenType::ShiftRight ||
-          prevType == TokenType::LeftArrow ||
-          prevType == TokenType::Minus ||
-          prevType == TokenType::Fn ||
-          prevType == TokenType::Op ||
-          prevIsKeywordAfterDot) {
+     } else if ((c == '+' || c == '!' || c == '~' || c == '^' || c == '@' || c == '|') && !tokens.empty()) {
+       TokenType prevType = tokens.back().type;
+
+       // After Assign, check if modifier+key is a hotkey binding
+       if (prevType == TokenType::Assign) {
+         bool isHotkey = false;
+         if (c == '!') {
+           isHotkey = isHotkeyBinding;
+         } else if ((c == '+' || c == '~' || c == '^' || c == '|') && !isAtEnd() && isHotkeyLookahead()) {
+           isHotkey = true;
+         }
+         if (isHotkey) {
+           tokens.push_back(scanHotkey());
+           if (debug_lexer) {
+             havel::debug("LEX: {}", tokens.back().toString());
+           }
+           continue;
+         }
+       }
+
+       // If previous token suggests expression context, treat as operator
+       // Exclude CloseBrace - after } we're at statement level (could be
+       // hotkey) Include statement starters that are followed by expressions
+       // (if, while, for, etc.)
+       // Also: keyword tokens after Dot are property accesses (x.mode + y),
+       // so check if token-before-previous is Dot
+       bool prevIsKeywordAfterDot = (tokens.size() >= 2 &&
+         tokens[tokens.size() - 2].type == TokenType::Dot);
+       if (prevType == TokenType::Number ||
+           prevType == TokenType::Identifier ||
+           prevType == TokenType::String ||
+           prevType == TokenType::InterpolatedString ||
+           prevType == TokenType::MultilineString ||
+           prevType == TokenType::RegexString ||
+           prevType == TokenType::CloseParen ||
+           prevType == TokenType::OpenParen ||
+           prevType == TokenType::CloseBracket ||
+           prevType == TokenType::Not ||
+           prevType == TokenType::Or ||
+           prevType == TokenType::And ||
+           prevType == TokenType::Assign ||
+           prevType == TokenType::If ||
+           prevType == TokenType::While ||
+           prevType == TokenType::For ||
+           prevType == TokenType::In ||
+           prevType == TokenType::Matches ||
+           prevType == TokenType::Tilde ||
+           prevType == TokenType::Comma ||
+           prevType == TokenType::Dot ||
+           prevType == TokenType::BitwiseOr ||
+           prevType == TokenType::BitwiseXor ||
+           prevType == TokenType::BitwiseAnd ||
+           prevType == TokenType::ShiftLeft ||
+           prevType == TokenType::ShiftRight ||
+           prevType == TokenType::LeftArrow ||
+           prevType == TokenType::Minus ||
+           prevType == TokenType::Fn ||
+           prevType == TokenType::Op ||
+           prevIsKeywordAfterDot) {
 		if (c == '^') {
-				tokens.push_back(makeToken("^", TokenType::BitwiseXor));
-				if (debug_lexer) {
-					havel::debug("LEX: {}", tokens.back().toString());
-				}
-				continue;
-			}
+        // ^ is binary XOR (needs left-hand operand).
+        // After Assign case handled above; here it's a real operator.
+        tokens.push_back(makeToken("^", TokenType::BitwiseXor));
+        if (debug_lexer) {
+          havel::debug("LEX: {}", tokens.back().toString());
+        }
+        continue;
+      }
 			if (c == '@') {
 				tokens.push_back(makeToken("@", TokenType::At));
 				if (debug_lexer) {

@@ -288,6 +288,7 @@ bool isAtEnd() const;
   Token scanShellCommand(bool captureOutput = false);
   Token scanIdentifier();
     Token scanHotkey();
+    bool isHotkeyLookahead();
 
     // Process escape sequence after consuming '\'. Returns decoded char(s).
     // Sets hasInterpolation=false for \$ \{ \} (they produce literal chars, not interpolation triggers).

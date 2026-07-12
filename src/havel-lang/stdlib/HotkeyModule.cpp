@@ -42,6 +42,7 @@ struct HotkeyContextData {
     bool enabled;
     bool grab = false;
     CallbackId condition_callback = 0;
+    uint32_t hostObjectId = 0;
     int64_t triggerCount = 0;
     int64_t lastTriggeredAt = 0;
 
@@ -146,6 +147,7 @@ static Value createHotkeyContextObject(VM *vm, const std::string &hotkeyId,
     }
 
     auto *ctx = getHotkeyContextData(hotkeyId);
+    if (ctx) ctx->hostObjectId = contextObj.id;
 
     auto idStr = vm->createRuntimeString(hotkeyId);
     auto aliasStr = vm->createRuntimeString(alias);
@@ -1153,6 +1155,8 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
       auto *hostCtx = vm.hostContext();
       if (hostCtx && hostCtx->hotkeyManager)
         hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, result);
+      ctx->grab = result;
+      vm.setHostObjectField(objRef, "grab", Value::makeBool(result));
     }
 
     auto condStr = vm.createRuntimeString("custom:" + std::to_string(newCondCb));
@@ -1459,6 +1463,17 @@ bool HotkeyModule::setEnabled(const std::string &hotkeyId, bool enabled) {
   if (!ctx) return false;
   ctx->enabled = enabled;
   ctx->state = enabled ? "enabled" : "disabled";
+  return true;
+}
+
+bool HotkeyModule::setGrab(VM &vm, const std::string &alias, bool grab) {
+  auto hotkeyId = findByAlias(alias);
+  if (hotkeyId.empty()) return false;
+  auto *ctx = getHotkeyContextDataMutable(hotkeyId);
+  if (!ctx) return false;
+  ctx->grab = grab;
+  if (ctx->hostObjectId != 0)
+    vm.setHostObjectField(ObjectRef{ctx->hostObjectId, true}, "grab", Value::makeBool(grab));
   return true;
 }
 

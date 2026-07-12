@@ -6,7 +6,7 @@
  */
 #include "core/detect/HardwareDetector.hpp"
 #include "core/display/DisplayManager.hpp"
-#include "core/window/WindowManagerDetector.hpp"
+// #include "core/window/WindowManagerDetector.hpp"
 #include <fstream>
 #include <sstream>
 #include <cstdlib>
@@ -108,7 +108,7 @@ HardwareDetector::SystemInfo HardwareDetector::detectSystem() noexcept {
     if (display) info.display = display;
     
     // Detect window manager using WindowManagerDetector
-    info.windowManager = WindowManagerDetector::GetWMName();
+    info.windowManager = "unknown"; // WindowManagerDetector::GetWMName();
     info.desktopEnv = info.windowManager;
     
     // Get desktop environment from XDG
@@ -241,7 +241,7 @@ bool HardwareDetector::isX11() noexcept {
 
 std::string HardwareDetector::getWindowManager() noexcept {
 #ifdef __linux__
-    return WindowManagerDetector::GetWMName();
+    return "unknown"; // WindowManagerDetector::GetWMName();
 #else
     return "Unknown";
 #endif

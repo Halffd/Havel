@@ -181,7 +181,6 @@ void HostBridge::shutdown() {
   inputBridge_.reset();
   mediaBridge_.reset();
   networkBridge_.reset();
-  audioBridge_.reset();
   displayBridge_.reset();
   configBridge_.reset();
   modeBridge_.reset();
@@ -220,7 +219,6 @@ void HostBridge::initBridges() {
   inputBridge_ = std::make_unique<InputBridge>(ctx_);
   mediaBridge_ = std::make_unique<MediaBridge>(ctx_);
   networkBridge_ = std::make_unique<NetworkBridge>(ctx_);
-  audioBridge_ = std::make_unique<AudioBridge>(ctx_);
   displayBridge_ = std::make_unique<DisplayBridge>(ctx_);
   configBridge_ = std::make_unique<ConfigBridge>(ctx_);
   modeBridge_ = std::make_unique<ModeBridge>(ctx_);
@@ -268,7 +266,6 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
     inputBridge_->install(options_);
     mediaBridge_->install(options_);
     networkBridge_->install(options_);
-    audioBridge_->install(options_);
     displayBridge_->install(options_);
     modeBridge_->install(options_);
     timerBridge_->install(options_);

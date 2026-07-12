@@ -81,6 +81,20 @@ void FFITypeRegistry::init_builtins() {
     type_registry_.push_back(f64); named_types_["double"] = f64;
     named_types_["f64"] = f64;
     
+    // Common C type aliases
+    named_types_["int"] = i32;
+    named_types_["unsigned"] = u32;
+    named_types_["unsigned int"] = u32;
+    named_types_["long"] = i64;
+    named_types_["unsigned long"] = u64;
+    named_types_["short"] = i16;
+    named_types_["unsigned short"] = u16;
+    named_types_["char"] = i8;
+    named_types_["signed char"] = i8;
+    named_types_["unsigned char"] = u8;
+    named_types_["float"] = f32;
+    named_types_["double"] = f64;
+    
     auto str = std::make_shared<FFIType>();
     str->kind = FFITypeKind::STRING; str->name = "char*";
     str->pointee = i8; str->size = 8; str->alignment = 8;

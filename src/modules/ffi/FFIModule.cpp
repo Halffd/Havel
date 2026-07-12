@@ -35,6 +35,12 @@ static void* resolvePtr(const Value& v) {
     if (v.isPtr()) return v.asPtr();
     if (v.isInt()) return reinterpret_cast<void*>(static_cast<uintptr_t>(v.asInt64()));
     if (v.isDouble()) return reinterpret_cast<void*>(static_cast<uintptr_t>(v.asDouble()));
+    // Handle arrays - extract the data pointer
+    if (v.isArrayId()) {
+        // Get the array's data pointer - we need to access the internal array data
+        // For now, return the array object itself as a pointer (this may need adjustment based on internal representation)
+        return v.asPtr();
+    }
     return nullptr;
 }
 
@@ -64,7 +70,9 @@ static Value ffiOpen(const compiler::VMApi& api, const std::vector<Value>& rawAr
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 1) return Value::makeNull();
     std::string path = api.toString(args[0]);
+    fprintf(stderr, "[FFIModule] ffiOpen called with path=%s\n", path.c_str());
     void* handle = FFICall::load_library(path);
+    fprintf(stderr, "[FFIModule] ffiOpen got handle=%p\n", handle);
     return Value::makePtr(handle);
 }
 
@@ -841,6 +849,7 @@ void registerFFIModule(const compiler::VMApi& api) {
     };
 
     reg("ffi.open", ffiOpen);
+    reg("ffi.load", ffiOpen);  // alias for ffi.load
     reg("ffi.close", ffiClose);
     reg("ffi.sym", ffiSym);
     reg("ffi.call", ffiCall);
@@ -917,6 +926,7 @@ void registerFFIModule(const compiler::VMApi& api) {
     // Mark this object as the FFI module so stripReceiver can identify it
     api.setField(ffiObj, FFI_MODULE_MARKER, Value::makeBool(true));
     api.setField(ffiObj, "open", api.makeFunctionRef("ffi.open"));
+    api.setField(ffiObj, "load", api.makeFunctionRef("ffi.open"));  // alias
     api.setField(ffiObj, "close", api.makeFunctionRef("ffi.close"));
     api.setField(ffiObj, "sym", api.makeFunctionRef("ffi.sym"));
     api.setField(ffiObj, "call", api.makeFunctionRef("ffi.call"));

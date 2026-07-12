@@ -58,6 +58,7 @@ ffi_type* FFICall::to_ffi_type(std::shared_ptr<FFIType> type) {
 
 void* FFICall::load_library(const std::string& path) {
 #ifndef _WIN32
+    ::havel::info("FFICall: attempting to load {}", path);
 	int flags = RTLD_NOW;
 #ifdef __APPLE__
 	flags |= RTLD_FIRST;
@@ -65,10 +66,12 @@ void* FFICall::load_library(const std::string& path) {
 
 	void* handle = dlopen(path.c_str(), flags);
 	if (!handle) {
-		::havel::debug("FFICall: failed to load {}: {}", path, dlerror());
+		const char* err = dlerror();
+		::havel::error("FFICall: failed to load {}: {}", path, err ? err : "unknown");
 	} else {
 		std::lock_guard<std::mutex> lock(library_mutex_);
 		libraries_[handle] = path;
+        ::havel::info("FFICall: successfully loaded {} -> {}", path, handle);
 	}
 	return handle;
 #else

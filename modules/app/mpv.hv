@@ -83,6 +83,7 @@ class MPV {
     }
 
     fn send(command) {
+        print("[send] command: ${command} type: ${type(command)}")
         if !@ensureConnection() {
             return null
         }
@@ -91,7 +92,9 @@ class MPV {
             command: command,
             request_id: rid
         }
+        print("[send] req: ${req}")
         payload = json.stringify(req) + "\n"
+        print("[send] payload type: ${type(payload)} value: ${payload}")
         sent = @sock.send(payload)
         if sent < 0 {
             @reconnect()

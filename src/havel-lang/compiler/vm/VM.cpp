@@ -2726,21 +2726,21 @@ Value VM::deepWrapModuleFunctions(Value value, std::shared_ptr<BytecodeChunk> ch
   if (value.isFunctionObjId() && chunk) {
     uint32_t funcIdx = value.asFunctionObjId();
     const auto* moduleFunc = chunk->getFunction(funcIdx);
-    uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
+uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
     bool wantsSelf = moduleFunc && !moduleFunc->param_names.empty() && moduleFunc->param_names[0] == "self";
     auto moduleChunk = chunk;
     auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
     std::string fnCapturedKey = canonicalKey;
     std::string fnCapturedField = fieldPath;
     imported_module_globals_.push_back(moduleGlobals);
-registerHostFunction(wrapperName,
-    [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField](const std::vector<Value>& args) -> Value {
+    registerHostFunction(wrapperName,
+    [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName, fnCapturedKey, fnCapturedField, wantsSelf](const std::vector<Value>& args) -> Value {
     std::vector<Value> callArgs = args;
     auto* preCheckCallee = moduleChunk->getFunction(funcIdx);
     bool isVariadic = preCheckCallee && preCheckCallee->variadic_param_index != UINT32_MAX;
-    if (!isVariadic && callArgs.size() > paramCount && paramCount > 0) {
-                    callArgs.erase(callArgs.begin());
-                }
+    if (!isVariadic && callArgs.size() >= paramCount && paramCount > 0 && wantsSelf) {
+        callArgs.erase(callArgs.begin());
+    }
             auto* savedChunk = current_chunk;
             auto savedGlobals = globals;
             auto savedMirrorId = globals_mirror_object_id_;

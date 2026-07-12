@@ -5,8 +5,6 @@
  */
 #include "DisplayModule.hpp"
 #include "core/display/DisplayManager.hpp"
-#include "core/window/WindowManager.hpp"
-#include "core/window/WindowManagerDetector.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "utils/Logger.hpp"
 
@@ -116,12 +114,12 @@ static Value displayResolutions(const VMApi &api, const std::vector<Value> &) {
 
 // display.isX11()
 static Value displayIsX11(const std::vector<Value> &) {
-    return Value::makeBool(WindowManager::IsX11());
+    return Value::makeBool(false);
 }
 
 // display.isWayland()
 static Value displayIsWayland(const std::vector<Value> &) {
-    return Value::makeBool(WindowManager::IsWayland());
+    return Value::makeBool(false);
 }
 
 // display.isWindows()
@@ -156,7 +154,7 @@ static Value displayProtocol(const VMApi &api, const std::vector<Value> &) {
 
 // display.wm()
 static Value displayWm(const VMApi &api, const std::vector<Value> &) {
-    std::string wmName = WindowManagerDetector::GetWMName();
+    std::string wmName = std::string("unknown");
     return makeStr(api, wmName);
 }
 

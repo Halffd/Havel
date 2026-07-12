@@ -131,18 +131,18 @@ bool VM::execBuiltinOp(const Instruction &instruction) {
     break;
   }
 
- case OpCode::IMPORT: {
- Value path_val = popStack();
- std::string path;
- if (path_val.isStringValId() && current_chunk) {
- path = current_chunk->getString(path_val.asStringValId());
- } else if (path_val.isStringId()) {
- if (auto *s = heap_.string(path_val.asStringId())) path = *s;
- }
+case OpCode::IMPORT: {
+    Value path_val = popStack();
+    std::string path;
+    if (path_val.isStringValId() && current_chunk) {
+        path = current_chunk->getString(path_val.asStringValId());
+    } else if (path_val.isStringId()) {
+        if (auto *s = heap_.string(path_val.asStringId())) path = *s;
+    }
 
- if (path.empty()) {
- COMPILER_THROW("IMPORT expects valid string path");
- }
+    if (path.empty()) {
+        COMPILER_THROW("IMPORT expects valid string path");
+    }
 
     // Check if module is already in globals (eager modules, previously loaded)
     // Only accept objects (namespace modules) and lazy proxies as pre-loaded.
@@ -156,7 +156,7 @@ bool VM::execBuiltinOp(const Instruction &instruction) {
             if (preObj) {
             auto *preLazy = preObj->get("__lazy__");
             if (preLazy && preLazy->isBool() && preLazy->asBool()) {
-                // Lazy proxy — fall through to ensureModuleLoaded to activate it
+                // Lazy proxy — fall through to loadModule to activate it
             } else {
                 pushStack(git->second);
                 break;
@@ -169,48 +169,22 @@ bool VM::execBuiltinOp(const Instruction &instruction) {
         pushStack(git->second);
         break;
     }
- // Try capitalized variant
- std::string capPath = path;
- capPath[0] = static_cast<char>(toupper(static_cast<unsigned char>(capPath[0])));
+    // Try capitalized variant
+    std::string capPath = path;
+    capPath[0] = static_cast<char>(toupper(static_cast<unsigned char>(capPath[0])));
         git = globals.find(capPath);
         if (git != globals.end()) {
             globals[path] = git->second;
- pushStack(git->second);
- break;
- }
+            pushStack(git->second);
+            break;
+        }
 
-        if (ensureModuleLoaded(path)) {
- auto it = globals.find(path);
- if (it != globals.end()) {
- if (it->second.isObjectId()) {
- auto *obj = heap_.object(it->second.asObjectId());
- if (obj) {
- auto *lazyFlag = obj->get("__lazy__");
- if (lazyFlag && lazyFlag->isBool() && lazyFlag->asBool()) {
- globals.erase(it);
- }
- }
- }
- }
- it = globals.find(path);
- if (it != globals.end()) {
- pushStack(it->second);
- break;
- }
- std::string capPath2 = path;
- capPath2[0] = static_cast<char>(toupper(static_cast<unsigned char>(capPath2[0])));
- it = globals.find(capPath2);
- if (it != globals.end()) {
- globals[path] = it->second;
- pushStack(it->second);
- break;
- }
- }
-
-        Value exports = loadModule(path);
-        pushStack(exports);
-        break;
-    }
+    // Load module via C++ module loader (handles .hv/.hvc files)
+    // This properly handles .hv/.hvc files and relative imports within modules
+    Value exports = loadModule(path);
+    pushStack(exports);
+    break;
+}
 
     case OpCode::IMPORT_WILDCARD: {
         Value exports = popStack();

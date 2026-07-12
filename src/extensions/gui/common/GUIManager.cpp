@@ -21,8 +21,8 @@
 
 namespace havel {
 
-GUIManager::GUIManager(WindowManager &windowMgr)
-    : QObject(nullptr), windowManager(windowMgr) {
+GUIManager::GUIManager()
+    : QObject(nullptr) {
   ensureQApplication();
 }
 
@@ -274,8 +274,8 @@ void GUIManager::showNotificationImpl(const QString &title,
 // === WINDOW TRANSPARENCY ===
 
 bool GUIManager::setActiveWindowTransparency(double opacity) {
-  wID activeWindow = windowManager.GetActiveWindow();
-  return setWindowTransparency(activeWindow, opacity);
+  // wID activeWindow = windowManager.GetActiveWindow(); // WindowManager removed
+  return false;
 }
 
 bool GUIManager::setWindowTransparency(uint64_t windowId, double opacity) {
@@ -304,14 +304,11 @@ bool GUIManager::setWindowTransparency(uint64_t windowId, double opacity) {
 }
 
 bool GUIManager::setWindowTransparencyByTitle(const std::string &title,
-                                              double opacity) {
-  // Note: WindowManager doesn't have getWindowsByTitle, so we use FindByTitle
-  wID window = WindowManager::FindByTitle(title.c_str());
-  if (window == 0) {
-    return false;
-  }
-
-  return setWindowTransparency(window, opacity);
+                                               double opacity) {
+  // Note: WindowManager removed - pure Havel window module used instead
+  (void)title;
+  (void)opacity;
+  return false;
 }
 
 // === DIALOG FUNCTIONS ===

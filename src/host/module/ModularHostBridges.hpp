@@ -732,54 +732,6 @@ private:
   [[maybe_unused]] const HostContext *ctx_;
 };
 
-/**
- * AudioBridge - Audio control
- */
-class AudioBridge : public BridgeModule {
-public:
-  explicit AudioBridge(const HostContext *ctx) : ctx_(ctx) {}
-  void install(PipelineOptions &options) override;
-
-private:
-  const HostContext *ctx_;
-  static Value handleGetVolume(const std::vector<Value> &args,
-                                       const HostContext *ctx);
-  static Value handleSetVolume(const std::vector<Value> &args,
-                                       const HostContext *ctx);
-  static Value handleIsMuted(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-  static Value handleSetMute(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-  static Value handleToggleMute(const std::vector<Value> &args,
-                                        const HostContext *ctx);
-  static Value handleGetDevices(const std::vector<Value> &args,
-                                        const HostContext *ctx);
-  static Value
-  handleFindDeviceByIndex(const std::vector<Value> &args,
-                          const HostContext *ctx);
-  static Value
-  handleFindDeviceByName(const std::vector<Value> &args,
-                         const HostContext *ctx);
-  static Value
-  handleSetDefaultOutput(const std::vector<Value> &args,
-                         const HostContext *ctx);
-  static Value
-  handleGetDefaultOutput(const std::vector<Value> &args,
-                         const HostContext *ctx);
-  static Value
-  handlePlayTestSound(const std::vector<Value> &args,
-                      const HostContext *ctx);
-  static Value
-  handleIncreaseVolume(const std::vector<Value> &args,
-                       const HostContext *ctx);
-  static Value
-  handleDecreaseVolume(const std::vector<Value> &args,
-                       const HostContext *ctx);
-};
-
-/**
- * DisplayBridge - Display/monitor info
- */
 class DisplayBridge : public BridgeModule {
 public:
   explicit DisplayBridge(const HostContext *ctx) : ctx_(ctx) {}

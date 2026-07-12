@@ -158,6 +158,16 @@ Value VM::execLengthOp(Value v) {
   }
   }
   }
+  fprintf(stderr, "[LENGTH DEBUG] v.isInt=%d isNull=%d isBool=%d isDouble=%d isObjectId=%d isArrayId=%d isStringValId=%d isStringId=%d isSetId=%d\n",
+          (int)v.isInt(), (int)v.isNull(), (int)v.isBool(), (int)v.isDouble(),
+          (int)v.isObjectId(), (int)v.isArrayId(),
+          (int)v.isStringValId(), (int)v.isStringId(), (int)v.isSetId());
+  if (current_chunk && frame_count_ > 0) {
+    auto& cf = frame_arena_[frame_count_-1];
+    fprintf(stderr, "[LENGTH DEBUG] ip=%u fn=%s\n",
+            (uint32_t)cf.ip,
+            cf.function ? cf.function->name.c_str() : "?");
+  }
   COMPILER_THROW("Length operator requires array, string, object, or set");
 }
 

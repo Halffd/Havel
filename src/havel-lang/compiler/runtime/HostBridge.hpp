@@ -24,7 +24,6 @@ class UIBridge;
 class InputBridge;
 class MediaBridge;
 class NetworkBridge;
-class AudioBridge;
 class DisplayBridge;
 class ConfigBridge;
 class ModeBridge;
@@ -146,7 +145,6 @@ private:
   std::unique_ptr<InputBridge> inputBridge_;
   std::unique_ptr<MediaBridge> mediaBridge_;
   std::unique_ptr<NetworkBridge> networkBridge_;
-  std::unique_ptr<AudioBridge> audioBridge_;
   std::unique_ptr<DisplayBridge> displayBridge_;
   std::unique_ptr<ConfigBridge> configBridge_;
   std::unique_ptr<ModeBridge> modeBridge_;

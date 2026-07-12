@@ -11,7 +11,6 @@
 #include "../host/clipboard/ClipboardService.hpp"
 #include "../host/clipboard/MonitoringClipboard.hpp"
 #endif
-#include "../host/audio/AudioService.hpp"
 #include "../host/screenshot/ScreenshotService.hpp"
 #include "../host/automation/PixelAutomationService.hpp"
 #include "../host/automation/AutomationService.hpp"
@@ -156,7 +155,6 @@ havel::HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI) {
 	ctx.io = hostAPI ? hostAPI->GetIO() : nullptr;
 	ctx.hotkeyManager = hostAPI ? hostAPI->GetHotkeyManager() : nullptr;
 	ctx.windowManager = hostAPI ? hostAPI->GetWindowManager() : nullptr;
-	ctx.audioManager = hostAPI ? hostAPI->GetAudioManager() : nullptr;
 	ctx.guiManager = hostAPI ? hostAPI->GetGUIManager() : nullptr;
 	ctx.screenshotManager = hostAPI ? hostAPI->GetScreenshotManager() : nullptr;
 	ctx.clipboardManager = hostAPI ? hostAPI->GetClipboardManager() : nullptr;

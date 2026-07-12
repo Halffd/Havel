@@ -24,8 +24,6 @@ namespace {
 bool HotkeyExecutor::isInHotkeyCallback() { return tl_inHotkeyCallback; }
 void HotkeyExecutor::setInHotkeyCallback(bool v) { tl_inHotkeyCallback = v; }
 #include "utils/Util.hpp"
-#include "core/window/WindowManager.hpp"
-#include "core/window/WindowManagerDetector.hpp"
 #include <chrono>
 #include <fcntl.h>
 #include <future>
@@ -35,9 +33,6 @@ void HotkeyExecutor::setInHotkeyCallback(bool v) { tl_inHotkeyCallback = v; }
 #include <qapplication.h>
 #include <qtmetamacros.h>
 #endif
-#include <sys/eventfd.h>
-#include <sys/resource.h>
-#include <sys/select.h>
 #include <unistd.h>
 #include <algorithm>
 #include <cstdio>
@@ -359,17 +354,17 @@ std::vector<std::string> IO::GetInputDevices() {
 
 std::string IO::GetActiveWindowTitle() {
   ensureBackend();
-  return WindowManager::GetActiveWindowTitle();
+  return "";
 }
 
 std::string IO::GetActiveWindowClass() {
   ensureBackend();
-  return WindowManager::GetActiveWindowClass();
+  return "";
 }
 
 std::string IO::GetActiveWindowProcess() {
   ensureBackend();
-  return WindowManager::GetActiveWindowProcess();
+  return "";
 }
 
 void IO::listInputDevices() {
@@ -2104,11 +2099,11 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
 void IO::ControlSend(const std::string &control, const std::string &keys) {
   ensureBackend();
     if (debugging::debug_io) ::havel::debug("Control send: {} keys: {}", control, keys);
-  wID hwnd = WindowManager::FindByTitle(control);
-  if (!hwnd) {
-        havel::warning("Window not found: {}", control);
-    return;
-  }
+  // wID hwnd = WindowManager::FindByTitle(control);
+  // if (!hwnd) {
+  //     havel::warning("Window not found: {}", control);
+  //   return;
+  // }
 }
 
 // Send text using clipboard + paste (more reliable than key events for complex text)
@@ -2841,7 +2836,7 @@ MouseAction IO::GetMouseAction(int idx) {
 // Additional methods for HostAPI
 pID havel::IO::GetActiveWindowPID() {
   ensureBackend();
-  return WindowManager::GetActiveWindowPID();
+  return 0;
 }
 
 void havel::IO::Scroll(int dy, int dx) {

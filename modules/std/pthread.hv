@@ -1,0 +1,845 @@
+// pthread.hv - POSIX Thread wrappers
+// Provides pthread-like API using Havel's thread module + FFI for advanced features
+
+// ============================================
+// Thread management
+// ============================================
+
+class Thread {
+  @handle
+  @id
+  @started
+  @joined
+  @detached
+  @fn
+  @args
+  @result
+  @error
+  
+  fn @(fn, args=[]) {
+    @fn = fn
+    @args = args
+    @handle = null
+    @id = 0
+    @started = false
+    @joined = false
+    @detached = false
+    @result = null
+    @error = null
+  }
+  
+  fn start() {
+    if @started { return false }
+    @started = true
+    
+    // Spawn using Havel's thread module
+    @handle = thread.spawn(fn() {
+      try {
+        @result = @fn(@args...)
+      } catch e {
+        @error = e
+      }
+    })
+    
+    @id = @handle.id
+    return true
+  }
+  
+  fn join() {
+    if !@started || @joined || @detached {
+      return {error: "invalid state"}
+    }
+    
+    @handle.join()
+    @joined = true
+    if @error != null {
+      return {error: @error}
+    }
+    return {success: true, result: @result}
+  }
+  
+  fn detach() {
+    if !@started || @joined || @detached {
+      return {error: "invalid state"}
+    }
+    
+    @handle.detach()
+    @detached = true
+    return {success: true}
+  }
+  
+  fn getId() {
+    return @id
+  }
+  
+  fn isJoinable() {
+    return @started && !@joined && !@detached
+  }
+  
+  fn isAlive() {
+    return @started && !@joined
+  }
+  
+  fn getResult() {
+    if @joined {
+      return @result
+    }
+    return null
+  }
+  
+  fn getError() {
+    if @joined {
+      return @error
+    }
+    return null
+  }
+}
+
+// Create and start thread
+fn create(fn, args=[]) {
+  t = Thread(fn, args)
+  t.start()
+  return t
+}
+
+fn createJoinable(fn, args=[]) {
+  t = Thread(fn, args)
+  t.start()
+  return t
+}
+
+fn createDetached(fn, args=[]) {
+  t = Thread(fn, args)
+  t.detach()
+  return t
+}
+
+// Current thread
+fn self() {
+  return {id: thread.id(), handle: thread.current()}
+}
+
+// Yield CPU
+fn yield() {
+  sleep(0)
+}
+
+// Exit current thread
+fn exit(retval=null) {
+  thread.current().exit(retval)
+}
+
+// Equal thread IDs
+fn equal(t1, t2) {
+  return t1.id == t2.id
+}
+
+// ============================================
+// Thread attributes
+// ============================================
+
+class ThreadAttr {
+  @detachState
+  @stackSize
+  @schedPolicy
+  @schedPriority
+  @inheritsched
+  @scope
+  @guardsize
+  
+  fn @() {
+    @detachState = "joinable"
+    @stackSize = 0
+    @schedPolicy = "other"
+    @schedPriority = 0
+    @inheritsched = true
+    @scope = "system"
+    @guardsize = 0
+  }
+  
+  fn setDetachState(state) {
+    if state == "joinable" || state == "detached" {
+      @detachState = state
+      return true
+    }
+    return false
+  }
+  
+  fn getDetachState() { return @detachState }
+  
+  fn setStackSize(size) {
+    if size > 0 { @stackSize = size; return true }
+    return false
+  }
+  fn getStackSize() { return @stackSize }
+  
+  fn setSchedPolicy(policy) { @schedPolicy = policy; return true }
+  fn getSchedPolicy() { return @schedPolicy }
+  
+  fn setSchedParam(priority) { @schedPriority = priority; return true }
+  fn getSchedParam() { return @schedPriority }
+  
+  fn setInheritSched(inherit) { @inheritsched = inherit; return true }
+  fn getInheritSched() { return @inheritsched }
+  
+  fn setScope(scope) {
+    if scope == "system" || scope == "process" {
+      @scope = scope
+      return true
+    }
+    return false
+  }
+  fn getScope() { return @scope }
+  
+  fn setGuardsize(size) { @guardsize = size; return true }
+  fn getGuardsize() { return @guardsize }
+}
+
+// ============================================
+// Mutex
+// ============================================
+
+class PThreadMutex {
+  @mutex
+  @type
+  @locked
+  @owner
+  @count
+  
+  fn @(attr=null) {
+    if attr != null && attr.type != null {
+      @type = attr.type
+    } else {
+      @type = "normal"
+    }
+    if @type == "recursive" {
+      @mutex = {count: 0, owner: 0}
+    } else {
+      @mutex = {locked: false, owner: 0}
+    }
+    @locked = false
+    @owner = 0
+    @count = 0
+  }
+  
+  fn lock() {
+    tid = thread.id()
+    if @type == "recursive" {
+      if @mutex.owner == tid {
+        @mutex.count += 1
+        return 0
+      }
+      // Spinlock for recursive
+      while @mutex.locked {
+        sleep(0)
+      }
+      @mutex.locked = true
+      @mutex.owner = tid
+      @mutex.count = 1
+      return 0
+    } else {
+      while @mutex.locked {
+        sleep(0)
+      }
+      @mutex.locked = true
+      @mutex.owner = tid
+      return 0
+    }
+  }
+  
+  fn tryLock() {
+    tid = thread.id()
+    if @type == "recursive" {
+      if @mutex.owner == tid {
+        @mutex.count += 1
+        return 0
+      }
+      if !@mutex.locked {
+        @mutex.locked = true
+        @mutex.owner = tid
+        @mutex.count = 1
+        return 0
+      }
+      return "EBUSY"
+    } else {
+      if !@mutex.locked {
+        @mutex.locked = true
+        @mutex.owner = tid
+        return 0
+      }
+      return "EBUSY"
+    }
+  }
+  
+  fn unlock() {
+    tid = thread.id()
+    if @type == "recursive" {
+      if @mutex.owner != tid { return "EPERM" }
+      @mutex.count -= 1
+      if @mutex.count == 0 {
+        @mutex.locked = false
+        @mutex.owner = 0
+      }
+      return 0
+    } else {
+      if @mutex.owner != tid { return "EPERM" }
+      @mutex.locked = false
+      @mutex.owner = 0
+      return 0
+    }
+  }
+  
+  fn destroy() {
+    @mutex = null
+    return 0
+  }
+}
+
+// Mutex attributes
+class MutexAttr {
+  @type
+  @protocol
+  @robust
+  
+  fn @() {
+    @type = "normal"
+    @protocol = "private"
+    @robust = false
+  }
+  
+  fn setType(type) {
+    if type == "normal" || type == "recursive" || type == "errorcheck" {
+      @type = type
+      return 0
+    }
+    return "EINVAL"
+  }
+  
+  fn getType() { return @type }
+  
+  fn setProtocol(protocol) {
+    if protocol == "private" || protocol == "shared" {
+      @protocol = protocol
+      return 0
+    }
+    return "EINVAL"
+  }
+  fn getProtocol() { return @protocol }
+  
+  fn setRobust(robust) { @robust = robust; return 0 }
+  fn getRobust() { return @robust }
+}
+
+// ============================================
+// Condition variables
+// ============================================
+
+class PThreadCond {
+  @waiting
+  @attr
+  
+  fn @(attr=null) { @waiting = [] }
+  
+  fn wait(mutex) {
+    chan = channel()
+    @waiting.push({thread: thread.id(), chan: chan, mutex: mutex})
+    
+    mutex.unlock()
+    chan.receive()
+    mutex.lock()
+    return 0
+  }
+  
+  fn timedWait(mutex, abstime) {
+    now = time.now()
+    if abstime <= now { return "ETIMEDOUT" }
+    timeout = abstime - now
+    
+    chan = channel()
+    @waiting.push({thread: thread.id(), chan: chan, mutex: mutex})
+    
+    mutex.unlock()
+    result = chan.receive(timeout)
+    mutex.lock()
+    
+    if result == null { return "ETIMEDOUT" }
+    return 0
+  }
+  
+  fn signal() {
+    if @waiting.len() > 0 {
+      w = @waiting.pop(0)
+      w.chan.send(true)
+    }
+    return 0
+  }
+  
+  fn broadcast() {
+    for w in @waiting {
+      w.chan.send(true)
+    }
+    @waiting = []
+    return 0
+  }
+  
+  fn destroy() {
+    @waiting = []
+    return 0
+  }
+}
+
+// Cond attributes
+class CondAttr {
+  @clock
+  @pshared
+  
+  fn @() { @clock = "realtime"; @pshared = "private" }
+  
+  fn setClock(clock) { @clock = clock; return 0 }
+  fn getClock() { return @clock }
+  fn setPshared(pshared) { @pshared = pshared; return 0 }
+  fn getPshared() { return @pshared }
+}
+
+// ============================================
+// Read-write locks
+// ============================================
+
+class PThreadRWLock {
+  @readers
+  @writer
+  @writeWaiting
+  @waitingReaders
+  @waitingWriters
+  
+  fn @(attr=null) { @readers = 0; @writer = false; @writeWaiting = 0; @waitingReaders = []; @waitingWriters = [] }
+  
+  fn rdlock() {
+    tid = thread.id()
+    while @writer || @writeWaiting > 0 {
+      chan = channel()
+      @waitingReaders.push(chan)
+      chan.receive()
+    }
+    @readers += 1
+    return 0
+  }
+  
+  fn tryRdlock() {
+    if @writer || @writeWaiting > 0 { return "EBUSY" }
+    @readers += 1
+    return 0
+  }
+  
+  fn wrlock() {
+    tid = thread.id()
+    @writeWaiting += 1
+    while @readers > 0 || @writer {
+      chan = channel()
+      @waitingWriters.push(chan)
+      chan.receive()
+    }
+    @writeWaiting -= 1
+    @writer = true
+    return 0
+  }
+  
+  fn tryWrlock() {
+    if @readers > 0 || @writer { return "EBUSY" }
+    @writer = true
+    return 0
+  }
+  
+  fn unlock() {
+    if @writer {
+      @writer = false
+      // Prefer writers
+      if @waitingWriters.len() > 0 {
+        w = @waitingWriters.pop(0)
+        w.chan.send(true)
+      } else {
+        for r in @waitingReaders {
+          r.chan.send(true)
+        }
+        @waitingReaders = []
+      }
+    } else {
+      @readers -= 1
+      if @readers == 0 && @waitingWriters.len() > 0 {
+        w = @waitingWriters.pop(0)
+        w.chan.send(true)
+      }
+    }
+    return 0
+  }
+  
+  fn destroy() { return 0 }
+}
+
+// RWLock attributes
+class RWLockAttr {
+  @pshared
+  @kind
+  
+  fn @() { @pshared = "private"; @kind = "writer-preferring" }
+  
+  fn setPshared(pshared) { @pshared = pshared; return 0 }
+  fn getPshared() { return @pshared }
+  fn setKind(kind) { @kind = kind; return 0 }
+  fn getKind() { return @kind }
+}
+
+// ============================================
+// Spinlocks
+// ============================================
+
+class PThreadSpinlock {
+  @locked
+  @pshared
+  
+  fn @(pshared="private") { @pshared = pshared; @locked = false }
+  
+  fn lock() { while @locked { sleep(0) }; @locked = true; return 0 }
+  fn tryLock() { if !@locked { @locked = true; return 0 } return "EBUSY" }
+  fn unlock() { @locked = false; return 0 }
+  fn destroy() { @locked = false; return 0 }
+}
+
+// ============================================
+// Barriers
+// ============================================
+
+class PThreadBarrier {
+  @count
+  @total
+  @generation
+  @waiting
+  
+  fn @(count, attr=null) { @total = count; @count = count; @generation = 0; @waiting = [] }
+  
+  fn wait() {
+    @count -= 1
+    gen = @generation
+    
+    if @count == 0 {
+      @generation += 1
+      @count = @total
+      for w in @waiting { w.chan.send(true) }
+      @waiting = []
+      return "PTHREAD_BARRIER_SERIAL_THREAD"
+    } else {
+      chan = channel()
+      @waiting.push({chan: chan})
+      chan.receive()
+      return 0
+    }
+  }
+  
+  fn destroy() { return 0 }
+}
+
+// ============================================
+// Thread-local storage
+// ============================================
+
+class ThreadKey {
+  @key
+  @destructor
+  @created
+  
+  fn @(destructor=null) { @key = "tls_" + random.uuid(); @destructor = destructor; @created = true; return 0 }
+  
+  fn get() { if !@created { return null }; return thread.current()[@key] }
+  fn set(value) { if !@created { return "EINVAL" }; thread.current()[@key] = value; return 0 }
+  fn delete() { if !@created { return "EINVAL" }; val = thread.current()[@key]; if @destructor != null && val != null { @destructor(val) }; thread.current().delete(@key); @created = false; return 0 }
+}
+
+// ============================================
+// Thread-specific data (TLS)
+// ============================================
+
+fn threadSpecific(key) { return key.get() }
+fn threadSpecificSet(key, value) { return key.set(value) }
+
+// ============================================
+// Cleanup handlers
+// ============================================
+
+class CleanupHandler {
+  @fn
+  @arg
+  @next
+  
+  fn @(fn, arg) { @fn = fn; @arg = arg }
+  fn execute() { @fn(@arg) }
+}
+
+// Stack of cleanup handlers per thread
+fn pushCleanup(fn, arg) {
+  t = thread.current()
+  if t.cleanups == null { t.cleanups = [] }
+  t.cleanups.push(CleanupHandler(fn, arg))
+  return 0
+}
+
+fn popCleanup(execute=true) {
+  t = thread.current()
+  if t.cleanups != null && t.cleanups.len() > 0 {
+    handler = t.cleanups.pop()
+    if execute { handler.execute() }
+  }
+  return 0
+}
+
+// ============================================
+// Scheduling (limited)
+// ============================================
+
+class SchedParam {
+  @priority
+  fn @(priority=0) { @priority = priority }
+  fn getPriority() { return @priority }
+  fn setPriority(p) { @priority = p }
+}
+
+fn getSchedParam(threadId) { return SchedParam(0) }
+fn setSchedParam(threadId, param) { return 0 }
+fn getSchedPriority(policy) { return 0 }
+fn setSchedPolicy(threadId, policy) { return 0 }
+fn getSchedPolicy(threadId) { return "SCHED_OTHER" }
+
+// ============================================
+// Cancellation
+// ============================================
+
+class CancellationState {
+  @enabled
+  @type
+  @pending
+  fn @() { @enabled = true; @type = "deferred"; @pending = false }
+  fn enable() { @enabled = true; return 0 }
+  fn disable() { @enabled = false; return 0 }
+  fn setType(type) { @type = type; return 0 }
+  fn getType() { return @type }
+  fn test() { if @pending && @enabled { throw "CANCELED" } }
+}
+
+fn setCancelState(state) {
+  t = thread.current()
+  if t.cancelState == null { t.cancelState = CancellationState() }
+  old = t.cancelState.enabled
+  t.cancelState.enabled = state
+  return old
+}
+
+fn setCancelType(type) {
+  t = thread.current()
+  if t.cancelState == null { t.cancelState = CancellationState() }
+  old = t.cancelState.type
+  t.cancelState.type = type
+  return old
+}
+
+fn testCancel() {
+  t = thread.current()
+  if t.cancelState != null && t.cancelState.pending && t.cancelState.enabled {
+    throw "CANCELED"
+  }
+}
+
+fn cancel(thread) {
+  if thread.cancelState != null {
+    thread.cancelState.pending = true
+    if thread.cancelState.type == "asynchronous" && thread.cancelState.enabled {
+      // Would need to interrupt - not easily possible in Havel
+    }
+  }
+  return 0
+}
+
+// ============================================
+// Once initialization
+// ============================================
+
+class OnceControl {
+  @done
+  @mutex
+  fn @() { @done = false; @mutex = PThreadMutex() }
+  fn callOnce(fn) {
+    @mutex.lock()
+    if !@done {
+      @done = true
+      @mutex.unlock()
+      fn()
+    } else {
+      @mutex.unlock()
+    }
+    return 0
+  }
+}
+
+// ============================================
+// Key creation
+// ============================================
+
+fn keyCreate(destructor=null) { return ThreadKey(destructor) }
+fn keyDelete(key) { return key.delete() }
+fn getSpecific(key) { return key.get() }
+fn setSpecific(key, value) { return key.set(value) }
+
+// ============================================
+// Signal handling (process-wide)
+// ============================================
+
+fn sigmask(how, set, oldset=null) { return 0 }
+fn kill(thread, sig) { return "EINVAL" }
+
+// ============================================
+// CPU affinity (requires FFI)
+// ============================================
+
+class CPUSet {
+  @cpus
+  fn @() { @cpus = [] }
+  fn set(cpu) { if !@cpus.contains(cpu) { @cpus.push(cpu) }; return 0 }
+  fn clear(cpu) { @cpus = @cpus.filter(x => x != cpu); return 0 }
+  fn isset(cpu) { return @cpus.contains(cpu) }
+  fn zero() { @cpus = [] }
+}
+
+fn setAffinity(thread, cpuset) { return 0 }
+fn getAffinity(thread, cpuset) { return 0 }
+
+// ============================================
+// Factory functions
+// ============================================
+
+fn createThread(fn, args=[]) { return create(fn, args) }
+fn createJoinable(fn, args=[]) { t = create(fn, args); return t }
+fn createDetached(fn, args=[]) { t = create(fn, args); t.detach(); return t }
+fn createMutex(type="normal") { return PThreadMutex({type: type}) }
+fn createCond() { return PThreadCond() }
+fn createRWLock() { return PThreadRWLock() }
+fn createSpinlock() { return PThreadSpinlock() }
+fn createBarrier(count) { return PThreadBarrier(count) }
+fn createThreadKey(destructor=null) { return ThreadKey(destructor) }
+fn createOnce() { return OnceControl() }
+
+// ============================================
+// Error codes
+// ============================================
+
+const EPERM = "EPERM"
+const ENOENT = "ENOENT"
+const ESRCH = "ESRCH"
+const EINTR = "EINTR"
+const EIO = "EIO"
+const ENXIO = "ENXIO"
+const E2BIG = "E2BIG"
+const ENOEXEC = "ENOEXEC"
+const EBADF = "EBADF"
+const ECHILD = "ECHILD"
+const EAGAIN = "EAGAIN"
+const ENOMEM = "ENOMEM"
+const EACCES = "EACCES"
+const EFAULT = "EFAULT"
+const EBUSY = "EBUSY"
+const EEXIST = "EEXIST"
+const EXDEV = "EXDEV"
+const ENODEV = "ENODEV"
+const ENOTDIR = "ENOTDIR"
+const EISDIR = "EISDIR"
+const EINVAL = "EINVAL"
+const ENFILE = "ENFILE"
+const EMFILE = "EMFILE"
+const ENOTTY = "ENOTTY"
+const ETXTBSY = "ETXTBSY"
+const EFBIG = "EFBIG"
+const ENOSPC = "ENOSPC"
+const ESPIPE = "ESPIPE"
+const EROFS = "EROFS"
+const EMLINK = "EMLINK"
+const EPIPE = "EPIPE"
+const EDOM = "EDOM"
+const ERANGE = "ERANGE"
+const EDEADLK = "EDEADLK"
+const ENAMETOOLONG = "ENAMETOOLONG"
+const ENOLCK = "ENOLCK"
+const ENOSYS = "ENOSYS"
+const ENOTEMPTY = "ENOTEMPTY"
+const ELOOP = "ELOOP"
+const EWOULDBLOCK = "EWOULDBLOCK"
+const ENOMSG = "ENOMSG"
+const EIDRM = "EIDRM"
+const ECHRNG = "ECHRNG"
+const EL2NSYNC = "EL2NSYNC"
+const EL3HLT = "EL3HLT"
+const EL3RST = "EL3RST"
+const ELNRNG = "ELNRNG"
+const EUNATCH = "EUNATCH"
+const ENOCSI = "ENOCSI"
+const EL2HLT = "EL2HLT"
+const EBADE = "EBADE"
+const EBADR = "EBADR"
+const EXFULL = "EXFULL"
+const ENOANO = "ENOANO"
+const EBADRQC = "EBADRQC"
+const EBADSLT = "EBADSLT"
+const EBFONT = "EBFONT"
+const ENOSTR = "ENOSTR"
+const ENODATA = "ENODATA"
+const ETIME = "ETIME"
+const ENOSR = "ENOSR"
+const ENONET = "ENONET"
+const ENOPKG = "ENOPKG"
+const EREMOTE = "EREMOTE"
+const ENOLINK = "ENOLINK"
+const EADV = "EADV"
+const ESRMNT = "ESRMNT"
+const ECOMM = "ECOMM"
+const EPROTO = "EPROTO"
+const EMULTIHOP = "EMULTIHOP"
+const EDOTDOT = "EDOTDOT"
+const EBADMSG = "EBADMSG"
+const EOVERFLOW = "EOVERFLOW"
+const ENOTUNIQ = "ENOTUNIQ"
+const EBADFD = "EBADFD"
+const EREMCHG = "EREMCHG"
+const ELIBACC = "ELIBACC"
+const ELIBEXEC = "ELIBEXEC"
+const ELIBMAX = "ELIBMAX"
+const ELIBSCN = "ELIBSCN"
+const ELIBBAD = "ELIBBAD"
+const ENOTSUP = "ENOTSUP"
+const ETIMEDOUT = "ETIMEDOUT"
+const ECONNREFUSED = "ECONNREFUSED"
+const EHOSTDOWN = "EHOSTDOWN"
+const EHOSTUNREACH = "EHOSTUNREACH"
+const EALREADY = "EALREADY"
+const EINPROGRESS = "EINPROGRESS"
+const ESTALE = "ESTALE"
+const EUCLEAN = "EUCLEAN"
+const ENOTNAM = "ENOTNAM"
+const ENAVAIL = "ENAVAIL"
+const EISNAM = "EISNAM"
+const EREMOTEIO = "EREMOTEIO"
+const EDQUOT = "EDQUOT"
+const ENOMEDIUM = "ENOMEDIUM"
+const EMEDIUMTYPE = "EMEDIUMTYPE"
+const ECANCELED = "ECANCELED"
+const ENOKEY = "ENOKEY"
+const EKEYEXPIRED = "EKEYEXPIRED"
+const EKEYREVOKED = "EKEYREVOKED"
+const EKEYREJECTED = "EKEYREJECTED"
+const EOWNERDEAD = "EOWNERDEAD"
+const ENOTRECOVERABLE = "ENOTRECOVERABLE"
+const ERFKILL = "ERFKILL"
+const EHWPOISON = "EHWPOISON"
+
+// Pthread-specific
+const EOWNERDEAD = "EOWNERDEAD"
+const ENOTRECOVERABLE = "ENOTRECOVERABLE"
+const EPROTO = "EPROTO"
+const EDEADLK = "EDEADLK"
+const PTHREAD_BARRIER_SERIAL_THREAD = "PTHREAD_BARRIER_SERIAL_THREAD"
+const CANCELED = "CANCELED"

@@ -1,0 +1,327 @@
+// mutex.hv - Mutual exclusion primitives
+// Note: This requires FFI/host function support for true OS-level mutexes
+// This is a pure Havel fallback using spinlocks (not recommended for production)
+
+use "ffi" as ffi
+
+// Simple spinlock implementation (for fallback only)
+class Spinlock {
+  @locked = false
+  @owner = 0
+  
+  fn @() {}
+  
+  fn lock() {
+    // Simple spin - not efficient but works
+    while true {
+      if !@locked {
+        @locked = true
+        @owner = thread.id()
+        break
+      }
+      // Yield to other threads
+      sleep(0)
+    }
+  }
+  
+  fn tryLock() {
+    if !@locked {
+      @locked = true
+      @owner = thread.id()
+      return true
+    } else {
+      return false
+    }
+  }
+  
+  fn unlock() {
+    if @owner == thread.id() {
+      @locked = false
+      @owner = 0
+      return true
+    } else {
+      return false
+    }
+  }
+  
+  fn isLocked() {
+    return @locked
+  }
+  
+  fn isOwned() {
+    return @owner == thread.id()
+  }
+}
+
+// Recursive mutex (same thread can lock multiple times)
+class RecursiveMutex {
+  @mutex = null
+  @count = 0
+  @owner = 0
+  
+  fn @() {
+    @mutex = Spinlock()
+  }
+  
+  fn lock() {
+    tid = thread.id()
+    if @owner == tid {
+      @count += 1
+      return
+    }
+    @mutex.lock()
+    @owner = tid
+    @count = 1
+  }
+  
+  fn tryLock() {
+    tid = thread.id()
+    if @owner == tid {
+      @count += 1
+      return true
+    }
+    if @mutex.tryLock() {
+      @owner = tid
+      @count = 1
+      return true
+    }
+    return false
+  }
+  
+  fn unlock() {
+    tid = thread.id()
+    if @owner != tid {
+      return false
+    }
+    @count -= 1
+    if @count == 0 {
+      @owner = 0
+      @mutex.unlock()
+    }
+    return true
+  }
+  
+  fn isLocked() {
+    return @mutex.isLocked()
+  }
+  
+  fn lockCount() {
+    return @count
+  }
+}
+
+// Read-write lock
+class RWLock {
+  @readers = 0
+  @writer = false
+  @writeWaiting = 0
+  @mutex = null
+  @readCond = null
+  @writeCond = null
+  
+  fn @() {
+    @mutex = Spinlock()
+    @readCond = mutex.createCondVar()
+    @writeCond = mutex.createCondVar()
+  }
+  
+  fn readLock() {
+    @mutex.lock()
+    while @writer || @writeWaiting > 0 {
+      // Wait for writer to finish
+      @mutex.unlock()
+      sleep(0)
+      @mutex.lock()
+    }
+    @readers += 1
+    @mutex.unlock()
+  }
+  
+  fn readUnlock() {
+    @mutex.lock()
+    @readers -= 1
+    @mutex.unlock()
+  }
+  
+  fn writeLock() {
+    @mutex.lock()
+    @writeWaiting += 1
+    while @readers > 0 || @writer {
+      @mutex.unlock()
+      sleep(0)
+      @mutex.lock()
+    }
+    @writeWaiting -= 1
+    @writer = true
+    @mutex.unlock()
+  }
+  
+  fn writeUnlock() {
+    @mutex.lock()
+    @writer = false
+    @mutex.unlock()
+  }
+  
+  fn tryReadLock() {
+    @mutex.lock()
+    if @writer || @writeWaiting > 0 {
+      @mutex.unlock()
+      return false
+    }
+    @readers += 1
+    @mutex.unlock()
+    return true
+  }
+  
+  fn tryWriteLock() {
+    @mutex.lock()
+    if @readers > 0 || @writer {
+      @mutex.unlock()
+      return false
+    }
+    @writer = true
+    @mutex.unlock()
+    return true
+  }
+}
+
+// Condition variable (requires mutex)
+class CondVar {
+  @waiting = []
+  
+  fn wait(mutex) {
+    // Add current thread to waiting list
+    chan = channel()
+    @waiting.push({thread: thread.id(), chan: chan})
+    
+    // Unlock mutex and wait
+    mutex.unlock()
+    chan.receive()
+    mutex.lock()
+  }
+  
+  fn waitTimeout(mutex, ms) {
+    chan = channel()
+    @waiting.push({thread: thread.id(), chan: chan})
+    
+    mutex.unlock()
+    result = chan.receive(ms)
+    mutex.lock()
+    return result != null
+  }
+  
+  fn signal() {
+    if @waiting.len() > 0 {
+      w = @waiting.pop(0)
+      w.chan.send(true)
+    }
+  }
+  
+  fn broadcast() {
+    for w in @waiting {
+      w.chan.send(true)
+    }
+    @waiting = []
+  }
+  
+  fn waitingCount() {
+    return @waiting.len()
+  }
+}
+
+// Higher-level synchronized wrapper
+class Synchronized {
+  @mutex = null
+  @value = null
+  
+  fn @(value) {
+    @mutex = Spinlock()
+    @value = value
+  }
+  
+  fn get() {
+    @mutex.lock()
+    v = @value
+    @mutex.unlock()
+    return v
+  }
+  
+  fn set(value) {
+    @mutex.lock()
+    @value = value
+    @mutex.unlock()
+  }
+  
+  fn modify(f) {
+    @mutex.lock()
+    @value = f(@value)
+    @mutex.unlock()
+    return @value
+  }
+  
+  fn withValue(f) {
+    @mutex.lock()
+    result = f(@value)
+    @mutex.unlock()
+    return result
+  }
+  
+  fn tryWith(f, timeoutMs=1000) {
+    start = time.now()
+    while !@mutex.tryLock() {
+      if time.now() - start > timeoutMs {
+        return {error: "timeout", result: null}
+      }
+      sleep(1)
+    }
+    result = f(@value)
+    @mutex.unlock()
+    return {error: null, result: result}
+  }
+}
+
+// Lock guard pattern (auto-unlock on scope exit)
+fn withLock(mutex, f) {
+  mutex.lock()
+  try {
+    return f()
+  } finally {
+    mutex.unlock()
+  }
+}
+
+fn withTryLock(mutex, f, timeoutMs=1000) {
+  start = time.now()
+  while !mutex.tryLock() {
+    if time.now() - start > timeoutMs {
+      return {error: "timeout", result: null}
+    }
+    sleep(1)
+  }
+  try {
+    return {error: null, result: func()}
+  } finally {
+    mutex.unlock()
+  }
+}
+
+// Export functions for functional style
+fn createSpinlock() {
+  return Spinlock()
+}
+
+fn createRecursiveMutex() {
+  return RecursiveMutex()
+}
+
+fn createRWLock() {
+  return RWLock()
+}
+
+fn createCondVar() {
+  return CondVar()
+}
+
+fn createSynchronized(initial=null) {
+  return Synchronized(initial)
+}

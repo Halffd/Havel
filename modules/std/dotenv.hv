@@ -1,0 +1,146 @@
+// dotenv.hv - Load .env files into environment variables
+// Pure Havel implementation
+
+fn parse(line) {
+  // Skip empty lines and comments
+  trimmed = line.trim()
+  if trimmed == "" || trimmed.starts("#") {
+    return null
+  }
+  
+  // Find first = not in quotes
+  eqIdx = -1
+  inSingle = false
+  inDouble = false
+  
+  for i, ch in trimmed.enumerate() {
+    if ch == "'" && !inDouble {
+      inSingle = !inSingle
+    } else if ch == '"' && !inSingle {
+      inDouble = !inDouble
+    } else if ch == "=" && !inSingle && !inDouble {
+      eqIdx = i
+      break
+    }
+  }
+  
+  if eqIdx == -1 {
+    return null
+  }
+  
+  key = trimmed.sub(0, eqIdx).trim()
+  value = trimmed.sub(eqIdx + 1).trim()
+  
+  // Strip quotes if present
+  if (value.starts("\"") && value.ends("\"")) || (value.starts("'") && value.ends("'")) {
+    value = value.sub(1, value.len() - 1)
+  }
+  
+  // Handle escape sequences
+  value = value.replace("\\n", "\n")
+  value = value.replace("\\r", "\r")
+  value = value.replace("\\t", "\t")
+  value = value.replace("\\\"", "\"")
+  value = value.replace("\\'", "'")
+  value = value.replace("\\\\", "\\")
+  
+  return {key: key, value: value}
+}
+
+// Load .env file from path, optionally override existing env vars
+fn load(path=".env", override=false) {
+  if !fs.exists(path) {
+    return {loaded: false, error: "file not found: " + path}
+  }
+  
+  content = fs.read(path)
+  if content == null {
+    return {loaded: false, error: "could not read: " + path}
+  }
+  
+  lines = content.split("\n")
+  loaded = 0
+  skipped = 0
+  
+  for line in lines {
+    parsed = parse(line)
+    if parsed == null {
+      skipped += 1
+      continue
+    }
+    
+    // Only set if not already set (unless override)
+    if !override && sys.env(parsed.key) != null {
+      skipped += 1
+      continue
+    }
+    
+    shell.env(parsed.key, parsed.value)
+    loaded += 1
+  }
+  
+  return {loaded: loaded, skipped: skipped}
+}
+
+// Load multiple .env files in order (later files override earlier)
+fn loadAll(paths, override=true) {
+  totalLoaded = 0
+  totalSkipped = 0
+  errors = []
+  
+  for path in paths {
+    result = load(path, override)
+    if result.error != null {
+      errors.push(result.error)
+    } else {
+      totalLoaded += result.loaded
+      totalSkipped += result.skipped
+    }
+  }
+  
+  return {loaded: totalLoaded, skipped: totalSkipped, errors: errors}
+}
+
+// Load .env.local, .env.development, .env.production etc based on NODE_ENV
+fn loadConfig(basePath="") {
+  env = sys.env("NODE_ENV") ?? sys.env("ENV") ?? "development"
+  
+  paths = []
+  if basePath != "" {
+    paths.push(basePath + "/.env")
+    paths.push(basePath + "/.env.local")
+    paths.push(basePath + "/.env." + env)
+    paths.push(basePath + "/.env." + env + ".local")
+  } else {
+    paths.push(".env")
+    paths.push(".env.local")
+    paths.push(".env." + env)
+    paths.push(".env." + env + ".local")
+  }
+  
+  return loadAll(paths)
+}
+
+// Export all env vars from .env file as object (without setting them)
+fn config(path=".env") {
+  if !fs.exists(path) {
+    return {error: "file not found: " + path}
+  }
+  
+  content = fs.read(path)
+  if content == null {
+    return {error: "could not read: " + path}
+  }
+  
+  result = {}
+  lines = content.split("\n")
+  
+  for line in lines {
+    parsed = parse(line)
+    if parsed != null {
+      result[parsed.key] = parsed.value
+    }
+  }
+  
+  return {parsed: result}
+}

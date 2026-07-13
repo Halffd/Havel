@@ -1,0 +1,743 @@
+// semaphore.hv - Semaphore synchronization primitives
+// Pure Havel implementation using mutexes and condition variables
+
+// ============================================
+// Binary semaphore (mutex-like)
+// ============================================
+
+class BinarySemaphore {
+  fn @() {
+    @value = 1
+    @mutex = mutex.createSpinlock()
+    @cond = mutex.createCondVar()
+  }
+  
+  // Wait (P operation) - decrement, block if 0
+  fn wait() {
+    @mutex.lock()
+    while @value == 0 {
+      @cond.wait(@mutex)
+    }
+    @value = 0
+    @mutex.unlock()
+  }
+  
+  // Try wait - return false if would block
+  fn tryWait() {
+    @mutex.lock()
+    if @value == 0 {
+      @mutex.unlock()
+      return false
+    }
+    @value = 0
+    @mutex.unlock()
+    return true
+  }
+  
+  // Timed wait
+  fn waitTimeout(ms) {
+    @mutex.lock()
+    start = time.now()
+    while @value == 0 {
+      elapsed = time.now() - start
+      if elapsed >= ms {
+        @mutex.unlock()
+        return false
+      }
+      @cond.waitTimeout(@mutex, ms - elapsed)
+    }
+    @value = 0
+    @mutex.unlock()
+    return true
+  }
+  
+  // Signal (V operation) - increment
+  fn signal() {
+    @mutex.lock()
+    @value = 1
+    @cond.signal()
+    @mutex.unlock()
+  }
+  
+  // Get current value (0 or 1)
+  fn getValue() {
+    @mutex.lock()
+    v = @value
+    @mutex.unlock()
+    return v
+  }
+  
+  // Check if available
+  fn available() {
+    @mutex.lock()
+    v = @value
+    @mutex.unlock()
+    return v == 1
+  }
+}
+
+// ============================================
+// Counting semaphore
+// ============================================
+
+class CountingSemaphore {
+  fn @(initial=0) {
+    if initial < 0 { initial = 0 }
+    @value = initial
+    @mutex = mutex.createSpinlock()
+    @cond = mutex.createCondVar()
+  }
+  
+  // Wait (P operation)
+  fn wait() {
+    @mutex.lock()
+    while @value == 0 {
+      @cond.wait(@mutex)
+    }
+    @value -= 1
+    @mutex.unlock()
+  }
+  
+  // Try wait
+  fn tryWait() {
+    @mutex.lock()
+    if @value == 0 {
+      @mutex.unlock()
+      return false
+    }
+    @value -= 1
+    @mutex.unlock()
+    return true
+  }
+  
+  // Timed wait
+  fn waitTimeout(ms) {
+    @mutex.lock()
+    start = time.now()
+    while @value == 0 {
+      elapsed = time.now() - start
+      if elapsed >= ms {
+        @mutex.unlock()
+        return false
+      }
+      @cond.waitTimeout(@mutex, ms - elapsed)
+    }
+    @value -= 1
+    @mutex.unlock()
+    return true
+  }
+  
+  // Signal (V operation) - increment by n (default 1)
+  fn signal(n=1) {
+    if n < 1 { n = 1 }
+    @mutex.lock()
+    @value += n
+    if n == 1 {
+      @cond.signal()
+    } else {
+      @cond.broadcast()
+    }
+    @mutex.unlock()
+  }
+  
+  // Get current count
+  fn getValue() {
+    @mutex.lock()
+    v = @value
+    @mutex.unlock()
+    return v
+  }
+  
+  // Get value and reset to 0
+  fn getAndReset() {
+    @mutex.lock()
+    v = @value
+    @value = 0
+    @mutex.unlock()
+    return v
+  }
+  
+  // Drain all permits
+  fn drain() {
+    @mutex.lock()
+    v = @value
+    @value = 0
+    @mutex.unlock()
+    return v
+  }
+  
+  // Check if permits available
+  fn available() {
+    @mutex.lock()
+    v = @value
+    @mutex.unlock()
+    return v
+  }
+}
+
+// ============================================
+// Bounded semaphore (max count limit)
+// ============================================
+
+class BoundedSemaphore {
+  fn @(max, initial=0) {
+    @max = max
+    if initial > max { initial = max }
+    @sem = CountingSemaphore(initial)
+    @mutex = mutex.createSpinlock()
+  }
+  
+  fn wait() {
+    @sem.wait()
+  }
+  
+  fn tryWait() {
+    return @sem.tryWait()
+  }
+  
+  fn waitTimeout(ms) {
+    return @sem.waitTimeout(ms)
+  }
+  
+  // Signal with bound check
+  fn signal(n=1) {
+    @mutex.lock()
+    current = @sem.getValue()
+    available = @max - current
+    if n > available { n = available }
+    @mutex.unlock()
+    if n > 0 {
+      @sem.signal(n)
+    }
+    return n
+  }
+  
+  fn getValue() {
+    return @sem.getValue()
+  }
+  
+  fn getMax() {
+    return @max
+  }
+  
+  fn available() {
+    @mutex.lock()
+    current = @sem.getValue()
+    avail = @max - current
+    @mutex.unlock()
+    return avail
+  }
+}
+
+// ============================================
+// Async semaphore (for coroutines/fibers)
+// ============================================
+
+class AsyncSemaphore {
+  fn @(initial=0, max=0) {
+    @count = initial
+    @max = max // 0 = unlimited
+    @waiting = []
+  }
+  
+  // Acquire a permit
+  fn acquire() {
+    if @count > 0 {
+      @count -= 1
+      return
+    }
+    // Wait for permit
+    chan = channel()
+    @waiting.push(chan)
+    chan.receive()
+  }
+  
+  // Try acquire without blocking
+  fn tryAcquire() {
+    if @count > 0 {
+      @count -= 1
+      return true
+    }
+    return false
+  }
+  
+  // Acquire with timeout
+  fn acquireTimeout(ms) {
+    if @count > 0 {
+      @count -= 1
+      return true
+    }
+    chan = channel()
+    @waiting.push(chan)
+    start = time.now()
+    while true {
+      elapsed = time.now() - start
+      if elapsed >= ms {
+        // Remove from waiting list
+        @waiting = @waiting.filter(fn(c) { return c != chan })
+        return false
+      }
+      if chan.receive(timeoutMs=1) {
+        return true
+      }
+    }
+  }
+  
+  // Release a permit
+  fn release(n=1) {
+    for i in range(n) {
+      if @waiting.len() > 0 {
+        chan = @waiting.pop(0)
+        chan.send(true)
+      } else if @max == 0 || @count < @max {
+        @count += 1
+      }
+    }
+  }
+  
+  fn availablePermits() {
+    return @count
+  }
+  
+  fn queueLength() {
+    return @waiting.len()
+  }
+  
+  fn isFair() {
+    return true // FIFO queue
+  }
+}
+
+// ============================================
+// Read-write semaphore (multiple readers, single writer)
+// ============================================
+
+class RWLockSemaphore {
+  fn @() {
+    @readers = 0
+    @writer = false
+    @writeWaiting = 0
+    @mutex = mutex.createSpinlock()
+    @readCond = mutex.createCondVar()
+    @writeCond = mutex.createCondVar()
+  }
+  
+  // Read lock
+  fn readLock() {
+    @mutex.lock()
+    while @writer || @writeWaiting > 0 {
+      @readCond.wait(@mutex)
+    }
+    @readers += 1
+    @mutex.unlock()
+  }
+  
+  fn readUnlock() {
+    @mutex.lock()
+    @readers -= 1
+    if @readers == 0 {
+      @writeCond.signal()
+    }
+    @mutex.unlock()
+  }
+  
+  fn tryReadLock() {
+    @mutex.lock()
+    if @writer || @writeWaiting > 0 {
+      @mutex.unlock()
+      return false
+    }
+    @readers += 1
+    @mutex.unlock()
+    return true
+  }
+  
+  // Write lock
+  fn writeLock() {
+    @mutex.lock()
+    @writeWaiting += 1
+    while @readers > 0 || @writer {
+      @writeCond.wait(@mutex)
+    }
+    @writeWaiting -= 1
+    @writer = true
+    @mutex.unlock()
+  }
+  
+  fn writeUnlock() {
+    @mutex.lock()
+    @writer = false
+    if @writeWaiting > 0 {
+      @writeCond.signal()
+    } else {
+      @readCond.broadcast()
+    }
+    @mutex.unlock()
+  }
+  
+  fn tryWriteLock() {
+    @mutex.lock()
+    if @readers > 0 || @writer {
+      @mutex.unlock()
+      return false
+    }
+    @writer = true
+    @mutex.unlock()
+    return true
+  }
+  
+  // Upgrade read to write (dangerous - can deadlock)
+  fn upgrade() {
+    @mutex.lock()
+    if @readers == 1 && !@writer {
+      @readers = 0
+      @writer = true
+      @mutex.unlock()
+      return true
+    }
+    @mutex.unlock()
+    return false
+  }
+  
+  // Downgrade write to read
+  fn downgrade() {
+    @mutex.lock()
+    if @writer {
+      @writer = false
+      @readers = 1
+      @readCond.broadcast()
+    }
+    @mutex.unlock()
+  }
+  
+  fn getReaders() {
+    @mutex.lock()
+    r = @readers
+    @mutex.unlock()
+    return r
+  }
+  
+  fn hasWriter() {
+    @mutex.lock()
+    w = @writer
+    @mutex.unlock()
+    return w
+  }
+  
+  fn writeWaiting() {
+    @mutex.lock()
+    w = @writeWaiting
+    @mutex.unlock()
+    return w
+  }
+}
+
+// ============================================
+// Higher-level patterns
+// ============================================
+
+// Resource pool with semaphore
+class ResourcePool {
+  fn @(factory, maxSize) {
+    @factory = factory
+    @maxSize = maxSize
+    @sem = CountingSemaphore(maxSize)
+    @resources = []
+    // Pre-create some resources
+    for i in range(min(5, maxSize)) {
+      @resources.push(factory())
+    }
+  }
+  
+  fn acquire() {
+    @sem.wait()
+    if @resources.len() > 0 {
+      return @resources.pop()
+    } else {
+      return @factory()
+    }
+  }
+  
+  fn tryAcquire() {
+    if @sem.tryWait() {
+      if @resources.len() > 0 {
+        return @resources.pop()
+      } else {
+        return @factory()
+      }
+    }
+    return null
+  }
+  
+  fn acquireTimeout(ms) {
+    if @sem.waitTimeout(ms) {
+      if @resources.len() > 0 {
+        return @resources.pop()
+      } else {
+        return @factory()
+      }
+    }
+    return null
+  }
+  
+  fn release(resource) {
+    if @resources.len() < @maxSize {
+      @resources.push(resource)
+    }
+    @sem.signal()
+  }
+  
+  fn available() {
+    return @sem.getValue()
+  }
+  
+  fn size() {
+    return @resources.len() + @sem.getValue()
+  }
+  
+  fn clear() {
+    @resources = []
+    @sem.drain()
+  }
+}
+
+// Rate limiter using semaphore
+class RateLimiter {
+  fn @(permitsPerInterval, intervalMs) {
+    @sem = CountingSemaphore(permitsPerInterval)
+    @interval = intervalMs
+    @permits = permitsPerInterval
+    
+    // Start refill task
+    @refillTask = thread.spawn(fn() {
+      while true {
+        sleep(@interval)
+        @sem.signal(@permits)
+      }
+    })
+  }
+  
+  fn acquire() {
+    @sem.wait()
+  }
+  
+  fn tryAcquire() {
+    return @sem.tryWait()
+  }
+  
+  fn acquireTimeout(ms) {
+    return @sem.waitTimeout(ms)
+  }
+  
+  fn available() {
+    return @sem.getValue()
+  }
+  
+  fn stop() {
+    if @refillTask != null {
+      @refillTask.cancel()
+      @refillTask = null
+    }
+  }
+}
+
+// Semaphore-based barrier
+class SemaphoreBarrier {
+  fn @(count) {
+    @total = count
+    @count = count
+    @mutex = mutex.createSpinlock()
+    @cond = mutex.createCondVar()
+  }
+  
+  fn wait() {
+    @mutex.lock()
+    @count -= 1
+    
+    if @count == 0 {
+      @count = @total
+      @cond.broadcast()
+      @mutex.unlock()
+      return true // Last thread
+    } else {
+      while @count > 0 {
+        @cond.wait(@mutex)
+      }
+      @mutex.unlock()
+      return false
+    }
+  }
+  
+  fn tryWait() {
+    @mutex.lock()
+    if @count == @total {
+      @mutex.unlock()
+      return false
+    }
+    @count -= 1
+    
+    if @count == 0 {
+      @count = @total
+      @cond.broadcast()
+      @mutex.unlock()
+      return true
+    }
+    @mutex.unlock()
+    return false
+  }
+  
+  fn waitTimeout(ms) {
+    @mutex.lock()
+    @count -= 1
+    
+    if @count == 0 {
+      @count = @total
+      @cond.broadcast()
+      @mutex.unlock()
+      return true
+    }
+    
+    start = time.now()
+    while @count > 0 {
+      elapsed = time.now() - start
+      if elapsed >= ms {
+        @count += 1
+        @mutex.unlock()
+        return false
+      }
+      @cond.waitTimeout(@mutex, ms - elapsed)
+    }
+    @mutex.unlock()
+    return true
+  }
+  
+  fn destroy() {
+    @mutex = null
+  }
+  
+  fn getParties() {
+    return @total
+  }
+  
+  fn getArrived() {
+    @mutex.lock()
+    a = @total - @count
+    @mutex.unlock()
+    return a
+  }
+}
+
+// Semaphore-based latch (one-time barrier)
+class SemaphoreLatch {
+  fn @(count) {
+    @count = count
+    @mutex = mutex.createSpinlock()
+    @cond = mutex.createCondVar()
+  }
+  
+  fn countDown() {
+    @mutex.lock()
+    if @count > 0 {
+      @count -= 1
+      if @count == 0 {
+        @cond.broadcast()
+      }
+    }
+    @mutex.unlock()
+  }
+  
+  fn await() {
+    @mutex.lock()
+    while @count > 0 {
+      @cond.wait(@mutex)
+    }
+    @mutex.unlock()
+  }
+  
+  fn awaitTimeout(ms) {
+    @mutex.lock()
+    start = time.now()
+    while @count > 0 {
+      elapsed = time.now() - start
+      if elapsed >= ms {
+        @mutex.unlock()
+        return false
+      }
+      @cond.waitTimeout(@mutex, ms - elapsed)
+    }
+    @mutex.unlock()
+    return true
+  }
+  
+  fn getCount() {
+    @mutex.lock()
+    c = @count
+    @mutex.unlock()
+    return c
+  }
+}
+
+// ============================================
+// Factory functions
+// ============================================
+
+fn createBinary(initial=true) {
+  b = BinarySemaphore()
+  if !initial { b.wait() }
+  return b
+}
+
+fn createCounting(initial=0) {
+  return CountingSemaphore(initial)
+}
+
+fn createBounded(max, initial=0) {
+  return BoundedSemaphore(max, initial)
+}
+
+fn createAsync(initial=0, max=0) {
+  return AsyncSemaphore(initial, max)
+}
+
+fn createRWLock() {
+  return RWLockSemaphore()
+}
+
+fn createPool(factory, maxSize) {
+  return ResourcePool(factory, maxSize)
+}
+
+fn createRateLimiter(permits, intervalMs) {
+  return RateLimiter(permits, intervalMs)
+}
+
+fn createBarrier(count) {
+  return SemaphoreBarrier(count)
+}
+
+fn createLatch(count) {
+  return SemaphoreLatch(count)
+}
+
+// ============================================
+// Error codes
+// ============================================
+
+const SEM_VALUE_MAX = 2147483647
+const SEM_FAILED = null
+const EINVAL = "EINVAL"
+const ENOSPC = "ENOSPC"
+const EAGAIN = "EAGAIN"
+const ETIMEDOUT = "ETIMEDOUT"
+const EINTR = "EINTR"
+const ENOSYS = "ENOSYS"
+const EPERM = "EPERM"
+const EACCES = "EACCES"
+const ENOENT = "ENOENT"
+const ENOTSUP = "ENOTSUP"
+const ECANCELED = "ECANCELED"
+const EOWNERDEAD = "EOWNERDEAD"
+const ENOTRECOVERABLE = "ENOTRECOVERABLE"
+const EPROTO = "EPROTO"
+const EDEADLK = "EDEADLK"
+const PTHREAD_BARRIER_SERIAL_THREAD = "PTHREAD_BARRIER_SERIAL_THREAD"

@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
+#include <memory>
+#include <vector>
 #include <string>
 #include <vector>
 
@@ -14,7 +17,10 @@ struct WindowInfo {
     uint64_t id = 0;
     std::string title;
     std::string windowClass;
+    std::string className;
     std::string exe;
+    int pid = 0;
+    std::string cmdline;
     int x = 0;
     int y = 0;
     int width = 0;

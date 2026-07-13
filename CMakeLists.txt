@@ -354,6 +354,8 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/host/process/*.cpp"
     "src/host/image/*.cpp"
     "src/host/timer/*.cpp"
+    "src/host/window/AltTabService.cpp"
+    "src/host/window/WindowService.cpp"
     "src/utils/*.cpp"
     "src/utils/*.c"
     "src/media/*.cpp"

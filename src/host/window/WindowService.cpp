@@ -11,7 +11,7 @@
 namespace havel::host {
 
 WindowService::WindowService() {}
-WindowService::~WindowService() = default;
+
 
 WindowInfo WindowService::getActiveWindowInfo() const {
   return WindowInfo{};

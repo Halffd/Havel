@@ -76,8 +76,7 @@ bool AltTabService::isAnimationsEnabled() const {
 }
 
 std::vector<AltTabInfo> AltTabService::getWindows() const {
-    if (!pImpl->backend) return {};
-    return pImpl->backend->getWindows();
+    return {};
 }
 
 int AltTabService::getWindowCount() const {
@@ -85,23 +84,16 @@ int AltTabService::getWindowCount() const {
     return pImpl->backend->getWindowCount();
 }
 
-void AltTabService::setAnimationsEnabled(bool enabled) {
-    if (pImpl->backend) pImpl->backend->setAnimationsEnabled(enabled);
-}
-
-bool AltTabService::isAnimationsEnabled() const {
-    if (!pImpl->backend) return false;
-    return pImpl->backend->isAnimationsEnabled();
-}
-
-} // namespace havel
-
 void AltTabService::toggle() {
-    if (pImpl->backend) pImpl->backend->toggle();
+    if (isVisible()) {
+        hide();
+    } else {
+        show();
+    }
 }
 
 void AltTabService::previous() {
-    if (pImpl->backend) pImpl->backend->prev();
+    prev();
 }
 
 } // namespace havel

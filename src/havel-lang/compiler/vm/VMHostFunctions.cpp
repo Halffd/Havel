@@ -15,7 +15,9 @@
 #include "../core/Pipeline.hpp"
 #include "../../../core/io/IO.hpp"
 #include "../../../core/io/EventListener.hpp"
+#include "../../../core/display/DisplayManager.hpp"
 #include "../../../host/ServiceRegistry.hpp"
+#include "../../../host/mouse/MouseService.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -224,11 +226,336 @@ void VM::registerDefaultHostFunctions() {
       auto* io = getIO(); if (!io) return Value::makeDouble(1.0);
       return Value::makeDouble(io->GetMouseSensitivity());
     });
+    // Mouse state query (X11 direct)
+    api.registerFunction("io._mouseState", [api](const std::vector<Value>& args) {
+      int button = 1;
+      if (!args.empty()) {
+        if (args[0].isInt()) button = static_cast<int>(args[0].asInt());
+        else if (args[0].isStringId() || args[0].isStringValId()) {
+          std::string btnStr = api.vm().resolveStringKey(args[0]);
+          button = static_cast<int>(::havel::host::MouseService::parseButton(btnStr));
+        }
+      }
+      auto display = havel::DisplayManager::GetDisplay();
+      if (!display) return Value::makeBool(false);
+      Window root, child;
+      int rootX, rootY, winX, winY;
+      unsigned int mask;
+      if (XQueryPointer(display, DefaultRootWindow(display), &root, &child, &rootX, &rootY, &winX, &winY, &mask)) {
+        bool pressed = false;
+        switch (button) {
+          case 1: pressed = (mask & Button1Mask) != 0; break;
+          case 2: pressed = (mask & Button3Mask) != 0; break;
+          case 3: pressed = (mask & Button2Mask) != 0; break;
+          case 4: pressed = (mask & Button4Mask) != 0; break;
+          case 5: pressed = (mask & Button5Mask) != 0; break;
+          default: pressed = (mask & Button1Mask) != 0; break;
+        }
+        return Value::makeBool(pressed);
+      }
+      return Value::makeBool(false);
+    });
+    // Lock state queries (X11 direct)
+    api.registerFunction("io._lastLocks", [](const std::vector<Value>&) {
+      auto display = havel::DisplayManager::GetDisplay();
+      if (!display) return Value::makeInt(0);
+      XkbStateRec xkbState;
+      if (XkbGetState(display, XkbUseCoreKbd, &xkbState) != 0)
+        return Value::makeInt(0);
+      return Value::makeInt(static_cast<int64_t>(xkbState.locked_mods));
+    });
+    api.registerFunction("io._locks", [api](const std::vector<Value>&) {
+      auto display = havel::DisplayManager::GetDisplay();
+      bool caps = false, num = false, scroll = false;
+      if (display) {
+        XkbStateRec state;
+        if (XkbGetState(display, XkbUseCoreKbd, &state) == 0) {
+          caps = (state.locked_mods & LockMask) != 0;
+          num = (state.locked_mods & Mod2Mask) != 0;
+          scroll = (state.locked_mods & Mod3Mask) != 0;
+        }
+      }
+      auto obj = api.vm().createHostObject();
+      api.vm().setHostObjectField(obj, "caps", Value::makeBool(caps));
+      api.vm().setHostObjectField(obj, "num", Value::makeBool(num));
+      api.vm().setHostObjectField(obj, "scroll", Value::makeBool(scroll));
+      return Value::makeObjectId(obj.id);
+    });
+    api.registerFunction("io._setLock", [api, getIO](const std::vector<Value>& args) {
+      if (args.empty()) return Value::makeBool(false);
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      auto display = havel::DisplayManager::GetDisplay();
+      if (!display) return Value::makeBool(false);
+      bool caps_set = false, num_set = false, scroll_set = false;
+      bool caps_val = false, num_val = false, scroll_val = false;
+      if (args[0].isObjectId()) {
+        auto capsField = api.vm().getHostObjectField(ObjectRef{args[0].asObjectId(), true}, "caps");
+        if (!capsField.isNull()) { caps_set = true; caps_val = capsField.asBool(); }
+        auto numField = api.vm().getHostObjectField(ObjectRef{args[0].asObjectId(), true}, "num");
+        if (!numField.isNull()) { num_set = true; num_val = numField.asBool(); }
+        auto scrollField = api.vm().getHostObjectField(ObjectRef{args[0].asObjectId(), true}, "scroll");
+        if (!scrollField.isNull()) { scroll_set = true; scroll_val = scrollField.asBool(); }
+      } else if (args[0].isStringValId() || args[0].isStringId()) {
+        std::string lockName = api.vm().resolveStringKey(args[0]);
+        std::string lower = lockName;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        bool val = true;
+        if (args.size() >= 2) {
+          if (args[1].isBool()) val = args[1].asBool();
+          else if (args[1].isInt()) val = args[1].asInt() != 0;
+        }
+        if (lower == "caps" || lower == "capslock") { caps_set = true; caps_val = val; }
+        else if (lower == "num" || lower == "numlock") { num_set = true; num_val = val; }
+        else if (lower == "scroll" || lower == "scrolllock") { scroll_set = true; scroll_val = val; }
+      }
+      XkbStateRec xkbState;
+      if (XkbGetState(display, XkbUseCoreKbd, &xkbState) != 0)
+        return Value::makeBool(false);
+      if (caps_set) {
+        bool curr = (xkbState.locked_mods & LockMask) != 0;
+        if (curr != caps_val) {
+          KeyCode kc = XKeysymToKeycode(display, XK_Caps_Lock);
+          if (kc && io->GetIOBackend()) {
+            io->GetIOBackend()->PressKey(kc);
+            io->GetIOBackend()->ReleaseKey(kc);
+          }
+        }
+      }
+      if (num_set) {
+        bool curr = (xkbState.locked_mods & Mod2Mask) != 0;
+        if (curr != num_val) {
+          KeyCode kc = XKeysymToKeycode(display, XK_Num_Lock);
+          if (kc && io->GetIOBackend()) {
+            io->GetIOBackend()->PressKey(kc);
+            io->GetIOBackend()->ReleaseKey(kc);
+          }
+        }
+      }
+      if (scroll_set) {
+        bool curr = (xkbState.locked_mods & Mod3Mask) != 0;
+        if (curr != scroll_val) {
+          KeyCode kc = XKeysymToKeycode(display, XK_Scroll_Lock);
+          if (kc && io->GetIOBackend()) {
+            io->GetIOBackend()->PressKey(kc);
+            io->GetIOBackend()->ReleaseKey(kc);
+          }
+        }
+      }
+      return Value::makeBool(true);
+    });
+    // Device management
+    api.registerFunction("io._devices", [api, getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeNull();
+      auto devices = io->GetDevices();
+      auto obj = api.vm().createHostObject();
+      api.vm().setHostObjectField(obj, "count", Value::makeInt(static_cast<int64_t>(devices.size())));
+      if (!devices.empty()) {
+        auto strRef = api.vm().getHeap().allocateString(devices[0].path);
+        api.vm().setHostObjectField(obj, "path", Value::makeStringId(strRef.id));
+      }
+      return Value::makeObjectId(obj.id);
+    });
+    api.registerFunction("io._addDevice", [api, getIO](const std::vector<Value>& args) {
+      if (args.empty()) return Value::makeBool(false);
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      std::string device;
+      if (args[0].isStringId() || args[0].isStringValId())
+        device = api.vm().resolveStringKey(args[0]);
+      else return Value::makeBool(false);
+      std::string type;
+      if (args.size() > 1 && (args[1].isStringId() || args[1].isStringValId()))
+        type = api.vm().resolveStringKey(args[1]);
+      if (!type.empty() && type == "backend") {
+        io->SetInputBackend(device);
+        return Value::makeBool(true);
+      }
+      return Value::makeBool(io->AddDevice(device));
+    });
     api.registerFunction("io._sleepMs", [](const std::vector<Value>& args) {
       if (args.empty()) return Value::makeNull();
       int ms = args[0].isInt() ? args[0].asInt() : 0;
       std::this_thread::sleep_for(std::chrono::milliseconds(ms));
       return Value::makeNull();
+    });
+  }
+
+  // EventListener bridge functions — registered at startup for pure-Havel event_listener module
+  {
+    VMApi api(*this);
+    auto getEL = []() -> EventListener* {
+      auto io = host::ServiceRegistry::instance().get<IO>();
+      return io ? io->GetEventListener() : nullptr;
+    };
+
+    api.registerFunction("eventListener.keys", [api, getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeNull();
+      auto arrRef = api.vm().getHeap().allocateArray();
+      auto* arr = api.vm().getHeap().array(arrRef.id);
+      for (const auto& [code, down] : el->GetEvdevKeyState()) {
+        if (down) {
+          std::string name = KeyMap::EvdevToString(code);
+          if (!name.empty()) {
+            auto ref = api.vm().getHeap().allocateString(name);
+            arr->push_back(Value::makeStringId(ref.id));
+          }
+        }
+      }
+      return Value::makeArrayId(arrRef.id);
+    });
+    api.registerFunction("eventListener.lastKey", [api, getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeNull();
+      int code = el->GetLastKeyCode();
+      if (code == 0) return Value::makeNull();
+      std::string name = KeyMap::EvdevToString(code);
+      auto ref = api.vm().getHeap().allocateString(name);
+      return Value::makeStringId(ref.id);
+    });
+    api.registerFunction("eventListener.lastState", [getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      return Value::makeBool(el->GetLastKeyWasDown());
+    });
+    api.registerFunction("eventListener.lastDevice", [api, getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeNull();
+      auto ref = api.vm().getHeap().allocateString(el->GetLastKeyDevice());
+      return Value::makeStringId(ref.id);
+    });
+    api.registerFunction("eventListener.lastModifiers", [getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeInt(0);
+      return Value::makeInt(el->GetLastKeyModifiers());
+    });
+    api.registerFunction("eventListener.lastKeys", [api, getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeNull();
+      auto arrRef = api.vm().getHeap().allocateArray();
+      auto* arr = api.vm().getHeap().array(arrRef.id);
+      for (const auto& [code, down] : el->GetEvdevKeyState()) {
+        if (down) {
+          std::string name = KeyMap::EvdevToString(code);
+          if (!name.empty()) {
+            auto ref = api.vm().getHeap().allocateString(name);
+            arr->push_back(Value::makeStringId(ref.id));
+          }
+        }
+      }
+      return Value::makeArrayId(arrRef.id);
+    });
+    api.registerFunction("eventListener.reset", [getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      el->ReleaseAllVirtualKeys();
+      return Value::makeBool(true);
+    });
+    api.registerFunction("eventListener.lastButton", [getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeInt(0);
+      return Value::makeInt(el->GetLastButtonCode());
+    });
+    api.registerFunction("eventListener.lastButtonState", [getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      return Value::makeBool(el->GetLastButtonWasDown());
+    });
+    api.registerFunction("eventListener.buttons", [getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeInt(0);
+      int pressed = 0;
+      for (const auto& [code, down] : el->GetMouseButtonState()) {
+        if (down) pressed++;
+      }
+      return Value::makeInt(pressed);
+    });
+    api.registerFunction("eventListener.releaseAll", [getEL](const std::vector<Value>&) {
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      el->ReleaseAllVirtualKeys();
+      return Value::makeBool(true);
+    });
+
+    // Callback registrations
+    api.registerFunction("eventListener.onKeyDown", [api, getEL](const std::vector<Value>& args) {
+      if (args.size() < 1) return Value::makeBool(false);
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      auto* vm = &api.vm();
+      CallbackId cb = vm->registerCallback(args[0]);
+      el->AddKeyDownListener([vm, cb](int) {
+        auto* sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, cb]() {
+          vm->spawnCallback(cb, FiberPriority::HOTKEY, {});
+        });
+      });
+      return Value::makeBool(true);
+    });
+    api.registerFunction("eventListener.onKeyUp", [api, getEL](const std::vector<Value>& args) {
+      if (args.size() < 1) return Value::makeBool(false);
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      auto* vm = &api.vm();
+      CallbackId cb = vm->registerCallback(args[0]);
+      el->AddKeyUpListener([vm, cb](int) {
+        auto* sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, cb]() {
+          vm->spawnCallback(cb, FiberPriority::HOTKEY, {});
+        });
+      });
+      return Value::makeBool(true);
+    });
+    api.registerFunction("eventListener.onKey", [api, getEL](const std::vector<Value>& args) {
+      if (args.size() < 1) return Value::makeBool(false);
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      auto* vm = &api.vm();
+      CallbackId cb = vm->registerCallback(args[0]);
+      el->AddKeyListener([vm, cb](const std::string& key) {
+        auto* sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, cb, key]() {
+          auto keyRef = vm->createRuntimeString(key);
+          vm->spawnCallback(cb, FiberPriority::HOTKEY, {Value::makeStringId(keyRef.id)});
+        });
+      });
+      return Value::makeBool(true);
+    });
+    api.registerFunction("eventListener.onButton", [api, getEL](const std::vector<Value>& args) {
+      if (args.size() < 1) return Value::makeBool(false);
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      auto* vm = &api.vm();
+      CallbackId cb = vm->registerCallback(args[0]);
+      el->AddMouseButtonListener([vm, cb](uint32_t button, bool down) {
+        auto* sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, cb, button, down]() {
+          vm->spawnCallback(cb, FiberPriority::HOTKEY,
+                            {Value::makeInt(static_cast<int64_t>(button)),
+                             Value::makeBool(down)});
+        });
+      });
+      return Value::makeBool(true);
+    });
+    api.registerFunction("eventListener.onMouse", [api, getEL](const std::vector<Value>& args) {
+      if (args.size() < 1) return Value::makeBool(false);
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      auto* vm = &api.vm();
+      CallbackId cb = vm->registerCallback(args[0]);
+      el->AddMouseMoveListener([vm, cb](int dx, int dy) {
+        auto* sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, cb, dx, dy]() {
+          vm->spawnCallback(cb, FiberPriority::BACKGROUND,
+                            {Value::makeInt(dx), Value::makeInt(dy)});
+        });
+      });
+      return Value::makeBool(true);
+    });
+    api.registerFunction("eventListener.onEvent", [api, getEL](const std::vector<Value>& args) {
+      if (args.size() < 1) return Value::makeBool(false);
+      auto* el = getEL(); if (!el) return Value::makeBool(false);
+      auto* vm = &api.vm();
+      CallbackId cb = vm->registerCallback(args[0]);
+      el->AddEventListener([vm, cb](const InputEvent& event) {
+        auto* sched = vm->getScheduler();
+        if (!sched) return;
+        sched->deferToVM([vm, cb, event]() {
+          vm->spawnCallback(cb, FiberPriority::BACKGROUND,
+                            {Value::makeInt(static_cast<int64_t>(event.kind)),
+                             Value::makeInt(event.code),
+                             Value::makeInt(event.value)});
+        });
+      });
+      return Value::makeBool(true);
     });
   }
   registerHostFunction("print", [this](const std::vector<Value> &args) {

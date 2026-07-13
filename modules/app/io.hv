@@ -38,6 +38,12 @@ io._getMousePosition = __io._getMousePosition
 io._setMouseSensitivity = __io._setMouseSensitivity
 io._getMouseSensitivity = __io._getMouseSensitivity
 io._sleepMs = __io._sleepMs
+io._mouseState = __io._mouseState
+io._lastLocks = __io._lastLocks
+io._locks = __io._locks
+io._setLock = __io._setLock
+io._devices = __io._devices
+io._addDevice = __io._addDevice
 
 // Mode mapping
 _modeMap = {
@@ -130,6 +136,45 @@ fn getMousePosition() { io._getMousePosition() }
 fn setMouseSensitivity(s) { io._setMouseSensitivity(s) }
 
 fn getMouseSensitivity() { io._getMouseSensitivity() }
+
+fn mouseState(button) { io._mouseState(button || 1) }
+
+fn lastLocks() { io._lastLocks() }
+
+fn locks() { io._locks() }
+
+fn setLock(name, state) { io._setLock(name, state) }
+
+fn devices() { io._devices() }
+
+fn addDevice(path, type) { io._addDevice(path, type || nil) }
+
+fn sendModifiers(mods, press) {
+  if mods == nil || mods == "" {
+    if !press { io._sendX11Key("ctrl", false); io._sendX11Key("shift", false); io._sendX11Key("alt", false); io._sendX11Key("super", false) }
+    nil
+  } else {
+    parts = str(mods).lower().split("+")
+    for p in parts {
+      if p == "ctrl" || p == "control" { io._sendX11Key("ctrl", press) }
+      elif p == "shift" { io._sendX11Key("shift", press) }
+      elif p == "alt" { io._sendX11Key("alt", press) }
+      elif p == "super" || p == "win" || p == "meta" { io._sendX11Key("super", press) }
+    }
+  }
+}
+
+fn sendKeyState(key, state) {
+  if state == nil || state == "click" || state == "tap" {
+    io._sendX11Key(str(key), true)
+    io._sleepMs(50)
+    io._sendX11Key(str(key), false)
+  } elif state == "release" || state == "up" {
+    io._sendX11Key(str(key), false)
+  } else {
+    io._sendX11Key(str(key), true)
+  }
+}
 
 // Set io as global for backward compat
 setGlobal("io", io)

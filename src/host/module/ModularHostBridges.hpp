@@ -94,46 +94,10 @@ public:
                                        const HostContext *ctx);
     static Value handleSetExecutorMode(const std::vector<Value> &args,
                                        const HostContext *ctx);
-    static Value handleMouseState(const std::vector<Value> &args,
-        const HostContext *ctx);
-    static Value handleMouseLastButton(const std::vector<Value> &args,
-        const HostContext *ctx);
-    static Value handleMouseLastState(const std::vector<Value> &args,
-        const HostContext *ctx);
-    static Value handleMouseButtons(const std::vector<Value> &args,
-        const HostContext *ctx);
-    static Value handleModifiers(const std::vector<Value> &args,
-                                  const HostContext *ctx);
     static Value handleSendModifiers(const std::vector<Value> &args,
-                                       const HostContext *ctx);
-    static Value handleSetDevice(const std::vector<Value> &args,
-                                   const HostContext *ctx);
-    static Value handleDevice(const std::vector<Value> &args,
-                                const HostContext *ctx);
+                                        const HostContext *ctx);
     static Value handleSendKeyState(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-    static Value handleSetLock(const std::vector<Value> &args,
-                                 const HostContext *ctx);
-    static Value handleLocks(const std::vector<Value> &args,
-                               const HostContext *ctx);
-    static Value handleMouseReset(const std::vector<Value> &args,
-                                    const HostContext *ctx);
-    static Value handleIoKeys(const std::vector<Value> &args,
-                                const HostContext *ctx);
-    static Value handleIoLastKey(const std::vector<Value> &args,
-                                   const HostContext *ctx);
-    static Value handleIoLastState(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleIoLastDevice(const std::vector<Value> &args,
-                                      const HostContext *ctx);
-    static Value handleIoLastModifiers(const std::vector<Value> &args,
-                                         const HostContext *ctx);
-    static Value handleIoLastLocks(const std::vector<Value> &args,
-                                     const HostContext *ctx);
-    static Value handleIoLastKeys(const std::vector<Value> &args,
-                                    const HostContext *ctx);
-    static Value handleIoReset(const std::vector<Value> &args,
-                                 const HostContext *ctx);
+                                       const HostContext *ctx);
     // Forwarding declarations used by other bridge install()
     static Value handleSystemDetect(const std::vector<Value> &args,
                                       const HostContext *ctx);
@@ -766,18 +730,6 @@ public:
                                      const HostContext *ctx);
     static Value handleAltTabGetWindows(const std::vector<Value> &args,
                                          const HostContext *ctx);
-    static Value handleIOOnKeyDown(const std::vector<Value> &args,
-                                    const HostContext *ctx);
-    static Value handleIOOnKeyUp(const std::vector<Value> &args,
-                                  const HostContext *ctx);
-    static Value handleIOOnKey(const std::vector<Value> &args,
-                                const HostContext *ctx);
-    static Value handleIOOnButton(const std::vector<Value> &args,
-                                   const HostContext *ctx);
-    static Value handleIOOnMouse(const std::vector<Value> &args,
-                                  const HostContext *ctx);
-    static Value handleIOOnEvent(const std::vector<Value> &args,
-                                  const HostContext *ctx);
 private:
     const HostContext *ctx_;
 };

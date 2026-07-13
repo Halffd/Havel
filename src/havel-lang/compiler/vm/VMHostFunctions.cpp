@@ -13,10 +13,15 @@
 #include "stdlib/StateModule.hpp"
 #include "stdlib/HotkeyModule.hpp"
 #include "../core/Pipeline.hpp"
+#include "../../../core/io/IO.hpp"
+#include "../../../core/io/EventListener.hpp"
+#include "../../../host/ServiceRegistry.hpp"
 
 #include <iostream>
 #include <sstream>
 #include <climits>
+#include <thread>
+#include <chrono>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -41,6 +46,190 @@ void VM::registerDefaultHostFunctions() {
   {
     VMApi api(*this);
     havel::stdlib::registerHotkeyModule(api);
+  }
+  // IO bridge functions — registered at startup so pure-Havel io module can reference them
+  // via the auto-export fallback (use "io" -> host_function_globals_ has io.* entries)
+  {
+    VMApi api(*this);
+    auto getIO = []() -> IO* {
+      auto io = host::ServiceRegistry::instance().get<IO>();
+      return io.get();
+    };
+    auto toStr = [this](const Value& v) -> std::string {
+      if (v.isStringId() || v.isStringValId()) return resolveStringKey(v);
+      if (v.isInt()) return std::to_string(v.asInt());
+      if (v.isDouble()) return std::to_string(v.asDouble());
+      if (v.isBool()) return v.asBool() ? "true" : "false";
+      return "";
+    };
+
+    api.registerFunction("io._send", [api, getIO, toStr](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (args.empty()) return Value::makeBool(false);
+      io->Send(toStr(args[0]).c_str());
+      return Value::makeBool(true);
+    });
+    api.registerFunction("io._sendX11Key", [api, getIO, toStr](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (args.size() < 2) return Value::makeBool(false);
+      bool press = args[1].isBool() ? args[1].asBool() : args[1].asInt() != 0;
+      io->SendX11Key(toStr(args[0]), press);
+      return Value::makeBool(true);
+    });
+    api.registerFunction("io._map", [api, getIO, toStr](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (args.size() < 2) return Value::makeBool(false);
+      io->Map(toStr(args[0]), toStr(args[1]));
+      return Value::makeBool(true);
+    });
+    api.registerFunction("io._remap", [api, getIO, toStr](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (args.size() < 2) return Value::makeBool(false);
+      io->Remap(toStr(args[0]), toStr(args[1]));
+      return Value::makeBool(true);
+    });
+    api.registerFunction("io._emergencyRelease", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeNull();
+      io->EmergencyReleaseAllKeys();
+      return Value::makeNull();
+    });
+    api.registerFunction("io._ungrabAll", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeNull();
+      io->UngrabAll();
+      return Value::makeNull();
+    });
+    api.registerFunction("io._setEvdevGrab", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      bool grab = !args.empty() && (args[0].isBool() ? args[0].asBool() : args[0].asInt() != 0);
+      return Value::makeBool(io->SetEvdevGrab(grab));
+    });
+    api.registerFunction("io._setBlockInput", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      bool block = !args.empty() && (args[0].isBool() ? args[0].asBool() : args[0].asInt() != 0);
+      auto* el = io->GetEventListener();
+      if (!el) return Value::makeBool(false);
+      el->SetBlockInput(block);
+      return Value::makeBool(true);
+    });
+    api.registerFunction("io._getEvdevGrab", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      return Value::makeBool(io->GetEvdevGrab());
+    });
+    api.registerFunction("io._suspend", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      return Value::makeBool(io->Suspend());
+    });
+    api.registerFunction("io._resume", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (io->isSuspended) return Value::makeBool(io->Resume());
+      return Value::makeBool(true);
+    });
+    api.registerFunction("io._isSuspended", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      return Value::makeBool(io->IsSuspended());
+    });
+    api.registerFunction("io._isKeyPressed", [api, getIO, toStr](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (args.empty()) return Value::makeBool(false);
+      return Value::makeBool(io->IsKeyPressed(toStr(args[0])));
+    });
+    api.registerFunction("io._isShiftPressed", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      return Value::makeBool(io->IsShiftPressed());
+    });
+    api.registerFunction("io._isCtrlPressed", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      return Value::makeBool(io->IsCtrlPressed());
+    });
+    api.registerFunction("io._isAltPressed", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      return Value::makeBool(io->IsAltPressed());
+    });
+    api.registerFunction("io._isWinPressed", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      return Value::makeBool(io->IsWinPressed());
+    });
+    api.registerFunction("io._getCurrentModifiers", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeInt(0);
+      return Value::makeInt(io->GetCurrentModifiers());
+    });
+    api.registerFunction("io._setExecutorMode", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (args.empty()) return Value::makeBool(false);
+      int m = args[0].isInt() ? args[0].asInt() : 0;
+      io->SetExecutorMode(static_cast<ExecutorMode>(m));
+      return Value::makeBool(true);
+    });
+    api.registerFunction("io._getExecutorMode", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeInt(0);
+      return Value::makeInt(static_cast<int>(io->GetExecutorMode()));
+    });
+    api.registerFunction("io._mouseMove", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (args.size() < 2) return Value::makeBool(false);
+      int dx = args[0].isInt() ? args[0].asInt() : 0;
+      int dy = args[1].isInt() ? args[1].asInt() : 0;
+      int speed = args.size() > 2 && args[2].isInt() ? args[2].asInt() : 1;
+      return Value::makeBool(io->MouseMove(dx, dy, speed));
+    });
+    api.registerFunction("io._mouseMoveTo", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (args.size() < 2) return Value::makeBool(false);
+      int x = args[0].isInt() ? args[0].asInt() : 0;
+      int y = args[1].isInt() ? args[1].asInt() : 0;
+      int speed = args.size() > 2 && args[2].isInt() ? args[2].asInt() : 1;
+      return Value::makeBool(io->MouseMoveTo(x, y, speed));
+    });
+    api.registerFunction("io._mouseClick", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
+      io->MouseClick(btn);
+      return Value::makeBool(true);
+    });
+    api.registerFunction("io._mouseDown", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
+      return Value::makeBool(io->MouseDown(btn));
+    });
+    api.registerFunction("io._mouseUp", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
+      return Value::makeBool(io->MouseUp(btn));
+    });
+    api.registerFunction("io._scroll", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      double dy = !args.empty() && (args[0].isDouble() || args[0].isInt())
+          ? (args[0].isDouble() ? args[0].asDouble() : static_cast<double>(args[0].asInt())) : 0.0;
+      double dx = args.size() > 1 && (args[1].isDouble() || args[1].isInt())
+          ? (args[1].isDouble() ? args[1].asDouble() : static_cast<double>(args[1].asInt())) : 0.0;
+      return Value::makeBool(io->Scroll(dy, dx));
+    });
+    api.registerFunction("io._getMousePosition", [api, getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeNull();
+      auto pos = io->GetMousePosition();
+      auto arr = api.makeArray();
+      api.push(arr, Value::makeInt(pos.first));
+      api.push(arr, Value::makeInt(pos.second));
+      return arr;
+    });
+    api.registerFunction("io._setMouseSensitivity", [getIO](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeNull();
+      if (args.empty()) return Value::makeNull();
+      double s = args[0].isDouble() ? args[0].asDouble()
+          : args[0].isInt() ? static_cast<double>(args[0].asInt()) : 1.0;
+      io->SetMouseSensitivity(s);
+      return Value::makeNull();
+    });
+    api.registerFunction("io._getMouseSensitivity", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeDouble(1.0);
+      return Value::makeDouble(io->GetMouseSensitivity());
+    });
+    api.registerFunction("io._sleepMs", [](const std::vector<Value>& args) {
+      if (args.empty()) return Value::makeNull();
+      int ms = args[0].isInt() ? args[0].asInt() : 0;
+      std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+      return Value::makeNull();
+    });
   }
   registerHostFunction("print", [this](const std::vector<Value> &args) {
     // Check if last arg is kwargs object (marked with __kwargs key)

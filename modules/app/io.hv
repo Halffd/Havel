@@ -1,14 +1,45 @@
-// modules/app/io.hv - Pure Havel IO sidecar
-// Wraps C++ shim functions (io._*) into public API with defaults and mode strings.
-// C++ shim: io._send, io._sendX11Key, io._map, io._remap, io._emergencyRelease,
-// io._ungrabAll, io._setEvdevGrab, io._setBlockInput, io._getEvdevGrab,
-// io._suspend, io._resume, io._isSuspended, io._isKeyPressed,
-// io._isShiftPressed, io._isCtrlPressed, io._isAltPressed, io._isWinPressed,
-// io._getCurrentModifiers, io._setExecutorMode, io._getExecutorMode,
-// io._mouseMove, io._mouseMoveTo, io._mouseClick, io._mouseDown, io._mouseUp,
-// io._scroll, io._getMousePosition, io._setMouseSensitivity, io._getMouseSensitivity,
-// io._sleepMs
+// modules/app/io.hv - Pure Havel IO module
+// Bridge functions (io._*) registered at startup by VMHostFunctions.cpp.
+// This module builds the io namespace and public API entirely in Havel.
 
+// Get auto-exported bridge functions via "io" namespace fallback
+// (host_function_globals_ has io._send, io._sendX11Key, etc.)
+__io = use "io"
+
+// Build the io namespace object with shim function refs
+io = object()
+io._send = __io._send
+io._sendX11Key = __io._sendX11Key
+io._map = __io._map
+io._remap = __io._remap
+io._emergencyRelease = __io._emergencyRelease
+io._ungrabAll = __io._ungrabAll
+io._setEvdevGrab = __io._setEvdevGrab
+io._setBlockInput = __io._setBlockInput
+io._getEvdevGrab = __io._getEvdevGrab
+io._suspend = __io._suspend
+io._resume = __io._resume
+io._isSuspended = __io._isSuspended
+io._isKeyPressed = __io._isKeyPressed
+io._isShiftPressed = __io._isShiftPressed
+io._isCtrlPressed = __io._isCtrlPressed
+io._isAltPressed = __io._isAltPressed
+io._isWinPressed = __io._isWinPressed
+io._getCurrentModifiers = __io._getCurrentModifiers
+io._setExecutorMode = __io._setExecutorMode
+io._getExecutorMode = __io._getExecutorMode
+io._mouseMove = __io._mouseMove
+io._mouseMoveTo = __io._mouseMoveTo
+io._mouseClick = __io._mouseClick
+io._mouseDown = __io._mouseDown
+io._mouseUp = __io._mouseUp
+io._scroll = __io._scroll
+io._getMousePosition = __io._getMousePosition
+io._setMouseSensitivity = __io._setMouseSensitivity
+io._getMouseSensitivity = __io._getMouseSensitivity
+io._sleepMs = __io._sleepMs
+
+// Mode mapping
 _modeMap = {
   "scheduler": 0,
   "executor": 1,
@@ -99,3 +130,6 @@ fn getMousePosition() { io._getMousePosition() }
 fn setMouseSensitivity(s) { io._setMouseSensitivity(s) }
 
 fn getMouseSensitivity() { io._getMouseSensitivity() }
+
+// Set io as global for backward compat
+setGlobal("io", io)

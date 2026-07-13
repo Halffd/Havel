@@ -1622,7 +1622,7 @@ target_link_libraries(havel_mod_ffi PRIVATE ${LIBFFI_LIBRARIES})
 add_havel_module_plugin(filemanager  ${CMAKE_SOURCE_DIR}/src/modules/filesystem/FileManagerModule.cpp)
 add_havel_module_plugin(help         ${CMAKE_SOURCE_DIR}/src/modules/help/HelpModule.cpp)
 add_havel_module_plugin(image        ${CMAKE_SOURCE_DIR}/src/modules/image/ImageModule.cpp)
-add_havel_module_plugin(io           ${CMAKE_SOURCE_DIR}/src/modules/io/IOModule.cpp)
+# IO module converted to pure Havel (modules/app/io.hv)
 add_havel_module_plugin(mapmanager   ${CMAKE_SOURCE_DIR}/src/modules/mapmanager/MapManagerModule.cpp)
 add_havel_module_plugin(media        ${CMAKE_SOURCE_DIR}/src/modules/media/MediaModule.cpp)
 

@@ -245,7 +245,7 @@ static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
       inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
       nullptr,
       nullptr, nullptr, nullptr, nullptr, nullptr,
-      nullptr, nullptr, nullptr,
+      nullptr, nullptr,
       std::vector<std::string>{});
 }
 

@@ -1,0 +1,7 @@
+use { io, sendKeys, sendKey, keyDown, keyUp, map, remap, block, unblock,
+       suspend, resume, isSuspended, grab, ungrab, emergencyRelease,
+       isKeyPressed, isShiftPressed, isCtrlPressed, isAltPressed, isWinPressed,
+       getCurrentModifiers, setExecutorMode, getExecutorMode,
+       mouseMove, mouseMoveTo, mouseClick, mouseDoubleClick,
+       mousePress, mouseRelease, scroll, getMousePosition,
+       setMouseSensitivity, getMouseSensitivity } from "app/io"

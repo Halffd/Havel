@@ -144,162 +144,162 @@ extractHandle(const std::vector<Value> &args, VM *vm,
 
 void IOBridge::install(PipelineOptions &options) {
     options.host_functions["send"] = [ctx = ctx_](const auto &args) {
-        return handleSend(args, ctx);
+        return IOBridge::handleSend(args, ctx);
     };
     options.host_functions["io.send"] = [ctx = ctx_](const auto &args) {
-        return handleSend(args, ctx);
+        return IOBridge::handleSend(args, ctx);
     };
     options.host_functions["io.sendKey"] = [ctx = ctx_](const auto &args) {
-        return handleSendKey(args, ctx);
+        return IOBridge::handleSendKey(args, ctx);
     };
     options.host_functions["io.sendText"] = [ctx = ctx_](const auto &args) {
-        return handleSendText(args, ctx);
+        return IOBridge::handleSendText(args, ctx);
     };
     options.host_functions["io.wait"] = [ctx = ctx_](const auto &args) {
-        return handleWait(args, ctx);
+        return IOBridge::handleWait(args, ctx);
     };
     options.host_functions["wait"] = [ctx = ctx_](const auto &args) {
-        return handleWait(args, ctx);
+        return IOBridge::handleWait(args, ctx);
     };
     // Mouse functions
     options.host_functions["io.click"] = [ctx = ctx_](const auto &args) {
-        return handleMouseClick(args, ctx);
+        return IOBridge::handleMouseClick(args, ctx);
     };
     options.host_functions["io.mouseMoveTo"] = [ctx = ctx_](const auto &args) {
-        return handleMouseMoveTo(args, ctx);
+        return IOBridge::handleMouseMoveTo(args, ctx);
     };
     options.host_functions["io.mouseMoveRel"] = [ctx = ctx_](const auto &args) {
-        return handleMouseMoveRel(args, ctx);
+        return IOBridge::handleMouseMoveRel(args, ctx);
     };
     options.host_functions["io.mouseScroll"] = [ctx = ctx_](const auto &args) {
-        return handleMouseScroll(args, ctx);
+        return IOBridge::handleMouseScroll(args, ctx);
     };
     options.host_functions["io.scroll"] = [ctx = ctx_](const auto &args) {
-        return handleMouseScroll(args, ctx);
+        return IOBridge::handleMouseScroll(args, ctx);
     };
     options.host_functions["io.mouseDown"] = [ctx = ctx_](const auto &args) {
-        return handleMouseDown(args, ctx);
+        return IOBridge::handleMouseDown(args, ctx);
     };
  options.host_functions["io.mouseUp"] = [ctx = ctx_](const auto &args) {
- return handleMouseUp(args, ctx);
+ return IOBridge::handleMouseUp(args, ctx);
  };
  options.host_functions["mouse.click"] = [ctx = ctx_](const auto &args) {
- return handleMouseClick(args, ctx);
+ return IOBridge::handleMouseClick(args, ctx);
  };
  options.host_functions["mouse.down"] = [ctx = ctx_](const auto &args) {
- return handleMouseDown(args, ctx);
+ return IOBridge::handleMouseDown(args, ctx);
  };
  options.host_functions["mouse.up"] = [ctx = ctx_](const auto &args) {
- return handleMouseUp(args, ctx);
+ return IOBridge::handleMouseUp(args, ctx);
  };
  options.host_functions["mouse.move"] = [ctx = ctx_](const auto &args) {
- return handleMouseMoveTo(args, ctx);
+ return IOBridge::handleMouseMoveTo(args, ctx);
  };
  options.host_functions["mouse.moveRel"] = [ctx = ctx_](const auto &args) {
- return handleMouseMoveRel(args, ctx);
+ return IOBridge::handleMouseMoveRel(args, ctx);
  };
  options.host_functions["mouse.scroll"] = [ctx = ctx_](const auto &args) {
- return handleMouseScroll(args, ctx);
+ return IOBridge::handleMouseScroll(args, ctx);
  };
  options.host_functions["mouse.pos"] = [ctx = ctx_](const auto &args) {
- return handleMousePos(args, ctx);
+ return IOBridge::handleMousePos(args, ctx);
  };
  options.host_functions["mouse.setSpeed"] = [ctx = ctx_](const auto &args) {
- return handleMouseSetSpeed(args, ctx);
+ return IOBridge::handleMouseSetSpeed(args, ctx);
  };
  options.host_functions["mouse.setAccel"] = [ctx = ctx_](const auto &args) {
- return handleMouseSetAccel(args, ctx);
+ return IOBridge::handleMouseSetAccel(args, ctx);
  };
  options.host_functions["mouse.setDPI"] = [ctx = ctx_](const auto &args) {
- return handleMouseSetDPI(args, ctx);
+ return IOBridge::handleMouseSetDPI(args, ctx);
  };
  options.host_functions["keyDown"] = [ctx = ctx_](const auto &args) {
- return handleKeyDown(args, ctx);
+ return IOBridge::handleKeyDown(args, ctx);
  };
  options.host_functions["keyUp"] = [ctx = ctx_](const auto &args) {
- return handleKeyUp(args, ctx);
+ return IOBridge::handleKeyUp(args, ctx);
  };
 options.host_functions["suspend"] = [ctx = ctx_](const auto &args) {
-    return handleSuspend(args, ctx);
+    return IOBridge::handleSuspend(args, ctx);
 };
  options.host_functions["io.getExecutorMode"] = [ctx = ctx_](const auto &args) {
-     return handleGetExecutorMode(args, ctx);
+     return IOBridge::handleGetExecutorMode(args, ctx);
  };
  options.host_functions["io.setExecutorMode"] = [ctx = ctx_](const auto &args) {
-     return handleSetExecutorMode(args, ctx);
+     return IOBridge::handleSetExecutorMode(args, ctx);
  };
   options.host_functions["io.getKey"] = [ctx = ctx_](const auto &args) {
-      return handleGetKey(args, ctx);
+      return IOBridge::handleGetKey(args, ctx);
   };
   options.host_functions["io.isKeyPressed"] = [ctx = ctx_](const auto &args) {
-      return handleIsKeyPressed(args, ctx);
+      return IOBridge::handleIsKeyPressed(args, ctx);
   };
     options.host_functions["io.state"] = [ctx = ctx_](const auto &args) {
         if (args.empty()) {
             if (!ctx->io) return Value::makeBool(false);
             return Value::makeBool(ctx->io->IsAnyKeyPressed());
         }
-        return handleGetKey(args, ctx);
+        return IOBridge::handleGetKey(args, ctx);
     };
   options.host_functions["io.modifiers"] = [ctx = ctx_](const auto &args) {
-      return handleModifiers(args, ctx);
+      return IOBridge::handleModifiers(args, ctx);
   };
   options.host_functions["io.sendModifiers"] = [ctx = ctx_](const auto &args) {
-      return handleSendModifiers(args, ctx);
+      return IOBridge::handleSendModifiers(args, ctx);
   };
   options.host_functions["io.setDevice"] = [ctx = ctx_](const auto &args) {
-      return handleSetDevice(args, ctx);
+      return IOBridge::handleSetDevice(args, ctx);
   };
   options.host_functions["io.device"] = [ctx = ctx_](const auto &args) {
-      return handleDevice(args, ctx);
+      return IOBridge::handleDevice(args, ctx);
   };
   options.host_functions["io.sendKey"] = [ctx = ctx_](const auto &args) {
-      return handleSendKeyState(args, ctx);
+      return IOBridge::handleSendKeyState(args, ctx);
   };
   options.host_functions["io.setLock"] = [ctx = ctx_](const auto &args) {
-      return handleSetLock(args, ctx);
+      return IOBridge::handleSetLock(args, ctx);
   };
   options.host_functions["io.locks"] = [ctx = ctx_](const auto &args) {
-      return handleLocks(args, ctx);
+      return IOBridge::handleLocks(args, ctx);
   };
 options.host_functions["mouse.state"] = [ctx = ctx_](const auto &args) {
-    return handleMouseState(args, ctx);
+    return IOBridge::handleMouseState(args, ctx);
 };
 options.host_functions["mouse.lastButton"] = [ctx = ctx_](const auto &args) {
-    return handleMouseLastButton(args, ctx);
+    return IOBridge::handleMouseLastButton(args, ctx);
 };
 options.host_functions["mouse.lastState"] = [ctx = ctx_](const auto &args) {
-    return handleMouseLastState(args, ctx);
+    return IOBridge::handleMouseLastState(args, ctx);
 };
 options.host_functions["mouse.buttons"] = [ctx = ctx_](const auto &args) {
- return handleMouseButtons(args, ctx);
+ return IOBridge::handleMouseButtons(args, ctx);
  };
  options.host_functions["mouse.reset"] = [ctx = ctx_](const auto &args) {
- return handleMouseReset(args, ctx);
+ return IOBridge::handleMouseReset(args, ctx);
  };
  options.host_functions["io.keys"] = [ctx = ctx_](const auto &args) {
- return handleIoKeys(args, ctx);
+ return IOBridge::handleIoKeys(args, ctx);
  };
  options.host_functions["io.lastKey"] = [ctx = ctx_](const auto &args) {
- return handleIoLastKey(args, ctx);
+ return IOBridge::handleIoLastKey(args, ctx);
  };
  options.host_functions["io.lastState"] = [ctx = ctx_](const auto &args) {
- return handleIoLastState(args, ctx);
+ return IOBridge::handleIoLastState(args, ctx);
  };
  options.host_functions["io.lastDevice"] = [ctx = ctx_](const auto &args) {
- return handleIoLastDevice(args, ctx);
+ return IOBridge::handleIoLastDevice(args, ctx);
  };
  options.host_functions["io.lastModifiers"] = [ctx = ctx_](const auto &args) {
- return handleIoLastModifiers(args, ctx);
+ return IOBridge::handleIoLastModifiers(args, ctx);
  };
  options.host_functions["io.lastLocks"] = [ctx = ctx_](const auto &args) {
- return handleIoLastLocks(args, ctx);
+ return IOBridge::handleIoLastLocks(args, ctx);
  };
  options.host_functions["io.lastKeys"] = [ctx = ctx_](const auto &args) {
- return handleIoLastKeys(args, ctx);
+ return IOBridge::handleIoLastKeys(args, ctx);
  };
  options.host_functions["io.reset"] = [ctx = ctx_](const auto &args) {
- return handleIoReset(args, ctx);
+ return IOBridge::handleIoReset(args, ctx);
  };
 }
 
@@ -1092,10 +1092,10 @@ Value IOBridge::handleLocks(const std::vector<Value> &,
 void SystemBridge::install(PipelineOptions &options) {
   // Register internal function handlers
   options.host_functions["system.detect"] = [ctx = ctx_](const auto &args) {
-    return handleSystemDetect(args, ctx);
+    return IOBridge::handleSystemDetect(args, ctx);
   };
   options.host_functions["system.hardware"] = [ctx = ctx_](const auto &args) {
-    return handleSystemHardware(args, ctx);
+    return IOBridge::handleSystemHardware(args, ctx);
   };
 
   // Create system objects and extension object via initializer
@@ -1329,60 +1329,60 @@ ioObj, "locks",
 
   // File operations
   options.host_functions["readFile"] = [ctx = ctx_](const auto &args) {
-    return handleFileRead(args, ctx);
+    return IOBridge::handleFileRead(args, ctx);
   };
   options.host_functions["writeFile"] = [ctx = ctx_](const auto &args) {
-    return handleFileWrite(args, ctx);
+    return IOBridge::handleFileWrite(args, ctx);
   };
   options.host_functions["fileExists"] = [ctx = ctx_](const auto &args) {
-    return handleFileExists(args, ctx);
+    return IOBridge::handleFileExists(args, ctx);
   };
   options.host_functions["fileSize"] = [ctx = ctx_](const auto &args) {
-    return handleFileSize(args, ctx);
+    return IOBridge::handleFileSize(args, ctx);
   };
   options.host_functions["deleteFile"] = [ctx = ctx_](const auto &args) {
-    return handleFileDelete(args, ctx);
+    return IOBridge::handleFileDelete(args, ctx);
   };
   options.host_functions["execute"] = [ctx = ctx_](const auto &args) {
-    return handleProcessExecute(args, ctx);
+    return IOBridge::handleProcessExecute(args, ctx);
   };
   options.host_functions["getpid"] = [ctx = ctx_](const auto &args) {
-    return handleProcessGetPid(args, ctx);
+    return IOBridge::handleProcessGetPid(args, ctx);
   };
   options.host_functions["getppid"] = [ctx = ctx_](const auto &args) {
-    return handleProcessGetPpid(args, ctx);
+    return IOBridge::handleProcessGetPpid(args, ctx);
   };
   options.host_functions["process.find"] = [ctx = ctx_](const auto &args) {
-    return handleProcessFind(args, ctx);
+    return IOBridge::handleProcessFind(args, ctx);
   };
   options.host_functions["process.exists"] = [ctx = ctx_](const auto &args) {
-    return handleProcessExists(args, ctx);
+    return IOBridge::handleProcessExists(args, ctx);
   };
   options.host_functions["process.kill"] = [ctx = ctx_](const auto &args) {
-    return handleProcessKill(args, ctx);
+    return IOBridge::handleProcessKill(args, ctx);
   };
   options.host_functions["process.nice"] = [ctx = ctx_](const auto &args) {
-    return handleProcessNice(args, ctx);
+    return IOBridge::handleProcessNice(args, ctx);
   };
   options.host_functions["process.run"] = [ctx = ctx_](const auto &args) {
-    return handleProcessRun(args, ctx);
+    return IOBridge::handleProcessRun(args, ctx);
   };
   options.host_functions["process.runDetached"] = [ctx =
                                                        ctx_](const auto &args) {
-    return handleProcessRunDetached(args, ctx);
+    return IOBridge::handleProcessRunDetached(args, ctx);
   };
   // Global aliases for convenience
   options.host_functions["run"] = [ctx = ctx_](const auto &args) {
-    return handleProcessRun(args, ctx);
+    return IOBridge::handleProcessRun(args, ctx);
   };
   options.host_functions["runCapture"] = [ctx = ctx_](const auto &args) {
-    return handleProcessRunCapture(args, ctx);
+    return IOBridge::handleProcessRunCapture(args, ctx);
   };
   options.host_functions["runDetached"] = [ctx = ctx_](const auto &args) {
-    return handleProcessRunDetached(args, ctx);
+    return IOBridge::handleProcessRunDetached(args, ctx);
   };
   options.host_functions["play"] = [ctx = ctx_](const auto &args) {
-    return handleMediaPlay(args, ctx);
+    return IOBridge::handleMediaPlay(args, ctx);
   };
 }
 
@@ -1861,275 +1861,275 @@ SystemBridge::handleSystemHardware(const std::vector<Value> &args,
 
 void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.active"] = [ctx = ctx_](const auto &args) {
-    return handleWindowGetActive(args, ctx);
+    return IOBridge::handleWindowGetActive(args, ctx);
   };
   options.host_functions["window.cmd"] = [ctx = ctx_](const auto &args) {
-    return handleWindowCmd(args, ctx);
+    return IOBridge::handleWindowCmd(args, ctx);
   };
   options.host_functions["window.find"] = [ctx = ctx_](const auto &args) {
-    return handleWindowFind(args, ctx);
+    return IOBridge::handleWindowFind(args, ctx);
   };
   options.host_functions["window.close"] = [ctx = ctx_](const auto &args) {
-    return handleWindowClose(args, ctx);
+    return IOBridge::handleWindowClose(args, ctx);
   };
   options.host_functions["window.resize"] = [ctx = ctx_](const auto &args) {
-    return handleWindowResize(args, ctx);
+    return IOBridge::handleWindowResize(args, ctx);
   };
   options.host_functions["window.move"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMove(args, ctx);
+    return IOBridge::handleWindowMove(args, ctx);
   };
   options.host_functions["window.moveRel"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMoveRel(args, ctx);
+    return IOBridge::handleWindowMoveRel(args, ctx);
   };
   options.host_functions["window.moveToMonitor"] =
       [ctx = ctx_](const auto &args) {
-        return handleWindowMoveToMonitor(args, ctx);
+        return IOBridge::handleWindowMoveToMonitor(args, ctx);
       };
   options.host_functions["window.moveToNextMonitor"] =
       [ctx = ctx_](const auto &args) {
-        return handleWindowMoveToNextMonitor(args, ctx);
+        return IOBridge::handleWindowMoveToNextMonitor(args, ctx);
       };
   options.host_functions["window.focus"] = [ctx = ctx_](const auto &args) {
-    return handleWindowFocus(args, ctx);
+    return IOBridge::handleWindowFocus(args, ctx);
   };
   options.host_functions["window.min"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMinimize(args, ctx);
+    return IOBridge::handleWindowMinimize(args, ctx);
   };
   options.host_functions["window.max"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMaximize(args, ctx);
+    return IOBridge::handleWindowMaximize(args, ctx);
   };
   options.host_functions["window.hide"] = [ctx = ctx_](const auto &args) {
-    return handleWindowHide(args, ctx);
+    return IOBridge::handleWindowHide(args, ctx);
   };
   options.host_functions["window.show"] = [ctx = ctx_](const auto &args) {
-    return handleWindowShow(args, ctx);
+    return IOBridge::handleWindowShow(args, ctx);
   };
   // Window query functions
   options.host_functions["window.any"] = [ctx = ctx_](const auto &args) {
-    return handleWindowAny(args, ctx);
+    return IOBridge::handleWindowAny(args, ctx);
   };
   options.host_functions["window.count"] = [ctx = ctx_](const auto &args) {
-    return handleWindowCount(args, ctx);
+    return IOBridge::handleWindowCount(args, ctx);
   };
   options.host_functions["window.filter"] = [ctx = ctx_](const auto &args) {
-    return handleWindowFilter(args, ctx);
+    return IOBridge::handleWindowFilter(args, ctx);
   };
   // Active window namespace functions
   options.host_functions["active.get"] = [ctx = ctx_](const auto &args) {
-    return handleActiveGet(args, ctx);
+    return IOBridge::handleActiveGet(args, ctx);
   };
   options.host_functions["active.title"] = [ctx = ctx_](const auto &args) {
-    return handleActiveTitle(args, ctx);
+    return IOBridge::handleActiveTitle(args, ctx);
   };
   options.host_functions["active.class"] = [ctx = ctx_](const auto &args) {
-    return handleActiveClass(args, ctx);
+    return IOBridge::handleActiveClass(args, ctx);
   };
   options.host_functions["active.exe"] = [ctx = ctx_](const auto &args) {
-    return handleActiveExe(args, ctx);
+    return IOBridge::handleActiveExe(args, ctx);
   };
   options.host_functions["active.pid"] = [ctx = ctx_](const auto &args) {
-    return handleActivePid(args, ctx);
+    return IOBridge::handleActivePid(args, ctx);
   };
   options.host_functions["active.close"] = [ctx = ctx_](const auto &args) {
-    return handleActiveClose(args, ctx);
+    return IOBridge::handleActiveClose(args, ctx);
   };
   options.host_functions["active.min"] = [ctx = ctx_](const auto &args) {
-    return handleActiveMin(args, ctx);
+    return IOBridge::handleActiveMin(args, ctx);
   };
   options.host_functions["active.max"] = [ctx = ctx_](const auto &args) {
-    return handleActiveMax(args, ctx);
+    return IOBridge::handleActiveMax(args, ctx);
   };
   options.host_functions["active.hide"] = [ctx = ctx_](const auto &args) {
-    return handleActiveHide(args, ctx);
+    return IOBridge::handleActiveHide(args, ctx);
   };
   options.host_functions["active.show"] = [ctx = ctx_](const auto &args) {
-    return handleActiveShow(args, ctx);
+    return IOBridge::handleActiveShow(args, ctx);
   };
   options.host_functions["active.move"] = [ctx = ctx_](const auto &args) {
-    return handleActiveMove(args, ctx);
+    return IOBridge::handleActiveMove(args, ctx);
   };
   options.host_functions["active.resize"] = [ctx = ctx_](const auto &args) {
-    return handleActiveResize(args, ctx);
+    return IOBridge::handleActiveResize(args, ctx);
   };
   // Window object prototype methods (shared, not per-instance)
   options.host_functions["window._close"] = [ctx = ctx_](const auto &args) {
-    return handleWindowCloseObj(args, ctx);
+    return IOBridge::handleWindowCloseObj(args, ctx);
   };
   options.host_functions["window._hide"] = [ctx = ctx_](const auto &args) {
-    return handleWindowHideObj(args, ctx);
+    return IOBridge::handleWindowHideObj(args, ctx);
   };
   options.host_functions["window._show"] = [ctx = ctx_](const auto &args) {
-    return handleWindowShowObj(args, ctx);
+    return IOBridge::handleWindowShowObj(args, ctx);
   };
   options.host_functions["window._focus"] = [ctx = ctx_](const auto &args) {
-    return handleWindowFocusObj(args, ctx);
+    return IOBridge::handleWindowFocusObj(args, ctx);
   };
   options.host_functions["window._min"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMinObj(args, ctx);
+    return IOBridge::handleWindowMinObj(args, ctx);
   };
   options.host_functions["window._max"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMaxObj(args, ctx);
+    return IOBridge::handleWindowMaxObj(args, ctx);
   };
   options.host_functions["window._resize"] = [ctx = ctx_](const auto &args) {
-    return handleWindowResizeObj(args, ctx);
+    return IOBridge::handleWindowResizeObj(args, ctx);
   };
   options.host_functions["window._move"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMoveObj(args, ctx);
+    return IOBridge::handleWindowMoveObj(args, ctx);
   };
   // Additional window operations
   options.host_functions["window.restore"] = [ctx = ctx_](const auto &args) {
-    return handleWindowRestore(args, ctx);
+    return IOBridge::handleWindowRestore(args, ctx);
   };
   options.host_functions["window.snap"] = [ctx = ctx_](const auto &args) {
-    return handleWindowSnap(args, ctx);
+    return IOBridge::handleWindowSnap(args, ctx);
   };
   options.host_functions["window.center"] = [ctx = ctx_](const auto &args) {
-    return handleWindowCenter(args, ctx);
+    return IOBridge::handleWindowCenter(args, ctx);
   };
   options.host_functions["window.fullscreen"] = [ctx = ctx_](
                                                    const auto &args) {
-    return handleWindowFullscreen(args, ctx);
+    return IOBridge::handleWindowFullscreen(args, ctx);
   };
   options.host_functions["window.moveResize"] = [ctx = ctx_](
                                                     const auto &args) {
-    return handleWindowMoveResize(args, ctx);
+    return IOBridge::handleWindowMoveResize(args, ctx);
   };
   options.host_functions["window.setAlwaysOnTop"] = [ctx = ctx_](
                                                         const auto &args) {
-    return handleWindowSetAlwaysOnTop(args, ctx);
+    return IOBridge::handleWindowSetAlwaysOnTop(args, ctx);
   };
   options.host_functions["window.pos"] = [ctx = ctx_](const auto &args) {
-    return handleWindowPos(args, ctx);
+    return IOBridge::handleWindowPos(args, ctx);
   };
   options.host_functions["window.list"] = [ctx = ctx_](const auto &args) {
-    return handleWindowList(args, ctx);
+    return IOBridge::handleWindowList(args, ctx);
   };
   options.host_functions["window.title"] = [ctx = ctx_](const auto &args) {
-    return handleWindowTitle(args, ctx);
+    return IOBridge::handleWindowTitle(args, ctx);
   };
   options.host_functions["window.class"] = [ctx = ctx_](const auto &args) {
-    return handleWindowClass(args, ctx);
+    return IOBridge::handleWindowClass(args, ctx);
   };
   options.host_functions["window.exe"] = [ctx = ctx_](const auto &args) {
-    return handleWindowExe(args, ctx);
+    return IOBridge::handleWindowExe(args, ctx);
   };
   options.host_functions["window.pid"] = [ctx = ctx_](const auto &args) {
-    return handleWindowPid(args, ctx);
+    return IOBridge::handleWindowPid(args, ctx);
   };
   options.host_functions["window.id"] = [ctx = ctx_](const auto &args) {
-    return handleWindowId(args, ctx);
+    return IOBridge::handleWindowId(args, ctx);
   };
   options.host_functions["window.area"] = [ctx = ctx_](const auto &args) {
-    return handleWindowArea(args, ctx);
+    return IOBridge::handleWindowArea(args, ctx);
   };
   options.host_functions["window.each"] = [ctx = ctx_](const auto &args) {
-    return handleWindowEach(args, ctx);
+    return IOBridge::handleWindowEach(args, ctx);
   };
 options.host_functions["window.sort"] = [ctx = ctx_](const auto &args) {
-    return handleWindowSort(args, ctx);
+    return IOBridge::handleWindowSort(args, ctx);
 };
 options.host_functions["window.map"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMap(args, ctx);
+    return IOBridge::handleWindowMap(args, ctx);
 };
 options.host_functions["window.unmap"] = [ctx = ctx_](const auto &args) {
-    return handleWindowUnmap(args, ctx);
+    return IOBridge::handleWindowUnmap(args, ctx);
 };
 options.host_functions["window.pin"] = [ctx = ctx_](const auto &args) {
-    return handleWindowPin(args, ctx);
+    return IOBridge::handleWindowPin(args, ctx);
 };
 options.host_functions["window.wait"] = [ctx = ctx_](const auto &args) {
-    return handleWindowWait(args, ctx);
+    return IOBridge::handleWindowWait(args, ctx);
 };
 // New object-method variants
   options.host_functions["window._restore"] = [ctx = ctx_](const auto &args) {
-    return handleWindowRestoreObj(args, ctx);
+    return IOBridge::handleWindowRestoreObj(args, ctx);
   };
   options.host_functions["window._snap"] = [ctx = ctx_](const auto &args) {
-    return handleWindowSnapObj(args, ctx);
+    return IOBridge::handleWindowSnapObj(args, ctx);
   };
   options.host_functions["window._center"] = [ctx = ctx_](const auto &args) {
-    return handleWindowCenterObj(args, ctx);
+    return IOBridge::handleWindowCenterObj(args, ctx);
   };
   options.host_functions["window._fullscreen"] = [ctx = ctx_](
                                                     const auto &args) {
-    return handleWindowFullscreenObj(args, ctx);
+    return IOBridge::handleWindowFullscreenObj(args, ctx);
   };
   options.host_functions["window._moveResize"] = [ctx = ctx_](
                                                     const auto &args) {
-    return handleWindowMoveResizeObj(args, ctx);
+    return IOBridge::handleWindowMoveResizeObj(args, ctx);
   };
   options.host_functions["window._setAlwaysOnTop"] = [ctx = ctx_](
                                                         const auto &args) {
-    return handleWindowSetAlwaysOnTopObj(args, ctx);
+    return IOBridge::handleWindowSetAlwaysOnTopObj(args, ctx);
   };
   options.host_functions["window._pos"] = [ctx = ctx_](const auto &args) {
-    return handleWindowPosObj(args, ctx);
+    return IOBridge::handleWindowPosObj(args, ctx);
   };
   options.host_functions["window._title"] = [ctx = ctx_](const auto &args) {
-    return handleWindowTitleObj(args, ctx);
+    return IOBridge::handleWindowTitleObj(args, ctx);
   };
   options.host_functions["window._class"] = [ctx = ctx_](const auto &args) {
-    return handleWindowClassObj(args, ctx);
+    return IOBridge::handleWindowClassObj(args, ctx);
   };
   options.host_functions["window._exe"] = [ctx = ctx_](const auto &args) {
-    return handleWindowExeObj(args, ctx);
+    return IOBridge::handleWindowExeObj(args, ctx);
   };
 options.host_functions["window._pid"] = [ctx = ctx_](const auto &args) {
-    return handleWindowPidObj(args, ctx);
+    return IOBridge::handleWindowPidObj(args, ctx);
 };
 options.host_functions["window._map"] = [ctx = ctx_](const auto &args) {
-    return handleWindowMapObj(args, ctx);
+    return IOBridge::handleWindowMapObj(args, ctx);
 };
 options.host_functions["window._unmap"] = [ctx = ctx_](const auto &args) {
-    return handleWindowUnmapObj(args, ctx);
+    return IOBridge::handleWindowUnmapObj(args, ctx);
 };
 options.host_functions["window._pin"] = [ctx = ctx_](const auto &args) {
-    return handleWindowPinObj(args, ctx);
+    return IOBridge::handleWindowPinObj(args, ctx);
 };
 options.host_functions["window._wait"] = [ctx = ctx_](const auto &args) {
-    return handleWindowWaitObj(args, ctx);
+    return IOBridge::handleWindowWaitObj(args, ctx);
 };
 // Group operations
   options.host_functions["group.add"] = [ctx = ctx_](const auto &args) {
-    return handleGroupAdd(args, ctx);
+    return IOBridge::handleGroupAdd(args, ctx);
   };
   options.host_functions["group.remove"] = [ctx = ctx_](const auto &args) {
-    return handleGroupRemove(args, ctx);
+    return IOBridge::handleGroupRemove(args, ctx);
   };
   options.host_functions["group.get"] = [ctx = ctx_](const auto &args) {
-    return handleGroupGet(args, ctx);
+    return IOBridge::handleGroupGet(args, ctx);
   };
   options.host_functions["group.list"] = [ctx = ctx_](const auto &args) {
-    return handleGroupList(args, ctx);
+    return IOBridge::handleGroupList(args, ctx);
   };
 options.host_functions["group.find"] = [ctx = ctx_](const auto &args) {
-    return handleGroupFind(args, ctx);
+    return IOBridge::handleGroupFind(args, ctx);
 };
 options.host_functions["group.findBy"] = [ctx = ctx_](const auto &args) {
-    return handleGroupFindBy(args, ctx);
+    return IOBridge::handleGroupFindBy(args, ctx);
 };
 options.host_functions["clipboard.get"] = [ctx = ctx_](const auto &args) {
-    return handleClipboardGet(args, ctx);
+    return IOBridge::handleClipboardGet(args, ctx);
   };
   options.host_functions["clipboard.set"] = [ctx = ctx_](const auto &args) {
-    return handleClipboardSet(args, ctx);
+    return IOBridge::handleClipboardSet(args, ctx);
   };
   options.host_functions["clipboard.clear"] = [ctx = ctx_](const auto &args) {
-    return handleClipboardClear(args, ctx);
+    return IOBridge::handleClipboardClear(args, ctx);
   };
     options.host_functions["io.getClipboard"] = [ctx = ctx_](const auto &args) {
-        return handleClipboardGet(args, ctx);
+        return IOBridge::handleClipboardGet(args, ctx);
     };
     options.host_functions["screenshot.full"] = [ctx = ctx_](const auto &args) {
-    return handleScreenshotFull(args, ctx);
+    return IOBridge::handleScreenshotFull(args, ctx);
   };
   options.host_functions["screenshot.monitor"] = [ctx =
                                                       ctx_](const auto &args) {
-    return handleScreenshotMonitor(args, ctx);
+    return IOBridge::handleScreenshotMonitor(args, ctx);
   };
   // GUI notifications
   options.host_functions["gui.notify"] = [ctx = ctx_](const auto &args) {
-    return handleGUINotify(args, ctx);
+    return IOBridge::handleGUINotify(args, ctx);
   };
 }
 
@@ -3316,29 +3316,29 @@ UIBridge::handleWindowSetAlwaysOnTopObj(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowPosObj(const std::vector<Value> &args,
                                    const HostContext *ctx) {
-  return handleWindowPos(args, ctx);
+  return IOBridge::handleWindowPos(args, ctx);
 }
 
 Value
 UIBridge::handleWindowTitleObj(const std::vector<Value> &args,
                                const HostContext *ctx) {
-  return handleWindowTitle(args, ctx);
+  return IOBridge::handleWindowTitle(args, ctx);
 }
 
 Value
 UIBridge::handleWindowClassObj(const std::vector<Value> &args,
                                const HostContext *ctx) {
-  return handleWindowClass(args, ctx);
+  return IOBridge::handleWindowClass(args, ctx);
 }
 
 Value UIBridge::handleWindowExeObj(const std::vector<Value> &args,
                                    const HostContext *ctx) {
-  return handleWindowExe(args, ctx);
+  return IOBridge::handleWindowExe(args, ctx);
 }
 
 Value UIBridge::handleWindowPidObj(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  return handleWindowPid(args, ctx);
+  return IOBridge::handleWindowPid(args, ctx);
 }
 
 Value UIBridge::handleWindowMap(const std::vector<Value> &args,
@@ -3425,22 +3425,22 @@ Value UIBridge::handleWindowWait(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowMapObj(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  return handleWindowMap(args, ctx);
+  return IOBridge::handleWindowMap(args, ctx);
 }
 
 Value UIBridge::handleWindowUnmapObj(const std::vector<Value> &args,
                                     const HostContext *ctx) {
-  return handleWindowUnmap(args, ctx);
+  return IOBridge::handleWindowUnmap(args, ctx);
 }
 
 Value UIBridge::handleWindowPinObj(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  return handleWindowPin(args, ctx);
+  return IOBridge::handleWindowPin(args, ctx);
 }
 
 Value UIBridge::handleWindowWaitObj(const std::vector<Value> &args,
                                    const HostContext *ctx) {
-  return handleWindowWait(args, ctx);
+  return IOBridge::handleWindowWait(args, ctx);
 }
 
 // ============================================================================
@@ -3764,74 +3764,74 @@ Value UIBridge::handleGUINotify(const std::vector<Value> &args,
 
 void InputBridge::install(PipelineOptions &options) {
   options.host_functions["hotkey.register"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyRegister(args, ctx);
+    return IOBridge::handleHotkeyRegister(args, ctx);
   };
   options.host_functions["hotkey.register_conditional"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyRegisterConditional(args, ctx);
+    return IOBridge::handleHotkeyRegisterConditional(args, ctx);
   };
   options.host_functions["hotkey.enable"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyEnable(args, ctx);
+    return IOBridge::handleHotkeyEnable(args, ctx);
   };
   options.host_functions["hotkey.disable"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyDisable(args, ctx);
+    return IOBridge::handleHotkeyDisable(args, ctx);
   };
   options.host_functions["hotkey.remove"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyRemove(args, ctx);
+    return IOBridge::handleHotkeyRemove(args, ctx);
   };
   options.host_functions["hotkey.trigger"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyTrigger(args, ctx);
+    return IOBridge::handleHotkeyTrigger(args, ctx);
   };
   options.host_functions["hotkey.list"] = [ctx = ctx_](const auto &args) {
-    return handleHotkeyList(args, ctx);
+    return IOBridge::handleHotkeyList(args, ctx);
   };
   options.host_functions["mapmanager.map"] = [ctx = ctx_](const auto &args) {
-    return handleMapManagerMap(args, ctx);
+    return IOBridge::handleMapManagerMap(args, ctx);
   };
   options.host_functions["mapmanager.getCurrentProfile"] =
       [ctx = ctx_](const auto &args) {
-        return handleMapManagerGetCurrentProfile(args, ctx);
+        return IOBridge::handleMapManagerGetCurrentProfile(args, ctx);
       };
   options.host_functions["alttab.show"] = [ctx = ctx_](const auto &args) {
-    return handleAltTabShow(args, ctx);
+    return IOBridge::handleAltTabShow(args, ctx);
   };
   options.host_functions["alttab.hide"] = [ctx = ctx_](const auto &args) {
-    return handleAltTabHide(args, ctx);
+    return IOBridge::handleAltTabHide(args, ctx);
   };
   options.host_functions["alttab.toggle"] = [ctx = ctx_](const auto &args) {
-    return handleAltTabToggle(args, ctx);
+    return IOBridge::handleAltTabToggle(args, ctx);
   };
   options.host_functions["alttab.next"] = [ctx = ctx_](const auto &args) {
-    return handleAltTabNext(args, ctx);
+    return IOBridge::handleAltTabNext(args, ctx);
   };
   options.host_functions["alttab.previous"] = [ctx = ctx_](const auto &args) {
-    return handleAltTabPrevious(args, ctx);
+    return IOBridge::handleAltTabPrevious(args, ctx);
   };
   options.host_functions["alttab.select"] = [ctx = ctx_](const auto &args) {
-    return handleAltTabSelect(args, ctx);
+    return IOBridge::handleAltTabSelect(args, ctx);
   };
     options.host_functions["alttab.getWindows"] = [ctx = ctx_](const auto &args) {
-        return handleAltTabGetWindows(args, ctx);
+        return IOBridge::handleAltTabGetWindows(args, ctx);
     };
     options.host_functions["hotkey.onAnyKey"] = [ctx = ctx_](const auto &args) {
-        return handleHotkeyOnAnyKey(args, ctx);
+        return IOBridge::handleHotkeyOnAnyKey(args, ctx);
     };
     options.host_functions["io.onKeyDown"] = [ctx = ctx_](const auto &args) {
-        return handleIOOnKeyDown(args, ctx);
+        return IOBridge::handleIOOnKeyDown(args, ctx);
     };
     options.host_functions["io.onKeyUp"] = [ctx = ctx_](const auto &args) {
-        return handleIOOnKeyUp(args, ctx);
+        return IOBridge::handleIOOnKeyUp(args, ctx);
     };
     options.host_functions["io.onKey"] = [ctx = ctx_](const auto &args) {
-        return handleIOOnKey(args, ctx);
+        return IOBridge::handleIOOnKey(args, ctx);
     };
     options.host_functions["io.onButton"] = [ctx = ctx_](const auto &args) {
-        return handleIOOnButton(args, ctx);
+        return IOBridge::handleIOOnButton(args, ctx);
     };
     options.host_functions["io.onMouse"] = [ctx = ctx_](const auto &args) {
-        return handleIOOnMouse(args, ctx);
+        return IOBridge::handleIOOnMouse(args, ctx);
     };
     options.host_functions["io.onEvent"] = [ctx = ctx_](const auto &args) {
-        return handleIOOnEvent(args, ctx);
+        return IOBridge::handleIOOnEvent(args, ctx);
     };
 }
 
@@ -3973,7 +3973,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
 
     if (!args[2].isFunctionObjId() && !args[2].isClosureId()) {
         // If no valid condition, fall back to regular register (no condition gating)
-        return handleHotkeyRegister(args, ctx);
+        return IOBridge::handleHotkeyRegister(args, ctx);
     }
 
     CallbackId actionCb = vm->registerCallback(args[1]);
@@ -5040,27 +5040,27 @@ AsyncBridge::handleTimeoutCancel(const std::vector<Value> &args,
 void AutomationBridge::install(PipelineOptions &options) {
   options.host_functions["automation.createAutoClicker"] =
       [ctx = ctx_](const auto &args) {
-        return handleAutomationCreateAutoClicker(args, ctx);
+        return IOBridge::handleAutomationCreateAutoClicker(args, ctx);
       };
   options.host_functions["automation.createAutoRunner"] =
       [ctx = ctx_](const auto &args) {
-        return handleAutomationCreateAutoRunner(args, ctx);
+        return IOBridge::handleAutomationCreateAutoRunner(args, ctx);
       };
   options.host_functions["automation.createAutoKeyPresser"] =
       [ctx = ctx_](const auto &args) {
-        return handleAutomationCreateAutoKeyPresser(args, ctx);
+        return IOBridge::handleAutomationCreateAutoKeyPresser(args, ctx);
       };
   options.host_functions["automation.hasTask"] = [ctx =
                                                       ctx_](const auto &args) {
-    return handleAutomationHasTask(args, ctx);
+    return IOBridge::handleAutomationHasTask(args, ctx);
   };
   options.host_functions["automation.removeTask"] =
       [ctx = ctx_](const auto &args) {
-        return handleAutomationRemoveTask(args, ctx);
+        return IOBridge::handleAutomationRemoveTask(args, ctx);
       };
   options.host_functions["automation.stopAll"] = [ctx =
                                                       ctx_](const auto &args) {
-    return handleAutomationStopAll(args, ctx);
+    return IOBridge::handleAutomationStopAll(args, ctx);
   };
 }
 
@@ -5126,50 +5126,50 @@ namespace {
 void ToolsBridge::install(PipelineOptions &options) {
   options.host_functions["textchunker.setText"] = [ctx =
                                                        ctx_](const auto &args) {
-    return handleTextChunkerSetText(args, ctx);
+    return IOBridge::handleTextChunkerSetText(args, ctx);
   };
   options.host_functions["textchunker.getText"] = [ctx =
                                                        ctx_](const auto &args) {
-    return handleTextChunkerGetText(args, ctx);
+    return IOBridge::handleTextChunkerGetText(args, ctx);
   };
   options.host_functions["textchunker.setChunkSize"] =
       [ctx = ctx_](const auto &args) {
-        return handleTextChunkerSetChunkSize(args, ctx);
+        return IOBridge::handleTextChunkerSetChunkSize(args, ctx);
       };
   options.host_functions["textchunker.getTotalChunks"] =
       [ctx = ctx_](const auto &args) {
-        return handleTextChunkerGetTotalChunks(args, ctx);
+        return IOBridge::handleTextChunkerGetTotalChunks(args, ctx);
       };
   options.host_functions["textchunker.getCurrentChunk"] =
       [ctx = ctx_](const auto &args) {
-        return handleTextChunkerGetCurrentChunk(args, ctx);
+        return IOBridge::handleTextChunkerGetCurrentChunk(args, ctx);
       };
   options.host_functions["textchunker.setCurrentChunk"] =
       [ctx = ctx_](const auto &args) {
-        return handleTextChunkerSetCurrentChunk(args, ctx);
+        return IOBridge::handleTextChunkerSetCurrentChunk(args, ctx);
       };
   options.host_functions["textchunker.getChunk"] =
       [ctx = ctx_](const auto &args) {
-        return handleTextChunkerGetChunk(args, ctx);
+        return IOBridge::handleTextChunkerGetChunk(args, ctx);
       };
   options.host_functions["textchunker.getNextChunk"] =
       [ctx = ctx_](const auto &args) {
-        return handleTextChunkerGetNextChunk(args, ctx);
+        return IOBridge::handleTextChunkerGetNextChunk(args, ctx);
       };
   options.host_functions["textchunker.getPreviousChunk"] =
       [ctx = ctx_](const auto &args) {
-        return handleTextChunkerGetPreviousChunk(args, ctx);
+        return IOBridge::handleTextChunkerGetPreviousChunk(args, ctx);
       };
   options.host_functions["textchunker.goToFirst"] =
       [ctx = ctx_](const auto &args) {
-        return handleTextChunkerGoToFirst(args, ctx);
+        return IOBridge::handleTextChunkerGoToFirst(args, ctx);
       };
   options.host_functions["textchunker.goToLast"] =
       [ctx = ctx_](const auto &args) {
-        return handleTextChunkerGoToLast(args, ctx);
+        return IOBridge::handleTextChunkerGoToLast(args, ctx);
       };
   options.host_functions["textchunker.clear"] = [ctx = ctx_](const auto &args) {
-    return handleTextChunkerClear(args, ctx);
+    return IOBridge::handleTextChunkerClear(args, ctx);
   };
 }
 
@@ -5308,40 +5308,40 @@ ToolsBridge::handleTextChunkerClear(const std::vector<Value> &args,
 
 void MediaBridge::install(PipelineOptions &options) {
   options.host_functions["media.playPause"] = [ctx = ctx_](const auto &args) {
-    return handleMediaPlayPause(args, ctx);
+    return IOBridge::handleMediaPlayPause(args, ctx);
   };
   options.host_functions["media.play"] = [ctx = ctx_](const auto &args) {
-    return handleMediaPlay(args, ctx);
+    return IOBridge::handleMediaPlay(args, ctx);
   };
   options.host_functions["media.pause"] = [ctx = ctx_](const auto &args) {
-    return handleMediaPause(args, ctx);
+    return IOBridge::handleMediaPause(args, ctx);
   };
   options.host_functions["media.stop"] = [ctx = ctx_](const auto &args) {
-    return handleMediaStop(args, ctx);
+    return IOBridge::handleMediaStop(args, ctx);
   };
   options.host_functions["media.next"] = [ctx = ctx_](const auto &args) {
-    return handleMediaNext(args, ctx);
+    return IOBridge::handleMediaNext(args, ctx);
   };
   options.host_functions["media.previous"] = [ctx = ctx_](const auto &args) {
-    return handleMediaPrevious(args, ctx);
+    return IOBridge::handleMediaPrevious(args, ctx);
   };
   options.host_functions["media.getVolume"] = [ctx = ctx_](const auto &args) {
-    return handleMediaGetVolume(args, ctx);
+    return IOBridge::handleMediaGetVolume(args, ctx);
   };
   options.host_functions["media.setVolume"] = [ctx = ctx_](const auto &args) {
-    return handleMediaSetVolume(args, ctx);
+    return IOBridge::handleMediaSetVolume(args, ctx);
   };
   options.host_functions["media.getActivePlayer"] =
       [ctx = ctx_](const auto &args) {
-        return handleMediaGetActivePlayer(args, ctx);
+        return IOBridge::handleMediaGetActivePlayer(args, ctx);
       };
   options.host_functions["media.setActivePlayer"] =
       [ctx = ctx_](const auto &args) {
-        return handleMediaSetActivePlayer(args, ctx);
+        return IOBridge::handleMediaSetActivePlayer(args, ctx);
       };
   options.host_functions["media.getAvailablePlayers"] =
       [ctx = ctx_](const auto &args) {
-        return handleMediaGetAvailablePlayers(args, ctx);
+        return IOBridge::handleMediaGetAvailablePlayers(args, ctx);
       };
 }
 
@@ -5526,41 +5526,41 @@ void NetworkBridge::install(PipelineOptions &options) {
 // ============================================================================
 void DisplayBridge::install(PipelineOptions &options) {
   options.host_functions["display.getMonitors"] =
-      [ctx = ctx_](const auto &args) { return handleGetMonitors(args, ctx); };
+      [ctx = ctx_](const auto &args) { return IOBridge::handleGetMonitors(args, ctx); };
   options.host_functions["display.getPrimary"] =
-      [ctx = ctx_](const auto &args) { return handleGetPrimary(args, ctx); };
+      [ctx = ctx_](const auto &args) { return IOBridge::handleGetPrimary(args, ctx); };
   options.host_functions["display.getCount"] = [ctx = ctx_](const auto &args) {
-    return handleGetCount(args, ctx);
+    return IOBridge::handleGetCount(args, ctx);
   };
   options.host_functions["display.getMonitorsArea"] =
   [ctx = ctx_](const auto &args) {
-    return handleGetMonitorsArea(args, ctx);
+    return IOBridge::handleGetMonitorsArea(args, ctx);
   };
   options.host_functions["display.isX11"] = [ctx = ctx_](const auto &args) {
-    return handleIsX11(args, ctx);
+    return IOBridge::handleIsX11(args, ctx);
   };
   options.host_functions["display.isWayland"] = [ctx = ctx_](
                                                    const auto &args) {
-    return handleIsWayland(args, ctx);
+    return IOBridge::handleIsWayland(args, ctx);
   };
   options.host_functions["display.isWindows"] = [ctx = ctx_](
                                                     const auto &args) {
-    return handleIsWindows(args, ctx);
+    return IOBridge::handleIsWindows(args, ctx);
   };
   options.host_functions["display.protocol"] = [ctx = ctx_](
                                                    const auto &args) {
-    return handleProtocol(args, ctx);
+    return IOBridge::handleProtocol(args, ctx);
   };
   options.host_functions["display.wm"] = [ctx = ctx_](const auto &args) {
-    return handleWm(args, ctx);
+    return IOBridge::handleWm(args, ctx);
   };
   options.host_functions["display.displayNum"] = [ctx = ctx_](
                                                      const auto &args) {
-    return handleDisplayNum(args, ctx);
+    return IOBridge::handleDisplayNum(args, ctx);
   };
   options.host_functions["display.monitorsResolution"] = [ctx = ctx_](
                                                             const auto &args) {
-    return handleMonitorsResolution(args, ctx);
+    return IOBridge::handleMonitorsResolution(args, ctx);
   };
 }
 
@@ -5799,13 +5799,13 @@ DisplayBridge::handleMonitorsResolution(const std::vector<Value> &args,
 
 void ConfigBridge::install(PipelineOptions &options) {
   options.host_functions["config.get"] = [ctx = ctx_](const auto &args) {
-    return handleGet(args, ctx);
+    return IOBridge::handleGet(args, ctx);
   };
   options.host_functions["config.set"] = [ctx = ctx_](const auto &args) {
-    return handleSet(args, ctx);
+    return IOBridge::handleSet(args, ctx);
   };
   options.host_functions["config.save"] = [ctx = ctx_](const auto &args) {
-    return handleSave(args, ctx);
+    return IOBridge::handleSave(args, ctx);
   };
 }
 
@@ -5916,13 +5916,13 @@ void ModeBridge::install(PipelineOptions &options) {
     return Value::makeBool(false);
   };
   options.host_functions["mode.current"] = [ctx = ctx_](const auto &args) {
-    return handleGetCurrent(args, ctx);
+    return IOBridge::handleGetCurrent(args, ctx);
   };
   options.host_functions["mode.set"] = [ctx = ctx_](const auto &args) {
-    return handleSet(args, ctx);
+    return IOBridge::handleSet(args, ctx);
   };
   options.host_functions["mode.previous"] = [ctx = ctx_](const auto &args) {
-    return handleGetPrevious(args, ctx);
+    return IOBridge::handleGetPrevious(args, ctx);
   };
   options.host_functions["mode.list"] = [ctx = ctx_](const auto &args) {
     (void)args; (void)ctx;
@@ -6006,10 +6006,10 @@ void TimerBridge::install(PipelineOptions &options) {
   // Timer functions are available but require closure support for callbacks
   // For now, use sleep() for simple delays
   options.host_functions["timer.after"] = [ctx = ctx_](const auto &args) {
-    return handleAfter(args, ctx);
+    return IOBridge::handleAfter(args, ctx);
   };
   options.host_functions["timer.every"] = [ctx = ctx_](const auto &args) {
-    return handleEvery(args, ctx);
+    return IOBridge::handleEvery(args, ctx);
   };
 }
 
@@ -6049,34 +6049,34 @@ Value TimerBridge::handleEvery(const std::vector<Value> &args,
 
 void AppBridge::install(PipelineOptions &options) {
   options.host_functions["app.getName"] = [ctx = ctx_](const auto &args) {
-    return handleAppGetName(args, ctx);
+    return IOBridge::handleAppGetName(args, ctx);
   };
   options.host_functions["app.getVersion"] = [ctx = ctx_](const auto &args) {
-    return handleAppGetVersion(args, ctx);
+    return IOBridge::handleAppGetVersion(args, ctx);
   };
   options.host_functions["app.getOS"] = [ctx = ctx_](const auto &args) {
-    return handleAppGetOS(args, ctx);
+    return IOBridge::handleAppGetOS(args, ctx);
   };
   options.host_functions["app.getHostname"] = [ctx = ctx_](const auto &args) {
-    return handleAppGetHostname(args, ctx);
+    return IOBridge::handleAppGetHostname(args, ctx);
   };
   options.host_functions["app.getUsername"] = [ctx = ctx_](const auto &args) {
-    return handleAppGetUsername(args, ctx);
+    return IOBridge::handleAppGetUsername(args, ctx);
   };
   options.host_functions["app.getHomeDir"] = [ctx = ctx_](const auto &args) {
-    return handleAppGetHomeDir(args, ctx);
+    return IOBridge::handleAppGetHomeDir(args, ctx);
   };
   options.host_functions["app.getCpuCores"] = [ctx = ctx_](const auto &args) {
-    return handleAppGetCpuCores(args, ctx);
+    return IOBridge::handleAppGetCpuCores(args, ctx);
   };
   options.host_functions["app.getEnv"] = [ctx = ctx_](const auto &args) {
-    return handleAppGetEnv(args, ctx);
+    return IOBridge::handleAppGetEnv(args, ctx);
   };
   options.host_functions["app.setEnv"] = [ctx = ctx_](const auto &args) {
-    return handleAppSetEnv(args, ctx);
+    return IOBridge::handleAppSetEnv(args, ctx);
   };
   options.host_functions["app.openUrl"] = [ctx = ctx_](const auto &args) {
-    return handleAppOpenUrl(args, ctx);
+    return IOBridge::handleAppOpenUrl(args, ctx);
   };
     options.host_functions["app.exit"] = [ctx = ctx_](const auto &args) {
         ctx->vm->exit_requested_.store(true);
@@ -6215,7 +6215,7 @@ AppBridge::handleAppOpenUrl(const std::vector<Value> &args,
 Value UIBridge::handleActiveGet(const std::vector<Value> &args,
                                         const HostContext *ctx) {
   (void)args;
-  return handleWindowGetActive(args, ctx);
+  return IOBridge::handleWindowGetActive(args, ctx);
 }
 
 Value

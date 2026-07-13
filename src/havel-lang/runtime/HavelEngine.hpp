@@ -58,7 +58,7 @@ public:
         hotkeyManager_ = std::make_shared<HotkeyManager>(io_holder_);
         auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(),
                                                  nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                                 nullptr, std::vector<std::string>{});
+                                                 nullptr, nullptr, std::vector<std::string>{});
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 

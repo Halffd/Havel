@@ -3444,6 +3444,37 @@ Value VM::loadModule(const std::string& path) {
       COMPILER_THROW("Failed to deserialize bytecode: " + resolved->canonicalPath);
     }
     chunk = std::make_shared<BytecodeChunk>(std::move(*deserialized));
+    // Wrap FunctionObjId constants in closures that capture this module's chunk
+    // so cross-module function references resolve to the correct chunk.
+    for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+        BytecodeFunction *func = chunk->getFunctionMutable(i);
+        if (!func) continue;
+        for (auto &constant : func->constants) {
+            if (constant.isFunctionObjId()) {
+                uint32_t fnIdx = constant.asFunctionObjId();
+                auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+                    .function_index = constant.asFunctionObjId(),
+                    .chunk_index = 0,
+                    .chunk = chunk.get(),
+                    .module_globals = nullptr,
+                    .upvalues = {}});
+                constant = Value::makeClosureId(closureRef.id);
+            }
+        }
+        // Also handle default values
+        for (auto &dv : func->default_values) {
+            if (dv.has_value() && dv->isFunctionObjId()) {
+                uint32_t fnIdx = dv->asFunctionObjId();
+                auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+                    .function_index = dv->asFunctionObjId(),
+                    .chunk_index = 0,
+                    .chunk = chunk.get(),
+                    .module_globals = nullptr,
+                    .upvalues = {}});
+                *dv = Value::makeClosureId(closureRef.id);
+            }
+        }
+    }
     current_script_dir_ = std::filesystem::path(resolved->canonicalPath).parent_path().string();
   } else {
     // Read source file and compile

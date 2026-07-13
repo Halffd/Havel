@@ -15,12 +15,10 @@
 #include "../host/automation/PixelAutomationService.hpp"
 #include "../host/automation/AutomationService.hpp"
 
-#include "../host/io/MapManagerService.hpp"
-#include "../host/window/AltTabService.hpp"
-
 #include "../host/media/MediaService.hpp"
 #include "../host/image/ImageService.hpp"
 #include "../host/filesystem/FileSystemService.hpp"
+#include "../host/io/MapManagerService.hpp"
 
 #include "../host/mouse/MouseService.hpp"
 #include "../host/app/AppService.hpp"
@@ -37,11 +35,8 @@ void declareAllServices() {
   registry.declareService<host::ClipboardService>("clipboard", "qt");
   registry.declareService<host::MonitoringClipboard>("monitoring-clipboard", "qt");
 #endif
-  registry.declareService<host::MapManagerService>("map-manager", "io");
-#if ENABLE_QT
-	registry.declareService<host::AltTabService>("alt-tab", "qt");
-#endif
-  registry.declareService<host::AutomationService>("automation", "io");
+registry.declareService<host::MapManagerService>("map-manager", "io");
+	registry.declareService<host::AutomationService>("automation", "io");
   registry.declareService<host::FileSystemService>("filesystem", "util");
   registry.declareService<host::ImageService>("image", "util");
   registry.declareService<host::MediaService>("media", "util");
@@ -87,15 +82,7 @@ if (registry.shouldRegister("clipboard", includes, excludes)) {
 		registry.registerService<host::MapManagerService>(mapManagerService);
 	}
 
-#ifdef HAVE_QT_EXTENSION
-	if (registry.shouldRegister("alt-tab", includes, excludes)) {
-		auto altTabService = std::make_shared<host::AltTabService>();
-		registry.registerService<host::AltTabService>(altTabService);
-	}
-#endif
-
-
-	if (hostAPI->GetIO() && registry.shouldRegister("automation", includes, excludes)) {
+if (hostAPI->GetIO() && registry.shouldRegister("automation", includes, excludes)) {
 		auto automationService = std::make_shared<host::AutomationService>(std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}));
 		registry.registerService<host::AutomationService>(automationService);
 	}

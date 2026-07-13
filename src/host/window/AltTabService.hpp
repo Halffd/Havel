@@ -1,42 +1,21 @@
 #pragma once
-
 #include "IAltTabBackend.hpp"
-#include <string>
-#include <vector>
-#include <cstdint>
 #include <memory>
 
-namespace havel::host {
+namespace havel {
 
-struct AltTabInfo {
-    std::string title;
-    std::string className;
-    std::string processName;
-    int64_t windowId = 0;
-    bool active = false;
-};
-
-class __attribute__((visibility("default"))) AltTabService {
+class AltTabService {
 public:
     AltTabService();
     ~AltTabService();
-
     void setBackend(std::unique_ptr<IAltTabBackend> backend);
-    IAltTabBackend* backend() const;
-    bool hasBackend() const { return backend_ != nullptr; }
-
     void show();
     void hide();
-    void toggle();
-
     void next();
-    void previous();
+    void prev();
+    bool isVisible() const;
     void select();
-
     void refresh();
-    std::vector<AltTabInfo> getWindows() const;
-    int getWindowCount() const;
-
     void setThumbnailSize(int width, int height);
     int getThumbnailWidth() const;
     int getThumbnailHeight() const;
@@ -44,9 +23,13 @@ public:
     int getMaxVisibleWindows() const;
     void setAnimationsEnabled(bool enabled);
     bool isAnimationsEnabled() const;
-
+    std::vector<AltTabInfo> getWindows() const;
+    int getWindowCount() const;
+    void toggle();
+    void previous();
 private:
-    std::unique_ptr<IAltTabBackend> backend_;
+    class Impl;
+    std::unique_ptr<Impl> pImpl;
 };
 
-} // namespace havel::host
+} // namespace havel

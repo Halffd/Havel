@@ -15,7 +15,7 @@
  * - ToolsBridge: text chunker
  */
 
-#include "havel-lang/host/ExecutionPolicy.hpp"
+#include "ExecutionPolicy.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
@@ -98,152 +98,1368 @@ public:
         const HostContext *ctx);
     static Value handleModifiers(const std::vector<Value> &args,
                                   const HostContext *ctx);
-
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * SystemBridge - Filesystem and process operations
- */
-class SystemBridge : public BridgeModule {
-public:
-    explicit SystemBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * UIBridge - Windows, clipboard, screenshots, AltTab
- */
-class UIBridge : public BridgeModule {
-public:
-    explicit UIBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * InputBridge - Hotkeys, input remapping, AltTab
- */
-class InputBridge : public BridgeModule {
-public:
-    explicit InputBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * MediaBridge - Audio, brightness
- */
-class MediaBridge : public BridgeModule {
-public:
-    explicit MediaBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * AsyncBridge - Timers, async operations
- */
-class AsyncBridge : public BridgeModule {
-public:
-    explicit AsyncBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * AutomationBridge - Automation tasks
- */
-class AutomationBridge : public BridgeModule {
-public:
-    explicit AutomationBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * BrowserBridge - Browser automation
- */
-class BrowserBridge : public BridgeModule {
-public:
-    explicit BrowserBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * ToolsBridge - Text chunker
- */
-class ToolsBridge : public BridgeModule {
-public:
-    explicit ToolsBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * MediaBridge - Audio, brightness
- */
-class MediaBridge : public BridgeModule {
-public:
-    explicit MediaBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * AsyncBridge - Timers, async operations
- */
-class AsyncBridge : public BridgeModule {
-public:
-    explicit AsyncBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * AutomationBridge - Automation tasks
- */
-class AutomationBridge : public BridgeModule {
-public:
-    explicit AutomationBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * BrowserBridge - Browser automation
- */
-class BrowserBridge : public BridgeModule {
-public:
-    explicit BrowserBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-/**
- * ToolsBridge - Text chunker
- */
-class ToolsBridge : public BridgeModule {
-public:
-    explicit ToolsBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-private:
-    const HostContext *ctx_;
-};
-
-} // namespace havel::compiler
+    static Value handleSendModifiers(const std::vector<Value> &args,
+                                      const HostContext *ctx);
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx);
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleMouseReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKey(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastState(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastDevice(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastModifiers(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastLocks(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoLastKeys(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleIoReset(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleSetLock(const std::vector<Value> &args, const HostContext *ctx).
+    static Value handleLocks

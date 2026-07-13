@@ -1,0 +1,68 @@
+// modules/app/event_listener.hv - Pure Havel event listener module
+// Bridge functions (eventListener._*) registered at startup by VMHostFunctions.cpp
+
+__el = use "eventListener"
+__io = use "io"
+
+eventListener = object()
+eventListener._keys = __el.keys
+eventListener._lastKey = __el.lastKey
+eventListener._lastState = __el.lastState
+eventListener._lastDevice = __el.lastDevice
+eventListener._lastModifiers = __el.lastModifiers
+eventListener._lastKeys = __el.lastKeys
+eventListener._reset = __el.reset
+eventListener._lastButton = __el.lastButton
+eventListener._lastButtonState = __el.lastButtonState
+eventListener._buttons = __el.buttons
+eventListener._releaseAll = __el.releaseAll
+eventListener._onKeyDown = __el.onKeyDown
+eventListener._onKeyUp = __el.onKeyUp
+eventListener._onKey = __el.onKey
+eventListener._onButton = __el.onButton
+eventListener._onMouse = __el.onMouse
+eventListener._onEvent = __el.onEvent
+
+fn pressedKeys() { eventListener._keys() }
+
+fn lastKey() { eventListener._lastKey() }
+
+fn lastState() { eventListener._lastState() }
+
+fn lastDevice() { eventListener._lastDevice() }
+
+fn lastModifiers() { eventListener._lastModifiers() }
+
+fn pressedKeysList() { eventListener._lastKeys() }
+
+fn resetState() { eventListener._reset() }
+
+fn lastButton() { eventListener._lastButton() }
+
+fn lastButtonState() { eventListener._lastButtonState() }
+
+fn pressedButtons() { eventListener._buttons() }
+
+fn releaseAll() { eventListener._releaseAll() }
+
+fn onKeyDown(cb) { eventListener._onKeyDown(cb) }
+
+fn onKeyUp(cb) { eventListener._onKeyUp(cb) }
+
+fn onKey(cb) { eventListener._onKey(cb) }
+
+fn onButton(cb) { eventListener._onButton(cb) }
+
+fn onMouse(cb) { eventListener._onMouse(cb) }
+
+fn onEvent(cb) { eventListener._onEvent(cb) }
+
+fn mouseState(button) { __io._mouseState(button || 1) }
+
+fn lastLocks() { __io._lastLocks() }
+
+fn locks() { __io._locks() }
+
+fn setLock(name, state) { __io._setLock(name, state) }
+
+setGlobal("eventListener", eventListener)

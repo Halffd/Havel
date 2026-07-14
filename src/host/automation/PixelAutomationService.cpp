@@ -3,6 +3,8 @@
  *
  * Pixel and image automation service implementation.
  */
+#ifdef HAVE_QT_EXTENSION
+
 #include "PixelAutomationService.hpp"
 #include "core/automation/PixelAutomation.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
@@ -208,3 +210,5 @@ bool PixelAutomationService::captureRegion(const Region& region, const std::stri
 }
 
 } // namespace havel::host
+
+#endif // HAVE_QT_EXTENSION

@@ -2,49 +2,6 @@
 // Bridge functions (io._*) registered at startup by VMHostFunctions.cpp.
 // This module builds the io namespace and public API entirely in Havel.
 
-// Get auto-exported bridge functions via "io" namespace fallback
-// (host_function_globals_ has io._send, io._sendX11Key, etc.)
-__io = use "io"
-
-// Build the io namespace object with shim function refs
-io = object()
-io._send = __io._send
-io._sendX11Key = __io._sendX11Key
-io._map = __io._map
-io._remap = __io._remap
-io._emergencyRelease = __io._emergencyRelease
-io._ungrabAll = __io._ungrabAll
-io._setEvdevGrab = __io._setEvdevGrab
-io._setBlockInput = __io._setBlockInput
-io._getEvdevGrab = __io._getEvdevGrab
-io._suspend = __io._suspend
-io._resume = __io._resume
-io._isSuspended = __io._isSuspended
-io._isKeyPressed = __io._isKeyPressed
-io._isShiftPressed = __io._isShiftPressed
-io._isCtrlPressed = __io._isCtrlPressed
-io._isAltPressed = __io._isAltPressed
-io._isWinPressed = __io._isWinPressed
-io._getCurrentModifiers = __io._getCurrentModifiers
-io._setExecutorMode = __io._setExecutorMode
-io._getExecutorMode = __io._getExecutorMode
-io._mouseMove = __io._mouseMove
-io._mouseMoveTo = __io._mouseMoveTo
-io._mouseClick = __io._mouseClick
-io._mouseDown = __io._mouseDown
-io._mouseUp = __io._mouseUp
-io._scroll = __io._scroll
-io._getMousePosition = __io._getMousePosition
-io._setMouseSensitivity = __io._setMouseSensitivity
-io._getMouseSensitivity = __io._getMouseSensitivity
-io._sleepMs = __io._sleepMs
-io._mouseState = __io._mouseState
-io._lastLocks = __io._lastLocks
-io._locks = __io._locks
-io._setLock = __io._setLock
-io._devices = __io._devices
-io._addDevice = __io._addDevice
-
 // Mode mapping
 _modeMap = {
   "scheduler": 0,
@@ -59,6 +16,10 @@ fn _modeToInt(mode) {
   m = mode.lower()
   v = _modeMap[m]
   if v != nil { v } else { 0 }
+}
+
+fn _intToMode(idx) {
+  if idx >= 0 && idx < #_modeNames { _modeNames[idx] } else { "scheduler" }
 }
 
 fn sendKeys(keys) { io._send(str(keys)) }
@@ -89,7 +50,7 @@ fn isSuspended() { io._isSuspended() }
 
 fn grab() { io._setEvdevGrab(true) }
 
-fn ungrab() { io._setEvdevGrab(false); io._ungrabAll() }
+fn ungrab() { io._setEvdevGrab(false); io._ungrabAll(); io._setBlockInput(false) }
 
 fn emergencyRelease() { io._emergencyRelease() }
 
@@ -107,10 +68,7 @@ fn getCurrentModifiers() { io._getCurrentModifiers() }
 
 fn setExecutorMode(mode) { io._setExecutorMode(_modeToInt(mode)) }
 
-fn getExecutorMode() {
-  idx = io._getExecutorMode()
-  if idx >= 0 && idx < _modeNames.len() { _modeNames[idx] } else { "scheduler" }
-}
+fn getExecutorMode() { _intToMode(io._getExecutorMode()) }
 
 fn mouseMove(dx, dy, speed) { io._mouseMove(dx, dy, speed || 1) }
 
@@ -137,6 +95,8 @@ fn setMouseSensitivity(s) { io._setMouseSensitivity(s) }
 
 fn getMouseSensitivity() { io._getMouseSensitivity() }
 
+fn sleepMs(ms) { io._sleepMs(ms) }
+
 fn mouseState(button) { io._mouseState(button || 1) }
 
 fn lastLocks() { io._lastLocks() }
@@ -149,32 +109,60 @@ fn devices() { io._devices() }
 
 fn addDevice(path, type) { io._addDevice(path, type || nil) }
 
+fn _modeToInt(mode) {
+  m = mode.lower()
+  v = _modeMap[m]
+  if v != nil { v } else { 0 }
+}
+
+fn _intToMode(idx) {
+  if idx >= 0 && idx < #_modeNames { _modeNames[idx] } else { "scheduler" }
+}
+
+fn _sendModifiersAt(parts, press, i) {
+  if i >= #parts { nil }
+  else {
+    p = parts[i]
+    if p == "ctrl" || p == "control" { io._sendX11Key("ctrl", press) }
+    else if p == "shift" { io._sendX11Key("shift", press) }
+    else if p == "alt" { io._sendX11Key("alt", press) }
+    else if p == "super" || p == "win" || p == "meta" { io._sendX11Key("super", press) }
+    _sendModifiersAt(parts, press, i + 1)
+  }
+}
+
 fn sendModifiers(mods, press) {
   if mods == nil || mods == "" {
     if !press { io._sendX11Key("ctrl", false); io._sendX11Key("shift", false); io._sendX11Key("alt", false); io._sendX11Key("super", false) }
     nil
   } else {
     parts = str(mods).lower().split("+")
-    for p in parts {
-      if p == "ctrl" || p == "control" { io._sendX11Key("ctrl", press) }
-      elif p == "shift" { io._sendX11Key("shift", press) }
-      elif p == "alt" { io._sendX11Key("alt", press) }
-      elif p == "super" || p == "win" || p == "meta" { io._sendX11Key("super", press) }
-    }
+    _sendModifiersRec(parts, press, 0)
+    nil
   }
+}
+
+fn _sendModifiersRec(parts, press, i) {
+  if i >= #parts { nil }
+  else {
+    p = parts[i]
+    if p == "ctrl" || p == "control" { io._sendX11Key("ctrl", press) }
+    else if p == "shift" { io._sendX11Key("shift", press) }
+    else if p == "alt" { io._sendX11Key("alt", press) }
+    else if p == "super" || p == "win" || p == "meta" { io._sendX11Key("super", press) }
+    _sendModifiersRec(parts, press, i + 1)
+  }
+}
+
+fn sendKeyState(key, press) {
+  if press { io._sendX11Key(str(key), true) }
+  else { io._sendX11Key(str(key), false) }
 }
 
 fn sendKeyState(key, state) {
-  if state == nil || state == "click" || state == "tap" {
-    io._sendX11Key(str(key), true)
-    io._sleepMs(50)
-    io._sendX11Key(str(key), false)
-  } elif state == "release" || state == "up" {
-    io._sendX11Key(str(key), false)
-  } else {
-    io._sendX11Key(str(key), true)
-  }
+  if state == "down" || state == "press" || state == true { io._sendX11Key(str(key), true) }
+  else if state == "release" || state == "up" || state == false { io._sendX11Key(str(key), false) }
+  else { io._sendX11Key(str(key), state == "press" || state == true) }
 }
 
 // Set io as global for backward compat
-setGlobal("io", io)

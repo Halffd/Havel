@@ -1,27 +1,8 @@
 // modules/app/event_listener.hv - Pure Havel event listener module
-// Bridge functions (eventListener._*) registered at startup by VMHostFunctions.cpp
+// Bridge functions (eventListener._*, io._*) registered at startup by VMHostFunctions.cpp
 
-__el = use "eventListener"
-__io = use "io"
-
-eventListener = object()
-eventListener._keys = __el.keys
-eventListener._lastKey = __el.lastKey
-eventListener._lastState = __el.lastState
-eventListener._lastDevice = __el.lastDevice
-eventListener._lastModifiers = __el.lastModifiers
-eventListener._lastKeys = __el.lastKeys
-eventListener._reset = __el.reset
-eventListener._lastButton = __el.lastButton
-eventListener._lastButtonState = __el.lastButtonState
-eventListener._buttons = __el.buttons
-eventListener._releaseAll = __el.releaseAll
-eventListener._onKeyDown = __el.onKeyDown
-eventListener._onKeyUp = __el.onKeyUp
-eventListener._onKey = __el.onKey
-eventListener._onButton = __el.onButton
-eventListener._onMouse = __el.onMouse
-eventListener._onEvent = __el.onEvent
+// Bridge functions registered at startup by VMHostFunctions.cpp.
+// Access them directly via their global names: eventListener._keys, io._mouseState, etc.
 
 fn pressedKeys() { eventListener._keys() }
 
@@ -57,12 +38,13 @@ fn onMouse(cb) { eventListener._onMouse(cb) }
 
 fn onEvent(cb) { eventListener._onEvent(cb) }
 
-fn mouseState(button) { __io._mouseState(button || 1) }
+fn mouseState(button) { io._mouseState(button || 1) }
 
-fn lastLocks() { __io._lastLocks() }
+fn lastLocks() { io._lastLocks() }
 
-fn locks() { __io._locks() }
+fn locks() { io._locks() }
 
-fn setLock(name, state) { __io._setLock(name, state) }
+fn setLock(name, state) { io._setLock(name, state) }
 
-setGlobal("eventListener", eventListener)
+// eventListener namespace is already available globally via bridge functions
+// No need to create an object - the bridge functions are global eventListener._*

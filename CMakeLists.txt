@@ -385,11 +385,6 @@ list(APPEND CORE_SOURCES
 if(ENABLE_QT_UI_BACKEND)
   set(_QT_CORE_SOURCES
     "src/host/automation/PixelAutomationService.cpp"
-    "src/host/clipboard/Clipboard.cpp"
-    "src/host/clipboard/ClipboardInfo.cpp"
-    "src/host/clipboard/ClipboardService.cpp"
-    "src/host/clipboard/HistoryClipboard.cpp"
-    "src/host/clipboard/MonitoringClipboard.cpp"
     "src/host/screenshot/ScreenshotService.cpp"
     "src/host/ui/QtBackend.cpp"
     "src/host/ui/UIService.cpp"
@@ -397,7 +392,15 @@ if(ENABLE_QT_UI_BACKEND)
   list(APPEND CORE_SOURCES ${_QT_CORE_SOURCES})
 endif()
 
-
+# Clipboard sources (always built, no Qt dependency)
+set(_CLIPBOARD_CORE_SOURCES
+  "src/host/clipboard/Clipboard.cpp"
+  "src/host/clipboard/ClipboardInfo.cpp"
+  "src/host/clipboard/ClipboardService.cpp"
+  "src/host/clipboard/HistoryClipboard.cpp"
+  "src/host/clipboard/MonitoringClipboard.cpp"
+)
+list(APPEND CORE_SOURCES ${_CLIPBOARD_CORE_SOURCES})
 
 # Input backend adapters - re-enabled after API fixes
 
@@ -470,11 +473,12 @@ endif()
 
 # Host modules (language bindings to system managers)
 file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
+list(FILTER HOST_MODULES_SOURCES EXCLUDE REGEX ".*clipboardmgr.*")
 list(REMOVE_ITEM HOST_MODULES_SOURCES "${CMAKE_SOURCE_DIR}/src/modules/HostModules.cpp")
 # Remove Qt-dependent modules when in-process Qt UI backend is disabled
 if(NOT ENABLE_QT_UI_BACKEND)
   file(GLOB_RECURSE _QT_MODULES
-    "src/modules/clipboardmgr/*.cpp"
+    # "src/modules/clipboardmgr/*.cpp"
     "src/modules/ui/*.cpp"
     "src/modules/screenshot/*.cpp"
     "src/modules/clipboard/*.cpp"
@@ -1011,6 +1015,9 @@ else()
 add_library(havel_modules INTERFACE)
 endif()
 target_link_libraries(havel_core PRIVATE fmt::fmt wayland-protos)
+target_include_directories(havel_core PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
 if(ENABLE_QT_UI_BACKEND)
   add_library(havel_gui STATIC ${GUI_SOURCES})
 endif()
@@ -1638,11 +1645,11 @@ target_compile_definitions(havel_mod_wayland PRIVATE
 
 # Qt-dependent modules
 if(ENABLE_QT)
-  add_havel_module_plugin(clipboardmgr ${CMAKE_SOURCE_DIR}/src/modules/clipboardmgr/ClipboardMgrModule.cpp)
+  # add_havel_module_plugin(clipboardmgr ${CMAKE_SOURCE_DIR}/src/modules/clipboardmgr/ClipboardMgrModule.cpp)
   get_target_property(_qt_core_inc Qt6::Core INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_gui_inc Qt6::Gui INTERFACE_INCLUDE_DIRECTORIES)
   get_target_property(_qt_widgets_inc Qt6::Widgets INTERFACE_INCLUDE_DIRECTORIES)
-  target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+  # target_include_directories(havel_mod_clipboardmgr PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   # screenshot module has const auto& lambda incompatibility with std::function — skip as .so for now
   # add_havel_module_plugin(screenshot ${CMAKE_SOURCE_DIR}/src/modules/screenshot/ScreenshotModule.cpp)
 endif()

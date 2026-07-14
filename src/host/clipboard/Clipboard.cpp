@@ -91,10 +91,12 @@ Clipboard::Method Clipboard::detectBestMethod() {
     return Method::X11;
   }
 
+#ifdef HAVE_QT_EXTENSION
   // Default to Qt if available
   if (QGuiApplication::instance()) {
     return Method::QT;
   }
+#endif
 
   // Fallback to external commands
   return Method::EXTERNAL;
@@ -114,9 +116,11 @@ void Clipboard::setMethod(Method method) {
   method_ = method;
   // Re-initialize clipboard with new method
   if (method_ == Method::QT) {
+#ifdef HAVE_QT_EXTENSION
     if (QGuiApplication::instance()) {
       clipboard_ = QGuiApplication::clipboard();
     }
+#endif
   } else {
     // For other methods, we don't need a cached pointer
     clipboard_ = nullptr;
@@ -130,11 +134,13 @@ std::string Clipboard::getText() const {
         if (!result.empty()) return result;
     }
     
+#ifdef HAVE_QT_EXTENSION
     // 1. Qt (if built and available)
     if (method_ == Method::QT || method_ == Method::AUTO) {
         std::string result = getTextQt();
         if (!result.empty()) return result;
     }
+#endif
     
     // 2. Wayland native
     if (method_ == Method::WAYLAND || method_ == Method::AUTO) {
@@ -164,10 +170,12 @@ bool Clipboard::setText(const std::string &text) {
         if (backend_->setText(text)) return true;
     }
     
+#ifdef HAVE_QT_EXTENSION
     // 1. Qt (if built and available)
     if (method_ == Method::QT || method_ == Method::AUTO) {
         if (setTextQt(text)) return true;
     }
+#endif
     
     // 2. Wayland native
     if (method_ == Method::WAYLAND || method_ == Method::AUTO) {
@@ -196,6 +204,8 @@ bool Clipboard::hasText() const { return !getText().empty(); }
 // Qt Implementation
 // ============================================================================
 
+#ifdef HAVE_QT_EXTENSION
+
 std::string Clipboard::getTextQt() const {
   auto *cb = static_cast<QClipboard *>(clipboard_);
   if (!cb && QGuiApplication::instance()) {
@@ -219,8 +229,8 @@ bool Clipboard::setTextQt(const std::string &text) {
   return true;
 }
 
-// ============================================================================
-// X11 Implementation (using external commands)
+#endif // HAVE_QT_EXTENSION
+
 // ============================================================================
 
 std::string Clipboard::getTextX11() const {
@@ -353,7 +363,7 @@ bool Clipboard::setImage(const std::string &base64Png) {
   }
 }
 
-bool Clipboard::hasImage() const { return !getImage().empty(); }
+#ifdef HAVE_QT_EXTENSION
 
 // Qt Image Implementation
 std::string Clipboard::getImageQt() const {
@@ -396,5 +406,6 @@ bool Clipboard::setImageQt(const std::string &base64Png) {
   return true;
 }
 
+#endif // HAVE_QT_EXTENSION
 
 } // namespace havel::host

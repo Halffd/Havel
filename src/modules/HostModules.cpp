@@ -12,7 +12,9 @@
 #include "../host/clipboard/ClipboardService.hpp"
 #endif
 #include "../host/screenshot/ScreenshotService.hpp"
+#ifdef HAVE_QT_EXTENSION
 #include "../host/automation/PixelAutomationService.hpp"
+#endif
 #include "../host/automation/AutomationService.hpp"
 
 #include "../host/io/MapManagerService.hpp"
@@ -46,7 +48,9 @@ void declareAllServices() {
   registry.declareService<host::ImageService>("image", "util");
   registry.declareService<host::MediaService>("media", "util");
   registry.declareService<host::AppService>("app", "util");
+#ifdef HAVE_QT_EXTENSION
   registry.declareService<host::PixelAutomationService>("pixel", "util");
+#endif
 }
 
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
@@ -133,12 +137,14 @@ if (registry.shouldRegister("clipboard", includes, excludes)) {
 	}
 
 	if (registry.shouldRegister("pixel", includes, excludes)) {
+#ifdef HAVE_QT_EXTENSION
 		try {
 			auto pixelService = std::make_shared<host::PixelAutomationService>();
 			registry.registerService<host::PixelAutomationService>(pixelService);
 		} catch (const std::exception& e) {
 			debug("initializeServiceRegistry: PixelAutomationService failed: {}", e.what());
 		}
+#endif
 	}
 
 

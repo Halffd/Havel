@@ -114,14 +114,20 @@ private:
   Method method_ = Method::AUTO;
 
   // Platform-specific implementations
+#ifdef HAVE_QT_EXTENSION
   std::string getTextQt() const;
+  std::string getImageQt() const;
+  std::vector<std::string> getFilesQt() const;
+  bool setTextQt(const std::string &text);
+  bool setImageQt(const std::string &base64Png);
+  bool setFilesQt(const std::vector<std::string> &paths);
+#endif
   std::string getTextX11() const;
   std::string getTextWayland() const;
   std::string getTextExternal() const;
   std::string getTextWindows() const;
   std::string getTextMacOS() const;
 
-  bool setTextQt(const std::string &text);
   bool setTextX11(const std::string &text);
   bool setTextWayland(const std::string &text);
   bool setTextExternal(const std::string &text);

@@ -351,7 +351,7 @@ file(GLOB_RECURSE CORE_SOURCES
 "src/host/media/*.cpp"
     "src/host/mouse/*.cpp"
     "src/host/mode/*.cpp"
-    "src/host/network/*.cpp"
+"src/host/network/*.cpp"
     "src/host/process/*.cpp"
     "src/host/image/*.cpp"
     "src/host/timer/*.cpp"
@@ -361,7 +361,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/utils/*.c"
     "src/media/*.cpp"
     "src/ai/ocr/*.cpp"
-)
+  )
 # Non-Qt host sources (always built)
 file(GLOB_RECURSE _HOST_CORE_SOURCES
   "src/host/app/*.cpp"
@@ -477,7 +477,6 @@ if(NOT ENABLE_QT_UI_BACKEND)
     "src/modules/clipboardmgr/*.cpp"
     "src/modules/ui/*.cpp"
     "src/modules/screenshot/*.cpp"
-    "src/modules/alttab/*.cpp"
     "src/modules/clipboard/*.cpp"
     "src/modules/automation/PixelModule.cpp"
   )
@@ -487,7 +486,6 @@ endif()
 # Explicitly add new modules (GLOB might not catch new files)
 
 list(APPEND HOST_MODULES_SOURCES "src/modules/mouse/MouseModule.cpp")
-list(APPEND HOST_MODULES_SOURCES "src/modules/automation/AutomationModule.cpp")
 if(ENABLE_QT_UI_BACKEND)
   list(APPEND HOST_MODULES_SOURCES "src/modules/ui/UIModule.cpp")
 endif()
@@ -1605,9 +1603,7 @@ add_havel_module_plugin(timer        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/T
 add_havel_module_plugin(type         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/TypeModule.cpp)
 
 # -- host module plugins ---------------------------------------------------
-add_havel_module_plugin(alttab       ${CMAKE_SOURCE_DIR}/src/modules/alttab/AltTabModule.cpp)
 add_havel_module_plugin(app          ${CMAKE_SOURCE_DIR}/src/modules/app/AppModule.cpp)
-add_havel_module_plugin(automation   ${CMAKE_SOURCE_DIR}/src/modules/automation/AutomationModule.cpp)
 add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp)
 add_havel_module_plugin(clipboard    ${CMAKE_SOURCE_DIR}/src/modules/clipboard/ClipboardModule.cpp)
 add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/HistoryClipboardModule.cpp)

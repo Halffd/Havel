@@ -1,0 +1,41 @@
+// automation.hv — Pure Havel automation module
+// C++ bridges registered at VM startup as global "automation" object
+
+// automation global provides: createAutoClicker, createAutoRunner, createAutoKeyPresser,
+// hasTask, removeTask, stopAll, getTaskNames
+
+// Public API
+fn createAutoClicker(button, intervalMs) {
+	automation.createAutoClicker(button, intervalMs || 100)
+}
+
+fn createAutoRunner(direction, intervalMs) {
+	automation.createAutoRunner(direction || "right", intervalMs || 50)
+}
+
+fn createAutoKeyPresser(key, intervalMs) {
+	automation.createAutoKeyPresser(key, intervalMs || 100)
+}
+
+fn hasTask(name) {
+	automation.hasTask(name)
+}
+
+fn removeTask(name) {
+	automation.removeTask(name)
+}
+
+fn stopAll() {
+	automation.stopAll()
+}
+
+fn getTaskNames() {
+	automation.getTaskNames()
+}
+
+// Convenience functions
+fn clicker(button, intervalMs) { createAutoClicker(button, intervalMs) }
+fn runner(direction, intervalMs) { createAutoRunner(direction, intervalMs) }
+fn keyPresser(key, intervalMs) { createAutoKeyPresser(key, intervalMs) }
+
+// automation is already global from C++ system object initializer

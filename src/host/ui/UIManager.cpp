@@ -255,6 +255,7 @@ bool UIManager::installToolkitBackends(const HavelToolkitABI *abi) {
     if (abi->create_alttab_backend) {
         auto *raw = abi->create_alttab_backend();
         auto *backend = castAltTabBackend(raw);
+        havel::AltTabService::instance().setBackend(std::unique_ptr<havel::IAltTabBackend>(backend));
         any = true;
     }
 
@@ -277,6 +278,8 @@ bool UIManager::installToolkitBackendsInProcess(const std::string &toolkitName) 
 #ifdef HAVE_QT_EXTENSION
         havel::host::ScreenshotService::getInstance().setBackend(
             std::make_unique<havel::host::QtScreenshotBackend>());
+        havel::AltTabService::instance().setBackend(
+            std::make_unique<havel::host::QtAltTabBackend>());
         return true;
 #else
         return false;

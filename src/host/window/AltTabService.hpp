@@ -8,6 +8,10 @@ class AltTabService {
 public:
     AltTabService();
     ~AltTabService();
+    static AltTabService& instance() {
+        static AltTabService svc;
+        return svc;
+    }
     void setBackend(std::unique_ptr<IAltTabBackend> backend);
     void show();
     void hide();

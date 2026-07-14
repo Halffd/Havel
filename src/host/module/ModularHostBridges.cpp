@@ -967,6 +967,86 @@ ioObj, "locks",
     ioObj, "reset",
     Value::makeHostFuncId(vm->getHostFunctionIndex("eventListener.reset")));
   vm->setGlobal("io", Value::makeObjectId(ioObj.id));
+
+  // altTab object
+  auto altTabObj = vm->createHostObject();
+  auto altTabObjGuard = vm->makeRoot(Value::makeObjectId(altTabObj.id));
+  vm->setHostObjectField(
+      altTabObj, "show",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._show")));
+  vm->setHostObjectField(
+      altTabObj, "hide",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._hide")));
+  vm->setHostObjectField(
+      altTabObj, "toggle",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._toggle")));
+  vm->setHostObjectField(
+      altTabObj, "next",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._next")));
+  vm->setHostObjectField(
+      altTabObj, "prev",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._prev")));
+  vm->setHostObjectField(
+      altTabObj, "select",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._select")));
+  vm->setHostObjectField(
+      altTabObj, "refresh",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._refresh")));
+  vm->setHostObjectField(
+      altTabObj, "getWindows",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getWindows")));
+  vm->setHostObjectField(
+      altTabObj, "getWindowCount",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getWindowCount")));
+  vm->setHostObjectField(
+      altTabObj, "setThumbnailSize",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._setThumbnailSize")));
+  vm->setHostObjectField(
+      altTabObj, "getThumbnailWidth",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getThumbnailWidth")));
+  vm->setHostObjectField(
+      altTabObj, "getThumbnailHeight",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getThumbnailHeight")));
+  vm->setHostObjectField(
+      altTabObj, "setMaxVisibleWindows",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._setMaxVisibleWindows")));
+  vm->setHostObjectField(
+      altTabObj, "getMaxVisibleWindows",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._getMaxVisibleWindows")));
+  vm->setHostObjectField(
+      altTabObj, "setAnimationsEnabled",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._setAnimationsEnabled")));
+  vm->setHostObjectField(
+      altTabObj, "isAnimationsEnabled",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("altTab._isAnimationsEnabled")));
+  vm->setGlobal("altTab", Value::makeObjectId(altTabObj.id));
+
+  // automation object
+  auto automationObj = vm->createHostObject();
+  auto automationObjGuard = vm->makeRoot(Value::makeObjectId(automationObj.id));
+  vm->setHostObjectField(
+      automationObj, "createAutoClicker",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.createAutoClicker")));
+  vm->setHostObjectField(
+      automationObj, "createAutoRunner",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.createAutoRunner")));
+  vm->setHostObjectField(
+      automationObj, "createAutoKeyPresser",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.createAutoKeyPresser")));
+  vm->setHostObjectField(
+      automationObj, "hasTask",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.hasTask")));
+  vm->setHostObjectField(
+      automationObj, "removeTask",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.removeTask")));
+  vm->setHostObjectField(
+      automationObj, "stopAll",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.stopAll")));
+  vm->setHostObjectField(
+      automationObj, "getTaskNames",
+      Value::makeHostFuncId(vm->getHostFunctionIndex("automation.getTaskNames")));
+  vm->setGlobal("automation", Value::makeObjectId(automationObj.id));
+  vm->setGlobal("automation", Value::makeObjectId(automationObj.id));
     vm->setGlobal("scroll",
         Value::makeHostFuncId(vm->getHostFunctionIndex("mouse.scroll")));
   };

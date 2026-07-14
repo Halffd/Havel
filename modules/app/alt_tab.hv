@@ -1,0 +1,133 @@
+// alt_tab.hv — Pure Havel alt-tab module
+// Uses window module for window operations, C++ bridges for Qt UI overlay via "altTab" namespace
+
+use window
+use "altTab" as __altTab
+
+// altTab namespace provides: show, hide, toggle, next, prev, select, refresh,
+// getWindows, getWindowCount, setThumbnailSize, getThumbnailWidth, getThumbnailHeight,
+// setMaxVisibleWindows, getMaxVisibleWindows, setAnimationsEnabled, isAnimationsEnabled
+
+// Window operations using window module
+fn _getWindowList() {
+	window.list()
+}
+
+fn _nextWindow() {
+	_wins = _getWindowList()
+	if #_wins == 0 { return }
+	_active = window.active()
+	if _active == null { return }
+	_idx = 0
+	_i = 0
+	while _i < #_wins {
+		if _wins[_i].id == _active.id {
+			_idx = _i
+			break
+		}
+		_i = _i + 1
+	}
+	_next = _idx + 1
+	if _next >= #_wins { _next = 0 }
+	_wins[_next].activate()
+}
+
+fn _prevWindow() {
+	_wins = _getWindowList()
+	if #_wins == 0 { return }
+	_active = window.active()
+	if _active == null { return }
+	_idx = 0
+	_i = 0
+	while _i < #_wins {
+		if _wins[_i].id == _active.id {
+			_idx = _i
+			break
+		}
+		_i = _i + 1
+	}
+	_prev = _idx - 1
+	if _prev < 0 { _prev = #_wins - 1 }
+	_wins[_prev].activate()
+}
+
+// Public API
+fn show() {
+	__altTab.show()
+}
+
+fn hide() {
+	__altTab.hide()
+}
+
+fn toggle() {
+	__altTab.toggle()
+}
+
+fn next() {
+	__altTab.next()
+}
+
+fn previous() {
+	__altTab.prev()
+}
+
+fn choose() {
+	__altTab.select()
+}
+
+fn refresh() {
+	__altTab.refresh()
+}
+
+fn getWindows() {
+	_wins = _getWindowList()
+	_results = []
+	for _w in _wins {
+		_info = _w.info()
+		if _info != null {
+			_results.push({
+				title: _info.title,
+				windowClass: _info.windowClass,
+				pid: _info.pid,
+				exe: _info.exe,
+				cmdline: _info.cmdline,
+				windowId: _info.id,
+				active: _info.isActive || false
+			})
+		}
+	}
+	_results
+}
+
+fn getWindowCount() {
+	__altTab.getWindowCount()
+}
+
+fn setThumbnailSize(width, height) {
+	__altTab.setThumbnailSize(width, height)
+}
+
+fn getThumbnailWidth() {
+	__altTab.getThumbnailWidth()
+}
+
+fn getThumbnailHeight() {
+	__altTab.getThumbnailHeight()
+}
+
+fn setMaxVisibleWindows(count) {
+	__altTab.setMaxVisibleWindows(count)
+}
+
+fn getMaxVisibleWindows() {
+	__altTab.getMaxVisibleWindows()
+}
+
+fn setAnimationsEnabled(enabled) {
+	__altTab.setAnimationsEnabled(enabled)
+}
+
+fn isAnimationsEnabled() {
+	__altTab.isAnimationsEnabled()
+}

@@ -1,6 +1,9 @@
 /*
  * ModularHostBridges.cpp - Modular bridge component implementations
  */
+#ifdef HAVE_QT_EXTENSION
+#include "qt.hpp"
+#endif
 #include "ModularHostBridges.hpp"
 #include "../../host/window/WindowService.hpp"
 #include "../../utils/Logger.hpp"
@@ -9,8 +12,8 @@
 #include "havel-lang/stdlib/HotkeyModule.hpp"
 #include "havel-lang/runtime/concurrency/DependencyTracker.hpp"
 #include "core/config/ConfigManager.hpp"
-#include "core/display/DisplayManager.hpp"
 #include "core/detect/HardwareDetector.hpp"
+#include "core/display/DisplayManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/IO.hpp"
 #include "core/io/EventListener.hpp"

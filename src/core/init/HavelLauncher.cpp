@@ -243,10 +243,8 @@ static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
   auto *hkManager = inst.getHotkeyManagerPtr();
   return std::make_shared<HostAPI>(
       inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
-      nullptr,
-      nullptr, nullptr, nullptr, nullptr, nullptr,
-      nullptr, nullptr,
-      std::vector<std::string>{});
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, std::vector<std::string>{});
 }
 
 static int runLint(const std::string &code, const std::string &primaryFile,
@@ -782,7 +780,7 @@ static int setupFullReplCommon(const havel::init::LaunchConfig &cfg) {
 static int runMinimalReplLoop(havel::HavelEngine &engine,
                               const havel::init::LaunchConfig &cfg) {
   havel::repl::REPL repl(makeREPLConfig(cfg));
-  repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
+  repl.attach(engine.vm(), engine.modules(), havel::init::collectKnownGlobals(engine.vm()));
   repl.setPumpCallback([&engine]() { engine.tickGoroutines(); });
   return repl.run();
 }
@@ -799,7 +797,7 @@ static int runFullReplLoop(const havel::init::LaunchConfig &cfg, havel::Havel &h
                                    cfg.serviceExcludes);
   hostAPI->SetVM(bytecodeVM);
   repl.attach(bytecodeVM, havel_inst.getModules(),
-              collectKnownGlobals(bytecodeVM));
+              havel::init::collectKnownGlobals(bytecodeVM));
 
   auto *io = havel_inst.getIOPtr();
   auto *hkManager = havel_inst.getHotkeyManagerPtr();
@@ -1163,6 +1161,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return runBuild(cfg);
 
     if (cfg.mode != LaunchConfig::Mode::SELF_HOSTED &&
+        cfg.mode != LaunchConfig::Mode::SCRIPT_AND_REPL &&
+        cfg.mode != LaunchConfig::Mode::REPL &&
         !cfg.vmConfig.self_hosted_modules_path.empty()) {
       namespace fs = std::filesystem;
       fs::path langDir =

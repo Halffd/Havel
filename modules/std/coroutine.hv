@@ -1,0 +1,559 @@
+// coroutine.hv - Coroutine/async primitives
+// Built on top of Havel's fiber/await system
+
+// ============================================
+// Simple Channel implementation
+// ============================================
+
+class Channel {
+  @buffer = []
+  @closed = false
+  @waiting = []
+  
+  fn @() {}
+  
+  fn send(value) {
+    if @closed { throw "Channel closed" }
+    @buffer.push(value)
+    if @waiting.len() > 0 {
+      w = @waiting.pop(0)
+      w.send(true)
+    }
+  }
+  
+  fn receive(timeoutMs=null) {
+    while true {
+      if @buffer.len() > 0 {
+        return @buffer.pop(0)
+      }
+      if @closed { return null }
+      w = waitable()
+      @waiting.push(w)
+      if timeoutMs != null {
+        w.receive(timeoutMs)
+      } else {
+        w.receive()
+      }
+    }
+  }
+  
+  fn close() {
+    @closed = true
+    for w in @waiting {
+      w.send(true)
+    }
+    @waiting = []
+  }
+  
+  fn isClosed() {
+    @closed
+  }
+  
+  fn len() {
+    @buffer.len()
+  }
+}
+
+// Create a waitable object for synchronization
+fn waitable() {
+  return {
+    done: false,
+    send: fn() { this.done = true },
+    receive: fn(tmo) {
+      start = time.now()
+      while !this.done {
+        if tmo != null && time.now() - start > tmo {
+          return false
+        }
+        sleep(1)
+      }
+      return true
+    }
+  }
+}
+
+// ============================================
+// Task/Coroutine wrapper
+// ============================================
+
+class Task {
+  @fiber = null
+  @result = null
+  @error = null
+  @done = false
+  @cancelled = false
+  
+  fn @(f) {
+    @fiber = f
+  }
+  
+  // Start the coroutine
+  fn start() {
+    @fiber()
+  }
+  
+  // Await the result
+  fn await() {
+    if @done {
+      if @error != null {
+        throw @error
+      }
+      return @result
+    }
+    
+    try {
+      @result = <-@fiber
+      @done = true
+      return @result
+    } catch e {
+      @error = e
+      @done = true
+      throw e
+    }
+  }
+  
+  // Check if done without blocking
+  fn isDone() {
+    @done
+  }
+  
+  // Get result if done, null otherwise
+  fn tryResult() {
+    if @done {
+      return {result: @result, error: @error}
+    }
+    return null
+  }
+  
+  // Cancel the task (cooperative)
+  fn cancel() {
+    @cancelled = true
+  }
+  
+  fn isCancelled() {
+    @cancelled
+  }
+}
+
+// Spawn a new task
+fn spawn(f) {
+  task = Task(f)
+  task.start()
+  return task
+}
+
+// ============================================
+// Parallel execution
+// ============================================
+
+// Run multiple tasks in parallel, return array of results
+fn all(tasks) {
+  results = []
+  for task in tasks {
+    results.push(task.await())
+  }
+  return results
+}
+
+// Run tasks, return first successful result
+fn race(tasks) {
+  // Start all
+  for task in tasks {
+    task.start()
+  }
+  
+  // Wait for first completion
+  while true {
+    for i, task in tasks.enumerate() {
+      if task.isDone() {
+        return {index: i, result: task.await()}
+      }
+    }
+    sleep(0) // yield
+  }
+}
+
+// Run all, return results as they complete
+fn allSettled(tasks) {
+  results = []
+  pending = tasks.len()
+  
+  for task in tasks {
+    task.start()
+  }
+  
+  while pending > 0 {
+    for i, task in tasks.enumerate() {
+      if task.isDone() && results[i] == null {
+        r = task.tryResult()
+        if r != null {
+          if r.error == null {
+            results[i] = {status: "fulfilled", value: r.result}
+          } else {
+            results[i] = {status: "rejected", reason: r.error}
+          }
+          pending -= 1
+        }
+      }
+    }
+    if pending > 0 {
+      sleep(0)
+    }
+  }
+  
+  return results
+}
+
+// ============================================
+// Async utilities
+// ============================================
+
+// Sleep for ms (non-blocking)
+fn sleep(ms) {
+  ch = channel()
+  ch.receive(timeoutMs=ms)
+}
+
+// Timeout wrapper - using channel-based approach
+fn withTimeout(task, ms) {
+  timeoutChan = channel()
+  
+  // Start timeout timer
+  thread.spawn(fn() {
+    sleep(ms)
+    timeoutChan.send({timeout: true})
+  })
+  
+  // Start task
+  resultChan = channel()
+  thread.spawn(fn() {
+    try {
+      result = task.await()
+      resultChan.send({result: result})
+    } catch e {
+      resultChan.send({error: e})
+    }
+  })
+  
+  // Wait for either using a loop with non-blocking check
+  // Since we don't have select, we'll use a different approach
+  // Return a promise-like object that can be awaited with timeout
+  return {
+    await: fn() {
+      // Use a simple loop to check both channels
+      while true {
+        // Check timeout
+        if timeoutChan.recv(timeoutMs=1) != null {
+          task.cancel()
+          throw "Timeout after " + ms + "ms"
+        }
+        // Check result
+        if resultChan.recv(timeoutMs=1) != null {
+          msg = resultChan.recv()
+          if msg.error != null {
+            throw msg.error
+          }
+          return msg.result
+        }
+      }
+    }
+  }
+}
+
+// Retry with backoff
+fn retry(f, attempts=3, baseDelay=100, maxDelay=5000) {
+  lastError = null
+  for i in range(attempts) {
+    try {
+      return f()
+    } catch e {
+      lastError = e
+      if i < attempts - 1 {
+        delay = min(baseDelay * (2 ** i), maxDelay)
+        // Add jitter
+        delay = delay + random.int(0, delay / 10)
+        sleep(delay)
+      }
+    }
+  }
+  throw lastError
+}
+
+// Debounce - delay execution until quiet period
+fn debounce(f, ms) {
+  timer = null
+  return fn(args) {
+    if timer != null {
+      timer.cancel()
+    }
+    timer = thread.timeout(fn() { f(args) }, ms)
+  }
+}
+
+// Throttle - limit execution rate
+fn throttle(f, ms) {
+  lastCall = 0
+  return fn(args) {
+    now = time.now()
+    if now - lastCall >= ms {
+      lastCall = now
+      return f(args)
+    }
+  }
+}
+
+// ============================================
+// Pipeline / composition
+// ============================================
+
+// Sequential pipeline: each step receives previous result
+fn pipe(initial, steps) {
+  result = initial
+  for step in steps {
+    result = step(result)
+  }
+  return result
+}
+
+// Async pipeline
+fn pipeAsync(initial, steps) {
+  result = initial
+  for step in steps {
+    result = await step(result)
+  }
+  return result
+}
+
+// Parallel map with concurrency limit
+fn mapAsync(items, f, concurrency=10) {
+  results = []
+  sem = Semaphore(concurrency)
+  
+  tasks = []
+  for item in items {
+    tasks.push(spawn(fn() {
+      sem.acquire()
+      try {
+        return f(item)
+      } finally {
+        sem.release()
+      }
+    }))
+  }
+  
+  return all(tasks)
+}
+
+// Filter async
+fn filterAsync(items, f, concurrency=10) {
+  mapped = mapAsync(items, fn(item) {
+    return {item: item, keep: await f(item)}
+  }, concurrency)
+  
+  return mapped.filter(x => x.keep).map(x => x.item)
+}
+
+// ============================================
+// Semaphore for concurrency control
+// ============================================
+
+class Semaphore {
+  @permits = 0
+  @waiting = []
+  
+  fn @(permits=1) {
+    @permits = permits
+  }
+  
+  fn acquire() {
+    while true {
+      if @permits > 0 {
+        @permits -= 1
+        return
+      }
+      // Wait
+      chan = channel()
+      @waiting.push(chan)
+      chan.recv()
+    }
+  }
+  
+  fn tryAcquire() {
+    if @permits > 0 {
+      @permits -= 1
+      return true
+    }
+    return false
+  }
+  
+  fn release() {
+    @permits += 1
+    if @waiting.len() > 0 {
+      chan = @waiting.pop(0)
+      chan.send(true)
+    }
+  }
+  
+  fn availablePermits() {
+    @permits
+  }
+}
+
+// ============================================
+// Future/Promise pattern
+// ============================================
+
+class Promise {
+  @resolved = false
+  @rejected = false
+  @value = null
+  @reason = null
+  @callbacks = []
+  
+  fn @() {}
+  
+  fn resolve(value) {
+    if @resolved || @rejected { return }
+    @resolved = true
+    @value = value
+    for cb in @callbacks {
+      cb.onFulfilled(value)
+    }
+    @callbacks = []
+  }
+  
+  fn reject(reason) {
+    if @resolved || @rejected { return }
+    @rejected = true
+    @reason = reason
+    for cb in @callbacks {
+      cb.onRejected(reason)
+    }
+    @callbacks = []
+  }
+  
+  fn then(onFulfilled, onRejected) {
+    p = Promise()
+    if @resolved {
+      thread.spawn(fn() {
+        try {
+          p.resolve(onFulfilled(@value))
+        } catch e {
+          p.reject(e)
+        }
+      })
+    } else if @rejected {
+      thread.spawn(fn() {
+        try {
+          p.resolve(onRejected(@reason))
+        } catch e {
+          p.reject(e)
+        }
+      })
+    } else {
+      @callbacks.push({onFulfilled: onFulfilled, onRejected: onRejected, promise: p})
+    }
+    return p
+  }
+  
+  fn catch_(onRejected) {
+    return this.then(null, onRejected)
+  }
+  
+  fn finally_(f) {
+    return this.then(
+      fn(v) { f(); return v },
+      fn(e) { f(); throw e }
+    )
+  }
+  
+  fn await() {
+    if @resolved { return @value }
+    if @rejected { throw @reason }
+    
+    chan = channel()
+    @callbacks.push({
+      onFulfilled: fn(v) { chan.send({ok: true, value: v}) },
+      onRejected: fn(e) { chan.send({ok: false, error: e}) }
+    })
+    msg = chan.recv()
+    if msg.ok { return msg.value }
+    throw msg.error
+  }
+}
+
+// Create a deferred promise
+fn deferred() {
+  p = Promise()
+  return {
+    promise: p,
+    resolve: fn(v) { p.resolve(v) },
+    reject: fn(e) { p.reject(e) }
+  }
+}
+
+// Promise.all
+fn promiseAll(promises) {
+  results = []
+  p = Promise()
+  
+  if promises.len() == 0 {
+    p.resolve([])
+    return p
+  }
+  
+  remaining = promises.len()
+  for i, promise in promises.enumerate() {
+    promise.then(
+      fn(v) {
+        results[i] = v
+        remaining -= 1
+        if remaining == 0 { p.resolve(results) }
+      },
+      fn(e) { p.reject(e) }
+    )
+  }
+  
+  return p
+}
+
+// Promise.race
+fn promiseRace(promises) {
+  p = Promise()
+  for promise in promises {
+    promise.then(
+      fn(v) { p.resolve(v) },
+      fn(e) { p.reject(e) }
+    )
+  }
+  return p
+}
+
+// Promise.allSettled
+fn promiseAllSettled(promises) {
+  results = []
+  p = Promise()
+  
+  if promises.len() == 0 {
+    p.resolve([])
+    return p
+  }
+  
+  remaining = promises.len()
+  for i, promise in promises.enumerate() {
+    promise.then(
+      fn(v) {
+        results[i] = {status: "fulfilled", value: v}
+        remaining -= 1
+        if remaining == 0 { p.resolve(results) }
+      },
+      fn(e) {
+        results[i] = {status: "rejected", reason: e}
+        remaining -= 1
+        if remaining == 0 { p.resolve(results) }
+      }
+    )
+  }
+  
+  return p
+}

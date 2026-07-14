@@ -50,6 +50,7 @@
     #ifdef __X11__
     #undef Window
     #undef None
+    #undef Bool
     #endif
     using wID = unsigned long; // X11 Window type
     //using Key = unsigned long;

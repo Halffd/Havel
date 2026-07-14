@@ -7,18 +7,20 @@
 #include "../host/ServiceRegistry.hpp"
 #include "../core/io/IO.hpp"
 
-#ifdef HAVE_QT_EXTENSION
-#include "../host/clipboard/ClipboardService.hpp"
+#ifdef HAVE_X11
 #include "../host/clipboard/MonitoringClipboard.hpp"
+#include "../host/clipboard/ClipboardService.hpp"
 #endif
 #include "../host/screenshot/ScreenshotService.hpp"
 #include "../host/automation/PixelAutomationService.hpp"
 #include "../host/automation/AutomationService.hpp"
 
+#include "../host/io/MapManagerService.hpp"
+#include "../host/window/AltTabService.hpp"
+
 #include "../host/media/MediaService.hpp"
 #include "../host/image/ImageService.hpp"
 #include "../host/filesystem/FileSystemService.hpp"
-#include "../host/io/MapManagerService.hpp"
 
 #include "../host/mouse/MouseService.hpp"
 #include "../host/app/AppService.hpp"
@@ -31,12 +33,15 @@ namespace havel {
 void declareAllServices() {
 	auto& registry = host::ServiceRegistry::instance();
   registry.declareService<IO>("io", "core");
-#ifdef HAVE_QT_EXTENSION
-  registry.declareService<host::ClipboardService>("clipboard", "qt");
-  registry.declareService<host::MonitoringClipboard>("monitoring-clipboard", "qt");
+#ifdef HAVE_X11
+  registry.declareService<havel::host::ClipboardService>("clipboard", "x11");
+  registry.declareService<havel::host::MonitoringClipboard>("monitoring-clipboard", "x11");
 #endif
-registry.declareService<host::MapManagerService>("map-manager", "io");
-	registry.declareService<host::AutomationService>("automation", "io");
+  registry.declareService<host::MapManagerService>("map-manager", "io");
+#if ENABLE_QT
+	registry.declareService<havel::AltTabService>("alt-tab", "qt");
+#endif
+  registry.declareService<host::AutomationService>("automation", "io");
   registry.declareService<host::FileSystemService>("filesystem", "util");
   registry.declareService<host::ImageService>("image", "util");
   registry.declareService<host::MediaService>("media", "util");
@@ -67,13 +72,13 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 
 
 if (registry.shouldRegister("clipboard", includes, excludes)) {
-		auto clipboardService = std::make_shared<host::ClipboardService>();
-		registry.registerService<host::ClipboardService>(clipboardService);
+		auto clipboardService = std::make_shared<havel::host::ClipboardService>();
+		registry.registerService<havel::host::ClipboardService>(clipboardService);
 	}
 
 	if (registry.shouldRegister("monitoring-clipboard", includes, excludes)) {
-		auto monitoringClipboard = std::make_shared<host::MonitoringClipboard>();
-		registry.registerService<host::MonitoringClipboard>(monitoringClipboard);
+		auto monitoringClipboard = std::make_shared<havel::host::MonitoringClipboard>();
+		registry.registerService<havel::host::MonitoringClipboard>(monitoringClipboard);
 	}
 
 
@@ -82,7 +87,15 @@ if (registry.shouldRegister("clipboard", includes, excludes)) {
 		registry.registerService<host::MapManagerService>(mapManagerService);
 	}
 
-if (hostAPI->GetIO() && registry.shouldRegister("automation", includes, excludes)) {
+#ifdef HAVE_X11
+	if (registry.shouldRegister("alt-tab", includes, excludes)) {
+		auto altTabService = std::make_shared<havel::AltTabService>();
+		registry.registerService<havel::AltTabService>(altTabService);
+	}
+#endif
+
+
+	if (hostAPI->GetIO() && registry.shouldRegister("automation", includes, excludes)) {
 		auto automationService = std::make_shared<host::AutomationService>(std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}));
 		registry.registerService<host::AutomationService>(automationService);
 	}

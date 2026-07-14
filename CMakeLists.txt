@@ -86,6 +86,7 @@ endif()
 # ==============================================================================
 find_package(PkgConfig REQUIRED)
 find_package(X11 REQUIRED)
+add_definitions(-DHAVE_X11)
 find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(fmt CONFIG REQUIRED)

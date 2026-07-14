@@ -243,10 +243,8 @@ static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
   auto *hkManager = inst.getHotkeyManagerPtr();
   return std::make_shared<HostAPI>(
       inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
-      nullptr,
-      nullptr, nullptr, nullptr, nullptr, nullptr,
-      nullptr, nullptr, nullptr,
-      std::vector<std::string>{});
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, std::vector<std::string>{});
 }
 
 static int runLint(const std::string &code, const std::string &primaryFile,

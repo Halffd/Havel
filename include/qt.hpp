@@ -8,15 +8,16 @@
 #undef None
 #endif
 
-#ifdef Bool
-#define X11_Bool Bool
-#undef Bool
-#endif
+// NOTE: Don't undef Bool and Status - they're needed by core code
+// #ifdef Bool
+// #define X11_Bool Bool
+// #undef Bool
+// #endif
 
-#ifdef Status
-#define X11_Status Status
-#undef Status
-#endif
+// #ifdef Status
+// #define X11_Status Status
+// #undef Status
+// #endif
 
 #ifdef True
 #define X11_True True

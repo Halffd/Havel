@@ -1,5 +1,7 @@
 #pragma once
 // Safe X11 wrapper - use this instead of direct X11 includes
+// This header provides safe X11 constants and undefines conflicting macros
+
 namespace x11 {
     // X11 constants - use the actual macro values, not the names
     using XStatus = int;
@@ -112,12 +114,14 @@ namespace x11 {
 #include <X11/extensions/Xinerama.h>
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xrender.h>
+
+// Undefine X11 macros that conflict with Qt
 #undef None
 #undef True
 #undef False
 #undef Success
-#undef Status
-#undef Bool
+// #undef Status - needed by X11 headers
+// #undef Bool - needed by X11 headers
 #undef Always
 #undef DestroyAll
 #undef Absolute

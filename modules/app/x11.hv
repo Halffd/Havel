@@ -55,21 +55,21 @@ _p = ["pointer"]
 
 fn open(name) {
     if name == null || name == "" {
-        ffi.call(_XOpenDisplay, "pointer", _p, 0)
+        ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
     } else {
         _cs = ffi.cstring(name)
-        _dpy = ffi.call(_XOpenDisplay, "pointer", _p, _cs)
+        _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], _cs)
         ffi.free(_cs)
         _dpy
     }
 }
 
 fn close(dpy) {
-    ffi.call(_XCloseDisplay, "int32", _p, dpy)
+    ffi.call(_XCloseDisplay, "int32", ["pointer"], dpy)
 }
 
 fn rootWindow(dpy) {
-    ffi.call(_XDefaultRootWindow, "uint64", _p, dpy)
+    ffi.call(_XDefaultRootWindow, "uint64", ["pointer"], dpy)
 }
 
 fn internAtom(dpy, name, onlyIfExists) {
@@ -84,7 +84,7 @@ fn getAtomName(dpy, atom) {
     if _ptr == 0 { "" }
     else {
         _name = ffi.string(_ptr)
-        ffi.call(_XFree, "int32", _p, _ptr)
+        ffi.call(_XFree, "int32", ["pointer"], _ptr)
         _name
     }
 }
@@ -248,7 +248,7 @@ fn getWMName(dpy, win) {
     if _rcode == 0 || _name_val == 0 { "" }
     else {
         _name = ffi.string(_name_val)
-        ffi.call(_XFree, "int32", _p, _name_val)
+        ffi.call(_XFree, "int32", ["pointer"], _name_val)
         _name
     }
 }
@@ -267,11 +267,11 @@ fn getClassHint(dpy, win) {
         _rc = ""
         if _res_name_ptr != 0 {
             _rn = ffi.string(_res_name_ptr)
-            ffi.call(_XFree, "int32", _p, _res_name_ptr)
+            ffi.call(_XFree, "int32", ["pointer"], _res_name_ptr)
         }
         if _res_class_ptr != 0 {
             _rc = ffi.string(_res_class_ptr)
-            ffi.call(_XFree, "int32", _p, _res_class_ptr)
+            ffi.call(_XFree, "int32", ["pointer"], _res_class_ptr)
         }
 ffi.free(_hint)
 ({resName: _rn, resClass: _rc})
@@ -305,7 +305,7 @@ fn changeProp(dpy, win, prop, type, format, propMode, data, nelements) {
 }
 
 fn flush(dpy) {
-    ffi.call(_XFlush, "int32", _p, dpy)
+    ffi.call(_XFlush, "int32", ["pointer"], dpy)
 }
 
 fn xSync(dpy, discard) {
@@ -313,15 +313,15 @@ fn xSync(dpy, discard) {
 }
 
 fn free(ptr) {
-    ffi.call(_XFree, "int32", _p, ptr)
+    ffi.call(_XFree, "int32", ["pointer"], ptr)
 }
 
 fn defaultScreen(dpy) {
-    ffi.call(_XDefaultScreen, "int32", _p, dpy)
+    ffi.call(_XDefaultScreen, "int32", ["pointer"], dpy)
 }
 
 fn screenCount(dpy) {
-    ffi.call(_XScreenCount, "int32", _p, dpy)
+    ffi.call(_XScreenCount, "int32", ["pointer"], dpy)
 }
 
 fn displayWidth(dpy, screen) {
@@ -334,12 +334,12 @@ fn displayHeight(dpy, screen) {
 
 fn widthOfScreen(dpy, screen) {
     _scr = ffi.call(_XScreenOfDisplay, "pointer", ["pointer", "int32"], dpy, screen)
-    ffi.call(_XWidthOfScreen, "int32", _p, _scr)
+    ffi.call(_XWidthOfScreen, "int32", ["pointer"], _scr)
 }
 
 fn heightOfScreen(dpy, screen) {
     _scr = ffi.call(_XScreenOfDisplay, "pointer", ["pointer", "int32"], dpy, screen)
-    ffi.call(_XHeightOfScreen, "int32", _p, _scr)
+    ffi.call(_XHeightOfScreen, "int32", ["pointer"], _scr)
 }
 
 fn killClient(dpy, win) {

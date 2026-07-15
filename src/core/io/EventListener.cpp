@@ -23,8 +23,9 @@
 #include <unistd.h>
 #include <sys/signalfd.h>
 
+// Use qt.hpp instead of raw Qt includes for X11 macro conflict handling
 #ifdef HAVE_QT_EXTENSION
-#include <QCoreApplication>
+#include "qt.hpp"
 #endif
 
 namespace havel {

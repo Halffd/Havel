@@ -14,10 +14,10 @@
 // #undef Bool
 // #endif
 
-// #ifdef Status
-// #define X11_Status Status
-// #undef Status
-// #endif
+#ifdef Status
+#define X11_Status Status
+#undef Status
+#endif
 
 #ifdef True
 #define X11_True True

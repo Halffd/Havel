@@ -8,8 +8,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
+#include "x11.h"
 
 namespace havel {
 

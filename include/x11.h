@@ -120,7 +120,7 @@ namespace x11 {
 #undef True
 #undef False
 #undef Success
-// #undef Status - needed by X11 headers
+#undef Status
 // #undef Bool - needed by X11 headers
 #undef Always
 #undef DestroyAll

@@ -29,9 +29,9 @@ void HotkeyExecutor::setInHotkeyCallback(bool v) { tl_inHotkeyCallback = v; }
 #include <future>
 #include <linux/input.h>
 #include <mutex>
+// Use qt.hpp instead of raw Qt includes for X11 macro conflict handling
 #ifdef HAVE_QT_EXTENSION
-#include <qapplication.h>
-#include <qtmetamacros.h>
+#include "qt.hpp"
 #endif
 #include <unistd.h>
 #include <algorithm>

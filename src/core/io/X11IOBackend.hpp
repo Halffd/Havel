@@ -1,8 +1,6 @@
 #pragma once
 #include "IOBackend.hpp"
-#include <X11/Xlib.h>
-#include <X11/extensions/XInput2.h>
-#include <X11/extensions/XTest.h>
+#include "x11.h"
 
 namespace havel {
 

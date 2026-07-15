@@ -287,22 +287,6 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
     }
 vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
 
-    auto windowObj = vm.createHostObject();
-    for (const auto &name : {"active", "cmd", "find", "close", "resize",
-                             "move", "moveToMonitor", "moveToNextMonitor",
-                             "focus", "min", "max", "hide", "show",
-                             "any", "count", "filter", "restore", "snap",
-                             "center", "fullscreen", "moveResize",
-                             "setAlwaysOnTop", "pos", "list", "title",
-                             "class", "exe", "pid", "id", "area", "each",
-                             "sort", "map", "unmap", "pin", "wait"}) {
-      std::string fn = std::string("window.") + name;
-      int idx = vm.getHostFunctionIndex(fn);
-      if (idx >= 0) {
-        vm.setHostObjectField(windowObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
-      }
-    }
-    vm.setGlobal("window", Value::makeObjectId(windowObj.id));
   });
 
   options_.host_functions["extension.load"] =

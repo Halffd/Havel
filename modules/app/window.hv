@@ -72,6 +72,10 @@ class Window {
 		_hint.resClass
 	}
 
+	fn class() {
+		@className()
+	}
+
 	fn pid() {
 		_d = _dpy()
 		if _d == 0 { return 0 }

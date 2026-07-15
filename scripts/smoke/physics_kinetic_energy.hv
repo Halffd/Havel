@@ -1,6 +1,7 @@
 // smoke: physics-kinetic-energy = 1
+use math
 // KE = 0.5 * m * v^2 = 0.5 * 2 * 9 = 9
-v = kinetic_energy(2, 3)
+v = math.kinetic_energy(2, 3)
 val __result = v == 9.0 ? 1 : 0
 if __result != 1 {
  print("FAIL physics-kinetic-energy: expected 1, got " + str(__result))

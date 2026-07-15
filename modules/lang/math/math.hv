@@ -108,3 +108,8 @@ fn randint(lo, hi) {
 fn random_range(lo, hi) {
   num(lo) + math.random() * (num(hi) - num(lo))
 }
+
+fn choice(arr) {
+  idx = randint(0, arr.len() - 1)
+  arr[idx]
+}

@@ -1,6 +1,7 @@
 // smoke: physics-constant-C = 1
+use math
 // C = 299792458
-val __result = physics.C > 299000000 ? 1 : 0
+val __result = math.C > 299000000 ? 1 : 0
 if __result != 1 {
  print("FAIL physics-constant-C: expected 1, got " + str(__result))
  process.exit(1)

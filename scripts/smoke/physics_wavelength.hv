@@ -1,6 +1,7 @@
 // smoke: physics-wavelength = 1
+use math
 // lambda = c / f = 299792458 / 1000
-v = wavelength(1000)
+v = math.wavelength(1000)
 val __result = v > 299000 ? 1 : 0
 if __result != 1 {
  print("FAIL physics-wavelength: expected 1, got " + str(__result))

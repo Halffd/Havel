@@ -2309,9 +2309,9 @@ return ok
 )havel", 1, dump_bytecode, snapshot_dir);
 
     failures += runStdlibCase("random-rand-type", R"havel(
-use random
-// rand() returns a double in [0, 1)
-v = rand()
+use math
+// random() returns a double in [0, 1)
+v = math.random()
 // If it returns a double, comparing with 0 should work
 ok = 1
 if v < 0 { ok = 0 }
@@ -2320,10 +2320,10 @@ return ok
 )havel", 1, dump_bytecode, snapshot_dir);
 
     failures += runStdlibCase("random-choice-from-array", R"havel(
-use random
+use math
 // choice picks from an array
 arr = [10, 20, 30]
-v = choice(arr)
+v = math.choice(arr)
 ok = 0
 if v == 10 { ok = 1 }
 if v == 20 { ok = 1 }

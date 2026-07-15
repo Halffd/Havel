@@ -1,7 +1,7 @@
 // smoke: random-randint-range = 1
-use random
+use math
 // randint(1, 10) should return an int in [1, 10]
-v = randint(1, 10)
+v = math.randint(1, 10)
 ok = 1
 if v < 1 { ok = 0 }
 if v > 10 { ok = 0 }

@@ -1,7 +1,7 @@
 // smoke: random-rand-type = 1
-use random
+use math
 // rand() returns a double in [0, 1)
-v = rand()
+v = math.random()
 // If it returns a double, comparing with 0 should work
 ok = 1
 if v < 0 { ok = 0 }

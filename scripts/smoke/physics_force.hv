@@ -1,6 +1,7 @@
 // smoke: physics-force = 1
+use math
 // F = m * a = 10 * 5 = 50
-v = force(10, 5)
+v = math.force(10, 5)
 val __result = v == 50.0 ? 1 : 0
 if __result != 1 {
  print("FAIL physics-force: expected 1, got " + str(__result))

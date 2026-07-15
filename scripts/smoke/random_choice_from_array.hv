@@ -1,8 +1,8 @@
 // smoke: random-choice-from-array = 1
-use random
+use math
 // choice picks from an array
 arr = [10, 20, 30]
-v = random.choice(arr)
+v = math.choice(arr)
 ok = 0
 if v == 10 { ok = 1 }
 if v == 20 { ok = 1 }

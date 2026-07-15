@@ -2266,6 +2266,15 @@ std::unique_ptr<ast::Expression> Parser::parseExpressionFromString(const std::st
   auto savedPosition = position;
   
   tokens = lexer.tokenize();
+  // Fix: hotkey token starting with # is actually a length operator in interpolated context
+  if (!tokens.empty() && tokens[0].type == havel::TokenType::Hotkey &&
+      !tokens[0].value.empty() && tokens[0].value[0] == '#') {
+    std::string key = tokens[0].value.substr(1);
+    havel::Token lengthTok("#", havel::TokenType::Length, "#", tokens[0].line, tokens[0].column);
+    havel::Token identTok(key, havel::TokenType::Identifier, key, tokens[0].line, tokens[0].column + 1);
+    tokens[0] = lengthTok;
+    tokens.insert(tokens.begin() + 1, identTok);
+  }
   position = 0;
   
   // Collect lexer errors but don't propagate them
@@ -8682,6 +8691,15 @@ return makeNode<havel::ast::StringLiteral>(tk.value, true);
           std::string exprStr = value.substr(exprStart, pos - exprStart);
           havel::Lexer exprLexer(exprStr);
           auto exprTokens = exprLexer.tokenize();
+          // Fix: hotkey token starting with # is actually a length operator in interpolated context
+          if (!exprTokens.empty() && exprTokens[0].type == havel::TokenType::Hotkey &&
+              !exprTokens[0].value.empty() && exprTokens[0].value[0] == '#') {
+            std::string key = exprTokens[0].value.substr(1);
+            havel::Token lengthTok("#", havel::TokenType::Length, "#", exprTokens[0].line, exprTokens[0].column);
+            havel::Token identTok(key, havel::TokenType::Identifier, key, exprTokens[0].line, exprTokens[0].column + 1);
+            exprTokens[0] = lengthTok;
+            exprTokens.insert(exprTokens.begin() + 1, identTok);
+          }
           auto savedTokens = tokens;
           auto savedPos = position;
           tokens = exprTokens;
@@ -8734,6 +8752,14 @@ return makeNode<havel::ast::StringLiteral>(tk.value, true);
                         std::string exprCode = value.substr(exprStart, pos - exprStart);
                         havel::Lexer exprLexer(exprCode);
                         auto exprTokens = exprLexer.tokenize();
+                        if (!exprTokens.empty() && exprTokens[0].type == havel::TokenType::Hotkey &&
+                            !exprTokens[0].value.empty() && exprTokens[0].value[0] == '#') {
+                          std::string key = exprTokens[0].value.substr(1);
+                          havel::Token lengthTok("#", havel::TokenType::Length, "#", exprTokens[0].line, exprTokens[0].column);
+                          havel::Token identTok(key, havel::TokenType::Identifier, key, exprTokens[0].line, exprTokens[0].column + 1);
+                          exprTokens[0] = lengthTok;
+                          exprTokens.insert(exprTokens.begin() + 1, identTok);
+                        }
                         auto savedTokens = tokens;
                         auto savedPos = position;
                         tokens = exprTokens;

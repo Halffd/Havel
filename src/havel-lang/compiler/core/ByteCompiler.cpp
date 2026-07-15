@@ -8192,6 +8192,7 @@ void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::str
   uint32_t funcIndex = compiled_functions.size();
   BytecodeFunction bf(name, 0, 0);
   bf.upvalues = std::move(upvalues);
+  bool has_upvalues = !bf.upvalues.empty();
 
   enterFunction(std::move(bf), funcIndex);
 
@@ -8206,7 +8207,7 @@ void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::str
   current_class_name_ = std::move(saved_class_name);
 
   // Load the function object
-  if (!upvalues.empty()) {
+  if (has_upvalues) {
       emit(OpCode::CLOSURE, Value::makeInt(static_cast<int64_t>(funcIndex)));
   } else {
       emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));

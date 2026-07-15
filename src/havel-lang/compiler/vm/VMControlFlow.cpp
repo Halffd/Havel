@@ -1128,7 +1128,7 @@ auto *parent_closure = heap_.closure(parent_closure_id);
     }
 
   std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
-  if (current_chunk != main_chunk_.get()) {
+  if (main_chunk_ && current_chunk != main_chunk_.get()) {
     closure_globals = std::make_shared<std::unordered_map<std::string, Value>>(globals);
   }
             pushStack(Value::makeClosureId(heap_.allocateClosure(

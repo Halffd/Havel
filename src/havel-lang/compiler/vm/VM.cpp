@@ -3573,14 +3573,16 @@ Value VM::loadModule(const std::string& path) {
     }
     // Also carry over namespace objects (fs, sys, math, etc.) from the
     // caller's globals so module code can call fs.read(), sys.cwd(), etc.
-    auto &callerGlobals = globals_stack_.back();
-    for (const auto& [name, value] : callerGlobals) {
-        if (name.empty() || name[0] == '_') continue;
-        if (globals.count(name)) continue; // don't overwrite host function globals
-        if (value.isObjectId()) {
-            globals[name] = value;
-            inheritedGlobalNames.insert(name);
-            inheritedGlobalValues[name] = value;
+    if (!globals_stack_.empty()) {
+        auto &callerGlobals = globals_stack_.back();
+        for (const auto& [name, value] : callerGlobals) {
+            if (name.empty() || name[0] == '_') continue;
+            if (globals.count(name)) continue; // don't overwrite host function globals
+            if (value.isObjectId()) {
+                globals[name] = value;
+                inheritedGlobalNames.insert(name);
+                inheritedGlobalValues[name] = value;
+            }
         }
     }
     auto g_obj = createHostObject();

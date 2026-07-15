@@ -1117,6 +1117,12 @@ std::vector<Token> Lexer::tokenize() {
                             prevType == TokenType::CloseBrace);
       }
 
+      // # followed by underscore is always length operator (hotkey keys never start with _)
+      if (!isAtEnd() && peek() == '_') {
+        tokens.push_back(makeToken("#", TokenType::Length));
+        continue;
+      }
+
       bool hasModifierPrefix = (!isAtEnd() && (peek() == '!' || peek() == '&' || peek() == '^'));
       bool hasKeyName = (!isAtEnd() && isAlpha(peek()));
       bool afterAssign = (prevType == TokenType::Assign && hasKeyName && isHotkeyLookahead());

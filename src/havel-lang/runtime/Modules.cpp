@@ -164,18 +164,6 @@ void Modules::installHostFunctions() {
         }
         vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
 
-        auto displayObj = vm.createHostObject();
-        for (const auto &name : {"getMonitors", "getPrimary", "getCount",
-                                 "getMonitorsArea", "isX11", "isWayland",
-                                 "isWindows", "protocol", "wm",
-                                 "displayNum", "monitorsResolution"}) {
-            std::string fn = std::string("display.") + name;
-            int idx = vm.getHostFunctionIndex(fn);
-            if (idx >= 0) {
-                vm.setHostObjectField(displayObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
-            }
-        }
-        vm.setGlobal("display", Value::makeObjectId(displayObj.id));
     });
 
     options_.host_functions["extension.load"] =

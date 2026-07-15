@@ -705,7 +705,30 @@ fn activeId() {
 }
 
 fn active() {
-	Window(activeId())
+	_w = Window(activeId())
+	{
+		id: _w.id,
+		title: _w.title(),
+		class: _w.className(),
+		pid: _w.pid(),
+		exe: _w.exe(),
+		cmdline: _w.cmdline(),
+		close: fn() { _w.close() },
+		hide: fn() { _w.hide() },
+		show: fn() { _w.show() },
+		focus: fn() { _w.activate() },
+		min: fn() { _w.minimize() },
+		max: fn() { _w.maximize() },
+		resize: fn(w, h) { _w.resize(w, h) },
+		move: fn(x, y) { _w.move(x, y) },
+		restore: fn() { _w.restore() },
+		snap: fn(pos) { _w.snap(pos) },
+		center: fn() { _w.center() },
+		fullscreen: fn() { _w.fullscreen() },
+		moveResize: fn(x, y, w, h) { _w.moveResize(x, y, w, h) },
+		setAlwaysOnTop: fn(b) { _w.setAlwaysOnTop(b) },
+		pos: fn() { _w.pos() },
+	}
 }
 
 fn list() {

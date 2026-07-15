@@ -3735,13 +3735,15 @@ for (const auto& [name, value] : globals) {
                                 lazyModuleUpdates[alias] = aliasIt->second;
                             }
                         }
-                    }
-                }
-            }
+}
+    }
         }
     }
-    globals = std::move(globals_stack_.back());
-    globals_stack_.pop_back();
+    }
+    if (!globals_stack_.empty()) {
+        globals = std::move(globals_stack_.back());
+        globals_stack_.pop_back();
+    }
     // Propagate lazy module objects to the caller's globals
     for (const auto &[name, value] : lazyModuleUpdates) {
         globals[name] = value;

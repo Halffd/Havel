@@ -184,6 +184,7 @@ bool RuntimeTypeSystem::isTruthy(const Value& value) {
   if (value.isInt()) return value.asInt() != 0;
   if (value.isDouble()) return value.asDouble() != 0.0;
   if (value.isStringValId()) return true; // All strings are truthy
+  if (value.isPtr()) return value.asPtr() != nullptr; // null ptr is falsy
   return true; // All reference types are truthy
 }
 

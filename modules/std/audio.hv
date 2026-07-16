@@ -11,7 +11,7 @@ use "std/array"
 use "std/json"
 
 _c = ffi.open("libc.so.6")
-if _c == 0 { _c = ffi.open("libc.so") }
+if !_c { _c = ffi.open("libc.so") }
 
 _popen = ffi.sym(_c, "popen")
 _pclose = ffi.sym(_c, "pclose")
@@ -24,13 +24,13 @@ fn _shell(cmd) {
     _fp = ffi.call(_popen, "pointer", ["pointer", "pointer"], _cs, _mode)
     ffi.free(_cs)
     ffi.free(_mode)
-    if _fp == 0 { return "" }
+    if !_fp { return "" }
     _buf = ffi.allocBytes(8192)
     _result = ""
     _looping = true
     while _looping {
         _ret = ffi.call(_fgets, "pointer", ["pointer", "int32", "pointer"], _buf, 8192, _fp)
-        if _ret == 0 {
+        if !_ret {
             _looping = false
         } else {
             _chunk = ffi.string(_buf)

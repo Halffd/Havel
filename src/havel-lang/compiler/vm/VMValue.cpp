@@ -584,6 +584,11 @@ bool VM::isTruthy(const Value &value) {
     return true;
   }
 
+  // Step 9: pointer values - null is falsy, non-null is truthy
+  if (value.isPtr()) {
+    return value.asPtr() != nullptr;
+  }
+
   // Default: should not reach here, but be conservative
   return false;
 }

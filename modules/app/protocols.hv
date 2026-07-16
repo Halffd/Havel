@@ -17,10 +17,12 @@ SOURCE_PAGER = 2
 // Cached display and atoms (lazily initialized)
 _dpy = 0
 _atoms_cache = {}
+_initialized = false
 
 fn _ensureDpy() {
-    if _dpy == 0 {
+    if !_initialized {
         _dpy = x11.open(null)
+        _initialized = true
     }
     _dpy
 }
@@ -230,5 +232,6 @@ fn cleanup() {
         x11.close(_dpy)
         _dpy = 0
         _atoms_cache = {}
+        _initialized = false
     }
 }

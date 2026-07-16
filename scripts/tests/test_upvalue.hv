@@ -1,9 +1,0 @@
-x = 0
-my_lambda = () => {
-    x = x + 1
-    print("inside fn, x:", x)
-}
-my_lambda()
-my_lambda()
-my_lambda()
-print("outside, x:", x)

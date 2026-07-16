@@ -1,8 +1,0 @@
-title_ = nil
-when title_ ~ "window" {
-  print("matched!")
-}
-sleep(100)
-title_ = "window"
-sleep(100)
-print("done")

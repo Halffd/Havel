@@ -176,19 +176,19 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
   }
 
 case OpCode::TAIL_CALL: {
-  // Tail call optimization: reuse current frame instead of pushing new one
-  uint32_t arg_count = instruction.operands[0].asInt();
-  if (stack.size() < static_cast<size_t>(arg_count) + 1) {
-    COMPILER_THROW("Stack underflow during TAIL_CALL");
-  }
+    // TAIL_CALL not fully implemented, fall back to regular CALL
+    uint32_t arg_count = instruction.operands[0].asInt();
+    if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+      COMPILER_THROW("Stack underflow during TAIL_CALL");
+    }
 
-  std::vector<Value> args(arg_count);
-  for (uint32_t i = 0; i < arg_count; ++i) {
-    args[arg_count - 1 - i] = popStack();
-  }
-  Value callee_value = popStack();
-  doTailCall(callee_value, std::move(args));
-  break;
+    std::vector<Value> args(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[arg_count - 1 - i] = popStack();
+    }
+    Value callee_value = popStack();
+    doCall(callee_value, std::move(args));
+    break;
   }
 
   case OpCode::CALL_METHOD: {

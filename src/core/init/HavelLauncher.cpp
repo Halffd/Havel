@@ -1168,7 +1168,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
       fs::path langDir =
           fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
       if (fs::exists(langDir) && !fs::is_empty(langDir)) {
-        cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
+        cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
         cfg.minimalMode = true;
         cfg.pureStdlib = true;
       } else {

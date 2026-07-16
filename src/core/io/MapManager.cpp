@@ -44,7 +44,6 @@ bool MappingCondition::Evaluate() const {
     XGetInputFocus(display, &focused, &revert);
 
     if (focused == 0) { // X11 None constant
-      XCloseDisplay(display);
       return false;
     }
 
@@ -66,8 +65,6 @@ bool MappingCondition::Evaluate() const {
           XFree(classHint.res_class);
       }
     }
-
-    XCloseDisplay(display);
 
     try {
       std::regex regex(pattern, std::regex::icase);

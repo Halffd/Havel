@@ -46,9 +46,6 @@ AltTabWindow::AltTabWindow(QWidget *parent)
 }
 
 AltTabWindow::~AltTabWindow() {
-  if (display) {
-    XCloseDisplay(display);
-  }
 }
 
 void AltTabWindow::setupUI() {

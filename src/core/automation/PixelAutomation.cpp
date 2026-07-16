@@ -285,7 +285,6 @@ Color PixelAutomation::getPixel(int x, int y) {
             XFixesShowCursor(display, DefaultRootWindow(display));
             XFlush(display);
         }
-        XCloseDisplay(display);
     }
 #endif
 

@@ -648,9 +648,8 @@ return
 			// TCO: emit TAIL_CALL if in tail position and not inside try
 			emitter.inTailPosition = savedTail
 			if emitter.inTailPosition && emitter.tryDepth == 0 {
-				bc.emit("TAIL_CALL", argc)
-				bc.emit("RETURN")
-				emitter.emittedTailCall = true
+				// TODO: TAIL_CALL not fully implemented in VM, use CALL for now
+				bc.emit("CALL", argc)
 			}
 			else {
 				bc.emit("CALL", argc)
@@ -3085,14 +3084,14 @@ emitStmt(emitter, node)
 
 }
 fn emitBlockWithReturn(emitter, node) {
-  if node == null {
+if node == null {
     bc.emit("PUSH_NULL")
     return
   }
 if node.kind == "BlockStatement" {
-oldScope = emitter.scope
-    blockScope = Scope(oldScope, null, null)
-emitter.scope = blockScope
+  oldScope = emitter.scope
+    blockScope = Scope(oldScope, oldScope.funcIdx, oldScope.bcFuncIdx)
+  emitter.scope = blockScope
 stmts = node.body
 n = #stmts
 if n == 0 {

@@ -301,6 +301,10 @@ locals.clear();
     current_exception_ = nullptr;
   registerDefaultHostGlobals();
   host_globals_registered_ = true;
+  // Copy host function globals to globals map so LOAD_GLOBAL finds them
+  for (const auto& [name, value] : host_function_globals_) {
+    globals[name] = value;
+  }
   if (post_reset_setup_) {
         post_reset_setup_(*this);
     }
@@ -2611,9 +2615,12 @@ if (locals.size() >= finished.locals_base) {
 immutable_locals_.clear();
 
 // Restore expression stack to the depth at call time, preserving return value
-while (stack.size() > finished.stack_depth) {
-    popStack();
-}
+    while (stack.size() > finished.stack_depth) {
+        popStack();
+    }
+    if (!ret.isNull()) {
+        pushStack(ret);
+    }
 
             if (current_coroutine_id_ != UINT32_MAX) {
                 auto *co = heap_.coroutine(current_coroutine_id_);
@@ -3002,7 +3009,9 @@ if (bc_execute_depth_ == 0) {
       (*copyObj)[k] = std::move(v);
     }
     visitedPtr->erase(objId);
+    uint64_t copyRootId = pinExternalRoot(Value::makeObjectId(copyRef.id));
     resumeGcGuard();
+    unpinExternalRoot(copyRootId);
     return Value::makeObjectId(copyRef.id);
   }
 
@@ -3035,7 +3044,9 @@ if (bc_execute_depth_ == 0) {
       copyArr->push_back(std::move(elem));
     }
     visitedPtr->erase(arrId);
+    uint64_t copyRootId = pinExternalRoot(Value::makeArrayId(copyRef.id));
     resumeGcGuard();
+    unpinExternalRoot(copyRootId);
     return Value::makeArrayId(copyRef.id);
   }
 
@@ -3673,6 +3684,7 @@ auto *obj = heap_.object(exportsObj.id);
     auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
     int exportCount = 0;
     (void)exportCount;
+    uint64_t exportsRootId = pinExternalRoot(Value::makeObjectId(exportsObj.id));
 for (const auto& [name, value] : globals) {
             if (name.empty() || name[0] == '_') continue;
         // Skip inherited globals UNLESS the module redefined them
@@ -3698,6 +3710,7 @@ for (const auto& [name, value] : globals) {
         (*obj)[name] = materialized;
         exportCount++;
     }
+    unpinExternalRoot(exportsRootId);
     Value exports = Value::makeObjectId(exportsObj.id);
 
     // Merge C++ host module globals (e.g., math.ceil, math.sqrt) into exports

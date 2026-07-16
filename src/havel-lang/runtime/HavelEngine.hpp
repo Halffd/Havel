@@ -76,9 +76,10 @@ public:
         t = havel::startup_now();
 
 vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
-hostContext_->vm = vm_.get();
-hostAPI->SetVM(vm_.get());
-havel::startup_timing_report("vm-create", t);
+        hostContext_->vm = vm_.get();
+        hostAPI->SetVM(vm_.get());
+        vm_->registerDefaultHostGlobals();  // Ensure host functions are in globals
+        havel::startup_timing_report("vm-create", t);
         t = havel::startup_now();
 
         // Set up scheduler for goroutine/thread support
@@ -312,6 +313,9 @@ vm_->addIntervalResult(timer_id, result);
         compiler::PipelineOptions options = modules_->options();
         options.compile_unit_name = compileUnitName;
         options.vm_override = vm_.get();
+        for (const auto &[name, fn] : vm_->getHostFunctions()) {
+            options.host_functions[name] = fn;
+        }
         options.debugBytecode = config_.debugBytecode;
         if (config_.vmConfig.max_instructions > 0 && options.max_instructions == 0) {
             options.max_instructions = config_.vmConfig.max_instructions;

@@ -377,6 +377,38 @@ void VM::registerDefaultHostFunctions() {
       std::this_thread::sleep_for(std::chrono::milliseconds(ms));
       return Value::makeNull();
     });
+    api.registerFunction("io._recordStart", [getIO, toStr](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      std::string stopKey = (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) ? toStr(args[0]) : "";
+      io->StartRecord(stopKey);
+      return Value::makeBool(true);
+    });
+    api.registerFunction("io._recordStop", [api, getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeNull();
+      auto events = io->StopRecord();
+      auto arr = api.makeArray();
+      for (auto& ev : events) {
+        auto obj = api.makeObject();
+        api.setField(obj, "type", Value::makeInt(static_cast<int64_t>(ev.kind)));
+        api.setField(obj, "code", Value::makeInt(ev.code));
+        api.setField(obj, "value", Value::makeInt(ev.value));
+        api.setField(obj, "down", Value::makeBool(ev.down));
+        api.setField(obj, "dx", Value::makeInt(ev.dx));
+        api.setField(obj, "dy", Value::makeInt(ev.dy));
+        api.setField(obj, "time", Value::makeDouble(ev.timeMs));
+        api.setField(obj, "buttonNumber", Value::makeInt(ev.buttonNumber));
+        if (!ev.keyName.empty()) {
+          auto nameRef = api.vm().createRuntimeString(ev.keyName);
+          api.setField(obj, "keyName", Value::makeStringId(nameRef.id));
+        }
+        api.push(arr, obj);
+      }
+      return arr;
+    });
+    api.registerFunction("io._isRecording", [getIO](const std::vector<Value>&) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      return Value::makeBool(io->IsRecording());
+    });
   }
 
   // EventListener bridge functions — registered at startup for pure-Havel event_listener module
@@ -3164,6 +3196,7 @@ void VM::registerDefaultHostGlobals() {
 
   for (const auto& [name, value] : host_function_globals_) {
     setHostObjectField(g_obj, name, value);
+    setGlobal(name, value);
   }
 
   auto system_obj = heap_.allocateObject();

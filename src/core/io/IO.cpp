@@ -540,6 +540,39 @@ eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
         debug("[IO] About to call EventListener::Start()...");
         eventListener->Start(devices, grab, eventListenerThreaded_);
         debug("[IO] EventListener::Start() returned");
+
+        // Pre-register recording callback (gated by isRecording_ flag)
+        eventListener->AddEventListener([this](const InputEvent& event) {
+          if (!isRecording_.load()) return;
+          if (recordStopKeyCode_.load() != 0 && event.kind == InputEventKind::Key && event.down && event.code == recordStopKeyCode_.load()) {
+            isRecording_.store(false);
+            return;
+          }
+          RecordedEvent re;
+          re.kind = event.kind;
+          re.code = event.code;
+          re.value = event.value;
+          re.down = event.down;
+          re.dx = event.dx;
+          re.dy = event.dy;
+          re.keyName = event.keyName;
+          if (event.kind == InputEventKind::MouseButton) {
+            switch (event.code) {
+              case BTN_LEFT: re.buttonNumber = 1; break;
+              case BTN_RIGHT: re.buttonNumber = 2; break;
+              case BTN_MIDDLE: re.buttonNumber = 3; break;
+              case BTN_SIDE: re.buttonNumber = 4; break;
+              case BTN_EXTRA: re.buttonNumber = 5; break;
+              case BTN_FORWARD: re.buttonNumber = 6; break;
+              case BTN_BACK: re.buttonNumber = 7; break;
+              default: re.buttonNumber = event.code >= 1 && event.code <= 7 ? event.code : 1; break;
+            }
+          }
+          auto now = std::chrono::steady_clock::now();
+          re.timeMs = std::chrono::duration<double, std::milli>(now - recordingStartTime_).count();
+          std::lock_guard<std::mutex> lock(recordingMutex_);
+          recordedEvents_.push_back(re);
+        });
       } catch (const std::exception &e) {
         error("Failed to start unified EventListener: {}", e.what());
         globalEvdev = false;
@@ -2829,6 +2862,25 @@ MouseAction IO::GetMouseAction(int idx) {
   default:
     return MouseAction::Click;
   }
+}
+
+void IO::StartRecord(const std::string &stopKeyName) {
+  ensureBackend();
+  std::lock_guard<std::mutex> lock(recordingMutex_);
+  recordedEvents_.clear();
+  recordStopKeyCode_.store(0);
+  if (!stopKeyName.empty()) {
+    int code = KeyMap::FromString(stopKeyName);
+    if (code != 0) recordStopKeyCode_.store(code);
+  }
+  recordingStartTime_ = std::chrono::steady_clock::now();
+  isRecording_.store(true);
+}
+
+std::vector<RecordedEvent> IO::StopRecord() {
+  isRecording_.store(false);
+  std::lock_guard<std::mutex> lock(recordingMutex_);
+  return std::move(recordedEvents_);
 }
 
 } // namespace havel

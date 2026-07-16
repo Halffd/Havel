@@ -165,4 +165,53 @@ fn sendKeyState(key, state) {
   else { io._sendX11Key(str(key), state == "press" || state == true) }
 }
 
+fn record(stopKey) {
+  io._recordStart("")
+  while io._isRecording() { io._sleepMs(10) }
+  evs = io._recordStop()
+  if evs == nil { [] } else { evs }
+}
+
+fn play(events) {
+  if events == nil { nil }
+  else {
+    last = 0.0
+    for ev in events {
+      dt = ev.time - last
+      if dt > 0.5 { io._sleepMs(int(dt)) }
+      last = ev.time
+      if ev.type == 0 {
+        if ev.keyName != nil && ev.keyName != "" { sendKeyState(ev.keyName, ev.down) }
+      } else if ev.type == 1 {
+        btn = ev.buttonNumber != nil && ev.buttonNumber > 0 ? ev.buttonNumber : 1
+        if ev.down { mousePress(btn) } else { mouseRelease(btn) }
+      } else if ev.type == 2 {
+        io._mouseMove(ev.dx, ev.dy, 1)
+      } else if ev.type == 3 {
+        io._scroll(ev.value > 0 ? 1.0 : -1.0, 0.0)
+      }
+    }
+    nil
+  }
+}
+
+fn recordScript(stopKey) {
+  events = record(stopKey)
+  n = #events
+  if n == 0 { "" } else {
+    result = "// recorded " + str(n) + " events\nio.play([\n"
+    for i in 0..n {
+      ev = events[i]
+      sep = i < n - 1 ? "," : ""
+      kn = ""
+      bn = ""
+      if ev.keyName != nil && ev.keyName != "" { kn = ", keyName: \"" + ev.keyName + "\"" }
+      if ev.buttonNumber != nil && ev.buttonNumber > 0 { bn = ", buttonNumber: " + str(ev.buttonNumber) }
+      result += "  {type: " + str(ev.type) + ", code: " + str(ev.code) + ", value: " + str(ev.value) + ", down: " + str(ev.down) + ", dx: " + str(ev.dx) + ", dy: " + str(ev.dy) + ", time: " + str(ev.time) + kn + bn + "}" + sep + "\n"
+    }
+    result += "])\n"
+    result
+  }
+}
+
 // Set io as global for backward compat

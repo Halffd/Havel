@@ -152,6 +152,19 @@ struct IoEvent {
   int modifiers;
   bool isDown;
 };
+
+struct RecordedEvent {
+  InputEventKind kind;
+  int code = 0;
+  int value = 0;
+  bool down = false;
+  int dx = 0;
+  int dy = 0;
+  double timeMs = 0;
+  std::string keyName;
+  int buttonNumber = 0;
+};
+
 class GrabException : public std::exception {
 public:
   const char *what() const noexcept override { return "Failed to grab hotkey"; }
@@ -531,5 +544,17 @@ public:
       const std::function<bool(const std::string &, int)> &deviceFilter);
   std::string getKeyboardDevice();
   std::string getMouseDevice();
+
+  // Recording
+  void StartRecord(const std::string &stopKeyName = "");
+  std::vector<RecordedEvent> StopRecord();
+  bool IsRecording() const { return isRecording_.load(); }
+
+private:
+  std::atomic<bool> isRecording_{false};
+  std::vector<RecordedEvent> recordedEvents_;
+  std::chrono::steady_clock::time_point recordingStartTime_;
+  std::atomic<int> recordStopKeyCode_{0};
+  std::mutex recordingMutex_;
 };
 } // namespace havel

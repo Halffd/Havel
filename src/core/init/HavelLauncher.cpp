@@ -983,13 +983,57 @@ public:
     }
 
     std::vector<std::string> appArgList;
-    appArgList.push_back("--self-hosted");
+
+    // Mode flag
+    switch (cfg.mode) {
+    case LaunchConfig::Mode::REPL:
+      appArgList.push_back("--repl");
+      break;
+    case LaunchConfig::Mode::SCRIPT_AND_REPL:
+      appArgList.push_back("--repl");
+      break;
+    case LaunchConfig::Mode::TEST:
+      appArgList.push_back("--test");
+      appArgList.push_back(cfg.testDir);
+      appArgList.push_back(std::to_string(cfg.testTimeout));
+      break;
+    default:
+      // SCRIPT, SCRIPT_ONLY: pass script files directly
+      break;
+    }
+
+    // Debug flags
+    if (cfg.debugBytecode)
+      appArgList.push_back("--debug-bytecode");
+    if (cfg.debugLexer)
+      appArgList.push_back("--debug-lexer");
+    if (cfg.debugParser)
+      appArgList.push_back("--debug-parser");
+    if (cfg.debugAst)
+      appArgList.push_back("--debug-ast");
+    if (cfg.stopOnError)
+      appArgList.push_back("--error");
+
+    // Script files
     for (const auto &f : cfg.scriptFiles)
       appArgList.push_back(f);
+
+    // Eval string
+    if (!cfg.evalString.empty()) {
+      appArgList.push_back("--eval");
+      appArgList.push_back(cfg.evalString);
+    }
+
+    // Lint-only
     if (cfg.lintOnly)
       appArgList.push_back("--lint");
-    for (const auto &a : cfg.scriptArgs)
-      appArgList.push_back(a);
+
+    // Script args (after --)
+    if (!cfg.scriptArgs.empty()) {
+      appArgList.push_back("--");
+      for (const auto &a : cfg.scriptArgs)
+        appArgList.push_back(a);
+    }
 
     installMinimalSignalHandlers();
 
@@ -1160,21 +1204,25 @@ int HavelLauncher::run(int argc, char *argv[]) {
     if (cfg.buildOnly)
       return runBuild(cfg);
 
-    bool modeExplicitlySet = (cfg.mode != LaunchConfig::Mode::DAEMON);
-
-    if (!modeExplicitlySet && !cfg.vmConfig.self_hosted_modules_path.empty()) {
+    if (!cfg.noSelfHosted && !cfg.vmConfig.self_hosted_modules_path.empty()) {
       namespace fs = std::filesystem;
       fs::path langDir =
           fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
       if (fs::exists(langDir) && !fs::is_empty(langDir)) {
-        cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
-        cfg.minimalMode = true;
-        cfg.pureStdlib = true;
+        if (cfg.mode == LaunchConfig::Mode::REPL ||
+            cfg.mode == LaunchConfig::Mode::SCRIPT ||
+            cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
+            cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
+            cfg.mode == LaunchConfig::Mode::TEST) {
+          cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
+          cfg.minimalMode = true;
+          cfg.pureStdlib = true;
+        }
       } else {
         error("Self-hosted modules not found at: " + langDir.string());
         return 1;
       }
-    } else if (!modeExplicitlySet) {
+    } else if (cfg.vmConfig.self_hosted_modules_path.empty()) {
       error("Self-hosted modules path not configured");
       return 1;
     }
@@ -1404,7 +1452,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.minimalMode = true;
       cfg.pureStdlib = true;
     } else if (arg == "--no-self-hosted") {
-      cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
+      cfg.noSelfHosted = true;
     } else if (arg == "--test" || arg == "-t") {
       // Test mode - run all .hv files in a directory
       cfg.mode = LaunchConfig::Mode::TEST;

@@ -38,6 +38,7 @@ struct LaunchConfig {
   };
 
   Mode mode = Mode::DAEMON;
+  bool noSelfHosted = false;
   std::vector<std::string> scriptFiles;
   std::vector<std::string> scriptArgs;
   std::string programName;

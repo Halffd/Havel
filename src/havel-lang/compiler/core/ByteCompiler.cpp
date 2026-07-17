@@ -5958,7 +5958,10 @@ void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
 
     loop_stack_.push_back({loop_start, {}, {}});
 
+    bool saved_tail_cond = in_tail_position_;
+    in_tail_position_ = false;
     compileExpression(*statement.condition);
+    in_tail_position_ = saved_tail_cond;
     uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
     bool saved_tail = in_tail_position_;
@@ -5999,7 +6002,10 @@ void ByteCompiler::compileDoWhileStatement(
 
     uint32_t continue_target =
         static_cast<uint32_t>(current_function->instructions.size());
+    bool saved_tail_cond = in_tail_position_;
+    in_tail_position_ = false;
     compileExpression(*statement.condition);
+    in_tail_position_ = saved_tail_cond;
     uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
     emit(OpCode::JUMP, loop_start);
@@ -6413,7 +6419,10 @@ void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
 
         loop_stack_.push_back({loop_start, {}, {}});
 
+        bool saved_tail_cond = in_tail_position_;
+        in_tail_position_ = false;
         compileExpression(*statement.condition);
+        in_tail_position_ = saved_tail_cond;
         uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
         bool saved_tail = in_tail_position_;

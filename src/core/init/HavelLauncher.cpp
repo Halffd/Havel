@@ -1160,10 +1160,9 @@ int HavelLauncher::run(int argc, char *argv[]) {
     if (cfg.buildOnly)
       return runBuild(cfg);
 
-    if (cfg.mode != LaunchConfig::Mode::SELF_HOSTED &&
-        cfg.mode != LaunchConfig::Mode::SCRIPT_AND_REPL &&
-        cfg.mode != LaunchConfig::Mode::REPL &&
-        !cfg.vmConfig.self_hosted_modules_path.empty()) {
+    bool modeExplicitlySet = (cfg.mode != LaunchConfig::Mode::DAEMON);
+
+    if (!modeExplicitlySet && !cfg.vmConfig.self_hosted_modules_path.empty()) {
       namespace fs = std::filesystem;
       fs::path langDir =
           fs::path(cfg.vmConfig.self_hosted_modules_path) / "modules" / "lang";
@@ -1172,8 +1171,12 @@ int HavelLauncher::run(int argc, char *argv[]) {
         cfg.minimalMode = true;
         cfg.pureStdlib = true;
       } else {
-        info("Engine: compiled (C++)");
+        error("Self-hosted modules not found at: " + langDir.string());
+        return 1;
       }
+    } else if (!modeExplicitlySet) {
+      error("Self-hosted modules path not configured");
+      return 1;
     }
 
     if (!cfg.diffPipelinePath.empty()) {
@@ -1400,6 +1403,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
       cfg.minimalMode = true;
       cfg.pureStdlib = true;
+    } else if (arg == "--no-self-hosted") {
+      cfg.mode = LaunchConfig::Mode::SCRIPT_ONLY;
     } else if (arg == "--test" || arg == "-t") {
       // Test mode - run all .hv files in a directory
       cfg.mode = LaunchConfig::Mode::TEST;
@@ -1621,6 +1626,7 @@ Options:
   -i, --interactive   Same as --repl
   --run               Run script in minimal mode
   --self-hosted       Run via pure Havel pipeline
+  --no-self-hosted    Use C++ parser (legacy)
   -t, --test DIR      Run all .hv files in a directory
   --lint FILE         Check syntax and compilation errors
   --build FILE        Compile to bytecode (.hvc)

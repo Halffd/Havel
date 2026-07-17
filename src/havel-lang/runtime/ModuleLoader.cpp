@@ -136,14 +136,36 @@ ModuleLoader::resolve(const std::string& modulePath,
   if (!scriptDir.empty()) {
     fs::path cachePath = fs::path(scriptDir) / "__cache__" / (name + ".hvc");
     if (fs::exists(cachePath)) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(cachePath).string(), modulePath};
+      // Check timestamp against source .hv file if it exists
+      fs::path srcPath = fs::path(scriptDir) / (name + ".hv");
+      if (fs::exists(srcPath)) {
+        auto cacheTime = fs::last_write_time(cachePath);
+        auto srcTime = fs::last_write_time(srcPath);
+        if (cacheTime >= srcTime) {
+          return ResolvedModule{ResolvedModule::BytecodeCache,
+                                fs::canonical(cachePath).string(), modulePath};
+        }
+      } else {
+        // No source file, use cache
+        return ResolvedModule{ResolvedModule::BytecodeCache,
+                              fs::canonical(cachePath).string(), modulePath};
+      }
     }
     // Also check old .hbc extension for backwards compat
     fs::path hbcPath = fs::path(scriptDir) / "__cache__" / (name + ".hbc");
     if (fs::exists(hbcPath)) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(hbcPath).string(), modulePath};
+      fs::path srcPath = fs::path(scriptDir) / (name + ".hv");
+      if (fs::exists(srcPath)) {
+        auto cacheTime = fs::last_write_time(hbcPath);
+        auto srcTime = fs::last_write_time(srcPath);
+        if (cacheTime >= srcTime) {
+          return ResolvedModule{ResolvedModule::BytecodeCache,
+                                fs::canonical(hbcPath).string(), modulePath};
+        }
+      } else {
+        return ResolvedModule{ResolvedModule::BytecodeCache,
+                              fs::canonical(hbcPath).string(), modulePath};
+      }
     }
   }
 

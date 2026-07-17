@@ -434,6 +434,10 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Returns nullptr if not found
     Goroutine* getHotkeyByAlias(const std::string& alias);
 
+    // Remove a persistent hotkey goroutine by alias
+    // Returns true if the goroutine was found and removed
+    bool removeHotkeyByAlias(const std::string& alias);
+
     // Change the hotkey policy on a goroutine at runtime
     void setHotkeyPolicy(Goroutine* g, HotkeyPolicy policy);
 

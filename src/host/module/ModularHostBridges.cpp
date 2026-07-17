@@ -3864,7 +3864,7 @@ InputBridge::handleHotkeyRemove(const std::vector<Value> &args,
     if (hostCtx && hostCtx->hotkeyManager) {
         hostCtx->hotkeyManager->RemoveHotkey(alias);
     }
-    bool removed = ::havel::stdlib::HotkeyModule::removeById(hotkeyId);
+    bool removed = ::havel::stdlib::HotkeyModule::removeById(*vm, hotkeyId);
     return Value::makeBool(removed);
 }
 

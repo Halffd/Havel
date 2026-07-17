@@ -1458,6 +1458,28 @@ bool HotkeyModule::removeById(const std::string &hotkeyId) {
   return g_hotkeyContexts.erase(hotkeyId) > 0;
 }
 
+bool HotkeyModule::removeById(VM &vm, const std::string &hotkeyId) {
+  std::lock_guard<std::mutex> lock(g_hotkeyContextsMutex);
+  auto it = g_hotkeyContexts.find(hotkeyId);
+  if (it == g_hotkeyContexts.end()) {
+    return false;
+  }
+  
+  // Get the goroutine ID before erasing
+  uint32_t gid = it->second.goroutine_id;
+  std::string alias = it->second.alias;
+  
+  // Remove from hotkey contexts
+  g_hotkeyContexts.erase(it);
+  
+  // Clean up the persistent goroutine in the scheduler
+  if (gid != 0 && vm.getScheduler()) {
+    vm.getScheduler()->removeHotkeyByAlias(alias);
+  }
+  
+  return true;
+}
+
 bool HotkeyModule::setEnabled(const std::string &hotkeyId, bool enabled) {
   auto *ctx = getHotkeyContextDataMutable(hotkeyId);
   if (!ctx) return false;

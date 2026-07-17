@@ -651,6 +651,25 @@ bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
     return found;
 }
 
+bool Scheduler::removeHotkeyByAlias(const std::string& alias) {
+    std::lock_guard lock(goroutines_mutex_);
+    for (auto it = goroutines_.begin(); it != goroutines_.end(); ++it) {
+        auto* g = it->second.get();
+        if (g && g->persistent && g->hotkey_alias == alias) {
+            // Mark as Done so it won't be picked up by the scheduler
+            g->state = GoroutineState::Done;
+            if (g->fiber) {
+                g->fiber->state = FiberState::DONE;
+            }
+            // Remove from goroutines map
+            goroutines_.erase(it);
+            ::havel::debug("[Scheduler] removeHotkeyByAlias: removed persistent goroutine gid={} alias='{}'", g->id, alias);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Scheduler::hasRunnableFibers() const {
   size_t hk = hotkey_queue_.size(), rn = runnable_queue_.size(), bg = background_queue_.size();
   if (debugging::debug_io)

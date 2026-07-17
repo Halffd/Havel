@@ -1,5 +1,5 @@
 // launcher.hv -- pure Havel script launcher
-// Handles --run, --test, --lint modes via the self-hosted pipeline
+// Handles --run, --repl, --test, --lint modes via the self-hosted pipeline
 // Usage: havel --run launcher.hv -- [flags] script.hv
 
 use { parse } from "pratt"
@@ -69,6 +69,86 @@ fn readScriptFile(path) {
     content
 }
 
+fn isInputComplete(input) {
+  depth = 0
+  inString = false
+  i = 0
+  while i < #input {
+    ch = input[i]
+    if inString {
+      if ch == '"' { inString = false }
+      i = i + 1
+      continue
+    }
+    if ch == '"' { inString = true; i = i + 1; continue }
+    if ch == "{" || ch == "(" || ch == "[" { depth = depth + 1 }
+    if ch == "}" || ch == ")" || ch == "]" { depth = depth - 1 }
+    i = i + 1
+  }
+  depth <= 0
+}
+
+fn runRepl(cfg) {
+  print("Havel REPL (self-hosted)")
+  if cfg.scriptFiles != null && #cfg.scriptFiles > 0 {
+    print("Type :exit to return to shell")
+  }
+
+  while true {
+    shell.write("havel> ")
+    line = shell.read()
+    if line == null { print(""); break }
+
+    // Multi-line: accumulate until braces/brackets/parens are balanced
+    while !isInputComplete(line) {
+      shell.write("... ")
+      cont = shell.read()
+      if cont == null { break }
+      line = line + "\n" + cont
+    }
+
+    trimmed = line.trim()
+
+    if trimmed == ":exit" || trimmed == ":q" || trimmed == "exit" || trimmed == "quit" { break }
+    if trimmed == ":help" || trimmed == ":h" || trimmed == "help" || trimmed == "?" {
+      print("Commands:")
+      print("  :exit, :q     Exit the REPL")
+      print("  :help, :h     Show this help")
+      print("")
+      print("Multi-line: enter {, (, or [ and continue on next line")
+      continue
+    }
+    if trimmed == "" { continue }
+
+    if trimmed[0] == ":" {
+      cmd = string.split(trimmed, " ")[0]
+      print("Unknown command: " + cmd + ". Type :help for commands.")
+      continue
+    }
+
+    // Compile and execute the line
+    clear()
+    result = parse(line)
+    if result.errors != null && #result.errors > 0 {
+      importLegacyErrors(result.errors, 1, "<repl>")
+      printAll()
+      continue
+    }
+
+    inferProgram(result)
+
+    if emitterHasErrors() {
+      emitterPrintAll()
+      continue
+    }
+
+    em = Emitter()
+    _replResult = compileProgram(em, result.ast, false, "<repl>", "__repl__", false)
+    if _replResult != null { print(_replResult) }
+  }
+  0
+}
+
 fn parseArgs(args) {
     cfg = {
         mode: "run",
@@ -107,6 +187,13 @@ fn parseArgs(args) {
                     i = i - 1
                 }
             }
+            i = i + 1
+            continue
+        }
+
+        if arg == "--repl" || arg == "-r" || arg == "--interactive" || arg == "-i" {
+            if #cfg.scriptFiles > 0 { cfg.mode = "script_and_repl" }
+            if #cfg.scriptFiles == 0 { cfg.mode = "repl" }
             i = i + 1
             continue
         }
@@ -497,47 +584,44 @@ fn runTests(cfg) {
 // ============================================================
 
 fn main() {
-  print("[launcher] before app.args")
   args = app.args
-  print("[launcher] app.args = " + str(args))
-  if args == null {
-    print("Usage: havel --run launcher.hv -- [flags] script.hv")
-    print("Use --help for more information")
-    shell.exit(1)
-  }
-  if #args == 0 {
-    print("Usage: havel --run launcher.hv -- [flags] script.hv")
-    print("Use --help for more information")
-    shell.exit(1)
+  if args == null || #args == 0 {
+    // No args — start REPL
+    shell.exit(runRepl({mode: "repl", scriptFiles: [], scriptArgs: [], evalString: null, testDir: null, testTimeout: 10, lintOnly: false, stopOnError: false, selfHosted: false}))
   }
 
-	cfg = parseArgs(args)
-	print("[launcher] cfg.mode = " + cfg.mode + " cfg.selfHosted = " + str(cfg.selfHosted) + " cfg.scriptFiles = " + str(cfg.scriptFiles))
+  cfg = parseArgs(args)
 
-    result = 0
-    if cfg.mode == "run" && cfg.selfHosted {
-        result = runSelfHosted(cfg)
-    }
-    if cfg.mode == "run" && !cfg.selfHosted {
-        result = runScript(cfg)
-    }
-    if cfg.mode == "test" {
-        result = runTests(cfg)
-    }
-    if cfg.mode != "run" && cfg.mode != "test" {
-        print("Unknown mode: " + cfg.mode)
-        result = 1
-    }
+  result = 0
+  if cfg.mode == "run" && cfg.selfHosted {
+    result = runSelfHosted(cfg)
+  }
+  if cfg.mode == "run" && !cfg.selfHosted {
+    result = runScript(cfg)
+  }
+  if cfg.mode == "repl" {
+    result = runRepl(cfg)
+  }
+  if cfg.mode == "script_and_repl" {
+    r1 = runScript(cfg)
+    if r1 != 0 { result = r1 }
+    result = runRepl(cfg)
+  }
+  if cfg.mode == "test" {
+    result = runTests(cfg)
+  }
+  if cfg.mode != "run" && cfg.mode != "repl" && cfg.mode != "script_and_repl" && cfg.mode != "test" {
+    print("Unknown mode: " + cfg.mode)
+    result = 1
+  }
 
-    shell.exit(result)
+  shell.exit(result)
 }
 
 // Auto-run main only when this file is the top-level entry point
-// (app.args non-empty means we were invoked with -- flag args)
-if app.args != null {
-  if #app.args > 0 {
-    main()
-  }
+if app.args != null && #app.args > 0 {
+  main()
 } else {
-  print("[launcher] app.args is null, not running main")
+  // No args — start REPL directly
+  shell.exit(runRepl({mode: "repl", scriptFiles: [], scriptArgs: [], evalString: null, testDir: null, testTimeout: 10, lintOnly: false, stopOnError: false, selfHosted: false}))
 }

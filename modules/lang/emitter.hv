@@ -540,6 +540,7 @@ return
 	if k == "CallExpression" {
 		callee = node.callee
 		argc = #node.args
+		savedArgc = argc
 		hasKwargs = node.kwargs != null and #node.kwargs > 0
 		// When compiling sub-expressions (callee, args), disable tail position
 		savedTail = emitter.inTailPosition
@@ -563,10 +564,10 @@ return
 			}
 			if hasKwargs {
 				emitKwargsObject(emitter, node.kwargs)
-				bc.emit("CALL", argc + 2)
+				bc.emit("CALL", savedArgc + 2)
 			}
 			else {
-				bc.emit("CALL", argc + 1)
+				bc.emit("CALL", savedArgc + 1)
 			}
 			emitter.inTailPosition = savedTail
 			return
@@ -588,27 +589,27 @@ return
 					for arg in node.args {
 						emitExpr(emitter, arg)
 					}
-					if hasKwargs {
-						emitKwargsObject(emitter, node.kwargs)
-						bc.emit("CALL", argc + 2)
-					}
-					else {
-						bc.emit("CALL", argc + 1)
-					}
-					emitter.inTailPosition = savedTail
-					return
-				}
-			}
-			emitExpr(emitter, callee.obj)
-			for arg in node.args {
-				emitExpr(emitter, arg)
-			}
 			if hasKwargs {
-				emitKwargsObject(emitter, node.kwargs)
-				argc = argc + 1
+					emitKwargsObject(emitter, node.kwargs)
+					bc.emit("CALL", savedArgc + 2)
+				}
+				else {
+					bc.emit("CALL", savedArgc + 1)
+				}
+				emitter.inTailPosition = savedTail
+				return
 			}
-			propIdx = bc.add_chunk_string(callee.property)
-			bc.emit("CALL_METHOD", bc.str_id(propIdx), argc)
+		}
+		emitExpr(emitter, callee.obj)
+		for arg in node.args {
+			emitExpr(emitter, arg)
+		}
+		if hasKwargs {
+			emitKwargsObject(emitter, node.kwargs)
+			savedArgc = savedArgc + 1
+		}
+		propIdx = bc.add_chunk_string(callee.property)
+		bc.emit("CALL_METHOD", bc.str_id(propIdx), savedArgc)
 			emitter.inTailPosition = savedTail
 			return
 		}
@@ -628,10 +629,10 @@ return
 				}
 				if hasKwargs {
 					emitKwargsObject(emitter, node.kwargs)
-					bc.emit("CALL", argc + 2)
+					bc.emit("CALL", savedArgc + 2)
 				}
 				else {
-					bc.emit("CALL", argc + 1)
+					bc.emit("CALL", savedArgc + 1)
 				}
 				emitter.inTailPosition = savedTail
 				return
@@ -643,16 +644,16 @@ return
 			}
 			if hasKwargs {
 				emitKwargsObject(emitter, node.kwargs)
-				argc = argc + 1
+				savedArgc = savedArgc + 1
 			}
 			// TCO: emit TAIL_CALL if in tail position and not inside try
 			emitter.inTailPosition = savedTail
 			if emitter.inTailPosition && emitter.tryDepth == 0 {
 				// TODO: TAIL_CALL not fully implemented in VM, use CALL for now
-				bc.emit("CALL", argc)
+				bc.emit("CALL", savedArgc)
 			}
 			else {
-				bc.emit("CALL", argc)
+				bc.emit("CALL", savedArgc)
 			}
 			return
 		}
@@ -663,10 +664,10 @@ return
 		}
 		if hasKwargs {
 			emitKwargsObject(emitter, node.kwargs)
-			argc = argc + 1
+			savedArgc = savedArgc + 1
 		}
 		emitter.inTailPosition = savedTail
-		bc.emit("CALL", argc)
+		bc.emit("CALL", savedArgc)
 		return
 	}
     if k == "AssignmentExpression" {
@@ -1292,14 +1293,14 @@ return
         if nilPassSet[calleeName] != null {
           bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
           bc.emit("LOAD_VAR", pipeSlot)
-          argc = 1
+          myArgc = 1
           if right.args != null {
             for a in right.args {
               emitExpr(emitter, a)
-              argc = argc + 1
             }
+            myArgc = 1 + #right.args
           }
-          bc.emit("CALL", argc)
+          bc.emit("CALL", myArgc)
           // nil pass-through: if result is null, restore pipe value
           bc.emit("DUP")
           bc.emit("IS_NULL")
@@ -1311,14 +1312,14 @@ return
         else {
           bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, calleeName)))
           bc.emit("LOAD_VAR", pipeSlot)
-          argc = 1
+          myArgc = 1
           if right.args != null {
             for a in right.args {
               emitExpr(emitter, a)
-              argc = argc + 1
             }
+            myArgc = 1 + #right.args
           }
-          bc.emit("CALL", argc)
+          bc.emit("CALL", myArgc)
         }
       }
       else if right.callee.kind == "LambdaExpression" {
@@ -1329,14 +1330,14 @@ return
       else {
         emitExpr(emitter, right.callee)
         bc.emit("LOAD_VAR", pipeSlot)
-        argc = 1
+        myArgc = 1
         if right.args != null {
           for a in right.args {
             emitExpr(emitter, a)
-            argc = argc + 1
           }
+          myArgc = 1 + #right.args
         }
-        bc.emit("CALL", argc)
+        bc.emit("CALL", myArgc)
       }
     }
     else if right.kind == "Identifier" {

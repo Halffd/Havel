@@ -1231,6 +1231,7 @@ emitter.scope = oldScope
 return
 }
   if k == "LambdaExpression" {
+  print("DEBUG EMITTER: LambdaExpression node.params: " + str(node.params) + " node.body: " + str(node.body))
   // Compile the lambda body now
   result = compileLambda(emitter, node.name, node.params, node.body, node.line)
   upcount = result[0]
@@ -3192,13 +3193,14 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
    if name != null {
        scopeDeclare(newScope, name)
    }
-   for p in params {
- if type(p) == "object" {
- if p.name != null { scopeDeclare(newScope, p.name) }
- else { scopeDeclare(newScope, p) }
- }
- else { scopeDeclare(newScope, p) }
- }
+for p in params {
+    if type(p) == "object" {
+      if p.name != null { scopeDeclare(newScope, p.name) }
+      else if p.value != null { scopeDeclare(newScope, p.value) }
+      else { scopeDeclare(newScope, p.name) }
+    }
+    else { scopeDeclare(newScope, p) }
+    }
   paramCount = #params
   localCount = paramCount + 16
   bc.func_push()
@@ -3273,7 +3275,8 @@ bc.set_local_count(actualLocals)
 
  }
 fn compileLambda(emitter, name, params, bodyNode, sourceLine) {
- lamId = emitter.nextFuncId
+  print("DEBUG: compileLambda called with params: " + str(params))
+  lamId = emitter.nextFuncId
  emitter.nextFuncId = lamId + 1
  if name == null { name = "lambda_" + str(lamId) }
  oldScope = emitter.scope
@@ -3285,13 +3288,16 @@ fn compileLambda(emitter, name, params, bodyNode, sourceLine) {
   if name != null {
       scopeDeclare(oldScope, name)
   }
-  for p in params {
- if type(p) == "object" {
- if p.name != null { scopeDeclare(newScope, p.name) }
- else { scopeDeclare(newScope, p) }
- }
- else { scopeDeclare(newScope, p) }
- }
+for p in params {
+  if type(p) == "array" {
+    print("ERROR: param is array: " + str(p))
+  }
+  if type(p) == "object" {
+    if p.name != null { scopeDeclare(newScope, p.name) }
+    else if p.value != null { scopeDeclare(newScope, p.value) }
+  }
+  else { scopeDeclare(newScope, p) }
+  }
   paramCount = #params
   localCount = paramCount + 16
   bc.func_push()

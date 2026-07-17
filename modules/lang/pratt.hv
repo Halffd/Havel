@@ -482,26 +482,26 @@ return parseInterpolatedString(tok.value, l, c)
     pipeline = source
     while current().tid == TID.Where {
      advance() // consume 'where'
-     condition = parseExpr(getRightBindingPower(TID.Where))
-     filterIdent = Identifier("filter", l, c)
-     param = varName
-     body = ExpressionStatement(condition, l, c)
-     lambda = LambdaExpression([param], body, l, c)
-     filterCall = CallExpression(filterIdent, [lambda], [], l, c)
-     pipeline = PipelineExpression(pipeline, filterCall, l, c)
+condition = parseExpr(getRightBindingPower(TID.Where))
+      filterIdent = Identifier("filter", l, c)
+      param = varName
+      body = ExpressionStatement(condition, l, c)
+      lambda = LambdaExpression(null, [param], body, l, c)
+      filterCall = CallExpression(filterIdent, [lambda], [], l, c)
+      pipeline = PipelineExpression(pipeline, filterCall, l, c)
+     }
+     if current().tid == TID.Select {
+      advance() // consume 'select'
+      transform = parseExpr(getRightBindingPower(TID.Select))
+      mapIdent = Identifier("map", l, c)
+      param = varName
+      body = ExpressionStatement(transform, l, c)
+      lambda = LambdaExpression(null, [param], body, l, c)
+      mapCall = CallExpression(mapIdent, [lambda], [], l, c)
+      pipeline = PipelineExpression(pipeline, mapCall, l, c)
+     }
+     return pipeline
     }
-    if current().tid == TID.Select {
-     advance() // consume 'select'
-     transform = parseExpr(getRightBindingPower(TID.Select))
-     mapIdent = Identifier("map", l, c)
-     param = varName
-     body = ExpressionStatement(transform, l, c)
-     lambda = LambdaExpression([param], body, l, c)
-     mapCall = CallExpression(mapIdent, [lambda], [], l, c)
-     pipeline = PipelineExpression(pipeline, mapCall, l, c)
-    }
-    return pipeline
-   }
   }
   return Identifier(tok.value, l, c)
  }
@@ -685,7 +685,7 @@ else if tt == TID.Go {
     }
     expect(TID.CloseBrace)
     block = BlockStatement(stmts, l, c)
-    call = LambdaExpression([], block, l, c)
+    call = LambdaExpression(null, [], block, l, c)
     return GoExpression(call, l, c)
   }
   call = parseExpr(0)
@@ -1037,12 +1037,12 @@ else if tt == TID.Arrow {
  body = null
  if current().tid == TID.OpenBrace {
   body = parseBlock()
- }
- else {
-  bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
-  body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
- }
- return LambdaExpression(params, body, l, c)
+}
+  else {
+    bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
+    body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+  }
+  return LambdaExpression(null, params, body, l, c)
 }
   else {
     return error("Unexpected token in infix position: " + tt, l, c)
@@ -1243,7 +1243,7 @@ fn parseCallArgs() {
                 bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
                 body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
             }
-            return LambdaExpression(params, body, l, c)
+            return LambdaExpression(null, params, body, l, c)
 
         }
         // Multi-param lambda detection: (a, b, c) => body
@@ -1287,7 +1287,7 @@ fn parseCallArgs() {
                 bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
                 body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
             }
-            return LambdaExpression(lambdaParams, body, l, c)
+            return LambdaExpression(null, lambdaParams, body, l, c)
 
         }
         // Not a lambda — restore position and parse grouped expression
@@ -1386,6 +1386,7 @@ return expr
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
   }
+  print("DEBUG PARSER CALL: name=" + str(name) + " params=" + str(params) + " body=" + str(body) + " l=" + str(l) + " c=" + str(c))
   return LambdaExpression(name, params, body, l, c)
 
   }
@@ -2186,10 +2187,10 @@ if tt == TID.Defer {
 			stmts.push(parseStatement())
 			skipNewlines()
 		}
-		expect(TID.CloseBrace)
-		block = BlockStatement(stmts, l, c)
-		expr = LambdaExpression([], block, l, c)
-		return DeferStatement(expr, l, c)
+expect(TID.CloseBrace)
+        block = BlockStatement(stmts, l, c)
+        expr = LambdaExpression(null, [], block, l, c)
+        return DeferStatement(expr, l, c)
 	}
 	else {
 		expr = parseExpr(0)
@@ -4360,7 +4361,7 @@ fn parseGoStatement() {
     }
     expect(TID.CloseBrace)
     block = BlockStatement(stmts, l, c)
-    call = LambdaExpression([], block, l, c)
+    call = LambdaExpression(null, [], block, l, c)
     return GoStatement(call, l, c)
   }
   call = parseExpr(0)

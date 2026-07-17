@@ -27,6 +27,11 @@ fn Scope(parent, funcId, bcFuncIdx) {
     {parent: parent, locals: {}, count: startCount, upvalues: {}, upcount: 0, startCount: startCount, funcId: fid, sid: sid, bcFuncIdx: bcFuncIdx}
 }
 fn scopeDeclare(scope, name) {
+  if type(name) == "array" {
+    print("ERROR: scopeDeclare called with array name: " + str(name))
+    // Print the caller info
+    print("  Called from scope: " + str(scope.sid))
+  }
   existing = scope.locals[name]
   if existing != null {
     return existing

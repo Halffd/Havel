@@ -1720,13 +1720,23 @@ std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
                         if (mc && mc->getFunction(function_index)) {
                             resolve_chunk = mc.get();
                             break;
-                        }
+}
                     }
                 }
             }
+            // Create a closure for FunctionObjId to capture module globals
+            if (resolve_chunk && resolve_chunk->getFunction(function_index)) {
+                auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+                    .function_index = function_index,
+                    .chunk_index = 0,
+                    .chunk = resolve_chunk,
+                    .module_globals = nullptr,
+                    .upvalues = {}});
+                closure_id = closureRef.id;
+            }
         } else if (callee_value.isClosureId()) {
-		closure_id = callee_value.asClosureId();
-		auto *closure = heap_.closure(closure_id);
+			closure_id = callee_value.asClosureId();
+			auto *closure = heap_.closure(closure_id);
         if (!closure) {
             COMPILER_THROW("Closure not found for call (id=" + std::to_string(closure_id) + ")");
         }
@@ -2701,9 +2711,6 @@ immutable_locals_.clear();
 // Restore expression stack to the depth at call time, preserving return value
     while (stack.size() > finished.stack_depth) {
         popStack();
-    }
-    if (!ret.isNull()) {
-        pushStack(ret);
     }
 
             if (current_coroutine_id_ != UINT32_MAX) {

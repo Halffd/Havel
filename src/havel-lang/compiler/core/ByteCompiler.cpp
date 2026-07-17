@@ -1932,9 +1932,10 @@ break;
     break;
   }
 
-  case ast::NodeType::FunctionDeclaration:
-    // Function declarations evaluate to function objects stored in local slots.
-    // Top-level declarations are skipped in __main__ and do not hit this path.
+case ast::NodeType::FunctionDeclaration:
+    // Function declarations evaluate to function objects.
+    // Top-level declarations must be stored in globals so they're accessible
+    // after module load. Nested functions are stored in local slots.
     {
       const auto &function =
           static_cast<const ast::FunctionDeclaration &>(statement);
@@ -1945,11 +1946,12 @@ break;
       auto index_it = function_indices_by_node_.find(&function);
       if (index_it == function_indices_by_node_.end()) {
         COMPILER_THROW("Missing function index for declaration: " +
-                                 function.name->symbol);
+                                     function.name->symbol);
       }
 
-      uint32_t slot = declarationSlot(*function.name);
-      reserveLocalSlot(slot);
+      // Check if this is a top-level function (direct child of program body)
+      bool is_top_level = top_level_function_indices_by_name_.count(function.name->symbol) > 0;
+
       auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
       if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
           !upvalues_it->second.empty()) {
@@ -1958,9 +1960,19 @@ break;
         emit(OpCode::LOAD_CONST,
              addConstant(Value::makeFunctionObjId(index_it->second)));
       }
-  emit(OpCode::STORE_VAR, slot);
-  }
-  break;
+
+      if (is_top_level) {
+        // Store in globals so the function is accessible module-wide
+        uint32_t name_sid = addStringConstant(function.name->symbol);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(name_sid));
+      } else {
+        // Nested function - store in local slot
+        uint32_t slot = declarationSlot(*function.name);
+        reserveLocalSlot(slot);
+        emit(OpCode::STORE_VAR, slot);
+      }
+    }
+    break;
 
 case ast::NodeType::DecoratorStatement:
   compileDecoratorStatement(
@@ -3515,10 +3527,11 @@ switch (binding->kind) {
     emit(OpCode::LOAD_UPVALUE, binding->slot);
     break;
   case ResolvedBindingKind::Function:
-    // User-defined function - load as FunctionObject
-    emit(OpCode::LOAD_CONST,
-         addConstant(Value::makeFunctionObjId(
-             top_level_function_indices_by_name_[binding->name])));
+    // User-defined function - load via global for robustness
+    {
+      uint32_t strId = addStringConstant(binding->name);
+      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    }
     break;
   case ResolvedBindingKind::HostFunction:
     // Host function - load as global, runtime will dispatch
@@ -5607,20 +5620,10 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         }
 
     if (binding->kind == ResolvedBindingKind::Function) {
-        // User-defined function - load as FunctionObject and call
-        uint32_t fn_index = top_level_function_indices_by_name_[binding->name];
-
-        // Decorated functions must be called via LOAD_GLOBAL because
-        // decorators replace the global with the wrapper closure
-        bool isDecorated = decorated_function_names_.count(binding->name) > 0;
-
-        if (isDecorated) {
-            uint32_t nameStrId = addStringConstant(binding->name);
-            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameStrId));
-        } else {
-            uint32_t const_idx = addConstant(Value::makeFunctionObjId(fn_index));
-            emit(OpCode::LOAD_CONST, const_idx);
-        }
+        // User-defined function - load via global for robustness
+        // (FunctionObjId constants in nested functions have proven fragile)
+        uint32_t nameStrId = addStringConstant(binding->name);
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(nameStrId));
 
       // Compile args, expanding spread
       uint32_t totalArgs = 0;

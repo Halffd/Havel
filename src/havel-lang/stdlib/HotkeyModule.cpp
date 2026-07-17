@@ -1466,8 +1466,8 @@ bool HotkeyModule::removeById(VM &vm, const std::string &hotkeyId) {
   }
   
   // Get the goroutine ID before erasing
-  uint32_t gid = it->second.goroutine_id;
-  std::string alias = it->second.alias;
+  uint32_t gid = it->second->goroutine_id;
+  std::string alias = it->second->alias;
   
   // Remove from hotkey contexts
   g_hotkeyContexts.erase(it);

@@ -100,13 +100,21 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
                 COMPILER_THROW("Stack underflow during CALL");
             }
 
-            std::vector<Value> args(arg_count);
+std::vector<Value> args(arg_count);
             for (uint32_t i = 0; i < arg_count; ++i) {
                 args[arg_count - 1 - i] = popStack();
-  }
-  Value callee_value = popStack();
+            }
+            Value callee_value = popStack();
 
-  // Handle callable objects (Lua-style __call metamethod, or op_call operator)
+            // DEBUG: dump stack for skipWhitespace call
+            if (frame_count_ > 0 && frame_arena_[frame_count_ - 1].function &&
+                frame_arena_[frame_count_ - 1].function->name == "skipWhitespace") {
+                std::cerr << "[DBG-CALL-STACK] skipWhitespace CALL " << arg_count
+                          << " callee=" << callee_value.toString()
+                          << " stack_size=" << stack.size() << "\n";
+            }
+
+            // Handle callable objects (Lua-style __call metamethod, or op_call operator)
   if (callee_value.isObjectId()) {
     auto *obj = heap_.object(callee_value.asObjectId());
     if (obj) {

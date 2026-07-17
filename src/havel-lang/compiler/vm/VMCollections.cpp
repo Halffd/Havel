@@ -440,7 +440,30 @@ if (container.isSetId()) {
   }
   auto key = resolveKey(index_or_key);
       if (!key) {
-        COMPILER_THROW("OBJECT index expects string/number/bool key");
+        std::string typeInfo = "unknown";
+        if (index_or_key.isNull()) typeInfo = "null";
+        else if (index_or_key.isInt()) typeInfo = "int";
+        else if (index_or_key.isDouble()) typeInfo = "double";
+        else if (index_or_key.isBool()) typeInfo = "bool";
+        else if (index_or_key.isStringId()) typeInfo = "string_id";
+        else if (index_or_key.isStringValId()) typeInfo = "string_val_id";
+        else if (index_or_key.isObjectId()) typeInfo = "object_id";
+        else if (index_or_key.isArrayId()) typeInfo = "array_id";
+        else if (index_or_key.isFunctionObjId()) typeInfo = "function_obj_id";
+        else if (index_or_key.isClosureId()) typeInfo = "closure_id";
+        else if (index_or_key.isHostFuncId()) typeInfo = "host_func_id";
+        else if (index_or_key.isBoundMethodId()) typeInfo = "bound_method_id";
+        else if (index_or_key.isCoroutineId()) typeInfo = "coroutine_id";
+        // Add call stack for debugging
+        std::string frameInfo;
+        for (int fi = static_cast<int>(frame_count_) - 1; fi >= 0 && fi >= static_cast<int>(frame_count_) - 5; --fi) {
+            auto &fr = frame_arena_[fi];
+            std::string fname = fr.function ? fr.function->name : "<anon>";
+            frameInfo += "  frame[" + std::to_string(fi) + "] " + fname + " ip=" + std::to_string(fr.ip) + "\n";
+        }
+        std::cerr << "[DEBUG-OBJECT-INDEX] key type: " << typeInfo << ", raw: " << std::hex << index_or_key.rawBits() << std::dec << "\n";
+        std::cerr << "[DEBUG-OBJECT-INDEX] call stack:\n" << frameInfo;
+        COMPILER_THROW("OBJECT index expects string/number/bool key (got " + typeInfo + ")");
       }
       auto *object = heap_.object(container.asObjectId());
       if (!object) {

@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <cstring>
 #include <stdexcept>
+#include <iostream>
 
 // Macro for throwing errors with source location info
 #define COMPILER_THROW(msg) \
@@ -871,11 +872,27 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
                 uint32_t fnIdx = 0;
                 if (!read(&fnIdx, sizeof(fnIdx))) return std::nullopt;
                 func.constants.push_back(Value::makeFunctionObjId(fnIdx));
+                if (funcName == "skipWhitespace" && c == 0) {
+                    std::cerr << "[DBG-DESER] fn=" << funcName
+                              << " const[" << c << "] tag=2 FunctionObjId fnIdx=" << fnIdx
+                              << " raw=" << std::hex << func.constants.back().rawBits() << std::dec
+                              << " isFunctionObjId=" << func.constants.back().isFunctionObjId()
+                              << "\n";
+                }
             } else {
                 // Raw value (int, double, bool, null)
                 uint64_t raw = 0;
                 if (!read(&raw, sizeof(raw))) return std::nullopt;
                 func.constants.push_back(Value::fromRawBits(raw));
+                if (funcName == "skipWhitespace" && c == 0) {
+                    std::cerr << "[DBG-DESER] fn=" << funcName
+                              << " const[" << c << "] tag=" << (int)tag << " raw=" << std::hex << raw << std::dec
+                              << " val_raw=" << std::hex << func.constants.back().rawBits() << std::dec
+                              << " isFunctionObjId=" << func.constants.back().isFunctionObjId()
+                              << " isInt=" << func.constants.back().isInt()
+                              << " isNull=" << func.constants.back().isNull()
+                              << "\n";
+                }
             }
         }
 

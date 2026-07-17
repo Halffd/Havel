@@ -47,6 +47,12 @@ public:
         std::string name;
     };
 
+    // Cached module entry: exports + globals snapshot for internal function calls
+    struct CachedModule {
+        core::Value exports;
+        std::shared_ptr<std::unordered_map<std::string, core::Value>> globals_snapshot;
+    };
+
     ModuleLoader() = default;
     ~ModuleLoader();
 
@@ -77,7 +83,9 @@ public:
     // ========================================================================
     bool isCached(const std::string& key) const;
     bool getCached(const std::string& key, core::Value* outValue) const;
+    bool getCachedGlobals(const std::string& key, std::shared_ptr<std::unordered_map<std::string, core::Value>>* outGlobals) const;
     void putCache(const std::string& key, core::Value value);
+    void putCacheWithGlobals(const std::string& key, core::Value value, std::shared_ptr<std::unordered_map<std::string, core::Value>> globals);
     void clearCache();
     std::vector<core::Value> cachedValues() const;
 
@@ -109,8 +117,8 @@ private:
   // Search paths for native module .so resolution (havel_mod_<name>.so)
   std::vector<std::string> moduleSoPaths_;
 
-  // Module cache: canonicalKey -> export value (replaces old void* leaking cache)
-  std::unordered_map<std::string, core::Value> cache_;
+  // Module cache: canonicalKey -> CachedModule (exports + globals snapshot)
+  std::unordered_map<std::string, CachedModule> cache_;
 
   // Native extension handles (for dlopen/dlclose)
   std::unordered_map<std::string, NativeHandle> nativeHandles_;

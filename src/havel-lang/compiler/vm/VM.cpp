@@ -1727,38 +1727,91 @@ std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
         } else if (callee_value.isClosureId()) {
 		closure_id = callee_value.asClosureId();
 		auto *closure = heap_.closure(closure_id);
-		if (!closure) {
-			COMPILER_THROW("Closure not found for call (id=" + std::to_string(closure_id) + ")");
-		}
-		function_index = closure->function_index;
- if (closure->chunk) {
- resolve_chunk = closure->chunk;
- }
- if (closure->module_globals) {
- closure_globals = closure->module_globals;
- }
- } else {
+        if (!closure) {
+            COMPILER_THROW("Closure not found for call (id=" + std::to_string(closure_id) + ")");
+        }
+        function_index = closure->function_index;
+        if (closure->chunk) {
+            resolve_chunk = closure->chunk;
+        }
+        if (closure->module_globals) {
+            closure_globals = closure->module_globals;
+        }
+        const BytecodeFunction *callee = nullptr;
+        if (callee_value.isFunctionObjId()) {
+            callee = resolve_chunk->getFunction(function_index);
+        } else if (callee_value.isClosureId()) {
+            callee = resolve_chunk->getFunction(closure->function_index);
+        }
+        if (callee && (callee->name == "tokenize" || callee->name == "Lexer" || callee->name == "skipWhitespace")) {
+            std::cerr << "[DBG-CALL] fn=" << callee->name
+                      << " closure_id=" << closure_id
+                      << " has_module_globals=" << (closure->module_globals ? "yes" : "no")
+                      << " globals_size=" << globals.size()
+                      << " has_LEXER_in_globals=" << (globals.count("Lexer") > 0 ? "yes" : "no")
+                      << " has_KEYWORDS_in_globals=" << (globals.count("KEYWORDS") > 0 ? "yes" : "no")
+                      << "\n";
+        }
+} else {
             // Debug: identify what type the value actually is
             std::string typeInfo = "unknown";
-        if (callee_value.isNull()) typeInfo = "null";
-        else if (callee_value.isInt()) typeInfo = "int";
-        else if (callee_value.isDouble()) typeInfo = "double";
-        else if (callee_value.isBool()) typeInfo = "bool";
-else if (callee_value.isStringValId()) {
-		typeInfo = current_chunk ? std::string("string_val_id='") + current_chunk->getString(callee_value.asStringValId()) + "'"
-		                         : std::string("string_val_id=<") + std::to_string(callee_value.asStringValId()) + ">";
-	}
-	else if (callee_value.isStringId()) {
-		auto *sp = heap_.string(callee_value.asStringId());
-		typeInfo = sp ? std::string("string_id='") + *sp + "'" : std::string("string_id=<") + std::to_string(callee_value.asStringId()) + ">";
-	}
-	else if (callee_value.isObjectId()) typeInfo = "object_id";
-	else if (callee_value.isArrayId()) typeInfo = "array_id";
-	else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
-	else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
-	else if (callee_value.isClosureId()) typeInfo = "closure_id (unexpected)";
-	else if (callee_value.isCoroutineId()) typeInfo = "coroutine_id (should have been caught)";
-	// Dump call stack for debugging
+            if (callee_value.isNull()) typeInfo = "null";
+            else if (callee_value.isInt()) typeInfo = "int";
+            else if (callee_value.isDouble()) typeInfo = "double";
+            else if (callee_value.isBool()) typeInfo = "bool";
+            else if (callee_value.isStringValId()) {
+                typeInfo = current_chunk ? std::string("string_val_id='") + current_chunk->getString(callee_value.asStringValId()) + "'"
+                                         : std::string("string_val_id=<") + std::to_string(callee_value.asStringValId()) + ">";
+            }
+            else if (callee_value.isStringId()) {
+                auto *sp = heap_.string(callee_value.asStringId());
+                typeInfo = sp ? std::string("string_id='") + *sp + "'" : std::string("string_id=<") + std::to_string(callee_value.asStringId()) + ">";
+            }
+            else if (callee_value.isObjectId()) typeInfo = "object_id";
+            else if (callee_value.isArrayId()) typeInfo = "array_id";
+            else if (callee_value.isHostFuncId()) typeInfo = "host_func_id";
+            else if (callee_value.isFunctionObjId()) typeInfo = "function_obj_id";
+            else if (callee_value.isClosureId()) typeInfo = "closure_id (unexpected)";
+            else if (callee_value.isCoroutineId()) typeInfo = "coroutine_id (should have been caught)";
+
+            // Fallback: if the value is a malformed boxed value with tag 0 (DOUBLE in QNaN space),
+            // try to interpret the payload as a function index
+            const uint64_t raw = callee_value.rawBits();
+            bool recovered = false;
+            if ((raw & 0x7FF8000000000000ULL) == 0x7FF8000000000000ULL &&  // isBoxed
+                (raw & 0x0007000000000000ULL) == 0) {  // primary tag == 0
+                uint32_t fn_index = static_cast<uint32_t>(raw & 0x0000FFFFFFFFFFFFULL);
+                const BytecodeChunk *found_chunk = nullptr;
+                if (resolve_chunk && resolve_chunk->getFunction(fn_index)) {
+                    found_chunk = resolve_chunk;
+                } else if (main_chunk_ && main_chunk_->getFunction(fn_index)) {
+                    found_chunk = main_chunk_.get();
+                } else {
+                    for (auto& pc : persistent_chunks_) {
+                        if (pc && pc->getFunction(fn_index)) {
+                            found_chunk = pc.get();
+                            break;
+                        }
+                    }
+                    if (!found_chunk) {
+                        for (auto& [_, mc] : module_chunks_) {
+                            if (mc && mc->getFunction(fn_index)) {
+                                found_chunk = mc.get();
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (found_chunk) {
+                    function_index = fn_index;
+                    resolve_chunk = found_chunk;
+                    typeInfo = "function_obj_id (recovered from malformed)";
+                    recovered = true;
+                }
+            }
+
+            if (!recovered) {
+                // Dump call stack for debugging
 	std::string frameInfo;
 	for (int fi = static_cast<int>(frame_count_) - 1; fi >= 0 && fi >= static_cast<int>(frame_count_) - 8; --fi) {
 		auto &fr = frame_arena_[fi];
@@ -1786,7 +1839,38 @@ else if (callee_value.isStringValId()) {
 			instrInfo += "\n";
 		}
 	}
-	COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ") [callee_bits=" + std::to_string(callee_value.rawBits()) + ", ip=" + std::to_string(currentFrame().ip) + "]\nCall stack:\n" + frameInfo + "Instructions:\n" + instrInfo);
+	if (!recovered) {
+                // Dump call stack for debugging
+                std::string frameInfo;
+                for (int fi = static_cast<int>(frame_count_) - 1; fi >= 0 && fi >= static_cast<int>(frame_count_) - 8; --fi) {
+                    auto &fr = frame_arena_[fi];
+                    std::string fname = fr.function ? fr.function->name : "<anon>";
+                    frameInfo += "  frame[" + std::to_string(fi) + "] " + fname + " ip=" + std::to_string(fr.ip) + "\n";
+                }
+                // Dump instructions around the failing IP
+                std::string instrInfo;
+                auto &cf = currentFrame();
+                if (cf.function && cf.ip < cf.function->instructions.size()) {
+                    uint32_t start = cf.ip > 15 ? cf.ip - 15 : 0;
+                    uint32_t end = std::min(cf.function->instructions.size(), static_cast<size_t>(cf.ip + 5));
+                    for (uint32_t ii = start; ii < end; ++ii) {
+                        auto &inst = cf.function->instructions[ii];
+                        std::string marker = (ii == cf.ip) ? " >>> " : "     ";
+                        instrInfo += marker + std::to_string(ii) + ": op=" + std::to_string(static_cast<int>(inst.opcode));
+                        for (size_t oi = 0; oi < inst.operands.size(); ++oi) {
+                            instrInfo += " op" + std::to_string(oi) + "=";
+                            if (inst.operands[oi].isStringValId() && resolve_chunk) {
+                                instrInfo += "'" + resolve_chunk->getString(inst.operands[oi].asStringValId()) + "'";
+                            } else {
+                                instrInfo += inst.operands[oi].toString();
+                            }
+                        }
+                        instrInfo += "\n";
+                    }
+                }
+                COMPILER_THROW("CALL expects function or closure as callee (got " + typeInfo + ") [callee_bits=" + std::to_string(callee_value.rawBits()) + ", ip=" + std::to_string(currentFrame().ip) + "]\nCall stack:\n" + frameInfo + "Instructions:\n" + instrInfo);
+            }
+        }
     }
 
     if (!resolve_chunk) {
@@ -3260,20 +3344,126 @@ Value VM::loadModule(const std::string& path) {
     // Check cache via canonical ModuleLoader
   if (moduleLoader_.isCached(path)) {
     Value cachedVal;
+    std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
     if (moduleLoader_.getCached(path, &cachedVal)) {
+      moduleLoader_.getCachedGlobals(path, &cachedGlobals);
+      std::cerr << "[CACHE-HIT] path='" << path << "' cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
+      if (cachedGlobals) {
+        // Do NOT restore cached globals to caller's globals - module internals
+        // (like 'flags' in debug.hv) are only accessible via the module's
+        // closures' module_globals, not via the caller's globals.
+        // Just update closures' module_globals to point to the cached globals.
+        
+        // 1. Update closures in caller's globals (e.g., if module was required before)
+        for (auto& [func_name, func_val] : globals) {
+          if (func_val.isClosureId()) {
+            auto* closure = heap_.closure(func_val.asClosureId());
+            if (closure && closure->module_globals) {
+              auto it = cachedGlobals->find(func_name);
+              if (it != cachedGlobals->end() && it->second.isClosureId() &&
+                  it->second.asClosureId() == func_val.asClosureId()) {
+                closure->module_globals = cachedGlobals;
+                std::cerr << "[CACHE-FIXUP] Updated module_globals for " << func_name << " (in globals)\n";
+              }
+            }
+          }
+        }
+        
+        // 2. Update closures in the exports object
+        if (cachedVal.isObjectId()) {
+          auto* exportsObj = heap_.object(cachedVal.asObjectId());
+          if (exportsObj) {
+            std::cerr << "[CACHE-FIXUP-EXPORTS] exports size=" << exportsObj->size() << "\n";
+            for (auto& [name, val] : *exportsObj) {
+              std::cerr << "[CACHE-FIXUP-EXPORTS]   checking " << name << " -> " << val.toString() << "\n";
+              if (val.isClosureId()) {
+                auto* closure = heap_.closure(val.asClosureId());
+                if (closure && closure->module_globals) {
+                  // Check if this closure's function is in cached globals
+                  auto it = cachedGlobals->find(name);
+                  std::cerr << "[CACHE-FIXUP-EXPORTS]     found in cachedGlobals=" << (it != cachedGlobals->end()) << "\n";
+                  if (it != cachedGlobals->end() && it->second.isClosureId() &&
+                      it->second.asClosureId() == val.asClosureId()) {
+                    closure->module_globals = cachedGlobals;
+                    std::cerr << "[CACHE-FIXUP] Updated module_globals for " << name << " (in exports)\n";
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
       return cachedVal;
     }
   }
 
     // Resolve the module path
     auto resolved = moduleLoader_.resolve(path, current_script_dir_);
+    if (path == "lexer") {
+        std::cerr << "[DBG-LOAD] resolving 'lexer' scriptDir='" << current_script_dir_ << "' resolved=" << (resolved ? "yes" : "no");
+        if (resolved) {
+            std::string typeStr;
+            switch (resolved->type) {
+                case havel::compiler::ModuleLoader::ResolvedModule::BytecodeCache: typeStr = "BytecodeCache"; break;
+                case havel::compiler::ModuleLoader::ResolvedModule::UserSource: typeStr = "UserSource"; break;
+                case havel::compiler::ModuleLoader::ResolvedModule::StdlibSource: typeStr = "StdlibSource"; break;
+                case havel::compiler::ModuleLoader::ResolvedModule::PackageSource: typeStr = "PackageSource"; break;
+                case havel::compiler::ModuleLoader::ResolvedModule::Cached: typeStr = "Cached"; break;
+                case havel::compiler::ModuleLoader::ResolvedModule::NativeExtension: typeStr = "NativeExtension"; break;
+                case havel::compiler::ModuleLoader::ResolvedModule::HostBuiltin: typeStr = "HostBuiltin"; break;
+                default: typeStr = "Other"; break;
+            }
+            std::cerr << " type=" << typeStr << " path=" << resolved->canonicalPath << "\n";
+        } else {
+            std::cerr << "\n";
+        }
+    }
     if (resolved) {
         std::string canonicalKey = resolved->canonicalPath;
         
         // Check cache by resolved path
-        if (moduleLoader_.isCached(canonicalKey)) {
+if (moduleLoader_.isCached(canonicalKey)) {
             Value cachedVal;
+            std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
             if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
+                moduleLoader_.getCachedGlobals(canonicalKey, &cachedGlobals);
+                std::cerr << "[CACHE-HIT] canonicalKey='" << canonicalKey << "' cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
+                if (cachedGlobals) {
+                    // Do NOT restore cached globals to caller's globals - module internals
+                    // are only accessible via closures' module_globals
+                    for (auto& [func_name, func_val] : globals) {
+                        if (func_val.isClosureId()) {
+                            auto* closure = heap_.closure(func_val.asClosureId());
+                            if (closure && closure->module_globals) {
+                                auto it = cachedGlobals->find(func_name);
+                                if (it != cachedGlobals->end() && it->second.isClosureId() &&
+                                    it->second.asClosureId() == func_val.asClosureId()) {
+                                    closure->module_globals = cachedGlobals;
+                                    std::cerr << "[CACHE-FIXUP] Updated module_globals for " << func_name << " (in globals)\n";
+                                }
+                            }
+                        }
+                    }
+                    // 2. Update closures in the exports object
+                    if (cachedVal.isObjectId()) {
+                        auto* exportsObj = heap_.object(cachedVal.asObjectId());
+                        if (exportsObj) {
+                            for (auto& [name, val] : *exportsObj) {
+                                if (val.isClosureId()) {
+                                    auto* closure = heap_.closure(val.asClosureId());
+                                    if (closure && closure->module_globals) {
+                                        auto it = cachedGlobals->find(name);
+                                        if (it != cachedGlobals->end() && it->second.isClosureId() &&
+                                            it->second.asClosureId() == val.asClosureId()) {
+                                            closure->module_globals = cachedGlobals;
+                                            std::cerr << "[CACHE-FIXUP] Updated module_globals for " << name << " (in exports)\n";
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 Value exports = cachedVal;
                 // Also cache under the original key for faster lookup next time
                 moduleLoader_.putCache(path, exports);
@@ -3460,7 +3650,8 @@ Value VM::loadModule(const std::string& path) {
     for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
         BytecodeFunction *func = chunk->getFunctionMutable(i);
         if (!func) continue;
-        for (auto &constant : func->constants) {
+        for (size_t ci = 0; ci < func->constants.size(); ++ci) {
+            auto &constant = func->constants[ci];
             if (constant.isFunctionObjId()) {
                 uint32_t fnIdx = constant.asFunctionObjId();
                 auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
@@ -3470,6 +3661,21 @@ Value VM::loadModule(const std::string& path) {
                     .module_globals = nullptr,
                     .upvalues = {}});
                 constant = Value::makeClosureId(closureRef.id);
+                if (func->name == "skipWhitespace" && ci == 0) {
+                    std::cerr << "[DBG-HVC] fn[" << i << "]=" << func->name
+                              << " const[" << ci << "] fnIdx=" << fnIdx
+                              << " replaced with ClosureId=" << closureRef.id
+                              << " raw=" << std::hex << constant.rawBits() << std::dec
+                              << "\n";
+                }
+            } else {
+                if (func->name == "skipWhitespace" && ci == 0) {
+                    std::cerr << "[DBG-HVC] fn[" << i << "]=" << func->name
+                              << " const[" << ci << "] NOT FunctionObjId, tag=" << std::hex << constant.rawBits() << std::dec
+                              << " isInt=" << constant.isInt() << " isStrVal=" << constant.isStringValId();
+                    if (constant.isInt()) std::cerr << " intVal=" << constant.asInt();
+                    std::cerr << "\n";
+                }
             }
         }
         // Also handle default values
@@ -3604,6 +3810,34 @@ Value VM::loadModule(const std::string& path) {
         setHostObjectField(g_obj, name, value);
     }
 
+    // Create a persistent snapshot of the module's globals BEFORE running the module.
+    // This snapshot will be used for:
+    // 1. Populating globals with top-level function closures (module_globals)
+    // 2. Wrapping exports after module execution
+    // 3. Restoring for cached module loads
+    // NOTE: We create a second snapshot AFTER __main__ for exports/caching,
+    // since module-level variables like 'flags = DebugFlags()' are set during __main__.
+    auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+
+    // Populate module globals with top-level functions BEFORE running the module,
+    // so that functions can call sibling top-level functions during module initialization.
+    // Use nullptr for module_globals so these closures use current globals (not the snapshot),
+    // allowing them to see variables set during __main__ (e.g., 'flags = DebugFlags()').
+    std::cerr << "[MODULE-LOAD] Populating globals with " << chunk->getFunctionIndices().size() << " functions\n";
+    for (const auto& [func_name, func_index] : chunk->getFunctionIndices()) {
+        if (globals.find(func_name) == globals.end()) {
+            auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+                .function_index = func_index,
+                .chunk_index = 0,
+                .chunk = chunk.get(),
+                .module_globals = nullptr,  // Use current globals, not snapshot
+                .upvalues = {}});
+            globals[func_name] = Value::makeClosureId(closureRef.id);
+            std::cerr << "[MODULE-LOAD]   " << func_name << " -> index " << func_index
+                      << " added as closure " << closureRef.id << "\n";
+        }
+    }
+
     // Set up the module's execution context WITHOUT resetting the heap.
     // execute() would call heap_.reset() which destroys the caller's objects.
     // Instead, we set up the call frame directly (like executePersistent).
@@ -3641,7 +3875,7 @@ Value VM::loadModule(const std::string& path) {
     } else {
         frame_arena_[frame_count_] = CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}};
     }
-    frame_count_++;
+frame_count_++;
     locals.resize(entry->local_count);
 
 	// Execute the module's bytecode (same heap, sandboxed globals)
@@ -3654,7 +3888,7 @@ Value VM::loadModule(const std::string& path) {
             }
         } catch (...) {
         // Restore caller's globals and execution state on error
-        globals = std::move(globals_stack_.back());
+globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
         globals["_G"] = old_g;
         globals_mirror_object_id_ = old_mirror_id;
@@ -3675,13 +3909,17 @@ Value VM::loadModule(const std::string& path) {
     // Keep module chunk alive so exported functions can reference it
     module_chunks_[canonicalKey] = chunk;
 
+    // Create a FINAL snapshot of module globals AFTER __main__ runs.
+    // This includes runtime variables like 'flags = DebugFlags()'.
+    // Use this for wrapping exports and for cached module loads.
+    auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+
     // Materialize chunk-relative values into heap-stable values before
     // restoring the caller's chunk. StringValId and FunctionObjId are
     // indices into the *module's* chunk — they'd resolve against the
     // caller's chunk after restore, producing garbage.
     auto exportsObj = createHostObject();
-auto *obj = heap_.object(exportsObj.id);
-    auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    auto *obj = heap_.object(exportsObj.id);
     int exportCount = 0;
     (void)exportCount;
     uint64_t exportsRootId = pinExternalRoot(Value::makeObjectId(exportsObj.id));
@@ -3705,7 +3943,7 @@ for (const auto& [name, value] : globals) {
             }
         }
         Value materialized = deepMaterializeStrings(value, current_chunk);
-            materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsSnapshot,
+            materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsForCache,
                 canonicalKey, name);
         (*obj)[name] = materialized;
         exportCount++;
@@ -3775,8 +4013,11 @@ for (const auto& [name, value] : globals) {
     current_script_dir_ = prev_script_dir;
 
     // Cache under both keys via canonical ModuleLoader
-    moduleLoader_.putCache(path, exports);
-    moduleLoader_.putCache(canonicalKey, exports);
+    // Use the module's globals (captured before restoring caller's globals)
+    // so runtime variables like 'flags = DebugFlags()' are included in the
+    // snapshot for cached loads.
+    moduleLoader_.putCacheWithGlobals(path, exports, moduleGlobalsForCache);
+    moduleLoader_.putCacheWithGlobals(canonicalKey, exports, moduleGlobalsForCache);
     // Also store in globals so GC scans it as a root
     // (the module cache is not a GC root, so cached objects can be collected)
     globals[path] = exports;

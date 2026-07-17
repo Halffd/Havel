@@ -501,6 +501,10 @@ public:
 
   size_t getFunctionCount() const { return functions.size(); }
 
+  const std::unordered_map<std::string, uint32_t>& getFunctionIndices() const {
+    return function_indices;
+  }
+
   uint32_t getFunctionIndex(const BytecodeFunction *func) const {
     if (!func || functions.empty()) return UINT32_MAX;
     auto offset = static_cast<ptrdiff_t>(func - functions.data());

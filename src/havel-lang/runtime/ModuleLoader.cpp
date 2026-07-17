@@ -322,13 +322,29 @@ bool ModuleLoader::getCached(const std::string& key, core::Value* outValue) cons
         return false;
     }
     if (outValue) {
-        *outValue = it->second;
+        *outValue = it->second.exports;
+    }
+    return true;
+}
+
+bool ModuleLoader::getCachedGlobals(const std::string& key, std::shared_ptr<std::unordered_map<std::string, core::Value>>* outGlobals) const {
+    auto it = cache_.find(key);
+    if (it == cache_.end()) {
+        return false;
+    }
+    if (outGlobals) {
+        *outGlobals = it->second.globals_snapshot;
     }
     return true;
 }
 
 void ModuleLoader::putCache(const std::string& key, core::Value value) {
-    cache_[key] = value;
+    // Default: no globals snapshot
+    cache_[key] = CachedModule{value, nullptr};
+}
+
+void ModuleLoader::putCacheWithGlobals(const std::string& key, core::Value value, std::shared_ptr<std::unordered_map<std::string, core::Value>> globals) {
+    cache_[key] = CachedModule{value, globals};
 }
 
 void ModuleLoader::clearCache() {
@@ -339,7 +355,7 @@ std::vector<core::Value> ModuleLoader::cachedValues() const {
     std::vector<core::Value> values;
     values.reserve(cache_.size());
     for (const auto& [key, val] : cache_) {
-        values.push_back(val);
+        values.push_back(val.exports);
     }
     return values;
 }

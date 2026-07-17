@@ -3870,34 +3870,6 @@ if (moduleLoader_.isCached(canonicalKey)) {
     has_current_exception_ = false;
     current_exception_ = nullptr;
 
-    // DEBUG: dump skipWhitespace constants from compiled chunk
-    if (path == "lexer") {
-        for (size_t f = 0; f < chunk->getFunctionCount(); ++f) {
-            const auto *bf = chunk->getFunction(f);
-            if (bf && bf->name == "skipWhitespace") {
-                std::cerr << "[DBG-MOD] skipWhitespace (idx " << f << ") has "
-                          << bf->constants.size() << " constants:\n";
-                for (size_t ci = 0; ci < bf->constants.size(); ++ci) {
-                    const auto &c = bf->constants[ci];
-                    std::cerr << "  const[" << ci << "] raw=" << std::hex << c.rawBits() << std::dec;
-                    if (c.isFunctionObjId()) std::cerr << " FunctionObjId=" << c.asFunctionObjId();
-                    if (c.isNull()) std::cerr << " NULL";
-                    if (c.isInt()) std::cerr << " int=" << c.asInt();
-                    if (c.isStringValId()) std::cerr << " strVal=" << c.asStringValId();
-                    std::cerr << "\n";
-                }
-                std::cerr << "  instr 0 opcode=" << static_cast<int>(bf->instructions[0].opcode) << "\n";
-                for (size_t oi = 0; oi < bf->instructions.size() && oi < 10; ++oi) {
-                    std::cerr << "    " << oi << ": op=" << static_cast<int>(bf->instructions[oi].opcode);
-                    for (const auto &op : bf->instructions[oi].operands) {
-                        std::cerr << " v=" << std::hex << op.rawBits() << std::dec;
-                    }
-                    std::cerr << "\n";
-                }
-            }
-        }
-    }
-
     if (frame_arena_.size() <= frame_count_) {
         frame_arena_.push_back(CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}});
     } else {

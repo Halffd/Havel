@@ -582,6 +582,32 @@ fn appMute(id, _val) {
     }
 }
 
+fn increaseActiveAppVolume(step) {
+    _s = step
+    if _s == null { _s = 5 }
+    _apps = apps()
+    if #_apps == 0 { return null }
+    _active = _apps[0]
+    _cur = appVolume(_active.id)
+    if _cur == null { _cur = 0 }
+    appVolume(_active.id, _cur + _s)
+    null
+}
+
+fn decreaseActiveAppVolume(step) {
+    _s = step
+    if _s == null { _s = 5 }
+    _apps = apps()
+    if #_apps == 0 { return null }
+    _active = _apps[0]
+    _cur = appVolume(_active.id)
+    if _cur == null { _cur = 0 }
+    _new = _cur - _s
+    if _new < 0 { _new = 0 }
+    appVolume(_active.id, _new)
+    null
+}
+
 fn volumeUp(step) {
     _s = step
     if _s == null { _s = 5 }

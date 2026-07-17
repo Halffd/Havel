@@ -17,8 +17,12 @@ fn setSourceDefault(id) { audio.setSourceDefault(id) }
 fn apps() { audio.apps() }
 fn appVolume(id, _val) { audio.appVolume(id, _val) }
 fn appMute(id, _val) { audio.appMute(id, _val) }
+fn increaseActiveAppVolume(step) { audio.increaseActiveAppVolume(step) }
+fn decreaseActiveAppVolume(step) { audio.decreaseActiveAppVolume(step) }
 fn volumeUp(step) { audio.volumeUp(step) }
 fn volumeDown(step) { audio.volumeDown(step) }
+fn increaseActiveAppVolume(step) { audio.increaseActiveAppVolume(step) }
+fn decreaseActiveAppVolume(step) { audio.decreaseActiveAppVolume(step) }
 fn alsaVolume(_val) { audio.alsaVolume(_val) }
 fn alsaMute(_val) { audio.alsaMute(_val) }
 fn setAlsaVolume(pct) { audio.setAlsaVolume(pct) }

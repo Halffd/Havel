@@ -1080,6 +1080,97 @@ havel_core
 )
 
 # ==============================================================================
+# BOOTSTRAP COMPILER (Stage 0)
+# ==============================================================================
+# Minimal C++ compiler that only compiles the self-hosted compiler modules:
+# lexer.hv, pratt.hv, emitter.hv
+# This is the "Stage 0" compiler used to build the self-hosted compiler.
+
+# Only build bootstrap when Havel Lang is enabled
+if(ENABLE_HAVEL_LANG)
+
+# Bootstrap compiler sources - frozen, minimal subset
+set(BOOTSTRAP_SOURCES
+    src/bootstrap/main.cpp
+    src/bootstrap/lexer/Lexer.cpp
+    src/bootstrap/parser/Parser.cpp
+    src/havel-lang/ast/AST.cpp
+    src/havel-lang/compiler/core/ByteCompiler.cpp
+    src/havel-lang/compiler/core/BytecodeIR.hpp
+    src/havel-lang/compiler/runtime/RuntimeSupport.cpp
+    src/havel-lang/compiler/semantic/LexicalResolver.cpp
+    src/havel-lang/compiler/semantic/TypeChecker.cpp
+    src/havel-lang/compiler/semantic/ModuleResolver.cpp
+    src/havel-lang/errors/ErrorSystem.h
+    src/havel-lang/utils/ErrorPrinter.cpp
+    src/utils/Timer.cpp
+    src/c/LoggerC.c
+    src/c/Config.c
+)
+
+add_executable(havel-bootstrap ${BOOTSTRAP_SOURCES})
+set_target_properties(havel-bootstrap PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    C_STANDARD 17
+    C_STANDARD_REQUIRED ON
+)
+
+target_include_directories(havel-bootstrap PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
+    ${CMAKE_SOURCE_DIR}/src/bootstrap
+)
+
+target_link_libraries(havel-bootstrap PRIVATE
+    nlohmann_json::nlohmann_json
+    Threads::Threads
+    fmt::fmt
+)
+
+# Add bootstrap as dependency of havel (havel needs .hvc files)
+add_dependencies(havel havel-bootstrap)
+
+# Custom commands to compile self-hosted modules via bootstrap
+# These generate .hvc files that havel needs at runtime
+
+# Function to add bootstrap compilation target
+function(add_bootstrap_module module_name)
+    set(hv_src "${CMAKE_SOURCE_DIR}/modules/lang/${module_name}.hv")
+    set(hvc_out "${CMAKE_BINARY_DIR}/out/modules/lang/${module_name}.hvc")
+    
+    add_custom_command(
+        OUTPUT ${hvc_out}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/out/modules/lang
+        COMMAND havel-bootstrap ${hv_src} ${hvc_out}
+        DEPENDS havel-bootstrap ${hv_src}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Compiling ${module_name}.hv via bootstrap compiler"
+        VERBATIM
+    )
+    
+    # Custom target with EXCLUDE_FROM_ALL - only built when needed via dependency
+    add_custom_target(build_${module_name}_hvc DEPENDS ${hvc_out} EXCLUDE_FROM_ALL)
+    add_dependencies(havel build_${module_name}_hvc)
+endfunction()
+
+# Compile the core self-hosted compiler modules
+add_bootstrap_module(lexer)
+add_bootstrap_module(pratt)
+add_bootstrap_module(emitter)
+add_bootstrap_module(loader)
+add_bootstrap_module(scope)
+add_bootstrap_module(ast)
+add_bootstrap_module(types)
+add_bootstrap_module(debug)
+add_bootstrap_module(error)
+add_bootstrap_module(fmt)
+
+endif() # ENABLE_HAVEL_LANG
+
+# ==============================================================================
 # LANGUAGE SERVER PROTOCOL SERVER
 # ==============================================================================
 

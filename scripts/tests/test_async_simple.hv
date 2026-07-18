@@ -1,0 +1,31 @@
+// Simple async test
+use async
+
+print("Testing sleep...")
+start = time.now()
+async.sleep(50)
+elapsed = time.now() - start
+print("sleep elapsed: " + str(elapsed) + "ms")
+assert(elapsed >= 40 && elapsed <= 200, "sleep timing off")
+
+print("\nTesting go + channel...")
+ch = async.chan()
+async.go(fn() {
+    async.sleep(20)
+    ch.send("hello")
+})
+result = ch.receive()
+print("Received: " + result)
+assert(result == "hello", "channel failed")
+
+print("\nTesting debounce...")
+counter = 0
+debounced = async.debounce(fn(x) { counter += x }, 50)
+debounced(1)
+debounced(2)
+debounced(3)
+async.sleep(80)
+print("Counter after debounce: " + str(counter))
+assert(counter == 3, "debounce failed")
+
+print("\nAll tests passed!")

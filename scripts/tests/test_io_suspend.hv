@@ -1,0 +1,15 @@
+// Test IO suspend/resume toggle
+print("Testing IO suspend/resume...")
+
+// Initial state - not suspended
+print("isSuspended:", io.isSuspended())
+
+// Suspend
+print("Suspend:", io.suspend())
+print("isSuspended:", io.isSuspended())
+
+// Resume (call suspend again to toggle back)
+print("Resume:", io.suspend())
+print("isSuspended:", io.isSuspended())
+
+print("Test passed!")

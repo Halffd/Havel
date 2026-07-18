@@ -59,7 +59,8 @@ null
 
 }
 fn scopeResolveUpvalue(scope, name) {
-    existing = scope.upvalues[name]
+  print("DEBUG scopeResolveUpvalue: name=" + str(name) + " scope.bcFuncIdx=" + str(scope.bcFuncIdx) + " scope.upcount=" + str(scope.upcount))
+  existing = scope.upvalues[name]
     if existing != null {
         return existing
     }
@@ -70,9 +71,11 @@ fn scopeResolveUpvalue(scope, name) {
         scope.upvalues[name] = myUpidx
         scope.upcount = myUpidx + 1
         if scope.bcFuncIdx != null {
+            print("DEBUG: add_upvalue_to funcIdx=" + str(scope.bcFuncIdx) + " index=" + str(localEntry) + " captures_local=1")
             bc.add_upvalue_to(scope.bcFuncIdx, localEntry, 1)
         }
         else {
+            print("DEBUG: add_upvalue index=" + str(localEntry) + " captures_local=1")
             bc.add_upvalue(localEntry, 1)
         }
         return myUpidx
@@ -150,11 +153,13 @@ fn scopeResolveUpvalue(scope, name) {
     scope.upvalues[name] = myUpidx
     scope.upcount = myUpidx + 1
     if scope.bcFuncIdx != null {
-        bc.add_upvalue_to(scope.bcFuncIdx, parentUpidx, 0)
-    }
-    else {
-        bc.add_upvalue(parentUpidx, 0)
-    }
+            print("DEBUG: add_upvalue_to (transitive) funcIdx=" + str(scope.bcFuncIdx) + " index=" + str(parentUpidx) + " captures_local=0")
+            bc.add_upvalue_to(scope.bcFuncIdx, parentUpidx, 0)
+        }
+        else {
+            print("DEBUG: add_upvalue (transitive) index=" + str(parentUpidx) + " captures_local=0")
+            bc.add_upvalue(parentUpidx, 0)
+        }
     return myUpidx
 }
 

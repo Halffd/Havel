@@ -245,6 +245,7 @@ fn Parser(tokenList) {
   tokens = tokenList
   pos = 0
   errors = []
+  incomplete = false
   inMatchExpr = false
   allowBraceSugar = true
   _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
@@ -273,6 +274,36 @@ fn Parser(tokenList) {
   }
   fn syncCur() {
     _cur = pos < tokens.len ? tokens[pos] : _eof
+  }
+  fn synchronize() {
+    while notEOF() and current().tid != TID.EOF {
+      tt = current().tid
+      if tt == TID.Semicolon { advance(); return }
+      if tt == TID.CloseBrace { return }
+      if tt == TID.NewLine { return }
+      if tt == TID.Fn { return }
+      if tt == TID.If { return }
+      if tt == TID.While { return }
+      if tt == TID.For { return }
+      if tt == TID.Switch { return }
+      if tt == TID.Match { return }
+      if tt == TID.Try { return }
+      if tt == TID.Return { return }
+      if tt == TID.Break { return }
+      if tt == TID.Continue { return }
+      if tt == TID.Struct { return }
+      if tt == TID.Class { return }
+      if tt == TID.Enum { return }
+      if tt == TID.Import { return }
+      if tt == TID.Use { return }
+      if tt == TID.Throw { return }
+      if tt == TID.Async { return }
+      if tt == TID.Config { return }
+      if tt == TID.Do { return }
+      if tt == TID.Defer { return }
+      if tt == TID.Hotkey { return }
+      advance()
+    }
   }
   fn notEOF() {
     return _cur.tid != TID.EOF
@@ -316,6 +347,7 @@ fn Parser(tokenList) {
     }
     // --- Error handling ---
 fn error(msg, line, col) {
+    if current().tid == TID.EOF: incomplete = true
     errors.push({msg: msg, line: line, col: col})
     return ErrorNode(msg, line, col)
 }
@@ -480,13 +512,13 @@ return parseInterpolatedString(tok.value, l, c)
     advance() // consume 'in'
     source = parseExpr(getRightBindingPower(TID.From))
     pipeline = source
-    while current().tid == TID.Where {
-     advance() // consume 'where'
+while current().tid == TID.Where {
+      advance() // consume 'where'
 condition = parseExpr(getRightBindingPower(TID.Where))
       filterIdent = Identifier("filter", l, c)
       param = varName
       body = ExpressionStatement(condition, l, c)
-      lambda = LambdaExpression(null, [param], body, l, c)
+      lambda = LambdaExpression([param], body)
       filterCall = CallExpression(filterIdent, [lambda], [], l, c)
       pipeline = PipelineExpression(pipeline, filterCall, l, c)
      }
@@ -496,7 +528,7 @@ condition = parseExpr(getRightBindingPower(TID.Where))
       mapIdent = Identifier("map", l, c)
       param = varName
       body = ExpressionStatement(transform, l, c)
-      lambda = LambdaExpression(null, [param], body, l, c)
+      lambda = LambdaExpression([param], body)
       mapCall = CallExpression(mapIdent, [lambda], [], l, c)
       pipeline = PipelineExpression(pipeline, mapCall, l, c)
      }
@@ -685,7 +717,7 @@ else if tt == TID.Go {
     }
     expect(TID.CloseBrace)
     block = BlockStatement(stmts, l, c)
-    call = LambdaExpression(null, [], block, l, c)
+    call = LambdaExpression([], block)
     return GoExpression(call, l, c)
   }
   call = parseExpr(0)
@@ -1042,7 +1074,7 @@ else if tt == TID.Arrow {
     bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
     body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
   }
-  return LambdaExpression(null, params, body, l, c)
+  return LambdaExpression(params, body)
 }
   else {
     return error("Unexpected token in infix position: " + tt, l, c)
@@ -1243,7 +1275,8 @@ fn parseCallArgs() {
                 bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
                 body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
             }
-return LambdaExpression(null, parameters, body, l, c)
+            return LambdaExpression(parameters, body)
+        }
 
         }
         // Multi-param lambda detection: (a, b, c) => body
@@ -1287,7 +1320,7 @@ return LambdaExpression(null, parameters, body, l, c)
                 bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
                 body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
             }
-            return LambdaExpression(null, lambdaParams, body, l, c)
+            return LambdaExpression(lambdaParams, body)
 
         }
         // Not a lambda — restore position and parse grouped expression
@@ -1384,10 +1417,10 @@ return expr
         else {
             bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
+    }
 
-  }
   print("DEBUG PARSER CALL: name=" + str(name) + " params=" + str(params) + " body=" + str(body) + " l=" + str(l) + " c=" + str(c))
-  return LambdaExpression(name, params, body, l, c)
+  return LambdaExpression(params, body)
 
   }
     // ===================================================================
@@ -1951,7 +1984,7 @@ fn parseBlock() {
         stmts.push(s)
       }
       if s != null and s.kind == "ErrorNode" {
-        advance()
+        synchronize()
       }
       skipNewlinesAndSemicolons()
     }
@@ -1959,7 +1992,7 @@ fn parseBlock() {
     allowBraceSugar = prevSugar
     return BlockStatement(stmts, l, c)
   }
- if current().tid == TID.Colon {
+  if current().tid == TID.Colon {
   // Find header indent by scanning backwards to first token on same line
   headerIndent = c
   scanPos = pos - 1
@@ -1985,12 +2018,12 @@ fn parseBlock() {
    if s != null and s.kind != "ErrorNode" {
     stmts.push(s)
    }
-   if s != null and s.kind == "ErrorNode" {
-    advance()
-   }
-   skipNewlinesAndSemicolons()
- if current().tid == TID.EOF: break
- if current().col < baseIndent: break
+    if s != null and s.kind == "ErrorNode" {
+     synchronize()
+    }
+    skipNewlinesAndSemicolons()
+  if current().tid == TID.EOF: break
+  if current().col < baseIndent: break
  endTokens = {}
  endTokens[TID.Else] = true; endTokens[TID.Catch] = true; endTokens[TID.Finally] = true; endTokens[TID.Case] = true; endTokens[TID.Default] = true
  if endTokens[current().tid] != null: break
@@ -2189,7 +2222,7 @@ if tt == TID.Defer {
 		}
 expect(TID.CloseBrace)
         block = BlockStatement(stmts, l, c)
-        expr = LambdaExpression(null, [], block, l, c)
+        expr = LambdaExpression([], block)
         return DeferStatement(expr, l, c)
 	}
 	else {
@@ -4361,7 +4394,7 @@ fn parseGoStatement() {
     }
     expect(TID.CloseBrace)
     block = BlockStatement(stmts, l, c)
-    call = LambdaExpression(null, [], block, l, c)
+    call = LambdaExpression([], block)
     return GoStatement(call, l, c)
   }
   call = parseExpr(0)
@@ -4554,8 +4587,7 @@ fn parseAtDecoratorStatement() {
                 stmts.push(s)
             }
             else if s != null and s.kind == "ErrorNode" {
-                // Skip past error token and continue
-                if pos < tokens.len: advance()
+                synchronize()
             }
             else {
                 // Null statement — skip
@@ -4576,8 +4608,6 @@ return Program(stmts, 1, 1)
     pos: pos,
     tokens: tokens,
     }
-
-}
 // ===================================================================
 // PUBLIC API
 // ===================================================================
@@ -4586,12 +4616,12 @@ fn parse(source) {
   tokenList = tokenize(source)
   p = Parser(tokenList)
   ast = p.produceAST()
-  return {ast: ast, errors: p.errors}
+  return {ast: ast, errors: p.errors, incomplete: p.incomplete}
 
 }
 fn parseTokens(tokenList) {
   p = Parser(tokenList)
   ast = p.produceAST()
-  return {ast: ast, errors: p.errors}
+  return {ast: ast, errors: p.errors, incomplete: p.incomplete}
 
 }

@@ -372,31 +372,35 @@ case OpCode::DECLOCAL_POST: {
 }
 
 case OpCode::LOAD_UPVALUE: {
-uint32_t upvalue_index = instruction.operands[0].asInt();
-uint32_t closure_id = currentFrame().closure_id;
-if (closure_id == 0) {
-::havel::error("[VM-DEBUG] LOAD_UPVALUE failed: closure_id=0 upvalue_idx={} frame_count={} func='{}'", 
-    upvalue_index, frame_count_, 
-    currentFrame().function ? currentFrame().function->name : "?");
-COMPILER_THROW("LOAD_UPVALUE used without active closure");
-}
-auto *closure = heap_.closure(closure_id);
-if (!closure) {
-COMPILER_THROW("Closure not found for LOAD_UPVALUE");
-}
-if (upvalue_index >= closure->upvalues.size() ||
-!closure->upvalues[upvalue_index]) {
-COMPILER_THROW("LOAD_UPVALUE index out of range");
-}
-        const auto &cell = closure->upvalues[upvalue_index];
-  Value value;
-  if (cell->is_open) {
-    uint32_t abs_index = cell->locals_base + cell->open_index;
-    this->ensureLocalIndex(abs_index);
-    value = locals[abs_index];
-  } else {
-    value = cell->closed_value;
-  }
+    uint32_t upvalue_index = instruction.operands[0].asInt();
+    uint32_t closure_id = currentFrame().closure_id;
+    if (closure_id == 0) {
+        ::havel::error("[VM-DEBUG] LOAD_UPVALUE failed: closure_id=0 upvalue_idx={} frame_count={} func='{}'", 
+            upvalue_index, frame_count_, 
+            currentFrame().function ? currentFrame().function->name : "?");
+        COMPILER_THROW("LOAD_UPVALUE used without active closure");
+    }
+    auto *closure = heap_.closure(closure_id);
+    if (!closure) {
+        COMPILER_THROW("Closure not found for LOAD_UPVALUE");
+    }
+    if (upvalue_index >= closure->upvalues.size() ||
+        !closure->upvalues[upvalue_index]) {
+        COMPILER_THROW("LOAD_UPVALUE index out of range");
+    }
+    const auto &cell = closure->upvalues[upvalue_index];
+    std::cerr << "[DEBUG LOAD_UPVALUE] upvalue_index=" << upvalue_index << " cell->is_open=" << cell->is_open << " cell->open_index=" << cell->open_index << " cell->locals_base=" << cell->locals_base << std::endl;
+    Value value;
+    if (cell->is_open) {
+        uint32_t abs_index = cell->locals_base + cell->open_index;
+        std::cerr << "  abs_index=" << abs_index << " locals_base=" << cell->locals_base << " open_index=" << cell->open_index << std::endl;
+        this->ensureLocalIndex(abs_index);
+        value = locals[abs_index];
+        std::cerr << "  loaded value=" << value.toString() << std::endl;
+    } else {
+        value = cell->closed_value;
+        std::cerr << "  closed value=" << value.toString() << std::endl;
+    }
     pushStack(value);
     break;
 }

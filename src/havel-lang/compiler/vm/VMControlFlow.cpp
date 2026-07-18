@@ -1092,39 +1092,46 @@ case OpCode::CLOSURE: {
       COMPILER_THROW("CLOSURE references unknown function index");
     }
 
-GCHeap::RuntimeClosure closure;
-closure.function_index = function_index;
-closure.upvalues.reserve(target->upvalues.size());
-for (const auto &descriptor : target->upvalues) {
-if (descriptor.captures_local) {
-uint32_t abs = this->toAbsoluteLocal(descriptor.index);
-this->ensureLocalIndex(abs);
-auto open_it = open_upvalues.find(abs);
-if (open_it == open_upvalues.end()) {
-auto cell = std::make_shared<GCHeap::UpvalueCell>();
-cell->is_open = true;
-cell->open_index = descriptor.index;
-cell->locals_base = currentFrame().locals_base;
-open_upvalues.emplace(abs, cell);
-closure.upvalues.push_back(std::move(cell));
-} else {
-closure.upvalues.push_back(open_it->second);
-}
-} else {
-uint32_t parent_closure_id = currentFrame().closure_id;
-if (parent_closure_id == 0) {
-COMPILER_THROW(
-"CLOSURE tried to capture upvalue without parent closure");
-}
-auto *parent_closure = heap_.closure(parent_closure_id);
-        if (!parent_closure) {
-          COMPILER_THROW("Parent closure not found for CLOSURE");
+    std::cerr << "[DEBUG CLOSURE] func=" << target->name << " upvalues.size=" << target->upvalues.size() << std::flush << std::endl;
+    for (size_t i = 0; i < target->upvalues.size(); ++i) {
+        std::cerr << "  upvalue[" << i << "] index=" << target->upvalues[i].index << " captures_local=" << target->upvalues[i].captures_local << std::flush << std::endl;
+    }
+
+    GCHeap::RuntimeClosure closure;
+    closure.function_index = function_index;
+    closure.upvalues.reserve(target->upvalues.size());
+    for (const auto &descriptor : target->upvalues) {
+        std::cerr << "  Creating upvalue: index=" << descriptor.index << " captures_local=" << descriptor.captures_local << std::endl;
+        if (descriptor.captures_local) {
+            uint32_t abs = this->toAbsoluteLocal(descriptor.index);
+            std::cerr << "  abs local index=" << abs << " locals_base=" << currentFrame().locals_base << std::endl;
+            this->ensureLocalIndex(abs);
+            auto open_it = open_upvalues.find(abs);
+            if (open_it == open_upvalues.end()) {
+                auto cell = std::make_shared<GCHeap::UpvalueCell>();
+                cell->is_open = true;
+                cell->open_index = descriptor.index;
+                cell->locals_base = currentFrame().locals_base;
+                open_upvalues.emplace(abs, cell);
+                closure.upvalues.push_back(std::move(cell));
+            } else {
+                closure.upvalues.push_back(open_it->second);
+            }
+        } else {
+            uint32_t parent_closure_id = currentFrame().closure_id;
+            if (parent_closure_id == 0) {
+                COMPILER_THROW(
+                    "CLOSURE tried to capture upvalue without parent closure");
+            }
+            auto *parent_closure = heap_.closure(parent_closure_id);
+            if (!parent_closure) {
+                COMPILER_THROW("Parent closure not found for CLOSURE");
+            }
+            if (descriptor.index >= parent_closure->upvalues.size()) {
+                COMPILER_THROW("CLOSURE upvalue index out of range");
+            }
+            closure.upvalues.push_back(parent_closure->upvalues[descriptor.index]);
         }
-        if (descriptor.index >= parent_closure->upvalues.size()) {
-          COMPILER_THROW("CLOSURE upvalue index out of range");
-        }
-        closure.upvalues.push_back(parent_closure->upvalues[descriptor.index]);
-      }
     }
 
   std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;

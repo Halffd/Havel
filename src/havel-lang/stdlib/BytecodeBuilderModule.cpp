@@ -5,6 +5,7 @@
 #include "utils/Logger.hpp"
 
 #include <fstream>
+#include <iostream>
 
 using havel::compiler::BytecodeChunk;
 using havel::compiler::BytecodeFunction;
@@ -538,6 +539,7 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
         }
         uint32_t sourceIndex = static_cast<uint32_t>(args[0].asInt());
         bool capturesLocal = args[1].asInt() != 0;
+        std::cerr << "[DEBUG bc.add_upvalue] func=" << fn->name << " sourceIndex=" << sourceIndex << " capturesLocal=" << capturesLocal << " upvalues.size=" << fn->upvalues.size() << std::endl;
         for (uint32_t i = 0; i < static_cast<uint32_t>(fn->upvalues.size()); i++) {
             if (fn->upvalues[i].index == sourceIndex && fn->upvalues[i].captures_local == capturesLocal) {
                 return Value::makeInt(static_cast<int64_t>(i));
@@ -547,6 +549,7 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
         desc.index = sourceIndex;
         desc.captures_local = capturesLocal;
         fn->upvalues.push_back(desc);
+        std::cerr << "[DEBUG bc.add_upvalue] Added upvalue at index " << (fn->upvalues.size() - 1) << std::endl;
         return Value::makeInt(static_cast<int64_t>(fn->upvalues.size() - 1));
     });
 
@@ -566,6 +569,7 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
         if (!targetFn) throw std::runtime_error("bc.add_upvalue_to: function not found at index " + std::to_string(targetIdx));
         uint32_t sourceIndex = static_cast<uint32_t>(args[1].asInt());
         bool capturesLocal = args[2].asInt() != 0;
+        std::cerr << "[DEBUG bc.add_upvalue_to] targetFuncIdx=" << targetIdx << " targetFunc=" << targetFn->name << " sourceIndex=" << sourceIndex << " capturesLocal=" << capturesLocal << " upvalues.size=" << targetFn->upvalues.size() << std::endl;
         for (uint32_t i = 0; i < static_cast<uint32_t>(targetFn->upvalues.size()); i++) {
             if (targetFn->upvalues[i].index == sourceIndex && targetFn->upvalues[i].captures_local == capturesLocal) {
                 return Value::makeInt(static_cast<int64_t>(i));
@@ -575,6 +579,7 @@ api.registerFunction("bc.set_param_count", [](const std::vector<Value> &args) ->
         desc.index = sourceIndex;
         desc.captures_local = capturesLocal;
         targetFn->upvalues.push_back(desc);
+        std::cerr << "[DEBUG bc.add_upvalue_to] Added upvalue at index " << (targetFn->upvalues.size() - 1) << std::endl;
         return Value::makeInt(static_cast<int64_t>(targetFn->upvalues.size() - 1));
     });
 

@@ -90,7 +90,6 @@ fn kwinZoom (cmd) {
 }
 inc = 0.25
 fn zoom (level) {
-    print("before", time.now())
   if level < 0 {
     level = 0
   } else if level > 4 {
@@ -172,7 +171,6 @@ fn zoom (level) {
       zoomLevel = 1.0
     }
   }
-  print("after", time.now())
   print("zoomLevel: " + zoomLevel)
 }
 print("zoomToggle")

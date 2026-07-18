@@ -1243,7 +1243,7 @@ fn parseCallArgs() {
                 bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
                 body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
             }
-            return LambdaExpression(null, params, body, l, c)
+return LambdaExpression(null, parameters, body, l, c)
 
         }
         // Multi-param lambda detection: (a, b, c) => body

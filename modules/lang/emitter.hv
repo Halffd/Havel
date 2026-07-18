@@ -3229,7 +3229,7 @@ for p in params {
     bc.set_func_source_line(sourceLine)
   }
 di = 0
-	for p in parameters {
+ 	for p in params != null ? params : [] {
     if type(p) == "object" && (p.defval != null || p.default != null) {
       dv = p.defval != null ? p.defval : p.default
       _handled = false
@@ -3289,7 +3289,12 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
   if name != null {
       scopeDeclare(oldScope, name)
   }
-  for p in parameters {
+  // Handle recursive lambdas: pre-allocate local slot for the closure
+  localIdx = -1
+  if name != null {
+    localIdx = scopeDeclare(newScope, name)
+  }
+  for p in parameters != null ? parameters : [] {
   if type(p) == "array" {
     print("ERROR: param is array: " + str(p))
 }
@@ -3299,14 +3304,14 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
 	}
 	else { scopeDeclare(newScope, p) }
 	}
-	paramCount = #parameters
-	localCount = paramCount + 16
-	bc.func_push()
-	actualIdx = bc.func_new(name, paramCount, localCount)
-	newScope.bcFuncIdx = actualIdx
-	// Set parameter names for kwargs support
-	paramNameStrIds = []
-	for p in parameters {
+paramCount = #(parameters != null ? parameters : [])
+  localCount = paramCount + 16
+  bc.func_push()
+  actualIdx = bc.func_new(name, paramCount, localCount)
+  newScope.bcFuncIdx = actualIdx
+  // Set parameter names for kwargs support
+  paramNameStrIds = []
+  for p in parameters != null ? parameters : [] {
 		if type(p) == "object" && p.name != null {
 			sid = bc.add_chunk_string(p.name)
 			paramNameStrIds.push(sid)
@@ -3325,8 +3330,8 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
  if sourceLine != null {
  bc.set_func_source_line(sourceLine)
  }
- di = 0
- for p in params {
+di = 0
+  for p in parameters != null ? parameters : [] {
  if type(p) == "object" && (p.defval != null || p.default != null) {
  dv = p.defval != null ? p.defval : p.default
  _handled = false
@@ -3366,11 +3371,11 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
   upcount = newScope.upcount
   bc.func_pop()
   traceEmitter("func_pop " + name + " upcount=" + str(upcount))
-  emitter.scope = oldScope
+emitter.scope = oldScope
   [upcount, actualIdx, localIdx]
+}
 
- }
- // ============================================================
+// ============================================================
 // Import / Use statement emission
 // ============================================================
 

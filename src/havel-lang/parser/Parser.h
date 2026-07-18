@@ -3,7 +3,7 @@
 #pragma once
 #include "../ast/AST.h"
 #include "../common/Debug.hpp"
-#include "../lexer/Lexer.hpp"
+#include "bootstrap/lexer/Lexer.hpp"
 #include <algorithm>
 #include <cassert>
 #include <memory>

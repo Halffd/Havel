@@ -3,7 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "lexer/Lexer.hpp"
+#include "bootstrap/lexer/Lexer.hpp"
 
 namespace havel {
 

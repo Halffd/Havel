@@ -885,13 +885,13 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
                 if (!read(&raw, sizeof(raw))) return std::nullopt;
                 func.constants.push_back(Value::fromRawBits(raw));
                 if (funcName == "skipWhitespace" && c == 0) {
-                    std::cerr << "[DBG-DESER] fn=" << funcName
-                              << " const[" << c << "] tag=" << (int)tag << " raw=" << std::hex << raw << std::dec
-                              << " val_raw=" << std::hex << func.constants.back().rawBits() << std::dec
-                              << " isFunctionObjId=" << func.constants.back().isFunctionObjId()
-                              << " isInt=" << func.constants.back().isInt()
-                              << " isNull=" << func.constants.back().isNull()
-                              << "\n";
+                    // std::cerr << "[DBG-DESER] fn=" << funcName
+                    //           << " const[" << c << "] tag=" << (int)tag << " raw=" << std::hex << raw << std::dec
+                    //           << " val_raw=" << std::hex << func.constants.back().rawBits() << std::dec
+                    //           << " isFunctionObjId=" << func.constants.back().isFunctionObjId()
+                    //           << " isInt=" << func.constants.back().isInt()
+                    //           << " isNull=" << func.constants.back().isNull()
+                    //           << "\n";
                 }
             }
         }

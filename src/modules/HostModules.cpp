@@ -26,9 +26,6 @@
 
 #include "../host/mouse/MouseService.hpp"
 #include "../host/app/AppService.hpp"
-#include <cstdio>
-
-#define BR_DEBUG(fmt, ...) fprintf(stderr, "[BR-DEBUG] " fmt "\n", ##__VA_ARGS__)
 
 namespace havel {
 
@@ -56,7 +53,6 @@ void declareAllServices() {
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 							   const host::ServiceFilter& includes,
 							   const host::ServiceFilter& excludes) {
-	BR_DEBUG("initializeServiceRegistry called, hostAPI=%p", (void*)hostAPI.get());
 	if (!hostAPI) {
 		debug("initializeServiceRegistry: hostAPI is null, skipping service registration");
 		return;

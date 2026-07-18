@@ -285,10 +285,10 @@ fn FnDeclaration(name, params, body, line, col, typeParams) {
     {kind: "FnDeclaration", line: line, col: col, name: name, params: params, body: body, typeParams: typeParams}
 
 }
-fn LambdaExpression(name, params, body, line, col) {
-  print("DEBUG AST: LambdaExpression constructor: name=" + str(name) + " params=" + str(params) + " body=" + str(body) + " line=" + str(line) + " col=" + str(col))
-  result = {kind: "LambdaExpression", line: line, col: col, name: name, params: params, body: body}
-  print("DEBUG AST: LambdaExpression result: params=" + str(result.params) + " body=" + str(result.body))
+fn LambdaExpression(parameters, body) {
+  print("DEBUG AST: LambdaExpression constructor: parameters=" + str(parameters) + " body=" + str(body))
+  result = {kind: "LambdaExpression", parameters: parameters, body: body}
+  print("DEBUG AST: LambdaExpression result: parameters=" + str(result.parameters) + " body=" + str(result.body))
   result
 }
 

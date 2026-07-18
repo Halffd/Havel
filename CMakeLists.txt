@@ -1117,6 +1117,10 @@ set_target_properties(havel-bootstrap PROPERTIES
     C_STANDARD_REQUIRED ON
 )
 
+# Use large code model to avoid R_X86_64_PC32 relocation overflow
+target_compile_options(havel-bootstrap PRIVATE -mcmodel=large)
+target_link_options(havel-bootstrap PRIVATE -mcmodel=large)
+
 target_include_directories(havel-bootstrap PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
@@ -1140,6 +1144,7 @@ add_dependencies(havel havel-bootstrap)
 function(add_bootstrap_module module_name)
     set(hv_src "${CMAKE_SOURCE_DIR}/modules/lang/${module_name}.hv")
     set(hvc_out "${CMAKE_BINARY_DIR}/out/modules/lang/${module_name}.hvc")
+    set(target_name "build_${module_name}_hvc")
     
     add_custom_command(
         OUTPUT ${hvc_out}
@@ -1151,9 +1156,9 @@ function(add_bootstrap_module module_name)
         VERBATIM
     )
     
-    # Custom target with EXCLUDE_FROM_ALL - only built when needed via dependency
-    add_custom_target(build_${module_name}_hvc DEPENDS ${hvc_out} EXCLUDE_FROM_ALL)
-    add_dependencies(havel build_${module_name}_hvc)
+    # Custom target that depends on the file output
+    add_custom_target(${target_name} DEPENDS ${hvc_out})
+    add_dependencies(havel ${target_name})
 endfunction()
 
 # Compile the core self-hosted compiler modules

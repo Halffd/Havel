@@ -1231,9 +1231,10 @@ emitter.scope = oldScope
 return
 }
   if k == "LambdaExpression" {
-  print("DEBUG EMITTER: LambdaExpression node.params: " + str(node.params) + " node.body: " + str(node.body))
+  print("DEBUG EMITTER: LambdaExpression node.parameters: " + str(node.parameters) + " node.body: " + str(node.body))
   // Compile the lambda body now
-  result = compileLambda(emitter, node.name, node.params, node.body, node.line)
+  // node only has parameters and body (no name, line, col)
+  result = compileLambda(emitter, null, node.parameters, node.body, null)
   upcount = result[0]
   chunkIdx = result[1]
   localIdx = result[2]
@@ -3227,8 +3228,8 @@ for p in params {
   if sourceLine != null {
     bc.set_func_source_line(sourceLine)
   }
-  di = 0
-  for p in params {
+di = 0
+	for p in parameters {
     if type(p) == "object" && (p.defval != null || p.default != null) {
       dv = p.defval != null ? p.defval : p.default
       _handled = false
@@ -3274,53 +3275,53 @@ bc.set_local_count(actualLocals)
  [upcount, actualIdx]
 
  }
-fn compileLambda(emitter, name, params, bodyNode, sourceLine) {
-  print("DEBUG: compileLambda called with params: " + str(params))
+fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
+  print("DEBUG: compileLambda called with parameters: " + str(parameters))
   lamId = emitter.nextFuncId
- emitter.nextFuncId = lamId + 1
- if name == null { name = "lambda_" + str(lamId) }
- oldScope = emitter.scope
- fid = emitter.nextFuncId
- emitter.nextFuncId = fid + 1
- newScope = Scope(oldScope, fid, null) // bcFuncIdx set after func_new
- emitter.scope = newScope
+  emitter.nextFuncId = lamId + 1
+  if name == null { name = "lambda_" + str(lamId) }
+  oldScope = emitter.scope
+  fid = emitter.nextFuncId
+  emitter.nextFuncId = fid + 1
+  newScope = Scope(oldScope, fid, null) // bcFuncIdx set after func_new
+  emitter.scope = newScope
   // Bind function name in the function's own scope for recursion
   if name != null {
       scopeDeclare(oldScope, name)
   }
-for p in params {
+  for p in parameters {
   if type(p) == "array" {
     print("ERROR: param is array: " + str(p))
-  }
-  if type(p) == "object" {
-    if p.name != null { scopeDeclare(newScope, p.name) }
-    else if p.value != null { scopeDeclare(newScope, p.value) }
-  }
-  else { scopeDeclare(newScope, p) }
-  }
-  paramCount = #params
-  localCount = paramCount + 16
-  bc.func_push()
-  actualIdx = bc.func_new(name, paramCount, localCount)
-  newScope.bcFuncIdx = actualIdx
-  // Set parameter names for kwargs support
-  paramNameStrIds = []
-  for p in params {
-    if type(p) == "object" && p.name != null {
-      sid = bc.add_chunk_string(p.name)
-      paramNameStrIds.push(sid)
-    }
-    else if type(p) == "object" && p.value != null {
-      sid = bc.add_chunk_string(p.value)
-      paramNameStrIds.push(sid)
-    }
-    else if type(p) == "str" {
-      sid = bc.add_chunk_string(p)
-      paramNameStrIds.push(sid)
-    }
-  }
-  bc.set_param_names(paramNameStrIds)
-  traceEmitter("func_new " + name + " params=" + str(paramCount) + " bcIdx=" + str(actualIdx))
+}
+	if type(p) == "object" {
+		if p.name != null { scopeDeclare(newScope, p.name) }
+		else if p.value != null { scopeDeclare(newScope, p.value) }
+	}
+	else { scopeDeclare(newScope, p) }
+	}
+	paramCount = #parameters
+	localCount = paramCount + 16
+	bc.func_push()
+	actualIdx = bc.func_new(name, paramCount, localCount)
+	newScope.bcFuncIdx = actualIdx
+	// Set parameter names for kwargs support
+	paramNameStrIds = []
+	for p in parameters {
+		if type(p) == "object" && p.name != null {
+			sid = bc.add_chunk_string(p.name)
+			paramNameStrIds.push(sid)
+		}
+		else if type(p) == "object" && p.value != null {
+			sid = bc.add_chunk_string(p.value)
+			paramNameStrIds.push(sid)
+		}
+		else if type(p) == "str" {
+			sid = bc.add_chunk_string(p)
+			paramNameStrIds.push(sid)
+		}
+	}
+	bc.set_param_names(paramNameStrIds)
+	traceEmitter("func_new " + name + " params=" + str(paramCount) + " bcIdx=" + str(actualIdx))
  if sourceLine != null {
  bc.set_func_source_line(sourceLine)
  }

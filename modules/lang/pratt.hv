@@ -238,63 +238,42 @@ IMPLICIT_CALL_STARTERS[TID.Number] = true; IMPLICIT_CALL_STARTERS[TID.Identifier
 IMPLICIT_CALL_STARTERS[TID.InterpolatedBacktick] = true; IMPLICIT_CALL_STARTERS[TID.At] = true; IMPLICIT_CALL_STARTERS[TID.AtAt] = true
 IMPLICIT_CALL_STARTERS[TID.Not] = true; IMPLICIT_CALL_STARTERS[TID.Length] = true
 
-// Module-level state for parser (single-threaded)
-// These are declared at module level so inner functions can access them as globals
-// without needing upvalue/closure support from the bootstrap compiler.
-// Each Parser() call resets these via :: prefix assignments.
-parser_ctx = {errors: null, incomplete: false}
-::pos = 0
-::tokens = null
-::_cur = null
-::_eof = null
-::inMatchExpr = false
-::allowBraceSugar = true
-
-fn error(msg, line, col) {
-    if parser_ctx.errors != null {
-        parser_ctx.errors.push({msg: msg, line: line, col: col})
-    }
-    return ErrorNode(msg, line, col)
-}
-
 // ===================================================================
 // Parser object — encapsulates parsing state
 // ===================================================================
 fn Parser(tokenList) {
-  parser_ctx.errors = []
-  parser_ctx.incomplete = false
-  ::tokens = tokenList
-  ::pos = 0
-  ::inMatchExpr = false
-  ::allowBraceSugar = true
-  ::_eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
-  print("PARSER: tokens=" + str(::tokens) + " tokenList=" + str(tokenList) + " eq=" + str(::tokens == tokenList) + " len=" + str(::tokens.len))
-  ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
+  tokens = tokenList
+  pos = 0
+  errors = []
+  incomplete = false
+  inMatchExpr = false
+  allowBraceSugar = true
+  _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
+  _cur = pos < tokens.len ? tokens[pos] : _eof
 
   fn at(offset) {
-    i = ::pos + offset
+    i = pos + offset
     if i < 0: i = 0
-    if i < ::tokens.len: return ::tokens[i]
-    else: return ::_eof
+    if i < tokens.len: return tokens[i]
+    else: return _eof
   }
   fn current() {
-    return ::_cur
+    return _cur
   }
   fn advance() {
-    if ::pos < ::tokens.len {
-      t = ::tokens[::pos]
-      print("ADVANCE: pos=" + str(::pos) + " tok type=" + str(t.type) + " tid=" + str(t.tid) + " tok_is_arr=" + str(t is Array))
-      ::pos = ::pos + 1
-      ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
-      t
+    if pos < tokens.len {
+      t = tokens[pos]
+      pos = pos + 1
+      _cur = pos < tokens.len ? tokens[pos] : _eof
+      return t
     }
     else {
-      ::_cur = ::_eof
-      return ::_eof
+      _cur = _eof
+      return _eof
     }
   }
   fn syncCur() {
-    ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
+    _cur = pos < tokens.len ? tokens[pos] : _eof
   }
   fn synchronize() {
     while notEOF() and current().tid != TID.EOF {
@@ -325,10 +304,9 @@ fn Parser(tokenList) {
       if tt == TID.Hotkey { return }
       advance()
     }
-    parser_ctx.incomplete = true
   }
   fn notEOF() {
-    return ::_cur.tid != TID.EOF
+    return _cur.tid != TID.EOF
   }
  fn expect(ttype) {
  t = current()
@@ -367,6 +345,12 @@ fn Parser(tokenList) {
 
         }
     }
+    // --- Error handling ---
+fn error(msg, line, col) {
+    if current().tid == TID.EOF: incomplete = true
+    errors.push({msg: msg, line: line, col: col})
+    return ErrorNode(msg, line, col)
+}
   fn parseError(msg) {
     t = current()
     return error(msg, t.line, t.col)
@@ -419,7 +403,7 @@ fn parseExpr(rbp) {
 
  }
  // Special: Arrow returns 0 in match context
- if curType == TID.Arrow and ::inMatchExpr {
+ if curType == TID.Arrow and inMatchExpr {
                 break
 
             }
@@ -440,11 +424,11 @@ fn parseExpr(rbp) {
  // Implicit call sugar: expr "string" -> expr("string")
  // Not across newlines — NewLine has bp=0 so the Pratt loop exits before we get here
  // and NewLine is not in IMPLICIT_CALL_STARTERS
- if ::allowBraceSugar and IMPLICIT_CALL_STARTERS[current().tid] != null {
-            prevSugar = ::allowBraceSugar
-            ::allowBraceSugar = false
+ if allowBraceSugar and IMPLICIT_CALL_STARTERS[current().tid] != null {
+            prevSugar = allowBraceSugar
+            allowBraceSugar = false
             arg = parseExpr(0)
-            ::allowBraceSugar = prevSugar
+            allowBraceSugar = prevSugar
 
             if arg == null or arg.kind == "ErrorNode" {
                 return arg
@@ -569,12 +553,12 @@ else if tt == TID.OpenParen {
 return parseParenExpr(tok)
 }
 else if tt == TID.OpenBracket {
-::pos = ::pos - 1
+pos = pos - 1
 syncCur()
 return parseArrayLiteral()
 }
 else if tt == TID.OpenBrace {
-::pos = ::pos - 1
+pos = pos - 1
 syncCur()
 return disambiguateBrace()
 }
@@ -1040,7 +1024,7 @@ return ForExpression(left, binding, iterable, l, c)
 }
 // Arrow function: param => body
 else if tt == TID.Arrow {
- if ::inMatchExpr {
+ if inMatchExpr {
   return null
  }
  // Check if left is a tuple (hotkey binding): (F1, F2) => { ... }
@@ -1145,8 +1129,8 @@ fn parseCallArgs() {
     fn detectSlice() {
         lookahead = 0
         depth = 1
-        while ::pos + lookahead < ::tokens.len {
-            t = ::tokens[::pos + lookahead]
+        while pos + lookahead < tokens.len {
+            t = tokens[pos + lookahead]
             if t.tid == TID.OpenBracket: depth = depth + 1
             else if t.tid == TID.CloseBracket {
                 depth = depth - 1
@@ -1296,7 +1280,7 @@ fn parseCallArgs() {
 
         }
         // Multi-param lambda detection: (a, b, c) => body
-        savedPos = ::pos
+        savedPos = pos
         lambdaParams = []
         isLambda = false
 
@@ -1318,7 +1302,7 @@ fn parseCallArgs() {
                 }
             }
             if current().tid == TID.CloseParen {
-                savedAfter = ::pos + 1
+                savedAfter = pos + 1
                 // Peek past ) for =>
                 if at(1).tid == TID.Arrow {
                     advance() // )
@@ -1340,7 +1324,7 @@ fn parseCallArgs() {
 
         }
         // Not a lambda — restore position and parse grouped expression
-        ::pos = savedPos
+        pos = savedPos
     syncCur()
         skipNewlines()
         expr = parseExpr(0)
@@ -1662,8 +1646,8 @@ fn parseMatchExpr() {
   c = current().col
 
   // Parse discriminants (comma-separated before { or :)
-  prevSugar = ::allowBraceSugar
-  ::allowBraceSugar = false
+  prevSugar = allowBraceSugar
+  allowBraceSugar = false
   discriminants = [parseExpr(0)]
   while current().tid == TID.Comma {
     // Look ahead: if comma followed by { or :, these are case delimiters not more discriminants
@@ -1671,7 +1655,7 @@ fn parseMatchExpr() {
     advance()
     discriminants.push(parseExpr(0))
   }
-  ::allowBraceSugar = prevSugar
+  allowBraceSugar = prevSugar
   skipNewlines()
 
   // Expect { or :
@@ -1685,8 +1669,8 @@ fn parseMatchExpr() {
     return error("Expected '{' or ':' after match subject", l, c)
 
   }
-  prevMatch = ::inMatchExpr
-  ::inMatchExpr = true
+  prevMatch = inMatchExpr
+  inMatchExpr = true
 
   cases = []
   defaultCase = null
@@ -1711,7 +1695,7 @@ fn parseMatchExpr() {
       advance()
     }
   }
-  ::inMatchExpr = prevMatch
+  inMatchExpr = prevMatch
 
   if current().tid == TID.CloseBrace {
     advance()
@@ -1728,10 +1712,10 @@ fn parseMatchExpr() {
         l = current().line
         c = current().col
 
-        prevSugar = ::allowBraceSugar
-        ::allowBraceSugar = false
+        prevSugar = allowBraceSugar
+        allowBraceSugar = false
         condition = parseExpr(0)
-        ::allowBraceSugar = prevSugar
+        allowBraceSugar = prevSugar
 
         skipNewlines()
 
@@ -1851,7 +1835,7 @@ if isObjKeyType {
         if couldBeSet {
             // Look ahead for comma
             setLook = lookahead + 1
-            while setLook < ::tokens.len and at(setLook).tid != TID.Comma and at(setLook).tid != TID.Semicolon and at(setLook).tid != TID.CloseBrace and at(setLook).tid != TID.NewLine {
+            while setLook < tokens.len and at(setLook).tid != TID.Comma and at(setLook).tid != TID.Semicolon and at(setLook).tid != TID.CloseBrace and at(setLook).tid != TID.NewLine {
                 setLook = setLook + 1
 
             }
@@ -1985,8 +1969,8 @@ return parseObjectLiteral(false)
 fn parseBlock() {
   l = current().line
   c = current().col
-  prevSugar = ::allowBraceSugar
-  ::allowBraceSugar = false
+  prevSugar = allowBraceSugar
+  allowBraceSugar = false
 
   if current().tid == TID.OpenBrace {
     advance()
@@ -2005,15 +1989,15 @@ fn parseBlock() {
       skipNewlinesAndSemicolons()
     }
     expect(TID.CloseBrace)
-    ::allowBraceSugar = prevSugar
+    allowBraceSugar = prevSugar
     return BlockStatement(stmts, l, c)
   }
   if current().tid == TID.Colon {
   // Find header indent by scanning backwards to first token on same line
   headerIndent = c
-  scanPos = ::pos - 1
+  scanPos = pos - 1
   while scanPos >= 0 {
-   t = ::tokens[scanPos]
+   t = tokens[scanPos]
    if t.line == l {
     if t.tid != TID.NewLine and t.tid != TID.Semicolon:
      headerIndent = t.col
@@ -2044,10 +2028,10 @@ fn parseBlock() {
  endTokens[TID.Else] = true; endTokens[TID.Catch] = true; endTokens[TID.Finally] = true; endTokens[TID.Case] = true; endTokens[TID.Default] = true
  if endTokens[current().tid] != null: break
  }
- ::allowBraceSugar = prevSugar
+ allowBraceSugar = prevSugar
   return BlockStatement(stmts, blockLine, c)
  }
-  ::allowBraceSugar = prevSugar
+  allowBraceSugar = prevSugar
   error("Expected '{' or ':' for block", l, c)
 
 }
@@ -2067,7 +2051,7 @@ fn parseStatement() {
  // Multiple assignment: a, b = value
  // Detect: Identifier, Identifier, ..., Assign
 	if tt == TID.Identifier && at(1).tid == TID.Comma {
-		savePos = ::pos
+		savePos = pos
 		targets = []
 		// Collect comma-separated identifiers
 		while notEOF() {
@@ -2086,7 +2070,7 @@ fn parseStatement() {
 			return ExpressionStatement(MultipleAssignment(targets, value, l, c), l, c)
 		}
   // Not multi-assign - restore position
-  ::pos = savePos
+  pos = savePos
   syncCur()
  }
 
@@ -2098,23 +2082,23 @@ fn parseStatement() {
 // @identifier => block (hotkey syntax) or @decorator
 if tt == TID.At and at(1).tid == TID.Identifier {
  // Check if this is a hotkey: @id => ...
- savePos = ::pos
+ savePos = pos
  advance() // @
  advance() // identifier
  if current().tid == TID.Arrow {
-  ::pos = savePos
+  pos = savePos
   syncCur()
   return parseHotkeyStatement()
  }
  // @decorator: followed by fn/class/struct/def
  skipNewlines()
  if current().tid == TID.Fn || current().tid == TID.Class || current().tid == TID.Struct || current().tid == TID.Def {
-  ::pos = savePos
+  pos = savePos
   syncCur()
   return parseAtDecoratorStatement()
  }
  // Otherwise @x is an expression (self-field access) — fall through
- ::pos = savePos
+ pos = savePos
  syncCur()
 }
 	// Identifier + When/If/Arrow at statement start => hotkey
@@ -2283,7 +2267,7 @@ if tt == TID.Greater { return parseInputStatement() }
     // [anything else] = expression (array literal or indexing)
     if at(1).tid == TID.Identifier && (at(2).tid == TID.CloseBracket || at(2).tid == TID.OpenParen) {
       // Save position, scan through [id] or [id(args)] groups
-      savePos = ::pos
+      savePos = pos
       isDeco = false
       loop {
         advance() // consume '['
@@ -2312,7 +2296,7 @@ if tt == TID.Greater { return parseInputStatement() }
         }
         break
       }
-      ::pos = savePos
+      pos = savePos
       syncCur()
       if isDeco { return parseDecoratorStatement() }
     }
@@ -2341,10 +2325,10 @@ fn parseIfStatement() {
  advance() // consume 'if'
  skipNewlines()
 
- prevSugar = ::allowBraceSugar
- ::allowBraceSugar = false
+ prevSugar = allowBraceSugar
+ allowBraceSugar = false
  condition = parseExpr(0)
- ::allowBraceSugar = prevSugar
+ allowBraceSugar = prevSugar
 
  skipNewlines()
 
@@ -2391,10 +2375,10 @@ fn parseWhileStatement() {
     advance() // consume 'while'
     skipNewlines()
 
-    prevSugar = ::allowBraceSugar
-    ::allowBraceSugar = false
+    prevSugar = allowBraceSugar
+    allowBraceSugar = false
     condition = parseExpr(0)
-    ::allowBraceSugar = prevSugar
+    allowBraceSugar = prevSugar
 
     skipNewlines()
 
@@ -2432,10 +2416,10 @@ fn parseDoWhileStatement() {
     advance() // consume 'while'
     skipNewlines()
 
-    prevSugar = ::allowBraceSugar
-    ::allowBraceSugar = false
+    prevSugar = allowBraceSugar
+    allowBraceSugar = false
     condition = parseExpr(0)
-    ::allowBraceSugar = prevSugar
+    allowBraceSugar = prevSugar
 
     return DoWhileStatement(body, condition, l, c)
 
@@ -2520,13 +2504,13 @@ fn parseDoWhileStatement() {
 
  // Check for loop count: loop 5 { ... } or loop n { ... }
  if (current().tid == TID.Number or current().tid == TID.Identifier) && notEOF() {
-  savedPos = ::pos
+  savedPos = pos
   // Peek: advance past count token, skip newlines, check for {
   advance()
   skipNewlines()
   if current().tid == TID.OpenBrace {
    // This is a count-based loop - restore and parse count expr
-   ::pos = savedPos
+   pos = savedPos
    syncCur()
    if current().tid == TID.Number {
     countExpr = NumberLiteral(current().value, current().line, current().col)
@@ -2540,7 +2524,7 @@ fn parseDoWhileStatement() {
   }
   else {
    // Not a count-based loop - restore position
-   ::pos = savedPos
+   pos = savedPos
    syncCur()
   }
  }
@@ -2548,10 +2532,10 @@ fn parseDoWhileStatement() {
  // Check for "while condition"
  if current().tid == TID.While {
   advance() // consume 'while'
-  prevSugar = ::allowBraceSugar
-  ::allowBraceSugar = false
+  prevSugar = allowBraceSugar
+  allowBraceSugar = false
   condition = parseExpr(0)
-  ::allowBraceSugar = prevSugar
+  allowBraceSugar = prevSugar
   skipNewlines()
  }
 
@@ -2578,10 +2562,10 @@ fn parseDoWhileStatement() {
         advance() // consume 'repeat'
         skipNewlines()
 
-        prevSugar = ::allowBraceSugar
-        ::allowBraceSugar = false
+        prevSugar = allowBraceSugar
+        allowBraceSugar = false
         count = parseExpr(0)
-        ::allowBraceSugar = prevSugar
+        allowBraceSugar = prevSugar
 
         skipNewlines()
 
@@ -3465,11 +3449,11 @@ fn parseOnKeyDownOrKeyUpStatement() {
  // Disambiguate: if opening brace and first token is condition/enter/exit/on,
  // it's a full mode definition. Otherwise it's a simple mode block.
  if current().tid == TID.OpenBrace {
-  savedPos = ::pos
+  savedPos = pos
   advance() // consume '{'
   skipNewlines()
   firstTok = current()
-  ::pos = savedPos
+  pos = savedPos
   syncCur()
   isFullDefinition = (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on")) || firstTok.tid == TID.On
   if isFullDefinition {
@@ -3745,7 +3729,7 @@ fn parseTypeParameterList() {
     if current().tid != TID.OpenParen { return [] }
     nextTok = at(1)
     if nextTok.tid != TID.Identifier { return [] }
-    savedPos = ::pos
+    savedPos = pos
     advance() // consume '('
     candidateParams = []
     isTypeParamList = true
@@ -3787,13 +3771,13 @@ fn parseTypeParameterList() {
         return candidateParams
       }
       // Not followed by '(' — backtrack
-      ::pos = savedPos
+      pos = savedPos
       syncCur()
       return []
     }
   }
   // Backtrack — not a type parameter list
-  ::pos = savedPos
+  pos = savedPos
   syncCur()
   return []
   }
@@ -4328,10 +4312,10 @@ fn parseWhenBlockStatement() {
   c = current().col
   advance() // consume 'when'
   skipNewlines()
-  prevSugar = ::allowBraceSugar
-  ::allowBraceSugar = false
+  prevSugar = allowBraceSugar
+  allowBraceSugar = false
   condition = parseExpr(0)
-  ::allowBraceSugar = prevSugar
+  allowBraceSugar = prevSugar
   skipNewlines()
   if current().tid != TID.OpenBrace {
     error("Expected '{' after when condition", current().line, current().col)
@@ -4359,10 +4343,10 @@ fn parseWithStatement() {
   c = current().col
   advance() // consume 'with'
   skipNewlines()
-  prevSugar = ::allowBraceSugar
-  ::allowBraceSugar = false
+  prevSugar = allowBraceSugar
+  allowBraceSugar = false
   obj = parseExpr(0)
-  ::allowBraceSugar = prevSugar
+  allowBraceSugar = prevSugar
   aliasNode = null
   if current().tid == TID.As {
     advance() // consume 'as'
@@ -4607,7 +4591,7 @@ fn parseAtDecoratorStatement() {
             }
             else {
                 // Null statement — skip
-                if ::pos < ::tokens.len: advance()
+                if pos < tokens.len: advance()
 
 }
 }
@@ -4620,10 +4604,9 @@ return Program(stmts, 1, 1)
     parseStatement: parseStatement,
     parseBlock: parseBlock,
     produceAST: produceAST,
-    errors: parser_ctx.errors,
-    incomplete: parser_ctx.incomplete,
-    pos: ::pos,
-    tokens: ::tokens,
+    errors: errors,
+    pos: pos,
+    tokens: tokens,
     }
 // ===================================================================
 // PUBLIC API
@@ -4631,8 +4614,6 @@ return Program(stmts, 1, 1)
 
 fn parse(source) {
   tokenList = tokenize(source)
-  print("PARSE src=" + str(source) + " tokenList=" + str(tokenList) + " len=" + str(tokenList.len))
-  if tokenList.len > 0 { print("  first type=" + str(tokenList[0].type) + " tid=" + str(tokenList[0].tid)) }
   p = Parser(tokenList)
   ast = p.produceAST()
   return {ast: ast, errors: p.errors, incomplete: p.incomplete}

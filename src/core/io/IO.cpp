@@ -1361,11 +1361,12 @@ bool IO::Suspend() {
     if (isSuspended) {
       // Resume (was suspended, now resuming)
       for (auto &[id, hotkey] : hotkeys) {
-        if (!hotkey.enabled && !hotkey.suspend) {
+        if (!hotkey.enabled && hotkey.suspend) {
           if (!hotkey.evdev) {
             GrabHotkey(id);
           }
           hotkey.enabled = true;
+          hotkey.suspend = false;
         }
       }
 

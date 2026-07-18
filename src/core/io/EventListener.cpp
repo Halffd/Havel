@@ -327,25 +327,19 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
 
     std::lock_guard<std::mutex> lock(sendInputMutex);
 
+    // Start batch if not already started
+    if (!pendingRelBatch_) {
+        backend_->BeginBatch();
+        pendingRelBatch_ = true;
+    }
+
+    // Queue all events (including key events) in the batch
+    backend_->QueueEvent(type, code, value);
+
+    // Track key state for emergency release
     if (type == EV_KEY) {
-        if (pendingRelBatch_) {
-            backend_->EndBatch();
-            pendingRelBatch_ = false;
-        }
-        backend_->SendKeyEvent(code, value != 0);
         if (value == 1) pressedVirtualKeys.insert(code);
         else if (value == 0) pressedVirtualKeys.erase(code);
-    } else if (type == EV_SYN) {
-        if (pendingRelBatch_) {
-            backend_->EndBatch();
-            pendingRelBatch_ = false;
-        }
-    } else {
-        if (!pendingRelBatch_) {
-            backend_->BeginBatch();
-            pendingRelBatch_ = true;
-        }
-        backend_->QueueEvent(type, code, value);
     }
 }
 

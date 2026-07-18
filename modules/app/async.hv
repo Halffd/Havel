@@ -1,0 +1,412 @@
+// async.hv — Higher-level async/scheduling utilities
+// Built on C++ primitives: thread.spawn, channel, sleep, timeout, interval, waitgroup
+
+use io
+
+// ============================================================
+// Core utilities
+// ============================================================
+
+fn sleep(ms) { io.sleep(ms) }
+
+fn go(func) { thread.spawn(func) }
+
+fn await(x) { x }
+
+// ============================================================
+// Debounce - delay execution until after wait period of silence
+// ============================================================
+
+fn debounce(func, ms) {
+    timer = nil
+    wrapped = fn(args...) {
+        if timer != nil { timeout.cancel(timer) }
+        timer = timeout ms { func(args...) }
+    }
+    wrapped.cancel = fn() { if timer != nil { timeout.cancel(timer); timer = nil } }
+    wrapped
+}
+
+// ============================================================
+// Throttle - limit execution to once per period
+// ============================================================
+
+fn throttle(func, ms) {
+    last = 0
+    pending = nil
+    timer = nil
+    
+    wrapped = fn(args...) {
+        now = time.now()
+        elapsed = now - last
+        if elapsed >= ms {
+            last = now
+            func(args...)
+        } else if pending == nil {
+            pending = args
+            delay = ms - elapsed
+            timer = timeout delay {
+                pending = nil
+                last = time.now()
+                func(pending...)
+            }
+        } else {
+            pending = args
+        }
+    }
+    wrapped.cancel = fn() { if timer != nil { timeout.cancel(timer); timer = nil; pending = nil } }
+    wrapped
+}
+
+// ============================================================
+// Retry - retry function with backoff
+// ============================================================
+
+fn retry(func, attempts, baseDelay, maxDelay, backoff) {
+    if backoff == nil { backoff = 2.0 }
+    if maxDelay == nil { maxDelay = 30000 }
+    
+    wrapped = fn(args...) {
+        lastErr = nil
+        delay = baseDelay || 100
+        i = 0
+        while i < attempts {
+            try {
+                return func(args...)
+            } catch err {
+                lastErr = err
+                i += 1
+                if i < attempts {
+                    sleep(int(delay))
+                    delay = int(delay * backoff)
+                    if delay > maxDelay { delay = maxDelay }
+                }
+            }
+        }
+        throw lastErr
+    }
+    wrapped
+}
+
+// ============================================================
+// Timeout - wrap function with timeout
+// ============================================================
+
+fn withTimeout(func, ms, onTimeout) {
+    result = channel.new()
+    timeoutId = nil
+    done = false
+    
+    timeoutId = timeout ms {
+        if !done {
+            done = true
+            if onTimeout != nil { 
+                result.send(onTimeout()) 
+            } else { 
+                result.send({ok: false, error: "timeout"}) 
+            }
+        }
+    }
+    
+    go fn() {
+        if !done {
+            try {
+                res = func()
+                done = true
+                timeout.cancel(timeoutId)
+                result.send({ok: true, value: res})
+            } catch err {
+                done = true
+                timeout.cancel(timeoutId)
+                result.send({ok: false, error: str(err)})
+            }
+        }
+    }
+    
+    result.receive()
+}
+
+// ============================================================
+// Race - first to complete wins
+// ============================================================
+
+fn race(funcs) {
+    result = channel.new()
+    done = false
+    
+    for f in funcs {
+        go fn() {
+            if !done {
+                try {
+                    res = f()
+                    done = true
+                    result.send({ok: true, value: res})
+                } catch err {
+                    done = true
+                    result.send({ok: false, error: str(err)})
+                }
+            }
+        }
+    }
+    
+    result.receive()
+}
+
+// ============================================================
+// Once - memoize async function
+// ============================================================
+
+fn once(func) {
+    called = false
+    cached = nil
+    err = nil
+    
+    wrapped = fn(args...) {
+        if !called {
+            called = true
+            try {
+                cached = func(args...)
+            } catch e {
+                err = e
+                throw e
+            }
+        }
+        if err != nil { throw err }
+        cached
+    }
+    wrapped
+}
+
+// ============================================================
+// Every - run function periodically
+// ============================================================
+
+fn every(func, ms) {
+    id = interval ms { func() }
+    wrapped = fn() { interval.stop(id) }
+    wrapped.id = id
+    wrapped.stop = wrapped
+    wrapped
+}
+
+// ============================================================
+// Parallel utilities
+// ============================================================
+
+fn parallelMap(items, func, concurrency) {
+    if concurrency == nil { concurrency = 4 }
+    if #items == 0 { return [] }
+    
+    results = channel.new()
+    wg = waitgroup.new()
+    sem = channel.new()
+    
+    // Initialize semaphore
+    for i in 0..concurrency { sem.send(true) }
+    
+    for i, item in items {
+        sem.receive()
+        wg.add(1)
+        go fn() {
+            defer { wg.done(); sem.send(true) }
+            res = func(item)
+            results.send({index: i, value: res, ok: true})
+        }
+    }
+    
+    go fn() {
+        wg.wait()
+        results.close()
+    }
+    
+    out = []
+    for r in results {
+        if r.ok { out[r.index] = r.value }
+    }
+    out
+}
+
+fn parallelFilter(items, func, concurrency) {
+    if concurrency == nil { concurrency = 4 }
+    mapped = parallelMap(items, func, concurrency)
+    out = []
+    for i, item in items {
+        if mapped[i] { out.push(item) }
+    }
+    out
+}
+
+fn parallelForEach(items, func, concurrency) {
+    parallelMap(items, func, concurrency)
+    nil
+}
+
+// ============================================================
+// Promise-like utilities (for channel-based async)
+// ============================================================
+
+fn promise(func) {
+    ch = channel.new()
+    go fn() {
+        try {
+            res = func()
+            ch.send({ok: true, value: res})
+        } catch err {
+            ch.send({ok: false, error: str(err)})
+        }
+    }
+    ch
+}
+
+fn then(promiseCh, onFulfilled, onRejected) {
+    go fn() {
+        res = promiseCh.receive()
+        if res.ok {
+            if onFulfilled != nil { onFulfilled(res.value) }
+        } else {
+            if onRejected != nil { onRejected(res.error) }
+        }
+    }
+}
+
+fn all(channels) {
+    results = []
+    for i, ch in channels {
+        go fn() { results[i] = ch.receive() }
+    }
+    wg = waitgroup.new()
+    wg.add(#channels)
+    for j in 0..#channels { wg.wait() }
+    results
+}
+
+fn allSettled(channels) {
+    out = []
+    for ch in channels {
+        out.push(ch.receive())
+    }
+    out
+}
+
+// ============================================================
+// Channel utilities
+// ============================================================
+
+fn chan(buffer) {
+    if buffer == nil || buffer <= 0 { channel.new() }
+    else { channel.new(buffer) }
+}
+
+fn chanSelect(channels) {
+    for ch in channels {
+        val = ch.receive()
+        return {channel: ch, value: val}
+    }
+    nil
+}
+
+fn merge(channels) {
+    out = channel.new()
+    for ch in channels {
+        go fn() {
+            for val in ch { out.send(val) }
+        }
+    }
+    out
+}
+
+fn fanIn(channels) { merge(channels) }
+
+fn fanOut(source, workers) {
+    outs = []
+    for i in 0..workers { outs.push(channel.new()) }
+    go fn() {
+        for val in source {
+            i = 0
+            for out in outs {
+                out.send(val)
+                i += 1
+            }
+        }
+        for out in outs { out.close() }
+    }
+    outs
+}
+
+// ============================================================
+// WaitGroup (re-export from VM)
+// ============================================================
+
+fn waitgroup() { waitgroup.new() }
+
+// ============================================================
+// Rate limiter
+// ============================================================
+
+fn rateLimit(maxPerSecond) {
+    intervalMs = 1000 / maxPerSecond
+    last = 0
+    queue = []
+    processing = false
+    
+    wrapped = fn(func) {
+        queue.push(func)
+        if !processing {
+            processing = true
+            go fn() {
+                while #queue > 0 {
+                    now = time.now()
+                    if now - last >= intervalMs {
+                        last = now
+                        f = queue.shift()
+                        f()
+                    } else {
+                        sleep(intervalMs - (now - last))
+                    }
+                }
+                processing = false
+            }
+        }
+    }
+    wrapped
+}
+
+// ============================================================
+// Circuit breaker
+// ============================================================
+
+fn circuitBreaker(func, failureThreshold, resetTimeout) {
+    if failureThreshold == nil { failureThreshold = 5 }
+    if resetTimeout == nil { resetTimeout = 30000 }
+    
+    state = "closed"
+    failures = 0
+    lastFailure = 0
+    
+    wrapped = fn(args...) {
+        if state == "open" {
+            if time.now() - lastFailure > resetTimeout {
+                state = "half-open"
+            } else {
+                throw "circuit breaker open"
+            }
+        }
+        
+        try {
+            res = func(args...)
+            if state == "half-open" {
+                state = "closed"
+                failures = 0
+            }
+            res
+        } catch err {
+            failures += 1
+            lastFailure = time.now()
+            if failures >= failureThreshold {
+                state = "open"
+            }
+            throw err
+        }
+    }
+    wrapped
+}

@@ -1,0 +1,1 @@
+use window; print(window.pos())

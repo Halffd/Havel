@@ -1,59 +1,15 @@
-// launcher.hv -- pure Havel script launcher
-// Handles --run, --repl, --test, --lint modes via the self-hosted pipeline
+// launcher.hv — pure Havel script launcher
+// Handles --run, --test, --lint modes via the self-hosted pipeline
 // Usage: havel --run launcher.hv -- [flags] script.hv
 
 use { parse } from "pratt"
 use { Emitter, compileProgram } from "emitter"
 use { inferProgram } from "types"
-use { loaderInit, loaderLoad, collectUseDeps, loaderSetScriptDir } from "loader"
-use { isOn, setFlag, parseDebugArgs, dumpAst, dumpBytecode, startTimer, endTimer, traceBytecode, traceEmitter } from "debug"
-use { hasErrors as emitterHasErrors, printAll as emitterPrintAll, clear as errorClear } from "error"
-
-bc = bytecodeBuilder
-
-// --- Inline error reporting (until use-imports work in C++ compiled path) ---
-_launcherErrors = []
-_launcherWarnings = 0
-_sourceFile = "<unknown>"
-
-fn setSourceFile(path) { _sourceFile = path }
-fn clear() { _launcherErrors = []; _launcherWarnings = 0 }
-
-fn hasErrors() { #_launcherErrors > 0 }
-
-fn importLegacyErrors(errors, stage, srcFile) {
-    if errors == null { return }
-    for err in errors {
-        msg = err.msg
-        if msg == null { msg = str(err) }
-        line = err.line
-        if line == null { line = 0 }
-        col = err.col
-        if col == null { col = 0 }
-        _launcherErrors.push({msg: msg, line: line, col: col, stage: stage})
-    }
-}
-
-fn printAll() {
-    for err in _launcherErrors {
-        stageName = "Parse"
-        if err.stage == 0 { stageName = "Lexer" }
-        if err.stage == 2 { stageName = "Emitter" }
-        print(stageName + " error at " + str(err.line) + ":" + str(err.col) + " - " + err.msg)
-    }
-}
-
-fn printSummary() {
- if #_launcherErrors > 0 {
-  print(str(#_launcherErrors) + " error(s) found")
- }
- if _launcherWarnings > 0 {
-  print(str(_launcherWarnings) + " warning(s)")
- }
-}
 
 fn readScriptFile(path) {
-    if !fs.exists(path) { return null }
+    if !fs.exists(path) {
+        return null
+    }
     content = fs.read(path)
     if content == null { return null }
     // Strip shebang line
@@ -62,91 +18,11 @@ fn readScriptFile(path) {
         if idx != null && idx >= 0 {
             content = content.substr(idx + 1)
         }
-        if idx == null || idx < 0 {
+        else {
             content = ""
         }
     }
     content
-}
-
-fn isInputComplete(input) {
-  depth = 0
-  inString = false
-  i = 0
-  while i < #input {
-    ch = input[i]
-    if inString {
-      if ch == '"' { inString = false }
-      i = i + 1
-      continue
-    }
-    if ch == '"' { inString = true; i = i + 1; continue }
-    if ch == "{" || ch == "(" || ch == "[" { depth = depth + 1 }
-    if ch == "}" || ch == ")" || ch == "]" { depth = depth - 1 }
-    i = i + 1
-  }
-  depth <= 0
-}
-
-fn runRepl(cfg) {
-  print("Havel REPL (self-hosted)")
-  if cfg.scriptFiles != null && #cfg.scriptFiles > 0 {
-    print("Type :exit to return to shell")
-  }
-
-  while true {
-    shell.write("havel> ")
-    line = shell.read()
-    if line == null { print(""); break }
-
-    // Multi-line: accumulate until braces/brackets/parens are balanced
-    while !isInputComplete(line) {
-      shell.write("... ")
-      cont = shell.read()
-      if cont == null { break }
-      line = line + "\n" + cont
-    }
-
-    trimmed = line.trim()
-
-    if trimmed == ":exit" || trimmed == ":q" || trimmed == "exit" || trimmed == "quit" { break }
-    if trimmed == ":help" || trimmed == ":h" || trimmed == "help" || trimmed == "?" {
-      print("Commands:")
-      print("  :exit, :q     Exit the REPL")
-      print("  :help, :h     Show this help")
-      print("")
-      print("Multi-line: enter {, (, or [ and continue on next line")
-      continue
-    }
-    if trimmed == "" { continue }
-
-    if trimmed[0] == ":" {
-      cmd = string.split(trimmed, " ")[0]
-      print("Unknown command: " + cmd + ". Type :help for commands.")
-      continue
-    }
-
-    // Compile and execute the line
-    clear()
-    result = parse(line)
-    if result.errors != null && #result.errors > 0 {
-      importLegacyErrors(result.errors, 1, "<repl>")
-      printAll()
-      continue
-    }
-
-    inferProgram(result)
-
-    if emitterHasErrors() {
-      emitterPrintAll()
-      continue
-    }
-
-    em = Emitter()
-    _replResult = compileProgram(em, result.ast, false, "<repl>", "__repl__", false)
-    if _replResult != null { print(_replResult) }
-  }
-  0
 }
 
 fn parseArgs(args) {
@@ -158,148 +34,73 @@ fn parseArgs(args) {
         testDir: null,
         testTimeout: 10,
         lintOnly: false,
+        debugBytecode: false,
+        debugLexer: false,
+        debugParser: false,
+        debugAst: false,
         stopOnError: false,
-        selfHosted: false,
     }
     i = 0
     while i < #args {
         arg = args[i]
-
         if arg == "--run" || arg == "run" {
             cfg.mode = "run"
             i = i + 1
             if i < #args { cfg.scriptFiles.push(args[i]) }
-            i = i + 1
-            continue
         }
-
-        if arg == "--test" || arg == "-t" {
+        else if arg == "--test" || arg == "-t" {
             cfg.mode = "test"
             i = i + 1
             if i < #args { cfg.testDir = args[i] }
+            // Optional timeout
             i = i + 1
             if i < #args {
                 n = int(args[i])
                 if n != null && n > 0 {
                     cfg.testTimeout = n
                 }
-                if n == null || n <= 0 {
+                else {
                     i = i - 1
                 }
             }
-            i = i + 1
-            continue
         }
-
-        if arg == "--repl" || arg == "-r" || arg == "--interactive" || arg == "-i" {
-            if #cfg.scriptFiles > 0 { cfg.mode = "script_and_repl" }
-            if #cfg.scriptFiles == 0 { cfg.mode = "repl" }
-            i = i + 1
-            continue
-        }
-
-        if arg == "--lint" {
+        else if arg == "--lint" {
             cfg.lintOnly = true
             i = i + 1
             if i < #args { cfg.scriptFiles.push(args[i]) }
-            i = i + 1
-            continue
         }
-
-        if arg == "--eval" || arg == "-E" {
+        else if arg == "--eval" || arg == "-E" {
             i = i + 1
             if i < #args {
                 cfg.evalString = args[i]
                 cfg.mode = "run"
             }
-            i = i + 1
-            continue
         }
-
-        if arg == "--debug-bytecode" || arg == "-dbc" || arg == "--dbc" {
-            setFlag("bytecode", true)
-            i = i + 1
-            continue
+        else if arg == "--debug-bytecode" || arg == "-dbc" {
+            cfg.debugBytecode = true
         }
-
-        if arg == "--debug-lexer" || arg == "-dl" || arg == "--dl" {
-            setFlag("lexer", true)
-            i = i + 1
-            continue
+        else if arg == "--debug-lexer" || arg == "-dl" {
+            cfg.debugLexer = true
         }
-
-        if arg == "--debug-parser" || arg == "-dp" || arg == "--dp" {
-            setFlag("parser", true)
-            i = i + 1
-            continue
+        else if arg == "--debug-parser" || arg == "-dp" {
+            cfg.debugParser = true
         }
-
-if arg == "--debug-ast" || arg == "-da" || arg == "--da" {
-setFlag("ast", true)
-i = i + 1
-continue
-}
-
-if arg == "--debug-emitter" || arg == "-de" || arg == "--de" {
-setFlag("emitter", true)
-i = i + 1
-continue
-}
-
-if arg == "--debug-scope" || arg == "-ds" || arg == "--ds" {
-setFlag("scope", true)
-i = i + 1
-continue
-}
-
-if arg == "--debug-gc" || arg == "-dgc" || arg == "--dgc" {
-setFlag("gc", true)
-i = i + 1
-continue
-}
-
-if arg == "--error" || arg == "-e" {
+        else if arg == "--debug-ast" || arg == "-da" {
+            cfg.debugAst = true
+        }
+        else if arg == "--error" || arg == "-e" {
             cfg.stopOnError = true
-            i = i + 1
-            continue
         }
-
- if arg == "--self-hosted" || arg == "-S" {
-  cfg.selfHosted = true
-  i = i + 1
-  continue
- }
-
- if arg == "-d" || arg == "--debug" {
-  setFlag("all", true)
-  setFlag("verbose", true)
-  i = i + 1
-  continue
- }
-
- if arg == "--timing" {
-  setFlag("timing", true)
-  i = i + 1
-  continue
- }
-
- if arg == "--no-color" {
-  setFlag("color", false)
-  i = i + 1
-  continue
- }
-
-        if arg == "--" {
+        else if arg == "--" {
+            // Everything after -- is script arguments
             j = i + 1
             while j < #args {
                 cfg.scriptArgs.push(args[j])
                 j = j + 1
             }
             i = #args
-            continue
         }
-
-        if arg == "--help" || arg == "-h" {
+        else if arg == "--help" || arg == "-h" {
             print("Usage: havel --run launcher.hv -- [flags] script.hv")
             print("")
             print("Modes:")
@@ -309,24 +110,18 @@ if arg == "--error" || arg == "-e" {
             print("  --eval CODE        Run inline code")
             print("")
             print("Flags:")
-            print("  -d / --debug       Enable all debug output")
-            print("  -dl / --debug-lexer    Print lexer debug info")
-            print("  -dp / --debug-parser   Print parser debug info")
-            print("  -da / --debug-ast      Print AST debug info")
-            print("  -dbc / --debug-bytecode Print bytecode debug info")
-            print("  -ds / --debug-scope    Print scope debug info")
-            print("  -de / --debug-emitter  Print emitter debug info")
-            print("  -dgc / --debug-gc      Print GC debug info")
-            print("  --timing           Print timing for each stage")
-            print("  --no-color         Disable ANSI colors in output")
+            print("  --debug-bytecode   Print bytecode debug info")
+            print("  --debug-lexer      Print lexer debug info")
+            print("  --debug-parser     Print parser debug info")
+            print("  --debug-ast        Print AST debug info")
             print("  --error            Stop on first error")
-            print("  -S / --self-hosted Use pure Havel module loader (no C++ IMPORT)")
             print("  --                 Pass remaining args to script as app.args")
             shell.exit(0)
         }
-
-        // Bare argument = script file
-        cfg.scriptFiles.push(arg)
+        else {
+            // Bare argument = script file
+            cfg.scriptFiles.push(arg)
+        }
         i = i + 1
     }
     cfg
@@ -358,31 +153,14 @@ fn runScript(cfg) {
     }
     if combinedCode == "" { return 0 }
 
-    // Initialize debug flags from CLI args
-    parseDebugArgs(app.args)
-
-    // Set source file for error reporting
-    sourceFile = null
-    if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
-    if sourceFile == null { sourceFile = combinedNames }
-    setSourceFile(sourceFile)
-    clear()
-
-    // Tokenize + Parse (with debug output)
-    if isOn("timing") { startTimer("parse") }
+    // Parse
     result = parse(combinedCode)
-    if isOn("timing") { endTimer("parse") }
-
-    // Report parse errors via unified error system
     if result.errors != null && #result.errors > 0 {
-        importLegacyErrors(result.errors, 1, sourceFile)
-        printAll()
-        printSummary()
+        for err in result.errors {
+            print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))
+        }
         return 1
     }
-
-    // AST debug dump
-    if isOn("ast") { dumpAst(result.ast) }
 
     // Lint-only mode: parse + typecheck, no execution
     if cfg.lintOnly {
@@ -394,111 +172,14 @@ fn runScript(cfg) {
     // Typecheck
     inferProgram(result)
 
-    // Compile
-    if isOn("timing") { startTimer("compile") }
+    // Compile and execute
     emitter = Emitter()
-    compileProgram(emitter, result.ast, false, sourceFile, "__main__", false)
-    if isOn("timing") { endTimer("compile") }
-
-	// Check for emitter errors
-	if hasErrors() || emitterHasErrors() {
-		printAll()
-		emitterPrintAll()
-		printSummary()
-		return 1
-	}
-
-    // Bytecode debug dump
-    dumpBytecode()
-
-    0
-}
-
-fn runSelfHosted(cfg) {
-    // Combine all script files
-    combinedCode = ""
-    combinedNames = ""
-    for f in cfg.scriptFiles {
-        content = readScriptFile(f)
-        if content == null {
-            print("Error: Cannot open script file: " + f)
-            return 2
-        }
-        combinedCode = combinedCode + content + "\n"
-        if combinedNames != "" { combinedNames = combinedNames + " + " }
-        combinedNames = combinedNames + f
-    }
-    if combinedCode == "" { return 0 }
-
-    // Initialize debug flags from CLI args
-    parseDebugArgs(app.args)
-
-    // Set source file for error reporting
+    bc.reset()
     sourceFile = null
     if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }
-    setSourceFile(sourceFile)
-    clear()
-
-    // Tokenize + Parse
-    if isOn("timing") { startTimer("parse") }
-    result = parse(combinedCode)
-    if isOn("timing") { endTimer("parse") }
-
-    if result.errors != null && #result.errors > 0 {
-        importLegacyErrors(result.errors, 1, sourceFile)
-        printAll()
-        printSummary()
-        return 1
-    }
-
-    if isOn("ast") { dumpAst(result.ast) }
-
-    // Lint-only mode
-    if cfg.lintOnly {
-        types = inferProgram(result)
-        print("Linting successful")
-        return 0
-    }
-
-    // Typecheck
-    inferProgram(result)
-
-    // Initialize loader and pre-load all dependencies
-    // NOTE: UseStatement nodes remain in the AST; when the emitter generates
-    // IMPORT opcodes, the C++ IMPORT handler checks globals first and
-    // short-circuits if the module is already there (from loaderLoad).
-    // Stripping would avoid the redundant IMPORT opcodes but breaks
-    // named imports (use { x } from "mod") that need STORE_GLOBAL binding.
-    if isOn("timing") { startTimer("loader") }
-    loaderState = loaderInit()
-    if #cfg.scriptFiles > 0 {
-        loaderSetScriptDir(loaderState, string.split(cfg.scriptFiles[0], "/").slice(0, -1).join("/"))
-    }
-    deps = collectUseDeps(result.ast)
-    for dep in deps {
-        rec = loaderLoad(loaderState, dep)
-        if rec == null {
-            print("Error: Failed to load module: " + dep)
-            return 1
-        }
-    }
-    if isOn("timing") { endTimer("loader") }
-
-    // Compile the main script into the shared chunk (noReset=true)
-    // skip_execute=false means compileProgram will call bc.execute_persistent automatically
-    if isOn("timing") { startTimer("compile") }
-    em = Emitter()
-    em.func_idx = bc.func_count()
-    safeName = sourceFile.replace("/", "_").replace(".", "_").replace("-", "_")
-    mainEntry = "__init_" + safeName
-	result = compileProgram(em, result.ast, false, sourceFile, mainEntry, true)
-	if isOn("timing") { endTimer("compile") }
-	if emitterHasErrors() {
-		emitterPrintAll()
-		return 1
-	}
-	result
+    compileProgram(emitter, result.ast, false, sourceFile)
+    0
 }
 
 fn runTests(cfg) {
@@ -535,13 +216,14 @@ fn runTests(cfg) {
     // Find havel binary
     selfPath = shell.env("HAVEL_BIN")
     if selfPath == null || selfPath == "" {
+        // Try common locations
         if fs.exists("./build-debug/havel") {
             selfPath = "./build-debug/havel"
         }
-        if !fs.exists("./build-debug/havel") && fs.exists("../../build-debug/havel") {
+        else if fs.exists("../../build-debug/havel") {
             selfPath = "../../build-debug/havel"
         }
-        if !fs.exists("./build-debug/havel") && !fs.exists("../../build-debug/havel") {
+        else {
             selfPath = "havel"
         }
     }
@@ -553,16 +235,16 @@ fn runTests(cfg) {
 
         // Run test as subprocess with timeout
         cmd = "timeout " + str(cfg.testTimeout) + " " + selfPath + " --run " + testFile
-        r = shell.exec(cmd)
+        result = shell.exec(cmd)
 
-        if r != null && r.exitCode == 0 {
-            print(" PASS " + testName)
+        if result != null && result.exitCode == 0 {
+            print("  PASS " + testName)
             passed = passed + 1
         }
-        if r == null || r.exitCode != 0 {
-            print(" FAIL " + testName)
-            if r != null && r.stderr != "" {
-                print("  " + r.stderr)
+        else {
+            print("  FAIL " + testName)
+            if result != null && result.stderr != "" {
+                print("    " + result.stderr)
             }
             failed = failed + 1
         }
@@ -579,49 +261,28 @@ fn runTests(cfg) {
 }
 
 // ============================================================
-// Main entry point — only runs when launcher.hv is the direct entry
-// (not when imported via 'use')
+// Main entry point
 // ============================================================
 
-fn main() {
-  args = app.args
-  if args == null || #args == 0 {
-    // No args — start REPL
-    shell.exit(runRepl({mode: "repl", scriptFiles: [], scriptArgs: [], evalString: null, testDir: null, testTimeout: 10, lintOnly: false, stopOnError: false, selfHosted: false}))
-  }
+args = app.args
+if args == null || #args == 0 {
+    print("Usage: havel --run launcher.hv -- [flags] script.hv")
+    print("Use --help for more information")
+    shell.exit(1)
+}
 
-  cfg = parseArgs(args)
+cfg = parseArgs(args)
 
-  result = 0
-  if cfg.mode == "run" && cfg.selfHosted {
-    result = runSelfHosted(cfg)
-  }
-  if cfg.mode == "run" && !cfg.selfHosted {
+result = 0
+if cfg.mode == "run" {
     result = runScript(cfg)
-  }
-  if cfg.mode == "repl" {
-    result = runRepl(cfg)
-  }
-  if cfg.mode == "script_and_repl" {
-    r1 = runScript(cfg)
-    if r1 != 0 { result = r1 }
-    result = runRepl(cfg)
-  }
-  if cfg.mode == "test" {
+}
+else if cfg.mode == "test" {
     result = runTests(cfg)
-  }
-  if cfg.mode != "run" && cfg.mode != "repl" && cfg.mode != "script_and_repl" && cfg.mode != "test" {
+}
+else {
     print("Unknown mode: " + cfg.mode)
     result = 1
-  }
-
-  shell.exit(result)
 }
 
-// Auto-run main only when this file is the top-level entry point
-if app.args != null && #app.args > 0 {
-  main()
-} else {
-  // No args — start REPL directly
-  shell.exit(runRepl({mode: "repl", scriptFiles: [], scriptArgs: [], evalString: null, testDir: null, testTimeout: 10, lintOnly: false, stopOnError: false, selfHosted: false}))
-}
+shell.exit(result)

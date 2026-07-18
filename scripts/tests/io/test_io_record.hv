@@ -1,0 +1,23 @@
+f1 => {
+    x = io.record()
+    print(x)
+}
+f2 => {
+    x = io.recordScript("out.hv")
+    print(x)
+}
+coords = []
+~LButton => {
+    if io.getKey("lctrl") {
+        coords.push("pin")
+    }
+    coords.push(mouse.pos())
+    print coords
+}
+~lbutton:up => {
+    coords.push(mouse.pos())
+    coords.push("up")
+}
+~r => {
+    print(coords)
+}

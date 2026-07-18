@@ -143,10 +143,13 @@ class Window {
 		else { {x: _r.x, y: _r.y, width: _r.width, height: _r.height, border: _r.border, depth: _r.depth} }
 	}
 
-	fn pos() {
-		_g = @geometry()
-		if _g == null { null } else { {x: _g.x, y: _g.y} }
-	}
+fn pos() {
+	_g = @geometry()
+	if _g != null { return {x: _g.x, y: _g.y} }
+	_sp = @screenPos()
+	if _sp != null { return _sp }
+	null
+}
 
 	fn size() {
 		_g = @geometry()
@@ -705,7 +708,9 @@ fn activeId() {
 }
 
 fn active() {
-	_w = Window(activeId())
+	_aid = activeId()
+	if _aid == 0 { return null }
+	_w = Window(_aid)
 	{
 		id: _w.id,
 		title: _w.title(),

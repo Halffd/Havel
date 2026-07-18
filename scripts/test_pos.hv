@@ -1,0 +1,16 @@
+use window
+
+w = window.active()
+print("window.active(): ", w)
+if w != null {
+    print("title: ", w.title)
+    print("id: ", w.id)
+    pos = w.pos()
+    print("pos(): ", pos)
+    if pos != null {
+        print("x: ", pos.x)
+        print("y: ", pos.y)
+    }
+} else {
+    print("No active window")
+}

@@ -20,6 +20,10 @@ fn appMute(id, _val) { audio.appMute(id, _val) }
 fn increaseActiveAppVolume(step) { audio.increaseActiveAppVolume(step) }
 fn decreaseActiveAppVolume(step) { audio.decreaseActiveAppVolume(step) }
 fn volumeUp(step) { audio.volumeUp(step) }
+<<<<<<< Updated upstream
+=======
+fn alsaVolume(_val) { audio.alsaVolume(_val) }
+>>>>>>> Stashed changes
 fn alsaMute(_val) { audio.alsaMute(_val) }
 fn setAlsaVolume(pct) { audio.setAlsaVolume(pct) }
 fn setAlsaMute(muted) { audio.setAlsaMute(muted) }

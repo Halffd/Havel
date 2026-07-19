@@ -1356,6 +1356,10 @@ void IO::Send(cstr keys) {
 }
 
 bool IO::Suspend() {
+  return Suspend(-1, -1);
+}
+
+bool IO::Suspend(int id, int triggerHotkeyId) {
   ensureBackend();
   try {
     if (isSuspended) {
@@ -1372,6 +1376,7 @@ bool IO::Suspend() {
 
       wasSuspended = false;
       isSuspended = false;
+      suspendTriggerHotkeyId = -1;
       return true;
     } else {
       for (auto &[id, hotkey] : hotkeys) {
@@ -1382,9 +1387,22 @@ bool IO::Suspend() {
           hotkey.enabled = false;
         }
       }
+      // Keep the trigger hotkey enabled (except itself if it's a suspend hotkey)
+      if (triggerHotkeyId > 0) {
+        auto it = hotkeys.find(triggerHotkeyId);
+        if (it != hotkeys.end()) {
+          if (!it->second.evdev) {
+            GrabHotkey(triggerHotkeyId);
+          }
+          it->second.enabled = true;
+          // Mark it as a suspend trigger so it can resume
+          it->second.suspend = true;
+        }
+      }
 
       wasSuspended = true;
       isSuspended = true;
+      suspendTriggerHotkeyId = triggerHotkeyId;
       return true;
     }
   } catch (const std::exception &e) {
@@ -1392,15 +1410,27 @@ bool IO::Suspend() {
     return false;
   }
 }
-// Method to suspend hotkeys
-bool IO::Suspend(int id) {
+
+// Method to suspend hotkeys - excludes the trigger hotkey
+bool IO::Suspend(int triggerId) {
   ensureBackend();
-  auto it = hotkeys.find(id);
-  if (it != hotkeys.end()) {
-    it->second.enabled = false;
-    return true;
+  for (auto &[id, hotkey] : hotkeys) {
+    if (id == triggerId) {
+      // Keep the trigger hotkey enabled and marked
+      continue;
+    }
+    if (hotkey.enabled && !hotkey.suspend) {
+      if (!hotkey.evdev) {
+        UngrabHotkey(id);
+      }
+      hotkey.enabled = false;
+      hotkey.suspend = true;
+    }
   }
-  return false;
+
+  wasSuspended = true;
+  isSuspended = true;
+  return true;
 }
 
 // Method to resume hotkeys
@@ -1698,10 +1728,25 @@ void IO::KeyCombo(const std::string &key, std::function<void()> comboAction) {
 
 HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
                      int id) {
-  auto wrapped_action = [action, rawInput]() {
+  // Assign ID before creating callback so it's available in wrapper
+  if (id <= 0) {
+    id = ++hotkeyCount;
+  }
+  
+  auto wrapped_action = [action, rawInput, this, id]() {
     if (Configs::Get().GetVerboseKeyLogging())
       debug("Hotkey pressed: " + rawInput);
-    action();
+    // If this hotkey has suspend flag, pass its ID to Suspend()
+    if (hotkeys.find(id) != hotkeys.end() && hotkeys[id].suspend) {
+      // Check if we're already suspended - if so, use toggle Suspend()
+      if (isSuspended) {
+        Suspend(); // Toggle resume
+      } else {
+        Suspend(id); // Suspend with exception for this hotkey
+      }
+    } else {
+      action();
+    }
   };
 
   bool hasAction = static_cast<bool>(action);
@@ -2704,6 +2749,20 @@ void IO::Remap(const std::string &key1, const std::string &key2) {
   } else {
     warn("Failed to remap keys: {} <-> {} ({} <-> {})", key1, key2, code1,
          code2);
+  }
+}
+
+void IO::Unmap(const std::string &from) {
+  ensureBackend();
+  int fromCode = EvdevNameToKeyCode(from);
+  if (fromCode > 0) {
+    evdevKeyMap.erase(fromCode);
+    if (eventListener) {
+      eventListener->RemoveKeyRemap(fromCode);
+    }
+        if (debugging::debug_io) debug("Unmapped evdev key {} ({})", from, fromCode);
+  } else {
+    warn("Failed to unmap key: {} ({})", from, fromCode);
   }
 }
 bool IO::MatchEvdevModifiers(int expectedModifiers,

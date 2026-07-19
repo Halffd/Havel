@@ -292,6 +292,7 @@ public:
               const std::string &condition = "", int id = 0);
   bool Suspend();
   bool Suspend(int id);
+  bool Suspend(int id, int triggerHotkeyId); // Suspend with exception for trigger hotkey
   bool Resume();
   bool Resume(int id);
   bool IsSuspended() const { return isSuspended; }
@@ -411,6 +412,7 @@ public:
   // Key mapping
   void Map(const std::string &from, const std::string &to);
   void Remap(const std::string &key1, const std::string &key2);
+  void Unmap(const std::string &from);
 
   // Static methods
   static void removeSpecialCharacters(std::string &keyName);
@@ -495,6 +497,7 @@ private:
   bool blockAllInput = false;
 
   bool wasSuspended = false;
+  int suspendTriggerHotkeyId = -1; // Hotkey ID that triggered suspend (for exception)
 
 public:
   bool EmitClick(int btnCode, MouseAction action);

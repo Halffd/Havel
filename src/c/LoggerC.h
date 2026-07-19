@@ -83,9 +83,58 @@ void HavelLogger_criticalf(HavelLogger* logger, const char* format, ...)
 #endif
     ;
 
-#ifdef __cplusplus
-}
+// Debug origin tracking and filtering
+typedef struct {
+    const char* file;
+    const char* function;
+    int line;
+    const char* category;  // e.g., "hotkey", "io", "vm", "gc"
+    const char* subsystem; // e.g., "EventListener", "IO", "Scheduler"
+    int priority;          // 0 = always, 1 = verbose, 2 = debug
+} HavelLogOrigin;
+
+// Initialize a debug origin struct
+#define HAVEL_LOG_ORIGIN_INIT {__FILE__, __func__, __LINE__, NULL, NULL, 0}
+
+// Log with origin information
+void HavelLogger_debugOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...)
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((format(printf, 3, 4)))
 #endif
+    ;
+
+void HavelLogger_infoOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...)
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((format(printf, 3, 4)))
+#endif
+    ;
+
+void HavelLogger_warningOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...)
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((format(printf, 3, 4)))
+#endif
+    ;
+
+void HavelLogger_errorOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...)
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((format(printf, 3, 4)))
+#endif
+    ;
+
+void HavelLogger_fatalOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...)
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((format(printf, 3, 4)))
+#endif
+    ;
+
+// Set global origin filter - only logs matching this filter will be output
+void HavelLogger_setOriginFilter(HavelLogger* logger, const HavelLogOrigin* filter);
+
+// Clear origin filter
+void HavelLogger_clearOriginFilter(HavelLogger* logger);
+
+// Check if a log origin matches the current filter
+bool HavelLogger_originMatchesFilter(const HavelLogOrigin* origin);
 
 // Convenience macros — work in both C and C++
 // Usage: HAVEL_LOG_DEBUG("message") or HAVEL_LOGF_DEBUG("count: %d", n)
@@ -102,7 +151,11 @@ void HavelLogger_criticalf(HavelLogger* logger, const char* format, ...)
 #define HAVEL_LOGF_ERROR(fmt, ...)   HavelLogger_errorf(HavelLogger_getInstance(), fmt, __VA_ARGS__)
 #define HAVEL_LOGF_FATAL(fmt, ...)   HavelLogger_fatalf(HavelLogger_getInstance(), fmt, __VA_ARGS__)
 #define HAVEL_LOGF_CRITICAL(fmt, ...) HavelLogger_criticalf(HavelLogger_getInstance(), fmt, __VA_ARGS__)
-
+ 
 #define HAVEL_LOGF(level, fmt, ...) HavelLogger_logf(HavelLogger_getInstance(), level, fmt, __VA_ARGS__)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // HAVEL_LOGGER_C_H

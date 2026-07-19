@@ -172,6 +172,167 @@ void registerLogModule(const VMApi &api) {
         return Value::makeNull();
     });
 
+    // Origin-based logging functions
+    api.registerFunction("log.setOriginFilter", [&logger, api](const std::vector<Value> &args) -> Value {
+        if (args.empty()) {
+            throw std::runtime_error("log.setOriginFilter() requires an origin object");
+        }
+        // Parse origin object
+        Value originVal = args[0];
+        if (!originVal.isObjectId()) {
+            throw std::runtime_error("log.setOriginFilter() requires an origin object");
+        }
+        std::string category, subsystem;
+        int priority = 0;
+        
+        Value catVal = api.getField(originVal, "category");
+        if (!catVal.isNull() && (catVal.isStringValId() || catVal.isStringId())) {
+            category = api.toString(catVal);
+        }
+        
+        Value subVal = api.getField(originVal, "subsystem");
+        if (!subVal.isNull() && (subVal.isStringValId() || subVal.isStringId())) {
+            subsystem = api.toString(subVal);
+        }
+        
+        Value priVal = api.getField(originVal, "priority");
+        if (!priVal.isNull() && priVal.isInt()) {
+            priority = static_cast<int>(priVal.asInt());
+        }
+        
+        Logger::Origin origin("", "", 0, 
+            category.empty() ? nullptr : category.c_str(),
+            subsystem.empty() ? nullptr : subsystem.c_str(),
+            priority);
+        logger.setOriginFilter(origin);
+        return Value::makeNull();
+    });
+
+    api.registerFunction("log.clearOriginFilter", [&logger](const std::vector<Value> &) -> Value {
+        logger.clearOriginFilter();
+        return Value::makeNull();
+    });
+
+    api.registerFunction("log.debugOrigin", [api](const std::vector<Value> &args) -> Value {
+        if (args.size() < 2) {
+            throw std::runtime_error("log.debugOrigin() requires origin and message");
+        }
+        Value originVal = args[0];
+        std::string category, subsystem;
+        int priority = 0;
+        if (originVal.isObjectId()) {
+            Value catVal = api.getField(originVal, "category");
+            if (!catVal.isNull() && (catVal.isStringValId() || catVal.isStringId())) category = api.toString(catVal);
+            Value subVal = api.getField(originVal, "subsystem");
+            if (!subVal.isNull() && (subVal.isStringValId() || subVal.isStringId())) subsystem = api.toString(subVal);
+            Value priVal = api.getField(originVal, "priority");
+            if (!priVal.isNull() && priVal.isInt()) priority = static_cast<int>(priVal.asInt());
+        }
+        Logger::Origin origin("", "", 0, 
+            category.empty() ? nullptr : category.c_str(),
+            subsystem.empty() ? nullptr : subsystem.c_str(),
+            priority);
+        std::string msg = formatMessage(std::vector<Value>(args.begin() + 1, args.end()), api);
+        ::havel::Logger::getInstance().debugOrigin(origin, msg);
+        return Value::makeNull();
+    });
+
+    api.registerFunction("log.infoOrigin", [api](const std::vector<Value> &args) -> Value {
+        if (args.size() < 2) {
+            throw std::runtime_error("log.infoOrigin() requires origin and message");
+        }
+        Value originVal = args[0];
+        std::string category, subsystem;
+        int priority = 0;
+        if (originVal.isObjectId()) {
+            Value catVal = api.getField(originVal, "category");
+            if (!catVal.isNull() && (catVal.isStringValId() || catVal.isStringId())) category = api.toString(catVal);
+            Value subVal = api.getField(originVal, "subsystem");
+            if (!subVal.isNull() && (subVal.isStringValId() || subVal.isStringId())) subsystem = api.toString(subVal);
+            Value priVal = api.getField(originVal, "priority");
+            if (!priVal.isNull() && priVal.isInt()) priority = static_cast<int>(priVal.asInt());
+        }
+        Logger::Origin origin("", "", 0, 
+            category.empty() ? nullptr : category.c_str(),
+            subsystem.empty() ? nullptr : subsystem.c_str(),
+            priority);
+        std::string msg = formatMessage(std::vector<Value>(args.begin() + 1, args.end()), api);
+        ::havel::Logger::getInstance().infoOrigin(origin, msg);
+        return Value::makeNull();
+    });
+
+    api.registerFunction("log.warnOrigin", [api](const std::vector<Value> &args) -> Value {
+        if (args.size() < 2) {
+            throw std::runtime_error("log.warnOrigin() requires origin and message");
+        }
+        Value originVal = args[0];
+        std::string category, subsystem;
+        int priority = 0;
+        if (originVal.isObjectId()) {
+            Value catVal = api.getField(originVal, "category");
+            if (!catVal.isNull() && (catVal.isStringValId() || catVal.isStringId())) category = api.toString(catVal);
+            Value subVal = api.getField(originVal, "subsystem");
+            if (!subVal.isNull() && (subVal.isStringValId() || subVal.isStringId())) subsystem = api.toString(subVal);
+            Value priVal = api.getField(originVal, "priority");
+            if (!priVal.isNull() && priVal.isInt()) priority = static_cast<int>(priVal.asInt());
+        }
+        Logger::Origin origin("", "", 0, 
+            category.empty() ? nullptr : category.c_str(),
+            subsystem.empty() ? nullptr : subsystem.c_str(),
+            priority);
+        std::string msg = formatMessage(std::vector<Value>(args.begin() + 1, args.end()), api);
+        ::havel::Logger::getInstance().warningOrigin(origin, msg);
+        return Value::makeNull();
+    });
+
+    api.registerFunction("log.errorOrigin", [api](const std::vector<Value> &args) -> Value {
+        if (args.size() < 2) {
+            throw std::runtime_error("log.errorOrigin() requires origin and message");
+        }
+        Value originVal = args[0];
+        std::string category, subsystem;
+        int priority = 0;
+        if (originVal.isObjectId()) {
+            Value catVal = api.getField(originVal, "category");
+            if (!catVal.isNull() && (catVal.isStringValId() || catVal.isStringId())) category = api.toString(catVal);
+            Value subVal = api.getField(originVal, "subsystem");
+            if (!subVal.isNull() && (subVal.isStringValId() || subVal.isStringId())) subsystem = api.toString(subVal);
+            Value priVal = api.getField(originVal, "priority");
+            if (!priVal.isNull() && priVal.isInt()) priority = static_cast<int>(priVal.asInt());
+        }
+        Logger::Origin origin("", "", 0, 
+            category.empty() ? nullptr : category.c_str(),
+            subsystem.empty() ? nullptr : subsystem.c_str(),
+            priority);
+        std::string msg = formatMessage(std::vector<Value>(args.begin() + 1, args.end()), api);
+        ::havel::Logger::getInstance().errorOrigin(origin, msg);
+        return Value::makeNull();
+    });
+
+    api.registerFunction("log.fatalOrigin", [api](const std::vector<Value> &args) -> Value {
+        if (args.size() < 2) {
+            throw std::runtime_error("log.fatalOrigin() requires origin and message");
+        }
+        Value originVal = args[0];
+        std::string category, subsystem;
+        int priority = 0;
+        if (originVal.isObjectId()) {
+            Value catVal = api.getField(originVal, "category");
+            if (!catVal.isNull() && (catVal.isStringValId() || catVal.isStringId())) category = api.toString(catVal);
+            Value subVal = api.getField(originVal, "subsystem");
+            if (!subVal.isNull() && (subVal.isStringValId() || subVal.isStringId())) subsystem = api.toString(subVal);
+            Value priVal = api.getField(originVal, "priority");
+            if (!priVal.isNull() && priVal.isInt()) priority = static_cast<int>(priVal.asInt());
+        }
+        Logger::Origin origin("", "", 0, 
+            category.empty() ? nullptr : category.c_str(),
+            subsystem.empty() ? nullptr : subsystem.c_str(),
+            priority);
+        std::string msg = formatMessage(std::vector<Value>(args.begin() + 1, args.end()), api);
+        ::havel::Logger::getInstance().fatalOrigin(origin, msg);
+        return Value::makeNull();
+    });
+
     auto logObj = api.makeObject();
     api.setField(logObj, "info", api.makeFunctionRef("log.info"));
     api.setField(logObj, "error", api.makeFunctionRef("log.error"));
@@ -182,6 +343,14 @@ void registerLogModule(const VMApi &api) {
     api.setField(logObj, "set", api.makeFunctionRef("log.set"));
     api.setField(logObj, "history", api.makeFunctionRef("log.history"));
     api.setField(logObj, "log", api.makeFunctionRef("log.log"));
+    // Origin-based logging
+    api.setField(logObj, "debugOrigin", api.makeFunctionRef("log.debugOrigin"));
+    api.setField(logObj, "infoOrigin", api.makeFunctionRef("log.infoOrigin"));
+    api.setField(logObj, "warnOrigin", api.makeFunctionRef("log.warnOrigin"));
+    api.setField(logObj, "errorOrigin", api.makeFunctionRef("log.errorOrigin"));
+    api.setField(logObj, "fatalOrigin", api.makeFunctionRef("log.fatalOrigin"));
+    api.setField(logObj, "setOriginFilter", api.makeFunctionRef("log.setOriginFilter"));
+    api.setField(logObj, "clearOriginFilter", api.makeFunctionRef("log.clearOriginFilter"));
     api.setGlobal("log", logObj);
 }
 

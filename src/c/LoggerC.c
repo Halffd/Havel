@@ -39,6 +39,10 @@ struct HavelLogger {
     size_t          currentFileSize;
     size_t          flushCounter;
     bool            destroying;
+    
+    // Origin filtering
+    HavelLogOrigin  originFilter;
+    bool            originFilterActive;
 };
 
 static const char* kColorDebug   = "\033[36m";
@@ -289,6 +293,15 @@ HavelLogger* HavelLogger_getInstance(void) {
     logger->historyCapacity = 0;
     logger->flushCounter = 0;
     logger->destroying = false;
+    
+    // Origin filter initialization
+    logger->originFilterActive = false;
+    logger->originFilter.file = NULL;
+    logger->originFilter.function = NULL;
+    logger->originFilter.line = 0;
+    logger->originFilter.category = NULL;
+    logger->originFilter.subsystem = NULL;
+    logger->originFilter.priority = 0;
 
     HavelLogger_initialize(logger, true, 3, true);
 
@@ -481,4 +494,161 @@ void HavelLogger_criticalf(HavelLogger* logger, const char* format, ...) {
     vsnprintf(buf, sizeof(buf), format, args);
     va_end(args);
     havel_log(logger, HAVEL_LOG_FATAL, buf);
+}
+
+// ============================================================
+// Origin-based logging implementation
+// ============================================================
+
+// Global origin filter (applied to all loggers)
+static HavelLogOrigin g_originFilter = {0};
+static bool g_originFilterActive = false;
+
+static bool originMatchesFilter(const HavelLogOrigin* origin) {
+    if (!g_originFilterActive) return true;
+    if (!origin) return false;
+    
+    // Check each filter field - empty means "match all"
+    if (g_originFilter.category && origin->category) {
+        if (strcmp(g_originFilter.category, origin->category) != 0) return false;
+    } else if (g_originFilter.category && !origin->category) {
+        return false;
+    }
+    
+    if (g_originFilter.subsystem && origin->subsystem) {
+        if (strcmp(g_originFilter.subsystem, origin->subsystem) != 0) return false;
+    } else if (g_originFilter.subsystem && !origin->subsystem) {
+        return false;
+    }
+    
+    if (g_originFilter.priority > 0 && origin->priority < g_originFilter.priority) {
+        return false;
+    }
+    
+    return true;
+}
+
+void HavelLogger_debugOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...) {
+    if (!originMatchesFilter(origin)) return;
+    
+    char buf[HAVEL_LOG_BUF_SIZE];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+    
+    // Prepend origin info for debug
+    char fullMsg[HAVEL_LOG_BUF_SIZE];
+    if (origin) {
+        snprintf(fullMsg, sizeof(fullMsg), "[%s:%s:%d] %s", 
+                 origin->category ? origin->category : "NONE",
+                 origin->subsystem ? origin->subsystem : "NONE",
+                 origin->line, buf);
+    } else {
+        strcpy(fullMsg, buf);
+    }
+    havel_log(logger, HAVEL_LOG_DEBUG, fullMsg);
+}
+
+void HavelLogger_infoOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...) {
+    if (!originMatchesFilter(origin)) return;
+    
+    char buf[HAVEL_LOG_BUF_SIZE];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+    
+    char fullMsg[HAVEL_LOG_BUF_SIZE];
+    if (origin) {
+        snprintf(fullMsg, sizeof(fullMsg), "[%s:%s:%d] %s", 
+                 origin->category ? origin->category : "NONE",
+                 origin->subsystem ? origin->subsystem : "NONE",
+                 origin->line, buf);
+    } else {
+        strcpy(fullMsg, buf);
+    }
+    havel_log(logger, HAVEL_LOG_INFO, fullMsg);
+}
+
+void HavelLogger_warningOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...) {
+    if (!originMatchesFilter(origin)) return;
+    
+    char buf[HAVEL_LOG_BUF_SIZE];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+    
+    char fullMsg[HAVEL_LOG_BUF_SIZE];
+    if (origin) {
+        snprintf(fullMsg, sizeof(fullMsg), "[%s:%s:%d] %s", 
+                 origin->category ? origin->category : "NONE",
+                 origin->subsystem ? origin->subsystem : "NONE",
+                 origin->line, buf);
+    } else {
+        strcpy(fullMsg, buf);
+    }
+    havel_log(logger, HAVEL_LOG_WARNING, fullMsg);
+}
+
+void HavelLogger_errorOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...) {
+    if (!originMatchesFilter(origin)) return;
+    
+    char buf[HAVEL_LOG_BUF_SIZE];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+    
+    char fullMsg[HAVEL_LOG_BUF_SIZE];
+    if (origin) {
+        snprintf(fullMsg, sizeof(fullMsg), "[%s:%s:%d] %s", 
+                 origin->category ? origin->category : "NONE",
+                 origin->subsystem ? origin->subsystem : "NONE",
+                 origin->line, buf);
+    } else {
+        strcpy(fullMsg, buf);
+    }
+    havel_log(logger, HAVEL_LOG_ERROR, fullMsg);
+}
+
+void HavelLogger_fatalOrigin(HavelLogger* logger, const HavelLogOrigin* origin, const char* format, ...) {
+    if (!originMatchesFilter(origin)) return;
+    
+    char buf[HAVEL_LOG_BUF_SIZE];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+    
+    char fullMsg[HAVEL_LOG_BUF_SIZE];
+    if (origin) {
+        snprintf(fullMsg, sizeof(fullMsg), "[%s:%s:%d] %s", 
+                 origin->category ? origin->category : "NONE",
+                 origin->subsystem ? origin->subsystem : "NONE",
+                 origin->line, buf);
+    } else {
+        strcpy(fullMsg, buf);
+    }
+    havel_log(logger, HAVEL_LOG_FATAL, fullMsg);
+}
+
+void HavelLogger_setOriginFilter(HavelLogger* logger, const HavelLogOrigin* filter) {
+    if (filter) {
+        g_originFilter = *filter;
+        g_originFilterActive = true;
+    } else {
+        g_originFilterActive = false;
+        memset(&g_originFilter, 0, sizeof(g_originFilter));
+    }
+}
+
+void HavelLogger_clearOriginFilter(HavelLogger* logger) {
+    g_originFilterActive = false;
+    memset(&g_originFilter, 0, sizeof(g_originFilter));
+}
+
+bool HavelLogger_originMatchesFilter(const HavelLogOrigin* origin) {
+    return originMatchesFilter(origin);
 }

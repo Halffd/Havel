@@ -1186,6 +1186,7 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     uint32_t function_index = 0;
     uint32_t closure_id = 0;
     const BytecodeChunk* chunk = nullptr;
+    std::shared_ptr<BytecodeChunk> chunk_ref;
 
     auto closure = vm.externalRootValue(newCb);
     if (!closure) { vm.releaseCallback(newCb); return Value::makeBool(false); }
@@ -1198,6 +1199,7 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
       if (!closureObj) { vm.releaseCallback(newCb); return Value::makeBool(false); }
       function_index = closureObj->function_index;
       if (closureObj->chunk) chunk = closureObj->chunk;
+      if (closureObj->chunk_ref) chunk_ref = closureObj->chunk_ref;
     } else {
       vm.releaseCallback(newCb);
       return Value::makeBool(false);
@@ -1207,7 +1209,7 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
 
     g->hotkey_function_id = function_index;
     g->hotkey_closure_id = closure_id;
-    g->hotkey_chunk = chunk;
+    g->hotkey_chunk = std::move(chunk_ref);
     g->hotkey_callback_id = newCb;
 
     auto thunk = vm.buildDirectCallThunk(newCb);
@@ -1338,6 +1340,7 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
         uint32_t function_index = 0;
         uint32_t closure_id = 0;
         const BytecodeChunk* chunk = nullptr;
+        std::shared_ptr<BytecodeChunk> chunk_ref;
 
         auto closure = vm.externalRootValue(newCb);
         if (closure) {
@@ -1349,6 +1352,7 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
             if (closureObj) {
               function_index = closureObj->function_index;
               if (closureObj->chunk) chunk = closureObj->chunk;
+              if (closureObj->chunk_ref) chunk_ref = closureObj->chunk_ref;
             }
           }
         }
@@ -1358,7 +1362,7 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
 
           g->hotkey_function_id = function_index;
           g->hotkey_closure_id = closure_id;
-          g->hotkey_chunk = chunk;
+          g->hotkey_chunk = std::move(chunk_ref);
           g->hotkey_callback_id = newCb;
 
           auto thunk = vm.buildDirectCallThunk(newCb);

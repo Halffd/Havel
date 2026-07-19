@@ -357,7 +357,7 @@ vm_->addIntervalResult(timer_id, result);
 
             // Start and run this goroutine to completion/suspension
             if (g->state == compiler::Scheduler::GoroutineState::Created) {
-                auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+                auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->hotkey_chunk.get());
                 if (result != compiler::VM::GoroutineCallResult::Failed) {
                     g->state = compiler::Scheduler::GoroutineState::Runnable;
                     { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
@@ -372,7 +372,7 @@ vm_->addIntervalResult(timer_id, result);
                        g->state == compiler::Scheduler::GoroutineState::Running) {
                 // Update goroutines restart via startGoroutineCall (fresh each tick)
                 if (g->update_interval_ms > 0) {
-                    auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+                    auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->hotkey_chunk.get());
                     if (result != compiler::VM::GoroutineCallResult::Failed) {
                         g->state = compiler::Scheduler::GoroutineState::Runnable;
                         { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
@@ -547,7 +547,7 @@ private:
       if (!g) break;
 
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
-        auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+        auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->hotkey_chunk.get());
         if (call_result == compiler::VM::GoroutineCallResult::Failed ||
             call_result == compiler::VM::GoroutineCallResult::JITExecuted) {
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
@@ -683,7 +683,7 @@ private:
       // Start and run this goroutine to completion
       // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
-        auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+        auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->hotkey_chunk.get());
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
           { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
@@ -698,7 +698,7 @@ private:
         g->state == compiler::Scheduler::GoroutineState::Running) {
         // Update goroutines restart via startGoroutineCall (fresh each tick)
         if (g->update_interval_ms > 0) {
-          auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals);
+          auto result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->hotkey_chunk.get());
           if (result != compiler::VM::GoroutineCallResult::Failed) {
             g->state = compiler::Scheduler::GoroutineState::Runnable;
             { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }

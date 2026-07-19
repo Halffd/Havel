@@ -138,6 +138,7 @@ const std::string &alias) {
   uint32_t function_index = 0;
   uint32_t closure_id = 0;
   const BytecodeChunk* chunk = current_chunk;
+  std::shared_ptr<BytecodeChunk> chunk_ref = findOwningChunk(current_chunk);
 
   if (closure->isFunctionObjId()) {
     function_index = closure->asFunctionObjId();
@@ -150,6 +151,7 @@ const std::string &alias) {
     }
     function_index = closure_obj->function_index;
     if (closure_obj->chunk) chunk = closure_obj->chunk;
+    if (closure_obj->chunk_ref) chunk_ref = closure_obj->chunk_ref;
   } else {
         ::havel::warn("[VM] createPersistentHotkeyCallback: Callback is not a function or closure");
         return 0;
@@ -162,7 +164,7 @@ if (g) {
 g->persistent = true;
 g->hotkey_function_id = function_index;
 g->hotkey_closure_id = closure_id;
-g->hotkey_chunk = chunk;
+g->hotkey_chunk = std::move(chunk_ref);
 g->hotkey_args = args;
 g->hotkey_policy = policy;
 g->hotkey_alias = alias;

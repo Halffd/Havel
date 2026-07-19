@@ -506,7 +506,7 @@ void Scheduler::requeueFront(Goroutine* g) {
       }
       g->fiber->pushCall(g->hotkey_function_id,
         static_cast<uint32_t>(g->hotkey_args.size()),
-        g->hotkey_chunk);
+        g->hotkey_chunk.get());
       auto& frame = g->fiber->currentFrame();
       frame.closure_id = g->hotkey_closure_id;
     }

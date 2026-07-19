@@ -1217,6 +1217,7 @@ uint64_t havel_vm_closure_new(void* vm_ptr, uint32_t func_index) {
  GCHeap::RuntimeClosure closure;
  closure.function_index = func_index;
  closure.chunk = chunk;
+ closure.chunk_ref = vm->findOwningChunk(chunk);
  closure.upvalues.reserve(target->upvalues.size());
 
  auto& mainChunk = vm->getMainChunk();

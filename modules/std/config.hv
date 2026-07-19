@@ -125,3 +125,6 @@ fn reset() {
 fn conf_path() {
     return config.get("_config_path", "")
 }
+
+// Compatibility: cfg = config (for scripts using 'use "std/config" as cfg')
+cfg = config

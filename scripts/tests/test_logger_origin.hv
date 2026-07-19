@@ -1,0 +1,26 @@
+// Test logger origin
+use log
+
+print("Testing logger origin...")
+
+// Set log level to debug
+log.setLogLevel(log.Level.LOG_DEBUG)
+
+filter = log.Origin("test", "TestModule", 1)
+log.setOriginFilter(filter)
+
+print("Filter set, testing debug...")
+log.debugOrigin(filter, "This should appear")
+
+// Test without filter - should not appear
+filter2 = log.Origin("other", "OtherModule", 1)
+log.debugOrigin(filter2, "This should NOT appear")
+
+print("Clearing filter...")
+log.clearOriginFilter()
+
+// Now both should appear
+log.debugOrigin(filter, "This should appear (filter cleared)")
+log.debugOrigin(filter2, "This should also appear (filter cleared)")
+
+print("Test complete!")

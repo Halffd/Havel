@@ -27,7 +27,7 @@ namespace havel::parser {
 
 static bool isKeywordToken(TokenType t) {
     switch (t) {
- case TokenType::Mode: case TokenType::Sync:
+ case TokenType::Mode: case TokenType::Sync: case TokenType::Async: case TokenType::Channel:
  case TokenType::Class: case TokenType::Match: case TokenType::Select:
  case TokenType::Where: case TokenType::Config: case TokenType::Devices:
  case TokenType::Modes: case TokenType::Pool:

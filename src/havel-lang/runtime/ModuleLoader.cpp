@@ -16,6 +16,25 @@ ModuleLoader::~ModuleLoader() {
     unloadNativeExtensions();
 }
 
+// Build a BytecodeCache ResolvedModule. If the .hv source next to .hvc exists
+// (or was located), record its canonical path so the VM can re-verify the
+// embedded source hash against the live file content.
+static ModuleLoader::ResolvedModule makeBcCache(const std::filesystem::path &hvcPath,
+                                                const std::filesystem::path &hvPath,
+                                                const std::string &modulePath) {
+    namespace fs = std::filesystem;
+    std::string bcPath;
+    try { bcPath = fs::canonical(hvcPath).string(); }
+    catch (...) { bcPath = hvcPath.string(); }
+    std::string srcPath;
+    if (fs::exists(hvPath)) {
+        try { srcPath = fs::canonical(hvPath).string(); }
+        catch (...) { srcPath = hvPath.string(); }
+    }
+    return ModuleLoader::ResolvedModule{ModuleLoader::ResolvedModule::BytecodeCache,
+                                        bcPath, modulePath, srcPath};
+}
+
 void ModuleLoader::addSearchPath(const std::string& path) {
   searchPaths_.push_back(path);
 }
@@ -78,16 +97,26 @@ ModuleLoader::resolve(const std::string& modulePath,
 
   // 1b. Check self-hosted modules path first (compiled .hvc bytecode)
   if (!self_hosted_modules_path_.empty()) {
+    // Prefer .hvc only if it is present and not older than the corresponding
+    // .hv source on disk (mtime check). When the source is missing, the cache
+    // is admissible as-is.
     fs::path selfHostedHvc = fs::path(self_hosted_modules_path_) / (name + ".hvc");
+    fs::path selfHostedHv  = fs::path(self_hosted_modules_path_) / (name + ".hv");
     if (fs::exists(selfHostedHvc)) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(selfHostedHvc).string(), modulePath};
+      auto hvcTime = fs::last_write_time(selfHostedHvc);
+      bool newerOrEqual = !fs::exists(selfHostedHv) ||
+                          hvcTime >= fs::last_write_time(selfHostedHv);
+      if (newerOrEqual) return makeBcCache(selfHostedHvc, selfHostedHv, modulePath);
     }
-    // Also try modules/lang/<name>.hvc subdirectory convention
+
+    // modules/lang/<name>.hvc subdirectory convention
     fs::path langHvc = fs::path(self_hosted_modules_path_) / "modules" / "lang" / (name + ".hvc");
+    fs::path langHv  = fs::path(self_hosted_modules_path_) / "modules" / "lang" / (name + ".hv");
     if (fs::exists(langHvc)) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(langHvc).string(), modulePath};
+      auto hvcTime = fs::last_write_time(langHvc);
+      bool newerOrEqual = !fs::exists(langHv) ||
+                          hvcTime >= fs::last_write_time(langHv);
+      if (newerOrEqual) return makeBcCache(langHvc, langHv, modulePath);
     }
   }
 
@@ -103,22 +132,18 @@ ModuleLoader::resolve(const std::string& modulePath,
       bool hvExists = fs::exists(hvPath);
       bool hvcExists = fs::exists(hvcPath);
       if (hvcExists && hvExists) {
-        auto hvcTime = fs::last_write_time(hvcPath);
-        auto hvTime = fs::last_write_time(hvPath);
-        if (hvcTime >= hvTime) {
-          return ResolvedModule{ResolvedModule::BytecodeCache,
-                                fs::canonical(hvcPath).string(), modulePath};
+        if (fs::last_write_time(hvcPath) >= fs::last_write_time(hvPath)) {
+          return makeBcCache(hvcPath, hvPath, modulePath);
         }
         return ResolvedModule{ResolvedModule::UserSource,
-                              fs::canonical(hvPath).string(), modulePath};
+                              fs::canonical(hvPath).string(), modulePath, ""};
       }
       if (hvcExists) {
-        return ResolvedModule{ResolvedModule::BytecodeCache,
-                              fs::canonical(hvcPath).string(), modulePath};
+        return makeBcCache(hvcPath, hvPath, modulePath);
       }
       if (hvExists) {
         return ResolvedModule{ResolvedModule::UserSource,
-                              fs::canonical(hvPath).string(), modulePath};
+                              fs::canonical(hvPath).string(), modulePath, ""};
       }
       return std::nullopt;
     };
@@ -135,36 +160,23 @@ ModuleLoader::resolve(const std::string& modulePath,
   // 3. Check __cache__/name.hvc relative to scriptDir (old .hbc path, now .hvc)
   if (!scriptDir.empty()) {
     fs::path cachePath = fs::path(scriptDir) / "__cache__" / (name + ".hvc");
+    fs::path srcPath  = fs::path(scriptDir) / (name + ".hv");
     if (fs::exists(cachePath)) {
-      // Check timestamp against source .hv file if it exists
-      fs::path srcPath = fs::path(scriptDir) / (name + ".hv");
-      if (fs::exists(srcPath)) {
-        auto cacheTime = fs::last_write_time(cachePath);
-        auto srcTime = fs::last_write_time(srcPath);
-        if (cacheTime >= srcTime) {
-          return ResolvedModule{ResolvedModule::BytecodeCache,
-                                fs::canonical(cachePath).string(), modulePath};
-        }
+      if (fs::exists(srcPath) &&
+          fs::last_write_time(cachePath) < fs::last_write_time(srcPath)) {
+        // source newer - skip cache, fall through
       } else {
-        // No source file, use cache
-        return ResolvedModule{ResolvedModule::BytecodeCache,
-                              fs::canonical(cachePath).string(), modulePath};
+        return makeBcCache(cachePath, srcPath, modulePath);
       }
     }
     // Also check old .hbc extension for backwards compat
     fs::path hbcPath = fs::path(scriptDir) / "__cache__" / (name + ".hbc");
     if (fs::exists(hbcPath)) {
-      fs::path srcPath = fs::path(scriptDir) / (name + ".hv");
-      if (fs::exists(srcPath)) {
-        auto cacheTime = fs::last_write_time(hbcPath);
-        auto srcTime = fs::last_write_time(srcPath);
-        if (cacheTime >= srcTime) {
-          return ResolvedModule{ResolvedModule::BytecodeCache,
-                                fs::canonical(hbcPath).string(), modulePath};
-        }
+      if (fs::exists(srcPath) &&
+          fs::last_write_time(hbcPath) < fs::last_write_time(srcPath)) {
+        // source newer - skip cache
       } else {
-        return ResolvedModule{ResolvedModule::BytecodeCache,
-                              fs::canonical(hbcPath).string(), modulePath};
+        return makeBcCache(hbcPath, srcPath, modulePath);
       }
     }
   }

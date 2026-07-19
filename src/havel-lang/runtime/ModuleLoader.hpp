@@ -9,6 +9,8 @@
 #include <vector>
 #include "core/Value.hpp"
 
+namespace fs_time = std::filesystem;
+
 namespace havel {
 
 class Environment;
@@ -39,6 +41,9 @@ public:
         Type type;
         std::string canonicalPath;  // Resolved absolute path (empty for Cached/HostBuiltin)
         std::string moduleName;     // Original module name
+        // For BytecodeCache: canonical path of the source .hv (or empty if no source on disk)
+        // VM.cpp uses this to re-verify hash to detect mods to source.
+        std::string sourcePath;
     };
 
     // --- Native extension handle ---
@@ -87,6 +92,7 @@ public:
     void putCache(const std::string& key, core::Value value);
     void putCacheWithGlobals(const std::string& key, core::Value value, std::shared_ptr<std::unordered_map<std::string, core::Value>> globals);
     void clearCache();
+    void invalidate(const std::string& key);
     std::vector<core::Value> cachedValues() const;
 
     // ========================================================================

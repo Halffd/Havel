@@ -1,0 +1,305 @@
+// drm_brightness.hv — GPU driver brightness control via DRM/KMS
+// Uses libdrm directly via FFI for hardware backlight control
+
+use ffi
+
+// === Library loading ===
+_drm = ffi.open("libdrm.so.2")
+if _drm == 0 { _drm = ffi.open("libdrm.so") }
+
+// === DRM function symbols ===
+_drmOpen = 0
+_drmClose = 0
+_drmModeGetResources = 0
+_drmModeFreeResources = 0
+_drmModeGetConnector = 0
+_drmModeFreeConnector = 0
+_drmModeGetEncoder = 0
+_drmModeFreeEncoder = 0
+_drmModeGetCrtc = 0
+_drmModeFreeCrtc = 0
+_drmModeGetProperty = 0
+_drmModeFreeProperty = 0
+_drmModeObjectGetProperties = 0
+_drmModeFreeObjectProperties = 0
+_drmModeAtomicAlloc = 0
+_drmModeAtomicFree = 0
+_drmModeAtomicAddProperty = 0
+_drmModeAtomicCommit = 0
+
+if _drm != 0 {
+    _drmOpen = ffi.sym(_drm, "drmOpen")
+    _drmClose = ffi.sym(_drm, "drmClose")
+    _drmModeGetResources = ffi.sym(_drm, "drmModeGetResources")
+    _drmModeFreeResources = ffi.sym(_drm, "drmModeFreeResources")
+    _drmModeGetConnector = ffi.sym(_drm, "drmModeGetConnector")
+    _drmModeFreeConnector = ffi.sym(_drm, "drmModeFreeConnector")
+    _drmModeGetEncoder = ffi.sym(_drm, "drmModeGetEncoder")
+    _drmModeFreeEncoder = ffi.sym(_drm, "drmModeFreeEncoder")
+    _drmModeGetCrtc = ffi.sym(_drm, "drmModeGetCrtc")
+    _drmModeFreeCrtc = ffi.sym(_drm, "drmModeFreeCrtc")
+    _drmModeGetProperty = ffi.sym(_drm, "drmModeGetProperty")
+    _drmModeFreeProperty = ffi.sym(_drm, "drmModeFreeProperty")
+    _drmModeObjectGetProperties = ffi.sym(_drm, "drmModeObjectGetProperties")
+    _drmModeFreeObjectProperties = ffi.sym(_drm, "drmModeFreeObjectProperties")
+    _drmModeAtomicAlloc = ffi.sym(_drm, "drmModeAtomicAlloc")
+    _drmModeAtomicFree = ffi.sym(_drm, "drmModeAtomicFree")
+    _drmModeAtomicAddProperty = ffi.sym(_drm, "drmModeAtomicAddProperty")
+    _drmModeAtomicCommit = ffi.sym(_drm, "drmModeAtomicCommit")
+}
+
+// === Constants ===
+DRM_MODE_CONNECTED = 1
+DRM_MODE_OBJECT_CONNECTOR = 0xCCCCCCCC
+DRM_MODE_PROP_RANGE = 1 << 1
+DRM_MODE_ATOMIC_ALLOW_MODESET = 1 << 1
+DRM_MODE_ATOMIC_NONBLOCK = 1 << 3
+
+// === State ===
+_drmFd = -1
+_initialized = false
+_connectors = []  // [{id, name, backlight_prop, max_brightness}]
+
+// === Helpers ===
+fn _checkDrm() {
+    if _drm == 0 {
+        print("[drm_brightness] libdrm not available")
+        return false
+    }
+    if _drmOpen == 0 {
+        print("[drm_brightness] drmOpen symbol not found")
+        return false
+    }
+    return true
+}
+
+fn _openDrm() {
+    if _drmFd >= 0 { return true }
+    if !_checkDrm() { return false }
+
+    // Try primary GPU first
+    i = 0
+    while i < 4 {
+        path = "/dev/dri/card" + str(i)
+        fd = ffi.call(_drmOpen, "int32", ["pointer", "pointer"], ffi.cstring(path), 0)
+        if fd >= 0 {
+            _drmFd = fd
+            print("[drm_brightness] Opened " + path + " fd=" + str(fd))
+            return true
+        }
+        i = i + 1
+    }
+    // Fallback: let kernel pick
+    fd = ffi.call(_drmOpen, "int32", ["pointer", "pointer"], 0, 0)
+    if fd >= 0 {
+        _drmFd = fd
+        print("[drm_brightness] Opened default DRM device fd=" + str(fd))
+        return true
+    }
+    print("[drm_brightness] Failed to open any DRM device")
+    return false
+}
+
+fn _closeDrm() {
+    if _drmFd >= 0 && _drmClose != 0 {
+        ffi.call(_drmClose, "int32", ["int32"], _drmFd)
+        _drmFd = -1
+    }
+}
+
+// === Structure sizes (for pointer arithmetic) ===
+// drmModeRes: 4 ints + 4 pointers + 4 ints = 48 bytes on 64-bit
+// drmModeConnector: connector_id, encoder_id, connector_type, connector_type_id, connection, mmWidth, mmHeight, subpixel, count_modes, modes, count_props, props, prop_values, count_encoders, encoders
+// drmModeProperty: props (pointer), count_props, count_values, values, prop_id, name[32], flags, count_values, values
+
+fn _enumConnectors() {
+    _connectors = []
+    if !_openDrm() { return }
+
+    res = ffi.call(_drmModeGetResources, "pointer", ["int32"], _drmFd)
+    if res == 0 { return }
+
+    count_connectors = ffi.get_i32(ffi.ptr_add(res, 4))  // offset 4: count_connectors
+    connectors_ptr = ffi.get_ptr(ffi.ptr_add(res, 16))   // offset 16: connectors array
+
+    i = 0
+    while i < count_connectors {
+        connector_id = ffi.get_u32(ffi.ptr_add(connectors_ptr, i * 4))
+        conn = ffi.call(_drmModeGetConnector, "pointer", ["int32", "uint32"], _drmFd, connector_id)
+        if conn != 0 {
+            connection = ffi.get_i32(ffi.ptr_add(conn, 20))  // connection field
+            if connection == DRM_MODE_CONNECTED {
+                count_props = ffi.get_i32(ffi.ptr_add(conn, 44))  // count_props
+                props_ptr = ffi.get_ptr(ffi.ptr_add(conn, 48))    // props array
+                prop_values_ptr = ffi.get_ptr(ffi.ptr_add(conn, 56))  // prop_values
+
+                backlight_prop = 0
+                max_brightness = 0
+
+                j = 0
+                while j < count_props {
+                    prop_id = ffi.get_u32(ffi.ptr_add(props_ptr, j * 4))
+                    prop = ffi.call(_drmModeGetProperty, "pointer", ["int32", "uint32"], _drmFd, prop_id)
+                    if prop != 0 {
+                        name_ptr = ffi.ptr_add(prop, 24)  // name[32] starts at offset 24
+                        name = ffi.string(name_ptr)
+                        if name == "BACKLIGHT" {
+                            backlight_prop = prop_id
+                            // Get max from property values
+                            if ffi.get_i32(ffi.ptr_add(prop, 16)) > 0 {  // count_values
+                                values_ptr = ffi.get_ptr(ffi.ptr_add(prop, 24 + 32))  // after name
+                                max_brightness = ffi.get_u64(ffi.ptr_add(values_ptr, (ffi.get_i32(ffi.ptr_add(prop, 16)) - 1) * 8))
+                            }
+                        }
+                        ffi.call(_drmModeFreeProperty, "void", ["pointer"], prop)
+                    }
+                    j = j + 1
+                }
+
+                if backlight_prop != 0 {
+                    // Get connector name
+                    count_encoders = ffi.get_i32(ffi.ptr_add(conn, 64))
+                    encoders_ptr = ffi.get_ptr(ffi.ptr_add(conn, 72))
+                    conn_name = "Connector-" + str(connector_id)
+                    if count_encoders > 0 {
+                        encoder_id = ffi.get_u32(encoders_ptr)
+                        encoder = ffi.call(_drmModeGetEncoder, "pointer", ["int32", "uint32"], _drmFd, encoder_id)
+                        if encoder != 0 {
+                            // Could get encoder name but skip for now
+                            ffi.call(_drmModeFreeEncoder, "void", ["pointer"], encoder)
+                        }
+                    }
+
+                    _connectors.push({id: connector_id, name: conn_name, backlight_prop: backlight_prop, max_brightness: max_brightness})
+                    print("[drm_brightness] Found backlight on " + conn_name + " prop=" + str(backlight_prop) + " max=" + str(max_brightness))
+                }
+            }
+            ffi.call(_drmModeFreeConnector, "void", ["pointer"], conn)
+        }
+        i = i + 1
+    }
+
+    ffi.call(_drmModeFreeResources, "void", ["pointer"], res)
+}
+
+fn _findConnector(connector_id) {
+    for c in _connectors {
+        if c.id == connector_id { return c }
+    }
+    return null
+}
+
+// === Public API ===
+
+fn init() {
+    if _initialized { return }
+    _enumConnectors()
+    _initialized = true
+}
+
+fn getConnectors() {
+    names = []
+    for c in _connectors { names.push(c.name) }
+    names
+}
+
+fn getBrightness(connector_id) {
+    if !_initialized { init() }
+    c = _findConnector(connector_id)
+    if c == null { return -1.0 }
+    if c.backlight_prop == 0 { return -1.0 }
+
+    // Get current value via atomic get or object properties
+    obj_props = ffi.call(_drmModeObjectGetProperties, "pointer", ["int32", "uint32", "uint32"], _drmFd, c.id, DRM_MODE_OBJECT_CONNECTOR)
+    if obj_props == 0 { return -1.0 }
+
+    count = ffi.get_i32(obj_props)
+    props_ptr = ffi.get_ptr(ffi.ptr_add(obj_props, 8))
+    values_ptr = ffi.get_ptr(ffi.ptr_add(obj_props, 16))
+
+    cur_val = -1
+    i = 0
+    while i < count {
+        pid = ffi.get_u32(ffi.ptr_add(props_ptr, i * 4))
+        if pid == c.backlight_prop {
+            cur_val = ffi.get_u64(ffi.ptr_add(values_ptr, i * 8))
+            break
+        }
+        i = i + 1
+    }
+
+    ffi.call(_drmModeFreeObjectProperties, "void", ["pointer"], obj_props)
+
+    if cur_val < 0 { return -1.0 }
+    if c.max_brightness > 0 {
+        return num(cur_val) / num(c.max_brightness)
+    }
+    return -1.0
+}
+
+fn setBrightness(brightness, connector_id) {
+    if !_initialized { init() }
+    c = _findConnector(connector_id)
+    if c == null { return false }
+    if c.backlight_prop == 0 { return false }
+
+    v = _clamp(brightness, 0.0, 1.0)
+    target = 0
+    if c.max_brightness > 0 {
+        target = int(v * num(c.max_brightness))
+    } else {
+        target = int(v * 65535)
+    }
+
+    // Use atomic commit for reliability
+    req = ffi.call(_drmModeAtomicAlloc, "pointer")
+    if req == 0 { return false }
+
+    _ret = ffi.call(_drmModeAtomicAddProperty, "int32", ["pointer", "uint32", "uint32", "uint64"], req, c.id, c.backlight_prop, target)
+    if _ret != 0 {
+        ffi.call(_drmModeAtomicFree, "void", ["pointer"], req)
+        return false
+    }
+
+    _ret = ffi.call(_drmModeAtomicCommit, "int32", ["int32", "pointer", "uint32", "pointer"], _drmFd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, 0)
+    ffi.call(_drmModeAtomicFree, "void", ["pointer"], req)
+
+    return _ret == 0
+}
+
+fn _clamp(v, lo, hi) {
+    if v < lo { lo }
+    else if v > hi { hi }
+    else { v }
+}
+
+fn increaseBrightness(step, connector_id) {
+    if step == null { step = 0.05 }
+    cur = getBrightness(connector_id)
+    if cur < 0 { return }
+    setBrightness(cur + step, connector_id)
+}
+
+fn decreaseBrightness(step, connector_id) {
+    if step == null { step = 0.05 }
+    cur = getBrightness(connector_id)
+    if cur < 0 { return }
+    setBrightness(cur - step, connector_id)
+}
+
+fn cleanup() {
+    _closeDrm()
+    _initialized = false
+    _connectors = []
+}
+
+// Module exports
+{
+    init: init
+    cleanup: cleanup
+    getConnectors: getConnectors
+    getBrightness: getBrightness
+    setBrightness: setBrightness
+    increaseBrightness: increaseBrightness
+    decreaseBrightness: decreaseBrightness
+}

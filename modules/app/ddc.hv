@@ -1,0 +1,177 @@
+// ddc.hv — DDC/CI brightness control using ddcutil CLI
+// Simpler wrapper around ddcutil command-line tool for external monitor control
+
+use shell
+use sys
+
+// === Detect ddcutil ===
+_ddcutilPath = "/usr/bin/ddcutil"
+if !sys.isExecutable(_ddcutilPath) {
+    _ddcutilPath = shell.which("ddcutil")
+}
+
+// === State ===
+_displays = []
+_initialized = false
+
+// === Helpers ===
+fn _parseDisplays(output) {
+    _displays = []
+    lines = output.split("\n")
+    current = null
+    for line in lines {
+        line = line.trim()
+        if line.find("Display") == 0 && line.find(":") > 0 {
+            if current != null { _displays.push(current) }
+            parts = line.split(":")
+            num = parts[0].replace("Display ", "").trim()
+            current = {number: int(num), name: parts[1].trim(), manufacturer: "", model: "", serial: "", i2c: ""}
+        } else if current != null && line.find("I2C bus:") == 0 {
+            current.i2c = line.replace("I2C bus:", "").trim()
+        } else if current != null && line.find("Manufacturer:") == 0 {
+            current.manufacturer = line.replace("Manufacturer:", "").trim()
+        } else if current != null && line.find("Model:") == 0 {
+            current.model = line.replace("Model:", "").trim()
+        } else if current != null && line.find("Serial number:") == 0 {
+            current.serial = line.replace("Serial number:", "").trim()
+        }
+    }
+    if current != null { _displays.push(current) }
+    print("[ddc] Detected " + str(#_displays) + " DDC/CI display(s)")
+}
+
+fn _getDisplayNumber(index) {
+    if index < 0 || index >= #_displays { return -1 }
+    return _displays[index].number
+}
+
+// === Public API ===
+fn init() {
+    if _initialized { return }
+    if _ddcutilPath == "" {
+        print("[ddc] ddcutil not found in PATH")
+        return
+    }
+    r = shell.exec(_ddcutilPath + " detect --terse")
+    if !r.success {
+        print("[ddc] detect failed: " + r.stderr)
+        return
+    }
+    _parseDisplays(r.stdout)
+    _initialized = true
+}
+
+fn cleanup() {
+    _displays = []
+    _initialized = false
+}
+
+fn getDisplays() {
+    if !_initialized { init() }
+    names = []
+    for d in _displays { names.push(d.name + " (I2C:" + d.i2c + ")") }
+    names
+}
+
+fn _getVcp(displayNum, code) {
+    r = shell.exec(_ddcutilPath + " getvcp " + code + " --display " + str(displayNum) + " --terse 2>/dev/null")
+    if !r.success { return -1 }
+    // Output format: VCP code 0x10 (Brightness ): current value =    50, max value =   100
+    line = r.stdout.trim()
+    if line == "" { return -1 }
+    // Parse: "current value =    50, max value =   100"
+    parts = line.split(",")
+    curStr = parts[0].split("=")[1].trim()
+    maxStr = parts[1].split("=")[1].trim()
+    cur = int(curStr)
+    max = int(maxStr)
+    if max <= 0 { return -1 }
+    return num(cur) / num(max)
+}
+
+fn _setVcp(displayNum, code, value) {
+    r = shell.exec(_ddcutilPath + " setvcp " + code + " " + str(value) + " --display " + str(displayNum) + " 2>/dev/null")
+    return r.success
+}
+
+fn getBrightness(displayIndex) {
+    if !_initialized { init() }
+    if displayIndex == null { displayIndex = 0 }
+    dnum = _getDisplayNumber(displayIndex)
+    if dnum < 0 { return -1.0 }
+    return _getVcp(dnum, "10")  // 0x10 = Brightness
+}
+
+fn setBrightness(value, displayIndex) {
+    if !_initialized { init() }
+    if displayIndex == null { displayIndex = 0 }
+    dnum = _getDisplayNumber(displayIndex)
+    if dnum < 0 { return false }
+    v = _clamp(value, 0.0, 1.0)
+    // Get max first
+    r = shell.exec(_ddcutilPath + " getvcp 10 --display " + str(dnum) + " --terse 2>/dev/null")
+    if !r.success { return false }
+    line = r.stdout.trim()
+    parts = line.split(",")
+    maxStr = parts[1].split("=")[1].trim()
+    max = int(maxStr)
+    target = int(v * num(max))
+    return _setVcp(dnum, "10", target)
+}
+
+fn increaseBrightness(step, displayIndex) {
+    if step == null { step = 0.05 }
+    cur = getBrightness(displayIndex)
+    if cur < 0 { return }
+    setBrightness(cur + step, displayIndex)
+}
+
+fn decreaseBrightness(step, displayIndex) {
+    if step == null { step = 0.05 }
+    cur = getBrightness(displayIndex)
+    if cur < 0 { return }
+    setBrightness(cur - step, displayIndex)
+}
+
+fn getContrast(displayIndex) {
+    if !_initialized { init() }
+    if displayIndex == null { displayIndex = 0 }
+    dnum = _getDisplayNumber(displayIndex)
+    if dnum < 0 { return -1.0 }
+    return _getVcp(dnum, "12")  // 0x12 = Contrast
+}
+
+fn setContrast(value, displayIndex) {
+    if !_initialized { init() }
+    if displayIndex == null { displayIndex = 0 }
+    dnum = _getDisplayNumber(displayIndex)
+    if dnum < 0 { return false }
+    v = _clamp(value, 0.0, 1.0)
+    r = shell.exec(_ddcutilPath + " getvcp 12 --display " + str(dnum) + " --terse 2>/dev/null")
+    if !r.success { return false }
+    line = r.stdout.trim()
+    parts = line.split(",")
+    maxStr = parts[1].split("=")[1].trim()
+    max = int(maxStr)
+    target = int(v * num(max))
+    return _setVcp(dnum, "12", target)
+}
+
+fn _clamp(v, lo, hi) {
+    if v < lo { lo }
+    else if v > hi { hi }
+    else { v }
+}
+
+// Module exports
+{
+    init: init
+    cleanup: cleanup
+    getDisplays: getDisplays
+    getBrightness: getBrightness
+    setBrightness: setBrightness
+    increaseBrightness: increaseBrightness
+    decreaseBrightness: decreaseBrightness
+    getContrast: getContrast
+    setContrast: setContrast
+}

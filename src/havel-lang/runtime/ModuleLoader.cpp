@@ -188,22 +188,19 @@ ModuleLoader::resolve(const std::string& modulePath,
     bool hvcExists = fs::exists(stdlibHvcPath);
     bool hvExists = fs::exists(stdlibHvPath);
     if (hvcExists && hvExists) {
-      auto hvcTime = fs::last_write_time(stdlibHvcPath);
-      auto hvTime = fs::last_write_time(stdlibHvPath);
-      if (hvcTime >= hvTime) {
-        return ResolvedModule{ResolvedModule::BytecodeCache,
-                              fs::canonical(stdlibHvcPath).string(), modulePath};
+      if (fs::last_write_time(stdlibHvcPath) >= fs::last_write_time(stdlibHvPath)) {
+        return makeBcCache(stdlibHvcPath, stdlibHvPath, modulePath);
       }
       return ResolvedModule{ResolvedModule::StdlibSource,
-                            fs::canonical(stdlibHvPath).string(), modulePath};
+                            fs::canonical(stdlibHvPath).string(), modulePath, ""};
     }
     if (hvcExists) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(stdlibHvcPath).string(), modulePath};
+      // No source side-by-side - use cache but no sourcePath for hash check.
+      return makeBcCache(stdlibHvcPath, stdlibHvPath, modulePath);
     }
     if (hvExists) {
       return ResolvedModule{ResolvedModule::StdlibSource,
-                            fs::canonical(stdlibHvPath).string(), modulePath};
+                            fs::canonical(stdlibHvPath).string(), modulePath, ""};
     }
   }
 
@@ -215,22 +212,18 @@ ModuleLoader::resolve(const std::string& modulePath,
     bool hvcExists = fs::exists(pkgHvcPath);
     bool hvExists = fs::exists(pkgHvPath);
     if (hvcExists && hvExists) {
-      auto hvcTime = fs::last_write_time(pkgHvcPath);
-      auto hvTime = fs::last_write_time(pkgHvPath);
-      if (hvcTime >= hvTime) {
-        return ResolvedModule{ResolvedModule::BytecodeCache,
-                              fs::canonical(pkgHvcPath).string(), modulePath};
+      if (fs::last_write_time(pkgHvcPath) >= fs::last_write_time(pkgHvPath)) {
+        return makeBcCache(pkgHvcPath, pkgHvPath, modulePath);
       }
       return ResolvedModule{ResolvedModule::PackageSource,
-                            fs::canonical(pkgHvPath).string(), modulePath};
+                            fs::canonical(pkgHvPath).string(), modulePath, ""};
     }
     if (hvcExists) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(pkgHvcPath).string(), modulePath};
+      return makeBcCache(pkgHvcPath, pkgHvPath, modulePath);
     }
     if (hvExists) {
       return ResolvedModule{ResolvedModule::PackageSource,
-                            fs::canonical(pkgHvPath).string(), modulePath};
+                            fs::canonical(pkgHvPath).string(), modulePath, ""};
     }
   }
 
@@ -244,22 +237,18 @@ ModuleLoader::resolve(const std::string& modulePath,
         bool hvcExists = fs::exists(hvcPath);
         bool hvExists = fs::exists(hvPath);
     if (hvcExists && hvExists) {
-      auto hvcTime = fs::last_write_time(hvcPath);
-      auto hvTime = fs::last_write_time(hvPath);
-      if (hvcTime >= hvTime) {
-        return ResolvedModule{ResolvedModule::BytecodeCache,
-                              fs::canonical(hvcPath).string(), modulePath};
+      if (fs::last_write_time(hvcPath) >= fs::last_write_time(hvPath)) {
+        return makeBcCache(hvcPath, hvPath, modulePath);
       }
       return ResolvedModule{ResolvedModule::UserSource,
-                            fs::canonical(hvPath).string(), modulePath};
+                            fs::canonical(hvPath).string(), modulePath, ""};
     }
     if (hvcExists) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(hvcPath).string(), modulePath};
+      return makeBcCache(hvcPath, hvPath, modulePath);
     }
     if (hvExists) {
       return ResolvedModule{ResolvedModule::UserSource,
-                            fs::canonical(hvPath).string(), modulePath};
+                            fs::canonical(hvPath).string(), modulePath, ""};
     }
 
     // Try name/name.hv or name/name.hvc (package style)
@@ -269,22 +258,18 @@ ModuleLoader::resolve(const std::string& modulePath,
     hvcExists = fs::exists(hvcPkgPath);
     hvExists = fs::exists(hvPkgPath);
     if (hvcExists && hvExists) {
-      auto hvcTime = fs::last_write_time(hvcPkgPath);
-      auto hvTime = fs::last_write_time(hvPkgPath);
-      if (hvcTime >= hvTime) {
-        return ResolvedModule{ResolvedModule::BytecodeCache,
-                              fs::canonical(hvcPkgPath).string(), modulePath};
+      if (fs::last_write_time(hvcPkgPath) >= fs::last_write_time(hvPkgPath)) {
+        return makeBcCache(hvcPkgPath, hvPkgPath, modulePath);
       }
       return ResolvedModule{ResolvedModule::UserSource,
-                            fs::canonical(hvPkgPath).string(), modulePath};
+                            fs::canonical(hvPkgPath).string(), modulePath, ""};
     }
     if (hvcExists) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(hvcPkgPath).string(), modulePath};
+      return makeBcCache(hvcPkgPath, hvPkgPath, modulePath);
     }
     if (hvExists) {
       return ResolvedModule{ResolvedModule::UserSource,
-                            fs::canonical(hvPkgPath).string(), modulePath};
+                            fs::canonical(hvPkgPath).string(), modulePath, ""};
     }
   }
 
@@ -361,6 +346,10 @@ void ModuleLoader::putCacheWithGlobals(const std::string& key, core::Value value
 
 void ModuleLoader::clearCache() {
     cache_.clear();
+}
+
+void ModuleLoader::invalidate(const std::string& key) {
+    cache_.erase(key);
 }
 
 std::vector<core::Value> ModuleLoader::cachedValues() const {

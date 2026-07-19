@@ -389,17 +389,17 @@ case OpCode::LOAD_UPVALUE: {
         COMPILER_THROW("LOAD_UPVALUE index out of range");
     }
     const auto &cell = closure->upvalues[upvalue_index];
-    std::cerr << "[DEBUG LOAD_UPVALUE] upvalue_index=" << upvalue_index << " cell->is_open=" << cell->is_open << " cell->open_index=" << cell->open_index << " cell->locals_base=" << cell->locals_base << std::endl;
+    // std::cerr << "[DEBUG LOAD_UPVALUE] upvalue_index=" << upvalue_index << " cell->is_open=" << cell->is_open << " cell->open_index=" << cell->open_index << " cell->locals_base=" << cell->locals_base << std::endl;
     Value value;
     if (cell->is_open) {
         uint32_t abs_index = cell->locals_base + cell->open_index;
-        std::cerr << "  abs_index=" << abs_index << " locals_base=" << cell->locals_base << " open_index=" << cell->open_index << std::endl;
+        // std::cerr << "  abs_index=" << abs_index << " locals_base=" << cell->locals_base << " open_index=" << cell->open_index << std::endl;
         this->ensureLocalIndex(abs_index);
         value = locals[abs_index];
-        std::cerr << "  loaded value=" << value.toString() << std::endl;
+        // std::cerr << "  loaded value=" << value.toString() << std::endl;
     } else {
         value = cell->closed_value;
-        std::cerr << "  closed value=" << value.toString() << std::endl;
+        // std::cerr << "  closed value=" << value.toString() << std::endl;
     }
     pushStack(value);
     break;

@@ -574,10 +574,12 @@ void EventListener::EventLoop() {
 
         if (shutdown.load()) break;
 
-        // Fast path: skip signal select when goroutines are still running
+        // Fast path: still wait for external events even when goroutines are runnable
+        // Use a shorter timeout to stay responsive, but don't busy-loop
         if (executionEngine && executionEngine->getScheduler() &&
             executionEngine->getScheduler()->hasRunnableFibers()) {
-            continue;
+            // Still do the select with a short timeout to avoid 100% CPU
+            // The select includes wakeup fds so we'll be woken promptly
         }
 
         // Periodic device re-check (every ~5 seconds) to handle hotplug/disconnect

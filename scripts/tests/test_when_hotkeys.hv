@@ -1,0 +1,32 @@
+// Test multiple hotkeys inside when blocks
+use io
+
+$F1 => {
+    print("F1 - toggle suspend")
+}
+
+when io.isSuspended() {
+    print("SUSPENDED!")
+    $F2 => {
+        print("F2 - only active when suspended")
+    }
+}
+
+when !io.isSuspended() {
+    print("ACTIVE!")
+    F3 => {
+        print("F3 - only active when NOT suspended")
+    }
+    F4 => {
+        print("F4 - also active when NOT suspended")
+    }
+}
+
+print("Hotkeys registered:")
+print("  F1 - always active (toggles suspend)")
+print("  F2 - only when suspended")
+print("  F3 - only when active")
+print("  F4 - only when active")
+
+sleep(10000)
+print("Done")

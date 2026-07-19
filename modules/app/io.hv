@@ -38,6 +38,8 @@ fn map(src, dst) { io._map(str(src), str(dst)) }
 
 fn remap(src, dst) { io._remap(str(src), str(dst)) }
 
+fn unmap(src) { io._unmap(str(src)) }
+
 fn block() { io._setBlockInput(true); io._setEvdevGrab(true) }
 
 fn unblock() { io._setEvdevGrab(false); io._ungrabAll(); io._setBlockInput(false) }

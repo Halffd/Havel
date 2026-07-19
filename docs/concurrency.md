@@ -12,6 +12,7 @@ Havel uses a **hybrid concurrency model**:
 - **OS Threads**: True parallelism with actor-style message passing
 - **Channels**: CSP-style synchronization between goroutines and threads
 - **Coroutines**: Stackful coroutines with yield/resume
+- **Async Utilities** (Havel sidecar): Debounce, throttle, retry, timeout, race, once, every, parallel operations, promise patterns, rate limiting, circuit breaker
 
 Only one fiber runs at a time. The scheduler time-slices goroutines with instruction budgets.
 
@@ -306,6 +307,102 @@ This is **non-blocking** — the fiber parks and returns control to the schedule
 
 ---
 
+## Async Utilities (Havel Sidecar)
+
+**Module**: `modules/app/async.hv` — Higher-level async utilities built on C++ primitives.
+
+These are **not** part of the VM — they're implemented in Havel as a sidecar module. Import with:
+
+```
+use async
+```
+
+### Core Utilities
+
+| Function | Description |
+|----------|-------------|
+| `sleep(ms)` | Sleep for milliseconds (wraps `io.sleep`) |
+| `go(func)` | Spawn goroutine (wraps `thread.spawn`) |
+| `await(x)` | Await a value (pass-through for primitives) |
+
+### Timing Patterns
+
+| Function | Description |
+|----------|-------------|
+| `debounce(fn, ms)` | Delay execution until `ms` of silence; cancels previous pending call |
+| `throttle(fn, ms)` | Limit execution to once per `ms` window; coalesces calls |
+| `retry(fn, attempts, baseDelay, maxDelay, backoff)` | Retry with exponential backoff |
+| `withTimeout(fn, ms, onTimeout)` | Wrap function with timeout; returns `{ok, value}` or `{ok: false, error}` |
+| `race(funcs)` | First to complete wins; cancels others |
+| `once(fn)` | Memoize async function; subsequent calls return cached result |
+| `every(fn, ms)` | Run function periodically; returns object with `.stop()` method |
+
+### Parallel Utilities
+
+| Function | Description |
+|----------|-------------|
+| `parallelMap(items, fn, concurrency)` | Map with bounded concurrency (semaphore + waitgroup) |
+| `parallelFilter(items, fn, concurrency)` | Filter with concurrency |
+| `parallelForEach(items, fn, concurrency)` | ForEach with concurrency (discards results) |
+
+### Promise-like Utilities (Channel-based)
+
+| Function | Description |
+|----------|-------------|
+| `promise(fn)` | Start async computation, return channel for result |
+| `then(promiseCh, onFulfilled, onRejected)` | Attach handlers to promise channel |
+| `all(channels)` | Wait for all channels, return results in order |
+| `allSettled(channels)` | Wait for all, return all results (ok/error) |
+
+### Channel Utilities
+
+| Function | Description |
+|----------|-------------|
+| `chan(buffer)` | Create channel (buffered or unbuffered) |
+| `chanSelect(channels)` | Simple select — return first ready channel |
+| `merge(channels)` | Merge multiple channels into one |
+| `fanIn(channels)` | Alias for merge |
+| `fanOut(source, workers)` | Distribute source values round-robin to worker channels |
+
+### Resilience Patterns
+
+| Function | Description |
+|----------|-------------|
+| `waitgroup()` | Create waitgroup (re-export) |
+| `rateLimit(maxPerSecond)` | Enforce max calls per second; queues excess |
+| `circuitBreaker(fn, failureThreshold, resetTimeout)` | Open circuit after failures; half-open after timeout |
+
+### Usage Examples
+
+```havel
+use async
+
+// Debounce rapid calls (e.g., key press handler)
+debounced = async.debounce(fn(msg) { print(msg) }, 100)
+debounced("a")
+debounced("b")  // only "b" fires after 100ms silence
+
+// Throttle to once per 500ms
+throttled = async.throttle(fn(x) { print(x) }, 500)
+
+// Retry with backoff
+result = async.retry(fn() { http.get(url) }, 3, 100)
+
+// Timeout
+result = async.withTimeout(fn() { slowOperation() }, 5000)
+
+// Race - first wins
+winner = async.race([fn() { slow() }, fn() { fast() }])
+
+// Parallel map with concurrency limit
+results = async.parallelMap(items, fn(x) { process(x) }, 4)
+
+// Circuit breaker
+cb = async.circuitBreaker(fn() { riskyCall() }, 5, 30000)
+```
+
+---
+
 ## Concurrency Opcodes Summary
 
 | Opcode | Description |
@@ -391,3 +488,15 @@ when temperature > 30 {
     startCooling()
 }
 ```
+
+---
+
+## Architecture Layers
+
+| Layer | Location | Responsibility |
+|-------|----------|----------------|
+| **C++ Primitives** | `VMHostFunctions.cpp`, `VMConcurrency.cpp` | `thread.spawn`, `channel`, `interval`, `timeout`, `waitgroup`, `sleep`, `go`, `await` |
+| **Havel Sidecars** | `modules/app/async.hv` | Higher-level utilities (debounce, throttle, retry, timeout, race, once, every, parallel, promises, channel utils, rateLimit, circuitBreaker) |
+| **User Scripts** | `scripts/` | Application logic |
+
+**Key Principle**: The VM scheduler (`Fiber`, `Coroutine`, `Scheduler`, `Channel`, `Sleep/Wake queues`) remains in C++ to avoid bootstrap circular dependency. Havel sidecars extend the scheduler with ergonomic patterns.

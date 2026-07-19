@@ -1783,13 +1783,13 @@ frame_arena_[frame_count_] = CallFrame{func, co_chunk, co->ip, 0, co->closure_id
             callee = resolve_chunk->getFunction(closure->function_index);
         }
         if (callee && (callee->name == "tokenize" || callee->name == "Lexer" || callee->name == "skipWhitespace")) {
-            std::cerr << "[DBG-CALL] fn=" << callee->name
-                      << " closure_id=" << closure_id
-                      << " has_module_globals=" << (closure->module_globals ? "yes" : "no")
-                      << " globals_size=" << globals.size()
-                      << " has_LEXER_in_globals=" << (globals.count("Lexer") > 0 ? "yes" : "no")
-                      << " has_KEYWORDS_in_globals=" << (globals.count("KEYWORDS") > 0 ? "yes" : "no")
-                      << "\n";
+            // std::cerr << "[DBG-CALL] fn=" << callee->name
+            //           << " closure_id=" << closure_id
+            //           << " has_module_globals=" << (closure->module_globals ? "yes" : "no")
+            //           << " globals_size=" << globals.size()
+            //           << " has_LEXER_in_globals=" << (globals.count("Lexer") > 0 ? "yes" : "no")
+            //           << " has_KEYWORDS_in_globals=" << (globals.count("KEYWORDS") > 0 ? "yes" : "no")
+            //           << "\n";
         }
 } else {
             // Debug: identify what type the value actually is
@@ -3385,7 +3385,7 @@ Value VM::loadModule(const std::string& path) {
     std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
     if (moduleLoader_.getCached(path, &cachedVal)) {
       moduleLoader_.getCachedGlobals(path, &cachedGlobals);
-      std::cerr << "[CACHE-HIT] path='" << path << "' cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
+      // std::cerr << "[CACHE-HIT] path='" << path << "' cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
       if (cachedGlobals) {
         // Do NOT restore cached globals to caller's globals - module internals
         // (like 'flags' in debug.hv) are only accessible via the module's
@@ -3411,19 +3411,19 @@ Value VM::loadModule(const std::string& path) {
         if (cachedVal.isObjectId()) {
           auto* exportsObj = heap_.object(cachedVal.asObjectId());
           if (exportsObj) {
-            std::cerr << "[CACHE-FIXUP-EXPORTS] exports size=" << exportsObj->size() << "\n";
+            // std::cerr << "[CACHE-FIXUP-EXPORTS] exports size=" << exportsObj->size() << "\n";
             for (auto& [name, val] : *exportsObj) {
-              std::cerr << "[CACHE-FIXUP-EXPORTS]   checking " << name << " -> " << val.toString() << "\n";
+              // std::cerr << "[CACHE-FIXUP-EXPORTS]   checking " << name << " -> " << val.toString() << "\n";
               if (val.isClosureId()) {
                 auto* closure = heap_.closure(val.asClosureId());
                 if (closure && closure->module_globals) {
                   // Check if this closure's function is in cached globals
                   auto it = cachedGlobals->find(name);
-                  std::cerr << "[CACHE-FIXUP-EXPORTS]     found in cachedGlobals=" << (it != cachedGlobals->end()) << "\n";
+                  // std::cerr << "[CACHE-FIXUP-EXPORTS]     found in cachedGlobals=" << (it != cachedGlobals->end()) << "\n";
                   if (it != cachedGlobals->end() && it->second.isClosureId() &&
                       it->second.asClosureId() == val.asClosureId()) {
                     closure->module_globals = cachedGlobals;
-                    std::cerr << "[CACHE-FIXUP] Updated module_globals for " << name << " (in exports)\n";
+                    // std::cerr << "[CACHE-FIXUP] Updated module_globals for " << name << " (in exports)\n";
                   }
                 }
               }
@@ -3435,10 +3435,10 @@ Value VM::loadModule(const std::string& path) {
     }
   }
 
-    // Resolve the module path
+// Resolve the module path
     auto resolved = moduleLoader_.resolve(path, current_script_dir_);
     if (path == "lexer") {
-        std::cerr << "[DBG-LOAD] resolving 'lexer' scriptDir='" << current_script_dir_ << "' resolved=" << (resolved ? "yes" : "no");
+        // std::cerr << "[DBG-LOAD] resolving 'lexer' scriptDir='" << current_script_dir_ << "' resolved=" << (resolved ? "yes" : "no");
         if (resolved) {
             std::string typeStr;
             switch (resolved->type) {
@@ -3451,21 +3451,21 @@ Value VM::loadModule(const std::string& path) {
                 case havel::compiler::ModuleLoader::ResolvedModule::HostBuiltin: typeStr = "HostBuiltin"; break;
                 default: typeStr = "Other"; break;
             }
-            std::cerr << " type=" << typeStr << " path=" << resolved->canonicalPath << "\n";
+            // std::cerr << " type=" << typeStr << " path=" << resolved->canonicalPath << "\n";
         } else {
-            std::cerr << "\n";
+            // std::cerr << "\n";
         }
     }
     if (resolved) {
         std::string canonicalKey = resolved->canonicalPath;
         
         // Check cache by resolved path
-if (moduleLoader_.isCached(canonicalKey)) {
+        if (moduleLoader_.isCached(canonicalKey)) {
             Value cachedVal;
             std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
             if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
                 moduleLoader_.getCachedGlobals(canonicalKey, &cachedGlobals);
-                std::cerr << "[CACHE-HIT] canonicalKey='" << canonicalKey << "' cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
+                // std::cerr << "[CACHE-HIT] canonicalKey='" << canonicalKey << "' cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
                 if (cachedGlobals) {
                     // Do NOT restore cached globals to caller's globals - module internals
                     // are only accessible via closures' module_globals
@@ -3494,7 +3494,7 @@ if (moduleLoader_.isCached(canonicalKey)) {
                                         if (it != cachedGlobals->end() && it->second.isClosureId() &&
                                             it->second.asClosureId() == val.asClosureId()) {
                                             closure->module_globals = cachedGlobals;
-                                            std::cerr << "[CACHE-FIXUP] Updated module_globals for " << name << " (in exports)\n";
+                                            // std::cerr << "[CACHE-FIXUP] Updated module_globals for " << name << " (in exports)\n";
                                         }
                                     }
                                 }
@@ -3701,19 +3701,19 @@ if (moduleLoader_.isCached(canonicalKey)) {
                     .upvalues = {}});
                 constant = Value::makeClosureId(closureRef.id);
                 if (func->name == "skipWhitespace" && ci == 0) {
-                    std::cerr << "[DBG-HVC] fn[" << i << "]=" << func->name
-                              << " const[" << ci << "] fnIdx=" << fnIdx
-                              << " replaced with ClosureId=" << closureRef.id
-                              << " raw=" << std::hex << constant.rawBits() << std::dec
-                              << "\n";
+                    // std::cerr << "[DBG-HVC] fn[" << i << "]=" << func->name
+                    //           << " const[" << ci << "] fnIdx=" << fnIdx
+                    //           << " replaced with ClosureId=" << closureRef.id
+                    //           << " raw=" << std::hex << constant.rawBits() << std::dec
+                    //           << "\n";
                 }
             } else {
                 if (func->name == "skipWhitespace" && ci == 0) {
-                    std::cerr << "[DBG-HVC] fn[" << i << "]=" << func->name
-                              << " const[" << ci << "] NOT FunctionObjId, tag=" << std::hex << constant.rawBits() << std::dec
-                              << " isInt=" << constant.isInt() << " isStrVal=" << constant.isStringValId();
-                    if (constant.isInt()) std::cerr << " intVal=" << constant.asInt();
-                    std::cerr << "\n";
+                    // std::cerr << "[DBG-HVC] fn[" << i << "]=" << func->name
+                    //           << " const[" << ci << "] NOT FunctionObjId, tag=" << std::hex << constant.rawBits() << std::dec
+                    //           << " isInt=" << constant.isInt() << " isStrVal=" << constant.isStringValId();
+                    // if (constant.isInt()) std::cerr << " intVal=" << constant.asInt();
+                    // std::cerr << "\n";
                 }
             }
         }
@@ -3863,7 +3863,7 @@ if (moduleLoader_.isCached(canonicalKey)) {
     // so that functions can call sibling top-level functions during module initialization.
     // Use nullptr for module_globals so these closures use current globals (not the snapshot),
     // allowing them to see variables set during __main__ (e.g., 'flags = DebugFlags()').
-    std::cerr << "[MODULE-LOAD] Populating globals with " << chunk->getFunctionIndices().size() << " functions\n";
+    // std::cerr << "[MODULE-LOAD] Populating globals with " << chunk->getFunctionIndices().size() << " functions\n";
     for (const auto& [func_name, func_index] : chunk->getFunctionIndices()) {
         if (globals.find(func_name) == globals.end()) {
             auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
@@ -3874,8 +3874,8 @@ if (moduleLoader_.isCached(canonicalKey)) {
                 .module_globals = nullptr,
                 .upvalues = {}});
             globals[func_name] = Value::makeClosureId(closureRef.id);
-            std::cerr << "[MODULE-LOAD]   " << func_name << " -> index " << func_index
-                      << " added as closure " << closureRef.id << "\n";
+            // std::cerr << "[MODULE-LOAD]   " << func_name << " -> index " << func_index
+            //           << " added as closure " << closureRef.id << "\n";
         }
     }
 
@@ -4270,11 +4270,10 @@ Value VM::loadScript(const std::string& path) {
   current_script_dir_ = prev_script_dir;
 
   // Restore caller's globals
-  globals = std::move(globals_stack_.back());
-  globals_stack_.pop_back();
-  globals["_G"] = old_g;
-  globals_mirror_object_id_ = old_mirror_id;
-  immutable_globals_ = saved_immutable_globals;
+  if (!globals_stack_.empty()) {
+    globals = std::move(globals_stack_.back());
+    globals_stack_.pop_back();
+  }
 
   modules_loading_.erase(canonicalKey);
 

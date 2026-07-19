@@ -1092,9 +1092,9 @@ case OpCode::CLOSURE: {
       COMPILER_THROW("CLOSURE references unknown function index");
     }
 
-    std::cerr << "[DEBUG CLOSURE] func=" << target->name << " upvalues.size=" << target->upvalues.size() << std::flush << std::endl;
+    //     std::cerr << "[DEBUG CLOSURE] func=" << target->name << " upvalues.size=" << target->upvalues.size() << std::flush << std::endl;
     for (size_t i = 0; i < target->upvalues.size(); ++i) {
-        std::cerr << "  upvalue[" << i << "] index=" << target->upvalues[i].index << " captures_local=" << target->upvalues[i].captures_local << std::flush << std::endl;
+        // std::cerr << "  upvalue[" << i << "] index=" << target->upvalues[i].index << " captures_local=" << target->upvalues[i].captures_local << std::flush << std::endl;
     }
 
     GCHeap::RuntimeClosure closure;

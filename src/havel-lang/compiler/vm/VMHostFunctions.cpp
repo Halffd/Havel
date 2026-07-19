@@ -90,6 +90,12 @@ void VM::registerDefaultHostFunctions() {
       io->Remap(toStr(args[0]), toStr(args[1]));
       return Value::makeBool(true);
     });
+    api.registerFunction("io._unmap", [api, getIO, toStr](const std::vector<Value>& args) {
+      auto* io = getIO(); if (!io) return Value::makeBool(false);
+      if (args.size() < 1) return Value::makeBool(false);
+      io->Unmap(toStr(args[0]));
+      return Value::makeBool(true);
+    });
     api.registerFunction("io._emergencyRelease", [getIO](const std::vector<Value>&) {
       auto* io = getIO(); if (!io) return Value::makeNull();
       io->EmergencyReleaseAllKeys();

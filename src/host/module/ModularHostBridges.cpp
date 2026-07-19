@@ -3575,7 +3575,7 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
 
     auto *vm = static_cast<VM *>(ctx->vm);
     std::string hotkeyStr;
-    if (args[0].isStringValId()) {
+    if (args[0].isStringValId() || args[0].isStringId()) {
         hotkeyStr = vm->resolveStringKey(args[0]);
     } else {
         return Value::makeNull();
@@ -3584,7 +3584,7 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
     HotkeyPolicy policy = HotkeyPolicy::Drop;
     if (args.size() >= 3 && args[2].isObjectId()) {
         auto policyVal = vm->objectGetWithClassChain(args[2].asObjectId(), "policy");
-        if (policyVal.isStringValId()) {
+        if (policyVal.isStringValId() || policyVal.isStringId()) {
             std::string policyStr = vm->resolveStringKey(policyVal);
             if (policyStr == "replace") policy = HotkeyPolicy::Replace;
             else if (policyStr == "queue") policy = HotkeyPolicy::Queue;
@@ -3670,7 +3670,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
 
     auto *vm = static_cast<VM *>(ctx->vm);
     std::string hotkeyStr;
-    if (args[0].isStringValId()) {
+    if (args[0].isStringValId() || args[0].isStringId()) {
         hotkeyStr = vm->resolveStringKey(args[0]);
     } else {
         return Value::makeNull();

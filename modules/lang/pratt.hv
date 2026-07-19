@@ -3311,8 +3311,11 @@ fn parseHotkeyAssignmentStatement() {
         c = current().col
         advance() // consume 'config'
         skipNewlines()
-        name = advance().value
-        skipNewlines()
+        name = ""
+        if current().tid != TID.OpenBrace {
+            name = advance().value
+            skipNewlines()
+        }
         body = parseBlock()
         return ConfigBlock(name, body, l, c)
 

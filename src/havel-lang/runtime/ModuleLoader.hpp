@@ -90,7 +90,11 @@ public:
     bool getCached(const std::string& key, core::Value* outValue) const;
     bool getCachedGlobals(const std::string& key, std::shared_ptr<std::unordered_map<std::string, core::Value>>* outGlobals) const;
     void putCache(const std::string& key, core::Value value);
+    void putCache(const std::string& key, core::Value value,
+                  const std::string &sourcePath, const std::string &bytecodePath);
     void putCacheWithGlobals(const std::string& key, core::Value value, std::shared_ptr<std::unordered_map<std::string, core::Value>> globals);
+    void putCacheWithGlobals(const std::string& key, core::Value value, std::shared_ptr<std::unordered_map<std::string, core::Value>> globals,
+                             const std::string &sourcePath, const std::string &bytecodePath);
     void clearCache();
     void invalidate(const std::string& key);
     std::vector<core::Value> cachedValues() const;
@@ -123,27 +127,27 @@ private:
   // Search paths for native module .so resolution (havel_mod_<name>.so)
   std::vector<std::string> moduleSoPaths_;
 
-    // Module cache: canonicalKey -> CachedModule (exports + globals snapshot)
-    std::unordered_map<std::string, CachedModule> cache_;
+  // Module cache: canonicalKey -> CachedModule (exports + globals snapshot)
+  mutable std::unordered_map<std::string, CachedModule> cache_;
 
-    // Per-cached-key freshness hints so a cache hit can still detect that the
-    // underlying .hv source (or .hvc file) was modified and self-invalidate
-    // without going all the way to a fresh resolve().
-    //   key  = same as `cache_` key (canonical path or module name)
-    //   src  = canonical path of the source .hv (empty if cache had no source)
-    //   hvc  = canonical path of the .hvc (empty if cached from source)
-    //   mtime_ns = nanoseconds since epoch of the most recently inspected file.
-    struct CacheFreshness {
-        std::string src;
-        std::string hvc;
-        long long mtime_ns = 0;
-    };
-    mutable std::unordered_map<std::string, CacheFreshness> freshness_;
+  // Per-cached-key freshness hints so a cache hit can still detect that the
+  // underlying .hv source (or .hvc file) was modified and self-invalidate
+  // without going all the way to a fresh resolve().
+  //   key  = same as `cache_` key (canonical path or module name)
+  //   src  = canonical path of the source .hv (empty if cache had no source)
+  //   hvc  = canonical path of the .hvc (empty if cached from source)
+  //   mtime_ns = nanoseconds since epoch of the most recently inspected file.
+  struct CacheFreshness {
+      std::string src;
+      std::string hvc;
+      long long mtime_ns = 0;
+  };
+  mutable std::unordered_map<std::string, CacheFreshness> freshness_;
 
-    // True iff the source/.hvc on disk matches the recorded freshness hint.
-    // If false, the entry must be invalidated before returning Cached.
-    bool isFreshLocked(const std::string &key) const;
-    long long mtimeNs(const std::string &path) const;
+  // True iff the source/.hvc on disk matches the recorded freshness hint.
+  // If false, the entry must be invalidated before returning Cached.
+  bool isFreshLocked(const std::string &key) const;
+  static long long mtimeNs(const std::string &path);
 
   // Native extension handles (for dlopen/dlclose)
   std::unordered_map<std::string, NativeHandle> nativeHandles_;

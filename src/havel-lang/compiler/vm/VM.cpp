@@ -97,6 +97,22 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig& cfg) {
 
 void VM::setMaxCallDepth(size_t value) { max_call_depth_ = value; }
 
+std::shared_ptr<BytecodeChunk> VM::findOwningChunk(const BytecodeChunk* raw) const {
+    if (!raw) return nullptr;
+    if (main_chunk_.get() == raw) return main_chunk_;
+    for (const auto& pc : persistent_chunks_) {
+        if (pc.get() == raw) return pc;
+    }
+    for (const auto& [_, mc] : module_chunks_) {
+        (void)_;
+        if (mc.get() == raw) return mc;
+    }
+    for (const auto& rc : repl_chunks_) {
+        if (rc.get() == raw) return rc;
+    }
+    return nullptr;
+}
+
 VM::~VM() {
   if (tier2_flush_on_shutdown_) {
     // Optional drain mode: let queued tier2 compiles finish before shutdown.
@@ -988,7 +1004,7 @@ void VM::saveFiberState(Fiber *fiber) {
 }
 
 VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
-    const std::vector<Value> &args) {
+    const std::vector<Value> &args, const BytecodeChunk* fallback_chunk) {
     // Clear VM state for fresh goroutine context
     while (!stack.empty()) stack.pop();
     locals.clear();
@@ -1001,6 +1017,14 @@ VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t cl
         auto *closure = heap_.closure(closure_id);
         if (closure && closure->chunk) {
             resolve_chunk = closure->chunk;
+        }
+    }
+
+    // If the closure is gone but a fallback is provided (e.g. hotkey_chunk),
+    // use it so the goroutine can still resolve its function.
+    if (!resolve_chunk || !resolve_chunk->getFunction(function_id)) {
+        if (fallback_chunk && fallback_chunk->getFunction(function_id)) {
+            resolve_chunk = fallback_chunk;
         }
     }
 
@@ -1698,43 +1722,48 @@ frame_arena_[frame_count_] = CallFrame{func, co_chunk, co->ip, 0, co->closure_id
     return;
   }
 
-uint32_t function_index = 0;
-uint32_t closure_id = 0;
-const BytecodeChunk *resolve_chunk = current_chunk;
-std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
- if (callee_value.isFunctionObjId()) {
-            function_index = callee_value.asFunctionObjId();
-            if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
-                if (main_chunk_ && main_chunk_->getFunction(function_index)) {
-                    resolve_chunk = main_chunk_.get();
-                } else {
-                    for (auto& pc : persistent_chunks_) {
-                        if (pc && pc->getFunction(function_index)) {
-                            resolve_chunk = pc.get();
-                            break;
-                        }
-                    }
-                }
-                if (!resolve_chunk->getFunction(function_index)) {
-                    for (auto& [_, mc] : module_chunks_) {
-                        if (mc && mc->getFunction(function_index)) {
-                            resolve_chunk = mc.get();
-                            break;
-}
+    uint32_t function_index = 0;
+    uint32_t closure_id = 0;
+    const BytecodeChunk *resolve_chunk = current_chunk;
+    std::shared_ptr<BytecodeChunk> resolve_chunk_ref;
+    std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
+    if (callee_value.isFunctionObjId()) {
+        function_index = callee_value.asFunctionObjId();
+        if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
+            if (main_chunk_ && main_chunk_->getFunction(function_index)) {
+                resolve_chunk = main_chunk_.get();
+                resolve_chunk_ref = main_chunk_;
+            } else {
+                for (auto& pc : persistent_chunks_) {
+                    if (pc && pc->getFunction(function_index)) {
+                        resolve_chunk = pc.get();
+                        resolve_chunk_ref = pc;
+                        break;
                     }
                 }
             }
-            // Create a closure for FunctionObjId to capture module globals
-            if (resolve_chunk && resolve_chunk->getFunction(function_index)) {
-                auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
-                    .function_index = function_index,
-                    .chunk_index = 0,
-                    .chunk = resolve_chunk,
-                    .module_globals = nullptr,
-                    .upvalues = {}});
-                closure_id = closureRef.id;
+            if (!resolve_chunk->getFunction(function_index)) {
+                for (auto& [_, mc] : module_chunks_) {
+                    if (mc && mc->getFunction(function_index)) {
+                        resolve_chunk = mc.get();
+                        resolve_chunk_ref = mc;
+                        break;
+                    }
+                }
             }
-        } else if (callee_value.isClosureId()) {
+        }
+        // Create a closure for FunctionObjId to capture module globals
+        if (resolve_chunk && resolve_chunk->getFunction(function_index)) {
+            auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+                .function_index = function_index,
+                .chunk_index = 0,
+                .chunk = resolve_chunk,
+                .chunk_ref = resolve_chunk_ref,
+                .module_globals = nullptr,
+                .upvalues = {}});
+            closure_id = closureRef.id;
+        }
+    } else if (callee_value.isClosureId()) {
 			closure_id = callee_value.asClosureId();
 			auto *closure = heap_.closure(closure_id);
         if (!closure) {
@@ -2776,10 +2805,12 @@ return Value::makeStringId(strRef.id);
 }
 
 if (value.isFunctionObjId() && chunk != current_chunk) {
+auto chunk_ref = findOwningChunk(chunk);
 auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
 .function_index = value.asFunctionObjId(),
 .chunk_index = 0,
 .chunk = chunk,
+.chunk_ref = std::move(chunk_ref),
 .module_globals = nullptr,
 .upvalues = {}});
 return Value::makeClosureId(closureRef.id);
@@ -3665,6 +3696,7 @@ if (moduleLoader_.isCached(canonicalKey)) {
                     .function_index = constant.asFunctionObjId(),
                     .chunk_index = 0,
                     .chunk = chunk.get(),
+                    .chunk_ref = chunk,
                     .module_globals = nullptr,
                     .upvalues = {}});
                 constant = Value::makeClosureId(closureRef.id);
@@ -3693,6 +3725,7 @@ if (moduleLoader_.isCached(canonicalKey)) {
                     .function_index = dv->asFunctionObjId(),
                     .chunk_index = 0,
                     .chunk = chunk.get(),
+                    .chunk_ref = chunk,
                     .module_globals = nullptr,
                     .upvalues = {}});
                 *dv = Value::makeClosureId(closureRef.id);
@@ -3837,7 +3870,8 @@ if (moduleLoader_.isCached(canonicalKey)) {
                 .function_index = func_index,
                 .chunk_index = 0,
                 .chunk = chunk.get(),
-                .module_globals = nullptr,  // Use current globals, not snapshot
+                .chunk_ref = chunk,
+                .module_globals = nullptr,
                 .upvalues = {}});
             globals[func_name] = Value::makeClosureId(closureRef.id);
             std::cerr << "[MODULE-LOAD]   " << func_name << " -> index " << func_index
@@ -4215,6 +4249,7 @@ Value VM::loadScript(const std::string& path) {
             .function_index = fnIdx,
             .chunk_index = 0,
             .chunk = chunk.get(),
+            .chunk_ref = chunk,
             .module_globals = nullptr,
             .upvalues = {}
           });

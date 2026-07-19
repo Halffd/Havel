@@ -50,7 +50,8 @@ bool isClosed() const { return !is_open; }
 struct RuntimeClosure {
     uint32_t function_index = 0;
     uint32_t chunk_index = 0;
-    const BytecodeChunk* chunk = nullptr;
+    const BytecodeChunk* chunk = nullptr;       // raw pointer for fast execution path
+    std::shared_ptr<BytecodeChunk> chunk_ref;   // strong ref keeping chunk alive
     std::shared_ptr<std::unordered_map<std::string, Value>> module_globals;
     std::vector<std::shared_ptr<UpvalueCell>> upvalues;
 };

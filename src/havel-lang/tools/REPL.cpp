@@ -944,6 +944,7 @@ vm_->storeReplChunk(sharedChunk);
             .function_index = fnIdx,
             .chunk_index = 0,
             .chunk = sharedChunk.get(),
+            .chunk_ref = sharedChunk,
             .module_globals = nullptr,
             .upvalues = {}
           });

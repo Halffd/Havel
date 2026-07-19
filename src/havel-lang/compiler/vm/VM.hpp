@@ -760,10 +760,11 @@ VM(const HostContext &ctx, const VMConfig& cfg);
 // @param function_id Bytecode function index to execute
 // @param closure_id Closure context (0 for plain functions)
 // @param args Arguments to pass to the function
+// @param fallback_chunk Optional chunk to use when closure chunk is unavailable (e.g. hotkey_chunk after reload)
 // @return GoroutineCallResult indicating success and execution mode
 enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
 GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id,
-    const std::vector<Value> &args);
+    const std::vector<Value> &args, const BytecodeChunk* fallback_chunk = nullptr);
 
   
   // Track which fiber is waiting on a specific thread
@@ -1229,12 +1230,18 @@ bool isLazyModuleLoaded(const std::string &name) const;
         }
         current_chunk = chunk.get();
     }
-void storePersistentChunk(std::shared_ptr<BytecodeChunk> chunk) {
+ void storePersistentChunk(std::shared_ptr<BytecodeChunk> chunk) {
         persistent_chunks_.push_back(std::move(chunk));
         if (persistent_chunks_.size() > 64) {
             persistent_chunks_.erase(persistent_chunks_.begin());
         }
 }
+
+    // Resolve the shared_ptr that owns `raw`, so callers can pin a chunk alive
+    // while holding only a raw pointer (e.g. RuntimeClosure::chunk).
+    // Returns nullptr if no VM-owned shared_ptr currently references `raw`.
+    // Important: a null return strongly implies `raw` is already dangling.
+    std::shared_ptr<BytecodeChunk> findOwningChunk(const BytecodeChunk* raw) const;
 
         void clearPersistentChunks() {
             persistent_chunks_.clear();

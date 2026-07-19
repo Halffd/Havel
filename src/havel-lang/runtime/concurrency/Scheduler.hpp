@@ -163,7 +163,7 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
   // Hotkey reset fields (stored from registration for reuse)
   uint32_t hotkey_function_id = 0;
   uint32_t hotkey_closure_id = 0;
-  const class BytecodeChunk* hotkey_chunk = nullptr;
+  std::shared_ptr<class BytecodeChunk> hotkey_chunk;
   std::vector<Value> hotkey_args;
     HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;
     std::string hotkey_alias;

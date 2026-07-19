@@ -1101,10 +1101,8 @@ case OpCode::CLOSURE: {
     closure.function_index = function_index;
     closure.upvalues.reserve(target->upvalues.size());
     for (const auto &descriptor : target->upvalues) {
-        std::cerr << "  Creating upvalue: index=" << descriptor.index << " captures_local=" << descriptor.captures_local << std::endl;
         if (descriptor.captures_local) {
             uint32_t abs = this->toAbsoluteLocal(descriptor.index);
-            std::cerr << "  abs local index=" << abs << " locals_base=" << currentFrame().locals_base << std::endl;
             this->ensureLocalIndex(abs);
             auto open_it = open_upvalues.find(abs);
             if (open_it == open_upvalues.end()) {
@@ -1138,11 +1136,33 @@ case OpCode::CLOSURE: {
   if (main_chunk_ && current_chunk != main_chunk_.get()) {
     closure_globals = std::make_shared<std::unordered_map<std::string, Value>>(globals);
   }
+
+  // Pin the chunk so the closure's raw `chunk` pointer cannot dangle when
+  // main_chunk_ / persistent_chunks_ get replaced on script reload.
+  std::shared_ptr<BytecodeChunk> chunk_pin = findOwningChunk(current_chunk);
+  if (!chunk_pin && current_chunk) {
+      // If the VM has no shared_ptr for current_chunk, the closure cannot be
+      // safely stored across chunk replacements. Fall back to current main_chunk_
+      // if plausible (same pointer) so we still get a pin when possible.
+      if (main_chunk_.get() == current_chunk) chunk_pin = main_chunk_;
+  }
+  // Inherit chunk_ref from parent closure if we're inside one and the local
+  // pin somehow failed (defensive — keeps nested closures safe across reloads).
+  if (!chunk_pin) {
+      uint32_t parent_closure_id = currentFrame().closure_id;
+      if (parent_closure_id != 0) {
+          if (auto *pc = heap_.closure(parent_closure_id)) {
+              chunk_pin = pc->chunk_ref;
+          }
+      }
+  }
+
             pushStack(Value::makeClosureId(heap_.allocateClosure(
                 GCHeap::RuntimeClosure{.function_index = closure.function_index,
                                         .chunk_index = 0,
                                         .chunk = current_chunk,
-.module_globals = std::move(closure_globals),
+                                        .chunk_ref = std::move(chunk_pin),
+ .module_globals = std::move(closure_globals),
     .upvalues = std::move(closure.upvalues)}).id));
     break;
   }

@@ -46,10 +46,10 @@ static void print_usage(const char *prog) {
     std::cerr << "usage: " << prog << " [mode] [options] [file...]\n"
 "\n"
 "modes:\n"
-" (default) run all tests\n"
-" --smoke run bytecode smoke tests (inline C++, fast)\n"
-" --hvmoke run .hv smoke tests (scripts/smoke/*.hv)\n"
-" --scripts run .hv script tests (smoke + integration + main)\n"
+ " (default) run all tests\n"
+ " --smoke run .hv smoke tests (scripts/smoke/*.hv, self-hosted)\n"
+ " --hvmoke run .hv smoke tests (scripts/smoke/*.hv)\n"
+ " --scripts run .hv script tests (smoke + integration + main)\n"
 " --cpp run C++ unit tests via ctest\n"
 " --jit   run JIT smoke tests (requires LLVM build)\n"
 " --list list all test files without running\n"
@@ -145,10 +145,17 @@ int main(int argc, char **argv) {
 	}
 
     if (mode_all || mode_smoke) {
-        std::cout << "=== bytecode smoke ===" << std::endl;
-        int smoke_argc = static_cast<int>(smoke_args.size());
-        std::vector<char *> smoke_argv(smoke_args.begin(), smoke_args.end());
-        failures += hvtest::run_smoke_tests(smoke_argc, smoke_argv.data());
+        std::cout << "=== bytecode smoke (self-hosted) ===" << std::endl;
+        std::string smoke_dir = scripts_root + "/smoke";
+        // Use self-hosted pipeline: --run + --self-hosted-path
+        fs::path bin_path(havel_bin);
+        fs::path self_hosted_path = bin_path.parent_path().parent_path();
+        std::vector<std::string> self_hosted_flags = {
+            "--run",
+            "--self-hosted-path",
+            self_hosted_path.string()
+        };
+        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags);
     }
 
 #ifdef HAVEL_ENABLE_LLVM

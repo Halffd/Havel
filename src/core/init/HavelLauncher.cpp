@@ -1453,6 +1453,8 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.pureStdlib = true;
     } else if (arg == "--no-self-hosted") {
       cfg.noSelfHosted = true;
+    } else if (arg == "--self-hosted-path" && i + 1 < argc) {
+      cfg.vmConfig.self_hosted_modules_path = argv[++i];
     } else if (arg == "--test" || arg == "-t") {
       // Test mode - run all .hv files in a directory
       cfg.mode = LaunchConfig::Mode::TEST;

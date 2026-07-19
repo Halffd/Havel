@@ -156,6 +156,30 @@ const std::string &alias) {
 
   if (closure->isFunctionObjId()) {
     function_index = closure->asFunctionObjId();
+    // FunctionObjId indices are per-chunk. Find the chunk that owns this function.
+    if (chunk && !chunk->getFunction(function_index)) {
+      if (main_chunk_ && main_chunk_->getFunction(function_index)) {
+        chunk = main_chunk_.get();
+        chunk_ref = main_chunk_;
+      } else {
+        for (auto& pc : persistent_chunks_) {
+          if (pc && pc->getFunction(function_index)) {
+            chunk = pc.get();
+            chunk_ref = pc;
+            break;
+          }
+        }
+      }
+      if (!chunk || !chunk->getFunction(function_index)) {
+        for (auto& [_, mc] : module_chunks_) {
+          if (mc && mc->getFunction(function_index)) {
+            chunk = mc.get();
+            chunk_ref = mc;
+            break;
+          }
+        }
+      }
+    }
   } else if (closure->isClosureId()) {
     closure_id = closure->asClosureId();
     auto *closure_obj = heap_.closure(closure_id);

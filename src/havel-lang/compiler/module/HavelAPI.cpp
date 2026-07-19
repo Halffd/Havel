@@ -170,7 +170,6 @@ struct ExtensionFunctionWrapper {
 static void api_register_function(const char* module, const char* name, 
                                    HavelNativeFn fn) {
     if (!module || !name || !fn) {
-        fprintf(stderr, "[HavelAPI] Invalid arguments to register_function\n");
         return;
     }
     

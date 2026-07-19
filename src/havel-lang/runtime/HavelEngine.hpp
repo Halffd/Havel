@@ -526,7 +526,7 @@ private:
     }
     if (inline_yield_active_) return;
     auto* sched = vm_->getScheduler();
-    if (!sched || sched->runnableCount() == 0) return;
+    if (!sched) return;
 
     inline_yield_active_ = true;
 
@@ -743,8 +743,11 @@ private:
         // For SLEEP, set the deadline on the wait_handle
         if (static_cast<compiler::SuspensionReason>(lastReason) == compiler::SuspensionReason::SLEEP) {
           auto ms = reinterpret_cast<intptr_t>(lastContext);
-          g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
-          g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+          {
+            std::lock_guard wlock(g->wait_handle_mutex_);
+            g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+            g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+          }
         }
         if (sched->current() == g) {
           sched->clearCurrent();

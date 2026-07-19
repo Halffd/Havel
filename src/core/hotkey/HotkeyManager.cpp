@@ -152,10 +152,9 @@ namespace havel
     return false;
   }
 
-  bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
-  {
-    fprintf(stderr, "[HKMgr] SetHotkeyGrab alias='%s' grab=%d suspended=%d\n", alias.c_str(), grab, grabsSuspended_);
-    if (debugging::debug_hotkeys) debug("[HotkeyManager] SetHotkeyGrab alias='{}' grab={}", alias, grab);
+bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
+{
+  if (debugging::debug_hotkeys) debug("[HotkeyManager] SetHotkeyGrab alias='{}' grab={}", alias, grab);
     std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
     if (grabsSuspended_) {
       pendingGrabs_[alias] = grab;

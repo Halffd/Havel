@@ -3611,8 +3611,6 @@ case ast::NodeType::AtExpression: {
     // Load 'this' (slot 0 for instance methods, or LOAD_GLOBAL for non-class methods)
     if (!current_class_name_.empty()) {
       // Class instance method: 'this' is in local slot 0
-      fprintf(stderr, "[AtExpression] loading self (slot 0) for field '%s', current_class='%s'\n",
-              fieldId->symbol.c_str(), current_class_name_.c_str());
       emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
     } else if (isDirective && current_function->is_timer_closure) {
       // Inside interval/timeout closure: interval ID is in the first upvalue
@@ -3623,7 +3621,6 @@ case ast::NodeType::AtExpression: {
     }
     // Get the field/method from this
     { uint32_t _sid = addStringConstant(fieldId->symbol); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-    fprintf(stderr, "[AtExpression] emitting OBJECT_GET for field '%s'\n", fieldId->symbol.c_str());
     emit(OpCode::OBJECT_GET);
 
     // If it's a directive method, call it
@@ -5293,6 +5290,13 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
                 emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(objSid));
             }
 
+            // Handle optional chaining: if receiver is null, skip the call and leave null on stack
+            uint32_t opt_jump = 0;
+            if (member.isOptional) {
+                emit(OpCode::DUP);
+                opt_jump = emitJump(OpCode::JUMP_IF_NULL);
+            }
+
  // Pre-check for dynamic spread in method call
  bool method_has_dynamic_spread = false;
  for (const auto &arg : expression.args) {
@@ -5381,15 +5385,20 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
          totalArgs++;
  }
 
-             // Call method
-             uint32_t method_sid = addStringConstant(property->symbol);
-             emit(OpCode::CALL_METHOD, std::vector<Value>{
-                 Value::makeStringValId(method_sid),
-                 Value(totalArgs)});
-             in_tail_position_ = saved_tail_position;
-             return;
- }
- // Fall through to instance-style call for non-identifier objects
+// Call method
+              uint32_t method_sid = addStringConstant(property->symbol);
+              emit(OpCode::CALL_METHOD, std::vector<Value>{
+                  Value::makeStringValId(method_sid),
+                  Value(totalArgs)});
+              
+              if (member.isOptional) {
+                  patchJump(opt_jump,
+                      static_cast<uint32_t>(current_function->instructions.size()));
+              }
+              in_tail_position_ = saved_tail_position;
+              return;
+  }
+  // Fall through to instance-style call for non-identifier objects
 
  // Instance-style method call on runtime value (e.g., nums.map(double), m.moveTo(...), "hello".len(), arr.len()).
     // Always emit CALL_METHOD - the VM will dispatch based on runtime type.

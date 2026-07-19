@@ -385,10 +385,6 @@ if (instanceObj) {
                   }
                 }
                 if (bf) {
-                  fprintf(stderr, "[CALL_METHOD] found fn %s in chunk %s, param_names.size=%zu\n",
-                          bf->name.c_str(),
-                          bf->name.size() > 0 ? "unknown" : "?",
-                          bf->param_names.size());
                 }
               } else if (it->second.isClosureId()) {
                 auto *closure = heap_.closure(it->second.asClosureId());
@@ -399,8 +395,6 @@ if (instanceObj) {
               if (bf && !bf->param_names.empty() && bf->param_names[0] == "self") {
                 wantsSelf = true;
               }
-              fprintf(stderr, "[CALL_METHOD] wantsSelf=%d isInstanceFunc=%d bf=%p\n",
-                      (int)wantsSelf, (int)isInstanceFunc, (void*)bf);
               isInstanceFunc = !wantsSelf;
             }
           } else if (it->second.isObjectId()) {
@@ -426,13 +420,9 @@ if (instanceObj) {
       }
     }
 
-    // 0.5 Check __class/__struct prototype for class/struct methods first
+// 0.5 Check __class/__struct prototype for class/struct methods first
     if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
       auto *classProto = heap_.object(receiver.asObjectId());
-fprintf(stderr, "[CALL_METHOD] step 0.5: method=%s receiver has __class=%d __struct=%d\n",
-                method_name.c_str(),
-                classProto ? (classProto->get("__class") != nullptr ? 1 : 0) : 0,
-                classProto ? (classProto->get("__struct") != nullptr ? 1 : 0) : 0);
       if (classProto) {
         auto *classVal = classProto->get("__class");
         if (!classVal) classVal = classProto->get("__struct");

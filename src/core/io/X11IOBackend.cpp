@@ -95,8 +95,7 @@ void X11IOBackend::SendButton(int button, bool down) {
 }
 
 bool X11IOBackend::RegisterHotkey(int keycode, int modifiers, bool isButton) {
-    fprintf(stderr, "[X11-RegisterHotkey] enter keycode=%d mods=%d isButton=%d\n", keycode, modifiers, isButton);
-    if (!display_) { fprintf(stderr, "[X11-RegisterHotkey] NO DISPLAY\n"); return false; }
+    if (!display_) return false;
     bool success = true;
     ::Window root = DefaultRootWindow(display_);
     unsigned int modVariants[] = {0, LockMask, numlockMask_, numlockMask_ | LockMask};
@@ -111,18 +110,14 @@ bool X11IOBackend::RegisterHotkey(int keycode, int modifiers, bool isButton) {
             result = XGrabKey(display_, keycode, finalMods, root, x11::XTrue,
                               GrabModeAsync, GrabModeAsync);
         }
-        fprintf(stderr, "[X11-RegisterHotkey] variant=%d finalMods=0x%x result=%d (XSuccess=%d)\n",
-                variant, finalMods, result, x11::XSuccess);
         if (result != x11::XSuccess) success = false;
     }
     XSync(display_, x11::XFalse);
-    fprintf(stderr, "[X11-RegisterHotkey] DONE success=%d\n", success);
     return success;
 }
 
 bool X11IOBackend::UnregisterHotkey(int keycode, int modifiers, bool isButton) {
-    fprintf(stderr, "[X11-UnregisterHotkey] enter keycode=%d mods=%d isButton=%d\n", keycode, modifiers, isButton);
-    if (!display_) { fprintf(stderr, "[X11-UnregisterHotkey] NO DISPLAY\n"); return false; }
+    if (!display_) return false;
     ::Window root = DefaultRootWindow(display_);
     unsigned int modVariants[] = {0, LockMask, numlockMask_, numlockMask_ | LockMask};
     for (unsigned int variant : modVariants) {
@@ -132,10 +127,8 @@ bool X11IOBackend::UnregisterHotkey(int keycode, int modifiers, bool isButton) {
         } else {
             XUngrabKey(display_, keycode, finalMods, root);
         }
-        fprintf(stderr, "[X11-UnregisterHotkey] variant=%d finalMods=0x%x done\n", variant, finalMods);
     }
     XSync(display_, x11::XFalse);
-    fprintf(stderr, "[X11-UnregisterHotkey] DONE\n");
     return true;
 }
 

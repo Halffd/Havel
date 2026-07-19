@@ -1081,8 +1081,9 @@ void VM::registerDefaultHostFunctions() {
 {
   static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
   if (_trace) {
-    fprintf(stderr, "[CYCLE] sleep host: scheduler_=%d current_executing_fiber_=%p duration=%ldms\n",
-            scheduler_ != nullptr, (void*)current_executing_fiber_, (long)*duration_ms);
+    (void)scheduler_;
+    (void)current_executing_fiber_;
+    (void)duration_ms;
   }
 }
 

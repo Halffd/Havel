@@ -367,6 +367,22 @@ for (const auto &statement : program.body) {
         continue;
     }
 
+    // First pass: compile all non-function statements (variable assignments, use statements, etc.)
+    // This ensures module-level variables are initialized before functions capture them.
+    if (statement->kind != ast::NodeType::FunctionDeclaration &&
+        statement->kind != ast::NodeType::DecoratorStatement) {
+      if (lastStmtIsExpr && statement.get() == lastRegularStmt) {
+        enterTailPosition();
+        clearTailCallFlag();
+      }
+      compileStatement(*statement);
+      if (lastStmtIsExpr && statement.get() == lastRegularStmt) {
+        exitTailPosition();
+      }
+      continue;
+    }
+
+    // Second pass: handle function declarations
     if (statement->kind == ast::NodeType::FunctionDeclaration) {
         const auto &functionDecl =
             static_cast<const ast::FunctionDeclaration &>(*statement);
@@ -456,9 +472,9 @@ for (const auto &statement : program.body) {
                 emit(OpCode::POP);
             }
 
-        emit(OpCode::POP);
+            emit(OpCode::POP);
+        }
         continue;
-    }
     }
 
   if (lastStmtIsExpr && statement.get() == lastRegularStmt) {

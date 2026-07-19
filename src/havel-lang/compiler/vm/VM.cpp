@@ -4258,7 +4258,7 @@ Value VM::loadScript(const std::string& path) {
     }
   }
 
-  // Restore caller's execution state (but keep the merged globals)
+  // Restore caller's execution state and globals
   stack = std::move(saved_stack);
   locals = std::move(saved_locals);
   immutable_locals_.clear();
@@ -4268,6 +4268,13 @@ Value VM::loadScript(const std::string& path) {
   has_current_exception_ = saved_exception;
   current_exception_ = saved_exception_val;
   current_script_dir_ = prev_script_dir;
+
+  // Restore caller's globals
+  globals = std::move(globals_stack_.back());
+  globals_stack_.pop_back();
+  globals["_G"] = old_g;
+  globals_mirror_object_id_ = old_mirror_id;
+  immutable_globals_ = saved_immutable_globals;
 
   modules_loading_.erase(canonicalKey);
 

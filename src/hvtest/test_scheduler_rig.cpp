@@ -923,12 +923,11 @@ static void test_loadFiberState_restores_current_chunk_from_top_frame() {
 static void test_requeueFront_resets_state_and_requeues() {
     auto& sched = Scheduler::instance();
 
-    uint32_t gid = sched.spawnHotkey(7, {Value::makeInt(42)}, 5, "hk_requeue");
+    uint32_t gid = sched.spawnHotkey(Value::makeFunctionObjId(7), {Value::makeInt(42)}, "hk_requeue");
     auto* g = sched.get(gid);
     CHECK(g != nullptr, "get() returned null");
     g->persistent = true;
-    g->hotkey_function_id = 7;
-    g->hotkey_closure_id = 5;
+    g->hotkey_callable = Value::makeClosureId(5);
     g->hotkey_args = {Value::makeInt(42)};
 
     auto* picked = sched.pickNext();
@@ -942,8 +941,10 @@ static void test_requeueFront_resets_state_and_requeues() {
     sched.requeueFront(g);
     CHECK(g->state == Scheduler::GoroutineState::Created, "requeueFront should set Created");
     CHECK(g->suspension_reason == Scheduler::SuspensionReason::None, "reason should be None");
-    CHECK_EQ(g->function_id, 7u, "function_id should be restored from hotkey_args");
-    CHECK_EQ(g->closure_id, 5u, "closure_id should be restored from hotkey_args");
+    // requeueFront restores `callable` from `hotkey_callable` — the (function_id,
+    // closure_id) are re-derived by VM::startGoroutineCall at resume time.
+    CHECK(g->callable.isClosureId(), "callable should be restored from hotkey_callable");
+    CHECK_EQ(g->callable.asClosureId(), 5u, "callable should equal hotkey_callable");
     CHECK_EQ(g->locals.size(), 1u, "locals should be repopulated from hotkey_args");
     CHECK_EQ(g->locals[0].asInt(), 42, "locals[0] should be hotkey_args[0]");
     CHECK_EQ(g->stack.size(), 1u, "stack should be repopulated from hotkey_args for persistent goroutine");
@@ -960,7 +961,7 @@ static void test_requeueFront_resets_state_and_requeues() {
 static void test_requeueFront_non_persistent_clears_args() {
     auto& sched = Scheduler::instance();
 
-    uint32_t gid = sched.spawn(3, {Value::makeInt(99)}, 0, "nonpersistent");
+    uint32_t gid = sched.spawn(Value::makeFunctionObjId(3), {Value::makeInt(99)}, "nonpersistent");
     auto* g = sched.get(gid);
 
     auto* picked = sched.pickNext();
@@ -968,7 +969,9 @@ static void test_requeueFront_non_persistent_clears_args() {
     sched.clearCurrent();
 
     sched.requeueFront(g);
-    CHECK_EQ(g->function_id, 3u, "function_id preserved for non-persistent");
+    // Non-persistent: callable is preserved from spawn
+    CHECK(g->callable.isFunctionObjId(), "callable should be preserved for non-persistent");
+    CHECK_EQ(g->callable.asFunctionObjId(), 3u, "callable preserves function index");
     CHECK(g->locals.empty(), "non-persistent requeueFront should not populate locals from hotkey_args");
 
     auto* re_picked = sched.pickNext();
@@ -984,7 +987,7 @@ static void test_wakeHotkey_drop_while_pending() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Drop;
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(10)};
 
     auto* picked = sched.pickNext();
@@ -1008,7 +1011,7 @@ static void test_wakeHotkey_drop_while_suspended() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Drop;
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(10)};
 
     auto* picked = sched.pickNext();
@@ -1030,7 +1033,7 @@ static void test_wakeHotkey_replace_while_pending() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Replace;
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(10)};
 
     auto* picked = sched.pickNext();
@@ -1053,7 +1056,7 @@ static void test_wakeHotkey_replace_while_suspended() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Replace;
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(5)};
 
     auto* picked = sched.pickNext();
@@ -1075,7 +1078,7 @@ static void test_wakeHotkey_queue_always_wakes() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Queue;
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(1)};
 
     auto* picked = sched.pickNext();
@@ -1098,7 +1101,7 @@ static void test_wakeHotkey_coalesce_while_pending() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Coalesce;
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(100)};
 
     auto* picked = sched.pickNext();
@@ -1121,7 +1124,7 @@ static void test_wakeHotkey_coalesce_pending_no_args() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Coalesce;
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(50)};
 
     auto* picked = sched.pickNext();
@@ -1143,7 +1146,7 @@ static void test_wakeHotkey_coalesce_while_suspended() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Coalesce;
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(1)};
 
     auto* picked = sched.pickNext();
@@ -1171,7 +1174,7 @@ static void test_wakeHotkeyByAlias_finds_matching() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_alias = "my_key";
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {};
     g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -1219,12 +1222,12 @@ static void test_wakeHotkeyByAlias_multiple_same_alias() {
 
     go1->persistent = true;
     go1->hotkey_alias = "shared_key";
-    go1->hotkey_function_id = 1;
+    go1->hotkey_callable = Value::makeFunctionObjId(1);
     go1->hotkey_policy = HotkeyPolicy::Drop;
 
     go2->persistent = true;
     go2->hotkey_alias = "shared_key";
-    go2->hotkey_function_id = 1;
+    go2->hotkey_callable = Value::makeFunctionObjId(1);
     go2->hotkey_policy = HotkeyPolicy::Drop;
 
     auto* p1 = sched.pickNext();
@@ -1254,12 +1257,12 @@ static void test_wakeHotkeyByAlias_with_drop_policy_only_wakes_suspended() {
 
     go1->persistent = true;
     go1->hotkey_alias = "drop_key";
-    go1->hotkey_function_id = 1;
+    go1->hotkey_callable = Value::makeFunctionObjId(1);
     go1->hotkey_policy = HotkeyPolicy::Drop;
 
     go2->persistent = true;
     go2->hotkey_alias = "drop_key";
-    go2->hotkey_function_id = 1;
+    go2->hotkey_callable = Value::makeFunctionObjId(1);
     go2->hotkey_policy = HotkeyPolicy::Drop;
 
     auto* p1 = sched.pickNext();
@@ -1287,15 +1290,14 @@ static void test_persistent_goroutine_fields() {
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Replace;
     g->hotkey_alias = "test_alias";
-    g->hotkey_function_id = 5;
-    g->hotkey_closure_id = 3;
+    g->hotkey_callable = Value::makeFunctionObjId(5);
+
     g->hotkey_args = {Value::makeInt(77)};
 
     CHECK(g->persistent == true, "persistent should be true");
     CHECK(g->hotkey_policy == HotkeyPolicy::Replace, "policy should be Replace");
     CHECK(g->hotkey_alias == "test_alias", "alias mismatch");
-    CHECK_EQ(g->hotkey_function_id, 5u, "hotkey_function_id mismatch");
-    CHECK_EQ(g->hotkey_closure_id, 3u, "hotkey_closure_id mismatch");
+    CHECK(g->hotkey_callable.isFunctionObjId(), "hotkey_callable should be a function id"); CHECK_EQ(g->hotkey_callable.asFunctionObjId(), 5u, "hotkey_function_id mismatch");
     CHECK_EQ(g->hotkey_args.size(), 1u, "hotkey_args should have 1 element");
     CHECK_EQ(g->hotkey_args[0].asInt(), 77, "hotkey_args[0] value mismatch");
 
@@ -1328,7 +1330,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(42)}, 0, "rig_park");
 auto* g = sched.get(gid);
 g->persistent = true;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(42)};
 g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -1358,7 +1360,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(10)}, 0, "rig_wake");
 auto* g = sched.get(gid);
 g->persistent = true;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(10)};
 g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -1385,7 +1387,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(7)}, 0, "rig_repark");
 auto* g = sched.get(gid);
 g->persistent = true;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(7)};
 g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -1424,7 +1426,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(1)}, 0, "rig_cycle");
 auto* g = sched.get(gid);
 g->persistent = true;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(1)};
 g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -1470,7 +1472,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(5)}, 0, "rig_drop_run");
 auto* g = sched.get(gid);
 g->persistent = true;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(5)};
 g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -1508,7 +1510,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(1)}, 0, "rig_replace");
 auto* g = sched.get(gid);
 g->persistent = true;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(1)};
 g->hotkey_policy = HotkeyPolicy::Replace;
 
@@ -1535,7 +1537,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(0)}, 0, "rig_alias");
 auto* g = sched.get(gid);
 g->persistent = true;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(0)};
 g->hotkey_policy = HotkeyPolicy::Drop;
 g->hotkey_alias = "Ctrl+A";
@@ -1577,7 +1579,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(0)}, 0, "rig_rapid");
 auto* g = sched.get(gid);
 g->persistent = true;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(0)};
 g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -1617,7 +1619,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(10)}, 0, "rig_coal");
 auto* g = sched.get(gid);
 g->persistent = true;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(10)};
 g->hotkey_policy = HotkeyPolicy::Coalesce;
 
@@ -1654,7 +1656,7 @@ auto& sched = Scheduler::instance();
 uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(1)}, 0, "rig_nonpersist");
 auto* g = sched.get(gid);
 g->persistent = false;
-g->hotkey_function_id = 1;
+g->hotkey_callable = Value::makeFunctionObjId(1);
 g->hotkey_args = {Value::makeInt(1)};
 g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -2315,7 +2317,7 @@ static void test_requeueFront_fiber_state_reset() {
     uint32_t gid = sched.spawnHotkey(2, {Value::makeInt(55)}, 0, "fiber_reset");
     auto* g = sched.get(gid);
     g->persistent = true;
-    g->hotkey_function_id = 2;
+    g->hotkey_callable = Value::makeFunctionObjId(2);
     g->hotkey_args = {Value::makeInt(55)};
 
     auto* picked = sched.pickNext();
@@ -2345,7 +2347,7 @@ static void test_wakeHotkey_queue_while_suspended() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_policy = HotkeyPolicy::Queue;
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_args = {Value::makeInt(1)};
 
     auto* picked = sched.pickNext();
@@ -2368,7 +2370,7 @@ static void test_wakeHotkeyByAlias_with_replace_policy() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_alias = "replace_key";
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_policy = HotkeyPolicy::Replace;
     g->hotkey_args = {Value::makeInt(0)};
 
@@ -2390,7 +2392,7 @@ static void test_wakeHotkeyByAlias_with_coalesce_policy() {
     auto* g = sched.get(gid);
     g->persistent = true;
     g->hotkey_alias = "coalesce_key";
-    g->hotkey_function_id = 1;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
     g->hotkey_policy = HotkeyPolicy::Coalesce;
     g->hotkey_args = {Value::makeInt(0)};
 
@@ -2414,7 +2416,7 @@ uint32_t normal = sched.spawn(1, {}, 0, "normal_front");
     auto* gn = sched.get(normal);
 
     g1->persistent = true;
-    g1->hotkey_function_id = 1;
+    g1->hotkey_callable = Value::makeFunctionObjId(1);
     g1->hotkey_args = {};
 
     auto* p = sched.pickNext();
@@ -2674,7 +2676,7 @@ static void test_hotkey_sleep_loop_with_retrigger() {
   uint32_t gid = sched.spawnHotkey(1, {}, 0, "hk_sleep_loop");
   auto* g = sched.get(gid);
   g->persistent = true;
-  g->hotkey_function_id = 1;
+  g->hotkey_callable = Value::makeFunctionObjId(1);
   g->hotkey_args = {};
   g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -2754,7 +2756,7 @@ static void test_hotkey_while_loop_exits_via_break() {
   uint32_t gid = sched.spawnHotkey(1, {}, 0, "hk_while_loop");
   auto* g = sched.get(gid);
   g->persistent = true;
-  g->hotkey_function_id = 1;
+  g->hotkey_callable = Value::makeFunctionObjId(1);
   g->hotkey_args = {};
   g->hotkey_policy = HotkeyPolicy::Drop;
 
@@ -2989,7 +2991,7 @@ static void test_hotkey_retrigger_during_sleep_does_not_double_wake() {
   uint32_t gid = sched.spawnHotkey(1, {}, 0, "hk_retrigger_sleep");
   auto* g = sched.get(gid);
   g->persistent = true;
-  g->hotkey_function_id = 1;
+  g->hotkey_callable = Value::makeFunctionObjId(1);
   g->hotkey_policy = HotkeyPolicy::Drop;
 
   // Park → wake → running

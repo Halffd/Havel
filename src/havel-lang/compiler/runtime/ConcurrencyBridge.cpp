@@ -209,13 +209,7 @@ Value ConcurrencyBridge::threadJoin(const std::vector<Value> &args) {
       // Main script (headless or full mode): execute goroutine synchronously
       // This drives the goroutine to completion via vm_->call()
       if (g->state == Scheduler::GoroutineState::Created) {
-        Value callee;
-        if (g->closure_id > 0) {
-          callee = Value::makeClosureId(g->closure_id);
-        } else {
-          callee = Value::makeFunctionObjId(g->function_id);
-        }
-        vm_->call(callee, g->locals);
+        vm_->call(g->callable, g->locals);
         g->state = Scheduler::GoroutineState::Done;
         if (g->fiber) {
           g->fiber->state = FiberState::DONE;

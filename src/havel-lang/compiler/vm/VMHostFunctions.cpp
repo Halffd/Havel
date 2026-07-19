@@ -1895,23 +1895,11 @@ interval_results_[*intervalIdPtr] = result;
         int ms = toInt(args[0]);
         Value closure = args[1];
 
-        uint32_t function_id = 0;
-        uint32_t closure_id = 0;
-        if (closure.isFunctionObjId()) {
-            function_id = closure.asFunctionObjId();
-        } else if (closure.isClosureId()) {
-            closure_id = closure.asClosureId();
-            auto* closure_obj = heap_.closure(closure_id);
-            if (closure_obj) {
-                function_id = closure_obj->function_index;
-            }
-        }
-
         if (!scheduler_) {
             COMPILER_THROW("update requires a scheduler");
         }
 
-    uint32_t goroutine_id = scheduler_->spawn(function_id, {}, closure_id, "update");
+    uint32_t goroutine_id = scheduler_->spawn(closure, {}, "update");
     Scheduler::Goroutine* g = scheduler_->get(goroutine_id);
     if (g) {
       g->update_interval_ms = static_cast<uint32_t>(ms);

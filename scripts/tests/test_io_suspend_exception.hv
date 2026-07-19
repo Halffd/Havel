@@ -1,0 +1,19 @@
+// Test io.suspend with exception for trigger hotkey
+use io
+
+print("Testing io.suspend with exception...")
+
+// Register a suspend hotkey: $F1
+// The $ prefix makes it a suspend hotkey
+$F1 => {
+    print("F1 pressed - toggling suspend")
+}
+
+// Register a normal hotkey: F2
+F2 => {
+    print("F2 pressed - normal action")
+}
+
+print("Registered hotkeys. Press F1 to suspend (F1 stays active), F2 should be disabled")
+print("Press F1 again to resume")
+print("Test complete!")

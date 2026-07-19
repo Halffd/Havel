@@ -1,0 +1,2 @@
+// Test $F1 syntax
+$F1 => { print("hello") }

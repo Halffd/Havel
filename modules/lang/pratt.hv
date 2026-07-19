@@ -2,6 +2,15 @@
 // Top-down operator precedence parser matching the C++ Parser.cpp architecture
 // Consumes token list from "lexer".hv, produces AST nodes from "ast".hv
 
+// Module-level parser state globals (must be before use statements for self-hosted bootstrap)
+::tokens = null
+::pos = 0
+::errors = []
+::incomplete = false
+::inMatchExpr = false
+::allowBraceSugar = true
+// _eof and _cur initialized in Parser() after imports run
+
 use { tokenize, TOKEN_TYPES, KEYWORDS, TID, TID_NAME } from "lexer"
 use { NODE_TYPES, BINARY_OPS, COMPOUND_ASSIGN_OPS, UNARY_OPS,
 Program, BlockStatement, ExpressionStatement,
@@ -243,14 +252,14 @@ IMPLICIT_CALL_STARTERS[TID.Not] = true; IMPLICIT_CALL_STARTERS[TID.Length] = tru
 // Parser object — encapsulates parsing state
 // ===================================================================
 fn Parser(tokenList) {
-  tokens = tokenList
-  pos = 0
-  errors = []
-  incomplete = false
-  inMatchExpr = false
-  allowBraceSugar = true
-  _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
-  _cur = pos < tokens.len ? tokens[pos] : _eof
+  ::tokens = tokenList
+  ::pos = 0
+  ::errors = []
+  ::incomplete = false
+  ::inMatchExpr = false
+  ::allowBraceSugar = true
+  ::_eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
+  ::_cur = pos < tokens.len ? tokens[pos] : _eof
 
   fn at(offset) {
     i = pos + offset

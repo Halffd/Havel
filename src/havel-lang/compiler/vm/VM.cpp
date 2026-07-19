@@ -1011,12 +1011,18 @@ VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t cl
     immutable_locals_.clear();
     frame_count_ = 0;
 
-    // Resolve chunk: closures carry their defining chunk
+    // Resolve chunk: closures carry their defining chunk.
+    // Prefer chunk_ref (shared_ptr) over chunk (raw) — the raw pointer
+    // can dangle when the owning chunk is replaced (e.g. script reload).
     const BytecodeChunk *resolve_chunk = current_chunk;
     if (closure_id > 0) {
         auto *closure = heap_.closure(closure_id);
-        if (closure && closure->chunk) {
-            resolve_chunk = closure->chunk;
+        if (closure) {
+            if (closure->chunk_ref) {
+                resolve_chunk = closure->chunk_ref.get();
+            } else if (closure->chunk) {
+                resolve_chunk = closure->chunk;
+            }
         }
     }
 

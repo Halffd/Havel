@@ -652,6 +652,15 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
             var_name,
             [this](uint32_t watcher_id) -> bool {
                 return evaluateCondition(watcher_id);
+            },
+            [this](uint32_t cleanup_func_id, uint32_t cleanup_ip) {
+                (void)cleanup_ip;
+                if (vm_) {
+                    try {
+                        Value cleanup_func = Value::makeFunctionObjId(cleanup_func_id);
+                        vm_->call(cleanup_func, {});
+                    } catch (...) {}
+                }
             }
         );
 

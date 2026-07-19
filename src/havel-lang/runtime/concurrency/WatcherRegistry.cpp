@@ -23,7 +23,9 @@ WatcherRegistry::WatcherId WatcherRegistry::registerWatcher(
     bool condition_result,
     const std::unordered_set<std::string>& dependencies,
     Fiber* fiber,
-    const BytecodeChunk* condition_chunk
+    const BytecodeChunk* condition_chunk,
+    uint32_t cleanup_func_id,
+    uint32_t cleanup_ip
 ) {
     if (!fiber) {
         return INVALID_WATCHER;
@@ -36,10 +38,11 @@ WatcherRegistry::WatcherId WatcherRegistry::registerWatcher(
         watcher_id = next_watcher_id_++;
     }
     
+    Watcher watcher(watcher_id, fiber, dependencies, condition_result, condition_func_id, condition_ip, condition_chunk);
+    watcher.cleanup_func_id = cleanup_func_id;
+    watcher.cleanup_ip = cleanup_ip;
     
-    watchers_.emplace(
-        watcher_id,
-        Watcher(watcher_id, fiber, dependencies, condition_result, condition_func_id, condition_ip, condition_chunk));
+    watchers_.emplace(watcher_id, std::move(watcher));
     
     // Register in reverse index: variable → watcher
     for (const auto& var_name : dependencies) {
@@ -81,7 +84,8 @@ bool WatcherRegistry::unregisterWatcher(WatcherId watcher_id) {
 
 std::vector<Fiber*> WatcherRegistry::onVariableChanged(
     const std::string& var_name,
-    std::function<bool(WatcherId)> evaluator
+    std::function<bool(WatcherId)> evaluator,
+    CleanupCallback cleanup
 ) {
     std::vector<Fiber*> fired_fibers;
     
@@ -108,9 +112,14 @@ std::vector<Fiber*> WatcherRegistry::onVariableChanged(
         
         // Edge-triggered: only fire on false→true transition
         if (!watcher.last_result && new_result) {
-            // Fire! Update state and mark fiber for resumption
             watcher.last_result = new_result;
             fired_fibers.push_back(watcher.fiber);
+        } else if (watcher.last_result && !new_result) {
+            // Cleanup: true→false transition — fire cleanup function
+            watcher.last_result = new_result;
+            if (cleanup && watcher.cleanup_func_id != 0) {
+                cleanup(watcher.cleanup_func_id, watcher.cleanup_ip);
+            }
         } else {
             // Update last result for future comparisons
             watcher.last_result = new_result;

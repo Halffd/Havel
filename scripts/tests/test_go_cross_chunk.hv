@@ -1,0 +1,18 @@
+// Regression test: spawn goroutine from imported module chunk
+use { getValue } from "cross_chunk_helper"
+use async
+
+print("=== Testing cross-chunk goroutine spawn ===")
+
+ch = async.chan()
+
+// Run a function imported from a different module chunk in a goroutine
+async.go(fn() {
+    val = getValue()
+    ch.send(val)
+})
+
+res = ch.receive()
+print("Received from cross-chunk goroutine: $res")
+assert(res == 42, "cross-chunk goroutine should return 42")
+print("cross-chunk goroutine test PASSED")

@@ -22,7 +22,7 @@ _initialized = false
 fn _ensureDpy() {
     if !_initialized {
         _dpy = x11.open(null)
-        _initialized = true
+        if _dpy != 0 { _initialized = true }
     }
     _dpy
 }

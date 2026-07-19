@@ -1,0 +1,16 @@
+// Test when block with non-hotkey statements only
+plk = false
+
+when plk == true {
+    print("body called")
+    a = 1 + 1
+    print("a =", a)
+}
+
+print("setting plk = true...")
+plk = true
+
+print("setting plk = false...")
+plk = false
+
+print("done")

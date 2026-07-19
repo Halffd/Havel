@@ -478,6 +478,6 @@ class MPV {
     }
 
     fn isPlaying() {
-        !@pause
+        not @pause
     }
 }

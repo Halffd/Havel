@@ -1269,6 +1269,42 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   LaunchConfig cfg;
   if (argc > 0)
     cfg.programName = argv[0];
+
+  // Read logging config from environment variables first
+  if (const char* env = std::getenv("HAVEL_LOG_LEVEL")) {
+    std::string level = env;
+    if (level == "debug") Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+    else if (level == "info") Logger::getInstance().setLogLevel(Logger::LOG_INFO);
+    else if (level == "warning") Logger::getInstance().setLogLevel(Logger::LOG_WARNING);
+    else if (level == "error") Logger::getInstance().setLogLevel(Logger::LOG_ERROR);
+    else if (level == "fatal") Logger::getInstance().setLogLevel(Logger::LOG_FATAL);
+  }
+  if (const char* env = std::getenv("HAVEL_LOG_FILE")) {
+    Logger::getInstance().setLogFile(env);
+  }
+  if (const char* env = std::getenv("HAVEL_LOG_NO_COLOR")) {
+    Logger::getInstance().setColoredOutput(false);
+  }
+  if (const char* env = std::getenv("HAVEL_LOG_ORIGIN_FILTER")) {
+    std::string filter = env;
+    size_t p1 = filter.find(':');
+    size_t p2 = filter.find(':', p1 + 1);
+    std::string category = (p1 != std::string::npos) ? filter.substr(0, p1) : filter;
+    std::string subsystem = "";
+    int priority = 0;
+    if (p1 != std::string::npos) {
+      if (p2 != std::string::npos) {
+        subsystem = filter.substr(p1 + 1, p2 - p1 - 1);
+        priority = std::stoi(filter.substr(p2 + 1));
+      } else {
+        subsystem = filter.substr(p1 + 1);
+      }
+    }
+    Logger::Origin origin("", "", 0, category.empty() ? nullptr : category.c_str(),
+                          subsystem.empty() ? nullptr : subsystem.c_str(), priority);
+    Logger::getInstance().setOriginFilter(origin);
+  }
+
   bool repl = false;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
@@ -1301,6 +1337,37 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
       debugging::debug_hotkeys = true;
       cfg.debugHotkeys = true;
+    } else if (arg == "--log-level" && i + 1 < argc) {
+      std::string level = argv[++i];
+      if (level == "debug") Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+      else if (level == "info") Logger::getInstance().setLogLevel(Logger::LOG_INFO);
+      else if (level == "warning") Logger::getInstance().setLogLevel(Logger::LOG_WARNING);
+      else if (level == "error") Logger::getInstance().setLogLevel(Logger::LOG_ERROR);
+      else if (level == "fatal") Logger::getInstance().setLogLevel(Logger::LOG_FATAL);
+      else error("Unknown log level: " + level);
+    } else if (arg == "--log-file" && i + 1 < argc) {
+      Logger::getInstance().setLogFile(argv[++i]);
+    } else if (arg == "--log-no-color") {
+      Logger::getInstance().setColoredOutput(false);
+    } else if (arg == "--log-origin-filter" && i + 1 < argc) {
+      std::string filter = argv[++i];
+      // Format: category[:subsystem][:priority]
+      size_t p1 = filter.find(':');
+      size_t p2 = filter.find(':', p1 + 1);
+      std::string category = (p1 != std::string::npos) ? filter.substr(0, p1) : filter;
+      std::string subsystem = "";
+      int priority = 0;
+      if (p1 != std::string::npos) {
+        if (p2 != std::string::npos) {
+          subsystem = filter.substr(p1 + 1, p2 - p1 - 1);
+          priority = std::stoi(filter.substr(p2 + 1));
+        } else {
+          subsystem = filter.substr(p1 + 1);
+        }
+      }
+      Logger::Origin origin("", "", 0, category.empty() ? nullptr : category.c_str(),
+                            subsystem.empty() ? nullptr : subsystem.c_str(), priority);
+      Logger::getInstance().setOriginFilter(origin);
     } else if (arg == "--diff" || arg == "-diff") {
       cfg.diffBytecode = true;
       cfg.debugBytecode = true;
@@ -1695,6 +1762,16 @@ Options:
   --enable-service NAME  Include service
   --disable-service NAME Exclude service
   --list-services     List available services
+  --log-level LEVEL     Set log level: debug, info, warning, error, fatal
+  --log-file PATH       Set log file path
+  --log-no-color        Disable colored output
+  --log-origin-filter   Filter by origin: category[:subsystem][:priority]
+
+Environment variables:
+  HAVEL_LOG_LEVEL          Same as --log-level
+  HAVEL_LOG_FILE           Same as --log-file
+  HAVEL_LOG_NO_COLOR       Same as --log-no-color
+  HAVEL_LOG_ORIGIN_FILTER  Same as --log-origin-filter
 
 Modes:
   havel                   - Start REPL (full features)

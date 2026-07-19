@@ -1,6 +1,8 @@
 // log.hv — structured logging wrapping C++ log.* host bridge
 // Host bridge: log.info, log.error, log.warn, log.debug, log.critical,
-//              log.get, log.set, log.history, log.log
+//              log.get, log.set, log.history, log.log,
+//              log.debugOrigin, log.infoOrigin, log.warnOrigin, log.errorOrigin, log.criticalOrigin,
+//              log.setOriginFilter, log.clearOriginFilter
 
 // ============================================================
 // Core level functions — thin wrappers over C++ bridge
@@ -13,6 +15,37 @@ fn debug(msg) { log.debug(msg) }
 fn critical(msg) { log.critical(msg) }
 
 // ============================================================
+// Origin-based logging with filtering support
+// Origin struct: {category, subsystem, priority}
+// Filter: category[:subsystem][:priority]
+// ============================================================
+
+// Set origin filter - only logs matching this origin will be output
+// Format: "category[:subsystem][:priority]"
+fn setOriginFilter(filter) { log.setOriginFilter(filter) }
+
+// Clear origin filter
+fn clearOriginFilter() { log.clearOriginFilter() }
+
+// Origin-based logging functions
+fn debugOrigin(origin, msg) { log.debugOrigin(origin, msg) }
+fn infoOrigin(origin, msg) { log.infoOrigin(origin, msg) }
+fn warnOrigin(origin, msg) { log.warnOrigin(origin, msg) }
+fn errorOrigin(origin, msg) { log.errorOrigin(origin, msg) }
+fn criticalOrigin(origin, msg) { log.criticalOrigin(origin, msg) }
+
+// Helper to create origin struct
+// Usage: log.debugOrigin(log.origin("hotkey", "EventListener", 1), "message")
+fn origin(category, subsystem, priority) {
+  {category: category, subsystem: subsystem, priority: priority}
+}
+
+// Convenience for current location
+fn here(category, subsystem, priority) {
+  {category: category, subsystem: subsystem, priority: priority, file: __FILE__, line: __LINE__, function: __FUNCTION__}
+}
+
+// ============================================================
 // File/target control
 // ============================================================
 
@@ -21,6 +54,7 @@ fn getPath() { log.get() }
 fn setPath(path) { log.set(path) }
 
 fn toStdout() { log.set(0) }
+
 fn toStderr() { log.set(1) }
 
 // ============================================================
@@ -32,9 +66,9 @@ fn history() { log.history() }
 fn dumpHistory() {
  entries = log.history()
  for e in entries {
-  print(e)
+   print(e)
  }
-}
+ }
 
 // ============================================================
 // Raw log to specific target (file, stdout, stderr)

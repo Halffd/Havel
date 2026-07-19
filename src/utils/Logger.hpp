@@ -23,6 +23,28 @@ public:
         LOG_FATAL   = HAVEL_LOG_FATAL
     };
 
+    // Debug origin for structured logging with filtering
+    struct Origin {
+        const char* file = nullptr;
+        const char* function = nullptr;
+        int line = 0;
+        const char* category = nullptr;      // e.g., "hotkey", "io", "vm", "gc"
+        const char* subsystem = nullptr;     // e.g., "EventListener", "IO", "Scheduler"
+        int priority = 0;                    // 0 = always, 1 = verbose, 2 = debug
+        
+        constexpr Origin(const char* f = nullptr, const char* fn = nullptr, int l = 0,
+                        const char* cat = nullptr, const char* sub = nullptr, int p = 0)
+            : file(f), function(fn), line(l), category(cat), subsystem(sub), priority(p) {}
+    };
+    
+    // Helper macro to create origin from current location
+    // Usage: HAVEL_LOG_ORIGIN("hotkey", "EventListener", 1)
+    // Creates: Origin(__FILE__, __func__, __LINE__, "hotkey", "EventListener", 1)
+    
+    // Convenience macro for creating origin at call site
+    #define HAVEL_LOG_ORIGIN(cat, sub, pri) \
+        Logger::Origin(__FILE__, __func__, __LINE__, cat, sub, pri)
+    
     static Logger& getInstance() {
         static Logger instance;
         return instance;
@@ -80,8 +102,128 @@ public:
         return result;
     }
 
+    // Origin-based filtering
+    void setOriginFilter(const Origin& filter) {
+        HavelLogOrigin cFilter = {filter.file, filter.function, filter.line, 
+                                  filter.category, filter.subsystem, filter.priority};
+        HavelLogger_setOriginFilter(handle(), &cFilter);
+    }
+
+    void clearOriginFilter() {
+        HavelLogger_clearOriginFilter(handle());
+    }
+
+    // Standard logging methods
     void debug(const std::string& message) {
         HavelLogger_debug(handle(), message.c_str());
+    }
+
+    // Origin-based debug logging with filtering support
+    template<typename... Args>
+    void debugOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
+        try {
+            #ifdef __cpp_lib_format
+                auto msg = std::vformat(fmt, std::make_format_args(args...));
+            #else
+                auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+            #endif
+            HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line,
+                                      origin.category, origin.subsystem, origin.priority};
+            HavelLogger_debugOrigin(handle(), &cOrigin, "%s", msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in debugOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+        }
+    }
+
+    template<typename... Args>
+    void infoOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
+        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
+                                  origin.category, origin.subsystem, origin.priority};
+        try {
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, std::make_format_args(args...));
+#else
+            auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+#endif
+            HavelLogger_infoOrigin(handle(), &cOrigin, msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in infoOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+        }
+    }
+
+    template<typename... Args>
+    void warningOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
+        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
+                                  origin.category, origin.subsystem, origin.priority};
+        try {
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, std::make_format_args(args...));
+#else
+            auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+#endif
+            HavelLogger_warningOrigin(handle(), &cOrigin, msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in warningOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+        }
+    }
+
+    template<typename... Args>
+    void errorOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
+        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
+                                  origin.category, origin.subsystem, origin.priority};
+        try {
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, std::make_format_args(args...));
+#else
+            auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+#endif
+            HavelLogger_errorOrigin(handle(), &cOrigin, msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in errorOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+        }
+    }
+
+    template<typename... Args>
+    void fatalOrigin(const Origin& origin, const std::string& fmt, Args&&... args) {
+        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
+                                  origin.category, origin.subsystem, origin.priority};
+        try {
+#ifdef __cpp_lib_format
+            auto msg = std::vformat(fmt, std::make_format_args(args...));
+#else
+            auto msg = fmt::vformat(fmt, fmt::make_format_args(args...));
+#endif
+            HavelLogger_fatalOrigin(handle(), &cOrigin, msg.c_str());
+        } catch (const std::exception& e) {
+            HavelLogger_errorf(handle(), "Logger format error in fatalOrigin(): %s | Original format: %s", e.what(), fmt.c_str());
+        }
+    }
+
+    // Non-template overloads for pre-formatted messages
+    void debugOrigin(const Origin& origin, const std::string& message) {
+        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
+                                  origin.category, origin.subsystem, origin.priority};
+        HavelLogger_debugOrigin(handle(), &cOrigin, "%s", message.c_str());
+    }
+    void infoOrigin(const Origin& origin, const std::string& message) {
+        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
+                                  origin.category, origin.subsystem, origin.priority};
+        HavelLogger_infoOrigin(handle(), &cOrigin, "%s", message.c_str());
+    }
+    void warningOrigin(const Origin& origin, const std::string& message) {
+        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
+                                  origin.category, origin.subsystem, origin.priority};
+        HavelLogger_warningOrigin(handle(), &cOrigin, "%s", message.c_str());
+    }
+    void errorOrigin(const Origin& origin, const std::string& message) {
+        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
+                                  origin.category, origin.subsystem, origin.priority};
+        HavelLogger_errorOrigin(handle(), &cOrigin, "%s", message.c_str());
+    }
+    void fatalOrigin(const Origin& origin, const std::string& message) {
+        HavelLogOrigin cOrigin = {origin.file, origin.function, origin.line, 
+                                  origin.category, origin.subsystem, origin.priority};
+        HavelLogger_fatalOrigin(handle(), &cOrigin, "%s", message.c_str());
     }
 
     void info(const std::string& message) {

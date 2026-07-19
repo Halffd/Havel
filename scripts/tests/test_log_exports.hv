@@ -1,0 +1,11 @@
+use log
+print("log module loaded")
+print(log.debugOrigin)
+print(log.infoOrigin)
+print(log.warnOrigin)
+print(log.errorOrigin)
+print(log.fatalOrigin)
+print(log.setOriginFilter)
+print(log.clearOriginFilter)
+print(log.origin)
+print(log.here)

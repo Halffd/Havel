@@ -3348,6 +3348,15 @@ bool VM::ensureModuleLoaded(const std::string &name) {
 }
 
 Value VM::loadModule(const std::string& path) {
+  // Local variables needed by all return paths
+  std::unordered_set<std::string> inheritedGlobalNames;
+  std::unordered_map<std::string, Value> inheritedGlobalValues;
+  std::shared_ptr<std::unordered_map<std::string, Value>> moduleGlobalsSnapshot;
+  std::unordered_set<std::string> saved_immutable_globals = immutable_globals_;
+  uint32_t old_mirror_id = globals_mirror_object_id_;
+  Value old_g = globals["_G"];
+
+
     // Check cache via canonical ModuleLoader
   if (moduleLoader_.isCached(path)) {
     Value cachedVal;
@@ -3771,9 +3780,6 @@ Value VM::loadModule(const std::string& path) {
     // Execute the module in a sandboxed globals context
   // Save current globals state
   globals_stack_.push_back(globals);
-    auto saved_immutable_globals = immutable_globals_;
-    auto old_mirror_id = globals_mirror_object_id_;
-    Value old_g = globals["_G"];
 
     // Save caller's execution state (stack, locals, frames, chunk, exception)
     auto saved_stack = stack;
@@ -3786,8 +3792,6 @@ Value VM::loadModule(const std::string& path) {
 
   // Fresh globals for the module — populate with host globals so
   // the module can call print(), len(), str, etc.
-  std::unordered_set<std::string> inheritedGlobalNames;
-  std::unordered_map<std::string, Value> inheritedGlobalValues;
   globals.clear();
     // Register host function globals into sandbox (print, len, str, etc.)
     for (const auto& [name, value] : host_function_globals_) {
@@ -3824,7 +3828,6 @@ Value VM::loadModule(const std::string& path) {
     // 3. Restoring for cached module loads
     // NOTE: We create a second snapshot AFTER __main__ for exports/caching,
     // since module-level variables like 'flags = DebugFlags()' are set during __main__.
-    auto moduleGlobalsSnapshot = std::make_shared<std::unordered_map<std::string, Value>>(globals);
 
     // Populate module globals with top-level functions BEFORE running the module,
     // so that functions can call sibling top-level functions during module initialization.
@@ -3854,9 +3857,8 @@ Value VM::loadModule(const std::string& path) {
         // Restore everything on error
         globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
-        globals["_G"] = old_g;
-        globals_mirror_object_id_ = old_mirror_id;
-        immutable_globals_ = saved_immutable_globals;
+  globals["_G"] = old_g;
+  globals_mirror_object_id_ = old_mirror_id;
         stack = std::move(saved_stack);
         locals = std::move(saved_locals);
         immutable_locals_.clear();
@@ -3897,9 +3899,8 @@ frame_count_++;
         // Restore caller's globals and execution state on error
 globals = std::move(globals_stack_.back());
         globals_stack_.pop_back();
-        globals["_G"] = old_g;
-        globals_mirror_object_id_ = old_mirror_id;
-        immutable_globals_ = saved_immutable_globals;
+  globals["_G"] = old_g;
+  globals_mirror_object_id_ = old_mirror_id;
         stack = std::move(saved_stack);
         locals = std::move(saved_locals);
         immutable_locals_.clear();
@@ -3920,6 +3921,17 @@ globals = std::move(globals_stack_.back());
     // This includes runtime variables like 'flags = DebugFlags()'.
     // Use this for wrapping exports and for cached module loads.
     auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+
+    // Update all closures in the module's globals to use this snapshot as their module_globals.
+    // This allows them to access module-level variables (like 'errors = []') when called later.
+    for (auto& [name, value] : globals) {
+        if (value.isClosureId()) {
+            auto* closure = heap_.closure(value.asClosureId());
+            if (closure) {
+                closure->module_globals = moduleGlobalsForCache;
+            }
+        }
+    }
 
     // Materialize chunk-relative values into heap-stable values before
     // restoring the caller's chunk. StringValId and FunctionObjId are
@@ -4006,9 +4018,8 @@ for (const auto& [name, value] : globals) {
     for (const auto &[name, value] : lazyModuleUpdates) {
         globals[name] = value;
     }
-    globals["_G"] = old_g;
+  globals["_G"] = old_g;
   globals_mirror_object_id_ = old_mirror_id;
-    immutable_globals_ = saved_immutable_globals;
     stack = std::move(saved_stack);
     locals = std::move(saved_locals);
     immutable_locals_.clear();

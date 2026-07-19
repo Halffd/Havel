@@ -3805,9 +3805,8 @@ Value VM::loadModule(const std::string& path) {
     // Auto-cache compiled chunk
     try {
         ValueSerializer serializer;
-        std::vector<uint8_t> data = serializer.serializeChunk(*chunk);
-        std::filesystem::path hvSrcPath(resolved->canonicalPath);
-        std::filesystem::path hvcPath = hvSrcPath;
+        std::vector<uint8_t> data = serializer.serializeChunk(*chunk, resolved->canonicalPath);
+        std::filesystem::path hvcPath = resolved->canonicalPath;
         hvcPath.replace_extension(".hvc");
         std::ofstream file(hvcPath, std::ios::binary);
         if (file.is_open()) {

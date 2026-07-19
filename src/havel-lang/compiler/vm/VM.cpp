@@ -3810,9 +3810,8 @@ Value VM::loadModule(const std::string& path) {
     // Auto-cache compiled chunk
     try {
         ValueSerializer serializer;
-        std::vector<uint8_t> data = serializer.serializeChunk(*chunk);
-        std::filesystem::path hvSrcPath(resolved->canonicalPath);
-        std::filesystem::path hvcPath = hvSrcPath;
+        std::vector<uint8_t> data = serializer.serializeChunk(*chunk, resolved->canonicalPath);
+        std::filesystem::path hvcPath = resolved->canonicalPath;
         hvcPath.replace_extension(".hvc");
         std::ofstream file(hvcPath, std::ios::binary);
         if (file.is_open()) {
@@ -4079,12 +4078,22 @@ for (const auto& [name, value] : globals) {
     current_exception_ = saved_exception_val;
     current_script_dir_ = prev_script_dir;
 
-    // Cache under both keys via canonical ModuleLoader
+    // Cache under both keys via canonical ModuleLoader.
     // Use the module's globals (captured before restoring caller's globals)
     // so runtime variables like 'flags = DebugFlags()' are included in the
-    // snapshot for cached loads.
-    moduleLoader_.putCacheWithGlobals(path, exports, moduleGlobalsForCache);
-    moduleLoader_.putCacheWithGlobals(canonicalKey, exports, moduleGlobalsForCache);
+    // snapshot for cached loads. Pass the source / bytecode paths so the
+    // loader can self-invalidate when either changes on disk.
+    std::string cacheSrcPath, cacheBcPath;
+    if (resolved->type == ModuleLoader::ResolvedModule::BytecodeCache) {
+        cacheBcPath = resolved->canonicalPath;
+        cacheSrcPath = resolved->sourcePath;
+    } else {
+        cacheSrcPath = resolved->canonicalPath;
+    }
+    moduleLoader_.putCacheWithGlobals(path, exports, moduleGlobalsForCache,
+                                     cacheSrcPath, cacheBcPath);
+    moduleLoader_.putCacheWithGlobals(canonicalKey, exports, moduleGlobalsForCache,
+                                     cacheSrcPath, cacheBcPath);
     // Also store in globals so GC scans it as a root
     // (the module cache is not a GC root, so cached objects can be collected)
     globals[path] = exports;

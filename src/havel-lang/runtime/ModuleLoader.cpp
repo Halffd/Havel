@@ -1,8 +1,11 @@
 #include "ModuleLoader.hpp"
 #include "c/ModulePlugin.h"
+#include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <cstdlib>
+#include <system_error>
 
 #ifndef _WIN32
 #include <dlfcn.h>
@@ -90,9 +93,15 @@ ModuleLoader::resolve(const std::string& modulePath,
   // For bare module names, try priority search
 
   // 1. Check cache (already loaded?)
-  // If already in cache, return Cached type
+  // If already in cache, return Cached type — BUT first drop the entry if the
+  // underlying source/.hvc filename has been touched since we cached it.
   if (cache_.count(modulePath) > 0) {
-    return ResolvedModule{ResolvedModule::Cached, "", modulePath};
+    if (!isFreshLocked(modulePath)) {
+      cache_.erase(modulePath);
+      freshness_.erase(modulePath);
+    } else {
+      return ResolvedModule{ResolvedModule::Cached, "", modulePath};
+    }
   }
 
   // 1b. Check self-hosted modules path first (compiled .hvc bytecode)
@@ -336,20 +345,65 @@ bool ModuleLoader::getCachedGlobals(const std::string& key, std::shared_ptr<std:
 }
 
 void ModuleLoader::putCache(const std::string& key, core::Value value) {
-    // Default: no globals snapshot
     cache_[key] = CachedModule{value, nullptr};
+}
+
+void ModuleLoader::putCache(const std::string& key, core::Value value,
+                            const std::string &sourcePath, const std::string &bytecodePath) {
+    cache_[key] = CachedModule{value, nullptr};
+    freshness_[key] = CacheFreshness{sourcePath, bytecodePath,
+                                     std::max(mtimeNs(sourcePath), mtimeNs(bytecodePath))};
 }
 
 void ModuleLoader::putCacheWithGlobals(const std::string& key, core::Value value, std::shared_ptr<std::unordered_map<std::string, core::Value>> globals) {
     cache_[key] = CachedModule{value, globals};
 }
 
+void ModuleLoader::putCacheWithGlobals(const std::string& key, core::Value value, std::shared_ptr<std::unordered_map<std::string, core::Value>> globals,
+                                       const std::string &sourcePath, const std::string &bytecodePath) {
+    cache_[key] = CachedModule{value, globals};
+    freshness_[key] = CacheFreshness{sourcePath, bytecodePath,
+                                     std::max(mtimeNs(sourcePath), mtimeNs(bytecodePath))};
+}
+
 void ModuleLoader::clearCache() {
     cache_.clear();
+    freshness_.clear();
 }
 
 void ModuleLoader::invalidate(const std::string& key) {
     cache_.erase(key);
+    freshness_.erase(key);
+}
+
+long long ModuleLoader::mtimeNs(const std::string &path) {
+    if (path.empty()) return 0;
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    auto t = fs::last_write_time(path, ec);
+    if (ec) return 0;
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        t.time_since_epoch()).count();
+}
+
+bool ModuleLoader::isFreshLocked(const std::string &key) const {
+    auto it = freshness_.find(key);
+    if (it == freshness_.end()) return true; // no hint, treat as fresh
+    const auto &h = it->second;
+    // Compare the most-recently-touched side. If both source and .hvc were
+    // recorded, just check the newer of the two (which is what we'd inspect
+    // during resolve); in practice we check both and bail if either changed.
+    if (!h.src.empty()) {
+        long long m = mtimeNs(h.src);
+        if (m != h.mtime_ns && !h.hvc.empty()) return false;
+        // For source-only entries (no .hvc), expect mtime to match.
+        if (h.hvc.empty() && m != h.mtime_ns) return false;
+    }
+    if (!h.hvc.empty()) {
+        long long m = mtimeNs(h.hvc);
+        if (m != h.mtime_ns) return false;
+    }
+    return true;
 }
 
 std::vector<core::Value> ModuleLoader::cachedValues() const {

@@ -336,6 +336,7 @@ public:
 
   // Chunk serialization
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk);
+  std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath);
   std::optional<BytecodeChunk> deserializeChunk(std::span<const uint8_t> data);
 
 private:

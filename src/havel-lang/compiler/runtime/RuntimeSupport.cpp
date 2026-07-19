@@ -5,6 +5,100 @@
 #include <cstring>
 #include <stdexcept>
 #include <iostream>
+#include <fstream>
+#include <array>
+#include <filesystem>
+
+// SHA-256 implementation (simplified, no external deps)
+namespace {
+    const uint32_t K[64] = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    };
+
+    void sha256_transform(uint32_t state[8], const uint8_t block[64]) {
+        uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
+        uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
+        uint32_t w[64];
+
+        for (int i = 0; i < 16; ++i) {
+            w[i] = (block[i*4] << 24) | (block[i*4+1] << 16) | (block[i*4+2] << 8) | block[i*4+3];
+        }
+        for (int i = 16; i < 64; ++i) {
+            uint32_t s0 = ((w[i-15] >> 7) | (w[i-15] << 25)) ^ ((w[i-15] >> 18) | (w[i-15] << 14)) ^ (w[i-15] >> 3);
+            uint32_t s1 = ((w[i-2] >> 17) | (w[i-2] << 15)) ^ ((w[i-2] >> 19) | (w[i-2] << 13)) ^ (w[i-2] >> 10);
+            w[i] = w[i-16] + s0 + w[i-7] + s1;
+        }
+
+        for (int i = 0; i < 64; ++i) {
+            uint32_t s1 = ((e >> 6) | (e << 26)) ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7));
+            uint32_t ch = (e & f) ^ (~e & g);
+            uint32_t temp1 = h + s1 + ch + K[i] + w[i];
+            uint32_t s0 = ((a >> 2) | (a << 30)) ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10));
+            uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+            uint32_t temp2 = s0 + maj;
+            h = g; g = f; f = e; e = d + temp1;
+            d = c; c = b; b = a; a = temp1 + temp2;
+        }
+        state[0] += a; state[1] += b; state[2] += c; state[3] += d;
+        state[4] += e; state[5] += f; state[6] += g; state[7] += h;
+    }
+
+    std::array<uint8_t, 32> sha256(const uint8_t* data, size_t len) {
+        uint32_t state[8] = {
+            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+        };
+        size_t pos = 0;
+        while (len >= 64) {
+            sha256_transform(state, data + pos);
+            pos += 64;
+            len -= 64;
+        }
+        uint8_t block[64] = {0};
+        memcpy(block, data + pos, len);
+        block[len] = 0x80;
+        size_t bit_len = (pos + len) * 8;
+        if (len >= 56) {
+            sha256_transform(state, block);
+            memset(block, 0, 64);
+        }
+        block[63] = bit_len & 0xFF;
+        block[62] = (bit_len >> 8) & 0xFF;
+        block[61] = (bit_len >> 16) & 0xFF;
+        block[60] = (bit_len >> 24) & 0xFF;
+        block[59] = (bit_len >> 32) & 0xFF;
+        block[58] = (bit_len >> 40) & 0xFF;
+        block[57] = (bit_len >> 48) & 0xFF;
+        block[56] = (bit_len >> 56) & 0xFF;
+        sha256_transform(state, block);
+        std::array<uint8_t, 32> out;
+        for (int i = 0; i < 8; ++i) {
+            out[i*4] = state[i] >> 24;
+            out[i*4+1] = state[i] >> 16;
+            out[i*4+2] = state[i] >> 8;
+            out[i*4+3] = state[i];
+        }
+        return out;
+    }
+
+    std::array<uint8_t, 32> sha256_file(const std::string& path) {
+        std::ifstream f(path, std::ios::binary);
+        if (!f) return {};
+        std::vector<uint8_t> buf((std::istreambuf_iterator<char>(f)), {});
+        return sha256(buf.data(), buf.size());
+    }
+
+    std::array<uint8_t, 32> sha256_string(const std::string& s) {
+        return sha256(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+    }
+}
 
 // Macro for throwing errors with source location info
 #define COMPILER_THROW(msg) \
@@ -629,23 +723,47 @@ std::optional<Value> ValueSerializer::deserializeJSON(const std::string& json) {
   return jsonToValue(json);
 }
 
-std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk) {
-  std::vector<uint8_t> data;
-  auto append = [&data](const void* ptr, size_t size) {
-    if (ptr == nullptr || size == 0) return;
-    data.insert(data.end(), static_cast<const uint8_t*>(ptr),
-                static_cast<const uint8_t*>(ptr) + size);
-  };
+std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath) {
+    std::vector<uint8_t> data;
+    auto append = [&data](const void* ptr, size_t size) {
+        if (ptr == nullptr || size == 0) return;
+        data.insert(data.end(), static_cast<const uint8_t*>(ptr),
+                    static_cast<const uint8_t*>(ptr) + size);
+    };
 
-  // Header: "HVC1" magic
-  append("HVC1", 4);
+    // Header: "HVC2" magic (version 2 with source hash)
+    append("HVC2", 4);
 
-  const auto& functions = chunk.getAllFunctions();
-  const auto& strings = chunk.getAllStrings();
+    // Version
+    uint32_t version = 2;
+    append(&version, sizeof(version));
 
-  // Number of functions (uint32_t)
-  uint32_t numFuncs = static_cast<uint32_t>(functions.size());
-  append(&numFuncs, sizeof(numFuncs));
+    // Flags (reserved)
+    uint32_t flags = 0;
+    append(&flags, sizeof(flags));
+
+    // Source path
+    std::string srcPath = sourcePath;
+    uint32_t srcPathLen = static_cast<uint32_t>(srcPath.size());
+    append(&srcPathLen, sizeof(srcPathLen));
+    if (srcPathLen > 0) append(srcPath.data(), srcPathLen);
+
+    // Source size + hash
+    uint64_t srcSize = 0;
+    std::array<uint8_t, 32> srcHash{};
+    if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+        srcSize = std::filesystem::file_size(srcPath);
+        srcHash = sha256_file(srcPath);
+    }
+    append(&srcSize, sizeof(srcSize));
+    append(srcHash.data(), srcHash.size());
+
+    const auto& functions = chunk.getAllFunctions();
+    const auto& strings = chunk.getAllStrings();
+
+    // Number of functions (uint32_t)
+    uint32_t numFuncs = static_cast<uint32_t>(functions.size());
+    append(&numFuncs, sizeof(numFuncs));
 
   // Number of strings (uint32_t)
   uint32_t numStrings = static_cast<uint32_t>(strings.size());
@@ -772,6 +890,10 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk)
     return data;
 }
 
+std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk) {
+    return serializeChunk(chunk, "");
+}
+
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const uint8_t> data) {
   BytecodeChunk chunk;
   size_t pos = 0;
@@ -783,12 +905,51 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     return true;
   };
 
-  // Check header: "HVC1" magic
+  // Check header: "HVC1" or "HVC2" magic
   if (data.size() < 4) return std::nullopt;
-  if (data[0] != 'H' || data[1] != 'V' || data[2] != 'C' || data[3] != '1') {
+  bool is_v2 = false;
+  if (data[0] == 'H' && data[1] == 'V' && data[2] == 'C' && data[3] == '2') {
+    is_v2 = true;
+  } else if (data[0] != 'H' || data[1] != 'V' || data[2] != 'C' || data[3] != '1') {
     return std::nullopt;
   }
   pos = 4;
+
+  if (is_v2) {
+    // HVC2: read version, flags, source path, source size, source hash
+    uint32_t version = 0;
+    if (!read(&version, sizeof(version))) return std::nullopt;
+    if (version != 2) return std::nullopt;
+
+    uint32_t flags = 0;
+    if (!read(&flags, sizeof(flags))) return std::nullopt;
+
+    // Source path
+    uint32_t srcPathLen = 0;
+    if (!read(&srcPathLen, sizeof(srcPathLen))) return std::nullopt;
+    std::string srcPath;
+    if (srcPathLen > 0) {
+      if (pos + srcPathLen > data.size()) return std::nullopt;
+      srcPath.assign(reinterpret_cast<const char*>(data.data() + pos), srcPathLen);
+      pos += srcPathLen;
+    }
+
+    // Source size
+    uint64_t srcSize = 0;
+    if (!read(&srcSize, sizeof(srcSize))) return std::nullopt;
+
+    // Source hash
+    std::array<uint8_t, 32> srcHash{};
+    if (!read(srcHash.data(), srcHash.size())) return std::nullopt;
+
+    // Validate hash if source path exists
+    if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+      auto actualSize = std::filesystem::file_size(srcPath);
+      if (actualSize != srcSize) return std::nullopt;
+      auto actualHash = sha256_file(srcPath);
+      if (actualHash != srcHash) return std::nullopt;
+    }
+  }
 
   // Number of functions
   uint32_t numFuncs = 0;

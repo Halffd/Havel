@@ -54,21 +54,39 @@ Scheduler::Goroutine::~Goroutine() {
 	}
 }
 
-uint32_t Scheduler::spawn(uint32_t function_id, const std::vector<Value>& args,
-  	uint32_t closure_id, const std::string& name, FiberPriority priority) {
+uint32_t Scheduler::spawn(Value callable, const std::vector<Value>& args,
+  	const std::string& name, FiberPriority priority) {
     auto g = std::make_unique<Scheduler::Goroutine>(next_goroutine_id_++, name, priority);
-    g->function_id = function_id;
-    g->closure_id = closure_id;
+    g->callable = callable;
+    g->hotkey_callable = callable;
     g->state = GoroutineState::Created;
     g->max_instructions_per_tick = (priority == FiberPriority::HOTKEY) ? hotkey_tick_instructions_ : default_tick_instructions_;
 
-    if (debugging::debug_io) ::havel::debug("[Scheduler] SPAWN: gid={} name='{}' func_id={} closure_id={} priority={}",
-                  g->id, name, function_id, closure_id, (int)priority);
+    // Pre-resolve function_id/closure_id for diagnostics and the legacy Fiber
+    // constructor (which expects an initial function index). The authoritative
+    // resolution happens in VM::startGoroutineCall via `callable` itself.
+    uint32_t init_function_id = 0;
+    if (callable.isFunctionObjId()) {
+      init_function_id = callable.asFunctionObjId();
+      g->function_id = init_function_id;
+      g->closure_id = 0;
+    } else if (callable.isClosureId()) {
+      g->closure_id = callable.asClosureId();
+      // init_function_id stays 0 — the VM will resolve it from the closure
+      // at startGoroutineCall time. The Fiber constructor only needs an
+      // initial marker; startGoroutineCall replaces the frame anyway.
+    }
 
-    g->fiber = new Fiber(g->id, function_id, 0, name);
-    if (closure_id > 0) {
+    if (debugging::debug_io) ::havel::debug("[Scheduler] SPAWN: gid={} name='{}' callable_kind={} priority={}",
+                  g->id, name,
+                  callable.isClosureId() ? "closure" :
+                  callable.isFunctionObjId() ? "function" : "other",
+                  (int)priority);
+
+    g->fiber = new Fiber(g->id, init_function_id, 0, name);
+    if (g->closure_id > 0) {
         auto& frame = g->fiber->currentFrame();
-        frame.closure_id = closure_id;
+        frame.closure_id = g->closure_id;
         frame.arg_count = static_cast<uint32_t>(args.size());
     }
 
@@ -471,8 +489,9 @@ void Scheduler::requeueFront(Goroutine* g) {
         for (const auto& arg : g->hotkey_args) {
             g->stack.push_back(arg);
         }
-    g->function_id = g->hotkey_function_id;
-    g->closure_id = g->hotkey_closure_id;
+    // Restore callable identity for the next run. VM::startGoroutineCall
+    // resolves function_id/closure_id/chunk from this Value at resume time.
+    g->callable = g->hotkey_callable;
   }
   if (g->fiber) {
     g->fiber->stack.clear();
@@ -484,11 +503,21 @@ void Scheduler::requeueFront(Goroutine* g) {
       for (const auto& arg : g->hotkey_args) {
         g->fiber->stack.push(arg);
       }
-      g->fiber->pushCall(g->hotkey_function_id,
+      // Push a placeholder frame. startGoroutineCall replaces it on resume
+      // with the real (function_id, chunk) derived from g->callable.
+      uint32_t placeholder_fn = 0;
+      if (g->callable.isFunctionObjId()) {
+        placeholder_fn = g->callable.asFunctionObjId();
+      } else if (g->callable.isClosureId()) {
+        // Will be resolved by VM at resume time; use 0 to signal "unknown
+        // until startGoroutineCall fills it in".
+        placeholder_fn = 0;
+      }
+      g->fiber->pushCall(placeholder_fn,
         static_cast<uint32_t>(g->hotkey_args.size()),
-        g->hotkey_chunk.get());
+        nullptr);
       auto& frame = g->fiber->currentFrame();
-      frame.closure_id = g->hotkey_closure_id;
+      frame.closure_id = g->callable.isClosureId() ? g->callable.asClosureId() : 0;
     }
     g->fiber->state = FiberState::CREATED;
     g->fiber->suspended_reason = ::havel::compiler::SuspensionReason::NONE;

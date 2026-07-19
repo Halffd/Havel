@@ -122,10 +122,19 @@ struct WaitHandle {
     uint32_t id;
     std::string name;
 
-    // Bytecode execution state
-    uint32_t function_id;              // Which function's bytecode (required)
-    uint32_t chunk_index;              // Which bytecode chunk (for module support)
-    uint32_t closure_id;               // Closure context (for upvalues)
+    // Single source of truth for "what to execute".
+    // The Value carries its own chunk context (via RuntimeClosure::chunk_ref)
+    // so the scheduler never needs to consult VM::current_chunk to resume.
+    Value callable;
+    // For persistent hotkeys: the "armed" callable to re-run on each trigger.
+    // Equals `callable` for normal goroutines; hotkey swap paths overwrite this.
+    Value hotkey_callable;
+
+    // Execution identity (derived from `callable` by VM at resume time; cached
+    // here for JIT path and debug logs). Do NOT set directly — always populate
+    // via VM::resolveCallable().
+    uint32_t function_id = 0;          // Which function's bytecode (required)
+    uint32_t closure_id = 0;           // Closure context (for upvalues)
     uint32_t ip;                       // Instruction pointer (resume position)
     std::vector<Value> stack;          // VM operand stack
     std::vector<Value> locals;         // Local variable storage
@@ -161,10 +170,6 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     // Used by hotkey system to avoid per-press goroutine allocation
     bool persistent = false;
   // Hotkey reset fields (stored from registration for reuse)
-  uint32_t hotkey_function_id = 0;
-  uint32_t hotkey_closure_id = 0;
-  std::shared_ptr<class BytecodeChunk> hotkey_chunk;
-  std::shared_ptr<class BytecodeChunk> spawn_chunk;
   std::vector<Value> hotkey_args;
     HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;
     std::string hotkey_alias;
@@ -207,7 +212,7 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   uint64_t update_callback_id = 0; // GC external root ID (from registerCallback), 0 = none
 
     explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL)
-        : id(id_), name(name_), function_id(0), chunk_index(0), closure_id(0), ip(0),
+        : id(id_), name(name_), ip(0),
           state(GoroutineState::Created), suspension_reason{SuspensionReason::None},
           created_time(std::chrono::steady_clock::now()),
 	max_instructions_per_tick(prio == FiberPriority::HOTKEY ? HOTKEY_MAX_INSTRUCTIONS : DEFAULT_MAX_INSTRUCTIONS),
@@ -226,18 +231,55 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   // ===== Goroutine Lifecycle =====
 
   /**
-   * Spawn a new goroutine with priority
+   * Spawn a new goroutine from any callable Value.
+   *
+   * The Value (closure, function object, or host function) is the single
+   * source of identity for the goroutine. It carries its own chunk context
+   * (via RuntimeClosure::chunk_ref) so the scheduler never needs to consult
+   * VM::current_chunk at resume time.
+   *
+   * @param callable  Value pointing to the function/closure to execute
+   * @param args      Arguments to pass to the callable
+   * @param name      Human-readable name for diagnostics
+   * @param priority  Scheduling priority
+   * @return          Goroutine ID (0 on failure)
    */
-  uint32_t spawn(uint32_t function_id, const std::vector<Value>& args,
-                 uint32_t closure_id = 0, const std::string& name = "",
+  uint32_t spawn(Value callable, const std::vector<Value>& args,
+                 const std::string& name = "",
                  FiberPriority priority = FiberPriority::NORMAL);
 
   /**
-   * Spawn a hotkey goroutine (prepended for immediate execution)
+   * spawnHotkey — same as spawn() with HOTKEY priority (prepended to hotkey
+   * queue for immediate execution on next pickNext()).
+   */
+  uint32_t spawnHotkey(Value callable, const std::vector<Value>& args,
+                        const std::string& name = "") {
+    return spawn(std::move(callable), args, name, FiberPriority::HOTKEY);
+  }
+
+  /**
+   * Legacy spawnHotkey overloads — same bridge behavior as the legacy
+   * spawn(function_id, closure_id, ...) overload. Used by test_scheduler_rig.
    */
   uint32_t spawnHotkey(uint32_t function_id, const std::vector<Value>& args,
                        uint32_t closure_id = 0, const std::string& name = "") {
     return spawn(function_id, args, closure_id, name, FiberPriority::HOTKEY);
+  }
+
+  /**
+   * Legacy spawn (function_id + closure_id) — bridges to spawn(Value).
+   *
+   * Builds a Value::makeFunctionObjId or Value::makeClosureId from the
+   * numeric IDs and delegates. Prefer the Value-based spawn() in new code.
+   * This overload exists for the test_scheduler_rig.cpp unit tests that
+   * don't have a real VM chunk to draw Values from.
+   */
+  uint32_t spawn(uint32_t function_id, const std::vector<Value>& args,
+                 uint32_t closure_id = 0, const std::string& name = "",
+                 FiberPriority priority = FiberPriority::NORMAL) {
+    Value v = closure_id > 0 ? Value::makeClosureId(closure_id)
+                            : Value::makeFunctionObjId(function_id);
+    return spawn(std::move(v), args, name, priority);
   }
 
   /**

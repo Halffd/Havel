@@ -113,6 +113,41 @@ std::shared_ptr<BytecodeChunk> VM::findOwningChunk(const BytecodeChunk* raw) con
     return nullptr;
 }
 
+Value VM::pinCallableAsClosure(Value callable) {
+    if (callable.isClosureId()) return callable;
+    if (!callable.isFunctionObjId()) return Value::makeNull();
+
+    uint32_t function_index = callable.asFunctionObjId();
+    const BytecodeChunk *chunk = current_chunk;
+    std::shared_ptr<BytecodeChunk> chunk_ref = findOwningChunk(current_chunk);
+
+    auto try_chunk = [&](const std::shared_ptr<BytecodeChunk> &candidate) {
+        if (candidate && candidate->getFunction(function_index)) {
+            chunk = candidate.get();
+            chunk_ref = candidate;
+        }
+    };
+    if (!chunk || !chunk->getFunction(function_index)) try_chunk(main_chunk_);
+    if (!chunk || !chunk->getFunction(function_index)) {
+        for (auto& pc : persistent_chunks_) try_chunk(pc);
+    }
+    if (!chunk || !chunk->getFunction(function_index)) {
+        for (auto& [_, mc] : module_chunks_) try_chunk(mc);
+    }
+
+    if (chunk && chunk->getFunction(function_index)) {
+        auto ref = heap_.allocateClosure(GCHeap::RuntimeClosure{
+            .function_index = function_index,
+            .chunk_index = 0,
+            .chunk = chunk,
+            .chunk_ref = std::move(chunk_ref),
+            .module_globals = nullptr,
+            .upvalues = {}});
+        return Value::makeClosureId(ref.id);
+    }
+    return Value::makeNull();
+}
+
 VM::~VM() {
   if (tier2_flush_on_shutdown_) {
     // Optional drain mode: let queued tier2 compiles finish before shutdown.
@@ -1003,43 +1038,95 @@ void VM::saveFiberState(Fiber *fiber) {
   // Just ensure the fiber's state reflects current execution point
 }
 
-VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
-    const std::vector<Value> &args, const BytecodeChunk* fallback_chunk) {
+VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
+    const std::vector<Value> &args) {
     // Clear VM state for fresh goroutine context
     while (!stack.empty()) stack.pop();
     locals.clear();
     immutable_locals_.clear();
     frame_count_ = 0;
 
-    // Resolve chunk: closures carry their defining chunk.
-    // Prefer chunk_ref (shared_ptr) over chunk (raw) — the raw pointer
-    // can dangle when the owning chunk is replaced (e.g. script reload).
+    // Resolve the callable's identity + chunk in ONE place.
+    // The Value is the single source of truth — no caller-side chunk pinning
+    // is needed.
+    uint32_t function_id = 0;
+    uint32_t closure_id = 0;
     const BytecodeChunk *resolve_chunk = nullptr;
-    if (closure_id > 0) {
+    std::shared_ptr<BytecodeChunk> chunk_pin;  // keeps chunk alive across ticks
+
+    if (callable.isClosureId()) {
+        closure_id = callable.asClosureId();
         auto *closure = heap_.closure(closure_id);
         if (closure) {
+            function_id = closure->function_index;
             if (closure->chunk_ref) {
                 resolve_chunk = closure->chunk_ref.get();
+                chunk_pin = closure->chunk_ref;
             } else if (closure->chunk) {
                 resolve_chunk = closure->chunk;
             }
+            // If closure has module_globals, install them so the goroutine
+            // sees imported module state correctly.
+            if (closure->module_globals) {
+                // (Module-global install handled by doCall path; goroutines
+                // typically rely on the closure's captured environment.)
+            }
         }
+    } else if (callable.isFunctionObjId()) {
+        function_id = callable.asFunctionObjId();
+        // Bare function id — search all chunks the VM knows about.
+        // Prefer current_chunk (fast path), then module/persistent chunks.
+        const BytecodeChunk *current = current_chunk;
+        if (current && current->getFunction(function_id)) {
+            resolve_chunk = current;
+            chunk_pin = findOwningChunk(current);
+        }
+        if (!resolve_chunk) {
+            if (main_chunk_ && main_chunk_->getFunction(function_id)) {
+                resolve_chunk = main_chunk_.get();
+                chunk_pin = main_chunk_;
+            } else {
+                for (auto& pc : persistent_chunks_) {
+                    if (pc && pc->getFunction(function_id)) {
+                        resolve_chunk = pc.get();
+                        chunk_pin = pc;
+                        break;
+                    }
+                }
+            }
+            if (!resolve_chunk) {
+                for (auto& [_, mc] : module_chunks_) {
+                    if (mc && mc->getFunction(function_id)) {
+                        resolve_chunk = mc.get();
+                        chunk_pin = mc;
+                        break;
+                    }
+                }
+            }
+        }
+        // Wrap as closure on the fly so upvalues/module-globals are preserved
+        // across goroutine suspensions. This mirrors the doCall path.
+        if (resolve_chunk && resolve_chunk->getFunction(function_id)) {
+            auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+                .function_index = function_id,
+                .chunk_index = 0,
+                .chunk = resolve_chunk,
+                .chunk_ref = chunk_pin,
+                .module_globals = nullptr,
+                .upvalues = {}});
+            closure_id = closureRef.id;
+        }
+    } else {
+        ::havel::error("[VM] startGoroutineCall(Value): unsupported callable kind");
+        return GoroutineCallResult::Failed;
     }
 
-    // If the closure is gone but a fallback is provided (e.g. spawn_chunk/hotkey_chunk),
-    // use it so the goroutine can still resolve its function.
-    if (!resolve_chunk || !resolve_chunk->getFunction(function_id)) {
-        if (fallback_chunk && fallback_chunk->getFunction(function_id)) {
-            resolve_chunk = fallback_chunk;
-        }
-    }
-
-    // Implicit fallback as a last resort, but print a warning
-    if (!resolve_chunk && current_chunk) {
-        if (current_chunk->getFunction(function_id)) {
-            resolve_chunk = current_chunk;
-            ::havel::warn("[VM] WARNING: goroutine resolved through current_chunk fallback. This indicates the caller failed to preserve chunk identity.");
-        }
+    // Closure population failed (e.g. closure not in heap) — last resort.
+    if (!resolve_chunk && current_chunk && current_chunk->getFunction(function_id)) {
+        resolve_chunk = current_chunk;
+        chunk_pin = findOwningChunk(current_chunk);
+        ::havel::warn("[VM] WARNING: goroutine resolved through current_chunk fallback."
+                       " Caller failed to preserve chunk identity in callable Value.");
     }
 
     if (!resolve_chunk) {
@@ -1055,6 +1142,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t cl
     }
 
     current_chunk = resolve_chunk;
+    (void)chunk_pin;  // held implicitly via the closure we allocated/looked-up
 
     func->execution_count++;
     if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
@@ -1105,6 +1193,32 @@ VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t cl
     frame_count_++;
 
     return GoroutineCallResult::Interpreter;
+}
+
+// Legacy bridge: take (function_id, closure_id, fallback_chunk) and route
+// through startGoroutineCall(Value).
+VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t closure_id,
+    const std::vector<Value> &args, const BytecodeChunk* fallback_chunk) {
+    // Prefer closure form when available (carries chunk_ref).
+    Value callable = closure_id > 0 ? Value::makeClosureId(closure_id)
+                                    : Value::makeFunctionObjId(function_id);
+
+    // If fallback_chunk is provided and contains the function, synthesize a
+    // closure pinned to that chunk so the Value-based path uses it.
+    if (fallback_chunk && fallback_chunk->getFunction(function_id)) {
+        auto pin = findOwningChunk(fallback_chunk);
+        if (pin) {
+            auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+                .function_index = function_id,
+                .chunk_index = 0,
+                .chunk = fallback_chunk,
+                .chunk_ref = pin,
+                .module_globals = nullptr,
+                .upvalues = {}});
+            callable = Value::makeClosureId(closureRef.id);
+        }
+    }
+    return startGoroutineCall(callable, args);
 }
 
 bool VM::executeDirectCallThunk(const DirectCallThunk& thunk) {

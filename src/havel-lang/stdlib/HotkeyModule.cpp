@@ -1183,33 +1183,16 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     auto *g = sched->get(ctx->goroutine_id);
     if (!g) { vm.releaseCallback(newCb); return Value::makeBool(false); }
 
-    uint32_t function_index = 0;
-    uint32_t closure_id = 0;
-    const BytecodeChunk* chunk = nullptr;
-    std::shared_ptr<BytecodeChunk> chunk_ref;
-
     auto closure = vm.externalRootValue(newCb);
     if (!closure) { vm.releaseCallback(newCb); return Value::makeBool(false); }
-
-    if (closure->isFunctionObjId()) {
-      function_index = closure->asFunctionObjId();
-    } else if (closure->isClosureId()) {
-      closure_id = closure->asClosureId();
-      auto *closureObj = vm.getHeap().closure(closure_id);
-      if (!closureObj) { vm.releaseCallback(newCb); return Value::makeBool(false); }
-      function_index = closureObj->function_index;
-      if (closureObj->chunk) chunk = closureObj->chunk;
-      if (closureObj->chunk_ref) chunk_ref = closureObj->chunk_ref;
-    } else {
+    if (!closure->isFunctionObjId() && !closure->isClosureId()) {
       vm.releaseCallback(newCb);
       return Value::makeBool(false);
     }
 
     if (ctx->callback != 0) vm.releaseCallback(ctx->callback);
 
-    g->hotkey_function_id = function_index;
-    g->hotkey_closure_id = closure_id;
-    g->hotkey_chunk = std::move(chunk_ref);
+    g->hotkey_callable = *closure;
     g->hotkey_callback_id = newCb;
 
     auto thunk = vm.buildDirectCallThunk(newCb);
@@ -1337,32 +1320,11 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     if (args.size() > 2 && !args[2].isNull() && (args[2].isFunctionObjId() || args[2].isClosureId())) {
       CallbackId newCb = vm.registerCallback(args[2]);
       if (newCb != INVALID_CALLBACK_ID) {
-        uint32_t function_index = 0;
-        uint32_t closure_id = 0;
-        const BytecodeChunk* chunk = nullptr;
-        std::shared_ptr<BytecodeChunk> chunk_ref;
-
         auto closure = vm.externalRootValue(newCb);
-        if (closure) {
-          if (closure->isFunctionObjId()) {
-            function_index = closure->asFunctionObjId();
-          } else if (closure->isClosureId()) {
-            closure_id = closure->asClosureId();
-            auto *closureObj = vm.getHeap().closure(closure_id);
-            if (closureObj) {
-              function_index = closureObj->function_index;
-              if (closureObj->chunk) chunk = closureObj->chunk;
-              if (closureObj->chunk_ref) chunk_ref = closureObj->chunk_ref;
-            }
-          }
-        }
-
-        if (function_index != 0 || closure_id != 0) {
+        if (closure && (closure->isFunctionObjId() || closure->isClosureId())) {
           if (ctx->callback != 0) vm.releaseCallback(ctx->callback);
 
-          g->hotkey_function_id = function_index;
-          g->hotkey_closure_id = closure_id;
-          g->hotkey_chunk = std::move(chunk_ref);
+          g->hotkey_callable = *closure;
           g->hotkey_callback_id = newCb;
 
           auto thunk = vm.buildDirectCallThunk(newCb);

@@ -760,11 +760,23 @@ VM(const HostContext &ctx, const VMConfig& cfg);
 // @param function_id Bytecode function index to execute
 // @param closure_id Closure context (0 for plain functions)
 // @param args Arguments to pass to the function
-// @param fallback_chunk Optional chunk to use when closure chunk is unavailable (e.g. hotkey_chunk after reload)
+// @param fallback_chunk Optional chunk to use when closure chunk is unavailable (e.g. after reload)
 // @return GoroutineCallResult indicating success and execution mode
 enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
-GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id,
-    const std::vector<Value> &args, const BytecodeChunk* fallback_chunk = nullptr);
+
+  // Primary entry: start a goroutine for first execution given a callable Value.
+  // The Value already carries its chunk context (closure.chunk_ref) so the VM
+  // can resolve everything internally. Caller does not need to know what kind
+  // of callable it is.
+  GoroutineCallResult startGoroutineCall(const Value &callable,
+      const std::vector<Value> &args);
+
+  // Legacy entry with explicit (function_id, closure_id, fallback_chunk).
+  // Bridges to startGoroutineCall(Value) by wrapping function_id into a
+  // Value::makeFunctionObjId or using the closure_id directly. Prefer the
+  // Value-based overload in new code.
+  GoroutineCallResult startGoroutineCall(uint32_t function_id, uint32_t closure_id,
+      const std::vector<Value> &args, const BytecodeChunk* fallback_chunk = nullptr);
 
   
   // Track which fiber is waiting on a specific thread
@@ -1242,6 +1254,18 @@ bool isLazyModuleLoaded(const std::string &name) const;
     // Returns nullptr if no VM-owned shared_ptr currently references `raw`.
     // Important: a null return strongly implies `raw` is already dangling.
     std::shared_ptr<BytecodeChunk> findOwningChunk(const BytecodeChunk* raw) const;
+
+    // Normalize a callable Value to a closure form pinned to its owning chunk.
+    //
+    // Accepts Value::FunctionObjId or Value::ClosureId. For FunctionObjId,
+    // searches current_chunk → main_chunk_ → persistent_chunks_ → module_chunks_
+    // for the function, allocates a RuntimeClosure with chunk_ref pinned, and
+    // returns Value::makeClosureId(...). For ClosureId, returns the input
+    // unchanged. Returns Null Value on failure (no chunk found / not callable).
+    //
+    // Use this whenever a spawner wants to enqueue a callable that may outlive
+    // the VM's current_chunk (goroutines, hotkeys, timers, persistent callbacks).
+    Value pinCallableAsClosure(Value callable);
 
         void clearPersistentChunks() {
             persistent_chunks_.clear();

@@ -2140,9 +2140,6 @@ co->ip = 0;
       locals[base + i] = Value::makeArrayId(arrRef.id);
     } else if (i < args.size()) {
       locals[base + i] = std::move(args[i]);
-      if (i == 0 && base >= 20) {
-        std::cerr << "doCall fn=" << (callee ? callee->name : "<?>") << " base=" << base << " locals[" << (base+i) << "]=" << locals[base+i].toString() << std::endl;
-      }
     } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
       auto it = kwargs_obj->find(callee->param_names[i]);
       if (it != kwargs_obj->end()) {

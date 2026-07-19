@@ -1014,7 +1014,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t cl
     // Resolve chunk: closures carry their defining chunk.
     // Prefer chunk_ref (shared_ptr) over chunk (raw) — the raw pointer
     // can dangle when the owning chunk is replaced (e.g. script reload).
-    const BytecodeChunk *resolve_chunk = current_chunk;
+    const BytecodeChunk *resolve_chunk = nullptr;
     if (closure_id > 0) {
         auto *closure = heap_.closure(closure_id);
         if (closure) {
@@ -1026,11 +1026,19 @@ VM::GoroutineCallResult VM::startGoroutineCall(uint32_t function_id, uint32_t cl
         }
     }
 
-    // If the closure is gone but a fallback is provided (e.g. hotkey_chunk),
+    // If the closure is gone but a fallback is provided (e.g. spawn_chunk/hotkey_chunk),
     // use it so the goroutine can still resolve its function.
     if (!resolve_chunk || !resolve_chunk->getFunction(function_id)) {
         if (fallback_chunk && fallback_chunk->getFunction(function_id)) {
             resolve_chunk = fallback_chunk;
+        }
+    }
+
+    // Implicit fallback as a last resort, but print a warning
+    if (!resolve_chunk && current_chunk) {
+        if (current_chunk->getFunction(function_id)) {
+            resolve_chunk = current_chunk;
+            ::havel::warn("[VM] WARNING: goroutine resolved through current_chunk fallback. This indicates the caller failed to preserve chunk identity.");
         }
     }
 
@@ -3395,7 +3403,7 @@ Value VM::loadModule(const std::string& path) {
     std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
     if (moduleLoader_.getCached(path, &cachedVal)) {
       moduleLoader_.getCachedGlobals(path, &cachedGlobals);
-      std::cerr << "[CACHE-HIT] path='" << path << "' cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
+      
       if (cachedGlobals) {
         // Do NOT restore cached globals to caller's globals - module internals
         // (like 'flags' in debug.hv) are only accessible via the module's
@@ -3411,7 +3419,6 @@ Value VM::loadModule(const std::string& path) {
               if (it != cachedGlobals->end() && it->second.isClosureId() &&
                   it->second.asClosureId() == func_val.asClosureId()) {
                 closure->module_globals = cachedGlobals;
-                std::cerr << "[CACHE-FIXUP] Updated module_globals for " << func_name << " (in globals)\n";
               }
             }
           }
@@ -3487,7 +3494,7 @@ Value VM::loadModule(const std::string& path) {
                                 if (it != cachedGlobals->end() && it->second.isClosureId() &&
                                     it->second.asClosureId() == func_val.asClosureId()) {
                                     closure->module_globals = cachedGlobals;
-                                    std::cerr << "[CACHE-FIXUP] Updated module_globals for " << func_name << " (in globals)\n";
+
                                 }
                             }
                         }
@@ -3957,15 +3964,7 @@ globals = std::move(globals_stack_.back());
     // This includes runtime variables like 'flags = DebugFlags()'.
     // Use this for wrapping exports and for cached module loads.
     auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
-    std::cerr << "[LOADMODULE] Snapshot created with " << moduleGlobalsForCache->size() << " entries\n";
-    std::cerr << "  errors present: " << (moduleGlobalsForCache->count("errors") ? "YES" : "NO") << "\n";
-    std::cerr << "  tokens present: " << (moduleGlobalsForCache->count("tokens") ? "YES" : "NO") << "\n";
-    std::cerr << "  pos present: " << (moduleGlobalsForCache->count("pos") ? "YES" : "NO") << "\n";
-    for (const auto& [k, v] : *moduleGlobalsForCache) {
-        if (k == "errors" || k == "tokens" || k == "pos" || k == "incomplete") {
-            std::cerr << "  " << k << " = " << v.toString() << "\n";
-        }
-    }
+    
 
     // Update all closures in the module's globals to use this snapshot as their module_globals.
     // This allows them to access module-level variables (like 'errors = []') when called later.

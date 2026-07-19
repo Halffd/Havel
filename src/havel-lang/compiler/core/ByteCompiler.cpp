@@ -8470,7 +8470,7 @@ void ByteCompiler::compileGoStatement(const ast::GoStatement &statement) {
     uint32_t strId = addStringConstant("thread_spawn");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
   }
-  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+  emit(OpCode::CLOSURE, Value::makeInt(static_cast<int64_t>(funcIndex)));
   emit(OpCode::CALL, static_cast<uint32_t>(1));
   emit(OpCode::POP);
 }
@@ -8510,7 +8510,7 @@ void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {
     uint32_t strId = addStringConstant("thread_spawn");
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
   }
-  emit(OpCode::LOAD_CONST, addConstant(Value::makeFunctionObjId(funcIndex)));
+  emit(OpCode::CLOSURE, Value::makeInt(static_cast<int64_t>(funcIndex)));
   emit(OpCode::CALL, static_cast<uint32_t>(1));
 }
 

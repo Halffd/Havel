@@ -164,6 +164,7 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
   uint32_t hotkey_function_id = 0;
   uint32_t hotkey_closure_id = 0;
   std::shared_ptr<class BytecodeChunk> hotkey_chunk;
+  std::shared_ptr<class BytecodeChunk> spawn_chunk;
   std::vector<Value> hotkey_args;
     HotkeyPolicy hotkey_policy = HotkeyPolicy::Drop;
     std::string hotkey_alias;

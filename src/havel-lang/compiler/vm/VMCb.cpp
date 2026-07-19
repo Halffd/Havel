@@ -56,6 +56,43 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
 
   if (callee.isFunctionObjId()) {
     function_index = callee.asFunctionObjId();
+    // Find the owning chunk of this function
+    const BytecodeChunk* resolve_chunk = current_chunk;
+    std::shared_ptr<BytecodeChunk> resolve_chunk_ref = findOwningChunk(current_chunk);
+    if (!resolve_chunk || !resolve_chunk->getFunction(function_index)) {
+      if (main_chunk_ && main_chunk_->getFunction(function_index)) {
+        resolve_chunk = main_chunk_.get();
+        resolve_chunk_ref = main_chunk_;
+      } else {
+        for (auto& pc : persistent_chunks_) {
+          if (pc && pc->getFunction(function_index)) {
+            resolve_chunk = pc.get();
+            resolve_chunk_ref = pc;
+            break;
+          }
+        }
+      }
+      if (!resolve_chunk || !resolve_chunk->getFunction(function_index)) {
+        for (auto& [_, mc] : module_chunks_) {
+          if (mc && mc->getFunction(function_index)) {
+            resolve_chunk = mc.get();
+            resolve_chunk_ref = mc;
+            break;
+          }
+        }
+      }
+    }
+    // Wrap FunctionObjId into RuntimeClosure to preserve chunk context
+    if (resolve_chunk && resolve_chunk->getFunction(function_index)) {
+      auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+        .function_index = function_index,
+        .chunk_index = 0,
+        .chunk = resolve_chunk,
+        .chunk_ref = resolve_chunk_ref,
+        .module_globals = nullptr,
+        .upvalues = {}});
+      closure_id = closureRef.id;
+    }
   } else if (callee.isClosureId()) {
     closure_id = callee.asClosureId();
     auto *closure = heap_.closure(closure_id);
@@ -70,7 +107,29 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
   }
 
   // Spawn the goroutine
-  return scheduler_->spawn(function_index, args, closure_id, "async-task");
+  uint32_t gid = scheduler_->spawn(function_index, args, closure_id, "async-task");
+
+  // Propagate spawn_chunk to Goroutine
+  if (gid != 0) {
+    auto *g = scheduler_->get(gid);
+    if (g) {
+      if (closure_id > 0) {
+        auto *closure = heap_.closure(closure_id);
+        if (closure) {
+          if (closure->chunk_ref) {
+            g->spawn_chunk = closure->chunk_ref;
+          } else if (closure->chunk) {
+            g->spawn_chunk = findOwningChunk(closure->chunk);
+          }
+        }
+      }
+      if (!g->spawn_chunk) {
+        g->spawn_chunk = findOwningChunk(current_chunk);
+      }
+    }
+  }
+
+  return gid;
 }
 
 uint32_t VM::spawnCallback(CallbackId id, const std::vector<Value> &args) {
@@ -99,6 +158,43 @@ uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vec
 
     if (closure->isFunctionObjId()) {
         function_index = closure->asFunctionObjId();
+        // Find the owning chunk of this function
+        const BytecodeChunk* resolve_chunk = current_chunk;
+        std::shared_ptr<BytecodeChunk> resolve_chunk_ref = findOwningChunk(current_chunk);
+        if (!resolve_chunk || !resolve_chunk->getFunction(function_index)) {
+            if (main_chunk_ && main_chunk_->getFunction(function_index)) {
+                resolve_chunk = main_chunk_.get();
+                resolve_chunk_ref = main_chunk_;
+            } else {
+                for (auto& pc : persistent_chunks_) {
+                    if (pc && pc->getFunction(function_index)) {
+                        resolve_chunk = pc.get();
+                        resolve_chunk_ref = pc;
+                        break;
+                    }
+                }
+            }
+            if (!resolve_chunk || !resolve_chunk->getFunction(function_index)) {
+                for (auto& [_, mc] : module_chunks_) {
+                    if (mc && mc->getFunction(function_index)) {
+                        resolve_chunk = mc.get();
+                        resolve_chunk_ref = mc;
+                        break;
+                    }
+                }
+            }
+        }
+        // Wrap FunctionObjId into RuntimeClosure to preserve chunk context
+        if (resolve_chunk && resolve_chunk->getFunction(function_index)) {
+            auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+                .function_index = function_index,
+                .chunk_index = 0,
+                .chunk = resolve_chunk,
+                .chunk_ref = resolve_chunk_ref,
+                .module_globals = nullptr,
+                .upvalues = {}});
+            closure_id = closureRef.id;
+        }
     } else if (closure->isClosureId()) {
         closure_id = closure->asClosureId();
         auto *closure_obj = heap_.closure(closure_id);
@@ -117,16 +213,26 @@ uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vec
 
     uint32_t gid = scheduler_->spawn(function_index, args, closure_id, "hotkey-callback", priority);
 
-    // Propagate chunk_ref to goroutine so startGoroutineCall can resolve
+    // Propagate spawn_chunk to Goroutine so startGoroutineCall can resolve
     // the function index even when current_chunk differs or the closure's
     // raw chunk pointer gets stale.
-    if (gid != 0 && closure->isClosureId()) {
+    if (gid != 0) {
         auto *g = scheduler_->get(gid);
         if (g) {
-            auto *closure_obj = heap_.closure(closure->asClosureId());
-            if (closure_obj && closure_obj->chunk_ref) {
-                g->hotkey_chunk = closure_obj->chunk_ref;
+            if (closure_id > 0) {
+                auto *closure_obj = heap_.closure(closure_id);
+                if (closure_obj) {
+                    if (closure_obj->chunk_ref) {
+                        g->spawn_chunk = closure_obj->chunk_ref;
+                    } else if (closure_obj->chunk) {
+                        g->spawn_chunk = findOwningChunk(closure_obj->chunk);
+                    }
+                }
             }
+            if (!g->spawn_chunk) {
+                g->spawn_chunk = findOwningChunk(current_chunk);
+            }
+            g->hotkey_chunk = g->spawn_chunk;
         }
     }
 
@@ -180,6 +286,17 @@ const std::string &alias) {
         }
       }
     }
+    // Wrap FunctionObjId into RuntimeClosure to preserve chunk context
+    if (chunk && chunk->getFunction(function_index)) {
+      auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
+        .function_index = function_index,
+        .chunk_index = 0,
+        .chunk = chunk,
+        .chunk_ref = chunk_ref,
+        .module_globals = nullptr,
+        .upvalues = {}});
+      closure_id = closureRef.id;
+    }
   } else if (closure->isClosureId()) {
     closure_id = closure->asClosureId();
     auto *closure_obj = heap_.closure(closure_id);
@@ -203,6 +320,7 @@ g->persistent = true;
 g->hotkey_function_id = function_index;
 g->hotkey_closure_id = closure_id;
 g->hotkey_chunk = std::move(chunk_ref);
+g->spawn_chunk = g->hotkey_chunk;
 g->hotkey_args = args;
 g->hotkey_policy = policy;
 g->hotkey_alias = alias;

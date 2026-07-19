@@ -204,7 +204,7 @@ if (g->persistent && g->state == Scheduler::GoroutineState::Created
 // Update goroutines always restart via startGoroutineCall (fresh each tick).
 
 if (g->update_interval_ms > 0) {
-    auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->hotkey_chunk.get());
+    auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->spawn_chunk ? g->spawn_chunk.get() : g->hotkey_chunk.get());
     if (call_result == VM::GoroutineCallResult::Failed) {
         g->update_interval_ms = 0;
         handleReturned(g);
@@ -240,7 +240,7 @@ return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
 }
 }
 
-auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->hotkey_chunk.get());
+auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->spawn_chunk ? g->spawn_chunk.get() : g->hotkey_chunk.get());
 if (call_result == VM::GoroutineCallResult::Failed) {
     handleReturned(g);
 stats_.goroutines_completed++;
@@ -934,7 +934,7 @@ void ExecutionEngine::processGoroutinesInline() {
         }
 
         if (g->state == Scheduler::GoroutineState::Created) {
-            auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->hotkey_chunk.get());
+            auto call_result = vm_->startGoroutineCall(g->function_id, g->closure_id, g->locals, g->spawn_chunk ? g->spawn_chunk.get() : g->hotkey_chunk.get());
             if (call_result == VM::GoroutineCallResult::Failed ||
                 call_result == VM::GoroutineCallResult::JITExecuted) {
                 if (g->fiber) vm_->saveFiberState(g->fiber);

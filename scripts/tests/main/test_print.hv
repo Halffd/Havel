@@ -1,0 +1,7 @@
+use "print"
+result = print.fmt("{} {}", "Hello", "World"); print result; print.puts 1;
+if result == "Hello World" {
+    exit(0)
+} else {
+    exit(1)
+}

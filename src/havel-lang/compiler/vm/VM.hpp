@@ -376,9 +376,9 @@ void* last_suspension_context_ = nullptr;
     std::unordered_map<uint32_t, Value> interval_results_;
 
     // Closures captured by timer/thread callbacks (invisible to GC otherwise)
-    std::unordered_map<uint32_t, Value> interval_captured_closures_;
-    std::unordered_map<uint32_t, Value> timeout_captured_closures_;
-    std::unordered_map<uint32_t, Value> thread_captured_closures_;
+    std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
+    std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
+    std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
 
 	
  class EventQueue* event_queue_ = nullptr;

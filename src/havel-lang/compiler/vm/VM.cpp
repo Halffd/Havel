@@ -4235,11 +4235,10 @@ Value VM::loadScript(const std::string& path) {
   current_script_dir_ = prev_script_dir;
 
   // Restore caller's globals
-  globals = std::move(globals_stack_.back());
-  globals_stack_.pop_back();
-  globals["_G"] = old_g;
-  globals_mirror_object_id_ = old_mirror_id;
-  immutable_globals_ = saved_immutable_globals;
+  if (!globals_stack_.empty()) {
+    globals = std::move(globals_stack_.back());
+    globals_stack_.pop_back();
+  }
 
   modules_loading_.erase(canonicalKey);
 

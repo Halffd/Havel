@@ -2735,6 +2735,12 @@ registerHostFunction(
     uint32_t cond_func_id = args[0].isFunctionObjId() ? args[0].asFunctionObjId() : 0;
     uint32_t body_func_id = args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
 
+    // 3rd optional arg: cleanup function (called on true→false transition)
+    uint32_t cleanup_func_id = 0;
+    if (args.size() >= 3 && (args[2].isFunctionObjId() || args[2].isClosureId())) {
+        cleanup_func_id = args[2].isFunctionObjId() ? args[2].asFunctionObjId() : 0;
+    }
+
     if (!watcher_registry_) {
         return Value::makeNull();
     }
@@ -2757,7 +2763,8 @@ registerHostFunction(
     fiber.release();
 
     watcher_registry_->registerWatcher(
-        cond_func_id, 0, initial_result, deps, raw_fiber, current_chunk);
+        cond_func_id, 0, initial_result, deps, raw_fiber, current_chunk,
+        cleanup_func_id, 0);
 
     if (initial_result) {
         try {

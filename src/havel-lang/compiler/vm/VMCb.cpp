@@ -116,6 +116,20 @@ uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vec
                   id, (int)priority, function_index, closure_id, args.size());
 
     uint32_t gid = scheduler_->spawn(function_index, args, closure_id, "hotkey-callback", priority);
+
+    // Propagate chunk_ref to goroutine so startGoroutineCall can resolve
+    // the function index even when current_chunk differs or the closure's
+    // raw chunk pointer gets stale.
+    if (gid != 0 && closure->isClosureId()) {
+        auto *g = scheduler_->get(gid);
+        if (g) {
+            auto *closure_obj = heap_.closure(closure->asClosureId());
+            if (closure_obj && closure_obj->chunk_ref) {
+                g->hotkey_chunk = closure_obj->chunk_ref;
+            }
+        }
+    }
+
     ::havel::debug("[VM] spawnCallback: created gid={} for callback id={}", gid, id);
     return gid;
 }

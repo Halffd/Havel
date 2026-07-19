@@ -75,7 +75,9 @@ WatcherRegistry();
         bool condition_result,
         const std::unordered_set<std::string>& dependencies,
         Fiber* fiber,
-        const BytecodeChunk* condition_chunk = nullptr
+        const BytecodeChunk* condition_chunk = nullptr,
+        uint32_t cleanup_func_id = 0,
+        uint32_t cleanup_ip = 0
     );
     
     /**
@@ -98,9 +100,13 @@ WatcherRegistry();
      *                  Takes watcher_id, returns new condition result
      * @return List of fibers to resume (fired watchers)
      */
+    // Callback type for firing cleanup action (called on true→false transition)
+    using CleanupCallback = std::function<void(uint32_t cleanup_func_id, uint32_t cleanup_ip)>;
+
     std::vector<Fiber*> onVariableChanged(
         const std::string& var_name,
-        std::function<bool(WatcherId)> evaluator
+        std::function<bool(WatcherId)> evaluator,
+        CleanupCallback cleanup = nullptr
     );
     
     /**
@@ -129,6 +135,10 @@ WatcherRegistry();
         uint32_t condition_func_id;  // Function ID in VM bytecode
         uint32_t condition_ip;       // Instruction pointer for condition
         const BytecodeChunk* condition_chunk;  // Chunk containing condition (nullptr = use current/main_chunk_)
+        
+        // Cleanup function: called on true→false transition (e.g. unregister hotkeys)
+        uint32_t cleanup_func_id = 0;
+        uint32_t cleanup_ip = 0;
         
         Watcher(WatcherId id_, Fiber* f,
                 const std::unordered_set<std::string>& deps, bool result,

@@ -178,8 +178,10 @@ fn runScript(cfg) {
     sourceFile = null
     if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }
-    compileProgram(emitter, result.ast, false, sourceFile)
-    0
+    print("LAUNCHER: about to compileProgram")
+    val ret = compileProgram(emitter, result.ast, false, sourceFile)
+    print("LAUNCHER: compileProgram returned: " + str(ret))
+    return ret
 }
 
 fn runTests(cfg) {
@@ -263,6 +265,8 @@ fn runTests(cfg) {
 // ============================================================
 // Main entry point
 // ============================================================
+
+print("LAUNCHER MAIN: args = " + str(app.args))
 
 args = app.args
 if args == null || #args == 0 {

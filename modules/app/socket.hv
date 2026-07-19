@@ -82,11 +82,11 @@ fn _doSend(self, data) {
     print("[_doSend] data type: ${type(data)} value: ${data}")
     if self.connected == false { return -1 }
     n = #data
-        buf = _strToBuf(data)
-        sent = ffi.call(_send, "int64", ["int32", "pointer", "uint64", "int32"], self.fd, buf, n, 0)
-        ffi.free(buf)
-        sent
-    }
+    buf = _strToBuf(data)
+    sent = ffi.call(_send, "int64", ["int32", "pointer", "uint64", "int32"], self.fd, buf, n, 0)
+    ffi.free(buf)
+    sent
+}
 
     fn _doRecv(self, maxSize) {
         if self.connected == false { return "" }

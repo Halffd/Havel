@@ -472,4 +472,12 @@ class MPV {
         }
         @connected = false
     }
+
+    fn isConnected() {
+        @connected && @sock != null && @sock.isAlive()
+    }
+
+    fn isPlaying() {
+        !@pause
+    }
 }

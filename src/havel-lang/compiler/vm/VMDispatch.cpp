@@ -141,6 +141,7 @@ auto hostIt = host_function_globals_.find(name);
             COMPILER_THROW("Cannot reassign val global: " + name);
         }
         globals[name] = value;
+        heap_.writeBarrier(Value::makeNull(), value);
         emitVariableChanged(name);
         break;
     }
@@ -191,6 +192,7 @@ auto hostIt = host_function_globals_.find(name);
 
         immutable_globals_.insert(name);
         globals[name] = value;
+        heap_.writeBarrier(Value::makeNull(), value);
         emitVariableChanged(name);
         break;
     }
@@ -240,6 +242,7 @@ case OpCode::STORE_VAR: {
     }
 
     locals[abs] = value;
+    heap_.writeBarrier(Value::makeNull(), value);
     break;
   }
 
@@ -264,6 +267,7 @@ case OpCode::STORE_IMMUT_VAR: {
     }
 
     locals[abs] = value;
+    heap_.writeBarrier(Value::makeNull(), value);
     break;
   }
 
@@ -423,14 +427,16 @@ auto &cell = closure->upvalues[upvalue_index];
 Value value = popStack();
 
 if (cell->is_open) {
-uint32_t abs_index = cell->locals_base + cell->open_index;
-this->ensureLocalIndex(abs_index);
-locals[abs_index] = value;
-} else {
-cell->closed_value = value;
-}
-break;
-}
+      uint32_t abs_index = cell->locals_base + cell->open_index;
+      this->ensureLocalIndex(abs_index);
+      locals[abs_index] = value;
+      heap_.writeBarrier(Value::makeNull(), value);
+    } else {
+      cell->closed_value = value;
+      heap_.writeBarrier(Value::makeNull(), value);
+    }
+    break;
+  }
 
   case OpCode::POP: {
     popStack();

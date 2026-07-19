@@ -2562,6 +2562,11 @@ std::vector<Value> VM::stackValuesForRoots() const {
       values.push_back(v);
     }
   }
+  // Scheduler goroutine roots
+  if (scheduler_) {
+      auto scheduler_roots = scheduler_->getGCRoots();
+      values.insert(values.end(), scheduler_roots.begin(), scheduler_roots.end());
+  }
   return values;
 }
 

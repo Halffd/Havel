@@ -286,6 +286,32 @@ void Scheduler::forEachGoroutine(std::function<void(Goroutine*)> fn) {
     }
 }
 
+std::vector<Value> Scheduler::getGCRoots() const {
+    std::vector<Value> roots;
+    std::lock_guard lock(goroutines_mutex_);
+    for (const auto& [id, g] : goroutines_) {
+        if (!g) continue;
+        // Stack values (used at spawn, then fiber takes over)
+        for (const Value& v : g->stack) {
+            roots.push_back(v);
+        }
+        // Local variables (used at spawn, then fiber takes over)
+        for (const Value& v : g->locals) {
+            roots.push_back(v);
+        }
+        // Hotkey args
+        for (const Value& v : g->hotkey_args) {
+            roots.push_back(v);
+        }
+        // Fiber state (holds actual execution state when running/suspended)
+        if (g->fiber && g->fiber->state != FiberState::DONE) {
+            auto fiber_roots = g->fiber->getGCRoots();
+            roots.insert(roots.end(), fiber_roots.begin(), fiber_roots.end());
+        }
+    }
+    return roots;
+}
+
 void Scheduler::start() {
 	running_.store(true);
 	shutdown_.store(false);

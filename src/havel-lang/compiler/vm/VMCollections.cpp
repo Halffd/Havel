@@ -517,8 +517,9 @@ if (container.isSetId()) {
 	if (idx_size >= old_size) {
 		array->resize(idx_size + 1, Value::makeNull());
 	}
-  (*array)[idx_size] = value;
-  heap_.bumpArrayVersion(container.asArrayId());
+(*array)[idx_size] = value;
+      heap_.writeArrayBarrier(array->data, value);
+      heap_.bumpArrayVersion(container.asArrayId());
   emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":[" + std::to_string(idx) + "]");
   if (old_size != array->size()) {
     emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":length");
@@ -549,6 +550,7 @@ if (container.isSetId()) {
       }
       if (present) {
         (*set)[*key] = Value::makeNull();
+        heap_.writeSetBarrier(*set, *key, Value::makeNull());
         heap_.bumpSetVersion(container.asSetId());
       } else {
         set->erase(*key);
@@ -584,9 +586,10 @@ if (container.isSetId()) {
 		if (!object) {
 			COMPILER_THROW("ARRAY_SET unknown object id");
 		}
-		(*object)[*key] = value;
-		break;
-	}
+(*object)[*key] = value;
+      heap_.writeObjectBarrier(object->data, *key, value);
+      break;
+    }
 
     COMPILER_THROW("ARRAY_SET expects array/set/object container");
   }

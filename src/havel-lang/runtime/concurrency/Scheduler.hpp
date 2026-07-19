@@ -324,6 +324,11 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
     // Iterate goroutines with an active conditional hotkey condition
     // Calls fn(g) for each goroutine where hotkey_condition_callback_id != 0
     void forEachConditionalHotkey(std::function<void(Goroutine*)> fn);
+    /**
+     * Get all GC roots from all goroutines for garbage collection
+     * Scans stacks and locals of all goroutines regardless of state
+     */
+    std::vector<Value> getGCRoots() const;
     void forEachGoroutine(std::function<void(Goroutine*)> fn);
 
     // ===== Scheduler Lifecycle =====

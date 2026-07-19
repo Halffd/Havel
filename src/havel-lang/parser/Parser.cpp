@@ -1149,7 +1149,8 @@ t == havel::TokenType::Continue ||
         while (at(colonLookahead).type == havel::TokenType::NewLine) {
           colonLookahead++;
         }
-        if (at(colonLookahead).type == havel::TokenType::Colon) {
+        if (at(colonLookahead).type == havel::TokenType::Colon ||
+            at(colonLookahead).type == havel::TokenType::Assign) {
           isObject = true;
         }
       }

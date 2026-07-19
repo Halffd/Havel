@@ -3,13 +3,14 @@
 // Consumes token list from "lexer".hv, produces AST nodes from "ast".hv
 
 // Module-level parser state globals (must be before use statements for self-hosted bootstrap)
-::tokens = null
-::pos = 0
-::errors = []
-::incomplete = false
-::inMatchExpr = false
-::allowBraceSugar = true
-// _eof and _cur initialized in Parser() after imports run
+tokens = null
+pos = 0
+errors = []
+incomplete = false
+inMatchExpr = false
+allowBraceSugar = true
+_eof = null
+_cur = null
 
 use { tokenize, TOKEN_TYPES, KEYWORDS, TID, TID_NAME } from "lexer"
 use { NODE_TYPES, BINARY_OPS, COMPOUND_ASSIGN_OPS, UNARY_OPS,

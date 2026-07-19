@@ -280,9 +280,9 @@ Value VM::callFunctionSync(const Value &fn,
 
   // Restore all VM state
   stack = std::move(saved_stack);
-  locals = std::move(saved_locals);
-  frame_arena_ = std::move(saved_frame_arena);
-  frame_count_ = saved_frame_count;
+    locals = std::move(saved_locals);
+    immutable_locals_.clear();
+    frame_count_ = saved_frame_count;
   current_chunk = outer_chunk;
   open_upvalues = std::move(saved_open_upvalues);
   has_current_exception_ = saved_exception;
@@ -3394,7 +3394,7 @@ Value VM::loadModule(const std::string& path) {
     std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
     if (moduleLoader_.getCached(path, &cachedVal)) {
       moduleLoader_.getCachedGlobals(path, &cachedGlobals);
-      // std::cerr << "[CACHE-HIT] path='" << path << "' cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
+      std::cerr << "[CACHE-HIT] path='" << path << "' cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
       if (cachedGlobals) {
         // Do NOT restore cached globals to caller's globals - module internals
         // (like 'flags' in debug.hv) are only accessible via the module's
@@ -3910,6 +3910,7 @@ Value VM::loadModule(const std::string& path) {
     locals.clear();
     frame_count_ = 0;
     open_upvalues.clear();
+    immutable_locals_.clear();
     has_current_exception_ = false;
     current_exception_ = nullptr;
 
@@ -3955,13 +3956,24 @@ globals = std::move(globals_stack_.back());
     // This includes runtime variables like 'flags = DebugFlags()'.
     // Use this for wrapping exports and for cached module loads.
     auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    std::cerr << "[LOADMODULE] Snapshot created with " << moduleGlobalsForCache->size() << " entries\n";
+    std::cerr << "  errors present: " << (moduleGlobalsForCache->count("errors") ? "YES" : "NO") << "\n";
+    std::cerr << "  tokens present: " << (moduleGlobalsForCache->count("tokens") ? "YES" : "NO") << "\n";
+    std::cerr << "  pos present: " << (moduleGlobalsForCache->count("pos") ? "YES" : "NO") << "\n";
+    for (const auto& [k, v] : *moduleGlobalsForCache) {
+        if (k == "errors" || k == "tokens" || k == "pos" || k == "incomplete") {
+            std::cerr << "  " << k << " = " << v.toString() << "\n";
+        }
+    }
 
     // Update all closures in the module's globals to use this snapshot as their module_globals.
     // This allows them to access module-level variables (like 'errors = []') when called later.
+    std::cerr << "[LOADMODULE] Updating " << globals.size() << " globals, updating closures' module_globals\n";
     for (auto& [name, value] : globals) {
         if (value.isClosureId()) {
             auto* closure = heap_.closure(value.asClosureId());
             if (closure) {
+                std::cerr << "  Updating closure " << name << " module_globals\n";
                 closure->module_globals = moduleGlobalsForCache;
             }
         }
@@ -4270,10 +4282,10 @@ Value VM::loadScript(const std::string& path) {
   }
 
   // Restore caller's execution state and globals
-  stack = std::move(saved_stack);
-  locals = std::move(saved_locals);
-  immutable_locals_.clear();
-  frame_count_ = saved_frame_count;
+stack = std::move(saved_stack);
+    locals = std::move(saved_locals);
+    immutable_locals_.clear();
+    frame_count_ = saved_frame_count;
   frame_arena_ = std::move(saved_frames);
   current_chunk = saved_chunk;
   has_current_exception_ = saved_exception;

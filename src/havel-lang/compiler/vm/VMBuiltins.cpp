@@ -144,6 +144,8 @@ case OpCode::IMPORT: {
         COMPILER_THROW("IMPORT expects valid string path");
     }
 
+    std::cerr << "[IMPORT] path='" << path << "' globals.size=" << globals.size() << "\n";
+
     // Check if module is already in globals (eager modules, previously loaded)
     // Only accept objects (namespace modules) and lazy proxies as pre-loaded.
     // Host functions with the same name as a module should NOT short-circuit

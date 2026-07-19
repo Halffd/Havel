@@ -1,4 +1,5 @@
 #include "LexicalResolver.hpp"
+#include <iostream>
 
 namespace havel::compiler {
 
@@ -589,25 +590,33 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
       resolveExpression(*let.value);
     }
 
-    auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
-    if (identifier) {
-      // Always allocate a new slot for `let` declarations.
-      // This preserves lexical shadowing across nested blocks.
-      uint32_t slot = declareLocal(identifier->symbol, identifier, let.isConst);
-      const bool is_program_root =
-          (function_stack_.size() == 1 && function_stack_.back().scopes.size() == 1);
-      if (is_program_root) {
-        global_variables_.insert(identifier->symbol);
-        noteIdentifierBinding(
-            *identifier,
-            ResolvedBinding{ResolvedBindingKind::Global, 0, 0, identifier->symbol,
-                            let.isConst});
-      } else {
-        noteIdentifierBinding(
-            *identifier,
-            ResolvedBinding{ResolvedBindingKind::Local, slot, 0, identifier->symbol,
-                            let.isConst});
-      }
+auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
+      if (identifier) {
+        // Always allocate a new slot for `let` declarations.
+        // This preserves lexical shadowing across nested blocks.
+        uint32_t slot = declareLocal(identifier->symbol, identifier, let.isConst);
+        // Check if we're at the top level of the current function (module-level)
+        // In a module context, the top-level function frame has no parent blocks
+        const bool is_program_root =
+            (function_stack_.back().scopes.size() == 1);
+        std::cerr << "[LEXICAL] LetDeclaration: " << identifier->symbol 
+                  << " isConst=" << let.isConst
+                  << " function_stack_size=" << function_stack_.size()
+                  << " scopes_size=" << function_stack_.back().scopes.size()
+                  << " is_program_root=" << is_program_root
+                  << "\n";
+        if (is_program_root) {
+          global_variables_.insert(identifier->symbol);
+          noteIdentifierBinding(
+              *identifier,
+              ResolvedBinding{ResolvedBindingKind::Global, 0, 0, identifier->symbol,
+                              let.isConst});
+        } else {
+          noteIdentifierBinding(
+              *identifier,
+              ResolvedBinding{ResolvedBindingKind::Local, slot, 0, identifier->symbol,
+                              let.isConst});
+        }
     } else if (let.pattern) {
       if (let.pattern->kind == ast::NodeType::ListPattern ||
           let.pattern->kind == ast::NodeType::ArrayPattern) {

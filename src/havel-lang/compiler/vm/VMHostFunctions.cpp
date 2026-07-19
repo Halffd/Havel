@@ -1638,12 +1638,12 @@ return Value::makeNull();
  }
  };
 
- threadObj->start(std::move(handler));
+threadObj->start(std::move(handler));
 
- // Store thread in GC heap and return wrapper object
+  // Store thread in GC heap and return wrapper object
         auto threadRef = heap_.allocateThreadObj(threadObj);
         *threadIdPtr = threadRef.id;
-        thread_captured_closures_[threadRef.id] = closure;
+        thread_captured_closures_[threadRef.id] = registerCallback(closure);
         return Value::makeThreadId(threadRef.id);
  });
 
@@ -1763,7 +1763,7 @@ return Value::makeNull();
         };
         threadObj->start(std::move(handler));
         auto threadRef = heap_.allocateThreadObj(threadObj);
-        thread_captured_closures_[threadRef.id] = closure;
+        thread_captured_closures_[threadRef.id] = registerCallback(closure);
         return Value::makeThreadId(threadRef.id);
     });
 
@@ -1797,7 +1797,7 @@ interval_results_[*intervalIdPtr] = result;
         auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
         auto intervalRef = heap_.allocateIntervalObj(intervalObj);
         *intervalIdPtr = intervalRef.id;
-        interval_captured_closures_[intervalRef.id] = closure;
+        interval_captured_closures_[intervalRef.id] = registerCallback(closure);
         return Value::makeIntervalId(intervalRef.id);
     });
 
@@ -1842,6 +1842,12 @@ COMPILER_THROW("interval.pause: invalid interval reference");
       COMPILER_THROW("interval.stop: invalid interval reference");
     }
     
+    auto it = interval_captured_closures_.find(args[0].asIntervalId());
+    if (it != interval_captured_closures_.end()) {
+      releaseCallback(it->second);
+      interval_captured_closures_.erase(it);
+    }
+    
         intervalObj->stop();
         return Value::makeNull();
     });
@@ -1873,7 +1879,7 @@ interval_results_[*intervalIdPtr] = result;
         auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
         auto intervalRef = heap_.allocateIntervalObj(intervalObj);
         *intervalIdPtr = intervalRef.id;
-        interval_captured_closures_[intervalRef.id] = closure;
+        interval_captured_closures_[intervalRef.id] = registerCallback(closure);
         return Value::makeIntervalId(intervalRef.id);
     });
 
@@ -1943,14 +1949,14 @@ timeout_results_[*timeoutIdPtr] = result;
 }
 };
 
-        auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
         auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
         *timeoutIdPtr = timeoutRef.id;
-        timeout_captured_closures_[timeoutRef.id] = closure;
+        timeout_captured_closures_[timeoutRef.id] = registerCallback(closure);
         return Value::makeTimeoutId(timeoutRef.id);
     });
 
-  // timeout.cancel(timeout) - Cancel timeout
+    // timeout.cancel(timeout) - Cancel timeout
   registerHostFunction("timeout.cancel", 1, [this](const std::vector<Value> &args) {
     if (args.empty() || !args[0].isTimeoutId()) {
       COMPILER_THROW("timeout.cancel requires a timeout argument");
@@ -1959,6 +1965,12 @@ timeout_results_[*timeoutIdPtr] = result;
     auto *timeoutObj = heap_.timeout(args[0].asTimeoutId());
     if (!timeoutObj) {
       COMPILER_THROW("timeout.cancel: invalid timeout reference");
+    }
+    
+    auto it = timeout_captured_closures_.find(args[0].asTimeoutId());
+    if (it != timeout_captured_closures_.end()) {
+      releaseCallback(it->second);
+      timeout_captured_closures_.erase(it);
     }
     
         timeoutObj->cancel();
@@ -1989,14 +2001,14 @@ timeout_results_[*timeoutIdPtr] = result;
 }
 }
 };
-        auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
         auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
         *timeoutIdPtr = timeoutRef.id;
-        timeout_captured_closures_[timeoutRef.id] = closure;
+        timeout_captured_closures_[timeoutRef.id] = registerCallback(closure);
         return Value::makeTimeoutId(timeoutRef.id);
     });
 
-  // WaitGroup host functions
+    // WaitGroup host functions
   // waitgroup.add(wg, n) - Increment waitgroup counter
   registerHostFunction("waitgroup.add", 2, [this](const std::vector<Value> &args) {
     if (args.empty() || !args[0].isWaitGroupId()) {

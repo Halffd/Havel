@@ -96,9 +96,35 @@ uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vec
 
     uint32_t function_index = 0;
     uint32_t closure_id = 0;
+    const BytecodeChunk* chunk = current_chunk;
+    std::shared_ptr<BytecodeChunk> chunk_ref = findOwningChunk(current_chunk);
 
     if (closure->isFunctionObjId()) {
         function_index = closure->asFunctionObjId();
+        // FunctionObjId indices are per-chunk. Find the chunk that owns this function.
+        if (chunk && !chunk->getFunction(function_index)) {
+          if (main_chunk_ && main_chunk_->getFunction(function_index)) {
+            chunk = main_chunk_.get();
+            chunk_ref = main_chunk_;
+          } else {
+            for (auto& pc : persistent_chunks_) {
+              if (pc && pc->getFunction(function_index)) {
+                chunk = pc.get();
+                chunk_ref = pc;
+                break;
+              }
+            }
+          }
+          if (!chunk || !chunk->getFunction(function_index)) {
+            for (auto& [_, mc] : module_chunks_) {
+              if (mc && mc->getFunction(function_index)) {
+                chunk = mc.get();
+                chunk_ref = mc;
+                break;
+              }
+            }
+          }
+        }
     } else if (closure->isClosureId()) {
         closure_id = closure->asClosureId();
         auto *closure_obj = heap_.closure(closure_id);
@@ -120,12 +146,16 @@ uint32_t VM::spawnCallback(CallbackId id, FiberPriority priority, const std::vec
     // Propagate chunk_ref to goroutine so startGoroutineCall can resolve
     // the function index even when current_chunk differs or the closure's
     // raw chunk pointer gets stale.
-    if (gid != 0 && closure->isClosureId()) {
+    if (gid != 0) {
         auto *g = scheduler_->get(gid);
         if (g) {
-            auto *closure_obj = heap_.closure(closure->asClosureId());
-            if (closure_obj && closure_obj->chunk_ref) {
-                g->hotkey_chunk = closure_obj->chunk_ref;
+            if (closure->isClosureId()) {
+                auto *closure_obj = heap_.closure(closure->asClosureId());
+                if (closure_obj && closure_obj->chunk_ref) {
+                    g->hotkey_chunk = closure_obj->chunk_ref;
+                }
+            } else if (closure->isFunctionObjId()) {
+                g->hotkey_chunk = chunk_ref;
             }
         }
     }

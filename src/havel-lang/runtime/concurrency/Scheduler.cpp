@@ -117,22 +117,16 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 
   static const bool trace_cycle = std::getenv("HAVEL_TRACE_CYCLE");
 
-{
+  if (debugging::debug_io) {
+    ::havel::debug("[Scheduler] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
+      hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
+  }
 
-    if (debugging::debug_io) {
-      ::havel::debug("[Scheduler] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
-        hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
-    }
-    if (trace_cycle) {
-      fprintf(stderr, "[CYCLE] pickNext: queues hk=%zu run=%zu bg=%zu suspended=%zu\n",
-              hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size(), suspendedCount());
-    }
-
-    // Priority order: hotkey → normal → background
-    // Each queue: rotate non-runnable entries to back instead of discarding.
-    // This prevents goroutines from being lost if the state changes between
-    // enqueue and pickNext (e.g. suspend() while still in queue).
-    auto popRunnable = [&](std::deque<Goroutine*>& q, const char* label) -> Goroutine* {
+  // Priority order: hotkey → normal → background
+  // Each queue: rotate non-runnable entries to back instead of discarding.
+  // This prevents goroutines from being lost if the state changes between
+  // enqueue and pickNext (e.g. suspend() while still in queue).
+  auto popRunnable = [&](std::deque<Goroutine*>& q, const char* label) -> Goroutine* {
       size_t limit = q.size();
       for (size_t i = 0; i < limit && !q.empty(); i++) {
         auto* g = q.front();
@@ -170,39 +164,25 @@ Scheduler::Goroutine* Scheduler::pickNext() {
       if (!result) result = popRunnable(runnable_queue_, "RUNNABLE");
       if (!result) result = popRunnable(background_queue_, "BACKGROUND");
     }
-	}
 
-	if (result) {
-		if (result->state == GoroutineState::Done) {
-			// Raced with markGoroutineDone — skip. popRunnable already
-			// filters Done entries (lines 145-150), but the state can
-			// flip between its check and here.
-			result = nullptr;
-		} else {
-			{
-				std::lock_guard glock(goroutines_mutex_);
-				assert(goroutines_.count(result->id) == 1);
-			}
-			result->wait_handle.clear();
-			current_.store(result, std::memory_order_release);
-			if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}",
-						  result->id, result->name, (int)result->state.load());
-			if (trace_cycle) {
-			  fprintf(stderr, "[CYCLE] pickNext -> gid=%u state=%d\n",
-					  result->id, (int)result->state.load());
-			}
-		}
-	}
-
-	if (!result) {
-		// No runnable goroutines found. Periodic cleanup while idle.
-		size_t removed = cleanupDoneGoroutines();
-		if (trace_cycle) {
-		  fprintf(stderr, "[CYCLE] pickNext -> nullptr (cleanup removed=%zu)\n", removed);
-		}
-	}
-
-	return result;
+  if (result) {
+    if (result->state == GoroutineState::Done) {
+      // Raced with markGoroutineDone — skip. popRunnable already
+      // filters Done entries (lines 145-150), but the state can
+      // flip between its check and here.
+      result = nullptr;
+    } else {
+      {
+        std::lock_guard glock(goroutines_mutex_);
+        assert(goroutines_.count(result->id) == 1);
+      }
+      result->wait_handle.clear();
+      current_.store(result, std::memory_order_release);
+      if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}",
+                        result->id, result->name, (int)result->state.load());
+    }
+  }
+  return result;
 }
 
 void Scheduler::suspend(Scheduler::Goroutine* g, SuspensionReason reason) {
@@ -696,9 +676,6 @@ size_t Scheduler::wakeSleepingGoroutines() {
     // while collecting candidates, then released before calling the callback).
     // If the callback yields, processGoroutinesInline() may call us.
     if (g_in_conditional_hotkey_eval) {
-        if (trace_cycle) {
-            fprintf(stderr, "[CYCLE] wakeSleepingGoroutines: SKIP (g_in_conditional_hotkey_eval=true)\n");
-        }
         return 0;
     }
 
@@ -718,44 +695,24 @@ size_t Scheduler::wakeSleepingGoroutines() {
             auto state = g->state.load(std::memory_order_acquire);
             if (state == GoroutineState::Done) continue;
             if (state != GoroutineState::Suspended) {
-                if (trace_cycle) {
-                    fprintf(stderr, "[CYCLE]   gid=%u skip state=%d (not Suspended)\n",
-                            id, static_cast<int>(state));
-                }
                 continue;
             }
             auto sr = g->suspension_reason.load(std::memory_order_acquire);
             if (sr != SuspensionReason::SleepWait) {
-                if (trace_cycle) {
-                    fprintf(stderr, "[CYCLE]   gid=%u skip reason=%d (not SleepWait)\n",
-                            id, static_cast<int>(sr));
-                }
                 continue;
             }
             {
                 std::lock_guard wlock(g->wait_handle_mutex_);
                 if (g->wait_handle.type != AwaitableType::SLEEP) {
-                    if (trace_cycle) {
-                        fprintf(stderr, "[CYCLE]   gid=%u skip wait_handle.type=%d (not SLEEP)\n",
-                                id, static_cast<int>(g->wait_handle.type));
-                    }
                     continue;
                 }
                 if (g->wait_handle.deadline == std::chrono::steady_clock::time_point{}) {
-                    if (trace_cycle) {
-                        fprintf(stderr, "[CYCLE]   gid=%u skip deadline=zero\n", id);
-                    }
                     continue;
                 }
                 // Add 1ms tolerance: when remaining is <1ms the sleep loop
                 // in processGoroutines would sleep_for(0ms) (busy-wait), so
                 // waking slightly early is better than spinning.
                 if (now + std::chrono::milliseconds(1) < g->wait_handle.deadline) {
-                    if (trace_cycle) {
-                        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                   g->wait_handle.deadline - now).count();
-                        fprintf(stderr, "[CYCLE]   gid=%u skip deadline in %ldms\n", id, ms);
-                    }
                     continue;
                 }
             }
@@ -800,8 +757,8 @@ size_t Scheduler::wakeSleepingGoroutines() {
             ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                    *next - std::chrono::steady_clock::now()).count();
         }
-        fprintf(stderr, "[CYCLE] wakeSleepingGoroutines: woken=%zu nextDeadlineMs=%ld\n",
-                woken, ms);
+        (void)woken;
+        (void)ms;
     }
     return woken;
 }
@@ -949,10 +906,10 @@ size_t Scheduler::cleanupDoneGoroutines() {
     auto t_end = std::chrono::steady_clock::now();
     auto dur_us = std::chrono::duration_cast<std::chrono::microseconds>(
         t_end - t_start).count();
-    fprintf(stderr, "[Scheduler] [CLEANUP] removed=%zu remaining=%zu dur=%lldus caller_tid=0x%llx t=%lld\n",
-            removed, goroutines_.size(), (long long)dur_us,
-            (unsigned long long)*reinterpret_cast<uint64_t*>(&caller),
-            (long long)t_start_ns);
+    (void)removed;
+    (void)dur_us;
+    (void)caller;
+    (void)t_start_ns;
   }
   return removed;
 }

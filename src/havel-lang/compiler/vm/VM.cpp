@@ -1185,9 +1185,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   const bool use_fast_path = !debugger_attached_ && !has_profiling && !has_tracing && !has_instruction_limit && !has_timer;
 
   if (_trace) {
-    fprintf(stderr, "[CYCLE] runDispatchLoop: use_fast_path=%d has_timer=%d has_inst_limit=%d trace=%d yield_cb=%d\n",
-            (int)use_fast_path, (int)has_timer, (int)has_instruction_limit, (int)has_tracing, yield_callback_ ? 1 : 0);
-  }
+    }
 
   if (use_fast_path) {
 #if HAVE_COMPUTED_GOTO
@@ -1355,9 +1353,6 @@ slow_path:
                 opts.useLabels = true;
                 auto disasm = BytecodeDisassembler(*current_chunk).formatInstruction(
                     ip, instruction, opts);
-                std::fprintf(stderr, "\033[2m[trace] %3u %s:%u  %s\033[0m\n",
-                             static_cast<unsigned>(frame_count_), funcName.c_str(),
-                             static_cast<unsigned>(ip), disasm.c_str());
             }
             executeInstruction(instruction);
       if ((fast_path_counter & 4095) == 0 && exit_requested_.load()) {
@@ -1373,9 +1368,9 @@ slow_path:
         void* ctx = suspension_context_;
         suspension_requested_ = false;
         suspension_context_ = nullptr;
-        if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
-          if (scheduler_) {
-            // In scheduler/goroutine context: break out so processGoroutines
+if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+          if (scheduler_ && current_executing_fiber_) {
+            // In goroutine context: break out so processGoroutines
             // can set the deadline on the WaitHandle and suspend properly
             // Advance IP past the current instruction (result was already pushed)
             if (frame_count_ > stop_frame_depth) {
@@ -1390,7 +1385,7 @@ slow_path:
             last_suspension_context_ = ctx;
             break;
           }
-          // Non-scheduler: blocking sleep inline with event processing
+          // Non-scheduler or main fiber: blocking sleep inline with event processing
           int64_t ms = reinterpret_cast<intptr_t>(ctx);
           if (ms > 0) {
             const int CHUNK = 10;
@@ -1399,6 +1394,9 @@ slow_path:
             while (std::chrono::steady_clock::now() < deadline) {
               if (exit_requested_.load()) break;
               processPendingEvents();
+              if (yield_callback_) {
+                yield_callback_();
+              }
               auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                   deadline - std::chrono::steady_clock::now());
               auto chunk = std::min(static_cast<int>(remaining.count()), CHUNK);
@@ -3971,12 +3969,10 @@ globals = std::move(globals_stack_.back());
 
     // Update all closures in the module's globals to use this snapshot as their module_globals.
     // This allows them to access module-level variables (like 'errors = []') when called later.
-    std::cerr << "[LOADMODULE] Updating " << globals.size() << " globals, updating closures' module_globals\n";
     for (auto& [name, value] : globals) {
         if (value.isClosureId()) {
             auto* closure = heap_.closure(value.asClosureId());
             if (closure) {
-                std::cerr << "  Updating closure " << name << " module_globals\n";
                 closure->module_globals = moduleGlobalsForCache;
             }
         }

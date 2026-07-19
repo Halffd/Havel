@@ -98,10 +98,6 @@ auto hostIt = host_function_globals_.find(name);
     break;
   }
 
-  std::cerr << "[LOAD_GLOBAL] name='" << name 
-            << "' globals.size=" << globals.size() 
-            << " globals.has(errors)=" << (globals.count("errors") > 0 ? "yes" : "no")
-            << " frame_count=" << frame_count_ << "\n";
   trackGlobalAccess(name);
   COMPILER_THROW("Undefined variable: '" + name + "'");
   break;

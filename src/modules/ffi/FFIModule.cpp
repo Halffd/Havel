@@ -70,9 +70,7 @@ static Value ffiOpen(const compiler::VMApi& api, const std::vector<Value>& rawAr
     auto args = stripReceiver(api, rawArgs);
     if (args.size() < 1) return Value::makeNull();
     std::string path = api.toString(args[0]);
-    fprintf(stderr, "[FFIModule] ffiOpen called with path=%s\n", path.c_str());
     void* handle = FFICall::load_library(path);
-    fprintf(stderr, "[FFIModule] ffiOpen got handle=%p\n", handle);
     return Value::makePtr(handle);
 }
 

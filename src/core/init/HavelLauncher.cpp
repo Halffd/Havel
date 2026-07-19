@@ -556,8 +556,6 @@ public:
     // Parse once to check for hotkey bindings
     auto program = parseScript(combinedCode, cfg);
     bool hasHotkeys = program && programHasHotkeys(*program);
-    fprintf(stderr, "[LAUNCHER] ScriptStrategy: hasHotkeys=%d program=%p\n",
-            hasHotkeys, (void *)program.get());
 
     if (hasHotkeys) {
       // Full mode with UI backend
@@ -629,8 +627,7 @@ public:
     }
 
     // Headless mode
-    fprintf(stderr,
-            "[LAUNCHER] ScriptStrategy: going headless (no hotkeys in AST)\n");
+    if (debugging::debug_io) debug("ScriptStrategy: going headless (no hotkeys in AST)");
     try {
       havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();

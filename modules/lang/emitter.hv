@@ -3660,11 +3660,14 @@ si = si + 1
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
     if !skip_execute {
-      traceEmitter("execute_persistent " + entryName)
-      return bc.execute_persistent(entryName)
+      traceEmitter("execute_persistent " + entryName + " BEFORE")
+      result = bc.execute_persistent(entryName)
+      traceEmitter("execute_persistent " + entryName + " AFTER result=" + str(result))
+      return result
     }
 
-  }
+  return mainChunkIdx
+}
 
 // ============================================================
 // Match expression emission

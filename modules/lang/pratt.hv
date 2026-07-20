@@ -260,31 +260,31 @@ fn Parser(tokenList) {
   ::inMatchExpr = false
   ::allowBraceSugar = true
   ::_eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
-  ::_cur = pos < tokens.len ? tokens[pos] : _eof
+  ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
 
   fn at(offset) {
-    i = pos + offset
+    i = ::pos + offset
     if i < 0: i = 0
-    if i < tokens.len: return tokens[i]
-    else: return _eof
+    if i < ::tokens.len: return ::tokens[i]
+    else: return ::_eof
   }
   fn current() {
-    return _cur
+    return ::_cur
   }
   fn advance() {
-    if pos < tokens.len {
-      t = tokens[pos]
-      pos = pos + 1
-      _cur = pos < tokens.len ? tokens[pos] : _eof
+    if ::pos < ::tokens.len {
+      t = ::tokens[::pos]
+      ::pos = ::pos + 1
+      ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
       return t
     }
     else {
-      _cur = _eof
-      return _eof
+      ::_cur = ::_eof
+      return ::_eof
     }
   }
   fn syncCur() {
-    _cur = pos < tokens.len ? tokens[pos] : _eof
+    ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
   }
   fn synchronize() {
     while notEOF() and current().tid != TID.EOF {
@@ -4589,9 +4589,12 @@ fn parseAtDecoratorStatement() {
     parseExpr: parseExpr,
     parseStatement: parseStatement,
     parseBlock: parseBlock,
-    errors: errors,
-    pos: pos,
-    tokens: tokens,
+    current: current,
+    advance: advance,
+    at: at,
+    errors: ::errors,
+    pos: ::pos,
+    tokens: ::tokens,
     }
 // ===================================================================
 // PUBLIC API

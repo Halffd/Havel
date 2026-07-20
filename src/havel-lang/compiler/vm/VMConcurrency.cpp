@@ -762,12 +762,15 @@ case OpCode::FIBER_SLEEP: {
 
 case OpCode::CHANNEL_NEW: {
 			Value result = invokeHostFunctionDirect("channel_new", {});
+			::havel::info("[CHANNEL] CHANNEL_NEW: invoke channel_new returned isNull={}, isChannelId={}", result.isNull(), result.isChannelId());
 			if (result.isNull()) {
 				result = invokeHostFunctionDirect("channel.new", {});
+				::havel::info("[CHANNEL] CHANNEL_NEW: invoke channel.new returned isNull={}, isChannelId={}", result.isNull(), result.isChannelId());
 			}
 			if (result.isNull()) {
 				ChannelRef channel_ref = heap_.allocateChannel();
 				result = Value::makeChannelId(channel_ref.id);
+				::havel::info("[CHANNEL] CHANNEL_NEW: heap fallback created channel_id={}", channel_ref.id);
 			}
 			pushStack(result);
 			break;

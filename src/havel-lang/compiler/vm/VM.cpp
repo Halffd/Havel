@@ -329,9 +329,9 @@ Value VM::callFunctionSync(const Value &fn,
 
 
 Value VM::execute(const BytecodeChunk &chunk,
- const std::string &function_name,
+ const std::string& function_name,
  const std::vector<Value> &args) {
- const BytecodeChunk *saved_chunk = current_chunk;
+  const BytecodeChunk *saved_chunk = current_chunk;
  current_chunk = &chunk;
 
   const auto *entry = chunk.getFunction(function_name);
@@ -3819,6 +3819,47 @@ Value VM::loadModule(const std::string& path) {
       COMPILER_THROW("Failed to deserialize bytecode: " + resolved->canonicalPath);
     }
     chunk = std::make_shared<BytecodeChunk>(std::move(*deserialized));
+
+    // Post-deserialization invariant check: every FunctionObjId constant and
+    // instruction operand must fall within this chunk's function count.
+    for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+        const BytecodeFunction *func = chunk->getFunction(i);
+        if (!func) continue;
+        for (size_t ci = 0; ci < func->constants.size(); ++ci) {
+            const auto &c = func->constants[ci];
+            if (c.isFunctionObjId() && c.asFunctionObjId() >= chunk->getFunctionCount()) {
+                modules_loading_.erase(canonicalKey);
+                COMPILER_THROW("Corrupt .hvc: function constant["
+                    + std::to_string(ci) + "] has FunctionObjId "
+                    + std::to_string(c.asFunctionObjId()) + " but chunk only has "
+                    + std::to_string(chunk->getFunctionCount()) + " functions");
+            }
+        }
+        for (size_t di = 0; di < func->default_values.size(); ++di) {
+            const auto &dv = func->default_values[di];
+            if (dv.has_value() && dv->isFunctionObjId() && dv->asFunctionObjId() >= chunk->getFunctionCount()) {
+                modules_loading_.erase(canonicalKey);
+                COMPILER_THROW("Corrupt .hvc: function default_value["
+                    + std::to_string(di) + "] has FunctionObjId "
+                    + std::to_string(dv->asFunctionObjId()) + " but chunk only has "
+                    + std::to_string(chunk->getFunctionCount()) + " functions");
+            }
+        }
+        for (size_t ii = 0; ii < func->instructions.size(); ++ii) {
+            for (size_t oi = 0; oi < func->instructions[ii].operands.size(); ++oi) {
+                const auto &op = func->instructions[ii].operands[oi];
+                if (op.isFunctionObjId() && op.asFunctionObjId() >= chunk->getFunctionCount()) {
+                    modules_loading_.erase(canonicalKey);
+                    COMPILER_THROW("Corrupt .hvc: instruction["
+                        + std::to_string(ii) + "] operand[" + std::to_string(oi)
+                        + "] has FunctionObjId " + std::to_string(op.asFunctionObjId())
+                        + " but chunk only has " + std::to_string(chunk->getFunctionCount())
+                        + " functions");
+                }
+            }
+        }
+    }
+
     // Wrap FunctionObjId constants in closures that capture this module's chunk
     // so cross-module function references resolve to the correct chunk.
     for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {

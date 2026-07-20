@@ -3430,11 +3430,11 @@ void VM::registerDefaultPrototypes() {
   prototypes::registerSetPrototype(*this);
   prototypes::registerRangePrototype(*this);
 
-    registerPrototypeMethodByName("thread", "send", "thread.send");
-    registerPrototypeMethodByName("thread", "join", "thread.join");
-    registerPrototypeMethodByName("thread", "pause", "thread.pause");
-    registerPrototypeMethodByName("thread", "resume", "thread.resume");
-    registerPrototypeMethodByName("thread", "running", "thread.running");
+  registerPrototypeMethodByName("thread", "send", "thread.send");
+  registerPrototypeMethodByName("thread", "join", "thread.join");
+  registerPrototypeMethodByName("thread", "pause", "thread.pause");
+  registerPrototypeMethodByName("thread", "resume", "thread.resume");
+  registerPrototypeMethodByName("thread", "running", "thread.running");
 registerPrototypeMethodByName("interval", "pause", "interval.pause");
   registerPrototypeMethodByName("interval", "resume", "interval.resume");
   registerPrototypeMethodByName("interval", "stop", "interval.stop");
@@ -3443,6 +3443,19 @@ registerPrototypeMethodByName("interval", "pause", "interval.pause");
   registerPrototypeMethodByName("waitgroup", "add", "waitgroup.add");
   registerPrototypeMethodByName("waitgroup", "done", "waitgroup.done");
   registerPrototypeMethodByName("waitgroup", "wait", "waitgroup.wait");
+
+  // Channel prototype: ch.send(v), ch.receive(), ch.close()
+  // NOTE: These registrations are best-effort. ConcurrencyBridge host
+  // functions (channel.send/receive/close) are not registered with the VM
+  // until Modules::install() runs (HavelEngine.hpp line 179-188). Because
+  // registerDefaultPrototypes is invoked during HavelEngine::initializeFull
+  // (line 81) BEFORE Modules::install, the channel.send host function name
+  // is not yet in host_function_names_, so these may register with idx 0.
+  // HavelEngine.hpp manually re-registers the channel prototype after
+  // modules_->install() completes, which overrides these entries.
+  registerPrototypeMethodByName("channel", "send", "channel.send");
+  registerPrototypeMethodByName("channel", "receive", "channel.receive");
+  registerPrototypeMethodByName("channel", "close", "channel.close");
 
   // Register builtin type protocol conformance so PROT_CHECK/PROT_CAST
   // can use the generic protocol dispatch instead of hardcoded checks.

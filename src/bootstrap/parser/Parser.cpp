@@ -21,6 +21,11 @@ static bool isKeywordToken(TokenType t) {
     case TokenType::Prot: case TokenType::Impl: case TokenType::This:
     case TokenType::Struct: case TokenType::Enum: case TokenType::Op:
     case TokenType::Default:
+    case TokenType::Val: case TokenType::Let: case TokenType::Const:
+    case TokenType::Fn: case TokenType::Go: case TokenType::Thread:
+    case TokenType::Timeout: case TokenType::Interval: case TokenType::Wait:
+    case TokenType::WaitGroup: case TokenType::Defer: case TokenType::Co:
+    case TokenType::Yield: case TokenType::Update:
         return true;
     default:
         return false;
@@ -2209,20 +2214,20 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
         continue;
       }
 
- if (at().type == TokenType::Identifier || at().type == TokenType::Underscore) {
+ if (at().type == TokenType::Identifier || at().type == TokenType::Underscore || isKeywordToken(at().type)) {
  auto pattern = makeIdentifier(advance());
-
+ 
         std::optional<std::unique_ptr<ast::TypeAnnotation>> typeAnn;
         if (at().type == TokenType::Colon) {
           typeAnn = parseTypeAnnotation();
         }
-
+        
         std::optional<std::unique_ptr<ast::Expression>> defaultVal;
         if (at().type == TokenType::Assign) {
           advance(); // consume '='
           defaultVal = parseExpression();
         }
-
+        
         params.push_back(makeNode<ast::FunctionParameter>(
             std::move(pattern), std::move(defaultVal), std::move(typeAnn), false));
       } else if (at().type == TokenType::Spread) {

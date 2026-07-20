@@ -1,32 +1,27 @@
-use { debounce, throttle, retry, timeout, race, once, every, 
-      parallelMap, parallelFilter, parallelForEach,
-      promise, then, all, allSettled,
-      chan, select, merge, fanIn, fanOut,
-      waitgroup, rateLimit, circuitBreaker,
-      sleep, go, await } from "app/async"
+use { debounce, throttle, retry, timeout, race, once, every, parallelMap, parallelFilter, parallelForEach, promise, then, all, allSettled, chan, chanSelect, merge, fanIn, fanOut, waitgroup, rateLimit, circuitBreaker, sleep, go, await } from "app/async"
 
-fn debounce(fn, ms) { debounce(fn, ms) }
-fn throttle(fn, ms) { throttle(fn, ms) }
-fn retry(fn, attempts, baseDelay, maxDelay, backoff) { retry(fn, attempts, baseDelay, maxDelay, backoff) }
-fn timeout(fn, ms, onTimeout) { timeout(fn, ms, onTimeout) }
+fn debounce(f, ms) { debounce(f, ms) }
+fn throttle(f, ms) { throttle(f, ms) }
+fn retry(f, attempts, baseDelay, maxDelay, backoff) { retry(f, attempts, baseDelay, maxDelay, backoff) }
+fn timeout(f, ms, onTimeout) { timeout(f, ms, onTimeout) }
 fn race(fns) { race(fns) }
-fn once(fn) { once(fn) }
-fn every(fn, ms) { every(fn, ms) }
-fn parallelMap(items, fn, concurrency) { parallelMap(items, fn, concurrency) }
-fn parallelFilter(items, fn, concurrency) { parallelFilter(items, fn, concurrency) }
-fn parallelForEach(items, fn, concurrency) { parallelForEach(items, fn, concurrency) }
-fn promise(fn) { promise(fn) }
+fn once(f) { once(f) }
+fn every(f, ms) { every(f, ms) }
+fn parallelMap(items, f, concurrency) { parallelMap(items, f, concurrency) }
+fn parallelFilter(items, f, concurrency) { parallelFilter(items, f, concurrency) }
+fn parallelForEach(items, f, concurrency) { parallelForEach(items, f, concurrency) }
+fn promise(f) { promise(f) }
 fn then(promiseCh, onFulfilled, onRejected) { then(promiseCh, onFulfilled, onRejected) }
 fn all(channels) { all(channels) }
 fn allSettled(channels) { allSettled(channels) }
 fn chan(buffer) { chan(buffer) }
-fn select(channels) { select(channels) }
+fn chanSelect(channels) { chanSelect(channels) }
 fn merge(channels) { merge(channels) }
 fn fanIn(channels) { fanIn(channels) }
 fn fanOut(source, workers) { fanOut(source, workers) }
 fn waitgroup() { waitgroup() }
 fn rateLimit(maxPerSecond) { rateLimit(maxPerSecond) }
-fn circuitBreaker(fn, failureThreshold, resetTimeout) { circuitBreaker(fn, failureThreshold, resetTimeout) }
+fn circuitBreaker(f, failureThreshold, resetTimeout) { circuitBreaker(f, failureThreshold, resetTimeout) }
 fn sleep(ms) { sleep(ms) }
-fn go(fn) { go(fn) }
+fn go(f) { go(f) }
 fn await(x) { await(x) }

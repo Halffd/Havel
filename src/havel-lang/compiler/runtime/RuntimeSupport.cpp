@@ -943,11 +943,20 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     if (!read(srcHash.data(), srcHash.size())) return std::nullopt;
 
     // Validate hash if source path exists
-    if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
-      auto actualSize = std::filesystem::file_size(srcPath);
-      if (actualSize != srcSize) return std::nullopt;
-      auto actualHash = sha256_file(srcPath);
-      if (actualHash != srcHash) return std::nullopt;
+    if (!srcPath.empty()) {
+      if (std::filesystem::exists(srcPath)) {
+        auto actualSize = std::filesystem::file_size(srcPath);
+        if (actualSize != srcSize) return std::nullopt;
+        auto actualHash = sha256_file(srcPath);
+        if (actualHash != srcHash) return std::nullopt;
+      } else {
+        // Source file recorded in .hvc no longer exists on disk.
+        // This is a stale cache — the source was probably moved or deleted.
+        // Refusing to load prevents silent bytecode mismatch errors
+        // (function index out of bounds, wrong local slot assignment, etc.).
+        ::havel::warn("[Cache] rejecting .hvc: source file '{}' no longer exists", srcPath);
+        return std::nullopt;
+      }
     }
   }
 

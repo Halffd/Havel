@@ -419,7 +419,7 @@ endif()
 set(HAVEL_LANG_SOURCES "")
 if(ENABLE_HAVEL_LANG)
     file(GLOB_RECURSE HAVEL_LANG_SOURCES "src/havel-lang/*.cpp")
-    list(APPEND HAVEL_LANG_SOURCES "src/bootstrap/lexer/Lexer.cpp")
+    list(APPEND HAVEL_LANG_SOURCES "src/bootstrap/Lexer.cpp")
     # Exclude LSP sources (they have their own target)
     # Exclude C API sources (not implemented)
 list(REMOVE_ITEM HAVEL_LANG_SOURCES
@@ -1093,8 +1093,8 @@ if(ENABLE_HAVEL_LANG)
 # Bootstrap compiler sources - frozen, minimal subset
 set(BOOTSTRAP_SOURCES
     src/bootstrap/main.cpp
-    src/bootstrap/lexer/Lexer.cpp
-    src/bootstrap/parser/Parser.cpp
+    src/bootstrap/Lexer.cpp
+    src/bootstrap/Parser.cpp
     src/havel-lang/ast/AST.cpp
     src/havel-lang/compiler/core/ByteCompiler.cpp
     src/havel-lang/compiler/core/BytecodeIR.hpp
@@ -1185,7 +1185,7 @@ set(LSP_SOURCES
  src/havel-lang/lsp/main.cpp
  src/havel-lang/lsp/LanguageServer.cpp
  src/havel-lang/ast/AST.cpp
-  src/bootstrap/lexer/Lexer.cpp
+  src/bootstrap/Lexer.cpp
  src/havel-lang/parser/Parser.cpp
  src/c/LoggerC.c
  src/c/Config.c

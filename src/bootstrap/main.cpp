@@ -8,13 +8,13 @@
 #include <vector>
 #include <filesystem>
 
-#include "bootstrap/lexer/Lexer.hpp"
-#include "havel-lang/parser/Parser.h"
-#include "havel-lang/compiler/core/ByteCompiler.hpp"
-#include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
-#include "havel-lang/errors/ErrorSystem.h"
-#include "havel-lang/utils/ErrorPrinter.hpp"
-#include "havel-lang/ast/AST.h"
+#include "Lexer.hpp"
+#include "Parser.hpp"
+#include "ByteCompiler.hpp"
+#include "RuntimeSupport.hpp"
+#include "ErrorSystem.h"
+#include "ErrorPrinter.hpp"
+#include "AST.hpp"
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {

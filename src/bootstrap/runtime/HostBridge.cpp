@@ -144,6 +144,8 @@ static std::string getTypeName(const Value &value) {
     return "function";
   if (value.isBoundMethodId())
     return "function";
+  if (value.isChannelId())
+    return "channel";
   return "unknown";
 }
 

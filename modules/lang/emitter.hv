@@ -3659,6 +3659,7 @@ si = si + 1
     }
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
+    traceEmitter("DEBUG: skip_execute=" + str(skip_execute) + " !skip_execute=" + str(!skip_execute))
     if !skip_execute {
       traceEmitter("execute_persistent " + entryName + " BEFORE")
       result = bc.execute_persistent(entryName)

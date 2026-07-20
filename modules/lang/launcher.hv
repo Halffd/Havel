@@ -5,6 +5,7 @@
 use { parse } from "pratt"
 use { Emitter, compileProgram } from "emitter"
 use { inferProgram } from "types"
+use { setFlag, isOn } from "debug"
 
 fn readScriptFile(path) {
     if !fs.exists(path) {
@@ -181,6 +182,9 @@ fn runScript(cfg) {
 // Compile and execute
     emitter = Emitter()
     bc.reset()
+    print("DEBUG: Setting emitter flag")
+    setFlag("emitter", true)
+    print("DEBUG: emitter flag set, isOn(emitter)=" + str(isOn("emitter")))
     sourceFile = null
     if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }

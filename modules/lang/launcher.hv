@@ -46,7 +46,6 @@ fn parseArgs(args) {
         if arg == "--run" || arg == "run" {
             cfg.mode = "run"
             i = i + 1
-            if i < #args { cfg.scriptFiles.push(args[i]) }
         }
         else if arg == "--test" || arg == "-t" {
             cfg.mode = "test"
@@ -67,7 +66,6 @@ fn parseArgs(args) {
         else if arg == "--lint" {
             cfg.lintOnly = true
             i = i + 1
-            if i < #args { cfg.scriptFiles.push(args[i]) }
         }
         else if arg == "--eval" || arg == "-E" {
             i = i + 1
@@ -153,6 +151,14 @@ fn runScript(cfg) {
     }
     if combinedCode == "" { return 0 }
 
+    print("DEBUG: combinedCode length = " + str(#combinedCode))
+    print("DEBUG: combinedCode = " + combinedCode)
+
+    // Parse
+    result = parse(combinedCode)
+    print("DEBUG: parse result errors = " + str(result.errors))
+    print("DEBUG: parse result ast = " + str(result.ast))
+
     // Parse
     result = parse(combinedCode)
     if result.errors != null && #result.errors > 0 {
@@ -172,16 +178,16 @@ fn runScript(cfg) {
     // Typecheck
     inferProgram(result)
 
-    // Compile and execute
+// Compile and execute
     emitter = Emitter()
     bc.reset()
     sourceFile = null
     if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }
     print("LAUNCHER: about to compileProgram")
-    val ret = compileProgram(emitter, result.ast, false, sourceFile)
-    print("LAUNCHER: compileProgram returned: " + str(ret))
-    return ret
+    result = compileProgram(emitter, result.ast, false, sourceFile)
+    print("LAUNCHER: compileProgram returned: " + str(result))
+    return result
 }
 
 fn runTests(cfg) {

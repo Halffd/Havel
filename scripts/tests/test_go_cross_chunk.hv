@@ -8,8 +8,8 @@ ch = async.chan()
 
 // Run a function imported from a different module chunk in a goroutine
 async.go(fn() {
-    val = getValue()
-    ch.send(val)
+    v = getValue()
+    ch.send(v)
 })
 
 res = ch.receive()

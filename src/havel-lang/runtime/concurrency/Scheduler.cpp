@@ -309,6 +309,13 @@ std::vector<Value> Scheduler::getGCRoots() const {
     std::lock_guard lock(goroutines_mutex_);
     for (const auto& [id, g] : goroutines_) {
         if (!g) continue;
+        // Primary callable — the goroutine's function/closure identity.
+        // Without this root, the closure can be GC-collected while the
+        // goroutine is queued (not yet executing on the VM stack).
+        if (!g->callable.isNull()) roots.push_back(g->callable);
+        // Hotkey arm — the version to re-run on each trigger. Separate
+        // from callable because hotkeys can swap their callback at runtime.
+        if (!g->hotkey_callable.isNull()) roots.push_back(g->hotkey_callable);
         // Stack values (used at spawn, then fiber takes over)
         for (const Value& v : g->stack) {
             roots.push_back(v);

@@ -189,6 +189,24 @@ vm_->setJITCompiler(jitCompiler_.get());
         havel::startup_timing_report("host-functions-register", t);
         t = havel::startup_now();
 
+        // Re-register channel prototype methods.
+        // registerDefaultPrototypes() runs during HavelEngine::initializeFull
+        // (line 81 above) BEFORE Modules::install() populates the
+        // channel_new/channel_send/etc. host functions. As a result,
+        // registerPrototypeMethodByName("channel","send","channel.send")
+        // looks up "channel.send" in host_function_names_, fails to find
+        // it, and falls back to index 0 — meaning ch.send(v) would
+        // dispatch to host_function_names_[0] ("print" or "type"), not
+        // to channel.send.
+        //
+        // After the registerHostFunction loop above, channel.send/
+        // channel.receive/channel.close are in host_function_names_ with
+        // valid indices. Re-registering here writes the correct indices
+        // into prototypes_["channel"], overriding the stale idx-0 entries.
+        vm_->registerPrototypeMethodByName("channel", "send", "channel.send");
+        vm_->registerPrototypeMethodByName("channel", "receive", "channel.receive");
+        vm_->registerPrototypeMethodByName("channel", "close", "channel.close");
+
         vm_->setTimerCheckFunction([this]() { modules_->checkTimers(); });
 
     if (hostContext_->eventQueue) {

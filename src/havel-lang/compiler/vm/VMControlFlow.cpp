@@ -258,6 +258,8 @@ case OpCode::TAIL_CALL: {
     type_name = "timeout";
   } else if (receiver.isWaitGroupId()) {
     type_name = "waitgroup";
+  } else if (receiver.isChannelId()) {
+    type_name = "channel";
   } else if (receiver.isRangeId()) {
         type_name = "range";
     } else if (receiver.isHostFuncId()) {
@@ -673,6 +675,8 @@ if (instanceObj) {
       type_name = "timeout";
     } else if (receiver.isWaitGroupId()) {
       type_name = "waitgroup";
+    } else if (receiver.isChannelId()) {
+      type_name = "channel";
     } else if (receiver.isRangeId()) {
       type_name = "range";
     } else if (receiver.isHostFuncId()) {

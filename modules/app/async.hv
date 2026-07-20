@@ -19,9 +19,9 @@ fn await(x) { x }
 
 fn debounce(func, ms) {
     timer = nil
-    wrapped = fn(args...) {
+    wrapped = fn(...args) {
         if timer != nil { timeout.cancel(timer) }
-        timer = timeout ms { func(args...) }
+        timer = timeout ms { func(...args) }
     }
     wrapped.cancel = fn() { if timer != nil { timeout.cancel(timer); timer = nil } }
     wrapped
@@ -36,19 +36,19 @@ fn throttle(func, ms) {
     pending = nil
     timer = nil
     
-    wrapped = fn(args...) {
+    wrapped = fn(...args) {
         now = time.now()
         elapsed = now - last
         if elapsed >= ms {
             last = now
-            func(args...)
+            func(...args)
         } else if pending == nil {
             pending = args
             delay = ms - elapsed
             timer = timeout delay {
                 pending = nil
                 last = time.now()
-                func(pending...)
+                func(...pending)
             }
         } else {
             pending = args
@@ -66,13 +66,13 @@ fn retry(func, attempts, baseDelay, maxDelay, backoff) {
     if backoff == nil { backoff = 2.0 }
     if maxDelay == nil { maxDelay = 30000 }
     
-    wrapped = fn(args...) {
+    wrapped = fn(...args) {
         lastErr = nil
         delay = baseDelay || 100
         i = 0
         while i < attempts {
             try {
-                return func(args...)
+                return func(...args)
             } catch err {
                 lastErr = err
                 i += 1
@@ -161,11 +161,11 @@ fn once(func) {
     cached = nil
     err = nil
     
-    wrapped = fn(args...) {
+    wrapped = fn(...args) {
         if !called {
             called = true
             try {
-                cached = func(args...)
+                cached = func(...args)
             } catch e {
                 err = e
                 throw e
@@ -299,8 +299,8 @@ fn chan(buffer) {
 
 fn chanSelect(channels) {
     for ch in channels {
-        val = ch.receive()
-        return {channel: ch, value: val}
+        v = ch.receive()
+        return {channel: ch, value: v}
     }
     nil
 }
@@ -309,7 +309,7 @@ fn merge(channels) {
     out = channel.new()
     for ch in channels {
         go fn() {
-            for val in ch { out.send(val) }
+            for v in ch { out.send(v) }
         }
     }
     out
@@ -321,10 +321,10 @@ fn fanOut(source, workers) {
     outs = []
     for i in 0..workers { outs.push(channel.new()) }
     go fn() {
-        for val in source {
+        for v in source {
             i = 0
             for out in outs {
-                out.send(val)
+                out.send(v)
                 i += 1
             }
         }
@@ -383,7 +383,7 @@ fn circuitBreaker(func, failureThreshold, resetTimeout) {
     failures = 0
     lastFailure = 0
     
-    wrapped = fn(args...) {
+    wrapped = fn(...args) {
         if state == "open" {
             if time.now() - lastFailure > resetTimeout {
                 state = "half-open"
@@ -393,7 +393,7 @@ fn circuitBreaker(func, failureThreshold, resetTimeout) {
         }
         
         try {
-            res = func(args...)
+            res = func(...args)
             if state == "half-open" {
                 state = "closed"
                 failures = 0

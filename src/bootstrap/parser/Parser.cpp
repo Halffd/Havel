@@ -4,22 +4,6 @@
 #include <iostream>
 #include <sstream>
 
-/*
- * MAIN C++ PARSER — FROZEN (Stage 0)
- *
- * This is the C++ parser used by the main havel executable (C++ compilation path).
- * It exists for the C++ compilation pipeline (--no-self-hosted).
- *
- * DO NOT ADD NEW FEATURES HERE.
- *
- * All new language features MUST be implemented in the self-hosted parser:
- *   modules/lang/pratt.hv
- *
- * When self-hosted compiler is feature-complete and default path:
- * 1. Delete this file and src/havel-lang/parser/
- * 2. Remove parser sources from CMakeLists.txt
- */
-
 using namespace havel;
 using enum havel::TokenType;
 
@@ -1154,8 +1138,7 @@ t == havel::TokenType::Continue ||
         while (at(colonLookahead).type == havel::TokenType::NewLine) {
           colonLookahead++;
         }
-        if (at(colonLookahead).type == havel::TokenType::Colon ||
-            at(colonLookahead).type == havel::TokenType::Assign) {
+        if (at(colonLookahead).type == havel::TokenType::Colon) {
           isObject = true;
         }
       }
@@ -2233,18 +2216,18 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
 
  if (at().type == TokenType::Identifier || at().type == TokenType::Underscore || isKeywordToken(at().type)) {
  auto pattern = makeIdentifier(advance());
-
+ 
         std::optional<std::unique_ptr<ast::TypeAnnotation>> typeAnn;
         if (at().type == TokenType::Colon) {
           typeAnn = parseTypeAnnotation();
         }
-
+        
         std::optional<std::unique_ptr<ast::Expression>> defaultVal;
         if (at().type == TokenType::Assign) {
           advance(); // consume '='
           defaultVal = parseExpression();
         }
-
+        
         params.push_back(makeNode<ast::FunctionParameter>(
             std::move(pattern), std::move(defaultVal), std::move(typeAnn), false));
       } else if (at().type == TokenType::Spread) {

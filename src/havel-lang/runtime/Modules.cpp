@@ -45,6 +45,7 @@ static std::string getTypeName(const Value &value) {
     if (value.isClosureId()) return "closure";
     if (value.isHostFuncId()) return "function";
     if (value.isBoundMethodId()) return "function";
+    if (value.isChannelId()) return "channel";
     return "unknown";
 }
 
@@ -130,7 +131,9 @@ void Modules::installHostFunctions() {
 
     options_.host_functions["type"] = [this](const std::vector<Value> &args) {
         if (args.empty()) return Value::makeNull();
-        auto ref = ctx_->vm->getHeap().allocateString(getTypeName(args[0]));
+        const Value &v = args[0];
+        ::havel::info("[TYPE] isNull={}, isChannelId={}", v.isNull(), v.isChannelId());
+        auto ref = ctx_->vm->getHeap().allocateString(getTypeName(v));
         return Value::makeStringId(ref.id);
     };
 

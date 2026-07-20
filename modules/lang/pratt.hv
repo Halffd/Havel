@@ -4598,13 +4598,52 @@ fn parseAtDecoratorStatement() {
 // PUBLIC API
 // ===================================================================
 
+// Parse entire source into a Program AST node
+fn parseProgram(source) {
+    tokenList = tokenize(source)
+    p = Parser(tokenList)
+    body = []
+    while p.current().tid != TID.EOF {
+        // Skip newlines and semicolons
+        tt = p.current().tid
+        if tt == TID.NewLine || tt == TID.Semicolon {
+            p.advance()
+            continue
+        }
+        stmt = p.parseStatement()
+        if stmt != null {
+            body.push(stmt)
+        }
+        // Error recovery
+        if p.errors != null && #p.errors > 100 {
+            break
+        }
+    }
+    program = Program(body, 1, 1)
+    return {ast: program, errors: p.errors, incomplete: p.incomplete}
+}
+
+// Parse entire source into a Program AST node (alias for parseProgram)
 fn parse(source) {
-  tokenList = tokenize(source)
-  ast = Parser(tokenList)
-  return {ast: ast, errors: ast.errors, incomplete: ast.incomplete}
+  return parseProgram(source)
 }
 fn parseTokens(tokenList) {
-  ast = Parser(tokenList)
-  return {ast: ast, errors: p.errors, incomplete: p.incomplete}
-
+  p = Parser(tokenList)
+  body = []
+  while p.current().tid != TID.EOF {
+    tt = p.current().tid
+    if tt == TID.NewLine || tt == TID.Semicolon {
+      p.advance()
+      continue
+    }
+    stmt = p.parseStatement()
+    if stmt != null {
+      body.push(stmt)
+    }
+    if p.errors != null && #p.errors > 100 {
+      break
+    }
+  }
+  program = Program(body, 1, 1)
+  return {ast: program, errors: p.errors, incomplete: p.incomplete}
 }

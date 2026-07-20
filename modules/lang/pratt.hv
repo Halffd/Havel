@@ -4585,11 +4585,39 @@ fn parseAtDecoratorStatement() {
   }
   return DecoratorStatement(decorators, target, l, c)
 }
+// ===================================================================
+// PRODUCE AST — main entry point
+// ===================================================================
+    fn produceAST() {
+        skipNewlines()
+        stmts = []
+
+        while notEOF() and current().tid != TID.EOF {
+            skipNewlinesAndSemicolons()
+            if !notEOF() or current().tid == TID.EOF: break
+
+            s = parseStatement()
+            if s != null and s.kind != "ErrorNode" {
+                stmts.push(s)
+            }
+            else if s != null and s.kind == "ErrorNode" {
+                synchronize()
+            }
+            else {
+                // Null statement — skip
+                if pos < tokens.len: advance()
+
+}
+}
+return Program(stmts, 1, 1)
+
+}
     // Return the parser interface
     {
     parseExpr: parseExpr,
     parseStatement: parseStatement,
     parseBlock: parseBlock,
+    produceAST: produceAST,
     errors: errors,
     pos: pos,
     tokens: tokens,
@@ -4600,11 +4628,13 @@ fn parseAtDecoratorStatement() {
 
 fn parse(source) {
   tokenList = tokenize(source)
-  ast = Parser(tokenList)
-  return {ast: ast, errors: ast.errors, incomplete: ast.incomplete}
+  p = Parser(tokenList)
+  ast = p.produceAST()
+  return {ast: ast, errors: p.errors, incomplete: p.incomplete}
 }
 fn parseTokens(tokenList) {
-  ast = Parser(tokenList)
+  p = Parser(tokenList)
+  ast = p.produceAST()
   return {ast: ast, errors: p.errors, incomplete: p.incomplete}
 
 }

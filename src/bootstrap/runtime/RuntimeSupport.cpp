@@ -731,11 +731,11 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
                     static_cast<const uint8_t*>(ptr) + size);
     };
 
-    // Header: "HVC2" magic (version 3 adds per-function flags)
+    // Header: "HVC2" magic (version 2 with source hash)
     append("HVC2", 4);
 
-    // Version (3 = per-function is_generator/is_timer_closure flags)
-    uint32_t version = 3;
+    // Version
+    uint32_t version = 2;
     append(&version, sizeof(version));
 
     // Flags (reserved)
@@ -784,10 +784,6 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
 
         append(&func.param_count, sizeof(func.param_count));
         append(&func.local_count, sizeof(func.local_count));
-
-        // Function flags: is_generator, is_timer_closure
-        uint8_t funcFlags = (func.is_generator ? 1 : 0) | (func.is_timer_closure ? 2 : 0);
-        append(&funcFlags, sizeof(funcFlags));
 
         // Serialize param_names
         uint32_t numParamNames = static_cast<uint32_t>(func.param_names.size());
@@ -901,7 +897,6 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk)
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const uint8_t> data) {
   BytecodeChunk chunk;
   size_t pos = 0;
-  uint32_t hvc_version = 0;
 
   auto read = [&data, &pos](void* out, size_t size) -> bool {
     if (pos + size > data.size()) return false;
@@ -922,8 +917,9 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
 
   if (is_v2) {
     // HVC2: read version, flags, source path, source size, source hash
-    if (!read(&hvc_version, sizeof(hvc_version))) return std::nullopt;
-    if (hvc_version < 2 || hvc_version > 3) return std::nullopt;
+    uint32_t version = 0;
+    if (!read(&version, sizeof(version))) return std::nullopt;
+    if (version != 2) return std::nullopt;
 
     uint32_t flags = 0;
     if (!read(&flags, sizeof(flags))) return std::nullopt;
@@ -947,16 +943,11 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     if (!read(srcHash.data(), srcHash.size())) return std::nullopt;
 
     // Validate hash if source path exists
-    if (!srcPath.empty()) {
-      if (std::filesystem::exists(srcPath)) {
-        auto actualSize = std::filesystem::file_size(srcPath);
-        if (actualSize != srcSize) return std::nullopt;
-        auto actualHash = sha256_file(srcPath);
-        if (actualHash != srcHash) return std::nullopt;
-      } else {
-        ::havel::warn("[Cache] rejecting .hvc: source file '{}' no longer exists", srcPath);
-        return std::nullopt;
-      }
+    if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+      auto actualSize = std::filesystem::file_size(srcPath);
+      if (actualSize != srcSize) return std::nullopt;
+      auto actualHash = sha256_file(srcPath);
+      if (actualHash != srcHash) return std::nullopt;
     }
   }
 
@@ -999,12 +990,6 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     if (!read(&param_count, sizeof(param_count))) return std::nullopt;
     if (!read(&local_count, sizeof(local_count))) return std::nullopt;
 
-    // Function flags (HVC3+): is_generator, is_timer_closure
-    uint8_t funcFlags = 0;
-    if (hvc_version >= 3) {
-        if (!read(&funcFlags, sizeof(funcFlags))) return std::nullopt;
-    }
-
         // Read param_names
         uint32_t numParamNames = 0;
         if (!read(&numParamNames, sizeof(numParamNames))) return std::nullopt;
@@ -1024,8 +1009,6 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
 
         BytecodeFunction func(funcName, param_count, local_count);
         func.param_names = std::move(param_names);
-        func.is_generator = (funcFlags & 1) != 0;
-        func.is_timer_closure = (funcFlags & 2) != 0;
 
         // Constants (per-function)
         uint32_t numConsts = 0;

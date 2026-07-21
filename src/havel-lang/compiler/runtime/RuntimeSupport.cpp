@@ -738,21 +738,9 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
     uint32_t version = 3;
     append(&version, sizeof(version));
 
-    // Flags (bit 0 = has compiler build ID)
+    // Flags (reserved)
     uint32_t flags = 0;
-    // Embed compiler build ID so .hvc is invalidated when compiler changes.
-    // This prevents stale cache when the compiler generates different function
-    // indices for the same source file.
-    const std::string compiler_build_id = __DATE__ " " __TIME__;
-    flags |= 1;
     append(&flags, sizeof(flags));
-
-    // Compiler build ID (when flags bit 0 is set)
-    if (flags & 1) {
-        uint32_t idLen = static_cast<uint32_t>(compiler_build_id.size());
-        append(&idLen, sizeof(idLen));
-        append(compiler_build_id.data(), idLen);
-    }
 
     // Source path
     std::string srcPath = sourcePath;
@@ -939,21 +927,6 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
 
     uint32_t flags = 0;
     if (!read(&flags, sizeof(flags))) return std::nullopt;
-
-    // Compiler build ID (when flags bit 0 is set, HVC3+ only)
-    if ((flags & 1) && hvc_version >= 3) {
-        uint32_t idLen = 0;
-        if (!read(&idLen, sizeof(idLen))) return std::nullopt;
-        std::string compiler_id(idLen, '\0');
-        if (idLen > 0) {
-            if (pos + idLen > data.size()) return std::nullopt;
-            std::memcpy(compiler_id.data(), data.data() + pos, idLen);
-            pos += idLen;
-        }
-        // Build ID is diagnostic only; we don't reject on mismatch.
-        // The source SHA-256 hash handles source changes, and the format
-        // version handles major compiler format changes.
-    }
 
     // Source path
     uint32_t srcPathLen = 0;

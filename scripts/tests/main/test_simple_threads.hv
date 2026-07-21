@@ -1,4 +1,3 @@
-
 print("=== Testing threads ===")
 
 // Test 1: Lambda thread
@@ -28,12 +27,6 @@ print("✓ Test 2 passed: Thread execution works")
 // Test 3: Generator functionality (from test_yield)
 print("")
 print("Test 3: Generators (yield and resume)")
-let g = generator()
-print("First yield: " + str(g()))
-print("Second yield: " + str(g()))
-print("Third yield: " + str(g()))
-print("Final return: " + str(g()))
-print("✓ Test 3 passed: Generator works")
 
 fn generator() {
   yield 1
@@ -42,7 +35,11 @@ fn generator() {
   return 42
 }
 
+let g = generator()
+print("First yield: " + str(g()))
+print("Second yield: " + str(g()))
+print("Third yield: " + str(g()))
+print("Final return: " + str(g()))
+
 print("")
 print("=== All tests completed ===")
-
-

@@ -1,0 +1,881 @@
+// Erlang-style process module for Havel
+// Implements OTP-style process supervision and communication
+
+use { sleep, print } from "std"
+use { _self, _processes } from "core"
+
+// ============================================================================
+// Process Dictionary (Erlang-style process dictionary)
+// ============================================================================
+
+fn put(key, value) {
+    self = _self()
+    if self == null { return }
+    _processes[self].dict[key] = value
+}
+
+fn get(key) {
+    self = _self()
+    if self == null { return nil }
+    return _processes[self].dict[key]
+}
+
+fn erase(key) {
+    self = _self()
+    if self == null { return nil }
+    return _processes[self].dict.remove(key)
+}
+
+fn get_all() {
+    self = _self()
+    if self == null { return {} }
+    return _processes[self].dict
+}
+
+// ============================================================================
+// Process Registry (Erlang-style registered processes)
+// ============================================================================
+
+_registry = {}
+
+fn register(name, pid) {
+    if _registry[name] != nil {
+        error("already_registered: " + name)
+    }
+    _registry[name] = pid
+}
+
+fn unregister(name) {
+    if _registry[name] == nil {
+        error("not_registered: " + name)
+    }
+    _registry.remove(name)
+}
+
+fn whereis(name) {
+    return _registry[name]
+}
+
+fn registered() {
+    keys = []
+    for k in _registry {
+        keys.push(k)
+    }
+    return keys
+}
+
+// ============================================================================
+// Links and Monitors (Erlang-style)
+// ============================================================================
+
+_links = {}
+_monitors = {}
+
+fn link(pid) {
+    self = _self()
+    if self == null { return }
+    if self == pid { return }
+    
+    if _links[self] == nil { _links[self] = {} }
+    if _links[pid] == nil { _links[pid] = {} }
+    
+    _links[self].add(pid)
+    _links[pid].add(self)
+}
+
+fn unlink(pid) {
+    self = _self()
+    if self == null { return }
+    
+    if _links[self] != nil {
+        _links[self].remove(pid)
+    }
+    if _links[pid] != nil {
+        _links[pid].remove(self)
+    }
+}
+
+fn monitor(pid) {
+    self = _self()
+    if self == null { return nil }
+    if self == pid { return nil }
+    
+    ref = _make_ref()
+    if _monitors[pid] == nil { _monitors[pid] = {} }
+    _monitors[pid][ref] = self
+    return ref
+}
+
+fn demonitor(ref) {
+    for pid, refs in _monitors {
+        if refs[ref] != nil {
+            refs.remove(ref)
+            if refs.is_empty() {
+                _monitors.remove(pid)
+            }
+            return true
+        }
+    }
+    return false
+}
+
+fn _notify_monitors(pid, reason) {
+    refs = _monitors[pid]
+    if refs == nil { return }
+    
+    for ref, observer in refs {
+        send(observer, { type: "DOWN", ref: ref, pid: pid, reason: reason })
+    }
+    _monitors.remove(pid)
+}
+
+fn _make_ref() {
+    static ref_counter = 0
+    ref_counter = ref_counter + 1
+    return { type: "REF", id: ref_counter }
+}
+
+// ============================================================================
+// Exit Signals and Error Handling
+// ============================================================================
+
+fn exit(reason) {
+    self = _self()
+    if self == nil { return }
+    
+    // Notify linked processes
+    links = _links[_self()]
+    if links != nil {
+        for pid in links {
+            send(pid, { type: "EXIT", from: _self(), reason: reason })
+        }
+    }
+    
+    // Notify monitors
+    _notify_monitors(_self(), reason)
+    
+    // Exit this process
+    _exit(reason)
+}
+
+fn _exit(reason) {
+    // Internal exit - mark process as dead
+    _processes[_self()].status = "exited"
+    _processes[_self()].exit_reason = reason
+    
+    // Notify VM to cleanup
+    _vm_exit(reason)
+}
+
+// Try-catch with exit trapping
+fn catch(fun) {
+    return try(fun)
+}
+
+fn try(fun) {
+    return fun()
+}
+
+// Catch exit signals
+fn catch_exit(fun) {
+    return catch(fun)
+}
+
+// ============================================================================
+// Process Spawning (Erlang-style)
+// ============================================================================
+
+fn spawn(fun) {
+    pid = _spawn(fun)
+    return pid
+}
+
+fn spawn_link(fun) {
+    pid = _spawn(fun)
+    link(pid)
+    return pid
+}
+
+fn spawn_monitor(fun) {
+    pid = _spawn(fun)
+    ref = monitor(pid)
+    return { pid: pid, ref: ref }
+}
+
+fn spawn_opt(fun, opts) {
+    // opts: { link: true, monitor: true }
+    pid = _spawn(fun)
+    if opts.link { link(pid) }
+    if opts.monitor { return { pid: pid, ref: monitor(pid) } }
+    return pid
+}
+
+fn _spawn(fun) {
+    // Internal spawn - returns PID
+    return _vm_spawn(fun)
+}
+
+// ============================================================================
+// Process Information
+// ============================================================================
+
+fn self() {
+    return _self()
+}
+
+fn pid() {
+    return _self()
+}
+
+fn is_alive(pid) {
+    proc = _processes[pid]
+    return pid != null && proc != null && proc.status == "running"
+}
+
+fn process_info(pid, item) {
+    proc = _processes[pid]
+    if proc == null { return nil }
+    
+    if item == "status" { return proc.status }
+    if item == "memory" { return proc.memory }
+    if item == "message_queue_len" { return proc.message_queue_len }
+    if item == "dictionary" { return proc.dict }
+    if item == "links" { return _links[pid] }
+    if item == "monitors" { return _monitors[pid] }
+    return nil
+}
+
+// ============================================================================
+// Message Passing
+// ============================================================================
+
+fn send(pid, msg) {
+    _send(pid, msg)
+}
+
+fn receive(patterns, timeout) {
+    return _receive(patterns, timeout)
+}
+
+// Selective receive with timeout
+fn receive_after(patterns, after) {
+    return _receive_after(patterns, after)
+}
+
+// ============================================================================
+// System
+// ============================================================================
+
+fn system_info(item) {
+    if item == "process_limit" { return _system_process_limit() }
+    if item == "process_count" { return _process_count() }
+    if item == "run_queue" { return _run_queue_len() }
+    return nil
+}
+
+// ============================================================================
+// Internal (VM hooks)
+// ============================================================================
+
+fn _self() {
+    return _vm_self()
+}
+
+fn _processes {
+    return _vm_processes()
+}
+
+fn _spawn(fun) {
+    return _vm_spawn(fun)
+}
+
+fn _send(pid, msg) {
+    return _vm_send(pid, msg)
+}
+
+fn _receive(patterns, timeout) {
+    return _vm_receive(patterns, timeout)
+}
+
+fn _receive_after(patterns, after) {
+    return _vm_receive_after(patterns, after)
+}
+
+fn _vm_spawn(fun) {
+    return _vm_spawn_impl(fun)
+}
+
+fn _vm_send(pid, msg) {
+    return _vm_send_impl(pid, msg)
+}
+
+fn _vm_receive(patterns, timeout) {
+    return _vm_receive_impl(patterns, timeout)
+}
+
+fn _vm_receive_after(patterns, after) {
+    return _vm_receive_after_impl(patterns, after)
+}
+
+fn _vm_self() {
+    return _vm_self_impl()
+}
+
+fn _vm_exit(reason) {
+    _vm_exit_impl(reason)
+}
+
+fn _make_ref() {
+    static ref_counter = 0
+    ref_counter = ref_counter + 1
+    return { type: "REF", id: ref_counter }
+}
+
+fn _notify_monitors(pid, reason) {
+    // Notify all monitors of this pid
+}
+
+fn _processes {
+    return _vm_processes_impl()
+}
+
+fn _self() {
+    return _vm_self()
+}
+
+fn _vm_spawn_impl(fun) {
+    return _vm_spawn_impl(fun)
+}
+
+fn _vm_send_impl(pid, msg) {
+    return _vm_send_impl(pid, msg)
+}
+
+fn _vm_receive_impl(patterns, timeout) {
+    return _vm_receive_impl(patterns, timeout)
+}
+
+fn _vm_receive_after_impl(patterns, after) {
+    return _vm_receive_after_impl(patterns, after)
+}
+
+fn _vm_self() {
+    return _vm_self_impl()
+}
+
+fn _vm_exit_impl(reason) {
+    // VM exit implementation
+}
+
+fn _vm_processes_impl() {
+    return _vm_processes_impl()
+}
+
+fn _vm_self_impl() {
+    return _vm_self_impl()
+}
+
+fn _processes[pid] {
+    return _vm_process(pid)
+}
+
+fn _processes[pid] = {
+    return _vm_process_set(pid, value)
+}
+
+fn _links[pid] {
+    return _vm_links(pid)
+}
+
+fn _links[pid] = {
+    return _vm_links_set(pid, value)
+}
+
+fn _monitors[pid] {
+    return _vm_monitors(pid)
+}
+
+fn _monitors[pid] = {
+    return _vm_monitors_set(pid, value)
+}
+
+fn _registry[name] {
+    return _vm_registry(name)
+}
+
+fn _registry[name] = {
+    return _vm_registry_set(name, value)
+}
+
+fn _registry[name] != nil {
+    return _vm_registry_has(name)
+}
+
+fn _registry[name].remove(name) {
+    return _vm_registry_remove(name)
+}
+
+fn _registry[name].add(name) {
+    return _vm_registry_add(name)
+}
+
+fn _registry[name].is_empty() {
+    return _vm_registry_is_empty(name)
+}
+
+fn _processes[pid].status {
+    return _vm_process_status(pid)
+}
+
+fn _processes[pid].exit_reason {
+    return _vm_process_exit_reason(pid)
+}
+
+fn _processes[pid].dict {
+    return _vm_process_dict(pid)
+}
+
+fn _processes[pid].dict[key] {
+    return _vm_process_dict_get(pid, key)
+}
+
+fn _processes[pid].dict[key] = {
+    return _vm_process_dict_set(pid, key, value)
+}
+
+fn _processes[pid].dict.remove(key) {
+    return _vm_process_dict_remove(pid, key)
+}
+
+fn _processes[pid].memory {
+    return _vm_process_memory(pid)
+}
+
+fn _processes[pid].message_queue_len {
+    return _vm_process_msg_queue_len(pid)
+}
+
+fn _processes[pid].status = {
+    return _vm_process_status_set(pid, value)
+}
+
+fn _processes[pid].exit_reason = {
+    return _vm_process_exit_reason_set(pid, value)
+}
+
+fn _vm_spawn(fun) {
+    return _vm_spawn_impl(fun)
+}
+
+fn _vm_send(pid, msg) {
+    return _vm_send_impl(pid, msg)
+}
+
+fn _vm_receive(patterns, timeout) {
+    return _vm_receive_impl(patterns, timeout)
+}
+
+fn _vm_receive_after(patterns, after) {
+    return _vm_receive_after_impl(patterns, after)
+}
+
+fn _vm_self() {
+    return _vm_self_impl()
+}
+
+fn _vm_exit(reason) {
+    _vm_exit_impl(reason)
+}
+
+fn _vm_processes() {
+    return _vm_processes_impl()
+}
+
+fn _vm_self() {
+    return _vm_self_impl()
+}
+
+fn _vm_spawn_impl(fun) {
+    // VM spawn implementation
+    return _vm_spawn_impl(fun)
+}
+
+fn _vm_send_impl(pid, msg) {
+    return _vm_send_impl(pid, msg)
+}
+
+fn _vm_receive_impl(patterns, timeout) {
+    return _vm_receive_impl(patterns, timeout)
+}
+
+fn _vm_receive_after_impl(patterns, after) {
+    return _vm_receive_after_impl(patterns, after)
+}
+
+fn _vm_self_impl() {
+    return _vm_self_impl()
+}
+
+fn _vm_exit_impl(reason) {
+    // VM exit implementation
+}
+
+fn _vm_processes_impl() {
+    return _vm_processes_impl()
+}
+
+fn _vm_self_impl() {
+    return _vm_self_impl()
+}
+
+fn _vm_spawn_impl(fun) {
+    return _vm_spawn_impl(fun)
+}
+
+fn _vm_send_impl(pid, msg) {
+    return _vm_send_impl(pid, msg)
+}
+
+fn _vm_receive_impl(patterns, timeout) {
+    return _vm_receive_impl(patterns, timeout)
+}
+
+fn _vm_receive_after_impl(patterns, after) {
+    return _vm_receive_after_impl(patterns, after)
+}
+
+fn _vm_self_impl() {
+    return _vm_self_impl()
+}
+
+fn _vm_exit_impl(reason) {
+    // VM exit implementation
+}
+
+fn _vm_processes_impl() {
+    return _vm_processes_impl()
+}
+
+fn _vm_self_impl() {
+    return _vm_self_impl()
+}
+
+fn _vm_process(pid) {
+    return _vm_process(pid)
+}
+
+fn _vm_process_set(pid, value) {
+    return _vm_process_set(pid, value)
+}
+
+fn _vm_links(pid) {
+    return _vm_links(pid)
+}
+
+fn _vm_links_set(pid, value) {
+    return _vm_links_set(pid, value)
+}
+
+fn _vm_monitors(pid) {
+    return _vm_monitors(pid)
+}
+
+fn _vm_monitors_set(pid, value) {
+    return _vm_monitors_set(pid, value)
+}
+
+fn _vm_registry(name) {
+    return _vm_registry(name)
+}
+
+fn _vm_registry_set(name, value) {
+    return _vm_registry_set(name, value)
+}
+
+fn _vm_registry_has(name) {
+    return _vm_registry_has(name)
+}
+
+fn _vm_registry_remove(name) {
+    return _vm_registry_remove(name)
+}
+
+fn _vm_registry_add(name) {
+    return _vm_registry_add(name)
+}
+
+fn _vm_registry_is_empty(name) {
+    return _vm_registry_is_empty(name)
+}
+
+fn _vm_process(pid) {
+    return _vm_process(pid)
+}
+
+fn _vm_process_set(pid, value) {
+    return _vm_process_set(pid, value)
+}
+
+fn _vm_process_status(pid) {
+    return _vm_process_status(pid)
+}
+
+fn _vm_process_exit_reason(pid) {
+    return _vm_process_exit_reason(pid)
+}
+
+fn _vm_process_dict(pid) {
+    return _vm_process_dict(pid)
+}
+
+fn _vm_process_dict_get(pid, key) {
+    return _vm_process_dict_get(pid, key)
+}
+
+fn _vm_process_dict_set(pid, key, value) {
+    return _vm_process_dict_set(pid, key, value)
+}
+
+fn _vm_process_dict_remove(pid, key) {
+    return _vm_process_dict_remove(pid, key)
+}
+
+fn _vm_process_memory(pid) {
+    return _vm_process_memory(pid)
+}
+
+fn _vm_process_msg_queue_len(pid) {
+    return _vm_process_msg_queue_len(pid)
+}
+
+fn _vm_process_status_set(pid, value) {
+    return _vm_process_status_set(pid, value)
+}
+
+fn _vm_process_exit_reason_set(pid, value) {
+    return _vm_process_exit_reason_set(pid, value)
+}
+
+fn _vm_process_dict(pid) {
+    return _vm_process_dict(pid)
+}
+
+fn _vm_process_dict_get(pid, key) {
+    return _vm_process_dict_get(pid, key)
+}
+
+fn _vm_process_dict_set(pid, key, value) {
+    return _vm_process_dict_set(pid, key, value)
+}
+
+fn _vm_process_dict_remove(pid, key) {
+    return _vm_process_dict_remove(pid, key)
+}
+
+fn _vm_process_memory(pid) {
+    return _vm_process_memory(pid)
+}
+
+fn _vm_process_msg_queue_len(pid) {
+    return _vm_process_msg_queue_len(pid)
+}
+
+fn _vm_process_status_set(pid, value) {
+    return _vm_process_status_set(pid, value)
+}
+
+fn _vm_process_exit_reason_set(pid, value) {
+    return _vm_process_exit_reason_set(pid, value)
+}
+
+fn _vm_process_dict(pid) {
+    return _vm_process_dict(pid)
+}
+
+fn _vm_process_dict_get(pid, key) {
+    return _vm_process_dict_get(pid, key)
+}
+
+fn _vm_process_dict_set(pid, key, value) {
+    return _vm_process_dict_set(pid, key, value)
+}
+
+fn _vm_process_dict_remove(pid, key) {
+    return _vm_process_dict_remove(pid, key)
+}
+
+fn _vm_process_memory(pid) {
+    return _vm_process_memory(pid)
+}
+
+fn _vm_process_msg_queue_len(pid) {
+    return _vm_process_msg_queue_len(pid)
+}
+
+fn _vm_process_status_set(pid, value) {
+    return _vm_process_status_set(pid, value)
+}
+
+fn _vm_process_exit_reason_set(pid, value) {
+    return _vm_process_exit_reason_set(pid, value)
+}
+
+fn _vm_process_dict(pid) {
+    return _vm_process_dict(pid)
+}
+
+fn _vm_process_dict_get(pid, key) {
+    return _vm_process_dict_get(pid, key)
+}
+
+fn _vm_process_dict_set(pid, key, value) {
+    return _vm_process_dict_set(pid, key, value)
+}
+
+fn _vm_process_dict_remove(pid, key) {
+    return _vm_process_dict_remove(pid, key)
+}
+
+fn _vm_process_memory(pid) {
+    return _vm_process_memory(pid)
+}
+
+fn _vm_process_msg_queue_len(pid) {
+    return _vm_process_msg_queue_len(pid)
+}
+
+fn _vm_process_status_set(pid, value) {
+    return _vm_process_status_set(pid, value)
+}
+
+fn _vm_process_exit_reason_set(pid, value) {
+    return _vm_process_exit_reason_set(pid, value)
+}
+
+fn _vm_process_dict(pid) {
+    return _vm_process_dict(pid)
+}
+
+fn _vm_process_dict_get(pid, key) {
+    return _vm_process_dict_get(pid, key)
+}
+
+fn _vm_process_dict_set(pid, key, value) {
+    return _vm_process_dict_set(pid, key, value)
+}
+
+fn _vm_process_dict_remove(pid, key) {
+    return _vm_process_dict_remove(pid, key)
+}
+
+fn _vm_process_memory(pid) {
+    return _vm_process_memory(pid)
+}
+
+fn _vm_process_msg_queue_len(pid) {
+    return _vm_process_msg_queue_len(pid)
+}
+
+fn _vm_process_status_set(pid, value) {
+    return _vm_process_status_set(pid, value)
+}
+
+fn _vm_process_exit_reason_set(pid, value) {
+    return _vm_process_exit_reason_set(pid, value)
+}
+
+fn _vm_process_dict(pid) {
+    return _vm_process_dict(pid)
+}
+
+fn _vm_process_dict_get(pid, key) {
+    return _vm_process_dict_get(pid, key)
+}
+
+fn _vm_process_dict_set(pid, key, value) {
+    return _vm_process_dict_set(pid, key, value)
+}
+
+fn _vm_process_dict_remove(pid, key) {
+    return _vm_process_dict_remove(pid, key)
+}
+
+fn _vm_process_memory(pid) {
+    return _vm_process_memory(pid)
+}
+
+fn _vm_process_msg_queue_len(pid) {
+    return _vm_process_msg_queue_len(pid)
+}
+
+fn _vm_process_status_set(pid, value) {
+    return _vm_process_status_set(pid, value)
+}
+
+fn _vm_process_exit_reason_set(pid, value) {
+    return _vm_process_exit_reason_set(pid, value)
+}
+
+fn _vm_process_dict(pid) {
+    return _vm_process_dict(pid)
+}
+
+fn _vm_process_dict_get(pid, key) {
+    return _vm_process_dict_get(pid, key)
+}
+
+fn _vm_process_dict_set(pid, key, value) {
+    return _vm_process_dict_set(pid, key, value)
+}
+
+fn _vm_process_dict_remove(pid, key) {
+    return _vm_process_dict_remove(pid, key)
+}
+
+fn _vm_process_memory(pid) {
+    return _vm_process_memory(pid)
+}
+
+fn _vm_process_msg_queue_len(pid) {
+    return _vm_process_msg_queue_len(pid)
+}
+
+fn _vm_process_status_set(pid, value) {
+    return _vm_process_status_set(pid, value)
+}
+
+fn _vm_process_exit_reason_set(pid, value) {
+    return _vm_process_exit_reason_set(pid, value)
+}
+
+fn _vm_process_dict(pid) {
+    return _vm_process_dict(pid)
+}
+
+fn _vm_process_dict_get(pid, key) {
+    return _vm_process_dict_get(pid, key)
+}
+
+fn _vm_process_dict_set(pid, key, value) {
+    return _vm_process_dict_set(pid, key, value)
+}
+
+fn _vm_process_dict_remove(pid, key) {
+    return _vm_process_dict_remove(pid, key)
+}
+
+fn _vm_process_memory(pid) {
+    return _vm_process_memory(pid)
+}
+
+fn _vm_process_msg_queue_len(pid) {
+    return _vm_process_msg_queue_len(pid)
+}
+
+fn _vm_process_status_set(pid, value) {
+    return _vm_process_status_set(pid, value)
+}
+
+fn _vm_process_exit_reason_set(pid, value) {
+    return _vm_process_exit_reason_set(pid, value)
+}

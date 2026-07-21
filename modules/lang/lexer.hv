@@ -25,6 +25,7 @@ TID = {
     OpenParen: 85, CloseParen: 86, OpenBrace: 87, CloseBrace: 88,
     BangOpenBrace: 89, OpenBracket: 90, CloseBracket: 91,
     Dot: 92, Comma: 93, Semicolon: 94, Colon: 95, ColonColon: 96,
+    ColonColonColon: 97,
     Underscore: 97, DotDot: 98, DotDotEquals: 99, Spread: 100,
     Plus: 101, Minus: 102, Multiply: 103, Divide: 104, Modulo: 105,
     Power: 106, Backslash: 107, DoubleBackslash: 108, DoubleModulo: 109,
@@ -915,6 +916,13 @@ fn scanHotkey() {
                 } else {
                     addToken("ShellCommand", "$")
                 }
+                continue
+            }
+            if c == 58 && cp(1) == 58 && cp(2) == 58 {
+                advance()
+                advance()
+                advance()
+                addToken("ColonColonColon", ":::")
                 continue
             }
             if c == 58 && cp(1) == 58 {

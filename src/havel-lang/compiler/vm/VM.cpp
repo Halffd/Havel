@@ -1766,11 +1766,20 @@ Value VM::call(const Value &callee_value,
 void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(Value callee_value, std::vector<Value> args) {
- tail_call_depth_ = 0;
+	tail_call_depth_ = 0;
 
     // Handle host function call directly
     if (callee_value.isHostFuncId()) {
         uint32_t host_func_idx = callee_value.asHostFuncId();
+        if (host_func_idx < host_function_names_.size()) {
+            const std::string& hfname = host_function_names_[host_func_idx];
+            if (hfname.find("Parser") != std::string::npos) {
+                static bool once = false;
+                if (!once) { once = true;
+                std::cerr << "[DOCALL] Parser as HostFuncId, name='" << hfname << "'" << std::endl;
+                }
+            }
+        }
         if (host_func_idx >= host_function_names_.size()) {
             COMPILER_THROW("Host function index out of range: " +
                 std::to_string(host_func_idx));
@@ -1855,6 +1864,20 @@ frame_arena_[frame_count_] = CallFrame{func, co_chunk, co->ip, 0, co->closure_id
     std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
     if (callee_value.isFunctionObjId()) {
         function_index = callee_value.asFunctionObjId();
+        {
+            auto *f = resolve_chunk ? resolve_chunk->getFunction(function_index) : nullptr;
+            if (!f) { f = main_chunk_ ? main_chunk_->getFunction(function_index) : nullptr; }
+            if (f && f->name == "Parser") {
+                static bool once = false;
+                if (!once) { once = true;
+                std::cerr << "[DOCALL] Parser fn=" << function_index
+                          << " chunk=" << (resolve_chunk ? "yes" : "null")
+                          << " frame_count=" << frame_count_
+                          << " stack_size=" << stack.size()
+                          << std::endl;
+                }
+            }
+        }
         if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
             if (main_chunk_ && main_chunk_->getFunction(function_index)) {
                 resolve_chunk = main_chunk_.get();
@@ -3507,6 +3530,7 @@ bool VM::ensureModuleLoaded(const std::string &name) {
 }
 
 Value VM::loadModule(const std::string& path) {
+  std::cerr << "[LOADMODULE] Enter: '" << path << "'\n";
   // Local variables needed by all return paths
   std::unordered_set<std::string> inheritedGlobalNames;
   std::unordered_map<std::string, Value> inheritedGlobalValues;
@@ -3567,14 +3591,15 @@ Value VM::loadModule(const std::string& path) {
           }
         }
       }
+      std::cerr << "[LOADMODULE] Cache hit: '" << path << "'\n";
       return cachedVal;
     }
   }
 
 // Resolve the module path
     auto resolved = moduleLoader_.resolve(path, current_script_dir_);
-    if (path == "lexer") {
-        // std::cerr << "[DBG-LOAD] resolving 'lexer' scriptDir='" << current_script_dir_ << "' resolved=" << (resolved ? "yes" : "no");
+    if (true) { // enable module loading debug
+        std::cerr << "[DBG-LOAD] resolving '" << path << "' scriptDir='" << current_script_dir_ << "' resolved=" << (resolved ? "yes" : "no");
         if (resolved) {
             std::string typeStr;
             switch (resolved->type) {
@@ -3587,9 +3612,9 @@ Value VM::loadModule(const std::string& path) {
                 case havel::compiler::ModuleLoader::ResolvedModule::HostBuiltin: typeStr = "HostBuiltin"; break;
                 default: typeStr = "Other"; break;
             }
-            // std::cerr << " type=" << typeStr << " path=" << resolved->canonicalPath << "\n";
+            std::cerr << " type=" << typeStr << " path=" << resolved->canonicalPath << "\n";
         } else {
-            // std::cerr << "\n";
+            std::cerr << "\n";
         }
     }
     if (resolved) {
@@ -4033,7 +4058,7 @@ Value VM::loadModule(const std::string& path) {
     // so that functions can call sibling top-level functions during module initialization.
     // Use nullptr for module_globals so these closures use current globals (not the snapshot),
     // allowing them to see variables set during __main__ (e.g., 'flags = DebugFlags()').
-    // std::cerr << "[MODULE-LOAD] Populating globals with " << chunk->getFunctionIndices().size() << " functions\n";
+    std::cerr << "[MODULE-LOAD] Populating globals for '" << path << "' with " << chunk->getFunctionIndices().size() << " functions\n";
     for (const auto& [func_name, func_index] : chunk->getFunctionIndices()) {
         if (globals.find(func_name) == globals.end()) {
             auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
@@ -4092,7 +4117,9 @@ frame_count_++;
 	// Execute the module's bytecode (same heap, sandboxed globals)
         Value exec_result;
         try {
+ std::cerr << "[MODULE-EXEC] Running __main__ of '" << path << "'\n";
  runDispatchLoop(0);
+ std::cerr << "[MODULE-EXEC] __main__ of '" << path << "' completed\n";
  if (!stack.empty()) {
                 exec_result = stack.top();
                 stack.pop();
@@ -4254,6 +4281,7 @@ for (const auto& [name, value] : globals) {
     globals[path] = exports;
     modules_loading_.erase(canonicalKey);
 
+    std::cerr << "[LOADMODULE] Exit: '" << path << "'\n";
     return exports;
 }
 

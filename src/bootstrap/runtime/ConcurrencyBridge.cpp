@@ -384,6 +384,7 @@ return Value::makeNull();
 
 Value ConcurrencyBridge::channelNew(const std::vector<Value> &args) {
   (void)args; // No arguments needed
+  ::havel::info("[CHANNEL] channelNew called");
 
   uint32_t channel_id;
   {
@@ -391,6 +392,7 @@ Value ConcurrencyBridge::channelNew(const std::vector<Value> &args) {
     channel_id = next_channel_id_++;
     channels_[channel_id] = std::make_unique<Channel>();
   }
+  ::havel::info("[CHANNEL] channelNew created channel_id={}", channel_id);
 
   return Value::makeChannelId(channel_id);
 }

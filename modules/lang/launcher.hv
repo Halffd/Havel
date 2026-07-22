@@ -2,7 +2,11 @@
 // Handles --run, --test, --lint modes via the self-hosted pipeline
 // Usage: havel --run launcher.hv -- [flags] script.hv
 
+print("DEBUG LAUNCHER: before imports")
+
 use { parse } from "pratt"
+print("DEBUG LAUNCHER: after pratt import")
+
 use { Emitter, compileProgram } from "emitter"
 use { inferProgram } from "types"
 use { setFlag, isOn } from "debug"

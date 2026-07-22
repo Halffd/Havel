@@ -1,0 +1,3865 @@
+#pragma once
+#include "../lexer/Lexer.hpp"
+#include <memory>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace havel::ast {
+class ASTVisitor;
+
+struct TypeAnnotation;
+struct TypeDefinition;
+struct StructFieldDef;
+struct EnumVariantDef;
+struct StructDefinition;
+struct ClassDefinition;
+struct EnumDefinition;
+
+struct TypeParam {
+	std::string name;
+	std::vector<std::string> upperBounds;
+
+	TypeParam() = default;
+	explicit TypeParam(std::string n, std::vector<std::string> bounds = {})
+		: name(std::move(n)), upperBounds(std::move(bounds)) {}
+
+	std::string toString() const {
+		std::string result = name;
+		if (!upperBounds.empty()) {
+			result += ": ";
+			for (size_t i = 0; i < upperBounds.size(); ++i) {
+				if (i > 0) result += " & ";
+				result += upperBounds[i];
+			}
+		}
+		return result;
+	}
+};
+struct TraitDeclaration;
+struct ProtocolDeclaration;
+struct ImplDeclaration;
+enum class NodeType {
+  // Program structure
+  Program,
+  Module,
+  ImportStatement, // import List from "std/collections"
+  UseStatement,    // use io, use media
+ WithStatement, // with io { ... }
+
+  // Core functional expressions
+  HotkeyBinding,          // F1 => { ... }
+  HotkeyExpression,       // ^t => { ... } as expression (returns Hotkey context)
+  PipelineExpression,     // data | map(f) | filter(g) | reduce(h)
+  BinaryExpression,       // 10 + 5, a && b
+  UnaryExpression,        // not flag, -number
+  UpdateExpression,       // i++, --i
+  CallExpression,         // map(f, list)
+  MemberExpression,       // record.field
+  LambdaExpression,       // fn(x) -> x * 2, |x| x + 1
+  ApplicationExpression,  // Curried function application
+  ThisExpression,         // this - current object reference
+  InputStatement,         // > "text" or > {Enter} or > lmb
+  GetInputExpression,     // < source
+  SleepStatement,         // :1500 or :1h30m
+  WaitStatement,          // w condition
+  BacktickExpression,     // `command` for shell output
+  ShellCommandExpression, // $ or $! command in expression context
+  ShellCommandStatement,  // $ command for shell execution
+  RepeatStatement,        // repeat n { body }
+
+  // Async/await expressions
+  AsyncExpression, // async { ... }
+  AwaitExpression, // await promise
+
+  // Pattern matching (essential for FP)
+  MatchExpression,      // match value with | Some(x) -> x | None -> 0
+  PatternLiteral,       // Some(x), [head|tail], {x, y}
+  GuardExpression,      // | x when x > 0 -> "positive"
+  BlockStatement,       // { ... }
+  BlockExpression,      // { stmt; stmt; expr } - last expr is value
+  IfStatement,          // if condition { ... } else { ... }
+  IfExpression,         // if condition { expr } else { expr } - returns value
+  TernaryExpression,    // condition ? trueValue : falseValue
+    RangeExpression, // 0..10
+    AssignmentExpression, // identifier = value
+    MultipleAssignment, // a, b = value (comma-separated targets)
+    CastExpression, // expr as Type
+  ReturnStatement,      // return value;
+  WhileStatement,       // while condition { ... }
+  ForExpression,        // expr for binding : iterable (generator/comprehension)
+  ForStatement,         // for i in range { ... }
+  LoopStatement,        // loop { ... }
+  DoWhileStatement,     // do { ... } while condition
+  SwitchStatement,      // switch expression { cases... }
+  SwitchCase,           // case expression => { ... }
+  BreakStatement,       // break
+  ContinueStatement,    // continue
+  OnModeStatement,      // on mode gaming { ... }
+  OffModeStatement,     // off mode gaming { ... }
+  OnReloadStatement,    // on reload { ... }
+  OnStartStatement,     // on start { ... }
+  OnMessageStatement,   // on msg { ... } - generic message handler
+  OnKeyDownStatement,   // on keyDown { ... } or on keyDown(keys...) { ... }
+  OnKeyUpStatement,     // on keyUp { ... } or on keyUp(keys...) { ... }
+  OnTapStatement,       // on tap(key) => { ... }
+  OnComboStatement,     // on combo(key) => { ... }
+  WhenModeExpression,   // when mode gaming
+  // Conditional hotkeys
+  ConditionalHotkey,  // hotkey "Ctrl+A" if mode == foo then ...
+  WhenBlockStatement, // when condition { ... }
+  WhenStatement,      // when signal { ... } - reactive when
+  // Immutable data structures
+  ListExpression,   // [1, 2, 3]
+  ArrayLiteral,     // [1, 2, 3] - actual implementation
+  ObjectLiteral,    // {name: "John", age: 30} - actual implementation
+  SpreadExpression, // ...array, ...object
+  ConfigBlock,      // config { ... }
+  DevicesBlock,     // devices { ... }
+  ModesBlock,       // modes { ... }
+ ModeBlock, // mode name { ... } (shorthand for when mode == "name")
+ ConfigSection, // any_identifier { ... }
+  IndexExpression,  // arr[0] or obj["key"]
+  AtExpression,     // @field for self-assignment in methods
+  AtAtExpression,   // @@field for class field access in methods
+  TupleExpression,  // (1, "hello", true)
+  RecordExpression, // {name: "John", age: 30}
+  MapExpression,    // #{key1: val1, key2: val2}
+  SetExpression,    // {1, 2, 3}
+  CollectionExpression, // {"a", "b", x: 10} mixed positional and keyed
+
+  // Destructuring patterns
+  ListPattern,   // [head|tail], [a, b, c]
+  TuplePattern,  // (x, y)
+  RecordPattern, // {name, age}
+  ObjectPattern, // { x, y: alias } for destructuring
+  ArrayPattern,  // [a, b] for destructuring
+  OrPattern,     // pat1 | pat2 for alternative patterns
+  WildcardPattern, // _ for match statements
+  SpreadPattern, // ..rest for array rest patterns
+  ConstructorPattern, // Name(p1, p2) constructor destructuring in match
+  // Literals
+  StringLiteral,                // "Hello"
+  CharLiteral,                  // 'x' single char
+  RangePattern,                 // 'a'..='z' range pattern for match
+  InterpolatedStringExpression, // "Hello ${name}"
+  NumberLiteral,                // 42, 3.14
+  BooleanLiteral,               // true, false
+  NullLiteral,                  // null
+  AtomLiteral,                  // :ok, :error (like Elixir atoms)
+  Identifier,                   // variable names
+  HotkeyLiteral,                // F1, Ctrl+V
+
+  // Functional statements (minimize these)
+  ExpressionStatement, // Most things are expressions
+  LetDeclaration, // let x = 5 (immutable)
+  FunctionDeclaration, // let add = fn(a, b) -> a + b
+  FunctionParameter, // function parameter with optional default value
+  DecoratorStatement, // @decorator fn foo() { } - decorator applied to declaration
+
+    // Type system (if you want static typing)
+    TypeDeclaration, // type Point = {x: Float, y: Float}
+    UnionType, // type Result = Ok(a) | Error(String)
+    TypeAnnotation, // : List(Int)
+    GenericTypeRef, // List(Int), Result(int, str) — parameterized type reference
+  StructDeclaration, // struct Vec2 { x: Num, y: Num }
+  StructDefinition,  // struct body definition
+  StructFieldDef,    // struct field with optional type
+  StructMethodDef,   // struct method (including constructor)
+  ClassDeclaration,  // class Window { x, y; fn moveTo(x, y) {...} }
+  ClassDefinition,   // class body definition
+  ClassFieldDef,     // class field with optional type
+  ClassMethodDef,    // class method (including constructor)
+  EnumDeclaration,   // enum Color { Red, Green, Blue }
+  EnumDefinition,    // enum body definition
+  EnumVariantDef,    // enum variant with optional payload
+  TraitDeclaration, // trait Drawable { fn draw() }
+  TraitMethod, // trait method (with optional default impl)
+  ProtocolDeclaration, // prot Drawable { fn draw() }
+  ImplDeclaration, // impl Drawable for Circle { ... }
+
+  // Higher-order constructs
+  PartialApplication, // add(5, _) creates fn(b) -> 5 + b
+  Composition,        // f >> g, f << g
+
+  // Monadic operations (advanced)
+  DoExpression,   // do { x <- getX(); y <- getY(); return x + y }
+  BindExpression, // >>= operator
+
+  // Error handling (functional style)
+  TryExpression,  // try expr catch pattern -> handler
+  ThrowStatement, // throw value
+  DelStatement,   // del variable/property/element
+
+  // Lazy evaluation
+  LazyExpression,  // lazy { expensive_computation() }
+  ForceExpression, // force lazy_value
+
+  // Concurrency Primitives
+  ThreadExpression,   // thread { ... }
+  IntervalExpression, // interval 1000 { ... }
+  UpdateBlockExpression, // update 150 { ... }
+  TimeoutExpression,  // timeout 1000 { ... }
+  
+  // Coroutines
+ YieldExpression, // yield or yield(ms) or yield value
+  GoStatement, // go func()
+  GoExpression, // go expr - as expression returning thread object
+  ChannelExpression, // channel()
+  WaitGroupExpression, // waitgroup()
+  WaitExpression, // wait expr - join on goroutine or waitgroup
+  DeferStatement, // defer expr
+
+  // Special
+  ErrorNode,
+  UnknownNode
+};
+
+// Base AST Node
+struct ASTNode {
+  NodeType kind;
+  size_t line = 0;
+  size_t column = 0;
+  size_t length = 0;
+
+  virtual ~ASTNode() = default;
+
+  virtual std::string toString() const = 0;
+
+  virtual void accept(ASTVisitor &visitor) const = 0;
+};
+
+// Expression base (inherits from ASTNode)
+struct Expression : public ASTNode {
+  // All expressions can be evaluated to values
+};
+
+// Statement base (inherits from ASTNode)
+struct Statement : public ASTNode {
+  // Statements don't return values
+};
+
+// ============================================================================
+// TYPE SYSTEM DEFINITIONS (must come before LetDeclaration which uses them)
+// ============================================================================
+
+// Type Definition base class
+struct TypeDefinition : public ASTNode {
+  std::string toString() const override { return "TypeDefinition{}"; }
+  void accept([[maybe_unused]] ASTVisitor &visitor) const override {}
+};
+
+// Simple type reference (e.g., Int, String, MyCustomType)
+struct TypeReference : public TypeDefinition {
+  std::string name;
+
+  TypeReference(const std::string &typeName) : name(typeName) {
+    kind = NodeType::TypeAnnotation;
+  }
+
+  std::string toString() const override {
+    return "TypeReference{" + name + "}";
+  }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Nullable type (e.g., ?Int means Int or null)
+struct NullableType : public TypeDefinition {
+    std::unique_ptr<TypeDefinition> inner;
+
+    NullableType(std::unique_ptr<TypeDefinition> innerType)
+        : inner(std::move(innerType)) {
+        kind = NodeType::TypeAnnotation;
+    }
+
+    std::string toString() const override {
+        return "NullableType{?" + (inner ? inner->toString() : "nullptr") + "}";
+    }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Generic/parameterized type reference (e.g., List(Int), Result(int, str), Map(str, int))
+struct GenericTypeRef : public TypeDefinition {
+    std::string name;                                  // Base type name (e.g., "List")
+    std::vector<std::unique_ptr<TypeDefinition>> typeArguments;  // Type arguments
+
+    GenericTypeRef(const std::string &baseName,
+                   std::vector<std::unique_ptr<TypeDefinition>> args)
+        : name(baseName), typeArguments(std::move(args)) {
+        kind = NodeType::GenericTypeRef;
+    }
+
+    std::string toString() const override {
+        std::string result = name + "(";
+        for (size_t i = 0; i < typeArguments.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += typeArguments[i] ? typeArguments[i]->toString() : "nullptr";
+        }
+        result += ")";
+        return result;
+    }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Type Annotation (e.g., : List(Int))
+struct TypeAnnotation : public ASTNode {
+  std::unique_ptr<TypeDefinition> type;
+
+  TypeAnnotation(std::unique_ptr<TypeDefinition> t) : type(std::move(t)) {
+    kind = NodeType::TypeAnnotation;
+  }
+
+  std::string toString() const override {
+    return "TypeAnnotation{" + (type ? type->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Struct field with optional type annotation
+struct StructFieldDef : public ASTNode {
+  std::string name;
+  std::optional<std::unique_ptr<TypeDefinition>> type;
+  std::optional<std::unique_ptr<Expression>> defaultValue;
+
+  StructFieldDef(
+      const std::string &fieldName,
+      std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt,
+      std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt)
+      : name(fieldName), type(std::move(fieldType)),
+        defaultValue(std::move(defaultVal)) {
+    kind = NodeType::StructFieldDef;
+  }
+
+  std::string toString() const override {
+    std::string result = name;
+    if (type) {
+      result += ": " + (*type)->toString();
+    }
+    if (defaultValue) {
+      result += " = " + (*defaultValue)->toString();
+    }
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Forward declarations
+struct Identifier;
+struct BlockStatement;
+struct FunctionParameter;
+struct FunctionDeclaration;
+struct DecoratorStatement;
+struct StructMethodDef;
+struct TraitMethod;
+
+// Enum variant with optional payload
+struct EnumVariantDef : public ASTNode {
+  std::string name;
+  std::optional<std::unique_ptr<TypeDefinition>> payloadType;
+
+  EnumVariantDef(
+      const std::string &variantName,
+      std::optional<std::unique_ptr<TypeDefinition>> payload = std::nullopt)
+      : name(variantName), payloadType(std::move(payload)) {
+    kind = NodeType::EnumVariantDef;
+  }
+
+  std::string toString() const override {
+    std::string result = name;
+    if (payloadType) {
+      result += "(" + (*payloadType)->toString() + ")";
+    }
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Enum definition
+struct EnumDefinition : public TypeDefinition {
+  std::vector<EnumVariantDef> variants;
+
+  EnumDefinition(std::vector<EnumVariantDef> variantList = {})
+      : variants(std::move(variantList)) {
+    kind = NodeType::EnumDefinition;
+  }
+
+  std::string toString() const override {
+    std::string result = "Enum{";
+    for (size_t i = 0; i < variants.size(); ++i) {
+      if (i > 0)
+        result += ", ";
+      result += variants[i].toString();
+    }
+    result += "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// ============================================================================
+// STATEMENT DEFINITIONS
+// ============================================================================
+enum class BinaryOperator {
+  Add,
+  Sub,
+  Mul,
+  Div,
+  Mod,
+  Pow,
+  IntDiv, // \ integer division
+  AddAssign,
+  SubAssign,
+  MulAssign,
+  DivAssign,
+  ModAssign,
+  PowAssign,
+  LessEqual,
+  GreaterEqual,
+  Equal,
+  NotEqual,
+Is, // identity comparison: a is b (same object reference)
+    IsNot, // negated identity: a is not b
+  Less,
+  Greater,
+  And,
+  Or,
+  In,          // membership: x in [1,2,3]
+  NotIn,       // negated membership: x not in [1,2,3]
+  Matches,     // regex match: title matches ".*Steam.*"
+  Tilde,       // regex match shorthand: title ~ /pattern/ or title ~ "string"
+  Nullish,     // ?? nullish coalescing: x ?? default
+  ConfigAppend,      // >> config operator
+    BitwiseOr,          // |  bitwise OR (inside (( )))
+    BitwiseXor,         // ^  bitwise XOR (inside (( )))
+    BitwiseAnd,         // &  bitwise AND (inside (( )))
+  BitwiseShiftLeft, // << bitwise left shift (inside (( )))
+  BitwiseShiftRight, // >> bitwise right shift (inside (( )))
+  DivMod, // \\ divmod
+  Remainder, // %% remainder
+  IntDivAssign, // \= integer division assign
+  RemainderAssign, // %%= remainder assign
+  BitwiseAndAssign, // &=
+  BitwiseOrAssign, // |=
+  BitwiseXorAssign, // ^=
+  BitwiseShiftLeftAssign, // <<=
+  BitwiseShiftRightAssign // >>=
+};
+
+// Overload operator<< for BinaryOperator
+inline std::ostream &operator<<(std::ostream &os, BinaryOperator op) {
+  switch (op) {
+  case BinaryOperator::Add:
+    return os << "+";
+  case BinaryOperator::Sub:
+    return os << "-";
+  case BinaryOperator::Mul:
+    return os << "*";
+  case BinaryOperator::Div:
+    return os << "/";
+  case BinaryOperator::Mod:
+    return os << "%";
+  case BinaryOperator::Pow:
+    return os << "**";
+  case BinaryOperator::AddAssign:
+    return os << "+=";
+  case BinaryOperator::SubAssign:
+    return os << "-=";
+  case BinaryOperator::MulAssign:
+    return os << "*=";
+  case BinaryOperator::DivAssign:
+    return os << "/=";
+  case BinaryOperator::ModAssign:
+    return os << "%=";
+  case BinaryOperator::PowAssign:
+    return os << "**=";
+  case BinaryOperator::Equal:
+    return os << "==";
+  case BinaryOperator::NotEqual:
+    return os << "!=";
+case BinaryOperator::Is:
+        return os << "is";
+    case BinaryOperator::IsNot:
+        return os << "is not";
+  case BinaryOperator::Less:
+    return os << "<";
+  case BinaryOperator::Greater:
+    return os << ">";
+  case BinaryOperator::LessEqual:
+    return os << "<=";
+  case BinaryOperator::GreaterEqual:
+    return os << ">=";
+  case BinaryOperator::And:
+    return os << "&&";
+  case BinaryOperator::Or:
+    return os << "||";
+  case BinaryOperator::In:
+    return os << "in";
+  case BinaryOperator::NotIn:
+    return os << "not in";
+  case BinaryOperator::Matches:
+    return os << "matches";
+  case BinaryOperator::ConfigAppend:
+      return os << ">>";
+    case BinaryOperator::BitwiseOr:
+      return os << "|";
+    case BinaryOperator::BitwiseXor:
+      return os << "^";
+    case BinaryOperator::BitwiseAnd:
+      return os << "&";
+    case BinaryOperator::BitwiseShiftLeft:
+      return os << "<<";
+case BinaryOperator::BitwiseShiftRight:
+    return os << ">>";
+  case BinaryOperator::DivMod:
+    return os << "\\\\";
+  case BinaryOperator::Remainder:
+    return os << "%%";
+  case BinaryOperator::IntDiv:
+    return os << "\\";
+  case BinaryOperator::IntDivAssign:
+    return os << "\\=";
+  case BinaryOperator::RemainderAssign:
+    return os << "%%=";
+  case BinaryOperator::BitwiseAndAssign:
+    return os << "&=";
+  case BinaryOperator::BitwiseOrAssign:
+    return os << "|=";
+  case BinaryOperator::BitwiseXorAssign:
+    return os << "^=";
+  case BinaryOperator::BitwiseShiftLeftAssign:
+    return os << "<<=";
+  case BinaryOperator::BitwiseShiftRightAssign:
+    return os << ">>=";
+  default:
+      return os << "UNKNOWN_OPERATOR";
+    }
+}
+
+struct BinaryExpression : public Expression {
+  std::unique_ptr<Expression> left;
+  BinaryOperator operator_; // Changed from string
+  std::unique_ptr<Expression> right;
+
+  BinaryExpression(std::unique_ptr<Expression> l, BinaryOperator op,
+                   std::unique_ptr<Expression> r)
+      : left(std::move(l)), operator_(op), right(std::move(r)) {
+    kind = NodeType::BinaryExpression;
+  }
+
+  std::string toString() const override {
+    return "BinaryExpr{" + (left ? left->toString() : "nullptr") + " " +
+           toString(operator_) + " " + (right ? right->toString() : "nullptr") +
+           "}";
+  }
+
+  std::string toString(BinaryOperator op) const {
+    switch (op) {
+    case BinaryOperator::Add:
+      return "+";
+    case BinaryOperator::Sub:
+      return "-";
+    case BinaryOperator::Mul:
+      return "*";
+    case BinaryOperator::Div:
+      return "/";
+    case BinaryOperator::Mod:
+      return "%";
+    case BinaryOperator::Pow:
+      return "**";
+    case BinaryOperator::AddAssign:
+      return "+=";
+    case BinaryOperator::SubAssign:
+      return "-=";
+    case BinaryOperator::MulAssign:
+      return "*=";
+    case BinaryOperator::DivAssign:
+      return "/=";
+    case BinaryOperator::ModAssign:
+      return "%=";
+    case BinaryOperator::PowAssign:
+      return "**=";
+    case BinaryOperator::Equal:
+      return "==";
+    case BinaryOperator::NotEqual:
+      return "!=";
+    case BinaryOperator::Less:
+      return "<";
+    case BinaryOperator::Greater:
+      return ">";
+    case BinaryOperator::LessEqual:
+      return "<=";
+    case BinaryOperator::GreaterEqual:
+      return ">=";
+    case BinaryOperator::And:
+      return "&&";
+    case BinaryOperator::Or:
+      return "||";
+    case BinaryOperator::In:
+      return "in";
+case BinaryOperator::Is:
+        return "is";
+    case BinaryOperator::IsNot:
+        return "is not";
+    case BinaryOperator::NotIn:
+      return "not in";
+    case BinaryOperator::Matches:
+      return "matches";
+    case BinaryOperator::Tilde:
+      return "~";
+    case BinaryOperator::IntDiv:
+      return "\\";
+    case BinaryOperator::Nullish:
+      return "??";
+    case BinaryOperator::ConfigAppend:
+      return ">>";
+    case BinaryOperator::BitwiseOr:
+      return "|";
+    case BinaryOperator::BitwiseXor:
+      return "^";
+    case BinaryOperator::BitwiseAnd:
+      return "&";
+    case BinaryOperator::BitwiseShiftLeft:
+      return "<<";
+        case BinaryOperator::BitwiseShiftRight:
+            return ">>";
+        case BinaryOperator::DivMod:
+            return "\\\\";
+        case BinaryOperator::Remainder:
+            return "%%";
+        case BinaryOperator::IntDivAssign:
+            return "\\=";
+        case BinaryOperator::RemainderAssign:
+            return "%%=";
+        case BinaryOperator::BitwiseAndAssign:
+            return "&=";
+        case BinaryOperator::BitwiseOrAssign:
+            return "|=";
+        case BinaryOperator::BitwiseXorAssign:
+            return "^=";
+        case BinaryOperator::BitwiseShiftLeftAssign:
+            return "<<=";
+        case BinaryOperator::BitwiseShiftRightAssign:
+            return ">>=";
+        }
+    return "UNKNOWN_OPERATOR";
+  }
+  void accept(ASTVisitor &visitor) const override;
+};
+// Program Node
+struct Program : public Statement {
+  std::vector<std::unique_ptr<Statement>> body;
+
+  Program() { kind = NodeType::Program; }
+
+  std::string toString() const override {
+    return "Program{body: [" + std::to_string(body.size()) + " statements]}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Identifier
+struct Identifier : public Expression {
+  std::string symbol;
+  bool isGlobalScope; // true for ::identifier (global scope assignment)
+
+  Identifier(const std::string &sym, size_t ln = 0, size_t col = 0)
+      : symbol(sym), isGlobalScope(false) {
+    kind = NodeType::Identifier;
+    line = ln;
+    column = col;
+  }
+
+  std::string toString() const override {
+    return std::string(isGlobalScope ? "::" : "") + "Identifier{" + symbol +
+           "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// This Expression (this keyword - current object reference)
+struct ThisExpression : public Expression {
+  ThisExpression() { kind = NodeType::ThisExpression; }
+
+  std::string toString() const override { return "this"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Block Statement ({ ... })
+struct BlockStatement : public Statement {
+  std::vector<std::unique_ptr<Statement>> body;
+
+  BlockStatement() { kind = NodeType::BlockStatement; }
+
+  std::string toString() const override {
+    return "Block{" + std::to_string(body.size()) + " statements}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// ============================================================================
+// CONCURRENCY & COROUTINES
+// ============================================================================
+
+struct ThreadExpression : public Expression {
+    std::unique_ptr<BlockStatement> body;
+    ThreadExpression(std::unique_ptr<BlockStatement> b) : body(std::move(b)) {
+        kind = NodeType::ThreadExpression;
+    }
+    std::string toString() const override { return "thread { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct IntervalExpression : public Expression {
+    std::unique_ptr<Expression> intervalMs;
+    std::unique_ptr<BlockStatement> body;
+    IntervalExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+        : intervalMs(std::move(ms)), body(std::move(b)) {
+        kind = NodeType::IntervalExpression;
+    }
+    std::string toString() const override { return "interval " + intervalMs->toString() + " { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct UpdateBlockExpression : public Expression {
+    std::unique_ptr<Expression> intervalMs;
+    std::unique_ptr<BlockStatement> body;
+    UpdateBlockExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+        : intervalMs(std::move(ms)), body(std::move(b)) {
+        kind = NodeType::UpdateBlockExpression;
+    }
+    std::string toString() const override { return "update " + intervalMs->toString() + " { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct TimeoutExpression : public Expression {
+    std::unique_ptr<Expression> delayMs;
+    std::unique_ptr<BlockStatement> body;
+    TimeoutExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+        : delayMs(std::move(ms)), body(std::move(b)) {
+        kind = NodeType::TimeoutExpression;
+    }
+    std::string toString() const override { return "timeout " + delayMs->toString() + " { ... }"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct YieldExpression : public Expression {
+    std::unique_ptr<Expression> value; // Optional: yield value or yield(ms)
+    YieldExpression(std::unique_ptr<Expression> val = nullptr) : value(std::move(val)) {
+        kind = NodeType::YieldExpression;
+    }
+    std::string toString() const override { return "yield" + (value ? "(" + value->toString() + ")" : ""); }
+ void accept(ASTVisitor &visitor) const override;
+ };
+
+ struct GoStatement : public Statement {
+    std::unique_ptr<Expression> call; // Must be a CallExpression
+    GoStatement(std::unique_ptr<Expression> c) : call(std::move(c)) {
+        kind = NodeType::GoStatement;
+    }
+    std::string toString() const override { return "go " + call->toString(); }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct GoExpression : public Expression {
+    std::unique_ptr<Expression> call; // Function call or block expression
+    GoExpression(std::unique_ptr<Expression> c) : call(std::move(c)) {
+        kind = NodeType::GoExpression;
+    }
+    std::string toString() const override { return "go(" + call->toString() + ")"; }
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct ChannelExpression : public Expression {
+  ChannelExpression() {
+    kind = NodeType::ChannelExpression;
+  }
+  std::string toString() const override { return "channel()"; }
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct WaitGroupExpression : public Expression {
+  WaitGroupExpression() {
+    kind = NodeType::WaitGroupExpression;
+  }
+  std::string toString() const override { return "waitgroup()"; }
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct DeferStatement : public Statement {
+  std::unique_ptr<Expression> expression;
+  DeferStatement(std::unique_ptr<Expression> expr) : expression(std::move(expr)) {
+    kind = NodeType::DeferStatement;
+  }
+  std::string toString() const override { return "defer " + (expression ? expression->toString() : "null"); }
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct WaitExpression : public Expression {
+  std::unique_ptr<Expression> target;
+  WaitExpression(std::unique_ptr<Expression> t) : target(std::move(t)) {
+    kind = NodeType::WaitExpression;
+  }
+  std::string toString() const override { return "wait " + (target ? target->toString() : "null"); }
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Function parameter with optional default value and type annotation
+// Supports destructuring patterns: { x, y }, [a, b], nested patterns
+struct FunctionParameter : public ASTNode {
+  std::unique_ptr<Expression> pattern; // Identifier or destructuring pattern
+  std::optional<std::unique_ptr<Expression>> defaultValue;
+  std::optional<std::unique_ptr<TypeAnnotation>>
+      typeAnnotation;      // Optional type annotation
+  bool isVariadic = false; // true for ...args (variadic parameter)
+
+  FunctionParameter(
+      std::unique_ptr<Expression> pat,
+      std::optional<std::unique_ptr<Expression>> defVal = std::nullopt,
+      std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt,
+      bool variadic = false)
+      : pattern(std::move(pat)), defaultValue(std::move(defVal)),
+        typeAnnotation(std::move(typeAnn)), isVariadic(variadic) {
+    kind = NodeType::FunctionParameter;
+  }
+
+  std::string toString() const override {
+    std::string result =
+        (isVariadic ? "..." : "") + (pattern ? pattern->toString() : "nullptr");
+    if (typeAnnotation) {
+      result += ": " + (*typeAnnotation)->toString();
+    }
+    if (defaultValue) {
+      result += " = " + (*defaultValue)->toString();
+    }
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Struct method definition (including constructor)
+struct StructMethodDef : public ASTNode {
+    std::string name; // "init" for constructor, otherwise method name, or
+                      // operator like "op_add"
+    std::vector<std::unique_ptr<FunctionParameter>> parameters;
+    std::unique_ptr<BlockStatement> body;
+    bool isConstructor;
+    bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
+	std::vector<TypeParam> typeParameters;
+
+	StructMethodDef(const std::string &methodName,
+		std::vector<std::unique_ptr<FunctionParameter>> params,
+		std::unique_ptr<BlockStatement> b, bool isCtor = false,
+		bool isOp = false,
+		std::vector<TypeParam> typeParams = {})
+		: name(methodName), parameters(std::move(params)), body(std::move(b)),
+		isConstructor(isCtor), isOperator(isOp),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::StructMethodDef;
+    }
+
+  std::string toString() const override {
+    if (isOperator) {
+      return "op " + name.substr(3) +
+             "(...) {...}"; // Remove "op_" prefix for display
+    }
+    std::string result = isConstructor ? "fn init(" : "fn " + name + "(";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+      if (i > 0)
+        result += ", ";
+      if (parameters[i]->pattern &&
+          parameters[i]->pattern->kind == NodeType::Identifier) {
+        result +=
+            static_cast<const Identifier &>(*parameters[i]->pattern).symbol;
+      } else {
+        result += "..."; // Pattern (destructuring)
+      }
+    }
+    result += ") {...}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Struct definition (defined after StructMethodDef is complete)
+struct StructDefinition : public TypeDefinition {
+  std::vector<StructFieldDef> fields;
+  std::vector<std::unique_ptr<StructMethodDef>> methods;
+  bool hasConstructor;
+
+  StructDefinition(
+      std::vector<StructFieldDef> fieldList = {},
+      std::vector<std::unique_ptr<StructMethodDef>> methodList = {})
+      : fields(std::move(fieldList)), methods(std::move(methodList)),
+        hasConstructor(false) {
+    for (const auto &method : methods) {
+      if (method && method->isConstructor) {
+        hasConstructor = true;
+        break;
+      }
+    }
+  }
+
+  std::string toString() const override {
+    std::string result = "Struct{";
+    for (size_t i = 0; i < fields.size(); ++i) {
+      if (i > 0)
+        result += ", ";
+      result += fields[i].toString();
+    }
+    result += "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Class field definition
+struct ClassFieldDef : public ASTNode {
+  std::string name;
+  std::optional<std::unique_ptr<TypeDefinition>> type;
+  std::optional<std::unique_ptr<Expression>> defaultValue;
+  bool isClassField = false; // true if @@field (class/static field)
+
+  ClassFieldDef(
+      const std::string &fieldName,
+      std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt,
+      std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt,
+      bool isClass = false)
+      : name(fieldName), type(std::move(fieldType)),
+        defaultValue(std::move(defaultVal)), isClassField(isClass) {
+    kind = NodeType::ClassFieldDef;
+  }
+
+  std::string toString() const override {
+    std::string result = name;
+    if (type) {
+      result += ": " + (*type)->toString();
+    }
+    if (defaultValue) {
+      result += " = " + (*defaultValue)->toString();
+    }
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Class method definition
+struct ClassMethodDef : public ASTNode {
+    std::string name;
+    std::vector<std::unique_ptr<FunctionParameter>> parameters;
+    std::unique_ptr<BlockStatement> body;
+    bool isConstructor;
+    bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
+    bool isClassMethod = false; // true if @@fn (class/static method)
+	std::vector<TypeParam> typeParameters;
+
+	ClassMethodDef(const std::string &methodName,
+		std::vector<std::unique_ptr<FunctionParameter>> params,
+		std::unique_ptr<BlockStatement> b, bool isCtor = false,
+		bool isOp = false, bool isClass = false,
+		std::vector<TypeParam> typeParams = {})
+		: name(methodName), parameters(std::move(params)), body(std::move(b)),
+		isConstructor(isCtor), isOperator(isOp), isClassMethod(isClass),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::ClassMethodDef;
+    }
+
+  std::string toString() const override {
+    if (isOperator) {
+      return "op " + name.substr(3) +
+             "(...) {...}"; // Remove "op_" prefix for display
+    }
+    std::string result = isConstructor ? "fn init(" : "fn " + name + "(";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+      if (i > 0)
+        result += ", ";
+      if (parameters[i]->pattern &&
+          parameters[i]->pattern->kind == NodeType::Identifier) {
+        result +=
+            static_cast<const Identifier &>(*parameters[i]->pattern).symbol;
+      } else {
+        result += "..."; // Pattern (destructuring)
+      }
+    }
+    result += ") {...}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Class Definition (body of a class declaration)
+struct ClassDefinition : public TypeDefinition {
+  std::vector<ClassFieldDef> fields;
+  std::vector<std::unique_ptr<ClassMethodDef>> methods;
+  bool hasConstructor;
+
+  ClassDefinition(std::vector<ClassFieldDef> fieldList = {},
+                  std::vector<std::unique_ptr<ClassMethodDef>> methodList = {})
+      : fields(std::move(fieldList)), methods(std::move(methodList)),
+        hasConstructor(false) {
+    for (const auto &method : methods) {
+      if (method && method->isConstructor) {
+        hasConstructor = true;
+        break;
+      }
+    }
+  }
+
+  std::string toString() const override {
+    std::string result = "Class{";
+    for (size_t i = 0; i < fields.size(); ++i) {
+      if (i > 0)
+        result += ", ";
+      result += fields[i].toString();
+    }
+    result += ", " + std::to_string(methods.size()) + " methods}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Block Expression ({ stmt; stmt; expr }) - last expression is value
+struct BlockExpression : public Expression {
+  std::vector<std::unique_ptr<Statement>> body;
+  std::unique_ptr<Expression> value; // Last expression becomes the value
+
+  BlockExpression() { kind = NodeType::BlockExpression; }
+
+  std::string toString() const override {
+    std::string result = "BlockExpr{";
+    for (size_t i = 0; i < body.size(); i++) {
+      if (i > 0)
+        result += "; ";
+      result += body[i]->toString();
+    }
+    if (value) {
+      if (!body.empty())
+        result += "; ";
+      result += value->toString();
+    }
+    return result + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Trait Method - method in a trait with optional default implementation
+struct TraitMethod : public ASTNode {
+  std::unique_ptr<Identifier> name;
+  std::vector<std::unique_ptr<FunctionParameter>> parameters;
+  std::unique_ptr<BlockStatement>
+      defaultBody; // nullptr if no default implementation
+
+  TraitMethod(std::unique_ptr<Identifier> n,
+              std::vector<std::unique_ptr<FunctionParameter>> params,
+              std::unique_ptr<BlockStatement> body = nullptr)
+      : name(std::move(n)), parameters(std::move(params)),
+        defaultBody(std::move(body)) {
+    kind = NodeType::TraitMethod;
+  }
+
+  std::string toString() const override {
+    std::string result = "TraitMethod{" + (name ? name->symbol : "?");
+    result += defaultBody ? " (with default)}" : " (abstract)}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Trait Declaration
+struct TraitDeclaration : public Statement {
+  std::unique_ptr<Identifier> name;
+  std::vector<std::unique_ptr<TraitMethod>> methods;
+
+  TraitDeclaration(std::unique_ptr<Identifier> n,
+                   std::vector<std::unique_ptr<TraitMethod>> meths)
+      : name(std::move(n)), methods(std::move(meths)) {
+    kind = NodeType::TraitDeclaration;
+  }
+
+  std::string toString() const override {
+    return "TraitDeclaration{name: " + (name ? name->symbol : "?") +
+           ", methods: " + std::to_string(methods.size()) + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Protocol Declaration (prot Drawable { fn draw() })
+// Like trait but with protocol semantics: operator overloading, built-in protocols
+struct ProtocolDeclaration : public Statement {
+  std::unique_ptr<Identifier> name;
+  std::vector<std::unique_ptr<TraitMethod>> methods;
+
+  ProtocolDeclaration(std::unique_ptr<Identifier> n,
+                      std::vector<std::unique_ptr<TraitMethod>> meths)
+      : name(std::move(n)), methods(std::move(meths)) {
+    kind = NodeType::ProtocolDeclaration;
+  }
+
+  std::string toString() const override {
+    return "ProtocolDeclaration{name: " + (name ? name->symbol : "?") +
+           ", methods: " + std::to_string(methods.size()) + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Hotkey Binding (Havel-specific)
+struct HotkeyBinding : public Statement {
+  std::vector<std::unique_ptr<Expression>> hotkeys;
+  std::unique_ptr<Statement> action;
+  // Changed from Expression to Statement
+
+  // Conditional support - legacy string conditions
+  std::vector<std::string> conditions; // e.g., ["mode gaming", "title genshin"]
+
+  // New: Complex condition expression (e.g., mode == "work" && system.cpu() <
+  // 80)
+  std::unique_ptr<Expression> conditionExpr;
+
+  // Direct key mapping support (e.g., Left => A)
+  bool isKeyMapping = false;
+  std::string mappedKey; // Target key for mapping
+
+  // Suspend exemption - hotkey works even when suspended
+  // Set to true for hotkeys that should work during suspend mode
+  // (typically defined in "when mode suspend" blocks)
+  bool suspend = false;
+
+  // Inline attributes: mode="name" policy="replace"
+  std::string mode;      // mode attribute (e.g. "default", "gaming")
+  std::string policy;    // policy attribute (drop/replace/queue/coalesce)
+
+  HotkeyBinding() { kind = NodeType::HotkeyBinding; }
+  HotkeyBinding(std::vector<std::unique_ptr<Expression>> hks,
+                std::unique_ptr<Statement> act)
+      : hotkeys(std::move(hks)), action(std::move(act)) {
+    kind = NodeType::HotkeyBinding;
+  }
+
+  std::string toString() const override {
+    std::string result = "HotkeyBinding{hotkeys: [";
+    for (size_t i = 0; i < hotkeys.size(); ++i) {
+      if (i > 0)
+        result += ", ";
+      result += hotkeys[i] ? hotkeys[i]->toString() : "nullptr";
+    }
+    result += "], action: " + (action ? action->toString() : "nullptr");
+    if (!conditions.empty()) {
+      result += ", conditions: [";
+      for (size_t i = 0; i < conditions.size(); ++i) {
+        if (i > 0)
+          result += ", ";
+        result += conditions[i];
+      }
+      result += "]";
+    }
+    if (isKeyMapping) {
+      result += ", mapping to: " + mappedKey;
+    }
+    if (suspend) {
+      result += ", suspend_exempt: true";
+    }
+    if (!mode.empty()) {
+      result += ", mode: " + mode;
+    }
+    if (!policy.empty()) {
+      result += ", policy: " + policy;
+    }
+    result += "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Conditional Hotkey - Hotkey binding with an expression-based condition
+struct ConditionalHotkey : public Statement {
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<HotkeyBinding> binding;
+
+  ConditionalHotkey(std::unique_ptr<Expression> cond,
+                    std::unique_ptr<HotkeyBinding> bind)
+      : condition(std::move(cond)), binding(std::move(bind)) {
+    kind = NodeType::ConditionalHotkey;
+  }
+
+  std::string toString() const override {
+    return "ConditionalHotkey{condition: " +
+           (condition ? condition->toString() : "nullptr") +
+           ", binding: " + (binding ? binding->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Hotkey Expression - HotkeyBinding used as expression (assignment RHS)
+struct HotkeyExpression : public Expression {
+  std::unique_ptr<HotkeyBinding> binding;
+
+  HotkeyExpression(std::unique_ptr<HotkeyBinding> b)
+      : binding(std::move(b)) {
+    kind = NodeType::HotkeyExpression;
+  }
+
+  std::string toString() const override {
+    return "HotkeyExpression{binding: " +
+           (binding ? binding->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// When Block - Group of hotkeys under a common condition
+struct WhenBlock : public Statement {
+  std::unique_ptr<Expression> condition;
+  std::vector<std::unique_ptr<Statement>> statements;
+
+  WhenBlock(std::unique_ptr<Expression> cond,
+            std::vector<std::unique_ptr<Statement>> stmts)
+      : condition(std::move(cond)), statements(std::move(stmts)) {
+    kind = NodeType::WhenBlockStatement;
+  }
+
+  std::string toString() const override {
+    return "WhenBlock{condition: " +
+           (condition ? condition->toString() : "nullptr") + ", statements: [" +
+           std::to_string(statements.size()) + "]}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// When Statement - Reactive when for signal triggers
+struct WhenStatement : public Statement {
+  std::unique_ptr<Expression> trigger; // Signal expression to watch
+  std::unique_ptr<Statement> body;     // Body to execute when signal triggers
+
+  WhenStatement(std::unique_ptr<Expression> trig, std::unique_ptr<Statement> b)
+      : trigger(std::move(trig)), body(std::move(b)) {
+    kind = NodeType::WhenStatement;
+  }
+
+  std::string toString() const override {
+    return "WhenStatement{trigger: " +
+           (trigger ? trigger->toString() : "nullptr") +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Pipeline Expression (clipbooard.get | text.upper | send)
+struct PipelineExpression : public Expression {
+  std::vector<std::unique_ptr<Expression>> stages;
+
+  PipelineExpression(std::vector<std::unique_ptr<Expression>> stgs = {})
+      : stages(std::move(stgs)) {
+    kind = NodeType::PipelineExpression;
+  }
+
+  std::string toString() const override {
+    return "Pipeline{stages: " + std::to_string(stages.size()) + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Keyword argument for function calls: name=value
+struct KeywordArg {
+  std::string name;
+  std::unique_ptr<Expression> value;
+
+  KeywordArg() = default;
+  KeywordArg(std::string n, std::unique_ptr<Expression> v)
+      : name(std::move(n)), value(std::move(v)) {}
+};
+
+// Call Expression (send("Hello"))
+struct CallExpression : public Expression {
+  std::unique_ptr<Expression> callee;
+  std::vector<std::unique_ptr<Expression>> args;
+  std::vector<KeywordArg> kwargs; // Keyword arguments
+
+  // Super call support for prototype inheritance
+  bool isSuperCall = false;
+  std::string superMethodName;
+
+  CallExpression(std::unique_ptr<Expression> cal,
+                 std::vector<std::unique_ptr<Expression>> ags = {},
+                 std::vector<KeywordArg> kws = {})
+      : callee(std::move(cal)), args(std::move(ags)), kwargs(std::move(kws)),
+        isSuperCall(false) {
+    kind = NodeType::CallExpression;
+  }
+
+  std::string toString() const override {
+    if (isSuperCall) {
+      return "SuperCall{@->" + superMethodName + "(" +
+             std::to_string(args.size()) + " args)}";
+    }
+    return "CallExpr{" + (callee ? callee->toString() : "nullptr") + "(" +
+           std::to_string(args.size()) + " args, " +
+           std::to_string(kwargs.size()) + " kwargs)}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Member Expression (clipboard.get)
+struct MemberExpression : public Expression {
+  std::unique_ptr<Expression> object;
+  std::unique_ptr<Expression> property; // e.g., an Identifier
+  bool isOptional = false;              // true for obj?.field (?. optional chaining)
+
+  MemberExpression() { kind = NodeType::MemberExpression; }
+  MemberExpression(std::unique_ptr<Expression> obj,
+                   std::unique_ptr<Expression> prop, bool optional = false)
+      : object(std::move(obj)), property(std::move(prop)), isOptional(optional) {
+    kind = NodeType::MemberExpression;
+  }
+
+  std::string toString() const override {
+    return "MemberExpr{" + (object ? object->toString() : "nullptr") + "." +
+           (property ? property->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// String Literal
+struct StringLiteral : public Expression {
+  std::string value;
+  bool isRegex = false;  // true for r"..." regex string literals
+
+  StringLiteral(const std::string &val, bool regex = false) : value(val), isRegex(regex) {
+    kind = NodeType::StringLiteral;
+  }
+
+  std::string toString() const override {
+    // Basic escaping for quotes in the string for display
+    std::string display_val = value;
+    size_t pos = 0;
+    while ((pos = display_val.find("\"", pos)) != std::string::npos) {
+      display_val.replace(pos, 1, "\\\"");
+      pos += 2;
+    }
+    return "StringLiteral{\"" + display_val + "\"}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Interpolated String Expression ("Hello ${name}")
+struct InterpolatedStringExpression : public Expression {
+  // Alternating string segments and expressions
+  // e.g., "Hello ${name}!" -> ["Hello ", name_expr, "!"]
+  struct Segment {
+    bool isString;           // true for string literal, false for expression
+    std::string stringValue; // if isString
+    std::unique_ptr<Expression> expression; // if !isString
+
+    Segment(const std::string &str) : isString(true), stringValue(str) {}
+    Segment(std::unique_ptr<Expression> expr)
+        : isString(false), expression(std::move(expr)) {}
+  };
+
+  std::vector<Segment> segments;
+
+  InterpolatedStringExpression(std::vector<Segment> segs = {})
+      : segments(std::move(segs)) {
+    kind = NodeType::InterpolatedStringExpression;
+  }
+
+  std::string toString() const override {
+    return "InterpolatedString{" + std::to_string(segments.size()) +
+           " segments}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Char Literal - single character 'x'
+struct CharLiteral : public Expression {
+  char value;
+
+  CharLiteral(char c) : value(c) {
+    kind = NodeType::CharLiteral;
+  }
+
+  std::string toString() const override {
+    return "CharLiteral{'" + std::string(1, value) + "'}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Range Pattern - 'a'..='z' inclusive range
+struct RangePattern : public Expression {
+  std::unique_ptr<Expression> start;
+  std::unique_ptr<Expression> end;
+
+  RangePattern(std::unique_ptr<Expression> s, std::unique_ptr<Expression> e)
+      : start(std::move(s)), end(std::move(e)) {
+    kind = NodeType::RangePattern;
+  }
+
+  std::string toString() const override {
+    return "RangePattern{" +
+           (start ? start->toString() : "nullptr") +
+           "..=" +
+           (end ? end->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Number Literal
+struct NumberLiteral : public Expression {
+    double value;
+    bool was_written_as_float; // true if source had decimal point (e.g., "1.0" vs "1")
+
+    NumberLiteral(double val, bool as_float = false) : value(val), was_written_as_float(as_float) { kind = NodeType::NumberLiteral; }
+
+    std::string toString() const override {
+        // Use stringstream to avoid trailing zeros for whole numbers
+        std::ostringstream oss;
+        oss << value;
+        return "NumberLiteral{" + oss.str() + "}";
+    }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Boolean Literal (true, false)
+struct BooleanLiteral : public Expression {
+  bool value;
+
+  BooleanLiteral(bool val) : value(val) { kind = NodeType::BooleanLiteral; }
+
+  std::string toString() const override {
+    return "BooleanLiteral{" + std::string(value ? "true" : "false") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Null Literal (null)
+struct NullLiteral : public Expression {
+  NullLiteral() { kind = NodeType::NullLiteral; }
+
+  std::string toString() const override { return "null"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Hotkey Literal (F1, Ctrl+V, etc.)
+struct HotkeyLiteral : public Expression {
+  std::string combination;
+
+  HotkeyLiteral(const std::string &combo) : combination(combo) {
+    kind = NodeType::HotkeyLiteral;
+  }
+
+  std::string toString() const override {
+    return "HotkeyLiteral{" + combination + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Expression Statement (wraps an expression as a statement)
+struct ExpressionStatement : public Statement {
+  std::unique_ptr<Expression> expression;
+  ExpressionStatement() { kind = NodeType::ExpressionStatement; }
+  ExpressionStatement(std::unique_ptr<Expression> expr)
+      : expression(std::move(expr)) {
+    kind = NodeType::ExpressionStatement;
+  }
+
+  std::string toString() const override {
+    return "ExpressionStatement{" +
+           (expression ? expression->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Input Statement - shortcut for input actions: > "text" or > {Enter} or > lmb
+struct InputCommand {
+  enum CommandType {
+    SendText,      // > "text"
+    SendKey,       // > {Enter}
+    MouseClick,    // > lmb, > rmb, > mmb, > side1, > side2, > btn4, > btn5
+    MouseMove,     // > m(x, y, speed, accel)
+    MouseRelative, // > r(x, y, speed, accel)
+    MouseWheel,    // > w(x, y, speed, accel)
+    MouseClickAt,  // > c(x, y, button, speed, accel)
+    Sleep          // > :500
+  };
+
+  CommandType type;
+  std::string text; // For SendText
+  std::string key;  // For SendKey
+  std::string
+      xExprStr; // For MouseMove, MouseRelative, MouseWheel, MouseClickAt
+  std::string
+      yExprStr; // For MouseMove, MouseRelative, MouseWheel, MouseClickAt
+  std::string speedExprStr;  // Speed parameter
+  std::string accelExprStr;  // Acceleration parameter
+  std::string buttonExprStr; // Button for MouseClickAt
+  std::string duration;      // For Sleep
+
+  InputCommand() : type(SendText) {}
+};
+
+struct InputStatement : public Statement {
+  std::vector<InputCommand> commands;
+
+  InputStatement() { kind = NodeType::InputStatement; }
+  InputStatement(std::vector<InputCommand> cmds) : commands(std::move(cmds)) {
+    kind = NodeType::InputStatement;
+  }
+
+  std::string toString() const override {
+    return "InputStatement{" + std::to_string(commands.size()) + " commands}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Get Input Expression - shortcut: < clipboard or < mouse.pos
+struct GetInputExpression : public Expression {
+  std::string source; // "clipboard", "selection", "mouse.pos", etc.
+  std::unique_ptr<Expression> prompt; // Optional prompt for < in("...")
+
+  GetInputExpression() { kind = NodeType::GetInputExpression; }
+  GetInputExpression(const std::string &src, std::unique_ptr<Expression> p = nullptr)
+      : source(src), prompt(std::move(p)) {
+    kind = NodeType::GetInputExpression;
+  }
+
+  std::string toString() const override {
+    return "GetInputExpression{source: " + source + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Sleep Statement - shortcut: :1500 or :1h30m
+struct SleepStatement : public Statement {
+  std::string duration; // Duration string like "1500", "1h30m", "3:10:25"
+
+  SleepStatement() { kind = NodeType::SleepStatement; }
+  SleepStatement(const std::string &dur) : duration(dur) {
+    kind = NodeType::SleepStatement;
+  }
+
+  std::string toString() const override {
+    return "SleepStatement{duration: " + duration + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Wait Statement - shortcut: w window.title == "Chrome"
+struct WaitStatement : public Statement {
+  std::unique_ptr<Expression> condition;
+
+  WaitStatement() { kind = NodeType::WaitStatement; }
+  WaitStatement(std::unique_ptr<Expression> cond) : condition(std::move(cond)) {
+    kind = NodeType::WaitStatement;
+  }
+
+  std::string toString() const override {
+    return "WaitStatement{condition: " + (condition ? condition->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Backtick Expression - `command` for shell output
+struct BacktickExpression : public Expression {
+  std::string command;
+
+  BacktickExpression() { kind = NodeType::BacktickExpression; }
+  explicit BacktickExpression(const std::string &cmd) : command(cmd) {
+    kind = NodeType::BacktickExpression;
+  }
+
+  std::string toString() const override {
+    return "BacktickExpression{`" + command + "`}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Shell Command Expression - $ or $! command in expression context
+struct ShellCommandExpression : public Expression {
+  std::unique_ptr<Expression>
+      commandExpr;    // Expression to evaluate (string or array)
+  bool captureOutput; // true for $! (capture stdout)
+
+  ShellCommandExpression() : captureOutput(false) {
+    kind = NodeType::ShellCommandExpression;
+  }
+  ShellCommandExpression(std::unique_ptr<Expression> expr, bool capture = false)
+      : commandExpr(std::move(expr)), captureOutput(capture) {
+    kind = NodeType::ShellCommandExpression;
+  }
+
+  std::string toString() const override {
+    std::string prefix = captureOutput ? "$! " : "$ ";
+    return "ShellCommandExpression{" + prefix +
+           (commandExpr ? commandExpr->toString() : "?") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Shell Command Statement - $ command for shell execution
+// Supports pipes: $! cmd1 | cmd2 | cmd3
+struct ShellCommandStatement : public Statement {
+  std::unique_ptr<Expression>
+      commandExpr;    // Expression to evaluate (string or array)
+  bool captureOutput; // true for $! (capture stdout)
+  std::unique_ptr<ShellCommandStatement> next; // Next command in pipe chain
+
+  ShellCommandStatement() : captureOutput(false) {
+    kind = NodeType::ShellCommandStatement;
+  }
+  explicit ShellCommandStatement(std::unique_ptr<Expression> expr,
+                                 bool capture = false)
+      : commandExpr(std::move(expr)), captureOutput(capture), next(nullptr) {
+    kind = NodeType::ShellCommandStatement;
+  }
+
+  std::string toString() const override {
+    std::string prefix = captureOutput ? "$! " : "$ ";
+    std::string result = "ShellCommandStatement{" + prefix +
+                         (commandExpr ? commandExpr->toString() : "?");
+    if (next) {
+      result += " | " + next->toString();
+    }
+    result += "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Repeat Statement - repeat n { body } or repeat n statement
+struct RepeatStatement : public Statement {
+  std::unique_ptr<Expression> countExpr;
+  std::unique_ptr<Statement> body;
+
+  RepeatStatement() { kind = NodeType::RepeatStatement; }
+  RepeatStatement(std::unique_ptr<Expression> c, std::unique_ptr<Statement> b)
+      : countExpr(std::move(c)), body(std::move(b)) {
+    kind = NodeType::RepeatStatement;
+  }
+
+  std::string toString() const override {
+    return "RepeatStatement{count: " +
+           (countExpr ? countExpr->toString() : "?") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Let Declaration with optional type annotation
+struct LetDeclaration : public Statement {
+  std::unique_ptr<Expression>
+      pattern; // Can be Identifier, ArrayPattern, or ObjectPattern
+  std::unique_ptr<Expression> value;
+  std::optional<std::unique_ptr<TypeAnnotation>>
+      typeAnnotation; // Optional type annotation
+  bool isConst;       // true if declared with 'const' (immutable binding)
+
+  // Value can be optional if language supports `let x;`
+
+  LetDeclaration(
+      std::unique_ptr<Expression> pat,
+      std::unique_ptr<Expression> val = nullptr,
+      std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt,
+      bool constant = false)
+      : pattern(std::move(pat)), value(std::move(val)),
+        typeAnnotation(std::move(typeAnn)), isConst(constant) {
+    kind = NodeType::LetDeclaration;
+  }
+
+  std::string toString() const override {
+    std::string result =
+        "LetDeclaration{" + std::string(isConst ? "const" : "let") +
+        " pattern: " + (pattern ? pattern->toString() : "nullptr");
+    if (typeAnnotation) {
+      result += ", type: " + (*typeAnnotation)->toString();
+    }
+    result += (value ? ", value: " + value->toString() : "") + "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// If Statement
+struct IfStatement : public Statement {
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<Statement> consequence; // Typically a BlockStatement
+  std::unique_ptr<Statement> alternative;
+  // Optional, typically BlockStatement or another IfStatement
+
+  IfStatement(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> cons,
+              std::unique_ptr<Statement> alt = nullptr)
+      : condition(std::move(cond)), consequence(std::move(cons)),
+        alternative(std::move(alt)) {
+    kind = NodeType::IfStatement;
+  }
+
+  std::string toString() const override {
+    std::string str =
+        "IfStatement{condition: " +
+        (condition ? condition->toString() : "nullptr") +
+        ", consequence: " + (consequence ? consequence->toString() : "nullptr");
+    if (alternative) {
+      str += ", alternative: " + alternative->toString();
+    }
+    str += "}";
+    return str;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// If Expression - returns a value
+struct IfExpression : public Expression {
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<Expression>
+      thenBranch; // BlockExpression or single expression
+  std::unique_ptr<Expression> elseBranch; // Optional
+
+  IfExpression(std::unique_ptr<Expression> cond,
+               std::unique_ptr<Expression> thenB,
+               std::unique_ptr<Expression> elseB = nullptr)
+      : condition(std::move(cond)), thenBranch(std::move(thenB)),
+        elseBranch(std::move(elseB)) {
+    kind = NodeType::IfExpression;
+  }
+
+  std::string toString() const override {
+    std::string str =
+        "IfExpr{if " + (condition ? condition->toString() : "nullptr") +
+        " then " + (thenBranch ? thenBranch->toString() : "nullptr");
+    if (elseBranch) {
+      str += " else " + elseBranch->toString();
+    }
+    return str + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Return Statement
+struct ReturnStatement : public Statement {
+  std::unique_ptr<Expression> argument; // Can be nullptr for `return;`
+
+  ReturnStatement(std::unique_ptr<Expression> arg = nullptr)
+      : argument(std::move(arg)) {
+    kind = NodeType::ReturnStatement;
+  }
+
+  std::string toString() const override {
+    return "ReturnStatement{" + (argument ? argument->toString() : "void") +
+           "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// While Statement
+struct WhileStatement : public Statement {
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<Statement> body; // Typically a BlockStatement
+
+  WhileStatement(std::unique_ptr<Expression> cond,
+                 std::unique_ptr<Statement> bd)
+      : condition(std::move(cond)), body(std::move(bd)) {
+    kind = NodeType::WhileStatement;
+  }
+
+  std::string toString() const override {
+    return "WhileStatement{condition: " +
+           (condition ? condition->toString() : "nullptr") +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// For Statement (for i in range { ... }) or (for (key, value) in dict { ... })
+struct ForStatement : public Statement {
+  std::vector<std::unique_ptr<Identifier>> iterators;
+  std::unique_ptr<Expression> iterable;
+  std::unique_ptr<Statement> body;
+
+  ForStatement(std::vector<std::unique_ptr<Identifier>> iters,
+               std::unique_ptr<Expression> itbl, std::unique_ptr<Statement> bd)
+      : iterators(std::move(iters)), iterable(std::move(itbl)),
+        body(std::move(bd)) {
+    kind = NodeType::ForStatement;
+  }
+
+  // Legacy constructor for single iterator
+  ForStatement(std::unique_ptr<Identifier> iter,
+               std::unique_ptr<Expression> itbl, std::unique_ptr<Statement> bd)
+      : iterable(std::move(itbl)), body(std::move(bd)) {
+    kind = NodeType::ForStatement;
+    if (iter) {
+      iterators.push_back(std::move(iter));
+    }
+  }
+
+  std::string toString() const override {
+    std::string iterStr;
+    if (iterators.size() == 1) {
+      iterStr = iterators[0] ? iterators[0]->toString() : "nullptr";
+    } else {
+      iterStr += "(";
+      for (size_t i = 0; i < iterators.size(); ++i) {
+        if (i > 0)
+          iterStr += ", ";
+        iterStr += iterators[i] ? iterators[i]->toString() : "nullptr";
+      }
+      iterStr += ")";
+    }
+    return "ForStatement{iterators: " + iterStr +
+           ", iterable: " + (iterable ? iterable->toString() : "nullptr") +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// For Expression (expr for binding : iterable) - generator/comprehension
+struct ForExpression : public Expression {
+  std::unique_ptr<Expression> mapping;
+  std::unique_ptr<Identifier> binding;
+  std::unique_ptr<Expression> iterable;
+
+  ForExpression(std::unique_ptr<Expression> map,
+                std::unique_ptr<Identifier> bind,
+                std::unique_ptr<Expression> itbl)
+      : mapping(std::move(map)), binding(std::move(bind)),
+        iterable(std::move(itbl)) {
+    kind = NodeType::ForExpression;
+  }
+
+  std::string toString() const override {
+    return "ForExpression{mapping: " + (mapping ? mapping->toString() : "null") +
+           ", binding: " + (binding ? binding->toString() : "null") +
+           ", iterable: " + (iterable ? iterable->toString() : "null") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Loop Statement (infinite loop, condition-driven, or count-based)
+struct LoopStatement : public Statement {
+  std::unique_ptr<Statement> body;
+  std::unique_ptr<Expression> condition; // For "loop while condition {}"
+  std::unique_ptr<Expression> countExpr; // For "loop 5 { ... }"
+
+  LoopStatement(std::unique_ptr<Statement> bd,
+                std::unique_ptr<Expression> cond = nullptr)
+      : body(std::move(bd)), condition(std::move(cond)) {
+    kind = NodeType::LoopStatement;
+  }
+
+  std::string toString() const override {
+    std::string condStr = condition ? " while " + condition->toString() : "";
+    std::string countStr = countExpr ? " " + countExpr->toString() : "";
+    return "LoopStatement{" + countStr + condStr +
+           "body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Break Statement
+struct BreakStatement : public Statement {
+  BreakStatement() { kind = NodeType::BreakStatement; }
+
+  std::string toString() const override { return "BreakStatement{}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Continue Statement
+struct ContinueStatement : public Statement {
+  ContinueStatement() { kind = NodeType::ContinueStatement; }
+
+  std::string toString() const override { return "ContinueStatement{}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Do-While Statement
+struct DoWhileStatement : public Statement {
+  std::unique_ptr<Statement> body;
+  std::unique_ptr<Expression> condition;
+
+  DoWhileStatement(std::unique_ptr<Statement> bd,
+                   std::unique_ptr<Expression> cond)
+      : body(std::move(bd)), condition(std::move(cond)) {
+    kind = NodeType::DoWhileStatement;
+  }
+
+  std::string toString() const override {
+    return "DoWhileStatement{body: " + (body ? body->toString() : "nullptr") +
+           ", condition: " + (condition ? condition->toString() : "nullptr") +
+           "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Switch Case
+struct SwitchCase : public ASTNode {
+  std::unique_ptr<Expression> test; // nullptr for 'else' case
+  std::unique_ptr<Statement> body;
+
+  SwitchCase(std::unique_ptr<Expression> t, std::unique_ptr<Statement> bd)
+      : test(std::move(t)), body(std::move(bd)) {
+    kind = NodeType::SwitchCase;
+  }
+
+  std::string toString() const override {
+    return "SwitchCase{test: " + (test ? test->toString() : "else") +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Switch Statement
+struct SwitchStatement : public Statement {
+  std::unique_ptr<Expression> expression;
+  std::vector<std::unique_ptr<SwitchCase>> cases;
+
+  SwitchStatement(std::unique_ptr<Expression> expr,
+                  std::vector<std::unique_ptr<SwitchCase>> cs)
+      : expression(std::move(expr)), cases(std::move(cs)) {
+    kind = NodeType::SwitchStatement;
+  }
+
+  std::string toString() const override {
+    return "SwitchStatement{expression: " +
+           (expression ? expression->toString() : "nullptr") + ", cases: [" +
+           std::to_string(cases.size()) + " cases]}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Mode Statement (on mode gaming { ... } else { ... })
+struct OnModeStatement : public Statement {
+  std::string modeName;
+  std::unique_ptr<Statement> body;
+  std::unique_ptr<Statement> alternative; // Optional else block
+
+  OnModeStatement(const std::string &mode, std::unique_ptr<Statement> bd,
+                  std::unique_ptr<Statement> alt = nullptr)
+      : modeName(mode), body(std::move(bd)), alternative(std::move(alt)) {
+    kind = NodeType::OnModeStatement;
+  }
+
+  std::string toString() const override {
+    return "OnModeStatement{mode: " + modeName +
+           ", body: " + (body ? body->toString() : "nullptr") +
+           (alternative ? ", else: " + alternative->toString() : "") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Off Mode Statement (off mode gaming { ... })
+struct OffModeStatement : public Statement {
+  std::string modeName;
+  std::unique_ptr<Statement> body;
+
+  OffModeStatement(const std::string &mode, std::unique_ptr<Statement> bd)
+      : modeName(mode), body(std::move(bd)) {
+    kind = NodeType::OffModeStatement;
+  }
+
+  std::string toString() const override {
+    return "OffModeStatement{mode: " + modeName +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Reload Statement (on reload { ... })
+struct OnReloadStatement : public Statement {
+  std::unique_ptr<Statement> body;
+
+  OnReloadStatement(std::unique_ptr<Statement> bd) : body(std::move(bd)) {
+    kind = NodeType::OnReloadStatement;
+  }
+
+  std::string toString() const override {
+    return "OnReloadStatement{body: " + (body ? body->toString() : "nullptr") +
+           "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Start Statement (on start { ... })
+struct OnStartStatement : public Statement {
+  std::unique_ptr<Statement> body;
+
+  OnStartStatement(std::unique_ptr<Statement> bd) : body(std::move(bd)) {
+    kind = NodeType::OnStartStatement;
+  }
+
+  std::string toString() const override {
+    return "OnStartStatement{body: " + (body ? body->toString() : "nullptr") +
+           "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Message Statement (on msg { ... })
+struct OnMessageStatement : public Statement {
+  std::string messageVar; // Variable name for the message
+  std::unique_ptr<Statement> body;
+
+  OnMessageStatement(const std::string &var, std::unique_ptr<Statement> bd)
+      : messageVar(var), body(std::move(bd)) {
+    kind = NodeType::OnMessageStatement;
+  }
+
+  std::string toString() const override {
+    return "OnMessageStatement{var: " + messageVar + ", body: " +
+           (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On KeyDown Statement (on keyDown { ... } or on keyDown(keys...) { ... })
+struct OnKeyDownStatement : public Statement {
+  std::vector<std::string> keys; // Empty = all keys
+  std::unique_ptr<Statement> action;
+
+  OnKeyDownStatement(std::vector<std::string> k, std::unique_ptr<Statement> act)
+      : keys(std::move(k)), action(std::move(act)) {
+    kind = NodeType::OnKeyDownStatement;
+  }
+
+  std::string toString() const override {
+    std::string keysStr = keys.empty() ? "all" : "";
+    for (size_t i = 0; i < keys.size(); ++i) {
+      if (i > 0)
+        keysStr += ", ";
+      keysStr += keys[i];
+    }
+    return "OnKeyDownStatement{keys: " + keysStr +
+           ", action: " + (action ? action->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On KeyUp Statement (on keyUp { ... } or on keyUp(keys...) { ... })
+struct OnKeyUpStatement : public Statement {
+  std::vector<std::string> keys; // Empty = all keys
+  std::unique_ptr<Statement> action;
+
+  OnKeyUpStatement(std::vector<std::string> k, std::unique_ptr<Statement> act)
+      : keys(std::move(k)), action(std::move(act)) {
+    kind = NodeType::OnKeyUpStatement;
+  }
+
+  std::string toString() const override {
+    std::string keysStr = keys.empty() ? "all" : "";
+    for (size_t i = 0; i < keys.size(); ++i) {
+      if (i > 0)
+        keysStr += ", ";
+      keysStr += keys[i];
+    }
+    return "OnKeyUpStatement{keys: " + keysStr +
+           ", action: " + (action ? action->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Tap Statement (on tap(key) => { ... })
+struct OnTapStatement : public Statement {
+  std::string key;
+  std::unique_ptr<Statement> action;
+
+  OnTapStatement(const std::string &k, std::unique_ptr<Statement> act)
+      : key(k), action(std::move(act)) {
+    kind = NodeType::OnTapStatement;
+  }
+
+  std::string toString() const override {
+    return "OnTapStatement{key: " + key +
+           ", action: " + (action ? action->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Combo Statement (on combo(key) => { ... })
+struct OnComboStatement : public Statement {
+  std::string key;
+  std::unique_ptr<Statement> action;
+
+  OnComboStatement(const std::string &k, std::unique_ptr<Statement> act)
+      : key(k), action(std::move(act)) {
+    kind = NodeType::OnComboStatement;
+  }
+
+  std::string toString() const override {
+    return "OnComboStatement{key: " + key +
+           ", action: " + (action ? action->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Function Declaration with optional return type annotation
+struct FunctionDeclaration : public Statement {
+    std::unique_ptr<Identifier> name;
+    std::vector<std::unique_ptr<FunctionParameter>> parameters;
+    std::unique_ptr<BlockStatement> body;
+    std::optional<std::unique_ptr<TypeAnnotation>>
+        returnType; // Optional return type annotation
+    bool is_coroutine = false; // co fn - creates a fiber
+	std::vector<TypeParam> typeParameters;
+
+	FunctionDeclaration(
+		std::unique_ptr<Identifier> n,
+		std::vector<std::unique_ptr<FunctionParameter>> params,
+		std::unique_ptr<BlockStatement> bd,
+		std::optional<std::unique_ptr<TypeAnnotation>> returnAnn = std::nullopt,
+		std::vector<TypeParam> typeParams = {})
+		: name(std::move(n)), parameters(std::move(params)), body(std::move(bd)),
+		returnType(std::move(returnAnn)),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::FunctionDeclaration;
+    }
+
+  std::string toString() const override {
+    std::string paramsStr;
+    for (size_t i = 0; i < parameters.size(); ++i) {
+      paramsStr += parameters[i]->toString();
+      if (i < parameters.size() - 1)
+        paramsStr += ", ";
+    }
+    std::string result =
+        "FunctionDeclaration{name: " + (name ? name->toString() : "nullptr") +
+        ", params: [" + paramsStr + "]";
+    if (returnType) {
+      result += ", returnType: " + (*returnType)->toString();
+    }
+    result += ", body: " + (body ? body->toString() : "nullptr") + "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct DecoratorStatement : public Statement {
+  std::vector<std::unique_ptr<Expression>> decorators;
+  std::unique_ptr<Statement> target;
+
+  DecoratorStatement(
+      std::vector<std::unique_ptr<Expression>> decs,
+      std::unique_ptr<Statement> tgt)
+      : decorators(std::move(decs)), target(std::move(tgt)) {
+    kind = NodeType::DecoratorStatement;
+  }
+
+  std::string toString() const override {
+    std::string result = "DecoratorStatement{decorators: [";
+    for (size_t i = 0; i < decorators.size(); ++i) {
+      result += decorators[i] ? decorators[i]->toString() : "null";
+      if (i < decorators.size() - 1) result += ", ";
+    }
+    result += "], target: " + (target ? target->toString() : "null") + "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Implementation Declaration (impl Trait for Type)
+struct ImplDeclaration : public Statement {
+  std::unique_ptr<Identifier> traitName;
+  std::unique_ptr<Identifier> typeName;
+  std::vector<std::unique_ptr<FunctionDeclaration>> funcs;
+
+  ImplDeclaration(std::unique_ptr<Identifier> trait,
+                  std::unique_ptr<Identifier> type,
+                  std::vector<std::unique_ptr<FunctionDeclaration>> f)
+      : traitName(std::move(trait)), typeName(std::move(type)),
+        funcs(std::move(f)) {
+    kind = NodeType::ImplDeclaration;
+  }
+
+  std::string toString() const override { return "ImplDeclaration"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct TryExpression : public Statement {
+  std::unique_ptr<Statement> tryBody;
+  std::unique_ptr<Identifier> catchVariable; // catch e -> variable name
+  std::unique_ptr<Statement> catchBody;      // catch block
+  std::unique_ptr<Statement> finallyBlock;   // optional finally block
+
+  TryExpression() { kind = NodeType::TryExpression; }
+  TryExpression(std::unique_ptr<Statement> tryBody,
+                std::unique_ptr<Identifier> catchVariable,
+                std::unique_ptr<Statement> catchBody,
+                std::unique_ptr<Statement> finallyBlock)
+      : tryBody(std::move(tryBody)), catchVariable(std::move(catchVariable)),
+        catchBody(std::move(catchBody)), finallyBlock(std::move(finallyBlock)) {
+    kind = NodeType::TryExpression;
+  }
+
+  std::string toString() const override { return "TryExpression{}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct ThrowStatement : public Statement {
+  std::unique_ptr<Expression> value;
+
+  ThrowStatement() { kind = NodeType::ThrowStatement; }
+  ThrowStatement(std::unique_ptr<Expression> value) : value(std::move(value)) {
+    kind = NodeType::ThrowStatement;
+  }
+
+  std::string toString() const override { return "ThrowStatement{}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Del statement - delete variable, object property, or array element
+// del variable
+// del obj.field
+// del arr[index]
+struct DelStatement : public Statement {
+  std::unique_ptr<Expression> target;
+
+  DelStatement() { kind = NodeType::DelStatement; }
+  DelStatement(std::unique_ptr<Expression> t) : target(std::move(t)) {
+    kind = NodeType::DelStatement;
+  }
+
+  std::string toString() const override { return "DelStatement{}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Union type (e.g., Result = Ok(a) | Error(String))
+struct UnionType : public TypeDefinition {
+  std::vector<std::unique_ptr<TypeDefinition>> variants;
+
+  UnionType(std::vector<std::unique_ptr<TypeDefinition>> vars)
+      : variants(std::move(vars)) {
+    kind = NodeType::UnionType;
+  }
+
+  std::string toString() const override {
+    return "UnionType{" + std::to_string(variants.size()) + " variants}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Record type (e.g., {name: String, age: Int})
+struct RecordType : public TypeDefinition {
+  std::vector<std::pair<std::string, std::unique_ptr<TypeDefinition>>> fields;
+
+  RecordType() {
+    kind = NodeType::RecordExpression; // Reuse or create RecordType
+  }
+
+  std::string toString() const override {
+    return "RecordType{" + std::to_string(fields.size()) + " fields}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Function type (e.g., (Int, String) -> Bool)
+struct FunctionType : public TypeDefinition {
+  std::vector<std::unique_ptr<TypeDefinition>> paramTypes;
+  std::unique_ptr<TypeDefinition> returnType;
+
+  FunctionType(std::vector<std::unique_ptr<TypeDefinition>> params,
+               std::unique_ptr<TypeDefinition> ret)
+      : paramTypes(std::move(params)), returnType(std::move(ret)) {
+    kind = NodeType::FunctionDeclaration; // Reuse or create FunctionType
+  }
+
+  std::string toString() const override {
+    return "FunctionType{" + std::to_string(paramTypes.size()) + " -> 1}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Type Declaration statement (e.g., type Point = {x: Float, y: Float})
+struct TypeDeclaration : public Statement {
+  std::string name;
+  std::unique_ptr<TypeDefinition> definition;
+
+  TypeDeclaration(const std::string &typeName,
+                  std::unique_ptr<TypeDefinition> def)
+      : name(typeName), definition(std::move(def)) {
+    kind = NodeType::TypeDeclaration;
+  }
+
+  std::string toString() const override {
+    return "TypeDeclaration{name: " + name + ", definition: " +
+           (definition ? definition->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+/**
+ * Struct declaration statement
+ * Example: struct Vec2 { x: Num, y: Num }
+ */
+struct StructDeclaration : public Statement {
+    std::string name;
+    StructDefinition definition;
+    std::vector<std::string> protocolNames;
+	std::vector<TypeParam> typeParameters;
+
+	StructDeclaration(const std::string &structName, StructDefinition def,
+		std::vector<std::string> protos = {},
+		std::vector<TypeParam> typeParams = {})
+		: name(structName), definition(std::move(def)),
+		protocolNames(std::move(protos)),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::StructDeclaration;
+    }
+
+    std::string toString() const override {
+        std::string result = "StructDeclaration{name: " + name;
+        if (!typeParameters.empty()) {
+            result += ", typeParams: [";
+            for (size_t i = 0; i < typeParameters.size(); ++i) {
+                if (i > 0) result += ", ";
+	result += typeParameters[i].toString();
+	}
+	result += "]";
+}
+if (!protocolNames.empty()) {
+            result += ", protocols: [";
+            for (size_t i = 0; i < protocolNames.size(); ++i) {
+                if (i > 0) result += ", ";
+                result += protocolNames[i];
+            }
+            result += "]";
+        }
+        result += ", definition: " + definition.toString() + "}";
+        return result;
+    }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+/**
+ * Class declaration statement
+ * Example: class Window { x, y; fn moveTo(x, y) {...} }
+ */
+struct ClassDeclaration : public Statement {
+    std::string name;
+    std::string parentName; // Parent class name for inheritance (empty if none)
+    std::vector<std::string> protocolNames;
+    ClassDefinition definition;
+	std::vector<TypeParam> typeParameters;
+
+	ClassDeclaration(const std::string &className, ClassDefinition def,
+		const std::string &parent = "",
+		std::vector<std::string> protos = {},
+		std::vector<TypeParam> typeParams = {})
+		: name(className), parentName(parent),
+		protocolNames(std::move(protos)), definition(std::move(def)),
+		typeParameters(std::move(typeParams)) {
+        kind = NodeType::ClassDeclaration;
+    }
+
+    std::string toString() const override {
+        std::string result = "ClassDeclaration{name: " + name;
+        if (!typeParameters.empty()) {
+            result += ", typeParams: [";
+            for (size_t i = 0; i < typeParameters.size(); ++i) {
+                if (i > 0) result += ", ";
+		result += typeParameters[i].toString();
+		}
+		result += "]";
+	}
+	if (!parentName.empty()) {
+            result += ", parent: " + parentName;
+        }
+        if (!protocolNames.empty()) {
+            result += ", protocols: [";
+            for (size_t i = 0; i < protocolNames.size(); ++i) {
+                if (i > 0) result += ", ";
+                result += protocolNames[i];
+            }
+            result += "]";
+        }
+        result += ", definition: " + definition.toString() + "}";
+        return result;
+    }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+/**
+ * Enum declaration statement
+ * Example: enum Color { Red, Green, Blue }
+ */
+struct EnumDeclaration : public Statement {
+    std::string name;
+    EnumDefinition definition;
+	std::vector<TypeParam> typeParameters;
+
+	EnumDeclaration(const std::string &enumName, EnumDefinition def,
+		std::vector<TypeParam> typeParams = {})
+		: name(enumName), definition(std::move(def)),
+		typeParameters(std::move(typeParams)) {
+		kind = NodeType::EnumDeclaration;
+	}
+
+	std::string toString() const override {
+		std::string result = "EnumDeclaration{name: " + name;
+		if (!typeParameters.empty()) {
+			result += ", typeParams: [";
+			for (size_t i = 0; i < typeParameters.size(); ++i) {
+				if (i > 0) result += ", ";
+				result += typeParameters[i].toString();
+			}
+			result += "]";
+		}
+		result += ", definition: " + definition.toString() + "}";
+		return result;
+	}
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+struct UnaryExpression : public Expression {
+  enum class UnaryOperator {
+    Not,    // !expr, not expr
+    Minus,  // -expr
+    Plus,   // +expr (unary plus)
+    Length, // #expr (length operator)
+    BitwiseNot, // ~expr bitwise NOT (inside (( )))
+  };
+
+  UnaryOperator operator_;
+  std::unique_ptr<Expression> operand;
+
+  UnaryExpression(UnaryOperator op, std::unique_ptr<Expression> operand)
+      : operator_(op), operand(std::move(operand)) {
+    kind = NodeType::UnaryExpression;
+  }
+
+  std::string toString() const override {
+    std::string opStr = (operator_ == UnaryOperator::Not) ? "!"
+        : (operator_ == UnaryOperator::Minus) ? "-"
+        : (operator_ == UnaryOperator::BitwiseNot) ? "~"
+        : "+";
+    return "UnaryExpr{" + opStr + (operand ? operand->toString() : "nullptr") +
+           "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+// Array Literal ([1, 2, 3])
+struct ArrayLiteral : public Expression {
+  std::vector<std::unique_ptr<Expression>> elements;
+
+  ArrayLiteral(std::vector<std::unique_ptr<Expression>> elems = {})
+      : elements(std::move(elems)) {
+    kind = NodeType::ArrayLiteral;
+  }
+
+  std::string toString() const override {
+    return "ArrayLiteral{" + std::to_string(elements.size()) + " elements}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Tuple Expression ((1, "hello", true))
+struct TupleExpression : public Expression {
+  std::vector<std::unique_ptr<Expression>> elements;
+
+  TupleExpression(std::vector<std::unique_ptr<Expression>> elems = {})
+      : elements(std::move(elems)) {
+    kind = NodeType::TupleExpression;
+  }
+
+  std::string toString() const override {
+    std::string result = "TupleExpr{(";
+    for (size_t i = 0; i < elements.size(); ++i) {
+      if (i > 0)
+        result += ", ";
+      result += elements[i] ? elements[i]->toString() : "nullptr";
+    }
+    result += ")}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Object Literal ({key: value, ...} or !{key: value, ...} for unsorted)
+// Also supports mixed syntax: {val1, val2, key: val, [expr]: val, ...spread}
+struct ObjectLiteral : public Expression {
+  // Pair entry: key may be empty for positional elements (no colon)
+  struct PairEntry {
+    std::string key;                    // empty for positional elements
+    bool isComputedKey = false;          // true if key is [expr]
+    std::unique_ptr<Expression> keyExpr; // expression for computed key
+    std::unique_ptr<Expression> value;   // the value
+  };
+
+  std::vector<PairEntry> pairs;
+  bool unsorted = false; // true for !{} syntax (unsorted keys)
+
+  ObjectLiteral(std::vector<PairEntry> p = {}, bool unsortedFlag = false)
+      : pairs(std::move(p)), unsorted(unsortedFlag) {
+    kind = NodeType::ObjectLiteral;
+  }
+
+  std::string toString() const override {
+    return "ObjectLiteral{" + std::to_string(pairs.size()) + " pairs, " +
+           (unsorted ? "unsorted" : "sorted") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Object Pattern for destructuring ({ x, y: alias })
+struct ObjectPattern : public Expression {
+  // Each property: { key, pattern } where pattern can be Identifier or nested
+  // pattern
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> properties;
+
+  ObjectPattern(std::vector<std::pair<std::string, std::unique_ptr<Expression>>>
+                    props = {})
+      : properties(std::move(props)) {
+    kind = NodeType::ObjectPattern;
+  }
+
+  std::string toString() const override {
+    return "ObjectPattern{" + std::to_string(properties.size()) + " props}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Array Pattern for destructuring ([a, b] or [x, ..rest])
+struct ArrayPattern : public Expression {
+std::vector<std::unique_ptr<Expression>> elements;
+std::unique_ptr<Expression> rest; // for ..rest pattern
+bool is_tuple_destructuring = false;
+
+ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {},
+std::unique_ptr<Expression> restPat = nullptr,
+bool isTuple = false)
+: elements(std::move(elems)), rest(std::move(restPat)),
+is_tuple_destructuring(isTuple) {
+kind = NodeType::ArrayPattern;
+}
+
+  std::string toString() const override {
+    return "ArrayPattern{" + std::to_string(elements.size()) + " elements" +
+           (rest ? ", has rest" : "") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Constructor Pattern for match (Name(p1, p2))
+struct ConstructorPattern : public Expression {
+  std::string name;                          // Constructor name (e.g. "Ok", "Err")
+  std::vector<std::unique_ptr<Expression>> args; // Sub-patterns for each field
+
+  ConstructorPattern(std::string n,
+                     std::vector<std::unique_ptr<Expression>> a = {})
+      : name(std::move(n)), args(std::move(a)) {
+    kind = NodeType::ConstructorPattern;
+  }
+
+  std::string toString() const override {
+    return "ConstructorPattern{" + name + " " +
+           std::to_string(args.size()) + " args}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Or Pattern for alternatives (pat1 | pat2 | pat3)
+struct OrPattern : public Expression {
+  std::vector<std::unique_ptr<Expression>> alternatives;
+
+  OrPattern(std::vector<std::unique_ptr<Expression>> alts = {})
+      : alternatives(std::move(alts)) {
+    kind = NodeType::OrPattern;
+  }
+
+  std::string toString() const override {
+    return "OrPattern{" + std::to_string(alternatives.size()) + " alts}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Wildcard Pattern (_)
+struct WildcardPattern : public Expression {
+  WildcardPattern() { kind = NodeType::WildcardPattern; }
+
+  std::string toString() const override { return "WildcardPattern{_}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Spread Pattern for rest elements (..rest)
+struct SpreadPattern : public Expression {
+  std::unique_ptr<Expression> target;  // identifier to bind rest to
+
+  SpreadPattern(std::unique_ptr<Expression> t = nullptr)
+      : target(std::move(t)) {
+    kind = NodeType::SpreadPattern;
+  }
+
+  std::string toString() const override {
+    return "SpreadPattern{}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Spread Expression (...array or ...object)
+struct SpreadExpression : public Expression {
+  std::unique_ptr<Expression> target;
+
+  SpreadExpression(std::unique_ptr<Expression> t) : target(std::move(t)) {
+    kind = NodeType::SpreadExpression;
+  }
+
+  std::string toString() const override {
+    return "SpreadExpr{..." + (target ? target->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+struct SetExpression : public Expression {
+  std::vector<std::unique_ptr<Expression>> elements;
+
+  SetExpression(std::vector<std::unique_ptr<Expression>> elems = {})
+      : elements(std::move(elems)) {
+    kind = NodeType::SetExpression;
+  }
+
+  std::string toString() const override {
+    return "SetExpression{" + std::to_string(elements.size()) + " elements}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Mixed collection expression: supports both positional and keyed entries
+// e.g. {"a", "b", x: 10, y: 20} or {["key"]: val, ...spread}
+struct CollectionExpression : public Expression {
+  // Uses the same PairEntry structure as ObjectLiteral
+  struct PairEntry {
+    std::string key;
+    bool isComputedKey = false;
+    std::unique_ptr<Expression> keyExpr;
+    std::unique_ptr<Expression> value;
+  };
+  std::vector<PairEntry> entries;
+
+  CollectionExpression(std::vector<PairEntry> e = {})
+      : entries(std::move(e)) {
+    kind = NodeType::CollectionExpression;
+  }
+
+  std::string toString() const override {
+    return "CollectionExpression{" + std::to_string(entries.size()) + " entries}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Config Block (config { ... })
+struct ConfigBlock : public Statement {
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+
+  ConfigBlock(
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+      : pairs(std::move(p)) {
+    kind = NodeType::ConfigBlock;
+  }
+
+  std::string toString() const override {
+    return "ConfigBlock{" + std::to_string(pairs.size()) + " pairs}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Devices Block (devices { ... })
+struct DevicesBlock : public Statement {
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+
+  DevicesBlock(
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+      : pairs(std::move(p)) {
+    kind = NodeType::DevicesBlock;
+  }
+
+  std::string toString() const override {
+    return "DevicesBlock{" + std::to_string(pairs.size()) + " pairs}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Mode Definition (mode name [priority N] { condition = ...; enter { ... };
+// exit { ... }; on enter from "mode" { ... }; on exit to "mode" { ... } })
+struct ModeDefinition {
+  std::string name;
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<BlockStatement> enterBlock;
+  std::unique_ptr<BlockStatement> exitBlock;
+  int priority = 0;
+  std::string onEnterFrom; // Mode name for on enter from hook
+  std::string onExitTo;    // Mode name for on exit to hook
+  std::unique_ptr<BlockStatement> onEnterFromBlock; // Block for on enter from
+  std::unique_ptr<BlockStatement> onExitToBlock;    // Block for on exit to
+
+  // Window event hooks
+  std::unique_ptr<BlockStatement> onCloseBlock;
+  std::unique_ptr<BlockStatement> onMinimizeBlock;
+  std::unique_ptr<BlockStatement> onMaximizeBlock;
+  std::unique_ptr<BlockStatement> onOpenBlock;
+
+  ModeDefinition() = default;
+  ModeDefinition(const std::string &n, std::unique_ptr<Expression> cond,
+                 std::unique_ptr<BlockStatement> enter,
+                 std::unique_ptr<BlockStatement> exit)
+      : name(n), condition(std::move(cond)), enterBlock(std::move(enter)),
+        exitBlock(std::move(exit)) {}
+};
+
+// Modes Block (modes { name { condition = ...; enter { ... }; exit { ... } } })
+struct ModesBlock : public Statement {
+  std::vector<ModeDefinition> modes;
+
+  ModesBlock(std::vector<ModeDefinition> m = {}) : modes(std::move(m)) {
+    kind = NodeType::ModesBlock;
+  }
+
+  std::string toString() const override {
+    return "ModesBlock{" + std::to_string(modes.size()) + " modes}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Simple Mode Block (mode name { statements })
+// Shorthand for: when mode == "name" { statements }
+struct ModeBlock : public Statement {
+  std::string modeName;
+  std::vector<std::unique_ptr<Statement>> statements;
+
+  ModeBlock(const std::string &name,
+            std::vector<std::unique_ptr<Statement>> stmts = {})
+      : modeName(name), statements(std::move(stmts)) {
+    kind = NodeType::ModeBlock;
+  }
+
+  std::string toString() const override {
+    return "ModeBlock{" + modeName + ", " + std::to_string(statements.size()) +
+           " stmts}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Signal Definition (signal name = expression)
+// Generic Config Section (any_identifier { key = value })
+struct ConfigSection : public Statement {
+  std::string name;
+  std::vector<std::string> args; // Hyprland-style args: monitor HDMI-0 { ... }
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+
+  ConfigSection(
+      const std::string &n,
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {},
+      std::vector<std::string> a = {})
+      : name(n), args(std::move(a)), pairs(std::move(p)) {
+    kind = NodeType::ConfigSection;
+  }
+
+  std::string toString() const override {
+    std::string result = "ConfigSection{" + name;
+    if (!args.empty()) {
+      result += " args=[";
+      for (size_t i = 0; i < args.size(); ++i) {
+        if (i > 0)
+          result += ", ";
+        result += args[i];
+      }
+      result += "]";
+    }
+    result += ", " + std::to_string(pairs.size()) + " pairs}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Update Expression (i++, --i)
+struct UpdateExpression : public Expression {
+  std::unique_ptr<Expression> argument;
+  enum class Operator { Increment, Decrement } operator_;
+  bool isPrefix;
+
+  UpdateExpression(std::unique_ptr<Expression> arg, Operator op, bool prefix)
+      : argument(std::move(arg)), operator_(op), isPrefix(prefix) {
+    kind = NodeType::UpdateExpression;
+  }
+
+  std::string toString() const override {
+    std::string opStr = (operator_ == Operator::Increment) ? "++" : "--";
+    if (isPrefix)
+      return "UpdateExpr{" + opStr +
+             (argument ? argument->toString() : "nullptr") + "}";
+    else
+      return "UpdateExpr{" + (argument ? argument->toString() : "nullptr") +
+             opStr + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Lambda (arrow) Function Expression (() => { ... } or x => expr)
+struct LambdaExpression : public Expression {
+  std::vector<std::unique_ptr<FunctionParameter>> parameters;
+  std::unique_ptr<Statement> body; // BlockStatement or ExpressionStatement
+
+  LambdaExpression() { kind = NodeType::LambdaExpression; }
+  LambdaExpression(std::vector<std::unique_ptr<FunctionParameter>> params,
+                   std::unique_ptr<Statement> bdy)
+      : parameters(std::move(params)), body(std::move(bdy)) {
+    kind = NodeType::LambdaExpression;
+  }
+
+  std::string toString() const override {
+    return "LambdaExpression{" + std::to_string(parameters.size()) + " params}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Async Expression (async { ... })
+struct AsyncExpression : public Expression {
+  std::unique_ptr<Statement> body; // BlockStatement or ExpressionStatement
+
+  AsyncExpression() { kind = NodeType::AsyncExpression; }
+  AsyncExpression(std::unique_ptr<Statement> bdy) : body(std::move(bdy)) {
+    kind = NodeType::AsyncExpression;
+  }
+
+  std::string toString() const override {
+    return "AsyncExpression{async block}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Await Expression (await promise)
+struct AwaitExpression : public Expression {
+  std::unique_ptr<Expression> argument; // The promise to await
+
+  AwaitExpression() { kind = NodeType::AwaitExpression; }
+  AwaitExpression(std::unique_ptr<Expression> arg) : argument(std::move(arg)) {
+    kind = NodeType::AwaitExpression;
+  }
+
+  std::string toString() const override { return "AwaitExpression{await}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Index Expression (arr[0] or obj["key"])
+struct IndexExpression : public Expression {
+  std::unique_ptr<Expression> object;
+  std::unique_ptr<Expression> index;
+
+  IndexExpression(std::unique_ptr<Expression> obj,
+                  std::unique_ptr<Expression> idx)
+      : object(std::move(obj)), index(std::move(idx)) {
+    kind = NodeType::IndexExpression;
+  }
+
+  std::string toString() const override {
+    return "IndexExpression{" + (object ? object->toString() : "nullptr") +
+           "[" + (index ? index->toString() : "nullptr") + "]}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// At Expression (@field for self-assignment in methods)
+struct AtExpression : public Expression {
+  std::unique_ptr<Expression> field; // Field name (Identifier)
+
+  AtExpression(std::unique_ptr<Expression> f) : field(std::move(f)) {
+    kind = NodeType::AtExpression;
+  }
+
+  std::string toString() const override {
+    return "AtExpression{@" + (field ? field->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// AtAt Expression (@@field for class/static field access in methods)
+struct AtAtExpression : public Expression {
+  std::unique_ptr<Expression> field; // Field name (Identifier)
+
+  AtAtExpression(std::unique_ptr<Expression> f) : field(std::move(f)) {
+    kind = NodeType::AtAtExpression;
+  }
+
+  std::string toString() const override {
+    return "AtAtExpression{@@" + (field ? field->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Ternary Expression (condition ? trueValue : falseValue)
+struct TernaryExpression : public Expression {
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<Expression> trueValue;
+  std::unique_ptr<Expression> falseValue;
+
+  TernaryExpression(std::unique_ptr<Expression> cond,
+                    std::unique_ptr<Expression> tVal,
+                    std::unique_ptr<Expression> fVal)
+      : condition(std::move(cond)), trueValue(std::move(tVal)),
+        falseValue(std::move(fVal)) {
+    kind = NodeType::TernaryExpression;
+  }
+
+  std::string toString() const override {
+    return "TernaryExpression{" +
+           (condition ? condition->toString() : "nullptr") + " ? " +
+           (trueValue ? trueValue->toString() : "nullptr") + " : " +
+           (falseValue ? falseValue->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Range Expression (0..10 or 0..10..2 for step)
+struct RangeExpression : public Expression {
+  std::unique_ptr<Expression> start;
+  std::unique_ptr<Expression> end;
+  std::unique_ptr<Expression> step; // Optional step value
+
+  RangeExpression(std::unique_ptr<Expression> s, std::unique_ptr<Expression> e,
+                  std::unique_ptr<Expression> stepVal = nullptr)
+      : start(std::move(s)), end(std::move(e)), step(std::move(stepVal)) {
+    kind = NodeType::RangeExpression;
+  }
+
+  std::string toString() const override {
+    std::string result = (start ? start->toString() : "nullptr") + ".." +
+                         (end ? end->toString() : "nullptr");
+    if (step) {
+      result += ".." + step->toString();
+    }
+    return "RangeExpression{" + result + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Assignment Expression (identifier = value or ::identifier = value)
+struct AssignmentExpression : public Expression {
+  std::unique_ptr<Expression> target; // What we're assigning to
+  std::unique_ptr<Expression> value;  // The new value
+  std::string operator_;              // "=" for now
+  bool isGlobalScope;                 // true for ::x = value
+
+  AssignmentExpression(std::unique_ptr<Expression> t,
+                       std::unique_ptr<Expression> v, std::string op = "=",
+                       bool globalScope = false)
+      : target(std::move(t)), value(std::move(v)), operator_(std::move(op)),
+        isGlobalScope(globalScope) {
+    kind = NodeType::AssignmentExpression;
+  }
+
+  std::string toString() const override {
+    std::string prefix = isGlobalScope ? "::" : "";
+    return "AssignmentExpression{" + prefix +
+           (target ? target->toString() : "nullptr") + " " + operator_ + " " +
+           (value ? value->toString() : "nullptr") + "}";
+  }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Multiple Assignment: a, b, c = expr
+// Each target gets the same value (or tuple-unpacking if value is tuple)
+struct MultipleAssignment : public Expression {
+    std::vector<std::unique_ptr<Expression>> targets;
+    std::unique_ptr<Expression> value;
+
+    MultipleAssignment(std::vector<std::unique_ptr<Expression>> t,
+                       std::unique_ptr<Expression> v)
+        : targets(std::move(t)), value(std::move(v)) {
+        kind = NodeType::MultipleAssignment;
+    }
+
+    std::string toString() const override {
+        std::string result = "MultipleAssignment{";
+        for (size_t i = 0; i < targets.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += targets[i] ? targets[i]->toString() : "nullptr";
+        }
+        result += " = " + (value ? value->toString() : "nullptr") + "}";
+        return result;
+    }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Cast Expression: expr as Type
+struct CastExpression : public Expression {
+  std::unique_ptr<Expression> expr;
+  std::string targetType; // "int", "float", "string", "bool"
+
+  CastExpression(std::unique_ptr<Expression> e, std::string type)
+      : expr(std::move(e)), targetType(std::move(type)) {
+    kind = NodeType::CastExpression;
+  }
+
+  std::string toString() const override {
+    return "CastExpression{" + (expr ? expr->toString() : "nullptr") + " as " +
+           targetType + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Match Expression: match value1, value2, ... { pattern1, pattern2, ... if guard => expr, ... }
+struct MatchExpression : public Expression {
+  struct MatchArm {
+    std::vector<std::unique_ptr<Expression>> patterns;
+    std::unique_ptr<Expression> guard;  // optional guard condition (if expr)
+    std::unique_ptr<Expression> result;
+  };
+
+  std::vector<std::unique_ptr<Expression>> discriminants; // Values to match on
+  std::vector<MatchArm> cases; // Each case has patterns, optional guard, and result
+  std::unique_ptr<Expression> defaultCase; // _ => expr (single underscore for any number of discriminants)
+
+  MatchExpression(std::vector<std::unique_ptr<Expression>> disc) : discriminants(std::move(disc)) {
+    kind = NodeType::MatchExpression;
+  }
+
+  std::string toString() const override {
+    return "MatchExpression{" + std::to_string(discriminants.size()) + " discriminants, " + std::to_string(cases.size()) + " cases}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Import Statement (import List from "std/collections")
+struct ImportStatement : public Statement {
+  std::string modulePath;
+  // pair of <OriginalName, Alias>
+  std::vector<std::pair<std::string, std::string>> importedItems;
+
+  ImportStatement(const std::string &path,
+                  std::vector<std::pair<std::string, std::string>> items = {})
+      : modulePath(path), importedItems(std::move(items)) {
+    kind = NodeType::ImportStatement;
+  }
+
+  std::string toString() const override {
+    std::string result = "ImportStatement{module: " + modulePath;
+    if (!importedItems.empty()) {
+      result += ", items: [";
+      for (size_t i = 0; i < importedItems.size(); ++i) {
+        result += importedItems[i].first;
+        if (importedItems[i].first != importedItems[i].second) {
+          result += " as " + importedItems[i].second;
+        }
+        if (i < importedItems.size() - 1)
+          result += ", ";
+      }
+      result += "]";
+    }
+    result += "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Use Statement (use io, use media) OR (use "file.hv" as alias) OR (use x, y
+// from "file.hv")
+struct UseStatement : public Statement {
+  std::vector<std::string>
+      moduleNames;      // List of module names to flatten (old syntax)
+  std::string filePath; // File path for script import (new syntax)
+    std::string alias; // Alias for imported script (new syntax)
+    std::vector<std::string>
+        importNames; // Named imports from file (use x, y from "file.hv")
+    std::vector<std::string>
+        importAliases; // Corresponding aliases (same size as importNames)
+  bool isFileImport =
+      false; // True if importing file, false if importing module
+  bool isNamedImport =
+      false; // True if using named imports (use x, y from "file.hv")
+  bool isWildcard = false; // True if using wildcard import (use module.*)
+
+  UseStatement(std::vector<std::string> modules = {})
+      : moduleNames(std::move(modules)), isFileImport(false) {
+    kind = NodeType::UseStatement;
+  }
+
+  UseStatement(const std::string &path, const std::string &aliasName)
+      : filePath(path), alias(aliasName), isFileImport(true) {
+    kind = NodeType::UseStatement;
+  }
+
+  UseStatement(const std::string &path, std::vector<std::string> names)
+      : filePath(path), importNames(std::move(names)), isFileImport(true),
+        isNamedImport(true) {
+    kind = NodeType::UseStatement;
+  }
+
+  std::string toString() const override {
+    if (isNamedImport) {
+      std::string result = "UseStatement{from " + filePath + " import: [";
+      for (size_t i = 0; i < importNames.size(); ++i) {
+        result += importNames[i];
+        if (i < importNames.size() - 1)
+          result += ", ";
+      }
+      result += "]}";
+      return result;
+    }
+    if (isFileImport) {
+      return "UseStatement{file: " + filePath + ", as: " + alias + "}";
+    }
+    std::string result = "UseStatement{modules: [";
+    for (size_t i = 0; i < moduleNames.size(); ++i) {
+      result += moduleNames[i];
+      if (i < moduleNames.size() - 1)
+        result += ", ";
+    }
+    result += "]}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// With Statement (with io { ... })
+struct WithStatement : public Statement {
+    std::unique_ptr<Expression> object; // The expression to bind
+    std::unique_ptr<Identifier> alias;  // Name after 'as' (null if no alias)
+    std::string objectName;            // Legacy: bare identifier name (when no expr)
+    std::vector<std::unique_ptr<Statement>> body; // Block statements
+
+    WithStatement(std::unique_ptr<Expression> expr,
+        std::unique_ptr<Identifier> aliasName,
+        std::vector<std::unique_ptr<Statement>> stmts = {})
+        : object(std::move(expr)), alias(std::move(aliasName)), body(std::move(stmts)) {
+        kind = NodeType::WithStatement;
+    }
+
+    WithStatement(const std::string &name,
+        std::vector<std::unique_ptr<Statement>> stmts = {})
+        : objectName(name), body(std::move(stmts)) {
+        kind = NodeType::WithStatement;
+    }
+
+    std::string toString() const override {
+        std::string result = "WithStatement{";
+        if (object) {
+            result += "object: " + object->toString();
+        } else {
+            result += "object: " + objectName;
+        }
+        if (alias) result += ", as: " + alias->symbol;
+        result += ", body: [";
+        for (size_t i = 0; i < body.size(); ++i) {
+            result += body[i] ? body[i]->toString() : "null";
+            if (i < body.size() - 1) result += ", ";
+        }
+        result += "]}";
+        return result;
+    }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
+// Visitor pattern interface for AST traversal
+class ASTVisitor {
+public:
+  virtual ~ASTVisitor() = default;
+
+  virtual void visitProgram(const Program &node) = 0;
+
+  virtual void visitHotkeyBinding(const HotkeyBinding &node) = 0;
+
+  virtual void visitPipelineExpression(const PipelineExpression &node) = 0;
+
+  virtual void visitBinaryExpression(const BinaryExpression &node) = 0;
+
+  virtual void visitCallExpression(const CallExpression &node) = 0;
+
+  virtual void visitMemberExpression(const MemberExpression &node) = 0;
+
+  virtual void visitLambdaExpression(const LambdaExpression &node) = 0;
+  virtual void visitAsyncExpression(const AsyncExpression &node) = 0;
+  virtual void visitAwaitExpression(const AwaitExpression &node) = 0;
+
+  virtual void visitStringLiteral(const StringLiteral &node) = 0;
+  virtual void visitCharLiteral(const CharLiteral &node) = 0;
+  virtual void visitRangePattern(const RangePattern &node) = 0;
+
+  virtual void visitInterpolatedStringExpression(
+      const InterpolatedStringExpression &node) = 0;
+
+  virtual void visitNumberLiteral(const NumberLiteral &node) = 0;
+
+  virtual void visitBooleanLiteral(const BooleanLiteral &node) = 0;
+  virtual void visitNullLiteral(const NullLiteral &node) = 0;
+
+  virtual void visitIdentifier(const Identifier &node) = 0;
+  virtual void visitThisExpression(const ThisExpression &node) = 0;
+
+  virtual void visitHotkeyLiteral(const HotkeyLiteral &node) = 0;
+
+  virtual void visitBlockStatement(const BlockStatement &node) = 0;
+  virtual void visitBlockExpression(const BlockExpression &node) = 0;
+
+  virtual void visitExpressionStatement(const ExpressionStatement &node) = 0;
+  virtual void visitInputStatement(const InputStatement &node) = 0;
+  virtual void visitGetInputExpression(const GetInputExpression &node) = 0;
+  virtual void visitSleepStatement(const SleepStatement &node) = 0;
+  virtual void visitWaitStatement(const WaitStatement &node) = 0;
+  virtual void visitBacktickExpression(const BacktickExpression &node) = 0;
+  virtual void
+  visitShellCommandExpression(const ShellCommandExpression &node) = 0;
+  virtual void
+  visitShellCommandStatement(const ShellCommandStatement &node) = 0;
+  virtual void visitRepeatStatement(const RepeatStatement &node) = 0;
+
+  virtual void visitIfStatement(const IfStatement &node) = 0;
+  virtual void visitIfExpression(const IfExpression &node) = 0;
+
+  virtual void visitLetDeclaration(const LetDeclaration &node) = 0;
+
+  virtual void visitReturnStatement(const ReturnStatement &node) = 0;
+
+  virtual void visitWhileStatement(const WhileStatement &node) = 0;
+  virtual void visitDoWhileStatement(const DoWhileStatement &node) = 0;
+  virtual void visitSwitchStatement(const SwitchStatement &node) = 0;
+  virtual void visitSwitchCase(const SwitchCase &node) = 0;
+
+  virtual void visitFunctionDeclaration(const FunctionDeclaration &node) = 0;
+  virtual void visitFunctionParameter(const FunctionParameter &node) = 0;
+
+  virtual void visitDecoratorStatement(const DecoratorStatement &node) = 0;
+
+  virtual void visitTypeDeclaration(const TypeDeclaration &node) = 0;
+  virtual void visitTypeAnnotation(const TypeAnnotation &node) = 0;
+  virtual void visitUnionType(const UnionType &node) = 0;
+  virtual void visitRecordType(const RecordType &node) = 0;
+  virtual void visitFunctionType(const FunctionType &node) = 0;
+    virtual void visitTypeReference(const TypeReference &node) = 0;
+    virtual void visitNullableType(const NullableType &node) = 0;
+    virtual void visitGenericTypeRef(const GenericTypeRef &node) = 0;
+virtual void visitTryExpression(const TryExpression &node) = 0;
+  virtual void visitUnaryExpression(const UnaryExpression &node) = 0;
+  virtual void visitUpdateExpression(const UpdateExpression &node) = 0;
+  virtual void visitImportStatement(const ImportStatement &node) = 0;
+  virtual void visitUseStatement(const UseStatement &node) = 0;
+  virtual void visitWithStatement(const WithStatement &node) = 0;
+  virtual void visitArrayLiteral(const ArrayLiteral &node) = 0;
+  virtual void visitTupleExpression(const TupleExpression &node) = 0;
+  virtual void visitObjectLiteral(const ObjectLiteral &node) = 0;
+  virtual void visitObjectPattern(const ObjectPattern &node) = 0;
+  virtual void visitArrayPattern(const ArrayPattern &node) = 0;
+  virtual void visitOrPattern(const OrPattern &node) = 0;
+  virtual void visitWildcardPattern(const WildcardPattern &node) = 0;
+  virtual void visitSpreadPattern(const SpreadPattern &node) = 0;
+  virtual void visitSpreadExpression(const SpreadExpression &node) = 0;
+  virtual void visitConstructorPattern(const ConstructorPattern &node) = 0;
+  virtual void visitSetExpression(const SetExpression &node) = 0;
+  virtual void visitConfigBlock(const ConfigBlock &node) = 0;
+  virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
+  virtual void visitModesBlock(const ModesBlock &node) = 0;
+ virtual void visitModeBlock(const ModeBlock &node) = 0;
+ virtual void visitConfigSection(const ConfigSection &node) = 0;
+  virtual void visitIndexExpression(const IndexExpression &node) = 0;
+  virtual void visitAtExpression(const AtExpression &node) = 0;
+  virtual void visitAtAtExpression(const AtAtExpression &node) = 0;
+  virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
+virtual void visitRangeExpression(const RangeExpression &node) = 0;
+    virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
+    virtual void visitMultipleAssignment(const MultipleAssignment &node) = 0;
+    virtual void visitCastExpression(const CastExpression &node) = 0;
+  virtual void visitMatchExpression(const MatchExpression &node) = 0;
+  virtual void visitThrowStatement(const ThrowStatement &node) = 0;
+  virtual void visitDelStatement(const DelStatement &node) = 0;
+  virtual void visitForExpression(const ForExpression &node) = 0;
+  virtual void visitForStatement(const ForStatement &node) = 0;
+  virtual void visitLoopStatement(const LoopStatement &node) = 0;
+  virtual void visitBreakStatement(const BreakStatement &node) = 0;
+  virtual void visitContinueStatement(const ContinueStatement &node) = 0;
+
+  // Concurrency primitives
+  virtual void visitThreadExpression(const ThreadExpression &node) = 0;
+  virtual void visitIntervalExpression(const IntervalExpression &node) = 0;
+  virtual void visitUpdateBlockExpression(const UpdateBlockExpression &node) = 0;
+  virtual void visitTimeoutExpression(const TimeoutExpression &node) = 0;
+ virtual void visitYieldExpression(const YieldExpression &node) = 0;
+  virtual void visitGoStatement(const GoStatement &node) = 0;
+  virtual void visitGoExpression(const GoExpression &node) = 0;
+  virtual void visitChannelExpression(const ChannelExpression &node) = 0;
+  virtual void visitWaitGroupExpression(const WaitGroupExpression &node) = 0;
+  virtual void visitDeferStatement(const DeferStatement &node) = 0;
+  virtual void visitWaitExpression(const WaitExpression &node) = 0;
+  virtual void visitOnModeStatement(const OnModeStatement &node) = 0;
+  virtual void visitOffModeStatement(const OffModeStatement &node) = 0;
+  virtual void visitOnReloadStatement(const OnReloadStatement &node) = 0;
+  virtual void visitOnStartStatement(const OnStartStatement &node) = 0;
+  virtual void visitOnMessageStatement(const OnMessageStatement &node) = 0;
+  virtual void visitOnKeyDownStatement(const OnKeyDownStatement &node) = 0;
+  virtual void visitOnKeyUpStatement(const OnKeyUpStatement &node) = 0;
+  virtual void visitOnTapStatement(const OnTapStatement &node) = 0;
+  virtual void visitOnComboStatement(const OnComboStatement &node) = 0;
+  virtual void visitConditionalHotkey(const ConditionalHotkey &node) = 0;
+  virtual void visitHotkeyExpression(const HotkeyExpression &node) = 0;
+  virtual void visitWhenBlock(const WhenBlock &node) = 0;
+  virtual void visitWhenStatement(const WhenStatement &node) = 0;
+
+  // Type system - struct/enum/class support
+  virtual void visitStructFieldDef(const StructFieldDef &node) = 0;
+  virtual void visitStructMethodDef(const StructMethodDef &node) = 0;
+  virtual void visitStructDefinition(const StructDefinition &node) = 0;
+  virtual void visitStructDeclaration(const StructDeclaration &node) = 0;
+  virtual void visitClassFieldDef(const ClassFieldDef &node) = 0;
+  virtual void visitClassMethodDef(const ClassMethodDef &node) = 0;
+  virtual void visitClassDefinition(const ClassDefinition &node) = 0;
+  virtual void visitClassDeclaration(const ClassDeclaration &node) = 0;
+  virtual void visitEnumVariantDef(const EnumVariantDef &node) = 0;
+  virtual void visitEnumDefinition(const EnumDefinition &node) = 0;
+  virtual void visitEnumDeclaration(const EnumDeclaration &node) = 0;
+  virtual void visitTraitDeclaration(const TraitDeclaration &node) = 0;
+  virtual void visitTraitMethod(const TraitMethod &node) = 0;
+  virtual void visitProtocolDeclaration(const ProtocolDeclaration &node) = 0;
+  virtual void visitImplDeclaration(const ImplDeclaration &node) = 0;
+};
+// Definitions of accept methods (must be after ASTVisitor declaration)
+inline void Program::accept(ASTVisitor &visitor) const {
+  visitor.visitProgram(*this);
+}
+
+inline void Identifier::accept(ASTVisitor &visitor) const {
+  visitor.visitIdentifier(*this);
+}
+
+inline void ThisExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitThisExpression(*this);
+}
+
+inline void BlockStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitBlockStatement(*this);
+}
+
+inline void BlockExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitBlockExpression(*this);
+}
+
+inline void HotkeyBinding::accept(ASTVisitor &visitor) const {
+  visitor.visitHotkeyBinding(*this);
+}
+
+inline void HotkeyExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitHotkeyExpression(*this);
+}
+
+inline void PipelineExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitPipelineExpression(*this);
+}
+
+inline void BinaryExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitBinaryExpression(*this);
+}
+
+inline void CallExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitCallExpression(*this);
+}
+
+inline void MemberExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitMemberExpression(*this);
+}
+
+inline void LambdaExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitLambdaExpression(*this);
+}
+
+inline void StringLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitStringLiteral(*this);
+}
+
+inline void CharLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitCharLiteral(*this);
+}
+
+inline void RangePattern::accept(ASTVisitor &visitor) const {
+  visitor.visitRangePattern(*this);
+}
+
+inline void InterpolatedStringExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitInterpolatedStringExpression(*this);
+}
+
+inline void NumberLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitNumberLiteral(*this);
+}
+
+inline void HotkeyLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitHotkeyLiteral(*this);
+}
+
+inline void NullLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitNullLiteral(*this);
+}
+
+inline void ExpressionStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitExpressionStatement(*this);
+}
+
+inline void InputStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitInputStatement(*this);
+}
+
+inline void GetInputExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitGetInputExpression(*this);
+}
+
+inline void SleepStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitSleepStatement(*this);
+}
+
+inline void WaitStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitWaitStatement(*this);
+}
+
+inline void BacktickExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitBacktickExpression(*this);
+}
+
+inline void ShellCommandExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitShellCommandExpression(*this);
+}
+
+inline void ShellCommandStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitShellCommandStatement(*this);
+}
+
+inline void RepeatStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitRepeatStatement(*this);
+}
+
+inline void LetDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitLetDeclaration(*this);
+}
+
+inline void IfStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitIfStatement(*this);
+}
+
+inline void IfExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitIfExpression(*this);
+}
+
+inline void ReturnStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitReturnStatement(*this);
+}
+
+inline void WhileStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitWhileStatement(*this);
+}
+inline void DoWhileStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitDoWhileStatement(*this);
+}
+inline void SwitchStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitSwitchStatement(*this);
+}
+inline void SwitchCase::accept(ASTVisitor &visitor) const {
+  visitor.visitSwitchCase(*this);
+}
+
+inline void FunctionParameter::accept(ASTVisitor &visitor) const {
+  visitor.visitFunctionParameter(*this);
+}
+
+inline void StructMethodDef::accept(ASTVisitor &visitor) const {
+  visitor.visitStructMethodDef(*this);
+}
+
+inline void FunctionDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitFunctionDeclaration(*this);
+}
+
+inline void DecoratorStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitDecoratorStatement(*this);
+}
+
+inline void ArrayLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitArrayLiteral(*this);
+}
+
+inline void TupleExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitTupleExpression(*this);
+}
+
+inline void ObjectLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitObjectLiteral(*this);
+}
+
+inline void ObjectPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitObjectPattern(*this);
+}
+
+inline void ArrayPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitArrayPattern(*this);
+}
+
+inline void OrPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitOrPattern(*this);
+}
+
+inline void WildcardPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitWildcardPattern(*this);
+}
+
+inline void SpreadPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitSpreadPattern(*this);
+}
+
+inline void SpreadExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitSpreadExpression(*this);
+}
+
+inline void ConstructorPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitConstructorPattern(*this);
+}
+
+inline void SetExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitSetExpression(*this);
+}
+
+inline void ConfigBlock::accept(ASTVisitor &visitor) const {
+  visitor.visitConfigBlock(*this);
+}
+
+inline void DevicesBlock::accept(ASTVisitor &visitor) const {
+  visitor.visitDevicesBlock(*this);
+}
+
+inline void ModesBlock::accept(ASTVisitor &visitor) const {
+  visitor.visitModesBlock(*this);
+}
+
+inline void ModeBlock::accept(ASTVisitor &visitor) const {
+ visitor.visitModeBlock(*this);
+}
+
+inline void ConfigSection::accept(ASTVisitor &visitor) const {
+ visitor.visitConfigSection(*this);
+}
+
+inline void IndexExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitIndexExpression(*this);
+}
+
+inline void TernaryExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitTernaryExpression(*this);
+}
+
+inline void RangeExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitRangeExpression(*this);
+}
+
+inline void AssignmentExpression::accept(ASTVisitor &visitor) const {
+visitor.visitAssignmentExpression(*this);
+}
+
+inline void MultipleAssignment::accept(ASTVisitor &visitor) const {
+visitor.visitMultipleAssignment(*this);
+}
+
+inline void CastExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitCastExpression(*this);
+}
+
+inline void MatchExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitMatchExpression(*this);
+}
+
+inline void ForExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitForExpression(*this);
+}
+
+inline void ForStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitForStatement(*this);
+}
+
+inline void LoopStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitLoopStatement(*this);
+}
+
+inline void BreakStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitBreakStatement(*this);
+}
+
+inline void ContinueStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitContinueStatement(*this);
+}
+
+inline void OnModeStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnModeStatement(*this);
+}
+
+inline void OffModeStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOffModeStatement(*this);
+}
+
+inline void OnReloadStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnReloadStatement(*this);
+}
+
+inline void OnStartStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnStartStatement(*this);
+}
+
+inline void OnMessageStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnMessageStatement(*this);
+}
+
+inline void OnKeyDownStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnKeyDownStatement(*this);
+}
+
+inline void OnKeyUpStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnKeyUpStatement(*this);
+}
+
+inline void OnTapStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnTapStatement(*this);
+}
+
+inline void OnComboStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnComboStatement(*this);
+}
+
+inline void TypeDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitTypeDeclaration(*this);
+}
+
+inline void TypeAnnotation::accept(ASTVisitor &visitor) const {
+  visitor.visitTypeAnnotation(*this);
+}
+
+inline void UnionType::accept(ASTVisitor &visitor) const {
+  visitor.visitUnionType(*this);
+}
+
+inline void RecordType::accept(ASTVisitor &visitor) const {
+  visitor.visitRecordType(*this);
+}
+
+inline void FunctionType::accept(ASTVisitor &visitor) const {
+  visitor.visitFunctionType(*this);
+}
+
+inline void TypeReference::accept(ASTVisitor &visitor) const {
+    visitor.visitTypeReference(*this);
+}
+
+inline void NullableType::accept(ASTVisitor &visitor) const {
+    visitor.visitNullableType(*this);
+}
+
+inline void GenericTypeRef::accept(ASTVisitor &visitor) const {
+    visitor.visitGenericTypeRef(*this);
+}
+
+inline void TryExpression::accept(ASTVisitor &visitor) const {
+    visitor.visitTryExpression(*this);
+}
+
+inline void ThrowStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitThrowStatement(*this);
+}
+
+inline void DelStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitDelStatement(*this);
+}
+
+inline void UnaryExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitUnaryExpression(*this);
+}
+
+inline void AsyncExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitAsyncExpression(*this);
+}
+
+inline void AwaitExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitAwaitExpression(*this);
+}
+
+inline void UpdateExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitUpdateExpression(*this);
+}
+
+inline void ImportStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitImportStatement(*this);
+}
+
+inline void UseStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitUseStatement(*this);
+}
+
+inline void WithStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitWithStatement(*this);
+}
+
+inline void ConditionalHotkey::accept(ASTVisitor &visitor) const {
+  visitor.visitConditionalHotkey(*this);
+}
+
+inline void WhenBlock::accept(ASTVisitor &visitor) const {
+  visitor.visitWhenBlock(*this);
+}
+
+inline void WhenStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitWhenStatement(*this);
+}
+
+// Type system - struct/enum accept methods
+inline void StructFieldDef::accept(ASTVisitor &visitor) const {
+  visitor.visitStructFieldDef(*this);
+}
+
+inline void StructDefinition::accept(ASTVisitor &visitor) const {
+  visitor.visitStructDefinition(*this);
+}
+
+inline void StructDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitStructDeclaration(*this);
+}
+
+// Type system - class accept methods
+inline void ClassFieldDef::accept(ASTVisitor &visitor) const {
+  visitor.visitClassFieldDef(*this);
+}
+
+inline void ClassMethodDef::accept(ASTVisitor &visitor) const {
+  visitor.visitClassMethodDef(*this);
+}
+
+inline void ClassDefinition::accept(ASTVisitor &visitor) const {
+  visitor.visitClassDefinition(*this);
+}
+
+inline void ClassDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitClassDeclaration(*this);
+}
+
+inline void EnumVariantDef::accept(ASTVisitor &visitor) const {
+  visitor.visitEnumVariantDef(*this);
+}
+
+inline void EnumDefinition::accept(ASTVisitor &visitor) const {
+  visitor.visitEnumDefinition(*this);
+}
+
+inline void EnumDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitEnumDeclaration(*this);
+}
+
+inline void TraitDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitTraitDeclaration(*this);
+}
+
+inline void TraitMethod::accept(ASTVisitor &visitor) const {
+  visitor.visitTraitMethod(*this);
+}
+
+inline void ProtocolDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitProtocolDeclaration(*this);
+}
+
+inline void ImplDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitImplDeclaration(*this);
+}
+} // namespace havel::ast

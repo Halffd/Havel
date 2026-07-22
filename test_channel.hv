@@ -1,5 +1,5 @@
-ch = channel.new()
+ch = channel()
 print("ch type: ${type.type(ch)}")
-channel.send(ch, 42)
-v = channel.receive(ch)
+ch.send(42)
+v = ch.receive()
 print("got: $v")

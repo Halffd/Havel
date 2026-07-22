@@ -161,11 +161,24 @@ void Modules::installHostFunctions() {
         for (const auto &name : {"register", "register_conditional", "trigger", "list"}) {
             std::string fn = std::string("hotkey.") + name;
             int idx = vm.getHostFunctionIndex(fn);
+            ::havel::info("[MOD] hotkey.{}: getHostFunctionIndex returned {}", name, idx);
             if (idx >= 0) {
                 vm.setHostObjectField(hotkeyObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
             }
         }
         vm.setGlobal("hotkey", Value::makeObjectId(hotkeyObj.id));
+
+        // Register global `channel` object with new, send, receive, close methods
+        auto channelObj = vm.createHostObject();
+        for (const auto &name : {"new", "send", "receive", "close"}) {
+            std::string fn = std::string("channel.") + name;
+            int idx = vm.getHostFunctionIndex(fn);
+            ::havel::info("[MOD] channel.{}: getHostFunctionIndex returned {}", name, idx);
+            if (idx >= 0) {
+                vm.setHostObjectField(channelObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
+            }
+        }
+        vm.setGlobal("channel", Value::makeObjectId(channelObj.id));
 
     });
 

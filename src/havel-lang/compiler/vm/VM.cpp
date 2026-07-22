@@ -19,7 +19,7 @@
 #include "../runtime/EventQueue.hpp"
 #include "../runtime/RuntimeSupport.hpp"
 #include "compiler/core/ByteCompiler.hpp"
-#include "havel-lang/lexer/Lexer.hpp"
+#include "bootstrap/lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
 #include "../../runtime/Modules.hpp"
 #include "dl/Loader.hpp"

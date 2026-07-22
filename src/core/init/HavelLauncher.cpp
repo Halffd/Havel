@@ -9,7 +9,7 @@
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
-#include "havel-lang/lexer/Lexer.hpp"
+#include "bootstrap/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/HavelEngine.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"

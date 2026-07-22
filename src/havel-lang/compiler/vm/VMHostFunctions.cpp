@@ -1755,34 +1755,44 @@ threadObj->start(std::move(handler));
         return Value::makeBool(threadObj->isRunning());
     });
 
-    // thread.spawn(closure) - alias for thread(closure), used by ThreadExpression
+// thread.spawn(closure) - alias for thread(closure), used by ThreadExpression
     registerHostFunction("thread.spawn", 1, [this](const std::vector<Value> &args) {
         if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
             COMPILER_THROW("thread.spawn requires a closure argument");
         }
-        ::havel::info("[THREAD] thread.spawn called, closure={}", args[0].isClosureId() ? "closure" : "function");
+        ::havel::info("[THREAD] thread.spawn called");
         auto threadObj = std::make_shared<Thread>();
         auto closure = args[0];
         auto handler = [this, closure](const Thread::Message &msg) {
-            ::havel::info("[THREAD] handler executing, msg_type={}", msg.index());
+            ::havel::info("[THREAD] handler executing");
             try {
                 Value arg;
+                bool hasArg = false;
                 if (std::holds_alternative<std::string>(msg)) {
                     auto strRef = heap_.allocateString(std::get<std::string>(msg));
                     arg = Value::makeStringId(strRef.id);
+                    hasArg = true;
                 } else if (std::holds_alternative<int>(msg)) {
                     arg = Value::makeInt(std::get<int>(msg));
+                    hasArg = true;
                 } else if (std::holds_alternative<double>(msg)) {
                     arg = Value::makeDouble(std::get<double>(msg));
+                    hasArg = true;
                 }
-                ::havel::info("[THREAD] calling closure with arg");
-                this->callFunction(closure, {arg});
+                if (hasArg) {
+                    this->callFunction(closure, {arg});
+                } else {
+                    this->callFunction(closure, {});
+                }
                 ::havel::info("[THREAD] closure returned");
             } catch (const std::exception &e) {
                 ::havel::error("[thread] Exception: {}", e.what());
             }
         };
         threadObj->start(std::move(handler));
+        ::havel::info("[THREAD] thread started, sending initial message");
+        threadObj->send("start");
+        ::havel::info("[THREAD] initial message sent");
         auto threadRef = heap_.allocateThreadObj(threadObj);
         thread_captured_closures_[threadRef.id] = registerCallback(closure);
         return Value::makeThreadId(threadRef.id);

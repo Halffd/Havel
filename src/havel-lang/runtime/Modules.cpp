@@ -161,7 +161,6 @@ void Modules::installHostFunctions() {
         for (const auto &name : {"register", "register_conditional", "trigger", "list"}) {
             std::string fn = std::string("hotkey.") + name;
             int idx = vm.getHostFunctionIndex(fn);
-            ::havel::info("[MOD] hotkey.{}: getHostFunctionIndex returned {}", name, idx);
             if (idx >= 0) {
                 vm.setHostObjectField(hotkeyObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
             }
@@ -173,7 +172,6 @@ void Modules::installHostFunctions() {
         for (const auto &name : {"new", "send", "receive", "close"}) {
             std::string fn = std::string("channel.") + name;
             int idx = vm.getHostFunctionIndex(fn);
-            ::havel::info("[MOD] channel.{}: getHostFunctionIndex returned {}", name, idx);
             if (idx >= 0) {
                 vm.setHostObjectField(channelObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
             }
@@ -185,7 +183,6 @@ void Modules::installHostFunctions() {
         for (const auto &name : {"spawn", "join", "send", "receive", "running", "pause", "resume", "stop"}) {
             std::string fn = std::string("thread.") + name;
             int idx = vm.getHostFunctionIndex(fn);
-            ::havel::info("[MOD] thread.{}: getHostFunctionIndex returned {}", name, idx);
             if (idx >= 0) {
                 vm.setHostObjectField(threadObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
             }

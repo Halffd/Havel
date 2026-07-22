@@ -339,10 +339,7 @@ case OpCode::TAIL_CALL: {
         }
 if (instanceObj) {
         auto it = instanceObj->find(method_name);
-        ::havel::info("[METHOD] dispatch: receiver=obj, method={}, found={}", method_name, it != instanceObj->end());
         if (it != instanceObj->end()) {
-            ::havel::info("[METHOD] field type: isHostFuncId={}, isFunctionObjId={}, isClosureId={}", 
-                it->second.isHostFuncId(), it->second.isFunctionObjId(), it->second.isClosureId());
             if (it->second.isHostFuncId()) {
                         host_func_idx = it->second.asHostFuncId();
                         found_host = true;

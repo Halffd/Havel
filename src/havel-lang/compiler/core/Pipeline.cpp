@@ -2,7 +2,7 @@
 #include "../../../utils/Logger.hpp"
 
 #include "../../errors/ErrorSystem.h"
-#include "havel-lang/lexer/Lexer.hpp"
+#include "bootstrap/lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../semantic/TypeChecker.hpp"

@@ -745,11 +745,7 @@ fn setBrightness(vue, monitorIndex) {
     if monName == "" { return }
     v = _clamp(vue, 0.0, 1.0)
     _cachedBrightness.set(monName, v)
-    // Try sysfs hardware brightness first (actual backlight control)
-    if !_setSysfsBrightness(v) {
-      // Fallback to Xrandr gamma ramp (color brightness, not hardware)
-      _applySettings(monName)
-    }
+    _applySettings(monName)
   }
 }
 

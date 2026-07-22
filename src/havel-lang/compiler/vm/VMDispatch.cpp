@@ -103,7 +103,7 @@ auto hostIt = host_function_globals_.find(name);
   break;
   }
 
-         case OpCode::STORE_GLOBAL: {
+case OpCode::STORE_GLOBAL: {
             if (instruction.operands.empty() ||
                 !instruction.operands[0].isStringValId()) {
                 COMPILER_THROW("STORE_GLOBAL expects string operand");
@@ -117,34 +117,46 @@ auto hostIt = host_function_globals_.find(name);
             } else {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
-  Value value = popStack();
+            Value value = popStack();
 
-  // Materialize StringValId to heap StringId so cross-chunk reads work
-  if (value.isStringValId() || value.isRegexValId()) {
-      const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
-      if (matChunk) {
-          std::string s;
-          if (value.isStringValId()) s = matChunk->getString(value.asStringValId());
-          else if (value.isRegexValId()) s = matChunk->getString(value.asRegexValId());
-          if (!s.empty()) {
-              auto ref = heap_.allocateString(std::move(s));
-              value = Value::makeStringId(ref.id);
-          }
-      }
-  }
-
-  if (immutable_globals_.count(name)) {
-            auto existing = globals.find(name);
-            if (existing != globals.end() && existing->second == value) {
-                break;
+            // Materialize StringValId to heap StringId so cross-chunk reads work
+            if (value.isStringValId() || value.isRegexValId()) {
+                const BytecodeChunk* matChunk = current_chunk ? current_chunk : (main_chunk_ ? main_chunk_.get() : nullptr);
+                if (matChunk) {
+                    std::string s;
+                    if (value.isStringValId()) s = matChunk->getString(value.asStringValId());
+                    else if (value.isRegexValId()) s = matChunk->getString(value.asRegexValId());
+                    if (!s.empty()) {
+                        auto ref = heap_.allocateString(std::move(s));
+                        value = Value::makeStringId(ref.id);
+                    }
+                }
             }
-            COMPILER_THROW("Cannot reassign val global: " + name);
+
+            if (immutable_globals_.count(name)) {
+                auto existing = globals.find(name);
+                if (existing != globals.end() && existing->second == value) {
+                    break;
+                }
+                COMPILER_THROW("Cannot reassign val global: " + name);
+            }
+            globals[name] = value;
+
+            // If this frame owns globals (module closure), also persist to the
+            // shared module_globals so subsequent calls see the updated value.
+            // This fixes module-level state like _dpy, _initialized, _display
+            // not persisting across calls.
+            if (cf_store.owns_globals && cf_store.closure_id != 0) {
+                auto* closure = heap_.closure(cf_store.closure_id);
+                if (closure && closure->module_globals) {
+                    (*closure->module_globals)[name] = value;
+                }
+            }
+
+            heap_.writeBarrier(Value::makeNull(), value);
+            emitVariableChanged(name);
+            break;
         }
-        globals[name] = value;
-        heap_.writeBarrier(Value::makeNull(), value);
-        emitVariableChanged(name);
-        break;
-    }
 
         case OpCode::STORE_IMMUT_GLOBAL: {
             if (instruction.operands.empty() ||
@@ -192,6 +204,15 @@ auto hostIt = host_function_globals_.find(name);
 
         immutable_globals_.insert(name);
         globals[name] = value;
+
+        // Persist to shared module_globals if this frame owns them
+        if (cf_imut.owns_globals && cf_imut.closure_id != 0) {
+            auto* closure = heap_.closure(cf_imut.closure_id);
+            if (closure && closure->module_globals) {
+                (*closure->module_globals)[name] = value;
+            }
+        }
+
         heap_.writeBarrier(Value::makeNull(), value);
         emitVariableChanged(name);
         break;

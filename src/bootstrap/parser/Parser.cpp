@@ -1876,7 +1876,12 @@ case TokenType::Tilde: {
                     bracketDepth--;
                     if (bracketDepth == 0)
                         break;
-                } else if ((tok.type == TokenType::Colon || tok.type == TokenType::ColonColon) && bracketDepth == 1) {
+                } else if (tok.type == TokenType::Colon && bracketDepth == 1) {
+                    isSlice = true;
+                    break;
+                } else if (tok.type == TokenType::ColonColon && lookahead > 0 && bracketDepth == 1) {
+                    // :: after lookahead > 0 means it's a slice step separator.
+                    // :: at position 0 is the global scope prefix (e.g. arr[::pos]).
                     isSlice = true;
                     break;
                 } else if (tok.type == TokenType::EOF_TOKEN) {

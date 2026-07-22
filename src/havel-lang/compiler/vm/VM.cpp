@@ -4167,13 +4167,72 @@ globals = std::move(globals_stack_.back());
     // restoring the caller's chunk. StringValId and FunctionObjId are
     // indices into the *module's* chunk — they'd resolve against the
     // caller's chunk after restore, producing garbage.
-    auto exportsObj = createHostObject();
-    auto *obj = heap_.object(exportsObj.id);
+    //
+    // If this Havel module shadows a host (lazy) module, use the host
+    // module's object as the exports base so that config { ... } blocks
+    // (which set properties on the host module object via aliases like
+    // 'conf') and 'use "std/config" as cfg' refer to the SAME object.
+    // E.g. std/config shadows the 'config' lazy module; its object has
+    // properties set by 'config { Debug.ForceMinimal = 0 }' and should
+    // also have the wrapper functions (get, set, save, load, ...) from
+    // the Havel module merged in.
+    bool shadowingHostModule = false;
+    Value hostModuleObj;
+    {
+        std::string pathBasename = path;
+        size_t slashPos = pathBasename.find_last_of('/');
+        if (slashPos != std::string::npos) pathBasename = pathBasename.substr(slashPos + 1);
+        for (const auto& [lmName, lmDesc] : lazy_modules_) {
+            if (!lmDesc.loaded) continue;
+            bool nameMatch = (lmName == pathBasename);
+            for (const auto& alias : lmDesc.aliases) {
+                if (alias == pathBasename) { nameMatch = true; break; }
+            }
+            if (!nameMatch) continue;
+            auto git = globals.find(lmName);
+            if (git != globals.end() && git->second.isObjectId()) {
+                auto* lmobj = heap_.object(git->second.asObjectId());
+                if (lmobj && !lmobj->get("__lazy__")) {
+                    hostModuleObj = git->second;
+                    shadowingHostModule = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Collect names of host functions that already exist on the host module
+    // object, so we don't add Havel wrappers with the same name (which would
+    // cause infinite recursion: wrapper 'get' calls 'config.get', but config
+    // and the exports are the same object, so 'config.get' finds the wrapper
+    // again).
+    std::unordered_set<std::string> hostModuleFuncNames;
+    if (shadowingHostModule && hostModuleObj.isObjectId()) {
+        auto* hmObj = heap_.object(hostModuleObj.asObjectId());
+        if (hmObj) {
+            for (const auto& [k, v] : *hmObj) {
+                if (v.isHostFuncId()) hostModuleFuncNames.insert(k);
+            }
+        }
+    }
+
+    ObjectRef exportsRef;
+    if (shadowingHostModule && hostModuleObj.isObjectId()) {
+        exportsRef = ObjectRef{hostModuleObj.asObjectId(), true};
+    } else {
+        exportsRef = createHostObject();
+    }
+    auto *obj = heap_.object(exportsRef.id);
     int exportCount = 0;
     (void)exportCount;
-    uint64_t exportsRootId = pinExternalRoot(Value::makeObjectId(exportsObj.id));
+    uint64_t exportsRootId = pinExternalRoot(Value::makeObjectId(exportsRef.id));
 for (const auto& [name, value] : globals) {
             if (name.empty() || name[0] == '_') continue;
+        // When shadowing a host module, skip Havel wrappers that have the same
+        // name as an existing host function on the host module object — the
+        // host function is already available and adding a wrapper that calls
+        // config.<name>() would cause infinite recursion (config == exports).
+        if (shadowingHostModule && hostModuleFuncNames.count(name) && value.isClosureId()) continue;
         // Skip inherited globals UNLESS the module redefined them
         // (i.e., the value is different from what was inherited)
         if (inheritedGlobalNames.count(name)) {
@@ -4198,16 +4257,36 @@ for (const auto& [name, value] : globals) {
         exportCount++;
     }
     unpinExternalRoot(exportsRootId);
-    Value exports = Value::makeObjectId(exportsObj.id);
+    Value exports = Value::makeObjectId(exportsRef.id);
 
     // Merge C++ host module globals (e.g., math.ceil, math.sqrt) into exports
     // when a .hv module shadows a native module. The .hv module's own exports
     // take priority; host functions are only added for missing keys.
     {
-        std::string prefix = path + ".";
+        // Also check host module name + aliases as prefixes, not just path.
+        std::vector<std::string> prefixes;
+        prefixes.push_back(path + ".");
+        std::string pathBasename = path;
+        size_t slashPos = pathBasename.find_last_of('/');
+        if (slashPos != std::string::npos) pathBasename = pathBasename.substr(slashPos + 1);
+        for (const auto& [lmName, lmDesc] : lazy_modules_) {
+            if (lmName == pathBasename) {
+                prefixes.push_back(lmName + ".");
+                for (const auto& alias : lmDesc.aliases)
+                    prefixes.push_back(alias + ".");
+            }
+        }
         for (const auto& [name, value] : host_function_globals_) {
-            if (name.rfind(prefix, 0) != 0) continue;
-            std::string localName = name.substr(prefix.size());
+            bool matched = false;
+            std::string localName;
+            for (const auto& prefix : prefixes) {
+                if (name.rfind(prefix, 0) == 0) {
+                    localName = name.substr(prefix.size());
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) continue;
             if (!obj->get(localName)) {
                 (*obj)[localName] = value;
             }

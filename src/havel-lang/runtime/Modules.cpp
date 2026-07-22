@@ -180,6 +180,18 @@ void Modules::installHostFunctions() {
         }
         vm.setGlobal("channel", Value::makeObjectId(channelObj.id));
 
+        // Register global `thread` object with spawn, join, send, receive, running, pause, resume, stop methods
+        auto threadObj = vm.createHostObject();
+        for (const auto &name : {"spawn", "join", "send", "receive", "running", "pause", "resume", "stop"}) {
+            std::string fn = std::string("thread.") + name;
+            int idx = vm.getHostFunctionIndex(fn);
+            ::havel::info("[MOD] thread.{}: getHostFunctionIndex returned {}", name, idx);
+            if (idx >= 0) {
+                vm.setHostObjectField(threadObj, name, Value::makeHostFuncId(static_cast<uint32_t>(idx)));
+            }
+        }
+        vm.setGlobal("thread", Value::makeObjectId(threadObj.id));
+
     });
 
     options_.host_functions["extension.load"] =

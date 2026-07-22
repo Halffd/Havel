@@ -5,13 +5,18 @@ use async
 print("=== Testing cross-chunk goroutine spawn ===")
 
 ch = async.chan()
+print("Channel created: $ch")
 
 // Run a function imported from a different module chunk in a goroutine
 async.go(fn() {
+    print("Goroutine started!")
     v = getValue()
+    print("Got value: $v")
     ch.send(v)
+    print("Sent value to channel")
 })
 
+print("Waiting for receive...")
 res = ch.receive()
 print("Received from cross-chunk goroutine: $res")
 assert(res == 42, "cross-chunk goroutine should return 42")

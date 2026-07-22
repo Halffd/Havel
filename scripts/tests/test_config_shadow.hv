@@ -1,0 +1,28 @@
+// Test that config { ... } blocks and 'use "std/config"' refer to the same object.
+// Regression: cfg.Debug was null because the exports were a separate object from
+// the host config module's object that config { ... } sets properties on.
+
+use "std/config" as cfg
+
+val DOLOG = 1
+
+config {
+  Debug.ForceMinimal = 0
+  Mouse.DPI = 400
+}
+
+if cfg.get("Debug", false) {
+  // ok - cfg.get works as a wrapper
+}
+
+cfg.Debug.VerboseKeyLogging = DOLOG
+cfg.Debug.VerboseWindowLogging = DOLOG
+
+// After setting on cfg (which is the same object as conf), the values are visible
+assert cfg.Debug.VerboseKeyLogging == DOLOG, "VerboseKeyLogging should be set"
+assert cfg.Debug.VerboseWindowLogging == DOLOG, "VerboseWindowLogging should be set"
+assert cfg.Debug.ForceMinimal == 0, "ForceMinimal should be 0 (set by config block)"
+assert cfg.Mouse.DPI == 400, "Mouse.DPI should be 400 (set by config block)"
+
+print("test config shadow passed")
+exit()

@@ -1,5 +1,5 @@
 #pragma once
-#include "bootstrap/lexer/Lexer.hpp"
+#include "havel-lang/lexer/Lexer.hpp"
 #include <memory>
 #include <optional>
 #include <sstream>

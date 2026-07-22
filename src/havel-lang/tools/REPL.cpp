@@ -9,7 +9,7 @@
 #include "utils/ErrorPrinter.hpp"
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/DebugUtils.hpp"
-#include "bootstrap/lexer/Lexer.hpp"
+#include "havel-lang/lexer/Lexer.hpp"
 #include "../runtime/concurrency/Scheduler.hpp"
 #include "../runtime/concurrency/Fiber.hpp"
 #include <iostream>

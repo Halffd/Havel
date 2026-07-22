@@ -4631,8 +4631,14 @@ fn parseProgram(source) {
             continue
         }
         stmt = p.parseStatement()
-        if stmt != null and stmt.kind != "ErrorNode" {
-            body.push(stmt)
+        if stmt != null {
+            // Skip ErrorNode to avoid infinite loop on parse errors
+            if stmt.kind != "ErrorNode" {
+                body.push(stmt)
+            } else {
+                // Advance past error token to prevent infinite loop
+                p.advance()
+            }
         }
         else if stmt != null and stmt.kind == "ErrorNode" {
             // Error recovery — skip to next statement boundary

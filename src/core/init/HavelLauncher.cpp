@@ -9,7 +9,7 @@
 #include "havel-lang/compiler/core/ByteCompiler.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
-#include "bootstrap/lexer/Lexer.hpp"
+#include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/HavelEngine.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
@@ -989,6 +989,9 @@ public:
     case LaunchConfig::Mode::SCRIPT_AND_REPL:
       appArgList.push_back("--repl");
       break;
+    case LaunchConfig::Mode::SCRIPT:
+      appArgList.push_back("--run");
+      break;
     case LaunchConfig::Mode::TEST:
       appArgList.push_back("--test");
       appArgList.push_back(cfg.testDir);
@@ -1016,14 +1019,13 @@ public:
       appArgList.push_back(f);
 
     // Eval string
+    if (cfg.lintOnly)
+      appArgList.push_back("--lint");
     if (!cfg.evalString.empty()) {
       appArgList.push_back("--eval");
       appArgList.push_back(cfg.evalString);
     }
 
-    // Lint-only
-    if (cfg.lintOnly)
-      appArgList.push_back("--lint");
 
     // Script args (after --)
     if (!cfg.scriptArgs.empty()) {

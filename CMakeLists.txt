@@ -419,19 +419,18 @@ endif()
 set(HAVEL_LANG_SOURCES "")
 if(ENABLE_HAVEL_LANG)
     file(GLOB_RECURSE HAVEL_LANG_SOURCES "src/havel-lang/*.cpp")
-    list(APPEND HAVEL_LANG_SOURCES "src/havel-lang/lexer/Lexer.cpp")
     # Exclude LSP sources (they have their own target)
     # Exclude C API sources (not implemented)
-list(REMOVE_ITEM HAVEL_LANG_SOURCES
-    ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/main.cpp
-    ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/LanguageServer.cpp
-    ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/BytecodeSmokeMain.cpp
-    ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/HostBridgeNew.cpp
-    ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/Compiler.cpp
-        # Note: Disabled C API files (not implemented)
-        # ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/module/HavelAPI.cpp
-        # ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
-)
+    list(REMOVE_ITEM HAVEL_LANG_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/main.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/LanguageServer.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/BytecodeSmokeMain.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime/HostBridgeNew.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/Compiler.cpp
+            # Note: Disabled C API files (not implemented)
+            # ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/module/HavelAPI.cpp
+            # ${CMAKE_SOURCE_DIR}/src/extensions/HavelValue.cpp
+    )
 
 # Exclude stdlib modules when building as plugins — they become havel_mod_*.so
 # Exception: HotkeyModule stays in main binary (host bridges use its C++ class directly)
@@ -1082,17 +1081,28 @@ havel_core
 
 
 # ==============================================================================
+# BOOTSTRAP COMPILER (Stage 0)
+# ==============================================================================
+# Minimal C++ compiler that compiles self-hosted modules to .hvc bytecode.
+# Stale .hvc files caused the ::x[::y] parsing bug (lookahead>0 fix in Parser.cpp).
+# Bootstrap is only built when Havel Lang is enabled.
+if(ENABLE_HAVEL_LANG)
+    include(${CMAKE_SOURCE_DIR}/cmake/BootstrapCompiler.cmake)
+endif()
+
+
+# ==============================================================================
 # LANGUAGE SERVER PROTOCOL SERVER
 # ==============================================================================
 
 # LSP-specific sources (just lexer and parser, no Qt dependencies)
 set(LSP_SOURCES
- src/havel-lang/lsp/main.cpp
- src/havel-lang/lsp/LanguageServer.cpp
- src/havel-lang/ast/AST.cpp
+src/havel-lang/lsp/main.cpp
+  src/havel-lang/lsp/LanguageServer.cpp
+  src/havel-lang/ast/AST.cpp
   src/havel-lang/lexer/Lexer.cpp
- src/havel-lang/parser/Parser.cpp
- src/c/LoggerC.c
+  src/havel-lang/parser/Parser.cpp
+  src/c/LoggerC.c
  src/c/Config.c
  src/dl/Loader.c
  )

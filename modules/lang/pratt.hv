@@ -1364,7 +1364,6 @@ fn parseCallArgs() {
         expect(TID.CloseParen)
         return expr
     }
-}
     // ===================================================================
     // HELPER: Lambda expression (fn keyword form)
     // ===================================================================
@@ -4589,8 +4588,8 @@ fn parseAtDecoratorStatement() {
   }
   return DecoratorStatement(decorators, target, l, c)
 }
-    print("P_RETURN")
-    return {
+    // Return the parser interface
+    {
     parseExpr: parseExpr,
     parseStatement: parseStatement,
     parseBlock: parseBlock,
@@ -4600,8 +4599,9 @@ fn parseAtDecoratorStatement() {
     errors: ::errors,
     pos: ::pos,
     tokens: ::tokens,
+    incomplete: ::incomplete,
     }
-    print("P_AFTER_RETURN")
+}
 // ===================================================================
 // PUBLIC API
 // ===================================================================

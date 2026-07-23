@@ -202,6 +202,8 @@ void Havel::initialize(bool isStartup) {
         for (const auto& [name, fn] : modules_->options().host_functions) {
             bytecodeVM->registerHostFunction(name, fn);
         }
+        // Run VM setup callbacks on the bytecodeVM to register global objects (thread, channel, etc.)
+        modules_->runVmSetupCallbacks(*bytecodeVM);
         havel::startup_timing_report("host-functions-register", t);
         t = havel::startup_now();
 

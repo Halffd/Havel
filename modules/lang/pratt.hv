@@ -574,12 +574,12 @@ else if tt == TID.OpenParen {
 return parseParenExpr(tok)
 }
 else if tt == TID.OpenBracket {
-pos = pos - 1
+::pos = ::pos - 1
 syncCur()
 return parseArrayLiteral()
 }
 else if tt == TID.OpenBrace {
-pos = pos - 1
+::pos = ::pos - 1
 syncCur()
 return disambiguateBrace()
 }
@@ -1340,7 +1340,7 @@ fn parseCallArgs() {
             return LambdaExpression(lambdaParams, body)
         }
         // Not a lambda — restore position and parse grouped expression
-        pos = savedPos
+        ::pos = savedPos
         syncCur()
         skipNewlines()
         expr = parseExpr(0)
@@ -2084,7 +2084,7 @@ fn parseStatement() {
 			return ExpressionStatement(MultipleAssignment(targets, value, l, c), l, c)
 		}
   // Not multi-assign - restore position
-  pos = savePos
+  ::pos = savePos
   syncCur()
  }
 
@@ -2100,19 +2100,19 @@ if tt == TID.At and at(1).tid == TID.Identifier {
  advance() // @
  advance() // identifier
  if current().tid == TID.Arrow {
-  pos = savePos
+  ::pos = savePos
   syncCur()
   return parseHotkeyStatement()
  }
  // @decorator: followed by fn/class/struct/def
  skipNewlines()
  if current().tid == TID.Fn || current().tid == TID.Class || current().tid == TID.Struct || current().tid == TID.Def {
-  pos = savePos
+  ::pos = savePos
   syncCur()
   return parseAtDecoratorStatement()
  }
  // Otherwise @x is an expression (self-field access) — fall through
- pos = savePos
+ ::pos = savePos
  syncCur()
 }
 	// Identifier + When/If/Arrow at statement start => hotkey
@@ -2310,7 +2310,7 @@ if tt == TID.Greater { return parseInputStatement() }
         }
         break
       }
-      pos = savePos
+      ::pos = savePos
       syncCur()
       if isDeco { return parseDecoratorStatement() }
     }
@@ -2524,7 +2524,7 @@ fn parseDoWhileStatement() {
   skipNewlines()
   if current().tid == TID.OpenBrace {
    // This is a count-based loop - restore and parse count expr
-   pos = savedPos
+   ::pos = savedPos
    syncCur()
    if current().tid == TID.Number {
     countExpr = NumberLiteral(current().value, current().line, current().col)
@@ -2538,7 +2538,7 @@ fn parseDoWhileStatement() {
   }
   else {
    // Not a count-based loop - restore position
-   pos = savedPos
+   ::pos = savedPos
    syncCur()
   }
  }
@@ -3470,7 +3470,7 @@ fn parseOnKeyDownOrKeyUpStatement() {
   advance() // consume '{'
   skipNewlines()
   firstTok = current()
-  pos = savedPos
+  ::pos = savedPos
   syncCur()
   isFullDefinition = (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on")) || firstTok.tid == TID.On
   if isFullDefinition {
@@ -3788,13 +3788,13 @@ fn parseTypeParameterList() {
         return candidateParams
       }
       // Not followed by '(' — backtrack
-      pos = savedPos
+      ::pos = savedPos
       syncCur()
       return []
     }
   }
   // Backtrack — not a type parameter list
-  pos = savedPos
+  ::pos = savedPos
   syncCur()
   return []
   }

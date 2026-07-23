@@ -91,6 +91,14 @@ private:
     void initBridges();
     void installHostFunctions();
     void installStdLib();
+
+public:
+    void runVmSetupCallbacks(compiler::VM &vm);
+
+private:
+    void registerPureStdLib(compiler::VM &vm);
+    void registerCoreStdLib(compiler::VM &vm);
+    std::unique_ptr<Modules> createModules(const HostContext &ctx);
 };
 
 void registerPureStdLib(compiler::VM &vm);

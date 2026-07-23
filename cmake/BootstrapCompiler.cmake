@@ -74,15 +74,17 @@ add_dependencies(havel havel-bootstrap)
 function(add_bootstrap_module module_name)
     set(hv_src "${CMAKE_SOURCE_DIR}/modules/lang/${module_name}.hv")
     set(hvc_out "${CMAKE_BINARY_DIR}/out/modules/lang/${module_name}.hvc")
+    set(hv_reldir "modules/lang")
     set(target_name "build_${module_name}_hvc")
 
     add_custom_command(
         OUTPUT ${hvc_out}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/out/modules/lang
         COMMAND havel-bootstrap ${hv_src} ${hvc_out}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${hvc_out} ${CMAKE_SOURCE_DIR}/${hv_reldir}/${module_name}.hvc
         DEPENDS havel-bootstrap ${hv_src}
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Compiling ${module_name}.hv via bootstrap compiler"
+        COMMENT "Compiling ${module_name}.hv via bootstrap compiler and syncing to source tree"
         VERBATIM
     )
 

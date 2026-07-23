@@ -1864,20 +1864,6 @@ frame_arena_[frame_count_] = CallFrame{func, co_chunk, co->ip, 0, co->closure_id
     std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
     if (callee_value.isFunctionObjId()) {
         function_index = callee_value.asFunctionObjId();
-        {
-            auto *f = resolve_chunk ? resolve_chunk->getFunction(function_index) : nullptr;
-            if (!f) { f = main_chunk_ ? main_chunk_->getFunction(function_index) : nullptr; }
-            if (f && f->name == "Parser") {
-                static bool once = false;
-                if (!once) { once = true;
-                std::cerr << "[DOCALL] Parser fn=" << function_index
-                          << " chunk=" << (resolve_chunk ? "yes" : "null")
-                          << " frame_count=" << frame_count_
-                          << " stack_size=" << stack.size()
-                          << std::endl;
-                }
-            }
-        }
         if (resolve_chunk && !resolve_chunk->getFunction(function_index)) {
             if (main_chunk_ && main_chunk_->getFunction(function_index)) {
                 resolve_chunk = main_chunk_.get();
@@ -1901,14 +1887,28 @@ frame_arena_[frame_count_] = CallFrame{func, co_chunk, co->ip, 0, co->closure_id
                 }
             }
         }
-        // Create a closure for FunctionObjId to capture module globals
+        // Create a closure for FunctionObjId to capture module globals.
+        // Reuse the calling frame's module_globals pointer (if set) so any
+        // ::global writes made by the callee write back into the same dict
+        // the caller observes. Without this, calling nested fns that have no
+        // upvalues (via LOAD_CONST fn[i] emitted by ByteCompiler) would
+        // silently drop STORE_GLOBAL writeback because the temporary closure
+        // had module_globals=nullptr.
+        std::shared_ptr<std::unordered_map<std::string, Value>> foid_globals;
+        uint32_t parent_cid = currentFrame().closure_id;
+        if (parent_cid != 0) {
+            auto *pclosure = heap_.closure(parent_cid);
+            if (pclosure && pclosure->module_globals) {
+                foid_globals = pclosure->module_globals;
+            }
+        }
         if (resolve_chunk && resolve_chunk->getFunction(function_index)) {
             auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
                 .function_index = function_index,
                 .chunk_index = 0,
                 .chunk = resolve_chunk,
                 .chunk_ref = resolve_chunk_ref,
-                .module_globals = nullptr,
+                .module_globals = std::move(foid_globals),
                 .upvalues = {}});
             closure_id = closureRef.id;
         }
@@ -1924,21 +1924,6 @@ frame_arena_[frame_count_] = CallFrame{func, co_chunk, co->ip, 0, co->closure_id
         }
         if (closure->module_globals) {
             closure_globals = closure->module_globals;
-        }
-        const BytecodeFunction *callee = nullptr;
-        if (callee_value.isFunctionObjId()) {
-            callee = resolve_chunk->getFunction(function_index);
-        } else if (callee_value.isClosureId()) {
-            callee = resolve_chunk->getFunction(closure->function_index);
-        }
-        if (callee && (callee->name == "tokenize" || callee->name == "Lexer" || callee->name == "skipWhitespace")) {
-            // std::cerr << "[DBG-CALL] fn=" << callee->name
-            //           << " closure_id=" << closure_id
-            //           << " has_module_globals=" << (closure->module_globals ? "yes" : "no")
-            //           << " globals_size=" << globals.size()
-            //           << " has_LEXER_in_globals=" << (globals.count("Lexer") > 0 ? "yes" : "no")
-            //           << " has_KEYWORDS_in_globals=" << (globals.count("KEYWORDS") > 0 ? "yes" : "no")
-            //           << "\n";
         }
 } else {
             // Debug: identify what type the value actually is
@@ -4159,6 +4144,35 @@ globals = std::move(globals_stack_.back());
             auto* closure = heap_.closure(value.asClosureId());
             if (closure) {
                 closure->module_globals = moduleGlobalsForCache;
+            }
+        }
+    }
+
+    // Also patch closure constants embedded in the chunk's function constant pools.
+    // Nested functions (no upvalues) are emitted as LOAD_CONST fn[i] and get
+    // wrapped into Closures at .hvc deserialization time (see VM.cpp:3896-3942).
+    // Those closures start with module_globals=nullptr so STORE_GLOBAL writeback
+    // (VMDispatch.cpp:174-178) is skipped — module state changes inside them
+    // (e.g. pratt::pos++ inside advance()) never persist. Assign the shared
+    // moduleGlobalsForCache snapshot so they write back to the same map the
+    // top-level Parser() closure reads.
+    for (size_t fi = 0; fi < chunk->getFunctionCount(); ++fi) {
+        const BytecodeFunction* fn = chunk->getFunction(fi);
+        if (!fn) continue;
+        for (const auto& c : fn->constants) {
+            if (c.isClosureId()) {
+                auto* closure = heap_.closure(c.asClosureId());
+                if (closure && !closure->module_globals) {
+                    closure->module_globals = moduleGlobalsForCache;
+                }
+            }
+        }
+        for (const auto& dv : fn->default_values) {
+            if (dv.has_value() && dv->isClosureId()) {
+                auto* closure = heap_.closure(dv->asClosureId());
+                if (closure && !closure->module_globals) {
+                    closure->module_globals = moduleGlobalsForCache;
+                }
             }
         }
     }

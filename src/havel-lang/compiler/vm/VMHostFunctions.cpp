@@ -1760,11 +1760,11 @@ threadObj->start(std::move(handler));
         if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
             COMPILER_THROW("thread.spawn requires a closure argument");
         }
-        ::havel::info("[THREAD] thread.spawn called");
+        ::havel::info("[THREAD] thread.spawn called, closure={}", args[0].isClosureId() ? "closure" : "function");
         auto threadObj = std::make_shared<Thread>();
         auto closure = args[0];
         auto handler = [this, closure](const Thread::Message &msg) {
-            ::havel::info("[THREAD] handler executing");
+            ::havel::info("[THREAD] handler executing, msg type={}", msg.index());
             try {
                 Value arg;
                 bool hasArg = false;
@@ -1789,7 +1789,9 @@ threadObj->start(std::move(handler));
                 ::havel::error("[thread] Exception: {}", e.what());
             }
         };
+        ::havel::info("[THREAD] calling threadObj->start()");
         threadObj->start(std::move(handler));
+        ::havel::info("[THREAD] threadObj->start() returned");
         ::havel::info("[THREAD] thread started, sending initial message");
         threadObj->send("start");
         ::havel::info("[THREAD] initial message sent");

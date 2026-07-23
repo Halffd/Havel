@@ -150,16 +150,20 @@ Value ConcurrencyBridge::threadSpawn(const std::vector<Value> &args) {
     return Value::makeNull();
   }
 
+  ::havel::info("[CONCURRENCY] threadSpawn called, vm_={}, scheduler_={}", (void*)vm_, vm_ ? (void*)vm_->scheduler_ : nullptr);
   
   // If scheduler is available, spawn as a goroutine
   if (vm_ && vm_->scheduler_) {
+    ::havel::info("[CONCURRENCY] spawning goroutine via scheduler");
     uint32_t gid = vm_->spawnGoroutine(args[0], {});
+    ::havel::info("[CONCURRENCY] goroutine spawned with id={}", gid);
     return Value::makeThreadId(gid);
   }
 
   // No scheduler: execute synchronously via vm_->call
   // This runs the closure inline and returns immediately.
   // The returned thread will be in "completed" state for threadJoin.
+  ::havel::info("[CONCURRENCY] no scheduler, calling synchronously");
   uint32_t thread_id;
   {
     std::lock_guard<std::mutex> lock(threads_mutex_);

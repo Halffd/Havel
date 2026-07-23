@@ -82,6 +82,17 @@ uint32_t Scheduler::spawn(Value callable, const std::vector<Value>& args,
                   callable.isClosureId() ? "closure" :
                   callable.isFunctionObjId() ? "function" : "other",
                   (int)priority);
+    ::havel::info("[SCHEDULER] SPAWN: gid={} name='{}' callable_kind={} priority={}",
+        g->id, name,
+        callable.isClosureId() ? "closure" :
+        callable.isFunctionObjId() ? "function" : "other",
+        (int)priority);
+
+    ::havel::info("[SCHEDULER] SPAWN: gid={} name='{}' callable_kind={} priority={} args={}",
+        g->id, name,
+        callable.isClosureId() ? "closure" :
+        callable.isFunctionObjId() ? "function" : "other",
+        (int)priority, args.size());
 
     g->fiber = new Fiber(g->id, init_function_id, 0, name);
     if (g->closure_id > 0) {
@@ -135,6 +146,9 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 
   static const bool trace_cycle = std::getenv("HAVEL_TRACE_CYCLE");
 
+  ::havel::info("[SCHEDULER] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
+      hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
+
   if (debugging::debug_io) {
     ::havel::debug("[Scheduler] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
       hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
@@ -166,6 +180,8 @@ Scheduler::Goroutine* Scheduler::pickNext() {
           continue;
         }
         if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
+          ::havel::info("[SCHEDULER] pickNext: selected {} gid={} state={}",
+              label, g->id, static_cast<int>(g->state.load()));
           if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected {} gid={} state={}",
             label, g->id, static_cast<int>(g->state.load()));
           return g;

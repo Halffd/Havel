@@ -4241,6 +4241,12 @@ globals = std::move(globals_stack_.back());
     (void)exportCount;
     uint64_t exportsRootId = pinExternalRoot(Value::makeObjectId(exportsRef.id));
 for (const auto& [name, value] : globals) {
+            if (path == "emitter" && name == "Emitter") {
+                std::cerr << "[DBG-EXPORTS] emitter Emitter: inherited=" << inheritedGlobalNames.count(name)
+                          << " isClosure=" << value.isClosureId()
+                          << " isHostFn=" << value.isHostFuncId()
+                          << " shadowing=" << shadowingHostModule << "\n";
+            }
             if (name.empty() || name[0] == '_') continue;
         // When shadowing a host module, skip Havel wrappers that have the same
         // name as an existing host function on the host module object — the

@@ -168,8 +168,11 @@ case OpCode::IMPORT: {
             break;
         }
     } else if (git != globals.end() && git->second.isNull()) {
+        std::cerr << "[DBG-IMPORT-CACHED-NULL] path='" << path << "' returning null cached value\n";
         pushStack(git->second);
         break;
+    } else if (git != globals.end()) {
+        // Not object, not null - log for debugging
     }
     // Try capitalized variant
     std::string capPath = path;

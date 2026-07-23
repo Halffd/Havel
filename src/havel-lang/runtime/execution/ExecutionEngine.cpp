@@ -957,7 +957,7 @@ void ExecutionEngine::processGoroutinesInline() {
             g->instructions_executed++;
             executed++;
             if (result.type != VMExecutionResult::YIELD) {
-                if (g->fiber) vm_->saveFiberState(g->fiber);
+                if (g->fiber && !vm_->exit_requested_.load()) vm_->saveFiberState(g->fiber);
                 switch (result.type) {
                     case VMExecutionResult::RETURNED:
                         handleReturned(g);

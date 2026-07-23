@@ -587,7 +587,7 @@ private:
         g->instructions_executed++;
         executed++;
         if (result.type != compiler::VMExecutionResult::YIELD) {
-          if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
+          if (g->fiber && !vm_->exit_requested_.load()) vm_->saveFiberStatePublic(g->fiber);
           switch (result.type) {
             case compiler::VMExecutionResult::RETURNED:
               g->state = compiler::Scheduler::GoroutineState::Done;

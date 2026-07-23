@@ -1,0 +1,178 @@
+// notif.hv — Desktop notifications via notify-send (libnotify freedesktop)
+//
+// Loaded by:
+//   use { notif } from "std/notif"
+//   notif.send("title", "body", opts...)
+//
+// Backed by:
+//   - /usr/bin/notify-send (preferred; full features)
+//   - falls back to Zenity / kdialog / OSD via environment if missing
+//
+// Provides:
+//   notif.send(title, body, opts?)  — show a notification
+//   notif.capable()                — true if a notifier is installed
+//   notif.notify_bin               — path to the executable actually used
+//
+// `opts` is a table:
+//   { urgency: "low"|"normal"|"critical", timeout: ms, icon: path, category: str,
+//     action: "command", hint: {key: val, ...} }
+//
+// Examples:
+//   notif.send("Build done", "Tests passed")
+//   notif.send("Battery", "10% remaining", {urgency: "critical", icon: "battery-caution"})
+//   notif.send("Task done", "click me",
+//              {action: 'notify-send "Click ack" "Acknowledged"',
+//               hint: {string:x-callback: "do.thing"}})
+
+shell = shell              // forward-resolve in module scope
+
+// ============================================================
+// Tool discovery
+// ============================================================
+
+fn _pick() {
+  p = shell.which("notify-send")
+  if p != null && p != "" { return {path: p, name: "notify-send"} }
+  p = shell.which("kdialog")
+  if p != null && p != "" { return {path: p, name: "kdialog"} }
+  p = shell.which("zenity")
+  if p != null && p != "" { return {path: p, name: "zenity"} }
+  null
+}
+
+fn capable() {
+  _pick() != null
+}
+
+fn notify_bin() {
+  t = _pick()
+  if t == null { null } else { t.path }
+}
+
+// ============================================================
+// Argument builder for notify-send / kdialog / zenity
+// ============================================================
+
+fn _escapeArg(s) {
+  if s == null { return "''" }
+  // Wrap in single quotes, escape any embedded single quotes
+  "'" + s.replace("'", "'\\''") + "'"
+}
+
+fn _urgencyFlag(u, tool) {
+  if u == null { return [] }
+  if tool == "notify-send" { return ["--urgency=" + u] }
+  if tool == "kdialog" {
+    if u == "critical" { return ["--sorry"] }
+    if u == "low" { return ["--dontagain", "low"] }
+    return []
+  }
+  if tool == "zenity" { return ["--" + u] }
+  []
+}
+
+fn _iconFlag(icon, tool) {
+  if icon == null || icon == "" { return [] }
+  if tool == "notify-send" { return ["--icon=" + icon] }
+  if tool == "kdialog" { return ["--icon=" + icon] }
+  if tool == "zenity" { return ["--window-icon=" + icon] }
+  ["--icon=" + icon]
+}
+
+fn _timeoutFlag(ms, tool) {
+  if ms == null { return [] }
+  if tool == "notify-send" {
+    // notify-send uses milliseconds with -t
+    return ["--expire-time=" + str(ms)]
+  }
+  if tool == "kdialog" { return ["--timeout=" + str(int(ms / 1000))] }
+  if tool == "zenity" { return ["--timeout=" + str(int(ms / 1000))] }
+  []
+}
+
+fn _categoryFlag(cat, tool) {
+  if cat == null { return [] }
+  if tool == "notify-send" { return ["--category=" + cat] }
+  []
+}
+
+fn _hintKv(k, v) {
+  // notify-send hints: int:value, double:value, string:value, boolean:string
+  if type(v) == "integer" || type(v) == "int" { return "int:" + k + "=" + str(v) }
+  if type(v) == "number" || type(v) == "float" || type(v) == "double" { return "double:" + k + "=" + str(v) }
+  if type(v) == "boolean" || type(v) == "bool" { return "boolean:" + k + ":" + (v ? "true" : "false") }
+  "string:" + k + "=" + (type(v) == "string" ? v : str(v))
+}
+
+fn _hintFlags(h, tool) {
+  if h == null { return [] }
+  if tool != "notify-send" { return [] }
+  out = []
+  for k in h { out = out + [_hintKv(k, h[k])] }
+  out
+}
+
+fn _actionFlag(action, tool) {
+  if action == null { return [] }
+  if tool == "notify-send" { return ["--action=" + _escapeArg(action)] }
+  []
+}
+
+// ============================================================
+// Public — send
+// ============================================================
+
+fn send(title, body, opts = null) {
+  tool = _pick()
+  if tool == null { return {ok: false, error: "no notifier installed (notify-send / kdialog / zenity)"} }
+
+  if opts == null { opts = {} }
+  args = [tool.path]
+
+  if tool.name == "notify-send" {
+    args = args + ["--app-name=Havel"]
+  } else if tool.name == "kdialog" {
+    args = args + ["--passivepopup", body == null ? "" : body, "5"]
+  } else if tool.name == "zenity" {
+    args = args + ["--info", "--text=" + _escapeArg(title)]
+  }
+
+  args = args + _urgencyFlag(opts.urgency, tool.name)
+  args = args + _iconFlag(opts.icon, tool.name)
+  args = args + _timeoutFlag(opts.timeout, tool.name)
+  args = args + _categoryFlag(opts.category, tool.name)
+  args = args + _hintFlags(opts.hint, tool.name)
+  args = args + _actionFlag(opts.action, tool.name)
+
+  if tool.name == "notify-send" {
+    args = args + [_escapeArg(title), _escapeArg(body == null ? "" : body)]
+  } else if tool.name == "kdialog" {
+    // kdialog --passivepopup layout is positional; already added above
+  }
+
+  cmd = args.join(" ")
+  result = shell.exec(cmd)
+  {
+    ok: result.ok,
+    code: result.code,
+    output: result.stdout,
+    tool: tool.name,
+    cmd: cmd
+  }
+}
+
+// ============================================================
+// Convenience presets
+// ============================================================
+
+fn critical(title, body, opts = null) {
+  if opts == null { opts = {} }
+  opts.urgency = "critical"
+  send(title, body, opts)
+}
+
+fn low(title, body, opts = null) {
+  if opts == null { opts = {} }
+  opts.urgency = "low"
+  send(title, body, opts)
+}

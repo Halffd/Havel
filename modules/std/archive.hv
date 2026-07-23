@@ -1,0 +1,252 @@
+// archive.hv — Archive operations (tar, zip, gzip, xz, zstd)
+//
+// Loaded by:
+//   use { archive } from "std/archive"
+//
+// Provides thin wrappers over system archivers. Each call returns
+// {ok, code, output, cmd, error}.
+//
+// Format-strings supported:
+//   "tar.gz", "tgz", "tar.bz2", "tar.xz", "tar.zst", "tar"
+//   "zip"
+//   "gz", "bz2", "xz", "zst"    (single-file compress/decompress)
+//
+// Tool discovery uses shell.which(); falls back across `tar`, `gzip`,
+// `bzip2`, `xz`, `zstd`, `zip` and `unzip`.
+
+shell = shell
+
+// ============================================================
+// Tool discovery
+// ============================================================
+
+fn _which(name) { shell.which(name) }
+
+fn _tools() {
+  {
+    tar: _which("tar") != null,
+    gzip: _which("gzip") != null,
+    bzip2: _which("bzip2") != null,
+    xz: _which("xz") != null,
+    zstd: _which("zstd") != null,
+    zip: _which("zip") != null,
+    unzip: _which("unzip") != null
+  }
+}
+
+// ============================================================
+// Format detection
+// ============================================================
+
+fn _ext(path) {
+  if path == null { return "" }
+  // returns ".tar.gz" or ".tgz" detection
+  if path.endsWith(".tar.gz") == true { return "tar.gz" }
+  if path.endsWith(".tgz") == true { return "tar.gz" }
+  if path.endsWith(".tar.bz2") == true { return "tar.bz2" }
+  if path.endsWith(".tbz2") == true { return "tar.bz2" }
+  if path.endsWith(".tar.xz") == true { return "tar.xz" }
+  if path.endsWith(".txz") == true { return "tar.xz" }
+  if path.endsWith(".tar.zst") == true { return "tar.zst" }
+  if path.endsWith(".tzst") == true { return "tar.zst" }
+  if path.endsWith(".tar") == true { return "tar" }
+  if path.endsWith(".zip") == true { return "zip" }
+  if path.endsWith(".gz") == true { return "gz" }
+  if path.endsWith(".bz2") == true { return "bz2" }
+  if path.endsWith(".xz") == true { return "xz" }
+  if path.endsWith(".zst") == true { return "zst" }
+  ""
+}
+
+fn _ensure(tools, names) {
+  for n in names {
+    if !tools[n] {
+      return {ok: false, error: "missing required tool: " + n}
+    }
+  }
+  {ok: true}
+}
+
+// ============================================================
+// tar-based
+// ============================================================
+
+fn _runTar(args) {
+  shell.exec("tar " + args.join(" "))
+}
+
+fn tar_create(archivePath, sourcePaths, opts = null) {
+  if sourcePaths == null || #sourcePaths == 0 { return {ok: false, error: "no source paths"} }
+  args = ["-cf", _quote(archivePath)]
+  if opts != null {
+    if opts.verbose == true { args = args + ["-v"] }
+    if opts.compress == "gz" { args = args + ["-z"] }
+    if opts.compress == "bz2" { args = args + ["-j"] }
+    if opts.compress == "xz" { args = args + ["-J"] }
+    if opts.compress == "zst" {
+      tools = _tools()
+      if !tools.zstd { return {ok: false, error: "zstd not installed"} }
+      args = args + ["--zstd"]
+    }
+  }
+  for p in sourcePaths { args = args + [_quote(p)] }
+  _runTar(args)
+}
+
+fn tar_extract(archivePath, destDir = null, opts = null) {
+  args = ["-xf", _quote(archivePath)]
+  if opts != null {
+    if opts.verbose == true { args = args + ["-v"] }
+    if opts.to_stdin == true { args = args + ["-O"] }
+  }
+  if destDir != null { args = args + ["-C", _quote(destDir)] }
+  _runTar(args)
+}
+
+fn tar_list(archivePath, opts = null) {
+  args = ["-tf", _quote(archivePath)]
+  if opts != null && opts.verbose == true { args = args + ["-v"] }
+  _runTar(args)
+}
+
+// ============================================================
+// zip-based
+// ============================================================
+
+fn zip_create(archivePath, sourcePaths, opts = null) {
+  tools = _tools()
+  miss = _ensure(tools, ["zip"])
+  if !miss.ok { return miss }
+  args = ["-r", _quote(archivePath)]
+  if opts != null && opts.compress != null {
+    args = args + ["-" + str(opts.compress)]
+  }
+  for p in sourcePaths { args = args + [_quote(p)] }
+  shell.exec("zip " + args.join(" "))
+}
+
+fn zip_extract(archivePath, destDir = null) {
+  tools = _tools()
+  miss = _ensure(tools, ["unzip"])
+  if !miss.ok { return miss }
+  args = ["-o", _quote(archivePath)]
+  if destDir != null { args = args + ["-d", _quote(destDir)] }
+  shell.exec("unzip " + args.join(" "))
+}
+
+fn zip_list(archivePath) {
+  tools = _tools()
+  miss = _ensure(tools, ["unzip"])
+  if !miss.ok { return miss }
+  shell.exec("unzip -l " + _quote(archivePath))
+}
+
+// ============================================================
+// Single-file compress / decompress
+// ============================================================
+
+fn gzip_compress(path, outPath = null) {
+  if outPath == null { outPath = path + ".gz" }
+  shell.exec("gzip -c " + _quote(path) + " > " + _quote(outPath))
+}
+
+fn gzip_decompress(path, outPath = null) {
+  // stripping extension: foo.gz -> foo
+  if outPath == null {
+    if path.endsWith(".gz") {
+      outPath = path[0 : #path - 3]
+    } else {
+      outPath = path + ".out"
+    }
+  }
+  shell.exec("gzip -dc " + _quote(path) + " > " + _quote(outPath))
+}
+
+fn xz_compress(path, outPath = null) {
+  if outPath == null { outPath = path + ".xz" }
+  shell.exec("xz -c " + _quote(path) + " > " + _quote(outPath))
+}
+
+fn xz_decompress(path, outPath = null) {
+  if outPath == null {
+    if path.endsWith(".xz") { outPath = path[0 : #path - 3] }
+    else { outPath = path + ".out" }
+  }
+  shell.exec("xz -dc " + _quote(path) + " > " + _quote(outPath))
+}
+
+fn zstd_compress(path, outPath = null) {
+  if outPath == null { outPath = path + ".zst" }
+  shell.exec("zstd -c " + _quote(path) + " > " + _quote(outPath))
+}
+
+fn zstd_decompress(path, outPath = null) {
+  if outPath == null {
+    if path.endsWith(".zst") { outPath = path[0 : #path - 4] }
+    else { outPath = path + ".out" }
+  }
+  shell.exec("zstd -dc " + _quote(path) + " > " + _quote(outPath))
+}
+
+// ============================================================
+// Format-agnostic high-level helpers
+// ============================================================
+
+fn format_from_extension(path) { _ext(path) }
+
+fn compress(srcPath, destPath = null, opts = null) {
+  if destPath == null { destPath = srcPath + ".gz" }
+  fmt = _ext(destPath)
+  if fmt == "gz"         { gzip_compress(srcPath, destPath) }
+  else if fmt == "xz"    { xz_compress(srcPath, destPath) }
+  else if fmt == "zst"   { zstd_compress(srcPath, destPath) }
+  else if fmt == "zip"   { zip_create(destPath, [srcPath], opts) }
+  else if fmt == "tar"   { tar_create(destPath, [srcPath], opts) }
+  else if fmt == "tar.gz"   { tar_create(destPath, [srcPath], {compress: "gz"}) }
+  else if fmt == "tar.bz2"  { tar_create(destPath, [srcPath], {compress: "bz2"}) }
+  else if fmt == "tar.xz"   { tar_create(destPath, [srcPath], {compress: "xz"}) }
+  else if fmt == "tar.zst"  { tar_create(destPath, [srcPath], {compress: "zst"}) }
+  else { {ok: false, error: "unknown extension: " + destPath} }
+}
+
+fn decompress(archivePath, destDir = null, opts = null) {
+  fmt = _ext(archivePath)
+  if fmt == "zip"        { zip_extract(archivePath, destDir) }
+  else if fmt == "gz"    { gzip_decompress(archivePath, destDir == null ? null : destDir + "/" + _basename(archivePath, ".gz")) }
+  else if fmt == "xz"    { xz_decompress(archivePath, destDir == null ? null : destDir + "/" + _basename(archivePath, ".xz")) }
+  else if fmt == "zst"   { zstd_decompress(archivePath, destDir == null ? null : destDir + "/" + _basename(archivePath, ".zst")) }
+  else if fmt.startsWith("tar") { tar_extract(archivePath, destDir, opts) }
+  else { {ok: false, error: "unknown archive format: " + archivePath} }
+}
+
+fn list(archivePath) {
+  fmt = _ext(archivePath)
+  if fmt == "zip" { zip_list(archivePath) }
+  else if fmt.startsWith("tar") { tar_list(archivePath) }
+  else if fmt == "gz" { [{name: _basename(archivePath, ".gz"), size: shell.size(archivePath)}] }
+  else { {ok: false, error: "unknown archive format: " + archivePath} }
+}
+
+// ============================================================
+// Small string helpers
+// ============================================================
+
+fn _quote(s) {
+  if s == null { return "''" }
+  "'" + s.replace("'", "'\\''") + "'"
+}
+
+fn _basename(path, extToStrip = null) {
+  if path == null { return "" }
+  base = path
+  i = #base - 1
+  while i >= 0 {
+    if base[i] == "/" { break }
+    i -= 1
+  }
+  if i >= 0 { base = base[i + 1 : #base] } else { base = base }
+  if extToStrip != null && base.endsWith(extToStrip) {
+    base = base[0 : #base - #extToStrip]
+  }
+  base
+}

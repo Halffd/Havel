@@ -1357,6 +1357,10 @@ case TokenType::Thread:
     if (at().type == TokenType::Dot) {
         return makeNodeAt<ast::Identifier>(token, token.value);
     }
+    // Allow thread as a global object reference when not followed by { (thread expression)
+    if (at().type != TokenType::OpenBrace) {
+        return makeNodeAt<ast::Identifier>(token, token.value);
+    }
     return parseThreadExpression();
 
 case TokenType::Interval:

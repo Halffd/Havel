@@ -71,20 +71,25 @@ void Thread::stop() {
 }
 
 void Thread::messageLoop(MessageHandler handler) {
+  ::havel::info("[THREAD] messageLoop started");
   while (running.load() && !stopped.load()) {
     // Check if paused
     if (paused.load()) {
+      ::havel::info("[THREAD] paused, sleeping");
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
       continue;
     }
     
     // Wait for message
     std::unique_lock<std::mutex> lock(queueMutex);
+    ::havel::info("[THREAD] waiting for message");
     queueCV.wait_for(lock, std::chrono::milliseconds(100), [this] {
       return !messageQueue.empty() || stopped.load();
     });
+    ::havel::info("[THREAD] woke up, queue empty={}, stopped={}", messageQueue.empty(), stopped.load());
     
     if (stopped.load()) {
+      ::havel::info("[THREAD] stopped, breaking");
       break;
     }
     
@@ -95,14 +100,16 @@ void Thread::messageLoop(MessageHandler handler) {
       
       // Call handler
       try {
+        ::havel::info("[THREAD] calling handler");
         handler(msg);
+        ::havel::info("[THREAD] handler returned");
       } catch (const std::exception &e) {
-        // Log error but continue processing
-        havel::error("[Thread] Handler exception: {}", e.what());
+        ::havel::error("[Thread] Handler exception: {}", e.what());
       }
     }
   }
   
+  ::havel::info("[THREAD] messageLoop ended");
   running.store(false);
 }
 

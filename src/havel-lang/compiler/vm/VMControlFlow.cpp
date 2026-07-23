@@ -1128,7 +1128,23 @@ case OpCode::CLOSURE: {
 
   std::shared_ptr<std::unordered_map<std::string, Value>> closure_globals;
   if (main_chunk_ && current_chunk != main_chunk_.get()) {
-    closure_globals = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    // For module chunks, share the parent frame's module_globals dict instead
+    // of copying vm.globals. Closures created here must observe writes done
+    // by sibling module functions (e.g. pratt::pos incremented inside nud so
+    // parseExpr sees the new position on its next ::pos read). Sharing one
+    // dict pointer across all closures in a module keeps :: globals coherent.
+    // The fresh dict is created lazily at module load (VM::loadModule line 4158)
+    // and re-used for every closure created in the chunk.
+    uint32_t parent_cid = currentFrame().closure_id;
+    if (parent_cid != 0) {
+      auto *pclosure = heap_.closure(parent_cid);
+      if (pclosure && pclosure->module_globals) {
+        closure_globals = pclosure->module_globals;
+      }
+    }
+    if (!closure_globals) {
+      closure_globals = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    }
   }
 
   // Pin the chunk so the closure's raw `chunk` pointer cannot dangle when

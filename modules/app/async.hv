@@ -9,7 +9,11 @@ use io
 
 fn sleep(ms) { io.sleep(ms) }
 
-fn go(func) { thread.spawn(func) }
+fn go(func) {
+    print("async.go calling thread.spawn")
+    thread.spawn(func)
+    print("async.go after thread.spawn")
+}
 
 fn await(x) { x }
 

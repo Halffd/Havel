@@ -461,9 +461,15 @@ void Modules::installStdLib() {
         ctx_->vm->registerHostFunction(name, fn);
     }
 
-    for (auto &setupFn : vm_setup_callbacks_) {
+for (auto &setupFn : vm_setup_callbacks_) {
         setupFn(*ctx_->vm);
     }
- }
+}
+
+void Modules::runVmSetupCallbacks(compiler::VM &vm) {
+    for (auto &setupFn : vm_setup_callbacks_) {
+        setupFn(vm);
+    }
+}
 
 } // namespace havel

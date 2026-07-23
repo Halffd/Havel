@@ -123,6 +123,17 @@ WatcherRegistry();
      * Get count of registered watchers
      */
     size_t getWatcherCount() const { return watchers_.size(); }
+    
+    /**
+     * Add a nested watcher to a parent watcher
+     * When the parent is cleaned up, all nested watchers will also be unregistered
+     */
+    void addNestedWatcher(WatcherId parent_watcher_id, WatcherId nested_watcher_id);
+    
+    /**
+     * Get nested watchers for a parent watcher
+     */
+    std::vector<WatcherId> getNestedWatchers(WatcherId parent_watcher_id) const;
 
     
     struct Watcher {
@@ -139,6 +150,10 @@ WatcherRegistry();
         // Cleanup function: called on true→false transition (e.g. unregister hotkeys)
         uint32_t cleanup_func_id = 0;
         uint32_t cleanup_ip = 0;
+        
+        // Nested watchers: watchers registered inside this when block's body
+        // These need to be cleaned up when this when block's condition becomes false
+        std::vector<WatcherId> nested_watchers;
         
         Watcher(WatcherId id_, Fiber* f,
                 const std::unordered_set<std::string>& deps, bool result,

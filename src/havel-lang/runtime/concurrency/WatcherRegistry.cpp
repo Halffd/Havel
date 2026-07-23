@@ -42,6 +42,9 @@ WatcherRegistry::WatcherId WatcherRegistry::registerWatcher(
     watcher.cleanup_func_id = cleanup_func_id;
     watcher.cleanup_ip = cleanup_ip;
     
+    // Set the watcher_id on the fiber for cleanup tracking
+    fiber->watcher_id = watcher_id;
+    
     watchers_.emplace(watcher_id, std::move(watcher));
     
     // Register in reverse index: variable → watcher
@@ -98,8 +101,8 @@ std::vector<Fiber*> WatcherRegistry::onVariableChanged(
  // Copy the list — evaluator may call updateDependencies which modifies var_to_watchers_
  auto watcher_ids = var_it->second;
 
- // Re-evaluate each watcher that depends on this variable
- for (WatcherId watcher_id : watcher_ids) {
+// Re-evaluate each watcher that depends on this variable
+  for (WatcherId watcher_id : watcher_ids) {
         auto watcher_it = watchers_.find(watcher_id);
         if (watcher_it == watchers_.end()) {
             continue;  // Watcher was unregistered
@@ -120,6 +123,11 @@ std::vector<Fiber*> WatcherRegistry::onVariableChanged(
             if (cleanup && watcher.cleanup_func_id != 0) {
                 cleanup(watcher.cleanup_func_id, watcher.cleanup_ip);
             }
+            // Also unregister all nested watchers
+            for (WatcherId nested_id : watcher.nested_watchers) {
+                unregisterWatcher(nested_id);
+            }
+            watcher.nested_watchers.clear();
         } else {
             // Update last result for future comparisons
             watcher.last_result = new_result;
@@ -143,6 +151,21 @@ std::vector<WatcherRegistry::WatcherId> WatcherRegistry::getAllWatchers() const 
         result.push_back(id);
     }
     return result;
+}
+
+void WatcherRegistry::addNestedWatcher(WatcherId parent_watcher_id, WatcherId nested_watcher_id) {
+    auto it = watchers_.find(parent_watcher_id);
+    if (it != watchers_.end()) {
+        it->second.nested_watchers.push_back(nested_watcher_id);
+    }
+}
+
+std::vector<WatcherRegistry::WatcherId> WatcherRegistry::getNestedWatchers(WatcherId parent_watcher_id) const {
+    auto it = watchers_.find(parent_watcher_id);
+    if (it != watchers_.end()) {
+        return it->second.nested_watchers;
+    }
+    return {};
 }
 
 }  // namespace havel::compiler

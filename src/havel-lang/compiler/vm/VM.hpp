@@ -370,6 +370,11 @@ void* last_suspension_context_ = nullptr;
  std::unordered_map<uint32_t, Fiber*> thread_wait_map_;
  mutable std::shared_mutex thread_wait_mutex_;
 
+ // Track the current when block's watcher ID for nested when cleanup
+ // When a when block's body executes, this is set to its watcher_id
+ // Nested when blocks can then register cleanup for themselves
+ uint32_t current_when_watcher_id_ = 0;
+
     // Thread/timeout/interval result storage for <- await
     std::unordered_map<uint32_t, Value> thread_results_;
     std::unordered_map<uint32_t, Value> timeout_results_;

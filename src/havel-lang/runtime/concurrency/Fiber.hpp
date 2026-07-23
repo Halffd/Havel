@@ -214,6 +214,7 @@ public:
     // ========== METADATA ==========
     uint64_t created_time;     // Nanoseconds since epoch
     uint32_t parent_id;        // Parent fiber (if spawned by another)
+    uint32_t watcher_id;       // Watcher ID if this fiber is a when-body (for cleanup)
     size_t max_stack_depth;    // Guard against stack overflow
     bool had_error;            // Did this fiber error?
     std::string error_message; // If had_error, why?
@@ -233,7 +234,8 @@ public:
           state(FiberState::CREATED), suspended_reason(SuspensionReason::NONE),
           suspension_context(nullptr), suspension_timestamp(0),
           created_time(std::chrono::system_clock::now().time_since_epoch().count()),
-          parent_id(parent_fiber_id), max_stack_depth(DEFAULT_MAX_STACK),
+          parent_id(parent_fiber_id), watcher_id(0),
+          max_stack_depth(DEFAULT_MAX_STACK),
           had_error(false)
     {
         // Pre-allocate stack space

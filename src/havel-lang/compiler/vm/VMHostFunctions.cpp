@@ -2798,19 +2798,61 @@ registerHostFunction(
         cond_func_id, 0, initial_result, deps, raw_fiber, current_chunk,
         cleanup_func_id, 0);
 
+    // If there's a parent when block, register this as a nested watcher
+    if (this->current_when_watcher_id_ != 0) {
+        watcher_registry_->addNestedWatcher(this->current_when_watcher_id_, raw_fiber->watcher_id);
+    }
+
     if (initial_result) {
+        // Set current when watcher ID so nested when blocks can find it for cleanup
+        uint32_t prev_when_watcher = this->current_when_watcher_id_;
+        this->current_when_watcher_id_ = raw_fiber->watcher_id;
+        
         try {
             Value body_func = Value::makeFunctionObjId(body_func_id);
             call(body_func, {});
         } catch (...) {
         }
+        
+        // Restore previous when watcher ID
+        this->current_when_watcher_id_ = prev_when_watcher;
     }
 
-    auto strRef = heap_.allocateString("watcher_registered");
-    return Value::makeStringId(strRef.id);
+    return Value::makeInt(static_cast<int64_t>(raw_fiber->watcher_id));
 });
 
-  registerHostFunction(
+registerHostFunction(
+    "when.unregister", [this](const std::vector<Value> &args) {
+    if (args.size() < 1) COMPILER_THROW("when.unregister requires watcher_id");
+    if (!args[0].isInt() && !args[0].isDouble()) COMPILER_THROW("when.unregister first arg must be a watcher_id (int)");
+
+    uint32_t watcher_id = static_cast<uint32_t>(args[0].asInt64());
+
+    if (!watcher_registry_) {
+        return Value::makeBool(false);
+    }
+
+    bool result = watcher_registry_->unregisterWatcher(watcher_id);
+    return Value::makeBool(result);
+});
+
+registerHostFunction(
+    "when.add_nested", [this](const std::vector<Value> &args) {
+    if (args.size() < 2) COMPILER_THROW("when.add_nested requires parent_watcher_id and nested_watcher_id");
+    if (!args[0].isInt() && !args[0].isDouble()) COMPILER_THROW("when.add_nested first arg must be a parent watcher_id (int)");
+    if (!args[1].isInt() && !args[1].isDouble()) COMPILER_THROW("when.add_nested second arg must be a nested watcher_id (int)");
+
+    uint32_t parent_watcher_id = static_cast<uint32_t>(args[0].asInt64());
+    uint32_t nested_watcher_id = static_cast<uint32_t>(args[1].asInt64());
+
+    // Store nested watcher_id in the parent's watcher for cleanup
+    if (watcher_registry_) {
+        watcher_registry_->addNestedWatcher(parent_watcher_id, nested_watcher_id);
+    }
+    return Value::makeNull();
+});
+
+registerHostFunction(
       "ref", [this](const std::vector<Value> &args) {
     Value initial = args.empty() ? Value::makeNull() : args[0];
     auto objRef = heap_.allocateObject();

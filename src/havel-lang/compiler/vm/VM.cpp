@@ -1486,6 +1486,10 @@ slow_path:
       }
 
  if (suspension_requested_) {
+        // Call yield callback to process goroutines before suspending
+        if (yield_callback_) {
+            yield_callback_();
+        }
         uint8_t reason = suspension_reason_;
         void* ctx = suspension_context_;
         suspension_requested_ = false;
@@ -4273,6 +4277,12 @@ for (const auto& [name, value] : globals) {
         Value materialized = deepMaterializeStrings(value, current_chunk);
             materialized = deepWrapModuleFunctions(materialized, chunk, moduleGlobalsForCache,
                 canonicalKey, name);
+        if (path == "emitter" && name == "Emitter") {
+            std::cerr << "[DBG-EXPORTS-AFTER-WRAP] Emitter materialized: isHostFn=" << materialized.isHostFuncId()
+                      << " isClosure=" << materialized.isClosureId()
+                      << " isObj=" << materialized.isObjectId()
+                      << " isNull=" << materialized.isNull() << "\n";
+        }
         (*obj)[name] = materialized;
         exportCount++;
     }

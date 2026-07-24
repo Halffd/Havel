@@ -246,12 +246,13 @@ void Havel::initialize(bool isStartup) {
     }
 
 
-  scheduler = &compiler::Scheduler::instance();
+scheduler = &compiler::Scheduler::instance();
   if (!scheduler) {
     throw std::runtime_error("Failed to create Scheduler");
   }
+  scheduler->start();
 
-        // EventQueue is created by ConcurrencyBridge during modules_->install()
+  // EventQueue is created by ConcurrencyBridge during modules_->install()
         compiler::EventQueue* eventQueue = hostContext->eventQueue;
         if (!eventQueue) {
             throw std::runtime_error("Failed to get EventQueue from Modules");

@@ -4,6 +4,7 @@
 #include "Modules.hpp"
 #include "../compiler/runtime/EventQueue.hpp"
 #include "../compiler/core/Pipeline.hpp"
+#include "../compiler/core/BytecodeIR.hpp"
 #ifdef HAVEL_ENABLE_LLVM
 #include "../compiler/BytecodeOrcJIT.h"
 #endif
@@ -339,13 +340,48 @@ vm_->addIntervalResult(timer_id, result);
             options.max_instructions = config_.vmConfig.max_instructions;
         }
 
-        auto result = compiler::runBytecodePipeline(source, entryPoint, options);
+        // Compile to bytecode chunk (without executing)
+        auto chunk = compiler::compileToBytecodeChunk(source, entryPoint, options);
+        if (!chunk) {
+            throw std::runtime_error("Compilation returned null chunk");
+        }
 
-        
-        // Process pending scheduler goroutines after main script completes
+        // Store chunk in VM
+        auto shared_chunk = std::shared_ptr<compiler::BytecodeChunk>(std::move(chunk));
+        vm_->storeMainChunk(shared_chunk);
+
+        // Spawn the entry function as a goroutine
+        auto* entryFunc = vm_->getMainChunk()->getFunction(entryPoint);
+        if (!entryFunc) {
+            throw std::runtime_error("Entry function not found: " + entryPoint);
+        }
+        uint32_t funcIndex = vm_->getMainChunk()->getFunctionIndex(entryFunc);
+        compiler::Value entryCallable = compiler::Value::makeFunctionObjId(funcIndex);
+        vm_->spawnGoroutine(entryCallable, {});
+
+        // Set the script directory for relative imports
+        if (!compileUnitName.empty() && compileUnitName != "unit" && compileUnitName != "script") {
+            namespace fs = std::filesystem;
+            std::string name = compileUnitName;
+            auto plusPos = name.find(" + ");
+            if (plusPos != std::string::npos)
+                name = name.substr(0, plusPos);
+            fs::path p(name);
+            if (p.is_absolute() && fs::exists(p)) {
+                vm_->setCurrentScriptDir(fs::canonical(p).parent_path().string());
+            } else if (!p.is_absolute()) {
+                fs::path resolved = fs::current_path() / p;
+                if (fs::exists(resolved)) {
+                    vm_->setCurrentScriptDir(fs::canonical(resolved).parent_path().string());
+                }
+            }
+        }
+
+        // Process all goroutines until they're done
         processGoroutines();
 
-        return result.return_value;
+        // Return null for now (result capture would need more infrastructure)
+        return compiler::Value::makeNull();
     }
 
     void tickGoroutines() {

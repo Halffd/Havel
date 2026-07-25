@@ -1755,6 +1755,19 @@ threadObj->start(std::move(handler));
         return Value::makeBool(threadObj->isRunning());
     });
 
+// go(closure) - Spawn a scheduler goroutine (used by go expression and async.go)
+    registerHostFunction("go", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
+            COMPILER_THROW("go requires a closure argument");
+        }
+        if (!scheduler_) {
+            COMPILER_THROW("go requires scheduler (not available in this VM mode)");
+        }
+        ::havel::info("[GO] spawning scheduler goroutine");
+        uint32_t gid = spawnGoroutine(args[0], {});
+        return Value::makeThreadId(gid);
+    });
+
 // thread.spawn(closure) - alias for thread(closure), used by ThreadExpression
     registerHostFunction("thread.spawn", 1, [this](const std::vector<Value> &args) {
         if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {

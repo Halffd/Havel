@@ -174,6 +174,7 @@ void registerShellModule(const VMApi &api) {
       auto result = api.makeObject();
       api.setField(result, "stdout", api.makeString(presult.stdout));
       api.setField(result, "stderr", api.makeString(presult.stderr));
+      api.setField(result, "ok", api.makeBool(presult.success));
       api.setField(result, "exitCode",
           Value::makeInt(static_cast<int64_t>(presult.exitCode)));
       return result;

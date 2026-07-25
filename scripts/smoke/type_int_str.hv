@@ -3,6 +3,6 @@ s = str(42)
 val __result = #s
 if __result != 2 {
  print("FAIL type-int-str: expected 2, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

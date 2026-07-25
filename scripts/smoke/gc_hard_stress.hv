@@ -43,7 +43,7 @@ while i < 10:
 
 if !ok:
   print("FAIL gc-hard-stress: closure arrays corrupted after GC")
-  process.exit(1)
+  process.exit(255)
 
 // Test 2: circular object graph with many nodes
 nodes = []
@@ -75,7 +75,7 @@ while i < 20:
 
 if !ok:
   print("FAIL gc-hard-stress: circular graph corrupted after GC")
-  process.exit(1)
+  process.exit(255)
 
 // Test 3: nested closures (closures holding closures holding arrays)
 fn makeNested():
@@ -109,7 +109,7 @@ while i < 15:
 
 if !ok:
   print("FAIL gc-hard-stress: nested closures corrupted after GC")
-  process.exit(1)
+  process.exit(255)
 
 // Test 4: object with many keys surviving GC
 big = {}
@@ -126,7 +126,7 @@ while i < 500:
 
 if big["key50"] != 350:
   print("FAIL gc-hard-stress: big object corrupted, key50=" + str(big["key50"]))
-  process.exit(1)
+  process.exit(255)
 
 // Test 5: object-as-set surviving GC
 s = {}
@@ -143,10 +143,10 @@ while i < 500:
 
 if s[25] != true:
   print("FAIL gc-hard-stress: set corrupted, has(25)=" + str(s[25]))
-  process.exit(1)
+  process.exit(255)
 if s[49] != true:
   print("FAIL gc-hard-stress: set corrupted, has(49)=" + str(s[49]))
-  process.exit(1)
+  process.exit(255)
 
 val __result = 1
 return __result

@@ -12,5 +12,5 @@ pair[1]("havel")
 val __result = pair[0]()
 if __result != "havel":
   print("FAIL closure-string-upvalue: expected havel, got " + str(__result))
-  process.exit(1)
+  process.exit(255)
 return __result

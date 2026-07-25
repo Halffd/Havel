@@ -6,6 +6,6 @@ if m > 12 { ok = 0 }
 val __result = ok
 if __result != 1 {
  print("FAIL time-month-range: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -3,6 +3,6 @@
 val __result = bit.toggle(6, 0)
 if __result != 7 {
  print("FAIL bit-toggle: expected 7, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

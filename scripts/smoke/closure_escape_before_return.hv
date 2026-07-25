@@ -9,5 +9,5 @@ f = outer()
 val __result = f()
 if __result != 7:
   print("FAIL closure-escape-before-return: expected 7, got " + str(__result))
-  process.exit(1)
+  process.exit(255)
 return __result

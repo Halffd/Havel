@@ -9,6 +9,6 @@ co fn outer() {
 val __result = <-outer()
 if __result != 21 {
  print("FAIL await-cofn-nested: expected 21, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

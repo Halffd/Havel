@@ -12,6 +12,6 @@ if decoded[3] != 116 { ok = 0 }  // 't'
 val __result = ok
 if __result != 1 {
  print("FAIL fmt-b64-roundtrip: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

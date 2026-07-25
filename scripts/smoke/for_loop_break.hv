@@ -7,6 +7,6 @@ for i in 1..100 {
 val __result = sum
 if __result != 15 {
  print("FAIL for-loop-break: expected 15, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

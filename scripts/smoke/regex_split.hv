@@ -4,6 +4,6 @@ arr = regex_split(",", "a,b,c")
 val __result = arr.len
 if __result != 3 {
  print("FAIL regex-split: expected 3, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

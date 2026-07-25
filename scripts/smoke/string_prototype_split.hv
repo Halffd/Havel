@@ -3,6 +3,6 @@ parts = "a,b,c".split(",")
 val __result = parts.len
 if __result != 3 {
  print("FAIL string-prototype-split: expected 3, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

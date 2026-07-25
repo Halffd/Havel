@@ -4,6 +4,6 @@ k = object.keys(obj)
 val __result = k.len
 if __result != 2 {
  print("FAIL object-keys: expected 2, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

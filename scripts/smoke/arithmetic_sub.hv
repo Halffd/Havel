@@ -2,6 +2,6 @@
 val __result = 100 - 58
 if __result != 42 {
  print("FAIL arithmetic-sub: expected 42, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -17,5 +17,5 @@ val b = apply(inc, 0)
 val __result = a + b
 if __result != 15:
   print("FAIL closure-as-argument: expected 15, got " + str(__result))
-  process.exit(1)
+  process.exit(255)
 return __result

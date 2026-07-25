@@ -6,6 +6,6 @@ a = {1, 2, 3}
     val __result = u.len * 10 + i.len
     if __result != 42 {
      print("FAIL set-union-intersection: expected 42, got " + str(__result))
-     process.exit(1)
+     process.exit(255)
     }
     return __result

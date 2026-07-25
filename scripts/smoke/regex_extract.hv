@@ -4,6 +4,6 @@ arr = regex_extract("\\d+", "abc123def456")
 val __result = arr.len
 if __result != 2 {
  print("FAIL regex-extract: expected 2, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

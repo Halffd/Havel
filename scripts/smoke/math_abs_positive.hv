@@ -3,6 +3,6 @@ v = math.abs(-5)
 val __result = v == 5.0 ? 1 : 0
 if __result != 1 {
  print("FAIL math-abs-positive: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

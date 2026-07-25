@@ -6,6 +6,6 @@ fn fact(n) {
 val __result = fact(5)
 if __result != 120 {
  print("FAIL recursive-factorial: expected 120, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

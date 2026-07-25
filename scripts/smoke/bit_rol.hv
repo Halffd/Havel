@@ -3,6 +3,6 @@
 val __result = bit.rol(1, 1)
 if __result != 2 {
  print("FAIL bit-rol: expected 2, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

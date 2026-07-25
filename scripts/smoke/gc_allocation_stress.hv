@@ -9,6 +9,6 @@ while i < 2000 {
 val __result = i
 if __result != 2000 {
  print("FAIL gc-allocation-stress: expected 2000, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

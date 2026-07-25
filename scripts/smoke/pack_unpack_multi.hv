@@ -7,6 +7,6 @@ if result[1] != 500 { ok = 0 }
 val __result = ok
 if __result != 1 {
  print("FAIL pack-unpack-multi: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

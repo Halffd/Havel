@@ -4,6 +4,6 @@ use math
 val __result = math.G > 9.8 ? 1 : 0
 if __result != 1 {
  print("FAIL physics-constant-G: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

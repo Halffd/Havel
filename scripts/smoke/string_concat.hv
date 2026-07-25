@@ -3,6 +3,6 @@ s = "hello" + " " + "world"
 val __result = #s
 if __result != 11 {
  print("FAIL string-concat: expected 11, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

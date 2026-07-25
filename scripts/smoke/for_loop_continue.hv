@@ -7,6 +7,6 @@ for i in 1..10 {
 val __result = sum
 if __result != 25 {
  print("FAIL for-loop-continue: expected 25, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

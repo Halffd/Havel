@@ -4,6 +4,6 @@ del obj.b
 val __result = obj.keys().len
 if __result != 2 {
  print("FAIL del-object-key: expected 2, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

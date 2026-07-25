@@ -3,6 +3,6 @@ fn add(a, b) { return a + b }
 val __result = add(1, 2)
 if __result != 3 {
  print("FAIL tail-call-host-func: expected 3, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

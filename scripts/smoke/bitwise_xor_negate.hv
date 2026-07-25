@@ -3,6 +3,6 @@ x = 5
     val __result = x ^ (-1)
     if __result != -6 {
      print("FAIL bitwise-xor-negate: expected -6, got " + str(__result))
-     process.exit(1)
+     process.exit(255)
     }
     return __result

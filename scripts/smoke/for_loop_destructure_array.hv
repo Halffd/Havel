@@ -4,6 +4,6 @@ for i, v in [10, 20, 30] { sum += v }
 val __result = sum
 if __result != 60 {
  print("FAIL for-loop-destructure-array: expected 60, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

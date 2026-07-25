@@ -2,6 +2,6 @@
 val __result = toNumber(null)
 if __result != 0 {
  print("FAIL toNumber-null: expected 0, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

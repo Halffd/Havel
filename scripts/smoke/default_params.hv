@@ -3,6 +3,6 @@ fn add(a, b = 10) { return a + b }
 val __result = add(32)
 if __result != 42 {
  print("FAIL default-params: expected 42, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

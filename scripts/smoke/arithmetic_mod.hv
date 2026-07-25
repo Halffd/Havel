@@ -2,6 +2,6 @@
 val __result = 43 % 10
 if __result != 3 {
  print("FAIL arithmetic-mod: expected 3, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

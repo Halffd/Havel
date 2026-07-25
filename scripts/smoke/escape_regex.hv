@@ -5,6 +5,6 @@ s = escape_regex("a.b")
 val __result = #s
 if __result != 4 {
  print("FAIL escape-regex: expected 4, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

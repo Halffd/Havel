@@ -4,6 +4,6 @@ idx = object.find(obj, "z")
 val __result = idx
 if __result != -1 {
  print("FAIL object-find-not-found: expected -1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

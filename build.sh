@@ -244,6 +244,18 @@ build() {
             log "WARNING" "  → Failed to build libgamma_ramp.so (fallback: Havel loop)" "${YELLOW}"
         fi
     fi
+
+    # Build self-hosted pipeline modules (out/modules/lang/*.hvc)
+    local emit_script="${SCRIPT_DIR}/emit_pipeline.sh"
+    local havel_bin="${SCRIPT_DIR}/${BUILD_DIR}/havel"
+    if [[ -f "$emit_script" && -x "$havel_bin" ]]; then
+        log "INFO" "Building self-hosted pipeline modules..." "${BLUE}"
+        if bash "$emit_script" "$havel_bin" 2>&1; then
+            log "INFO" "  → Self-hosted pipeline built" "${GREEN}"
+        else
+            log "WARNING" "  → Self-hosted pipeline build failed (fallback: C++ pipeline)" "${YELLOW}"
+        fi
+    fi
 }
 
 run() {

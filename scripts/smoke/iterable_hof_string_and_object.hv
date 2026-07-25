@@ -16,6 +16,6 @@ if chars[0] == "a" {
 val __result = 0
 if __result != 1 {
  print("FAIL iterable-hof-string-and-object: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

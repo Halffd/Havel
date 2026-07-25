@@ -4,6 +4,6 @@ total = a + b + c
 val __result = total
 if __result != 21 {
  print("FAIL const-tuple-destructure: expected 21, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

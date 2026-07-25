@@ -206,11 +206,11 @@ fn IndexExpression(obj, index, line, col) {
 
 }
 fn AssignmentExpression(target, value, line, col) {
-    {kind: "AssignmentExpression", line: line, col: col, target: target, value: value}
+    {kind: "AssignmentExpression", line: line, col: col, target: target, value: value, isGlobalScope: target.globalScope == true}
 
 }
 fn CompoundAssignment(target, oper, value, line, col) {
-    {kind: "CompoundAssignment", line: line, col: col, target: target, oper: oper, value: value}
+    {kind: "CompoundAssignment", line: line, col: col, target: target, oper: oper, value: value, isGlobalScope: target.globalScope == true}
 
 }
 fn ArrayLiteral(elements, line, col) {

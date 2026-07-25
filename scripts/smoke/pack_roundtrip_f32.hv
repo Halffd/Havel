@@ -6,6 +6,6 @@ result = pack.unpack("f", data)
 val __result = int(result[0])
 if __result != 3 {
  print("FAIL pack-roundtrip-f32: expected 3, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

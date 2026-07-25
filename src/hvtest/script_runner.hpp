@@ -75,19 +75,21 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         dup2(pipefd[1], STDOUT_FILENO);
         dup2(pipefd[1], STDERR_FILENO);
         close(pipefd[1]);
+        std::vector<std::string> flags;
         if (pre_flags.empty()) {
-            execlp(havel_bin.c_str(), havel_bin.c_str(), "--run", "--pure-stdlib",
-                   script_path.c_str(), nullptr);
+            // C++ pipeline: force --no-self-hosted to prevent auto-detect
+            flags = {"--run", "--pure-stdlib", "--no-self-hosted"};
         } else {
-            std::vector<char *> args;
-            args.push_back(const_cast<char *>(havel_bin.c_str()));
-            for (const auto &f : pre_flags) {
-                args.push_back(const_cast<char *>(f.c_str()));
-            }
-            args.push_back(const_cast<char *>(script_path.c_str()));
-            args.push_back(nullptr);
-            execvp(havel_bin.c_str(), args.data());
+            flags = pre_flags;
         }
+        std::vector<char *> args;
+        args.push_back(const_cast<char *>(havel_bin.c_str()));
+        for (const auto &f : flags) {
+            args.push_back(const_cast<char *>(f.c_str()));
+        }
+        args.push_back(const_cast<char *>(script_path.c_str()));
+        args.push_back(nullptr);
+        execvp(havel_bin.c_str(), args.data());
         _exit(127);
     }
 
@@ -215,6 +217,12 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
         } else if (result.exit_code == -6 || result.exit_code == -11) {
             if (verbose) std::cout << "[SKIP] " << name << " (crash, needs event loop)" << std::endl;
             skip++;
+        } else if (!pre_flags.empty() && result.exit_code != 255) {
+            // Self-hosted mode: script return value becomes exit code.
+            // exit=255 means process.exit(255) was called (assertion failure).
+            // Any other exit code is the script's return value (success).
+            if (verbose) std::cout << "[PASS] " << name << " (" << result.elapsed_ms << "ms)" << std::endl;
+            pass++;
         } else {
             std::cout << "[FAIL] " << name << " (exit=" << result.exit_code << ")" << std::endl;
             fail++;

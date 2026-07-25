@@ -3,6 +3,6 @@ use format
 val __result = fmt.bin(5) == "0b101" ? 1 : 0
 if __result != 1 {
  print("FAIL fmt-bin-int: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -3,6 +3,6 @@ obj = { a: 1, b: 2 }
 val __result = object.len(obj)
 if __result != 2 {
  print("FAIL object-len: expected 2, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -4,5 +4,5 @@ fn id():
 val __result = id()
 if __result != 42:
   print("FAIL closure-iife: expected 42, got " + str(__result))
-  process.exit(1)
+  process.exit(255)
 return __result

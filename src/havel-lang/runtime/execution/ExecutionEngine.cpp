@@ -920,7 +920,6 @@ void ExecutionEngine::processGoroutinesInline() {
     while (executed < budget) {
         Scheduler::Goroutine* g = scheduler_->pickNext();
         if (!g) break;
-
         if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
             auto* action = HotkeyActionWrapper::getCallback(g->fiber->id);
             if (action && *action) {

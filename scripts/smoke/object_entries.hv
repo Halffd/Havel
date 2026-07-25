@@ -4,6 +4,6 @@ e = object.entries(obj)
 val __result = e.len
 if __result != 1 {
  print("FAIL object-entries: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

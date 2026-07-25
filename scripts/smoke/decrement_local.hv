@@ -4,6 +4,6 @@ x--
 val __result = x
 if __result != 42 {
  print("FAIL decrement-local: expected 42, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -12,6 +12,6 @@ class Counter {
     val __result = c.current()
     if __result != 3 {
      print("FAIL class-basic: expected 3, got " + str(__result))
-     process.exit(1)
+     process.exit(255)
     }
     return __result

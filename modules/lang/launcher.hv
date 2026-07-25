@@ -161,11 +161,11 @@ fn runScript(cfg) {
 
     // Parse
     result = parse(combinedCode)
-    print("DEBUG: parse result errors = " + str(result.errors))
-    print("DEBUG: parse result ast = " + str(result.ast))
-
-    // Parse
-    result = parse(combinedCode)
+    print("DEBUG: body count = " + str(#result.ast.body))
+    if #result.ast.body > 0 {
+        firstStmt = result.ast.body[0]
+        print("DEBUG: first stmt kind = " + firstStmt.kind)
+    }
     if result.errors != null && #result.errors > 0 {
         for err in result.errors {
             print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))

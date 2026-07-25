@@ -7,6 +7,6 @@ loop {
 val __result = i
 if __result != 5 {
  print("FAIL loop-with-break: expected 5, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

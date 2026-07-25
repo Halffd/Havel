@@ -16,5 +16,5 @@ val d = pair[1]()
 val __result = a + b + c + d
 if __result != 9:
   print("FAIL closure-shared-upvalue: expected 9, got " + str(__result))
-  process.exit(1)
+  process.exit(255)
 return __result

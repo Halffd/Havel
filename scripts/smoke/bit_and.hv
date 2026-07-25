@@ -2,6 +2,6 @@
 val __result = 12 & 10
 if __result != 8 {
  print("FAIL bit-and: expected 8, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -3,6 +3,6 @@ m = [[1, 2], [3, 4]]
 val __result = m[1][0]
 if __result != 3 {
  print("FAIL nested-array-access: expected 3, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -3,6 +3,6 @@ data = pack.pack("u", 42)
 val __result = data.len
 if __result != 1 {
  print("FAIL pack-pack-u8: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

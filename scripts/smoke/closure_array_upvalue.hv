@@ -14,5 +14,5 @@ stack[0](3)
 val __result = stack[1]()
 if __result != 3:
   print("FAIL closure-array-upvalue: expected 3, got " + str(__result))
-  process.exit(1)
+  process.exit(255)
 return __result

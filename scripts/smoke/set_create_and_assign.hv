@@ -13,6 +13,6 @@ if s[3] {
 val __result = 0
 if __result != 1 {
  print("FAIL set-create-and-assign: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

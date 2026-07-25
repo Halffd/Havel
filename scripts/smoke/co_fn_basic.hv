@@ -9,6 +9,6 @@ c = greet()
 val __result = 0
 if __result != 0 {
  print("FAIL co-fn-basic: expected 0, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

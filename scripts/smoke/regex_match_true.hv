@@ -3,6 +3,6 @@ use regex
 val __result = regex_match("hello.*", "hello world") ? 1 : 0
 if __result != 1 {
  print("FAIL regex-match-true: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

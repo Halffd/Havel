@@ -2,6 +2,6 @@
 val __result = 256 >> 4
 if __result != 16 {
  print("FAIL bitwise-rsh: expected 16, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -13,6 +13,6 @@ c()
 val __result = c()
 if __result != 42 {
  print("FAIL assignment-upvalue: expected 42, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

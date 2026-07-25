@@ -7,6 +7,6 @@ if obj.has("x") {
 val __result = 0
 if __result != 1 {
  print("FAIL object-has-delete: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

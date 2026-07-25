@@ -18,5 +18,5 @@ val s2 = calc[0]()
 val __result = s1 + p1 + s2
 if __result != 255:
   print("FAIL closure-multiple-upvalues: expected 255, got " + str(__result))
-  process.exit(1)
+  process.exit(255)
 return __result

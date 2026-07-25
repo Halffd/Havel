@@ -1,5 +1,6 @@
 #include "StringModule.hpp"
 #include "../compiler/vm/VM.hpp"
+#include "../compiler/prototypes/PrototypeRegistry.hpp"
 #include <regex>
 
 using havel::compiler::Value;
@@ -168,6 +169,11 @@ void registerStringModule(const VMApi &api) {
     api.setField(strObj, "toCodePointArray", api.makeFunctionRef("string._toCodePointArray"));
     api.setGlobal("string", strObj);
     api.setGlobal("String", strObj);
+
+    if (!api.vm().hasHostFunction("string.len")) {
+        compiler::prototypes::registerStringPrototype(api.vm());
+    }
+    finalizeStringNamespace(api);
 }
 
 void finalizeStringNamespace(const VMApi &api) {

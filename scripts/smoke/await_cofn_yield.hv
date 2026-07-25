@@ -9,6 +9,6 @@ r1 = <-c
 val __result = r1
 if __result != 10 {
  print("FAIL await-cofn-yield: expected 10, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -2,6 +2,6 @@
 val __result = string.endswith("hello", "xyz") ? 1 : 0
 if __result != 0 {
  print("FAIL string-endswith-false: expected 0, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -4,6 +4,6 @@ for c in "abc" { count += 1 }
 val __result = count
 if __result != 3 {
  print("FAIL string-forin: expected 3, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

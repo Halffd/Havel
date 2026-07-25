@@ -4,6 +4,6 @@ x |= 0x0F
 val __result = x
 if __result != 255 {
  print("FAIL bitwise-compound-or: expected 255, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

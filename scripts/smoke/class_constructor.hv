@@ -8,6 +8,6 @@ v = Vec2(20, 22)
 val __result = v.sum()
 if __result != 42 {
  print("FAIL class-constructor: expected 42, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

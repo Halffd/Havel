@@ -11,6 +11,6 @@ r3 = <-c
 val __result = r1 + r2 + r3
 if __result != 60 {
  print("FAIL await-cofn-multi-yield: expected 60, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

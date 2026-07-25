@@ -4,6 +4,6 @@ arr.sort((a, b) => a - b)
 val __result = arr[0]
 if __result != 1 {
  print("FAIL array-reverse-sort: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

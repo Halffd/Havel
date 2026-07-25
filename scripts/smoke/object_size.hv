@@ -3,6 +3,6 @@ obj = { a: 1, b: 2, c: 3 }
 val __result = object.size(obj)
 if __result != 3 {
  print("FAIL object-size: expected 3, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

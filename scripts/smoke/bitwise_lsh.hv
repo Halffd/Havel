@@ -2,6 +2,6 @@
 val __result = 1 << 8
 if __result != 256 {
  print("FAIL bitwise-lsh: expected 256, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

@@ -12,7 +12,7 @@ try {
     val __result = e
     if __result != 7 {
      print("FAIL throw-across-frames: expected 7, got " + str(__result))
-     process.exit(1)
+     process.exit(255)
     }
     return __result
 }

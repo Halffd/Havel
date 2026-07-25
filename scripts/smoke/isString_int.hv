@@ -2,6 +2,6 @@
 val __result = isString(42) ? 0 : 1
 if __result != 1 {
  print("FAIL isString-int: expected 1, got " + str(__result))
- process.exit(1)
+ process.exit(255)
 }
 return __result

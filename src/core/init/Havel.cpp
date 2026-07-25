@@ -189,24 +189,11 @@ void Havel::initialize(bool isStartup) {
 #endif
 
 
-        // Create Modules
-        modules_ = havel::createModules(*hostContext);
-        hostContext->modules = modules_.get();
-        havel::startup_timing_report("Modules-create", t);
-        t = havel::startup_now();
-
-        // Register stdlib + install
-        modules_->install();
-        havel::startup_timing_report("Modules-install", t);
-        t = havel::startup_now();
-        for (const auto& [name, fn] : modules_->options().host_functions) {
-            bytecodeVM->registerHostFunction(name, fn);
-        }
-        // Run VM setup callbacks on the bytecodeVM to register global objects (thread, channel, etc.)
-        modules_->runVmSetupCallbacks(*bytecodeVM);
-        havel::startup_timing_report("host-functions-register", t);
-        t = havel::startup_now();
-
+        // Set search paths BEFORE modules_->install() so eager plugin
+        // registration (registerBitModule → vm.loadModule("bit/bit"))
+        // can resolve sidecar .hv/.hvc files. Without these paths,
+        // every sidecar module either compiles from source (ignoring
+        // pre-compiled .hvc caches) or silently fails to load at all.
 {
     std::string stdlibPath;
     const char* envStdlib = std::getenv("HAVEL_STDLIB");
@@ -244,6 +231,24 @@ void Havel::initialize(bool isStartup) {
             }
         }
     }
+
+        // Create Modules
+        modules_ = havel::createModules(*hostContext);
+        hostContext->modules = modules_.get();
+        havel::startup_timing_report("Modules-create", t);
+        t = havel::startup_now();
+
+        // Register stdlib + install
+        modules_->install();
+        havel::startup_timing_report("Modules-install", t);
+        t = havel::startup_now();
+        for (const auto& [name, fn] : modules_->options().host_functions) {
+            bytecodeVM->registerHostFunction(name, fn);
+        }
+        // Run VM setup callbacks on the bytecodeVM to register global objects (thread, channel, etc.)
+        modules_->runVmSetupCallbacks(*bytecodeVM);
+        havel::startup_timing_report("host-functions-register", t);
+        t = havel::startup_now();
 
 
 scheduler = &compiler::Scheduler::instance();

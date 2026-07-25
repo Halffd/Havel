@@ -463,10 +463,20 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
         }
     }
 
-    // No scheduler — blocking wait (legacy path)
-    it->second->cv.wait(lock, [&] {
-        return !it->second->queue.empty() || it->second->closed;
-    });
+    // Main thread (not in a goroutine) — poll instead of blocking
+    // so goroutines can run and send on this channel.
+    // Release mutex before processing events to avoid deadlock when
+    // a goroutine calls channelSend (which also locks channels_mutex_).
+    while (it->second->queue.empty() && !it->second->closed) {
+        lock.unlock();
+        if (vm) {
+            vm->processEventsAndYield();
+        }
+        lock.lock();
+        it->second->cv.wait_for(lock, std::chrono::milliseconds(10), [&] {
+            return !it->second->queue.empty() || it->second->closed;
+        });
+    }
 
     if (it->second->queue.empty() && it->second->closed) {
         return Value::makeNull();

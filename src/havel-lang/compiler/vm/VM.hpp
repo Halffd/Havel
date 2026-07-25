@@ -1014,6 +1014,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
  void setEventQueue(class EventQueue* eq);
 	class EventQueue* getEventQueue() { return event_queue_; }
         void processPendingEvents();
+        void processEventsAndYield();
 
 	void setWatcherRegistry(WatcherRegistry* wr) { watcher_registry_ = wr; }
 	WatcherRegistry* getWatcherRegistry() const { return watcher_registry_; }

@@ -536,4 +536,11 @@ void VM::processPendingEvents() {
   }
 }
 
+void VM::processEventsAndYield() {
+  processPendingEvents();
+  if (yield_callback_) {
+    yield_callback_();
+  }
+}
+
 } // namespace havel::compiler

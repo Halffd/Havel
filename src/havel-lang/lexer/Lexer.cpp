@@ -2131,10 +2131,30 @@ continue;
            prevType == TokenType::ShiftLeft ||
            prevType == TokenType::ShiftRight ||
            prevType == TokenType::LeftArrow ||
-           prevType == TokenType::Minus ||
-           prevType == TokenType::Fn ||
-           prevType == TokenType::Op ||
-           prevIsKeywordAfterDot) {
+            prevType == TokenType::Minus ||
+            prevType == TokenType::Fn ||
+            prevType == TokenType::Op ||
+            prevType == TokenType::Mode ||
+            prevType == TokenType::When ||
+            prevType == TokenType::Repeat ||
+            prevType == TokenType::On ||
+            prevType == TokenType::Off ||
+            prevType == TokenType::Match ||
+            prevType == TokenType::Case ||
+            prevType == TokenType::Default ||
+            prevType == TokenType::Config ||
+            prevType == TokenType::Devices ||
+            prevType == TokenType::Modes ||
+            prevType == TokenType::Pool ||
+            prevType == TokenType::Struct ||
+            prevType == TokenType::Class ||
+            prevType == TokenType::Enum ||
+            prevType == TokenType::Trait ||
+            prevType == TokenType::Prot ||
+            prevType == TokenType::Impl ||
+            prevType == TokenType::Is ||
+            prevType == TokenType::As ||
+            prevIsKeywordAfterDot) {
 		if (c == '^') {
         // ^ is binary XOR (needs left-hand operand).
         // After Assign case handled above; here it's a real operator.

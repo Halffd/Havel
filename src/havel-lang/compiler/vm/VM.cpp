@@ -1488,7 +1488,10 @@ slow_path:
  if (suspension_requested_) {
         // Call yield callback to process goroutines before suspending
         if (yield_callback_) {
+            ::havel::info("[VM] Suspension requested, calling yield_callback_");
             yield_callback_();
+        } else {
+            ::havel::info("[VM] Suspension requested but NO yield_callback_ set!");
         }
         uint8_t reason = suspension_reason_;
         void* ctx = suspension_context_;

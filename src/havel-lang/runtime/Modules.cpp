@@ -189,6 +189,12 @@ void Modules::installHostFunctions() {
         }
         vm.setGlobal("thread", Value::makeObjectId(threadObj.id));
 
+        // Also register thread.spawn as global function for ThreadExpression (thread { ... })
+        int spawnIdx = vm.getHostFunctionIndex("thread.spawn");
+        if (spawnIdx >= 0) {
+            vm.setGlobal("thread.spawn", Value::makeHostFuncId(static_cast<uint32_t>(spawnIdx)));
+        }
+
     });
 
     options_.host_functions["extension.load"] =

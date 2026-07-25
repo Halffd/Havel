@@ -1,0 +1,173 @@
+// fn.hv — Function utilities: bind, partial, curry, compose, etc.
+//
+// Loaded by: use { bind, partial, curry, compose, pipe, flip, identity, constant } from "std/fn"
+//
+// bind(fn, ...args) - partially apply arguments from the left
+//   bind(fn, a, b)(c, d) => fn(a, b, c, d)
+//
+// bindRight(fn, ...args) - partially apply arguments from the right
+//   bindRight(fn, c, d)(a, b) => fn(a, b, c, d)
+//
+// partial(fn, ...args) - alias for bind
+//
+// curry(fn) - transform fn(a,b,c) => fn(a)(b)(c)
+// uncurry(fn) - transform fn(a)(b)(c) => fn(a,b,c)
+//
+// compose(f, g) - f(g(x))
+// pipe(f, g) - g(f(x))
+//
+// flip(f) - fn(a,b) => fn(b,a)
+// identity(x) - returns x
+// constant(v) - fn(_) => v
+
+// ============================================================
+// bind / partial
+// ============================================================
+
+fn bind(fn, ...boundArgs) {
+  fn(...boundArgs, ...arguments)
+}
+
+fn bindRight(fn, ...boundArgs) {
+  fn(...arguments, ...boundArgs)
+}
+
+fn partial(fn, ...boundArgs) {
+  bind(fn, ...boundArgs)
+}
+
+// ============================================================
+// curry / uncurry
+// ============================================================
+
+fn curry(fn) {
+  if fn.length() <= 1 { return fn }
+  fn(a) {
+    fn(b) {
+      fn(a, b)
+    }
+  }
+}
+
+// For functions with more than 2 args, we'd need a more complex implementation
+// This is a basic 2-arg curry. For N-ary curry, use the general version:
+fn curryN(fn) {
+  fn length() <= 1 { return fn }
+  fn firstArg {
+    curryN(fn.bind(firstArg))
+  }
+}
+
+fn uncurry(fn) {
+  fn(a, b) { fn(a)(b) }
+}
+
+// ============================================================
+// compose / pipe
+// ============================================================
+
+fn compose(f, g) {
+  fn(x) { f(g(x)) }
+}
+
+fn pipe(f, g) {
+  fn(x) { g(f(x)) }
+}
+
+// Multi-function compose: compose(f, g, h)(x) => f(g(h(x)))
+fn composeMany(...fns) {
+  fns.length() == 0 { return fn(x) { x } }
+  fns.length() == 1 { return fns[0] }
+  // Right-to-left composition
+  reduce(fns, fn(acc, fn) { compose(fn, acc) }, fns[0])
+}
+
+// Multi-function pipe: pipe(f, g, h)(x) => h(g(f(x)))
+fn pipeMany(...fns) {
+  fns.length() == 0 { return fn(x) { x } }
+  fns.length() == 1 { return fns[0] }
+  reduce(fns, fn(acc, fn) { pipe(acc, fn) }, fns[0])
+}
+
+// ============================================================
+// Basic combinators
+// ============================================================
+
+fn flip(f) {
+  fn(a, b) { f(b, a) }
+}
+
+fn identity(x) { x }
+
+fn constant(v) {
+  fn(_) { v }
+}
+
+// ============================================================
+// Additional utilities
+// ============================================================
+
+// Apply function to each argument: apply(fn, [a,b,c]) => fn(a,b,c)
+fn apply(fn, args) {
+  fn(...args)
+}
+
+// Thread value through functions: thread(x, f, g, h) => h(g(f(x)))
+fn thread(val, ...fns) {
+  val = val
+  for fn in fns {
+    val = fn(val)
+  }
+  val
+}
+
+// Fixpoint combinator (for recursive anonymous functions)
+fn fix(f) {
+  fn(x) { f(fix(f))(x) }
+}
+
+// Memoize a single-argument function
+fn memoize(fn) {
+  cache = {}
+  fn(x) {
+    key = "${x}"
+    if cache.has(key) { return cache[key] }
+    result = fn(x)
+    cache[key] = result
+    result
+  }
+}
+
+// Debounce: delay function execution
+fn debounce(fn, ms) {
+  timer = null
+  fn(...args) {
+    if timer != null { clearTimeout(timer) }
+    timer = setTimeout(fn.bind(this, ...args), ms)
+  }
+}
+
+// Throttle: limit function execution rate
+fn throttle(fn, ms) {
+  lastCall = 0
+  fn(...args) {
+    now = Date.now()
+    if now - lastCall >= ms {
+      lastCall = now
+      fn(...args)
+    }
+  }
+}
+
+// Once: function that only executes once
+fn once(fn) {
+  called = false
+  result = null
+  fn(...args) {
+    if !called {
+      called = true
+      result = fn(...args)
+    }
+    result
+  }
+}

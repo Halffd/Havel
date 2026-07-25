@@ -5,12 +5,93 @@ if libuv == null { libuv = ffi.open("libuv.so") }
 
 _loop = ffi.call(ffi.sym(libuv, "uv_default_loop"), "pointer", [])
 
+fn sync_open(path, flags, mode) {
+  cp = ffi.cstring(path)
+  fd = ffi.call(_libc_open, "int32", ["pointer", "int32", "int32"], cp, flags, mode)
+  ffi.free(cp)
+  return fd
+}
+
+fn sync_close(fd) {
+  return ffi.call(_libc_close, "int32", ["int32"], fd)
+}
+
+fn sync_read(fd, size) {
+  buf = ffi.allocBytes(size)
+  n = ffi.call(_libc_read, "int64", ["int32", "pointer", "int64"], fd, buf, size)
+  if n <= 0 { ffi.free(buf); return null }
+  result = ffi.string(buf, n)
+  ffi.free(buf)
+  return result
+}
+
+fn sync_write(fd, data) {
+  byte_arr = bytes(data)
+  buf = ffi.allocBytes(#data)
+  i = 0
+  for b in byte_arr {
+    ffi.set_u8(buf, i, b)
+    i = i + 1
+  }
+  n = ffi.call(_libc_write, "int64", ["int32", "pointer", "int64"], fd, buf, #data)
+  ffi.free(buf)
+  return n
+}
+
+fn sync_close(fd) {
+  return ffi.call(_libc_close, "int32", ["int32"], fd)
+}
+
+fn sync_mkdir(path, mode) {
+  if mode == null { mode = 493 }
+  cp = ffi.cstring(path)
+  r = ffi.call(_libc_mkdir, "int32", ["pointer", "int32"], cp, mode)
+  ffi.free(cp)
+  return r == 0
+}
+
+fn sync_exists(path) {
+  fd = sync_open(path, O_RDONLY, 0)
+  if fd >= 0 { sync_close(fd); return true }
+  return false
+}
+
+fn sync_mkdirAll(path) {
+  if sync_exists(path) { return true }
+  parts = path.split("/")
+  cur = ""
+  for part in parts {
+    if part == "" { continue }
+    cur = cur + "/" + part
+    if !sync_exists(cur) { if !sync_mkdir(cur) { return false } }
+  }
+  return true
+}
+
+fn sync_readFile(path) {
+  fd = sync_open(path, O_RDONLY, 0)
+  if fd < 0 { return null }
+  content = sync_read(fd, 1024 * 1024)
+  sync_close(fd)
+  return content
+}
+
+fn sync_writeFile(path, content) {
+  fd = sync_open(path, O_WRONLY_CREAT_TRUNC, 438)
+  if fd < 0 { return false }
+  n = sync_write(fd, content)
+  sync_close(fd)
+  return n >= 0
+}
+
+
 O_RDONLY = 0
 O_WRONLY = 1
 O_RDWR = 2
 O_CREAT = 64
 O_TRUNC = 512
 O_APPEND = 1024
+O_WRONLY_CREAT_TRUNC = ((O_WRONLY | O_CREAT | O_TRUNC))
 
 _uv_fs_open = ffi.sym(libuv, "uv_fs_open")
 _uv_fs_close = ffi.sym(libuv, "uv_fs_close")

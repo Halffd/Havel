@@ -5,7 +5,21 @@
 // shell.read, shell.write, shell.isatty, shell.exit, shell.splitArgs,
 // shell.exists, shell.isFile, shell.isDir, shell.mkdir, shell.mkdirs,
 // shell.remove, shell.removeAll, shell.copy, shell.move, shell.listDir,
-// shell.tmpfile, shell.envList, shell.open
+// shell.read, shell.write, shell.appendFile, shell.platform, shell.pid,
+// shell.hostname, shell.user, shell.shell, shell.sleep, shell.splitArgs,
+// shell.exists, shell.isFile, shell.isDir, shell.mkdir, shell.mkdirs,
+// shell.remove, shell.removeAll, shell.copy, shell.move, shell.listDir,
+// shell.read, shell.write, shell.appendFile, shell.platform, shell.pid,
+// shell.hostname, shell.user, shell.shell, shell.sleep, shell.splitArgs,
+// shell.exists, shell.isFile, shell.isDir, shell.mkdir, shell.mkdirs,
+// shell.remove, shell.removeAll, shell.copy, shell.move, shell.listDir,
+// shell.read, shell.write, shell.appendFile, shell.platform, shell.pid,
+// shell.hostname, shell.user, shell.shell, shell.sleep, shell.splitArgs,
+// shell.exists, shell.isFile, shell.isDir, shell.mkdir, shell.mkdirs,
+// shell.remove, shell.removeAll, shell.copy, shell.move, shell.listDir,
+// shell.read, shell.write, shell.appendFile, shell.env, shell.getenv,
+// shell.envList, shell.cwd, shell.cd, shell.home, shell.tmpdir,
+// shell.tmpfile, shell.open, shell.removeAll, shell.copy, shell.move
 
 // ============================================================
 // Command execution
@@ -21,7 +35,10 @@ fn splitArgs(str) { shell.splitArgs(str) }
 // Environment
 // ============================================================
 
-fn env(name, value=null) { shell.env(name, value) }
+fn env(name, value=null) {
+  if value == null { shell.getenv(name) }
+  else { shell.env(name, value) }
+}
 fn getenv(name) { shell.getenv(name) }
 fn envList() { shell.envList() }
 
@@ -46,6 +63,7 @@ fn move(src, dst) { shell.move(src, dst) }
 fn listDir(path) { shell.listDir(path) }
 fn read(path) { shell.read(path) }
 fn write(path, content) { shell.write(path, content) }
+fn appendFile(path, content) { shell.appendFile(path, content) }
 
 // ============================================================
 // System info
@@ -64,59 +82,53 @@ fn shell() { shell.shell() }
 fn sleep(ms) { shell.sleep(ms) }
 fn exit(code) { shell.exit(code) }
 fn isatty() { shell.isatty() }
+
+// ============================================================
+// Network / IPC
+// ============================================================
+
 fn open(url) { shell.open(url) }
 
 // ============================================================
-// Higher-level convenience
+// File utilities
 // ============================================================
 
-// Read file lines as array
 fn readLines(path) {
- content = shell.read(path)
- if content == null { return [] }
- content.split("\n")
-}
-
-// Write lines to file (joins with newlines)
-fn writeLines(path, lines) {
- shell.write(path, lines.join("\n"))
-}
-
-// Copy file content to string, transform, write back
-fn transformFile(path, cb) {
   content = shell.read(path)
-  if content == null { return null }
-  result = cb(content)
- shell.write(path, result)
- result
+  if content == null { return [] }
+  content.split("\n")
 }
 
-// List files matching a glob-like pattern (simple prefix/suffix)
+fn writeLines(path, lines) {
+  shell.write(path, lines.join("\n"))
+}
+
+fn appendLines(path, lines) {
+  appendFile(path, lines.join("\n") + "\n")
+}
+
 fn listMatching(dir, prefix="", suffix="") {
- entries = shell.listDir(dir)
- if entries == null { return [] }
- result = []
- for e in entries {
-  if prefix != "" && !e.startsWith(prefix) { continue }
-  if suffix != "" && !e.endsWith(suffix) { continue }
-  result.push(e)
- }
- result
+  entries = shell.listDir(dir)
+  if entries == null { return [] }
+  result = []
+  for e in entries {
+    if prefix != "" && !e.startsWith(prefix) { continue }
+    if suffix != "" && !e.endsWith(suffix) { continue }
+    result.push(e)
+  }
+  result
 }
 
-// Ensure directory exists, create if needed
 fn ensureDir(path) {
- if !shell.exists(path) { shell.mkdirs(path) }
+  if !shell.exists(path) { shell.mkdirs(path) }
 }
 
-// Remove file if it exists
 fn removeIfExists(path) {
- if shell.exists(path) { shell.remove(path) }
+  if shell.exists(path) { shell.remove(path) }
 }
 
-// Append content to file (read + write)
 fn append(path, content) {
- existing = shell.read(path)
- if existing == null { existing = "" }
- shell.write(path, existing + content)
+  existing = shell.read(path)
+  if existing == null { existing = "" }
+  shell.write(path, existing + content)
 }

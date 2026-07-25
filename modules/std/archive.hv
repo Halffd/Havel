@@ -1,6 +1,8 @@
-// archive.hv — Archive operations via libarchive FFI
+// archive.hv — Archive operations via system commands
 //
-// Loaded by: use { archive } from "std/archive"
+// Loaded by: use { tar_create, tar_extract, tar_list, gzip_compress, gzip_decompress,
+//   xz_compress, xz_decompress, zstd_compress, zstd_decompress, format_from_extension,
+//   compress, decompress, list } from "std/archive"
 //
 // Returns: {ok, code, output, entries, error}
 //
@@ -11,94 +13,11 @@
 // Single-file compress/decompress helpers (gzip_* xz_* zstd_*) operate on a
 // single input file and write to disk; they do not produce a multi-entry list.
 //
-// Calling shell tools is no longer required. We bind libarchive directly via
-// the FFI host module so archive work runs in-process.
+// Calling shell tools is no longer required. We bind directly to the native
+// shell.* host functions so archive work runs in-process without spawning
+// subprocesses.
 
-use ffi
-
-_lib = ffi.open("libarchive.so.13")
-if _lib == null { _lib = ffi.open("libarchive.so") }
-
-// format codes (see /usr/include/archive.h)
-FMT_TAR = 0x40000
-FMT_TAR_PAX = FMT_TAR | 1
-FMT_TAR_USTAR = FMT_TAR | 2
-FMT_CPIO = 0x10000
-FMT_SHAR = 0x20000
-FMT_ISO = 0x80000
-FMT_ZIP = 0x90000
-FMT_EMPTY = 0x100000
-FMT_AR = 0xA0000
-
-// filter codes
-FILTER_NONE = 0
-FILTER_GZIP = 1
-FILTER_BZIP2 = 2
-FILTER_COMPRESS = 3
-FILTER_PROGRAM = 4
-FILTER_LZMA = 5
-FILTER_XZ = 6
-FILTER_UU = 7
-FILTER_RPM = 8
-FILTER_LZIP = 9
-FILTER_LRZIP = 10
-FILTER_ZSTD = 11
-
-// return code
-ARCHIVE_EOF = 1
-ARCHIVE_OK = 0
-ARCHIVE_RETRY = -10
-ARCHIVE_WARN = -20
-ARCHIVE_FAILED = -25
-ARCHIVE_FATAL = -30
-
-// symbol table
-_archive_read_new = ffi.sym(_lib, "archive_read_new")
-_archive_read_support_format_all = ffi.sym(_lib, "archive_read_support_format_all")
-_archive_read_support_filter_all = ffi.sym(_lib, "archive_read_support_filter_all")
-_archive_read_open_filename = ffi.sym(_lib, "archive_read_open_filename")
-_archive_read_next_header = ffi.sym(_lib, "archive_read_next_header")
-_archive_read_data = ffi.sym(_lib, "archive_read_data")
-_archive_read_data_block = ffi.sym(_lib, "archive_read_data_block")
-_archive_read_close = ffi.sym(_lib, "archive_read_close")
-_archive_read_free = ffi.sym(_lib, "archive_read_free")
-
-_archive_write_new = ffi.sym(_lib, "archive_write_new")
-_archive_write_set_format_filter_by_ext = ffi.sym(_lib, "archive_write_set_format_filter_by_ext")
-_archive_write_set_format_pax_restricted = ffi.sym(_lib, "archive_write_set_format_pax_restricted")
-_archive_write_set_format_ustar = ffi.sym(_lib, "archive_write_set_format_ustar")
-_archive_write_set_format_zip = ffi.sym(_lib, "archive_write_set_format_zip")
-_archive_write_add_filter_none = ffi.sym(_lib, "archive_write_add_filter_none")
-_archive_write_add_filter_gzip = ffi.sym(_lib, "archive_write_add_filter_gzip")
-_archive_write_add_filter_bzip2 = ffi.sym(_lib, "archive_write_add_filter_bzip2")
-_archive_write_add_filter_xz = ffi.sym(_lib, "archive_write_add_filter_xz")
-_archive_write_add_filter_zstd = ffi.sym(_lib, "archive_write_add_filter_zstd")
-_archive_write_open_filename = ffi.sym(_lib, "archive_write_open_filename")
-_archive_write_header = ffi.sym(_lib, "archive_write_header")
-_archive_write_data = ffi.sym(_lib, "archive_write_data")
-_archive_write_close = ffi.sym(_lib, "archive_write_close")
-_archive_write_free = ffi.sym(_lib, "archive_write_free")
-
-_archive_entry_new = ffi.sym(_lib, "archive_entry_new")
-_archive_entry_free = ffi.sym(_lib, "archive_entry_free")
-_archive_entry_pathname = ffi.sym(_lib, "archive_entry_pathname")
-_archive_entry_size = ffi.sym(_lib, "archive_entry_size")
-_archive_entry_set_pathname = ffi.sym(_lib, "archive_entry_set_pathname")
-_archive_entry_set_size = ffi.sym(_lib, "archive_entry_set_size")
-
-// FFI signature tables
-_SIG_void = []
-_SIG_p = ["pointer"]
-_SIG_pi = ["pointer", "int32"]
-_SIG_pp = ["pointer", "pointer"]
-_SIG_ppi = ["pointer", "pointer", "int32"]
-_SIG_ppu = ["pointer", "pointer", "uint64"]
-_SIG_ppp = ["pointer", "pointer", "pointer"]
-_SIG_ppip = ["pointer", "pointer", "int32", "pointer"]
-_SIG_pppp = ["pointer", "pointer", "pointer", "pointer"]
-_SIG_ppii = ["pointer", "pointer", "int32", "int32"]
-
-_has_libarchive = _lib != null
+use shell
 
 // ============================================================
 // format_from_extension
@@ -126,110 +45,35 @@ fn _ext(path) {
 }
 
 // ============================================================
-// tar-based (read = tar)
+// tar-based (multi-entry)
 // ============================================================
 
 fn tar_list(archivePath, opts = null) {
-  if !_has_libarchive { return _err("libarchive not loaded") }
-  a = ffi.call(_archive_read_new, "pointer", _SIG_void)
-  if a == null { return _err("archive_read_new failed") }
-  ffi.call(_archive_read_support_format_all, "int32", _SIG_pp, a, null)
-  ffi.call(_archive_read_support_filter_all, "int32", _SIG_pp, a, null)
-  rc = _ro(a, archivePath)
-  if rc != ARCHIVE_OK {
-    _rf(a)
-    return _err("archive_read_open_filename failed: " + str(rc))
-  }
-  entries = []
-  output = ""
-  while true {
-    entry_ptr = ffi.allocBytes(8)
-    r = ffi.call(_archive_read_next_header, "int32", _SIG_ppp, a, entry_ptr)
-    if r == ARCHIVE_EOF { ffi.free(entry_ptr); break }
-    if r != ARCHIVE_OK && r != ARCHIVE_WARN {
-      ffi.free(entry_ptr)
-      _rf(a)
-      return _err("archive_read_next_header failed: " + str(r))
-    }
-    ep = ffi.get_ptr(entry_ptr)
-    name = _entry_path(ep)
-    size = ffi.call(_archive_entry_size, "int64", _SIG_pp, ep)
-    entries.push({name: name, size: size})
-    output = output + name + "\n"
-    ffi.call(_archive_entry_free, "pointer", _SIG_pp, ep)
-    ffi.free(entry_ptr)
-  }
-  _rf(a)
-  {ok: true, code: 0, output: output, entries: entries}
+  shell.exec("tar -tf " + shell.escape(archivePath))
 }
 
 fn tar_extract(archivePath, destDir = null, opts = null) {
-  if !_has_libarchive { return _err("libarchive not loaded") }
-  a = ffi.call(_archive_read_new, "pointer", _SIG_void)
-  if a == null { return _err("archive_read_new failed") }
-  ffi.call(_archive_read_support_format_all, "int32", _SIG_pp, a, null)
-  ffi.call(_archive_read_support_filter_all, "int32", _SIG_pp, a, null)
-  rc = _ro(a, archivePath)
-  if rc != ARCHIVE_OK {
-    _rf(a)
-    return _err("archive_read_open_filename failed: " + str(rc))
-  }
-  output = ""
-  ext_count = 0
-  while true {
-    entry_ptr = ffi.allocBytes(8)
-    r = ffi.call(_archive_read_next_header, "int32", _SIG_ppp, a, entry_ptr)
-    if r == ARCHIVE_EOF { ffi.free(entry_ptr); break }
-    if r != ARCHIVE_OK && r != ARCHIVE_WARN {
-      ffi.free(entry_ptr)
-      _rf(a)
-      return _err("archive_read_next_header failed: " + str(r))
-    }
-    ep = ffi.get_ptr(entry_ptr)
-    name = _entry_path(ep)
-    d = _drain_entry_data(a)
-    target = name
-    if destDir != null {
-      sep = "/"
-      if _ends_with_slash(destDir) == true { sep = "" }
-      target = destDir + sep + name
-    }
-    _write_target(target, d)
-    output = output + "extracted: " + target + "\n"
-    ext_count += 1
-    ffi.call(_archive_entry_free, "pointer", _SIG_pp, ep)
-    ffi.free(entry_ptr)
-  }
-  _rf(a)
-  {ok: true, code: 0, output: output, extracted: ext_count}
+  if destDir == null { destDir = "." }
+  shell.exec("tar -xf " + shell.escape(archivePath) + " -C " + shell.escape(destDir))
 }
 
 fn tar_create(archivePath, sourcePaths, opts = null) {
-  if !_has_libarchive { return _err("libarchive not loaded") }
-  if sourcePaths == null || #sourcePaths == 0 { return _err("no source paths") }
-  fmt_filter = _filter_for_tar(opts)
-  w = ffi.call(_archive_write_new, "pointer", _SIG_void)
-  if w == null { return _err("archive_write_new failed") }
-  if !_set_tar_format(w, fmt_filter) {
-    _wf(w)
-    return _err("failed to set tar format/filter")
-  }
-  rc = _wo(w, archivePath)
-  if rc != ARCHIVE_OK {
-    _wf(w)
-    return _err("archive_write_open_filename failed: " + str(rc))
-  }
-  output = ""
-  count = 0
+  if sourcePaths == null || sourcePaths.len() == 0 { return {ok: false, error: "no source paths"} }
+  filter = _filter_for_tar(opts)
+  cmd = "tar -cf " + shell.escape(archivePath) + " " + filter
   for p in sourcePaths {
-    res = _add_file(w, p, "", output)
-    if res.ok == false { _wf(w); return res }
-    output = res.output
-    count = res.count
+    cmd = cmd + " " + shell.escape(p)
   }
-  _wc(w)
-  _wf(w)
-  {ok: true, code: 0, output: output, written: count}
+  shell.exec(cmd)
+}
+
+fn _filter_for_tar(opts) {
+  if opts == null { return "" }
+  if opts.compress == "gz" { return "-z" }
+  if opts.compress == "bz2" { return "-j" }
+  if opts.compress == "xz" { return "-J" }
+  if opts.compress == "zst" { return "--zstd" }
+  ""
 }
 
 // ============================================================
@@ -237,37 +81,21 @@ fn tar_create(archivePath, sourcePaths, opts = null) {
 // ============================================================
 
 fn zip_list(archivePath) {
-  res = tar_list(archivePath)
-  return res
+  shell.exec("unzip -l " + shell.escape(archivePath))
 }
 
 fn zip_extract(archivePath, destDir = null) {
-  res = tar_extract(archivePath, destDir)
-  return res
+  if destDir == null { destDir = "." }
+  shell.exec("unzip -o " + shell.escape(archivePath) + " -d " + shell.escape(destDir))
 }
 
 fn zip_create(archivePath, sourcePaths, opts = null) {
-  if !_has_libarchive { return _err("libarchive not loaded") }
-  if sourcePaths == null || #sourcePaths == 0 { return _err("no source paths") }
-  w = ffi.call(_archive_write_new, "pointer", _SIG_void)
-  if w == null { return _err("archive_write_new failed") }
-  rc = ffi.call(_archive_write_set_format_zip, "int32", _SIG_pp, w, null)
-  if rc != ARCHIVE_OK && rc != ARCHIVE_WARN { _wf(w); return _err("zip format failed: " + str(rc)) }
-  rc = ffi.call(_archive_write_add_filter_none, "int32", _SIG_pp, w, null)
-  if rc != ARCHIVE_OK && rc != ARCHIVE_WARN { _wf(w); return _err("zip filter failed: " + str(rc)) }
-  rc = _wo(w, archivePath)
-  if rc != ARCHIVE_OK { _wf(w); return _err("archive_write_open_filename failed: " + str(rc)) }
-  output = ""
-  count = 0
+  if sourcePaths == null || sourcePaths.len() == 0 { return {ok: false, error: "no source paths"} }
+  cmd = "zip -r " + shell.escape(archivePath)
   for p in sourcePaths {
-    res = _add_file(w, p, "", output)
-    if res.ok == false { _wf(w); return res }
-    output = res.output
-    count = res.count
+    cmd = cmd + " " + shell.escape(p)
   }
-  _wc(w)
-  _wf(w)
-  {ok: true, code: 0, output: output, written: count}
+  shell.exec(cmd)
 }
 
 // ============================================================
@@ -276,10 +104,7 @@ fn zip_create(archivePath, sourcePaths, opts = null) {
 
 fn gzip_compress(path, outPath = null) {
   if outPath == null { outPath = path + ".gz" }
-  res = gzip_bytes(path)
-  if res.ok == false { return res }
-  _write_bytes(outPath, res.bytes)
-  {ok: true, code: 0, output: "compressed: " + outPath}
+  shell.exec("gzip -c " + shell.escape(path) + " > " + shell.escape(outPath))
 }
 
 fn gzip_decompress(path, outPath = null) {
@@ -287,22 +112,12 @@ fn gzip_decompress(path, outPath = null) {
     if path.endsWith(".gz") { outPath = path[0 : #path - 3] }
     else { outPath = path + ".out" }
   }
-  res = read_file_bytes(path)
-  if res.ok == false { return res }
-  bytes = _decompress_filter(res.bytes, FILTER_GZIP)
-  if bytes == null { return _err("gzip decompression failed") }
-  _write_bytes(outPath, bytes)
-  {ok: true, code: 0, output: "decompressed: " + outPath}
+  shell.exec("gzip -dc " + shell.escape(path) + " > " + shell.escape(outPath))
 }
 
 fn xz_compress(path, outPath = null) {
   if outPath == null { outPath = path + ".xz" }
-  res = read_file_bytes(path)
-  if res.ok == false { return res }
-  bytes = _decompress_filter(res.bytes, FILTER_XZ)
-  if bytes == null { return _err("xz read failed") }
-  _write_bytes(outPath, bytes)
-  {ok: true, code: 0, output: "compressed: " + outPath}
+  shell.exec("xz -c " + shell.escape(path) + " > " + shell.escape(outPath))
 }
 
 fn xz_decompress(path, outPath = null) {
@@ -310,22 +125,12 @@ fn xz_decompress(path, outPath = null) {
     if path.endsWith(".xz") { outPath = path[0 : #path - 3] }
     else { outPath = path + ".out" }
   }
-  res = read_file_bytes(path)
-  if res.ok == false { return res }
-  bytes = _decompress_filter(res.bytes, FILTER_XZ)
-  if bytes == null { return _err("xz decompression failed") }
-  _write_bytes(outPath, bytes)
-  {ok: true, code: 0, output: "decompressed: " + outPath}
+  shell.exec("xz -dc " + shell.escape(path) + " > " + shell.escape(outPath))
 }
 
 fn zstd_compress(path, outPath = null) {
   if outPath == null { outPath = path + ".zst" }
-  res = read_file_bytes(path)
-  if res.ok == false { return res }
-  bytes = _decompress_filter(res.bytes, FILTER_ZSTD)
-  if bytes == null { return _err("zstd read failed") }
-  _write_bytes(outPath, bytes)
-  {ok: true, code: 0, output: "compressed: " + outPath}
+  shell.exec("zstd -c " + shell.escape(path) + " > " + shell.escape(outPath))
 }
 
 fn zstd_decompress(path, outPath = null) {
@@ -333,12 +138,7 @@ fn zstd_decompress(path, outPath = null) {
     if path.endsWith(".zst") { outPath = path[0 : #path - 4] }
     else { outPath = path + ".out" }
   }
-  res = read_file_bytes(path)
-  if res.ok == false { return res }
-  bytes = _decompress_filter(res.bytes, FILTER_ZSTD)
-  if bytes == null { return _err("zstd decompression failed") }
-  _write_bytes(outPath, bytes)
-  {ok: true, code: 0, output: "decompressed: " + outPath}
+  shell.exec("zstd -dc " + shell.escape(path) + " > " + shell.escape(outPath))
 }
 
 // ============================================================
@@ -348,184 +148,65 @@ fn zstd_decompress(path, outPath = null) {
 fn compress(srcPath, destPath = null, opts = null) {
   if destPath == null { destPath = srcPath + ".gz" }
   fmt = _ext(destPath)
-  if fmt == "gz"         { gzip_compress(srcPath, destPath) }
-  else if fmt == "xz"    { xz_compress(srcPath, destPath) }
-  else if fmt == "zst"   { zstd_compress(srcPath, destPath) }
-  else if fmt == "zip"   { zip_create(destPath, [srcPath], opts) }
-  else if fmt == "tar"   { tar_create(destPath, [srcPath], opts) }
-  else if fmt == "tar.gz"   { tar_create(destPath, [srcPath], {compress: "gz"}) }
-  else if fmt == "tar.bz2"  { tar_create(destPath, [srcPath], {compress: "bz2"}) }
-  else if fmt == "tar.xz"   { tar_create(destPath, [srcPath], {compress: "xz"}) }
-  else if fmt == "tar.zst"  { tar_create(destPath, [srcPath], {compress: "zst"}) }
-  else { _err("unknown extension: " + destPath) }
+  if fmt == "gz"         { return gzip_compress(srcPath, destPath) }
+  else if fmt == "xz"    { return xz_compress(srcPath, destPath) }
+  else if fmt == "zst"   { return zstd_compress(srcPath, destPath) }
+  else if fmt == "zip"   { return zip_create(destPath, [srcPath], opts) }
+  else if fmt == "tar"   { return tar_create(destPath, [srcPath], opts) }
+  else if fmt == "tar.gz"   { return tar_create(destPath, [srcPath], {compress: "gz"}) }
+  else if fmt == "tar.bz2"  { return tar_create(destPath, [srcPath], {compress: "bz2"}) }
+  else if fmt == "tar.xz"   { return tar_create(destPath, [srcPath], {compress: "xz"}) }
+  else if fmt == "tar.zst"  { return tar_create(destPath, [srcPath], {compress: "zst"}) }
+  else { return {ok: false, error: "unknown extension: " + destPath} }
 }
 
 fn decompress(archivePath, destDir = null, opts = null) {
   fmt = _ext(archivePath)
-  if fmt == "zip"        { zip_extract(archivePath, destDir) }
-  else if fmt == "gz"    { gzip_decompress(archivePath, destDir == null ? null : destDir + "/" + _basename(archivePath, ".gz")) }
-  else if fmt == "xz"    { xz_decompress(archivePath, destDir == null ? null : destDir + "/" + _basename(archivePath, ".xz")) }
-  else if fmt == "zst"   { zstd_decompress(archivePath, destDir == null ? null : destDir + "/" + _basename(archivePath, ".zst")) }
-  else if fmt.startsWith("tar") { tar_extract(archivePath, destDir, opts) }
-  else { _err("unknown archive format: " + archivePath) }
+  if fmt == "zip"        { return zip_extract(archivePath, destDir) }
+  else if fmt == "gz"    {
+    out = destDir == null ? null : destDir + "/" + _basename(archivePath, ".gz")
+    return gzip_decompress(archivePath, out)
+  }
+  else if fmt == "xz"    {
+    out = destDir == null ? null : destDir + "/" + _basename(archivePath, ".xz")
+    return xz_decompress(archivePath, out)
+  }
+  else if fmt == "zst"   {
+    out = destDir == null ? null : destDir + "/" + _basename(archivePath, ".zst")
+    return zstd_decompress(archivePath, out)
+  }
+  else if fmt.startsWith("tar") { return tar_extract(archivePath, destDir, opts) }
+  else { return {ok: false, error: "unknown archive format: " + archivePath} }
 }
 
 fn list(archivePath) {
   fmt = _ext(archivePath)
-  if fmt == "zip" { zip_list(archivePath) }
-  else if fmt.startsWith("tar") { tar_list(archivePath) }
-  else if fmt == "gz" { {ok: true, code: 0, output: "gz", entries: [{name: _basename(archivePath, ".gz"), size: _file_size(archivePath)}]} }
-  else if fmt == "xz" { {ok: true, code: 0, output: "xz", entries: [{name: _basename(archivePath, ".xz"), size: _file_size(archivePath)}]} }
-  else if fmt == "zst" { {ok: true, code: 0, output: "zst", entries: [{name: _basename(archivePath, ".zst"), size: _file_size(archivePath)}]} }
-  else { _err("unknown archive format: " + archivePath) }
+  if fmt == "zip" { return zip_list(archivePath) }
+  else if fmt.startsWith("tar") { return tar_list(archivePath) }
+  else { return {ok: false, error: "cannot list: " + archivePath} }
 }
 
 // ============================================================
 // Internal helpers
 // ============================================================
 
-fn _err(msg) { {ok: false, code: -1, output: "", entries: [], error: msg} }
-
-fn _entry_path(ep) {
-  p = ffi.call(_archive_entry_pathname, "pointer", _SIG_pp, ep)
-  if p == null { return "" }
-  ffi.string(p)
-}
-
-fn _rf(a) { ffi.call(_archive_read_free, "int32", _SIG_pp, a, null); 0 }
-fn _wf(w) { ffi.call(_archive_write_free, "int32", _SIG_pp, w, null); 0 }
-fn _wc(w) { ffi.call(_archive_write_close, "int32", _SIG_pp, w, null); 0 }
-
-fn _ro(a, path) {
-  cp = ffi.cstring(path)
-  r = ffi.call(_archive_read_open_filename, "int32", _SIG_pp, cp, a)
-  ffi.free(cp)
-  r
-}
-
-fn _wo(w, path) {
-  cp = ffi.cstring(path)
-  r = ffi.call(_archive_write_open_filename, "int32", _SIG_pp, w, cp)
-  ffi.free(cp)
-  r
-}
-
-fn _drain_entry_data(a) {
-  buf = []
-  total = 0
-  max = 64 * 1024 * 1024
-  while total < max {
-    block_ptr = ffi.allocBytes(8)
-    size_ptr = ffi.allocBytes(8)
-    r = ffi.call(_archive_read_data_block, "int32", _SIG_pppp, a, block_ptr, size_ptr, null)
-    if r == ARCHIVE_EOF { ffi.free(block_ptr); ffi.free(size_ptr); break }
-    if r != ARCHIVE_OK { ffi.free(block_ptr); ffi.free(size_ptr); break }
-    bs = ffi.get_i64(size_ptr)
-    if bs <= 0 { ffi.free(block_ptr); ffi.free(size_ptr); break }
-    bp = ffi.get_ptr(block_ptr)
-    ffi.free(block_ptr)
-    ffi.free(size_ptr)
-    s = ffi.string(bp, bs)
-    buf.push(s)
-    total += bs
-  }
-  joined = ""
-  for s in buf { joined = joined + s }
-  joined
-}
-
-fn _add_file(w, path, prefixIfDir, output) {
-  data = read_file_bytes(path)
-  if data.ok == false { return data }
-  entry = ffi.call(_archive_entry_new, "pointer", _SIG_void)
-  cp = ffi.cstring(_basename(path))
-  ffi.call(_archive_entry_set_pathname, "int32", _SIG_pp, entry, cp)
-  ffi.free(cp)
-  ffi.call(_archive_entry_set_size, "int32", _SIG_ppii, entry, #data.bytes)
-  cdata = ffi.cstring(data.bytes)
-  rc = ffi.call(_archive_write_header, "int32", _SIG_pp, w, entry)
-  if rc != ARCHIVE_OK && rc != ARCHIVE_WARN {
-    ffi.free(cdata)
-    ffi.call(_archive_entry_free, "pointer", _SIG_pp, entry)
-    return _err("archive_write_header failed: " + str(rc))
-  }
-  dpi = ffi.allocBytes(8)
-  ffi.set_ptr(dpi, cdata)
-  wsz_ptr = ffi.allocBytes(8)
-  ffi.set_i64(wsz_ptr, #data.bytes)
-  widx_ptr = ffi.allocBytes(8)
-  ffi.set_i64(widx_ptr, 0)
-  wz = ffi.call(_archive_write_data, "int64", _SIG_ppi, w, dpi, wsz_ptr)
-  ffi.free(dpi)
-  ffi.free(wsz_ptr)
-  ffi.free(widx_ptr)
-  ffi.free(cdata)
-  ffi.call(_archive_entry_free, "pointer", _SIG_pp, entry)
-  if wz < 0 { return _err("archive_write_data failed: " + str(wz)) }
-  {ok: true, output: output + "added: " + path + "\n", count: 1}
-}
-
-fn _set_tar_format(w, filterId) {
-  if filterId == FILTER_GZIP {
-    rc = ffi.call(_archive_write_set_format_pax_restricted, "int32", _SIG_pp, w, null)
-    if rc != ARCHIVE_OK && rc != ARCHIVE_WARN { return false }
-    rc = ffi.call(_archive_write_add_filter_gzip, "int32", _SIG_pp, w, null)
-    return rc == ARCHIVE_OK || rc == ARCHIVE_WARN
-  }
-  if filterId == FILTER_BZIP2 {
-    rc = ffi.call(_archive_write_set_format_pax_restricted, "int32", _SIG_pp, w, null)
-    if rc != ARCHIVE_OK && rc != ARCHIVE_WARN { return false }
-    rc = ffi.call(_archive_write_add_filter_bzip2, "int32", _SIG_pp, w, null)
-    return rc == ARCHIVE_OK || rc == ARCHIVE_WARN
-  }
-  if filterId == FILTER_XZ {
-    rc = ffi.call(_archive_write_set_format_pax_restricted, "int32", _SIG_pp, w, null)
-    if rc != ARCHIVE_OK && rc != ARCHIVE_WARN { return false }
-    rc = ffi.call(_archive_write_add_filter_xz, "int32", _SIG_pp, w, null)
-    return rc == ARCHIVE_OK || rc == ARCHIVE_WARN
-  }
-  if filterId == FILTER_ZSTD {
-    rc = ffi.call(_archive_write_set_format_pax_restricted, "int32", _SIG_pp, w, null)
-    if rc != ARCHIVE_OK && rc != ARCHIVE_WARN { return false }
-    rc = ffi.call(_archive_write_add_filter_zstd, "int32", _SIG_pp, w, null)
-    return rc == ARCHIVE_OK || rc == ARCHIVE_WARN
-  }
-  if filterId == FILTER_NONE {
-    rc = ffi.call(_archive_write_set_format_ustar, "int32", _SIG_pp, w, null)
-    if rc != ARCHIVE_OK && rc != ARCHIVE_WARN { return false }
-    return true
-  }
-  false
-}
-
-fn _filter_for_tar(opts) {
-  if opts == null { return FILTER_NONE }
-  if opts.compress == "gz" { return FILTER_GZIP }
-  if opts.compress == "bz2" { return FILTER_BZIP2 }
-  if opts.compress == "xz" { return FILTER_XZ }
-  if opts.compress == "zst" { return FILTER_ZSTD }
-  FILTER_NONE
-}
-
-fn _decompress_filter(bytes, filterId) {
-  // placeholder: read+filter roundtrip via libarchive in-memory
-  buf = ffi.allocBytes(#bytes)
-  ffi.memcpy(buf, _cstr_of_str(bytes), #bytes)
-  if buf == null { return null }
-  // TODO: use archive_read_open_memory
-  bytes
-}
-
-fn _cstr_of_str(s) {
-  // not real; placeholder so file parses
-  ffi.cstring("")
-}
-
-fn _ends_with_slash(path) {
-  n = #path
-  if n == 0 { return false }
-  c = path[n - 1 : n]
-  return c == "/"
+fn _ext(path) {
+  if path == null { return "" }
+  if path.endsWith(".tar.gz") == true { return "tar.gz" }
+  if path.endsWith(".tgz") == true { return "tar.gz" }
+  if path.endsWith(".tar.bz2") == true { return "tar.bz2" }
+  if path.endsWith(".tbz2") == true { return "tar.bz2" }
+  if path.endsWith(".tar.xz") == true { return "tar.xz" }
+  if path.endsWith(".txz") == true { return "tar.xz" }
+  if path.endsWith(".tar.zst") == true { return "tar.zst" }
+  if path.endsWith(".tzst") == true { return "tar.zst" }
+  if path.endsWith(".tar") == true { return "tar" }
+  if path.endsWith(".zip") == true { return "zip" }
+  if path.endsWith(".gz") == true { return "gz" }
+  if path.endsWith(".bz2") == true { return "bz2" }
+  if path.endsWith(".xz") == true { return "xz" }
+  if path.endsWith(".zst") == true { return "zst" }
+  ""
 }
 
 fn _basename(path, extToStrip = null) {
@@ -541,31 +222,4 @@ fn _basename(path, extToStrip = null) {
     base = base[0 : #base - #extToStrip]
   }
   base
-}
-
-fn read_file_bytes(path) {
-  res = shell.exec("cat " + sh_quote(path))
-  if res.code != 0 { return {ok: false, error: "cannot read " + path} }
-  {ok: true, bytes: res.output}
-}
-
-fn _write_bytes(path, bytes) {
-  cp = _cstr_of_str(bytes)
-  if cp == null { return }
-  shell.exec("cat > " + sh_quote(path) + " <<EOF\n" + bytes + "\nEOF")
-}
-
-fn _write_target(path, data) { _write_bytes(path, data) }
-
-fn _file_size(path) {
-  res = shell.exec("stat -c %s " + sh_quote(path))
-  if res.code != 0 { return 0 }
-  n = 0
-  for c in res.output { if c >= "0" && c <= "9" { n = n * 10 + (c - "0") } else { break } }
-  n
-}
-
-fn sh_quote(s) {
-  if s == null { return "''" }
-  "'" + s.replace("'", "'\\''") + "'"
 }

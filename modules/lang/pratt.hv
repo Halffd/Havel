@@ -253,20 +253,14 @@ IMPLICIT_CALL_STARTERS[TID.Not] = true; IMPLICIT_CALL_STARTERS[TID.Length] = tru
 // Parser object — encapsulates parsing state
 // ===================================================================
 fn Parser(tokenList) {
-  print("P_ENTRY")
   ::tokens = tokenList
-  print("P_SETUP1")
   ::pos = 0
-  print("P_SETUP2")
   ::errors = []
   ::incomplete = false
   ::inMatchExpr = false
   ::allowBraceSugar = true
-  print("P_SETUP3")
   ::_eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
-  print("P_SETUP4")
   ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
-  print("P_SETUP5")
 
   fn at(offset) {
     i = ::pos + offset
@@ -275,21 +269,17 @@ fn Parser(tokenList) {
     else: return ::_eof
   }
   fn current() {
-    print("P_CURRENT tid=" + str(::_cur.tid))
     return ::_cur
   }
   fn advance() {
-    print("P_ADVANCE_START")
     if ::pos < ::tokens.len {
       t = ::tokens[::pos]
       ::pos = ::pos + 1
       ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
-      print("P_ADVANCE_RETURN t=" + str(t))
       return t
     }
     else {
       ::_cur = ::_eof
-      print("P_ADVANCE_EOF")
       return ::_eof
     }
   }
@@ -2328,6 +2318,7 @@ if tt == TID.Dsl {
     expr = parseExpr(0)
     if expr == null: return null
     if expr.kind == "ErrorNode": return expr
+    print("PS_END: pos=" + str(::pos) + " return=" + str(expr.kind))
     return ExpressionStatement(expr, l, c)
 }
     // ===================================================================
@@ -4608,30 +4599,34 @@ fn parseAtDecoratorStatement() {
 
 // Parse entire source into a Program AST node
 fn parseProgram(source) {
-    print("P0")
+    print("PARSEPROGRAM_ENTER")
     tokenList = tokenize(source)
-    print("P1")
+    print("PARSEPROGRAM_TOKENIZED len=" + str(#tokenList))
     p = Parser(tokenList)
-    print("P2")
+    print("PARSEPROGRAM_PARSER_CREATED")
     body = []
-    print("P_LOOP_START")
     loop_iter = 0
     while p.current().tid != TID.EOF {
         loop_iter = loop_iter + 1
         if loop_iter > 100 {
-            print("P_LOOP_GUARD")
             break
         }
-        print("P_LOOP_ITER_" + str(loop_iter))
-        // Skip newlines and semicolons
         tt = p.current().tid
-        print("P_TT=" + str(tt))
         if tt == TID.NewLine || tt == TID.Semicolon {
             p.advance()
             continue
         }
         stmt = p.parseStatement()
         if stmt != null {
+            // Skip ErrorNode to avoid infinite loop on parse errors
+            if stmt.kind != "ErrorNode" {
+                body.push(stmt)
+            } else {
+                // Advance past error token to prevent infinite loop
+                p.advance()
+            }
+        }
+        else if stmt != null and stmt.kind == "ErrorNode" {
             // Skip ErrorNode to avoid infinite loop on parse errors
             if stmt.kind != "ErrorNode" {
                 body.push(stmt)

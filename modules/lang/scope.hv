@@ -59,7 +59,6 @@ null
 
 }
 fn scopeResolveUpvalue(scope, name) {
-  print("DEBUG scopeResolveUpvalue: name=" + str(name) + " scope.bcFuncIdx=" + str(scope.bcFuncIdx) + " scope.upcount=" + str(scope.upcount))
   existing = scope.upvalues[name]
     if existing != null {
         return existing

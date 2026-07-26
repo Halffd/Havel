@@ -275,21 +275,17 @@ fn Parser(tokenList) {
     else: return ::_eof
   }
   fn current() {
-    print("P_CURRENT tid=" + str(::_cur.tid))
     return ::_cur
   }
   fn advance() {
-    print("P_ADVANCE_START")
     if ::pos < ::tokens.len {
       t = ::tokens[::pos]
       ::pos = ::pos + 1
       ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
-      print("P_ADVANCE_RETURN t=" + str(t))
       return t
     }
     else {
       ::_cur = ::_eof
-      print("P_ADVANCE_EOF")
       return ::_eof
     }
   }

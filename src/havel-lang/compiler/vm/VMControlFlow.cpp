@@ -493,15 +493,15 @@ if (instanceObj) {
     }
   }
 
-  // 1. Try host prototype (for primitives and built-in object methods)
-  if (!found_host && vm_func.isNull()) {
-		auto typeIt = prototypes_.find(type_name);
-		if (typeIt != prototypes_.end()) {
-			auto methodIt = typeIt->second.find(method_name);
-            if (methodIt != typeIt->second.end()) {
-                host_func_idx = methodIt->second;
-                found_host = true;
-            }
+// 1. Try host prototype (for primitives and built-in object methods)
+    if (!found_host && vm_func.isNull()) {
+      auto typeIt = prototypes_.find(type_name);
+      if (typeIt != prototypes_.end()) {
+        auto methodIt = typeIt->second.find(method_name);
+        if (methodIt != typeIt->second.end()) {
+            host_func_idx = methodIt->second;
+            found_host = true;
+        }
         }
     }
 
@@ -584,6 +584,18 @@ if (instanceObj) {
     } else {
         // Call VM function
         doCall(vm_func, all_args);
+    }
+
+    // Check for suspension after host function call (e.g., channel.receive suspending)
+    if (suspension_requested_) {
+        // Advance IP past CALL_METHOD so we can resume correctly
+        if (frame_count_ > 0) {
+            auto& f = frame_arena_[frame_count_ - 1];
+            if (f.ip < f.function->instructions.size()) {
+                f.ip++;
+            }
+        }
+        break; // Return to caller to process suspension
     }
     break;
   }
@@ -673,9 +685,10 @@ if (instanceObj) {
       type_name = "interval";
     } else if (receiver.isTimeoutId()) {
       type_name = "timeout";
-    } else if (receiver.isWaitGroupId()) {
-      type_name = "waitgroup";
     } else if (receiver.isChannelId()) {
+      {
+        ::havel::info("[CALL_METHOD] receiver is channel, method={}", method_name);
+      }
       type_name = "channel";
     } else if (receiver.isRangeId()) {
       type_name = "range";

@@ -1149,7 +1149,8 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
         hot_func_cb_(*func);
     }
 
-    if (func->jit_compiled && jit_compiler_ && !debugger_attached_) {
+    if (func->jit_compiled && jit_compiler_ && !debugger_attached_ && !callable.isClosureId()) {
+        ::havel::info("[VM] JIT path: func={} callable_is_closure={} jit_compiled={} debugger={}", func->name, callable.isClosureId(), func->jit_compiled, debugger_attached_);
         uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
         try {
             jit_compiler_->executeCompiled(this, func->name, args);
@@ -1159,6 +1160,8 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
             setJITActiveClosurePublic(prev_jit_closure);
             // Fall through to interpreter path
         }
+    } else {
+        ::havel::info("[VM] JIT skipped: func={} callable_is_closure={} jit_compiled={} debugger={}", func->name, callable.isClosureId(), func->jit_compiled, debugger_attached_);
     }
 
     // Push args onto VM stack
@@ -1294,6 +1297,34 @@ std::vector<uint32_t> VM::getWaitingThreadIds() const {
     }
   }
   return result;
+}
+
+// ============================================================================
+// CHANNEL WAIT REGISTRATION
+// ============================================================================
+
+void VM::registerChannelWait(uint32_t channel_id, Fiber* fiber) {
+  if (!fiber) return;
+  std::unique_lock<std::shared_mutex> lock(channel_wait_mutex_);
+  channel_wait_map_[channel_id] = fiber;
+}
+
+Fiber* VM::resumeChannelWait(uint32_t channel_id) {
+  std::unique_lock<std::shared_mutex> lock(channel_wait_mutex_);
+  auto it = channel_wait_map_.find(channel_id);
+  if (it != channel_wait_map_.end()) {
+    Fiber* fiber = it->second;
+    channel_wait_map_.erase(it);
+    // Unpark the goroutine in the scheduler so it gets scheduled again
+    if (scheduler_) {
+      Scheduler::Goroutine* g = scheduler_->findGoroutineByFiber(fiber);
+      if (g) {
+        scheduler_->unpark(g);
+      }
+    }
+    return fiber;
+  }
+  return nullptr;
 }
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {

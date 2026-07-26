@@ -458,6 +458,9 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   // Attach a Fiber to a goroutine by ID
   void attachFiber(uint32_t goroutine_id, Fiber* fiber);
 
+  // Register the main script as a goroutine
+  void registerMainGoroutine(Goroutine* g);
+
   void yield(Goroutine* g);
   // Yield current goroutine and allow other goroutines to run
   void yieldCurrentAndCheckTimers();

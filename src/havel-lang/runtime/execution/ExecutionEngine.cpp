@@ -910,6 +910,24 @@ void ExecutionEngine::processGoroutinesInline() {
         main_script_fiber_ = std::make_unique<Fiber>(0, 0);
     }
 
+    // Ensure main script is registered as a goroutine in scheduler
+    static bool main_goroutine_registered = false;
+    if (!main_goroutine_registered) {
+        // Create a proper goroutine for the main script
+        main_script_fiber_->id = 1;  // Main goroutine ID
+        main_script_fiber_->name = "main-script";
+        main_script_fiber_->state = FiberState::RUNNING;
+        
+        // Create goroutine wrapper for main script
+        Scheduler::Goroutine* main_g = new Scheduler::Goroutine(1, "main-script", FiberPriority::NORMAL);
+        main_g->fiber = main_script_fiber_.get();
+        main_g->state = Scheduler::GoroutineState::Running;
+        
+        // Register in scheduler
+        scheduler_->registerMainGoroutine(main_g);
+        main_goroutine_registered = true;
+    }
+
     vm_->saveFiberState(main_script_fiber_.get());
 
     scheduler_->drainDeferredCallbacks();

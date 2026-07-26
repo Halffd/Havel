@@ -141,6 +141,16 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 	return nullptr;
 }
 
+void Scheduler::registerMainGoroutine(Goroutine* g) {
+    if (!g) return;
+    std::lock_guard lock(goroutines_mutex_);
+    // If there's already a goroutine with ID 1, replace it
+    goroutines_[1] = std::unique_ptr<Goroutine>(g);
+    // Add to runnable queue since it's running
+    runnable_queue_.push_back(goroutines_[1].get());
+    ::havel::info("[SCHEDULER] Registered main goroutine (id=1)");
+}
+
 Scheduler::Goroutine* Scheduler::pickNext() {
   Goroutine* result = nullptr;
 
@@ -160,10 +170,13 @@ Scheduler::Goroutine* Scheduler::pickNext() {
   // enqueue and pickNext (e.g. suspend() while still in queue).
   auto popRunnable = [&](std::deque<Goroutine*>& q, const char* label) -> Goroutine* {
       size_t limit = q.size();
+      ::havel::info("[SCHEDULER] popRunnable {}: initial queue size={}", label, q.size());
       for (size_t i = 0; i < limit && !q.empty(); i++) {
         auto* g = q.front();
         q.pop_front();
         if (!g) continue;
+        ::havel::info("[SCHEDULER] popRunnable {}: popped gid={} state={} fiber_state={}", 
+            label, g->id, static_cast<int>(g->state.load()), g->fiber ? static_cast<int>(g->fiber->state) : -1);
         // UAF defense: cleanupDoneGoroutines purges queue entries before
         // erasing the Goroutine. If we ever pop a Done goroutine here, a
         // purge was skipped — log loudly with timestamp so we can match
@@ -179,6 +192,9 @@ Scheduler::Goroutine* Scheduler::pickNext() {
           g->state = GoroutineState::Done;
           continue;
         }
+        ::havel::info("[SCHEDULER] popRunnable {}: checking state gid={} state={} match={}", 
+            label, g->id, static_cast<int>(g->state.load()), 
+            (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created));
         if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
           ::havel::info("[SCHEDULER] pickNext: selected {} gid={} state={}",
               label, g->id, static_cast<int>(g->state.load()));
@@ -187,16 +203,22 @@ Scheduler::Goroutine* Scheduler::pickNext() {
           return g;
         }
         // Non-runnable but not garbage: rotate to back
+        ::havel::info("[SCHEDULER] popRunnable {}: rotating gid={} state={}", label, g->id, static_cast<int>(g->state.load()));
         q.push_back(g);
       }
+      ::havel::info("[SCHEDULER] popRunnable {}: queue empty after processing, returning nullptr", label);
       return nullptr;
     };
 
     {
       std::lock_guard lock(priority_mutex_);
+      ::havel::info("[SCHEDULER] pickNext: before pop hotkey={} runnable={} bg={}",
+          hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
       result = popRunnable(hotkey_queue_, "HOTKEY");
       if (!result) result = popRunnable(runnable_queue_, "RUNNABLE");
       if (!result) result = popRunnable(background_queue_, "BACKGROUND");
+      ::havel::info("[SCHEDULER] pickNext: after pop hotkey={} runnable={} bg={}, result={}",
+          hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size(), result ? result->id : 0);
     }
 
   if (result) {

@@ -381,13 +381,17 @@ void* last_suspension_context_ = nullptr;
     std::unordered_map<uint32_t, Value> timeout_results_;
     std::unordered_map<uint32_t, Value> interval_results_;
 
-    // Closures captured by timer/thread callbacks (invisible to GC otherwise)
+// Closures captured by timer/thread callbacks (invisible to GC otherwise)
     std::unordered_map<uint32_t, CallbackId> interval_captured_closures_;
     std::unordered_map<uint32_t, CallbackId> timeout_captured_closures_;
     std::unordered_map<uint32_t, CallbackId> thread_captured_closures_;
-
+    
+    // Track suspended VM fibers waiting on channel receive
+    // Map channel_id -> suspended fiber (for main fiber suspension on channel receive)
+    std::unordered_map<uint32_t, Fiber*> channel_wait_map_;
+    mutable std::shared_mutex channel_wait_mutex_;
 	
- class EventQueue* event_queue_ = nullptr;
+class EventQueue* event_queue_ = nullptr;
  struct PendingTimerCallback {
  Value closure;
  uint32_t timer_id;
@@ -974,6 +978,11 @@ void* getSuspensionContext() const { return suspension_context_; }
 uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
 void* getLastSuspensionContext() const { return last_suspension_context_; }
 void clearLastSuspension() { last_suspension_reason_ = 0; last_suspension_context_ = nullptr; }
+
+  // Register a suspended fiber waiting on a channel receive
+  void registerChannelWait(uint32_t channel_id, Fiber* fiber);
+  // Resume a suspended fiber waiting on a channel receive
+  Fiber* resumeChannelWait(uint32_t channel_id);
 
   uint32_t getHostFunctionIndex(const std::string &name);
   void throwError(const std::string &msg);

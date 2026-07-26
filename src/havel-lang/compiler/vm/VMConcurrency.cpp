@@ -794,14 +794,19 @@ case OpCode::CHANNEL_SEND: {
 
 		case OpCode::CHANNEL_RECEIVE: {
 			Value channel_val = popStack();
+			::havel::info("[VM] CHANNEL_RECEIVE: channel_val.isChannelId={}", channel_val.isChannelId());
 
 			if (!channel_val.isChannelId()) {
 				COMPILER_THROW("CHANNEL_RECEIVE expects a channel");
 			}
 
+			::havel::info("[VM] CHANNEL_RECEIVE: invoking channel_receive");
 			Value result = invokeHostFunctionDirect("channel_receive", {channel_val});
+			::havel::info("[VM] CHANNEL_RECEIVE: channel_receive returned isNull={}, isChannelId={}", result.isNull(), result.isChannelId());
 			if (result.isNull()) {
+				::havel::info("[VM] CHANNEL_RECEIVE: trying channel.receive");
 				result = invokeHostFunctionDirect("channel.receive", {channel_val});
+				::havel::info("[VM] CHANNEL_RECEIVE: channel.receive returned isNull={}, isChannelId={}", result.isNull(), result.isChannelId());
 			}
 			pushStack(result);
 			break;

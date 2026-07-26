@@ -219,7 +219,8 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
     delete name_ptr;
     if (!watcher_registry_ || !vm_) return;
     auto fired = watcher_registry_->onVariableChanged(
-        var_name, [this](uint32_t wid) -> bool {
+        var_name,
+        [this](uint32_t wid) -> bool {
         const auto* w = watcher_registry_->getWatcher(wid);
         if (!w) return false;
         const compiler::BytecodeChunk* saved_chunk = nullptr;
@@ -233,7 +234,17 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
         compiler::DependencyTrackerScope scope(tracker);
         bool result = vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
         if (set_chunk) vm_->setCurrentChunkPublic(saved_chunk);
+        auto newDeps = tracker->getGlobalDependencies();
+        auto fieldDeps = tracker->getFieldDependencies();
+        newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+        watcher_registry_->updateDependencies(wid, newDeps);
         return result;
+    },
+        [this](uint32_t cleanup_func_id, uint32_t) {
+        try {
+            compiler::Value cleanup_func = compiler::Value::makeFunctionObjId(cleanup_func_id);
+            vm_->call(cleanup_func, {});
+        } catch (...) {}
     });
     std::vector<uint32_t> fired_func_ids;
     for (auto* fiber : fired) {

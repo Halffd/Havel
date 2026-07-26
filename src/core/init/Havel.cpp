@@ -324,23 +324,34 @@ scheduler = &compiler::Scheduler::instance();
 				if (!name_ptr) return;
 				std::string var_name = std::move(*name_ptr);
 				delete name_ptr;
-				auto fired = watcherRegistry->onVariableChanged(
-					var_name, [vm, watcherRegistry](uint32_t wid) -> bool {
-					const auto* w = watcherRegistry->getWatcher(wid);
-					if (!w) return false;
-					const compiler::BytecodeChunk* saved_chunk = nullptr;
-					bool set_chunk = false;
-					if (w->condition_chunk) {
-						saved_chunk = vm->getCurrentChunk();
-						vm->setCurrentChunkPublic(w->condition_chunk);
-						set_chunk = true;
-					}
-					auto tracker = std::make_shared<compiler::DependencyTracker>();
-					compiler::DependencyTrackerScope scope(tracker);
-					bool result = vm->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
-					if (set_chunk) vm->setCurrentChunkPublic(saved_chunk);
-					return result;
-				});
+			auto fired = watcherRegistry->onVariableChanged(
+				var_name,
+				[vm, watcherRegistry](uint32_t wid) -> bool {
+				const auto* w = watcherRegistry->getWatcher(wid);
+				if (!w) return false;
+				const compiler::BytecodeChunk* saved_chunk = nullptr;
+				bool set_chunk = false;
+				if (w->condition_chunk) {
+					saved_chunk = vm->getCurrentChunk();
+					vm->setCurrentChunkPublic(w->condition_chunk);
+					set_chunk = true;
+				}
+				auto tracker = std::make_shared<compiler::DependencyTracker>();
+				compiler::DependencyTrackerScope scope(tracker);
+				bool result = vm->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
+				if (set_chunk) vm->setCurrentChunkPublic(saved_chunk);
+				auto newDeps = tracker->getGlobalDependencies();
+				auto fieldDeps = tracker->getFieldDependencies();
+				newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+				watcherRegistry->updateDependencies(wid, newDeps);
+				return result;
+			},
+				[vm](uint32_t cleanup_func_id, uint32_t) {
+				try {
+					compiler::Value cleanup_func = compiler::Value::makeFunctionObjId(cleanup_func_id);
+					vm->call(cleanup_func, {});
+				} catch (...) {}
+			});
 				vm->processSignalBindings(var_name);
 				auto* sched = vm->getScheduler();
 				if (sched) {

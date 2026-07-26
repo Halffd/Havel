@@ -7557,88 +7557,59 @@ void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
         static_cast<uint32_t>(compiled_functions.size() - 1);
 
     
-    // Collect hotkey keys from statements (for cleanup function)
-    std::vector<std::string> hotkeyKeys;
+    // Separate hotkey and non-hotkey statements
+    std::vector<const ast::Statement *> hotkeyStmts;
+    std::vector<const ast::Statement *> otherStmts;
     for (const auto &stmt : whenBlock.statements) {
         if (!stmt) continue;
         if (stmt->kind == ast::NodeType::HotkeyBinding) {
-            const auto &binding = static_cast<const ast::HotkeyBinding &>(*stmt);
-            for (const auto &hkExpr : binding.hotkeys) {
-                if (auto *literal = dynamic_cast<const ast::HotkeyLiteral *>(hkExpr.get())) {
-                    hotkeyKeys.push_back(literal->combination);
-                }
-            }
+            hotkeyStmts.push_back(stmt.get());
+        } else {
+            otherStmts.push_back(stmt.get());
         }
     }
 
-    
-    // Compile body function with ALL statements (hotkey + non-hotkey).
-    // Hotkeys use hotkey.register (unconditional), not hotkey.register_conditional.
-    // The body runs only on false->true transition.
-    BytecodeFunction bodyFn("when_body");
-    enterFunction(std::move(bodyFn));
+    // Non-hotkey statements run in a body function via when.register
+    if (!otherStmts.empty()) {
+        BytecodeFunction bodyFn("when_body");
+        enterFunction(std::move(bodyFn));
 
-    auto prevConditionIndex = conditional_hotkey_condition_index_;
-    conditional_hotkey_condition_index_.reset();
-
-    for (const auto &stmt : whenBlock.statements) {
-        if (stmt) compileStatement(*stmt);
-    }
-    emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-    emit(OpCode::RETURN);
-
-    conditional_hotkey_condition_index_ = prevConditionIndex;
-    leaveFunction();
-
-    uint32_t body_func_index =
-        static_cast<uint32_t>(compiled_functions.size() - 1);
-
-    
-    // Compile cleanup function (called on true->false transition)
-    // Calls hotkey.remove(key) for each hotkey key in the when block
-    uint32_t cleanup_func_index = 0;
-    bool hasHotkeys = !hotkeyKeys.empty();
-    if (hasHotkeys) {
-        BytecodeFunction cleanupFn("when_cleanup");
-        enterFunction(std::move(cleanupFn));
-
-        for (const auto &key : hotkeyKeys) {
-            {
-                uint32_t sid = addStringConstant("hotkey.remove");
-                emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(sid));
-            }
-            {
-                uint32_t sid = addStringConstant(key);
-                emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid)));
-            }
-            emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
-            emit(OpCode::POP);
+        for (const auto *stmt : otherStmts) {
+            compileStatement(*stmt);
         }
         emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
         emit(OpCode::RETURN);
 
         leaveFunction();
-        cleanup_func_index = static_cast<uint32_t>(compiled_functions.size() - 1);
+
+        uint32_t body_func_index =
+            static_cast<uint32_t>(compiled_functions.size() - 1);
+
+        
+        // Call when.register(condition, body)
+        {
+            uint32_t strId = addStringConstant("when.register");
+            emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+        }
+        emit(OpCode::LOAD_CONST,
+            addConstant(Value::makeFunctionObjId(condition_func_index)));
+        emit(OpCode::LOAD_CONST,
+            addConstant(Value::makeFunctionObjId(body_func_index)));
+        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
+        emit(OpCode::POP);
     }
 
-    
-    // Call when.register(condition, body [, cleanup])
-    {
-        uint32_t strId = addStringConstant("when.register");
-        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+    // Hotkey statements use hotkey.register_conditional with the when condition
+    if (!hotkeyStmts.empty()) {
+        auto prevConditionIndex = conditional_hotkey_condition_index_;
+        conditional_hotkey_condition_index_ = condition_func_index;
+
+        for (const auto *stmt : hotkeyStmts) {
+            compileStatement(*stmt);
+        }
+
+        conditional_hotkey_condition_index_ = prevConditionIndex;
     }
-    emit(OpCode::LOAD_CONST,
-        addConstant(Value::makeFunctionObjId(condition_func_index)));
-    emit(OpCode::LOAD_CONST,
-        addConstant(Value::makeFunctionObjId(body_func_index)));
-    if (hasHotkeys) {
-        emit(OpCode::LOAD_CONST,
-            addConstant(Value::makeFunctionObjId(cleanup_func_index)));
-        emit(OpCode::CALL, Value(static_cast<uint32_t>(3)));
-    } else {
-        emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
-    }
-    emit(OpCode::POP);
 }
 
   // Compile hotkey binding: hotkey => action

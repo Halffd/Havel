@@ -382,10 +382,12 @@ DirectCallThunk VM::buildDirectCallThunk(CallbackId id) {
           tn = "interval";
         } else if (recv->isTimeoutId()) {
           tn = "timeout";
-        } else if (recv->isWaitGroupId()) {
-          tn = "waitgroup";
+} else if (recv->isWaitGroupId()) {
+            tn = "waitgroup";
         } else if (recv->isRangeId()) {
-          tn = "range";
+            tn = "range";
+        } else if (recv->isChannelId()) {
+            tn = "channel";
         } else if (recv->isHostFuncId()) {
           std::string receiver_name;
           if (recv->asHostFuncId() < host_function_names_.size()) {

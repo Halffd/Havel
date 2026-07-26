@@ -410,6 +410,11 @@ Value ConcurrencyBridge::channelSend(const std::vector<Value> &args) {
     it->second->queue.push(value);
     it->second->cv.notify_one();
 
+    // Resume any suspended VM fiber waiting on this channel
+    if (vm_) {
+        vm_->resumeChannelWait(channel_id);
+    }
+
     // Emit CHANNEL_RECV event so the ExecutionEngine can unpark
     // any goroutine that is suspended waiting for data on this channel
     if (event_queue_) {
@@ -420,6 +425,7 @@ Value ConcurrencyBridge::channelSend(const std::vector<Value> &args) {
 }
 
 Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
+    ::havel::info("[CONCURRENCY] channelReceive called, args.size={}", args.size());
     if (args.empty() || !args[0].isChannelId()) {
         return Value::makeNull();
     }
@@ -450,6 +456,8 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
     auto* sched = vm ? vm->getScheduler() : nullptr;
     if (sched) {
         auto* current_g = sched->current();
+        ::havel::info("[CONCURRENCY] channelReceive: sched={}, current_g={}, state={}", 
+            (void*)sched, current_g ? (void*)current_g : nullptr, current_g ? (int)current_g->state.load() : -1);
         if (current_g && current_g->state == Scheduler::GoroutineState::Running) {
             // Suspend the goroutine — the EventQueue will unpark us
             // when data arrives on this channel
@@ -459,6 +467,24 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
             vm->requestSuspension(
                 static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV),
                 reinterpret_cast<void*>(static_cast<intptr_t>(channel_id)));
+            ::havel::info("[CONCURRENCY] channelReceive: requested suspension for channel_id={}", channel_id);
+            return Value::makeNull(); // placeholder, replaced on resume
+        }
+        // Main fiber or non-running goroutine: also set wait_handle on main goroutine
+        else {
+            ::havel::info("[CONCURRENCY] channelReceive: main fiber suspending for channel_id={}", channel_id);
+            // Find main goroutine (id=1) and set its wait_handle
+            auto* main_g = sched->get(1);
+            if (main_g) {
+                main_g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
+                main_g->wait_handle.target_id = channel_id;
+                main_g->wait_handle.resume_value = Value::makeNull();
+                ::havel::info("[CONCURRENCY] channelReceive: set wait_handle on main goroutine for channel_id={}", channel_id);
+            }
+            vm->requestSuspension(
+                static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV),
+                reinterpret_cast<void*>(static_cast<intptr_t>(channel_id)));
+            ::havel::info("[CONCURRENCY] channelReceive: requested main fiber suspension for channel_id={}", channel_id);
             return Value::makeNull(); // placeholder, replaced on resume
         }
     }

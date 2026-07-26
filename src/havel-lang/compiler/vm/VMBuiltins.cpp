@@ -153,6 +153,17 @@ case OpCode::IMPORT: {
     // conflicts with the "debug" .hv module).
     // Lazy proxy objects must be activated before use, so skip the short-circuit.
     auto git = globals.find(path);
+        std::cerr << "[DBG-IMPORT-GENERIC] path='" << path << "' globals_size=" << globals.size()
+                  << " found=" << (git != globals.end())
+                  << " cid=" << currentFrame().closure_id << "\n";
+        if (path == "emitter") {
+            std::cerr << "[DBG-IMPORT-EMITTER] globals_size=" << globals.size()
+                      << " found=" << (git != globals.end())
+                      << " isObj=" << (git != globals.end() ? git->second.isObjectId() : false)
+                      << " isNull=" << (git != globals.end() ? git->second.isNull() : false)
+                      << " isHost=" << (git != globals.end() ? git->second.isHostFuncId() : false)
+                      << " cid=" << currentFrame().closure_id << "\n";
+        }
         if (git != globals.end() && git->second.isObjectId()) {
             auto *preObj = heap_.object(git->second.asObjectId());
             if (preObj) {

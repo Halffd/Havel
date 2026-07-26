@@ -58,6 +58,15 @@ case OpCode::LOAD_GLOBAL: {
 
   auto it = globals.find(name);
   if (it != globals.end()) {
+        if (name == "Emitter") {
+            std::cerr << "[DBG-LD-EMITTER] isHostFn=" << it->second.isHostFuncId()
+                      << " isClosure=" << it->second.isClosureId()
+                      << " isNull=" << it->second.isNull()
+                      << " isObj=" << it->second.isObjectId()
+                      << " globals_size=" << globals.size()
+                      << " owns_globals=" << cf.owns_globals
+                      << " closure_id=" << cf.closure_id << "\n";
+        }
         if (it->second.isObjectId()) {
             auto *obj = heap_.object(it->second.asObjectId());
             if (obj) {
@@ -118,6 +127,16 @@ case OpCode::STORE_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
             Value value = popStack();
+
+            if (name == "Emitter") {
+                std::cerr << "[DBG-STG-EMITTER] isHostFn=" << value.isHostFuncId()
+                          << " isClosure=" << value.isClosureId()
+                          << " isNull=" << value.isNull()
+                          << " isObj=" << value.isObjectId()
+                          << " globals_size=" << globals.size()
+                          << " owns_globals=" << cf_store.owns_globals
+                          << " closure_id=" << cf_store.closure_id << "\n";
+            }
 
             // Materialize StringValId to heap StringId so cross-chunk reads work
             if (value.isStringValId() || value.isRegexValId()) {
@@ -709,6 +728,10 @@ op_LOAD_CONST: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        // Check for suspension request (e.g., channel receive, thread join)
+        if (suspension_requested_) {
+            return;
+        }
         if (!pending_calls.empty()) {
             processPendingCalls();
             if (exit_requested_.load()) return;

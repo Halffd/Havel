@@ -1,4 +1,4 @@
-#include "ByteCompiler.hpp"
+#include "BootstrapByteCompiler.hpp"
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/errors/ErrorSystem.h"
 #include <algorithm>

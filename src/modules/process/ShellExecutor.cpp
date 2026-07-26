@@ -11,8 +11,84 @@
 #include <sys/wait.h>
 #include <cstring>
 #include <cerrno>
+#include <vector>
+#include <string>
 
 namespace havel {
+
+// Whitelist of allowed commands for shell execution
+static const std::vector<std::string> ALLOWED_COMMANDS = {
+    "ls", "cat", "echo", "grep", "find", "wc", "head", "tail",
+    "mkdir", "rmdir", "cp", "mv", "rm", "touch", "stat",
+    "ps", "df", "du", "free", "uptime", "whoami", "id",
+    "date", "cal", "sleep", "sort", "uniq", "cut", "tr",
+    "awk", "sed", "tee", "xargs", "which", "whereis",
+    "git", "cargo", "npm", "make", "cmake", "clang", "gcc",
+    "python3", "python", "node", "deno", "bun",
+    "ssh", "scp", "rsync", "curl", "wget", "ping", "dig",
+    "tar", "gzip", "gunzip", "zip", "unzip", "bzip2", "bunzip2"
+};
+
+// Check if a command is in the allowlist
+static bool isCommandAllowed(const std::string& command) {
+    // Extract the first word (command name)
+    std::string cmd;
+    size_t pos = command.find_first_not_of(" \t");
+    if (pos != std::string::npos) {
+        size_t end = command.find_first_of(" \t", pos);
+        cmd = command.substr(pos, end - pos);
+    }
+    
+    // Get basename of command (in case full path provided)
+    size_t slashPos = cmd.rfind('/');
+    if (slashPos != std::string::npos) {
+        cmd = cmd.substr(slashPos + 1);
+    }
+    
+    for (const auto& allowed : ALLOWED_COMMANDS) {
+        if (allowed == cmd) return true;
+    }
+    return false;
+}
+
+// Safer argument parsing that avoids shell metacharacters
+static std::vector<std::string> parseCommandArgs(const std::string& command) {
+    std::vector<std::string> args;
+    std::string current;
+    bool inDQuote = false, inSQuote = false;
+    bool escape = false;
+    
+    for (size_t i = 0; i < command.size(); ++i) {
+        char c = command[i];
+        if (escape) {
+            current += c;
+            escape = false;
+            continue;
+        }
+        if (c == '\\' && !inSQuote) {
+            escape = true;
+            continue;
+        }
+        if (c == '"' && !inSQuote) {
+            inDQuote = !inDQuote;
+            continue;
+        }
+        if (c == '\'' && !inDQuote) {
+            inSQuote = !inSQuote;
+            continue;
+        }
+        if (!inDQuote && !inSQuote && std::isspace(c)) {
+            if (!current.empty()) {
+                args.push_back(current);
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+    if (!current.empty()) args.push_back(current);
+    return args;
+}
 
 ShellResult ShellExecutor::executeShell(const std::string& command) {
     return executeSingle(command, true);
@@ -45,6 +121,16 @@ ShellResult ShellExecutor::executeChain(const std::vector<std::string>& commands
     
     if (commands.size() == 1) {
         return executeSingle(commands[0], true);
+    }
+    
+    // Validate all commands in chain
+    for (const auto& cmd : commands) {
+        if (!isCommandAllowed(cmd)) {
+            result.success = false;
+            result.error = "Command not allowed: " + cmd;
+            result.exitCode = 126;
+            return result;
+        }
     }
     
     // Implement proper Unix pipes with pipe()/fork()/dup2()/exec()
@@ -87,17 +173,12 @@ ShellResult ShellExecutor::executeChain(const std::vector<std::string>& commands
             result.exitCode = 1;
             
             // Close all pipe ends
-            for (int fd : pipes) {
-                close(fd);
-            }
+            for (int fd : pipes) close(fd);
             close(outputPipe[0]);
             close(outputPipe[1]);
             
             // Wait for any started processes
-            for (pid_t startedPid : pids) {
-                waitpid(startedPid, nullptr, 0);
-            }
-            
+            for (pid_t startedPid : pids) waitpid(startedPid, nullptr, 0);
             return result;
         }
         
@@ -121,16 +202,26 @@ ShellResult ShellExecutor::executeChain(const std::vector<std::string>& commands
             }
             
             // Close all pipe ends in child
-            for (int fd : pipes) {
-                close(fd);
-            }
+            for (int fd : pipes) close(fd);
             close(outputPipe[0]);
             close(outputPipe[1]);
             
-            // Execute command through shell
-            execl("/bin/sh", "sh", "-c", commands[i].c_str(), nullptr);
+            // Parse command and execute directly (NO SHELL)
+            auto args = parseCommandArgs(commands[i]);
+            if (args.empty()) _exit(127);
             
-            // If exec fails
+            // Validate command is allowed
+            if (!isCommandAllowed(commands[i])) _exit(126);
+            
+            // Execute directly using execvp
+            std::vector<char*> cargv;
+            cargv.reserve(args.size() + 1);
+            for (const auto& a : args) {
+                cargv.push_back(const_cast<char*>(a.c_str()));
+            }
+            cargv.push_back(nullptr);
+            
+            execvp(cargv[0], cargv.data());
             _exit(127);
         }
         
@@ -138,10 +229,8 @@ ShellResult ShellExecutor::executeChain(const std::vector<std::string>& commands
         pids.push_back(pid);
     }
     
-    // Parent: close all pipe ends (child has duplicates)
-    for (int fd : pipes) {
-        close(fd);
-    }
+    // Parent: close all pipe ends (children have duplicates)
+    for (int fd : pipes) close(fd);
     close(outputPipe[1]);  // Close write end, only read
     
     // Read stdout/stderr from last command
@@ -215,6 +304,14 @@ std::vector<std::string> ShellExecutor::splitPipes(const std::string& command) {
 ShellResult ShellExecutor::executeSingle(const std::string& command, bool useShell) {
     ShellResult result;
     
+    // Validate command is allowed
+    if (!isCommandAllowed(command)) {
+        result.success = false;
+        result.error = "Command not allowed: " + command;
+        result.exitCode = 126;
+        return result;
+    }
+    
     if (useShell) {
         auto launcherResult = Launcher::runShell(command);
         result.stdout = launcherResult.stdout;
@@ -223,27 +320,8 @@ ShellResult ShellExecutor::executeSingle(const std::string& command, bool useShe
         result.success = launcherResult.success;
         result.error = launcherResult.error;
     } else {
-        // Parse command and args
-        std::vector<std::string> args;
-        std::string current;
-        bool inQuotes = false;
-        
-        for (char c : command) {
-            if (c == '"') {
-                inQuotes = !inQuotes;
-            } else if (c == ' ' && !inQuotes) {
-                if (!current.empty()) {
-                    args.push_back(current);
-                    current.clear();
-                }
-            } else {
-                current += c;
-            }
-        }
-        if (!current.empty()) {
-            args.push_back(current);
-        }
-        
+        // Parse command and execute directly without shell
+        auto args = parseCommandArgs(command);
         if (args.empty()) {
             result.success = false;
             result.error = "Empty command";

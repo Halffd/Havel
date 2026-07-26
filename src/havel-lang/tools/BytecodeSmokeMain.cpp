@@ -1,7 +1,7 @@
-#include "havel-lang/compiler/core/ByteCompiler.hpp"
+#include "havel-lang/compiler/core/BootstrapByteCompiler.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
-#include "havel-lang/parser/Parser.h"
+#include "havel-lang/parser/BootstrapParser.h"
 
 #include <cstdint>
 #include <deque>

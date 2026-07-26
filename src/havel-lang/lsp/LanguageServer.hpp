@@ -1,8 +1,8 @@
 #pragma once
 
-#include "bootstrap/lexer/Lexer.hpp"
-#include "parser/Parser.h"
-#include "ast/AST.h"
+#include "lexer/Lexer.hpp"
+#include "parser/BootstrapParser.h"
+#include "ast/BootstrapAST.h"
 #include "utils/Logger.hpp"
 #include <nlohmann/json.hpp>
 #include <string>

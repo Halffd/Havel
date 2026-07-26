@@ -2,12 +2,12 @@
 #include "../../../utils/Logger.hpp"
 
 #include "../../errors/ErrorSystem.h"
-#include "bootstrap/lexer/Lexer.hpp"
-#include "../../parser/Parser.h"
+#include "lexer/Lexer.hpp"
+#include "../../parser/BootstrapParser.h"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../semantic/TypeChecker.hpp"
 #include "../vm/VM.hpp"
-#include "ByteCompiler.hpp"
+#include "BootstrapByteCompiler.hpp"
 
 #include "../../stdlib/RuntimeErrorTracker.hpp"
 #include <algorithm>

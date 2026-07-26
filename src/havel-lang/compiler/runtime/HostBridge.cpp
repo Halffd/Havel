@@ -15,10 +15,10 @@
 #include "../../../host/ui/UIManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "havel-lang/compiler/vm/VMApi.hpp"
-#include "havel-lang/parser/Parser.h"
-#include "havel-lang/compiler/core/ByteCompiler.hpp"
+#include "havel-lang/parser/BootstrapParser.h"
+#include "havel-lang/compiler/core/BootstrapByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
-#include "bootstrap/lexer/Lexer.hpp"
+#include "havel-lang/lexer/Lexer.hpp"
 
 #include <fstream>
 #include "../../../host/app/AppService.hpp"

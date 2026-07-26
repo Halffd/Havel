@@ -1081,17 +1081,6 @@ havel_core
 
 
 # ==============================================================================
-# BOOTSTRAP COMPILER (Stage 0)
-# ==============================================================================
-# Minimal C++ compiler that compiles self-hosted modules to .hvc bytecode.
-# Stale .hvc files caused the ::x[::y] parsing bug (lookahead>0 fix in Parser.cpp).
-# Bootstrap is only built when Havel Lang is enabled.
-if(ENABLE_HAVEL_LANG)
-    include(${CMAKE_SOURCE_DIR}/cmake/BootstrapCompiler.cmake)
-endif()
-
-
-# ==============================================================================
 # LANGUAGE SERVER PROTOCOL SERVER
 # ==============================================================================
 
@@ -1099,13 +1088,13 @@ endif()
 set(LSP_SOURCES
 src/havel-lang/lsp/main.cpp
   src/havel-lang/lsp/LanguageServer.cpp
-  src/havel-lang/ast/AST.cpp
+  src/havel-lang/ast/BootstrapAST.cpp
   src/havel-lang/lexer/Lexer.cpp
-  src/havel-lang/parser/Parser.cpp
+  src/havel-lang/parser/BootstrapParser.cpp
   src/c/LoggerC.c
- src/c/Config.c
- src/dl/Loader.c
- )
+  src/c/Config.c
+  src/dl/Loader.c
+  )
 
 add_executable(havel-lsp ${LSP_SOURCES})
 
@@ -1121,6 +1110,7 @@ target_compile_options(havel-lsp PRIVATE -fno-lto)
 target_link_options(havel-lsp PRIVATE -fno-lto)
 
 target_include_directories(havel-lsp PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/havel-lang/lexer
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/havel-lang

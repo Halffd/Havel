@@ -7,7 +7,7 @@
  */
 #pragma once
 
-#include "havel-lang/ast/AST.h"
+#include "havel-lang/ast/BootstrapAST.h"
 #include <string>
 #include <vector>
 

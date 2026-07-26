@@ -300,6 +300,7 @@ struct CallFrame {
   
         // Function properties support (fn.prop = value for static state, memoization, etc.)
         std::unordered_map<uint32_t, ObjectRef> function_properties_; // function_index -> properties object
+        uint32_t bind_count_ = 0;
         std::unordered_map<uint32_t, ObjectRef> closure_properties_;  // closure_id -> properties object
         std::unordered_map<uint32_t, ObjectRef> hostfunc_properties_; // host_func_idx -> properties object
     std::unordered_map<CallbackId, DirectCallThunk> direct_call_thunks_;

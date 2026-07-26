@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../core/BytecodeIR.hpp"
+#include "VMImage.hpp"
 #include "VM.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 
@@ -82,90 +83,90 @@ struct VMApi {
         if (!obj.isObjectId()) {
             throw std::runtime_error("VMApi::setField: expected object");
         }
-        vm().setHostObjectField(ObjectRef{obj.asObjectId(), true}, key, std::move(value));
+        vm().setHostObjectField(havel::compiler::ObjectRef{obj.asObjectId(), true}, key, std::move(value));
     }
 
     std::vector<std::string> getObjectKeys(Value obj) const {
         if (!obj.isObjectId())
             return {};
-        return vm().getHostObjectKeys(ObjectRef{obj.asObjectId(), true});
+        return vm().getHostObjectKeys(havel::compiler::ObjectRef{obj.asObjectId(), true});
     }
 
     bool hasField(Value obj, const std::string &key) const {
         if (!obj.isObjectId())
             return false;
-        return vm().hasHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
+        return vm().hasHostObjectField(havel::compiler::ObjectRef{obj.asObjectId(), true}, key);
     }
 
     Value getField(Value obj, const std::string &key) const {
         if (!obj.isObjectId())
             return Value::makeNull();
-        return vm().getHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
+        return vm().getHostObjectField(havel::compiler::ObjectRef{obj.asObjectId(), true}, key);
     }
 
   bool deleteField(Value obj, const std::string &key) const {
     if (!obj.isObjectId())
       return false;
-    return vm().deleteHostObjectField(ObjectRef{obj.asObjectId(), true}, key);
+    return vm().deleteHostObjectField(havel::compiler::ObjectRef{obj.asObjectId(), true}, key);
   }
 
   void freeze(Value obj) const {
     if (!obj.isObjectId())
       return;
-    vm().setHostObjectFrozen(ObjectRef{obj.asObjectId(), true}, true);
+    vm().setHostObjectFrozen(havel::compiler::ObjectRef{obj.asObjectId(), true}, true);
   }
 
   void seal(Value obj) const {
     if (!obj.isObjectId())
       return;
-    vm().setHostObjectSealed(ObjectRef{obj.asObjectId(), true}, true);
+    vm().setHostObjectSealed(havel::compiler::ObjectRef{obj.asObjectId(), true}, true);
   }
 
   bool isFrozen(Value obj) const {
     if (!obj.isObjectId())
       return false;
-    return vm().hasHostObjectField(ObjectRef{obj.asObjectId(), true}, "__frozen__");
+    return vm().hasHostObjectField(havel::compiler::ObjectRef{obj.asObjectId(), true}, "__frozen__");
   }
 
   bool isSealed(Value obj) const {
     if (!obj.isObjectId())
       return false;
-    return vm().hasHostObjectField(ObjectRef{obj.asObjectId(), true}, "__sealed__");
+    return vm().hasHostObjectField(havel::compiler::ObjectRef{obj.asObjectId(), true}, "__sealed__");
   }
 
     void push(Value arr, Value value) const {
         if (!arr.isArrayId()) {
             throw std::runtime_error("VMApi::push: expected array");
         }
-        vm().pushHostArrayValue(ArrayRef{arr.asArrayId()}, std::move(value));
+        vm().pushHostArrayValue(havel::compiler::ArrayRef{arr.asArrayId()}, std::move(value));
     }
 
   Value pop(Value arr) const {
     if (!arr.isArrayId()) {
       throw std::runtime_error("VMApi::pop: expected array");
     }
-    return vm().popHostArrayValue(ArrayRef{arr.asArrayId()});
+    return vm().popHostArrayValue(havel::compiler::ArrayRef{arr.asArrayId()});
   }
 
   void insertAt(Value arr, uint32_t index, Value value) const {
     if (!arr.isArrayId()) {
       throw std::runtime_error("VMApi::insertAt: expected array");
     }
-    vm().insertHostArrayValue(ArrayRef{arr.asArrayId()}, index, std::move(value));
+    vm().insertHostArrayValue(havel::compiler::ArrayRef{arr.asArrayId()}, index, std::move(value));
   }
 
   Value removeAt(Value arr, uint32_t index) const {
     if (!arr.isArrayId()) {
       throw std::runtime_error("VMApi::removeAt: expected array");
     }
-    return vm().removeHostArrayValue(ArrayRef{arr.asArrayId()}, index);
+    return vm().removeHostArrayValue(havel::compiler::ArrayRef{arr.asArrayId()}, index);
   }
 
     uint32_t length(Value arr) const {
         if (arr.isArrayId()) {
-            return (uint32_t)vm().getHostArrayLength(ArrayRef{arr.asArrayId()});
+            return (uint32_t)vm().getHostArrayLength(havel::compiler::ArrayRef{arr.asArrayId()});
         } else if (arr.isStringId()) {
-            return (uint32_t)vm().getRuntimeStringLength(StringRef{arr.asStringId()});
+            return (uint32_t)vm().getRuntimeStringLength(havel::compiler::StringRef{arr.asStringId()});
         }
         return 0;
     }
@@ -173,13 +174,13 @@ struct VMApi {
     Value getAt(Value arr, uint32_t index) const {
         if (!arr.isArrayId())
             return Value::makeNull();
-        return vm().getHostArrayValue(ArrayRef{arr.asArrayId()}, index);
+        return vm().getHostArrayValue(havel::compiler::ArrayRef{arr.asArrayId()}, index);
     }
 
     void setAt(Value arr, uint32_t index, Value value) const {
         if (!arr.isArrayId())
             return;
-        vm().setHostArrayValue(ArrayRef{arr.asArrayId()}, index, std::move(value));
+        vm().setHostArrayValue(havel::compiler::ArrayRef{arr.asArrayId()}, index, std::move(value));
     }
 
     template <typename F>
@@ -279,12 +280,12 @@ struct VMApi {
     sched->deferToVM(std::forward<F>(fn));
   }
 
-    VMImage createImage(int width, int height, int stride, PixelFormat format,
+    havel::compiler::VMImage createImage(int width, int height, int stride, havel::compiler::PixelFormat format,
                         const uint8_t *data) const {
         return vm().createImage(width, height, stride, format, data);
     }
 
-    VMImage createImageFromRGBA(int width, int height,
+    havel::compiler::VMImage createImageFromRGBA(int width, int height,
                                 const std::vector<uint8_t> &rgbaData) const {
         return vm().createImageFromRGBA(width, height, rgbaData);
     }
@@ -295,22 +296,22 @@ struct VMApi {
 
     uint32_t getEnumTag(Value val) const {
         if (!val.isEnumId()) return 0;
-        return vm().getEnumTag(EnumRef{val.asEnumId()});
+        return vm().getEnumTag(havel::compiler::EnumRef{val.asEnumId()});
     }
 
     Value getEnumPayload(Value val, size_t index) const {
         if (!val.isEnumId()) return Value::makeNull();
-        return vm().getEnumPayload(EnumRef{val.asEnumId()}, index);
+        return vm().getEnumPayload(havel::compiler::EnumRef{val.asEnumId()}, index);
     }
 
     uint32_t getEnumValueCount(Value val) const {
         if (!val.isEnumId()) return 0;
-        return vm().getEnumPayloadCount(EnumRef{val.asEnumId()});
+        return vm().getEnumPayloadCount(havel::compiler::EnumRef{val.asEnumId()});
     }
 
     uint32_t getEnumPayloadCount(Value val) const {
         if (!val.isEnumId()) return 0;
-        return vm().getEnumPayloadCount(EnumRef{val.asEnumId()});
+        return vm().getEnumPayloadCount(havel::compiler::EnumRef{val.asEnumId()});
     }
 
     std::string getEnumTypeName(uint32_t typeId) const {

@@ -3,9 +3,11 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "bootstrap/lexer/Lexer.hpp"
+#include "lexer/Lexer.hpp"
 
 namespace havel {
+using TokenType = TokenType;
+using Token = Token;
 
 enum class HighlightType {
     None,

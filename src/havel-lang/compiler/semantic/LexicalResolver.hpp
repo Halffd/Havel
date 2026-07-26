@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../core/BytecodeIR.hpp"
-#include "../../ast/AST.h"
+#include "../../ast/BootstrapAST.h"
 #include <optional>
 #include <string>
 #include <unordered_map>

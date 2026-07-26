@@ -10,8 +10,8 @@
 //
 // partial(fn, ...args) - alias for bind
 //
-// curry(fn) - transform fn(a,b,c) => fn(a)(b)(c)
-// uncurry(fn) - transform fn(a)(b)(c) => fn(a,b,c)
+// curry(fn) - transform fn(a,b,c) => func(a)(b)(c)
+// uncurry(fn) - transform func(a)(b)(c) => fn(a,b,c)
 //
 // compose(f, g) - f(g(x))
 // pipe(f, g) - g(f(x))
@@ -24,42 +24,42 @@
 // bind / partial
 // ============================================================
 
-fn bind(fn, ...boundArgs) {
-  fn(...boundArgs, ...arguments)
+fn bind(func, ...boundArgs) {
+  func(...boundArgs, ...arguments)
 }
 
-fn bindRight(fn, ...boundArgs) {
-  fn(...arguments, ...boundArgs)
+fn bindRight(func, ...boundArgs) {
+  func(...arguments, ...boundArgs)
 }
 
-fn partial(fn, ...boundArgs) {
-  bind(fn, ...boundArgs)
+fn partial(func, ...boundArgs) {
+  bind(func, ...boundArgs)
 }
 
 // ============================================================
 // curry / uncurry
 // ============================================================
 
-fn curry(fn) {
-  if fn.length() <= 1 { return fn }
-  fn(a) {
-    fn(b) {
-      fn(a, b)
+fn curry(func) {
+  if func.length() <= 1 { return func }
+  func(a) {
+    func(b) {
+      func(a, b)
     }
   }
 }
 
 // For functions with more than 2 args, we'd need a more complex implementation
 // This is a basic 2-arg curry. For N-ary curry, use the general version:
-fn curryN(fn) {
-  fn length() <= 1 { return fn }
-  fn firstArg {
-    curryN(fn.bind(firstArg))
+fn curryN(func) {
+  func.length() <= 1 { return func }
+  firstArg {
+    curryN(func.bind(firstArg))
   }
 }
 
-fn uncurry(fn) {
-  fn(a, b) { fn(a)(b) }
+fn uncurry(func) {
+  func(a, b) { func(a)(b) }
 }
 
 // ============================================================
@@ -67,26 +67,26 @@ fn uncurry(fn) {
 // ============================================================
 
 fn compose(f, g) {
-  fn(x) { f(g(x)) }
+  func(x) { f(g(x)) }
 }
 
 fn pipe(f, g) {
-  fn(x) { g(f(x)) }
+  func(x) { g(f(x)) }
 }
 
 // Multi-function compose: compose(f, g, h)(x) => f(g(h(x)))
 fn composeMany(...fns) {
-  fns.length() == 0 { return fn(x) { x } }
+  fns.length() == 0 { return func(x) { x } }
   fns.length() == 1 { return fns[0] }
   // Right-to-left composition
-  reduce(fns, fn(acc, fn) { compose(fn, acc) }, fns[0])
+  reduce(fns, func(acc, fn) { compose(fn, acc) }, fns[0])
 }
 
 // Multi-function pipe: pipe(f, g, h)(x) => h(g(f(x)))
 fn pipeMany(...fns) {
-  fns.length() == 0 { return fn(x) { x } }
+  fns.length() == 0 { return func(x) { x } }
   fns.length() == 1 { return fns[0] }
-  reduce(fns, fn(acc, fn) { pipe(acc, fn) }, fns[0])
+  reduce(fns, func(acc, fn) { pipe(acc, fn) }, fns[0])
 }
 
 // ============================================================
@@ -94,13 +94,13 @@ fn pipeMany(...fns) {
 // ============================================================
 
 fn flip(f) {
-  fn(a, b) { f(b, a) }
+  func(a, b) { f(b, a) }
 }
 
 fn identity(x) { x }
 
 fn constant(v) {
-  fn(_) { v }
+  func(_) { v }
 }
 
 // ============================================================
@@ -108,65 +108,65 @@ fn constant(v) {
 // ============================================================
 
 // Apply function to each argument: apply(fn, [a,b,c]) => fn(a,b,c)
-fn apply(fn, args) {
-  fn(...args)
+fn apply(func, args) {
+  func(...args)
 }
 
 // Thread value through functions: thread(x, f, g, h) => h(g(f(x)))
 fn thread(val, ...fns) {
   val = val
-  for fn in fns {
-    val = fn(val)
+  for f in fns {
+    val = f(val)
   }
   val
 }
 
 // Fixpoint combinator (for recursive anonymous functions)
 fn fix(f) {
-  fn(x) { f(fix(f))(x) }
+  func(x) { f(fix(f))(x) }
 }
 
 // Memoize a single-argument function
-fn memoize(fn) {
+fn memoize(func) {
   cache = {}
-  fn(x) {
+  func(x) {
     key = "${x}"
     if cache.has(key) { return cache[key] }
-    result = fn(x)
+    result = func(x)
     cache[key] = result
     result
   }
 }
 
 // Debounce: delay function execution
-fn debounce(fn, ms) {
+fn debounce(func, ms) {
   timer = null
-  fn(...args) {
+  func(...args) {
     if timer != null { clearTimeout(timer) }
-    timer = setTimeout(fn.bind(this, ...args), ms)
+    timer = setTimeout(func.bind(this, ...args), ms)
   }
 }
 
 // Throttle: limit function execution rate
-fn throttle(fn, ms) {
+fn throttle(func, ms) {
   lastCall = 0
-  fn(...args) {
+  func(...args) {
     now = Date.now()
     if now - lastCall >= ms {
       lastCall = now
-      fn(...args)
+      func(...args)
     }
   }
 }
 
 // Once: function that only executes once
-fn once(fn) {
+fn once(func) {
   called = false
   result = null
-  fn(...args) {
+  func(...args) {
     if !called {
       called = true
-      result = fn(...args)
+      result = func(...args)
     }
     result
   }

@@ -127,15 +127,12 @@ void registerTimeModule(const VMApi &api) {
         else
           throw std::runtime_error("time.sleep() requires numeric argument");
         
-        std::cerr << "[TIME] time.sleep called with ms=" << ms << ", isInGoroutine=" << api.isInGoroutine() << std::endl;
         if (api.isInGoroutine()) {
-          std::cerr << "[TIME] In goroutine, requesting suspension for " << ms << "ms" << std::endl;
           api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
                                     reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
-          std::cerr << "[TIME] Suspension requested, returning null" << std::endl;
+          api.processPendingEvents();
           return Value::makeNull();
         }
-        std::cerr << "[TIME] Not in goroutine, using chunkedSleep for " << ms << "ms" << std::endl;
         api.chunkedSleep(ms);
         return Value::makeNull();
       });

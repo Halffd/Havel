@@ -3529,11 +3529,11 @@ registerPrototypeMethodByName("interval", "pause", "interval.pause");
 }
 
 Value VM::invokeHostFunction(const std::string &name,
- uint32_t arg_count) {
- auto it = host_functions.find(name);
- if (it == host_functions.end()) {
- COMPILER_THROW("Host function not found: " + name);
- }
+  uint32_t arg_count) {
+  auto it = host_functions.find(name);
+  if (it == host_functions.end()) {
+    COMPILER_THROW("Host function not found: " + name);
+  }
 
 
   std::vector<Value> args(arg_count);
@@ -3541,11 +3541,17 @@ Value VM::invokeHostFunction(const std::string &name,
     if (stack.empty()) {
       COMPILER_THROW("Stack underflow while reading host arguments");
     }
-      args[arg_count - 1 - i] = stack.top();
-      stack.pop();
-    }
+    args[arg_count - 1 - i] = stack.top();
+    stack.pop();
+  }
 
-  return it->second(args);
+  Value result = it->second(args);
+  
+  if (suspension_requested_ && yield_callback_) {
+    yield_callback_();
+  }
+  
+  return result;
 }
 
 Value VM::invokeHostFunctionDirect(const std::string &name,

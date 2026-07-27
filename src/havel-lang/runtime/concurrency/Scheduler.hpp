@@ -649,7 +649,7 @@ private:
   // Goroutine storage and queues
   std::unordered_map<uint32_t, std::unique_ptr<Goroutine>> goroutines_;
   mutable std::mutex goroutines_mutex_;
-  uint32_t next_goroutine_id_ = 1;
+  uint32_t next_goroutine_id_ = 2; // Start at 2 since ID 1 is reserved for main script
 
   // Priority queues: hotkey fibers are prepended (immediate), normal/fg fibers use FIFO
   std::deque<Goroutine*> hotkey_queue_;    // HOTKEY priority (prepended)

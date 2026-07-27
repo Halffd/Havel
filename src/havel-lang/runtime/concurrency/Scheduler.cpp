@@ -148,6 +148,8 @@ void Scheduler::registerMainGoroutine(Goroutine* g) {
     goroutines_[1] = std::unique_ptr<Goroutine>(g);
     // Add to runnable queue since it's running
     runnable_queue_.push_back(goroutines_[1].get());
+    // Reserve ID 1 for main goroutine, start assigning from 2
+    next_goroutine_id_ = 2;
     ::havel::info("[SCHEDULER] Registered main goroutine (id=1)");
 }
 
@@ -212,13 +214,9 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 
     {
       std::lock_guard lock(priority_mutex_);
-      ::havel::info("[SCHEDULER] pickNext: before pop hotkey={} runnable={} bg={}",
-          hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
       result = popRunnable(hotkey_queue_, "HOTKEY");
       if (!result) result = popRunnable(runnable_queue_, "RUNNABLE");
       if (!result) result = popRunnable(background_queue_, "BACKGROUND");
-      ::havel::info("[SCHEDULER] pickNext: after pop hotkey={} runnable={} bg={}, result={}",
-          hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size(), result ? result->id : 0);
     }
 
   if (result) {

@@ -709,6 +709,7 @@ op_LOAD_CONST: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
         // Check for suspension request (e.g., channel receive, thread join)
         if (suspension_requested_) {
             return;
@@ -745,6 +746,7 @@ op_LOAD_VAR: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -776,6 +778,7 @@ op_STORE_VAR: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -798,6 +801,7 @@ op_POP: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -852,6 +856,7 @@ op_CALL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
         if (!pending_calls.empty()) {
             processPendingCalls();
             if (exit_requested_.load()) return;
@@ -921,6 +926,7 @@ op_LOAD_GLOBAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -954,6 +960,7 @@ op_STORE_GLOBAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -986,6 +993,7 @@ op_STORE_IMMUT_GLOBAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1013,6 +1021,7 @@ op_STORE_IMMUT_VAR: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1036,6 +1045,7 @@ op_LOAD_UPVALUE: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1059,6 +1069,7 @@ op_STORE_UPVALUE: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1131,6 +1142,7 @@ op_INCLOCAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1166,6 +1178,7 @@ op_DECLOCAL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1198,6 +1211,7 @@ op_INCLOCAL_POST: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1230,6 +1244,7 @@ op_DECLOCAL_POST: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1259,6 +1274,7 @@ op_BIT_LSH: op_BIT_RSH: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
     }
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1473,6 +1489,7 @@ op_default: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
+        if (suspension_requested_) { return; }
         if (!pending_calls.empty()) {
             processPendingCalls();
             if (exit_requested_.load()) return;

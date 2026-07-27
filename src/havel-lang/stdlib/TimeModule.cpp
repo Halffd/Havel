@@ -4,9 +4,11 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <thread>
 
+#include "utils/Logger.hpp"
 #include "havel-lang/core/Value.hpp"
 #include "havel-lang/runtime/concurrency/Fiber.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
@@ -112,7 +114,7 @@ void registerTimeModule(const VMApi &api) {
         return Value(static_cast<int64_t>(time) * 1000);
       });
 
-  // time.sleep(ms) — non-blocking if in a goroutine
+// time.sleep(ms) — non-blocking if in a goroutine
   api.registerFunction(
       "time.sleep", [api](const std::vector<Value> &args) {
         if (args.empty())
@@ -125,14 +127,15 @@ void registerTimeModule(const VMApi &api) {
         else
           throw std::runtime_error("time.sleep() requires numeric argument");
         
-        
-        // If we are running in a goroutine, suspend instead of blocking the thread
-  if (api.isInGoroutine()) {
-    api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
-                                   reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
-            return Value::makeNull();
+        std::cerr << "[TIME] time.sleep called with ms=" << ms << ", isInGoroutine=" << api.isInGoroutine() << std::endl;
+        if (api.isInGoroutine()) {
+          std::cerr << "[TIME] In goroutine, requesting suspension for " << ms << "ms" << std::endl;
+          api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
+                                    reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
+          std::cerr << "[TIME] Suspension requested, returning null" << std::endl;
+          return Value::makeNull();
         }
-
+        std::cerr << "[TIME] Not in goroutine, using chunkedSleep for " << ms << "ms" << std::endl;
         api.chunkedSleep(ms);
         return Value::makeNull();
       });

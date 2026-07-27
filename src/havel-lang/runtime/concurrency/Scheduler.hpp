@@ -461,6 +461,8 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   // Register the main script as a goroutine
   void registerMainGoroutine(Goroutine* g);
 
+  void incrementNextGoroutineId();
+
   void yield(Goroutine* g);
   // Yield current goroutine and allow other goroutines to run
   void yieldCurrentAndCheckTimers();
@@ -468,6 +470,9 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
 void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
   // Add a pre-created Action Fiber to the scheduler with priority
   void addActionFiber(Fiber* fiber, FiberPriority priority = FiberPriority::NORMAL);
+
+    // Enqueue a goroutine to the back of its priority queue
+    void enqueue(Goroutine* g);
 
     // Re-enqueue an existing goroutine to front of its priority queue
     // Used by persistent hotkey goroutines to avoid per-press allocation

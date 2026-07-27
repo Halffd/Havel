@@ -597,7 +597,6 @@ void VM::registerDefaultHostFunctions() {
     });
   }
   registerHostFunction("print", [this](const std::vector<Value> &args) {
-    std::cerr << "[DEBUG] print host function called, args=" << args.size() << std::endl;
     // Check if last arg is kwargs object (marked with __kwargs key)
     std::string delim = " ";
     std::string end = "\n";
@@ -635,29 +634,18 @@ void VM::registerDefaultHostFunctions() {
       const auto &arg = args[i];
       std::string resolved;
 if (arg.isStringValId()) {
-        std::cerr << "[DEBUG] arg " << i << " is StringValId: " << arg.asStringValId() << std::endl;
-        if (current_chunk) {
-          std::cerr << "[DEBUG] current_chunk has strings: " << current_chunk->getAllStrings().size() << std::endl;
-        }
-        if (main_chunk_) {
-          std::cerr << "[DEBUG] main_chunk_ has strings: " << main_chunk_->getAllStrings().size() << std::endl;
-        }
         std::string resolved = resolveStringKey(arg);
-        std::cerr << "[DEBUG] resolved: '" << resolved << "'" << std::endl;
         std::cout << resolved;
       } else if (arg.isStringId() || arg.isRegexValId()) {
         resolved = resolveStringKey(arg);
-        std::cerr << "[DEBUG] resolved string/regex: '" << resolved << "'" << std::endl;
         std::cout << resolved;
       } else {
         std::string s = toString(arg);
-        std::cerr << "[DEBUG] toString: '" << s << "'" << std::endl;
         std::cout << s;
       }
     }
         std::cout << end;
         std::cout.flush();
-        std::cerr << "[DEBUG] print host function returning" << std::endl;
         return Value::makeNull();
     });
 

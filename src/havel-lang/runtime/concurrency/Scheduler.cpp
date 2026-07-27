@@ -505,6 +505,10 @@ void Scheduler::clearCurrent() {
     current_.store(nullptr, std::memory_order_release);
 }
 
+void Scheduler::incrementNextGoroutineId() {
+    ++next_goroutine_id_;
+}
+
 void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 	if (!fiber) return;
 
@@ -530,6 +534,20 @@ void Scheduler::addActionFiber(Fiber* fiber, FiberPriority priority) {
 			runnable_queue_.push_back(goroutines_[g_id].get());
 		}
 	}
+}
+
+void Scheduler::enqueue(Goroutine* g) {
+    if (!g || g->state == GoroutineState::Done) return;
+    {
+        std::lock_guard lock(priority_mutex_);
+        if (g->priority == FiberPriority::HOTKEY) {
+            hotkey_queue_.push_back(g);
+        } else if (g->priority == FiberPriority::BACKGROUND) {
+            background_queue_.push_back(g);
+        } else {
+            runnable_queue_.push_back(g);
+        }
+    }
 }
 
 void Scheduler::requeueFront(Goroutine* g) {

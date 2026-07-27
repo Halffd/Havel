@@ -593,7 +593,6 @@ private:
     auto* sched = vm_->getScheduler();
     if (!sched) return;
 
-    ::havel::info("[INLINE_YIELD] processGoroutinesInline called, runnableCount={}, inline_yield_active_={}", sched->runnableCount(), inline_yield_active_);
     inline_yield_active_ = true;
 
     try {
@@ -610,7 +609,9 @@ private:
 
     while (executed < budget) {
       auto* g = sched->pickNext();
-      ::havel::info("[INLINE_YIELD] pickNext returned g={} state={}", g ? g->id : 0, g ? static_cast<int>(g->state.load()) : -1);
+      if (_trace) {
+        ::havel::info("[INLINE_YIELD] pickNext returned g={} state={}", g ? g->id : 0, g ? static_cast<int>(g->state.load()) : -1);
+      }
       if (!g) break;
 
       if (g->state == compiler::Scheduler::GoroutineState::Created) {

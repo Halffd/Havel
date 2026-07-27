@@ -1,5 +1,6 @@
 #include "ModuleLoader.hpp"
 #include "c/ModulePlugin.h"
+#include "dl/Loader.h"
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -191,6 +192,29 @@ ModuleLoader::resolve(const std::string& modulePath,
   }
 
   // 4. Check stdlibPath_ for name.hvc or name.hv
+  // But first, check if there's a plugin (native extension) for this module
+  // in the search paths, to allow plugins to override stdlib .hv/.hvc files.
+  for (const auto& sp : searchPaths_) {
+    fs::path spDir(sp);
+    fs::path soPath = spDir / (name + ".so");
+    if (fs::exists(soPath)) {
+      return ResolvedModule{ResolvedModule::NativeExtension,
+                            fs::canonical(soPath).string(), modulePath, ""};
+    }
+    fs::path libPath = spDir / ("libhavel_" + name + ".so");
+    if (fs::exists(libPath)) {
+      return ResolvedModule{ResolvedModule::NativeExtension,
+                            fs::canonical(libPath).string(), modulePath, ""};
+    }
+    // Also check plugin naming convention (havel_mod_<name>.so)
+    fs::path pluginPath = fs::path(sp) / ("havel_mod_" + name + ".so");
+    if (fs::exists(pluginPath)) {
+      return ResolvedModule{ResolvedModule::NativeExtension,
+                            fs::canonical(pluginPath).string(), modulePath, ""};
+    }
+  }
+
+  // 4. Check stdlibPath_ for name.hvc or name.hv
   if (!stdlibPath_.empty()) {
     fs::path stdlibHvcPath = fs::path(stdlibPath_) / (name + ".hvc");
     fs::path stdlibHvPath = fs::path(stdlibPath_) / (name + ".hv");
@@ -204,10 +228,56 @@ ModuleLoader::resolve(const std::string& modulePath,
                             fs::canonical(stdlibHvPath).string(), modulePath, ""};
     }
     if (hvcExists) {
+      // Check if there's a plugin for this module before using the cache
+      for (const auto& sp : searchPaths_) {
+        fs::path spDir(sp);
+        fs::path soPath = spDir / (name + ".so");
+        if (fs::exists(soPath)) {
+          return ResolvedModule{ResolvedModule::NativeExtension,
+                                fs::canonical(soPath).string(), modulePath, ""};
+        }
+        fs::path libPath = spDir / ("libhavel_" + name + ".so");
+        if (fs::exists(libPath)) {
+          return ResolvedModule{ResolvedModule::NativeExtension,
+                                fs::canonical(libPath).string(), modulePath, ""};
+        }
+        fs::path pluginPath = fs::path(sp) / ("havel_mod_" + name + ".so");
+        if (fs::exists(pluginPath)) {
+          return ResolvedModule{ResolvedModule::NativeExtension,
+                                fs::canonical(pluginPath).string(), modulePath, ""};
+        }
+      }
       // No source side-by-side - use cache but no sourcePath for hash check.
       return makeBcCache(stdlibHvcPath, stdlibHvPath, modulePath);
     }
     if (hvExists) {
+      // Check if there's a plugin for this module before using the .hv file
+      if (!stdlibPath_.empty()) {
+        fs::path stdlibPluginPath = fs::path(stdlibPath_) / (name + havel_loader_suffix());
+        if (fs::exists(stdlibPluginPath)) {
+          return ResolvedModule{ResolvedModule::NativeExtension,
+                                fs::canonical(stdlibPluginPath).string(), modulePath, ""};
+        }
+      }
+      // Also check search paths for plugins
+      for (const auto& sp : searchPaths_) {
+        fs::path spDir(sp);
+        fs::path soPath = spDir / (name + ".so");
+        if (fs::exists(soPath)) {
+          return ResolvedModule{ResolvedModule::NativeExtension,
+                                fs::canonical(soPath).string(), modulePath, ""};
+        }
+        fs::path libPath = spDir / ("libhavel_" + name + ".so");
+        if (fs::exists(libPath)) {
+          return ResolvedModule{ResolvedModule::NativeExtension,
+                                fs::canonical(libPath).string(), modulePath, ""};
+        }
+        fs::path pluginPath = fs::path(sp) / ("havel_mod_" + name + ".so");
+        if (fs::exists(pluginPath)) {
+          return ResolvedModule{ResolvedModule::NativeExtension,
+                                fs::canonical(pluginPath).string(), modulePath, ""};
+        }
+      }
       return ResolvedModule{ResolvedModule::StdlibSource,
                             fs::canonical(stdlibHvPath).string(), modulePath, ""};
     }
@@ -306,13 +376,13 @@ ModuleLoader::resolve(const std::string& modulePath,
     fs::path soPath = fs::path(sp) / ("havel_mod_" + name + ".so");
     if (fs::exists(soPath)) {
       return ResolvedModule{ResolvedModule::NativeExtension,
-        fs::canonical(soPath).string(), modulePath};
+        fs::canonical(soPath).string(), modulePath, ""};
     }
   }
 
     // 8. Check for host builtin module
     if (hostFns_.count(name) > 0 || envModules_.count(name) > 0) {
-        return ResolvedModule{ResolvedModule::HostBuiltin, "", modulePath};
+        return ResolvedModule{ResolvedModule::HostBuiltin, "", modulePath, ""};
     }
 
     return std::nullopt;

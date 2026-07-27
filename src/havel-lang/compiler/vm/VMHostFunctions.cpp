@@ -2120,7 +2120,101 @@ registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
         Value::makeInt(static_cast<int64_t>(stats.collections)));
         setHostObjectField(object_ref, "lastPauseNs",
         Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
-  return Value::makeObjectId(object_ref.id);
+      return Value::makeObjectId(object_ref.id);
+    });
+
+  // waitForGoroutines() - block until all goroutines complete
+  registerHostFunction("waitForGoroutines", 0, [this](const std::vector<Value> &) {
+    if (scheduler_) {
+      // Run the goroutine scheduler until all goroutines complete
+      while (true) {
+        if (exit_requested_.load()) break;
+        
+        // Process events
+        if (event_queue_) {
+          event_queue_->processAll();
+        }
+        
+        // Drain deferred callbacks
+        scheduler_->drainDeferredCallbacks(FiberPriority::NORMAL);
+        
+        // Wake sleeping goroutines
+        scheduler_->wakeSleepingGoroutines();
+        
+        auto* g = scheduler_->pickNext();
+        if (!g) {
+          size_t sc = scheduler_->suspendedCount();
+          if (sc == 0) break; // No runnable or suspended goroutines
+          
+          // Check if any sleeping goroutine has a deadline
+          auto deadline = scheduler_->nextSleepDeadline();
+          if (!deadline) break;
+          
+          auto now = std::chrono::steady_clock::now();
+          if (*deadline <= now) continue;
+          
+          auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(*deadline - now).count();
+          auto sleepMs = std::min(ms, 100L);
+          std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+          continue;
+        }
+        
+        scheduler_->setCurrent(g);
+        
+        if (g->state == compiler::Scheduler::GoroutineState::Created) {
+          auto result = startGoroutineCall(g->callable, g->locals);
+          if (result == VM::GoroutineCallResult::Failed || result == VM::GoroutineCallResult::JITExecuted) {
+            g->state = compiler::Scheduler::GoroutineState::Done;
+            continue;
+          }
+          g->state = compiler::Scheduler::GoroutineState::Runnable;
+        }
+        
+        { current_executing_fiber_ = g->fiber; runDispatchLoopPublic(0); current_executing_fiber_ = nullptr; }
+        
+        // Check suspension
+        uint8_t lastReason = getLastSuspensionReason();
+        void* lastContext = getLastSuspensionContext();
+        if (lastReason != 0) {
+          clearLastSuspension();
+          if (g->fiber) saveFiberStatePublic(g->fiber);
+          auto schedReason = static_cast<compiler::Scheduler::SuspensionReason>(lastReason);
+          g->state = compiler::Scheduler::GoroutineState::Suspended;
+          g->suspension_reason = schedReason;
+          if (g->fiber) {
+            g->fiber->state = compiler::FiberState::SUSPENDED;
+            g->fiber->suspended_reason = static_cast<compiler::SuspensionReason>(lastReason);
+          }
+          if (static_cast<compiler::SuspensionReason>(lastReason) == compiler::SuspensionReason::SLEEP) {
+            auto ms = reinterpret_cast<intptr_t>(lastContext);
+            g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+            g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+          }
+          if (scheduler_->current() == g) scheduler_->clearCurrent();
+        } else if (g->update_interval_ms > 0) {
+          scheduler_->clearCurrent();
+          g->ip = 0;
+          g->stack.clear();
+          g->locals.clear();
+          auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(g->update_interval_ms);
+          { std::lock_guard wlock(g->wait_handle_mutex_); g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP; g->wait_handle.deadline = deadline; }
+          g->state = compiler::Scheduler::GoroutineState::Suspended;
+          g->suspension_reason.store(compiler::Scheduler::SuspensionReason::SleepWait, std::memory_order_release);
+        } else if (g->persistent) {
+          g->state = compiler::Scheduler::GoroutineState::Suspended;
+          g->suspension_reason = compiler::Scheduler::SuspensionReason::HotkeyWait;
+          if (g->fiber) {
+            g->fiber->state = compiler::FiberState::SUSPENDED;
+            g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
+          }
+          if (scheduler_->current() == g) scheduler_->clearCurrent();
+        } else {
+          g->state = compiler::Scheduler::GoroutineState::Done;
+          if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
+        }
+      }
+    }
+    return Value::makeNull();
   });
 
   // load(path) - execute a script file in the current VM session

@@ -461,6 +461,12 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   // Register the main script as a goroutine
   void registerMainGoroutine(Goroutine* g);
 
+  // Register a goroutine with the scheduler (adds to map and queue)
+  void registerGoroutine(Goroutine* g);
+
+  // Get the next available goroutine ID (increments counter)
+  uint32_t nextGoroutineId() { return next_goroutine_id_++; }
+
   void incrementNextGoroutineId();
 
   void yield(Goroutine* g);

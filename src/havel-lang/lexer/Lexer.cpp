@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <unordered_set>
 
 namespace havel {
 
@@ -183,7 +184,7 @@ bool Lexer::isSkippable(char c) const {
 bool Lexer::isHotkeyChar(char c) const {
     return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' ||
            c == '#' || c == '@' || c == '|' || c == '*' || c == '&' || c == ':' ||
-           c == '~' || c == '$' || c == '=' || c == '.' || c == ',' || c == '/';
+           c == '~' || c == '$' || c == '.' || c == ',' || c == '/';
 }
 
 // UTF-8 decoding support
@@ -1002,7 +1003,7 @@ hotkey += source[position - 1];
     safetyPos = position;
   }
 
-  // Special handling for plain F-keys (F1..F12)
+  // Special handling for plain F-keys (F1..F24)
   if (hotkey.size() >= 2 && hotkey[0] == 'F') {
     bool allDigits = true;
     for (size_t i = 1; i < hotkey.size(); ++i)
@@ -1010,7 +1011,7 @@ hotkey += source[position - 1];
     if (allDigits) {
       try {
         int fnum = std::stoi(hotkey.substr(1));
-        if (fnum >= 1 && fnum <= 12)
+        if (fnum >= 1 && fnum <= 24)
           return makeToken(hotkey, TokenType::Hotkey);
       } catch (...) {
       }
@@ -1033,16 +1034,18 @@ hotkey.find(':') != std::string::npos || hotkey[0] == 'F')) {
     return makeToken(hotkey, TokenType::Hotkey);
   }
 
-  // Accept pure alphanumeric key names (Esc, Return, Delete, Tab, Space,
-  // Backspace, etc.) that don't match the modifier or F-key patterns above
-  if (!hotkey.empty()) {
-    bool allAlphaNumeric =
-        std::all_of(hotkey.begin(), hotkey.end(), [](unsigned char ch) {
-          return std::isalnum(ch);
-        });
-    if (allAlphaNumeric) {
-      return makeToken(hotkey, TokenType::Hotkey);
-    }
+  // Accept known key names (Esc, Return, Delete, Tab, Space, Backspace, etc.)
+  // that don't match the modifier or F-key patterns above
+  static const std::unordered_set<std::string> knownKeys = {
+    "Esc", "Escape", "Return", "Enter", "Delete", "Del", "Tab", "Space",
+    "Backspace", "BackSpace", "Insert", "Ins", "Home", "End", "PageUp",
+    "PgUp", "PageDown", "PgDn", "Up", "Down", "Left", "Right",
+    "PrintScreen", "PrtSc", "ScrollLock", "Pause", "Break",
+    "NumLock", "CapsLock", "Shift", "Ctrl", "Control", "Alt", "Meta",
+    "Super", "Win", "Command", "Menu", "Apps", "Help"
+  };
+  if (!hotkey.empty() && knownKeys.count(hotkey)) {
+    return makeToken(hotkey, TokenType::Hotkey);
   }
 
   // Fallback: not a recognizable hotkey, rewind and treat as identifier
@@ -2214,7 +2217,7 @@ continue;
 
   // Handle identifiers and potential hotkeys
   if (isAlpha(c)) {
-    // Check if this might be a hotkey starting with F (F1..F12)
+    // Check if this might be a hotkey starting with F (F1..F24)
     if (c == 'F' && isDigit(peek())) {
       // Could be F-key hotkey, but check if it's followed by assignment or
       // other non-hotkey syntax If next non-digit char is '=' or
@@ -2234,6 +2237,10 @@ continue;
           tokens.push_back(scanIdentifier());
           continue;
         }
+      } else {
+        // End of input - treat as identifier (e.g., standalone F1)
+        tokens.push_back(scanIdentifier());
+        continue;
       }
       tokens.push_back(scanHotkey());
     } else {

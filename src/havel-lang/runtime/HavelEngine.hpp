@@ -593,13 +593,17 @@ private:
     auto* sched = vm_->getScheduler();
     if (!sched) return;
 
+    // Check if current goroutine is the one being executed
+    auto* current_g = sched->current();
+    compiler::Fiber* current_fiber = current_g ? current_g->fiber : nullptr;
+
     inline_yield_active_ = true;
 
     try {
-    if (!main_script_fiber_) {
-      main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0);
+    // Save state of current goroutine's fiber if we have one
+    if (current_fiber) {
+      vm_->saveFiberStatePublic(current_fiber);
     }
-    vm_->saveFiberStatePublic(main_script_fiber_.get());
 
     sched->drainDeferredCallbacks();
     sched->wakeSleepingGoroutines();
@@ -705,7 +709,10 @@ private:
       // Reset inline_yield_active_ on any throw so scheduling isn't frozen.
     }
 
-    vm_->loadFiberStatePublic(main_script_fiber_.get());
+    // Restore current fiber state if we had one
+    if (current_fiber) {
+      vm_->loadFiberStatePublic(current_fiber);
+    }
 
     inline_yield_active_ = false;
   }

@@ -1516,19 +1516,22 @@ slow_path:
         if (debug_break_cb_) debug_break_cb_();
       }
 
- if (suspension_requested_) {
-        // Call yield callback to process goroutines before suspending
-        if (yield_callback_) {
-            ::havel::info("[VM] Suspension requested, calling yield_callback_");
+if (suspension_requested_) {
+        // Call yield callback ONLY for explicit yields (time slice exhausted),
+        // NOT for explicit suspensions (sleep, channel recv, etc.).
+        // For suspensions, the goroutine will be properly suspended in the scheduler
+        // and the event loop will wake it when ready.
+        if (yield_callback_ && suspension_reason_ != static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+            ::havel::info("[VM] Yield requested, calling yield_callback_");
             yield_callback_();
-        } else {
-            ::havel::info("[VM] Suspension requested but NO yield_callback_ set!");
+        } else if (suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+            ::havel::info("[VM] Sleep suspension requested, not calling yield_callback_ (will be woken by event loop)");
         }
         uint8_t reason = suspension_reason_;
         void* ctx = suspension_context_;
         suspension_requested_ = false;
         suspension_context_ = nullptr;
-if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+        if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
           if (scheduler_ && current_executing_fiber_) {
             // In goroutine context: break out so processGoroutines
             // can set the deadline on the WaitHandle and suspend properly
@@ -1545,7 +1548,25 @@ if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
             last_suspension_context_ = ctx;
             break;
           }
-          // Non-scheduler or main fiber: blocking sleep inline with event processing
+          // Main fiber (non-goroutine): register with scheduler and return to event loop
+          // so the sleep can be handled by the scheduler's wakeSleepingGoroutines
+          if (scheduler_ && current_executing_fiber_) {
+            // Register this fiber as a suspended goroutine with the scheduler
+            // Create a temporary goroutine wrapper for the main fiber
+            auto* g = new Scheduler::Goroutine(
+                scheduler_->nextGoroutineId(), "main-script", FiberPriority::NORMAL);
+            g->fiber = current_executing_fiber_;
+            g->state = Scheduler::GoroutineState::Suspended;
+            g->suspension_reason.store(Scheduler::SuspensionReason::SleepWait, std::memory_order_release);
+            g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+            g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(reinterpret_cast<intptr_t>(ctx));
+            scheduler_->registerGoroutine(g);
+            // Save suspension info so we can resume later
+            last_suspension_reason_ = reason;
+            last_suspension_context_ = ctx;
+            break;
+          }
+          // No scheduler available: fallback to inline blocking sleep with event processing
           int64_t ms = reinterpret_cast<intptr_t>(ctx);
           if (ms > 0) {
             const int CHUNK = 10;
@@ -1579,8 +1600,8 @@ if (reason == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
            last_suspension_reason_ = reason;
            last_suspension_context_ = ctx;
            break;
-         }
-       }
+        }
+      }
     } catch (const ScriptThrow &thrown) {
       ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
       if (!handleScriptThrow(thrown.value)) {

@@ -150,11 +150,11 @@ bool ExecutionEngine::executeFrame() {
 	// The scheduler maintains a queue of RUNNABLE goroutines
 	Scheduler::Goroutine* g = scheduler_->pickNext();
 	if (!g) {
-		static int idle_count = 0;
-		if (idle_count < 10) {
-			idle_count++;
-		}
-		return false;
+		// No runnable goroutines right now.
+		// If there are suspended goroutines (sleeping, waiting on channels, etc.),
+		// we should return true so the event loop keeps calling us to wake them.
+		// Only return false if there's truly nothing running or waiting.
+		return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
 	}
 
 
@@ -902,18 +902,19 @@ void ExecutionEngine::processGoroutinesInline() {
     // early and never reach wakeSleepingGoroutines(). The IO thread's
     // executeFrame() also can't help because isInExecute() is true.
     scheduler_->wakeSleepingGoroutines();
-    
+
     // If there are no runnable goroutines but there are suspended ones that
     // might wake up soon, wait for them instead of returning immediately.
-    if (scheduler_->runnableCount() == 0 && scheduler_->suspendedCount() > 0) {
+    // This is the event loop - keep running until there's actual work or
+    // the main script goroutine finishes.
+    while (scheduler_->runnableCount() == 0 && scheduler_->suspendedCount() > 0) {
         // Process any events that might wake sleeping goroutines
         scheduler_->wakeSleepingGoroutines();
-        // Sleep for a short time to allow timers to fire
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        // Sleep briefly to allow timers to fire
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
         scheduler_->wakeSleepingGoroutines();
-        if (scheduler_->runnableCount() == 0) return;
     }
-    
+
     if (scheduler_->runnableCount() == 0) return;
 
     inline_yield_active_ = true;

@@ -172,15 +172,18 @@ fn runScript(cfg) {
     // Typecheck
     inferProgram(result)
 
-// Compile and execute
+    // Compile and execute
     emitter = Emitter()
     bc.reset()
     setFlag("emitter", true)
     sourceFile = null
     if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }
-    result = compileProgram(emitter, result.ast, false, sourceFile)
-    return result
+    bcChunk = compileProgram(emitter, result.ast, false, sourceFile)
+
+    // Spawn the user script as a goroutine
+    spawnUserScript(bcChunk)
+    return 0
 }
 
 fn runTests(cfg) {
@@ -262,6 +265,18 @@ fn runTests(cfg) {
 }
 
 // ============================================================
+// Spawn user script as a goroutine
+// ============================================================
+
+fn spawnUserScript(bcChunk) {
+    use { bc } from "bc"
+    // Store the bytecode chunk so we can spawn it
+    chunkId = bc.store_chunk(bcChunk)
+    // Spawn the __main__ function from the user script as a goroutine
+    bc.spawn_stored(chunkId, "__main__")
+}
+
+// ============================================================
 // Main entry point
 // ============================================================
 
@@ -269,7 +284,7 @@ args = app.args
 if args == null || #args == 0 {
     print("Usage: havel --run launcher.hv -- [flags] script.hv")
     print("Use --help for more information")
-    shell.exit(1)
+    1
 }
 
 cfg = parseArgs(args)
@@ -286,4 +301,5 @@ else {
     result = 1
 }
 
-shell.exit(result)
+// Don't call shell.exit() - let the goroutine system run the user script
+result

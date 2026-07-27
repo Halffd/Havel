@@ -2,10 +2,7 @@
 // Handles --run, --test, --lint modes via the self-hosted pipeline
 // Usage: havel --run launcher.hv -- [flags] script.hv
 
-print("DEBUG LAUNCHER: before imports")
-
 use { parse } from "pratt"
-print("DEBUG LAUNCHER: after pratt import")
 
 use { Emitter, compileProgram } from "emitter"
 use { inferProgram } from "types"
@@ -156,16 +153,8 @@ fn runScript(cfg) {
     }
     if combinedCode == "" { return 0 }
 
-    print("DEBUG: combinedCode length = " + str(#combinedCode))
-    print("DEBUG: combinedCode = " + combinedCode)
-
     // Parse
     result = parse(combinedCode)
-    print("DEBUG: body count = " + str(#result.ast.body))
-    if #result.ast.body > 0 {
-        firstStmt = result.ast.body[0]
-        print("DEBUG: first stmt kind = " + firstStmt.kind)
-    }
     if result.errors != null && #result.errors > 0 {
         for err in result.errors {
             print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))
@@ -186,15 +175,11 @@ fn runScript(cfg) {
 // Compile and execute
     emitter = Emitter()
     bc.reset()
-    print("DEBUG: Setting emitter flag")
     setFlag("emitter", true)
-    print("DEBUG: emitter flag set, isOn(emitter)=" + str(isOn("emitter")))
     sourceFile = null
     if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }
-    print("LAUNCHER: about to compileProgram")
     result = compileProgram(emitter, result.ast, false, sourceFile)
-    print("LAUNCHER: compileProgram returned: " + str(result))
     return result
 }
 
@@ -279,8 +264,6 @@ fn runTests(cfg) {
 // ============================================================
 // Main entry point
 // ============================================================
-
-print("LAUNCHER MAIN: args = " + str(app.args))
 
 args = app.args
 if args == null || #args == 0 {

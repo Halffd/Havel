@@ -3553,7 +3553,6 @@ ii2 = ii2 + 1
 // ============================================================
 
 fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, entryName = "__main__", noReset = false) {
-  print("[CP-DEBUG] entered compileProgram entryName=" + entryName + " skip_execute=" + str(skip_execute))
   traceEmitter("compileProgram entryName=" + entryName + " skip_execute=" + str(skip_execute))
   if !noReset {
     bc.reset()

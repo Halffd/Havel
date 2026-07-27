@@ -1,13 +1,13 @@
 // async.hv — Higher-level async/scheduling utilities
 // Built on C++ primitives: thread.spawn, channel, sleep, timeout, interval, waitgroup
 
-use io
+use time
 
 // ============================================================
 // Core utilities
 // ============================================================
 
-fn sleep(ms) { io.sleep(ms) }
+fn sleep(ms) { time.sleep(ms) }
 
 fn go(func) {
     print("async.go calling thread.spawn")

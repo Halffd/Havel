@@ -1,4 +1,4 @@
-use { debounce, throttle, retry, timeout, race, once, every, parallelMap, parallelFilter, parallelForEach, promise, then, all, allSettled, chan, chanSelect, merge, fanIn, fanOut, waitgroup, rateLimit, circuitBreaker, sleep, go, await } from "app/async"
+use { debounce, throttle, retry, timeout, race, once, every, parallelMap, parallelFilter, parallelForEach, promise, then, all, allSettled, chan, chanSelect, merge, fanIn, fanOut, waitgroup, rateLimit, circuitBreaker, sleep, go, await } from "app/async_mod"
 
 fn debounce(f, ms) { debounce(f, ms) }
 fn throttle(f, ms) { throttle(f, ms) }

@@ -57,6 +57,8 @@ public:
     Loader &extensionLoader() { return *extensionLoader_; }
     const Loader &extensionLoader() const { return *extensionLoader_; }
 
+    void clearExtensionLoaderCache();
+
     compiler::EventQueue *eventQueue() const;
     void checkTimers();
 

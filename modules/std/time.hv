@@ -18,4 +18,3 @@ fn minute() { time.minute() }
 fn second() { time.second() }
 fn weekday() { time.weekday() }
 fn date() { time.date() }
-fn time() { time.time() }

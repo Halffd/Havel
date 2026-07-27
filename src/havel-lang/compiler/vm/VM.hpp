@@ -8,6 +8,7 @@
 
 namespace havel { class Loader; }
 
+#include <iostream>
 #include <array>
 #include <atomic>
 #include <cstdint>

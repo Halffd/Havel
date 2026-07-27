@@ -103,6 +103,10 @@ bool Modules::import(const std::string &importSpec) {
     return !result.isNull();
 }
 
+void Modules::clearExtensionLoaderCache() {
+    extensionLoader_->clearLoaded();
+}
+
 void Modules::initBridges() {
     ioBridge_ = std::make_unique<compiler::IOBridge>(ctx_);
     systemBridge_ = std::make_unique<compiler::SystemBridge>(ctx_);

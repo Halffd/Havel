@@ -87,6 +87,12 @@ void havel_loader_add_module_paths(HavelLoader *loader);
 
 const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *name);
 
+// Unload a module so it can be reloaded (useful for development)
+void havel_loader_unload_module(HavelLoader *loader, const char *name);
+
+// Clear all loaded modules
+void havel_loader_clear_loaded_modules(HavelLoader *loader);
+
 /* Toolkit plugin search paths */
 void havel_loader_add_toolkit_paths(HavelLoader *loader);
 

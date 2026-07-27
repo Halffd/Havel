@@ -649,8 +649,7 @@ return
 			// TCO: emit TAIL_CALL if in tail position and not inside try
 			emitter.inTailPosition = savedTail
 			if emitter.inTailPosition && emitter.tryDepth == 0 {
-				// TODO: TAIL_CALL not fully implemented in VM, use CALL for now
-				bc.emit("CALL", savedArgc)
+				bc.emit("TAIL_CALL", savedArgc)
 			}
 			else {
 				bc.emit("CALL", savedArgc)
@@ -667,7 +666,12 @@ return
 			savedArgc = savedArgc + 1
 		}
 		emitter.inTailPosition = savedTail
-		bc.emit("CALL", savedArgc)
+		if emitter.inTailPosition && emitter.tryDepth == 0 {
+			bc.emit("TAIL_CALL", savedArgc)
+		}
+		else {
+			bc.emit("CALL", savedArgc)
+		}
 		return
 	}
     if k == "AssignmentExpression" {

@@ -519,29 +519,30 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
   }
   if (!g) return;
 
-  // Persistent goroutines (hotkey system): re-suspend instead of Done.
+// Persistent goroutines (hotkey system): re-suspend instead of Done.
   // The goroutine/fiber are recycled on next trigger via resetAndRequeuePersistent.
   if (g->persistent) {
         ::havel::debug("[ExecutionEngine] handleReturned: gid={} persistent retrigger={}", g->id, g->hotkey_retrigger.load(std::memory_order_acquire));
         if (g->hotkey_retrigger.load(std::memory_order_acquire)) {
-     g->hotkey_retrigger.store(false, std::memory_order_release);
-     scheduler_->requeueFront(g);
-     if (scheduler_->current() == g) {
-       scheduler_->clearCurrent();
-     }
-     return;
-   }
-     g->state = Scheduler::GoroutineState::Suspended;
-     g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
-     if (g->fiber) {
-         g->fiber->state = FiberState::SUSPENDED;
-         g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
-     }
-     if (scheduler_->current() == g) {
-         scheduler_->clearCurrent();
-     }
-     return;
- }
+      g->hotkey_retrigger.store(false, std::memory_order_release);
+      scheduler_->requeueFront(g);
+      if (scheduler_->current() == g) {
+        scheduler_->clearCurrent();
+      }
+      return;
+    }
+    // No retrigger flag: suspend and wait for next wakeHotkey from IO thread
+    g->state = Scheduler::GoroutineState::Suspended;
+    g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait, std::memory_order_release);
+    if (g->fiber) {
+        g->fiber->state = FiberState::SUSPENDED;
+        g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+    }
+    if (scheduler_->current() == g) {
+      scheduler_->clearCurrent();
+    }
+    return;
+  }
 
  // Update goroutines: reset and re-suspend with SleepWait
  // On wake, executeFrame will use startGoroutineCall to restart from scratch.

@@ -1,0 +1,285 @@
+use sys
+use shell
+use fs
+use { config as dotenvConfig } from "std/dotenv"
+use { parse as tomlParse } from "std/toml"
+use { parse as jsonParse, stringify as jsonStringify } from "std/json"
+use { create as createApp } from "net/webserver"
+use { get as httpGet, postJson as httpPostJson } from "net/http"
+use { spawn, kill } from "process"
+
+// ============================================================================
+// Global State & Configuration
+// ============================================================================
+
+fn resolveEnv(key, defaultVal, envVars) {
+  envVal = sys.env(key)
+  if envVal != null && envVal != "" {
+    envVal
+  } else if envVars != null && envVars[key] != null && envVars[key] != "" {
+    envVars[key]
+  } else {
+    defaultVal
+  }
+}
+
+fn loadConfig() {
+  envVars = {}
+
+  if fs.exists(".env") {
+    envRes = dotenvConfig(".env")
+    if envRes != null && envRes.parsed != null {
+      envVars = envRes.parsed
+    }
+  }
+
+  tomlCfg = {}
+  if fs.exists("config.toml") {
+    content = fs.read("config.toml")
+    if content != null {
+      parsed = tomlParse(content)
+      if parsed != null {
+        tomlCfg = parsed
+      }
+    }
+  }
+
+  portStr = resolveEnv("PORT", "3000", envVars)
+  refreshStr = resolveEnv("REFRESH_INTERVAL", "300000", envVars)
+
+  config = {
+    port: int(portStr)
+    streamUrl: resolveEnv("STREAM_URL", "", envVars)
+    refreshInterval: int(refreshStr)
+    streams: {}
+    autoRefresh: resolveEnv("AUTO_REFRESH", "true", envVars) == "true"
+  }
+
+  if tomlCfg.streams != null {
+    config.streams = tomlCfg.streams
+  }
+
+  // Parse CLI Overrides
+  rawArgs = []
+  if sys.argv != null {
+    rawArgs = sys.argv()
+  }
+
+  i = 0
+  while i < #rawArgs {
+    arg = rawArgs[i]
+    if arg == "--port" && i + 1 < #rawArgs {
+      i = i + 1
+      config.port = int(rawArgs[i])
+    } else if arg == "--url" && i + 1 < #rawArgs {
+      i = i + 1
+      config.streamUrl = rawArgs[i]
+    } else if arg == "--refresh-interval" && i + 1 < #rawArgs {
+      i = i + 1
+      config.refreshInterval = int(rawArgs[i])
+    } else if arg == "--no-auto-refresh" {
+      config.autoRefresh = false
+    }
+    i = i + 1
+  }
+
+  config
+}
+
+// Global Application State
+cfg = loadConfig()
+serverStartTime = sys.time()
+
+state = {
+  activeStream: {
+    url: cfg.streamUrl
+    quality: "auto"
+    title: "LiveLink Direct Stream"
+    headers: {}
+    format: "hls"
+    lastUpdated: sys.time()
+  }
+  streamHistory: []
+  autoRefresh: cfg.autoRefresh
+  refreshInterval: cfg.refreshInterval
+}
+
+// ============================================================================
+// Stream Management Functions
+// ============================================================================
+
+fn refreshStream() {
+  print("[LiveLink] Refreshing stream details for: ${state.activeStream.url}")
+  if state.activeStream.url == null || state.activeStream.url == "" {
+    print("[LiveLink] No stream URL configured.")
+    return false
+  }
+
+  // Record history
+  if #state.streamHistory >= 10 {
+    state.streamHistory.shift()
+  }
+  state.streamHistory.push({
+    url: state.activeStream.url
+    timestamp: sys.time()
+  })
+
+  state.activeStream.lastUpdated = sys.time()
+  print("[LiveLink] Stream refreshed successfully at ${state.activeStream.lastUpdated}")
+  true
+}
+
+fn switchStream(newUrl, newTitle) {
+  if newTitle == null {
+    newTitle = "Stream - ${newUrl}"
+  }
+  state.activeStream.url = newUrl
+  state.activeStream.title = newTitle
+  refreshStream()
+}
+
+// ============================================================================
+// Web Server & API Setup
+// ============================================================================
+
+webApp = createApp()
+
+// API: Get Server Status
+webApp.get("/api/status", fn(req, res) {
+  uptime = sys.time() - serverStartTime
+  statusObj = {
+    status: "online"
+    uptime: uptime
+    activeStream: state.activeStream
+    autoRefresh: state.autoRefresh
+    refreshInterval: state.refreshInterval
+    port: cfg.port
+  }
+  res.json(statusObj)
+})
+
+// API: Get Active Stream Details
+webApp.get("/api/stream", fn(req, res) {
+  res.json(state.activeStream)
+})
+
+// API: Switch or Update Stream
+webApp.post("/api/stream", fn(req, res) {
+  body = req.body
+  if body != null {
+    if body.url != null && body.url != "" {
+      switchStream(body.url, body.title)
+    }
+  }
+  res.json({
+    success: true
+    activeStream: state.activeStream
+  })
+})
+
+// API: Trigger Refresh
+webApp.post("/api/refresh", fn(req, res) {
+  success = refreshStream()
+  res.json({
+    success: success
+    activeStream: state.activeStream
+  })
+})
+
+// API: List Available Streams
+webApp.get("/api/streams", fn(req, res) {
+  res.json({
+    streams: cfg.streams
+  })
+})
+
+// Root Dashboard HTML Route
+webApp.get("/", fn(req, res) {
+  htmlContent = "<!DOCTYPE html><html><head><title>LiveLink Stream Dashboard</title>"
+  htmlContent = htmlContent + "<style>body{font-family:sans-serif;background:#121212;color:#fff;padding:20px}"
+  htmlContent = htmlContent + ".card{background:#1e1e1e;border-radius:8px;padding:16px;margin-bottom:16px}"
+  htmlContent = htmlContent + "h1{color:#4caf50}a{color:#64b5f6}</style></head><body>"
+  htmlContent = htmlContent + "<h1>LiveLink Stream Hub</h1>"
+  htmlContent = htmlContent + "<div class='card'><h2>Active Stream</h2>"
+  htmlContent = htmlContent + "<p><strong>Title:</strong> ${state.activeStream.title}</p>"
+  htmlContent = htmlContent + "<p><strong>URL:</strong> ${state.activeStream.url}</p>"
+  htmlContent = htmlContent + "</div></body></html>"
+  res.html(htmlContent)
+})
+
+// ============================================================================
+// Initialization & Background Goroutines
+// ============================================================================
+
+print("========================================================================")
+print(" LiveLink Havel Engine Started")
+print(" Server listening on port: ${cfg.port}")
+print(" Auto-refresh: ${state.autoRefresh} (interval: ${state.refreshInterval} ms)")
+print("========================================================================")
+
+// Start initial stream refresh
+if state.activeStream.url != "" {
+  refreshStream()
+}
+
+// Start Web Server
+webApp.listen("0.0.0.0", cfg.port)
+
+// Background Auto-Refresh Loop
+go {
+  while true {
+    sleep(state.refreshInterval)
+    if state.autoRefresh && state.activeStream.url != "" {
+      refreshStream()
+    }
+  }
+}
+
+// ============================================================================
+// Interactive CLI Loop / Non-Interactive Server Loop
+// ============================================================================
+
+if !shell.isatty(0) {
+  print("[LiveLink] Non-interactive TTY mode. Web server active on port ${cfg.port}.")
+  while true {
+    sleep(10000)
+  }
+} else {
+  print("LiveLink CLI Ready. Commands: status, refresh, streams, help, quit")
+
+  while true {
+    shell.write("> ")
+    line = shell.read()
+    if line == null {
+      print("[LiveLink] End of input reached. Web server active on port ${cfg.port}.")
+      while true {
+        sleep(10000)
+      }
+    }
+
+    cmd = line.trim()
+    if cmd == "quit" || cmd == "exit" {
+      print("Exiting LiveLink...")
+      shell.exit(0)
+    } else if cmd == "status" {
+      print("Active Stream: ${state.activeStream.title}")
+      print("URL:           ${state.activeStream.url}")
+      print("Auto-Refresh:  ${state.autoRefresh}")
+    } else if cmd == "refresh" {
+      refreshStream()
+    } else if cmd == "streams" {
+      print("Configured Streams:")
+      for key in cfg.streams.keys() {
+        print("  - ${key}: ${cfg.streams[key]}")
+      }
+    } else if cmd == "help" {
+      print("Commands:")
+      print("  status   - Show current stream and server state")
+      print("  refresh  - Manually refresh active stream")
+      print("  streams  - List streams from config.toml")
+      print("  quit     - Exit LiveLink")
+    } else if cmd != "" {
+      print("Unknown command: '${cmd}'. Type 'help' for available commands.")
+    }
+  }
+}

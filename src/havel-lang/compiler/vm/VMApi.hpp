@@ -255,10 +255,12 @@ struct VMApi {
     if (sched && sched->current() != nullptr) {
       return true;
     }
-    return vm().hasCurrentExecutingFiber();
+    return vm().hasCurrentExecutingFiber() || vm().isInExecute();
   }
 
   void processPendingEvents() const { vm().processPendingEvents(); }
+
+  void invalidateModuleCache(const std::string& name) const { vm().moduleLoader().invalidate(name); }
 
   void chunkedSleep(int64_t ms) const {
     if (ms <= 0) return;

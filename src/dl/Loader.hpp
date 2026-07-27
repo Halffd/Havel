@@ -189,8 +189,12 @@ public:
   havel_loader_add_toolkit_paths(handle_);
  }
 
- bool isLoaded(const std::string &name) const {
-  return havel_loader_is_loaded(handle_, name.c_str());
+bool isLoaded(const std::string &name) const {
+   return havel_loader_is_loaded(handle_, name.c_str());
+ }
+
+ void clearLoaded() {
+   havel_loader_clear_loaded_modules(handle_);
  }
 
  void *getHandle(const std::string &name) const {

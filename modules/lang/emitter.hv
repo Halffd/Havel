@@ -70,6 +70,7 @@ fn globalIdx(emitter, name) {
 }
 fn emitLoadVar(emitter, name) {
   resolved = scopeResolve(emitter.scope, name)
+  print("[EMITTER-DEBUG] emitLoadVar: name=" + name + " resolved=" + str(resolved))
   if resolved != null {
     if resolved.kind == "local" {
       bc.emit("LOAD_VAR", resolved.index)
@@ -226,6 +227,7 @@ fn emitExpr(emitter, node) {
 
     }
   if k == "Identifier" {
+    print("[EMITTER-DEBUG] Identifier: name=" + node.name + " globalScope=" + str(node.globalScope) + " scope=" + emitter.scope)
     if node.globalScope == true {
 
       bc.emit("LOAD_GLOBAL", bc.str_id(globalIdx(emitter, node.name)))

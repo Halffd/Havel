@@ -372,6 +372,38 @@ const HavelModuleABI *havel_loader_load_module(HavelLoader *loader, const char *
   return abi;
 }
 
+void havel_loader_unload_module(HavelLoader *loader, const char *name) {
+  if (!loader || !name) return;
+
+  char lib_name[300];
+  snprintf(lib_name, sizeof(lib_name), "havel_mod_%s", name);
+
+  for (int i = 0; i < loader->loaded_count; i++) {
+    if (strcmp(loader->loaded[i].name, lib_name) == 0 && loader->loaded[i].is_loaded) {
+      if (loader->loaded[i].handle) {
+        dlclose(loader->loaded[i].handle);
+      }
+      // path is a fixed array, not a pointer, so no free needed
+      loader->loaded[i].is_loaded = 0;
+      HAVEL_LOGF_INFO("havel_loader_unload_module: %s unloaded", name);
+      return;
+    }
+  }
+}
+
+void havel_loader_clear_loaded_modules(HavelLoader *loader) {
+  if (!loader) return;
+
+  for (int i = 0; i < loader->loaded_count; i++) {
+    if (loader->loaded[i].is_loaded && loader->loaded[i].handle) {
+      dlclose(loader->loaded[i].handle);
+    }
+    loader->loaded[i].is_loaded = 0;
+    loader->loaded[i].path[0] = '\0';
+  }
+  HAVEL_LOG_INFO("havel_loader_clear_loaded_modules: all modules cleared");
+}
+
 const HavelToolkitABI *havel_loader_load_toolkit(HavelLoader *loader, const char *name) {
  if (!loader || !name) return NULL;
 

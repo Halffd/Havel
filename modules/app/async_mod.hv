@@ -7,7 +7,11 @@ use time
 // Core utilities
 // ============================================================
 
-fn sleep(ms) { time.sleep(ms) }
+fn sleep(ms) {
+    print("ASYNC_MOD: calling time.sleep(" + ms + ")")
+    time.sleep(ms)
+    print("ASYNC_MOD: returned from time.sleep(" + ms + ")")
+}
 
 fn go(func) {
     print("async.go calling thread.spawn")

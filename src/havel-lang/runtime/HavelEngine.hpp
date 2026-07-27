@@ -737,6 +737,8 @@ private:
 
             sched->wakeSleepingGoroutines();
             auto* g = sched->pickNext();
+      fprintf(stderr, "[PROCESS] pickNext returned gid=%d state=%d\n", g ? g->id : -1, g ? (int)g->state.load() : -1);
+      fflush(stderr);
       if (!g) {
         size_t sc = sched->suspendedCount();
         if (sc == 0) break;

@@ -5,6 +5,7 @@
 #include "VM.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 #include <functional>
 #include <chrono>
 #include <thread>
+#include <iostream>
 
 namespace havel::host {
 class ServiceRegistry;
@@ -260,13 +262,19 @@ struct VMApi {
   void chunkedSleep(int64_t ms) const {
     if (ms <= 0) return;
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+    int iterations = 0;
     while (std::chrono::steady_clock::now() < deadline) {
-      if (vm().exitRequested()) break;
-      processPendingEvents();
-      auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-          deadline - std::chrono::steady_clock::now());
-      auto chunk = std::min(static_cast<int64_t>(remaining.count()), int64_t(10));
-      if (chunk > 0) std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+        if (vm().exitRequested()) {
+            break;
+        }
+        processPendingEvents();
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        auto chunk = std::min(static_cast<int64_t>(remaining.count()), int64_t(10));
+        if (chunk > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+            iterations++;
+        }
     }
   }
 

@@ -19,7 +19,7 @@
 #include "../runtime/EventQueue.hpp"
 #include "../runtime/RuntimeSupport.hpp"
 #include "compiler/core/BootstrapByteCompiler.hpp"
-#include "lexer/Lexer.hpp"
+#include "lexer/BootstrapLexer.hpp"
 #include "../../parser/BootstrapParser.h"
 #include "../../runtime/Modules.hpp"
 #include "dl/Loader.hpp"

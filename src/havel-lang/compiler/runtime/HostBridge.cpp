@@ -18,7 +18,7 @@
 #include "havel-lang/parser/BootstrapParser.h"
 #include "havel-lang/compiler/core/BootstrapByteCompiler.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
-#include "havel-lang/lexer/Lexer.hpp"
+#include "havel-lang/lexer/BootstrapLexer.hpp"
 
 #include <fstream>
 #include "../../../host/app/AppService.hpp"

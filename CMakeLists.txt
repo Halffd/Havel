@@ -1114,7 +1114,7 @@ set(LSP_SOURCES
 src/havel-lang/lsp/main.cpp
   src/havel-lang/lsp/LanguageServer.cpp
   src/havel-lang/ast/BootstrapAST.cpp
-  src/havel-lang/lexer/Lexer.cpp
+  src/havel-lang/lexer/BootstrapLexer.cpp
   src/havel-lang/parser/BootstrapParser.cpp
   src/c/LoggerC.c
   src/c/Config.c

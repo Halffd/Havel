@@ -1,4 +1,4 @@
-#include "Lexer.hpp"
+#include "BootstrapLexer.hpp"
 #include "../../utils/Logger.hpp"
 #include <cctype>
 #include <iomanip>
@@ -1538,7 +1538,7 @@ if (c == '%' && peek() == '=') {
       continue;
     }
 
-    // Handle == and !=
+// Handle == and !=
     if (c == '=' && peek() == '=') {
       advance();
       tokens.push_back(makeToken("==", TokenType::Equals));
@@ -1547,29 +1547,28 @@ if (c == '%' && peek() == '=') {
       }
       continue;
     }
-if (c == '!' && peek() == '=') {
-// At statement start, != can be a hotkey (Alt+Equals) if followed by =>
-
-bool prevIsStatementStart = tokens.empty() ||
-tokens.back().type == TokenType::NewLine ||
-tokens.back().type == TokenType::Semicolon ||
-tokens.back().type == TokenType::CloseBrace ||
-tokens.back().type == TokenType::EOF_TOKEN;
-if (prevIsStatementStart) {
-size_t look = position + 1;
-while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) look++;
-if (look + 1 < source.size() && source[look] == '=' && source[look + 1] == '>') {
-tokens.push_back(scanHotkey());
-continue;
-}
-}
-advance();
-tokens.push_back(makeToken("!=", TokenType::NotEquals));
-if (debug_lexer) {
-havel::debug("LEX: {}", tokens.back().toString());
-}
-continue;
-}
+    if (c == '!' && peek() == '=') {
+      // Check if this is a hotkey (!= followed by => with optional whitespace)
+      size_t look = position + 1;
+      while (look < source.length() && (source[look] == ' ' || source[look] == '\t')) {
+        look++;
+      }
+      if (look + 1 < source.length() && source[look] == '=' && source[look + 1] == '>') {
+        // This is a hotkey (!= =>), scan it
+        tokens.push_back(scanHotkey());
+        if (debug_lexer) {
+          havel::debug("LEX: {}", tokens.back().toString());
+        }
+        continue;
+      }
+      // Not a hotkey, treat as NotEquals operator
+      advance();
+      tokens.push_back(makeToken("!=", TokenType::NotEquals));
+      if (debug_lexer) {
+        havel::debug("LEX: {}", tokens.back().toString());
+      }
+      continue;
+    }
 
         // Handle (( )) bitwise expression delimiters
         if (c == '(' && peek() == '(' && !inBitwiseExpr) {

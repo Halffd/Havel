@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lexer/Lexer.hpp"
+#include "lexer/BootstrapLexer.hpp"
 #include "parser/BootstrapParser.h"
 #include "ast/BootstrapAST.h"
 #include "utils/Logger.hpp"

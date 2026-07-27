@@ -1,5 +1,5 @@
 #pragma once
-#include "lexer/Lexer.hpp"
+#include "lexer/BootstrapLexer.hpp"
 #include <memory>
 #include <optional>
 #include <sstream>

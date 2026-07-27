@@ -2,7 +2,7 @@
 #include "../../../utils/Logger.hpp"
 
 #include "../../errors/ErrorSystem.h"
-#include "lexer/Lexer.hpp"
+#include "lexer/BootstrapLexer.hpp"
 #include "../../parser/BootstrapParser.h"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../semantic/TypeChecker.hpp"

@@ -289,6 +289,11 @@ bool isAtEnd() const;
   Token scanIdentifier();
     Token scanHotkey();
     bool isHotkeyLookahead();
+    // Check if current position is start of a hotkey binding (modifier + key + trigger)
+    bool isHotkeyBindingStart();
+    // Try to scan a hotkey binding at current position (statement start or after assign)
+    // Returns empty optional if not a hotkey binding
+    std::optional<Token> tryParseHotkeyBinding();
 
     // Process escape sequence after consuming '\'. Returns decoded char(s).
     // Sets hasInterpolation=false for \$ \{ \} (they produce literal chars, not interpolation triggers).

@@ -1145,6 +1145,7 @@ target_link_libraries(havel-lsp PRIVATE
 nlohmann_json::nlohmann_json
 Threads::Threads
 fmt::fmt
+havel_core
 )
 
  if(ENABLE_COVERAGE)

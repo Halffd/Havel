@@ -1,4 +1,5 @@
 #include "BootstrapLexer.hpp"
+#include "core/io/KeyMap.hpp"
 #include "../../utils/Logger.hpp"
 #include <cctype>
 #include <iomanip>
@@ -1079,6 +1080,190 @@ bool Lexer::isHotkeyLookahead() {
     return false;
 }
 
+// Parse a hotkey binding at statement start or after assignment
+// Handles: modifier combinations (+, #, ^, !, $, @, |, ~, &)
+// Validates key names against KeyMap
+// Checks for triggers: if, =>, ::, & (combo), :up/:down/up/down
+std::optional<Token> Lexer::tryParseHotkeyBinding() {
+    size_t startPos = position;
+    size_t startLine = line;
+    size_t startCol = column;
+    std::string hotkey;
+
+    // Parse modifier prefix: +, #, ^, !, $, @, |, ~, &
+    std::string modifiers;
+    while (!isAtEnd()) {
+        char c = peek();
+        if (c == '+' || c == '#' || c == '^' || c == '!' || 
+            c == '$' || c == '@' || c == '|' || c == '~' || c == '&') {
+            modifiers += advance();
+        } else {
+            break;
+        }
+    }
+
+    // Skip whitespace after modifiers
+    while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
+        advance();
+    }
+
+    // Parse key name (alphanumeric + some special chars)
+    std::string keyName;
+    while (!isAtEnd()) {
+        char c = peek();
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') {
+            keyName += advance();
+        } else {
+            break;
+        }
+    }
+
+    if (keyName.empty()) {
+        return std::nullopt;
+    }
+
+    // Validate key name against KeyMap
+    std::string fullKey = keyName;
+    if (!havel::KeyMap::FromString(keyName)) {
+        // Try to find aliases
+        // Fallback: check if it's a known key name
+        static const std::unordered_set<std::string> knownKeys = {
+            "Esc", "Escape", "Return", "Enter", "Delete", "Del", "Tab", "Space",
+            "Backspace", "BackSpace", "Insert", "Ins", "Home", "End", "PageUp",
+            "PgUp", "PageDown", "PgDn", "Up", "Down", "Left", "Right",
+            "PrintScreen", "PrtSc", "ScrollLock", "Pause", "Break",
+            "NumLock", "CapsLock", "Shift", "Ctrl", "Control", "Alt", "Meta",
+            "Super", "Win", "Command", "Menu", "Apps", "Help",
+            "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+            "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
+            "Esc", "Enter", "Tab", "Space", "Backspace", "Delete", "Insert", "Home", "End",
+            "PageUp", "PageDown", "Up", "Down", "Left", "Right",
+            "CapsLock", "ScrollLock", "NumLock",
+            "Shift", "Ctrl", "Alt", "Meta", "Super", "Win", "Command", "Menu", "Apps"
+        };
+        if (!knownKeys.count(keyName)) {
+            return std::nullopt;
+        }
+    }
+
+    // Build the hotkey string with modifiers
+    hotkey = modifiers + keyName;
+
+    // Check for combo hotkeys with & (e.g., "LButton & RButton")
+    while (!isAtEnd()) {
+        // Skip whitespace
+        while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
+            hotkey += advance();
+        }
+        // Check for & (combo)
+        if (peek() == '&') {
+            hotkey += advance();
+            // Skip whitespace after &
+            while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
+                hotkey += advance();
+            }
+            // Parse next key in combo
+            std::string nextKey;
+            while (!isAtEnd()) {
+                char c = peek();
+                if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') {
+                    nextKey += advance();
+                } else {
+                    break;
+                }
+            }
+            if (nextKey.empty()) {
+                return std::nullopt;
+            }
+            hotkey += nextKey;
+        } else {
+            break;
+        }
+    }
+
+    // Check for triggers: if, =>, ::, &, :up, :down, up, down
+    size_t savePos = position;
+    size_t saveLine = line;
+    size_t saveCol = column;
+
+    // Skip whitespace
+    while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
+        advance();
+    }
+
+    bool hasTrigger = false;
+    std::string trigger;
+
+    // Check for =>
+    if (peek() == '=' && peek(1) == '>') {
+        hasTrigger = true;
+        trigger = "=>";
+        advance(); advance();
+    }
+    // Check for ::
+    else if (peek() == ':' && peek(1) == ':') {
+        hasTrigger = true;
+        trigger = "::";
+        advance(); advance();
+    }
+    // Check for &
+    else if (peek() == '&' && peek(1) != '&') {
+        hasTrigger = true;
+        trigger = "&";
+        advance();
+    }
+    // Check for if
+    else if (peek() == 'i' && peek(1) == 'f' && 
+             (!std::isalnum(static_cast<unsigned char>(peek(2))) && peek(2) != '_')) {
+        hasTrigger = true;
+        trigger = "if";
+        advance(); advance();
+    }
+    // Check for :up, :down, up, down
+    else if (peek() == ':') {
+        if (peek(1) == 'u' && peek(2) == 'p' && 
+            (!std::isalnum(static_cast<unsigned char>(peek(3))) && peek(3) != '_')) {
+            hasTrigger = true;
+            trigger = ":up";
+            advance(); advance(); advance();
+        } else if (peek(1) == 'd' && peek(2) == 'o' && peek(3) == 'w' && 
+                   peek(4) == 'n' && 
+                   (!std::isalnum(static_cast<unsigned char>(peek(5))) && peek(5) != '_')) {
+            hasTrigger = true;
+            trigger = ":down";
+            advance(); advance(); advance(); advance(); advance();
+        }
+    }
+    else if (peek() == 'u' && peek(1) == 'p' && 
+             (!std::isalnum(static_cast<unsigned char>(peek(2))) && peek(2) != '_')) {
+        hasTrigger = true;
+        trigger = "up";
+        advance(); advance();
+    }
+    else if (peek() == 'd' && peek(1) == 'o' && peek(2) == 'w' && peek(3) == 'n' &&
+             (!std::isalnum(static_cast<unsigned char>(peek(4))) && peek(4) != '_')) {
+        hasTrigger = true;
+        trigger = "down";
+        advance(); advance(); advance(); advance();
+    }
+
+    if (!hasTrigger) {
+        // No valid trigger, rewind
+        position = savePos;
+        line = saveLine;
+        column = saveCol;
+        return std::nullopt;
+    }
+
+    // Build the final hotkey token value including trigger
+    std::string fullHotkey = hotkey;
+    if (!trigger.empty()) {
+        fullHotkey += " " + trigger;
+    }
+
+    return makeToken(fullHotkey, TokenType::Hotkey);
+}
+
 std::vector<Token> Lexer::tokenize() {
   std::vector<Token> tokens;
   size_t tokenCount = 0;
@@ -1581,6 +1766,101 @@ if (c == '%' && peek() == '=') {
         havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
+    }
+    // Handle !#= and !#- as hotkey prefixes (e.g., !#= =>, !#- =>)
+    if (c == '!' && peek() == '#') {
+      char nextAfterHash = peek(1);
+      if (nextAfterHash == '=' || nextAfterHash == '-') {
+        // This is a hotkey prefix (!#= or !#-), scan the full hotkey
+        // We need to consume the trigger (=> or :: or if) and emit both tokens
+        // The main loop already consumed '!', position is at '#'
+        advance(); // consume '#'
+        char prefixChar = advance(); // consume '=' or '-'
+        // Now scan the key part - but first check if next is whitespace + trigger
+        // If so, the hotkey is just !#= or !#- (complete hotkey, not a prefix)
+        size_t savePos = position;
+        size_t saveLine = line;
+        size_t saveCol = column;
+        std::string keyName;
+        while (!isAtEnd()) {
+          char c2 = peek();
+          if (std::isalnum(static_cast<unsigned char>(c2)) || c2 == '_' || c2 == '-') {
+            keyName += advance();
+          } else {
+            break;
+          }
+        }
+        // Skip whitespace
+        while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) advance();
+        // Check for triggers
+        std::string trigger;
+        bool hasTrigger = false;
+        if (peek() == '=' && peek(1) == '>') {
+          trigger = "=>";
+          hasTrigger = true;
+          advance(); advance();
+        } else if (peek() == ':' && peek(1) == ':') {
+          trigger = "::";
+          hasTrigger = true;
+          advance(); advance();
+        } else if (peek() == '&' && peek(1) != '&') {
+          trigger = "&";
+          hasTrigger = true;
+          advance();
+        } else if (peek() == 'i' && peek(1) == 'f' && 
+                   (!std::isalnum(static_cast<unsigned char>(peek(2))) && peek(2) != '_')) {
+          trigger = "if";
+          hasTrigger = true;
+          advance(); advance();
+        } else if (peek() == ':') {
+          if (peek(1) == 'u' && peek(2) == 'p' && 
+              (!std::isalnum(static_cast<unsigned char>(peek(3))) && peek(3) != '_')) {
+            trigger = ":up";
+            hasTrigger = true;
+            advance(); advance(); advance();
+          } else if (peek(1) == 'd' && peek(2) == 'o' && peek(3) == 'w' && peek(4) == 'n' && 
+                     (!std::isalnum(static_cast<unsigned char>(peek(4))) && peek(4) != '_')) {
+            trigger = ":down";
+            hasTrigger = true;
+            advance(); advance(); advance(); advance(); advance();
+          }
+        } else if (peek() == 'u' && peek(1) == 'p' && 
+                   (!std::isalnum(static_cast<unsigned char>(peek(2))) && peek(2) != '_')) {
+          trigger = "up";
+          hasTrigger = true;
+          advance(); advance();
+        } else if (peek() == 'd' && peek(1) == 'o' && peek(2) == 'w' && peek(3) == 'n' &&
+                   (!std::isalnum(static_cast<unsigned char>(peek(4))) && peek(4) != '_')) {
+          trigger = "down";
+          hasTrigger = true;
+          advance(); advance(); advance(); advance();
+        }
+        // If we found a trigger but no keyName, the hotkey is just !#= or !#-
+        // If we found a keyName, include it
+        std::string hotkey = "!#";
+        hotkey += prefixChar;
+        if (!keyName.empty()) {
+          hotkey += keyName;
+        }
+        if (!trigger.empty()) {
+          // Hotkey token contains only the key part, trigger is separate token
+          tokens.push_back(makeToken(hotkey, TokenType::Hotkey));
+          tokens.push_back(makeToken(trigger, trigger == "=>" ? TokenType::Arrow : 
+                                     trigger == "::" ? TokenType::ColonColon :
+                                     trigger == "&" ? TokenType::BitwiseAnd :
+                                     trigger == "if" ? TokenType::If :
+                                     trigger == ":up" || trigger == ":down" || trigger == "up" || trigger == "down" ? TokenType::Identifier :
+                                     TokenType::Hotkey));
+        } else {
+          // No trigger found - this might be a standalone hotkey reference
+          // Emit just the hotkey part
+          tokens.push_back(makeToken(hotkey, TokenType::Hotkey));
+        }
+        if (debug_lexer) {
+          havel::debug("LEX: {}", tokens.back().toString());
+        }
+        continue;
+      }
     }
 
         // Handle (( )) bitwise expression delimiters

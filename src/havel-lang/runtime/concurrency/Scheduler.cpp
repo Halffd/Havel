@@ -82,17 +82,6 @@ uint32_t Scheduler::spawn(Value callable, const std::vector<Value>& args,
                   callable.isClosureId() ? "closure" :
                   callable.isFunctionObjId() ? "function" : "other",
                   (int)priority);
-    ::havel::info("[SCHEDULER] SPAWN: gid={} name='{}' callable_kind={} priority={}",
-        g->id, name,
-        callable.isClosureId() ? "closure" :
-        callable.isFunctionObjId() ? "function" : "other",
-        (int)priority);
-
-    ::havel::info("[SCHEDULER] SPAWN: gid={} name='{}' callable_kind={} priority={} args={}",
-        g->id, name,
-        callable.isClosureId() ? "closure" :
-        callable.isFunctionObjId() ? "function" : "other",
-        (int)priority, args.size());
 
     g->fiber = new Fiber(g->id, init_function_id, 0, name);
     if (g->closure_id > 0) {
@@ -150,7 +139,7 @@ void Scheduler::registerMainGoroutine(Goroutine* g) {
     runnable_queue_.push_back(goroutines_[1].get());
     // Reserve ID 1 for main goroutine, start assigning from 2
     next_goroutine_id_ = 2;
-    ::havel::info("[SCHEDULER] Registered main goroutine (id=1)");
+    if (debugging::debug_io) ::havel::debug("[Scheduler] Registered main goroutine (id=1)");
 }
 
 Scheduler::Goroutine* Scheduler::pickNext() {
@@ -158,8 +147,10 @@ Scheduler::Goroutine* Scheduler::pickNext() {
 
   static const bool trace_cycle = std::getenv("HAVEL_TRACE_CYCLE");
 
-  ::havel::info("[SCHEDULER] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
-      hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
+  if (trace_cycle) {
+    ::havel::info("[SCHEDULER] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
+        hotkey_queue_.size(), runnable_queue_.size(), background_queue_.size());
+  }
 
   if (debugging::debug_io) {
     ::havel::debug("[Scheduler] pickNext: hotkey_queue={} runnable_queue={} bg_queue={}",
@@ -172,12 +163,12 @@ Scheduler::Goroutine* Scheduler::pickNext() {
   // enqueue and pickNext (e.g. suspend() while still in queue).
   auto popRunnable = [&](std::deque<Goroutine*>& q, const char* label) -> Goroutine* {
       size_t limit = q.size();
-      ::havel::info("[SCHEDULER] popRunnable {}: initial queue size={}", label, q.size());
+      if (debugging::debug_io) ::havel::debug("[Scheduler] popRunnable {}: initial queue size={}", label, q.size());
       for (size_t i = 0; i < limit && !q.empty(); i++) {
         auto* g = q.front();
         q.pop_front();
         if (!g) continue;
-        ::havel::info("[SCHEDULER] popRunnable {}: popped gid={} state={} fiber_state={}", 
+        if (debugging::debug_io) ::havel::debug("[Scheduler] popRunnable {}: popped gid={} state={} fiber_state={}",
             label, g->id, static_cast<int>(g->state.load()), g->fiber ? static_cast<int>(g->fiber->state) : -1);
         // UAF defense: cleanupDoneGoroutines purges queue entries before
         // erasing the Goroutine. If we ever pop a Done goroutine here, a
@@ -194,21 +185,19 @@ Scheduler::Goroutine* Scheduler::pickNext() {
           g->state = GoroutineState::Done;
           continue;
         }
-        ::havel::info("[SCHEDULER] popRunnable {}: checking state gid={} state={} match={}", 
-            label, g->id, static_cast<int>(g->state.load()), 
+        if (debugging::debug_io) ::havel::debug("[Scheduler] popRunnable {}: checking state gid={} state={} match={}",
+            label, g->id, static_cast<int>(g->state.load()),
             (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created));
         if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
-          ::havel::info("[SCHEDULER] pickNext: selected {} gid={} state={}",
-              label, g->id, static_cast<int>(g->state.load()));
           if (debugging::debug_io) ::havel::debug("[Scheduler] pickNext: selected {} gid={} state={}",
             label, g->id, static_cast<int>(g->state.load()));
           return g;
         }
         // Non-runnable but not garbage: rotate to back
-        ::havel::info("[SCHEDULER] popRunnable {}: rotating gid={} state={}", label, g->id, static_cast<int>(g->state.load()));
+        if (debugging::debug_io) ::havel::debug("[Scheduler] popRunnable {}: rotating gid={} state={}", label, g->id, static_cast<int>(g->state.load()));
         q.push_back(g);
       }
-      ::havel::info("[SCHEDULER] popRunnable {}: queue empty after processing, returning nullptr", label);
+      if (debugging::debug_io) ::havel::debug("[Scheduler] popRunnable {}: queue empty after processing, returning nullptr", label);
       return nullptr;
     };
 

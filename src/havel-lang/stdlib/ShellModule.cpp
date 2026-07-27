@@ -13,6 +13,10 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <cstdlib>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "utils/ExitHandler.hpp"
 
 #ifndef _WIN32
@@ -35,6 +39,50 @@ using havel::compiler::VMApi;
 namespace fs = std::filesystem;
 
 namespace havel::stdlib {
+
+// ============================================================================
+// Path validation to prevent path traversal
+// ============================================================================
+
+static bool isPathAllowed(const std::string& path) {
+    // Resolve the path to canonical form
+    std::error_code ec;
+    fs::path resolved = fs::canonical(path, ec);
+    if (ec) {
+        // If canonical fails (e.g., path doesn't exist), try to resolve parent
+        resolved = fs::absolute(path, ec);
+        if (ec) return false;
+    }
+    
+    // Get allowed base directories
+    std::vector<fs::path> allowedBases;
+    
+    // Current working directory
+    allowedBases.push_back(fs::current_path(ec));
+    if (ec) allowedBases.clear();
+    
+    // Home directory
+    const char* home = std::getenv("HOME");
+    if (home) allowedBases.push_back(fs::path(home));
+    
+    // Temp directory
+    allowedBases.push_back(fs::temp_directory_path());
+    
+    // Check if resolved path is within any allowed base
+    for (const auto& base : allowedBases) {
+        fs::path canonicalBase = fs::canonical(base, ec);
+        if (ec) continue;
+        
+        auto baseStr = canonicalBase.string();
+        auto resolvedStr = resolved.string();
+        
+        if (resolvedStr.rfind(baseStr, 0) == 0) {
+            return true;
+        }
+    }
+    
+    return false;
+}
 
 // ============================================================================
 // Command validation to prevent command injection
@@ -630,114 +678,124 @@ if (!std::getline(std::cin, line))
   // Filesystem helpers (cross‑platform via std::filesystem)
   // ----------------------------------------------------------------------
 
-  // shell.exists(path)
-  api.registerFunction("shell.exists",
-    [api](const std::vector<Value> &args) {
-      if (args.empty()) return Value::makeBool(false);
-      std::string p = api.resolveString(args[0]);
-      return Value::makeBool(fs::exists(p));
-    });
+// shell.exists(path)
+api.registerFunction("shell.exists",
+  [api](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeBool(false);
+    std::string p = api.resolveString(args[0]);
+    if (!isPathAllowed(p)) return Value::makeBool(false);
+    return Value::makeBool(fs::exists(p));
+  });
 
-  // shell.isFile(path)
-  api.registerFunction("shell.isFile",
-    [api](const std::vector<Value> &args) {
-      if (args.empty()) return Value::makeBool(false);
-      std::string p = api.resolveString(args[0]);
-      return Value::makeBool(fs::exists(p) && fs::is_regular_file(p));
-    });
+// shell.isFile(path)
+api.registerFunction("shell.isFile",
+  [api](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeBool(false);
+    std::string p = api.resolveString(args[0]);
+    if (!isPathAllowed(p)) return Value::makeBool(false);
+    return Value::makeBool(fs::exists(p) && fs::is_regular_file(p));
+  });
 
-  // shell.isDir(path)
-  api.registerFunction("shell.isDir",
-    [api](const std::vector<Value> &args) {
-      if (args.empty()) return Value::makeBool(false);
-      std::string p = api.resolveString(args[0]);
-      return Value::makeBool(fs::exists(p) && fs::is_directory(p));
-    });
+// shell.isDir(path)
+api.registerFunction("shell.isDir",
+  [api](const std::vector<Value> &args) {
+    if (args.empty()) return Value::makeBool(false);
+    std::string p = api.resolveString(args[0]);
+    if (!isPathAllowed(p)) return Value::makeBool(false);
+    return Value::makeBool(fs::exists(p) && fs::is_directory(p));
+  });
 
-  // shell.mkdir(path) – create single directory (non‑recursive)
-  api.registerFunction("shell.mkdir",
-    [api](const std::vector<Value> &args) {
-      if (args.empty())
-        return Value::makeBool(false);
-      std::string p = api.resolveString(args[0]);
-      std::error_code ec;
-      bool ok = fs::create_directory(p, ec);
-      return Value::makeBool(ok);
-    });
+// shell.mkdir(path) – create single directory (non‑recursive)
+api.registerFunction("shell.mkdir",
+  [api](const std::vector<Value> &args) {
+    if (args.empty())
+      return Value::makeBool(false);
+    std::string p = api.resolveString(args[0]);
+    if (!isPathAllowed(p)) return Value::makeBool(false);
+    std::error_code ec;
+    bool ok = fs::create_directory(p, ec);
+    return Value::makeBool(ok);
+  });
 
-  // shell.mkdirs(path) – create directory and all missing parents
-  api.registerFunction("shell.mkdirs",
-    [api](const std::vector<Value> &args) {
-      if (args.empty())
-        return Value::makeBool(false);
-      std::string p = api.resolveString(args[0]);
-      std::error_code ec;
-      bool ok = fs::create_directories(p, ec);
-      return Value::makeBool(ok);
-    });
+// shell.mkdirs(path) – create directory and all missing parents
+api.registerFunction("shell.mkdirs",
+  [api](const std::vector<Value> &args) {
+    if (args.empty())
+      return Value::makeBool(false);
+    std::string p = api.resolveString(args[0]);
+    if (!isPathAllowed(p)) return Value::makeBool(false);
+    std::error_code ec;
+    bool ok = fs::create_directories(p, ec);
+    return Value::makeBool(ok);
+  });
 
-  // shell.remove(path) – delete a file or empty directory
-  api.registerFunction("shell.remove",
-    [api](const std::vector<Value> &args) {
-      if (args.empty())
-        return Value::makeBool(false);
-      std::string p = api.resolveString(args[0]);
-      std::error_code ec;
-      bool ok = fs::remove(p, ec);
-      return Value::makeBool(ok);
-    });
+// shell.remove(path) – delete a file or empty directory
+api.registerFunction("shell.remove",
+  [api](const std::vector<Value> &args) {
+    if (args.empty())
+      return Value::makeBool(false);
+    std::string p = api.resolveString(args[0]);
+    if (!isPathAllowed(p)) return Value::makeBool(false);
+    std::error_code ec;
+    bool ok = fs::remove(p, ec);
+    return Value::makeBool(ok);
+  });
 
-  // shell.removeAll(path) – delete a file or directory recursively
-  api.registerFunction("shell.removeAll",
-    [api](const std::vector<Value> &args) {
-      if (args.empty())
-        return Value::makeBool(false);
-      std::string p = api.resolveString(args[0]);
-      std::error_code ec;
-      uintmax_t cnt = fs::remove_all(p, ec);
-      return Value::makeInt(static_cast<int64_t>(cnt));  // number of deleted items
-    });
+// shell.removeAll(path) – delete a file or directory recursively
+api.registerFunction("shell.removeAll",
+  [api](const std::vector<Value> &args) {
+    if (args.empty())
+      return Value::makeBool(false);
+    std::string p = api.resolveString(args[0]);
+    if (!isPathAllowed(p)) return Value::makeBool(false);
+    std::error_code ec;
+    uintmax_t cnt = fs::remove_all(p, ec);
+    return Value::makeInt(static_cast<int64_t>(cnt));  // number of deleted items
+  });
 
-  // shell.copy(src, dst) – copy file; if dst is a directory, file is copied inside it
-  api.registerFunction("shell.copy",
-    [api](const std::vector<Value> &args) {
-      if (args.size() < 2)
-        throw std::runtime_error("shell.copy() requires source and destination");
-      std::string src = api.resolveString(args[0]);
-      std::string dst = api.resolveString(args[1]);
-      std::error_code ec;
-      fs::copy(src, dst, fs::copy_options::overwrite_existing, ec);
-      return Value::makeBool(!ec);
-    });
+// shell.copy(src, dst) – copy file; if dst is a directory, file is copied inside it
+api.registerFunction("shell.copy",
+  [api](const std::vector<Value> &args) {
+    if (args.size() < 2)
+      throw std::runtime_error("shell.copy() requires source and destination");
+    std::string src = api.resolveString(args[0]);
+    std::string dst = api.resolveString(args[1]);
+    if (!isPathAllowed(src) || !isPathAllowed(dst)) return Value::makeBool(false);
+    std::error_code ec;
+    fs::copy(src, dst, fs::copy_options::overwrite_existing, ec);
+    return Value::makeBool(!ec);
+  });
 
-  // shell.move(src, dst) – move/rename a file or directory
-  api.registerFunction("shell.move",
-    [api](const std::vector<Value> &args) {
-      if (args.size() < 2)
-        throw std::runtime_error("shell.move() requires source and destination");
-      std::string src = api.resolveString(args[0]);
-      std::string dst = api.resolveString(args[1]);
-      std::error_code ec;
-      fs::rename(src, dst, ec);
-      return Value::makeBool(!ec);
-    });
+// shell.move(src, dst) – move/rename a file or directory
+api.registerFunction("shell.move",
+  [api](const std::vector<Value> &args) {
+    if (args.size() < 2)
+      throw std::runtime_error("shell.move() requires source and destination");
+    std::string src = api.resolveString(args[0]);
+    std::string dst = api.resolveString(args[1]);
+    if (!isPathAllowed(src) || !isPathAllowed(dst)) return Value::makeBool(false);
+    std::error_code ec;
+    fs::rename(src, dst, ec);
+    return Value::makeBool(!ec);
+  });
 
-  // shell.listDir(path) – returns array of filenames inside directory
-  api.registerFunction("shell.listDir",
-    [api](const std::vector<Value> &args) {
-      if (args.empty())
-        throw std::runtime_error("shell.listDir() requires a directory path");
-      std::string p = api.resolveString(args[0]);
-      auto arr = api.makeArray();
-      std::error_code ec;
-      if (!fs::exists(p, ec) || !fs::is_directory(p, ec))
-        return arr;  // empty if not a directory
+// shell.listDir(path) – returns array of filenames inside directory
+api.registerFunction("shell.listDir",
+  [api](const std::vector<Value> &args) {
+    if (args.empty())
+      throw std::runtime_error("shell.listDir() requires a directory path");
+    std::string p = api.resolveString(args[0]);
+    if (!isPathAllowed(p)) return api.makeArray();  // empty if not allowed
+    auto arr = api.makeArray();
+    std::error_code ec;
+    if (!fs::exists(p, ec) || !fs::is_directory(p, ec))
+      return arr;  // empty if not a directory
 
-      for (const auto &entry : fs::directory_iterator(p, ec)) {
-        api.push(arr, api.makeString(entry.path().filename().string()));
-      }
-      return arr;
-    });
+    for (const auto &entry : fs::directory_iterator(p, ec)) {
+      api.push(arr, api.makeString(entry.path().filename().string()));
+    }
+    return arr;
+  });
 
   // shell.tmpfile() – create a temporary file and return its path
   api.registerFunction("shell.tmpfile",

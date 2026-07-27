@@ -296,8 +296,8 @@ fn WebApplication() {
         if self.tcpServer == null { return false }
         self.running = true
         
-        // Accept loop with timeout for graceful shutdown
-        self.acceptTimeoutMs = 1000
+        // Accept loop with short timeout for responsive scheduler yielding
+        self.acceptTimeoutMs = 50
         
         go {
             while self.running {
@@ -308,9 +308,11 @@ fn WebApplication() {
                     if client != null && client.fd >= 0 {
                         // Handle request in a goroutine for concurrency
                         go {
-                            _handleClient(TCPConnection(client.fd, client.remote))
+                            _handleClient(tcp.TCPConnection(client.fd, client.remote))
                         }
                     }
+                } else {
+                    sleep(5)
                 }
             }
         }

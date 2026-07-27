@@ -1127,7 +1127,7 @@ std::vector<Token> Lexer::tokenize() {
       bool hasKeyName = (!isAtEnd() && isAlpha(peek()));
       bool afterAssign = (prevType == TokenType::Assign && hasKeyName && isHotkeyLookahead());
 
-      if (isStatementStart || afterAssign || (hasModifierPrefix && hasKeyName && isHotkeyLookahead())) {
+      if ((isStatementStart && isHotkeyLookahead()) || afterAssign || (hasModifierPrefix && hasKeyName && isHotkeyLookahead())) {
         tokens.push_back(scanHotkey());
         if (debug_lexer) {
           havel::debug("LEX: hotkey modifier {}", tokens.back().toString());

@@ -103,27 +103,27 @@ LOG_DIR="logs"
 THREADS=${THREADS:-$(detect_cores)}
 
 declare -A BUILD_CONFIGS=(
-  [0]="Debug,ON,ON,ON,OFF,build-debug"
-  [1]="Release,OFF,OFF,ON,OFF,build-release"
-  [2]="Debug,OFF,ON,ON,OFF,build-debug"
-  [3]="Debug,OFF,OFF,OFF,OFF,build-debug"
-  [4]="Debug,ON,ON,OFF,OFF,build-debug"
-  [5]="Release,ON,ON,ON,OFF,build-release"
-  [6]="Debug,ON,ON,OFF,OFF,build-debug"
-  [7]="Release,OFF,OFF,OFF,OFF,build-release"
-  [8]="Debug,OFF,ON,OFF,OFF,build-debug"
-  [9]="Release,ON,ON,OFF,OFF,build-release"
-  [10]="Debug,OFF,ON,ON,OFF,build"
-  [11]="Release,OFF,ON,ON,OFF,build"
-  [12]="Debug,ON,ON,OFF,ON,build-headless"
-  [13]="Release,OFF,ON,OFF,ON,build-headless"
-  [14]="Debug,OFF,ON,OFF,ON,build-headless"
-  [15]="Release,ON,ON,OFF,ON,build-headless"
-  [16]="Debug,OFF,ON,OFF,OFF,build-tsan"
+  [0]="Debug,ON,ON,ON,OFF,OFF,build-debug"
+  [1]="Release,OFF,OFF,ON,OFF,OFF,build-release"
+  [2]="Debug,OFF,ON,ON,OFF,OFF,build-debug"
+  [3]="Debug,OFF,OFF,OFF,OFF,OFF,build-debug"
+  [4]="Debug,ON,ON,OFF,OFF,OFF,build-debug"
+  [5]="Release,ON,ON,ON,OFF,OFF,build-release"
+  [6]="Debug,ON,ON,OFF,OFF,OFF,build-debug"
+  [7]="Release,OFF,OFF,OFF,OFF,OFF,build-release"
+  [8]="Debug,OFF,ON,OFF,OFF,OFF,build-debug"
+  [9]="Release,ON,ON,OFF,OFF,OFF,build-release"
+  [10]="Debug,OFF,ON,ON,OFF,OFF,build"
+  [11]="Release,OFF,ON,ON,OFF,OFF,build"
+  [12]="Debug,ON,ON,OFF,ON,OFF,build-headless"
+  [13]="Release,OFF,ON,OFF,ON,OFF,build-headless"
+  [14]="Debug,OFF,ON,OFF,ON,OFF,build-headless"
+  [15]="Release,ON,ON,OFF,ON,OFF,build-headless"
+  [16]="Debug,OFF,ON,OFF,OFF,ON,build-tsan"
 )
 
 if [[ "$BUILD_MODE" =~ ^[0-9]+$ ]] && [[ -n "${BUILD_CONFIGS[$BUILD_MODE]:-}" ]]; then
-    IFS=',' read -r BUILD_TYPE ENABLE_TESTS ENABLE_HAVEL_LANG ENABLE_LLVM ENABLE_HEADLESS BUILD_DIR <<<"${BUILD_CONFIGS[$BUILD_MODE]}"
+    IFS=',' read -r BUILD_TYPE ENABLE_TESTS ENABLE_HAVEL_LANG ENABLE_LLVM ENABLE_HEADLESS ENABLE_TSAN BUILD_DIR <<<"${BUILD_CONFIGS[$BUILD_MODE]}"
     if [[ "$ENABLE_LLVM" == "ON" && "$ENABLE_HAVEL_LANG" == "OFF" ]]; then
         log "WARNING" "LLVM requires Havel Lang - enabling automatically" "${YELLOW}"
         ENABLE_HAVEL_LANG="ON"
@@ -136,6 +136,29 @@ fi
 
 BUILD_LOG="${LOG_DIR}/build-mode${BUILD_MODE}-${BUILD_TYPE,,}.log"
 mkdir -p "${LOG_DIR}"
+
+# Sanitizer configuration (can be overridden via env vars)
+ASAN_DETECT_LEAKS=${ASAN_DETECT_LEAKS:-ON}
+ASAN_DETECT_ODR_VIOLATION=${ASAN_DETECT_ODR_VIOLATION:-ON}
+ASAN_DETECT_STACK_USE_AFTER_RETURN=${ASAN_DETECT_STACK_USE_AFTER_RETURN:-ON}
+ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=${ASAN_DETECT_INITIALIZATION_ORDER_FIASCO:-ON}
+ASAN_ALLOCATOR_MAY_RETURN_NULL=${ASAN_ALLOCATOR_MAY_RETURN_NULL:-OFF}
+ASAN_ABORT_ON_ERROR=${ASAN_ABORT_ON_ERROR:-OFF}
+UBSAN_ABORT_ON_ERROR=${UBSAN_ABORT_ON_ERROR:-OFF}
+UBSAN_ALIGNMENT=${UBSAN_ALIGNMENT:-ON}
+UBSAN_BOOL=${UBSAN_BOOL:-ON}
+UBSAN_ENUM=${UBSAN_ENUM:-ON}
+UBSAN_FLOAT_CAST_OVERFLOW=${UBSAN_FLOAT_CAST_OVERFLOW:-ON}
+UBSAN_FLOAT_DIVIDE_BY_ZERO=${UBSAN_FLOAT_DIVIDE_BY_ZERO:-ON}
+UBSAN_FUNCTION=${UBSAN_FUNCTION:-ON}
+UBSAN_INTEGER=${UBSAN_INTEGER:-ON}
+UBSAN_NULL=${UBSAN_NULL:-ON}
+UBSAN_POINTER_OVERFLOW=${UBSAN_POINTER_OVERFLOW:-ON}
+UBSAN_RETURN=${UBSAN_RETURN:-ON}
+UBSAN_SHIFT=${UBSAN_SHIFT:-ON}
+UBSAN_SIGNED_INTEGER_OVERFLOW=${UBSAN_SIGNED_INTEGER_OVERFLOW:-ON}
+UBSAN_UNREACHABLE=${UBSAN_UNREACHABLE:-ON}
+UBSAN_VLA_BOUND=${UBSAN_VLA_BOUND:-ON}
 
 show_config() {
     log "INFO" "=== BUILD CONFIGURATION ===" "${BLUE}"
@@ -214,8 +237,32 @@ build() {
   if [[ "$ENABLE_HEADLESS" == "ON" ]]; then
     cmake_cmd+=" -DENABLE_QT=OFF -DENABLE_QT_UI_BACKEND=OFF"
   fi
-  if [[ "$BUILD_MODE" == "16" ]]; then
+  if [[ "$ENABLE_TSAN" == "ON" ]]; then
     cmake_cmd+=" -DENABLE_TSAN=ON"
+  fi
+  # ASAN/UBSAN configuration (for Debug builds without TSAN)
+  if [[ "$BUILD_TYPE" == "Debug" && "$ENABLE_TSAN" != "ON" ]]; then
+    cmake_cmd+=" -DASAN_DETECT_LEAKS=${ASAN_DETECT_LEAKS}"
+    cmake_cmd+=" -DASAN_DETECT_ODR_VIOLATION=${ASAN_DETECT_ODR_VIOLATION}"
+    cmake_cmd+=" -DASAN_DETECT_STACK_USE_AFTER_RETURN=${ASAN_DETECT_STACK_USE_AFTER_RETURN}"
+    cmake_cmd+=" -DASAN_DETECT_INITIALIZATION_ORDER_FIASCO=${ASAN_DETECT_INITIALIZATION_ORDER_FIASCO}"
+    cmake_cmd+=" -DASAN_ALLOCATOR_MAY_RETURN_NULL=${ASAN_ALLOCATOR_MAY_RETURN_NULL}"
+    cmake_cmd+=" -DASAN_ABORT_ON_ERROR=${ASAN_ABORT_ON_ERROR}"
+    cmake_cmd+=" -DUBSAN_ABORT_ON_ERROR=${UBSAN_ABORT_ON_ERROR}"
+    cmake_cmd+=" -DUBSAN_ALIGNMENT=${UBSAN_ALIGNMENT}"
+    cmake_cmd+=" -DUBSAN_BOOL=${UBSAN_BOOL}"
+    cmake_cmd+=" -DUBSAN_ENUM=${UBSAN_ENUM}"
+    cmake_cmd+=" -DUBSAN_FLOAT_CAST_OVERFLOW=${UBSAN_FLOAT_CAST_OVERFLOW}"
+    cmake_cmd+=" -DUBSAN_FLOAT_DIVIDE_BY_ZERO=${UBSAN_FLOAT_DIVIDE_BY_ZERO}"
+    cmake_cmd+=" -DUBSAN_FUNCTION=${UBSAN_FUNCTION}"
+    cmake_cmd+=" -DUBSAN_INTEGER=${UBSAN_INTEGER}"
+    cmake_cmd+=" -DUBSAN_NULL=${UBSAN_NULL}"
+    cmake_cmd+=" -DUBSAN_POINTER_OVERFLOW=${UBSAN_POINTER_OVERFLOW}"
+    cmake_cmd+=" -DUBSAN_RETURN=${UBSAN_RETURN}"
+    cmake_cmd+=" -DUBSAN_SHIFT=${UBSAN_SHIFT}"
+    cmake_cmd+=" -DUBSAN_SIGNED_INTEGER_OVERFLOW=${UBSAN_SIGNED_INTEGER_OVERFLOW}"
+    cmake_cmd+=" -DUBSAN_UNREACHABLE=${UBSAN_UNREACHABLE}"
+    cmake_cmd+=" -DUBSAN_VLA_BOUND=${UBSAN_VLA_BOUND}"
   fi
   cmake_cmd+=" ${SCRIPT_DIR}"
 

@@ -91,3 +91,4 @@ session*
 .sisyphus
 out
 build-*/**/*.hvc
+modules/**/*.hvc

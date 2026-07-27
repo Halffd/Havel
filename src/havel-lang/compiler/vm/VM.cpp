@@ -1150,7 +1150,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     }
 
     if (func->jit_compiled && jit_compiler_ && !debugger_attached_ && !callable.isClosureId()) {
-        ::havel::info("[VM] JIT path: func={} callable_is_closure={} jit_compiled={} debugger={}", func->name, callable.isClosureId(), func->jit_compiled, debugger_attached_);
+        if (debugging::debug_io) ::havel::debug("[VM] JIT path: func={} callable_is_closure={} jit_compiled={} debugger={}", func->name, callable.isClosureId(), func->jit_compiled, debugger_attached_);
         uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
         try {
             jit_compiler_->executeCompiled(this, func->name, args);
@@ -1161,7 +1161,7 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
             // Fall through to interpreter path
         }
     } else {
-        ::havel::info("[VM] JIT skipped: func={} callable_is_closure={} jit_compiled={} debugger={}", func->name, callable.isClosureId(), func->jit_compiled, debugger_attached_);
+        if (debugging::debug_io) ::havel::debug("[VM] JIT skipped: func={} callable_is_closure={} jit_compiled={} debugger={}", func->name, callable.isClosureId(), func->jit_compiled, debugger_attached_);
     }
 
     // Push args onto VM stack
@@ -1522,10 +1522,10 @@ if (suspension_requested_) {
         // For suspensions, the goroutine will be properly suspended in the scheduler
         // and the event loop will wake it when ready.
         if (yield_callback_ && suspension_reason_ != static_cast<uint8_t>(SuspensionReason::SLEEP)) {
-            ::havel::info("[VM] Yield requested, calling yield_callback_");
+            if (debugging::debug_io) ::havel::debug("[VM] Yield requested, calling yield_callback_");
             yield_callback_();
         } else if (suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
-            ::havel::info("[VM] Sleep suspension requested, not calling yield_callback_ (will be woken by event loop)");
+            if (debugging::debug_io) ::havel::debug("[VM] Sleep suspension requested, not calling yield_callback_ (will be woken by event loop)");
         }
         uint8_t reason = suspension_reason_;
         void* ctx = suspension_context_;
@@ -1851,10 +1851,10 @@ gc_suspend_counter_++;
             // Check for suspension request after host function returns
             if (suspension_requested_) {
                 if (yield_callback_) {
-                    ::havel::info("[VM] Suspension requested after host function, calling yield_callback_");
+                    if (debugging::debug_io) ::havel::debug("[VM] Suspension requested after host function, calling yield_callback_");
                     yield_callback_();
                 } else {
-                    ::havel::info("[VM] Suspension requested but NO yield_callback_ set!");
+                    ::havel::warning("[VM] Suspension requested but NO yield_callback_ set!");
                 }
             }
             return;

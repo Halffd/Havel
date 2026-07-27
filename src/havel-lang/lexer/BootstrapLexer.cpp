@@ -1550,19 +1550,32 @@ if (c == '%' && peek() == '=') {
     if (c == '!' && peek() == '=') {
       // Check if this is a hotkey (!= followed by => with optional whitespace)
       size_t look = position + 1;
+      // Skip the '=' in '!='
+      look++;
+      // Skip whitespace after '!='
       while (look < source.length() && (source[look] == ' ' || source[look] == '\t')) {
         look++;
       }
       if (look + 1 < source.length() && source[look] == '=' && source[look + 1] == '>') {
-        // This is a hotkey (!= =>), scan it
-        tokens.push_back(scanHotkey());
+        // This is a hotkey (!= =>), consume != and =>
+        advance(); // consume '!'
+        advance(); // consume '='
+        // Skip whitespace
+        while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) advance();
+        // Consume =>
+        advance(); // consume '='
+        advance(); // consume '>'
+        // Emit hotkey token AND arrow token
+        tokens.push_back(makeToken("!=", TokenType::Hotkey));
+        tokens.push_back(makeToken("=>", TokenType::Arrow));
         if (debug_lexer) {
           havel::debug("LEX: {}", tokens.back().toString());
         }
         continue;
       }
       // Not a hotkey, treat as NotEquals operator
-      advance();
+      advance(); // consume '!'
+      advance(); // consume '='
       tokens.push_back(makeToken("!=", TokenType::NotEquals));
       if (debug_lexer) {
         havel::debug("LEX: {}", tokens.back().toString());

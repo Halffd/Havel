@@ -1832,12 +1832,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
         uint32_t host_func_idx = callee_value.asHostFuncId();
         if (host_func_idx < host_function_names_.size()) {
             const std::string& hfname = host_function_names_[host_func_idx];
-            if (hfname.find("Parser") != std::string::npos) {
-                static bool once = false;
-                if (!once) { once = true;
-                std::cerr << "[DOCALL] Parser as HostFuncId, name='" << hfname << "'" << std::endl;
-                }
-            }
         }
         if (host_func_idx >= host_function_names_.size()) {
             COMPILER_THROW("Host function index out of range: " +
@@ -1848,12 +1842,22 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
         if (it == host_functions.end()) {
             COMPILER_THROW("Host function not found: " + name);
         }
-        gc_suspend_counter_++;
-    Value result = it->second(args);
-    gc_suspend_counter_--;
-    pushStack(result);
-    maybeCollectGarbage();
-    return;
+gc_suspend_counter_++;
+            Value result = it->second(args);
+            gc_suspend_counter_--;
+            pushStack(result);
+            maybeCollectGarbage();
+            
+            // Check for suspension request after host function returns
+            if (suspension_requested_) {
+                if (yield_callback_) {
+                    ::havel::info("[VM] Suspension requested after host function, calling yield_callback_");
+                    yield_callback_();
+                } else {
+                    ::havel::info("[VM] Suspension requested but NO yield_callback_ set!");
+                }
+            }
+            return;
   }
 
   if (frame_count_ >= max_call_depth_) {
@@ -2352,10 +2356,10 @@ co->ip = 0;
       } else {
         locals[base + i] = dv;
       }
-    } else {
+        } else {
       locals[base + i] = nullptr; // No arg provided, no default
     }
-  }
+}
 }
 
 void VM::doTailCall(Value callee_value,
@@ -4081,7 +4085,6 @@ Value VM::loadModule(const std::string& path) {
     // so that functions can call sibling top-level functions during module initialization.
     // Use nullptr for module_globals so these closures use current globals (not the snapshot),
     // allowing them to see variables set during __main__ (e.g., 'flags = DebugFlags()').
-    std::cerr << "[MODULE-LOAD] Populating globals for '" << path << "' with " << chunk->getFunctionIndices().size() << " functions\n";
     for (const auto& [func_name, func_index] : chunk->getFunctionIndices()) {
         if (globals.find(func_name) == globals.end()) {
             auto closureRef = heap_.allocateClosure(GCHeap::RuntimeClosure{
@@ -4140,10 +4143,8 @@ frame_count_++;
 	// Execute the module's bytecode (same heap, sandboxed globals)
         Value exec_result;
         try {
- std::cerr << "[MODULE-EXEC] Running __main__ of '" << path << "'\n";
- runDispatchLoop(0);
- std::cerr << "[MODULE-EXEC] __main__ of '" << path << "' completed\n";
- if (!stack.empty()) {
+  runDispatchLoop(0);
+  if (!stack.empty()) {
                 exec_result = stack.top();
                 stack.pop();
             }

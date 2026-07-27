@@ -286,9 +286,7 @@ fn FnDeclaration(name, params, body, line, col, typeParams) {
 
 }
 fn LambdaExpression(parameters, body) {
-  print("DEBUG AST: LambdaExpression constructor: parameters=" + str(parameters) + " body=" + str(body))
   result = {kind: "LambdaExpression", parameters: parameters, body: body}
-  print("DEBUG AST: LambdaExpression result: parameters=" + str(result.parameters) + " body=" + str(result.body))
   result
 }
 

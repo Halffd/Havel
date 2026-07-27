@@ -924,7 +924,7 @@ void ExecutionEngine::processGoroutinesInline() {
         main_script_fiber_ = std::make_unique<Fiber>(0, 0);
     }
 
-    // Ensure main script is registered as a goroutine in scheduler
+// Ensure main script is registered as a goroutine in scheduler
     static bool main_goroutine_registered = false;
     if (!main_goroutine_registered) {
         // Create a proper goroutine for the main script
@@ -932,16 +932,14 @@ void ExecutionEngine::processGoroutinesInline() {
         main_script_fiber_->name = "main-script";
         main_script_fiber_->state = FiberState::RUNNING;
         
-        // Create goroutine wrapper for main script
+        // Create goroutine wrapper for main script (let scheduler assign ID)
         Scheduler::Goroutine* main_g = new Scheduler::Goroutine(1, "main-script", FiberPriority::NORMAL);
         main_g->fiber = main_script_fiber_.get();
-        main_g->state = Scheduler::GoroutineState::Running;
+        main_g->state = Scheduler::GoroutineState::Runnable;  // Must be Runnable to be picked by scheduler
         
         // Register in scheduler
         scheduler_->registerMainGoroutine(main_g);
         scheduler_->setCurrent(main_g);
-        // Increment next_goroutine_id_ to avoid ID conflict with main script goroutine (ID=1)
-        scheduler_->incrementNextGoroutineId();
         main_goroutine_registered = true;
     }
 
@@ -1008,6 +1006,13 @@ void ExecutionEngine::processGoroutinesInline() {
             g->instructions_executed++;
             executed++;
             ::havel::info("[INLINE_YIELD] gid={} step {} result={}", g->id, i, static_cast<int>(result.type));
+            // Check for suspension request after each step (e.g., from time.sleep)
+            if (vm_->isSuspensionRequested()) {
+                ::havel::info("[INLINE_YIELD] gid={} suspension requested, yielding", g->id);
+                if (g->fiber && !vm_->exit_requested_.load()) vm_->saveFiberState(g->fiber);
+                handleYield(g);
+                break;
+            }
             if (result.type != VMExecutionResult::YIELD) {
                 if (g->fiber && !vm_->exit_requested_.load()) vm_->saveFiberState(g->fiber);
                 switch (result.type) {

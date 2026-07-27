@@ -187,7 +187,7 @@ case OpCode::TAIL_CALL: {
       args[arg_count - 1 - i] = popStack();
     }
     Value callee_value = popStack();
-    doCall(callee_value, std::move(args));
+    doTailCall(callee_value, std::move(args));
     break;
   }
 

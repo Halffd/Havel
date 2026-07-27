@@ -252,7 +252,10 @@ struct VMApi {
 
   bool isInGoroutine() const {
     auto *sched = vm().getScheduler();
-    return sched && sched->current() != nullptr;
+    if (sched && sched->current() != nullptr) {
+      return true;
+    }
+    return vm().hasCurrentExecutingFiber();
   }
 
   void processPendingEvents() const { vm().processPendingEvents(); }
@@ -261,12 +264,16 @@ struct VMApi {
     if (ms <= 0) return;
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
     while (std::chrono::steady_clock::now() < deadline) {
-      if (vm().exitRequested()) break;
+      if (vm().exitRequested()) {
+        break;
+      }
       processPendingEvents();
       auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
           deadline - std::chrono::steady_clock::now());
       auto chunk = std::min(static_cast<int64_t>(remaining.count()), int64_t(10));
-      if (chunk > 0) std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+      if (chunk > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+      }
     }
   }
 

@@ -649,8 +649,7 @@ return
 			// TCO: emit TAIL_CALL if in tail position and not inside try
 			emitter.inTailPosition = savedTail
 			if emitter.inTailPosition && emitter.tryDepth == 0 {
-				// TODO: TAIL_CALL not fully implemented in VM, use CALL for now
-				bc.emit("CALL", savedArgc)
+				bc.emit("TAIL_CALL", savedArgc)
 			}
 			else {
 				bc.emit("CALL", savedArgc)
@@ -667,7 +666,12 @@ return
 			savedArgc = savedArgc + 1
 		}
 		emitter.inTailPosition = savedTail
-		bc.emit("CALL", savedArgc)
+		if emitter.inTailPosition && emitter.tryDepth == 0 {
+			bc.emit("TAIL_CALL", savedArgc)
+		}
+		else {
+			bc.emit("CALL", savedArgc)
+		}
 		return
 	}
     if k == "AssignmentExpression" {
@@ -1231,7 +1235,6 @@ emitter.scope = oldScope
 return
 }
   if k == "LambdaExpression" {
-  print("DEBUG EMITTER: LambdaExpression node.parameters: " + str(node.parameters) + " node.body: " + str(node.body))
   // Compile the lambda body now
   // node only has parameters and body (no name, line, col)
   result = compileLambda(emitter, null, node.parameters, node.body, null)
@@ -3190,10 +3193,6 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
   newScope.tag = name + str(fid)
   emitter.lastFuncScope = newScope
   emitter.scope = newScope
-   // Bind function name in the function's own scope for recursion
-   if name != null {
-       scopeDeclare(newScope, name)
-   }
 for p in params {
     if type(p) == "object" {
       if p.name != null { scopeDeclare(newScope, p.name) }
@@ -3276,7 +3275,6 @@ bc.set_local_count(actualLocals)
 
  }
 fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
-  print("DEBUG: compileLambda called with parameters: " + str(parameters))
   lamId = emitter.nextFuncId
   emitter.nextFuncId = lamId + 1
   if name == null { name = "lambda_" + str(lamId) }
@@ -3289,11 +3287,7 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
   if name != null {
       scopeDeclare(oldScope, name)
   }
-  // Handle recursive lambdas: pre-allocate local slot for the closure
   localIdx = -1
-  if name != null {
-    localIdx = scopeDeclare(newScope, name)
-  }
   for p in parameters != null ? parameters : [] {
   if type(p) == "array" {
     print("ERROR: param is array: " + str(p))
@@ -3659,7 +3653,6 @@ si = si + 1
     }
     bc.set_local_count(scopeLocalCount(emitter.scope))
     emitter.scope = null
-    traceEmitter("DEBUG: skip_execute=" + str(skip_execute) + " !skip_execute=" + str(!skip_execute))
     if !skip_execute {
       traceEmitter("execute_persistent " + entryName + " BEFORE")
       result = bc.execute_persistent(entryName)

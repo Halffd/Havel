@@ -3,6 +3,7 @@
 #include <chrono>
 #include <filesystem>
 #include <iostream>
+#include <poll.h>
 #include <signal.h>
 #include <string>
 #include <sys/wait.h>
@@ -95,31 +96,53 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 
 	close(pipefd[1]);
 
+	struct pollfd pfd = {pipefd[0], POLLIN, 0};
+
 	char buffer[4096];
-	while (true) {
-		ssize_t n = read(pipefd[0], buffer, sizeof(buffer));
-		if (n <= 0) break;
-	}
-
-	close(pipefd[0]);
-
 	int status = 0;
 	bool killed = false;
-
+	bool pipe_done = false;
 	auto deadline = start + std::chrono::seconds(timeout_seconds);
+
 	while (true) {
+		if (!pipe_done) {
+			int pret = poll(&pfd, 1, 100);
+			if (pret > 0) {
+				ssize_t n = read(pipefd[0], buffer, sizeof(buffer));
+				if (n <= 0) {
+					close(pipefd[0]);
+					pipe_done = true;
+				}
+			} else if (pret == 0) {
+				// timeout waiting for pipe data, check child status
+			}
+		}
+
 		pid_t ret = waitpid(pid, &status, WNOHANG);
-		if (ret > 0) break;
-		if (ret == -1) break;
+		if (ret > 0 || ret == -1) {
+			if (!pipe_done) {
+				while (true) {
+					int p = poll(&pfd, 1, 200);
+					if (p > 0) {
+						ssize_t n = read(pipefd[0], buffer, sizeof(buffer));
+						if (n <= 0) break;
+					} else {
+						break;
+					}
+				}
+				close(pipefd[0]);
+			}
+			break;
+		}
 
 		auto now = std::chrono::high_resolution_clock::now();
 		if (now >= deadline) {
 			kill(pid, SIGKILL);
 			waitpid(pid, &status, 0);
 			killed = true;
+			if (!pipe_done) close(pipefd[0]);
 			break;
 		}
-		usleep(10000);
 	}
 
 	auto end = std::chrono::high_resolution_clock::now();

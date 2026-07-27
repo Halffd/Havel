@@ -531,11 +531,17 @@ size_t tail_call_depth_ = 0;
                   std::vector<Value> args); // TCO
   void runDispatchLoop(size_t stop_frame_depth);
   void runDispatchFast(size_t stop_frame_depth);
-   inline void periodicYieldCheck() {
-       if (yield_callback_) {
-           yield_callback_();
-       }
-   }
+inline void periodicYieldCheck() {
+        if (yield_callback_) {
+            yield_callback_();
+        }
+        if (suspension_requested_) {
+            // Suspension requested (e.g., time.sleep), yield to scheduler
+            if (yield_callback_) {
+                yield_callback_();
+            }
+        }
+    }
   bool handleScriptThrow(const Value &value);
   std::string buildStackTrace(size_t frame_count) const;
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
@@ -963,6 +969,10 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   }
   bool isSuspensionRequested() const { return suspension_requested_; }
   void clearSuspensionRequest() { suspension_requested_ = false; }
+  
+  // Check if VM is currently executing a fiber (for goroutine context detection)
+  bool hasCurrentExecutingFiber() const { return current_executing_fiber_ != nullptr; }
+  
   // JIT yield-point: scheduler calls this to request preemption of
   // a long-running JIT-compiled function. The JIT's havel_vm_check_yield()
   // stub reads this flag and throws JitCoroutineSignal if set.

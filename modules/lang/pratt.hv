@@ -1423,7 +1423,6 @@ fn parseCallArgs() {
             body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
     }
 
-  print("DEBUG PARSER CALL: name=" + str(name) + " params=" + str(params) + " body=" + str(body) + " l=" + str(l) + " c=" + str(c))
   return LambdaExpression(params, body)
 
   }
@@ -2318,7 +2317,6 @@ if tt == TID.Dsl {
     expr = parseExpr(0)
     if expr == null: return null
     if expr.kind == "ErrorNode": return expr
-    print("PS_END: pos=" + str(::pos) + " return=" + str(expr.kind))
     return ExpressionStatement(expr, l, c)
 }
     // ===================================================================
@@ -4599,11 +4597,8 @@ fn parseAtDecoratorStatement() {
 
 // Parse entire source into a Program AST node
 fn parseProgram(source) {
-    print("PARSEPROGRAM_ENTER")
     tokenList = tokenize(source)
-    print("PARSEPROGRAM_TOKENIZED len=" + str(#tokenList))
     p = Parser(tokenList)
-    print("PARSEPROGRAM_PARSER_CREATED")
     body = []
     while p.current().tid != TID.EOF {
         tt = p.current().tid

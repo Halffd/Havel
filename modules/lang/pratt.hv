@@ -4605,12 +4605,7 @@ fn parseProgram(source) {
     p = Parser(tokenList)
     print("PARSEPROGRAM_PARSER_CREATED")
     body = []
-    loop_iter = 0
     while p.current().tid != TID.EOF {
-        loop_iter = loop_iter + 1
-        if loop_iter > 100 {
-            break
-        }
         tt = p.current().tid
         if tt == TID.NewLine || tt == TID.Semicolon {
             p.advance()

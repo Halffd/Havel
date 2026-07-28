@@ -78,8 +78,10 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         close(pipefd[1]);
         std::vector<std::string> flags;
         if (pre_flags.empty()) {
-            // C++ pipeline: force --no-self-hosted to prevent auto-detect
-            flags = {"--run", "--pure-stdlib", "--no-self-hosted"};
+            // Self-hosted pipeline by default (like smoke mode)
+            fs::path bin_path(havel_bin);
+            fs::path self_hosted_path = bin_path.parent_path().parent_path();
+            flags = {"--run", "--self-hosted-path", self_hosted_path.string()};
         } else {
             flags = pre_flags;
         }

@@ -46,6 +46,7 @@ Scheduler::~Scheduler() {
   }
 #endif
   stop();
+  cleanupDoneGoroutines();
 }
 
 Scheduler::Goroutine::~Goroutine() {
@@ -826,6 +827,10 @@ size_t Scheduler::wakeSleepingGoroutines() {
         for (auto* g : toWake) {
             // Set resume value for sleep (returns null)
             g->wait_handle.resume_value = Value::makeNull();
+            // Resume the fiber if it exists
+            if (g->fiber) {
+                g->fiber->resume();
+            }
             if (g->priority == FiberPriority::HOTKEY) {
                 hotkey_queue_.push_back(g);
             } else if (g->priority == FiberPriority::BACKGROUND) {

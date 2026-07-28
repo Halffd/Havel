@@ -252,17 +252,26 @@ void registerSysModule(const VMApi &api) {
 #endif
                        });
 
-    api.registerFunction("sys.exit",
+    // Register exit cleanup callbacks
+    static std::vector<std::function<void()>>* g_exitCleanups = nullptr;
+    if (!g_exitCleanups) {
+        g_exitCleanups = new std::vector<std::function<void()>>();
+    }
+    api.registerFunction("sys.registerExitCleanup",
         [&api](const std::vector<Value> &args) -> Value {
-        int code = 0;
-        if (!args.empty()) {
-            if (args[0].isInt())
-                code = static_cast<int>(args[0].asInt());
-            else if (args[0].isDouble())
-                code = static_cast<int>(args[0].asDouble());
+        if (args.empty() || !args[0].isFunctionObjId()) {
+            return Value::makeNull();
         }
-        api.vm().exit_requested_.store(true);
-        api.vm().exit_code_.store(code);
+        uint32_t funcId = static_cast<uint32_t>(args[0].asInt());
+        if (g_exitCleanups) {
+            g_exitCleanups->push_back([&api, funcId]() {
+                try {
+                    api.vm().callFunction(funcId, {});
+                } catch (...) {
+                    // Ignore errors in cleanup
+                }
+            });
+        }
         return Value::makeNull();
     });
 

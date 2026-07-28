@@ -78,6 +78,8 @@ fn close() {
     }
 }
 
+// Note: Exit cleanup removed - OS will clean up X11 connection on process exit
+
 fn displayNum() {
     _d = shell.getenv("DISPLAY")
     if _d == null { 0 }

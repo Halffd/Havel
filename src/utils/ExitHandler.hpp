@@ -20,6 +20,8 @@ void exit(ExitReason reason, int code = 0);
 
 void registerExitCleanup(std::function<void()> fn);
 
+void runExitCleanups();
+
 bool isExiting();
 
 } // namespace havel

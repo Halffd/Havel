@@ -175,16 +175,32 @@ int main(int argc, char **argv) {
 #endif
 
     if (mode_all || mode_hvmoke) {
-        std::cout << "\n=== .hv smoke tests ===" << std::endl;
+        std::cout << "\n=== .hv smoke tests (self-hosted) ===" << std::endl;
         std::string smoke_dir = scripts_root + "/smoke";
-        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose);
+        // Use self-hosted pipeline by default
+        fs::path bin_path(havel_bin);
+        fs::path self_hosted_path = bin_path.parent_path().parent_path();
+        std::vector<std::string> self_hosted_flags = {
+            "--run",
+            "--self-hosted-path",
+            self_hosted_path.string()
+        };
+        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags);
     }
 
 	if (mode_all || mode_scripts) {
-		std::cout << "\n=== script tests ===" << std::endl;
-		auto dirs = hvtest::list_test_dirs(scripts_root);
-		failures += hvtest::run_script_suite(havel_bin, dirs, verbose);
-	}
+        std::cout << "\n=== script tests (self-hosted) ===" << std::endl;
+        auto dirs = hvtest::list_test_dirs(scripts_root);
+        // Use self-hosted pipeline by default
+        fs::path bin_path(havel_bin);
+        fs::path self_hosted_path = bin_path.parent_path().parent_path();
+        std::vector<std::string> self_hosted_flags = {
+            "--run",
+            "--self-hosted-path",
+            self_hosted_path.string()
+        };
+        failures += hvtest::run_script_suite(havel_bin, dirs, verbose, self_hosted_flags);
+    }
 
 	if (mode_all || mode_cpp) {
 		std::cout << "\n=== C++ unit tests ===" << std::endl;

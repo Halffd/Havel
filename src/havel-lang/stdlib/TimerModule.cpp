@@ -14,6 +14,7 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 void registerTimerModule(const VMApi &api) {
+  fprintf(stderr, "[DEBUG] registerTimerModule called\n");
   // timer.setTimeout(ms, fn) — one-shot timer, delegates to timeout.start
   api.registerFunction("timer.setTimeout", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
@@ -48,10 +49,26 @@ void registerTimerModule(const VMApi &api) {
     return Value::makeInt(0);
   });
 
-  // timer.clearAll() — clear all timers
-  api.registerFunction("timer.clearAll", [](const std::vector<Value> &args) {
+  // timer.sleep(ms) — sleep for milliseconds (delegates to VM yield with sleep reason)
+  api.registerFunction("timer.sleep", [api](const std::vector<Value> &args) {
+    if (args.empty())
+      throw std::runtime_error("timer.sleep requires milliseconds");
+    if (!args[0].isInt())
+      throw std::runtime_error("timer.sleep requires integer milliseconds");
+    int64_t ms = args[0].asInt();
+    if (ms < 0) throw std::runtime_error("timer.sleep: ms must be non-negative");
+    return api.vm().invokeHostFunctionDirect("sleep_ms", args);
+  });
+
+  // timer.now() — current time in milliseconds
+  api.registerFunction("timer.now", [](const std::vector<Value> &args) {
+    fprintf(stderr, "[TimerModule] timer.now lambda entered\n");
     (void)args;
-    return Value::makeNull();
+    fprintf(stderr, "[TimerModule] timer.now() called\n");
+    auto now = std::chrono::steady_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    fprintf(stderr, "[TimerModule] timer.now() returning: %lld\n", ms);
+    return Value::makeInt(static_cast<int64_t>(ms));
   });
 
   // Build namespace object
@@ -61,6 +78,7 @@ void registerTimerModule(const VMApi &api) {
   api.setField(timerObj, "clear", api.makeFunctionRef("timer.clear"));
   api.setField(timerObj, "activeCount", api.makeFunctionRef("timer.activeCount"));
   api.setField(timerObj, "clearAll", api.makeFunctionRef("timer.clearAll"));
+  api.setField(timerObj, "now", api.makeFunctionRef("timer.now"));
   api.setGlobal("timer", timerObj);
 }
 

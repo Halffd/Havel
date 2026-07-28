@@ -11,9 +11,20 @@ void EmergencyUngrabAllEvdevSignalSafe();
 
 static std::atomic<bool> g_exiting{false};
 static std::function<void()> g_cleanup_fn;
+static std::vector<std::function<void()>> g_exit_cleanups;
 
 void registerExitCleanup(std::function<void()> fn) {
-  g_cleanup_fn = std::move(fn);
+  g_exit_cleanups.push_back(std::move(fn));
+}
+
+void runExitCleanups() {
+  for (auto& fn : g_exit_cleanups) {
+    try {
+      fn();
+    } catch (...) {
+      // Ignore exceptions in cleanup
+    }
+  }
 }
 
 bool isExiting() { return g_exiting.load(std::memory_order_acquire); }
@@ -68,6 +79,9 @@ void exit(ExitReason reason, int code) {
   if (g_cleanup_fn) {
     g_cleanup_fn();
   }
+
+  // Run all registered exit cleanups
+  runExitCleanups();
 
   std::exit(code);
 }

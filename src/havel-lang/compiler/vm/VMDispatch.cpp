@@ -30,9 +30,6 @@ namespace havel::compiler {
 // ============================================================================
 
 void VM::executeInstruction(const Instruction &instruction) {
-  fprintf(stderr, "[EXEC] op=%d globals_count=%zu PI=%d\n",
-    (int)instruction.opcode,
-    globals.size(), (int)(globals.find("PI") != globals.end()));
 if (frame_count_ > 0 && frame_arena_[frame_count_ - 1].chunk) {
         current_chunk = frame_arena_[frame_count_ - 1].chunk;
 }
@@ -102,14 +99,6 @@ auto hostIt = host_function_globals_.find(name);
   }
 
   trackGlobalAccess(name);
-  if (name == "PI" || name == "E") {
-    fprintf(stderr, "[DISPATCH] PI/E not found! globals count=%zu\n", globals.size());
-    int n = 0;
-    for (auto &[k,v] : globals) {
-      if (n++ > 20) { fprintf(stderr, "[DISPATCH]   ...\n"); break; }
-      fprintf(stderr, "[DISPATCH]   %s\n", k.c_str());
-    }
-  }
   COMPILER_THROW("Undefined variable: '" + name + "'");
   break;
   }
@@ -864,7 +853,19 @@ op_CALL: {
     }
     // IMMEDIATE check for suspension after CALL - host functions may request suspension
     if (suspension_requested_) {
-        return;
+        // If it's a SLEEP suspension, handle it immediately like the periodic check does
+        if (suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
+            if (scheduler_ && current_executing_fiber_) {
+                // For SLEEP, the IP was already advanced before the CALL (at start of op_CALL)
+                // No need to adjust IP further
+                last_suspension_reason_ = suspension_reason_;
+                last_suspension_context_ = suspension_context_;
+                suspension_requested_ = false;
+                suspension_context_ = nullptr;
+                return;
+            }
+        }
+        goto slow_dispatch_fallback;
     }
     counter++;
     if ((counter & 8191) == 0) {

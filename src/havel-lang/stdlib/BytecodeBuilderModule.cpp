@@ -1100,8 +1100,19 @@ return result;
         // Create a callable for the entry function
         const auto *entryFunc = exec_chunk->getFunction(entry);
         if (!entryFunc) {
+            fprintf(stderr, "[SPAWN-STORED-DEBUG] entry '%s' not found! chunk_func_count=%zu func_names=",
+                entry.c_str(), exec_chunk->getFunctionCount());
+            for (const auto& f : exec_chunk->getAllFunctions()) {
+                fprintf(stderr, "%s ",
+                    f.name.empty() ? "<anon>" : f.name.c_str());
+            }
+            fprintf(stderr, "\n");
             throw std::runtime_error("bc.spawn_stored: entry function '" + entry + "' not found in chunk");
         }
+        // [SPAWN-STORED-DEBUG] Verify chunk content
+        fprintf(stderr, "[SPAWN-STORED-DEBUG] chunk stored at id=%u func_count=%zu entry_func_name='%s' instr_count=%zu\n",
+            chunk_id, exec_chunk->getFunctionCount(), entryFunc->name.c_str(),
+            entryFunc->instructions.size());
         uint32_t funcIndex = exec_chunk->getFunctionIndex(entryFunc);
         Value entryCallable = Value::makeFunctionObjId(funcIndex);
         

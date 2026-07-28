@@ -1345,8 +1345,13 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   if (use_fast_path) {
 #if HAVE_COMPUTED_GOTO
     runDispatchFast(stop_frame_depth);
+    // If suspension was requested (indicated by last_suspension_reason_), return immediately so caller can handle it
+    if (last_suspension_reason_ != 0) {
+      current_executing_fiber_ = saved_fiber_flag;
+      return;
+    }
     if (frame_count_ > stop_frame_depth && !exit_requested_.load()) {
-      // runDispatchFast returned due to suspension — fall through to slow path
+      // runDispatchFast returned due to other reasons (complex opcode) — fall through to slow path
       goto slow_path;
     }
     current_executing_fiber_ = saved_fiber_flag;
@@ -1358,7 +1363,11 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       if ((counter & 8191) == 0) {
         if (exit_requested_.load()) break;
         maybeCollectGarbage();
-        if (suspension_requested_) goto slow_path;
+        if (last_suspension_reason_ != 0) {
+          // Suspension requested - return immediately so caller can handle it
+          current_executing_fiber_ = saved_fiber_flag;
+          return;
+        }
         if (yield_callback_) {
             yield_callback_();
         }

@@ -987,8 +987,9 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
 void* getSuspensionContext() const { return suspension_context_; }
 
 uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
-void* getLastSuspensionContext() const { return last_suspension_context_; }
-void clearLastSuspension() { last_suspension_reason_ = 0; last_suspension_context_ = nullptr; }
+  void* getLastSuspensionContext() const { return last_suspension_context_; }
+  void clearLastSuspension() { last_suspension_reason_ = 0; last_suspension_context_ = nullptr; }
+  bool isInlineYieldActive() const { return inline_yield_active_; }
 
   // Register a suspended fiber waiting on a channel receive
   void registerChannelWait(uint32_t channel_id, Fiber* fiber);
@@ -1329,15 +1330,16 @@ private:
     std::atomic<uint64_t> tier2_enqueue_count_{0};
     std::atomic<uint64_t> tier2_compile_count_{0};
     std::atomic<uint64_t> tier2_skip_duplicate_count_{0};
-    bool tier2_flush_on_shutdown_ = false;
+bool tier2_flush_on_shutdown_ = false;
     uint32_t jit_active_closure_id_ = 0;
     std::function<void(VM&)> post_reset_setup_;
     int gc_suspend_counter_ = 0;
     void* serviceRegistry_ = nullptr;
+    bool inline_yield_active_ = false;
 
- public:
-     bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire); }
-     void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
+  public:
+bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire); }
+    void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }
      void* getServiceRegistry() const { return serviceRegistry_; }
 
      // RAII guard for vm_in_execute_. Ensures the flag is cleared on

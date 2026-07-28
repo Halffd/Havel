@@ -1,5 +1,6 @@
 // Simple async test
 use async_mod
+use time
 
 print("Testing sleep...")
 start = time.now()

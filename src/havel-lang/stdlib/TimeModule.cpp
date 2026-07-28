@@ -134,8 +134,8 @@ void registerTimeModule(const VMApi &api) {
         if (api.isInGoroutine()) {
           api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
                                     reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
-          fprintf(stderr, "[TIME_DEBUG] suspension requested\n");
-          fflush(stderr);
+          // Force immediate yield to process the suspension
+          api.yieldNow();
           return Value::makeNull();
         }
         fprintf(stderr, "[TIME_DEBUG] calling chunkedSleep\n");

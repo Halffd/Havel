@@ -542,7 +542,7 @@ void VM::processPendingEvents() {
 
 void VM::processEventsAndYield() {
   processPendingEvents();
-  if (yield_callback_) {
+  if (yield_callback_ && !isInlineYieldActive()) {
     yield_callback_();
   }
 }

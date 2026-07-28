@@ -7,6 +7,7 @@
 #include "../../utils/ErrorPrinter.hpp"
 #include "../semantic/TypeChecker.hpp"
 #include "../vm/VM.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
 #include "BootstrapByteCompiler.hpp"
 
 #include "../../stdlib/RuntimeErrorTracker.hpp"
@@ -1002,11 +1003,27 @@ BytecodeSmokeResult runBytecodePipeline(const std::string &source,
     if (options.debugBytecode) {
       vm->setTraceExecution(true);
     }
+    // Set up a yield callback to process events and wake sleeping goroutines
+    // when the main fiber suspends (e.g., for time.sleep)
     if (options.vm_override) {
       auto shared_chunk = std::shared_ptr<BytecodeChunk>(std::move(chunk));
       vm->storeMainChunk(shared_chunk);
+      // Set up yield callback for the main fiber to handle sleep suspensions
+      vm->setYieldCallback([vm]() {
+        vm->processPendingEvents();
+        if (vm->getScheduler()) {
+          vm->getScheduler()->wakeSleepingGoroutines();
+        }
+      });
       result.return_value = vm->execute(*shared_chunk, entry_function);
     } else {
+      // Set up yield callback for the owned VM as well
+      vm->setYieldCallback([vm]() {
+        vm->processPendingEvents();
+        if (vm->getScheduler()) {
+          vm->getScheduler()->wakeSleepingGoroutines();
+        }
+      });
       result.return_value = vm->execute(*chunk, entry_function);
     }
   } catch (const ScriptError &e) {

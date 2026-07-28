@@ -1095,57 +1095,6 @@ return result;
             runArgs.push_back(args[i]);
         }
 
-        // Spawn as a goroutine instead of executing inline
-        auto &vm = api.vm();
-        // Create a callable for the entry function
-        const auto *entryFunc = exec_chunk->getFunction(entry);
-        if (!entryFunc) {
-            fprintf(stderr, "[SPAWN-STORED-DEBUG] entry '%s' not found! chunk_func_count=%zu func_names=",
-                entry.c_str(), exec_chunk->getFunctionCount());
-            for (const auto& f : exec_chunk->getAllFunctions()) {
-                fprintf(stderr, "%s ",
-                    f.name.empty() ? "<anon>" : f.name.c_str());
-            }
-            fprintf(stderr, "\n");
-            throw std::runtime_error("bc.spawn_stored: entry function '" + entry + "' not found in chunk");
-        }
-        // [SPAWN-STORED-DEBUG] Verify chunk content
-        fprintf(stderr, "[SPAWN-STORED-DEBUG] chunk stored at id=%u func_count=%zu entry_func_name='%s' instr_count=%zu\n",
-            chunk_id, exec_chunk->getFunctionCount(), entryFunc->name.c_str(),
-            entryFunc->instructions.size());
-        uint32_t funcIndex = exec_chunk->getFunctionIndex(entryFunc);
-        Value entryCallable = Value::makeFunctionObjId(funcIndex);
-        
-        // Store the chunk as the main chunk for the goroutine
-        vm.storeMainChunk(exec_chunk);
-        
-        // Spawn the goroutine
-        uint32_t gid = vm.spawnGoroutine(entryCallable, {});
-        
-        return Value(static_cast<int64_t>(gid));
-    });
-
-    api.registerFunction("bc.spawn_stored", [api](const std::vector<Value> &args) -> Value {
-        if (args.empty() || !args[0].isInt()) {
-            throw std::runtime_error("bc.spawn_stored: requires chunk id (int)");
-        }
-        uint32_t chunk_id = static_cast<uint32_t>(args[0].asInt());
-        if (chunk_id >= g_builder.stored_chunks.size()) {
-            throw std::runtime_error("bc.spawn_stored: invalid chunk id " + std::to_string(chunk_id));
-        }
-        auto &exec_chunk = g_builder.stored_chunks[chunk_id];
-        if (!exec_chunk || exec_chunk->getFunctionCount() == 0) {
-            throw std::runtime_error("bc.spawn_stored: chunk has no functions");
-        }
-        std::string entry = "__main__";
-        if (args.size() > 1 && (args[1].isStringId() || args[1].isStringValId())) {
-            entry = api.resolveString(args[1]);
-        }
-        std::vector<Value> runArgs;
-        for (size_t i = 2; i < args.size(); ++i) {
-            runArgs.push_back(args[i]);
-        }
-
         auto &vm = api.vm();
         vm.setMainChunkShared(exec_chunk);
         vm.current_chunk = exec_chunk.get();

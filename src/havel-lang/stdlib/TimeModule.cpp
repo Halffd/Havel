@@ -37,8 +37,6 @@ static int64_t getTimestampMs(const std::vector<Value> &args) {
 }
 
 void registerTimeModule(const VMApi &api) {
-  std::cerr << "[TIME_DEBUG] registerTimeModule called!" << std::endl;
-  std::cerr.flush();
   // time.now() — current epoch in milliseconds
   api.registerFunction("time.now",
                        [](const std::vector<Value> &args) {
@@ -128,21 +126,15 @@ void registerTimeModule(const VMApi &api) {
           ms = static_cast<int64_t>(args[0].asDouble());
         else
           throw std::runtime_error("time.sleep() requires numeric argument");
-        
-        fprintf(stderr, "[TIME_DEBUG] >>> ENTERING time.sleep ms=%ld isInGoroutine=%d\n", ms, api.isInGoroutine());
-        fflush(stderr);
+
         if (api.isInGoroutine()) {
           api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
-                                    reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
+                                     reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
           // Force immediate yield to process the suspension
           api.yieldNow();
           return Value::makeNull();
         }
-        fprintf(stderr, "[TIME_DEBUG] calling chunkedSleep\n");
-        fflush(stderr);
         api.chunkedSleep(ms);
-        fprintf(stderr, "[TIME_DEBUG] chunkedSleep returned\n");
-        fflush(stderr);
         return Value::makeNull();
       });
 

@@ -586,8 +586,6 @@ private:
     static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
     if (_trace) {
       auto* _s = vm_->getScheduler();
-      fprintf(stderr, "[CYCLE] processGoroutinesInline: enter inline_yield_active_=%d runnableCount=%zu\n",
-              (int)inline_yield_active_, _s ? _s->runnableCount() : 0);
     }
     if (inline_yield_active_) return;
     auto* sched = vm_->getScheduler();

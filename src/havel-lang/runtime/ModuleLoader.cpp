@@ -128,6 +128,16 @@ ModuleLoader::resolve(const std::string& modulePath,
                           hvcTime >= fs::last_write_time(langHv);
       if (newerOrEqual) return makeBcCache(langHvc, langHv, modulePath);
     }
+
+    // modules/std/<name>.hvc subdirectory convention (stdlib modules)
+    fs::path stdHvc = fs::path(self_hosted_modules_path_) / "modules" / "std" / (name + ".hvc");
+    fs::path stdHv  = fs::path(self_hosted_modules_path_) / "modules" / "std" / (name + ".hv");
+    if (fs::exists(stdHvc)) {
+      auto hvcTime = fs::last_write_time(stdHvc);
+      bool newerOrEqual = !fs::exists(stdHv) ||
+                          hvcTime >= fs::last_write_time(stdHv);
+      if (newerOrEqual) return makeBcCache(stdHvc, stdHv, modulePath);
+    }
   }
 
   // 2. Check script directory first for local modules:

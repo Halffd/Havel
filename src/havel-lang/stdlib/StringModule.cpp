@@ -33,6 +33,30 @@ void registerStringModule(const VMApi &api) {
         return api.makeString(result);
     });
 
+    api.registerFunction("string.chr", [api](const std::vector<Value> &args) {
+        if (args.empty())
+            throw std::runtime_error("string.chr() requires 1 argument");
+        int64_t cp = args[0].isInt() ? args[0].asInt() : 0;
+        std::string result;
+        if (cp < 0) return api.makeString("");
+        if (cp < 0x80) {
+            result += static_cast<char>(cp);
+        } else if (cp < 0x800) {
+            result += static_cast<char>(0xC0 | (cp >> 6));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        } else if (cp < 0x10000) {
+            result += static_cast<char>(0xE0 | (cp >> 12));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        } else if (cp < 0x110000) {
+            result += static_cast<char>(0xF0 | (cp >> 18));
+            result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        }
+        return api.makeString(result);
+    });
+
     api.registerFunction("string._codePointLen", [api](const std::vector<Value> &args) {
         if (args.empty())
             throw std::runtime_error("string._codePointLen() requires 1 argument");
@@ -203,7 +227,7 @@ void finalizeStringNamespace(const VMApi &api) {
 
     Value exports;
     try {
-        exports = vm.loadModule("string/string");
+        exports = vm.loadModule("string");
     } catch (...) {
     }
 

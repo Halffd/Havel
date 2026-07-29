@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Compile all self-hosted modules/lang/*.hv -> out/modules/lang/*.hvc
+# and modules/std/*.hv -> out/modules/std/*.hvc
 # Usage: ./emit_pipeline.sh [havel_binary] [output_dir]
 set -euo pipefail
 
@@ -7,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HAVEL="${1:-$SCRIPT_DIR/build-release/havel}"
 OUT_DIR="${2:-$SCRIPT_DIR/out/modules/lang}"
 SRC_DIR="$SCRIPT_DIR/modules/lang"
+STD_SRC_DIR="$SCRIPT_DIR/modules/std"
+STD_OUT_DIR="$SCRIPT_DIR/out/modules/std"
 
 if [ ! -x "$HAVEL" ]; then
     echo "emit_pipeline: havel binary not found: $HAVEL" >&2
@@ -14,11 +17,13 @@ if [ ! -x "$HAVEL" ]; then
 fi
 
 mkdir -p "$OUT_DIR"
+mkdir -p "$STD_OUT_DIR"
 
 PASS=0
 FAIL=0
 VERSION_HASHES=""
 
+echo "emit_pipeline: building lang modules..."
 for hv in "$SRC_DIR"/*.hv; do
     name="$(basename "$hv" .hv)"
     out="$OUT_DIR/$name.hvc"
@@ -28,6 +33,20 @@ for hv in "$SRC_DIR"/*.hv; do
         PASS=$((PASS + 1))
     else
         echo "emit_pipeline: FAILED $name" >&2
+        FAIL=$((FAIL + 1))
+    fi
+done
+
+echo "emit_pipeline: building std modules..."
+for hv in "$STD_SRC_DIR"/*.hv; do
+    name="$(basename "$hv" .hv)"
+    out="$STD_OUT_DIR/$name.hvc"
+    if "$HAVEL" --build "$hv" -o "$out" 2>/dev/null; then
+        sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+        VERSION_HASHES="${VERSION_HASHES}std/$name:${sz}\n"
+        PASS=$((PASS + 1))
+    else
+        echo "emit_pipeline: FAILED std/$name" >&2
         FAIL=$((FAIL + 1))
     fi
 done

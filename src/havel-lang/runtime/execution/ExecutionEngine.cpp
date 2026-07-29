@@ -158,8 +158,7 @@ bool ExecutionEngine::executeFrame() {
 	}
 
 
-if (g->persistent && g->state == Scheduler::GoroutineState::Created
-    && g->hotkey_condition_callback_id != 0) {
+if (g->persistent && g->hotkey_condition_callback_id != 0) {
     auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
     // Print watched global variables for debugging conditional hotkeys
     if (!g->hotkey_condition_deps.empty()) {

@@ -158,8 +158,7 @@ bool ExecutionEngine::executeFrame() {
 	}
 
 
-if (g->persistent && g->state == Scheduler::GoroutineState::Created
-    && g->hotkey_condition_callback_id != 0) {
+if (g->persistent && g->hotkey_condition_callback_id != 0) {
     auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
     // Print watched global variables for debugging conditional hotkeys
     if (!g->hotkey_condition_deps.empty()) {
@@ -672,7 +671,11 @@ void ExecutionEngine::onVariableChanged(const std::string& var_name) {
                 }
                 try {
                     Value body_func = Value::makeFunctionObjId(fiber->current_function_id);
+                    // Set current when watcher ID so nested when blocks register correctly
+                    uint32_t prev_when_watcher = vm_->current_when_watcher_id_;
+                    vm_->current_when_watcher_id_ = fiber->watcher_id;
                     vm_->call(body_func, {});
+                    vm_->current_when_watcher_id_ = prev_when_watcher;
                 } catch (...) {
                 }
             }

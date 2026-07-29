@@ -5007,18 +5007,7 @@ bool VM::checkDebugBreak() {
 
 
 
-// Direct invocation of host functions (bypasses stack, takes args as vector)
-Value VM::invokeHostFunctionDirect(const std::string &name,
-                                    const std::vector<Value> &args) {
-  fprintf(stderr, "[DEBUG] invokeHostFunctionDirect called with name: %s\n", name.c_str());
-  auto it = host_functions.find(name);
-  if (it == host_functions.end()) {
-    fprintf(stderr, "[DEBUG] invokeHostFunctionDirect: function '%s' NOT FOUND in host_functions\n", name.c_str());
-    return Value::makeNull();
-  }
-  fprintf(stderr, "[DEBUG] invokeHostFunctionDirect: function FOUND: %s\n", name.c_str());
-  return it->second(args);
-}
+// invokeHostFunctionDirect is defined in VMHostFunctions.cpp
 
 
 

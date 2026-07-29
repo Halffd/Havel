@@ -1021,7 +1021,7 @@ if (arg.isStringValId()) {
           COMPILER_THROW("sleep_ms duration cannot be negative");
         }
 
-        fprintf(stderr, "[DEBUG] sleep_ms called with duration_ms=%ld, scheduler_=%p, current_executing_fiber_=%p\n", duration_ms, scheduler_, current_executing_fiber_);
+        fprintf(stderr, "[DEBUG] sleep_ms: entered with duration_ms=%ld, scheduler_=%p, current_executing_fiber_=%p\n", duration_ms, scheduler_, current_executing_fiber_);
 
         if (scheduler_ && current_executing_fiber_) {
           fprintf(stderr, "[DEBUG] sleep_ms: suspending fiber\n");
@@ -1087,16 +1087,9 @@ if (arg.isStringValId()) {
           COMPILER_THROW("sleep(): duration cannot be negative");
         }
 
-{
-  static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
-  if (_trace) {
-    (void)scheduler_;
-    (void)current_executing_fiber_;
-    (void)duration_ms;
-  }
-}
+        fprintf(stderr, "[DEBUG] sleep: scheduler_=%p, current_executing_fiber_=%p, duration_ms=%ld\n", scheduler_, current_executing_fiber_, *duration_ms);
 
-if (scheduler_ && current_executing_fiber_) {
+        if (scheduler_ && current_executing_fiber_) {
 // Use the VM's goroutine suspension mechanism instead of blocking.
 // This lets the scheduler put the goroutine to sleep and resume it
 // after the duration, allowing the event loop to process input
@@ -3652,14 +3645,5 @@ Value VM::invokeHostFunction(const std::string &name,
   return result;
 }
 
-Value VM::invokeHostFunctionDirect(const std::string &name,
-                                     const std::vector<Value> &args) {
-  auto it = host_functions.find(name);
-  if (it == host_functions.end()) {
-    fprintf(stderr, "[DEBUG] invokeHostFunctionDirect: function '%s' NOT FOUND in host_functions\n", name.c_str());
-    return Value::makeNull();
-  }
-  return it->second(args);
-}
 
 } // namespace havel::compiler

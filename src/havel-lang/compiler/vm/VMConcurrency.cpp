@@ -674,10 +674,11 @@ if (awaitable.isTimeoutId()) {
  }
 
 case OpCode::FIBER_SLEEP: {
-  Value ms_val = popStack();
-  int ms = toInt(ms_val);
+    Value ms_val = popStack();
+    int ms = toInt(ms_val);
+    fprintf(stderr, "[DEBUG] FIBER_SLEEP: ms=%d, current_coroutine_id_=%u, scheduler_=%p\n", ms, current_coroutine_id_, scheduler_);
 
-  if (current_coroutine_id_ != UINT32_MAX) {
+    if (current_coroutine_id_ != UINT32_MAX) {
     // Inside a coroutine: yield with a resume time
     auto *co = heap_.coroutine(current_coroutine_id_);
     if (co && frame_count_ > 0) {
@@ -734,6 +735,9 @@ case OpCode::FIBER_SLEEP: {
     suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
     suspension_context_ = reinterpret_cast<void*>(
         static_cast<intptr_t>(ms));
+    // Also set last_suspension_* so fast path can detect this suspension
+    last_suspension_reason_ = suspension_reason_;
+    last_suspension_context_ = suspension_context_;
     pushStack(Value::makeNull());
     break;
   }

@@ -681,6 +681,7 @@ void VM::runDispatchFast(size_t stop_frame_depth) {
         [static_cast<uint8_t>(OpCode::CALL_SPREAD)] = &&op_CALL,
         [static_cast<uint8_t>(OpCode::RETURN)] = &&op_RETURN
     };
+    fprintf(stderr, "[DEBUG] runDispatchFast: entered, frame_count_=%zu, stop_frame_depth=%zu, use_fast_path=%d\n", frame_count_, stop_frame_depth, !debugger_attached_ && !profiling_enabled_ && !trace_execution_ && max_instructions_ == 0 && !timer_check_func_);
 
     size_t counter = 0;
 
@@ -709,9 +710,20 @@ op_LOAD_CONST: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
-        if (suspension_requested_) { return; }
+        if (suspension_requested_) { 
+            // Transfer suspension info to last_suspension_* so caller can handle it
+            last_suspension_reason_ = suspension_reason_;
+            last_suspension_context_ = suspension_context_;
+            suspension_requested_ = false;
+            suspension_context_ = nullptr;
+            return; 
+        }
         // Check for suspension request (e.g., channel receive, thread join)
         if (suspension_requested_) {
+            last_suspension_reason_ = suspension_reason_;
+            last_suspension_context_ = suspension_context_;
+            suspension_requested_ = false;
+            suspension_context_ = nullptr;
             return;
         }
         if (!pending_calls.empty()) {
@@ -1478,6 +1490,14 @@ op_JUMP_IF_NULL: {
 
 slow_dispatch_fallback:
     // Suspension or complex opcode encountered — return to caller's slow path
+    if (suspension_requested_) {
+        // Transfer suspension info to last_suspension_* so caller can handle it
+        last_suspension_reason_ = suspension_reason_;
+        last_suspension_context_ = suspension_context_;
+        suspension_requested_ = false;
+        suspension_context_ = nullptr;
+        fprintf(stderr, "[DEBUG] slow_dispatch_fallback: transferred suspension reason=%d\n", last_suspension_reason_);
+    }
     return;
 
 op_default: {
@@ -1505,7 +1525,14 @@ op_default: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
-        if (suspension_requested_) { return; }
+        if (suspension_requested_) {
+            // Transfer suspension info to last_suspension_* so caller can handle it
+            last_suspension_reason_ = suspension_reason_;
+            last_suspension_context_ = suspension_context_;
+            suspension_requested_ = false;
+            suspension_context_ = nullptr;
+            return;
+        }
         if (!pending_calls.empty()) {
             processPendingCalls();
             if (exit_requested_.load()) return;

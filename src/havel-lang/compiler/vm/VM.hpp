@@ -361,6 +361,9 @@ uint32_t current_coroutine_id_ = UINT32_MAX; // Currently executing coroutine (U
   std::atomic<bool> jit_yield_requested_{false}; // Scheduler sets this to preempt JIT
   std::function<void()> yield_callback_; // Called periodically to allow scheduler goroutine processing
 
+  // Track main script goroutine ID for SLEEP handling in simple execute()
+  uint32_t main_script_goroutine_id_ = UINT32_MAX;
+
 // Last suspension info preserved after runDispatchLoop exits
 // Used by processGoroutines to set WaitHandle on the goroutine
 uint8_t last_suspension_reason_ = 0;

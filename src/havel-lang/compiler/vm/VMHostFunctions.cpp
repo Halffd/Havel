@@ -1,29 +1,29 @@
-#include "VM.hpp"
-#include "VMInternals.hpp"
-#include "../../../utils/Logger.hpp"
-#include "../../runtime/concurrency/Thread.hpp"
-#include "../../runtime/concurrency/Fiber.hpp"
-#include "../../runtime/concurrency/Scheduler.hpp"
-#include "../../runtime/concurrency/DependencyTracker.hpp"
-#include "../../runtime/concurrency/WatcherRegistry.hpp"
-#include "../runtime/EventQueue.hpp"
-#include "../prototypes/PrototypeRegistry.hpp"
-#include "stdlib/StringModule.hpp"
-#include "stdlib/FsModule.hpp"
-#include "stdlib/StateModule.hpp"
-#include "stdlib/HotkeyModule.hpp"
-#include "../core/Pipeline.hpp"
-#include "../../../core/io/IO.hpp"
-#include "../../../core/io/EventListener.hpp"
 #include "../../../core/display/DisplayManager.hpp"
+#include "../../../core/io/EventListener.hpp"
+#include "../../../core/io/IO.hpp"
 #include "../../../host/ServiceRegistry.hpp"
 #include "../../../host/mouse/MouseService.hpp"
+#include "../../../utils/Logger.hpp"
+#include "../../runtime/concurrency/DependencyTracker.hpp"
+#include "../../runtime/concurrency/Fiber.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
+#include "../../runtime/concurrency/Thread.hpp"
+#include "../../runtime/concurrency/WatcherRegistry.hpp"
+#include "../core/Pipeline.hpp"
+#include "../prototypes/PrototypeRegistry.hpp"
+#include "../runtime/EventQueue.hpp"
+#include "VM.hpp"
+#include "VMInternals.hpp"
+#include "stdlib/FsModule.hpp"
+#include "stdlib/HotkeyModule.hpp"
+#include "stdlib/StateModule.hpp"
+#include "stdlib/StringModule.hpp"
 
+#include <chrono>
+#include <climits>
 #include <iostream>
 #include <sstream>
-#include <climits>
 #include <thread>
-#include <chrono>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -32,9 +32,9 @@ namespace havel::compiler {
 
 void VM::registerDefaultHostFunctions() {
   // Register print as both host function AND global (for closure access)
-    // Register string module host functions (toCodePointArray, etc.)
-    {
-        VMApi api(*this);
+  // Register string module host functions (toCodePointArray, etc.)
+  {
+    VMApi api(*this);
     havel::stdlib::registerStringModule(api);
   }
   {
@@ -49,228 +49,362 @@ void VM::registerDefaultHostFunctions() {
     VMApi api(*this);
     havel::stdlib::registerHotkeyModule(api);
   }
-  // IO bridge functions — registered at startup so pure-Havel io module can reference them
-  // via the auto-export fallback (use "io" -> host_function_globals_ has io.* entries)
+  // IO bridge functions — registered at startup so pure-Havel io module can
+  // reference them via the auto-export fallback (use "io" ->
+  // host_function_globals_ has io.* entries)
   {
     VMApi api(*this);
-    auto getIO = []() -> IO* {
+    auto getIO = []() -> IO * {
       auto io = host::ServiceRegistry::instance().get<IO>();
       return io.get();
     };
-    auto toStr = [this](const Value& v) -> std::string {
-      if (v.isStringId() || v.isStringValId()) return resolveStringKey(v);
-      if (v.isInt()) return std::to_string(v.asInt());
-      if (v.isDouble()) return std::to_string(v.asDouble());
-      if (v.isBool()) return v.asBool() ? "true" : "false";
+    auto toStr = [this](const Value &v) -> std::string {
+      if (v.isStringId() || v.isStringValId())
+        return resolveStringKey(v);
+      if (v.isInt())
+        return std::to_string(v.asInt());
+      if (v.isDouble())
+        return std::to_string(v.asDouble());
+      if (v.isBool())
+        return v.asBool() ? "true" : "false";
       return "";
     };
 
-    api.registerFunction("io._send", [api, getIO, toStr](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (args.empty()) return Value::makeBool(false);
-      io->Send(toStr(args[0]).c_str());
-      return Value::makeBool(true);
-    });
-    api.registerFunction("io._sendX11Key", [api, getIO, toStr](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (args.size() < 2) return Value::makeBool(false);
-      bool press = args[1].isBool() ? args[1].asBool() : args[1].asInt() != 0;
-      io->SendX11Key(toStr(args[0]), press);
-      return Value::makeBool(true);
-    });
-    api.registerFunction("io._map", [api, getIO, toStr](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (args.size() < 2) return Value::makeBool(false);
-      io->Map(toStr(args[0]), toStr(args[1]));
-      return Value::makeBool(true);
-    });
-    api.registerFunction("io._remap", [api, getIO, toStr](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (args.size() < 2) return Value::makeBool(false);
-      io->Remap(toStr(args[0]), toStr(args[1]));
-      return Value::makeBool(true);
-    });
-    api.registerFunction("io._unmap", [api, getIO, toStr](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (args.size() < 1) return Value::makeBool(false);
-      io->Unmap(toStr(args[0]));
-      return Value::makeBool(true);
-    });
-    api.registerFunction("io._emergencyRelease", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeNull();
-      io->EmergencyReleaseAllKeys();
-      return Value::makeNull();
-    });
-    api.registerFunction("io._ungrabAll", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeNull();
+    api.registerFunction("io._send",
+                         [api, getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.empty())
+                             return Value::makeBool(false);
+                           io->Send(toStr(args[0]).c_str());
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction("io._sendX11Key",
+                         [api, getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.size() < 2)
+                             return Value::makeBool(false);
+                           bool press = args[1].isBool() ? args[1].asBool()
+                                                         : args[1].asInt() != 0;
+                           io->SendX11Key(toStr(args[0]), press);
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction("io._map",
+                         [api, getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.size() < 2)
+                             return Value::makeBool(false);
+                           io->Map(toStr(args[0]), toStr(args[1]));
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction("io._remap",
+                         [api, getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.size() < 2)
+                             return Value::makeBool(false);
+                           io->Remap(toStr(args[0]), toStr(args[1]));
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction("io._unmap",
+                         [api, getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.size() < 1)
+                             return Value::makeBool(false);
+                           io->Unmap(toStr(args[0]));
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction("io._emergencyRelease",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeNull();
+                           io->EmergencyReleaseAllKeys();
+                           return Value::makeNull();
+                         });
+    api.registerFunction("io._ungrabAll", [getIO](const std::vector<Value> &) {
+      auto *io = getIO();
+      if (!io)
+        return Value::makeNull();
       io->UngrabAll();
       return Value::makeNull();
     });
-    api.registerFunction("io._setEvdevGrab", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      bool grab = !args.empty() && (args[0].isBool() ? args[0].asBool() : args[0].asInt() != 0);
-      return Value::makeBool(io->SetEvdevGrab(grab));
-    });
-    api.registerFunction("io._setBlockInput", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      bool block = !args.empty() && (args[0].isBool() ? args[0].asBool() : args[0].asInt() != 0);
-      auto* el = io->GetEventListener();
-      if (!el) return Value::makeBool(false);
-      el->SetBlockInput(block);
-      return Value::makeBool(true);
-    });
-    api.registerFunction("io._getEvdevGrab", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      return Value::makeBool(io->GetEvdevGrab());
-    });
-    api.registerFunction("io._suspend", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
+    api.registerFunction(
+        "io._setEvdevGrab", [getIO](const std::vector<Value> &args) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeBool(false);
+          bool grab =
+              !args.empty() &&
+              (args[0].isBool() ? args[0].asBool() : args[0].asInt() != 0);
+          return Value::makeBool(io->SetEvdevGrab(grab));
+        });
+    api.registerFunction(
+        "io._setBlockInput", [getIO](const std::vector<Value> &args) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeBool(false);
+          bool block =
+              !args.empty() &&
+              (args[0].isBool() ? args[0].asBool() : args[0].asInt() != 0);
+          auto *el = io->GetEventListener();
+          if (!el)
+            return Value::makeBool(false);
+          el->SetBlockInput(block);
+          return Value::makeBool(true);
+        });
+    api.registerFunction("io._getEvdevGrab",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           return Value::makeBool(io->GetEvdevGrab());
+                         });
+    api.registerFunction("io._suspend", [getIO](const std::vector<Value> &) {
+      auto *io = getIO();
+      if (!io)
+        return Value::makeBool(false);
       return Value::makeBool(io->Suspend());
     });
-    api.registerFunction("io._resume", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (io->isSuspended) return Value::makeBool(io->Resume());
+    api.registerFunction("io._resume", [getIO](const std::vector<Value> &) {
+      auto *io = getIO();
+      if (!io)
+        return Value::makeBool(false);
+      if (io->isSuspended)
+        return Value::makeBool(io->Resume());
       return Value::makeBool(true);
     });
-    api.registerFunction("io._isSuspended", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      return Value::makeBool(io->IsSuspended());
-    });
-    api.registerFunction("io._isKeyPressed", [api, getIO, toStr](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (args.empty()) return Value::makeBool(false);
-      return Value::makeBool(io->IsKeyPressed(toStr(args[0])));
-    });
-    api.registerFunction("io._isShiftPressed", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      return Value::makeBool(io->IsShiftPressed());
-    });
-    api.registerFunction("io._isCtrlPressed", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      return Value::makeBool(io->IsCtrlPressed());
-    });
-    api.registerFunction("io._isAltPressed", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      return Value::makeBool(io->IsAltPressed());
-    });
-    api.registerFunction("io._isWinPressed", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      return Value::makeBool(io->IsWinPressed());
-    });
-    api.registerFunction("io._getCurrentModifiers", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeInt(0);
-      return Value::makeInt(io->GetCurrentModifiers());
-    });
-    api.registerFunction("io._setExecutorMode", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (args.empty()) return Value::makeBool(false);
-      int m = args[0].isInt() ? args[0].asInt() : 0;
-      io->SetExecutorMode(static_cast<ExecutorMode>(m));
-      return Value::makeBool(true);
-    });
-    api.registerFunction("io._getExecutorMode", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeInt(0);
-      return Value::makeInt(static_cast<int>(io->GetExecutorMode()));
-    });
-    api.registerFunction("io._mouseMove", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (args.size() < 2) return Value::makeBool(false);
-      int dx = args[0].isInt() ? args[0].asInt() : 0;
-      int dy = args[1].isInt() ? args[1].asInt() : 0;
-      int speed = args.size() > 2 && args[2].isInt() ? args[2].asInt() : 1;
-      return Value::makeBool(io->MouseMove(dx, dy, speed));
-    });
-    api.registerFunction("io._mouseMoveTo", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      if (args.size() < 2) return Value::makeBool(false);
-      int x = args[0].isInt() ? args[0].asInt() : 0;
-      int y = args[1].isInt() ? args[1].asInt() : 0;
-      int speed = args.size() > 2 && args[2].isInt() ? args[2].asInt() : 1;
-      return Value::makeBool(io->MouseMoveTo(x, y, speed));
-    });
-    api.registerFunction("io._mouseClick", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
-      io->MouseClick(btn);
-      return Value::makeBool(true);
-    });
-    api.registerFunction("io._mouseDown", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
-      return Value::makeBool(io->MouseDown(btn));
-    });
-    api.registerFunction("io._mouseUp", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
-      return Value::makeBool(io->MouseUp(btn));
-    });
-    api.registerFunction("io._scroll", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      double dy = !args.empty() && (args[0].isDouble() || args[0].isInt())
-          ? (args[0].isDouble() ? args[0].asDouble() : static_cast<double>(args[0].asInt())) : 0.0;
-      double dx = args.size() > 1 && (args[1].isDouble() || args[1].isInt())
-          ? (args[1].isDouble() ? args[1].asDouble() : static_cast<double>(args[1].asInt())) : 0.0;
+    api.registerFunction("io._isSuspended",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           return Value::makeBool(io->IsSuspended());
+                         });
+    api.registerFunction("io._isKeyPressed",
+                         [api, getIO, toStr](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.empty())
+                             return Value::makeBool(false);
+                           return Value::makeBool(
+                               io->IsKeyPressed(toStr(args[0])));
+                         });
+    api.registerFunction("io._isShiftPressed",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           return Value::makeBool(io->IsShiftPressed());
+                         });
+    api.registerFunction("io._isCtrlPressed",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           return Value::makeBool(io->IsCtrlPressed());
+                         });
+    api.registerFunction("io._isAltPressed",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           return Value::makeBool(io->IsAltPressed());
+                         });
+    api.registerFunction("io._isWinPressed",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           return Value::makeBool(io->IsWinPressed());
+                         });
+    api.registerFunction("io._getCurrentModifiers",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeInt(0);
+                           return Value::makeInt(io->GetCurrentModifiers());
+                         });
+    api.registerFunction("io._setExecutorMode",
+                         [getIO](const std::vector<Value> &args) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           if (args.empty())
+                             return Value::makeBool(false);
+                           int m = args[0].isInt() ? args[0].asInt() : 0;
+                           io->SetExecutorMode(static_cast<ExecutorMode>(m));
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction(
+        "io._getExecutorMode", [getIO](const std::vector<Value> &) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeInt(0);
+          return Value::makeInt(static_cast<int>(io->GetExecutorMode()));
+        });
+    api.registerFunction(
+        "io._mouseMove", [getIO](const std::vector<Value> &args) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeBool(false);
+          if (args.size() < 2)
+            return Value::makeBool(false);
+          int dx = args[0].isInt() ? args[0].asInt() : 0;
+          int dy = args[1].isInt() ? args[1].asInt() : 0;
+          int speed = args.size() > 2 && args[2].isInt() ? args[2].asInt() : 1;
+          return Value::makeBool(io->MouseMove(dx, dy, speed));
+        });
+    api.registerFunction(
+        "io._mouseMoveTo", [getIO](const std::vector<Value> &args) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeBool(false);
+          if (args.size() < 2)
+            return Value::makeBool(false);
+          int x = args[0].isInt() ? args[0].asInt() : 0;
+          int y = args[1].isInt() ? args[1].asInt() : 0;
+          int speed = args.size() > 2 && args[2].isInt() ? args[2].asInt() : 1;
+          return Value::makeBool(io->MouseMoveTo(x, y, speed));
+        });
+    api.registerFunction(
+        "io._mouseClick", [getIO](const std::vector<Value> &args) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeBool(false);
+          int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
+          io->MouseClick(btn);
+          return Value::makeBool(true);
+        });
+    api.registerFunction(
+        "io._mouseDown", [getIO](const std::vector<Value> &args) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeBool(false);
+          int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
+          return Value::makeBool(io->MouseDown(btn));
+        });
+    api.registerFunction(
+        "io._mouseUp", [getIO](const std::vector<Value> &args) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeBool(false);
+          int btn = !args.empty() && args[0].isInt() ? args[0].asInt() : 1;
+          return Value::makeBool(io->MouseUp(btn));
+        });
+    api.registerFunction("io._scroll", [getIO](const std::vector<Value> &args) {
+      auto *io = getIO();
+      if (!io)
+        return Value::makeBool(false);
+      double dy =
+          !args.empty() && (args[0].isDouble() || args[0].isInt())
+              ? (args[0].isDouble() ? args[0].asDouble()
+                                    : static_cast<double>(args[0].asInt()))
+              : 0.0;
+      double dx =
+          args.size() > 1 && (args[1].isDouble() || args[1].isInt())
+              ? (args[1].isDouble() ? args[1].asDouble()
+                                    : static_cast<double>(args[1].asInt()))
+              : 0.0;
       return Value::makeBool(io->Scroll(dy, dx));
     });
-    api.registerFunction("io._getMousePosition", [api, getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeNull();
-      auto pos = io->GetMousePosition();
-      auto arr = api.makeArray();
-      api.push(arr, Value::makeInt(pos.first));
-      api.push(arr, Value::makeInt(pos.second));
-      return arr;
-    });
-    api.registerFunction("io._setMouseSensitivity", [getIO](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeNull();
-      if (args.empty()) return Value::makeNull();
-      double s = args[0].isDouble() ? args[0].asDouble()
-          : args[0].isInt() ? static_cast<double>(args[0].asInt()) : 1.0;
-      io->SetMouseSensitivity(s);
-      return Value::makeNull();
-    });
-    api.registerFunction("io._getMouseSensitivity", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeDouble(1.0);
-      return Value::makeDouble(io->GetMouseSensitivity());
-    });
+    api.registerFunction("io._getMousePosition",
+                         [api, getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeNull();
+                           auto pos = io->GetMousePosition();
+                           auto arr = api.makeArray();
+                           api.push(arr, Value::makeInt(pos.first));
+                           api.push(arr, Value::makeInt(pos.second));
+                           return arr;
+                         });
+    api.registerFunction(
+        "io._setMouseSensitivity", [getIO](const std::vector<Value> &args) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeNull();
+          if (args.empty())
+            return Value::makeNull();
+          double s = args[0].isDouble() ? args[0].asDouble()
+                     : args[0].isInt()  ? static_cast<double>(args[0].asInt())
+                                        : 1.0;
+          io->SetMouseSensitivity(s);
+          return Value::makeNull();
+        });
+    api.registerFunction("io._getMouseSensitivity",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeDouble(1.0);
+                           return Value::makeDouble(io->GetMouseSensitivity());
+                         });
     // Mouse state query (X11 direct)
-    api.registerFunction("io._mouseState", [api](const std::vector<Value>& args) {
-      int button = 1;
-      if (!args.empty()) {
-        if (args[0].isInt()) button = static_cast<int>(args[0].asInt());
-        else if (args[0].isStringId() || args[0].isStringValId()) {
-          std::string btnStr = api.vm().resolveStringKey(args[0]);
-          button = static_cast<int>(::havel::host::MouseService::parseButton(btnStr));
-        }
-      }
-      auto display = havel::DisplayManager::GetDisplay();
-      if (!display) return Value::makeBool(false);
-      Window root, child;
-      int rootX, rootY, winX, winY;
-      unsigned int mask;
-      if (XQueryPointer(display, DefaultRootWindow(display), &root, &child, &rootX, &rootY, &winX, &winY, &mask)) {
-        bool pressed = false;
-        switch (button) {
-          case 1: pressed = (mask & Button1Mask) != 0; break;
-          case 2: pressed = (mask & Button3Mask) != 0; break;
-          case 3: pressed = (mask & Button2Mask) != 0; break;
-          case 4: pressed = (mask & Button4Mask) != 0; break;
-          case 5: pressed = (mask & Button5Mask) != 0; break;
-          default: pressed = (mask & Button1Mask) != 0; break;
-        }
-        return Value::makeBool(pressed);
-      }
-      return Value::makeBool(false);
-    });
+    api.registerFunction(
+        "io._mouseState", [api](const std::vector<Value> &args) {
+          int button = 1;
+          if (!args.empty()) {
+            if (args[0].isInt())
+              button = static_cast<int>(args[0].asInt());
+            else if (args[0].isStringId() || args[0].isStringValId()) {
+              std::string btnStr = api.vm().resolveStringKey(args[0]);
+              button = static_cast<int>(
+                  ::havel::host::MouseService::parseButton(btnStr));
+            }
+          }
+          auto display = havel::DisplayManager::GetDisplay();
+          if (!display)
+            return Value::makeBool(false);
+          Window root, child;
+          int rootX, rootY, winX, winY;
+          unsigned int mask;
+          if (XQueryPointer(display, DefaultRootWindow(display), &root, &child,
+                            &rootX, &rootY, &winX, &winY, &mask)) {
+            bool pressed = false;
+            switch (button) {
+            case 1:
+              pressed = (mask & Button1Mask) != 0;
+              break;
+            case 2:
+              pressed = (mask & Button3Mask) != 0;
+              break;
+            case 3:
+              pressed = (mask & Button2Mask) != 0;
+              break;
+            case 4:
+              pressed = (mask & Button4Mask) != 0;
+              break;
+            case 5:
+              pressed = (mask & Button5Mask) != 0;
+              break;
+            default:
+              pressed = (mask & Button1Mask) != 0;
+              break;
+            }
+            return Value::makeBool(pressed);
+          }
+          return Value::makeBool(false);
+        });
     // Lock state queries (X11 direct)
-    api.registerFunction("io._lastLocks", [](const std::vector<Value>&) {
+    api.registerFunction("io._lastLocks", [](const std::vector<Value> &) {
       auto display = havel::DisplayManager::GetDisplay();
-      if (!display) return Value::makeInt(0);
+      if (!display)
+        return Value::makeInt(0);
       XkbStateRec xkbState;
       if (XkbGetState(display, XkbUseCoreKbd, &xkbState) != 0)
         return Value::makeInt(0);
       return Value::makeInt(static_cast<int64_t>(xkbState.locked_mods));
     });
-    api.registerFunction("io._locks", [api](const std::vector<Value>&) {
+    api.registerFunction("io._locks", [api](const std::vector<Value> &) {
       auto display = havel::DisplayManager::GetDisplay();
       bool caps = false, num = false, scroll = false;
       if (display) {
@@ -287,32 +421,58 @@ void VM::registerDefaultHostFunctions() {
       api.vm().setHostObjectField(obj, "scroll", Value::makeBool(scroll));
       return Value::makeObjectId(obj.id);
     });
-    api.registerFunction("io._setLock", [api, getIO](const std::vector<Value>& args) {
-      if (args.empty()) return Value::makeBool(false);
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
+    api.registerFunction("io._setLock", [api, getIO](
+                                            const std::vector<Value> &args) {
+      if (args.empty())
+        return Value::makeBool(false);
+      auto *io = getIO();
+      if (!io)
+        return Value::makeBool(false);
       auto display = havel::DisplayManager::GetDisplay();
-      if (!display) return Value::makeBool(false);
+      if (!display)
+        return Value::makeBool(false);
       bool caps_set = false, num_set = false, scroll_set = false;
       bool caps_val = false, num_val = false, scroll_val = false;
       if (args[0].isObjectId()) {
-        auto capsField = api.vm().getHostObjectField(ObjectRef{args[0].asObjectId(), true}, "caps");
-        if (!capsField.isNull()) { caps_set = true; caps_val = capsField.asBool(); }
-        auto numField = api.vm().getHostObjectField(ObjectRef{args[0].asObjectId(), true}, "num");
-        if (!numField.isNull()) { num_set = true; num_val = numField.asBool(); }
-        auto scrollField = api.vm().getHostObjectField(ObjectRef{args[0].asObjectId(), true}, "scroll");
-        if (!scrollField.isNull()) { scroll_set = true; scroll_val = scrollField.asBool(); }
+        auto capsField = api.vm().getHostObjectField(
+            ObjectRef{args[0].asObjectId(), true}, "caps");
+        if (!capsField.isNull()) {
+          caps_set = true;
+          caps_val = capsField.asBool();
+        }
+        auto numField = api.vm().getHostObjectField(
+            ObjectRef{args[0].asObjectId(), true}, "num");
+        if (!numField.isNull()) {
+          num_set = true;
+          num_val = numField.asBool();
+        }
+        auto scrollField = api.vm().getHostObjectField(
+            ObjectRef{args[0].asObjectId(), true}, "scroll");
+        if (!scrollField.isNull()) {
+          scroll_set = true;
+          scroll_val = scrollField.asBool();
+        }
       } else if (args[0].isStringValId() || args[0].isStringId()) {
         std::string lockName = api.vm().resolveStringKey(args[0]);
         std::string lower = lockName;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
         bool val = true;
         if (args.size() >= 2) {
-          if (args[1].isBool()) val = args[1].asBool();
-          else if (args[1].isInt()) val = args[1].asInt() != 0;
+          if (args[1].isBool())
+            val = args[1].asBool();
+          else if (args[1].isInt())
+            val = args[1].asInt() != 0;
         }
-        if (lower == "caps" || lower == "capslock") { caps_set = true; caps_val = val; }
-        else if (lower == "num" || lower == "numlock") { num_set = true; num_val = val; }
-        else if (lower == "scroll" || lower == "scrolllock") { scroll_set = true; scroll_val = val; }
+        if (lower == "caps" || lower == "capslock") {
+          caps_set = true;
+          caps_val = val;
+        } else if (lower == "num" || lower == "numlock") {
+          num_set = true;
+          num_val = val;
+        } else if (lower == "scroll" || lower == "scrolllock") {
+          scroll_set = true;
+          scroll_val = val;
+        }
       }
       XkbStateRec xkbState;
       if (XkbGetState(display, XkbUseCoreKbd, &xkbState) != 0)
@@ -350,24 +510,34 @@ void VM::registerDefaultHostFunctions() {
       return Value::makeBool(true);
     });
     // Device management
-    api.registerFunction("io._devices", [api, getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeNull();
+    api.registerFunction("io._devices", [api,
+                                         getIO](const std::vector<Value> &) {
+      auto *io = getIO();
+      if (!io)
+        return Value::makeNull();
       auto devices = io->GetDevices();
       auto obj = api.vm().createHostObject();
-      api.vm().setHostObjectField(obj, "count", Value::makeInt(static_cast<int64_t>(devices.size())));
+      api.vm().setHostObjectField(
+          obj, "count", Value::makeInt(static_cast<int64_t>(devices.size())));
       if (!devices.empty()) {
         auto strRef = api.vm().getHeap().allocateString(devices[0].path);
-        api.vm().setHostObjectField(obj, "path", Value::makeStringId(strRef.id));
+        api.vm().setHostObjectField(obj, "path",
+                                    Value::makeStringId(strRef.id));
       }
       return Value::makeObjectId(obj.id);
     });
-    api.registerFunction("io._addDevice", [api, getIO](const std::vector<Value>& args) {
-      if (args.empty()) return Value::makeBool(false);
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
+    api.registerFunction("io._addDevice", [api, getIO](
+                                              const std::vector<Value> &args) {
+      if (args.empty())
+        return Value::makeBool(false);
+      auto *io = getIO();
+      if (!io)
+        return Value::makeBool(false);
       std::string device;
       if (args[0].isStringId() || args[0].isStringValId())
         device = api.vm().resolveStringKey(args[0]);
-      else return Value::makeBool(false);
+      else
+        return Value::makeBool(false);
       std::string type;
       if (args.size() > 1 && (args[1].isStringId() || args[1].isStringValId()))
         type = api.vm().resolveStringKey(args[1]);
@@ -377,224 +547,305 @@ void VM::registerDefaultHostFunctions() {
       }
       return Value::makeBool(io->AddDevice(device));
     });
-    api.registerFunction("io._sleepMs", [](const std::vector<Value>& args) {
-      if (args.empty()) return Value::makeNull();
+    api.registerFunction("io._sleepMs", [](const std::vector<Value> &args) {
+      if (args.empty())
+        return Value::makeNull();
       int ms = args[0].isInt() ? args[0].asInt() : 0;
       std::this_thread::sleep_for(std::chrono::milliseconds(ms));
       return Value::makeNull();
     });
-    api.registerFunction("io._recordStart", [getIO, toStr](const std::vector<Value>& args) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      std::string stopKey = (!args.empty() && (args[0].isStringId() || args[0].isStringValId())) ? toStr(args[0]) : "";
-      io->StartRecord(stopKey);
-      return Value::makeBool(true);
-    });
-    api.registerFunction("io._recordStop", [api, getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeNull();
-      auto events = io->StopRecord();
-      auto arr = api.makeArray();
-      for (auto& ev : events) {
-        auto obj = api.makeObject();
-        api.setField(obj, "type", Value::makeInt(static_cast<int64_t>(ev.kind)));
-        api.setField(obj, "code", Value::makeInt(ev.code));
-        api.setField(obj, "value", Value::makeInt(ev.value));
-        api.setField(obj, "down", Value::makeBool(ev.down));
-        api.setField(obj, "dx", Value::makeInt(ev.dx));
-        api.setField(obj, "dy", Value::makeInt(ev.dy));
-        api.setField(obj, "time", Value::makeDouble(ev.timeMs));
-        api.setField(obj, "buttonNumber", Value::makeInt(ev.buttonNumber));
-        if (!ev.keyName.empty()) {
-          auto nameRef = api.vm().createRuntimeString(ev.keyName);
-          api.setField(obj, "keyName", Value::makeStringId(nameRef.id));
-        }
-        api.push(arr, obj);
-      }
-      return arr;
-    });
-    api.registerFunction("io._isRecording", [getIO](const std::vector<Value>&) {
-      auto* io = getIO(); if (!io) return Value::makeBool(false);
-      return Value::makeBool(io->IsRecording());
-    });
+    api.registerFunction(
+        "io._recordStart", [getIO, toStr](const std::vector<Value> &args) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeBool(false);
+          std::string stopKey = (!args.empty() && (args[0].isStringId() ||
+                                                   args[0].isStringValId()))
+                                    ? toStr(args[0])
+                                    : "";
+          io->StartRecord(stopKey);
+          return Value::makeBool(true);
+        });
+    api.registerFunction(
+        "io._recordStop", [api, getIO](const std::vector<Value> &) {
+          auto *io = getIO();
+          if (!io)
+            return Value::makeNull();
+          auto events = io->StopRecord();
+          auto arr = api.makeArray();
+          for (auto &ev : events) {
+            auto obj = api.makeObject();
+            api.setField(obj, "type",
+                         Value::makeInt(static_cast<int64_t>(ev.kind)));
+            api.setField(obj, "code", Value::makeInt(ev.code));
+            api.setField(obj, "value", Value::makeInt(ev.value));
+            api.setField(obj, "down", Value::makeBool(ev.down));
+            api.setField(obj, "dx", Value::makeInt(ev.dx));
+            api.setField(obj, "dy", Value::makeInt(ev.dy));
+            api.setField(obj, "time", Value::makeDouble(ev.timeMs));
+            api.setField(obj, "buttonNumber", Value::makeInt(ev.buttonNumber));
+            if (!ev.keyName.empty()) {
+              auto nameRef = api.vm().createRuntimeString(ev.keyName);
+              api.setField(obj, "keyName", Value::makeStringId(nameRef.id));
+            }
+            api.push(arr, obj);
+          }
+          return arr;
+        });
+    api.registerFunction("io._isRecording",
+                         [getIO](const std::vector<Value> &) {
+                           auto *io = getIO();
+                           if (!io)
+                             return Value::makeBool(false);
+                           return Value::makeBool(io->IsRecording());
+                         });
   }
 
-  // EventListener bridge functions — registered at startup for pure-Havel event_listener module
+  // EventListener bridge functions — registered at startup for pure-Havel
+  // event_listener module
   {
     VMApi api(*this);
-    auto getEL = []() -> EventListener* {
+    auto getEL = []() -> EventListener * {
       auto io = host::ServiceRegistry::instance().get<IO>();
       return io ? io->GetEventListener() : nullptr;
     };
 
-    api.registerFunction("eventListener.keys", [api, getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeNull();
-      auto arrRef = api.vm().getHeap().allocateArray();
-      auto* arr = api.vm().getHeap().array(arrRef.id);
-      for (const auto& [code, down] : el->GetEvdevKeyState()) {
-        if (down) {
-          std::string name = KeyMap::EvdevToString(code);
-          if (!name.empty()) {
-            auto ref = api.vm().getHeap().allocateString(name);
-            arr->push_back(Value::makeStringId(ref.id));
+    api.registerFunction(
+        "eventListener.keys", [api, getEL](const std::vector<Value> &) {
+          auto *el = getEL();
+          if (!el)
+            return Value::makeNull();
+          auto arrRef = api.vm().getHeap().allocateArray();
+          auto *arr = api.vm().getHeap().array(arrRef.id);
+          for (const auto &[code, down] : el->GetEvdevKeyState()) {
+            if (down) {
+              std::string name = KeyMap::EvdevToString(code);
+              if (!name.empty()) {
+                auto ref = api.vm().getHeap().allocateString(name);
+                arr->push_back(Value::makeStringId(ref.id));
+              }
+            }
           }
-        }
-      }
-      return Value::makeArrayId(arrRef.id);
-    });
-    api.registerFunction("eventListener.lastKey", [api, getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeNull();
-      int code = el->GetLastKeyCode();
-      if (code == 0) return Value::makeNull();
-      std::string name = KeyMap::EvdevToString(code);
-      auto ref = api.vm().getHeap().allocateString(name);
-      return Value::makeStringId(ref.id);
-    });
-    api.registerFunction("eventListener.lastState", [getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      return Value::makeBool(el->GetLastKeyWasDown());
-    });
-    api.registerFunction("eventListener.lastDevice", [api, getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeNull();
-      auto ref = api.vm().getHeap().allocateString(el->GetLastKeyDevice());
-      return Value::makeStringId(ref.id);
-    });
-    api.registerFunction("eventListener.lastModifiers", [getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeInt(0);
-      return Value::makeInt(el->GetLastKeyModifiers());
-    });
-    api.registerFunction("eventListener.lastKeys", [api, getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeNull();
-      auto arrRef = api.vm().getHeap().allocateArray();
-      auto* arr = api.vm().getHeap().array(arrRef.id);
-      for (const auto& [code, down] : el->GetEvdevKeyState()) {
-        if (down) {
-          std::string name = KeyMap::EvdevToString(code);
-          if (!name.empty()) {
-            auto ref = api.vm().getHeap().allocateString(name);
-            arr->push_back(Value::makeStringId(ref.id));
+          return Value::makeArrayId(arrRef.id);
+        });
+    api.registerFunction("eventListener.lastKey",
+                         [api, getEL](const std::vector<Value> &) {
+                           auto *el = getEL();
+                           if (!el)
+                             return Value::makeNull();
+                           int code = el->GetLastKeyCode();
+                           if (code == 0)
+                             return Value::makeNull();
+                           std::string name = KeyMap::EvdevToString(code);
+                           auto ref = api.vm().getHeap().allocateString(name);
+                           return Value::makeStringId(ref.id);
+                         });
+    api.registerFunction("eventListener.lastState",
+                         [getEL](const std::vector<Value> &) {
+                           auto *el = getEL();
+                           if (!el)
+                             return Value::makeBool(false);
+                           return Value::makeBool(el->GetLastKeyWasDown());
+                         });
+    api.registerFunction(
+        "eventListener.lastDevice", [api, getEL](const std::vector<Value> &) {
+          auto *el = getEL();
+          if (!el)
+            return Value::makeNull();
+          auto ref = api.vm().getHeap().allocateString(el->GetLastKeyDevice());
+          return Value::makeStringId(ref.id);
+        });
+    api.registerFunction("eventListener.lastModifiers",
+                         [getEL](const std::vector<Value> &) {
+                           auto *el = getEL();
+                           if (!el)
+                             return Value::makeInt(0);
+                           return Value::makeInt(el->GetLastKeyModifiers());
+                         });
+    api.registerFunction(
+        "eventListener.lastKeys", [api, getEL](const std::vector<Value> &) {
+          auto *el = getEL();
+          if (!el)
+            return Value::makeNull();
+          auto arrRef = api.vm().getHeap().allocateArray();
+          auto *arr = api.vm().getHeap().array(arrRef.id);
+          for (const auto &[code, down] : el->GetEvdevKeyState()) {
+            if (down) {
+              std::string name = KeyMap::EvdevToString(code);
+              if (!name.empty()) {
+                auto ref = api.vm().getHeap().allocateString(name);
+                arr->push_back(Value::makeStringId(ref.id));
+              }
+            }
           }
-        }
-      }
-      return Value::makeArrayId(arrRef.id);
-    });
-    api.registerFunction("eventListener.reset", [getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      el->ReleaseAllVirtualKeys();
-      return Value::makeBool(true);
-    });
-    api.registerFunction("eventListener.lastButton", [getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeInt(0);
-      return Value::makeInt(el->GetLastButtonCode());
-    });
-    api.registerFunction("eventListener.lastButtonState", [getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      return Value::makeBool(el->GetLastButtonWasDown());
-    });
-    api.registerFunction("eventListener.buttons", [getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeInt(0);
-      int pressed = 0;
-      for (const auto& [code, down] : el->GetMouseButtonState()) {
-        if (down) pressed++;
-      }
-      return Value::makeInt(pressed);
-    });
-    api.registerFunction("eventListener.releaseAll", [getEL](const std::vector<Value>&) {
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      el->ReleaseAllVirtualKeys();
-      return Value::makeBool(true);
-    });
+          return Value::makeArrayId(arrRef.id);
+        });
+    api.registerFunction("eventListener.reset",
+                         [getEL](const std::vector<Value> &) {
+                           auto *el = getEL();
+                           if (!el)
+                             return Value::makeBool(false);
+                           el->ReleaseAllVirtualKeys();
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction("eventListener.lastButton",
+                         [getEL](const std::vector<Value> &) {
+                           auto *el = getEL();
+                           if (!el)
+                             return Value::makeInt(0);
+                           return Value::makeInt(el->GetLastButtonCode());
+                         });
+    api.registerFunction("eventListener.lastButtonState",
+                         [getEL](const std::vector<Value> &) {
+                           auto *el = getEL();
+                           if (!el)
+                             return Value::makeBool(false);
+                           return Value::makeBool(el->GetLastButtonWasDown());
+                         });
+    api.registerFunction(
+        "eventListener.buttons", [getEL](const std::vector<Value> &) {
+          auto *el = getEL();
+          if (!el)
+            return Value::makeInt(0);
+          int pressed = 0;
+          for (const auto &[code, down] : el->GetMouseButtonState()) {
+            if (down)
+              pressed++;
+          }
+          return Value::makeInt(pressed);
+        });
+    api.registerFunction("eventListener.releaseAll",
+                         [getEL](const std::vector<Value> &) {
+                           auto *el = getEL();
+                           if (!el)
+                             return Value::makeBool(false);
+                           el->ReleaseAllVirtualKeys();
+                           return Value::makeBool(true);
+                         });
 
     // Callback registrations
-    api.registerFunction("eventListener.onKeyDown", [api, getEL](const std::vector<Value>& args) {
-      if (args.size() < 1) return Value::makeBool(false);
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      auto* vm = &api.vm();
-      CallbackId cb = vm->registerCallback(args[0]);
-      el->AddKeyDownListener([vm, cb](int) {
-        auto* sched = vm->getScheduler();
-        if (!sched) return;
-        sched->deferToVM([vm, cb]() {
-          vm->spawnCallback(cb, FiberPriority::HOTKEY, {});
+    api.registerFunction("eventListener.onKeyDown",
+                         [api, getEL](const std::vector<Value> &args) {
+                           if (args.size() < 1)
+                             return Value::makeBool(false);
+                           auto *el = getEL();
+                           if (!el)
+                             return Value::makeBool(false);
+                           auto *vm = &api.vm();
+                           CallbackId cb = vm->registerCallback(args[0]);
+                           el->AddKeyDownListener([vm, cb](int) {
+                             auto *sched = vm->getScheduler();
+                             if (!sched)
+                               return;
+                             sched->deferToVM([vm, cb]() {
+                               vm->spawnCallback(cb, FiberPriority::HOTKEY, {});
+                             });
+                           });
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction("eventListener.onKeyUp",
+                         [api, getEL](const std::vector<Value> &args) {
+                           if (args.size() < 1)
+                             return Value::makeBool(false);
+                           auto *el = getEL();
+                           if (!el)
+                             return Value::makeBool(false);
+                           auto *vm = &api.vm();
+                           CallbackId cb = vm->registerCallback(args[0]);
+                           el->AddKeyUpListener([vm, cb](int) {
+                             auto *sched = vm->getScheduler();
+                             if (!sched)
+                               return;
+                             sched->deferToVM([vm, cb]() {
+                               vm->spawnCallback(cb, FiberPriority::HOTKEY, {});
+                             });
+                           });
+                           return Value::makeBool(true);
+                         });
+    api.registerFunction(
+        "eventListener.onKey", [api, getEL](const std::vector<Value> &args) {
+          if (args.size() < 1)
+            return Value::makeBool(false);
+          auto *el = getEL();
+          if (!el)
+            return Value::makeBool(false);
+          auto *vm = &api.vm();
+          CallbackId cb = vm->registerCallback(args[0]);
+          el->AddKeyListener([vm, cb](const std::string &key) {
+            auto *sched = vm->getScheduler();
+            if (!sched)
+              return;
+            sched->deferToVM([vm, cb, key]() {
+              auto keyRef = vm->createRuntimeString(key);
+              vm->spawnCallback(cb, FiberPriority::HOTKEY,
+                                {Value::makeStringId(keyRef.id)});
+            });
+          });
+          return Value::makeBool(true);
         });
-      });
-      return Value::makeBool(true);
-    });
-    api.registerFunction("eventListener.onKeyUp", [api, getEL](const std::vector<Value>& args) {
-      if (args.size() < 1) return Value::makeBool(false);
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      auto* vm = &api.vm();
-      CallbackId cb = vm->registerCallback(args[0]);
-      el->AddKeyUpListener([vm, cb](int) {
-        auto* sched = vm->getScheduler();
-        if (!sched) return;
-        sched->deferToVM([vm, cb]() {
-          vm->spawnCallback(cb, FiberPriority::HOTKEY, {});
+    api.registerFunction(
+        "eventListener.onButton", [api, getEL](const std::vector<Value> &args) {
+          if (args.size() < 1)
+            return Value::makeBool(false);
+          auto *el = getEL();
+          if (!el)
+            return Value::makeBool(false);
+          auto *vm = &api.vm();
+          CallbackId cb = vm->registerCallback(args[0]);
+          el->AddMouseButtonListener([vm, cb](uint32_t button, bool down) {
+            auto *sched = vm->getScheduler();
+            if (!sched)
+              return;
+            sched->deferToVM([vm, cb, button, down]() {
+              vm->spawnCallback(cb, FiberPriority::HOTKEY,
+                                {Value::makeInt(static_cast<int64_t>(button)),
+                                 Value::makeBool(down)});
+            });
+          });
+          return Value::makeBool(true);
         });
-      });
-      return Value::makeBool(true);
-    });
-    api.registerFunction("eventListener.onKey", [api, getEL](const std::vector<Value>& args) {
-      if (args.size() < 1) return Value::makeBool(false);
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      auto* vm = &api.vm();
-      CallbackId cb = vm->registerCallback(args[0]);
-      el->AddKeyListener([vm, cb](const std::string& key) {
-        auto* sched = vm->getScheduler();
-        if (!sched) return;
-        sched->deferToVM([vm, cb, key]() {
-          auto keyRef = vm->createRuntimeString(key);
-          vm->spawnCallback(cb, FiberPriority::HOTKEY, {Value::makeStringId(keyRef.id)});
+    api.registerFunction(
+        "eventListener.onMouse", [api, getEL](const std::vector<Value> &args) {
+          if (args.size() < 1)
+            return Value::makeBool(false);
+          auto *el = getEL();
+          if (!el)
+            return Value::makeBool(false);
+          auto *vm = &api.vm();
+          CallbackId cb = vm->registerCallback(args[0]);
+          el->AddMouseMoveListener([vm, cb](int dx, int dy) {
+            auto *sched = vm->getScheduler();
+            if (!sched)
+              return;
+            sched->deferToVM([vm, cb, dx, dy]() {
+              vm->spawnCallback(cb, FiberPriority::BACKGROUND,
+                                {Value::makeInt(dx), Value::makeInt(dy)});
+            });
+          });
+          return Value::makeBool(true);
         });
-      });
-      return Value::makeBool(true);
-    });
-    api.registerFunction("eventListener.onButton", [api, getEL](const std::vector<Value>& args) {
-      if (args.size() < 1) return Value::makeBool(false);
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      auto* vm = &api.vm();
-      CallbackId cb = vm->registerCallback(args[0]);
-      el->AddMouseButtonListener([vm, cb](uint32_t button, bool down) {
-        auto* sched = vm->getScheduler();
-        if (!sched) return;
-        sched->deferToVM([vm, cb, button, down]() {
-          vm->spawnCallback(cb, FiberPriority::HOTKEY,
-                            {Value::makeInt(static_cast<int64_t>(button)),
-                             Value::makeBool(down)});
+    api.registerFunction(
+        "eventListener.onEvent", [api, getEL](const std::vector<Value> &args) {
+          if (args.size() < 1)
+            return Value::makeBool(false);
+          auto *el = getEL();
+          if (!el)
+            return Value::makeBool(false);
+          auto *vm = &api.vm();
+          CallbackId cb = vm->registerCallback(args[0]);
+          el->AddEventListener([vm, cb](const InputEvent &event) {
+            auto *sched = vm->getScheduler();
+            if (!sched)
+              return;
+            sched->deferToVM([vm, cb, event]() {
+              vm->spawnCallback(
+                  cb, FiberPriority::BACKGROUND,
+                  {Value::makeInt(static_cast<int64_t>(event.kind)),
+                   Value::makeInt(event.code), Value::makeInt(event.value)});
+            });
+          });
+          return Value::makeBool(true);
         });
-      });
-      return Value::makeBool(true);
-    });
-    api.registerFunction("eventListener.onMouse", [api, getEL](const std::vector<Value>& args) {
-      if (args.size() < 1) return Value::makeBool(false);
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      auto* vm = &api.vm();
-      CallbackId cb = vm->registerCallback(args[0]);
-      el->AddMouseMoveListener([vm, cb](int dx, int dy) {
-        auto* sched = vm->getScheduler();
-        if (!sched) return;
-        sched->deferToVM([vm, cb, dx, dy]() {
-          vm->spawnCallback(cb, FiberPriority::BACKGROUND,
-                            {Value::makeInt(dx), Value::makeInt(dy)});
-        });
-      });
-      return Value::makeBool(true);
-    });
-    api.registerFunction("eventListener.onEvent", [api, getEL](const std::vector<Value>& args) {
-      if (args.size() < 1) return Value::makeBool(false);
-      auto* el = getEL(); if (!el) return Value::makeBool(false);
-      auto* vm = &api.vm();
-      CallbackId cb = vm->registerCallback(args[0]);
-      el->AddEventListener([vm, cb](const InputEvent& event) {
-        auto* sched = vm->getScheduler();
-        if (!sched) return;
-        sched->deferToVM([vm, cb, event]() {
-          vm->spawnCallback(cb, FiberPriority::BACKGROUND,
-                            {Value::makeInt(static_cast<int64_t>(event.kind)),
-                             Value::makeInt(event.code),
-                             Value::makeInt(event.value)});
-        });
-      });
-      return Value::makeBool(true);
-    });
   }
   registerHostFunction("print", [this](const std::vector<Value> &args) {
     // Check if last arg is kwargs object (marked with __kwargs key)
@@ -605,24 +856,24 @@ void VM::registerDefaultHostFunctions() {
     // Check for kwargs object as last argument
     bool hasKwargs = false;
     if (!args.empty() && args.back().isObjectId()) {
-        auto *kwargsObj = heap_.object(args.back().asObjectId());
-        if (kwargsObj) {
-            auto itMarker = kwargsObj->find("__kwargs");
-            if (itMarker != kwargsObj->end()) {
-                hasKwargs = true;
-                auto itEnd = kwargsObj->find("end");
-                if (itEnd != kwargsObj->end()) {
-                    end = resolveStringKey(itEnd->second);
-                }
-                auto itDelim = kwargsObj->find("delim");
-                if (itDelim != kwargsObj->end()) {
-                    delim = resolveStringKey(itDelim->second);
-                }
-            }
+      auto *kwargsObj = heap_.object(args.back().asObjectId());
+      if (kwargsObj) {
+        auto itMarker = kwargsObj->find("__kwargs");
+        if (itMarker != kwargsObj->end()) {
+          hasKwargs = true;
+          auto itEnd = kwargsObj->find("end");
+          if (itEnd != kwargsObj->end()) {
+            end = resolveStringKey(itEnd->second);
+          }
+          auto itDelim = kwargsObj->find("delim");
+          if (itDelim != kwargsObj->end()) {
+            delim = resolveStringKey(itDelim->second);
+          }
         }
+      }
     }
     if (hasKwargs) {
-        argCount--; // Don't count kwargs as a value to print
+      argCount--; // Don't count kwargs as a value to print
     }
 
     // Print values with delimiter
@@ -630,10 +881,11 @@ void VM::registerDefaultHostFunctions() {
       if (i > 0) {
         std::cout << delim;
       }
-      // For string values, resolve them; for other types use heap-aware toString
+      // For string values, resolve them; for other types use heap-aware
+      // toString
       const auto &arg = args[i];
       std::string resolved;
-if (arg.isStringValId()) {
+      if (arg.isStringValId()) {
         std::string resolved = resolveStringKey(arg);
         std::cout << resolved;
       } else if (arg.isStringId() || arg.isRegexValId()) {
@@ -644,14 +896,15 @@ if (arg.isStringValId()) {
         std::cout << s;
       }
     }
-        std::cout << end;
-        std::cout.flush();
-        return Value::makeNull();
-    });
+    std::cout << end;
+    std::cout.flush();
+    return Value::makeNull();
+  });
 
-    registerHostFunction("println", [this](const std::vector<Value> &args) {
-        for (size_t i = 0; i < args.size(); ++i) {
-      if (i > 0) std::cout << " ";
+  registerHostFunction("println", [this](const std::vector<Value> &args) {
+    for (size_t i = 0; i < args.size(); ++i) {
+      if (i > 0)
+        std::cout << " ";
       const auto &arg = args[i];
       if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
         std::cout << resolveStringKey(arg);
@@ -665,7 +918,8 @@ if (arg.isStringValId()) {
 
   registerHostFunction("error", [this](const std::vector<Value> &args) {
     for (size_t i = 0; i < args.size(); ++i) {
-      if (i > 0) std::cerr << " ";
+      if (i > 0)
+        std::cerr << " ";
       const auto &arg = args[i];
       if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
         std::cerr << resolveStringKey(arg);
@@ -679,7 +933,8 @@ if (arg.isStringValId()) {
 
   registerHostFunction("warn", [this](const std::vector<Value> &args) {
     for (size_t i = 0; i < args.size(); ++i) {
-      if (i > 0) std::cerr << " ";
+      if (i > 0)
+        std::cerr << " ";
       const auto &arg = args[i];
       if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
         std::cerr << resolveStringKey(arg);
@@ -693,7 +948,8 @@ if (arg.isStringValId()) {
 
   registerHostFunction("info", [this](const std::vector<Value> &args) {
     for (size_t i = 0; i < args.size(); ++i) {
-      if (i > 0) std::cerr << " ";
+      if (i > 0)
+        std::cerr << " ";
       const auto &arg = args[i];
       if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
         std::cerr << resolveStringKey(arg);
@@ -707,7 +963,8 @@ if (arg.isStringValId()) {
 
   registerHostFunction("debug", [this](const std::vector<Value> &args) {
     for (size_t i = 0; i < args.size(); ++i) {
-      if (i > 0) std::cerr << " ";
+      if (i > 0)
+        std::cerr << " ";
       const auto &arg = args[i];
       if (arg.isStringValId() || arg.isStringId() || arg.isRegexValId()) {
         std::cerr << resolveStringKey(arg);
@@ -720,183 +977,215 @@ if (arg.isStringValId()) {
   });
 
   registerHostFunction("repr", [this](const std::vector<Value> &args) {
-  if (args.empty()) throw std::runtime_error("repr() requires an argument");
-        const auto &arg = args[0];
-        if (arg.isObjectId()) {
-            Value opMethod = getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_repr");
-            if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
-                Value result = callFunctionSync(opMethod, {arg});
-                if (result.isStringValId() && current_chunk) {
-                    return result;
-                } else if (result.isStringId()) {
-                    return result;
-                }
+    if (args.empty())
+      throw std::runtime_error("repr() requires an argument");
+    const auto &arg = args[0];
+    if (arg.isObjectId()) {
+      Value opMethod =
+          getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_repr");
+      if (!opMethod.isNull() &&
+          (opMethod.isFunctionObjId() || opMethod.isClosureId() ||
+           opMethod.isHostFuncId())) {
+        Value result = callFunctionSync(opMethod, {arg});
+        if (result.isStringValId() && current_chunk) {
+          return result;
+        } else if (result.isStringId()) {
+          return result;
+        }
+      }
+    }
+    return Value::makeStringId(heap_.allocateString(toString(arg)).id);
+  });
+
+  registerHostFunction("copy", [this](const std::vector<Value> &args) {
+    if (args.empty())
+      throw std::runtime_error("copy() requires an argument");
+    const auto &arg = args[0];
+    if (arg.isObjectId()) {
+      Value opMethod =
+          getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_copy");
+      if (!opMethod.isNull() &&
+          (opMethod.isFunctionObjId() || opMethod.isClosureId() ||
+           opMethod.isHostFuncId())) {
+        return callFunctionSync(opMethod, {arg});
+      }
+    }
+    return arg;
+  });
+
+  registerHostFunction("code", [this](const std::vector<Value> &args) {
+    if (args.empty())
+      throw std::runtime_error("code() requires an argument");
+    const auto &arg = args[0];
+    if (arg.isObjectId()) {
+      Value opMethod =
+          getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_code");
+      if (!opMethod.isNull() &&
+          (opMethod.isFunctionObjId() || opMethod.isClosureId() ||
+           opMethod.isHostFuncId())) {
+        Value result = callFunctionSync(opMethod, {arg});
+        return result;
+      }
+    }
+    return Value::makeStringId(heap_.allocateString(toString(arg)).id);
+  });
+
+  // fmt(format_string, ...) - Python-style string formatting
+  registerHostFunction("fmt.format", [this](const std::vector<Value> &args) {
+    if (args.empty()) {
+      COMPILER_THROW("fmt.format() requires at least a format string");
+    }
+
+    std::string formatStr;
+    if (args[0].isStringValId() && current_chunk) {
+      formatStr = current_chunk->getString(args[0].asStringValId());
+    } else if (args[0].isStringId()) {
+      auto *s = heap_.string(args[0].asStringId());
+      if (s)
+        formatStr = *s;
+    } else {
+      COMPILER_THROW("fmt.format() format must be a string");
+    }
+
+    std::vector<std::string> argStrings;
+    for (size_t i = 1; i < args.size(); ++i) {
+      argStrings.push_back(toString(args[i]));
+    }
+
+    // Parse format specifiers: {} and {:spec}
+    std::string result;
+    size_t argIndex = 0;
+    size_t pos = 0;
+
+    while (pos < formatStr.size()) {
+      size_t open = formatStr.find('{', pos);
+      if (open == std::string::npos) {
+        result += formatStr.substr(pos);
+        break;
+      }
+      result += formatStr.substr(pos, open - pos);
+
+      if (open + 1 < formatStr.size() && formatStr[open + 1] == '{') {
+        result += '{';
+        pos = open + 2;
+        continue;
+      }
+
+      size_t close = formatStr.find('}', open);
+      if (close == std::string::npos) {
+        result += formatStr.substr(open);
+        break;
+      }
+
+      std::string spec = formatStr.substr(open + 1, close - open - 1);
+      pos = close + 1;
+
+      std::string formatted;
+      if (argIndex < argStrings.size()) {
+        if (spec.empty()) {
+          formatted = argStrings[argIndex++];
+        } else if (spec[0] == ':') {
+          std::string fmtSpec = spec.substr(1);
+          std::string argVal = argStrings[argIndex++];
+
+          if (fmtSpec == "x" || fmtSpec == "X") {
+            try {
+              long long val = std::stoll(argVal);
+              std::stringstream ss;
+              if (fmtSpec == "X")
+                ss << std::uppercase;
+              ss << std::hex << val;
+              formatted = ss.str();
+            } catch (...) {
+              formatted = argVal;
             }
-        }
-        return Value::makeStringId(heap_.allocateString(toString(arg)).id);
-    });
-
-    registerHostFunction("copy", [this](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("copy() requires an argument");
-        const auto &arg = args[0];
-        if (arg.isObjectId()) {
-            Value opMethod = getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_copy");
-            if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
-                return callFunctionSync(opMethod, {arg});
+          } else if (fmtSpec == "o") {
+            try {
+              long long val = std::stoll(argVal);
+              std::stringstream ss;
+              ss << std::oct << val;
+              formatted = ss.str();
+            } catch (...) {
+              formatted = argVal;
             }
-        }
-        return arg;
-    });
-
-    registerHostFunction("code", [this](const std::vector<Value> &args) {
-        if (args.empty()) throw std::runtime_error("code() requires an argument");
-        const auto &arg = args[0];
-        if (arg.isObjectId()) {
-            Value opMethod = getHostObjectField(ObjectRef{arg.asObjectId(), true}, "op_code");
-            if (!opMethod.isNull() && (opMethod.isFunctionObjId() || opMethod.isClosureId() || opMethod.isHostFuncId())) {
-                Value result = callFunctionSync(opMethod, {arg});
-                return result;
+          } else if (fmtSpec == "b") {
+            try {
+              long long val = std::stoll(argVal);
+              std::string bin;
+              if (val == 0)
+                bin = "0";
+              else {
+                bool neg = val < 0;
+                unsigned long long uval =
+                    neg ? -static_cast<unsigned long long>(val)
+                        : static_cast<unsigned long long>(val);
+                while (uval > 0) {
+                  bin = static_cast<char>('0' + (uval & 1)) + bin;
+                  uval >>= 1;
+                }
+                if (neg)
+                  bin = "-" + bin;
+              }
+              formatted = bin;
+            } catch (...) {
+              formatted = argVal;
             }
-        }
-        return Value::makeStringId(heap_.allocateString(toString(arg)).id);
-    });
-
-    // fmt(format_string, ...) - Python-style string formatting
-  registerHostFunction(
-      "fmt.format", [this](const std::vector<Value> &args) {
-        if (args.empty()) {
-          COMPILER_THROW("fmt.format() requires at least a format string");
-        }
-
-        std::string formatStr;
-        if (args[0].isStringValId() && current_chunk) {
-          formatStr = current_chunk->getString(args[0].asStringValId());
-        } else if (args[0].isStringId()) {
-          auto *s = heap_.string(args[0].asStringId());
-          if (s) formatStr = *s;
-        } else {
-          COMPILER_THROW("fmt.format() format must be a string");
-        }
-
-        std::vector<std::string> argStrings;
-        for (size_t i = 1; i < args.size(); ++i) {
-          argStrings.push_back(toString(args[i]));
-        }
-
-        // Parse format specifiers: {} and {:spec}
-        std::string result;
-        size_t argIndex = 0;
-        size_t pos = 0;
-
-        while (pos < formatStr.size()) {
-          size_t open = formatStr.find('{', pos);
-          if (open == std::string::npos) {
-            result += formatStr.substr(pos);
-            break;
-          }
-          result += formatStr.substr(pos, open - pos);
-
-          if (open + 1 < formatStr.size() && formatStr[open + 1] == '{') {
-            result += '{';
-            pos = open + 2;
-            continue;
-          }
-
-          size_t close = formatStr.find('}', open);
-          if (close == std::string::npos) {
-            result += formatStr.substr(open);
-            break;
-          }
-
-          std::string spec = formatStr.substr(open + 1, close - open - 1);
-          pos = close + 1;
-
-          std::string formatted;
-          if (argIndex < argStrings.size()) {
-            if (spec.empty()) {
-              formatted = argStrings[argIndex++];
-            } else if (spec[0] == ':') {
-              std::string fmtSpec = spec.substr(1);
-              std::string argVal = argStrings[argIndex++];
-
-              if (fmtSpec == "x" || fmtSpec == "X") {
-                try {
-                  long long val = std::stoll(argVal);
-                  std::stringstream ss;
-                  if (fmtSpec == "X") ss << std::uppercase;
-                  ss << std::hex << val;
-                  formatted = ss.str();
-                } catch (...) {
-                  formatted = argVal;
-                }
-              } else if (fmtSpec == "o") {
-                try {
-                  long long val = std::stoll(argVal);
-                  std::stringstream ss;
-                  ss << std::oct << val;
-                  formatted = ss.str();
-                } catch (...) {
-                  formatted = argVal;
-                }
-              } else if (fmtSpec == "b") {
-                try {
-                  long long val = std::stoll(argVal);
-                  std::string bin;
-                  if (val == 0) bin = "0";
-                  else {
-                    bool neg = val < 0;
-                    unsigned long long uval = neg ? -static_cast<unsigned long long>(val) : static_cast<unsigned long long>(val);
-                    while (uval > 0) { bin = static_cast<char>('0' + (uval & 1)) + bin; uval >>= 1; }
-                    if (neg) bin = "-" + bin;
-                  }
-                  formatted = bin;
-                } catch (...) {
-                  formatted = argVal;
-                }
-              } else if (fmtSpec.size() > 1 && (fmtSpec[0] == '>' || fmtSpec[0] == '<' || fmtSpec[0] == '^')) {
-                char align = fmtSpec[0];
-                int width = 0;
-                try { width = std::stoi(fmtSpec.substr(1)); } catch (...) {}
-                if (width > 0 && static_cast<int>(argVal.size()) < width) {
-                  int pad = width - static_cast<int>(argVal.size());
-                  if (align == '>') {
-                    formatted = std::string(pad, ' ') + argVal;
-                  } else if (align == '<') {
-                    formatted = argVal + std::string(pad, ' ');
-                  } else {
-                    int left = pad / 2, right = pad - left;
-                    formatted = std::string(left, ' ') + argVal + std::string(right, ' ');
-                  }
-                } else {
-                  formatted = argVal;
-                }
-              } else if (fmtSpec.size() > 1 && fmtSpec[0] == '0') {
-                int width = 0;
-                try { width = std::stoi(fmtSpec.substr(1)); } catch (...) {}
-                if (width > 0 && static_cast<int>(argVal.size()) < width) {
-                  formatted = std::string(width - argVal.size(), '0') + argVal;
-                } else {
-                  formatted = argVal;
-                }
-              } else if (fmtSpec.size() >= 2 && fmtSpec[fmtSpec.size()-1] == 'd') {
-                try {
-                  long long val = std::stoll(argVal);
-                  formatted = std::to_string(val);
-                } catch (...) { formatted = argVal; }
+          } else if (fmtSpec.size() > 1 &&
+                     (fmtSpec[0] == '>' || fmtSpec[0] == '<' ||
+                      fmtSpec[0] == '^')) {
+            char align = fmtSpec[0];
+            int width = 0;
+            try {
+              width = std::stoi(fmtSpec.substr(1));
+            } catch (...) {
+            }
+            if (width > 0 && static_cast<int>(argVal.size()) < width) {
+              int pad = width - static_cast<int>(argVal.size());
+              if (align == '>') {
+                formatted = std::string(pad, ' ') + argVal;
+              } else if (align == '<') {
+                formatted = argVal + std::string(pad, ' ');
               } else {
-                formatted = argVal;
+                int left = pad / 2, right = pad - left;
+                formatted =
+                    std::string(left, ' ') + argVal + std::string(right, ' ');
               }
             } else {
-              formatted = argStrings[argIndex++];
+              formatted = argVal;
+            }
+          } else if (fmtSpec.size() > 1 && fmtSpec[0] == '0') {
+            int width = 0;
+            try {
+              width = std::stoi(fmtSpec.substr(1));
+            } catch (...) {
+            }
+            if (width > 0 && static_cast<int>(argVal.size()) < width) {
+              formatted = std::string(width - argVal.size(), '0') + argVal;
+            } else {
+              formatted = argVal;
+            }
+          } else if (fmtSpec.size() >= 2 &&
+                     fmtSpec[fmtSpec.size() - 1] == 'd') {
+            try {
+              long long val = std::stoll(argVal);
+              formatted = std::to_string(val);
+            } catch (...) {
+              formatted = argVal;
             }
           } else {
-            formatted = "{}";
+            formatted = argVal;
           }
-          result += formatted;
+        } else {
+          formatted = argStrings[argIndex++];
         }
+      } else {
+        formatted = "{}";
+      }
+      result += formatted;
+    }
 
-        return Value::makeStringId(heap_.allocateString(result).id);
-      });
+    return Value::makeStringId(heap_.allocateString(result).id);
+  });
 
   registerHostFunction("fmt", [this](const std::vector<Value> &args) {
     if (args.empty()) {
@@ -904,63 +1193,86 @@ if (arg.isStringValId()) {
     }
     std::vector<Value> fmtArgs;
     fmtArgs.push_back(args[0]);
-    for (size_t i = 1; i < args.size(); ++i) fmtArgs.push_back(args[i]);
+    for (size_t i = 1; i < args.size(); ++i)
+      fmtArgs.push_back(args[i]);
     auto fnIt = host_functions.find("fmt.format");
-    if (fnIt != host_functions.end()) return fnIt->second(fmtArgs);
+    if (fnIt != host_functions.end())
+      return fnIt->second(fmtArgs);
     return Value::makeNull();
   });
 
   registerHostFunction("fmt.hex", [this](const std::vector<Value> &args) {
-    if (args.empty()) COMPILER_THROW("fmt.hex() requires an integer argument");
+    if (args.empty())
+      COMPILER_THROW("fmt.hex() requires an integer argument");
     int64_t val = 0;
-    if (args[0].isInt()) val = args[0].asInt();
-    else if (args[0].isDouble()) val = static_cast<int64_t>(args[0].asDouble());
+    if (args[0].isInt())
+      val = args[0].asInt();
+    else if (args[0].isDouble())
+      val = static_cast<int64_t>(args[0].asDouble());
     std::stringstream ss;
     ss << "0x" << std::hex << val;
     return Value::makeStringId(heap_.allocateString(ss.str()).id);
   });
 
   registerHostFunction("fmt.oct", [this](const std::vector<Value> &args) {
-    if (args.empty()) COMPILER_THROW("fmt.oct() requires an integer argument");
+    if (args.empty())
+      COMPILER_THROW("fmt.oct() requires an integer argument");
     int64_t val = 0;
-    if (args[0].isInt()) val = args[0].asInt();
-    else if (args[0].isDouble()) val = static_cast<int64_t>(args[0].asDouble());
+    if (args[0].isInt())
+      val = args[0].asInt();
+    else if (args[0].isDouble())
+      val = static_cast<int64_t>(args[0].asDouble());
     std::stringstream ss;
     ss << "0o" << std::oct << val;
     return Value::makeStringId(heap_.allocateString(ss.str()).id);
   });
 
   registerHostFunction("fmt.bin", [this](const std::vector<Value> &args) {
-    if (args.empty()) COMPILER_THROW("fmt.bin() requires an integer argument");
+    if (args.empty())
+      COMPILER_THROW("fmt.bin() requires an integer argument");
     int64_t val = 0;
-    if (args[0].isInt()) val = args[0].asInt();
-    else if (args[0].isDouble()) val = static_cast<int64_t>(args[0].asDouble());
+    if (args[0].isInt())
+      val = args[0].asInt();
+    else if (args[0].isDouble())
+      val = static_cast<int64_t>(args[0].asDouble());
     bool neg = val < 0;
-    unsigned long long uval = neg ? -static_cast<unsigned long long>(val) : static_cast<unsigned long long>(val);
+    unsigned long long uval = neg ? -static_cast<unsigned long long>(val)
+                                  : static_cast<unsigned long long>(val);
     std::string bin;
-    if (uval == 0) bin = "0";
-    else while (uval > 0) { bin = static_cast<char>('0' + (uval & 1)) + bin; uval >>= 1; }
-    if (neg) bin = "-" + bin;
+    if (uval == 0)
+      bin = "0";
+    else
+      while (uval > 0) {
+        bin = static_cast<char>('0' + (uval & 1)) + bin;
+        uval >>= 1;
+      }
+    if (neg)
+      bin = "-" + bin;
     return Value::makeStringId(heap_.allocateString("0b" + bin).id);
   });
 
   registerHostFunction("fmt.b64", [this](const std::vector<Value> &args) {
-    if (args.empty()) COMPILER_THROW("fmt.b64() requires a string argument");
+    if (args.empty())
+      COMPILER_THROW("fmt.b64() requires a string argument");
     std::string input;
     if (args[0].isStringValId() && current_chunk) {
       input = current_chunk->getString(args[0].asStringValId());
     } else if (args[0].isStringId()) {
       auto *s = heap_.string(args[0].asStringId());
-      if (s) input = *s;
+      if (s)
+        input = *s;
     } else {
       COMPILER_THROW("fmt.b64() argument must be a string");
     }
-    static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    static const char b64[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     std::string result;
     for (size_t i = 0; i < input.size(); i += 3) {
       unsigned int n = static_cast<unsigned char>(input[i]) << 16;
-      if (i + 1 < input.size()) n |= static_cast<unsigned char>(input[i+1]) << 8;
-      if (i + 2 < input.size()) n |= static_cast<unsigned char>(input[i+2]);
+      if (i + 1 < input.size())
+        n |= static_cast<unsigned char>(input[i + 1]) << 8;
+      if (i + 2 < input.size())
+        n |= static_cast<unsigned char>(input[i + 2]);
       result += b64[(n >> 18) & 0x3F];
       result += b64[(n >> 12) & 0x3F];
       result += (i + 1 < input.size()) ? b64[(n >> 6) & 0x3F] : '=';
@@ -970,32 +1282,39 @@ if (arg.isStringValId()) {
   });
 
   registerHostFunction("fmt.b64decode", [this](const std::vector<Value> &args) {
-    if (args.empty()) COMPILER_THROW("fmt.b64decode() requires a string argument");
+    if (args.empty())
+      COMPILER_THROW("fmt.b64decode() requires a string argument");
     std::string input;
     if (args[0].isStringValId() && current_chunk) {
       input = current_chunk->getString(args[0].asStringValId());
     } else if (args[0].isStringId()) {
       auto *s = heap_.string(args[0].asStringId());
-      if (s) input = *s;
+      if (s)
+        input = *s;
     } else {
       COMPILER_THROW("fmt.b64decode() argument must be a string");
     }
     int b64inv[256];
     std::memset(b64inv, -1, sizeof(b64inv));
-    const char *b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    for (int i = 0; i < 64; i++) b64inv[static_cast<unsigned char>(b64chars[i])] = i;
+    const char *b64chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for (int i = 0; i < 64; i++)
+      b64inv[static_cast<unsigned char>(b64chars[i])] = i;
     auto arrRef = heap_.allocateArray();
     auto *arr = heap_.array(arrRef.id);
     int val = 0, bits = 0;
     for (unsigned char c : input) {
-      if (c == '=') break;
+      if (c == '=')
+        break;
       int v = b64inv[c];
-      if (v < 0) continue;
+      if (v < 0)
+        continue;
       val = (val << 6) | v;
       bits += 6;
       if (bits >= 8) {
         bits -= 8;
-        arr->push_back(Value::makeInt(static_cast<int64_t>((val >> bits) & 0xFF)));
+        arr->push_back(
+            Value::makeInt(static_cast<int64_t>((val >> bits) & 0xFF)));
       }
     }
     return Value::makeArrayId(arrRef.id);
@@ -1009,45 +1328,47 @@ if (arg.isStringValId()) {
     return Value::makeInt(static_cast<int64_t>(now));
   });
 
-  registerHostFunction(
-      "sleep_ms", 1, [this](const std::vector<Value> &args) {
-        if (!args[0].isInt()) {
-          COMPILER_THROW(
-              "sleep_ms expects exactly 1 integer argument");
-        }
+  registerHostFunction("sleep_ms", 1, [this](const std::vector<Value> &args) {
+    if (!args[0].isInt()) {
+      COMPILER_THROW("sleep_ms expects exactly 1 integer argument");
+    }
 
-        int64_t duration_ms = args[0].asInt();
-        if (duration_ms < 0) {
-          COMPILER_THROW("sleep_ms duration cannot be negative");
-        }
+    int64_t duration_ms = args[0].asInt();
+    if (duration_ms < 0) {
+      COMPILER_THROW("sleep_ms duration cannot be negative");
+    }
 
-        fprintf(stderr, "[DEBUG] sleep_ms: entered with duration_ms=%ld, scheduler_=%p, current_executing_fiber_=%p\n", duration_ms, scheduler_, current_executing_fiber_);
+    fprintf(stderr,
+            "[DEBUG] sleep_ms: entered with duration_ms=%ld, scheduler_=%p, "
+            "current_executing_fiber_=%p\n",
+            duration_ms, scheduler_, current_executing_fiber_);
 
-        if (scheduler_ && current_executing_fiber_) {
-          fprintf(stderr, "[DEBUG] sleep_ms: suspending fiber\n");
-          suspension_requested_ = true;
-          suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
-          suspension_context_ = reinterpret_cast<void*>(
-              static_cast<intptr_t>(duration_ms));
-          return Value::makeNull();
-        }
+    if (scheduler_ && current_executing_fiber_) {
+      suspension_requested_ = true;
+      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
+      suspension_context_ =
+          reinterpret_cast<void *>(static_cast<intptr_t>(duration_ms));
+      return Value::makeNull();
+    }
 
-        fprintf(stderr, "[DEBUG] sleep_ms: using busy-wait fallback\n");
-        auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(duration_ms);
-        while (std::chrono::steady_clock::now() < deadline) {
-          if (exit_requested_.load()) return Value::makeNull();
-          processPendingEvents();
-          if (yield_callback_) {
-            yield_callback_();
-          }
-          auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-              deadline - std::chrono::steady_clock::now());
-          auto chunk = std::min(static_cast<int64_t>(remaining.count()), int64_t(10));
-          if (chunk > 0) std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
-        }
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::milliseconds(duration_ms);
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (exit_requested_.load())
         return Value::makeNull();
-      });
+      processPendingEvents();
+      if (yield_callback_) {
+        yield_callback_();
+      }
+      auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - std::chrono::steady_clock::now());
+      auto chunk =
+          std::min(static_cast<int64_t>(remaining.count()), int64_t(10));
+      if (chunk > 0)
+        std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+    }
+    return Value::makeNull();
+  });
 
   // Read a line from stdin
   registerHostFunction("input", [this](const std::vector<Value> &args) {
@@ -1065,71 +1386,78 @@ if (arg.isStringValId()) {
   // globals() - returns count of global variables
   registerHostFunction("globals", [this](const std::vector<Value> &args) {
     (void)args;
-    int64_t count = static_cast<int64_t>(globals.size() + host_function_globals_.size());
+    int64_t count =
+        static_cast<int64_t>(globals.size() + host_function_globals_.size());
     return Value::makeInt(count);
   });
 
   // Enhanced sleep() with duration string support
-  registerHostFunction(
-      "sleep", 1, [this](const std::vector<Value> &args) {
-        if (args.empty()) {
-          COMPILER_THROW("sleep() requires one argument");
+  registerHostFunction("sleep", 1, [this](const std::vector<Value> &args) {
+    if (args.empty()) {
+      COMPILER_THROW("sleep() requires one argument");
+    }
+
+    auto duration_ms = parseDuration(args[0]);
+    if (!duration_ms) {
+      COMPILER_THROW(
+          "sleep(): invalid duration format. Use numbers (ms) or strings "
+          "like '1s', '500ms', '2.5m', '1h'");
+    }
+
+    if (*duration_ms < 0) {
+      COMPILER_THROW("sleep(): duration cannot be negative");
+    }
+
+    fprintf(stderr,
+            "[DEBUG] sleep: scheduler_=%p, current_executing_fiber_=%p, "
+            "duration_ms=%ld\n",
+            scheduler_, current_executing_fiber_, *duration_ms);
+
+    if (scheduler_ && current_executing_fiber_) {
+      // Use the VM's goroutine suspension mechanism instead of blocking.
+      // This lets the scheduler put the goroutine to sleep and resume it
+      // after the duration, allowing the event loop to process input
+      // events (including exit requests from other hotkeys) while we wait.
+      // Only valid when running inside a fiber/goroutine context.
+      suspension_requested_ = true;
+      suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
+      suspension_context_ =
+          reinterpret_cast<void *>(static_cast<intptr_t>(*duration_ms));
+      return Value::makeNull();
+    }
+
+    // No scheduler — fall back to chunked sleep with event processing
+    {
+      const int SLEEP_CHUNK_MS = 10;
+      auto end_time = std::chrono::steady_clock::now() +
+                      std::chrono::milliseconds(*duration_ms);
+      while (std::chrono::steady_clock::now() < end_time) {
+        if (exit_requested_.load())
+          return Value::makeNull();
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            end_time - std::chrono::steady_clock::now());
+        auto chunk =
+            std::min(static_cast<int>(remaining.count()), SLEEP_CHUNK_MS);
+        if (chunk > 0) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
         }
-
-        auto duration_ms = parseDuration(args[0]);
-        if (!duration_ms) {
-          COMPILER_THROW(
-              "sleep(): invalid duration format. Use numbers (ms) or strings "
-              "like '1s', '500ms', '2.5m', '1h'");
+        processPendingEvents();
+        if (yield_callback_) {
+          yield_callback_();
         }
-
-        if (*duration_ms < 0) {
-          COMPILER_THROW("sleep(): duration cannot be negative");
-        }
-
-        fprintf(stderr, "[DEBUG] sleep: scheduler_=%p, current_executing_fiber_=%p, duration_ms=%ld\n", scheduler_, current_executing_fiber_, *duration_ms);
-
-        if (scheduler_ && current_executing_fiber_) {
-// Use the VM's goroutine suspension mechanism instead of blocking.
-// This lets the scheduler put the goroutine to sleep and resume it
-// after the duration, allowing the event loop to process input
-// events (including exit requests from other hotkeys) while we wait.
-// Only valid when running inside a fiber/goroutine context.
-suspension_requested_ = true;
-suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
-suspension_context_ = reinterpret_cast<void*>(
-static_cast<intptr_t>(*duration_ms));
-return Value::makeNull();
-}
-
-        // No scheduler — fall back to chunked sleep with event processing
-        {
-          const int SLEEP_CHUNK_MS = 10;
-          auto end_time = std::chrono::steady_clock::now() +
-                          std::chrono::milliseconds(*duration_ms);
-          while (std::chrono::steady_clock::now() < end_time) {
-            if (exit_requested_.load()) return Value::makeNull();
-            auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-                end_time - std::chrono::steady_clock::now());
-            auto chunk = std::min(static_cast<int>(remaining.count()), SLEEP_CHUNK_MS);
-            if (chunk > 0) {
-              std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
-            }
-            processPendingEvents();
-            if (yield_callback_) {
-              yield_callback_();
-            }
-          }
-        }
-        return Value::makeNull();
-      });
+      }
+    }
+    return Value::makeNull();
+  });
 
   // eval(code_string) - Parse and execute Havel code at runtime
   // Returns the result of the last expression
   registerHostFunction("eval", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeNull();
+    if (args.empty())
+      return Value::makeNull();
     std::string code = toString(args[0]);
-    if (code.empty()) return Value::makeNull();
+    if (code.empty())
+      return Value::makeNull();
 
     havel::compiler::PipelineOptions options;
     options.compile_unit_name = "<eval>";
@@ -1138,7 +1466,8 @@ return Value::makeNull();
 
     std::unique_ptr<havel::compiler::BytecodeChunk> chunk;
     try {
-      chunk = havel::compiler::compileToBytecodeChunk(code, "__main__", options);
+      chunk =
+          havel::compiler::compileToBytecodeChunk(code, "__main__", options);
     } catch (const std::exception &e) {
       COMPILER_THROW(std::string("eval(): ") + e.what());
     }
@@ -1189,14 +1518,13 @@ return Value::makeNull();
   // Instrumentation: assert(condition, message?)
   registerHostFunction("assert", [this](const std::vector<Value> &args) {
     if (args.empty()) {
-      COMPILER_THROW(
-          "assert() requires at least a condition argument");
+      COMPILER_THROW("assert() requires at least a condition argument");
     }
     bool condition = toBool(args[0]);
     if (!condition) {
       std::string msg = "Assertion failed";
-      if (args.size() > 1 &&
-          (args[1].isStringValId() || args[1].isStringId() || args[1].isRegexValId())) {
+      if (args.size() > 1 && (args[1].isStringValId() || args[1].isStringId() ||
+                              args[1].isRegexValId())) {
         msg = resolveStringKey(args[1]);
       }
       COMPILER_THROW(msg);
@@ -1217,15 +1545,15 @@ return Value::makeNull();
   // Instead of calling std::exit() (which crashes during static destruction
   // while Qt widgets are alive), we set a flag on the VM for cooperative
   // shutdown. The EventListener detects this and stops cleanly.
-    registerHostFunction("exit", [this](const std::vector<Value> &args) {
-        int exit_code = 0;
-        if (!args.empty() && args[0].isInt()) {
-            exit_code = static_cast<int>(args[0].asInt());
-        }
-        exit_requested_ = true;
-        exit_code_ = exit_code;
-        return Value::makeNull();
-    });
+  registerHostFunction("exit", [this](const std::vector<Value> &args) {
+    int exit_code = 0;
+    if (!args.empty() && args[0].isInt()) {
+      exit_code = static_cast<int>(args[0].asInt());
+    }
+    exit_requested_ = true;
+    exit_code_ = exit_code;
+    return Value::makeNull();
+  });
 
   // Performance: clock_ns() - high-resolution clock in nanoseconds
   registerHostFunction("clock_ns", 0, [](const std::vector<Value> &) {
@@ -1254,30 +1582,39 @@ return Value::makeNull();
 
   // ord() builtin returns Unicode code point of first character
   registerHostFunction("ord", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeNull();
+    if (args.empty())
+      return Value::makeNull();
     std::string s = this->toString(args[0]);
-    if (s.empty()) return Value::makeNull();
+    if (s.empty())
+      return Value::makeNull();
     unsigned char b0 = static_cast<unsigned char>(s[0]);
     uint32_t cp = 0;
-    if (b0 < 0x80) { cp = b0; }
-    else if ((b0 & 0xE0) == 0xC0 && s.size() >= 2) {
+    if (b0 < 0x80) {
+      cp = b0;
+    } else if ((b0 & 0xE0) == 0xC0 && s.size() >= 2) {
       cp = ((b0 & 0x1F) << 6) | (static_cast<unsigned char>(s[1]) & 0x3F);
     } else if ((b0 & 0xF0) == 0xE0 && s.size() >= 3) {
-      cp = ((b0 & 0x0F) << 12) | ((static_cast<unsigned char>(s[1]) & 0x3F) << 6)
-         | (static_cast<unsigned char>(s[2]) & 0x3F);
+      cp = ((b0 & 0x0F) << 12) |
+           ((static_cast<unsigned char>(s[1]) & 0x3F) << 6) |
+           (static_cast<unsigned char>(s[2]) & 0x3F);
     } else if ((b0 & 0xF8) == 0xF0 && s.size() >= 4) {
-      cp = ((b0 & 0x07) << 18) | ((static_cast<unsigned char>(s[1]) & 0x3F) << 12)
-         | ((static_cast<unsigned char>(s[2]) & 0x3F) << 6)
-         | (static_cast<unsigned char>(s[3]) & 0x3F);
-    } else { return Value::makeNull(); }
+      cp = ((b0 & 0x07) << 18) |
+           ((static_cast<unsigned char>(s[1]) & 0x3F) << 12) |
+           ((static_cast<unsigned char>(s[2]) & 0x3F) << 6) |
+           (static_cast<unsigned char>(s[3]) & 0x3F);
+    } else {
+      return Value::makeNull();
+    }
     return Value::makeInt(static_cast<int64_t>(cp));
   });
 
   // char() builtin returns string from Unicode code point
   registerHostFunction("char", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isInt()) return Value::makeNull();
+    if (args.empty() || !args[0].isInt())
+      return Value::makeNull();
     int64_t cp = args[0].asInt();
-    if (cp < 0 || cp > 0x10FFFF) return Value::makeNull();
+    if (cp < 0 || cp > 0x10FFFF)
+      return Value::makeNull();
     std::string result;
     if (cp < 0x80) {
       result += static_cast<char>(cp);
@@ -1300,7 +1637,8 @@ return Value::makeNull();
 
   // contains(haystack, needle) - Check if string contains substring
   registerHostFunction("contains", 2, [this](const std::vector<Value> &args) {
-    if (args.size() < 2) return Value::makeBool(false);
+    if (args.size() < 2)
+      return Value::makeBool(false);
     std::string haystack = toString(args[0]);
     std::string needle = toString(args[1]);
     return Value::makeBool(haystack.find(needle) != std::string::npos);
@@ -1308,51 +1646,73 @@ return Value::makeNull();
 
   // lower(s) - Convert string to lowercase
   registerHostFunction("lower", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeNull();
+    if (args.empty())
+      return Value::makeNull();
     std::string s = toString(args[0]);
     for (char &c : s) {
-      if (c >= 'A' && c <= 'Z') c += 32;
+      if (c >= 'A' && c <= 'Z')
+        c += 32;
     }
     auto strRef = heap_.allocateString(s);
     return Value::makeStringId(strRef.id);
   });
 
-// type() builtin returns type name
+  // type() builtin returns type name
   registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
     const auto &value = args[0];
     std::string typeName;
-    if (value.isNull()) typeName = "null";
-    else if (value.isBool()) typeName = "bool";
-    else if (value.isInt()) typeName = "int";
-    else if (value.isDouble()) typeName = "float";
-    else if (value.isStringValId() || value.isStringId() || value.isRegexValId()) typeName = "string";
-    else if (value.isArrayId()) typeName = "array";
-    else if (value.isObjectId()) typeName = "object";
-    else if (value.isSetId()) typeName = "set";
-    else if (value.isRangeId()) typeName = "range";
-    else if (value.isHostFuncId()) typeName = "function";
-    else if (value.isClosureId()) typeName = "closure";
-    else if (value.isFunctionObjId()) typeName = "function";
-    else if (value.isEnumId()) typeName = "enum";
-    else if (value.isIteratorId()) typeName = "iterator";
-    else if (value.isBoundMethodId()) typeName = "fn";
-    else if (value.isCoroutineId()) typeName = "coroutine";
-    else typeName = "unknown";
+    if (value.isNull())
+      typeName = "null";
+    else if (value.isBool())
+      typeName = "bool";
+    else if (value.isInt())
+      typeName = "int";
+    else if (value.isDouble())
+      typeName = "float";
+    else if (value.isStringValId() || value.isStringId() ||
+             value.isRegexValId())
+      typeName = "string";
+    else if (value.isArrayId())
+      typeName = "array";
+    else if (value.isObjectId())
+      typeName = "object";
+    else if (value.isSetId())
+      typeName = "set";
+    else if (value.isRangeId())
+      typeName = "range";
+    else if (value.isHostFuncId())
+      typeName = "function";
+    else if (value.isClosureId())
+      typeName = "closure";
+    else if (value.isFunctionObjId())
+      typeName = "function";
+    else if (value.isEnumId())
+      typeName = "enum";
+    else if (value.isIteratorId())
+      typeName = "iterator";
+    else if (value.isBoundMethodId())
+      typeName = "fn";
+    else if (value.isCoroutineId())
+      typeName = "coroutine";
+    else
+      typeName = "unknown";
     auto strRef = heap_.allocateString(typeName);
     return Value::makeStringId(strRef.id);
   });
 
-    // ========================================================================
-    // Duck typing / Protocol functions
-    // ========================================================================
+  // ========================================================================
+  // Duck typing / Protocol functions
+  // ========================================================================
 
-    // iter(x) - Get an iterator for any iterable type
-    registerHostFunction("iter", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeNull();
+  // iter(x) - Get an iterator for any iterable type
+  registerHostFunction("iter", 1, [this](const std::vector<Value> &args) {
+    if (args.empty())
+      return Value::makeNull();
     const auto &value = args[0];
     // Check if value is iterable
-    if (value.isArrayId() || value.isStringId() || value.isStringValId() || value.isRegexValId() ||
-        value.isObjectId() || value.isSetId() || value.isRangeId()) {
+    if (value.isArrayId() || value.isStringId() || value.isStringValId() ||
+        value.isRegexValId() || value.isObjectId() || value.isSetId() ||
+        value.isRangeId()) {
       uint32_t iterId = heap_.createIterator(value);
       return Value::makeIteratorId(iterId);
     }
@@ -1361,22 +1721,25 @@ return Value::makeNull();
 
   // next(iter) - Get next value from iterator
   registerHostFunction("next", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isIteratorId()) return Value::makeNull();
+    if (args.empty() || !args[0].isIteratorId())
+      return Value::makeNull();
     return heap_.iteratorNext(args[0].asIteratorId());
   });
 
   // callable(x) - Check if value can be called
   registerHostFunction("callable", 1, [](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeBool(false);
+    if (args.empty())
+      return Value::makeBool(false);
     const auto &value = args[0];
     bool isCallable = value.isFunctionObjId() || value.isClosureId() ||
-                       value.isHostFuncId() || value.isBoundMethodId();
+                      value.isHostFuncId() || value.isBoundMethodId();
     return Value::makeBool(isCallable);
   });
 
   // hasattr(obj, name) - Check if object has attribute/method
   registerHostFunction("hasattr", 2, [this](const std::vector<Value> &args) {
-    if (args.size() < 2) return Value::makeBool(false);
+    if (args.size() < 2)
+      return Value::makeBool(false);
     std::string name;
     if (args[1].isStringValId() && current_chunk) {
       name = current_chunk->getString(args[1].asStringValId());
@@ -1388,7 +1751,8 @@ return Value::makeNull();
     if (args[0].isObjectId()) {
       if (args[0].asObjectId() == globals_mirror_object_id_) {
         return Value::makeBool(globals.find(name) != globals.end() ||
-                               host_function_globals_.find(name) != host_function_globals_.end());
+                               host_function_globals_.find(name) !=
+                                   host_function_globals_.end());
       }
       auto *obj = heap_.object(args[0].asObjectId());
       return Value::makeBool(obj && obj->find(name) != obj->end());
@@ -1398,22 +1762,24 @@ return Value::makeNull();
 
   // isIterable(x) - Check if value can be iterated
   registerHostFunction("isIterable", 1, [](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeBool(false);
+    if (args.empty())
+      return Value::makeBool(false);
     const auto &value = args[0];
     bool isIterable = value.isArrayId() || value.isStringId() ||
-                      value.isStringValId() || value.isRegexValId() || value.isObjectId() ||
-                      value.isSetId() || value.isRangeId() ||
-                      value.isIteratorId();
+                      value.isStringValId() || value.isRegexValId() ||
+                      value.isObjectId() || value.isSetId() ||
+                      value.isRangeId() || value.isIteratorId();
     return Value::makeBool(isIterable);
   });
 
   // isIndexable(x) - Check if value supports indexing
   registerHostFunction("isIndexable", 1, [](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeBool(false);
+    if (args.empty())
+      return Value::makeBool(false);
     const auto &value = args[0];
     bool isIndexable = value.isArrayId() || value.isStringId() ||
-                       value.isStringValId() || value.isRegexValId() || value.isObjectId() ||
-                       value.isSetId();
+                       value.isStringValId() || value.isRegexValId() ||
+                       value.isObjectId() || value.isSetId();
     return Value::makeBool(isIndexable);
   });
 
@@ -1422,141 +1788,158 @@ return Value::makeNull();
   // ========================================================================
 
   // function.name(fn) - Get function name
-  registerHostFunction("function.name", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeNull();
-    Value fn = args[0];
-    
-    if (fn.isFunctionObjId()) {
-      uint32_t idx = fn.asFunctionObjId();
-      if (current_chunk && idx < current_chunk->getFunctionCount()) {
-        const auto *bf = current_chunk->getFunction(idx);
-        if (bf) {
-          auto strRef = heap_.allocateString(bf->name);
-          return Value::makeStringId(strRef.id);
-        }
-      }
-    } else if (fn.isClosureId()) {
-      auto *closure = heap_.closure(fn.asClosureId());
-      if (closure && current_chunk) {
-        if (closure->function_index < current_chunk->getFunctionCount()) {
-          const auto *bf = current_chunk->getFunction(closure->function_index);
-          if (bf) {
-            auto strRef = heap_.allocateString(bf->name);
-            return Value::makeStringId(strRef.id);
-          }
-        }
-      }
-    }
-    return Value::makeNull();
-  });
+  registerHostFunction(
+      "function.name", 1, [this](const std::vector<Value> &args) {
+        if (args.empty())
+          return Value::makeNull();
+        Value fn = args[0];
 
-  // function.arity(fn) - Get function parameter count
-  registerHostFunction("function.arity", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeInt(0);
-    Value fn = args[0];
-    
-    if (fn.isFunctionObjId()) {
-      uint32_t idx = fn.asFunctionObjId();
-      if (current_chunk && idx < current_chunk->getFunctionCount()) {
-        const auto *bf = current_chunk->getFunction(idx);
-        if (bf) return Value::makeInt(bf->param_count);
-      }
-    } else if (fn.isClosureId()) {
-      auto *closure = heap_.closure(fn.asClosureId());
-      if (closure && current_chunk) {
-        if (closure->function_index < current_chunk->getFunctionCount()) {
-          const auto *bf = current_chunk->getFunction(closure->function_index);
-          if (bf) return Value::makeInt(bf->param_count);
-        }
-      }
-    }
-    return Value::makeInt(0);
-  });
-
-  // function.params(fn) - Get function parameter names as array
-  registerHostFunction("function.params", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeNull();
-    Value fn = args[0];
-    
-    ArrayRef arrRef = heap_.allocateArray();
-    auto *arr = heap_.array(arrRef.id);
-    
-    if (fn.isFunctionObjId()) {
-      uint32_t idx = fn.asFunctionObjId();
-      if (current_chunk && idx < current_chunk->getFunctionCount()) {
-        const auto *bf = current_chunk->getFunction(idx);
-        if (bf) {
-          for (const auto &pname : bf->param_names) {
-            auto strRef = heap_.allocateString(pname);
-            arr->push_back(Value::makeStringId(strRef.id));
-          }
-          return Value::makeArrayId(arrRef.id);
-        }
-      }
-    } else if (fn.isClosureId()) {
-      auto *closure = heap_.closure(fn.asClosureId());
-      if (closure && current_chunk) {
-        if (closure->function_index < current_chunk->getFunctionCount()) {
-          const auto *bf = current_chunk->getFunction(closure->function_index);
-          if (bf) {
-            for (const auto &pname : bf->param_names) {
-              auto strRef = heap_.allocateString(pname);
-              arr->push_back(Value::makeStringId(strRef.id));
-            }
-            return Value::makeArrayId(arrRef.id);
-          }
-        }
-      }
-    }
-    return Value::makeNull();
-  });
-
-  // function.source(fn) - Get source location as "file:line" string
-  registerHostFunction("function.source", 1, [this](const std::vector<Value> &args) {
-    if (args.empty()) return Value::makeNull();
-    Value fn = args[0];
-    
-    if (fn.isFunctionObjId()) {
-      uint32_t idx = fn.asFunctionObjId();
-      if (current_chunk && idx < current_chunk->getFunctionCount()) {
-        const auto *bf = current_chunk->getFunction(idx);
-        if (bf) {
-          std::string loc = bf->source_file.empty() ? "" : bf->source_file;
-          if (bf->source_line > 0) {
-            loc += (loc.empty() ? "" : ":") + std::to_string(bf->source_line);
-          }
-          if (!loc.empty()) {
-            auto strRef = heap_.allocateString(loc);
-            return Value::makeStringId(strRef.id);
-          }
-        }
-      }
-    } else if (fn.isClosureId()) {
-      auto *closure = heap_.closure(fn.asClosureId());
-      if (closure && current_chunk) {
-        if (closure->function_index < current_chunk->getFunctionCount()) {
-          const auto *bf = current_chunk->getFunction(closure->function_index);
-          if (bf) {
-            std::string loc = bf->source_file.empty() ? "" : bf->source_file;
-            if (bf->source_line > 0) {
-              loc += (loc.empty() ? "" : ":") + std::to_string(bf->source_line);
-            }
-            if (!loc.empty()) {
-              auto strRef = heap_.allocateString(loc);
+        if (fn.isFunctionObjId()) {
+          uint32_t idx = fn.asFunctionObjId();
+          if (current_chunk && idx < current_chunk->getFunctionCount()) {
+            const auto *bf = current_chunk->getFunction(idx);
+            if (bf) {
+              auto strRef = heap_.allocateString(bf->name);
               return Value::makeStringId(strRef.id);
             }
           }
+        } else if (fn.isClosureId()) {
+          auto *closure = heap_.closure(fn.asClosureId());
+          if (closure && current_chunk) {
+            if (closure->function_index < current_chunk->getFunctionCount()) {
+              const auto *bf =
+                  current_chunk->getFunction(closure->function_index);
+              if (bf) {
+                auto strRef = heap_.allocateString(bf->name);
+                return Value::makeStringId(strRef.id);
+              }
+            }
+          }
         }
-      }
-    }
-    return Value::makeNull();
-  });
+        return Value::makeNull();
+      });
+
+  // function.arity(fn) - Get function parameter count
+  registerHostFunction(
+      "function.arity", 1, [this](const std::vector<Value> &args) {
+        if (args.empty())
+          return Value::makeInt(0);
+        Value fn = args[0];
+
+        if (fn.isFunctionObjId()) {
+          uint32_t idx = fn.asFunctionObjId();
+          if (current_chunk && idx < current_chunk->getFunctionCount()) {
+            const auto *bf = current_chunk->getFunction(idx);
+            if (bf)
+              return Value::makeInt(bf->param_count);
+          }
+        } else if (fn.isClosureId()) {
+          auto *closure = heap_.closure(fn.asClosureId());
+          if (closure && current_chunk) {
+            if (closure->function_index < current_chunk->getFunctionCount()) {
+              const auto *bf =
+                  current_chunk->getFunction(closure->function_index);
+              if (bf)
+                return Value::makeInt(bf->param_count);
+            }
+          }
+        }
+        return Value::makeInt(0);
+      });
+
+  // function.params(fn) - Get function parameter names as array
+  registerHostFunction(
+      "function.params", 1, [this](const std::vector<Value> &args) {
+        if (args.empty())
+          return Value::makeNull();
+        Value fn = args[0];
+
+        ArrayRef arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+
+        if (fn.isFunctionObjId()) {
+          uint32_t idx = fn.asFunctionObjId();
+          if (current_chunk && idx < current_chunk->getFunctionCount()) {
+            const auto *bf = current_chunk->getFunction(idx);
+            if (bf) {
+              for (const auto &pname : bf->param_names) {
+                auto strRef = heap_.allocateString(pname);
+                arr->push_back(Value::makeStringId(strRef.id));
+              }
+              return Value::makeArrayId(arrRef.id);
+            }
+          }
+        } else if (fn.isClosureId()) {
+          auto *closure = heap_.closure(fn.asClosureId());
+          if (closure && current_chunk) {
+            if (closure->function_index < current_chunk->getFunctionCount()) {
+              const auto *bf =
+                  current_chunk->getFunction(closure->function_index);
+              if (bf) {
+                for (const auto &pname : bf->param_names) {
+                  auto strRef = heap_.allocateString(pname);
+                  arr->push_back(Value::makeStringId(strRef.id));
+                }
+                return Value::makeArrayId(arrRef.id);
+              }
+            }
+          }
+        }
+        return Value::makeNull();
+      });
+
+  // function.source(fn) - Get source location as "file:line" string
+  registerHostFunction(
+      "function.source", 1, [this](const std::vector<Value> &args) {
+        if (args.empty())
+          return Value::makeNull();
+        Value fn = args[0];
+
+        if (fn.isFunctionObjId()) {
+          uint32_t idx = fn.asFunctionObjId();
+          if (current_chunk && idx < current_chunk->getFunctionCount()) {
+            const auto *bf = current_chunk->getFunction(idx);
+            if (bf) {
+              std::string loc = bf->source_file.empty() ? "" : bf->source_file;
+              if (bf->source_line > 0) {
+                loc +=
+                    (loc.empty() ? "" : ":") + std::to_string(bf->source_line);
+              }
+              if (!loc.empty()) {
+                auto strRef = heap_.allocateString(loc);
+                return Value::makeStringId(strRef.id);
+              }
+            }
+          }
+        } else if (fn.isClosureId()) {
+          auto *closure = heap_.closure(fn.asClosureId());
+          if (closure && current_chunk) {
+            if (closure->function_index < current_chunk->getFunctionCount()) {
+              const auto *bf =
+                  current_chunk->getFunction(closure->function_index);
+              if (bf) {
+                std::string loc =
+                    bf->source_file.empty() ? "" : bf->source_file;
+                if (bf->source_line > 0) {
+                  loc += (loc.empty() ? "" : ":") +
+                         std::to_string(bf->source_line);
+                }
+                if (!loc.empty()) {
+                  auto strRef = heap_.allocateString(loc);
+                  return Value::makeStringId(strRef.id);
+                }
+              }
+            }
+          }
+        }
+        return Value::makeNull();
+      });
 
   // Create function prototype object for introspection
   {
     ObjectRef funcProto = heap_.allocateObject();
     auto *funcObj = heap_.object(funcProto.id);
-    
+
     // function.name(fn)
     {
       auto it = host_function_globals_.find("function.name");
@@ -1585,20 +1968,22 @@ return Value::makeNull();
         funcObj->set("source", it->second);
       }
     }
-    
+
     globals["function"] = Value::makeObjectId(funcProto.id);
   }
 
-    registerHostFunction("async.await", 1, [](const std::vector<Value> &args) {
-        if (args.empty()) return Value::makeNull();
-        return args[0];
-    });
-    registerHostFunction("await", 1, [](const std::vector<Value> &args) {
-        if (args.empty()) return Value::makeNull();
-        return args[0];
-    });
+  registerHostFunction("async.await", 1, [](const std::vector<Value> &args) {
+    if (args.empty())
+      return Value::makeNull();
+    return args[0];
+  });
+  registerHostFunction("await", 1, [](const std::vector<Value> &args) {
+    if (args.empty())
+      return Value::makeNull();
+    return args[0];
+  });
 
-    // app.restart() - restart the application
+  // app.restart() - restart the application
   registerHostFunction("app.restart", 0, [this](const std::vector<Value> &) {
     if (restart_callback_) {
       restart_callback_();
@@ -1610,182 +1995,194 @@ return Value::makeNull();
   // Thread, Interval, and Timeout - Concurrency primitives
   // ========================================================================
 
- // thread { closure } - Create and start a message-passing thread
- registerHostFunction("thread", 1, [this](const std::vector<Value> &args) {
- if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
- COMPILER_THROW("thread requires a closure argument");
- }
+  // thread { closure } - Create and start a message-passing thread
+  registerHostFunction("thread", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() ||
+        (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
+      COMPILER_THROW("thread requires a closure argument");
+    }
 
- auto threadObj = std::make_shared<Thread>();
- auto closure = args[0];
- auto threadIdPtr = std::make_shared<uint32_t>(0);
+    auto threadObj = std::make_shared<Thread>();
+    auto closure = args[0];
+    auto threadIdPtr = std::make_shared<uint32_t>(0);
 
- // Create message handler that invokes the closure
- auto handler = [this, closure, threadIdPtr](const Thread::Message &msg) {
- try {
- Value arg;
- if (std::holds_alternative<std::string>(msg)) {
- auto strRef = heap_.allocateString(std::get<std::string>(msg));
- arg = Value::makeStringId(strRef.id);
- } else if (std::holds_alternative<int>(msg)) {
- arg = Value::makeInt(std::get<int>(msg));
- } else if (std::holds_alternative<double>(msg)) {
- arg = Value::makeDouble(std::get<double>(msg));
- }
+    // Create message handler that invokes the closure
+    auto handler = [this, closure, threadIdPtr](const Thread::Message &msg) {
+      try {
+        Value arg;
+        if (std::holds_alternative<std::string>(msg)) {
+          auto strRef = heap_.allocateString(std::get<std::string>(msg));
+          arg = Value::makeStringId(strRef.id);
+        } else if (std::holds_alternative<int>(msg)) {
+          arg = Value::makeInt(std::get<int>(msg));
+        } else if (std::holds_alternative<double>(msg)) {
+          arg = Value::makeDouble(std::get<double>(msg));
+        }
 
- Value result = this->callFunction(closure, {arg});
- thread_results_[*threadIdPtr] = result;
- } catch (const std::exception &e) {
- ::havel::error("[thread] Exception: {}", e.what());
- }
- };
+        Value result = this->callFunction(closure, {arg});
+        thread_results_[*threadIdPtr] = result;
+      } catch (const std::exception &e) {
+        ::havel::error("[thread] Exception: {}", e.what());
+      }
+    };
 
-threadObj->start(std::move(handler));
+    threadObj->start(std::move(handler));
 
-  // Store thread in GC heap and return wrapper object
-        auto threadRef = heap_.allocateThreadObj(threadObj);
-        *threadIdPtr = threadRef.id;
-        thread_captured_closures_[threadRef.id] = registerCallback(closure);
-        return Value::makeThreadId(threadRef.id);
- });
+    // Store thread in GC heap and return wrapper object
+    auto threadRef = heap_.allocateThreadObj(threadObj);
+    *threadIdPtr = threadRef.id;
+    thread_captured_closures_[threadRef.id] = registerCallback(closure);
+    return Value::makeThreadId(threadRef.id);
+  });
 
   // thread.send(thread, message) - Send message to thread
-  registerHostFunction("thread.send", 2, [this](const std::vector<Value> &args) {
-    if (args.size() < 2 || !args[0].isThreadId()) {
-      COMPILER_THROW("thread.send requires a thread object and message");
-    }
-    
-    auto *threadObj = heap_.thread(args[0].asThreadId());
-    if (!threadObj) {
-      COMPILER_THROW("thread.send: invalid thread reference");
-    }
-    
-    // Convert message Value to Thread::Message
-    Thread::Message msg;
-    if (args[1].isStringValId()) {
-      auto *str = heap_.string(args[1].asStringValId());
-      if (str) {
-        msg = *str;
-      } else {
-        COMPILER_THROW("thread.send: invalid string reference");
-      }
-    } else if (args[1].isInt()) {
-      msg = static_cast<int>(args[1].asInt());
-    } else if (args[1].isDouble() || args[1].isNumber()) {
-      msg = args[1].isDouble() ? args[1].asDouble() : static_cast<double>(args[1].asInt());
-    } else {
-      COMPILER_THROW("thread.send: message must be string, int, or number");
-    }
-    
-    threadObj->send(msg);
-    return Value::makeNull();
-  });
+  registerHostFunction(
+      "thread.send", 2, [this](const std::vector<Value> &args) {
+        if (args.size() < 2 || !args[0].isThreadId()) {
+          COMPILER_THROW("thread.send requires a thread object and message");
+        }
+
+        auto *threadObj = heap_.thread(args[0].asThreadId());
+        if (!threadObj) {
+          COMPILER_THROW("thread.send: invalid thread reference");
+        }
+
+        // Convert message Value to Thread::Message
+        Thread::Message msg;
+        if (args[1].isStringValId()) {
+          auto *str = heap_.string(args[1].asStringValId());
+          if (str) {
+            msg = *str;
+          } else {
+            COMPILER_THROW("thread.send: invalid string reference");
+          }
+        } else if (args[1].isInt()) {
+          msg = static_cast<int>(args[1].asInt());
+        } else if (args[1].isDouble() || args[1].isNumber()) {
+          msg = args[1].isDouble() ? args[1].asDouble()
+                                   : static_cast<double>(args[1].asInt());
+        } else {
+          COMPILER_THROW("thread.send: message must be string, int, or number");
+        }
+
+        threadObj->send(msg);
+        return Value::makeNull();
+      });
 
   // thread.pause(thread) - Pause thread
-  registerHostFunction("thread.pause", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isThreadId()) {
-      COMPILER_THROW("thread.pause requires a thread argument");
-    }
-    
-    auto *threadObj = heap_.thread(args[0].asThreadId());
-    if (!threadObj) {
-      COMPILER_THROW("thread.pause: invalid thread reference");
-    }
-    
-    threadObj->pause();
-    return Value::makeNull();
-  });
+  registerHostFunction(
+      "thread.pause", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isThreadId()) {
+          COMPILER_THROW("thread.pause requires a thread argument");
+        }
+
+        auto *threadObj = heap_.thread(args[0].asThreadId());
+        if (!threadObj) {
+          COMPILER_THROW("thread.pause: invalid thread reference");
+        }
+
+        threadObj->pause();
+        return Value::makeNull();
+      });
 
   // thread.resume(thread) - Resume thread
-  registerHostFunction("thread.resume", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isThreadId()) {
-      COMPILER_THROW("thread.resume requires a thread argument");
-    }
-    
-    auto *threadObj = heap_.thread(args[0].asThreadId());
-    if (!threadObj) {
-      COMPILER_THROW("thread.resume: invalid thread reference");
-    }
-    
-    threadObj->resume();
-    return Value::makeNull();
-  });
+  registerHostFunction(
+      "thread.resume", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isThreadId()) {
+          COMPILER_THROW("thread.resume requires a thread argument");
+        }
+
+        auto *threadObj = heap_.thread(args[0].asThreadId());
+        if (!threadObj) {
+          COMPILER_THROW("thread.resume: invalid thread reference");
+        }
+
+        threadObj->resume();
+        return Value::makeNull();
+      });
 
   // thread.stop(thread) - Stop thread
-  registerHostFunction("thread.stop", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isThreadId()) {
-      COMPILER_THROW("thread.stop requires a thread argument");
-    }
-    
-    auto *threadObj = heap_.thread(args[0].asThreadId());
-    if (!threadObj) {
-      COMPILER_THROW("thread.stop: invalid thread reference");
-    }
-    
-    threadObj->stop();
-    return Value::makeNull();
-  });
+  registerHostFunction(
+      "thread.stop", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isThreadId()) {
+          COMPILER_THROW("thread.stop requires a thread argument");
+        }
+
+        auto *threadObj = heap_.thread(args[0].asThreadId());
+        if (!threadObj) {
+          COMPILER_THROW("thread.stop: invalid thread reference");
+        }
+
+        threadObj->stop();
+        return Value::makeNull();
+      });
 
   // thread.running(thread) -> bool - Check if thread is running
-  registerHostFunction("thread.running", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isThreadId()) {
-      COMPILER_THROW("thread.running requires a thread argument");
-    }
-    
-    auto *threadObj = heap_.thread(args[0].asThreadId());
-    if (!threadObj) {
-      return Value::makeBool(false);
-    }
-    
+  registerHostFunction(
+      "thread.running", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isThreadId()) {
+          COMPILER_THROW("thread.running requires a thread argument");
+        }
+
+        auto *threadObj = heap_.thread(args[0].asThreadId());
+        if (!threadObj) {
+          return Value::makeBool(false);
+        }
+
         return Value::makeBool(threadObj->isRunning());
-    });
+      });
 
-// go(closure) - Spawn a scheduler goroutine (used by go expression and async.go)
-    registerHostFunction("go", 1, [this](const std::vector<Value> &args) {
-        if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
-            COMPILER_THROW("go requires a closure argument");
-        }
-        if (!scheduler_) {
-            COMPILER_THROW("go requires scheduler (not available in this VM mode)");
-        }
-        ::havel::info("[GO] spawning scheduler goroutine");
-        uint32_t gid = spawnGoroutine(args[0], {});
-        return Value::makeThreadId(gid);
-    });
+  // go(closure) - Spawn a scheduler goroutine (used by go expression and
+  // async.go)
+  registerHostFunction("go", 1, [this](const std::vector<Value> &args) {
+    if (args.empty() ||
+        (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
+      COMPILER_THROW("go requires a closure argument");
+    }
+    if (!scheduler_) {
+      COMPILER_THROW("go requires scheduler (not available in this VM mode)");
+    }
+    ::havel::info("[GO] spawning scheduler goroutine");
+    uint32_t gid = spawnGoroutine(args[0], {});
+    return Value::makeThreadId(gid);
+  });
 
-// thread.spawn(closure) - alias for thread(closure), used by ThreadExpression
-    registerHostFunction("thread.spawn", 1, [this](const std::vector<Value> &args) {
-        if (args.empty() || (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
-            COMPILER_THROW("thread.spawn requires a closure argument");
+  // thread.spawn(closure) - alias for thread(closure), used by ThreadExpression
+  registerHostFunction(
+      "thread.spawn", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() ||
+            (!args[0].isClosureId() && !args[0].isFunctionObjId())) {
+          COMPILER_THROW("thread.spawn requires a closure argument");
         }
-        ::havel::info("[THREAD] thread.spawn called, closure={}", args[0].isClosureId() ? "closure" : "function");
+        ::havel::info("[THREAD] thread.spawn called, closure={}",
+                      args[0].isClosureId() ? "closure" : "function");
         auto threadObj = std::make_shared<Thread>();
         auto closure = args[0];
         auto handler = [this, closure](const Thread::Message &msg) {
-            ::havel::info("[THREAD] handler executing, msg type={}", msg.index());
-            try {
-                Value arg;
-                bool hasArg = false;
-                if (std::holds_alternative<std::string>(msg)) {
-                    auto strRef = heap_.allocateString(std::get<std::string>(msg));
-                    arg = Value::makeStringId(strRef.id);
-                    hasArg = true;
-                } else if (std::holds_alternative<int>(msg)) {
-                    arg = Value::makeInt(std::get<int>(msg));
-                    hasArg = true;
-                } else if (std::holds_alternative<double>(msg)) {
-                    arg = Value::makeDouble(std::get<double>(msg));
-                    hasArg = true;
-                }
-                if (hasArg) {
-                    this->callFunction(closure, {arg});
-                } else {
-                    this->callFunction(closure, {});
-                }
-                ::havel::info("[THREAD] closure returned");
-            } catch (const std::exception &e) {
-                ::havel::error("[thread] Exception: {}", e.what());
+          ::havel::info("[THREAD] handler executing, msg type={}", msg.index());
+          try {
+            Value arg;
+            bool hasArg = false;
+            if (std::holds_alternative<std::string>(msg)) {
+              auto strRef = heap_.allocateString(std::get<std::string>(msg));
+              arg = Value::makeStringId(strRef.id);
+              hasArg = true;
+            } else if (std::holds_alternative<int>(msg)) {
+              arg = Value::makeInt(std::get<int>(msg));
+              hasArg = true;
+            } else if (std::holds_alternative<double>(msg)) {
+              arg = Value::makeDouble(std::get<double>(msg));
+              hasArg = true;
             }
+            if (hasArg) {
+              this->callFunction(closure, {arg});
+            } else {
+              this->callFunction(closure, {});
+            }
+            ::havel::info("[THREAD] closure returned");
+          } catch (const std::exception &e) {
+            ::havel::error("[thread] Exception: {}", e.what());
+          }
         };
         ::havel::info("[THREAD] calling threadObj->start()");
         threadObj->start(std::move(handler));
@@ -1796,933 +2193,1029 @@ threadObj->start(std::move(handler));
         auto threadRef = heap_.allocateThreadObj(threadObj);
         thread_captured_closures_[threadRef.id] = registerCallback(closure);
         return Value::makeThreadId(threadRef.id);
-    });
+      });
 
-    // interval(ms, closure) - Create repeating timer
-registerHostFunction("interval", 2, [this](const std::vector<Value> &args) {
-if (args.size() < 2 || !args[0].isNumber()) {
-COMPILER_THROW("interval requires milliseconds and closure");
-}
-if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
-COMPILER_THROW("interval requires a closure argument");
-}
+  // interval(ms, closure) - Create repeating timer
+  registerHostFunction("interval", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || !args[0].isNumber()) {
+      COMPILER_THROW("interval requires milliseconds and closure");
+    }
+    if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+      COMPILER_THROW("interval requires a closure argument");
+    }
 
-int ms = toInt(args[0]);
-auto closure = args[1];
-auto intervalIdPtr = std::make_shared<uint32_t>(0);
+    int ms = toInt(args[0]);
+    auto closure = args[1];
+    auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
-	auto callback = [this, closure, intervalIdPtr]() {
-		if (event_queue_) {
-auto *payload = new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
-event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
-} else {
-try {
-Value result = this->callFunction(closure, {});
-interval_results_[*intervalIdPtr] = result;
-} catch (const std::exception &e) {
-::havel::error("[interval] Exception: {}", e.what());
-}
-}
-};
+    auto callback = [this, closure, intervalIdPtr]() {
+      if (event_queue_) {
+        auto *payload = new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
+        event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
+      } else {
+        try {
+          Value result = this->callFunction(closure, {});
+          interval_results_[*intervalIdPtr] = result;
+        } catch (const std::exception &e) {
+          ::havel::error("[interval] Exception: {}", e.what());
+        }
+      }
+    };
 
-        auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
-        auto intervalRef = heap_.allocateIntervalObj(intervalObj);
-        *intervalIdPtr = intervalRef.id;
-        interval_captured_closures_[intervalRef.id] = registerCallback(closure);
-        return Value::makeIntervalId(intervalRef.id);
-    });
+    auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
+    auto intervalRef = heap_.allocateIntervalObj(intervalObj);
+    *intervalIdPtr = intervalRef.id;
+    interval_captured_closures_[intervalRef.id] = registerCallback(closure);
+    return Value::makeIntervalId(intervalRef.id);
+  });
 
   // interval.pause(interval) - Pause interval
-registerHostFunction("interval.pause", 1, [this](const std::vector<Value> &args) {
-if (args.empty() || !args[0].isIntervalId()) {
-COMPILER_THROW("interval.pause requires an interval argument");
-}
+  registerHostFunction(
+      "interval.pause", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isIntervalId()) {
+          COMPILER_THROW("interval.pause requires an interval argument");
+        }
 
-auto *intervalObj = heap_.interval(args[0].asIntervalId());
-if (!intervalObj) {
-COMPILER_THROW("interval.pause: invalid interval reference");
-}
-    
-    intervalObj->pause();
-    return Value::makeNull();
-  });
+        auto *intervalObj = heap_.interval(args[0].asIntervalId());
+        if (!intervalObj) {
+          COMPILER_THROW("interval.pause: invalid interval reference");
+        }
+
+        intervalObj->pause();
+        return Value::makeNull();
+      });
 
   // interval.resume(interval) - Resume interval
-  registerHostFunction("interval.resume", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isIntervalId()) {
-      COMPILER_THROW("interval.resume requires an interval argument");
-    }
-    
-    auto *intervalObj = heap_.interval(args[0].asIntervalId());
-    if (!intervalObj) {
-      COMPILER_THROW("interval.resume: invalid interval reference");
-    }
-    
-    intervalObj->resume();
-    return Value::makeNull();
-  });
+  registerHostFunction(
+      "interval.resume", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isIntervalId()) {
+          COMPILER_THROW("interval.resume requires an interval argument");
+        }
+
+        auto *intervalObj = heap_.interval(args[0].asIntervalId());
+        if (!intervalObj) {
+          COMPILER_THROW("interval.resume: invalid interval reference");
+        }
+
+        intervalObj->resume();
+        return Value::makeNull();
+      });
 
   // interval.stop(interval) - Stop interval
-  registerHostFunction("interval.stop", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isIntervalId()) {
-      COMPILER_THROW("interval.stop requires an interval argument");
-    }
-    
-    auto *intervalObj = heap_.interval(args[0].asIntervalId());
-    if (!intervalObj) {
-      COMPILER_THROW("interval.stop: invalid interval reference");
-    }
-    
-    auto it = interval_captured_closures_.find(args[0].asIntervalId());
-    if (it != interval_captured_closures_.end()) {
-      releaseCallback(it->second);
-      interval_captured_closures_.erase(it);
-    }
-    
+  registerHostFunction(
+      "interval.stop", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isIntervalId()) {
+          COMPILER_THROW("interval.stop requires an interval argument");
+        }
+
+        auto *intervalObj = heap_.interval(args[0].asIntervalId());
+        if (!intervalObj) {
+          COMPILER_THROW("interval.stop: invalid interval reference");
+        }
+
+        auto it = interval_captured_closures_.find(args[0].asIntervalId());
+        if (it != interval_captured_closures_.end()) {
+          releaseCallback(it->second);
+          interval_captured_closures_.erase(it);
+        }
+
         intervalObj->stop();
         return Value::makeNull();
-    });
+      });
 
-    // interval.start(ms, closure) - alias for interval(ms, closure), used by IntervalExpression
-registerHostFunction("interval.start", 2, [this](const std::vector<Value> &args) {
- if (args.size() < 2 || !args[0].isNumber()) {
- COMPILER_THROW("interval.start requires milliseconds and closure");
- }
- if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
- COMPILER_THROW("interval.start requires a closure argument");
- }
- int ms = toInt(args[0]);
- auto closure = args[1];
- auto intervalIdPtr = std::make_shared<uint32_t>(0);
-auto callback = [this, closure, intervalIdPtr]() {
-if (event_queue_) {
-auto *payload = new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
-event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
-} else {
-try {
-Value result = this->callFunction(closure, {});
-interval_results_[*intervalIdPtr] = result;
-} catch (const std::exception &e) {
-::havel::error("[interval] Exception: {}", e.what());
-}
-}
-};
+  // interval.start(ms, closure) - alias for interval(ms, closure), used by
+  // IntervalExpression
+  registerHostFunction(
+      "interval.start", 2, [this](const std::vector<Value> &args) {
+        if (args.size() < 2 || !args[0].isNumber()) {
+          COMPILER_THROW("interval.start requires milliseconds and closure");
+        }
+        if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+          COMPILER_THROW("interval.start requires a closure argument");
+        }
+        int ms = toInt(args[0]);
+        auto closure = args[1];
+        auto intervalIdPtr = std::make_shared<uint32_t>(0);
+        auto callback = [this, closure, intervalIdPtr]() {
+          if (event_queue_) {
+            auto *payload =
+                new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
+            event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
+          } else {
+            try {
+              Value result = this->callFunction(closure, {});
+              interval_results_[*intervalIdPtr] = result;
+            } catch (const std::exception &e) {
+              ::havel::error("[interval] Exception: {}", e.what());
+            }
+          }
+        };
         auto intervalObj = std::make_shared<Interval>(ms, std::move(callback));
         auto intervalRef = heap_.allocateIntervalObj(intervalObj);
         *intervalIdPtr = intervalRef.id;
         interval_captured_closures_[intervalRef.id] = registerCallback(closure);
         return Value::makeIntervalId(intervalRef.id);
-    });
+      });
 
-    // update(ms, closure) - Create scheduler-managed periodic goroutine
-    registerHostFunction("update", 2, [this](const std::vector<Value>& args) {
-        if (args.size() < 2 || !args[0].isNumber()) {
-            COMPILER_THROW("update requires milliseconds and closure");
-        }
-        if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
-            COMPILER_THROW("update requires a closure argument");
-        }
+  // update(ms, closure) - Create scheduler-managed periodic goroutine
+  registerHostFunction("update", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || !args[0].isNumber()) {
+      COMPILER_THROW("update requires milliseconds and closure");
+    }
+    if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+      COMPILER_THROW("update requires a closure argument");
+    }
 
-        int ms = toInt(args[0]);
-        Value closure = args[1];
+    int ms = toInt(args[0]);
+    Value closure = args[1];
 
-        if (!scheduler_) {
-            COMPILER_THROW("update requires a scheduler");
-        }
+    if (!scheduler_) {
+      COMPILER_THROW("update requires a scheduler");
+    }
 
     uint32_t goroutine_id = scheduler_->spawn(closure, {}, "update");
-    Scheduler::Goroutine* g = scheduler_->get(goroutine_id);
+    Scheduler::Goroutine *g = scheduler_->get(goroutine_id);
     if (g) {
       g->update_interval_ms = static_cast<uint32_t>(ms);
-      // Pin the closure as GC root so the goroutine can survive across GC cycles
+      // Pin the closure as GC root so the goroutine can survive across GC
+      // cycles
       g->update_callback_id = registerCallback(closure);
     }
 
-        return Value::makeNull();
-    });
+    return Value::makeNull();
+  });
 
-// timeout(ms, closure) - Create one-shot delayed execution
-registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
- if (args.size() < 2 || !args[0].isNumber()) {
- COMPILER_THROW("timeout requires milliseconds and closure");
- }
- if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
- COMPILER_THROW("timeout requires a closure argument");
- }
-
- int ms = toInt(args[0]);
- auto closure = args[1];
- auto timeoutIdPtr = std::make_shared<uint32_t>(0);
-
-auto callback = [this, closure, timeoutIdPtr]() {
-if (event_queue_) {
-auto *payload = new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
-event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
-} else {
-try {
-Value result = this->callFunction(closure, {});
-timeout_results_[*timeoutIdPtr] = result;
-} catch (const std::exception &e) {
-::havel::error("[timeout] Exception: {}", e.what());
-}
-}
-};
-
-auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
-        auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
-        *timeoutIdPtr = timeoutRef.id;
-        timeout_captured_closures_[timeoutRef.id] = registerCallback(closure);
-        return Value::makeTimeoutId(timeoutRef.id);
-    });
-
-    // timeout.cancel(timeout) - Cancel timeout
-  registerHostFunction("timeout.cancel", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isTimeoutId()) {
-      COMPILER_THROW("timeout.cancel requires a timeout argument");
+  // timeout(ms, closure) - Create one-shot delayed execution
+  registerHostFunction("timeout", 2, [this](const std::vector<Value> &args) {
+    if (args.size() < 2 || !args[0].isNumber()) {
+      COMPILER_THROW("timeout requires milliseconds and closure");
     }
-    
-    auto *timeoutObj = heap_.timeout(args[0].asTimeoutId());
-    if (!timeoutObj) {
-      COMPILER_THROW("timeout.cancel: invalid timeout reference");
+    if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+      COMPILER_THROW("timeout requires a closure argument");
     }
-    
-    auto it = timeout_captured_closures_.find(args[0].asTimeoutId());
-    if (it != timeout_captured_closures_.end()) {
-      releaseCallback(it->second);
-      timeout_captured_closures_.erase(it);
-    }
-    
+
+    int ms = toInt(args[0]);
+    auto closure = args[1];
+    auto timeoutIdPtr = std::make_shared<uint32_t>(0);
+
+    auto callback = [this, closure, timeoutIdPtr]() {
+      if (event_queue_) {
+        auto *payload = new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
+        event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
+      } else {
+        try {
+          Value result = this->callFunction(closure, {});
+          timeout_results_[*timeoutIdPtr] = result;
+        } catch (const std::exception &e) {
+          ::havel::error("[timeout] Exception: {}", e.what());
+        }
+      }
+    };
+
+    auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+    auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
+    *timeoutIdPtr = timeoutRef.id;
+    timeout_captured_closures_[timeoutRef.id] = registerCallback(closure);
+    return Value::makeTimeoutId(timeoutRef.id);
+  });
+
+  // timeout.cancel(timeout) - Cancel timeout
+  registerHostFunction(
+      "timeout.cancel", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isTimeoutId()) {
+          COMPILER_THROW("timeout.cancel requires a timeout argument");
+        }
+
+        auto *timeoutObj = heap_.timeout(args[0].asTimeoutId());
+        if (!timeoutObj) {
+          COMPILER_THROW("timeout.cancel: invalid timeout reference");
+        }
+
+        auto it = timeout_captured_closures_.find(args[0].asTimeoutId());
+        if (it != timeout_captured_closures_.end()) {
+          releaseCallback(it->second);
+          timeout_captured_closures_.erase(it);
+        }
+
         timeoutObj->cancel();
         return Value::makeNull();
-    });
+      });
 
- // timeout.start(ms, closure) - alias for timeout(ms, closure), used by TimeoutExpression
- registerHostFunction("timeout.start", 2, [this](const std::vector<Value> &args) {
- if (args.size() < 2 || !args[0].isNumber()) {
- COMPILER_THROW("timeout.start requires milliseconds and closure");
- }
- if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
- COMPILER_THROW("timeout.start requires a closure argument");
- }
- int ms = toInt(args[0]);
- auto closure = args[1];
- auto timeoutIdPtr = std::make_shared<uint32_t>(0);
-auto callback = [this, closure, timeoutIdPtr]() {
-if (event_queue_) {
-auto *payload = new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
-event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
-} else {
-try {
-Value result = this->callFunction(closure, {});
-timeout_results_[*timeoutIdPtr] = result;
-} catch (const std::exception &e) {
-::havel::error("[timeout] Exception: {}", e.what());
-}
-}
-};
-auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
+  // timeout.start(ms, closure) - alias for timeout(ms, closure), used by
+  // TimeoutExpression
+  registerHostFunction(
+      "timeout.start", 2, [this](const std::vector<Value> &args) {
+        if (args.size() < 2 || !args[0].isNumber()) {
+          COMPILER_THROW("timeout.start requires milliseconds and closure");
+        }
+        if (!args[1].isClosureId() && !args[1].isFunctionObjId()) {
+          COMPILER_THROW("timeout.start requires a closure argument");
+        }
+        int ms = toInt(args[0]);
+        auto closure = args[1];
+        auto timeoutIdPtr = std::make_shared<uint32_t>(0);
+        auto callback = [this, closure, timeoutIdPtr]() {
+          if (event_queue_) {
+            auto *payload =
+                new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
+            event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
+          } else {
+            try {
+              Value result = this->callFunction(closure, {});
+              timeout_results_[*timeoutIdPtr] = result;
+            } catch (const std::exception &e) {
+              ::havel::error("[timeout] Exception: {}", e.what());
+            }
+          }
+        };
+        auto timeoutObj = std::make_shared<Timeout>(ms, std::move(callback));
         auto timeoutRef = heap_.allocateTimeoutObj(timeoutObj);
         *timeoutIdPtr = timeoutRef.id;
         timeout_captured_closures_[timeoutRef.id] = registerCallback(closure);
         return Value::makeTimeoutId(timeoutRef.id);
-    });
+      });
 
-    // WaitGroup host functions
+  // WaitGroup host functions
   // waitgroup.add(wg, n) - Increment waitgroup counter
-  registerHostFunction("waitgroup.add", 2, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isWaitGroupId()) {
-      COMPILER_THROW("waitgroup.add requires a waitgroup argument");
-    }
-    int64_t n = (args.size() > 1 && args[1].isInt()) ? args[1].asInt() : 1;
-    auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
-    if (wg) {
-      wg->counter.fetch_add(n);
-    }
-    return Value::makeNull();
-  });
-
-// waitgroup.done(wg) - Decrement waitgroup counter
-registerHostFunction("waitgroup.done", 1, [this](const std::vector<Value> &args) {
-  if (args.empty() || !args[0].isWaitGroupId()) {
-    COMPILER_THROW("waitgroup.done requires a waitgroup argument");
-  }
-  uint32_t wg_id = args[0].asWaitGroupId();
-  auto *wg = heap_.waitgroup(wg_id);
-  if (wg) {
-    int64_t prev = wg->counter.fetch_sub(1);
-    if (prev <= 1) {
-      std::lock_guard<std::mutex> lock(wg->mutex);
-      wg->cv.notify_all();
-      // Unpark any goroutine waiting on this waitgroup
-      if (scheduler_) {
-        auto* g = scheduler_->findGoroutineByWaitTarget(
-            Scheduler::AwaitableType::EXTERNAL, wg_id);
-        if (g) {
-          g->wait_handle.resume_value = Value::makeNull();
-          scheduler_->unpark(g);
+  registerHostFunction(
+      "waitgroup.add", 2, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isWaitGroupId()) {
+          COMPILER_THROW("waitgroup.add requires a waitgroup argument");
         }
-      }
-    }
-  }
-  return Value::makeNull();
-});
+        int64_t n = (args.size() > 1 && args[1].isInt()) ? args[1].asInt() : 1;
+        auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
+        if (wg) {
+          wg->counter.fetch_add(n);
+        }
+        return Value::makeNull();
+      });
+
+  // waitgroup.done(wg) - Decrement waitgroup counter
+  registerHostFunction(
+      "waitgroup.done", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isWaitGroupId()) {
+          COMPILER_THROW("waitgroup.done requires a waitgroup argument");
+        }
+        uint32_t wg_id = args[0].asWaitGroupId();
+        auto *wg = heap_.waitgroup(wg_id);
+        if (wg) {
+          int64_t prev = wg->counter.fetch_sub(1);
+          if (prev <= 1) {
+            std::lock_guard<std::mutex> lock(wg->mutex);
+            wg->cv.notify_all();
+            // Unpark any goroutine waiting on this waitgroup
+            if (scheduler_) {
+              auto *g = scheduler_->findGoroutineByWaitTarget(
+                  Scheduler::AwaitableType::EXTERNAL, wg_id);
+              if (g) {
+                g->wait_handle.resume_value = Value::makeNull();
+                scheduler_->unpark(g);
+              }
+            }
+          }
+        }
+        return Value::makeNull();
+      });
 
   // waitgroup.wait(wg) - Block until counter reaches 0
-  registerHostFunction("waitgroup.wait", 1, [this](const std::vector<Value> &args) {
-    if (args.empty() || !args[0].isWaitGroupId()) {
-      COMPILER_THROW("waitgroup.wait requires a waitgroup argument");
-    }
-    auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
-    if (wg && wg->counter.load() > 0) {
-      std::unique_lock<std::mutex> lock(wg->mutex);
-      wg->cv.wait(lock, [&wg]() { return wg->counter.load() <= 0; });
-    }
+  registerHostFunction(
+      "waitgroup.wait", 1, [this](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isWaitGroupId()) {
+          COMPILER_THROW("waitgroup.wait requires a waitgroup argument");
+        }
+        auto *wg = heap_.waitgroup(args[0].asWaitGroupId());
+        if (wg && wg->counter.load() > 0) {
+          std::unique_lock<std::mutex> lock(wg->mutex);
+          wg->cv.wait(lock, [&wg]() { return wg->counter.load() <= 0; });
+        }
+        return Value::makeNull();
+      });
+
+  // GC control
+  // "system.gc" is called via method dispatch (system.gc()) which prepends
+  // the receiver, so it needs arity 1. The underscore alias "system_gc"
+  // is called directly without a receiver, so arity 0.
+  registerHostFunction("system.gc", 0, [this](const std::vector<Value> &) {
+    runGarbageCollection();
+    return Value::makeNull();
+  });
+  registerHostFunction("system_gc", 0, [this](const std::vector<Value> &) {
+    runGarbageCollection();
     return Value::makeNull();
   });
 
-  // GC control
-    // "system.gc" is called via method dispatch (system.gc()) which prepends
-    // the receiver, so it needs arity 1. The underscore alias "system_gc"
-    // is called directly without a receiver, so arity 0.
-registerHostFunction("system.gc", 0, [this](const std::vector<Value> &) {
-  runGarbageCollection();
-  return Value::makeNull();
-});
-registerHostFunction("system_gc", 0, [this](const std::vector<Value> &) {
-  runGarbageCollection();
-  return Value::makeNull();
-});
-
-registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
-        const auto stats = gcStats();
-        const auto object_ref = createHostObject();
-        setHostObjectField(object_ref, "heapSize",
-        Value::makeInt(static_cast<int64_t>(stats.heap_size)));
-        setHostObjectField(object_ref, "objectCount",
+  registerHostFunction("system.gcStats", 0, [this](const std::vector<Value> &) {
+    const auto stats = gcStats();
+    const auto object_ref = createHostObject();
+    setHostObjectField(object_ref, "heapSize",
+                       Value::makeInt(static_cast<int64_t>(stats.heap_size)));
+    setHostObjectField(
+        object_ref, "objectCount",
         Value::makeInt(static_cast<int64_t>(stats.object_count)));
-        setHostObjectField(object_ref, "collections",
-        Value::makeInt(static_cast<int64_t>(stats.collections)));
-        setHostObjectField(object_ref, "lastPauseNs",
+    setHostObjectField(object_ref, "collections",
+                       Value::makeInt(static_cast<int64_t>(stats.collections)));
+    setHostObjectField(
+        object_ref, "lastPauseNs",
         Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
-        return Value::makeObjectId(object_ref.id);
-    });
-    registerHostFunction("system_gcStats", 0, [this](const std::vector<Value> &) {
-        const auto stats = gcStats();
-        const auto object_ref = createHostObject();
-        setHostObjectField(object_ref, "heapSize",
-        Value::makeInt(static_cast<int64_t>(stats.heap_size)));
-        setHostObjectField(object_ref, "objectCount",
+    return Value::makeObjectId(object_ref.id);
+  });
+  registerHostFunction("system_gcStats", 0, [this](const std::vector<Value> &) {
+    const auto stats = gcStats();
+    const auto object_ref = createHostObject();
+    setHostObjectField(object_ref, "heapSize",
+                       Value::makeInt(static_cast<int64_t>(stats.heap_size)));
+    setHostObjectField(
+        object_ref, "objectCount",
         Value::makeInt(static_cast<int64_t>(stats.object_count)));
-        setHostObjectField(object_ref, "collections",
-        Value::makeInt(static_cast<int64_t>(stats.collections)));
-        setHostObjectField(object_ref, "lastPauseNs",
+    setHostObjectField(object_ref, "collections",
+                       Value::makeInt(static_cast<int64_t>(stats.collections)));
+    setHostObjectField(
+        object_ref, "lastPauseNs",
         Value::makeInt(static_cast<int64_t>(stats.last_pause_ns)));
-      return Value::makeObjectId(object_ref.id);
-    });
+    return Value::makeObjectId(object_ref.id);
+  });
 
   // waitForGoroutines() - block until all goroutines complete
-  registerHostFunction("waitForGoroutines", 0, [this](const std::vector<Value> &) {
-    if (scheduler_) {
-      // Run the goroutine scheduler until all goroutines complete
-      while (true) {
-        if (exit_requested_.load()) break;
-        
-        // Process events
-        if (event_queue_) {
-          event_queue_->processAll();
+  registerHostFunction(
+      "waitForGoroutines", 0, [this](const std::vector<Value> &) {
+        if (scheduler_) {
+          // Run the goroutine scheduler until all goroutines complete
+          while (true) {
+            if (exit_requested_.load())
+              break;
+
+            // Process events
+            if (event_queue_) {
+              event_queue_->processAll();
+            }
+
+            // Drain deferred callbacks
+            scheduler_->drainDeferredCallbacks(FiberPriority::NORMAL);
+
+            // Wake sleeping goroutines
+            scheduler_->wakeSleepingGoroutines();
+
+            auto *g = scheduler_->pickNext();
+            if (!g) {
+              size_t sc = scheduler_->suspendedCount();
+              if (sc == 0)
+                break; // No runnable or suspended goroutines
+
+              // Check if any sleeping goroutine has a deadline
+              auto deadline = scheduler_->nextSleepDeadline();
+              if (!deadline)
+                break;
+
+              auto now = std::chrono::steady_clock::now();
+              if (*deadline <= now)
+                continue;
+
+              auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            *deadline - now)
+                            .count();
+              auto sleepMs = std::min(ms, 100L);
+              std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+              continue;
+            }
+
+            scheduler_->setCurrent(g);
+
+            if (g->state == compiler::Scheduler::GoroutineState::Created) {
+              auto result = startGoroutineCall(g->callable, g->locals);
+              if (result == VM::GoroutineCallResult::Failed ||
+                  result == VM::GoroutineCallResult::JITExecuted) {
+                g->state = compiler::Scheduler::GoroutineState::Done;
+                continue;
+              }
+              g->state = compiler::Scheduler::GoroutineState::Runnable;
+            }
+
+            {
+              current_executing_fiber_ = g->fiber;
+              runDispatchLoopPublic(0);
+              current_executing_fiber_ = nullptr;
+            }
+
+            // Check suspension
+            uint8_t lastReason = getLastSuspensionReason();
+            void *lastContext = getLastSuspensionContext();
+            if (lastReason != 0) {
+              clearLastSuspension();
+              if (g->fiber)
+                saveFiberStatePublic(g->fiber);
+              auto schedReason =
+                  static_cast<compiler::Scheduler::SuspensionReason>(
+                      lastReason);
+              g->state = compiler::Scheduler::GoroutineState::Suspended;
+              g->suspension_reason = schedReason;
+              if (g->fiber) {
+                g->fiber->state = compiler::FiberState::SUSPENDED;
+                g->fiber->suspended_reason =
+                    static_cast<compiler::SuspensionReason>(lastReason);
+              }
+              if (static_cast<compiler::SuspensionReason>(lastReason) ==
+                  compiler::SuspensionReason::SLEEP) {
+                auto ms = reinterpret_cast<intptr_t>(lastContext);
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+                g->wait_handle.deadline = std::chrono::steady_clock::now() +
+                                          std::chrono::milliseconds(ms);
+              }
+              if (scheduler_->current() == g)
+                scheduler_->clearCurrent();
+            } else if (g->update_interval_ms > 0) {
+              scheduler_->clearCurrent();
+              g->ip = 0;
+              g->stack.clear();
+              g->locals.clear();
+              auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(g->update_interval_ms);
+              {
+                std::lock_guard wlock(g->wait_handle_mutex_);
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+                g->wait_handle.deadline = deadline;
+              }
+              g->state = compiler::Scheduler::GoroutineState::Suspended;
+              g->suspension_reason.store(
+                  compiler::Scheduler::SuspensionReason::SleepWait,
+                  std::memory_order_release);
+            } else if (g->persistent) {
+              g->state = compiler::Scheduler::GoroutineState::Suspended;
+              g->suspension_reason =
+                  compiler::Scheduler::SuspensionReason::HotkeyWait;
+              if (g->fiber) {
+                g->fiber->state = compiler::FiberState::SUSPENDED;
+                g->fiber->suspended_reason =
+                    compiler::SuspensionReason::HOTKEY_WAIT;
+              }
+              if (scheduler_->current() == g)
+                scheduler_->clearCurrent();
+            } else {
+              g->state = compiler::Scheduler::GoroutineState::Done;
+              if (g->fiber)
+                g->fiber->state = compiler::FiberState::DONE;
+            }
+          }
         }
-        
-        // Drain deferred callbacks
-        scheduler_->drainDeferredCallbacks(FiberPriority::NORMAL);
-        
-        // Wake sleeping goroutines
-        scheduler_->wakeSleepingGoroutines();
-        
-        auto* g = scheduler_->pickNext();
-        if (!g) {
-          size_t sc = scheduler_->suspendedCount();
-          if (sc == 0) break; // No runnable or suspended goroutines
-          
-          // Check if any sleeping goroutine has a deadline
-          auto deadline = scheduler_->nextSleepDeadline();
-          if (!deadline) break;
-          
-          auto now = std::chrono::steady_clock::now();
-          if (*deadline <= now) continue;
-          
-          auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(*deadline - now).count();
-          auto sleepMs = std::min(ms, 100L);
-          std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
-          continue;
-        }
-        
-        scheduler_->setCurrent(g);
-        
-        if (g->state == compiler::Scheduler::GoroutineState::Created) {
-          auto result = startGoroutineCall(g->callable, g->locals);
-          if (result == VM::GoroutineCallResult::Failed || result == VM::GoroutineCallResult::JITExecuted) {
-            g->state = compiler::Scheduler::GoroutineState::Done;
-            continue;
-          }
-          g->state = compiler::Scheduler::GoroutineState::Runnable;
-        }
-        
-        { current_executing_fiber_ = g->fiber; runDispatchLoopPublic(0); current_executing_fiber_ = nullptr; }
-        
-        // Check suspension
-        uint8_t lastReason = getLastSuspensionReason();
-        void* lastContext = getLastSuspensionContext();
-        if (lastReason != 0) {
-          clearLastSuspension();
-          if (g->fiber) saveFiberStatePublic(g->fiber);
-          auto schedReason = static_cast<compiler::Scheduler::SuspensionReason>(lastReason);
-          g->state = compiler::Scheduler::GoroutineState::Suspended;
-          g->suspension_reason = schedReason;
-          if (g->fiber) {
-            g->fiber->state = compiler::FiberState::SUSPENDED;
-            g->fiber->suspended_reason = static_cast<compiler::SuspensionReason>(lastReason);
-          }
-          if (static_cast<compiler::SuspensionReason>(lastReason) == compiler::SuspensionReason::SLEEP) {
-            auto ms = reinterpret_cast<intptr_t>(lastContext);
-            g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
-            g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-          }
-          if (scheduler_->current() == g) scheduler_->clearCurrent();
-        } else if (g->update_interval_ms > 0) {
-          scheduler_->clearCurrent();
-          g->ip = 0;
-          g->stack.clear();
-          g->locals.clear();
-          auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(g->update_interval_ms);
-          { std::lock_guard wlock(g->wait_handle_mutex_); g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP; g->wait_handle.deadline = deadline; }
-          g->state = compiler::Scheduler::GoroutineState::Suspended;
-          g->suspension_reason.store(compiler::Scheduler::SuspensionReason::SleepWait, std::memory_order_release);
-        } else if (g->persistent) {
-          g->state = compiler::Scheduler::GoroutineState::Suspended;
-          g->suspension_reason = compiler::Scheduler::SuspensionReason::HotkeyWait;
-          if (g->fiber) {
-            g->fiber->state = compiler::FiberState::SUSPENDED;
-            g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
-          }
-          if (scheduler_->current() == g) scheduler_->clearCurrent();
-        } else {
-          g->state = compiler::Scheduler::GoroutineState::Done;
-          if (g->fiber) g->fiber->state = compiler::FiberState::DONE;
+        return Value::makeNull();
+      });
+
+  // load(path) - execute a script file in the current VM session
+  // Merges all definitions (globals, functions, classes, etc.) into caller's
+  // scope
+  registerHostFunction("load", 1, [this](const std::vector<Value> &args) {
+    if (args.empty())
+      COMPILER_THROW("load requires a file path string");
+    std::string path = resolveStringKey(args[0]);
+    if (path.empty())
+      COMPILER_THROW("load: path is empty");
+    return loadScript(path);
+  });
+
+  // Protocol operations
+  registerHostFunction("prot.register", [this](const std::vector<Value> &args) {
+    if (args.empty() || !args[0].isStringValId()) {
+      COMPILER_THROW("prot.register requires protocol name string");
+    }
+    if (!current_chunk)
+      COMPILER_THROW("prot.register requires active chunk");
+
+    const std::string &protName =
+        current_chunk->getString(args[0].asStringValId());
+    std::unordered_set<std::string> methods;
+    for (size_t i = 1; i < args.size(); i++) {
+      if (args[i].isStringValId()) {
+        methods.insert(current_chunk->getString(args[i].asStringValId()));
+      }
+    }
+    registerProtocol(protName, methods);
+
+    auto protRef = heap_.allocateObject();
+    auto *protObj = heap_.object(protRef.id);
+    protObj->set("__name", args[0]);
+    protObj->set("__is_protocol", Value::makeBool(true));
+    return Value::makeObjectId(protRef.id);
+  });
+
+  registerHostFunction("prot.impl", [this](const std::vector<Value> &args) {
+    if (args.size() < 2) {
+      COMPILER_THROW("prot.impl requires (protocolName, typeName)");
+    }
+    if (!current_chunk)
+      COMPILER_THROW("prot.impl requires active chunk");
+
+    std::string protName;
+    if (args[0].isStringValId()) {
+      protName = current_chunk->getString(args[0].asStringValId());
+    } else if (args[0].isObjectId()) {
+      auto *obj = heap_.object(args[0].asObjectId());
+      if (obj) {
+        auto it = obj->find("__name");
+        if (it != obj->end() && it->second.isStringValId()) {
+          protName = current_chunk->getString(it->second.asStringValId());
         }
       }
     }
-    return Value::makeNull();
+    if (protName.empty()) {
+      COMPILER_THROW(
+          "prot.impl: first arg must be protocol name string or object");
+    }
+
+    std::string typeName;
+    if (args[1].isStringValId()) {
+      typeName = current_chunk->getString(args[1].asStringValId());
+    } else if (args[1].isObjectId()) {
+      auto *obj = heap_.object(args[1].asObjectId());
+      if (obj) {
+        auto it = obj->find("__name");
+        if (it != obj->end() && it->second.isStringValId()) {
+          typeName = current_chunk->getString(it->second.asStringValId());
+        }
+      }
+    }
+    if (typeName.empty()) {
+      COMPILER_THROW(
+          "prot.impl: second arg must be type name string or object");
+    }
+
+    registerProtocolImpl(protName, typeName);
+    return Value::makeBool(true);
   });
 
-  // load(path) - execute a script file in the current VM session
-  // Merges all definitions (globals, functions, classes, etc.) into caller's scope
-  registerHostFunction(
-    "load", 1, [this](const std::vector<Value> &args) {
-      if (args.empty()) COMPILER_THROW("load requires a file path string");
-      std::string path = resolveStringKey(args[0]);
-      if (path.empty()) COMPILER_THROW("load: path is empty");
-      return loadScript(path);
-    });
+  // Struct operations (prototype-based)
+  registerHostFunction("struct.define", [this](const std::vector<Value> &args) {
+    size_t offset = (args.size() >= 3 && args[0].isObjectId()) ? 1 : 0;
+    if (args.size() - offset < 2)
+      COMPILER_THROW("struct.define requires name and fields");
+    if (!current_chunk)
+      COMPILER_THROW("struct.define requires active chunk");
 
-  // Protocol operations
-registerHostFunction(
-	"prot.register", [this](const std::vector<Value> &args) {
-		if (args.empty() || !args[0].isStringValId()) {
-			COMPILER_THROW("prot.register requires protocol name string");
-		}
-		if (!current_chunk) COMPILER_THROW("prot.register requires active chunk");
+    auto protoRef = heap_.allocateObject();
+    auto *proto = heap_.object(protoRef.id);
 
-		const std::string &protName = current_chunk->getString(args[0].asStringValId());
-		std::unordered_set<std::string> methods;
-		for (size_t i = 1; i < args.size(); i++) {
-			if (args[i].isStringValId()) {
-				methods.insert(current_chunk->getString(args[i].asStringValId()));
-			}
-		}
-		registerProtocol(protName, methods);
-
-		auto protRef = heap_.allocateObject();
-		auto *protObj = heap_.object(protRef.id);
-		protObj->set("__name", args[0]);
-		protObj->set("__is_protocol", Value::makeBool(true));
-		return Value::makeObjectId(protRef.id);
-	});
-
-registerHostFunction(
-	"prot.impl", [this](const std::vector<Value> &args) {
-		if (args.size() < 2) {
-			COMPILER_THROW("prot.impl requires (protocolName, typeName)");
-		}
-		if (!current_chunk) COMPILER_THROW("prot.impl requires active chunk");
-
-	std::string protName;
-	if (args[0].isStringValId()) {
-		protName = current_chunk->getString(args[0].asStringValId());
-	} else if (args[0].isObjectId()) {
-		auto *obj = heap_.object(args[0].asObjectId());
-		if (obj) {
-			auto it = obj->find("__name");
-			if (it != obj->end() && it->second.isStringValId()) {
-				protName = current_chunk->getString(it->second.asStringValId());
-			}
-		}
-	}
-	if (protName.empty()) {
-		COMPILER_THROW("prot.impl: first arg must be protocol name string or object");
-	}
-
-	std::string typeName;
-	if (args[1].isStringValId()) {
-		typeName = current_chunk->getString(args[1].asStringValId());
-	} else if (args[1].isObjectId()) {
-		auto *obj = heap_.object(args[1].asObjectId());
-		if (obj) {
-			auto it = obj->find("__name");
-			if (it != obj->end() && it->second.isStringValId()) {
-				typeName = current_chunk->getString(it->second.asStringValId());
-			}
-		}
-	}
-		if (typeName.empty()) {
-			COMPILER_THROW("prot.impl: second arg must be type name string or object");
-		}
-
-		registerProtocolImpl(protName, typeName);
-		return Value::makeBool(true);
-	});
-
-// Struct operations (prototype-based)
-registerHostFunction(
-        "struct.define", [this](const std::vector<Value> &args) {
-        size_t offset = (args.size() >= 3 && args[0].isObjectId()) ? 1 : 0;
-        if (args.size() - offset < 2) COMPILER_THROW("struct.define requires name and fields");
-        if (!current_chunk) COMPILER_THROW("struct.define requires active chunk");
-
-        auto protoRef = heap_.allocateObject();
-        auto* proto = heap_.object(protoRef.id);
-
-        proto->set("__name", Value::makeStringValId(args[offset].asStringValId()));
-        proto->set("__is_struct", Value::makeBool(true));
-        proto->set("__fields", args[offset + 1]);
-        if (args.size() - offset >= 3 && args[offset + 2].isArrayId()) {
-            proto->set("__defaults", args[offset + 2]);
-        }
-
-        return Value::makeObjectId(protoRef.id);
-    });
-
-registerHostFunction(
-  "struct.method", [this](const std::vector<Value> &args) {
-    if (args.size() != 3 || !args[1].isStringValId() ||
-        (!args[2].isFunctionObjId() && !args[2].isClosureId() && !args[2].isHostFuncId())) {
-      COMPILER_THROW("struct.method expects (structType, methodNameString, callableObj)");
+    proto->set("__name", Value::makeStringValId(args[offset].asStringValId()));
+    proto->set("__is_struct", Value::makeBool(true));
+    proto->set("__fields", args[offset + 1]);
+    if (args.size() - offset >= 3 && args[offset + 2].isArrayId()) {
+      proto->set("__defaults", args[offset + 2]);
     }
-    if (!current_chunk) COMPILER_THROW("struct.method requires active chunk");
 
-    auto* structObj = heap_.object(args[0].asObjectId());
-    if (!structObj) return Value::makeNull();
+    return Value::makeObjectId(protoRef.id);
+  });
 
-    const std::string &method_name = current_chunk->getString(args[1].asStringValId());
+  registerHostFunction("struct.method", [this](const std::vector<Value> &args) {
+    if (args.size() != 3 || !args[1].isStringValId() ||
+        (!args[2].isFunctionObjId() && !args[2].isClosureId() &&
+         !args[2].isHostFuncId())) {
+      COMPILER_THROW(
+          "struct.method expects (structType, methodNameString, callableObj)");
+    }
+    if (!current_chunk)
+      COMPILER_THROW("struct.method requires active chunk");
+
+    auto *structObj = heap_.object(args[0].asObjectId());
+    if (!structObj)
+      return Value::makeNull();
+
+    const std::string &method_name =
+        current_chunk->getString(args[1].asStringValId());
     structObj->set(method_name, args[2]);
 
     auto nameVal = structObj->get("__name");
     if (nameVal && nameVal->isStringValId()) {
-      const std::string& structName = current_chunk->getString(nameVal->asStringValId());
+      const std::string &structName =
+          current_chunk->getString(nameVal->asStringValId());
       setGlobal(structName + "." + method_name, args[2]);
     }
 
     return Value::makeNull();
   });
 
-  registerHostFunction(
-  "struct.new", [this](const std::vector<Value> &args) {
-        if (args.empty()) {
-          COMPILER_THROW("struct.new(type, ...values) requires a type argument");
-        }
-        
-        if (!current_chunk) COMPILER_THROW("struct.new requires active chunk");
-        
-        // Determine offset for self argument (when called as method)
-        size_t offset = 0;
-        if (args.size() >= 3 && args[0].isObjectId() && args[1].isObjectId()) {
-          offset = 1; // Skip self
-        }
-        
-        Value protoVal;
-        if (args[offset].isObjectId()) {
-          // First arg is the prototype object directly
-          protoVal = args[offset];
-        } else if (args[offset].isStringValId()) {
-          // First arg is the name string, look up prototype
-          const auto &name = current_chunk->getString(args[offset].asStringValId());
-          auto it = globals.find(name);
-          if (it == globals.end()) {
-              COMPILER_THROW("Unknown struct type: " + name);
-          }
-          protoVal = it->second;
-          if (!protoVal.isObjectId()) {
-              COMPILER_THROW("Struct type is not an object prototype: " + name);
-          }
-        } else {
-          COMPILER_THROW("struct.new requires prototype object or type name");
-        }
-
-        auto* proto = heap_.object(protoVal.asObjectId());
-        auto fieldsVal = proto->get("__fields");
-        if (!fieldsVal || !fieldsVal->isArrayId()) {
-            COMPILER_THROW("Struct prototype missing __fields array");
-        }
-
-        auto* fields = heap_.array(fieldsVal->asArrayId());
-        
-        auto instanceRef = heap_.allocateObject();
-        auto* instance = heap_.object(instanceRef.id);
-        
-  instance->set("__struct", protoVal); // set prototype
-
-  // Initialize fields from positional arguments (fallback if no init method)
-  const size_t provided = args.size() - 1 - offset;
-
-        // Look for init method on prototype (like class.new does)
-        Value initMethodVal = Value::makeNull();
-        auto* currentProto = proto;
-        while (currentProto) {
-            auto val = currentProto->get("init");
-            if (!val) val = currentProto->get("new");
-            if (val) {
-      initMethodVal = *val;
-      break;
+  registerHostFunction("struct.new", [this](const std::vector<Value> &args) {
+    if (args.empty()) {
+      COMPILER_THROW("struct.new(type, ...values) requires a type argument");
     }
-    auto parentVal = currentProto->get("__parent");
-    if (parentVal && parentVal->isObjectId()) {
-      currentProto = heap_.object(parentVal->asObjectId());
+
+    if (!current_chunk)
+      COMPILER_THROW("struct.new requires active chunk");
+
+    // Determine offset for self argument (when called as method)
+    size_t offset = 0;
+    if (args.size() >= 3 && args[0].isObjectId() && args[1].isObjectId()) {
+      offset = 1; // Skip self
+    }
+
+    Value protoVal;
+    if (args[offset].isObjectId()) {
+      // First arg is the prototype object directly
+      protoVal = args[offset];
+    } else if (args[offset].isStringValId()) {
+      // First arg is the name string, look up prototype
+      const auto &name = current_chunk->getString(args[offset].asStringValId());
+      auto it = globals.find(name);
+      if (it == globals.end()) {
+        COMPILER_THROW("Unknown struct type: " + name);
+      }
+      protoVal = it->second;
+      if (!protoVal.isObjectId()) {
+        COMPILER_THROW("Struct type is not an object prototype: " + name);
+      }
     } else {
-      break;
-    }
-  }
-
-    if (!initMethodVal.isNull()) {
-        // Call init method with instance as first arg
-        std::vector<Value> ctor_args;
-        ctor_args.reserve(args.size());
-        ctor_args.push_back(Value::makeObjectId(instanceRef.id));
-        for (size_t i = offset + 1; i < args.size(); ++i) {
-            ctor_args.push_back(args[i]);
-        }
-        (void)call(initMethodVal, ctor_args);
-    } else {
-        // No init method: set fields from positional arguments, falling back to defaults
-            GCHeap::ArrayEntry* defaultsArr = nullptr;
-            auto defaultsVal = proto->get("__defaults");
-            if (defaultsVal && defaultsVal->isArrayId()) {
-                defaultsArr = heap_.array(defaultsVal->asArrayId());
-            }
-            for (size_t i = 0; i < fields->size(); ++i) {
-                std::string fieldName = current_chunk->getString((*fields)[i].asStringValId());
-                if (i < provided) {
-                    instance->set(fieldName, args[i + 1 + offset]);
-                } else if (defaultsArr && i < defaultsArr->size() && !(*defaultsArr)[i].isNull()) {
-                    instance->set(fieldName, (*defaultsArr)[i]);
-                } else {
-                    instance->set(fieldName, Value::makeNull());
-                }
-            }
+      COMPILER_THROW("struct.new requires prototype object or type name");
     }
 
-  return Value::makeObjectId(instanceRef.id);
-      });
+    auto *proto = heap_.object(protoVal.asObjectId());
+    auto fieldsVal = proto->get("__fields");
+    if (!fieldsVal || !fieldsVal->isArrayId()) {
+      COMPILER_THROW("Struct prototype missing __fields array");
+    }
 
-  // struct.get(instance, field_name)
-  registerHostFunction(
-      "struct.get", [this](const std::vector<Value> &args) {
-        // Handle self offset for method calls
-        size_t offset = 0;
-        if (args.size() >= 3 && args[0].isObjectId() && args[1].isObjectId()) {
-          offset = 1;
-        }
-        if (args.size() - offset < 2) COMPILER_THROW("struct.get requires instance and field name");
-        if (!args[offset].isObjectId()) COMPILER_THROW("struct.get first arg must be object");
-        if (!args[offset + 1].isStringValId()) COMPILER_THROW("struct.get second arg must be string");
-        
-        auto* instance = heap_.object(args[offset].asObjectId());
-        std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
-        auto* val = instance->get(fieldName);
-        return val ? *val : Value::makeNull();
-      });
+    auto *fields = heap_.array(fieldsVal->asArrayId());
 
-  // struct.set(instance, field_name, value)
-  registerHostFunction(
-      "struct.set", [this](const std::vector<Value> &args) {
-        size_t offset = 0;
-        if (args.size() >= 4 && args[0].isObjectId()) {
-          offset = 1;
-        }
-        if (args.size() - offset < 3) COMPILER_THROW("struct.set requires instance, field name, and value");
-        if (!args[offset].isObjectId()) COMPILER_THROW("struct.set first arg must be object");
-        if (!args[offset + 1].isStringValId()) COMPILER_THROW("struct.set second arg must be string");
-        
-        auto* instance = heap_.object(args[offset].asObjectId());
-        std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
-        instance->set(fieldName, args[offset + 2]);
-            return Value::makeNull();
-        });
+    auto instanceRef = heap_.allocateObject();
+    auto *instance = heap_.object(instanceRef.id);
 
-        // Enum operations: enum.define(name, [variantNames], [payloadCounts])
-        // Registers the enum type and creates variant constructors as globals
-        registerHostFunction(
-        "enum.define", [this](const std::vector<Value> &args) {
-            if (!current_chunk) COMPILER_THROW("enum.define requires active chunk");
-            size_t offset = (args.size() >= 3 && args[0].isObjectId()) ? 1 : 0;
-            if (args.size() - offset < 2) COMPILER_THROW("enum.define requires name and variants");
+    instance->set("__struct", protoVal); // set prototype
 
-            const std::string &enumName = current_chunk->getString(args[offset].asStringValId());
+    // Initialize fields from positional arguments (fallback if no init method)
+    const size_t provided = args.size() - 1 - offset;
 
-            auto* variantsArr = heap_.array(args[offset + 1].asArrayId());
-            if (!variantsArr) COMPILER_THROW("enum.define variants must be an array");
-
-            std::vector<std::string> variantNames;
-            for (size_t i = 0; i < variantsArr->size(); ++i) {
-                variantNames.push_back(current_chunk->getString((*variantsArr)[i].asStringValId()));
-            }
-
-            uint32_t typeId = heap_.registerEnumType(enumName, variantNames);
-
-            auto enumObj = heap_.allocateObject();
-            auto* enumObjPtr = heap_.object(enumObj.id);
-            enumObjPtr->set("__name", Value::makeStringValId(args[offset].asStringValId()));
-            enumObjPtr->set("__is_enum", Value::makeBool(true));
-            enumObjPtr->set("__enum_type_id", Value::makeInt(static_cast<int64_t>(typeId)));
-
-            for (uint32_t tag = 0; tag < variantNames.size(); ++tag) {
-                const std::string &variantName = variantNames[tag];
-                uint32_t capturedTag = tag;
-                uint32_t capturedTypeId = typeId;
-                std::string fullName = enumName + "." + variantName;
-
-                bool hasPayload = (args.size() - offset > 2 && args[offset + 2].isArrayId())
-                    ? (heap_.array(args[offset + 2].asArrayId())->size() > tag &&
-                       (*heap_.array(args[offset + 2].asArrayId()))[tag].asInt() > 0)
-                    : false;
-
-                if (hasPayload) {
-                    registerHostFunction(fullName, 1, [this, capturedTypeId, capturedTag](const std::vector<Value> &a) {
-                        EnumRef ref = heap_.allocateEnum(capturedTypeId, capturedTag, 1);
-                        if (!a.empty()) {
-                            auto it = heap_.enums_.find(ref.id);
-                            if (it != heap_.enums_.end() && !it->second.second.empty())
-                                it->second.second[0] = a[0];
-                        }
-                        return Value::makeEnumId(ref.id, capturedTypeId);
-                    });
-        } else {
-            Value singleton = [&]() -> Value {
-                EnumRef ref = heap_.allocateEnum(capturedTypeId, capturedTag, 0);
-                return Value::makeEnumId(ref.id, capturedTypeId);
-            }();
-            registerHostFunction(fullName, 0, [singleton](const std::vector<Value> &) -> Value {
-                return singleton;
-            });
-            enumObjPtr->set(variantName, singleton);
-            continue;
-        }
-
-        uint32_t variantFuncIdx = getHostFunctionIndex(fullName);
-        enumObjPtr->set(variantName, Value::makeHostFuncId(variantFuncIdx));
-            }
-
-            return Value::makeObjectId(enumObj.id);
-        });
-
-        // Class operations (prototype-based)
-  registerHostFunction(
-      "class.define", [this](const std::vector<Value> &args) {
-        if (!current_chunk) COMPILER_THROW("class.define requires active chunk");
-        if (args.size() < 4) COMPILER_THROW("class.define requires at least 4 arguments");
-
-        auto protoRef = heap_.allocateObject();
-        auto* proto = heap_.object(protoRef.id);
-
-        proto->set("__name", Value::makeStringValId(args[0].asStringValId()));
-        proto->set("__is_class", Value::makeBool(true));
-        proto->set("__fields", args[1]);
-
-        size_t arg_idx = 2;
-        // Check for parent class
-        if (args.size() > arg_idx && (args[arg_idx].isObjectId() || args[arg_idx].isStringValId() || args[arg_idx].isNull())) {
-            if (args[arg_idx].isObjectId()) {
-                proto->set("__parent", args[arg_idx]);
-            } else if (args[arg_idx].isStringValId()) {
-                const auto &parentName = current_chunk->getString(args[arg_idx].asStringValId());
-                auto parentIt = globals.find(parentName);
-                if (parentIt == globals.end() || !parentIt->second.isObjectId()) {
-                    COMPILER_THROW("Unknown or invalid parent class: " + parentName);
-                }
-                proto->set("__parent", parentIt->second);
-            }
-            arg_idx++;
-        }
-
- // Check for class fields (@@fields)
- if (args.size() > arg_idx && args[arg_idx].isArrayId()) {
- proto->set("__class_fields", args[arg_idx]);
- arg_idx++;
- }
-
- // Check for instance field defaults (@field = value)
- if (args.size() > arg_idx && args[arg_idx].isObjectId()) {
-   proto->set("__field_defaults", args[arg_idx]);
- }
-
- proto->set("new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
- proto->set("method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
-
- return Value::makeObjectId(protoRef.id);
-      });
-
-registerHostFunction(
-"class.new", [this](const std::vector<Value> &args) {
-if (args.empty()) {
-COMPILER_THROW("class.new(type, ...values) requires a type argument");
-}
-if (!current_chunk) COMPILER_THROW("class.new requires active chunk");
-
-Value protoVal;
-size_t ctor_offset = 1;
-if (args[0].isObjectId()) {
-protoVal = args[0];
-ctor_offset = 1;
-} else if (args[0].isStringValId()) {
-const auto &name = current_chunk->getString(args[0].asStringValId());
-auto it = globals.find(name);
-if (it == globals.end()) {
-COMPILER_THROW("Unknown class type: " + name);
-}
-protoVal = it->second;
-ctor_offset = 1;
-} else {
-COMPILER_THROW("class.new: first argument must be class name or prototype object");
-}
-
-if (!protoVal.isObjectId()) {
-COMPILER_THROW("Class type is not an object prototype");
-}
-
-auto instanceRef = heap_.allocateObject();
-auto* instance = heap_.object(instanceRef.id);
-
-instance->set("__class", protoVal);
-
-auto* currentProto = heap_.object(protoVal.asObjectId());
-while (currentProto) {
-auto fieldsVal = currentProto->get("__fields");
-if (fieldsVal && fieldsVal->isArrayId()) {
-auto* fields = heap_.array(fieldsVal->asArrayId());
-for (const auto& f : *fields) {
-std::string fName = current_chunk->getString(f.asStringValId());
-instance->set(fName, Value::makeNull());
-}
-}
-// Apply instance field defaults (@field = value) if present
-auto defaultsVal = currentProto->get("__field_defaults");
-if (defaultsVal && defaultsVal->isObjectId()) {
-  auto* defaultsObj = heap_.object(defaultsVal->asObjectId());
-  if (defaultsObj) {
-    for (const auto& [defName, defVal] : *defaultsObj) {
-      if (!defVal.isNull()) {
-        instance->set(defName, defVal);
+    // Look for init method on prototype (like class.new does)
+    Value initMethodVal = Value::makeNull();
+    auto *currentProto = proto;
+    while (currentProto) {
+      auto val = currentProto->get("init");
+      if (!val)
+        val = currentProto->get("new");
+      if (val) {
+        initMethodVal = *val;
+        break;
+      }
+      auto parentVal = currentProto->get("__parent");
+      if (parentVal && parentVal->isObjectId()) {
+        currentProto = heap_.object(parentVal->asObjectId());
+      } else {
+        break;
       }
     }
-  }
-}
-auto parentVal = currentProto->get("__parent");
-if (parentVal && parentVal->isObjectId()) {
-currentProto = heap_.object(parentVal->asObjectId());
-} else {
-currentProto = nullptr;
-}
-}
 
-        Value initMethodVal = Value::makeNull();
-        currentProto = heap_.object(protoVal.asObjectId());
-        while (currentProto) {
-            auto val = currentProto->get("init");
-            if (!val) val = currentProto->get("new");
-            if (val) {
-                initMethodVal = *val;
-                break;
-            }
-            auto parentVal = currentProto->get("__parent");
-            if (parentVal && parentVal->isObjectId()) {
-                currentProto = heap_.object(parentVal->asObjectId());
-            } else {
-                break;
-            }
+    if (!initMethodVal.isNull()) {
+      // Call init method with instance as first arg
+      std::vector<Value> ctor_args;
+      ctor_args.reserve(args.size());
+      ctor_args.push_back(Value::makeObjectId(instanceRef.id));
+      for (size_t i = offset + 1; i < args.size(); ++i) {
+        ctor_args.push_back(args[i]);
+      }
+      (void)call(initMethodVal, ctor_args);
+    } else {
+      // No init method: set fields from positional arguments, falling back to
+      // defaults
+      GCHeap::ArrayEntry *defaultsArr = nullptr;
+      auto defaultsVal = proto->get("__defaults");
+      if (defaultsVal && defaultsVal->isArrayId()) {
+        defaultsArr = heap_.array(defaultsVal->asArrayId());
+      }
+      for (size_t i = 0; i < fields->size(); ++i) {
+        std::string fieldName =
+            current_chunk->getString((*fields)[i].asStringValId());
+        if (i < provided) {
+          instance->set(fieldName, args[i + 1 + offset]);
+        } else if (defaultsArr && i < defaultsArr->size() &&
+                   !(*defaultsArr)[i].isNull()) {
+          instance->set(fieldName, (*defaultsArr)[i]);
+        } else {
+          instance->set(fieldName, Value::makeNull());
         }
+      }
+    }
 
-if (!initMethodVal.isNull()) {
-            std::vector<Value> ctor_args;
-            ctor_args.reserve(args.size());
-            ctor_args.push_back(Value::makeObjectId(instanceRef.id));
-            for (size_t i = ctor_offset; i < args.size(); ++i) {
-                ctor_args.push_back(args[i]);
-            }
-            (void)call(initMethodVal, ctor_args);
-} else {
-auto* proto = heap_.object(protoVal.asObjectId());
-auto fieldsVal = proto->get("__fields");
-if (fieldsVal && fieldsVal->isArrayId()) {
-auto* fields = heap_.array(fieldsVal->asArrayId());
-const size_t provided = args.size() - ctor_offset;
-for (size_t i = 0; i < provided && i < fields->size(); ++i) {
-std::string fieldName = current_chunk->getString((*fields)[i].asStringValId());
-instance->set(fieldName, args[i + ctor_offset]);
-}
-}
-}
+    return Value::makeObjectId(instanceRef.id);
+  });
 
-return Value::makeObjectId(instanceRef.id);
-});
+  // struct.get(instance, field_name)
+  registerHostFunction("struct.get", [this](const std::vector<Value> &args) {
+    // Handle self offset for method calls
+    size_t offset = 0;
+    if (args.size() >= 3 && args[0].isObjectId() && args[1].isObjectId()) {
+      offset = 1;
+    }
+    if (args.size() - offset < 2)
+      COMPILER_THROW("struct.get requires instance and field name");
+    if (!args[offset].isObjectId())
+      COMPILER_THROW("struct.get first arg must be object");
+    if (!args[offset + 1].isStringValId())
+      COMPILER_THROW("struct.get second arg must be string");
 
-  registerHostFunction(
-      "class.method", [this](const std::vector<Value> &args) {
-        if (args.size() != 3 || !args[1].isStringValId() ||
-            (!args[2].isFunctionObjId() && !args[2].isClosureId() && !args[2].isHostFuncId())) {
-          COMPILER_THROW("class.method expects (classType, methodNameString, callableObj)");
+    auto *instance = heap_.object(args[offset].asObjectId());
+    std::string fieldName =
+        current_chunk->getString(args[offset + 1].asStringValId());
+    auto *val = instance->get(fieldName);
+    return val ? *val : Value::makeNull();
+  });
+
+  // struct.set(instance, field_name, value)
+  registerHostFunction("struct.set", [this](const std::vector<Value> &args) {
+    size_t offset = 0;
+    if (args.size() >= 4 && args[0].isObjectId()) {
+      offset = 1;
+    }
+    if (args.size() - offset < 3)
+      COMPILER_THROW("struct.set requires instance, field name, and value");
+    if (!args[offset].isObjectId())
+      COMPILER_THROW("struct.set first arg must be object");
+    if (!args[offset + 1].isStringValId())
+      COMPILER_THROW("struct.set second arg must be string");
+
+    auto *instance = heap_.object(args[offset].asObjectId());
+    std::string fieldName =
+        current_chunk->getString(args[offset + 1].asStringValId());
+    instance->set(fieldName, args[offset + 2]);
+    return Value::makeNull();
+  });
+
+  // Enum operations: enum.define(name, [variantNames], [payloadCounts])
+  // Registers the enum type and creates variant constructors as globals
+  registerHostFunction("enum.define", [this](const std::vector<Value> &args) {
+    if (!current_chunk)
+      COMPILER_THROW("enum.define requires active chunk");
+    size_t offset = (args.size() >= 3 && args[0].isObjectId()) ? 1 : 0;
+    if (args.size() - offset < 2)
+      COMPILER_THROW("enum.define requires name and variants");
+
+    const std::string &enumName =
+        current_chunk->getString(args[offset].asStringValId());
+
+    auto *variantsArr = heap_.array(args[offset + 1].asArrayId());
+    if (!variantsArr)
+      COMPILER_THROW("enum.define variants must be an array");
+
+    std::vector<std::string> variantNames;
+    for (size_t i = 0; i < variantsArr->size(); ++i) {
+      variantNames.push_back(
+          current_chunk->getString((*variantsArr)[i].asStringValId()));
+    }
+
+    uint32_t typeId = heap_.registerEnumType(enumName, variantNames);
+
+    auto enumObj = heap_.allocateObject();
+    auto *enumObjPtr = heap_.object(enumObj.id);
+    enumObjPtr->set("__name",
+                    Value::makeStringValId(args[offset].asStringValId()));
+    enumObjPtr->set("__is_enum", Value::makeBool(true));
+    enumObjPtr->set("__enum_type_id",
+                    Value::makeInt(static_cast<int64_t>(typeId)));
+
+    for (uint32_t tag = 0; tag < variantNames.size(); ++tag) {
+      const std::string &variantName = variantNames[tag];
+      uint32_t capturedTag = tag;
+      uint32_t capturedTypeId = typeId;
+      std::string fullName = enumName + "." + variantName;
+
+      bool hasPayload =
+          (args.size() - offset > 2 && args[offset + 2].isArrayId())
+              ? (heap_.array(args[offset + 2].asArrayId())->size() > tag &&
+                 (*heap_.array(args[offset + 2].asArrayId()))[tag].asInt() > 0)
+              : false;
+
+      if (hasPayload) {
+        registerHostFunction(
+            fullName, 1,
+            [this, capturedTypeId, capturedTag](const std::vector<Value> &a) {
+              EnumRef ref = heap_.allocateEnum(capturedTypeId, capturedTag, 1);
+              if (!a.empty()) {
+                auto it = heap_.enums_.find(ref.id);
+                if (it != heap_.enums_.end() && !it->second.second.empty())
+                  it->second.second[0] = a[0];
+              }
+              return Value::makeEnumId(ref.id, capturedTypeId);
+            });
+      } else {
+        Value singleton = [&]() -> Value {
+          EnumRef ref = heap_.allocateEnum(capturedTypeId, capturedTag, 0);
+          return Value::makeEnumId(ref.id, capturedTypeId);
+        }();
+        registerHostFunction(fullName, 0,
+                             [singleton](const std::vector<Value> &) -> Value {
+                               return singleton;
+                             });
+        enumObjPtr->set(variantName, singleton);
+        continue;
+      }
+
+      uint32_t variantFuncIdx = getHostFunctionIndex(fullName);
+      enumObjPtr->set(variantName, Value::makeHostFuncId(variantFuncIdx));
+    }
+
+    return Value::makeObjectId(enumObj.id);
+  });
+
+  // Class operations (prototype-based)
+  registerHostFunction("class.define", [this](const std::vector<Value> &args) {
+    if (!current_chunk)
+      COMPILER_THROW("class.define requires active chunk");
+    if (args.size() < 4)
+      COMPILER_THROW("class.define requires at least 4 arguments");
+
+    auto protoRef = heap_.allocateObject();
+    auto *proto = heap_.object(protoRef.id);
+
+    proto->set("__name", Value::makeStringValId(args[0].asStringValId()));
+    proto->set("__is_class", Value::makeBool(true));
+    proto->set("__fields", args[1]);
+
+    size_t arg_idx = 2;
+    // Check for parent class
+    if (args.size() > arg_idx &&
+        (args[arg_idx].isObjectId() || args[arg_idx].isStringValId() ||
+         args[arg_idx].isNull())) {
+      if (args[arg_idx].isObjectId()) {
+        proto->set("__parent", args[arg_idx]);
+      } else if (args[arg_idx].isStringValId()) {
+        const auto &parentName =
+            current_chunk->getString(args[arg_idx].asStringValId());
+        auto parentIt = globals.find(parentName);
+        if (parentIt == globals.end() || !parentIt->second.isObjectId()) {
+          COMPILER_THROW("Unknown or invalid parent class: " + parentName);
         }
-        if (!current_chunk) COMPILER_THROW("class.method requires active chunk");
-        
-        auto* classObj = heap_.object(args[0].asObjectId());
-        if (!classObj) return Value::makeNull();
-        
-        const std::string &method_name = current_chunk->getString(args[1].asStringValId());
-        
-        // Overloading/Arity dispatch logic
-        uint32_t classObjId = args[0].asObjectId();
-        std::string key = std::to_string(classObjId) + "." + method_name;
-        auto &candidates = overloaded_methods_[key];
-        
-        // If candidates is empty but classObj already has an existing method of that name,
-        // add the existing one to the candidates first
-        if (candidates.empty()) {
-          auto *existing = classObj->get(method_name);
-          if (existing && (existing->isFunctionObjId() || existing->isClosureId() || existing->isHostFuncId())) {
-            candidates.push_back(*existing);
+        proto->set("__parent", parentIt->second);
+      }
+      arg_idx++;
+    }
+
+    // Check for class fields (@@fields)
+    if (args.size() > arg_idx && args[arg_idx].isArrayId()) {
+      proto->set("__class_fields", args[arg_idx]);
+      arg_idx++;
+    }
+
+    // Check for instance field defaults (@field = value)
+    if (args.size() > arg_idx && args[arg_idx].isObjectId()) {
+      proto->set("__field_defaults", args[arg_idx]);
+    }
+
+    proto->set("new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
+    proto->set("method",
+               Value::makeHostFuncId(getHostFunctionIndex("class.method")));
+
+    return Value::makeObjectId(protoRef.id);
+  });
+
+  registerHostFunction("class.new", [this](const std::vector<Value> &args) {
+    if (args.empty()) {
+      COMPILER_THROW("class.new(type, ...values) requires a type argument");
+    }
+    if (!current_chunk)
+      COMPILER_THROW("class.new requires active chunk");
+
+    Value protoVal;
+    size_t ctor_offset = 1;
+    if (args[0].isObjectId()) {
+      protoVal = args[0];
+      ctor_offset = 1;
+    } else if (args[0].isStringValId()) {
+      const auto &name = current_chunk->getString(args[0].asStringValId());
+      auto it = globals.find(name);
+      if (it == globals.end()) {
+        COMPILER_THROW("Unknown class type: " + name);
+      }
+      protoVal = it->second;
+      ctor_offset = 1;
+    } else {
+      COMPILER_THROW(
+          "class.new: first argument must be class name or prototype object");
+    }
+
+    if (!protoVal.isObjectId()) {
+      COMPILER_THROW("Class type is not an object prototype");
+    }
+
+    auto instanceRef = heap_.allocateObject();
+    auto *instance = heap_.object(instanceRef.id);
+
+    instance->set("__class", protoVal);
+
+    auto *currentProto = heap_.object(protoVal.asObjectId());
+    while (currentProto) {
+      auto fieldsVal = currentProto->get("__fields");
+      if (fieldsVal && fieldsVal->isArrayId()) {
+        auto *fields = heap_.array(fieldsVal->asArrayId());
+        for (const auto &f : *fields) {
+          std::string fName = current_chunk->getString(f.asStringValId());
+          instance->set(fName, Value::makeNull());
+        }
+      }
+      // Apply instance field defaults (@field = value) if present
+      auto defaultsVal = currentProto->get("__field_defaults");
+      if (defaultsVal && defaultsVal->isObjectId()) {
+        auto *defaultsObj = heap_.object(defaultsVal->asObjectId());
+        if (defaultsObj) {
+          for (const auto &[defName, defVal] : *defaultsObj) {
+            if (!defVal.isNull()) {
+              instance->set(defName, defVal);
+            }
           }
         }
-        
-        // Push the new candidate
-        candidates.push_back(args[2]);
-        
-        if (candidates.size() > 1) {
-          // Create dispatcher host function name
-          std::string dispatcher_name = "_overload_" + std::to_string(classObjId) + "_" + method_name;
-          
-          // Register dynamic host function (updates if already exists)
-          registerHostFunction(dispatcher_name, [this, key](const std::vector<Value> &dispatcher_args) -> Value {
+      }
+      auto parentVal = currentProto->get("__parent");
+      if (parentVal && parentVal->isObjectId()) {
+        currentProto = heap_.object(parentVal->asObjectId());
+      } else {
+        currentProto = nullptr;
+      }
+    }
+
+    Value initMethodVal = Value::makeNull();
+    currentProto = heap_.object(protoVal.asObjectId());
+    while (currentProto) {
+      auto val = currentProto->get("init");
+      if (!val)
+        val = currentProto->get("new");
+      if (val) {
+        initMethodVal = *val;
+        break;
+      }
+      auto parentVal = currentProto->get("__parent");
+      if (parentVal && parentVal->isObjectId()) {
+        currentProto = heap_.object(parentVal->asObjectId());
+      } else {
+        break;
+      }
+    }
+
+    if (!initMethodVal.isNull()) {
+      std::vector<Value> ctor_args;
+      ctor_args.reserve(args.size());
+      ctor_args.push_back(Value::makeObjectId(instanceRef.id));
+      for (size_t i = ctor_offset; i < args.size(); ++i) {
+        ctor_args.push_back(args[i]);
+      }
+      (void)call(initMethodVal, ctor_args);
+    } else {
+      auto *proto = heap_.object(protoVal.asObjectId());
+      auto fieldsVal = proto->get("__fields");
+      if (fieldsVal && fieldsVal->isArrayId()) {
+        auto *fields = heap_.array(fieldsVal->asArrayId());
+        const size_t provided = args.size() - ctor_offset;
+        for (size_t i = 0; i < provided && i < fields->size(); ++i) {
+          std::string fieldName =
+              current_chunk->getString((*fields)[i].asStringValId());
+          instance->set(fieldName, args[i + ctor_offset]);
+        }
+      }
+    }
+
+    return Value::makeObjectId(instanceRef.id);
+  });
+
+  registerHostFunction("class.method", [this](const std::vector<Value> &args) {
+    if (args.size() != 3 || !args[1].isStringValId() ||
+        (!args[2].isFunctionObjId() && !args[2].isClosureId() &&
+         !args[2].isHostFuncId())) {
+      COMPILER_THROW(
+          "class.method expects (classType, methodNameString, callableObj)");
+    }
+    if (!current_chunk)
+      COMPILER_THROW("class.method requires active chunk");
+
+    auto *classObj = heap_.object(args[0].asObjectId());
+    if (!classObj)
+      return Value::makeNull();
+
+    const std::string &method_name =
+        current_chunk->getString(args[1].asStringValId());
+
+    // Overloading/Arity dispatch logic
+    uint32_t classObjId = args[0].asObjectId();
+    std::string key = std::to_string(classObjId) + "." + method_name;
+    auto &candidates = overloaded_methods_[key];
+
+    // If candidates is empty but classObj already has an existing method of
+    // that name, add the existing one to the candidates first
+    if (candidates.empty()) {
+      auto *existing = classObj->get(method_name);
+      if (existing && (existing->isFunctionObjId() || existing->isClosureId() ||
+                       existing->isHostFuncId())) {
+        candidates.push_back(*existing);
+      }
+    }
+
+    // Push the new candidate
+    candidates.push_back(args[2]);
+
+    if (candidates.size() > 1) {
+      // Create dispatcher host function name
+      std::string dispatcher_name =
+          "_overload_" + std::to_string(classObjId) + "_" + method_name;
+
+      // Register dynamic host function (updates if already exists)
+      registerHostFunction(
+          dispatcher_name,
+          [this, key](const std::vector<Value> &dispatcher_args) -> Value {
             auto candIt = overloaded_methods_.find(key);
-            if (candIt == overloaded_methods_.end()) return Value::makeNull();
+            if (candIt == overloaded_methods_.end())
+              return Value::makeNull();
             const auto &cands = candIt->second;
-            
+
             Value best_cand = Value::makeNull();
             for (const auto &cand : cands) {
               uint32_t param_count = 0;
@@ -2736,7 +3229,8 @@ return Value::makeObjectId(instanceRef.id);
               } else if (cand.isClosureId()) {
                 if (auto *closure = heap_.closure(cand.asClosureId())) {
                   uint32_t idx = closure->function_index;
-                  if (current_chunk && idx < current_chunk->getFunctionCount()) {
+                  if (current_chunk &&
+                      idx < current_chunk->getFunctionCount()) {
                     if (auto *bf = current_chunk->getFunction(idx)) {
                       param_count = bf->param_count;
                     }
@@ -2756,119 +3250,140 @@ return Value::makeObjectId(instanceRef.id);
             }
             return Value::makeNull();
           });
-          
-          uint32_t dispatcher_idx = getHostFunctionIndex(dispatcher_name);
-          Value dispatcher_val = Value::makeHostFuncId(dispatcher_idx);
-          classObj->set(method_name, dispatcher_val);
-          
-          // Emulate older fallback for supercalls if invoked globally
-          auto nameVal = classObj->get("__name");
-          if (nameVal && nameVal->isStringValId()) {
-            const std::string& className = current_chunk->getString(nameVal->asStringValId());
-            setGlobal(className + "." + method_name, dispatcher_val);
-          }
-        } else {
-          // Only one candidate so far - store it directly (no overhead of host function dispatcher)
-          classObj->set(method_name, args[2]);
-          
-          // Emulate older fallback for supercalls if invoked globally
-          auto nameVal = classObj->get("__name");
-          if (nameVal && nameVal->isStringValId()) {
-            const std::string& className = current_chunk->getString(nameVal->asStringValId());
-            setGlobal(className + "." + method_name, args[2]);
-          }
-        }
-        
-        return Value::makeNull();
-      });
 
-  registerHostFunction(
-      "inherits", [this](const std::vector<Value> &args) {
-        if (args.size() != 2) {
-          COMPILER_THROW("inherits(child, parent) expects two arguments");
-        }
-        if (args.size() != 2) return Value::makeBool(false);
-        if (!args[0].isObjectId() || !args[1].isObjectId()) return Value::makeBool(false);
-        auto* obj = heap_.object(args[0].asObjectId());
-        auto target_id = args[1].asObjectId();
-        
-        while (obj) {
-            auto parentVal = obj->get("__parent");
-            if (!parentVal) parentVal = obj->get("__struct");
-            if (!parentVal) parentVal = obj->get("__class");
-            if (!parentVal || !parentVal->isObjectId()) break;
-            if (parentVal->asObjectId() == target_id) return Value::makeBool(true);
-            obj = heap_.object(parentVal->asObjectId());
-        }
-        return Value::makeBool(false);
-      });
+      uint32_t dispatcher_idx = getHostFunctionIndex(dispatcher_name);
+      Value dispatcher_val = Value::makeHostFuncId(dispatcher_idx);
+      classObj->set(method_name, dispatcher_val);
+
+      // Emulate older fallback for supercalls if invoked globally
+      auto nameVal = classObj->get("__name");
+      if (nameVal && nameVal->isStringValId()) {
+        const std::string &className =
+            current_chunk->getString(nameVal->asStringValId());
+        setGlobal(className + "." + method_name, dispatcher_val);
+      }
+    } else {
+      // Only one candidate so far - store it directly (no overhead of host
+      // function dispatcher)
+      classObj->set(method_name, args[2]);
+
+      // Emulate older fallback for supercalls if invoked globally
+      auto nameVal = classObj->get("__name");
+      if (nameVal && nameVal->isStringValId()) {
+        const std::string &className =
+            current_chunk->getString(nameVal->asStringValId());
+        setGlobal(className + "." + method_name, args[2]);
+      }
+    }
+
+    return Value::makeNull();
+  });
+
+  registerHostFunction("inherits", [this](const std::vector<Value> &args) {
+    if (args.size() != 2) {
+      COMPILER_THROW("inherits(child, parent) expects two arguments");
+    }
+    if (args.size() != 2)
+      return Value::makeBool(false);
+    if (!args[0].isObjectId() || !args[1].isObjectId())
+      return Value::makeBool(false);
+    auto *obj = heap_.object(args[0].asObjectId());
+    auto target_id = args[1].asObjectId();
+
+    while (obj) {
+      auto parentVal = obj->get("__parent");
+      if (!parentVal)
+        parentVal = obj->get("__struct");
+      if (!parentVal)
+        parentVal = obj->get("__class");
+      if (!parentVal || !parentVal->isObjectId())
+        break;
+      if (parentVal->asObjectId() == target_id)
+        return Value::makeBool(true);
+      obj = heap_.object(parentVal->asObjectId());
+    }
+    return Value::makeBool(false);
+  });
 
   // class.get(instance, field_name)
-  registerHostFunction(
-      "class.get", [this](const std::vector<Value> &args) {
-        size_t offset = 0;
-        if (args.size() >= 3 && args[0].isObjectId()) {
-          offset = 1;
-        }
-        if (args.size() - offset < 2) COMPILER_THROW("class.get requires instance and field name");
-        if (!args[offset].isObjectId()) COMPILER_THROW("class.get first arg must be object");
-        if (!args[offset + 1].isStringValId()) COMPILER_THROW("class.get second arg must be string");
-        
-        auto* instance = heap_.object(args[offset].asObjectId());
-        std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
-        
-        // Walk prototype chain
-        GCHeap::ObjectEntry* current = instance;
-        while (current) {
-          auto* val = current->get(fieldName);
-          if (val) return *val;
-          auto* parentVal = current->get("__parent");
-          if (!parentVal) parentVal = current->get("__class");
-          if (parentVal && parentVal->isObjectId()) {
-            current = heap_.object(parentVal->asObjectId());
-          } else {
-            break;
-          }
-        }
-        return Value::makeNull();
-      });
+  registerHostFunction("class.get", [this](const std::vector<Value> &args) {
+    size_t offset = 0;
+    if (args.size() >= 3 && args[0].isObjectId()) {
+      offset = 1;
+    }
+    if (args.size() - offset < 2)
+      COMPILER_THROW("class.get requires instance and field name");
+    if (!args[offset].isObjectId())
+      COMPILER_THROW("class.get first arg must be object");
+    if (!args[offset + 1].isStringValId())
+      COMPILER_THROW("class.get second arg must be string");
+
+    auto *instance = heap_.object(args[offset].asObjectId());
+    std::string fieldName =
+        current_chunk->getString(args[offset + 1].asStringValId());
+
+    // Walk prototype chain
+    GCHeap::ObjectEntry *current = instance;
+    while (current) {
+      auto *val = current->get(fieldName);
+      if (val)
+        return *val;
+      auto *parentVal = current->get("__parent");
+      if (!parentVal)
+        parentVal = current->get("__class");
+      if (parentVal && parentVal->isObjectId()) {
+        current = heap_.object(parentVal->asObjectId());
+      } else {
+        break;
+      }
+    }
+    return Value::makeNull();
+  });
 
   // class.set(instance, field_name, value)
-  registerHostFunction(
-      "class.set", [this](const std::vector<Value> &args) {
-        size_t offset = 0;
-        if (args.size() >= 4 && args[0].isObjectId()) {
-          offset = 1;
-        }
-        if (args.size() - offset < 3) COMPILER_THROW("class.set requires instance, field name, and value");
-        if (!args[offset].isObjectId()) COMPILER_THROW("class.set first arg must be object");
-        if (!args[offset + 1].isStringValId()) COMPILER_THROW("class.set second arg must be string");
-        
-        auto* instance = heap_.object(args[offset].asObjectId());
-        std::string fieldName = current_chunk->getString(args[offset + 1].asStringValId());
-	instance->set(fieldName, args[offset + 2]);
-	return Value::makeNull();
-	});
+  registerHostFunction("class.set", [this](const std::vector<Value> &args) {
+    size_t offset = 0;
+    if (args.size() >= 4 && args[0].isObjectId()) {
+      offset = 1;
+    }
+    if (args.size() - offset < 3)
+      COMPILER_THROW("class.set requires instance, field name, and value");
+    if (!args[offset].isObjectId())
+      COMPILER_THROW("class.set first arg must be object");
+    if (!args[offset + 1].isStringValId())
+      COMPILER_THROW("class.set second arg must be string");
 
-registerHostFunction(
-    "when.register", [this](const std::vector<Value> &args) {
-    if (args.size() < 2) COMPILER_THROW("when.register requires condition_func_id and body_func_id");
+    auto *instance = heap_.object(args[offset].asObjectId());
+    std::string fieldName =
+        current_chunk->getString(args[offset + 1].asStringValId());
+    instance->set(fieldName, args[offset + 2]);
+    return Value::makeNull();
+  });
+
+  registerHostFunction("when.register", [this](const std::vector<Value> &args) {
+    if (args.size() < 2)
+      COMPILER_THROW(
+          "when.register requires condition_func_id and body_func_id");
     if (!args[0].isFunctionObjId() && !args[0].isClosureId())
-        COMPILER_THROW("when.register first arg must be a function");
+      COMPILER_THROW("when.register first arg must be a function");
     if (!args[1].isFunctionObjId() && !args[1].isClosureId())
-        COMPILER_THROW("when.register second arg must be a function");
+      COMPILER_THROW("when.register second arg must be a function");
 
-    uint32_t cond_func_id = args[0].isFunctionObjId() ? args[0].asFunctionObjId() : 0;
-    uint32_t body_func_id = args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
+    uint32_t cond_func_id =
+        args[0].isFunctionObjId() ? args[0].asFunctionObjId() : 0;
+    uint32_t body_func_id =
+        args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
 
     // 3rd optional arg: cleanup function (called on true→false transition)
     uint32_t cleanup_func_id = 0;
-    if (args.size() >= 3 && (args[2].isFunctionObjId() || args[2].isClosureId())) {
-        cleanup_func_id = args[2].isFunctionObjId() ? args[2].asFunctionObjId() : 0;
+    if (args.size() >= 3 &&
+        (args[2].isFunctionObjId() || args[2].isClosureId())) {
+      cleanup_func_id =
+          args[2].isFunctionObjId() ? args[2].asFunctionObjId() : 0;
     }
 
     if (!watcher_registry_) {
-        return Value::makeNull();
+      return Value::makeNull();
     }
 
     auto tracker = std::make_shared<DependencyTracker>();
@@ -2881,374 +3396,468 @@ registerHostFunction(
     deps.insert(fieldDeps.begin(), fieldDeps.end());
 
     static std::atomic<uint32_t> next_when_fiber_id{20000};
-    uint32_t fiber_id = next_when_fiber_id.fetch_add(1, std::memory_order_relaxed);
-    auto fiber = std::make_unique<Fiber>(fiber_id, body_func_id, 0, "when_body");
+    uint32_t fiber_id =
+        next_when_fiber_id.fetch_add(1, std::memory_order_relaxed);
+    auto fiber =
+        std::make_unique<Fiber>(fiber_id, body_func_id, 0, "when_body");
     fiber->state = FiberState::SUSPENDED;
 
-    Fiber* raw_fiber = fiber.get();
+    Fiber *raw_fiber = fiber.get();
     fiber.release();
 
-    watcher_registry_->registerWatcher(
-        cond_func_id, 0, initial_result, deps, raw_fiber, current_chunk,
-        cleanup_func_id, 0);
+    watcher_registry_->registerWatcher(cond_func_id, 0, initial_result, deps,
+                                       raw_fiber, current_chunk,
+                                       cleanup_func_id, 0);
 
     // If there's a parent when block, register this as a nested watcher
     if (this->current_when_watcher_id_ != 0) {
-        watcher_registry_->addNestedWatcher(this->current_when_watcher_id_, raw_fiber->watcher_id);
+      watcher_registry_->addNestedWatcher(this->current_when_watcher_id_,
+                                          raw_fiber->watcher_id);
     }
 
     if (initial_result) {
-        // Set current when watcher ID so nested when blocks can find it for cleanup
-        uint32_t prev_when_watcher = this->current_when_watcher_id_;
-        this->current_when_watcher_id_ = raw_fiber->watcher_id;
-        
-        try {
-            Value body_func = Value::makeFunctionObjId(body_func_id);
-            call(body_func, {});
-        } catch (...) {
-        }
-        
-        // Restore previous when watcher ID
-        this->current_when_watcher_id_ = prev_when_watcher;
+      // Set current when watcher ID so nested when blocks can find it for
+      // cleanup
+      uint32_t prev_when_watcher = this->current_when_watcher_id_;
+      this->current_when_watcher_id_ = raw_fiber->watcher_id;
+
+      try {
+        Value body_func = Value::makeFunctionObjId(body_func_id);
+        call(body_func, {});
+      } catch (...) {
+      }
+
+      // Restore previous when watcher ID
+      this->current_when_watcher_id_ = prev_when_watcher;
     }
 
     return Value::makeInt(static_cast<int64_t>(raw_fiber->watcher_id));
-});
+  });
 
-registerHostFunction(
-    "when.unregister", [this](const std::vector<Value> &args) {
-    if (args.size() < 1) COMPILER_THROW("when.unregister requires watcher_id");
-    if (!args[0].isInt() && !args[0].isDouble()) COMPILER_THROW("when.unregister first arg must be a watcher_id (int)");
+  registerHostFunction("when.unregister", [this](
+                                              const std::vector<Value> &args) {
+    if (args.size() < 1)
+      COMPILER_THROW("when.unregister requires watcher_id");
+    if (!args[0].isInt() && !args[0].isDouble())
+      COMPILER_THROW("when.unregister first arg must be a watcher_id (int)");
 
     uint32_t watcher_id = static_cast<uint32_t>(args[0].asInt64());
 
     if (!watcher_registry_) {
-        return Value::makeBool(false);
+      return Value::makeBool(false);
     }
 
     bool result = watcher_registry_->unregisterWatcher(watcher_id);
     return Value::makeBool(result);
-});
+  });
 
-registerHostFunction(
-    "when.add_nested", [this](const std::vector<Value> &args) {
-    if (args.size() < 2) COMPILER_THROW("when.add_nested requires parent_watcher_id and nested_watcher_id");
-    if (!args[0].isInt() && !args[0].isDouble()) COMPILER_THROW("when.add_nested first arg must be a parent watcher_id (int)");
-    if (!args[1].isInt() && !args[1].isDouble()) COMPILER_THROW("when.add_nested second arg must be a nested watcher_id (int)");
+  registerHostFunction("when.add_nested", [this](
+                                              const std::vector<Value> &args) {
+    if (args.size() < 2)
+      COMPILER_THROW(
+          "when.add_nested requires parent_watcher_id and nested_watcher_id");
+    if (!args[0].isInt() && !args[0].isDouble())
+      COMPILER_THROW(
+          "when.add_nested first arg must be a parent watcher_id (int)");
+    if (!args[1].isInt() && !args[1].isDouble())
+      COMPILER_THROW(
+          "when.add_nested second arg must be a nested watcher_id (int)");
 
     uint32_t parent_watcher_id = static_cast<uint32_t>(args[0].asInt64());
     uint32_t nested_watcher_id = static_cast<uint32_t>(args[1].asInt64());
 
     // Store nested watcher_id in the parent's watcher for cleanup
     if (watcher_registry_) {
-        watcher_registry_->addNestedWatcher(parent_watcher_id, nested_watcher_id);
+      watcher_registry_->addNestedWatcher(parent_watcher_id, nested_watcher_id);
     }
     return Value::makeNull();
-});
+  });
 
-registerHostFunction(
-      "ref", [this](const std::vector<Value> &args) {
+  registerHostFunction("ref", [this](const std::vector<Value> &args) {
     Value initial = args.empty() ? Value::makeNull() : args[0];
     auto objRef = heap_.allocateObject();
-    auto* obj = heap_.object(objRef.id);
+    auto *obj = heap_.object(objRef.id);
     (*obj)["_val"] = initial;
     return Value::makeObjectId(objRef.id);
   });
 
+  registerHostFunction("signal.bind", [this](const std::vector<Value> &args) {
+    if (args.size() < 2)
+      COMPILER_THROW("signal.bind requires name and expression function");
+    if (!args[0].isStringValId() && !args[0].isStringId())
+      COMPILER_THROW("signal.bind first arg must be a string (signal name)");
+    if (!args[1].isFunctionObjId() && !args[1].isClosureId())
+      COMPILER_THROW("signal.bind second arg must be a function");
+
+    std::string name = resolveStringKey(args[0]);
+    uint32_t func_id =
+        args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
+
+    registerSignal(name, func_id);
+
+    return Value::makeNull();
+  });
+
+  registerHostFunction("gc_collect", 0,
+                       [this](const std::vector<Value> &) -> Value {
+                         collectGarbage();
+                         return Value::makeNull();
+                       });
+
   registerHostFunction(
-      "signal.bind", [this](const std::vector<Value> &args) {
-          if (args.size() < 2)
-              COMPILER_THROW("signal.bind requires name and expression function");
-          if (!args[0].isStringValId() && !args[0].isStringId())
-              COMPILER_THROW("signal.bind first arg must be a string (signal name)");
-          if (!args[1].isFunctionObjId() && !args[1].isClosureId())
-              COMPILER_THROW("signal.bind second arg must be a function");
-
-          std::string name = resolveStringKey(args[0]);
-          uint32_t func_id = args[1].isFunctionObjId() ? args[1].asFunctionObjId() : 0;
-
-          registerSignal(name, func_id);
-
-          return Value::makeNull();
+      "gc_collect_full", 0, [this](const std::vector<Value> &) -> Value {
+        heap_.forceFullCollection(
+            stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
+            [this](uint32_t index) -> std::optional<Value> {
+              if (index >= locals.size())
+                return std::nullopt;
+              return locals[index];
+            });
+        return Value::makeNull();
       });
 
-  registerHostFunction("gc_collect", 0, [this](const std::vector<Value> &) -> Value {
-    collectGarbage();
-    return Value::makeNull();
-  });
-
-  registerHostFunction("gc_collect_full", 0, [this](const std::vector<Value> &) -> Value {
-    heap_.forceFullCollection(
-      stackValuesForRoots(), locals, globals,
-      activeClosureIdsForRoots(),
-      [this](uint32_t index) -> std::optional<Value> {
-        if (index >= locals.size()) return std::nullopt;
-        return locals[index];
+  registerHostFunction(
+      "gc_stats", 0, [this](const std::vector<Value> &) -> Value {
+        auto s = heap_.stats();
+        auto obj = createHostObject();
+        auto *o = heap_.object(obj.id);
+        (*o)["heap_size"] = Value::makeInt(static_cast<int64_t>(s.heap_size));
+        (*o)["object_count"] =
+            Value::makeInt(static_cast<int64_t>(s.object_count));
+        (*o)["collections"] =
+            Value::makeInt(static_cast<int64_t>(s.collections));
+        (*o)["last_pause_ns"] =
+            Value::makeInt(static_cast<int64_t>(s.last_pause_ns));
+        (*o)["total_recovered"] =
+            Value::makeInt(static_cast<int64_t>(s.total_recovered));
+        (*o)["locals_size"] =
+            Value::makeInt(static_cast<int64_t>(locals.size()));
+        (*o)["stack_size"] = Value::makeInt(static_cast<int64_t>(stack.size()));
+        (*o)["frame_count"] =
+            Value::makeInt(static_cast<int64_t>(frame_count_));
+        (*o)["globals_count"] =
+            Value::makeInt(static_cast<int64_t>(globals.size()));
+        (*o)["old_arrays"] =
+            Value::makeInt(static_cast<int64_t>(heap_.oldArrayCount()));
+        (*o)["old_objects"] =
+            Value::makeInt(static_cast<int64_t>(heap_.oldObjectCount()));
+        (*o)["old_closures"] =
+            Value::makeInt(static_cast<int64_t>(heap_.oldClosureCount()));
+        (*o)["total_closures"] =
+            Value::makeInt(static_cast<int64_t>(heap_.closures().size()));
+        return Value::makeObjectId(obj.id);
       });
-    return Value::makeNull();
-  });
 
-  registerHostFunction("gc_stats", 0, [this](const std::vector<Value> &) -> Value {
-    auto s = heap_.stats();
-    auto obj = createHostObject();
-    auto *o = heap_.object(obj.id);
-    (*o)["heap_size"] = Value::makeInt(static_cast<int64_t>(s.heap_size));
-    (*o)["object_count"] = Value::makeInt(static_cast<int64_t>(s.object_count));
-    (*o)["collections"] = Value::makeInt(static_cast<int64_t>(s.collections));
-    (*o)["last_pause_ns"] = Value::makeInt(static_cast<int64_t>(s.last_pause_ns));
-    (*o)["total_recovered"] = Value::makeInt(static_cast<int64_t>(s.total_recovered));
-    (*o)["locals_size"] = Value::makeInt(static_cast<int64_t>(locals.size()));
-    (*o)["stack_size"] = Value::makeInt(static_cast<int64_t>(stack.size()));
-    (*o)["frame_count"] = Value::makeInt(static_cast<int64_t>(frame_count_));
-    (*o)["globals_count"] = Value::makeInt(static_cast<int64_t>(globals.size()));
-    (*o)["old_arrays"] = Value::makeInt(static_cast<int64_t>(heap_.oldArrayCount()));
-    (*o)["old_objects"] = Value::makeInt(static_cast<int64_t>(heap_.oldObjectCount()));
-  (*o)["old_closures"] = Value::makeInt(static_cast<int64_t>(heap_.oldClosureCount()));
-  (*o)["total_closures"] = Value::makeInt(static_cast<int64_t>(heap_.closures().size()));
-  return Value::makeObjectId(obj.id);
-  });
-
-  registerHostFunction("gc_validate", 0, [this](const std::vector<Value> &) -> Value {
-    int invalid = 0;
-    int checked = 0;
-    int deep_invalid = 0;
-    for (const auto &[id, closure] : heap_.closures()) {
-      for (const auto &cell : closure.upvalues) {
-        if (!cell) continue;
-        checked++;
-        Value v;
-        if (cell->is_open) {
-          uint32_t abs_index = cell->locals_base + cell->open_index;
-          if (abs_index < locals.size()) {
-            v = locals[abs_index];
+  registerHostFunction(
+      "gc_validate", 0, [this](const std::vector<Value> &) -> Value {
+        int invalid = 0;
+        int checked = 0;
+        int deep_invalid = 0;
+        for (const auto &[id, closure] : heap_.closures()) {
+          for (const auto &cell : closure.upvalues) {
+            if (!cell)
+              continue;
+            checked++;
+            Value v;
+            if (cell->is_open) {
+              uint32_t abs_index = cell->locals_base + cell->open_index;
+              if (abs_index < locals.size()) {
+                v = locals[abs_index];
+              }
+            } else {
+              v = cell->closed_value;
+            }
+            if (v.isArrayId() && !heap_.arrayExists(v.asArrayId())) {
+              invalid++;
+            }
+            if (v.isObjectId() && !heap_.objectExists(v.asObjectId())) {
+              invalid++;
+            }
+            if (v.isClosureId() && !heap_.closureExists(v.asClosureId())) {
+              invalid++;
+            }
+            if (v.isSetId() && !heap_.setExists(v.asSetId())) {
+              invalid++;
+            }
+            // Deep check: values inside objects
+            if (v.isObjectId()) {
+              auto *obj = heap_.object(v.asObjectId());
+              if (obj) {
+                for (const auto &[k2, v2] : *obj) {
+                  checked++;
+                  if (v2.isArrayId() && !heap_.arrayExists(v2.asArrayId())) {
+                    deep_invalid++;
+                  }
+                  if (v2.isObjectId() && !heap_.objectExists(v2.asObjectId())) {
+                    deep_invalid++;
+                  }
+                  if (v2.isClosureId() &&
+                      !heap_.closureExists(v2.asClosureId())) {
+                    deep_invalid++;
+                  }
+                  if (v2.isSetId() && !heap_.setExists(v2.asSetId())) {
+                    deep_invalid++;
+                  }
+                }
+              }
+            }
+            if (v.isArrayId()) {
+              auto *arr = heap_.array(v.asArrayId());
+              if (arr) {
+                for (const auto &v2 : *arr) {
+                  checked++;
+                  if (v2.isArrayId() && !heap_.arrayExists(v2.asArrayId())) {
+                    deep_invalid++;
+                  }
+                  if (v2.isObjectId() && !heap_.objectExists(v2.asObjectId())) {
+                    deep_invalid++;
+                  }
+                  if (v2.isClosureId() &&
+                      !heap_.closureExists(v2.asClosureId())) {
+                    deep_invalid++;
+                  }
+                  if (v2.isSetId() && !heap_.setExists(v2.asSetId())) {
+                    deep_invalid++;
+                  }
+                }
+              }
+            }
           }
-        } else {
-          v = cell->closed_value;
-        }
-        if (v.isArrayId() && !heap_.arrayExists(v.asArrayId())) {
-          invalid++;
-        }
-        if (v.isObjectId() && !heap_.objectExists(v.asObjectId())) {
-          invalid++;
-        }
-        if (v.isClosureId() && !heap_.closureExists(v.asClosureId())) {
-          invalid++;
-        }
-        if (v.isSetId() && !heap_.setExists(v.asSetId())) {
-          invalid++;
-        }
-        // Deep check: values inside objects
-        if (v.isObjectId()) {
-          auto *obj = heap_.object(v.asObjectId());
-          if (obj) {
-            for (const auto &[k2, v2] : *obj) {
+          if (closure.module_globals) {
+            for (const auto &[gname, gv] : *closure.module_globals) {
               checked++;
-              if (v2.isArrayId() && !heap_.arrayExists(v2.asArrayId())) { deep_invalid++; }
-              if (v2.isObjectId() && !heap_.objectExists(v2.asObjectId())) { deep_invalid++; }
-              if (v2.isClosureId() && !heap_.closureExists(v2.asClosureId())) { deep_invalid++; }
-              if (v2.isSetId() && !heap_.setExists(v2.asSetId())) { deep_invalid++; }
+              if (gv.isArrayId() && !heap_.arrayExists(gv.asArrayId())) {
+                invalid++;
+                ::havel::warning(
+                    "[gc_validate] module_global '{}' has dangling array {}",
+                    gname, gv.asArrayId());
+              }
+              if (gv.isObjectId() && !heap_.objectExists(gv.asObjectId())) {
+                invalid++;
+                ::havel::warning(
+                    "[gc_validate] module_global '{}' has dangling object {}",
+                    gname, gv.asObjectId());
+              }
+              if (gv.isClosureId() && !heap_.closureExists(gv.asClosureId())) {
+                invalid++;
+                ::havel::warning(
+                    "[gc_validate] module_global '{}' has dangling closure {}",
+                    gname, gv.asClosureId());
+              }
+              // Deep check module_global objects
+              if (gv.isObjectId()) {
+                auto *obj = heap_.object(gv.asObjectId());
+                if (obj) {
+                  for (const auto &[k2, v2] : *obj) {
+                    checked++;
+                    if (v2.isArrayId() && !heap_.arrayExists(v2.asArrayId())) {
+                      deep_invalid++;
+                      ::havel::warning(
+                          "[gc_validate] module_global '{}' object {} key '{}' "
+                          "has dangling array {}",
+                          gname, gv.asObjectId(), k2, v2.asArrayId());
+                    }
+                    if (v2.isObjectId() &&
+                        !heap_.objectExists(v2.asObjectId())) {
+                      deep_invalid++;
+                      ::havel::warning(
+                          "[gc_validate] module_global '{}' object {} key '{}' "
+                          "has dangling object {}",
+                          gname, gv.asObjectId(), k2, v2.asObjectId());
+                    }
+                    if (v2.isClosureId() &&
+                        !heap_.closureExists(v2.asClosureId())) {
+                      deep_invalid++;
+                      ::havel::warning(
+                          "[gc_validate] module_global '{}' object {} key '{}' "
+                          "has dangling closure {}",
+                          gname, gv.asObjectId(), k2, v2.asClosureId());
+                    }
+                  }
+                }
+              }
             }
           }
         }
-        if (v.isArrayId()) {
-          auto *arr = heap_.array(v.asArrayId());
-          if (arr) {
-            for (const auto &v2 : *arr) {
-              checked++;
-              if (v2.isArrayId() && !heap_.arrayExists(v2.asArrayId())) { deep_invalid++; }
-              if (v2.isObjectId() && !heap_.objectExists(v2.asObjectId())) { deep_invalid++; }
-              if (v2.isClosureId() && !heap_.closureExists(v2.asClosureId())) { deep_invalid++; }
-              if (v2.isSetId() && !heap_.setExists(v2.asSetId())) { deep_invalid++; }
-            }
-          }
-        }
-      }
-      if (closure.module_globals) {
-        for (const auto &[gname, gv] : *closure.module_globals) {
+        for (const auto &[gname, gv] : globals) {
           checked++;
           if (gv.isArrayId() && !heap_.arrayExists(gv.asArrayId())) {
             invalid++;
-            ::havel::warning("[gc_validate] module_global '{}' has dangling array {}", gname, gv.asArrayId());
+            ::havel::warning("[gc_validate] global '{}' has dangling array {}",
+                             gname, gv.asArrayId());
           }
           if (gv.isObjectId() && !heap_.objectExists(gv.asObjectId())) {
             invalid++;
-            ::havel::warning("[gc_validate] module_global '{}' has dangling object {}", gname, gv.asObjectId());
+            ::havel::warning("[gc_validate] global '{}' has dangling object {}",
+                             gname, gv.asObjectId());
           }
           if (gv.isClosureId() && !heap_.closureExists(gv.asClosureId())) {
             invalid++;
-            ::havel::warning("[gc_validate] module_global '{}' has dangling closure {}", gname, gv.asClosureId());
-          }
-          // Deep check module_global objects
-          if (gv.isObjectId()) {
-            auto *obj = heap_.object(gv.asObjectId());
-            if (obj) {
-              for (const auto &[k2, v2] : *obj) {
-                checked++;
-                if (v2.isArrayId() && !heap_.arrayExists(v2.asArrayId())) {
-                  deep_invalid++;
-                  ::havel::warning("[gc_validate] module_global '{}' object {} key '{}' has dangling array {}", gname, gv.asObjectId(), k2, v2.asArrayId());
-                }
-                if (v2.isObjectId() && !heap_.objectExists(v2.asObjectId())) {
-                  deep_invalid++;
-                  ::havel::warning("[gc_validate] module_global '{}' object {} key '{}' has dangling object {}", gname, gv.asObjectId(), k2, v2.asObjectId());
-                }
-                if (v2.isClosureId() && !heap_.closureExists(v2.asClosureId())) {
-                  deep_invalid++;
-                  ::havel::warning("[gc_validate] module_global '{}' object {} key '{}' has dangling closure {}", gname, gv.asObjectId(), k2, v2.asClosureId());
-                }
-              }
-            }
+            ::havel::warning(
+                "[gc_validate] global '{}' has dangling closure {}", gname,
+                gv.asClosureId());
           }
         }
-      }
-    }
-    for (const auto &[gname, gv] : globals) {
-      checked++;
-      if (gv.isArrayId() && !heap_.arrayExists(gv.asArrayId())) {
-        invalid++;
-        ::havel::warning("[gc_validate] global '{}' has dangling array {}", gname, gv.asArrayId());
-      }
-      if (gv.isObjectId() && !heap_.objectExists(gv.asObjectId())) {
-        invalid++;
-        ::havel::warning("[gc_validate] global '{}' has dangling object {}", gname, gv.asObjectId());
-      }
-      if (gv.isClosureId() && !heap_.closureExists(gv.asClosureId())) {
-        invalid++;
-        ::havel::warning("[gc_validate] global '{}' has dangling closure {}", gname, gv.asClosureId());
-      }
-    }
-    auto obj = createHostObject();
-    auto *o = heap_.object(obj.id);
-    (*o)["checked"] = Value::makeInt(checked);
-    (*o)["invalid"] = Value::makeInt(invalid);
-    (*o)["deep_invalid"] = Value::makeInt(deep_invalid);
-    return Value::makeObjectId(obj.id);
-  });
+        auto obj = createHostObject();
+        auto *o = heap_.object(obj.id);
+        (*o)["checked"] = Value::makeInt(checked);
+        (*o)["invalid"] = Value::makeInt(invalid);
+        (*o)["deep_invalid"] = Value::makeInt(deep_invalid);
+        return Value::makeObjectId(obj.id);
+      });
 
-  registerHostFunction("gc_mark_check", 0, [this](const std::vector<Value> &) -> Value {
-    int unmarked = 0;
-    int total = 0;
-    for (const auto &[name, chunk] : module_chunks_) {
-      if (!chunk) continue;
-      for (const auto &func : chunk->getAllFunctions()) {
-        for (const auto &constVal : func.constants) {
-          if (constVal.isArrayId()) {
-            total++;
-            if (!heap_.isMarkedArray(constVal.asArrayId())) {
-              unmarked++;
-              if (unmarked <= 5) {
-                ::havel::warning("[gc_mark_check] unmarked array {} in module {} func {}", constVal.asArrayId(), name, func.name);
+  registerHostFunction(
+      "gc_mark_check", 0, [this](const std::vector<Value> &) -> Value {
+        int unmarked = 0;
+        int total = 0;
+        for (const auto &[name, chunk] : module_chunks_) {
+          if (!chunk)
+            continue;
+          for (const auto &func : chunk->getAllFunctions()) {
+            for (const auto &constVal : func.constants) {
+              if (constVal.isArrayId()) {
+                total++;
+                if (!heap_.isMarkedArray(constVal.asArrayId())) {
+                  unmarked++;
+                  if (unmarked <= 5) {
+                    ::havel::warning("[gc_mark_check] unmarked array {} in "
+                                     "module {} func {}",
+                                     constVal.asArrayId(), name, func.name);
+                  }
+                }
               }
-            }
-          }
-          if (constVal.isObjectId()) {
-            total++;
-            if (!heap_.isMarkedObject(constVal.asObjectId())) {
-              unmarked++;
-              if (unmarked <= 5) {
-                ::havel::warning("[gc_mark_check] unmarked object {} in module {} func {}", constVal.asObjectId(), name, func.name);
+              if (constVal.isObjectId()) {
+                total++;
+                if (!heap_.isMarkedObject(constVal.asObjectId())) {
+                  unmarked++;
+                  if (unmarked <= 5) {
+                    ::havel::warning("[gc_mark_check] unmarked object {} in "
+                                     "module {} func {}",
+                                     constVal.asObjectId(), name, func.name);
+                  }
+                }
               }
-            }
-          }
-          if (constVal.isClosureId()) {
-            total++;
-            if (!heap_.isMarkedClosure(constVal.asClosureId())) {
-              unmarked++;
-              if (unmarked <= 5) {
-                ::havel::warning("[gc_mark_check] unmarked closure {} in module {} func {}", constVal.asClosureId(), name, func.name);
-              }
-            }
-          }
-        }
-      }
-    }
-    for (const auto &chunk : persistent_chunks_) {
-      if (!chunk) continue;
-      for (const auto &func : chunk->getAllFunctions()) {
-        for (const auto &constVal : func.constants) {
-          if (constVal.isArrayId()) {
-            total++;
-            if (!heap_.isMarkedArray(constVal.asArrayId())) {
-              unmarked++;
-              if (unmarked <= 5) {
-                ::havel::warning("[gc_mark_check] unmarked array {} in persistent func {}", constVal.asArrayId(), func.name);
-              }
-            }
-          }
-          if (constVal.isObjectId()) {
-            total++;
-            if (!heap_.isMarkedObject(constVal.asObjectId())) {
-              unmarked++;
-              if (unmarked <= 5) {
-                ::havel::warning("[gc_mark_check] unmarked object {} in persistent func {}", constVal.asObjectId(), func.name);
+              if (constVal.isClosureId()) {
+                total++;
+                if (!heap_.isMarkedClosure(constVal.asClosureId())) {
+                  unmarked++;
+                  if (unmarked <= 5) {
+                    ::havel::warning("[gc_mark_check] unmarked closure {} in "
+                                     "module {} func {}",
+                                     constVal.asClosureId(), name, func.name);
+                  }
+                }
               }
             }
           }
         }
-      }
-    }
-    auto obj = createHostObject();
-    auto *o = heap_.object(obj.id);
-    (*o)["total"] = Value::makeInt(total);
-    (*o)["unmarked"] = Value::makeInt(unmarked);
-    return Value::makeObjectId(obj.id);
-  });
+        for (const auto &chunk : persistent_chunks_) {
+          if (!chunk)
+            continue;
+          for (const auto &func : chunk->getAllFunctions()) {
+            for (const auto &constVal : func.constants) {
+              if (constVal.isArrayId()) {
+                total++;
+                if (!heap_.isMarkedArray(constVal.asArrayId())) {
+                  unmarked++;
+                  if (unmarked <= 5) {
+                    ::havel::warning("[gc_mark_check] unmarked array {} in "
+                                     "persistent func {}",
+                                     constVal.asArrayId(), func.name);
+                  }
+                }
+              }
+              if (constVal.isObjectId()) {
+                total++;
+                if (!heap_.isMarkedObject(constVal.asObjectId())) {
+                  unmarked++;
+                  if (unmarked <= 5) {
+                    ::havel::warning("[gc_mark_check] unmarked object {} in "
+                                     "persistent func {}",
+                                     constVal.asObjectId(), func.name);
+                  }
+                }
+              }
+            }
+          }
+        }
+        auto obj = createHostObject();
+        auto *o = heap_.object(obj.id);
+        (*o)["total"] = Value::makeInt(total);
+        (*o)["unmarked"] = Value::makeInt(unmarked);
+        return Value::makeObjectId(obj.id);
+      });
 
   // Debug builtins
 
-  registerHostFunction("debugBreak", [this](const std::vector<Value>&) -> Value {
-    if (debugger_attached_ && debug_break_cb_) {
-      debug_break_cb_();
-    }
-    return Value::makeNull();
-  });
+  registerHostFunction("debugBreak",
+                       [this](const std::vector<Value> &) -> Value {
+                         if (debugger_attached_ && debug_break_cb_) {
+                           debug_break_cb_();
+                         }
+                         return Value::makeNull();
+                       });
 
-  registerHostFunction("dumpStack", [this](const std::vector<Value>&) -> Value {
-    auto frames = getStackFrames();
-    for (auto& f : frames) {
-      std::cerr << "  #" << f.frame_depth << " " << f.function_name
-                << " at " << f.source_file << ":" << f.line << std::endl;
-    }
-    return Value::makeNull();
-  });
+  registerHostFunction(
+      "dumpStack", [this](const std::vector<Value> &) -> Value {
+        auto frames = getStackFrames();
+        for (auto &f : frames) {
+          std::cerr << "  #" << f.frame_depth << " " << f.function_name
+                    << " at " << f.source_file << ":" << f.line << std::endl;
+        }
+        return Value::makeNull();
+      });
 
-  registerHostFunction("dumpLocals", [this](const std::vector<Value>&) -> Value {
-    auto vars = getLocals();
-    for (auto& v : vars) {
-      std::cerr << "  " << v.name << " : " << v.type << " = " << v.value << std::endl;
-    }
-    return Value::makeNull();
-  });
+  registerHostFunction("dumpLocals",
+                       [this](const std::vector<Value> &) -> Value {
+                         auto vars = getLocals();
+                         for (auto &v : vars) {
+                           std::cerr << "  " << v.name << " : " << v.type
+                                     << " = " << v.value << std::endl;
+                         }
+                         return Value::makeNull();
+                       });
 
-  registerHostFunction("dumpGlobals", [this](const std::vector<Value>&) -> Value {
-    auto vars = getDebugGlobals();
-    size_t n = 0;
-    for (auto& v : vars) {
-      if (n++ >= 50) { std::cerr << "  ... (truncated)" << std::endl; break; }
-      std::cerr << "  " << v.name << " : " << v.type << " = " << v.value << std::endl;
-    }
-    return Value::makeNull();
-  });
+  registerHostFunction("dumpGlobals",
+                       [this](const std::vector<Value> &) -> Value {
+                         auto vars = getDebugGlobals();
+                         size_t n = 0;
+                         for (auto &v : vars) {
+                           if (n++ >= 50) {
+                             std::cerr << "  ... (truncated)" << std::endl;
+                             break;
+                           }
+                           std::cerr << "  " << v.name << " : " << v.type
+                                     << " = " << v.value << std::endl;
+                         }
+                         return Value::makeNull();
+                       });
 
-  registerHostFunction("sourceLocation", [this](const std::vector<Value>&) -> Value {
-    if (frame_count_ == 0) return Value::makeNull();
-    auto& frame = frame_arena_[frame_count_ - 1];
-    auto* func = frame.function;
-    if (!func) return Value::makeNull();
-    auto loc = nearestSourceLocation(*func, frame.ip);
-    std::string result = loc.filename.empty() ? func->source_file : loc.filename;
-    result += ":" + std::to_string(loc.line);
-    auto strId = heap_.allocateString(result);
-    return Value::makeStringId(strId.id);
-  });
+  registerHostFunction(
+      "sourceLocation", [this](const std::vector<Value> &) -> Value {
+        if (frame_count_ == 0)
+          return Value::makeNull();
+        auto &frame = frame_arena_[frame_count_ - 1];
+        auto *func = frame.function;
+        if (!func)
+          return Value::makeNull();
+        auto loc = nearestSourceLocation(*func, frame.ip);
+        std::string result =
+            loc.filename.empty() ? func->source_file : loc.filename;
+        result += ":" + std::to_string(loc.line);
+        auto strId = heap_.allocateString(result);
+        return Value::makeStringId(strId.id);
+      });
 
-  registerHostFunction("frameCount", [this](const std::vector<Value>&) -> Value {
-    return Value::makeInt(static_cast<int64_t>(frame_count_));
-  });
+  registerHostFunction(
+      "frameCount", [this](const std::vector<Value> &) -> Value {
+        return Value::makeInt(static_cast<int64_t>(frame_count_));
+      });
 
-  auto makeGoroutineInfoObject = [this](const Scheduler::GoroutineInfo& gi) -> Value {
+  auto makeGoroutineInfoObject =
+      [this](const Scheduler::GoroutineInfo &gi) -> Value {
     auto objRef = heap_.allocateObject();
-    auto* o = heap_.object(objRef.id);
+    auto *o = heap_.object(objRef.id);
     (*o)["id"] = Value::makeInt(static_cast<int64_t>(gi.id));
     if (!gi.name.empty()) {
       auto sid = heap_.allocateString(gi.name);
@@ -3280,17 +3889,19 @@ registerHostFunction(
       (*o)["hotkey_policy"] = Value::makeStringId(sid.id);
     }
     (*o)["parent_id"] = Value::makeInt(static_cast<int64_t>(gi.parent_id));
-    (*o)["instructions_executed"] = Value::makeInt(static_cast<int64_t>(gi.instructions_executed));
+    (*o)["instructions_executed"] =
+        Value::makeInt(static_cast<int64_t>(gi.instructions_executed));
     (*o)["ip"] = Value::makeInt(static_cast<int64_t>(gi.ip));
     {
       auto sid = heap_.allocateString(gi.wait_type);
       (*o)["wait_type"] = Value::makeStringId(sid.id);
     }
-    (*o)["wait_target_id"] = Value::makeInt(static_cast<int64_t>(gi.wait_target_id));
+    (*o)["wait_target_id"] =
+        Value::makeInt(static_cast<int64_t>(gi.wait_target_id));
     (*o)["has_fiber"] = Value::makeBool(gi.has_fiber);
     if (gi.has_fiber) {
       auto fiberRef = heap_.allocateObject();
-      auto* f = heap_.object(fiberRef.id);
+      auto *f = heap_.object(fiberRef.id);
       (*f)["id"] = Value::makeInt(static_cast<int64_t>(gi.fiber_id));
       {
         auto sid = heap_.allocateString(gi.fiber_state);
@@ -3300,8 +3911,10 @@ registerHostFunction(
         auto sid = heap_.allocateString(gi.fiber_suspension_reason);
         (*f)["suspension_reason"] = Value::makeStringId(sid.id);
       }
-      (*f)["call_stack_depth"] = Value::makeInt(static_cast<int64_t>(gi.fiber_call_stack_depth));
-      (*f)["stack_size"] = Value::makeInt(static_cast<int64_t>(gi.fiber_stack_size));
+      (*f)["call_stack_depth"] =
+          Value::makeInt(static_cast<int64_t>(gi.fiber_call_stack_depth));
+      (*f)["stack_size"] =
+          Value::makeInt(static_cast<int64_t>(gi.fiber_stack_size));
       (*f)["had_error"] = Value::makeBool(gi.fiber_had_error);
       if (!gi.fiber_error_message.empty()) {
         auto sid = heap_.allocateString(gi.fiber_error_message);
@@ -3316,58 +3929,89 @@ registerHostFunction(
     return Value::makeObjectId(objRef.id);
   };
 
-  registerHostFunction("scheduler.info", 0, [this, makeGoroutineInfoObject](const std::vector<Value>&) -> Value {
-    auto* sched = scheduler_;
-    if (!sched) return Value::makeNull();
-    auto s = sched->getSchedulerSummary();
-    auto objRef = heap_.allocateObject();
-    auto* o = heap_.object(objRef.id);
-    (*o)["running"] = Value::makeBool(s.running);
-    (*o)["goroutine_count"] = Value::makeInt(static_cast<int64_t>(s.goroutine_count));
-    (*o)["runnable_count"] = Value::makeInt(static_cast<int64_t>(s.runnable_count));
-    (*o)["suspended_count"] = Value::makeInt(static_cast<int64_t>(s.suspended_count));
-    (*o)["done_count"] = Value::makeInt(static_cast<int64_t>(s.done_count));
-    (*o)["created_count"] = Value::makeInt(static_cast<int64_t>(s.created_count));
-    (*o)["running_count"] = Value::makeInt(static_cast<int64_t>(s.running_count));
-    (*o)["hotkey_count"] = Value::makeInt(static_cast<int64_t>(s.hotkey_count));
-    (*o)["active_hotkey_count"] = Value::makeInt(static_cast<int64_t>(s.active_hotkey_count));
-    (*o)["suspended_hotkey_count"] = Value::makeInt(static_cast<int64_t>(s.suspended_hotkey_count));
-    (*o)["hotkey_queue_size"] = Value::makeInt(static_cast<int64_t>(s.hotkey_queue_size));
-    (*o)["normal_queue_size"] = Value::makeInt(static_cast<int64_t>(s.normal_queue_size));
-    (*o)["background_queue_size"] = Value::makeInt(static_cast<int64_t>(s.background_queue_size));
-    (*o)["deferred_hotkey_count"] = Value::makeInt(static_cast<int64_t>(s.deferred_hotkey_count));
-    (*o)["deferred_normal_count"] = Value::makeInt(static_cast<int64_t>(s.deferred_normal_count));
-    (*o)["deferred_background_count"] = Value::makeInt(static_cast<int64_t>(s.deferred_background_count));
-    (*o)["current_goroutine_id"] = Value::makeInt(static_cast<int64_t>(s.current_goroutine_id));
-    (*o)["default_tick_instructions"] = Value::makeInt(static_cast<int64_t>(s.default_tick_instructions));
-    (*o)["hotkey_tick_instructions"] = Value::makeInt(static_cast<int64_t>(s.hotkey_tick_instructions));
-    return Value::makeObjectId(objRef.id);
-  });
+  registerHostFunction(
+      "scheduler.info", 0,
+      [this, makeGoroutineInfoObject](const std::vector<Value> &) -> Value {
+        auto *sched = scheduler_;
+        if (!sched)
+          return Value::makeNull();
+        auto s = sched->getSchedulerSummary();
+        auto objRef = heap_.allocateObject();
+        auto *o = heap_.object(objRef.id);
+        (*o)["running"] = Value::makeBool(s.running);
+        (*o)["goroutine_count"] =
+            Value::makeInt(static_cast<int64_t>(s.goroutine_count));
+        (*o)["runnable_count"] =
+            Value::makeInt(static_cast<int64_t>(s.runnable_count));
+        (*o)["suspended_count"] =
+            Value::makeInt(static_cast<int64_t>(s.suspended_count));
+        (*o)["done_count"] = Value::makeInt(static_cast<int64_t>(s.done_count));
+        (*o)["created_count"] =
+            Value::makeInt(static_cast<int64_t>(s.created_count));
+        (*o)["running_count"] =
+            Value::makeInt(static_cast<int64_t>(s.running_count));
+        (*o)["hotkey_count"] =
+            Value::makeInt(static_cast<int64_t>(s.hotkey_count));
+        (*o)["active_hotkey_count"] =
+            Value::makeInt(static_cast<int64_t>(s.active_hotkey_count));
+        (*o)["suspended_hotkey_count"] =
+            Value::makeInt(static_cast<int64_t>(s.suspended_hotkey_count));
+        (*o)["hotkey_queue_size"] =
+            Value::makeInt(static_cast<int64_t>(s.hotkey_queue_size));
+        (*o)["normal_queue_size"] =
+            Value::makeInt(static_cast<int64_t>(s.normal_queue_size));
+        (*o)["background_queue_size"] =
+            Value::makeInt(static_cast<int64_t>(s.background_queue_size));
+        (*o)["deferred_hotkey_count"] =
+            Value::makeInt(static_cast<int64_t>(s.deferred_hotkey_count));
+        (*o)["deferred_normal_count"] =
+            Value::makeInt(static_cast<int64_t>(s.deferred_normal_count));
+        (*o)["deferred_background_count"] =
+            Value::makeInt(static_cast<int64_t>(s.deferred_background_count));
+        (*o)["current_goroutine_id"] =
+            Value::makeInt(static_cast<int64_t>(s.current_goroutine_id));
+        (*o)["default_tick_instructions"] =
+            Value::makeInt(static_cast<int64_t>(s.default_tick_instructions));
+        (*o)["hotkey_tick_instructions"] =
+            Value::makeInt(static_cast<int64_t>(s.hotkey_tick_instructions));
+        return Value::makeObjectId(objRef.id);
+      });
 
-  registerHostFunction("scheduler.goroutines", 0, [this, makeGoroutineInfoObject](const std::vector<Value>&) -> Value {
-    auto* sched = scheduler_;
-    if (!sched) return Value::makeNull();
-    auto list = sched->getGoroutineList();
-    auto arrRef = heap_.allocateArray();
-    auto* arr = heap_.array(arrRef.id);
-    for (auto& gi : list) {
-      arr->push_back(makeGoroutineInfoObject(gi));
-    }
-    return Value::makeArrayId(arrRef.id);
-  });
+  registerHostFunction(
+      "scheduler.goroutines", 0,
+      [this, makeGoroutineInfoObject](const std::vector<Value> &) -> Value {
+        auto *sched = scheduler_;
+        if (!sched)
+          return Value::makeNull();
+        auto list = sched->getGoroutineList();
+        auto arrRef = heap_.allocateArray();
+        auto *arr = heap_.array(arrRef.id);
+        for (auto &gi : list) {
+          arr->push_back(makeGoroutineInfoObject(gi));
+        }
+        return Value::makeArrayId(arrRef.id);
+      });
 
-  registerHostFunction("scheduler.goroutine", 1, [this, makeGoroutineInfoObject](const std::vector<Value>& args) -> Value {
-    auto* sched = scheduler_;
-    if (!sched) return Value::makeNull();
-    if (args.empty()) return Value::makeNull();
-    uint32_t id = 0;
-    if (args[0].isInt()) id = static_cast<uint32_t>(args[0].asInt());
-    else return Value::makeNull();
-    if (id == 0) return Value::makeNull();
-    auto gi = sched->getGoroutineInfoById(id);
-    if (gi.id == 0) return Value::makeNull();
-    return makeGoroutineInfoObject(gi);
-  });
+  registerHostFunction(
+      "scheduler.goroutine", 1,
+      [this, makeGoroutineInfoObject](const std::vector<Value> &args) -> Value {
+        auto *sched = scheduler_;
+        if (!sched)
+          return Value::makeNull();
+        if (args.empty())
+          return Value::makeNull();
+        uint32_t id = 0;
+        if (args[0].isInt())
+          id = static_cast<uint32_t>(args[0].asInt());
+        else
+          return Value::makeNull();
+        if (id == 0)
+          return Value::makeNull();
+        auto gi = sched->getGoroutineInfoById(id);
+        if (gi.id == 0)
+          return Value::makeNull();
+        return makeGoroutineInfoObject(gi);
+      });
 }
 
 void VM::registerDefaultHostGlobals() {
@@ -3375,21 +4019,28 @@ void VM::registerDefaultHostGlobals() {
   globals_mirror_object_id_ = g_obj.id;
   setGlobal("_G", Value::makeObjectId(g_obj.id));
 
-  for (const auto& [name, value] : host_function_globals_) {
+  for (const auto &[name, value] : host_function_globals_) {
     setHostObjectField(g_obj, name, value);
     setGlobal(name, value);
   }
 
   auto system_obj = heap_.allocateObject();
-  setHostObjectField(system_obj, "gc", Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
-  setHostObjectField(system_obj, "gcStats", Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
+  setHostObjectField(system_obj, "gc",
+                     Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
+  setHostObjectField(
+      system_obj, "gcStats",
+      Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
   auto sysIt = globals.find("system");
   if (sysIt != globals.end() && sysIt->second.isObjectId()) {
     ObjectRef existingRef{sysIt->second.asObjectId(), true};
-    auto* existingObj = heap_.object(existingRef.id);
+    auto *existingObj = heap_.object(existingRef.id);
     if (existingObj) {
-      setHostObjectField(existingRef, "gc", Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
-      setHostObjectField(existingRef, "gcStats", Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
+      setHostObjectField(
+          existingRef, "gc",
+          Value::makeHostFuncId(getHostFunctionIndex("system.gc")));
+      setHostObjectField(
+          existingRef, "gcStats",
+          Value::makeHostFuncId(getHostFunctionIndex("system.gcStats")));
     } else {
       setGlobal("system", Value::makeObjectId(system_obj.id));
     }
@@ -3398,41 +4049,69 @@ void VM::registerDefaultHostGlobals() {
   }
 
   auto struct_obj = heap_.allocateObject();
-  setHostObjectField(struct_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("struct.define")));
-  setHostObjectField(struct_obj, "new", Value::makeHostFuncId(getHostFunctionIndex("struct.new")));
-  setHostObjectField(struct_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("struct.get")));
-  setHostObjectField(struct_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("struct.set")));
+  setHostObjectField(
+      struct_obj, "define",
+      Value::makeHostFuncId(getHostFunctionIndex("struct.define")));
+  setHostObjectField(struct_obj, "new",
+                     Value::makeHostFuncId(getHostFunctionIndex("struct.new")));
+  setHostObjectField(struct_obj, "get",
+                     Value::makeHostFuncId(getHostFunctionIndex("struct.get")));
+  setHostObjectField(struct_obj, "set",
+                     Value::makeHostFuncId(getHostFunctionIndex("struct.set")));
   setGlobal("struct", Value::makeObjectId(struct_obj.id));
   // Also register Struct (capital S) as alias for compatibility
   setGlobal("Struct", Value::makeObjectId(struct_obj.id));
 
   auto class_obj = heap_.allocateObject();
-  setHostObjectField(class_obj, "define", Value::makeHostFuncId(getHostFunctionIndex("class.define")));
-  setHostObjectField(class_obj, "new", Value::makeHostFuncId(getHostFunctionIndex("class.new")));
-  setHostObjectField(class_obj, "method", Value::makeHostFuncId(getHostFunctionIndex("class.method")));
-  setHostObjectField(class_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("class.get")));
-  setHostObjectField(class_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("class.set")));
-	setGlobal("class", Value::makeObjectId(class_obj.id));
-	setGlobal("Class", Value::makeObjectId(class_obj.id));
+  setHostObjectField(
+      class_obj, "define",
+      Value::makeHostFuncId(getHostFunctionIndex("class.define")));
+  setHostObjectField(class_obj, "new",
+                     Value::makeHostFuncId(getHostFunctionIndex("class.new")));
+  setHostObjectField(
+      class_obj, "method",
+      Value::makeHostFuncId(getHostFunctionIndex("class.method")));
+  setHostObjectField(class_obj, "get",
+                     Value::makeHostFuncId(getHostFunctionIndex("class.get")));
+  setHostObjectField(class_obj, "set",
+                     Value::makeHostFuncId(getHostFunctionIndex("class.set")));
+  setGlobal("class", Value::makeObjectId(class_obj.id));
+  setGlobal("Class", Value::makeObjectId(class_obj.id));
 
-	auto prot_obj = heap_.allocateObject();
-	setHostObjectField(prot_obj, "register", Value::makeHostFuncId(getHostFunctionIndex("prot.register")));
-	setHostObjectField(prot_obj, "impl", Value::makeHostFuncId(getHostFunctionIndex("prot.impl")));
+  auto prot_obj = heap_.allocateObject();
+  setHostObjectField(
+      prot_obj, "register",
+      Value::makeHostFuncId(getHostFunctionIndex("prot.register")));
+  setHostObjectField(prot_obj, "impl",
+                     Value::makeHostFuncId(getHostFunctionIndex("prot.impl")));
   setGlobal("prot", Value::makeObjectId(prot_obj.id));
 
   auto fmt_obj = heap_.allocateObject();
-  setHostObjectField(fmt_obj, "format", Value::makeHostFuncId(getHostFunctionIndex("fmt.format")));
-  setHostObjectField(fmt_obj, "hex", Value::makeHostFuncId(getHostFunctionIndex("fmt.hex")));
-  setHostObjectField(fmt_obj, "oct", Value::makeHostFuncId(getHostFunctionIndex("fmt.oct")));
-  setHostObjectField(fmt_obj, "bin", Value::makeHostFuncId(getHostFunctionIndex("fmt.bin")));
-  setHostObjectField(fmt_obj, "b64", Value::makeHostFuncId(getHostFunctionIndex("fmt.b64")));
-  setHostObjectField(fmt_obj, "b64decode", Value::makeHostFuncId(getHostFunctionIndex("fmt.b64decode")));
+  setHostObjectField(fmt_obj, "format",
+                     Value::makeHostFuncId(getHostFunctionIndex("fmt.format")));
+  setHostObjectField(fmt_obj, "hex",
+                     Value::makeHostFuncId(getHostFunctionIndex("fmt.hex")));
+  setHostObjectField(fmt_obj, "oct",
+                     Value::makeHostFuncId(getHostFunctionIndex("fmt.oct")));
+  setHostObjectField(fmt_obj, "bin",
+                     Value::makeHostFuncId(getHostFunctionIndex("fmt.bin")));
+  setHostObjectField(fmt_obj, "b64",
+                     Value::makeHostFuncId(getHostFunctionIndex("fmt.b64")));
+  setHostObjectField(
+      fmt_obj, "b64decode",
+      Value::makeHostFuncId(getHostFunctionIndex("fmt.b64decode")));
   setGlobal("fmt", Value::makeObjectId(fmt_obj.id));
 
   auto scheduler_obj = heap_.allocateObject();
-  setHostObjectField(scheduler_obj, "info", Value::makeHostFuncId(getHostFunctionIndex("scheduler.info")));
-  setHostObjectField(scheduler_obj, "goroutines", Value::makeHostFuncId(getHostFunctionIndex("scheduler.goroutines")));
-  setHostObjectField(scheduler_obj, "goroutine", Value::makeHostFuncId(getHostFunctionIndex("scheduler.goroutine")));
+  setHostObjectField(
+      scheduler_obj, "info",
+      Value::makeHostFuncId(getHostFunctionIndex("scheduler.info")));
+  setHostObjectField(
+      scheduler_obj, "goroutines",
+      Value::makeHostFuncId(getHostFunctionIndex("scheduler.goroutines")));
+  setHostObjectField(
+      scheduler_obj, "goroutine",
+      Value::makeHostFuncId(getHostFunctionIndex("scheduler.goroutine")));
   setGlobal("scheduler", Value::makeObjectId(scheduler_obj.id));
 
   // load() - script-level file loading
@@ -3460,26 +4139,34 @@ void VM::registerDefaultHostGlobals() {
 #else
     char winBuf[MAX_PATH];
     DWORD wlen = GetModuleFileNameA(nullptr, winBuf, MAX_PATH);
-    if (wlen > 0) exePath = winBuf;
+    if (wlen > 0)
+      exePath = winBuf;
 #endif
-    Value pathVal = exePath.empty() ? Value::makeNull() : Value::makeStringId(createRuntimeString(exePath).id);
-    Value cwdVal = Value::makeStringId(createRuntimeString(std::filesystem::current_path().string()).id);
+    Value pathVal = exePath.empty()
+                        ? Value::makeNull()
+                        : Value::makeStringId(createRuntimeString(exePath).id);
+    Value cwdVal = Value::makeStringId(
+        createRuntimeString(std::filesystem::current_path().string()).id);
 
     auto appIt = globals.find("app");
     if (appIt != globals.end() && appIt->second.isObjectId()) {
       ObjectRef existingRef{appIt->second.asObjectId(), true};
-      auto* existingObj = heap_.object(existingRef.id);
+      auto *existingObj = heap_.object(existingRef.id);
       if (existingObj) {
         setHostObjectField(existingRef, "args", argsVal);
         setHostObjectField(existingRef, "path", pathVal);
         setHostObjectField(existingRef, "cwd", cwdVal);
-        setHostObjectField(existingRef, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
+        setHostObjectField(
+            existingRef, "restart",
+            Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       } else {
         auto app_obj = heap_.allocateObject();
         setHostObjectField(app_obj, "args", argsVal);
         setHostObjectField(app_obj, "path", pathVal);
         setHostObjectField(app_obj, "cwd", cwdVal);
-        setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
+        setHostObjectField(
+            app_obj, "restart",
+            Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
         setGlobal("app", Value::makeObjectId(app_obj.id));
       }
     } else {
@@ -3487,88 +4174,184 @@ void VM::registerDefaultHostGlobals() {
       setHostObjectField(app_obj, "args", argsVal);
       setHostObjectField(app_obj, "path", pathVal);
       setHostObjectField(app_obj, "cwd", cwdVal);
-      setHostObjectField(app_obj, "restart", Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
+      setHostObjectField(
+          app_obj, "restart",
+          Value::makeHostFuncId(getHostFunctionIndex("app.restart")));
       setGlobal("app", Value::makeObjectId(app_obj.id));
     }
   }
 
-    // FFI module object
-    if (hasHostFunction("ffi.open")) {
-        auto ffi_obj = heap_.allocateObject();
-        setHostObjectField(ffi_obj, "open", Value::makeHostFuncId(getHostFunctionIndex("ffi.open")));
-        setHostObjectField(ffi_obj, "close", Value::makeHostFuncId(getHostFunctionIndex("ffi.close")));
-        setHostObjectField(ffi_obj, "sym", Value::makeHostFuncId(getHostFunctionIndex("ffi.sym")));
-        setHostObjectField(ffi_obj, "call", Value::makeHostFuncId(getHostFunctionIndex("ffi.call")));
-        setHostObjectField(ffi_obj, "cdef", Value::makeHostFuncId(getHostFunctionIndex("ffi.cdef")));
-        setHostObjectField(ffi_obj, "alloc", Value::makeHostFuncId(getHostFunctionIndex("ffi.alloc")));
-        setHostObjectField(ffi_obj, "allocBytes", Value::makeHostFuncId(getHostFunctionIndex("ffi.allocBytes")));
-        setHostObjectField(ffi_obj, "free", Value::makeHostFuncId(getHostFunctionIndex("ffi.free")));
-        setHostObjectField(ffi_obj, "sizeof", Value::makeHostFuncId(getHostFunctionIndex("ffi.sizeof")));
-        setHostObjectField(ffi_obj, "alignof", Value::makeHostFuncId(getHostFunctionIndex("ffi.alignof")));
-        setHostObjectField(ffi_obj, "string", Value::makeHostFuncId(getHostFunctionIndex("ffi.string")));
-        setHostObjectField(ffi_obj, "cstring", Value::makeHostFuncId(getHostFunctionIndex("ffi.cstring")));
-        setHostObjectField(ffi_obj, "array", Value::makeHostFuncId(getHostFunctionIndex("ffi.array")));
-        setHostObjectField(ffi_obj, "cast", Value::makeHostFuncId(getHostFunctionIndex("ffi.cast")));
-        setHostObjectField(ffi_obj, "newStruct", Value::makeHostFuncId(getHostFunctionIndex("ffi.newStruct")));
-        setHostObjectField(ffi_obj, "field", Value::makeHostFuncId(getHostFunctionIndex("ffi.field")));
-        setHostObjectField(ffi_obj, "setField", Value::makeHostFuncId(getHostFunctionIndex("ffi.setField")));
-        setHostObjectField(ffi_obj, "callback", Value::makeHostFuncId(getHostFunctionIndex("ffi.callback")));
-        setHostObjectField(ffi_obj, "closure", Value::makeHostFuncId(getHostFunctionIndex("ffi.closure")));
-        setHostObjectField(ffi_obj, "memcpy", Value::makeHostFuncId(getHostFunctionIndex("ffi.memcpy")));
-        setHostObjectField(ffi_obj, "memset", Value::makeHostFuncId(getHostFunctionIndex("ffi.memset")));
-        setHostObjectField(ffi_obj, "var", Value::makeHostFuncId(getHostFunctionIndex("ffi.var")));
-        setHostObjectField(ffi_obj, "get", Value::makeHostFuncId(getHostFunctionIndex("ffi.get")));
-        setHostObjectField(ffi_obj, "set", Value::makeHostFuncId(getHostFunctionIndex("ffi.set")));
-        setHostObjectField(ffi_obj, "get_i8", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i8")));
-        setHostObjectField(ffi_obj, "set_i8", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i8")));
-        setHostObjectField(ffi_obj, "get_i16", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i16")));
-        setHostObjectField(ffi_obj, "set_i16", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i16")));
-        setHostObjectField(ffi_obj, "get_i32", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i32")));
-        setHostObjectField(ffi_obj, "set_i32", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i32")));
-        setHostObjectField(ffi_obj, "get_i64", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i64")));
-        setHostObjectField(ffi_obj, "set_i64", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i64")));
-        setHostObjectField(ffi_obj, "get_u8", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u8")));
-        setHostObjectField(ffi_obj, "set_u8", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u8")));
-        setHostObjectField(ffi_obj, "get_u16", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u16")));
-        setHostObjectField(ffi_obj, "set_u16", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u16")));
-        setHostObjectField(ffi_obj, "get_u32", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u32")));
-        setHostObjectField(ffi_obj, "set_u32", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u32")));
-        setHostObjectField(ffi_obj, "get_u64", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u64")));
-        setHostObjectField(ffi_obj, "set_u64", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u64")));
-        setHostObjectField(ffi_obj, "get_f32", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_f32")));
-        setHostObjectField(ffi_obj, "set_f32", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_f32")));
-        setHostObjectField(ffi_obj, "get_f64", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_f64")));
-        setHostObjectField(ffi_obj, "set_f64", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_f64")));
-        setHostObjectField(ffi_obj, "get_ptr", Value::makeHostFuncId(getHostFunctionIndex("ffi.get_ptr")));
-        setHostObjectField(ffi_obj, "set_ptr", Value::makeHostFuncId(getHostFunctionIndex("ffi.set_ptr")));
-        setHostObjectField(ffi_obj, "ptr_add", Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_add")));
-        setHostObjectField(ffi_obj, "ptr_sub", Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_sub")));
-        setHostObjectField(ffi_obj, "ptr_to_uint", Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_to_uint")));
-        setHostObjectField(ffi_obj, "lastError", Value::makeHostFuncId(getHostFunctionIndex("ffi.lastError")));
-        setHostObjectField(ffi_obj, "clearError", Value::makeHostFuncId(getHostFunctionIndex("ffi.clearError")));
-        setGlobal("ffi", Value::makeObjectId(ffi_obj.id));
-    }
+  // FFI module object
+  if (hasHostFunction("ffi.open")) {
+    auto ffi_obj = heap_.allocateObject();
+    setHostObjectField(ffi_obj, "open",
+                       Value::makeHostFuncId(getHostFunctionIndex("ffi.open")));
+    setHostObjectField(
+        ffi_obj, "close",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.close")));
+    setHostObjectField(ffi_obj, "sym",
+                       Value::makeHostFuncId(getHostFunctionIndex("ffi.sym")));
+    setHostObjectField(ffi_obj, "call",
+                       Value::makeHostFuncId(getHostFunctionIndex("ffi.call")));
+    setHostObjectField(ffi_obj, "cdef",
+                       Value::makeHostFuncId(getHostFunctionIndex("ffi.cdef")));
+    setHostObjectField(
+        ffi_obj, "alloc",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.alloc")));
+    setHostObjectField(
+        ffi_obj, "allocBytes",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.allocBytes")));
+    setHostObjectField(ffi_obj, "free",
+                       Value::makeHostFuncId(getHostFunctionIndex("ffi.free")));
+    setHostObjectField(
+        ffi_obj, "sizeof",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.sizeof")));
+    setHostObjectField(
+        ffi_obj, "alignof",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.alignof")));
+    setHostObjectField(
+        ffi_obj, "string",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.string")));
+    setHostObjectField(
+        ffi_obj, "cstring",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.cstring")));
+    setHostObjectField(
+        ffi_obj, "array",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.array")));
+    setHostObjectField(ffi_obj, "cast",
+                       Value::makeHostFuncId(getHostFunctionIndex("ffi.cast")));
+    setHostObjectField(
+        ffi_obj, "newStruct",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.newStruct")));
+    setHostObjectField(
+        ffi_obj, "field",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.field")));
+    setHostObjectField(
+        ffi_obj, "setField",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.setField")));
+    setHostObjectField(
+        ffi_obj, "callback",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.callback")));
+    setHostObjectField(
+        ffi_obj, "closure",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.closure")));
+    setHostObjectField(
+        ffi_obj, "memcpy",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.memcpy")));
+    setHostObjectField(
+        ffi_obj, "memset",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.memset")));
+    setHostObjectField(ffi_obj, "var",
+                       Value::makeHostFuncId(getHostFunctionIndex("ffi.var")));
+    setHostObjectField(ffi_obj, "get",
+                       Value::makeHostFuncId(getHostFunctionIndex("ffi.get")));
+    setHostObjectField(ffi_obj, "set",
+                       Value::makeHostFuncId(getHostFunctionIndex("ffi.set")));
+    setHostObjectField(
+        ffi_obj, "get_i8",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i8")));
+    setHostObjectField(
+        ffi_obj, "set_i8",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i8")));
+    setHostObjectField(
+        ffi_obj, "get_i16",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i16")));
+    setHostObjectField(
+        ffi_obj, "set_i16",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i16")));
+    setHostObjectField(
+        ffi_obj, "get_i32",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i32")));
+    setHostObjectField(
+        ffi_obj, "set_i32",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i32")));
+    setHostObjectField(
+        ffi_obj, "get_i64",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_i64")));
+    setHostObjectField(
+        ffi_obj, "set_i64",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_i64")));
+    setHostObjectField(
+        ffi_obj, "get_u8",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u8")));
+    setHostObjectField(
+        ffi_obj, "set_u8",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u8")));
+    setHostObjectField(
+        ffi_obj, "get_u16",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u16")));
+    setHostObjectField(
+        ffi_obj, "set_u16",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u16")));
+    setHostObjectField(
+        ffi_obj, "get_u32",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u32")));
+    setHostObjectField(
+        ffi_obj, "set_u32",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u32")));
+    setHostObjectField(
+        ffi_obj, "get_u64",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_u64")));
+    setHostObjectField(
+        ffi_obj, "set_u64",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_u64")));
+    setHostObjectField(
+        ffi_obj, "get_f32",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_f32")));
+    setHostObjectField(
+        ffi_obj, "set_f32",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_f32")));
+    setHostObjectField(
+        ffi_obj, "get_f64",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_f64")));
+    setHostObjectField(
+        ffi_obj, "set_f64",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_f64")));
+    setHostObjectField(
+        ffi_obj, "get_ptr",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.get_ptr")));
+    setHostObjectField(
+        ffi_obj, "set_ptr",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.set_ptr")));
+    setHostObjectField(
+        ffi_obj, "ptr_add",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_add")));
+    setHostObjectField(
+        ffi_obj, "ptr_sub",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_sub")));
+    setHostObjectField(
+        ffi_obj, "ptr_to_uint",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.ptr_to_uint")));
+    setHostObjectField(
+        ffi_obj, "lastError",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.lastError")));
+    setHostObjectField(
+        ffi_obj, "clearError",
+        Value::makeHostFuncId(getHostFunctionIndex("ffi.clearError")));
+    setGlobal("ffi", Value::makeObjectId(ffi_obj.id));
+  }
 
-    // Note: shell, interval, config modules are registered via registerStdLibWithVM()
-    // called during VM initialization - do NOT register them here as this function
-    // is called on every execute() invocation
+  // Note: shell, interval, config modules are registered via
+  // registerStdLibWithVM() called during VM initialization - do NOT register
+  // them here as this function is called on every execute() invocation
 
   if (system_object_initializer_) {
     system_object_initializer_(this);
-    }
+  }
 
-    registerDefaultPrototypes();
+  registerDefaultPrototypes();
 }
 
 void VM::registerDefaultPrototypes() {
-    if (prototypes_registered_) return;
-    prototypes_registered_ = true;
-    prototypes::registerStringPrototype(*this);
-    // Register "string" as a lazy module so that accessing "string"
-    // as a global triggers namespace construction from string.* host functions.
-    registerLazyModule("string", [](VMApi &) {});
+  if (prototypes_registered_)
+    return;
+  prototypes_registered_ = true;
+  prototypes::registerStringPrototype(*this);
+  // Register "string" as a lazy module so that accessing "string"
+  // as a global triggers namespace construction from string.* host functions.
+  registerLazyModule("string", [](VMApi &) {});
   // fs is already registered statically via registerFsModule() at line 28
-        // Do NOT register an empty lazy stub that overrides it
+  // Do NOT register an empty lazy stub that overrides it
   prototypes::registerArrayPrototype(*this);
   prototypes::registerNumberPrototype(*this);
   prototypes::registerBoolPrototype(*this);
@@ -3581,7 +4364,7 @@ void VM::registerDefaultPrototypes() {
   registerPrototypeMethodByName("thread", "pause", "thread.pause");
   registerPrototypeMethodByName("thread", "resume", "thread.resume");
   registerPrototypeMethodByName("thread", "running", "thread.running");
-registerPrototypeMethodByName("interval", "pause", "interval.pause");
+  registerPrototypeMethodByName("interval", "pause", "interval.pause");
   registerPrototypeMethodByName("interval", "resume", "interval.resume");
   registerPrototypeMethodByName("interval", "stop", "interval.stop");
   registerPrototypeMethodByName("timeout", "cancel", "timeout.cancel");
@@ -3606,7 +4389,8 @@ registerPrototypeMethodByName("interval", "pause", "interval.pause");
   // Register builtin type protocol conformance so PROT_CHECK/PROT_CAST
   // can use the generic protocol dispatch instead of hardcoded checks.
   // Iterable: array, str, set, range, object, iterator
-  for (const char *name : {"array", "str", "set", "range", "object", "iterator"}) {
+  for (const char *name :
+       {"array", "str", "set", "range", "object", "iterator"}) {
     registerProtocolImpl("Iterable", name);
   }
   // Indexable: array, str, set, object
@@ -3619,13 +4403,11 @@ registerPrototypeMethodByName("interval", "pause", "interval.pause");
   }
 }
 
-Value VM::invokeHostFunction(const std::string &name,
-  uint32_t arg_count) {
+Value VM::invokeHostFunction(const std::string &name, uint32_t arg_count) {
   auto it = host_functions.find(name);
   if (it == host_functions.end()) {
     COMPILER_THROW("Host function not found: " + name);
   }
-
 
   std::vector<Value> args(arg_count);
   for (uint32_t i = 0; i < arg_count; ++i) {
@@ -3637,13 +4419,21 @@ Value VM::invokeHostFunction(const std::string &name,
   }
 
   Value result = it->second(args);
-  
+
   if (suspension_requested_ && yield_callback_) {
     yield_callback_();
   }
-  
+
   return result;
 }
 
+Value VM::invokeHostFunctionDirect(const std::string &name,
+                                   const std::vector<Value> &args) {
+  auto it = host_functions.find(name);
+  if (it == host_functions.end()) {
+    return Value::makeNull();
+  }
+  return it->second(args);
+}
 
 } // namespace havel::compiler

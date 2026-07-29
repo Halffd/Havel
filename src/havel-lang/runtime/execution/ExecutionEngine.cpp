@@ -158,7 +158,8 @@ bool ExecutionEngine::executeFrame() {
 	}
 
 
-if (g->persistent && g->hotkey_condition_callback_id != 0) {
+if (g->persistent && g->state == Scheduler::GoroutineState::Created
+    && g->hotkey_condition_callback_id != 0) {
     auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
     // Print watched global variables for debugging conditional hotkeys
     if (!g->hotkey_condition_deps.empty()) {
@@ -531,7 +532,13 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
       return;
     }
     // No retrigger flag: suspend and wait for next wakeHotkey from IO thread
-    g->state = Scheduler::GoroutineState::Suspended;
+    // For conditional hotkeys, set state back to Created so the condition
+    // is re-evaluated on next wakeHotkey (pickNext checks Created state).
+    if (g->hotkey_condition_callback_id != 0) {
+      g->state = Scheduler::GoroutineState::Created;
+    } else {
+      g->state = Scheduler::GoroutineState::Suspended;
+    }
     g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait, std::memory_order_release);
     if (g->fiber) {
         g->fiber->state = FiberState::SUSPENDED;

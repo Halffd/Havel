@@ -217,8 +217,6 @@ void Scheduler::suspend(Scheduler::Goroutine* g, SuspensionReason reason) {
 
   g->state = GoroutineState::Suspended;
   g->suspension_reason.store(reason, std::memory_order_release);
-  ::havel::debug("[Scheduler] [YIELD] gid={} name='{}' reason={}", 
-                g->id, g->name, (int)reason);
 
   // Remove from queues immediately since it's no longer runnable
   removeFromQueues(g);

@@ -1040,8 +1040,6 @@ void VM::saveFiberState(Fiber *fiber) {
 
 VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     const std::vector<Value> &args) {
-    fprintf(stderr, "[START-GOROUTINE] PI=%d count=%zu stack_depth=%zu\n",
-        (int)(globals.find("PI") != globals.end()), globals.size(), globals_stack_.size());
     // Clear VM state for fresh goroutine context
     while (!stack.empty()) stack.pop();
     locals.clear();
@@ -1345,8 +1343,13 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   if (use_fast_path) {
 #if HAVE_COMPUTED_GOTO
     runDispatchFast(stop_frame_depth);
+    // If suspension was requested (indicated by last_suspension_reason_), return immediately so caller can handle it
+    if (last_suspension_reason_ != 0) {
+      current_executing_fiber_ = saved_fiber_flag;
+      return;
+    }
     if (frame_count_ > stop_frame_depth && !exit_requested_.load()) {
-      // runDispatchFast returned due to suspension — fall through to slow path
+      // runDispatchFast returned due to other reasons (complex opcode) — fall through to slow path
       goto slow_path;
     }
     current_executing_fiber_ = saved_fiber_flag;
@@ -1358,7 +1361,11 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       if ((counter & 8191) == 0) {
         if (exit_requested_.load()) break;
         maybeCollectGarbage();
-        if (suspension_requested_) goto slow_path;
+        if (last_suspension_reason_ != 0) {
+          // Suspension requested - return immediately so caller can handle it
+          current_executing_fiber_ = saved_fiber_flag;
+          return;
+        }
         if (yield_callback_) {
             yield_callback_();
         }
@@ -1519,9 +1526,6 @@ slow_path:
       }
 
 if (suspension_requested_) {
-        fprintf(stderr, "[VM_DISPATCH] suspension_requested_=true reason=%d scheduler=%d current_fiber=%d\n", 
-                static_cast<int>(suspension_reason_), scheduler_ ? 1 : 0, current_executing_fiber_ ? 1 : 0);
-        fflush(stderr);
         // Call yield callback ONLY for explicit yields (time slice exhausted),
         // NOT for explicit suspensions (sleep, channel recv, etc.).
         // For suspensions, the goroutine will be properly suspended in the scheduler
@@ -1551,8 +1555,6 @@ if (suspension_requested_) {
             }
             last_suspension_reason_ = reason;
             last_suspension_context_ = ctx;
-            fprintf(stderr, "[VM_DISPATCH] Breaking out of dispatch loop for SLEEP\n");
-            fflush(stderr);
             break;
           }
           // Main fiber (non-goroutine): register with scheduler and return to event loop
@@ -1571,8 +1573,6 @@ if (suspension_requested_) {
             // Save suspension info so we can resume later
             last_suspension_reason_ = reason;
             last_suspension_context_ = ctx;
-            fprintf(stderr, "[VM_DISPATCH] Breaking out of dispatch loop for SLEEP (main fiber)\n");
-            fflush(stderr);
             break;
           }
           // No scheduler available: fallback to inline blocking sleep with event processing
@@ -1686,8 +1686,6 @@ if (suspension_requested_) {
             }
         }
     }
-    fprintf(stderr, "[VM_DISPATCH] runDispatchFast returning\n");
-    fflush(stderr);
 }
 
 bool VM::handleScriptThrow(const Value &value) {
@@ -1843,7 +1841,6 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
         uint32_t host_func_idx = callee_value.asHostFuncId();
         if (host_func_idx < host_function_names_.size()) {
             const std::string& hfname = host_function_names_[host_func_idx];
-            fprintf(stderr, "[DOCALL] host func: %s\n", hfname.c_str());
         }
         if (host_func_idx >= host_function_names_.size()) {
             COMPILER_THROW("Host function index out of range: " +
@@ -2273,9 +2270,6 @@ co->ip = 0;
   if (closure_globals) {
     uint32_t cid = currentFrame().closure_id;
     auto* c = heap_.closure(cid);
-    std::string fname = callee ? callee->name : "???";
-    fprintf(stderr, "[DOCALL] closure globals install: fn=%s closure_id=%d globals_size=%zu closure_globals_size=%zu\n",
-        fname.c_str(), cid, globals.size(), closure_globals->size());
     globals_stack_.push_back(std::move(globals));
     globals = *closure_globals;
     frame_owns_globals = true;

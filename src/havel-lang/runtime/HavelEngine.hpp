@@ -586,8 +586,6 @@ private:
     static const bool _trace = std::getenv("HAVEL_TRACE_CYCLE");
     if (_trace) {
       auto* _s = vm_->getScheduler();
-      fprintf(stderr, "[CYCLE] processGoroutinesInline: enter inline_yield_active_=%d runnableCount=%zu\n",
-              (int)inline_yield_active_, _s ? _s->runnableCount() : 0);
     }
     if (inline_yield_active_) return;
     auto* sched = vm_->getScheduler();
@@ -737,22 +735,16 @@ private:
 
             sched->wakeSleepingGoroutines();
             auto* g = sched->pickNext();
-      fprintf(stderr, "[PROCESS] pickNext returned gid=%d state=%d\n", g ? g->id : -1, g ? (int)g->state.load() : -1);
-      fflush(stderr);
       if (!g) {
         size_t sc = sched->suspendedCount();
         if (sc == 0) break;
         // Check if any sleeping goroutine has a deadline that will wake it
         auto deadline = sched->nextSleepDeadline();
-        fprintf(stderr, "[PROCESS] pickNext returned null, suspendedCount=%zu deadline=%p\n", sc, deadline ? "yes" : "no");
-        fflush(stderr);
         if (!deadline) break; // No sleeping goroutines with deadlines — would hang forever
         auto now = std::chrono::steady_clock::now();
         if (*deadline <= now) continue; // Already expired, retry immediately
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(*deadline - now).count();
         auto sleepMs = std::min(ms, 100L); // Cap at 100ms to stay responsive to exit_requested
-        fprintf(stderr, "[PROCESS] Sleeping for %ld ms until deadline\n", sleepMs);
-        fflush(stderr);
         std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
         continue;
       }
@@ -763,17 +755,11 @@ private:
 
       // Start and run this goroutine to completion
       // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
-      fprintf(stderr, "[PROCESS] pickNext gid=%d state=%d globals_has_PI=%d\n",
-        g->id, (int)g->state.load(), (int)(vm_->getGlobals().find("PI") != vm_->getGlobals().end()));
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
         auto result = vm_->startGoroutineCall(g->callable, g->locals);
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
-          fprintf(stderr, "[PROCESS] Before runDispatchLoop gid=%d\n", g->id);
-          fflush(stderr);
           { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
-          fprintf(stderr, "[PROCESS] After runDispatchLoop gid=%d\n", g->id);
-          fflush(stderr);
         } else {
           g->state = compiler::Scheduler::GoroutineState::Done;
           if (g->update_callback_id != 0) {
@@ -814,9 +800,6 @@ private:
       // Check if the goroutine suspended (await/sleep) or finished
       uint8_t lastReason = vm_->getLastSuspensionReason();
       void* lastContext = vm_->getLastSuspensionContext();
-      fprintf(stderr, "[PROCESS] After runDispatchLoop: lastReason=%d lastContext=%p g->state=%d\n", 
-        lastReason, lastContext, (int)g->state.load());
-      fflush(stderr);
       if (lastReason != 0) {
         // Goroutine suspended — save fiber state and mark as Suspended
         vm_->clearLastSuspension();

@@ -7,6 +7,7 @@
 #include <stack>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "../../core/Value.hpp"
@@ -201,6 +202,16 @@ public:
     FiberStack stack;          // Operand stack (values being computed)
     std::map<std::string, Value> locals;  // Local variables by name
     Value return_value;        // Last computed value / return
+    
+    // ========== GLOBALS SNAPSHOT (per-fiber) ==========
+    // globals are shared across all goroutines in the VM, but each goroutine
+    // needs its own globals view. When a goroutine yields, its current globals
+    // (and globals_stack_ depth marker) are saved here. When it resumes, they
+    // are restored. has_saved_globals=false on first run (use VM's current).
+    std::unordered_map<std::string, Value> saved_globals;
+    std::vector<std::unordered_map<std::string, Value>> saved_globals_stack;
+    uint32_t saved_globals_mirror_id = UINT32_MAX;
+    bool has_saved_globals = false;
     
     // ========== EXECUTION STATE ==========
     FiberState state;

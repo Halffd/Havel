@@ -136,7 +136,7 @@ case OpCode::IMPORT: {
     std::string path;
     if (path_val.isStringValId() && current_chunk) {
         path = current_chunk->getString(path_val.asStringValId());
-    } else if (path_val.isStringId()) {
+    } else     if (path_val.isStringId()) {
         if (auto *s = heap_.string(path_val.asStringId())) path = *s;
     }
 

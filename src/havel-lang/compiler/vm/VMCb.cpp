@@ -46,8 +46,6 @@ Value VM::invokeCallback(CallbackId id,
 }
 
 uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args) {
-  fprintf(stderr, "[SPAWN] spawnGoroutine called. globals has PI=%d, globals count=%zu, globals_stack_ depth=%zu\n",
-    (int)(globals.find("PI") != globals.end()), globals.size(), globals_stack_.size());
   if (!scheduler_) {
     ::havel::warn("[VM] spawnGoroutine: No scheduler available");
     return 0;
@@ -542,7 +540,7 @@ void VM::processPendingEvents() {
 
 void VM::processEventsAndYield() {
   processPendingEvents();
-  if (yield_callback_) {
+  if (yield_callback_ && !isInlineYieldActive()) {
     yield_callback_();
   }
 }

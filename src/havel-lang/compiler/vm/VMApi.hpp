@@ -260,6 +260,12 @@ struct VMApi {
 
   void processPendingEvents() const { vm().processPendingEvents(); }
 
+  void yieldNow() const { 
+    if (vm().hasYieldCallback() && !vm().isInlineYieldActive()) {
+      vm().yield_callback_();
+    }
+  }
+
   void invalidateModuleCache(const std::string& name) const { vm().moduleLoader().invalidate(name); }
 
   void chunkedSleep(int64_t ms) const {

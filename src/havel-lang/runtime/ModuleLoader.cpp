@@ -91,7 +91,7 @@ ModuleLoader::resolve(const std::string& modulePath,
     return std::nullopt;
   }
 
-  // For bare module names, try priority search
+// For bare module names, try priority search
 
   // 1. Check cache (already loaded?)
   // If already in cache, return Cached type — BUT first drop the entry if the
@@ -306,9 +306,9 @@ ModuleLoader::resolve(const std::string& modulePath,
     }
   }
 
-    // 6. Check each user search path for name.hvc, name.hv, or name/name.hv
-    for (const auto& sp : searchPaths_) {
-        fs::path spDir(sp);
+// 6. Check each user search path for name.hvc, name.hv, or name/name.hv
+  for (const auto& sp : searchPaths_) {
+      fs::path spDir(sp);
 
         // Prefer .hvc if available and newer
         fs::path hvPath = spDir / (name + ".hv");
@@ -533,9 +533,10 @@ void ModuleLoader::unloadNativeExtensions() {
 #else
             FreeLibrary(static_cast<HMODULE>(handle.dlHandle));
 #endif
-        }
-    }
-    nativeHandles_.clear();
+}
+  }
+
+  nativeHandles_.clear();
 }
 
 // ============================================================================

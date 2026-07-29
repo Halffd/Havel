@@ -34,7 +34,6 @@ static void mergeExports(const VMApi &api, Value targetObj, Value exports) {
 }
 
 void registerMathModule(const VMApi &api) {
-  fprintf(stderr, "[MATH-DEBUG] registerMathModule called\n");
   auto &vm = api.vm();
 
   // --- cmath host bridges (require native <cmath>) ---
@@ -202,13 +201,10 @@ void registerMathModule(const VMApi &api) {
   // Bare constants (backward compat) — set AFTER all sidecar loads because
   // loadModule() does globals.clear() and only restores host_function_globals_,
   // which would otherwise wipe out PI/E/INF/NAN set earlier.
-  fprintf(stderr, "[MATH-DEBUG] Setting bare PI/E\n");
   api.setGlobal("PI", Value(3.14159265358979323846));
   api.setGlobal("E", Value(2.71828182845904523536));
   api.setGlobal("INF", Value(std::numeric_limits<double>::infinity()));
   api.setGlobal("NAN", Value(std::numeric_limits<double>::quiet_NaN()));
-  fprintf(stderr, "[MATH-DEBUG] PI set, globals count = %zu, PI exists=%d\n",
-    vm.getGlobals().size(), vm.getGlobals().find("PI") != vm.getGlobals().end());
   }
 
 } // namespace havel::stdlib

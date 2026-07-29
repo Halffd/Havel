@@ -179,7 +179,7 @@ fn runScript(cfg) {
     sourceFile = null
     if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }
-    bcChunk = compileProgram(emitter, result.ast, false, sourceFile)
+    bcChunk = compileProgram(emitter, result.ast, true, sourceFile)
 
     // Spawn the user script as a goroutine
     spawnUserScript(bcChunk)
@@ -269,7 +269,7 @@ fn runTests(cfg) {
 // ============================================================
 
 fn spawnUserScript(bcChunk) {
-    use { bc } from "bc"
+    // bc is a host global, no import needed
     // Store the bytecode chunk so we can spawn it
     chunkId = bc.store_chunk(bcChunk)
     // Spawn the __main__ function from the user script as a goroutine
@@ -302,4 +302,5 @@ else {
 }
 
 // Don't call shell.exit() - let the goroutine system run the user script
-result
+    // The C++ engine.execute() will call processGoroutines() after this returns
+    result

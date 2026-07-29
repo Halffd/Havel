@@ -329,6 +329,54 @@ vm_->addIntervalResult(timer_id, result);
         vm_->setWatcherRegistry(watcher_registry_.get());
         havel::startup_timing_report("watcher-registry", t);
 
+        // Synchronous reactive when evaluation: STORE_GLOBAL commits the new
+        // value then calls emitVariableChanged, which invokes this callback
+        // before queueing a VAR_CHANGED event. Evaluating the watcher here
+        // sees the actual post-store globals, so false->true edges fire even
+        // in headless runs where the event queue is only drained after the
+        // main goroutine returns (events would otherwise see a stale value).
+        vm_->setOnVarChangedSync([this](const std::string& var_name) {
+            if (!watcher_registry_ || !vm_) return;
+            auto fired = watcher_registry_->onVariableChanged(
+                var_name,
+                [this](compiler::WatcherRegistry::WatcherId wid) -> bool {
+                    const auto* w = watcher_registry_->getWatcher(wid);
+                    if (!w) return false;
+                    const compiler::BytecodeChunk* saved_chunk = nullptr;
+                    bool set_chunk = false;
+                    if (w->condition_chunk) {
+                        saved_chunk = vm_->getCurrentChunk();
+                        vm_->setCurrentChunkPublic(w->condition_chunk);
+                        set_chunk = true;
+                    }
+                    auto tracker = std::make_shared<compiler::DependencyTracker>();
+                    compiler::DependencyTrackerScope scope(tracker);
+                    bool result = vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
+                    if (set_chunk) vm_->setCurrentChunkPublic(saved_chunk);
+                    auto newDeps = tracker->getGlobalDependencies();
+                    auto fieldDeps = tracker->getFieldDependencies();
+                    newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+                    watcher_registry_->updateDependencies(wid, newDeps);
+                    return result;
+                },
+                [this](uint32_t cleanup_func_id, uint32_t) {
+                    try {
+                        compiler::Value cleanup_func = compiler::Value::makeFunctionObjId(cleanup_func_id);
+                        vm_->call(cleanup_func, {});
+                    } catch (...) {}
+                });
+            for (auto* fiber : fired) {
+                if (!fiber) continue;
+                try {
+                    uint32_t prev_when_watcher = vm_->current_when_watcher_id_;
+                    vm_->current_when_watcher_id_ = fiber->watcher_id;
+                    compiler::Value body_func = compiler::Value::makeFunctionObjId(fiber->current_function_id);
+                    vm_->call(body_func, {});
+                    vm_->current_when_watcher_id_ = prev_when_watcher;
+                } catch (...) {}
+            }
+        });
+
         havel::startup_timing_report("HavelEngine::initializeFull TOTAL", t0);
         initialized_ = true;
     }

@@ -7733,6 +7733,7 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
   if (standaloneCond) {
     BytecodeFunction standaloneCondFn("standalone_cond");
     standaloneCondFn.param_count = 0;
+    standaloneCondFn.upvalues = wrapperUpvalues;
     enterFunction(std::move(standaloneCondFn));
     compileExpression(*binding.conditionExpr);
     emit(OpCode::RETURN);
@@ -7901,6 +7902,7 @@ void ByteCompiler::compileHotkeyBindingExpr(const ast::HotkeyBinding &binding) {
   if (standaloneCond) {
     BytecodeFunction standaloneCondFn("standalone_cond");
     standaloneCondFn.param_count = 0;
+    standaloneCondFn.upvalues = wrapperUpvalues;
     enterFunction(std::move(standaloneCondFn));
     compileExpression(*binding.conditionExpr);
     emit(OpCode::RETURN);

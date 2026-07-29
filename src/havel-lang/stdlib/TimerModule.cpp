@@ -14,7 +14,6 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 void registerTimerModule(const VMApi &api) {
-  fprintf(stderr, "[DEBUG] registerTimerModule called\n");
   // timer.setTimeout(ms, fn) — one-shot timer, delegates to timeout.start
   api.registerFunction("timer.setTimeout", [api](const std::vector<Value> &args) {
     if (args.size() < 2)
@@ -62,12 +61,9 @@ void registerTimerModule(const VMApi &api) {
 
   // timer.now() — current time in milliseconds
   api.registerFunction("timer.now", [](const std::vector<Value> &args) {
-    fprintf(stderr, "[TimerModule] timer.now lambda entered\n");
     (void)args;
-    fprintf(stderr, "[TimerModule] timer.now() called\n");
     auto now = std::chrono::steady_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    fprintf(stderr, "[TimerModule] timer.now() returning: %lld\n", ms);
     return Value::makeInt(static_cast<int64_t>(ms));
   });
 

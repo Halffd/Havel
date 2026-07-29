@@ -1021,10 +1021,7 @@ if (arg.isStringValId()) {
           COMPILER_THROW("sleep_ms duration cannot be negative");
         }
 
-        fprintf(stderr, "[DEBUG] sleep_ms called with duration_ms=%ld, scheduler_=%p, current_executing_fiber_=%p\n", duration_ms, scheduler_, current_executing_fiber_);
-
         if (scheduler_ && current_executing_fiber_) {
-          fprintf(stderr, "[DEBUG] sleep_ms: suspending fiber\n");
           suspension_requested_ = true;
           suspension_reason_ = static_cast<uint8_t>(SuspensionReason::SLEEP);
           suspension_context_ = reinterpret_cast<void*>(
@@ -1032,7 +1029,6 @@ if (arg.isStringValId()) {
           return Value::makeNull();
         }
 
-        fprintf(stderr, "[DEBUG] sleep_ms: using busy-wait fallback\n");
         auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::milliseconds(duration_ms);
         while (std::chrono::steady_clock::now() < deadline) {
@@ -3656,7 +3652,6 @@ Value VM::invokeHostFunctionDirect(const std::string &name,
                                      const std::vector<Value> &args) {
   auto it = host_functions.find(name);
   if (it == host_functions.end()) {
-    fprintf(stderr, "[DEBUG] invokeHostFunctionDirect: function '%s' NOT FOUND in host_functions\n", name.c_str());
     return Value::makeNull();
   }
   return it->second(args);

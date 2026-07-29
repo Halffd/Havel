@@ -2375,12 +2375,8 @@ co->ip = 0;
 
 void VM::doTailCall(Value callee_value,
  std::vector<Value> args) {
- tail_call_depth_++;
- if (frame_count_ + tail_call_depth_ >= max_call_depth_) {
- tail_call_depth_ = 0;
- COMPILER_THROW("Stack overflow: maximum call depth " +
- std::to_string(max_call_depth_) + " reached");
- }
+ // TCO reuses the current frame, so frame_count_ does not grow.
+ // Only enforce the real stack limit (frame_count_), not an artificial tail-call counter.
 
     if (callee_value.isCoroutineId()) {
         doCall(callee_value, std::move(args));

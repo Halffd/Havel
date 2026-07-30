@@ -927,6 +927,17 @@ void ExecutionEngine::processGoroutinesInline() {
 
     if (scheduler_->runnableCount() == 0) return;
 
+    // If we were called from within a goroutine's yield (sleep host fn
+    // chunked path inside executeOneStep), the VM stack + frame arena
+    // currently hold the goroutine's state, not main's. Saving
+    // main_script_fiber_ now would snapshot the goroutine's empty
+    // stack and a frame pointer that doesn't belong to main. The next
+    // pickNext/push sequence would then corrupt main's CALL site and
+    // report "CALL Underflow". Skip scheduling: the goroutine will
+    // yield via its own executeOneStep returning SUSPENDED, and the
+    // outer loop (tickGoroutines/processGoroutines) drives the rest.
+    if (vm_->hasCurrentExecutingFiber()) return;
+
     inline_yield_active_ = true;
 
     try {
@@ -943,12 +954,21 @@ void ExecutionEngine::processGoroutinesInline() {
         main_script_fiber_->state = FiberState::RUNNING;
         
         // Create goroutine wrapper for main script (let scheduler assign ID)
+        // Main MUST NOT be added to the runnable queue: pickNext would
+        // pick it from inside processGoroutinesInline and re-execute
+        // __main__'s bytecode in the scheduler's tick budget, advancing
+        // the script's program counter past the host-function dispatch
+        // the OUTER runDispatchLoop expects to resume from. Doing that
+        // corrupts __main__'s CALL site and reports
+        // "CALL Underflow! Stack size: 0 Expected: 2 IP: 2896".
+        // Set as current goroutine for context (so goroutines spawned by
+        // main see their parent), but keep it out of the runnable queue.
         Scheduler::Goroutine* main_g = new Scheduler::Goroutine(1, "main-script", FiberPriority::NORMAL);
         main_g->fiber = main_script_fiber_.get();
-        main_g->state = Scheduler::GoroutineState::Runnable;  // Must be Runnable to be picked by scheduler
+        main_g->state = Scheduler::GoroutineState::Suspended;  // Picked up by outer runDispatchLoop, not by scheduler.
         
-        // Register in scheduler
-        scheduler_->registerMainGoroutine(main_g);
+        // Register in scheduler (goroutine map only — DO NOT enqueue).
+        scheduler_->registerGoroutine(main_g);
         scheduler_->setCurrent(main_g);
         main_goroutine_registered = true;
     }
@@ -1101,3 +1121,4 @@ void ExecutionEngine::processGoroutinesInline() {
 }
 
 } // namespace havel::compiler
+                                                                                                                                                                                                                                                                                       

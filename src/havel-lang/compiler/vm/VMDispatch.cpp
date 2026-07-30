@@ -681,7 +681,6 @@ void VM::runDispatchFast(size_t stop_frame_depth) {
         [static_cast<uint8_t>(OpCode::CALL_SPREAD)] = &&op_CALL,
         [static_cast<uint8_t>(OpCode::RETURN)] = &&op_RETURN
     };
-    fprintf(stderr, "[DEBUG] runDispatchFast: entered, frame_count_=%zu, stop_frame_depth=%zu, use_fast_path=%d\n", frame_count_, stop_frame_depth, !debugger_attached_ && !profiling_enabled_ && !trace_execution_ && max_instructions_ == 0 && !timer_check_func_);
 
     size_t counter = 0;
 
@@ -1496,7 +1495,6 @@ slow_dispatch_fallback:
         last_suspension_context_ = suspension_context_;
         suspension_requested_ = false;
         suspension_context_ = nullptr;
-        fprintf(stderr, "[DEBUG] slow_dispatch_fallback: transferred suspension reason=%d\n", last_suspension_reason_);
     }
     return;
 

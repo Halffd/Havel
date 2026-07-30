@@ -331,15 +331,6 @@ Value VM::callFunctionSync(const Value &fn,
 Value VM::execute(const BytecodeChunk &chunk,
   const std::string& function_name,
   const std::vector<Value> &args) {
-  {
-    FILE* f = fopen("/tmp/vm_execute_debug.txt", "a");
-    if (f) {
-      fprintf(f, "VM::execute CALLED: function=%s\n", function_name.c_str());
-      fclose(f);
-    }
-  }
-  fprintf(stderr, "===== VM::execute CALLED: function=%s =====\n", function_name.c_str());
-  fflush(stderr);
   const BytecodeChunk *saved_chunk = current_chunk;
   current_chunk = &chunk;
 
@@ -396,21 +387,14 @@ locals.clear();
     ::havel::debug("=== Executing function: {} ===", function_name);
   }
 
-fprintf(stderr, ">>> DEBUG execute: BEFORE runDispatchLoop, frame_count_=%zu, last_suspension_reason_=%d\n", frame_count_, last_suspension_reason_);
-  fflush(stderr);
-
   vm_in_execute_.store(true, std::memory_order_release);
   runDispatchLoop(0);
   vm_in_execute_.store(false, std::memory_order_release);
-
-  fprintf(stderr, ">>> DEBUG execute: after runDispatchLoop, last_suspension_reason_=%d, main_script_goroutine_id_=%u, scheduler_=%p\n", last_suspension_reason_, main_script_goroutine_id_, scheduler_);
-  fflush(stderr);
 
   // If fast path was used and we suspended due to SLEEP, we need to set up
   // the main script goroutine so the while loop below can handle it
   if (last_suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP) &&
       scheduler_ && current_executing_fiber_ && main_script_goroutine_id_ == UINT32_MAX) {
-    fprintf(stderr, "[DEBUG] execute: setting up main script goroutine from fast path\n");
     auto* g = new Scheduler::Goroutine(
         scheduler_->nextGoroutineId(), "main-script", FiberPriority::NORMAL);
     main_script_goroutine_id_ = g->id;
@@ -425,24 +409,19 @@ fprintf(stderr, ">>> DEBUG execute: BEFORE runDispatchLoop, frame_count_=%zu, la
   // Handle SLEEP suspension in simple execute() path
   // If we suspended due to SLEEP with a scheduler, we need to run the
   // scheduler's wake loop until the main goroutine completes
-  fprintf(stderr, "[DEBUG] execute: entering while loop check, scheduler_=%p, main_script_goroutine_id_=%u\n", scheduler_, main_script_goroutine_id_);
   while (scheduler_ && main_script_goroutine_id_ != UINT32_MAX) {
-    fprintf(stderr, "[DEBUG] execute: main_script_goroutine_id_=%u, checking scheduler\n", main_script_goroutine_id_);
     // Wake any sleeping goroutines whose deadline has passed
     scheduler_->wakeSleepingGoroutines();
     
     // Check if our main script goroutine is ready to run
     auto* g = scheduler_->get(main_script_goroutine_id_);
     if (!g) {
-      fprintf(stderr, "[DEBUG] execute: goroutine not found, breaking\n");
       // Goroutine was removed (completed or errored)
       break;
     }
     
-    fprintf(stderr, "[DEBUG] execute: goroutine state=%d\n", static_cast<int>(g->state.load()));
     if (g->state == Scheduler::GoroutineState::Done) {
       // Main script completed
-      fprintf(stderr, "[DEBUG] execute: goroutine Done, breaking\n");
       break;
     }
     
@@ -450,7 +429,6 @@ fprintf(stderr, ">>> DEBUG execute: BEFORE runDispatchLoop, frame_count_=%zu, la
         g->state == Scheduler::GoroutineState::Running) {
       // Main goroutine is ready to resume
       if (g->fiber) {
-        fprintf(stderr, "[DEBUG] execute: resuming fiber\n");
         // Restore fiber state and continue execution
         current_executing_fiber_ = g->fiber;
         vm_in_execute_.store(true, std::memory_order_release);
@@ -461,7 +439,6 @@ fprintf(stderr, ">>> DEBUG execute: BEFORE runDispatchLoop, frame_count_=%zu, la
         // Check if goroutine completed
         g = scheduler_->get(main_script_goroutine_id_);
         if (!g || g->state == Scheduler::GoroutineState::Done) {
-          fprintf(stderr, "[DEBUG] execute: goroutine completed after resume, breaking\n");
           break;
         }
         // If still runnable, loop will continue and call wakeSleepingGoroutines again
@@ -5003,22 +4980,6 @@ bool VM::checkDebugBreak() {
   return false;
 }
 
-
-
-
-
-// Direct invocation of host functions (bypasses stack, takes args as vector)
-Value VM::invokeHostFunctionDirect(const std::string &name,
-                                    const std::vector<Value> &args) {
-  fprintf(stderr, "[DEBUG] invokeHostFunctionDirect called with name: %s\n", name.c_str());
-  auto it = host_functions.find(name);
-  if (it == host_functions.end()) {
-    fprintf(stderr, "[DEBUG] invokeHostFunctionDirect: function '%s' NOT FOUND in host_functions\n", name.c_str());
-    return Value::makeNull();
-  }
-  fprintf(stderr, "[DEBUG] invokeHostFunctionDirect: function FOUND: %s\n", name.c_str());
-  return it->second(args);
-}
 
 
 

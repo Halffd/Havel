@@ -676,7 +676,6 @@ if (awaitable.isTimeoutId()) {
 case OpCode::FIBER_SLEEP: {
     Value ms_val = popStack();
     int ms = toInt(ms_val);
-    fprintf(stderr, "[DEBUG] FIBER_SLEEP: ms=%d, current_coroutine_id_=%u, scheduler_=%p\n", ms, current_coroutine_id_, scheduler_);
 
     if (current_coroutine_id_ != UINT32_MAX) {
     // Inside a coroutine: yield with a resume time

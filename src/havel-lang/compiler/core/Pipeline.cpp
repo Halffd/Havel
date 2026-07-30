@@ -1005,25 +1005,28 @@ BytecodeSmokeResult runBytecodePipeline(const std::string &source,
     }
     // Set up a yield callback to process events and wake sleeping goroutines
     // when the main fiber suspends (e.g., for time.sleep)
+    auto default_yield = [vm]() {
+        vm->processPendingEvents();
+        if (vm->getScheduler()) {
+            vm->getScheduler()->wakeSleepingGoroutines();
+        }
+    };
+    if (options.yield_callback) {
+      // Caller-provided hook (e.g., HavelEngine::processGoroutinesInline).
+      // Wrap it so pending events and sleep wakeups still run first.
+      auto caller_cb = std::move(options.yield_callback);
+      vm->setYieldCallback([default_yield, caller_cb = std::move(caller_cb)]() {
+        default_yield();
+        caller_cb();
+      });
+    } else {
+      vm->setYieldCallback(std::move(default_yield));
+    }
     if (options.vm_override) {
       auto shared_chunk = std::shared_ptr<BytecodeChunk>(std::move(chunk));
       vm->storeMainChunk(shared_chunk);
-      // Set up yield callback for the main fiber to handle sleep suspensions
-      vm->setYieldCallback([vm]() {
-        vm->processPendingEvents();
-        if (vm->getScheduler()) {
-          vm->getScheduler()->wakeSleepingGoroutines();
-        }
-      });
       result.return_value = vm->execute(*shared_chunk, entry_function);
     } else {
-      // Set up yield callback for the owned VM as well
-      vm->setYieldCallback([vm]() {
-        vm->processPendingEvents();
-        if (vm->getScheduler()) {
-          vm->getScheduler()->wakeSleepingGoroutines();
-        }
-      });
       result.return_value = vm->execute(*chunk, entry_function);
     }
   } catch (const ScriptError &e) {

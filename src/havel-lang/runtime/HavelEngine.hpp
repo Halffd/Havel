@@ -641,16 +641,30 @@ private:
 
     // Check if current goroutine is the one being executed
     auto* current_g = sched->current();
-    compiler::Fiber* current_fiber = current_g ? current_g->fiber : nullptr;
+    (void)current_g;
+
+    // CRITICAL: in the runBytecodePipeline hotkey path the main script is
+    // NOT scheduled as a goroutine; vm_->execute runs it directly. When
+    // the script blocks inside a chunked sleep host function, our
+    // yield_callback fires into this method, and startGoroutineCall
+    // below then wipes the shared VM stack (`while(!stack.empty())
+    // stack.pop()` in startGoroutineCall). Without saving the
+    // half-consumed operand stack + frame arena into a fiber here
+    // and restoring them afterwards, the next CALL opcode in __main__
+    // reports "CALL Underflow! Stack size: 0 Expected: 2" (e.g. the
+    // script's sleep(1000) call) and the throw escapes through
+    // yield_callback, silently corrupting the main loop.
+    // Save main's execution state into a private Fiber first, restore
+    // it before returning so the sleep host fn's chunked loop resumes
+    // with main's stack intact.
+    if (!main_script_fiber_) {
+      main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snapshot");
+    }
+    vm_->saveFiberStatePublic(main_script_fiber_.get());
 
     inline_yield_active_ = true;
 
     try {
-    // Save state of current goroutine's fiber if we have one
-    if (current_fiber) {
-      vm_->saveFiberStatePublic(current_fiber);
-    }
-
     sched->drainDeferredCallbacks();
     sched->wakeSleepingGoroutines();
 
@@ -755,9 +769,11 @@ private:
       // Reset inline_yield_active_ on any throw so scheduling isn't frozen.
     }
 
-    // Restore current fiber state if we had one
-    if (current_fiber) {
-      vm_->loadFiberStatePublic(current_fiber);
+    // Restore the main-script snapshot we saved above so the shared VM
+    // stack and frame arena match __main__'s half-run state — see
+    // explanation at saveFiberStatePublic above.
+    if (main_script_fiber_) {
+      vm_->loadFiberStatePublic(main_script_fiber_.get());
     }
 
     inline_yield_active_ = false;

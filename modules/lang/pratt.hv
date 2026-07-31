@@ -74,7 +74,7 @@ BP_TABLE[TID.Arrow] = 10; BP_TABLE[TID.LeftArrow] = 10
 BP_TABLE[TID.Nullish] = 20; BP_TABLE[TID.Question] = 15
 BP_TABLE[TID.Or] = 30; BP_TABLE[TID.And] = 40
 BP_TABLE[TID.Equals] = 50; BP_TABLE[TID.NotEquals] = 50; BP_TABLE[TID.Is] = 50
-BP_TABLE[TID.Tilde] = 50; BP_TABLE[TID.Matches] = 50; BP_TABLE[TID.As] = 50; BP_TABLE[TID.In] = 55
+BP_TABLE[TID.Tilde] = 50; BP_TABLE[TID.NotTilde] = 50; BP_TABLE[TID.Matches] = 50; BP_TABLE[TID.As] = 50; BP_TABLE[TID.In] = 55
 BP_TABLE[TID.Less] = 60; BP_TABLE[TID.Greater] = 60; BP_TABLE[TID.LessEquals] = 60; BP_TABLE[TID.GreaterEquals] = 60
 BP_TABLE[TID.DotDot] = 70; BP_TABLE[TID.DotDotEquals] = 70
 BP_TABLE[TID.Plus] = 70; BP_TABLE[TID.Minus] = 70; BP_TABLE[TID.Pipe] = 75; BP_TABLE[TID.PipeRight] = 75
@@ -228,7 +228,7 @@ LED_TOKENS[TID.BitwiseAndAssign] = true; LED_TOKENS[TID.BitwiseOrAssign] = true;
 LED_TOKENS[TID.ShiftLeftAssign] = true; LED_TOKENS[TID.ShiftRightAssign] = true
 LED_TOKENS[TID.LeftArrow] = true; LED_TOKENS[TID.Nullish] = true; LED_TOKENS[TID.Question] = true
 LED_TOKENS[TID.Or] = true; LED_TOKENS[TID.And] = true
-LED_TOKENS[TID.Equals] = true; LED_TOKENS[TID.NotEquals] = true; LED_TOKENS[TID.Is] = true; LED_TOKENS[TID.Tilde] = true
+LED_TOKENS[TID.Equals] = true; LED_TOKENS[TID.NotEquals] = true; LED_TOKENS[TID.Is] = true; LED_TOKENS[TID.Tilde] = true; LED_TOKENS[TID.NotTilde] = true
 LED_TOKENS[TID.Matches] = true; LED_TOKENS[TID.As] = true; LED_TOKENS[TID.In] = true; LED_TOKENS[TID.Not] = true
 LED_TOKENS[TID.Less] = true; LED_TOKENS[TID.Greater] = true; LED_TOKENS[TID.LessEquals] = true; LED_TOKENS[TID.GreaterEquals] = true
 LED_TOKENS[TID.DotDot] = true; LED_TOKENS[TID.DotDotEquals] = true
@@ -850,10 +850,11 @@ else if tt == TID.Is {
 right = parseExpr(getRightBindingPower(TID.Is))
 return BinaryExpression(left, "is", right, l, c)
 }
-else if tt == TID.Tilde or tt == TID.Matches {
-right = parseExpr(getRightBindingPower(tt))
-return BinaryExpression(left, "matches", right, l, c)
-}
+else if tt == TID.Tilde or tt == TID.NotTilde or tt == TID.Matches {
+        right = parseExpr(getRightBindingPower(tt))
+        op = if tt == TID.NotTilde { "not matches" } else { "matches" }
+        return BinaryExpression(left, op, right, l, c)
+    }
 else if tt == TID.In {
 right = parseExpr(getRightBindingPower(TID.In))
 return BinaryExpression(left, "in", right, l, c)

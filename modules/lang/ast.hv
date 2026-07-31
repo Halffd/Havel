@@ -120,7 +120,7 @@ BINARY_OPS = {
     "&&": "&&", "||": "||",
     "&": "&", "|": "|", "^": "^", "<<": "<<", ">>": ">>",
     "??": "??",
-    "in": "in", "is": "is", "matches": "matches", "not in": "not in",
+    "in": "in", "is": "is", "matches": "matches", "not matches": "not matches", "not in": "not in",
 }
 
 COMPOUND_ASSIGN_OPS = {

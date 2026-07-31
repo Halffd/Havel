@@ -328,6 +328,15 @@ if opr == "not in" {
     bc.emit("CALL", 2)
     return
   }
+  if opr == "not matches" {
+    sid = globalIdx(emitter, "string.includes")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    emitExpr(emitter, node.left)
+    emitExpr(emitter, node.right)
+    bc.emit("CALL", 2)
+    bc.emit("NOT")
+    return
+  }
   if opr == "=~" {
     sid = globalIdx(emitter, "regex_search")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))

@@ -83,6 +83,7 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
         }
         case OpCode::CALL: {
             uint32_t arg_count = instruction.operands[0].asInt();
+            ::havel::debug("[VM-DEBUG] CALL bytecode handler, arg_count=" + std::to_string(arg_count));
             if (stack.size() < static_cast<size_t>(arg_count) + 1) {
                 uint32_t current_ip = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].ip : 0;
                 std::cerr << "CALL Underflow! Stack size: " << stack.size() << " Expected: " << (arg_count + 1) << " IP: " << current_ip << "\n";

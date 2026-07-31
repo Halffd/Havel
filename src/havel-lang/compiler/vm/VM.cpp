@@ -1257,9 +1257,40 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     size_t needed = std::max(func->local_count, func->param_count);
     locals.resize(needed, nullptr);
 
-    // Copy args into local slots
-    for (uint32_t i = 0; i < func->param_count && i < args.size(); ++i) {
-        locals[i] = args[i];
+    // Handle variadic parameters for goroutine entry function
+    if (!args.empty()) {
+        if (func->variadic_param_index != UINT32_MAX) {
+            // Variadic function: allow >= variadic_param_index args
+            if (args.size() < func->variadic_param_index) {
+                COMPILER_THROW("Argument count mismatch for goroutine entry function '" +
+                           func->name + "' (expected at least " +
+                           std::to_string(func->variadic_param_index) + ", got " +
+                           std::to_string(args.size()) + ")");
+            }
+            // Copy fixed params
+            for (uint32_t i = 0; i < func->variadic_param_index; ++i) {
+                if (i < args.size()) {
+                    locals[i] = args[i];
+                }
+            }
+            // Pack remaining args into array at variadic_param_index
+            auto arrRef = heap_.allocateArray();
+            auto *arr = heap_.array(arrRef.id);
+            for (size_t i = func->variadic_param_index; i < args.size(); ++i) {
+                arr->push_back(std::move(args[i]));
+            }
+            locals[func->variadic_param_index] = Value::makeArrayId(arrRef.id);
+        } else {
+            // Non-variadic: exact match required (or fewer args for defaults)
+            for (uint32_t i = 0; i < func->param_count && i < args.size(); ++i) {
+                locals[i] = args[i];
+            }
+        }
+    } else {
+        // No args provided
+        for (uint32_t i = 0; i < func->param_count; ++i) {
+            locals[i] = Value::makeNull();
+        }
     }
 
     // Set up the initial call frame
@@ -1916,6 +1947,27 @@ Value VM::call(const Value &callee_value,
  return result;
 }
 
+// Pack variadic arguments into an array for functions with variadic parameters.
+// Must be called before any early returns (JIT, generator, coroutine, host func, interpreter).
+void VM::packVariadicArgs(std::vector<Value> &args, const BytecodeFunction *callee) {
+    if (!callee || callee->variadic_param_index == UINT32_MAX) {
+        return; // Not a variadic function
+    }
+    if (args.size() <= callee->variadic_param_index) {
+        return; // Not enough args to pack
+    }
+
+    // Pack args from variadic_param_index onwards into an array
+    auto arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
+    for (size_t i = callee->variadic_param_index; i < args.size(); ++i) {
+        arr->push_back(std::move(args[i]));
+    }
+    // Resize args to keep only up to variadic_param_index, then add the packed array
+    args.resize(callee->variadic_param_index);
+    args.push_back(Value::makeArrayId(arrRef.id));
+}
+
 void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(Value callee_value, std::vector<Value> args) {
@@ -2208,6 +2260,8 @@ frame_arena_[frame_count_] = CallFrame{func, co_chunk, co->ip, 0, co->closure_id
     }
 
 const auto *callee = resolve_chunk->getFunction(function_index);
+    // Pack variadic args for variadic functions
+    packVariadicArgs(args, callee);
 if (!callee) {
     COMPILER_THROW("Function index not found: " +
         std::to_string(function_index));
@@ -5005,20 +5059,6 @@ bool VM::checkDebugBreak() {
 
 
 
-
-
-// Direct invocation of host functions (bypasses stack, takes args as vector)
-Value VM::invokeHostFunctionDirect(const std::string &name,
-                                    const std::vector<Value> &args) {
-  fprintf(stderr, "[DEBUG] invokeHostFunctionDirect called with name: %s\n", name.c_str());
-  auto it = host_functions.find(name);
-  if (it == host_functions.end()) {
-    fprintf(stderr, "[DEBUG] invokeHostFunctionDirect: function '%s' NOT FOUND in host_functions\n", name.c_str());
-    return Value::makeNull();
-  }
-  fprintf(stderr, "[DEBUG] invokeHostFunctionDirect: function FOUND: %s\n", name.c_str());
-  return it->second(args);
-}
 
 
 

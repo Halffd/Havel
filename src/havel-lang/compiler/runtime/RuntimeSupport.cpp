@@ -731,11 +731,11 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
                     static_cast<const uint8_t*>(ptr) + size);
     };
 
-    // Header: "HVC2" magic (version 3 adds per-function flags)
+    // Header: "HVC2" magic (version 3 adds per-function flags, version 4 adds variadic_param_index)
     append("HVC2", 4);
 
-    // Version (3 = per-function is_generator/is_timer_closure flags)
-    uint32_t version = 3;
+    // Version (3 = per-function is_generator/is_timer_closure flags, 4 = variadic_param_index)
+    uint32_t version = 4;
     append(&version, sizeof(version));
 
     // Flags (bit 0 = has compiler build ID)
@@ -809,6 +809,9 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk,
             append(&len, sizeof(len));
             if (!name.empty()) append(name.data(), len);
         }
+
+        // variadic_param_index (HVC4+)
+        append(&func.variadic_param_index, sizeof(func.variadic_param_index));
 
         // Constants (per-function)
         uint32_t numConsts = static_cast<uint32_t>(func.constants.size());
@@ -935,7 +938,8 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     if (is_v2) {
         // HVC2: read version, flags, source path, source size, source hash
         if (!read(&hvc_version, sizeof(hvc_version))) return std::nullopt;
-        if (hvc_version < 2 || hvc_version > 3) return std::nullopt;
+        if (hvc_version < 2 || hvc_version > 4) return std::nullopt;
+        ::havel::debug("[RTS-DEBUG] hvc_version = " + std::to_string(hvc_version));
 
     uint32_t flags = 0;
     if (!read(&flags, sizeof(flags))) return std::nullopt;
@@ -1057,6 +1061,14 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
         func.param_names = std::move(param_names);
         func.is_generator = (funcFlags & 1) != 0;
         func.is_timer_closure = (funcFlags & 2) != 0;
+
+        // variadic_param_index (HVC4+)
+        if (hvc_version >= 4) {
+        ::havel::debug("[RTS-DEBUG] read variadic_param_index = " + std::to_string(func.variadic_param_index) + " for function " + funcName);
+            if (!read(&func.variadic_param_index, sizeof(func.variadic_param_index))) return std::nullopt;
+        } else {
+            func.variadic_param_index = UINT32_MAX;
+        }
 
         // Constants (per-function)
         uint32_t numConsts = 0;

@@ -282,10 +282,13 @@ void registerBytecodeBuilderModule(const VMApi &api) {
     std::string name = api.vm().toString(args[0]);
 		uint32_t params = 0;
 		uint32_t locals = 0;
+		uint32_t variadic_param_index = UINT32_MAX;
 		if (args.size() > 1 && args[1].isInt()) params = static_cast<uint32_t>(args[1].asInt());
 		if (args.size() > 2 && args[2].isInt()) locals = static_cast<uint32_t>(args[2].asInt());
+		if (args.size() > 3 && args[3].isInt()) variadic_param_index = static_cast<uint32_t>(args[3].asInt());
 
         BytecodeFunction func(name, params, locals);
+		func.variadic_param_index = variadic_param_index;
         g_builder.chunk->addFunction(std::move(func));
         g_builder.current_func_idx = static_cast<int32_t>(g_builder.chunk->getFunctionCount() - 1);
         return Value::makeInt(static_cast<int64_t>(g_builder.current_func_idx));

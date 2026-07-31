@@ -4237,6 +4237,7 @@ fn emitHotkeyBinding(emitter, node) {
  oldScope = emitter.scope
  newScope = Scope(null)
  emitter.scope = newScope
+ bc.func_push()
  actionChunkIdx = bc.func_new("hotkey_action", 1, 16)
  // Store parameter (this) in local 0
  scopeDeclare(newScope, "this")
@@ -4255,8 +4256,10 @@ fn emitHotkeyBinding(emitter, node) {
  bc.emit("PUSH_NULL")
  bc.emit("RETURN")
  bc.set_local_count(scopeLocalCount(newScope))
+ bc.func_pop()
  emitter.scope = oldScope
  // Create wrapper that sets this context
+ bc.func_push()
  wrapperChunkIdx = bc.func_new("hotkey_wrapper", 1, 8)
  // Mode guard: if mode attr is set, check mode() == "modeName"
  modeSkipJumpIp = -1
@@ -4286,6 +4289,7 @@ fn emitHotkeyBinding(emitter, node) {
  }
  bc.emit("PUSH_NULL")
  bc.emit("RETURN")
+ bc.func_pop()
  // Determine hotkey list: use hotkeys array if present, otherwise fall back to key
  hkList = []
  if node.hotkeys != null && #node.hotkeys > 0 {
@@ -4297,7 +4301,7 @@ fn emitHotkeyBinding(emitter, node) {
  // Register each hotkey
  hasPolicy = node.policy != null && node.policy != ""
  for hk in hkList {
-  if emitter.whenConditionFuncIndex != null {
+  if emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0 {
    sid = globalIdx(emitter, "hotkey.register_conditional")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
    if type(hk) == "str" {
@@ -4326,7 +4330,7 @@ fn emitHotkeyBinding(emitter, node) {
     bc.emit("CALL", 3)
    }
   }
-  if emitter.whenConditionFuncIndex == null {
+  if emitter.whenConditionFuncIndex == null || emitter.whenConditionFuncIndex < 0 {
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
    if type(hk) == "str" {
@@ -4365,6 +4369,7 @@ fn emitHotkeyBindingExpr(emitter, node) {
  oldScope = emitter.scope
  newScope = Scope(null)
  emitter.scope = newScope
+ bc.func_push()
  actionChunkIdx = bc.func_new("hotkey_action", 1, 16)
  scopeDeclare(newScope, "this")
  actionNode = node.action != null ? node.action : node.body
@@ -4381,7 +4386,9 @@ fn emitHotkeyBindingExpr(emitter, node) {
  bc.emit("PUSH_NULL")
  bc.emit("RETURN")
  bc.set_local_count(scopeLocalCount(newScope))
+ bc.func_pop()
  emitter.scope = oldScope
+ bc.func_push()
  wrapperChunkIdx = bc.func_new("hotkey_wrapper", 1, 8)
  // Mode guard: if mode attr is set, check mode() == "modeName"
  modeSkipJumpIp = -1
@@ -4409,6 +4416,7 @@ fn emitHotkeyBindingExpr(emitter, node) {
  }
  bc.emit("PUSH_NULL")
  bc.emit("RETURN")
+ bc.func_pop()
  hasPolicy = node.policy != null && node.policy != ""
  hkList = []
  if node.hotkeys != null && #node.hotkeys > 0 {
@@ -4417,9 +4425,9 @@ fn emitHotkeyBindingExpr(emitter, node) {
  else if node.key != null {
   hkList = [node.key]
  }
- for hk in hkList {
-  if emitter.whenConditionFuncIndex != null {
-   sid = globalIdx(emitter, "hotkey.register_conditional")
+  for hk in hkList {
+   if emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0 {
+    sid = globalIdx(emitter, "hotkey.register_conditional")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
    if type(hk) == "str" {
     keyIdx = bc.add_string(hk)
@@ -4447,7 +4455,7 @@ fn emitHotkeyBindingExpr(emitter, node) {
     bc.emit("CALL", 3)
    }
   }
-  if emitter.whenConditionFuncIndex == null {
+  if emitter.whenConditionFuncIndex == null || emitter.whenConditionFuncIndex < 0 {
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
    if type(hk) == "str" {

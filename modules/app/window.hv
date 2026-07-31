@@ -124,7 +124,7 @@ class Window {
 		_d = _dpy()
 		if _d == 0 { return 0 }
 		_r = x11.getTransientForHint(_d, @id)
-		if _r.ret == 0 { _r.transientFor } else { 0 }
+		if _r.rcode == 0 { _r.transientFor } else { 0 }
 	}
 
 	fn desktop() {
@@ -139,7 +139,7 @@ class Window {
 		_d = _dpy()
 		if _d == 0 { return null }
 		_r = x11.getGeometry(_d, @id)
-		if _r.ret == 0 { null }
+		if _r.rcode == 0 { null }
 		else { {x: _r.x, y: _r.y, width: _r.width, height: _r.height, border: _r.border, depth: _r.depth} }
 	}
 
@@ -162,7 +162,7 @@ fn pos() {
 		_root = _root()
 		if _root == 0 { return null }
 		_r = x11.translateCoordinates(_d, @id, _root, 0, 0)
-		if _r.ret == 0 { null }
+		if _r.rcode == 0 { null }
 		else { {x: _r.x, y: _r.y} }
 	}
 

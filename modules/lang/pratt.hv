@@ -1864,8 +1864,8 @@ if isObjKeyType {
 
             }
 }
-// Block expression: { if/for/while/loop/val/let/fn/return/... }
-isBlockStart = (nextTok.tid == TID.If || nextTok.tid == TID.For || nextTok.tid == TID.While || nextTok.tid == TID.Loop || nextTok.tid == TID.Repeat || nextTok.tid == TID.Let || nextTok.tid == TID.Val || nextTok.tid == TID.Fn || nextTok.tid == TID.Return || nextTok.tid == TID.Throw || nextTok.tid == TID.Try || nextTok.tid == TID.Match || nextTok.tid == TID.Break || nextTok.tid == TID.Continue || nextTok.tid == TID.Defer)
+// Block expression: { if/for/while/loop/val/let/fn/return/go/... }
+isBlockStart = (nextTok.tid == TID.If || nextTok.tid == TID.For || nextTok.tid == TID.While || nextTok.tid == TID.Loop || nextTok.tid == TID.Repeat || nextTok.tid == TID.Let || nextTok.tid == TID.Val || nextTok.tid == TID.Fn || nextTok.tid == TID.Return || nextTok.tid == TID.Go || nextTok.tid == TID.Throw || nextTok.tid == TID.Try || nextTok.tid == TID.Match || nextTok.tid == TID.Break || nextTok.tid == TID.Continue || nextTok.tid == TID.Defer)
 if isBlockStart {
  advance() // consume {
  skipNewlines()

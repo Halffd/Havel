@@ -1,4 +1,3 @@
-use window
 Mode = mode
 mode = lmode = "default"
 title_ = ltitle = ""
@@ -13,91 +12,274 @@ timeout 35000 {
     exit(0)
 }
 
-Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
-when title_ ~ "onsole" {
-  print("Konsole is active")
-}
-when class_ ~ "mpv" {
-  print("MPV class is active")
-}
-when title_ ~ "mpv" {
-  print("MPV title is active")
-}
-when title_ ~ "hatterino" {
-  print("Chatterino is active")
-}
-p if title_ ~ "mpv" => play()
-^v if title_ ~ "hatterino" => print("Ctrl+V pressed in chatterino")
-+s if mode == "gaming" => {  // Shift+S
-  winid = window.active().id
-  interval 100 {
-    if winid != window.active().id || io.getKey("f") { return }
-    send("{enter}")
-    sleep(100)
-    send("f")
-    move(1600, 900)
-    click()
-  }
-}
-if cfg?.General == null {
-  cfg.General = {}
-}
-cfg.General.Apps = "steam,lutris,mpv,konsole,hatterino"
-fn modeEval (win) {
-  titlelower = win.title.lower().trim()
-  classlower = win.class.lower().trim()
-  cmdlower = win.cmdline.lower().trim()
-  apps = cfg.General.Apps.lower().trim().split(",")
-  // print("apps: " + apps.join(","))
-  if (classlower in apps || titlelower in apps) && !(classlower in cfg.General.GamingExcludeClasses.lower().split(",") || titlelower in cfg.General.GamingExcludeTitles.lower().split(",")) && mode != "gaming" {
-    print(f"Gaming mode activated for window: $title_ (class: $class_)")
-    mode = "gaming"
-  } else if mode != "default" {
-    mode = "default"
-    print("Leaving mode to default")
-  }
-}
-hotkeyTest = hotkey.register_conditional("a", () => { print "Gaming/mpv mode active" }, () => { res = mode == "gaming" || title_ ~ "mpv"; print("CONDITIONAL mode gaming or mpv:" + res); return res })
-hotkeyTest2 = hotkey.register_conditional("b", () => { print "On terminal" }, () => { res = title_ ~ "onsole"; print("CONDITIONAL title onsole:" + res); return res })
-dbgWin = 0
-hks = null
-tickGo = 0
-tickOut = 0
-print("STARTING GOROUTINE")
-go fn update() {
-  loop {
-    tickGo++
-    print("[IN GOROUTINE] tick=$tickGo")
-    if(tickGo > 5 && tickOut < 5){
-        print("[ERROR] ONLY GOROUTINE RUNNING $tickGo > $tickOut")
-        if(tickOut == 0){
-            print("[ERROR] OUTSIDE LOOP NEVER RAN $tickOut")
-        }
+// ============================================================
+// HOTKEY DEFINITIONS WITH CONDITIONS
+// ============================================================
+enterHk = Enter if title_ ~ "onsole" => print("Enter pressed in konsole")
+enter2Hk = ~Enter if !(title_ ~ "onsole") => print("Enter pressed OUTSIDE konsole")
+tHk = #t if true => print("Meta+t pressed")
+fHk = +f if false => print("Error: should never print")
+nHk = !n if 1 + 2 == 4 - 1 => print("Alt+n pressed")
+oHk = ~!o if {} == {} => print("Alt+o non-grab pressed")
+xHk = |x if #"x" == 1 => print("X non repeat pressed")
+
+// ============================================================
+// ASSERT HELPERS
+// ============================================================
+fn assert(condition, msg) {
+    if !condition {
+        print("ASSERT FAIL: " + msg)
+        exit(1)
     }
-    win = window.active()
-    [title_, class_, cmd, wid, wpid] = [win.title, win.class, win.cmdline, win.id, win.pid]
-    if wid != lwid {
-      [ltitle, lclass, lcmd, lwid, lwpid] = [title_, class_, cmd, wid, wpid]
-      modeEval(win)
-      if dbgWin {
-         print("Active window changed: $title_ class: $class_ mode: $mode cmd: $cmd pid: $wpid id: $wid last: ${lastWin ? lastWin.title_ : "none"}")
-      }
-      print("hotkeyTest: ", hotkeyTest)
-      print("hotkeyTest2: ", hotkeyTest2)
-      print("Hotkeys:")
-      print(hotkey.list())
-      print("Scheduler: ", scheduler.info(), scheduler.goroutines())
-    }
-    sleep(1000)
-  }
 }
-print("LINE93: STARTING OUTSIDE LOOP")
-loop {
-    tickOut++
-    println("[OUTSIDE GOROUTINE] tick=$tickOut")
-    if(tickOut > 20 && tickGo <= 20){
-        print("[ERROR] GOROUTINE HANG $tickGo < $tickOut")
+fn assertEq(got, expected, msg) {
+    if got != expected {
+        print("ASSERT FAIL: " + msg + " - got: " + got + " expected: " + expected)
+        exit(1)
     }
-    sleep(1000)
 }
 
+// ============================================================
+// STARTUP HOTKEY GRAB TESTS
+// ============================================================
+fn runGrabTests() {
+    print("\n=== RUNNING STARTUP GRAB TESTS ===")
+    assert(tHk.grab == true, "true condition should grab")
+    assert(fHk.grab == false, "false condition should not grab")
+    assert(nHk.grab == true, "arithmetic condition should grab")
+    assert(oHk.grab == true, "object equality should grab (currently non-grab?)")
+    // oHk is actually ~!o with {} == {} which is true, so grab should be true
+    assert(oHk.grab == true, "object equality should grab")
+    assert(xHk.grab == true, "length expression should grab")
+    print("All grab tests passed.")
+}
+runGrabTests()
+
+// ============================================================
+// CONDITIONAL HOTKEYS
+// ============================================================
+condGaming = () => {
+    res = mode == "gaming" || title_ ~ "mpv"
+    print("COND GAMING: " + res)
+    return res
+}
+condConsole = () => {
+    res = title_ ~ "onsole"
+    print("COND CONSOLE: " + res)
+    return res
+}
+
+hotkeyTest = hotkey.register_conditional("a",
+    () => { print("Gaming/mpv mode active") },
+    condGaming
+)
+hotkeyTest2 = hotkey.register_conditional("b",
+    () => { print("On terminal") },
+    condConsole
+)
+
+// ============================================================
+// MODE EVALUATION FUNCTION
+// ============================================================
+cfg = cfg || {}
+if cfg?.General == null { cfg.General = {} }
+cfg.General.Apps = "steam,lutris,mpv,konsole,hatterino"
+cfg.General.GamingExcludeClasses = ""
+cfg.General.GamingExcludeTitles = ""
+
+fn modeEval(win) {
+    titlelower = win.title.lower().trim()
+    classlower = win.class.lower().trim()
+    apps = cfg.General.Apps.lower().trim().split(",")
+    excludeClasses = cfg.General.GamingExcludeClasses.lower().trim().split(",")
+    excludeTitles = cfg.General.GamingExcludeTitles.lower().trim().split(",")
+
+    isGamingApp = (classlower in apps) || (titlelower in apps)
+    isExcluded = (classlower in excludeClasses) || (titlelower in excludeTitles)
+
+    if isGamingApp && !isExcluded && mode != "gaming" {
+        print("Gaming mode activated for window: " + title_ + " (class: " + class_ + ")")
+        mode = "gaming"
+    } else if !isGamingApp && mode == "gaming" {
+        mode = "default"
+        print("Leaving mode to default")
+    }
+}
+
+// ============================================================
+// OTHER HOTKEYS
+// ============================================================
+pHk = p if title_ ~ "mpv" => print("P pressed in mpv")
+vHk = ^v if title_ ~ "hatterino" => print("Ctrl+V pressed in chatterino")
++s if mode == "gaming" => {
+    winid = window.active().id
+    interval 100 {
+        if winid != window.active().id || io.getKey("f") { return }
+        send("{enter}")
+        sleep(100)
+        send("f")
+        move(1600, 900)
+        click()
+    }
+}
+o => test()
+
+// ============================================================
+// COMPREHENSIVE TEST FUNCTION
+// ============================================================
+fn test() {
+    print("\n=== TESTING ===")
+    print("title_: " + title_)
+    print("mode: " + mode)
+
+    // Test conditional hotkeys based on current mode/title
+    if condGaming() {
+        assert(hotkeyTest.enabled, "hotkeyTest should be enabled when condGaming true")
+        assert(hotkeyTest.grab, "hotkeyTest should be grabbing when condGaming true")
+    } else {
+        assert(!hotkeyTest.enabled, "hotkeyTest should be disabled when condGaming false")
+        assert(!hotkeyTest.grab, "hotkeyTest should not grab when condGaming false")
+    }
+
+    if condConsole() {
+        assert(hotkeyTest2.enabled, "hotkeyTest2 should be enabled when condConsole true")
+        assert(hotkeyTest2.grab, "hotkeyTest2 should be grabbing when condConsole true")
+    } else {
+        assert(!hotkeyTest2.enabled, "hotkeyTest2 should be disabled when condConsole false")
+        assert(!hotkeyTest2.grab, "hotkeyTest2 should not grab when condConsole false")
+    }
+
+    // Test window-specific hotkeys
+    if title_ ~ "mpv" {
+        assert(pHk.enabled, "pHk should be enabled in mpv")
+        assert(pHk.grab, "pHk should be grabbing in mpv")
+    } else {
+        // pHk might still be enabled but not grabbing? It depends on implementation.
+        // Usually if condition false, it's disabled, but let's check.
+        // We'll just verify consistency: if disabled, grab should be false too.
+        if !pHk.enabled { assert(!pHk.grab, "pHk disabled should have grab false") }
+    }
+
+    if title_ ~ "hatterino" {
+        assert(vHk.enabled, "vHk should be enabled in hatterino")
+        assert(vHk.grab, "vHk should be grabbing in hatterino")
+    } else {
+        if !vHk.enabled { assert(!vHk.grab, "vHk disabled should have grab false") }
+    }
+
+    if title_ ~ "onsole" {
+        assert(enterHk.enabled, "enterHk should be enabled in konsole")
+        assert(enterHk.grab, "enterHk should be grabbing in konsole")
+        // enter2Hk should be disabled
+        assert(!enter2Hk.enabled, "enter2Hk should be disabled in konsole")
+        assert(!enter2Hk.grab, "enter2Hk should not grab in konsole")
+    } else {
+        assert(enter2Hk.enabled, "enter2Hk should be enabled outside konsole")
+        assert(enter2Hk.grab, "enter2Hk should be grabbing outside konsole")
+        assert(!enterHk.enabled, "enterHk should be disabled outside konsole")
+        assert(!enterHk.grab, "enterHk should not grab outside konsole")
+    }
+
+    print("=== ALL TESTS PASSED ===\n")
+}
+
+// ============================================================
+// MODE FORCING TEST (startup)
+// ============================================================
+fn testModeForcing() {
+    print("\n=== FORCING MODE TO GAMING FOR TEST ===")
+    oldMode = mode
+    mode = "gaming"
+    print("Mode forced to gaming. Testing hotkey states...")
+    // Call test to verify hotkeyTest becomes active
+    test()
+    // Restore mode
+    mode = oldMode
+    print("Mode restored to " + mode + ". Re-testing...")
+    test()
+}
+// Uncomment to run: testModeForcing()  // but this will change mode and may affect other tests; we can run it later.
+
+// ============================================================
+// START MAIN LOOPS
+// ============================================================
+dbgWin = 0
+hks = null
+tick = 0
+tickGo = 0
+tickOut = 0
+
+print("STARTING GOROUTINE")
+go fn update() {
+    loop {
+        tickGo++
+        print("[IN GOROUTINE] tick=" + tickGo)
+
+        // Verify goroutine is not alone
+        if tickGo > 5 && tickOut < 5 {
+            print("[ERROR] ONLY GOROUTINE RUNNING " + tickGo + " > " + tickOut)
+            assert(tickOut > 0, "outside loop should have run by now")
+        }
+
+        win = window.active()
+        [title_, class_, cmd, wid, wpid] = [win.title, win.class, win.cmdline, win.id, win.pid]
+
+        if wid != lwid {
+            [ltitle, lclass, lcmd, lwid, lwpid] = [title_, class_, cmd, wid, wpid]
+            modeEval(win)
+
+            if dbgWin {
+                print("Active window changed: " + title_ + " class: " + class_ + " mode: " + mode + " cmd: " + cmd + " pid: " + wpid + " id: " + wid + " last: " + (lastWin ? lastWin.title_ : "none"))
+            }
+            print("Hotkeys:")
+            print(hotkey.list())
+            test()
+        }
+        sleep(1000)
+    }
+}
+
+print("STARTING OUTSIDE LOOP")
+loop {
+    tickOut++
+    println("[OUTSIDE GOROUTINE] tick=" + tickOut)
+
+    // Check goroutine liveness
+    if tickOut > 20 && tickGo <= 20 {
+        print("[ERROR] GOROUTINE HANG " + tickGo + " < " + tickOut)
+        assert(tickGo > 20, "goroutine should have run at least 20 times")
+    }
+
+    // Mode info
+    if mode == "gaming" {
+        println("[MODE] gaming")
+    } else {
+        println("[MODE] default")
+    }
+
+    // On every 10th tick, run mode forcing test to verify conditional hotkeys update dynamically
+    if tickOut % 10 == 0 {
+        println("\n=== RUNNING PERIODIC MODE FORCING TEST ===")
+        oldMode = mode
+        // Force gaming and verify hotkeyTest
+        mode = "gaming"
+        // Check that condGaming returns true
+        if condGaming() {
+            assert(hotkeyTest.enabled, "hotkeyTest should be enabled when mode forced to gaming")
+            assert(hotkeyTest.grab, "hotkeyTest should be grabbing when mode forced to gaming")
+            print("SUCCESS: hotkeyTest became active under forced gaming mode")
+        } else {
+            print("WARNING: condGaming returned false even after forcing gaming mode")
+        }
+        // Restore mode and verify it changes back
+        mode = oldMode
+        if !condGaming() {
+            assert(!hotkeyTest.enabled, "hotkeyTest should be disabled when mode restored")
+            assert(!hotkeyTest.grab, "hotkeyTest should not grab when mode restored")
+            print("SUCCESS: hotkeyTest disabled after mode restoration")
+        }
+        println("=== PERIODIC TEST COMPLETE ===\n")
+    }
+
+    sleep(1000)
+}

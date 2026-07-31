@@ -129,6 +129,7 @@ fn inferBinary(leftType, oper, rightType) {
   if oper == "in" { return TYPE_BOOL }
   if oper == "not in" { return TYPE_BOOL }
   if oper == "matches" { return TYPE_BOOL }
+  if oper == "not matches" { return TYPE_BOOL }
   if oper == "??" {
     if rightType != TYPE_UNKNOWN { rightType }
     else { leftType }

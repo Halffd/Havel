@@ -2582,10 +2582,12 @@ if k == "HotkeyBinding" {
       oldScope = emitter.scope
       condScope = Scope(null)
       emitter.scope = condScope
+      bc.func_push()
       condChunkIdx = bc.func_new("condhotkey_condition", 0, 16)
       emitExpr(emitter, node.condition)
       bc.emit("RETURN")
       bc.set_local_count(scopeLocalCount(condScope))
+      bc.func_pop()
       emitter.scope = oldScope
       prevWcfi = emitter.whenConditionFuncIndex
       emitter.whenConditionFuncIndex = condChunkIdx
@@ -4309,8 +4311,8 @@ fn emitHotkeyBinding(emitter, node) {
    else {
     emitExpr(emitter, hk)
    }
-   bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
-   bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
+   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
+   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(emitter.whenConditionFuncIndex)))
    if hasPolicy {
     bc.emit("OBJECT_NEW")
     polKeyIdx = bc.add_string(node.policy)
@@ -4338,7 +4340,7 @@ fn emitHotkeyBinding(emitter, node) {
    else {
     emitExpr(emitter, hk)
    }
-   bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
    if hasPolicy {
     bc.emit("OBJECT_NEW")
     polKeyIdx = bc.add_string(node.policy)
@@ -4430,8 +4432,8 @@ fn emitHotkeyBindingExpr(emitter, node) {
    else {
     emitExpr(emitter, hk)
    }
-   bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
-   bc.emit("LOAD_CONST", bc.add_const(emitter.whenConditionFuncIndex))
+   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
+   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(emitter.whenConditionFuncIndex)))
    if hasPolicy {
     bc.emit("OBJECT_NEW")
     polKeyIdx = bc.add_string(node.policy)
@@ -4459,7 +4461,7 @@ fn emitHotkeyBindingExpr(emitter, node) {
    else {
     emitExpr(emitter, hk)
    }
-   bc.emit("LOAD_CONST", bc.add_const(wrapperChunkIdx))
+   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
    if hasPolicy {
     bc.emit("OBJECT_NEW")
     polKeyIdx = bc.add_string(node.policy)
@@ -4516,6 +4518,7 @@ fn emitWhenBlock(emitter, node) {
   oldScope = emitter.scope
   condScope = Scope(null)
   emitter.scope = condScope
+  bc.func_push()
   condChunkIdx = bc.func_new("when_condition", 0, 16)
   if node.condition != null {
     emitExpr(emitter, node.condition)
@@ -4525,11 +4528,12 @@ fn emitWhenBlock(emitter, node) {
   }
   bc.emit("RETURN")
   bc.set_local_count(scopeLocalCount(condScope))
+  bc.func_pop()
   emitter.scope = oldScope
   hotkeyStmts = []
   otherStmts = []
-  if node.statements != null {
-    for s in node.statements {
+  if node.body != null {
+    for s in node.body {
       sk = s.kind
       if sk == "HotkeyBinding" || sk == "ConditionalHotkey" || sk == "HotkeyExpression" {
         hotkeyStmts.push(s)
@@ -4542,6 +4546,7 @@ fn emitWhenBlock(emitter, node) {
   if #otherStmts > 0 {
     bodyScope = Scope(null)
     emitter.scope = bodyScope
+    bc.func_push()
     bodyChunkIdx = bc.func_new("when_body", 0, 16)
     for s in otherStmts {
       emitStmt(emitter, s)
@@ -4549,11 +4554,12 @@ fn emitWhenBlock(emitter, node) {
     bc.emit("PUSH_NULL")
     bc.emit("RETURN")
     bc.set_local_count(scopeLocalCount(bodyScope))
+    bc.func_pop()
     emitter.scope = oldScope
     sid = globalIdx(emitter, "when.register")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-    bc.emit("LOAD_CONST", bc.add_const(condChunkIdx))
-    bc.emit("LOAD_CONST", bc.add_const(bodyChunkIdx))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(condChunkIdx)))
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(bodyChunkIdx)))
     bc.emit("CALL", 2)
     bc.emit("POP")
   }

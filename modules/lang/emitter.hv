@@ -4501,23 +4501,25 @@ fn compileCondHotkeyCondition(emitter, condition) {
 }
 
 fn emitClosureBody(emitter, body, name) {
-  oldScope = emitter.scope
+   oldScope = emitter.scope
 	newScope = Scope(oldScope)
 	emitter.scope = newScope
+	bc.func_push()
 	funcIdx = bc.func_new(name, 0, 16)
-  if body != null {
-    if body.kind == "BlockStatement" {
-      for s in body.body {
-        emitStmt(emitter, s)
-      }
-    }
-    else {
-      emitStmt(emitter, body)
-    }
-  }
-  bc.emit("PUSH_NULL")
-  bc.emit("RETURN")
+   if body != null {
+     if body.kind == "BlockStatement" {
+       for s in body.body {
+         emitStmt(emitter, s)
+       }
+     }
+     else {
+       emitStmt(emitter, body)
+     }
+   }
+   bc.emit("PUSH_NULL")
+   bc.emit("RETURN")
 	bc.set_local_count(scopeLocalCount(newScope))
+	bc.func_pop()
 	emitter.scope = oldScope
 	bc.emit("LOAD_CONST", bc.add_const(funcIdx))
 }

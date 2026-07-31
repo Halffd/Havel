@@ -3195,18 +3195,22 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
   newScope.tag = name + str(fid)
   emitter.lastFuncScope = newScope
   emitter.scope = newScope
-for p in params {
+  variadicParamIndex = -1
+  pi = 0
+  for p in params {
     if type(p) == "object" {
       if p.name != null { scopeDeclare(newScope, p.name) }
       else if p.value != null { scopeDeclare(newScope, p.value) }
       else { scopeDeclare(newScope, p.name) }
     }
     else { scopeDeclare(newScope, p) }
-    }
+    if p.variadic { variadicParamIndex = pi }
+    pi = pi + 1
+  }
   paramCount = #params
   localCount = paramCount + 16
   bc.func_push()
-  actualIdx = bc.func_new(name, paramCount, localCount)
+  actualIdx = bc.func_new(name, paramCount, localCount, variadicParamIndex)
   newScope.bcFuncIdx = actualIdx
   // Set parameter names for kwargs support
   paramNameStrIds = []
@@ -3225,12 +3229,15 @@ for p in params {
     }
   }
   bc.set_param_names(paramNameStrIds)
-  traceEmitter("func_new " + name + " params=" + str(paramCount) + " locals=" + str(localCount) + " bcIdx=" + str(actualIdx))
+  traceEmitter("func_new " + name + " params=" + str(paramCount) + " locals=" + str(localCount) + " variadic=" + str(variadicParamIndex) + " bcIdx=" + str(actualIdx))
   if sourceLine != null {
     bc.set_func_source_line(sourceLine)
   }
-di = 0
+  di = 0
  	for p in params != null ? params : [] {
+    if type(p) == "object" && p.variadic {
+      variadicParamIndex = di
+    }
     if type(p) == "object" && (p.defval != null || p.default != null) {
       dv = p.defval != null ? p.defval : p.default
       _handled = false
@@ -3244,10 +3251,10 @@ di = 0
         _handled = true
       }
       if !_handled && type(dv) == "object" && dv.kind == "BooleanLiteral" {
-bv = dv.value == "true" || dv.value == true
-  bc.set_default_value(di, bv)
-  _handled = true
-}
+ bv = dv.value == "true" || dv.value == true
+   bc.set_default_value(di, bv)
+   _handled = true
+ }
             if !_handled && type(dv) == "object" && dv.kind == "NullLiteral" {
                 bc.set_default_value(di, null)
             }
@@ -3256,9 +3263,9 @@ bv = dv.value == "true" || dv.value == true
                     bc.set_default_value(di, true)
                 }
             }
-}
-di = di + 1
   }
+  di = di + 1
+    }
   // Instance methods: store self (slot 0) into global 'this' for @field access
   if isInstanceMethod {
     thisSid = globalIdx(emitter, "this")
@@ -3290,6 +3297,8 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
       scopeDeclare(oldScope, name)
   }
   localIdx = -1
+  variadicParamIndex = -1
+  pi = 0
   for p in parameters != null ? parameters : [] {
   if type(p) == "array" {
     print("ERROR: param is array: " + str(p))
@@ -3299,11 +3308,13 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
 		else if p.value != null { scopeDeclare(newScope, p.value) }
 	}
 	else { scopeDeclare(newScope, p) }
+    if p.variadic { variadicParamIndex = pi }
+    pi = pi + 1
 	}
 paramCount = #(parameters != null ? parameters : [])
   localCount = paramCount + 16
   bc.func_push()
-  actualIdx = bc.func_new(name, paramCount, localCount)
+  actualIdx = bc.func_new(name, paramCount, localCount, variadicParamIndex)
   newScope.bcFuncIdx = actualIdx
   // Set parameter names for kwargs support
   paramNameStrIds = []
@@ -3322,13 +3333,16 @@ paramCount = #(parameters != null ? parameters : [])
 		}
 	}
 	bc.set_param_names(paramNameStrIds)
-	traceEmitter("func_new " + name + " params=" + str(paramCount) + " bcIdx=" + str(actualIdx))
+	traceEmitter("func_new " + name + " params=" + str(paramCount) + " variadic=" + str(variadicParamIndex) + " bcIdx=" + str(actualIdx))
  if sourceLine != null {
  bc.set_func_source_line(sourceLine)
  }
 di = 0
   for p in parameters != null ? parameters : [] {
- if type(p) == "object" && (p.defval != null || p.default != null) {
+  if type(p) == "object" && p.variadic {
+    variadicParamIndex = di
+  }
+  if type(p) == "object" && (p.defval != null || p.default != null) {
  dv = p.defval != null ? p.defval : p.default
  _handled = false
  if type(dv) == "object" && dv.kind == "StringLiteral" {

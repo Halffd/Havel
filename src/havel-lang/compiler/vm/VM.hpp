@@ -531,8 +531,8 @@ size_t tail_call_depth_ = 0;
 	bool execBuiltinOp(const Instruction &instruction);
 
   void doCall(Value callee_value, std::vector<Value> args);
-  void doTailCall(Value callee_value,
-                  std::vector<Value> args); // TCO
+  void doTailCall(Value callee_value, std::vector<Value> args);
+  void packVariadicArgs(std::vector<Value> &args, const BytecodeFunction *callee);
   void runDispatchLoop(size_t stop_frame_depth);
   void runDispatchFast(size_t stop_frame_depth);
 inline void periodicYieldCheck() {

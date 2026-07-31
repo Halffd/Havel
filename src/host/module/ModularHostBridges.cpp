@@ -3716,9 +3716,11 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                     try {
                         Value result = vm->callFunctionSync(*condVal, {});
                         initialResult = vm->toBool(result);
-                    } catch (...) {
+                    } catch (const std::exception &e) {
+                        ::havel::error("[InputBridge] conditional '{}' initial eval threw: {}", hotkeyStr, e.what());
                     }
                     g->hotkey_condition_last_result = initialResult;
+                    ::havel::info("[InputBridge] conditional '{}' initial result = {}", hotkeyStr, initialResult);
                     auto deps = tracker->getGlobalDependencies();
                     auto fieldDeps = tracker->getFieldDependencies();
                     deps.insert(fieldDeps.begin(), fieldDeps.end());
@@ -3764,6 +3766,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                     if (auto* g = sched->get(persistentGid)) {
                         ctx->hotkeyManager->SetHotkeyGrab(hotkeyStr, g->hotkey_condition_last_result);
                         ::havel::stdlib::HotkeyModule::setGrab(*vm, hotkeyStr, g->hotkey_condition_last_result);
+                        ::havel::info("[InputBridge] conditional '{}' initial SetHotkeyGrab = {}", hotkeyStr, g->hotkey_condition_last_result);
                     }
                 }
             }

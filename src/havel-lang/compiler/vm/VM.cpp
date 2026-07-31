@@ -1238,7 +1238,6 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
         " Caller failed to preserve chunk identity in callable Value.");
   }
 
-<<<<<<< HEAD
   if (!resolve_chunk) {
     ::havel::error(
         "[VM] startGoroutineCall: no chunk available for function {}",
@@ -1277,7 +1276,15 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     } catch (const JitCoroutineSignal &) {
       setJITActiveClosurePublic(prev_jit_closure);
       // Fall through to interpreter path
-=======
+    }
+  } else {
+    if (debugging::debug_io)
+      ::havel::debug("[VM] JIT skipped: func={} callable_is_closure={} "
+                     "jit_compiled={} debugger={}",
+                     func->name, callable.isClosureId(), func->jit_compiled,
+                     debugger_attached_);
+  }
+
   // Handle variadic parameters for goroutine entry function
   if (!args.empty()) {
     if (func->variadic_param_index != UINT32_MAX) {
@@ -1313,14 +1320,6 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     for (uint32_t i = 0; i < func->param_count; ++i) {
       locals[i] = Value::makeNull();
     }
->>>>>>> havel-3
-    }
-  } else {
-    if (debugging::debug_io)
-      ::havel::debug("[VM] JIT skipped: func={} callable_is_closure={} "
-                     "jit_compiled={} debugger={}",
-                     func->name, callable.isClosureId(), func->jit_compiled,
-                     debugger_attached_);
   }
 
   // Push args onto VM stack
@@ -2397,18 +2396,13 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     COMPILER_THROW("No chunk available for function call");
   }
 
-<<<<<<< HEAD
   const auto *callee = resolve_chunk->getFunction(function_index);
   if (!callee) {
-=======
-  const auto *callee = resolve_chunk->getFunction(function_index);
-  // Pack variadic args for variadic functions
-  packVariadicArgs(args, callee);
-  if (!callee) {
->>>>>>> havel-3
     COMPILER_THROW("Function index not found: " +
                    std::to_string(function_index));
   }
+  // Pack variadic args for variadic functions
+  packVariadicArgs(args, callee);
 
   callee->execution_count++;
   if (callee->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {

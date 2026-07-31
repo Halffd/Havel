@@ -1374,41 +1374,53 @@ fn parseCallArgs() {
             while current().tid != TID.CloseParen and notEOF() {
                 skipNewlines()
                 if current().tid == TID.CloseParen: break
-            // Parse param name (allow keyword-idents as param names, but not Fn)
-            lpt = current().tid
-            if lpt == TID.Fn {
-                return error("'fn' cannot be used as a parameter name (reserved for lambda syntax)", current().line, current().col)
-            }
-            if lpt != TID.Identifier && !isKeywordIdent(lpt) {
-                return error("Expected parameter name, got " + lpt, current().line, current().col)
-            }
-            pname = advance().value
-                p = {name: pname}
+            // Parse param: can be either "name..." or "...name"
+            // Check for variadic prefix (...name) FIRST
+            if current().tid == TID.Spread {
+                advance()
+                p = {variadic: true}
+                // Must have identifier after ...
+                if current().tid == TID.Identifier || isKeywordIdent(current().tid) {
+                    p.name = advance().value
+                } else {
+                    return error("Expected parameter name after '...'", current().line, current().col)
+                }
+            } else {
+                // Regular parameter: name first
+                lpt = current().tid
+                if lpt == TID.Fn {
+                    return error("'fn' cannot be used as a parameter name (reserved for lambda syntax)", current().line, current().col)
+                }
+                if current().tid != TID.Identifier && !isKeywordIdent(current().tid) {
+                    return error("Expected parameter name, got " + current().tid, current().line, current().col)
+                }
+                p.name = advance().value
                 // Type annotation
                 if current().tid == TID.Colon {
                     advance()
                     p.typeAnn = advance().value
                 }
-		// Default value
-		if current().tid == TID.Assign {
-			advance()
-			p.defval = parseExpr(0)
-		}
-                // Variadic
+                // Default value
+                if current().tid == TID.Assign {
+                    advance()
+                    p.defval = parseExpr(0)
+                }
+                // Variadic (name...)
                 if current().tid == TID.Spread {
                     advance()
                     p.variadic = true
                 }
-                params.push(p)
-                skipNewlines()
-                if current().tid == TID.Comma: advance()
             }
-            expect(TID.CloseParen)
+            params.push(p)
+            skipNewlines()
+            if current().tid == TID.Comma: advance()
         }
-        else if current().tid == TID.Identifier {
-            params.push({name: advance().value})
+        expect(TID.CloseParen)
+    }
+    else if current().tid == TID.Identifier {
+        params.push({name: advance().value})
 
-        }
+    }
         // Optional => (fn(x) body and fn(x) => body both valid)
         if current().tid == TID.Arrow {
          advance()

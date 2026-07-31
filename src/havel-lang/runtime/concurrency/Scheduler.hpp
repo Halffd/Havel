@@ -166,6 +166,10 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
 	// Execution priority (controls scheduler queue selection)
 	FiberPriority priority = FiberPriority::NORMAL;
 
+	// Whether this goroutine owns its fiber (and should delete it on destruction).
+	// False for main script fiber which is owned by ExecutionEngine.
+	bool owns_fiber = true;
+
     // Persistent goroutine: re-suspend instead of Done on completion
     // Used by hotkey system to avoid per-press goroutine allocation
     bool persistent = false;
@@ -211,13 +215,14 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   uint32_t update_interval_ms = 0;
   uint64_t update_callback_id = 0; // GC external root ID (from registerCallback), 0 = none
 
-    explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL)
+explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL, bool owns_fiber_ = true)
         : id(id_), name(name_), ip(0),
           state(GoroutineState::Created), suspension_reason{SuspensionReason::None},
           created_time(std::chrono::steady_clock::now()),
-	max_instructions_per_tick(prio == FiberPriority::HOTKEY ? HOTKEY_MAX_INSTRUCTIONS : DEFAULT_MAX_INSTRUCTIONS),
-	parent_id(0),
-	priority(prio) {}
+          max_instructions_per_tick(prio == FiberPriority::HOTKEY ? HOTKEY_MAX_INSTRUCTIONS : DEFAULT_MAX_INSTRUCTIONS),
+          parent_id(0),
+          priority(prio),
+          owns_fiber(owns_fiber_) {}
 
     ~Goroutine(); // Defined in .cpp to avoid Fiber dependency
   };

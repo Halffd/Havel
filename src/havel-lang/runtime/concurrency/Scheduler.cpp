@@ -50,7 +50,7 @@ Scheduler::~Scheduler() {
 }
 
 Scheduler::Goroutine::~Goroutine() {
-	if (fiber) {
+	if (fiber && owns_fiber) {
 		delete fiber;
 	}
 }

@@ -913,18 +913,13 @@ void ExecutionEngine::processGoroutinesInline() {
     // executeFrame() also can't help because isInExecute() is true.
     scheduler_->wakeSleepingGoroutines();
 
-    // If there are no runnable goroutines but there are suspended ones that
-    // might wake up soon, wait for them instead of returning immediately.
-    // This is the event loop - keep running until there's actual work or
-    // the main script goroutine finishes.
-    while (scheduler_->runnableCount() == 0 && scheduler_->suspendedCount() > 0) {
-        // Process any events that might wake sleeping goroutines
-        scheduler_->wakeSleepingGoroutines();
-        // Sleep briefly to allow timers to fire
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        scheduler_->wakeSleepingGoroutines();
-    }
-
+    // processGoroutinesInline is the pipeline's yield callback, invoked from
+    // inside the user script's bytecode dispatch loop. It must NOT block.
+    // The previous code spun here on `runnable==0 && suspended>0` waiting for
+    // a wake event — which froze the user script's own bytecode (e.g. after a
+    // `when.register` registering a non-firing watcher, or a non-runnable
+    // goroutine that just sleeps). The IO scheduler thread handles wakeups;
+    // our job here is a quick pump only.
     if (scheduler_->runnableCount() == 0) return;
 
     // If we were called from within a goroutine's yield (sleep host fn
@@ -982,11 +977,7 @@ void ExecutionEngine::processGoroutinesInline() {
 
     while (executed < budget) {
         Scheduler::Goroutine* g = scheduler_->pickNext();
-        if (!g) {
-            ::havel::info("[INLINE_YIELD] pickNext returned nullptr, executed={} budget={}", executed, budget);
-            break;
-        }
-        ::havel::info("[INLINE_YIELD] picked gid={} state={} fiber={}", g->id, static_cast<int>(g->state.load()), g->fiber ? "yes" : "no");
+        if (!g) break;
 
         if (g->fiber && g->fiber->current_function_id == HotkeyActionWrapper::HOTKEY_ACTION_FUNCTION_ID) {
             auto* action = HotkeyActionWrapper::getCallback(g->fiber->id);
@@ -1001,9 +992,7 @@ void ExecutionEngine::processGoroutinesInline() {
         }
 
         if (g->state == Scheduler::GoroutineState::Created) {
-            ::havel::info("[INLINE_YIELD] gid={} state=Created, calling startGoroutineCall", g->id);
             auto call_result = vm_->startGoroutineCall(g->callable, g->locals);
-            ::havel::info("[INLINE_YIELD] gid={} startGoroutineCall returned {}", g->id, static_cast<int>(call_result));
             if (call_result == VM::GoroutineCallResult::Failed ||
                 call_result == VM::GoroutineCallResult::JITExecuted) {
                 if (g->fiber) vm_->saveFiberState(g->fiber);
@@ -1013,12 +1002,9 @@ void ExecutionEngine::processGoroutinesInline() {
                 continue;
             }
             // Interpreter: goroutine is ready to run - enqueue it
-            ::havel::info("[INLINE_YIELD] gid={} call_result=Interpreter, enqueueing", g->id);
             g->state = Scheduler::GoroutineState::Runnable;
             if (g->fiber) vm_->saveFiberState(g->fiber);
-            ::havel::info("[INLINE_YIELD] gid={} enqueueing after Interpreter", g->id);
             scheduler_->enqueue(g);
-            ::havel::info("[INLINE_YIELD] gid={} enqueue done, continuing loop", g->id);
             continue;
         } else if (g->fiber) {
             vm_->loadFiberState(g->fiber);
@@ -1029,16 +1015,11 @@ void ExecutionEngine::processGoroutinesInline() {
 
         scheduler_->setCurrent(g);
 
-        ::havel::info("[INLINE_YIELD] gid={} executing {} instructions", g->id, 64);
         for (int i = 0; i < 64; ++i) {
-            ::havel::info("[INLINE_YIELD] gid={} step {} ip={}", g->id, i, g->fiber ? g->fiber->ip : 0);
             auto result = vm_->executeOneStep(g->fiber);
             g->instructions_executed++;
             executed++;
-            ::havel::info("[INLINE_YIELD] gid={} step {} result={}", g->id, i, static_cast<int>(result.type));
-            // Check for suspension request after each step (e.g., from time.sleep)
             if (vm_->isSuspensionRequested()) {
-                ::havel::info("[INLINE_YIELD] gid={} suspension requested, yielding", g->id);
                 if (g->fiber && !vm_->exit_requested_.load()) vm_->saveFiberState(g->fiber);
                 handleYield(g);
                 break;
@@ -1047,13 +1028,11 @@ void ExecutionEngine::processGoroutinesInline() {
                 if (g->fiber && !vm_->exit_requested_.load()) vm_->saveFiberState(g->fiber);
                 switch (result.type) {
                     case VMExecutionResult::RETURNED:
-                        ::havel::info("[INLINE_YIELD] gid={} RETURNED", g->id);
                         handleReturned(g);
                         stats_.goroutines_completed++;
                         break;
                     case VMExecutionResult::SUSPENDED: {
                         auto fiber_reason = g->fiber ? g->fiber->suspended_reason : SuspensionReason::NONE;
-                        ::havel::info("[INLINE_YIELD] gid={} SUSPENDED reason={} context={}", g->id, static_cast<int>(fiber_reason), g->fiber ? g->fiber->suspension_context : nullptr);
                         void* context = g->fiber ? g->fiber->suspension_context : nullptr;
                         uint8_t reason = static_cast<uint8_t>(fiber_reason);
                         scheduler_->suspend(g, toSchedulerReason(reason));

@@ -27,6 +27,13 @@ struct PipelineOptions {
     VM *vm_override = nullptr;
     std::function<void(VM &)> vm_setup;
     std::function<void(VM *)> system_object_initializer; // Create system object with proper namespacing
+    // Optional yield hook invoked from the main fiber dispatch loop
+    // (sleep host function chunked path). Default callback only drains
+    // pending events and wakes sleeping goroutines; a richer caller
+    // (HavelEngine) supplies a callback that also pumps the scheduler
+    // so spawned goroutines get a chance to run while main blocks in
+    // a long sleep.
+    std::function<void()> yield_callback;
 };
 
 struct BytecodeSmokeResult {

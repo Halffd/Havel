@@ -102,6 +102,12 @@ public:
   void setScriptReady(bool ready) { script_ready_.store(ready, std::memory_order_release); }
   bool isScriptReady() const { return script_ready_.load(std::memory_order_acquire); }
 
+  // Yield-period pump from the main VM dispatch loop. Drains pending
+  // goroutines so a goroutine spawned inside a hotkey script gets a
+  // chance to run while the main script fiber is blocking inside the
+  // chunked sleep host function (runBytecodePipeline path).
+  void processGoroutinesInline();
+
 private:
   // ========== CORE COMPONENTS ==========
   VM* vm_;                    // Bytecode virtual machine
@@ -126,7 +132,6 @@ private:
   void handleSuspended(Scheduler::Goroutine* g);
   void handleReturned(Scheduler::Goroutine* g);
   void handleError(Scheduler::Goroutine* g, const std::string& msg);
-  void processGoroutinesInline();
 
 
     void onThreadComplete(uint32_t thread_id);

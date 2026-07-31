@@ -502,8 +502,10 @@ public:
             options.vm_override = bytecodeVM;
             options.debugBytecode = cfg.debugBytecode;
             auto *ee = havel_inst.getExecutionEngine();
-            if (ee)
+            if (ee) {
               ee->setScriptReady(true);
+              options.yield_callback = [ee]() { ee->processGoroutinesInline(); };
+            }
             try {
               havel::compiler::runBytecodePipeline(combinedCode, "__main__",
                                                    options);
@@ -604,6 +606,12 @@ public:
         options.compile_unit_name = combinedNames;
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
+        if (ee) {
+          // Pump goroutine scheduler from the main fiber yield hook so a
+          // goroutine spawned by a hotkey script runs while main blocks in
+          // a long sleep inside the chunked-sleep bytecode path.
+          options.yield_callback = [ee]() { ee->processGoroutinesInline(); };
+        }
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
       } catch (const std::exception &e) {
         error("Execution error: {}", e.what());
@@ -865,6 +873,8 @@ public:
         options.compile_unit_name = combinedNames;
         options.vm_override = bytecodeVM;
         options.debugBytecode = cfg.debugBytecode;
+        if (ee)
+          options.yield_callback = [ee]() { ee->processGoroutinesInline(); };
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
       } catch (const std::exception &e) {
         error("Script execution error: {}", e.what());

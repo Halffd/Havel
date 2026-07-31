@@ -329,6 +329,54 @@ vm_->addIntervalResult(timer_id, result);
         vm_->setWatcherRegistry(watcher_registry_.get());
         havel::startup_timing_report("watcher-registry", t);
 
+        // Synchronous reactive when evaluation: STORE_GLOBAL commits the new
+        // value then calls emitVariableChanged, which invokes this callback
+        // before queueing a VAR_CHANGED event. Evaluating the watcher here
+        // sees the actual post-store globals, so false->true edges fire even
+        // in headless runs where the event queue is only drained after the
+        // main goroutine returns (events would otherwise see a stale value).
+        vm_->setOnVarChangedSync([this](const std::string& var_name) {
+            if (!watcher_registry_ || !vm_) return;
+            auto fired = watcher_registry_->onVariableChanged(
+                var_name,
+                [this](compiler::WatcherRegistry::WatcherId wid) -> bool {
+                    const auto* w = watcher_registry_->getWatcher(wid);
+                    if (!w) return false;
+                    const compiler::BytecodeChunk* saved_chunk = nullptr;
+                    bool set_chunk = false;
+                    if (w->condition_chunk) {
+                        saved_chunk = vm_->getCurrentChunk();
+                        vm_->setCurrentChunkPublic(w->condition_chunk);
+                        set_chunk = true;
+                    }
+                    auto tracker = std::make_shared<compiler::DependencyTracker>();
+                    compiler::DependencyTrackerScope scope(tracker);
+                    bool result = vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
+                    if (set_chunk) vm_->setCurrentChunkPublic(saved_chunk);
+                    auto newDeps = tracker->getGlobalDependencies();
+                    auto fieldDeps = tracker->getFieldDependencies();
+                    newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+                    watcher_registry_->updateDependencies(wid, newDeps);
+                    return result;
+                },
+                [this](uint32_t cleanup_func_id, uint32_t) {
+                    try {
+                        compiler::Value cleanup_func = compiler::Value::makeFunctionObjId(cleanup_func_id);
+                        vm_->call(cleanup_func, {});
+                    } catch (...) {}
+                });
+            for (auto* fiber : fired) {
+                if (!fiber) continue;
+                try {
+                    uint32_t prev_when_watcher = vm_->current_when_watcher_id_;
+                    vm_->current_when_watcher_id_ = fiber->watcher_id;
+                    compiler::Value body_func = compiler::Value::makeFunctionObjId(fiber->current_function_id);
+                    vm_->call(body_func, {});
+                    vm_->current_when_watcher_id_ = prev_when_watcher;
+                } catch (...) {}
+            }
+        });
+
         havel::startup_timing_report("HavelEngine::initializeFull TOTAL", t0);
         initialized_ = true;
     }
@@ -593,16 +641,30 @@ private:
 
     // Check if current goroutine is the one being executed
     auto* current_g = sched->current();
-    compiler::Fiber* current_fiber = current_g ? current_g->fiber : nullptr;
+    (void)current_g;
+
+    // CRITICAL: in the runBytecodePipeline hotkey path the main script is
+    // NOT scheduled as a goroutine; vm_->execute runs it directly. When
+    // the script blocks inside a chunked sleep host function, our
+    // yield_callback fires into this method, and startGoroutineCall
+    // below then wipes the shared VM stack (`while(!stack.empty())
+    // stack.pop()` in startGoroutineCall). Without saving the
+    // half-consumed operand stack + frame arena into a fiber here
+    // and restoring them afterwards, the next CALL opcode in __main__
+    // reports "CALL Underflow! Stack size: 0 Expected: 2" (e.g. the
+    // script's sleep(1000) call) and the throw escapes through
+    // yield_callback, silently corrupting the main loop.
+    // Save main's execution state into a private Fiber first, restore
+    // it before returning so the sleep host fn's chunked loop resumes
+    // with main's stack intact.
+    if (!main_script_fiber_) {
+      main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snapshot");
+    }
+    vm_->saveFiberStatePublic(main_script_fiber_.get());
 
     inline_yield_active_ = true;
 
     try {
-    // Save state of current goroutine's fiber if we have one
-    if (current_fiber) {
-      vm_->saveFiberStatePublic(current_fiber);
-    }
-
     sched->drainDeferredCallbacks();
     sched->wakeSleepingGoroutines();
 
@@ -707,9 +769,11 @@ private:
       // Reset inline_yield_active_ on any throw so scheduling isn't frozen.
     }
 
-    // Restore current fiber state if we had one
-    if (current_fiber) {
-      vm_->loadFiberStatePublic(current_fiber);
+    // Restore the main-script snapshot we saved above so the shared VM
+    // stack and frame arena match __main__'s half-run state — see
+    // explanation at saveFiberStatePublic above.
+    if (main_script_fiber_) {
+      vm_->loadFiberStatePublic(main_script_fiber_.get());
     }
 
     inline_yield_active_ = false;

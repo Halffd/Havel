@@ -50,23 +50,13 @@ void registerTimerModule(const VMApi &api) {
 
   // timer.sleep(ms) — sleep for milliseconds (delegates to VM yield with sleep reason)
   api.registerFunction("timer.sleep", [api](const std::vector<Value> &args) {
-    fprintf(stderr, "[TimerModule] timer.sleep IMMEDIATE ENTRY: args.size()=%zu\n", args.size());
-    fflush(stderr);
-    if (args.empty()) {
-      fprintf(stderr, "[TimerModule] timer.sleep: throwing - args empty\n");
+    if (args.empty())
       throw std::runtime_error("timer.sleep requires milliseconds");
-    }
-    fprintf(stderr, "[TimerModule] timer.sleep: args[0].isInt()=%d\n", args[0].isInt());
     if (!args[0].isInt())
       throw std::runtime_error("timer.sleep requires integer milliseconds");
     int64_t ms = args[0].asInt();
-    fprintf(stderr, "[TimerModule] timer.sleep: ms=%ld\n", ms);
     if (ms < 0) throw std::runtime_error("timer.sleep: ms must be non-negative");
-    fprintf(stderr, "[TimerModule] timer.sleep: calling invokeHostFunctionDirect\n");
-    fflush(stderr);
-    auto result = api.vm().invokeHostFunctionDirect("sleep_ms", args);
-    fprintf(stderr, "[TimerModule] timer.sleep: after invokeHostFunctionDirect, isNull=%d\n", result.isNull());
-    return result;
+    return api.vm().invokeHostFunctionDirect("sleep_ms", args);
   });
 
   // timer.now() — current time in milliseconds

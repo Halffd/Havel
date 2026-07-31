@@ -1016,6 +1016,9 @@ fn scanHotkey() {
       addToken("Not", "!")
     } else if isIdentStart {
       // !ident could be a hotkey binding like !F1 => { } — scan ahead for =>
+      savedIdx = idx
+      savedLine = line
+      savedCol = col
       advance()
       s = "!"
       while current() != -1 && current() != 13 && current() != 10 && current() != 123 && current() != 40 {
@@ -1027,6 +1030,11 @@ fn scanHotkey() {
       if current() == 61 && cp(1) == 62 {
         addToken("Hotkey", s)
       } else {
+        // Not a hotkey binding — emit only `!` as Not and re-lex the consumed chars
+        idx = savedIdx
+        line = savedLine
+        col = savedCol
+        advance()
         addToken("Not", "!")
       }
     } else {

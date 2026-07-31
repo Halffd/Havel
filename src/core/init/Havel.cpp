@@ -281,8 +281,17 @@ scheduler = &compiler::Scheduler::instance();
 		scheduler->forEachConditionalHotkey(
 			[vm_, this, &var_name](compiler::Scheduler::Goroutine* g) {
 			if (!g) return;
-			if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
-				g->suspension_reason.load(std::memory_order_acquire)
+			// Conditional hotkeys park in one of two states:
+			//   HotkeyWait+Suspended (never triggered yet, or non-conditional)
+			//   HotkeyWait+Created (recycled after first trigger via
+			//   ExecutionEngine::handleReturned so the condition check
+			//   in pickNext re-evaluates on the next wake). Both must still
+			//   re-evaluate the grab state here when one of their deps
+			//   changes.
+			auto st = g->state.load(std::memory_order_acquire);
+			if (st != compiler::Scheduler::GoroutineState::Suspended &&
+			    st != compiler::Scheduler::GoroutineState::Created) return;
+			if (g->suspension_reason.load(std::memory_order_acquire)
 				!= compiler::Scheduler::SuspensionReason::HotkeyWait) return;
 			if (g->hotkey_condition_deps.empty() ||
 				g->hotkey_condition_deps.count(var_name) == 0) return;
@@ -355,13 +364,21 @@ scheduler = &compiler::Scheduler::instance();
 				vm->processSignalBindings(var_name);
 				auto* sched = vm->getScheduler();
 				if (sched) {
-				sched->forEachConditionalHotkey(
-					[vm, hostCtx, &var_name, sched](compiler::Scheduler::Goroutine* g) {
-					if (!g) return;
-					if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
-						g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
-					if (g->hotkey_condition_deps.empty() ||
-						g->hotkey_condition_deps.count(var_name) == 0) return;
+			sched->forEachConditionalHotkey(
+				[vm, hostCtx, &var_name, sched](compiler::Scheduler::Goroutine* g) {
+				if (!g) return;
+				// See counterpart in setOnVarChangedSync above: a
+				// conditional hotkey parked in HotkeyWait may be in
+				// either Suspended (pre-first-trigger) or Created
+				// (recycled by handleReturned after a prior trigger)
+				// state. Accept both: grab state must move when the
+				// condition's dependency changes regardless.
+				auto st = g->state.load(std::memory_order_acquire);
+				if (st != compiler::Scheduler::GoroutineState::Suspended &&
+				    st != compiler::Scheduler::GoroutineState::Created) return;
+				if (g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+				if (g->hotkey_condition_deps.empty() ||
+					g->hotkey_condition_deps.count(var_name) == 0) return;
 					auto condVal = vm->externalRootValue(g->hotkey_condition_callback_id);
 					if (!condVal) return;
 						auto tracker = std::make_shared<compiler::DependencyTracker>();

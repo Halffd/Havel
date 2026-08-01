@@ -648,3 +648,88 @@ fn play(file) {
 fn playTest() {
     _run("speaker-test -t sine -f 440 -l 1")
 }
+
+// Additional functions for device lookup by name/index
+fn getDevices() {
+    _devices()
+}
+
+fn findDeviceByName(name) {
+    _all = _devices()
+    for _d in _all {
+        if _d.name == name || _d.description == name {
+            return _d
+        }
+    }
+    null
+}
+
+fn findDeviceByIndex(index) {
+    _all = _devices()
+    if index >= 0 && index < #_all {
+        return _all[index]
+    }
+    null
+}
+
+fn getDefaultOutput() {
+    _sink = defaultSink()
+    if _sink != null {
+        return _sink.name
+    }
+    ""
+}
+
+fn setDefaultOutput(name) {
+    _dev = findDeviceByName(name)
+    if _dev != null && _dev.has("id") {
+        setSinkDefault(_dev.id)
+        return true
+    }
+    false
+}
+
+fn playTestSound() {
+    playTest()
+}
+
+fn setVolume(name, vol) {
+    _dev = findDeviceByName(name)
+    if _dev != null && _dev.has("id") {
+        sinkVolume(_dev.id, vol)
+        return true
+    }
+    false
+}
+
+fn getVolume(name) {
+    _dev = findDeviceByName(name)
+    if _dev != null && _dev.has("id") {
+        return sinkVolume(_dev.id)
+    }
+    0
+}
+
+fn increaseVolume(name, step) {
+    _dev = findDeviceByName(name)
+    if _dev != null && _dev.has("id") {
+        _cur = sinkVolume(_dev.id)
+        if _cur == null { _cur = 0 }
+        sinkVolume(_dev.id, _cur + step)
+        return true
+    }
+    false
+}
+
+fn decreaseVolume(name, step) {
+    _dev = findDeviceByName(name)
+    if _dev != null && _dev.has("id") {
+        _cur = sinkVolume(_dev.id)
+        if _cur == null { _cur = 0 }
+        _new = _cur - step
+        if _new < 0 { _new = 0 }
+        sinkVolume(_dev.id, _new)
+        return true
+    }
+    false
+}

@@ -394,15 +394,38 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   locals.resize(entry->local_count);
 
   if (!args.empty()) {
-    if (args.size() != entry->param_count) {
-      COMPILER_THROW("Argument count mismatch for entry function '" +
-                     function_name + "' (expected " +
-                     std::to_string(entry->param_count) + ", got " +
-                     std::to_string(args.size()) + ")");
-    }
-
-    for (uint32_t i = 0; i < entry->param_count; ++i) {
-      locals[i] = args[i];
+    if (entry->variadic_param_index != UINT32_MAX) {
+      // Variadic function: allow >= variadic_param_index args
+      if (args.size() < entry->variadic_param_index) {
+        COMPILER_THROW("Argument count mismatch for entry function '" +
+                       function_name + "' (expected at least " +
+                       std::to_string(entry->variadic_param_index) + ", got " +
+                       std::to_string(args.size()) + ")");
+      }
+      // Copy fixed params
+      for (uint32_t i = 0; i < entry->variadic_param_index; ++i) {
+        if (i < args.size()) {
+          locals[i] = args[i];
+        }
+      }
+      // Pack remaining args into array at variadic_param_index
+      auto arrRef = heap_.allocateArray();
+      auto *arr = heap_.array(arrRef.id);
+      for (size_t i = entry->variadic_param_index; i < args.size(); ++i) {
+        arr->push_back(std::move(args[i]));
+      }
+      locals[entry->variadic_param_index] = Value::makeArrayId(arrRef.id);
+    } else {
+      // Non-variadic: exact match required
+      if (args.size() != entry->param_count) {
+        COMPILER_THROW("Argument count mismatch for entry function '" +
+                       function_name + "' (expected " +
+                       std::to_string(entry->param_count) + ", got " +
+                       std::to_string(args.size()) + ")");
+      }
+      for (uint32_t i = 0; i < entry->param_count; ++i) {
+        locals[i] = args[i];
+      }
     }
   }
 
@@ -540,15 +563,38 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   locals.resize(entry->local_count);
 
   if (!args.empty()) {
-    if (args.size() != entry->param_count) {
-      COMPILER_THROW("Argument count mismatch for entry function '" +
-                     function_name + "' (expected " +
-                     std::to_string(entry->param_count) + ", got " +
-                     std::to_string(args.size()) + ")");
-    }
-
-    for (uint32_t i = 0; i < entry->param_count; ++i) {
-      locals[i] = args[i];
+    if (entry->variadic_param_index != UINT32_MAX) {
+      // Variadic function: allow >= variadic_param_index args
+      if (args.size() < entry->variadic_param_index) {
+        COMPILER_THROW("Argument count mismatch for entry function '" +
+                       function_name + "' (expected at least " +
+                       std::to_string(entry->variadic_param_index) + ", got " +
+                       std::to_string(args.size()) + ")");
+      }
+      // Copy fixed params
+      for (uint32_t i = 0; i < entry->variadic_param_index; ++i) {
+        if (i < args.size()) {
+          locals[i] = args[i];
+        }
+      }
+      // Pack remaining args into array at variadic_param_index
+      auto arrRef = heap_.allocateArray();
+      auto *arr = heap_.array(arrRef.id);
+      for (size_t i = entry->variadic_param_index; i < args.size(); ++i) {
+        arr->push_back(std::move(args[i]));
+      }
+      locals[entry->variadic_param_index] = Value::makeArrayId(arrRef.id);
+    } else {
+      // Non-variadic: exact match required
+      if (args.size() != entry->param_count) {
+        COMPILER_THROW("Argument count mismatch for entry function '" +
+                       function_name + "' (expected " +
+                       std::to_string(entry->param_count) + ", got " +
+                       std::to_string(args.size()) + ")");
+      }
+      for (uint32_t i = 0; i < entry->param_count; ++i) {
+        locals[i] = args[i];
+      }
     }
   }
 
@@ -1294,9 +1340,38 @@ return GoroutineCallResult::JITExecuted;
   size_t needed = std::max(func->local_count, func->param_count);
   locals.resize(needed, nullptr);
 
-  // Copy args into local slots
-  for (uint32_t i = 0; i < func->param_count && i < args.size(); ++i) {
-    locals[i] = args[i];
+  // Handle variadic parameters for goroutine entry function
+  if (func->variadic_param_index != UINT32_MAX) {
+    // Variadic function: allow >= variadic_param_index args
+    if (args.size() < func->variadic_param_index) {
+      COMPILER_THROW("Argument count mismatch for goroutine entry function '" +
+          func->name + "' (expected at least " +
+          std::to_string(func->variadic_param_index) + ", got " +
+          std::to_string(args.size()) + ")");
+    }
+    // Copy fixed params
+    for (uint32_t i = 0; i < func->variadic_param_index; ++i) {
+      if (i < args.size()) {
+        locals[i] = args[i];
+      }
+    }
+    // Pack remaining args into array at variadic_param_index
+    auto arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
+    for (size_t i = func->variadic_param_index; i < args.size(); ++i) {
+      arr->push_back(std::move(args[i]));
+    }
+    locals[func->variadic_param_index] = Value::makeArrayId(arrRef.id);
+  } else if (!args.empty()) {
+    // Non-variadic: exact match required (or fewer args for defaults)
+    for (uint32_t i = 0; i < func->param_count && i < args.size(); ++i) {
+      locals[i] = args[i];
+    }
+  } else {
+    // No args provided
+    for (uint32_t i = 0; i < func->param_count; ++i) {
+      locals[i] = Value::makeNull();
+    }
   }
 
   // Set up the initial call frame
@@ -2013,11 +2088,9 @@ void VM::packVariadicArgs(std::vector<Value> &args,
   if (!callee || callee->variadic_param_index == UINT32_MAX) {
     return; // Not a variadic function
   }
-  if (args.size() <= callee->variadic_param_index) {
-    return; // Not enough args to pack
-  }
 
   // Pack args from variadic_param_index onwards into an array
+  // Even if no variadic args provided, create empty array
   auto arrRef = heap_.allocateArray();
   auto *arr = heap_.array(arrRef.id);
   for (size_t i = callee->variadic_param_index; i < args.size(); ++i) {
@@ -2577,16 +2650,7 @@ const auto *callee = resolve_chunk->getFunction(function_index);
   }
 
   for (uint32_t i = 0; i < callee->param_count; i++) {
-    if (callee->variadic_param_index != UINT32_MAX &&
-        i == callee->variadic_param_index) {
-      // Variadic parameter: pack remaining args into array
-      auto arrRef = heap_.allocateArray();
-      auto *arr = heap_.array(arrRef.id);
-      for (size_t j = i; j < args.size(); j++) {
-        arr->push_back(std::move(args[j]));
-      }
-      locals[base + i] = Value::makeArrayId(arrRef.id);
-    } else if (i < args.size()) {
+    if (i < args.size()) {
       locals[base + i] = std::move(args[i]);
     } else if (has_kwargs && i < callee->param_names.size() && kwargs_obj) {
       auto it = kwargs_obj->find(callee->param_names[i]);

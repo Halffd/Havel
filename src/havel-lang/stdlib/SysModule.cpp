@@ -216,7 +216,7 @@ void registerSysModule(const VMApi &api) {
 #endif
                        });
 
-  api.registerFunction("process.pid",
+  api.registerFunction("__proc.pid",
                        [](const std::vector<Value> &args) {
                          (void)args;
 #ifndef _WIN32
@@ -226,7 +226,7 @@ void registerSysModule(const VMApi &api) {
 #endif
                        });
 
-  api.registerFunction("process.ppid",
+  api.registerFunction("__proc.ppid",
                        [](const std::vector<Value> &args) {
                          (void)args;
 #ifndef _WIN32
@@ -699,9 +699,9 @@ void registerSysModule(const VMApi &api) {
   // ========================================================================
   // process.find — find PIDs by name
   // ========================================================================
-api.registerFunction("process.find", [api](const std::vector<Value>& args) {
+api.registerFunction("__proc.find", [api](const std::vector<Value>& args) {
     if (args.empty())
-        throw std::runtime_error("process.find() requires a process name");
+        throw std::runtime_error("__proc.find() requires a process name");
     std::string name = api.resolveString(args[0]);
 #ifndef _WIN32
     auto pids = havel::utils::findProcessesByName(name);
@@ -718,9 +718,9 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
   // ========================================================================
   // process.exists — check if process is running (by name or PID)
   // ========================================================================
-  api.registerFunction("process.exists", [api](const std::vector<Value>& args) {
+  api.registerFunction("__proc.exists", [api](const std::vector<Value>& args) {
     if (args.empty())
-      throw std::runtime_error("process.exists() requires a process name or PID");
+      throw std::runtime_error("__proc.exists() requires a process name or PID");
 #ifndef _WIN32
     if (args[0].isInt()) {
       pid_t pid = static_cast<pid_t>(args[0].asInt());
@@ -736,11 +736,11 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
   // ========================================================================
   // process.kill — send signal to PID
   // ========================================================================
-  api.registerFunction("process.kill", [api](const std::vector<Value>& args) {
+  api.registerFunction("__proc.kill", [api](const std::vector<Value>& args) {
     if (args.size() < 2)
-      throw std::runtime_error("process.kill() requires PID and signal");
+      throw std::runtime_error("__proc.kill() requires PID and signal");
     if (!args[0].isInt())
-      throw std::runtime_error("process.kill() requires a number PID");
+      throw std::runtime_error("__proc.kill() requires a number PID");
     int32_t pid = static_cast<int32_t>(args[0].asInt());
     std::string sig = api.resolveString(args[1]);
     int signum = 15;
@@ -748,6 +748,8 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
     else if (sig == "SIGTERM" || sig == "term") signum = 15;
     else if (sig == "SIGHUP" || sig == "hangup") signum = 1;
     else if (sig == "SIGINT" || sig == "int") signum = 2;
+    else if (sig == "SIGSTOP" || sig == "stop") signum = 19;
+    else if (sig == "SIGCONT" || sig == "cont") signum = 18;
 #ifndef _WIN32
     return Value::makeBool(kill(pid, signum) == 0);
 #else
@@ -755,20 +757,68 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
 #endif
   });
 
+  // process.getState — get process state (RUNNING, STOPPED, etc.)
+  // ========================================================================
+  api.registerFunction("__proc.getState", [api](const std::vector<Value>& args) -> Value {
+    if (args.size() < 1)
+      throw std::runtime_error("__proc.getState() requires PID");
+    if (!args[0].isInt())
+      throw std::runtime_error("__proc.getState() requires a number PID");
+    int32_t pid = static_cast<int32_t>(args[0].asInt());
+
+#ifndef _WIN32
+    std::string statPath = "/proc/" + std::to_string(pid) + "/stat";
+    std::ifstream statFile(statPath);
+    if (!statFile.is_open()) {
+      return api.makeString("DEAD");
+    }
+    std::string line;
+    std::getline(statFile, line);
+    // Parse state character (3rd field)
+    size_t firstSpace = line.find(' ');
+    size_t secondSpace = line.find(' ', firstSpace + 1);
+    size_t thirdSpace = line.find(' ', secondSpace + 1);
+    if (thirdSpace != std::string::npos && thirdSpace + 1 < line.size()) {
+      char stateChar = line[thirdSpace + 1];
+      switch (stateChar) {
+        case 'R': return api.makeString("RUNNING");
+        case 'S': return api.makeString("SLEEPING");
+        case 'D': return api.makeString("WAITING");
+        case 'Z': return api.makeString("ZOMBIE");
+        case 'T':
+        case 't': return api.makeString("STOPPED");
+        case 'X': return api.makeString("DEAD");
+        case 'x': return api.makeString("DEAD");
+        case 'K': return api.makeString("WAKEKILL");
+        case 'W': return api.makeString("WAKING");
+        case 'P': return api.makeString("PARKED");
+        case 'I': return api.makeString("IDLE");
+        default: return api.makeString("UNKNOWN");
+      }
+    }
+    return api.makeString("UNKNOWN");
+#else
+    return api.makeString("UNKNOWN");
+#endif
+  });
+
+  // Signal constants are defined in modules/std/process.hv
+  // ========================================================================
+
   // ========================================================================
   // process.nice — set nice value for PID
   // ========================================================================
-  api.registerFunction("process.nice", [](const std::vector<Value>& args) -> Value {
+  api.registerFunction("__proc.nice", [](const std::vector<Value>& args) -> Value {
     if (args.size() < 2)
-      throw std::runtime_error("process.nice() requires PID and nice value");
+      throw std::runtime_error("__proc.nice() requires PID and nice value");
     if (!args[0].isInt())
-      throw std::runtime_error("process.nice() requires a number PID");
+      throw std::runtime_error("__proc.nice() requires a number PID");
     if (!args[1].isInt())
-      throw std::runtime_error("process.nice() requires a number nice value");
+      throw std::runtime_error("__proc.nice() requires a number nice value");
     int32_t pid = static_cast<int32_t>(args[0].asInt());
     int64_t niceVal = args[1].asInt();
     if (niceVal < -20 || niceVal > 19)
-      throw std::runtime_error("process.nice() nice value must be between -20 and 19");
+      throw std::runtime_error("__proc.nice() nice value must be between -20 and 19");
 #ifndef _WIN32
     errno = 0;
     int ret = setpriority(PRIO_PROCESS, pid, static_cast<int>(niceVal));
@@ -781,11 +831,11 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
   // ========================================================================
   // process.run — run command synchronously, return {pid, exitCode, success, stdout, stderr, error}
   // ========================================================================
-  api.registerFunction("process.run", [api](const std::vector<Value>& args) {
+  api.registerFunction("__proc.run", [api](const std::vector<Value>& args) {
     if (api.vm().getScheduler())
       api.vm().getScheduler()->yieldCurrentAndCheckTimers();
     if (args.empty())
-      throw std::runtime_error("process.run() requires a command");
+      throw std::runtime_error("__proc.run() requires a command");
     std::string cmd = api.resolveString(args[0]);
 
     auto presult = Launcher::runSync(cmd);
@@ -803,9 +853,9 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
   // ========================================================================
   // process.runDetached — run command without waiting, return pid
   // ========================================================================
-  api.registerFunction("process.runDetached", [api](const std::vector<Value>& args) {
+  api.registerFunction("__proc.runDetached", [api](const std::vector<Value>& args) {
     if (args.empty())
-      throw std::runtime_error("process.runDetached() requires a command");
+      throw std::runtime_error("__proc.runDetached() requires a command");
     std::string cmd = api.resolveString(args[0]);
 
     auto presult = Launcher::runDetached(cmd);
@@ -815,20 +865,20 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
   // ========================================================================
   // process.wait — wait for spawned process to finish, update fields on object
   // ========================================================================
-  api.registerFunction("process.wait", [api](const std::vector<Value>& args) {
+  api.registerFunction("__proc.wait", [api](const std::vector<Value>& args) {
     if (api.vm().getScheduler())
       api.vm().getScheduler()->yieldCurrentAndCheckTimers();
     if (args.empty())
-      throw std::runtime_error("process.wait() requires process object");
+      throw std::runtime_error("__proc.wait() requires process object");
 
     Value procObj = args[0];
     Value pidVal = api.getField(procObj, "pid");
     if (!pidVal.isInt())
-      throw std::runtime_error("process.wait(): invalid process object");
+      throw std::runtime_error("__proc.wait(): invalid process object");
 #ifndef _WIN32
     pid_t pid = static_cast<pid_t>(pidVal.asInt());
     if (pid <= 0)
-      throw std::runtime_error("process.wait(): process not started");
+      throw std::runtime_error("__proc.wait(): process not started");
 
     int status;
     pid_t ret = waitpid(pid, &status, 0);
@@ -866,14 +916,14 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
   // ========================================================================
   // process.killObj — kill spawned process (use process.kill(pid, sig) for PID)
   // ========================================================================
-  api.registerFunction("process.killObj", [api](const std::vector<Value>& args) {
+  api.registerFunction("__proc.killObj", [api](const std::vector<Value>& args) {
     if (args.empty())
-      throw std::runtime_error("process.killObj() requires process object");
+      throw std::runtime_error("__proc.killObj() requires process object");
 
     Value procObj = args[0];
     Value pidVal = api.getField(procObj, "pid");
     if (!pidVal.isInt())
-      throw std::runtime_error("process.killObj(): invalid process object");
+      throw std::runtime_error("__proc.killObj(): invalid process object");
 
 #ifndef _WIN32
     pid_t pid = static_cast<pid_t>(pidVal.asInt());
@@ -890,22 +940,22 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
   // ========================================================================
   // process.spawn — run command, return process object with .pid (data fields only)
   // ========================================================================
-  api.registerFunction("process.spawn", [api](const std::vector<Value>& args) {
+  api.registerFunction("__proc.spawn", [api](const std::vector<Value>& args) {
     if (api.vm().getScheduler())
       api.vm().getScheduler()->yieldCurrentAndCheckTimers();
     if (args.empty())
-      throw std::runtime_error("process.spawn() requires a command");
+      throw std::runtime_error("__proc.spawn() requires a command");
     std::string cmd = api.resolveString(args[0]);
 #ifndef _WIN32
     int stdout_pipe[2], stderr_pipe[2];
     if (pipe(stdout_pipe) < 0 || pipe(stderr_pipe) < 0)
-      throw std::runtime_error("process.spawn() pipe failed");
+      throw std::runtime_error("__proc.spawn() pipe failed");
 
     pid_t pid = fork();
     if (pid == -1) {
       close(stdout_pipe[0]); close(stdout_pipe[1]);
       close(stderr_pipe[0]); close(stderr_pipe[1]);
-      throw std::runtime_error("process.spawn() fork failed");
+      throw std::runtime_error("__proc.spawn() fork failed");
     }
 
     if (pid == 0) {
@@ -948,18 +998,18 @@ api.registerFunction("process.find", [api](const std::vector<Value>& args) {
   // process namespace object
   // ========================================================================
   auto processObj = api.makeObject();
-  api.setField(processObj, "find", api.makeFunctionRef("process.find"));
-  api.setField(processObj, "exists", api.makeFunctionRef("process.exists"));
-  api.setField(processObj, "kill", api.makeFunctionRef("process.kill"));
-  api.setField(processObj, "nice", api.makeFunctionRef("process.nice"));
-  api.setField(processObj, "run", api.makeFunctionRef("process.run"));
-  api.setField(processObj, "runDetached", api.makeFunctionRef("process.runDetached"));
-  api.setField(processObj, "spawn", api.makeFunctionRef("process.spawn"));
-  api.setField(processObj, "wait", api.makeFunctionRef("process.wait"));
-    api.setField(processObj, "killObj", api.makeFunctionRef("process.killObj"));
+  api.setField(processObj, "find", api.makeFunctionRef("__proc.find"));
+  api.setField(processObj, "exists", api.makeFunctionRef("__proc.exists"));
+  api.setField(processObj, "kill", api.makeFunctionRef("__proc.kill"));
+  api.setField(processObj, "nice", api.makeFunctionRef("__proc.nice"));
+  api.setField(processObj, "run", api.makeFunctionRef("__proc.run"));
+  api.setField(processObj, "runDetached", api.makeFunctionRef("__proc.runDetached"));
+  api.setField(processObj, "spawn", api.makeFunctionRef("__proc.spawn"));
+  api.setField(processObj, "wait", api.makeFunctionRef("__proc.wait"));
+    api.setField(processObj, "killObj", api.makeFunctionRef("__proc.killObj"));
     api.setField(processObj, "exit", api.makeFunctionRef("sys.exit"));
-    api.setField(processObj, "pid", api.makeFunctionRef("process.pid"));
-    api.setField(processObj, "ppid", api.makeFunctionRef("process.ppid"));
+    api.setField(processObj, "pid", api.makeFunctionRef("__proc.pid"));
+    api.setField(processObj, "ppid", api.makeFunctionRef("__proc.ppid"));
     api.setGlobal("process", processObj);
 }
 

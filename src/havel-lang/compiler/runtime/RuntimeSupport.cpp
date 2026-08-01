@@ -1064,7 +1064,6 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
 
         // variadic_param_index (HVC4+)
         if (hvc_version >= 4) {
-        ::havel::debug("[RTS-DEBUG] read variadic_param_index = " + std::to_string(func.variadic_param_index) + " for function " + funcName);
             if (!read(&func.variadic_param_index, sizeof(func.variadic_param_index))) return std::nullopt;
         } else {
             func.variadic_param_index = UINT32_MAX;

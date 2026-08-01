@@ -2,16 +2,6 @@
 // Top-down operator precedence parser matching the C++ Parser.cpp architecture
 // Consumes token list from "lexer".hv, produces AST nodes from "ast".hv
 
-// Module-level parser state globals (must be before use statements for self-hosted bootstrap)
-tokens = null
-pos = 0
-errors = []
-incomplete = false
-inMatchExpr = false
-allowBraceSugar = true
-_eof = null
-_cur = null
-
 use { tokenize, TOKEN_TYPES, KEYWORDS, TID, TID_NAME } from "lexer"
 use { NODE_TYPES, BINARY_OPS, COMPOUND_ASSIGN_OPS, UNARY_OPS,
 Program, BlockStatement, ExpressionStatement,
@@ -74,7 +64,7 @@ BP_TABLE[TID.Arrow] = 10; BP_TABLE[TID.LeftArrow] = 10
 BP_TABLE[TID.Nullish] = 20; BP_TABLE[TID.Question] = 15
 BP_TABLE[TID.Or] = 30; BP_TABLE[TID.And] = 40
 BP_TABLE[TID.Equals] = 50; BP_TABLE[TID.NotEquals] = 50; BP_TABLE[TID.Is] = 50
-BP_TABLE[TID.Tilde] = 50; BP_TABLE[TID.Matches] = 50; BP_TABLE[TID.As] = 50; BP_TABLE[TID.In] = 55
+BP_TABLE[TID.Tilde] = 50; BP_TABLE[TID.NotTilde] = 50; BP_TABLE[TID.Matches] = 50; BP_TABLE[TID.As] = 50; BP_TABLE[TID.In] = 55
 BP_TABLE[TID.Less] = 60; BP_TABLE[TID.Greater] = 60; BP_TABLE[TID.LessEquals] = 60; BP_TABLE[TID.GreaterEquals] = 60
 BP_TABLE[TID.DotDot] = 70; BP_TABLE[TID.DotDotEquals] = 70
 BP_TABLE[TID.Plus] = 70; BP_TABLE[TID.Minus] = 70; BP_TABLE[TID.Pipe] = 75; BP_TABLE[TID.PipeRight] = 75
@@ -228,7 +218,7 @@ LED_TOKENS[TID.BitwiseAndAssign] = true; LED_TOKENS[TID.BitwiseOrAssign] = true;
 LED_TOKENS[TID.ShiftLeftAssign] = true; LED_TOKENS[TID.ShiftRightAssign] = true
 LED_TOKENS[TID.LeftArrow] = true; LED_TOKENS[TID.Nullish] = true; LED_TOKENS[TID.Question] = true
 LED_TOKENS[TID.Or] = true; LED_TOKENS[TID.And] = true
-LED_TOKENS[TID.Equals] = true; LED_TOKENS[TID.NotEquals] = true; LED_TOKENS[TID.Is] = true; LED_TOKENS[TID.Tilde] = true
+LED_TOKENS[TID.Equals] = true; LED_TOKENS[TID.NotEquals] = true; LED_TOKENS[TID.Is] = true; LED_TOKENS[TID.Tilde] = true; LED_TOKENS[TID.NotTilde] = true
 LED_TOKENS[TID.Matches] = true; LED_TOKENS[TID.As] = true; LED_TOKENS[TID.In] = true; LED_TOKENS[TID.Not] = true
 LED_TOKENS[TID.Less] = true; LED_TOKENS[TID.Greater] = true; LED_TOKENS[TID.LessEquals] = true; LED_TOKENS[TID.GreaterEquals] = true
 LED_TOKENS[TID.DotDot] = true; LED_TOKENS[TID.DotDotEquals] = true
@@ -253,38 +243,38 @@ IMPLICIT_CALL_STARTERS[TID.Not] = true; IMPLICIT_CALL_STARTERS[TID.Length] = tru
 // Parser object — encapsulates parsing state
 // ===================================================================
 fn Parser(tokenList) {
-  ::tokens = tokenList
-  ::pos = 0
-  ::errors = []
-  ::incomplete = false
-  ::inMatchExpr = false
-  ::allowBraceSugar = true
-  ::_eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
-  ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
+  tokens = tokenList
+  pos = 0
+  errors = []
+  incomplete = false
+  inMatchExpr = false
+  allowBraceSugar = true
+  _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
+  _cur = pos < tokens.len ? tokens[pos] : _eof
 
   fn at(offset) {
-    i = ::pos + offset
+    i = pos + offset
     if i < 0: i = 0
-    if i < ::tokens.len: return ::tokens[i]
-    else: return ::_eof
+    if i < tokens.len: return tokens[i]
+    else: return _eof
   }
   fn current() {
-    return ::_cur
+    return _cur
   }
   fn advance() {
-    if ::pos < ::tokens.len {
-      t = ::tokens[::pos]
-      ::pos = ::pos + 1
-      ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
+    if pos < tokens.len {
+      t = tokens[pos]
+      pos = pos + 1
+      _cur = pos < tokens.len ? tokens[pos] : _eof
       return t
     }
     else {
-      ::_cur = ::_eof
-      return ::_eof
+      _cur = _eof
+      return _eof
     }
   }
   fn syncCur() {
-    ::_cur = ::pos < ::tokens.len ? ::tokens[::pos] : ::_eof
+    _cur = pos < tokens.len ? tokens[pos] : _eof
   }
   fn synchronize() {
     while notEOF() and current().tid != TID.EOF {
@@ -564,12 +554,12 @@ else if tt == TID.OpenParen {
 return parseParenExpr(tok)
 }
 else if tt == TID.OpenBracket {
-::pos = ::pos - 1
+pos = pos - 1
 syncCur()
 return parseArrayLiteral()
 }
 else if tt == TID.OpenBrace {
-::pos = ::pos - 1
+pos = pos - 1
 syncCur()
 return disambiguateBrace()
 }
@@ -850,10 +840,16 @@ else if tt == TID.Is {
 right = parseExpr(getRightBindingPower(TID.Is))
 return BinaryExpression(left, "is", right, l, c)
 }
-else if tt == TID.Tilde or tt == TID.Matches {
-right = parseExpr(getRightBindingPower(tt))
-return BinaryExpression(left, "matches", right, l, c)
-}
+else if tt == TID.Tilde {
+        right = parseExpr(getRightBindingPower(TID.Tilde))
+        return BinaryExpression(left, "~", right, l, c)
+    }
+else if tt == TID.NotTilde or tt == TID.Matches {
+        right = parseExpr(getRightBindingPower(tt))
+        matchOp = "matches"
+        if tt == TID.NotTilde { matchOp = "not matches" }
+        return BinaryExpression(left, matchOp, right, l, c)
+    }
 else if tt == TID.In {
 right = parseExpr(getRightBindingPower(TID.In))
 return BinaryExpression(left, "in", right, l, c)
@@ -1330,7 +1326,7 @@ fn parseCallArgs() {
             return LambdaExpression(lambdaParams, body)
         }
         // Not a lambda — restore position and parse grouped expression
-        ::pos = savedPos
+        pos = savedPos
         syncCur()
         skipNewlines()
         expr = parseExpr(0)
@@ -2073,7 +2069,7 @@ fn parseStatement() {
 			return ExpressionStatement(MultipleAssignment(targets, value, l, c), l, c)
 		}
   // Not multi-assign - restore position
-  ::pos = savePos
+  pos = savePos
   syncCur()
  }
 
@@ -2089,19 +2085,19 @@ if tt == TID.At and at(1).tid == TID.Identifier {
  advance() // @
  advance() // identifier
  if current().tid == TID.Arrow {
-  ::pos = savePos
+  pos = savePos
   syncCur()
   return parseHotkeyStatement()
  }
  // @decorator: followed by fn/class/struct/def
  skipNewlines()
  if current().tid == TID.Fn || current().tid == TID.Class || current().tid == TID.Struct || current().tid == TID.Def {
-  ::pos = savePos
+  pos = savePos
   syncCur()
   return parseAtDecoratorStatement()
  }
  // Otherwise @x is an expression (self-field access) — fall through
- ::pos = savePos
+ pos = savePos
  syncCur()
 }
 	// Identifier + When/If/Arrow at statement start => hotkey
@@ -2299,7 +2295,7 @@ if tt == TID.Greater { return parseInputStatement() }
         }
         break
       }
-      ::pos = savePos
+      pos = savePos
       syncCur()
       if isDeco { return parseDecoratorStatement() }
     }
@@ -2513,7 +2509,7 @@ fn parseDoWhileStatement() {
   skipNewlines()
   if current().tid == TID.OpenBrace {
    // This is a count-based loop - restore and parse count expr
-   ::pos = savedPos
+   pos = savedPos
    syncCur()
    if current().tid == TID.Number {
     countExpr = NumberLiteral(current().value, current().line, current().col)
@@ -2527,7 +2523,7 @@ fn parseDoWhileStatement() {
   }
   else {
    // Not a count-based loop - restore position
-   ::pos = savedPos
+   pos = savedPos
    syncCur()
   }
  }
@@ -3459,7 +3455,7 @@ fn parseOnKeyDownOrKeyUpStatement() {
   advance() // consume '{'
   skipNewlines()
   firstTok = current()
-  ::pos = savedPos
+  pos = savedPos
   syncCur()
   isFullDefinition = (firstTok.tid == TID.Identifier && (firstTok.value == "condition" || firstTok.value == "enter" || firstTok.value == "exit" || firstTok.value == "on")) || firstTok.tid == TID.On
   if isFullDefinition {
@@ -3777,13 +3773,13 @@ fn parseTypeParameterList() {
         return candidateParams
       }
       // Not followed by '(' — backtrack
-      ::pos = savedPos
+      pos = savedPos
       syncCur()
       return []
     }
   }
   // Backtrack — not a type parameter list
-  ::pos = savedPos
+  pos = savedPos
   syncCur()
   return []
   }
@@ -4585,10 +4581,10 @@ fn parseAtDecoratorStatement() {
     current: current,
     advance: advance,
     at: at,
-    errors: ::errors,
-    pos: ::pos,
-    tokens: ::tokens,
-    incomplete: ::incomplete,
+    errors: errors,
+    pos: pos,
+    tokens: tokens,
+    incomplete: incomplete,
     }
 }
 // ===================================================================

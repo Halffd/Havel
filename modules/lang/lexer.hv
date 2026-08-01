@@ -42,9 +42,9 @@ TID = {
     ShiftLeftAssign: 138, ShiftRightAssign: 139,
     DoubleOpenParen: 140, DoubleCloseParen: 141,
     Nullish: 142, Question: 143, QuestionDot: 144,
-    Tilde: 145, At: 146, AtAt: 147, SuperArrow: 148,
-    Pipe: 149, PipeRight: 150, Length: 151, NewLine: 152, EOF: 153, CharLiteral: 154,
-    Hash: 155,
+    Tilde: 145, NotTilde: 146, At: 147, AtAt: 148, SuperArrow: 149,
+    Pipe: 150, PipeRight: 151, Length: 152, NewLine: 153, EOF: 154, CharLiteral: 155,
+    Hash: 156,
 }
 
 // --- Reverse mapping: integer ID -> string type name ---
@@ -997,13 +997,20 @@ fn scanHotkey() {
         addToken("NotEquals", "!=")
         continue
       }
-            if c == 33 && cp(1) == 123 {
+if c == 33 && cp(1) == 123 {
                 advance()
                 advance()
                 addToken("BangOpenBrace", "!{")
                 continue
             }
-  // ! - context-aware: Not vs hotkey
+            // !~ - not matches operator
+            if c == 33 && cp(1) == 126 {
+                advance()
+                advance()
+                addToken("NotTilde", "!~")
+                continue
+            }
+            // ! - context-aware: Not vs hotkey
   if c == 33 {
     nextCp = cp(1)
     isIdentStart = false

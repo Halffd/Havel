@@ -958,7 +958,7 @@ void ExecutionEngine::processGoroutinesInline() {
         // "CALL Underflow! Stack size: 0 Expected: 2 IP: 2896".
         // Set as current goroutine for context (so goroutines spawned by
         // main see their parent), but keep it out of the runnable queue.
-        Scheduler::Goroutine* main_g = new Scheduler::Goroutine(1, "main-script", FiberPriority::NORMAL);
+        Scheduler::Goroutine* main_g = new Scheduler::Goroutine(1, "main-script", FiberPriority::NORMAL, false);
         main_g->fiber = main_script_fiber_.get();
         main_g->state = Scheduler::GoroutineState::Suspended;  // Picked up by outer runDispatchLoop, not by scheduler.
         

@@ -328,6 +328,23 @@ if opr == "not in" {
     bc.emit("CALL", 2)
     return
   }
+  if opr == "not matches" {
+    sid = globalIdx(emitter, "string.includes")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    emitExpr(emitter, node.left)
+    emitExpr(emitter, node.right)
+    bc.emit("CALL", 2)
+    bc.emit("NOT")
+    return
+  }
+  if opr == "matches" {
+    sid = globalIdx(emitter, "regex_search")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    emitExpr(emitter, node.left)
+    emitExpr(emitter, node.right)
+    bc.emit("CALL", 2)
+    return
+  }
   if opr == "=~" {
     sid = globalIdx(emitter, "regex_search")
     bc.emit("LOAD_GLOBAL", bc.str_id(sid))
@@ -1967,7 +1984,7 @@ if k == "DoWhileStatement" {
 
 	if k == "LoopStatement" {
 	// Check for count-based loop: loop N { ... }
-	if node.count != null {
+	if node.has("count") {
 		emitExpr(emitter, node.count)
 		countSlot = scopeDeclare(emitter.scope, "__loop_count__")
 		bc.emit("STORE_VAR", countSlot)

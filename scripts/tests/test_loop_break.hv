@@ -1,0 +1,8 @@
+tickOut = 0
+loop {
+  tickOut++
+  println("out=$tickOut")
+  if tickOut >= 3 { break }
+  sleep(1000)
+}
+println("done out=$tickOut")

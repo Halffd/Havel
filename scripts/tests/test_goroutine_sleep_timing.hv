@@ -1,0 +1,22 @@
+::tickGo = 0
+::tickOut = 0
+::t0 = time.now()
+go fn update() {
+  loop {
+    ::tickGo = ::tickGo + 1
+    sleep(1000)
+    if ::tickGo >= 6 { return }
+  }
+}
+loop {
+  ::tickOut = ::tickOut + 1
+  sleep(1000)
+  if ::tickOut >= 6 { break }
+}
+::elapsed = (time.now() - ::t0) / 1000.0
+print("out=" + str(::tickOut) + " in=" + str(::tickGo) + " elapsed_ms=" + str(::elapsed))
+if ::tickGo >= 5 && ::tickOut >= 5 {
+  ratio = num(::tickOut) / num(::tickGo)
+  println(" ratio=" + str(ratio))
+  if ratio >= 0.5 && ratio <= 1.5 { println("PASS") } else { println("FAIL ratio outside 0.5-1.5") }
+} else { println(" FAIL not enough ticks") }

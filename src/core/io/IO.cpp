@@ -1965,7 +1965,9 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
         warn("Duplicate hotkey alias detected: '{}' (registered as '{}'). "
              "Skipping duplicate registration.",
              rawInput, existingHotkey.alias);
-        return hotkey; // Return existing hotkey without re-registering
+        // Return the already-registered hotkey so callers keep using the
+        // existing entry instead of storing an unregistered id-0 hotkey.
+        return existingHotkey;
       }
     }
 

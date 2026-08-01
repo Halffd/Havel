@@ -1318,17 +1318,17 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     try {
       jit_compiler_->executeCompiled(this, func->name, args);
       setJITActiveClosurePublic(prev_jit_closure);
-return GoroutineCallResult::JITExecuted;
+      return GoroutineCallResult::JITExecuted;
     } catch (const JitCoroutineSignal &) {
       setJITActiveClosurePublic(prev_jit_closure);
       // Fall through to interpreter path
     }
-} else {
+  } else {
     if (debugging::debug_io)
       ::havel::debug("[VM] JIT skipped: func={} callable_is_closure={} "
-                       "jit_compiled={} debugger={}",
-                       func->name, callable.isClosureId(), func->jit_compiled,
-                       debugger_attached_);
+                     "jit_compiled={} debugger={}",
+                     func->name, callable.isClosureId(), func->jit_compiled,
+                     debugger_attached_);
   }
   if (!args.empty()) {
     if (func->variadic_param_index != UINT32_MAX) {
@@ -1359,7 +1359,7 @@ return GoroutineCallResult::JITExecuted;
         locals[i] = args[i];
       }
     }
-} else {
+  } else {
     // No args provided
     for (uint32_t i = 0; i < func->param_count; ++i) {
       locals[i] = Value::makeNull();
@@ -1380,9 +1380,9 @@ return GoroutineCallResult::JITExecuted;
     // Variadic function: allow >= variadic_param_index args
     if (args.size() < func->variadic_param_index) {
       COMPILER_THROW("Argument count mismatch for goroutine entry function '" +
-          func->name + "' (expected at least " +
-          std::to_string(func->variadic_param_index) + ", got " +
-          std::to_string(args.size()) + ")");
+                     func->name + "' (expected at least " +
+                     std::to_string(func->variadic_param_index) + ", got " +
+                     std::to_string(args.size()) + ")");
     }
     // Copy fixed params
     for (uint32_t i = 0; i < func->variadic_param_index; ++i) {

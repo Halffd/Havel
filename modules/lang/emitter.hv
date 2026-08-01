@@ -52,7 +52,7 @@ fn parseOct(s) {
 
 
 fn Emitter() {
- {scope: null, func_map: {}, globals: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}, structNames: {}, currentClassName: "", currentParentClassName: "", inTailPosition: false, emittedTailCall: false, tryDepth: 0, whenConditionFuncIndex: -1}
+ {scope: null, func_map: {}, globals: {}, global_names: {}, gcount: 0, breakStack: [], continueStack: [], nextFuncId: 1, classNames: {}, structNames: {}, currentClassName: "", currentParentClassName: "", inTailPosition: false, emittedTailCall: false, tryDepth: 0, whenConditionFuncIndex: -1}
 
 }
 fn emitError(msg, line, col) {
@@ -67,6 +67,39 @@ fn globalIdx(emitter, name) {
     emitter.globals[name] = cidx
     cidx
 
+}
+fn collectAssignTargetNames(emitter, target) {
+  if target != null {
+    if target.kind == "Identifier" {
+      emitter.global_names[target.name] = true
+    }
+    else if target.kind == "MemberExpression" && target.obj != null && target.obj.kind == "Identifier" {
+      emitter.global_names[target.obj.name] = true
+    }
+  }
+}
+fn collectTopLevelGlobals(emitter, body) {
+  for stmt in body {
+    if stmt == null { continue }
+    if stmt.kind == "ExpressionStatement" {
+      e = stmt.expr
+      if e == null { continue }
+      if e.kind == "AssignmentExpression" {
+        collectAssignTargetNames(emitter, e.target)
+      }
+      else if e.kind == "MultipleAssignment" && e.targets != null {
+        for t in e.targets {
+          collectAssignTargetNames(emitter, t)
+        }
+      }
+      else if e.kind == "CompoundAssignment" {
+        collectAssignTargetNames(emitter, e.target)
+      }
+      else if e.kind == "UpdateExpression" {
+        collectAssignTargetNames(emitter, e.operand)
+      }
+    }
+  }
 }
 fn emitLoadVar(emitter, name) {
   resolved = scopeResolve(emitter.scope, name)
@@ -98,6 +131,10 @@ fn emitStoreVar(emitter, name) {
   // Variable not found in scope — bare assignment creates local inside function, global at top level
   funcRoot = scopeFindFuncRoot(emitter.scope)
   if funcRoot.parent != null {
+    if emitter.global_names[name] == true {
+      bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, name)))
+      return
+    }
     // Inside a function — declare as local in the current scope
     idx = scopeDeclare(emitter.scope, name)
     bc.emit("STORE_VAR", idx)
@@ -321,11 +358,10 @@ if opr == "not in" {
     return
   }
   if opr == "~" {
-    sid = globalIdx(emitter, "string.includes")
-    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
     emitExpr(emitter, node.left)
+    propIdx = bc.add_chunk_string("includes")
     emitExpr(emitter, node.right)
-    bc.emit("CALL", 2)
+    bc.emit("CALL_METHOD", bc.str_id(propIdx), 1)
     return
   }
   if opr == "not matches" {
@@ -335,6 +371,14 @@ if opr == "not in" {
     emitExpr(emitter, node.right)
     bc.emit("CALL", 2)
     bc.emit("NOT")
+    return
+  }
+  if opr == "matches" {
+    sid = globalIdx(emitter, "regex_search")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    emitExpr(emitter, node.left)
+    emitExpr(emitter, node.right)
+    bc.emit("CALL", 2)
     return
   }
   if opr == "=~" {
@@ -1976,7 +2020,7 @@ if k == "DoWhileStatement" {
 
 	if k == "LoopStatement" {
 	// Check for count-based loop: loop N { ... }
-	if node.count != null {
+	if node.has("count") {
 		emitExpr(emitter, node.count)
 		countSlot = scopeDeclare(emitter.scope, "__loop_count__")
 		bc.emit("STORE_VAR", countSlot)
@@ -3232,7 +3276,7 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
       sid = bc.add_chunk_string(p.value)
       paramNameStrIds.push(sid)
     }
-    else if type(p) == "str" {
+    else if type(p) == "string" {
       sid = bc.add_chunk_string(p)
       paramNameStrIds.push(sid)
     }
@@ -3333,7 +3377,7 @@ paramCount = #(parameters != null ? parameters : [])
 			sid = bc.add_chunk_string(p.value)
 			paramNameStrIds.push(sid)
 		}
-		else if type(p) == "str" {
+		else if type(p) == "string" {
 			sid = bc.add_chunk_string(p)
 			paramNameStrIds.push(sid)
 		}
@@ -3603,6 +3647,10 @@ for stmt in body {
  // Module scope — used as parent for top-level functions
     moduleScope = Scope(null, null, null)
  emitter.scope = moduleScope
+ // Pre-scan top-level assignment targets as implicit globals so lambdas
+ // that assign to module-level variables (e.g. goroutine writing title_)
+ // emit STORE_GLOBAL instead of shadowing the global with a local.
+ collectTopLevelGlobals(emitter, body)
  // Pass 1: compile all function bodies
  funcUpcounts = []
  funcChunkIdxs = []
@@ -4324,7 +4372,7 @@ fn emitHotkeyBinding(emitter, node) {
   if emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0 {
    sid = globalIdx(emitter, "hotkey.register_conditional")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   if type(hk) == "str" {
+   if type(hk) == "string" {
     keyIdx = bc.add_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
@@ -4353,7 +4401,7 @@ fn emitHotkeyBinding(emitter, node) {
   if emitter.whenConditionFuncIndex == null || emitter.whenConditionFuncIndex < 0 {
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   if type(hk) == "str" {
+   if type(hk) == "string" {
     keyIdx = bc.add_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
@@ -4449,7 +4497,7 @@ fn emitHotkeyBindingExpr(emitter, node) {
    if emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0 {
     sid = globalIdx(emitter, "hotkey.register_conditional")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   if type(hk) == "str" {
+   if type(hk) == "string" {
     keyIdx = bc.add_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
@@ -4478,7 +4526,7 @@ fn emitHotkeyBindingExpr(emitter, node) {
   if emitter.whenConditionFuncIndex == null || emitter.whenConditionFuncIndex < 0 {
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   if type(hk) == "str" {
+   if type(hk) == "string" {
     keyIdx = bc.add_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
@@ -4727,7 +4775,7 @@ fn emitOnKeyBinding(emitter, registerFn, key, body) {
   sid = globalIdx(emitter, registerFn)
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   if key != null {
-    if type(key) == "str" {
+    if type(key) == "string" {
       keyIdx = bc.add_string(key)
       bc.emit("LOAD_CONST", keyIdx)
     }

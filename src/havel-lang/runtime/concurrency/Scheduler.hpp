@@ -215,7 +215,7 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   uint32_t update_interval_ms = 0;
   uint64_t update_callback_id = 0; // GC external root ID (from registerCallback), 0 = none
 
-explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL, bool owns_fiber_ = true)
+    explicit Goroutine(uint32_t id_, const std::string& name_ = "", FiberPriority prio = FiberPriority::NORMAL, bool owns_fiber_ = true)
         : id(id_), name(name_), ip(0),
           state(GoroutineState::Created), suspension_reason{SuspensionReason::None},
           created_time(std::chrono::steady_clock::now()),

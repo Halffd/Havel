@@ -129,7 +129,7 @@ fn _validateStmt(node, ctx) {
 
     if k == "LetDeclaration" {
         if node.value != null { _validateExpr(node.value, ctx) }
-        if node.name != null && type(node.name) == "str" {
+        if node.name != null && type(node.name) == "string" {
             nctx = ctx.constNames
             nctx[node.name] = "let"
         }
@@ -138,7 +138,7 @@ fn _validateStmt(node, ctx) {
 
     if k == "ValDeclaration" {
         if node.value != null { _validateExpr(node.value, ctx) }
-        if node.name != null && type(node.name) == "str" {
+        if node.name != null && type(node.name) == "string" {
             nctx = ctx.constNames
             nctx[node.name] = "val"
         }

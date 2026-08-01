@@ -1,0 +1,57 @@
+// test_conditional_hotkey_grab.hv
+// Regression: conditional hotkeys must register with their real key string
+// and the initial grab must match the condition result (false -> not grabbed).
+// Covers: when plk { F1 => {} } with plk=false (bug: key emitted as null,
+// because type() returns "string" but emitter checked == "str").
+
+failures = 0
+
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    }
+    else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+plk = false
+when plk {
+    F1 => {
+        print("F1 body")
+    }
+}
+
+plkTrue = true
+when plkTrue {
+    F2 => {
+        print("F2 body")
+    }
+}
+
+hkList = hotkey.list()
+check("hotkey.list returns entries", hkList != null && #hkList > 0)
+
+foundF1 = false
+foundF2 = false
+f1Grab = null
+for hk in hkList {
+    if hk.alias == "F1" {
+        foundF1 = true
+        f1Grab = hk.grab
+    }
+    if hk.alias == "F2" {
+        foundF2 = true
+    }
+}
+
+check("when+false hotkey registers with key F1", foundF1)
+check("when+false hotkey not grabbed (grab=false)", f1Grab == false)
+check("when+true hotkey registers with key F2", foundF2)
+
+if failures > 0 {
+    print("FAILED " + str(failures))
+    exit(1)
+}
+print("ALL PASS")

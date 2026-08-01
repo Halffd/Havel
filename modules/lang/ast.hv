@@ -981,7 +981,7 @@ prettyPrint(node.iterable, depth + 2)
  if node.hotkeys != null && #node.hotkeys > 0 {
   for h in node.hotkeys {
    if keyStr != "": keyStr += ", "
-   if type(h) == "str": keyStr += h
+   if type(h) == "string": keyStr += h
    else if h.kind == "HotkeyLiteral": keyStr += h.combination
    else: keyStr += str(h)
   }

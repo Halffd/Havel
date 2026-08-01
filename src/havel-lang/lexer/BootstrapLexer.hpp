@@ -123,10 +123,10 @@ enum class TokenType {
   And,
   Or,
   Not,
-Matches, // regex match operator
-    Tilde,   // ~ regex match shorthand
-    NotTilde, // !~ not matches
-    True,    // boolean literal true
+  Matches,    // regex match operator
+  Tilde,      // ~ regex match shorthand
+  NotTilde,   // !~ not matches
+  True,       // boolean literal true
   False,   // boolean literal false
   Null,    // null literal
   Assign,

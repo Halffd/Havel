@@ -1,0 +1,14 @@
+// test_when_not.hv — verifies when !plk (unary negate in condition) fires
+plk = false
+
+when !plk {
+    print("body called - not plk")
+}
+
+print("setting plk = true...")
+plk = true
+
+print("setting plk = false...")
+plk = false
+
+print("done")

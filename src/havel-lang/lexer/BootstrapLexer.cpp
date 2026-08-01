@@ -1766,8 +1766,18 @@ if (c == '%' && peek() == '=') {
         havel::debug("LEX: {}", tokens.back().toString());
       }
       continue;
-    }
-    // Handle !#= and !#- as hotkey prefixes (e.g., !#= =>, !#- =>)
+}
+      // Handle !~ - not matches operator
+      if (c == '!' && peek() == '~') {
+        advance(); // consume '!'
+        advance(); // consume '~'
+        tokens.push_back(makeToken("!~", TokenType::NotTilde));
+        if (debug_lexer) {
+          havel::debug("LEX: {}", tokens.back().toString());
+        }
+        continue;
+      }
+      // Handle !#= and !#- as hotkey prefixes (e.g., !#= =>, !#- =>)
     if (c == '!' && peek() == '#') {
       char nextAfterHash = peek(1);
       if (nextAfterHash == '=' || nextAfterHash == '-') {

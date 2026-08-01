@@ -816,7 +816,6 @@ private:
 
       // Set as current goroutine so VM opcodes can access it via scheduler_->current()
       sched->setCurrent(g);
-
       // Start and run this goroutine to completion
       // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
       if (g->state == compiler::Scheduler::GoroutineState::Created) {

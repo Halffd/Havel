@@ -496,10 +496,90 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
         // If still runnable, loop will continue and call wakeSleepingGoroutines
         // again
       }
+    } else {
+      // Main is suspended (e.g. in sleep). Drive other runnable goroutines
+      // (spawned via go/async) so they make progress while main waits.
+      // Without this branch, a goroutine spawned by the script never runs
+      // during main's sleep — it only executes later in the event loop, so
+      // main sees stale globals.
+      auto *other = scheduler_->pickNext();
+      if (other) {
+        scheduler_->setCurrent(other);
+        if (other->state == Scheduler::GoroutineState::Created) {
+          auto cr = startGoroutineCall(other->callable, other->locals);
+          if (cr != GoroutineCallResult::Failed) {
+            other->state = Scheduler::GoroutineState::Runnable;
+            if (other->fiber) {
+              current_executing_fiber_ = other->fiber;
+              runDispatchLoop(0);
+              current_executing_fiber_ = nullptr;
+              saveFiberState(other->fiber);
+            }
+          } else {
+            other->state = Scheduler::GoroutineState::Done;
+          }
+        } else if (other->fiber) {
+          loadFiberState(other->fiber);
+          current_executing_fiber_ = other->fiber;
+          runDispatchLoop(0);
+          current_executing_fiber_ = nullptr;
+          saveFiberState(other->fiber);
+        }
+        // Inspect suspension / completion and update scheduler state.
+        uint8_t r = last_suspension_reason_;
+        void *ctx = last_suspension_context_;
+        if (r != 0) {
+          clearLastSuspension();
+          other->state = Scheduler::GoroutineState::Suspended;
+          using F = SuspensionReason;
+          using S = Scheduler::SuspensionReason;
+          S schedReason = S::None;
+          switch (static_cast<F>(r)) {
+          case F::SLEEP: schedReason = S::SleepWait; break;
+          case F::CHANNEL_RECV: schedReason = S::ChannelWait; break;
+          case F::CHANNEL_SEND: schedReason = S::ChannelSendWait; break;
+          case F::THREAD_JOIN: schedReason = S::ThreadWait; break;
+          case F::TIMER: schedReason = S::TimerWait; break;
+          case F::HOTKEY_WAIT: schedReason = S::HotkeyWait; break;
+          case F::COROUTINE_WAIT: schedReason = S::CoroutineWait; break;
+          default: break;
+          }
+          other->suspension_reason.store(schedReason, std::memory_order_release);
+          if (other->fiber) {
+            other->fiber->state = FiberState::SUSPENDED;
+            other->fiber->suspended_reason = static_cast<F>(r);
+          }
+          if (static_cast<F>(r) == F::SLEEP) {
+            auto ms = reinterpret_cast<intptr_t>(ctx);
+            std::lock_guard wlock(other->wait_handle_mutex_);
+            other->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+            other->wait_handle.deadline =
+                std::chrono::steady_clock::now() +
+                std::chrono::milliseconds(ms);
+          }
+        } else if (other->state == Scheduler::GoroutineState::Running) {
+          // Yielded (instruction budget) — requeue.
+          other->state = Scheduler::GoroutineState::Runnable;
+        }
+        scheduler_->clearCurrent();
+      } else {
+        // Nothing runnable. Sleep until the nearest deadline so we don't spin.
+        auto deadline = scheduler_->nextSleepDeadline();
+        if (!deadline) {
+          // No sleeping goroutines with deadlines — main should be runnable
+          // or we'd hang. Break and let execute() return.
+          break;
+        }
+        auto now = std::chrono::steady_clock::now();
+        if (*deadline > now) {
+          auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        *deadline - now)
+                        .count();
+          std::this_thread::sleep_for(
+              std::chrono::milliseconds(std::min(ms, 100L)));
+        }
+      }
     }
-
-    // Sleep a bit to avoid busy-waiting
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
   // Clean up
@@ -1598,6 +1678,18 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
 
       try {
         executeInstruction(instruction);
+        // The switch-based executeInstruction (used by the slow dispatch
+        // loop) does not propagate suspension_requested_ into last_suspension_*.
+        // Host calls (e.g. sleep) set suspension_requested_ + suspension_reason_
+        // but leave last_suspension_reason_ at 0, so the periodic check above
+        // would never see the suspension and the goroutine runs to completion.
+        // Propagate here so the next iteration's check returns to the caller.
+        if (suspension_requested_) {
+          last_suspension_reason_ = suspension_reason_;
+          last_suspension_context_ = suspension_context_;
+          suspension_requested_ = false;
+          suspension_context_ = nullptr;
+        }
       } catch (const ScriptThrow &thrown) {
         ::havel::stdlib::notifyRuntimeError(thrown.value.toString());
         if (!handleScriptThrow(thrown.value)) {
@@ -2130,15 +2222,13 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
 
     // Check for suspension request after host function returns
     if (suspension_requested_) {
-      if (yield_callback_) {
-        if (debugging::debug_io)
-          ::havel::debug("[VM] Suspension requested after host function, "
-                         "calling yield_callback_");
-        yield_callback_();
-      } else {
-        ::havel::warning(
-            "[VM] Suspension requested but NO yield_callback_ set!");
-      }
+      // Propagate into last_suspension_* so the caller (scheduler) reads the
+      // correct reason. Previously this only invoked yield_callback_, which
+      // re-entered the scheduler inline and clobbered the active suspension
+      // state (other goroutines also set suspension_requested_), so main's
+      // sleep suspend was lost and execution ran to completion.
+      last_suspension_reason_ = suspension_reason_;
+      last_suspension_context_ = suspension_context_;
     }
     return;
   }

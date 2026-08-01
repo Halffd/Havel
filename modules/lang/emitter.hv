@@ -3212,7 +3212,7 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
       else { scopeDeclare(newScope, p.name) }
     }
     else { scopeDeclare(newScope, p) }
-    if p.variadic { variadicParamIndex = pi }
+    if p.variadic || p.isVariadic { variadicParamIndex = pi }
     pi = pi + 1
   }
   paramCount = #params
@@ -3308,15 +3308,12 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
   variadicParamIndex = -1
   pi = 0
   for p in parameters != null ? parameters : [] {
-  if type(p) == "array" {
-    print("ERROR: param is array: " + str(p))
-}
 	if type(p) == "object" {
 		if p.name != null { scopeDeclare(newScope, p.name) }
 		else if p.value != null { scopeDeclare(newScope, p.value) }
 	}
 	else { scopeDeclare(newScope, p) }
-    if p.variadic { variadicParamIndex = pi }
+    if p.variadic || p.isVariadic { variadicParamIndex = pi }
     pi = pi + 1
 	}
 paramCount = #(parameters != null ? parameters : [])
@@ -3347,7 +3344,7 @@ paramCount = #(parameters != null ? parameters : [])
  }
 di = 0
   for p in parameters != null ? parameters : [] {
-  if type(p) == "object" && p.variadic {
+  if type(p) == "object" && (p.variadic || p.isVariadic) {
     variadicParamIndex = di
   }
   if type(p) == "object" && (p.defval != null || p.default != null) {

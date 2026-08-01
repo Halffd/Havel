@@ -28,3 +28,13 @@ fn play(file) { audio.play(file) }
 fn playTest() { audio.playTest() }
 fn backend() { audio.backend() }
 fn devices() { audio.devices() }
+fn getDevices() { audio.getDevices() }
+fn findDeviceByName(name) { audio.findDeviceByName(name) }
+fn findDeviceByIndex(index) { audio.findDeviceByIndex(index) }
+fn getDefaultOutput() { audio.getDefaultOutput() }
+fn setDefaultOutput(name) { audio.setDefaultOutput(name) }
+fn playTestSound() { audio.playTestSound() }
+fn setVolume(name, vol) { audio.setVolume(name, vol) }
+fn getVolume(name) { audio.getVolume(name) }
+fn increaseVolume(name, step) { audio.increaseVolume(name, step) }
+fn decreaseVolume(name, step) { audio.decreaseVolume(name, step) }

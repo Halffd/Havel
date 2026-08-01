@@ -198,7 +198,6 @@ fn testModeForcing() {
     print("Mode restored to " + mode + ". Re-testing...")
     test()
 }
-// Uncomment to run: testModeForcing()  // but this will change mode and may affect other tests; we can run it later.
 
 // ============================================================
 // START MAIN LOOPS
@@ -225,6 +224,7 @@ go fn update() {
         [title_, class_, cmd, wid, wpid] = [win.title, win.class, win.cmdline, win.id, win.pid]
 
         if wid != lwid {
+            print("WINDOW CHANGE")
             [ltitle, lclass, lcmd, lwid, lwpid] = [title_, class_, cmd, wid, wpid]
             modeEval(win)
 
@@ -239,6 +239,7 @@ go fn update() {
     }
 }
 
+testModeForcing()
 print("STARTING OUTSIDE LOOP")
 loop {
     tickOut++

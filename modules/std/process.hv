@@ -1,21 +1,33 @@
 // process.hv — process management wrapping C++ process.* host bridge
-// Host bridge: process.spawn, process.wait, process.run, process.runDetached,
-// process.kill, process.killObj, process.find, process.exists, process.nice
+// Host bridge: __proc.spawn, __proc.wait, __proc.run, __proc.runDetached,
+// __proc.kill, __proc.killObj, __proc.find, __proc.exists, __proc.nice,
+// __proc.getState
+
+// ============================================================
+// Signal constants
+// ============================================================
+
+SIGKILL = 9
+SIGTERM = 15
+SIGHUP = 1
+SIGINT = 2
+SIGSTOP = 19
+SIGCONT = 18
 
 // ============================================================
 // Spawn + wait (two-step async pattern)
 // ============================================================
 
 fn spawn(cmd) {
- process.spawn(cmd)
+ __proc.spawn(cmd)
 }
 
 fn wait(proc) {
- process.wait(proc)
+ __proc.wait(proc)
 }
 
 fn killObj(proc) {
- process.killObj(proc)
+ __proc.killObj(proc)
 }
 
 // ============================================================
@@ -23,12 +35,12 @@ fn killObj(proc) {
 // ============================================================
 
 fn run(cmd) {
- process.run(cmd)
+ __proc.run(cmd)
 }
 
 // Run command and return only stdout (trimmed). Errors logged, not thrown.
 fn capture(cmd) {
- r = process.run(cmd)
+ r = __proc.run(cmd)
  if !r.success {
   log.warn("process.capture failed: " + r.stderr.trim())
  }
@@ -37,7 +49,7 @@ fn capture(cmd) {
 
 // Run command, throw on failure.
 fn runOrThrow(cmd) {
- r = process.run(cmd)
+ r = __proc.run(cmd)
  if !r.success {
   throw("process failed (exit " + str(r.exitCode) + "): " + r.stderr)
  }
@@ -49,7 +61,7 @@ fn runOrThrow(cmd) {
 // ============================================================
 
 fn runDetached(cmd) {
- process.runDetached(cmd)
+ __proc.runDetached(cmd)
 }
 
 // ============================================================
@@ -57,11 +69,11 @@ fn runDetached(cmd) {
 // ============================================================
 
 fn find(name) {
- process.find(name)
+ __proc.find(name)
 }
 
 fn exists(nameOrPid) {
- process.exists(nameOrPid)
+ __proc.exists(nameOrPid)
 }
 
 // ============================================================
@@ -69,11 +81,19 @@ fn exists(nameOrPid) {
 // ============================================================
 
 fn kill(pid, sig) {
- process.kill(pid, sig)
+ __proc.kill(pid, sig)
+}
+
+fn getState(pid) {
+ __proc.getState(pid)
+}
+
+fn sendSignal(pid, sig) {
+ __proc.kill(pid, sig)
 }
 
 fn nice(pid, value) {
- process.nice(pid, value)
+ __proc.nice(pid, value)
 }
 
 // ============================================================
@@ -82,34 +102,34 @@ fn nice(pid, value) {
 
 // Check if a command is available on PATH
 fn which(cmd) {
- r = process.run("command -v " + cmd + " 2>/dev/null")
+ r = __proc.run("command -v " + cmd + " 2>/dev/null")
  if r.success { return r.stdout.trim() }
  null
 }
 
 // Spawn, wait, return exit code only
 fn exec(cmd) {
- p = process.spawn(cmd)
- process.wait(p)
+ p = __proc.spawn(cmd)
+ __proc.wait(p)
  p.exitCode
 }
 
 // Spawn, wait, return {stdout, stderr, exitCode}
 fn output(cmd) {
- p = process.spawn(cmd)
- process.wait(p)
+ p = __proc.spawn(cmd)
+ __proc.wait(p)
  {stdout: p.stdout, stderr: p.stderr, exitCode: p.exitCode}
 }
 
 // Run command silently, return true on success
 fn ok(cmd) {
- r = process.run(cmd)
+ r = __proc.run(cmd)
  r.success
 }
 
 // Pipeline: run cmd1, pipe stdout into cmd2
 fn pipe(cmd1, cmd2) {
- r1 = process.run(cmd1)
+ r1 = __proc.run(cmd1)
  if !r1.success { return {success: false, error: r1.stderr} }
- process.run("echo '" + r1.stdout.replace("'", "'\\''") + "' | " + cmd2)
+ __proc.run("echo '" + r1.stdout.replace("'", "'\\''") + "' | " + cmd2)
 }

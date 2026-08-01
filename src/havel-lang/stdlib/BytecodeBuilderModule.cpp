@@ -285,7 +285,9 @@ void registerBytecodeBuilderModule(const VMApi &api) {
 		uint32_t variadic_param_index = UINT32_MAX;
 		if (args.size() > 1 && args[1].isInt()) params = static_cast<uint32_t>(args[1].asInt());
 		if (args.size() > 2 && args[2].isInt()) locals = static_cast<uint32_t>(args[2].asInt());
-		if (args.size() > 3 && args[3].isInt()) variadic_param_index = static_cast<uint32_t>(args[3].asInt());
+		if (args.size() > 3 && args[3].isInt()) {
+            variadic_param_index = static_cast<uint32_t>(args[3].asInt());
+        }
 
         BytecodeFunction func(name, params, locals);
 		func.variadic_param_index = variadic_param_index;

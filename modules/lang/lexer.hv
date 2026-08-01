@@ -45,8 +45,6 @@ TID = {
     Tilde: 145, NotTilde: 146, At: 147, AtAt: 148, SuperArrow: 149,
     Pipe: 150, PipeRight: 151, Length: 152, NewLine: 153, EOF: 154, CharLiteral: 155,
     Hash: 156,
-    Pipe: 149, PipeRight: 150, Length: 151, NewLine: 152, EOF: 153, CharLiteral: 154,
-    Hash: 155,
 }
 
 // --- Reverse mapping: integer ID -> string type name ---

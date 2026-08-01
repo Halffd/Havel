@@ -852,8 +852,8 @@ return BinaryExpression(left, "is", right, l, c)
 }
 else if tt == TID.Tilde or tt == TID.NotTilde or tt == TID.Matches {
         right = parseExpr(getRightBindingPower(tt))
-        op = if tt == TID.NotTilde { "not matches" } else { "matches" }
-        return BinaryExpression(left, op, right, l, c)
+        opr = tt == TID.NotTilde ? "not matches" : "matches"
+        return BinaryExpression(left, opr, right, l, c)
     }
 else if tt == TID.In {
 right = parseExpr(getRightBindingPower(TID.In))

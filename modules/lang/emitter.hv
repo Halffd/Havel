@@ -3232,7 +3232,7 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
       sid = bc.add_chunk_string(p.value)
       paramNameStrIds.push(sid)
     }
-    else if type(p) == "str" {
+    else if type(p) == "string" {
       sid = bc.add_chunk_string(p)
       paramNameStrIds.push(sid)
     }
@@ -3336,7 +3336,7 @@ paramCount = #(parameters != null ? parameters : [])
 			sid = bc.add_chunk_string(p.value)
 			paramNameStrIds.push(sid)
 		}
-		else if type(p) == "str" {
+		else if type(p) == "string" {
 			sid = bc.add_chunk_string(p)
 			paramNameStrIds.push(sid)
 		}
@@ -4327,7 +4327,7 @@ fn emitHotkeyBinding(emitter, node) {
   if emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0 {
    sid = globalIdx(emitter, "hotkey.register_conditional")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   if type(hk) == "str" {
+   if type(hk) == "string" {
     keyIdx = bc.add_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
@@ -4356,7 +4356,7 @@ fn emitHotkeyBinding(emitter, node) {
   if emitter.whenConditionFuncIndex == null || emitter.whenConditionFuncIndex < 0 {
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   if type(hk) == "str" {
+   if type(hk) == "string" {
     keyIdx = bc.add_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
@@ -4452,7 +4452,7 @@ fn emitHotkeyBindingExpr(emitter, node) {
    if emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0 {
     sid = globalIdx(emitter, "hotkey.register_conditional")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   if type(hk) == "str" {
+   if type(hk) == "string" {
     keyIdx = bc.add_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
@@ -4481,7 +4481,7 @@ fn emitHotkeyBindingExpr(emitter, node) {
   if emitter.whenConditionFuncIndex == null || emitter.whenConditionFuncIndex < 0 {
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   if type(hk) == "str" {
+   if type(hk) == "string" {
     keyIdx = bc.add_string(hk)
     bc.emit("LOAD_CONST", keyIdx)
    }
@@ -4730,7 +4730,7 @@ fn emitOnKeyBinding(emitter, registerFn, key, body) {
   sid = globalIdx(emitter, registerFn)
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   if key != null {
-    if type(key) == "str" {
+    if type(key) == "string" {
       keyIdx = bc.add_string(key)
       bc.emit("LOAD_CONST", keyIdx)
     }

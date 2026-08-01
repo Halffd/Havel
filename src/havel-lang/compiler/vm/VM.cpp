@@ -1277,12 +1277,47 @@ return GoroutineCallResult::JITExecuted;
       setJITActiveClosurePublic(prev_jit_closure);
       // Fall through to interpreter path
     }
-  } else {
+} else {
     if (debugging::debug_io)
       ::havel::debug("[VM] JIT skipped: func={} callable_is_closure={} "
                        "jit_compiled={} debugger={}",
                        func->name, callable.isClosureId(), func->jit_compiled,
                        debugger_attached_);
+  }
+  if (!args.empty()) {
+    if (func->variadic_param_index != UINT32_MAX) {
+      // Variadic function: allow >= variadic_param_index args
+      if (args.size() < func->variadic_param_index) {
+        COMPILER_THROW(
+            "Argument count mismatch for goroutine entry function '" +
+            func->name + "' (expected at least " +
+            std::to_string(func->variadic_param_index) + ", got " +
+            std::to_string(args.size()) + ")");
+      }
+      // Copy fixed params
+      for (uint32_t i = 0; i < func->variadic_param_index; ++i) {
+        if (i < args.size()) {
+          locals[i] = args[i];
+        }
+      }
+      // Pack remaining args into array at variadic_param_index
+      auto arrRef = heap_.allocateArray();
+      auto *arr = heap_.array(arrRef.id);
+      for (size_t i = func->variadic_param_index; i < args.size(); ++i) {
+        arr->push_back(std::move(args[i]));
+      }
+      locals[func->variadic_param_index] = Value::makeArrayId(arrRef.id);
+    } else {
+      // Non-variadic: exact match required (or fewer args for defaults)
+      for (uint32_t i = 0; i < func->param_count && i < args.size(); ++i) {
+        locals[i] = args[i];
+      }
+    }
+} else {
+    // No args provided
+    for (uint32_t i = 0; i < func->param_count; ++i) {
+      locals[i] = Value::makeNull();
+    }
   }
 
   // Push args onto VM stack
@@ -2359,12 +2394,11 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     COMPILER_THROW("No chunk available for function call");
   }
 
-const auto *callee = resolve_chunk->getFunction(function_index);
+  const auto *callee = resolve_chunk->getFunction(function_index);
   if (!callee) {
     COMPILER_THROW("Function index not found: " +
                    std::to_string(function_index));
   }
-
   // Pack variadic args for variadic functions
   packVariadicArgs(args, callee);
 

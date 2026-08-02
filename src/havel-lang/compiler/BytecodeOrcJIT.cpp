@@ -226,7 +226,7 @@ void havel_deoptimize(void* vm_ptr, uint64_t l, uint64_t r, const char* func) {
 }
 
 // JIT helper for function calls - delegates to VM
-uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count) {
+extern "C" uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count) {
     if (!vm_ptr) return 0x7FF8000000000003ULL; // null
     auto* vm = static_cast<VM*>(vm_ptr);
     
@@ -2409,7 +2409,9 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
     }
 
     translate(func, *module);
-    runOptimizations(*module);
+    if (optimization_level_ > 0) {
+        runOptimizations(*module);
+    }
 
     if (dump_ir_) {
         ::havel::debug("--- LLVM IR for {} ---", func.name);
@@ -2465,7 +2467,10 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
         return;
     }
 
-    fptrs_[func.name] = reinterpret_cast<void*>((*sym).getValue());
+    void* func_ptr = reinterpret_cast<void*>((*sym).getValue());
+    fprintf(stderr, "[COMPILE-DEBUG] func=%s ptr=%p\n", func.name.c_str(), func_ptr);
+    fflush(stderr);
+    fptrs_[func.name] = func_ptr;
     compile_cache_[func_hash] = CachedFunction{func.name};
     saveCompileCacheIndex();
     func.jit_compiled = true;

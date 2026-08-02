@@ -170,10 +170,10 @@ Scheduler::Goroutine* Scheduler::pickNext() {
                                g->id, now_ns);
               continue;
             }
-            if (g->fiber && g->fiber->state == FiberState::DONE) {
-              g->state = GoroutineState::Done;
-              continue;
-            }
+            // NOTE: Do NOT mark goroutine as Done based on fiber->state == DONE here.
+            // Fibers in infinite loops (loop { ... }) may temporarily show DONE
+            // during yield/suspend transitions. Goroutine completion is handled
+            // by the VM's execute loop when the fiber actually returns.
             if (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created) {
               return g;
             }

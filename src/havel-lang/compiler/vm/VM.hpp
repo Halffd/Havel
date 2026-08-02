@@ -192,6 +192,9 @@ struct VMConfig {
     uint64_t tier2_threshold = 10000;
     bool tier2_flush_on_shutdown = false;
 
+    // JIT Debug
+    bool debugJIT = false;
+
     // Timer check interval (instructions between timer checks)
     size_t timer_check_interval = 1000;
 

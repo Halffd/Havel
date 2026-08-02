@@ -2,11 +2,33 @@
 // Handles --run, --test, --lint modes via the self-hosted pipeline
 // Usage: havel --run launcher.hv -- [flags] script.hv
 
-use { parse } from "pratt"
+fn now() {
+    time.now()
+}
 
-use { Emitter, compileProgram } from "emitter"
-use { inferProgram } from "types"
-use { setFlag, isOn } from "debug"
+fn measure(label, t0) {
+    print("TIMING: " + label + " = " + str(time.now() - t0) + "ms")
+}
+
+fn loadCompiler() {
+    t0 = now()
+    use { parse } from "pratt"
+    measure("load pratt", t0)
+
+    t0 = now()
+    use { Emitter, compileProgram } from "emitter"
+    measure("load emitter", t0)
+
+    t0 = now()
+    use { inferProgram } from "types"
+    measure("load types", t0)
+
+    t0 = now()
+    use { setFlag, isOn } from "debug"
+    measure("load debug", t0)
+}
+
+loadCompiler()
 
 fn readScriptFile(path) {
     if !fs.exists(path) {
@@ -134,6 +156,7 @@ fn parseArgs(args) {
 }
 
 fn runScript(cfg) {
+    t_total = now()
     // Combine all script files
     combinedCode = ""
     combinedNames = ""
@@ -160,7 +183,9 @@ fn runScript(cfg) {
     if combinedCode == "" { return 0 }
 
     // Parse
+    t = now()
     result = parse(combinedCode)
+    measure("parse", t)
     if result.errors != null && #result.errors > 0 {
         for err in result.errors {
             print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))
@@ -176,15 +201,20 @@ fn runScript(cfg) {
 
     // Lint-only mode: parse + typecheck, no execution
     if cfg.lintOnly {
+        t = now()
         types = inferProgram(result)
+        measure("lint typecheck", t)
         print("Linting successful")
         shell.exit(0)
     }
 
     // Typecheck
+    t = now()
     inferProgram(result)
+    measure("typecheck", t)
 
     // Compile and execute
+    t = now()
     emitter = Emitter()
     bc.reset()
     setFlag("emitter", true)
@@ -192,9 +222,11 @@ fn runScript(cfg) {
     if #cfg.scriptFiles > 0 { sourceFile = cfg.scriptFiles[0] }
     if sourceFile == null { sourceFile = combinedNames }
     bcChunk = compileProgram(emitter, result.ast, true, sourceFile)
+    measure("emit", t)
 
     // Spawn the user script as a goroutine
     spawnUserScript(bcChunk)
+    measure("TOTAL runScript", t_total)
     return 0
 }
 

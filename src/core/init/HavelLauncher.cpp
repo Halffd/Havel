@@ -507,11 +507,14 @@ public:
               ee->setScriptReady(true);
               options.yield_callback = [ee]() { ee->processGoroutinesInline(); };
             }
+            auto exec_t0 = havel::startup_now();
             try {
               havel::compiler::runBytecodePipeline(combinedCode, "__main__",
                                                    options);
+              havel::startup_timing_report("runBytecodePipeline", exec_t0);
               info("Execution completed successfully");
             } catch (const std::exception &e) {
+              havel::startup_timing_report("runBytecodePipeline", exec_t0);
               error("Execution error: {}", e.what());
             }
           }
@@ -613,7 +616,9 @@ public:
           // a long sleep inside the chunked-sleep bytecode path.
           options.yield_callback = [ee]() { ee->processGoroutinesInline(); };
         }
+        auto exec_t0 = havel::startup_now();
         havel::compiler::runBytecodePipeline(combinedCode, "__main__", options);
+        havel::startup_timing_report("runBytecodePipeline", exec_t0);
       } catch (const std::exception &e) {
         error("Execution error: {}", e.what());
         return 1;
@@ -640,7 +645,9 @@ public:
     try {
       havel::HavelEngine engine(makeEngineConfig(cfg));
       engine.initializeMinimal();
+      auto exec_t0 = havel::startup_now();
       engine.execute(combinedCode, "__main__", combinedNames);
+      havel::startup_timing_report("engine.execute", exec_t0);
       engine.shutdown();
       return 0;
     } catch (const std::exception &e) {
@@ -741,7 +748,9 @@ public:
       }
 
       auto t1 = std::chrono::high_resolution_clock::now();
+      auto exec_t0 = havel::startup_now();
       engine.execute(combinedCode, "__main__", combinedNames);
+      havel::startup_timing_report("engine.execute", exec_t0);
       auto t2 = std::chrono::high_resolution_clock::now();
       engine.shutdown();
       auto t3 = std::chrono::high_resolution_clock::now();
@@ -1060,7 +1069,9 @@ public:
       }
       vm.setAppArgs(arrRef.id);
 
+      auto exec_t0 = havel::startup_now();
       engine.execute(launcherCode, "__main__", launcherPath);
+      havel::startup_timing_report("engine.execute", exec_t0);
       engine.shutdown();
       return 0;
     } catch (const std::exception &e) {

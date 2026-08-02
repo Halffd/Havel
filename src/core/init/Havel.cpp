@@ -375,16 +375,9 @@ scheduler = &compiler::Scheduler::instance();
 			sched->forEachConditionalHotkey(
 				[vm, hostCtx, &var_name, sched](compiler::Scheduler::Goroutine* g) {
 				if (!g) return;
-				// See counterpart in setOnVarChangedSync above: a
-				// conditional hotkey parked in HotkeyWait may be in
-				// either Suspended (pre-first-trigger) or Created
-				// (recycled by handleReturned after a prior trigger)
-				// state. Accept both: grab state must move when the
-				// condition's dependency changes regardless.
-				auto st = g->state.load(std::memory_order_acquire);
-				if (st != compiler::Scheduler::GoroutineState::Suspended &&
-				    st != compiler::Scheduler::GoroutineState::Created) return;
-				if (g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+				// Only process goroutines that have a conditional callback registered.
+				// This handles both pre-first-trigger (HotkeyWait) and post-trigger goroutines.
+				if (g->hotkey_condition_callback_id == 0) return;
 				if (g->hotkey_condition_deps.empty() ||
 					g->hotkey_condition_deps.count(var_name) == 0) return;
 					auto condVal = vm->externalRootValue(g->hotkey_condition_callback_id);

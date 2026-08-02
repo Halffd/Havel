@@ -55,12 +55,8 @@ namespace havel::compiler {
 VM::VM() : VM(VMConfig{}) {}
 
 VM::VM(const VMConfig &cfg) {
-  fprintf(stderr, "[VM-CTOR] VM::VM(const VMConfig&) called\n");
-  fflush(stderr);
   vm_config_ = cfg;
   tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
-  fprintf(stderr, "[VM-CTOR-DEBUG] cfg.tiering_enabled=%d tiering_enabled_=%d\n", cfg.tiering_enabled, tiering_enabled_);
-  fflush(stderr);
   tier2_threshold_ = cfg.tier2_threshold > 0
                          ? cfg.tier2_threshold
                          : envU64("HAVEL_TIER2_THRESHOLD", 10000);
@@ -82,11 +78,11 @@ VM::VM(const VMConfig &cfg) {
 
 #ifdef HAVEL_ENABLE_LLVM
   if (tiering_enabled_) {
-    fprintf(stderr, "[VM-DEBUG] Creating JIT compiler, tiering_enabled_=%d\n", tiering_enabled_);
-    fflush(stderr);
     jit_compiler_ = std::make_unique<BytecodeOrcJIT>();
-    fprintf(stderr, "[VM-DEBUG] JIT compiler created: %p\n", jit_compiler_.get());
-    fflush(stderr);
+    if (trace_execution_) {
+      fprintf(stderr, "[VM-DEBUG] JIT compiler created: %p\n", jit_compiler_.get());
+      fflush(stderr);
+    }
     jit_compiler_->setDebugMode(cfg.debugJIT);
   }
 #endif
@@ -2526,8 +2522,10 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     hot_func_cb_(*callee);
   }
 
-  fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());
-  fflush(stderr);
+  if (trace_execution_) {
+    fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());
+    fflush(stderr);
+  }
   if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
     try {

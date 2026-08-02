@@ -5,85 +5,140 @@
 
 
 // --- Token type integer IDs (for fast parser dispatch) ---
-TID = {
-    Identifier: 1, Number: 2, String: 3, RegexString: 4, MultilineString: 5,
-    InterpolatedString: 6, Backtick: 7, InterpolatedBacktick: 8, RegexLiteral: 9,
-    Hotkey: 10, True: 11, False: 12, Null: 13,
-    Let: 14, Val: 15, Const: 16, If: 17, Else: 18, While: 19, Do: 20,
-    Switch: 21, For: 22, In: 23, Loop: 24, Break: 25, Continue: 26,
-    Match: 27, Case: 28, Default: 29, Fn: 30, Op: 31, Return: 32, Ret: 33,
-    Struct: 34, Class: 35, Enum: 36, Trait: 37, Prot: 38, Impl: 39, This: 40,
-    Try: 41, Catch: 42, Finally: 43, Throw: 44,
-    Thread: 45, Interval: 46, Timeout: 47, Yield: 48, Sleep: 49,
-    Go: 50, Sync: 51, Async: 52, Channel: 53, Co: 54,
-    Config: 55, Devices: 56, Modes: 57, Pool: 58, Signal: 59,
-    Group: 60, On: 61, Off: 62, When: 63, Mode: 64, Repeat: 65,
-    Dsl: 66, Del: 67, Import: 68, From: 69, As: 70, Use: 71,
-    With: 72, Where: 73, Select: 74, And: 75, Or: 76, Not: 77,
-    Is: 78, Matches: 79, WaitGroup: 80, Wait: 81, Defer: 82,
-    ShellCommand: 83, ShellCommandCapture: 84,
-    OpenParen: 85, CloseParen: 86, OpenBrace: 87, CloseBrace: 88,
-    BangOpenBrace: 89, OpenBracket: 90, CloseBracket: 91,
-    Dot: 92, Comma: 93, Semicolon: 94, Colon: 95, ColonColon: 96,
-    ColonColonColon: 97,
-    Underscore: 97, DotDot: 98, DotDotEquals: 99, Spread: 100,
-    Plus: 101, Minus: 102, Multiply: 103, Divide: 104, Modulo: 105,
-    Power: 106, Backslash: 107, DoubleBackslash: 108, DoubleModulo: 109,
-    BackslashAssign: 110, DoubleModuloAssign: 111,
-    PlusPlus: 112, MinusMinus: 113,
-    Equals: 114, NotEquals: 115, Less: 116, Greater: 117,
-    LessEquals: 118, GreaterEquals: 119,
-    Arrow: 120, ReturnType: 121, LeftArrow: 122, Assign: 123,
-    PlusAssign: 124, MinusAssign: 125, MultiplyAssign: 126,
-    DivideAssign: 127, ModuloAssign: 128, PowerAssign: 129,
-    BitwiseAnd: 130, BitwiseOr: 131, BitwiseXor: 132,
-    ShiftLeft: 133, ShiftRight: 134,
-    BitwiseAndAssign: 135, BitwiseOrAssign: 136, BitwiseXorAssign: 137,
-    ShiftLeftAssign: 138, ShiftRightAssign: 139,
-    DoubleOpenParen: 140, DoubleCloseParen: 141,
-    Nullish: 142, Question: 143, QuestionDot: 144,
-    Tilde: 145, NotTilde: 146, At: 147, AtAt: 148, SuperArrow: 149,
-    Pipe: 150, PipeRight: 151, Length: 152, NewLine: 153, EOF: 154, CharLiteral: 155,
-    Hash: 156,
+_TID = null
+
+fn initTID() {
+    _TID = {
+        Identifier: 1, Number: 2, String: 3, RegexString: 4, MultilineString: 5,
+        InterpolatedString: 6, Backtick: 7, InterpolatedBacktick: 8, RegexLiteral: 9,
+        Hotkey: 10, True: 11, False: 12, Null: 13,
+        Let: 14, Val: 15, Const: 16, If: 17, Else: 18, While: 19, Do: 20,
+        Switch: 21, For: 22, In: 23, Loop: 24, Break: 25, Continue: 26,
+        Match: 27, Case: 28, Default: 29, Fn: 30, Op: 31, Return: 32, Ret: 33,
+        Struct: 36, Class: 37, Enum: 38, Trait: 39, Prot: 40, Impl: 41, This: 42,
+        Try: 43, Catch: 44, Finally: 45, Throw: 46,
+        Thread: 47, Interval: 48, Timeout: 49, Yield: 50, Sleep: 51,
+        Go: 52, Sync: 53, Async: 54, Channel: 55, Co: 56,
+        Config: 57, Devices: 58, Modes: 59, Pool: 60, Signal: 61,
+        Group: 62, On: 63, Off: 64, When: 65, Mode: 66, Repeat: 67,
+        Dsl: 68, Del: 69, Import: 70, From: 71, As: 72, Use: 73,
+        With: 74, Where: 75, Select: 76, And: 77, Or: 78, Not: 79,
+        Is: 80, Matches: 81, WaitGroup: 82, Wait: 83, Defer: 84,
+        ShellCommand: 85, ShellCommandCapture: 86,
+        OpenParen: 87, CloseParen: 88, OpenBrace: 89, CloseBrace: 90,
+        BangOpenBrace: 91, OpenBracket: 92, CloseBracket: 93,
+        Dot: 94, Comma: 95, Semicolon: 96, Colon: 97, ColonColon: 98,
+        ColonColonColon: 99,
+        Underscore: 100, DotDot: 101, DotDotEquals: 102, Spread: 103,
+        Plus: 104, Minus: 105, Multiply: 106, Divide: 107, Modulo: 108,
+        Power: 109, Backslash: 110, DoubleBackslash: 111, DoubleModulo: 112,
+        BackslashAssign: 113, DoubleModuloAssign: 114,
+        PlusPlus: 115, MinusMinus: 116,
+        Equals: 117, NotEquals: 118, Less: 119, Greater: 120,
+        LessEquals: 121, GreaterEquals: 122,
+        Arrow: 123, ReturnType: 124, LeftArrow: 125, Assign: 126,
+        PlusAssign: 127, MinusAssign: 128, MultiplyAssign: 129,
+        DivideAssign: 130, ModuloAssign: 131, PowerAssign: 132,
+        BitwiseAnd: 133, BitwiseOr: 134, BitwiseXor: 135,
+        ShiftLeft: 136, ShiftRight: 137,
+        BitwiseAndAssign: 138, BitwiseOrAssign: 139, BitwiseXorAssign: 140,
+        ShiftLeftAssign: 141, ShiftRightAssign: 142,
+        DoubleOpenParen: 143, DoubleCloseParen: 144,
+        Nullish: 145, Question: 146, QuestionDot: 147,
+        Tilde: 148, NotTilde: 149, At: 150, AtAt: 151, SuperArrow: 152,
+        Pipe: 153, PipeRight: 154, Length: 155, NewLine: 156, EOF: 157, CharLiteral: 158,
+        Hash: 159,
+    }
 }
+
+fn ensureTID() {
+    if _TID == null { initTID() }
+    _TID
+}
+
+TID = ensureTID()
 
 // --- Reverse mapping: integer ID -> string type name ---
-TID_NAME = {}
-for k, v in TID { TID_NAME[v] = k }
+_TID_NAME = null
+
+fn initTIDName() {
+    _TID_NAME = {}
+    for k, v in ensureTID() { _TID_NAME[v] = k }
+}
+
+fn ensureTIDName() {
+    if _TID_NAME == null { initTIDName() }
+    _TID_NAME
+}
+
+TID_NAME = ensureTIDName()
 
 // --- Token types (string names, kept for compatibility) ---
-TOKEN_TYPES = {}
-for k, v in TID { TOKEN_TYPES[k] = k }
+_TOKEN_TYPES = null
 
-KEYWORDS = {
-    "let": "Let", "val": "Val", "const": "Const",
-    "if": "If", "else": "Else", "while": "While", "do": "Do",
-    "switch": "Switch", "for": "For", "in": "In", "loop": "Loop",
-    "break": "Break", "continue": "Continue",
-    "match": "Match", "case": "Case", "default": "Default",
-    "fn": "Fn", "op": "Op", "return": "Return", "ret": "Ret",
-    "struct": "Struct", "class": "Class", "enum": "Enum",
-    "trait": "Trait", "prot": "Prot", "impl": "Impl", "this": "This",
-    "try": "Try", "catch": "Catch", "finally": "Finally", "throw": "Throw",
-    "thread": "Thread", "interval": "Interval", "timeout": "Timeout",
-    "yield": "Yield", "sleep": "Sleep",
-    "go": "Go", "sync": "Sync", "async": "Async", "channel": "Channel", "co": "Co",
-    "config": "Config", "devices": "Devices", "modes": "Modes",
-    "pool": "Pool", "signal": "Signal", "group": "Group",
-    "on": "On", "off": "Off", "when": "When", "mode": "Mode", "repeat": "Repeat",
-    "dsl": "Dsl", "del": "Del", "import": "Import", "from": "From",
-    "as": "As", "use": "Use", "with": "With", "where": "Where", "select": "Select",
-    "true": "True", "false": "False", "null": "Null", "nil": "Null",
-    "and": "And", "or": "Or", "not": "Not", "is": "Is", "matches": "Matches",
-    "waitgroup": "WaitGroup", "wait": "Wait", "defer": "Defer",
+fn initTokenTypes() {
+    _TOKEN_TYPES = {}
+    for k, v in ensureTID() { _TOKEN_TYPES[k] = k }
 }
 
-EXPRESSION_TOKENS = {
-    "Number", "String", "InterpolatedString", "MultilineString",
-    "Identifier", "True", "False", "Null",
-    "CloseParen", "CloseBracket", "CloseBrace",
-    "Length", "PlusPlus", "MinusMinus", "LeftArrow",
+fn ensureTokenTypes() {
+    if _TOKEN_TYPES == null { initTokenTypes() }
+    _TOKEN_TYPES
 }
+
+TOKEN_TYPES = ensureTokenTypes()
+
+_KEYWORDS = null
+
+fn initKeywords() {
+    _KEYWORDS = {
+        "let": "Let", "val": "Val", "const": "Const",
+        "if": "If", "else": "Else", "while": "While", "do": "Do",
+        "switch": "Switch", "for": "For", "in": "In", "loop": "Loop",
+        "break": "Break", "continue": "Continue",
+        "match": "Match", "case": "Case", "default": "Default",
+        "fn": "Fn", "op": "Op", "return": "Return", "ret": "Ret",
+        "struct": "Struct", "class": "Class", "enum": "Enum",
+        "trait": "Trait", "prot": "Prot", "impl": "Impl", "this": "This",
+        "try": "Try", "catch": "Catch", "finally": "Finally", "throw": "Throw",
+        "thread": "Thread", "interval": "Interval", "timeout": "Timeout",
+        "yield": "Yield", "sleep": "Sleep",
+        "go": "Go", "sync": "Sync", "async": "Async", "channel": "Channel", "co": "Co",
+        "config": "Config", "devices": "Devices", "modes": "Modes",
+        "pool": "Pool", "signal": "Signal", "group": "Group",
+        "on": "On", "off": "Off", "when": "When", "mode": "Mode", "repeat": "Repeat",
+        "dsl": "Dsl", "del": "Del", "import": "Import", "from": "From",
+        "as": "As", "use": "Use", "with": "With", "where": "Where", "select": "Select",
+        "true": "True", "false": "False", "null": "Null", "nil": "Null",
+        "and": "And", "or": "Or", "not": "Not", "is": "Is", "matches": "Matches",
+        "waitgroup": "WaitGroup", "wait": "Wait", "defer": "Defer",
+    }
+}
+
+fn ensureKeywords() {
+    if _KEYWORDS == null { initKeywords() }
+    _KEYWORDS
+}
+
+KEYWORDS = ensureKeywords()
+
+_EXPRESSION_TOKENS = null
+
+fn initExpressionTokens() {
+    _EXPRESSION_TOKENS = {
+        "Number", "String", "InterpolatedString", "MultilineString",
+        "Identifier", "True", "False", "Null",
+        "CloseParen", "CloseBracket", "CloseBrace",
+        "Length", "PlusPlus", "MinusMinus", "LeftArrow",
+    }
+}
+
+fn ensureExpressionTokens() {
+    if _EXPRESSION_TOKENS == null { initExpressionTokens() }
+    _EXPRESSION_TOKENS
+}
+
+EXPRESSION_TOKENS = ensureExpressionTokens()
 
 // --- Character classification (integer codepoint versions) ---
 
@@ -138,12 +193,71 @@ fn isUnicodeIdentifierCharCp(cp) {
 
 SIMPLE_ESCAPES = {110: "\n", 116: "\t", 114: "\r", 92: "\\", 48: "\0", 36: "$", 123: "{", 125: "}"}
 
-AFTER_EXPR_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "RegexString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow", "Not", "Or", "And", "Assign", "BitwiseOr", "BitwiseAnd", "BitwiseXor", "ShiftLeft", "ShiftRight", "OpenParen", "If", "While", "For", "In", "Matches", "Tilde", "Comma", "Dot", "Minus", "Fn", "Op"}
-AFTER_MINUS_NUMBER_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow"}
-REGEX_CONTEXT_TYPES = {"OpenParen", "OpenBracket", "OpenBrace", "Comma", "Assign", "Arrow", "And", "Or", "Not", "In", "Matches", "Tilde", "Colon", "Question", "Pipe", "NewLine", "Semicolon"}
-  STATEMENT_START_TYPES = {"NewLine", "Semicolon", "Arrow", "OpenBrace", "CloseBrace"}
-  STATEMENT_START_NO_ARROW_TYPES = {"NewLine", "Semicolon", "CloseBrace", "EOF"}
-DOUBLE_PAREN_EXPR_TYPES = {"Identifier", "CloseParen", "CloseBracket", "String", "InterpolatedString", "MultilineString", "Number", "Plus", "Minus", "Multiply", "Divide", "Modulo", "Equals", "NotEquals", "Less", "Greater", "LessEquals", "GreaterEquals", "Comma", "Return", "Colon"}
+_AFTER_EXPR_TYPES = null
+
+fn initAfterExprTypes() {
+    _AFTER_EXPR_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "RegexString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow", "Not", "Or", "And", "Assign", "BitwiseOr", "BitwiseAnd", "BitwiseXor", "ShiftLeft", "ShiftRight", "OpenParen", "If", "While", "For", "In", "Matches", "Tilde", "Comma", "Dot", "Minus", "Fn", "Op"}
+}
+
+fn ensureAfterExprTypes() {
+    if _AFTER_EXPR_TYPES == null { initAfterExprTypes() }
+    _AFTER_EXPR_TYPES
+}
+
+_AFTER_MINUS_NUMBER_TYPES = null
+
+fn initAfterMinusNumberTypes() {
+    _AFTER_MINUS_NUMBER_TYPES = {"Number", "String", "InterpolatedString", "MultilineString", "Identifier", "True", "False", "Null", "CloseParen", "CloseBracket", "CloseBrace", "Length", "PlusPlus", "MinusMinus", "LeftArrow"}
+}
+
+fn ensureAfterMinusNumberTypes() {
+    if _AFTER_MINUS_NUMBER_TYPES == null { initAfterMinusNumberTypes() }
+    _AFTER_MINUS_NUMBER_TYPES
+}
+
+_REGEX_CONTEXT_TYPES = null
+
+fn initRegexContextTypes() {
+    _REGEX_CONTEXT_TYPES = {"OpenParen", "OpenBracket", "OpenBrace", "Comma", "Assign", "Arrow", "And", "Or", "Not", "In", "Matches", "Tilde", "Colon", "Question", "Pipe", "NewLine", "Semicolon"}
+}
+
+fn ensureRegexContextTypes() {
+    if _REGEX_CONTEXT_TYPES == null { initRegexContextTypes() }
+    _REGEX_CONTEXT_TYPES
+}
+
+_STATEMENT_START_TYPES = null
+
+fn initStatementStartTypes() {
+    _STATEMENT_START_TYPES = {"NewLine", "Semicolon", "Arrow", "OpenBrace", "CloseBrace"}
+}
+
+fn ensureStatementStartTypes() {
+    if _STATEMENT_START_TYPES == null { initStatementStartTypes() }
+    _STATEMENT_START_TYPES
+}
+
+_STATEMENT_START_NO_ARROW_TYPES = null
+
+fn initStatementStartNoArrowTypes() {
+    _STATEMENT_START_NO_ARROW_TYPES = {"NewLine", "Semicolon", "CloseBrace", "EOF"}
+}
+
+fn ensureStatementStartNoArrowTypes() {
+    if _STATEMENT_START_NO_ARROW_TYPES == null { initStatementStartNoArrowTypes() }
+    _STATEMENT_START_NO_ARROW_TYPES
+}
+
+_DOUBLE_PAREN_EXPR_TYPES = null
+
+fn initDoubleParenExprTypes() {
+    _DOUBLE_PAREN_EXPR_TYPES = {"Identifier", "CloseParen", "CloseBracket", "String", "InterpolatedString", "MultilineString", "Number", "Plus", "Minus", "Multiply", "Divide", "Modulo", "Equals", "NotEquals", "Less", "Greater", "LessEquals", "GreaterEquals", "Comma", "Return", "Colon"}
+}
+
+fn ensureDoubleParenExprTypes() {
+    if _DOUBLE_PAREN_EXPR_TYPES == null { initDoubleParenExprTypes() }
+    _DOUBLE_PAREN_EXPR_TYPES
+}
 
 fn Lexer(source) {
     keywords = KEYWORDS
@@ -237,7 +351,7 @@ fn Lexer(source) {
         if tokens.len > 0 { tokens[tokens.len - 1].type } else { "NewLine" }
     }
   fn afterExpression() {
-    AFTER_EXPR_TYPES.has(lastTokenType()) || prevIsKeywordAfterDot()
+    ensureAfterExprTypes().has(lastTokenType()) || prevIsKeywordAfterDot()
   }
   fn prevIsKeywordAfterDot() {
     if tokens.len < 2 { return false }

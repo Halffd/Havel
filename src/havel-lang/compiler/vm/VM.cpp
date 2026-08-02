@@ -46,16 +46,21 @@
 #include "VMApi.hpp"
 #include "core/config/ConfigManager.hpp"
 
+#ifdef HAVEL_ENABLE_LLVM
+#include "../BytecodeOrcJIT.h"
+#endif
+
 namespace havel::compiler {
 
 VM::VM() : VM(VMConfig{}) {}
 
 VM::VM(const VMConfig &cfg) {
+  fprintf(stderr, "[VM-CTOR] VM::VM(const VMConfig&) called\n");
+  fflush(stderr);
   vm_config_ = cfg;
   tiering_enabled_ = cfg.tiering_enabled || envU64("HAVEL_TIERING", 0) != 0;
-  tier1_threshold_ = cfg.tier1_threshold > 0
-                         ? cfg.tier1_threshold
-                         : envU64("HAVEL_TIER1_THRESHOLD", 1000);
+  fprintf(stderr, "[VM-CTOR-DEBUG] cfg.tiering_enabled=%d tiering_enabled_=%d\n", cfg.tiering_enabled, tiering_enabled_);
+  fflush(stderr);
   tier2_threshold_ = cfg.tier2_threshold > 0
                          ? cfg.tier2_threshold
                          : envU64("HAVEL_TIER2_THRESHOLD", 10000);
@@ -74,6 +79,17 @@ VM::VM(const VMConfig &cfg) {
     moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
   }
   registerDefaultHostFunctions();
+
+#ifdef HAVEL_ENABLE_LLVM
+  if (tiering_enabled_) {
+    fprintf(stderr, "[VM-DEBUG] Creating JIT compiler, tiering_enabled_=%d\n", tiering_enabled_);
+    fflush(stderr);
+    jit_compiler_ = std::make_unique<BytecodeOrcJIT>();
+    fprintf(stderr, "[VM-DEBUG] JIT compiler created: %p\n", jit_compiler_.get());
+    fflush(stderr);
+    jit_compiler_->setDebugMode(cfg.debugJIT);
+  }
+#endif
 }
 
 VM::VM(const ::havel::HostContext &ctx) : VM(ctx, VMConfig{}) {}
@@ -4336,17 +4352,11 @@ Value VM::loadModule(const std::string &path) {
     }
     std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
-    std::vector<uint8_t> buffer(size);
-    if (!file.read(reinterpret_cast<char *>(buffer.data()), size)) {
-      modules_loading_.erase(canonicalKey);
-      COMPILER_THROW("Failed to read bytecode file: " +
-                     resolved->canonicalPath);
-    }
     ValueSerializer serializer;
-    auto deserialized = serializer.deserializeChunk(buffer);
+    auto deserialized = serializer.loadChunk(resolved->canonicalPath, 65536);
     if (!deserialized) {
       modules_loading_.erase(canonicalKey);
-      COMPILER_THROW("Failed to deserialize bytecode: " +
+      COMPILER_THROW("Failed to load bytecode: " +
                      resolved->canonicalPath);
     }
     chunk = std::make_shared<BytecodeChunk>(std::move(*deserialized));

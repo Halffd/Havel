@@ -13,6 +13,9 @@ void VM::execBinaryOp(const Instruction &instruction) {
   Value right = popStack();
   Value left = popStack();
 
+  fprintf(stderr, "[BINARY-DEBUG] opcode=%d tiering_enabled=%d jit_compiler_=%p\n", (int)instruction.opcode, tiering_enabled_, jit_compiler_.get());
+  fflush(stderr);
+
   if (hot_func_cb_) {
     auto &frame = currentFrame();
     if (frame.ip < frame.function->type_feedback.size()) {
@@ -22,6 +25,9 @@ void VM::execBinaryOp(const Instruction &instruction) {
       fb.right_type_mask |= getFeedbackMask(right);
 
       if (tiering_enabled_ && frame.function && jit_compiler_) {
+        fprintf(stderr, "[TIERING-DEBUG] tiering_enabled=%d frame.function=%s jit_compiler_=%p execution_count=%llu tier1_thresh=%llu tier2_thresh=%llu\n", 
+                       tiering_enabled_, frame.function ? "yes" : "no", jit_compiler_.get(), (unsigned long long)fb.execution_count, (unsigned long long)tier1_threshold_, (unsigned long long)tier2_threshold_);
+        fflush(stderr);
         const std::string fn_name = frame.function->name;
         if (fb.execution_count >= tier1_threshold_ && !tier1_compiled_.count(fn_name)) {
           tier1_compiled_.insert(fn_name);

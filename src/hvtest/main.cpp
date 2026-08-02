@@ -1,8 +1,3 @@
-#include "smoke_runner.hpp"
-#include "script_runner.hpp"
-
-namespace havel::test { void run_scheduler_tests(); }
-
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -11,6 +6,11 @@ namespace havel::test { void run_scheduler_tests(); }
 #include <string>
 #include <unistd.h>
 #include <vector>
+
+#include "smoke_runner.hpp"
+#include "script_runner.hpp"
+
+namespace havel::test { void run_scheduler_tests(); }
 
 namespace fs = std::filesystem;
 

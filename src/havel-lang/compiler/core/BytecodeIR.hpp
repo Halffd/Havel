@@ -573,6 +573,13 @@ public:
   virtual Value executeCompiled(VM* vm, const std::string &func_name,
                                 const std::vector<Value> &args) = 0;
   virtual bool isCompiled(const std::string &func_name) const = 0;
+  
+  // Debug/diagnostic methods
+  virtual void setDebugMode(bool enabled) { (void)enabled; }
+  virtual void setDumpIR(bool enabled) { (void)enabled; }
+  virtual void setDumpAsmToFile(bool enabled) { (void)enabled; }
+  virtual void setShowWarnings(bool enabled) { (void)enabled; }
+  virtual void setOptimizationLevel(uint8_t level) { (void)level; }
 };
 
 // Hybrid execution engine (Compiler + Interpreter + JIT)

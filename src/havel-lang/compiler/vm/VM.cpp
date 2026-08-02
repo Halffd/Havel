@@ -47,7 +47,7 @@
 #include "core/config/ConfigManager.hpp"
 
 #ifdef HAVEL_ENABLE_LLVM
-#include "BytecodeOrcJIT.h"
+#include "../BytecodeOrcJIT.h"
 #endif
 
 namespace havel::compiler {

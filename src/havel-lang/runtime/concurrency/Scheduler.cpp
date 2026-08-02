@@ -830,10 +830,6 @@ size_t Scheduler::wakeSleepingGoroutines() {
         for (auto* g : toWake) {
             // Set resume value for sleep (returns null)
             g->wait_handle.resume_value = Value::makeNull();
-            // Resume the fiber if it exists and is suspended
-            if (g->fiber && g->fiber->state == FiberState::SUSPENDED) {
-                g->fiber->resume();
-            }
             // Defense in depth: ensure goroutine isn't already in a queue
             removeFromQueues(g);
             if (g->priority == FiberPriority::HOTKEY) {

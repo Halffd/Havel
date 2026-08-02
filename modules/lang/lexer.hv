@@ -973,7 +973,7 @@ fn scanHotkey() {
             // Minus: check for negative number context
             canNegNum = (c == 45 && isDigitCp(cp(1)))
             if canNegNum && tokens.len > 0 {
-                if AFTER_MINUS_NUMBER_TYPES.has(tokens[tokens.len - 1].type) {
+                if ensureAfterMinusNumberTypes().has(tokens[tokens.len - 1].type) {
                     canNegNum = false
                 }
             }
@@ -1096,7 +1096,7 @@ fn scanHotkey() {
         // At statement start, != can be a hotkey (Alt+Equals) if followed by =>
         isStmtStart = tokens.len == 0
         if !isStmtStart {
-          if STATEMENT_START_NO_ARROW_TYPES.has(tokens[tokens.len - 1].type) { isStmtStart = true }
+          if ensureStatementStartNoArrowTypes().has(tokens[tokens.len - 1].type) { isStmtStart = true }
         }
         if isStmtStart {
           lk = idx + 2
@@ -1376,7 +1376,7 @@ if c == 33 && cp(1) == 123 {
                     // Regex context check
                     isRegCtx = tokens.len == 0
                     if !isRegCtx {
-                        if REGEX_CONTEXT_TYPES.has(tokens[tokens.len - 1].type) { isRegCtx = true }
+                        if ensureRegexContextTypes().has(tokens[tokens.len - 1].type) { isRegCtx = true }
                     }
                     if isRegCtx && !isDigitCp(cp(1)) {
                         scanRegexLiteral()
@@ -1486,7 +1486,7 @@ if c == 33 && cp(1) == 123 {
       if c == 124 && !inBitwiseExpr {
         isStmtStart = tokens.len == 0
         if !isStmtStart {
-          if STATEMENT_START_NO_ARROW_TYPES.has(tokens[tokens.len - 1].type) { isStmtStart = true }
+          if ensureStatementStartNoArrowTypes().has(tokens[tokens.len - 1].type) { isStmtStart = true }
         }
         if isStmtStart {
           nx = cp(1)
@@ -1553,7 +1553,7 @@ if c == 33 && cp(1) == 123 {
                 emitTwo = false
                 if tokens.len > 0 {
                     prevType = tokens[tokens.len - 1].type
-                    if DOUBLE_PAREN_EXPR_TYPES.has(prevType) {
+                    if ensureDoubleParenExprTypes().has(prevType) {
                         emitTwo = true
                     }
   if !emitTwo && prevType == "Assign" {
@@ -1707,7 +1707,7 @@ if c == 33 && cp(1) == 123 {
             if c == 35 {
                 isStmtStart = tokens.len == 0
                 if !isStmtStart {
-                    if STATEMENT_START_TYPES.has(tokens[tokens.len - 1].type) { isStmtStart = true }
+                    if ensureStatementStartTypes().has(tokens[tokens.len - 1].type) { isStmtStart = true }
                 }
                 hasModPfx = (cp(1) != -1 && (cp(1) == 33 || cp(1) == 38 || cp(1) == 94))
                 hasKeyName = (cp(1) != -1 && isAlphaCp(cp(1)))

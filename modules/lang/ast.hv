@@ -122,26 +122,53 @@ fn ensureNodeTypes() {
   "RangePattern": true,
 }
 
-BINARY_OPS = {
-    "+": "+", "-": "-", "*": "*", "/": "/", "%": "%",
-    "**": "**", "\\": "\\", "\\\\": "\\\\", "%%": "%%",
-    "==": "==", "!=": "!=", "<": "<", ">": ">",
-    "<=": "<=", ">=": ">=",
-    "&&": "&&", "||": "||",
-    "&": "&", "|": "|", "^": "^", "<<": "<<", ">>": ">>",
-    "??": "??",
-    "in": "in", "is": "is", "matches": "matches", "not matches": "not matches", "not in": "not in",
+_BINARY_OPS = null
+
+fn initBinaryOps() {
+    _BINARY_OPS = {
+        "+": "+", "-": "-", "*": "*", "/": "/", "%": "%",
+        "**": "**", "\\": "\\", "\\\\": "\\\\", "%%": "%%",
+        "==": "==", "!=": "!=", "<": "<", ">": ">",
+        "<=": "<=", ">=": ">=",
+        "&&": "&&", "||": "||",
+        "&": "&", "|": "|", "^": "^", "<<": "<<", ">>": ">>",
+        "??": "??",
+        "in": "in", "is": "is", "matches": "matches", "not matches": "not matches", "not in": "not in",
+    }
 }
 
-COMPOUND_ASSIGN_OPS = {
-    "+=": "+=", "-=": "-=", "*=": "*=", "/=": "/=", "%=": "%=",
-    "**=": "**=", "\\=": "\\=", "%%=": "%%=",
-    "&=": "&=", "|=": "|=", "^=": "^=",
-    "<<=": "<<=", ">>=": ">>=",
+fn ensureBinaryOps() {
+    if _BINARY_OPS == null { initBinaryOps() }
+    _BINARY_OPS
 }
 
-UNARY_OPS = {
-  "-": "-", "!": "!", "not": "not", "#": "#", "~": "~",
+_COMPOUND_ASSIGN_OPS = null
+
+fn initCompoundAssignOps() {
+    _COMPOUND_ASSIGN_OPS = {
+        "+=": "+=", "-=": "-=", "*=": "*=", "/=": "/=", "%=": "%=",
+        "**=": "**=", "\\=": "\\=", "%%=": "%%=",
+        "&=": "&=", "|=": "|=", "^=": "^=",
+        "<<=": "<<=", ">>=": ">>=",
+    }
+}
+
+fn ensureCompoundAssignOps() {
+    if _COMPOUND_ASSIGN_OPS == null { initCompoundAssignOps() }
+    _COMPOUND_ASSIGN_OPS
+}
+
+_UNARY_OPS = null
+
+fn initUnaryOps() {
+    _UNARY_OPS = {
+        "-": "-", "!": "!", "not": "not", "#": "#", "~": "~",
+    }
+}
+
+fn ensureUnaryOps() {
+    if _UNARY_OPS == null { initUnaryOps() }
+    _UNARY_OPS
 }
 
 fn Program(body, line, col) {

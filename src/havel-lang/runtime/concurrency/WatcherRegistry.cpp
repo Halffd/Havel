@@ -98,8 +98,8 @@ std::vector<Fiber*> WatcherRegistry::onVariableChanged(
  return fired_fibers; // No watchers for this variable
  }
 
- // Copy the list — evaluator may call updateDependencies which modifies var_to_watchers_
- auto watcher_ids = var_it->second;
+// Copy the list — evaluator may call mergeDependencies which modifies var_to_watchers_
+  auto watcher_ids = var_it->second;
 
 // Re-evaluate each watcher that depends on this variable
   for (WatcherId watcher_id : watcher_ids) {

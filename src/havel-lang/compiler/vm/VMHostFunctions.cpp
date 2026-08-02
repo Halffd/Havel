@@ -1338,10 +1338,12 @@ void VM::registerDefaultHostFunctions() {
       COMPILER_THROW("sleep_ms duration cannot be negative");
     }
 
-    fprintf(stderr,
-            "[DEBUG] sleep_ms: entered with duration_ms=%ld, scheduler_=%p, "
-            "current_executing_fiber_=%p\n",
-            duration_ms, scheduler_, current_executing_fiber_);
+    if (trace_execution_) {
+      fprintf(stderr,
+              "[DEBUG] sleep_ms: entered with duration_ms=%ld, scheduler_=%p, "
+              "current_executing_fiber_=%p\n",
+              duration_ms, scheduler_, current_executing_fiber_);
+    }
 
     if (scheduler_ && current_executing_fiber_) {
       suspension_requested_ = true;
@@ -1408,10 +1410,12 @@ void VM::registerDefaultHostFunctions() {
       COMPILER_THROW("sleep(): duration cannot be negative");
     }
 
-    fprintf(stderr,
-            "[DEBUG] sleep: scheduler_=%p, current_executing_fiber_=%p, "
-            "duration_ms=%ld\n",
-            scheduler_, current_executing_fiber_, *duration_ms);
+    if (trace_execution_) {
+      fprintf(stderr,
+              "[DEBUG] sleep: scheduler_=%p, current_executing_fiber_=%p, "
+              "duration_ms=%ld\n",
+              scheduler_, current_executing_fiber_, *duration_ms);
+    }
 
     if (scheduler_ && current_executing_fiber_) {
       // Use the VM's goroutine suspension mechanism instead of blocking.

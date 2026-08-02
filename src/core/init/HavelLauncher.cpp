@@ -384,15 +384,8 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
     }
     havel::HostContext ctx;
     havel::compiler::VMConfig vmCfg = cfg.vmConfig;
-    fprintf(stderr, "[LAUNCHER-DEBUG] vmCfg.tiering_enabled=%d vmCfg.tier1_threshold=%llu vmCfg.tier2_threshold=%llu\n", 
-            vmCfg.tiering_enabled, (unsigned long long)vmCfg.tier1_threshold, (unsigned long long)vmCfg.tier2_threshold);
-    fflush(stderr);
     havel::compiler::VMConfig vmCfg2 = vmCfg;
-    fprintf(stderr, "[LAUNCHER-DEBUG] Creating VM\n");
-    fflush(stderr);
     havel::compiler::VM tempVm(vmCfg2);
-    fprintf(stderr, "[LAUNCHER-DEBUG] VM created\n");
-    fflush(stderr);
     ctx.vm = &tempVm;
     auto bridge = havel::createModules(ctx);
     auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);

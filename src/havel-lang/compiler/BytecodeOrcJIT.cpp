@@ -3214,10 +3214,10 @@ case OpCode::INCLOCAL:
             llvm::Function* fnComp = module.getFunction(fname);
             if (!fnComp) {
                 fnComp = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::FunctionType::get(i64, {i64, i64}, false),
                     llvm::Function::ExternalLinkage, fname, &module);
             }
-            llvm::Value* slowResult = B.CreateCall(fnComp, {vmArg, l, r});
+            llvm::Value* slowResult = B.CreateCall(fnComp, {l, r});
             auto* slowExitBB = B.GetInsertBlock();
             B.CreateBr(mergeBB);
             
@@ -3242,10 +3242,10 @@ case OpCode::INCLOCAL:
             llvm::Function* fnComp = module.getFunction(fname);
             if (!fnComp) {
                 fnComp = llvm::Function::Create(
-                    llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+                    llvm::FunctionType::get(i64, {i64, i64}, false),
                     llvm::Function::ExternalLinkage, fname, &module);
             }
-            vstack.push_back(B.CreateCall(fnComp, {vmArg, l, r}));
+            vstack.push_back(B.CreateCall(fnComp, {l, r}));
         }
         break;
       }

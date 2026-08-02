@@ -2994,6 +2994,7 @@ int runJitCase(const std::string &name, const std::string &source,
 }
 
 ::havel::registerPureStdLib(vm);
+    vm.setScheduler(&::havel::compiler::Scheduler::instance());
     vm.setHotFunctionCallback(
         [](const ::havel::compiler::BytecodeFunction &func) {
           // JIT compilation handled by tiering system

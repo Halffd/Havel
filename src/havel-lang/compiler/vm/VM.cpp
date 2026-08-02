@@ -471,6 +471,7 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
     g->state = Scheduler::GoroutineState::Created;
     g->fiber = new Fiber(g->id, entry_index, 0, "main-script");
     scheduler_->registerGoroutine(g);
+    scheduler_->enqueue(g);
 
     // Run scheduler loop until main script completes
     while (main_script_goroutine_id_ != UINT32_MAX) {

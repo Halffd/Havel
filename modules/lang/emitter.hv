@@ -4366,38 +4366,45 @@ fn emitHotkeyBinding(emitter, node) {
  else if node.key != null {
   hkList = [node.key]
  }
- // Register each hotkey
- hasPolicy = node.policy != null && node.policy != ""
- for hk in hkList {
-  if emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0 {
-   sid = globalIdx(emitter, "hotkey.register_conditional")
-   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-   if type(hk) == "string" {
-    keyIdx = bc.add_string(hk)
-    bc.emit("LOAD_CONST", keyIdx)
-   }
-   else if hk.kind == "HotkeyLiteral" {
-    keyIdx = bc.add_string(hk.combination)
-    bc.emit("LOAD_CONST", keyIdx)
-   }
-   else {
-    emitExpr(emitter, hk)
-   }
-   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
-   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(emitter.whenConditionFuncIndex)))
-   if hasPolicy {
-    bc.emit("OBJECT_NEW")
-    polKeyIdx = bc.add_string(node.policy)
-    bc.emit("LOAD_CONST", polKeyIdx)
-    polNameIdx = bc.add_string("policy")
-    bc.emit("LOAD_CONST", polNameIdx)
-    bc.emit("OBJECT_SET")
-    bc.emit("CALL", 4)
-   }
-   else {
-    bc.emit("CALL", 3)
-   }
+// Register each hotkey
+  hasPolicy = node.policy != null && node.policy != ""
+  // Compile condition if present (for conditional hotkey assignments: entc = Enter if cond => { ... })
+  condFuncIndex = -1
+  if node.condition != null {
+    result = compileCondHotkeyCondition(emitter, node.condition)
+    condFuncIndex = result[1]
   }
+  for hk in hkList {
+   if (emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0) || condFuncIndex >= 0 {
+    sid = globalIdx(emitter, "hotkey.register_conditional")
+    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+    if type(hk) == "string" {
+     keyIdx = bc.add_string(hk)
+     bc.emit("LOAD_CONST", keyIdx)
+    }
+    else if hk.kind == "HotkeyLiteral" {
+     keyIdx = bc.add_string(hk.combination)
+     bc.emit("LOAD_CONST", keyIdx)
+    }
+    else {
+     emitExpr(emitter, hk)
+    }
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
+    useCondIdx = condFuncIndex >= 0 ? condFuncIndex : emitter.whenConditionFuncIndex
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(useCondIdx)))
+    if hasPolicy {
+     bc.emit("OBJECT_NEW")
+     polKeyIdx = bc.add_string(node.policy)
+     bc.emit("LOAD_CONST", polKeyIdx)
+     polNameIdx = bc.add_string("policy")
+     bc.emit("LOAD_CONST", polNameIdx)
+     bc.emit("OBJECT_SET")
+     bc.emit("CALL", 4)
+    }
+    else {
+     bc.emit("CALL", 3)
+    }
+   }
   if emitter.whenConditionFuncIndex == null || emitter.whenConditionFuncIndex < 0 {
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
@@ -4486,15 +4493,21 @@ fn emitHotkeyBindingExpr(emitter, node) {
  bc.emit("RETURN")
  bc.func_pop()
  hasPolicy = node.policy != null && node.policy != ""
- hkList = []
- if node.hotkeys != null && #node.hotkeys > 0 {
-  hkList = node.hotkeys
- }
- else if node.key != null {
-  hkList = [node.key]
- }
+hkList = []
+  if node.hotkeys != null && #node.hotkeys > 0 {
+   hkList = node.hotkeys
+  }
+  else if node.key != null {
+   hkList = [node.key]
+  }
+  // Compile condition if present (for conditional hotkey assignments: entc = Enter if cond => { ... })
+  condFuncIndex = -1
+  if node.condition != null {
+    result = compileCondHotkeyCondition(emitter, node.condition)
+    condFuncIndex = result[1]
+  }
   for hk in hkList {
-   if emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0 {
+   if (emitter.whenConditionFuncIndex != null && emitter.whenConditionFuncIndex >= 0) || condFuncIndex >= 0 {
     sid = globalIdx(emitter, "hotkey.register_conditional")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
    if type(hk) == "string" {
@@ -4508,9 +4521,10 @@ fn emitHotkeyBindingExpr(emitter, node) {
    else {
     emitExpr(emitter, hk)
    }
-   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
-   bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(emitter.whenConditionFuncIndex)))
-   if hasPolicy {
+bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
+    useCondIdx = condFuncIndex >= 0 ? condFuncIndex : emitter.whenConditionFuncIndex
+    bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(useCondIdx)))
+    if hasPolicy {
     bc.emit("OBJECT_NEW")
     polKeyIdx = bc.add_string(node.policy)
     bc.emit("LOAD_CONST", polKeyIdx)
@@ -4521,9 +4535,9 @@ fn emitHotkeyBindingExpr(emitter, node) {
    }
    else {
     bc.emit("CALL", 3)
+}
    }
-  }
-  if emitter.whenConditionFuncIndex == null || emitter.whenConditionFuncIndex < 0 {
+  if (emitter.whenConditionFuncIndex == null || emitter.whenConditionFuncIndex < 0) && condFuncIndex < 0 {
    sid = globalIdx(emitter, "hotkey.register")
    bc.emit("LOAD_GLOBAL", bc.str_id(sid))
    if type(hk) == "string" {

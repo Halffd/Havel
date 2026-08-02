@@ -119,6 +119,13 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
     moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
   }
   registerDefaultHostFunctions();
+
+#ifdef HAVEL_ENABLE_LLVM
+  if (tiering_enabled_) {
+    jit_compiler_ = std::make_unique<BytecodeOrcJIT>();
+    jit_compiler_->setDebugMode(cfg.debugJIT);
+  }
+#endif
 }
 
 void VM::setMaxCallDepth(size_t value) { max_call_depth_ = value; }
@@ -2518,6 +2525,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     hot_func_cb_(*callee);
   }
 
+  fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());
+  fflush(stderr);
   if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);
     try {

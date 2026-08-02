@@ -18,6 +18,7 @@ namespace fs = std::filesystem;
 #include <unordered_map>
 #include <vector>
 
+#include "core/config/ConfigManager.hpp"
 #ifdef HAVEL_ENABLE_LLVM
 #include "compiler/BytecodeOrcJIT.h"
 #include "runtime/Modules.hpp"
@@ -2958,6 +2959,8 @@ if (failures != 0) {
 // ===========================================================================
 #ifdef HAVEL_ENABLE_LLVM
 
+#include "core/config/ConfigManager.hpp"
+
 int runJitCase(const std::string &name, const std::string &source,
                int64_t expected, bool dump_bytecode,
                const std::string &snapshot_dir) {
@@ -2967,8 +2970,6 @@ int runJitCase(const std::string &name, const std::string &source,
     }
 
     ::havel::HostContext ctx;
-    ::havel::compiler::BytecodeOrcJIT jit;
-    jit.setShowWarnings(false);
     ::havel::compiler::VM vm(ctx);
     ctx.vm = &vm;
 
@@ -2994,10 +2995,15 @@ int runJitCase(const std::string &name, const std::string &source,
 
 ::havel::registerPureStdLib(vm);
     vm.setHotFunctionCallback(
-        [&jit](const ::havel::compiler::BytecodeFunction &func) {
-          jit.compileFunction(func);
+        [](const ::havel::compiler::BytecodeFunction &func) {
+          // JIT compilation handled by tiering system
         });
-    vm.setJITCompiler(&jit);
+    auto jit = std::unique_ptr<::havel::compiler::JITCompiler>(new ::havel::compiler::BytecodeOrcJIT());
+    jit->setDebugMode(::havel::Configs::Get().Get<bool>("Compiler.DebugJIT", false));
+    jit->setDumpAsmToFile(::havel::Configs::Get().Get<bool>("Compiler.OutputAsm", false));
+    jit->setDumpIR(::havel::Configs::Get().Get<bool>("Compiler.DumpIR", false));
+    jit->setShowWarnings(::havel::Configs::Get().Get<bool>("Compiler.JITWarnings", true));
+    vm.setJITCompiler(std::move(jit));
 
     ::havel::compiler::PipelineOptions options;
     options.compile_unit_name = name;

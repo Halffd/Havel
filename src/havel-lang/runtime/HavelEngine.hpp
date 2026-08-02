@@ -237,7 +237,9 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
         auto newDeps = tracker->getGlobalDependencies();
         auto fieldDeps = tracker->getFieldDependencies();
         newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-        watcher_registry_->updateDependencies(wid, newDeps);
+        // Union-merge: keep previously-tracked deps so short-circuited
+        // branches' globals keep triggering re-evals (stale when bug).
+        watcher_registry_->mergeDependencies(wid, newDeps);
         return result;
     },
         [this](uint32_t cleanup_func_id, uint32_t) {
@@ -286,7 +288,11 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
                 auto newDeps = tracker->getGlobalDependencies();
                 auto fieldDeps = tracker->getFieldDependencies();
                 newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-                g->hotkey_condition_deps = std::move(newDeps);
+                // Union-merge: keep previously-tracked deps so short-circuited
+                // branches' globals remain tracked. Replacing drops un-
+                // evaluated-side globals once `||`/`&&` short-circuits, then
+                // their VAR_CHANGED no longer triggers re-eval (stale grab).
+                g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
                 bool prev = g->hotkey_condition_last_result;
                 g->hotkey_condition_last_result = conditionMet;
                 if (prev == conditionMet) return;
@@ -356,7 +362,10 @@ vm_->addIntervalResult(timer_id, result);
                     auto newDeps = tracker->getGlobalDependencies();
                     auto fieldDeps = tracker->getFieldDependencies();
                     newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-                    watcher_registry_->updateDependencies(wid, newDeps);
+                    // Union-merge (see Havel.cpp when site): keep previously-
+                    // tracked deps so short-circuited branches' globals keep
+                    // triggering re-evals.
+                    watcher_registry_->mergeDependencies(wid, newDeps);
                     return result;
                 },
                 [this](uint32_t cleanup_func_id, uint32_t) {

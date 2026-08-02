@@ -1150,7 +1150,9 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
       auto deps = tracker->getGlobalDependencies();
       auto fieldDeps = tracker->getFieldDependencies();
       deps.insert(fieldDeps.begin(), fieldDeps.end());
-      g->hotkey_condition_deps = std::move(deps);
+      // Union-merge with prior deps so an update applied while the
+      // condition short-circuits retains previously-tracked globals.
+      g->hotkey_condition_deps.insert(deps.begin(), deps.end());
 
       auto *hostCtx = vm.hostContext();
       if (hostCtx && hostCtx->hotkeyManager)
@@ -1307,7 +1309,8 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
           auto deps = tracker->getGlobalDependencies();
           auto fieldDeps = tracker->getFieldDependencies();
           deps.insert(fieldDeps.begin(), fieldDeps.end());
-          g->hotkey_condition_deps = std::move(deps);
+          // Union-merge with prior deps (see setCondition above).
+          g->hotkey_condition_deps.insert(deps.begin(), deps.end());
 
           auto *hostCtx = vm.hostContext();
           if (hostCtx && hostCtx->hotkeyManager)

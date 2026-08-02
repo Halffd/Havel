@@ -237,6 +237,7 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
 
 	{
 		std::lock_guard lock(priority_mutex_);
+		removeFromQueues(g);
 		if (g->priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_back(g);
             ::havel::debug("[Scheduler] [UNPARK] gid={} name='{}' to HOTKEY queue", g->id, g->name);
@@ -434,6 +435,7 @@ void Scheduler::yield(Goroutine* g) {
 
 	{
 		std::lock_guard lock(priority_mutex_);
+		removeFromQueues(g);
 		if (g->priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_back(g);
 		} else if (g->priority == FiberPriority::BACKGROUND) {
@@ -457,6 +459,7 @@ void Scheduler::yieldCurrentAndCheckTimers() {
 
 	{
 		std::lock_guard lock(priority_mutex_);
+		removeFromQueues(g);
 		if (g->priority == FiberPriority::HOTKEY) {
 			hotkey_queue_.push_back(g);
 		} else if (g->priority == FiberPriority::BACKGROUND) {
@@ -507,6 +510,7 @@ void Scheduler::enqueue(Goroutine* g) {
     if (!g || g->state == GoroutineState::Done) return;
     {
         std::lock_guard lock(priority_mutex_);
+        removeFromQueues(g);
         if (g->priority == FiberPriority::HOTKEY) {
             hotkey_queue_.push_back(g);
         } else if (g->priority == FiberPriority::BACKGROUND) {
@@ -582,6 +586,7 @@ void Scheduler::requeueFront(Goroutine* g) {
         g->id, g->persistent, g->function_id, g->closure_id, static_cast<int>(g->priority));
 {
     std::lock_guard lock(priority_mutex_);
+    removeFromQueues(g);
     if (g->priority == FiberPriority::HOTKEY) {
       hotkey_queue_.push_front(g);
       ::havel::debug("[Scheduler] requeueFront: gid={} pushed to HOTKEY queue (size={})",
@@ -595,7 +600,7 @@ void Scheduler::requeueFront(Goroutine* g) {
       ::havel::debug("[Scheduler] requeueFront: gid={} pushed to RUNNABLE queue (size={})",
         g->id, runnable_queue_.size());
     }
-    }
+}
 }
 
 // Wake a persistent hotkey goroutine on trigger
@@ -829,6 +834,8 @@ size_t Scheduler::wakeSleepingGoroutines() {
             if (g->fiber) {
                 g->fiber->resume();
             }
+            // Defense in depth: ensure goroutine isn't already in a queue
+            removeFromQueues(g);
             if (g->priority == FiberPriority::HOTKEY) {
                 hotkey_queue_.push_back(g);
             } else if (g->priority == FiberPriority::BACKGROUND) {

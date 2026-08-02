@@ -433,153 +433,121 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
     ::havel::debug("=== Executing function: {} ===", function_name);
   }
 
-  vm_in_execute_.store(true, std::memory_order_release);
-  runDispatchLoop(0);
-  vm_in_execute_.store(false, std::memory_order_release);
-
-  // If fast path was used and we suspended due to SLEEP, we need to set up
-  // the main script goroutine so the while loop below can handle it
-  if (last_suspension_reason_ ==
-          static_cast<uint8_t>(SuspensionReason::SLEEP) &&
-      scheduler_ && current_executing_fiber_ &&
-      main_script_goroutine_id_ == UINT32_MAX) {
+  // If a scheduler is available, run the main script as a goroutine
+  // so it cooperatively yields with other goroutines (spawned via go/async).
+  // This avoids the main script starving goroutines when running in the
+  // fast dispatch path which never calls yield_callback.
+  if (scheduler_) {
+    vm_in_execute_.store(true, std::memory_order_release);
+    uint32_t entry_index = chunk.getFunctionIndex(entry);
     auto *g = new Scheduler::Goroutine(scheduler_->nextGoroutineId(),
                                        "main-script", FiberPriority::NORMAL);
     main_script_goroutine_id_ = g->id;
-    g->fiber = current_executing_fiber_;
-    g->state = Scheduler::GoroutineState::Suspended;
-    g->suspension_reason.store(Scheduler::SuspensionReason::SleepWait,
-                               std::memory_order_release);
-    g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
-    g->wait_handle.deadline =
-        std::chrono::steady_clock::now() +
-        std::chrono::milliseconds(
-            reinterpret_cast<intptr_t>(last_suspension_context_));
+    g->callable = Value::makeFunctionObjId(entry_index);
+    g->function_id = entry_index;
+    g->state = Scheduler::GoroutineState::Created;
+    g->fiber = new Fiber(g->id, entry_index, 0, "main-script");
     scheduler_->registerGoroutine(g);
-  }
 
-  // Handle SLEEP suspension in simple execute() path
-  // If we suspended due to SLEEP with a scheduler, we need to run the
-  // scheduler's wake loop until the main goroutine completes
-  while (scheduler_ && main_script_goroutine_id_ != UINT32_MAX) {
-    // Wake any sleeping goroutines whose deadline has passed
-    scheduler_->wakeSleepingGoroutines();
-
-    // Check if our main script goroutine is ready to run
-    auto *g = scheduler_->get(main_script_goroutine_id_);
-    if (!g) {
-      // Goroutine was removed (completed or errored)
-      break;
-    }
-
-    if (g->state == Scheduler::GoroutineState::Done) {
-      // Main script completed
-      break;
-    }
-
-    if (g->state == Scheduler::GoroutineState::Runnable ||
-        g->state == Scheduler::GoroutineState::Running) {
-      // Main goroutine is ready to resume
-      if (g->fiber) {
-        // Restore fiber state and continue execution
-        current_executing_fiber_ = g->fiber;
-        vm_in_execute_.store(true, std::memory_order_release);
-        runDispatchLoop(0);
-        vm_in_execute_.store(false, std::memory_order_release);
-        current_executing_fiber_ = nullptr;
-
-        // Check if goroutine completed
-        g = scheduler_->get(main_script_goroutine_id_);
-        if (!g || g->state == Scheduler::GoroutineState::Done) {
-          break;
-        }
-        // If still runnable, loop will continue and call wakeSleepingGoroutines
-        // again
-      }
-    } else {
-      // Main is suspended (e.g. in sleep). Drive other runnable goroutines
-      // (spawned via go/async) so they make progress while main waits.
-      // Without this branch, a goroutine spawned by the script never runs
-      // during main's sleep — it only executes later in the event loop, so
-      // main sees stale globals.
-      auto *other = scheduler_->pickNext();
-      if (other) {
-        scheduler_->setCurrent(other);
-        if (other->state == Scheduler::GoroutineState::Created) {
-          auto cr = startGoroutineCall(other->callable, other->locals);
-          if (cr != GoroutineCallResult::Failed) {
-            other->state = Scheduler::GoroutineState::Runnable;
-            if (other->fiber) {
-              current_executing_fiber_ = other->fiber;
-              runDispatchLoop(0);
-              current_executing_fiber_ = nullptr;
-              saveFiberState(other->fiber);
-            }
-          } else {
-            other->state = Scheduler::GoroutineState::Done;
-          }
-        } else if (other->fiber) {
-          loadFiberState(other->fiber);
-          current_executing_fiber_ = other->fiber;
-          runDispatchLoop(0);
-          current_executing_fiber_ = nullptr;
-          saveFiberState(other->fiber);
-        }
-        // Inspect suspension / completion and update scheduler state.
-        uint8_t r = last_suspension_reason_;
-        void *ctx = last_suspension_context_;
-        if (r != 0) {
-          clearLastSuspension();
-          other->state = Scheduler::GoroutineState::Suspended;
-          using F = SuspensionReason;
-          using S = Scheduler::SuspensionReason;
-          S schedReason = S::None;
-          switch (static_cast<F>(r)) {
-          case F::SLEEP: schedReason = S::SleepWait; break;
-          case F::CHANNEL_RECV: schedReason = S::ChannelWait; break;
-          case F::CHANNEL_SEND: schedReason = S::ChannelSendWait; break;
-          case F::THREAD_JOIN: schedReason = S::ThreadWait; break;
-          case F::TIMER: schedReason = S::TimerWait; break;
-          case F::HOTKEY_WAIT: schedReason = S::HotkeyWait; break;
-          case F::COROUTINE_WAIT: schedReason = S::CoroutineWait; break;
-          default: break;
-          }
-          other->suspension_reason.store(schedReason, std::memory_order_release);
-          if (other->fiber) {
-            other->fiber->state = FiberState::SUSPENDED;
-            other->fiber->suspended_reason = static_cast<F>(r);
-          }
-          if (static_cast<F>(r) == F::SLEEP) {
-            auto ms = reinterpret_cast<intptr_t>(ctx);
-            std::lock_guard wlock(other->wait_handle_mutex_);
-            other->wait_handle.type = Scheduler::AwaitableType::SLEEP;
-            other->wait_handle.deadline =
-                std::chrono::steady_clock::now() +
-                std::chrono::milliseconds(ms);
-          }
-        } else if (other->state == Scheduler::GoroutineState::Running) {
-          // Yielded (instruction budget) — requeue.
-          other->state = Scheduler::GoroutineState::Runnable;
-        }
-        scheduler_->clearCurrent();
-      } else {
-        // Nothing runnable. Sleep until the nearest deadline so we don't spin.
+    // Run scheduler loop until main script completes
+    while (main_script_goroutine_id_ != UINT32_MAX) {
+      scheduler_->wakeSleepingGoroutines();
+      auto *cur = scheduler_->pickNext();
+      if (!cur) {
+        size_t sc = scheduler_->suspendedCount();
+        if (sc == 0) break;
         auto deadline = scheduler_->nextSleepDeadline();
-        if (!deadline) {
-          // No sleeping goroutines with deadlines — main should be runnable
-          // or we'd hang. Break and let execute() return.
-          break;
-        }
+        if (!deadline) break;
         auto now = std::chrono::steady_clock::now();
-        if (*deadline > now) {
-          auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        if (*deadline <= now) continue;
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         *deadline - now)
                         .count();
-          std::this_thread::sleep_for(
-              std::chrono::milliseconds(std::min(ms, 100L)));
+        auto sleepMs = std::min(ms, 100L);
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+        continue;
+      }
+      scheduler_->setCurrent(cur);
+      if (cur->state == Scheduler::GoroutineState::Created) {
+        auto result = startGoroutineCall(cur->callable, cur->locals);
+        if (result != VM::GoroutineCallResult::Failed) {
+          cur->state = Scheduler::GoroutineState::Runnable;
+          current_executing_fiber_ = cur->fiber;
+          runDispatchLoop(0);
+          current_executing_fiber_ = nullptr;
+        } else {
+          cur->state = Scheduler::GoroutineState::Done;
+        }
+      } else if (cur->state == Scheduler::GoroutineState::Runnable ||
+                 cur->state == Scheduler::GoroutineState::Running) {
+        if (cur->fiber) {
+          loadFiberState(cur->fiber);
+          current_executing_fiber_ = cur->fiber;
+          runDispatchLoop(0);
+          current_executing_fiber_ = nullptr;
         }
       }
+      uint8_t lastReason = getLastSuspensionReason();
+      void *lastContext = getLastSuspensionContext();
+      if (lastReason != 0) {
+        clearLastSuspension();
+        if (cur->fiber) saveFiberState(cur->fiber);
+        using F = SuspensionReason;
+        using S = Scheduler::SuspensionReason;
+        S schedReason = S::None;
+        switch (static_cast<F>(lastReason)) {
+        case F::SLEEP: schedReason = S::SleepWait; break;
+        case F::CHANNEL_RECV: schedReason = S::ChannelWait; break;
+        case F::CHANNEL_SEND: schedReason = S::ChannelSendWait; break;
+        case F::THREAD_JOIN: schedReason = S::ThreadWait; break;
+        case F::TIMER: schedReason = S::TimerWait; break;
+        case F::HOTKEY_WAIT: schedReason = S::HotkeyWait; break;
+        case F::COROUTINE_WAIT: schedReason = S::CoroutineWait; break;
+        default: break;
+        }
+        cur->state = Scheduler::GoroutineState::Suspended;
+        cur->suspension_reason.store(schedReason, std::memory_order_release);
+        if (cur->fiber) {
+          cur->fiber->state = FiberState::SUSPENDED;
+          cur->fiber->suspended_reason = static_cast<F>(lastReason);
+        }
+        if (static_cast<F>(lastReason) == F::SLEEP) {
+          auto ms = reinterpret_cast<intptr_t>(lastContext);
+          std::lock_guard wlock(cur->wait_handle_mutex_);
+          cur->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+          cur->wait_handle.deadline =
+              std::chrono::steady_clock::now() +
+              std::chrono::milliseconds(ms);
+        }
+        if (scheduler_->current() == cur) scheduler_->clearCurrent();
+      } else if (cur->update_interval_ms > 0) {
+        scheduler_->clearCurrent();
+        cur->ip = 0;
+        cur->stack.clear();
+        cur->locals.clear();
+        auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::milliseconds(cur->update_interval_ms);
+        {
+          std::lock_guard wlock(cur->wait_handle_mutex_);
+          cur->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+          cur->wait_handle.deadline = deadline;
+        }
+        cur->state = Scheduler::GoroutineState::Suspended;
+        cur->suspension_reason.store(Scheduler::SuspensionReason::SleepWait, std::memory_order_release);
+      } else if (cur->persistent) {
+        cur->state = Scheduler::GoroutineState::Suspended;
+        cur->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+        if (cur->fiber) {
+          cur->fiber->state = FiberState::SUSPENDED;
+          cur->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+        }
+        if (scheduler_->current() == cur) scheduler_->clearCurrent();
+      } else {
+        cur->state = Scheduler::GoroutineState::Done;
+        if (cur->fiber) cur->fiber->state = FiberState::DONE;
+      }
     }
+vm_in_execute_.store(false, std::memory_order_release);
   }
 
   // Clean up

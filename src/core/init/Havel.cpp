@@ -307,7 +307,12 @@ scheduler = &compiler::Scheduler::instance();
 			auto newDeps = tracker->getGlobalDependencies();
 			auto fieldDeps = tracker->getFieldDependencies();
 			newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-			g->hotkey_condition_deps = std::move(newDeps);
+			// Union-merge: keep previously-tracked deps so short-circuited
+			// branches' globals remain tracked across re-evaluations. A plain
+			// replace drops un-evaluated-side globals once `||`/`&&` short-
+			// circuits, after which their VAR_CHANGED events no longer
+			// trigger re-eval (the condition goes stale).
+			g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
 			bool prev = g->hotkey_condition_last_result;
 			g->hotkey_condition_last_result = conditionMet;
 			if (prev == conditionMet) return;
@@ -352,7 +357,10 @@ scheduler = &compiler::Scheduler::instance();
 				auto newDeps = tracker->getGlobalDependencies();
 				auto fieldDeps = tracker->getFieldDependencies();
 				newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-				watcherRegistry->updateDependencies(wid, newDeps);
+				// Union-merge: keep previously-tracked deps so short-circuited
+				// branches' globals keep triggering re-evals (stale-grab
+				// counterpart of the hotkey-condition bug).
+				watcherRegistry->mergeDependencies(wid, newDeps);
 				return result;
 			},
 				[vm](uint32_t cleanup_func_id, uint32_t) {
@@ -367,16 +375,9 @@ scheduler = &compiler::Scheduler::instance();
 			sched->forEachConditionalHotkey(
 				[vm, hostCtx, &var_name, sched](compiler::Scheduler::Goroutine* g) {
 				if (!g) return;
-				// See counterpart in setOnVarChangedSync above: a
-				// conditional hotkey parked in HotkeyWait may be in
-				// either Suspended (pre-first-trigger) or Created
-				// (recycled by handleReturned after a prior trigger)
-				// state. Accept both: grab state must move when the
-				// condition's dependency changes regardless.
-				auto st = g->state.load(std::memory_order_acquire);
-				if (st != compiler::Scheduler::GoroutineState::Suspended &&
-				    st != compiler::Scheduler::GoroutineState::Created) return;
-				if (g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+				// Only process goroutines that have a conditional callback registered.
+				// This handles both pre-first-trigger (HotkeyWait) and post-trigger goroutines.
+				if (g->hotkey_condition_callback_id == 0) return;
 				if (g->hotkey_condition_deps.empty() ||
 					g->hotkey_condition_deps.count(var_name) == 0) return;
 					auto condVal = vm->externalRootValue(g->hotkey_condition_callback_id);
@@ -388,13 +389,16 @@ scheduler = &compiler::Scheduler::instance();
 							compiler::Value result = vm->callFunctionSync(*condVal, {});
 							conditionMet = vm->toBool(result);
 						} catch (...) {}
-						auto newDeps = tracker->getGlobalDependencies();
-						auto fieldDeps = tracker->getFieldDependencies();
-						newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-						g->hotkey_condition_deps = std::move(newDeps);
-						bool prev = g->hotkey_condition_last_result;
-						g->hotkey_condition_last_result = conditionMet;
-					if (prev == conditionMet) return;
+					auto newDeps = tracker->getGlobalDependencies();
+					auto fieldDeps = tracker->getFieldDependencies();
+					newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+					// Union-merge (see setOnVarChangedSync above): never drop
+					// previously-tracked deps so short-circuited branches'
+					// globals keep triggering re-evals.
+					g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
+					bool prev = g->hotkey_condition_last_result;
+					g->hotkey_condition_last_result = conditionMet;
+				if (prev == conditionMet) return;
 					if (conditionMet) {
 						if (!g->hotkey_condition_alias.empty()) {
 							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;

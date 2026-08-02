@@ -171,7 +171,7 @@ WatcherRegistry();
 	return (it != watchers_.end()) ? &it->second : nullptr;
 	}
 
-	void updateDependencies(WatcherId watcher_id,
+ 	void updateDependencies(WatcherId watcher_id,
 	const std::unordered_set<std::string>& new_deps) {
 	auto it = watchers_.find(watcher_id);
 	if (it == watchers_.end()) return;
@@ -189,6 +189,25 @@ WatcherRegistry();
 	var_to_watchers_[var].push_back(watcher_id);
 	}
 	}
+
+	// Union-merge additional deps into the watcher's dependency set without
+	// removing any prior deps. Use this after re-evaluating a `when`
+	// condition so that globals referenced only in a non-executed (short-
+	// circuited) branch keep triggering future re-evals instead of being
+	// dropped. The reverse index is only grown, never pruned, so lookups via
+	// onVariableChanged stay correct.
+	void mergeDependencies(WatcherId watcher_id,
+	const std::unordered_set<std::string>& additional_deps) {
+	auto it = watchers_.find(watcher_id);
+	if (it == watchers_.end()) return;
+	auto& watcher = it->second;
+	for (const auto& var : additional_deps) {
+	if (watcher.dependencies.insert(var).second) {
+	var_to_watchers_[var].push_back(watcher_id);
+	}
+	}
+	}
+
 
 private:
     // All registered watchers (id → watcher)

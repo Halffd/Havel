@@ -3724,7 +3724,10 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                     auto deps = tracker->getGlobalDependencies();
                     auto fieldDeps = tracker->getFieldDependencies();
                     deps.insert(fieldDeps.begin(), fieldDeps.end());
-                    g->hotkey_condition_deps = std::move(deps);
+                    // Union-merge with prior deps so registering/updating while
+                    // the condition short-circuits retains previously-tracked
+                    // globals.
+                    g->hotkey_condition_deps.insert(deps.begin(), deps.end());
                 }
                 {
                     std::string depStr;

@@ -174,17 +174,10 @@ void Havel::initialize(bool isStartup) {
     }
 
     // Hook up to VM
-  bytecodeVM->setHotFunctionCallback([jit_ptr = jit.get()](const compiler::BytecodeFunction& func) {
-    if (!jit_ptr->isCompiled(func.name)) {
-      jit_ptr->compileFunction(func);
-    }
+  bytecodeVM->setHotFunctionCallback([](const compiler::BytecodeFunction& func) {
+    // JIT compilation will be handled by the VM's tiering system
   });
-  bytecodeVM->setJITCompiler(jit.get());
-    
-    // Store JIT in some way? Or just keep it alive?
-    // We'll need a member in Havel to keep the JIT instance alive.
-    this->jitCompiler = std::move(jit);
-
+  bytecodeVM->setJITCompiler(std::move(jit));
   }
 #endif
 

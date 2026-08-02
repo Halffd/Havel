@@ -36,6 +36,7 @@ fn parseArgs(args) {
         testDir: null,
         testTimeout: 10,
         lintOnly: false,
+        formatOnly: false,
         debugBytecode: false,
         debugLexer: false,
         debugParser: false,
@@ -67,6 +68,10 @@ fn parseArgs(args) {
         }
         else if arg == "--lint" {
             cfg.lintOnly = true
+            i = i + 1
+        }
+        else if arg == "--format" {
+            cfg.formatOnly = true
             i = i + 1
         }
         else if arg == "--eval" || arg == "-E" {
@@ -107,6 +112,7 @@ fn parseArgs(args) {
             print("  --run script.hv    Run script via self-hosted pipeline")
             print("  --test dir/ [N]    Run all .hv files in directory (timeout N seconds)")
             print("  --lint script.hv   Check syntax/type errors without running")
+            print("  --format script.hv Format script (pretty-print AST)")
             print("  --eval CODE        Run inline code")
             print("")
             print("Flags:")
@@ -162,11 +168,17 @@ fn runScript(cfg) {
         return 1
     }
 
+    // Format-only mode: parse and pretty-print AST
+    if cfg.formatOnly {
+        print(str(result.ast))
+        shell.exit(0)
+    }
+
     // Lint-only mode: parse + typecheck, no execution
     if cfg.lintOnly {
         types = inferProgram(result)
         print("Linting successful")
-        return 0
+        shell.exit(0)
     }
 
     // Typecheck

@@ -779,6 +779,21 @@ target_link_options(image_extension PRIVATE -fno-lto)
 target_compile_definitions(image_extension PRIVATE HAVE_OPENCV)
 endif()
 
+# Gamma ramp extension for brightness module
+add_library(gamma_ramp MODULE ${CMAKE_SOURCE_DIR}/modules/app/gamma_ramp.c)
+target_include_directories(gamma_ramp PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(gamma_ramp PRIVATE havel_extension_runtime m)
+set_target_properties(gamma_ramp PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+target_compile_options(gamma_ramp PRIVATE -fno-lto)
+target_link_options(gamma_ramp PRIVATE -fno-lto)
+
+# Install to modules/app/ so brightness.hv can find it
+install(TARGETS gamma_ramp
+    RUNTIME DESTINATION modules/app
+    LIBRARY DESTINATION modules/app
+    ARCHIVE DESTINATION modules/app
+)
+
 # OCR extension (Tesseract-based)
 if(TESSERACT_FOUND)
 add_library(ocr_extension MODULE src/extensions/ocr/ocr_extension.cpp)

@@ -387,6 +387,10 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/media/*.cpp"
     "src/ai/ocr/*.cpp"
   )
+# Exclude daemon/client from core library (they are separate executables)
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelDaemon.*\\.cpp")
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelClient.*\\.cpp")
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelDaemonMain.*\\.cpp")
 # Non-Qt host sources (always built)
 file(GLOB_RECURSE _HOST_CORE_SOURCES
   "src/host/app/*.cpp"
@@ -1118,6 +1122,55 @@ $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui>
 havel_core
 -Wl,--end-group
 )
+
+
+# ==============================================================================
+# DAEMON SERVER (persistent VM for fast script execution) - DISABLED due to namespace std pollution
+# ==============================================================================
+# set(DAEMON_SOURCES
+#     src/core/init/HavelDaemon.cpp
+#     src/core/init/HavelDaemonMain.cpp
+#     src/c/LoggerC.c
+#     src/c/Config.c
+#     src/dl/Loader.c
+# )
+#
+# add_executable(havel-daemon ${DAEMON_SOURCES})
+#
+# target_include_directories(havel-daemon PRIVATE
+#     ${CMAKE_SOURCE_DIR}/src
+#     ${CMAKE_SOURCE_DIR}/src/havel-lang
+#     ${CMAKE_SOURCE_DIR}/include
+# )
+#
+# target_link_libraries(havel-daemon PRIVATE
+# -Wl,--start-group
+# $<$<BOOL:${ENABLE_HAVEL_LANG}>:havel_lang>
+# havel_modules
+# havel_core
+# -Wl,--end-group
+# )
+#
+#
+# ==============================================================================
+# CLIENT (send scripts to running havel-daemon) - DISABLED
+# ==============================================================================
+# add_executable(havel-client
+#     src/core/init/HavelClient.cpp
+#     src/c/LoggerC.c
+#     src/c/Config.c
+#     src/dl/Loader.c
+# )
+#
+# target_include_directories(havel-client PRIVATE
+#     ${CMAKE_SOURCE_DIR}/src
+#     ${CMAKE_SOURCE_DIR}/src/havel-lang
+#     ${CMAKE_SOURCE_DIR}/include
+# )
+#
+# target_link_libraries(havel-client PRIVATE
+#     havel_core
+# )
 
 
 # ==============================================================================

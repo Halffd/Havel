@@ -8,6 +8,10 @@
 #include <fstream>
 #include <array>
 #include <filesystem>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 // SHA-256 implementation (simplified, no external deps)
 namespace {
@@ -1205,6 +1209,67 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
     }
 
     return chunk;
+}
+
+// mmap-based deserialization for zero-copy bytecode loading
+std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::string& filePath) {
+  int fd = open(filePath.c_str(), O_RDONLY);
+  if (fd < 0) {
+    ::havel::warn("[RTS-MMAP] failed to open {}: {}", filePath, strerror(errno));
+    return std::nullopt;
+  }
+
+  struct stat st;
+  if (fstat(fd, &st) < 0) {
+    close(fd);
+    ::havel::warn("[RTS-MMAP] failed to stat {}: {}", filePath, strerror(errno));
+    return std::nullopt;
+  }
+
+  size_t fileSize = st.st_size;
+  if (fileSize < 4) {
+    close(fd);
+    return std::nullopt;
+  }
+
+  void* mapped = mmap(nullptr, fileSize, PROT_READ, MAP_PRIVATE, fd, 0);
+  close(fd);
+
+  if (mapped == MAP_FAILED) {
+    ::havel::warn("[RTS-MMAP] mmap failed for {}: {}", filePath, strerror(errno));
+    return std::nullopt;
+  }
+
+  // Create span from mapped memory
+  const uint8_t* data = static_cast<const uint8_t*>(mapped);
+  std::span<const uint8_t> span(data, fileSize);
+
+  // Use existing deserializeChunk logic
+  auto result = deserializeChunk(span);
+
+  // Unmap
+  munmap(const_cast<void*>(static_cast<const void*>(mapped)), fileSize);
+
+  return result;
+}
+
+// Load bytecode chunk from file (mmap if large, read if small)
+std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string& filePath, size_t mmapThreshold) {
+  struct stat st;
+  if (stat(filePath.c_str(), &st) != 0) {
+    return std::nullopt;
+  }
+
+  if (st.st_size >= mmapThreshold) {
+    ::havel::debug("[RTS-MMAP] using mmap for {} ({} bytes)", filePath, st.st_size);
+    return deserializeChunkMmap(filePath);
+  } else {
+    ::havel::debug("[RTS-MMAP] using read for {} ({} bytes)", filePath, st.st_size);
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file) return std::nullopt;
+    std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    return deserializeChunk(std::span<const uint8_t>(data.data(), data.size()));
+  }
 }
 
 std::string ValueSerializer::valueToJson(const Value& value) {

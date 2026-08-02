@@ -1573,8 +1573,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   const bool has_tracing = trace_execution_;
 
   const bool use_fast_path = !debugger_attached_ && !has_profiling &&
-                             !has_tracing && !has_instruction_limit &&
-                             !has_timer;
+                             !has_tracing && !has_instruction_limit;
 
   if (_trace) {
   }

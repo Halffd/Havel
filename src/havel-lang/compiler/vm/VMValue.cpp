@@ -261,6 +261,9 @@ return "<struct " + structName + ">";
     if (value.isChannelId()) {
         return "<channel:" + std::to_string(value.asChannelId()) + ">";
     }
+    if (value.isPtr()) {
+        return "<ptr:" + std::to_string(reinterpret_cast<uint64_t>(value.asPtr())) + ">";
+    }
     return "unknown";
 }
 

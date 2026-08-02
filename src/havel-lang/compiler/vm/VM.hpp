@@ -1,13 +1,5 @@
 #pragma once
 
-#include "../core/BytecodeIR.hpp"
-#include "../gc/GC.hpp"
-#include "VMImage.hpp"
-#include "../../runtime/HostContext.hpp"
-#include "../../runtime/ModuleLoader.hpp"
-
-namespace havel { class Loader; }
-
 #include <iostream>
 #include <array>
 #include <atomic>
@@ -25,6 +17,14 @@ namespace havel { class Loader; }
 #include <thread>
 #include <mutex>
 #include <queue>
+
+#include "../core/BytecodeIR.hpp"
+#include "../gc/GC.hpp"
+#include "VMImage.hpp"
+#include "../../runtime/HostContext.hpp"
+#include "../../runtime/ModuleLoader.hpp"
+
+namespace havel { class Loader; }
 
 #include "utils/RobinHoodHashMap.hpp"
 
@@ -1007,8 +1007,8 @@ uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   void setHotFunctionCallback(HotFunctionCallback cb) { hot_func_cb_ = std::move(cb); }
 
   
-  void setJITCompiler(JITCompiler* jit) { jit_compiler_ = jit; }
-  JITCompiler* getJITCompiler() const { return jit_compiler_; }
+void setJITCompiler(std::unique_ptr<JITCompiler> jit) { jit_compiler_ = std::move(jit); }
+    JITCompiler* getJITCompiler() const { return jit_compiler_.get(); }
 
   // System object initializer - called after registerDefaultHostGlobals()
   void setSystemObjectInitializer(SystemObjectInitializer init) {
@@ -1317,7 +1317,7 @@ private:
     std::vector<std::string> program_args_;
     std::function<void()> restart_callback_;
     HotFunctionCallback hot_func_cb_;
-    JITCompiler* jit_compiler_ = nullptr;
+    std::unique_ptr<JITCompiler> jit_compiler_;
     bool tiering_enabled_ = false;
     uint64_t tier1_threshold_ = 1000;
     uint64_t tier2_threshold_ = 10000;

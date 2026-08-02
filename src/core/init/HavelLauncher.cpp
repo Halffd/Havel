@@ -21,6 +21,7 @@
 #include "utils/DebugFlags.hpp"
 #include "utils/ExitHandler.hpp"
 #include "utils/Logger.hpp"
+#include <iostream>
 
 #ifdef HAVEL_ENABLE_LLVM
 // LLVM headers for AOT
@@ -382,25 +383,32 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
       return 2;
     }
     havel::HostContext ctx;
-    havel::compiler::VM tempVm;
+    havel::compiler::VMConfig vmCfg = cfg.vmConfig;
+    fprintf(stderr, "[LAUNCHER-DEBUG] vmCfg.tiering_enabled=%d vmCfg.tier1_threshold=%llu vmCfg.tier2_threshold=%llu\n", 
+            vmCfg.tiering_enabled, (unsigned long long)vmCfg.tier1_threshold, (unsigned long long)vmCfg.tier2_threshold);
+    fflush(stderr);
+    havel::compiler::VMConfig vmCfg2 = vmCfg;
+    fprintf(stderr, "[LAUNCHER-DEBUG] Creating VM\n");
+    fflush(stderr);
+    havel::compiler::VM tempVm(vmCfg2);
+    fprintf(stderr, "[LAUNCHER-DEBUG] VM created\n");
+    fflush(stderr);
     ctx.vm = &tempVm;
     auto bridge = havel::createModules(ctx);
     auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
     const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;
 #ifdef HAVEL_ENABLE_LLVM
-    std::unique_ptr<havel::compiler::BytecodeOrcJIT> jit;
-    if (cfg.useJIT) {
-      jit = std::make_unique<havel::compiler::BytecodeOrcJIT>();
+    if (cfg.useJIT && vm->getJITCompiler()) {
+      auto* jit = static_cast<havel::compiler::BytecodeOrcJIT*>(vm->getJITCompiler());
       jit->setDebugMode(cfg.debugJIT);
       jit->setDumpIR(cfg.dumpIR);
       jit->setDumpAsmToFile(cfg.outputAsmToFile);
       jit->setShowWarnings(cfg.aotWarnings);
       vm->setHotFunctionCallback(
-          [jit_ptr = jit.get()](const havel::compiler::BytecodeFunction &func) {
-            if (!jit_ptr->isCompiled(func.name))
-              jit_ptr->compileFunction(func);
+          [jit](const havel::compiler::BytecodeFunction &func) {
+            if (!jit->isCompiled(func.name))
+              jit->compileFunction(func);
           });
-      vm->setJITCompiler(jit.get());
     }
 #endif
     bridge->install(coreProfile ? havel::InstallProfile::Core
@@ -1652,6 +1660,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         cfg.vmConfig.tier2_threshold = std::stoull(argv[++i]);
     } else if (arg == "--tiering") {
       cfg.vmConfig.tiering_enabled = true;
+      cfg.useJIT = true;
     } else if (arg == "--timer-interval") {
       if (i + 1 < argc)
         cfg.vmConfig.timer_check_interval = std::stoul(argv[++i]);
@@ -1836,8 +1845,15 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       return std::string{};
     }
     const auto dot = path.find_last_of('.');
-    return dot == std::string::npos ? path + ".hbc"
-                                    : path.substr(0, dot) + ".hbc";
+    std::string base = dot == std::string::npos ? path : path.substr(0, dot);
+    // Extract filename only
+    const auto slash = base.find_last_of("/\\");
+    std::string filename = slash == std::string::npos ? base : base.substr(slash + 1);
+    // Store in ~/.cache/havel/
+    std::string cacheDir = havel::Env::cache() + "/havel";
+    std::error_code ec;
+    std::filesystem::create_directories(cacheDir, ec);
+    return cacheDir + "/" + filename + ".hbc";
   };
 
   // Determine output path
@@ -2385,6 +2401,6 @@ int HavelLauncher::diffPipeline(const havel::init::LaunchConfig &cfg) {
 }
 
 // DEBUG
-#include <iostream>
+// #include <iostream>  // Moved to top of file
 
 } // namespace havel::init

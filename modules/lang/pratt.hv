@@ -2130,9 +2130,10 @@ if tt == TID.At and at(1).tid == TID.Identifier {
 			}
 		}
             // identifier = hotkey => action (e.g. dhk = d => { print @id })
+            // Also handle: identifier = hotkey if/when cond => action
             if nextTid == TID.Assign {
                 at2 = at(2).tid
-                if at2 == TID.Hotkey || (at2 == TID.Identifier && at(3).tid == TID.Arrow) {
+                if at2 == TID.Hotkey || (at2 == TID.Identifier && (at(3).tid == TID.Arrow || at(3).tid == TID.When || at(3).tid == TID.If)) {
                     return parseHotkeyAssignmentStatement()
                 }
             }

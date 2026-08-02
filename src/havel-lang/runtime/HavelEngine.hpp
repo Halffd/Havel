@@ -95,19 +95,17 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
             config_.vmConfig.goroutine_hotkey_tick_instructions);
 
 #ifdef HAVEL_ENABLE_LLVM
-if (Configs::Get().Get<bool>("Compiler.JIT", true)) {
-jitCompiler_ = std::make_unique<compiler::BytecodeOrcJIT>();
-jitCompiler_->setDebugMode(Configs::Get().Get<bool>("Compiler.DebugJIT", false));
-jitCompiler_->setDumpAsmToFile(Configs::Get().Get<bool>("Compiler.OutputAsm", false));
-jitCompiler_->setDumpIR(Configs::Get().Get<bool>("Compiler.DumpIR", false));
-jitCompiler_->setShowWarnings(Configs::Get().Get<bool>("Compiler.JITWarnings", true));
-vm_->setHotFunctionCallback([jit_ptr = jitCompiler_.get()](const compiler::BytecodeFunction& func) {
-if (!jit_ptr->isCompiled(func.name)) {
-jit_ptr->compileFunction(func);
-}
-});
-vm_->setJITCompiler(jitCompiler_.get());
-}
+        if (Configs::Get().Get<bool>("Compiler.JIT", true)) {
+            jitCompiler_ = std::make_unique<compiler::BytecodeOrcJIT>();
+            jitCompiler_->setDebugMode(Configs::Get().Get<bool>("Compiler.DebugJIT", false));
+            jitCompiler_->setDumpAsmToFile(Configs::Get().Get<bool>("Compiler.OutputAsm", false));
+            jitCompiler_->setDumpIR(Configs::Get().Get<bool>("Compiler.DumpIR", false));
+            jitCompiler_->setShowWarnings(Configs::Get().Get<bool>("Compiler.JITWarnings", true));
+            vm_->setHotFunctionCallback([](const compiler::BytecodeFunction& func) {
+                // JIT compilation will be handled by the VM's tiering system
+            });
+            vm_->setJITCompiler(std::move(jitCompiler_));
+        }
 #endif
 
         modules_ = havel::createModules(*hostContext_);

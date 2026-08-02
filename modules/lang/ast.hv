@@ -8,109 +8,99 @@ fn TypeParam(name, bounds) {
 
 }
 
-_NODE_TYPES = null
-
-fn initNodeTypes() {
-    _NODE_TYPES = {
-        "Program": true,
-        "BlockStatement": true,
-        "ExpressionStatement": true,
-        "NumberLiteral": true,
-        "StringLiteral": true,
-        "BooleanLiteral": true,
-        "NullLiteral": true,
-        "Identifier": true,
-        "BinaryExpression": true,
-        "UnaryExpression": true,
-        "CallExpression": true,
-        "MemberExpression": true,
-        "IndexExpression": true,
-        "AssignmentExpression": true,
-        "CompoundAssignment": true,
-        "UpdateExpression": true,
-        "ArrayLiteral": true,
-        "ObjectLiteral": true,
-        "ObjectField": true,
-        "IfStatement": true,
-        "WhileStatement": true,
-        "ForStatement": true,
-        "ForExpression": true,
-        "LoopStatement": true,
-        "RepeatStatement": true,
-        "BreakStatement": true,
-        "ContinueStatement": true,
-        "FnDeclaration": true,
-        "ReturnStatement": true,
-        "LetDeclaration": true,
-        "ValDeclaration": true,
-        "UseStatement": true,
-        "ImportStatement": true,
-        "HotkeyBinding": true,
-        "BacktickExpression": true,
-        "ShellCommand": true,
-        "RangeExpression": true,
-        "TernaryExpression": true,
-        "SpreadExpression": true,
-        "ThrowStatement": true,
-        "TryStatement": true,
-        "MatchExpression": true,
-        "MatchCase": true,
-        "PipelineExpression": true,
-        "LambdaExpression": true,
-        "InterpolatedString": true,
-        "RegexLiteral": true,
-        "CharLiteral": true,
-        "ThisExpression": true,
-        "BlockExpression": true,
-        "TupleExpression": true,
-        "AtExpression": true,
-        "AtAtExpression": true,
-        "ConfigBlock": true,
-        "SleepStatement": true,
-        "ErrorNode": true,
-        "StructDeclaration": true,
-        "ClassDeclaration": true,
-        "EnumDeclaration": true,
-        "TraitDeclaration": true,
-        "ProtocolDeclaration": true,
-        "ImplDeclaration": true,
-        "SetLiteral": true,
-        "DeferStatement": true,
-        "WaitExpression": true,
-        "WaitGroupExpression": true,
-        "DoWhileStatement": true,
-        "WhenBlock": true,
-        "WithStatement": true,
-        "DecoratorStatement": true,
-        "GoStatement": true,
-        "WaitStatement": true,
-        "YieldExpression": true,
-        "GoExpression": true,
-        "ChannelExpression": true,
-        "AsyncExpression": true,
-        "AwaitExpression": true,
-        "OnModeStatement": true,
-        "OffModeStatement": true,
-        "OnReloadStatement": true,
-        "OnStartStatement": true,
-        "OnTapStatement": true,
-        "OnComboStatement": true,
-        "OnKeyDownStatement": true,
-        "OnKeyUpStatement": true,
-        "OnMessageStatement": true,
-        "ModesBlock": true, "ModeBlock": true,
-        "ModeDefinition": true,
-        "ConfigSection": true,
-        "InputStatement": true,
-        "MultipleAssignment": true,
-        "QueryExpression": true,
-    }
-}
-
-fn ensureNodeTypes() {
-    if _NODE_TYPES == null { initNodeTypes() }
-    _NODE_TYPES
-}
+NODE_TYPES = {
+    "Program": true,
+    "BlockStatement": true,
+    "ExpressionStatement": true,
+    "NumberLiteral": true,
+    "StringLiteral": true,
+    "BooleanLiteral": true,
+    "NullLiteral": true,
+    "Identifier": true,
+    "BinaryExpression": true,
+    "UnaryExpression": true,
+    "CallExpression": true,
+    "MemberExpression": true,
+    "IndexExpression": true,
+    "AssignmentExpression": true,
+    "CompoundAssignment": true,
+    "UpdateExpression": true,
+    "ArrayLiteral": true,
+    "ObjectLiteral": true,
+    "ObjectField": true,
+    "IfStatement": true,
+    "WhileStatement": true,
+    "ForStatement": true,
+"ForExpression": true,
+    "LoopStatement": true,
+    "RepeatStatement": true,
+    "BreakStatement": true,
+    "ContinueStatement": true,
+    "FnDeclaration": true,
+    "ReturnStatement": true,
+    "LetDeclaration": true,
+    "ValDeclaration": true,
+    "UseStatement": true,
+    "ImportStatement": true,
+    "HotkeyBinding": true,
+    "BacktickExpression": true,
+    "ShellCommand": true,
+    "RangeExpression": true,
+    "TernaryExpression": true,
+    "SpreadExpression": true,
+    "ThrowStatement": true,
+    "TryStatement": true,
+    "MatchExpression": true,
+    "MatchCase": true,
+    "PipelineExpression": true,
+    "LambdaExpression": true,
+"InterpolatedString": true,
+"RegexLiteral": true,
+"CharLiteral": true,
+"ThisExpression": true,
+"BlockExpression": true,
+"TupleExpression": true,
+    "AtExpression": true,
+    "AtAtExpression": true,
+    "ConfigBlock": true,
+  "SleepStatement": true,
+  "ErrorNode": true,
+  "StructDeclaration": true,
+  "ClassDeclaration": true,
+ "EnumDeclaration": true,
+ "TraitDeclaration": true,
+ "ProtocolDeclaration": true,
+  "ImplDeclaration": true,
+  "SetLiteral": true,
+"DeferStatement": true,
+    "WaitExpression": true,
+    "WaitGroupExpression": true,
+    "DoWhileStatement": true,
+    "WhenBlock": true,
+"WithStatement": true,
+"DecoratorStatement": true,
+"GoStatement": true,
+"WaitStatement": true,
+"YieldExpression": true,
+"GoExpression": true,
+"ChannelExpression": true,
+"AsyncExpression": true,
+"AwaitExpression": true,
+    "OnModeStatement": true,
+    "OffModeStatement": true,
+    "OnReloadStatement": true,
+    "OnStartStatement": true,
+    "OnTapStatement": true,
+    "OnComboStatement": true,
+    "OnKeyDownStatement": true,
+    "OnKeyUpStatement": true,
+    "OnMessageStatement": true,
+    "ModesBlock": true, "ModeBlock": true,
+    "ModeDefinition": true,
+    "ConfigSection": true,
+    "InputStatement": true,
+    "MultipleAssignment": true,
+    "QueryExpression": true,
     "CastExpression": true,
  "HotkeyLiteral": true,
     "HotkeyExpression": true,
@@ -122,53 +112,26 @@ fn ensureNodeTypes() {
   "RangePattern": true,
 }
 
-_BINARY_OPS = null
-
-fn initBinaryOps() {
-    _BINARY_OPS = {
-        "+": "+", "-": "-", "*": "*", "/": "/", "%": "%",
-        "**": "**", "\\": "\\", "\\\\": "\\\\", "%%": "%%",
-        "==": "==", "!=": "!=", "<": "<", ">": ">",
-        "<=": "<=", ">=": ">=",
-        "&&": "&&", "||": "||",
-        "&": "&", "|": "|", "^": "^", "<<": "<<", ">>": ">>",
-        "??": "??",
-        "in": "in", "is": "is", "matches": "matches", "not matches": "not matches", "not in": "not in",
-    }
+BINARY_OPS = {
+    "+": "+", "-": "-", "*": "*", "/": "/", "%": "%",
+    "**": "**", "\\": "\\", "\\\\": "\\\\", "%%": "%%",
+    "==": "==", "!=": "!=", "<": "<", ">": ">",
+    "<=": "<=", ">=": ">=",
+    "&&": "&&", "||": "||",
+    "&": "&", "|": "|", "^": "^", "<<": "<<", ">>": ">>",
+    "??": "??",
+    "in": "in", "is": "is", "matches": "matches", "not matches": "not matches", "not in": "not in",
 }
 
-fn ensureBinaryOps() {
-    if _BINARY_OPS == null { initBinaryOps() }
-    _BINARY_OPS
+COMPOUND_ASSIGN_OPS = {
+    "+=": "+=", "-=": "-=", "*=": "*=", "/=": "/=", "%=": "%=",
+    "**=": "**=", "\\=": "\\=", "%%=": "%%=",
+    "&=": "&=", "|=": "|=", "^=": "^=",
+    "<<=": "<<=", ">>=": ">>=",
 }
 
-_COMPOUND_ASSIGN_OPS = null
-
-fn initCompoundAssignOps() {
-    _COMPOUND_ASSIGN_OPS = {
-        "+=": "+=", "-=": "-=", "*=": "*=", "/=": "/=", "%=": "%=",
-        "**=": "**=", "\\=": "\\=", "%%=": "%%=",
-        "&=": "&=", "|=": "|=", "^=": "^=",
-        "<<=": "<<=", ">>=": ">>=",
-    }
-}
-
-fn ensureCompoundAssignOps() {
-    if _COMPOUND_ASSIGN_OPS == null { initCompoundAssignOps() }
-    _COMPOUND_ASSIGN_OPS
-}
-
-_UNARY_OPS = null
-
-fn initUnaryOps() {
-    _UNARY_OPS = {
-        "-": "-", "!": "!", "not": "not", "#": "#", "~": "~",
-    }
-}
-
-fn ensureUnaryOps() {
-    if _UNARY_OPS == null { initUnaryOps() }
-    _UNARY_OPS
+UNARY_OPS = {
+  "-": "-", "!": "!", "not": "not", "#": "#", "~": "~",
 }
 
 fn Program(body, line, col) {
@@ -678,7 +641,7 @@ fn isNode(v) {
     if v == null: false
     else if type(v) != "object": false
     else if v.kind == null: false
-    else: ensureNodeTypes()[v.kind] != null
+    else: NODE_TYPES[v.kind] != null
 
 }
 fn nodeKind(v) {

@@ -1771,6 +1771,12 @@ if k == "HotkeyLiteral" {
     }
     return
   }
+  if k == "HotkeyExpression" {
+  if node.key != null && node.key.kind == "HotkeyBinding" {
+   emitHotkeyBindingExpr(emitter, node.key)
+   return
+  }
+  }
   emitError("unsupported expr: " + k, node.line, node.col)
   bc.emit("PUSH_NULL")
 
@@ -2542,6 +2548,7 @@ if k == "HotkeyBinding" {
  if k == "HotkeyExpression" {
  if node.key != null && node.key.kind == "HotkeyBinding" {
   emitHotkeyBindingExpr(emitter, node.key)
+  bc.emit("POP")
   return
  }
  }
@@ -4565,7 +4572,6 @@ bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
     bc.emit("CALL", 2)
    }
   }
-  bc.emit("POP")
  }
 }
 
@@ -4574,10 +4580,12 @@ fn compileCondHotkeyCondition(emitter, condition) {
   oldScope = emitter.scope
   newScope = Scope(null)
   emitter.scope = newScope
+  bc.func_push()
   condChunkIdx = bc.func_new("condhotkey_condition", 0, 16)
   emitExpr(emitter, condition)
   bc.emit("RETURN")
   bc.set_local_count(scopeLocalCount(newScope))
+  bc.func_pop()
   emitter.scope = oldScope
   return [null, condChunkIdx]
 }

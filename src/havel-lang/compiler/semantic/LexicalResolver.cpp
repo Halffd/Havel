@@ -245,6 +245,18 @@ if (ctx.owner) {
     else if (ctx.owner->kind == ast::NodeType::HotkeyBinding) {
       auto *hk = static_cast<const ast::HotkeyBinding *>(ctx.owner);
       result_.hotkey_binding_upvalues[hk] = ctx.upvalues;
+    } else if (ctx.owner->kind == ast::NodeType::IntervalExpression) {
+      auto *ie = static_cast<const ast::IntervalExpression *>(ctx.owner);
+      result_.interval_expression_upvalues[ie] = ctx.upvalues;
+    } else if (ctx.owner->kind == ast::NodeType::TimeoutExpression) {
+      auto *te = static_cast<const ast::TimeoutExpression *>(ctx.owner);
+      result_.timeout_expression_upvalues[te] = ctx.upvalues;
+    } else if (ctx.owner->kind == ast::NodeType::ThreadExpression) {
+      auto *te = static_cast<const ast::ThreadExpression *>(ctx.owner);
+      result_.thread_expression_upvalues[te] = ctx.upvalues;
+    } else if (ctx.owner->kind == ast::NodeType::UpdateBlockExpression) {
+      auto *ube = static_cast<const ast::UpdateBlockExpression *>(ctx.owner);
+      result_.update_block_expression_upvalues[ube] = ctx.upvalues;
     }
   } else {
     result_.main_local_count = ctx.next_slot;

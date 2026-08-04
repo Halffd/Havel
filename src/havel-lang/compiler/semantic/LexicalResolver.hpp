@@ -41,6 +41,10 @@ struct LexicalResolutionResult {
 	std::unordered_map<const ast::TraitMethod *, uint32_t> trait_method_local_counts;
   std::unordered_map<const ast::TraitMethod *, std::vector<UpvalueDescriptor>> trait_method_upvalues;
   std::unordered_map<const ast::HotkeyBinding *, std::vector<UpvalueDescriptor>> hotkey_binding_upvalues;
+  std::unordered_map<const ast::IntervalExpression *, std::vector<UpvalueDescriptor>> interval_expression_upvalues;
+  std::unordered_map<const ast::TimeoutExpression *, std::vector<UpvalueDescriptor>> timeout_expression_upvalues;
+  std::unordered_map<const ast::ThreadExpression *, std::vector<UpvalueDescriptor>> thread_expression_upvalues;
+  std::unordered_map<const ast::UpdateBlockExpression *, std::vector<UpvalueDescriptor>> update_block_expression_upvalues;
   uint32_t main_local_count = 0;
   std::unordered_set<std::string> global_variables; // Top-level let declarations
 };

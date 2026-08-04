@@ -7,6 +7,8 @@ wpid = lwpid = 0
 win = lastWin = null
 cmd = lcmd = ""
 
+use window
+
 timeout 35000 {
     print("35 seconds passed, exiting")
     exit(0)

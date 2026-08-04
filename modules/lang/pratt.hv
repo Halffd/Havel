@@ -1287,6 +1287,49 @@ fn parseCallArgs() {
             }
             return LambdaExpression(parameters, body)
         }
+        // Check for (params){ body } lambda shorthand BEFORE multi-param lambda
+        // (which consumes tokens even when it fails)
+        savedPos = pos
+        braceLambdaParams = []
+        isBraceLambda = false
+
+        if current().tid == TID.Identifier {
+            // Collect comma-separated identifiers
+            while true {
+                if current().tid == TID.Identifier {
+                    braceLambdaParams.push(advance().value)
+                    if current().tid == TID.Comma {
+                        advance()
+                    } else {
+                        break
+                    }
+                } else {
+                    break
+                }
+            }
+            // Check for ) {
+            if braceLambdaParams.length >= 1 and current().tid == TID.CloseParen and at(1).tid == TID.OpenBrace {
+                advance() // consume )
+                // DON'T consume '{' - parseBlock expects to see it
+                isBraceLambda = true
+            }
+        } else if current().tid == TID.CloseParen and at(1).tid == TID.OpenBrace {
+            // Empty params: () { body }
+            advance() // consume )
+            // DON'T consume '{' - parseBlock expects to see it
+            isBraceLambda = true
+        }
+
+        if isBraceLambda {
+            // Parse lambda body as block (parseBlock expects to see '{')
+            body = parseBlock()
+            return LambdaExpression(braceLambdaParams, body)
+        }
+
+        // Not a brace lambda, restore position and check multi-param lambda
+        pos = savedPos
+        syncCur()
+
         // Multi-param lambda detection: (a, b, c) => body
         savedPos = pos
         lambdaParams = []

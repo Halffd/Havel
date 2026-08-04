@@ -456,7 +456,7 @@ if opr == "not in" {
   emitter.inTailPosition = savedTail
   opcodes = {
   "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV",
-  "%": "MOD", "%%": "REMAINDER", "\\%": "DIVMOD", "**": "POW", "\\\\": "INT_DIV",
+  "%": "MOD", "%%": "REMAINDER", "\\": "INT_DIV", "\\\\": "DIVMOD", "**": "POW",
   "==": "EQ", "!=": "NEQ", "<": "LT", ">": "GT",
   "<=": "LTE", ">=": "GTE",
   "&": "BIT_AND", "|": "BIT_OR", "^": "BIT_XOR",

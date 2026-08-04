@@ -335,6 +335,12 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
         backend_->SendKeyEvent(code, value != 0);
         if (value == 1) pressedVirtualKeys.insert(code);
         else if (value == 0) pressedVirtualKeys.erase(code);
+        
+        // Track synthetic key to filter feedback loop
+        {
+          std::lock_guard<std::mutex> lock(syntheticKeysMutex);
+          syntheticKeys.push_back({code, std::chrono::steady_clock::now(), value != 0});
+        }
     } else if (type == EV_SYN) {
         if (pendingRelBatch_) {
             backend_->EndBatch();
@@ -695,6 +701,33 @@ void EventListener::EventLoop() {
   }
 }
 void EventListener::ProcessKeyboardEvent(const input_event &ev) {
+  // Filter out synthetic key events we sent via uinput to prevent feedback loop
+  if (ev.type == EV_KEY) {
+    std::lock_guard<std::mutex> lock(syntheticKeysMutex);
+    auto now = std::chrono::steady_clock::now();
+    for (auto it = syntheticKeys.begin(); it != syntheticKeys.end(); ) {
+      if (it->code == ev.code && it->down == (ev.value != 0)) {
+        // Check if this synthetic event is recent (within 100ms)
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->time).count();
+        if (elapsed < 100) {
+          // This is our synthetic event bouncing back - filter it out
+          if (debugging::debug_io) debug("Filtered synthetic key event: code={} down={}", ev.code, ev.value != 0);
+          return;
+        }
+        ++it;
+      } else {
+        ++it;
+      }
+    }
+    // Clean up old synthetic keys (>500ms old)
+    syntheticKeys.erase(
+        std::remove_if(syntheticKeys.begin(), syntheticKeys.end(),
+                       [&now](const SyntheticKey &sk) {
+                         return std::chrono::duration_cast<std::chrono::milliseconds>(now - sk.time).count() > 500;
+                       }),
+        syntheticKeys.end());
+  }
+
   if (inputNotificationCallback) {
     inputNotificationCallback();
   }

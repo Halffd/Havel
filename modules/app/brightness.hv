@@ -896,3 +896,5 @@ init()
   getMonitors: getMonitors
   getMonitor: getMonitor
 }
+
+init()

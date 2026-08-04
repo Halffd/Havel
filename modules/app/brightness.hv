@@ -632,9 +632,16 @@ fn init() {
   s.initialized = true
 }
 
+// Auto-initialization helper
+fn _ensureInit() {
+  s = _S()
+  if !s.initialized { init() }
+}
+
 // === Public API ===
 
 fn getBrightness(monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -650,6 +657,7 @@ fn getBrightness(monitorIndex) {
 }
 
 fn getHardwareBrightness(monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -662,6 +670,7 @@ fn getHardwareBrightness(monitorIndex) {
 }
 
 fn getXrandrBrightness(monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -684,6 +693,7 @@ fn getXrandrBrightness(monitorIndex) {
 }
 
 fn setBrightness(vue, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   if mi < 0 { i = 0; while i < #s.monitors { setBrightness(vue, i); i = i + 1 } }
@@ -697,6 +707,7 @@ fn setBrightness(vue, monitorIndex) {
 }
 
 fn increaseBrightness(step, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   if step == null || step <= 0 { step = DEFAULT_BRIGHTNESS_AMOUNT }
@@ -705,6 +716,7 @@ fn increaseBrightness(step, monitorIndex) {
 }
 
 fn decreaseBrightness(step, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   if step == null { step = DEFAULT_BRIGHTNESS_AMOUNT }
@@ -713,6 +725,7 @@ fn decreaseBrightness(step, monitorIndex) {
 }
 
 fn getTemperature(monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -721,6 +734,7 @@ fn getTemperature(monitorIndex) {
 }
 
 fn setTemperature(kelvin, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -731,6 +745,7 @@ fn setTemperature(kelvin, monitorIndex) {
 }
 
 fn increaseTemperature(amount, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   if amount == null { amount = DEFAULT_TEMP_AMOUNT }
@@ -740,6 +755,7 @@ fn increaseTemperature(amount, monitorIndex) {
 }
 
 fn decreaseTemperature(amount, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   if amount == null { amount = DEFAULT_TEMP_AMOUNT }
@@ -749,6 +765,7 @@ fn decreaseTemperature(amount, monitorIndex) {
 }
 
 fn setGammaRGB(r, g, b, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -759,6 +776,7 @@ fn setGammaRGB(r, g, b, monitorIndex) {
 }
 
 fn getGammaRGB(monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -774,6 +792,7 @@ fn getGammaB(monitorIndex) { rgb = getGammaRGB(monitorIndex); if rgb != null { r
 fn getGamma(monitorIndex) { getGammaR(monitorIndex) }
 
 fn setGamma(gamma, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   g = _clamp(gamma, 0.1, 10.0)
@@ -781,6 +800,7 @@ fn setGamma(gamma, monitorIndex) {
 }
 
 fn increaseGamma(amount, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   if amount == null { amount = DEFAULT_GAMMA_AMOUNT }
@@ -792,6 +812,7 @@ fn increaseGamma(amount, monitorIndex) {
 }
 
 fn decreaseGamma(amount, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   if amount == null { amount = DEFAULT_GAMMA_AMOUNT }
@@ -803,6 +824,7 @@ fn decreaseGamma(amount, monitorIndex) {
 }
 
 fn getShadowLift(monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -811,6 +833,7 @@ fn getShadowLift(monitorIndex) {
 }
 
 fn setShadowLift(lift, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -822,6 +845,7 @@ fn setShadowLift(lift, monitorIndex) {
 }
 
 fn increaseShadowLift(amount, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   if amount == null { amount = 0.1 }
@@ -831,6 +855,7 @@ fn increaseShadowLift(amount, monitorIndex) {
 }
 
 fn decreaseShadowLift(amount, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   if amount == null { amount = 0.1 }
@@ -841,6 +866,7 @@ fn decreaseShadowLift(amount, monitorIndex) {
 
 // Combined setters
 fn setBrightnessAndRGB(brightness, r, g, b, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -851,6 +877,7 @@ fn setBrightnessAndRGB(brightness, r, g, b, monitorIndex) {
 }
 
 fn setBrightnessAndTemperature(brightness, kelvin, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -861,6 +888,7 @@ fn setBrightnessAndTemperature(brightness, kelvin, monitorIndex) {
 }
 
 fn setBrightnessAndShadowLift(brightness, lift, monitorIndex) {
+  _ensureInit()
   s = _S()
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
@@ -873,6 +901,7 @@ fn setBrightnessAndShadowLift(brightness, lift, monitorIndex) {
 }
 
 fn getMonitors() {
+  _ensureInit()
   s = _S()
   names = []
   for m in s.monitors { names.push(m.name) }
@@ -880,12 +909,13 @@ fn getMonitors() {
 }
 
 fn getMonitor(index) {
+  _ensureInit()
   s = _S()
   if index >= 0 && index < #s.monitors { s.monitors[index] } else { null }
 }
 
 fn getGamma(monitorIndex) { getGammaR(monitorIndex) }
-fn setGamma(gamma, monitorIndex) { s = _S(); mi = monitorIndex; if mi == null { mi = -1 }; g = _clamp(gamma, 0.1, 10.0); setGammaRGB(g, g, g, mi) }
+fn setGamma(gamma, monitorIndex) { _ensureInit(); s = _S(); mi = monitorIndex; if mi == null { mi = -1 }; g = _clamp(gamma, 0.1, 10.0); setGammaRGB(g, g, g, mi) }
 
 {
   init: init

@@ -1855,6 +1855,16 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
     if (global_variables_.count(name) > 0) {
       return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
     }
+    // Check main function's scopes for top-level variable declarations
+    auto &ctx = function_stack_[0];
+    for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
+      const auto &scope = ctx.scopes[sc - 1];
+      auto it = scope.find(name);
+      if (it != scope.end()) {
+        return ResolvedBinding{
+            ResolvedBindingKind::Local, it->second.slot, 0, name, it->second.is_const};
+      }
+    }
     // Dynamic language: treat all other identifiers as globals
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }

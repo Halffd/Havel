@@ -8466,6 +8466,16 @@ void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {
   BytecodeFunction bf("<go>", 0, 0);
   enterFunction(std::move(bf), funcIndex);
 
+  // If the callee is a lambda, copy its upvalues to the wrapper function
+  // so the wrapper can pass them to the lambda when called.
+  if (call.callee && call.callee->kind == ast::NodeType::LambdaExpression) {
+    const auto *lambda = static_cast<const ast::LambdaExpression *>(call.callee.get());
+    auto upvalues_it = lexical_resolution_.lambda_upvalues.find(lambda);
+    if (upvalues_it != lexical_resolution_.lambda_upvalues.end()) {
+      current_function->upvalues = upvalues_it->second;
+    }
+  }
+
   // Clear class context so @ resolves via LOAD_GLOBAL "this" in goroutine
   const std::string saved_class_name_go = std::move(current_class_name_);
   current_class_name_.clear();

@@ -895,6 +895,11 @@ init()
   setBrightnessAndShadowLift: setBrightnessAndShadowLift
   getMonitors: getMonitors
   getMonitor: getMonitor
+  // Aliases for convenience
+  get: getBrightness
+  set: setBrightness
+  increase: increaseBrightness
+  decrease: decreaseBrightness
 }
 
 init()

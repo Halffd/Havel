@@ -741,6 +741,7 @@ bool Scheduler::removeHotkeyByAlias(const std::string& alias) {
 }
 
 bool Scheduler::hasRunnableFibers() const {
+  std::lock_guard lock(priority_mutex_);
   size_t hk = hotkey_queue_.size(), rn = runnable_queue_.size(), bg = background_queue_.size();
   if (debugging::debug_io)
     ::havel::debug("[Scheduler] hasRunnableFibers: hotkey={} runnable={} bg={}", hk, rn, bg);

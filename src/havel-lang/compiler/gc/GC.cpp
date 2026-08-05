@@ -622,7 +622,8 @@ void GCHeap::maybeCollectGarbage(
   const std::vector<Value> &locals,
   const std::unordered_map<std::string, Value> &globals,
   const std::vector<uint32_t> &active_closure_ids,
-  const std::function<std::optional<Value>(uint32_t)> &open_local_reader) {
+  const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
+  const std::vector<Value> &extra_roots) {
 
   if (allocations_since_last_ >= allocation_budget_) {
     collection_requested_ = true;
@@ -631,15 +632,16 @@ void GCHeap::maybeCollectGarbage(
     if (collection_requested_) {
         if (stop_the_world_) {
             collectGarbage(stack_values, locals, globals, active_closure_ids,
-                           open_local_reader);
+                           open_local_reader, extra_roots);
             collection_requested_ = false;
         } else if (gc_state_ == IncrementalState::Idle) {
             stepGarbageCollection(stack_values, locals, globals, active_closure_ids,
-                                  open_local_reader, kDefaultWorkBudget);
+                                  open_local_reader, kDefaultWorkBudget, extra_roots);
         } else if (gc_state_ != IncrementalState::Idle) {
             root_stack_snapshot_ = stack_values;
             root_locals_snapshot_ = locals;
             root_closures_snapshot_ = active_closure_ids;
+            root_extra_roots_snapshot_ = extra_roots;
             open_local_reader_snapshot_ = open_local_reader;
             if (gc_state_ == IncrementalState::Mark) {
                 markRoots();
@@ -653,9 +655,10 @@ void GCHeap::collectGarbage(
     const std::vector<Value> &locals,
     const std::unordered_map<std::string, Value> &globals,
     const std::vector<uint32_t> &active_closure_ids,
-    const std::function<std::optional<Value>(uint32_t)> &open_local_reader) {
+    const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
+    const std::vector<Value> &extra_roots) {
 
-    startIncrementalCollection(stack_values, locals, globals, active_closure_ids, open_local_reader);
+    startIncrementalCollection(stack_values, locals, globals, active_closure_ids, open_local_reader, extra_roots);
 
     // Complete marking first
     while (gc_state_ == IncrementalState::Mark) {
@@ -677,10 +680,11 @@ void GCHeap::forceFullCollection(
     const std::vector<Value> &locals,
     const std::unordered_map<std::string, Value> &globals,
     const std::vector<uint32_t> &active_closure_ids,
-    const std::function<std::optional<Value>(uint32_t)> &open_local_reader) {
+    const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
+    const std::vector<Value> &extra_roots) {
 
   current_collection_full_ = true;
-  collectGarbage(stack_values, locals, globals, active_closure_ids, open_local_reader);
+  collectGarbage(stack_values, locals, globals, active_closure_ids, open_local_reader, extra_roots);
 }
 
 void GCHeap::stepGarbageCollection(
@@ -689,7 +693,8 @@ void GCHeap::stepGarbageCollection(
     const std::unordered_map<std::string, Value> &globals,
     const std::vector<uint32_t> &active_closure_ids,
     const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
-    size_t work_budget) {
+    size_t work_budget,
+    const std::vector<Value> &extra_roots) {
 
     if (work_budget == 0) {
         return;
@@ -729,12 +734,14 @@ void GCHeap::startIncrementalCollection(
     const std::vector<Value> &locals,
     const std::unordered_map<std::string, Value> &globals,
     const std::vector<uint32_t> &active_closure_ids,
-    const std::function<std::optional<Value>(uint32_t)> &open_local_reader) {
+    const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
+    const std::vector<Value> &extra_roots) {
 
     root_stack_snapshot_ = stack_values;
     root_locals_snapshot_ = locals;
     root_globals_ptr_ = &globals;
     root_closures_snapshot_ = active_closure_ids;
+    root_extra_roots_snapshot_ = extra_roots;
     open_local_reader_snapshot_ = open_local_reader;
 
     mark_worklist_.clear();
@@ -753,7 +760,7 @@ void GCHeap::startIncrementalCollection(
     marked_intervals_.clear();
     marked_timeouts_.clear();
     marked_channels_.clear();
-  marked_waitgroups_.clear();
+    marked_waitgroups_.clear();
 
     recovered_in_cycle_ = 0;
     collection_requested_ = false;
@@ -924,6 +931,9 @@ void GCHeap::markRoots() {
             markReference(Value::makeClosureId(closure_id));
         }
     }
+    for (const auto &value : root_extra_roots_snapshot_) {
+        markReference(value);
+    }
 
     if (!current_collection_full_) {
         for (uint32_t id : old_arrays_) {
@@ -935,13 +945,13 @@ void GCHeap::markRoots() {
         for (uint32_t id : old_sets_) {
             markReference(Value::makeSetId(id));
         }
-for (uint32_t id : old_closures_) {
-markReference(Value::makeClosureId(id));
-}
-for (uint32_t id : old_strings_) {
-markReference(Value::makeStringId(id));
-}
-}
+        for (uint32_t id : old_closures_) {
+            markReference(Value::makeClosureId(id));
+        }
+        for (uint32_t id : old_strings_) {
+            markReference(Value::makeStringId(id));
+        }
+    }
 }
 
 void GCHeap::markStep(size_t &work_budget) {

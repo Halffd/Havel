@@ -1232,6 +1232,12 @@ fn parseCallArgs() {
             // {...} interpolation (works in all strings, not just f-strings)
             if ch == "{" {
                 if buf.len > 0 {
+                    // Strip the interpolation marker: ${expr} → the '$' before '{'
+                    if buf.sub(buf.len - 1, 1) == "$" {
+                        buf = buf.slice(0, buf.len - 1)
+                    }
+                }
+                if buf.len > 0 {
                     parts.push(StringLiteral(buf, l, c))
                     buf = ""
                 }

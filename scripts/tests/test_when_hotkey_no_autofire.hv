@@ -1,0 +1,56 @@
+// test_when_hotkey_no_autofire.hv
+// Regression: when a when-block condition becomes true, the hotkeys declared
+// inside it must be ARMED (awaiting a real keypress) but NOT executed
+// immediately.
+//
+// Bug: the condition-false->true transition called wakeHotkey() on the parked
+// hotkey goroutine (requeueFront -> ran the body right away). This test flips
+// `cond` and asserts the hotkey body never auto-fires while the when-body does
+// run.
+//
+// Note: `havel run` uses minimal mode (no OS hotkeyManager), so the OS grab
+// toggling is not observable here; this test targets the auto-fire behaviour.
+
+failures = 0
+
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    }
+    else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+cond = false
+bodyRuns = 0
+hkBodyRuns = 0
+
+when cond {
+    bodyRuns = bodyRuns + 1
+    F7 => {
+        hkBodyRuns = hkBodyRuns + 1
+    }
+}
+
+check("hotkey registered", #hotkey.list() > 0)
+
+cond = true
+sleep(400)
+
+check("when body ran (false->true edge)", bodyRuns == 1)
+check("hotkey body NOT auto-fired on arm", hkBodyRuns == 0)
+
+cond = false
+sleep(400)
+cond = true
+sleep(400)
+
+check("hotkey body still not fired across toggles", hkBodyRuns == 0)
+
+if failures > 0 {
+    print("FAILED " + str(failures))
+    exit(1)
+}
+print("ALL PASS")

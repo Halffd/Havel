@@ -1463,8 +1463,12 @@ bool HotkeyModule::setGrab(VM &vm, const std::string &alias, bool grab) {
   auto *ctx = getHotkeyContextDataMutable(hotkeyId);
   if (!ctx) return false;
   ctx->grab = grab;
-  if (ctx->hostObjectId != 0)
+  ctx->enabled = grab;
+  ctx->state = grab ? "enabled" : "disabled";
+  if (ctx->hostObjectId != 0) {
     vm.setHostObjectField(ObjectRef{ctx->hostObjectId, true}, "grab", Value::makeBool(grab));
+    vm.setHostObjectField(ObjectRef{ctx->hostObjectId, true}, "enabled", Value::makeBool(grab));
+  }
   return true;
 }
 

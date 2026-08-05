@@ -239,12 +239,40 @@ fn Lexer(source) {
   fn afterExpression() {
     AFTER_EXPR_TYPES.has(lastTokenType()) || prevIsKeywordAfterDot()
   }
+  fn isHotkeyAssign() {
+    tokens.len > 0 && lastTokenType() == "Assign" && isHotkeyBindingAhead()
+  }
   fn prevIsKeywordAfterDot() {
     if tokens.len < 2 { return false }
     tokens[tokens.len - 2].type == "Dot"
   }
     fn isHotkeyCharCp(cp) {
         isAlphaNumCp(cp) || cp == 43 || cp == 45 || cp == 94 || cp == 33 || cp == 35 || cp == 64 || cp == 124 || cp == 42 || cp == 38 || cp == 58 || cp == 126 || cp == 36 || cp == 61 || cp == 46 || cp == 44 || cp == 47
+    }
+    fn isHotkeyBindingAhead() {
+      look = idx
+      while look < n && isHotkeyCharCp(cpArr[look][0]) { look = look + 1 }
+      while look < n && (cpArr[look][0] == 32 || cpArr[look][0] == 9) { look = look + 1 }
+      if look + 1 < n && cpArr[look][0] == 61 && cpArr[look + 1][0] == 62 { return true }
+      if look + 2 < n && cpArr[look][0] == 105 && cpArr[look + 1][0] == 102 {
+        // 'if' — scan ahead for =>
+        look = look + 2
+        while look + 1 < n {
+          if cpArr[look][0] == 61 && cpArr[look + 1][0] == 62 { return true }
+          look = look + 1
+        }
+        return false
+      }
+      if look + 4 < n && cpArr[look][0] == 119 && cpArr[look + 1][0] == 104 && cpArr[look + 2][0] == 101 && cpArr[look + 3][0] == 110 {
+        // when
+        look = look + 4
+        while look + 1 < n {
+          if cpArr[look][0] == 61 && cpArr[look + 1][0] == 62 { return true }
+          look = look + 1
+        }
+        return false
+      }
+      return false
     }
     fn decodeHexCp(cp) {
         if cp >= 48 && cp <= 57 { return cp - 48 }
@@ -720,7 +748,7 @@ fn scanHotkey() {
   while current() != -1 {
     c = current()
     if c == 32 || c == 9 {
-      if s.find("&") != null {
+      if s.find("&") >= 0 {
         s = s + string.fromCodePoint(c)
         advance()
         continue
@@ -765,15 +793,16 @@ fn scanHotkey() {
   }
   hasMod = false
   if s.len > 0 {
-    if s.find("^") != null { hasMod = true }
-    if !hasMod && s.find("!") != null { hasMod = true }
-    if !hasMod && s.find("+") != null { hasMod = true }
-    if !hasMod && s.find("#") != null { hasMod = true }
-    if !hasMod && s.find("@") != null { hasMod = true }
-    if !hasMod && s.find("~") != null { hasMod = true }
-    if !hasMod && s.find("$") != null { hasMod = true }
-    if !hasMod && s.find("&") != null { hasMod = true }
-    if !hasMod && s.find(":") != null { hasMod = true }
+    if s.find("^") >= 0 { hasMod = true }
+    if !hasMod && s.find("!") >= 0 { hasMod = true }
+    if !hasMod && s.find("+") >= 0 { hasMod = true }
+    if !hasMod && s.find("#") >= 0 { hasMod = true }
+    if !hasMod && s.find("@") >= 0 { hasMod = true }
+    if !hasMod && s.find("~") >= 0 { hasMod = true }
+    if !hasMod && s.find("$") >= 0 { hasMod = true }
+    if !hasMod && s.find("&") >= 0 { hasMod = true }
+    if !hasMod && s.find(":") >= 0 { hasMod = true }
+    if !hasMod && s.find("|") >= 0 { hasMod = true }
     if s[0] == "F"[0] { hasMod = true }
   }
   if hasMod {
@@ -905,7 +934,7 @@ fn scanHotkey() {
                 hkLook = idx + 1
                 while hkLook < n && isHotkeyCharCp(cpArr[hkLook][0]) { hkLook = hkLook + 1 }
                 while hkLook < n && (cpArr[hkLook][0] == 32 || cpArr[hkLook][0] == 9) { hkLook = hkLook + 1 }
-                if hkLook + 1 < n && cpArr[hkLook][0] == 61 && cpArr[hkLook + 1][0] == 62 {
+                if isHotkeyBindingAhead() {
                     scanHotkey()
                     continue
                 }
@@ -1018,7 +1047,7 @@ if c == 33 && cp(1) == 123 {
     if nextCp >= 65 && nextCp <= 90 { isIdentStart = true }
     if nextCp == 95 { isIdentStart = true }
     if nextCp >= 48 && nextCp <= 57 { isIdentStart = true }
-    if afterExpression() {
+    if afterExpression() && !isHotkeyAssign() {
       advance()
       addToken("Not", "!")
     } else if isIdentStart {
@@ -1030,11 +1059,12 @@ if c == 33 && cp(1) == 123 {
       s = "!"
       while current() != -1 && current() != 13 && current() != 10 && current() != 123 && current() != 40 {
         if current() == 61 && cp(1) == 62 { break }
+        if !isHotkeyCharCp(current()) { break }
         s = s + string.fromCodePoint(current())
         advance()
       }
-      // Check if this is a hotkey binding (ends with =>)
-      if current() == 61 && cp(1) == 62 {
+      // Check if this is a hotkey binding (ends with =>, possibly after if/when)
+      if isHotkeyBindingAhead() {
         addToken("Hotkey", s)
       } else {
         // Not a hotkey binding — emit only `!` as Not and re-lex the consumed chars
@@ -1049,6 +1079,7 @@ if c == 33 && cp(1) == 123 {
       s = "!"
       while current() != -1 && current() != 13 && current() != 10 && current() != 123 && current() != 40 {
         if current() == 61 && cp(1) == 62 { break }
+        if !isHotkeyCharCp(current()) { break }
         s = s + string.fromCodePoint(current())
         advance()
       }
@@ -1149,7 +1180,7 @@ if c == 33 && cp(1) == 123 {
             }
             // Plus: context-aware (operator vs hotkey modifier)
             if c == 43 {
-                if afterExpression() {
+                if afterExpression() && !isHotkeyAssign() {
                     advance()
                     addToken("Plus", "+")
                 } else {
@@ -1352,7 +1383,7 @@ if c == 33 && cp(1) == 123 {
                 continue
             }
       if c == 38 {
-        if inBitwiseExpr || afterExpression() {
+        if (inBitwiseExpr || afterExpression()) && !isHotkeyAssign() {
           advance()
           addToken("BitwiseAnd", "&")
         } else {
@@ -1374,7 +1405,7 @@ if c == 33 && cp(1) == 123 {
         if !isStmtStart {
           if STATEMENT_START_NO_ARROW_TYPES.has(tokens[tokens.len - 1].type) { isStmtStart = true }
         }
-        if isStmtStart {
+        if isStmtStart || isHotkeyAssign() {
           nx = cp(1)
           if nx != -1 && (isAlphaCp(nx) || nx == 43 || nx == 33 || nx == 94 || nx == 35 || nx == 64 || nx == 126 || nx == 36 || nx == 42) {
             scanHotkey()
@@ -1418,7 +1449,7 @@ if c == 33 && cp(1) == 123 {
             }
       // ^ - bitwise xor vs hotkey
       if c == 94 {
-        if inBitwiseExpr || afterExpression() {
+        if (inBitwiseExpr || afterExpression()) && !isHotkeyAssign() {
           advance()
           addToken("BitwiseXor", "^")
         } else {
@@ -1568,6 +1599,10 @@ if c == 33 && cp(1) == 123 {
       // @ - context-aware: At vs hotkey
   if c == 64 {
     nextCp = cp(1)
+    if isHotkeyAssign() {
+      scanHotkey()
+      continue
+    }
     if afterExpression() || (nextCp != -1 && (isAlphaCp(nextCp) || nextCp == 95)) {
           // Look ahead past identifier and whitespace to decide hotkey vs field access
           lk = idx
@@ -1597,12 +1632,12 @@ if c == 33 && cp(1) == 123 {
                 }
                 hasModPfx = (cp(1) != -1 && (cp(1) == 33 || cp(1) == 38 || cp(1) == 94))
                 hasKeyName = (cp(1) != -1 && isAlphaCp(cp(1)))
-                if isStmtStart || (hasModPfx && hasKeyName) {
+                if isStmtStart || (hasModPfx && hasKeyName) || isHotkeyAssign() {
                     lk = idx
                     while lk < n && isHotkeyCharCp(cpArr[lk][0]) { lk = lk + 1 }
                     while lk < n && (cpArr[lk][0] == 32 || cpArr[lk][0] == 9) { lk = lk + 1 }
                     hasArrow = (lk + 1 < n && cpArr[lk][0] == 61 && cpArr[lk + 1][0] == 62)
-                    if hasArrow {
+                    if hasArrow || isHotkeyBindingAhead() {
                         scanHotkey()
                         continue
                     }
@@ -1613,7 +1648,7 @@ if c == 33 && cp(1) == 123 {
             }
             // ~ - context-aware: Tilde vs hotkey
             if c == 126 {
-                if inBitwiseExpr || afterExpression() {
+                if (inBitwiseExpr || afterExpression()) && !isHotkeyAssign() {
                     advance()
                     addToken("Tilde", "~")
                 } else {

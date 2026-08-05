@@ -393,7 +393,8 @@ void maybeCollectGarbage(
     const std::unordered_map<std::string, Value> &globals,
     const std::vector<uint32_t> &active_closure_ids,
     const std::function<std::optional<Value>(uint32_t)>
-        &open_local_reader);
+        &open_local_reader,
+    const std::vector<Value> &extra_roots = {});
 
 void abortIncrementalCollection() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -421,7 +422,8 @@ void abortIncrementalCollection() {
         const std::unordered_map<std::string, Value> &globals,
         const std::vector<uint32_t> &active_closure_ids,
         const std::function<std::optional<Value>(uint32_t)>
-        &open_local_reader);
+        &open_local_reader,
+        const std::vector<Value> &extra_roots = {});
 
     void
     stepGarbageCollection(const std::vector<Value> &stack_values,
@@ -429,14 +431,24 @@ void abortIncrementalCollection() {
         const std::unordered_map<std::string, Value> &globals,
         const std::vector<uint32_t> &active_closure_ids,
         const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
-        size_t work_budget = 128);
+        size_t work_budget = 128,
+        const std::vector<Value> &extra_roots = {});
 
     void forceFullCollection(
         const std::vector<Value> &stack_values,
         const std::vector<Value> &locals,
         const std::unordered_map<std::string, Value> &globals,
         const std::vector<uint32_t> &active_closure_ids,
-        const std::function<std::optional<Value>(uint32_t)> &open_local_reader);
+        const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
+        const std::vector<Value> &extra_roots = {});
+
+    void
+    startIncrementalCollection(const std::vector<Value> &stack_values,
+        const std::vector<Value> &locals,
+        const std::unordered_map<std::string, Value> &globals,
+        const std::vector<uint32_t> &active_closure_ids,
+        const std::function<std::optional<Value>(uint32_t)> &open_local_reader,
+        const std::vector<Value> &extra_roots = {});
 
     std::vector<std::pair<uint32_t, ObjectEntry>> drainFinalizers();
 
@@ -474,13 +486,6 @@ private:
         std::unordered_set<uint32_t> &marked_closures,
         const std::function<std::optional<Value>(uint32_t)>
         &open_local_reader) const;
-    void startIncrementalCollection(
-        const std::vector<Value> &stack_values,
-        const std::vector<Value> &locals,
-        const std::unordered_map<std::string, Value> &globals,
-        const std::vector<uint32_t> &active_closure_ids,
-        const std::function<std::optional<Value>(uint32_t)>
-        &open_local_reader);
     void markReference(const Value &value);
     void markRoots();
     void markStep(size_t &work_budget);
@@ -597,6 +602,7 @@ size_t full_collection_interval_ = 4;
     std::vector<Value> root_locals_snapshot_;
     const std::unordered_map<std::string, Value>* root_globals_ptr_ = nullptr;
     std::vector<uint32_t> root_closures_snapshot_;
+    std::vector<Value> root_extra_roots_snapshot_;
     std::function<std::optional<Value>(uint32_t)> open_local_reader_snapshot_;
 
     std::vector<uint32_t> sweep_keys_;

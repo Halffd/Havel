@@ -8122,7 +8122,15 @@ void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expressi
  uint32_t strId = addStringConstant("thread.spawn");
  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
 
- compileClosureBody(*expression.body, "<thread>");
+
+  // Get precomputed upvalues from semantic analysis
+  const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr;
+  auto it = lexical_resolution_.thread_expression_upvalues.find(&expression);
+  if (it != lexical_resolution_.thread_expression_upvalues.end()) {
+    precomputedUpvalues = &it->second;
+  }
+  
+ compileClosureBody(*expression.body, "<thread>", std::nullopt, precomputedUpvalues);
 
  emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
 }
@@ -8148,7 +8156,15 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
   // Reserve local slot for interval ID before compiling closure body so it can be captured
   uint32_t idSlot = next_local_index++;
 
-  compileClosureBody(*expression.body, "<interval>", idSlot);
+
+  // Get precomputed upvalues from semantic analysis
+  const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr;
+  auto it = lexical_resolution_.interval_expression_upvalues.find(&expression);
+  if (it != lexical_resolution_.interval_expression_upvalues.end()) {
+    precomputedUpvalues = &it->second;
+  }
+  
+  compileClosureBody(*expression.body, "<interval>", idSlot, precomputedUpvalues);
 
   // Emit LOAD_GLOBAL + CALL to interval.start
   emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
@@ -8175,7 +8191,15 @@ void ByteCompiler::compileUpdateBlockExpression(const ast::UpdateBlockExpression
 
   compileExpression(*expression.intervalMs);
 
-  compileClosureBody(*expression.body, "<update>");
+
+  // Get precomputed upvalues from semantic analysis
+  const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr;
+  auto it = lexical_resolution_.update_block_expression_upvalues.find(&expression);
+  if (it != lexical_resolution_.update_block_expression_upvalues.end()) {
+    precomputedUpvalues = &it->second;
+  }
+  
+  compileClosureBody(*expression.body, "<update>", std::nullopt, precomputedUpvalues);
 
   emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
 }
@@ -8201,7 +8225,15 @@ void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expres
   // Reserve local slot for timeout ID before compiling closure body
   uint32_t idSlot = next_local_index++;
 
-  compileClosureBody(*expression.body, "<timeout>", idSlot);
+
+  // Get precomputed upvalues from semantic analysis
+  const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr;
+  auto it = lexical_resolution_.timeout_expression_upvalues.find(&expression);
+  if (it != lexical_resolution_.timeout_expression_upvalues.end()) {
+    precomputedUpvalues = &it->second;
+  }
+  
+  compileClosureBody(*expression.body, "<timeout>", idSlot, precomputedUpvalues);
 
   // Emit LOAD_GLOBAL + CALL to timeout.start
   emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
@@ -8213,10 +8245,18 @@ void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expres
 }
 
 // Compile a closure body, resolving identifiers against the enclosing function's scope
-void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::string &name, std::optional<uint32_t> capturedIntervalIdSlot) {
+void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::string &name, std::optional<uint32_t> capturedIntervalIdSlot, const std::vector<UpvalueDescriptor> *precomputedUpvalues) {
   // Collect all identifiers in the body that reference enclosing scope variables
   std::vector<UpvalueDescriptor> upvalues;
-  collectUpvaluesFromBody(body, upvalues);
+  if (precomputedUpvalues) {
+    upvalues = *precomputedUpvalues;
+  } else {
+    if (precomputedUpvalues) {
+    upvalues = *precomputedUpvalues;
+  } else {
+    collectUpvaluesFromBody(body, upvalues);
+  }
+  }
 
   if (capturedIntervalIdSlot.has_value()) {
     // Add the captured interval/timeout ID as an upvalue
@@ -8465,6 +8505,16 @@ void ByteCompiler::compileGoExpression(const ast::GoExpression &expression) {
   uint32_t funcIndex = compiled_functions.size();
   BytecodeFunction bf("<go>", 0, 0);
   enterFunction(std::move(bf), funcIndex);
+
+  // If the callee is a lambda, copy its upvalues to the wrapper function
+  // so the wrapper can pass them to the lambda when called.
+  if (call.callee && call.callee->kind == ast::NodeType::LambdaExpression) {
+    const auto *lambda = static_cast<const ast::LambdaExpression *>(call.callee.get());
+    auto upvalues_it = lexical_resolution_.lambda_upvalues.find(lambda);
+    if (upvalues_it != lexical_resolution_.lambda_upvalues.end()) {
+      current_function->upvalues = upvalues_it->second;
+    }
+  }
 
   // Clear class context so @ resolves via LOAD_GLOBAL "this" in goroutine
   const std::string saved_class_name_go = std::move(current_class_name_);

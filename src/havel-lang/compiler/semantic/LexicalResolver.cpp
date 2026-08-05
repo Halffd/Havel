@@ -245,6 +245,18 @@ if (ctx.owner) {
     else if (ctx.owner->kind == ast::NodeType::HotkeyBinding) {
       auto *hk = static_cast<const ast::HotkeyBinding *>(ctx.owner);
       result_.hotkey_binding_upvalues[hk] = ctx.upvalues;
+    } else if (ctx.owner->kind == ast::NodeType::IntervalExpression) {
+      auto *ie = static_cast<const ast::IntervalExpression *>(ctx.owner);
+      result_.interval_expression_upvalues[ie] = ctx.upvalues;
+    } else if (ctx.owner->kind == ast::NodeType::TimeoutExpression) {
+      auto *te = static_cast<const ast::TimeoutExpression *>(ctx.owner);
+      result_.timeout_expression_upvalues[te] = ctx.upvalues;
+    } else if (ctx.owner->kind == ast::NodeType::ThreadExpression) {
+      auto *te = static_cast<const ast::ThreadExpression *>(ctx.owner);
+      result_.thread_expression_upvalues[te] = ctx.upvalues;
+    } else if (ctx.owner->kind == ast::NodeType::UpdateBlockExpression) {
+      auto *ube = static_cast<const ast::UpdateBlockExpression *>(ctx.owner);
+      result_.update_block_expression_upvalues[ube] = ctx.upvalues;
     }
   } else {
     result_.main_local_count = ctx.next_slot;
@@ -1854,6 +1866,16 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
     }
     if (global_variables_.count(name) > 0) {
       return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
+    }
+    // Check main function's scopes for top-level variable declarations
+    auto &ctx = function_stack_[0];
+    for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
+      const auto &scope = ctx.scopes[sc - 1];
+      auto it = scope.find(name);
+      if (it != scope.end()) {
+        return ResolvedBinding{
+            ResolvedBindingKind::Local, it->second.slot, 0, name, it->second.is_const};
+      }
     }
     // Dynamic language: treat all other identifiers as globals
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};

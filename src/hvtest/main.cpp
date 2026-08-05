@@ -33,7 +33,7 @@ static std::string find_scripts_root() {
 	if (len > 0) {
 		self_path[len] = '\0';
 		fs::path self(self_path);
-		fs::path root = self.parent_path().parent_path().parent_path();
+		fs::path root = self.parent_path().parent_path();
 		if (fs::exists(root / "scripts" / "smoke")) return (root / "scripts").string();
 	}
 	if (const char *env = std::getenv("HAVEL_SCRIPTS")) return env;

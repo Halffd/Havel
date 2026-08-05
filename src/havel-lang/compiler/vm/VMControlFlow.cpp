@@ -1134,7 +1134,12 @@ case OpCode::CLOSURE: {
                 COMPILER_THROW("Parent closure not found for CLOSURE");
             }
             if (descriptor.index >= parent_closure->upvalues.size()) {
-                COMPILER_THROW("CLOSURE upvalue index out of range");
+                COMPILER_THROW(
+                    "CLOSURE upvalue index out of range (func=" +
+                    target->name + " upvalue_idx=" + std::to_string(descriptor.index) +
+                    " parent_closure=" + std::to_string(parent_closure_id) +
+                    " parent_upvalues_size=" + std::to_string(parent_closure->upvalues.size()) +
+                    " captures_local=" + std::to_string(target->upvalues.size()));
             }
             closure.upvalues.push_back(parent_closure->upvalues[descriptor.index]);
         }

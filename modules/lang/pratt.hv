@@ -1272,7 +1272,7 @@ fn parseCallArgs() {
         l = openTok.line
         c = openTok.col
 
-        // Empty lambda: () => body
+// Empty lambda: () => body
         body = null
         if current().tid == TID.CloseParen and at(1).tid == TID.Arrow {
             advance() // )
@@ -1287,6 +1287,49 @@ fn parseCallArgs() {
             }
             return LambdaExpression(parameters, body)
         }
+        // Check for (params){ body } lambda shorthand BEFORE multi-param lambda
+        // (which consumes tokens even when it fails)
+        savedPos = pos
+        braceLambdaParams = []
+        isBraceLambda = false
+
+        if current().tid == TID.Identifier {
+            // Collect comma-separated identifiers
+            while true {
+                if current().tid == TID.Identifier {
+                    braceLambdaParams.push(advance().value)
+                    if current().tid == TID.Comma {
+                        advance()
+                    } else {
+                        break
+                    }
+                } else {
+                    break
+                }
+            }
+            // Check for ) {
+            if braceLambdaParams.length >= 1 and current().tid == TID.CloseParen and at(1).tid == TID.OpenBrace {
+                advance() // consume )
+                // DON'T consume '{' - parseBlock expects to see it
+                isBraceLambda = true
+            }
+        } else if current().tid == TID.CloseParen and at(1).tid == TID.OpenBrace {
+            // Empty params: () { body }
+            advance() // consume )
+            // DON'T consume '{' - parseBlock expects to see it
+            isBraceLambda = true
+        }
+
+        if isBraceLambda {
+            // Parse lambda body as block (parseBlock expects to see '{')
+            body = parseBlock()
+            return LambdaExpression(braceLambdaParams, body)
+        }
+
+        // Not a brace lambda, restore position and check multi-param lambda
+        pos = savedPos
+        syncCur()
+
         // Multi-param lambda detection: (a, b, c) => body
         savedPos = pos
         lambdaParams = []
@@ -2243,18 +2286,21 @@ expect(TID.CloseBrace)
 	}
 }
         // DSL statements
-        if tt == TID.On: return parseOnStatement()
-        if tt == TID.Mode: return parseModeBlockStatement()
- if tt == TID.Modes: return parseModesBlockStatement()
-        if tt == TID.Group: return parseGroupStatement()
-        if tt == TID.Signal: return parseSignalStatement()
-        if tt == TID.Pool: return parsePoolStatement()
-        if tt == TID.Devices: return parseDevicesBlockStatement()
+        if tt == TID.On { return parseOnStatement() }
+        if tt == TID.Mode {
+          if at(1).tid == TID.Identifier { return parseModeBlockStatement() }
+          return parseExpr(0)
+        }
+        if tt == TID.Modes { return parseModesBlockStatement() }
+        if tt == TID.Group { return parseGroupStatement() }
+        if tt == TID.Signal { return parseSignalStatement() }
+        if tt == TID.Pool { return parsePoolStatement() }
+        if tt == TID.Devices { return parseDevicesBlockStatement() }
 
         // Thread/Interval/Timeout sugar
-        if tt == TID.Thread: return parseThreadStatement()
-        if tt == TID.Interval: return parseIntervalStatement()
-        if tt == TID.Timeout: return parseTimeoutStatement()
+        if tt == TID.Thread { return parseThreadStatement() }
+        if tt == TID.Interval { return parseIntervalStatement() }
+        if tt == TID.Timeout { return parseTimeoutStatement() }
 
  // Type declarations
  if tt == TID.Class { return parseClassDeclaration() }

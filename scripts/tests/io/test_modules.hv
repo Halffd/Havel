@@ -38,24 +38,24 @@ gg = "1.0"
 gb = "1.0"
 temp = "6500"
 print("Resetting brightness to defaults: " + b + " " + sl + " " + gr + " " + gg + " " + gb + " " + temp)
-brightness.set(num(b))
+brightness.setBrightness(num(b))
 brightness.setShadowLift(num(sl))
 brightness.setGammaRGB(num(gr), num(gg), num(gb))
 brightness.setTemperature(int(temp))
 
-print("Current brightness: " + brightness.get() + " ShadowLift: " + brightness.getShadowLift() + " GammaR: " + brightness.getGammaR() + " GammaG: " + brightness.getGammaG() + " GammaB: " + brightness.getGammaB() + " Temperature: " + brightness.getTemperature())
+print("Current brightness: " + brightness.getBrightness() + " ShadowLift: " + brightness.getShadowLift() + " GammaR: " + brightness.getGammaR() + " GammaG: " + brightness.getGammaG() + " GammaB: " + brightness.getGammaB() + " Temperature: " + brightness.getTemperature())
 
 print("Brightness increase requested")
 print("Brightness before change: ")
-print(brightness.get())
-brightness.increase(0.05)
+print(brightness.getBrightness())
+brightness.increaseBrightness(0.05)
 print("Brightness after change: ")
-print(brightness.get())
+print(brightness.getBrightness())
 print("Brightness decrease requested")
-brightness.decrease(0.05)
+brightness.decreaseBrightness(0.05)
 print("Brightness after decrease: ")
-print(brightness.get())
-print("type of brightness: " + type(brightness) + ", type of brightness.get: " + type(brightness.get) + ", type of brightness.increase: " + type(brightness.increase) + ", type of brightness.decrease: " + type(brightness.decrease) + ", type of brightness.set: " + type(brightness.set) + ", type of brightness.getShadowLift: " + type(brightness.getShadowLift) + ", type of brightness.setShadowLift: " + type(brightness.setShadowLift) + ", type of brightness.getGammaR: " + type(brightness.getGammaR) + ", type of brightness.setGammaRGB: " + type(brightness.setGammaRGB) + ", type of brightness.getTemperature: " + type(brightness.getTemperature) + ", type of brightness.setTemperature: " + type(brightness.setTemperature))
+print(brightness.getBrightness())
+print("type of brightness: " + type(brightness) + ", type of brightness.getBrightness: " + type(brightness.getBrightness) + ", type of brightness.increaseBrightness: " + type(brightness.increaseBrightness) + ", type of brightness.decreaseBrightness: " + type(brightness.decreaseBrightness) + ", type of brightness.setBrightness: " + type(brightness.setBrightness) + ", type of brightness.getShadowLift: " + type(brightness.getShadowLift) + ", type of brightness.setShadowLift: " + type(brightness.setShadowLift) + ", type of brightness.getGammaR: " + type(brightness.getGammaR) + ", type of brightness.setGammaRGB: " + type(brightness.setGammaRGB) + ", type of brightness.getTemperature: " + type(brightness.getTemperature) + ", type of brightness.setTemperature: " + type(brightness.setTemperature))
 print(brightness)
 
 sl = brightness.getShadowLift()
@@ -82,10 +82,10 @@ temp = brightness.getTemperature()
 brightness.setTemperature(temp - 500)
 print("Color temperature after decrease: " + brightness.getTemperature())
 // get brightness and set it directly
-b = brightness.get()
+b = brightness.getBrightness()
 print("Current brightness: " + b)
-brightness.set(b - 0.05)
-print("Brightness after decrease: " + brightness.get())
+brightness.setBrightness(b - 0.05)
+print("Brightness after decrease: " + brightness.getBrightness())
 
 // io
 print("Mouse state ", mouse.state())

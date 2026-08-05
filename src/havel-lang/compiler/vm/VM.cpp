@@ -3186,6 +3186,10 @@ std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
 void VM::maybeCollectGarbage() {
   if (gc_suspend_counter_ > 0)
     return;
+  std::vector<Value> scheduler_roots;
+  if (scheduler_) {
+    scheduler_roots = scheduler_->getGCRoots();
+  }
   heap_.maybeCollectGarbage(stackValuesForRoots(), locals, globals,
                             activeClosureIdsForRoots(),
                             [this](uint32_t index) -> std::optional<Value> {
@@ -3193,7 +3197,8 @@ void VM::maybeCollectGarbage() {
                                 return std::nullopt;
                               }
                               return locals[index];
-                            });
+                            },
+                            scheduler_roots);
 }
 
 void VM::drainFinalizers() {
@@ -3213,6 +3218,10 @@ void VM::drainFinalizers() {
 void VM::collectGarbage() {
   if (gc_suspend_counter_ > 0)
     return;
+  std::vector<Value> scheduler_roots;
+  if (scheduler_) {
+    scheduler_roots = scheduler_->getGCRoots();
+  }
   heap_.collectGarbage(stackValuesForRoots(), locals, globals,
                        activeClosureIdsForRoots(),
                        [this](uint32_t index) -> std::optional<Value> {
@@ -3220,10 +3229,15 @@ void VM::collectGarbage() {
                            return std::nullopt;
                          }
                          return locals[index];
-                       });
+                       },
+                       scheduler_roots);
 }
 
 void VM::stepGarbageCollection(size_t work_budget) {
+  std::vector<Value> scheduler_roots;
+  if (scheduler_) {
+    scheduler_roots = scheduler_->getGCRoots();
+  }
   heap_.stepGarbageCollection(
       stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
       [this](uint32_t index) -> std::optional<Value> {
@@ -3232,7 +3246,7 @@ void VM::stepGarbageCollection(size_t work_budget) {
         }
         return locals[index];
       },
-      work_budget);
+      work_budget, scheduler_roots);
 }
 
 void VM::garbageCollectionSafePoint(size_t work_budget) {

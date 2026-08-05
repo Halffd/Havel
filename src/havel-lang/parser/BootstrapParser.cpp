@@ -2185,6 +2185,49 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
   // Not a multi-param lambda, restore position and parse normally
   position = savedPos;
 
+  // Check for (params){ body } lambda shorthand
+  // Save position again to check for this pattern
+  size_t savedPos2 = position;
+  std::vector<std::unique_ptr<ast::FunctionParameter>> braceLambdaParams;
+  bool isBraceLambda = false;
+
+  if (at().type == TokenType::Identifier) {
+    // Collect comma-separated identifiers
+    while (true) {
+      if (at().type != TokenType::Identifier) {
+        break;
+      }
+      auto pattern = makeIdentifier(advance());
+      braceLambdaParams.push_back(makeNode<ast::FunctionParameter>(
+          std::move(pattern), std::nullopt, std::nullopt, false));
+      if (at().type == TokenType::Comma) {
+        advance();
+      } else {
+        break;
+      }
+    }
+    // Check for ) {
+    if (braceLambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
+      advance(); // consume ')'
+      // DON'T consume '{' - parseBlockStatement expects to see it
+      isBraceLambda = true;
+    }
+  } else if (at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
+    // Empty params: () { body }
+    advance(); // consume ')'
+    // DON'T consume '{' - parseBlockStatement expects to see it
+    isBraceLambda = true;
+  }
+
+  if (isBraceLambda) {
+    // Parse lambda body as block (parseBlockStatement expects to see '{')
+    std::unique_ptr<ast::Statement> body = parseBlockStatement();
+    return makeNode<ast::LambdaExpression>(std::move(braceLambdaParams), std::move(body));
+  }
+
+  // Not a brace lambda, restore position and parse normally
+  position = savedPos2;
+
   // Parse first expression
   auto expr = parsePrattExpression(0);
   if (!expr) return nullptr;

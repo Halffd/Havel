@@ -297,6 +297,14 @@ private:
 
     // Track pressed virtual keys sent to uinput to release on shutdown
     std::unordered_set<int> pressedVirtualKeys;
+    // Track synthetic key events we sent via uinput to filter feedback loop
+    struct SyntheticKey {
+        int code;
+        std::chrono::steady_clock::time_point time;
+        bool down;
+    };
+    std::vector<SyntheticKey> syntheticKeys;
+    std::mutex syntheticKeysMutex;
     std::mutex sendInputMutex;
     bool pendingRelBatch_ = false;
 

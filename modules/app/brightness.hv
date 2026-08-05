@@ -7,15 +7,6 @@ use shell
 use fs
 use math
 
-// === Constants ===
-MIN_TEMP = 1000
-MAX_TEMP = 25000
-DEFAULT_BRIGHTNESS_AMOUNT = 0.02
-DEFAULT_TEMP_AMOUNT = 200
-DEFAULT_GAMMA_AMOUNT = 100
-GAMMA_RAMP_SIZE = 256
-SHADOW_LIFT_MAX = 4.0
-
 // === State holder (module-level singleton) ===
 _state = {
   initialized: false,
@@ -145,7 +136,7 @@ fn _loadNativeRampBuilder() {
     if ffi.ptr_to_uint(s.gammaRampLib) == 0 { return false }
     s.fillGammaRamp = ffi.sym(s.gammaRampLib, "fill_gamma_ramp")
   }
-  ffi.ptr_to_uint(s.fillGammaRamp) != 0
+  return ffi.ptr_to_uint(s.fillGammaRamp) != 0
 }
 
 // === Display connection management ===
@@ -176,6 +167,7 @@ fn _releaseDisplay() {
     ffi.call(s.XCloseDisplay, "int32", ["pointer"], s.display)
     s.display = 0
     s.rootWin = 0
+    s.brightnessAtom = 0
     s.displayRefCount = 0
   }
 }
@@ -860,46 +852,10 @@ fn getMonitor(index) {
   if index >= 0 && index < #s.monitors { s.monitors[index] } else { null }
 }
 
-fn getGamma(monitorIndex) { getGammaR(monitorIndex) }
-fn setGamma(gamma, monitorIndex) { _ensureInit(); s = _S(); mi = monitorIndex; if mi == null { mi = -1 }; g = _clamp(gamma, 0.1, 10.0); setGammaRGB(g, g, g, mi) }
-
-init()
-
-{
-  init: init
-  getBrightness: getBrightness
-  getHardwareBrightness: getHardwareBrightness
-  getXrandrBrightness: getXrandrBrightness
-  setBrightness: setBrightness
-  increaseBrightness: increaseBrightness
-  decreaseBrightness: decreaseBrightness
-  getTemperature: getTemperature
-  setTemperature: setTemperature
-  increaseTemperature: increaseTemperature
-  decreaseTemperature: decreaseTemperature
-  setGammaRGB: setGammaRGB
-  getGammaRGB: getGammaRGB
-  getGammaR: getGammaR
-  getGammaG: getGammaG
-  getGammaB: getGammaB
-  getGamma: getGamma
-  setGamma: setGamma
-  increaseGamma: increaseGamma
-  decreaseGamma: decreaseGamma
-  getShadowLift: getShadowLift
-  setShadowLift: setShadowLift
-  increaseShadowLift: increaseShadowLift
-  decreaseShadowLift: decreaseShadowLift
-  setBrightnessAndRGB: setBrightnessAndRGB
-  setBrightnessAndTemperature: setBrightnessAndTemperature
-  setBrightnessAndShadowLift: setBrightnessAndShadowLift
-  getMonitors: getMonitors
-  getMonitor: getMonitor
-  // Aliases for convenience
-  get: getBrightness
-  set: setBrightness
-  increase: increaseBrightness
-  decrease: decreaseBrightness
-}
+// Aliases for convenience (top-level so the module loader exposes them)
+// Note: 'get = getBrightness' triggers a compiler bug that breaks all exports
+set = setBrightness
+increase = increaseBrightness
+decrease = decreaseBrightness
 
 init()

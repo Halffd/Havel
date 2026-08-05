@@ -62,27 +62,15 @@ uint32_t VM::getHostFunctionIndex(const std::string &name) {
 }
 
 ObjectRef VM::createHostObject() {
-  ObjectRef ref = heap_.allocateObject();
-  Value root = Value::makeObjectId(ref.id);
-  stack.push(root);
-  stack.pop();
-  return ref;
+  return heap_.allocateObject();
 }
 
 ArrayRef VM::createHostArray() {
-  ArrayRef ref = heap_.allocateArray();
-  Value root = Value::makeArrayId(ref.id);
-  stack.push(root);
-  stack.pop();
-  return ref;
+  return heap_.allocateArray();
 }
 
 StringRef VM::createRuntimeString(std::string value) {
-  StringRef ref = heap_.allocateString(std::move(value));
-  Value root = Value::makeStringId(ref.id);
-  stack.push(root);
-  stack.pop();
-  return ref;
+  return heap_.allocateString(std::move(value));
 }
 
 size_t VM::getRuntimeStringLength(StringRef string_ref) {

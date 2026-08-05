@@ -3183,8 +3183,52 @@ static void test_fiber_suspend_coroutine_preserves_context() {
   CHECK(fib.suspended_reason == SuspensionReason::NONE, "reason cleared after resume");
 }
 
+static void test_removeHotkey_while_hasRunnableFibers() {
+  auto& sched = Scheduler::instance();
+
+  // Spawn a persistent hotkey goroutine and park it, exactly like
+  // createPersistentHotkeyCallback does (VMCb.cpp). Distinct aliases,
+  // matching real usage where each hotkey owns its alias.
+  for (int i = 0; i < 200; ++i) {
+    uint32_t gid = sched.spawn(0, {}, 0, "hotkey-persistent", FiberPriority::HOTKEY);
+    auto* g = sched.get(gid);
+    CHECK(g != nullptr, "spawn returned null goroutine");
+    g->persistent = true;
+    g->hotkey_alias = "test-remove-alias-" + std::to_string(i);
+    g->state = Scheduler::GoroutineState::Suspended;
+  }
+  CHECK_EQ(sched.goroutineCount(), 200u, "200 persistent goroutines should exist");
+
+  // Concurrently hammer hasRunnableFibers/pickNext while removing by alias.
+  // Previously removeHotkeyByAlias erased the map entry without purging the
+  // queue first, leaving a dangling Goroutine* for hasRunnableFibers to read.
+  std::atomic<bool> stop{false};
+  std::atomic<int> removed{0};
+  std::thread reader([&] {
+    while (!stop.load(std::memory_order_acquire)) {
+      (void)sched.hasRunnableFibers();
+      (void)sched.runnableCount();
+    }
+  });
+  std::thread remover([&] {
+    for (int i = 0; i < 200; ++i) {
+      if (sched.removeHotkeyByAlias("test-remove-alias-" + std::to_string(i))) removed.fetch_add(1);
+    }
+    stop.store(true, std::memory_order_release);
+  });
+  remover.join();
+  reader.join();
+
+  CHECK_EQ(removed.load(), 200, "every distinct alias should be removed once");
+  CHECK_EQ(sched.goroutineCount(), 0u, "all goroutines should be removed");
+  CHECK(!sched.hasRunnableFibers(), "hasRunnableFibers must not crash after removal");
+}
+
 void run_scheduler_tests() {
 std::cout << "=== Scheduler Tests ===\n\n";
+
+  test_removeHotkey_while_hasRunnableFibers();
+  std::cout << " PASS removeHotkeyByAlias concurrent with hasRunnableFibers (no UAF)\n";
 
   test_pickNext_returns_null_on_empty();
   std::cout << " PASS pickNext returns null on empty\n";

@@ -2353,6 +2353,22 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       closure_globals = closure->module_globals;
     }
   } else {
+    // Class prototypes are constructors: calling a class object builds an instance.
+    if (callee_value.isObjectId()) {
+      auto *obj = heap_.object(callee_value.asObjectId());
+      if (obj) {
+        auto *isClassVal = obj->get("__is_class");
+        if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
+          std::vector<Value> ctorArgs;
+          ctorArgs.reserve(args.size() + 1);
+          ctorArgs.push_back(callee_value);
+          for (const auto &a : args) ctorArgs.push_back(a);
+          doCall(Value::makeHostFuncId(getHostFunctionIndex("class.new")),
+                 ctorArgs);
+          return;
+        }
+      }
+    }
     // Debug: identify what type the value actually is
     std::string typeInfo = "unknown";
     if (callee_value.isNull())

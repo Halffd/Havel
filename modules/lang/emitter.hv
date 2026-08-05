@@ -635,11 +635,11 @@ return
 					if emitter.structNames[callee.obj.name] != null {
 						newFn = "struct.new"
 					}
-					sid = globalIdx(emitter, newFn)
-					bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-					nameIdx = bc.add_string(callee.obj.name)
-					bc.emit("LOAD_CONST", nameIdx)
-					for arg in node.args {
+				sid = globalIdx(emitter, newFn)
+				bc.emit("LOAD_GLOBAL", bc.str_id(sid))
+				nameSid = globalIdx(emitter, callee.obj.name)
+				bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
+				for arg in node.args {
 						emitExpr(emitter, arg)
 					}
 			if hasKwargs {
@@ -675,8 +675,8 @@ return
 				}
 				sid = globalIdx(emitter, newFn)
 				bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-				nameIdx = bc.add_string(callee.name)
-				bc.emit("LOAD_CONST", nameIdx)
+				nameSid = globalIdx(emitter, callee.name)
+				bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
 				for arg in node.args {
 					emitExpr(emitter, arg)
 				}

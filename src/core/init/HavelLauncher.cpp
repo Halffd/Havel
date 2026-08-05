@@ -632,11 +632,10 @@ public:
       }
 
       if (!hkManager || hkManager->getHotkeyList().empty()) {
-        info("No hotkeys registered — exiting");
-        return 0;
+        info("No hotkeys registered — running event loop for goroutines");
+      } else {
+        info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
       }
-
-      info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
       return backend->runEventLoop();
     }
 

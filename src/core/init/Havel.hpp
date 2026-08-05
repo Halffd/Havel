@@ -74,6 +74,7 @@ public:
   HotkeyManager *getHotkeyManager() const { return hotkeyManager.get(); }
   automation::AutomationManager *getAutomationManager() const { return automationManager.get(); }
   compiler::VM *getBytecodeVM() const { return bytecodeVM.get(); }
+  compiler::Scheduler *getScheduler() const { return scheduler; }
   // Additional getters for HavelLauncher
   HotkeyManager* getHotkeyManagerPtr() const { return hotkeyManager.get(); }
   IO* getIOPtr() const { return io.get(); }

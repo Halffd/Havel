@@ -90,6 +90,85 @@ export CXX=clang++
 OLD_LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
 unset LD_LIBRARY_PATH
 
+# Parse ASAN/UBSAN/TSAN flags first (before mode/command detection)
+ASAN_LEVEL="default"
+ASAN_FULL=false
+FSANITIZE_ARGS=()
+ENABLE_TSAN_FLAG=false
+ASAN_EXPLICITLY_DISABLED=false
+UBSAN_EXPLICITLY_DISABLED=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --asanl|--asan-level)
+            ASAN_LEVEL="${2:-default}"
+            shift 2
+            ;;
+        --asan-full)
+            ASAN_FULL=true
+            shift
+            ;;
+        --fsan|--fsanitize)
+            FSANITIZE_ARGS+=("$2")
+            shift 2
+            ;;
+        --tsan|--enable-tsan)
+            ENABLE_TSAN_FLAG=true
+            shift
+            ;;
+        --ubsan-full)
+            export UBSAN_ALIGNMENT=ON
+            export UBSAN_BOOL=ON
+            export UBSAN_ENUM=ON
+            export UBSAN_FLOAT_CAST_OVERFLOW=ON
+            export UBSAN_FLOAT_DIVIDE_BY_ZERO=ON
+            export UBSAN_FUNCTION=ON
+            export UBSAN_INTEGER=ON
+            export UBSAN_NULL=ON
+            export UBSAN_POINTER_OVERFLOW=ON
+            export UBSAN_RETURN=ON
+            export UBSAN_SHIFT=ON
+            export UBSAN_SIGNED_INTEGER_OVERFLOW=ON
+            export UBSAN_UNREACHABLE=ON
+            export UBSAN_VLA_BOUND=ON
+            export UBSAN_ABORT_ON_ERROR=ON
+            shift
+            ;;
+        --no-asan)
+            ASAN_EXPLICITLY_DISABLED=true
+            export ASAN_DETECT_LEAKS=OFF
+            export ASAN_DETECT_ODR_VIOLATION=OFF
+            export ASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
+            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF
+            export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
+            export ASAN_ABORT_ON_ERROR=OFF
+            shift
+            ;;
+        --no-ubsan)
+            UBSAN_EXPLICITLY_DISABLED=true
+            export UBSAN_ABORT_ON_ERROR=OFF
+            export UBSAN_ALIGNMENT=OFF
+            export UBSAN_BOOL=OFF
+            export UBSAN_ENUM=OFF
+            export UBSAN_FLOAT_CAST_OVERFLOW=OFF
+            export UBSAN_FLOAT_DIVIDE_BY_ZERO=OFF
+            export UBSAN_FUNCTION=OFF
+            export UBSAN_INTEGER=OFF
+            export UBSAN_NULL=OFF
+            export UBSAN_POINTER_OVERFLOW=OFF
+            export UBSAN_RETURN=OFF
+            export UBSAN_SHIFT=OFF
+            export UBSAN_SIGNED_INTEGER_OVERFLOW=OFF
+            export UBSAN_UNREACHABLE=OFF
+            export UBSAN_VLA_BOUND=OFF
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
 if [[ $# -eq 0 ]] || [[ "$1" =~ ^(build|clean|rebuild|run|test|all|detect|info|help|--help|-h)$ ]]; then
     BUILD_MODE=6
 else
@@ -132,6 +211,66 @@ else
     log "ERROR" "Invalid build mode: $BUILD_MODE" "${RED}"
     echo "Valid modes: ${!BUILD_CONFIGS[@]}"
     exit 1
+fi
+
+# Apply ASAN level flags (unless explicitly disabled)
+if [[ "$ASAN_EXPLICITLY_DISABLED" != "true" ]]; then
+    case "$ASAN_LEVEL" in
+        none|off)
+            export ASAN_DETECT_LEAKS=OFF
+            export ASAN_DETECT_ODR_VIOLATION=OFF
+            export ASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
+            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF
+            export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
+            export ASAN_ABORT_ON_ERROR=OFF
+            ;;
+        minimal)
+            export ASAN_DETECT_LEAKS=ON
+            export ASAN_DETECT_ODR_VIOLATION=ON
+            export ASAN_DETECT_STACK_USE_AFTER_RETURN=OFF
+            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=OFF
+            export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
+            export ASAN_ABORT_ON_ERROR=OFF
+            ;;
+        default|standard)
+            export ASAN_DETECT_LEAKS=ON
+            export ASAN_DETECT_ODR_VIOLATION=ON
+            export ASAN_DETECT_STACK_USE_AFTER_RETURN=ON
+            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON
+            export ASAN_ALLOCATOR_MAY_RETURN_NULL=OFF
+            export ASAN_ABORT_ON_ERROR=OFF
+            ;;
+        full|strict)
+            export ASAN_DETECT_LEAKS=ON
+            export ASAN_DETECT_ODR_VIOLATION=ON
+            export ASAN_DETECT_STACK_USE_AFTER_RETURN=ON
+            export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON
+            export ASAN_ALLOCATOR_MAY_RETURN_NULL=ON
+            export ASAN_ABORT_ON_ERROR=ON
+            ;;
+    esac
+fi
+
+# ASAN full preset
+if [[ "$ASAN_FULL" == "true" ]]; then
+    export ASAN_DETECT_LEAKS=ON
+    export ASAN_DETECT_ODR_VIOLATION=ON
+    export ASAN_DETECT_STACK_USE_AFTER_RETURN=ON
+    export ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON
+    export ASAN_ALLOCATOR_MAY_RETURN_NULL=ON
+    export ASAN_ABORT_ON_ERROR=ON
+fi
+
+# Additional fsanitize args
+if [[ ${#FSANITIZE_ARGS[@]} -gt 0 ]]; then
+    # Join with commas for CMake
+    FSAN_JOINED=$(IFS=,; echo "${FSANITIZE_ARGS[*]}")
+    export EXTRA_SANITIZERS="$FSAN_JOINED"
+fi
+
+# TSAN flag
+if [[ "$ENABLE_TSAN_FLAG" == "true" ]]; then
+    ENABLE_TSAN="ON"
 fi
 
 BUILD_LOG="${LOG_DIR}/build-mode${BUILD_MODE}-${BUILD_TYPE,,}.log"
@@ -263,6 +402,9 @@ build() {
     cmake_cmd+=" -DUBSAN_SIGNED_INTEGER_OVERFLOW=${UBSAN_SIGNED_INTEGER_OVERFLOW}"
     cmake_cmd+=" -DUBSAN_UNREACHABLE=${UBSAN_UNREACHABLE}"
     cmake_cmd+=" -DUBSAN_VLA_BOUND=${UBSAN_VLA_BOUND}"
+    if [[ -n "${EXTRA_SANITIZERS:-}" ]]; then
+        cmake_cmd+=" -DEXTRA_SANITIZERS=${EXTRA_SANITIZERS}"
+    fi
   fi
   cmake_cmd+=" ${SCRIPT_DIR}"
 
@@ -381,7 +523,43 @@ usage() {
     echo "  -h, --help   Show this help"
     echo ""
     echo -e "${YELLOW}Environment:${NC}"
-    echo "  THREADS=N    Parallel build jobs (default: auto, currently $(detect_cores))"
+    echo "  THREADS=N           Parallel build jobs (default: auto, currently $(detect_cores))"
+    echo ""
+    echo -e "${YELLOW}ASAN/UBSAN Flags:${NC}"
+    echo "  --asanl, --asan-level LEVEL    ASAN level: none|minimal|default|full|strict"
+    echo "  --asan-full                    Enable all ASAN checks (strict preset)"
+    echo "  --fsanitize, --fsan SANITIZERS  Extra sanitizers (comma-separated: address,undefined,thread,memory)"
+    echo "  --tsan, --enable-tsan          Enable ThreadSanitizer"
+    echo "  --ubsan-full                   Enable all UBSAN checks"
+    echo "  --no-asan                      Disable all ASAN checks"
+    echo "  --no-ubsan                     Disable all UBSAN checks"
+    echo ""
+    echo -e "${YELLOW}ASAN/UBSAN Environment (Debug builds only):${NC}"
+    echo "  ASAN_DETECT_LEAKS=ON|OFF"
+    echo "  ASAN_DETECT_ODR_VIOLATION=ON|OFF"
+    echo "  ASAN_DETECT_STACK_USE_AFTER_RETURN=ON|OFF"
+    echo "  ASAN_DETECT_INITIALIZATION_ORDER_FIASCO=ON|OFF"
+    echo "  ASAN_ALLOCATOR_MAY_RETURN_NULL=ON|OFF"
+    echo "  ASAN_ABORT_ON_ERROR=ON|OFF"
+    echo "  UBSAN_ABORT_ON_ERROR=ON|OFF"
+    echo "  UBSAN_ALIGNMENT=ON|OFF"
+    echo "  UBSAN_BOOL=ON|OFF"
+    echo "  UBSAN_ENUM=ON|OFF"
+    echo "  UBSAN_FLOAT_CAST_OVERFLOW=ON|OFF"
+    echo "  UBSAN_FLOAT_DIVIDE_BY_ZERO=ON|OFF"
+    echo "  UBSAN_FUNCTION=ON|OFF"
+    echo "  UBSAN_INTEGER=ON|OFF"
+    echo "  UBSAN_NULL=ON|OFF"
+    echo "  UBSAN_POINTER_OVERFLOW=ON|OFF"
+    echo "  UBSAN_RETURN=ON|OFF"
+    echo "  UBSAN_SHIFT=ON|OFF"
+    echo "  UBSAN_SIGNED_INTEGER_OVERFLOW=ON|OFF"
+    echo "  UBSAN_UNREACHABLE=ON|OFF"
+    echo "  UBSAN_VLA_BOUND=ON|OFF"
+    echo "  ENABLE_TSAN=ON       Enable ThreadSanitizer (mode 16)"
+    echo ""
+    echo -e "${YELLOW}Runtime (ASAN_OPTIONS):${NC}"
+    echo "  ASAN_OPTIONS=halt_on_error=1:detect_leaks=0:allocator_may_return_null=1"
     echo ""
     echo -e "${YELLOW}Examples:${NC}"
     echo "  $0                 # mode 6 debug build (default)"

@@ -312,7 +312,6 @@ scheduler = &compiler::Scheduler::instance();
 			if (conditionMet) {
 				if (!g->hotkey_condition_alias.empty())
 					::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, true);
-				scheduler->wakeHotkey(g);
 			} else {
 				if (!g->hotkey_condition_alias.empty())
 					::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, false);
@@ -392,20 +391,19 @@ scheduler = &compiler::Scheduler::instance();
 					bool prev = g->hotkey_condition_last_result;
 					g->hotkey_condition_last_result = conditionMet;
 				if (prev == conditionMet) return;
-					if (conditionMet) {
-						if (!g->hotkey_condition_alias.empty()) {
-							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
-							if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
-							::havel::stdlib::HotkeyModule::setGrab(*vm, g->hotkey_condition_alias, true);
-						}
-						sched->wakeHotkey(g);
-					} else {
-						if (!g->hotkey_condition_alias.empty()) {
-							auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
-							if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
-							::havel::stdlib::HotkeyModule::setGrab(*vm, g->hotkey_condition_alias, false);
-						}
+				if (conditionMet) {
+					if (!g->hotkey_condition_alias.empty()) {
+						auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
+						if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, true);
+						::havel::stdlib::HotkeyModule::setGrab(*vm, g->hotkey_condition_alias, true);
 					}
+				} else {
+					if (!g->hotkey_condition_alias.empty()) {
+						auto* hm = hostCtx ? hostCtx->hotkeyManager : nullptr;
+						if (hm) hm->SetHotkeyGrab(g->hotkey_condition_alias, false);
+						::havel::stdlib::HotkeyModule::setGrab(*vm, g->hotkey_condition_alias, false);
+					}
+				}
 					});
 				}
 				std::vector<uint32_t> fired_func_ids;

@@ -270,7 +270,6 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
         struct HotkeyAction {
             std::string alias;
             bool grab;
-            uint32_t gid;
         };
         std::vector<HotkeyAction> pendingActions;
         sched->forEachConditionalHotkey(
@@ -300,15 +299,13 @@ hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
                 bool prev = g->hotkey_condition_last_result;
                 g->hotkey_condition_last_result = conditionMet;
                 if (prev == conditionMet) return;
-                pendingActions.push_back({g->hotkey_condition_alias, conditionMet, g->id});
+                pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
             });
         for (auto& act : pendingActions) {
             if (!act.alias.empty()) {
                 auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
                 if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
             }
-            auto* g = sched->get(act.gid);
-            if (g && act.grab) sched->wakeHotkey(g);
         }
     }
 });

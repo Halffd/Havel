@@ -310,11 +310,15 @@ scheduler = &compiler::Scheduler::instance();
 			g->hotkey_condition_last_result = conditionMet;
 			if (prev == conditionMet) return;
 			if (conditionMet) {
-				if (!g->hotkey_condition_alias.empty())
+				if (!g->hotkey_condition_alias.empty()) {
+					if (hotkeyManager) hotkeyManager->SetHotkeyGrab(g->hotkey_condition_alias, true);
 					::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, true);
+				}
 			} else {
-				if (!g->hotkey_condition_alias.empty())
+				if (!g->hotkey_condition_alias.empty()) {
+					if (hotkeyManager) hotkeyManager->SetHotkeyGrab(g->hotkey_condition_alias, false);
 					::havel::stdlib::HotkeyModule::setGrab(*vm_, g->hotkey_condition_alias, false);
+				}
 			}
 		});
 	});

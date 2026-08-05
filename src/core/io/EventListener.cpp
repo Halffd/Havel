@@ -1170,7 +1170,19 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
         auto callback = it->second.callback;
         lock.unlock();
 
-        if (hotkeyExecutor) {
+        ExecutorMode mode = executorMode_;
+        if (mode == ExecutorMode::Thread) {
+          // Separate detached thread per callback
+          std::thread([callback]() {
+            try {
+              callback();
+            } catch (const std::exception &e) {
+              error("Callback exception: {}", e.what());
+            } catch (...) {
+              error("Callback unknown exception");
+            }
+          }).detach();
+        } else if (mode == ExecutorMode::Executor && hotkeyExecutor) {
           hotkeyExecutor->submit([callback]() {
             try {
               callback();
@@ -1181,7 +1193,16 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
             }
           });
         } else {
-          std::thread([callback]() { callback(); }).detach();
+          // Scheduler / Sync: cooperative. We are on the event-loop (VM) thread, so
+          // run the callback inline. Havel wrappers detect the VM thread and call
+          // wakeHotkey() directly, avoiding the worker-pool + deferToVM round trip.
+          try {
+            callback();
+          } catch (const std::exception &e) {
+            error("Callback exception: {}", e.what());
+          } catch (...) {
+            error("Callback unknown exception");
+          }
         }
       }
     }

@@ -572,7 +572,14 @@ void EventListener::EventLoop() {
         modules_->checkTimers();
         }
 
-        // Blocking poll for input events — monitors evdev fds for prompt event pickup
+        // Blocking poll for input events — monitors evdev fds for prompt event pickup.
+        // Also watches the VM deferred-wakeup fd so VM work (e.g. hotkey bodies) is
+        // noticed immediately instead of waiting out the full poll timeout.
+        if (executionEngine && executionEngine->getScheduler() && backend_) {
+            backend_->SetExternalWakeupFd(executionEngine->getScheduler()->deferredWakeupFd());
+        } else if (backend_) {
+            backend_->SetExternalWakeupFd(-1);
+        }
         if (backend_) {
             backend_->PollEvents(10);
         }

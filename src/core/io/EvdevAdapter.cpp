@@ -49,6 +49,7 @@ public:
 
     int GetPollFd() const override;
     bool PollEvents(int timeoutMs) override;
+    void SetExternalWakeupFd(int fd) override { externalWakeupFd_ = fd; }
     void RecheckDevices();
 
     std::pair<int, int> GetMousePosition() const override;
@@ -230,6 +231,10 @@ private:
     // Shutdown coordination
     int shutdownFd_ = -1;
     std::atomic<bool> running_{false};
+
+    // External fd that breaks a blocking PollEvents() when readable (VM wakeup).
+    // Observed for readiness only; never drained or closed here.
+    int externalWakeupFd_ = -1;
 
     // Callbacks - feed to EventListener
     KeyCallback keyDownCallback_;
@@ -457,7 +462,7 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
 
     {
         std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-        pfds.reserve(devices_.size() + 1);
+        pfds.reserve(devices_.size() + 2);
         for (const auto &dev : devices_) {
             if (dev.fd >= 0) {
                 pfds.push_back({.fd = dev.fd, .events = POLLIN | POLLERR | POLLHUP, .revents = 0});
@@ -465,7 +470,13 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
         }
     }
 
+    if (externalWakeupFd_ >= 0) {
+        pfds.push_back({.fd = externalWakeupFd_, .events = POLLIN, .revents = 0});
+    }
+
+    size_t shutdownIdx = SIZE_MAX;
     if (shutdownFd_ >= 0) {
+        shutdownIdx = pfds.size();
         pfds.push_back({.fd = shutdownFd_, .events = POLLIN, .revents = 0});
     }
 
@@ -478,10 +489,13 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
     if (ret <= 0) return false;
 
     // Drain shutdown eventfd if signaled
-    if (shutdownFd_ >= 0 && pfds.back().revents & POLLIN) {
+    if (shutdownIdx != SIZE_MAX && pfds[shutdownIdx].revents & POLLIN) {
         uint64_t val;
         while (read(shutdownFd_, &val, sizeof(val)) == sizeof(val)) {}
     }
+    // External wakeup (e.g. VM deferred wakeup) is left for the VM to drain in
+    // executeFrame(); here it merely breaks the poll wait so VM work is noticed
+    // promptly. Fall through so any latched device events are still processed.
 
     std::vector<std::pair<size_t, input_event>> events;
     std::vector<size_t> deadDevices;

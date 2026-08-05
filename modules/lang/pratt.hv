@@ -1272,7 +1272,7 @@ fn parseCallArgs() {
         l = openTok.line
         c = openTok.col
 
-        // Empty lambda: () => body
+// Empty lambda: () => body
         body = null
         if current().tid == TID.CloseParen and at(1).tid == TID.Arrow {
             advance() // )
@@ -2286,18 +2286,21 @@ expect(TID.CloseBrace)
 	}
 }
         // DSL statements
-        if tt == TID.On: return parseOnStatement()
-        if tt == TID.Mode: return parseModeBlockStatement()
- if tt == TID.Modes: return parseModesBlockStatement()
-        if tt == TID.Group: return parseGroupStatement()
-        if tt == TID.Signal: return parseSignalStatement()
-        if tt == TID.Pool: return parsePoolStatement()
-        if tt == TID.Devices: return parseDevicesBlockStatement()
+        if tt == TID.On { return parseOnStatement() }
+        if tt == TID.Mode {
+          if at(1).tid == TID.Identifier { return parseModeBlockStatement() }
+          return parseExpr(0)
+        }
+        if tt == TID.Modes { return parseModesBlockStatement() }
+        if tt == TID.Group { return parseGroupStatement() }
+        if tt == TID.Signal { return parseSignalStatement() }
+        if tt == TID.Pool { return parsePoolStatement() }
+        if tt == TID.Devices { return parseDevicesBlockStatement() }
 
         // Thread/Interval/Timeout sugar
-        if tt == TID.Thread: return parseThreadStatement()
-        if tt == TID.Interval: return parseIntervalStatement()
-        if tt == TID.Timeout: return parseTimeoutStatement()
+        if tt == TID.Thread { return parseThreadStatement() }
+        if tt == TID.Interval { return parseIntervalStatement() }
+        if tt == TID.Timeout { return parseTimeoutStatement() }
 
  // Type declarations
  if tt == TID.Class { return parseClassDeclaration() }

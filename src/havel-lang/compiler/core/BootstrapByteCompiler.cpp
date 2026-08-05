@@ -8114,13 +8114,14 @@ void ByteCompiler::compileGetInputExpression(
 void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expression) {
   // thread { ... } -> spawn a new thread with the body as a function
 
-  if (!expression.body) {
-    COMPILER_THROW("Thread expression missing body");
-  }
+ if (!expression.body) {
+ COMPILER_THROW("Thread expression missing body");
+ }
 
-  // Emit LOAD_GLOBAL + CALL to thread.spawn
-  uint32_t strId = addStringConstant("thread.spawn");
-  emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ // Emit LOAD_GLOBAL + CALL to thread.spawn
+ uint32_t strId = addStringConstant("thread.spawn");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+
 
   // Get precomputed upvalues from semantic analysis
   const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr;
@@ -8128,10 +8129,10 @@ void ByteCompiler::compileThreadExpression(const ast::ThreadExpression &expressi
   if (it != lexical_resolution_.thread_expression_upvalues.end()) {
     precomputedUpvalues = &it->second;
   }
+  
+ compileClosureBody(*expression.body, "<thread>", std::nullopt, precomputedUpvalues);
 
-  compileClosureBody(*expression.body, "<thread>", std::nullopt, precomputedUpvalues);
-
-  emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
+ emit(OpCode::CALL, Value(static_cast<uint32_t>(1)));
 }
 
 void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expression) {
@@ -8141,19 +8142,20 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
     COMPILER_THROW("Interval expression missing duration");
   }
 
-  if (!expression.body) {
-    COMPILER_THROW("Interval expression missing body");
-  }
+ if (!expression.body) {
+ COMPILER_THROW("Interval expression missing body");
+ }
 
-  {
-    uint32_t strId = addStringConstant("interval.start");
-    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-  }
+ {
+ uint32_t strId = addStringConstant("interval.start");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
   // Compile the interval duration
   compileExpression(*expression.intervalMs);
 
   // Reserve local slot for interval ID before compiling closure body so it can be captured
   uint32_t idSlot = next_local_index++;
+
 
   // Get precomputed upvalues from semantic analysis
   const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr;
@@ -8161,7 +8163,7 @@ void ByteCompiler::compileIntervalExpression(const ast::IntervalExpression &expr
   if (it != lexical_resolution_.interval_expression_upvalues.end()) {
     precomputedUpvalues = &it->second;
   }
-
+  
   compileClosureBody(*expression.body, "<interval>", idSlot, precomputedUpvalues);
 
   // Emit LOAD_GLOBAL + CALL to interval.start
@@ -8189,13 +8191,14 @@ void ByteCompiler::compileUpdateBlockExpression(const ast::UpdateBlockExpression
 
   compileExpression(*expression.intervalMs);
 
+
   // Get precomputed upvalues from semantic analysis
   const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr;
   auto it = lexical_resolution_.update_block_expression_upvalues.find(&expression);
   if (it != lexical_resolution_.update_block_expression_upvalues.end()) {
     precomputedUpvalues = &it->second;
   }
-
+  
   compileClosureBody(*expression.body, "<update>", std::nullopt, precomputedUpvalues);
 
   emit(OpCode::CALL, Value(static_cast<uint32_t>(2)));
@@ -8208,19 +8211,20 @@ void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expres
     COMPILER_THROW("Timeout expression missing duration");
   }
 
-  if (!expression.body) {
-    COMPILER_THROW("Timeout expression missing body");
-  }
+ if (!expression.body) {
+ COMPILER_THROW("Timeout expression missing body");
+ }
 
-  {
-    uint32_t strId = addStringConstant("timeout.start");
-    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-  }
+ {
+ uint32_t strId = addStringConstant("timeout.start");
+ emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+ }
   // Compile the delay duration
   compileExpression(*expression.delayMs);
 
   // Reserve local slot for timeout ID before compiling closure body
   uint32_t idSlot = next_local_index++;
+
 
   // Get precomputed upvalues from semantic analysis
   const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr;
@@ -8228,7 +8232,7 @@ void ByteCompiler::compileTimeoutExpression(const ast::TimeoutExpression &expres
   if (it != lexical_resolution_.timeout_expression_upvalues.end()) {
     precomputedUpvalues = &it->second;
   }
-
+  
   compileClosureBody(*expression.body, "<timeout>", idSlot, precomputedUpvalues);
 
   // Emit LOAD_GLOBAL + CALL to timeout.start
@@ -8247,7 +8251,11 @@ void ByteCompiler::compileClosureBody(const ast::Statement &body, const std::str
   if (precomputedUpvalues) {
     upvalues = *precomputedUpvalues;
   } else {
+    if (precomputedUpvalues) {
+    upvalues = *precomputedUpvalues;
+  } else {
     collectUpvaluesFromBody(body, upvalues);
+  }
   }
 
   if (capturedIntervalIdSlot.has_value()) {

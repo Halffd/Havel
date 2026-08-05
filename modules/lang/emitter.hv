@@ -456,7 +456,7 @@ if opr == "not in" {
   emitter.inTailPosition = savedTail
   opcodes = {
   "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV",
-  "%": "MOD", "%%": "REMAINDER", "\\%": "DIVMOD", "**": "POW", "\\\\": "INT_DIV",
+  "%": "MOD", "%%": "REMAINDER", "\\": "INT_DIV", "\\\\": "DIVMOD", "**": "POW",
   "==": "EQ", "!=": "NEQ", "<": "LT", ">": "GT",
   "<=": "LTE", ">=": "GTE",
   "&": "BIT_AND", "|": "BIT_OR", "^": "BIT_XOR",
@@ -1745,16 +1745,9 @@ if k == "AsyncExpression" {
     return
   }
 if k == "HotkeyLiteral" {
-  idx = bc.add_string(node.combination)
-  bc.emit("LOAD_CONST", idx)
-  return
-}
-  if k == "HotkeyExpression" {
-  if node.key != null && node.key.kind == "HotkeyBinding" {
-   emitHotkeyBindingExpr(emitter, node.key)
-   bc.emit("POP")
-   return
-  }
+ idx = bc.add_string(node.combination)
+ bc.emit("LOAD_CONST", idx)
+    return
   }
   if k == "CharLiteral" {
     bc.emit("LOAD_CONST", bc.add_const(node.value))
@@ -1777,6 +1770,12 @@ if k == "HotkeyLiteral" {
       bc.emit("CALL", 0)
     }
     return
+  }
+  if k == "HotkeyExpression" {
+  if node.key != null && node.key.kind == "HotkeyBinding" {
+   emitHotkeyBindingExpr(emitter, node.key)
+   return
+  }
   }
   emitError("unsupported expr: " + k, node.line, node.col)
   bc.emit("PUSH_NULL")
@@ -2549,6 +2548,7 @@ if k == "HotkeyBinding" {
  if k == "HotkeyExpression" {
  if node.key != null && node.key.kind == "HotkeyBinding" {
   emitHotkeyBindingExpr(emitter, node.key)
+  bc.emit("POP")
   return
  }
  }
@@ -4310,7 +4310,7 @@ fn emitEnumDeclaration(emitter, node) {
 fn emitHotkeyBinding(emitter, node) {
  // Compile action as a function
  oldScope = emitter.scope
- newScope = Scope(oldScope)
+ newScope = Scope(null)
  emitter.scope = newScope
  bc.func_push()
  actionChunkIdx = bc.func_new("hotkey_action", 1, 16)
@@ -4448,9 +4448,9 @@ fn emitHotkeyBinding(emitter, node) {
 
 
 fn emitHotkeyBindingExpr(emitter, node) {
-  oldScope = emitter.scope
-  newScope = Scope(oldScope)
-  emitter.scope = newScope
+ oldScope = emitter.scope
+ newScope = Scope(null)
+ emitter.scope = newScope
  bc.func_push()
  actionChunkIdx = bc.func_new("hotkey_action", 1, 16)
  scopeDeclare(newScope, "this")
@@ -4570,19 +4570,22 @@ bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(wrapperChunkIdx)))
    }
    else {
     bc.emit("CALL", 2)
-}
-}
+   }
+  }
+ }
 }
 
 
 fn compileCondHotkeyCondition(emitter, condition) {
   oldScope = emitter.scope
-  newScope = Scope(oldScope)
+  newScope = Scope(null)
   emitter.scope = newScope
+  bc.func_push()
   condChunkIdx = bc.func_new("condhotkey_condition", 0, 16)
   emitExpr(emitter, condition)
   bc.emit("RETURN")
   bc.set_local_count(scopeLocalCount(newScope))
+  bc.func_pop()
   emitter.scope = oldScope
   return [null, condChunkIdx]
 }
@@ -4837,5 +4840,4 @@ fn emitOnKeyListBinding(emitter, registerFn, keys, body) {
   bc.emit("LOAD_CONST", bc.add_const(actionChunkIdx))
   bc.emit("CALL", 2)
   bc.emit("POP")
-}
 }

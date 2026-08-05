@@ -133,11 +133,17 @@ Scheduler::Goroutine* Scheduler::get(uint32_t id) {
 
 void Scheduler::registerMainGoroutine(Goroutine* g) {
     if (!g) return;
-    std::lock_guard lock(goroutines_mutex_);
-    // If there's already a goroutine with ID 1, replace it
-    goroutines_[1] = std::unique_ptr<Goroutine>(g);
-    // Add to runnable queue since it's running
-    runnable_queue_.push_back(goroutines_[1].get());
+    {
+        std::lock_guard glock(goroutines_mutex_);
+        // If there's already a goroutine with ID 1, replace it
+        goroutines_[1] = std::unique_ptr<Goroutine>(g);
+    }
+    // Add to runnable queue under priority_mutex_ (queue mutation must not
+    // race the EventListener-thread reads in hasRunnableFibers()/runnableCount()).
+    {
+        std::lock_guard plock(priority_mutex_);
+        runnable_queue_.push_back(g);
+    }
 }
 
 void Scheduler::registerGoroutine(Goroutine* g) {
@@ -389,6 +395,7 @@ size_t Scheduler::goroutineCount() const {
 }
 
 size_t Scheduler::runnableCount() const {
+  std::lock_guard lock(priority_mutex_);
   size_t count = 0;
   for (auto* g : hotkey_queue_) {
     if (g && (g->state == GoroutineState::Runnable || g->state == GoroutineState::Created))
@@ -722,22 +729,41 @@ bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
 }
 
 bool Scheduler::removeHotkeyByAlias(const std::string& alias) {
-    std::lock_guard lock(goroutines_mutex_);
-    for (auto it = goroutines_.begin(); it != goroutines_.end(); ++it) {
-        auto* g = it->second.get();
-        if (g && g->persistent && g->hotkey_alias == alias) {
-            // Mark as Done so it won't be picked up by the scheduler
-            g->state = GoroutineState::Done;
-            if (g->fiber) {
-                g->fiber->state = FiberState::DONE;
+    // Three-phase removal matching cleanupDoneGoroutines() lock ordering
+    // (priority_mutex_ BEFORE goroutines_mutex_): collect the target under
+    // goroutines_mutex_, purge its raw pointer from the run queues under
+    // priority_mutex_, then erase the owning unique_ptr from the map. Purge
+    // before erase is mandatory — otherwise hasRunnableFibers()/pickNext()
+    // walk a dangling Goroutine* still sitting in a queue (UAF). See the
+    // cleanupDoneGoroutines() doc comment.
+    Goroutine* target = nullptr;
+    {
+        std::lock_guard glock(goroutines_mutex_);
+        for (auto& [id, g] : goroutines_) {
+            if (g && g->persistent && g->hotkey_alias == alias) {
+                // Mark as Done so it won't be picked up by the scheduler
+                g->state = GoroutineState::Done;
+                if (g->fiber) {
+                    g->fiber->state = FiberState::DONE;
+                }
+                target = g.get();
+                break;
             }
-            // Remove from goroutines map
-            goroutines_.erase(it);
-            ::havel::debug("[Scheduler] removeHotkeyByAlias: removed persistent goroutine gid={} alias='{}'", g->id, alias);
-            return true;
         }
     }
-    return false;
+    if (!target) {
+        return false;
+    }
+    {
+        std::lock_guard plock(priority_mutex_);
+        removeFromQueues(target);
+    }
+    {
+        std::lock_guard glock(goroutines_mutex_);
+        goroutines_.erase(target->id);
+    }
+    ::havel::debug("[Scheduler] removeHotkeyByAlias: removed persistent goroutine gid={} alias='{}'", target->id, alias);
+    return true;
 }
 
 bool Scheduler::hasRunnableFibers() const {
@@ -1178,6 +1204,7 @@ Scheduler::SchedulerSummary Scheduler::getSchedulerSummary() const {
     }
   }
 {
+    std::lock_guard lock(priority_mutex_);
     s.hotkey_queue_size = hotkey_queue_.size();
     s.normal_queue_size = runnable_queue_.size();
     s.background_queue_size = background_queue_.size();

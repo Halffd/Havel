@@ -304,29 +304,93 @@ fn replEvaluate(cfg, line) {
     bc.tick()
 }
 
+fn replBalanced(code) {
+    brace = 0
+    bracket = 0
+    paren = 0
+    in_string = false
+    esc = false
+    n = #code
+    i = 0
+    while i < n {
+        c = code[i]
+        if esc {
+            esc = false
+        }
+        else if c == "\\" {
+            esc = true
+        }
+        else if c == "\"" {
+            in_string = !in_string
+        }
+        else if !in_string {
+            if c == "{" { brace = brace + 1 }
+            else if c == "}" { brace = brace - 1 }
+            else if c == "[" { bracket = bracket + 1 }
+            else if c == "]" { bracket = bracket - 1 }
+            else if c == "(" { paren = paren + 1 }
+            else if c == ")" { paren = paren - 1 }
+            else if c == "/" && i + 1 < n && code[i + 1] == "/" {
+                i = n
+            }
+        }
+        i = i + 1
+    }
+    !in_string && brace == 0 && bracket == 0 && paren == 0
+}
+
 fn replLoop(cfg) {
     interactive = shell.isatty(0)
     if interactive {
         print("Havel self-hosted REPL (Ctrl-D or 'exit' to quit)")
     }
     while true {
-        while !shell.ready(5) {
-            bc.tick()
+        pending = ""
+        while true {
+            while !shell.ready(5) {
+                bc.tick()
+            }
+            if interactive {
+                if pending == "" {
+                    shell.write("havel> ")
+                }
+                else {
+                    shell.write("...> ")
+                }
+            }
+            line = shell.read()
+            if line == null {
+                if interactive { print("") }
+                if pending != "" {
+                    replEvaluate(cfg, pending)
+                }
+                return
+            }
+            if pending == "" {
+                stripped = line.trim()
+                if stripped == "" { continue }
+                if stripped == "exit" || stripped == "quit" || stripped == ":q" {
+                    return
+                }
+                if stripped == "help" || stripped == "?" {
+                    print("Commands: exit | quit | :q, help | ?, clear | :clear")
+                    print("Multi-line: keep typing until braces/brackets/parens balance")
+                    continue
+                }
+                if stripped == "clear" || stripped == ":clear" {
+                    print("\033[2J\033[H")
+                    continue
+                }
+            }
+            if pending != "" {
+                pending = pending + "\n"
+            }
+            pending = pending + line
+            if replBalanced(pending) {
+                replEvaluate(cfg, pending)
+                break
+            }
         }
-        if interactive {
-            shell.write("havel> ")
-        }
-        line = shell.read()
-        if line == null {
-            if interactive { print("") }
-            break
-        }
-        stripped = line.trim()
-        if stripped == "" { continue }
-        if stripped == "exit" || stripped == "quit" || stripped == ":q" {
-            break
-        }
-        replEvaluate(cfg, line)
     }
 }
 

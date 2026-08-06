@@ -216,99 +216,6 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
 
     if (hostContext_->eventQueue) {
                 vm_->setEventQueue(hostContext_->eventQueue);
-hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
-    [this](const compiler::Event& event) {
-    auto *name_ptr = static_cast<std::string*>(event.ptr);
-    std::string var_name = std::move(*name_ptr);
-    delete name_ptr;
-    if (!watcher_registry_ || !vm_) return;
-    auto fired = watcher_registry_->onVariableChanged(
-        var_name,
-        [this](uint32_t wid) -> bool {
-        const auto* w = watcher_registry_->getWatcher(wid);
-        if (!w) return false;
-        const compiler::BytecodeChunk* saved_chunk = nullptr;
-        bool set_chunk = false;
-        if (w->condition_chunk) {
-            saved_chunk = vm_->getCurrentChunk();
-            vm_->setCurrentChunkPublic(w->condition_chunk);
-            set_chunk = true;
-        }
-        auto tracker = std::make_shared<compiler::DependencyTracker>();
-        compiler::DependencyTrackerScope scope(tracker);
-        bool result = vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
-        if (set_chunk) vm_->setCurrentChunkPublic(saved_chunk);
-        auto newDeps = tracker->getGlobalDependencies();
-        auto fieldDeps = tracker->getFieldDependencies();
-        newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-        // Union-merge: keep previously-tracked deps so short-circuited
-        // branches' globals keep triggering re-evals (stale when bug).
-        watcher_registry_->mergeDependencies(wid, newDeps);
-        return result;
-    },
-        [this](uint32_t cleanup_func_id, uint32_t) {
-        try {
-            compiler::Value cleanup_func = compiler::Value::makeFunctionObjId(cleanup_func_id);
-            vm_->call(cleanup_func, {});
-        } catch (...) {}
-    });
-    std::vector<uint32_t> fired_func_ids;
-    for (auto* fiber : fired) {
-        if (fiber) {
-            fired_func_ids.push_back(fiber->current_function_id);
-        }
-    }
-    for (auto func_id : fired_func_ids) {
-        try {
-            compiler::Value body_func = compiler::Value::makeFunctionObjId(func_id);
-            vm_->call(body_func, {});
-        } catch (...) {}
-    }
-    vm_->processSignalBindings(var_name);
-    auto* sched = vm_->getScheduler();
-    if (sched) {
-        struct HotkeyAction {
-            std::string alias;
-            bool grab;
-        };
-        std::vector<HotkeyAction> pendingActions;
-        sched->forEachConditionalHotkey(
-            [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
-                if (!g) return;
-                if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
-                    g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
-                if (!g->hotkey_condition_deps.empty() &&
-                    g->hotkey_condition_deps.count(var_name) == 0) return;
-                auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
-                if (!condVal) return;
-                auto tracker = std::make_shared<compiler::DependencyTracker>();
-                compiler::DependencyTrackerScope scope(tracker);
-                bool conditionMet = false;
-                try {
-                    compiler::Value result = vm_->callFunctionSync(*condVal, {});
-                    conditionMet = vm_->toBool(result);
-                } catch (...) {}
-                auto newDeps = tracker->getGlobalDependencies();
-                auto fieldDeps = tracker->getFieldDependencies();
-                newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-                // Union-merge: keep previously-tracked deps so short-circuited
-                // branches' globals remain tracked. Replacing drops un-
-                // evaluated-side globals once `||`/`&&` short-circuits, then
-                // their VAR_CHANGED no longer triggers re-eval (stale grab).
-                g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
-                bool prev = g->hotkey_condition_last_result;
-                g->hotkey_condition_last_result = conditionMet;
-                if (prev == conditionMet) return;
-                pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
-            });
-        for (auto& act : pendingActions) {
-            if (!act.alias.empty()) {
-                auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-                if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
-            }
-        }
-    }
-});
                 hostContext_->eventQueue->onEvent(compiler::EventType::TIMER_FIRE,
 [this](const compiler::Event& event) {
 auto *payload = static_cast<std::pair<compiler::Value, uint32_t>*>(event.ptr);
@@ -384,6 +291,49 @@ vm_->addIntervalResult(timer_id, result);
                     vm_->call(body_func, {});
                     vm_->current_when_watcher_id_ = prev_when_watcher;
                 } catch (...) {}
+            }
+            vm_->processSignalBindings(var_name);
+            auto* sched = vm_->getScheduler();
+            if (sched) {
+                struct HotkeyAction {
+                    std::string alias;
+                    bool grab;
+                };
+                std::vector<HotkeyAction> pendingActions;
+                sched->forEachConditionalHotkey(
+                    [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
+                        if (!g) return;
+                        if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
+                            g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+                        if (!g->hotkey_condition_deps.empty() &&
+                            g->hotkey_condition_deps.count(var_name) == 0) return;
+                        auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
+                        if (!condVal) return;
+                        auto tracker = std::make_shared<compiler::DependencyTracker>();
+                        compiler::DependencyTrackerScope scope(tracker);
+                        bool conditionMet = false;
+                        try {
+                            compiler::Value result = vm_->callFunctionSync(*condVal, {});
+                            conditionMet = vm_->toBool(result);
+                        } catch (...) {}
+                        auto newDeps = tracker->getGlobalDependencies();
+                        auto fieldDeps = tracker->getFieldDependencies();
+                        newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+                        // Union-merge: keep previously-tracked deps so
+                        // short-circuited branches' globals keep triggering
+                        // re-evals.
+                        g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
+                        bool prev = g->hotkey_condition_last_result;
+                        g->hotkey_condition_last_result = conditionMet;
+                        if (prev == conditionMet) return;
+                        pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
+                    });
+                for (auto& act : pendingActions) {
+                    if (!act.alias.empty()) {
+                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                        if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
+                    }
+                }
             }
         });
 

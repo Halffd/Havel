@@ -24,7 +24,7 @@ fn loadCompiler() {
     measure("load types", t0)
 
     t0 = now()
-    use { setFlag, isOn } from "debug"
+    use { setFlag, isOn, dumpBytecodeSummary, dumpBytecode, traceBytecode } from "debug"
     measure("load debug", t0)
 }
 
@@ -263,6 +263,12 @@ fn loadScriptForRepl(cfg) {
         return 1
     }
     inferProgram(result)
+    // Track globals from script
+    for line in combinedCode.split("\n") {
+        for name in extractGlobalsFromLine(line) {
+            if !(name in knownGlobals) { knownGlobals.push(name) }
+        }
+    }
     bc.reset()
     setFlag("emitter", true)
     emitter = Emitter()
@@ -276,6 +282,74 @@ fn loadScriptForRepl(cfg) {
 // Self-hosted REPL
 // ============================================================
 
+// Track known globals for :globals command
+knownGlobals = []
+
+// Simple text-based global extraction from REPL line
+// Handles: fn name(...), x = ..., class Name, etc.
+fn extractGlobalsFromLine(line) {
+    names = []
+    stripped = line.trim()
+    if stripped == "" { return names }
+    
+    // Function declaration: fn name(...)
+    if stripped.startsWith("fn ") {
+        rest = stripped.slice(3).trim()
+        paren = rest.find("(")
+        if paren != null && paren > 0 {
+            name = rest.slice(0, paren).trim()
+            if name != "" { names.push(name) }
+        }
+    }
+    
+    // Class declaration: class Name
+    if stripped.startsWith("class ") {
+        rest = stripped.slice(6).trim()
+        space = rest.find(" ")
+        brace = rest.find("{")
+        end = -1
+        if space != null && brace != null {
+            end = space < brace ? space : brace
+        } else if space != null {
+            end = space
+        } else if brace != null {
+            end = brace
+        }
+        if end > 0 {
+            name = rest.slice(0, end).trim()
+            if name != "" { names.push(name) }
+        } else {
+            name = rest
+            if name != "" { names.push(name) }
+        }
+    }
+    
+    // Simple assignment at start of line: name = ...
+    // (not compound assignment, not inside expression)
+    // Match: ^name =  (where name is identifier)
+    if !stripped.startsWith("fn ") && !stripped.startsWith("class ") {
+        eq = stripped.find("=")
+        if eq != null && eq > 0 {
+            before = stripped.slice(0, eq).trim()
+            // Check if it's a simple identifier (not compound assignment)
+            if before != "" && before[-1] != "+" && before[-1] != "-" && before[-1] != "*" && before[-1] != "/" && before[-1] != "%" && before[-1] != "&" && before[-1] != "|" && before[-1] != "^" && before[-1] != ">" && before[-1] != "<" {
+                // Verify it's a valid identifier
+                valid = true
+                for c in before {
+                    if !(c >= "a" && c <= "z" || c >= "A" && c <= "Z" || c >= "0" && c <= "9" || c == "_") {
+                        valid = false
+                    }
+                }
+                if valid && !(before[0] >= "0" && before[0] <= "9") {
+                    names.push(before)
+                }
+            }
+        }
+    }
+    
+    names
+}
+
 fn replEvaluate(cfg, line) {
     result = parse(line)
     if result.errors != null && #result.errors > 0 {
@@ -288,6 +362,10 @@ fn replEvaluate(cfg, line) {
         inferProgram(result)
     } catch {
         return null
+    }
+    // Track new globals from this line
+    for name in extractGlobalsFromLine(line) {
+        if !(name in knownGlobals) { knownGlobals.push(name) }
     }
     bc.reset()
     setFlag("emitter", true)
@@ -374,11 +452,35 @@ fn replLoop(cfg) {
                 }
                 if stripped == "help" || stripped == "?" {
                     print("Commands: exit | quit | :q, help | ?, clear | :clear")
+                    print("        :bytecode  - toggle bytecode debug + show summary")
+                    print("        :globals   - list known globals")
+                    print("        :debug     - toggle debug mode")
                     print("Multi-line: keep typing until braces/brackets/parens balance")
                     continue
                 }
                 if stripped == "clear" || stripped == ":clear" {
                     print("\033[2J\033[H")
+                    continue
+                }
+                if stripped == ":bytecode" || stripped == ":bc" {
+                    setFlag("bytecode", !isOn("bytecode"))
+                    print("Bytecode debug: " + (isOn("bytecode") ? "ON" : "OFF"))
+                    if isOn("bytecode") {
+                        dumpBytecodeSummary()
+                    }
+                    continue
+                }
+                if stripped == ":globals" {
+                    if #knownGlobals == 0 {
+                        print("No globals defined")
+                    }
+                    else {
+                        print("Known globals: " + knownGlobals.join(", "))
+                    }
+                    continue
+                }
+                if stripped == ":debug" {
+                    print("Debug mode: not implemented in self-hosted REPL")
                     continue
                 }
             }

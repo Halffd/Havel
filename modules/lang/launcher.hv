@@ -70,7 +70,9 @@ fn parseArgs(args) {
         arg = args[i]
         if arg == "--run" || arg == "run" {
             cfg.mode = "run"
-            i = i + 1
+        }
+        else if arg == "--repl" {
+            cfg.mode = "repl"
         }
         else if arg == "--test" || arg == "-t" {
             cfg.mode = "test"
@@ -132,6 +134,7 @@ fn parseArgs(args) {
             print("")
             print("Modes:")
             print("  --run script.hv    Run script via self-hosted pipeline")
+            print("  --repl             Interactive REPL (optional script.hv loaded first)")
             print("  --test dir/ [N]    Run all .hv files in directory (timeout N seconds)")
             print("  --lint script.hv   Check syntax/type errors without running")
             print("  --format script.hv Format script (pretty-print AST)")
@@ -228,6 +231,167 @@ fn runScript(cfg) {
     spawnUserScript(bcChunk)
     measure("TOTAL runScript", t_total)
     return 0
+}
+
+// Load script for the REPL via execute_persistent so its globals/functions
+// live in the same namespace the REPL evaluates against.
+fn loadScriptForRepl(cfg) {
+    combinedCode = ""
+    combinedNames = ""
+    for f in cfg.scriptFiles {
+        content = readScriptFile(f)
+        if content == null {
+            print("Error: Cannot open script file: " + f)
+            return 2
+        }
+        combinedCode = combinedCode + content + "\n"
+        if combinedNames != "" { combinedNames = combinedNames + " + " }
+        combinedNames = combinedNames + f
+    }
+    if cfg.evalString != null {
+        combinedCode = combinedCode + cfg.evalString + "\n"
+        if combinedNames != "" { combinedNames = combinedNames + " + " }
+        combinedNames = combinedNames + "<eval>"
+    }
+    if combinedCode == "" { return 0 }
+
+    result = parse(combinedCode)
+    if result.errors != null && #result.errors > 0 {
+        for err in result.errors {
+            print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))
+        }
+        return 1
+    }
+    inferProgram(result)
+    bc.reset()
+    setFlag("emitter", true)
+    emitter = Emitter()
+    compileProgram(emitter, result.ast, true, combinedNames)
+    bc.execute_persistent("__main__")
+    bc.tick()
+    return 0
+}
+
+// ============================================================
+// Self-hosted REPL
+// ============================================================
+
+fn replEvaluate(cfg, line) {
+    result = parse(line)
+    if result.errors != null && #result.errors > 0 {
+        for err in result.errors {
+            print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))
+        }
+        return null
+    }
+    try {
+        inferProgram(result)
+    } catch {
+        return null
+    }
+    bc.reset()
+    setFlag("emitter", true)
+    emitter = Emitter()
+    compileProgram(emitter, result.ast, true, "<repl>")
+    try {
+        value = bc.execute_persistent("__main__")
+        if value != null && value != nil {
+            print("// " + str(value))
+        }
+    } catch (e) {
+        print("Runtime error: " + str(e))
+    }
+    bc.tick()
+}
+
+fn replBalanced(code) {
+    brace = 0
+    bracket = 0
+    paren = 0
+    in_string = false
+    esc = false
+    n = #code
+    i = 0
+    while i < n {
+        c = code[i]
+        if esc {
+            esc = false
+        }
+        else if c == "\\" {
+            esc = true
+        }
+        else if c == "\"" {
+            in_string = !in_string
+        }
+        else if !in_string {
+            if c == "{" { brace = brace + 1 }
+            else if c == "}" { brace = brace - 1 }
+            else if c == "[" { bracket = bracket + 1 }
+            else if c == "]" { bracket = bracket - 1 }
+            else if c == "(" { paren = paren + 1 }
+            else if c == ")" { paren = paren - 1 }
+            else if c == "/" && i + 1 < n && code[i + 1] == "/" {
+                i = n
+            }
+        }
+        i = i + 1
+    }
+    !in_string && brace == 0 && bracket == 0 && paren == 0
+}
+
+fn replLoop(cfg) {
+    interactive = shell.isatty(0)
+    if interactive {
+        print("Havel self-hosted REPL (Ctrl-D or 'exit' to quit)")
+    }
+    while true {
+        pending = ""
+        while true {
+            while !shell.ready(5) {
+                bc.tick()
+            }
+            if interactive {
+                if pending == "" {
+                    shell.write("havel> ")
+                }
+                else {
+                    shell.write("...> ")
+                }
+            }
+            line = shell.read()
+            if line == null {
+                if interactive { print("") }
+                if pending != "" {
+                    replEvaluate(cfg, pending)
+                }
+                return
+            }
+            if pending == "" {
+                stripped = line.trim()
+                if stripped == "" { continue }
+                if stripped == "exit" || stripped == "quit" || stripped == ":q" {
+                    return
+                }
+                if stripped == "help" || stripped == "?" {
+                    print("Commands: exit | quit | :q, help | ?, clear | :clear")
+                    print("Multi-line: keep typing until braces/brackets/parens balance")
+                    continue
+                }
+                if stripped == "clear" || stripped == ":clear" {
+                    print("\033[2J\033[H")
+                    continue
+                }
+            }
+            if pending != "" {
+                pending = pending + "\n"
+            }
+            pending = pending + line
+            if replBalanced(pending) {
+                replEvaluate(cfg, pending)
+                break
+            }
+        }
+    }
 }
 
 fn runTests(cfg) {
@@ -336,6 +500,13 @@ cfg = parseArgs(args)
 result = 0
 if cfg.mode == "run" {
     result = runScript(cfg)
+}
+else if cfg.mode == "repl" {
+    if #cfg.scriptFiles > 0 {
+        result = loadScriptForRepl(cfg)
+        if result != 0 { shell.exit(result) }
+    }
+    replLoop(cfg)
 }
 else if cfg.mode == "test" {
     result = runTests(cfg)

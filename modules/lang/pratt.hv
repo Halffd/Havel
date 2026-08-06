@@ -1232,6 +1232,12 @@ fn parseCallArgs() {
             // {...} interpolation (works in all strings, not just f-strings)
             if ch == "{" {
                 if buf.len > 0 {
+                    // Strip the interpolation marker: ${expr} → the '$' before '{'
+                    if buf.sub(buf.len - 1, 1) == "$" {
+                        buf = buf.slice(0, buf.len - 1)
+                    }
+                }
+                if buf.len > 0 {
                     parts.push(StringLiteral(buf, l, c))
                     buf = ""
                 }
@@ -1285,7 +1291,7 @@ fn parseCallArgs() {
                 bodyExpr = parseExpr(getRightBindingPower(TID.Arrow))
                 body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
             }
-            return LambdaExpression(parameters, body)
+            return LambdaExpression(params, body)
         }
         // Check for (params){ body } lambda shorthand BEFORE multi-param lambda
         // (which consumes tokens even when it fails)
@@ -1308,7 +1314,7 @@ fn parseCallArgs() {
                 }
             }
             // Check for ) {
-            if braceLambdaParams.length >= 1 and current().tid == TID.CloseParen and at(1).tid == TID.OpenBrace {
+            if braceLambdaParams.length() >= 1 and current().tid == TID.CloseParen and at(1).tid == TID.OpenBrace {
                 advance() // consume )
                 // DON'T consume '{' - parseBlock expects to see it
                 isBraceLambda = true
@@ -1433,7 +1439,7 @@ fn parseCallArgs() {
                 if current().tid != TID.Identifier && !isKeywordIdent(current().tid) {
                     return error("Expected parameter name, got " + current().tid, current().line, current().col)
                 }
-                p.name = advance().value
+                p = {name: advance().value}
                 // Type annotation
                 if current().tid == TID.Colon {
                     advance()

@@ -637,22 +637,22 @@ return
 					}
 					sid = globalIdx(emitter, newFn)
 					bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-					nameIdx = bc.add_string(callee.obj.name)
-					bc.emit("LOAD_CONST", nameIdx)
+					nameSid = globalIdx(emitter, callee.obj.name)
+					bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
 					for arg in node.args {
 						emitExpr(emitter, arg)
 					}
 			if hasKwargs {
-					emitKwargsObject(emitter, node.kwargs)
-					bc.emit("CALL", savedArgc + 2)
-				}
-				else {
-					bc.emit("CALL", savedArgc + 1)
-				}
-				emitter.inTailPosition = savedTail
-				return
+				emitKwargsObject(emitter, node.kwargs)
+				bc.emit("CALL", savedArgc + 2)
 			}
+			else {
+				bc.emit("CALL", savedArgc + 1)
+			}
+			emitter.inTailPosition = savedTail
+			return
 		}
+	}
 		emitExpr(emitter, callee.obj)
 		for arg in node.args {
 			emitExpr(emitter, arg)
@@ -675,8 +675,8 @@ return
 				}
 				sid = globalIdx(emitter, newFn)
 				bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-				nameIdx = bc.add_string(callee.name)
-				bc.emit("LOAD_CONST", nameIdx)
+				nameSid = globalIdx(emitter, callee.name)
+				bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
 				for arg in node.args {
 					emitExpr(emitter, arg)
 				}

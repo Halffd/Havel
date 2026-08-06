@@ -1001,7 +1001,7 @@ public:
     std::vector<std::string> appArgList;
 
     // Mode flag
-    switch (cfg.mode) {
+    switch (cfg.launchMode) {
     case LaunchConfig::Mode::REPL:
       appArgList.push_back("--repl");
       break;
@@ -1017,7 +1017,7 @@ public:
       appArgList.push_back(std::to_string(cfg.testTimeout));
       break;
     default:
-      // SCRIPT, SCRIPT_ONLY: pass script files directly
+      // SCRIPT_ONLY: pass script files directly
       break;
     }
 
@@ -1234,6 +1234,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
             cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
             cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
             cfg.mode == LaunchConfig::Mode::TEST) {
+          cfg.launchMode = cfg.mode;
           cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
           cfg.minimalMode = true;
           cfg.pureStdlib = true;

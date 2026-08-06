@@ -811,7 +811,7 @@ bool HotkeyManager::SetHotkeyGrab(const std::string &alias, bool grab)
     }
     case ExecutorMode::Scheduler:
     {
-      debug("[HotkeyManager] executeHotkey '{}' mode=Scheduler", alias);
+      if (debugging::debug_hotkeys) debug("[HotkeyManager] executeHotkey '{}' mode=Scheduler", alias);
       try {
         callback();
       } catch (const std::exception &e) {

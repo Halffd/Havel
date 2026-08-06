@@ -209,6 +209,9 @@ private:
     // Input blocking
     std::atomic<bool> blockInput_{false};
 
+    // Grab enabled state
+    bool grabEnabled_ = false;
+
     // Emergency shutdown
     uint32_t emergencyShutdownKey_ = 0;
 
@@ -398,6 +401,8 @@ bool EvdevAdapter::GrabDevice(const std::string &path) {
             signalSafeGrabbedCount_.store(signalSafeGrabbedCount_.load(std::memory_order_relaxed) + 1, std::memory_order_release);
         }
 
+    grabEnabled_ = true;
+
     ReleasePressedKeys(*it);
     DrainDeviceEvents(*it);
 
@@ -578,6 +583,22 @@ void EvdevAdapter::RecheckDevices() {
             int fd = open(dev.path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
             if (fd >= 0) {
                 dev.fd = fd;
+                // Re-grab if grab was enabled
+                if (grabEnabled_) {
+                    if (ioctl(fd, EVIOCGRAB, 1) < 0) {
+                        error("EvdevAdapter: Failed to re-grab {}: {}", dev.path, strerror(errno));
+                    } else {
+                        dev.grabbed = true;
+                        grabbedFds_.insert(fd);
+                        if (signalSafeGrabbedCount_.load(std::memory_order_relaxed) < MAX_GRABBED_FDS) {
+                            signalSafeGrabbedFds_[signalSafeGrabbedCount_.load(std::memory_order_relaxed)] = fd;
+                            signalSafeGrabbedCount_.store(signalSafeGrabbedCount_.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+                        }
+                        ReleasePressedKeys(dev);
+                        DrainDeviceEvents(dev);
+                        debug("EvdevAdapter: Re-grabbed device {}", dev.path);
+                    }
+                }
             }
         }
     }

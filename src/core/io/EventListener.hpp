@@ -244,6 +244,12 @@ private:
   void ProcessQueuedMouseMovementHotkeys();
   void EvaluateMouseMovementHotkeys(int virtualKey);
 
+  // Dispatch a hotkey callback honoring executorMode_:
+  // Scheduler/Sync run inline on the current (event-loop) thread to avoid the
+  // worker-pool + deferToVM round trip; Executor submits to the pool; Thread
+  // detaches a fresh thread per callback.
+  void DispatchHotkeyCallback(std::function<void()> callback);
+
   // Mouse gesture helpers (legacy; kept for compatibility)
   void ProcessMouseGesture(int dx, int dy);
   MouseGestureDirection GetGestureDirection(int dx, int dy) const;

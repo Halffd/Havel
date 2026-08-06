@@ -2,7 +2,9 @@
 // Host bridge: shell.run, shell.exec, shell.which, shell.env, shell.getenv,
 // shell.cwd, shell.cd, shell.escape, shell.platform, shell.pid, shell.home,
 // shell.tmpdir, shell.hostname, shell.user, shell.shell, shell.sleep,
-// shell.read, shell.write, shell.isatty, shell.exit, shell.splitArgs,
+// shell.read, shell.write, shell.isatty, shell.ready, shell.history_path,
+// shell.history_read, shell.history_write, shell.history_add,
+// shell.exit, shell.splitArgs,
 // shell.exists, shell.isFile, shell.isDir, shell.mkdir, shell.mkdirs,
 // shell.remove, shell.removeAll, shell.copy, shell.move, shell.listDir,
 // shell.read, shell.write, shell.appendFile, shell.platform, shell.pid,
@@ -39,7 +41,6 @@ fn env(name, value=null) {
   if value == null { shell.getenv(name) }
   else { shell.env(name, value) }
 }
-fn getenv(name) { shell.getenv(name) }
 fn envList() { shell.envList() }
 
 // ============================================================
@@ -132,4 +133,35 @@ fn append(path, content) {
   existing = shell.read(path)
   if existing == null { existing = "" }
   shell.write(path, existing + content)
+}
+
+// ============================================================
+// History
+// ============================================================
+
+fn historyPath() { 
+  home = shell.getenv("HOME")
+  if home == null { return null }
+  home + "/.havel_history"
+}
+fn historyRead(path=null) {
+  if path == null {
+    path = historyPath()
+    if path == null { return [] }
+  }
+  shell.history_read(path)
+}
+fn historyWrite(lines, path=null) {
+  if path == null {
+    path = historyPath()
+    if path == null { return null }
+  }
+  shell.history_write(lines, path)
+}
+fn historyAdd(line, path=null) {
+  if path == null {
+    path = historyPath()
+    if path == null { return null }
+  }
+  shell.history_add(line, path)
 }

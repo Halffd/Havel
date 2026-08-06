@@ -649,6 +649,10 @@ public:
     return frame_count_ > 0 ? frame_arena_[frame_count_ - 1].function : nullptr;
   }
   void runDispatchLoopPublic(size_t stop_frame_depth) { runDispatchLoop(stop_frame_depth); }
+  // Run one scheduler tick: drain events, wake sleeping goroutines, then
+  // execute a single runnable goroutine. Shared by the engine REPL pump and
+  // the self-hosted launcher REPL (bc.tick).
+  void tickScheduler();
   size_t frameCountPublic() const { return frame_count_; }
   void tryEnterPublic(uint32_t catch_ip, uint32_t finally_ip,
                       size_t stack_depth) {

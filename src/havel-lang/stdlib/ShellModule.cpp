@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <poll.h>
 #include "utils/ExitHandler.hpp"
 
 #ifndef _WIN32
@@ -614,6 +615,25 @@ if (!std::getline(std::cin, line))
     });
 
   // ----------------------------------------------------------------------
+  // shell.ready – non-blocking stdin check
+  //   shell.ready() or shell.ready(timeoutMs) -> bool (input available)
+  // ----------------------------------------------------------------------
+  api.registerFunction("shell.ready",
+    [](const std::vector<Value> &args) {
+      int timeoutMs = 0;
+      if (!args.empty() && args[0].isInt()) {
+        timeoutMs = static_cast<int>(args[0].asInt());
+        if (timeoutMs < 0) timeoutMs = 0;
+      }
+      struct pollfd pfd;
+      pfd.fd = 0;
+      pfd.events = POLLIN;
+      pfd.revents = 0;
+      int r = ::poll(&pfd, 1, timeoutMs);
+      return Value::makeBool(r > 0);
+    });
+
+  // ----------------------------------------------------------------------
   // shell.write – write text to stdout (default) or stderr
   //   shell.write(text) or shell.write(text, fd) where fd: 1=stdout, 2=stderr
   // ----------------------------------------------------------------------
@@ -875,6 +895,7 @@ api.registerFunction("shell.listDir",
   api.setField(shellObj, "read",       api.makeFunctionRef("shell.read"));
   api.setField(shellObj, "write",      api.makeFunctionRef("shell.write"));
   api.setField(shellObj, "isatty",     api.makeFunctionRef("shell.isatty"));
+  api.setField(shellObj, "ready",      api.makeFunctionRef("shell.ready"));
   api.setField(shellObj, "exit",       api.makeFunctionRef("shell.exit"));
   api.setField(shellObj, "splitArgs",  api.makeFunctionRef("shell.splitArgs"));
   api.setField(shellObj, "exists",     api.makeFunctionRef("shell.exists"));

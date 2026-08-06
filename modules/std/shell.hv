@@ -81,7 +81,8 @@ fn shell() { shell.shell() }
 
 fn sleep(ms) { shell.sleep(ms) }
 fn exit(code) { shell.exit(code) }
-fn isatty() { shell.isatty() }
+fn isatty(fd=0) { shell.isatty(fd) }
+fn ready(ms=0) { shell.ready(ms) }
 
 // ============================================================
 // Network / IPC

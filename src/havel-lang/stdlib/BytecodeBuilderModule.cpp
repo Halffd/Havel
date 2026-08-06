@@ -705,6 +705,34 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
         vm.bc_execute_depth_--;
         vm.storePersistentChunk(exec_chunk);
 
+        // Wrap FunctionObjId globals defined in this executable chunk into
+        // closures pinned to exec_chunk. A bare FunctionObjId is only a raw
+        // function-table index, which is meaningless once another chunk (e.g.
+        // a later REPL line) becomes current_chunk and reuses the same index
+        // for a different function. Closures carry their chunk pointer, so a
+        // function defined in this persistent chunk stays callable from any
+        // later chunk that shares the globals namespace.
+        {
+          auto &own_globals = vm.getGlobals();
+          for (auto &[name, val] : own_globals) {
+            if (val.isFunctionObjId()) {
+              uint32_t fnIdx = val.asFunctionObjId();
+              if (exec_chunk->getFunction(fnIdx)) {
+                auto ref = vm.getHeap().allocateClosure(
+                    havel::compiler::GCHeap::RuntimeClosure{
+                        .function_index = fnIdx,
+                        .chunk_index = 0,
+                        .chunk = exec_chunk.get(),
+                        .chunk_ref = exec_chunk,
+                        .module_globals = nullptr,
+                        .upvalues = {},
+                    });
+                val = havel::compiler::Value::makeClosureId(ref.id);
+              }
+            }
+          }
+        }
+
         auto &post_globals = vm.getGlobals();
         for (auto &[name, val] : post_globals) {
             auto preIt = pre_globals.find(name);
@@ -1115,6 +1143,14 @@ return result;
         return Value::makeInt(static_cast<int64_t>(gid));
     });
 
+    // Run one scheduler tick (drain events + one goroutine). Used by the
+    // self-hosted REPL to keep hotkey/update goroutines alive while reading
+    // stdin.
+    api.registerFunction("bc.tick", [api](const std::vector<Value> &) -> Value {
+        api.vm().tickScheduler();
+        return Value::makeNull();
+    });
+
     auto bcObj = api.makeObject();
   api.setField(bcObj, "reset", api.makeFunctionRef("bc.reset"));
     api.setField(bcObj, "func_new", api.makeFunctionRef("bc.func_new"));
@@ -1138,6 +1174,7 @@ return result;
     api.setField(bcObj, "store_chunk", api.makeFunctionRef("bc.store_chunk"));
     api.setField(bcObj, "execute_stored", api.makeFunctionRef("bc.execute_stored"));
     api.setField(bcObj, "spawn_stored", api.makeFunctionRef("bc.spawn_stored"));
+    api.setField(bcObj, "tick", api.makeFunctionRef("bc.tick"));
     api.setField(bcObj, "get_global", api.makeFunctionRef("bc.get_global"));
     api.setField(bcObj, "set_global", api.makeFunctionRef("bc.set_global"));
     api.setField(bcObj, "set_script_dir", api.makeFunctionRef("bc.set_script_dir"));

@@ -255,6 +255,7 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
             ::havel::debug("[Scheduler] [UNPARK] gid={} name='{}' to RUNNABLE queue", g->id, g->name);
 		}
     }
+    notifyWakeup();
 }
 
 Scheduler::Goroutine* Scheduler::findGoroutineByWaitTarget(AwaitableType type, uint32_t target_id) {
@@ -526,6 +527,7 @@ void Scheduler::enqueue(Goroutine* g) {
             runnable_queue_.push_back(g);
         }
     }
+    notifyWakeup();
 }
 
 void Scheduler::requeueFront(Goroutine* g) {
@@ -608,6 +610,7 @@ void Scheduler::requeueFront(Goroutine* g) {
         g->id, runnable_queue_.size());
     }
 }
+notifyWakeup();
 }
 
 // Wake a persistent hotkey goroutine on trigger
@@ -898,6 +901,16 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
     return earliest;
 }
 
+ void Scheduler::notifyWakeup() {
+ #ifndef _WIN32
+   if (deferred_wakeup_fd_ >= 0) {
+     uint64_t val = 1;
+     ssize_t ret = write(deferred_wakeup_fd_, &val, sizeof(val));
+     (void)ret;
+   }
+ #endif
+ }
+
  void Scheduler::schedule(DeferredAction fn, FiberPriority priority) {
    {
      std::lock_guard lock(deferred_mutex_);
@@ -913,13 +926,7 @@ std::optional<std::chrono::steady_clock::time_point> Scheduler::nextSleepDeadlin
          break;
      }
    }
- #ifndef _WIN32
-   if (deferred_wakeup_fd_ >= 0) {
-     uint64_t val = 1;
-     ssize_t ret = write(deferred_wakeup_fd_, &val, sizeof(val));
-     (void)ret;
-   }
- #endif
+   notifyWakeup();
  }
 
  void Scheduler::deferToVM(DeferredAction fn) {

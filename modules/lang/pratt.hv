@@ -538,7 +538,7 @@ condition = parseExpr(getRightBindingPower(TID.Where))
   }
   return Identifier(tok.value, l, c)
  }
-else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From) {
+else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From and tt != TID.Yield) {
 return Identifier(tok.value, l, c)
 }
 else if tt == TID.True {
@@ -2244,10 +2244,20 @@ if tt == TID.At and at(1).tid == TID.Identifier {
             return parseDelStatement()
 
         }
-        // Function declaration
+// Function declaration
         if tt == TID.Fn {
             return parseFnDeclaration()
-
+        }
+        // Coroutine function declaration
+        if tt == TID.Co {
+            advance()
+            skipNewlines()
+            if current().tid == TID.Fn {
+                return parseFnDeclaration(true)
+            }
+            else {
+                error("Expected 'fn' after 'co'", current().line, current().col)
+            }
         }
         // Import / Use
         if tt == TID.Import {
@@ -2826,7 +2836,7 @@ skipNewlines()
     // ===================================================================
     // STATEMENT: fn declaration
     // ===================================================================
-    fn parseFnDeclaration() {
+    fn parseFnDeclaration(isCoroutine = false) {
         l = current().line
         c = current().col
         advance() // consume 'fn'
@@ -2931,7 +2941,7 @@ skipNewlines()
         body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
 
     }
-    return FnDeclaration(name, params, body, l, c, typeParams)
+    return FnDeclaration(name, params, body, l, c, typeParams, isCoroutine)
 
     }
     // ===================================================================
@@ -2967,8 +2977,7 @@ fn parseLetDecl(keyword, isStatic = false) {
       if current().tid == TID.Comma { advance() }
     }
     if current().tid == TID.CloseParen { advance() }
-    pattern = ArrayPattern(elements, null, l, c)
-    pattern.isTuple = true
+    pattern = ArrayPattern(elements, null, true)
   }
   // Object destructuring: let {x, y} = val
   else if current().tid == TID.OpenBrace {
@@ -3018,14 +3027,20 @@ fn parseLetDecl(keyword, isStatic = false) {
     value = parseExpr(0)
   }
 
-  if keyword == "Let" {
+if keyword == "Let" {
     node = LetDeclaration(name, value, l, c)
-  node.isStatic = isStatic
-  }
-  else {
-    node = ValDeclaration(name, value, l, c)
-  node.isStatic = isStatic
-  }
+    node.isStatic = isStatic
+    node.isConst = false
+}
+else {
+    node = LetDeclaration(name, value, l, c)
+    node.isStatic = isStatic
+    if keyword == "Const" {
+        node.isConst = true
+    } else {
+        node.isConst = false
+    }
+}
   if pattern != null { node.pattern = pattern }
   if typeAnno != null { node.typeAnnotation = typeAnno }
   node

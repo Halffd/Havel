@@ -419,28 +419,49 @@ fn replBalanced(code) {
 
 fn replLoop(cfg) {
     interactive = shell.isatty(0)
+    useReadline = false
     if interactive {
-        print("Havel self-hosted REPL (Ctrl-D or 'exit' to quit)")
+        // Try to load readline module for line editing/history
+        useReadline = true
+        try {
+            use { readline } from "readline"
+            print("Havel self-hosted REPL (Ctrl-D or 'exit' to quit)")
+            readline.read_history()  // Load history from default file
+        } catch {
+            useReadline = false
+            print("Havel self-hosted REPL (Ctrl-D or 'exit' to quit)")
+        }
     }
     while true {
         pending = ""
         while true {
-            while !shell.ready(5) {
-                bc.tick()
-            }
-            if interactive {
-                if pending == "" {
-                    shell.write("havel> ")
+            if useReadline {
+                prompt = (pending == "") ? "havel> " : "...> "
+                line = readline.readline(prompt)
+                if line != null && line != "" {
+                    readline.add_history(line)
                 }
-                else {
-                    shell.write("...> ")
+            } else {
+                while !shell.ready(5) {
+                    bc.tick()
                 }
+                if interactive {
+                    if pending == "" {
+                        shell.write("havel> ")
+                    }
+                    else {
+                        shell.write("...> ")
+                    }
+                }
+                line = shell.read()
             }
-            line = shell.read()
             if line == null {
                 if interactive { print("") }
                 if pending != "" {
                     replEvaluate(cfg, pending)
+                }
+                if useReadline {
+                    readline.write_history()
                 }
                 return
             }
@@ -448,6 +469,9 @@ fn replLoop(cfg) {
                 stripped = line.trim()
                 if stripped == "" { continue }
                 if stripped == "exit" || stripped == "quit" || stripped == ":q" {
+                    if useReadline {
+                        readline.write_history()
+                    }
                     return
                 }
                 if stripped == "help" || stripped == "?" {

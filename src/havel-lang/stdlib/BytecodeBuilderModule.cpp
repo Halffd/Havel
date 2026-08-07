@@ -943,6 +943,50 @@ api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> V
     return api.makeString(out);
 });
 
+	// ----------------------------------------------------------------------
+	// bc.debug_attach – attach VM debugger
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_attach", [api](const std::vector<Value> &) -> Value {
+		api.vm().attachDebugger();
+		return Value::makeNull();
+	});
+
+	// ----------------------------------------------------------------------
+	// bc.debug_detach – detach VM debugger
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_detach", [api](const std::vector<Value> &) -> Value {
+		api.vm().detachDebugger();
+		return Value::makeNull();
+	});
+
+	// ----------------------------------------------------------------------
+	// bc.debug_step_mode – set VM debug step mode (0=Continue, 1=StepInto, 2=StepOver, 3=StepOut)
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_step_mode", [api](const std::vector<Value> &args) -> Value {
+		if (args.empty()) return Value::makeNull();
+		int mode = static_cast<int>(args[0].asInt());
+		if (mode < 0 || mode > 3) mode = 0;
+		api.vm().setDebugStepMode(static_cast<havel::compiler::VM::DebugStepMode>(mode));
+		return Value::makeNull();
+	});
+
+	// ----------------------------------------------------------------------
+	// bc.debug_is_attached – check if debugger is attached
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_is_attached", [api](const std::vector<Value> &) -> Value {
+		return Value::makeBool(api.vm().isDebuggerAttached());
+	});
+
+	// ----------------------------------------------------------------------
+	// bc.debug_step_frame_depth – set frame depth for step out
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_step_frame_depth", [api](const std::vector<Value> &args) -> Value {
+		if (args.empty()) return Value::makeNull();
+		size_t depth = static_cast<size_t>(args[0].asInt());
+		api.vm().setDebugStepFrameDepth(depth);
+		return Value::makeNull();
+	});
+
 api.registerFunction("bc.is_string_id", [](const std::vector<Value> &args) -> Value {
     if (args.empty()) return Value::makeBool(false);
     return Value::makeBool(args[0].isStringId());
@@ -1183,11 +1227,16 @@ return result;
   api.setField(bcObj, "const_count", api.makeFunctionRef("bc.const_count"));
   api.setField(bcObj, "disasm", api.makeFunctionRef("bc.disasm"));
 api.setField(bcObj, "disasm_all", api.makeFunctionRef("bc.disasm_all"));
-api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
-api.setField(bcObj, "make_function_obj", api.makeFunctionRef("bc.make_function_obj"));
-api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
-    api.setField(bcObj, "is_string_id", api.makeFunctionRef("bc.is_string_id"));
-  api.setField(bcObj, "is_string_val_id", api.makeFunctionRef("bc.is_string_val_id"));
+	api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
+	api.setField(bcObj, "make_function_obj", api.makeFunctionRef("bc.make_function_obj"));
+	api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
+	api.setField(bcObj, "is_string_id", api.makeFunctionRef("bc.is_string_id"));
+	api.setField(bcObj, "is_string_val_id", api.makeFunctionRef("bc.is_string_val_id"));
+	api.setField(bcObj, "debug_attach", api.makeFunctionRef("bc.debug_attach"));
+	api.setField(bcObj, "debug_detach", api.makeFunctionRef("bc.debug_detach"));
+	api.setField(bcObj, "debug_step_mode", api.makeFunctionRef("bc.debug_step_mode"));
+	api.setField(bcObj, "debug_is_attached", api.makeFunctionRef("bc.debug_is_attached"));
+	api.setField(bcObj, "debug_step_frame_depth", api.makeFunctionRef("bc.debug_step_frame_depth"));
   api.setField(bcObj, "set_source", api.makeFunctionRef("bc.set_source"));
   api.setField(bcObj, "clear_source", api.makeFunctionRef("bc.clear_source"));
   api.setField(bcObj, "set_func_source_line", api.makeFunctionRef("bc.set_func_source_line"));

@@ -484,7 +484,7 @@ fn replLoop(cfg) {
                     print("Commands: exit | quit | :q, help | ?, clear | :clear")
                     print("        :bytecode  - toggle bytecode debug + show summary")
                     print("        :globals   - list known globals")
-                    print("        :debug     - toggle debug mode")
+                    print("        :debug     - toggle debug mode (attach/detach VM debugger)")
                     print("Multi-line: keep typing until braces/brackets/parens balance")
                     continue
                 }
@@ -510,7 +510,14 @@ fn replLoop(cfg) {
                     continue
                 }
                 if stripped == ":debug" {
-                    print("Debug mode: not implemented in self-hosted REPL")
+                    if bc.debug_is_attached() {
+                        bc.debug_detach()
+                        print("Debug mode: OFF")
+                    } else {
+                        bc.debug_attach()
+                        bc.debug_step_mode(1)  // StepInto
+                        print("Debug mode: ON (step mode: StepInto)")
+                    }
                     continue
                 }
             }

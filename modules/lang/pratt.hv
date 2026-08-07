@@ -53,89 +53,109 @@ BP_POWER = 135
 BP_POSTFIX = 150
 BP_CALL_MEMBER = 170
 
-// --- Binding power lookup tables (built programmatically for integer keys) ---
-BP_TABLE = {}
-BP_TABLE[TID.Assign] = 10; BP_TABLE[TID.PlusAssign] = 10; BP_TABLE[TID.MinusAssign] = 10
-BP_TABLE[TID.MultiplyAssign] = 10; BP_TABLE[TID.DivideAssign] = 10; BP_TABLE[TID.ModuloAssign] = 10
-BP_TABLE[TID.PowerAssign] = 10; BP_TABLE[TID.BackslashAssign] = 10; BP_TABLE[TID.DoubleModuloAssign] = 10
-BP_TABLE[TID.BitwiseAndAssign] = 10; BP_TABLE[TID.BitwiseOrAssign] = 10; BP_TABLE[TID.BitwiseXorAssign] = 10
-BP_TABLE[TID.ShiftLeftAssign] = 10; BP_TABLE[TID.ShiftRightAssign] = 10
-BP_TABLE[TID.Arrow] = 10; BP_TABLE[TID.LeftArrow] = 10
-BP_TABLE[TID.Nullish] = 20; BP_TABLE[TID.Question] = 15
-BP_TABLE[TID.Or] = 30; BP_TABLE[TID.And] = 40
-BP_TABLE[TID.Equals] = 50; BP_TABLE[TID.NotEquals] = 50; BP_TABLE[TID.Is] = 50
-BP_TABLE[TID.Tilde] = 50; BP_TABLE[TID.NotTilde] = 50; BP_TABLE[TID.Matches] = 50; BP_TABLE[TID.As] = 50; BP_TABLE[TID.In] = 55
-BP_TABLE[TID.Less] = 60; BP_TABLE[TID.Greater] = 60; BP_TABLE[TID.LessEquals] = 60; BP_TABLE[TID.GreaterEquals] = 60
-BP_TABLE[TID.DotDot] = 70; BP_TABLE[TID.DotDotEquals] = 70
-BP_TABLE[TID.Plus] = 70; BP_TABLE[TID.Minus] = 70; BP_TABLE[TID.Pipe] = 75; BP_TABLE[TID.PipeRight] = 75
-BP_TABLE[TID.BitwiseOr] = 80; BP_TABLE[TID.BitwiseXor] = 90; BP_TABLE[TID.BitwiseAnd] = 100
-BP_TABLE[TID.ShiftLeft] = 110; BP_TABLE[TID.ShiftRight] = 110
-BP_TABLE[TID.Multiply] = 130; BP_TABLE[TID.Divide] = 130; BP_TABLE[TID.Modulo] = 130; BP_TABLE[TID.Backslash] = 130
-BP_TABLE[TID.DoubleBackslash] = 130; BP_TABLE[TID.DoubleModulo] = 130
-BP_TABLE[TID.Power] = 135
-BP_TABLE[TID.PlusPlus] = 150; BP_TABLE[TID.MinusMinus] = 150
-BP_TABLE[TID.For] = 15
-BP_TABLE[TID.Dot] = 170; BP_TABLE[TID.QuestionDot] = 170; BP_TABLE[TID.OpenParen] = 170; BP_TABLE[TID.OpenBracket] = 170
+// --- Binding power lookup tables (built lazily on first access) ---
+BP_TABLE = null
+fn getBPTABLE() {
+    if BP_TABLE != null: return BP_TABLE
+    BP_TABLE = {}
+    BP_TABLE[TID.Assign] = 10; BP_TABLE[TID.PlusAssign] = 10; BP_TABLE[TID.MinusAssign] = 10
+    BP_TABLE[TID.MultiplyAssign] = 10; BP_TABLE[TID.DivideAssign] = 10; BP_TABLE[TID.ModuloAssign] = 10
+    BP_TABLE[TID.PowerAssign] = 10; BP_TABLE[TID.BackslashAssign] = 10; BP_TABLE[TID.DoubleModuloAssign] = 10
+    BP_TABLE[TID.BitwiseAndAssign] = 10; BP_TABLE[TID.BitwiseOrAssign] = 10; BP_TABLE[TID.BitwiseXorAssign] = 10
+    BP_TABLE[TID.ShiftLeftAssign] = 10; BP_TABLE[TID.ShiftRightAssign] = 10
+    BP_TABLE[TID.Arrow] = 10; BP_TABLE[TID.LeftArrow] = 10
+    BP_TABLE[TID.Nullish] = 20; BP_TABLE[TID.Question] = 15
+    BP_TABLE[TID.Or] = 30; BP_TABLE[TID.And] = 40
+    BP_TABLE[TID.Equals] = 50; BP_TABLE[TID.NotEquals] = 50; BP_TABLE[TID.Is] = 50
+    BP_TABLE[TID.Tilde] = 50; BP_TABLE[TID.NotTilde] = 50; BP_TABLE[TID.Matches] = 50; BP_TABLE[TID.As] = 50; BP_TABLE[TID.In] = 55
+    BP_TABLE[TID.Less] = 60; BP_TABLE[TID.Greater] = 60; BP_TABLE[TID.LessEquals] = 60; BP_TABLE[TID.GreaterEquals] = 60
+    BP_TABLE[TID.DotDot] = 70; BP_TABLE[TID.DotDotEquals] = 70
+    BP_TABLE[TID.Plus] = 70; BP_TABLE[TID.Minus] = 70; BP_TABLE[TID.Pipe] = 75; BP_TABLE[TID.PipeRight] = 75
+    BP_TABLE[TID.BitwiseOr] = 80; BP_TABLE[TID.BitwiseXor] = 90; BP_TABLE[TID.BitwiseAnd] = 100
+    BP_TABLE[TID.ShiftLeft] = 110; BP_TABLE[TID.ShiftRight] = 110
+    BP_TABLE[TID.Multiply] = 130; BP_TABLE[TID.Divide] = 130; BP_TABLE[TID.Modulo] = 130; BP_TABLE[TID.Backslash] = 130
+    BP_TABLE[TID.DoubleBackslash] = 130; BP_TABLE[TID.DoubleModulo] = 130
+    BP_TABLE[TID.Power] = 135
+    BP_TABLE[TID.PlusPlus] = 150; BP_TABLE[TID.MinusMinus] = 150
+    BP_TABLE[TID.For] = 15
+    BP_TABLE[TID.Dot] = 170; BP_TABLE[TID.QuestionDot] = 170; BP_TABLE[TID.OpenParen] = 170; BP_TABLE[TID.OpenBracket] = 170
+    BP_TABLE
+}
 
-RBP_TABLE = {}
-RBP_TABLE[TID.Assign] = 5; RBP_TABLE[TID.PlusAssign] = 5; RBP_TABLE[TID.MinusAssign] = 5
-RBP_TABLE[TID.MultiplyAssign] = 5; RBP_TABLE[TID.DivideAssign] = 5; RBP_TABLE[TID.ModuloAssign] = 5
-RBP_TABLE[TID.PowerAssign] = 5; RBP_TABLE[TID.BackslashAssign] = 5; RBP_TABLE[TID.DoubleModuloAssign] = 5
-RBP_TABLE[TID.BitwiseAndAssign] = 5; RBP_TABLE[TID.BitwiseOrAssign] = 5; RBP_TABLE[TID.BitwiseXorAssign] = 5
-RBP_TABLE[TID.ShiftLeftAssign] = 5; RBP_TABLE[TID.ShiftRightAssign] = 5
-RBP_TABLE[TID.LeftArrow] = 5; RBP_TABLE[TID.Arrow] = 5
-RBP_TABLE[TID.Power] = 130; RBP_TABLE[TID.Nullish] = 15; RBP_TABLE[TID.Question] = 10
-RBP_TABLE[TID.For] = 15
+RBP_TABLE = null
+fn getRBPTABLE() {
+    if RBP_TABLE != null: return RBP_TABLE
+    RBP_TABLE = {}
+    RBP_TABLE[TID.Assign] = 5; RBP_TABLE[TID.PlusAssign] = 5; RBP_TABLE[TID.MinusAssign] = 5
+    RBP_TABLE[TID.MultiplyAssign] = 5; RBP_TABLE[TID.DivideAssign] = 5; RBP_TABLE[TID.ModuloAssign] = 5
+    RBP_TABLE[TID.PowerAssign] = 5; RBP_TABLE[TID.BackslashAssign] = 5; RBP_TABLE[TID.DoubleModuloAssign] = 5
+    RBP_TABLE[TID.BitwiseAndAssign] = 5; RBP_TABLE[TID.BitwiseOrAssign] = 5; RBP_TABLE[TID.BitwiseXorAssign] = 5
+    RBP_TABLE[TID.ShiftLeftAssign] = 5; RBP_TABLE[TID.ShiftRightAssign] = 5
+    RBP_TABLE[TID.LeftArrow] = 5; RBP_TABLE[TID.Arrow] = 5
+    RBP_TABLE[TID.Power] = 130; RBP_TABLE[TID.Nullish] = 15; RBP_TABLE[TID.Question] = 10
+    RBP_TABLE[TID.For] = 15
+    RBP_TABLE
+}
 
 fn getBindingPower(ttype) {
     if ttype == TID.Not {
         if at(1).tid == TID.In { return 52 }
         return BP_NONE
     }
-    r = BP_TABLE[ttype]
+    r = getBPTABLE()[ttype]
     if r != null: return r
     return BP_NONE
 }
 
 // --- getRightBindingPower: lower rbp for right-associative operators ---
 fn getRightBindingPower(ttype) {
-    r = RBP_TABLE[ttype]
+    r = getRBPTABLE()[ttype]
     if r != null: return r
     return getBindingPower(ttype)
 }
 // --- Compound assign token set (integer keys for fast lookup) ---
-COMPOUND_ASSIGN_TOKENS = {}
-COMPOUND_ASSIGN_TOKENS[TID.PlusAssign] = "+="
-COMPOUND_ASSIGN_TOKENS[TID.MinusAssign] = "-="
-COMPOUND_ASSIGN_TOKENS[TID.MultiplyAssign] = "*="
-COMPOUND_ASSIGN_TOKENS[TID.DivideAssign] = "/="
-COMPOUND_ASSIGN_TOKENS[TID.ModuloAssign] = "%="
-COMPOUND_ASSIGN_TOKENS[TID.PowerAssign] = "**="
-COMPOUND_ASSIGN_TOKENS[TID.BackslashAssign] = "\\="
-COMPOUND_ASSIGN_TOKENS[TID.DoubleModuloAssign] = "%%="
-COMPOUND_ASSIGN_TOKENS[TID.BitwiseAndAssign] = "&="
-COMPOUND_ASSIGN_TOKENS[TID.BitwiseOrAssign] = "|="
-COMPOUND_ASSIGN_TOKENS[TID.BitwiseXorAssign] = "^="
-COMPOUND_ASSIGN_TOKENS[TID.ShiftLeftAssign] = "<<="
-COMPOUND_ASSIGN_TOKENS[TID.ShiftRightAssign] = ">>="
+COMPOUND_ASSIGN_TOKENS = null
+fn getCompoundAssignTokens() {
+    if COMPOUND_ASSIGN_TOKENS != null: return COMPOUND_ASSIGN_TOKENS
+    COMPOUND_ASSIGN_TOKENS = {}
+    COMPOUND_ASSIGN_TOKENS[TID.PlusAssign] = "+="
+    COMPOUND_ASSIGN_TOKENS[TID.MinusAssign] = "-="
+    COMPOUND_ASSIGN_TOKENS[TID.MultiplyAssign] = "*="
+    COMPOUND_ASSIGN_TOKENS[TID.DivideAssign] = "/="
+    COMPOUND_ASSIGN_TOKENS[TID.ModuloAssign] = "%="
+    COMPOUND_ASSIGN_TOKENS[TID.PowerAssign] = "**="
+    COMPOUND_ASSIGN_TOKENS[TID.BackslashAssign] = "\\="
+    COMPOUND_ASSIGN_TOKENS[TID.DoubleModuloAssign] = "%%="
+    COMPOUND_ASSIGN_TOKENS[TID.BitwiseAndAssign] = "&="
+    COMPOUND_ASSIGN_TOKENS[TID.BitwiseOrAssign] = "|="
+    COMPOUND_ASSIGN_TOKENS[TID.BitwiseXorAssign] = "^="
+    COMPOUND_ASSIGN_TOKENS[TID.ShiftLeftAssign] = "<<="
+    COMPOUND_ASSIGN_TOKENS[TID.ShiftRightAssign] = ">>="
+    COMPOUND_ASSIGN_TOKENS
+}
 
 // --- Check if identifier value is a hotkey key name ---
-HOTKEY_IDENT_NAMES = {
-	"space": true, "enter": true, "tab": true, "escape": true, "esc": true,
-	"backspace": true, "delete": true, "insert": true, "home": true,
-	"end": true, "pageup": true, "pagedown": true, "capslock": true,
-	"numlock": true, "scrolllock": true, "lshift": true, "rshift": true,
-	"lctrl": true, "rctrl": true, "lalt": true, "ralt": true,
-	"lmeta": true, "rmeta": true, "super": true, "menu": true,
-	"print": true, "pause": true, "up": true, "down": true,
-	"left": true, "right": true, "wheelup": true, "wheeldown": true,
-	"wheelleft": true, "wheelright": true,
-	"numpad0": true, "numpad1": true, "numpad2": true, "numpad3": true,
-	"numpad4": true, "numpad5": true, "numpad6": true, "numpad7": true,
-	"numpad8": true, "numpad9": true, "btn0": true, "btn1": true,
-	"btn2": true, "btn3": true, "btn4": true, "numpadmult": true,
-	"numpadadd": true, "numpadsub": true, "numpaddiv": true,
-	"numpadenter": true, "numpadsep": true,
+HOTKEY_IDENT_NAMES = null
+fn getHotkeyIdentNames() {
+    if HOTKEY_IDENT_NAMES != null: return HOTKEY_IDENT_NAMES
+    HOTKEY_IDENT_NAMES = {
+    	"space": true, "enter": true, "tab": true, "escape": true, "esc": true,
+    	"backspace": true, "delete": true, "insert": true, "home": true,
+    	"end": true, "pageup": true, "pagedown": true, "capslock": true,
+    	"numlock": true, "scrolllock": true, "lshift": true, "rshift": true,
+    	"lctrl": true, "rctrl": true, "lalt": true, "ralt": true,
+    	"lmeta": true, "rmeta": true, "super": true, "menu": true,
+    	"print": true, "pause": true, "up": true, "down": true,
+    	"left": true, "right": true, "wheelup": true, "wheeldown": true,
+    	"wheelleft": true, "wheelright": true,
+    	"numpad0": true, "numpad1": true, "numpad2": true, "numpad3": true,
+    	"numpad4": true, "numpad5": true, "numpad6": true, "numpad7": true,
+    	"numpad8": true, "numpad9": true, "btn0": true, "btn1": true,
+    	"btn2": true, "btn3": true, "btn4": true, "numpadmult": true,
+    	"numpadadd": true, "numpadsub": true, "numpaddiv": true,
+    	"numpadenter": true, "numpadsep": true,
+    }
+    HOTKEY_IDENT_NAMES
 }
 fn isHotkeyIdentifier(value) {
 	if value.len >= 2 && value[0] == "F" {
@@ -149,95 +169,111 @@ fn isHotkeyIdentifier(value) {
 		}
 		if isDigit { return true }
 	}
-	HOTKEY_IDENT_NAMES[value] != null
+	getHotkeyIdentNames()[value] != null
 }
 
 // parseHotkeyAttrs moved inside Parser()
 
 // --- Token types that can start an expression (have nud) ---
-NUD_TOKENS = {}
-NUD_TOKENS[TID.Number] = true; NUD_TOKENS[TID.String] = true; NUD_TOKENS[TID.MultilineString] = true
-NUD_TOKENS[TID.InterpolatedString] = true; NUD_TOKENS[TID.RegexString] = true; NUD_TOKENS[TID.RegexLiteral] = true
-NUD_TOKENS[TID.Backtick] = true; NUD_TOKENS[TID.InterpolatedBacktick] = true
-NUD_TOKENS[TID.Identifier] = true; NUD_TOKENS[TID.True] = true; NUD_TOKENS[TID.False] = true; NUD_TOKENS[TID.Null] = true
-NUD_TOKENS[TID.OpenParen] = true; NUD_TOKENS[TID.OpenBracket] = true; NUD_TOKENS[TID.OpenBrace] = true
-NUD_TOKENS[TID.BangOpenBrace] = true; NUD_TOKENS[TID.Not] = true; NUD_TOKENS[TID.Minus] = true; NUD_TOKENS[TID.Plus] = true
-NUD_TOKENS[TID.PlusPlus] = true; NUD_TOKENS[TID.MinusMinus] = true; NUD_TOKENS[TID.Length] = true
-NUD_TOKENS[TID.At] = true; NUD_TOKENS[TID.AtAt] = true; NUD_TOKENS[TID.ColonColon] = true
-NUD_TOKENS[TID.Fn] = true; NUD_TOKENS[TID.Match] = true; NUD_TOKENS[TID.If] = true
-NUD_TOKENS[TID.Class] = true; NUD_TOKENS[TID.Struct] = true; NUD_TOKENS[TID.Enum] = true; NUD_TOKENS[TID.Mode] = true
-NUD_TOKENS[TID.Val] = true; NUD_TOKENS[TID.Const] = true; NUD_TOKENS[TID.Let] = true
-NUD_TOKENS[TID.Config] = true; NUD_TOKENS[TID.Devices] = true
-NUD_TOKENS[TID.ShellCommand] = true; NUD_TOKENS[TID.ShellCommandCapture] = true
-NUD_TOKENS[TID.SuperArrow] = true
-NUD_TOKENS[TID.Spread] = true; NUD_TOKENS[TID.Hash] = true; NUD_TOKENS[TID.DoubleOpenParen] = true
-NUD_TOKENS[TID.Tilde] = true; NUD_TOKENS[TID.Hotkey] = true
-NUD_TOKENS[TID.Thread] = true; NUD_TOKENS[TID.Interval] = true; NUD_TOKENS[TID.Timeout] = true
-NUD_TOKENS[TID.Async] = true; NUD_TOKENS[TID.LeftArrow] = true; NUD_TOKENS[TID.CharLiteral] = true
-NUD_TOKENS[TID.Yield] = true; NUD_TOKENS[TID.Channel] = true; NUD_TOKENS[TID.Go] = true
-NUD_TOKENS[TID.WaitGroup] = true; NUD_TOKENS[TID.Wait] = true; NUD_TOKENS[TID.From] = true
+NUD_TOKENS = null
+fn getNUDTokens() {
+    if NUD_TOKENS != null: return NUD_TOKENS
+    NUD_TOKENS = {}
+    NUD_TOKENS[TID.Number] = true; NUD_TOKENS[TID.String] = true; NUD_TOKENS[TID.MultilineString] = true
+    NUD_TOKENS[TID.InterpolatedString] = true; NUD_TOKENS[TID.RegexString] = true; NUD_TOKENS[TID.RegexLiteral] = true
+    NUD_TOKENS[TID.Backtick] = true; NUD_TOKENS[TID.InterpolatedBacktick] = true
+    NUD_TOKENS[TID.Identifier] = true; NUD_TOKENS[TID.True] = true; NUD_TOKENS[TID.False] = true; NUD_TOKENS[TID.Null] = true
+    NUD_TOKENS[TID.OpenParen] = true; NUD_TOKENS[TID.OpenBracket] = true; NUD_TOKENS[TID.OpenBrace] = true
+    NUD_TOKENS[TID.BangOpenBrace] = true; NUD_TOKENS[TID.Not] = true; NUD_TOKENS[TID.Minus] = true; NUD_TOKENS[TID.Plus] = true
+    NUD_TOKENS[TID.PlusPlus] = true; NUD_TOKENS[TID.MinusMinus] = true; NUD_TOKENS[TID.Length] = true
+    NUD_TOKENS[TID.At] = true; NUD_TOKENS[TID.AtAt] = true; NUD_TOKENS[TID.ColonColon] = true
+    NUD_TOKENS[TID.Fn] = true; NUD_TOKENS[TID.Match] = true; NUD_TOKENS[TID.If] = true
+    NUD_TOKENS[TID.Class] = true; NUD_TOKENS[TID.Struct] = true; NUD_TOKENS[TID.Enum] = true; NUD_TOKENS[TID.Mode] = true
+    NUD_TOKENS[TID.Val] = true; NUD_TOKENS[TID.Const] = true; NUD_TOKENS[TID.Let] = true
+    NUD_TOKENS[TID.Config] = true; NUD_TOKENS[TID.Devices] = true
+    NUD_TOKENS[TID.ShellCommand] = true; NUD_TOKENS[TID.ShellCommandCapture] = true
+    NUD_TOKENS[TID.SuperArrow] = true
+    NUD_TOKENS[TID.Spread] = true; NUD_TOKENS[TID.Hash] = true; NUD_TOKENS[TID.DoubleOpenParen] = true
+    NUD_TOKENS[TID.Tilde] = true; NUD_TOKENS[TID.Hotkey] = true
+    NUD_TOKENS[TID.Thread] = true; NUD_TOKENS[TID.Interval] = true; NUD_TOKENS[TID.Timeout] = true
+    NUD_TOKENS[TID.Async] = true; NUD_TOKENS[TID.LeftArrow] = true; NUD_TOKENS[TID.CharLiteral] = true
+    NUD_TOKENS[TID.Yield] = true; NUD_TOKENS[TID.Channel] = true; NUD_TOKENS[TID.Go] = true
+    NUD_TOKENS[TID.WaitGroup] = true; NUD_TOKENS[TID.Wait] = true; NUD_TOKENS[TID.From] = true
+    NUD_TOKENS
+}
 
 // --- Keywords allowed as identifiers in expression context ---
-KEYWORD_IDENTS = {}
-KEYWORD_IDENTS[TID.Class] = true; KEYWORD_IDENTS[TID.Struct] = true; KEYWORD_IDENTS[TID.Enum] = true; KEYWORD_IDENTS[TID.Mode] = true
-KEYWORD_IDENTS[TID.Val] = true; KEYWORD_IDENTS[TID.Const] = true; KEYWORD_IDENTS[TID.Let] = true
-KEYWORD_IDENTS[TID.Config] = true; KEYWORD_IDENTS[TID.Devices] = true; KEYWORD_IDENTS[TID.On] = true; KEYWORD_IDENTS[TID.Off] = true; KEYWORD_IDENTS[TID.When] = true
-KEYWORD_IDENTS[TID.Timeout] = true; KEYWORD_IDENTS[TID.Thread] = true; KEYWORD_IDENTS[TID.Interval] = true; KEYWORD_IDENTS[TID.Channel] = true
-KEYWORD_IDENTS[TID.Co] = true; KEYWORD_IDENTS[TID.Go] = true; KEYWORD_IDENTS[TID.Fn] = true; KEYWORD_IDENTS[TID.Op] = true
-KEYWORD_IDENTS[TID.Return] = true; KEYWORD_IDENTS[TID.Ret] = true; KEYWORD_IDENTS[TID.Break] = true; KEYWORD_IDENTS[TID.Continue] = true
-KEYWORD_IDENTS[TID.Try] = true; KEYWORD_IDENTS[TID.Catch] = true; KEYWORD_IDENTS[TID.Finally] = true; KEYWORD_IDENTS[TID.Throw] = true; KEYWORD_IDENTS[TID.Del] = true
-KEYWORD_IDENTS[TID.True] = true; KEYWORD_IDENTS[TID.False] = true; KEYWORD_IDENTS[TID.Null] = true; KEYWORD_IDENTS[TID.This] = true; KEYWORD_IDENTS[TID.Repeat] = true
-KEYWORD_IDENTS[TID.Use] = true; KEYWORD_IDENTS[TID.Import] = true; KEYWORD_IDENTS[TID.From] = true; KEYWORD_IDENTS[TID.As] = true; KEYWORD_IDENTS[TID.With] = true
-KEYWORD_IDENTS[TID.Dsl] = true
-KEYWORD_IDENTS[TID.Pool] = true; KEYWORD_IDENTS[TID.Signal] = true; KEYWORD_IDENTS[TID.Group] = true; KEYWORD_IDENTS[TID.Modes] = true
-KEYWORD_IDENTS[TID.Sleep] = true; KEYWORD_IDENTS[TID.Yield] = true; KEYWORD_IDENTS[TID.WaitGroup] = true; KEYWORD_IDENTS[TID.Wait] = true; KEYWORD_IDENTS[TID.Defer] = true
+KEYWORD_IDENTS = null
+fn getKeywordIdents() {
+    if KEYWORD_IDENTS != null: return KEYWORD_IDENTS
+    KEYWORD_IDENTS = {}
+    KEYWORD_IDENTS[TID.Class] = true; KEYWORD_IDENTS[TID.Struct] = true; KEYWORD_IDENTS[TID.Enum] = true; KEYWORD_IDENTS[TID.Mode] = true
+    KEYWORD_IDENTS[TID.Val] = true; KEYWORD_IDENTS[TID.Const] = true; KEYWORD_IDENTS[TID.Let] = true
+    KEYWORD_IDENTS[TID.Config] = true; KEYWORD_IDENTS[TID.Devices] = true; KEYWORD_IDENTS[TID.On] = true; KEYWORD_IDENTS[TID.Off] = true; KEYWORD_IDENTS[TID.When] = true
+    KEYWORD_IDENTS[TID.Timeout] = true; KEYWORD_IDENTS[TID.Thread] = true; KEYWORD_IDENTS[TID.Interval] = true; KEYWORD_IDENTS[TID.Channel] = true
+    KEYWORD_IDENTS[TID.Co] = true; KEYWORD_IDENTS[TID.Go] = true; KEYWORD_IDENTS[TID.Fn] = true; KEYWORD_IDENTS[TID.Op] = true
+    KEYWORD_IDENTS[TID.Return] = true; KEYWORD_IDENTS[TID.Ret] = true; KEYWORD_IDENTS[TID.Break] = true; KEYWORD_IDENTS[TID.Continue] = true
+    KEYWORD_IDENTS[TID.Try] = true; KEYWORD_IDENTS[TID.Catch] = true; KEYWORD_IDENTS[TID.Finally] = true; KEYWORD_IDENTS[TID.Throw] = true; KEYWORD_IDENTS[TID.Del] = true
+    KEYWORD_IDENTS[TID.True] = true; KEYWORD_IDENTS[TID.False] = true; KEYWORD_IDENTS[TID.Null] = true; KEYWORD_IDENTS[TID.This] = true; KEYWORD_IDENTS[TID.Repeat] = true
+    KEYWORD_IDENTS[TID.Use] = true; KEYWORD_IDENTS[TID.Import] = true; KEYWORD_IDENTS[TID.From] = true; KEYWORD_IDENTS[TID.As] = true; KEYWORD_IDENTS[TID.With] = true
+    KEYWORD_IDENTS[TID.Dsl] = true
+    KEYWORD_IDENTS[TID.Pool] = true; KEYWORD_IDENTS[TID.Signal] = true; KEYWORD_IDENTS[TID.Group] = true; KEYWORD_IDENTS[TID.Modes] = true
+    KEYWORD_IDENTS[TID.Sleep] = true; KEYWORD_IDENTS[TID.Yield] = true; KEYWORD_IDENTS[TID.WaitGroup] = true; KEYWORD_IDENTS[TID.Wait] = true; KEYWORD_IDENTS[TID.Defer] = true
+    KEYWORD_IDENTS
+}
 
-DOT_ACCESS_KEYWORDS = {}
-DOT_ACCESS_KEYWORDS[TID.If] = true; DOT_ACCESS_KEYWORDS[TID.Else] = true; DOT_ACCESS_KEYWORDS[TID.For] = true; DOT_ACCESS_KEYWORDS[TID.In] = true; DOT_ACCESS_KEYWORDS[TID.While] = true
-DOT_ACCESS_KEYWORDS[TID.Loop] = true; DOT_ACCESS_KEYWORDS[TID.Switch] = true; DOT_ACCESS_KEYWORDS[TID.Do] = true; DOT_ACCESS_KEYWORDS[TID.Match] = true; DOT_ACCESS_KEYWORDS[TID.Case] = true
-DOT_ACCESS_KEYWORDS[TID.Default] = true; DOT_ACCESS_KEYWORDS[TID.Not] = true; DOT_ACCESS_KEYWORDS[TID.And] = true; DOT_ACCESS_KEYWORDS[TID.Or] = true; DOT_ACCESS_KEYWORDS[TID.Is] = true
-DOT_ACCESS_KEYWORDS[TID.Matches] = true; DOT_ACCESS_KEYWORDS[TID.Where] = true; DOT_ACCESS_KEYWORDS[TID.Select] = true
-DOT_ACCESS_KEYWORDS[TID.Async] = true; DOT_ACCESS_KEYWORDS[TID.Sync] = true
-DOT_ACCESS_KEYWORDS[TID.Trait] = true; DOT_ACCESS_KEYWORDS[TID.Prot] = true; DOT_ACCESS_KEYWORDS[TID.Impl] = true
+DOT_ACCESS_KEYWORDS = null
+fn getDotAccessKeywords() {
+    if DOT_ACCESS_KEYWORDS != null: return DOT_ACCESS_KEYWORDS
+    DOT_ACCESS_KEYWORDS = {}
+    DOT_ACCESS_KEYWORDS[TID.If] = true; DOT_ACCESS_KEYWORDS[TID.Else] = true; DOT_ACCESS_KEYWORDS[TID.For] = true; DOT_ACCESS_KEYWORDS[TID.In] = true; DOT_ACCESS_KEYWORDS[TID.While] = true
+    DOT_ACCESS_KEYWORDS[TID.Loop] = true; DOT_ACCESS_KEYWORDS[TID.Switch] = true; DOT_ACCESS_KEYWORDS[TID.Do] = true; DOT_ACCESS_KEYWORDS[TID.Match] = true; DOT_ACCESS_KEYWORDS[TID.Case] = true
+    DOT_ACCESS_KEYWORDS[TID.Default] = true; DOT_ACCESS_KEYWORDS[TID.Not] = true; DOT_ACCESS_KEYWORDS[TID.And] = true; DOT_ACCESS_KEYWORDS[TID.Or] = true; DOT_ACCESS_KEYWORDS[TID.Is] = true
+    DOT_ACCESS_KEYWORDS[TID.Matches] = true; DOT_ACCESS_KEYWORDS[TID.Where] = true; DOT_ACCESS_KEYWORDS[TID.Select] = true
+    DOT_ACCESS_KEYWORDS[TID.Async] = true; DOT_ACCESS_KEYWORDS[TID.Sync] = true
+    DOT_ACCESS_KEYWORDS[TID.Trait] = true; DOT_ACCESS_KEYWORDS[TID.Prot] = true; DOT_ACCESS_KEYWORDS[TID.Impl] = true
+    DOT_ACCESS_KEYWORDS
+}
 
 fn isKeywordIdent(ttype) {
   if ttype == null { return false }
-  KEYWORD_IDENTS[ttype] != null
+  getKeywordIdents()[ttype] != null
 }
 
 fn isDotAccessIdent(ttype) {
-  KEYWORD_IDENTS[ttype] != null or DOT_ACCESS_KEYWORDS[ttype] != null
+  getKeywordIdents()[ttype] != null or getDotAccessKeywords()[ttype] != null
 }
 
 // --- Token types that are infix/postfix operators (have led) ---
-LED_TOKENS = {}
-LED_TOKENS[TID.Assign] = true; LED_TOKENS[TID.PlusAssign] = true; LED_TOKENS[TID.MinusAssign] = true
-LED_TOKENS[TID.MultiplyAssign] = true; LED_TOKENS[TID.DivideAssign] = true; LED_TOKENS[TID.ModuloAssign] = true
-LED_TOKENS[TID.PowerAssign] = true; LED_TOKENS[TID.BackslashAssign] = true; LED_TOKENS[TID.DoubleModuloAssign] = true
-LED_TOKENS[TID.BitwiseAndAssign] = true; LED_TOKENS[TID.BitwiseOrAssign] = true; LED_TOKENS[TID.BitwiseXorAssign] = true
-LED_TOKENS[TID.ShiftLeftAssign] = true; LED_TOKENS[TID.ShiftRightAssign] = true
-LED_TOKENS[TID.LeftArrow] = true; LED_TOKENS[TID.Nullish] = true; LED_TOKENS[TID.Question] = true
-LED_TOKENS[TID.Or] = true; LED_TOKENS[TID.And] = true
-LED_TOKENS[TID.Equals] = true; LED_TOKENS[TID.NotEquals] = true; LED_TOKENS[TID.Is] = true; LED_TOKENS[TID.Tilde] = true; LED_TOKENS[TID.NotTilde] = true
-LED_TOKENS[TID.Matches] = true; LED_TOKENS[TID.As] = true; LED_TOKENS[TID.In] = true; LED_TOKENS[TID.Not] = true
-LED_TOKENS[TID.Less] = true; LED_TOKENS[TID.Greater] = true; LED_TOKENS[TID.LessEquals] = true; LED_TOKENS[TID.GreaterEquals] = true
-LED_TOKENS[TID.DotDot] = true; LED_TOKENS[TID.DotDotEquals] = true
-LED_TOKENS[TID.Plus] = true; LED_TOKENS[TID.Minus] = true; LED_TOKENS[TID.Pipe] = true; LED_TOKENS[TID.PipeRight] = true
-LED_TOKENS[TID.BitwiseOr] = true; LED_TOKENS[TID.BitwiseXor] = true; LED_TOKENS[TID.BitwiseAnd] = true
-LED_TOKENS[TID.ShiftLeft] = true; LED_TOKENS[TID.ShiftRight] = true
-LED_TOKENS[TID.Multiply] = true; LED_TOKENS[TID.Divide] = true; LED_TOKENS[TID.Modulo] = true
-LED_TOKENS[TID.Backslash] = true; LED_TOKENS[TID.DoubleBackslash] = true; LED_TOKENS[TID.DoubleModulo] = true
-LED_TOKENS[TID.Power] = true; LED_TOKENS[TID.PlusPlus] = true; LED_TOKENS[TID.MinusMinus] = true
-LED_TOKENS[TID.Dot] = true; LED_TOKENS[TID.QuestionDot] = true
-LED_TOKENS[TID.OpenParen] = true; LED_TOKENS[TID.OpenBracket] = true
-LED_TOKENS[TID.Arrow] = true; LED_TOKENS[TID.For] = true
+LED_TOKENS = null
+fn getLEDTokens() {
+    if LED_TOKENS != null: return LED_TOKENS
+    LED_TOKENS = {}
+    LED_TOKENS[TID.Assign] = true; LED_TOKENS[TID.PlusAssign] = true; LED_TOKENS[TID.MinusAssign] = true
+    LED_TOKENS[TID.MultiplyAssign] = true; LED_TOKENS[TID.DivideAssign] = true; LED_TOKENS[TID.ModuloAssign] = true
+    LED_TOKENS[TID.PowerAssign] = true; LED_TOKENS[TID.BackslashAssign] = true; LED_TOKENS[TID.DoubleModuloAssign] = true
+    LED_TOKENS[TID.BitwiseAndAssign] = true; LED_TOKENS[TID.BitwiseOrAssign] = true; LED_TOKENS[TID.BitwiseXorAssign] = true
+    LED_TOKENS[TID.ShiftLeftAssign] = true; LED_TOKENS[TID.ShiftRightAssign] = true
+    LED_TOKENS[TID.LeftArrow] = true; LED_TOKENS[TID.Nullish] = true; LED_TOKENS[TID.Question] = true
+    LED_TOKENS[TID.Or] = true; LED_TOKENS[TID.And] = true
+    LED_TOKENS[TID.Equals] = true; LED_TOKENS[TID.NotEquals] = true; LED_TOKENS[TID.Is] = true; LED_TOKENS[TID.Tilde] = true; LED_TOKENS[TID.NotTilde] = true
+    LED_TOKENS[TID.Matches] = true; LED_TOKENS[TID.As] = true; LED_TOKENS[TID.In] = true; LED_TOKENS[TID.Not] = true
+    LED_TOKENS[TID.Less] = true; LED_TOKENS[TID.Greater] = true; LED_TOKENS[TID.LessEquals] = true; LED_TOKENS[TID.GreaterEquals] = true
+    LED_TOKENS[TID.DotDot] = true; LED_TOKENS[TID.DotDotEquals] = true
+    LED_TOKENS
+}
 
 // --- Expression tokens (for implicit call sugar detection) ---
-IMPLICIT_CALL_STARTERS = {}
-IMPLICIT_CALL_STARTERS[TID.String] = true; IMPLICIT_CALL_STARTERS[TID.MultilineString] = true; IMPLICIT_CALL_STARTERS[TID.RegexString] = true
-IMPLICIT_CALL_STARTERS[TID.Number] = true; IMPLICIT_CALL_STARTERS[TID.Identifier] = true; IMPLICIT_CALL_STARTERS[TID.InterpolatedString] = true
-IMPLICIT_CALL_STARTERS[TID.InterpolatedBacktick] = true; IMPLICIT_CALL_STARTERS[TID.At] = true; IMPLICIT_CALL_STARTERS[TID.AtAt] = true
-IMPLICIT_CALL_STARTERS[TID.Not] = true; IMPLICIT_CALL_STARTERS[TID.Length] = true
+IMPLICIT_CALL_STARTERS = null
+fn getImplicitCallStarters() {
+    if IMPLICIT_CALL_STARTERS != null: return IMPLICIT_CALL_STARTERS
+    IMPLICIT_CALL_STARTERS = {}
+    IMPLICIT_CALL_STARTERS[TID.String] = true; IMPLICIT_CALL_STARTERS[TID.MultilineString] = true; IMPLICIT_CALL_STARTERS[TID.RegexString] = true
+    IMPLICIT_CALL_STARTERS[TID.Number] = true; IMPLICIT_CALL_STARTERS[TID.Identifier] = true; IMPLICIT_CALL_STARTERS[TID.InterpolatedString] = true
+    IMPLICIT_CALL_STARTERS[TID.InterpolatedBacktick] = true; IMPLICIT_CALL_STARTERS[TID.At] = true; IMPLICIT_CALL_STARTERS[TID.AtAt] = true
+    IMPLICIT_CALL_STARTERS[TID.Not] = true; IMPLICIT_CALL_STARTERS[TID.Length] = true
+    IMPLICIT_CALL_STARTERS
+}
 
 // ===================================================================
 // Parser object — encapsulates parsing state
@@ -359,11 +395,11 @@ fn error(msg, line, col) {
   }
   // --- Token classification ---
   fn canStartExpr(ttype) {
-    NUD_TOKENS[ttype] != null
+    getNUDTokens()[ttype] != null
 
   }
   fn isLed(ttype) {
-    LED_TOKENS[ttype] != null
+    getLEDTokens()[ttype] != null
 
   }
 // --- Check if 'not' is infix (followed by 'in') ---
@@ -425,7 +461,7 @@ fn parseExpr(rbp) {
  // Implicit call sugar: expr "string" -> expr("string")
  // Not across newlines — NewLine has bp=0 so the Pratt loop exits before we get here
  // and NewLine is not in IMPLICIT_CALL_STARTERS
- if allowBraceSugar and IMPLICIT_CALL_STARTERS[current().tid] != null {
+ if allowBraceSugar and getImplicitCallStarters()[current().tid] != null {
             prevSugar = allowBraceSugar
             allowBraceSugar = false
             arg = parseExpr(0)
@@ -779,11 +815,11 @@ if right == null: return error("Expected value after '='", l, c)
 if right.kind == "ErrorNode": return right
 return AssignmentExpression(left, right, l, c)
 }
-else if COMPOUND_ASSIGN_TOKENS[tt] != null {
+else if getCompoundAssignTokens()[tt] != null {
 right = parseExpr(getRightBindingPower(tt))
 if right == null: return error("Expected value after compound assign", l, c)
 if right.kind == "ErrorNode": return right
-return CompoundAssignment(left, COMPOUND_ASSIGN_TOKENS[tt], right, l, c)
+return CompoundAssignment(left, getCompoundAssignTokens()[tt], right, l, c)
 }
 else if tt == TID.LeftArrow {
 right = parseExpr(getRightBindingPower(TID.LeftArrow))

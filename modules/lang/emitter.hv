@@ -96,7 +96,6 @@ fn collectAssignTargetNames(emitter, target) {
       }
     }
   }
-}
 fn collectTopLevelGlobals(emitter, body) {
   for stmt in body {
     if stmt == null { continue }
@@ -2263,7 +2262,7 @@ if k == "RepeatStatement" {
 				}
 			}
 			return
-		}
+}
 		// Object destructuring: let {key: alias} = val
 		if node.pattern != null && node.pattern.kind == "ObjectPattern" {
 			pat = node.pattern
@@ -2293,21 +2292,34 @@ if k == "RepeatStatement" {
 			}
 			return
 		}
-		localIdx = scopeDeclare(emitter.scope, node.name)
-		if node.value != null {
-			emitExpr(emitter, node.value)
-		}
-		if node.value == null {
-			bc.emit("PUSH_NULL")
-		}
-		if localIdx >= 0 {
-			bc.emit(node.isStatic ? "STORE_IMMUT_GLOBAL" : "STORE_VAR", localIdx)
+		// For module-level declarations, don't declare a local - emitStoreDecl handles globals
+		funcRoot = scopeFindFuncRoot(emitter.scope)
+		if funcRoot.parent == null {
+			if node.value != null {
+				emitExpr(emitter, node.value)
+			}
+			if node.value == null {
+				bc.emit("PUSH_NULL")
+			}
+			emitStoreDecl(emitter, node.name, node.isConst)
 		}
 		else {
-			bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.isStatic ? "__static__" + node.name : node.name)))
+			localIdx = scopeDeclare(emitter.scope, node.name)
+			if node.value != null {
+				emitExpr(emitter, node.value)
+			}
+			if node.value == null {
+				bc.emit("PUSH_NULL")
+			}
+			if localIdx >= 0 {
+				bc.emit(node.isStatic ? "STORE_IMMUT_GLOBAL" : "STORE_VAR", localIdx)
+			}
+			else {
+				bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, node.isStatic ? "__static__" + node.name : node.name)))
+			}
 		}
 		return
-}
+    }
 	if k == "ValDeclaration" {
 		// Array destructuring: val [a, b, c] = val
 		if node.pattern != null && node.pattern.kind == "ArrayPattern" {
@@ -2359,14 +2371,27 @@ if k == "RepeatStatement" {
 			}
 			return
 		}
-		localIdx = scopeDeclare(emitter.scope, node.name)
-		if node.value != null {
-			emitExpr(emitter, node.value)
+		// For module-level declarations, don't declare a local - emitStoreDecl handles globals
+		funcRoot = scopeFindFuncRoot(emitter.scope)
+		if funcRoot.parent == null {
+			if node.value != null {
+				emitExpr(emitter, node.value)
+			}
+			if node.value == null {
+				bc.emit("PUSH_NULL")
+			}
+			emitStoreDecl(emitter, node.name, true)
 		}
-		if node.value == null {
-			bc.emit("PUSH_NULL")
+		else {
+			localIdx = scopeDeclare(emitter.scope, node.name)
+			if node.value != null {
+				emitExpr(emitter, node.value)
+			}
+			if node.value == null {
+				bc.emit("PUSH_NULL")
+			}
+			emitStoreDecl(emitter, node.name, true)
 		}
-		emitStoreDecl(emitter, node.name, true)
 		return
     }
   if k == "FnDeclaration" {
@@ -3731,32 +3756,37 @@ while si < n - 1 {
 emitStmt(emitter, topStmts[si])
 si = si + 1
 }
-    // Last expression is the return rvalue
+// Last expression is the return rvalue
   if n > 0 {
     last = topStmts[n - 1]
     lastExpr = last.expr
     if last.kind == "ExpressionStatement" {
       emitExpr(emitter, lastExpr)
-            bc.emit("RETURN")
-        }
-        if last.kind == "IfStatement" {
-            emitIfExpr(emitter, last)
-            bc.emit("RETURN")
-        }
-	if last.kind != "ExpressionStatement" {
-		if last.kind != "IfStatement" {
-			if last.kind == "TryStatement" {
-				emitTryExpr(emitter, last)
-				bc.emit("RETURN")
-			}
-			else {
-				emitStmt(emitter, last)
-				bc.emit("PUSH_NULL")
-				bc.emit("RETURN")
-			}
-        }
-      }
+      bc.emit("RETURN")
     }
+    else if last.kind == "IfStatement" {
+      emitIfExpr(emitter, last)
+      bc.emit("RETURN")
+    }
+    else if last.kind == "TryStatement" {
+      emitTryExpr(emitter, last)
+      bc.emit("RETURN")
+    }
+    else if last.kind == "ReturnStatement" {
+      // Top-level return: emit the return value and RETURN
+      if last.value != null {
+        emitExpr(emitter, last.value)
+      } else {
+        bc.emit("PUSH_NULL")
+      }
+      bc.emit("RETURN")
+    }
+    else {
+      emitStmt(emitter, last)
+      bc.emit("PUSH_NULL")
+      bc.emit("RETURN")
+    }
+  }
     if n == 0 {
       bc.emit("PUSH_NULL")
       bc.emit("RETURN")

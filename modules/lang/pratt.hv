@@ -2977,7 +2977,7 @@ fn parseLetDecl(keyword, isStatic = false) {
       if current().tid == TID.Comma { advance() }
     }
     if current().tid == TID.CloseParen { advance() }
-    pattern = ArrayPattern(elements, null, true)
+    pattern = ArrayPattern(elements, null, current().line, current().col, true)
   }
   // Object destructuring: let {x, y} = val
   else if current().tid == TID.OpenBrace {
@@ -3002,7 +3002,7 @@ fn parseLetDecl(keyword, isStatic = false) {
         advance()
         skipNewlines()
       }
-      pattern = ArrayPattern(elements, null, l, c)
+      pattern = ArrayPattern(elements, null, l, c, false)
       name = null
     }
   }
@@ -3033,13 +3033,9 @@ if keyword == "Let" {
     node.isConst = false
 }
 else {
-    node = LetDeclaration(name, value, l, c)
+    node = ValDeclaration(name, value, l, c)
     node.isStatic = isStatic
-    if keyword == "Const" {
-        node.isConst = true
-    } else {
-        node.isConst = false
-    }
+    node.isConst = true
 }
   if pattern != null { node.pattern = pattern }
   if typeAnno != null { node.typeAnnotation = typeAnno }

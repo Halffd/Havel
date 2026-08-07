@@ -247,13 +247,57 @@ fn inferStmt(node, env) {
   if k == "LetDeclaration" {
     t = TYPE_UNKNOWN
     if node.value != null { t = inferExpr(node.value, env) }
-    envSet(env, node.name, t)
+    if node.pattern != null {
+      if node.pattern.kind == "ArrayPattern" {
+        for elem in node.pattern.elements {
+          if elem != null && elem.kind == "Identifier" {
+            envSet(env, elem.name, TYPE_UNKNOWN)
+          }
+        }
+      }
+      else if node.pattern.kind == "ObjectPattern" {
+        for prop in node.pattern.properties {
+          alias = prop.value
+          if alias != null && alias.kind == "Identifier" {
+            envSet(env, alias.name, TYPE_UNKNOWN)
+          }
+          else if alias == null {
+            envSet(env, prop.key, TYPE_UNKNOWN)
+          }
+        }
+      }
+    }
+    else if node.name != null {
+      envSet(env, node.name, t)
+    }
     return
   }
   if k == "ValDeclaration" {
     t = TYPE_UNKNOWN
     if node.value != null { t = inferExpr(node.value, env) }
-    envSet(env, node.name, t)
+    if node.pattern != null {
+      if node.pattern.kind == "ArrayPattern" {
+        for elem in node.pattern.elements {
+          if elem != null && elem.kind == "Identifier" {
+            envSet(env, elem.name, TYPE_UNKNOWN)
+          }
+        }
+      }
+      else if node.pattern.kind == "ObjectPattern" {
+        for prop in node.pattern.properties {
+          alias = prop.value
+          if alias != null && alias.kind == "Identifier" {
+            envSet(env, alias.name, TYPE_UNKNOWN)
+          }
+          else if alias == null {
+            envSet(env, prop.key, TYPE_UNKNOWN)
+          }
+        }
+      }
+    }
+    else if node.name != null {
+      envSet(env, node.name, t)
+    }
     return
   }
   if k == "AssignmentExpression" {

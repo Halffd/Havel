@@ -1,0 +1,28 @@
+class Box {
+	v: int
+
+	fn @(x) {
+		@v = x
+	}
+}
+
+fn makeBox() {
+	b = Box(5)
+	b.v
+}
+
+b = makeBox()
+if b != 5 {
+	print("FAIL same-file constructor in function, got ${b}")
+	exit(1)
+}
+print("PASS same-file constructor in function")
+
+p = Box(9)
+if p.v != 9 {
+	print("FAIL same-file constructor at top level, got ${p.v}")
+	exit(1)
+}
+print("PASS same-file constructor at top level")
+
+print("ALL PASS")

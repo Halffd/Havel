@@ -705,6 +705,34 @@ api.registerFunction("bc.execute_persistent", [api](const std::vector<Value> &ar
         vm.bc_execute_depth_--;
         vm.storePersistentChunk(exec_chunk);
 
+        // Wrap FunctionObjId globals defined in this executable chunk into
+        // closures pinned to exec_chunk. A bare FunctionObjId is only a raw
+        // function-table index, which is meaningless once another chunk (e.g.
+        // a later REPL line) becomes current_chunk and reuses the same index
+        // for a different function. Closures carry their chunk pointer, so a
+        // function defined in this persistent chunk stays callable from any
+        // later chunk that shares the globals namespace.
+        {
+          auto &own_globals = vm.getGlobals();
+          for (auto &[name, val] : own_globals) {
+            if (val.isFunctionObjId()) {
+              uint32_t fnIdx = val.asFunctionObjId();
+              if (exec_chunk->getFunction(fnIdx)) {
+                auto ref = vm.getHeap().allocateClosure(
+                    havel::compiler::GCHeap::RuntimeClosure{
+                        .function_index = fnIdx,
+                        .chunk_index = 0,
+                        .chunk = exec_chunk.get(),
+                        .chunk_ref = exec_chunk,
+                        .module_globals = nullptr,
+                        .upvalues = {},
+                    });
+                val = havel::compiler::Value::makeClosureId(ref.id);
+              }
+            }
+          }
+        }
+
         auto &post_globals = vm.getGlobals();
         for (auto &[name, val] : post_globals) {
             auto preIt = pre_globals.find(name);
@@ -915,6 +943,50 @@ api.registerFunction("bc.get_global", [api](const std::vector<Value> &args) -> V
     return api.makeString(out);
 });
 
+	// ----------------------------------------------------------------------
+	// bc.debug_attach – attach VM debugger
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_attach", [api](const std::vector<Value> &) -> Value {
+		api.vm().attachDebugger();
+		return Value::makeNull();
+	});
+
+	// ----------------------------------------------------------------------
+	// bc.debug_detach – detach VM debugger
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_detach", [api](const std::vector<Value> &) -> Value {
+		api.vm().detachDebugger();
+		return Value::makeNull();
+	});
+
+	// ----------------------------------------------------------------------
+	// bc.debug_step_mode – set VM debug step mode (0=Continue, 1=StepInto, 2=StepOver, 3=StepOut)
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_step_mode", [api](const std::vector<Value> &args) -> Value {
+		if (args.empty()) return Value::makeNull();
+		int mode = static_cast<int>(args[0].asInt());
+		if (mode < 0 || mode > 3) mode = 0;
+		api.vm().setDebugStepMode(static_cast<havel::compiler::VM::DebugStepMode>(mode));
+		return Value::makeNull();
+	});
+
+	// ----------------------------------------------------------------------
+	// bc.debug_is_attached – check if debugger is attached
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_is_attached", [api](const std::vector<Value> &) -> Value {
+		return Value::makeBool(api.vm().isDebuggerAttached());
+	});
+
+	// ----------------------------------------------------------------------
+	// bc.debug_step_frame_depth – set frame depth for step out
+	// ----------------------------------------------------------------------
+	api.registerFunction("bc.debug_step_frame_depth", [api](const std::vector<Value> &args) -> Value {
+		if (args.empty()) return Value::makeNull();
+		size_t depth = static_cast<size_t>(args[0].asInt());
+		api.vm().setDebugStepFrameDepth(depth);
+		return Value::makeNull();
+	});
+
 api.registerFunction("bc.is_string_id", [](const std::vector<Value> &args) -> Value {
     if (args.empty()) return Value::makeBool(false);
     return Value::makeBool(args[0].isStringId());
@@ -1115,6 +1187,14 @@ return result;
         return Value::makeInt(static_cast<int64_t>(gid));
     });
 
+    // Run one scheduler tick (drain events + one goroutine). Used by the
+    // self-hosted REPL to keep hotkey/update goroutines alive while reading
+    // stdin.
+    api.registerFunction("bc.tick", [api](const std::vector<Value> &) -> Value {
+        api.vm().tickScheduler();
+        return Value::makeNull();
+    });
+
     auto bcObj = api.makeObject();
   api.setField(bcObj, "reset", api.makeFunctionRef("bc.reset"));
     api.setField(bcObj, "func_new", api.makeFunctionRef("bc.func_new"));
@@ -1138,6 +1218,7 @@ return result;
     api.setField(bcObj, "store_chunk", api.makeFunctionRef("bc.store_chunk"));
     api.setField(bcObj, "execute_stored", api.makeFunctionRef("bc.execute_stored"));
     api.setField(bcObj, "spawn_stored", api.makeFunctionRef("bc.spawn_stored"));
+    api.setField(bcObj, "tick", api.makeFunctionRef("bc.tick"));
     api.setField(bcObj, "get_global", api.makeFunctionRef("bc.get_global"));
     api.setField(bcObj, "set_global", api.makeFunctionRef("bc.set_global"));
     api.setField(bcObj, "set_script_dir", api.makeFunctionRef("bc.set_script_dir"));
@@ -1146,11 +1227,16 @@ return result;
   api.setField(bcObj, "const_count", api.makeFunctionRef("bc.const_count"));
   api.setField(bcObj, "disasm", api.makeFunctionRef("bc.disasm"));
 api.setField(bcObj, "disasm_all", api.makeFunctionRef("bc.disasm_all"));
-api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
-api.setField(bcObj, "make_function_obj", api.makeFunctionRef("bc.make_function_obj"));
-api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
-    api.setField(bcObj, "is_string_id", api.makeFunctionRef("bc.is_string_id"));
-  api.setField(bcObj, "is_string_val_id", api.makeFunctionRef("bc.is_string_val_id"));
+	api.setField(bcObj, "opcode_id", api.makeFunctionRef("bc.opcode_id"));
+	api.setField(bcObj, "make_function_obj", api.makeFunctionRef("bc.make_function_obj"));
+	api.setField(bcObj, "str_id", api.makeFunctionRef("bc.str_id"));
+	api.setField(bcObj, "is_string_id", api.makeFunctionRef("bc.is_string_id"));
+	api.setField(bcObj, "is_string_val_id", api.makeFunctionRef("bc.is_string_val_id"));
+	api.setField(bcObj, "debug_attach", api.makeFunctionRef("bc.debug_attach"));
+	api.setField(bcObj, "debug_detach", api.makeFunctionRef("bc.debug_detach"));
+	api.setField(bcObj, "debug_step_mode", api.makeFunctionRef("bc.debug_step_mode"));
+	api.setField(bcObj, "debug_is_attached", api.makeFunctionRef("bc.debug_is_attached"));
+	api.setField(bcObj, "debug_step_frame_depth", api.makeFunctionRef("bc.debug_step_frame_depth"));
   api.setField(bcObj, "set_source", api.makeFunctionRef("bc.set_source"));
   api.setField(bcObj, "clear_source", api.makeFunctionRef("bc.clear_source"));
   api.setField(bcObj, "set_func_source_line", api.makeFunctionRef("bc.set_func_source_line"));

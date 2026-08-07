@@ -2168,10 +2168,12 @@ struct FunctionDeclaration : public Statement {
 		std::vector<std::unique_ptr<FunctionParameter>> params,
 		std::unique_ptr<BlockStatement> bd,
 		std::optional<std::unique_ptr<TypeAnnotation>> returnAnn = std::nullopt,
-		std::vector<TypeParam> typeParams = {})
+		std::vector<TypeParam> typeParams = {},
+		bool isCoroutine = false)
 		: name(std::move(n)), parameters(std::move(params)), body(std::move(bd)),
 		returnType(std::move(returnAnn)),
-		typeParameters(std::move(typeParams)) {
+		typeParameters(std::move(typeParams)),
+		is_coroutine(isCoroutine) {
         kind = NodeType::FunctionDeclaration;
     }
 

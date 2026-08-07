@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -17,6 +18,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <poll.h>
 #include "utils/ExitHandler.hpp"
 
 #ifndef _WIN32
@@ -39,6 +41,21 @@ using havel::compiler::VMApi;
 namespace fs = std::filesystem;
 
 namespace havel::stdlib {
+
+// ============================================================================
+// Helper: merge exports from a module into a target object
+// ============================================================================
+
+static void mergeExports(const VMApi &api, Value targetObj, Value exports) {
+  auto &vm = api.vm();
+  if (!exports.isObjectId()) return;
+  auto *obj = vm.getHeap().object(exports.asObjectId());
+  if (!obj) return;
+  for (const auto& [name, value] : *obj) {
+    if (name.empty() || name[0] == '_') continue;
+    api.setField(targetObj, name, value);
+  }
+}
 
 // ============================================================================
 // Path validation to prevent path traversal
@@ -614,6 +631,25 @@ if (!std::getline(std::cin, line))
     });
 
   // ----------------------------------------------------------------------
+  // shell.ready – non-blocking stdin check
+  //   shell.ready() or shell.ready(timeoutMs) -> bool (input available)
+  // ----------------------------------------------------------------------
+  api.registerFunction("shell.ready",
+    [](const std::vector<Value> &args) {
+      int timeoutMs = 0;
+      if (!args.empty() && args[0].isInt()) {
+        timeoutMs = static_cast<int>(args[0].asInt());
+        if (timeoutMs < 0) timeoutMs = 0;
+      }
+      struct pollfd pfd;
+      pfd.fd = 0;
+      pfd.events = POLLIN;
+      pfd.revents = 0;
+      int r = ::poll(&pfd, 1, timeoutMs);
+      return Value::makeBool(r > 0);
+    });
+
+  // ----------------------------------------------------------------------
   // shell.write – write text to stdout (default) or stderr
   //   shell.write(text) or shell.write(text, fd) where fd: 1=stdout, 2=stderr
   // ----------------------------------------------------------------------
@@ -647,6 +683,151 @@ if (!std::getline(std::cin, line))
       return Value::makeBool(isatty(fd) != 0);
 #endif
     });
+
+  // ----------------------------------------------------------------------
+  // shell.history_path – get path to history file (~/.havel_history)
+  // ----------------------------------------------------------------------
+  api.registerFunction("shell.history_path",
+      [api](const std::vector<Value>&) {
+        std::string home;
+  #ifdef _WIN32
+        const char *drive = std::getenv("HOMEDRIVE");
+        const char *path  = std::getenv("HOMEPATH");
+        if (drive && path)
+          home = std::string(drive) + path;
+        else
+          home = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "";
+  #else
+        const char *h = std::getenv("HOME");
+        if (h) home = h;
+        else {
+          // fallback using getpwuid
+          struct passwd *pw = getpwuid(getuid());
+          if (pw) home = pw->pw_dir;
+        }
+  #endif
+        if (home.empty()) return Value::makeNull();
+        return api.makeString(home + "/.havel_history");
+      });
+
+  // ----------------------------------------------------------------------
+  // shell.history_read – read history file, return array of lines
+  // ----------------------------------------------------------------------
+  api.registerFunction("shell.history_read",
+      [api](const std::vector<Value> &args) {
+        std::string path;
+        if (!args.empty()) path = api.resolveString(args[0]);
+        else {
+          // Get default path: ~/.havel_history
+          std::string home;
+  #ifdef _WIN32
+          const char *drive = std::getenv("HOMEDRIVE");
+          const char *hpath  = std::getenv("HOMEPATH");
+          if (drive && hpath)
+            home = std::string(drive) + hpath;
+          else
+            home = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "";
+  #else
+          const char *h = std::getenv("HOME");
+          if (h) home = h;
+          else {
+            struct passwd *pw = getpwuid(getuid());
+            if (pw) home = pw->pw_dir;
+          }
+  #endif
+          if (home.empty()) return api.makeArray();
+          path = home + "/.havel_history";
+        }
+        std::ifstream f(path);
+        if (!f) return api.makeArray();
+        auto arr = api.makeArray();
+        std::string line;
+        while (std::getline(f, line)) {
+          if (!line.empty())
+            api.push(arr, api.makeString(line));
+        }
+        return arr;
+      });
+
+  // ----------------------------------------------------------------------
+  // shell.history_write – write array of strings to history file
+  // ----------------------------------------------------------------------
+  api.registerFunction("shell.history_write",
+      [api](const std::vector<Value> &args) {
+        if (args.empty() || !args[0].isArrayId()) {
+          throw std::runtime_error("shell.history_write: requires array argument");
+        }
+        std::string path;
+        if (args.size() > 1) path = api.resolveString(args[1]);
+        else {
+          std::string home;
+  #ifdef _WIN32
+          const char *drive = std::getenv("HOMEDRIVE");
+          const char *hpath  = std::getenv("HOMEPATH");
+          if (drive && hpath)
+            home = std::string(drive) + hpath;
+          else
+            home = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "";
+  #else
+          const char *h = std::getenv("HOME");
+          if (h) home = h;
+          else {
+            struct passwd *pw = getpwuid(getuid());
+            if (pw) home = pw->pw_dir;
+          }
+  #endif
+          if (home.empty()) return Value::makeNull();
+          path = home + "/.havel_history";
+        }
+        uint32_t arrId = args[0].asArrayId();
+        havel::compiler::ArrayRef arrRef{arrId};
+        size_t len = api.vm().getHostArrayLength(arrRef);
+        std::ofstream f(path);
+        if (!f) return Value::makeNull();
+        for (size_t i = 0; i < len; ++i) {
+          Value elem = api.vm().getHostArrayValue(arrRef, i);
+          if (elem.isStringId()) {
+            auto s = api.resolveString(elem);
+            f << s << "\n";
+          }
+        }
+        return Value::makeNull();
+      });
+
+  // ----------------------------------------------------------------------
+  // shell.history_add – append a line to history file
+  // ----------------------------------------------------------------------
+  api.registerFunction("shell.history_add",
+      [api](const std::vector<Value> &args) {
+        if (args.empty()) return Value::makeNull();
+        std::string line = api.resolveString(args[0]);
+        std::string path;
+        if (args.size() > 1) path = api.resolveString(args[1]);
+        else {
+          std::string home;
+  #ifdef _WIN32
+          const char *drive = std::getenv("HOMEDRIVE");
+          const char *hpath  = std::getenv("HOMEPATH");
+          if (drive && hpath)
+            home = std::string(drive) + hpath;
+          else
+            home = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "";
+  #else
+          const char *h = std::getenv("HOME");
+          if (h) home = h;
+          else {
+            struct passwd *pw = getpwuid(getuid());
+            if (pw) home = pw->pw_dir;
+          }
+  #endif
+          if (home.empty()) return Value::makeNull();
+          path = home + "/.havel_history";
+        }
+        std::ofstream f(path, std::ios::app);
+        if (!f) return Value::makeNull();
+        f << line << "\n";
+        return Value::makeNull();
+      });
 
   // ----------------------------------------------------------------------
   // shell.exit – terminate the program with a status code
@@ -874,8 +1055,12 @@ api.registerFunction("shell.listDir",
   api.setField(shellObj, "sleep",      api.makeFunctionRef("shell.sleep"));
   api.setField(shellObj, "read",       api.makeFunctionRef("shell.read"));
   api.setField(shellObj, "write",      api.makeFunctionRef("shell.write"));
-  api.setField(shellObj, "isatty",     api.makeFunctionRef("shell.isatty"));
-  api.setField(shellObj, "exit",       api.makeFunctionRef("shell.exit"));
+api.setField(shellObj, "isatty",      api.makeFunctionRef("shell.isatty"));
+  api.setField(shellObj, "ready",       api.makeFunctionRef("shell.ready"));
+  api.setField(shellObj, "history_read", api.makeFunctionRef("shell.history_read"));
+  api.setField(shellObj, "history_write", api.makeFunctionRef("shell.history_write"));
+  api.setField(shellObj, "history_add",  api.makeFunctionRef("shell.history_add"));
+  api.setField(shellObj, "exit",        api.makeFunctionRef("shell.exit"));
   api.setField(shellObj, "splitArgs",  api.makeFunctionRef("shell.splitArgs"));
   api.setField(shellObj, "exists",     api.makeFunctionRef("shell.exists"));
   api.setField(shellObj, "isFile",     api.makeFunctionRef("shell.isFile"));
@@ -890,6 +1075,21 @@ api.registerFunction("shell.listDir",
   api.setField(shellObj, "tmpfile",    api.makeFunctionRef("shell.tmpfile"));
   api.setField(shellObj, "envList",    api.makeFunctionRef("shell.envList"));
   api.setField(shellObj, "open",       api.makeFunctionRef("shell.open"));
+
+  // Set "shell" global BEFORE loading sidecar so the sidecar can access shell.*
+  api.setGlobal("shell", shellObj);
+
+  // Load pure-Havel shell sidecar (adds historyRead, historyWrite, historyAdd, historyPath)
+  Value shellExports;
+  try {
+    shellExports = api.vm().loadModule("shell");
+    mergeExports(api, shellObj, shellExports);
+  } catch (const std::exception& e) {
+    // Shell sidecar not available - continue without Havel wrappers
+  } catch (...) {
+  }
+
+  // Re-export updated shell object
   api.setGlobal("shell", shellObj);
 }
 

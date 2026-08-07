@@ -38,6 +38,10 @@ struct LaunchConfig {
   };
 
   Mode mode = Mode::DAEMON;
+  // Original mode preserved when the self-hosted router overwrites `mode`
+  // with SELF_HOSTED. SelfHostedStrategy reads this to forward the right
+  // flags to modules/lang/launcher.hv.
+  Mode launchMode = Mode::DAEMON;
   bool noSelfHosted = false;
   std::vector<std::string> scriptFiles;
   std::vector<std::string> scriptArgs;

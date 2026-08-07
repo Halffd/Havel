@@ -78,7 +78,8 @@ enum class SuspensionReason {
     TimerWait, // Suspended on timeout/interval await
     HotkeyWait, // Parked waiting for next hotkey trigger (persistent)
     CoroutineWait, // Suspended on coroutine await
-    ChannelSendWait // Suspended on send() to full channel
+    ChannelSendWait, // Suspended on send() to full channel
+    Yield // Suspended on YIELD opcode
 };
 
 // AwaitableType - identifies what a goroutine is awaiting

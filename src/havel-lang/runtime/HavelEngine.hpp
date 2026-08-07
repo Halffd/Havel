@@ -216,99 +216,6 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
 
     if (hostContext_->eventQueue) {
                 vm_->setEventQueue(hostContext_->eventQueue);
-hostContext_->eventQueue->onEvent(compiler::EventType::VAR_CHANGED,
-    [this](const compiler::Event& event) {
-    auto *name_ptr = static_cast<std::string*>(event.ptr);
-    std::string var_name = std::move(*name_ptr);
-    delete name_ptr;
-    if (!watcher_registry_ || !vm_) return;
-    auto fired = watcher_registry_->onVariableChanged(
-        var_name,
-        [this](uint32_t wid) -> bool {
-        const auto* w = watcher_registry_->getWatcher(wid);
-        if (!w) return false;
-        const compiler::BytecodeChunk* saved_chunk = nullptr;
-        bool set_chunk = false;
-        if (w->condition_chunk) {
-            saved_chunk = vm_->getCurrentChunk();
-            vm_->setCurrentChunkPublic(w->condition_chunk);
-            set_chunk = true;
-        }
-        auto tracker = std::make_shared<compiler::DependencyTracker>();
-        compiler::DependencyTrackerScope scope(tracker);
-        bool result = vm_->evaluateConditionBytecode(w->condition_func_id, w->condition_ip);
-        if (set_chunk) vm_->setCurrentChunkPublic(saved_chunk);
-        auto newDeps = tracker->getGlobalDependencies();
-        auto fieldDeps = tracker->getFieldDependencies();
-        newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-        // Union-merge: keep previously-tracked deps so short-circuited
-        // branches' globals keep triggering re-evals (stale when bug).
-        watcher_registry_->mergeDependencies(wid, newDeps);
-        return result;
-    },
-        [this](uint32_t cleanup_func_id, uint32_t) {
-        try {
-            compiler::Value cleanup_func = compiler::Value::makeFunctionObjId(cleanup_func_id);
-            vm_->call(cleanup_func, {});
-        } catch (...) {}
-    });
-    std::vector<uint32_t> fired_func_ids;
-    for (auto* fiber : fired) {
-        if (fiber) {
-            fired_func_ids.push_back(fiber->current_function_id);
-        }
-    }
-    for (auto func_id : fired_func_ids) {
-        try {
-            compiler::Value body_func = compiler::Value::makeFunctionObjId(func_id);
-            vm_->call(body_func, {});
-        } catch (...) {}
-    }
-    vm_->processSignalBindings(var_name);
-    auto* sched = vm_->getScheduler();
-    if (sched) {
-        struct HotkeyAction {
-            std::string alias;
-            bool grab;
-        };
-        std::vector<HotkeyAction> pendingActions;
-        sched->forEachConditionalHotkey(
-            [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
-                if (!g) return;
-                if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
-                    g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
-                if (!g->hotkey_condition_deps.empty() &&
-                    g->hotkey_condition_deps.count(var_name) == 0) return;
-                auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
-                if (!condVal) return;
-                auto tracker = std::make_shared<compiler::DependencyTracker>();
-                compiler::DependencyTrackerScope scope(tracker);
-                bool conditionMet = false;
-                try {
-                    compiler::Value result = vm_->callFunctionSync(*condVal, {});
-                    conditionMet = vm_->toBool(result);
-                } catch (...) {}
-                auto newDeps = tracker->getGlobalDependencies();
-                auto fieldDeps = tracker->getFieldDependencies();
-                newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-                // Union-merge: keep previously-tracked deps so short-circuited
-                // branches' globals remain tracked. Replacing drops un-
-                // evaluated-side globals once `||`/`&&` short-circuits, then
-                // their VAR_CHANGED no longer triggers re-eval (stale grab).
-                g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
-                bool prev = g->hotkey_condition_last_result;
-                g->hotkey_condition_last_result = conditionMet;
-                if (prev == conditionMet) return;
-                pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
-            });
-        for (auto& act : pendingActions) {
-            if (!act.alias.empty()) {
-                auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-                if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
-            }
-        }
-    }
-});
                 hostContext_->eventQueue->onEvent(compiler::EventType::TIMER_FIRE,
 [this](const compiler::Event& event) {
 auto *payload = static_cast<std::pair<compiler::Value, uint32_t>*>(event.ptr);
@@ -385,6 +292,49 @@ vm_->addIntervalResult(timer_id, result);
                     vm_->current_when_watcher_id_ = prev_when_watcher;
                 } catch (...) {}
             }
+            vm_->processSignalBindings(var_name);
+            auto* sched = vm_->getScheduler();
+            if (sched) {
+                struct HotkeyAction {
+                    std::string alias;
+                    bool grab;
+                };
+                std::vector<HotkeyAction> pendingActions;
+                sched->forEachConditionalHotkey(
+                    [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
+                        if (!g) return;
+                        if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
+                            g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+                        if (!g->hotkey_condition_deps.empty() &&
+                            g->hotkey_condition_deps.count(var_name) == 0) return;
+                        auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
+                        if (!condVal) return;
+                        auto tracker = std::make_shared<compiler::DependencyTracker>();
+                        compiler::DependencyTrackerScope scope(tracker);
+                        bool conditionMet = false;
+                        try {
+                            compiler::Value result = vm_->callFunctionSync(*condVal, {});
+                            conditionMet = vm_->toBool(result);
+                        } catch (...) {}
+                        auto newDeps = tracker->getGlobalDependencies();
+                        auto fieldDeps = tracker->getFieldDependencies();
+                        newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+                        // Union-merge: keep previously-tracked deps so
+                        // short-circuited branches' globals keep triggering
+                        // re-evals.
+                        g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
+                        bool prev = g->hotkey_condition_last_result;
+                        g->hotkey_condition_last_result = conditionMet;
+                        if (prev == conditionMet) return;
+                        pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
+                    });
+                for (auto& act : pendingActions) {
+                    if (!act.alias.empty()) {
+                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                        if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
+                    }
+                }
+            }
         });
 
         havel::startup_timing_report("HavelEngine::initializeFull TOTAL", t0);
@@ -457,132 +407,7 @@ vm_->addIntervalResult(timer_id, result);
         if (!initialized_) return;
         auto* sched = vm_->getScheduler();
         if (!sched) return;
-
-        if (hostContext_->eventQueue) {
-            hostContext_->eventQueue->processAll();
-        }
-        sched->drainDeferredCallbacks(compiler::FiberPriority::NORMAL);
-
-        sched->wakeSleepingGoroutines();
-
-        // Execute at most one goroutine per tick so the REPL select loop
-        // can process stdin between ticks. Previously this loop drained ALL
-        // runnable goroutines, which froze the REPL when persistent hotkey
-        // or update goroutines kept getting requeued.
-        if (sched->hasRunnableFibers()) {
-            if (vm_->exit_requested_.load()) return;
-
-            auto* g = sched->pickNext();
-            if (!g) return;
-
-            // Set as current goroutine so VM opcodes can access it via scheduler_->current()
-            sched->setCurrent(g);
-
-            // Start and run this goroutine to completion/suspension
-            if (g->state == compiler::Scheduler::GoroutineState::Created) {
-                auto result = vm_->startGoroutineCall(g->callable, g->locals);
-                if (result != compiler::VM::GoroutineCallResult::Failed) {
-                    g->state = compiler::Scheduler::GoroutineState::Runnable;
-                    { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
-                } else {
-                    g->state = compiler::Scheduler::GoroutineState::Done;
-                    if (g->update_callback_id != 0) {
-                        vm_->releaseCallback(g->update_callback_id);
-                        g->update_callback_id = 0;
-                    }
-                }
-            } else if (g->state == compiler::Scheduler::GoroutineState::Runnable ||
-                       g->state == compiler::Scheduler::GoroutineState::Running) {
-                // Update goroutines restart via startGoroutineCall (fresh each tick)
-                if (g->update_interval_ms > 0) {
-                    auto result = vm_->startGoroutineCall(g->callable, g->locals);
-                    if (result != compiler::VM::GoroutineCallResult::Failed) {
-                        g->state = compiler::Scheduler::GoroutineState::Runnable;
-                        { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
-                    } else {
-                        g->state = compiler::Scheduler::GoroutineState::Done;
-                        if (g->update_callback_id != 0) {
-                            vm_->releaseCallback(g->update_callback_id);
-                            g->update_callback_id = 0;
-                        }
-                    }
-                } else {
-                    // Resumed goroutine (unparked from await/sleep)
-                    if (g->fiber) {
-                        vm_->loadFiberStatePublic(g->fiber);
-                        // Replace placeholder null with actual resume_value
-                        if (g->wait_handle.type != compiler::Scheduler::AwaitableType::NONE &&
-                            g->wait_handle.type != compiler::Scheduler::AwaitableType::SLEEP) {
-                            vm_->replaceStackTop(g->wait_handle.resume_value);
-                            g->wait_handle.clear();
-                        }
-                    }
-                    { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
-                }
-            }
-
-            // Check if the goroutine suspended (await/sleep) or finished
-            uint8_t lastReason = vm_->getLastSuspensionReason();
-            void* lastContext = vm_->getLastSuspensionContext();
-            if (lastReason != 0) {
-                // Goroutine suspended — save fiber state and mark as Suspended
-                vm_->clearLastSuspension();
-                if (g->fiber) {
-                    vm_->saveFiberStatePublic(g->fiber);
-                }
-                auto schedReason = toSchedulerReasonPublic(lastReason);
-                g->state = compiler::Scheduler::GoroutineState::Suspended;
-                g->suspension_reason = schedReason;
-                if (g->fiber) {
-                    g->fiber->state = compiler::FiberState::SUSPENDED;
-                    g->fiber->suspended_reason = static_cast<compiler::SuspensionReason>(lastReason);
-                }
-                // For SLEEP, set the deadline on the wait_handle
-                if (static_cast<compiler::SuspensionReason>(lastReason) == compiler::SuspensionReason::SLEEP) {
-                    auto ms = reinterpret_cast<intptr_t>(lastContext);
-                    g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
-                    g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-                }
-                if (sched->current() == g) {
-                    sched->clearCurrent();
-                }
-            } else if (g->update_interval_ms > 0) {
-                // Update goroutines: reset and re-suspend with SleepWait
-                sched->clearCurrent();
-                g->ip = 0;
-                g->stack.clear();
-                g->locals.clear();
-                auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(g->update_interval_ms);
-                {
-                    std::lock_guard wlock(g->wait_handle_mutex_);
-                    g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
-                    g->wait_handle.deadline = deadline;
-                }
-                g->state = compiler::Scheduler::GoroutineState::Suspended;
-                g->suspension_reason.store(compiler::Scheduler::SuspensionReason::SleepWait, std::memory_order_release);
-            } else if (g->persistent) {
-                // Persistent goroutines (hotkey system): re-suspend instead of Done.
-                g->state = compiler::Scheduler::GoroutineState::Suspended;
-                g->suspension_reason = compiler::Scheduler::SuspensionReason::HotkeyWait;
-                if (g->fiber) {
-                    g->fiber->state = compiler::FiberState::SUSPENDED;
-                    g->fiber->suspended_reason = compiler::SuspensionReason::HOTKEY_WAIT;
-                }
-                if (sched->current() == g) {
-                    sched->clearCurrent();
-                }
-            } else {
-                g->state = compiler::Scheduler::GoroutineState::Done;
-                if (g->fiber) {
-                    g->fiber->state = compiler::FiberState::DONE;
-                }
-                if (g->update_callback_id != 0) {
-                    vm_->releaseCallback(g->update_callback_id);
-                    g->update_callback_id = 0;
-                }
-            }
-        }
+        vm_->tickScheduler();
     }
 
     compiler::VM* vm() const { return vm_.get(); }

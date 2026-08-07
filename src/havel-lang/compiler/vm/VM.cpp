@@ -2353,6 +2353,22 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       closure_globals = closure->module_globals;
     }
   } else {
+    // Class prototypes are constructors: calling a class object builds an instance.
+    if (callee_value.isObjectId()) {
+      auto *obj = heap_.object(callee_value.asObjectId());
+      if (obj) {
+        auto *isClassVal = obj->get("__is_class");
+        if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
+          std::vector<Value> ctorArgs;
+          ctorArgs.reserve(args.size() + 1);
+          ctorArgs.push_back(callee_value);
+          for (const auto &a : args) ctorArgs.push_back(a);
+          doCall(Value::makeHostFuncId(getHostFunctionIndex("class.new")),
+                 ctorArgs);
+          return;
+        }
+      }
+    }
     // Debug: identify what type the value actually is
     std::string typeInfo = "unknown";
     if (callee_value.isNull())
@@ -3422,6 +3438,143 @@ void VM::emitVariableChanged(const std::string &var_name) {
   Event change_event(EventType::VAR_CHANGED, var_hash,
                      new std::string(var_name));
   event_queue_->push(change_event);
+}
+
+void VM::tickScheduler() {
+  auto *sched = scheduler_;
+  if (!sched) return;
+  if (event_queue_) {
+    event_queue_->processAll();
+  }
+
+  sched->drainDeferredCallbacks(FiberPriority::NORMAL);
+  sched->wakeSleepingGoroutines();
+
+  // Execute at most one goroutine per tick so the REPL select loop can
+  // process stdin between ticks. Draining ALL runnable goroutines froze the
+  // REPL when persistent hotkey or update goroutines kept getting requeued.
+  if (!sched->hasRunnableFibers()) return;
+  if (exit_requested_.load()) return;
+
+  auto *g = sched->pickNext();
+  if (!g) return;
+
+  sched->setCurrent(g);
+
+  if (g->state == Scheduler::GoroutineState::Created) {
+    auto result = startGoroutineCall(g->callable, g->locals);
+    if (result != VM::GoroutineCallResult::Failed) {
+      g->state = Scheduler::GoroutineState::Runnable;
+      current_executing_fiber_ = g->fiber;
+      runDispatchLoop(0);
+      current_executing_fiber_ = nullptr;
+    } else {
+      g->state = Scheduler::GoroutineState::Done;
+      if (g->update_callback_id != 0) {
+        releaseCallback(g->update_callback_id);
+        g->update_callback_id = 0;
+      }
+    }
+  } else if (g->state == Scheduler::GoroutineState::Runnable ||
+             g->state == Scheduler::GoroutineState::Running) {
+    if (g->update_interval_ms > 0) {
+      // Update goroutines restart via startGoroutineCall (fresh each tick)
+      auto result = startGoroutineCall(g->callable, g->locals);
+      if (result != VM::GoroutineCallResult::Failed) {
+        g->state = Scheduler::GoroutineState::Runnable;
+        current_executing_fiber_ = g->fiber;
+        runDispatchLoop(0);
+        current_executing_fiber_ = nullptr;
+      } else {
+        g->state = Scheduler::GoroutineState::Done;
+        if (g->update_callback_id != 0) {
+          releaseCallback(g->update_callback_id);
+          g->update_callback_id = 0;
+        }
+      }
+    } else {
+      // Resumed goroutine (unparked from await/sleep)
+      if (g->fiber) {
+        loadFiberStatePublic(g->fiber);
+        if (g->wait_handle.type != Scheduler::AwaitableType::NONE &&
+            g->wait_handle.type != Scheduler::AwaitableType::SLEEP) {
+          replaceStackTop(g->wait_handle.resume_value);
+          g->wait_handle.clear();
+        }
+      }
+      current_executing_fiber_ = g->fiber;
+      runDispatchLoop(0);
+      current_executing_fiber_ = nullptr;
+    }
+  }
+
+  uint8_t lastReason = getLastSuspensionReason();
+  void *lastContext = getLastSuspensionContext();
+  if (lastReason != 0) {
+    clearLastSuspension();
+    if (g->fiber) saveFiberStatePublic(g->fiber);
+    using F = SuspensionReason;
+    using S = Scheduler::SuspensionReason;
+    S schedReason = S::None;
+    switch (static_cast<F>(lastReason)) {
+    case F::NONE: schedReason = S::None; break;
+    case F::YIELD: schedReason = S::None; break;
+    case F::CHANNEL_RECV: schedReason = S::ChannelWait; break;
+    case F::CHANNEL_SEND: schedReason = S::ChannelSendWait; break;
+    case F::THREAD_JOIN: schedReason = S::ThreadWait; break;
+    case F::TIMER: schedReason = S::TimerWait; break;
+    case F::SLEEP: schedReason = S::SleepWait; break;
+    case F::EXTERNAL: schedReason = S::None; break;
+    case F::HOTKEY_WAIT: schedReason = S::HotkeyWait; break;
+    case F::AWAIT: schedReason = S::None; break;
+    case F::COROUTINE_WAIT: schedReason = S::CoroutineWait; break;
+    default: schedReason = S::None; break;
+    }
+    g->state = Scheduler::GoroutineState::Suspended;
+    g->suspension_reason.store(schedReason, std::memory_order_release);
+    if (g->fiber) {
+      g->fiber->state = FiberState::SUSPENDED;
+      g->fiber->suspended_reason = static_cast<F>(lastReason);
+    }
+    if (static_cast<F>(lastReason) == F::SLEEP) {
+      auto ms = reinterpret_cast<intptr_t>(lastContext);
+      g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+      g->wait_handle.deadline =
+          std::chrono::steady_clock::now() +
+          std::chrono::milliseconds(ms);
+    }
+    if (sched->current() == g) sched->clearCurrent();
+  } else if (g->update_interval_ms > 0) {
+    sched->clearCurrent();
+    g->ip = 0;
+    g->stack.clear();
+    g->locals.clear();
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(g->update_interval_ms);
+    {
+      std::lock_guard wlock(g->wait_handle_mutex_);
+      g->wait_handle.type = Scheduler::AwaitableType::SLEEP;
+      g->wait_handle.deadline = deadline;
+    }
+    g->state = Scheduler::GoroutineState::Suspended;
+    g->suspension_reason.store(Scheduler::SuspensionReason::SleepWait,
+                               std::memory_order_release);
+  } else if (g->persistent) {
+    g->state = Scheduler::GoroutineState::Suspended;
+    g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+    if (g->fiber) {
+      g->fiber->state = FiberState::SUSPENDED;
+      g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+    }
+    if (sched->current() == g) sched->clearCurrent();
+  } else {
+    g->state = Scheduler::GoroutineState::Done;
+    if (g->fiber) g->fiber->state = FiberState::DONE;
+    if (g->update_callback_id != 0) {
+      releaseCallback(g->update_callback_id);
+      g->update_callback_id = 0;
+    }
+  }
 }
 
 void VM::throwError(const std::string &msg) { COMPILER_THROW(msg); }

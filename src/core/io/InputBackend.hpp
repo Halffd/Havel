@@ -108,6 +108,11 @@ public:
     virtual int GetPollFd() const = 0;
     virtual bool PollEvents(int timeoutMs = 100) = 0;
 
+    // Register an external fd whose readiness should break an in-progress blocking
+    // PollEvents() wait (e.g. the VM scheduler's deferred-wakeup eventfd). The fd is
+    // only observed for readiness, never drained or closed by the backend.
+    virtual void SetExternalWakeupFd(int fd) { (void)fd; }
+
     virtual std::pair<int, int> GetMousePosition() const = 0;
     virtual bool GetKeyState(uint32_t code) const = 0;
     virtual uint32_t GetModifiers() const = 0;

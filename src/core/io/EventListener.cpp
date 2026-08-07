@@ -572,7 +572,14 @@ void EventListener::EventLoop() {
         modules_->checkTimers();
         }
 
-        // Blocking poll for input events — monitors evdev fds for prompt event pickup
+        // Blocking poll for input events — monitors evdev fds for prompt event pickup.
+        // Also watches the VM deferred-wakeup fd so VM work (e.g. hotkey bodies) is
+        // noticed immediately instead of waiting out the full poll timeout.
+        if (executionEngine && executionEngine->getScheduler() && backend_) {
+            backend_->SetExternalWakeupFd(executionEngine->getScheduler()->deferredWakeupFd());
+        } else if (backend_) {
+            backend_->SetExternalWakeupFd(-1);
+        }
         if (backend_) {
             backend_->PollEvents(10);
         }
@@ -1163,19 +1170,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
         auto callback = it->second.callback;
         lock.unlock();
 
-        if (hotkeyExecutor) {
-          hotkeyExecutor->submit([callback]() {
-            try {
-              callback();
-            } catch (const std::exception &e) {
-              error("Callback exception: {}", e.what());
-            } catch (...) {
-              error("Callback unknown exception");
-            }
-          });
-        } else {
-          std::thread([callback]() { callback(); }).detach();
-        }
+        DispatchHotkeyCallback(std::move(callback));
       }
     }
 
@@ -1231,13 +1226,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
           if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
             auto callback = hotkey.callback;
             lock.unlock();
-            if (hotkeyExecutor) {
-              hotkeyExecutor->submit([callback]() {
-                try { callback(); } catch (...) {}
-              });
-            } else {
-              std::thread([callback]() { callback(); }).detach();
-            }
+            DispatchHotkeyCallback(std::move(callback));
             break;
           }
         }
@@ -1391,19 +1380,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
           auto callback = it->second.callback;
           lock.unlock();
 
-          if (hotkeyExecutor) {
-            hotkeyExecutor->submit([callback]() {
-              try {
-                callback();
-              } catch (const std::exception &e) {
-                error("Wheel hotkey callback exception: {}", e.what());
-              } catch (...) {
-                error("Wheel hotkey callback unknown exception");
-              }
-            });
-          } else {
-            std::thread([callback]() { callback(); }).detach();
-          }
+          DispatchHotkeyCallback(std::move(callback));
         }
       }
 
@@ -1529,22 +1506,7 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
       auto callback = it->second.callback;
       lock.unlock();
 
-      // Use HotkeyExecutor instead of spawning threads
-      if (hotkeyExecutor) {
-        hotkeyExecutor->submit([callback]() {
-          try {
-            callback();
-          } catch (const std::exception &e) {
-            error("Callback exception: {}", e.what());
-          } catch (...) {
-            error("Callback unknown exception");
-          }
-        });
-      } else {
-        std::lock_guard<std::mutex> ioLock(
-            HotkeyManager::RegisteredHotkeysMutex());
-        std::thread([callback]() { callback(); }).detach();
-      }
+      DispatchHotkeyCallback(std::move(callback));
     }
   }
 }
@@ -1719,6 +1681,42 @@ bool EventListener::CheckModifierMatchExcludingModifier(
     // Normal: exact modifier match (excluding the remapped one)
     return (ctrlRequired == ctrlPressed) && (shiftRequired == shiftPressed) &&
            (altRequired == altPressed) && (metaRequired == metaPressed);
+  }
+}
+
+void EventListener::DispatchHotkeyCallback(std::function<void()> callback) {
+  ExecutorMode mode = executorMode_;
+  if (mode == ExecutorMode::Thread) {
+    std::thread([cb = std::move(callback)]() {
+      try {
+        cb();
+      } catch (const std::exception &e) {
+        error("Callback exception: {}", e.what());
+      } catch (...) {
+        error("Callback unknown exception");
+      }
+    }).detach();
+  } else if (mode == ExecutorMode::Executor && hotkeyExecutor) {
+    hotkeyExecutor->submit([cb = std::move(callback)]() {
+      try {
+        cb();
+      } catch (const std::exception &e) {
+        error("Callback exception: {}", e.what());
+      } catch (...) {
+        error("Callback unknown exception");
+      }
+    });
+  } else {
+    // Scheduler / Sync: cooperative. Inline on the event-loop thread so the
+    // Havel wrapper calls wakeHotkey() directly, skipping the worker-pool +
+    // deferToVM round trip that adds a frame of latency per keypress.
+    try {
+      callback();
+    } catch (const std::exception &e) {
+      error("Callback exception: {}", e.what());
+    } catch (...) {
+      error("Callback unknown exception");
+    }
   }
 }
 
@@ -1902,17 +1900,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
       auto callback = it->second.callback;
       lock.unlock();
 
-      if (hotkeyExecutor) {
-        hotkeyExecutor->submit([callback]() {
-          try { callback(); } catch (const std::exception &e) {
-            error("Hotkey callback exception: {}", e.what());
-          } catch (...) {
-            error("Hotkey callback unknown exception");
-          }
-        });
-      } else {
-        std::thread([callback]() { callback(); }).detach();
-      }
+      DispatchHotkeyCallback(std::move(callback));
     }
   }
 
@@ -2172,13 +2160,7 @@ void EventListener::ProcessMouseGesture(int dx, int dy) {
     if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
       auto callback = hotkey.callback;
       lock.unlock();
-      if (hotkeyExecutor) {
-        hotkeyExecutor->submit([callback]() {
-          try { callback(); } catch (...) {}
-        });
-      } else {
-        std::thread([callback]() { callback(); }).detach();
-      }
+      DispatchHotkeyCallback(std::move(callback));
       break;
     }
   }

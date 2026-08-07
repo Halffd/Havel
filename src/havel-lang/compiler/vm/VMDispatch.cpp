@@ -6,8 +6,9 @@
 #include "../../runtime/concurrency/DependencyTracker.hpp"
 #include "../../runtime/concurrency/WatcherRegistry.hpp"
 #include "../../runtime/concurrency/Fiber.hpp"
+#include "../../runtime/concurrency/Scheduler.hpp"
 #include "../prototypes/PrototypeRegistry.hpp"
-#include "core/config/ConfigManager.hpp"
+#include "../core/config/ConfigManager.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -679,7 +680,8 @@ void VM::runDispatchFast(size_t stop_frame_depth) {
         [static_cast<uint8_t>(OpCode::CALL)] = &&op_CALL,
         [static_cast<uint8_t>(OpCode::CALL_DYN)] = &&op_CALL,
         [static_cast<uint8_t>(OpCode::CALL_SPREAD)] = &&op_CALL,
-        [static_cast<uint8_t>(OpCode::RETURN)] = &&op_RETURN
+        [static_cast<uint8_t>(OpCode::RETURN)] = &&op_RETURN,
+        [static_cast<uint8_t>(OpCode::YIELD)] = &&op_YIELD,
     };
 
     size_t counter = 0;
@@ -914,6 +916,41 @@ op_RETURN: {
         ::havel::stdlib::notifyRuntimeError(e.what());
         throw std::runtime_error(e.what());
     }
+if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
+        {
+            auto &f2 = frame_arena_[frame_count_ - 1];
+            if (f2.ip >= f2.function->instructions.size()) {
+                stack.push(nullptr);
+                executeInstruction(Instruction{OpCode::RETURN});
+                return;
+            }
+            goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
+        }
+}
+
+op_YIELD: {
+    auto &frm = frame_arena_[frame_count_ - 1];
+    const auto &inst = frm.function->instructions[frm.ip];
+    frm.ip++;
+    
+    // Check if there's a value on the stack to yield
+    Value yieldValue;
+    if (!stack.empty()) {
+        yieldValue = popStack();
+    } else {
+        yieldValue = Value::makeNull();
+    }
+    
+    // Set suspension reason to YIELD
+    last_suspension_reason_ = static_cast<uint8_t>(havel::compiler::Scheduler::SuspensionReason::Yield);
+    last_suspension_context_ = nullptr;
+    suspension_requested_ = true;
+    suspension_reason_ = static_cast<uint8_t>(havel::compiler::Scheduler::SuspensionReason::Yield);
+    suspension_context_ = nullptr;
+    
+    // Push the yield value onto the stack so it's available when resumed
+    pushStack(yieldValue);
+    
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];

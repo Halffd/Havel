@@ -1169,6 +1169,33 @@ void VM::loadFiberState(Fiber *fiber) {
     // This was saved during the previous suspension
     frame_arena_[frame_count_ - 1].ip = fiber->ip;
   }
+
+  // STEP 6: Reattach spawn-time globals scope if the ambient globals lost it.
+  // Churn repro (n=600) resumes a goroutine against a module sidecar map that
+  // lacks script globals (tick_in), so every global read fails. Reinstate the
+  // spawn snapshot only when ambient is provably the wrong map: ambient is
+  // missing a key the snapshot carries. When ambient still holds the shared
+  // script map, shared-write semantics are preserved.
+  uint32_t top_closure_id = UINT32_MAX;
+  if (frame_count_ > 0)
+    top_closure_id = frame_arena_[frame_count_ - 1].closure_id;
+  auto snapIt = spawn_globals_snapshot_.find(top_closure_id);
+  if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
+    bool missing = false;
+    for (const auto &[k, v] : *snapIt->second) {
+      if (!globals.count(k)) {
+        missing = true;
+        break;
+      }
+    }
+    if (missing) {
+      ::havel::debug(
+          "[VM] loadFiberState: reinstating globals snapshot (ambient missing "
+          "key, snap_size={})",
+          snapIt->second->size());
+      globals = *(snapIt->second);
+    }
+  }
 }
 
 /**
@@ -1286,12 +1313,6 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
       } else if (closure->chunk) {
         resolve_chunk = closure->chunk;
       }
-      // If closure has module_globals, install them so the goroutine
-      // sees imported module state correctly.
-      if (closure->module_globals) {
-        // (Module-global install handled by doCall path; goroutines
-        // typically rely on the closure's captured environment.)
-      }
     }
   } else if (callable.isFunctionObjId()) {
     function_id = callable.asFunctionObjId();
@@ -1342,7 +1363,14 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     return GoroutineCallResult::Failed;
   }
 
-  // Closure population failed (e.g. closure not in heap) — last resort.
+  {
+    auto snapIt = spawn_globals_snapshot_.find(closure_id);
+    if (snapIt != spawn_globals_snapshot_.end()) {
+      globals = *snapIt->second;
+    }
+  }
+
+  // Closure population failed (same as last resort).
   if (!resolve_chunk && current_chunk &&
       current_chunk->getFunction(function_id)) {
     resolve_chunk = current_chunk;
@@ -3470,10 +3498,7 @@ void VM::tickScheduler() {
       current_executing_fiber_ = nullptr;
     } else {
       g->state = Scheduler::GoroutineState::Done;
-      if (g->update_callback_id != 0) {
-        releaseCallback(g->update_callback_id);
-        g->update_callback_id = 0;
-      }
+      current_executing_fiber_ = nullptr;
     }
   } else if (g->state == Scheduler::GoroutineState::Runnable ||
              g->state == Scheduler::GoroutineState::Running) {

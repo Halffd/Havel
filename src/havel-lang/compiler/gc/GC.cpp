@@ -704,7 +704,7 @@ void GCHeap::stepGarbageCollection(
         if (!collection_requested_ && allocations_since_last_ < allocation_budget_) {
             return;
         }
-        startIncrementalCollection(stack_values, locals, globals, active_closure_ids, open_local_reader);
+        startIncrementalCollection(stack_values, locals, globals, active_closure_ids, open_local_reader, extra_roots);
     }
 
     const auto pause_start = std::chrono::steady_clock::now();

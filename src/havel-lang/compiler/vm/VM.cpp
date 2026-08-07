@@ -3674,8 +3674,7 @@ Value VM::deepWrapModuleFunctions(
     registerHostFunction(
         wrapperName,
         [this, funcIdx, moduleChunk, paramCount, moduleGlobals, wrapperName,
-         fnCapturedKey, fnCapturedField,
-         wantsSelf](const std::vector<Value> &args) -> Value {
+         fnCapturedKey, fnCapturedField, wantsSelf, depth, visitedPtr](const std::vector<Value> &args) -> Value {
           std::vector<Value> callArgs = args;
           auto *preCheckCallee = moduleChunk->getFunction(funcIdx);
           bool isVariadic = preCheckCallee &&
@@ -3769,7 +3768,7 @@ Value VM::deepWrapModuleFunctions(
           if (bc_execute_depth_ == 0) {
             result = deepWrapModuleFunctions(
                 deepMaterializeStrings(result, current_chunk), moduleChunk,
-                moduleGlobals, fnCapturedKey, fnCapturedField + "_ret");
+                moduleGlobals, fnCapturedKey, fnCapturedField + "_ret", depth + 1, visitedPtr);
           }
           *moduleGlobals = std::move(globals);
           globals = std::move(savedGlobals);
@@ -3816,7 +3815,7 @@ Value VM::deepWrapModuleFunctions(
     registerHostFunction(
         wrapperName,
         [this, closureId, funcIdx, moduleChunk, closureGlobals, wrapperName,
-         capturedKey, capturedField](const std::vector<Value> &args) -> Value {
+         capturedKey, capturedField, depth, visitedPtr](const std::vector<Value> &args) -> Value {
           auto *rc2 = heap_.closure(closureId);
           if (!rc2 || !rc2->chunk)
             return Value::makeNull();
@@ -3909,7 +3908,7 @@ Value VM::deepWrapModuleFunctions(
           if (bc_execute_depth_ == 0) {
             result = deepWrapModuleFunctions(
                 deepMaterializeStrings(result, current_chunk), moduleChunk,
-                closureGlobals, capturedKey, capturedField + "_ret");
+                closureGlobals, capturedKey, capturedField + "_ret", depth + 1, visitedPtr);
           }
           globals = std::move(savedGlobals);
           globals_mirror_object_id_ = savedMirrorId;

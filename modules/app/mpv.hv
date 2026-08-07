@@ -30,6 +30,9 @@ class MPV {
 
     fn @(path="/tmp/mpvsocket") {
         @path = path
+    }
+
+    fn init() {
         @connect()
         @observeDefaults()
         @startReceiver()
@@ -125,32 +128,34 @@ class MPV {
             return
         }
         @receiverRunning = true
-        thread.spawn(fn() {
+        // Capture self explicitly for the thread closure
+        self = @
+        thread.spawn(fn(self) {
             while true {
-                if !@ensureConnection() {
+                if !self.ensureConnection() {
                     sleep(1)
                     continue
                 }
-                chunk = @sock.recv(8192)
+                chunk = self.sock.recv(8192)
                 if chunk == "" {
-                    @connected = false
+                    self.connected = false
                     sleep(1)
                     continue
                 }
-                @recvBuffer += chunk
-                while @recvBuffer.has("\n") {
-                    idx = @recvBuffer.find("\n")
-                    line = @recvBuffer.sub(0, idx)
-                    @recvBuffer = @recvBuffer.sub(idx + 1)
+                self.recvBuffer += chunk
+                while self.recvBuffer.has("\n") {
+                    idx = self.recvBuffer.find("\n")
+                    line = self.recvBuffer.sub(0, idx)
+                    self.recvBuffer = self.recvBuffer.sub(idx + 1)
                     if line.trim() == "" {
                         continue
                     }
                     msg = json.parse(line)
                     if msg.has("request_id") {
-                        @pending[msg.request_id] = msg
+                        self.pending[msg.request_id] = msg
                     }
                     else if msg.has("event") {
-                        @handleEvent(msg)
+                        self.handleEvent(msg)
                     }
                 }
             }

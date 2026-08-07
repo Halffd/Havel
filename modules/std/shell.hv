@@ -2,7 +2,9 @@
 // Host bridge: shell.run, shell.exec, shell.which, shell.env, shell.getenv,
 // shell.cwd, shell.cd, shell.escape, shell.platform, shell.pid, shell.home,
 // shell.tmpdir, shell.hostname, shell.user, shell.shell, shell.sleep,
-// shell.read, shell.write, shell.isatty, shell.exit, shell.splitArgs,
+// shell.read, shell.write, shell.isatty, shell.ready, shell.history_path,
+// shell.history_read, shell.history_write, shell.history_add,
+// shell.exit, shell.splitArgs,
 // shell.exists, shell.isFile, shell.isDir, shell.mkdir, shell.mkdirs,
 // shell.remove, shell.removeAll, shell.copy, shell.move, shell.listDir,
 // shell.read, shell.write, shell.appendFile, shell.platform, shell.pid,
@@ -22,114 +24,32 @@
 // shell.tmpfile, shell.open, shell.removeAll, shell.copy, shell.move
 
 // ============================================================
-// Command execution
+// History (Havel-side only - not host functions)
 // ============================================================
 
-fn run(cmd) { shell.run(cmd) }
-fn exec(cmd) { shell.exec(cmd) }
-fn which(name) { shell.which(name) }
-fn escape(input) { shell.escape(input) }
-fn splitArgs(str) { shell.splitArgs(str) }
-
-// ============================================================
-// Environment
-// ============================================================
-
-fn env(name, value=null) {
-  if value == null { shell.getenv(name) }
-  else { shell.env(name, value) }
+fn historyPath() { 
+  home = shell.getenv("HOME")
+  if home == null { return null }
+  home + "/.havel_history"
 }
-fn getenv(name) { shell.getenv(name) }
-fn envList() { shell.envList() }
-
-// ============================================================
-// Filesystem
-// ============================================================
-
-fn cwd() { shell.cwd() }
-fn cd(path) { shell.cd(path) }
-fn home() { shell.home() }
-fn tmpdir() { shell.tmpdir() }
-fn tmpfile() { shell.tmpfile() }
-fn exists(path) { shell.exists(path) }
-fn isFile(path) { shell.isFile(path) }
-fn isDir(path) { shell.isDir(path) }
-fn mkdir(path) { shell.mkdir(path) }
-fn mkdirs(path) { shell.mkdirs(path) }
-fn remove(path) { shell.remove(path) }
-fn removeAll(path) { shell.removeAll(path) }
-fn copy(src, dst) { shell.copy(src, dst) }
-fn move(src, dst) { shell.move(src, dst) }
-fn listDir(path) { shell.listDir(path) }
-fn read(path) { shell.read(path) }
-fn write(path, content) { shell.write(path, content) }
-fn appendFile(path, content) { shell.appendFile(path, content) }
-
-// ============================================================
-// System info
-// ============================================================
-
-fn platform() { shell.platform() }
-fn pid() { shell.pid() }
-fn hostname() { shell.hostname() }
-fn user() { shell.user() }
-fn shell() { shell.shell() }
-
-// ============================================================
-// Process control
-// ============================================================
-
-fn sleep(ms) { shell.sleep(ms) }
-fn exit(code) { shell.exit(code) }
-fn isatty(fd=0) { shell.isatty(fd) }
-fn ready(ms=0) { shell.ready(ms) }
-
-// ============================================================
-// Network / IPC
-// ============================================================
-
-fn open(url) { shell.open(url) }
-
-// ============================================================
-// File utilities
-// ============================================================
-
-fn readLines(path) {
-  content = shell.read(path)
-  if content == null { return [] }
-  content.split("\n")
-}
-
-fn writeLines(path, lines) {
-  shell.write(path, lines.join("\n"))
-}
-
-fn appendLines(path, lines) {
-  appendFile(path, lines.join("\n") + "\n")
-}
-
-fn listMatching(dir, prefix="", suffix="") {
-  entries = shell.listDir(dir)
-  if entries == null { return [] }
-  result = []
-  for e in entries {
-    if prefix != "" && !e.startsWith(prefix) { continue }
-    if suffix != "" && !e.endsWith(suffix) { continue }
-    result.push(e)
+fn historyRead(path=null) {
+  if path == null {
+    path = historyPath()
+    if path == null { return [] }
   }
-  result
+  shell.history_read(path)
 }
-
-fn ensureDir(path) {
-  if !shell.exists(path) { shell.mkdirs(path) }
+fn historyWrite(lines, path=null) {
+  if path == null {
+    path = historyPath()
+    if path == null { return null }
+  }
+  shell.history_write(lines, path)
 }
-
-fn removeIfExists(path) {
-  if shell.exists(path) { shell.remove(path) }
-}
-
-fn append(path, content) {
-  existing = shell.read(path)
-  if existing == null { existing = "" }
-  shell.write(path, existing + content)
+fn historyAdd(line, path=null) {
+  if path == null {
+    path = historyPath()
+    if path == null { return null }
+  }
+  shell.history_add(line, path)
 }

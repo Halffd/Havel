@@ -266,7 +266,10 @@ fn loadScriptForRepl(cfg) {
     // Track globals from script
     for line in combinedCode.split("\n") {
         for name in extractGlobalsFromLine(line) {
-            if !(name in knownGlobals) { knownGlobals.push(name) }
+            if !(name in knownGlobals) { 
+                knownGlobals.push(name)
+                if useReadline { readline.add_completion_word(name) }
+            }
         }
     }
     bc.reset()
@@ -284,6 +287,7 @@ fn loadScriptForRepl(cfg) {
 
 // Track known globals for :globals command
 knownGlobals = []
+useReadline = false
 
 // Simple text-based global extraction from REPL line
 // Handles: fn name(...), x = ..., class Name, etc.
@@ -365,7 +369,10 @@ fn replEvaluate(cfg, line) {
     }
     // Track new globals from this line
     for name in extractGlobalsFromLine(line) {
-        if !(name in knownGlobals) { knownGlobals.push(name) }
+        if !(name in knownGlobals) { 
+            knownGlobals.push(name)
+            if useReadline { readline.add_completion_word(name) }
+        }
     }
     bc.reset()
     setFlag("emitter", true)
@@ -419,7 +426,6 @@ fn replBalanced(code) {
 
 fn replLoop(cfg) {
     interactive = shell.isatty(0)
-    useReadline = false
     if interactive {
         // Try to load readline module for line editing/history
         useReadline = true

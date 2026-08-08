@@ -1232,6 +1232,14 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
         chunk.addFunction(std::move(func));
     }
 
+    // Check for GLBS marker (globals section) - stop parsing here
+    if (pos + 4 <= data.size()) {
+        const uint8_t* ptr = data.data() + pos;
+        if (ptr[0] == 'G' && ptr[1] == 'L' && ptr[2] == 'B' && ptr[3] == 'S') {
+            // Found globals section marker, stop parsing
+        }
+    }
+
     return chunk;
 }
 

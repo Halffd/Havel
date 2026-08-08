@@ -73,6 +73,11 @@ VM::VM(const VMConfig &cfg) {
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
     moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
+    // Add self-hosted modules subdirectories to search paths for hierarchical module resolution
+    moduleLoader_.addSearchPath(cfg.self_hosted_modules_path + "/modules/lang");
+    moduleLoader_.addSearchPath(cfg.self_hosted_modules_path + "/modules/std");
+    moduleLoader_.addSearchPath(cfg.self_hosted_modules_path + "/modules/app");
+    moduleLoader_.addSearchPath(cfg.self_hosted_modules_path + "/modules");
   }
   registerDefaultHostFunctions();
 
@@ -4651,6 +4656,13 @@ Value VM::loadModule(const std::string &path) {
   std::filesystem::path hvcPath = resolved->canonicalPath;
   hvcPath.replace_extension(".hvc");
   bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals);
+  std::cerr << "[DEBUG] loadModule: path=" << path 
+            << " resolved type=" << static_cast<int>(resolved->type) 
+            << " canonical=" << resolved->canonicalPath
+            << " hvcPath=" << hvcPath 
+            << " hasCachedGlobals=" << hasCachedGlobals 
+            << " cachedGlobalsSize=" << cachedGlobals.size()
+            << " selfHostedPath=" << self_hosted_modules_path_ << "\n";
   
   if (hasCachedGlobals && !cachedGlobals.empty()) {
     // Restore globals from cache - this avoids running __main__
@@ -4819,6 +4831,7 @@ Value VM::loadModule(const std::string &path) {
       if (file.is_open()) {
         file.write(reinterpret_cast<const char *>(data.data()), data.size());
         file.close();
+        std::cerr << "[DEBUG] Auto-cached chunk to " << hvcPath << ", size: " << data.size() << "\n";
       }
     } catch (...) {
     }
@@ -5217,24 +5230,31 @@ Value VM::loadModule(const std::string &path) {
   current_chunk = saved_chunk;
   has_current_exception_ = saved_exception;
   current_exception_ = saved_exception_val;
-  current_script_dir_ = prev_script_dir;
+current_script_dir_ = prev_script_dir;
 
   // Cache under both keys via canonical ModuleLoader.
   // Use the module's globals (captured before restoring caller's globals)
   // so runtime variables like 'flags = DebugFlags()' are included in the
   // snapshot for cached loads. Pass the source / bytecode paths so the
   // loader can self-invalidate when either changes on disk.
-  std::string cacheSrcPath, cacheBcPath;
-  if (resolved->type == ModuleLoader::ResolvedModule::BytecodeCache) {
-    cacheBcPath = resolved->canonicalPath;
-    cacheSrcPath = resolved->sourcePath;
-  } else {
-    cacheSrcPath = resolved->canonicalPath;
-  }
   moduleLoader_.putCacheWithGlobals(path, exports, moduleGlobalsForCache,
-                                    cacheSrcPath, cacheBcPath);
+                                      cacheSrcPath, cacheBcPath);
   moduleLoader_.putCacheWithGlobals(
       canonicalKey, exports, moduleGlobalsForCache, cacheSrcPath, cacheBcPath);
+  
+  // Serialize and append globals to .hvc file for fast loading
+  try {
+    std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache);
+    std::cerr << "[DEBUG] Serialized globals for " << resolved->canonicalPath << ", size: " << globalsData.size() << " bytes\n";
+    std::filesystem::path hvcPath = resolved->canonicalPath;
+    hvcPath.replace_extension(".hvc");
+    writeGlobalsToHvc(hvcPath.string(), globalsData);
+    std::cerr << "[DEBUG] Wrote globals to " << hvcPath << "\n";
+  } catch (...) {
+    // Ignore serialization errors
+    std::cerr << "[DEBUG] writeGlobalsToHvc failed\n";
+  }
+  
   // Also store in globals so GC scans it as a root
   // (the module cache is not a GC root, so cached objects can be collected)
   globals[path] = exports;
@@ -5288,21 +5308,21 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
         // Collect strings from value
         std::function<void(const Value&)> collectStrings = [&](const Value& v) {
             if (v.isStringId()) {
-                auto* obj = heap_.object(v.asStringId());
-                if (obj) getStringId(obj->getString());
+                const std::string* strPtr = heap_.string(v.asStringId());
+                if (strPtr) getStringId(*strPtr);
             } else if (v.isStringValId()) {
                 // StringValId references chunk string table - not in heap
                 // We'll handle these separately if needed
             } else if (v.isObjectId()) {
                 auto* obj = heap_.object(v.asObjectId());
                 if (obj) {
-                    for (const auto& [k, val] : *obj) {
-                        getStringId(k);
-                        collectStrings(val);
+                    for (const auto& kv : *obj) {
+                        getStringId(kv.first);
+                        collectStrings(kv.second);
                     }
                 }
             } else if (v.isArrayId()) {
-                auto* obj = heap_.object(v.asArrayId());
+                auto* obj = heap_.array(v.asArrayId());
                 if (obj) {
                     for (const auto& val : *obj) {
                         collectStrings(val);
@@ -5349,9 +5369,9 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
             append(&val, sizeof(val));
         } else if (v.isStringId()) {
             append(&TAG_STRING, 1);
-            auto* obj = heap_.object(v.asStringId());
-            if (obj) {
-                uint32_t strId = getStringId(obj->getString());
+            const std::string* strPtr = heap_.string(v.asStringId());
+            if (strPtr) {
+                uint32_t strId = getStringId(*strPtr);
                 append(&strId, sizeof(strId));
             } else {
                 uint32_t strId = getStringId("");
@@ -5374,7 +5394,7 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
             }
         } else if (v.isArrayId()) {
             append(&TAG_ARRAY, 1);
-            auto* obj = heap_.object(v.asArrayId());
+            auto* obj = heap_.array(v.asArrayId());
             if (obj) {
                 uint32_t count = static_cast<uint32_t>(obj->size());
                 append(&count, sizeof(count));
@@ -5396,6 +5416,14 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
         append(&nameId, sizeof(nameId));
         serializeValue(value);
     }
+    
+    // Append marker at the END: "GLBS" + 4-byte offset to start of globals section
+    // The globals section starts after the chunk data, so we need to know the chunk size
+    // But we don't have that here. Instead, we'll write the globals section size at the end.
+    // Format: [globals data][GLBS][globals_size]
+    uint32_t globalsSize = static_cast<uint32_t>(data.size());
+    append("GLBS", 4);
+    append(&globalsSize, sizeof(globalsSize));
     
     return data;
 }
@@ -5467,7 +5495,8 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
                 uint32_t strId = 0;
                 if (!read(&strId, sizeof(strId))) return std::nullopt;
                 if (strId < stringList.size()) {
-                    return addString(stringList[strId]);
+                    auto strRef = heap_.allocateString(stringList[strId]);
+                    return Value::makeStringId(strRef.id);
                 }
                 return nullptr;
             }
@@ -5528,45 +5557,64 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
 
 void VM::writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData) {
     // Append globals data to existing .hvc file
-    std::ofstream file(hvcPath, std::ios::binary | std::ios::app);
-    if (file.is_open()) {
-        file.write(reinterpret_cast<const char*>(globalsData.data()), globalsData.size());
-        file.close();
+    std::cerr << "[DEBUG] writeGlobalsToHvc: opening " << hvcPath << " for append, data size: " << globalsData.size() << "\n";
+    FILE* file = fopen(hvcPath.c_str(), "ab");
+    if (file) {
+        long posBefore = ftell(file);
+        std::cerr << "[DEBUG] writeGlobalsToHvc: posBefore = " << posBefore << "\n";
+        size_t written = fwrite(globalsData.data(), 1, globalsData.size(), file);
+        std::cerr << "[DEBUG] writeGlobalsToHvc: written = " << written << "\n";
+        long posAfter = ftell(file);
+        std::cerr << "[DEBUG] writeGlobalsToHvc: posAfter = " << posAfter << "\n";
+        fclose(file);
+        std::cerr << "[DEBUG] writeGlobalsToHvc: closed\n";
+    } else {
+        std::cerr << "[DEBUG] writeGlobalsToHvc: failed to open " << hvcPath << ", errno: " << errno << "\n";
     }
 }
 
 std::optional<std::vector<uint8_t>> VM::readGlobalsFromHvc(const std::string& hvcPath) {
     std::ifstream file(hvcPath, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) return std::nullopt;
+    if (!file.is_open()) {
+        std::cerr << "[DEBUG] readGlobalsFromHvc: failed to open " << hvcPath << "\n";
+        return std::nullopt;
+    }
     
     std::streamsize size = file.tellg();
-    if (size < 8) return std::nullopt; // Need at least "GLBS" + count
+    if (size < 8) {
+        std::cerr << "[DEBUG] readGlobalsFromHvc: file too small " << size << "\n";
+        return std::nullopt; // Need at least "GLBS" + size
+    }
     
-    // Read last 4 bytes to check for "GLBS" marker
-    file.seekg(-4, std::ios::end);
+    // Read last 8 bytes to check for "GLBS" marker + size
+    file.seekg(-8, std::ios::end);
     char marker[4];
+    uint32_t globalsSize = 0;
     file.read(marker, 4);
+    file.read(reinterpret_cast<char*>(&globalsSize), 4);
+    
     if (marker[0] != 'G' || marker[1] != 'L' || marker[2] != 'B' || marker[3] != 'S') {
+        std::cerr << "[DEBUG] readGlobalsFromHvc: no GLBS at end-8, got: " 
+                  << std::hex << (int)(unsigned char)marker[0] << " "
+                  << (int)(unsigned char)marker[1] << " "
+                  << (int)(unsigned char)marker[2] << " "
+                  << (int)(unsigned char)marker[3] << std::dec << "\n";
         return std::nullopt; // No globals section
     }
     
-    // Find the start of globals section by scanning backwards
-    // The format is: [chunk data][GLBS][globals data]
-    // We need to find where GLBS starts
-    file.seekg(0, std::ios::beg);
-    std::vector<uint8_t> allData(size);
-    file.read(reinterpret_cast<char*>(allData.data()), size);
-    
-    // Scan for "GLBS" marker from the end
-    for (std::streamsize i = size - 4; i >= 0; --i) {
-        if (allData[i] == 'G' && allData[i+1] == 'L' && allData[i+2] == 'B' && allData[i+3] == 'S') {
-            // Found marker at position i
-            std::vector<uint8_t> globalsData(allData.begin() + i, allData.end());
-            return globalsData;
-        }
+    if (globalsSize > static_cast<uint32_t>(size) - 8) {
+        std::cerr << "[DEBUG] readGlobalsFromHvc: invalid globalsSize " << globalsSize << " > fileSize " << size << "\n";
+        return std::nullopt;
     }
     
-    return std::nullopt;
+    // Read globals data from (end - 8 - globalsSize) to (end - 8)
+    std::streampos globalsStart = size - 8 - globalsSize;
+    file.seekg(globalsStart);
+    std::vector<uint8_t> globalsData(globalsSize);
+    file.read(reinterpret_cast<char*>(globalsData.data()), globalsSize);
+    
+    std::cerr << "[DEBUG] readGlobalsFromHvc: found GLBS at end-8, globalsSize=" << globalsSize << ", globalsStart=" << globalsStart << "\n";
+    return globalsData;
 }
 
 bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals) {

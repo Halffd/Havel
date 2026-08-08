@@ -33,12 +33,28 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <queue>
 #include <regex>
 #include <set>
 #include <sstream>
+
+// Globals reconstructed per-process by host modules. Since host-fn fields
+// serialize to null and these carry per-run state (app.args), they must never
+// be baked into or restored from the .hvc cache.
+static const std::unordered_set<std::string> &runtimeGlobalsSkipList() {
+  static const std::unordered_set<std::string> names = {
+      "app",        "system",     "scheduler", "load",   "struct", "class",
+      "prot",       "fmt",        "ffi",       "fs",     "bc",     "shell",
+      "sys",        "time",       "timer",     "math",   "rand",   "random",
+      "randint",    "log",        "jit",       "debug",  "readline", "browser",
+      "http",       "choice",     "pack",      "Regex",  "Option", "Result",
+      "getVariant", "state",
+  };
+  return names;
+}
 #include <stdexcept>
 #include <thread>
 
@@ -4725,16 +4741,10 @@ Value VM::loadModule(const std::string &path) {
   
   // Try to load globals from .hvc cache
   std::unordered_map<std::string, Value> cachedGlobals;
+  std::vector<ClosureImportRef> closureRefs;
   std::filesystem::path hvcPath = resolved->canonicalPath;
   hvcPath.replace_extension(".hvc");
-  bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals);
-  std::cerr << "[DEBUG] loadModule: path=" << path 
-            << " resolved type=" << static_cast<int>(resolved->type) 
-            << " canonical=" << resolved->canonicalPath
-            << " hvcPath=" << hvcPath 
-            << " hasCachedGlobals=" << hasCachedGlobals 
-            << " cachedGlobalsSize=" << cachedGlobals.size()
-            << " selfHostedPath=" << self_hosted_modules_path_ << "\n";
+  bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals, &closureRefs);
   
   if (hasCachedGlobals && !cachedGlobals.empty()) {
     // Restore globals from cache - this avoids running __main__
@@ -4755,6 +4765,11 @@ Value VM::loadModule(const std::string &path) {
     }
     // Restore cached globals (lazy tables, etc.)
     for (const auto &[name, value] : cachedGlobals) {
+      // Never clobber per-process runtime globals (fs, app, etc.) with the
+      // serialized copy — host-fn fields came back as null and app carries
+      // stale args. A stale GLBS section from an older binary can still
+      // contain them, so guard both serialize and restore.
+      if (runtimeGlobalsSkipList().count(name)) continue;
       globals[name] = value;
     }
     // Create _G mirror
@@ -4779,6 +4794,28 @@ Value VM::loadModule(const std::string &path) {
       }
     }
     
+    // Re-bind imported closures from serialized refs
+    // Warm loads skip __main__ so imports never re-run; these refs
+    // were saved from the cold run's globals and must be restored now.
+    for (const auto &ref : closureRefs) {
+      // Try cached module first (avoids recursive load triggering source compile)
+      Value srcExports;
+      if (moduleLoader_.isCached(ref.modulePath)) {
+        moduleLoader_.getCached(ref.modulePath, &srcExports);
+      }
+      if (!srcExports.isObjectId()) {
+        // Try loading by stripping .hvc extension and using module name
+        std::string modName = std::filesystem::path(ref.modulePath).stem().string();
+        srcExports = loadModule(modName);
+      }
+      if (!srcExports.isObjectId()) continue;
+      auto *srcObj = heap_.object(srcExports.asObjectId());
+      if (!srcObj) continue;
+      Value srcClosure = srcObj->get(ref.functionName);
+      if (!srcClosure.isClosureId()) continue;
+      globals[ref.globalName] = srcClosure;
+    }
+
     // Create module globals snapshot for closures
     auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
     for (auto &[name, value] : globals) {
@@ -4829,12 +4866,17 @@ Value VM::loadModule(const std::string &path) {
     moduleLoader_.putCacheWithGlobals(path, exports, moduleGlobalsForCache,
                                       cacheSrcPath, cacheBcPath);
     moduleLoader_.putCacheWithGlobals(canonicalKey, exports, moduleGlobalsForCache,
-                                      cacheSrcPath, cacheBcPath);
+                                       cacheSrcPath, cacheBcPath);
     globals[path] = exports;
     modules_loading_.erase(canonicalKey);
     return exports;
   }
-} else {
+  // hasCachedGlobals was false but chunk is loaded from .hvc.
+  // Fall through to execute __main__ from the loaded chunk.
+  // The execution block below handles both source-compiled and
+  // BytecodeCache-loaded chunks uniformly.
+  } // close if (BytecodeCache)
+  if (resolved->type != ModuleLoader::ResolvedModule::BytecodeCache) {
     // Read source file and compile
     std::ifstream file(resolved->canonicalPath);
     if (!file.is_open()) {
@@ -5316,15 +5358,20 @@ current_script_dir_ = prev_script_dir;
   
   // Serialize and append globals to .hvc file for fast loading
   try {
-    std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache);
-    std::cerr << "[DEBUG] Serialized globals for " << resolved->canonicalPath << ", size: " << globalsData.size() << " bytes\n";
+    std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache, canonicalKey);
     std::filesystem::path hvcPath = resolved->canonicalPath;
     hvcPath.replace_extension(".hvc");
     writeGlobalsToHvc(hvcPath.string(), globalsData);
-    std::cerr << "[DEBUG] Wrote globals to " << hvcPath << "\n";
+    // Also write to canonicalKey path if different (e.g. out/ build directory)
+    if (canonicalKey != resolved->canonicalPath) {
+      std::filesystem::path hvcPath2 = canonicalKey;
+      hvcPath2.replace_extension(".hvc");
+      if (hvcPath2 != hvcPath) {
+        writeGlobalsToHvc(hvcPath2.string(), globalsData);
+      }
+    }
   } catch (...) {
     // Ignore serialization errors
-    std::cerr << "[DEBUG] writeGlobalsToHvc failed\n";
   }
   
   // Also store in globals so GC scans it as a root
@@ -5338,7 +5385,8 @@ current_script_dir_ = prev_script_dir;
 // Globals serialization for .hvc cache
 // ============================================================================
 
-std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, Value>& globals) {
+std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, Value>& globals,
+                                          const std::string& thisModuleKey) {
     std::vector<uint8_t> data;
     auto append = [&data](const void* ptr, size_t size) {
         if (ptr == nullptr || size == 0) return;
@@ -5358,26 +5406,72 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
         return id;
     };
     
-    // Filter and count globals to serialize (skip private/internal)
+    // Filter and count globals to serialize (skip private/internal).
+    // and runtime-built environment objects (app/system/scheduler/...):
+    // they are reconstructed per the process by VMHostFunctions and would
+    // otherwise bake a stale args array (e.g. build-time script paths) into
+    // the .hvc, or restore host-module objects whose host-fn fields serialized
+    // to null (breaking fs reads).
+    static const std::unordered_set<std::string> &runtimeGlobals = runtimeGlobalsSkipList();
     std::vector<std::pair<std::string, Value>> toSerialize;
+    // Imported closures (defined in a different module) are not recreated from
+    // this module's own chunk on warm load, so serialize them as refs.
+    std::vector<std::pair<std::string, ClosureImportRef>> closureImports;
+    std::shared_ptr<BytecodeChunk> ownChunk;
+    if (!thisModuleKey.empty()) {
+        auto ownIt = module_chunks_.find(thisModuleKey);
+        if (ownIt != module_chunks_.end()) ownChunk = ownIt->second;
+    }
     toSerialize.reserve(globals.size());
     for (const auto& [name, value] : globals) {
         if (name.empty() || name[0] == '_') continue;
+        if (runtimeGlobals.count(name)) continue;
         // Skip host functions (they're re-registered on load)
-        if (value.isHostFuncId()) continue;
-        // Skip closures (they're recreated from chunk on load)
-        if (value.isClosureId()) continue;
+        if (value.isHostFuncId()) {
+            // But serialize $module_closure_ entries as closure refs
+            // so warm loads can re-register them.
+            if (name.rfind("$module_closure_", 0) == 0) {
+                std::string rest = name.substr(16); // skip "$module_closure_"
+                size_t lastUnderscore = rest.rfind('_');
+                if (lastUnderscore != std::string::npos && lastUnderscore > 0) {
+                    std::string srcKey = rest.substr(0, lastUnderscore);
+                    std::string fieldName = rest.substr(lastUnderscore + 1);
+                    closureImports.emplace_back(name, ClosureImportRef{srcKey, fieldName, name});
+                }
+            }
+            continue;
+        }
+        if (value.isClosureId()) {
+            auto *closure = heap_.closure(value.asClosureId());
+            if (!closure || !closure->chunk) continue;
+            // Local closures are recreated from this module's chunk on load.
+            if (ownChunk && closure->chunk == ownChunk.get()) continue;
+            // Foreign closure (imported from another module): emit a ref so
+            // warm loads can re-bind it from the source module's exports.
+            const BytecodeFunction *fn =
+                closure->chunk->getFunction(closure->function_index);
+            if (!fn) continue;
+            std::string srcKey;
+            for (const auto &[k, c] : module_chunks_) {
+                if (c.get() == closure->chunk) { srcKey = k; break; }
+            }
+            if (srcKey.empty()) continue;
+            closureImports.emplace_back(name, ClosureImportRef{srcKey, fn->name, name});
+            continue;
+        }
         toSerialize.emplace_back(name, value);
     }
     
     // Write globals count
-    uint32_t numGlobals = static_cast<uint32_t>(toSerialize.size());
+    uint32_t numGlobals = static_cast<uint32_t>(toSerialize.size() + closureImports.size());
     append(&numGlobals, sizeof(numGlobals));
     
     // First pass: collect all strings
     for (const auto& [name, value] : toSerialize) {
         getStringId(name);
         // Collect strings from value
+        std::unordered_set<uint32_t> visitedObj;
+        std::unordered_set<uint32_t> visitedArr;
         std::function<void(const Value&)> collectStrings = [&](const Value& v) {
             if (v.isStringId()) {
                 const std::string* strPtr = heap_.string(v.asStringId());
@@ -5386,7 +5480,12 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 // StringValId references chunk string table - not in heap
                 // We'll handle these separately if needed
             } else if (v.isObjectId()) {
-                auto* obj = heap_.object(v.asObjectId());
+                uint32_t id = v.asObjectId();
+                // Guard against object cycles (e.g. a globals mirror that
+                // references itself) — without this, a self-referential
+                // object overflows the stack in serializeGlobals.
+                if (!visitedObj.insert(id).second) return;
+                auto* obj = heap_.object(id);
                 if (obj) {
                     for (const auto& kv : *obj) {
                         getStringId(kv.first);
@@ -5394,7 +5493,9 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                     }
                 }
             } else if (v.isArrayId()) {
-                auto* obj = heap_.array(v.asArrayId());
+                uint32_t id = v.asArrayId();
+                if (!visitedArr.insert(id).second) return;
+                auto* obj = heap_.array(id);
                 if (obj) {
                     for (const auto& val : *obj) {
                         collectStrings(val);
@@ -5403,6 +5504,13 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
             }
         };
         collectStrings(value);
+    }
+    // Collect strings for closure import refs
+    for (const auto& [name, ref] : closureImports) {
+        getStringId(name);
+        getStringId(ref.modulePath);
+        getStringId(ref.functionName);
+        getStringId(ref.globalName);
     }
     
     // Write string table
@@ -5422,8 +5530,11 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
     constexpr uint8_t TAG_STRING = 4;
     constexpr uint8_t TAG_OBJECT = 5;
     constexpr uint8_t TAG_ARRAY = 6;
+    constexpr uint8_t TAG_CLOSURE_REF = 7;
     
     // Second pass: serialize values
+    std::unordered_set<uint32_t> serVisitedObj;
+    std::unordered_set<uint32_t> serVisitedArr;
     std::function<void(const Value&)> serializeValue = [&](const Value& v) {
         if (v.isNull()) {
             append(&TAG_NULL, 1);
@@ -5450,8 +5561,15 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 append(&strId, sizeof(strId));
             }
         } else if (v.isObjectId()) {
+            uint32_t id = v.asObjectId();
+            // Cycle guard: a self-referential object would recurse forever
+            // here (same crash as collectStrings). Emit null for the cycle.
+            if (!serVisitedObj.insert(id).second) {
+                append(&TAG_NULL, 1);
+                return;
+            }
             append(&TAG_OBJECT, 1);
-            auto* obj = heap_.object(v.asObjectId());
+            auto* obj = heap_.object(id);
             if (obj) {
                 uint32_t count = static_cast<uint32_t>(obj->size());
                 append(&count, sizeof(count));
@@ -5464,9 +5582,15 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 uint32_t count = 0;
                 append(&count, sizeof(count));
             }
+            serVisitedObj.erase(id);
         } else if (v.isArrayId()) {
+            uint32_t id = v.asArrayId();
+            if (!serVisitedArr.insert(id).second) {
+                append(&TAG_NULL, 1);
+                return;
+            }
             append(&TAG_ARRAY, 1);
-            auto* obj = heap_.array(v.asArrayId());
+            auto* obj = heap_.array(id);
             if (obj) {
                 uint32_t count = static_cast<uint32_t>(obj->size());
                 append(&count, sizeof(count));
@@ -5477,6 +5601,7 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 uint32_t count = 0;
                 append(&count, sizeof(count));
             }
+            serVisitedArr.erase(id);
         } else {
             // Unsupported type (closure, host function, etc.) - serialize as null
             append(&TAG_NULL, 1);
@@ -5487,6 +5612,19 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
         uint32_t nameId = getStringId(name);
         append(&nameId, sizeof(nameId));
         serializeValue(value);
+    }
+    // Emit closure import refs (imported functions from other modules).
+    // Format per entry: [nameId][TAG_CLOSURE_REF][modulePathId][functionNameId][globalNameId]
+    for (const auto& [name, ref] : closureImports) {
+        uint32_t nameId = getStringId(name);
+        append(&nameId, sizeof(nameId));
+        append(&TAG_CLOSURE_REF, 1);
+        uint32_t modId = getStringId(ref.modulePath);
+        append(&modId, sizeof(modId));
+        uint32_t fnId = getStringId(ref.functionName);
+        append(&fnId, sizeof(fnId));
+        uint32_t gnId = getStringId(ref.globalName);
+        append(&gnId, sizeof(gnId));
     }
     
     // Append marker at the END: "GLBS" + 4-byte offset to start of globals section
@@ -5500,7 +5638,8 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
     return data;
 }
 
-std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const uint8_t> data) {
+std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const uint8_t> data,
+                                                              std::vector<ClosureImportRef>* outRefs) {
     std::unordered_map<std::string, Value> globals;
     size_t pos = 0;
     
@@ -5540,10 +5679,16 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
     constexpr uint8_t TAG_STRING = 4;
     constexpr uint8_t TAG_OBJECT = 5;
     constexpr uint8_t TAG_ARRAY = 6;
-    
-    std::function<std::optional<Value>()> deserializeValue = [&]() -> std::optional<Value> {
+    constexpr uint8_t TAG_CLOSURE_REF = 7;
+
+    std::function<std::optional<Value>(std::optional<uint8_t>)> deserializeValue =
+        [&](std::optional<uint8_t> preTag) -> std::optional<Value> {
         uint8_t tag = 0;
-        if (!read(&tag, 1)) return std::nullopt;
+        if (preTag.has_value()) {
+            tag = *preTag;
+        } else if (!read(&tag, 1)) {
+            return std::nullopt;
+        }
         
         switch (tag) {
             case TAG_NULL:
@@ -5582,7 +5727,7 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
                         uint32_t keyId = 0;
                         if (!read(&keyId, sizeof(keyId))) return std::nullopt;
                         std::string key = (keyId < stringList.size()) ? stringList[keyId] : "";
-                        auto valOpt = deserializeValue();
+                        auto valOpt = deserializeValue(std::nullopt);
                         if (valOpt) {
                             (*obj)[key] = *valOpt;
                         }
@@ -5599,7 +5744,7 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
                 auto* obj = heap_.object(objRef.id);
                 if (obj) {
                     for (uint32_t i = 0; i < count; ++i) {
-                        auto valOpt = deserializeValue();
+                        auto valOpt = deserializeValue(std::nullopt);
                         if (valOpt) {
                             (*obj)[std::to_string(i)] = *valOpt;
                         }
@@ -5618,7 +5763,29 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
         uint32_t nameId = 0;
         if (!read(&nameId, sizeof(nameId))) break;
         std::string name = (nameId < stringList.size()) ? stringList[nameId] : "";
-        auto valOpt = deserializeValue();
+        // Peek the tag for this global's value
+        if (pos >= data.size()) break;
+        uint8_t tag = data[pos];
+        if (tag == TAG_CLOSURE_REF && outRefs) {
+            // Skip the tag byte
+            ++pos;
+            // Read modulePath string id
+            uint32_t modId = 0;
+            if (!read(&modId, sizeof(modId))) break;
+            std::string modPath = (modId < stringList.size()) ? stringList[modId] : "";
+            // Read functionName string id
+            uint32_t fnId = 0;
+            if (!read(&fnId, sizeof(fnId))) break;
+            std::string fnName = (fnId < stringList.size()) ? stringList[fnId] : "";
+            // Read globalName string id
+            uint32_t gnId = 0;
+            if (!read(&gnId, sizeof(gnId))) break;
+            std::string globalName = (gnId < stringList.size()) ? stringList[gnId] : "";
+            outRefs->push_back(ClosureImportRef{modPath, fnName, globalName});
+            // Do NOT add to globals map; the warm restore path will populate it.
+            continue;
+        }
+        auto valOpt = deserializeValue(std::nullopt);
         if (valOpt) {
             globals[name] = *valOpt;
         }
@@ -5689,7 +5856,8 @@ std::optional<std::vector<uint8_t>> VM::readGlobalsFromHvc(const std::string& hv
     return globalsData;
 }
 
-bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals) {
+bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals,
+                                   std::vector<ClosureImportRef>* outRefs) {
     auto globalsDataOpt = readGlobalsFromHvc(hvcPath);
     if (!globalsDataOpt) return false;
 
@@ -5702,7 +5870,7 @@ bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_ma
     if (globalsData.empty()) return false;
     std::span<const uint8_t> data(globalsData.data(), globalsData.size());
 
-    outGlobals = deserializeGlobals(data);
+    outGlobals = deserializeGlobals(data, outRefs);
     return !outGlobals.empty();
 }
 

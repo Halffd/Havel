@@ -1252,11 +1252,23 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
 Value loadModule(const std::string& path);
     Value loadScript(const std::string& path);
     // Globals serialization for .hvc cache
-    std::vector<uint8_t> serializeGlobals(const std::unordered_map<std::string, Value>& globals);
-    std::unordered_map<std::string, Value> deserializeGlobals(std::span<const uint8_t> data);
+    // An imported closure (defined in another module) is serialized as a
+    // ClosureImportRef { modulePath, functionName } so warm loads can re-bind
+    // it. Local closures are skipped: they are recreated from the module's own
+    // chunk on restore.
+    struct ClosureImportRef {
+      std::string modulePath;
+      std::string functionName;
+      std::string globalName; // the name in the importing module's globals
+    };
+    std::vector<uint8_t> serializeGlobals(const std::unordered_map<std::string, Value>& globals,
+                                          const std::string& thisModuleKey = "");
+    std::unordered_map<std::string, Value> deserializeGlobals(std::span<const uint8_t> data,
+                                                              std::vector<ClosureImportRef>* outRefs = nullptr);
     void writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData);
     std::optional<std::vector<uint8_t>> readGlobalsFromHvc(const std::string& hvcPath);
-    bool deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals);
+    bool deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals,
+                                   std::vector<ClosureImportRef>* outRefs = nullptr);
     void registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases = {});
   bool ensureModuleLoaded(const std::string &name);
   bool isLazyModuleRegistered(const std::string &name) const;

@@ -3510,13 +3510,18 @@ void VM::registerDefaultHostFunctions() {
 
   registerHostFunction(
       "gc_collect_full", 0, [this](const std::vector<Value> &) -> Value {
+        std::vector<Value> scheduler_roots;
+        if (scheduler_) {
+          scheduler_roots = scheduler_->getGCRoots();
+        }
         heap_.forceFullCollection(
             stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
             [this](uint32_t index) -> std::optional<Value> {
               if (index >= locals.size())
                 return std::nullopt;
               return locals[index];
-            });
+            },
+            scheduler_roots);
         return Value::makeNull();
       });
 

@@ -300,6 +300,11 @@ struct CallFrame {
   utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
     std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
   std::vector<std::shared_ptr<std::unordered_map<std::string, Value>>> imported_module_globals_; // GC root for wrapped module functions
+  // Spawn-time globals snapshot per goroutine closure id. Restored in
+  // startGoroutineCall so a goroutine's first run resolves globals against
+  // the module scope that was active at spawn, not whatever map is ambient
+  // at first-pick (module-cache fixup may reassign the closure's module_globals).
+  std::unordered_map<uint32_t, std::shared_ptr<std::unordered_map<std::string, Value>>> spawn_globals_snapshot_;
  
   
         // Function properties support (fn.prop = value for static state, memoization, etc.)
@@ -1244,9 +1249,15 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
                                 const std::string& canonicalKey, const std::string& fieldPath,
                                 int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
 
-    Value loadModule(const std::string& path);
-  Value loadScript(const std::string& path);
-void registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases = {});
+Value loadModule(const std::string& path);
+    Value loadScript(const std::string& path);
+    // Globals serialization for .hvc cache
+    std::vector<uint8_t> serializeGlobals(const std::unordered_map<std::string, Value>& globals);
+    std::unordered_map<std::string, Value> deserializeGlobals(std::span<const uint8_t> data);
+    void writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData);
+    std::optional<std::vector<uint8_t>> readGlobalsFromHvc(const std::string& hvcPath);
+    bool deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals);
+    void registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases = {});
   bool ensureModuleLoaded(const std::string &name);
   bool isLazyModuleRegistered(const std::string &name) const;
   void activateLazyModule(const std::string &name);

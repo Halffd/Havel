@@ -63,6 +63,16 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
     return 0;
   }
 
+  // Capture the globals in scope at spawn time keyed by the goroutine's
+  // closure id. startGoroutineCall restores this snapshot on the goroutine's
+  // first run so it resolves globals against the right module scope, even if
+  // the closure's module_globals is later reassigned by module-cache fixup.
+  if (spawn_value.isClosureId()) {
+    uint32_t cid = spawn_value.asClosureId();
+    spawn_globals_snapshot_[cid] =
+        std::make_shared<std::unordered_map<std::string, Value>>(globals);
+  }
+
   return scheduler_->spawn(spawn_value, args, "async-task");
 }
 

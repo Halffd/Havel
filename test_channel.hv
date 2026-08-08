@@ -1,5 +1,0 @@
-ch = channel()
-print("ch type: ${type.type(ch)}")
-ch.send(42)
-v = ch.receive()
-print("got: $v")

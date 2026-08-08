@@ -1175,33 +1175,50 @@ void VM::loadFiberState(Fiber *fiber) {
     frame_arena_[frame_count_ - 1].ip = fiber->ip;
   }
 
-  // STEP 6: Reattach spawn-time globals scope if the ambient globals lost it.
-  // Churn repro (n=600) resumes a goroutine against a module sidecar map that
-  // lacks script globals (tick_in), so every global read fails. Reinstate the
-  // spawn snapshot only when ambient is provably the wrong map: ambient is
-  // missing a key the snapshot carries. Merge missing keys into ambient
-  // instead of wholesale-replacing it — replacing destroys the goroutine's
-  // live progress (e.g. tick_in=5 reset back to spawn-time 0) and produces
-  // resetting tick sequences. When ambient is the right map (has all keys),
-  // leave it untouched so shared-write semantics are preserved.
+  // STEP 6: Reattach globals scope if the ambient globals lost script keys.
+  // Under GC churn a goroutine resumes against a module sidecar map lacking
+  // script globals, so every global read fails. Merge missing keys BACK into
+  // ambient instead of wholesale-replacing it — replacing destroys the
+  // goroutine's live progress (e.g. tick_in=5 reset to spawn-time 0) and
+  // produces resetting tick sequences.
+  //
+  // Merge source priority (most fresh first):
+  //   1. fiber->saved_globals — refreshed on every saveFiberState, holds the
+  //      goroutine's last-live progress. Preserves shared-write values main
+  //      wrote too (main and goroutine share ambient, which was copied here).
+  //   2. spawn_globals_snapshot_ — spawn-time copy, used only on first run
+  //      (before any save). Stale, but better than nothing.
+  // ambient stays primary: merges only add missing keys, never overwrite, so
+  // shared-write semantics are preserved when ambient is the right map.
   uint32_t top_closure_id = UINT32_MAX;
   if (frame_count_ > 0)
     top_closure_id = frame_arena_[frame_count_ - 1].closure_id;
-  auto snapIt = spawn_globals_snapshot_.find(top_closure_id);
-  if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
-    std::vector<std::pair<std::string, Value>> missing_keys;
-    for (const auto &[k, v] : *snapIt->second) {
+
+  std::vector<std::pair<std::string, Value>> missing_keys;
+  auto consider_source = [&](const std::unordered_map<std::string, Value>& src) {
+    for (const auto& [k, v] : src) {
       if (!globals.count(k)) {
         missing_keys.emplace_back(k, v);
       }
     }
-    if (!missing_keys.empty()) {
-      ::havel::debug(
-          "[VM] loadFiberState: merging {} globals snapshot keys into ambient",
-          missing_keys.size());
-      for (auto &[k, v] : missing_keys) {
-        globals.emplace(std::move(k), std::move(v));
-      }
+  };
+
+  const bool has_fresh = fiber->has_saved_globals && !fiber->saved_globals.empty();
+  if (has_fresh) {
+    consider_source(fiber->saved_globals);
+  } else {
+    auto snapIt = spawn_globals_snapshot_.find(top_closure_id);
+    if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
+      consider_source(*snapIt->second);
+    }
+  }
+
+  if (!missing_keys.empty()) {
+    ::havel::debug(
+        "[VM] loadFiberState: merging {} missing globals keys from {}",
+        missing_keys.size(), has_fresh ? "fiber saved_globals" : "spawn snapshot");
+    for (auto& [k, v] : missing_keys) {
+      globals.emplace(std::move(k), std::move(v));
     }
   }
 }
@@ -1288,7 +1305,18 @@ void VM::saveFiberState(Fiber *fiber) {
     fiber->ip = frame_arena_[frame_count_ - 1].ip;
   }
 
-  // STEP 5: Update fiber state if needed
+  // STEP 5: Refresh the per-fiber fresh-globals fallback. loadFiberState
+  // uses this (in preference to the stale spawn-time snapshot) when
+  // ambient globals is a churned sidecar missing script keys — merging
+  // the LAST saved values keeps the goroutine's live progress (e.g.
+  // tick_in=5 survives a GC-churned ambient that lost it) without
+  // breaking shared-write semantics (ambient stays the primary map).
+  fiber->saved_globals = globals;
+  fiber->saved_globals_stack = globals_stack_;
+  fiber->saved_globals_mirror_id = globals_mirror_object_id_;
+  fiber->has_saved_globals = true;
+
+  // STEP 6: Update fiber state if needed
   // Don't change the suspended_reason - that was set when suspension occurred
   // Just ensure the fiber's state reflects current execution point
 }

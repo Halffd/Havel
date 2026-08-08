@@ -232,8 +232,8 @@ fn SpreadExpression(value, line, col) {
 fn WildcardPattern(line, col) {
   {kind: "WildcardPattern", line: line, col: col}
 }
-fn ArrayPattern(elements, rest, line, col) {
-  {kind: "ArrayPattern", line: line, col: col, elements: elements, rest: rest}
+fn ArrayPattern(elements, rest, line, col, is_tuple_destructuring = false) {
+  {kind: "ArrayPattern", line: line, col: col, elements: elements, rest: rest, is_tuple_destructuring: is_tuple_destructuring}
 }
 fn ObjectPattern(properties, rest, line, col) {
   {kind: "ObjectPattern", line: line, col: col, properties: properties, rest: rest}

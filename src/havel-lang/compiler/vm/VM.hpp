@@ -1249,9 +1249,15 @@ Value deepMaterializeStrings(Value value, const BytecodeChunk* chunk, std::unord
                                 const std::string& canonicalKey, const std::string& fieldPath,
                                 int depth = 0, std::unordered_set<uint32_t>* visited = nullptr);
 
-    Value loadModule(const std::string& path);
-  Value loadScript(const std::string& path);
-void registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases = {});
+Value loadModule(const std::string& path);
+    Value loadScript(const std::string& path);
+    // Globals serialization for .hvc cache
+    std::vector<uint8_t> serializeGlobals(const std::unordered_map<std::string, Value>& globals);
+    std::unordered_map<std::string, Value> deserializeGlobals(std::span<const uint8_t> data);
+    void writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData);
+    std::optional<std::vector<uint8_t>> readGlobalsFromHvc(const std::string& hvcPath);
+    bool deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals);
+    void registerLazyModule(const std::string &name, std::function<void(struct VMApi&)> initFn, const std::vector<std::string> &aliases = {});
   bool ensureModuleLoaded(const std::string &name);
   bool isLazyModuleRegistered(const std::string &name) const;
   void activateLazyModule(const std::string &name);

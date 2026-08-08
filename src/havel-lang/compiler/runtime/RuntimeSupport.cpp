@@ -917,6 +917,30 @@ std::vector<uint8_t> ValueSerializer::serializeChunk(const BytecodeChunk& chunk)
     return serializeChunk(chunk, "");
 }
 
+// Serialize globals - placeholder, actual serialization done in VM with heap access
+std::vector<uint8_t> ValueSerializer::serializeChunkWithGlobals(const BytecodeChunk& chunk,
+                                                                const std::unordered_map<std::string, Value>& globals,
+                                                                const std::string& sourcePath) {
+    // First serialize the chunk normally
+    std::vector<uint8_t> data = serializeChunk(chunk, sourcePath);
+    
+    // Append globals section marker
+    auto append = [&data](const void* ptr, size_t size) {
+        if (ptr == nullptr || size == 0) return;
+        data.insert(data.end(), static_cast<const uint8_t*>(ptr),
+                    static_cast<const uint8_t*>(ptr) + size);
+    };
+    
+    // Globals section marker: "GLBS"
+    append("GLBS", 4);
+    
+    // Placeholder - actual serialization done in VM
+    uint32_t numGlobals = 0;
+    append(&numGlobals, sizeof(numGlobals));
+    
+    return data;
+}
+
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const uint8_t> data) {
   BytecodeChunk chunk;
   size_t pos = 0;
@@ -1206,6 +1230,14 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
         }
 
         chunk.addFunction(std::move(func));
+    }
+
+    // Check for GLBS marker (globals section) - stop parsing here
+    if (pos + 4 <= data.size()) {
+        const uint8_t* ptr = data.data() + pos;
+        if (ptr[0] == 'G' && ptr[1] == 'L' && ptr[2] == 'B' && ptr[3] == 'S') {
+            // Found globals section marker, stop parsing
+        }
     }
 
     return chunk;

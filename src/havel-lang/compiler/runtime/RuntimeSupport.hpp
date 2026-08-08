@@ -337,6 +337,14 @@ public:
   // Chunk serialization
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk);
   std::vector<uint8_t> serializeChunk(const BytecodeChunk& chunk, const std::string& sourcePath);
+  std::vector<uint8_t> serializeChunkWithGlobals(const BytecodeChunk& chunk,
+                                                  const std::unordered_map<std::string, Value>& globals,
+                                                  const std::string& sourcePath = "");
+  struct ChunkWithGlobals {
+      BytecodeChunk chunk;
+      std::unordered_map<std::string, Value> globals;
+  };
+  std::optional<ChunkWithGlobals> deserializeChunkWithGlobals(std::span<const uint8_t> data);
   std::optional<BytecodeChunk> deserializeChunk(std::span<const uint8_t> data);
   std::optional<BytecodeChunk> deserializeChunkMmap(const std::string& filePath);
   std::optional<BytecodeChunk> loadChunk(const std::string& filePath, size_t mmapThreshold = 65536);

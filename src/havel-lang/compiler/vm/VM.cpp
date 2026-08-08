@@ -1174,26 +1174,29 @@ void VM::loadFiberState(Fiber *fiber) {
   // Churn repro (n=600) resumes a goroutine against a module sidecar map that
   // lacks script globals (tick_in), so every global read fails. Reinstate the
   // spawn snapshot only when ambient is provably the wrong map: ambient is
-  // missing a key the snapshot carries. When ambient still holds the shared
-  // script map, shared-write semantics are preserved.
+  // missing a key the snapshot carries. Merge missing keys into ambient
+  // instead of wholesale-replacing it — replacing destroys the goroutine's
+  // live progress (e.g. tick_in=5 reset back to spawn-time 0) and produces
+  // resetting tick sequences. When ambient is the right map (has all keys),
+  // leave it untouched so shared-write semantics are preserved.
   uint32_t top_closure_id = UINT32_MAX;
   if (frame_count_ > 0)
     top_closure_id = frame_arena_[frame_count_ - 1].closure_id;
   auto snapIt = spawn_globals_snapshot_.find(top_closure_id);
   if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
-    bool missing = false;
+    std::vector<std::pair<std::string, Value>> missing_keys;
     for (const auto &[k, v] : *snapIt->second) {
       if (!globals.count(k)) {
-        missing = true;
-        break;
+        missing_keys.emplace_back(k, v);
       }
     }
-    if (missing) {
+    if (!missing_keys.empty()) {
       ::havel::debug(
-          "[VM] loadFiberState: reinstating globals snapshot (ambient missing "
-          "key, snap_size={})",
-          snapIt->second->size());
-      globals = *(snapIt->second);
+          "[VM] loadFiberState: merging {} globals snapshot keys into ambient",
+          missing_keys.size());
+      for (auto &[k, v] : missing_keys) {
+        globals.emplace(std::move(k), std::move(v));
+      }
     }
   }
 }
@@ -1363,10 +1366,26 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
     return GoroutineCallResult::Failed;
   }
 
+  // Install the goroutine's spawn-time globals snapshot only when the
+  // ambient globals is provably the wrong map (missing a key the snapshot
+  // carries). When ambient still holds the shared script map, keep it so
+  // main-script writes (e.g. loop counters declared after spawn) stay
+  // visible on resume; unconditionally swapping to the snapshot would
+  // clobber main's live globals and re-run stale iterations.
   {
     auto snapIt = spawn_globals_snapshot_.find(closure_id);
-    if (snapIt != spawn_globals_snapshot_.end()) {
-      globals = *snapIt->second;
+    if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
+      bool missing = false;
+      for (const auto &[k, v] : *snapIt->second) {
+        (void)v;
+        if (!globals.count(k)) {
+          missing = true;
+          break;
+        }
+      }
+      if (missing) {
+        globals = *snapIt->second;
+      }
     }
   }
 

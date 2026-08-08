@@ -300,6 +300,11 @@ struct CallFrame {
   utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
     std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
   std::vector<std::shared_ptr<std::unordered_map<std::string, Value>>> imported_module_globals_; // GC root for wrapped module functions
+  // Spawn-time globals snapshot per goroutine closure id. Restored in
+  // startGoroutineCall so a goroutine's first run resolves globals against
+  // the module scope that was active at spawn, not whatever map is ambient
+  // at first-pick (module-cache fixup may reassign the closure's module_globals).
+  std::unordered_map<uint32_t, std::shared_ptr<std::unordered_map<std::string, Value>>> spawn_globals_snapshot_;
  
   
         // Function properties support (fn.prop = value for static state, memoization, etc.)

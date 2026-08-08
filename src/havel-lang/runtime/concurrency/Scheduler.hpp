@@ -606,6 +606,12 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
 
   int deferredWakeupFd() const { return deferred_wakeup_fd_; }
 
+  /// Ping the eventfd so a blocking event-loop poll (which monitors
+  /// deferredWakeupFd) returns immediately. Called when goroutines are
+  /// made runnable outside the main loop (requeueFront/unpark) so hotkey
+  /// triggers are not delayed until the poll times out.
+  void notifyWakeup();
+
   /// Drains deferred callbacks in priority order (hotkey → normal → background).
   /// Default drains all priorities. Specify upTo to drain only up to a priority.
   /// e.g. drainDeferredCallbacks(FiberPriority::NORMAL) drains HOTKEY + NORMAL.

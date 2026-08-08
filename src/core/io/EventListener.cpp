@@ -587,12 +587,15 @@ void EventListener::EventLoop() {
 
         if (shutdown.load()) break;
 
-        // Fast path: still wait for external events even when goroutines are runnable
-        // Use a shorter timeout to stay responsive, but don't busy-loop
+        // Fast path: when goroutines are runnable, skip the blocking poll and
+        // select and re-enter executeFrame() immediately so VM work (hotkey
+        // re-arms, slept/unparked goroutines, newly-spawned work) is picked up
+        // without waiting out the PollEvents(10) + select(10ms) latency.
+        // Only block again when there is genuinely nothing left to run, which
+        // both prevents 100% CPU busy-looping and keeps event pickup prompt.
         if (executionEngine && executionEngine->getScheduler() &&
             executionEngine->getScheduler()->hasRunnableFibers()) {
-            // Still do the select with a short timeout to avoid 100% CPU
-            // The select includes wakeup fds so we'll be woken promptly
+            continue;
         }
 
         // Periodic device re-check (every ~5 seconds) to handle hotplug/disconnect

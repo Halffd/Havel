@@ -5692,12 +5692,16 @@ std::optional<std::vector<uint8_t>> VM::readGlobalsFromHvc(const std::string& hv
 bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals) {
     auto globalsDataOpt = readGlobalsFromHvc(hvcPath);
     if (!globalsDataOpt) return false;
-    
+
     auto globalsData = *globalsDataOpt;
-    // Skip "GLBS" marker
-    if (globalsData.size() < 4) return false;
-    std::span<const uint8_t> data(globalsData.data() + 4, globalsData.size() - 4);
-    
+    // readGlobalsFromHvc already strips the trailing [GLBS][size] trailer
+    // and returns only the serialized payload ([numGlobals][string table]
+    // [name+value...]...). Feed it directly — skipping bytes here would
+    // drop the leading numGlobals field and yield an empty result,
+    // forcing the slow recompile+serialize path every launch.
+    if (globalsData.empty()) return false;
+    std::span<const uint8_t> data(globalsData.data(), globalsData.size());
+
     outGlobals = deserializeGlobals(data);
     return !outGlobals.empty();
 }

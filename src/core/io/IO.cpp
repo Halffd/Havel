@@ -17,6 +17,8 @@ static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 #include "HotkeyExecutor.hpp"
 #include "utils/Logger.hpp"
 
+#include "UinputDevice.hpp"
+
 namespace {
   thread_local bool tl_inHotkeyCallback = false;
 }
@@ -303,7 +305,15 @@ std::string IO::getMouseDevice() {
     return mice[0].eventPath;
   }
 
-  warning("❌ No suitable mouse devices found");
+  // No physical mouse found - create virtual mouse via uinput
+  if (debugging::debug_io) debug("No physical mouse found, creating virtual mouse via uinput");
+  std::string virtualMouse = UinputDevice::CreateVirtualMouse("havel-virtual-mouse");
+  if (!virtualMouse.empty()) {
+    if (debugging::debug_io) debug("Created virtual mouse: {}", virtualMouse);
+    return virtualMouse;
+  }
+
+  warning("❌ No suitable mouse devices found and failed to create virtual mouse");
   return "";
 }
 

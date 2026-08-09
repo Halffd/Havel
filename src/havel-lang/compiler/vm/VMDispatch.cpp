@@ -115,6 +115,17 @@ auto hostIt = host_function_globals_.find(name);
       }
     }
     { int i = 0; for (const auto &[nk, nv] : globals) { if (i >= 6) break; std::cerr << "  sample key '" << nk << "' closure=" << nv.isClosureId() << " hf=" << nv.isHostFuncId() << "\n"; i++; } }
+    uint32_t cid = frame_count_ > 0 ? frame_arena_[frame_count_-1].closure_id : 0;
+    if (cid != 0) {
+      auto *cl = heap_.closure(cid);
+      if (cl) {
+        std::cerr << "  frameClosure module_globals=" << (cl->module_globals ? (void*)cl->module_globals.get() : 0)
+                  << " size=" << (cl->module_globals ? cl->module_globals->size() : 0)
+                  << " hasEmitterError=" << (cl->module_globals && cl->module_globals->find("emitterError") != cl->module_globals->end())
+                  << " hasEmitError=" << (cl->module_globals && cl->module_globals->find("emitError") != cl->module_globals->end())
+                  << "\n";
+      }
+    }
   }
   COMPILER_THROW("Undefined variable: '" + name + "'");
   break;

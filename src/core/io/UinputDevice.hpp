@@ -11,6 +11,7 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_set>
+#include <string>
 
 namespace havel {
 
@@ -46,6 +47,10 @@ public:
     
     // Get file descriptor (for EventListener integration)
     int GetFd() const { return uinputFd; }
+
+    // Create a virtual mouse device (for when no physical mouse is available)
+    // Returns the event device path (e.g., "/dev/input/eventX") or empty string on failure
+    static std::string CreateVirtualMouse(const std::string& name = "havel-virtual-mouse");
 
 private:
     int uinputFd = -1;

@@ -151,6 +151,22 @@ case OpCode::IMPORT: {
     // conflicts with the "debug" .hv module).
     // Lazy proxy objects must be activated before use, so skip the short-circuit.
     auto git = globals.find(path);
+    if (path == "debug") {
+      std::cerr << "[DEBUG IMPORT] globals['debug'] found? " << (git != globals.end())
+                << " isObj=" << (git != globals.end() && git->second.isObjectId())
+                << " isNull=" << (git != globals.end() && git->second.isNull())
+                << " isHF=" << (git != globals.end() && git->second.isHostFuncId()) << "\n";
+      if (git != globals.end() && git->second.isObjectId()) {
+        auto *co = heap_.object(git->second.asObjectId());
+        if (co) {
+          auto *sf = co->get("setFlag");
+          std::cerr << "    globals['debug'].setFlag present? " << (sf != nullptr)
+                    << " hf=" << (sf ? sf->isHostFuncId() : 0)
+                    << " closure=" << (sf ? sf->isClosureId() : 0)
+                    << " null=" << (sf ? sf->isNull() : 1) << "\n";
+        }
+      }
+    }
         if (git != globals.end() && git->second.isObjectId()) {
             auto *preObj = heap_.object(git->second.asObjectId());
             if (preObj) {
@@ -184,6 +200,27 @@ case OpCode::IMPORT: {
     // Load module via C++ module loader (handles .hv/.hvc files)
     // This properly handles .hv/.hvc files and relative imports within modules
     Value exports = loadModule(path);
+    if (path == "debug") {
+        std::cerr << "[DEBUG IMPORT RETURN] path=debug"
+                  << " bits=" << exports.rawBits()
+                  << " obj=" << exports.isObjectId()
+                  << " closure=" << exports.isClosureId()
+                  << " hf=" << exports.isHostFuncId()
+                  << " null=" << exports.isNull()
+                  << "\n";
+        if (exports.isObjectId()) {
+            auto *ei = heap_.object(exports.asObjectId());
+            if (ei) {
+                auto *sf = ei->get("setFlag");
+                std::cerr << "  returned.setFlag="
+                          << (sf ? "present" : "MISSING")
+                          << " closure=" << (sf && sf->isClosureId())
+                          << " hf=" << (sf && sf->isHostFuncId())
+                          << " null=" << (sf && sf->isNull())
+                          << "\n";
+            }
+        }
+    }
     pushStack(exports);
     break;
 }

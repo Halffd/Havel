@@ -635,6 +635,7 @@ private:
             sched->wakeSleepingGoroutines();
             auto* g = sched->pickNext();
       if (!g) {
+        std::cerr << "[DEBUG] pickNext null: suspended=" << sched->suspendedCount() << " total=" << sched->goroutineCount() << "\n";
         size_t sc = sched->suspendedCount();
         if (sc == 0) break;
         // Check if any sleeping goroutine has a deadline that will wake it
@@ -654,7 +655,9 @@ private:
       // Start and run this goroutine to completion
       // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
+        std::cerr << "[DEBUG] pickNext Created gid=" << g->id << " name='" << g->name << "'\n";
         auto result = vm_->startGoroutineCall(g->callable, g->locals);
+        std::cerr << "[DEBUG] startGoroutineCall gid=" << g->id << " result=" << (int)result << "\n";
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
           { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }

@@ -52,6 +52,11 @@ static const std::unordered_set<std::string> &runtimeGlobalsSkipList() {
       "randint",    "log",        "jit",       "debug",  "readline", "browser",
       "http",       "choice",     "pack",      "Regex",  "Option", "Result",
       "getVariant", "state",
+      // Host-namespace objects (contain host-fn fields that serialize to null).
+      // Reconstructed per process, so a stale GLBS copy must not clobber them.
+      "string",     "String",     "array",     "Array",  "bit",     "ptr",
+      "object",     "Object",     "physics",   "Physics", "Type",    "process",
+      "wayland",    "bytecodeBuilder",
   };
   return names;
 }
@@ -237,6 +242,10 @@ VM::~VM() {
     unpinExternalRoot(rootId);
   }
   host_function_gc_roots_.clear();
+  for (auto &[name, rootId] : module_cache_gc_roots_) {
+    unpinExternalRoot(rootId);
+  }
+  module_cache_gc_roots_.clear();
   imported_module_globals_.clear();
 
   if (heap_.externalRootCount() > 0) {
@@ -1421,20 +1430,19 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   // main-script writes (e.g. loop counters declared after spawn) stay
   // visible on resume; unconditionally swapping to the snapshot would
   // clobber main's live globals and re-run stale iterations.
-  {
-    auto snapIt = spawn_globals_snapshot_.find(closure_id);
-    if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
-      bool missing = false;
-      for (const auto &[k, v] : *snapIt->second) {
-        (void)v;
-        if (!globals.count(k)) {
-          missing = true;
-          break;
-        }
+  auto snapIt = spawn_globals_snapshot_.find(closure_id);
+  std::cerr << "[DEBUG] startGoroutine snapshot found=" << (snapIt != spawn_globals_snapshot_.end()) << " size=" << (snapIt != spawn_globals_snapshot_.end() ? snapIt->second->size() : 0) << " globals has fs=" << (globals.count("fs") ? 1 : 0) << " snapshot has fs=" << (snapIt != spawn_globals_snapshot_.end() && snapIt->second->count("fs") ? 1 : 0) << "\n";
+  if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
+    bool missing = false;
+    for (const auto &[k, v] : *snapIt->second) {
+      (void)v;
+      if (!globals.count(k)) {
+        missing = true;
+        break;
       }
-      if (missing) {
-        globals = *snapIt->second;
-      }
+    }
+    if (missing) {
+      globals = *snapIt->second;
     }
   }
 
@@ -1467,6 +1475,12 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   (void)chunk_pin; // held implicitly via the closure we allocated/looked-up
 
   func->execution_count++;
+  std::cerr << "[DEBUG] startGoroutine func name='" << func->name << "' instrs=" << func->instructions.size() << " param=" << func->param_count << " local=" << func->local_count << "\n";
+  for (size_t di = 0; di < func->instructions.size(); ++di) {
+    std::cerr << "[DEBUG]   i" << di << " op=" << (int)func->instructions[di].opcode << " ops=";
+    for (const auto &opv : func->instructions[di].operands) std::cerr << opv.toString() << ";";
+    std::cerr << "\n";
+  }
   if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*func);
   }
@@ -4166,6 +4180,7 @@ void VM::activateLazyModule(const std::string &name) {
           }
         }
         moduleLoader_.putCache(name, postInitIt->second);
+        pinModuleCacheExports(name, postInitIt->second);
         return;
       }
     }
@@ -4270,6 +4285,7 @@ bool VM::ensureModuleLoaded(const std::string &name) {
         auto git = globals.find(name);
         if (git != globals.end()) {
           moduleLoader_.putCache(name, git->second);
+          pinModuleCacheExports(name, git->second);
         }
         return true;
       }
@@ -4299,6 +4315,7 @@ bool VM::ensureModuleLoaded(const std::string &name) {
   auto git = globals.find(name);
   if (git != globals.end()) {
     moduleLoader_.putCache(name, git->second);
+    pinModuleCacheExports(name, git->second);
     auto modIt = lazy_modules_.find(name);
     if (modIt != lazy_modules_.end()) {
       for (const auto &alias : modIt->second.aliases) {
@@ -4334,6 +4351,18 @@ Value VM::loadModule(const std::string &path) {
     Value cachedVal;
     std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
     if (moduleLoader_.getCached(path, &cachedVal)) {
+      if (path == "debug") {
+        std::cerr << "[DEBUG] loadModule cached path='" << path << "' cachedVal is oid? "
+                  << cachedVal.isObjectId() << " isNull? " << cachedVal.isNull() << " isHF? " << cachedVal.isHostFuncId()
+                  << " bits=" << cachedVal.rawBits() << "\n";
+        if (cachedVal.isObjectId()) {
+          auto *co = heap_.object(cachedVal.asObjectId());
+          if (co) {
+            auto *sf = co->get("setFlag");
+            std::cerr << "    exports has setFlag? " << (sf != nullptr) << " bits=" << cachedVal.rawBits() << " closure=" << (sf ? sf->isClosureId() : 0) << " hf=" << (sf ? sf->isHostFuncId() : 0) << " null=" << (sf ? sf->isNull() : 1) << "\n";
+          }
+        }
+      }
       moduleLoader_.getCachedGlobals(path, &cachedGlobals);
 
       if (cachedGlobals) {
@@ -4442,6 +4471,7 @@ Value VM::loadModule(const std::string &path) {
         Value exports = cachedVal;
         // Also cache under the original key for faster lookup next time
         moduleLoader_.putCache(path, exports);
+        pinModuleCacheExports(path, exports);
         return exports;
       }
     }
@@ -4455,6 +4485,7 @@ Value VM::loadModule(const std::string &path) {
       auto it = globals.find(path);
       if (it != globals.end()) {
         moduleLoader_.putCache(path, it->second);
+        pinModuleCacheExports(path, it->second);
         return it->second;
       }
     }
@@ -4485,6 +4516,7 @@ Value VM::loadModule(const std::string &path) {
       }
       Value exports = Value::makeObjectId(exportsObj.id);
       moduleLoader_.putCache(path, exports);
+      pinModuleCacheExports(path, exports);
       return exports;
     }
     // Fallback: try modules/ directory relative to executable
@@ -4601,6 +4633,8 @@ Value VM::loadModule(const std::string &path) {
 
     moduleLoader_.putCache(path, exports);
     moduleLoader_.putCache(canonicalKey, exports);
+    pinModuleCacheExports(path, exports);
+    pinModuleCacheExports(canonicalKey, exports);
     modules_loading_.erase(canonicalKey);
     return exports;
   }
@@ -4770,6 +4804,9 @@ Value VM::loadModule(const std::string &path) {
       // stale args. A stale GLBS section from an older binary can still
       // contain them, so guard both serialize and restore.
       if (runtimeGlobalsSkipList().count(name)) continue;
+      if (canonicalKey.find("pratt") != std::string::npos && (name == "parse")) {
+        std::cerr << "[DEBUG] pratt cachedGlobals parse type null=" << value.isNull() << " closure=" << value.isClosureId() << "\n";
+      }
       globals[name] = value;
     }
     // Create _G mirror
@@ -4797,6 +4834,15 @@ Value VM::loadModule(const std::string &path) {
     // Re-bind imported closures from serialized refs
     // Warm loads skip __main__ so imports never re-run; these refs
     // were saved from the cold run's globals and must be restored now.
+    if (canonicalKey.find("pratt") != std::string::npos || canonicalKey.find("/ast.") != std::string::npos) {
+      std::cerr << "[DEBUG] " << (canonicalKey.find("pratt") != std::string::npos ? "pratt" : "ast") << " restored globals: " << globals.size() << "\n";
+      for (auto &[n, v] : globals) {
+        if (n == "parse" || n == "Program" || n == "ErrorNode" || n == "BlockStatement") {
+        std::cerr << "[DEBUG]   " << n << " closure=" << v.isClosureId() << " hostfn=" << v.isHostFuncId() << " null=" << v.isNull() << " fnobj=" << v.isFunctionObjId() << "\n";
+      }
+      }
+    }
+    std::cerr << "[DEBUG] warm restore: " << closureRefs.size() << " closure refs for module " << canonicalKey << "\n";
     for (const auto &ref : closureRefs) {
       // Try cached module first (avoids recursive load triggering source compile)
       Value srcExports;
@@ -4804,15 +4850,21 @@ Value VM::loadModule(const std::string &path) {
         moduleLoader_.getCached(ref.modulePath, &srcExports);
       }
       if (!srcExports.isObjectId()) {
-        // Try loading by stripping .hvc extension and using module name
+        // Try loading from source .hv to re-bind
         std::string modName = std::filesystem::path(ref.modulePath).stem().string();
         srcExports = loadModule(modName);
       }
-      if (!srcExports.isObjectId()) continue;
+      if (!srcExports.isObjectId()) { std::cerr << "[DEBUG] restore " << ref.globalName << ": no exports for " << ref.modulePath << "\n"; continue; }
       auto *srcObj = heap_.object(srcExports.asObjectId());
-      if (!srcObj) continue;
-      Value srcClosure = srcObj->get(ref.functionName);
-      if (!srcClosure.isClosureId()) continue;
+      if (!srcObj) { std::cerr << "[DEBUG] restore " << ref.globalName << ": null object\n"; continue; }
+      auto srcClosurePtr = srcObj->get(ref.functionName);
+      if (ref.functionName == "ErrorNode" || ref.functionName == "Program") {
+        std::cerr << "[DEBUG] srcClosure " << ref.functionName << " from " << ref.modulePath << " present=" << (srcClosurePtr != nullptr) << " exportsSize=" << srcObj->size() << "\n";
+        if (srcClosurePtr) std::cerr << "[DEBUG]   closureType closure=" << srcClosurePtr->isClosureId() << " hostfn=" << srcClosurePtr->isHostFuncId() << " fnobj=" << srcClosurePtr->isFunctionObjId() << " null=" << srcClosurePtr->isNull() << " obj=" << srcClosurePtr->isObjectId() << "\n";
+      }
+      if (!srcClosurePtr || !srcClosurePtr->isClosureId()) { std::cerr << "[DEBUG] restore " << ref.globalName << ": fn '" << ref.functionName << "' not closure in exports\n"; continue; }
+      Value srcClosure = *srcClosurePtr;
+      std::cerr << "[DEBUG] re-bind[" << canonicalKey << "] " << ref.globalName << " <- " << ref.modulePath << "." << ref.functionName << "\n";
       globals[ref.globalName] = srcClosure;
     }
 
@@ -4855,9 +4907,17 @@ Value VM::loadModule(const std::string &path) {
     ObjectRef exportsRef = createHostObject();
     auto *obj = heap_.object(exportsRef.id);
     uint64_t exportsRootId = pinExternalRoot(Value::makeObjectId(exportsRef.id));
+    if (canonicalKey.find("debug.hv") != std::string::npos) {
+      auto gi = globals.find("setFlag");
+      std::cerr << "[DEBUG] debug warm exports setFlag globals=" << (gi != globals.end()) << " bits=" << (gi != globals.end() ? gi->second.rawBits() : 0ULL) << " closure=" << (gi != globals.end() ? gi->second.isClosureId() : 0) << " hf=" << (gi != globals.end() ? gi->second.isHostFuncId() : 0) << " null=" << (gi != globals.end() ? gi->second.isNull() : 0) << "\n";
+    }
     for (const auto &[name, value] : globals) {
       if (name.empty() || name[0] == '_') continue;
       (*obj)[name] = value;
+    }
+    if (canonicalKey.find("debug.hv") != std::string::npos) {
+      auto *sf = obj->get("setFlag");
+      std::cerr << "[DEBUG] debug warm exports setFlag in-obj=" << (sf != nullptr) << " bits=" << (sf ? sf->rawBits() : 0ULL) << " closure=" << (sf ? sf->isClosureId() : 0) << "\n";
     }
     unpinExternalRoot(exportsRootId);
     Value exports = Value::makeObjectId(exportsRef.id);
@@ -4867,6 +4927,8 @@ Value VM::loadModule(const std::string &path) {
                                       cacheSrcPath, cacheBcPath);
     moduleLoader_.putCacheWithGlobals(canonicalKey, exports, moduleGlobalsForCache,
                                        cacheSrcPath, cacheBcPath);
+    pinModuleCacheExports(path, exports);
+    pinModuleCacheExports(canonicalKey, exports);
     globals[path] = exports;
     modules_loading_.erase(canonicalKey);
     return exports;
@@ -5355,6 +5417,8 @@ current_script_dir_ = prev_script_dir;
                                       cacheSrcPath, cacheBcPath);
   moduleLoader_.putCacheWithGlobals(
       canonicalKey, exports, moduleGlobalsForCache, cacheSrcPath, cacheBcPath);
+  pinModuleCacheExports(path, exports);
+  pinModuleCacheExports(canonicalKey, exports);
   
   // Serialize and append globals to .hvc file for fast loading
   try {
@@ -5428,25 +5492,46 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
         if (runtimeGlobals.count(name)) continue;
         // Skip host functions (they're re-registered on load)
         if (value.isHostFuncId()) {
-            // But serialize $module_closure_ entries as closure refs
-            // so warm loads can re-register them.
-            if (name.rfind("$module_closure_", 0) == 0) {
-                std::string rest = name.substr(16); // skip "$module_closure_"
-                size_t lastUnderscore = rest.rfind('_');
-                if (lastUnderscore != std::string::npos && lastUnderscore > 0) {
-                    std::string srcKey = rest.substr(0, lastUnderscore);
-                    std::string fieldName = rest.substr(lastUnderscore + 1);
-                    closureImports.emplace_back(name, ClosureImportRef{srcKey, fieldName, name});
-                }
+            // But serialize $module_closure_ and $module_fn_ entries (and
+            // plain-name imports resolving to such wrappers) as closure refs
+            // so warm loads can re-register them. The plain-name case arises
+            // when `use { fn } from "m"` binds the wrapper host-fn directly
+            // under the field name: host_function_names_[hostIdx] still
+            // carries the underlying $module_*<key>_<field> registration.
+            static const std::string kModuleClosurePrefix = "$module_closure_";
+            static const std::string kModuleFnPrefix = "$module_fn_";
+            std::string regName;
+            uint32_t hostIdx = value.asHostFuncId();
+            if (hostIdx < host_function_names_.size()) {
+                regName = host_function_names_[hostIdx];
             }
+            const std::string &probe = regName.empty() ? name : regName;
+            std::string rest;
+            if (probe.rfind(kModuleClosurePrefix, 0) == 0) {
+                rest = probe.substr(kModuleClosurePrefix.size());
+            } else if (probe.rfind(kModuleFnPrefix, 0) == 0) {
+                rest = probe.substr(kModuleFnPrefix.size());
+            } else {
+                continue;
+            }
+            size_t lastUnderscore = rest.rfind('_');
+            if (lastUnderscore != std::string::npos && lastUnderscore > 0) {
+                std::string srcKey = rest.substr(0, lastUnderscore);
+                std::string fieldName = rest.substr(lastUnderscore + 1);
+                closureImports.emplace_back(name, ClosureImportRef{srcKey, fieldName, name});
+            }
+            continue;
+        }
+        if (value.isFunctionObjId()) {
+            // top-level function index: recreated from this chunk's function
+            // table on warm load (the fn-indices loop), no need to serialize.
             continue;
         }
         if (value.isClosureId()) {
             auto *closure = heap_.closure(value.asClosureId());
             if (!closure || !closure->chunk) continue;
             // Local closures are recreated from this module's chunk on load.
-            if (ownChunk && closure->chunk == ownChunk.get()) continue;
-            // Foreign closure (imported from another module): emit a ref so
+            if (ownChunk && closure->chunk == ownChunk.get()) continue;            // Foreign closure (imported from another module): emit a ref so
             // warm loads can re-bind it from the source module's exports.
             const BytecodeFunction *fn =
                 closure->chunk->getFunction(closure->function_index);
@@ -5456,6 +5541,9 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 if (c.get() == closure->chunk) { srcKey = k; break; }
             }
             if (srcKey.empty()) continue;
+            if (name == "parse" && ownChunk) {
+                std::cerr << "[DEBUG] serialize foreign closure 'parse' srcKey=" << srcKey << "\n";
+            }
             closureImports.emplace_back(name, ClosureImportRef{srcKey, fn->name, name});
             continue;
         }

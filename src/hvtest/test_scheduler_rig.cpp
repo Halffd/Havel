@@ -3224,6 +3224,74 @@ static void test_removeHotkey_while_hasRunnableFibers() {
   CHECK(!sched.hasRunnableFibers(), "hasRunnableFibers must not crash after removal");
 }
 
+static void benchmark_scheduler_pump_cost() {
+  auto& sched = Scheduler::instance();
+  using clk = std::chrono::steady_clock;
+  sched.stop();
+  sched.start();
+
+  const int iterations = 200000;
+
+  // Simulate one event-loop pump as executed by ExecutionEngine::executeFrame():
+  // drainDeferredCallbacks + wakeSleepingGoroutines + hasRunnableFibers + pickNext.
+  auto pump = [&]() {
+    sched.drainDeferredCallbacks();
+    sched.wakeSleepingGoroutines();
+    volatile bool r = sched.hasRunnableFibers();
+    auto* g = sched.pickNext();
+    if (g) {
+      if (g->state == Scheduler::GoroutineState::Created) {
+        // mark done without a VM — simulates a goroutine that immediately returns
+        g->state = Scheduler::GoroutineState::Done;
+      }
+      sched.yield(g);
+    }
+    (void)r;
+  };
+
+  // Spawn n goroutines and leave them Created (runnable, hot path the event
+  // loop spins on). Then also measure the all-suspended variant (sleeping).
+  auto measureWith = [&](int nGoroutines, bool suspendThem) -> std::chrono::nanoseconds {
+    for (int i = 0; i < nGoroutines; ++i) {
+      auto gid = sched.spawn(0, {}, 0, "bench-worker", FiberPriority::NORMAL);
+      auto* g = sched.get(gid);
+      if (suspendThem) sched.suspend(g, Scheduler::SuspensionReason::SleepWait);
+    }
+    auto t0 = clk::now();
+    for (int i = 0; i < iterations; ++i) {
+      pump();
+    }
+    auto t1 = clk::now();
+    sched.stop();
+    sched.start();
+    return t1 - t0;
+  };
+
+  auto pr = [&](const char* label, std::chrono::nanoseconds total) {
+    std::cout << "[bench] " << label << " per-pump="
+              << total.count() / iterations << "ns"
+              << " (total " << total.count() / 1000 << "us)\n";
+  };
+
+  auto a = measureWith(0, false);
+  pr("pump (no goroutines)", a);
+  auto b = measureWith(1, false);
+  pr("pump (1 created goroutine)", b);
+  auto c = measureWith(4, false);
+  pr("pump (4 created goroutines)", c);
+  auto d = measureWith(8, false);
+  pr("pump (8 created goroutines)", d);
+  auto e = measureWith(1, true);
+  pr("pump (1 suspended goroutine)", e);
+  auto f = measureWith(8, true);
+  pr("pump (8 suspended goroutines)", f);
+
+  std::cout << "[bench] pump overhead 1-suspended vs none: "
+            << (e.count() - a.count()) / iterations << "ns/pump\n";
+  std::cout << "[bench] pump overhead 8-created vs none: "
+            << (d.count() - a.count()) / iterations << "ns/pump\n";
+}
+
 void run_scheduler_tests() {
 std::cout << "=== Scheduler Tests ===\n\n";
 
@@ -3651,6 +3719,8 @@ std::cout << "=== Scheduler Tests ===\n\n";
   // + 14 async loop/coroutine/while-loop integration tests
   constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
+
+  benchmark_scheduler_pump_cost();
 }
 
 } // namespace havel::test

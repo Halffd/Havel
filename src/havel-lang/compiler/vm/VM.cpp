@@ -4870,6 +4870,16 @@ Value VM::loadModule(const std::string &path) {
 
     // Create module globals snapshot for closures
     auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    if (canonicalKey.find("emitter.hvc") != std::string::npos) {
+      std::cerr << "[DEBUG] emitter snapshot build: globals.size=" << globals.size()
+                << " hasEmitterError=" << (globals.find("emitterError") != globals.end())
+                << " hasEmitError=" << (globals.find("emitError") != globals.end())
+                << "\n";
+    }
+    if (globals.find("emitError") != globals.end() && globals.find("emitterError") == globals.end()) {
+      std::cerr << "[DEBUG] SNAPSHOT-MISSES-EMITTERERROR module=" << canonicalKey
+                << " size=" << globals.size() << "\n";
+    }
     for (auto &[name, value] : globals) {
       if (value.isClosureId()) {
         auto *closure = heap_.closure(value.asClosureId());
@@ -5167,6 +5177,10 @@ Value VM::loadModule(const std::string &path) {
   // Use this for wrapping exports and for cached module loads.
   auto moduleGlobalsForCache =
       std::make_shared<std::unordered_map<std::string, Value>>(globals);
+  if (globals.find("emitError") != globals.end() && globals.find("emitterError") == globals.end()) {
+    std::cerr << "[DEBUG] COLD-SNAPSHOT-MISSES-EMITTERERROR module=" << canonicalKey
+              << " size=" << globals.size() << "\n";
+  }
 
   // Update all closures in the module's globals to use this snapshot as their
   // module_globals. This allows them to access module-level variables (like

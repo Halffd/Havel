@@ -2667,9 +2667,11 @@ if k == "HotkeyBinding" {
                   keyStrIdx = bc.add_string(key)
                   bc.emit("LOAD_CONST", keyStrIdx)
                   emitExpr(emitter, s.expr.value)
-                  bc.emit("CALL", 2)
-                  bc.emit("POP")
-                }
+bc.emit("CALL", 2)
+  bc.emit("POP")
+}
+
+{Emitter: Emitter, compileProgram: compileProgram, emitStmt: emitStmt, emitExpr: emitExpr, emitUseStatement: emitUseStatement, emitImportStatement: emitImportStatement, emitIfExpr: emitIfExpr, emitTryExpr: emitTryExpr, emitBlock: emitBlock, emitBlockWithReturn: emitBlockWithReturn, compileFuncDecl: compileFuncDecl, compileLambda: compileLambda, emitMatchExpr: emitMatchExpr, emitPatternMatch: emitPatternMatch, emitClassDeclaration: emitClassDeclaration, emitClassMethodRegister: emitClassMethodRegister, emitStructMethodRegister: emitStructMethodRegister, emitStructDeclaration: emitStructDeclaration, emitImplDeclaration: emitImplDeclaration, emitEnumDeclaration: emitEnumDeclaration, emitHotkeyBinding: emitHotkeyBinding, emitHotkeyBindingExpr: emitHotkeyBindingExpr, compileCondHotkeyCondition: compileCondHotkeyCondition, emitClosureBody: emitClosureBody, emitWhenBlock: emitWhenBlock, emitDecoratorStatement: emitDecoratorStatement, emitInputStatement: emitInputStatement, emitOnKeyBinding: emitOnKeyBinding, emitOnKeyListBinding: emitOnKeyListBinding, globalIdx: globalIdx, collectAssignTargetNames: collectAssignTargetNames, collectTopLevelGlobals: collectTopLevelGlobals, emitLoadVar: emitLoadVar, emitStoreVar: emitStoreVar, emitStoreDecl: emitStoreDecl, emitKwargsObject: emitKwargsObject, emitError: emitError}
               }
             }
           }

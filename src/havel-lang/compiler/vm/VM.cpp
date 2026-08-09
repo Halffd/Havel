@@ -4778,11 +4778,7 @@ Value VM::loadModule(const std::string &path) {
   std::vector<ClosureImportRef> closureRefs;
   std::filesystem::path hvcPath = resolved->canonicalPath;
   hvcPath.replace_extension(".hvc");
-<<<<<<< HEAD
   bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals, &closureRefs);
-=======
-  bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals);
->>>>>>> havel-2
   
   if (hasCachedGlobals && !cachedGlobals.empty()) {
     // Restore globals from cache - this avoids running __main__
@@ -5440,7 +5436,6 @@ current_script_dir_ = prev_script_dir;
   
 // Serialize and append globals to .hvc file for fast loading
   try {
-<<<<<<< HEAD
     std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache, canonicalKey);
     std::filesystem::path hvcPath = resolved->canonicalPath;
     hvcPath.replace_extension(".hvc");
@@ -5453,12 +5448,6 @@ current_script_dir_ = prev_script_dir;
         writeGlobalsToHvc(hvcPath2.string(), globalsData);
       }
     }
-=======
-    std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache);
-    std::filesystem::path hvcPath = resolved->canonicalPath;
-    hvcPath.replace_extension(".hvc");
-    writeGlobalsToHvc(hvcPath.string(), globalsData);
->>>>>>> havel-2
   } catch (...) {
     // Ignore serialization errors
   }
@@ -5957,7 +5946,6 @@ bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_ma
     if (!globalsDataOpt) return false;
 
     auto globalsData = *globalsDataOpt;
-<<<<<<< HEAD
     // readGlobalsFromHvc already strips the trailing [GLBS][size] trailer
     // and returns only the serialized payload ([numGlobals][string table]
     // [name+value...]...). Feed it directly — skipping bytes here would
@@ -5967,13 +5955,6 @@ bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_ma
     std::span<const uint8_t> data(globalsData.data(), globalsData.size());
 
     outGlobals = deserializeGlobals(data, outRefs);
-=======
-    // globalsData already contains just the serialized globals (without the GLBS marker and size)
-    // Pass directly to deserializeGlobals
-    std::span<const uint8_t> data(globalsData.data(), globalsData.size());
-    
-    outGlobals = deserializeGlobals(data);
->>>>>>> havel-2
     return !outGlobals.empty();
 }
 

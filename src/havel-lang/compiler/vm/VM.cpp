@@ -4346,6 +4346,52 @@ Value VM::loadModule(const std::string &path) {
   uint32_t old_mirror_id = globals_mirror_object_id_;
   Value old_g = globals["_G"];
 
+  // Re-point closures stored in `globals` and the module's exports object so
+  // their module_globals refers to the cached snapshot. Only touch closures
+  // owned by THIS module's chunk: `globals` is the shared VM global map that
+  // accumulates closures from every loaded module, and the exports object is
+  // built from that same shared map, so foreign closures can appear here.
+  // Re-pointing a foreign closure would make it resolve its globals against
+  // the wrong module's snapshot (e.g. emitter's emitError resolving against
+  // debug's map) and fail at LOAD_GLOBAL time.
+  auto fixupCachedClosures = [&](const std::string &moduleKey,
+                                 Value exportsVal,
+                                 const std::shared_ptr<std::unordered_map<std::string, Value>> &cachedGlobals) {
+    std::shared_ptr<BytecodeChunk> ownChunk;
+    auto ownIt = module_chunks_.find(moduleKey);
+    if (ownIt != module_chunks_.end()) ownChunk = ownIt->second;
+    if (!ownChunk) return; // cannot verify ownership, leave closures untouched
+
+    for (auto &[func_name, func_val] : globals) {
+      if (!func_val.isClosureId()) continue;
+      auto *closure = heap_.closure(func_val.asClosureId());
+      if (!closure || !closure->module_globals) continue;
+      if (closure->chunk != ownChunk.get()) continue;
+      auto it = cachedGlobals->find(func_name);
+      if (it != cachedGlobals->end() && it->second.isClosureId() &&
+          it->second.asClosureId() == func_val.asClosureId()) {
+        closure->module_globals = cachedGlobals;
+      }
+    }
+
+    if (exportsVal.isObjectId()) {
+      auto *exportsObj = heap_.object(exportsVal.asObjectId());
+      if (exportsObj) {
+        for (auto &[name, val] : *exportsObj) {
+          if (!val.isClosureId()) continue;
+          auto *closure = heap_.closure(val.asClosureId());
+          if (!closure || !closure->module_globals) continue;
+          if (closure->chunk != ownChunk.get()) continue;
+          auto it = cachedGlobals->find(name);
+          if (it != cachedGlobals->end() && it->second.isClosureId() &&
+              it->second.asClosureId() == val.asClosureId()) {
+            closure->module_globals = cachedGlobals;
+          }
+        }
+      }
+    }
+  };
+
   // Check cache via canonical ModuleLoader
   if (moduleLoader_.isCached(path)) {
     Value cachedVal;
@@ -4369,50 +4415,11 @@ Value VM::loadModule(const std::string &path) {
         // Do NOT restore cached globals to caller's globals - module internals
         // (like 'flags' in debug.hv) are only accessible via the module's
         // closures' module_globals, not via the caller's globals.
-        // Just update closures' module_globals to point to the cached globals.
-
-        // 1. Update closures in caller's globals (e.g., if module was required
-        // before)
-        for (auto &[func_name, func_val] : globals) {
-          if (func_val.isClosureId()) {
-            auto *closure = heap_.closure(func_val.asClosureId());
-            if (closure && closure->module_globals) {
-              auto it = cachedGlobals->find(func_name);
-              if (it != cachedGlobals->end() && it->second.isClosureId() &&
-                  it->second.asClosureId() == func_val.asClosureId()) {
-                closure->module_globals = cachedGlobals;
-              }
-            }
-          }
-        }
-
-        // 2. Update closures in the exports object
-        if (cachedVal.isObjectId()) {
-          auto *exportsObj = heap_.object(cachedVal.asObjectId());
-          if (exportsObj) {
-            // std::cerr << "[CACHE-FIXUP-EXPORTS] exports size=" <<
-            // exportsObj->size() << "\n";
-            for (auto &[name, val] : *exportsObj) {
-              // std::cerr << "[CACHE-FIXUP-EXPORTS]   checking " << name << "
-              // -> " << val.toString() << "\n";
-              if (val.isClosureId()) {
-                auto *closure = heap_.closure(val.asClosureId());
-                if (closure && closure->module_globals) {
-                  // Check if this closure's function is in cached globals
-                  auto it = cachedGlobals->find(name);
-                  // std::cerr << "[CACHE-FIXUP-EXPORTS]     found in
-                  // cachedGlobals=" << (it != cachedGlobals->end()) << "\n";
-                  if (it != cachedGlobals->end() && it->second.isClosureId() &&
-                      it->second.asClosureId() == val.asClosureId()) {
-                    closure->module_globals = cachedGlobals;
-                    // std::cerr << "[CACHE-FIXUP] Updated module_globals for "
-                    // << name << " (in exports)\n";
-                  }
-                }
-              }
-            }
-          }
-        }
+        // Just update the module's OWN closures' module_globals to point to
+        // the cached globals.
+        auto resolvedB1 = moduleLoader_.resolve(path, current_script_dir_);
+        std::string keyB1 = resolvedB1 ? resolvedB1->canonicalPath : path;
+        fixupCachedClosures(keyB1, cachedVal, cachedGlobals);
       }
       return cachedVal;
     }
@@ -4434,39 +4441,7 @@ Value VM::loadModule(const std::string &path) {
         if (cachedGlobals) {
           // Do NOT restore cached globals to caller's globals - module
           // internals are only accessible via closures' module_globals
-          for (auto &[func_name, func_val] : globals) {
-            if (func_val.isClosureId()) {
-              auto *closure = heap_.closure(func_val.asClosureId());
-              if (closure && closure->module_globals) {
-                auto it = cachedGlobals->find(func_name);
-                if (it != cachedGlobals->end() && it->second.isClosureId() &&
-                    it->second.asClosureId() == func_val.asClosureId()) {
-                  closure->module_globals = cachedGlobals;
-                }
-              }
-            }
-          }
-          // 2. Update closures in the exports object
-          if (cachedVal.isObjectId()) {
-            auto *exportsObj = heap_.object(cachedVal.asObjectId());
-            if (exportsObj) {
-              for (auto &[name, val] : *exportsObj) {
-                if (val.isClosureId()) {
-                  auto *closure = heap_.closure(val.asClosureId());
-                  if (closure && closure->module_globals) {
-                    auto it = cachedGlobals->find(name);
-                    if (it != cachedGlobals->end() &&
-                        it->second.isClosureId() &&
-                        it->second.asClosureId() == val.asClosureId()) {
-                      closure->module_globals = cachedGlobals;
-                      // std::cerr << "[CACHE-FIXUP] Updated module_globals for
-                      // " << name << " (in exports)\n";
-                    }
-                  }
-                }
-              }
-            }
-          }
+          fixupCachedClosures(canonicalKey, cachedVal, cachedGlobals);
         }
         Value exports = cachedVal;
         // Also cache under the original key for faster lookup next time
@@ -4778,11 +4753,13 @@ Value VM::loadModule(const std::string &path) {
   std::vector<ClosureImportRef> closureRefs;
   std::filesystem::path hvcPath = resolved->canonicalPath;
   hvcPath.replace_extension(".hvc");
-<<<<<<< HEAD
-  bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals, &closureRefs);
-=======
-  bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals);
->>>>>>> havel-2
+  // Warm-restore is disabled: restoring serialized globals re-binds closures
+  // across chunk instances and chunk-relative StringValIds then resolve
+  // against the wrong chunk's string table (corrupting string constants
+  // such as '+' -> 'payloadType'). Always run __main__ from the loaded .hvc
+  // chunk instead; that path initializes globals in the correct chunk context.
+  bool hasCachedGlobals = false;
+  (void)deserializeGlobalsFromHvc;
   
   if (hasCachedGlobals && !cachedGlobals.empty()) {
     // Restore globals from cache - this avoids running __main__
@@ -4874,12 +4851,6 @@ Value VM::loadModule(const std::string &path) {
 
     // Create module globals snapshot for closures
     auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
-    if (canonicalKey.find("emitter.hvc") != std::string::npos) {
-      std::cerr << "[DEBUG] emitter snapshot build: globals.size=" << globals.size()
-                << " hasEmitterError=" << (globals.find("emitterError") != globals.end())
-                << " hasEmitError=" << (globals.find("emitError") != globals.end())
-                << "\n";
-    }
     if (globals.find("emitError") != globals.end() && globals.find("emitterError") == globals.end()) {
       std::cerr << "[DEBUG] SNAPSHOT-MISSES-EMITTERERROR module=" << canonicalKey
                 << " size=" << globals.size() << "\n";
@@ -4887,7 +4858,7 @@ Value VM::loadModule(const std::string &path) {
     for (auto &[name, value] : globals) {
       if (value.isClosureId()) {
         auto *closure = heap_.closure(value.asClosureId());
-        if (closure) {
+        if (closure && closure->chunk == chunk.get()) {
           closure->module_globals = moduleGlobalsForCache;
         }
       }
@@ -5192,7 +5163,7 @@ Value VM::loadModule(const std::string &path) {
   for (auto &[name, value] : globals) {
     if (value.isClosureId()) {
       auto *closure = heap_.closure(value.asClosureId());
-      if (closure) {
+      if (closure && closure->chunk == chunk.get()) {
         closure->module_globals = moduleGlobalsForCache;
       }
     }
@@ -5438,9 +5409,13 @@ current_script_dir_ = prev_script_dir;
   pinModuleCacheExports(path, exports);
   pinModuleCacheExports(canonicalKey, exports);
   
-// Serialize and append globals to .hvc file for fast loading
+// Serialize and append globals to .hvc file for fast loading is DISABLED:
+// warm global restoration re-binds closures across chunk instances and
+// chunk-relative StringValIds then resolve against the wrong chunk's string
+// table (corrupting string constants such as '+' -> 'payloadType'). Compiled
+// bytecode caching still works; only the globals round-trip is dropped.
+#if 0
   try {
-<<<<<<< HEAD
     std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache, canonicalKey);
     std::filesystem::path hvcPath = resolved->canonicalPath;
     hvcPath.replace_extension(".hvc");
@@ -5453,15 +5428,10 @@ current_script_dir_ = prev_script_dir;
         writeGlobalsToHvc(hvcPath2.string(), globalsData);
       }
     }
-=======
-    std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache);
-    std::filesystem::path hvcPath = resolved->canonicalPath;
-    hvcPath.replace_extension(".hvc");
-    writeGlobalsToHvc(hvcPath.string(), globalsData);
->>>>>>> havel-2
   } catch (...) {
     // Ignore serialization errors
   }
+#endif
   
   // Also store in globals so GC scans it as a root
   // (the module cache is not a GC root, so cached objects can be collected)
@@ -5957,7 +5927,6 @@ bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_ma
     if (!globalsDataOpt) return false;
 
     auto globalsData = *globalsDataOpt;
-<<<<<<< HEAD
     // readGlobalsFromHvc already strips the trailing [GLBS][size] trailer
     // and returns only the serialized payload ([numGlobals][string table]
     // [name+value...]...). Feed it directly — skipping bytes here would
@@ -5967,13 +5936,6 @@ bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_ma
     std::span<const uint8_t> data(globalsData.data(), globalsData.size());
 
     outGlobals = deserializeGlobals(data, outRefs);
-=======
-    // globalsData already contains just the serialized globals (without the GLBS marker and size)
-    // Pass directly to deserializeGlobals
-    std::span<const uint8_t> data(globalsData.data(), globalsData.size());
-    
-    outGlobals = deserializeGlobals(data);
->>>>>>> havel-2
     return !outGlobals.empty();
 }
 

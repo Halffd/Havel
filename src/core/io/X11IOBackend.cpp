@@ -30,7 +30,10 @@ bool X11IOBackend::Initialize() {
 }
 
 void X11IOBackend::Cleanup() {
-    display_ = nullptr;
+    if (display_) {
+        UnregisterAll();
+        display_ = nullptr;
+    }
 }
 
 bool X11IOBackend::IsAvailable() const { return display_ != nullptr; }

@@ -233,7 +233,7 @@ void registerAppModule(const VMApi& api) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(app, "1.0.0", "Application management module",
+HAVEL_MODULE_PLUGIN_EAGER(app, "1.0.0", "Application management module",
     havel::modules::registerAppModule(*api);
 )
 #endif

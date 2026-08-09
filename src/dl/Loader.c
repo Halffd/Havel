@@ -909,38 +909,38 @@ const HavelModuleABI *havel_loader_probe_module(HavelLoader *loader, const char 
 }
 
 int havel_loader_scan_modules(HavelLoader *loader, HavelModuleInfo *out, int max_out) {
- if (!loader || !out || max_out <= 0) return 0;
+  if (!loader || !out || max_out <= 0) return 0;
 
- const char *suffix = platform_suffix();
- const char *prefix = "havel_mod_";
- int count = 0;
+  const char *suffix = platform_suffix();
+  const char *prefix = "havel_mod_";
+  int count = 0;
 
- for (int si = 0; si < loader->search_path_count && count < max_out; si++) {
- const char *dir = loader->search_paths[si];
- DIR *d = opendir(dir);
- if (!d) continue;
+  for (int si = 0; si < loader->search_path_count && count < max_out; si++) {
+  const char *dir = loader->search_paths[si];
+  DIR *d = opendir(dir);
+  if (!d) continue;
 
- struct dirent *entry;
- while ((entry = readdir(d)) != NULL && count < max_out) {
- char *mod_name = extract_module_name(entry->d_name, prefix, suffix);
- if (!mod_name) continue;
+  struct dirent *entry;
+  while ((entry = readdir(d)) != NULL && count < max_out) {
+  char *mod_name = extract_module_name(entry->d_name, prefix, suffix);
+  if (!mod_name) continue;
 
- int already = 0;
- for (int k = 0; k < count; k++) {
- if (strcmp(out[k].name, mod_name) == 0) { already = 1; break; }
- }
- if (already) { free(mod_name); continue; }
+  int already = 0;
+  for (int k = 0; k < count; k++) {
+  if (strcmp(out[k].name, mod_name) == 0) { already = 1; break; }
+  }
+  if (already) { free(mod_name); continue; }
 
- HavelModuleInfo info;
- const HavelModuleABI *abi = havel_loader_probe_module(loader, mod_name, &info);
- if (abi) {
- out[count] = info;
- count++;
- }
- free(mod_name);
- }
- closedir(d);
- }
+  HavelModuleInfo info;
+  const HavelModuleABI *abi = havel_loader_probe_module(loader, mod_name, &info);
+  if (abi) {
+  out[count] = info;
+  count++;
+  }
+  free(mod_name);
+  }
+  closedir(d);
+  }
 
- return count;
+  return count;
 }

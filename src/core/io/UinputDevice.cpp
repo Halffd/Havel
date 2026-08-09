@@ -12,6 +12,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <cstring>
+#include <dirent.h>
 
 namespace havel {
 
@@ -84,6 +85,99 @@ bool UinputDevice::Setup() {
 
     if (debugging::debug_io) debug("uinput device initialized (fd={})", uinputFd);
     return true;
+}
+
+std::string UinputDevice::CreateVirtualMouse(const std::string& name) {
+    int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) {
+        error("Failed to open /dev/uinput for virtual mouse: {}", strerror(errno));
+        return "";
+    }
+
+    // Enable event types for mouse
+    ioctl(fd, UI_SET_EVBIT, EV_KEY);
+    ioctl(fd, UI_SET_EVBIT, EV_SYN);
+    ioctl(fd, UI_SET_EVBIT, EV_REL);
+    ioctl(fd, UI_SET_EVBIT, EV_ABS);
+
+    // Enable mouse buttons
+    for (int i = BTN_MOUSE; i < BTN_DIGI; i++) {
+        ioctl(fd, UI_SET_KEYBIT, i);
+    }
+
+    // Enable relative axes for mouse
+    ioctl(fd, UI_SET_RELBIT, REL_X);
+    ioctl(fd, UI_SET_RELBIT, REL_Y);
+    ioctl(fd, UI_SET_RELBIT, REL_WHEEL);
+    ioctl(fd, UI_SET_RELBIT, REL_HWHEEL);
+#ifdef REL_WHEEL_HI_RES
+    ioctl(fd, UI_SET_RELBIT, REL_WHEEL_HI_RES);
+#endif
+#ifdef REL_HWHEEL_HI_RES
+    ioctl(fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES);
+#endif
+
+    // Setup device as a mouse
+    struct uinput_user_dev usetup = {};
+    std::snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "%s", name.c_str());
+    usetup.id.bustype = BUS_USB;
+    usetup.id.vendor = 0x1234;
+    usetup.id.product = 0x5679;  // Different product ID for mouse
+    usetup.id.version = 1;
+
+    // Set mouse-like absolute axis ranges (for compatibility)
+    usetup.absmin[ABS_X] = 0;
+    usetup.absmax[ABS_X] = 32767;
+    usetup.absmin[ABS_Y] = 0;
+    usetup.absmax[ABS_Y] = 32767;
+
+    if (ioctl(fd, UI_DEV_SETUP, &usetup) < 0) {
+        error("Failed to setup virtual mouse uinput device: {}", strerror(errno));
+        close(fd);
+        return "";
+    }
+
+    if (ioctl(fd, UI_DEV_CREATE) < 0) {
+        error("Failed to create virtual mouse uinput device: {}", strerror(errno));
+        close(fd);
+        return "";
+    }
+
+    // Find the created device path
+    std::string devicePath;
+    DIR* dir = opendir("/dev/input");
+    if (dir) {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (strncmp(entry->d_name, "event", 5) == 0) {
+                std::string path = "/dev/input/" + std::string(entry->d_name);
+                int testFd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
+                if (testFd >= 0) {
+                    char devName[256] = {};
+                    if (ioctl(testFd, EVIOCGNAME(sizeof(devName)), devName) >= 0) {
+                        if (std::string(devName) == name) {
+                            devicePath = path;
+                            close(testFd);
+                            break;
+                        }
+                    }
+                    close(testFd);
+                }
+            }
+        }
+        closedir(dir);
+    }
+
+    // Close the uinput fd - the device persists in kernel
+    close(fd);
+
+    if (devicePath.empty()) {
+        error("Virtual mouse created but could not find its event path");
+        return "";
+    }
+
+    if (debugging::debug_io) debug("Virtual mouse created: {} at {}", name, devicePath);
+    return devicePath;
 }
 
 void UinputDevice::SendEvent(int type, int code, int value) {

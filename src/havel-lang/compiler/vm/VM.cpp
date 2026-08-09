@@ -4700,13 +4700,6 @@ Value VM::loadModule(const std::string &path) {
   std::filesystem::path hvcPath = resolved->canonicalPath;
   hvcPath.replace_extension(".hvc");
   bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals);
-  std::cerr << "[DEBUG] loadModule: path=" << path 
-            << " resolved type=" << static_cast<int>(resolved->type) 
-            << " canonical=" << resolved->canonicalPath
-            << " hvcPath=" << hvcPath 
-            << " hasCachedGlobals=" << hasCachedGlobals 
-            << " cachedGlobalsSize=" << cachedGlobals.size()
-            << " selfHostedPath=" << self_hosted_modules_path_ << "\n";
   
   if (hasCachedGlobals && !cachedGlobals.empty()) {
     // Restore globals from cache - this avoids running __main__
@@ -5286,17 +5279,14 @@ current_script_dir_ = prev_script_dir;
   moduleLoader_.putCacheWithGlobals(
       canonicalKey, exports, moduleGlobalsForCache, cacheSrcPath, cacheBcPath);
   
-  // Serialize and append globals to .hvc file for fast loading
+// Serialize and append globals to .hvc file for fast loading
   try {
     std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache);
-    std::cerr << "[DEBUG] Serialized globals for " << resolved->canonicalPath << ", size: " << globalsData.size() << " bytes\n";
     std::filesystem::path hvcPath = resolved->canonicalPath;
     hvcPath.replace_extension(".hvc");
     writeGlobalsToHvc(hvcPath.string(), globalsData);
-    std::cerr << "[DEBUG] Wrote globals to " << hvcPath << "\n";
   } catch (...) {
     // Ignore serialization errors
-    std::cerr << "[DEBUG] writeGlobalsToHvc failed\n";
   }
   
   // Also store in globals so GC scans it as a root
@@ -5601,33 +5591,22 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
 
 void VM::writeGlobalsToHvc(const std::string& hvcPath, const std::vector<uint8_t>& globalsData) {
     // Append globals data to existing .hvc file
-    std::cerr << "[DEBUG] writeGlobalsToHvc: opening " << hvcPath << " for append, data size: " << globalsData.size() << "\n";
     FILE* file = fopen(hvcPath.c_str(), "ab");
     if (file) {
-        long posBefore = ftell(file);
-        std::cerr << "[DEBUG] writeGlobalsToHvc: posBefore = " << posBefore << "\n";
-        size_t written = fwrite(globalsData.data(), 1, globalsData.size(), file);
-        std::cerr << "[DEBUG] writeGlobalsToHvc: written = " << written << "\n";
-        long posAfter = ftell(file);
-        std::cerr << "[DEBUG] writeGlobalsToHvc: posAfter = " << posAfter << "\n";
+        fwrite(globalsData.data(), 1, globalsData.size(), file);
         fclose(file);
-        std::cerr << "[DEBUG] writeGlobalsToHvc: closed\n";
-    } else {
-        std::cerr << "[DEBUG] writeGlobalsToHvc: failed to open " << hvcPath << ", errno: " << errno << "\n";
     }
 }
 
 std::optional<std::vector<uint8_t>> VM::readGlobalsFromHvc(const std::string& hvcPath) {
     std::ifstream file(hvcPath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        std::cerr << "[DEBUG] readGlobalsFromHvc: failed to open " << hvcPath << "\n";
         return std::nullopt;
     }
     
     std::streamsize size = file.tellg();
     if (size < 8) {
-        std::cerr << "[DEBUG] readGlobalsFromHvc: file too small " << size << "\n";
-        return std::nullopt; // Need at least "GLBS" + size
+        return std::nullopt;
     }
     
     // Read last 8 bytes to check for "GLBS" marker + size
@@ -5638,16 +5617,10 @@ std::optional<std::vector<uint8_t>> VM::readGlobalsFromHvc(const std::string& hv
     file.read(reinterpret_cast<char*>(&globalsSize), 4);
     
     if (marker[0] != 'G' || marker[1] != 'L' || marker[2] != 'B' || marker[3] != 'S') {
-        std::cerr << "[DEBUG] readGlobalsFromHvc: no GLBS at end-8, got: " 
-                  << std::hex << (int)(unsigned char)marker[0] << " "
-                  << (int)(unsigned char)marker[1] << " "
-                  << (int)(unsigned char)marker[2] << " "
-                  << (int)(unsigned char)marker[3] << std::dec << "\n";
-        return std::nullopt; // No globals section
+        return std::nullopt;
     }
     
     if (globalsSize > static_cast<uint32_t>(size) - 8) {
-        std::cerr << "[DEBUG] readGlobalsFromHvc: invalid globalsSize " << globalsSize << " > fileSize " << size << "\n";
         return std::nullopt;
     }
     
@@ -5657,7 +5630,6 @@ std::optional<std::vector<uint8_t>> VM::readGlobalsFromHvc(const std::string& hv
     std::vector<uint8_t> globalsData(globalsSize);
     file.read(reinterpret_cast<char*>(globalsData.data()), globalsSize);
     
-    std::cerr << "[DEBUG] readGlobalsFromHvc: found GLBS at end-8, globalsSize=" << globalsSize << ", globalsStart=" << globalsStart << "\n";
     return globalsData;
 }
 
@@ -5666,9 +5638,9 @@ bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_ma
     if (!globalsDataOpt) return false;
     
     auto globalsData = *globalsDataOpt;
-    // Skip "GLBS" marker
-    if (globalsData.size() < 4) return false;
-    std::span<const uint8_t> data(globalsData.data() + 4, globalsData.size() - 4);
+    // globalsData already contains just the serialized globals (without the GLBS marker and size)
+    // Pass directly to deserializeGlobals
+    std::span<const uint8_t> data(globalsData.data(), globalsData.size());
     
     outGlobals = deserializeGlobals(data);
     return !outGlobals.empty();

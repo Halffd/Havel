@@ -1,0 +1,18 @@
+// Regression: variable declared AFTER `go fn` spawn must stay visible on
+// main resume. Before fix, startGoroutineCall replaced ambient globals with
+// the spawn-time snapshot (which lacks the post-spawn var), so main's
+// next LOAD_GLOBAL threw "Undefined variable: 'tickOut'" and the scheduler
+// froze after one iteration. Expected: main ticks to 5 and exits 0.
+tickGo = 0
+go fn update() {
+  loop {
+    tickGo = tickGo + 1
+    sleep(1000)
+  }
+}
+tickOut = 0
+loop {
+  tickOut = tickOut + 1
+  if tickOut >= 5 { exit() }
+  sleep(1)
+}

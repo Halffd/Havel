@@ -35,6 +35,8 @@ for hv in "$SRC_DIR"/*.hv; do
         echo "emit_pipeline: FAILED $name" >&2
         FAIL=$((FAIL + 1))
     fi
+    # Also copy source .hv file for self-hosted loader
+    cp "$hv" "$OUT_DIR/$name.hv"
 done
 
 echo "emit_pipeline: building std modules..."
@@ -49,6 +51,8 @@ for hv in "$STD_SRC_DIR"/*.hv; do
         echo "emit_pipeline: FAILED std/$name" >&2
         FAIL=$((FAIL + 1))
     fi
+    # Also copy source .hv file for self-hosted loader
+    cp "$hv" "$STD_OUT_DIR/$name.hv"
 done
 
 # Write VERSION file with module sizes

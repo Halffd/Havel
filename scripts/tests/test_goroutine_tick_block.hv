@@ -1,0 +1,25 @@
+// test_goroutine_tick_block.hv
+// Measures how long one goroutine tick (max_instructions_per_tick=10000)
+// blocks execution. The event loop calls executeFrame() which runs a
+// goroutine for up to 10000 instructions before returning to poll input
+// events. If a background goroutine stays runnable (busy loop), execFrame
+// never returns, so input event pickup is starved. Expected: a hotkey
+// fires into the OS thread and is deferred to the VM thread, which is
+// stuck inside executeFrame running the busy goroutine's budget.
+
+::tick = 0
+::busy = 0
+::t0 = time.now()
+go fn poll() {
+  loop {
+    i = 0
+    while i < 100000 { i = i + 1 }   // ~100k bytecode steps of busy work
+    ::busy = ::busy + 1
+    ::tick = ::tick + 1
+    if ::tick >= 50 { return }
+  }
+}
+time.sleep(3000)
+elapsed = (time.now() - ::t0) / 1000.0
+println("tick=" + str(::tick) + " elapsed_ms=" + str(elapsed))
+if ::tick >= 1 { println("PASS") } else { println("FAIL: no goroutine ticks") }

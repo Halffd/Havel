@@ -57,7 +57,9 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
 
   // Normalize to a closure pinned to its owning chunk. Scheduler stores this
   // Value as the goroutine's identity; startGoroutineCall resolves the rest.
+  std::cerr << "[DEBUG] spawnGoroutine calleeKinds fnobj=" << callee.isFunctionObjId() << " closure=" << callee.isClosureId() << "\n";
   Value spawn_value = pinCallableAsClosure(callee);
+  std::cerr << "[DEBUG] spawnGoroutine pinned null=" << spawn_value.isNull() << " closure=" << spawn_value.isClosureId() << " chmain=" << (getMainChunk() ? getMainChunk()->getFunctionCount() : -1) << " cur=" << (current_chunk ? current_chunk->getFunctionCount() : -1) << "\n";
   if (spawn_value.isNull()) {
     ::havel::warn("[VM] spawnGoroutine: could not resolve chunk for callable");
     return 0;
@@ -71,6 +73,7 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
     uint32_t cid = spawn_value.asClosureId();
     spawn_globals_snapshot_[cid] =
         std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    std::cerr << "[DEBUG] spawned snapshot globals has fs=" << (globals.count("fs") ? 1 : 0) << " println=" << (globals.count("println") ? 1 : 0) << " print=" << (globals.count("print") ? 1 : 0) << "\n";
   }
 
   return scheduler_->spawn(spawn_value, args, "async-task");

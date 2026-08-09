@@ -41,14 +41,7 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
   }
   if (value.isStringValId()) {
     if (current_chunk) {
-      std::string resolved = current_chunk->getString(value.asStringValId());
-      if (std::getenv("HAVEL_DEBUG_SVID_RESOLVE")) {
-        std::cerr << "[SVID] id=" << value.asStringValId()
-                  << " resolved='" << resolved << "'"
-                  << " curfunc=" << (currentFrame().function ? currentFrame().function->name : "no-frame")
-                  << "\n";
-      }
-      return resolved;
+      return current_chunk->getString(value.asStringValId());
     }
     return "<string:" + std::to_string(value.asStringValId()) + ">";
   }
@@ -60,10 +53,6 @@ std::string VM::toStringInternal(const Value &value, std::unordered_set<uint32_t
   }
   if (value.isStringId()) {
     if (auto *s = heap_.string(value.asStringId())) {
-      if (std::getenv("HAVEL_DEBUG_SVID_RESOLVE")) {
-        std::cerr << "[HEAPSTR] id=" << value.asStringId()
-                  << " len=" << s->size() << " content='" << *s << "'\n";
-      }
       return *s;
     }
     return "<string:" + std::to_string(value.asStringId()) + ">";

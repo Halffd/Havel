@@ -4753,13 +4753,12 @@ Value VM::loadModule(const std::string &path) {
   std::vector<ClosureImportRef> closureRefs;
   std::filesystem::path hvcPath = resolved->canonicalPath;
   hvcPath.replace_extension(".hvc");
-  // Warm-restore is disabled: restoring serialized globals re-binds closures
+// Warm-restore is disabled: restoring serialized globals re-binds closures
   // across chunk instances and chunk-relative StringValIds then resolve
   // against the wrong chunk's string table (corrupting string constants
   // such as '+' -> 'payloadType'). Always run __main__ from the loaded .hvc
   // chunk instead; that path initializes globals in the correct chunk context.
   bool hasCachedGlobals = false;
-  (void)deserializeGlobalsFromHvc;
   
   if (hasCachedGlobals && !cachedGlobals.empty()) {
     // Restore globals from cache - this avoids running __main__

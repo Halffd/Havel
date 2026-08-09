@@ -224,3 +224,5 @@ fn scopeLocalCount(scope) {
   scope.count
 
 }
+
+{Scope: Scope, scopeDeclare: scopeDeclare, scopeFindInEnclosingFunc: scopeFindInEnclosingFunc, scopeResolveUpvalue: scopeResolveUpvalue, scopeResolve: scopeResolve, scopeFindFuncRoot: scopeFindFuncRoot, scopeFindFuncRootByFuncId: scopeFindFuncRootByFuncId, scopeDepth: scopeDepth, scopeLocalCount: scopeLocalCount}

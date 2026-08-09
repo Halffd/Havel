@@ -4784,3 +4784,5 @@ fn parseTokens(tokenList) {
   program = Program(body, 1, 1)
   return {ast: program, errors: p.errors, incomplete: p.incomplete}
 }
+
+{parse: parse, parseProgram: parseProgram, parseTokens: parseTokens}

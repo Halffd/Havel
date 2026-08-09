@@ -1,0 +1,149 @@
+site_name: Havel Documentation
+site_description: Havel — a systems scripting language for desktop automation, window management, and hotkey-driven workflows.
+site_url: https://havel-lang.org
+repo_url: https://github.com/yourorg/havel-3
+repo_name: havel-3/havel-3
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.keys
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - attr_list
+  - md_in_html
+  - def_list
+  - footnotes
+  - abbr
+
+plugins:
+  - search:
+      separator: '[\s\-\.]+'
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: date
+      timezone: UTC
+  - minify:
+      minify_html: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - First Script: getting-started/first-script.md
+      - Basic Syntax: getting-started/basic-syntax.md
+      - Running Programs: getting-started/running-programs.md
+  - Language Reference:
+      - Lexical Structure: language/lexical.md
+      - Variables & Mutability: language/variables.md
+      - Control Flow: language/control-flow.md
+      - Functions: language/functions.md
+      - Types: language/types.md
+      - Concurrency: language/concurrency.md
+      - Modules: language/modules.md
+      - Hotkeys: language/hotkeys.md
+      - DSL & Input Commands: language/dsl.md
+      - Interoperability (FFI): language/ffi.md
+  - Standard Library:
+      - Math: stdlib/math.md
+      - String: stdlib/string.md
+      - Array: stdlib/array.md
+      - Object: stdlib/object.md
+      - Time: stdlib/time.md
+      - Filesystem: stdlib/fs.md
+      - Shell: stdlib/shell.md
+      - System: stdlib/sys.md
+      - Network: stdlib/network.md
+      - Clipboard: stdlib/clipboard.md
+      - Window: stdlib/window.md
+      - Brightness: stdlib/brightness.md
+      - Hotkey: stdlib/hotkey.md
+  - Compiler Internals:
+      - Bytecode Format: compiler/bytecode.md
+      - JIT/AOT Compilation: compiler/jit-aot.md
+      - Garbage Collection: compiler/gc.md
+      - Self-Hosted vs Bootstrap: compiler/self-hosted.md
+      - C++ Embedding API: compiler/cpp-api.md
+  - Guides:
+      - First Hotkey Script: guides/first-hotkey.md
+      - Desktop Automation Tool: guides/desktop-automation.md
+      - Web Server: guides/web-server.md
+      - Using FFI: guides/ffi.md
+      - Profiling & Debugging: guides/profiling.md
+      - Migration Guide: guides/migration.md
+  - API Reference:
+      - Host Functions: reference/host-functions.md
+      - FFI: reference/ffi.md
+      - Error Handling: reference/error-handling.md
+      - Extern Types: reference/extern-types.md
+  - Contributing:
+      - Build System: contributing/build-system.md
+      - Directory Structure: contributing/directory-structure.md
+      - Testing: contributing/testing.md
+      - Code Style: contributing/code-style.md
+      - Adding Host Functions: contributing/adding-host-functions.md
+      - Extending Self-Hosted Compiler: contributing/extending-self-hosted.md
+  - Changelog: changelog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yourorg/havel-3
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/havel
+  generator: false
+  version:
+    provider: mike
+
+copyright: Copyright &copy; 2024 Havel Contributors
+
+# Custom CSS/JS
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/extra.js

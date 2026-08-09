@@ -147,6 +147,8 @@ DOUBLE_PAREN_EXPR_TYPES = {"Identifier", "CloseParen", "CloseBracket", "String",
 
 fn Lexer(source) {
     keywords = KEYWORDS
+    sObj = string
+    print("[DEBUG Lexer] hasKey(toCP)=" + str(sObj.hasKey("toCodePointArray")) + " hasKey(_toCP)=" + str(sObj.hasKey("_toCodePointArray")) + " size=" + str(sObj.size))
     src = source
     cpArr = string.toCodePointArray(source)
     n = cpArr.length()
@@ -828,6 +830,7 @@ fn scanHotkey() {
 }
   fn _scan() {
     tokenCount = 0
+    print("[DEBUG _scan] n=" + str(n) + " cpArrLen=" + str(cpArr.length()))
     while current() != -1 {
       loopStartIdx = idx
       skipWhitespace()
@@ -1690,8 +1693,11 @@ if c == 33 && cp(1) == 123 {
 }
 
 fn tokenize(source) {
+    cpArr0 = string.toCodePointArray(source)
+    print("[DEBUG lexer.tokenize] src='" + str(source) + "' cpArr0=" + str(cpArr0))
     lx = Lexer(source)
     result = lx.run()
+    print("[DEBUG lexer.tokenize] tokens=" + str(#result.tokens))
     result.tokens
 }
 

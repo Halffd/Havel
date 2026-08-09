@@ -766,5 +766,14 @@ std::optional<Value> VM::externalRootValue(uint64_t root_id) const {
   return heap_.externalRoot(root_id);
 }
 
+void VM::pinModuleCacheExports(const std::string &key, const Value &exports) {
+  if (!exports.isObjectId()) return;
+  auto existing = module_cache_gc_roots_.find(key);
+  if (existing != module_cache_gc_roots_.end() && existing->second != 0) {
+    unpinExternalRoot(existing->second);
+  }
+  module_cache_gc_roots_[key] = pinExternalRoot(exports);
+}
+
 
 } // namespace havel::compiler

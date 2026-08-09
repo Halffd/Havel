@@ -33,12 +33,33 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <queue>
 #include <regex>
 #include <set>
 #include <sstream>
+
+// Globals reconstructed per-process by host modules. Since host-fn fields
+// serialize to null and these carry per-run state (app.args), they must never
+// be baked into or restored from the .hvc cache.
+static const std::unordered_set<std::string> &runtimeGlobalsSkipList() {
+  static const std::unordered_set<std::string> names = {
+      "app",        "system",     "scheduler", "load",   "struct", "class",
+      "prot",       "fmt",        "ffi",       "fs",     "bc",     "shell",
+      "sys",        "time",       "timer",     "math",   "rand",   "random",
+      "randint",    "log",        "jit",       "debug",  "readline", "browser",
+      "http",       "choice",     "pack",      "Regex",  "Option", "Result",
+      "getVariant", "state",
+      // Host-namespace objects (contain host-fn fields that serialize to null).
+      // Reconstructed per process, so a stale GLBS copy must not clobber them.
+      "string",     "String",     "array",     "Array",  "bit",     "ptr",
+      "object",     "Object",     "physics",   "Physics", "Type",    "process",
+      "wayland",    "bytecodeBuilder",
+  };
+  return names;
+}
 #include <stdexcept>
 #include <thread>
 
@@ -221,6 +242,10 @@ VM::~VM() {
     unpinExternalRoot(rootId);
   }
   host_function_gc_roots_.clear();
+  for (auto &[name, rootId] : module_cache_gc_roots_) {
+    unpinExternalRoot(rootId);
+  }
+  module_cache_gc_roots_.clear();
   imported_module_globals_.clear();
 
   if (heap_.externalRootCount() > 0) {
@@ -1175,33 +1200,50 @@ void VM::loadFiberState(Fiber *fiber) {
     frame_arena_[frame_count_ - 1].ip = fiber->ip;
   }
 
-  // STEP 6: Reattach spawn-time globals scope if the ambient globals lost it.
-  // Churn repro (n=600) resumes a goroutine against a module sidecar map that
-  // lacks script globals (tick_in), so every global read fails. Reinstate the
-  // spawn snapshot only when ambient is provably the wrong map: ambient is
-  // missing a key the snapshot carries. Merge missing keys into ambient
-  // instead of wholesale-replacing it — replacing destroys the goroutine's
-  // live progress (e.g. tick_in=5 reset back to spawn-time 0) and produces
-  // resetting tick sequences. When ambient is the right map (has all keys),
-  // leave it untouched so shared-write semantics are preserved.
+  // STEP 6: Reattach globals scope if the ambient globals lost script keys.
+  // Under GC churn a goroutine resumes against a module sidecar map lacking
+  // script globals, so every global read fails. Merge missing keys BACK into
+  // ambient instead of wholesale-replacing it — replacing destroys the
+  // goroutine's live progress (e.g. tick_in=5 reset to spawn-time 0) and
+  // produces resetting tick sequences.
+  //
+  // Merge source priority (most fresh first):
+  //   1. fiber->saved_globals — refreshed on every saveFiberState, holds the
+  //      goroutine's last-live progress. Preserves shared-write values main
+  //      wrote too (main and goroutine share ambient, which was copied here).
+  //   2. spawn_globals_snapshot_ — spawn-time copy, used only on first run
+  //      (before any save). Stale, but better than nothing.
+  // ambient stays primary: merges only add missing keys, never overwrite, so
+  // shared-write semantics are preserved when ambient is the right map.
   uint32_t top_closure_id = UINT32_MAX;
   if (frame_count_ > 0)
     top_closure_id = frame_arena_[frame_count_ - 1].closure_id;
-  auto snapIt = spawn_globals_snapshot_.find(top_closure_id);
-  if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
-    std::vector<std::pair<std::string, Value>> missing_keys;
-    for (const auto &[k, v] : *snapIt->second) {
+
+  std::vector<std::pair<std::string, Value>> missing_keys;
+  auto consider_source = [&](const std::unordered_map<std::string, Value>& src) {
+    for (const auto& [k, v] : src) {
       if (!globals.count(k)) {
         missing_keys.emplace_back(k, v);
       }
     }
-    if (!missing_keys.empty()) {
-      ::havel::debug(
-          "[VM] loadFiberState: merging {} globals snapshot keys into ambient",
-          missing_keys.size());
-      for (auto &[k, v] : missing_keys) {
-        globals.emplace(std::move(k), std::move(v));
-      }
+  };
+
+  const bool has_fresh = fiber->has_saved_globals && !fiber->saved_globals.empty();
+  if (has_fresh) {
+    consider_source(fiber->saved_globals);
+  } else {
+    auto snapIt = spawn_globals_snapshot_.find(top_closure_id);
+    if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
+      consider_source(*snapIt->second);
+    }
+  }
+
+  if (!missing_keys.empty()) {
+    ::havel::debug(
+        "[VM] loadFiberState: merging {} missing globals keys from {}",
+        missing_keys.size(), has_fresh ? "fiber saved_globals" : "spawn snapshot");
+    for (auto& [k, v] : missing_keys) {
+      globals.emplace(std::move(k), std::move(v));
     }
   }
 }
@@ -1288,7 +1330,18 @@ void VM::saveFiberState(Fiber *fiber) {
     fiber->ip = frame_arena_[frame_count_ - 1].ip;
   }
 
-  // STEP 5: Update fiber state if needed
+  // STEP 5: Refresh the per-fiber fresh-globals fallback. loadFiberState
+  // uses this (in preference to the stale spawn-time snapshot) when
+  // ambient globals is a churned sidecar missing script keys — merging
+  // the LAST saved values keeps the goroutine's live progress (e.g.
+  // tick_in=5 survives a GC-churned ambient that lost it) without
+  // breaking shared-write semantics (ambient stays the primary map).
+  fiber->saved_globals = globals;
+  fiber->saved_globals_stack = globals_stack_;
+  fiber->saved_globals_mirror_id = globals_mirror_object_id_;
+  fiber->has_saved_globals = true;
+
+  // STEP 6: Update fiber state if needed
   // Don't change the suspended_reason - that was set when suspension occurred
   // Just ensure the fiber's state reflects current execution point
 }
@@ -1377,20 +1430,19 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   // main-script writes (e.g. loop counters declared after spawn) stay
   // visible on resume; unconditionally swapping to the snapshot would
   // clobber main's live globals and re-run stale iterations.
-  {
-    auto snapIt = spawn_globals_snapshot_.find(closure_id);
-    if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
-      bool missing = false;
-      for (const auto &[k, v] : *snapIt->second) {
-        (void)v;
-        if (!globals.count(k)) {
-          missing = true;
-          break;
-        }
+  auto snapIt = spawn_globals_snapshot_.find(closure_id);
+  std::cerr << "[DEBUG] startGoroutine snapshot found=" << (snapIt != spawn_globals_snapshot_.end()) << " size=" << (snapIt != spawn_globals_snapshot_.end() ? snapIt->second->size() : 0) << " globals has fs=" << (globals.count("fs") ? 1 : 0) << " snapshot has fs=" << (snapIt != spawn_globals_snapshot_.end() && snapIt->second->count("fs") ? 1 : 0) << "\n";
+  if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
+    bool missing = false;
+    for (const auto &[k, v] : *snapIt->second) {
+      (void)v;
+      if (!globals.count(k)) {
+        missing = true;
+        break;
       }
-      if (missing) {
-        globals = *snapIt->second;
-      }
+    }
+    if (missing) {
+      globals = *snapIt->second;
     }
   }
 
@@ -1423,6 +1475,12 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   (void)chunk_pin; // held implicitly via the closure we allocated/looked-up
 
   func->execution_count++;
+  std::cerr << "[DEBUG] startGoroutine func name='" << func->name << "' instrs=" << func->instructions.size() << " param=" << func->param_count << " local=" << func->local_count << "\n";
+  for (size_t di = 0; di < func->instructions.size(); ++di) {
+    std::cerr << "[DEBUG]   i" << di << " op=" << (int)func->instructions[di].opcode << " ops=";
+    for (const auto &opv : func->instructions[di].operands) std::cerr << opv.toString() << ";";
+    std::cerr << "\n";
+  }
   if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*func);
   }
@@ -4122,6 +4180,7 @@ void VM::activateLazyModule(const std::string &name) {
           }
         }
         moduleLoader_.putCache(name, postInitIt->second);
+        pinModuleCacheExports(name, postInitIt->second);
         return;
       }
     }
@@ -4226,6 +4285,7 @@ bool VM::ensureModuleLoaded(const std::string &name) {
         auto git = globals.find(name);
         if (git != globals.end()) {
           moduleLoader_.putCache(name, git->second);
+          pinModuleCacheExports(name, git->second);
         }
         return true;
       }
@@ -4255,6 +4315,7 @@ bool VM::ensureModuleLoaded(const std::string &name) {
   auto git = globals.find(name);
   if (git != globals.end()) {
     moduleLoader_.putCache(name, git->second);
+    pinModuleCacheExports(name, git->second);
     auto modIt = lazy_modules_.find(name);
     if (modIt != lazy_modules_.end()) {
       for (const auto &alias : modIt->second.aliases) {
@@ -4290,6 +4351,18 @@ Value VM::loadModule(const std::string &path) {
     Value cachedVal;
     std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
     if (moduleLoader_.getCached(path, &cachedVal)) {
+      if (path == "debug") {
+        std::cerr << "[DEBUG] loadModule cached path='" << path << "' cachedVal is oid? "
+                  << cachedVal.isObjectId() << " isNull? " << cachedVal.isNull() << " isHF? " << cachedVal.isHostFuncId()
+                  << " bits=" << cachedVal.rawBits() << "\n";
+        if (cachedVal.isObjectId()) {
+          auto *co = heap_.object(cachedVal.asObjectId());
+          if (co) {
+            auto *sf = co->get("setFlag");
+            std::cerr << "    exports has setFlag? " << (sf != nullptr) << " bits=" << cachedVal.rawBits() << " closure=" << (sf ? sf->isClosureId() : 0) << " hf=" << (sf ? sf->isHostFuncId() : 0) << " null=" << (sf ? sf->isNull() : 1) << "\n";
+          }
+        }
+      }
       moduleLoader_.getCachedGlobals(path, &cachedGlobals);
 
       if (cachedGlobals) {
@@ -4398,6 +4471,7 @@ Value VM::loadModule(const std::string &path) {
         Value exports = cachedVal;
         // Also cache under the original key for faster lookup next time
         moduleLoader_.putCache(path, exports);
+        pinModuleCacheExports(path, exports);
         return exports;
       }
     }
@@ -4411,6 +4485,7 @@ Value VM::loadModule(const std::string &path) {
       auto it = globals.find(path);
       if (it != globals.end()) {
         moduleLoader_.putCache(path, it->second);
+        pinModuleCacheExports(path, it->second);
         return it->second;
       }
     }
@@ -4441,6 +4516,7 @@ Value VM::loadModule(const std::string &path) {
       }
       Value exports = Value::makeObjectId(exportsObj.id);
       moduleLoader_.putCache(path, exports);
+      pinModuleCacheExports(path, exports);
       return exports;
     }
     // Fallback: try modules/ directory relative to executable
@@ -4557,6 +4633,8 @@ Value VM::loadModule(const std::string &path) {
 
     moduleLoader_.putCache(path, exports);
     moduleLoader_.putCache(canonicalKey, exports);
+    pinModuleCacheExports(path, exports);
+    pinModuleCacheExports(canonicalKey, exports);
     modules_loading_.erase(canonicalKey);
     return exports;
   }
@@ -4697,9 +4775,14 @@ Value VM::loadModule(const std::string &path) {
   
   // Try to load globals from .hvc cache
   std::unordered_map<std::string, Value> cachedGlobals;
+  std::vector<ClosureImportRef> closureRefs;
   std::filesystem::path hvcPath = resolved->canonicalPath;
   hvcPath.replace_extension(".hvc");
+<<<<<<< HEAD
+  bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals, &closureRefs);
+=======
   bool hasCachedGlobals = deserializeGlobalsFromHvc(hvcPath.string(), cachedGlobals);
+>>>>>>> havel-2
   
   if (hasCachedGlobals && !cachedGlobals.empty()) {
     // Restore globals from cache - this avoids running __main__
@@ -4720,6 +4803,14 @@ Value VM::loadModule(const std::string &path) {
     }
     // Restore cached globals (lazy tables, etc.)
     for (const auto &[name, value] : cachedGlobals) {
+      // Never clobber per-process runtime globals (fs, app, etc.) with the
+      // serialized copy — host-fn fields came back as null and app carries
+      // stale args. A stale GLBS section from an older binary can still
+      // contain them, so guard both serialize and restore.
+      if (runtimeGlobalsSkipList().count(name)) continue;
+      if (canonicalKey.find("pratt") != std::string::npos && (name == "parse")) {
+        std::cerr << "[DEBUG] pratt cachedGlobals parse type null=" << value.isNull() << " closure=" << value.isClosureId() << "\n";
+      }
       globals[name] = value;
     }
     // Create _G mirror
@@ -4744,8 +4835,55 @@ Value VM::loadModule(const std::string &path) {
       }
     }
     
+    // Re-bind imported closures from serialized refs
+    // Warm loads skip __main__ so imports never re-run; these refs
+    // were saved from the cold run's globals and must be restored now.
+    if (canonicalKey.find("pratt") != std::string::npos || canonicalKey.find("/ast.") != std::string::npos) {
+      std::cerr << "[DEBUG] " << (canonicalKey.find("pratt") != std::string::npos ? "pratt" : "ast") << " restored globals: " << globals.size() << "\n";
+      for (auto &[n, v] : globals) {
+        if (n == "parse" || n == "Program" || n == "ErrorNode" || n == "BlockStatement") {
+        std::cerr << "[DEBUG]   " << n << " closure=" << v.isClosureId() << " hostfn=" << v.isHostFuncId() << " null=" << v.isNull() << " fnobj=" << v.isFunctionObjId() << "\n";
+      }
+      }
+    }
+    std::cerr << "[DEBUG] warm restore: " << closureRefs.size() << " closure refs for module " << canonicalKey << "\n";
+    for (const auto &ref : closureRefs) {
+      // Try cached module first (avoids recursive load triggering source compile)
+      Value srcExports;
+      if (moduleLoader_.isCached(ref.modulePath)) {
+        moduleLoader_.getCached(ref.modulePath, &srcExports);
+      }
+      if (!srcExports.isObjectId()) {
+        // Try loading from source .hv to re-bind
+        std::string modName = std::filesystem::path(ref.modulePath).stem().string();
+        srcExports = loadModule(modName);
+      }
+      if (!srcExports.isObjectId()) { std::cerr << "[DEBUG] restore " << ref.globalName << ": no exports for " << ref.modulePath << "\n"; continue; }
+      auto *srcObj = heap_.object(srcExports.asObjectId());
+      if (!srcObj) { std::cerr << "[DEBUG] restore " << ref.globalName << ": null object\n"; continue; }
+      auto srcClosurePtr = srcObj->get(ref.functionName);
+      if (ref.functionName == "ErrorNode" || ref.functionName == "Program") {
+        std::cerr << "[DEBUG] srcClosure " << ref.functionName << " from " << ref.modulePath << " present=" << (srcClosurePtr != nullptr) << " exportsSize=" << srcObj->size() << "\n";
+        if (srcClosurePtr) std::cerr << "[DEBUG]   closureType closure=" << srcClosurePtr->isClosureId() << " hostfn=" << srcClosurePtr->isHostFuncId() << " fnobj=" << srcClosurePtr->isFunctionObjId() << " null=" << srcClosurePtr->isNull() << " obj=" << srcClosurePtr->isObjectId() << "\n";
+      }
+      if (!srcClosurePtr || !srcClosurePtr->isClosureId()) { std::cerr << "[DEBUG] restore " << ref.globalName << ": fn '" << ref.functionName << "' not closure in exports\n"; continue; }
+      Value srcClosure = *srcClosurePtr;
+      std::cerr << "[DEBUG] re-bind[" << canonicalKey << "] " << ref.globalName << " <- " << ref.modulePath << "." << ref.functionName << "\n";
+      globals[ref.globalName] = srcClosure;
+    }
+
     // Create module globals snapshot for closures
     auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    if (canonicalKey.find("emitter.hvc") != std::string::npos) {
+      std::cerr << "[DEBUG] emitter snapshot build: globals.size=" << globals.size()
+                << " hasEmitterError=" << (globals.find("emitterError") != globals.end())
+                << " hasEmitError=" << (globals.find("emitError") != globals.end())
+                << "\n";
+    }
+    if (globals.find("emitError") != globals.end() && globals.find("emitterError") == globals.end()) {
+      std::cerr << "[DEBUG] SNAPSHOT-MISSES-EMITTERERROR module=" << canonicalKey
+                << " size=" << globals.size() << "\n";
+    }
     for (auto &[name, value] : globals) {
       if (value.isClosureId()) {
         auto *closure = heap_.closure(value.asClosureId());
@@ -4783,9 +4921,17 @@ Value VM::loadModule(const std::string &path) {
     ObjectRef exportsRef = createHostObject();
     auto *obj = heap_.object(exportsRef.id);
     uint64_t exportsRootId = pinExternalRoot(Value::makeObjectId(exportsRef.id));
+    if (canonicalKey.find("debug.hv") != std::string::npos) {
+      auto gi = globals.find("setFlag");
+      std::cerr << "[DEBUG] debug warm exports setFlag globals=" << (gi != globals.end()) << " bits=" << (gi != globals.end() ? gi->second.rawBits() : 0ULL) << " closure=" << (gi != globals.end() ? gi->second.isClosureId() : 0) << " hf=" << (gi != globals.end() ? gi->second.isHostFuncId() : 0) << " null=" << (gi != globals.end() ? gi->second.isNull() : 0) << "\n";
+    }
     for (const auto &[name, value] : globals) {
       if (name.empty() || name[0] == '_') continue;
       (*obj)[name] = value;
+    }
+    if (canonicalKey.find("debug.hv") != std::string::npos) {
+      auto *sf = obj->get("setFlag");
+      std::cerr << "[DEBUG] debug warm exports setFlag in-obj=" << (sf != nullptr) << " bits=" << (sf ? sf->rawBits() : 0ULL) << " closure=" << (sf ? sf->isClosureId() : 0) << "\n";
     }
     unpinExternalRoot(exportsRootId);
     Value exports = Value::makeObjectId(exportsRef.id);
@@ -4794,12 +4940,19 @@ Value VM::loadModule(const std::string &path) {
     moduleLoader_.putCacheWithGlobals(path, exports, moduleGlobalsForCache,
                                       cacheSrcPath, cacheBcPath);
     moduleLoader_.putCacheWithGlobals(canonicalKey, exports, moduleGlobalsForCache,
-                                      cacheSrcPath, cacheBcPath);
+                                       cacheSrcPath, cacheBcPath);
+    pinModuleCacheExports(path, exports);
+    pinModuleCacheExports(canonicalKey, exports);
     globals[path] = exports;
     modules_loading_.erase(canonicalKey);
     return exports;
   }
-} else {
+  // hasCachedGlobals was false but chunk is loaded from .hvc.
+  // Fall through to execute __main__ from the loaded chunk.
+  // The execution block below handles both source-compiled and
+  // BytecodeCache-loaded chunks uniformly.
+  } // close if (BytecodeCache)
+  if (resolved->type != ModuleLoader::ResolvedModule::BytecodeCache) {
     // Read source file and compile
     std::ifstream file(resolved->canonicalPath);
     if (!file.is_open()) {
@@ -5028,6 +5181,10 @@ Value VM::loadModule(const std::string &path) {
   // Use this for wrapping exports and for cached module loads.
   auto moduleGlobalsForCache =
       std::make_shared<std::unordered_map<std::string, Value>>(globals);
+  if (globals.find("emitError") != globals.end() && globals.find("emitterError") == globals.end()) {
+    std::cerr << "[DEBUG] COLD-SNAPSHOT-MISSES-EMITTERERROR module=" << canonicalKey
+              << " size=" << globals.size() << "\n";
+  }
 
   // Update all closures in the module's globals to use this snapshot as their
   // module_globals. This allows them to access module-level variables (like
@@ -5278,13 +5435,30 @@ current_script_dir_ = prev_script_dir;
                                       cacheSrcPath, cacheBcPath);
   moduleLoader_.putCacheWithGlobals(
       canonicalKey, exports, moduleGlobalsForCache, cacheSrcPath, cacheBcPath);
+  pinModuleCacheExports(path, exports);
+  pinModuleCacheExports(canonicalKey, exports);
   
 // Serialize and append globals to .hvc file for fast loading
   try {
+<<<<<<< HEAD
+    std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache, canonicalKey);
+    std::filesystem::path hvcPath = resolved->canonicalPath;
+    hvcPath.replace_extension(".hvc");
+    writeGlobalsToHvc(hvcPath.string(), globalsData);
+    // Also write to canonicalKey path if different (e.g. out/ build directory)
+    if (canonicalKey != resolved->canonicalPath) {
+      std::filesystem::path hvcPath2 = canonicalKey;
+      hvcPath2.replace_extension(".hvc");
+      if (hvcPath2 != hvcPath) {
+        writeGlobalsToHvc(hvcPath2.string(), globalsData);
+      }
+    }
+=======
     std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache);
     std::filesystem::path hvcPath = resolved->canonicalPath;
     hvcPath.replace_extension(".hvc");
     writeGlobalsToHvc(hvcPath.string(), globalsData);
+>>>>>>> havel-2
   } catch (...) {
     // Ignore serialization errors
   }
@@ -5300,7 +5474,8 @@ current_script_dir_ = prev_script_dir;
 // Globals serialization for .hvc cache
 // ============================================================================
 
-std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, Value>& globals) {
+std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, Value>& globals,
+                                          const std::string& thisModuleKey) {
     std::vector<uint8_t> data;
     auto append = [&data](const void* ptr, size_t size) {
         if (ptr == nullptr || size == 0) return;
@@ -5320,26 +5495,96 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
         return id;
     };
     
-    // Filter and count globals to serialize (skip private/internal)
+    // Filter and count globals to serialize (skip private/internal).
+    // and runtime-built environment objects (app/system/scheduler/...):
+    // they are reconstructed per the process by VMHostFunctions and would
+    // otherwise bake a stale args array (e.g. build-time script paths) into
+    // the .hvc, or restore host-module objects whose host-fn fields serialized
+    // to null (breaking fs reads).
+    static const std::unordered_set<std::string> &runtimeGlobals = runtimeGlobalsSkipList();
     std::vector<std::pair<std::string, Value>> toSerialize;
+    // Imported closures (defined in a different module) are not recreated from
+    // this module's own chunk on warm load, so serialize them as refs.
+    std::vector<std::pair<std::string, ClosureImportRef>> closureImports;
+    std::shared_ptr<BytecodeChunk> ownChunk;
+    if (!thisModuleKey.empty()) {
+        auto ownIt = module_chunks_.find(thisModuleKey);
+        if (ownIt != module_chunks_.end()) ownChunk = ownIt->second;
+    }
     toSerialize.reserve(globals.size());
     for (const auto& [name, value] : globals) {
         if (name.empty() || name[0] == '_') continue;
+        if (runtimeGlobals.count(name)) continue;
         // Skip host functions (they're re-registered on load)
-        if (value.isHostFuncId()) continue;
-        // Skip closures (they're recreated from chunk on load)
-        if (value.isClosureId()) continue;
+        if (value.isHostFuncId()) {
+            // But serialize $module_closure_ and $module_fn_ entries (and
+            // plain-name imports resolving to such wrappers) as closure refs
+            // so warm loads can re-register them. The plain-name case arises
+            // when `use { fn } from "m"` binds the wrapper host-fn directly
+            // under the field name: host_function_names_[hostIdx] still
+            // carries the underlying $module_*<key>_<field> registration.
+            static const std::string kModuleClosurePrefix = "$module_closure_";
+            static const std::string kModuleFnPrefix = "$module_fn_";
+            std::string regName;
+            uint32_t hostIdx = value.asHostFuncId();
+            if (hostIdx < host_function_names_.size()) {
+                regName = host_function_names_[hostIdx];
+            }
+            const std::string &probe = regName.empty() ? name : regName;
+            std::string rest;
+            if (probe.rfind(kModuleClosurePrefix, 0) == 0) {
+                rest = probe.substr(kModuleClosurePrefix.size());
+            } else if (probe.rfind(kModuleFnPrefix, 0) == 0) {
+                rest = probe.substr(kModuleFnPrefix.size());
+            } else {
+                continue;
+            }
+            size_t lastUnderscore = rest.rfind('_');
+            if (lastUnderscore != std::string::npos && lastUnderscore > 0) {
+                std::string srcKey = rest.substr(0, lastUnderscore);
+                std::string fieldName = rest.substr(lastUnderscore + 1);
+                closureImports.emplace_back(name, ClosureImportRef{srcKey, fieldName, name});
+            }
+            continue;
+        }
+        if (value.isFunctionObjId()) {
+            // top-level function index: recreated from this chunk's function
+            // table on warm load (the fn-indices loop), no need to serialize.
+            continue;
+        }
+        if (value.isClosureId()) {
+            auto *closure = heap_.closure(value.asClosureId());
+            if (!closure || !closure->chunk) continue;
+            // Local closures are recreated from this module's chunk on load.
+            if (ownChunk && closure->chunk == ownChunk.get()) continue;            // Foreign closure (imported from another module): emit a ref so
+            // warm loads can re-bind it from the source module's exports.
+            const BytecodeFunction *fn =
+                closure->chunk->getFunction(closure->function_index);
+            if (!fn) continue;
+            std::string srcKey;
+            for (const auto &[k, c] : module_chunks_) {
+                if (c.get() == closure->chunk) { srcKey = k; break; }
+            }
+            if (srcKey.empty()) continue;
+            if (name == "parse" && ownChunk) {
+                std::cerr << "[DEBUG] serialize foreign closure 'parse' srcKey=" << srcKey << "\n";
+            }
+            closureImports.emplace_back(name, ClosureImportRef{srcKey, fn->name, name});
+            continue;
+        }
         toSerialize.emplace_back(name, value);
     }
     
     // Write globals count
-    uint32_t numGlobals = static_cast<uint32_t>(toSerialize.size());
+    uint32_t numGlobals = static_cast<uint32_t>(toSerialize.size() + closureImports.size());
     append(&numGlobals, sizeof(numGlobals));
     
     // First pass: collect all strings
     for (const auto& [name, value] : toSerialize) {
         getStringId(name);
         // Collect strings from value
+        std::unordered_set<uint32_t> visitedObj;
+        std::unordered_set<uint32_t> visitedArr;
         std::function<void(const Value&)> collectStrings = [&](const Value& v) {
             if (v.isStringId()) {
                 const std::string* strPtr = heap_.string(v.asStringId());
@@ -5348,7 +5593,12 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 // StringValId references chunk string table - not in heap
                 // We'll handle these separately if needed
             } else if (v.isObjectId()) {
-                auto* obj = heap_.object(v.asObjectId());
+                uint32_t id = v.asObjectId();
+                // Guard against object cycles (e.g. a globals mirror that
+                // references itself) — without this, a self-referential
+                // object overflows the stack in serializeGlobals.
+                if (!visitedObj.insert(id).second) return;
+                auto* obj = heap_.object(id);
                 if (obj) {
                     for (const auto& kv : *obj) {
                         getStringId(kv.first);
@@ -5356,7 +5606,9 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                     }
                 }
             } else if (v.isArrayId()) {
-                auto* obj = heap_.array(v.asArrayId());
+                uint32_t id = v.asArrayId();
+                if (!visitedArr.insert(id).second) return;
+                auto* obj = heap_.array(id);
                 if (obj) {
                     for (const auto& val : *obj) {
                         collectStrings(val);
@@ -5365,6 +5617,13 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
             }
         };
         collectStrings(value);
+    }
+    // Collect strings for closure import refs
+    for (const auto& [name, ref] : closureImports) {
+        getStringId(name);
+        getStringId(ref.modulePath);
+        getStringId(ref.functionName);
+        getStringId(ref.globalName);
     }
     
     // Write string table
@@ -5384,8 +5643,11 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
     constexpr uint8_t TAG_STRING = 4;
     constexpr uint8_t TAG_OBJECT = 5;
     constexpr uint8_t TAG_ARRAY = 6;
+    constexpr uint8_t TAG_CLOSURE_REF = 7;
     
     // Second pass: serialize values
+    std::unordered_set<uint32_t> serVisitedObj;
+    std::unordered_set<uint32_t> serVisitedArr;
     std::function<void(const Value&)> serializeValue = [&](const Value& v) {
         if (v.isNull()) {
             append(&TAG_NULL, 1);
@@ -5412,8 +5674,15 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 append(&strId, sizeof(strId));
             }
         } else if (v.isObjectId()) {
+            uint32_t id = v.asObjectId();
+            // Cycle guard: a self-referential object would recurse forever
+            // here (same crash as collectStrings). Emit null for the cycle.
+            if (!serVisitedObj.insert(id).second) {
+                append(&TAG_NULL, 1);
+                return;
+            }
             append(&TAG_OBJECT, 1);
-            auto* obj = heap_.object(v.asObjectId());
+            auto* obj = heap_.object(id);
             if (obj) {
                 uint32_t count = static_cast<uint32_t>(obj->size());
                 append(&count, sizeof(count));
@@ -5426,9 +5695,15 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 uint32_t count = 0;
                 append(&count, sizeof(count));
             }
+            serVisitedObj.erase(id);
         } else if (v.isArrayId()) {
+            uint32_t id = v.asArrayId();
+            if (!serVisitedArr.insert(id).second) {
+                append(&TAG_NULL, 1);
+                return;
+            }
             append(&TAG_ARRAY, 1);
-            auto* obj = heap_.array(v.asArrayId());
+            auto* obj = heap_.array(id);
             if (obj) {
                 uint32_t count = static_cast<uint32_t>(obj->size());
                 append(&count, sizeof(count));
@@ -5439,6 +5714,7 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 uint32_t count = 0;
                 append(&count, sizeof(count));
             }
+            serVisitedArr.erase(id);
         } else {
             // Unsupported type (closure, host function, etc.) - serialize as null
             append(&TAG_NULL, 1);
@@ -5449,6 +5725,19 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
         uint32_t nameId = getStringId(name);
         append(&nameId, sizeof(nameId));
         serializeValue(value);
+    }
+    // Emit closure import refs (imported functions from other modules).
+    // Format per entry: [nameId][TAG_CLOSURE_REF][modulePathId][functionNameId][globalNameId]
+    for (const auto& [name, ref] : closureImports) {
+        uint32_t nameId = getStringId(name);
+        append(&nameId, sizeof(nameId));
+        append(&TAG_CLOSURE_REF, 1);
+        uint32_t modId = getStringId(ref.modulePath);
+        append(&modId, sizeof(modId));
+        uint32_t fnId = getStringId(ref.functionName);
+        append(&fnId, sizeof(fnId));
+        uint32_t gnId = getStringId(ref.globalName);
+        append(&gnId, sizeof(gnId));
     }
     
     // Append marker at the END: "GLBS" + 4-byte offset to start of globals section
@@ -5462,7 +5751,8 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
     return data;
 }
 
-std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const uint8_t> data) {
+std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const uint8_t> data,
+                                                              std::vector<ClosureImportRef>* outRefs) {
     std::unordered_map<std::string, Value> globals;
     size_t pos = 0;
     
@@ -5502,10 +5792,16 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
     constexpr uint8_t TAG_STRING = 4;
     constexpr uint8_t TAG_OBJECT = 5;
     constexpr uint8_t TAG_ARRAY = 6;
-    
-    std::function<std::optional<Value>()> deserializeValue = [&]() -> std::optional<Value> {
+    constexpr uint8_t TAG_CLOSURE_REF = 7;
+
+    std::function<std::optional<Value>(std::optional<uint8_t>)> deserializeValue =
+        [&](std::optional<uint8_t> preTag) -> std::optional<Value> {
         uint8_t tag = 0;
-        if (!read(&tag, 1)) return std::nullopt;
+        if (preTag.has_value()) {
+            tag = *preTag;
+        } else if (!read(&tag, 1)) {
+            return std::nullopt;
+        }
         
         switch (tag) {
             case TAG_NULL:
@@ -5544,7 +5840,7 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
                         uint32_t keyId = 0;
                         if (!read(&keyId, sizeof(keyId))) return std::nullopt;
                         std::string key = (keyId < stringList.size()) ? stringList[keyId] : "";
-                        auto valOpt = deserializeValue();
+                        auto valOpt = deserializeValue(std::nullopt);
                         if (valOpt) {
                             (*obj)[key] = *valOpt;
                         }
@@ -5561,7 +5857,7 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
                 auto* obj = heap_.object(objRef.id);
                 if (obj) {
                     for (uint32_t i = 0; i < count; ++i) {
-                        auto valOpt = deserializeValue();
+                        auto valOpt = deserializeValue(std::nullopt);
                         if (valOpt) {
                             (*obj)[std::to_string(i)] = *valOpt;
                         }
@@ -5580,7 +5876,29 @@ std::unordered_map<std::string, Value> VM::deserializeGlobals(std::span<const ui
         uint32_t nameId = 0;
         if (!read(&nameId, sizeof(nameId))) break;
         std::string name = (nameId < stringList.size()) ? stringList[nameId] : "";
-        auto valOpt = deserializeValue();
+        // Peek the tag for this global's value
+        if (pos >= data.size()) break;
+        uint8_t tag = data[pos];
+        if (tag == TAG_CLOSURE_REF && outRefs) {
+            // Skip the tag byte
+            ++pos;
+            // Read modulePath string id
+            uint32_t modId = 0;
+            if (!read(&modId, sizeof(modId))) break;
+            std::string modPath = (modId < stringList.size()) ? stringList[modId] : "";
+            // Read functionName string id
+            uint32_t fnId = 0;
+            if (!read(&fnId, sizeof(fnId))) break;
+            std::string fnName = (fnId < stringList.size()) ? stringList[fnId] : "";
+            // Read globalName string id
+            uint32_t gnId = 0;
+            if (!read(&gnId, sizeof(gnId))) break;
+            std::string globalName = (gnId < stringList.size()) ? stringList[gnId] : "";
+            outRefs->push_back(ClosureImportRef{modPath, fnName, globalName});
+            // Do NOT add to globals map; the warm restore path will populate it.
+            continue;
+        }
+        auto valOpt = deserializeValue(std::nullopt);
         if (valOpt) {
             globals[name] = *valOpt;
         }
@@ -5633,16 +5951,29 @@ std::optional<std::vector<uint8_t>> VM::readGlobalsFromHvc(const std::string& hv
     return globalsData;
 }
 
-bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals) {
+bool VM::deserializeGlobalsFromHvc(const std::string& hvcPath, std::unordered_map<std::string, Value>& outGlobals,
+                                   std::vector<ClosureImportRef>* outRefs) {
     auto globalsDataOpt = readGlobalsFromHvc(hvcPath);
     if (!globalsDataOpt) return false;
-    
+
     auto globalsData = *globalsDataOpt;
+<<<<<<< HEAD
+    // readGlobalsFromHvc already strips the trailing [GLBS][size] trailer
+    // and returns only the serialized payload ([numGlobals][string table]
+    // [name+value...]...). Feed it directly — skipping bytes here would
+    // drop the leading numGlobals field and yield an empty result,
+    // forcing the slow recompile+serialize path every launch.
+    if (globalsData.empty()) return false;
+    std::span<const uint8_t> data(globalsData.data(), globalsData.size());
+
+    outGlobals = deserializeGlobals(data, outRefs);
+=======
     // globalsData already contains just the serialized globals (without the GLBS marker and size)
     // Pass directly to deserializeGlobals
     std::span<const uint8_t> data(globalsData.data(), globalsData.size());
     
     outGlobals = deserializeGlobals(data);
+>>>>>>> havel-2
     return !outGlobals.empty();
 }
 

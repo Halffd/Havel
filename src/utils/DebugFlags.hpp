@@ -13,4 +13,11 @@ inline bool debug_event_listener = false;
 // measuring, never during normal key spam.
 inline bool trace_hotkey_latency = false;
 
+// Trace VM::emitVariableChanged. Off by default: every array/object write
+// fires this, and the SKIPPED (no handler) branch alone floods the log with
+// hundreds of ms of print per scheduler tick when reactive hotkeys aren't
+// registered. Enable only when debugging conditional-hotkey dependency
+// tracking.
+inline bool debug_var_changed = false;
+
 }

@@ -3538,12 +3538,21 @@ void VM::emitVariableChanged(const std::string &var_name) {
     on_var_changed_busy_ = false;
   }
   if (!event_queue_ || !event_queue_->hasHandler(EventType::VAR_CHANGED)) {
-    ::havel::debug("[VM] emitVariableChanged: '{}' SKIPPED (no handler)",
-                   var_name);
+    // No reactive-hotkey handler is registered, so this is a pure no-op.
+    // Every array/object write fires this (multiple times per container op),
+    // and the unconditional debug() flooded the log with hundreds of ms of
+    // prints per scheduler tick. Gate the trace behind debug_var_changed so
+    // the no-op path stays zero-overhead in normal builds.
+    if (debugging::debug_var_changed) {
+      ::havel::debug("[VM] emitVariableChanged: '{}' SKIPPED (no handler)",
+                     var_name);
+    }
     return;
   }
-  ::havel::debug("[VM] emitVariableChanged: '{}' -> pushing VAR_CHANGED event",
-                 var_name);
+  if (debugging::debug_var_changed) {
+    ::havel::debug("[VM] emitVariableChanged: '{}' -> pushing VAR_CHANGED event",
+                   var_name);
+  }
   uint32_t var_hash = std::hash<std::string>{}(var_name);
   Event change_event(EventType::VAR_CHANGED, var_hash,
                      new std::string(var_name));

@@ -4679,7 +4679,7 @@ fn emitClosureBody(emitter, body, name) {
 	bc.set_local_count(scopeLocalCount(newScope))
 	bc.func_pop()
 	emitter.scope = oldScope
-	bc.emit("LOAD_CONST", bc.add_const(funcIdx))
+	bc.emit("LOAD_CONST", bc.add_const(bc.make_function_obj(funcIdx)))
 }
 
 fn emitWhenBlock(emitter, node) {

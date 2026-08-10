@@ -28,7 +28,7 @@ ClassDeclaration, StructDeclaration, EnumDeclaration, TraitDeclaration, Protocol
 TypeParam, isNode, prettyPrint,
 WildcardPattern, ArrayPattern, ObjectPattern, ConstructorPattern, OrPattern, RangePattern,
 CharLiteral, ThisExpression, GoExpression, AsyncExpression, AwaitExpression, ChannelExpression,
-YieldExpression, WaitStatement, InputCommand } from "ast"
+YieldExpression, WaitStatement, InputCommand, ThreadExpression, IntervalExpression, TimeoutExpression, UpdateBlockExpression } from "ast"
 
 // --- Binding power constants (matching C++ switch-based values) ---
 BP_NONE = 0
@@ -574,6 +574,49 @@ condition = parseExpr(getRightBindingPower(TID.Where))
   }
   return Identifier(tok.value, l, c)
  }
+else if tt == TID.Interval {
+  if current().tid == TID.OpenParen {
+    return MemberExpression(Identifier(tok.value, l, c), Identifier("start", l, c), l, c)
+  }
+  if current().tid == TID.Dot {
+    return Identifier(tok.value, l, c)
+  }
+  intervalMs = parseExpr(0)
+  if intervalMs == null or intervalMs.kind == "ErrorNode" { return intervalMs }
+  if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+    body = parseBlock()
+    return IntervalExpression(intervalMs, body, l, c)
+  }
+  return error("Expected '{' after interval duration", l, c)
+}
+else if tt == TID.Timeout {
+  if current().tid == TID.OpenParen {
+    return MemberExpression(Identifier(tok.value, l, c), Identifier("start", l, c), l, c)
+  }
+  if current().tid == TID.Dot {
+    return Identifier(tok.value, l, c)
+  }
+  delayMs = parseExpr(0)
+  if delayMs == null or delayMs.kind == "ErrorNode" { return delayMs }
+  if current().tid == TID.OpenBrace or current().tid == TID.Colon {
+    body = parseBlock()
+    return TimeoutExpression(delayMs, body, l, c)
+  }
+  return error("Expected '{' after timeout duration", l, c)
+}
+else if tt == TID.Thread {
+  if current().tid == TID.OpenParen {
+    return MemberExpression(Identifier(tok.value, l, c), Identifier("spawn", l, c), l, c)
+  }
+  if current().tid == TID.Dot {
+    return Identifier(tok.value, l, c)
+  }
+  if current().tid != TID.OpenBrace {
+    return Identifier(tok.value, l, c)
+  }
+  body = parseBlock()
+  return ThreadExpression(body, l, c)
+}
 else if tt == TID.Identifier or (isKeywordIdent(tt) and tt != TID.True and tt != TID.False and tt != TID.Null and tt != TID.Fn and tt != TID.WaitGroup and tt != TID.Wait and tt != TID.Defer and tt != TID.From and tt != TID.Yield) {
 return Identifier(tok.value, l, c)
 }
@@ -2068,7 +2111,6 @@ fn parseBlock() {
   l = current().line
   c = current().col
   prevSugar = allowBraceSugar
-  allowBraceSugar = false
 
   if current().tid == TID.OpenBrace {
     advance()
@@ -2351,10 +2393,11 @@ expect(TID.CloseBrace)
         if tt == TID.Pool { return parsePoolStatement() }
         if tt == TID.Devices { return parseDevicesBlockStatement() }
 
-        // Thread/Interval/Timeout sugar
-        if tt == TID.Thread { return parseThreadStatement() }
-        if tt == TID.Interval { return parseIntervalStatement() }
-        if tt == TID.Timeout { return parseTimeoutStatement() }
+        // Thread/Interval/Timeout sugar — only when used as block sugar (thread { }, interval ms { }, timeout ms { }),
+        // not as member/call references (interval.stop(id), thread.spawn(fn), interval.start(ms))
+        if tt == TID.Thread && at(1).tid != TID.Dot && at(1).tid != TID.OpenParen { return parseThreadStatement() }
+        if tt == TID.Interval && at(1).tid != TID.Dot && at(1).tid != TID.OpenParen { return parseIntervalStatement() }
+        if tt == TID.Timeout && at(1).tid != TID.Dot && at(1).tid != TID.OpenParen { return parseTimeoutStatement() }
 
  // Type declarations
  if tt == TID.Class { return parseClassDeclaration() }

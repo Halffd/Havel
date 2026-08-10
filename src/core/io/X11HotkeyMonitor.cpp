@@ -61,6 +61,12 @@ void X11HotkeyMonitor::Stop() {
         monitorThread.join();
     }
 
+    // Clear all hotkeys to prevent any lingering state
+    {
+        std::lock_guard<std::mutex> lock(hotkeyMutex);
+        hotkeys.clear();
+    }
+
     havel::info("X11HotkeyMonitor stopped");
 }
 

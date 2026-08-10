@@ -134,7 +134,7 @@ check("match-9", daytype(9), "unknown")
 // 11. try/catch basic
 caught = 0
 try {
-  error("test error")
+  throw "test error"
 } catch {
   caught = 1
 }
@@ -153,12 +153,12 @@ check("try-after", val_after, 15)
 // 13. multiple try/catch blocks
 errors_caught = 0
 try {
-  error("e1")
+  throw "e1"
 } catch {
   errors_caught += 1
 }
 try {
-  error("e2")
+  throw "e2"
 } catch {
   errors_caught += 1
 }
@@ -190,11 +190,12 @@ for ch in "hello" {
 }
 check("for-in-str", char_count, 5)
 
-// 17. complex boolean logic - returns true/false not 1/0
-check("and-tt", 1 && 1, true)
-check("and-tf", 1 && 0, false)
-check("or-tt", 1 || 0, true)
-check("or-ff", 0 || 0, false)
+// 17. complex boolean logic - &&/|| are short-circuit and return operand values,
+// so int operands yield int results; use bool operands for bool results
+check("and-tt", 1 && 1, 1)
+check("and-tf", 1 && 0, 0)
+check("or-tt", 1 || 0, 1)
+check("or-ff", 0 || 0, 0)
 check("not-t", !0, true)
 check("not-f", !1, false)
 

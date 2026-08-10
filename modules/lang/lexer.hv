@@ -637,6 +637,7 @@ fn Lexer(source) {
     }
     fn scanNumber() {
         startPos = bytePos()
+        if current() == 45 { advance() }
         if current() == 48 {
             next = cp(1)
             if next == 120 || next == 88 {

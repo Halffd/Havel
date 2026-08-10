@@ -813,12 +813,20 @@ void IO::cleanup() {
     ioBackend->Cleanup();
   }
 
+  // Release any active X11 keyboard/pointer grab in the input backend
+  if (inputBackend && inputBackendType == InputBackendType::X11) {
+    inputBackend->UngrabAllDevices();
+  }
+
     if (debugging::debug_io) ::havel::debug("IO cleanup completed");
 }
 
 void IO::UngrabAll() {
   ensureBackend();
   if (ioBackend) ioBackend->UnregisterAll();
+  if (inputBackend && inputBackendType == InputBackendType::X11) {
+    inputBackend->UngrabAllDevices();
+  }
 }
 
 

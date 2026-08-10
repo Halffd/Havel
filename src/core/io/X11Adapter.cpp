@@ -284,10 +284,18 @@ bool X11Adapter::GrabDevice(const std::string &path) {
         error("X11Adapter: XGrabKeyboard failed ({})", result);
         return false;
     }
+    grabbed_ = true;
 
-    XGrabPointer(display_, root_, True,
+    result = XGrabPointer(display_, root_, True,
         ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
         GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+    if (result != GrabSuccess) {
+        error("X11Adapter: XGrabPointer failed ({})", result);
+        XUngrabKeyboard(display_, CurrentTime);
+        grabbed_ = false;
+        XSync(display_, False);
+        return false;
+    }
 
     XSync(display_, False);
     grabbed_ = true;

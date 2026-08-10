@@ -49,7 +49,16 @@ public:
 
     int GetPollFd() const override;
     bool PollEvents(int timeoutMs) override;
-    void SetExternalWakeupFd(int fd) override { externalWakeupFd_ = fd; }
+    void SetExternalWakeupFd(int fd) override {
+        std::lock_guard<std::mutex> lock(externalWakeupFdsMutex_);
+        externalWakeupFds_.clear();
+        if (fd >= 0) externalWakeupFds_.push_back(fd);
+    }
+
+    void SetExternalWakeupFds(std::vector<int> fds) override {
+        std::lock_guard<std::mutex> lock(externalWakeupFdsMutex_);
+        externalWakeupFds_ = std::move(fds);
+    }
     void RecheckDevices();
 
     std::pair<int, int> GetMousePosition() const override;
@@ -235,9 +244,14 @@ private:
     int shutdownFd_ = -1;
     std::atomic<bool> running_{false};
 
-    // External fd that breaks a blocking PollEvents() when readable (VM wakeup).
-    // Observed for readiness only; never drained or closed here.
-    int externalWakeupFd_ = -1;
+    // External fds whose readiness breaks a blocking PollEvents() (VM scheduler
+    // deferred-wakeup, event-queue wakeup, signalfd). Observed for readiness
+    // only; never drained or closed here. Replaces the older single-fd
+    // externalWakeupFd_ so we can collapse the EventLoop's PollEvents(10) +
+    // select(10ms) double wait into a single poll() call (saving ~10ms per
+    // cycle when no work is queued).
+    std::vector<int> externalWakeupFds_;
+    std::mutex externalWakeupFdsMutex_;
 
     // Callbacks - feed to EventListener
     KeyCallback keyDownCallback_;
@@ -475,8 +489,16 @@ bool EvdevAdapter::PollEvents(int timeoutMs) {
         }
     }
 
-    if (externalWakeupFd_ >= 0) {
-        pfds.push_back({.fd = externalWakeupFd_, .events = POLLIN, .revents = 0});
+    // External wakeup fds (scheduler deferred-wakeup, event-queue wakeup,
+    // signalfd). All map into the same equivalence class ("break the poll and
+    // let the caller drain/re-check") so we don't need to track indices.
+    {
+        std::lock_guard<std::mutex> lock(externalWakeupFdsMutex_);
+        for (int fd : externalWakeupFds_) {
+            if (fd >= 0) {
+                pfds.push_back({.fd = fd, .events = POLLIN, .revents = 0});
+            }
+        }
     }
 
     size_t shutdownIdx = SIZE_MAX;

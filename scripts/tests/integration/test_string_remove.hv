@@ -1,0 +1,15 @@
+// Try to remove '+' using map/filter
+x = "hello+world+test"
+chars = x.split("")
+filtered = chars.filter(fn(c) c != "+")
+result = filtered.join("")
+print(result)  // "helloworldtest"
+
+// Or using for loop
+result = ""
+for c in x {
+    if c != "+" {
+        result += c
+    }
+}
+print(result)  // "helloworldtest"

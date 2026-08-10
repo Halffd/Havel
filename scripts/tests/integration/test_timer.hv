@@ -1,0 +1,24 @@
+// Test timer module
+
+print("=== Testing Timer Module ===\n")
+
+fn callback() {
+  print("  Timer callback called!")
+}
+
+print("1. Testing timer.after (100ms delay):")
+timer.after(100, callback)
+sleep(200)
+print("  Done waiting")
+print("")
+
+print("2. Testing timer.every (50ms interval):")
+fn counter() {
+  print("  Tick!")
+}
+timer.every(50, counter)
+sleep(200)
+print("  Done (timer still running in background)")
+print("")
+
+print("=== Timer Tests Complete ===")

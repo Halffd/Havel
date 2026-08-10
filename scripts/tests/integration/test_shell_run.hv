@@ -1,0 +1,4 @@
+_x = shell.run("true")
+print("run true: " + str(_x))
+_x2 = shell.run("echo hi")
+print("run echo: " + str(_x2))

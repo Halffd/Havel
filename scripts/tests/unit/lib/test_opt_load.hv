@@ -1,0 +1,2 @@
+use { isLiteral } from "optimizer"
+print("loaded")

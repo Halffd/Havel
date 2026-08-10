@@ -1,0 +1,19 @@
+use { constantFold, deadCodeElim, isAlwaysFalse } from "optimizer"
+use { NumberLiteral, BooleanLiteral, IfStatement, ExpressionStatement, Program, NullLiteral } from "ast"
+
+cond = BooleanLiteral(false, 1, 1)
+print("isAlwaysFalse=" + str(isAlwaysFalse(cond)))
+thenBr = ExpressionStatement(NumberLiteral(1, 1, 1), 1, 1)
+elseBr = ExpressionStatement(NumberLiteral(2, 1, 1), 1, 1)
+ifStmt = IfStatement(cond, thenBr, elseBr, 1, 1)
+
+dceIf = deadCodeElim(ifStmt)
+print("dceIf kind=" + dceIf.kind)
+if dceIf.kind == "ExpressionStatement" {
+    print("dceIf expr kind=" + dceIf.expr.kind + " val=" + str(dceIf.expr.value))
+}
+
+prog2 = Program([ifStmt], 1, 1)
+print("prog body len=" + str(#prog2.body))
+dceProg = deadCodeElim(prog2)
+print("dceProg kind=" + dceProg.kind + " body len=" + str(#dceProg.body))

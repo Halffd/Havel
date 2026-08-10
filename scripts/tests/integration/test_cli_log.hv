@@ -1,0 +1,3 @@
+log.debug("test debug message")
+log.info("test info message")
+log.warn("test warn message")

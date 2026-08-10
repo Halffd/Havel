@@ -1,0 +1,8 @@
+use { constantFold } from "optimizer"
+use { tokenize } from "lexer"
+use { parse } from "pratt"
+
+source = "1 + 2"
+tokens = tokenize(source)
+ast = parse(tokens)
+print("errors: " + str(#ast.errors))

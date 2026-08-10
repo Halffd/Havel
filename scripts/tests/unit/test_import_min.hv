@@ -1,0 +1,51 @@
+use { parse } from "pratt"
+use { inferProgram } from "types"
+use { Emitter, compileProgram } from "emitter"
+
+// Test 1: bare use
+code1 = 'use math\nval x = math.abs(-42)\nprint(x)'
+emitter1 = Emitter()
+ast1 = parse(code1)
+typed1 = inferProgram(ast1.ast)
+result1 = compileProgram(emitter1, ast1.ast)
+print("test1 ok")
+
+// Test 2: named import
+code2 = 'use { abs } from "math"\nprint(abs(-7))'
+emitter2 = Emitter()
+ast2 = parse(code2)
+typed2 = inferProgram(ast2.ast)
+result2 = compileProgram(emitter2, ast2.ast)
+print("test2 ok")
+
+// Test 3: wildcard
+code3 = 'use * from "math"\nprint(abs(-3))'
+emitter3 = Emitter()
+ast3 = parse(code3)
+typed3 = inferProgram(ast3.ast)
+result3 = compileProgram(emitter3, ast3.ast)
+print("test3 ok")
+
+// Test 4: file import with alias
+code4 = 'use "math" as m\nprint(m.abs(-9))'
+emitter4 = Emitter()
+ast4 = parse(code4)
+typed4 = inferProgram(ast4.ast)
+result4 = compileProgram(emitter4, ast4.ast)
+print("test4 ok")
+
+// Test 5: use module as alias
+code5 = 'use math as m\nprint(m.max(1,2))'
+emitter5 = Emitter()
+ast5 = parse(code5)
+typed5 = inferProgram(ast5.ast)
+result5 = compileProgram(emitter5, ast5.ast)
+print("test5 ok")
+
+// Test 6: import named
+code6 = 'import { abs } from "math"\nprint(abs(-11))'
+emitter6 = Emitter()
+ast6 = parse(code6)
+typed6 = inferProgram(ast6.ast)
+result6 = compileProgram(emitter6, ast6.ast)
+print("test6 ok")

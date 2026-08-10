@@ -1,0 +1,25 @@
+// Test object literal and field assignment
+
+print("=== Object Tests ===\n")
+
+// Test 1: Object literal
+print("1. Testing object literal:")
+let obj = {}
+obj.a = 1
+obj.b = 2
+print("  obj.a = ")
+print(obj.a)
+print("  obj.b = ")
+print(obj.b)
+print("")
+
+// Test 2: Object with initial values
+print("2. Testing object with values:")
+let obj2 = {x: 10, y: 20}
+print("  obj2.x = ")
+print(obj2.x)
+print("  obj2.y = ")
+print(obj2.y)
+print("")
+
+print("=== Object Tests Complete ===")

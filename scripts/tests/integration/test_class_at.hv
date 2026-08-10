@@ -1,0 +1,12 @@
+// Debug class constructor @field
+
+class Foo {
+    fn init(x) {
+        println("init called with x=" + str(x))
+        @val = x
+        println("after @val=x, @val=" + str(@val))
+    }
+}
+
+f = Foo(42)
+println("after construction, f.val=" + str(f.val))

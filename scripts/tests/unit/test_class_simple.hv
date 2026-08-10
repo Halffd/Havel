@@ -1,0 +1,19 @@
+class Counter {
+    count = 0
+
+    fn @(start) {
+        @count = start
+    }
+
+    fn increment() {
+        @count++
+    }
+
+    fn getCount() {
+        @count
+    }
+}
+
+c = Counter(10)
+c.increment()
+print(c.getCount())

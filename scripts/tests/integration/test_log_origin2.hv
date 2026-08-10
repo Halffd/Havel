@@ -1,0 +1,19 @@
+use log
+
+// Test without filter
+log.debugOrigin(log.origin("test", "TestModule", 1), "test message 1")
+
+// Test with filter matching
+filter = log.origin("test", "TestModule", 1)
+log.setOriginFilter(filter)
+log.debugOrigin(filter, "test message 2")
+
+// Test with non-matching filter
+filter2 = log.origin("other", "OtherModule", 1)
+log.setOriginFilter(filter2)
+log.debugOrigin(log.origin("test", "TestModule", 1), "test message 3")
+
+log.clearOriginFilter()
+log.debugOrigin(log.origin("test", "TestModule", 1), "test message 4")
+
+print("done")

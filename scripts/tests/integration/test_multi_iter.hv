@@ -1,0 +1,44 @@
+// Test multi-variable iteration
+
+print("=== Multi-Variable Iteration Tests ===\n")
+
+// Test 1: Object iteration with key, value (requires parentheses)
+print("1. Object iteration (key, value):")
+let obj = {"a": 1, "b": 2, "c": 3}
+for (key, val) in obj {
+  print("  ")
+  print(key)
+  print(": ")
+  print(val)
+}
+print("")
+
+// Test 2: Array iteration with single variable (should still work)
+print("2. Array iteration (single var):")
+for x in [10, 20, 30] {
+  print("  ")
+  print(x)
+}
+print("")
+
+// Test 3: String iteration with single variable
+print("3. String iteration (single var):")
+for c in "abc" {
+  print("  '")
+  print(c)
+  print("'")
+}
+print("")
+// Arrays: iterate over values (sequential, no holes)
+for x in [1,2,3] { print(x) }        // 1,2,3
+
+// Arrays with index: use two variables
+for i, x in [1,2,3] { print(i, x) }  // 0,1; 1,2; 2,3
+
+// Objects: iterate over key-value pairs
+for k, v in {a:1, b:2} { print(k, v) }  // a,1; b,2
+
+// Objects with only keys: use one variable
+for k in {a:1, b:2} { print(k) }         // a, b
+
+print("=== Tests Complete ===")

@@ -1,0 +1,26 @@
+// Test log module origin functions
+use log
+
+// Test basic functions
+info("basic info message")
+debug("basic debug message")
+warn("basic warn message")
+
+// Test origin functions
+filter = origin("test", "TestModule", 1)
+setOriginFilter(filter)
+
+debugOrigin(filter, "filtered debug message")
+infoOrigin(filter, "filtered info message")
+
+// Test here function
+here_filter = here("test", "TestModule", 1)
+clearOriginFilter()
+debugOrigin(here_filter, "here filtered debug")
+
+// Test origin with priority
+filter2 = origin("test", "TestModule", 1)
+setOriginFilter(filter2)
+debugOrigin(filter2, "priority 1 debug")
+
+print("Log module origin tests complete!")

@@ -1,0 +1,24 @@
+// Test various LINQ patterns
+numbers := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+// Multiple where clauses
+result1 := from x in numbers where x > 3 where x < 8 select x * 10
+print("Range filter: " + result1)
+
+// Just filter
+result2 := from x in numbers where x % 2 == 0
+print("Evens: " + result2)
+
+// Just select (map)
+result3 := from x in numbers select x * x
+print("Squares: " + result3)
+
+// Real world: query windows (simulated with array of objects)
+windows := [
+  {id: 1, title: "Chrome - Google"},
+  {id: 2, title: "VS Code"},
+  {id: 3, title: "Chrome - GitHub"}
+]
+
+chrome_windows := from w in windows where w.title has "Chrome" select w.id
+print("Chrome window IDs: " + chrome_windows)

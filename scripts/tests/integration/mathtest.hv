@@ -1,0 +1,17 @@
+// math.hv
+fn add(a: num, b: num) -> num {
+    a + b
+}
+
+fn sub(a: num, b: num) -> num {
+    _n(a) - _n(b)
+}
+
+val PI: num = 3.14159
+
+// Private (not exported)
+fn _n(x: num) -> num {
+    num(x)
+}
+
+let _private_state = 0

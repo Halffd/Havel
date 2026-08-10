@@ -1,0 +1,9 @@
+// smoke: fmt-b64-string = 8
+use format
+s = fmt.b64("Hello")
+val __result = #s
+if __result != 8 {
+ print("FAIL fmt-b64-string: expected 8, got " + str(__result))
+ process.exit(255)
+}
+return __result

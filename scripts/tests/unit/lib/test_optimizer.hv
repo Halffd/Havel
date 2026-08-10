@@ -1,0 +1,85 @@
+use { tokenize } from "lexer"
+use { parse } from "pratt"
+use { constantFold, deadCodeElim, optimize } from "optimizer"
+use { inferProgram, getVarType, getReturnType } from "types"
+use { prettyPrint } from "ast"
+
+// Test constant folding
+source1 = "1 + 2"
+tokens1 = tokenize(source1)
+ast1 = parse(tokens1)
+if ast1.errors != null && #ast1.errors > 0 {
+    print("parse error in source1")
+} else {
+    folded = constantFold(ast1)
+    if folded.kind == "Program" && #folded.body == 1 {
+        expr = folded.body[0]
+        if expr.kind == "ExpressionStatement" && expr.expr.kind == "NumberLiteral" && expr.expr.value == 3 {
+            print("PASS: constant fold 1+2 -> 3")
+        } else {
+            print("FAIL: constant fold 1+2, got kind=" + expr.expr.kind + " val=" + str(expr.expr.value))
+        }
+    } else {
+        print("FAIL: constant fold structure")
+    }
+}
+
+// Test constant fold string concat
+source2 = "\"hello\" + \" world\""
+tokens2 = tokenize(source2)
+ast2 = parse(tokens2)
+if ast2.errors == null || #ast2.errors == 0 {
+    folded2 = constantFold(ast2)
+    expr2 = folded2.body[0]
+    if expr2.expr.kind == "StringLiteral" && expr2.expr.value == "hello world" {
+        print("PASS: constant fold str concat")
+    } else {
+        print("FAIL: constant fold str concat, got " + str(expr2.expr.value))
+    }
+}
+
+// Test dead code elimination - if false
+source3 = "if false { print(\"dead\") } else { print(\"alive\") }"
+tokens3 = tokenize(source3)
+ast3 = parse(tokens3)
+if ast3.errors == null || #ast3.errors == 0 {
+    dce = deadCodeElim(ast3)
+    if dce.kind == "Program" && #dce.body == 1 {
+        stmt = dce.body[0]
+        if stmt.kind == "ExpressionStatement" {
+            print("PASS: dead code elim if false -> else branch")
+        } else {
+            print("FAIL: dead code elim if false, got kind=" + stmt.kind)
+        }
+    }
+}
+
+// Test type inference
+source4 = "x = 42"
+tokens4 = tokenize(source4)
+ast4 = parse(tokens4)
+if ast4.errors == null || #ast4.errors == 0 {
+    result = inferProgram(ast4)
+    xt = getVarType(result, "x")
+    if xt == "int" {
+        print("PASS: type inference x=42 -> int")
+    } else {
+        print("FAIL: type inference x=" + str(xt))
+    }
+}
+
+// Test type inference on function
+source5 = "fn add(a, b) { a + b }"
+tokens5 = tokenize(source5)
+ast5 = parse(tokens5)
+if ast5.errors == null || #ast5.errors == 0 {
+    result5 = inferProgram(ast5)
+    fnType = getVarType(result5, "add")
+    if fnType == "fn" {
+        print("PASS: fn type inference")
+    } else {
+        print("FAIL: fn type inference, got " + str(fnType))
+    }
+}
+
+print("optimizer + types test done")

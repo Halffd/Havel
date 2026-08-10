@@ -1,0 +1,47 @@
+// Basic test script for new host modules
+// Tests core functionality without complex features
+
+// Test Timer Module
+let start = timer.now();
+timer.sleep(50);
+let end = timer.now();
+let elapsed = end - start;
+
+// Test File System Module
+let testFile = "/tmp/havel_test.txt";
+fs.writeFile(testFile, "Hello from Havel VM!");
+let content = fs.readFile(testFile);
+let exists = fs.exists(testFile);
+
+// Test Clipboard Module
+clipboard.setText("Test message from Havel VM");
+let clipboardText = clipboard.getText();
+let hasText = clipboard.hasText();
+clipboard.clear();
+
+// Test Window Module (placeholder)
+let activeWindow = window.getActive();
+let allWindows = window.getAll();
+
+// Test Hotkey Module (placeholder) - without function callback
+let hotkeyId = hotkey.register("ctrl+alt+t", "callback_string");
+let isRegistered = hotkey.isRegistered(hotkeyId);
+hotkey.unregister(hotkeyId);
+
+// Test File System Module - directory listing
+let entries = fs.listDirectory("/tmp");
+let entryCount = entries.length;
+
+// Write a simple result file
+let result = "Timer elapsed: " + elapsed + "ms\n";
+result += "File content: " + content + "\n";
+result += "File exists: " + exists + "\n";
+result += "Clipboard text: " + clipboardText + "\n";
+result += "Clipboard has text: " + hasText + "\n";
+result += "Active window: " + activeWindow + "\n";
+result += "Window count: " + allWindows.length + "\n";
+result += "Hotkey ID: " + hotkeyId + "\n";
+result += "Hotkey registered: " + isRegistered + "\n";
+result += "Directory entries: " + entryCount + "\n";
+
+fs.writeFile("/tmp/havel_test_results.txt", result);

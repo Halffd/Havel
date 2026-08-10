@@ -1,0 +1,18 @@
+// Test GC string comparison bug fix
+
+test_string_eq = fn() {
+    count = 0
+    for i in 0..2000 {
+        s = "hello world " + int(i).str()
+        if s == "hello world 1000" {
+            count = count + 1
+        }
+        if s != "no match" {
+            count = count + 1
+        }
+    }
+    println("string eq test: count=" + int(count).str())
+}
+
+test_string_eq()
+println("all GC string tests passed")

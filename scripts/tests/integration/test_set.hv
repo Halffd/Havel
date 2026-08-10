@@ -1,0 +1,13 @@
+// Simple object.set test
+
+print("Testing object.set:\n")
+
+let obj = {a: 1}
+print("Before set:")
+print(object.keys(obj))
+
+object.set(obj, "b", 2)
+print("After set:")
+print(object.keys(obj))
+
+print("Done")

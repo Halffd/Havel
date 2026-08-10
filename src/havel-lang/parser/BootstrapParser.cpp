@@ -7554,6 +7554,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
         }
 
     auto stmt = makeNodeAt<havel::ast::UseStatement>(keyword, source, std::vector<std::string>{});
+    stmt->isFileImport = true;
     stmt->isNamedImport = true;
     for (auto& [name, alias] : importNames) {
         stmt->importNames.push_back(name);

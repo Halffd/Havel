@@ -17,9 +17,10 @@ VAL = 5            // immutable (uppercase convention)
 | Form | Mutability | Use Case |
 |------|------------|----------|
 | `x = 5` | Mutable | Variables that change |
+| `let x = 5` | Mutable | Explicit mutable (deprecated, prefer `x = 5`) |
+| `val x = 5` | Immutable | Immutable binding (preferred) |
+| `const x = 5` | Immutable | Alias for `val` |
 | `VAL = 5` | Immutable | Constants (uppercase convention) |
-
-No `let`, `const`, or `val` keywords — Havel uses Python-style declaration.
 
 ## Naming Conventions
 
@@ -92,11 +93,17 @@ No `let`/`const` block scoping like JavaScript. Use functions for isolation.
 x = 5
 x = 10          // OK: mutable
 
-val y = 5
-y = 10          // Compile error: immutable
+let y = 5
+y = 10          // OK: let is mutable (deprecated)
 
-const z = 5
+val z = 5
 z = 10          // Compile error: immutable
+
+const w = 5
+w = 10          // Compile error: immutable (alias for val)
+
+VAL = 5
+VAL = 10        // Convention says immutable, but not enforced
 ```
 
 ## Global vs Local

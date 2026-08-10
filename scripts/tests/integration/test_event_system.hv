@@ -1,0 +1,59 @@
+// Test the Event Monitor System
+print("=== Event Monitor Test ===");
+
+// Test timer functions
+print("Testing timer functions...");
+
+let timerId = setTimeout(() => {
+    print("✅ setTimeout executed after 1 second!");
+}, 1000);
+
+let counter = 0;
+let intervalId = setInterval(() => {
+    counter = counter + 1;
+    print("🔄 Interval tick:", counter);
+    if (counter >= 3) {
+        print("⏹️ Stopping interval after 3 ticks");
+        stopInterval(intervalId);
+    }
+}, 500);
+
+// Test mode management
+print("Testing mode management...");
+setMode("test");
+print("Current mode:", getMode());
+
+// Test key event registration (will work when keys are pressed)
+print("Testing key event registration...");
+onKeyDown((keyCode, keyName) => {
+    print("⌨️ Key down:", keyName, "(code:", keyCode, ")");
+});
+
+onKeyUp((keyCode, keyName) => {
+    print("⌨️ Key up:", keyName, "(code:", keyCode, ")");
+});
+
+// Test update loop
+print("Testing update loop...");
+let frameCount = 0;
+let updateLoopId = startUpdateLoop(() => {
+    frameCount = frameCount + 1;
+    if (frameCount % 60 == 0) { // Every second at 60 FPS
+        print("🎮 Update loop frame:", frameCount);
+    }
+}, 16); // ~60 FPS
+
+print("✅ All event monitor features initialized!");
+print("");
+print("📝 Available functions:");
+print("- setTimeout(callback, delayMs)");
+print("- setInterval(callback, intervalMs)");
+print("- stopInterval(timerId)");
+print("- setMode(modeName)");
+print("- getMode()");
+print("- onKeyDown(callback)");
+print("- onKeyUp(callback)");
+print("- startUpdateLoop(callback, [intervalMs])");
+print("");
+print("🎯 Try pressing keys to see key events!");
+print("🕐 Timers and update loops are running...");

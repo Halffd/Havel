@@ -1,0 +1,16 @@
+// Test module import system
+print "=== Testing Module Import System ==="
+
+// Import constants from math module
+import { PI, E, version } from "./math_module.hv"
+
+// Test imported constants
+print "PI constant: " + PI
+print "E constant: " + E  
+print "Module version: " + version
+
+// Test in expressions
+let circumference = 2 * PI * 5
+print "Circumference of circle (radius 5): " + circumference
+
+print "=== Module import test complete ==="

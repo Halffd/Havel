@@ -1,0 +1,15 @@
+// smoke: tco-branch-collatz = 111
+// Tests TCO with branching tail calls (Collatz conjecture, start=27).
+// Each path (even/odd) has a tail call; the algorithm converges by design.
+fn collatz(n, steps):
+  if n == 1:
+    return steps
+  if n % 2 == 0:
+    return collatz(n / 2, steps + 1)
+  return collatz(3 * n + 1, steps + 1)
+
+val __result = collatz(27, 0)
+if __result != 111:
+  print("FAIL tco-branch-collatz: expected 111, got " + str(__result))
+  process.exit(255)
+return __result

@@ -1,0 +1,13 @@
+// smoke: random-randint-range = 1
+use math
+// randint(1, 10) should return an int in [1, 10]
+v = math.randint(1, 10)
+ok = 1
+if v < 1 { ok = 0 }
+if v > 10 { ok = 0 }
+val __result = ok
+if __result != 1 {
+ print("FAIL random-randint-range: expected 1, got " + str(__result))
+ process.exit(255)
+}
+return __result

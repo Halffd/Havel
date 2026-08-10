@@ -1,0 +1,12 @@
+let sep = "/"
+fn join(a, b) {
+    if a == sep { return sep + b }
+    let n = a.len()
+    let idx = n - 1
+    let last = a[idx:]
+    if last == sep { return a + b }
+    return a + sep + b
+}
+print(join("/home/user", "docs"))
+print(join("/home/user/", "docs"))
+print(join("/", "home"))

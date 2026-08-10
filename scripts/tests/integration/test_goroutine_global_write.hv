@@ -1,0 +1,10 @@
+// Minimal: does a goroutine's global write reach the main scope?
+count = 0
+
+worker = fn() {
+    count = count + 1
+    print("WORKER count=", count)
+}
+
+worker()
+print("MAIN count=", count)

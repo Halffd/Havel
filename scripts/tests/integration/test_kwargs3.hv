@@ -1,0 +1,21 @@
+print("Hello", "World", delim="---", end=" end!\n")
+fn arrRand(n, s=5, arr=[]){
+    let al = #arr
+    do {
+        let rn = random.int(0,s)
+        arr.push(rn)
+        al++
+    } while #arr < n
+    return arr
+}
+let endStr = "\n--------------\n"
+print(arrRand(5), end=endStr)
+print(arrRand(30, 1000), end=endStr)
+print(arrRand(5, 10, [1,2,3]), end="\n===============\n")
+let test = [1,2,3,4,5]
+let result = arrRand(15, arr=test)
+print(result)
+print(arrRand(10, arr=[5]), end=endStr)
+print(arrRand(arr=test, s=3, n=9), end=endStr)
+print(arrRand(s=25, arr=[5], n=5), end=endStr)
+return 0

@@ -1,0 +1,34 @@
+print("Testing FFI module...")
+
+use ffi
+
+// Test 1: Load libc
+print("Test 1: Loading libc...")
+libc = ffi.open("libc.so.6")
+if libc == null {
+    print("Failed to open libc.so.6, trying libc.so")
+    libc = ffi.open("libc.so")
+}
+print("libc loaded")
+
+// Test 2: Get symbol
+print("Test 2: Getting getpid symbol...")
+getpid = ffi.sym(libc, "getpid")
+print("getpid symbol obtained")
+
+// Test 3: Call function
+print("Test 3: Calling getpid...")
+pid = ffi.call(getpid, "int64", [])
+print("PID: " + pid)
+
+// Test 4: cdef
+print("Test 4: Testing cdef...")
+ffi.cdef("int getpid(void);")
+print("cdef succeeded")
+
+// Test 5: Close library
+print("Test 5: Closing libc...")
+ffi.close(libc)
+print("Close succeeded")
+
+print("All FFI tests passed!")

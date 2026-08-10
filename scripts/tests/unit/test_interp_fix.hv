@@ -1,0 +1,6 @@
+name = "world"
+print("${name}")
+print("$name")
+print("hello $name")
+print("{")
+print("{}")

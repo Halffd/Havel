@@ -1,0 +1,8 @@
+print("aot core objects")
+
+obj = { name = "havel", version = 2 }
+obj.status = "core"
+
+print(obj.name)
+print(obj.version)
+print(obj.status)

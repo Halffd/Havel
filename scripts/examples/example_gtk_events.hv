@@ -1,0 +1,158 @@
+/*
+ * Example GTK extension with events in Havel
+ * 
+ * Demonstrates event/signal handling with GTK4 widgets
+ * 
+ * Run with: ./build-release/havel scripts/example_gtk_events.hv
+ */
+
+import gtk from "extension:gtk"
+
+// Initialize GTK
+if (!gtk.init()) {
+    print("Failed to load GTK4")
+    return
+}
+
+// Create main window
+let win = gtk.windowNew("GTK Events Demo")
+gtk.windowSetSize(win, 500, 400)
+
+// Create layout
+let vbox = gtk.boxNew("vertical", 10)
+
+// Label
+let label = gtk.labelNew("Click the button or type in the field")
+gtk.labelSetAlignment(label, 0x0084)  // Center
+gtk.boxAppend(vbox, label)
+
+// Button with click event
+let button = gtk.buttonNewWithLabel("Click Me!")
+
+// Define callback function for button click
+fn onButtonClick() {
+    print("Button was clicked!")
+    gtk.labelSetText(label, "Button clicked at: " + str(time.now()))
+}
+
+// Connect the button click event
+gtk.onClicked(button, onButtonClick)
+
+gtk.boxAppend(vbox, button)
+
+// Entry with text change event
+let entry = gtk.entryNew()
+gtk.entrySetPlaceholderText(entry, "Type something...")
+
+// Define callback for text changes
+fn onTextChange(text) {
+    print("Text changed to: " + text)
+    gtk.labelSetText(label, "You typed: " + text)
+}
+
+// Connect text change event
+gtk.onTextChanged(entry, onTextChange)
+
+gtk.boxAppend(vbox, entry)
+
+// Scale (slider) with value change event
+let scale = gtk.scaleNewWithRange("horizontal", 0, 100, 1)
+
+// Define callback for value changes
+fn onValueChange() {
+    let val = gtk.scaleGetValue(scale)
+    print("Scale value: " + str(val))
+}
+
+// Connect value change event
+gtk.onValueChanged(scale, onValueChange)
+
+gtk.boxAppend(vbox, scale)
+
+// SpinButton
+let spinButton = gtk.spinButtonNewWithRange(0, 100, 1)
+
+// Connect value change
+gtk.onValueChanged(spinButton, fn() {
+    let val = gtk.spinButtonGetValue(spinButton)
+    print("SpinButton value: " + str(val))
+})
+
+gtk.boxAppend(vbox, spinButton)
+
+// ComboBoxText with selection change event
+let comboBox = gtk.comboBoxTextNew()
+gtk.comboBoxTextAppend(comboBox, "opt1", "Option 1")
+gtk.comboBoxTextAppend(comboBox, "opt2", "Option 2")
+gtk.comboBoxTextAppend(comboBox, "opt3", "Option 3")
+
+// Define callback for selection changes
+fn onSelectionChange() {
+    let text = gtk.comboBoxTextGetActiveId(comboBox)
+    print("Selected: " + text)
+    gtk.labelSetText(label, "Selected: " + text)
+}
+
+// Connect selection change event
+gtk.onSelectionChanged(comboBox, onSelectionChange)
+
+gtk.boxAppend(vbox, comboBox)
+
+// CheckButton with state change event
+let checkButton = gtk.checkButtonNewWithLabel("Enable feature")
+
+// Define callback for state changes
+fn onStateChange() {
+    let active = gtk.toggleButtonGetActive(checkButton)
+    print("CheckButton state: " + str(active))
+}
+
+// Connect state change event
+gtk.onStateChanged(checkButton, onStateChange)
+
+gtk.boxAppend(vbox, checkButton)
+
+// Switch with state change event
+let switchWidget = gtk.switchNew()
+
+// Connect state change
+gtk.onStateChanged(switchWidget, fn() {
+    let active = gtk.switchGetActive(switchWidget)
+    print("Switch state: " + str(active))
+})
+
+gtk.boxAppend(vbox, switchWidget)
+
+// Notebook with tab change event
+let notebook = gtk.notebookNew()
+
+let page1 = gtk.labelNew("Page 1 Content")
+let page2 = gtk.labelNew("Page 2 Content")
+
+gtk.notebookAppendPage(notebook, page1, gtk.labelNew("Tab 1"))
+gtk.notebookAppendPage(notebook, page2, gtk.labelNew("Tab 2"))
+
+// Connect tab change event
+gtk.onTabChanged(notebook, fn() {
+    let idx = gtk.notebookGetCurrentPage(notebook)
+    print("Tab changed to: " + str(idx))
+})
+
+gtk.boxAppend(vbox, notebook)
+
+// Set content
+gtk.windowSetChild(win, vbox)
+gtk.windowShow(win)
+
+print("GTK window created with event handlers")
+print("Event loop starting...")
+
+// Main loop - process events and callbacks
+while (true) {
+    gtk.processCallbacks()  // Process registered callbacks
+    
+    // Small delay to prevent CPU spinning
+    sleep(0.016)  // ~60 FPS
+}
+
+print("GTK event loop exited")

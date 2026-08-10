@@ -1,0 +1,39 @@
+// Test Semantic Analyzer - Module and Builtin Detection
+
+print("=== Testing Module/Builtin Detection ===\n")
+
+// Test 1: Valid builtin - should pass
+print("Test 1: Valid builtin\n")
+print("Hello")
+
+// Test 2: Undefined builtin - should fail
+// Uncomment to test:
+// print("\nTest 2: Undefined builtin\n")
+// undefinedFunction()  // Should error: Undefined function
+
+// Test 3: Valid module function - should pass
+print("\nTest 3: Valid module function\n")
+let vol = audio.getVolume()
+print("Volume:", vol)
+
+// Test 4: Undefined module - should fail
+// Uncomment to test:
+// print("\nTest 4: Undefined module\n")
+// nonexistentModule.someFunction()  // Should error: Undefined module
+
+// Test 5: Undefined module function - should fail
+// Uncomment to test:
+// print("\nTest 5: Undefined module function\n")
+// audio.nonexistentFunction()  // Should error: Undefined function in module
+
+// Test 6: Valid math functions
+print("\nTest 6: Valid math functions\n")
+print("sqrt(16) =", math.sqrt(16))
+print("abs(-5) =", math.abs(-5))
+
+// Test 7: Undefined math function - should fail
+// Uncomment to test:
+// print("\nTest 7: Undefined math function\n")
+// math.nonexistent()  // Should error: Undefined function in module
+
+print("\n=== Test Complete ===\n")

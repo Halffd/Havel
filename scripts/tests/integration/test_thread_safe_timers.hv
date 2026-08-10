@@ -1,0 +1,146 @@
+// Test Thread-Safe Timer Module
+print("=== Testing Thread-Safe Timer Module ===");
+
+// Test 1: Basic setTimeout
+print("1. Testing setTimeout...");
+
+let timeoutId = timer.setTimeout(1000, () => {
+    print("✅ Timeout executed after 1 second!");
+});
+
+print("Started timeout with ID:", timeoutId);
+
+// Test 2: Basic setInterval
+print("2. Testing setInterval...");
+
+let count = 0;
+let intervalId = timer.setInterval(500, () => {
+    count = count + 1;
+    print("✅ Interval executed", count, "times");
+});
+
+print("Started interval with ID:", intervalId);
+
+// Test 3: Timer status checking
+print("3. Testing timer status...");
+
+setTimeout(2000, () => {
+    let timeoutStatus = timer.getTimerStatus(timeoutId);
+    if (timeoutStatus != null) {
+        print("Timeout status:");
+        print("  ID:", timeoutStatus.id);
+        print("  Running:", timeoutStatus.running);
+    }
+    
+    let intervalStatus = timer.getTimerStatus(intervalId);
+    if (intervalStatus != null) {
+        print("Interval status:");
+        print("  ID:", intervalStatus.id);
+        print("  Running:", intervalStatus.running);
+    }
+});
+
+// Test 4: Timer cleanup
+print("4. Testing timer cleanup...");
+
+setTimeout(3000, () => {
+    print("Stopping interval...");
+    let stopped = timer.clearInterval(intervalId);
+    print("Interval stopped:", stopped);
+    
+    setTimeout(3500, () => {
+        print("Checking active timers...");
+        let activeTimers = timer.getActiveTimers();
+        print("Active timers:", activeTimers);
+    });
+});
+
+// Test 5: Multiple concurrent timers
+print("5. Testing concurrent timers...");
+
+for (let i = 0; i < 3; i++) {
+    let id = timer.setTimeout(1000 + (i * 200), () => {
+        print("✅ Concurrent timer", i, "executed!");
+    });
+    print("Started concurrent timer", i, "with ID:", id);
+}
+
+// Test 6: Error handling
+print("6. Testing error handling...");
+
+try {
+    let invalidId = timer.setTimeout(-100, "not a function");
+    print("This should not print");
+} catch (e) {
+    print("✅ Caught error as expected:", e);
+}
+
+// Test 7: Nested timers
+print("7. Testing nested timers...");
+
+timer.setTimeout(4000, () => {
+    print("Starting nested timer...");
+    
+    timer.setTimeout(1000, () => {
+        print("✅ Nested timer executed!");
+    });
+    
+    timer.setInterval(500, () => {
+        print("✅ Nested interval executed!");
+    });
+});
+
+// Test 8: Timer cleanup all
+print("8. Testing cleanup all timers...");
+
+setTimeout(6000, () => {
+    print("Cleaning up all timers...");
+    let cleanedCount = timer.cleanupAllTimers();
+    print("Cleaned up", cleanedCount, "timers");
+});
+
+print("=== Timer Module Tests Complete ===");
+print("");
+print("🎯 Thread-Safe Timer Functions:");
+print("");
+print("⏰ setTimeout(delay, callback):");
+print("  - Creates one-time timer");
+print("  - Returns timer ID for management");
+print("");
+print("🔄 setInterval(interval, callback):");
+print("  - Creates repeating timer");
+print("  - Returns timer ID for management");
+print("");
+print("🛑 clearTimeout(timerId):");
+print("  - Stops specific timeout timer");
+print("  - Returns true if timer was found and stopped");
+print("");
+print("🛑 clearInterval(timerId):");
+print("  - Stops specific interval timer");
+print("  - Returns true if timer was found and stopped");
+print("");
+print("🛑 stopTimer(timerId):");
+print("  - Unified stop function for any timer type");
+print("  - Returns true if timer was found and stopped");
+print("");
+print("📊 getTimerStatus(timerId):");
+print("  - Returns timer status object with ID and running state");
+print("  - Returns null if timer not found");
+print("");
+print("📋 getActiveTimers():");
+print("  - Returns array of all currently running timer IDs");
+print("  - Thread-safe enumeration of active timers");
+print("");
+print("🧹 cleanupAllTimers():");
+print("  - Stops and removes ALL timers");
+print("  - Returns count of timers that were cleaned up");
+print("  - Thread-safe bulk cleanup operation");
+print("");
+print("🔒 Thread Safety Features:");
+print("  - All timer operations use mutex protection");
+print("  - Shared mutex allows concurrent reads");
+print("  - Exception handling prevents crashes");
+print("  - Atomic timer state management");
+print("  - Safe callback execution with error handling");
+print("");
+print("✅ Thread-safe timer system prevents crashes and race conditions!");

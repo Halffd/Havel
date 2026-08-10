@@ -1,0 +1,110 @@
+// Test script for new host modules
+// This script tests the basic functionality of all implemented modules
+
+// Test Clipboard Module
+console.log("=== Testing Clipboard Module ===");
+try {
+    // Test getting clipboard text
+    let clipboardText = clipboard.getText();
+    console.log("Clipboard text: '" + clipboardText + "'");
+    
+    // Test setting clipboard text
+    clipboard.setText("Hello from Havel VM!");
+    console.log("Set clipboard text to: 'Hello from Havel VM!'");
+    
+    // Test if clipboard has text
+    let hasText = clipboard.hasText();
+    console.log("Clipboard has text: " + hasText);
+    
+    // Clear clipboard
+    clipboard.clear();
+    console.log("Cleared clipboard");
+    
+    console.log("✅ Clipboard module tests passed");
+} catch (error) {
+    console.log("❌ Clipboard module error: " + error);
+}
+
+// Test File System Module
+console.log("\n=== Testing File System Module ===");
+try {
+    // Test file existence
+    let testFile = "/tmp/havel_test.txt";
+    let exists = fs.exists(testFile);
+    console.log("Test file exists: " + exists);
+    
+    // Test writing file
+    fs.writeFile(testFile, "Hello from Havel VM File System!");
+    console.log("Wrote test file: " + testFile);
+    
+    // Test reading file
+    let content = fs.readFile(testFile);
+    console.log("File content: '" + content + "'");
+    
+    // Test listing directory
+    let entries = fs.listDirectory("/tmp");
+    console.log("Directory entries count: " + entries.length);
+    if (entries.length > 0) {
+        console.log("First entry: " + entries[0].name + " (isFile: " + entries[0].isFile + ")");
+    }
+    
+    console.log("✅ File System module tests passed");
+} catch (error) {
+    console.log("❌ File System module error: " + error);
+}
+
+// Test Timer Module
+console.log("\n=== Testing Timer Module ===");
+try {
+    // Test getting current timestamp
+    let now = timer.now();
+    console.log("Current timestamp: " + now);
+    
+    // Test sleep function (short sleep)
+    console.log("Testing sleep for 100ms...");
+    let start = timer.now();
+    timer.sleep(100);
+    let end = timer.now();
+    console.log("Slept for: " + (end - start) + "ms");
+    
+    console.log("✅ Timer module tests passed");
+} catch (error) {
+    console.log("❌ Timer module error: " + error);
+}
+
+// Test Window Module (placeholder)
+console.log("\n=== Testing Window Module ===");
+try {
+    // Test placeholder functions
+    let activeWindow = window.getActive();
+    console.log("Active window ID: " + activeWindow);
+    
+    let allWindows = window.getAll();
+    console.log("All windows count: " + allWindows.length);
+    
+    console.log("✅ Window module tests passed (placeholder functions)");
+} catch (error) {
+    console.log("❌ Window module error: " + error);
+}
+
+// Test Hotkey Module (placeholder)
+console.log("\n=== Testing Hotkey Module ===");
+try {
+    // Test placeholder functions
+    let hotkeyId = hotkey.register("ctrl+alt+t", function() {
+        console.log("Hotkey triggered!");
+    });
+    console.log("Registered hotkey ID: " + hotkeyId);
+    
+    let isRegistered = hotkey.isRegistered(hotkeyId);
+    console.log("Hotkey is registered: " + isRegistered);
+    
+    let unregistered = hotkey.unregister(hotkeyId);
+    console.log("Unregistered hotkey: " + unregistered);
+    
+    console.log("✅ Hotkey module tests passed (placeholder functions)");
+} catch (error) {
+    console.log("❌ Hotkey module error: " + error);
+}
+
+console.log("\n=== All Module Tests Complete ===");

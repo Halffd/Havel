@@ -1,0 +1,31 @@
+// Test UtilityModule VMApi functionality
+print("=== UtilityModule VMApi Test ===");
+
+// Test utility functions
+print("UtilityModule Functions:");
+
+// Test type function
+print("  type(123):", type(123));
+print("  type('hello'):", type("hello"));
+print("  type([1,2,3]):", type([1,2,3]));
+
+// Test len function
+print("  len('hello'):", len("hello"));
+print("  len([1,2,3]):", len([1,2,3]));
+
+// Test list function
+print("  list(123):", list(123));
+print("  list('abc'):", list("abc"));
+print("  list([1,2,3]):", list([1,2,3]));
+
+// Test keys function
+test_obj = {a: 1, b: 2};
+print("  keys({a: 1, b: 2}):", keys(test_obj));
+
+// Test items function
+print("  items({a: 1, b: 2}):", items(test_obj));
+
+// Test Utility object
+print("Utility object exists");
+
+print("=== UtilityModule Test Complete ===");

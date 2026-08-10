@@ -1,0 +1,8 @@
+class Foo {
+    value = 0
+    fn init(x) {
+        @value = x
+    }
+}
+f = Foo(42)
+print(f.value)

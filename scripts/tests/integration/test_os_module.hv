@@ -1,0 +1,15 @@
+// Test os.hv module
+use os
+
+print(os.platform())
+print(os.pid())
+print(os.ppid())
+print(os.hostname())
+print(os.username())
+print(os.home())
+print(os.tmpdir())
+print(os.shell())
+print(os.cwd())
+print(os.uptime())
+print(os.env("HOME"))
+print(os.arch())

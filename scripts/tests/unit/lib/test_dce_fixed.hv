@@ -1,0 +1,18 @@
+use { isNode } from "ast"
+use { isAlwaysTrue, isAlwaysFalse, deadCodeElim, nullLiteral } from "optimizer"
+
+falseLit = {kind: "BooleanLiteral", value: false, line: 1, col: 1}
+thenBlock = {kind: "BlockStatement", body: [], line: 1, col: 1}
+elseBlock = {kind: "BlockStatement", body: [{kind: "ExpressionStatement", expr: {kind: "NumberLiteral", value: 42, line: 1, col: 1}, line: 1, col: 1}], line: 1, col: 1}
+
+ifNode = {kind: "IfStatement", condition: falseLit, then: thenBlock, line: 1, col: 1}
+ifNode["else"] = elseBlock
+
+result = deadCodeElim(ifNode)
+print("result kind=" + result.kind)
+if result.kind == "BlockStatement" {
+    print("PASS: if false with else returns else branch")
+}
+else {
+    print("FAIL: got kind=" + result.kind + " expected BlockStatement")
+}

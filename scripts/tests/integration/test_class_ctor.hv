@@ -1,0 +1,29 @@
+// Test class constructor @field assignment via self-hosted pipeline
+
+class Service {
+    fn init(name, port) {
+        @name = name
+        @port = port
+        @status = "idle"
+        @connections = 0
+    }
+    fn start() {
+        @status = "running"
+        @connections = @connections + 1
+    }
+    fn stop() {
+        @status = "stopped"
+    }
+    fn info() {
+        println(@name + " port=" + int(@port).str() + " status=" + @status)
+    }
+}
+
+svc = Service("api", 8080)
+svc.info()
+svc.start()
+svc.info()
+svc.stop()
+svc.info()
+
+println("class test done")

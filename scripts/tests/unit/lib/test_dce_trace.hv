@@ -1,0 +1,21 @@
+use { deadCodeElim, isAlwaysFalse } from "optimizer"
+use { IfStatement, BooleanLiteral, NumberLiteral, ExpressionStatement, Program } from "ast"
+
+cond = BooleanLiteral(false, 1, 1)
+thenBr = ExpressionStatement(NumberLiteral(1, 1, 1), 1, 1)
+elseBr = ExpressionStatement(NumberLiteral(2, 1, 1), 1, 1)
+ifStmt = IfStatement(cond, thenBr, elseBr, 1, 1)
+
+// Check isAlwaysFalse
+print("isAlwaysFalse=" + str(isAlwaysFalse(cond)))
+
+// Check the else branch
+print("ifStmt else kind=" + str(ifStmt["else"].kind))
+
+// Now call deadCodeElim
+result = deadCodeElim(ifStmt)
+print("result type=" + str(type(result)))
+print("result=" + str(result))
+if result != null {
+    print("result kind=" + str(result.kind))
+}

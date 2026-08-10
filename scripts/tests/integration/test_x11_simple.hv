@@ -1,0 +1,28 @@
+// test_x11_simple.hv - Minimal X11 FFI test
+
+use ffi
+
+let xlib = ffi.open("libX11.so.6")
+print("loaded xlib")
+
+let XOpenDisplay = ffi.sym(xlib, "XOpenDisplay")
+let XDefaultRootWindow = ffi.sym(xlib, "XDefaultRootWindow")
+let XCloseDisplay = ffi.sym(xlib, "XCloseDisplay")
+
+print("got symbols")
+
+let dpy = ffi.call(XOpenDisplay, "pointer", ["pointer"], 0)
+print("opened display")
+
+if dpy == 0 {
+    print("dpy is null")
+} else {
+    print("dpy is non-null")
+    let root = ffi.call(XDefaultRootWindow, "uint64", ["pointer"], dpy)
+    print("got root window")
+    print(root)
+    ffi.call(XCloseDisplay, "int32", ["pointer"], dpy)
+    print("closed display")
+}
+
+print("Done")

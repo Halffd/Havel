@@ -1,0 +1,42 @@
+// Zoom module test — property tests (no display needed)
+zoom.setRegion(100, 100, 300, 300)
+zoom.setScale(3.0)
+
+assert zoom.Nearest == 0
+assert zoom.Bilinear == 1
+assert zoom.Sharpen == 2
+assert zoom.Lanczos == 3
+
+assert zoom.getScale() == 3.0
+zoom.setScale(2.5)
+assert zoom.getScale() == 2.5
+
+reg = zoom.getRegion()
+assert reg.x == 100
+assert reg.y == 100
+assert reg.width == 300
+assert reg.height == 300
+
+zoom.setFilter(zoom.Sharpen)
+assert zoom.getFilter() == 2
+
+zoom.setColorInvert(true)
+assert zoom.isColorInvert() == true
+zoom.setColorInvert(false)
+assert zoom.isColorInvert() == false
+
+zoom.setBrightness(1.5)
+assert zoom.getBrightness() == 1.5
+zoom.setContrast(1.2)
+assert zoom.getContrast() == 1.2
+
+zoom.setLocked(true)
+assert zoom.isLocked() == true
+zoom.setLocked(false)
+
+zoom.setFollowCursor(false)
+assert zoom.isFollowCursor() == false
+zoom.setFollowCursor(true)
+
+assert zoom.isRunning() == false
+print("zoom module: all property tests passed")

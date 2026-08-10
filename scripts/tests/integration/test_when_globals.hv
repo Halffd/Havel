@@ -1,0 +1,36 @@
+// Test: when blocks tracking global variable changes
+//
+// Verifies:
+// 1. when fires when a global crosses a threshold
+// 2. Edge-triggered: fires on false→true, not on true→true
+// 3. Compound condition tracking multiple globals
+// 4. Multiple when blocks on the same global
+// 5. when block body can modify globals
+
+x = 0
+y = 0
+stage = 0
+
+when x > 5 {
+    stage = 1
+    print("x crossed 5")
+}
+
+when y >= 10 {
+    stage = 2
+    print("y reached 10")
+}
+
+when x > 5 && y >= 10 {
+    stage = 3
+    print("both conditions met")
+    print("stage=" + stage)
+    exit(0)
+}
+
+loop {
+    x = x + 1
+    y = y + 2
+    print("x=" + x + " y=" + y)
+    sleep(50)
+}

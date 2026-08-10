@@ -1,0 +1,13 @@
+use { isNode } from "ast"
+
+fn test(x) {
+    if x == null { "null" }
+    else if !isNode(x) { "not-node" }
+    else if x.kind == "A" { "A" }
+    else { "other" }
+}
+
+print(test(null))
+print(test(42))
+print(test({kind: "A"}))
+print(test({kind: "B"}))

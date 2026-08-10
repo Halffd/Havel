@@ -26,6 +26,8 @@ havel::compiler::Scheduler::SuspensionReason toSchedReason(uint8_t fiberReason) 
 }
 #include <cassert>
 #include <iostream>
+#include <algorithm>
+#include <vector>
 
 using namespace havel::compiler;
 
@@ -1352,6 +1354,75 @@ CHECK(picked == nullptr || picked->id != gid, "parked persistent should not be p
 // cleanup
 g->state = Scheduler::GoroutineState::Done;
 sched.clearCurrent();
+}
+
+// Regression: createPersistentHotkeyCallback parks a freshly-spawned
+// persistent hotkey goroutine via suspend(), which must atomically remove
+// it from hotkey_queue_. spawn() had pushed it as Created; without removal
+// the goroutine stays in the queue as Suspended, inflating hotkey_queue_ to
+// N persistent registrations and making every hasRunnableFibers()/pickNext()
+// O(N). wakeHotkey() re-enqueues on trigger, so parked persistent goroutines
+// must NOT live in the run queue between triggers.
+static void test_callback_rig_create_parked_dequeues() {
+    auto& sched = Scheduler::instance();
+
+    size_t base_hkq = sched.getSchedulerSummary().hotkey_queue_size;
+
+    const int N = 50;
+    std::vector<uint32_t> gids;
+    for (int i = 0; i < N; ++i) {
+        uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(i)}, 0, "rig_park_deq");
+        auto* g = sched.get(gid);
+        if (!g) { CHECK(false, "spawn returned gid with no goroutine"); return; }
+        g->persistent = true;
+        g->hotkey_callable = Value::makeFunctionObjId(1);
+        g->hotkey_args = {Value::makeInt(i)};
+        g->hotkey_policy = HotkeyPolicy::Drop;
+        // Park via the public suspend() path the way createPersistentHotkeyCallback
+        // does (after the fix). Must atomically remove from the run queue.
+        if (g->fiber) {
+            g->fiber->state = FiberState::SUSPENDED;
+            g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+        }
+        sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+        gids.push_back(gid);
+    }
+
+    //	None of the N parked persistent hotkeys may remain in hotkey_queue_;
+    // otherwise hasRunnableFibers()/pickNext() scan them every tick.
+    auto summary = sched.getSchedulerSummary();
+    CHECK_EQ(summary.hotkey_queue_size, base_hkq,
+             "parked persistent hotkeys must NOT sit in hotkey_queue_");
+
+    // pickNext must not return any of the parked goroutines.
+    for (int i = 0; i < N; ++i) {
+        auto* picked = sched.pickNext();
+        CHECK(picked == nullptr || std::find(gids.begin(), gids.end(), picked->id) == gids.end(),
+              "pickNext must not return a parked persistent hotkey");
+    }
+
+    // wakeHotkey must still find them by id and re-enqueue (state=Created).
+    auto* g0 = sched.get(gids[0]);
+    CHECK(g0 != nullptr, "parked goroutine must still be reachable by id");
+    // Re-baseline after the pickNext loop above may have drained any leftover
+    // warm-state entries from prior tests, so the queue + 1 expectation is
+    // computed against the current size, not the snapshot from before the
+    // pickNext loop.
+    size_t pre_wake_hkq = sched.getSchedulerSummary().hotkey_queue_size;
+    bool woke = sched.wakeHotkey(g0);
+    CHECK(woke, "wakeHotkey on parked persistent must succeed");
+    CHECK_EQ(static_cast<int>(g0->state.load()),
+             static_cast<int>(Scheduler::GoroutineState::Created),
+             "wakeHotkey must transition to Created via requeueFront");
+    CHECK_EQ(sched.getSchedulerSummary().hotkey_queue_size, pre_wake_hkq + 1,
+             "wakeHotkey must re-enqueue exactly one hotkey");
+
+    // cleanup
+    for (uint32_t gid : gids) {
+        auto* gg = sched.get(gid);
+        if (gg) gg->state = Scheduler::GoroutineState::Done;
+    }
+    sched.clearCurrent();
 }
 
 static void test_callback_rig_wake_from_parked() {
@@ -3473,6 +3544,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
   // Hotkey callback rig tests (persistent goroutine lifecycle)
   test_callback_rig_create_parked();
   std::cout << " PASS callback rig: create → parked\n";
+
+  test_callback_rig_create_parked_dequeues();
+  std::cout << " PASS callback rig: park removes goroutine from hotkey_queue_\n";
 
   test_callback_rig_wake_from_parked();
   std::cout << " PASS callback rig: wake from parked\n";

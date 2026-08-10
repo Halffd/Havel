@@ -2396,45 +2396,6 @@ if k == "RepeatStatement" {
 		return
     }
   if k == "FnDeclaration" {
-    // Thread sugar: thread { body } parses as FnDeclaration with isThread=true
-    if node.isThread == true {
-      sid = globalIdx(emitter, "thread.spawn")
-      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      emitClosureBody(emitter, node.body, "<thread>")
-      bc.emit("CALL", 1)
-      bc.emit("POP")
-      return
-    }
-    // Interval sugar: interval ms { body } parses as FnDeclaration with isInterval=true
-    if node.isInterval == true {
-      sid = globalIdx(emitter, "interval.start")
-      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      if node.intervalDuration != null {
-        emitExpr(emitter, node.intervalDuration)
-      }
-      else {
-        bc.emit("LOAD_CONST", bc.add_const(0))
-      }
-      emitClosureBody(emitter, node.body, "<interval>")
-      bc.emit("CALL", 2)
-      bc.emit("POP")
-      return
-    }
-    // Timeout sugar: timeout ms { body } parses as FnDeclaration with isTimeout=true
-    if node.isTimeout == true {
-      sid = globalIdx(emitter, "timeout.start")
-      bc.emit("LOAD_GLOBAL", bc.str_id(sid))
-      if node.timeoutDuration != null {
-        emitExpr(emitter, node.timeoutDuration)
-      }
-      else {
-        bc.emit("LOAD_CONST", bc.add_const(0))
-      }
-      emitClosureBody(emitter, node.body, "<timeout>")
-      bc.emit("CALL", 2)
-      bc.emit("POP")
-      return
-    }
     // Declare the function name in scope
     localIdx = scopeDeclare(emitter.scope, node.name)
     // Compile the function body — compileFuncDecl returns (upcount, actualChunkIdx)

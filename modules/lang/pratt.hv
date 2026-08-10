@@ -2393,11 +2393,10 @@ expect(TID.CloseBrace)
         if tt == TID.Pool { return parsePoolStatement() }
         if tt == TID.Devices { return parseDevicesBlockStatement() }
 
-        // Thread/Interval/Timeout sugar — only when used as block sugar (thread { }, interval ms { }, timeout ms { }),
-        // not as member/call references (interval.stop(id), thread.spawn(fn), interval.start(ms))
-        if tt == TID.Thread && at(1).tid != TID.Dot && at(1).tid != TID.OpenParen { return parseThreadStatement() }
-        if tt == TID.Interval && at(1).tid != TID.Dot && at(1).tid != TID.OpenParen { return parseIntervalStatement() }
-        if tt == TID.Timeout && at(1).tid != TID.Dot && at(1).tid != TID.OpenParen { return parseTimeoutStatement() }
+        // Thread/Interval/Timeout flow through the expression path (nud), matching the
+        // C++ parser — no statement-level sugar. Top-level "interval ms { }" is an
+        // expression statement; routing here to parse*Statement would produce an
+        // FnDeclaration that compileProgram hoists and never executes.
 
  // Type declarations
  if tt == TID.Class { return parseClassDeclaration() }
@@ -3819,67 +3818,14 @@ if keyword == "condition" {
     }
     // ===================================================================
     // STATEMENT: thread/interval/timeout sugar
+    //
+    // These keywords parse through the expression path (nud) exactly like the
+    // C++ parser; there is no statement-level sugar. A top-level
+    // "interval 50 { }" is an ExpressionStatement wrapping an IntervalExpression.
+    // Old FnDeclaration sugar (isThread/isInterval/isTimeout) was removed because
+    // compileProgram hoists top-level FnDeclarations and never executes them.
     // ===================================================================
-    fn parseThreadStatement() {
-        l = current().line
-        c = current().col
-        advance() // consume 'thread'
-        skipNewlines()
-        body = null
-        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
-            body = parseBlock()
-        }
-        else {
-            bodyExpr = parseExpr(0)
-            body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-        }
-        node = FnDeclaration("__thread__", [], body, l, c, [])
-        node.isThread = true
-        node
 
-    }
-    fn parseIntervalStatement() {
-        l = current().line
-        c = current().col
-        advance() // consume 'interval'
-        skipNewlines()
-        duration = parseExpr(0)
-        skipNewlines()
-        body = null
-        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
-            body = parseBlock()
-        }
-        else {
-            bodyExpr = parseExpr(0)
-            body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-        }
-        node = FnDeclaration("__interval__", [], body, l, c, [])
-        node.isInterval = true
-        node.intervalDuration = duration
-        node
-
-    }
-    fn parseTimeoutStatement() {
-        l = current().line
-        c = current().col
-        advance() // consume 'timeout'
-        skipNewlines()
-        duration = parseExpr(0)
-        skipNewlines()
-        body = null
-        if current().tid == TID.OpenBrace or current().tid == TID.Colon {
-            body = parseBlock()
-        }
-        else {
-            bodyExpr = parseExpr(0)
-            body = BlockStatement([ExpressionStatement(bodyExpr, l, c)], l, c)
-        }
-        node = FnDeclaration("__timeout__", [], body, l, c, [])
-        node.isTimeout = true
-node.timeoutDuration = duration
-    node
-
-}
 // ===================================================================
 // Type parameter list parser: (T) or (T: Bound) or (T: B1 & B2, E)
 // Returns [] if no type parameters found (backtracks on failure)

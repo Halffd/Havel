@@ -14,6 +14,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"let", TokenType::Let},
     {"val", TokenType::Val},
     {"const", TokenType::Const},
+    {"import", TokenType::Import},
     {"if", TokenType::If},
     {"else", TokenType::Else},
     {"while", TokenType::While},
@@ -342,8 +343,21 @@ void Lexer::skipComment() {
   // char Single line comment //
   if (peek() == '/') {
     advance(); // consume second '/'
+    size_t commentStart = position;
+    size_t commentStartCol = column;
     while (!isAtEnd() && peek() != '\n') {
       advance();
+    }
+    // Check for #unsafe marker
+    std::string comment = source.substr(commentStart, position - commentStart);
+    // Trim leading/trailing whitespace for marker matching
+    size_t start = comment.find_first_not_of(" \t");
+    size_t end = comment.find_last_not_of(" \t");
+    std::string trimmedComment = (start != std::string::npos) ? comment.substr(start, end - start + 1) : "";
+    if (trimmedComment == "#unsafe") {
+      // Create an UnsafeMarker token
+      Token token("#unsafe", TokenType::UnsafeMarker, "#unsafe", line, commentStartCol, 7);
+      currentTokens.push_back(std::move(token));
     }
   }
   // Multi-line comment /* */
@@ -964,6 +978,15 @@ Token Lexer::scanIdentifier() {
     TokenType type =
         (keywordIt != KEYWORDS.end()) ? keywordIt->second : TokenType::Identifier;
 
+    if (type == TokenType::Let || type == TokenType::Const) {
+        std::cerr << "WARNING: '" << identifier << "' is deprecated, use 'val' instead at line " 
+                  << line << ", col " << (column - identifier.length()) << std::endl;
+    }
+    else if (type == TokenType::Import) {
+        std::cerr << "WARNING: '" << identifier << "' is deprecated, use 'use' instead at line " 
+                  << line << ", col " << (column - identifier.length()) << std::endl;
+    }
+
     return makeToken(identifier, type);
 }
 
@@ -1277,7 +1300,7 @@ std::optional<Token> Lexer::tryParseHotkeyBinding() {
 }
 
 std::vector<Token> Lexer::tokenize() {
-  std::vector<Token> tokens;
+  currentTokens.clear();
   size_t tokenCount = 0;
 
   while (!isAtEnd()) {
@@ -1302,13 +1325,13 @@ std::vector<Token> Lexer::tokenize() {
 
     // Handle # as length operator or hotkey modifier
     if (c == '#') {
-      bool isStatementStart = tokens.empty();
+      bool isStatementStart = currentTokens.empty();
       TokenType prevType = TokenType::EOF_TOKEN;
       if (!isStatementStart) {
-        prevType = tokens.back().type;
+        prevType = currentTokens.back().type;
         if (debug_lexer) {
           havel::debug("[DEBUG] # char at line {} col {}. Prev token type: {} value: '{}'", 
-                       line, column, static_cast<int>(prevType), tokens.back().value);
+                       line, column, static_cast<int>(prevType), currentTokens.back().value);
         }
         isStatementStart = (prevType == TokenType::NewLine ||
                             prevType == TokenType::Semicolon ||
@@ -1319,7 +1342,7 @@ std::vector<Token> Lexer::tokenize() {
 
       // # followed by underscore is always length operator (hotkey keys never start with _)
       if (!isAtEnd() && peek() == '_') {
-        tokens.push_back(makeToken("#", TokenType::Length));
+        currentTokens.push_back(makeToken("#", TokenType::Length));
         continue;
       }
 
@@ -1328,17 +1351,17 @@ std::vector<Token> Lexer::tokenize() {
       bool afterAssign = (prevType == TokenType::Assign && hasKeyName && isHotkeyLookahead());
 
       if ((isStatementStart && isHotkeyLookahead()) || afterAssign || (hasModifierPrefix && hasKeyName && isHotkeyLookahead())) {
-        tokens.push_back(scanHotkey());
+        currentTokens.push_back(scanHotkey());
         if (debug_lexer) {
-          havel::debug("LEX: hotkey modifier {}", tokens.back().toString());
+          havel::debug("LEX: hotkey modifier {}", currentTokens.back().toString());
         }
         continue;
       }
 
       // If it's not a hotkey, it's the length operator
-      tokens.push_back(makeToken("#", TokenType::Length));
+      currentTokens.push_back(makeToken("#", TokenType::Length));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -1347,8 +1370,8 @@ std::vector<Token> Lexer::tokenize() {
     // Handle numbers (including negative numbers in certain contexts)
 // Only treat -digit as a negative number when NOT after an expression
 bool canBeNegativeNumber = (c == '-' && isDigit(peek()));
- if (canBeNegativeNumber && !tokens.empty()) {
- TokenType prevType = tokens.back().type;
+ if (canBeNegativeNumber && !currentTokens.empty()) {
+ TokenType prevType = currentTokens.back().type;
  if (prevType == TokenType::Number ||
  prevType == TokenType::String ||
  prevType == TokenType::InterpolatedString ||
@@ -1368,9 +1391,9 @@ bool canBeNegativeNumber = (c == '-' && isDigit(peek()));
  }
 }
 if (isDigit(c) || canBeNegativeNumber) {
-            tokens.push_back(scanNumber());
+            currentTokens.push_back(scanNumber());
             if (debug_lexer) {
-                havel::debug("LEX: {}", tokens.back().toString());
+                havel::debug("LEX: {}", currentTokens.back().toString());
             }
             continue;
         }
@@ -1381,21 +1404,21 @@ if (isDigit(c) || canBeNegativeNumber) {
         bool isFString = false;
         bool isRegexString = false;
         bool isRawString = false;
-        if (!tokens.empty() && tokens.back().type == TokenType::Identifier) {
-            if (tokens.back().value == "f" || tokens.back().value == "F") {
+        if (!currentTokens.empty() && currentTokens.back().type == TokenType::Identifier) {
+            if (currentTokens.back().value == "f" || currentTokens.back().value == "F") {
                 isFString = true;
-                tokens.pop_back();
-            } else if (tokens.back().value == "u" || tokens.back().value == "U") {
+                currentTokens.pop_back();
+            } else if (currentTokens.back().value == "u" || currentTokens.back().value == "U") {
                 isFString = false;
-                tokens.pop_back();
-            } else if (tokens.back().value == "r" || tokens.back().value == "R") {
+                currentTokens.pop_back();
+            } else if (currentTokens.back().value == "r" || currentTokens.back().value == "R") {
                 isRegexString = true;
                 isFString = false;
-                tokens.pop_back();
-            } else if (tokens.back().value == "raw" || tokens.back().value == "RAW") {
+                currentTokens.pop_back();
+            } else if (currentTokens.back().value == "raw" || currentTokens.back().value == "RAW") {
                 isRawString = true;
                 isFString = false;
-                tokens.pop_back();
+                currentTokens.pop_back();
             }
         }
 
@@ -1404,12 +1427,12 @@ if (isDigit(c) || canBeNegativeNumber) {
             source[position] == quote && source[position + 1] == quote) {
             advance();
             advance();
-            tokens.push_back(scanMultilineString(isFString, quote));
+            currentTokens.push_back(scanMultilineString(isFString, quote));
         } else {
-            tokens.push_back(scanString(isFString, isRegexString, isRawString, quote));
+            currentTokens.push_back(scanString(isFString, isRegexString, isRawString, quote));
         }
         if (debug_lexer) {
-                havel::debug("LEX: {}", tokens.back().toString());
+                havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
     }
@@ -1424,9 +1447,9 @@ if (isDigit(c) || canBeNegativeNumber) {
             advance();
             isMultilineBacktick = true;
         }
-        tokens.push_back(scanBacktick(isMultilineBacktick));
+        currentTokens.push_back(scanBacktick(isMultilineBacktick));
         if (debug_lexer) {
-                havel::debug("LEX: {}", tokens.back().toString());
+                havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
     }
@@ -1440,9 +1463,9 @@ if (isDigit(c) || canBeNegativeNumber) {
  size_t la = position + 1;
  while (la < source.length() && source[la] == ' ') la++;
  if (la + 1 < source.length() && source[la] == '=' && source[la + 1] == '>') {
- tokens.push_back(makeToken("/", TokenType::Hotkey));
+ currentTokens.push_back(makeToken("/", TokenType::Hotkey));
  if (debug_lexer) {
- havel::debug("LEX: {}", tokens.back().toString());
+ havel::debug("LEX: {}", currentTokens.back().toString());
  }
  continue;
  }
@@ -1499,7 +1522,7 @@ if (isDigit(c) || canBeNegativeNumber) {
  if (isSlashHotkey) {
  if (identifierIsKeyword) {
  // / followed by condition keyword — only consume /
- tokens.push_back(makeToken("/", TokenType::Hotkey));
+ currentTokens.push_back(makeToken("/", TokenType::Hotkey));
  advance(); // consume '/'
  } else {
  // /identifier — consume the whole thing as one token
@@ -1508,10 +1531,10 @@ if (isDigit(c) || canBeNegativeNumber) {
  while (position < source.length() && position < hotkeyEnd) {
  advance();
  }
- tokens.push_back(makeToken(hotkeyValue, TokenType::Hotkey));
+ currentTokens.push_back(makeToken(hotkeyValue, TokenType::Hotkey));
  }
  if (debug_lexer) {
- havel::debug("LEX: {}", tokens.back().toString());
+ havel::debug("LEX: {}", currentTokens.back().toString());
  }
  continue;
  }
@@ -1519,29 +1542,29 @@ if (isDigit(c) || canBeNegativeNumber) {
  // Check if this looks like a regex (not division)
  // Simple heuristic: if previous non-whitespace token suggests expression
  // context
- bool isRegexContext = tokens.empty() ||
- tokens.back().type == TokenType::OpenParen ||
- tokens.back().type == TokenType::OpenBracket ||
- tokens.back().type == TokenType::OpenBrace ||
- tokens.back().type == TokenType::Comma ||
- tokens.back().type == TokenType::Assign ||
- tokens.back().type == TokenType::Arrow ||
- tokens.back().type == TokenType::And ||
- tokens.back().type == TokenType::Or ||
- tokens.back().type == TokenType::Not ||
- tokens.back().type == TokenType::In ||
- tokens.back().type == TokenType::Matches ||
- tokens.back().type == TokenType::Tilde ||
- tokens.back().type == TokenType::Colon ||
- tokens.back().type == TokenType::Question ||
- tokens.back().type == TokenType::Pipe ||
- tokens.back().type == TokenType::NewLine ||
- tokens.back().type == TokenType::Semicolon;
+ bool isRegexContext = currentTokens.empty() ||
+ currentTokens.back().type == TokenType::OpenParen ||
+ currentTokens.back().type == TokenType::OpenBracket ||
+ currentTokens.back().type == TokenType::OpenBrace ||
+ currentTokens.back().type == TokenType::Comma ||
+ currentTokens.back().type == TokenType::Assign ||
+ currentTokens.back().type == TokenType::Arrow ||
+ currentTokens.back().type == TokenType::And ||
+ currentTokens.back().type == TokenType::Or ||
+ currentTokens.back().type == TokenType::Not ||
+ currentTokens.back().type == TokenType::In ||
+ currentTokens.back().type == TokenType::Matches ||
+ currentTokens.back().type == TokenType::Tilde ||
+ currentTokens.back().type == TokenType::Colon ||
+ currentTokens.back().type == TokenType::Question ||
+ currentTokens.back().type == TokenType::Pipe ||
+ currentTokens.back().type == TokenType::NewLine ||
+ currentTokens.back().type == TokenType::Semicolon;
 
  if (isRegexContext && !isDigit(peek())) {
- tokens.push_back(scanRegexLiteral());
+ currentTokens.push_back(scanRegexLiteral());
  if (debug_lexer) {
- havel::debug("LEX: {}", tokens.back().toString());
+ havel::debug("LEX: {}", currentTokens.back().toString());
  }
  continue;
  }
@@ -1550,9 +1573,9 @@ if (isDigit(c) || canBeNegativeNumber) {
     // Handle return type arrow ->
     if (c == '-' && peek() == '>') {
       advance(); // consume '>'
-      tokens.push_back(makeToken("->", TokenType::ReturnType));
+      currentTokens.push_back(makeToken("->", TokenType::ReturnType));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -1560,16 +1583,16 @@ if (isDigit(c) || canBeNegativeNumber) {
     // Handle arrow operator =>
     if (c == '=' && peek() == '>') {
       advance(); // consume '>'
-      tokens.push_back(makeToken("=>", TokenType::Arrow));
+      currentTokens.push_back(makeToken("=>", TokenType::Arrow));
       continue;
     }
 
     // Handle hotkey block trigger ::
     if (c == ':' && peek() == ':') {
       advance(); // consume second ':'
-      tokens.push_back(makeToken("::", TokenType::ColonColon));
+      currentTokens.push_back(makeToken("::", TokenType::ColonColon));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -1577,17 +1600,17 @@ if (isDigit(c) || canBeNegativeNumber) {
     // Handle ++ and --
     if (c == '+' && peek() == '+') {
       advance();
-      tokens.push_back(makeToken("++", TokenType::PlusPlus));
+      currentTokens.push_back(makeToken("++", TokenType::PlusPlus));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
     if (c == '-' && peek() == '-') {
       advance();
-      tokens.push_back(makeToken("--", TokenType::MinusMinus));
+      currentTokens.push_back(makeToken("--", TokenType::MinusMinus));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -1595,41 +1618,41 @@ if (isDigit(c) || canBeNegativeNumber) {
     // Handle compound assignments first: +=, -=, *=, /=
     if (c == '+' && peek() == '=') {
       advance();
-      tokens.push_back(makeToken("+=", TokenType::PlusAssign));
+      currentTokens.push_back(makeToken("+=", TokenType::PlusAssign));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
     if (c == '-' && peek() == '=') {
       advance();
-      tokens.push_back(makeToken("-=", TokenType::MinusAssign));
+      currentTokens.push_back(makeToken("-=", TokenType::MinusAssign));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
     if (c == '*' && peek() == '=') {
       advance();
-      tokens.push_back(makeToken("*=", TokenType::MultiplyAssign));
+      currentTokens.push_back(makeToken("*=", TokenType::MultiplyAssign));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
     if (c == '/' && peek() == '=') {
       advance();
-      tokens.push_back(makeToken("/=", TokenType::DivideAssign));
+      currentTokens.push_back(makeToken("/=", TokenType::DivideAssign));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
 if (c == '%' && peek() == '=') {
     advance();
-    tokens.push_back(makeToken("%=", TokenType::ModuloAssign));
+    currentTokens.push_back(makeToken("%=", TokenType::ModuloAssign));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
@@ -1638,57 +1661,57 @@ if (c == '%' && peek() == '=') {
     advance(); // consume second %
     if (peek() == '=') {
       advance(); // consume =
-      tokens.push_back(makeToken("%%=", TokenType::DoubleModuloAssign));
+      currentTokens.push_back(makeToken("%%=", TokenType::DoubleModuloAssign));
     } else {
-      tokens.push_back(makeToken("%%", TokenType::DoubleModulo));
+      currentTokens.push_back(makeToken("%%", TokenType::DoubleModulo));
     }
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
         // \\ divmod operator
         if (c == '\\' && peek() == '\\') {
             advance(); // consume second backslash
-            tokens.push_back(makeToken("\\\\", TokenType::DoubleBackslash));
+            currentTokens.push_back(makeToken("\\\\", TokenType::DoubleBackslash));
             if (debug_lexer) {
-                havel::debug("LEX: {}", tokens.back().toString());
+                havel::debug("LEX: {}", currentTokens.back().toString());
             }
             continue;
         }
   // \= integer division assign
   if (c == '\\' && peek() == '=') {
     advance(); // consume =
-    tokens.push_back(makeToken("\\=", TokenType::BackslashAssign));
+    currentTokens.push_back(makeToken("\\=", TokenType::BackslashAssign));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
   // &= bitwise AND assign
   if (c == '&' && peek() == '=') {
     advance();
-    tokens.push_back(makeToken("&=", TokenType::BitwiseAndAssign));
+    currentTokens.push_back(makeToken("&=", TokenType::BitwiseAndAssign));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
   // |= bitwise OR assign
   if (c == '|' && peek() == '=') {
     advance();
-    tokens.push_back(makeToken("|=", TokenType::BitwiseOrAssign));
+    currentTokens.push_back(makeToken("|=", TokenType::BitwiseOrAssign));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
   // ^= bitwise XOR assign
   if (c == '^' && peek() == '=') {
     advance();
-    tokens.push_back(makeToken("^=", TokenType::BitwiseXorAssign));
+    currentTokens.push_back(makeToken("^=", TokenType::BitwiseXorAssign));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
@@ -1699,17 +1722,17 @@ if (c == '%' && peek() == '=') {
         advance(); // consume first *
         advance(); // consume second *
         advance(); // consume =
-        tokens.push_back(makeToken("**=", TokenType::PowerAssign));
+        currentTokens.push_back(makeToken("**=", TokenType::PowerAssign));
         if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
+            havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
       } else {
         advance(); // consume first *
         advance(); // consume second *
-        tokens.push_back(makeToken("**", TokenType::Power));
+        currentTokens.push_back(makeToken("**", TokenType::Power));
         if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
+            havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
       }
@@ -1718,9 +1741,9 @@ if (c == '%' && peek() == '=') {
     // Handle ?? (nullish coalescing)
     if (c == '?' && peek() == '?') {
       advance();
-      tokens.push_back(makeToken("??", TokenType::Nullish));
+      currentTokens.push_back(makeToken("??", TokenType::Nullish));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -1728,9 +1751,9 @@ if (c == '%' && peek() == '=') {
     // Handle ?. (optional chaining)
     if (c == '?' && peek() == '.') {
       advance();
-      tokens.push_back(makeToken("?.", TokenType::QuestionDot));
+      currentTokens.push_back(makeToken("?.", TokenType::QuestionDot));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -1738,9 +1761,9 @@ if (c == '%' && peek() == '=') {
 // Handle == and !=
     if (c == '=' && peek() == '=') {
       advance();
-      tokens.push_back(makeToken("==", TokenType::Equals));
+      currentTokens.push_back(makeToken("==", TokenType::Equals));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -1763,19 +1786,19 @@ if (c == '%' && peek() == '=') {
         advance(); // consume '='
         advance(); // consume '>'
         // Emit hotkey token AND arrow token
-        tokens.push_back(makeToken("!=", TokenType::Hotkey));
-        tokens.push_back(makeToken("=>", TokenType::Arrow));
+        currentTokens.push_back(makeToken("!=", TokenType::Hotkey));
+        currentTokens.push_back(makeToken("=>", TokenType::Arrow));
         if (debug_lexer) {
-          havel::debug("LEX: {}", tokens.back().toString());
+          havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
       }
       // Not a hotkey, treat as NotEquals operator
       advance(); // consume '!'
       advance(); // consume '='
-      tokens.push_back(makeToken("!=", TokenType::NotEquals));
+      currentTokens.push_back(makeToken("!=", TokenType::NotEquals));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
 }
@@ -1783,9 +1806,9 @@ if (c == '%' && peek() == '=') {
       if (c == '!' && peek() == '~') {
         advance(); // consume '!'
         advance(); // consume '~'
-        tokens.push_back(makeToken("!~", TokenType::NotTilde));
+        currentTokens.push_back(makeToken("!~", TokenType::NotTilde));
         if (debug_lexer) {
-          havel::debug("LEX: {}", tokens.back().toString());
+          havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
       }
@@ -1866,8 +1889,8 @@ if (c == '%' && peek() == '=') {
         }
         if (!trigger.empty()) {
           // Hotkey token contains only the key part, trigger is separate token
-          tokens.push_back(makeToken(hotkey, TokenType::Hotkey));
-          tokens.push_back(makeToken(trigger, trigger == "=>" ? TokenType::Arrow : 
+          currentTokens.push_back(makeToken(hotkey, TokenType::Hotkey));
+          currentTokens.push_back(makeToken(trigger, trigger == "=>" ? TokenType::Arrow : 
                                      trigger == "::" ? TokenType::ColonColon :
                                      trigger == "&" ? TokenType::BitwiseAnd :
                                      trigger == "if" ? TokenType::If :
@@ -1876,10 +1899,10 @@ if (c == '%' && peek() == '=') {
         } else {
           // No trigger found - this might be a standalone hotkey reference
           // Emit just the hotkey part
-          tokens.push_back(makeToken(hotkey, TokenType::Hotkey));
+          currentTokens.push_back(makeToken(hotkey, TokenType::Hotkey));
         }
         if (debug_lexer) {
-          havel::debug("LEX: {}", tokens.back().toString());
+          havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
       }
@@ -1889,8 +1912,8 @@ if (c == '%' && peek() == '=') {
         if (c == '(' && peek() == '(' && !inBitwiseExpr) {
         // If previous token suggests function call context, emit two separate OpenParens
         // e.g. print((expr)) should be: print ( ( expr ) )
-        if (!tokens.empty()) {
-            TokenType prevType = tokens.back().type;
+        if (!currentTokens.empty()) {
+            TokenType prevType = currentTokens.back().type;
  if (prevType == TokenType::Identifier ||
  prevType == TokenType::CloseParen ||
  prevType == TokenType::CloseBracket ||
@@ -1912,9 +1935,9 @@ if (c == '%' && peek() == '=') {
             prevType == TokenType::Comma ||
             prevType == TokenType::Return ||
             prevType == TokenType::Colon) {
-            tokens.push_back(makeToken("(", TokenType::OpenParen));
+            currentTokens.push_back(makeToken("(", TokenType::OpenParen));
             advance(); // consume second '('
-            tokens.push_back(makeToken("(", TokenType::OpenParen));
+            currentTokens.push_back(makeToken("(", TokenType::OpenParen));
             continue;
         }
         // After Assign, (( could be either bitwise or arithmetic.
@@ -1943,9 +1966,9 @@ if (c == '%' && peek() == '=') {
                 look++;
             }
             if (!hasBitwiseOp) {
-                tokens.push_back(makeToken("(", TokenType::OpenParen));
+                currentTokens.push_back(makeToken("(", TokenType::OpenParen));
                 advance(); // consume second '('
-                tokens.push_back(makeToken("(", TokenType::OpenParen));
+                currentTokens.push_back(makeToken("(", TokenType::OpenParen));
                 continue;
             }
         }
@@ -1992,27 +2015,27 @@ if (c == '%' && peek() == '=') {
             if (debug_lexer) {
                 havel::debug("LEX: Lambda heuristic triggered. Emitting two OpenParens.");
             }
-            tokens.push_back(makeToken("(", TokenType::OpenParen));
+            currentTokens.push_back(makeToken("(", TokenType::OpenParen));
             advance(); // consume second '('
-            tokens.push_back(makeToken("(", TokenType::OpenParen));
+            currentTokens.push_back(makeToken("(", TokenType::OpenParen));
             continue;
         }
 
         advance(); // consume second '('
         inBitwiseExpr = true;
-        tokens.push_back(makeToken("((", TokenType::DoubleOpenParen));
+        currentTokens.push_back(makeToken("((", TokenType::DoubleOpenParen));
         if (debug_lexer) {
             havel::debug("LEX: Bitwise block detected at pos {}. Emitting DoubleOpenParen.", position - 2);
-            havel::debug("LEX: {}", tokens.back().toString());
+            havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
     }
     if (c == ')' && peek() == ')' && inBitwiseExpr) {
         advance(); // consume second ')'
         inBitwiseExpr = false;
-	tokens.push_back(makeToken("))", TokenType::DoubleCloseParen));
+	currentTokens.push_back(makeToken("))", TokenType::DoubleCloseParen));
 	if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
+            havel::debug("LEX: {}", currentTokens.back().toString());
         }
     continue;
   }
@@ -2020,61 +2043,61 @@ if (c == '%' && peek() == '=') {
   // Handle && and ||
     if (c == '&' && peek() == '&') {
       advance();
-      tokens.push_back(makeToken("&&", TokenType::And));
+      currentTokens.push_back(makeToken("&&", TokenType::And));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
       if (c == '|' && peek() == '|') {
         advance();
-        tokens.push_back(makeToken("||", TokenType::Or));
+        currentTokens.push_back(makeToken("||", TokenType::Or));
         if (debug_lexer) {
-          havel::debug("LEX: {}", tokens.back().toString());
+          havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
       }
 // |> pipeline operator
 if (c == '|' && peek() == '>') {
 advance();
-tokens.push_back(makeToken("|>", TokenType::PipeRight));
+currentTokens.push_back(makeToken("|>", TokenType::PipeRight));
 if (debug_lexer) {
-havel::debug("LEX: {}", tokens.back().toString());
+havel::debug("LEX: {}", currentTokens.back().toString());
 }
 continue;
 }
 // | at statement start followed by hotkey chars = passthrough hotkey prefix
 if (c == '|' && !inBitwiseExpr) {
-bool prevIsStatementStart = tokens.empty() ||
-tokens.back().type == TokenType::NewLine ||
-tokens.back().type == TokenType::Semicolon ||
-tokens.back().type == TokenType::CloseBrace ||
-tokens.back().type == TokenType::EOF_TOKEN;
+bool prevIsStatementStart = currentTokens.empty() ||
+currentTokens.back().type == TokenType::NewLine ||
+currentTokens.back().type == TokenType::Semicolon ||
+currentTokens.back().type == TokenType::CloseBrace ||
+currentTokens.back().type == TokenType::EOF_TOKEN;
 if (prevIsStatementStart) {
 char next = peek();
 if (isAlpha(next) || next == '+' || next == '!' || next == '^' ||
 next == '#' || next == '@' || next == '~' || next == '$' ||
 next == '*') {
-tokens.push_back(scanHotkey());
+currentTokens.push_back(scanHotkey());
 continue;
 }
 }
 }
 // Inside (( )), single | is bitwise OR, not pipeline
 if (c == '|' && inBitwiseExpr) {
-tokens.push_back(makeToken("|", TokenType::BitwiseOr));
+currentTokens.push_back(makeToken("|", TokenType::BitwiseOr));
 if (debug_lexer) {
-havel::debug("LEX: {}", tokens.back().toString());
+havel::debug("LEX: {}", currentTokens.back().toString());
 }
 continue;
 }
 // Context-aware: if previous token suggests expression context, treat |
 // as bitwise OR operator rather than pipeline
-if (c == '|' && !tokens.empty()) {
-TokenType prevType = tokens.back().type;
+if (c == '|' && !currentTokens.empty()) {
+TokenType prevType = currentTokens.back().type;
 // After Assign, check if this is a hotkey binding (|x if => or |x =>)
 if (prevType == TokenType::Assign && !isAtEnd() && isHotkeyLookahead()) {
-  tokens.push_back(scanHotkey());
+  currentTokens.push_back(scanHotkey());
   continue;
 }
 if (prevType == TokenType::Number ||
@@ -2094,9 +2117,9 @@ prevType == TokenType::BitwiseAnd ||
 prevType == TokenType::BitwiseXor ||
 prevType == TokenType::ShiftLeft ||
 prevType == TokenType::ShiftRight) {
-tokens.push_back(makeToken("|", TokenType::BitwiseOr));
+currentTokens.push_back(makeToken("|", TokenType::BitwiseOr));
 if (debug_lexer) {
-havel::debug("LEX: {}", tokens.back().toString());
+havel::debug("LEX: {}", currentTokens.back().toString());
 }
 continue;
 }
@@ -2105,17 +2128,17 @@ continue;
   // Handle <= and >=
   if (c == '<' && peek() == '=') {
     advance();
-    tokens.push_back(makeToken("<=", TokenType::LessEquals));
+    currentTokens.push_back(makeToken("<=", TokenType::LessEquals));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
   if (c == '>' && peek() == '=') {
     advance();
-    tokens.push_back(makeToken(">=", TokenType::GreaterEquals));
+    currentTokens.push_back(makeToken(">=", TokenType::GreaterEquals));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
@@ -2124,18 +2147,18 @@ continue;
   if (c == '<' && peek() == '<' && position + 1 < source.length() && source[position + 1] == '=') {
     advance(); // consume second '<'
     advance(); // consume '='
-    tokens.push_back(makeToken("<<=", TokenType::ShiftLeftAssign));
+    currentTokens.push_back(makeToken("<<=", TokenType::ShiftLeftAssign));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
   // Handle << (bitwise left shift) - must check before single <
   if (c == '<' && peek() == '<') {
     advance(); // consume second '<'
-    tokens.push_back(makeToken("<<", TokenType::ShiftLeft));
+    currentTokens.push_back(makeToken("<<", TokenType::ShiftLeft));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
@@ -2144,18 +2167,18 @@ continue;
   if (c == '>' && peek() == '>' && position + 1 < source.length() && source[position + 1] == '=') {
     advance(); // consume second '>'
     advance(); // consume '='
-    tokens.push_back(makeToken(">>=", TokenType::ShiftRightAssign));
+    currentTokens.push_back(makeToken(">>=", TokenType::ShiftRightAssign));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
     continue;
   }
   // Handle >> (config append/get or bitwise right shift) - must check before single >
   if (c == '>' && peek() == '>') {
     advance(); // consume second '>'
-    tokens.push_back(makeToken(">>", TokenType::ShiftRight));
+    currentTokens.push_back(makeToken(">>", TokenType::ShiftRight));
     if (debug_lexer) {
-      havel::debug("LEX: {}", tokens.back().toString());
+      havel::debug("LEX: {}", currentTokens.back().toString());
     }
  continue;
  }
@@ -2163,34 +2186,34 @@ continue;
  // Handle <- (left arrow / fiber await) - must check before single <
  if (c == '<' && peek() == '-') {
  advance(); // consume '-'
- tokens.push_back(makeToken("<-", TokenType::LeftArrow));
+ currentTokens.push_back(makeToken("<-", TokenType::LeftArrow));
  if (debug_lexer) {
- havel::debug("LEX: {}", tokens.back().toString());
+ havel::debug("LEX: {}", currentTokens.back().toString());
  }
  continue;
  }
 
  // Handle single < and >
     if (c == '<') {
-      tokens.push_back(makeToken("<", TokenType::Less));
+      currentTokens.push_back(makeToken("<", TokenType::Less));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
     if (c == '>') {
-      tokens.push_back(makeToken(">", TokenType::Greater));
+      currentTokens.push_back(makeToken(">", TokenType::Greater));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
 
     // Handle single equals (assignment)
     if (c == '=') {
-      tokens.push_back(makeToken("=", TokenType::Assign));
+      currentTokens.push_back(makeToken("=", TokenType::Assign));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -2200,7 +2223,7 @@ continue;
     if (c == '.' && peek() == '.' && peek(1) == '.') {
       advance(); // consume second '.'
       advance(); // consume third '.'
-      tokens.push_back(makeToken("...", TokenType::Spread));
+      currentTokens.push_back(makeToken("...", TokenType::Spread));
       continue;
     }
 
@@ -2208,14 +2231,14 @@ continue;
     if (c == '.' && peek() == '.' && peek(1) == '=') {
       advance(); // consume second '.'
       advance(); // consume '='
-      tokens.push_back(makeToken("..=", TokenType::DotDotEquals));
+      currentTokens.push_back(makeToken("..=", TokenType::DotDotEquals));
       continue;
     }
 
     // Handle .. (range operator)
     if (c == '.' && peek() == '.') {
       advance(); // consume second '.'
-      tokens.push_back(makeToken("..", TokenType::DotDot));
+      currentTokens.push_back(makeToken("..", TokenType::DotDot));
       continue;
     }
 
@@ -2229,9 +2252,9 @@ continue;
         while (look < source.length() && isHotkeyChar(source[look])) look++;
         while (look < source.length() && (source[look] == ' ' || source[look] == '\t')) look++;
         if (look + 1 < source.length() && source[look] == '=' && source[look + 1] == '>') {
-          tokens.push_back(scanHotkey());
+          currentTokens.push_back(scanHotkey());
           if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
+            havel::debug("LEX: {}", currentTokens.back().toString());
           }
           continue;
         }
@@ -2247,9 +2270,9 @@ continue;
       // Don't skip whitespace - let parser handle it
       // Just emit the token and let parser parse the expression
 
-      tokens.push_back(scanShellCommand(captureOutput));
+      currentTokens.push_back(scanShellCommand(captureOutput));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -2258,9 +2281,9 @@ continue;
     if (c == '@' && peek() == '-' && peek(1) == '>') {
       advance(); // consume '-'
       advance(); // consume '>'
-      tokens.push_back(makeToken("@->", TokenType::SuperArrow));
+      currentTokens.push_back(makeToken("@->", TokenType::SuperArrow));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -2268,9 +2291,9 @@ continue;
     // Handle @@ (class member marker) - must be before single @ handling
     if (c == '@' && peek() == '@') {
       advance(); // consume second '@'
-      tokens.push_back(makeToken("@@", TokenType::AtAt));
+      currentTokens.push_back(makeToken("@@", TokenType::AtAt));
       if (debug_lexer) {
-        havel::debug("LEX: {}", tokens.back().toString());
+        havel::debug("LEX: {}", currentTokens.back().toString());
       }
       continue;
     }
@@ -2278,9 +2301,9 @@ continue;
     // Handle @ (at/this field access) - must be before hotkey handling
     // @ not followed by alpha/underscore is always self-reference (At token), never a hotkey
     if (c == '@' && !(isAlpha(peek()) || peek() == '_')) {
-        tokens.push_back(makeToken("@", TokenType::At));
+        currentTokens.push_back(makeToken("@", TokenType::At));
         if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
+            havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
     }
@@ -2310,9 +2333,9 @@ continue;
         // Fall through to scanHotkey
       } else {
         // @identifier with anything else ( = / . / ( / \n / etc ) - field access
-        tokens.push_back(makeToken("@", TokenType::At));
+        currentTokens.push_back(makeToken("@", TokenType::At));
         if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
+            havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
       }
@@ -2322,16 +2345,16 @@ continue;
     // combo '&' — but inside (( )), & is bitwise AND
     if (c == '&') {
         if (inBitwiseExpr) {
-            tokens.push_back(makeToken("&", TokenType::BitwiseAnd));
+            currentTokens.push_back(makeToken("&", TokenType::BitwiseAnd));
             if (debug_lexer) {
-                havel::debug("LEX: {}", tokens.back().toString());
+                havel::debug("LEX: {}", currentTokens.back().toString());
             }
             continue;
         }
         // Context-aware: if previous token suggests expression context, treat as
         // bitwise AND operator rather than hotkey
-        if (!tokens.empty()) {
-            TokenType prevType = tokens.back().type;
+        if (!currentTokens.empty()) {
+            TokenType prevType = currentTokens.back().type;
             if (prevType == TokenType::Number ||
                 prevType == TokenType::Identifier ||
                 prevType == TokenType::String ||
@@ -2349,23 +2372,23 @@ continue;
             prevType == TokenType::BitwiseAnd ||
             prevType == TokenType::ShiftLeft ||
             prevType == TokenType::ShiftRight) {
-        tokens.push_back(makeToken("&", TokenType::BitwiseAnd));
+        currentTokens.push_back(makeToken("&", TokenType::BitwiseAnd));
                 if (debug_lexer) {
-                    havel::debug("LEX: {}", tokens.back().toString());
+                    havel::debug("LEX: {}", currentTokens.back().toString());
                 }
                 continue;
             }
         }
-        tokens.push_back(scanHotkey());
+        currentTokens.push_back(scanHotkey());
     continue;
 }
 
 // Handle modifier-based hotkeys starting with special characters like ^ + !
     // @ ~ $ — but inside (( )), ^ is bitwise XOR and ~ is bitwise NOT
     if (c == '^' && inBitwiseExpr) {
-        tokens.push_back(makeToken("^", TokenType::BitwiseXor));
+        currentTokens.push_back(makeToken("^", TokenType::BitwiseXor));
         if (debug_lexer) {
-            havel::debug("LEX: {}", tokens.back().toString());
+            havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
     }
@@ -2373,9 +2396,9 @@ continue;
  // Special case: !{ for unsorted object literals
  if (c == '!' && peek() == '{') {
  advance(); // consume '{'
- tokens.push_back(makeToken("!{", TokenType::BangOpenBrace));
+ currentTokens.push_back(makeToken("!{", TokenType::BangOpenBrace));
  if (debug_lexer) {
- havel::debug("LEX: {}", tokens.back().toString());
+ havel::debug("LEX: {}", currentTokens.back().toString());
  }
  continue;
  }
@@ -2393,8 +2416,8 @@ continue;
    // Fall through to SINGLE_CHAR_TOKENS to get Not token
  } else if (c == '~' && inBitwiseExpr) {
    // Fall through to SINGLE_CHAR_TOKENS for Tilde
-     } else if ((c == '+' || c == '!' || c == '~' || c == '^' || c == '@' || c == '|') && !tokens.empty()) {
-       TokenType prevType = tokens.back().type;
+     } else if ((c == '+' || c == '!' || c == '~' || c == '^' || c == '@' || c == '|') && !currentTokens.empty()) {
+       TokenType prevType = currentTokens.back().type;
 
        // After Assign, check if modifier+key is a hotkey binding
        if (prevType == TokenType::Assign) {
@@ -2405,9 +2428,9 @@ continue;
            isHotkey = true;
          }
          if (isHotkey) {
-           tokens.push_back(scanHotkey());
+           currentTokens.push_back(scanHotkey());
            if (debug_lexer) {
-             havel::debug("LEX: {}", tokens.back().toString());
+             havel::debug("LEX: {}", currentTokens.back().toString());
            }
            continue;
          }
@@ -2419,8 +2442,8 @@ continue;
        // (if, while, for, etc.)
        // Also: keyword tokens after Dot are property accesses (x.mode + y),
        // so check if token-before-previous is Dot
-       bool prevIsKeywordAfterDot = (tokens.size() >= 2 &&
-         tokens[tokens.size() - 2].type == TokenType::Dot);
+       bool prevIsKeywordAfterDot = (currentTokens.size() >= 2 &&
+         currentTokens[currentTokens.size() - 2].type == TokenType::Dot);
        if (prevType == TokenType::Number ||
            prevType == TokenType::Identifier ||
            prevType == TokenType::String ||
@@ -2475,26 +2498,26 @@ continue;
 		if (c == '^') {
         // ^ is binary XOR (needs left-hand operand).
         // After Assign case handled above; here it's a real operator.
-        tokens.push_back(makeToken("^", TokenType::BitwiseXor));
+        currentTokens.push_back(makeToken("^", TokenType::BitwiseXor));
         if (debug_lexer) {
-          havel::debug("LEX: {}", tokens.back().toString());
+          havel::debug("LEX: {}", currentTokens.back().toString());
         }
         continue;
       }
 			if (c == '@') {
-				tokens.push_back(makeToken("@", TokenType::At));
+				currentTokens.push_back(makeToken("@", TokenType::At));
 				if (debug_lexer) {
-					havel::debug("LEX: {}", tokens.back().toString());
+					havel::debug("LEX: {}", currentTokens.back().toString());
 				}
 				continue;
 			}
 			// Fall through to SINGLE_CHAR_TOKENS to get Plus, Not, or Tilde
    } else {
-     tokens.push_back(scanHotkey());
+     currentTokens.push_back(scanHotkey());
      continue;
    }
  } else {
-   tokens.push_back(scanHotkey());
+   currentTokens.push_back(scanHotkey());
    continue;
  }
 }
@@ -2514,7 +2537,7 @@ continue;
             if (c == '_' && !isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
                 // Fall through to identifier scanning below
             } else {
-                tokens.push_back(makeToken(std::string(1, c), singleCharIt->second));
+                currentTokens.push_back(makeToken(std::string(1, c), singleCharIt->second));
                 continue;
             }
         }
@@ -2544,21 +2567,21 @@ continue;
       if (position + lookahead < source.length()) {
         char after = source[position + lookahead];
         if (after == '=' || after == ';' || after == ',') {
-          tokens.push_back(scanIdentifier());
+          currentTokens.push_back(scanIdentifier());
           continue;
         }
         if (after == ' ' || after == '\t') {
-          tokens.push_back(scanIdentifier());
+          currentTokens.push_back(scanIdentifier());
           continue;
         }
       } else {
         // End of input - treat as identifier (e.g., standalone F1)
-        tokens.push_back(scanIdentifier());
+        currentTokens.push_back(scanIdentifier());
         continue;
       }
-      tokens.push_back(scanHotkey());
+      currentTokens.push_back(scanHotkey());
     } else {
-      tokens.push_back(scanIdentifier());
+      currentTokens.push_back(scanIdentifier());
     }
     continue;
   }
@@ -2581,14 +2604,14 @@ continue;
   }
 
     // Add EOF token
-    tokens.push_back(makeToken("EndOfFile", TokenType::EOF_TOKEN));
+    currentTokens.push_back(makeToken("EndOfFile", TokenType::EOF_TOKEN));
 
-  return tokens;
+  return currentTokens;
 }
 
 void Lexer::printTokens(const std::vector<Token> &tokens) const {
     havel::debug("=== HAVEL TOKENS ===");
-    for (size_t i = 0; i < tokens.size(); ++i) {
+    for (size_t i = 0; i < currentTokens.size(); ++i) {
         havel::debug("[{}] {}", i, tokens[i].toString());
     }
     havel::debug("===================");

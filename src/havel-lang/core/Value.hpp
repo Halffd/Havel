@@ -289,12 +289,16 @@ public:
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::FUNCTION_OBJ_ID), functionIndex));
   }
 
-  static Value makeStringValId(uint32_t id) {
-    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::STRING_VAL_ID), id));
+  static Value makeStringValId(uint32_t id, uint32_t chunkId = 0) {
+    // Payload layout: bits 31-42 = chunk ID (12 bits), bits 0-30 = string index (31 bits)
+    uint64_t payload = (static_cast<uint64_t>(chunkId & 0xFFF) << 31) | (id & 0x7FFFFFFF);
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::STRING_VAL_ID), payload));
   }
 
-  static Value makeRegexValId(uint32_t id) {
-    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::REGEX_VAL_ID), id));
+  static Value makeRegexValId(uint32_t id, uint32_t chunkId = 0) {
+    // Payload layout: bits 31-42 = chunk ID (12 bits), bits 0-30 = regex index (31 bits)
+    uint64_t payload = (static_cast<uint64_t>(chunkId & 0xFFF) << 31) | (id & 0x7FFFFFFF);
+    return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::REGEX_VAL_ID), payload));
   }
 
   // Concurrency object value types
@@ -536,11 +540,21 @@ public:
   }
 
   uint32_t asStringValId() const {
-    return static_cast<uint32_t>(extractPayload(bits_));
+    // Extract string index from bits 0-30
+    return static_cast<uint32_t>(extractPayload(bits_) & 0x7FFFFFFFULL);
+  }
+
+  uint32_t asStringChunkId() const {
+    // Extract chunk ID from bits 31-42
+    return static_cast<uint32_t>((extractPayload(bits_) >> 31) & 0xFFFULL);
   }
 
   uint32_t asRegexValId() const {
-    return static_cast<uint32_t>(extractPayload(bits_));
+    return static_cast<uint32_t>(extractPayload(bits_) & 0x7FFFFFFFULL);
+  }
+
+  uint32_t asRegexChunkId() const {
+    return static_cast<uint32_t>((extractPayload(bits_) >> 31) & 0xFFFULL);
   }
 
   uint32_t asThreadId() const {

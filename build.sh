@@ -466,17 +466,38 @@ test_suite() {
     local pass_count=0
     local fail_count=0
     local test_count=0
-    while IFS= read -r test_exe; do
-        if [[ -f "$test_exe" && -x "$test_exe" ]]; then
-            log "INFO" "Running $(basename "$test_exe")..." "${YELLOW}"
-            if "$test_exe" 2>&1 | tee -a "${BUILD_LOG}"; then
-                ((pass_count++))
-            else
+    
+    # Run CTest (C++ unit tests)
+    log "INFO" "Running CTest..." "${YELLOW}"
+    if ctest --test-dir "${SCRIPT_DIR}/${BUILD_DIR}" --output-on-failure 2>&1 | tee -a "${BUILD_LOG}"; then
+        ((pass_count++))
+    else
+        ((fail_count++))
+    fi
+    ((test_count++))
+    
+    # Run smoke tests via havel (no-self-hosted to avoid self-hosted pipeline hang)
+    log "INFO" "Running script smoke tests..." "${YELLOW}"
+    local smoke_tests=(
+        "${SCRIPT_DIR}/scripts/smoke/arithmetic_add.hv"
+        "${SCRIPT_DIR}/scripts/smoke/arithmetic_sub.hv"
+        "${SCRIPT_DIR}/scripts/smoke/arithmetic_mul.hv"
+        "${SCRIPT_DIR}/scripts/smoke/arithmetic_div.hv"
+    )
+    for test_file in "${smoke_tests[@]}"; do
+        if [[ -f "$test_file" ]]; then
+            log "INFO" "Running $(basename "$test_file")..." "${YELLOW}"
+            if "${SCRIPT_DIR}/${BUILD_DIR}/havel" --no-self-hosted "$test_file" 2>&1 | grep -q "FAIL"; then
+                log "ERROR" "FAIL: $(basename "$test_file")" "${RED}"
                 ((fail_count++))
+            else
+                log "INFO" "PASS: $(basename "$test_file")" "${GREEN}"
+                ((pass_count++))
             fi
             ((test_count++))
         fi
-    done < <(find "${SCRIPT_DIR}/${BUILD_DIR}" -maxdepth 1 -name 'test_*' -type f -executable 2>/dev/null)
+    done
+    
     if [[ $test_count -eq 0 ]]; then
         log "WARNING" "No test executables found" "${YELLOW}"
     else

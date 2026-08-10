@@ -1,0 +1,24 @@
+// test_slice_syntax.hv - test what slice syntax works
+
+let s = "hello"
+
+// basic slice
+print(s[0:1])
+print(s[1:2])
+print(s[2:3])
+
+// variable in slice
+let i = 0
+print(s[i:i+1])
+
+// expression in slice
+let x = 2
+print(s[x:x+1])
+
+// negative
+print(s[-1:])
+
+// more complex
+let arr = [10, 20, 30]
+print(arr[0])
+print(arr[i])

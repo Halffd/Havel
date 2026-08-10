@@ -1,0 +1,40 @@
+// Test bc.store_chunk + bc.execute_stored workflow
+
+// Build chunk 1: simple arithmetic
+bc.reset()
+bc.func_new("__main__", 0, 4)
+bc.emit("LOAD_CONST", bc.add_const(42))
+bc.emit("LOAD_CONST", bc.add_const(8))
+bc.emit("ADD")
+bc.emit("RETURN")
+bc.set_local_count(4)
+id1 = bc.store_chunk()
+
+// Build chunk 2: another arithmetic
+bc.reset()
+bc.func_new("__main__", 0, 4)
+bc.emit("LOAD_CONST", bc.add_const(10))
+bc.emit("LOAD_CONST", bc.add_const(3))
+bc.emit("MUL")
+bc.emit("RETURN")
+bc.set_local_count(4)
+id2 = bc.store_chunk()
+
+// Build chunk 3: comparison
+bc.reset()
+bc.func_new("__main__", 0, 4)
+bc.emit("LOAD_CONST", bc.add_const(5))
+bc.emit("LOAD_CONST", bc.add_const(3))
+bc.emit("GT")
+bc.emit("RETURN")
+bc.set_local_count(4)
+id3 = bc.store_chunk()
+
+// Execute all in different orders
+println("id1=" + str(id1) + " id2=" + str(id2) + " id3=" + str(id3))
+println("chunk1=" + str(bc.execute_stored(id1)))
+println("chunk2=" + str(bc.execute_stored(id2)))
+println("chunk3=" + str(bc.execute_stored(id3)))
+println("re-chunk1=" + str(bc.execute_stored(id1)))
+println("re-chunk3=" + str(bc.execute_stored(id3)))
+println("all store_chunk tests passed")

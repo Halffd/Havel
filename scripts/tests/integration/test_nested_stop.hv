@@ -1,0 +1,13 @@
+// scripts/test_nested_stop.hv
+print("Start")
+interval 100 {
+    print("Outer")
+    interval 50 {
+        print("Inner")
+        @stop
+    }
+}
+// Run for a short time and exit
+timeout 300 {
+    print("Done")
+}

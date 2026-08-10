@@ -1,0 +1,11 @@
+// Test: lambda local variable should not collide with parameter slot
+fn test_lambda_slot() {
+    x = [10, 20, 30]
+    result = x.map(fn(v) {
+        a = v + 1
+        b = a * 2
+        return [v, a, b]
+    })
+    print(result)
+}
+test_lambda_slot()

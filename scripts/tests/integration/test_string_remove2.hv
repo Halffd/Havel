@@ -1,0 +1,14 @@
+// Method 1: Functional (shorter)
+x = "hello+world+test"
+result = x.split("").filter(fn(c) c != "+").join("")
+print(result)  // "helloworldtest"
+
+// Method 2: Imperative (more verbose)
+x = "hello+world+test"
+result = ""
+for c in x {
+    if c != "+" {
+        result += c
+    }
+}
+print(result)  // "helloworldtest"

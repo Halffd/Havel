@@ -1,0 +1,64 @@
+// Test full Process module
+
+print("=== Testing Full Process Module ===\n")
+
+// Test 1: process.pid() and process.ppid()
+print("Test 1: Current process info\n")
+print("  My PID:", process.pid())
+print("  My PPID:", process.ppid())
+
+// Test 2: process.list()
+print("\nTest 2: List processes (first 5)\n")
+let allProcs = process.list()
+print("Total processes:", allProcs.length)
+for i in [0, 1, 2, 3, 4] {
+    if i < allProcs.length {
+        let p = allProcs[i]
+        print("  ", p.pid, p.name, "CPU:", p.cpu_usage, "Mem:", p.memory_usage)
+    }
+}
+
+// Test 3: process.find()
+print("\nTest 3: Find bash processes\n")
+let bashProcs = process.find("bash")
+print("Found", bashProcs.length, "bash process(es)")
+for p in bashProcs {
+    print("  PID:", p.pid, "Name:", p.name, "User:", p.user)
+}
+
+// Test 4: process.info()
+print("\nTest 4: Get process info for PID 1\n")
+let initInfo = process.info(1)
+if initInfo {
+    print("  PID:", initInfo.pid)
+    print("  Name:", initInfo.name)
+    print("  Command:", initInfo.command)
+    print("  User:", initInfo.user)
+} else {
+    print("  Process 1 not found")
+}
+
+// Test 5: process.exists()
+print("\nTest 5: Check if processes exist\n")
+print("  PID 1 exists:", process.exists(1))
+print("  PID 99999 exists:", process.exists(99999))
+
+// Test 6: process.state()
+print("\nTest 6: Get process state\n")
+print("  State of PID 1:", process.state(1))
+
+// Test 7: process metrics
+print("\nTest 7: Process metrics for PID 1\n")
+print("  CPU:", process.cpu(1))
+print("  Memory:", process.memory(1))
+print("  Threads:", process.threads(1))
+
+// Test 8: process properties
+print("\nTest 8: Process properties for PID 1\n")
+print("  Name:", process.name(1))
+print("  Command:", process.command(1))
+print("  User:", process.user(1))
+print("  CWD:", process.cwd(1))
+print("  Exe:", process.exe(1))
+
+print("\n=== Test Complete ===\n")

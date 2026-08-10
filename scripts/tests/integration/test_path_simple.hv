@@ -1,0 +1,8 @@
+use path
+print("sep=" + path.sep)
+print("delimiter=" + path.delimiter)
+print("basename=" + path.basename("/home/user/file.txt"))
+print("extname=" + path.extname("/home/user/file.txt"))
+print("join=" + path.join("/home/user", "docs"))
+print("basename_root=" + path.basename("/"))
+print("basename_trailing=" + path.basename("/home/user/"))

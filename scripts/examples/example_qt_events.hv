@@ -1,0 +1,159 @@
+/*
+ * Example Qt extension with events in Havel
+ * 
+ * Demonstrates event/signal handling with Qt widgets
+ * 
+ * Run with: ./build-release/havel examples/example_qt_events.hv
+ */
+
+import qt from "extension:qt"
+
+// Initialize Qt
+qt.init()
+qt.setApplicationName("Havel Qt Events Demo")
+
+// Create main window
+let win = qt.mainWindowNew()
+qt.widgetSetWindowTitle(win, "Qt Events Demo")
+qt.widgetResize(win, 500, 400)
+
+// Create layout
+let layout = qt.vBoxLayoutNew()
+
+// Label
+let label = qt.labelNew("Click the button or type in the field")
+qt.labelSetAlignment(label, 0x0084)  // Center
+qt.layoutAddWidget(layout, label)
+
+// Button with click event
+let button = qt.pushButtonNew("Click Me!")
+
+// Define callback function for button click
+fn onButtonClick() {
+    print("Button was clicked!")
+    qt.labelSetText(label, "Button clicked at: " + str(time.now()))
+}
+
+// Connect the button click event
+qt.onClicked(button, onButtonClick)
+
+qt.layoutAddWidget(layout, button)
+
+// Line edit with text change event
+let lineEdit = qt.lineEditNew("")
+qt.lineEditSetPlaceholderText(lineEdit, "Type something...")
+
+// Define callback for text changes
+fn onTextChange(text) {
+    print("Text changed to: " + text)
+    qt.labelSetText(label, "You typed: " + text)
+}
+
+// Connect text change event
+qt.onTextChanged(lineEdit, onTextChange)
+
+qt.layoutAddWidget(layout, lineEdit)
+
+// Slider with value change event
+let slider = qt.sliderNew(0)  // Horizontal
+qt.sliderSetRange(slider, 0, 100)
+qt.sliderSetValue(slider, 50)
+
+// Define callback for value changes
+fn onValueChange(value) {
+    print("Slider value: " + str(value))
+}
+
+// Connect value change event
+qt.onValueChanged(slider, onValueChange)
+
+qt.layoutAddWidget(layout, slider)
+
+// SpinBox
+let spinBox = qt.spinBoxNew()
+qt.spinBoxSetRange(spinBox, 0, 100)
+
+// Connect value change
+qt.onValueChanged(spinBox, fn(v) {
+    print("SpinBox value: " + str(v))
+})
+
+qt.layoutAddWidget(layout, spinBox)
+
+// ComboBox with selection change event
+let comboBox = qt.comboBoxNew()
+qt.comboBoxAddItem(comboBox, "Option 1")
+qt.comboBoxAddItem(comboBox, "Option 2")
+qt.comboBoxAddItem(comboBox, "Option 3")
+
+// Define callback for selection changes
+fn onSelectionChange() {
+    let text = qt.comboBoxCurrentText(comboBox)
+    print("Selected: " + text)
+    qt.labelSetText(label, "Selected: " + text)
+}
+
+// Connect selection change event
+qt.onCurrentIndexChanged(comboBox, onSelectionChange)
+
+qt.layoutAddWidget(layout, comboBox)
+
+// Timer with timeout event
+let timer = qt.timerNew()
+qt.timerSetInterval(timer, 1000)  // 1 second
+qt.timerSetSingleShot(timer, false)
+
+// Counter for timer
+let tickCount = 0
+
+// Define callback for timer timeout
+fn onTimerTick() {
+    tickCount = tickCount + 1
+    print("Timer tick: " + str(tickCount))
+}
+
+// Connect timer timeout event
+qt.onTimerTimeout(timer, onTimerTick)
+
+// Start the timer
+qt.timerStart(timer)
+
+qt.layoutAddWidget(layout, qt.labelNew("Timer running..."))
+
+// Checkbox with state change event
+let checkBox = qt.checkBoxNew("Enable feature")
+
+// Define callback for state changes
+fn onStateChange() {
+    print("Checkbox state changed")
+}
+
+// Connect state change event
+qt.onStateChanged(checkBox, onStateChange)
+
+qt.layoutAddWidget(layout, checkBox)
+
+// Add stretch
+qt.layoutAddStretch(layout)
+
+// Create container and set layout
+let container = qt.mainWindowNew()
+qt.widgetSetLayout(container, layout)
+qt.mainWindowSetCentralWidget(win, container)
+
+// Show window
+qt.widgetShow(win)
+
+print("Qt window created with event handlers")
+print("Event loop starting...")
+
+// Main loop - process events and callbacks
+while (true) {
+    qt.processEvents()
+    qt.processCallbacks()  // Process registered callbacks
+    
+    // Small delay to prevent CPU spinning
+    sleep(0.016)  // ~60 FPS
+}
+
+print("Qt event loop exited")

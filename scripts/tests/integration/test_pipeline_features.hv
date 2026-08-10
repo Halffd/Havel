@@ -1,0 +1,59 @@
+// Pipeline Feature Demonstration
+// Shows auto-currying, tap behavior, lambda filter/map, and void pass-through
+
+// Example 1: Basic pipeline with auto-currying
+let files = fs.readDir "/tmp"
+    | print                    // tap - print and pass through
+    | f => f.isFile           // filter - keep only files (returns bool)
+    | f => f.endsWith ".log"  // filter - keep .log files
+    | head 1                  // take first file
+    | f => fs.read f          // map - read file content
+    | find "ERROR"            // partial call - find ERROR in content
+    | flatten                 // flatten results
+    | head 10                 // take first 10 matches
+    | print
+
+// Example 2: Value pass-through with tap
+let result = [1, 2, 3, 4, 5]
+    | print                   // prints array, passes it through
+    | x => x + 1              // map - add 1 to each
+    | print                   // prints incremented array
+    | sum                     // sum all values
+    | print                   // prints sum
+
+// Example 3: Auto-currying with partial calls
+let processed = "hello world"
+    | string.upper            // method call
+    | print                   // tap
+    | string.split " "        // partial call - split by space
+    | print
+
+// Example 4: Filter with lambda returning bool
+let evens = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    | n => n % 2 == 0         // filter - keep even numbers
+    | print
+
+// Example 5: Map with lambda returning value  
+let doubled = [1, 2, 3, 4, 5]
+    | n => n * 2              // map - double each
+    | print
+
+// Example 6: Void functions pass through previous value
+let data = getSomeData()
+    | processAndLog           // if this returns nil/void, data passes through
+    | transform
+    | print
+
+// Example 7: Complex chain from user's example
+fs.readDir "/tmp"
+    | print                    // tap - print and pass through
+    | f => f.isFile           // keep only files
+    | f => f.endsWith ".log"  // keep .log files
+    | head 1                  // take first file
+    | f => fs.read f          // read file
+    | find "ERROR"            // find ERROR in each
+    | flatten                 // flatten results
+    | head 10                 // take first 10
+    | print
+
+print "Pipeline demonstrations complete!"

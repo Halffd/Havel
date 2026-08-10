@@ -1,0 +1,17 @@
+t = 0
+go fn update() {
+  loop {
+    t++
+    print("iteration: $t")
+    sleep(1000)
+    print("after sleep: $t")
+    if t >= 30 {
+      print("reached 30 iterations, stopping")
+      exit()
+    }
+  }
+}
+print("started goroutine, waiting...")
+// Sleep on main thread to let goroutine run
+sleep(35000)
+print("done")

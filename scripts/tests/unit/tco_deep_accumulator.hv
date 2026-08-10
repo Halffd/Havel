@@ -1,0 +1,13 @@
+// smoke: tco-deep-accumulator = 200010000
+// Tests TCO with accumulator pattern at depth above non-TCO stack limit.
+// Without TCO, max_call_depth_ (16384) would overflow.
+fn sumto(n, acc):
+  if n == 0:
+    return acc
+  return sumto(n - 1, acc + n)
+
+val __result = sumto(20000, 0)
+if __result != 200010000:
+  print("FAIL tco-deep-accumulator: expected 200010000, got " + str(__result))
+  process.exit(255)
+return __result

@@ -1,0 +1,78 @@
+// Test VM fixes for null, indexing, and duration parsing
+print("Testing VM fixes...");
+
+// Test 1: null keyword as first-class citizen
+print("=== Testing null support ===");
+
+// Test null literal and comparisons
+print("null == null:", null == null);      // Should be true
+print("null != null:", null != null);      // Should be false  
+print("null == 0:", null == 0);            // Should be false
+print("null == false:", null == false);    // Should be false
+print("null == \"\":", null == "");         // Should be false
+
+// Test null truthiness
+print("!null:", !null);                    // Should be true
+print("null && true:", null && true);      // Should be false
+print("null || true:", null || true);      // Should be true
+
+// Test 2: nested indexing
+print("\n=== Testing nested indexing ===");
+
+// Create nested array structure
+matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+print("matrix:", matrix);
+print("matrix[0]:", matrix[0]);           // Should be [1, 2, 3]
+print("matrix[0][1]:", matrix[0][1]);     // Should be 2
+print("matrix[1][2]:", matrix[1][2]);     // Should be 6
+print("matrix[2][0]:", matrix[2][0]);     // Should be 7
+
+// Test deeper nesting
+nested = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+print("nested[0][1][0]:", nested[0][1][0]); // Should be 3
+print("nested[1][1][1]:", nested[1][1][1]); // Should be 8
+
+// Test 3: duration parsing in sleep
+print("\n=== Testing duration parsing ===");
+
+// Test numeric durations (treated as milliseconds)
+print("Testing numeric durations...");
+// sleep(100); // 100ms - uncomment to actually test
+
+// Test string durations  
+print("Testing string durations...");
+// sleep("1s");   // 1 second
+// sleep("500ms"); // 500 milliseconds  
+// sleep("2.5m"); // 2.5 minutes
+// sleep("1h");   // 1 hour
+
+print("Duration formats supported:");
+print("- Numbers: 100 (treated as ms)");
+print("- Strings: \"1s\", \"500ms\", \"2.5m\", \"1h\"");
+
+// Test 4: Truthiness consistency
+print("\n=== Testing truthiness consistency ===");
+
+print("null truthiness:", null ? "truthy" : "falsy");      // falsy
+print("false truthiness:", false ? "truthy" : "falsy");    // falsy
+print("0 truthiness:", 0 ? "truthy" : "falsy");          // falsy
+print("0.0 truthiness:", 0.0 ? "truthy" : "falsy");      // falsy
+print("\"\" truthiness:", "" ? "truthy" : "falsy");        // falsy
+print("[] truthiness:", [] ? "truthy" : "falsy");          // falsy
+
+print("true truthiness:", true ? "truthy" : "falsy");      // truthy
+print("1 truthiness:", 1 ? "truthy" : "falsy");          // truthy
+print("0.1 truthiness:", 0.1 ? "truthy" : "falsy");        // truthy
+print("\"hello\" truthiness:", "hello" ? "truthy" : "falsy"); // truthy
+print("[1] truthiness:", [1] ? "truthy" : "falsy");      // truthy
+print("{} truthiness:", {} ? "truthy" : "falsy");          // truthy
+
+// Test 5: Object indexing with null
+print("\n=== Testing object operations with null ===");
+
+obj = {key: "value", null_key: null};
+print("obj.key:", obj.key);
+print("obj.null_key:", obj.null_key);
+print("obj.missing:", obj.missing);  // Should be null
+
+print("\n=== All VM fixes tests completed! ===");

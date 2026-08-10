@@ -1,0 +1,94 @@
+// Test 1: Basic closure - function returned from another function
+fn make_counter():
+  count = 0
+  fn increment():
+    count = count + 1
+    count
+  increment
+
+c = make_counter()
+a = c()
+b = c()
+d = c()
+assert(a == 1, "closure basic 1")
+assert(b == 2, "closure basic 2")
+assert(d == 3, "closure basic 3")
+print("test 1 passed: basic closure")
+
+// Test 2: Closure with parameter capture
+fn make_adder(x):
+  fn add(y):
+    x + y
+  add
+
+add5 = make_adder(5)
+add10 = make_adder(10)
+assert(add5(3) == 8, "adder 5+3")
+assert(add10(3) == 13, "adder 10+3")
+print("test 2 passed: closure with params")
+
+// Test 3: Shared upvalue between two closures
+fn make_counters():
+  count = 0
+  fn inc():
+    count = count + 1
+    count
+  fn dec():
+    count = count - 1
+    count
+  [inc, dec]
+
+counters = make_counters()
+inc = counters[0]
+dec = counters[1]
+assert(inc() == 1, "shared upvalue inc 1")
+assert(inc() == 2, "shared upvalue inc 2")
+assert(dec() == 1, "shared upvalue dec 1")
+print("test 3 passed: shared upvalue")
+
+// Test 4: Deep nesting - 3 levels
+fn level1():
+  x = 10
+  fn level2():
+    y = 20
+    fn level3():
+      x + y
+    level3
+  level2
+
+l2 = level1()
+l3 = l2()
+assert(l3() == 30, "deep nesting 10+20")
+print("test 4 passed: deep nesting")
+
+// Test 5: Closure modifying outer variable
+fn accumulator():
+  total = 0
+  fn add(n):
+    total = total + n
+    total
+  add
+
+acc = accumulator()
+assert(acc(10) == 10, "accum 10")
+assert(acc(20) == 30, "accum 20")
+assert(acc(5) == 35, "accum 5")
+print("test 5 passed: closure modification")
+
+// Test 6: Multiple independent closures
+fn make_pair(x, y):
+  fn get_x():
+    x
+  fn get_y():
+    y
+  [get_x, get_y]
+
+p1 = make_pair(1, 2)
+p2 = make_pair(3, 4)
+assert(p1[0]() == 1, "pair1 x")
+assert(p1[1]() == 2, "pair1 y")
+assert(p2[0]() == 3, "pair2 x")
+assert(p2[1]() == 4, "pair2 y")
+print("test 6 passed: independent closures")
+
+print("all closure upvalue tests passed")

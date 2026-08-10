@@ -1,0 +1,25 @@
+struct Point1 {
+    x: int = 0
+    y: int = 0
+}
+
+p1 = Point1(10, 20)
+print(p1.x)
+print(p1.y)
+
+p2 = Point1()
+print(p2.x)
+print(p2.y)
+
+struct Point2 {
+    x = 0
+    y = 0
+}
+
+p3 = Point2(10, 20)
+print(p3.x)
+print(p3.y)
+
+p4 = Point2()
+print(p4.x)
+print(p4.y)

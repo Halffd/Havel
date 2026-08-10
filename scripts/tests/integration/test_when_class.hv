@@ -1,0 +1,52 @@
+// Test: when blocks with class-like patterns via globals
+//
+// Architecture: when blocks track GLOBAL variable changes.
+// Class field writes (this.val = ...) do NOT emit VAR_CHANGED.
+// The reactive pattern for classes: use globals as reactive state.
+//
+// Verifies:
+// 1. when tracking a global updated by a function — WORKS
+// 2. Edge trigger: fires once on false→true
+// 3. Global proxy pattern: class methods write to globals → VAR_CHANGED → when fires
+
+count = 0
+threshold = 5
+notified = false
+
+// Global proxy for class-style state
+Counter_value = 0
+
+fn increment(amount) {
+    Counter_value = Counter_value + amount
+    return Counter_value
+}
+
+when Counter_value >= threshold {
+    print("Counter_value reached " + Counter_value)
+    notified = true
+}
+
+print("initial: " + Counter_value)
+increment(2)
+print("after +2: " + Counter_value)
+
+// Sleep allows event loop to process VAR_CHANGED from the STORE_GLOBAL above
+sleep(50)
+
+increment(2)
+print("after +2: " + Counter_value)
+sleep(50)
+
+increment(2)
+print("after +2: " + Counter_value)
+sleep(50)
+
+print("notified: " + notified)
+
+if notified {
+    print("PASS")
+} else {
+    print("FAIL: when block did not fire")
+}
+
+exit(0)

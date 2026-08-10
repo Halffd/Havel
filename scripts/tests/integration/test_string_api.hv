@@ -1,0 +1,10 @@
+// Test script to verify VMApi StringModule functionality
+print("Testing VMApi StringModule...");
+
+// Test string functions
+print("string.len('hello'):", string.len("hello"));
+print("string.upper('hello'):", string.upper("hello"));
+print("string.lower('HELLO'):", string.lower("HELLO"));
+print("string.trim('  hello  '):", string.trim("  hello  "));
+
+print("VMApi StringModule test completed successfully!");

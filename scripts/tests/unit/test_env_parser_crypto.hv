@@ -1,0 +1,90 @@
+// test_env_parser_crypto.hv - Test env, parser, crypto modules
+
+use env
+use parser
+use crypto
+
+// --- env module ---
+print("=== env ===")
+print("home: " + env.home())
+print("user: " + env.user())
+print("platform: " + env.platform())
+print("has PATH: " + env.has("PATH"))
+let pathVal = env.get("PATH")
+if pathVal != null {
+  print("PATH length: " + #pathVal)
+}
+print("getOr: " + env.getOr("NONEXISTENT_XYZ", "fallback_ok"))
+
+// --- parser module ---
+print("")
+print("=== parser ===")
+
+// CSV
+let csvData = "name,age,city\nalice,30,NYC\nbob,25,LA"
+let csvRows = parser.csv(csvData)
+print("csv rows: " + #csvRows)
+print("first row: " + csvRows[0])
+
+// KV
+let kvData = "host=localhost\nport=8080\n# comment\ndb=mydb"
+let kvPairs = parser.kv(kvData)
+print("kv pairs: " + #kvPairs)
+
+// INI
+let iniData = "[server]\nhost = localhost\nport = 8080\n[client]\ntimeout = 30"
+let iniSections = parser.ini(iniData)
+print("ini sections: " + #iniSections)
+
+// args
+let testArgs = ["prog", "--verbose", "--output=file.txt", "input.dat"]
+let argPairs = parser.args(testArgs)
+print("arg pairs: " + #argPairs)
+
+// lines
+let lineData = "  hello  \n  \n  world  "
+let parsedLines = parser.lines(lineData)
+print("lines: " + parsedLines)
+
+// tokens
+let tokData = "  hello   world  foo  "
+let tokResult = parser.tokens(tokData)
+print("tokens: " + tokResult)
+
+// --- crypto module ---
+print("")
+print("=== crypto ===")
+
+// hex
+let bytes = [72, 101, 108, 108, 111]
+let hexStr = crypto.hexEncode(bytes)
+print("hex encode: " + hexStr)
+let decoded = crypto.hexDecode(hexStr)
+print("hex decode len: " + #decoded)
+
+// base64
+let b64Str = crypto.base64Encode(bytes)
+print("base64 encode: " + b64Str)
+let b64Decoded = crypto.base64Decode(b64Str)
+print("base64 decode len: " + #b64Decoded)
+
+// hash
+let hash1 = crypto.fnv1a("hello")
+print("fnv1a: " + hash1)
+let hash2 = crypto.djb2("hello")
+print("djb2: " + hash2)
+
+// token
+let tok = crypto.token(8)
+print("token: " + tok + " len: " + #tok)
+
+// uuid
+let id = crypto.uuid()
+print("uuid: " + id)
+
+// xor
+let xored = crypto.xorHex("48656c6c6f", "a5a5a5a5a5")
+print("xor hex: " + xored)
+
+print("")
+print("all tests passed")

@@ -1,0 +1,3 @@
+print("fs.exists: " + str(fs.exists("/tmp")))
+print("sys.pid: " + str(sys.pid()))
+print("shell type: " + type(shell))

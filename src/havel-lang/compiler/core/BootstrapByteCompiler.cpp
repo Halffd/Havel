@@ -2737,43 +2737,43 @@ void ByteCompiler::compileUseStatement(const ast::UseStatement &statement) {
     return;
   }
 
-    if (statement.isFileImport) {
-        uint32_t path_sid = addStringConstant(statement.filePath);
-        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
-        emit(OpCode::IMPORT);
+  if (statement.isFileImport) {
+    uint32_t path_sid = addStringConstant(statement.filePath);
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(path_sid)));
+    emit(OpCode::IMPORT);
 
     if (statement.isNamedImport && !statement.importNames.empty()) {
-        for (size_t i = 0; i < statement.importNames.size(); ++i) {
-            const auto &name = statement.importNames[i];
-            const auto &alias = (i < statement.importAliases.size())
-                                    ? statement.importAliases[i]
-                                    : name;
-            if (name == "*" && statement.isWildcard) {
-                emit(OpCode::IMPORT_WILDCARD);
-                return;
-            }
-            emit(OpCode::DUP);
-            uint32_t key_sid = addStringConstant(name);
-            emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(key_sid)));
-            emit(OpCode::OBJECT_GET_RAW);
-            uint32_t global_sid = addStringConstant(alias);
-            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(global_sid));
+      for (size_t i = 0; i < statement.importNames.size(); ++i) {
+        const auto &name = statement.importNames[i];
+        const auto &alias = (i < statement.importAliases.size())
+                                ? statement.importAliases[i]
+                                : name;
+        if (name == "*" && statement.isWildcard) {
+          emit(OpCode::IMPORT_WILDCARD);
+          return;
         }
-        emit(OpCode::POP);
-        } else if (!statement.alias.empty()) {
-            uint32_t alias_sid = addStringConstant(statement.alias);
-            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(alias_sid));
-        } else if (!statement.filePath.empty()) {
-            std::filesystem::path p(statement.filePath);
-            std::string modName = p.stem().string();
-            uint32_t mod_sid = addStringConstant(modName);
-            emit(OpCode::STORE_GLOBAL, Value::makeStringValId(mod_sid));
-        } else {
-            emit(OpCode::POP);
-        }
-return;
+        emit(OpCode::DUP);
+        uint32_t key_sid = addStringConstant(name);
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(key_sid)));
+        emit(OpCode::OBJECT_GET_RAW);
+        uint32_t global_sid = addStringConstant(alias);
+        emit(OpCode::STORE_GLOBAL, Value::makeStringValId(global_sid));
+      }
+      emit(OpCode::POP);
+    } else if (!statement.alias.empty()) {
+      uint32_t alias_sid = addStringConstant(statement.alias);
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(alias_sid));
+    } else if (!statement.filePath.empty()) {
+      std::filesystem::path p(statement.filePath);
+      std::string modName = p.stem().string();
+      uint32_t mod_sid = addStringConstant(modName);
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(mod_sid));
+    } else {
+      emit(OpCode::POP);
     }
-    }
+    return;
+  }
+}
 
 void ByteCompiler::compileWithStatement(const ast::WithStatement &statement) {
     if (statement.object) {

@@ -1,0 +1,124 @@
+// Comprehensive self-hosted compiler test
+use { tokenize } from "lexer"
+use { parse } from "pratt"
+use { Emitter, compileProgram } from "emitter"
+
+passed = 0
+failed = 0
+
+fn check(label, source, expected) {
+    ast = parse(source)
+    if ast == null {
+        print("FAIL " + label + ": parse returned null")
+        failed = failed + 1
+        return
+    }
+    bc.reset()
+    em = Emitter()
+    result = compileProgram(em, ast)
+    if result == expected {
+        print("PASS " + label + ": " + str(result))
+        passed = passed + 1
+    } else {
+        print("FAIL " + label + ": expected " + str(expected) + " got " + str(result))
+        failed = failed + 1
+    }
+}
+
+// --- Arithmetic ---
+check("add", "3 + 4", 7)
+check("sub", "10 - 3", 7)
+check("mul", "6 * 7", 42)
+check("div", "20 / 4", 5)
+check("mod", "10 % 3", 1)
+check("neg", "-5", -5)
+check("paren", "(2 + 3) * 4", 20)
+check("precedence", "2 + 3 * 4", 14)
+
+// --- Variables ---
+check("val_decl", "val x = 10\nx + 5", 15)
+check("let_decl", "let x = 10\nx = 20\nx", 20)
+
+// --- Functions ---
+check("fn_call", "fn double(n) { n * 2 }\ndouble(21)", 42)
+check("fn_add", "fn add(a, b) { a + b }\nadd(3, 4)", 7)
+check("fn_recursion", "fn fib(n) { if n < 2 { n } else { fib(n-1) + fib(n-2) } }\nfib(10)", 55)
+
+// --- Control flow ---
+check("if_true", "if true { 1 } else { 0 }", 1)
+check("if_false", "if false { 1 } else { 0 }", 0)
+check("if_else", "val x = 10\nif x > 5 { 100 } else { 200 }", 100)
+check("ternary", "true ? 1 : 0", 1)
+check("ternary_false", "false ? 1 : 0", 0)
+
+// --- Comparisons ---
+check("lt_true", "3 < 5", true)
+check("lt_false", "5 < 3", false)
+check("gt_true", "5 > 3", true)
+check("eq_true", "3 == 3", true)
+check("ne_true", "3 != 4", true)
+check("le_true", "3 <= 3", true)
+check("ge_true", "5 >= 3", true)
+
+// --- Logic ---
+check("and_true", "true && true", true)
+check("and_false", "true && false", false)
+check("or_true", "false || true", true)
+check("or_false", "false || false", false)
+check("not_true", "!false", true)
+
+// --- Strings ---
+check("string", "\"hello\"", "hello")
+check("strlen", "\"hello\".length()", 5)
+check("str_concat", "\"hello\" + \" world\"", "hello world")
+
+// --- Booleans and null ---
+check("bool_true", "true", true)
+check("bool_false", "false", false)
+check("null_val", "null", null)
+
+// --- While loop ---
+check("while_loop", "let x = 0\nwhile x < 5 { x = x + 1 }\nx", 5)
+
+// --- For loop (0..5 is inclusive = 0+1+2+3+4+5=15) ---
+check("for_loop", "let sum = 0\nfor i in 0..5 { sum = sum + i }\nsum", 15)
+
+// --- Nested functions (braces required for nested fn) ---
+check("nested_fn", "fn outer(x) { fn inner(y) { x + y } inner(3) }\nouter(4)", 7)
+
+// --- Closures ---
+check("closure", "fn make_adder(n) { fn add(x) { x + n } add }\nval add5 = make_adder(5)\nadd5(10)", 15)
+
+// --- Array ---
+bc.reset()
+em_a = Emitter()
+ast_a = parse("[1, 2, 3]")
+r_a = compileProgram(em_a, ast_a)
+if r_a != null && r_a.length() == 3 {
+    print("PASS array: " + str(r_a))
+    passed = passed + 1
+} else {
+    print("FAIL array: expected array length 3 got " + str(r_a))
+    failed = failed + 1
+}
+
+// --- Object ---
+bc.reset()
+em_o = Emitter()
+ast_o = parse("{ a: 1, b: 2 }")
+r_o = compileProgram(em_o, ast_o)
+if r_o != null && r_o.keys().length() == 2 {
+    print("PASS object: " + str(r_o))
+    passed = passed + 1
+} else {
+    print("FAIL object: expected 2 keys got " + str(r_o))
+    failed = failed + 1
+}
+
+// --- Multiple statements ---
+check("multi_stmt", "val a = 10\nval b = 20\nval c = a + b\nc", 30)
+
+// --- Comparison chaining ---
+check("chain_lt", "1 < 2 && 2 < 3", true)
+
+print(str(passed) + "/" + str(passed + failed) + " tests passed")

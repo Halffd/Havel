@@ -4477,6 +4477,22 @@ Value VM::loadModule(const std::string &path) {
     }
   }
 
+  // Handle cached modules (already loaded in this VM session)
+  if (resolved && resolved->type == ModuleLoader::ResolvedModule::Cached) {
+    Value cachedVal;
+    if (moduleLoader_.getCached(path, &cachedVal)) {
+      // Also cache under the canonical key if different
+      if (!resolved->canonicalPath.empty()) {
+        moduleLoader_.putCache(resolved->canonicalPath, cachedVal);
+        pinModuleCacheExports(resolved->canonicalPath, cachedVal);
+      }
+      moduleLoader_.putCache(path, cachedVal);
+      pinModuleCacheExports(path, cachedVal);
+      return cachedVal;
+    }
+    // Cache entry exists but getCached failed - fall through to reload
+  }
+
   if (!resolved) {
     // Check lazy modules — activate if registered
     auto lazyIt = lazy_modules_.find(path);

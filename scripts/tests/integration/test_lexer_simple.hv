@@ -1,0 +1,3 @@
+use { tokenize } from "lexer"
+tokens = tokenize("x = 1")
+print(#tokens)

@@ -1,0 +1,19 @@
+// Test keyword arguments in function calls
+fn add(a, b=10):
+    return a + b
+
+print(add(5))
+print(add(5, b=20))
+print(add(a=3, b=7))
+print(add(b=15, a=2))
+
+fn greet(name, greeting="Hello"):
+    print(greeting)
+    print(name)
+    return greeting
+
+greet("World")
+greet("World", greeting="Hi")
+greet(name="Alice", greeting="Hey")
+
+return 0

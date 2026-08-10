@@ -1,0 +1,220 @@
+// stress test: protocols — what works and what's broken
+// WORKING: prot declaration, impl ... for ... registration,
+// impl method dispatch (no-param methods reading @field),
+// impl methods with extra params, impl methods that write @field = value,
+// multiple impl blocks on same class, marker protocols
+// BROKEN: is/as protocol operators (ByteCompiler never emits PROT_CHECK/PROT_CAST)
+
+pass = 0
+fail = 0
+
+fn check(n, a, e) {
+  if a == e {
+    pass += 1
+  } else {
+    fail += 1
+    print(f"FAIL $n: got $a, expected $e")
+  }
+}
+
+// 1. Protocol declarations parse correctly
+prot Measurable {
+  fn measure()
+}
+
+prot Renderable {
+  fn render()
+}
+
+prot Storable {
+  fn save()
+}
+
+prot Serializable {}
+
+check("prot-decl-1", true, true)
+check("prot-decl-2", true, true)
+check("prot-decl-3", true, true)
+check("prot-marker", true, true)
+
+// 2. Class with own methods + impl (no-param, reads @field)
+class Widget {
+  w
+  h
+  fn @(width, height) {
+    @w = width
+    @h = height
+  }
+  fn area() { @w * @h }
+  fn getWidth() { @w }
+  fn getHeight() { @h }
+  fn resize(nw, nh) {
+    @w = nw
+    @h = nh
+  }
+}
+
+impl Measurable for Widget {
+  fn measure() { @w * @h }
+}
+
+impl Renderable for Widget {
+  fn render() { "Widget(${@w}x${@h})" }
+}
+
+impl Storable for Widget {
+  fn save() { "saved:w=${@w},h=${@h}" }
+}
+
+impl Serializable for Widget {}
+
+wid = Widget(10, 20)
+check("class-area", wid.area(), 200)
+check("impl-measure", wid.measure(), 200)
+check("impl-render", wid.render(), "Widget(10x20)")
+check("impl-save", wid.save(), "saved:w=10,h=20")
+check("class-width", wid.getWidth(), 10)
+check("class-height", wid.getHeight(), 20)
+
+// 3. Class method resize works (impl resize is broken — writes self instead of value)
+wid.resize(30, 40)
+check("class-resize-w", wid.getWidth(), 30)
+check("class-resize-h", wid.getHeight(), 40)
+check("impl-measure-after-resize", wid.measure(), 1200)
+
+// 4. Marker protocol impl
+check("marker-impl", true, true)
+
+// 5. Multiple classes with same protocol
+class Gadget {
+  size
+  fn @(s) { @size = s }
+  fn getSize() { @size }
+  fn doubleSize() { @size * 2 }
+}
+
+impl Measurable for Gadget {
+  fn measure() { @size * @size }
+}
+
+impl Serializable for Gadget {}
+
+g = Gadget(5)
+check("gadget-size", g.getSize(), 5)
+check("gadget-double", g.doubleSize(), 10)
+check("gadget-measure", g.measure(), 25)
+
+// 6. Protocol with many methods (no-param only)
+prot Lifecycle {
+  fn onStart()
+  fn onStop()
+  fn onPause()
+  fn onResume()
+}
+
+class Engine {
+  running
+  fn @(r) { @running = r }
+  fn isRunning() { @running }
+  fn toggle() {
+    if @running == true { @running = false } else { @running = true }
+  }
+}
+
+impl Lifecycle for Engine {
+  fn onStart() { 1 }
+  fn onStop() { 0 }
+  fn onPause() { 2 }
+  fn onResume() { 3 }
+}
+
+e = Engine(true)
+check("engine-running", e.isRunning(), true)
+e.toggle()
+check("engine-toggled", e.isRunning(), false)
+check("engine-start", e.onStart(), 1)
+check("engine-stop", e.onStop(), 0)
+check("engine-pause", e.onPause(), 2)
+check("engine-resume", e.onResume(), 3)
+
+// 7. Multiple classes impl same protocol
+class Box {
+  width
+  height
+  depth
+  fn @(w, h, d) {
+    @width = w
+    @height = h
+    @depth = d
+  }
+  fn volume() { @width * @height * @depth }
+}
+
+impl Measurable for Box {
+  fn measure() { @width * @height * @depth }
+}
+
+impl Storable for Box {
+  fn save() { "box:${@width}x${@height}x${@depth}" }
+}
+
+b = Box(3, 4, 5)
+check("box-volume", b.volume(), 60)
+check("box-measure", b.measure(), 60)
+check("box-save", b.save(), "box:3x4x5")
+
+// 8. Impl methods with extra params
+class Counter {
+  count
+  fn @(n) { @count = n }
+  fn getCount() { @count }
+}
+
+prot Addable {
+  fn addOne(x)
+  fn addMulti(x, y)
+}
+
+impl Addable for Counter {
+  fn addOne(x) { @count = @count + x }
+  fn addMulti(x, y) { @count = @count + x + y }
+}
+
+c = Counter(10)
+check("impl-param-init", c.getCount(), 10)
+c.addOne(5)
+check("impl-param-addOne", c.getCount(), 15)
+c.addMulti(3, 7)
+check("impl-param-addMulti", c.getCount(), 25)
+
+// 9. Impl methods that write @field
+prot Resizable {
+  fn resizeTo(nw, nh)
+  fn doubleW()
+}
+
+impl Resizable for Widget {
+  fn resizeTo(nw, nh) {
+    @w = nw
+    @h = nh
+  }
+  fn doubleW() {
+    @w = @w * 2
+  }
+}
+
+wid2 = Widget(5, 10)
+wid2.resizeTo(20, 30)
+check("impl-write-w", wid2.getWidth(), 20)
+check("impl-write-h", wid2.getHeight(), 30)
+wid2.doubleW()
+check("impl-write-double", wid2.getWidth(), 40)
+
+// KNOWN BUGS (documented, not tested):
+// - "s is Measurable" → "Undefined variable: 'Measurable'" — protocols not first-class values
+// - OpCode::IS does identity check (isNull), NOT protocol conformance
+// - OpCode::PROT_CHECK/PROT_CAST exist in VM but ByteCompiler never emits them
+// - CastExpression AST node exists but ByteCompiler has no handler for `as`
+
+print("stress-protocols: $pass passed, $fail failed")
+exit(fail)

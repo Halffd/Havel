@@ -1,0 +1,8 @@
+X = 42
+fn outer() {
+    fn inner() {
+        X
+    }
+    inner
+
+}

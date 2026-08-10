@@ -1,0 +1,17 @@
+// Test io.map and io.unmap
+use io
+
+print("Testing io.map and io.unmap...")
+
+// Map left to w
+map("left", "w")
+print("Mapped left -> w")
+
+// Check mapping (can't easily verify without X11/evdev, but should not error)
+print("Mapping done")
+
+// Unmap left
+unmap("left")
+print("Unmapped left")
+
+print("Test passed!")

@@ -1,0 +1,16 @@
+// Test UTF-8 string indexing and iteration
+s = "café"
+print(s[0])
+print(s[1])
+print(s[2])
+print(s[3])
+print(s[-1])
+print(s[-2])
+
+emoji = "ab🎉"
+print(emoji[0])
+print(emoji[1])
+print(emoji[2])
+
+for c in s
+    print(c)

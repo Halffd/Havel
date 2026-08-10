@@ -1,0 +1,10 @@
+// smoke: escape-regex = 4
+use regex
+s = escape_regex("a.b")
+// "a.b" -> "a\\.b" (escaped the dot)
+val __result = #s
+if __result != 4 {
+ print("FAIL escape-regex: expected 4, got " + str(__result))
+ process.exit(255)
+}
+return __result

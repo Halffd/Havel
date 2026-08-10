@@ -1,0 +1,11 @@
+fn make_counter():
+  count = 0
+  fn increment():
+    count = count + 1
+    count
+  increment
+
+c = make_counter()
+print(c())
+print(c())
+print(c())

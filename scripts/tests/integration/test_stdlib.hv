@@ -1,0 +1,196 @@
+// Test script for extracted stdlib modules
+// Run with: ./build-release/havel --run test_stdlib.hv
+
+print("=== Testing Extracted Stdlib Modules ===\n")
+
+// ============================================================================
+// Math Module Tests
+// ============================================================================
+print("--- Math Module ---")
+
+// Basic math
+print("abs(-5) = " + abs(-5))
+print("ceil(3.2) = " + ceil(3.2))
+print("floor(3.8) = " + floor(3.8))
+print("round(3.5) = " + round(3.5))
+
+// Trigonometry
+print("sin(0) = " + sin(0))
+print("cos(0) = " + cos(0))
+print("tan(0) = " + tan(0))
+
+// Logarithms
+print("exp(1) = " + exp(1))
+print("log(2.718) = " + log(2.718))
+print("log10(100) = " + log10(100))
+print("log2(8) = " + log2(8))
+
+// Roots and powers
+print("sqrt(16) = " + sqrt(16))
+print("cbrt(27) = " + cbrt(27))
+print("pow(2, 3) = " + pow(2, 3))
+print("hypot(3, 4) = " + hypot(3, 4))
+
+// Constants
+print("PI = " + PI)
+print("E = " + E)
+print("PHI = " + PHI)
+
+// Random
+print("random() = " + random())
+print("random(10) = " + random(10))
+print("random(1, 6) = " + random(1, 6))
+
+print("")
+
+// ============================================================================
+// Type Module Tests
+// ============================================================================
+print("--- Type Module ---")
+
+// Type conversions
+print("int(3.7) = " + int(3.7))
+print("int('42') = " + int("42"))
+print("num('3.14') = " + num("3.14"))
+print("str(42) = " + str(42))
+print("str(3.14) = " + str(3.14))
+
+// Container constructors
+print("list(1, 2, 3) = " + list(1, 2, 3))
+print("tuple('a', 'b') = " + tuple("a", "b"))
+print("set(1, 2, 2, 3) = " + set(1, 2, 2, 3))
+
+// Type inspection
+print("type(42) = " + type(42))
+print("type('hello') = " + type("hello"))
+print("type([1,2]) = " + type([1,2]))
+print("typeof(true) = " + typeof(true))
+
+// Length
+print("len('hello') = " + len("hello"))
+print("len([1,2,3]) = " + len([1,2,3]))
+
+print("")
+
+// ============================================================================
+// String Module Tests
+// ============================================================================
+print("--- String Module ---")
+
+// Case
+print("upper('hello') = " + upper("hello"))
+print("lower('WORLD') = " + lower("WORLD"))
+
+// Whitespace
+print("trim('  hello  ') = '" + trim("  hello  ") + "'")
+
+// Length
+print("length('hello') = " + length("hello"))
+
+// Search
+print("contains('hello', 'ell') = " + contains("hello", "ell"))
+print("startsWith('hello', 'he') = " + startsWith("hello", "he"))
+print("endsWith('hello', 'lo') = " + endsWith("hello", "lo"))
+
+// Modification
+print("replace('hello', 'l', 'x') = " + replace("hello", "l", "x"))
+
+// Substrings
+print("substr('hello', 1, 3) = " + substr("hello", 1, 3))
+print("left('hello', 2) = " + left("hello", 2))
+print("right('hello', 2) = " + right("hello", 2))
+
+// Formatting
+print("format('Hello {}', 'World') = " + format("Hello {}", "World"))
+print("format('{} + {} = {}', 2, 3, 5) = " + format("{} + {} = {}", 2, 3, 5))
+
+print("")
+
+// ============================================================================
+// Array Module Tests
+// ============================================================================
+print("--- Array Module ---")
+
+let arr = [1, 2, 3, 4, 5]
+print("arr = " + arr)
+
+// Transformation
+print("map(arr, int) = " + map(arr, int))
+print("filter(arr, x => x > 2) = " + filter(arr, x => x > 2))
+print("reduce(arr, (a,b) => a+b, 0) = " + reduce(arr, (a,b) => a+b, 0))
+
+// Search
+print("find(arr, x => x > 3) = " + find(arr, x => x > 3))
+print("some(arr, x => x > 4) = " + some(arr, x => x > 4))
+print("every(arr, x => x > 0) = " + every(arr, x => x > 0))
+print("includes(arr, 3) = " + includes(arr, 3))
+print("indexOf(arr, 3) = " + indexOf(arr, 3))
+
+// Mutation
+let arr2 = [1, 2, 3]
+push(arr2, 4)
+print("after push(arr2, 4): arr2 = " + arr2)
+print("pop(arr2) = " + pop(arr2))
+print("after pop: arr2 = " + arr2)
+
+// Conversion
+print("join([1,2,3], '-') = " + join([1,2,3], "-"))
+print("split('a-b-c', '-') = " + split("a-b-c", "-"))
+
+print("")
+
+// ============================================================================
+// File Module Tests
+// ============================================================================
+print("--- File Module ---")
+
+let testFile = "/tmp/havel_test.txt"
+print("file.exists('" + testFile + "') = " + file.exists(testFile))
+
+file.write(testFile, "Hello from Havel!")
+print("After write, file.exists = " + file.exists(testFile))
+
+let content = file.read(testFile)
+print("file.read() = '" + content + "'")
+
+print("")
+
+// ============================================================================
+// Regex Module Tests
+// ============================================================================
+print("--- Regex Module ---")
+
+let text = "The quick brown fox jumps over 123 lazy dogs"
+print("text = '" + text + "'")
+
+// Basic match
+print("regex.match(text, 'fox') = " + regex.match(text, "fox"))
+print("regex.match(text, 'cat') = " + regex.match(text, "cat"))
+
+// Search
+let match = regex.search(text, "\\d+")
+print("regex.search(text, '\\d+') = " + match)
+if (match != null) {
+    print("  match.match = '" + match.match + "'")
+    print("  match.index = " + match.index)
+}
+
+// Findall
+print("regex.findall(text, 'o') = " + regex.findall(text, "o"))
+
+// Replace
+print("regex.replace(text, ' ', '_') = " + regex.replace(text, " ", "_"))
+
+// Split
+print("regex.split(text, ' ') = " + regex.split(text, " "))
+
+// Compile
+let re = regex.compile("\\w+")
+print("regex.compile('\\w+').pattern = " + re.pattern)
+
+print("")
+
+// ============================================================================
+// Summary
+// ============================================================================
+print("=== All Tests Complete ===")

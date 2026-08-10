@@ -576,7 +576,13 @@ Token Lexer::scanString(bool isFString, bool isRegexString, bool isRawString, ch
     }
 
 } else if (c == '{' && braceDepth == 0) {
-            if (peek(1) != '{') {
+            if (isFString && peek(1) != '{') {
+                // f-string brace interpolation {expr}
+                hasInterpolation = true;
+                advance(); // consume {
+                value += '\x01'; // start interpolation marker
+                braceDepth++;
+            } else if (peek(1) != '{') {
                 // Literal { — not interpolation. Use ${expr} or $var.
                 value += advance();
             } else {
@@ -717,7 +723,13 @@ Token Lexer::scanMultilineString(bool isFString, char quote) {
             value += advance(); // $ as literal
         }
 } else if (c == '{' && braceDepth == 0) {
-            if (peek(1) != '{') {
+            if (isFString && peek(1) != '{') {
+                // f-string brace interpolation {expr}
+                hasInterpolation = true;
+                advance(); // consume {
+                value += '\x01'; // start interpolation marker
+                braceDepth++;
+            } else if (peek(1) != '{') {
                 value += advance(); // literal {
             } else {
                 advance();

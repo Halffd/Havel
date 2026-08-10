@@ -1,0 +1,51 @@
+// Test object VM intrinsics
+
+print("=== Object VM Intrinsics Tests ===\n")
+
+// Test 1: object.keys
+print("1. Testing object.keys:")
+let obj = {a: 1, b: 2, c: 3}
+let keys = object.keys(obj)
+print("  keys: ")
+print(keys)
+print("")
+
+// Test 2: object.values
+print("2. Testing object.values:")
+let vals = object.values(obj)
+print("  values: ")
+print(vals)
+print("")
+
+// Test 3: object.entries
+print("3. Testing object.entries:")
+let entries = object.entries(obj)
+print("  entries: ")
+print(entries)
+print("")
+
+// Test 4: object.has
+print("4. Testing object.has:")
+print("  object.has(obj, 'b'): ")
+print(object.has(obj, "b"))
+print("  object.has(obj, 'x'): ")
+print(object.has(obj, "x"))
+print("")
+
+// Test 5: object.set and object.get
+print("5. Testing object.set and object.get:")
+object.set(obj, "d", 4)
+print("  After object.set(obj, 'd', 4):")
+print("  object.get(obj, 'd'): ")
+print(object.get(obj, "d"))
+print("")
+
+// Test 6: object.del
+print("6. Testing object.del:")
+object.del(obj, "b")
+print("  After object.del(obj, 'b'):")
+print("  keys: ")
+print(object.keys(obj))
+print("")
+
+print("=== Tests Complete ===")

@@ -1,0 +1,11 @@
+use { constantFold } from "optimizer"
+use { tokenize } from "lexer"
+use { parse } from "pratt"
+
+source = "1 + 2"
+tokens = tokenize(source)
+print("tokenized: " + str(#tokens))
+ast = parse(tokens)
+print("parsed, errors: " + str(#ast.errors))
+folded = constantFold(ast)
+print("folded")

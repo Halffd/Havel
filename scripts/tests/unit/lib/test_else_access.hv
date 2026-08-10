@@ -1,0 +1,12 @@
+use { IfStatement, BooleanLiteral, NumberLiteral, ExpressionStatement } from "ast"
+
+cond = BooleanLiteral(false, 1, 1)
+thenBr = ExpressionStatement(NumberLiteral(1, 1, 1), 1, 1)
+elseBr = ExpressionStatement(NumberLiteral(2, 1, 1), 1, 1)
+ifStmt = IfStatement(cond, thenBr, elseBr, 1, 1)
+
+print("kind=" + str(ifStmt.kind))
+print("cond kind=" + str(ifStmt.condition.kind))
+print("then kind=" + str(ifStmt.then.kind))
+print("else via dot=" + str(ifStmt.else))
+print("else via bracket=" + str(ifStmt["else"]))

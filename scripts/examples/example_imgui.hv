@@ -1,0 +1,121 @@
+/*
+ * Example Dear ImGui extension usage in Havel
+ * 
+ * Prerequisites:
+ * - GLFW3 development libraries installed
+ * - OpenGL development libraries installed
+ * - Dear ImGui headers available
+ * - imgui_extension.so built and available
+ * 
+ * Run with: ./build-release/havel examples/example_imgui.hv
+ */
+
+import imgui from "extension:imgui"
+
+// Initialize ImGui with a window
+let success = imgui.init("Hello ImGui from Havel!", 1280, 720)
+if (success == false) {
+    print("Failed to initialize ImGui")
+    return
+}
+
+print("ImGui initialized. Starting render loop...")
+
+// State variables
+let showDemo = true
+let counter = 0
+let sliderValue = 50.0
+let inputValue = ""
+let checkboxValue = false
+let color = [1.0, 0.5, 0.0, 1.0]
+
+// Main render loop
+while (imgui.shouldClose() == false) {
+    // Start new frame
+    imgui.frameBegin()
+    
+    // Main window
+    if (imgui.beginWindow("Main Window")) {
+        imgui.text("Welcome to Havel + Dear ImGui!")
+        imgui.separator()
+        
+        // Simple button
+        if (imgui.button("Click Me!", 120, 30)) {
+            counter = counter + 1
+            print("Button clicked! Counter: " + str(counter))
+        }
+        
+        imgui.sameLine()
+        imgui.text("Counter: " + str(counter))
+        
+        imgui.spacing()
+        
+        // Slider
+        let sliderResult = imgui.sliderFloat("Value", sliderValue, 0.0, 100.0)
+        if (sliderResult[0]) {
+            sliderValue = sliderResult[1]
+        }
+        
+        // Input text
+        let inputResult = imgui.inputText("Enter text", inputValue)
+        if (inputResult[0]) {
+            inputValue = inputResult[1]
+        }
+        
+        // Checkbox
+        let checkResult = imgui.checkbox("Enable feature", checkboxValue)
+        if (checkResult[0]) {
+            checkboxValue = checkResult[1]
+        }
+        
+        imgui.separator()
+        
+        // Color picker
+        let colorResult = imgui.colorEdit4("Pick Color", color[0], color[1], color[2], color[3])
+        if (colorResult[0]) {
+            color = [colorResult[1], colorResult[2], colorResult[3], colorResult[4]]
+        }
+        
+        imgui.separator()
+        
+        // Progress bar
+        let progress = sliderValue / 100.0
+        imgui.progressBar(progress, 200, 20, "Loading...")
+        
+        imgui.spacing()
+        
+        // Collapsing header
+        if (imgui.collapsingHeader("Advanced Options")) {
+            imgui.text("These are some advanced options:")
+            imgui.bulletText("Option 1")
+            imgui.bulletText("Option 2")
+            imgui.bulletText("Option 3")
+        }
+        
+        // Tree node
+        if (imgui.treeNode("Settings")) {
+            imgui.text("Setting A: Value 1")
+            imgui.text("Setting B: Value 2")
+            imgui.treePop()
+        }
+    }
+    imgui.endWindow()
+    
+    // Demo window (if enabled)
+    if (showDemo) {
+        if (imgui.beginWindow("Demo Window")) {
+            imgui.text("This is a demo window")
+            if (imgui.button("Close Demo")) {
+                showDemo = false
+            }
+        }
+        imgui.endWindow()
+    }
+    
+    // End frame and render
+    imgui.frameEnd()
+}
+
+// Cleanup
+imgui.shutdown()
+print("ImGui shutdown complete")

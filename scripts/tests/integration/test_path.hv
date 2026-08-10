@@ -1,0 +1,18 @@
+use path
+
+print("=== path module test ===")
+
+print("sep: " + path.sep)
+print("basename /home/user/file.txt: " + path.basename("/home/user/file.txt"))
+print("dirname /home/user/file.txt: " + path.dirname("/home/user/file.txt"))
+print("ext /home/user/file.txt: " + path.ext("/home/user/file.txt"))
+print("join [/home, user, file.txt]: " + path.join(["/home", "user", "file.txt"]))
+print("isAbs /home: " + path.isAbs("/home"))
+print("isAbs relative: " + path.isAbs("relative/path"))
+print("normalize /home/../etc: " + path.normalize("/home/../etc"))
+print("normalize ./foo/./bar: " + path.normalize("./foo/./bar"))
+print("stem /home/user/file.txt: " + path.stem("/home/user/file.txt"))
+print("parent /home/user/file.txt: " + path.parent("/home/user/file.txt"))
+print("filename /home/user/file.txt: " + path.filename("/home/user/file.txt"))
+
+print("=== path module test done ===")

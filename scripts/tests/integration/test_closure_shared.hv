@@ -1,0 +1,16 @@
+fn make_counters():
+  count = 0
+  fn inc():
+    count = count + 1
+    count
+  fn dec():
+    count = count - 1
+    count
+  [inc, dec]
+
+counters = make_counters()
+inc = counters[0]
+dec = counters[1]
+print(inc())
+print(inc())
+print(dec())

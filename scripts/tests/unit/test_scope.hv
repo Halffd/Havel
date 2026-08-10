@@ -1,0 +1,8 @@
+let sep = "/"
+fn basename(p) {
+    let parts = p.split(sep)
+    let n = len(parts)
+    let idx = n - 1
+    return parts[idx]
+}
+print(basename("/home/user/file.txt"))

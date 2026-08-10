@@ -3666,7 +3666,10 @@ for stmt in body {
     topStmts.push(stmt)
     if stmt.funcs != null {
       for m in stmt.funcs {
-        if m != null && m.kind == "FnDeclaration" { funcDecls.push(m) }
+        if m != null && m.kind == "FnDeclaration" {
+          m._implFor = stmt.typeName
+          funcDecls.push(m)
+        }
       }
     }
   }
@@ -3686,32 +3689,48 @@ for stmt in body {
  funcUpcounts = []
  funcChunkIdxs = []
  fi = 0
- while fi < #funcDecls {
- decl = funcDecls[fi]
- result = compileFuncDecl(emitter, decl.name, decl.params, decl.body, -1, decl.line)
- uc = result[0]
- chunkIdx = result[1]
- emitter.func_map[decl.name] = chunkIdx
- funcUpcounts.push(uc)
- funcChunkIdxs.push(chunkIdx)
- fi = fi + 1
- }
+while fi < #funcDecls {
+  decl = funcDecls[fi]
+  implFor = decl._implFor
+  if implFor != null {
+    selfParam = {"name": "self", "default": null}
+    implParams = [selfParam]
+    for p in decl.params { implParams.push(p) }
+    result = compileFuncDecl(emitter, decl.name, implParams, decl.body, -1, decl.line, true)
+    key = "impl:" + str(implFor) + "." + decl.name
+    emitter.func_map[key] = result[1]
+    funcChunkIdxs.push(result[1])
+    funcUpcounts.push(result[0])
+    fi = fi + 1
+    continue
+  }
+  result = compileFuncDecl(emitter, decl.name, decl.params, decl.body, -1, decl.line)
+  uc = result[0]
+  chunkIdx = result[1]
+  emitter.func_map[decl.name] = chunkIdx
+  funcUpcounts.push(uc)
+  funcChunkIdxs.push(chunkIdx)
+  fi = fi + 1
+  }
  // Pass 2: compile __main__
  mainChunkIdx = bc.func_new(entryName, 0, 64)
  traceEmitter("func_new " + entryName + " (main) bcIdx=" + str(mainChunkIdx))
  emitter.scope = moduleScope
  // Emit CLOSURE or LOAD_CONST + STORE_GLOBAL for each top-level function
- fi2 = 0
- while fi2 < #funcDecls {
- decl = funcDecls[fi2]
- fidx = emitter.func_map[decl.name]
- if funcUpcounts[fi2] > 0 {
- bc.emit("CLOSURE", fidx)
- }
- else {
- fnConstIdx = bc.add_const(bc.make_function_obj(fidx))
- bc.emit("LOAD_CONST", fnConstIdx)
- }
+fi2 = 0
+  while fi2 < #funcDecls {
+  decl = funcDecls[fi2]
+  implFor = decl._implFor
+  fkey = decl.name
+  if implFor != null { fkey = "impl:" + str(implFor) + "." + decl.name }
+  fidx = emitter.func_map[fkey]
+  if funcUpcounts[fi2] > 0 {
+  bc.emit("CLOSURE", fidx)
+  }
+  else {
+  fnConstIdx = bc.add_const(bc.make_function_obj(fidx))
+  bc.emit("LOAD_CONST", fnConstIdx)
+  }
 bc.emit("STORE_GLOBAL", bc.str_id(globalIdx(emitter, decl.name)))
 fi2 = fi2 + 1
 }
@@ -4275,7 +4294,7 @@ fn emitImplDeclaration(emitter, node) {
     for method in node.funcs {
       if method == null { continue }
       if method.name == null { continue }
-      fidx = emitter.func_map[method.name]
+      fidx = emitter.func_map["impl:" + str(typeName) + "." + method.name]
       if fidx == null { continue }
       sid = globalIdx(emitter, methodHostFn)
       bc.emit("LOAD_GLOBAL", bc.str_id(sid))

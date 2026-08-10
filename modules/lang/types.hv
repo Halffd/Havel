@@ -459,3 +459,5 @@ fn hasVar(inferenceResult, name) {
 fn allTypes(inferenceResult) {
   inferenceResult.env.bindings
 }
+
+{inferProgram: inferProgram, getVarType: getVarType, getReturnType: getReturnType, hasVar: hasVar, allTypes: allTypes, isNumeric: isNumeric, envLookup: envLookup, envHas: envHas, envSet: envSet, inferExpr: inferExpr, inferStmt: inferStmt, TypeEnv: TypeEnv}

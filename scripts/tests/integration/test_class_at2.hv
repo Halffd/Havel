@@ -1,0 +1,15 @@
+// Debug class constructor @field with fn @ syntax
+
+class Foo {
+    val = 0
+    fn @(x) {
+        @val = x
+    }
+    fn getVal() {
+        @val
+    }
+}
+
+f = Foo(42)
+println("val=" + str(f.getVal()))
+println("val direct=" + str(f.val))

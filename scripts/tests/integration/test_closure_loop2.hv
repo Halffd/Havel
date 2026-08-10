@@ -1,0 +1,7 @@
+fns = []
+for i in range(3):
+  fns.push(fn (): i)
+
+print(fns[0]())
+print(fns[1]())
+print(fns[2]())

@@ -11,7 +11,7 @@ description: "Tokens, comments, identifiers, literals, operators, and keywords i
 // single-line comment — the only comment syntax
 ```
 
-Block comments (`/* */`) are **not supported** in the self-hosted parser (C++ lexer supports them but self-hosted does not). `#` is **not** a comment character (used for hotkey prefixes and the `#` length operator).
+Block comments (`/* */`) are **supported in the self-hosted parser** with nested comment support. `#` is **not** a comment character (used for hotkey prefixes and the `#` length operator).
 
 ## Block Syntax
 
@@ -67,11 +67,13 @@ f"interpolated {variable}"   // f-string (${expr} or {expr})
 
 | Syntax | Context | Example |
 |--------|---------|---------|
-| `{var}` | Regular strings, f-strings, backticks | `"hello {name}"` |
-| `${expr}` | f-strings, backticks | `f"2+2={2+2}"` |
-| `$var` | Regular strings, f-strings (short form) | `"value: $x"` |
+| `{var}` / `{expr}` | f-strings, multiline f-strings | `f"hello {name}"`, `f"2+2={2+2}"` |
+| `${expr}` | f-strings, multiline f-strings, backticks | `f"2+2={2+2}"` |
+| `$var` | f-strings, multiline f-strings, regular strings, backticks | `"value: $x"`, `f"value: $x"` |
 
-**Do not** use `+`, `,`, `.`, or newlines for concatenation.
+String concatenation: use interpolation (preferred) or `+` operator.
+
+Regular (non-f) strings only support `$var` short form; use f-strings for full expression interpolation.
 
 ## Operators
 

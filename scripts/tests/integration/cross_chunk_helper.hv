@@ -1,0 +1,3 @@
+fn getValue() {
+    42
+}

@@ -1,0 +1,100 @@
+// test_x11.hv
+// Test X11 FFI - get active window title using low-level FFI API
+
+use ffi
+
+// Load X11 library
+let xlib = ffi.open("libX11.so.6")
+if xlib == 0 {
+    print("Failed to load libX11.so.6")
+    exit(1)
+}
+
+// Look up function symbols
+let XOpenDisplay = ffi.sym(xlib, "XOpenDisplay")
+let XDefaultRootWindow = ffi.sym(xlib, "XDefaultRootWindow")
+let XGetInputFocus = ffi.sym(xlib, "XGetInputFocus")
+let XInternAtom = ffi.sym(xlib, "XInternAtom")
+let XGetWindowProperty = ffi.sym(xlib, "XGetWindowProperty")
+let XFree = ffi.sym(xlib, "XFree")
+let XCloseDisplay = ffi.sym(xlib, "XCloseDisplay")
+
+// Open display
+let dpy = ffi.call(XOpenDisplay, "pointer", ["pointer"], 0)
+if dpy == 0 {
+    print("Cannot open X display")
+    exit(1)
+}
+print("Display opened")
+
+// Get root window
+let root = ffi.call(XDefaultRootWindow, "uint64", ["pointer"], dpy)
+print("Root window: " + root)
+
+// Get focused window
+let focus_ptr = ffi.alloc(8)
+let revert_ptr = ffi.alloc(4)
+let status = ffi.call(XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], dpy, focus_ptr, revert_ptr)
+let focus = ffi.get_u64(focus_ptr)
+let revert = ffi.get_i32(revert_ptr)
+print("Focused window: " + focus + " (revert: " + revert + ", status: " + status + ")")
+
+// Try to get window title via WM_NAME (XA_STRING = 31)
+let XA_STRING = 31
+let XA_WM_NAME = 39
+
+// Allocate output parameter buffers for XGetWindowProperty
+let actual_type_ptr = ffi.alloc(8)
+let actual_format_ptr = ffi.alloc(4)
+let nitems_ptr = ffi.alloc(8)
+let bytes_after_ptr = ffi.alloc(8)
+let prop_return_ptr = ffi.alloc(8)
+
+// Type signature for XGetWindowProperty
+let xgwp_types = ["pointer", "uint64", "uint64", "int64", "int64", "int32", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer"]
+
+let prop_status = ffi.call(XGetWindowProperty, "int32", xgwp_types, dpy, focus, XA_WM_NAME, 0, 1024, 0, XA_STRING, actual_type_ptr, actual_format_ptr, nitems_ptr, bytes_after_ptr, prop_return_ptr)
+
+if prop_status == 0 {
+    let title_ptr = ffi.get_ptr(prop_return_ptr)
+    if title_ptr != 0 {
+        let title = ffi.string(title_ptr)
+        print("Window title (WM_NAME): " + title)
+        ffi.call(XFree, "void", ["pointer"], title_ptr)
+    } else {
+        print("No WM_NAME property")
+    }
+} else {
+    print("XGetWindowProperty failed: " + prop_status)
+}
+
+// Try with _NET_WM_NAME (UTF-8 via EWMH)
+let net_wm_name_atom = ffi.call(XInternAtom, "uint64", ["pointer", "pointer", "int32"], dpy, "_NET_WM_NAME", 0)
+print("_NET_WM_NAME atom: " + net_wm_name_atom)
+
+if net_wm_name_atom != 0 {
+    let actual_type2 = ffi.alloc(8)
+    let actual_format2 = ffi.alloc(4)
+    let nitems2 = ffi.alloc(8)
+    let bytes_after2 = ffi.alloc(8)
+    let prop_return2 = ffi.alloc(8)
+
+    let prop_status2 = ffi.call(XGetWindowProperty, "int32", xgwp_types, dpy, focus, net_wm_name_atom, 0, 1024, 0, XA_STRING, actual_type2, actual_format2, nitems2, bytes_after2, prop_return2)
+
+    if prop_status2 == 0 {
+        let title_ptr2 = ffi.get_ptr(prop_return2)
+        if title_ptr2 != 0 {
+            let title2 = ffi.string(title_ptr2)
+            print("Window title (_NET_WM_NAME): " + title2)
+            ffi.call(XFree, "void", ["pointer"], title_ptr2)
+        } else {
+            print("No _NET_WM_NAME property")
+        }
+    } else {
+        print("XGetWindowProperty for _NET_WM_NAME failed: " + prop_status2)
+    }
+}
+
+// Close display
+ffi.call(XCloseDisplay, "int32", ["pointer"], dpy)
+print("Done")

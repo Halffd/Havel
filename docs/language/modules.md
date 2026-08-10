@@ -12,13 +12,44 @@ Havel uses **Python-style modules**: every top-level function, variable, and cla
 ## Import / Use
 
 ```hv
-use module                      // import module by name
-use { fn1, fn2 } from "path"   // import specific bindings from path
-use a, b from "path"           // import a and b from path
-use { a, b as alias } from "path"  // import with aliases
-use * from "path"              // wildcard import
-use Name as alias              // import with alias
-use Name from "path" as alias  // import from path with alias
+use module                      // import module by name (flattens into scope)
+use module1, module2            // import multiple modules
+use module as alias             // import with alias
+use module.*                    // wildcard import all exports from module
+use { fn1, fn2 } from "path"   // import specific bindings from file path
+use { fn as alias } from "path" // import with alias
+use "file.hv"                   // import file (executes in sandboxed scope)
+use "file.hv" as alias          // import file with alias
+use pure "module"               // type-only import (no side effects)
+```
+
+### Examples
+
+```hv
+// Import entire module
+use math
+print(math.pi)
+print(math.sin(1.57))
+
+// Import specific functions from file (braces required)
+use { sin, cos, pi } from "math"
+print(sin(pi / 2))
+
+// Import with alias
+use { sin as sine } from "math"
+print(sine(1.57))
+
+// Wildcard (imports all top-level)
+use math.*
+print(pi)
+
+// Rename module
+use math as m
+print(m.pi)
+
+// File import
+use "myutils.hv"
+print(myutils.helper())
 ```
 
 ### Examples

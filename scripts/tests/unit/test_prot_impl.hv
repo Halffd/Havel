@@ -1,0 +1,19 @@
+prot Drawable {
+  fn draw()
+}
+
+class Shape {
+  fn init(self, x) {
+    @x = x
+  }
+}
+
+impl Drawable for Shape {
+  fn draw(self) {
+    print("drawing shape")
+  }
+}
+
+s = Shape(5)
+s.draw()
+print s.x

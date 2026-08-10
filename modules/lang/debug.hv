@@ -537,3 +537,5 @@ fn dumpBytecodeSummary() {
  }
  traceBytecode("total: " + str(totalInstrs) + " instrs, " + str(totalConsts) + " consts")
 }
+
+{isOn: isOn, setFlag: setFlag, parseDebugArgs: parseDebugArgs, trace: trace, traceLexer: traceLexer, traceParser: traceParser, traceAst: traceAst, traceBytecode: traceBytecode, traceScope: traceScope, traceEmitter: traceEmitter, traceTypes: traceTypes, traceGc: traceGc, dumpToken: dumpToken, dumpTokenList: dumpTokenList, astKindName: astKindName, dumpAstNode: dumpAstNode, dumpAst: dumpAst, bytecodeStats: bytecodeStats, dumpBytecodeStats: dumpBytecodeStats, dumpBytecode: dumpBytecode, dumpCurrentFunc: dumpCurrentFunc, colorizeBytecodeLine: colorizeBytecodeLine, traceEmit: traceEmit, startTimer: startTimer, endTimer: endTimer, dumpScope: dumpScope, parseBytecodeSummary: parseBytecodeSummary, dumpBytecodeSummary: dumpBytecodeSummary, DebugFlags: DebugFlags}

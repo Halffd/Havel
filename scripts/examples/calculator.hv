@@ -1,0 +1,69 @@
+// Calculator App
+
+let display = "0"
+let currentVal = 0.0
+let prevVal = 0.0
+let op = ""
+let newNum = true
+
+let win = ui.window("Calculator", width=300, height=400, resizable=false)
+
+let screen = ui.text("0").font("monospace", 24).alignRight()
+
+fn pressNum(n) {
+    if newNum { display = str(n); newNum = false }
+    else if display == "0" { display = str(n) }
+    else { display = display + str(n) }
+    screen.text(display)
+    currentVal = toNum(display)
+}
+
+fn pressOp(o) {
+    prevVal = currentVal
+    op = o
+    newNum = true
+}
+
+fn calc() {
+    let result = match op {
+        "+" => prevVal + currentVal,
+        "-" => prevVal - currentVal,
+        "*" => prevVal * currentVal,
+        "/" => if currentVal != 0 { prevVal / currentVal } else { screen.text("Error"); return }
+    }
+    currentVal = result
+    display = str(result)
+    screen.text(display)
+    newNum = true
+    op = ""
+}
+
+fn clear() {
+    display = "0"; currentVal = 0.0
+    prevVal = 0.0; op = ""; newNum = true
+    screen.text("0")
+}
+
+// grid builds itself from a list - no manual .add() per button
+let grid = ui.grid(4, [
+    ui.btn("7", () => pressNum(7)),  ui.btn("8", () => pressNum(8)),
+    ui.btn("9", () => pressNum(9)),  ui.btn("/", () => pressOp("/")),
+
+    ui.btn("4", () => pressNum(4)),  ui.btn("5", () => pressNum(5)),
+    ui.btn("6", () => pressNum(6)),  ui.btn("*", () => pressOp("*")),
+
+    ui.btn("1", () => pressNum(1)),  ui.btn("2", () => pressNum(2)),
+    ui.btn("3", () => pressNum(3)),  ui.btn("-", () => pressOp("-")),
+
+    ui.btn("0", () => pressNum(0)),  ui.btn(".", () => {
+        if !display.contains(".") { display += "."; screen.text(display) }
+    }),
+    ui.btn("=", calc),               ui.btn("+", () => pressOp("+")),
+])
+
+let btnClear = ui.btn("C", clear).bg("red").fg("white")
+
+win.add(ui.col([screen, btnClear, grid]))
+win.onClose(() => print("Calculator closed"))
+win.show()
+// no manual event loop - ui.show() hands off to host

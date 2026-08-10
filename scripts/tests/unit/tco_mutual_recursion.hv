@@ -1,0 +1,18 @@
+// smoke: tco-mutual-recursion = true
+// Tests TCO across mutually recursive functions at depth above non-TCO stack limit.
+// Without TCO, max_call_depth_ (16384) would overflow.
+fn isEven(n):
+  if n == 0:
+    return true
+  return isOdd(n - 1)
+
+fn isOdd(n):
+  if n == 0:
+    return false
+  return isEven(n - 1)
+
+val __result = isEven(20000)
+if __result != true:
+  print("FAIL tco-mutual-recursion: expected true, got " + str(__result))
+  process.exit(255)
+return __result

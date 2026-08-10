@@ -1,0 +1,27 @@
+// Repro for C++ (legacy) pipeline: goroutine writes global, when reads it.
+title_ = ""
+writes = 0
+
+when title_ ~ "hatterino" {
+    print("BODY_FIRED title_=<", title_, ">")
+}
+
+go fn update() {
+    sleep(100)
+    title_ = "Chatterino - streamer"
+    writes = writes + 1
+    print("GOROUTINE_WROTE title_=<", title_, ">")
+    sleep(100)
+    title_ = "Konsole"
+    writes = writes + 1
+    print("GOROUTINE_WROTE title_=<", title_, ">")
+    sleep(200)
+    title_ = "Chatterino - streamer"
+    writes = writes + 1
+    print("GOROUTINE_WROTE title_=<", title_, ">")
+    sleep(300)
+    print("DONE writes=", writes)
+}
+
+sleep(1200)
+print("MAIN_EXIT title_=<", title_, "> writes=", writes)

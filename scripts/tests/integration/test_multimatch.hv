@@ -1,0 +1,48 @@
+// Test multi-value match statements
+fn fizzbuzz(n) {
+    match n % 3, n % 5 {
+        0, 0 => print("FizzBuzz")
+        0, _ => print("Fizz")
+        _, 0 => print("Buzz")
+        _ => print(n)
+    }
+}
+
+// Test single value (backward compatibility)
+fn test_single() {
+    let x = 5
+    match x {
+        1 => print("one")
+        5 => print("five")
+        _ => print("other")
+    }
+}
+
+// Test with expressions
+fn test_expressions(a, b) {
+    match a + 1, b * 2 {
+        2, 4 => print("matched both")
+        2, _ => print("first matched")
+        _, 4 => print("second matched")
+        _ => print("none matched")
+    }
+}
+
+// Run tests
+print("=== Testing Multi-Value Match ===")
+
+print("\nFizzBuzz 1-15:")
+for n in 1..15 {
+    fizzbuzz(n)
+}
+
+print("\nSingle value match:")
+test_single()
+
+print("\nExpression match (2, 2):")
+test_expressions(1, 1)
+
+print("\nExpression match (1, 5):")
+test_expressions(0, 2)
+
+print("\n=== Done ===")

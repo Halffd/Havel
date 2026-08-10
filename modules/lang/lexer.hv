@@ -1715,3 +1715,5 @@ fn printTokens(tokens) {
         print(typeStr + " " + valStr)
     }
 }
+
+{tokenize: tokenize, tokenizeWithErrors: tokenizeWithErrors, printTokens: printTokens, Lexer: Lexer, isAlphaCp: isAlphaCp, isDigitCp: isDigitCp, isAlphaNumCp: isAlphaNumCp, isHexDigitCp: isHexDigitCp, isBinDigitCp: isBinDigitCp, isOctDigitCp: isOctDigitCp, isWhitespaceCp: isWhitespaceCp, isUnicodeLetterCp: isUnicodeLetterCp, isUnicodeDigitCp: isUnicodeDigitCp, isUnicodeIdentifierCharCp: isUnicodeIdentifierCharCp}

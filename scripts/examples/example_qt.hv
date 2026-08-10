@@ -1,0 +1,56 @@
+/*
+ * Example Qt6 extension usage in Havel
+ * 
+ * Prerequisites:
+ * - Qt6 development libraries installed (or Qt5)
+ * - qt_extension.so built and available
+ * 
+ * Run with: ./build-release/havel examples/example_qt.hv
+ */
+
+import qt from "extension:qt"
+
+// Initialize Qt
+qt.init()
+
+// Set application info
+qt.setApplicationName("Havel Qt App")
+qt.setOrganizationName("Havel")
+
+// Create main window
+let win = qt.mainWindowNew()
+qt.widgetSetWindowTitle(win, "Hello Qt from Havel!")
+qt.widgetResize(win, 400, 300)
+
+// Create a vertical layout
+let layout = qt.vBoxLayoutNew()
+
+// Create a label
+let label = qt.labelNew("Welcome to Havel + Qt6!")
+qt.labelSetAlignment(label, 0x0084)  // AlignCenter
+qt.layoutAddWidget(layout, label)
+
+// Create a button
+let button = qt.pushButtonNew("Click Me!")
+qt.layoutAddWidget(layout, button)
+qt.layoutAddStretch(layout)  // Add stretch to push widgets up
+
+// Create a line edit
+let lineEdit = qt.lineEditNew("")
+qt.lineEditSetPlaceholderText(lineEdit, "Type something...")
+qt.layoutAddWidget(layout, lineEdit)
+
+// Set the layout on a container widget
+let container = qt.mainWindowNew()
+qt.widgetSetLayout(container, layout)
+qt.mainWindowSetCentralWidget(win, container)
+
+// Show the window
+qt.widgetShow(win)
+
+print("Qt window created. Running event loop...")
+
+// Run Qt event loop
+qt.exec()
+
+print("Qt event loop exited")

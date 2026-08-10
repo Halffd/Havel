@@ -1,0 +1,17 @@
+// Test that self-hosted emitter handles object dot-assignment correctly
+// This simulates the pattern used inside emitter.hv: emitter.scope = value
+
+fn makeEmitter() {
+    {scope: null, count: 0, name: "test"}
+}
+
+fn testDotAssign() {
+    em = makeEmitter()
+    em.scope = "main"
+    em.count = 42
+    println("scope=" + str(em.scope))
+    println("count=" + str(em.count))
+}
+
+testDotAssign()
+println("done")

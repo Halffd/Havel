@@ -1,0 +1,20 @@
+plk = false
+
+when plk == true {
+    print("body called")
+    lwin => print("lwin pressed (should NOT fire when plk=false)")
+}
+
+print("setting plk = true...")
+plk = true
+
+print("setting plk = false (should cleanup)...")
+plk = false
+
+print("setting plk = true again...")
+plk = true
+
+print("setting plk = false again (should cleanup again)...")
+plk = false
+
+print("done")

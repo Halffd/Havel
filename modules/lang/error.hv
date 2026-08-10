@@ -383,3 +383,5 @@ fn importLegacyErrors(errors, stage, sourceFile) {
     report(newErr)
   }
 }
+
+{HavelError: HavelError, errorAtLocation: errorAtLocation, file: file, withCode: withCode, withSourceLine: withSourceLine, ErrorReporter: ErrorReporter, setSourceFile: setSourceFile, report: report, hasErrors: hasErrors, clear: clear, errorAt: errorAt, warningAt: warningAt, infoAt: infoAt, reportError: reportError, warning: warning, severityColor: severityColor, severityLabel: severityLabel, stageLabel: stageLabel, padLeft: padLeft, formatError: formatError, formatAll: formatAll, printAll: printAll, printSummary: printSummary, lexerError: lexerError, parserError: parserError, emitterError: emitterError, typeError: typeError, runtimeError: runtimeError, importLegacyErrors: importLegacyErrors, readSourceLine: readSourceLine, clearSourceCache: clearSourceCache}

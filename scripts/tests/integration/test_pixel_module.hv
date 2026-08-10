@@ -1,0 +1,57 @@
+// Pixel module test
+// In headless/minimal mode, most pixel functions return null/false
+// In GUI mode with X11, they return real screen data
+
+print("=== Pixel Module Test ===")
+
+print("pixel module exists:")
+print(pixel != null)
+
+// Screen dimensions (null in headless)
+sw = pixel.screenWidth()
+sh = pixel.screenHeight()
+print("screenWidth:")
+print(sw)
+print("screenHeight:")
+print(sh)
+
+// pixel.get (returns color object or null)
+c = pixel.get(0, 0)
+print("pixel.get(0,0):")
+print(c)
+
+if c != null {
+    print("  r:")
+    print(c.r)
+    print("  g:")
+    print(c.g)
+    print("  b:")
+    print(c.b)
+}
+
+// pixel.match (returns bool)
+m = pixel.match(0, 0, "#FF0000", 10)
+print("pixel.match(0,0,#FF0000,10):")
+print(m)
+
+// pixel.capture (returns bool)
+cap = pixel.capture("/tmp/havel_pixel_test.png")
+print("pixel.capture result:")
+print(cap)
+
+// pixel.captureRegion
+capR = pixel.captureRegion(0, 0, 100, 100, "/tmp/havel_pixel_region.png")
+print("pixel.captureRegion result:")
+print(capR)
+
+// pixel.findImage (returns match object or null)
+fi = pixel.findImage("/tmp/havel_pixel_test.png")
+print("pixel.findImage result:")
+print(fi)
+
+// pixel.readText (returns string or null)
+text = pixel.readText()
+print("pixel.readText result:")
+print(text)
+
+print("=== Pixel Module Test Complete ===")

@@ -1,0 +1,30 @@
+// Simple bootstrap test - arithmetic + closures + classes
+
+fn add(a, b) { a + b }
+
+fn makeCounter() {
+  count = 0
+  fn increment() {
+    count = count + 1
+    count
+  }
+  increment
+}
+
+result = add(3, 4)
+print("add(3, 4) = " + str(result))
+
+counter = makeCounter()
+print("counter() = " + str(counter()))
+print("counter() = " + str(counter()))
+print("counter() = " + str(counter()))
+
+class Point {
+  fn @(x, y) {
+    @x = x
+    @y = y
+  }
+}
+
+p = Point(10, 20)
+print("Point(" + str(p.x) + ", " + str(p.y) + ")")

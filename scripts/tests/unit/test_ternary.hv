@@ -1,0 +1,47 @@
+// Test script for Ternary Operator and Optional Chaining
+
+log.log("", "--- Ternary Operator Tests ---")
+
+// Basic true
+t1 = true ? "passed" : "failed"
+log.log("", "Test 1 (true): " + t1)
+
+// Basic false
+t2 = false ? "failed" : "passed"
+log.log("", "Test 2 (false): " + t2)
+
+// Nesting in true branch
+t3 = true ? (true ? "passed" : "failed") : "failed"
+log.log("", "Test 3 (nested true): " + t3)
+
+// Nesting in false branch
+t4 = false ? "failed" : (true ? "passed" : "failed")
+log.log("", "Test 4 (nested false): " + t4)
+
+// Precedence with comparison
+t5 = 10 > 5 ? "passed" : "failed"
+log.log("", "Test 5 (10 > 5): " + t5)
+
+t6 = 5 > 10 ? "failed" : "passed"
+log.log("", "Test 6 (5 > 10): " + t6)
+
+// Precedence with arithmetic
+t7 = 1 + 1 == 2 ? "passed" : "failed"
+log.log("", "Test 7 (1 + 1 == 2): " + t7)
+
+log.log("", "\n--- Optional Chaining Tests ---")
+
+class MyClass {
+    prop = "passed"
+}
+
+obj = MyClass()
+log.log("", "Test 8 (obj?.prop): " + (obj?.prop ?? "failed"))
+
+// obj2 = null
+// Note: Optional chaining on null should return null
+// res = obj2?.prop
+// log.log("", "Test 9 (null?.prop): " + (res == null ? "passed" : "failed"))
+
+log.log("", "\nAll tests completed.")
+

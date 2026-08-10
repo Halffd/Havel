@@ -1,0 +1,50 @@
+// Test builtin type protocol conformance (Iterable, Indexable, Callable)
+
+// Builtin types should satisfy protocol checks without explicit conformance
+
+// Iterable: array, str, set, range, object, iterator
+arr = [1, 2, 3]
+if arr is Iterable { print("array is Iterable") }
+
+s = "hello"
+if s is Iterable { print("str is Iterable") }
+
+st = {1, 2, 3}
+if st is Iterable { print("set is Iterable") }
+
+r = 1..5
+if r is Iterable { print("range is Iterable") }
+
+obj = {a: 1, b: 2}
+if obj is Iterable { print("object is Iterable") }
+
+// Indexable: array, str, set, object
+if arr is Indexable { print("array is Indexable") }
+if s is Indexable { print("str is Indexable") }
+if st is Indexable { print("set is Indexable") }
+if obj is Indexable { print("object is Indexable") }
+
+// Callable: fn, closure, hostfunc, boundmethod
+fn add(a, b) { a + b }
+if add is Callable { print("fn is Callable") }
+
+closure = fn(x) { x + 1 }
+if closure is Callable { print("closure is Callable") }
+
+// Negative checks - int is not Iterable
+n = 42
+if n is Iterable { print("FAIL: int should not be Iterable") }
+else { print("int is not Iterable") }
+
+// str is not Callable
+if s is Callable { print("FAIL: str should not be Callable") }
+else { print("str is not Callable") }
+
+// Protocol cast returns value or null
+result = arr as Iterable
+if result != nil { print("array as Iterable ok") }
+
+result2 = n as Iterable
+if result2 == nil { print("int as Iterable returns nil") }
+
+print("builtin protocols ok")

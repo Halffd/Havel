@@ -1,0 +1,27 @@
+// test_canvas.hv - basic canvas API test
+
+w = ui.window("Canvas Test")
+c = ui.canvas(400, 300)
+
+w.add(c)
+
+c.setColor("blue")
+c.setLineWidth(2)
+c.line(10, 10, 390, 10)
+c.line(10, 10, 10, 290)
+
+c.setColor("red")
+c.rect(50, 50, 100, 80)
+
+c.setFill("green")
+c.fillCircle(300, 200, 40)
+
+c.setColor("black")
+c.setFont("monospace", 14)
+c.text(100, 150, "canvas works")
+
+c.flush()
+
+w.show()
+
+print("canvas test: elements created and flushed ok")

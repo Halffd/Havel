@@ -1,0 +1,13 @@
+// smoke: tco-deep-recursion = 0
+// Tests TCO with no accumulator: pure tail recursion returning base value.
+// Without TCO, max_call_depth_ (16384) would overflow at depth 50000.
+fn iter(n):
+  if n == 0:
+    return 0
+  return iter(n - 1)
+
+val __result = iter(50000)
+if __result != 0:
+  print("FAIL tco-deep-recursion: expected 0, got " + str(__result))
+  process.exit(255)
+return __result

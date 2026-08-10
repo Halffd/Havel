@@ -1,0 +1,22 @@
+// Test RegexModule functionality
+print("Testing RegexModule...");
+
+// Test regex functions
+print("regex_match('hello.*world', 'hello world'):", regex_match("hello.*world", "hello world"));
+print("regex_match('^hello$', 'hello world'):", regex_match("^hello$", "hello world"));
+
+print("regex_search('world', 'hello world'):", regex_search("world", "hello world"));
+print("regex_search('xyz', 'hello world'):", regex_search("xyz", "hello world"));
+
+print("regex_replace('world', 'hello world', 'universe'):", regex_replace("world", "hello world", "universe"));
+
+print("regex_extract('\\d+', 'abc123def456'):", regex_extract("\\d+", "abc123def456"));
+print("regex_split('\\s+', 'hello world test'):", regex_split("\\s+", "hello world test"));
+
+print("escape_regex('hello.world*'):", escape_regex("hello.world*"));
+
+// Test Regex object
+print("Regex object exists:", Regex != null);
+print("Regex.match exists:", Regex.match != null);
+
+print("RegexModule tests completed!");

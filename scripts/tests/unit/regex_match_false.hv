@@ -1,0 +1,8 @@
+// smoke: regex-match-false = 1
+use regex
+val __result = regex_match("^xyz$", "hello") ? 0 : 1
+if __result != 1 {
+ print("FAIL regex-match-false: expected 1, got " + str(__result))
+ process.exit(255)
+}
+return __result

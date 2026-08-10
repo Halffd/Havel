@@ -1,0 +1,39 @@
+use audio
+
+print("=== Audio Module Test ===")
+
+v = audio.volume()
+print("volume: " + str(v))
+
+m = audio.mute()
+print("mute: " + str(m))
+
+print("sinks:")
+sinks = audio.sinks()
+for s in sinks {
+  print("  #" + str(s.id) + " " + s.description + " vol=" + str(s.volume) + " mute=" + str(s.mute))
+}
+
+print("default sink:")
+ds = audio.defaultSink()
+if ds != null {
+  print("  " + ds.description + " vol=" + str(ds.volume))
+} else {
+  print("  none")
+}
+
+print("sources:")
+srcs = audio.sources()
+for s in srcs {
+  print("  #" + str(s.id) + " " + s.description + " vol=" + str(s.volume) + " mute=" + str(s.mute))
+}
+
+print("apps:")
+apps = audio.apps()
+for a in apps {
+  _name = a.app
+  if _name == null { _name = "unknown" }
+  print("  #" + str(a.id) + " " + _name + " vol=" + str(a.volume))
+}
+
+print("=== Done ===")

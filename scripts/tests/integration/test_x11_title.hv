@@ -1,0 +1,54 @@
+use ffi
+
+_xlib = ffi.open("libX11.so.6")
+print(_xlib)
+
+_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
+print(_XOpenDisplay)
+
+_dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
+print(_dpy)
+
+if _dpy != 0 {
+  _XGetInputFocus = ffi.sym(_xlib, "XGetInputFocus")
+  _focus_ptr = ffi.allocBytes(8)
+  _revert_ptr = ffi.allocBytes(4)
+  ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], _dpy, _focus_ptr, _revert_ptr)
+  _focus = ffi.get_u64(_focus_ptr)
+  print(_focus)
+  ffi.free(_focus_ptr)
+  ffi.free(_revert_ptr)
+
+  _XInternAtom = ffi.sym(_xlib, "XInternAtom")
+  _atom = ffi.call(_XInternAtom, "uint64", ["pointer", "pointer", "int32"], _dpy, ffi.cstring("_NET_WM_NAME"), 0)
+  print(_atom)
+
+  _XGetWindowProperty = ffi.sym(_xlib, "XGetWindowProperty")
+  _at = ffi.allocBytes(8)
+  _af = ffi.allocBytes(4)
+  _ni = ffi.allocBytes(8)
+  _ba = ffi.allocBytes(8)
+  _pr = ffi.allocBytes(8)
+  _types = ["pointer", "uint64", "uint64", "int64", "int64", "int32", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer"]
+  _XA_STRING = 31
+  _ret = ffi.call(_XGetWindowProperty, "int32", _types, _dpy, _focus, _atom, 0, 1024, 0, _XA_STRING, _at, _af, _ni, _ba, _pr)
+  print(_ret)
+  if _ret == 0 {
+    _ptr = ffi.get_ptr(_pr)
+    print(_ptr)
+    if _ptr != 0 {
+      _title = ffi.string(_ptr)
+      print(_title)
+      _XFree = ffi.sym(_xlib, "XFree")
+      ffi.call(_XFree, "void", ["pointer"], _ptr)
+    }
+  }
+
+  ffi.free(_at)
+  ffi.free(_af)
+  ffi.free(_ni)
+  ffi.free(_ba)
+  ffi.free(_pr)
+
+  ffi.call(ffi.sym(_xlib, "XCloseDisplay"), "int32", ["pointer"], _dpy)
+}

@@ -1,0 +1,29 @@
+// Test conditional hotkeys: F2 if mode == "work" && ctx == "code" => { print("Coding at work") }
+
+mode = "work"
+ctx = "code"
+
+print "=== Testing Conditional Hotkeys ==="
+
+// Test 1: Simple if condition
+print "Defining F2 if mode == work..."
+f2 if mode == "work" => {
+  print("F2 fired: Working mode active!")
+}
+
+print "Defining F3 if ctx == code..."
+f3 if ctx == "code" => {
+  print("F3 fired: Coding mode!")
+}
+
+print "Defining F4 if mode == work && ctx == code..."
+f4 if mode == "work" && ctx == "code" => {
+  print("F4 fired: Both conditions met!")
+}
+
+print "Defining F5 (unconditional)..."
+f5 => {
+  print("F5 fired: Always works!")
+}
+
+print "=== All conditional hotkeys defined ==="

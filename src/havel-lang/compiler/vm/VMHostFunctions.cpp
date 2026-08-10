@@ -2672,7 +2672,7 @@ void VM::registerDefaultHostFunctions() {
     std::string path = resolveStringKey(args[0]);
     if (path.empty())
       COMPILER_THROW("load: path is empty");
-    return loadScript(path);
+    return loadModule(path);
   });
 
   // Protocol operations

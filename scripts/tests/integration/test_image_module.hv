@@ -1,0 +1,129 @@
+// Image module test
+// Uses image.create to generate test images (no files needed)
+
+print("=== Image Module Test ===")
+
+print("image module exists:")
+print(image != null)
+
+// Create a 100x100 red image
+h = image.create(100, 100, 255, 0, 0)
+print("image.create handle:")
+print(h)
+
+// Query dimensions
+w = image.width(h)
+ht = image.height(h)
+ch = image.channels(h)
+print("width height channels:")
+print(w)
+print(ht)
+print(ch)
+
+// Get image info
+inf = image.info(h)
+print("info:")
+print(inf)
+
+// Get pixel at (0,0)
+px = image.getPixel(h, 0, 0)
+print("getPixel(0,0):")
+print(px)
+print(px.r)
+print(px.g)
+print(px.b)
+print(px.a)
+
+// Set pixel at (10,10) to green
+image.setPixel(h, 10, 10, 0, 255, 0)
+px2 = image.getPixel(h, 10, 10)
+print("after setPixel green:")
+print(px2.r)
+print(px2.g)
+print(px2.b)
+
+// Save the red image
+saved = image.save(h, "/tmp/havel_test_red.png")
+print("save result:")
+print(saved)
+
+// Load it back
+h2 = image.load("/tmp/havel_test_red.png")
+print("load handle:")
+print(h2)
+print("loaded width:")
+print(image.width(h2))
+
+// Resize
+h3 = image.resize(h, 50, 50)
+print("resize w:")
+print(image.width(h3))
+print("resize h:")
+print(image.height(h3))
+
+// Crop
+h4 = image.crop(h, 10, 10, 30, 30)
+print("crop w:")
+print(image.width(h4))
+print("crop h:")
+print(image.height(h4))
+
+// Rotate
+h5 = image.rotate(h, 45.0)
+print("rotate handle:")
+print(h5)
+
+// Blur
+h6 = image.blur(h, 5)
+print("blur handle:")
+print(h6)
+
+// Grayscale
+h7 = image.grayscale(h)
+print("grayscale channels:")
+print(image.channels(h7))
+
+// Edges
+h8 = image.edges(h)
+print("edges handle:")
+print(h8)
+
+// Flip horizontal
+h9 = image.flip(h, 1)
+print("flip handle:")
+print(h9)
+
+// Create a blue image for blending
+hblue = image.create(100, 100, 0, 0, 255)
+h10 = image.blend(h, hblue, 0.5)
+print("blend handle:")
+print(h10)
+
+// Threshold
+h11 = image.threshold(h, 128.0)
+print("threshold handle:")
+print(h11)
+
+// Template matching (same image vs itself)
+m = image.matchTemplate(h, h)
+print("matchTemplate(self):")
+print(m)
+
+// Save grayscale
+image.save(h7, "/tmp/havel_test_gray.png")
+
+// Release handles
+image.release(h)
+image.release(h2)
+image.release(h3)
+image.release(h4)
+image.release(h5)
+image.release(h6)
+image.release(h7)
+image.release(h8)
+image.release(h9)
+image.release(hblue)
+image.release(h10)
+image.release(h11)
+
+print("=== Image Module Test Complete ===")

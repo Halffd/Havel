@@ -1,0 +1,34 @@
+// Mirrors hotkeys0.3.hv lines 38, 2080-2091: chained init,
+// destructuring inside goroutine, when condition re-evaluates.
+
+title_ = ltitle = ""
+class_ = cmd = ""
+wid = wpid = 0
+writes = 0
+
+when title_ ~ "hatterino" {
+    print("BODY_FIRED title_=<", title_, ">")
+}
+
+update = fn() {
+    sleep(100)
+    [title_, class_, cmd, wid, wpid] = ["Chatterino - streamer", "chatterino", "/x", 42, 999]
+    [ltitle, lclass] = [title_, class_]
+    writes = writes + 1
+    print("GOROUTINE_WROTE title_=<", title_, "> ltitle=<", ltitle, ">")
+    sleep(100)
+    [title_, class_, cmd, wid, wpid] = ["Konsole", "konsole", "/k", 7, 1]
+    writes = writes + 1
+    print("GOROUTINE_WROTE title_=<", title_, ">")
+    sleep(200)
+    [title_, class_, cmd, wid, wpid] = ["Chatterino - streamer", "chatterino", "/x", 42, 999]
+    [ltitle, lclass] = [title_, class_]
+    writes = writes + 1
+    print("GOROUTINE_WROTE title_=<", title_, "> ltitle=<", ltitle, ">")
+    sleep(300)
+    print("DONE writes=", writes, " ltitle=<", ltitle, ">")
+}
+
+update()
+sleep(1200)
+print("MAIN_EXIT title_=<", title_, "> writes=", writes)

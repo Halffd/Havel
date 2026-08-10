@@ -1,0 +1,24 @@
+// Regression: goroutine spawned via `go` under GC churn must keep running.
+// Before fix, resume hit a module sidecar globals map lacking script globals
+// (tick_in), so the goroutine died after one tick. Expected: goroutine ticks
+// throughout, main exits at 60.
+tick_out = 0
+tick_in = 0
+go fn updater() {
+  loop {
+    tick_in++
+    print("[IN GOROUTINE] tick=$tick_in")
+    sleep(100)
+  }
+}
+loop {
+  tick_out++
+  obj = {}
+  for i in range(0, 600) {
+    obj["k$i"] = i
+  }
+  sleep(50)
+  if tick_out >= 60 {
+    exit()
+  }
+}

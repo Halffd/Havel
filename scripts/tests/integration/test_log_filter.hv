@@ -1,0 +1,9 @@
+// Test log origin filter
+use log
+
+// These have different origins
+log.debug("debug message")
+log.info("info message")  
+log.warn("warn message")
+
+// Test with origin filter - should only show when filter matches

@@ -1,0 +1,38 @@
+print("Testing function call...")
+i = ["i"]
+iImplicit = [1,2,3,4,5]
+o = {"a": 1}
+o2 = {"b": 1}
+assert(o != o2, "o should != o2")
+try {
+    result = sleep
+    throw "Error"
+    print("Result: " + result)
+} catch {
+    print("Error!")
+} finally {
+    v = "top"
+    vImplicit = "top2"
+    fn test() {
+        assert(v == "top", "v should be 'top'")
+        assert(vImplicit == "top2", "vImplicit should be 'top2'")
+        v = 1
+        vImplicit = 2
+        print("v in test: ", v)
+        ::v = "below"
+        ::vImplicit = "below2"
+        print(vImplicit)
+    }
+    print("v before test: ", v)
+    print("vImplicit before test: ", vImplicit)
+    print("i before test: ", i)
+    i = ["i", 0]
+    iImplicit = [0]
+    test()
+    print("end v: ", v)
+    print("end vImplicit: ", vImplicit) // should be "below2"
+    assert(vImplicit == "below2", "vImplicit should be 'below2'")
+    print("end i: ", i)
+    print("end iImplicit: ", iImplicit) // should be ["i", 0]
+    assert(i == ["i", 0], "i should be ['i', 0]")  // not iImplicit
+}

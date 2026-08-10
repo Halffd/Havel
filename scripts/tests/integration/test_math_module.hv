@@ -1,0 +1,81 @@
+// Test file for the new math module
+
+// Test basic arithmetic functions
+print("=== Basic Arithmetic ===");
+print("abs(-5.5):", math.abs(-5.5));
+print("ceil(4.2):", math.ceil(4.2));
+print("floor(4.8):", math.floor(4.8));
+print("round(4.6):", math.round(4.6));
+print("round(4.4):", math.round(4.4));
+
+// Test constants
+print("\n=== Mathematical Constants ===");
+print("PI:", math.PI);
+print("E:", math.E);
+print("TAU:", math.TAU);
+print("SQRT2:", math.SQRT2);
+
+// Test trigonometric functions
+print("\n=== Trigonometry ===");
+print("sin(PI/2):", math.sin(math.PI / 2));
+print("cos(0):", math.cos(0));
+print("tan(PI/4):", math.tan(math.PI / 4));
+
+// Test inverse trigonometric functions
+print("\n=== Inverse Trigonometry ===");
+print("asin(0.5):", math.asin(0.5));
+print("acos(0.5):", math.acos(0.5));
+print("atan(1):", math.atan(1));
+
+// Test exponential and logarithmic functions
+print("\n=== Exponential & Logarithmic ===");
+print("exp(1):", math.exp(1));
+print("log(E):", math.log(math.E));
+print("log10(100):", math.log10(100));
+print("log2(8):", math.log2(8));
+print("sqrt(16):", math.sqrt(16));
+print("cbrt(27):", math.cbrt(27));
+
+// Test power functions
+print("\n=== Power Functions ===");
+print("pow(2, 3):", math.pow(2, 3));
+print("pow(9, 0.5):", math.pow(9, 0.5));
+
+// Test utility functions
+print("\n=== Utility Functions ===");
+print("min(3, 1, 4, 2):", math.min(3, 1, 4, 2));
+print("max(3, 1, 4, 2):", math.max(3, 1, 4, 2));
+print("clamp(2.5, 1, 3):", math.clamp(2.5, 1, 3));
+print("clamp(0.5, 1, 3):", math.clamp(0.5, 1, 3));
+print("clamp(3.5, 1, 3):", math.clamp(3.5, 1, 3));
+print("lerp(0, 10, 0.5):", math.lerp(0, 10, 0.5));
+
+// Test random functions
+print("\n=== Random Functions ===");
+print("random():", math.random());
+print("random(10):", math.random(10));
+print("random(5, 10):", math.random(5, 10));
+print("randint(10):", math.randint(10));
+print("randint(5, 10):", math.randint(5, 10));
+
+// Test angle conversion
+print("\n=== Angle Conversion ===");
+print("deg2rad(180):", math.deg2rad(180));
+print("rad2deg(PI):", math.rad2deg(math.PI));
+
+// Test special functions
+print("\n=== Special Functions ===");
+print("sign(5):", math.sign(5));
+print("sign(-5):", math.sign(-5));
+print("sign(0):", math.sign(0));
+print("fract(3.7):", math.fract(3.7));
+print("mod(7, 3):", math.mod(7, 3));
+print("mod(-7, 3):", math.mod(-7, 3));
+
+// Test geometry functions
+print("\n=== Geometry Functions ===");
+print("distance(0, 0, 3, 4):", math.distance(0, 0, 3, 4));
+print("hypot(3, 4):", math.hypot(3, 4));
+print("hypot(1, 2, 2):", math.hypot(1, 2, 2));
+
+print("\n=== Math Module Test Complete ===");

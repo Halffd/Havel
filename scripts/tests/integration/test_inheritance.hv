@@ -1,0 +1,75 @@
+// Test class inheritance
+
+// Simple base class
+class Animal {
+  name: str
+  sound: str
+
+  fn init(name, sound) {
+    @name = name
+    @sound = sound
+  }
+
+  fn speak() {
+    return @name + " says " + @sound
+  }
+
+  fn getInfo() {
+    return @name + " (Animal)"
+  }
+}
+
+// Subclass that inherits from Animal
+class Dog : Animal {
+  fn init(name) {
+    @->init(name, "woof")  // super call
+  }
+
+  fn getInfo() {
+    return @name + " (Dog)"
+  }
+}
+
+// Another subclass
+class Cat : Animal {
+  fn init(name) {
+    @->init(name, "meow")
+  }
+}
+
+// Test inheritance
+print("=== Inheritance Tests ===\n")
+
+// Test 1: Create subclass instances
+print("1. Creating subclass instances:")
+let dog = Dog("Buddy")
+let cat = Cat("Whiskers")
+print("  dog.speak(): " + dog.speak())
+print("  cat.speak(): " + cat.speak())
+
+// Test 2: Method override
+print("2. Method override:")
+print("  dog.getInfo(): " + dog.getInfo())
+print("  cat.getInfo(): " + cat.getInfo())
+
+// Test 3: Multiple instances
+print("3. Multiple instances:")
+let dog2 = Dog("Rex")
+print("  dog2.speak(): " + dog2.speak())
+
+// Test 4: inherits() function
+print("4. inherits() function:")
+let d = inherits(Dog, Animal)
+let c = inherits(Cat, Animal)
+let a = inherits(Animal, Dog)
+print("  inherits(Dog, Animal): " + d)
+print("  inherits(Cat, Animal): " + c)
+print("  inherits(Animal, Dog): " + a)
+
+if d && c && !a {
+  print("  ✓ inherits() works correctly\n")
+} else {
+  print("  ✗ inherits() FAILED\n")
+}
+
+print("=== Inheritance Tests Complete ===")

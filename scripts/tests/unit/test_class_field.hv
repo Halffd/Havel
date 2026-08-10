@@ -1,0 +1,22 @@
+class Simple {
+    x, y
+
+    fn @(a, b) {
+        @x = a
+        @y = b
+    }
+
+    fn getX() {
+        @x
+    }
+
+    fn getY() {
+        @y
+    }
+}
+
+s = Simple(1, 2)
+print(s.getX())
+print(s.getY())
+print(s.x)
+print(s.y)

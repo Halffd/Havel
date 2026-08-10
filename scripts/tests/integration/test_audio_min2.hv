@@ -1,0 +1,36 @@
+use ffi
+
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
+_popen = ffi.sym(_c, "popen")
+_pclose = ffi.sym(_c, "pclose")
+_fgets = ffi.sym(_c, "fgets")
+
+fn _shell(cmd) {
+  _cs = ffi.cstring(cmd)
+  _mode = ffi.cstring("r")
+  _fp = ffi.call(_popen, "pointer", ["pointer", "pointer"], _cs, _mode)
+  ffi.free(_cs)
+  ffi.free(_mode)
+  if _fp == 0 { return "" }
+  _buf = ffi.allocBytes(8192)
+  _result = ""
+  _looping = true
+  while _looping {
+    _ret = ffi.call(_fgets, "pointer", ["pointer", "int32", "pointer"], _buf, 8192, _fp)
+    if _ret == 0 {
+      _looping = false
+    } else {
+      _chunk = ffi.string(_buf)
+      _result = _result + _chunk
+    }
+  }
+  ffi.call(_pclose, "int32", ["pointer"], _fp)
+  ffi.free(_buf)
+  _result
+}
+
+print("testing...")
+_out = _shell("pactl get-sink-volume @DEFAULT_SINK@")
+print("output: " + _out)

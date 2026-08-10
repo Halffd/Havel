@@ -1,0 +1,12 @@
+use { inferProgram, getVarType, getReturnType, TYPE_INT, TYPE_NUM, TYPE_STR, TYPE_BOOL, TYPE_UNKNOWN } from "types"
+
+num42 = {kind: "NumberLiteral", value: 42, line: 1, col: 1}
+letX = {kind: "LetDeclaration", name: "x", value: num42, line: 1, col: 1}
+prog = {kind: "Program", body: [letX], line: 1, col: 1}
+
+result = inferProgram(prog)
+print("result=" + str(result))
+xt = getVarType(result, "x")
+print("x type=" + str(xt))
+print("TYPE_INT=" + str(TYPE_INT))
+print("match=" + str(xt == TYPE_INT))

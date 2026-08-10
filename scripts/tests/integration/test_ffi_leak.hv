@@ -1,0 +1,28 @@
+// Test FFI memory management - allocation and free
+print("Testing FFI memory management...")
+
+// Test cstring allocation and free
+s1 = ffi.cstring("test1")
+s2 = ffi.cstring("test2")
+print("Allocated cstrings")
+
+// Test array allocation - this reads from a pointer, doesn't allocate
+// We need a valid pointer for this
+ptr = ffi.cstring("dummy")
+arr = ffi.array(ptr, "int", 10)
+print("Created array from pointer")
+
+// Free everything
+ffi.free(s1)
+ffi.free(s2)
+ffi.free(ptr)
+print("Freed all allocations")
+
+// Test library open/close
+lib = ffi.open("/usr/lib/libc.so.6")
+if lib != null {
+    ffi.close(lib)
+    print("Library open/close test passed")
+}
+
+print("All FFI memory management tests passed!")

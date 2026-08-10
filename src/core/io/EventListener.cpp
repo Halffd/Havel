@@ -22,6 +22,7 @@
 #include <sys/select.h>
 #include <unistd.h>
 #include <sys/signalfd.h>
+#include <vector>
 
 // Use qt.hpp instead of raw Qt includes for X11 macro conflict handling
 #ifdef HAVE_QT_EXTENSION
@@ -572,14 +573,43 @@ void EventListener::EventLoop() {
         modules_->checkTimers();
         }
 
-        // Blocking poll for input events — monitors evdev fds for prompt event pickup.
-        // Also watches the VM deferred-wakeup fd so VM work (e.g. hotkey bodies) is
-        // noticed immediately instead of waiting out the full poll timeout.
-        if (executionEngine && executionEngine->getScheduler() && backend_) {
-            backend_->SetExternalWakeupFd(executionEngine->getScheduler()->deferredWakeupFd());
-        } else if (backend_) {
-            backend_->SetExternalWakeupFd(-1);
+        // Collect all external wakeup fds that need to break the upcoming
+        // blocking PollEvents() and register them with the backend so a
+        // single poll() watches evdev + shutdown + signal + event-queue +
+        // deferred-wakeup fds together. This collapses the previous
+        // PollEvents(10) + select(10ms) pair — which serialized two 10ms
+        // waits back-to-back (~20ms per cycle when no work was queued) — into
+        // a single PollEvents(N) call. The backend only watches the fd for
+        // readiness; we drain any pending bytes ourselves below.
+        std::vector<int> wakeupFds;
+        int signalFd = -1;
+        int eventQueueWakeupFd = -1;
+        int deferredWakeupFd = -1;
+        if (signalHandler) {
+            signalFd = signalHandler->GetSignalFd();
+            if (signalFd >= 0) wakeupFds.push_back(signalFd);
         }
+        if (executionEngine) {
+            auto* eq = executionEngine->getEventQueue();
+            if (eq) {
+                eventQueueWakeupFd = eq->wakeupFd();
+                if (eventQueueWakeupFd >= 0) wakeupFds.push_back(eventQueueWakeupFd);
+            }
+            auto* sched = executionEngine->getScheduler();
+            if (sched) {
+                deferredWakeupFd = sched->deferredWakeupFd();
+                if (deferredWakeupFd >= 0) wakeupFds.push_back(deferredWakeupFd);
+            }
+        }
+        if (backend_) backend_->SetExternalWakeupFds(std::move(wakeupFds));
+
+        // Single blocking poll. PollEvents() returns on any of:
+        //   - evdev device fd readable (input event)
+        //   - shutdownFd readable (async shutdown requested)
+        //   - any external wakeup fd readable
+        //   - timeout (10ms)
+        // This replaces the previous PollEvents(10) + select(10ms) sequence
+        // that spent up to 20ms per cycle even when nothing was happening.
         if (backend_) {
             backend_->PollEvents(10);
         }
@@ -587,12 +617,44 @@ void EventListener::EventLoop() {
 
         if (shutdown.load()) break;
 
-        // Fast path: when goroutines are runnable, skip the blocking poll and
-        // select and re-enter executeFrame() immediately so VM work (hotkey
+        // Drain the external fds regardless of which one fired PollEvents; a
+        // wakeup byte may be latched even if poll() returned due to evdev
+        // input or shutdown race. read() in a loop in case multiple wakeups
+        // coalesced into one eventfd signal.
+        if (signalFd >= 0) {
+            struct signalfd_siginfo fdsi;
+            while (true) {
+                ssize_t s = read(signalFd, &fdsi, sizeof(fdsi));
+                if (s == sizeof(fdsi)) {
+                    if (fdsi.ssi_signo == SIGINT || fdsi.ssi_signo == SIGTERM) {
+                        if (debugging::debug_io) debug("Received shutdown signal {}", fdsi.ssi_signo);
+                        SignalSafeShutdown(fdsi.ssi_signo, true);
+                        break;
+                    }
+                    continue;
+                }
+                if (s < 0 && errno == EAGAIN) break;
+                if (s < 0 && errno == EINTR) continue;
+                break;
+            }
+        }
+        if (eventQueueWakeupFd >= 0) {
+            uint64_t val;
+            while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
+        }
+        if (deferredWakeupFd >= 0) {
+            uint64_t val;
+            while (read(deferredWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
+        }
+
+        if (shutdown.load()) break;
+
+        // Fast path: when goroutines are runnable, skip the device re-check
+        // gap and re-enter executeFrame() immediately so VM work (hotkey
         // re-arms, slept/unparked goroutines, newly-spawned work) is picked up
-        // without waiting out the PollEvents(10) + select(10ms) latency.
-        // Only block again when there is genuinely nothing left to run, which
-        // both prevents 100% CPU busy-looping and keeps event pickup prompt.
+        // without waiting out the next PollEvents(10) latency. Only block
+        // again when there is genuinely nothing left to run, which both
+        // prevents 100% CPU busy-looping and keeps event pickup prompt.
         if (executionEngine && executionEngine->getScheduler() &&
             executionEngine->getScheduler()->hasRunnableFibers()) {
             continue;
@@ -606,88 +668,7 @@ void EventListener::EventLoop() {
                 backend_->RecheckDevices();
             }
         }
-
-    fd_set readfds;
-    FD_ZERO(&readfds);
-
-    int maxFd = shutdownFd;
-    FD_SET(shutdownFd, &readfds);
-
-    int signalFd = signalHandler ? signalHandler->GetSignalFd() : -1;
-    if (signalFd >= 0) {
-      FD_SET(signalFd, &readfds);
-      if (signalFd > maxFd) maxFd = signalFd;
     }
-
-    int eventQueueWakeupFd = -1;
-    int deferredWakeupFd = -1;
-    if (executionEngine) {
-      auto* eq = executionEngine->getEventQueue();
-      if (eq) {
-        eventQueueWakeupFd = eq->wakeupFd();
-        if (eventQueueWakeupFd >= 0) {
-          FD_SET(eventQueueWakeupFd, &readfds);
-          if (eventQueueWakeupFd > maxFd) maxFd = eventQueueWakeupFd;
-        }
-      }
-      auto* sched = executionEngine->getScheduler();
-      if (sched) {
-        deferredWakeupFd = sched->deferredWakeupFd();
-        if (deferredWakeupFd >= 0) {
-          FD_SET(deferredWakeupFd, &readfds);
-          if (deferredWakeupFd > maxFd) maxFd = deferredWakeupFd;
-        }
-      }
-    }
-
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 10000;
-
-    int ret = select(maxFd + 1, &readfds, nullptr, nullptr, &timeout);
-
-    if (ret < 0) {
-      if (errno == EINTR) continue;
-      error("select() failed: {}", strerror(errno));
-      break;
-    }
-
-    if (ret == 0) continue;
-
-    if (FD_ISSET(shutdownFd, &readfds)) {
-      if (asyncSignalRequested != 0) {
-        SignalSafeShutdown(asyncSignalRequested, false);
-        asyncSignalRequested = 0;
-      }
-      break;
-    }
-
-    if (signalFd >= 0 && FD_ISSET(signalFd, &readfds)) {
-      struct signalfd_siginfo fdsi;
-      ssize_t s = read(signalFd, &fdsi, sizeof(fdsi));
-      if (s < 0 && errno == EAGAIN) {
-        continue;
-      }
-      if (s == sizeof(fdsi)) {
-        if (fdsi.ssi_signo == SIGINT || fdsi.ssi_signo == SIGTERM) {
-          if (debugging::debug_io) debug("Received shutdown signal {}", fdsi.ssi_signo);
-          SignalSafeShutdown(fdsi.ssi_signo, true);
-          break;
-        }
-        }
-        continue;
-    }
-
-    if (eventQueueWakeupFd >= 0 && FD_ISSET(eventQueueWakeupFd, &readfds)) {
-      uint64_t val;
-      while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
-    }
-
-    if (deferredWakeupFd >= 0 && FD_ISSET(deferredWakeupFd, &readfds)) {
-      uint64_t val;
-      while (read(deferredWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
-    }
-  }
 
   if (debugging::debug_io) debug("EventListener: Waiting for {} callbacks", pendingCallbacks.load());
 

@@ -792,7 +792,8 @@ else if tt == TID.Async {
   }
   return error("Expected '{' or 'fn' after 'async'", l, c)
 }
-else if tt == TID.Await {
+else if tt == TID.LeftArrow {
+  // <- as await prefix: <-expr
   arg = parseExpr(140)
   return AwaitExpression(arg, l, c)
 }
@@ -825,7 +826,8 @@ else if tt == TID.LeftArrow {
 right = parseExpr(getRightBindingPower(TID.LeftArrow))
 if right == null: return error("Expected value after '<-'", l, c)
 if right.kind == "ErrorNode": return right
-return AssignmentExpression(left, right, l, c)
+await = AwaitExpression(right, l, c)
+return AssignmentExpression(left, await, l, c)
 }
 // Binary operators
 else if tt == TID.Plus {

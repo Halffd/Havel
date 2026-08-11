@@ -25,6 +25,8 @@
 #include "dl/Loader.hpp"
 #include "lexer/BootstrapLexer.hpp"
 #include <dlfcn.h>
+#include <poll.h>
+#include <unistd.h>
 
 #include "../../stdlib/LogModule.hpp"
 #include "havel-lang/compiler/runtime/DebugUtils.hpp"
@@ -514,7 +516,33 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
                         *deadline - now)
                         .count();
         auto sleepMs = std::min(ms, 100L);
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+        // Wait on the scheduler's deferred-wakeup fd so that hotkey
+        // triggers (or any notifyWakeup()) arriving on the IO thread
+        // break this sleep immediately instead of stalling for the full
+        // sleepMs. Without this poll(), the main VM scheduler loop sits
+        // in sleep_for(100ms) while the hotkey goroutine sits in the
+        // HOTKEY queue. pickNext() would prefer it, but we never get to
+        // pickNext until the sleep expires. Result: ~100ms latency from
+        // physical key event to hotkey block entry, every time. By
+        // waiting on the fd here, notifyWakeup() (called by requeueFront
+        // when wakeHotkey fires) jolt us awake so the next iteration's
+        // pickNext() pops the hotkey goroutine promptly.
+        int wakeupFd = scheduler_->deferredWakeupFd();
+        if (wakeupFd >= 0) {
+          struct pollfd pfd;
+          pfd.fd = wakeupFd;
+          pfd.events = POLLIN;
+          pfd.revents = 0;
+          int pr = ::poll(&pfd, 1, static_cast<int>(sleepMs));
+          if (pr > 0 && (pfd.revents & POLLIN)) {
+            // Drain coalesced wakeups so the next poll doesn't return
+            // immediately with stale data.
+            uint64_t val;
+            while (::read(wakeupFd, &val, sizeof(val)) == sizeof(val)) {}
+          }
+        } else {
+          std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+        }
         continue;
       }
       scheduler_->setCurrent(cur);

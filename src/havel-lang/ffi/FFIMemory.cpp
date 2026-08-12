@@ -197,6 +197,22 @@ void* FFIMemory::to_native(const Value& v, std::shared_ptr<FFIType> type) {
         std::memcpy(buf, static_cast<const void*>(&s), sizeof(const char*));
         break;
     }
+    case FFITypeKind::ARRAY: {
+        // Array passed as pointer to first element
+        void* p = v.isPtr() ? v.asPtr() : nullptr;
+        std::memcpy(buf, &p, sizeof(void*));
+        break;
+    }
+    case FFITypeKind::STRUCT: {
+        // Struct passed by pointer or value; use pointer representation from value
+        if (v.isPtr()) {
+            std::memcpy(buf, v.asPtr(), std::min(sz, sizeof(void*)));
+        } else {
+            void* empty = nullptr;
+            std::memcpy(buf, &empty, sizeof(void*));
+        }
+        break;
+    }
     default:
         std::free(buf);
         return nullptr;
@@ -238,6 +254,10 @@ Value FFIMemory::to_havel(void* ptr, std::shared_ptr<FFIType> type, bool take_ow
         return Value::makePtr(*reinterpret_cast<void**>(ptr));
     case FFITypeKind::POINTER:
         return Value::makePtr(*reinterpret_cast<void**>(ptr));
+    case FFITypeKind::ARRAY:
+        return Value::makePtr(*reinterpret_cast<void**>(ptr));
+    case FFITypeKind::STRUCT:
+        return Value::makePtr(ptr);
     default:
         return Value::makePtr(ptr);
     }

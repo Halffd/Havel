@@ -1464,24 +1464,24 @@ havel::Dynamic gdkLoader;
     bool load() {
         /* Load GLib first (required by GTK) */
         if (!glibLoader.load(havel::LibNames::GLIB2)) {
-            fprintf(stderr, "[GTK] Failed to load GLib\n");
+            // fprintf(stderr, "[GTK] Failed to load GLib\n");
             return false;
         }
         
         /* Load GObject */
         if (!gobjectLoader.load(havel::LibNames::GOBJECT2)) {
-            fprintf(stderr, "[GTK] Failed to load GObject\n");
+            // fprintf(stderr, "[GTK] Failed to load GObject\n");
             return false;
         }
         
         /* Load GDK */
         if (!gdkLoader.load(havel::LibNames::GDK4)) {
-            fprintf(stderr, "[GTK] Warning: Failed to load GDK4\n");
+            // fprintf(stderr, "[GTK] Warning: Failed to load GDK4\n");
         }
         
         /* Load GTK4 */
         if (!gtkLoader.load(havel::LibNames::GTK4)) {
-            fprintf(stderr, "[GTK] Failed to load GTK4\n");
+            // fprintf(stderr, "[GTK] Failed to load GTK4\n");
             return false;
         }
         
@@ -1489,7 +1489,7 @@ havel::Dynamic gdkLoader;
 #define LOAD_SYMBOL(name) \
     name = gtkLoader.getSymbol<name##Fn>(#name); \
     if (!name) { \
-        fprintf(stderr, "[GTK] Failed to load symbol: %s\n", #name); \
+        // fprintf(stderr, "[GTK] Failed to load symbol: %s\n", #name); \
         return false; \
     }
         
@@ -1973,7 +1973,7 @@ GtkWidget* getWidget(int64_t id) {
 GtkWidget* getWidgetChecked(int64_t id, const char* typeName) {
     GtkWidget* widget = getWidget(id);
     if (!widget) {
-        fprintf(stderr, "[GTK] Widget ID %ld not found\n", (long)id);
+        // fprintf(stderr, "[GTK] Widget ID %ld not found\n", (long)id);
         return nullptr;
     }
     return widget;
@@ -2078,12 +2078,12 @@ static HavelValue* gtk_init_app(int argc, HavelValue** argv) {
     if (!g_gtkLibs) {
         g_gtkLibs = new Gtk4Libs();
         if (!g_gtkLibs->load()) {
-            fprintf(stderr, "[GTK] Failed to load GTK4 libraries\n");
+            // fprintf(stderr, "[GTK] Failed to load GTK4 libraries\n");
             delete g_gtkLibs;
             g_gtkLibs = nullptr;
             return havel_new_bool(0);
         }
-        fprintf(stderr, "[GTK] GTK4 libraries loaded dynamically\n");
+        // fprintf(stderr, "[GTK] GTK4 libraries loaded dynamically\n");
     }
     
     g_gtkLibs->gtk_init(nullptr, nullptr);
@@ -2094,7 +2094,7 @@ static HavelValue* gtk_run_main(int argc, HavelValue** argv) {
     (void)argc; (void)argv;
     
     if (!g_gtkLibs || !g_gtkLibs->isLoaded()) {
-        fprintf(stderr, "[GTK] GTK4 not initialized\n");
+        // fprintf(stderr, "[GTK] GTK4 not initialized\n");
         return havel_new_null();
     }
     
@@ -2119,7 +2119,7 @@ static HavelValue* gtk_quit_main(int argc, HavelValue** argv) {
 
 static HavelValue* gtk_window_new(int argc, HavelValue** argv) {
     if (!g_gtkLibs || !g_gtkLibs->isLoaded()) {
-        fprintf(stderr, "[GTK] GTK4 not initialized. Call gtk.init() first.\n");
+        // fprintf(stderr, "[GTK] GTK4 not initialized. Call gtk.init() first.\n");
         return havel_new_int(0);
     }
     

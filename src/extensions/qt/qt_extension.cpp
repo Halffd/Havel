@@ -824,7 +824,7 @@ havel::Dynamic qtWidgets;
         /* Load Qt6Core */
         if (!qtCore.load("libQt6Core.so.6")) {
             if (!qtCore.load("libQt5Core.so.5")) {
-                fprintf(stderr, "[Qt] Failed to load Qt Core\n");
+                // fprintf(stderr, "[Qt] Failed to load Qt Core\n");
                 return false;
             }
         }
@@ -832,7 +832,7 @@ havel::Dynamic qtWidgets;
         /* Load Qt6Gui */
         if (!qtGui.load("libQt6Gui.so.6")) {
             if (!qtGui.load("libQt5Gui.so.5")) {
-                fprintf(stderr, "[Qt] Failed to load Qt Gui\n");
+                // fprintf(stderr, "[Qt] Failed to load Qt Gui\n");
                 return false;
             }
         }
@@ -840,12 +840,12 @@ havel::Dynamic qtWidgets;
         /* Load Qt6Widgets */
         if (!qtWidgets.load("libQt6Widgets.so.6")) {
             if (!qtWidgets.load("libQt5Widgets.so.5")) {
-                fprintf(stderr, "[Qt] Failed to load Qt Widgets\n");
+                // fprintf(stderr, "[Qt] Failed to load Qt Widgets\n");
                 return false;
             }
         }
         
-        fprintf(stderr, "[Qt] Qt libraries loaded dynamically\n");
+        // fprintf(stderr, "[Qt] Qt libraries loaded dynamically\n");
         
         /* Load Core symbols */
 #define LOAD_CORE(name) name = qtCore.getSymbol<Q##name##Fn>("_" QT_STRINGIFY(name)); if (!name) name = qtCore.getSymbol<Q##name##Fn>(#name);

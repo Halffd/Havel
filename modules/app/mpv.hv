@@ -1,5 +1,5 @@
 use socket
-use "../std/json.hv" as json
+use "std/json" as json
 
 class MPV {
     // connection state
@@ -28,14 +28,34 @@ class MPV {
     // computed values
     @progress = 0
 
-    fn @(path="/tmp/mpvsocket") {
-        @path = path
-    }
+    // Dummy init for class.new (does nothing)
+    fn init() {}
 
-    fn init() {
-        @connect()
-        @observeDefaults()
-        @startReceiver()
+    // Factory method - creates and initializes instance
+    @@fn new(path="/tmp/mpvsocket") {
+        val instance = {
+            _class: MPV,
+            path: path,
+            sock: null,
+            connected: false,
+            receiverRunning: false,
+            recvBuffer: "",
+            nextRequestId: 1,
+            pending: {},
+            listeners: {},
+            pause: false,
+            timePos: 0,
+            duration: 0,
+            volume: 100,
+            speed: 1.0,
+            filename: "",
+            fullscreen: false,
+            progress: 0
+        }
+        instance.connect()
+        instance.observeDefaults()
+        instance.startReceiver()
+        instance
     }
 
     fn connect() {
@@ -131,7 +151,7 @@ class MPV {
         // Capture self explicitly for the thread closure
         self = @
         thread.spawn(fn(self) {
-            while true {
+            while self.receiverRunning {
                 if !self.ensureConnection() {
                     sleep(1)
                     continue

@@ -493,15 +493,34 @@ private:
     // it before returning so the sleep host fn's chunked loop resumes
     // with main's stack intact.
     if (!main_script_fiber_) {
-      main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snapshot");
-    }
+main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snapshot");
+  }
     vm_->saveFiberStatePublic(main_script_fiber_.get());
+
+    // The caller (e.g. the current goroutine's time.sleep host fn) may have
+    // an in-flight suspension_requested_ that belongs to IT, not to any
+    // sibling goroutine we are about to run inline. executeOneStep() consumes
+    // suspension_requested_ unconditionally (VM.cpp:~987) and calls suspend()
+    // on whichever fiber it is given, so a sibling's first step here would
+    // steal the caller's sleep request and both lose the sleep and misfire
+    // the sibling. Preserve the caller's pending suspension, run siblings with
+    // a clean VM suspension state, and restore it before reinstating main.
+    const bool caller_susp = vm_->isSuspensionRequested();
+    const uint8_t caller_susp_reason = vm_->getSuspensionReason();
+    void* caller_susp_ctx = vm_->getSuspensionContext();
+    const uint8_t caller_last_reason = vm_->getLastSuspensionReason();
+    void* caller_last_ctx = vm_->getLastSuspensionContext();
+    vm_->clearSuspensionRequest();
+    vm_->clearLastSuspension();
 
     inline_yield_active_ = true;
 
     try {
     sched->drainDeferredCallbacks();
     sched->wakeSleepingGoroutines();
+    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+      fprintf(stderr, "[SLEEPDBG] processGoroutinesInline enter susp_req=%d last_reason=%d inline_active=%d\n", (int)vm_->isSuspensionRequested(), (int)vm_->getLastSuspensionReason(), (int)inline_yield_active_);
+    }
 
     const int budget = 512;
     int executed = 0;
@@ -515,6 +534,9 @@ private:
 
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
         auto call_result = vm_->startGoroutineCall(g->callable, g->locals);
+        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+          fprintf(stderr, "[SLEEPDBG] startGoroutineCall g=%d result=%d\n", g->id, (int)call_result);
+        }
         if (call_result == compiler::VM::GoroutineCallResult::Failed ||
             call_result == compiler::VM::GoroutineCallResult::JITExecuted) {
           if (g->fiber) vm_->saveFiberStatePublic(g->fiber);
@@ -533,6 +555,9 @@ private:
 
       for (int i = 0; i < 64; ++i) {
         auto result = vm_->executeOneStep(g->fiber);
+        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+          fprintf(stderr, "[SLEEPDBG] executeOneStep g=%d result=%d\n", g->id, (int)result.type);
+        }
         g->instructions_executed++;
         executed++;
         if (result.type != compiler::VMExecutionResult::YIELD) {
@@ -608,7 +633,17 @@ private:
     // stack and frame arena match __main__'s half-run state — see
     // explanation at saveFiberStatePublic above.
     if (main_script_fiber_) {
+      // Reinstate the caller's own pending suspension (saved above) now that
+      // sibling goroutines are done, so the caller's dispatch resumes and
+      // properly suspends the CURRENT goroutine instead of a sibling.
+      if (caller_susp) {
+        vm_->requestSuspension(caller_susp_reason, caller_susp_ctx);
+      }
+      vm_->setLastSuspension(caller_last_reason, caller_last_ctx);
       vm_->loadFiberStatePublic(main_script_fiber_.get());
+      if (std::getenv("HAVEL_TRACE_SLEEP")) {
+        fprintf(stderr, "[SLEEPDBG] processGoroutinesInline exit last_reason=%d susp_req=%d\n", (int)vm_->getLastSuspensionReason(), (int)vm_->isSuspensionRequested());
+      }
     }
 
     inline_yield_active_ = false;
@@ -700,6 +735,9 @@ private:
 
       // Check if the goroutine suspended (await/sleep) or finished
       uint8_t lastReason = vm_->getLastSuspensionReason();
+      if (std::getenv("HAVEL_TRACE_SLEEP")) {
+        std::cerr << "[SLEEPDBG] processGoroutines after-run gid=" << g->id << " lastReason=" << (int)lastReason << " state=" << (int)g->state.load() << "\n";
+      }
       void* lastContext = vm_->getLastSuspensionContext();
       if (lastReason != 0) {
         // Goroutine suspended — save fiber state and mark as Suspended

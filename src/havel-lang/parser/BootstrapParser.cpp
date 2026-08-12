@@ -2581,7 +2581,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   DepthGuard dg(recursion_depth_);
   // Skip leading newlines within statement context
   // This allows multiple newlines between statements
-  while (at().type == havel::TokenType::NewLine) {
+  while (isSkippableToken(at())) {
     advance();
   }
 

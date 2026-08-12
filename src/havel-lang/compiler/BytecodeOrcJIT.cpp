@@ -76,6 +76,7 @@ static constexpr uint64_t QNAN             = 0x7FF8000000000000ULL;
 static constexpr uint64_t TAG_MASK         = 0x0007000000000000ULL;
 static constexpr uint64_t PAYLOAD_MASK     = 0x0000FFFFFFFFFFFFULL;
 static constexpr uint64_t EXT_PAYLOAD_MASK = 0x000007FFFFFFFFFFULL; // 43 bits for extended payload
+static constexpr uint64_t EXTENDED_TAG_MASK = 0x0000F80000000000ULL; // bits 43-47
 
 static constexpr uint64_t INT_TAG          = 0x1;
 static constexpr uint64_t EXT_TAG          = 0x7;
@@ -1215,12 +1216,24 @@ uint64_t havel_vm_string_concat(void* vm_ptr, uint64_t l_bits, uint64_t r_bits) 
   std::memcpy(&l, &l_bits, sizeof(uint64_t));
   std::memcpy(&r, &r_bits, sizeof(uint64_t));
   
-  if (!l.isStringId() || !r.isStringId()) {
+  if (!(l.isStringId() || l.isStringValId()) || !(r.isStringId() || r.isStringValId())) {
     return Value::makeNull().rawBits();
   }
   
-  const auto& lStr = chunk->getString(l.asStringId());
-  const auto& rStr = chunk->getString(r.asStringId());
+  std::string lStr, rStr;
+  if (l.isStringId()) {
+    auto* strPtr = vm->getHeap().string(l.asStringId());
+    lStr = strPtr ? *strPtr : "";
+  } else {
+    lStr = chunk->getString(l.asStringValId());
+  }
+  if (r.isStringId()) {
+    auto* strPtr = vm->getHeap().string(r.asStringId());
+    rStr = strPtr ? *strPtr : "";
+  } else {
+    rStr = chunk->getString(r.asStringValId());
+  }
+  
   std::string result = lStr + rStr;
   auto ref = vm->createRuntimeString(std::move(result));
   return Value::makeStringId(ref.id).rawBits();
@@ -1310,18 +1323,12 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
         callArgs.push_back(v);
     }
 
-    // Determine if we should pass receiver as self (first argument)
-    // Mirrors interpreter logic in VMControlFlow.cpp:
-    // - For module namespace objects (found in globals), don't pass self
-    // - For class/struct instances, pass self
-    // - For host functions that explicitly want self, pass self
     bool passReceiverAsSelf = true;
 
     if (receiver.isObjectId()) {
         ObjectRef recvRef{receiver.asObjectId(), true};
         auto* obj = vm->getHeap().object(recvRef.id);
         if (obj) {
-            // Check if this object is a module namespace (exists in globals)
             bool foundViaModule = false;
             for (const auto& [name, val] : vm->getGlobals()) {
                 if (val.isObjectId() && val.asObjectId() == receiver.asObjectId()) {
@@ -1329,23 +1336,26 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                     break;
                 }
             }
-            if (!foundViaModule) {
-                for (const auto& [name, val] : vm->getGlobals()) {
-                }
-            }
             if (foundViaModule) {
                 passReceiverAsSelf = false;
+                Value methodValue = vm->getHostObjectField(recvRef, method_name);
+                if (!methodValue.isNull()) {
+                    if (methodValue.isHostFuncId()) {
+                        if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
+                            Value result = vm->invokeHostFunctionDirect(*hostName, callArgs);
+                            return result.rawBits();
+                        }
+                    }
+                    return vm->callFunction(methodValue, callArgs).rawBits();
+                }
             } else {
-                // Check if it's a class/struct prototype
                 auto* classVal = obj->get("__class");
                 if (!classVal) classVal = obj->get("__struct");
                 if (classVal && classVal->isObjectId()) {
-                    passReceiverAsSelf = true; // class.new passes class proto as self
+                    passReceiverAsSelf = true;
                 } else if (obj->get("__is_class") || obj->get("__is_struct")) {
                     passReceiverAsSelf = true;
                 } else {
-                    // Regular object instance - check if host function wants self
-                    // Look up the method to see if it's a host function with wantsSelf
                     Value methodValue = vm->getHostObjectField(recvRef, method_name);
                     if (methodValue.isHostFuncId()) {
                         uint32_t hostIdx = methodValue.asHostFuncId();
@@ -1362,9 +1372,20 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
         }
     }
 
-
     if (passReceiverAsSelf) {
         callArgs.insert(callArgs.begin(), receiver);
+    }
+
+    if (receiver.isObjectId() && !passReceiverAsSelf) {
+        Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
+        if (!methodValue.isNull()) {
+            if (methodValue.isHostFuncId()) {
+                if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
+                    return vm->invokeHostFunctionDirect(*hostName, callArgs).rawBits();
+                }
+            }
+            return vm->callFunction(methodValue, callArgs).rawBits();
+        }
     }
 
     if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
@@ -1372,7 +1393,6 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
             Value result = vm->invokeHostFunctionDirect(*hostName, callArgs);
             if (!result.isNull()) return result.rawBits();
         }
-    } else {
     }
 
     if (receiver.isObjectId()) {
@@ -1384,18 +1404,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                 }
             }
             return vm->callFunction(methodValue, callArgs).rawBits();
-        } else {
         }
-    }
-
-    std::string typeName;
-    if (receiver.isStringValId() || receiver.isStringId()) typeName = "string";
-    else if (receiver.isArrayId()) typeName = "array";
-    else if (receiver.isObjectId()) typeName = "object";
-
-    if (!typeName.empty()) {
-        Value result = vm->invokeHostFunctionDirect(typeName + "." + method_name, callArgs);
-        if (!result.isNull()) return result.rawBits();
     }
 
     return Value::makeNull().rawBits();
@@ -2972,6 +2981,14 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         return B.CreateICmpNE(B.CreateAnd(v, llvm::ConstantInt::get(i64, QNAN)), llvm::ConstantInt::get(i64, QNAN));
     };
 
+    auto isStringLoc = [&](llvm::Value* v) -> llvm::Value* {
+        llvm::Value* primaryTag = B.CreateAnd(v, llvm::ConstantInt::get(i64, TAG_MASK));
+        llvm::Value* isStringId = B.CreateICmpEQ(primaryTag, llvm::ConstantInt::get(i64, 0x0005000000000000ULL));
+        llvm::Value* extTag = B.CreateAnd(v, llvm::ConstantInt::get(i64, EXTENDED_TAG_MASK));
+        llvm::Value* isStringVal = B.CreateICmpEQ(extTag, llvm::ConstantInt::get(i64, 0x0000600000000000ULL));
+        return B.CreateOr(isStringId, isStringVal);
+    };
+
 auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, llvm::Value* left, llvm::Value* right) -> llvm::Value* {
     // Check for AOT type hint first, then fall back to runtime type feedback
     uint64_t type_hint = 0;
@@ -3051,11 +3068,32 @@ else if (op == OpCode::INT_DIV) {
     llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, pfx + "int", f);
     llvm::BasicBlock *chkDblBB = llvm::BasicBlock::Create(ctx, pfx + "chk_dbl", f);
     llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, pfx + "dbl", f);
+    llvm::BasicBlock *chkStrBB = llvm::BasicBlock::Create(ctx, pfx + "chk_str", f);
+    llvm::BasicBlock *strBB = llvm::BasicBlock::Create(ctx, pfx + "str", f);
     llvm::BasicBlock *deoptBB = llvm::BasicBlock::Create(ctx, pfx + "deopt", f);
     llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx + "merge", f);
 
     llvm::Value *bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
     B.CreateCondBr(bothInt, intBB, chkDblBB);
+
+    B.SetInsertPoint(chkDblBB);
+    llvm::Value *bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
+    B.CreateCondBr(bothDbl, dblBB, chkStrBB);
+
+    B.SetInsertPoint(chkStrBB);
+    llvm::Value *bothStr = B.CreateAnd(isStringLoc(left), isStringLoc(right));
+    B.CreateCondBr(bothStr, strBB, deoptBB);
+
+    B.SetInsertPoint(strBB);
+    llvm::Function *fnStrCat = module.getFunction("havel_vm_string_concat");
+    if (!fnStrCat) {
+        fnStrCat = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_string_concat", &module);
+    }
+    llvm::Value *strBoxed = B.CreateCall(fnStrCat, {vmArg, left, right});
+    llvm::BasicBlock *strExitBB = B.GetInsertBlock();
+    B.CreateBr(mergeBB);
 
     B.SetInsertPoint(intBB);
     llvm::Value *lIv = unboxInt(left);
@@ -3081,10 +3119,6 @@ else if (op == OpCode::INT_DIV) {
     if (!intBoxed) intBoxed = boxInt(iRes);
     llvm::BasicBlock *intExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
-
-    B.SetInsertPoint(chkDblBB);
-    llvm::Value *bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
-    B.CreateCondBr(bothDbl, dblBB, deoptBB);
 
     B.SetInsertPoint(dblBB);
     llvm::Value *lDv = B.CreateBitCast(left, f64);
@@ -3129,9 +3163,10 @@ else if (op == OpCode::INT_DIV) {
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(mergeBB);
-    llvm::PHINode *phi = B.CreatePHI(i64, 3);
+    llvm::PHINode *phi = B.CreatePHI(i64, 4);
     phi->addIncoming(intBoxed, intExitBB);
     phi->addIncoming(dblBoxed, dblExitBB);
+    phi->addIncoming(strBoxed, strExitBB);
     phi->addIncoming(slowBoxed, slowExitBB);
     return phi;
 };

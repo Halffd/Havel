@@ -25,7 +25,10 @@ fn _strToBuf(s) {
 }
 
 fn _buildAddr(path) {
+    if path == null { return null }
+    print("[socket] _buildAddr called for path: ", path)
     addr = ffi.allocBytes(SOCKADDR_UN_SIZE)
+    defer { ffi.free(addr) }
     // allocBytes already zeroes the memory, but be explicit for clarity
     ffi.set_i16(addr, AF_UNIX)
     i = 0
@@ -39,6 +42,7 @@ fn _buildAddr(path) {
 }
 
 fn _addrLen(path) {
+    if path == null { return SOCKADDR_UN_SIZE }
     // Use exact size: sa_family (2 bytes) + path + NUL terminator
     // Linux recommends this over always passing 110
     n = #path
@@ -50,8 +54,10 @@ fn UnixSocket() {
     self = {fd: -1, connected: false, path: ""}
 
     fn _doConnect(self, path) {
+        print("[socket] _doConnect called for path: ", path)
         if self.connected { self.close() }
         fd = ffi.call(_socket, "int32", ["int32", "int32", "int32"], AF_UNIX, SOCK_STREAM, 0)
+        print("[socket] socket() returned fd: ", fd)
         if fd < 0 {
             _se = ffi.errno()
             _ss = ffi.strerror(_se)
@@ -60,11 +66,17 @@ fn UnixSocket() {
         }
 
         addr = _buildAddr(path)
+        if addr == null {
+            print("[socket] _buildAddr returned null, closing fd")
+            ffi.call(_close, "int32", ["int32"], fd)
+            return false
+        }
         alen = _addrLen(path)
+        print("[socket] calling connect() with fd=", fd, " addr=", addr, " alen=", alen)
+        defer { ffi.free(addr) }
         _ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, alen)
-
+        print("[socket] connect() returned: ", _ret)
         _err = ffi.errno()
-        ffi.free(addr)
         if _ret == 0 {
             self.fd = fd
             self.connected = true
@@ -81,10 +93,11 @@ fn UnixSocket() {
 fn _doSend(self, data) {
     print("[_doSend] data type: ${type(data)} value: ${data}")
     if self.connected == false { return -1 }
+    if data == null { return -1 }
     n = #data
     buf = _strToBuf(data)
+    defer { ffi.free(buf) }
     sent = ffi.call(_send, "int64", ["int32", "pointer", "uint64", "int32"], self.fd, buf, n, 0)
-    ffi.free(buf)
     sent
 }
 
@@ -92,6 +105,7 @@ fn _doSend(self, data) {
         if self.connected == false { return "" }
         if maxSize == null { maxSize = 8192 }
         buf = ffi.allocBytes(maxSize)
+        defer { ffi.free(buf) }
         n = ffi.call(_recv, "int64", ["int32", "pointer", "uint64", "int32"], self.fd, buf, maxSize, 0)
         result = ""
         if n > 0 {
@@ -102,7 +116,6 @@ fn _doSend(self, data) {
                 i = i + 1
             }
         }
-        ffi.free(buf)
         result
     }
 
@@ -133,8 +146,8 @@ fn create() {
 fn connect(fd, path) {
     if fd < 0 { return false }
     addr = _buildAddr(path)
+    defer { ffi.free(addr) }
     _ret = ffi.call(_connect, "int32", ["int32", "pointer", "uint32"], fd, addr, _addrLen(path))
-    ffi.free(addr)
     _ret == 0
 }
 
@@ -143,8 +156,8 @@ fn send(fd, data) {
     if fd < 0 || data == null { return -1 }
     n = #data
     buf = _strToBuf(data)
+    defer { ffi.free(buf) }
     sent = ffi.call(_send, "int64", ["int32", "pointer", "uint64", "int32"], fd, buf, n, 0)
-    ffi.free(buf)
     sent
 }
 
@@ -152,6 +165,7 @@ fn recv(fd, maxSize) {
     if fd < 0 { return "" }
     if maxSize == null { maxSize = 8192 }
     buf = ffi.allocBytes(maxSize)
+    defer { ffi.free(buf) }
     n = ffi.call(_recv, "int64", ["int32", "pointer", "uint64", "int32"], fd, buf, maxSize, 0)
     result = ""
     if n > 0 {
@@ -162,7 +176,6 @@ fn recv(fd, maxSize) {
             i = i + 1
         }
     }
-    ffi.free(buf)
     result
 }
 

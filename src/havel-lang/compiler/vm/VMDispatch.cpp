@@ -903,7 +903,7 @@ op_CALL: {
     // IMMEDIATE check for suspension after CALL - host functions may request suspension
     if (suspension_requested_ || last_suspension_reason_ != 0) {
         if (std::getenv("HAVEL_TRACE_SLEEP")) {
-            fprintf(stderr, "[SLEEPDBG] op_CALL susp_reason=%d last_reason=%d executing_fiber=%d\n", (int)suspension_reason_, (int)last_suspension_reason_, current_executing_fiber_ ? 1 : 0);
+            // fprintf(stderr, "[SLEEPDBG] op_CALL susp_reason=%d last_reason=%d executing_fiber=%d\n", (int)suspension_reason_, (int)last_suspension_reason_, current_executing_fiber_ ? 1 : 0);
         }
         // If it's a SLEEP suspension, handle it immediately like the periodic check does
         if (suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
@@ -1566,7 +1566,7 @@ op_JUMP_IF_NULL: {
 slow_dispatch_fallback:
     // Suspension or complex opcode encountered — return to caller's slow path
     if (std::getenv("HAVEL_TRACE_SLEEP")) {
-        fprintf(stderr, "[SLEEPDBG] slow_dispatch_fallback susp_req=%d reason=%d last_before=%d exec_fiber=%d\n", (int)suspension_requested_, (int)suspension_reason_, (int)last_suspension_reason_, (int)(current_executing_fiber_!=nullptr));
+        // fprintf(stderr, "[SLEEPDBG] slow_dispatch_fallback susp_req=%d reason=%d last_before=%d exec_fiber=%d\n", (int)suspension_requested_, (int)suspension_reason_, (int)last_suspension_reason_, (int)(current_executing_fiber_!=nullptr));
     }
     if (suspension_requested_) {
         // Transfer suspension info to last_suspension_* so caller can handle it

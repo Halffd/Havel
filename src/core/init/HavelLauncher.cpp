@@ -175,6 +175,39 @@ static void appendDefaultLlvmLinkLibraries(std::string &linkCmd) {
   (void)linkCmd;
 #endif
 }
+
+// Append native (system) link flags baked in at CMake time from
+// COMMON_LIBS. Required when linking the AOT executable: havel_core
+// archive references X11/Wayland/DBus/PulseAudio/etc. symbols, so the
+// standalone clang++ link command must supply the matching system
+// libraries or fail with undefined symbols (XNextEvent, etc.).
+//
+// Also append -L<exeDir> so the build directory's own archives
+// (libwayland-protos.a, etc.) can be found by the standalone clang++
+// invocation. Without this the SO link using system /usr/bin/ld fails
+// to resolve `-lwayland-protos` even though the executable link
+// (which uses lld with explicit -Lbuild-release) succeeds.
+static void appendDefaultNativeLinkLibraries(std::string &linkCmd) {
+  // Add havel build dir to library search path.
+  std::string exePath = Env::executable();
+  if (!exePath.empty()) {
+    std::string libDir =
+        std::filesystem::path(exePath).parent_path().string();
+    linkCmd += " -L\"";
+    linkCmd += libDir;
+    linkCmd += "\"";
+  }
+#ifdef HAVEL_DEFAULT_NATIVE_LINK_FLAGS
+  constexpr const char *kDefaultNativeLinkFlags =
+      HAVEL_DEFAULT_NATIVE_LINK_FLAGS;
+  if (kDefaultNativeLinkFlags[0] != '\0') {
+    linkCmd += " ";
+    linkCmd += kDefaultNativeLinkFlags;
+  }
+#else
+  (void)linkCmd;
+#endif
+}
 #endif
 
 // ─── Shared Helpers ──────────────────────────────────────────────
@@ -1197,8 +1230,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
 
-    // Apply self-hosted config from main()
-    if (!self_hosted_modules_path_config_.empty()) {
+    // Apply self-hosted config from main() (only if not --no-self-hosted)
+    if (!cfg.noSelfHosted && !self_hosted_modules_path_config_.empty()) {
       cfg.vmConfig.self_hosted_modules_path = self_hosted_modules_path_config_;
     }
 
@@ -1243,7 +1276,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
         error("Self-hosted modules not found at: " + langDir.string());
         return 1;
       }
-    } else if (cfg.vmConfig.self_hosted_modules_path.empty()) {
+    } else if (!cfg.noSelfHosted && cfg.vmConfig.self_hosted_modules_path.empty()) {
       error("Self-hosted modules path not configured");
       return 1;
     }
@@ -2056,6 +2089,24 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         aotOutput.rfind(".hv") == aotOutput.size() - 3) {
       aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
     }
+    // If the user passed an explicit -o OUT with a known artifact extension
+    // (.o, .ll, .s, .wasm, .exe), strip it so aotOutput is a true base path.
+    // Otherwise, every emit step (.o appended -> .o.o, .ll appended -> .ll.o)
+    // double-suffixes the file. Only strip well-known extensions, never
+    // arbitrary ones like "ao" or random paths.
+    if (!cfg.outputPath.empty()) {
+      auto endsWith = [&](const char* ext) {
+        size_t n = strlen(ext);
+        return aotOutput.size() > n &&
+               aotOutput.compare(aotOutput.size() - n, n, ext) == 0;
+      };
+      if (endsWith(".o"))      aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
+      else if (endsWith(".ll")) aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
+      else if (endsWith(".s"))  aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
+      else if (endsWith(".wasm")) aotOutput = aotOutput.substr(0, aotOutput.size() - 5);
+      else if (endsWith(".so")) aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
+      else if (endsWith(".exe")) aotOutput = aotOutput.substr(0, aotOutput.size() - 4);
+    }
     if (aotOutput.empty()) {
       aotOutput = "output";
     }
@@ -2164,6 +2215,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           if (jit.linkedLibraries().empty()) {
             appendDefaultLlvmLinkLibraries(linkCmd);
           }
+          appendDefaultNativeLinkLibraries(linkCmd);
         }
         int linkRc = std::system(linkCmd.c_str());
         if (linkRc != 0) {
@@ -2234,13 +2286,26 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           if (coreProfile) {
             linkCmd += " -lhavel_aot_core_shim -lhavel_lang_core";
           } else {
-            linkCmd += " -lhavel_lang -lhavel_core -lhavel_modules -lhavel_gui";
+            linkCmd += " -lhavel_lang -lhavel_core";
+            // havel_modules is a static archive only when module plugins
+            // are disabled (CMakeLists.txt:1057-1060). With
+            // ENABLE_MODULE_PLUGINS=ON, havel_modules is an INTERFACE
+            // target — no libhavel_modules.a archive is produced. Linking
+            // against the missing archive fails the entire
+            // --full-aot executable step.
+#ifndef ENABLE_MODULE_PLUGINS
+            linkCmd += " -lhavel_modules";
+#endif
+#if defined(ENABLE_QT_UI_BACKEND) || defined(HAVE_QT_EXTENSION)
+            linkCmd += " -lhavel_gui";
+#endif
           }
         }
         appendLinkLibraries(linkCmd, jit.linkedLibraries());
         if (jit.linkedLibraries().empty()) {
           appendDefaultLlvmLinkLibraries(linkCmd);
         }
+        appendDefaultNativeLinkLibraries(linkCmd);
         int linkRc = std::system(linkCmd.c_str());
         if (linkRc != 0) {
           error("Failed to link native AOT executable with command: {}",

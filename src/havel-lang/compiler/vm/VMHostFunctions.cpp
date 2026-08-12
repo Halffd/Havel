@@ -1339,10 +1339,10 @@ void VM::registerDefaultHostFunctions() {
     }
 
     if (trace_execution_) {
-      fprintf(stderr,
-              "[DEBUG] sleep_ms: entered with duration_ms=%ld, scheduler_=%p, "
-              "current_executing_fiber_=%p\n",
-              duration_ms, scheduler_, current_executing_fiber_);
+      // fprintf(stderr,
+      //         "[DEBUG] sleep_ms: entered with duration_ms=%ld, scheduler_=%p, "
+      //         "current_executing_fiber_=%p\n",
+      //         duration_ms, scheduler_, current_executing_fiber_);
     }
 
     if (scheduler_ && current_executing_fiber_) {
@@ -1411,10 +1411,10 @@ void VM::registerDefaultHostFunctions() {
     }
 
     if (trace_execution_) {
-      fprintf(stderr,
-              "[DEBUG] sleep: scheduler_=%p, current_executing_fiber_=%p, "
-              "duration_ms=%ld\n",
-              scheduler_, current_executing_fiber_, *duration_ms);
+      // fprintf(stderr,
+      //         "[DEBUG] sleep: scheduler_=%p, current_executing_fiber_=%p, "
+      //         "duration_ms=%ld\n",
+      //         scheduler_, current_executing_fiber_, *duration_ms);
     }
 
     if (scheduler_ && current_executing_fiber_) {

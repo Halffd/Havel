@@ -42,7 +42,8 @@ enum class TokenType {
     Let,
     Val,   // val - immutable binding
     Const, // const - legacy alias for val
-  If,
+    Import, // import - deprecated, use 'use'
+    If,
   Else,
   While,
   Do,
@@ -145,12 +146,12 @@ enum class TokenType {
   Length,       // # length operator
   Pipe,
   PipeRight, // |> pipeline operator
-  Comment,
-  NewLine,
-  Import,       // import
-  From,         // from
-  As,           // as
-  Use,          // use
+Comment,
+    UnsafeMarker, // #unsafe - safety tier marker
+    NewLine,
+    From,         // from
+    As,           // as
+    Use,          // use
   With, // with
   Where,        // where - LINQ filter
   Select,       // select - LINQ transform
@@ -246,6 +247,8 @@ private:
   size_t position = 0;
   size_t line = 1;
   size_t column = 1;
+
+  std::vector<Token> currentTokens; // Tokens being built during tokenize()
 
   std::vector<CompilerError> errors; // Collected errors
 

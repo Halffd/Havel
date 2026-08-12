@@ -25,6 +25,8 @@
 #include "dl/Loader.hpp"
 #include "lexer/BootstrapLexer.hpp"
 #include <dlfcn.h>
+#include <poll.h>
+#include <unistd.h>
 
 #include "../../stdlib/LogModule.hpp"
 #include "havel-lang/compiler/runtime/DebugUtils.hpp"
@@ -106,8 +108,8 @@ VM::VM(const VMConfig &cfg) {
   if (tiering_enabled_) {
     jit_compiler_ = std::make_unique<BytecodeOrcJIT>();
     if (trace_execution_) {
-      fprintf(stderr, "[VM-DEBUG] JIT compiler created: %p\n", jit_compiler_.get());
-      fflush(stderr);
+      // fprintf(stderr, "[VM-DEBUG] JIT compiler created: %p\n", jit_compiler_.get());
+      // fflush(stderr);
     }
     jit_compiler_->setDebugMode(cfg.debugJIT);
   }
@@ -514,7 +516,33 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
                         *deadline - now)
                         .count();
         auto sleepMs = std::min(ms, 100L);
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+        // Wait on the scheduler's deferred-wakeup fd so that hotkey
+        // triggers (or any notifyWakeup()) arriving on the IO thread
+        // break this sleep immediately instead of stalling for the full
+        // sleepMs. Without this poll(), the main VM scheduler loop sits
+        // in sleep_for(100ms) while the hotkey goroutine sits in the
+        // HOTKEY queue. pickNext() would prefer it, but we never get to
+        // pickNext until the sleep expires. Result: ~100ms latency from
+        // physical key event to hotkey block entry, every time. By
+        // waiting on the fd here, notifyWakeup() (called by requeueFront
+        // when wakeHotkey fires) jolt us awake so the next iteration's
+        // pickNext() pops the hotkey goroutine promptly.
+        int wakeupFd = scheduler_->deferredWakeupFd();
+        if (wakeupFd >= 0) {
+          struct pollfd pfd;
+          pfd.fd = wakeupFd;
+          pfd.events = POLLIN;
+          pfd.revents = 0;
+          int pr = ::poll(&pfd, 1, static_cast<int>(sleepMs));
+          if (pr > 0 && (pfd.revents & POLLIN)) {
+            // Drain coalesced wakeups so the next poll doesn't return
+            // immediately with stale data.
+            uint64_t val;
+            while (::read(wakeupFd, &val, sizeof(val)) == sizeof(val)) {}
+          }
+        } else {
+          std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+        }
         continue;
       }
       scheduler_->setCurrent(cur);
@@ -1431,7 +1459,6 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   // visible on resume; unconditionally swapping to the snapshot would
   // clobber main's live globals and re-run stale iterations.
   auto snapIt = spawn_globals_snapshot_.find(closure_id);
-  std::cerr << "[DEBUG] startGoroutine snapshot found=" << (snapIt != spawn_globals_snapshot_.end()) << " size=" << (snapIt != spawn_globals_snapshot_.end() ? snapIt->second->size() : 0) << " globals has fs=" << (globals.count("fs") ? 1 : 0) << " snapshot has fs=" << (snapIt != spawn_globals_snapshot_.end() && snapIt->second->count("fs") ? 1 : 0) << "\n";
   if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
     bool missing = false;
     for (const auto &[k, v] : *snapIt->second) {
@@ -1475,12 +1502,6 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   (void)chunk_pin; // held implicitly via the closure we allocated/looked-up
 
   func->execution_count++;
-  std::cerr << "[DEBUG] startGoroutine func name='" << func->name << "' instrs=" << func->instructions.size() << " param=" << func->param_count << " local=" << func->local_count << "\n";
-  for (size_t di = 0; di < func->instructions.size(); ++di) {
-    std::cerr << "[DEBUG]   i" << di << " op=" << (int)func->instructions[di].opcode << " ops=";
-    for (const auto &opv : func->instructions[di].operands) std::cerr << opv.toString() << ";";
-    std::cerr << "\n";
-  }
   if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*func);
   }
@@ -2701,8 +2722,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   }
 
   if (trace_execution_) {
-    fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());
-    fflush(stderr);
+    // fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());
+    // fflush(stderr);
   }
   if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);

@@ -253,13 +253,13 @@ extern "C" uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count) 
       std::string argstr;
       for (auto &v : valArgs) argstr += v.toString() + ",";
       if (vm->isTraceExecution()) {
-        fprintf(stderr, "[JITCALL-DEBUG] depth=%d callee_bits=0x%llx args=[%s]\n", depth, (unsigned long long)callee.rawBits(), argstr.c_str());
-        fflush(stderr);
+        // fprintf(stderr, "[JITCALL-DEBUG] depth=%d callee_bits=0x%llx args=[%s]\n", depth, (unsigned long long)callee.rawBits(), argstr.c_str());
+        // fflush(stderr);
       }
       Value result = vm->callFunction(callee, valArgs);
       if (vm->isTraceExecution()) {
-        fprintf(stderr, "[JITCALL-DEBUG] depth=%d result=0x%llx (%s)\n", depth, (unsigned long long)result.rawBits(), result.toString().c_str());
-        fflush(stderr);
+        // fprintf(stderr, "[JITCALL-DEBUG] depth=%d result=0x%llx (%s)\n", depth, (unsigned long long)result.rawBits(), result.toString().c_str());
+        // fflush(stderr);
       }
       depth--;
       uint64_t bits;
@@ -645,15 +645,18 @@ uint64_t havel_vm_collection_get_raw_ic(void* vm_ptr, uint64_t container_bits, u
 }
 
 uint64_t havel_vm_array_set(void* vm_ptr, uint64_t arr_bits, uint64_t idx_bits, uint64_t val_bits) {
-  if (!vm_ptr) return val_bits;
-  auto* vm = static_cast<VM*>(vm_ptr);
-  Value arr, idx, val;
-  std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
-  std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
-  std::memcpy(&val, &val_bits, sizeof(uint64_t));
-  if (!arr.isArrayId() || !idx.isInt()) return val_bits;
-  vm->setHostArrayValue(ArrayRef{arr.asArrayId()}, static_cast<size_t>(idx.asInt()), val);
-  return val_bits;
+    if (!vm_ptr) return val_bits;
+    auto* vm = static_cast<VM*>(vm_ptr);
+    Value arr, idx, val;
+    std::memcpy(&arr, &arr_bits, sizeof(uint64_t));
+    std::memcpy(&idx, &idx_bits, sizeof(uint64_t));
+    std::memcpy(&val, &val_bits, sizeof(uint64_t));
+    if (!arr.isArrayId() || !idx.isInt()) return val_bits;
+    vm->setHostArrayValue(ArrayRef{arr.asArrayId()}, static_cast<size_t>(idx.asInt()), val);
+    // Return the array reference (not the value) so chained sets on the
+    // same array keep operating on the same array. Interpreter
+    // ARRAY_SET pops value/index/container and pushes the container.
+    return arr_bits;
 }
 
 uint64_t havel_vm_array_len(void* vm_ptr, uint64_t arr_bits) {
@@ -787,7 +790,14 @@ uint64_t havel_vm_object_set_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_b
     if (!key_str) return val_bits;
 
     vm->setHostObjectField(ObjectRef{obj.asObjectId()}, *key_str, val);
-    return val_bits;
+    // Return the object reference (not the value) so chained sets
+    // (obj.a, obj.b, obj.c pushed through repeated SET/SET/SET) keep
+    // operating on the same object. Previously this returned val_bits,
+    // which made later chained sets pass a non-ObjectId as obj and
+    // silently no-op — turning every multi-field object initializer
+    // into a one-field object followed by globals pollution. Matches
+    // interpreter OBJECT_SET which pops key/value/obj and pushes obj.
+    return obj_bits;
 }
 
 uint64_t havel_vm_object_has_raw(void* vm_ptr, uint64_t obj_bits, uint64_t key_bits) {
@@ -1968,7 +1978,10 @@ uint64_t havel_vm_class_set_field(void* vm_ptr, uint64_t obj_bits, uint32_t fiel
   if (!chunk) return val_bits;
   const std::string& key = chunk->getString(field_id);
   o->data[key] = val;
-  return val_bits;
+  // Return the object reference (not the value) so chained sets on the
+  // same instance keep operating on the same instance. See comment in
+  // havel_vm_object_set_raw for the rationale.
+  return obj_bits;
 }
 
 uint64_t havel_vm_load_class_proto(void* vm_ptr, uint32_t type_id) {
@@ -2473,8 +2486,8 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
 
     void* func_ptr = reinterpret_cast<void*>((*sym).getValue());
     if (debug_jit_) {
-      fprintf(stderr, "[COMPILE-DEBUG] func=%s ptr=%p\n", func.name.c_str(), func_ptr);
-      fflush(stderr);
+      // fprintf(stderr, "[COMPILE-DEBUG] func=%s ptr=%p\n", func.name.c_str(), func_ptr);
+      // fflush(stderr);
     }
     fptrs_[func.name] = func_ptr;
     compile_cache_[func_hash] = CachedFunction{func.name};
@@ -2518,16 +2531,16 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
 
     while (true) {
       if (debug_jit_) {
-        fprintf(stderr, "[EXECJIT-DEBUG] calling func=%p with %u args\n", (void*)func, current_args_count);
-        fflush(stderr);
+        // fprintf(stderr, "[EXECJIT-DEBUG] calling func=%p with %u args\n", (void*)func, current_args_count);
+        // fflush(stderr);
       }
       vm->setJitTailCall(false); // Reset flag before calling
 
       uint64_t res_bits =
         func(static_cast<void*>(vm), current_args_ptr, current_args_count);
       if (debug_jit_) {
-        fprintf(stderr, "[EXECJIT-DEBUG] func returned 0x%llx\n", (unsigned long long)res_bits);
-        fflush(stderr);
+        // fprintf(stderr, "[EXECJIT-DEBUG] func returned 0x%llx\n", (unsigned long long)res_bits);
+        // fflush(stderr);
       }
 
       // Check if a tail call occurred that we can handle in JIT
@@ -4230,7 +4243,18 @@ case OpCode::LENGTH: {
     }
     case OpCode::TAIL_CALL: {
         uint32_t argCount = instr.operands[0].asInt();
-        // Collect args from stack
+        // The bytecode-level arg count is the number of actual args (NOT
+        // including the callee). Interpreter (VMControlFlow.cpp TAIL_CALL)
+        // pops arg_count+1 items: arg_count args + the callee underneath.
+        // havel_vm_tail_call / havel_vm_call both expect args[0] = callee,
+        // args[1..N] = actual args, count = arg_count + 1.
+        //
+        // Previously this handler popped only arg_count items, leaving the
+        // callee on the VM stack and passing args[0] = first actual arg to
+        // havel_vm_call — which then read args[0] as the callee. That made
+        // every TAIL_CALL treat its first argument as the callee ("TAIL_CALL
+        // expects function ... (got int)" when calling print(int)).
+        const uint32_t callCount = argCount + 1;
         std::vector<llvm::Value*> args;
         args.push_back(vmArg);
         llvm::Function* fnMalloc = module.getFunction("malloc");
@@ -4239,17 +4263,24 @@ case OpCode::LENGTH: {
                 llvm::FunctionType::get(i8p, {i64}, false),
                 llvm::Function::ExternalLinkage, "malloc", &module);
         }
-        llvm::Value* mallocSize = llvm::ConstantInt::get(i64, argCount * sizeof(uint64_t));
+        llvm::Value* mallocSize = llvm::ConstantInt::get(i64, callCount * sizeof(uint64_t));
         llvm::Value* argsArrayI8 = B.CreateCall(fnMalloc, {mallocSize});
         llvm::Value* argsArray = B.CreatePointerCast(argsArrayI8, llvm::PointerType::get(ctx, 0), "tail_args");
+        // Pop arg_count actual args (in reverse order: argN, ..., arg1, arg0)
         for (uint32_t i = 0; i < argCount; ++i) {
             llvm::Value* arg = vstack.back(); vstack.pop_back();
-            B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
-                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, argCount - 1 - i)}));
+            // args[callCount - 1 - i] = argN, args[callCount - 2] = arg(N-1)...
+            // The callee slot (index 0) is written last after the pop below.
+            B.CreateStore(arg, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, callCount), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, callCount - 1 - i)}));
         }
-        args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, argCount), argsArray,
+        // Pop the callee and store it at args[0].
+        llvm::Value* callee = vstack.back(); vstack.pop_back();
+        B.CreateStore(callee, B.CreateInBoundsGEP(llvm::ArrayType::get(i64, callCount), argsArray,
             {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
-        args.push_back(llvm::ConstantInt::get(i32, argCount));
+        args.push_back(B.CreateInBoundsGEP(llvm::ArrayType::get(i64, callCount), argsArray,
+            {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}));
+        args.push_back(llvm::ConstantInt::get(i32, callCount));
 
         // Unregister GC roots before tail call
         llvm::Function *fn_unreg = module.getFunction("havel_gc_unregister_roots");
@@ -4579,8 +4610,16 @@ case OpCode::LENGTH: {
         break;
     }
     case OpCode::OBJECT_SET: {
-        llvm::Value* val = vstack.back(); vstack.pop_back();
+        // Matches interpreter stack protocol (VMCollections.cpp OBJECT_SET):
+        //   Stack: [..., obj, value, key] → pops key, then value, then obj
+        // The interpreter pops key FIRST (top of stack), value SECOND, obj
+        // LAST. havel_vm_object_set_raw(vm, obj, key, val) takes key/val
+        // in that order. Previously this handler popped in val/key/obj
+        // order, silently swapping key and value, which made every
+        // JIT/AOT OBJECT_SET write the value under the wrong key — and
+        // the matching get returned null.
         llvm::Value* key = vstack.back(); vstack.pop_back();
+        llvm::Value* val = vstack.back(); vstack.pop_back();
         llvm::Value* obj = vstack.back(); vstack.pop_back();
         llvm::Function* fnSet = module.getFunction("havel_vm_object_set_raw");
         if (!fnSet) {

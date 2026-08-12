@@ -382,6 +382,11 @@ fn Parser(tokenList) {
 
         }
     }
+    fn skipCommentsAndNewlines() {
+        while current().tid == TID.NewLine or current().tid == TID.Comment or current().tid == TID.UnsafeMarker {
+            advance()
+        }
+    }
     // --- Error handling ---
 fn error(msg, line, col) {
     if current().tid == TID.EOF: incomplete = true
@@ -3129,77 +3134,8 @@ fn parseImportStatement() {
   c = current().col
   advance()
   skipNewlines()
-
-  iNames = []
-  iAliases = []
-
-  // import * from "module"
-  if current().tid == TID.Multiply {
-    advance()
-    skipNewlines()
-    if current().tid == TID.From {
-      advance()
-      skipNewlines()
-    }
-    module = advance().value
-    return ImportStatement(module, ["*"], l, c, {isWildcard: true})
-  }
-
-  // import { names } from "module" or import a, b from "module"
-  if current().tid == TID.OpenBrace {
-    advance()
-    skipNewlines()
-    while current().tid != TID.CloseBrace and notEOF() {
-      skipNewlines()
-      if current().tid == TID.CloseBrace: break
-      n = advance().value
-      a = n
-      if current().tid == TID.As {
-        advance()
-        skipNewlines()
-        a = advance().value
-      }
-      iNames.push(n)
-      iAliases.push(a)
-      skipNewlines()
-      if current().tid == TID.Comma: advance()
-    }
-    expect(TID.CloseBrace)
-    skipNewlines()
-    if current().tid == TID.From {
-      advance()
-      skipNewlines()
-    }
-    module = advance().value
-    return ImportStatement(module, iNames, l, c, {importNames: iNames, importAliases: iAliases})
-  }
-
-  // import identifier[, identifier...] from "module"
-  if current().tid == TID.Identifier {
-    n = advance().value
-    iNames.push(n)
-    iAliases.push(n)
-    skipNewlines()
-    while current().tid == TID.Comma {
-      advance()
-      skipNewlines()
-      n = advance().value
-      iNames.push(n)
-      iAliases.push(n)
-      skipNewlines()
-    }
-    if current().tid == TID.From {
-      advance()
-      skipNewlines()
-    }
-    module = advance().value
-    return ImportStatement(module, iNames, l, c, {importNames: iNames, importAliases: iAliases})
-  }
-
-  // bare: import "module"
-  module = advance().value
-  return ImportStatement(module, [], l, c, null)
-
+  print("WARNING: 'import' is deprecated, use 'use' instead at line " + str(l) + ", col " + str(c))
+  return parseUseStatement()
 }
     // ===================================================================
     // STATEMENT: use

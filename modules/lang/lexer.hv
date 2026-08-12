@@ -56,7 +56,8 @@ TOKEN_TYPES = {}
 for k, v in TID { TOKEN_TYPES[k] = k }
 
 KEYWORDS = {
-    "let": "Let", "val": "Val", "const": "Const",
+    "val": "Val",
+    "let": "Let", "const": "Const", "import": "Import",
     "if": "If", "else": "Else", "while": "While", "do": "Do",
     "switch": "Switch", "for": "For", "in": "In", "loop": "Loop",
     "break": "Break", "continue": "Continue",
@@ -71,7 +72,7 @@ KEYWORDS = {
     "config": "Config", "devices": "Devices", "modes": "Modes",
     "pool": "Pool", "signal": "Signal", "group": "Group",
     "on": "On", "off": "Off", "when": "When", "mode": "Mode", "repeat": "Repeat",
-    "dsl": "Dsl", "del": "Del", "import": "Import", "from": "From",
+    "dsl": "Dsl", "del": "Del", "from": "From",
     "as": "As", "use": "Use", "with": "With", "where": "Where", "select": "Select",
     "true": "True", "false": "False", "null": "Null", "nil": "Null",
     "and": "And", "or": "Or", "not": "Not", "is": "Is", "matches": "Matches",
@@ -215,7 +216,13 @@ fn Lexer(source) {
     fn skipLineComment() {
         advance()
         advance()
+        startIdx = idx
         while current() != -1 && current() != 10 { advance() }
+        commentText = src.sub(startIdx, idx - startIdx)
+        commentText = commentText.trim()
+        if commentText == "unsafe" {
+            addToken("UnsafeMarker", "#unsafe")
+        }
     }
     fn skipBlockComment() {
         advance()
@@ -713,6 +720,12 @@ fn Lexer(source) {
             advance()
         }
         if keywords.has(word) {
+            if word == "let" || word == "const" {
+                print("WARNING: '" + word + "' is deprecated, use 'val' instead at line " + str(line) + ", col " + str(col - word.len))
+            }
+            else if word == "import" {
+                print("WARNING: '" + word + "' is deprecated, use 'use' instead at line " + str(line) + ", col " + str(col - word.len))
+            }
             addToken(keywords[word], word)
         } else {
             addToken("Identifier", word)

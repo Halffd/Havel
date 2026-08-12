@@ -1,13 +1,13 @@
 #include "core/io/IO.hpp"
+#include "InputBackend.hpp"
+#include "KeyTap.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/display/DisplayManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
-#include "KeyTap.hpp"
-#include "core/process/ProcessManager.hpp"
 #include "core/init/Havel.hpp"
+#include "core/process/ProcessManager.hpp"
 #include "utils/DebugFlags.hpp"
 #include "utils/ExitHandler.hpp"
-#include "InputBackend.hpp"
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
@@ -20,7 +20,7 @@ static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 #include "UinputDevice.hpp"
 
 namespace {
-  thread_local bool tl_inHotkeyCallback = false;
+thread_local bool tl_inHotkeyCallback = false;
 }
 
 bool HotkeyExecutor::isInHotkeyCallback() { return tl_inHotkeyCallback; }
@@ -35,13 +35,13 @@ void HotkeyExecutor::setInHotkeyCallback(bool v) { tl_inHotkeyCallback = v; }
 #ifdef HAVE_QT_EXTENSION
 #include "qt.hpp"
 #endif
-#include <unistd.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <regex>
 #include <string>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 namespace havel {
@@ -206,9 +206,9 @@ void IO::SendUInput(int keycode, bool down) {
   eventListener->SendUinputEvent(EV_KEY, keycode, down ? 1 : 0);
 }
 
-
 std::string IO::findEvdevDevice(const std::string &deviceName) {
-        if (debugging::debug_io) debug("=== DEBUGGING findEvdevDevice for '{}' ===", deviceName);
+  if (debugging::debug_io)
+    debug("=== DEBUGGING findEvdevDevice for '{}' ===", deviceName);
 
   std::ifstream proc("/proc/bus/input/devices");
   if (!proc.is_open()) {
@@ -221,24 +221,29 @@ std::string IO::findEvdevDevice(const std::string &deviceName) {
   int deviceCount = 0;
 
   while (std::getline(proc, line)) {
-        if (debugging::debug_io) debug("Line: {}", line);
+    if (debugging::debug_io)
+      debug("Line: {}", line);
 
-        if (line.starts_with("N: Name=")) {
-            deviceCount++;
-            currentName = line.substr(8);
-            if (!currentName.empty() && currentName[0] == '"') {
-                currentName = currentName.substr(1, currentName.length() - 2);
-            }
-            if (debugging::debug_io) debug(" Device #{}: '{}'", deviceCount, currentName);
+    if (line.starts_with("N: Name=")) {
+      deviceCount++;
+      currentName = line.substr(8);
+      if (!currentName.empty() && currentName[0] == '"') {
+        currentName = currentName.substr(1, currentName.length() - 2);
+      }
+      if (debugging::debug_io)
+        debug(" Device #{}: '{}'", deviceCount, currentName);
 
-            if (currentName == deviceName) {
-                if (debugging::debug_io) debug(" EXACT MATCH FOUND!");
-            }
-        } else if (line.starts_with("H: Handlers=")) {
-            if (debugging::debug_io) debug(" Handlers: {}", line);
+      if (currentName == deviceName) {
+        if (debugging::debug_io)
+          debug(" EXACT MATCH FOUND!");
+      }
+    } else if (line.starts_with("H: Handlers=")) {
+      if (debugging::debug_io)
+        debug(" Handlers: {}", line);
 
-            if (currentName == deviceName) {
-                if (debugging::debug_io) debug(" This is our target device!");
+      if (currentName == deviceName) {
+        if (debugging::debug_io)
+          debug(" This is our target device!");
 
         size_t eventPos = line.find("event");
         if (eventPos != std::string::npos) {
@@ -248,35 +253,41 @@ std::string IO::findEvdevDevice(const std::string &deviceName) {
             eventStr = eventStr.substr(0, spacePos);
           }
           std::string result = "/dev/input/event" + eventStr;
-                if (debugging::debug_io) debug(" SUCCESS: {}", result);
+          if (debugging::debug_io)
+            debug(" SUCCESS: {}", result);
           return result;
         }
       }
     }
   }
 
-    if (debugging::debug_io) debug("=== END DEBUG - Device not found ===");
+  if (debugging::debug_io)
+    debug("=== END DEBUG - Device not found ===");
   return "";
 }
 std::string IO::getKeyboardDevice() {
   std::string id = Configs::Get().Get<std::string>("Device.KeyboardID", "");
-    if (!id.empty()) {
-        if (debugging::debug_io) debug("Using keyboard device ID from config: '{}'", id);
-        return findEvdevDevice(id);
-    }
+  if (!id.empty()) {
+    if (debugging::debug_io)
+      debug("Using keyboard device ID from config: '{}'", id);
+    return findEvdevDevice(id);
+  }
 
-    auto keyboards = Device::findKeyboards();
+  auto keyboards = Device::findKeyboards();
 
-    if (debugging::debug_io) debug("=== Keyboard Detection Results ===");
-    for (const auto &kb : keyboards) {
-        if (debugging::debug_io) debug("Found: '{}' confidence={:.1f}% reason='{}'", kb.name,
+  if (debugging::debug_io)
+    debug("=== Keyboard Detection Results ===");
+  for (const auto &kb : keyboards) {
+    if (debugging::debug_io)
+      debug("Found: '{}' confidence={:.1f}% reason='{}'", kb.name,
             kb.confidence * 100, kb.reason);
-    }
+  }
 
-    if (!keyboards.empty()) {
-        if (debugging::debug_io) debug("Selected keyboard: '{}' -> {} (confidence: {:.1f}%)",
-         keyboards[0].name, keyboards[0].eventPath,
-         keyboards[0].confidence * 100);
+  if (!keyboards.empty()) {
+    if (debugging::debug_io)
+      debug("Selected keyboard: '{}' -> {} (confidence: {:.1f}%)",
+            keyboards[0].name, keyboards[0].eventPath,
+            keyboards[0].confidence * 100);
     return keyboards[0].eventPath;
   }
 
@@ -286,49 +297,60 @@ std::string IO::getKeyboardDevice() {
 
 std::string IO::getMouseDevice() {
   std::string id = Configs::Get().Get<std::string>("Device.MouseID", "");
-    if (!id.empty()) {
-        if (debugging::debug_io) debug("Using mouse device ID from config: '{}'", id);
-        return findEvdevDevice(id);
-    }
+  if (!id.empty()) {
+    if (debugging::debug_io)
+      debug("Using mouse device ID from config: '{}'", id);
+    return findEvdevDevice(id);
+  }
 
-    auto mice = Device::findMice();
+  auto mice = Device::findMice();
 
-    if (debugging::debug_io) debug("=== Mouse Detection Results ===");
-    for (const auto &mouse : mice) {
-        if (debugging::debug_io) debug("Found: '{}' confidence={:.1f}% reason='{}'", mouse.name,
+  if (debugging::debug_io)
+    debug("=== Mouse Detection Results ===");
+  for (const auto &mouse : mice) {
+    if (debugging::debug_io)
+      debug("Found: '{}' confidence={:.1f}% reason='{}'", mouse.name,
             mouse.confidence * 100, mouse.reason);
-    }
+  }
 
-    if (!mice.empty()) {
-        if (debugging::debug_io) debug("Selected mouse: '{}' -> {} (confidence: {:.1f}%)", mice[0].name,
-         mice[0].eventPath, mice[0].confidence * 100);
+  if (!mice.empty()) {
+    if (debugging::debug_io)
+      debug("Selected mouse: '{}' -> {} (confidence: {:.1f}%)", mice[0].name,
+            mice[0].eventPath, mice[0].confidence * 100);
     return mice[0].eventPath;
   }
 
   // No physical mouse found - create virtual mouse via uinput
-  if (debugging::debug_io) debug("No physical mouse found, creating virtual mouse via uinput");
-  std::string virtualMouse = UinputDevice::CreateVirtualMouse("havel-virtual-mouse");
+  if (debugging::debug_io)
+    debug("No physical mouse found, creating virtual mouse via uinput");
+  std::string virtualMouse =
+      UinputDevice::CreateVirtualMouse("havel-virtual-mouse");
   if (!virtualMouse.empty()) {
-    if (debugging::debug_io) debug("Created virtual mouse: {}", virtualMouse);
+    if (debugging::debug_io)
+      debug("Created virtual mouse: {}", virtualMouse);
     return virtualMouse;
   }
 
-  warning("❌ No suitable mouse devices found and failed to create virtual mouse");
+  warning(
+      "❌ No suitable mouse devices found and failed to create virtual mouse");
   return "";
 }
 
 std::string IO::getGamepadDevice() {
-    auto gamepads = Device::findGamepads();
+  auto gamepads = Device::findGamepads();
 
-    if (debugging::debug_io) debug("=== Gamepad Detection Results ===");
-    for (const auto &gamepad : gamepads) {
-        if (debugging::debug_io) debug("Found: '{}' confidence={:.1f}% reason='{}'", gamepad.name,
+  if (debugging::debug_io)
+    debug("=== Gamepad Detection Results ===");
+  for (const auto &gamepad : gamepads) {
+    if (debugging::debug_io)
+      debug("Found: '{}' confidence={:.1f}% reason='{}'", gamepad.name,
             gamepad.confidence * 100, gamepad.reason);
-    }
+  }
 
-    if (!gamepads.empty()) {
-        if (debugging::debug_io) debug("Found gamepad: '{}' -> {} (confidence: {:.1f}%)", gamepads[0].name,
-         gamepads[0].eventPath, gamepads[0].confidence * 100);
+  if (!gamepads.empty()) {
+    if (debugging::debug_io)
+      debug("Found gamepad: '{}' -> {} (confidence: {:.1f}%)", gamepads[0].name,
+            gamepads[0].eventPath, gamepads[0].confidence * 100);
     return gamepads[0].eventPath;
   }
 
@@ -378,264 +400,299 @@ std::string IO::GetActiveWindowProcess() {
 }
 
 void IO::listInputDevices() {
-    if (!debugging::debug_io) return;
+  if (!debugging::debug_io)
+    return;
 
-    auto devices = Device::getAllDevices();
+  auto devices = Device::getAllDevices();
 
-    ::havel::debug("=== Input Device Detection Results ===");
+  ::havel::debug("=== Input Device Detection Results ===");
 
-    for (const auto &device : devices) {
-        ::havel::debug("{}", device.toString());
-    }
+  for (const auto &device : devices) {
+    ::havel::debug("{}", device.toString());
+  }
 
-    ::havel::debug("\n=== Summary ===");
+  ::havel::debug("\n=== Summary ===");
 
-    auto keyboards = Device::findKeyboards();
-    ::havel::debug("Keyboards found: {}", keyboards.size());
-    for (const auto &kb : keyboards) {
-        ::havel::debug(" - {} ({:.0f}%)", kb.name, kb.confidence * 100);
-    }
+  auto keyboards = Device::findKeyboards();
+  ::havel::debug("Keyboards found: {}", keyboards.size());
+  for (const auto &kb : keyboards) {
+    ::havel::debug(" - {} ({:.0f}%)", kb.name, kb.confidence * 100);
+  }
 
-    auto mice = Device::findMice();
-    ::havel::debug("Mice found: {}", mice.size());
-    for (const auto &mouse : mice) {
-        ::havel::debug(" - {} ({:.0f}%)", mouse.name, mouse.confidence * 100);
-    }
+  auto mice = Device::findMice();
+  ::havel::debug("Mice found: {}", mice.size());
+  for (const auto &mouse : mice) {
+    ::havel::debug(" - {} ({:.0f}%)", mouse.name, mouse.confidence * 100);
+  }
 
-    auto gamepads = Device::findGamepads();
-    ::havel::debug("Gamepads/Joysticks found: {}", gamepads.size());
-    for (const auto &gamepad : gamepads) {
-        ::havel::debug(" - {} ({:.0f}%)", gamepad.name, gamepad.confidence * 100);
-    }
+  auto gamepads = Device::findGamepads();
+  ::havel::debug("Gamepads/Joysticks found: {}", gamepads.size());
+  for (const auto &gamepad : gamepads) {
+    ::havel::debug(" - {} ({:.0f}%)", gamepad.name, gamepad.confidence * 100);
+  }
 }
 
 // Updated constructor
-IO::IO() {
-  importManager = std::make_shared<ImportManager>();
-}
+IO::IO() { importManager = std::make_shared<ImportManager>(); }
 
 void IO::ensureBackend() {
   std::call_once(backendInitFlag_, [this]() {
-  debug("[IO] Starting IO backend init...");
-  DisplayManager::Initialize();
-  debug("[IO] DisplayManager initialized");
+    debug("[IO] Starting IO backend init...");
+    DisplayManager::Initialize();
+    debug("[IO] DisplayManager initialized");
 
-  // Initialize ImportManager
-  importManager = std::make_shared<ImportManager>();
+    // Initialize ImportManager
+    importManager = std::make_shared<ImportManager>();
 
-  // Initialize KeyMap
-  KeyMap::Initialize();
-  debug("[IO] KeyMap initialized");
+    // Initialize KeyMap
+    KeyMap::Initialize();
+    debug("[IO] KeyMap initialized");
 
-  // Read process priority and thread count from config
-  int processPriority = Configs::Get().Get<int>(
-      "Advanced.ProcessPriority", 0); // -20 (highest) to 19 (lowest)
-  int workerThreads = Configs::Get().Get<int>("Advanced.WorkerThreads",
-                                              4); // Number of worker threads
+    // Read process priority and thread count from config
+    int processPriority = Configs::Get().Get<int>(
+        "Advanced.ProcessPriority", 0); // -20 (highest) to 19 (lowest)
+    int workerThreads = Configs::Get().Get<int>("Advanced.WorkerThreads",
+                                                4); // Number of worker threads
 
-  // Set process priority (nice value)
-  if (processPriority != 0) {
-    processPriority = std::clamp(processPriority, -20, 19);
-        if (setpriority(PRIO_PROCESS, 0, processPriority) == 0) {
-            if (debugging::debug_io) debug("Process priority set to nice {}", processPriority);
-    } else {
-      warning("Failed to set process priority to {}: {}", processPriority,
-              strerror(errno));
+    // Set process priority (nice value)
+    if (processPriority != 0) {
+      processPriority = std::clamp(processPriority, -20, 19);
+      if (setpriority(PRIO_PROCESS, 0, processPriority) == 0) {
+        if (debugging::debug_io)
+          debug("Process priority set to nice {}", processPriority);
+      } else {
+        warning("Failed to set process priority to {}: {}", processPriority,
+                strerror(errno));
+      }
     }
-  }
 
-// Clamp worker threads to reasonable range
-workerThreads = std::clamp(workerThreads, 1, 32);
+    // Clamp worker threads to reasonable range
+    workerThreads = std::clamp(workerThreads, 1, 32);
 
-// Read executor mode from config
-std::string executorModeStr = Configs::Get().Get<std::string>("IO.Executor", "Scheduler");
-std::transform(executorModeStr.begin(), executorModeStr.end(), executorModeStr.begin(),
-               [](unsigned char c){ return std::tolower(c); });
+    // Read executor mode from config
+    std::string executorModeStr =
+        Configs::Get().Get<std::string>("IO.Executor", "Scheduler");
+    std::transform(executorModeStr.begin(), executorModeStr.end(),
+                   executorModeStr.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
     if (executorModeStr == "executor") {
-        executorMode_.store(ExecutorMode::Executor);
+      executorMode_.store(ExecutorMode::Executor);
     } else if (executorModeStr == "sync") {
-        executorMode_.store(ExecutorMode::Sync);
+      executorMode_.store(ExecutorMode::Sync);
     } else if (executorModeStr == "thread") {
-        executorMode_.store(ExecutorMode::Thread);
+      executorMode_.store(ExecutorMode::Thread);
     } else {
-        executorMode_.store(ExecutorMode::Scheduler);
+      executorMode_.store(ExecutorMode::Scheduler);
     }
-    if (debugging::debug_io) debug("Hotkey executor mode: {} (config: IO.Executor={})", static_cast<int>(executorMode_.load()), executorModeStr);
+    if (debugging::debug_io)
+      debug("Hotkey executor mode: {} (config: IO.Executor={})",
+            static_cast<int>(executorMode_.load()), executorModeStr);
 
-  // Initialize HotkeyExecutor for thread-safe hotkey execution
-  hotkeyExecutor = std::make_unique<HotkeyExecutor>(workerThreads, 256);
-    if (debugging::debug_io) debug("HotkeyExecutor initialized with {} worker threads", workerThreads);
+    // Initialize HotkeyExecutor for thread-safe hotkey execution
+    hotkeyExecutor = std::make_unique<HotkeyExecutor>(workerThreads, 256);
+    if (debugging::debug_io)
+      debug("HotkeyExecutor initialized with {} worker threads", workerThreads);
 
-  mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
+    mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
 
 #ifdef __linux__
-  // EventListener needs DisplayManager to be initialized
-  {
-    // Use new unified EventListener
-        if (debugging::debug_io) debug("Using new unified EventListener");
+    // EventListener needs DisplayManager to be initialized
+    {
+      // Use new unified EventListener
+      if (debugging::debug_io)
+        debug("Using new unified EventListener");
 
-    std::vector<std::string> devices;
+      std::vector<std::string> devices;
 
-    // Get all keyboard devices (including auxiliary keyboards)
-    auto keyboardDevices = Device::findKeyboards();
-    for (const auto &kb : keyboardDevices) {
-      devices.push_back(kb.eventPath);
-    debug("[IO] Finding keyboard devices...");
-        if (debugging::debug_io) debug("Adding keyboard device: '{}' -> {} (confidence: {:.1f}%)", kb.name,
-           kb.eventPath, kb.confidence * 100);
-    }
-
-    std::string mouseDevice = getMouseDevice();
-    std::string gamepadDevice;
-
-    if (!mouseDevice.empty() &&
-        !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-      // Only add mouse device if it's not already in the keyboard devices
-      // list
-      bool alreadyAdded = false;
-      for (const auto &kb_device : keyboardDevices) {
-        if (kb_device.eventPath == mouseDevice) {
-          alreadyAdded = true;
-          break;
-        }
+      // Get all keyboard devices (including auxiliary keyboards)
+      auto keyboardDevices = Device::findKeyboards();
+      for (const auto &kb : keyboardDevices) {
+        devices.push_back(kb.eventPath);
+        debug("[IO] Finding keyboard devices...");
+        if (debugging::debug_io)
+          debug("Adding keyboard device: '{}' -> {} (confidence: {:.1f}%)",
+                kb.name, kb.eventPath, kb.confidence * 100);
       }
-      if (!alreadyAdded) {
-        devices.push_back(mouseDevice);
-            if (debugging::debug_io) debug("Adding mouse device: {}", mouseDevice);
-      }
-    }
 
-    bool enableGamepad =
-        Configs::Get().Get<bool>("Device.EnableGamepad", false);
-    if (enableGamepad) {
-      gamepadDevice = getGamepadDevice();
-      if (!gamepadDevice.empty()) {
-        devices.push_back(gamepadDevice);
-            if (debugging::debug_io) debug("Adding gamepad device: {}", gamepadDevice);
-      }
-    }
+      std::string mouseDevice = getMouseDevice();
+      std::string gamepadDevice;
 
-    if (!devices.empty()) {
-      try {
-        eventListener = std::make_unique<EventListener>();
-        eventListener->SetupUinput();
-
-        if (hotkeyManager) {
-          eventListener->setHotkeyManager(hotkeyManager.get());
-        }
-
-        // Initialize MouseController
-        mouseController =
-            std::make_unique<MouseController>(eventListener.get());
-        mouseController->SetSensitivity(mouseSensitivity);
-        mouseController->SetScrollSpeed(
-            Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
-
-// Pass HotkeyExecutor to EventListener for thread-safe execution
-eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
-    eventListener->SetExecutorMode(executorMode_.load());
-
-        // Set mouse and scroll sensitivity on EventListener (for internal use)
-        eventListener->SetMouseSensitivity(mouseSensitivity);
-        eventListener->SetScrollSpeed(
-            Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
-
-        globalEvdev = true;
-        bool grab = Configs::Get().Get<bool>("Device.GrabDevices", false);
-        if (ProcessManager::isTraced() || !eventListenerThreaded_) {
-          grab = false;
-        }
-        if (debugging::debug_io) debug("Starting EventListener with {} devices (grab={})", devices.size(),
-              grab);
-        debug("[IO] About to call EventListener::Start()...");
-        eventListener->Start(devices, grab, eventListenerThreaded_);
-        debug("[IO] EventListener::Start() returned");
-
-        // Pre-register recording callback (gated by isRecording_ flag)
-        eventListener->AddEventListener([this](const InputEvent& event) {
-          if (!isRecording_.load()) return;
-          if (recordStopKeyCode_.load() != 0 && event.kind == InputEventKind::Key && event.down && event.code == recordStopKeyCode_.load()) {
-            isRecording_.store(false);
-            return;
+      if (!mouseDevice.empty() &&
+          !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+        // Only add mouse device if it's not already in the keyboard devices
+        // list
+        bool alreadyAdded = false;
+        for (const auto &kb_device : keyboardDevices) {
+          if (kb_device.eventPath == mouseDevice) {
+            alreadyAdded = true;
+            break;
           }
-          RecordedEvent re;
-          re.kind = event.kind;
-          re.code = event.code;
-          re.value = event.value;
-          re.down = event.down;
-          re.dx = event.dx;
-          re.dy = event.dy;
-          re.keyName = event.keyName;
-          if (event.kind == InputEventKind::MouseButton) {
-            switch (event.code) {
-              case BTN_LEFT: re.buttonNumber = 1; break;
-              case BTN_RIGHT: re.buttonNumber = 2; break;
-              case BTN_MIDDLE: re.buttonNumber = 3; break;
-              case BTN_SIDE: re.buttonNumber = 4; break;
-              case BTN_EXTRA: re.buttonNumber = 5; break;
-              case BTN_FORWARD: re.buttonNumber = 6; break;
-              case BTN_BACK: re.buttonNumber = 7; break;
-              default: re.buttonNumber = event.code >= 1 && event.code <= 7 ? event.code : 1; break;
+        }
+        if (!alreadyAdded) {
+          devices.push_back(mouseDevice);
+          if (debugging::debug_io)
+            debug("Adding mouse device: {}", mouseDevice);
+        }
+      }
+
+      bool enableGamepad =
+          Configs::Get().Get<bool>("Device.EnableGamepad", false);
+      if (enableGamepad) {
+        gamepadDevice = getGamepadDevice();
+        if (!gamepadDevice.empty()) {
+          devices.push_back(gamepadDevice);
+          if (debugging::debug_io)
+            debug("Adding gamepad device: {}", gamepadDevice);
+        }
+      }
+
+      if (!devices.empty()) {
+        try {
+          eventListener = std::make_unique<EventListener>();
+          eventListener->SetupUinput();
+
+          if (hotkeyManager) {
+            eventListener->setHotkeyManager(hotkeyManager.get());
+          }
+
+          // Initialize MouseController
+          mouseController =
+              std::make_unique<MouseController>(eventListener.get());
+          mouseController->SetSensitivity(mouseSensitivity);
+          mouseController->SetScrollSpeed(
+              Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
+
+          // Pass HotkeyExecutor to EventListener for thread-safe execution
+          eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
+          eventListener->SetExecutorMode(executorMode_.load());
+
+          // Set mouse and scroll sensitivity on EventListener (for internal
+          // use)
+          eventListener->SetMouseSensitivity(mouseSensitivity);
+          eventListener->SetScrollSpeed(
+              Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
+
+          globalEvdev = true;
+          bool grab = Configs::Get().Get<bool>("Device.GrabDevices", false);
+          if (ProcessManager::isTraced() || !eventListenerThreaded_) {
+            grab = false;
+          }
+          if (debugging::debug_io)
+            debug("Starting EventListener with {} devices (grab={})",
+                  devices.size(), grab);
+          debug("[IO] About to call EventListener::Start()...");
+          eventListener->Start(devices, grab, eventListenerThreaded_);
+          debug("[IO] EventListener::Start() returned");
+
+          // Pre-register recording callback (gated by isRecording_ flag)
+          eventListener->AddEventListener([this](const InputEvent &event) {
+            if (!isRecording_.load())
+              return;
+            if (recordStopKeyCode_.load() != 0 &&
+                event.kind == InputEventKind::Key && event.down &&
+                event.code == recordStopKeyCode_.load()) {
+              isRecording_.store(false);
+              return;
             }
-          }
-          auto now = std::chrono::steady_clock::now();
-          re.timeMs = std::chrono::duration<double, std::milli>(now - recordingStartTime_).count();
-          std::lock_guard<std::mutex> lock(recordingMutex_);
-          recordedEvents_.push_back(re);
-        });
-      } catch (const std::exception &e) {
-        error("Failed to start unified EventListener: {}", e.what());
-        globalEvdev = false;
-      }
-    } else {
-      globalEvdev = false;
-      error("No input devices found for EventListener");
-    }
-
-        // Debug output - show what we detected
-        if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
-            listInputDevices();
+            RecordedEvent re;
+            re.kind = event.kind;
+            re.code = event.code;
+            re.value = event.value;
+            re.down = event.down;
+            re.dx = event.dx;
+            re.dy = event.dy;
+            re.keyName = event.keyName;
+            if (event.kind == InputEventKind::MouseButton) {
+              switch (event.code) {
+              case BTN_LEFT:
+                re.buttonNumber = 1;
+                break;
+              case BTN_RIGHT:
+                re.buttonNumber = 2;
+                break;
+              case BTN_MIDDLE:
+                re.buttonNumber = 3;
+                break;
+              case BTN_SIDE:
+                re.buttonNumber = 4;
+                break;
+              case BTN_EXTRA:
+                re.buttonNumber = 5;
+                break;
+              case BTN_FORWARD:
+                re.buttonNumber = 6;
+                break;
+              case BTN_BACK:
+                re.buttonNumber = 7;
+                break;
+              default:
+                re.buttonNumber =
+                    event.code >= 1 && event.code <= 7 ? event.code : 1;
+                break;
+              }
+            }
+            auto now = std::chrono::steady_clock::now();
+            re.timeMs = std::chrono::duration<double, std::milli>(
+                            now - recordingStartTime_)
+                            .count();
+            std::lock_guard<std::mutex> lock(recordingMutex_);
+            recordedEvents_.push_back(re);
+          });
+        } catch (const std::exception &e) {
+          error("Failed to start unified EventListener: {}", e.what());
+          globalEvdev = false;
         }
+      } else {
+        globalEvdev = false;
+        error("No input devices found for EventListener");
+      }
+
+      // Debug output - show what we detected
+      if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
+        listInputDevices();
+      }
     }
 
     // Create IOBackend for platform-specific output (XTest, keybd_event, etc.)
     ioBackend = IOBackend::Create(eventListener.get());
     if (ioBackend) {
-        ioBackend->Initialize();
-        if (debugging::debug_io) debug("IOBackend initialized: {}", ioBackend->GetName());
+      ioBackend->Initialize();
+      if (debugging::debug_io)
+        debug("IOBackend initialized: {}", ioBackend->GetName());
     }
 #endif
   });
 }
 
 void IO::SetInputBackend(const std::string &backendName) {
-    ensureBackend();
-    InputBackendType type = InputBackendType::Unknown;
+  ensureBackend();
+  InputBackendType type = InputBackendType::Unknown;
 
-    if (backendName.empty() || backendName == "auto") {
-        type = InputBackend::DetectBestBackend();
-        info("Auto-detected input backend: {}", 
-            type == InputBackendType::Evdev ? "evdev" :
-            type == InputBackendType::X11 ? "x11" :
-            type == InputBackendType::Wayland ? "wayland" : "unknown");
-    } else if (backendName == "evdev") {
-        type = InputBackendType::Evdev;
-    } else if (backendName == "x11") {
-        type = InputBackendType::X11;
-    } else if (backendName == "wayland") {
-        type = InputBackendType::Wayland;
-    } else {
-        warn("Unknown input backend '{}', using auto-detection", backendName);
-        type = InputBackend::DetectBestBackend();
-    }
+  if (backendName.empty() || backendName == "auto") {
+    type = InputBackend::DetectBestBackend();
+    info("Auto-detected input backend: {}",
+         type == InputBackendType::Evdev     ? "evdev"
+         : type == InputBackendType::X11     ? "x11"
+         : type == InputBackendType::Wayland ? "wayland"
+                                             : "unknown");
+  } else if (backendName == "evdev") {
+    type = InputBackendType::Evdev;
+  } else if (backendName == "x11") {
+    type = InputBackendType::X11;
+  } else if (backendName == "wayland") {
+    type = InputBackendType::Wayland;
+  } else {
+    warn("Unknown input backend '{}', using auto-detection", backendName);
+    type = InputBackend::DetectBestBackend();
+  }
 
-    inputBackend = InputBackend::Create(type);
-    if (inputBackend) {
-        inputBackendType = type;
-        info("Input backend set to: {}", inputBackend->GetName());
-    } else {
-        error("Failed to create input backend type {}", static_cast<int>(type));
-    }
+  inputBackend = InputBackend::Create(type);
+  if (inputBackend) {
+    inputBackendType = type;
+    info("Input backend set to: {}", inputBackend->GetName());
+  } else {
+    error("Failed to create input backend type {}", static_cast<int>(type));
+  }
 }
 
 void IO::SetEventListenerThreaded(bool threaded) {
@@ -651,151 +708,151 @@ void IO::PumpOnce() {
 // Backend device management
 std::vector<std::string> IO::ListDevices() {
   ensureBackend();
-    std::vector<std::string> result;
-    if (inputBackend) {
-        for (const auto &dev : inputBackend->EnumerateDevices()) {
-            result.push_back(dev.path);
-        }
+  std::vector<std::string> result;
+  if (inputBackend) {
+    for (const auto &dev : inputBackend->EnumerateDevices()) {
+      result.push_back(dev.path);
     }
-    return result;
+  }
+  return result;
 }
 
 bool IO::AddDevice(const std::string &path) {
   ensureBackend();
-    if (inputBackend) {
-        return inputBackend->OpenDevice(path);
-    }
-    return false;
+  if (inputBackend) {
+    return inputBackend->OpenDevice(path);
+  }
+  return false;
 }
 
 bool IO::RemoveDevice(const std::string &path) {
   ensureBackend();
-    if (inputBackend) {
-        inputBackend->CloseDevice(path);
-        return true;
-    }
-    return false;
+  if (inputBackend) {
+    inputBackend->CloseDevice(path);
+    return true;
+  }
+  return false;
 }
 
 void IO::ClearDevices() {
   ensureBackend();
-    if (inputBackend) {
-        auto devices = inputBackend->EnumerateDevices();
-        for (const auto &dev : devices) {
-            inputBackend->CloseDevice(dev.path);
-        }
+  if (inputBackend) {
+    auto devices = inputBackend->EnumerateDevices();
+    for (const auto &dev : devices) {
+      inputBackend->CloseDevice(dev.path);
     }
+  }
 }
 
 DeviceInfo IO::GetDevice(const std::string &path) {
   ensureBackend();
-    if (inputBackend) {
-        auto devices = inputBackend->EnumerateDevices();
-        for (const auto &dev : devices) {
-            if (dev.path == path) return dev;
-        }
+  if (inputBackend) {
+    auto devices = inputBackend->EnumerateDevices();
+    for (const auto &dev : devices) {
+      if (dev.path == path)
+        return dev;
     }
-    return DeviceInfo{};
+  }
+  return DeviceInfo{};
 }
 
 std::vector<DeviceInfo> IO::GetDevices() {
   ensureBackend();
-    if (inputBackend) {
-        return inputBackend->EnumerateDevices();
-    }
-    return {};
+  if (inputBackend) {
+    return inputBackend->EnumerateDevices();
+  }
+  return {};
 }
 
 // Evdev grab control
 bool IO::SetEvdevGrab(bool grab) {
   ensureBackend();
-    if (inputBackend) {
-        if (grab) {
-            auto devices = inputBackend->EnumerateDevices();
-            for (const auto &dev : devices) {
-                inputBackend->GrabDevice(dev.path);
-            }
-            return true;
-        } else {
-            inputBackend->UngrabAllDevices();
-            return true;
-        }
+  if (inputBackend) {
+    if (grab) {
+      auto devices = inputBackend->EnumerateDevices();
+      for (const auto &dev : devices) {
+        inputBackend->GrabDevice(dev.path);
+      }
+      return true;
+    } else {
+      inputBackend->UngrabAllDevices();
+      return true;
     }
-    return false;
+  }
+  return false;
 }
 
 bool IO::GetEvdevGrab() const {
-  const_cast<IO*>(this)->ensureBackend();
-    if (inputBackend) {
-        return inputBackend->GetGrabbedDeviceCount() > 0;
-    }
-    return false;
+  const_cast<IO *>(this)->ensureBackend();
+  if (inputBackend) {
+    return inputBackend->GetGrabbedDeviceCount() > 0;
+  }
+  return false;
 }
 
 bool IO::ToggleEvdevGrab() {
   ensureBackend();
-    bool current = GetEvdevGrab();
-    return SetEvdevGrab(!current);
+  bool current = GetEvdevGrab();
+  return SetEvdevGrab(!current);
 }
 
 // Key repeat settings
 void IO::SetRepeatInterval(int ms) {
   ensureBackend();
-    // Stored in config, used by EventListener
-    Configs::Get().Set<int>("Input.RepeatInterval", ms);
+  // Stored in config, used by EventListener
+  Configs::Get().Set<int>("Input.RepeatInterval", ms);
 }
 
 int IO::GetRepeatInterval() const {
-  const_cast<IO*>(this)->ensureBackend();
-    return Configs::Get().Get<int>("Input.RepeatInterval", 50);
+  const_cast<IO *>(this)->ensureBackend();
+  return Configs::Get().Get<int>("Input.RepeatInterval", 50);
 }
 
 void IO::SetAutoRepeat(bool enabled) {
   ensureBackend();
-    Configs::Get().Set<bool>("Input.AutoRepeat", enabled);
+  Configs::Get().Set<bool>("Input.AutoRepeat", enabled);
 }
 
 bool IO::GetAutoRepeat() const {
-  const_cast<IO*>(this)->ensureBackend();
-    return Configs::Get().Get<bool>("Input.AutoRepeat", true);
+  const_cast<IO *>(this)->ensureBackend();
+  return Configs::Get().Get<bool>("Input.AutoRepeat", true);
 }
 
 // Mouse gesture methods
 void IO::AddGesture(int id, const std::string &pattern) {
   ensureBackend();
-    if (eventListener) {
-        auto directions = eventListener->ParseGesturePattern(pattern);
-        eventListener->RegisterGestureHotkey(id, directions);
-    }
+  if (eventListener) {
+    auto directions = eventListener->ParseGesturePattern(pattern);
+    eventListener->RegisterGestureHotkey(id, directions);
+  }
 }
 
-void IO::AddGesture(int id, const std::vector<MouseGestureDirection> &directions) {
+void IO::AddGesture(int id,
+                    const std::vector<MouseGestureDirection> &directions) {
   ensureBackend();
-    if (eventListener) {
-        eventListener->RegisterGestureHotkey(id, directions);
-    }
+  if (eventListener) {
+    eventListener->RegisterGestureHotkey(id, directions);
+  }
 }
 
 void IO::RemoveGesture(int id) {
   ensureBackend();
-    // Gesture removal would need to be implemented in EventListener
-    (void)id;
+  // Gesture removal would need to be implemented in EventListener
+  (void)id;
 }
 
-std::vector<int> IO::GetGestures() const {
-    return {};
-}
+std::vector<int> IO::GetGestures() const { return {}; }
 
 bool IO::HasGestures() const {
-  const_cast<IO*>(this)->ensureBackend();
-    return false;
+  const_cast<IO *>(this)->ensureBackend();
+  return false;
 }
 
 void IO::ClearGestures() {
   ensureBackend();
-    if (eventListener) {
-        eventListener->ResetMouseGesture();
-    }
+  if (eventListener) {
+    eventListener->ResetMouseGesture();
+  }
 }
 
 IO::~IO() { cleanup(); }
@@ -818,18 +875,18 @@ void IO::cleanup() {
     inputBackend->UngrabAllDevices();
   }
 
-    if (debugging::debug_io) ::havel::debug("IO cleanup completed");
+  if (debugging::debug_io)
+    ::havel::debug("IO cleanup completed");
 }
 
 void IO::UngrabAll() {
   ensureBackend();
-  if (ioBackend) ioBackend->UnregisterAll();
+  if (ioBackend)
+    ioBackend->UnregisterAll();
   if (inputBackend && inputBackendType == InputBackendType::X11) {
     inputBackend->UngrabAllDevices();
   }
 }
-
-
 
 void IO::removeSpecialCharacters(str &keyName) {
   // Define the characters to remove
@@ -845,46 +902,52 @@ void IO::removeSpecialCharacters(str &keyName) {
 }
 bool IO::EmitClick(int btnCode, MouseAction action) {
   ensureBackend();
-    int x11Button = btnCode;
-    if (btnCode >= 1 && btnCode <= 9) x11Button = btnCode;
+  int x11Button = btnCode;
+  if (btnCode >= 1 && btnCode <= 9)
+    x11Button = btnCode;
 
-    auto doAction = [&](bool down) {
-        if (ioBackend) {
-          ioBackend->SendButton(x11Button, down);
-        }
-    };
-
-    switch (action) {
-    case MouseAction::Release:
-        doAction(false);
-        return true;
-    case MouseAction::Hold:
-        doAction(true);
-        return true;
-    case MouseAction::Click:
-        doAction(true);
-        doAction(false);
-        return true;
-    default:
-        error("Invalid mouse action: {}", static_cast<int>(action));
-        return false;
+  auto doAction = [&](bool down) {
+    if (ioBackend) {
+      ioBackend->SendButton(x11Button, down);
     }
+  };
+
+  switch (action) {
+  case MouseAction::Release:
+    doAction(false);
+    return true;
+  case MouseAction::Hold:
+    doAction(true);
+    return true;
+  case MouseAction::Click:
+    doAction(true);
+    doAction(false);
+    return true;
+  default:
+    error("Invalid mouse action: {}", static_cast<int>(action));
+    return false;
+  }
 }
 bool IO::MouseMove(int dx, int dy, int speed, float accel) {
   ensureBackend();
-    if (ioBackend) {
-        if (speed <= 0) speed = 1;
-        if (accel <= 0.0f) accel = 1.0f;
-        float acceleratedSpeed = speed * std::pow(accel, 1.5f);
-        int actualDx = static_cast<int>(dx * acceleratedSpeed);
-        int actualDy = static_cast<int>(dy * acceleratedSpeed);
-        if (actualDx == 0 && dx != 0) actualDx = (dx > 0) ? 1 : -1;
-        if (actualDy == 0 && dy != 0) actualDy = (dy > 0) ? 1 : -1;
-        if (debugging::debug_io) debug("Mouse move: {} {}", actualDx, actualDy);
-        return ioBackend->MovePointer(actualDx, actualDy);
-    }
-    error("MouseMove: no IOBackend available");
-    return false;
+  if (ioBackend) {
+    if (speed <= 0)
+      speed = 1;
+    if (accel <= 0.0f)
+      accel = 1.0f;
+    float acceleratedSpeed = speed * std::pow(accel, 1.5f);
+    int actualDx = static_cast<int>(dx * acceleratedSpeed);
+    int actualDy = static_cast<int>(dy * acceleratedSpeed);
+    if (actualDx == 0 && dx != 0)
+      actualDx = (dx > 0) ? 1 : -1;
+    if (actualDy == 0 && dy != 0)
+      actualDy = (dy > 0) ? 1 : -1;
+    if (debugging::debug_io)
+      debug("Mouse move: {} {}", actualDx, actualDy);
+    return ioBackend->MovePointer(actualDx, actualDy);
+  }
+  error("MouseMove: no IOBackend available");
+  return false;
 }
 bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
   ensureBackend();
@@ -906,7 +969,8 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
       return ioBackend->MovePointerTo(targetX, targetY);
     }
 
-    if (speed <= 0) speed = 5;
+    if (speed <= 0)
+      speed = 5;
     int steps = std::min(30, std::max(5, std::max(1, distance / (speed * 10))));
 
     for (int i = 0; i <= steps; ++i) {
@@ -921,41 +985,45 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
     return ioBackend->MovePointerTo(targetX, targetY);
   }
 
-    // For Wayland, fall back to REL with feedback loop
-    auto currentPos = GetMousePosition();
-    int currentX = currentPos.first;
-    int currentY = currentPos.second;
-    int dx = targetX - currentX;
-    int dy = targetY - currentY;
-    int distance = std::abs(dx) + std::abs(dy);
+  // For Wayland, fall back to REL with feedback loop
+  auto currentPos = GetMousePosition();
+  int currentX = currentPos.first;
+  int currentY = currentPos.second;
+  int dx = targetX - currentX;
+  int dy = targetY - currentY;
+  int distance = std::abs(dx) + std::abs(dy);
 
-    if (distance == 0) return true;
-
-    if (distance < 3) {
-        eventListener->SendUinputEvent(EV_REL, REL_X, dx);
-        eventListener->SendUinputEvent(EV_REL, REL_Y, dy);
-        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-        return true;
-    }
-
-    if (speed <= 0) speed = 5;
-    int steps = std::min(30, std::max(5, distance / (speed * 10)));
-    int stepDx = dx / steps;
-    int stepDy = dy / steps;
-    int remainderDx = dx - stepDx * steps;
-    int remainderDy = dy - stepDy * steps;
-
-    for (int i = 0; i < steps; ++i) {
-        int mx = stepDx + (i == steps - 1 ? remainderDx : 0);
-        int my = stepDy + (i == steps - 1 ? remainderDy : 0);
-        if (mx != 0) eventListener->SendUinputEvent(EV_REL, REL_X, mx);
-        if (my != 0) eventListener->SendUinputEvent(EV_REL, REL_Y, my);
-        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-        int sleepMs = std::max(1, 5 / std::max(1, speed));
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
-    }
-
+  if (distance == 0)
     return true;
+
+  if (distance < 3) {
+    eventListener->SendUinputEvent(EV_REL, REL_X, dx);
+    eventListener->SendUinputEvent(EV_REL, REL_Y, dy);
+    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    return true;
+  }
+
+  if (speed <= 0)
+    speed = 5;
+  int steps = std::min(30, std::max(5, distance / (speed * 10)));
+  int stepDx = dx / steps;
+  int stepDy = dy / steps;
+  int remainderDx = dx - stepDx * steps;
+  int remainderDy = dy - stepDy * steps;
+
+  for (int i = 0; i < steps; ++i) {
+    int mx = stepDx + (i == steps - 1 ? remainderDx : 0);
+    int my = stepDy + (i == steps - 1 ? remainderDy : 0);
+    if (mx != 0)
+      eventListener->SendUinputEvent(EV_REL, REL_X, mx);
+    if (my != 0)
+      eventListener->SendUinputEvent(EV_REL, REL_Y, my);
+    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    int sleepMs = std::max(1, 5 / std::max(1, speed));
+    std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+  }
+
+  return true;
 }
 
 bool IO::ClickAt(int x, int y, int button, int speed, float accel) {
@@ -978,38 +1046,38 @@ bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
 
 bool IO::Scroll(double dy, double dx) {
   ensureBackend();
-    if (mouseController) {
-        return mouseController->Scroll(dy, dx);
+  if (mouseController) {
+    return mouseController->Scroll(dy, dx);
+  }
+  if (ioBackend) {
+    int clicks = static_cast<int>(dy);
+    if (clicks > 0) {
+      for (int i = 0; i < clicks; i++) {
+        ioBackend->SendButton(4, true);
+        ioBackend->SendButton(4, false);
+      }
+    } else if (clicks < 0) {
+      for (int i = 0; i < -clicks; i++) {
+        ioBackend->SendButton(5, true);
+        ioBackend->SendButton(5, false);
+      }
     }
-    if (ioBackend) {
-        int clicks = static_cast<int>(dy);
-        if (clicks > 0) {
-            for (int i = 0; i < clicks; i++) {
-                ioBackend->SendButton(4, true);
-                ioBackend->SendButton(4, false);
-            }
-        } else if (clicks < 0) {
-            for (int i = 0; i < -clicks; i++) {
-                ioBackend->SendButton(5, true);
-                ioBackend->SendButton(5, false);
-            }
-        }
-        int hclicks = static_cast<int>(dx);
-        if (hclicks > 0) {
-            for (int i = 0; i < hclicks; i++) {
-                ioBackend->SendButton(6, true);
-                ioBackend->SendButton(6, false);
-            }
-        } else if (hclicks < 0) {
-            for (int i = 0; i < -hclicks; i++) {
-                ioBackend->SendButton(7, true);
-                ioBackend->SendButton(7, false);
-            }
-        }
-        return true;
+    int hclicks = static_cast<int>(dx);
+    if (hclicks > 0) {
+      for (int i = 0; i < hclicks; i++) {
+        ioBackend->SendButton(6, true);
+        ioBackend->SendButton(6, false);
+      }
+    } else if (hclicks < 0) {
+      for (int i = 0; i < -hclicks; i++) {
+        ioBackend->SendButton(7, true);
+        ioBackend->SendButton(7, false);
+      }
     }
-    error("Cannot scroll: MouseController not initialized");
-    return false;
+    return true;
+  }
+  error("Cannot scroll: MouseController not initialized");
+  return false;
 }
 
 void IO::SetMouseSensitivity(double sensitivity) {
@@ -1039,92 +1107,104 @@ void IO::SetScrollSpeed(double speed) {
 double IO::GetScrollSpeed() const { return scrollSpeed; }
 
 std::pair<int, int> IO::GetMousePosition() {
-    if (ioBackend) return ioBackend->GetCursorPosition();
-    if (!mouseController) {
-        error("Cannot get mouse position: MouseController not initialized");
-        return {0, 0};
-    }
-    return mouseController->GetPosition();
+  if (ioBackend)
+    return ioBackend->GetCursorPosition();
+  if (!mouseController) {
+    error("Cannot get mouse position: MouseController not initialized");
+    return {0, 0};
+  }
+  return mouseController->GetPosition();
 }
 
 bool IO::InitializeXInput2() {
   ensureBackend();
-  if (ioBackend) return ioBackend->SetupXInput2();
+  if (ioBackend)
+    return ioBackend->SetupXInput2();
   return false;
 }
 
 bool IO::SetHardwareMouseSensitivity(double sensitivity) {
   ensureBackend();
-  if (ioBackend) return ioBackend->SetHardwareSensitivity(sensitivity);
+  if (ioBackend)
+    return ioBackend->SetHardwareSensitivity(sensitivity);
   return false;
 }
 
 void IO::SendX11Key(const std::string &keyName, bool press) {
   ensureBackend();
-    Key keycode = GetKeyCode(keyName);
-    if (keycode == 0) return;
-    if (press) {
-        if (!TryPressKey(keycode)) return;
-    } else {
-        if (!TryReleaseKey(keycode)) return;
-    }
-    if (ioBackend) {
-        if (press) ioBackend->PressKey(keycode);
-        else ioBackend->ReleaseKey(keycode);
-    }
+  Key keycode = GetKeyCode(keyName);
+  if (keycode == 0)
+    return;
+  if (press) {
+    if (!TryPressKey(keycode))
+      return;
+  } else {
+    if (!TryReleaseKey(keycode))
+      return;
+  }
+  if (ioBackend) {
+    if (press)
+      ioBackend->PressKey(keycode);
+    else
+      ioBackend->ReleaseKey(keycode);
+  }
 }
 
 void IO::SendCharX11(char ch) {
   ensureBackend();
-    if (!ioBackend) return;
-    auto *display = DisplayManager::GetDisplay();
-    if (!display) return;
+  if (!ioBackend)
+    return;
+  auto *display = DisplayManager::GetDisplay();
+  if (!display)
+    return;
 
-    KeySym keysym;
-    if (ch == ' ') {
-        keysym = XK_space;
-    } else if (ch == '\n') {
-        keysym = XK_Return;
-    } else if (ch == '\t') {
-        keysym = XK_Tab;
-    } else if (ch == '\r') {
-        return;
-    } else {
-        keysym = XStringToKeysym(std::string(1, ch).c_str());
-        if (keysym == NoSymbol) {
-            keysym = XStringToKeysym(std::string(1, tolower(ch)).c_str());
+  KeySym keysym;
+  if (ch == ' ') {
+    keysym = XK_space;
+  } else if (ch == '\n') {
+    keysym = XK_Return;
+  } else if (ch == '\t') {
+    keysym = XK_Tab;
+  } else if (ch == '\r') {
+    return;
+  } else {
+    keysym = XStringToKeysym(std::string(1, ch).c_str());
+    if (keysym == NoSymbol) {
+      keysym = XStringToKeysym(std::string(1, tolower(ch)).c_str());
+    }
+  }
+  if (keysym == NoSymbol)
+    return;
+
+  KeyCode keycode = XKeysymToKeycode(display, keysym);
+  if (keycode == 0)
+    return;
+
+  int syms_per_keycode = 0;
+  KeySym *syms = XGetKeyboardMapping(display, keycode, 1, &syms_per_keycode);
+  bool needShift = false;
+  if (syms) {
+    if (syms_per_keycode > 0 && syms[0] != keysym) {
+      for (int i = 1; i < syms_per_keycode; ++i) {
+        if (syms[i] == keysym) {
+          needShift = (i == 1);
+          break;
         }
+      }
     }
-    if (keysym == NoSymbol) return;
+    XFree(syms);
+  }
 
-    KeyCode keycode = XKeysymToKeycode(display, keysym);
-    if (keycode == 0) return;
+  auto shiftKeycode = XKeysymToKeycode(display, XK_Shift_L);
 
-    int syms_per_keycode = 0;
-    KeySym *syms = XGetKeyboardMapping(display, keycode, 1, &syms_per_keycode);
-    bool needShift = false;
-    if (syms) {
-        if (syms_per_keycode > 0 && syms[0] != keysym) {
-            for (int i = 1; i < syms_per_keycode; ++i) {
-                if (syms[i] == keysym) {
-                    needShift = (i == 1);
-                    break;
-                }
-            }
-        }
-        XFree(syms);
-    }
-
-    auto shiftKeycode = XKeysymToKeycode(display, XK_Shift_L);
-
-    if (needShift && shiftKeycode) {
-        ioBackend->PressKey(shiftKeycode);
-    }
-    ioBackend->PressKey(keycode);
-    ioBackend->ReleaseKey(keycode);
-    if (needShift && shiftKeycode) {
-        ioBackend->ReleaseKey(shiftKeycode);
-    }
+  if (needShift && shiftKeycode) {
+    ioBackend->PressKey(shiftKeycode);
+  }
+  ioBackend->PressKey(keycode);
+  ioBackend->ReleaseKey(keycode);
+  if (needShift && shiftKeycode) {
+    ioBackend->ReleaseKey(shiftKeycode);
+  }
 }
 // SendUInput removed - delegate to EventListener instead
 // EventListener now manages uinput through UinputDevice class
@@ -1157,7 +1237,7 @@ bool IO::TryReleaseKey(int keycode) {
 void IO::EmergencyReleaseAllKeys() {
   ensureBackend();
   std::lock_guard<std::mutex> lock(keyStateMutex);
-    havel::warning("EMERGENCY: Releasing {} stuck keys", pressedKeys.size());
+  havel::warning("EMERGENCY: Releasing {} stuck keys", pressedKeys.size());
 
   // Copy the set to avoid iterator invalidation
   std::set<int> keysToRelease = pressedKeys;
@@ -1187,10 +1267,11 @@ void IO::FlushPendingSends() {
 }
 
 void IO::Send(cstr keys) {
-  if (HotkeyExecutor::isInHotkeyCallback()) {
-    DeferSend(keys);
-    return;
-  }
+  debug("Start Send: {}",
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+
 #if defined(WINDOWS)
   // Windows implementation unchanged
   for (size_t i = 0; i < keys.length(); ++i) {
@@ -1243,10 +1324,8 @@ void IO::Send(cstr keys) {
   auto SendKeyImpl = [&](const std::string &keyName, bool down) {
     if (useUinput || (!useX11 && globalEvdev)) {
       int code = GetKeyCacheLookup(keyName);
-      if (Configs::Get().GetVerboseKeyLogging()) {
-        info("Sending key: " + keyName + " (" + std::to_string(down) +
-             ") code: " + std::to_string(code));
-      }
+      debug("Sending key: " + keyName + " (" + std::to_string(down) +
+            ") code: " + std::to_string(code));
       if (code != -1) {
         if (eventListener) {
           eventListener->SendUinputEvent(EV_KEY, code, down ? 1 : 0);
@@ -1296,12 +1375,10 @@ void IO::Send(cstr keys) {
     case KeyToken::Modifier: {
       if (token.value == "toggle_uinput") {
         useUinput = !useUinput;
-        if (Configs::Get().GetVerboseKeyLogging())
-          debug(useUinput ? "Switched to uinput" : "Switched to X11");
+        debug(useUinput ? "Switched to uinput" : "Switched to X11");
       } else if (token.value == "toggle_x11") {
         useX11 = !useX11;
-        if (Configs::Get().GetVerboseKeyLogging())
-          debug(useX11 ? "Switched to X11" : "Switched to uinput");
+        debug(useX11 ? "Switched to X11" : "Switched to uinput");
       } else if (modifierKeys.count(token.value)) {
         SendKey(modifierKeys[token.value], true);
         activeModifiers.push_back(token.value);
@@ -1370,12 +1447,13 @@ void IO::Send(cstr keys) {
     }
   }
   activeModifiers.clear();
+  debug("End Send: {}", std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count());
 #endif
 }
 
-bool IO::Suspend() {
-  return Suspend(-1, -1);
-}
+bool IO::Suspend() { return Suspend(-1, -1); }
 
 bool IO::Suspend(int id, int triggerHotkeyId) {
   ensureBackend();
@@ -1405,7 +1483,8 @@ bool IO::Suspend(int id, int triggerHotkeyId) {
           hotkey.enabled = false;
         }
       }
-      // Keep the trigger hotkey enabled (except itself if it's a suspend hotkey)
+      // Keep the trigger hotkey enabled (except itself if it's a suspend
+      // hotkey)
       if (triggerHotkeyId > 0) {
         auto it = hotkeys.find(triggerHotkeyId);
         if (it != hotkeys.end()) {
@@ -1424,7 +1503,7 @@ bool IO::Suspend(int id, int triggerHotkeyId) {
       return true;
     }
   } catch (const std::exception &e) {
-        havel::error("Error in IO::Suspend: {}", e.what());
+    havel::error("Error in IO::Suspend: {}", e.what());
     return false;
   }
 }
@@ -1470,8 +1549,8 @@ bool IO::Resume() {
 
 // Static method to exit the application
 void IO::ExitApp() {
-    warning("Static ExitApp called - initiating graceful shutdown");
-    havel::exit(ExitReason::Normal, 0);
+  warning("Static ExitApp called - initiating graceful shutdown");
+  havel::exit(ExitReason::Normal, 0);
 }
 
 // Helper function to parse mouse button from string
@@ -1631,18 +1710,18 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
     case '%':
       result.isX11 = true;
       break;
-      case '^':
-        result.modifiers |= isEvdev ? (1 << 0) : ModifierMasks::CONTROL;
-        break;
-      case '+':
-        result.modifiers |= isEvdev ? (1 << 1) : ModifierMasks::SHIFT;
-        break;
-      case '!':
-        result.modifiers |= isEvdev ? (1 << 2) : ModifierMasks::ALT;
-        break;
-      case '#':
-        result.modifiers |= isEvdev ? (1 << 3) : ModifierMasks::META;
-        break;
+    case '^':
+      result.modifiers |= isEvdev ? (1 << 0) : ModifierMasks::CONTROL;
+      break;
+    case '+':
+      result.modifiers |= isEvdev ? (1 << 1) : ModifierMasks::SHIFT;
+      break;
+    case '!':
+      result.modifiers |= isEvdev ? (1 << 2) : ModifierMasks::ALT;
+      break;
+    case '#':
+      result.modifiers |= isEvdev ? (1 << 3) : ModifierMasks::META;
+      break;
     case '*':
       // Wildcard - ignore all current modifiers but don't set repeat=false
       result.wildcard = true;
@@ -1750,7 +1829,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
   if (id <= 0) {
     id = ++hotkeyCount;
   }
-  
+
   auto wrapped_action = [action, rawInput, this, id]() {
     if (Configs::Get().GetVerboseKeyLogging())
       debug("Hotkey pressed: " + rawInput);
@@ -1960,7 +2039,8 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
         KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
 
         if (keycode == 0) {
-        havel::error("Invalid key: '{}' in hotkey: {}", parsed.keyPart, rawInput);
+          havel::error("Invalid key: '{}' in hotkey: {}", parsed.keyPart,
+                       rawInput);
           return {};
         }
 
@@ -2025,13 +2105,14 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       default:
         eventTypeStr = "Unknown";
       }
-        if (debugging::debug_hotkeys) debug("Hotkey pressed: " + hotkeyStr +
-           " | Modifiers: " + std::to_string(parsed.modifiers) +
-           " | Key: " + parsed.keyPart + " | Event Type: " + eventTypeStr +
-           " | Grab: " + (parsed.grab ? "true" : "false") +
-           " | Suspend: " + (parsed.suspend ? "true" : "false") +
-           " | Repeat: " + (parsed.repeat ? "true" : "false") +
-           " | Wildcard: " + (parsed.wildcard ? "true" : "false"));
+      if (debugging::debug_hotkeys)
+        debug("Hotkey pressed: " + hotkeyStr +
+              " | Modifiers: " + std::to_string(parsed.modifiers) +
+              " | Key: " + parsed.keyPart + " | Event Type: " + eventTypeStr +
+              " | Grab: " + (parsed.grab ? "true" : "false") +
+              " | Suspend: " + (parsed.suspend ? "true" : "false") +
+              " | Repeat: " + (parsed.repeat ? "true" : "false") +
+              " | Wildcard: " + (parsed.wildcard ? "true" : "false"));
     }
     action();
   };
@@ -2185,7 +2266,7 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
     hk = AddHotkey(rawInput, std::move(action), id);
   }
   if (!hk.success) {
-        havel::error("Failed to register hotkey: {}", rawInput);
+    havel::error("Failed to register hotkey: {}", rawInput);
     failedHotkeys.push_back(hk);
     return false;
   }
@@ -2197,7 +2278,8 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
 // Method to control send
 void IO::ControlSend(const std::string &control, const std::string &keys) {
   ensureBackend();
-    if (debugging::debug_io) ::havel::debug("Control send: {} keys: {}", control, keys);
+  if (debugging::debug_io)
+    ::havel::debug("Control send: {} keys: {}", control, keys);
   // wID hwnd = WindowManager::FindByTitle(control);
   // if (!hwnd) {
   //     havel::warning("Window not found: {}", control);
@@ -2205,12 +2287,14 @@ void IO::ControlSend(const std::string &control, const std::string &keys) {
   // }
 }
 
-// Send text using clipboard + paste (more reliable than key events for complex text)
-// BACKS UP AND RESTORES clipboard to avoid destroying user data
+// Send text using clipboard + paste (more reliable than key events for complex
+// text) BACKS UP AND RESTORES clipboard to avoid destroying user data
 void IO::SendText(const std::string &text) {
   ensureBackend();
-  if (text.empty()) return;
-  if (ioBackend) ioBackend->TypeText(text);
+  if (text.empty())
+    return;
+  if (ioBackend)
+    ioBackend->TypeText(text);
 }
 
 // Method to get mouse position
@@ -2283,16 +2367,19 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
 // Display a message box
 void IO::MsgBox(const std::string &message) {
   ensureBackend();
- ::havel::info("Message Box: {}", message);
- }
+  ::havel::info("Message Box: {}", message);
+}
 
 // Assign a hotkey to a specific ID
 void IO::AssignHotkey(HotKey hotkey, int id) {
   ensureBackend();
-  if (id == 0) id = ++hotkeyCount;
+  if (id == 0)
+    id = ++hotkeyCount;
   hotkey.id = id;
   hotkeys[id] = hotkey;
-  if (ioBackend) ioBackend->RegisterHotkey(hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers), false);
+  if (ioBackend)
+    ioBackend->RegisterHotkey(
+        hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers), false);
 }
 
 #ifdef WINDOWS
@@ -2309,8 +2396,10 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
       if (!hotkey.grab && hotkey.enabled) {
         if (pKeyboard->vkCode == static_cast<DWORD>(hotkey.key.virtualKey)) {
           bool modifiersMatch =
-              ((hotkey.modifiers & ModifierMasks::SHIFT) ? shiftPressed : true) &&
-              ((hotkey.modifiers & ModifierMasks::CONTROL) ? ctrlPressed : true) &&
+              ((hotkey.modifiers & ModifierMasks::SHIFT) ? shiftPressed
+                                                         : true) &&
+              ((hotkey.modifiers & ModifierMasks::CONTROL) ? ctrlPressed
+                                                           : true) &&
               ((hotkey.modifiers & ModifierMasks::ALT) ? altPressed : true) &&
               ((hotkey.modifiers & ModifierMasks::META) ? winPressed : true);
 
@@ -2347,26 +2436,31 @@ int IO::ParseModifiers(str str) {
     abstract |= ModifierMasks::META;
     str.erase(str.find("#"), 1);
   }
-  if (ioBackend) return ioBackend->ToPlatformMask(abstract);
+  if (ioBackend)
+    return ioBackend->ToPlatformMask(abstract);
   return abstract;
 }
 bool IO::GetKeyState(const std::string &keyName) {
   ensureBackend();
   if (eventListener) {
     int keycode = KeyMap::FromString(keyName);
-    if (keycode != 0) return eventListener->GetKeyState(keycode);
+    if (keycode != 0)
+      return eventListener->GetKeyState(keycode);
   }
   if (ioBackend) {
     int keycode = GetKeyCode(keyName);
-    if (keycode != 0) return ioBackend->IsKeyDown(keycode);
+    if (keycode != 0)
+      return ioBackend->IsKeyDown(keycode);
   }
   return false;
 }
 
 bool IO::GetKeyState(int keycode) {
   ensureBackend();
-  if (eventListener) return eventListener->GetKeyState(keycode);
-  if (ioBackend) return ioBackend->IsKeyDown(keycode);
+  if (eventListener)
+    return eventListener->GetKeyState(keycode);
+  if (ioBackend)
+    return ioBackend->IsKeyDown(keycode);
   return false;
 }
 
@@ -2375,10 +2469,12 @@ bool IO::IsAnyKeyPressed() {
   if (eventListener) {
     std::lock_guard<std::mutex> lk(keyStateMutex);
     for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
-      if (isDown) return true;
+      if (isDown)
+        return true;
     }
   }
-  if (ioBackend && ioBackend->IsAnyKeyDown()) return true;
+  if (ioBackend && ioBackend->IsAnyKeyDown())
+    return true;
   return false;
 }
 
@@ -2388,7 +2484,8 @@ bool IO::IsAnyKeyPressedExcept(const std::string &excludeKey) {
     int excludeKeycode = EvdevNameToKeyCode(excludeKey);
     std::lock_guard<std::mutex> lk(keyStateMutex);
     for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
-      if (isDown && keycode != excludeKeycode) return true;
+      if (isDown && keycode != excludeKeycode)
+        return true;
     }
   }
   return false;
@@ -2400,11 +2497,13 @@ bool IO::IsAnyKeyPressedExcept(const std::vector<std::string> &excludeKeys) {
     std::set<int> excludeCodes;
     for (const auto &key : excludeKeys) {
       int code = EvdevNameToKeyCode(key);
-      if (code != -1) excludeCodes.insert(code);
+      if (code != -1)
+        excludeCodes.insert(code);
     }
     std::lock_guard<std::mutex> lk(keyStateMutex);
     for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
-      if (isDown && excludeCodes.find(keycode) == excludeCodes.end()) return true;
+      if (isDown && excludeCodes.find(keycode) == excludeCodes.end())
+        return true;
     }
   }
   return false;
@@ -2449,25 +2548,28 @@ Key IO::GetKeyCode(cstr keyName) {
   // Convert string to keysym
   KeySym keysym = StringToVirtualKey(keyName);
   if (keysym == NoSymbol) {
-        havel::warning("Unknown keysym for: {}", keyName);
+    havel::warning("Unknown keysym for: {}", keyName);
     return 0;
   }
 
   // Convert keysym to keycode
   KeyCode keycode = XKeysymToKeycode(DisplayManager::GetDisplay(), keysym);
   if (keycode == 0) {
-        havel::warning("Invalid keycode for keysym: {}", keyName);
+    havel::warning("Invalid keycode for keysym: {}", keyName);
     return 0;
   }
   return keycode;
 }
 void IO::PressKey(const std::string &keyName, bool press) {
   ensureBackend();
-    if (debugging::debug_io) ::havel::debug("Pressing key: {} (press: {})", keyName, press);
+  if (debugging::debug_io)
+    ::havel::debug("Pressing key: {} (press: {})", keyName, press);
   Key keycode = GetKeyCode(keyName);
   if (ioBackend) {
-    if (press) ioBackend->PressKey(keycode);
-    else ioBackend->ReleaseKey(keycode);
+    if (press)
+      ioBackend->PressKey(keycode);
+    else
+      ioBackend->ReleaseKey(keycode);
   }
 }
 
@@ -2484,12 +2586,15 @@ bool IO::GrabHotkey(int hotkeyId) {
     return false;
   }
   if (!hotkey.evdev && ioBackend) {
-    bool regOk = ioBackend->RegisterHotkey(hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers), hotkey.type == HotkeyType::MouseButton);
+    bool regOk = ioBackend->RegisterHotkey(
+        hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers),
+        hotkey.type == HotkeyType::MouseButton);
   } else if (hotkey.evdev) {
   } else {
   }
   hotkeys[hotkeyId].enabled = true;
-  if (debugging::debug_hotkeys) debug("Grabbed hotkey: {}", hotkey.alias);
+  if (debugging::debug_hotkeys)
+    debug("Grabbed hotkey: {}", hotkey.alias);
   return true;
 }
 
@@ -2501,7 +2606,8 @@ bool IO::UngrabHotkey(int hotkeyId) {
     return false;
   }
   const HotKey &hotkey = it->second;
-  if (debugging::debug_hotkeys) debug("Ungrabbing hotkey: {}", hotkey.alias);
+  if (debugging::debug_hotkeys)
+    debug("Ungrabbing hotkey: {}", hotkey.alias);
   if (hotkey.key == 0) {
     error("Invalid keycode for hotkey: {}", hotkey.alias);
     return false;
@@ -2509,25 +2615,29 @@ bool IO::UngrabHotkey(int hotkeyId) {
   if (!hotkey.evdev && ioBackend) {
     bool hasOtherSameHotkey = false;
     for (const auto &[id, hk] : hotkeys) {
-      if (id != hotkeyId && hk.enabled && !hk.evdev &&
-          hk.key == hotkey.key && hk.modifiers == hotkey.modifiers) {
+      if (id != hotkeyId && hk.enabled && !hk.evdev && hk.key == hotkey.key &&
+          hk.modifiers == hotkey.modifiers) {
         hasOtherSameHotkey = true;
         break;
       }
     }
-  if (!hasOtherSameHotkey) {
-    ioBackend->UnregisterHotkey(hotkey.key, ioBackend->ToPlatformMask(hotkey.modifiers), hotkey.type == HotkeyType::MouseButton);
-  }
+    if (!hasOtherSameHotkey) {
+      ioBackend->UnregisterHotkey(hotkey.key,
+                                  ioBackend->ToPlatformMask(hotkey.modifiers),
+                                  hotkey.type == HotkeyType::MouseButton);
+    }
   }
   hotkeys[hotkeyId].enabled = false;
-  if (debugging::debug_hotkeys) debug("Ungrabbed hotkey: {}", hotkey.alias);
+  if (debugging::debug_hotkeys)
+    debug("Ungrabbed hotkey: {}", hotkey.alias);
   return true;
 }
 
 void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
   ensureBackend();
-    if (debugging::debug_io) debug("IO::SetAnyKeyPressCallback called, eventListener={}",
-        (void *)eventListener.get());
+  if (debugging::debug_io)
+    debug("IO::SetAnyKeyPressCallback called, eventListener={}",
+          (void *)eventListener.get());
   if (!eventListener) {
     warn("IO::SetAnyKeyPressCallback: eventListener is null - callback will "
          "not be registered");
@@ -2539,9 +2649,11 @@ void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
   }
   try {
     // Double-check that eventListener is valid
-        if (debugging::debug_io) debug("Calling eventListener->SetAnyKeyPressCallback");
-        eventListener->SetAnyKeyPressCallback(callback);
-        if (debugging::debug_io) debug("SetAnyKeyPressCallback completed successfully");
+    if (debugging::debug_io)
+      debug("Calling eventListener->SetAnyKeyPressCallback");
+    eventListener->SetAnyKeyPressCallback(callback);
+    if (debugging::debug_io)
+      debug("SetAnyKeyPressCallback completed successfully");
   } catch (const std::exception &e) {
     error("IO::SetAnyKeyPressCallback failed: {}", e.what());
   } catch (...) {
@@ -2582,18 +2694,19 @@ void IO::SetInputBlockCallback(
 }
 
 HotkeyExecutor *IO::GetHotkeyExecutor() const {
-  const_cast<IO*>(this)->ensureBackend();
+  const_cast<IO *>(this)->ensureBackend();
   return hotkeyExecutor.get();
 }
 ExecutorMode IO::GetExecutorMode() const { return executorMode_.load(); }
 
 void IO::SetExecutorMode(ExecutorMode mode) {
   ensureBackend();
-    executorMode_.store(mode);
-    if (eventListener) {
-        eventListener->SetExecutorMode(mode);
-    }
-    if (debugging::debug_io) debug("ExecutorMode changed to {}", static_cast<int>(mode));
+  executorMode_.store(mode);
+  if (eventListener) {
+    eventListener->SetExecutorMode(mode);
+  }
+  if (debugging::debug_io)
+    debug("ExecutorMode changed to {}", static_cast<int>(mode));
 }
 
 bool IO::GrabHotkeysByPrefix(const std::string &prefix) {
@@ -2601,7 +2714,8 @@ bool IO::GrabHotkeysByPrefix(const std::string &prefix) {
   bool success = true;
   for (const auto &[id, hotkey] : hotkeys) {
     if (hotkey.alias.find(prefix) == 0) {
-      if (!GrabHotkey(id)) success = false;
+      if (!GrabHotkey(id))
+        success = false;
     }
   }
   return success;
@@ -2612,7 +2726,8 @@ bool IO::UngrabHotkeysByPrefix(const std::string &prefix) {
   bool success = true;
   for (const auto &[id, hotkey] : hotkeys) {
     if (hotkey.alias.find(prefix) == 0) {
-      if (!UngrabHotkey(id)) success = false;
+      if (!UngrabHotkey(id))
+        success = false;
     }
   }
   return success;
@@ -2733,7 +2848,8 @@ void IO::Map(const std::string &from, const std::string &to) {
     if (eventListener) {
       eventListener->AddKeyRemap(fromCode, toCode);
     }
-        if (debugging::debug_io) debug("Mapped evdev key {} ({}) to {} ({})", from, fromCode, to, toCode);
+    if (debugging::debug_io)
+      debug("Mapped evdev key {} ({}) to {} ({})", from, fromCode, to, toCode);
   } else {
     warn("Failed to map keys: {} -> {} (from:{} to:{})", from, to, fromCode,
          toCode);
@@ -2748,7 +2864,9 @@ void IO::Remap(const std::string &key1, const std::string &key2) {
   if (code1 > 0 && code2 > 0) {
     evdevRemappedKeys[code1] = code2;
     evdevRemappedKeys[code2] = code1;
-        if (debugging::debug_io) debug("Remapped evdev keys: {} ({}) <-> {} ({})", key1, code1, key2, code2);
+    if (debugging::debug_io)
+      debug("Remapped evdev keys: {} ({}) <-> {} ({})", key1, code1, key2,
+            code2);
 
     // Also add to EventListener if enabled
     if (eventListener) {
@@ -2769,7 +2887,8 @@ void IO::Unmap(const std::string &from) {
     if (eventListener) {
       eventListener->RemoveKeyRemap(fromCode);
     }
-        if (debugging::debug_io) debug("Unmapped evdev key {} ({})", from, fromCode);
+    if (debugging::debug_io)
+      debug("Unmapped evdev key {} ({})", from, fromCode);
   } else {
     warn("Failed to unmap key: {} ({})", from, fromCode);
   }
@@ -2807,7 +2926,6 @@ bool IO::IsKeyRemappedTo(int targetKey) {
   return false;
 }
 
-
 void havel::IO::setGlobalAltState(bool pressed) {
   ensureBackend();
   globalAltPressed.store(pressed);
@@ -2816,7 +2934,8 @@ void havel::IO::setGlobalAltState(bool pressed) {
 bool havel::IO::getGlobalAltState() { return globalAltPressed.load(); }
 void IO::executeComboAction(const std::string &action) {
   ensureBackend();
-    if (debugging::debug_hotkeys) debug("Executing combo action: {}", action);
+  if (debugging::debug_hotkeys)
+    debug("Executing combo action: {}", action);
 
   // Transform action to hotkey alias
   std::string targetAlias;
@@ -2827,22 +2946,26 @@ void IO::executeComboAction(const std::string &action) {
   else
     targetAlias = action;
 
-  if (debugging::debug_hotkeys) debug("Looking for hotkey with alias: '{}'", targetAlias);
+  if (debugging::debug_hotkeys)
+    debug("Looking for hotkey with alias: '{}'", targetAlias);
 
   // Get current modifier state
   int currentMods = GetCurrentModifiers();
-  if (debugging::debug_hotkeys) debug("Current modifiers: 0x{:x}", currentMods);
+  if (debugging::debug_hotkeys)
+    debug("Current modifiers: 0x{:x}", currentMods);
 
   for (auto &[id, hotkey] : hotkeys) {
     if (hotkey.enabled && hotkey.callback && hotkey.alias == targetAlias) {
       // Check modifiers match
       if (hotkey.modifiers == currentMods) {
-        if (debugging::debug_hotkeys) debug("Executing hotkey '{}' for action '{}'", hotkey.alias, action);
+        if (debugging::debug_hotkeys)
+          debug("Executing hotkey '{}' for action '{}'", hotkey.alias, action);
         hotkey.callback();
         return;
       } else {
-                if (debugging::debug_hotkeys) debug("Modifiers don't match: expected={}, current={}",
-              hotkey.modifiers, currentMods);
+        if (debugging::debug_hotkeys)
+          debug("Modifiers don't match: expected={}, current={}",
+                hotkey.modifiers, currentMods);
       }
     }
   }
@@ -2940,7 +3063,8 @@ void IO::StartRecord(const std::string &stopKeyName) {
   recordStopKeyCode_.store(0);
   if (!stopKeyName.empty()) {
     int code = KeyMap::FromString(stopKeyName);
-    if (code != 0) recordStopKeyCode_.store(code);
+    if (code != 0)
+      recordStopKeyCode_.store(code);
   }
   recordingStartTime_ = std::chrono::steady_clock::now();
   isRecording_.store(true);
@@ -2966,4 +3090,3 @@ void havel::IO::Scroll(int dy, int dx) {
     mouseController->Scroll(dy, dx);
   }
 }
-

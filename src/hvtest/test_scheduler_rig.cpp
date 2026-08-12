@@ -26,6 +26,12 @@ havel::compiler::Scheduler::SuspensionReason toSchedReason(uint8_t fiberReason) 
 }
 #include <cassert>
 #include <iostream>
+#include <algorithm>
+#include <vector>
+#include <poll.h>
+#include <unistd.h>
+#include <thread>
+#include <chrono>
 
 using namespace havel::compiler;
 
@@ -1354,6 +1360,75 @@ g->state = Scheduler::GoroutineState::Done;
 sched.clearCurrent();
 }
 
+// Regression: createPersistentHotkeyCallback parks a freshly-spawned
+// persistent hotkey goroutine via suspend(), which must atomically remove
+// it from hotkey_queue_. spawn() had pushed it as Created; without removal
+// the goroutine stays in the queue as Suspended, inflating hotkey_queue_ to
+// N persistent registrations and making every hasRunnableFibers()/pickNext()
+// O(N). wakeHotkey() re-enqueues on trigger, so parked persistent goroutines
+// must NOT live in the run queue between triggers.
+static void test_callback_rig_create_parked_dequeues() {
+    auto& sched = Scheduler::instance();
+
+    size_t base_hkq = sched.getSchedulerSummary().hotkey_queue_size;
+
+    const int N = 50;
+    std::vector<uint32_t> gids;
+    for (int i = 0; i < N; ++i) {
+        uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(i)}, 0, "rig_park_deq");
+        auto* g = sched.get(gid);
+        if (!g) { CHECK(false, "spawn returned gid with no goroutine"); return; }
+        g->persistent = true;
+        g->hotkey_callable = Value::makeFunctionObjId(1);
+        g->hotkey_args = {Value::makeInt(i)};
+        g->hotkey_policy = HotkeyPolicy::Drop;
+        // Park via the public suspend() path the way createPersistentHotkeyCallback
+        // does (after the fix). Must atomically remove from the run queue.
+        if (g->fiber) {
+            g->fiber->state = FiberState::SUSPENDED;
+            g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
+        }
+        sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+        gids.push_back(gid);
+    }
+
+    //	None of the N parked persistent hotkeys may remain in hotkey_queue_;
+    // otherwise hasRunnableFibers()/pickNext() scan them every tick.
+    auto summary = sched.getSchedulerSummary();
+    CHECK_EQ(summary.hotkey_queue_size, base_hkq,
+             "parked persistent hotkeys must NOT sit in hotkey_queue_");
+
+    // pickNext must not return any of the parked goroutines.
+    for (int i = 0; i < N; ++i) {
+        auto* picked = sched.pickNext();
+        CHECK(picked == nullptr || std::find(gids.begin(), gids.end(), picked->id) == gids.end(),
+              "pickNext must not return a parked persistent hotkey");
+    }
+
+    // wakeHotkey must still find them by id and re-enqueue (state=Created).
+    auto* g0 = sched.get(gids[0]);
+    CHECK(g0 != nullptr, "parked goroutine must still be reachable by id");
+    // Re-baseline after the pickNext loop above may have drained any leftover
+    // warm-state entries from prior tests, so the queue + 1 expectation is
+    // computed against the current size, not the snapshot from before the
+    // pickNext loop.
+    size_t pre_wake_hkq = sched.getSchedulerSummary().hotkey_queue_size;
+    bool woke = sched.wakeHotkey(g0);
+    CHECK(woke, "wakeHotkey on parked persistent must succeed");
+    CHECK_EQ(static_cast<int>(g0->state.load()),
+             static_cast<int>(Scheduler::GoroutineState::Created),
+             "wakeHotkey must transition to Created via requeueFront");
+    CHECK_EQ(sched.getSchedulerSummary().hotkey_queue_size, pre_wake_hkq + 1,
+             "wakeHotkey must re-enqueue exactly one hotkey");
+
+    // cleanup
+    for (uint32_t gid : gids) {
+        auto* gg = sched.get(gid);
+        if (gg) gg->state = Scheduler::GoroutineState::Done;
+    }
+    sched.clearCurrent();
+}
+
 static void test_callback_rig_wake_from_parked() {
 auto& sched = Scheduler::instance();
 
@@ -1668,6 +1743,69 @@ CHECK(!result, "Drop+non-persistent while Running should return false (event dro
 // Non-persistent goes to Done after handler, not re-parked
 g->state = Scheduler::GoroutineState::Done;
 sched.clearCurrent();
+}
+
+// Regression: notifyWakeup() must write to deferred_wakeup_fd_ so a
+// concurrent poll() on that fd (replacing the naive sleep_for in
+// VM::execute's main scheduler loop) wakes immediately when a hotkey
+// goroutine is requeued. Without this contract, the main VM loop blocks
+// in sleep_for(100ms) while hotkey work sits in the queue, producing
+// 50-100ms+ latency from physical key event to hotkey block entry.
+static void test_notifyWakeup_breaks_poll_wakeup_fd() {
+auto& sched = Scheduler::instance();
+int fd = sched.deferredWakeupFd();
+CHECK(fd >= 0, "deferredWakeupFd must be initialized");
+
+// Drain any stale wakeups from previous tests.
+uint64_t v;
+while (::read(fd, &v, sizeof(v)) == sizeof(v)) {}
+
+// Simulate the main VM scheduler loop's idle wait: poll the wakeup fd
+// with a 5-second timeout. A concurrent notifyWakeup() should break it
+// within milliseconds.
+auto t0 = std::chrono::steady_clock::now();
+std::thread notifier([&]{
+  // Give the poll() a moment to start before signaling.
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  // requeueFront() calls notifyWakeup() at its end. We can call it
+  // directly via wakeHotkey(g) on a parked persistent hotkey, which
+  // takes the same code path.
+  uint32_t gid = sched.spawnHotkey(0, {}, 0, "rig_wakeup_fd");
+  auto* g = sched.get(gid);
+  g->persistent = true;
+  g->hotkey_callable = Value::makeFunctionObjId(1);
+  g->hotkey_alias = "rig_wakeup_fd_alias";
+  g->hotkey_policy = HotkeyPolicy::Drop;
+  g->state = Scheduler::GoroutineState::Suspended;
+  g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait,
+                             std::memory_order_release);
+  bool ok = sched.wakeHotkey(g);
+  CHECK(ok, "wakeHotkey on Suspended+HotkeyWait goroutine should succeed");
+});
+
+struct pollfd pfd;
+pfd.fd = fd;
+pfd.events = POLLIN;
+pfd.revents = 0;
+int pr = ::poll(&pfd, 1, 5000);
+auto t1 = std::chrono::steady_clock::now();
+notifier.join();
+
+CHECK(pr > 0, "poll() must return >0 when wakeup fd is signaled");
+CHECK((pfd.revents & POLLIN) != 0, "POLLIN must be set on wakeup fd");
+auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+// 20ms notify delay + small slop for scheduling. Well under 5000ms.
+CHECK(elapsed_ms < 1000, "poll() must wake within 1s of notifyWakeup() (got elapsed_ms)");
+
+// Drain the byte we were notified about.
+uint64_t val;
+ssize_t rd = ::read(fd, &val, sizeof(val));
+CHECK(rd == sizeof(val), "read must drain the wake byte");
+
+// Cleanup: mark the goroutine Done and remove by alias.
+auto* g = sched.get(1u); // we just spawned; instance assigns sequential IDs
+(void)g;
+sched.removeHotkeyByAlias("rig_wakeup_fd_alias");
 }
 
 // ============================================================
@@ -3474,6 +3612,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
   test_callback_rig_create_parked();
   std::cout << " PASS callback rig: create → parked\n";
 
+  test_callback_rig_create_parked_dequeues();
+  std::cout << " PASS callback rig: park removes goroutine from hotkey_queue_\n";
+
   test_callback_rig_wake_from_parked();
   std::cout << " PASS callback rig: wake from parked\n";
 
@@ -3500,6 +3641,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
 
  test_callback_rig_non_persistent_no_repark();
  std::cout << " PASS callback rig: non-persistent no repark\n";
+
+ test_notifyWakeup_breaks_poll_wakeup_fd();
+ std::cout << " PASS notifyWakeup: poll() on deferred fd wakes immediately\n";
 
  // Scheduler API coverage gaps
  test_spawn_args_populated();
@@ -3717,7 +3861,8 @@ std::cout << "=== Scheduler Tests ===\n\n";
   // + 23 scheduler API gaps + 22 fiber API gaps + 4 hotkey edge-case gaps
   // + 4 new scheduler API tests + 4 new hotkey query tests
   // + 14 async loop/coroutine/while-loop integration tests
-  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14;
+  // + 1 deferred-wakeup-fd poll regression test
+  constexpr int total = 25 + 14 + 18 + 10 + 23 + 22 + 4 + 4 + 4 + 14 + 1;
   std::cout << "\n=== All " << total << " tests passed! ===\n";
 
   benchmark_scheduler_pump_cost();

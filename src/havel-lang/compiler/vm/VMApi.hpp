@@ -246,6 +246,10 @@ struct VMApi {
         vm().requestSuspension(reason, context);
     }
 
+    bool isSuspensionPending() const { return vm().isSuspensionRequested(); }
+
+    uint8_t lastSuspensionReason() const { return vm().getLastSuspensionReason(); }
+
     bool hasScheduler() const {
         return vm().getScheduler() != nullptr;
     }

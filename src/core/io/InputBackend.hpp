@@ -113,6 +113,13 @@ public:
     // only observed for readiness, never drained or closed by the backend.
     virtual void SetExternalWakeupFd(int fd) { (void)fd; }
 
+    // Multi-fd variant: register several external wakeup fds at once (e.g.
+    // scheduler deferred-wakeup, event-queue wakeup, signalfd). All fds are
+    // observed for readiness only; never drained or closed here. Replaces the
+    // single-fd registration with the given set. Pass an empty vector (or call
+    // with no args) to clear.
+    virtual void SetExternalWakeupFds(std::vector<int> fds) { (void)fds; }
+
     virtual std::pair<int, int> GetMousePosition() const = 0;
     virtual bool GetKeyState(uint32_t code) const = 0;
     virtual uint32_t GetModifiers() const = 0;

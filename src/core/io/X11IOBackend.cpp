@@ -99,6 +99,8 @@ void X11IOBackend::SendButton(int button, bool down) {
 
 bool X11IOBackend::RegisterHotkey(int keycode, int modifiers, bool isButton) {
     if (!display_) return false;
+    // First ungrab any existing grab for this key/modifier combo to avoid leaks
+    UnregisterHotkey(keycode, modifiers, isButton);
     bool success = true;
     ::Window root = DefaultRootWindow(display_);
     unsigned int modVariants[] = {0, LockMask, numlockMask_, numlockMask_ | LockMask};

@@ -1,0 +1,14 @@
+use time
+
+fn sleepm(ms) { time.sleep(ms) }
+
+::t0 = time.now()
+sleepm(150)
+t1 = (time.now() - ::t0) / 1000.0
+
+::t2 = time.now()
+time.sleep(150)
+t3 = (time.now() - ::t2) / 1000.0
+
+print("mod=" + str(t1) + " dir=" + str(t3))
+if t1 >= 0.120 && t3 >= 0.120 { println(" PASS") } else { println(" FAIL") }

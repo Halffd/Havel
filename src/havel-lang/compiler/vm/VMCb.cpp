@@ -158,14 +158,20 @@ const std::string &alias) {
             g->hotkey_callback_id = id;
             storeDirectCallThunk(id, std::move(thunk));
         }
-        // Park immediately: set Suspended so pickNext skips it until first trigger
-        g->state = Scheduler::GoroutineState::Suspended;
-        g->suspension_reason = Scheduler::SuspensionReason::HotkeyWait;
+        // Park immediately: set Suspended + HotkeyWait and remove from any
+        // priority queue. spawn() pushed this goroutine to hotkey_queue_
+        // (state=Created); without removal it would sit there as Suspended
+        // indefinitely, inflating hotkey_queue_ to N persistent registrations
+        // and making hasRunnableFibers()/pickNext() O(N) per scheduler tick
+        // even when no hotkey is actually runnable. wakeHotkey() re-enqueues
+        // on trigger, so the goroutine only needs to be discoverable via
+        // goroutines_ (by id/alias), not via the run queues.
         if (g->fiber) {
             g->fiber->state = FiberState::SUSPENDED;
             g->fiber->suspended_reason = SuspensionReason::HOTKEY_WAIT;
         }
-        ::havel::debug("[VM] createPersistentHotkeyCallback: gid={} persistent (parked)", gid);
+        scheduler_->suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+        ::havel::debug("[VM] createPersistentHotkeyCallback: gid={} persistent (parked, de-queued)", gid);
     }
 
     return gid;

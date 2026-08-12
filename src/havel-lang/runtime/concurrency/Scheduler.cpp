@@ -224,8 +224,16 @@ void Scheduler::suspend(Scheduler::Goroutine* g, SuspensionReason reason) {
   g->state = GoroutineState::Suspended;
   g->suspension_reason.store(reason, std::memory_order_release);
 
-  // Remove from queues immediately since it's no longer runnable
-  removeFromQueues(g);
+  // Remove from queues immediately since it's no longer runnable.
+  // Must hold priority_mutex_ to satisfy removeFromQueues contract and
+  // to serialize against pickNext() / requeueFront() / hasRunnableFibers()
+  // running on the VM thread. Without the lock, a concurrent pickNext()
+  // could observe a half-removed entry or rotate it to back, leaving the
+  // goroutine in the queue as Suspended (queue inflation root cause).
+  {
+    std::lock_guard lock(priority_mutex_);
+    removeFromQueues(g);
+  }
 }
 
 void Scheduler::unpark(Scheduler::Goroutine* g) {

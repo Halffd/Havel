@@ -1230,8 +1230,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
   try {
     LaunchConfig cfg = parseArgs(argc, argv);
 
-    // Apply self-hosted config from main()
-    if (!self_hosted_modules_path_config_.empty()) {
+    // Apply self-hosted config from main() (only if not --no-self-hosted)
+    if (!cfg.noSelfHosted && !self_hosted_modules_path_config_.empty()) {
       cfg.vmConfig.self_hosted_modules_path = self_hosted_modules_path_config_;
     }
 
@@ -1276,7 +1276,7 @@ int HavelLauncher::run(int argc, char *argv[]) {
         error("Self-hosted modules not found at: " + langDir.string());
         return 1;
       }
-    } else if (cfg.vmConfig.self_hosted_modules_path.empty()) {
+    } else if (!cfg.noSelfHosted && cfg.vmConfig.self_hosted_modules_path.empty()) {
       error("Self-hosted modules path not configured");
       return 1;
     }

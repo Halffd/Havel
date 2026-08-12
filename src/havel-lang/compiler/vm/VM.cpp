@@ -108,8 +108,8 @@ VM::VM(const VMConfig &cfg) {
   if (tiering_enabled_) {
     jit_compiler_ = std::make_unique<BytecodeOrcJIT>();
     if (trace_execution_) {
-      fprintf(stderr, "[VM-DEBUG] JIT compiler created: %p\n", jit_compiler_.get());
-      fflush(stderr);
+      // fprintf(stderr, "[VM-DEBUG] JIT compiler created: %p\n", jit_compiler_.get());
+      // fflush(stderr);
     }
     jit_compiler_->setDebugMode(cfg.debugJIT);
   }
@@ -1459,7 +1459,6 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   // visible on resume; unconditionally swapping to the snapshot would
   // clobber main's live globals and re-run stale iterations.
   auto snapIt = spawn_globals_snapshot_.find(closure_id);
-  std::cerr << "[DEBUG] startGoroutine snapshot found=" << (snapIt != spawn_globals_snapshot_.end()) << " size=" << (snapIt != spawn_globals_snapshot_.end() ? snapIt->second->size() : 0) << " globals has fs=" << (globals.count("fs") ? 1 : 0) << " snapshot has fs=" << (snapIt != spawn_globals_snapshot_.end() && snapIt->second->count("fs") ? 1 : 0) << "\n";
   if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
     bool missing = false;
     for (const auto &[k, v] : *snapIt->second) {
@@ -1503,12 +1502,6 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   (void)chunk_pin; // held implicitly via the closure we allocated/looked-up
 
   func->execution_count++;
-  std::cerr << "[DEBUG] startGoroutine func name='" << func->name << "' instrs=" << func->instructions.size() << " param=" << func->param_count << " local=" << func->local_count << "\n";
-  for (size_t di = 0; di < func->instructions.size(); ++di) {
-    std::cerr << "[DEBUG]   i" << di << " op=" << (int)func->instructions[di].opcode << " ops=";
-    for (const auto &opv : func->instructions[di].operands) std::cerr << opv.toString() << ";";
-    std::cerr << "\n";
-  }
   if (func->execution_count == 1000 && hot_func_cb_ && !debugger_attached_) {
     hot_func_cb_(*func);
   }
@@ -2677,8 +2670,8 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
   }
 
   if (trace_execution_) {
-    fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());
-    fflush(stderr);
+    // fprintf(stderr, "[DOCALL-DEBUG] name=%s jit_compiled=%d jit_compiler_=%p closure_id=%u is_fn_obj=%d is_closure=%d\n", callee->name.c_str(), (int)callee->jit_compiled, jit_compiler_.get(), closure_id, (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId());
+    // fflush(stderr);
   }
   if (callee->jit_compiled && jit_compiler_ && !debugger_attached_) {
     uint32_t prev_jit_closure = setJITActiveClosurePublic(closure_id);

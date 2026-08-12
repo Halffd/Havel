@@ -3,6 +3,13 @@
 #include "../common/Debug.hpp"
 #include <iostream>
 #include <sstream>
+// Check if a token is skippable (whitespace, comment, or #unsafe marker)
+static inline bool isSkippableToken(const havel::Token& t) {
+    return t.type == havel::TokenType::NewLine || 
+           t.type == havel::TokenType::Comment || 
+           t.type == havel::TokenType::UnsafeMarker;
+}
+
 
 /*
  * MAIN C++ PARSER — FROZEN (Stage 0)
@@ -2574,7 +2581,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   DepthGuard dg(recursion_depth_);
   // Skip leading newlines within statement context
   // This allows multiple newlines between statements
-  while (at().type == havel::TokenType::NewLine) {
+  while (isSkippableToken(at())) {
     advance();
   }
 
@@ -4558,7 +4565,7 @@ Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
 
   auto isEnd = [&]() -> bool {
     if (isColonBody) {
-      return (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Comment)
+      return isSkippableToken(at())
         ? false
         : at().column < colonBaseIndent;
     }
@@ -4567,8 +4574,7 @@ Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
 
   while (!isEnd() && notEOF()) {
     // Skip newlines and comments
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Comment) {
+    if (isSkippableToken(at())) {
       advance();
       continue;
     }
@@ -4580,8 +4586,7 @@ Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
       advance(); // consume 'fn' or 'op'
 
       // Skip whitespace/newlines after fn/op
-      while ((at().type == havel::TokenType::NewLine ||
-              at().type == havel::TokenType::Comment) &&
+      while (isSkippableToken(at()) &&
              notEOF()) {
         advance();
       }
@@ -4875,7 +4880,7 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
 
   auto isEnd = [&]() -> bool {
     if (isColonBody) {
-      return (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Comment)
+      return isSkippableToken(at())
         ? false
         : at().column < colonBaseIndent;
     }
@@ -4884,8 +4889,7 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
 
   while (!isEnd() && notEOF()) {
     // Skip newlines and comments
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Comment) {
+    if (isSkippableToken(at())) {
       advance();
       continue;
     }
@@ -4906,8 +4910,7 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
       advance(); // consume 'fn' or 'op'
 
       // Skip whitespace/newlines after fn/op
-      while ((at().type == havel::TokenType::NewLine ||
-              at().type == havel::TokenType::Comment) &&
+      while (isSkippableToken(at()) &&
              notEOF()) {
         advance();
       }
@@ -5132,8 +5135,7 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
 	std::vector<std::unique_ptr<ast::FunctionParameter>> params;
 	      while (at().type != havel::TokenType::CloseParen && notEOF()) {
 	        // Skip newlines and comments
-	        if (at().type == havel::TokenType::NewLine ||
-	            at().type == havel::TokenType::Comment) {
+	        if (isSkippableToken(at())) {
 	          advance();
 	          continue;
 	        }
@@ -5217,8 +5219,7 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
         at().type == havel::TokenType::Let) {
         // Peek ahead past newlines to see if an identifier follows
         size_t lookahead = 1;
-        while (at(lookahead).type == havel::TokenType::NewLine ||
-               at(lookahead).type == havel::TokenType::Comment) {
+        while (isSkippableToken(at(lookahead))) {
           ++lookahead;
         }
         if (at(lookahead).type == havel::TokenType::Identifier) {
@@ -5226,8 +5227,7 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
           isConst = (at().type == havel::TokenType::Val || at().type == havel::TokenType::Const);
           advance(); // consume val/const/let
           // Skip newlines between prefix and field name
-          while (at().type == havel::TokenType::NewLine ||
-                 at().type == havel::TokenType::Comment) {
+          while (isSkippableToken(at())) {
             advance();
           }
         }
@@ -5358,8 +5358,7 @@ std::vector<ast::EnumVariantDef> Parser::parseEnumVariants() {
 
   while (at().type != havel::TokenType::CloseBrace && notEOF()) {
     // Skip newlines and comments
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Comment) {
+    if (isSkippableToken(at())) {
       advance();
       continue;
     }
@@ -5414,8 +5413,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
 
   while (at().type != havel::TokenType::CloseBrace && notEOF()) {
     // Skip newlines and comments
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Comment) {
+    if (isSkippableToken(at())) {
       advance();
       continue;
     }
@@ -5508,7 +5506,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
 
   auto isEnd = [&]() -> bool {
     if (isColonBody) {
-      return (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Comment)
+      return isSkippableToken(at())
         ? false
         : at().column < colonBaseIndent;
     }
@@ -5518,8 +5516,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
   std::vector<std::unique_ptr<havel::ast::TraitMethod>> methods;
 
   while (!isEnd() && notEOF()) {
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Comment) {
+    if (isSkippableToken(at())) {
       advance();
       continue;
     }
@@ -5625,8 +5622,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
 
   while (at().type != havel::TokenType::CloseBrace && notEOF()) {
     // Skip newlines and comments
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Comment) {
+    if (isSkippableToken(at())) {
       advance();
       continue;
     }

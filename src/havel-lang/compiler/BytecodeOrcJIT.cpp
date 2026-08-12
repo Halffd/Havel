@@ -253,13 +253,13 @@ extern "C" uint64_t havel_vm_call(void* vm_ptr, uint64_t* args, uint32_t count) 
       std::string argstr;
       for (auto &v : valArgs) argstr += v.toString() + ",";
       if (vm->isTraceExecution()) {
-        fprintf(stderr, "[JITCALL-DEBUG] depth=%d callee_bits=0x%llx args=[%s]\n", depth, (unsigned long long)callee.rawBits(), argstr.c_str());
-        fflush(stderr);
+        // fprintf(stderr, "[JITCALL-DEBUG] depth=%d callee_bits=0x%llx args=[%s]\n", depth, (unsigned long long)callee.rawBits(), argstr.c_str());
+        // fflush(stderr);
       }
       Value result = vm->callFunction(callee, valArgs);
       if (vm->isTraceExecution()) {
-        fprintf(stderr, "[JITCALL-DEBUG] depth=%d result=0x%llx (%s)\n", depth, (unsigned long long)result.rawBits(), result.toString().c_str());
-        fflush(stderr);
+        // fprintf(stderr, "[JITCALL-DEBUG] depth=%d result=0x%llx (%s)\n", depth, (unsigned long long)result.rawBits(), result.toString().c_str());
+        // fflush(stderr);
       }
       depth--;
       uint64_t bits;
@@ -2486,8 +2486,8 @@ void BytecodeOrcJIT::compileFunction(const BytecodeFunction &func) {
 
     void* func_ptr = reinterpret_cast<void*>((*sym).getValue());
     if (debug_jit_) {
-      fprintf(stderr, "[COMPILE-DEBUG] func=%s ptr=%p\n", func.name.c_str(), func_ptr);
-      fflush(stderr);
+      // fprintf(stderr, "[COMPILE-DEBUG] func=%s ptr=%p\n", func.name.c_str(), func_ptr);
+      // fflush(stderr);
     }
     fptrs_[func.name] = func_ptr;
     compile_cache_[func_hash] = CachedFunction{func.name};
@@ -2531,16 +2531,16 @@ Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
 
     while (true) {
       if (debug_jit_) {
-        fprintf(stderr, "[EXECJIT-DEBUG] calling func=%p with %u args\n", (void*)func, current_args_count);
-        fflush(stderr);
+        // fprintf(stderr, "[EXECJIT-DEBUG] calling func=%p with %u args\n", (void*)func, current_args_count);
+        // fflush(stderr);
       }
       vm->setJitTailCall(false); // Reset flag before calling
 
       uint64_t res_bits =
         func(static_cast<void*>(vm), current_args_ptr, current_args_count);
       if (debug_jit_) {
-        fprintf(stderr, "[EXECJIT-DEBUG] func returned 0x%llx\n", (unsigned long long)res_bits);
-        fflush(stderr);
+        // fprintf(stderr, "[EXECJIT-DEBUG] func returned 0x%llx\n", (unsigned long long)res_bits);
+        // fflush(stderr);
       }
 
       // Check if a tail call occurred that we can handle in JIT

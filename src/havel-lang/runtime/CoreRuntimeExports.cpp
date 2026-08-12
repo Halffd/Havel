@@ -40,7 +40,8 @@ extern "C" uint64_t havel_vm_global_get(void *vm_ptr, uint32_t name_id) {
   if (!chunk || name_id >= chunk->getAllStrings().size()) {
     return Value::makeNull().rawBits();
   }
-  auto it = vm->getAllGlobals().find(chunk->getString(name_id));
+  const std::string& name = chunk->getString(name_id);
+  auto it = vm->getAllGlobals().find(name);
   return it != vm->getAllGlobals().end() ? it->second.rawBits() : Value::makeNull().rawBits();
 }
 
@@ -53,5 +54,7 @@ extern "C" void havel_vm_global_set(void *vm_ptr, uint32_t name_id, uint64_t val
   if (!chunk || name_id >= chunk->getAllStrings().size()) {
     return;
   }
-  vm->setGlobal(chunk->getString(name_id), Value::fromRawBits(value));
+  const std::string& name = chunk->getString(name_id);
+  Value val = Value::fromRawBits(value);
+  vm->setGlobal(name, val);
 }

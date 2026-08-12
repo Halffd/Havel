@@ -1,0 +1,31 @@
+// FFI type test: array, struct, double
+// Tests canonical FFI representation and memory access
+
+use ffi
+
+// --- Double ---
+print("Testing ffi.double...")
+d = 3.14159265
+assert(d == 3.14159265, "double value mismatch")
+d_buf = ffi.allocBytes(8)
+ffi.set_f64(d_buf, d)
+assert(ffi.get_f64(d_buf) == d, "ffi.get_f64 double mismatch")
+ffi.free(d_buf)
+
+// --- Array ---
+print("Testing ffi.array...")
+buf = ffi.allocBytes(16)
+arr = ffi.array(buf, "int32", 4)
+assert(arr != nil && arr.isArrayId(), "ffi.array returned nil or non-array")
+ffi.free(buf)
+
+// --- Struct ---
+print("Testing ffi.struct...")
+st = ffi.newStruct("Point", [["x", "float64"], ["y", "float64"]])
+assert(st != nil, "ffi.newStruct returned nil")
+libc = ffi.open("libc.so.6")
+getpid = ffi.sym(libc, "getpid")
+pid = ffi.call(getpid, "int64", [])
+assert(pid > 0, "ffi.call double/struct result invalid: got " + str(pid))
+
+print("All ffi.array/struct/double tests passed.")

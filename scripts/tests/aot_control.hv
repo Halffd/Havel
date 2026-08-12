@@ -1,0 +1,15 @@
+print("aot control")
+
+// while loop
+n = 10
+while n > 0 {
+    n = n - 1
+}
+print(n)
+
+// if/else
+if 1 < 2 {
+    print("lt")
+} else {
+    print("gte")
+}

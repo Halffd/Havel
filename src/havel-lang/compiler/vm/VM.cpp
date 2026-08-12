@@ -4523,6 +4523,41 @@ Value VM::loadModule(const std::string &path) {
     }
   }
 
+  // Check native modules FIRST (before Havel module resolution)
+  // This ensures native modules like "time" take precedence over .hvc files
+  if (context_ && context_->modules) {
+    auto pluginOpt = context_->modules->extensionLoader().loadModulePlugin(path);
+    if (pluginOpt) {
+      auto plugin = *pluginOpt;
+      auto exportsObj = createHostObject();
+      auto *obj = heap_.object(exportsObj.id);
+      if (obj) {
+        compiler::VMApi api(*this);
+        plugin.register_fn(static_cast<void*>(&api));
+        
+        // Collect exports from global namespace (functions with module prefix)
+        std::string prefix = path + ".";
+        std::string usPrefix = path + "_";
+        for (const auto &[name, value] : host_function_globals_) {
+          std::string localName;
+          if (name.rfind(prefix, 0) == 0) {
+            localName = name.substr(prefix.size());
+          } else if (name.rfind(usPrefix, 0) == 0) {
+            localName = name.substr(usPrefix.size());
+          }
+          if (!localName.empty() && !obj->get(localName)) {
+            (*obj)[localName] = value;
+          }
+        }
+        
+        Value exports = Value::makeObjectId(exportsObj.id);
+        moduleLoader_.putCache(path, exports);
+        pinModuleCacheExports(path, exports);
+        return exports;
+      }
+    }
+  }
+
   // Resolve the module path
   auto resolved = moduleLoader_.resolve(path, current_script_dir_);
   if (resolved) {

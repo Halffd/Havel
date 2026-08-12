@@ -1,0 +1,13 @@
+print("aot math")
+
+print(math.abs(-7))
+print(math.min(10, 5))
+print(math.max(10, 5))
+print(math.pow(2, 10))
+print(math.sqrt(16))
+print(math.floor(3.7))
+print(math.ceil(3.2))
+print(math.round(3.5))
+print(math.sin(0))
+print(math.cos(0))
+print(math.random())

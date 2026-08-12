@@ -1271,7 +1271,10 @@ void IO::Send(cstr keys) {
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch())
             .count());
-
+  if (HotkeyExecutor::isInHotkeyCallback()) {
+    DeferSend(keys);
+    return;
+  }
 #if defined(WINDOWS)
   // Windows implementation unchanged
   for (size_t i = 0; i < keys.length(); ++i) {

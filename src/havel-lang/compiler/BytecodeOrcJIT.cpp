@@ -26,8 +26,8 @@
 #include <unordered_set>
 #include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/Passes/PassBuilder.h>
-
 #include "BytecodeOrcJIT.h"
+#include "core/util/Env.hpp"
 #include "../../utils/Logger.hpp"
 #include <cstring>
 #include <iostream>
@@ -871,11 +871,49 @@ extern "C" void* havel_vm_init_standalone_with_functions(
     const uint32_t* func_param_counts, const uint32_t* func_local_counts,
     const uint32_t* func_upvalue_counts, const uint32_t* func_is_generator,
     const uint32_t* upvalue_indices, const uint32_t* upvalue_captures_local,
-    uint32_t total_upvalues
+    uint32_t total_upvalues,
+    const char* build_dir
 ) {
     static ::havel::HavelEngine engine;
     if (!engine.isInitialized()) {
         engine.initializeMinimal();
+        
+        // Initialize module loader for AOT so that IMPORT works
+        auto* vm = engine.vm();
+        if (vm) {
+            // Set stdlib path - always derive from executable path (source tree)
+            std::string stdlibPath;
+            const char* envStdlib = std::getenv("HAVEL_STDLIB");
+            if (envStdlib && envStdlib[0] != '\0') {
+                stdlibPath = envStdlib;
+            } else {
+                auto exePath = Env::executable();
+                if (!exePath.empty()) {
+                    stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
+                } else {
+                    stdlibPath = "./modules/std";
+                }
+            }
+            // Debug
+            std::cerr << "[AOT DEBUG] stdlibPath=" << stdlibPath << " exePath=" << Env::executable() << std::endl;
+            vm->moduleLoader().setStdlibPath(stdlibPath);
+
+            // Add module search paths - also derive from executable path
+            std::string modulesRoot;
+            auto exePath2 = Env::executable();
+            if (!exePath2.empty()) {
+                modulesRoot = (std::filesystem::path(exePath2).parent_path() / ".." / "modules").string();
+            } else {
+                modulesRoot = "./modules";
+            }
+            auto canonicalRoot = std::filesystem::exists(modulesRoot)
+                ? std::filesystem::canonical(modulesRoot).string() : modulesRoot;
+            std::cerr << "[AOT DEBUG] modulesRoot=" << modulesRoot << " canonical=" << canonicalRoot << std::endl;
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/std");
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/app");
+            vm->moduleLoader().addSearchPath(canonicalRoot);
+        }
         
         if (strings && string_count > 0) {
             auto chunk = std::make_shared<BytecodeChunk>();
@@ -944,6 +982,13 @@ uint64_t havel_vm_iter_next(void* vm_ptr, uint64_t iter_bits) {
   std::memcpy(&iter, &iter_bits, sizeof(uint64_t));
   if (!iter.isIteratorId()) return Value::makeNull().rawBits();
   return vm->iteratorNext(IteratorRef{iter.asIteratorId()}).rawBits();
+}
+
+uint64_t havel_vm_time_now(void* vm_ptr) {
+  (void)vm_ptr;
+  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
+  return Value(static_cast<int64_t>(ms)).rawBits();
 }
 
 // Concurrency primitives
@@ -1244,11 +1289,62 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
 
     std::vector<Value> callArgs;
     callArgs.reserve(static_cast<size_t>(arg_count) + 1);
-    callArgs.push_back(receiver);
     for (uint32_t i = 0; i < arg_count; ++i) {
         Value v;
         std::memcpy(&v, &args[i], sizeof(uint64_t));
         callArgs.push_back(v);
+    }
+
+    // Determine if we should pass receiver as self (first argument)
+    // Mirrors interpreter logic in VMControlFlow.cpp:
+    // - For module namespace objects (found in globals), don't pass self
+    // - For class/struct instances, pass self
+    // - For host functions that explicitly want self, pass self
+    bool passReceiverAsSelf = true;
+
+    if (receiver.isObjectId()) {
+        ObjectRef recvRef{receiver.asObjectId(), true};
+        auto* obj = vm->getHeap().object(recvRef.id);
+        if (obj) {
+            // Check if this object is a module namespace (exists in globals)
+            bool foundViaModule = false;
+            for (const auto& [name, val] : vm->getGlobals()) {
+                if (val.isObjectId() && val.asObjectId() == receiver.asObjectId()) {
+                    foundViaModule = true;
+                    break;
+                }
+            }
+            if (foundViaModule) {
+                passReceiverAsSelf = false;
+            } else {
+                // Check if it's a class/struct prototype
+                auto* classVal = obj->get("__class");
+                if (!classVal) classVal = obj->get("__struct");
+                if (classVal && classVal->isObjectId()) {
+                    passReceiverAsSelf = true; // class.new passes class proto as self
+                } else if (obj->get("__is_class") || obj->get("__is_struct")) {
+                    passReceiverAsSelf = true;
+                } else {
+                    // Regular object instance - check if host function wants self
+                    // Look up the method to see if it's a host function with wantsSelf
+                    Value methodValue = vm->getHostObjectField(recvRef, method_name);
+                    if (methodValue.isHostFuncId()) {
+                        uint32_t hostIdx = methodValue.asHostFuncId();
+                        if (vm->host_function_wants_self_.count(hostIdx) > 0) {
+                            passReceiverAsSelf = true;
+                        } else {
+                            passReceiverAsSelf = false;
+                        }
+                    } else {
+                        passReceiverAsSelf = false;
+                    }
+                }
+            }
+        }
+    }
+
+    if (passReceiverAsSelf) {
+        callArgs.insert(callArgs.begin(), receiver);
     }
 
     if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
@@ -1280,8 +1376,8 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
         if (!result.isNull()) return result.rawBits();
     }
 
-  return Value::makeNull().rawBits();
-  }
+    return Value::makeNull().rawBits();
+}
 
 uint64_t havel_vm_closure_new(void* vm_ptr, uint32_t func_index) {
     if (!vm_ptr) return Value::makeNull().rawBits();
@@ -2251,6 +2347,7 @@ addSym("havel_vm_object_new", reinterpret_cast<void*>(&havel_vm_object_new));
 addSym("havel_vm_range_new", reinterpret_cast<void*>(&havel_vm_range_new));
 addSym("havel_vm_iter_new", reinterpret_cast<void*>(&havel_vm_iter_new));
 addSym("havel_vm_iter_next", reinterpret_cast<void*>(&havel_vm_iter_next));
+addSym("havel_vm_time_now", reinterpret_cast<void*>(&havel_vm_time_now));
 addSym("havel_vm_thread_new", reinterpret_cast<void*>(&havel_vm_thread_new));
 addSym("havel_vm_thread_join", reinterpret_cast<void*>(&havel_vm_thread_join));
 addSym("havel_vm_thread_send", reinterpret_cast<void*>(&havel_vm_thread_send));
@@ -4720,6 +4817,16 @@ case OpCode::LENGTH: {
         // Interpreter semantics: consume iterator operand and push next result.
         llvm::Value* result = B.CreateCall(fnNext, {vmArg, iter});
         vstack.push_back(result);
+        break;
+    }
+    case OpCode::TIME_NOW: {
+        llvm::Function* fnTimeNow = module.getFunction("havel_vm_time_now");
+        if (!fnTimeNow) {
+            fnTimeNow = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_time_now", &module);
+        }
+        vstack.push_back(B.CreateCall(fnTimeNow, {vmArg}));
         break;
     }
 

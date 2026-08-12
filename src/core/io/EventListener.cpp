@@ -1,17 +1,17 @@
 #include "EventListener.hpp"
 #include "HotkeyExecutor.hpp"
+#include "InputBackend.hpp"
 #include "KeyMap.hpp"
 #include "SignalHandler.hpp"
-#include "InputBackend.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
-#include "core/io/IO.hpp"
 #include "core/init/Havel.hpp"
-#include "utils/ExitHandler.hpp"
-#include "utils/Logger.hpp"
-#include "utils/DebugFlags.hpp"
+#include "core/io/IO.hpp"
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/runtime/execution/ExecutionEngine.hpp"
+#include "utils/DebugFlags.hpp"
+#include "utils/ExitHandler.hpp"
+#include "utils/Logger.hpp"
 #include <cstring>
 #include <fcntl.h>
 #include <fmt/format.h>
@@ -20,8 +20,8 @@
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
-#include <unistd.h>
 #include <sys/signalfd.h>
+#include <unistd.h>
 #include <vector>
 
 // Use qt.hpp instead of raw Qt includes for X11 macro conflict handling
@@ -84,11 +84,14 @@ EventListener::EventListener() {
 
 EventListener::~EventListener() {
   Stop();
-  if (backend_) backend_->UngrabAllDevices();
-  if (shutdownFd >= 0) close(shutdownFd);
+  if (backend_)
+    backend_->UngrabAllDevices();
+  if (shutdownFd >= 0)
+    close(shutdownFd);
 }
 
-void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths, bool grab) {
+void EventListener::InitInputBackend(
+    const std::vector<std::string> &devicePaths, bool grab) {
   (void)grab; // grab is now handled in Start() after event loop is ready
   backend_ = InputBackend::Create(InputBackendType::Evdev);
   if (!backend_) {
@@ -103,8 +106,10 @@ void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths
 
   auto type = backend_->GetType();
 
-  backend_->SetKeyCallback([this](const KeyEvent &ke) { OnBackendKeyEvent(ke); });
-  backend_->SetMouseCallback([this](const MouseEvent &me) { OnBackendMouseEvent(me); });
+  backend_->SetKeyCallback(
+      [this](const KeyEvent &ke) { OnBackendKeyEvent(ke); });
+  backend_->SetMouseCallback(
+      [this](const MouseEvent &me) { OnBackendMouseEvent(me); });
 
   if (type == InputBackendType::Evdev || type == InputBackendType::X11) {
     for (const auto &path : devicePaths) {
@@ -120,8 +125,11 @@ void EventListener::InitInputBackend(const std::vector<std::string> &devicePaths
 }
 
 void EventListener::OnBackendKeyEvent(const KeyEvent &ke) {
-  if (blockInput.load()) return;
-  if (debugging::debug_hotkeys) debug("⌨️ OnBackendKeyEvent: code={} down={} repeat={} value={}", ke.code, ke.down, ke.repeat, ke.down ? (ke.repeat ? 2 : 1) : 0);
+  if (blockInput.load())
+    return;
+  if (debugging::debug_hotkeys)
+    debug("⌨️ OnBackendKeyEvent: code={} down={} repeat={} value={}", ke.code,
+          ke.down, ke.repeat, ke.down ? (ke.repeat ? 2 : 1) : 0);
   struct input_event ev;
   ev.type = EV_KEY;
   ev.code = ke.code;
@@ -135,17 +143,20 @@ void EventListener::OnBackendKeyEvent(const KeyEvent &ke) {
 
 void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
   if (blockInput.load()) {
-    if (debugging::debug_io) debug("[WHEEL] OnBackendMouseEvent blocked (blockInput=true) type={}", static_cast<int>(me.type));
+    if (debugging::debug_io)
+      debug("[WHEEL] OnBackendMouseEvent blocked (blockInput=true) type={}",
+            static_cast<int>(me.type));
     return;
   }
   if (debugging::debug_io) {
     if (me.type == MouseEvent::Type::Wheel)
-      debug("[WHEEL] OnBackendMouseEvent wheel={} hi_res={} code={}",
-            me.wheel, me.wheel_hi_res, me.code);
+      debug("[WHEEL] OnBackendMouseEvent wheel={} hi_res={} code={}", me.wheel,
+            me.wheel_hi_res, me.code);
   }
   if (debugging::debug_hotkeys) {
     if (me.type == MouseEvent::Type::Button)
-      debug("[Mouse] OnBackendMouseEvent: button={} down={}", me.button, me.down);
+      debug("[Mouse] OnBackendMouseEvent: button={} down={}", me.button,
+            me.down);
     else if (me.type == MouseEvent::Type::Move)
       debug("[Mouse] OnBackendMouseEvent: move dx={} dy={}", me.dx, me.dy);
     else if (me.type == MouseEvent::Type::Wheel)
@@ -161,14 +172,16 @@ void EventListener::OnBackendMouseEvent(const MouseEvent &me) {
     ev.value = static_cast<int>(me.dy);
     ProcessMouseEvent(ev);
     SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-    for (auto &cb : mouseMoveListeners) cb(me.dx, me.dy);
+    for (auto &cb : mouseMoveListeners)
+      cb(me.dx, me.dy);
   } else if (me.type == MouseEvent::Type::Button) {
     struct input_event ev;
     ev.type = EV_KEY;
     ev.code = me.button;
     ev.value = me.down ? 1 : 0;
     ProcessMouseEvent(ev);
-    for (auto &cb : mouseButtonListeners) cb(me.button, me.down);
+    for (auto &cb : mouseButtonListeners)
+      cb(me.button, me.down);
   } else if (me.type == MouseEvent::Type::Wheel) {
     struct input_event ev;
     ev.type = EV_REL;
@@ -189,7 +202,7 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
   // Read grab delay from config (in milliseconds)
   int grabDelayMs = 0;
   try {
-    auto& config = havel::Configs::Get();
+    auto &config = havel::Configs::Get();
     grabDelayMs = config.Get<int>("IO.GrabDelay", 0);
   } catch (...) {
     // Config not available, use default (0)
@@ -218,7 +231,8 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
   //    races where the EventLoop sees events that also reach the system
   if (grabDevices && backend_) {
     if (!backend_->SupportsSynthesis()) {
-      warn("EventListener: uinput not available, disabling grab to avoid input lockup");
+      warn("EventListener: uinput not available, disabling grab to avoid input "
+           "lockup");
       this->grabDevices = false;
     }
     if (this->grabDevices) {
@@ -230,10 +244,12 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
           debug("EventListener: Grabbed device: {}", path);
         }
       }
-      
-      // Add grab delay if configured - allows grab to settle before event loop starts
+
+      // Add grab delay if configured - allows grab to settle before event loop
+      // starts
       if (grabDelayMs > 0) {
-        if (havel::debugging::debug_event_listener) debug("EventListener: Waiting {}ms for grab to settle", grabDelayMs);
+        if (havel::debugging::debug_event_listener)
+          debug("EventListener: Waiting {}ms for grab to settle", grabDelayMs);
         std::this_thread::sleep_for(std::chrono::milliseconds(grabDelayMs));
       }
     }
@@ -244,7 +260,8 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
   if (backend_) {
     auto pressed = backend_->GetPressedKeys();
     if (!pressed.empty()) {
-      debug("[EventListener] Seeding {} pressed keys from kernel state", pressed.size());
+      debug("[EventListener] Seeding {} pressed keys from kernel state",
+            pressed.size());
       std::unique_lock<std::shared_mutex> lock(stateMutex);
       for (uint32_t code : pressed) {
         evdevKeyState[code] = true;
@@ -286,33 +303,33 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 }
 
 void EventListener::Stop() {
-    running.store(false);
-    shutdown.store(true);
+  running.store(false);
+  shutdown.store(true);
 
-    if (shutdownFd >= 0) {
-        uint64_t val = 1;
-        write(shutdownFd, &val, sizeof(val));
+  if (shutdownFd >= 0) {
+    uint64_t val = 1;
+    write(shutdownFd, &val, sizeof(val));
+  }
+
+  if (eventThread.joinable()) {
+    if (eventThread.get_id() == std::this_thread::get_id()) {
+      eventThread.detach();
+    } else {
+      eventThread.join();
     }
+  }
 
-    if (eventThread.joinable()) {
-        if (eventThread.get_id() == std::this_thread::get_id()) {
-            eventThread.detach();
-        } else {
-            eventThread.join();
-        }
-    }
+  ReleaseAllVirtualKeys();
 
-    ReleaseAllVirtualKeys();
+  if (backend_) {
+    backend_->Shutdown();
+  }
 
-    if (backend_) {
-        backend_->Shutdown();
-    }
+  if (signalHandler) {
+    signalHandler->Shutdown();
+  }
 
-    if (signalHandler) {
-        signalHandler->Shutdown();
-    }
-
-    StopX11Monitor();
+  StopX11Monitor();
 }
 
 bool EventListener::SetupUinput() {
@@ -324,53 +341,61 @@ bool EventListener::SupportsSynthesis() const {
 }
 
 void EventListener::SendUinputEvent(int type, int code, int value) {
-    if (!backend_ || !backend_->SupportsSynthesis()) return;
+  if (!backend_ || !backend_->SupportsSynthesis())
+    return;
 
-    std::lock_guard<std::mutex> lock(sendInputMutex);
+  std::lock_guard<std::mutex> lock(sendInputMutex);
 
-    if (type == EV_KEY) {
-        if (pendingRelBatch_) {
-            backend_->EndBatch();
-            pendingRelBatch_ = false;
-        }
-        backend_->SendKeyEvent(code, value != 0);
-        if (value == 1) pressedVirtualKeys.insert(code);
-        else if (value == 0) pressedVirtualKeys.erase(code);
-        
-        // Track synthetic key to filter feedback loop
-        {
-          std::lock_guard<std::mutex> lock(syntheticKeysMutex);
-          syntheticKeys.push_back({code, std::chrono::steady_clock::now(), value != 0});
-        }
-    } else if (type == EV_SYN) {
-        if (pendingRelBatch_) {
-            backend_->EndBatch();
-            pendingRelBatch_ = false;
-        }
-    } else {
-        if (!pendingRelBatch_) {
-            backend_->BeginBatch();
-            pendingRelBatch_ = true;
-        }
-        backend_->QueueEvent(type, code, value);
+  if (type == EV_KEY) {
+    if (pendingRelBatch_) {
+      backend_->EndBatch();
+      pendingRelBatch_ = false;
     }
+    backend_->SendKeyEvent(code, value != 0);
+    if (value == 1)
+      pressedVirtualKeys.insert(code);
+    else if (value == 0)
+      pressedVirtualKeys.erase(code);
+
+    // Track synthetic key to filter feedback loop
+    {
+      std::lock_guard<std::mutex> lock(syntheticKeysMutex);
+      syntheticKeys.push_back(
+          {code, std::chrono::steady_clock::now(), value != 0});
+    }
+  } else if (type == EV_SYN) {
+    if (pendingRelBatch_) {
+      backend_->EndBatch();
+      pendingRelBatch_ = false;
+    }
+  } else {
+    if (!pendingRelBatch_) {
+      backend_->BeginBatch();
+      pendingRelBatch_ = true;
+    }
+    backend_->QueueEvent(type, code, value);
+  }
 }
 
 void EventListener::BeginUinputBatch() {
-    if (backend_) backend_->BeginBatch();
+  if (backend_)
+    backend_->BeginBatch();
 }
 
 void EventListener::QueueUinputEvent(int type, int code, int value) {
-  if (backend_) backend_->QueueEvent(type, code, value);
+  if (backend_)
+    backend_->QueueEvent(type, code, value);
 }
 
 void EventListener::EndUinputBatch() {
-    if (backend_) backend_->EndBatch();
-    pendingRelBatch_ = false;
+  if (backend_)
+    backend_->EndBatch();
+  pendingRelBatch_ = false;
 }
 
 void EventListener::EmergencyReleaseAllKeys() {
-  if (backend_) backend_->EmergencyReleaseAllKeys();
+  if (backend_)
+    backend_->EmergencyReleaseAllKeys();
 }
 
 bool EventListener::GetKeyState(int evdevCode) const {
@@ -386,20 +411,23 @@ const EventListener::ModifierState &EventListener::GetModifierState() const {
 
 void EventListener::SetBlockInput(bool block) {
   blockInput.store(block);
-  if (backend_) backend_->SetBlockInput(block);
+  if (backend_)
+    backend_->SetBlockInput(block);
 }
 
 void EventListener::AddKeyRemap(int fromCode, int toCode) {
   std::lock_guard<std::mutex> lock(remapMutex);
   keyRemaps[fromCode] = toCode;
-  if (backend_) backend_->SetKeyRemap(fromCode, toCode);
+  if (backend_)
+    backend_->SetKeyRemap(fromCode, toCode);
 }
 
 void EventListener::RemoveKeyRemap(int fromCode) {
   std::lock_guard<std::mutex> lock(remapMutex);
   keyRemaps.erase(fromCode);
   activeRemaps.erase(fromCode);
-  if (backend_) backend_->RemoveKeyRemap(fromCode);
+  if (backend_)
+    backend_->RemoveKeyRemap(fromCode);
 }
 
 int EventListener::RemapKey(int evdevCode, bool down) {
@@ -426,17 +454,20 @@ int EventListener::RemapKey(int evdevCode, bool down) {
 
 void EventListener::SetEmergencyShutdownKey(int evdevCode) {
   emergencyShutdownKey = evdevCode;
-  if (backend_) backend_->SetEmergencyShutdownKey(evdevCode);
+  if (backend_)
+    backend_->SetEmergencyShutdownKey(evdevCode);
 }
 
 void EventListener::SetMouseSensitivity(double sensitivity) {
   mouseSensitivity = sensitivity;
-  if (backend_) backend_->SetMouseSensitivity(sensitivity);
+  if (backend_)
+    backend_->SetMouseSensitivity(sensitivity);
 }
 
 void EventListener::SetScrollSpeed(double speed) {
   scrollSpeed = speed;
-  if (backend_) backend_->SetScrollSpeed(speed);
+  if (backend_)
+    backend_->SetScrollSpeed(speed);
 }
 
 void EventListener::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
@@ -492,9 +523,7 @@ int EventListener::GetCurrentModifiersMask() const {
   return mask;
 }
 
-void EventListener::setModules(havel::Modules *m) {
-    modules_ = m;
-}
+void EventListener::setModules(havel::Modules *m) { modules_ = m; }
 
 void EventListener::setExecutionEngine(havel::compiler::ExecutionEngine *ee) {
   executionEngine = ee;
@@ -509,168 +538,189 @@ void EventListener::setDeferredSendFlush(std::function<void()> flushFn) {
 }
 
 void EventListener::PumpOnce() {
-    // Always drain pending input events (non-blocking) before anything else
-    if (backend_) {
-        backend_->PollEvents(0);
-    }
-    if (deferredSendFlush_) deferredSendFlush_();
+  // Always drain pending input events (non-blocking) before anything else
+  if (backend_) {
+    backend_->PollEvents(0);
+  }
+  if (deferredSendFlush_)
+    deferredSendFlush_();
 
-    if (shutdown.load()) return;
+  if (shutdown.load())
+    return;
 
-    if (executionEngine) {
-        if (modules_) modules_->checkTimers();
-        executionEngine->executeFrame();
+  if (executionEngine) {
+    if (modules_)
+      modules_->checkTimers();
+    executionEngine->executeFrame();
 
-        auto* vm = executionEngine->getVM();
-        if (vm && vm->exit_requested_.load()) {
-            int code = vm->exit_code_.load();
+    auto *vm = executionEngine->getVM();
+    if (vm && vm->exit_requested_.load()) {
+      int code = vm->exit_code_.load();
 #ifdef HAVE_QT_EXTENSION
-            QCoreApplication::exit(code);
+      QCoreApplication::exit(code);
 #endif
-            havel::exit(ExitReason::VmExit, code);
-            return;
-        }
-    } else if (modules_) {
-        modules_->checkTimers();
+      havel::exit(ExitReason::VmExit, code);
+      return;
     }
+  } else if (modules_) {
+    modules_->checkTimers();
+  }
 
-    if (backend_) {
-        backend_->PollEvents(1);
-    }
-    if (deferredSendFlush_) deferredSendFlush_();
+  if (backend_) {
+    backend_->PollEvents(1);
+  }
+  if (deferredSendFlush_)
+    deferredSendFlush_();
 }
 
 void EventListener::EventLoop() {
-    if (debugging::debug_io) debug("EventListener: EventLoop started, running={}", running.load());
-    eventLoopReady_.store(false);
-    int loopCount = 0;
-    while (running.load() && !shutdown.load()) {
+  if (debugging::debug_io)
+    debug("EventListener: EventLoop started, running={}", running.load());
+  eventLoopReady_.store(false);
+  int loopCount = 0;
+  while (running.load() && !shutdown.load()) {
 
-        if (backend_) {
-            backend_->PollEvents(0);
-        }
-        if (!eventLoopReady_.load()) {
-            eventLoopReady_.store(true);
-        }
-        if (deferredSendFlush_) deferredSendFlush_();
+    if (backend_) {
+      backend_->PollEvents(0);
+    }
+    if (!eventLoopReady_.load()) {
+      eventLoopReady_.store(true);
+    }
+    if (deferredSendFlush_)
+      deferredSendFlush_();
 
-        if (shutdown.load()) break;
+    if (shutdown.load())
+      break;
 
-        if (executionEngine) {
-            if (modules_) modules_->checkTimers();
-            executionEngine->executeFrame();
-
-        auto* vm = executionEngine->getVM();
-        if (vm && vm->exit_requested_.load()) {
-            int code = vm->exit_code_.load();
-#ifdef HAVE_QT_EXTENSION
-            QCoreApplication::exit(code);
-#endif
-            havel::exit(ExitReason::VmExit, code);
-            break;
-        }
-} else if (modules_) {
+    if (executionEngine) {
+      if (modules_)
         modules_->checkTimers();
-        }
+      executionEngine->executeFrame();
 
-        // Collect all external wakeup fds that need to break the upcoming
-        // blocking PollEvents() and register them with the backend so a
-        // single poll() watches evdev + shutdown + signal + event-queue +
-        // deferred-wakeup fds together. This collapses the previous
-        // PollEvents(10) + select(10ms) pair — which serialized two 10ms
-        // waits back-to-back (~20ms per cycle when no work was queued) — into
-        // a single PollEvents(N) call. The backend only watches the fd for
-        // readiness; we drain any pending bytes ourselves below.
-        std::vector<int> wakeupFds;
-        int signalFd = -1;
-        int eventQueueWakeupFd = -1;
-        int deferredWakeupFd = -1;
-        if (signalHandler) {
-            signalFd = signalHandler->GetSignalFd();
-            if (signalFd >= 0) wakeupFds.push_back(signalFd);
-        }
-        if (executionEngine) {
-            auto* eq = executionEngine->getEventQueue();
-            if (eq) {
-                eventQueueWakeupFd = eq->wakeupFd();
-                if (eventQueueWakeupFd >= 0) wakeupFds.push_back(eventQueueWakeupFd);
-            }
-            auto* sched = executionEngine->getScheduler();
-            if (sched) {
-                deferredWakeupFd = sched->deferredWakeupFd();
-                if (deferredWakeupFd >= 0) wakeupFds.push_back(deferredWakeupFd);
-            }
-        }
-        if (backend_) backend_->SetExternalWakeupFds(std::move(wakeupFds));
-
-        // Single blocking poll. PollEvents() returns on any of:
-        //   - evdev device fd readable (input event)
-        //   - shutdownFd readable (async shutdown requested)
-        //   - any external wakeup fd readable
-        //   - timeout (10ms)
-        // This replaces the previous PollEvents(10) + select(10ms) sequence
-        // that spent up to 20ms per cycle even when nothing was happening.
-        if (backend_) {
-            backend_->PollEvents(10);
-        }
-        if (deferredSendFlush_) deferredSendFlush_();
-
-        if (shutdown.load()) break;
-
-        // Drain the external fds regardless of which one fired PollEvents; a
-        // wakeup byte may be latched even if poll() returned due to evdev
-        // input or shutdown race. read() in a loop in case multiple wakeups
-        // coalesced into one eventfd signal.
-        if (signalFd >= 0) {
-            struct signalfd_siginfo fdsi;
-            while (true) {
-                ssize_t s = read(signalFd, &fdsi, sizeof(fdsi));
-                if (s == sizeof(fdsi)) {
-                    if (fdsi.ssi_signo == SIGINT || fdsi.ssi_signo == SIGTERM) {
-                        if (debugging::debug_io) debug("Received shutdown signal {}", fdsi.ssi_signo);
-                        SignalSafeShutdown(fdsi.ssi_signo, true);
-                        break;
-                    }
-                    continue;
-                }
-                if (s < 0 && errno == EAGAIN) break;
-                if (s < 0 && errno == EINTR) continue;
-                break;
-            }
-        }
-        if (eventQueueWakeupFd >= 0) {
-            uint64_t val;
-            while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
-        }
-        if (deferredWakeupFd >= 0) {
-            uint64_t val;
-            while (read(deferredWakeupFd, &val, sizeof(val)) == sizeof(val)) {}
-        }
-
-        if (shutdown.load()) break;
-
-        // Fast path: when goroutines are runnable, skip the device re-check
-        // gap and re-enter executeFrame() immediately so VM work (hotkey
-        // re-arms, slept/unparked goroutines, newly-spawned work) is picked up
-        // without waiting out the next PollEvents(10) latency. Only block
-        // again when there is genuinely nothing left to run, which both
-        // prevents 100% CPU busy-looping and keeps event pickup prompt.
-        if (executionEngine && executionEngine->getScheduler() &&
-            executionEngine->getScheduler()->hasRunnableFibers()) {
-            continue;
-        }
-
-        // Periodic device re-check (every ~5 seconds) to handle hotplug/disconnect
-        loopCount++;
-        if (loopCount >= 500) { // 500 * 10ms = 5 seconds
-            loopCount = 0;
-            if (backend_) {
-                backend_->RecheckDevices();
-            }
-        }
+      auto *vm = executionEngine->getVM();
+      if (vm && vm->exit_requested_.load()) {
+        int code = vm->exit_code_.load();
+#ifdef HAVE_QT_EXTENSION
+        QCoreApplication::exit(code);
+#endif
+        havel::exit(ExitReason::VmExit, code);
+        break;
+      }
+    } else if (modules_) {
+      modules_->checkTimers();
     }
 
-  if (debugging::debug_io) debug("EventListener: Waiting for {} callbacks", pendingCallbacks.load());
+    // Collect all external wakeup fds that need to break the upcoming
+    // blocking PollEvents() and register them with the backend so a
+    // single poll() watches evdev + shutdown + signal + event-queue +
+    // deferred-wakeup fds together. This collapses the previous
+    // PollEvents(10) + select(10ms) pair — which serialized two 10ms
+    // waits back-to-back (~20ms per cycle when no work was queued) — into
+    // a single PollEvents(N) call. The backend only watches the fd for
+    // readiness; we drain any pending bytes ourselves below.
+    std::vector<int> wakeupFds;
+    int signalFd = -1;
+    int eventQueueWakeupFd = -1;
+    int deferredWakeupFd = -1;
+    if (signalHandler) {
+      signalFd = signalHandler->GetSignalFd();
+      if (signalFd >= 0)
+        wakeupFds.push_back(signalFd);
+    }
+    if (executionEngine) {
+      auto *eq = executionEngine->getEventQueue();
+      if (eq) {
+        eventQueueWakeupFd = eq->wakeupFd();
+        if (eventQueueWakeupFd >= 0)
+          wakeupFds.push_back(eventQueueWakeupFd);
+      }
+      auto *sched = executionEngine->getScheduler();
+      if (sched) {
+        deferredWakeupFd = sched->deferredWakeupFd();
+        if (deferredWakeupFd >= 0)
+          wakeupFds.push_back(deferredWakeupFd);
+      }
+    }
+    if (backend_)
+      backend_->SetExternalWakeupFds(std::move(wakeupFds));
+
+    // Single blocking poll. PollEvents() returns on any of:
+    //   - evdev device fd readable (input event)
+    //   - shutdownFd readable (async shutdown requested)
+    //   - any external wakeup fd readable
+    //   - timeout (10ms)
+    // This replaces the previous PollEvents(10) + select(10ms) sequence
+    // that spent up to 20ms per cycle even when nothing was happening.
+    if (backend_) {
+      backend_->PollEvents(10);
+    }
+    if (deferredSendFlush_)
+      deferredSendFlush_();
+
+    if (shutdown.load())
+      break;
+
+    // Drain the external fds regardless of which one fired PollEvents; a
+    // wakeup byte may be latched even if poll() returned due to evdev
+    // input or shutdown race. read() in a loop in case multiple wakeups
+    // coalesced into one eventfd signal.
+    if (signalFd >= 0) {
+      struct signalfd_siginfo fdsi;
+      while (true) {
+        ssize_t s = read(signalFd, &fdsi, sizeof(fdsi));
+        if (s == sizeof(fdsi)) {
+          if (fdsi.ssi_signo == SIGINT || fdsi.ssi_signo == SIGTERM) {
+            if (debugging::debug_io)
+              debug("Received shutdown signal {}", fdsi.ssi_signo);
+            SignalSafeShutdown(fdsi.ssi_signo, true);
+            break;
+          }
+          continue;
+        }
+        if (s < 0 && errno == EAGAIN)
+          break;
+        if (s < 0 && errno == EINTR)
+          continue;
+        break;
+      }
+    }
+    if (eventQueueWakeupFd >= 0) {
+      uint64_t val;
+      while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {
+      }
+    }
+    if (deferredWakeupFd >= 0) {
+      uint64_t val;
+      while (read(deferredWakeupFd, &val, sizeof(val)) == sizeof(val)) {
+      }
+    }
+
+    if (shutdown.load())
+      break;
+
+    // Fast path: when goroutines are runnable, skip the device re-check
+    // gap and re-enter executeFrame() immediately so VM work (hotkey
+    // re-arms, slept/unparked goroutines, newly-spawned work) is picked up
+    // without waiting out the next PollEvents(10) latency. Only block
+    // again when there is genuinely nothing left to run, which both
+    // prevents 100% CPU busy-looping and keeps event pickup prompt.
+    if (executionEngine && executionEngine->getScheduler() &&
+        executionEngine->getScheduler()->hasRunnableFibers()) {
+      continue;
+    }
+
+    // Periodic device re-check (every ~5 seconds) to handle hotplug/disconnect
+    loopCount++;
+    if (loopCount >= 500) { // 500 * 10ms = 5 seconds
+      loopCount = 0;
+      if (backend_) {
+        backend_->RecheckDevices();
+      }
+    }
+  }
+
+  if (debugging::debug_io)
+    debug("EventListener: Waiting for {} callbacks", pendingCallbacks.load());
 
   auto shutdownStart = std::chrono::steady_clock::now();
   const auto maxShutdownTime = std::chrono::milliseconds(1000);
@@ -679,13 +729,15 @@ void EventListener::EventLoop() {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - shutdownStart);
     if (elapsed > maxShutdownTime) {
-      error("Shutdown timeout: {} callbacks still pending, force-exiting", pendingCallbacks.load());
+      error("Shutdown timeout: {} callbacks still pending, force-exiting",
+            pendingCallbacks.load());
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  if (debugging::debug_io) debug("EventListener: Stopped");
+  if (debugging::debug_io)
+    debug("EventListener: Stopped");
 
   if (shutdownCallback_) {
     shutdownCallback_();
@@ -696,13 +748,17 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
   if (ev.type == EV_KEY) {
     std::lock_guard<std::mutex> lock(syntheticKeysMutex);
     auto now = std::chrono::steady_clock::now();
-    for (auto it = syntheticKeys.begin(); it != syntheticKeys.end(); ) {
+    for (auto it = syntheticKeys.begin(); it != syntheticKeys.end();) {
       if (it->code == ev.code && it->down == (ev.value != 0)) {
         // Check if this synthetic event is recent (within 100ms)
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->time).count();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           now - it->time)
+                           .count();
         if (elapsed < 100) {
           // This is our synthetic event bouncing back - filter it out
-          if (debugging::debug_io) debug("Filtered synthetic key event: code={} down={}", ev.code, ev.value != 0);
+          if (debugging::debug_io)
+            debug("Filtered synthetic key event: code={} down={}", ev.code,
+                  ev.value != 0);
           return;
         }
         ++it;
@@ -712,10 +768,13 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     }
     // Clean up old synthetic keys (>500ms old)
     syntheticKeys.erase(
-        std::remove_if(syntheticKeys.begin(), syntheticKeys.end(),
-                       [&now](const SyntheticKey &sk) {
-                         return std::chrono::duration_cast<std::chrono::milliseconds>(now - sk.time).count() > 500;
-                       }),
+        std::remove_if(
+            syntheticKeys.begin(), syntheticKeys.end(),
+            [&now](const SyntheticKey &sk) {
+              return std::chrono::duration_cast<std::chrono::milliseconds>(
+                         now - sk.time)
+                         .count() > 500;
+            }),
         syntheticKeys.end());
   }
 
@@ -841,14 +900,14 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     } else {
       keyDownTime.erase(originalCode);
       activeInputs.erase(originalCode);
-                physicalKeyStates[originalCode] = false;
-                }
-                lastKeyCode_ = originalCode;
-                lastKeyWasDown_ = down;
-                lastKeyModifiers_ = GetCurrentModifiersMask();
-            }
+      physicalKeyStates[originalCode] = false;
+    }
+    lastKeyCode_ = originalCode;
+    lastKeyWasDown_ = down;
+    lastKeyModifiers_ = GetCurrentModifiersMask();
+  }
 
-            // Call raw key callbacks if registered
+  // Call raw key callbacks if registered
   if (down && keyDownCallback) {
     keyDownCallback(originalCode);
   } else if (!down && keyUpCallback) {
@@ -886,12 +945,16 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
 
   // Multi-listeners
   if (down) {
-    for (auto &cb : keyDownListeners) cb(originalCode);
+    for (auto &cb : keyDownListeners)
+      cb(originalCode);
   } else {
-    for (auto &cb : keyUpListeners) cb(originalCode);
+    for (auto &cb : keyUpListeners)
+      cb(originalCode);
   }
-  for (auto &cb : keyListeners) cb(event.keyName);
-  for (auto &cb : eventListeners) cb(event);
+  for (auto &cb : keyListeners)
+    cb(event.keyName);
+  for (auto &cb : eventListeners)
+    cb(event);
 
   if (inputEventCallback) {
     inputEventCallback(event);
@@ -918,7 +981,8 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
                                        int wheelDirection) {
   auto now = std::chrono::steady_clock::now();
 
-  if (debugging::debug_io) debug("[Search] Evaluating wheel combo '{}'", hotkey.alias);
+  if (debugging::debug_io)
+    debug("[Search] Evaluating wheel combo '{}'", hotkey.alias);
 
   // Check if the wheel event occurred recently enough (unless time window is 0
   // for infinite)
@@ -927,8 +991,9 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
 
     // Skip if wheelTime is zero-initialized (not yet set)
     if (wheelTime.time_since_epoch().count() == 0) {
-      if (debugging::debug_io) debug("❌ Wheel combo '{}' failed: wheel time not initialized",
-            hotkey.alias);
+      if (debugging::debug_io)
+        debug("❌ Wheel combo '{}' failed: wheel time not initialized",
+              hotkey.alias);
       return false;
     }
 
@@ -937,8 +1002,9 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
             .count();
 
     if (wheelAge > comboTimeWindow) {
-      if (debugging::debug_io) debug("❌ Wheel combo '{}' failed: wheel event too old ({}ms)",
-            hotkey.alias, wheelAge);
+      if (debugging::debug_io)
+        debug("❌ Wheel combo '{}' failed: wheel event too old ({}ms)",
+              hotkey.alias, wheelAge);
       return false;
     }
   }
@@ -948,7 +1014,8 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
       // Check wheel direction matches
       if (comboKey.wheelDirection != 0 &&
           comboKey.wheelDirection != wheelDirection) {
-        if (debugging::debug_io) debug("❌ Wheel combo '{}' failed: wrong direction", hotkey.alias);
+        if (debugging::debug_io)
+          debug("❌ Wheel combo '{}' failed: wrong direction", hotkey.alias);
         return false;
       }
       // Wheel part matched, continue
@@ -969,8 +1036,9 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
     // Check if key is currently pressed
     auto it = activeInputs.find(keyCode);
     if (it == activeInputs.end()) {
-      if (debugging::debug_io) debug("❌ Wheel combo '{}' failed: key {} not pressed", hotkey.alias,
-            keyCode);
+      if (debugging::debug_io)
+        debug("❌ Wheel combo '{}' failed: key {} not pressed", hotkey.alias,
+              keyCode);
       return false;
     }
 
@@ -981,8 +1049,9 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
                          .count();
 
       if (elapsed > comboTimeWindow) {
-        if (debugging::debug_io) debug("⏱️  Wheel combo '{}' failed: key {} too old ({}ms)", hotkey.alias,
-              keyCode, elapsed);
+        if (debugging::debug_io)
+          debug("⏱️  Wheel combo '{}' failed: key {} too old ({}ms)",
+                hotkey.alias, keyCode, elapsed);
         return false;
       }
     }
@@ -990,14 +1059,16 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
     // Check modifiers
     if (comboKey.modifiers != 0) {
       if (!CheckModifierMatch(comboKey.modifiers, comboKey.wildcard)) {
-        if (debugging::debug_io) debug("❌ Wheel combo '{}' failed: modifiers don't match",
-              hotkey.alias);
+        if (debugging::debug_io)
+          debug("❌ Wheel combo '{}' failed: modifiers don't match",
+                hotkey.alias);
         return false;
       }
     }
   }
 
-  if (debugging::debug_io) debug("✅ Wheel combo '{}' MATCHED", hotkey.alias);
+  if (debugging::debug_io)
+    debug("✅ Wheel combo '{}' MATCHED", hotkey.alias);
   return true;
 }
 /**
@@ -1031,23 +1102,25 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
     {
       std::unique_lock<std::shared_mutex> lock(stateMutex);
       mouseButtonState[ev.code] = down;
-        lastButtonCode = ev.code;
-        lastButtonWasDown = down;
-        lastButtonTime = now;
+      lastButtonCode = ev.code;
+      lastButtonWasDown = down;
+      lastButtonTime = now;
 
       if (down) {
         int currentMods = GetCurrentModifiersMask();
         activeInputs[ev.code] = ActiveInput(currentMods, now);
         // Track physical mouse button state as well
         physicalKeyStates[ev.code] = true;
-        if (debugging::debug_io) debug("Mouse BUTTON DOWN: code={} | Active buttons: {}", ev.code,
-              GetActiveInputsString());
+        if (debugging::debug_io)
+          debug("Mouse BUTTON DOWN: code={} | Active buttons: {}", ev.code,
+                GetActiveInputsString());
       } else {
         activeInputs.erase(ev.code);
         // Clear physical mouse button state as well
         physicalKeyStates[ev.code] = false;
-        if (debugging::debug_io) debug("Mouse BUTTON UP: code={} | Active buttons: {}", ev.code,
-              GetActiveInputsString());
+        if (debugging::debug_io)
+          debug("Mouse BUTTON UP: code={} | Active buttons: {}", ev.code,
+                GetActiveInputsString());
       }
     } // stateMutex unlocked here
 
@@ -1066,7 +1139,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
     std::vector<int> matchedHotkeyIds;
     bool shouldBlock = false;
 
-    if (debugging::debug_io) debug("[Mouse] Evaluating mouse button hotkeys (code={}, down={})", ev.code, down);
+    if (debugging::debug_io)
+      debug("[Mouse] Evaluating mouse button hotkeys (code={}, down={})",
+            ev.code, down);
 
     // Evaluate hotkeys - lock both mutexes
     {
@@ -1080,10 +1155,13 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
           continue;
 
         if (hotkey.type == HotkeyType::Combo) {
-          if (debugging::debug_hotkeys) debug("[Search] Evaluating COMBO hotkey '{}' (id={})", hotkey.alias, id);
+          if (debugging::debug_hotkeys)
+            debug("[Search] Evaluating COMBO hotkey '{}' (id={})", hotkey.alias,
+                  id);
           try {
             if (EvaluateCombo(hotkey)) {
-              if (debugging::debug_hotkeys) debug("[Hotkey] COMBO MATCHED: '{}' (id={})", hotkey.alias, id);
+              if (debugging::debug_hotkeys)
+                debug("[Hotkey] COMBO MATCHED: '{}' (id={})", hotkey.alias, id);
               matchedHotkeyIds.push_back(id);
               if (hotkey.grab)
                 shouldBlock = true;
@@ -1132,7 +1210,8 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
 
         // Hotkey matched!
         if (debugging::debug_hotkeys || Conf().GetVerboseKeyLogging()) {
-          info("[Hotkey] MOUSE MATCHED: '{}' (id={}, down={})", hotkey.alias, id, down);
+          info("[Hotkey] MOUSE MATCHED: '{}' (id={}, down={})", hotkey.alias,
+               id, down);
         }
         matchedHotkeyIds.push_back(id);
         if (hotkey.grab)
@@ -1142,7 +1221,8 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
 
     // Execute callbacks outside critical section
     for (int hotkeyId : matchedHotkeyIds) {
-      if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING id={}", hotkeyId);
+      if (debugging::debug_hotkeys)
+        info("[Hotkey] EXECUTING id={}", hotkeyId);
       std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
       auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
@@ -1150,7 +1230,8 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
           HotkeyManager::RegisteredHotkeysMutex());
       if (it != HotkeyManager::RegisteredHotkeys().end() &&
           it->second.enabled) {
-        if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING '{}' (id={})", it->second.alias, hotkeyId);
+        if (debugging::debug_hotkeys)
+          info("[Hotkey] EXECUTING '{}' (id={})", it->second.alias, hotkeyId);
         auto callback = it->second.callback;
         lock.unlock();
 
@@ -1169,8 +1250,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
     // Mouse movement
     if (ev.code == REL_X || ev.code == REL_Y) {
       int32_t scaledInt = ev.value;
-      if (debugging::debug_io) debug("Mouse MOVE: axis={}, value={}",
-            ev.code == REL_X ? "X" : "Y", ev.value);
+      if (debugging::debug_io)
+        debug("Mouse MOVE: axis={}, value={}", ev.code == REL_X ? "X" : "Y",
+              ev.value);
       if (inputEventCallback) {
         InputEvent event;
         event.kind = InputEventKind::MouseMove;
@@ -1252,9 +1334,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
         event.modifiers = GetCurrentModifiersMask();
         inputEventCallback(event);
       }
-      if (debugging::debug_io) debug("Mouse WHEEL: axis={}, direction={}, speed={}",
-            ev.code == REL_WHEEL ? "VERT" : "HORZ",
-            wheelDirection > 0 ? "UP/LEFT" : "DOWN/RIGHT", IO::scrollSpeed);
+      if (debugging::debug_io)
+        debug("Mouse WHEEL: axis={}, direction={}, speed={}",
+              ev.code == REL_WHEEL ? "VERT" : "HORZ",
+              wheelDirection > 0 ? "UP/LEFT" : "DOWN/RIGHT", IO::scrollSpeed);
 
       // Update the wheel time tracking for combo evaluation and evaluate
       // hotkeys
@@ -1352,7 +1435,8 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
       currentWheelDirection = 0;
 
       for (int hotkeyId : wheelHotkeyIds) {
-        if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING wheel id={}", hotkeyId);
+        if (debugging::debug_hotkeys)
+          info("[Hotkey] EXECUTING wheel id={}", hotkeyId);
         std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
         auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
@@ -1360,7 +1444,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
             HotkeyManager::RegisteredHotkeysMutex());
         if (it != HotkeyManager::RegisteredHotkeys().end() &&
             it->second.enabled) {
-          if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING wheel '{}' (id={})", it->second.alias, hotkeyId);
+          if (debugging::debug_hotkeys)
+            info("[Hotkey] EXECUTING wheel '{}' (id={})", it->second.alias,
+                 hotkeyId);
           auto callback = it->second.callback;
           lock.unlock();
 
@@ -1382,11 +1468,14 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
           scaledInt = (ev.value > 0) ? 1 : -1;
         }
 
-        if (debugging::debug_io) debug("[WHEEL] ProcessMouseEvent: shouldBlock={} raw={} scaled={} hiResVal={} scrollSpeed={}",
-              shouldBlock, ev.value, scaledInt, hiResVal, IO::scrollSpeed);
+        if (debugging::debug_io)
+          debug("[WHEEL] ProcessMouseEvent: shouldBlock={} raw={} scaled={} "
+                "hiResVal={} scrollSpeed={}",
+                shouldBlock, ev.value, scaledInt, hiResVal, IO::scrollSpeed);
 #ifdef REL_WHEEL_HI_RES
         if (hiResVal != 0) {
-          int hiResCode = (ev.code == REL_WHEEL) ? REL_WHEEL_HI_RES : REL_HWHEEL_HI_RES;
+          int hiResCode =
+              (ev.code == REL_WHEEL) ? REL_WHEEL_HI_RES : REL_HWHEEL_HI_RES;
           BeginUinputBatch();
           QueueUinputEvent(EV_REL, hiResCode, hiResVal);
           QueueUinputEvent(EV_REL, ev.code, scaledInt);
@@ -1398,24 +1487,28 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);
 #endif
       } else {
-        if (debugging::debug_io) debug("[WHEEL] WHEEL BLOCKED by hotkey shouldBlock={}", shouldBlock);
+        if (debugging::debug_io)
+          debug("[WHEEL] WHEEL BLOCKED by hotkey shouldBlock={}", shouldBlock);
       }
     }
 #ifdef REL_WHEEL_HI_RES
     // High-resolution wheel events — handled above in sync with REL_WHEEL
     else if (ev.code == REL_WHEEL_HI_RES || ev.code == REL_HWHEEL_HI_RES) {
-      // Ignored here because EvdevAdapter buffers and delegates to the main REL_WHEEL event
+      // Ignored here because EvdevAdapter buffers and delegates to the main
+      // REL_WHEEL event
     }
 #endif
     // Other relative events
     else {
-    if (!blockInput.load() && grabDevices) {
-      if (SupportsSynthesis()) {
-        SendUinputEvent(ev.type, ev.code, ev.value);
-      } else {
-        warn("EventListener: grab active but uinput unavailable, dropping event type={} code={}", ev.type, ev.code);
+      if (!blockInput.load() && grabDevices) {
+        if (SupportsSynthesis()) {
+          SendUinputEvent(ev.type, ev.code, ev.value);
+        } else {
+          warn("EventListener: grab active but uinput unavailable, dropping "
+               "event type={} code={}",
+               ev.type, ev.code);
+        }
       }
-    }
     }
 
   } else if (ev.type == EV_ABS) {
@@ -1441,7 +1534,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
 }
 
 void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
-  if (debugging::debug_hotkeys) debug("⌨️  Evaluating keyboard/movement hotkeys for virtualKey={}", virtualKey);
+  if (debugging::debug_hotkeys)
+    debug("⌨️  Evaluating keyboard/movement hotkeys for virtualKey={}",
+          virtualKey);
   std::vector<int> matchedHotkeyIds;
 
   {
@@ -1474,19 +1569,24 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
           continue;
       }
 
-      if (debugging::debug_hotkeys) debug("[Hotkey] KEYBOARD/MOVEMENT MATCHED: '{}' (id={})", hotkey.alias, id);
+      if (debugging::debug_hotkeys)
+        debug("[Hotkey] KEYBOARD/MOVEMENT MATCHED: '{}' (id={})", hotkey.alias,
+              id);
       matchedHotkeyIds.push_back(id);
     }
   }
 
   // Execute callbacks asynchronously to avoid blocking input thread
   for (int hotkeyId : matchedHotkeyIds) {
-    if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING keyboard/movement id={}", hotkeyId);
+    if (debugging::debug_hotkeys)
+      info("[Hotkey] EXECUTING keyboard/movement id={}", hotkeyId);
     std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
     auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
     if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
-      if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING keyboard/movement '{}' (id={})", it->second.alias, hotkeyId);
+      if (debugging::debug_hotkeys)
+        info("[Hotkey] EXECUTING keyboard/movement '{}' (id={})",
+             it->second.alias, hotkeyId);
       auto callback = it->second.callback;
       lock.unlock();
 
@@ -1705,7 +1805,9 @@ void EventListener::DispatchHotkeyCallback(std::function<void()> callback) {
 }
 
 bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
-  if (debugging::debug_hotkeys) debug("⌨️ EvaluateHotkeys: code={} down={} repeat={}", evdevCode, down, repeat);
+  if (debugging::debug_hotkeys)
+    debug("⌨️ EvaluateHotkeys: code={} down={} repeat={}", evdevCode, down,
+          repeat);
   std::vector<int> matchedHotkeyIds;
   bool shouldBlock = false;
 
@@ -1728,10 +1830,14 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       // Check if this is a combo hotkey
       if (hotkey.type == HotkeyType::Combo) {
-        if (debugging::debug_hotkeys) debug("[Search] Evaluating keyboard COMBO '{}' (id={})", hotkey.alias, id);
+        if (debugging::debug_hotkeys)
+          debug("[Search] Evaluating keyboard COMBO '{}' (id={})", hotkey.alias,
+                id);
         try {
           if (EvaluateCombo(hotkey)) {
-            if (debugging::debug_hotkeys) debug("[Hotkey] KEYBOARD COMBO MATCHED: '{}' (id={})", hotkey.alias, id);
+            if (debugging::debug_hotkeys)
+              debug("[Hotkey] KEYBOARD COMBO MATCHED: '{}' (id={})",
+                    hotkey.alias, id);
             // Combo matched, collect for execution outside locks
             std::lock_guard<std::mutex> ioLock(
                 HotkeyManager::RegisteredHotkeysMutex());
@@ -1862,7 +1968,9 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       // Hotkey matched! Collect for execution outside locks
       hotkey.success = true; // Update the actual hotkey's success status
-      if (debugging::debug_hotkeys) debug("[Hotkey] KEYBOARD MATCHED: '{}' (id={}, down={})", hotkey.alias, id, down);
+      if (debugging::debug_hotkeys)
+        debug("[Hotkey] KEYBOARD MATCHED: '{}' (id={}, down={})", hotkey.alias,
+              id, down);
 
       matchedHotkeyIds.push_back(id);
 
@@ -1874,13 +1982,14 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
   // Execute callbacks outside critical section
   for (int hotkeyId : matchedHotkeyIds) {
-    if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING id={}", hotkeyId);
+    if (debugging::debug_hotkeys)
+      info("[Hotkey] EXECUTING id={}", hotkeyId);
     std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
     auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-    if (it != HotkeyManager::RegisteredHotkeys().end() &&
-        it->second.enabled) {
-      if (debugging::debug_hotkeys) info("[Hotkey] EXECUTING '{}' (id={})", it->second.alias, hotkeyId);
+    if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
+      if (debugging::debug_hotkeys)
+        info("[Hotkey] EXECUTING '{}' (id={})", it->second.alias, hotkeyId);
       auto callback = it->second.callback;
       lock.unlock();
 
@@ -1919,14 +2028,17 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
     // Gate: If this combo requires a wheel event, only evaluate during wheel
     // events
     if (hotkey.requiresWheel && !isProcessingWheelEvent) {
-      if (debugging::debug_io) debug("⏭️  Skipping combo '{}' - requires wheel but not processing wheel "
+      if (debugging::debug_io)
+        debug(
+            "⏭️  Skipping combo '{}' - requires wheel but not processing wheel "
             "event",
             hotkey.alias);
       return false;
     }
 
-    if (debugging::debug_io) debug("[Search] Evaluating combo '{}' | Active inputs: {}", hotkey.alias,
-          GetActiveInputsString());
+    if (debugging::debug_io)
+      debug("[Search] Evaluating combo '{}' | Active inputs: {}", hotkey.alias,
+            GetActiveInputsString());
 
     // Build a set of required keys for this combo
     std::set<int> requiredKeys;
@@ -1966,11 +2078,14 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         // They only trigger DURING the wheel event itself
         // So we just skip them in the activeInputs check
         // The wheel direction matching happens in ProcessMouseEvent
-        if (debugging::debug_io) debug("Combo includes wheel event, skipping activeInputs check for it");
+        if (debugging::debug_io)
+          debug(
+              "Combo includes wheel event, skipping activeInputs check for it");
         continue;
       } else {
-        if (debugging::debug_io) debug("❌ Combo '{}' has unsupported type {}", hotkey.alias,
-              static_cast<int>(comboKey.type));
+        if (debugging::debug_io)
+          debug("❌ Combo '{}' has unsupported type {}", hotkey.alias,
+                static_cast<int>(comboKey.type));
         return false;
       }
     }
@@ -1981,7 +2096,6 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
     int requiredCount = requiredKeys.size();
 
     // Count how many modifier keys are active
-
 
     if (!hotkey.wildcard) {
       // Strict matching: ensure no unauthorized keys are pressed
@@ -2027,8 +2141,9 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         }
 
         // If we get here, 'code' is an extra key that is not allowed
-        if (debugging::debug_io) debug("❌ Combo '{}' rejected: unauthorized key {} active",
-              hotkey.alias, code);
+        if (debugging::debug_io)
+          debug("❌ Combo '{}' rejected: unauthorized key {} active",
+                hotkey.alias, code);
         return false;
       }
       // If we passed the loop, all active keys are allowed
@@ -2041,14 +2156,16 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
       auto it = activeInputs.find(requiredKey);
 
       if (it == activeInputs.end()) {
-        if (debugging::debug_io) debug("❌ Combo '{}' rejected: required key {} not active",
-              hotkey.alias, requiredKey);
+        if (debugging::debug_io)
+          debug("❌ Combo '{}' rejected: required key {} not active",
+                hotkey.alias, requiredKey);
         return false;
       }
 
       if (hasLastTimestamp && it->second.timestamp < lastTimestamp) {
-        if (debugging::debug_io) debug("❌ Combo '{}' rejected: key {} order mismatch", hotkey.alias,
-              requiredKey);
+        if (debugging::debug_io)
+          debug("❌ Combo '{}' rejected: key {} order mismatch", hotkey.alias,
+                requiredKey);
         return false;
       }
 
@@ -2061,8 +2178,9 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
             now - it->second.timestamp);
 
         if (keyAge.count() > comboTimeWindow) {
-          if (debugging::debug_io) debug("❌ Combo '{}' rejected: key {} too old ({}ms > {}ms)",
-                hotkey.alias, requiredKey, keyAge.count(), comboTimeWindow);
+          if (debugging::debug_io)
+            debug("❌ Combo '{}' rejected: key {} too old ({}ms > {}ms)",
+                  hotkey.alias, requiredKey, keyAge.count(), comboTimeWindow);
           return false;
         }
       }
@@ -2078,8 +2196,9 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
 
     if (!isPureModifierWheelCombo && !hotkey.requiredPhysicalKeys.empty()) {
       if (!ArePhysicalKeysPressed(hotkey.requiredPhysicalKeys)) {
-        if (debugging::debug_io) debug("❌ Combo '{}' rejected: required physical keys not pressed",
-              hotkey.alias);
+        if (debugging::debug_io)
+          debug("❌ Combo '{}' rejected: required physical keys not pressed",
+                hotkey.alias);
         return false;
       }
     }
@@ -2091,23 +2210,26 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
       if (!hotkey.wildcard) {
         // Strict: must match exactly
         if (currentMods != requiredModifiers) {
-          if (debugging::debug_io) debug("❌ Combo '{}' rejected: wrong modifiers "
-                "(have {:#x}, need {:#x})",
-                hotkey.alias, currentMods, requiredModifiers);
+          if (debugging::debug_io)
+            debug("❌ Combo '{}' rejected: wrong modifiers "
+                  "(have {:#x}, need {:#x})",
+                  hotkey.alias, currentMods, requiredModifiers);
           return false;
         }
       } else {
         // Wildcard: required mods must be present (can have extras)
         if ((currentMods & requiredModifiers) != requiredModifiers) {
-          if (debugging::debug_io) debug("❌ Combo '{}' rejected: missing required modifiers "
-                "(have {:#x}, need {:#x})",
-                hotkey.alias, currentMods, requiredModifiers);
+          if (debugging::debug_io)
+            debug("❌ Combo '{}' rejected: missing required modifiers "
+                  "(have {:#x}, need {:#x})",
+                  hotkey.alias, currentMods, requiredModifiers);
           return false;
         }
       }
     }
 
-    if (debugging::debug_io) debug("✅ Combo '{}' matched!", hotkey.alias);
+    if (debugging::debug_io)
+      debug("✅ Combo '{}' matched!", hotkey.alias);
     return true;
   } catch (const std::system_error &e) {
     error("System error in EvaluateCombo for hotkey '{}': {}", hotkey.alias,
@@ -2162,18 +2284,21 @@ bool EventListener::MatchGesturePattern(
 
 // Release all pressed virtual keys (for clean shutdown)
 void EventListener::ReleaseAllVirtualKeys() {
-  if (backend_) backend_->ReleaseAllVirtualKeys();
+  if (backend_)
+    backend_->ReleaseAllVirtualKeys();
   pressedVirtualKeys.clear();
   evdevKeyState.clear();
 }
 
 void EventListener::ForceUngrabAllDevices() {
-  if (backend_) backend_->UngrabAllDevices();
+  if (backend_)
+    backend_->UngrabAllDevices();
 }
 
 void EventListener::RequestGracefulShutdown() {
   ReleaseAllVirtualKeys();
-  if (backend_) backend_->UngrabAllDevices();
+  if (backend_)
+    backend_->UngrabAllDevices();
   running.store(false);
   shutdown.store(true);
   if (shutdownFd >= 0) {
@@ -2239,7 +2364,8 @@ void EventListener::ProcessSignal() {
 }
 
 void EventListener::HandleSignal(int sig) {
-  if (debugging::debug_io) debug("EventListener received signal: {}", sig);
+  if (debugging::debug_io)
+    debug("EventListener received signal: {}", sig);
 
   switch (sig) {
   case SIGTERM:
@@ -2254,46 +2380,47 @@ void EventListener::HandleSignal(int sig) {
       SignalSafeShutdown(sig, true);
     }
     break;
-    case SIGSEGV:
-    case SIGABRT:
-    case SIGBUS:
-    case SIGILL:
-    case SIGFPE:
-        havel::exit(ExitReason::SignalCrash, sig + 128);
-        break;
+  case SIGSEGV:
+  case SIGABRT:
+  case SIGBUS:
+  case SIGILL:
+  case SIGFPE:
+    havel::exit(ExitReason::SignalCrash, sig + 128);
+    break;
   default:
-    if (debugging::debug_io) debug("Unknown signal received: {}", sig);
+    if (debugging::debug_io)
+      debug("Unknown signal received: {}", sig);
     break;
   }
 }
 
 void EventListener::RequestShutdownFromSignal(int sig) {
-    EmergencyUngrabAllEvdevSignalSafe();
-    asyncSignalRequested = sig;
-    if (shutdownFd >= 0) {
-        uint64_t val = 1;
-        write(shutdownFd, &val, sizeof(val));
-    }
+  EmergencyUngrabAllEvdevSignalSafe();
+  asyncSignalRequested = sig;
+  if (shutdownFd >= 0) {
+    uint64_t val = 1;
+    write(shutdownFd, &val, sizeof(val));
+  }
 }
 
 void EventListener::SignalSafeShutdown(int sig, bool exitAfter) {
-    int exitCode =
-        (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
-    if (exitAfter) {
-        ExitReason reason = sig == SIGINT  ? ExitReason::SignalInt
-                           : sig == SIGTERM ? ExitReason::SignalTerm
-                           : sig == SIGQUIT ? ExitReason::SignalQuit
-                           : ExitReason::SignalCrash;
-        havel::exit(reason, exitCode);
-    } else {
-        EmergencyUngrabAllEvdevSignalSafe();
-        running.store(false);
-        shutdown.store(true);
-        if (shutdownFd >= 0) {
-            uint64_t val = 1;
-            write(shutdownFd, &val, sizeof(val));
-        }
+  int exitCode =
+      (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
+  if (exitAfter) {
+    ExitReason reason = sig == SIGINT    ? ExitReason::SignalInt
+                        : sig == SIGTERM ? ExitReason::SignalTerm
+                        : sig == SIGQUIT ? ExitReason::SignalQuit
+                                         : ExitReason::SignalCrash;
+    havel::exit(reason, exitCode);
+  } else {
+    EmergencyUngrabAllEvdevSignalSafe();
+    running.store(false);
+    shutdown.store(true);
+    if (shutdownFd >= 0) {
+      uint64_t val = 1;
+      write(shutdownFd, &val, sizeof(val));
     }
+  }
 }
 
 } // namespace havel

@@ -2285,8 +2285,21 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
         std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
         std::string stubPath = aotOutput + "_stub.cpp";
+        
+        // Get build directory for module search paths
+        std::string buildDir;
+        std::string exePath = Env::executable();
+        if (!exePath.empty()) {
+            buildDir = std::filesystem::path(exePath).parent_path().string();
+        }
+        
+        info("AOT: generating stub at {}", stubPath);
         {
           std::ofstream stub(stubPath);
+          if (!stub) {
+            error("Failed to open stub file for writing: {}", stubPath);
+            return 1;
+          }
           const std::string initSymbol = coreProfile
                                              ? "havel_vm_init_standalone_core"
                                              : "havel_vm_init_standalone";
@@ -2335,7 +2348,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
             stub << "    const char**, uint32_t,\n";
             stub << "    const uint32_t*, const uint32_t*,\n";
             stub << "    const uint32_t*, const uint32_t*,\n";
-            stub << "    const uint32_t*, const uint32_t*, uint32_t);\n";
+            stub << "    const uint32_t*, const uint32_t*, uint32_t,\n";
+            stub << "    const char*);\n";
             stub << "int main() {\n";
             stub << "    const char* strings[] = {\n";
             const auto &chunkStrings = chunk->getAllStrings();
@@ -2405,13 +2419,20 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
             }
             stub << "    };\n";
             
+            std::string escapedBuildDir = buildDir;
+            for (char& c : escapedBuildDir) {
+                if (c == '"') escapedBuildDir += '\\';
+                else if (c == '\\') escapedBuildDir += '\\\\';
+            }
+            
             stub << "    void* vm = " << initWithFuncsSymbol << "(strings, "
                  << chunkStrings.size() << ",\n";
             stub << "        func_names, " << funcNames.size() << ",\n";
             stub << "        func_param_counts, func_local_counts,\n";
             stub << "        func_upvalue_counts, func_is_generator,\n";
             stub << "        upvalue_indices, upvalue_captures_local, "
-                 << upvalueIndices.size() << ");\n";
+                 << upvalueIndices.size() << ",\n";
+            stub << "        \"" << escapedBuildDir << "\");\n";
             stub << "    uint64_t dummy_args[1024];\n";
             stub << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
                     "0x7ffb000000000000ULL;\n";
@@ -2435,7 +2456,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
                     "\" -o \"" + binPath + "\"";
         } else {
           linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" +
-                    nativeObjPath + "\" -o \"" + binPath + "\"";
+                    nativeObjPath + "\" -o \"" + binPath + "\" -Wl,--export-dynamic";
           std::string exePath = Env::executable();
           if (!exePath.empty()) {
             std::string libDir =
@@ -2469,11 +2490,11 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         if (linkRc != 0) {
           error("Failed to link native AOT executable with command: {}",
                 linkCmd);
-          std::filesystem::remove(stubPath);
+          // std::filesystem::remove(stubPath);
           return 1;
         }
         info("Native AOT executable written to: {}", binPath);
-        std::filesystem::remove(stubPath);
+        // std::filesystem::remove(stubPath);
       }
     }
 

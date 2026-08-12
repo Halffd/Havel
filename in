@@ -1,0 +1,42 @@
+[DEBUG] spawnGoroutine calleeKinds fnobj=[DEBUG] spawnGoroutine calleeKinds fnobj=1 closure=0
+[DEBUG] spawnGoroutine pinned null=0 closure=1 chmain=14 cur=14
+[DEBUG] spawned snapshot globals has fs=1 println=1 print=1
+1 closure=0
+[DEBUG] spawnGoroutine pinned null=0 closure=1 chmain=14 cur=14
+[DEBUG] spawned snapshot globals has fs=1 println=1 print=1
+[DEBUG] pickNext Created gid=2 name='async-task'
+[DEBUG] pickNext Created gid=2 name='async-task'
+[DEBUG] startGoroutineCall gid=2[DEBUG] startGoroutineCall gid=2 result=1
+ result=1
+[DEBUG IMPORT] globals['debug'] found? 1[DEBUG IMPORT] globals['debug'] found? 1 isObj=0 isNull=0 isHF=1
+ isObj=0 isNull=0 isHF=1
+[DEBUG STORE_GLOBAL] name=setFlag bits=9223090561878065976 closure=[DEBUG STORE_GLOBAL] name=setFlag bits=9223090561878065976 closure=1 hf=0 obj=0 null=0
+1 hf=0 obj=0 null=0
+[DEBUG IMPORT RETURN] path=debug bits=[DEBUG IMPORT RETURN] path=debug bits=9222809086901354926 obj=1 closure=0 hf=0 null=0
+  returned.setFlag=present closure=0 hf=1 null=0
+9222809086901354926 obj=1 closure=0 hf=0 null=0
+  returned.setFlag=present closure=0 hf=1 null=0
+[DEBUG IMPORT] globals['debug'] found? 1[DEBUG IMPORT] globals['debug'] found? 1 isObj=0 isNull=0 isHF=1
+[DEBUG] loadModule cached path='debug' cachedVal is oid? 1 isNull? 0 isHF? 0 bits=9222809086901354926
+    exports has setFlag? 1 bits=9222809086901354926 closure=0 hf=1 null=0
+ isObj=0 isNull=0 isHF=1
+[DEBUG] loadModule cached path='debug' cachedVal is oid? 1 isNull? 0 isHF? 0 bits=9222809086901354926
+    exports has setFlag? 1 bits=9222809086901354926 closure=0 hf=1 null=0
+[DEBUG IMPORT RETURN] path=debug[DEBUG IMPORT RETURN] path=debug bits= bits=92228090869013549269222809086901354926 obj=1 closure=0 hf=0 obj=1 closure=0 hf=0 null=0
+  returned.setFlag=present closure=0 hf=1 null=0
+[DEBUG STORE_GLOBAL] name=setFlag bits=9223160930622244052 closure=0 hf=1 obj=0 null=0
+ null=0
+  returned.setFlag=present closure=0 hf=1 null=0
+[DEBUG STORE_GLOBAL] name=setFlag bits=9223160930622244052 closure=0 hf=1 obj=0 null=0
+[DEBUG] spawnGoroutine calleeKinds fnobj=[DEBUG] spawnGoroutine calleeKinds fnobj=1 closure=0
+[DEBUG] spawnGoroutine pinned null=0 closure=1 chmain=1 cur=1
+[DEBUG] spawned snapshot globals has fs=1 println=1 print=1
+[DEBUG] pickNext Created gid=3 name='async-task'
+[DEBUG] startGoroutineCall gid=3 result=1
+[DEBUG] pickNext null: suspended=0 total=2
+1 closure=0
+[DEBUG] spawnGoroutine pinned null=0 closure=1 chmain=1 cur=1
+[DEBUG] spawned snapshot globals has fs=1 println=1 print=1
+[DEBUG] pickNext Created gid=3 name='async-task'
+[DEBUG] startGoroutineCall gid=3 result=1
+[DEBUG] pickNext null: suspended=0 total=2

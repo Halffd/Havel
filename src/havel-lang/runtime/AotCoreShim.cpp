@@ -2,6 +2,7 @@
 #include "havel-lang/runtime/Modules.hpp"
 #include "havel-lang/compiler/vm/VM.hpp"
 #include "havel-lang/runtime/HostContext.hpp"
+#include "core/util/Env.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -26,6 +27,39 @@ extern "C" void* havel_vm_init_standalone_core(const char** strings, uint32_t co
         for (const auto &[name, fn] : modules->options().host_functions) {
             vm->registerHostFunction(name, fn);
         }
+        
+        // Initialize module loader for AOT so that IMPORT works
+        if (vm) {
+            // Set stdlib path - always derive from executable path (source tree)
+            std::string stdlibPath;
+            const char* envStdlib = std::getenv("HAVEL_STDLIB");
+            if (envStdlib && envStdlib[0] != '\0') {
+                stdlibPath = envStdlib;
+            } else {
+                auto exePath = Env::executable();
+                if (!exePath.empty()) {
+                    stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
+                } else {
+                    stdlibPath = "./modules/std";
+                }
+            }
+            vm->moduleLoader().setStdlibPath(stdlibPath);
+
+            // Add module search paths - also derive from executable path
+            std::string modulesRoot;
+            auto exePath = Env::executable();
+            if (!exePath.empty()) {
+                modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
+            } else {
+                modulesRoot = "./modules";
+            }
+            auto canonicalRoot = std::filesystem::exists(modulesRoot)
+                ? std::filesystem::canonical(modulesRoot).string() : modulesRoot;
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/std");
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/app");
+            vm->moduleLoader().addSearchPath(canonicalRoot);
+        }
     }
 
     if (strings && count > 0) {
@@ -48,7 +82,8 @@ extern "C" void* havel_vm_init_standalone_with_functions_core(
     const uint32_t* func_param_counts, const uint32_t* func_local_counts,
     const uint32_t* func_upvalue_counts, const uint32_t* func_is_generator,
     const uint32_t* upvalue_indices, const uint32_t* upvalue_captures_local,
-    uint32_t total_upvalues
+    uint32_t total_upvalues,
+    const char* build_dir
 ) {
     using namespace havel;
 
@@ -65,6 +100,45 @@ extern "C" void* havel_vm_init_standalone_with_functions_core(
         modules->install(havel::InstallProfile::Core, false);
         for (const auto &[name, fn] : modules->options().host_functions) {
             vm->registerHostFunction(name, fn);
+        }
+        
+        // Initialize module loader for AOT so that IMPORT works
+        if (vm) {
+            // Set stdlib path
+            std::string stdlibPath;
+            const char* envStdlib = std::getenv("HAVEL_STDLIB");
+            if (envStdlib && envStdlib[0] != '\0') {
+                stdlibPath = envStdlib;
+            } else if (build_dir && build_dir[0] != '\0') {
+                stdlibPath = (std::filesystem::path(build_dir) / "modules" / "std").string();
+            } else {
+                auto exePath = Env::executable();
+                if (!exePath.empty()) {
+                    stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
+                } else {
+                    stdlibPath = "./modules/std";
+                }
+            }
+            vm->moduleLoader().setStdlibPath(stdlibPath);
+
+            // Add module search paths
+            std::string modulesRoot;
+            if (build_dir && build_dir[0] != '\0') {
+                modulesRoot = (std::filesystem::path(build_dir) / "modules").string();
+            } else {
+                auto exePath = Env::executable();
+                if (!exePath.empty()) {
+                    modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
+                } else {
+                    modulesRoot = "./modules";
+                }
+            }
+            auto canonicalRoot = std::filesystem::exists(modulesRoot)
+                ? std::filesystem::canonical(modulesRoot).string() : modulesRoot;
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/std");
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/app");
+            vm->moduleLoader().addSearchPath(canonicalRoot);
         }
     }
 

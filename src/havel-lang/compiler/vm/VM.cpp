@@ -3855,6 +3855,10 @@ Value VM::deepWrapModuleFunctions(
     uint32_t paramCount = moduleFunc ? moduleFunc->param_count : 0;
     bool wantsSelf = moduleFunc && !moduleFunc->param_names.empty() &&
                      moduleFunc->param_names[0] == "self";
+    bool isConstructor = wantsSelf && moduleFunc && moduleFunc->name == "init";
+    if (isConstructor) {
+      wantsSelf = false;
+    }
     auto moduleChunk = chunk;
     auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
     std::string fnCapturedKey = canonicalKey;
@@ -4516,6 +4520,41 @@ Value VM::loadModule(const std::string &path) {
         fixupCachedClosures(keyB1, cachedVal, cachedGlobals);
       }
       return cachedVal;
+    }
+  }
+
+  // Check native modules FIRST (before Havel module resolution)
+  // This ensures native modules like "time" take precedence over .hvc files
+  if (context_ && context_->modules) {
+    auto pluginOpt = context_->modules->extensionLoader().loadModulePlugin(path);
+    if (pluginOpt) {
+      auto plugin = *pluginOpt;
+      auto exportsObj = createHostObject();
+      auto *obj = heap_.object(exportsObj.id);
+      if (obj) {
+        compiler::VMApi api(*this);
+        plugin.register_fn(static_cast<void*>(&api));
+        
+        // Collect exports from global namespace (functions with module prefix)
+        std::string prefix = path + ".";
+        std::string usPrefix = path + "_";
+        for (const auto &[name, value] : host_function_globals_) {
+          std::string localName;
+          if (name.rfind(prefix, 0) == 0) {
+            localName = name.substr(prefix.size());
+          } else if (name.rfind(usPrefix, 0) == 0) {
+            localName = name.substr(usPrefix.size());
+          }
+          if (!localName.empty() && !obj->get(localName)) {
+            (*obj)[localName] = value;
+          }
+        }
+        
+        Value exports = Value::makeObjectId(exportsObj.id);
+        moduleLoader_.putCache(path, exports);
+        pinModuleCacheExports(path, exports);
+        return exports;
+      }
     }
   }
 

@@ -95,7 +95,9 @@ const char *havel_loader_error(void) {
 
 void havel_loader_add_search_path(HavelLoader *loader, const char *path) {
  if (!loader || !path) return;
- if (loader->search_path_count >= MAX_SEARCH_PATHS) return;
+ if (loader->search_path_count >= MAX_SEARCH_PATHS) {
+   return;
+ }
  loader->search_paths[loader->search_path_count++] = strdup(path);
 }
 
@@ -915,10 +917,15 @@ int havel_loader_scan_modules(HavelLoader *loader, HavelModuleInfo *out, int max
   const char *prefix = "havel_mod_";
   int count = 0;
 
+  for (int si = 0; si < loader->search_path_count; si++) {
+  }
+
   for (int si = 0; si < loader->search_path_count && count < max_out; si++) {
   const char *dir = loader->search_paths[si];
   DIR *d = opendir(dir);
-  if (!d) continue;
+  if (!d) {
+    continue;
+  }
 
   struct dirent *entry;
   while ((entry = readdir(d)) != NULL && count < max_out) {

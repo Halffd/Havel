@@ -881,11 +881,15 @@ extern "C" void* havel_vm_init_standalone_with_functions(
         // Initialize module loader for AOT so that IMPORT works
         auto* vm = engine.vm();
         if (vm) {
-            // Set stdlib path - always derive from executable path (source tree)
+            // Use build_dir (passed from stub) for module paths
+            // build_dir is the build directory (e.g., /path/to/build-debug)
+            // Source modules are at build_dir/../modules
             std::string stdlibPath;
             const char* envStdlib = std::getenv("HAVEL_STDLIB");
             if (envStdlib && envStdlib[0] != '\0') {
                 stdlibPath = envStdlib;
+            } else if (build_dir && build_dir[0] != '\0') {
+                stdlibPath = (std::filesystem::path(build_dir) / ".." / "modules" / "std").string();
             } else {
                 auto exePath = Env::executable();
                 if (!exePath.empty()) {
@@ -894,25 +898,36 @@ extern "C" void* havel_vm_init_standalone_with_functions(
                     stdlibPath = "./modules/std";
                 }
             }
-            // Debug
-            std::cerr << "[AOT DEBUG] stdlibPath=" << stdlibPath << " exePath=" << Env::executable() << std::endl;
             vm->moduleLoader().setStdlibPath(stdlibPath);
 
-            // Add module search paths - also derive from executable path
+            // Add module search paths - use build_dir/.. for source
             std::string modulesRoot;
-            auto exePath2 = Env::executable();
-            if (!exePath2.empty()) {
-                modulesRoot = (std::filesystem::path(exePath2).parent_path() / ".." / "modules").string();
+            if (build_dir && build_dir[0] != '\0') {
+                modulesRoot = (std::filesystem::path(build_dir) / ".." / "modules").string();
             } else {
-                modulesRoot = "./modules";
+                auto exePath = Env::executable();
+                if (!exePath.empty()) {
+                    modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
+                } else {
+                    modulesRoot = "./modules";
+                }
             }
             auto canonicalRoot = std::filesystem::exists(modulesRoot)
                 ? std::filesystem::canonical(modulesRoot).string() : modulesRoot;
-            std::cerr << "[AOT DEBUG] modulesRoot=" << modulesRoot << " canonical=" << canonicalRoot << std::endl;
             vm->moduleLoader().addSearchPath(canonicalRoot + "/lang");
             vm->moduleLoader().addSearchPath(canonicalRoot + "/std");
             vm->moduleLoader().addSearchPath(canonicalRoot + "/app");
             vm->moduleLoader().addSearchPath(canonicalRoot);
+
+            // Also add build directory to C loader's search paths for native modules
+            if (build_dir && build_dir[0] != '\0') {
+                auto extLoader = vm->pluginLoader();
+                if (extLoader) {
+                    std::string buildModulesPath = (std::filesystem::path(build_dir) / "modules").string();
+                    extLoader->addSearchPath(buildModulesPath);
+                    extLoader->addModulePaths();
+                }
+            }
         }
         
         if (strings && string_count > 0) {
@@ -1314,6 +1329,10 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                     break;
                 }
             }
+            if (!foundViaModule) {
+                for (const auto& [name, val] : vm->getGlobals()) {
+                }
+            }
             if (foundViaModule) {
                 passReceiverAsSelf = false;
             } else {
@@ -1343,6 +1362,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
         }
     }
 
+
     if (passReceiverAsSelf) {
         callArgs.insert(callArgs.begin(), receiver);
     }
@@ -1352,6 +1372,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
             Value result = vm->invokeHostFunctionDirect(*hostName, callArgs);
             if (!result.isNull()) return result.rawBits();
         }
+    } else {
     }
 
     if (receiver.isObjectId()) {
@@ -1363,6 +1384,7 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
                 }
             }
             return vm->callFunction(methodValue, callArgs).rawBits();
+        } else {
         }
     }
 
@@ -1974,7 +1996,8 @@ uint64_t havel_vm_import(void* vm_ptr, uint64_t path_bits) {
   std::memcpy(&pathVal, &path_bits, sizeof(uint64_t));
   std::string path = vm->toString(pathVal);
   if (path.empty()) return Value::makeNull().rawBits();
-  return vm->loadModule(path).rawBits();
+  Value result = vm->loadModule(path);
+  return result.rawBits();
 }
 
 void havel_vm_import_wildcard(void* vm_ptr, uint64_t exports_bits) {

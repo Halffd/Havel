@@ -97,20 +97,29 @@ extern "C" void* havel_vm_init_standalone_with_functions_core(
         ctx.vm = vm.get();
 
         modules = havel::createModules(ctx);
-        modules->install(havel::InstallProfile::Core, false);
+        
+        modules->install(havel::InstallProfile::Full, false);
+        
+        // Add build directory to C loader's search paths for native modules AFTER install
+        if (build_dir && build_dir[0] != '\0') {
+            auto& extLoader = modules->extensionLoader();
+            std::string buildModulesPath = (std::filesystem::path(build_dir) / "modules").string();
+            extLoader.addSearchPath(buildModulesPath);
+        }
+        
         for (const auto &[name, fn] : modules->options().host_functions) {
             vm->registerHostFunction(name, fn);
         }
         
         // Initialize module loader for AOT so that IMPORT works
         if (vm) {
-            // Set stdlib path
+            // Set stdlib path - always derive from executable path (source tree)
             std::string stdlibPath;
             const char* envStdlib = std::getenv("HAVEL_STDLIB");
             if (envStdlib && envStdlib[0] != '\0') {
                 stdlibPath = envStdlib;
             } else if (build_dir && build_dir[0] != '\0') {
-                stdlibPath = (std::filesystem::path(build_dir) / "modules" / "std").string();
+                stdlibPath = (std::filesystem::path(build_dir) / ".." / "modules" / "std").string();
             } else {
                 auto exePath = Env::executable();
                 if (!exePath.empty()) {
@@ -121,17 +130,13 @@ extern "C" void* havel_vm_init_standalone_with_functions_core(
             }
             vm->moduleLoader().setStdlibPath(stdlibPath);
 
-            // Add module search paths
+            // Add module search paths - also derive from executable path
             std::string modulesRoot;
-            if (build_dir && build_dir[0] != '\0') {
-                modulesRoot = (std::filesystem::path(build_dir) / "modules").string();
+            auto exePath = Env::executable();
+            if (!exePath.empty()) {
+                modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
             } else {
-                auto exePath = Env::executable();
-                if (!exePath.empty()) {
-                    modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
-                } else {
-                    modulesRoot = "./modules";
-                }
+                modulesRoot = "./modules";
             }
             auto canonicalRoot = std::filesystem::exists(modulesRoot)
                 ? std::filesystem::canonical(modulesRoot).string() : modulesRoot;
@@ -139,6 +144,14 @@ extern "C" void* havel_vm_init_standalone_with_functions_core(
             vm->moduleLoader().addSearchPath(canonicalRoot + "/std");
             vm->moduleLoader().addSearchPath(canonicalRoot + "/app");
             vm->moduleLoader().addSearchPath(canonicalRoot);
+            
+            // Also add build directory to C loader's search paths for native modules
+            if (build_dir && build_dir[0] != '\0') {
+                auto extLoader = vm->pluginLoader();
+                if (extLoader) {
+                    extLoader->addSearchPath((std::filesystem::path(build_dir) / "modules").string());
+                }
+            }
         }
     }
 

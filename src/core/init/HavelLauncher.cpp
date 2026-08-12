@@ -6,6 +6,7 @@
 #include "core/util/Env.hpp"
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/compiler/BytecodeOrcJIT.h"
+#include "havel-lang/compiler/core/BytecodeIR.hpp"
 #include "havel-lang/compiler/core/BootstrapByteCompiler.hpp"
 #include "havel-lang/compiler/core/Pipeline.hpp"
 #include "havel-lang/compiler/runtime/RuntimeSupport.hpp"
@@ -2056,16 +2057,61 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     llvm::LLVMContext ctx;
     auto module = std::make_unique<llvm::Module>(primaryFile + "_module", ctx);
 
+    // First pass: find functions with unsupported opcodes
+    std::vector<bool> hasUnsupported(chunk->getFunctionCount(), false);
+    bool anyUnsupported = false;
     for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
       const auto *func = chunk->getFunction(i);
-      if (func &&
-          !havel::compiler::BytecodeOrcJIT::hasUnsupportedOpcodes(*func)) {
-        jit.translate(*func, *module);
-      } else if (func && cfg.aotWarnings) {
-        warn("AOT: skipping function '{}' — contains async/concurrency opcodes "
-             "not supported in AOT",
-             func->name);
+      if (func && havel::compiler::BytecodeOrcJIT::hasUnsupportedOpcodes(*func)) {
+        hasUnsupported[i] = true;
+        anyUnsupported = true;
+        if (cfg.aotWarnings) {
+          warn("AOT: skipping function '{}' — contains async/concurrency opcodes "
+               "not supported in AOT",
+               func->name);
+        }
       }
+    }
+
+    // Second pass: also skip functions that have CALL instructions if there
+    // are any unsupported functions, because CALL is dynamic and we can't
+    // guarantee the callee is also AOT-compiled.
+    std::vector<bool> shouldSkip = hasUnsupported;
+    if (anyUnsupported) {
+      for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+        if (shouldSkip[i]) continue;
+        const auto *func = chunk->getFunction(i);
+        if (!func) continue;
+        for (const auto& instr : func->instructions) {
+          if (instr.opcode == compiler::OpCode::CALL ||
+              instr.opcode == compiler::OpCode::TAIL_CALL ||
+              instr.opcode == compiler::OpCode::CALL_METHOD ||
+              instr.opcode == compiler::OpCode::CALL_SUPER ||
+              instr.opcode == compiler::OpCode::SPREAD_CALL) {
+            shouldSkip[i] = true;
+            if (cfg.aotWarnings) {
+              warn("AOT: skipping function '{}' — calls other functions "
+                   "(dynamic dispatch may reach async code)",
+                   func->name);
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    bool anyCompiled = false;
+    for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+      const auto *func = chunk->getFunction(i);
+      if (func && !shouldSkip[i]) {
+        jit.translate(*func, *module);
+        anyCompiled = true;
+      }
+    }
+
+    if (!anyCompiled) {
+      warn("AOT: no functions compiled (all contain or call unsupported opcodes). "
+           "Emitting dummy __main__ that exits with message.");
     }
 
     // Verify module
@@ -2235,39 +2281,49 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           const std::string initSymbol = coreProfile
                                              ? "havel_vm_init_standalone_core"
                                              : "havel_vm_init_standalone";
-          stub
-              << "#include <cstdint>\n"
-              << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n"
-              << "extern \"C\" void* " << initSymbol
-              << "(const char**, uint32_t);\n"
-              << "int main() {\n"
-              << "    const char* strings[] = {\n";
-          const auto &chunkStrings = chunk->getAllStrings();
-          for (size_t i = 0; i < chunkStrings.size(); ++i) {
-            const std::string &s = chunkStrings[i];
-            // Escape string
-            std::string escaped;
-            for (char c : s) {
-              if (c == '"')
-                escaped += "\\\"";
-              else if (c == '\\')
-                escaped += "\\\\";
-              else if (c == '\n')
-                escaped += "\\n";
-              else
-                escaped += c;
+          if (anyCompiled) {
+            stub
+                << "#include <cstdint>\n"
+                << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n"
+                << "extern \"C\" void* " << initSymbol
+                << "(const char**, uint32_t);\n"
+                << "int main() {\n"
+                << "    const char* strings[] = {\n";
+            const auto &chunkStrings = chunk->getAllStrings();
+            for (size_t i = 0; i < chunkStrings.size(); ++i) {
+              const std::string &s = chunkStrings[i];
+              // Escape string
+              std::string escaped;
+              for (char c : s) {
+                if (c == '"')
+                  escaped += "\\\"";
+                else if (c == '\\')
+                  escaped += "\\\\";
+                else if (c == '\n')
+                  escaped += "\\n";
+                else
+                  escaped += c;
+              }
+              stub << "        \"" << escaped << "\",\n";
             }
-            stub << "        \"" << escaped << "\",\n";
+            stub << "    };\n"
+                 << "    void* vm = " << initSymbol << "(strings, "
+                 << chunkStrings.size() << ");\n"
+                 << "    uint64_t dummy_args[1024];\n"
+                 << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
+                    "0x7ffb000000000000ULL;\n"
+                 << "    __main__(vm, dummy_args, 0);\n"
+                 << "    return 0;\n"
+                 << "}\n";
+          } else {
+            // No functions compiled — emit a dummy main that prints message
+            stub
+                << "#include <cstdio>\n"
+                << "int main() {\n"
+                << "    fprintf(stderr, \"AOT: no sync functions to run (all code is async/generator). Run with interpreter.\\n\");\n"
+                << "    return 0;\n"
+                << "}\n";
           }
-          stub << "    };\n"
-               << "    void* vm = " << initSymbol << "(strings, "
-               << chunkStrings.size() << ");\n"
-               << "    uint64_t dummy_args[1024];\n"
-               << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
-                  "0x7ffb000000000000ULL;\n"
-               << "    __main__(vm, dummy_args, 0);\n"
-               << "    return 0;\n"
-               << "}\n";
         }
 
         std::string linkCmd;

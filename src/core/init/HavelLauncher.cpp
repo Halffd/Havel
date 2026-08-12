@@ -2101,17 +2101,26 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     }
 
     bool anyCompiled = false;
+    bool mainCompiled = false;
     for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
       const auto *func = chunk->getFunction(i);
       if (func && !shouldSkip[i]) {
         jit.translate(*func, *module);
         anyCompiled = true;
+        if (func->name == "__main__") {
+          mainCompiled = true;
+        }
       }
     }
 
-    if (!anyCompiled) {
-      warn("AOT: no functions compiled (all contain or call unsupported opcodes). "
-           "Emitting dummy __main__ that exits with message.");
+    if (!anyCompiled || !mainCompiled) {
+      if (!anyCompiled) {
+        warn("AOT: no functions compiled (all contain or call unsupported opcodes). "
+             "Emitting dummy __main__ that exits with message.");
+      } else if (!mainCompiled) {
+        warn("AOT: entry point '__main__' not compiled (contains or calls unsupported opcodes). "
+             "Emitting dummy executable that exits with message.");
+      }
     }
 
     // Verify module
@@ -2281,46 +2290,140 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           const std::string initSymbol = coreProfile
                                              ? "havel_vm_init_standalone_core"
                                              : "havel_vm_init_standalone";
-          if (anyCompiled) {
-            stub
-                << "#include <cstdint>\n"
-                << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n"
-                << "extern \"C\" void* " << initSymbol
-                << "(const char**, uint32_t);\n"
-                << "int main() {\n"
-                << "    const char* strings[] = {\n";
+          const std::string initWithFuncsSymbol = coreProfile
+                                             ? "havel_vm_init_standalone_with_functions_core"
+                                             : "havel_vm_init_standalone_with_functions";
+          if (mainCompiled) {
+            // Collect function metadata for closures.
+            // IMPORTANT: Include ALL functions (even skipped ones) to preserve
+            // original function indices used by CLOSURE opcode.
+            std::vector<std::string> funcNames;
+            std::vector<uint32_t> funcParamCounts;
+            std::vector<uint32_t> funcLocalCounts;
+            std::vector<uint32_t> funcUpvalueCounts;
+            std::vector<uint32_t> funcIsGenerator;
+            std::vector<uint32_t> upvalueIndices;
+            std::vector<uint32_t> upvalueCapturesLocal;
+            
+            for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+              const auto* func = chunk->getFunction(i);
+              if (func) {
+                funcNames.push_back(func->name);
+                funcParamCounts.push_back(func->param_count);
+                funcLocalCounts.push_back(func->local_count);
+                funcUpvalueCounts.push_back(static_cast<uint32_t>(func->upvalues.size()));
+                funcIsGenerator.push_back(func->is_generator ? 1 : 0);
+                for (const auto& uv : func->upvalues) {
+                  upvalueIndices.push_back(uv.index);
+                  upvalueCapturesLocal.push_back(uv.captures_local ? 1 : 0);
+                }
+              } else {
+                // Empty placeholder for null function (shouldn't happen)
+                funcNames.push_back("");
+                funcParamCounts.push_back(0);
+                funcLocalCounts.push_back(0);
+                funcUpvalueCounts.push_back(0);
+                funcIsGenerator.push_back(0);
+              }
+            }
+            
+            // Generate arrays for function metadata
+            stub << "#include <cstdint>\n";
+            stub << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n";
+            stub << "extern \"C\" void* " << initWithFuncsSymbol << "(\n";
+            stub << "    const char**, uint32_t,\n";
+            stub << "    const char**, uint32_t,\n";
+            stub << "    const uint32_t*, const uint32_t*,\n";
+            stub << "    const uint32_t*, const uint32_t*,\n";
+            stub << "    const uint32_t*, const uint32_t*, uint32_t);\n";
+            stub << "int main() {\n";
+            stub << "    const char* strings[] = {\n";
             const auto &chunkStrings = chunk->getAllStrings();
             for (size_t i = 0; i < chunkStrings.size(); ++i) {
               const std::string &s = chunkStrings[i];
-              // Escape string
               std::string escaped;
               for (char c : s) {
-                if (c == '"')
-                  escaped += "\\\"";
-                else if (c == '\\')
-                  escaped += "\\\\";
-                else if (c == '\n')
-                  escaped += "\\n";
-                else
-                  escaped += c;
+                if (c == '"') escaped += "\\\"";
+                else if (c == '\\') escaped += "\\\\";
+                else if (c == '\n') escaped += "\\n";
+                else escaped += c;
               }
               stub << "        \"" << escaped << "\",\n";
             }
-            stub << "    };\n"
-                 << "    void* vm = " << initSymbol << "(strings, "
-                 << chunkStrings.size() << ");\n"
-                 << "    uint64_t dummy_args[1024];\n"
-                 << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
-                    "0x7ffb000000000000ULL;\n"
-                 << "    __main__(vm, dummy_args, 0);\n"
-                 << "    return 0;\n"
-                 << "}\n";
+            stub << "    };\n";
+            
+            // Function names
+            stub << "    const char* func_names[] = {\n";
+            for (size_t i = 0; i < funcNames.size(); ++i) {
+              std::string escaped = funcNames[i];
+              for (char& c : escaped) {
+                if (c == '"') c = '\\'; // strings don't have quotes in names
+              }
+              stub << "        \"" << escaped << "\",\n";
+            }
+            stub << "    };\n";
+            
+            // Function param counts
+            stub << "    const uint32_t func_param_counts[] = {\n";
+            for (size_t i = 0; i < funcParamCounts.size(); ++i) {
+              stub << "        " << funcParamCounts[i] << ",\n";
+            }
+            stub << "    };\n";
+            
+            // Function local counts
+            stub << "    const uint32_t func_local_counts[] = {\n";
+            for (size_t i = 0; i < funcLocalCounts.size(); ++i) {
+              stub << "        " << funcLocalCounts[i] << ",\n";
+            }
+            stub << "    };\n";
+            
+            // Function upvalue counts
+            stub << "    const uint32_t func_upvalue_counts[] = {\n";
+            for (size_t i = 0; i < funcUpvalueCounts.size(); ++i) {
+              stub << "        " << funcUpvalueCounts[i] << ",\n";
+            }
+            stub << "    };\n";
+            
+            // Function is_generator
+            stub << "    const uint32_t func_is_generator[] = {\n";
+            for (size_t i = 0; i < funcIsGenerator.size(); ++i) {
+              stub << "        " << funcIsGenerator[i] << ",\n";
+            }
+            stub << "    };\n";
+            
+            // Upvalue indices
+            stub << "    const uint32_t upvalue_indices[] = {\n";
+            for (size_t i = 0; i < upvalueIndices.size(); ++i) {
+              stub << "        " << upvalueIndices[i] << ",\n";
+            }
+            stub << "    };\n";
+            
+            // Upvalue captures_local
+            stub << "    const uint32_t upvalue_captures_local[] = {\n";
+            for (size_t i = 0; i < upvalueCapturesLocal.size(); ++i) {
+              stub << "        " << upvalueCapturesLocal[i] << ",\n";
+            }
+            stub << "    };\n";
+            
+            stub << "    void* vm = " << initWithFuncsSymbol << "(strings, "
+                 << chunkStrings.size() << ",\n";
+            stub << "        func_names, " << funcNames.size() << ",\n";
+            stub << "        func_param_counts, func_local_counts,\n";
+            stub << "        func_upvalue_counts, func_is_generator,\n";
+            stub << "        upvalue_indices, upvalue_captures_local, "
+                 << upvalueIndices.size() << ");\n";
+            stub << "    uint64_t dummy_args[1024];\n";
+            stub << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
+                    "0x7ffb000000000000ULL;\n";
+            stub << "    __main__(vm, dummy_args, 0);\n";
+            stub << "    return 0;\n";
+            stub << "}\n";
           } else {
-            // No functions compiled — emit a dummy main that prints message
+            // Entry point not compiled — emit a dummy main that prints message
             stub
                 << "#include <cstdio>\n"
                 << "int main() {\n"
-                << "    fprintf(stderr, \"AOT: no sync functions to run (all code is async/generator). Run with interpreter.\\n\");\n"
+                << "    fprintf(stderr, \"AOT: entry point '__main__' not compiled (contains or calls unsupported opcodes). Run with interpreter.\\n\");\n"
                 << "    return 0;\n"
                 << "}\n";
           }

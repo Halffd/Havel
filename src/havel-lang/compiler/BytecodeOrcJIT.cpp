@@ -863,6 +863,59 @@ extern "C" void* havel_vm_init_standalone(const char** strings, uint32_t count) 
     return engine.vm();
 }
 
+// Extended init for AOT with closures: also creates function entries in the chunk
+// so that CLOSURE opcode can look up functions by index.
+extern "C" void* havel_vm_init_standalone_with_functions(
+    const char** strings, uint32_t string_count,
+    const char** func_names, uint32_t func_count,
+    const uint32_t* func_param_counts, const uint32_t* func_local_counts,
+    const uint32_t* func_upvalue_counts, const uint32_t* func_is_generator,
+    const uint32_t* upvalue_indices, const uint32_t* upvalue_captures_local,
+    uint32_t total_upvalues
+) {
+    static ::havel::HavelEngine engine;
+    if (!engine.isInitialized()) {
+        engine.initializeMinimal();
+        
+        if (strings && string_count > 0) {
+            auto chunk = std::make_shared<BytecodeChunk>();
+            for (uint32_t i = 0; i < string_count; ++i) {
+                chunk->addString(strings[i]);
+            }
+            
+            // Parse upvalue data
+            uint32_t upvalue_offset = 0;
+            for (uint32_t fi = 0; fi < func_count; ++fi) {
+                std::string name(func_names[fi]);
+                uint32_t param_count = func_param_counts[fi];
+                uint32_t local_count = func_local_counts[fi];
+                uint32_t upvalue_count = func_upvalue_counts[fi];
+                bool is_gen = func_is_generator[fi] != 0;
+                
+                BytecodeFunction func(name, param_count, local_count);
+                func.is_generator = is_gen;
+                
+                // Add upvalue descriptors
+                for (uint32_t ui = 0; ui < upvalue_count; ++ui) {
+                    UpvalueDescriptor desc;
+                    desc.index = upvalue_indices[upvalue_offset + ui];
+                    desc.captures_local = upvalue_captures_local[upvalue_offset + ui] != 0;
+                    func.upvalues.push_back(desc);
+                }
+                upvalue_offset += upvalue_count;
+                
+                chunk->addFunction(std::move(func));
+            }
+            
+            engine.vm()->setCurrentChunkPublic(chunk.get());
+            engine.vm()->pushFramePublic(nullptr, 0, 0, 0);
+            
+            static std::shared_ptr<BytecodeChunk> keepAlive = chunk;
+        }
+    }
+    return engine.vm();
+}
+
 // Range and iterator operations - use public heap API
 uint64_t havel_vm_range_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits) {
   if (!vm_ptr) return Value::makeNull().rawBits();
@@ -2378,6 +2431,7 @@ bool BytecodeOrcJIT::hasUnsupportedOpcodes(const BytecodeFunction &func) {
             case OpCode::GO_ASYNC:
             case OpCode::FIBER_SLEEP:
             case OpCode::FIBER_AWAIT:
+            case OpCode::CLOSURE:
                 return true;
             default:
                 break;

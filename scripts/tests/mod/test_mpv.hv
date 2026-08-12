@@ -13,6 +13,7 @@ fn main() {
     p = m.isPlaying()
     print("Is Playing?",  p)
     print("Done", m.cmd)
+    m.close()
 }
 
 main()

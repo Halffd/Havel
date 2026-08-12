@@ -1,0 +1,29 @@
+print("aot host calls")
+
+// global functions that work in AOT
+print(int(3.7))
+print(num("42.5"))
+print(repr(42))
+print(str(3.14))
+print(ord("A"))
+print(char(65))
+print(contains("hello", "ell"))
+print(lower("ABC"))
+print(type(123))
+print(type("str"))
+print(type([1,2]))
+print(callable(fn() {}))
+print(callable(123))
+
+// string via prototype  
+s = "Hello"
+print(s.len())
+print(s.upper())
+print(s.lower())
+
+// clock
+print(clock_ms() > 0)
+
+// array via global function
+arr = [1, 2, 3]
+print(arr.len())

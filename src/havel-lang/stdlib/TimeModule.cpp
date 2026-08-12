@@ -127,13 +127,11 @@ void registerTimeModule(const VMApi &api) {
         else
           throw std::runtime_error("time.sleep() requires numeric argument");
 
-        fprintf(stderr, "[TIMEDBG] time.sleep(%ld) isInGoroutine=%d\n", ms, (int)api.isInGoroutine());
-        if (api.isInGoroutine()) {
+if (api.isInGoroutine()) {
           api.requestSuspension(static_cast<uint8_t>(havel::compiler::SuspensionReason::SLEEP),
-                                     reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
+                                       reinterpret_cast<void*>(static_cast<intptr_t>(ms)));
           // Force immediate yield to process the suspension
           api.yieldNow();
-          fprintf(stderr, "[TIMEDBG] after yieldNow suspended?%d lastReason=%d\n", (int)api.isSuspensionPending(), (int)api.lastSuspensionReason());
           return Value::makeNull();
         }
         api.chunkedSleep(ms);

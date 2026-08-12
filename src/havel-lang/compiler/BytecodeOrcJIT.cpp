@@ -26,8 +26,8 @@
 #include <unordered_set>
 #include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/Passes/PassBuilder.h>
-
 #include "BytecodeOrcJIT.h"
+#include "core/util/Env.hpp"
 #include "../../utils/Logger.hpp"
 #include <cstring>
 #include <iostream>
@@ -76,6 +76,7 @@ static constexpr uint64_t QNAN             = 0x7FF8000000000000ULL;
 static constexpr uint64_t TAG_MASK         = 0x0007000000000000ULL;
 static constexpr uint64_t PAYLOAD_MASK     = 0x0000FFFFFFFFFFFFULL;
 static constexpr uint64_t EXT_PAYLOAD_MASK = 0x000007FFFFFFFFFFULL; // 43 bits for extended payload
+static constexpr uint64_t EXTENDED_TAG_MASK = 0x0000F80000000000ULL; // bits 43-47
 
 static constexpr uint64_t INT_TAG          = 0x1;
 static constexpr uint64_t EXT_TAG          = 0x7;
@@ -863,6 +864,112 @@ extern "C" void* havel_vm_init_standalone(const char** strings, uint32_t count) 
     return engine.vm();
 }
 
+// Extended init for AOT with closures: also creates function entries in the chunk
+// so that CLOSURE opcode can look up functions by index.
+extern "C" void* havel_vm_init_standalone_with_functions(
+    const char** strings, uint32_t string_count,
+    const char** func_names, uint32_t func_count,
+    const uint32_t* func_param_counts, const uint32_t* func_local_counts,
+    const uint32_t* func_upvalue_counts, const uint32_t* func_is_generator,
+    const uint32_t* upvalue_indices, const uint32_t* upvalue_captures_local,
+    uint32_t total_upvalues,
+    const char* build_dir
+) {
+    static ::havel::HavelEngine engine;
+    if (!engine.isInitialized()) {
+        engine.initializeMinimal();
+        
+        // Initialize module loader for AOT so that IMPORT works
+        auto* vm = engine.vm();
+        if (vm) {
+            // Use build_dir (passed from stub) for module paths
+            // build_dir is the build directory (e.g., /path/to/build-debug)
+            // Source modules are at build_dir/../modules
+            std::string stdlibPath;
+            const char* envStdlib = std::getenv("HAVEL_STDLIB");
+            if (envStdlib && envStdlib[0] != '\0') {
+                stdlibPath = envStdlib;
+            } else if (build_dir && build_dir[0] != '\0') {
+                stdlibPath = (std::filesystem::path(build_dir) / ".." / "modules" / "std").string();
+            } else {
+                auto exePath = Env::executable();
+                if (!exePath.empty()) {
+                    stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
+                } else {
+                    stdlibPath = "./modules/std";
+                }
+            }
+            vm->moduleLoader().setStdlibPath(stdlibPath);
+
+            // Add module search paths - use build_dir/.. for source
+            std::string modulesRoot;
+            if (build_dir && build_dir[0] != '\0') {
+                modulesRoot = (std::filesystem::path(build_dir) / ".." / "modules").string();
+            } else {
+                auto exePath = Env::executable();
+                if (!exePath.empty()) {
+                    modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
+                } else {
+                    modulesRoot = "./modules";
+                }
+            }
+            auto canonicalRoot = std::filesystem::exists(modulesRoot)
+                ? std::filesystem::canonical(modulesRoot).string() : modulesRoot;
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/std");
+            vm->moduleLoader().addSearchPath(canonicalRoot + "/app");
+            vm->moduleLoader().addSearchPath(canonicalRoot);
+
+            // Also add build directory to C loader's search paths for native modules
+            if (build_dir && build_dir[0] != '\0') {
+                auto extLoader = vm->pluginLoader();
+                if (extLoader) {
+                    std::string buildModulesPath = (std::filesystem::path(build_dir) / "modules").string();
+                    extLoader->addSearchPath(buildModulesPath);
+                    extLoader->addModulePaths();
+                }
+            }
+        }
+        
+        if (strings && string_count > 0) {
+            auto chunk = std::make_shared<BytecodeChunk>();
+            for (uint32_t i = 0; i < string_count; ++i) {
+                chunk->addString(strings[i]);
+            }
+            
+            // Parse upvalue data
+            uint32_t upvalue_offset = 0;
+            for (uint32_t fi = 0; fi < func_count; ++fi) {
+                std::string name(func_names[fi]);
+                uint32_t param_count = func_param_counts[fi];
+                uint32_t local_count = func_local_counts[fi];
+                uint32_t upvalue_count = func_upvalue_counts[fi];
+                bool is_gen = func_is_generator[fi] != 0;
+                
+                BytecodeFunction func(name, param_count, local_count);
+                func.is_generator = is_gen;
+                
+                // Add upvalue descriptors
+                for (uint32_t ui = 0; ui < upvalue_count; ++ui) {
+                    UpvalueDescriptor desc;
+                    desc.index = upvalue_indices[upvalue_offset + ui];
+                    desc.captures_local = upvalue_captures_local[upvalue_offset + ui] != 0;
+                    func.upvalues.push_back(desc);
+                }
+                upvalue_offset += upvalue_count;
+                
+                chunk->addFunction(std::move(func));
+            }
+            
+            engine.vm()->setCurrentChunkPublic(chunk.get());
+            engine.vm()->pushFramePublic(nullptr, 0, 0, 0);
+            
+            static std::shared_ptr<BytecodeChunk> keepAlive = chunk;
+        }
+    }
+    return engine.vm();
+}
+
 // Range and iterator operations - use public heap API
 uint64_t havel_vm_range_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits) {
   if (!vm_ptr) return Value::makeNull().rawBits();
@@ -891,6 +998,13 @@ uint64_t havel_vm_iter_next(void* vm_ptr, uint64_t iter_bits) {
   std::memcpy(&iter, &iter_bits, sizeof(uint64_t));
   if (!iter.isIteratorId()) return Value::makeNull().rawBits();
   return vm->iteratorNext(IteratorRef{iter.asIteratorId()}).rawBits();
+}
+
+uint64_t havel_vm_time_now(void* vm_ptr) {
+  (void)vm_ptr;
+  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
+  return Value(static_cast<int64_t>(ms)).rawBits();
 }
 
 // Concurrency primitives
@@ -1102,12 +1216,24 @@ uint64_t havel_vm_string_concat(void* vm_ptr, uint64_t l_bits, uint64_t r_bits) 
   std::memcpy(&l, &l_bits, sizeof(uint64_t));
   std::memcpy(&r, &r_bits, sizeof(uint64_t));
   
-  if (!l.isStringId() || !r.isStringId()) {
+  if (!(l.isStringId() || l.isStringValId()) || !(r.isStringId() || r.isStringValId())) {
     return Value::makeNull().rawBits();
   }
   
-  const auto& lStr = chunk->getString(l.asStringId());
-  const auto& rStr = chunk->getString(r.asStringId());
+  std::string lStr, rStr;
+  if (l.isStringId()) {
+    auto* strPtr = vm->getHeap().string(l.asStringId());
+    lStr = strPtr ? *strPtr : "";
+  } else {
+    lStr = chunk->getString(l.asStringValId());
+  }
+  if (r.isStringId()) {
+    auto* strPtr = vm->getHeap().string(r.asStringId());
+    rStr = strPtr ? *strPtr : "";
+  } else {
+    rStr = chunk->getString(r.asStringValId());
+  }
+  
   std::string result = lStr + rStr;
   auto ref = vm->createRuntimeString(std::move(result));
   return Value::makeStringId(ref.id).rawBits();
@@ -1191,11 +1317,75 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
 
     std::vector<Value> callArgs;
     callArgs.reserve(static_cast<size_t>(arg_count) + 1);
-    callArgs.push_back(receiver);
     for (uint32_t i = 0; i < arg_count; ++i) {
         Value v;
         std::memcpy(&v, &args[i], sizeof(uint64_t));
         callArgs.push_back(v);
+    }
+
+    bool passReceiverAsSelf = true;
+
+    if (receiver.isObjectId()) {
+        ObjectRef recvRef{receiver.asObjectId(), true};
+        auto* obj = vm->getHeap().object(recvRef.id);
+        if (obj) {
+            bool foundViaModule = false;
+            for (const auto& [name, val] : vm->getGlobals()) {
+                if (val.isObjectId() && val.asObjectId() == receiver.asObjectId()) {
+                    foundViaModule = true;
+                    break;
+                }
+            }
+            if (foundViaModule) {
+                passReceiverAsSelf = false;
+                Value methodValue = vm->getHostObjectField(recvRef, method_name);
+                if (!methodValue.isNull()) {
+                    if (methodValue.isHostFuncId()) {
+                        if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
+                            Value result = vm->invokeHostFunctionDirect(*hostName, callArgs);
+                            return result.rawBits();
+                        }
+                    }
+                    return vm->callFunction(methodValue, callArgs).rawBits();
+                }
+            } else {
+                auto* classVal = obj->get("__class");
+                if (!classVal) classVal = obj->get("__struct");
+                if (classVal && classVal->isObjectId()) {
+                    passReceiverAsSelf = true;
+                } else if (obj->get("__is_class") || obj->get("__is_struct")) {
+                    passReceiverAsSelf = true;
+                } else {
+                    Value methodValue = vm->getHostObjectField(recvRef, method_name);
+                    if (methodValue.isHostFuncId()) {
+                        uint32_t hostIdx = methodValue.asHostFuncId();
+                        if (vm->host_function_wants_self_.count(hostIdx) > 0) {
+                            passReceiverAsSelf = true;
+                        } else {
+                            passReceiverAsSelf = false;
+                        }
+                    } else {
+                        passReceiverAsSelf = false;
+                    }
+                }
+            }
+        }
+    }
+
+    if (passReceiverAsSelf) {
+        callArgs.insert(callArgs.begin(), receiver);
+    }
+
+    if (receiver.isObjectId() && !passReceiverAsSelf) {
+        Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
+        if (!methodValue.isNull()) {
+            if (methodValue.isHostFuncId()) {
+                if (auto hostName = vm->getHostFunctionName(methodValue.asHostFuncId())) {
+                    return vm->invokeHostFunctionDirect(*hostName, callArgs).rawBits();
+                }
+            }
+            return vm->callFunction(methodValue, callArgs).rawBits();
+        }
     }
 
     if (auto methodIdx = vm->getPrototypeMethod(receiver, method_name)) {
@@ -1217,18 +1407,8 @@ uint64_t havel_vm_call_method(void* vm_ptr, uint64_t receiver_bits, uint32_t met
         }
     }
 
-    std::string typeName;
-    if (receiver.isStringValId() || receiver.isStringId()) typeName = "string";
-    else if (receiver.isArrayId()) typeName = "array";
-    else if (receiver.isObjectId()) typeName = "object";
-
-    if (!typeName.empty()) {
-        Value result = vm->invokeHostFunctionDirect(typeName + "." + method_name, callArgs);
-        if (!result.isNull()) return result.rawBits();
-    }
-
-  return Value::makeNull().rawBits();
-  }
+    return Value::makeNull().rawBits();
+}
 
 uint64_t havel_vm_closure_new(void* vm_ptr, uint32_t func_index) {
     if (!vm_ptr) return Value::makeNull().rawBits();
@@ -1825,7 +2005,8 @@ uint64_t havel_vm_import(void* vm_ptr, uint64_t path_bits) {
   std::memcpy(&pathVal, &path_bits, sizeof(uint64_t));
   std::string path = vm->toString(pathVal);
   if (path.empty()) return Value::makeNull().rawBits();
-  return vm->loadModule(path).rawBits();
+  Value result = vm->loadModule(path);
+  return result.rawBits();
 }
 
 void havel_vm_import_wildcard(void* vm_ptr, uint64_t exports_bits) {
@@ -2198,6 +2379,7 @@ addSym("havel_vm_object_new", reinterpret_cast<void*>(&havel_vm_object_new));
 addSym("havel_vm_range_new", reinterpret_cast<void*>(&havel_vm_range_new));
 addSym("havel_vm_iter_new", reinterpret_cast<void*>(&havel_vm_iter_new));
 addSym("havel_vm_iter_next", reinterpret_cast<void*>(&havel_vm_iter_next));
+addSym("havel_vm_time_now", reinterpret_cast<void*>(&havel_vm_time_now));
 addSym("havel_vm_thread_new", reinterpret_cast<void*>(&havel_vm_thread_new));
 addSym("havel_vm_thread_join", reinterpret_cast<void*>(&havel_vm_thread_join));
 addSym("havel_vm_thread_send", reinterpret_cast<void*>(&havel_vm_thread_send));
@@ -2378,6 +2560,7 @@ bool BytecodeOrcJIT::hasUnsupportedOpcodes(const BytecodeFunction &func) {
             case OpCode::GO_ASYNC:
             case OpCode::FIBER_SLEEP:
             case OpCode::FIBER_AWAIT:
+            case OpCode::CLOSURE:
                 return true;
             default:
                 break;
@@ -2798,6 +2981,14 @@ void BytecodeOrcJIT::translate(const BytecodeFunction &func, llvm::Module &modul
         return B.CreateICmpNE(B.CreateAnd(v, llvm::ConstantInt::get(i64, QNAN)), llvm::ConstantInt::get(i64, QNAN));
     };
 
+    auto isStringLoc = [&](llvm::Value* v) -> llvm::Value* {
+        llvm::Value* primaryTag = B.CreateAnd(v, llvm::ConstantInt::get(i64, TAG_MASK));
+        llvm::Value* isStringId = B.CreateICmpEQ(primaryTag, llvm::ConstantInt::get(i64, 0x0005000000000000ULL));
+        llvm::Value* extTag = B.CreateAnd(v, llvm::ConstantInt::get(i64, EXTENDED_TAG_MASK));
+        llvm::Value* isStringVal = B.CreateICmpEQ(extTag, llvm::ConstantInt::get(i64, 0x0000600000000000ULL));
+        return B.CreateOr(isStringId, isStringVal);
+    };
+
 auto emitSpecializedBinop = [&](OpCode op, const TypeFeedback* fb, size_t ip, llvm::Value* left, llvm::Value* right) -> llvm::Value* {
     // Check for AOT type hint first, then fall back to runtime type feedback
     uint64_t type_hint = 0;
@@ -2877,11 +3068,32 @@ else if (op == OpCode::INT_DIV) {
     llvm::BasicBlock *intBB = llvm::BasicBlock::Create(ctx, pfx + "int", f);
     llvm::BasicBlock *chkDblBB = llvm::BasicBlock::Create(ctx, pfx + "chk_dbl", f);
     llvm::BasicBlock *dblBB = llvm::BasicBlock::Create(ctx, pfx + "dbl", f);
+    llvm::BasicBlock *chkStrBB = llvm::BasicBlock::Create(ctx, pfx + "chk_str", f);
+    llvm::BasicBlock *strBB = llvm::BasicBlock::Create(ctx, pfx + "str", f);
     llvm::BasicBlock *deoptBB = llvm::BasicBlock::Create(ctx, pfx + "deopt", f);
     llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(ctx, pfx + "merge", f);
 
     llvm::Value *bothInt = B.CreateAnd(isInt48Loc(left), isInt48Loc(right));
     B.CreateCondBr(bothInt, intBB, chkDblBB);
+
+    B.SetInsertPoint(chkDblBB);
+    llvm::Value *bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
+    B.CreateCondBr(bothDbl, dblBB, chkStrBB);
+
+    B.SetInsertPoint(chkStrBB);
+    llvm::Value *bothStr = B.CreateAnd(isStringLoc(left), isStringLoc(right));
+    B.CreateCondBr(bothStr, strBB, deoptBB);
+
+    B.SetInsertPoint(strBB);
+    llvm::Function *fnStrCat = module.getFunction("havel_vm_string_concat");
+    if (!fnStrCat) {
+        fnStrCat = llvm::Function::Create(
+            llvm::FunctionType::get(i64, {i8p, i64, i64}, false),
+            llvm::Function::ExternalLinkage, "havel_vm_string_concat", &module);
+    }
+    llvm::Value *strBoxed = B.CreateCall(fnStrCat, {vmArg, left, right});
+    llvm::BasicBlock *strExitBB = B.GetInsertBlock();
+    B.CreateBr(mergeBB);
 
     B.SetInsertPoint(intBB);
     llvm::Value *lIv = unboxInt(left);
@@ -2907,10 +3119,6 @@ else if (op == OpCode::INT_DIV) {
     if (!intBoxed) intBoxed = boxInt(iRes);
     llvm::BasicBlock *intExitBB = B.GetInsertBlock();
     B.CreateBr(mergeBB);
-
-    B.SetInsertPoint(chkDblBB);
-    llvm::Value *bothDbl = B.CreateAnd(isDblLoc(left), isDblLoc(right));
-    B.CreateCondBr(bothDbl, dblBB, deoptBB);
 
     B.SetInsertPoint(dblBB);
     llvm::Value *lDv = B.CreateBitCast(left, f64);
@@ -2955,9 +3163,10 @@ else if (op == OpCode::INT_DIV) {
     B.CreateBr(mergeBB);
 
     B.SetInsertPoint(mergeBB);
-    llvm::PHINode *phi = B.CreatePHI(i64, 3);
+    llvm::PHINode *phi = B.CreatePHI(i64, 4);
     phi->addIncoming(intBoxed, intExitBB);
     phi->addIncoming(dblBoxed, dblExitBB);
+    phi->addIncoming(strBoxed, strExitBB);
     phi->addIncoming(slowBoxed, slowExitBB);
     return phi;
 };
@@ -4666,6 +4875,16 @@ case OpCode::LENGTH: {
         // Interpreter semantics: consume iterator operand and push next result.
         llvm::Value* result = B.CreateCall(fnNext, {vmArg, iter});
         vstack.push_back(result);
+        break;
+    }
+    case OpCode::TIME_NOW: {
+        llvm::Function* fnTimeNow = module.getFunction("havel_vm_time_now");
+        if (!fnTimeNow) {
+            fnTimeNow = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_time_now", &module);
+        }
+        vstack.push_back(B.CreateCall(fnTimeNow, {vmArg}));
         break;
     }
 

@@ -1,0 +1,10 @@
+print("aot arrays")
+
+// array operations via prototype methods
+arr = [1, 2, 3]
+arr.push(4)
+print(arr.len())
+print(arr[3])
+arr.pop()
+print(arr.len())
+print(arr[2])

@@ -499,13 +499,13 @@ havel::Dynamic imguiLoader;
     bool load() {
         /* Load GLFW */
         if (!glfwLoader.load(LibNames::GLFW3)) {
-            fprintf(stderr, "[ImGui] Failed to load GLFW3\n");
+            // fprintf(stderr, "[ImGui] Failed to load GLFW3\n");
             return false;
         }
         
         /* Load OpenGL */
         if (!glLoader.load(LibNames::GL)) {
-            fprintf(stderr, "[ImGui] Failed to load OpenGL\n");
+            // fprintf(stderr, "[ImGui] Failed to load OpenGL\n");
             return false;
         }
         
@@ -527,7 +527,7 @@ havel::Dynamic imguiLoader;
         }
         
         if (!imguiLoaded) {
-            fprintf(stderr, "[ImGui] Failed to load Dear ImGui from any location\n");
+            // fprintf(stderr, "[ImGui] Failed to load Dear ImGui from any location\n");
             return false;
         }
         
@@ -535,7 +535,7 @@ havel::Dynamic imguiLoader;
 #define LOAD_GLFW(name) \
     glfw##name = glfwLoader.getSymbol<Glfw##name##Fn>("glfw" #name); \
     if (!glfw##name) { \
-        fprintf(stderr, "[ImGui] Failed to load GLFW symbol: glfw%s\n", #name); \
+        // fprintf(stderr, "[ImGui] Failed to load GLFW symbol: glfw%s\n", #name); \
         return false; \
     }
         
@@ -557,7 +557,7 @@ havel::Dynamic imguiLoader;
 #define LOAD_GL(name) \
     gl##name = glLoader.getSymbol<Gl##name##Fn>("gl" #name); \
     if (!gl##name) { \
-        fprintf(stderr, "[ImGui] Failed to load GL symbol: gl%s\n", #name); \
+        // fprintf(stderr, "[ImGui] Failed to load GL symbol: gl%s\n", #name); \
         return false; \
     }
         
@@ -574,7 +574,7 @@ havel::Dynamic imguiLoader;
 #define LOAD_IMGUI(name) \
     ImGui_##name = imguiLoader.getSymbol<ImGui##name##Fn>("ImGui" #name); \
     if (!ImGui_##name) { \
-        fprintf(stderr, "[ImGui] Failed to load ImGui symbol: ImGui%s\n", #name); \
+        // fprintf(stderr, "[ImGui] Failed to load ImGui symbol: ImGui%s\n", #name); \
         return false; \
     }
         
@@ -670,7 +670,7 @@ havel::Dynamic imguiLoader;
         ImGui_ImplOpenGL3_RenderDrawData = imguiLoader.getSymbol<ImGuiImplOpenGL3RenderDrawDataFn>("ImGui_ImplOpenGL3_RenderDrawData");
         
         if (!ImGui_ImplGlfw_InitForOpenGL || !ImGui_ImplOpenGL3_Init) {
-            fprintf(stderr, "[ImGui] Warning: ImGui backend implementations not found. Some features may not work.\n");
+            // fprintf(stderr, "[ImGui] Warning: ImGui backend implementations not found. Some features may not work.\n");
         }
         
         return true;
@@ -698,12 +698,12 @@ static HavelValue* imgui_init(int argc, HavelValue** argv) {
     if (!g_imguiLibs) {
         g_imguiLibs = new ImGuiLibs();
         if (!g_imguiLibs->load()) {
-            fprintf(stderr, "[ImGui] Failed to load ImGui libraries\n");
+            // fprintf(stderr, "[ImGui] Failed to load ImGui libraries\n");
             delete g_imguiLibs;
             g_imguiLibs = nullptr;
             return havel_new_bool(0);
         }
-        fprintf(stderr, "[ImGui] ImGui libraries loaded dynamically\n");
+        // fprintf(stderr, "[ImGui] ImGui libraries loaded dynamically\n");
     }
     
     int width = 1280;
@@ -722,14 +722,14 @@ static HavelValue* imgui_init(int argc, HavelValue** argv) {
     
     /* Initialize GLFW */
     if (!g_imguiLibs->glfwInit()) {
-        fprintf(stderr, "[ImGui] Failed to initialize GLFW\n");
+        // fprintf(stderr, "[ImGui] Failed to initialize GLFW\n");
         return havel_new_bool(0);
     }
     
     /* Create window */
     g_window = g_imguiLibs->glfwCreateWindow(width, height, title, nullptr, nullptr);
     if (!g_window) {
-        fprintf(stderr, "[ImGui] Failed to create GLFW window\n");
+        // fprintf(stderr, "[ImGui] Failed to create GLFW window\n");
         g_imguiLibs->glfwTerminate();
         return havel_new_bool(0);
     }

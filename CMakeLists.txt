@@ -1052,13 +1052,79 @@ set_source_files_properties(
 target_compile_definitions(havel_core PRIVATE
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_DEFAULT_LLVM_LINK_FLAGS=\"${HAVEL_LLVM_LINK_FLAGS}\">
 $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
+${UI_BACKEND_DEFS}
+$<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
+$<$<BOOL:${OpenCV_FOUND}>:HAVE_OPENCV>
+$<$<BOOL:${TESSERACT_FOUND}>:HAVE_TESSERACT>
+$<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
+$<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
+$<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
+$<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
+)
+
+# Bake the native (system) link flags into havel_core so the AOT
+# executable linker in HavelLauncher.cpp can use them. This avoids
+# hardcoding a list of -lX11 etc. in C++ source. COMMON_LIBS contains
+# cmake imported targets (fmt::fmt, OpenGL::GL, Qt6::*) which we cannot
+# pass directly to clang++, so we filter them. CMake-imported targets
+# contribute additional -l flags here, since they're externally
+# installed system libraries (looked up via ldconfig).
+#
+# Absolute-path libs (libSM.so, libX11.so, etc.) are skipped because
+# their embedded quotes break the C++ string-literal macro value when
+# baked in. We instead pass the -lfoo form resolved via ldconfig.
+set(_NATIVE_LINK_FLAGS "")
+foreach(lib ${COMMON_LIBS})
+    if(TARGET ${lib})
+        # CMake imported targets -> resolve to plain -l names where possible
+        if(${lib} STREQUAL "fmt::fmt")
+            string(APPEND _NATIVE_LINK_FLAGS " -lfmt")
+        elseif(${lib} STREQUAL "OpenGL::GL" OR ${lib} STREQUAL "OpenGL::GLX")
+            string(APPEND _NATIVE_LINK_FLAGS " -lGL")
+        elseif(${lib} STREQUAL "Threads::Threads")
+            string(APPEND _NATIVE_LINK_FLAGS " -lpthread")
+        elseif(${lib} MATCHES "^Qt6::")
+            # Strip "Qt6::" prefix and map to libQt6Foo
+            string(REPLACE "Qt6::" "" _qtmod "${lib}")
+            string(APPEND _NATIVE_LINK_FLAGS " -lQt6${_qtmod}")
+        endif()
+        continue()
+    endif()
+    if(IS_ABSOLUTE "${lib}")
+        continue()
+    endif()
+    if(lib MATCHES "^-l")
+        string(APPEND _NATIVE_LINK_FLAGS " ${lib}")
+    elseif(lib MATCHES "^[A-Za-z0-9_]+$")
+        string(APPEND _NATIVE_LINK_FLAGS " -l${lib}")
+    endif()
+endforeach()
+# Add system libraries that havel_core references but are only resolved
+# via ldconfig at link time (ldd-confirmed .so names).
+string(APPEND _NATIVE_LINK_FLAGS " -lX11 -lXext -lXtst -lXrandr -lXinerama")
+string(APPEND _NATIVE_LINK_FLAGS " -lreadline -lwayland-client -lwayland-egl")
+string(APPEND _NATIVE_LINK_FLAGS " -ldbus-1 -lpulse -lpipewire-0.3 -lasound")
+string(APPEND _NATIVE_LINK_FLAGS " -ltesseract -lleptonica")
+string(APPEND _NATIVE_LINK_FLAGS " -lopencv_core -lopencv_imgproc -lopencv_imgcodecs")
+string(APPEND _NATIVE_LINK_FLAGS " -lxkbcommon -lxkbregistry -lxkbfile")
+# wayland-protos archive holds the zwp_*/zwlr_* generated interfaces.
+# Without it the AOT executable link fails with undefined-symbol
+# errors from WaylandProtocolClient.cpp.o.
+string(APPEND _NATIVE_LINK_FLAGS " -lwayland-protos")
+string(STRIP "${_NATIVE_LINK_FLAGS}" _NATIVE_LINK_FLAGS)
+set_property(TARGET havel_core APPEND PROPERTY
+    COMPILE_DEFINITIONS "HAVEL_DEFAULT_NATIVE_LINK_FLAGS=\"${_NATIVE_LINK_FLAGS}\""
+)
+
+target_compile_definitions(havel_core PRIVATE
+$<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 if(NOT ENABLE_MODULE_PLUGINS)
 add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
 else()
 add_library(havel_modules INTERFACE)
 endif()
-target_link_libraries(havel_core PRIVATE fmt::fmt wayland-protos)
+target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos)
 target_include_directories(havel_core PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang
 )

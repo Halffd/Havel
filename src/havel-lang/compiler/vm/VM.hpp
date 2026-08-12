@@ -980,6 +980,9 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
 
   
   void requestSuspension(uint8_t reason, void* context = nullptr) {
+    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+      fprintf(stderr, "[SLEEPDBG] requestSuspension reason=%d inline=%d exec_fiber=%d last=%d\n", (int)reason, (int)inline_yield_active_, (int)(current_executing_fiber_!=nullptr), (int)last_suspension_reason_);
+    }
     suspension_requested_ = true;
     suspension_reason_ = reason;
     suspension_context_ = context;
@@ -1005,6 +1008,7 @@ void* getSuspensionContext() const { return suspension_context_; }
 uint8_t getLastSuspensionReason() const { return last_suspension_reason_; }
   void* getLastSuspensionContext() const { return last_suspension_context_; }
   void clearLastSuspension() { last_suspension_reason_ = 0; last_suspension_context_ = nullptr; }
+  void setLastSuspension(uint8_t reason, void* ctx) { last_suspension_reason_ = reason; last_suspension_context_ = ctx; }
   bool isInlineYieldActive() const { return inline_yield_active_; }
 
   // Register a suspended fiber waiting on a channel receive

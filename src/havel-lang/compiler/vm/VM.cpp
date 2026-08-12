@@ -1721,11 +1721,26 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   if (_trace) {
   }
 
+  if (std::getenv("HAVEL_TRACE_SLEEP")) {
+    fprintf(stderr, "[SLEEPDBG] runDispatchLoop enter stop=%zu frames=%zu last=%d susp=%d\n", stop_frame_depth, frame_count_, (int)last_suspension_reason_, (int)suspension_requested_);
+    if (last_suspension_reason_ != 0) {
+      for (size_t fi = 0; fi < frame_count_ && fi < 6; ++fi) {
+        const char* fnName = "?";
+        if (frame_arena_[fi].function && !frame_arena_[fi].function->name.empty())
+          fnName = frame_arena_[fi].function->name.c_str();
+        fprintf(stderr, "[SLEEPDBG]   rdl-reenter frame[%zu] fn=%s ip=%u\n", fi, fnName, (uint32_t)frame_arena_[fi].ip);
+      }
+    }
+  }
+
   if (use_fast_path) {
 #if HAVE_COMPUTED_GOTO
     runDispatchFast(stop_frame_depth);
     // If suspension was requested (indicated by last_suspension_reason_),
     // return immediately so caller can handle it
+    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+      fprintf(stderr, "[SLEEPDBG] runDispatchLoop post-fast last=%d frames=%zu stop=%zu\n", (int)last_suspension_reason_, frame_count_, stop_frame_depth);
+    }
     if (last_suspension_reason_ != 0) {
       current_executing_fiber_ = saved_fiber_flag;
       return;
@@ -1939,7 +1954,38 @@ slow_path:
           debug_break_cb_();
       }
 
+      if (last_suspension_reason_ != 0 && !suspension_requested_) {
+        // A suspension already transferred into last_suspension_* (e.g. by a
+        // nested runDispatchLoop inside a host function wrapper) must break
+        // out to the caller immediately. Without this, the slow loop keeps
+        // executing instructions while a sleep/etc. is pending.
+        // CRITICAL: the slow path advances IP only at the end of the loop body
+        // (below), NOT before/inside executeInstruction like the fast path's
+        // op_default does. If we break without advancing IP, the suspended
+        // goroutine resumes by re-executing the CALL that already consumed its
+        // receiver/args, corrupting the stack ("stack underflow during
+        // CALL_METHOD"). Mirror the normal IP-advance before breaking.
+        // Only fire when suspension_requested_ was already consumed; if it is
+        // still set, the suspension_requested_ block below handles it (with
+        // its own IP-advance) instead.
+        if (frame_count_ > stop_frame_depth) {
+          if (frame_count_ == entry_frame_count &&
+              frame_arena_[frame_count_ - 1].ip == ip) {
+            frame_arena_[frame_count_ - 1].ip++;
+          } else if (frame_count_ > entry_frame_count) {
+            frame_arena_[entry_frame_count - 1].ip++;
+          }
+        }
+        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+          fprintf(stderr, "[SLEEPDBG] slow_path propagate last=%d frames=%zu\n", (int)last_suspension_reason_, frame_count_);
+        }
+        break;
+      }
+
       if (suspension_requested_) {
+        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+          fprintf(stderr, "[SLEEPDBG] dispatch susp_reason=%d last_reason=%d frame_depth=%d\n", (int)suspension_reason_, (int)last_suspension_reason_, (int)frame_count_);
+        }
         // Call yield callback ONLY for explicit yields (time slice exhausted),
         // NOT for explicit suspensions (sleep, channel recv, etc.).
         // For suspensions, the goroutine will be properly suspended in the
@@ -2295,6 +2341,9 @@ void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(Value callee_value, std::vector<Value> args) {
   tail_call_depth_ = 0;
+  if (std::getenv("HAVEL_TRACE_SLEEP")) {
+    fprintf(stderr, "[SLEEPDBG] doCall enter hf=%d fn=%d cl=%d suspend_req=%d\n", (int)callee_value.isHostFuncId(), (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId(), (int)suspension_requested_);
+  }
 
   // Handle host function call directly
   if (callee_value.isHostFuncId()) {
@@ -2319,6 +2368,9 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
 
     // Check for suspension request after host function returns
     if (suspension_requested_) {
+      if (std::getenv("HAVEL_TRACE_SLEEP")) {
+        fprintf(stderr, "[SLEEPDBG] doCall host %s susp propagated\n", name.c_str());
+      }
       // Propagate into last_suspension_* so the caller (scheduler) reads the
       // correct reason. Previously this only invoked yield_callback_, which
       // re-entered the scheduler inline and clobbered the active suspension
@@ -3866,7 +3918,13 @@ Value VM::deepWrapModuleFunctions(
             }
           }
           try {
+            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+              fprintf(stderr, "[SLEEPDBG] module_fn_wrapper enter name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
+            }
             runDispatchLoop(frame_count_ - 1);
+            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+              fprintf(stderr, "[SLEEPDBG] module_fn_wrapper after-rdl name=%s frames=%zu last=%d\n", wrapperName.c_str(), frame_count_, (int)last_suspension_reason_);
+            }
           } catch (...) {
             if (locals.size() > savedLocalsSize) {
               locals.resize(savedLocalsSize);
@@ -4009,7 +4067,13 @@ Value VM::deepWrapModuleFunctions(
           }
 
           try {
+            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+              fprintf(stderr, "[SLEEPDBG] closure_wrapper enter frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
+            }
             runDispatchLoop(frame_count_ - 1);
+            if (std::getenv("HAVEL_TRACE_SLEEP")) {
+              fprintf(stderr, "[SLEEPDBG] closure_wrapper after-rdl frames=%zu last=%d\n", frame_count_, (int)last_suspension_reason_);
+            }
           } catch (...) {
             if (locals.size() > base) {
               locals.resize(base);

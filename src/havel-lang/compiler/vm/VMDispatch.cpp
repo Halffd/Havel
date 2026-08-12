@@ -901,7 +901,10 @@ op_CALL: {
         }
     }
     // IMMEDIATE check for suspension after CALL - host functions may request suspension
-    if (suspension_requested_) {
+    if (suspension_requested_ || last_suspension_reason_ != 0) {
+        if (std::getenv("HAVEL_TRACE_SLEEP")) {
+            fprintf(stderr, "[SLEEPDBG] op_CALL susp_reason=%d last_reason=%d executing_fiber=%d\n", (int)suspension_reason_, (int)last_suspension_reason_, current_executing_fiber_ ? 1 : 0);
+        }
         // If it's a SLEEP suspension, handle it immediately like the periodic check does
         if (suspension_reason_ == static_cast<uint8_t>(SuspensionReason::SLEEP)) {
             if (scheduler_ && current_executing_fiber_) {
@@ -921,13 +924,13 @@ op_CALL: {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
-        if (suspension_requested_) { return; }
+        if (suspension_requested_ || last_suspension_reason_ != 0) { return; }
         if (!pending_calls.empty()) {
             processPendingCalls();
             if (exit_requested_.load()) return;
         }
     }
-    if (suspension_requested_) goto slow_dispatch_fallback;
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
@@ -1562,6 +1565,9 @@ op_JUMP_IF_NULL: {
 
 slow_dispatch_fallback:
     // Suspension or complex opcode encountered — return to caller's slow path
+    if (std::getenv("HAVEL_TRACE_SLEEP")) {
+        fprintf(stderr, "[SLEEPDBG] slow_dispatch_fallback susp_req=%d reason=%d last_before=%d exec_fiber=%d\n", (int)suspension_requested_, (int)suspension_reason_, (int)last_suspension_reason_, (int)(current_executing_fiber_!=nullptr));
+    }
     if (suspension_requested_) {
         // Transfer suspension info to last_suspension_* so caller can handle it
         last_suspension_reason_ = suspension_reason_;
@@ -1590,13 +1596,13 @@ op_default: {
             throw std::runtime_error(e.what());
         }
     }
-    if (suspension_requested_) goto slow_dispatch_fallback;
+    if (suspension_requested_ || last_suspension_reason_ != 0) goto slow_dispatch_fallback;
     counter++;
     if ((counter & 8191) == 0) {
         if (exit_requested_.load()) return;
         maybeCollectGarbage();
         periodicYieldCheck();
-        if (suspension_requested_) {
+        if (suspension_requested_ || last_suspension_reason_ != 0) {
             // Transfer suspension info to last_suspension_* so caller can handle it
             last_suspension_reason_ = suspension_reason_;
             last_suspension_context_ = suspension_context_;

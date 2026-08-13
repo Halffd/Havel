@@ -3207,8 +3207,7 @@ fn parseUseStatement() {
     if alias != null {
       return UseStatement(fpath, [], l, c, {isFileImport: true, filePath: fpath, alias: alias})
     }
-    return UseStatement(fpath, ["*"], l, c, {isFileImport: true, filePath: fpath,
-      isWildcard: true})
+    return UseStatement(fpath, [], l, c, {isFileImport: true, filePath: fpath})
   }
 
   // use module or use module as alias or use module, module2

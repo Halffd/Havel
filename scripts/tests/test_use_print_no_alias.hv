@@ -1,0 +1,22 @@
+// Regression test for print.fmt() returning null when using `use "print"` (no alias)
+// Bug: pratt.hv parser parsed `use "string"` as wildcard import (isWildcard=true),
+//      causing the emitter to emit IMPORT + IMPORT_WILDCARD instead of IMPORT +
+//      STORE_GLOBAL <stem>. After fix, `use "print"` should make print.fmt
+//      accessible without an alias.
+// Expected: print is "object", print.fmt is "function",
+//           print.fmt("{}", "Hello world!") returns "Hello world!"
+
+use "print"
+
+assert type(print) == "object", "type(print) is object"
+assert type(print.fmt) == "function", "type(print.fmt) is function"
+
+result = print.fmt("Hello {}!", "world")
+assert result == "Hello world!", "print.fmt returns formatted string"
+
+// named import should also work
+use { fmt, puts } from "print"
+assert type(fmt) == "function", "named import fmt is function"
+assert type(puts) == "function", "named import puts is function"
+
+println("PASS use \"print\" without alias loads print module as object")

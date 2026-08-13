@@ -4632,7 +4632,6 @@ fn parseAtDecoratorStatement() {
 // Parse entire source into a Program AST node
 fn parseProgram(source) {
     tokenList = tokenize(source)
-    print("[DEBUG pratt.parseProgram] source len=" + str(#source) + " tokens=" + str(#tokenList))
     p = Parser(tokenList)
     body = []
     while p.current().tid != TID.EOF {

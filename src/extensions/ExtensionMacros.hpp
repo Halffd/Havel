@@ -66,11 +66,11 @@
         const char* libs[] = { __VA_ARGS__ }; \
         for (const char* lib : libs) { \
             if (_##prefix##_loader.load(lib)) { \
-                fprintf(stderr, "[Extension] Loaded " #name " from %s\n", lib); \
+                // fprintf(stderr, "[Extension] Loaded " #name " from %s\n", lib); \
                 return true; \
             } \
         } \
-        fprintf(stderr, "[Extension] " #name " not available (tried " #__VA_ARGS__ ")\n"); \
+        // fprintf(stderr, "[Extension] " #name " not available (tried " #__VA_ARGS__ ")\n"); \
         return false; \
     }();
 
@@ -165,11 +165,11 @@
     static ::havel::Dynamic _##prefix##_loader; \
     static bool _##prefix##_initialized = []() { \
         if (_##prefix##_loader.load(primary)) { \
-            fprintf(stderr, "[Extension] Using primary " #name " from %s\n", primary); \
+            // fprintf(stderr, "[Extension] Using primary " #name " from %s\n", primary); \
             return true; \
         } \
         if (_##prefix##_loader.load(fallback)) { \
-            fprintf(stderr, "[Extension] Using fallback " #name " from %s\n", fallback); \
+            // fprintf(stderr, "[Extension] Using fallback " #name " from %s\n", fallback); \
             return true; \
         } \
         return false; \
@@ -186,7 +186,7 @@
 #else
     #define EXT_LIBRARY_MODE "dynamic"
     #define EXT_DYNAMIC_INIT() \
-        fprintf(stderr, "[Extension] Running in dynamic mode\n")
+        // fprintf(stderr, "[Extension] Running in dynamic mode\n")
 #endif
 
 // Platform detection
@@ -218,11 +218,11 @@
 
 // Log extension info
 #define EXT_LOG_INFO(fmt, ...) \
-    fprintf(stderr, "[Extension] " fmt "\n", ##__VA_ARGS__)
+    // fprintf(stderr, "[Extension] " fmt "\n", ##__VA_ARGS__)
 
 // Log extension error
 #define EXT_LOG_ERROR(fmt, ...) \
-    fprintf(stderr, "[Extension ERROR] " fmt "\n", ##__VA_ARGS__)
+    // fprintf(stderr, "[Extension ERROR] " fmt "\n", ##__VA_ARGS__)
 
 // Check if running in Havel VM
 #define EXT_CHECK_API(api) \

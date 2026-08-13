@@ -494,6 +494,12 @@ void setCurrent(Goroutine* g) { current_.store(g, std::memory_order_release); }
     // Returns true if the goroutine was woken/requeued, false if dropped
     bool wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs = {});
 
+    // Cheap pending check: true if the goroutine is already queued (Created),
+    // about to run (Runnable), or executing (Running). Under bursty input
+    // (wheel storms) callers can coalesce a redundant trigger — a Drop-policy
+    // wakeHotkey would drop it anyway — without touching the run queues.
+    bool isHotkeyPending(uint32_t gid) const;
+
     // Wake persistent hotkey goroutines matching the given alias
     // Used by hotkey.trigger() to reach persistent goroutines without HotkeyManager
     bool wakeHotkeyByAlias(const std::string& alias);

@@ -3620,9 +3620,16 @@ InputBridge::handleHotkeyRegister(const std::vector<Value> &args,
     // If hotkeyManager is available, wire the OS callback to wake the persistent goroutine
     if (ctx->hotkeyManager) {
         if (persistentGid != 0) {
-            auto wakeHotkey = [vm, persistentGid, hotkeyId]() {
+            auto wakeHotkey = [vm, persistentGid, hotkeyId, policy]() {
                 auto *sched = vm->getScheduler();
                 if (!sched) return;
+                // Coalesce redundant triggers: with Drop policy a wakeHotkey on
+                // an already queued/running fiber is dropped by the scheduler
+                // anyway, so skip the lock/queue/record work entirely. Prevents
+                // bursty input (wheel storms) from hammering the scheduler.
+                if (policy == HotkeyPolicy::Drop &&
+                    sched->isHotkeyPending(persistentGid))
+                    return;
                 auto *g = sched->get(persistentGid);
                 if (!g) return;
                 sched->wakeHotkey(g);
@@ -3747,6 +3754,9 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
             auto wakeHotkey = [vm, persistentGid, hotkeyId]() {
                 auto *sched = vm->getScheduler();
                 if (!sched) return;
+                // Conditional hotkeys are always Drop-policy — coalesce
+                // redundant triggers on an already queued/running fiber.
+                if (sched->isHotkeyPending(persistentGid)) return;
                 auto *g = sched->get(persistentGid);
                 if (!g) return;
                 sched->wakeHotkey(g);

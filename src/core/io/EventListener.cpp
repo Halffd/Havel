@@ -1344,9 +1344,14 @@ void EventListener::ProcessMouseEvent(const input_event &ev, int32_t hiResVal) {
       std::vector<int> wheelHotkeyIds;
       bool wheelHotkeyShouldBlock = false;
 
+      // The scan below only READS hotkey state and registered key state; hold
+      // shared locks so concurrent readers (other scans, VM hotkey-manager
+      // reads) are not excluded for the whole wheel tick. Wheel events arrive
+      // in bursts; an exclusive hold here serializes behind the VM thread and
+      // makes hotkey triggers feel laggy under scroll spam.
       {
-        std::unique_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
-        std::unique_lock<std::shared_mutex> stateLock(stateMutex);
+        std::shared_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
+        std::shared_lock<std::shared_mutex> stateLock(stateMutex);
 
         // Set wheel event context for combo evaluation
         isProcessingWheelEvent = true;

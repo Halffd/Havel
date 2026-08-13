@@ -721,6 +721,15 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
   return true;
 }
 
+bool Scheduler::isHotkeyPending(uint32_t gid) const {
+    std::lock_guard lock(goroutines_mutex_);
+    auto it = goroutines_.find(gid);
+    if (it == goroutines_.end()) return false;
+    auto s = it->second->state.load(std::memory_order_acquire);
+    return s == GoroutineState::Runnable || s == GoroutineState::Created ||
+           s == GoroutineState::Running;
+}
+
 bool Scheduler::wakeHotkeyByAlias(const std::string& alias) {
     std::vector<Goroutine*> toWake;
     {

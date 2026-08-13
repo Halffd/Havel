@@ -519,7 +519,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
     sched->drainDeferredCallbacks();
     sched->wakeSleepingGoroutines();
     if (std::getenv("HAVEL_TRACE_SLEEP")) {
-      fprintf(stderr, "[SLEEPDBG] processGoroutinesInline enter susp_req=%d last_reason=%d inline_active=%d\n", (int)vm_->isSuspensionRequested(), (int)vm_->getLastSuspensionReason(), (int)inline_yield_active_);
+      // fprintf(stderr, "[SLEEPDBG] processGoroutinesInline enter susp_req=%d last_reason=%d inline_active=%d\n", (int)vm_->isSuspensionRequested(), (int)vm_->getLastSuspensionReason(), (int)inline_yield_active_);
     }
 
     const int budget = 512;
@@ -535,7 +535,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       if (g->state == compiler::Scheduler::GoroutineState::Created) {
         auto call_result = vm_->startGoroutineCall(g->callable, g->locals);
         if (std::getenv("HAVEL_TRACE_SLEEP")) {
-          fprintf(stderr, "[SLEEPDBG] startGoroutineCall g=%d result=%d\n", g->id, (int)call_result);
+          // fprintf(stderr, "[SLEEPDBG] startGoroutineCall g=%d result=%d\n", g->id, (int)call_result);
         }
         if (call_result == compiler::VM::GoroutineCallResult::Failed ||
             call_result == compiler::VM::GoroutineCallResult::JITExecuted) {
@@ -556,7 +556,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       for (int i = 0; i < 64; ++i) {
         auto result = vm_->executeOneStep(g->fiber);
         if (std::getenv("HAVEL_TRACE_SLEEP")) {
-          fprintf(stderr, "[SLEEPDBG] executeOneStep g=%d result=%d\n", g->id, (int)result.type);
+          // fprintf(stderr, "[SLEEPDBG] executeOneStep g=%d result=%d\n", g->id, (int)result.type);
         }
         g->instructions_executed++;
         executed++;
@@ -642,7 +642,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       vm_->setLastSuspension(caller_last_reason, caller_last_ctx);
       vm_->loadFiberStatePublic(main_script_fiber_.get());
       if (std::getenv("HAVEL_TRACE_SLEEP")) {
-        fprintf(stderr, "[SLEEPDBG] processGoroutinesInline exit last_reason=%d susp_req=%d\n", (int)vm_->getLastSuspensionReason(), (int)vm_->isSuspensionRequested());
+        // fprintf(stderr, "[SLEEPDBG] processGoroutinesInline exit last_reason=%d susp_req=%d\n", (int)vm_->getLastSuspensionReason(), (int)vm_->isSuspensionRequested());
       }
     }
 

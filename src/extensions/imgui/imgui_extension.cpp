@@ -535,7 +535,7 @@ havel::Dynamic imguiLoader;
 #define LOAD_GLFW(name) \
     glfw##name = glfwLoader.getSymbol<Glfw##name##Fn>("glfw" #name); \
     if (!glfw##name) { \
-        // fprintf(stderr, "[ImGui] Failed to load GLFW symbol: glfw%s\n", #name); \
+        /* fprintf(stderr, "[ImGui] Failed to load GLFW symbol: glfw%s\n", #name); */ \
         return false; \
     }
         
@@ -557,7 +557,7 @@ havel::Dynamic imguiLoader;
 #define LOAD_GL(name) \
     gl##name = glLoader.getSymbol<Gl##name##Fn>("gl" #name); \
     if (!gl##name) { \
-        // fprintf(stderr, "[ImGui] Failed to load GL symbol: gl%s\n", #name); \
+        /* fprintf(stderr, "[ImGui] Failed to load GL symbol: gl%s\n", #name); */ \
         return false; \
     }
         
@@ -574,7 +574,7 @@ havel::Dynamic imguiLoader;
 #define LOAD_IMGUI(name) \
     ImGui_##name = imguiLoader.getSymbol<ImGui##name##Fn>("ImGui" #name); \
     if (!ImGui_##name) { \
-        // fprintf(stderr, "[ImGui] Failed to load ImGui symbol: ImGui%s\n", #name); \
+        /* fprintf(stderr, "[ImGui] Failed to load ImGui symbol: ImGui%s\n", #name); */ \
         return false; \
     }
         

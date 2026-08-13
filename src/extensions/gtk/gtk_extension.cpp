@@ -1489,7 +1489,7 @@ havel::Dynamic gdkLoader;
 #define LOAD_SYMBOL(name) \
     name = gtkLoader.getSymbol<name##Fn>(#name); \
     if (!name) { \
-        // fprintf(stderr, "[GTK] Failed to load symbol: %s\n", #name); \
+        /* fprintf(stderr, "[GTK] Failed to load symbol: %s\n", #name); */ \
         return false; \
     }
         

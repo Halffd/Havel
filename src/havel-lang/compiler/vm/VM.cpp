@@ -4525,7 +4525,7 @@ Value VM::loadModule(const std::string &path) {
 
   // Check native modules FIRST (before Havel module resolution)
   // This ensures native modules like "time" take precedence over .hvc files
-  if (context_ && context_->modules) {
+  if (context_ && context_->modules && !native_plugin_in_progress_.count(path)) {
     auto pluginOpt = context_->modules->extensionLoader().loadModulePlugin(path);
     if (pluginOpt) {
       auto plugin = *pluginOpt;
@@ -4533,8 +4533,18 @@ Value VM::loadModule(const std::string &path) {
       auto *obj = heap_.object(exportsObj.id);
       if (obj) {
         compiler::VMApi api(*this);
-        plugin.register_fn(static_cast<void*>(&api));
-        
+        // Guard against reentrant registration: eager plugins call
+        // vm.loadModule("<own name>") from within register_fn, which would
+        // otherwise re-enter this branch and recurse forever.
+        native_plugin_in_progress_.insert(path);
+        try {
+          plugin.register_fn(static_cast<void*>(&api));
+        } catch (...) {
+          native_plugin_in_progress_.erase(path);
+          throw;
+        }
+        native_plugin_in_progress_.erase(path);
+
         // Collect exports from global namespace (functions with module prefix)
         std::string prefix = path + ".";
         std::string usPrefix = path + "_";

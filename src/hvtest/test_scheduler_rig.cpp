@@ -986,6 +986,40 @@ static void test_requeueFront_non_persistent_clears_args() {
     sched.clearCurrent();
 }
 
+static void test_isHotkeyPending_coalesce_check() {
+    auto& sched = Scheduler::instance();
+
+    uint32_t gid = sched.spawnHotkey(1, {Value::makeInt(10)}, 0, "pending_hk");
+    auto* g = sched.get(gid);
+    g->persistent = true;
+    g->hotkey_policy = HotkeyPolicy::Drop;
+    g->hotkey_callable = Value::makeFunctionObjId(1);
+    g->hotkey_args = {Value::makeInt(10)};
+
+    // Parked (Suspended/HotkeyWait): not pending — a trigger must wake it.
+    auto* picked = sched.pickNext();
+    sched.clearCurrent();
+    sched.suspend(g, Scheduler::SuspensionReason::HotkeyWait);
+    CHECK(!sched.isHotkeyPending(gid),
+          "parked HotkeyWait fiber is not pending -> trigger must wake it");
+
+    // Queued (Created): pending -> redundant Drop triggers coalesce away.
+    sched.requeueFront(g);
+    CHECK(sched.isHotkeyPending(gid), "queued (Created) fiber is pending");
+    bool result = sched.wakeHotkey(g);
+    CHECK(result, "Drop on pending returns true (coalesced, no re-queue)");
+
+    // Running: pending.
+    g->state = Scheduler::GoroutineState::Running;
+    CHECK(sched.isHotkeyPending(gid), "running fiber is pending");
+
+    // Unknown gid is never pending.
+    CHECK(!sched.isHotkeyPending(0xDEADBEEF), "unknown gid is not pending");
+
+    g->state = Scheduler::GoroutineState::Done;
+    sched.clearCurrent();
+}
+
 static void test_wakeHotkey_drop_while_pending() {
     auto& sched = Scheduler::instance();
 
@@ -3559,6 +3593,9 @@ std::cout << "=== Scheduler Tests ===\n\n";
 
     test_requeueFront_non_persistent_clears_args();
     std::cout << " PASS requeueFront non-persistent does not populate hotkey_args\n";
+
+    test_isHotkeyPending_coalesce_check();
+    std::cout << " PASS isHotkeyPending reflects queued/running/parked state for coalescing\n";
 
     test_wakeHotkey_drop_while_pending();
     std::cout << " PASS wakeHotkey Drop policy: returns false while pending\n";

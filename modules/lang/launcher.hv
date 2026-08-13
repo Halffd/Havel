@@ -12,8 +12,12 @@ fn measure(label, t0) {
 
 fn loadCompiler() {
     t0 = now()
-    use { parse } from "pratt"
+    use { parse, parseTokens } from "pratt"
     measure("load pratt", t0)
+
+    t0 = now()
+    use { tokenize } from "lexer"
+    measure("load lexer", t0)
 
     t0 = now()
     use { Emitter, compileProgram } from "emitter"
@@ -25,7 +29,6 @@ fn loadCompiler() {
 
     t0 = now()
     use { setFlag, isOn, dumpBytecodeSummary, dumpBytecode, traceBytecode } from "debug"
-print("[DEBUG launching setFlag-type] q1=" + str(setFlag) + " q2=" + str(isOn) + " q3=" + str(dumpBytecode))
     measure("load debug", t0)
 }
 
@@ -186,12 +189,13 @@ fn runScript(cfg) {
     }
     if combinedCode == "" { return 0 }
 
-    // Parse
+    // Parse (split into tokenize + parseTokens)
     t = now()
-    print("[DEBUG] launcher combinedCode len=" + str(#combinedCode))
-    result = parse(combinedCode)
-    measure("parse", t)
-    print("[DEBUG] launcher ast=" + str(result.ast))
+    tokenList = tokenize(combinedCode)
+    measure("parse: tokenize", t)
+    t = now()
+    result = parseTokens(tokenList)
+    measure("parse: parseAST", t)
     if result.errors != null && #result.errors > 0 {
         for err in result.errors {
             print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))

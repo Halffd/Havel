@@ -3207,8 +3207,7 @@ fn parseUseStatement() {
     if alias != null {
       return UseStatement(fpath, [], l, c, {isFileImport: true, filePath: fpath, alias: alias})
     }
-    return UseStatement(fpath, ["*"], l, c, {isFileImport: true, filePath: fpath,
-      isWildcard: true})
+    return UseStatement(fpath, [], l, c, {isFileImport: true, filePath: fpath})
   }
 
   // use module or use module as alias or use module, module2
@@ -4633,7 +4632,6 @@ fn parseAtDecoratorStatement() {
 // Parse entire source into a Program AST node
 fn parseProgram(source) {
     tokenList = tokenize(source)
-    print("[DEBUG pratt.parseProgram] source len=" + str(#source) + " tokens=" + str(#tokenList))
     p = Parser(tokenList)
     body = []
     while p.current().tid != TID.EOF {

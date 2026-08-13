@@ -210,7 +210,6 @@ fn emitExpr(emitter, node) {
         bc.set_source(node.line, node.col)
     }
   k = node.kind
-  print("[DEBUG emitExpr] k=" + str(k))
 
   if k == "NumberLiteral" {
     raw = node.value
@@ -3653,9 +3652,7 @@ fn compileProgram(emitter, program, skip_execute = false, sourceFile = null, ent
     if program.ast != null {
         program = program.ast
     }
-print("[DEBUG compileProgram] entryName=" + str(entryName) + " program=" + str(program))
 body = program.body
-print("[DEBUG compileProgram] bodyLen=" + str(#body) + " body=" + str(body))
 topStmts = []
 funcDecls = []
 for stmt in body {

@@ -981,7 +981,7 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   
   void requestSuspension(uint8_t reason, void* context = nullptr) {
     if (std::getenv("HAVEL_TRACE_SLEEP")) {
-      fprintf(stderr, "[SLEEPDBG] requestSuspension reason=%d inline=%d exec_fiber=%d last=%d\n", (int)reason, (int)inline_yield_active_, (int)(current_executing_fiber_!=nullptr), (int)last_suspension_reason_);
+      // fprintf(stderr, "[SLEEPDBG] requestSuspension reason=%d inline=%d exec_fiber=%d last=%d\n", (int)reason, (int)inline_yield_active_, (int)(current_executing_fiber_!=nullptr), (int)last_suspension_reason_);
     }
     suspension_requested_ = true;
     suspension_reason_ = reason;

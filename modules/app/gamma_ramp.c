@@ -23,8 +23,7 @@ static double apply_shadow_lift(double ch, double lift) {
   double norm = clamp01(ch, 0.0, 1.0);
   double gamma_adj = 1.0 / (1.0 + lift);
   double gamma_lifted = pow(norm, gamma_adj);
-  double additive_lifted = lift * (1.0 - norm);
-  return clamp01(gamma_lifted + additive_lifted, 0.0, 1.0);
+  return gamma_lifted;
 }
 
 void fill_gamma_ramp(

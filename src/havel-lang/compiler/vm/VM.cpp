@@ -503,6 +503,13 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
 
     // Run scheduler loop until main script completes
     while (main_script_goroutine_id_ != UINT32_MAX) {
+      // Cooperative exit: a goroutine (or hotkey) may have called exit()
+      // while the main script is suspended in sleep/await. Without this
+      // check the main goroutine re-suspends forever and the VM never
+      // unwinds; the EventLoop's quitEventLoop() cannot help because the
+      // main thread is here, not inside runEventLoop(). Break so
+      // vm->execute() returns and the launcher reports exit_code_.
+      if (exit_requested_.load()) break;
       scheduler_->wakeSleepingGoroutines();
       auto *cur = scheduler_->pickNext();
       if (!cur) {

@@ -600,11 +600,24 @@ void EventListener::EventLoop() {
       auto *vm = executionEngine->getVM();
       if (vm && vm->exit_requested_.load()) {
         int code = vm->exit_code_.load();
+        // Cooperative shutdown: record the requested exit code and signal
+        // the UI event loop to quit. Do NOT call havel::exit() here - it
+        // tears down the VM and calls std::exit() from this thread while
+        // the main thread may still be executing runBytecodePipeline,
+        // racing Qt teardown and crashing at shutdown. Do NOT stop this
+        // loop either: if the main fiber is suspended in a sleep, only
+        // checkTimers() below can wake it, and the main thread must unwind
+        // and run cleanup() via the Havel destructor before the process
+        // exits. The launcher returns the requested exit code.
+        if (!exitSignaled_) {
+          exitSignaled_ = true;
+          if (shutdownCallback_) {
+            shutdownCallback_(code);
+          }
 #ifdef HAVE_QT_EXTENSION
-        QCoreApplication::exit(code);
+          QCoreApplication::exit(code);
 #endif
-        havel::exit(ExitReason::VmExit, code);
-        break;
+        }
       }
     } else if (modules_) {
       modules_->checkTimers();
@@ -740,7 +753,7 @@ void EventListener::EventLoop() {
     debug("EventListener: Stopped");
 
   if (shutdownCallback_) {
-    shutdownCallback_();
+    shutdownCallback_(pendingExitCode_.load());
   }
 }
 void EventListener::ProcessKeyboardEvent(const input_event &ev) {

@@ -216,17 +216,19 @@ fn _enumMonitors() {
 // === Gamma ramp operations (always uses native lib) ===
 fn _applyGammaRamp(monitorName, brightness, gammaR, gammaG, gammaB, tempK, shadowLiftVal) {
   s = _S()
-  if !s.hasXRR { return false }
-  if !_ensureDisplay() { return false }
+  if !s.hasXRR { print("[brightness] ERROR: XRR not available"); return false }
+  if !_ensureDisplay() { print("[brightness] ERROR: cannot ensure display"); return false }
 
   mi = s.monitorIndexByName.get(monitorName)
-  if mi == null || mi < 0 { _releaseDisplay(); return false }
+  if mi == null || mi < 0 { print("[brightness] ERROR: monitor not found: " + monitorName); _releaseDisplay(); return false }
   mon = s.monitors[mi]
-  if mon.crtc == 0 { _releaseDisplay(); return false }
+  if mon.crtc == 0 { print("[brightness] ERROR: CRTC is 0 for " + monitorName); _releaseDisplay(); return false }
+
+  print("[brightness] _applyGammaRamp: monitor=" + monitorName + " crtc=" + str(mon.crtc) + " gammaSize=" + str(mon.gammaSize) + " tempK=" + str(tempK) + " brightness=" + str(brightness))
 
   gammaSize = mon.gammaSize
   gamma = ffi.call(s.XRRAllocGamma, "pointer", ["int32"], gammaSize)
-  if gamma == 0 { _releaseDisplay(); return false }
+  if gamma == 0 { print("[brightness] ERROR: XRRAllocGamma failed"); _releaseDisplay(); return false }
 
   redPtr = ffi.get_ptr(ffi.ptr_add(gamma, 8))
   greenPtr = ffi.get_ptr(ffi.ptr_add(gamma, 16))
@@ -288,6 +290,7 @@ fn _applyGammaRamp(monitorName, brightness, gammaR, gammaG, gammaB, tempK, shado
     }
   }
 
+  print("[brightness] _applyGammaRamp: calling XRRSetCrtcGamma for monitor=" + monitorName + " crtc=" + str(mon.crtc))
   ffi.call(s.XRRSetCrtcGamma, "void", ["pointer", "uint64", "pointer"], s.display, mon.crtc, gamma)
   _flush()
   ffi.call(s.XRRFreeGamma, "void", ["pointer"], gamma)
@@ -547,7 +550,9 @@ fn _applySettings(monitorName) {
   if temp == null { temp = 6500 }
   sl = s.shadowLift.get(monitorName)
   if sl == null { sl = 0.0 }
-  _applyGammaRamp(monitorName, br, gammaRGB.r, gammaRGB.g, gammaRGB.b, temp, sl)
+  print("[brightness] _applySettings: monitor=" + monitorName + " br=" + str(br) + " temp=" + str(temp) + " gamma=(" + str(gammaRGB.r) + "," + str(gammaRGB.g) + "," + str(gammaRGB.b) + ") shadow=" + str(sl))
+  ok = _applyGammaRamp(monitorName, br, gammaRGB.r, gammaRGB.g, gammaRGB.b, temp, sl)
+  if !ok { print("[brightness] ERROR: _applyGammaRamp failed for " + monitorName) }
 }
 
 // === Initialization ===
@@ -668,7 +673,10 @@ fn getTemperature(monitorIndex) {
   mi = monitorIndex; if mi == null { mi = -1 }
   monName = _getMonitorName(mi)
   if monName == "" { return 6500 }
-  t = s.temperature.get(monName); if t != null { t } else { 6500 }
+  t = s.temperature.get(monName)
+  if t != null { print("[brightness] getTemperature: monitor=" + monName + " temp=" + str(t)); return t }
+  print("[brightness] getTemperature: monitor=" + monName + " temp=6500 (default)")
+  return 6500
 }
 
 fn setTemperature(kelvin, monitorIndex) {
@@ -678,6 +686,7 @@ fn setTemperature(kelvin, monitorIndex) {
   monName = _getMonitorName(mi)
   if monName == "" { return }
   k = int(_clamp(kelvin, MIN_TEMP, MAX_TEMP))
+  print("[brightness] setTemperature: monitor=" + monName + " kelvin=" + str(k))
   s.temperature.set(monName, k)
   _applySettings(monName)
 }
@@ -689,7 +698,9 @@ fn increaseTemperature(amount, monitorIndex) {
   if amount == null { amount = DEFAULT_TEMP_AMOUNT }
   monName = _getMonitorName(mi)
   if monName == "" { return }
-  cur = getTemperature(mi); setTemperature(cur + amount, mi)
+  cur = getTemperature(mi)
+  print("[brightness] increaseTemperature: monitor=" + monName + " cur=" + str(cur) + " amount=" + str(amount))
+  setTemperature(cur + amount, mi)
 }
 
 fn decreaseTemperature(amount, monitorIndex) {
@@ -699,7 +710,9 @@ fn decreaseTemperature(amount, monitorIndex) {
   if amount == null { amount = DEFAULT_TEMP_AMOUNT }
   monName = _getMonitorName(mi)
   if monName == "" { return }
-  cur = getTemperature(mi); setTemperature(cur - amount, mi)
+  cur = getTemperature(mi)
+  print("[brightness] decreaseTemperature: monitor=" + monName + " cur=" + str(cur) + " amount=" + str(amount))
+  setTemperature(cur - amount, mi)
 }
 
 fn setGammaRGB(r, g, b, monitorIndex) {

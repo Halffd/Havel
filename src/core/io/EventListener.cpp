@@ -757,38 +757,69 @@ void EventListener::EventLoop() {
   }
 }
 void EventListener::ProcessKeyboardEvent(const input_event &ev) {
-  // Filter out synthetic key events we sent via uinput to prevent feedback loop
+  // Filter out synthetic key events we sent to prevent a feedback loop.
+  // Only the X11 backend reads its own injected events back (XTest events
+  // are delivered to the same client connection). The evdev backend excludes
+  // the havel-virtual-device from the read set, so injected events never
+  // loop back here — filtering in that mode would swallow genuine physical
+  // key events (e.g. a physical key-up arriving right after a hotkey's
+  // send() released the same modifier) and leave key/modifier state stuck.
+  bool loopbackBackend = backend_ &&
+      backend_->GetType() == InputBackendType::X11;
   if (ev.type == EV_KEY) {
-    std::lock_guard<std::mutex> lock(syntheticKeysMutex);
-    auto now = std::chrono::steady_clock::now();
-    for (auto it = syntheticKeys.begin(); it != syntheticKeys.end();) {
-      if (it->code == ev.code && it->down == (ev.value != 0)) {
-        // Check if this synthetic event is recent (within 100ms)
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - it->time)
-                           .count();
-        if (elapsed < 100) {
-          // This is our synthetic event bouncing back - filter it out
-          if (debugging::debug_io)
-            debug("Filtered synthetic key event: code={} down={}", ev.code,
-                  ev.value != 0);
-          return;
+    if (loopbackBackend) {
+      // Only the X11 backend reads its own injected events back (XTest
+      // events are delivered to the same client connection). Filter those
+      // echoes out. The evdev backend excludes the havel-virtual-device
+      // from the read set, so injected events never loop back here —
+      // filtering in that mode would swallow genuine physical key events
+      // (e.g. a physical key-up arriving right after a hotkey's send()
+      // released the same modifier) and leave key/modifier state stuck.
+      std::lock_guard<std::mutex> lock(syntheticKeysMutex);
+      auto now = std::chrono::steady_clock::now();
+      for (auto it = syntheticKeys.begin(); it != syntheticKeys.end();) {
+        if (it->code == ev.code && it->down == (ev.value != 0)) {
+          // Check if this synthetic event is recent (within 100ms)
+          auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             now - it->time)
+                             .count();
+          if (elapsed < 100) {
+            // This is our synthetic event bouncing back - filter it out
+            if (debugging::debug_io)
+              debug("Filtered synthetic key event: code={} down={}", ev.code,
+                    ev.value != 0);
+            return;
+          }
+          ++it;
+        } else {
+          ++it;
         }
-        ++it;
-      } else {
-        ++it;
       }
+      // Clean up old synthetic keys (>500ms old)
+      syntheticKeys.erase(
+          std::remove_if(
+              syntheticKeys.begin(), syntheticKeys.end(),
+              [&now](const SyntheticKey &sk) {
+                return std::chrono::duration_cast<std::chrono::milliseconds>(
+                           now - sk.time)
+                           .count() > 500;
+              }),
+          syntheticKeys.end());
+    } else {
+      // Keep the synthetic key list bounded even on backends that never
+      // loop back injected events (evdev).
+      std::lock_guard<std::mutex> lock(syntheticKeysMutex);
+      auto now = std::chrono::steady_clock::now();
+      syntheticKeys.erase(
+          std::remove_if(
+              syntheticKeys.begin(), syntheticKeys.end(),
+              [&now](const SyntheticKey &sk) {
+                return std::chrono::duration_cast<std::chrono::milliseconds>(
+                           now - sk.time)
+                           .count() > 500;
+              }),
+          syntheticKeys.end());
     }
-    // Clean up old synthetic keys (>500ms old)
-    syntheticKeys.erase(
-        std::remove_if(
-            syntheticKeys.begin(), syntheticKeys.end(),
-            [&now](const SyntheticKey &sk) {
-              return std::chrono::duration_cast<std::chrono::milliseconds>(
-                         now - sk.time)
-                         .count() > 500;
-            }),
-        syntheticKeys.end());
   }
 
   if (inputNotificationCallback) {

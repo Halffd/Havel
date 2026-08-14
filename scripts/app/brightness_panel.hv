@@ -21,6 +21,9 @@ class BrightnessPanel {
     fn initUI() {
         @_requireBackend()
         @win = ui.window("Brightness Control Panel", {width: 450, height: 700})
+    }
+
+    fn show() {
         @win.show()
     }
 
@@ -324,6 +327,7 @@ class BrightnessPanel {
 
     fn run() {
         @syncAll()
+        @show()
         ui.run()
     }
 }
@@ -331,6 +335,11 @@ class BrightnessPanel {
 fn main() {
     panel = BrightnessPanel.new()
     panel.run()
+}
+
+// For self-hosted mode (which expects Main)
+fn Main() {
+    main()
 }
 
 main()

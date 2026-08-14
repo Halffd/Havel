@@ -2332,8 +2332,32 @@ Value VM::call(const Value &callee_value, const std::vector<Value> &args) {
   }
 
   const size_t base_depth = frame_count_;
+
+  const auto saved_stack = stack;
+  const auto saved_locals = locals;
+  const BytecodeChunk *base_chunk = current_chunk;
+  const auto saved_upvalues = open_upvalues;
+  const uint32_t saved_when_watcher = current_when_watcher_id_;
+  const uint32_t saved_coroutine = current_coroutine_id_;
+
   doCall(callee_value, args);
-  runDispatchLoop(base_depth);
+  try {
+    runDispatchLoop(base_depth);
+  } catch (...) {
+    stack = saved_stack;
+    locals = saved_locals;
+    frame_count_ = base_depth;
+    current_chunk = base_chunk;
+    open_upvalues = saved_upvalues;
+    current_when_watcher_id_ = saved_when_watcher;
+    current_coroutine_id_ = saved_coroutine;
+    suspension_requested_ = false;
+    suspension_reason_ = 0;
+    suspension_context_ = nullptr;
+    last_suspension_reason_ = 0;
+    last_suspension_context_ = nullptr;
+    throw;
+  }
 
   if (stack.empty()) {
     return nullptr;

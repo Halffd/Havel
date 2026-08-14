@@ -1,0 +1,41 @@
+// Test: goroutine hang after reactive when-block fires on mode change
+// What: A goroutine assigns `mode = "gaming"`, which triggers the reactive
+//       `when mode == "gaming"` watcher synchronously on the goroutine thread.
+//       The when-body throws (simulating a faulty when-block). Regression:
+//       VM::call must unwind callee frames on exception so the goroutine's
+//       caller state stays intact and the goroutine keeps ticking.
+// Expected: [TICK] lines keep printing past the mode transition; goroutine
+//           survives the thrown when-body and reaches PASS.
+
+ticks = 0
+
+mode = "default"
+
+when mode == "gaming" {
+  print("WHEN gaming fired (about to throw)")
+  // Deliberately reference an undefined global so the when-body throws.
+  _does_not_exist.boom()
+}
+
+go fn watch() {
+  loop {
+    ticks = ticks + 1
+    print("TICK $ticks")
+    if ticks == 3 && mode != "gaming" {
+      mode = "gaming"
+      print("mode set to gaming")
+    }
+    sleep(300)
+    if ticks > 8 {
+      print("OK goroutine alive after mode transition")
+      break
+    }
+  }
+}
+
+sleep(4000)
+if ticks > 5 {
+  print("PASS: goroutine ticked $ticks times after transition")
+} else {
+  print("FAIL: goroutine stalled, ticks=$ticks")
+}

@@ -240,7 +240,28 @@ void registerDisplayModule(const VMApi &api) {
     api.setField(displayObj, "displayNum", api.makeFunctionRef("display.displayNum"));
     api.setGlobal("display", displayObj);
 
-    debug("Display module registered (14 host functions)");
+    // Merge Havel-script display.hv exports (open, close, screenWidth, etc.)
+    // so bare `use display` resolves to the full script implementation instead
+    // of only these host stubs. This is the same merge ObjectModule,
+    // MathModule, etc. perform. Reentrancy is guarded in VM::loadModule, so
+    // the loadModule("display") call below resolves display.hv instead of
+    // re-running this register function.
+    try {
+        auto &vm = api.vm();
+        Value exports = vm.loadModule("display");
+        if (exports.isObjectId()) {
+            auto *obj = vm.getHeap().object(exports.asObjectId());
+            if (obj) {
+                for (const auto &[name, value] : *obj) {
+                    if (name.empty() || name[0] == '_') continue;
+                    api.setField(displayObj, name, value);
+                    api.setGlobal(name, value);
+                }
+            }
+        }
+    } catch (...) {}
+
+    debug("Display module registered (14 host functions + display.hv merged)");
 }
 
 } // namespace havel::modules
@@ -248,7 +269,7 @@ void registerDisplayModule(const VMApi &api) {
 #ifdef HAVEL_MODULE_PLUGIN
 #include "c/ModulePlugin.h"
 
-HAVEL_MODULE_PLUGIN_IMPL(display, "1.0.0", "Display management module",
+HAVEL_MODULE_PLUGIN_EAGER(display, "1.0.0", "Display management module",
     havel::modules::registerDisplayModule(*api);
 )
 #endif

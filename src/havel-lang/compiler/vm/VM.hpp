@@ -343,6 +343,15 @@ std::vector<std::shared_ptr<BytecodeChunk>> persistent_chunks_;
     // Plugin loader for dynamic .so module discovery
     havel::Loader *pluginLoader_ = nullptr;
 
+    // Native plugins whose register_fn is currently executing on this stack.
+    // Eager stdlib plugins (object, string, math, array, ...) call
+    // vm.loadModule("<own name>") from inside register_fn to merge their
+    // Havel-script export set. Without this guard that call re-enters the
+    // native-plugin branch below, re-runs register_fn, and recurses forever
+    // until stack overflow (SIGSEGV). When a plugin is mid-registration we
+    // fall through to Havel-script resolution instead.
+    std::unordered_set<std::string> native_plugin_in_progress_;
+
 // Lazy module registry — descriptors are registered at startup,
 // init functions are called on first use (import/access)
 std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;

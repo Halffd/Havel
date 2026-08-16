@@ -1,0 +1,13 @@
+use "app/brightness" as br
+
+fn main() {
+    print("Monitors: ", br.getMonitors())
+    print("Initial temp: ", br.getTemperature())
+    br.setTemperature(3000)
+    print("After setTemperature(3000): ", br.getTemperature())
+    br.increaseTemperature(500)
+    print("After increaseTemperature(500): ", br.getTemperature())
+    br.decreaseTemperature(200)
+    print("After decreaseTemperature(200): ", br.getTemperature())
+}
+main()

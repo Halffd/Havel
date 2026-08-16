@@ -425,8 +425,12 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
     auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
     const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;
 #ifdef HAVEL_ENABLE_LLVM
-    if (cfg.useJIT && vm->getJITCompiler()) {
+    const bool wantJIT = cfg.useJIT || cfg.vmConfig.tiering_enabled ||
+                         (std::getenv("HAVEL_TIERING") &&
+                          std::string(std::getenv("HAVEL_TIERING")) != "0");
+    if (wantJIT && vm->getJITCompiler()) {
       auto* jit = static_cast<havel::compiler::BytecodeOrcJIT*>(vm->getJITCompiler());
+      jit->setCompilationVM(vm);
       jit->setDebugMode(cfg.debugJIT);
       jit->setDumpIR(cfg.dumpIR);
       jit->setDumpAsmToFile(cfg.outputAsmToFile);
@@ -436,6 +440,15 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
             if (!jit->isCompiled(func.name))
               jit->compileFunction(func);
           });
+      vm->setHotTraceCallback(
+          [jit](const havel::compiler::BytecodeFunction &func,
+                uint32_t start_ip,
+                uint64_t hot_count) {
+            if (jit) {
+              jit->compileTrace(func, start_ip, hot_count);
+            }
+          });
+      vm->setJITCompiler(jit);
     }
 #endif
     bridge->install(coreProfile ? havel::InstallProfile::Core
@@ -2034,556 +2047,563 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
   if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm ||
       cfg.emitBinary || cfg.emitElf) {
     // Import LLVM JIT for translation
-    havel::compiler::BytecodeOrcJIT jit;
-    jit.setShowWarnings(cfg.aotWarnings);
-    jit.setLinkedLibraries(cfg.linkLibs);
-    if (cfg.emitLLVM || cfg.debugJIT) {
-      jit.setDumpIR(true);
-    }
-    const std::string normalizedOS = normalizeTargetOS(cfg.targetOS);
-    if (normalizedOS == "linux") {
-      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Linux);
-    } else if (normalizedOS == "windows") {
-      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Windows);
-    } else if (normalizedOS == "macos") {
-      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::MacOS);
-    } else if (normalizedOS == "wasm") {
-      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Wasm);
-    } else {
-      jit.setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Native);
-    }
-
-    // Generate LLVM IR for each function
-    llvm::LLVMContext ctx;
-    auto module = std::make_unique<llvm::Module>(primaryFile + "_module", ctx);
-
-    // First pass: find functions with unsupported opcodes
-    std::vector<bool> hasUnsupported(chunk->getFunctionCount(), false);
-    bool anyUnsupported = false;
-    for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-      const auto *func = chunk->getFunction(i);
-      if (func && havel::compiler::BytecodeOrcJIT::hasUnsupportedOpcodes(*func)) {
-        hasUnsupported[i] = true;
-        anyUnsupported = true;
-        if (cfg.aotWarnings) {
-          warn("AOT: skipping function '{}' — contains async/concurrency opcodes "
-               "not supported in AOT",
-               func->name);
-        }
+    std::unique_ptr<havel::compiler::BytecodeOrcJIT> jit;
+    const bool wantJIT = cfg.useJIT || cfg.vmConfig.tiering_enabled ||
+                         (std::getenv("HAVEL_TIERING") && std::string(std::getenv("HAVEL_TIERING")) != "0");
+    if (wantJIT) {
+      jit = std::make_unique<havel::compiler::BytecodeOrcJIT>();
+      jit->setDebugMode(cfg.debugJIT);
+      jit->setDumpIR(cfg.dumpIR);
+      jit->setDumpAsmToFile(cfg.outputAsmToFile);
+      jit->setShowWarnings(cfg.aotWarnings);
+      jit->setLinkedLibraries(cfg.linkLibs);
+      if (cfg.emitLLVM || cfg.debugJIT) {
+        jit->setDumpIR(true);
       }
-    }
+      const std::string normalizedOS = normalizeTargetOS(cfg.targetOS);
+      if (normalizedOS == "linux") {
+        jit->setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Linux);
+      } else if (normalizedOS == "windows") {
+        jit->setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Windows);
+      } else if (normalizedOS == "macos") {
+        jit->setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::MacOS);
+      } else if (normalizedOS == "wasm") {
+        jit->setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Wasm);
+      } else {
+        jit->setTargetOS(havel::compiler::BytecodeOrcJIT::TargetOS::Native);
+      }
 
-    // Second pass: also skip functions that have CALL instructions if there
-    // are any unsupported functions, because CALL is dynamic and we can't
-    // guarantee the callee is also AOT-compiled.
-    std::vector<bool> shouldSkip = hasUnsupported;
-    if (anyUnsupported) {
+      // Generate LLVM IR for each function
+      llvm::LLVMContext ctx;
+      auto module = std::make_unique<llvm::Module>(primaryFile + "_module", ctx);
+
+      // First pass: find functions with unsupported opcodes
+      std::vector<bool> hasUnsupported(chunk->getFunctionCount(), false);
+      bool anyUnsupported = false;
       for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-        if (shouldSkip[i]) continue;
         const auto *func = chunk->getFunction(i);
-        if (!func) continue;
-        for (const auto& instr : func->instructions) {
-          if (instr.opcode == compiler::OpCode::CALL ||
-              instr.opcode == compiler::OpCode::TAIL_CALL ||
-              instr.opcode == compiler::OpCode::CALL_METHOD ||
-              instr.opcode == compiler::OpCode::CALL_SUPER ||
-              instr.opcode == compiler::OpCode::SPREAD_CALL) {
-            shouldSkip[i] = true;
-            if (cfg.aotWarnings) {
-              warn("AOT: skipping function '{}' — calls other functions "
-                   "(dynamic dispatch may reach async code)",
-                   func->name);
-            }
-            break;
+        if (func && havel::compiler::BytecodeOrcJIT::hasUnsupportedOpcodes(*func)) {
+          hasUnsupported[i] = true;
+          anyUnsupported = true;
+          if (cfg.aotWarnings) {
+            warn("AOT: skipping function '{}' — contains async/concurrency opcodes "
+                 "not supported in AOT",
+                 func->name);
           }
         }
       }
-    }
 
-    bool anyCompiled = false;
-    bool mainCompiled = false;
-    for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-      const auto *func = chunk->getFunction(i);
-      if (func && !shouldSkip[i]) {
-        jit.translate(*func, *module);
-        anyCompiled = true;
-        if (func->name == "__main__") {
-          mainCompiled = true;
+      // Second pass: also skip functions that have CALL instructions if there
+      // are any unsupported functions, because CALL is dynamic and we can't
+      // guarantee the callee is also AOT-compiled.
+      std::vector<bool> shouldSkip = hasUnsupported;
+      if (anyUnsupported) {
+        for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+          if (shouldSkip[i]) continue;
+          const auto *func = chunk->getFunction(i);
+          if (!func) continue;
+          for (const auto& instr : func->instructions) {
+            if (instr.opcode == compiler::OpCode::CALL ||
+                instr.opcode == compiler::OpCode::TAIL_CALL ||
+                instr.opcode == compiler::OpCode::CALL_METHOD ||
+                instr.opcode == compiler::OpCode::CALL_SUPER ||
+                instr.opcode == compiler::OpCode::SPREAD_CALL) {
+              shouldSkip[i] = true;
+              if (cfg.aotWarnings) {
+                warn("AOT: skipping function '{}' — calls other functions "
+                     "(dynamic dispatch may reach async code)",
+                     func->name);
+              }
+              break;
+            }
+          }
         }
       }
-    }
 
-    if (!anyCompiled || !mainCompiled) {
-      if (!anyCompiled) {
-        warn("AOT: no functions compiled (all contain or call unsupported opcodes). "
-             "Emitting dummy __main__ that exits with message.");
-      } else if (!mainCompiled) {
-        warn("AOT: entry point '__main__' not compiled (contains or calls unsupported opcodes). "
-             "Emitting dummy executable that exits with message.");
+      bool anyCompiled = false;
+      bool mainCompiled = false;
+      for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+        const auto *func = chunk->getFunction(i);
+        if (func && !shouldSkip[i]) {
+          jit->translate(*func, *module);
+          anyCompiled = true;
+          if (func->name == "__main__") {
+            mainCompiled = true;
+          }
+        }
       }
-    }
 
-    // Verify module
-    if (llvm::verifyModule(*module, &llvm::errs())) {
-      std::string failPath = "/tmp/havel_aot_verify_fail.ll";
-      std::error_code ec;
-      llvm::raw_fd_ostream failOut(failPath, ec, llvm::sys::fs::OF_None);
-      if (!ec) {
-        module->print(failOut, nullptr);
-        error("LLVM IR verification failed (dumped to {})", failPath);
-      } else {
-        error("LLVM IR verification failed");
+      if (!anyCompiled || !mainCompiled) {
+        if (!anyCompiled) {
+          warn("AOT: no functions compiled (all contain or call unsupported opcodes). "
+               "Emitting dummy __main__ that exits with message.");
+        } else if (!mainCompiled) {
+          warn("AOT: entry point '__main__' not compiled (contains or calls unsupported opcodes). "
+               "Emitting dummy executable that exits with message.");
+        }
       }
-      return 1;
-    }
 
-    // Determine output base path
-    std::string aotOutput =
-        cfg.outputPath.empty() ? primaryFile : cfg.outputPath;
-    if (aotOutput.size() >= 3 &&
-        aotOutput.rfind(".hv") == aotOutput.size() - 3) {
-      aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
-    }
-    // If the user passed an explicit -o OUT with a known artifact extension
-    // (.o, .ll, .s, .wasm, .exe), strip it so aotOutput is a true base path.
-    // Otherwise, every emit step (.o appended -> .o.o, .ll appended -> .ll.o)
-    // double-suffixes the file. Only strip well-known extensions, never
-    // arbitrary ones like "ao" or random paths.
-    if (!cfg.outputPath.empty()) {
-      auto endsWith = [&](const char* ext) {
-        size_t n = strlen(ext);
-        return aotOutput.size() > n &&
-               aotOutput.compare(aotOutput.size() - n, n, ext) == 0;
-      };
-      if (endsWith(".o"))      aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
-      else if (endsWith(".ll")) aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
-      else if (endsWith(".s"))  aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
-      else if (endsWith(".wasm")) aotOutput = aotOutput.substr(0, aotOutput.size() - 5);
-      else if (endsWith(".so")) aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
-      else if (endsWith(".exe")) aotOutput = aotOutput.substr(0, aotOutput.size() - 4);
-    }
-    if (aotOutput.empty()) {
-      aotOutput = "output";
-    }
-
-    if (cfg.emitLLVM) {
-      std::string llPath = aotOutput + ".ll";
-      std::error_code ec;
-      llvm::raw_fd_ostream out(llPath, ec, llvm::sys::fs::OF_None);
-      if (ec) {
-        error("Cannot open output file: {}", llPath);
+      // Verify module
+      if (llvm::verifyModule(*module, &llvm::errs())) {
+        std::string failPath = "/tmp/havel_aot_verify_fail.ll";
+        std::error_code ec;
+        llvm::raw_fd_ostream failOut(failPath, ec, llvm::sys::fs::OF_None);
+        if (!ec) {
+          module->print(failOut, nullptr);
+          error("LLVM IR verification failed (dumped to {})", failPath);
+        } else {
+          error("LLVM IR verification failed");
+        }
         return 1;
       }
-      module->print(out, nullptr);
-      info("LLVM IR written to: {}", llPath);
-    }
 
-    if (cfg.emitAsm || cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
-      // Initialize target for native code gen
-      llvm::InitializeNativeTarget();
-      llvm::InitializeNativeTargetAsmPrinter();
-      llvm::InitializeNativeTargetAsmParser();
-
-      std::string targetTripleStr =
-          cfg.arch.empty()
-              ? mapTargetTripleForOS(cfg.targetOS,
-                                     llvm::sys::getDefaultTargetTriple())
-              : cfg.arch;
-      llvm::Triple targetTriple(targetTripleStr);
-      module->setTargetTriple(targetTriple);
-
-      std::string err;
-      auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
-      if (!target) {
-        error("Cannot find target: {}", err);
-        return 1;
+      // Determine output base path
+      std::string aotOutput =
+          cfg.outputPath.empty() ? primaryFile : cfg.outputPath;
+      if (aotOutput.size() >= 3 &&
+          aotOutput.rfind(".hv") == aotOutput.size() - 3) {
+        aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
       }
-      info("AOT Target: {} ({})", target->getName(), targetTripleStr);
-
-      llvm::TargetOptions opt;
-      if (cfg.asmSyntax == LaunchConfig::AsmSyntax::INTEL) {
-        opt.MCOptions.OutputAsmVariant = 1;
+      // If the user passed an explicit -o OUT with a known artifact extension
+      // (.o, .ll, .s, .wasm, .exe), strip it so aotOutput is a true base path.
+      // Otherwise, every emit step (.o appended -> .o.o, .ll appended -> .ll.o)
+      // double-suffixes the file. Only strip well-known extensions, never
+      // arbitrary ones like "ao" or random paths.
+      if (!cfg.outputPath.empty()) {
+        auto endsWith = [&](const char* ext) {
+          size_t n = strlen(ext);
+          return aotOutput.size() > n &&
+                 aotOutput.compare(aotOutput.size() - n, n, ext) == 0;
+        };
+        if (endsWith(".o"))      aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
+        else if (endsWith(".ll")) aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
+        else if (endsWith(".s"))  aotOutput = aotOutput.substr(0, aotOutput.size() - 2);
+        else if (endsWith(".wasm")) aotOutput = aotOutput.substr(0, aotOutput.size() - 5);
+        else if (endsWith(".so")) aotOutput = aotOutput.substr(0, aotOutput.size() - 3);
+        else if (endsWith(".exe")) aotOutput = aotOutput.substr(0, aotOutput.size() - 4);
+      }
+      if (aotOutput.empty()) {
+        aotOutput = "output";
       }
 
-      auto targetMachine =
-          target->createTargetMachine(targetTriple, llvm::sys::getHostCPUName(),
-                                      "", opt, llvm::Reloc::PIC_);
-
-      module->setDataLayout(targetMachine->createDataLayout());
-
-      std::string nativeObjPath;
-
-      if (cfg.emitAsm) {
-        std::string asmPath = aotOutput + ".s";
+      if (cfg.emitLLVM) {
+        std::string llPath = aotOutput + ".ll";
         std::error_code ec;
-        llvm::raw_fd_ostream out(asmPath, ec, llvm::sys::fs::OF_None);
+        llvm::raw_fd_ostream out(llPath, ec, llvm::sys::fs::OF_None);
         if (ec) {
-          error("Cannot open output file: {}", asmPath);
+          error("Cannot open output file: {}", llPath);
           return 1;
         }
-        llvm::legacy::PassManager pm;
-        if (targetMachine->addPassesToEmitFile(
-                pm, out, nullptr, llvm::CodeGenFileType::AssemblyFile)) {
-          error("Target '{}' cannot emit assembly", targetTripleStr);
-          return 1;
-        }
-        pm.run(*module);
-        info("Assembly written to: {}", asmPath);
+        module->print(out, nullptr);
+        info("LLVM IR written to: {}", llPath);
       }
 
-      if (cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
-        nativeObjPath = aotOutput + ".o";
+      if (cfg.emitAsm || cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
+        // Initialize target for native code gen
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
+        llvm::InitializeNativeTargetAsmParser();
+
+        std::string targetTripleStr =
+            cfg.arch.empty()
+                ? mapTargetTripleForOS(cfg.targetOS,
+                                       llvm::sys::getDefaultTargetTriple())
+                : cfg.arch;
+        llvm::Triple targetTriple(targetTripleStr);
+        module->setTargetTriple(targetTriple);
+
+        std::string err;
+        auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
+        if (!target) {
+          error("Cannot find target: {}", err);
+          return 1;
+        }
+        info("AOT Target: {} ({})", target->getName(), targetTripleStr);
+
+        llvm::TargetOptions opt;
+        if (cfg.asmSyntax == LaunchConfig::AsmSyntax::INTEL) {
+          opt.MCOptions.OutputAsmVariant = 1;
+        }
+
+        auto targetMachine =
+            target->createTargetMachine(targetTriple, llvm::sys::getHostCPUName(),
+                                        "", opt, llvm::Reloc::PIC_);
+
+        module->setDataLayout(targetMachine->createDataLayout());
+
+        std::string nativeObjPath;
+
+        if (cfg.emitAsm) {
+          std::string asmPath = aotOutput + ".s";
+          std::error_code ec;
+          llvm::raw_fd_ostream out(asmPath, ec, llvm::sys::fs::OF_None);
+          if (ec) {
+            error("Cannot open output file: {}", asmPath);
+            return 1;
+          }
+          llvm::legacy::PassManager pm;
+          if (targetMachine->addPassesToEmitFile(
+                  pm, out, nullptr, llvm::CodeGenFileType::AssemblyFile)) {
+            error("Target '{}' cannot emit assembly", targetTripleStr);
+            return 1;
+          }
+          pm.run(*module);
+          info("Assembly written to: {}", asmPath);
+        }
+
+        if (cfg.emitObj || cfg.emitBinary || cfg.emitElf) {
+          nativeObjPath = aotOutput + ".o";
+          std::error_code ec;
+          llvm::raw_fd_ostream out(nativeObjPath, ec, llvm::sys::fs::OF_None);
+          if (ec) {
+            error("Cannot open output file: {}", nativeObjPath);
+            return 1;
+          }
+          llvm::legacy::PassManager pm;
+          if (targetMachine->addPassesToEmitFile(
+                  pm, out, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+            error("Target '{}' cannot emit object files", targetTripleStr);
+            return 1;
+          }
+          pm.run(*module);
+          info("Object file written to: {}", nativeObjPath);
+        }
+
+        const bool coreProfile = (cfg.profile == "core");
+
+        if (cfg.emitBinary) {
+          const std::string shExt = sharedLibraryExtensionForOS(cfg.targetOS);
+          std::string soPath = aotOutput + shExt;
+          std::string linkCmd;
+          if (normalizeTargetOS(cfg.targetOS) == "windows") {
+            linkCmd =
+                "clang++ -shared \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
+          } else if (normalizeTargetOS(cfg.targetOS) == "macos") {
+            linkCmd = "clang++ -dynamiclib \"" + nativeObjPath + "\" -o \"" +
+                      soPath + "\"";
+          } else {
+            linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" +
+                      soPath + "\"";
+          }
+          if (!coreProfile) {
+            appendLinkLibraries(linkCmd, jit->linkedLibraries());
+            if (jit->linkedLibraries().empty()) {
+              appendDefaultLlvmLinkLibraries(linkCmd);
+            }
+            appendDefaultNativeLinkLibraries(linkCmd);
+          }
+          int linkRc = std::system(linkCmd.c_str());
+          if (linkRc != 0) {
+            error("Failed to link native shared binary with command: {}",
+                  linkCmd);
+            return 1;
+          }
+          info("Native shared binary written to: {}", soPath);
+        }
+
+        if (cfg.emitElf) {
+          const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
+          std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
+          std::string stubPath = aotOutput + "_stub.cpp";
+          
+          // Get build directory for module search paths
+          std::string buildDir;
+          std::string exePath = Env::executable();
+          if (!exePath.empty()) {
+              buildDir = std::filesystem::path(exePath).parent_path().string();
+          }
+          
+          info("AOT: generating stub at {}", stubPath);
+          {
+            std::ofstream stub(stubPath);
+            if (!stub) {
+              error("Failed to open stub file for writing: {}", stubPath);
+              return 1;
+            }
+            const std::string initSymbol = coreProfile
+                                               ? "havel_vm_init_standalone_core"
+                                               : "havel_vm_init_standalone";
+            const std::string initWithFuncsSymbol = coreProfile
+                                               ? "havel_vm_init_standalone_with_functions_core"
+                                               : "havel_vm_init_standalone_with_functions";
+            if (mainCompiled) {
+              // Collect function metadata for closures.
+              // IMPORTANT: Include ALL functions (even skipped ones) to preserve
+              // original function indices used by CLOSURE opcode.
+              std::vector<std::string> funcNames;
+              std::vector<uint32_t> funcParamCounts;
+              std::vector<uint32_t> funcLocalCounts;
+              std::vector<uint32_t> funcUpvalueCounts;
+              std::vector<uint32_t> funcIsGenerator;
+              std::vector<uint32_t> upvalueIndices;
+              std::vector<uint32_t> upvalueCapturesLocal;
+              
+              for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
+                const auto* func = chunk->getFunction(i);
+                if (func) {
+                  funcNames.push_back(func->name);
+                  funcParamCounts.push_back(func->param_count);
+                  funcLocalCounts.push_back(func->local_count);
+                  funcUpvalueCounts.push_back(static_cast<uint32_t>(func->upvalues.size()));
+                  funcIsGenerator.push_back(func->is_generator ? 1 : 0);
+                  for (const auto& uv : func->upvalues) {
+                    upvalueIndices.push_back(uv.index);
+                    upvalueCapturesLocal.push_back(uv.captures_local ? 1 : 0);
+                  }
+                } else {
+                  // Empty placeholder for null function (shouldn't happen)
+                  funcNames.push_back("");
+                  funcParamCounts.push_back(0);
+                  funcLocalCounts.push_back(0);
+                  funcUpvalueCounts.push_back(0);
+                  funcIsGenerator.push_back(0);
+                }
+              }
+              
+              // Generate arrays for function metadata
+              stub << "#include <cstdint>\n";
+              stub << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n";
+              stub << "extern \"C\" void* " << initWithFuncsSymbol << "(\n";
+              stub << "    const char**, uint32_t,\n";
+              stub << "    const char**, uint32_t,\n";
+              stub << "    const uint32_t*, const uint32_t*,\n";
+              stub << "    const uint32_t*, const uint32_t*,\n";
+              stub << "    const uint32_t*, const uint32_t*, uint32_t,\n";
+              stub << "    const char*);\n";
+              stub << "int main() {\n";
+              stub << "    const char* strings[] = {\n";
+              const auto &chunkStrings = chunk->getAllStrings();
+              for (size_t i = 0; i < chunkStrings.size(); ++i) {
+                const std::string &s = chunkStrings[i];
+                std::string escaped;
+                for (char c : s) {
+                  if (c == '"') escaped += "\\\"";
+                  else if (c == '\\') escaped += "\\\\";
+                  else if (c == '\n') escaped += "\\n";
+                  else escaped += c;
+                }
+                stub << "        \"" << escaped << "\",\n";
+              }
+              stub << "    };\n";
+              
+              // Function names
+              stub << "    const char* func_names[] = {\n";
+              for (size_t i = 0; i < funcNames.size(); ++i) {
+                std::string escaped = funcNames[i];
+                for (char& c : escaped) {
+                  if (c == '"') c = '\\'; // strings don't have quotes in names
+                }
+                stub << "        \"" << escaped << "\",\n";
+              }
+              stub << "    };\n";
+              
+              // Function param counts
+              stub << "    const uint32_t func_param_counts[] = {\n";
+              for (size_t i = 0; i < funcParamCounts.size(); ++i) {
+                stub << "        " << funcParamCounts[i] << ",\n";
+              }
+              stub << "    };\n";
+              
+              // Function local counts
+              stub << "    const uint32_t func_local_counts[] = {\n";
+              for (size_t i = 0; i < funcLocalCounts.size(); ++i) {
+                stub << "        " << funcLocalCounts[i] << ",\n";
+              }
+              stub << "    };\n";
+              
+              // Function upvalue counts
+              stub << "    const uint32_t func_upvalue_counts[] = {\n";
+              for (size_t i = 0; i < funcUpvalueCounts.size(); ++i) {
+                stub << "        " << funcUpvalueCounts[i] << ",\n";
+              }
+              stub << "    };\n";
+              
+              // Function is_generator
+              stub << "    const uint32_t func_is_generator[] = {\n";
+              for (size_t i = 0; i < funcIsGenerator.size(); ++i) {
+                stub << "        " << funcIsGenerator[i] << ",\n";
+              }
+              stub << "    };\n";
+              
+              // Upvalue indices
+              stub << "    const uint32_t upvalue_indices[] = {\n";
+              for (size_t i = 0; i < upvalueIndices.size(); ++i) {
+                stub << "        " << upvalueIndices[i] << ",\n";
+              }
+              stub << "    };\n";
+              
+              // Upvalue captures_local
+              stub << "    const uint32_t upvalue_captures_local[] = {\n";
+              for (size_t i = 0; i < upvalueCapturesLocal.size(); ++i) {
+                stub << "        " << upvalueCapturesLocal[i] << ",\n";
+              }
+              stub << "    };\n";
+              
+              std::string escapedBuildDir = buildDir;
+              for (char& c : escapedBuildDir) {
+                  if (c == '"') escapedBuildDir += '\\';
+                  else if (c == '\\') escapedBuildDir += '\\\\';
+              }
+              
+              stub << "    void* vm = " << initWithFuncsSymbol << "(strings, "
+                   << chunkStrings.size() << ",\n";
+              stub << "        func_names, " << funcNames.size() << ",\n";
+              stub << "        func_param_counts, func_local_counts,\n";
+              stub << "        func_upvalue_counts, func_is_generator,\n";
+              stub << "        upvalue_indices, upvalue_captures_local, "
+                   << upvalueIndices.size() << ",\n";
+              stub << "        \"" << escapedBuildDir << "\");\n";
+              stub << "    uint64_t dummy_args[1024];\n";
+              stub << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
+                      "0x7ffb000000000000ULL;\n";
+              stub << "    __main__(vm, dummy_args, 0);\n";
+              stub << "    return 0;\n";
+              stub << "}\n";
+            } else {
+              // Entry point not compiled — emit a dummy main that prints message
+              stub
+                  << "#include <cstdio>\n"
+                  << "int main() {\n"
+                  << "    fprintf(stderr, \"AOT: entry point '__main__' not compiled (contains or calls unsupported opcodes). Run with interpreter.\\n\");\n"
+                  << "    return 0;\n"
+                  << "}\n";
+            }
+          }
+
+          std::string linkCmd;
+          if (targetWindows) {
+            linkCmd = "clang++ \"" + stubPath + "\" \"" + nativeObjPath +
+                      "\" -o \"" + binPath + "\"";
+          } else {
+            linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" +
+                      nativeObjPath + "\" -o \"" + binPath + "\" -Wl,--export-dynamic";
+            std::string exePath = Env::executable();
+            if (!exePath.empty()) {
+              std::string libDir =
+                  std::filesystem::path(exePath).parent_path().string();
+              linkCmd += " -L\"" + libDir + "\"";
+            }
+            if (coreProfile) {
+              linkCmd += " -lhavel_aot_core_shim -lhavel_lang_core";
+            } else {
+              linkCmd += " -lhavel_lang -lhavel_core";
+              // havel_modules is a static archive only when module plugins
+              // are disabled (CMakeLists.txt:1057-1060). With
+              // ENABLE_MODULE_PLUGINS=ON, havel_modules is an INTERFACE
+              // target — no libhavel_modules.a archive is produced. Linking
+              // against the missing archive fails the entire
+              // --full-aot executable step.
+#ifndef ENABLE_MODULE_PLUGINS
+              linkCmd += " -lhavel_modules";
+#endif
+#if defined(ENABLE_QT_UI_BACKEND) || defined(HAVE_QT_EXTENSION)
+              linkCmd += " -lhavel_gui";
+#endif
+            }
+          }
+          appendLinkLibraries(linkCmd, jit->linkedLibraries());
+          if (jit->linkedLibraries().empty()) {
+            appendDefaultLlvmLinkLibraries(linkCmd);
+          }
+          appendDefaultNativeLinkLibraries(linkCmd);
+          int linkRc = std::system(linkCmd.c_str());
+          if (linkRc != 0) {
+            error("Failed to link native AOT executable with command: {}",
+                  linkCmd);
+            // std::filesystem::remove(stubPath);
+            return 1;
+          }
+          info("Native AOT executable written to: {}", binPath);
+          // std::filesystem::remove(stubPath);
+        }
+      }
+
+      if (cfg.emitWasm) {
+        std::string targetTripleStr = "wasm32-unknown-unknown";
+        llvm::Triple targetTriple(targetTripleStr);
+        module->setTargetTriple(targetTriple);
+
+        std::string err;
+        auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
+        if (!target) {
+          error("Cannot find WebAssembly target: {}", err);
+          return 1;
+        }
+
+        llvm::TargetOptions opt;
+        auto targetMachine = target->createTargetMachine(
+            targetTriple, "generic", "", opt, llvm::Reloc::PIC_);
+
+        module->setDataLayout(targetMachine->createDataLayout());
+
+        std::string wasmPath = aotOutput + ".wasm";
         std::error_code ec;
-        llvm::raw_fd_ostream out(nativeObjPath, ec, llvm::sys::fs::OF_None);
+        llvm::raw_fd_ostream out(wasmPath, ec, llvm::sys::fs::OF_None);
         if (ec) {
-          error("Cannot open output file: {}", nativeObjPath);
+          error("Cannot open output file: {}", wasmPath);
           return 1;
         }
         llvm::legacy::PassManager pm;
         if (targetMachine->addPassesToEmitFile(
                 pm, out, nullptr, llvm::CodeGenFileType::ObjectFile)) {
-          error("Target '{}' cannot emit object files", targetTripleStr);
+          error("Target '{}' cannot emit WebAssembly object", targetTripleStr);
           return 1;
         }
         pm.run(*module);
-        info("Object file written to: {}", nativeObjPath);
+        info("WebAssembly binary written to: {}", wasmPath);
       }
 
-      const bool coreProfile = (cfg.profile == "core");
-
-      if (cfg.emitBinary) {
-        const std::string shExt = sharedLibraryExtensionForOS(cfg.targetOS);
-        std::string soPath = aotOutput + shExt;
-        std::string linkCmd;
-        if (normalizeTargetOS(cfg.targetOS) == "windows") {
-          linkCmd =
-              "clang++ -shared \"" + nativeObjPath + "\" -o \"" + soPath + "\"";
-        } else if (normalizeTargetOS(cfg.targetOS) == "macos") {
-          linkCmd = "clang++ -dynamiclib \"" + nativeObjPath + "\" -o \"" +
-                    soPath + "\"";
-        } else {
-          linkCmd = "clang++ -shared -fPIC \"" + nativeObjPath + "\" -o \"" +
-                    soPath + "\"";
-        }
-        if (!coreProfile) {
-          appendLinkLibraries(linkCmd, jit.linkedLibraries());
-          if (jit.linkedLibraries().empty()) {
-            appendDefaultLlvmLinkLibraries(linkCmd);
-          }
-          appendDefaultNativeLinkLibraries(linkCmd);
-        }
-        int linkRc = std::system(linkCmd.c_str());
-        if (linkRc != 0) {
-          error("Failed to link native shared binary with command: {}",
-                linkCmd);
-          return 1;
-        }
-        info("Native shared binary written to: {}", soPath);
-      }
-
-      if (cfg.emitElf) {
-        const bool targetWindows = normalizeTargetOS(cfg.targetOS) == "windows";
-        std::string binPath = aotOutput + (targetWindows ? ".exe" : "");
-        std::string stubPath = aotOutput + "_stub.cpp";
-        
-        // Get build directory for module search paths
-        std::string buildDir;
-        std::string exePath = Env::executable();
-        if (!exePath.empty()) {
-            buildDir = std::filesystem::path(exePath).parent_path().string();
-        }
-        
-        info("AOT: generating stub at {}", stubPath);
-        {
-          std::ofstream stub(stubPath);
-          if (!stub) {
-            error("Failed to open stub file for writing: {}", stubPath);
-            return 1;
-          }
-          const std::string initSymbol = coreProfile
-                                             ? "havel_vm_init_standalone_core"
-                                             : "havel_vm_init_standalone";
-          const std::string initWithFuncsSymbol = coreProfile
-                                             ? "havel_vm_init_standalone_with_functions_core"
-                                             : "havel_vm_init_standalone_with_functions";
-          if (mainCompiled) {
-            // Collect function metadata for closures.
-            // IMPORTANT: Include ALL functions (even skipped ones) to preserve
-            // original function indices used by CLOSURE opcode.
-            std::vector<std::string> funcNames;
-            std::vector<uint32_t> funcParamCounts;
-            std::vector<uint32_t> funcLocalCounts;
-            std::vector<uint32_t> funcUpvalueCounts;
-            std::vector<uint32_t> funcIsGenerator;
-            std::vector<uint32_t> upvalueIndices;
-            std::vector<uint32_t> upvalueCapturesLocal;
-            
-            for (size_t i = 0; i < chunk->getFunctionCount(); ++i) {
-              const auto* func = chunk->getFunction(i);
-              if (func) {
-                funcNames.push_back(func->name);
-                funcParamCounts.push_back(func->param_count);
-                funcLocalCounts.push_back(func->local_count);
-                funcUpvalueCounts.push_back(static_cast<uint32_t>(func->upvalues.size()));
-                funcIsGenerator.push_back(func->is_generator ? 1 : 0);
-                for (const auto& uv : func->upvalues) {
-                  upvalueIndices.push_back(uv.index);
-                  upvalueCapturesLocal.push_back(uv.captures_local ? 1 : 0);
-                }
-              } else {
-                // Empty placeholder for null function (shouldn't happen)
-                funcNames.push_back("");
-                funcParamCounts.push_back(0);
-                funcLocalCounts.push_back(0);
-                funcUpvalueCounts.push_back(0);
-                funcIsGenerator.push_back(0);
-              }
-            }
-            
-            // Generate arrays for function metadata
-            stub << "#include <cstdint>\n";
-            stub << "extern \"C\" uint64_t __main__(void*, uint64_t*, uint32_t);\n";
-            stub << "extern \"C\" void* " << initWithFuncsSymbol << "(\n";
-            stub << "    const char**, uint32_t,\n";
-            stub << "    const char**, uint32_t,\n";
-            stub << "    const uint32_t*, const uint32_t*,\n";
-            stub << "    const uint32_t*, const uint32_t*,\n";
-            stub << "    const uint32_t*, const uint32_t*, uint32_t,\n";
-            stub << "    const char*);\n";
-            stub << "int main() {\n";
-            stub << "    const char* strings[] = {\n";
-            const auto &chunkStrings = chunk->getAllStrings();
-            for (size_t i = 0; i < chunkStrings.size(); ++i) {
-              const std::string &s = chunkStrings[i];
-              std::string escaped;
-              for (char c : s) {
-                if (c == '"') escaped += "\\\"";
-                else if (c == '\\') escaped += "\\\\";
-                else if (c == '\n') escaped += "\\n";
-                else escaped += c;
-              }
-              stub << "        \"" << escaped << "\",\n";
-            }
-            stub << "    };\n";
-            
-            // Function names
-            stub << "    const char* func_names[] = {\n";
-            for (size_t i = 0; i < funcNames.size(); ++i) {
-              std::string escaped = funcNames[i];
-              for (char& c : escaped) {
-                if (c == '"') c = '\\'; // strings don't have quotes in names
-              }
-              stub << "        \"" << escaped << "\",\n";
-            }
-            stub << "    };\n";
-            
-            // Function param counts
-            stub << "    const uint32_t func_param_counts[] = {\n";
-            for (size_t i = 0; i < funcParamCounts.size(); ++i) {
-              stub << "        " << funcParamCounts[i] << ",\n";
-            }
-            stub << "    };\n";
-            
-            // Function local counts
-            stub << "    const uint32_t func_local_counts[] = {\n";
-            for (size_t i = 0; i < funcLocalCounts.size(); ++i) {
-              stub << "        " << funcLocalCounts[i] << ",\n";
-            }
-            stub << "    };\n";
-            
-            // Function upvalue counts
-            stub << "    const uint32_t func_upvalue_counts[] = {\n";
-            for (size_t i = 0; i < funcUpvalueCounts.size(); ++i) {
-              stub << "        " << funcUpvalueCounts[i] << ",\n";
-            }
-            stub << "    };\n";
-            
-            // Function is_generator
-            stub << "    const uint32_t func_is_generator[] = {\n";
-            for (size_t i = 0; i < funcIsGenerator.size(); ++i) {
-              stub << "        " << funcIsGenerator[i] << ",\n";
-            }
-            stub << "    };\n";
-            
-            // Upvalue indices
-            stub << "    const uint32_t upvalue_indices[] = {\n";
-            for (size_t i = 0; i < upvalueIndices.size(); ++i) {
-              stub << "        " << upvalueIndices[i] << ",\n";
-            }
-            stub << "    };\n";
-            
-            // Upvalue captures_local
-            stub << "    const uint32_t upvalue_captures_local[] = {\n";
-            for (size_t i = 0; i < upvalueCapturesLocal.size(); ++i) {
-              stub << "        " << upvalueCapturesLocal[i] << ",\n";
-            }
-            stub << "    };\n";
-            
-            std::string escapedBuildDir = buildDir;
-            for (char& c : escapedBuildDir) {
-                if (c == '"') escapedBuildDir += '\\';
-                else if (c == '\\') escapedBuildDir += '\\\\';
-            }
-            
-            stub << "    void* vm = " << initWithFuncsSymbol << "(strings, "
-                 << chunkStrings.size() << ",\n";
-            stub << "        func_names, " << funcNames.size() << ",\n";
-            stub << "        func_param_counts, func_local_counts,\n";
-            stub << "        func_upvalue_counts, func_is_generator,\n";
-            stub << "        upvalue_indices, upvalue_captures_local, "
-                 << upvalueIndices.size() << ",\n";
-            stub << "        \"" << escapedBuildDir << "\");\n";
-            stub << "    uint64_t dummy_args[1024];\n";
-            stub << "    for(int i=0; i<1024; ++i) dummy_args[i] = "
-                    "0x7ffb000000000000ULL;\n";
-            stub << "    __main__(vm, dummy_args, 0);\n";
-            stub << "    return 0;\n";
-            stub << "}\n";
-          } else {
-            // Entry point not compiled — emit a dummy main that prints message
-            stub
-                << "#include <cstdio>\n"
-                << "int main() {\n"
-                << "    fprintf(stderr, \"AOT: entry point '__main__' not compiled (contains or calls unsupported opcodes). Run with interpreter.\\n\");\n"
-                << "    return 0;\n"
-                << "}\n";
-          }
-        }
-
-        std::string linkCmd;
-        if (targetWindows) {
-          linkCmd = "clang++ \"" + stubPath + "\" \"" + nativeObjPath +
-                    "\" -o \"" + binPath + "\"";
-        } else {
-          linkCmd = "clang++ -flto -fuse-ld=lld \"" + stubPath + "\" \"" +
-                    nativeObjPath + "\" -o \"" + binPath + "\" -Wl,--export-dynamic";
-          std::string exePath = Env::executable();
-          if (!exePath.empty()) {
-            std::string libDir =
-                std::filesystem::path(exePath).parent_path().string();
-            linkCmd += " -L\"" + libDir + "\"";
-          }
-          if (coreProfile) {
-            linkCmd += " -lhavel_aot_core_shim -lhavel_lang_core";
-          } else {
-            linkCmd += " -lhavel_lang -lhavel_core";
-            // havel_modules is a static archive only when module plugins
-            // are disabled (CMakeLists.txt:1057-1060). With
-            // ENABLE_MODULE_PLUGINS=ON, havel_modules is an INTERFACE
-            // target — no libhavel_modules.a archive is produced. Linking
-            // against the missing archive fails the entire
-            // --full-aot executable step.
-#ifndef ENABLE_MODULE_PLUGINS
-            linkCmd += " -lhavel_modules";
-#endif
-#if defined(ENABLE_QT_UI_BACKEND) || defined(HAVE_QT_EXTENSION)
-            linkCmd += " -lhavel_gui";
-#endif
-          }
-        }
-        appendLinkLibraries(linkCmd, jit.linkedLibraries());
-        if (jit.linkedLibraries().empty()) {
-          appendDefaultLlvmLinkLibraries(linkCmd);
-        }
-        appendDefaultNativeLinkLibraries(linkCmd);
-        int linkRc = std::system(linkCmd.c_str());
-        if (linkRc != 0) {
-          error("Failed to link native AOT executable with command: {}",
-                linkCmd);
-          // std::filesystem::remove(stubPath);
-          return 1;
-        }
-        info("Native AOT executable written to: {}", binPath);
-        // std::filesystem::remove(stubPath);
-      }
+      return 0;
     }
-
-    if (cfg.emitWasm) {
-      std::string targetTripleStr = "wasm32-unknown-unknown";
-      llvm::Triple targetTriple(targetTripleStr);
-      module->setTargetTriple(targetTriple);
-
-      std::string err;
-      auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, err);
-      if (!target) {
-        error("Cannot find WebAssembly target: {}", err);
-        return 1;
-      }
-
-      llvm::TargetOptions opt;
-      auto targetMachine = target->createTargetMachine(
-          targetTriple, "generic", "", opt, llvm::Reloc::PIC_);
-
-      module->setDataLayout(targetMachine->createDataLayout());
-
-      std::string wasmPath = aotOutput + ".wasm";
-      std::error_code ec;
-      llvm::raw_fd_ostream out(wasmPath, ec, llvm::sys::fs::OF_None);
-      if (ec) {
-        error("Cannot open output file: {}", wasmPath);
-        return 1;
-      }
-      llvm::legacy::PassManager pm;
-      if (targetMachine->addPassesToEmitFile(
-              pm, out, nullptr, llvm::CodeGenFileType::ObjectFile)) {
-        error("Target '{}' cannot emit WebAssembly object", targetTripleStr);
-        return 1;
-      }
-      pm.run(*module);
-      info("WebAssembly binary written to: {}", wasmPath);
+#else
+    if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm ||
+        cfg.emitBinary) {
+      error("AOT compilation requires LLVM support. Rebuild with ENABLE_LLVM=ON");
+      return 1;
     }
+#endif
 
+    // Serialize and write bytecode
+    havel::compiler::ValueSerializer serializer;
+    auto data = serializer.serializeChunk(*chunk);
+
+    info("Serialization complete, {} bytes", data.size());
+    std::ofstream outFile(outputPath, std::ios::binary);
+    if (!outFile.is_open()) {
+      error("Cannot open output file: {}", outputPath);
+      return 1;
+    }
+    outFile.write(reinterpret_cast<const char *>(data.data()), data.size());
+    if (!outFile.good()) {
+      error("Failed to write output file: {}", outputPath);
+      return 1;
+    }
+    outFile.close();
+
+    const auto writeCompanionCache = [&](const std::string &path) {
+      if (path.empty()) {
+        return;
+      }
+      std::string cachePath = companionCachePath(path);
+      std::ofstream cacheOut(cachePath, std::ios::binary);
+      if (!cacheOut.is_open()) {
+        warn("Cannot open bytecode cache file: {}", cachePath);
+        return;
+      }
+      cacheOut.write(reinterpret_cast<const char *>(data.data()), data.size());
+      if (!cacheOut.good()) {
+        warn("Failed to write bytecode cache file: {}", cachePath);
+        return;
+      }
+      cacheOut.close();
+      info("Bytecode cache written to: {}", cachePath);
+    };
+
+    writeCompanionCache(outputPath);
+
+    info("Build successful: {} ({} bytes)", outputPath, data.size());
     return 0;
   }
-#else
-  if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm ||
-      cfg.emitBinary) {
-    error("AOT compilation requires LLVM support. Rebuild with ENABLE_LLVM=ON");
-    return 1;
-  }
-#endif
-
-  // Serialize and write bytecode
-  havel::compiler::ValueSerializer serializer;
-  auto data = serializer.serializeChunk(*chunk);
-
-  info("Serialization complete, {} bytes", data.size());
-  std::ofstream outFile(outputPath, std::ios::binary);
-  if (!outFile.is_open()) {
-    error("Cannot open output file: {}", outputPath);
-    return 1;
-  }
-  outFile.write(reinterpret_cast<const char *>(data.data()), data.size());
-  if (!outFile.good()) {
-    error("Failed to write output file: {}", outputPath);
-    return 1;
-  }
-  outFile.close();
-
-  const auto writeCompanionCache = [&](const std::string &path) {
-    if (path.empty()) {
-      return;
-    }
-    std::string cachePath = companionCachePath(path);
-    std::ofstream cacheOut(cachePath, std::ios::binary);
-    if (!cacheOut.is_open()) {
-      warn("Cannot open bytecode cache file: {}", cachePath);
-      return;
-    }
-    cacheOut.write(reinterpret_cast<const char *>(data.data()), data.size());
-    if (!cacheOut.good()) {
-      warn("Failed to write bytecode cache file: {}", cachePath);
-      return;
-    }
-    cacheOut.close();
-    info("Bytecode cache written to: {}", cachePath);
-  };
-
-  writeCompanionCache(outputPath);
-
-  info("Build successful: {} ({} bytes)", outputPath, data.size());
-  return 0;
-}
 
 int HavelLauncher::diffPipeline(const havel::init::LaunchConfig &cfg) {
   namespace fs = std::filesystem;

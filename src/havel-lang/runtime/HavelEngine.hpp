@@ -107,6 +107,13 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
                 existingJIT = jitCompiler_.get();
                 vm_->setJITCompiler(std::move(jitCompiler_));
             }
+            vm_->setHotTraceCallback([existingJIT](const compiler::BytecodeFunction& func,
+                                                 uint32_t start_ip,
+                                                 uint64_t hot_count) {
+                if (existingJIT) {
+                    existingJIT->compileTrace(func, start_ip, hot_count);
+                }
+            });
             existingJIT->setDebugMode(Configs::Get().Get<bool>("Compiler.DebugJIT", false));
             existingJIT->setDumpAsmToFile(Configs::Get().Get<bool>("Compiler.OutputAsm", false));
             existingJIT->setDumpIR(Configs::Get().Get<bool>("Compiler.DumpIR", false));

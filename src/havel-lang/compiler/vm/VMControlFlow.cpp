@@ -172,6 +172,56 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
       }
     }
 
+    // Validate that callee is callable before attempting to call
+    if (!callee_value.isHostFuncId() &&
+        !callee_value.isFunctionObjId() &&
+        !callee_value.isClosureId() &&
+        !callee_value.isCoroutineId() &&
+        !callee_value.isBoundMethodId()) {
+      // Check if it's an object with __call or op_call
+      bool isCallableObject = false;
+      if (callee_value.isObjectId()) {
+        auto *obj = heap_.object(callee_value.asObjectId());
+        if (obj) {
+          auto *callVal = obj->get("__call");
+          if (!callVal) callVal = obj->get("op_call");
+          if (callVal && (callVal->isHostFuncId() || callVal->isFunctionObjId() || callVal->isClosureId())) {
+            isCallableObject = true;
+          }
+        }
+      }
+      if (!isCallableObject) {
+        std::string calleeType = callee_value.isNull() ? "null" :
+                                 callee_value.isInt() ? "int" :
+                                 callee_value.isStringId() ? "string" :
+                                 callee_value.isObjectId() ? "object" :
+                                 callee_value.isBool() ? "bool" :
+                                 callee_value.isArrayId() ? "array" :
+                                 callee_value.isSetId() ? "set" :
+                                 "unknown";
+        
+        // Build Python-style traceback by walking the call stack
+        std::string traceback = "\nTraceback (most recent call last):";
+        for (size_t i = 0; i < frame_count_; ++i) {
+            auto &frame = frame_arena_[i];
+            if (frame.function) {
+                auto loc = nearestSourceLocation(*frame.function, frame.ip);
+                if (loc.line > 0) {
+                    traceback += "\n  File \"<bytecode>\", line " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+                } else {
+                    traceback += "\n  File \"<bytecode>\", line <unknown>";
+                }
+                if (!frame.function->name.empty()) {
+                    traceback += ", in " + frame.function->name;
+                }
+            }
+        }
+        traceback += "\n    " + std::string("Attempted to call non-callable value of type ") + calleeType;
+        
+        COMPILER_THROW("TypeError: Attempted to call non-callable value of type " + calleeType + traceback);
+      }
+    }
+
     doCall(callee_value, std::move(args));
     break;
   }
@@ -187,12 +237,61 @@ case OpCode::TAIL_CALL: {
     for (uint32_t i = 0; i < arg_count; ++i) {
       args[arg_count - 1 - i] = popStack();
     }
-    Value callee_value = popStack();
+Value callee_value = popStack();
+    // Validate that callee is callable before attempting to call
+    if (!callee_value.isHostFuncId() &&
+        !callee_value.isFunctionObjId() &&
+        !callee_value.isClosureId() &&
+        !callee_value.isCoroutineId() &&
+        !callee_value.isBoundMethodId()) {
+      bool isCallableObject = false;
+      if (callee_value.isObjectId()) {
+        auto *obj = heap_.object(callee_value.asObjectId());
+        if (obj) {
+          auto *callVal = obj->get("__call");
+          if (!callVal) callVal = obj->get("op_call");
+          if (callVal && (callVal->isHostFuncId() || callVal->isFunctionObjId() || callVal->isClosureId())) {
+            isCallableObject = true;
+          }
+        }
+      }
+      if (!isCallableObject) {
+        std::string calleeType = callee_value.isNull() ? "null" :
+                                 callee_value.isInt() ? "int" :
+                                 callee_value.isStringId() ? "string" :
+                                 callee_value.isObjectId() ? "object" :
+                                 callee_value.isBool() ? "bool" :
+                                 callee_value.isArrayId() ? "array" :
+                                 callee_value.isSetId() ? "set" :
+                                 "unknown";
+        
+        // Build Python-style traceback by walking the call stack
+        std::string traceback = "\nTraceback (most recent call last):";
+        for (size_t i = 0; i < frame_count_; ++i) {
+            auto &frame = frame_arena_[i];
+            if (frame.function) {
+                auto loc = nearestSourceLocation(*frame.function, frame.ip);
+                if (loc.line > 0) {
+                    traceback += "\n  File \"<bytecode>\", line " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+                } else {
+                    traceback += "\n  File \"<bytecode>\", line <unknown>";
+                }
+                if (!frame.function->name.empty()) {
+                    traceback += ", in " + frame.function->name;
+                }
+            }
+        }
+        traceback += "\n    " + std::string("Attempted to call non-callable value of type ") + calleeType;
+        
+        COMPILER_THROW("TypeError: Attempted to call non-callable value of type " + calleeType + traceback);
+      }
+    }
+
     doTailCall(callee_value, std::move(args));
     break;
   }
 
-  case OpCode::CALL_METHOD: {
+case OpCode::CALL_METHOD: {
     // Dispatches based on receiver type without boxing.
     if (instruction.operands.size() != 2 ||
         !instruction.operands[0].isStringValId() ||

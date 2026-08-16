@@ -1479,6 +1479,10 @@ op_LENGTH: {
 op_JUMP: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
+    uint32_t target = inst.operands[0].asInt();
+    if (target < frm.ip) {
+        recordBackedgePublic(frm.ip);
+    }
     execJump(inst);
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1495,6 +1499,11 @@ op_JUMP: {
 op_JUMP_IF_FALSE: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
+    uint32_t target = inst.operands[0].asInt();
+    Value cond_peek = stack.empty() ? Value::makeNull() : stack.top();
+    if (!isTruthy(cond_peek) && target < frm.ip) {
+        recordBackedgePublic(frm.ip);
+    }
     execJumpIfFalse(inst);
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1511,6 +1520,11 @@ op_JUMP_IF_FALSE: {
 op_JUMP_IF_TRUE: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
+    uint32_t target = inst.operands[0].asInt();
+    Value cond_peek = stack.empty() ? Value::makeNull() : stack.top();
+    if (isTruthy(cond_peek) && target < frm.ip) {
+        recordBackedgePublic(frm.ip);
+    }
     execJumpIfTrue(inst);
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
@@ -1547,6 +1561,9 @@ op_JUMP_IF_NULL: {
     uint32_t target = inst.operands[0].asInt();
     Value value = popStack();
     if (value.isNull()) {
+        if (target < frm.ip) {
+            recordBackedgePublic(frm.ip);
+        }
         frm.ip = target;
     } else {
         frm.ip++;

@@ -706,7 +706,37 @@ fn _allWindows() {
 }
 
 // ============================================================
-// Module-level functions — return Window instances
+// Snapshot — frozen property-style view of a Window
+// ============================================================
+
+fn _snapshot(_w) {
+	{
+		id: _w.id,
+		title: _w.title(),
+		class: _w.className(),
+		pid: _w.pid(),
+		exe: _w.exe(),
+		cmdline: _w.cmdline(),
+		close: fn() { _w.close() },
+		hide: fn() { _w.hide() },
+		show: fn() { _w.show() },
+		focus: fn() { _w.activate() },
+		min: fn() { _w.minimize() },
+		max: fn() { _w.maximize() },
+		restore: fn() { _w.restore() },
+		snap: fn(pos) { _w.snap(pos) },
+		center: fn() { _w.center() },
+		fullscreen: fn() { _w.fullscreen() },
+		move: fn(x, y) { _w.move(x, y) },
+		moveResize: fn(x, y, w, h) { _w.moveResize(x, y, w, h) },
+		resize: fn(w, h) { _w.resize(w, h) },
+		setAlwaysOnTop: fn(b) { _w.setAlwaysOnTop(b) },
+		pos: fn() { _w.pos() },
+	}
+}
+
+// ============================================================
+// Module-level functions — return Window snapshots
 // ============================================================
 
 fn activeId() {
@@ -727,14 +757,14 @@ fn activeId() {
 fn active() {
 	_aid = activeId()
 	if _aid == 0 { return null }
-	Window(_aid)
+	_snapshot(Window(_aid))
 }
 
 fn list() {
 	_ids = _allWindows()
 	_wins = []
 	for _id in _ids {
-		_wins.push(Window(_id))
+		_wins.push(_snapshot(Window(_id)))
 	}
 	_wins
 }

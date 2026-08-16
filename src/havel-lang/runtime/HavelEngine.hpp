@@ -387,30 +387,14 @@ vm_->addIntervalResult(timer_id, result);
                 compiler::DependencyTrackerScope scope(tracker);
                 bool conditionMet = false;
                 auto dumpTitle = [&]() {
-                    const auto& gmap = vm_->getGlobals();
-                    auto ti = gmap.find("title_");
-                    if (ti == gmap.end()) return std::string("<title_ missing>");
-                    auto& v = ti->second;
-                    if (v.isStringId() || v.isStringValId()) {
-                        auto sp = vm_->getStringPtr(v);
-                        if (!sp) return std::string("<title_ string-null>");
-                        return *sp;
-                    }
-                    return std::string("<title_ ") + vm_->toString(v) + ">";
+                    auto ti = vm_->getGlobals().find("title_");
+                    if (ti == vm_->getGlobals().end()) return std::string("<title_ missing>");
+                    if (!ti->second.isStringId()) return std::string("<title_ not string>");
+                    auto* sp = vm_->getStringPtr(ti->second);
+                    if (!sp) return std::string("<title_ null>");
+                    return *sp;
                 };
-                auto dumpMode = [&]() {
-                    const auto& gmap = vm_->getGlobals();
-                    auto ti = gmap.find("mode");
-                    if (ti == gmap.end()) return std::string("<mode missing>");
-                    auto& v = ti->second;
-                    if (v.isStringId() || v.isStringValId()) {
-                        auto sp = vm_->getStringPtr(v);
-                        if (!sp) return std::string("<mode string-null>");
-                        return *sp;
-                    }
-                    return std::string("<mode ") + vm_->toString(v) + ">";
-                };
-                fprintf(stderr, "[R]     title_='%s' mode='%s' for alias=%s\n", dumpTitle().c_str(), dumpMode().c_str(), g->hotkey_condition_alias.c_str());
+                fprintf(stderr, "[R]     title_='%s' for alias=%s\n", dumpTitle().c_str(), g->hotkey_condition_alias.c_str());
                 try {
                     compiler::Value result = vm_->callFunctionSync(*condVal, {});
                     conditionMet = vm_->toBool(result);

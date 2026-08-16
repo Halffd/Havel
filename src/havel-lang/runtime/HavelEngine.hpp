@@ -27,6 +27,9 @@
 #include <memory>
 #include <string>
 #include <cstdlib>
+#include <mutex>
+#include <unordered_set>
+#include <vector>
 #include "utils/StartupTiming.hpp"
 
 namespace havel {
@@ -722,6 +725,13 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
 
         for (;;) {
             if (vm_->exit_requested_.load()) break;
+
+            // Drain any var_names queued from inside a goroutine's dispatch
+            // loop. Doing this here (after exit check, before any fiber runs)
+            // means the re-eval runs with current_executing_fiber_ == nullptr,
+            // so callFunctionSync's nested dispatch can't wedge the goroutine
+            // frame that produced the VAR_CHANGED event.
+            drainPendingVarChanges();
 
             if (hostContext_->eventQueue) {
                 hostContext_->eventQueue->processAll();

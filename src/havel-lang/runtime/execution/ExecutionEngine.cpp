@@ -154,11 +154,11 @@ bool ExecutionEngine::executeFrame() {
 		// If there are suspended goroutines (sleeping, waiting on channels, etc.),
 		// we should return true so the event loop keeps calling us to wake them.
 		// Only return false if there's truly nothing running or waiting.
-		return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
-	}
+return scheduler_->hasRunnableFibers() || scheduler_->suspendedCount() > 0;
+  }
 
 
-if (g->persistent && g->state == Scheduler::GoroutineState::Created
+ if (g->persistent && g->state == Scheduler::GoroutineState::Created
     && g->hotkey_condition_callback_id != 0) {
     auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
     // Print watched global variables for debugging conditional hotkeys

@@ -199,7 +199,26 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
                                  callee_value.isArrayId() ? "array" :
                                  callee_value.isSetId() ? "set" :
                                  "unknown";
-        COMPILER_THROW("Attempted to call non-callable value of type " + calleeType);
+        
+        // Build Python-style traceback by walking the call stack
+        std::string traceback = "\nTraceback (most recent call last):";
+        for (size_t i = 0; i < frame_count_; ++i) {
+            auto &frame = frame_arena_[i];
+            if (frame.function) {
+                auto loc = nearestSourceLocation(*frame.function, frame.ip);
+                if (loc.line > 0) {
+                    traceback += "\n  File \"<bytecode>\", line " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+                } else {
+                    traceback += "\n  File \"<bytecode>\", line <unknown>";
+                }
+                if (!frame.function->name.empty()) {
+                    traceback += ", in " + frame.function->name;
+                }
+            }
+        }
+        traceback += "\n    " + std::string("Attempted to call non-callable value of type ") + calleeType;
+        
+        COMPILER_THROW("TypeError: Attempted to call non-callable value of type " + calleeType + traceback);
       }
     }
 
@@ -245,7 +264,26 @@ Value callee_value = popStack();
                                  callee_value.isArrayId() ? "array" :
                                  callee_value.isSetId() ? "set" :
                                  "unknown";
-        COMPILER_THROW("Attempted to call non-callable value of type " + calleeType);
+        
+        // Build Python-style traceback by walking the call stack
+        std::string traceback = "\nTraceback (most recent call last):";
+        for (size_t i = 0; i < frame_count_; ++i) {
+            auto &frame = frame_arena_[i];
+            if (frame.function) {
+                auto loc = nearestSourceLocation(*frame.function, frame.ip);
+                if (loc.line > 0) {
+                    traceback += "\n  File \"<bytecode>\", line " + std::to_string(loc.line) + ":" + std::to_string(loc.column);
+                } else {
+                    traceback += "\n  File \"<bytecode>\", line <unknown>";
+                }
+                if (!frame.function->name.empty()) {
+                    traceback += ", in " + frame.function->name;
+                }
+            }
+        }
+        traceback += "\n    " + std::string("Attempted to call non-callable value of type ") + calleeType;
+        
+        COMPILER_THROW("TypeError: Attempted to call non-callable value of type " + calleeType + traceback);
       }
     }
 

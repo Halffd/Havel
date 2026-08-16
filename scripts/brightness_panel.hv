@@ -1,0 +1,336 @@
+use "ui" as ui
+use "app/brightness" as br
+
+class BrightnessPanel {
+    @win
+    @sliders = {}
+    @labels = {}
+    @monitors = []
+    @currentMonitor = null
+
+    fn @() {
+        @initUI()
+        @loadMonitors()
+        @createControls()
+    }
+
+    fn _requireBackend() {
+        if !ui.init(null) { return null }
+    }
+
+    fn initUI() {
+        @_requireBackend()
+        @win = ui.window("Brightness Control Panel", {width: 450, height: 700})
+        @win.show()
+    }
+
+    fn loadMonitors() {
+        @monitors = br.getMonitors()
+        if #@monitors == 0 {
+            @monitors = ["default"]
+        }
+        @currentMonitor = @monitors[0]
+        print("Monitors: " + str(@monitors))
+    }
+
+    fn createControls() {
+        # Main container
+        col = ui.col()
+        @win.add(col)
+
+        # Title
+        title = ui.label("Brightness Control Panel")
+        title.style("font-size", "18")
+        title.style("font-weight", "bold")
+        title.style("margin-bottom", "10")
+        col.add(title)
+
+        # Monitor selector
+        @createMonitorSelector(col)
+
+        # Brightness section
+        @createSection(col, "Brightness", [
+            @createSlider("brightness", "Brightness", 0, 100, br.get() * 100, fn(v) {
+                br.set(v / 100)
+                @updateLabel("brightness", v / 100)
+            })
+        ])
+
+        # Temperature section
+        @createSection(col, "Temperature (Kelvin)", [
+            @createSlider("temperature", "Temperature", 1000, 25000, br.getTemperature(), fn(v) {
+                br.setTemperature(v)
+                @updateLabel("temperature", v)
+            })
+        ])
+
+        # Shadow Lift section
+        @createSection(col, "Shadow Lift", [
+            @createSlider("shadow_lift", "Shadow Lift", 0, 400, br.getShadowLift() * 100, fn(v) {
+                br.setShadowLift(v / 100)
+                @updateLabel("shadow_lift", v / 100)
+            })
+        ])
+
+        # Gamma section
+        @createSection(col, "Gamma", [
+            @createSlider("gamma_r", "Gamma R", 10, 1000, br.getGammaR() * 100, fn(v) {
+                rgb = br.getGammaRGB()
+                br.setGammaRGB(v / 100, rgb.g, rgb.b)
+                @updateLabel("gamma_r", v / 100)
+            }),
+            @createSlider("gamma_g", "Gamma G", 10, 1000, br.getGammaG() * 100, fn(v) {
+                rgb = br.getGammaRGB()
+                br.setGammaRGB(rgb.r, v / 100, rgb.b)
+                @updateLabel("gamma_g", v / 100)
+            }),
+            @createSlider("gamma_b", "Gamma B", 10, 1000, br.getGammaB() * 100, fn(v) {
+                rgb = br.getGammaRGB()
+                br.setGammaRGB(rgb.r, rgb.g, v / 100)
+                @updateLabel("gamma_b", v / 100)
+            }),
+            @createResetGammaButton()
+        ])
+
+        # Monitor selector
+        @createSection(col, "Monitor", [
+            @createMonitorSelector()
+        ])
+
+        # Presets row
+        @createSection(col, "Presets", [
+            @createPresetButtons()
+        ])
+
+        @win.add(ui.spacer(20))
+
+        # Status display
+        @createStatusDisplay(col)
+    }
+
+    fn createSection(parent, title, children) {
+        sec = ui.col()
+        sec.style("margin-bottom", "15")
+        sec.style("padding", "10")
+        sec.style("border", "1px solid #ccc")
+        sec.style("border-radius", "5")
+
+        t = ui.label(title)
+        t.style("font-weight", "bold")
+        t.style("margin-bottom", "5")
+        sec.add(t)
+
+        for child in children {
+            if child != null { sec.add(child) }
+        }
+        parent.add(sec)
+    }
+
+    fn createSlider(key, label, min, max, value, onChange) {
+        row = ui.row()
+        row.style("margin-bottom", "5")
+
+        lbl = ui.label(label)
+        lbl.style("width", "100")
+        lbl.style("font-size", "12")
+        @labels[key] = lbl
+        row.add(lbl)
+
+        valLbl = ui.label(str(value))
+        valLbl.style("width", "50")
+        valLbl.style("font-size", "12")
+        valLbl.style("text-align", "right")
+        @labels[key + "_value"] = valLbl
+        row.add(valLbl)
+
+        s = ui.slider(min, max, value)
+        s.style("flex", "1")
+        s.listen("change", fn(v) { onChange(v) })
+        @sliders[key] = s
+        row.add(s)
+
+        return row
+    }
+
+    fn createResetGammaButton() {
+        row = ui.row()
+        row.style("margin-top", "5")
+
+        btn = ui.btn("Reset Gamma")
+        btn.listen("click", fn() { 
+            br.setGamma(1.0) 
+            @syncAll() 
+        })
+        row.add(btn)
+
+        return row
+    }
+
+    fn createMonitorSelector(parent) {
+        row = ui.row()
+        row.style("margin-bottom", "10")
+
+        lbl = ui.label("Monitor:")
+        lbl.style("width", "80")
+        row.add(lbl)
+
+        dd = ui.dropdown(@monitors)
+        dd.listen("change", fn(idx) {
+            @currentMonitor = @monitors[idx]
+            @syncAll()
+        })
+        @labels["monitor_selector"] = dd
+        row.add(dd)
+
+        parent.add(row)
+    }
+
+    fn createPresetButtons() {
+        row1 = ui.row()
+        row1.style("margin-bottom", "5")
+
+        btn1 = ui.btn("Default (6500K)")
+        btn1.listen("click", fn() { 
+            br.setTemperature(6500)
+            br.setBrightness(1.0)
+            br.setShadowLift(0.0)
+            br.setGamma(1.0)
+            @syncAll()
+        })
+        row1.add(btn1)
+
+        btn2 = ui.btn("Warm (3000K)")
+        btn2.listen("click", fn() { 
+            br.setTemperature(3000)
+            @syncAll()
+        })
+        row1.add(btn2)
+
+        btn3 = ui.btn("Cool (8000K)")
+        btn3.listen("click", fn() { 
+            br.setTemperature(8000)
+            @syncAll()
+        })
+        row1.add(btn3)
+
+        row2 = ui.row()
+        row2.style("margin-bottom", "5")
+
+        btn4 = ui.btn("Night Mode")
+        btn4.listen("click", fn() { 
+            br.setTemperature(2500)
+            br.setBrightness(0.3)
+            br.setShadowLift(1.0)
+            @syncAll()
+        })
+        row2.add(btn4)
+
+        btn5 = ui.btn("Reset All")
+        btn5.listen("click", fn() { 
+            br.setBrightness(1.0)
+            br.setTemperature(6500)
+            br.setShadowLift(0.0)
+            br.setGamma(1.0)
+            @syncAll()
+        })
+        row2.add(btn5)
+
+        return [row1, row2]
+    }
+
+    fn createStatusDisplay(parent) {
+        row = ui.row()
+        row.style("margin-top", "10")
+        row.style("padding", "10")
+        row.style("background", "#f5f5f5")
+        row.style("border-radius", "5")
+
+        @labels["status"] = ui.label("Ready")
+        parent.add(row)
+    }
+
+    fn createMonitorSelector(parent) {
+        row = ui.row()
+        row.style("margin-bottom", "10")
+
+        lbl = ui.label("Monitor:")
+        lbl.style("width", "80")
+        row.add(lbl)
+
+        dd = ui.dropdown(@monitors)
+        dd.listen("change", fn(idx) {
+            @currentMonitor = @monitors[idx]
+            @syncAll()
+        })
+        @labels["monitor_selector"] = dd
+        row.add(dd)
+
+        parent.add(row)
+    }
+
+    fn createStatusDisplay(parent) {
+        row = ui.row()
+        row.style("margin-top", "10")
+        row.style("padding", "10")
+        row.style("background", "#f5f5f5")
+        row.style("border-radius", "5")
+
+        @labels["status"] = ui.label("Ready")
+        parent.add(row)
+    }
+
+    fn updateLabel(key, value) {
+        v = @labels[key + "_value"]
+        if v != null {
+            v.value(str(value))
+        }
+    }
+
+    fn syncAll() {
+        @updateLabel("brightness", br.get() * 100)
+        @updateLabel("temperature", br.getTemperature())
+        @updateLabel("shadow_lift", br.getShadowLift() * 100)
+        @updateLabel("gamma_r", br.getGammaR() * 100)
+        @updateLabel("gamma_g", br.getGammaG() * 100)
+        @updateLabel("gamma_b", br.getGammaB() * 100)
+
+        # Update slider positions
+        s = @sliders["brightness"]
+        if s != null { s.value(br.get() * 100) }
+        s = @sliders["temperature"]
+        if s != null { s.value(br.getTemperature()) }
+        s = @sliders["shadow_lift"]
+        if s != null { s.value(br.getShadowLift() * 100) }
+        s = @sliders["gamma_r"]
+        if s != null { s.value(br.getGammaR() * 100) }
+        s = @sliders["gamma_g"]
+        if s != null { s.value(br.getGammaG() * 100) }
+        s = @sliders["gamma_b"]
+        if s != null { s.value(br.getGammaB() * 100) }
+
+        @updateStatus()
+    }
+
+    fn updateStatus() {
+        s = @labels["status"]
+        if s != null {
+            s.value("Monitor: " + @currentMonitor + " | Brightness: " + str(br.get()) + " | Temp: " + str(br.getTemperature()) + "K | Shadow: " + str(br.getShadowLift()) + " | Gamma: " + str(br.getGammaR()) + ":" + str(br.getGammaG()) + ":" + str(br.getGammaB()))
+        }
+    }
+
+    fn show() {
+        @win.show()
+    }
+
+    fn run() {
+        @syncAll()
+        ui.run()
+    }
+}
+
+fn main() {
+    panel = BrightnessPanel.new()
+    panel.run()
+}
+
+main()

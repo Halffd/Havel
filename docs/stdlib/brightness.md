@@ -13,12 +13,6 @@ use brightness
 
 ---
 
-## Overview
-
-The brightness module controls monitor brightness, color temperature, and gamma via XRandR gamma ramps. It uses a native `libgamma_ramp.so` library for efficient gamma calculations.
-
----
-
 ## Basic Brightness
 
 | Function | Signature | Description |
@@ -66,9 +60,28 @@ brightness.setGamma(1.2)
 
 ---
 
+## Shadow Lift
+
+Shadow lift enhances contrast in darker parts of the image without blowing out highlights.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `brightness.shadowLift()` | `() -> num` | Get shadow lift (0.0 - 4.0) |
+| `brightness.setShadowLift(value, monitor?)` | `(num, str?) -> nil` | Set shadow lift (0.0 - 4.0) |
+| `brightness.increaseShadowLift(delta, monitor?)` | `(num, str?) -> nil` | Increase shadow lift |
+| `brightness.decreaseShadowLift(delta, monitor?)` | `(num, str?) -> nil` | Decrease shadow lift |
+
+```hv
+sl = brightness.shadowLift()            // 0.0
+brightness.setShadowLift(1.0)           // Lift shadows on all monitors
+brightness.setShadowLift(1.0, "HDMI-0") // Lift shadows on specific monitor
+brightness.increaseShadowLift(0.2)      // Increase on all monitors
+```
+
+---
 ## Monitor-Specific Control
 
-All operations support an optional monitor name:
+All operations support an optional monitor name (2nd argument). **When no monitor is specified, the operation applies to ALL connected monitors.**
 
 | Function | Signature |
 |----------|-----------|
@@ -78,10 +91,16 @@ All operations support an optional monitor name:
 | `brightness.setTemperatureMonitor(name, kelvin)` | `(str, int) -> nil` |
 | `brightness.getGammaMonitor(name)` | `(str) -> num` |
 | `brightness.setGammaMonitor(name, value)` | `(str, num) -> nil` |
+| `brightness.getShadowLiftMonitor(name)` | `(str) -> num` |
+| `brightness.setShadowLiftMonitor(name, value)` | `(str, num) -> nil` |
 
 ```hv
-brightness.setMonitor("HDMI-0", 0.8)
-brightness.setTemperatureMonitor("DP-1", 5000)
+brightness.setMonitor("HDMI-0", 0.8)              // Specific monitor
+brightness.setTemperatureMonitor("DP-1", 5000)    // Specific monitor
+brightness.set(0.7)                               // ALL monitors
+brightness.setTemperature(4000)                   // ALL monitors
+brightness.setShadowLift(1.0)                     // ALL monitors
+brightness.setGamma(1.2)                          // ALL monitors
 ```
 
 ---

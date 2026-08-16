@@ -183,6 +183,24 @@ error[E022]: undefined variable 'x'
    = note: did you mean 'y'?
 ```
 
+### Python-Style Tracebacks
+
+Runtime errors now include full Python-style tracebacks with file, line, column, and function name:
+
+```
+TypeError: Attempted to call non-callable value of type null
+Traceback (most recent call last):
+  File "<bytecode>", line 7:1, in __main__
+  File "<bytecode>", line 2:9, in test
+    Attempted to call non-callable value of type null
+```
+
+The traceback shows:
+- Full call stack from most recent to oldest
+- File, line, and column for each frame
+- Function name (when available)
+- Error type and message at the bottom
+
 ### CLI Flags
 
 ```bash

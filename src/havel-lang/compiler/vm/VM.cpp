@@ -4547,7 +4547,7 @@ Value VM::loadModule(const std::string &path) {
         std::string keyB1 = resolvedB1 ? resolvedB1->canonicalPath : path;
         fixupCachedClosures(keyB1, cachedVal, cachedGlobals);
       }
-      return cachedVal;
+return cachedVal;
     }
   }
 
@@ -4555,6 +4555,7 @@ Value VM::loadModule(const std::string &path) {
   // This ensures native modules like "time" take precedence over .hvc files
   // But skip native plugin check if the module exists as a Havel module (has .hvc/.hv)
   // to avoid "library not found" errors for Havel sidecar modules like math/math, math/physics, etc.
+  // Also skip if this is a registered lazy module (like bytecodeBuilder)
   bool skipNativePluginCheck = false;
   if (context_ && context_->modules) {
     // Quick check: does this module exist as a Havel module in self-hosted path?
@@ -4567,6 +4568,10 @@ Value VM::loadModule(const std::string &path) {
         skipNativePluginCheck = true;
       }
     }
+  }
+  // Also skip native plugin check if this is a registered lazy module
+  if (!skipNativePluginCheck && lazy_modules_.count(path) > 0) {
+    skipNativePluginCheck = true;
   }
   if (!skipNativePluginCheck && context_ && context_->modules && !native_plugin_in_progress_.count(path)) {
     auto pluginOpt = context_->modules->extensionLoader().loadModulePlugin(path);

@@ -4,6 +4,7 @@
 
 use x11
 use display
+use ffi
 
 // EWMH state operations
 STATE_ADD = 1

@@ -16,10 +16,10 @@ void registerRangePrototype(VM& vm) {
         int64_t value = args[1].isInt() ? args[1].asInt()
             : (args[1].isDouble() ? static_cast<int64_t>(args[1].asDouble()) : 0);
         if (r->step > 0) {
-            return Value::makeBool(value >= r->start && value < r->end &&
+            return Value::makeBool(value >= r->start && value <= r->end &&
                 (value - r->start) % r->step == 0);
         } else if (r->step < 0) {
-            return Value::makeBool(value <= r->start && value > r->end &&
+            return Value::makeBool(value <= r->start && value >= r->end &&
                 (value - r->start) % r->step == 0);
         }
         return Value::makeBool(false);
@@ -31,7 +31,14 @@ void registerRangePrototype(VM& vm) {
         auto* r = vm.getHeap().range(args[0].asRangeId());
         if (!r) return Value::makeInt(0);
         if (r->step == 0) return Value::makeInt(0);
-        int64_t count = (r->end - r->start) / r->step;
+        int64_t delta = r->end - r->start;
+        int64_t step = r->step;
+        int64_t count = 0;
+        if ((step > 0 && delta >= 0) || (step < 0 && delta <= 0)) {
+            int64_t span = step > 0 ? delta : -delta;
+            int64_t absStep = step > 0 ? step : -step;
+            count = span / absStep + 1;
+        }
         if (count < 0) count = 0;
         return Value::makeInt(count);
     });
@@ -65,11 +72,11 @@ void registerRangePrototype(VM& vm) {
         auto resultRef = vm.getHeap().allocateArray();
         auto* result = vm.getHeap().array(resultRef.id);
         if (r->step > 0) {
-            for (int64_t i = r->start; i < r->end; i += r->step) {
+            for (int64_t i = r->start; i <= r->end; i += r->step) {
                 result->push_back(Value::makeInt(i));
             }
         } else {
-            for (int64_t i = r->start; i > r->end; i += r->step) {
+            for (int64_t i = r->start; i >= r->end; i += r->step) {
                 result->push_back(Value::makeInt(i));
             }
         }

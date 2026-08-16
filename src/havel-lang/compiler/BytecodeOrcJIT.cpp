@@ -2696,6 +2696,53 @@ void BytecodeOrcJIT::compileFunctionTier(const BytecodeFunction &func, uint8_t t
     compileFunctionAtOptLevel(func, 2);
 }
 
+void BytecodeOrcJIT::compileTrace(const BytecodeFunction &func, uint32_t start_ip, uint64_t hot_count) {
+    if (!lljit_) {
+        setLastError("trace:" + func.name + ": JIT is not initialized");
+        return;
+    }
+    if (start_ip >= func.instructions.size()) {
+        return;
+    }
+
+    uint64_t trace_hash = computeFunctionHash(func);
+    trace_hash ^= static_cast<uint64_t>(start_ip) * 0x9e3779b97f4a7c15ULL;
+    trace_hash ^= hot_count + 0x27d4eb2f165667c5ULL + (trace_hash << 7) + (trace_hash >> 3);
+
+    auto cached = trace_cache_.find(trace_hash);
+    if (cached != trace_cache_.end()) {
+        auto existing = fptrs_.find(cached->second.function_name);
+        if (existing != fptrs_.end()) {
+            fptrs_[func.name] = existing->second;
+            return;
+        }
+    }
+
+    size_t trace_len = 0;
+    std::vector<uint32_t> trace_ips;
+    for (uint32_t ip = start_ip; ip < func.instructions.size() && trace_len < 64; ++ip, ++trace_len) {
+        trace_ips.push_back(ip);
+        const auto &instr = func.instructions[ip];
+        if (instr.opcode == OpCode::RETURN ||
+            instr.opcode == OpCode::THROW ||
+            instr.opcode == OpCode::TAIL_CALL ||
+            instr.opcode == OpCode::JUMP ||
+            instr.opcode == OpCode::JUMP_IF_FALSE ||
+            instr.opcode == OpCode::JUMP_IF_TRUE ||
+            instr.opcode == OpCode::JUMP_IF_NULL) {
+            break;
+        }
+    }
+
+    if (show_warnings_) {
+        ::havel::debug("[trace] compiling '{}' trace@{} len={} hot_count={}",
+                       func.name, start_ip, trace_ips.size(), hot_count);
+    }
+
+    compileFunctionAtOptLevel(func, 0);
+    trace_cache_[trace_hash] = CachedTrace{func.name, start_ip, hot_count, trace_hash};
+}
+
 Value BytecodeOrcJIT::executeCompiled(VM* vm, const std::string &func_name,
                                       const std::vector<Value> &args) {
   auto it = fptrs_.find(func_name);
@@ -4636,6 +4683,19 @@ case OpCode::LENGTH: {
     // Global and upvalue access - critical for closures
     case OpCode::LOAD_GLOBAL: {
         uint32_t nameId = instr.operands[0].asInt();
+        if (compilation_vm_ && func.chunk) {
+            const std::string &name = func.getString(nameId);
+            Value snapshot = compilation_vm_->lookupGlobalByKey(name);
+            if (!snapshot.isNull() || compilation_vm_->hasGlobalPublic(name) ||
+                compilation_vm_->isHostFunctionGlobal(name)) {
+                if (snapshot.isInt() || snapshot.isDouble() || snapshot.isBool() ||
+                    snapshot.isNull() || snapshot.isStringId() ||
+                    snapshot.isStringValId() || snapshot.isHostFuncId()) {
+                    vstack.push_back(llvm::ConstantInt::get(i64, snapshot.rawBits()));
+                    break;
+                }
+            }
+        }
         llvm::Function* fnGet = module.getFunction("havel_vm_global_get");
         if (!fnGet) {
             fnGet = llvm::Function::Create(

@@ -206,6 +206,7 @@ class __attribute__((visibility("default"))) VM : public BytecodeInterpreter {
 public:
 // Timer check callback - called periodically during script execution
 using TimerCheckFunction = std::function<void()>;
+using HotTraceCallback = std::function<void(const BytecodeFunction&, uint32_t, uint64_t)>;
   
   class GCRoot {
   public:
@@ -742,7 +743,32 @@ Value lookupGlobalByKey(const std::string& key) {
 
     // Backedge loop detection
     void recordBackedgePublic(uint32_t ip) {
-        ++backedge_counters_[ip];
+        auto count = ++backedge_counters_[ip];
+        trace_hot_count_.fetch_add(1, std::memory_order_relaxed);
+        if (!hasActiveFrames()) {
+            return;
+        }
+        const auto &frame = currentFrame();
+        if (!frame.function) {
+            return;
+        }
+        const uint64_t site_key = (static_cast<uint64_t>(std::hash<std::string>{}(frame.function->name)) << 32) ^ ip;
+        if (count >= tier1_threshold_) {
+            bool should_fire = false;
+            {
+                std::lock_guard<std::mutex> lock(hot_trace_mutex_);
+                should_fire = hot_trace_sites_.insert(site_key).second;
+            }
+            if (should_fire) {
+                tier1_transition_count_.fetch_add(1, std::memory_order_relaxed);
+                if (hot_trace_cb_) {
+                    hot_trace_cb_(*frame.function, ip, count);
+                }
+            }
+        }
+        if (count >= tier2_threshold_) {
+            tier2_enqueue_count_.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
   // Direct invocation (bypasses stack, takes args as vector)
@@ -1011,6 +1037,8 @@ enum class GoroutineCallResult { Failed, Interpreter, JITExecuted };
   }
   void setYieldCallback(std::function<void()> cb) { yield_callback_ = std::move(cb); }
   bool hasYieldCallback() const { return static_cast<bool>(yield_callback_); }
+  void setHotTraceCallback(HotTraceCallback cb) { hot_trace_cb_ = std::move(cb); }
+  bool hasHotTraceCallback() const { return static_cast<bool>(hot_trace_cb_); }
  uint8_t getSuspensionReason() const { return suspension_reason_; }
 void* getSuspensionContext() const { return suspension_context_; }
 
@@ -1291,6 +1319,7 @@ Value loadModule(const std::string& path);
 bool isLazyModuleLoaded(const std::string &name) const;
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
+    const std::string& currentScriptDir() const { return current_script_dir_; }
 
     ModuleLoader& moduleLoader() { return moduleLoader_; }
     void setPluginLoader(havel::Loader *loader) { pluginLoader_ = loader; }
@@ -1310,7 +1339,11 @@ bool isLazyModuleLoaded(const std::string &name) const;
     }
  const std::shared_ptr<BytecodeChunk>& getMainChunk() const { return main_chunk_; }
   std::unordered_map<std::string, Value>& getGlobals() { return globals; }
+  const std::unordered_map<std::string, Value>& getGlobals() const { return globals; }
   auto& hostFunctionGlobals() { return host_function_globals_; }
+  const auto& hostFunctionGlobals() const { return host_function_globals_; }
+  bool hasGlobalPublic(const std::string &name) const { return globals.find(name) != globals.end(); }
+  bool isHostFunctionGlobal(const std::string &name) const { return host_function_globals_.find(name) != host_function_globals_.end(); }
     void storeReplChunk(std::shared_ptr<BytecodeChunk> chunk) {
         repl_chunks_.push_back(chunk);
         if (repl_chunks_.size() > 64) {
@@ -1378,6 +1411,10 @@ private:
     std::atomic<uint64_t> tier2_enqueue_count_{0};
     std::atomic<uint64_t> tier2_compile_count_{0};
     std::atomic<uint64_t> tier2_skip_duplicate_count_{0};
+    std::atomic<uint64_t> trace_hot_count_{0};
+    std::unordered_set<uint64_t> hot_trace_sites_;
+    std::mutex hot_trace_mutex_;
+    HotTraceCallback hot_trace_cb_;
 bool tier2_flush_on_shutdown_ = false;
     uint32_t jit_active_closure_id_ = 0;
     std::function<void(VM&)> post_reset_setup_;

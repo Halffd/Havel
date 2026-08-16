@@ -24,11 +24,6 @@ bool X11HotkeyMonitor::Start(Display* disp) {
         return false;
     }
 
-    if (!XInitThreads()) {
-        havel::error("Failed to initialize X11 threading support");
-        return false;
-    }
-
     const char* displayName = disp ? DisplayString(disp) : nullptr;
     display = XOpenDisplay(displayName);
     if (!display) {

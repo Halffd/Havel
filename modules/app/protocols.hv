@@ -3,6 +3,7 @@
 // for EWMH-compliant window manager communication
 
 use x11
+use display
 
 // EWMH state operations
 STATE_ADD = 1
@@ -15,22 +16,17 @@ SOURCE_APPLICATION = 1
 SOURCE_PAGER = 2
 
 // Cached display and atoms (lazily initialized)
-_dpy = 0
 _atoms_cache = {}
-_initialized = false
 
 fn _ensureDpy() {
-    if !_initialized {
-        _dpy = x11.open(null)
-        if _dpy != 0 { _initialized = true }
-    }
-    _dpy
+    display.open()
 }
 
 fn _atom(name) {
     if _atoms_cache.has(name) { return _atoms_cache.get(name) }
     _d = _ensureDpy()
-    _a = x11.internAtom(_d, name, 1)
+    if _d == 0 { return 0 }
+    _a = x11.internAtom(_d, name, 0)
     _atoms_cache.set(name, _a)
     _a
 }
@@ -228,10 +224,5 @@ fn hasState(dpy, win, stateAtom) {
 
 // Cleanup display
 fn cleanup() {
-    if _dpy != 0 {
-        x11.close(_dpy)
-        _dpy = 0
-        _atoms_cache = {}
-        _initialized = false
-    }
+    _atoms_cache = {}
 }

@@ -703,8 +703,16 @@ fn _allWindows() {
 fn activeId() {
 	_d = _dpy()
 	if _d == 0 { return 0 }
+	_rw = _root()
+	if _rw != 0 {
+		_aid = protocols.getWindowProp(_d, _rw, protocols.netActiveWindow())
+		if _aid != 0 && _aid != _rw { return _aid }
+	}
 	_info = x11.getInputFocus(_d)
-	_info.focus
+	if _info.focus != 0 && _info.focus != 1 && _info.focus != _rw {
+		return _info.focus
+	}
+	0
 }
 
 fn active() {

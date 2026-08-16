@@ -23,9 +23,6 @@ std::vector<DisplayManager::MonitorInfo> DisplayManager::cached_monitors;
 
 void DisplayManager::Initialize() {
   if (!initialized) {
-#ifdef __linux__
-    XInitThreads();
-#endif
     display = XOpenDisplay(nullptr);
     if (display) {
       root = DefaultRootWindow(display);

@@ -101,7 +101,7 @@ public:
     std::chrono::steady_clock::time_point GetLastWheelDownTime() const override { return lastWheelDownTime_; }
 
     size_t GetDeviceCount() const override { return 1; }
-    size_t GetGrabbedDeviceCount() const override { return grabbed_ ? 1 : 0; }
+    size_t GetGrabbedDeviceCount() const override { return (keyboardGrabbed_ || pointerGrabbed_) ? 1 : 0; }
 
     // X11-specific
     void SetDisplayName(const std::string &name) { displayName_ = name; }
@@ -129,7 +129,8 @@ private:
 #endif
 
     bool initialized_ = false;
-    bool grabbed_ = false;
+    bool keyboardGrabbed_ = false;
+    bool pointerGrabbed_ = false;
     std::string displayName_;
 
 #ifdef __linux__
@@ -199,11 +200,6 @@ X11Adapter::~X11Adapter() {
 bool X11Adapter::Init() {
 #ifdef __linux__
     if (initialized_) return true;
-
-    if (!XInitThreads()) {
-        error("X11Adapter: XInitThreads failed");
-        return false;
-    }
 
     const char *name = displayName_.empty() ? nullptr : displayName_.c_str();
     display_ = XOpenDisplay(name);
@@ -278,27 +274,35 @@ bool X11Adapter::GrabDevice(const std::string &path) {
     (void)path;
     if (!display_) return false;
 
-    int result = XGrabKeyboard(display_, root_, True,
+    if (keyboardGrabbed_ || pointerGrabbed_) {
+        debug("X11Adapter: GrabDevice already active");
+        return true;
+    }
+
+    int kResult = XGrabKeyboard(display_, root_, True,
         GrabModeAsync, GrabModeAsync, CurrentTime);
-    if (result != GrabSuccess) {
-        error("X11Adapter: XGrabKeyboard failed ({})", result);
+    XSync(display_, False);
+    debug("[X11 GRAB] keyboardResult={} display={}", kResult, static_cast<void*>(display_));
+    if (kResult != GrabSuccess) {
+        error("X11Adapter: XGrabKeyboard failed ({})", kResult);
         return false;
     }
-    grabbed_ = true;
+    keyboardGrabbed_ = true;
 
-    result = XGrabPointer(display_, root_, True,
+    int pResult = XGrabPointer(display_, root_, True,
         ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
         GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
-    if (result != GrabSuccess) {
-        error("X11Adapter: XGrabPointer failed ({})", result);
+    XSync(display_, False);
+    debug("[X11 GRAB] pointerResult={} display={}", pResult, static_cast<void*>(display_));
+    if (pResult != GrabSuccess) {
+        error("X11Adapter: XGrabPointer failed ({})", pResult);
         XUngrabKeyboard(display_, CurrentTime);
-        grabbed_ = false;
         XSync(display_, False);
+        keyboardGrabbed_ = false;
         return false;
     }
+    pointerGrabbed_ = true;
 
-    XSync(display_, False);
-    grabbed_ = true;
     debug("X11Adapter: Grabbed input");
     return true;
 #else
@@ -314,11 +318,17 @@ void X11Adapter::UngrabDevice(const std::string &path) {
 
 void X11Adapter::UngrabAllDevices() {
 #ifdef __linux__
-    if (display_ && grabbed_) {
-        XUngrabKeyboard(display_, CurrentTime);
-        XUngrabPointer(display_, CurrentTime);
+    if (display_) {
+        if (keyboardGrabbed_) {
+            XUngrabKeyboard(display_, CurrentTime);
+            keyboardGrabbed_ = false;
+        }
+        if (pointerGrabbed_) {
+            XUngrabPointer(display_, CurrentTime);
+            pointerGrabbed_ = false;
+        }
         XSync(display_, False);
-        grabbed_ = false;
+        debug("[X11 UNGRAB] keyboard/pointer display={}", static_cast<void*>(display_));
     }
 #endif
 }

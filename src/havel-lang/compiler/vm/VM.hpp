@@ -353,6 +353,10 @@ std::vector<std::shared_ptr<BytecodeChunk>> persistent_chunks_;
     // fall through to Havel-script resolution instead.
     std::unordered_set<std::string> native_plugin_in_progress_;
 
+// Resolution cache to avoid repeated ModuleLoader::resolve() filesystem stats
+// Key: module path, Value: empty string = not found, non-empty = resolved canonical path
+std::unordered_map<std::string, std::string> module_resolution_cache_;
+
 // Lazy module registry — descriptors are registered at startup,
 // init functions are called on first use (import/access)
 std::unordered_map<std::string, ModuleDescriptor> lazy_modules_;

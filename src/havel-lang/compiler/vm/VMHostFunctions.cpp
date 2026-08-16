@@ -3061,6 +3061,10 @@ void VM::registerDefaultHostFunctions() {
     proto->set("method",
                Value::makeHostFuncId(getHostFunctionIndex("class.method")));
 
+    // Register in persistent class registry so class is findable even if globals map changes
+    const std::string &className = current_chunk->getString(args[0].asStringValId());
+    class_registry_[className] = Value::makeObjectId(protoRef.id);
+
     return Value::makeObjectId(protoRef.id);
   });
 
@@ -3080,10 +3084,18 @@ void VM::registerDefaultHostFunctions() {
       const auto &name = current_chunk->getString(args[0].asStringValId());
       auto it = globals.find(name);
       if (it == globals.end()) {
-        COMPILER_THROW("Unknown class type: " + name);
+        // Fallback: check class registry for classes that were defined but globals map changed
+        auto regIt = class_registry_.find(name);
+        if (regIt != class_registry_.end()) {
+          protoVal = regIt->second;
+          ctor_offset = 1;
+        } else {
+          COMPILER_THROW("Unknown class type: " + name);
+        }
+      } else {
+        protoVal = it->second;
+        ctor_offset = 1;
       }
-      protoVal = it->second;
-      ctor_offset = 1;
     } else {
       COMPILER_THROW(
           "class.new: first argument must be class name or prototype object");

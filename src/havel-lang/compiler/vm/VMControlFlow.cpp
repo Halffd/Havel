@@ -541,9 +541,7 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
                     }
                   }
                 }
-                if (bf) {
-                }
-              } else if (it->second.isClosureId()) {
+                } else if (it->second.isClosureId()) {
                 auto *closure = heap_.closure(it->second.asClosureId());
                 if (closure && closure->chunk) {
                   bf = closure->chunk->getFunction(closure->function_index);
@@ -1416,16 +1414,15 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
                     .module_globals = std::move(closure_globals),
                     .upvalues = std::move(closure.upvalues)})
                 .id));
-        break;
+break;
       }
 
-        if (execCollectionOp(instruction))
-          break;
+      if (execCollectionOp(instruction))
+        break;
 
       default:
         return false;
       }
       return true;
     }
-
   } // namespace havel::compiler

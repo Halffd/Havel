@@ -129,15 +129,7 @@ void registerStringModule(const VMApi &api) {
         return arr;
     });
 
-    struct CursorData {
-        std::string str;
-        std::vector<int64_t> codepoints;
-        std::vector<size_t> byteOffsets;
-        std::vector<int> byteLens;
-        size_t idx = 0;
-    };
-
-    api.registerFunction("string._cursor", [api](const std::vector<Value> &args) {
+    api.registerFunction("string._cursor", [api](const std::vector<Value> &args) -> Value {
         if (args.empty())
             throw std::runtime_error("string._cursor() requires 1 argument");
         const std::string* strPtr = api.getStringPtr(args[0]);
@@ -145,8 +137,9 @@ void registerStringModule(const VMApi &api) {
         const std::string& str = strPtr ? *strPtr : (tempStr = api.toString(args[0]));
 
         auto cursorObj = api.makeObject();
-        auto data = new CursorData();
-        data->str = str;
+        std::vector<int64_t> codepoints;
+        std::vector<int64_t> byteOffsets;
+        std::vector<int64_t> byteLens;
 
         size_t i = 0;
         while (i < str.size()) {
@@ -175,117 +168,155 @@ void registerStringModule(const VMApi &api) {
                 cp = static_cast<int64_t>(c);
                 byteLen = 1;
             }
-            data->codepoints.push_back(cp);
-            data->byteOffsets.push_back(i);
-            data->byteLens.push_back(byteLen);
+            codepoints.push_back(cp);
+            byteOffsets.push_back(static_cast<int64_t>(i));
+            byteLens.push_back(byteLen);
             i += byteLen;
         }
 
-        api.vm().setHostObjectNativeData(cursorObj.asObjectId(), data, [](void* ptr) { delete static_cast<CursorData*>(ptr); });
+        // Create Havel arrays for direct access
+        auto cpArr = api.makeArray();
+        for (int64_t cp : codepoints) {
+            api.push(cpArr, Value::makeInt(cp));
+        }
+        auto offArr = api.makeArray();
+        for (int64_t off : byteOffsets) {
+            api.push(offArr, Value::makeInt(off));
+        }
+        auto lenArr = api.makeArray();
+        for (int64_t len : byteLens) {
+            api.push(lenArr, Value::makeInt(len));
+        }
+
         api.setField(cursorObj, "str", args[0]);
+        api.setField(cursorObj, "codepoints", cpArr);
+        api.setField(cursorObj, "byteOffsets", offArr);
+        api.setField(cursorObj, "byteLens", lenArr);
         api.setField(cursorObj, "idx", Value::makeInt(0));
+        api.setField(cursorObj, "len", Value::makeInt(static_cast<int64_t>(codepoints.size())));
         return cursorObj;
     });
 
-    api.registerFunction("string._cursor_cp", [api](const std::vector<Value> &args) {
+    // Simplified cursor functions - just update idx field
+    api.registerFunction("string._cursor_cp", [api](const std::vector<Value> &args) -> Value {
         if (args.size() < 2)
             throw std::runtime_error("string._cursor_cp() requires cursor and offset");
         auto cursorObj = args[0];
         int64_t offset = args[1].isInt() ? args[1].asInt() : 0;
-        auto* data = static_cast<CursorData*>(api.vm().getHostObjectNativeData(cursorObj.asObjectId()));
-        if (!data) throw std::runtime_error("invalid cursor");
-        int64_t idx = data->idx + offset;
-        if (idx >= 0 && idx < (int64_t)data->codepoints.size()) {
-            return Value::makeInt(data->codepoints[idx]);
+        Value idxVal = api.getField(cursorObj, "idx");
+        int64_t idx = idxVal.isInt() ? idxVal.asInt() : 0;
+        Value cpArr = api.getField(cursorObj, "codepoints");
+        if (!cpArr.isArrayId()) throw std::runtime_error("invalid cursor: no codepoints array");
+        int64_t targetIdx = idx + offset;
+        uint32_t len = api.length(cpArr);
+        if (targetIdx >= 0 && targetIdx < (int64_t)len) {
+            return api.getAt(cpArr, targetIdx);
         }
         return Value::makeInt(-1);
     });
 
-    api.registerFunction("string._cursor_current", [api](const std::vector<Value> &args) {
+    api.registerFunction("string._cursor_current", [api](const std::vector<Value> &args) -> Value {
         if (args.empty())
             throw std::runtime_error("string._cursor_current() requires cursor");
         auto cursorObj = args[0];
-        auto* data = static_cast<CursorData*>(api.vm().getHostObjectNativeData(cursorObj.asObjectId()));
-        if (!data) throw std::runtime_error("invalid cursor");
-        if (data->idx < data->codepoints.size()) {
-            return Value::makeInt(data->codepoints[data->idx]);
+        Value idxVal = api.getField(cursorObj, "idx");
+        int64_t idx = idxVal.isInt() ? idxVal.asInt() : 0;
+        Value cpArr = api.getField(cursorObj, "codepoints");
+        if (!cpArr.isArrayId()) throw std::runtime_error("invalid cursor: no codepoints array");
+        uint32_t len = api.length(cpArr);
+        if (idx < (int64_t)len) {
+            return api.getAt(cpArr, idx);
         }
         return Value::makeInt(-1);
     });
 
-    api.registerFunction("string._cursor_advance", [api](const std::vector<Value> &args) {
+    api.registerFunction("string._cursor_advance", [api](const std::vector<Value> &args) -> Value {
         if (args.empty())
             throw std::runtime_error("string._cursor_advance() requires cursor");
         auto cursorObj = args[0];
-        auto* data = static_cast<CursorData*>(api.vm().getHostObjectNativeData(cursorObj.asObjectId()));
-        if (!data) throw std::runtime_error("invalid cursor");
-        if (data->idx >= data->codepoints.size()) {
+        Value idxVal = api.getField(cursorObj, "idx");
+        int64_t idx = idxVal.isInt() ? idxVal.asInt() : 0;
+        Value cpArr = api.getField(cursorObj, "codepoints");
+        if (!cpArr.isArrayId()) throw std::runtime_error("invalid cursor: no codepoints array");
+        uint32_t len = api.length(cpArr);
+        if (idx >= (int64_t)len) {
             return Value::makeInt(-1);
         }
-        int64_t cp = data->codepoints[data->idx];
-        data->idx++;
-        return Value::makeInt(cp);
+        Value cp = api.getAt(cpArr, idx);
+        api.setField(cursorObj, "idx", Value::makeInt(idx + 1));
+        return cp;
     });
 
-    api.registerFunction("string._cursor_bytePos", [api](const std::vector<Value> &args) {
+    api.registerFunction("string._cursor_bytePos", [api](const std::vector<Value> &args) -> Value {
         if (args.empty())
             throw std::runtime_error("string._cursor_bytePos() requires cursor");
         auto cursorObj = args[0];
-        auto* data = static_cast<CursorData*>(api.vm().getHostObjectNativeData(cursorObj.asObjectId()));
-        if (!data) throw std::runtime_error("invalid cursor");
-        if (data->idx < data->byteOffsets.size()) {
-            return Value::makeInt(static_cast<int64_t>(data->byteOffsets[data->idx]));
+        Value idxVal = api.getField(cursorObj, "idx");
+        int64_t idx = idxVal.isInt() ? idxVal.asInt() : 0;
+        Value offArr = api.getField(cursorObj, "byteOffsets");
+        if (!offArr.isArrayId()) throw std::runtime_error("invalid cursor: no byteOffsets array");
+        uint32_t len = api.length(offArr);
+        if (idx < (int64_t)len) {
+            return api.getAt(offArr, idx);
         }
-        return Value::makeInt(static_cast<int64_t>(data->str.size()));
+        Value strVal = api.getField(cursorObj, "str");
+        return Value::makeInt(static_cast<int64_t>(api.toString(strVal).size()));
     });
 
-    api.registerFunction("string._cursor_byteLen", [api](const std::vector<Value> &args) {
+    api.registerFunction("string._cursor_byteLen", [api](const std::vector<Value> &args) -> Value {
         if (args.size() < 2)
             throw std::runtime_error("string._cursor_byteLen() requires cursor and index");
         auto cursorObj = args[0];
         int64_t idx = args[1].isInt() ? args[1].asInt() : 0;
-        auto* data = static_cast<CursorData*>(api.vm().getHostObjectNativeData(cursorObj.asObjectId()));
-        if (!data) throw std::runtime_error("invalid cursor");
-        if (idx >= 0 && idx < (int64_t)data->byteLens.size()) {
-            return Value::makeInt(data->byteLens[idx]);
+        Value lenArr = api.getField(cursorObj, "byteLens");
+        if (!lenArr.isArrayId()) throw std::runtime_error("invalid cursor: no byteLens array");
+        uint32_t len = api.length(lenArr);
+        if (idx >= 0 && idx < (int64_t)len) {
+            return api.getAt(lenArr, idx);
         }
         return Value::makeInt(1);
     });
 
-    api.registerFunction("string._cursor_len", [api](const std::vector<Value> &args) {
+    api.registerFunction("string._cursor_len", [api](const std::vector<Value> &args) -> Value {
         if (args.empty())
             throw std::runtime_error("string._cursor_len() requires cursor");
         auto cursorObj = args[0];
-        auto* data = static_cast<CursorData*>(api.vm().getHostObjectNativeData(cursorObj.asObjectId()));
-        if (!data) throw std::runtime_error("invalid cursor");
-        return Value::makeInt(static_cast<int64_t>(data->codepoints.size()));
+        Value lenVal = api.getField(cursorObj, "len");
+        if (lenVal.isInt()) return lenVal;
+        Value cpArr = api.getField(cursorObj, "codepoints");
+        if (!cpArr.isArrayId()) throw std::runtime_error("invalid cursor: no codepoints array");
+        return Value::makeInt(static_cast<int64_t>(api.length(cpArr)));
     });
 
-    api.registerFunction("string._cursor_setIdx", [api](const std::vector<Value> &args) {
+    api.registerFunction("string._cursor_setIdx", [api](const std::vector<Value> &args) -> Value {
         if (args.size() < 2)
             throw std::runtime_error("string._cursor_setIdx() requires cursor and index");
         auto cursorObj = args[0];
         int64_t idx = args[1].isInt() ? args[1].asInt() : 0;
-        auto* data = static_cast<CursorData*>(api.vm().getHostObjectNativeData(cursorObj.asObjectId()));
-        if (!data) throw std::runtime_error("invalid cursor");
+        Value cpArr = api.getField(cursorObj, "codepoints");
+        if (!cpArr.isArrayId()) throw std::runtime_error("invalid cursor: no codepoints array");
+        uint32_t len = api.length(cpArr);
         if (idx < 0) idx = 0;
-        if (idx > (int64_t)data->codepoints.size()) idx = data->codepoints.size();
-        data->idx = idx;
+        if (idx > (int64_t)len) idx = len;
+        api.setField(cursorObj, "idx", Value::makeInt(idx));
         return Value::makeInt(idx);
     });
 
-    api.registerFunction("string._cursor_idxAtByte", [api](const std::vector<Value> &args) {
+    api.registerFunction("string._cursor_idxAtByte", [api](const std::vector<Value> &args) -> Value {
         if (args.size() < 2)
             throw std::runtime_error("string._cursor_idxAtByte() requires cursor and bytePos");
         auto cursorObj = args[0];
         int64_t bp = args[1].isInt() ? args[1].asInt() : 0;
-        auto* data = static_cast<CursorData*>(api.vm().getHostObjectNativeData(cursorObj.asObjectId()));
-        if (!data) throw std::runtime_error("invalid cursor");
+        Value offArr = api.getField(cursorObj, "byteOffsets");
+        if (!offArr.isArrayId()) throw std::runtime_error("invalid cursor: no byteOffsets array");
+        uint32_t len = api.length(offArr);
         size_t lo = 0;
-        size_t hi = data->byteOffsets.size();
+        size_t hi = len;
         while (lo < hi) {
             size_t mid = (lo + hi) / 2;
-            if (data->byteOffsets[mid] < (size_t)bp) {
+            Value midVal = api.getAt(offArr, mid);
+            int64_t midOff = midVal.isInt() ? midVal.asInt() : 0;
+            if (midOff < bp) {
                 lo = mid + 1;
             } else {
                 hi = mid;

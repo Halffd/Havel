@@ -1016,7 +1016,14 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     return;
   }
 
-  if (grabDevices) {
+  if (grabDevices && !repeat) {
+    // Forward physical key events to the virtual device. Repeat events
+    // (value==2) carry no state change: the down event already told the
+    // consumer the key is held, and the kernel/compositor generates its own
+    // soft-repeat. Forwarding them re-asserts a held key as "down" on the
+    // virtual device, which can race with a send() that just released that
+    // key (e.g. a hotkey releasing Alt then sending Ctrl+Up) and turn
+    // Ctrl+Up into Ctrl+Alt+Up. Drop them.
     SendUinputEvent(EV_KEY, mappedCode, ev.value);
   }
 }

@@ -150,6 +150,10 @@ fn Lexer(source) {
     keywords = KEYWORDS
     src = source
     cursor = string.cursor(source)
+    codepoints = cursor.codepoints
+    byteOffsets = cursor.byteOffsets
+    byteLens = cursor.byteLens
+    n = cursor.len
     idx = 0
     line = 1
     col = 1
@@ -160,16 +164,16 @@ fn Lexer(source) {
     parenDepth = 0
 
     fn cp(offset) {
-        string.cp(cursor, idx + offset)
+        i = idx + offset
+        if i >= 0 && i < n { codepoints[i] } else { -1 }
     }
     fn current() {
-        string.current(cursor)
+        if idx < n { codepoints[idx] } else { -1 }
     }
   fn advance() {
-    if idx >= string.len(cursor) { return -1 }
-    c = string.current(cursor)
+    if idx >= n { return -1 }
+    c = codepoints[idx]
     idx = idx + 1
-    string.setIdx(cursor, idx)
     if c == 10 {
       line = line + 1
       col = 1
@@ -184,10 +188,22 @@ fn Lexer(source) {
         if current() == expected { advance(); true } else { false }
     }
     fn bytePos() {
-        string.bytePos(cursor)
+        if idx < n { byteOffsets[idx] } else { src.len }
     }
     fn idxAtByte(bp) {
-        string.idxAtByte(cursor, bp)
+        lo = 0
+        hi = n - 1
+        while lo <= hi {
+            mid = (lo + hi) / 2
+            if byteOffsets[mid] < bp {
+                lo = mid + 1
+            } else if byteOffsets[mid] > bp {
+                hi = mid - 1
+            } else {
+                return mid
+            }
+        }
+        lo
     }
     fn addToken(ttype, value) {
         tokens.push({type: ttype, tid: TID[ttype], value: value, line: line, col: tokenStartCol})
@@ -245,23 +261,23 @@ fn Lexer(source) {
     }
     fn isHotkeyBindingAhead() {
       look = idx
-      while look < n && isHotkeyCharCp(cpArr[look][0]) { look = look + 1 }
-      while look < n && (cpArr[look][0] == 32 || cpArr[look][0] == 9) { look = look + 1 }
-      if look + 1 < n && cpArr[look][0] == 61 && cpArr[look + 1][0] == 62 { return true }
-      if look + 2 < n && cpArr[look][0] == 105 && cpArr[look + 1][0] == 102 {
+      while look < n && isHotkeyCharCp(codepoints[look]) { look = look + 1 }
+      while look < n && (codepoints[look] == 32 || codepoints[look] == 9) { look = look + 1 }
+      if look + 1 < n && codepoints[look] == 61 && codepoints[look + 1] == 62 { return true }
+      if look + 2 < n && codepoints[look] == 105 && codepoints[look + 1] == 102 {
         // 'if' — scan ahead for =>
         look = look + 2
         while look + 1 < n {
-          if cpArr[look][0] == 61 && cpArr[look + 1][0] == 62 { return true }
+          if codepoints[look] == 61 && codepoints[look + 1] == 62 { return true }
           look = look + 1
         }
         return false
       }
-      if look + 4 < n && cpArr[look][0] == 119 && cpArr[look + 1][0] == 104 && cpArr[look + 2][0] == 101 && cpArr[look + 3][0] == 110 {
+      if look + 4 < n && codepoints[look] == 119 && codepoints[look + 1] == 104 && codepoints[look + 2] == 101 && codepoints[look + 3] == 110 {
         // when
         look = look + 4
         while look + 1 < n {
-          if cpArr[look][0] == 61 && cpArr[look + 1][0] == 62 { return true }
+          if codepoints[look] == 61 && codepoints[look + 1] == 62 { return true }
           look = look + 1
         }
         return false
@@ -756,12 +772,12 @@ fn scanHotkey() {
       }
       look = idx
       while look < n {
-        lcp = cpArr[look][0]
+        lcp = codepoints[look]
         if lcp != 32 && lcp != 9 { break }
         look = look + 1
       }
       if look < n {
-        lcp = cpArr[look][0]
+        lcp = codepoints[look]
         if lcp == 38 || lcp == 58 {
           while idx < look {
             s = s + string.fromCodePoint(current())
@@ -908,9 +924,9 @@ fn scanHotkey() {
         if c == 70 && isDigitCp(cp(1)) {
           // Lookahead: if followed by assignment/space/tab/semicolon/comma, it's an identifier
           la = 1
-          while idx + la < n && isDigitCp(cpArr[idx + la][0]) { la = la + 1 }
+          while idx + la < n && isDigitCp(codepoints[idx + la]) { la = la + 1 }
           if idx + la < n {
-            after = cpArr[idx + la][0]
+            after = codepoints[idx + la]
             if after == 61 || after == 32 || after == 9 || after == 59 || after == 44 {
               scanIdentifier()
               continue
@@ -933,8 +949,8 @@ fn scanHotkey() {
             if c == 36 {
                 // Look ahead: if $ is followed by hotkey name then =>, treat as hotkey
                 hkLook = idx + 1
-                while hkLook < n && isHotkeyCharCp(cpArr[hkLook][0]) { hkLook = hkLook + 1 }
-                while hkLook < n && (cpArr[hkLook][0] == 32 || cpArr[hkLook][0] == 9) { hkLook = hkLook + 1 }
+                while hkLook < n && isHotkeyCharCp(codepoints[hkLook]) { hkLook = hkLook + 1 }
+                while hkLook < n && (codepoints[hkLook] == 32 || codepoints[hkLook] == 9) { hkLook = hkLook + 1 }
                 if isHotkeyBindingAhead() {
                     scanHotkey()
                     continue
@@ -1016,8 +1032,8 @@ fn scanHotkey() {
         }
         if isStmtStart {
           lk = idx + 2
-          while lk < n && (cpArr[lk][0] == 32 || cpArr[lk][0] == 9) { lk = lk + 1 }
-          if lk + 1 < n && cpArr[lk][0] == 61 && cpArr[lk + 1][0] == 62 {
+          while lk < n && (codepoints[lk] == 32 || codepoints[lk] == 9) { lk = lk + 1 }
+          if lk + 1 < n && codepoints[lk] == 61 && codepoints[lk + 1] == 62 {
             scanHotkey()
             continue
           }
@@ -1233,20 +1249,20 @@ if c == 33 && cp(1) == 123 {
                 if cp(1) != 47 && cp(1) != 42 {
                     // Check for / => hotkey or /identifier => hotkey
                     la = idx + 1
-                    while la < n && (cpArr[la][0] == 32 || cpArr[la][0] == 9) { la = la + 1 }
+                    while la < n && (codepoints[la] == 32 || codepoints[la] == 9) { la = la + 1 }
                     isSlashHK = false
                     hkEnd = 0
                     identIsKeyword = false
-                    if la + 1 < n && cpArr[la][0] == 61 && cpArr[la + 1][0] == 62 {
+                    if la + 1 < n && codepoints[la] == 61 && codepoints[la + 1] == 62 {
                         addToken("Hotkey", "/")
                         advance()
                         continue
                     }
-                    if la < n && (isAlphaCp(cpArr[la][0]) || cpArr[la][0] == 95) {
+                    if la < n && (isAlphaCp(codepoints[la]) || codepoints[la] == 95) {
                         la2 = la
                         idStart = la
-                        while la2 < n && (isAlphaNumCp(cpArr[la2][0]) || cpArr[la2][0] == 95) { la2 = la2 + 1 }
-                        if la2 < n && cpArr[la2][0] == 47 {
+                        while la2 < n && (isAlphaNumCp(codepoints[la2]) || codepoints[la2] == 95) { la2 = la2 + 1 }
+                        if la2 < n && codepoints[la2] == 47 {
                             // has closing /, likely regex literal, not hotkey
                         } else {
                             hasClosingSlash = false
@@ -1254,23 +1270,23 @@ if c == 33 && cp(1) == 123 {
                             if se2 > n { se2 = n }
                             for si in la2..se2 {
                                 if si + 1 > n { break }
-                                scp = cpArr[si][0]
+                                scp = codepoints[si]
                                 if scp == 47 && si > la { hasClosingSlash = true; break }
-                                if scp == 61 && cpArr[si + 1][0] == 62 { break }
+                                if scp == 61 && codepoints[si + 1] == 62 { break }
                                 if scp == 10 { break }
                             }
                             if hasClosingSlash {
                                 // not hotkey
                             } else {
-                                ident = src.sub(cpArr[idStart][1], cpArr[la2][1] - cpArr[idStart][1])
+                                ident = src.sub(byteOffsets[idStart], byteOffsets[la2] - byteOffsets[idStart])
                                 if ident == "if" || ident == "when" { identIsKeyword = true }
                                 se = la2 + 200
                                 if se > n { se = n }
                                 foundArrow = false
                                 for si in la2..se {
                                     if si + 1 >= n { break }
-                                    if cpArr[si][0] == 61 && cpArr[si + 1][0] == 62 { foundArrow = true; break }
-                                    if cpArr[si][0] == 10 { break }
+                                    if codepoints[si] == 61 && codepoints[si + 1] == 62 { foundArrow = true; break }
+                                    if codepoints[si] == 10 { break }
                                 }
                                 if foundArrow {
                                     isSlashHK = true
@@ -1284,7 +1300,7 @@ if c == 33 && cp(1) == 123 {
                             addToken("Hotkey", "/")
                             advance()
                         } else {
-                            hkVal = src.sub(bytePos(), cpArr[hkEnd][1] - bytePos())
+                            hkVal = src.sub(bytePos(), byteOffsets[hkEnd] - bytePos())
                             advance()
                             while idx < hkEnd { advance() }
                             addToken("Hotkey", hkVal)
@@ -1479,17 +1495,17 @@ if c == 33 && cp(1) == 123 {
     lk = idx + 2
     dp = 2
                         while lk < n && dp > 0 {
-                            lc = cpArr[lk][0]
+                            lc = codepoints[lk]
                             if lc == 40 { dp = dp + 1 }
                             else if lc == 41 { dp = dp - 1; if dp == 0 { break } }
                             else if dp == 2 && (lc == 38 || lc == 124 || lc == 94) {
                                 isDbl = false
-                                if lc == 38 && lk + 1 < n && cpArr[lk + 1][0] == 38 { isDbl = true }
-                                if lc == 124 && lk + 1 < n && cpArr[lk + 1][0] == 124 { isDbl = true }
+                                if lc == 38 && lk + 1 < n && codepoints[lk + 1] == 38 { isDbl = true }
+                                if lc == 124 && lk + 1 < n && codepoints[lk + 1] == 124 { isDbl = true }
                                 if !isDbl { hasBOp = true; break }
                             }
-                            else if dp == 2 && lc == 60 && lk + 1 < n && cpArr[lk + 1][0] == 60 { hasBOp = true; break }
-                            else if dp == 2 && lc == 62 && lk + 1 < n && cpArr[lk + 1][0] == 62 { hasBOp = true; break }
+                            else if dp == 2 && lc == 60 && lk + 1 < n && codepoints[lk + 1] == 60 { hasBOp = true; break }
+                            else if dp == 2 && lc == 62 && lk + 1 < n && codepoints[lk + 1] == 62 { hasBOp = true; break }
                             lk = lk + 1
                         }
                         if !hasBOp { emitTwo = true }
@@ -1501,13 +1517,13 @@ if c == 33 && cp(1) == 123 {
   lk = idx + 2
   ldp = 2
                     while lk < n && ldp > 0 {
-                        lc = cpArr[lk][0]
+                        lc = codepoints[lk]
                         if lc == 40 { ldp = ldp + 1 }
                         else if lc == 41 {
                             if ldp == 2 {
                                 nx = lk + 1
-                                while nx < n && (cpArr[nx][0] == 32 || cpArr[nx][0] == 9 || cpArr[nx][0] == 10) { nx = nx + 1 }
-                                if nx + 1 < n && cpArr[nx][0] == 61 && cpArr[nx + 1][0] == 62 {
+                                while nx < n && (codepoints[nx] == 32 || codepoints[nx] == 9 || codepoints[nx] == 10) { nx = nx + 1 }
+                                if nx + 1 < n && codepoints[nx] == 61 && codepoints[nx + 1] == 62 {
                                     lambdaFlag = true
                                     break
                                 }
@@ -1607,12 +1623,12 @@ if c == 33 && cp(1) == 123 {
     if afterExpression() || (nextCp != -1 && (isAlphaCp(nextCp) || nextCp == 95)) {
           // Look ahead past identifier and whitespace to decide hotkey vs field access
           lk = idx
-          while lk < n && (isAlphaNumCp(cpArr[lk][0]) || cpArr[lk][0] == 95) { lk = lk + 1 }
-          while lk < n && (cpArr[lk][0] == 32 || cpArr[lk][0] == 9) { lk = lk + 1 }
+          while lk < n && (isAlphaNumCp(codepoints[lk]) || codepoints[lk] == 95) { lk = lk + 1 }
+          while lk < n && (codepoints[lk] == 32 || codepoints[lk] == 9) { lk = lk + 1 }
           isHK = false
-          if lk + 1 < n && cpArr[lk][0] == 61 && cpArr[lk + 1][0] == 62 { isHK = true }
-          else if lk < n && cpArr[lk][0] == 38 { isHK = true }
-          else if lk < n && cpArr[lk][0] == 58 { isHK = true }
+          if lk + 1 < n && codepoints[lk] == 61 && codepoints[lk + 1] == 62 { isHK = true }
+          else if lk < n && codepoints[lk] == 38 { isHK = true }
+          else if lk < n && codepoints[lk] == 58 { isHK = true }
           if isHK {
             scanHotkey()
           } else {
@@ -1635,9 +1651,9 @@ if c == 33 && cp(1) == 123 {
                 hasKeyName = (cp(1) != -1 && isAlphaCp(cp(1)))
                 if isStmtStart || (hasModPfx && hasKeyName) || isHotkeyAssign() {
                     lk = idx
-                    while lk < n && isHotkeyCharCp(cpArr[lk][0]) { lk = lk + 1 }
-                    while lk < n && (cpArr[lk][0] == 32 || cpArr[lk][0] == 9) { lk = lk + 1 }
-                    hasArrow = (lk + 1 < n && cpArr[lk][0] == 61 && cpArr[lk + 1][0] == 62)
+                    while lk < n && isHotkeyCharCp(codepoints[lk]) { lk = lk + 1 }
+                    while lk < n && (codepoints[lk] == 32 || codepoints[lk] == 9) { lk = lk + 1 }
+                    hasArrow = (lk + 1 < n && codepoints[lk] == 61 && codepoints[lk + 1] == 62)
                     if hasArrow || isHotkeyBindingAhead() {
                         scanHotkey()
                         continue

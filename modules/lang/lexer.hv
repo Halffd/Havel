@@ -1704,7 +1704,6 @@ if c == 33 && cp(1) == 123 {
 }
 
 fn tokenize(source) {
-    cpArr0 = string.toCodePointArray(source)
     lx = Lexer(source)
     result = lx.run()
     result.tokens

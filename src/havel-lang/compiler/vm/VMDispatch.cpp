@@ -146,7 +146,7 @@ case OpCode::STORE_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
 Value value = popStack();
-             if (name == "setFlag") {
+             if (name.rfind("Box", 0) == 0 || name == "setFlag") {
                  std::cerr << "[DEBUG STORE_GLOBAL] name=" << name
                            << " bits=" << value.rawBits()
                            << " closure=" << value.isClosureId()
@@ -177,7 +177,9 @@ Value value = popStack();
                 }
                 COMPILER_THROW("Cannot reassign val global: " + name);
             }
+std::cerr << "[DEBUG STORE_GLOBAL] Storing " << name << " in globals (size before: " << globals.size() << ")\n";
             globals[name] = value;
+            std::cerr << "[DEBUG STORE_GLOBAL] After store, globals size: " << globals.size() << ", has " << name << " = " << (globals.count(name) ? "yes" : "no") << "\n";
 
             // If this frame owns globals (module closure), also persist to the
             // shared module_globals so subsequent calls see the updated value.

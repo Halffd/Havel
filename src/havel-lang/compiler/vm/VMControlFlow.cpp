@@ -505,9 +505,9 @@ if (instanceObj) {
             if (fieldObj) {
               auto *isClassVal = fieldObj->get("__is_class");
               if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
-                // It's a class prototype - invoke class.new on it
-                // Look up "new" method on the class prototype
+                std::cerr << "[DEBUG CALL] Found class: " << it->first << " __is_class=" << isClassVal->asBool() << "\n";
                 auto *newMethod = fieldObj->get("new");
+                std::cerr << "[DEBUG CALL] new method: " << (newMethod ? "found" : "not found") << "\n";
                 if (newMethod && newMethod->isHostFuncId()) {
                   host_func_idx = newMethod->asHostFuncId();
                   found_host = true;
@@ -522,7 +522,23 @@ if (instanceObj) {
       }
     }
 
-// 0.5 Check __class/__struct prototype for class/struct methods first
+std::cerr << "[DEBUG CALL] globals size: " << globals.size() << " globals_stack_ size: " << globals_stack_.size() << "\n";
+  for (size_t i = 0; i < globals_stack_.size(); ++i) {
+    auto& gmap = globals_stack_[i];
+    std::cerr << "[DEBUG CALL] globals_stack_[" << i << "] size: " << gmap.size() << "\n";
+    for (const auto& g : gmap) {
+      std::cerr << "[DEBUG CALL]   globals_stack_[" << i << "]: " << g.first << " type=" << (g.second.isObjectId() ? "object" : g.second.isFunctionObjId() ? "func" : g.second.isClosureId() ? "closure" : g.second.isHostFuncId() ? "host" : "other") << "\n";
+      if (g.second.isObjectId()) {
+        auto *obj = heap_.object(g.second.asObjectId());
+        if (obj) {
+          auto *isClassVal = obj->get("__is_class");
+          if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
+            std::cerr << "[DEBUG CALL] Found class in globals_stack_[" << i << "]: " << g.first << " __is_class=true\n";
+          }
+        }
+      }
+    }
+  }
     if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
       auto *classProto = heap_.object(receiver.asObjectId());
       if (classProto) {

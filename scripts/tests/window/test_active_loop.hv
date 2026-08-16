@@ -10,7 +10,6 @@ while i < 5 {
     } else {
         print("iter $i active: null")
     }
-    time.sleep(100)
     i = i + 1
 }
 

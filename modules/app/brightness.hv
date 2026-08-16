@@ -129,6 +129,7 @@ fn _loadNativeRampBuilder() {
       "libgamma_ramp.so",
       "/home/all/repos/havel-3/modules/app/libgamma_ramp.so",
       "/home/all/repos/havel-3/build-debug/libgamma_ramp.so",
+      "/home/all/repos/havel-2/build-debug/libgamma_ramp.so",
       "/usr/local/lib/libgamma_ramp.so",
       "/usr/lib/libgamma_ramp.so"
     ]

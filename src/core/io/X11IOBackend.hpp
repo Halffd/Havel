@@ -52,7 +52,6 @@ private:
     Display *display_ = nullptr;
     int xinput2DeviceId_ = -1;
     bool xinput2Available_ = false;
-    bool keyboardGrabbed_ = false;
     unsigned int numlockMask_ = 0;
 
     void UpdateNumLockMask();

@@ -11,6 +11,9 @@
 namespace fs = std::filesystem;
 
 int main(int argc, char* argv[]) {
+#ifdef __linux__
+    XInitThreads();
+#endif
     auto t0 = havel::startup_now();
     
     std::string selfHostedPath;

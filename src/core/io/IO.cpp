@@ -441,6 +441,10 @@ void IO::ensureBackend() {
     DisplayManager::Initialize();
     debug("[IO] DisplayManager initialized");
 
+    registerExitCleanup([this]() {
+      cleanup();
+    });
+
     // Initialize ImportManager
     importManager = std::make_shared<ImportManager>();
 

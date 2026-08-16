@@ -24,17 +24,18 @@ bool X11HotkeyMonitor::Start(Display* disp) {
         return false;
     }
 
-    if (!disp) {
-        havel::error("Display is null, cannot start X11 hotkey monitoring");
-        return false;
-    }
-
-    display = disp;
-
     if (!XInitThreads()) {
         havel::error("Failed to initialize X11 threading support");
         return false;
     }
+
+    const char* displayName = disp ? DisplayString(disp) : nullptr;
+    display = XOpenDisplay(displayName);
+    if (!display) {
+        havel::error("Cannot open dedicated X11 display for hotkey monitoring");
+        return false;
+    }
+    ownDisplay = true;
 
     rootWindow = DefaultRootWindow(display);
     XSelectInput(display, rootWindow, KeyPressMask | KeyReleaseMask);
@@ -59,6 +60,12 @@ void X11HotkeyMonitor::Stop() {
 
     if (monitorThread.joinable()) {
         monitorThread.join();
+    }
+
+    if (display && ownDisplay) {
+        XCloseDisplay(display);
+        display = nullptr;
+        ownDisplay = false;
     }
 
     // Clear all hotkeys to prevent any lingering state

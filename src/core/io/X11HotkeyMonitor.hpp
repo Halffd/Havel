@@ -69,6 +69,7 @@ private:
     std::thread monitorThread;
 
     Display* display = nullptr;
+    bool ownDisplay = false;
     Window rootWindow;
 
     // Hotkey management

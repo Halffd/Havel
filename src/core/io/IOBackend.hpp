@@ -45,6 +45,7 @@ public:
   virtual bool UnregisterHotkey(int keycode, int modifiers, bool isButton) = 0;
   virtual void UnregisterAll() = 0;
   virtual bool GrabKeyboard() = 0;
+  virtual void UngrabKeyboard() {}
 
   // State queries
   virtual bool IsKeyDown(int keycode) = 0;

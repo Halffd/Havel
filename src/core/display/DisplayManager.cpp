@@ -23,6 +23,9 @@ std::vector<DisplayManager::MonitorInfo> DisplayManager::cached_monitors;
 
 void DisplayManager::Initialize() {
   if (!initialized) {
+#ifdef __linux__
+    XInitThreads();
+#endif
     display = XOpenDisplay(nullptr);
     if (display) {
       root = DefaultRootWindow(display);
@@ -34,12 +37,20 @@ void DisplayManager::Initialize() {
         return 0;
       });
       initialized = true;
+      registerExitCleanup([]() {
+        DisplayManager::Close();
+      });
     }
   }
 }
 
 void DisplayManager::Close() {
   if (display) {
+    XUngrabKeyboard(display, CurrentTime);
+    XUngrabPointer(display, CurrentTime);
+    XUngrabKey(display, AnyKey, AnyModifier, root ? root : DefaultRootWindow(display));
+    XUngrabButton(display, AnyButton, AnyModifier, root ? root : DefaultRootWindow(display));
+    XSync(display, x11::XFalse);
     XCloseDisplay(display);
     display = nullptr;
     initialized = false;

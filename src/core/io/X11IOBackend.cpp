@@ -139,6 +139,7 @@ bool X11IOBackend::UnregisterHotkey(int keycode, int modifiers, bool isButton) {
 
 void X11IOBackend::UnregisterAll() {
     if (!display_) return;
+    UngrabKeyboard();
     XUngrabKey(display_, AnyKey, AnyModifier, DefaultRootWindow(display_));
     XUngrabButton(display_, AnyButton, AnyModifier, DefaultRootWindow(display_));
     XSync(display_, x11::XFalse);
@@ -151,6 +152,7 @@ bool X11IOBackend::GrabKeyboard() {
         int result = XGrabKeyboard(display_, DefaultRootWindow(display_), x11::XTrue,
                                    GrabModeAsync, GrabModeAsync, CurrentTime);
         if (result == x11::XSuccess) {
+            keyboardGrabbed_ = true;
             if (debugging::debug_io) debug("Successfully grabbed entire keyboard after {} attempts", i + 1);
             return true;
         }
@@ -158,6 +160,15 @@ bool X11IOBackend::GrabKeyboard() {
     }
     error("Cannot grab keyboard after 1000 attempts");
     return false;
+}
+
+void X11IOBackend::UngrabKeyboard() {
+    if (display_ && keyboardGrabbed_) {
+        XUngrabKeyboard(display_, CurrentTime);
+        XSync(display_, x11::XFalse);
+        keyboardGrabbed_ = false;
+        if (debugging::debug_io) debug("Ungrabbed keyboard in X11IOBackend");
+    }
 }
 
 bool X11IOBackend::IsKeyDown(int keycode) {

@@ -26,6 +26,7 @@ public:
     bool UnregisterHotkey(int keycode, int modifiers, bool isButton) override;
     void UnregisterAll() override;
     bool GrabKeyboard() override;
+    void UngrabKeyboard() override;
 
     bool IsKeyDown(int keycode) override;
     bool IsAnyKeyDown() override;
@@ -51,6 +52,7 @@ private:
     Display *display_ = nullptr;
     int xinput2DeviceId_ = -1;
     bool xinput2Available_ = false;
+    bool keyboardGrabbed_ = false;
     unsigned int numlockMask_ = 0;
 
     void UpdateNumLockMask();

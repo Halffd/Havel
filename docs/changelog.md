@@ -22,6 +22,10 @@ All notable changes to Havel are documented here.
 - HTTP client module
 - SQLite module
 - Async utilities module (`modules/app/async.hv`)
+- **Brightness module: shadow lift control** (enhance contrast in dark areas without blowing out highlights)
+- **Brightness panel UI** (`scripts/app/brightness_panel.hv`) - full GUI with sliders, monitor selector, presets
+- **All brightness setters now apply to all monitors** when no monitor index is provided
+- **Python-style tracebacks** for runtime errors with full call stack, file/line/column, and function names
 
 ### Changed
 - Build system: modes 0-16 with granular feature flags
@@ -30,6 +34,7 @@ All notable changes to Havel are documented here.
 - Module system: Python-style, no `export` keyword
 - String interpolation: only `"{var}"` and `$var` syntax
 - Variable declaration: `val` for immutable, no `let`/`const`
+- **Brightness setters now apply to all monitors** when no monitor index specified (was: first monitor only)
 
 ### Deprecated
 - `let` for immutable bindings (use `val`)
@@ -48,6 +53,7 @@ All notable changes to Havel are documented here.
 - `and`/`or` keywords (use `&&`/`||`/`!`)
 
 ### Fixed
+- **Segfault when calling non-callable values** (null, int, string, object) - now throws descriptive runtime error with Python-style traceback
 - GC finalizer ordering
 - Hotkey policy race conditions
 - Conditional hotkey re-evaluation thrashing

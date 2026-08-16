@@ -1,16 +1,26 @@
 use ffi
 
-_core = ffi.open("libopencv_core.so")
-if _core == 0 { _core = ffi.open("libopencv_core.so.413") }
-if _core == 0 { _core = ffi.open("libopencv_core.so.411") }
-if _core == 0 { _core = ffi.open("libopencv_core.so.409") }
-if _core == 0 { _core = ffi.open("libopencv_core.so.408") }
+fn _open_lib(base_name) {
+    candidates = [
+        "libopencv_" + base_name + ".so",
+        "libopencv_" + base_name + ".so.4",
+        "libopencv_" + base_name + ".so.413",
+        "libopencv_" + base_name + ".so.411",
+        "libopencv_" + base_name + ".so.409",
+        "libopencv_" + base_name + ".so.408",
+        "libopencv_" + base_name + ".so.406",
+    ]
+    for lib in candidates {
+        handle = ffi.open(lib)
+        if handle != 0 && handle != null {
+            return handle
+        }
+    }
+    return 0
+}
 
-_imgproc = ffi.open("libopencv_imgproc.so")
-if _imgproc == 0 { _imgproc = ffi.open("libopencv_imgproc.so.413") }
-if _imgproc == 0 { _imgproc = ffi.open("libopencv_imgproc.so.411") }
-if _imgproc == 0 { _imgproc = ffi.open("libopencv_imgproc.so.409") }
-if _imgproc == 0 { _imgproc = ffi.open("libopencv_imgproc.so.408") }
+_core = _open_lib("core")
+_imgproc = _open_lib("imgproc")
 
 _has_libs = _core != 0 && _core != null && _imgproc != 0 && _imgproc != null
 

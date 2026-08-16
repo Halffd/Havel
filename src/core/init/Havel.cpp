@@ -399,7 +399,15 @@ scheduler = &compiler::Scheduler::instance();
   info("Havel language disabled");
 #endif
     // WindowManagerDetector::IsX11() check removed - using pure Havel window module
-    havel::registerExitCleanup([this]() { performCleanup(); });
+    // Guard with the live singleton: main() runs runExitCleanups() after the
+    // stack Havel instance is destroyed (destructor already ran cleanup()),
+    // so a raw `this` capture would re-run cleanup on freed memory and
+    // double-join the periodic timer thread.
+    havel::registerExitCleanup([]() {
+      if (auto *inst = Havel::getInstance()) {
+        inst->performCleanup();
+      }
+    });
 havel::startup_timing_report("Havel::initialize TOTAL", t0);
 if(Configs::Get().Get<bool>("Debug.AutoExit", false)){
 		std::thread([this]() {

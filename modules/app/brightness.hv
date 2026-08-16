@@ -6,6 +6,7 @@ use display
 use shell
 use fs
 use math
+use os
 
 // === State holder (module-level singleton) ===
 _state = {
@@ -125,13 +126,24 @@ fn _loadLibraries() {
 fn _loadNativeRampBuilder() {
   s = _S()
   if s.gammaRampLib == null || ffi.ptr_to_uint(s.gammaRampLib) == 0 {
+    // Dynamic paths based on common build directories
+    cwd = fs.cwd()
     paths = [
       "libgamma_ramp.so",
-      "/home/all/repos/havel-3/modules/app/libgamma_ramp.so",
-      "/home/all/repos/havel-3/build-debug/libgamma_ramp.so",
+      "./libgamma_ramp.so",
+      "./lib/libgamma_ramp.so",
+      "./build-debug/libgamma_ramp.so",
+      "./build-release/libgamma_ramp.so",
       "/usr/local/lib/libgamma_ramp.so",
       "/usr/lib/libgamma_ramp.so"
     ]
+    // Also try build directory if HAVEL_BUILD_DIR is set
+    buildDir = os.env("HAVEL_BUILD_DIR")
+    if buildDir != "" { paths = [buildDir + "/libgamma_ramp.so"] + paths }
+    // Try build directories relative to cwd if cwd is available
+    if cwd != null {
+      paths = paths + [cwd + "/libgamma_ramp.so", cwd + "/lib/libgamma_ramp.so", cwd + "/build-debug/libgamma_ramp.so", cwd + "/build-release/libgamma_ramp.so"]
+    }
     for p in paths {
       s.gammaRampLib = ffi.open(p)
       if ffi.ptr_to_uint(s.gammaRampLib) != 0 { break }

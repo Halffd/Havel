@@ -387,10 +387,11 @@ vm_->addIntervalResult(timer_id, result);
                 compiler::DependencyTrackerScope scope(tracker);
                 bool conditionMet = false;
                 auto dumpTitle = [&]() {
-                    const auto* ti = vm_->getGlobals().find("title_");
-                    if (ti == vm_->getGlobals().end()) return std::string("<title_ missing>");
+                    const auto& gmap = vm_->getGlobals();
+                    auto ti = gmap.find("title_");
+                    if (ti == gmap.end()) return std::string("<title_ missing>");
                     if (!ti->second.isStringId()) return std::string("<title_ not string>");
-                    auto* sp = vm_->getStringPtr(ti->second);
+                    auto sp = vm_->getStringPtr(ti->second);
                     if (!sp) return std::string("<title_ null>");
                     return *sp;
                 };

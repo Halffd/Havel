@@ -448,7 +448,6 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
               jit->compileTrace(func, start_ip, hot_count);
             }
           });
-      vm->setJITCompiler(jit);
     }
 #endif
     bridge->install(coreProfile ? havel::InstallProfile::Core

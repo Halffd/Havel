@@ -201,7 +201,7 @@ class GenshinBot extends GameBot {
     init() { super("Genshin") }
 
     override _run() {
-        while (this.active && ModeManager.current == "gaming" && window.active().title.has("Genshin")) {
+        while (this.active && ModeManager.current == "gaming" && window.active().title().has("Genshin")) {
             // simple combo cycle
             keyboard.send(this.combo[this.index])
             this.index = (this.index + 1) % this.combo.length

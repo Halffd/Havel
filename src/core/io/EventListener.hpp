@@ -189,8 +189,9 @@ public:
   void RequestShutdownFromSignal(int sig);
 
   // Callback invoked when the event loop exits due to a shutdown signal
-  // Used by embedders (e.g., Qt main loop) to unblock the main thread
-void SetShutdownCallback(std::function<void()> cb) {
+  // Used by embedders (e.g., Qt main loop) to unblock the main thread.
+  // Receives the process exit code requested by the program (0 if none).
+void SetShutdownCallback(std::function<void(int)> cb) {
         shutdownCallback_ = std::move(cb);
     }
 
@@ -226,7 +227,9 @@ private:
   std::unique_ptr<SignalHandler> signalHandler;
   std::unique_ptr<InputBackend> backend_;
 
-  std::function<void()> shutdownCallback_;
+  std::function<void(int)> shutdownCallback_;
+  std::atomic<int> pendingExitCode_{0};
+  bool exitSignaled_ = false;
 
     havel::Modules *modules_ = nullptr;
   havel::compiler::ExecutionEngine *executionEngine = nullptr;

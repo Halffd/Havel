@@ -2390,7 +2390,7 @@ expect(TID.CloseBrace)
         if tt == TID.On { return parseOnStatement() }
         if tt == TID.Mode {
           if at(1).tid == TID.Identifier { return parseModeBlockStatement() }
-          return parseExpr(0)
+          return ExpressionStatement(parseExpr(0), l, c)
         }
         if tt == TID.Modes { return parseModesBlockStatement() }
         if tt == TID.Group { return parseGroupStatement() }

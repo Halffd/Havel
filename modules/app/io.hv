@@ -2,6 +2,51 @@
 // Bridge functions (io._*) registered at startup by VMHostFunctions.cpp.
 // This module builds the io namespace and public API entirely in Havel.
 
+// Build io namespace object from dotted host function globals.
+// Bridge fns are registered as globals named "io._send", "io._map", etc.
+// Pull them into an object so wrapper functions can close over it.
+io = {}
+io._send              = _G["io._send"]
+io._sendX11Key        = _G["io._sendX11Key"]
+io._map               = _G["io._map"]
+io._remap             = _G["io._remap"]
+io._unmap             = _G["io._unmap"]
+io._emergencyRelease  = _G["io._emergencyRelease"]
+io._ungrabAll         = _G["io._ungrabAll"]
+io._setEvdevGrab      = _G["io._setEvdevGrab"]
+io._setBlockInput     = _G["io._setBlockInput"]
+io._getEvdevGrab      = _G["io._getEvdevGrab"]
+io._suspend           = _G["io._suspend"]
+io._resume            = _G["io._resume"]
+io._isSuspended       = _G["io._isSuspended"]
+io._isKeyPressed      = _G["io._isKeyPressed"]
+io._isShiftPressed    = _G["io._isShiftPressed"]
+io._isCtrlPressed     = _G["io._isCtrlPressed"]
+io._isAltPressed      = _G["io._isAltPressed"]
+io._isWinPressed      = _G["io._isWinPressed"]
+io._getCurrentModifiers = _G["io._getCurrentModifiers"]
+io._setExecutorMode   = _G["io._setExecutorMode"]
+io._getExecutorMode   = _G["io._getExecutorMode"]
+io._mouseMove         = _G["io._mouseMove"]
+io._mouseMoveTo       = _G["io._mouseMoveTo"]
+io._mouseClick        = _G["io._mouseClick"]
+io._mouseDown         = _G["io._mouseDown"]
+io._mouseUp           = _G["io._mouseUp"]
+io._scroll            = _G["io._scroll"]
+io._getMousePosition  = _G["io._getMousePosition"]
+io._setMouseSensitivity = _G["io._setMouseSensitivity"]
+io._getMouseSensitivity = _G["io._getMouseSensitivity"]
+io._sleepMs           = _G["io._sleepMs"]
+io._mouseState        = _G["io._mouseState"]
+io._lastLocks         = _G["io._lastLocks"]
+io._locks             = _G["io._locks"]
+io._setLock           = _G["io._setLock"]
+io._devices           = _G["io._devices"]
+io._addDevice         = _G["io._addDevice"]
+io._isRecording       = _G["io._isRecording"]
+io._recordStart       = _G["io._recordStart"]
+io._recordStop        = _G["io._recordStop"]
+
 // Mode mapping
 _modeMap = {
   "scheduler": 0,
@@ -216,4 +261,53 @@ fn recordScript(stopKey) {
   }
 }
 
+// Attach public API functions as fields so io.map / io.unmap / etc. work
+// when io is used as a global object (without `use io`).
+io.sendKeys = sendKeys
+io.sendKey = sendKey
+io.keyDown = keyDown
+io.keyUp = keyUp
+io.map = map
+io.remap = remap
+io.unmap = unmap
+io.block = block
+io.unblock = unblock
+io.suspend = suspend
+io.resume = resume
+io.isSuspended = isSuspended
+io.grab = grab
+io.ungrab = ungrab
+io.emergencyRelease = emergencyRelease
+io.isKeyPressed = isKeyPressed
+io.isShiftPressed = isShiftPressed
+io.isCtrlPressed = isCtrlPressed
+io.isAltPressed = isAltPressed
+io.isWinPressed = isWinPressed
+io.getCurrentModifiers = getCurrentModifiers
+io.setExecutorMode = setExecutorMode
+io.getExecutorMode = getExecutorMode
+io.mouseMove = mouseMove
+io.mouseMoveTo = mouseMoveTo
+io.mouseClick = mouseClick
+io.mouseDoubleClick = mouseDoubleClick
+io.mousePress = mousePress
+io.mouseRelease = mouseRelease
+io.scroll = scroll
+io.getMousePosition = getMousePosition
+io.setMouseSensitivity = setMouseSensitivity
+io.getMouseSensitivity = getMouseSensitivity
+io.sleepMs = sleepMs
+io.mouseState = mouseState
+io.lastLocks = lastLocks
+io.locks = locks
+io.setLock = setLock
+io.devices = devices
+io.addDevice = addDevice
+io.sendModifiers = sendModifiers
+io.sendKeyState = sendKeyState
+io.record = record
+io.play = play
+io.recordScript = recordScript
+
 // Set io as global for backward compat
+_G["io"] = io

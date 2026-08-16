@@ -1319,6 +1319,7 @@ Value loadModule(const std::string& path);
 bool isLazyModuleLoaded(const std::string &name) const;
     void addModuleSearchPath(const std::string& path) { moduleLoader_.addSearchPath(path); }
     void setCurrentScriptDir(const std::string& dir) { current_script_dir_ = dir; }
+    const std::string& currentScriptDir() const { return current_script_dir_; }
 
     ModuleLoader& moduleLoader() { return moduleLoader_; }
     void setPluginLoader(havel::Loader *loader) { pluginLoader_ = loader; }

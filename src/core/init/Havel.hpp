@@ -62,7 +62,7 @@ public:
   static void gracefulExit(int code = 0, bool fromSignal = false);
 
   // Shutdown callback for embedders (e.g., Qt event loop)
-  void setShutdownCallback(std::function<void()> cb);
+  void setShutdownCallback(std::function<void(int)> cb);
 
   // Getters
   static Havel *getInstance() { return instance; }

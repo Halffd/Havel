@@ -569,7 +569,7 @@ public:
 
         info("Havel started successfully - running in system tray");
         havel_inst.setShutdownCallback(
-            [] { host::UIManager::instance().backend()->quitEventLoop(0); });
+            [](int code) { host::UIManager::instance().backend()->quitEventLoop(code); });
 
         if (auto *io = havel_inst.getIO()) {
           backend->setIdleCallback([io]() { io->PumpOnce(); });
@@ -672,7 +672,7 @@ public:
       }
 
       havel_inst.setShutdownCallback(
-          [] { host::UIManager::instance().backend()->quitEventLoop(0); });
+          [](int code) { host::UIManager::instance().backend()->quitEventLoop(code); });
 
       if (auto *io = havel_inst.getIO()) {
         backend->setIdleCallback([io]() { io->PumpOnce(); });
@@ -682,6 +682,16 @@ public:
         info("No hotkeys registered — running event loop for goroutines");
       } else {
         info("Scripts loaded. Hotkeys registered. Press Ctrl+C to exit.");
+      }
+
+      // If the script requested exit during the pipeline (e.g. a hotkey or
+      // goroutine ran exit() while main was executing), do not enter the UI
+      // event loop. havel::exit() must NOT be called from the event thread
+      // (it destroys the VM and calls std::exit() while the main thread is
+      // still alive). Instead return the requested code so the Havel
+      // instance destructor runs cleanup() on this thread.
+      if (bytecodeVM && bytecodeVM->exitRequested()) {
+        return bytecodeVM->exit_code_.load();
       }
       return backend->runEventLoop();
     }

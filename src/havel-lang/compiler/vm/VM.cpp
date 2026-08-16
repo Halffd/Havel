@@ -503,6 +503,13 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
 
     // Run scheduler loop until main script completes
     while (main_script_goroutine_id_ != UINT32_MAX) {
+      // Cooperative exit: a goroutine (or hotkey) may have called exit()
+      // while the main script is suspended in sleep/await. Without this
+      // check the main goroutine re-suspends forever and the VM never
+      // unwinds; the EventLoop's quitEventLoop() cannot help because the
+      // main thread is here, not inside runEventLoop(). Break so
+      // vm->execute() returns and the launcher reports exit_code_.
+      if (exit_requested_.load()) break;
       scheduler_->wakeSleepingGoroutines();
       auto *cur = scheduler_->pickNext();
       if (!cur) {
@@ -2325,8 +2332,32 @@ Value VM::call(const Value &callee_value, const std::vector<Value> &args) {
   }
 
   const size_t base_depth = frame_count_;
+
+  const auto saved_stack = stack;
+  const auto saved_locals = locals;
+  const BytecodeChunk *base_chunk = current_chunk;
+  const auto saved_upvalues = open_upvalues;
+  const uint32_t saved_when_watcher = current_when_watcher_id_;
+  const uint32_t saved_coroutine = current_coroutine_id_;
+
   doCall(callee_value, args);
-  runDispatchLoop(base_depth);
+  try {
+    runDispatchLoop(base_depth);
+  } catch (...) {
+    stack = saved_stack;
+    locals = saved_locals;
+    frame_count_ = base_depth;
+    current_chunk = base_chunk;
+    open_upvalues = saved_upvalues;
+    current_when_watcher_id_ = saved_when_watcher;
+    current_coroutine_id_ = saved_coroutine;
+    suspension_requested_ = false;
+    suspension_reason_ = 0;
+    suspension_context_ = nullptr;
+    last_suspension_reason_ = 0;
+    last_suspension_context_ = nullptr;
+    throw;
+  }
 
   if (stack.empty()) {
     return nullptr;
@@ -4525,7 +4556,22 @@ Value VM::loadModule(const std::string &path) {
 
   // Check native modules FIRST (before Havel module resolution)
   // This ensures native modules like "time" take precedence over .hvc files
-  if (context_ && context_->modules && !native_plugin_in_progress_.count(path)) {
+  // But skip native plugin check if the module exists as a Havel module (has .hvc/.hv)
+  // to avoid "library not found" errors for Havel sidecar modules like math/math, math/physics, etc.
+  bool skipNativePluginCheck = false;
+  if (context_ && context_->modules) {
+    // Quick check: does this module exist as a Havel module in self-hosted path?
+    // If so, skip native plugin check to avoid "library not found" spam
+    if (!native_plugin_in_progress_.count(path)) {
+      auto resolved = moduleLoader_.resolve(path, current_script_dir_);
+      if (resolved && (resolved->type == ModuleLoader::ResolvedModule::BytecodeCache ||
+                       resolved->type == ModuleLoader::ResolvedModule::UserSource ||
+                       resolved->type == ModuleLoader::ResolvedModule::StdlibSource)) {
+        skipNativePluginCheck = true;
+      }
+    }
+  }
+  if (!skipNativePluginCheck && context_ && context_->modules && !native_plugin_in_progress_.count(path)) {
     auto pluginOpt = context_->modules->extensionLoader().loadModulePlugin(path);
     if (pluginOpt) {
       auto plugin = *pluginOpt;

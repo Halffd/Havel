@@ -3206,6 +3206,9 @@ void VM::registerDefaultHostFunctions() {
     // Push the new candidate
     candidates.push_back(args[2]);
 
+    // Also store directly on class object so class.new can find it
+    classObj->set(method_name, args[2]);
+
     if (candidates.size() > 1) {
       // Create dispatcher host function name
       std::string dispatcher_name =

@@ -373,7 +373,8 @@ vm_->addIntervalResult(timer_id, result);
         if (depth > 0) return; // re-entry guard for nested calls (eval→emit→eval)
         depth++;
         struct Gd__ { ~Gd__(){ depth--; } } _gd_;
-        fprintf(stderr, "[R] var=%s\n", var_name.c_str());
+        static const bool _trace = std::getenv("HAVEL_DEBUG_CONDHOTKEYS") != nullptr;
+        if (_trace) fprintf(stderr, "[R] var=%s\n", var_name.c_str());
         sched->forEachConditionalHotkey(
             [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
                 if (!g) return;
@@ -394,7 +395,7 @@ vm_->addIntervalResult(timer_id, result);
                     if (!sp) return std::string("<title_ null>");
                     return *sp;
                 };
-                fprintf(stderr, "[R]     title_='%s' for alias=%s\n", dumpTitle().c_str(), g->hotkey_condition_alias.c_str());
+                if (_trace) fprintf(stderr, "[R]     title_='%s' for alias=%s\n", dumpTitle().c_str(), g->hotkey_condition_alias.c_str());
                 try {
                     compiler::Value result = vm_->callFunctionSync(*condVal, {});
                     conditionMet = vm_->toBool(result);
@@ -405,13 +406,13 @@ vm_->addIntervalResult(timer_id, result);
                 g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
                 bool prev = g->hotkey_condition_last_result;
                 g->hotkey_condition_last_result = conditionMet;
-                fprintf(stderr, "[R]   g=%d alias=%s condMet=%d prev=%d deps_sz=%zu\n",
+                if (_trace) fprintf(stderr, "[R]   g=%d alias=%s condMet=%d prev=%d deps_sz=%zu\n",
                     g->id, g->hotkey_condition_alias.c_str(),
                     (int)conditionMet, (int)prev, g->hotkey_condition_deps.size());
                 if (prev == conditionMet) return;
                 pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
             });
-        fprintf(stderr, "[R] actions=%zu\n", pendingActions.size());
+        if (_trace) fprintf(stderr, "[R] actions=%zu\n", pendingActions.size());
         for (auto& act : pendingActions) {
             if (act.alias.empty()) continue;
             auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;

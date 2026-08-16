@@ -149,6 +149,10 @@ private:
   bool isFreshLocked(const std::string &key) const;
   static long long mtimeNs(const std::string &path);
 
+  // Resolution cache to avoid repeated filesystem stats
+  // Key: module path, Value: empty string = not found, non-empty = resolved canonical path
+  mutable std::unordered_map<std::string, std::string> resolution_cache_;
+
   // Native extension handles (for dlopen/dlclose)
   std::unordered_map<std::string, NativeHandle> nativeHandles_;
 

@@ -1,0 +1,19 @@
+// Test: window.active() repeated calls
+use window
+use time
+
+i = 0
+while i < 5 {
+    w = window.active()
+    if w != null {
+        print("iter $i active id: ${w.id}")
+    } else {
+        print("iter $i active: null")
+    }
+    time.sleep(100)
+    i = i + 1
+}
+
+use display
+display.close()
+print("OK: active loop finished")

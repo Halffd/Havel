@@ -64,5 +64,7 @@ int main(int argc, char* argv[]) {
 
     havel::init::HavelLauncher launcher;
     launcher.setSelfHostedConfig(selfHostedPath);
-    return launcher.run(argc, argv);
+    int res = launcher.run(argc, argv);
+    havel::runExitCleanups();
+    return res;
 }

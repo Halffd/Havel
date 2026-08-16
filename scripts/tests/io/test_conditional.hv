@@ -90,8 +90,8 @@ cfg.General.GamingExcludeClasses = ""
 cfg.General.GamingExcludeTitles = ""
 
 fn modeEval(win) {
-    titlelower = win.title.lower().trim()
-    classlower = win.class.lower().trim()
+    titlelower = win.title().lower().trim()
+    classlower = win.className().lower().trim()
     apps = cfg.General.Apps.lower().trim().split(",")
     excludeClasses = cfg.General.GamingExcludeClasses.lower().trim().split(",")
     excludeTitles = cfg.General.GamingExcludeTitles.lower().trim().split(",")
@@ -211,7 +211,7 @@ go fn update() {
         }
 
         win = window.active()
-        [title_, class_, cmd, wid, wpid] = [win.title, win.class, win.cmdline, win.id, win.pid]
+        [title_, class_, cmd, wid, wpid] = [win.title(), win.className(), win.cmdline(), win.id, win.pid()]
 
         if wid != lwid {
             print("WINDOW CHANGE")

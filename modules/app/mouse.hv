@@ -60,8 +60,21 @@ BUTTON3 = 3
 BUTTON4 = 4
 BUTTON5 = 5
 
+_cached_dpy = 0
+
 fn _openDisplay() {
-    ffi.call(_XOpenDisplay, "pointer", _t_p, 0)
+    if _cached_dpy == 0 {
+        _cached_dpy = ffi.call(_XOpenDisplay, "pointer", _t_p, 0)
+        if _cached_dpy != 0 {
+            sys.registerExitCleanup(fn() {
+                if _cached_dpy != 0 {
+                    ffi.call(_XCloseDisplay, "int32", _t_p, _cached_dpy)
+                    _cached_dpy = 0
+                }
+            })
+        }
+    }
+    _cached_dpy
 }
 
 fn _rootWindow(dpy) {
@@ -69,7 +82,9 @@ fn _rootWindow(dpy) {
 }
 
 fn _closeDisplay(dpy) {
-    ffi.call(_XCloseDisplay, "int32", _t_p, dpy)
+    if dpy != 0 {
+        ffi.call(_XFlush, "int32", _t_p, dpy)
+    }
 }
 
 fn _flush(dpy) {

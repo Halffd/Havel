@@ -4535,18 +4535,6 @@ Value VM::loadModule(const std::string &path) {
     Value cachedVal;
     std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
     if (moduleLoader_.getCached(path, &cachedVal)) {
-      if (path == "debug") {
-        std::cerr << "[DEBUG] loadModule cached path='" << path << "' cachedVal is oid? "
-                  << cachedVal.isObjectId() << " isNull? " << cachedVal.isNull() << " isHF? " << cachedVal.isHostFuncId()
-                  << " bits=" << cachedVal.rawBits() << "\n";
-        if (cachedVal.isObjectId()) {
-          auto *co = heap_.object(cachedVal.asObjectId());
-          if (co) {
-            auto *sf = co->get("setFlag");
-            std::cerr << "    exports has setFlag? " << (sf != nullptr) << " bits=" << cachedVal.rawBits() << " closure=" << (sf ? sf->isClosureId() : 0) << " hf=" << (sf ? sf->isHostFuncId() : 0) << " null=" << (sf ? sf->isNull() : 1) << "\n";
-          }
-        }
-      }
       moduleLoader_.getCachedGlobals(path, &cachedGlobals);
 
       if (cachedGlobals) {
@@ -5029,14 +5017,11 @@ Value VM::loadModule(const std::string &path) {
     // Warm loads skip __main__ so imports never re-run; these refs
     // were saved from the cold run's globals and must be restored now.
     if (canonicalKey.find("pratt") != std::string::npos || canonicalKey.find("/ast.") != std::string::npos) {
-      std::cerr << "[DEBUG] " << (canonicalKey.find("pratt") != std::string::npos ? "pratt" : "ast") << " restored globals: " << globals.size() << "\n";
       for (auto &[n, v] : globals) {
         if (n == "parse" || n == "Program" || n == "ErrorNode" || n == "BlockStatement") {
-        std::cerr << "[DEBUG]   " << n << " closure=" << v.isClosureId() << " hostfn=" << v.isHostFuncId() << " null=" << v.isNull() << " fnobj=" << v.isFunctionObjId() << "\n";
-      }
+        }
       }
     }
-    std::cerr << "[DEBUG] warm restore: " << closureRefs.size() << " closure refs for module " << canonicalKey << "\n";
     for (const auto &ref : closureRefs) {
       // Try cached module first (avoids recursive load triggering source compile)
       Value srcExports;
@@ -5048,26 +5033,17 @@ Value VM::loadModule(const std::string &path) {
         std::string modName = std::filesystem::path(ref.modulePath).stem().string();
         srcExports = loadModule(modName);
       }
-      if (!srcExports.isObjectId()) { std::cerr << "[DEBUG] restore " << ref.globalName << ": no exports for " << ref.modulePath << "\n"; continue; }
+      if (!srcExports.isObjectId()) { continue; }
       auto *srcObj = heap_.object(srcExports.asObjectId());
-      if (!srcObj) { std::cerr << "[DEBUG] restore " << ref.globalName << ": null object\n"; continue; }
+      if (!srcObj) { continue; }
       auto srcClosurePtr = srcObj->get(ref.functionName);
-      if (ref.functionName == "ErrorNode" || ref.functionName == "Program") {
-        std::cerr << "[DEBUG] srcClosure " << ref.functionName << " from " << ref.modulePath << " present=" << (srcClosurePtr != nullptr) << " exportsSize=" << srcObj->size() << "\n";
-        if (srcClosurePtr) std::cerr << "[DEBUG]   closureType closure=" << srcClosurePtr->isClosureId() << " hostfn=" << srcClosurePtr->isHostFuncId() << " fnobj=" << srcClosurePtr->isFunctionObjId() << " null=" << srcClosurePtr->isNull() << " obj=" << srcClosurePtr->isObjectId() << "\n";
-      }
-      if (!srcClosurePtr || !srcClosurePtr->isClosureId()) { std::cerr << "[DEBUG] restore " << ref.globalName << ": fn '" << ref.functionName << "' not closure in exports\n"; continue; }
+      if (!srcClosurePtr || !srcClosurePtr->isClosureId()) { continue; }
       Value srcClosure = *srcClosurePtr;
-      std::cerr << "[DEBUG] re-bind[" << canonicalKey << "] " << ref.globalName << " <- " << ref.modulePath << "." << ref.functionName << "\n";
       globals[ref.globalName] = srcClosure;
     }
 
     // Create module globals snapshot for closures
     auto moduleGlobalsForCache = std::make_shared<std::unordered_map<std::string, Value>>(globals);
-    if (globals.find("emitError") != globals.end() && globals.find("emitterError") == globals.end()) {
-      std::cerr << "[DEBUG] SNAPSHOT-MISSES-EMITTERERROR module=" << canonicalKey
-                << " size=" << globals.size() << "\n";
-    }
     for (auto &[name, value] : globals) {
       if (value.isClosureId()) {
         auto *closure = heap_.closure(value.asClosureId());

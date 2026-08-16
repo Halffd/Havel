@@ -100,33 +100,6 @@ auto hostIt = host_function_globals_.find(name);
   }
 
   trackGlobalAccess(name);
-  if (name == "emitterError") {
-    std::cerr << "[DEBUG LOAD_GLOBAL-FAIL] name=" << name
-              << " globals.size=" << globals.size()
-              << " inMain=" << (globals.find(name) != globals.end())
-              << " curChunkPtr=" << (const void*)current_chunk
-              << " curFn=" << (frame_count_ > 0 && frame_arena_[frame_count_-1].function ? frame_arena_[frame_count_-1].function->name : "null")
-              << "\n";
-    auto mgit = globals.find(name);
-    if (mgit != globals.end()) std::cerr << "  mainGlobals emitterError type closure=" << mgit->second.isClosureId() << " hf=" << mgit->second.isHostFuncId() << " null=" << mgit->second.isNull() << "\n";
-    for (const auto &[nk, nv] : globals) {
-      if (nk.find("emitterError") != std::string::npos || nk.find("emitter") != std::string::npos) {
-        std::cerr << "  key '" << nk << "' closure=" << nv.isClosureId() << " hf=" << nv.isHostFuncId() << " null=" << nv.isNull() << "\n";
-      }
-    }
-    { int i = 0; for (const auto &[nk, nv] : globals) { if (i >= 6) break; std::cerr << "  sample key '" << nk << "' closure=" << nv.isClosureId() << " hf=" << nv.isHostFuncId() << "\n"; i++; } }
-    uint32_t cid = frame_count_ > 0 ? frame_arena_[frame_count_-1].closure_id : 0;
-    if (cid != 0) {
-      auto *cl = heap_.closure(cid);
-      if (cl) {
-        std::cerr << "  frameClosure module_globals=" << (cl->module_globals ? (void*)cl->module_globals.get() : 0)
-                  << " size=" << (cl->module_globals ? cl->module_globals->size() : 0)
-                  << " hasEmitterError=" << (cl->module_globals && cl->module_globals->find("emitterError") != cl->module_globals->end())
-                  << " hasEmitError=" << (cl->module_globals && cl->module_globals->find("emitError") != cl->module_globals->end())
-                  << "\n";
-      }
-    }
-  }
   COMPILER_THROW("Undefined variable: '" + name + "'");
   break;
   }
@@ -177,9 +150,7 @@ Value value = popStack();
                 }
                 COMPILER_THROW("Cannot reassign val global: " + name);
             }
-std::cerr << "[DEBUG STORE_GLOBAL] Storing " << name << " in globals (size before: " << globals.size() << ")\n";
             globals[name] = value;
-            std::cerr << "[DEBUG STORE_GLOBAL] After store, globals size: " << globals.size() << ", has " << name << " = " << (globals.count(name) ? "yes" : "no") << "\n";
 
             // If this frame owns globals (module closure), also persist to the
             // shared module_globals so subsequent calls see the updated value.

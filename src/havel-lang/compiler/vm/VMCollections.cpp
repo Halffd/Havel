@@ -454,15 +454,6 @@ if (container.isSetId()) {
         else if (index_or_key.isHostFuncId()) typeInfo = "host_func_id";
         else if (index_or_key.isBoundMethodId()) typeInfo = "bound_method_id";
         else if (index_or_key.isCoroutineId()) typeInfo = "coroutine_id";
-        // Add call stack for debugging
-        std::string frameInfo;
-        for (int fi = static_cast<int>(frame_count_) - 1; fi >= 0 && fi >= static_cast<int>(frame_count_) - 5; --fi) {
-            auto &fr = frame_arena_[fi];
-            std::string fname = fr.function ? fr.function->name : "<anon>";
-            frameInfo += "  frame[" + std::to_string(fi) + "] " + fname + " ip=" + std::to_string(fr.ip) + "\n";
-        }
-        std::cerr << "[DEBUG-OBJECT-INDEX] key type: " << typeInfo << ", raw: " << std::hex << index_or_key.rawBits() << std::dec << "\n";
-        std::cerr << "[DEBUG-OBJECT-INDEX] call stack:\n" << frameInfo;
         COMPILER_THROW("OBJECT index expects string/number/bool key (got " + typeInfo + ")");
       }
       auto *object = heap_.object(container.asObjectId());
@@ -1218,15 +1209,6 @@ if (!modName.empty()) {
     }
 
 	if (!object.isObjectId()) {
-		{
-			std::cerr << "OBJECT_SET: object=" << object.toString()
-				<< " key=" << *keyStr
-				<< " value=" << value.toString()
-				<< " frame_count=" << frame_count_
-				<< " locals_size=" << locals.size()
-				<< " stack_depth=" << stack.size()
-				<< std::endl;
-		}
 		COMPILER_THROW("OBJECT_SET expects object container");
 	}
 

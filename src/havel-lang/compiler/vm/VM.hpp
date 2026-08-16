@@ -1122,6 +1122,21 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
         // and wedges the frame; deferral is mandatory in that case.
         std::atomic<int> deep_wrap_module_functions_depth_{0};
 
+        // Drain callback invoked by host-side getters that read state derived
+        // from conditional-hotkey re-eval (e.g. Hotkey.grab). HavelEngine
+        // sets this to its drainPendingVarChanges(): if the caller just
+        // performed a STORE_GLOBAL that queued a var change, this flushes the
+        // pending re-eval before the getter reads ctx->grab. Otherwise
+        // scripts that do `mode = "gaming"; ...; hotkey.grab` inside the
+        // same goroutine tick see stale grab state.
+        std::function<void()> drain_conditional_hotkey_pending_fn_;
+        void setDrainConditionalHotkeyPendingFn(std::function<void()> cb) {
+            drain_conditional_hotkey_pending_fn_ = std::move(cb);
+        }
+        void drainConditionalHotkeyPending() {
+            if (drain_conditional_hotkey_pending_fn_) drain_conditional_hotkey_pending_fn_();
+        }
+
     // When true, the script requested program exit (via exit() host function)
     std::atomic<bool> exit_requested_{false};
     bool exitRequested() const { return exit_requested_.load(); }

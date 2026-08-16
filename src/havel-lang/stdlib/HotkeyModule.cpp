@@ -1105,6 +1105,12 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     auto objRef = ObjectRef{args[0].asObjectId(), true};
     auto idValue = vm.getHostObjectField(objRef, "id");
     if (idValue.isNull()) return Value::makeBool(false);
+    // Flush pending conditional-hotkey re-evals queued by recent
+    // STORE_GLOBAL ops in this goroutine tick before reporting grab.
+    // Otherwise scripts that write the dependency var then read .grab in
+    // the same tick see a stale value (the scheduler's drain at top of
+    // processGoroutines only fires after the goroutine yields/sleeps).
+    vm.drainConditionalHotkeyPending();
     auto hotkeyId = resolveHotkeyId(vm, idValue);
     auto *ctx = getHotkeyContextData(hotkeyId);
     if (!ctx) return Value::makeBool(false);

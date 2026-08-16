@@ -316,29 +316,40 @@ vm_->addIntervalResult(timer_id, result);
                 } catch (...) {}
             }
             vm_->processSignalBindings(var_name);
-            // Conditional-hotkey re-eval: defer when synchronous re-eval would
-            // wedge an active frame. Two unsafe cases:
-            //   1. deepWrapModuleFunctions is mid-frame: the cond callback's
-            //      callFunctionSync crosses the still-being-wrapped module
-            //      host wrapper / FFI and never returns.
-            //   2. A goroutine fiber is mid-dispatch and the cond callback
-            //      would touch the same shared VM state the goroutine is
-            //      using. This is the same risk as case 1 in spirit but
-            //      triggered by ordinary runtime execution, not bootstrap.
-            // Defer to pending_var_changes_ and drain at the next scheduler
-            // tick (drainPendingVarChanges in processGoroutines).
-            // Case 2 is allowed to run synchronously when deepWrapModuleFunctions
-            // is NOT on the stack: the cond function only reads globals and
-            // runs in callFunctionSync's save/restored state. Without this,
-            // scripts that mutate global mode inside a goroutine then read
-            // hotkey.grab in the same goroutine always see stale grab (the
-            // pending drain never fires between two non-yielding statements).
-            if (vm_->deep_wrap_module_functions_depth_.load() > 0) {
+            // Conditional-hotkey re-eval: defer to scheduler tick when we're
+            // inside a goroutine's dispatch loop, run inline otherwise.
+            // Synchronous re-eval from inside a goroutine frame nests a
+            // recursive VM dispatch (callFunctionSync) inside the active
+            // goroutine's frame, which corrupts FFI/VM state (e.g.
+            // window.active() never returns). Drain after suspension.
+            //
+            // deferral must also fire when deepWrapModuleFunctions is mid-
+            // frame: synchronous re-eval would cross the still-being-wrapped
+            // module host wrapper FFI and wedge similarly.
+            if (vm_->hasCurrentExecutingFiber() ||
+                vm_->deep_wrap_module_functions_depth_.load() > 0) {
                 std::lock_guard<std::mutex> lk(pending_var_changes_mutex_);
                 pending_var_changes_.push_back(var_name);
             } else {
                 reevalConditionalHotkeys(var_name);
             }
+        });
+
+        // Wire a drain into the VM so host getters (e.g. Hotkey.grab) that
+        // read state derived from conditional-hotkey re-eval flush any
+        // pending var changes before reading. Without this, scripts that
+        // mutate a global followed by reading hotkey.grab in the same tick
+        // (no yield/sleep between them) read stale grab state, since
+        // pending_var_changes_ is otherwise only drained at top of
+        // processGoroutines loop.
+        vm_->setDrainConditionalHotkeyPendingFn([this]() {
+            // Re-entrancy guard: if a re-eval is already in flight on this
+            // thread (e.g. setGrab triggered by drain itself), don't recurse.
+            static thread_local bool in_drain = false;
+            if (in_drain) return;
+            in_drain = true;
+            struct Guard { bool* p; ~Guard() { *p = false; } } _g{&in_drain};
+            drainPendingVarChanges();
         });
 
         havel::startup_timing_report("HavelEngine::initializeFull TOTAL", t0);
@@ -358,6 +369,11 @@ vm_->addIntervalResult(timer_id, result);
             bool grab;
         };
         std::vector<HotkeyAction> pendingActions;
+        static thread_local int depth = 0;
+        if (depth > 0) return; // re-entry guard for nested calls (eval→emit→eval)
+        depth++;
+        struct Gd__ { ~Gd__(){ depth--; } } _gd_;
+        fprintf(stderr, "[R] var=%s\n", var_name.c_str());
         sched->forEachConditionalHotkey(
             [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
                 if (!g) return;
@@ -370,6 +386,15 @@ vm_->addIntervalResult(timer_id, result);
                 auto tracker = std::make_shared<compiler::DependencyTracker>();
                 compiler::DependencyTrackerScope scope(tracker);
                 bool conditionMet = false;
+                auto dumpTitle = [&]() {
+                    const auto* ti = vm_->getGlobals().find("title_");
+                    if (ti == vm_->getGlobals().end()) return std::string("<title_ missing>");
+                    if (!ti->second.isStringId()) return std::string("<title_ not string>");
+                    auto* sp = vm_->getStringPtr(ti->second);
+                    if (!sp) return std::string("<title_ null>");
+                    return *sp;
+                };
+                fprintf(stderr, "[R]     title_='%s' for alias=%s\n", dumpTitle().c_str(), g->hotkey_condition_alias.c_str());
                 try {
                     compiler::Value result = vm_->callFunctionSync(*condVal, {});
                     conditionMet = vm_->toBool(result);
@@ -377,28 +402,21 @@ vm_->addIntervalResult(timer_id, result);
                 auto newDeps = tracker->getGlobalDependencies();
                 auto fieldDeps = tracker->getFieldDependencies();
                 newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-                // Union-merge: keep previously-tracked deps so
-                // short-circuited branches' globals keep triggering
-                // re-evals.
                 g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
                 bool prev = g->hotkey_condition_last_result;
                 g->hotkey_condition_last_result = conditionMet;
+                fprintf(stderr, "[R]   g=%d alias=%s condMet=%d prev=%d deps_sz=%zu\n",
+                    g->id, g->hotkey_condition_alias.c_str(),
+                    (int)conditionMet, (int)prev, g->hotkey_condition_deps.size());
                 if (prev == conditionMet) return;
                 pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
             });
+        fprintf(stderr, "[R] actions=%zu\n", pendingActions.size());
         for (auto& act : pendingActions) {
-            if (!act.alias.empty()) {
-                auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-                // HotkeyManager::SetHotkeyGrab updates the native I/O layer
-                // (evdev / XGrab) and the hotkey's grab/enabled fields in
-                // RegisteredHotkeys(). HotkeyModule::setGrab also updates
-                // HotkeyContextData::grab/enabled, which is what the Havel
-                // "Hotkey.grab" prototype getter reads (see HotkeyModule.cpp
-                // "grab" method). Update both; missing one means the script
-                // sees stale grab state.
-                if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
-                ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
-            }
+            if (act.alias.empty()) continue;
+            auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+            if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
+            ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
         }
     }
 

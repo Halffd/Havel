@@ -580,6 +580,13 @@ public:
   virtual void setDumpAsmToFile(bool enabled) { (void)enabled; }
   virtual void setShowWarnings(bool enabled) { (void)enabled; }
   virtual void setOptimizationLevel(uint8_t level) { (void)level; }
+  // Hot-trace compilation (tiered JIT backedge). Default: no-op.
+  virtual void compileTrace(const BytecodeFunction &func, uint32_t start_ip,
+                            uint64_t hot_count) {
+    (void)start_ip;
+    (void)hot_count;
+    compileFunction(func);
+  }
 };
 
 // Hybrid execution engine (Compiler + Interpreter + JIT)

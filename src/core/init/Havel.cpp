@@ -518,7 +518,7 @@ void Havel::exit() {
   havel::exit(ExitReason::Normal, 0);
 }
 
-void Havel::setShutdownCallback(std::function<void()> cb) {
+void Havel::setShutdownCallback(std::function<void(int)> cb) {
   if (io && io->GetEventListener()) {
     io->GetEventListener()->SetShutdownCallback(std::move(cb));
   }

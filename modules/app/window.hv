@@ -612,6 +612,15 @@ fn pos() {
 		x11.freeClientMessage(_ev)
 		true
 	}
+
+	fn focus() { @activate() }
+	fn min() { @minimize() }
+	fn max() { @maximize() }
+	fn setAlwaysOnTop(b) {
+		if b == null || b { @alwaysOnTop() }
+		else { @floating() }
+	}
+	fn name() { @title() }
 }
 
 // ============================================================
@@ -694,18 +703,6 @@ fn _allWindows() {
 	}
 	if _tree.children != 0 { x11.free(_tree.children) }
 	_wins
-}
-
-// ============================================================
-	fn focus() { @activate() }
-	fn min() { @minimize() }
-	fn max() { @maximize() }
-	fn setAlwaysOnTop(b) {
-		if b == null || b { @alwaysOnTop() }
-		else { @floating() }
-	}
-
-	fn name() { @title() }
 }
 
 // ============================================================

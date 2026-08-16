@@ -611,17 +611,23 @@ fn decreaseActiveAppVolume(step) {
 fn volumeUp(step) {
     _s = step
     if _s == null { _s = 5 }
-    _cur = volume()
-    volume(_cur + _s)
+    if _backend == "alsa" {
+        _run("amixer -q set Master " + str(_s) + "%+")
+    } else {
+        _run("pactl set-sink-volume @DEFAULT_SINK@ +" + str(_s) + "%")
+    }
+    null
 }
 
 fn volumeDown(step) {
     _s = step
     if _s == null { _s = 5 }
-    _cur = volume()
-    _new = _cur - _s
-    if _new < 0 { _new = 0 }
-    volume(_new)
+    if _backend == "alsa" {
+        _run("amixer -q set Master " + str(_s) + "%-")
+    } else {
+        _run("pactl set-sink-volume @DEFAULT_SINK@ -" + str(_s) + "%")
+    }
+    null
 }
 
 fn alsaVolume(_val) {

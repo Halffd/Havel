@@ -23,6 +23,7 @@
 #include "core/config/ConfigManager.hpp"
 #include "core/io/IO.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
+#include "../stdlib/HotkeyModule.hpp"
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -315,9 +316,24 @@ vm_->addIntervalResult(timer_id, result);
                 } catch (...) {}
             }
             vm_->processSignalBindings(var_name);
-            // Conditional-hotkey re-eval: defer to scheduler tick when we're
-            // inside a goroutine's dispatch loop, run inline otherwise.
-            if (vm_->hasCurrentExecutingFiber()) {
+            // Conditional-hotkey re-eval: defer when synchronous re-eval would
+            // wedge an active frame. Two unsafe cases:
+            //   1. deepWrapModuleFunctions is mid-frame: the cond callback's
+            //      callFunctionSync crosses the still-being-wrapped module
+            //      host wrapper / FFI and never returns.
+            //   2. A goroutine fiber is mid-dispatch and the cond callback
+            //      would touch the same shared VM state the goroutine is
+            //      using. This is the same risk as case 1 in spirit but
+            //      triggered by ordinary runtime execution, not bootstrap.
+            // Defer to pending_var_changes_ and drain at the next scheduler
+            // tick (drainPendingVarChanges in processGoroutines).
+            // Case 2 is allowed to run synchronously when deepWrapModuleFunctions
+            // is NOT on the stack: the cond function only reads globals and
+            // runs in callFunctionSync's save/restored state. Without this,
+            // scripts that mutate global mode inside a goroutine then read
+            // hotkey.grab in the same goroutine always see stale grab (the
+            // pending drain never fires between two non-yielding statements).
+            if (vm_->deep_wrap_module_functions_depth_.load() > 0) {
                 std::lock_guard<std::mutex> lk(pending_var_changes_mutex_);
                 pending_var_changes_.push_back(var_name);
             } else {
@@ -373,7 +389,15 @@ vm_->addIntervalResult(timer_id, result);
         for (auto& act : pendingActions) {
             if (!act.alias.empty()) {
                 auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                // HotkeyManager::SetHotkeyGrab updates the native I/O layer
+                // (evdev / XGrab) and the hotkey's grab/enabled fields in
+                // RegisteredHotkeys(). HotkeyModule::setGrab also updates
+                // HotkeyContextData::grab/enabled, which is what the Havel
+                // "Hotkey.grab" prototype getter reads (see HotkeyModule.cpp
+                // "grab" method). Update both; missing one means the script
+                // sees stale grab state.
                 if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
+                ::havel::stdlib::HotkeyModule::setGrab(*vm_, act.alias, act.grab);
             }
         }
     }

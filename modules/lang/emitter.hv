@@ -4074,7 +4074,7 @@ fn emitPatternMatch(emitter, pattern, discSlot) {
 
 fn emitClassDeclaration(emitter, node) {
  emitter.classNames[node.name] = true
- // class.define(name, [instance_fields], parent, [class_fields])
+ // class.define(name, [instance_fields], parent, [class_fields], {field: default})
   sid = globalIdx(emitter, "class.define")
   bc.emit("LOAD_GLOBAL", bc.str_id(sid))
   // Name
@@ -4124,7 +4124,22 @@ fn emitClassDeclaration(emitter, node) {
       }
     }
   }
-  bc.emit("CALL", 4)
+  // Instance field defaults (@field = value) as object map name -> value
+  bc.emit("OBJECT_NEW")
+  if node.definition.fields != null {
+    for f in node.definition.fields {
+      isField = f.isClassField
+      if (isField == null || !isField) {
+        if f.defaultValue != null {
+          emitExpr(emitter, f.defaultValue)
+          fidx = bc.add_string(f.name)
+          bc.emit("LOAD_CONST", fidx)
+          bc.emit("OBJECT_SET")
+        }
+      }
+    }
+  }
+  bc.emit("CALL", 5)
   nameSid = globalIdx(emitter, node.name)
   bc.emit("STORE_GLOBAL", bc.str_id(nameSid))
   if node.definition.fields != null {

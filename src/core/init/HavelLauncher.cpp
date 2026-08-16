@@ -2564,6 +2564,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
 
       return 0;
     }
+  }
 #else
     if (cfg.emitLLVM || cfg.emitAsm || cfg.emitObj || cfg.emitWasm ||
         cfg.emitBinary) {

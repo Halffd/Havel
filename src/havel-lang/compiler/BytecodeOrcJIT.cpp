@@ -4683,19 +4683,6 @@ case OpCode::LENGTH: {
     // Global and upvalue access - critical for closures
     case OpCode::LOAD_GLOBAL: {
         uint32_t nameId = instr.operands[0].asInt();
-        if (compilation_vm_ && func.chunk) {
-            const std::string &name = func.getString(nameId);
-            Value snapshot = compilation_vm_->lookupGlobalByKey(name);
-            if (!snapshot.isNull() || compilation_vm_->hasGlobalPublic(name) ||
-                compilation_vm_->isHostFunctionGlobal(name)) {
-                if (snapshot.isInt() || snapshot.isDouble() || snapshot.isBool() ||
-                    snapshot.isNull() || snapshot.isStringId() ||
-                    snapshot.isStringValId() || snapshot.isHostFuncId()) {
-                    vstack.push_back(llvm::ConstantInt::get(i64, snapshot.rawBits()));
-                    break;
-                }
-            }
-        }
         llvm::Function* fnGet = module.getFunction("havel_vm_global_get");
         if (!fnGet) {
             fnGet = llvm::Function::Create(

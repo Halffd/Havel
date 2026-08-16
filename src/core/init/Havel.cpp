@@ -133,7 +133,9 @@ void Havel::initialize(bool isStartup) {
 
 #ifdef HAVEL_ENABLE_LLVM
   // Initialize JIT if enabled
-  bool useJIT = Configs::Get().Get<bool>("Compiler.JIT", true);
+  bool useJIT = Configs::Get().Get<bool>("Compiler.JIT", true) ||
+                (std::getenv("HAVEL_TIERING") &&
+                 std::string(std::getenv("HAVEL_TIERING")) != "0");
   // Override with CLI config if present (assuming this->commandLineArgs or similar)
   // For now we check the instance-level config if we had it, but Havre uses LaunchConfig in Launcher.
   // We'll trust the ConfigManager which should be updated by Launcher.
@@ -141,6 +143,7 @@ void Havel::initialize(bool isStartup) {
   if (useJIT) {
     if (debugging::debug_io) debug("JIT compilation enabled");
     auto jit = std::make_unique<compiler::BytecodeOrcJIT>();
+    jit->setCompilationVM(bytecodeVM.get());
     
     // Check for debug JIT
     if (Configs::Get().Get<bool>("Compiler.DebugJIT", false)) {
@@ -176,6 +179,13 @@ void Havel::initialize(bool isStartup) {
     // Hook up to VM
   bytecodeVM->setHotFunctionCallback([](const compiler::BytecodeFunction& func) {
     // JIT compilation will be handled by the VM's tiering system
+  });
+  bytecodeVM->setHotTraceCallback([jitPtr = jit.get()](const compiler::BytecodeFunction& func,
+                                                      uint32_t start_ip,
+                                                      uint64_t hot_count) {
+    if (jitPtr) {
+      jitPtr->compileTrace(func, start_ip, hot_count);
+    }
   });
   bytecodeVM->setJITCompiler(std::move(jit));
   }

@@ -89,6 +89,8 @@ public:
     static void clearLastError();
     void compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level);
     void compileFunctionTier(const BytecodeFunction &func, uint8_t tier) override;
+    void compileTrace(const BytecodeFunction &func, uint32_t start_ip, uint64_t hot_count);
+    void setCompilationVM(const VM* vm) { compilation_vm_ = vm; }
 
     void dumpAssembly(const std::string &filename);
 
@@ -104,9 +106,17 @@ private:
         std::string canonical_name;
     };
 
+    struct CachedTrace {
+        std::string function_name;
+        uint32_t start_ip = 0;
+        uint64_t hot_count = 0;
+        uint64_t trace_hash = 0;
+    };
+
     std::unique_ptr<llvm::orc::LLJIT> lljit_;
     std::unordered_map<std::string, void*> fptrs_;
     std::unordered_map<uint64_t, CachedFunction> compile_cache_;
+    std::unordered_map<uint64_t, CachedTrace> trace_cache_;
     std::string cache_index_path_;
     std::unique_ptr<llvm::TargetMachine> target_machine_;
     bool debug_jit_ = false;
@@ -116,6 +126,7 @@ private:
     TargetOS target_os_ = TargetOS::Native;
     bool show_warnings_ = true;
     std::vector<std::string> linked_libraries_;
+    const VM* compilation_vm_ = nullptr;
     std::string last_asm_;
     static std::mutex last_error_mutex_;
     static std::string last_error_;

@@ -256,6 +256,18 @@ vm_->addIntervalResult(timer_id, result);
         // sees the actual post-store globals, so false->true edges fire even
         // in headless runs where the event queue is only drained after the
         // main goroutine returns (events would otherwise see a stale value).
+        //
+        // The conditional-hotkey re-eval arm (forEachConditionalHotkey +
+        // callFunctionSync) must NOT run synchronously when emitVariableChanged
+        // is itself fired from inside a goroutine's dispatch loop: doing so
+        // nests a recursive VM dispatch (callFunctionSync) inside an active
+        // goroutine frame, and the condition-callback's bytecode dispatch
+        // crosses deepWrapModuleFunctions + FFI. This combination wedges the
+        // self-hosted pipeline: the goroutine's window.active() FFI call never
+        // returns, and the next tick's pickNext returns the already-running
+        // fiber again, producing the apparent "hang after tick=1".
+        // The fix is to queue var_names produced from inside a goroutine frame
+        // and process them in processGoroutines (outside any fiber context).
         vm_->setOnVarChangedSync([this](const std::string& var_name) {
             if (!watcher_registry_ || !vm_) return;
             auto fired = watcher_registry_->onVariableChanged(
@@ -300,52 +312,89 @@ vm_->addIntervalResult(timer_id, result);
                 } catch (...) {}
             }
             vm_->processSignalBindings(var_name);
-            auto* sched = vm_->getScheduler();
-            if (sched) {
-                struct HotkeyAction {
-                    std::string alias;
-                    bool grab;
-                };
-                std::vector<HotkeyAction> pendingActions;
-                sched->forEachConditionalHotkey(
-                    [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
-                        if (!g) return;
-                        if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
-                            g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
-                        if (!g->hotkey_condition_deps.empty() &&
-                            g->hotkey_condition_deps.count(var_name) == 0) return;
-                        auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
-                        if (!condVal) return;
-                        auto tracker = std::make_shared<compiler::DependencyTracker>();
-                        compiler::DependencyTrackerScope scope(tracker);
-                        bool conditionMet = false;
-                        try {
-                            compiler::Value result = vm_->callFunctionSync(*condVal, {});
-                            conditionMet = vm_->toBool(result);
-                        } catch (...) {}
-                        auto newDeps = tracker->getGlobalDependencies();
-                        auto fieldDeps = tracker->getFieldDependencies();
-                        newDeps.insert(fieldDeps.begin(), fieldDeps.end());
-                        // Union-merge: keep previously-tracked deps so
-                        // short-circuited branches' globals keep triggering
-                        // re-evals.
-                        g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
-                        bool prev = g->hotkey_condition_last_result;
-                        g->hotkey_condition_last_result = conditionMet;
-                        if (prev == conditionMet) return;
-                        pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
-                    });
-                for (auto& act : pendingActions) {
-                    if (!act.alias.empty()) {
-                        auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
-                        if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
-                    }
-                }
+            // Conditional-hotkey re-eval: defer to scheduler tick when we're
+            // inside a goroutine's dispatch loop, run inline otherwise.
+            if (vm_->hasCurrentExecutingFiber()) {
+                std::lock_guard<std::mutex> lk(pending_var_changes_mutex_);
+                pending_var_changes_.push_back(var_name);
+            } else {
+                reevalConditionalHotkeys(var_name);
             }
         });
 
         havel::startup_timing_report("HavelEngine::initializeFull TOTAL", t0);
         initialized_ = true;
+    }
+
+    // Re-evaluate every conditional hotkey whose dep set contains var_name
+    // (or whose dep set is empty: an empty set matches any change, including
+    // the very first eval after registration where deps haven't been
+    // recorded yet). Runs synchronously; caller must NOT be inside a
+    // goroutine's dispatch loop (use pending_var_changes_ to defer instead).
+    void reevalConditionalHotkeys(const std::string& var_name) {
+        auto* sched = vm_ ? vm_->getScheduler() : nullptr;
+        if (!sched) return;
+        struct HotkeyAction {
+            std::string alias;
+            bool grab;
+        };
+        std::vector<HotkeyAction> pendingActions;
+        sched->forEachConditionalHotkey(
+            [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
+                if (!g) return;
+                if (g->state != compiler::Scheduler::GoroutineState::Suspended ||
+                    g->suspension_reason.load(std::memory_order_acquire) != compiler::Scheduler::SuspensionReason::HotkeyWait) return;
+                if (!g->hotkey_condition_deps.empty() &&
+                    g->hotkey_condition_deps.count(var_name) == 0) return;
+                auto condVal = vm_->externalRootValue(g->hotkey_condition_callback_id);
+                if (!condVal) return;
+                auto tracker = std::make_shared<compiler::DependencyTracker>();
+                compiler::DependencyTrackerScope scope(tracker);
+                bool conditionMet = false;
+                try {
+                    compiler::Value result = vm_->callFunctionSync(*condVal, {});
+                    conditionMet = vm_->toBool(result);
+                } catch (...) {}
+                auto newDeps = tracker->getGlobalDependencies();
+                auto fieldDeps = tracker->getFieldDependencies();
+                newDeps.insert(fieldDeps.begin(), fieldDeps.end());
+                // Union-merge: keep previously-tracked deps so
+                // short-circuited branches' globals keep triggering
+                // re-evals.
+                g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
+                bool prev = g->hotkey_condition_last_result;
+                g->hotkey_condition_last_result = conditionMet;
+                if (prev == conditionMet) return;
+                pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
+            });
+        for (auto& act : pendingActions) {
+            if (!act.alias.empty()) {
+                auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
+                if (hm) hm->SetHotkeyGrab(act.alias, act.grab);
+            }
+        }
+    }
+
+    // Drain var_names queued from inside goroutine frames, deduped so a
+    // batch of ARRAY_PUSH ops from the same window.active() call only
+    // triggers one re-eval pass per unique var_name. Must be called from
+    // processGoroutines (outside any fiber context).
+    void drainPendingVarChanges() {
+        std::vector<std::string> batch;
+        {
+            std::lock_guard<std::mutex> lk(pending_var_changes_mutex_);
+            batch.swap(pending_var_changes_);
+        }
+        if (batch.empty()) return;
+        // Dedup while preserving first-seen order so the dep tracker sees
+        // the chronologically earliest var_name.
+        std::unordered_set<std::string> seen;
+        seen.reserve(batch.size() * 2);
+        for (auto& name : batch) {
+            if (seen.insert(name).second) {
+                reevalConditionalHotkeys(name);
+            }
+        }
     }
 
     compiler::Value execute(const std::string& source,
@@ -452,6 +501,11 @@ private:
     bool initialized_ = false;
     std::unique_ptr<compiler::Fiber> main_script_fiber_;
     bool inline_yield_active_ = false;
+    // Var names produced by emitVariableChanged from inside a goroutine's
+    // dispatch loop. Drained by processGoroutines between scheduler ticks so
+    // conditional hotkey re-evals happen outside any fiber context.
+    std::vector<std::string> pending_var_changes_;
+    std::mutex pending_var_changes_mutex_;
 
   static compiler::Scheduler::SuspensionReason toSchedulerReasonPublic(uint8_t fiberReason) {
     using F = compiler::SuspensionReason;

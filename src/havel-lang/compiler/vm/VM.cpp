@@ -4525,7 +4525,22 @@ Value VM::loadModule(const std::string &path) {
 
   // Check native modules FIRST (before Havel module resolution)
   // This ensures native modules like "time" take precedence over .hvc files
-  if (context_ && context_->modules && !native_plugin_in_progress_.count(path)) {
+  // But skip native plugin check if the module exists as a Havel module (has .hvc/.hv)
+  // to avoid "library not found" errors for Havel sidecar modules like math/math, math/physics, etc.
+  bool skipNativePluginCheck = false;
+  if (context_ && context_->modules) {
+    // Quick check: does this module exist as a Havel module in self-hosted path?
+    // If so, skip native plugin check to avoid "library not found" spam
+    if (!native_plugin_in_progress_.count(path)) {
+      auto resolved = moduleLoader_.resolve(path, current_script_dir_);
+      if (resolved && (resolved->type == ModuleLoader::ResolvedModule::BytecodeCache ||
+                       resolved->type == ModuleLoader::ResolvedModule::UserSource ||
+                       resolved->type == ModuleLoader::ResolvedModule::StdlibSource)) {
+        skipNativePluginCheck = true;
+      }
+    }
+  }
+  if (!skipNativePluginCheck && context_ && context_->modules && !native_plugin_in_progress_.count(path)) {
     auto pluginOpt = context_->modules->extensionLoader().loadModulePlugin(path);
     if (pluginOpt) {
       auto plugin = *pluginOpt;

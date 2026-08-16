@@ -1060,12 +1060,14 @@ if (!modName.empty()) {
     trackFieldAccess("@O" + std::to_string(object.asObjectId()) + ":" + *key);
 
     Value found_val = Value::makeNull();
+    bool found_on_prototype = false;
     GCHeap::ObjectEntry *current_obj = obj;
 
     while (current_obj) {
       auto *val = current_obj->get(*key);
       if (val) {
         found_val = *val;
+        found_on_prototype = (current_obj != obj);
         break;
       }
       // Check prototypes: __proto first (Lua-style), then __class, __struct, __parent
@@ -1082,6 +1084,44 @@ if (!modName.empty()) {
     }
 
         if (!found_val.isNull()) {
+            // Property getter: bare access to a zero-arg method found on the
+            // class prototype auto-calls it (self = receiver). Instance fields
+            // holding functions are untouched, so `obj.callback` still returns
+            // the fn value for passing around.
+            if (found_on_prototype &&
+                (found_val.isFunctionObjId() || found_val.isClosureId())) {
+              uint32_t fi = found_val.isFunctionObjId()
+                                ? found_val.asFunctionObjId()
+                                : (heap_.closure(found_val.asClosureId())
+                                       ? heap_.closure(found_val.asClosureId())
+                                             ->function_index
+                                       : UINT32_MAX);
+              const BytecodeFunction *bf = nullptr;
+              const BytecodeChunk *fn_chunk = current_chunk;
+              if (found_val.isClosureId()) {
+                auto *closure = heap_.closure(found_val.asClosureId());
+                if (closure && closure->chunk) fn_chunk = closure->chunk;
+              }
+              auto resolveFn = [&](const BytecodeChunk *ch) -> const BytecodeFunction * {
+                return (ch && fi != UINT32_MAX) ? ch->getFunction(fi) : nullptr;
+              };
+              bf = resolveFn(fn_chunk);
+              if (!bf) bf = resolveFn(main_chunk_.get());
+              if (!bf) {
+                for (auto &pc : persistent_chunks_)
+                  if (!bf) bf = resolveFn(pc.get());
+              }
+              if (!bf) {
+                for (auto &[_, mc] : module_chunks_)
+                  if (!bf) bf = resolveFn(mc.get());
+              }
+              if (bf && bf->param_count <= 1 &&
+                  (bf->param_count == 0 ||
+                   (!bf->param_names.empty() && bf->param_names[0] == "self"))) {
+                doCall(found_val, {object});
+                break;
+              }
+            }
             pushStack(found_val);
     } else {
         // Built-in .len property returns key count for objects

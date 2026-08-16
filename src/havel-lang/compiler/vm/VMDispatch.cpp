@@ -119,15 +119,6 @@ case OpCode::STORE_GLOBAL: {
                 name = "<unknown:" + std::to_string(strIndex) + ">";
             }
 Value value = popStack();
-             if (name.rfind("Box", 0) == 0 || name == "setFlag") {
-                 std::cerr << "[DEBUG STORE_GLOBAL] name=" << name
-                           << " bits=" << value.rawBits()
-                           << " closure=" << value.isClosureId()
-                           << " hf=" << value.isHostFuncId()
-                           << " obj=" << value.isObjectId()
-                           << " null=" << value.isNull()
-                           << "\n";
-             }
 
              // Materialize StringValId to heap StringId so cross-chunk reads work
             if (value.isStringValId() || value.isRegexValId()) {

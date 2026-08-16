@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <poll.h>
@@ -13,6 +14,8 @@
 namespace hvtest {
 
 namespace fs = std::filesystem;
+
+extern char **environ;
 
 struct ScriptResult {
     std::string path;
@@ -80,7 +83,8 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         if (pre_flags.empty()) {
             // Self-hosted pipeline by default (like smoke mode)
             fs::path bin_path(havel_bin);
-            fs::path self_hosted_path = bin_path.parent_path().parent_path();
+            fs::path repo_root = bin_path.parent_path().parent_path();
+            fs::path self_hosted_path = repo_root / "out";
             flags = {"--run", "--self-hosted-path", self_hosted_path.string()};
         } else {
             flags = pre_flags;
@@ -92,7 +96,14 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         }
         args.push_back(const_cast<char *>(script_path.c_str()));
         args.push_back(nullptr);
-        execvp(havel_bin.c_str(), args.data());
+        
+        // Pass through environment variables (needed for HAVEL_EXTENSION_DIR)
+        std::vector<char *> env;
+        for (char **e = ::environ; *e; ++e) {
+            env.push_back(*e);
+        }
+        env.push_back(nullptr);
+        execvpe(havel_bin.c_str(), args.data(), env.data());
         _exit(127);
     }
 
@@ -164,7 +175,8 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 }
 
 inline int run_script_suite(const std::string &havel_bin, const std::vector<std::string> &directories, bool verbose = false,
-                            const std::vector<std::string> &pre_flags = {}) {
+                            const std::vector<std::string> &pre_flags = {},
+                            int timeout_seconds = 30) {
     auto scripts = discover_scripts(directories);
     if (scripts.empty()) {
         std::cerr << "no .hv scripts found in specified directories" << std::endl;
@@ -174,7 +186,7 @@ inline int run_script_suite(const std::string &havel_bin, const std::vector<std:
     int pass = 0, fail = 0;
     std::vector<ScriptResult> results;
     for (const auto &script : scripts) {
-        auto result = run_script(havel_bin, script, 30, pre_flags);
+        auto result = run_script(havel_bin, script, timeout_seconds, pre_flags);
         results.push_back(result);
         if (result.passed) {
             std::cout << "[PASS] " << script << " (" << result.elapsed_ms << "ms)" << std::endl;
@@ -205,7 +217,8 @@ inline int list_scripts(const std::vector<std::string> &directories) {
 
 inline int run_smoke_suite(const std::string &havel_bin, const std::string &smoke_dir,
                            bool verbose = false,
-                           const std::vector<std::string> &pre_flags = {}) {
+                           const std::vector<std::string> &pre_flags = {},
+                           int timeout_seconds = 30) {
     auto scripts = discover_scripts({smoke_dir});
     if (scripts.empty()) {
         std::cerr << "no .hv smoke tests found in " << smoke_dir << std::endl;
@@ -230,7 +243,7 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
     auto suite_start = std::chrono::high_resolution_clock::now();
 
     for (const auto &script : scripts) {
-        auto result = run_script(havel_bin, script, 30, pre_flags);
+        auto result = run_script(havel_bin, script, timeout_seconds, pre_flags);
         results.push_back(result);
         auto name = fs::path(script).stem().string();
         if (result.passed) {

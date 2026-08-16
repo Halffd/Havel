@@ -97,6 +97,9 @@ public:
                              const std::string &sourcePath, const std::string &bytecodePath);
     void clearCache();
     void invalidate(const std::string& key);
+
+    // Compute SHA-256 hash of a file (for persistent cache index)
+    static std::string sha256FileHex(const std::string& path);
     std::vector<core::Value> cachedValues() const;
 
     // ========================================================================
@@ -143,6 +146,19 @@ private:
       long long mtime_ns = 0;
   };
   mutable std::unordered_map<std::string, CacheFreshness> freshness_;
+
+  // Persistent bytecode cache index: module name -> source hash (SHA-256 hex)
+  // Allows quick hash validation without loading .hvc file
+  mutable std::unordered_map<std::string, std::string> bytecode_hash_index_;
+  mutable std::string bytecode_hash_index_path_;
+  mutable bool hash_index_loaded_ = false;
+
+public:
+  void updateHashIndex(const std::string& moduleName, const std::string& hash);
+
+private:
+  void loadHashIndex() const;
+  void saveHashIndex() const;
 
   // True iff the source/.hvc on disk matches the recorded freshness hint.
   // If false, the entry must be invalidated before returning Cached.

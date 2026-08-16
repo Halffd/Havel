@@ -5591,17 +5591,26 @@ return cachedVal;
   current_exception_ = saved_exception_val;
 current_script_dir_ = prev_script_dir;
 
-  // Cache under both keys via canonical ModuleLoader.
+// Cache under both keys via canonical ModuleLoader.
   // Use the module's globals (captured before restoring caller's globals)
   // so runtime variables like 'flags = DebugFlags()' are included in the
   // snapshot for cached loads. Pass the source / bytecode paths so the
   // loader can self-invalidate when either changes on disk.
   moduleLoader_.putCacheWithGlobals(path, exports, moduleGlobalsForCache,
-                                      cacheSrcPath, cacheBcPath);
+                                    cacheSrcPath, cacheBcPath);
   moduleLoader_.putCacheWithGlobals(
       canonicalKey, exports, moduleGlobalsForCache, cacheSrcPath, cacheBcPath);
   pinModuleCacheExports(path, exports);
   pinModuleCacheExports(canonicalKey, exports);
+  
+  // Update persistent hash index for this module
+  if (!cacheSrcPath.empty()) {
+    std::string moduleName = std::filesystem::path(cacheSrcPath).stem().string();
+    std::string hash = moduleLoader_.sha256FileHex(cacheSrcPath);
+    if (!hash.empty()) {
+      moduleLoader_.updateHashIndex(moduleName, hash);
+    }
+  }
   
 // Serialize and append globals to .hvc file for fast loading is DISABLED:
 // warm global restoration re-binds closures across chunk instances and

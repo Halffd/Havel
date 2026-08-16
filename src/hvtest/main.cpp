@@ -149,13 +149,14 @@ int main(int argc, char **argv) {
         std::string smoke_dir = scripts_root + "/smoke";
         // Use self-hosted pipeline: --run + --self-hosted-path
         fs::path bin_path(havel_bin);
-        fs::path self_hosted_path = bin_path.parent_path().parent_path();
+        fs::path repo_root = bin_path.parent_path().parent_path();
+        fs::path self_hosted_path = repo_root / "out";
         std::vector<std::string> self_hosted_flags = {
             "--run",
             "--self-hosted-path",
             self_hosted_path.string()
         };
-        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags);
+        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags, timeout);
     }
 
 #ifdef HAVEL_ENABLE_LLVM
@@ -179,27 +180,29 @@ int main(int argc, char **argv) {
         std::string smoke_dir = scripts_root + "/smoke";
         // Use self-hosted pipeline by default
         fs::path bin_path(havel_bin);
-        fs::path self_hosted_path = bin_path.parent_path().parent_path();
+        fs::path repo_root = bin_path.parent_path().parent_path();
+        fs::path self_hosted_path = repo_root / "out";
         std::vector<std::string> self_hosted_flags = {
             "--run",
             "--self-hosted-path",
             self_hosted_path.string()
         };
-        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags);
+        failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags, timeout);
     }
 
-	if (mode_all || mode_scripts) {
+if (mode_all || mode_scripts) {
         std::cout << "\n=== script tests (self-hosted) ===" << std::endl;
         auto dirs = hvtest::list_test_dirs(scripts_root);
         // Use self-hosted pipeline by default
         fs::path bin_path(havel_bin);
-        fs::path self_hosted_path = bin_path.parent_path().parent_path();
+        fs::path repo_root = bin_path.parent_path().parent_path();
+        fs::path self_hosted_path = repo_root / "out";
         std::vector<std::string> self_hosted_flags = {
             "--run",
             "--self-hosted-path",
             self_hosted_path.string()
         };
-        failures += hvtest::run_script_suite(havel_bin, dirs, verbose, self_hosted_flags);
+        failures += hvtest::run_script_suite(havel_bin, dirs, verbose, self_hosted_flags, timeout);
     }
 
 	if (mode_all || mode_cpp) {

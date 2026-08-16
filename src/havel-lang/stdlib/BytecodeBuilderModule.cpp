@@ -83,6 +83,7 @@ struct BuilderState {
 		{"CALL", OpCode::CALL},
 		{"TAIL_CALL", OpCode::TAIL_CALL},
 		{"CALL_METHOD", OpCode::CALL_METHOD},
+		{"CALL_IF_FUNCTION", OpCode::CALL_IF_FUNCTION},
 		{"RETURN", OpCode::RETURN},
 		{"DEFINE_FUNC", OpCode::DEFINE_FUNC},
 		{"CLOSURE", OpCode::CLOSURE},

@@ -277,6 +277,25 @@ Value callee_value = popStack();
     break;
   }
 
+  case OpCode::CALL_IF_FUNCTION: {
+    // Auto-call: if top of stack is callable, call it with 0 args.
+    // Otherwise, leave the value on stack (no-op).
+    // Used for: bare identifier as statement (newline) or pipe left operand (title |> print).
+    if (stack.empty()) {
+      COMPILER_THROW("CALL_IF_FUNCTION: stack underflow");
+    }
+    Value callee_value = stack.top();
+    if (callee_value.isHostFuncId() ||
+        callee_value.isFunctionObjId() ||
+        callee_value.isClosureId() ||
+        callee_value.isBoundMethodId()) {
+      stack.pop();
+      doCall(callee_value, {});
+    }
+    // Not callable: leave value on stack (no-op)
+    break;
+  }
+
 case OpCode::CALL_METHOD: {
     // Dispatches based on receiver type without boxing.
     if (instruction.operands.size() != 2 ||

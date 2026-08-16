@@ -301,6 +301,9 @@ struct CallFrame {
 utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
   std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
   std::unordered_map<std::string, uint64_t> module_cache_gc_roots_; // Module key -> pinned GC root for cached exports
+  // Persistent class registry: class name -> class prototype object
+  // Survives globals map changes (execute_persistent, function calls, etc.)
+  std::unordered_map<std::string, Value> class_registry_;
   std::vector<std::shared_ptr<std::unordered_map<std::string, Value>>> imported_module_globals_; // GC root for wrapped module functions
   // Spawn-time globals snapshot per goroutine closure id. Restored in
   // startGoroutineCall so a goroutine's first run resolves globals against
@@ -1109,6 +1112,15 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
         std::atomic<bool> on_var_changed_busy_{false};
 
         void setOnVarChangedSync(std::function<void(const std::string&)> cb) { on_var_changed_sync_ = std::move(cb); }
+
+        // Non-zero while deepWrapModuleFunctions is on the stack. The
+        // conditional-hotkey re-eval path uses this to decide between
+        // synchronous (cond function runs immediately, sees the just-stored
+        // global) and deferred (queued to pending_var_changes_ for drain at
+        // the next scheduler tick) emission. Synchronous re-eval from inside
+        // deepWrapModuleFunctions crosses the still-being-wrapped module FFI
+        // and wedges the frame; deferral is mandatory in that case.
+        std::atomic<int> deep_wrap_module_functions_depth_{0};
 
     // When true, the script requested program exit (via exit() host function)
     std::atomic<bool> exit_requested_{false};

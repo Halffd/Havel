@@ -425,16 +425,16 @@ XA_STRING = 31
 // ClientMessage
 ClientMessage = 33
 
-// XWindowChanges struct size = 28 bytes (5 ints + 1 ulong + 1 int)
+// XWindowChanges struct size = 40 bytes on 64-bit (5 ints + 1 ulong + 1 int + padding)
 fn makeWindowChanges(x, y, w, h, border, sibling, stackMode) {
-    _buf = ffi.allocBytes(28)
+    _buf = ffi.allocBytes(40)
     ffi.set_i32(_buf, x)
     ffi.set_i32(ffi.ptr_add(_buf, 4), y)
     ffi.set_i32(ffi.ptr_add(_buf, 8), w)
     ffi.set_i32(ffi.ptr_add(_buf, 12), h)
     ffi.set_i32(ffi.ptr_add(_buf, 16), border)
-    ffi.set_u64(ffi.ptr_add(_buf, 20), sibling)
-    ffi.set_i32(ffi.ptr_add(_buf, 28), stackMode)
+    ffi.set_u64(ffi.ptr_add(_buf, 24), sibling)
+    ffi.set_i32(ffi.ptr_add(_buf, 32), stackMode)
     _buf
 }
 
@@ -443,21 +443,18 @@ fn makeClientMessage(win, messageType, format, d0, d1, d2, d3, d4) {
     _buf = ffi.allocBytes(192)
     // type = ClientMessage (33)
     ffi.set_i32(_buf, ClientMessage)
-    // serial at offset 4 (unused for send)
-    // send_event at offset 8
-    // display at offset 16 (pointer)
-    // window at offset 24
-    ffi.set_u64(ffi.ptr_add(_buf, 24), win)
-    // message_type at offset 32
-    ffi.set_u64(ffi.ptr_add(_buf, 32), messageType)
-    // format at offset 40
-    ffi.set_i32(ffi.ptr_add(_buf, 40), format)
-    // data.l[0..4] at offset 44
-    ffi.set_i64(ffi.ptr_add(_buf, 44), d0)
-    ffi.set_i64(ffi.ptr_add(_buf, 52), d1)
-    ffi.set_i64(ffi.ptr_add(_buf, 60), d2)
-    ffi.set_i64(ffi.ptr_add(_buf, 68), d3)
-    ffi.set_i64(ffi.ptr_add(_buf, 76), d4)
+    // window at offset 32
+    ffi.set_u64(ffi.ptr_add(_buf, 32), win)
+    // message_type at offset 40
+    ffi.set_u64(ffi.ptr_add(_buf, 40), messageType)
+    // format at offset 48
+    ffi.set_i32(ffi.ptr_add(_buf, 48), format)
+    // data.l[0..4] at offset 56, 64, 72, 80, 88
+    ffi.set_i64(ffi.ptr_add(_buf, 56), d0)
+    ffi.set_i64(ffi.ptr_add(_buf, 64), d1)
+    ffi.set_i64(ffi.ptr_add(_buf, 72), d2)
+    ffi.set_i64(ffi.ptr_add(_buf, 80), d3)
+    ffi.set_i64(ffi.ptr_add(_buf, 88), d4)
     _buf
 }
 

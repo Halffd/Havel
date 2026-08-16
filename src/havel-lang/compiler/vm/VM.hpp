@@ -1113,6 +1113,15 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
 
         void setOnVarChangedSync(std::function<void(const std::string&)> cb) { on_var_changed_sync_ = std::move(cb); }
 
+        // Non-zero while deepWrapModuleFunctions is on the stack. The
+        // conditional-hotkey re-eval path uses this to decide between
+        // synchronous (cond function runs immediately, sees the just-stored
+        // global) and deferred (queued to pending_var_changes_ for drain at
+        // the next scheduler tick) emission. Synchronous re-eval from inside
+        // deepWrapModuleFunctions crosses the still-being-wrapped module FFI
+        // and wedges the frame; deferral is mandatory in that case.
+        std::atomic<int> deep_wrap_module_functions_depth_{0};
+
     // When true, the script requested program exit (via exit() host function)
     std::atomic<bool> exit_requested_{false};
     bool exitRequested() const { return exit_requested_.load(); }

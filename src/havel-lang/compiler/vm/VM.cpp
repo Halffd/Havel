@@ -3869,6 +3869,15 @@ Value VM::deepWrapModuleFunctions(
     std::unordered_set<uint32_t> *visitedPtr) {
   if (depth > 64)
     return value;
+  // Mark wrapping active at the outermost frame so emitVariableChanged can
+  // defer conditional-hotkey re-eval (synchronous callFunctionSync from
+  // inside a host wrapper wedges the frame; see HavelEngine.hpp).
+  struct WrapDepthGuard {
+    std::atomic<int>* counter;
+    explicit WrapDepthGuard(std::atomic<int>* c) : counter(c) { if (counter) counter->fetch_add(1); }
+    ~WrapDepthGuard() { if (counter) counter->fetch_sub(1); }
+  };
+  WrapDepthGuard wrapGuard{depth == 0 ? &deep_wrap_module_functions_depth_ : nullptr};
   bool suspendedGc = false;
   if (depth == 0) {
     suspendGC();

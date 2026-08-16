@@ -83,21 +83,7 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
         }
         case OpCode::CALL: {
             uint32_t arg_count = instruction.operands[0].asInt();
-            ::havel::debug("[VM-DEBUG] CALL bytecode handler, arg_count=" + std::to_string(arg_count));
             if (stack.size() < static_cast<size_t>(arg_count) + 1) {
-                uint32_t current_ip = frame_count_ > 0 ? frame_arena_[frame_count_ - 1].ip : 0;
-                std::cerr << "CALL Underflow! Stack size: " << stack.size() << " Expected: " << (arg_count + 1) << " IP: " << current_ip << "\n";
-                // Temporary copy of the stack to print values
-                auto temp = stack;
-                std::vector<Value> stack_vals;
-                while (!temp.empty()) {
-                    stack_vals.push_back(temp.top());
-                    temp.pop();
-                }
-                std::cerr << "Stack values (top first):\n";
-                for (size_t i = 0; i < stack_vals.size(); ++i) {
-                    std::cerr << "  [" << i << "]: " << toString(stack_vals[i]) << "\n";
-                }
                 COMPILER_THROW("Stack underflow during CALL");
             }
 
@@ -505,9 +491,7 @@ if (instanceObj) {
             if (fieldObj) {
               auto *isClassVal = fieldObj->get("__is_class");
               if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
-                std::cerr << "[DEBUG CALL] Found class: " << it->first << " __is_class=" << isClassVal->asBool() << "\n";
                 auto *newMethod = fieldObj->get("new");
-                std::cerr << "[DEBUG CALL] new method: " << (newMethod ? "found" : "not found") << "\n";
                 if (newMethod && newMethod->isHostFuncId()) {
                   host_func_idx = newMethod->asHostFuncId();
                   found_host = true;
@@ -522,23 +506,6 @@ if (instanceObj) {
       }
     }
 
-std::cerr << "[DEBUG CALL] globals size: " << globals.size() << " globals_stack_ size: " << globals_stack_.size() << "\n";
-  for (size_t i = 0; i < globals_stack_.size(); ++i) {
-    auto& gmap = globals_stack_[i];
-    std::cerr << "[DEBUG CALL] globals_stack_[" << i << "] size: " << gmap.size() << "\n";
-    for (const auto& g : gmap) {
-      std::cerr << "[DEBUG CALL]   globals_stack_[" << i << "]: " << g.first << " type=" << (g.second.isObjectId() ? "object" : g.second.isFunctionObjId() ? "func" : g.second.isClosureId() ? "closure" : g.second.isHostFuncId() ? "host" : "other") << "\n";
-      if (g.second.isObjectId()) {
-        auto *obj = heap_.object(g.second.asObjectId());
-        if (obj) {
-          auto *isClassVal = obj->get("__is_class");
-          if (isClassVal && isClassVal->isBool() && isClassVal->asBool()) {
-            std::cerr << "[DEBUG CALL] Found class in globals_stack_[" << i << "]: " << g.first << " __is_class=true\n";
-          }
-        }
-      }
-    }
-  }
     if (!found_host && vm_func.isNull() && receiver.isObjectId()) {
       auto *classProto = heap_.object(receiver.asObjectId());
       if (classProto) {

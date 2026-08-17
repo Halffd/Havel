@@ -4529,11 +4529,18 @@ Value VM::loadModule(const std::string &path) {
     }
   };
 
+  // Resolve canonical cache key early so all cache operations use the same key
+  // regardless of whether the module is referenced via relative or absolute path.
+  std::string canonicalKey = moduleLoader_.canonicalizePath(path, current_script_dir_);
+  if (canonicalKey.empty()) {
+    canonicalKey = path; // fallback to original path if resolution fails
+  }
+
   // Check cache via canonical ModuleLoader
-  if (moduleLoader_.isCached(path)) {
+  if (moduleLoader_.isCached(canonicalKey)) {
     Value cachedVal;
     std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
-    if (moduleLoader_.getCached(path, &cachedVal)) {
+    if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
       moduleLoader_.getCachedGlobals(path, &cachedGlobals);
 
       if (cachedGlobals) {
@@ -4608,8 +4615,8 @@ return cachedVal;
         }
         
         Value exports = Value::makeObjectId(exportsObj.id);
-        moduleLoader_.putCache(path, exports);
-        pinModuleCacheExports(path, exports);
+        moduleLoader_.putCache(canonicalKey, exports);
+        pinModuleCacheExports(canonicalKey, exports);
         return exports;
       }
     }
@@ -4618,25 +4625,21 @@ return cachedVal;
   // Resolve the module path
   auto resolved = moduleLoader_.resolve(path, current_script_dir_);
   if (resolved) {
-    std::string canonicalKey = resolved->canonicalPath;
-
     // Check cache by resolved path
     if (moduleLoader_.isCached(canonicalKey)) {
       Value cachedVal;
       std::shared_ptr<std::unordered_map<std::string, Value>> cachedGlobals;
       if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
         moduleLoader_.getCachedGlobals(canonicalKey, &cachedGlobals);
-        // std::cerr << "[CACHE-HIT] canonicalKey='" << canonicalKey << "'
-        // cachedGlobals=" << (cachedGlobals ? "yes" : "no") << "\n";
         if (cachedGlobals) {
           // Do NOT restore cached globals to caller's globals - module
           // internals are only accessible via closures' module_globals
           fixupCachedClosures(canonicalKey, cachedVal, cachedGlobals);
         }
         Value exports = cachedVal;
-        // Also cache under the original key for faster lookup next time
-        moduleLoader_.putCache(path, exports);
-        pinModuleCacheExports(path, exports);
+        // Also cache under the canonical key for faster lookup next time
+        moduleLoader_.putCache(canonicalKey, exports);
+        pinModuleCacheExports(canonicalKey, exports);
         return exports;
       }
     }
@@ -4645,14 +4648,9 @@ return cachedVal;
   // Handle cached modules (already loaded in this VM session)
   if (resolved && resolved->type == ModuleLoader::ResolvedModule::Cached) {
     Value cachedVal;
-    if (moduleLoader_.getCached(path, &cachedVal)) {
-      // Also cache under the canonical key if different
-      if (!resolved->canonicalPath.empty()) {
-        moduleLoader_.putCache(resolved->canonicalPath, cachedVal);
-        pinModuleCacheExports(resolved->canonicalPath, cachedVal);
-      }
-      moduleLoader_.putCache(path, cachedVal);
-      pinModuleCacheExports(path, cachedVal);
+    if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
+      moduleLoader_.putCache(canonicalKey, cachedVal);
+      pinModuleCacheExports(canonicalKey, cachedVal);
       return cachedVal;
     }
     // Cache entry exists but getCached failed - fall through to reload
@@ -4665,8 +4663,8 @@ return cachedVal;
       activateLazyModule(path);
       auto it = globals.find(path);
       if (it != globals.end()) {
-        moduleLoader_.putCache(path, it->second);
-        pinModuleCacheExports(path, it->second);
+        moduleLoader_.putCache(canonicalKey, it->second);
+        pinModuleCacheExports(canonicalKey, it->second);
         return it->second;
       }
     }
@@ -4696,8 +4694,8 @@ return cachedVal;
         }
       }
       Value exports = Value::makeObjectId(exportsObj.id);
-      moduleLoader_.putCache(path, exports);
-      pinModuleCacheExports(path, exports);
+      moduleLoader_.putCache(canonicalKey, exports);
+      pinModuleCacheExports(canonicalKey, exports);
       return exports;
     }
     // Fallback: try modules/ directory relative to executable
@@ -4720,8 +4718,6 @@ return cachedVal;
       COMPILER_THROW("Module not found: " + path);
     }
   }
-
-  std::string canonicalKey = resolved->canonicalPath;
 
   // Circular dependency detection
   if (modules_loading_.count(canonicalKey)) {
@@ -4812,9 +4808,7 @@ return cachedVal;
       globals[modName] = exports;
     }
 
-    moduleLoader_.putCache(path, exports);
     moduleLoader_.putCache(canonicalKey, exports);
-    pinModuleCacheExports(path, exports);
     pinModuleCacheExports(canonicalKey, exports);
     modules_loading_.erase(canonicalKey);
     return exports;
@@ -5182,6 +5176,10 @@ return cachedVal;
   // Save current globals state
   globals_stack_.push_back(globals);
 
+  // Save caller's immutable_globals_ and create fresh set for sandbox
+  auto sandbox_saved_immutable_globals = std::move(immutable_globals_);
+  immutable_globals_.clear();
+
   // Save caller's execution state (stack, locals, frames, chunk, exception)
   auto saved_stack = stack;
   auto saved_locals = locals;
@@ -5268,6 +5266,7 @@ return cachedVal;
     stack = std::move(saved_stack);
     locals = std::move(saved_locals);
     immutable_locals_.clear();
+    immutable_globals_ = std::move(saved_immutable_globals);
     frame_count_ = saved_frame_count;
     frame_arena_ = std::move(saved_frames);
     current_chunk = saved_chunk;
@@ -5314,6 +5313,7 @@ return cachedVal;
     stack = std::move(saved_stack);
     locals = std::move(saved_locals);
     immutable_locals_.clear();
+    immutable_globals_ = std::move(saved_immutable_globals);
     frame_count_ = saved_frame_count;
     frame_arena_ = std::move(saved_frames);
     current_chunk = saved_chunk;
@@ -5561,6 +5561,8 @@ return cachedVal;
     globals = std::move(globals_stack_.back());
     globals_stack_.pop_back();
   }
+  // Restore caller's immutable_globals_ (sandbox had its own cleared set)
+  immutable_globals_ = std::move(sandbox_saved_immutable_globals);
   // Propagate lazy module objects to the caller's globals
   for (const auto &[name, value] : lazyModuleUpdates) {
     globals[name] = value;
@@ -5590,8 +5592,24 @@ current_script_dir_ = prev_script_dir;
   pinModuleCacheExports(canonicalKey, exports);
   
   // Update persistent hash index for this module
-  if (!cacheSrcPath.empty()) {
-    std::string moduleName = std::filesystem::path(cacheSrcPath).stem().string();
+  if (!cacheSrcPath.empty() || !cacheBcPath.empty()) {
+    // Key the persistent hash index by the name the loader uses at lookup
+    // time. For flat-cache loads the .hvc basename IS the cache name
+    // (lang.<stem> / std.<stem> / <stem>.<path-hash>). For source or
+    // side-by-side loads, derive it from the canonical source path so
+    // same-stem files cannot collide (the loader only ever validates flat
+    // cache entries by this key).
+    std::string moduleName;
+    bool inFlatCache = false;
+    if (!cacheBcPath.empty()) {
+      std::string cacheDir = moduleLoader_.getCacheDir();
+      inFlatCache = cacheBcPath.rfind(cacheDir, 0) == 0;
+    }
+    if (inFlatCache) {
+      moduleName = std::filesystem::path(cacheBcPath).stem().string();
+    } else {
+      moduleName = moduleLoader_.cacheFileNameForSource(cacheSrcPath);
+    }
     std::string hash = moduleLoader_.sha256FileHex(cacheSrcPath);
     if (!hash.empty()) {
       moduleLoader_.updateHashIndex(moduleName, hash);
@@ -5626,6 +5644,7 @@ current_script_dir_ = prev_script_dir;
   // (the module cache is not a GC root, so cached objects can be collected)
   globals[path] = exports;
   modules_loading_.erase(canonicalKey);
+
   return exports;
 }
 

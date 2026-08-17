@@ -106,9 +106,40 @@ std::string sha256_file_hex(const std::string& path) {
     for (uint8_t b : hash) oss << std::hex << std::setw(2) << std::setfill('0') << (int)b;
     return oss.str();
 }
+
+std::string sha256_hex(const std::string& data) {
+    auto hash = sha256(reinterpret_cast<const uint8_t*>(data.data()), data.size());
+    std::ostringstream oss;
+    for (uint8_t b : hash) oss << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+    return oss.str();
+}
 } // anonymous namespace
 
 namespace havel {
+
+std::string ModuleLoader::cacheFileNameForSource(const std::string& canonicalSourcePath) {
+    namespace fs = std::filesystem;
+
+    // Namespace prefix for bundled modules: lang.<stem> / std.<stem>
+    std::string normalized = canonicalSourcePath;
+    for (char& c : normalized) {
+        if (c == '\\') c = '/';
+    }
+    if (normalized.find("/modules/lang/") != std::string::npos) {
+        std::string stem = fs::path(normalized).stem().string();
+        return "lang." + stem;
+    }
+    if (normalized.find("/modules/std/") != std::string::npos) {
+        std::string stem = fs::path(normalized).stem().string();
+        return "std." + stem;
+    }
+
+    // User module: stem + short hash of the canonical path so two files with
+    // the same stem in different directories cannot clobber each other.
+    std::string stem = fs::path(normalized).stem().string();
+    std::string hash = sha256_hex(normalized);
+    return stem + "." + hash.substr(0, 8);
+}
 
 ModuleLoader::~ModuleLoader() {
     unloadNativeExtensions();
@@ -152,56 +183,10 @@ ModuleLoader::resolve(const std::string& modulePath,
 
   std::string name = modulePath;
 
-  // Check if path is absolute
-  if (fs::path(modulePath).is_absolute()) {
-    if (fs::exists(modulePath)) {
-      return ResolvedModule{ResolvedModule::UserSource, modulePath, modulePath};
-    }
-    // Also try with .hvc extension for absolute paths
-    fs::path hvcPath = fs::path(modulePath).replace_extension(".hvc");
-    if (fs::exists(hvcPath)) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(hvcPath).string(), modulePath};
-    }
-    return std::nullopt;
-  }
-
-  // Handle explicit relative paths starting with ./ or ../
-  if (modulePath.starts_with("./") || modulePath.starts_with("../")) {
-    fs::path resolved = fs::path(scriptDir) / modulePath;
-    if (fs::exists(resolved)) {
-      return ResolvedModule{ResolvedModule::UserSource,
-                            fs::canonical(resolved).string(), modulePath};
-    }
-    // Also try .hvc variant
-    fs::path hvcPath = fs::path(scriptDir) / (modulePath + ".hvc");
-    if (modulePath.ends_with(".hv")) {
-      hvcPath = fs::path(scriptDir) / (modulePath.substr(0, modulePath.size() - 3) + ".hvc");
-    }
-    if (fs::exists(hvcPath)) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(hvcPath).string(), modulePath};
-    }
-    return std::nullopt;
-  }
-
-// For bare module names, try priority search
-
-  // 1. Check cache (already loaded?)
-  // If already in cache, return Cached type — BUT first drop the entry if the
-  // underlying source/.hvc filename has been touched since we cached it.
-  if (cache_.count(modulePath) > 0) {
-    if (!isFreshLocked(modulePath)) {
-      cache_.erase(modulePath);
-      freshness_.erase(modulePath);
-    } else {
-      return ResolvedModule{ResolvedModule::Cached, "", modulePath};
-    }
-  }
-
   // 1b. Check cache directory first (compiled .hvc bytecode)
   // Load hash index for persistent cache validation
   loadHashIndex();
+  std::string cacheDir = getCacheDir();
 
   auto checkBcCache = [&](const fs::path& hvcPath, const fs::path& hvPath,
                           const std::string& hashKey) -> std::optional<ResolvedModule> {
@@ -228,12 +213,75 @@ ModuleLoader::resolve(const std::string& modulePath,
     return std::nullopt;
   };
 
-  // Get cache directory
-  std::string cacheDir = getCacheDir();
+  // Check the flat cache for a resolved source file. The cache filename is
+  // derived from the canonical source path (stem + path hash for user
+  // modules), so same-stem files in different directories cannot collide.
+  auto flatCacheFor = [&](const std::string& canonicalSrcPath,
+                          ResolvedModule::Type srcType)
+      -> std::optional<ResolvedModule> {
+    std::string cacheName = cacheFileNameForSource(canonicalSrcPath);
+    auto bc = checkBcCache(fs::path(cacheDir) / (cacheName + ".hvc"),
+                           fs::path(cacheDir) / (cacheName + ".hv"),
+                           cacheName);
+    if (bc) return bc;
+    return ResolvedModule{srcType, canonicalSrcPath, modulePath, ""};
+  };
 
-  // Single flat cache at ~/.cache/havel/ with namespaced filenames.
-  // Priority: lang.<name>.hvc > std.<name>.hvc > <name>.hvc
-  // This preserves the original search order while avoiding subdirs.
+  // Check if path is absolute
+  if (fs::path(modulePath).is_absolute()) {
+    if (fs::exists(modulePath)) {
+      try {
+        return flatCacheFor(fs::canonical(modulePath).string(),
+                            ResolvedModule::UserSource);
+      } catch (...) {
+        return ResolvedModule{ResolvedModule::UserSource, modulePath, modulePath};
+      }
+    }
+    // Also try with .hvc extension for absolute paths
+    fs::path hvcPath = fs::path(modulePath).replace_extension(".hvc");
+    if (fs::exists(hvcPath)) {
+      try {
+        return ResolvedModule{ResolvedModule::BytecodeCache,
+                              fs::canonical(hvcPath).string(), modulePath};
+      } catch (...) {
+        return ResolvedModule{ResolvedModule::BytecodeCache, hvcPath.string(), modulePath};
+      }
+    }
+    return std::nullopt;
+  }
+
+  // Handle explicit relative paths starting with ./ or ../
+  if (modulePath.starts_with("./") || modulePath.starts_with("../")) {
+    fs::path resolved = fs::path(scriptDir) / modulePath;
+    if (fs::exists(resolved)) {
+      return flatCacheFor(fs::canonical(resolved).string(),
+                          ResolvedModule::UserSource);
+    }
+    // Also try .hvc variant
+    fs::path hvcPath = fs::path(scriptDir) / (modulePath + ".hvc");
+    if (modulePath.ends_with(".hv")) {
+      hvcPath = fs::path(scriptDir) / (modulePath.substr(0, modulePath.size() - 3) + ".hvc");
+    }
+    if (fs::exists(hvcPath)) {
+      return ResolvedModule{ResolvedModule::BytecodeCache,
+                            fs::canonical(hvcPath).string(), modulePath};
+    }
+    return std::nullopt;
+  }
+
+// For bare module names, try priority search
+
+  // 1. Check cache (already loaded?)
+  // If already in cache, return Cached type — BUT first drop the entry if the
+  // underlying source/.hvc filename has been touched since we cached it.
+  if (cache_.count(modulePath) > 0) {
+    if (!isFreshLocked(modulePath)) {
+      cache_.erase(modulePath);
+      freshness_.erase(modulePath);
+    } else {
+      return ResolvedModule{ResolvedModule::Cached, "", modulePath};
+    }
+  }
 
   // 1. lang.<name>.hvc (lang modules take priority)
   if (auto bc = checkBcCache(
@@ -274,15 +322,15 @@ ModuleLoader::resolve(const std::string& modulePath,
         if (fs::last_write_time(hvcPath) >= fs::last_write_time(hvPath)) {
           return makeBcCache(hvcPath, hvPath, modulePath);
         }
-        return ResolvedModule{ResolvedModule::UserSource,
-                              fs::canonical(hvPath).string(), modulePath, ""};
+        return flatCacheFor(fs::canonical(hvPath).string(),
+                            ResolvedModule::UserSource);
       }
       if (hvcExists) {
         return makeBcCache(hvcPath, hvPath, modulePath);
       }
       if (hvExists) {
-        return ResolvedModule{ResolvedModule::UserSource,
-                              fs::canonical(hvPath).string(), modulePath, ""};
+        return flatCacheFor(fs::canonical(hvPath).string(),
+                            ResolvedModule::UserSource);
       }
       return std::nullopt;
     };
@@ -383,8 +431,8 @@ ModuleLoader::resolve(const std::string& modulePath,
                                 fs::canonical(pluginPath).string(), modulePath, ""};
         }
       }
-      return ResolvedModule{ResolvedModule::StdlibSource,
-                            fs::canonical(stdlibHvPath).string(), modulePath, ""};
+      return flatCacheFor(fs::canonical(stdlibHvPath).string(),
+                          ResolvedModule::StdlibSource);
     }
   }
 
@@ -399,15 +447,15 @@ ModuleLoader::resolve(const std::string& modulePath,
       if (fs::last_write_time(pkgHvcPath) >= fs::last_write_time(pkgHvPath)) {
         return makeBcCache(pkgHvcPath, pkgHvPath, modulePath);
       }
-      return ResolvedModule{ResolvedModule::PackageSource,
-                            fs::canonical(pkgHvPath).string(), modulePath, ""};
+      return flatCacheFor(fs::canonical(pkgHvPath).string(),
+                          ResolvedModule::PackageSource);
     }
     if (hvcExists) {
       return makeBcCache(pkgHvcPath, pkgHvPath, modulePath);
     }
     if (hvExists) {
-      return ResolvedModule{ResolvedModule::PackageSource,
-                            fs::canonical(pkgHvPath).string(), modulePath, ""};
+      return flatCacheFor(fs::canonical(pkgHvPath).string(),
+                          ResolvedModule::PackageSource);
     }
   }
 
@@ -424,15 +472,15 @@ ModuleLoader::resolve(const std::string& modulePath,
       if (fs::last_write_time(hvcPath) >= fs::last_write_time(hvPath)) {
         return makeBcCache(hvcPath, hvPath, modulePath);
       }
-      return ResolvedModule{ResolvedModule::UserSource,
-                            fs::canonical(hvPath).string(), modulePath, ""};
+      return flatCacheFor(fs::canonical(hvPath).string(),
+                          ResolvedModule::UserSource);
     }
     if (hvcExists) {
       return makeBcCache(hvcPath, hvPath, modulePath);
     }
     if (hvExists) {
-      return ResolvedModule{ResolvedModule::UserSource,
-                            fs::canonical(hvPath).string(), modulePath, ""};
+      return flatCacheFor(fs::canonical(hvPath).string(),
+                          ResolvedModule::UserSource);
     }
 
     // Try name/name.hv or name/name.hvc (package style)
@@ -445,15 +493,15 @@ ModuleLoader::resolve(const std::string& modulePath,
       if (fs::last_write_time(hvcPkgPath) >= fs::last_write_time(hvPkgPath)) {
         return makeBcCache(hvcPkgPath, hvPkgPath, modulePath);
       }
-      return ResolvedModule{ResolvedModule::UserSource,
-                            fs::canonical(hvPkgPath).string(), modulePath, ""};
+      return flatCacheFor(fs::canonical(hvPkgPath).string(),
+                          ResolvedModule::UserSource);
     }
     if (hvcExists) {
       return makeBcCache(hvcPkgPath, hvPkgPath, modulePath);
     }
     if (hvExists) {
-      return ResolvedModule{ResolvedModule::UserSource,
-                            fs::canonical(hvPkgPath).string(), modulePath, ""};
+      return flatCacheFor(fs::canonical(hvPkgPath).string(),
+                          ResolvedModule::UserSource);
     }
   }
 
@@ -622,6 +670,15 @@ bool ModuleLoader::isFreshLocked(const std::string &key) const {
 
   std::string ModuleLoader::sha256FileHex(const std::string& path) {
     return sha256_file_hex(path);
+  }
+
+  std::string ModuleLoader::canonicalizePath(const std::string& modulePath,
+                                             const std::string& scriptDir) const {
+    auto resolved = resolve(modulePath, scriptDir);
+    if (resolved && !resolved->canonicalPath.empty()) {
+      return resolved->canonicalPath;
+    }
+    return "";
   }
 
   std::string ModuleLoader::getCacheDir() {

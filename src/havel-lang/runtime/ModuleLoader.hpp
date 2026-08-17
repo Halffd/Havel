@@ -95,8 +95,20 @@ public:
     void clearCache();
     void invalidate(const std::string& key);
 
+    // Resolve a module path to its canonical form for consistent caching.
+    // Returns empty string if the module cannot be resolved.
+    std::string canonicalizePath(const std::string& modulePath, const std::string& scriptDir) const;
+
     // Compute SHA-256 hash of a file (for persistent cache index)
     static std::string sha256FileHex(const std::string& path);
+
+    // Deterministic flat cache filename for a compiled source file:
+    //   lang.<stem>.hvc / std.<stem>.hvc for bundled modules,
+    //   <stem>.<8-hex-path-hash>.hvc for user modules (avoids collisions
+    //   between same-stem files in different directories).
+    // `canonicalSourcePath` must be an absolute canonical path.
+    static std::string cacheFileNameForSource(const std::string& canonicalSourcePath);
+
     static std::string getCacheDir();
     std::vector<core::Value> cachedValues() const;
 

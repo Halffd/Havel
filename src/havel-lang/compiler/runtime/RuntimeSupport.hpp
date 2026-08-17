@@ -374,43 +374,10 @@ inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
     std::string cacheDir = havel::ModuleLoader::getCacheDir();
     std::filesystem::create_directories(cacheDir);
 
-    // Extract base name from path
-    std::string moduleName = compileUnitName;
-    size_t lastSlash = moduleName.find_last_of('/');
-    if (lastSlash == std::string::npos) {
-      lastSlash = moduleName.find_last_of('\\');
-    }
-    if (lastSlash != std::string::npos) {
-      moduleName = moduleName.substr(lastSlash + 1);
-    }
-    // Remove extension
-    if (moduleName.size() >= 3 &&
-        moduleName.substr(moduleName.size() - 3) == ".hv") {
-      moduleName = moduleName.substr(0, moduleName.size() - 3);
-    } else if (moduleName.size() >= 4 &&
-               moduleName.substr(moduleName.size() - 4) == ".hvc") {
-      moduleName = moduleName.substr(0, moduleName.size() - 4);
-    }
-
-    // Determine namespace prefix from path
-    std::string cacheName = moduleName;
-    if (moduleName.rfind("lang.", 0) != 0 && moduleName.rfind("std.", 0) != 0) {
-      if (compileUnitName.find("/modules/lang/") != std::string::npos ||
-          compileUnitName.find("\\modules\\lang\\") != std::string::npos) {
-        cacheName = "lang." + moduleName;
-      } else if (compileUnitName.find("/modules/std/") != std::string::npos ||
-                 compileUnitName.find("\\modules\\std\\") != std::string::npos) {
-        cacheName = "std." + moduleName;
-      }
-    }
-
-    // Sanitize filename
-    for (char& c : cacheName) {
-      if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
-          c == '"' || c == '<' || c == '>' || c == '|') {
-        c = '_';
-      }
-    }
+    // Derive the flat cache filename from the canonical source path:
+    // lang.<stem>.hvc / std.<stem>.hvc for bundled modules,
+    // <stem>.<8-hex-path-hash>.hvc for user modules (collision-free).
+    std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
 
     std::filesystem::path hvcPath =
         std::filesystem::path(cacheDir) / (cacheName + ".hvc");

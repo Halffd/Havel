@@ -326,6 +326,17 @@ vm_->addIntervalResult(timer_id, result);
             // deferral must also fire when deepWrapModuleFunctions is mid-
             // frame: synchronous re-eval would cross the still-being-wrapped
             // module host wrapper FFI and wedge similarly.
+            // Conditional-hotkey re-eval: defer when synchronous re-eval would
+            // wedge an active goroutine dispatch frame. Two unsafe cases:
+            //   1. deepWrapModuleFunctions is mid-frame: the cond callback's
+            //      callFunctionSync may cross the still-being-wrapped module
+            //      host wrapper FFI and wedge.
+            //   2. A goroutine fiber is mid-dispatch: same risk in spirit;
+            //      callFunctionSync nested inside the active dispatch may
+            //      wedge the host function's FFI (e.g. window.active() never
+            //      returns).
+            // Defer to pending_var_changes_ for the next processGoroutines
+            // tick drain.
             if (vm_->hasCurrentExecutingFiber() ||
                 vm_->deep_wrap_module_functions_depth_.load() > 0) {
                 std::lock_guard<std::mutex> lk(pending_var_changes_mutex_);
@@ -369,11 +380,13 @@ vm_->addIntervalResult(timer_id, result);
             bool grab;
         };
         std::vector<HotkeyAction> pendingActions;
+        // Re-entry guard: emit→eval→emit cycles can stack when a condition
+        // callback mutates a dep variable. thread_local so concurrent
+        // reeval from distinct goroutine dispatch threads don't interfere.
         static thread_local int depth = 0;
-        if (depth > 0) return; // re-entry guard for nested calls (eval→emit→eval)
+        if (depth > 0) return;
         depth++;
         struct Gd__ { ~Gd__(){ depth--; } } _gd_;
-        fprintf(stderr, "[R] var=%s\n", var_name.c_str());
         sched->forEachConditionalHotkey(
             [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
                 if (!g) return;
@@ -386,15 +399,6 @@ vm_->addIntervalResult(timer_id, result);
                 auto tracker = std::make_shared<compiler::DependencyTracker>();
                 compiler::DependencyTrackerScope scope(tracker);
                 bool conditionMet = false;
-                auto dumpTitle = [&]() {
-                    auto ti = vm_->getGlobals().find("title_");
-                    if (ti == vm_->getGlobals().end()) return std::string("<title_ missing>");
-                    if (!ti->second.isStringId()) return std::string("<title_ not string>");
-                    auto* sp = vm_->getStringPtr(ti->second);
-                    if (!sp) return std::string("<title_ null>");
-                    return *sp;
-                };
-                fprintf(stderr, "[R]     title_='%s' for alias=%s\n", dumpTitle().c_str(), g->hotkey_condition_alias.c_str());
                 try {
                     compiler::Value result = vm_->callFunctionSync(*condVal, {});
                     conditionMet = vm_->toBool(result);
@@ -405,13 +409,9 @@ vm_->addIntervalResult(timer_id, result);
                 g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
                 bool prev = g->hotkey_condition_last_result;
                 g->hotkey_condition_last_result = conditionMet;
-                fprintf(stderr, "[R]   g=%d alias=%s condMet=%d prev=%d deps_sz=%zu\n",
-                    g->id, g->hotkey_condition_alias.c_str(),
-                    (int)conditionMet, (int)prev, g->hotkey_condition_deps.size());
                 if (prev == conditionMet) return;
                 pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
             });
-        fprintf(stderr, "[R] actions=%zu\n", pendingActions.size());
         for (auto& act : pendingActions) {
             if (act.alias.empty()) continue;
             auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
@@ -420,10 +420,16 @@ vm_->addIntervalResult(timer_id, result);
         }
     }
 
-    // Drain var_names queued from inside goroutine frames, deduped so a
+    // Drain var_names queued from inside goroutine frames. Dedupes so a
     // batch of ARRAY_PUSH ops from the same window.active() call only
     // triggers one re-eval pass per unique var_name. Must be called from
     // processGoroutines (outside any fiber context).
+    // Dedup is safe: reevalConditionalHotkeys reads live globals, so a
+    // variable that changed multiple times during the queue accrual (mode=gaming
+    // then mode=default) is re-evaluated once with the final state. Reads of
+    // hotkey.grab then drain pending events via the __get_grab prototype
+    // interceptor before returning the cached bool, so any deferred
+    // re-evals run in the same goroutine tick that produced the writes.
     void drainPendingVarChanges() {
         std::vector<std::string> batch;
         {
@@ -431,8 +437,6 @@ vm_->addIntervalResult(timer_id, result);
             batch.swap(pending_var_changes_);
         }
         if (batch.empty()) return;
-        // Dedup while preserving first-seen order so the dep tracker sees
-        // the chronologically earliest var_name.
         std::unordered_set<std::string> seen;
         seen.reserve(batch.size() * 2);
         for (auto& name : batch) {

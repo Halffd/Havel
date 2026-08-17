@@ -471,7 +471,7 @@ Value VM::getHostObjectField(ObjectRef object_ref,
     }
   }
 
-  // Function calling
+// Function calling
 Value VM::callHostFunction(const Value &fn,
                                     const std::vector<Value> &args) {
   if (fn.isHostFuncId()) {

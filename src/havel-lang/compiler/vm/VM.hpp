@@ -310,8 +310,8 @@ utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> H
   // the module scope that was active at spawn, not whatever map is ambient
   // at first-pick (module-cache fixup may reassign the closure's module_globals).
   std::unordered_map<uint32_t, std::shared_ptr<std::unordered_map<std::string, Value>>> spawn_globals_snapshot_;
- 
-  
+
+   
         // Function properties support (fn.prop = value for static state, memoization, etc.)
         std::unordered_map<uint32_t, ObjectRef> function_properties_; // function_index -> properties object
         uint32_t bind_count_ = 0;
@@ -1210,7 +1210,7 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
 
     // Function calling
   Value callHostFunction(const Value &fn,
-                                 const std::vector<Value> &args);
+                                  const std::vector<Value> &args);
 
 // General function call (handles both VM closures and host functions)
 Value callFunction(const Value &fn,

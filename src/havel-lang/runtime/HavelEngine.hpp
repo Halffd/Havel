@@ -772,13 +772,6 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         for (;;) {
             if (vm_->exit_requested_.load()) break;
 
-            // Drain any var_names queued from inside a goroutine's dispatch
-            // loop. Doing this here (after exit check, before any fiber runs)
-            // means the re-eval runs with current_executing_fiber_ == nullptr,
-            // so callFunctionSync's nested dispatch can't wedge the goroutine
-            // frame that produced the VAR_CHANGED event.
-            drainPendingVarChanges();
-
             if (hostContext_->eventQueue) {
                 hostContext_->eventQueue->processAll();
             }
@@ -917,6 +910,16 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           g->update_callback_id = 0;
       }
     }
+
+    // Drain any var_names queued from inside the goroutine's dispatch
+    // loop. By this point current_executing_fiber_ is null (set to nullptr
+    // after runDispatchLoopPublic / yield), so conditional-hotkey re-eval
+    // callbacks execute with no active fiber and cannot wedge the dispatch
+    // frame that produced the VAR_CHANGED event. This runs for every
+    // goroutine tick, including the last one before exit_requested_
+    // terminates the loop, fixing the stale-hotkey-cache bug when a
+    // goroutine calls exit(1) after mutating a condition dependency.
+    drainPendingVarChanges();
   }
 
   // Clean up any remaining update goroutine GC roots

@@ -1059,29 +1059,6 @@ if (!modName.empty()) {
 
     trackFieldAccess("@O" + std::to_string(object.asObjectId()) + ":" + *key);
 
-    // Property getter interception: if object has __class and prototype
-    // defines __get_<field>, call that method with (this) instead of
-    // returning the raw cached value. This lets host objects like Hotkey
-    // react to `m.grab` reads dynamically — e.g. flush pending conditional-
-    // hotkey re-evals queued by recent STORE_GLOBAL ops in this goroutine
-    // tick before reporting the field value. Without this, `m.grab == true`
-    // compares against a stale cached bool that does not reflect recent
-    // mutations of the condition's dependency variables.
-    {
-      auto *classVal = obj->get("__class");
-      if (classVal && (classVal->isStringValId() || classVal->isStringId())) {
-        std::string getterName = "__get_" + *key;
-        auto getter = getPrototypeMethod(object, getterName);
-        if (getter) {
-          try {
-            Value r = callHostFunction(Value::makeHostFuncId(*getter), {object});
-            pushStack(std::move(r));
-            break;
-          } catch (...) {}
-        }
-      }
-    }
-
     Value found_val = Value::makeNull();
     GCHeap::ObjectEntry *current_obj = obj;
 

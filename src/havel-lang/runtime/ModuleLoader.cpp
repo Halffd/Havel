@@ -203,12 +203,13 @@ ModuleLoader::resolve(const std::string& modulePath,
   // Load hash index for persistent cache validation
   loadHashIndex();
 
-  auto checkBcCache = [&](const fs::path& hvcPath, const fs::path& hvPath) -> std::optional<ResolvedModule> {
+  auto checkBcCache = [&](const fs::path& hvcPath, const fs::path& hvPath,
+                          const std::string& hashKey) -> std::optional<ResolvedModule> {
     if (!fs::exists(hvcPath)) return std::nullopt;
 
     // Check persistent hash index first
     loadHashIndex();
-    auto hashIt = bytecode_hash_index_.find(name);
+    auto hashIt = bytecode_hash_index_.find(hashKey);
     if (hashIt != bytecode_hash_index_.end() && fs::exists(hvPath)) {
       // Compute current source hash
       std::string currentHash = sha256_file_hex(hvPath.string());
@@ -230,26 +231,31 @@ ModuleLoader::resolve(const std::string& modulePath,
   // Get cache directory
   std::string cacheDir = getCacheDir();
 
-  // Prefer .hvc only if it is present and not older than the corresponding
-  // .hv source on disk (mtime check). When the source is missing, the cache
-  // is admissible as-is.
+  // Single flat cache at ~/.cache/havel/ with namespaced filenames.
+  // Priority: lang.<name>.hvc > std.<name>.hvc > <name>.hvc
+  // This preserves the original search order while avoiding subdirs.
+
+  // 1. lang.<name>.hvc (lang modules take priority)
+  if (auto bc = checkBcCache(
+        fs::path(cacheDir) / ("lang." + name + ".hvc"),
+        fs::path(cacheDir) / ("lang." + name + ".hv"),
+        "lang." + name)) {
+    return *bc;
+  }
+
+  // 2. std.<name>.hvc (stdlib modules)
+  if (auto bc = checkBcCache(
+        fs::path(cacheDir) / ("std." + name + ".hvc"),
+        fs::path(cacheDir) / ("std." + name + ".hv"),
+        "std." + name)) {
+    return *bc;
+  }
+
+  // 3. <name>.hvc (user modules, no namespace)
   if (auto bc = checkBcCache(
         fs::path(cacheDir) / (name + ".hvc"),
-        fs::path(cacheDir) / (name + ".hv"))) {
-    return *bc;
-  }
-
-  // modules/lang/<name>.hvc subdirectory convention
-  if (auto bc = checkBcCache(
-        fs::path(cacheDir) / "modules" / "lang" / (name + ".hvc"),
-        fs::path(cacheDir) / "modules" / "lang" / (name + ".hv"))) {
-    return *bc;
-  }
-
-  // modules/std/<name>.hvc subdirectory convention (stdlib modules)
-  if (auto bc = checkBcCache(
-        fs::path(cacheDir) / "modules" / "std" / (name + ".hvc"),
-        fs::path(cacheDir) / "modules" / "std" / (name + ".hv"))) {
+        fs::path(cacheDir) / (name + ".hv"),
+        name)) {
     return *bc;
   }
 

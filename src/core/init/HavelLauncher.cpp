@@ -1921,20 +1921,36 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     return 1;
   }
 
+  // Compute cache path for a module. Uses namespaced flat filenames in
+  // ~/.cache/havel/ to avoid collisions between lang/ and std/ modules.
+  // The namespace prefix is determined by the output path or inferred.
   const auto companionCachePath = [](const std::string &path) {
     if (path.empty()) {
       return std::string{};
     }
     const auto dot = path.find_last_of('.');
     std::string base = dot == std::string::npos ? path : path.substr(0, dot);
-    // Extract filename only
     const auto slash = base.find_last_of("/\\");
     std::string filename = slash == std::string::npos ? base : base.substr(slash + 1);
-    // Store in ~/.cache/havel/ (single bytecode cache location)
+
+    // If filename already has lang. or std. prefix, use as-is.
+    // Otherwise, infer from directory: .../modules/lang/ -> lang.<name>
+    // .../modules/std/ -> std.<name>
+    std::string cacheName = filename;
+    if (filename.rfind("lang.", 0) != 0 && filename.rfind("std.", 0) != 0) {
+      if (base.find("/modules/lang/") != std::string::npos ||
+          base.find("\\modules\\lang\\") != std::string::npos) {
+        cacheName = "lang." + filename;
+      } else if (base.find("/modules/std/") != std::string::npos ||
+                 base.find("\\modules\\std\\") != std::string::npos) {
+        cacheName = "std." + filename;
+      }
+    }
+
     std::string cacheDir = havel::Env::cache() + "/havel";
     std::error_code ec;
     std::filesystem::create_directories(cacheDir, ec);
-    return cacheDir + "/" + filename + ".hvc";
+    return cacheDir + "/" + cacheName + ".hvc";
   };
 
   // Determine output path

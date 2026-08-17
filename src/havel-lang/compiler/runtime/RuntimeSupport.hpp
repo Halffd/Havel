@@ -359,7 +359,8 @@ private:
 
 // ============================================================================
 // Auto-cache - write a freshly compiled chunk to the single bytecode cache
-// location ~/.cache/havel/<moduleName>.hvc (see ModuleLoader::getCacheDir()).
+// location ~/.cache/havel/ with namespaced filenames (lang.<name>.hvc,
+// std.<name>.hvc, or <name>.hvc for user modules).
 // Called after compiling a main script or a module from source so the next
 // run can resolve it as BytecodeCache without recompiling.
 // ============================================================================
@@ -373,16 +374,38 @@ inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
     std::string cacheDir = havel::ModuleLoader::getCacheDir();
     std::filesystem::create_directories(cacheDir);
 
+    // Extract base name from path
     std::string moduleName = compileUnitName;
     size_t lastSlash = moduleName.find_last_of('/');
+    if (lastSlash == std::string::npos) {
+      lastSlash = moduleName.find_last_of('\\');
+    }
     if (lastSlash != std::string::npos) {
       moduleName = moduleName.substr(lastSlash + 1);
     }
+    // Remove extension
     if (moduleName.size() >= 3 &&
         moduleName.substr(moduleName.size() - 3) == ".hv") {
       moduleName = moduleName.substr(0, moduleName.size() - 3);
+    } else if (moduleName.size() >= 4 &&
+               moduleName.substr(moduleName.size() - 4) == ".hvc") {
+      moduleName = moduleName.substr(0, moduleName.size() - 4);
     }
-    for (char& c : moduleName) {
+
+    // Determine namespace prefix from path
+    std::string cacheName = moduleName;
+    if (moduleName.rfind("lang.", 0) != 0 && moduleName.rfind("std.", 0) != 0) {
+      if (compileUnitName.find("/modules/lang/") != std::string::npos ||
+          compileUnitName.find("\\modules\\lang\\") != std::string::npos) {
+        cacheName = "lang." + moduleName;
+      } else if (compileUnitName.find("/modules/std/") != std::string::npos ||
+                 compileUnitName.find("\\modules\\std\\") != std::string::npos) {
+        cacheName = "std." + moduleName;
+      }
+    }
+
+    // Sanitize filename
+    for (char& c : cacheName) {
       if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
           c == '"' || c == '<' || c == '>' || c == '|') {
         c = '_';
@@ -390,11 +413,19 @@ inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
     }
 
     std::filesystem::path hvcPath =
-        std::filesystem::path(cacheDir) / (moduleName + ".hvc");
+        std::filesystem::path(cacheDir) / (cacheName + ".hvc");
+    std::filesystem::path hvPath =
+        std::filesystem::path(cacheDir) / (cacheName + ".hv");
     std::ofstream file(hvcPath, std::ios::binary);
     if (file.is_open()) {
       file.write(reinterpret_cast<const char*>(data.data()), data.size());
       file.close();
+    }
+    // Also copy source .hv next to .hvc for hash/mtime validation
+    std::error_code ec;
+    if (std::filesystem::exists(compileUnitName, ec) && !ec) {
+      std::filesystem::copy_file(compileUnitName, hvPath,
+                                 std::filesystem::copy_options::overwrite_existing, ec);
     }
   } catch (...) {
   }

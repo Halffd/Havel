@@ -650,12 +650,17 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
                     g->state == GoroutineState::Created ||
                     g->state == GoroutineState::Running);
 
+  // For persistent hotkeys suspended with HotkeyWait, treat as pending for
+  // Drop policy to prevent bursty input (wheel storms) from hammering the scheduler
+  bool isSuspendedHotkeyWait = (g->state == GoroutineState::Suspended &&
+                                g->suspension_reason.load(std::memory_order_acquire) == SuspensionReason::HotkeyWait);
+
   ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
-                 g->id, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending);
+                  g->id, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending);
 
   switch (g->hotkey_policy) {
   case HotkeyPolicy::Drop:
-    if (isPending) return g->persistent;
+    if (isPending || isSuspendedHotkeyWait) return g->persistent;
     break;
   case HotkeyPolicy::Replace:
     if (isPending) {
@@ -726,6 +731,15 @@ bool Scheduler::isHotkeyPending(uint32_t gid) const {
     auto it = goroutines_.find(gid);
     if (it == goroutines_.end()) return false;
     auto s = it->second->state.load(std::memory_order_acquire);
+    // For persistent hotkeys, also consider Suspended with HotkeyWait as "pending"
+    // to prevent bursty input from hammering the scheduler
+    if (s == GoroutineState::Suspended) {
+      auto sr = it->second->suspension_reason.load(std::memory_order_acquire);
+      if (sr == SuspensionReason::HotkeyWait) {
+        return true;
+      }
+      return false;
+    }
     return s == GoroutineState::Runnable || s == GoroutineState::Created ||
            s == GoroutineState::Running;
 }

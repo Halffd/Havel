@@ -1300,8 +1300,29 @@ int HavelLauncher::run(int argc, char *argv[]) {
         return 1;
       }
     } else if (!cfg.noSelfHosted && cfg.vmConfig.self_hosted_modules_path.empty()) {
-      error("Self-hosted modules path not configured");
-      return 1;
+      // Try to derive self-hosted path from binary location: binary/../out
+      namespace fs = std::filesystem;
+      auto exePath = Env::executable();
+      if (!exePath.empty()) {
+        fs::path candidate = fs::path(exePath).parent_path().parent_path() / "out";
+        if (fs::exists(candidate / "modules" / "lang")) {
+          cfg.vmConfig.self_hosted_modules_path = candidate.string();
+          fs::path langDir = candidate / "modules" / "lang";
+          if (!fs::is_empty(langDir)) {
+            if (cfg.mode == LaunchConfig::Mode::REPL ||
+                cfg.mode == LaunchConfig::Mode::SCRIPT ||
+                cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
+                cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
+                cfg.mode == LaunchConfig::Mode::TEST) {
+              cfg.launchMode = cfg.mode;
+              cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
+              cfg.minimalMode = true;
+              cfg.pureStdlib = true;
+            }
+          }
+        }
+        // If not found, fall through to --no-self-hosted behaviour silently
+      }
     }
 
     if (!cfg.diffPipelinePath.empty()) {

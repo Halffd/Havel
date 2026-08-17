@@ -230,6 +230,12 @@ void Havel::initialize(bool isStartup) {
                 }
 
                 // Add module .so paths for havel_mod_<name>.so discovery
+                // Try sibling modules/ first (build-debug/modules/) then ../modules/
+                auto siblingModulesDir = std::filesystem::path(exePath).parent_path() / "modules";
+                if (std::filesystem::exists(siblingModulesDir)) {
+                    bytecodeVM->moduleLoader().addModuleSoPath(
+                        std::filesystem::canonical(siblingModulesDir).string());
+                }
                 auto modulesDir = std::filesystem::path(exePath).parent_path() / ".." / "modules";
                 if (std::filesystem::exists(modulesDir)) {
                     bytecodeVM->moduleLoader().addModuleSoPath(

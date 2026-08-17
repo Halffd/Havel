@@ -67,6 +67,9 @@ static void print_usage(const char *prog) {
 }
 
 int main(int argc, char **argv) {
+    // Disable stdout buffering so results appear immediately even when piped
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    std::cout.setf(std::ios::unitbuf);
     bool mode_smoke = false;
     bool mode_hvmoke = false;
     bool mode_scripts = false;

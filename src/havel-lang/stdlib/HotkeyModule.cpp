@@ -1117,6 +1117,32 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     return Value::makeBool(ctx->grab);
   });
 
+  // __get_grab - property-getter interceptor for `m.grab` (no parens).
+  // OBJECT_GET on a Hotkey-typed object checks for a prototype method named
+  // __get_<field> before falling back to the cached instance field, so
+  // scripts that read `hotkeyTest.grab` (without calling it as a method)
+  // still get a fresh value with pending conditional-hotkey re-evals
+  // drained. This is necessary because the cached `grab` instance field
+  // (set by setGrab on every re-eval) would otherwise shadow the prototype
+  // method and reflect stale state when the condition's dependency variable
+  // was mutated in this same goroutine tick but not yet drained by the
+  // scheduler.
+  api.registerPrototypeMethod("Hotkey", "__get_grab", 1, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    vm.drainConditionalHotkeyPending();
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    // Sync the cached field so any subsequent read still observes the
+    // freshly drained value. (Mostly a no-op once setGrab keeps it in sync
+    // on every re-eval, but cheap and defensive.)
+    vm.setHostObjectField(objRef, "grab", Value::makeBool(ctx->grab));
+    return Value::makeBool(ctx->grab);
+  });
+
   // ===== Dynamic Update Methods =====
 
   // setCondition(newConditionFn) - update the condition function for this hotkey
@@ -1257,7 +1283,7 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     bool grab = vm.toBoolPublic(args[1]);
     auto *hostCtx = vm.hostContext();
     if (hostCtx && hostCtx->hotkeyManager) {
-      hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, grab);
+       hostCtx->hotkeyManager->SetHotkeyGrab(ctx->alias, grab);
     }
     ctx->grab = grab;
     vm.setHostObjectField(objRef, "grab", Value::makeBool(grab));

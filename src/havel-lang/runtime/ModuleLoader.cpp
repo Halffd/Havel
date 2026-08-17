@@ -210,25 +210,20 @@ ModuleLoader::resolve(const std::string& modulePath,
       // Check persistent hash index first
       loadHashIndex();
       auto hashIt = bytecode_hash_index_.find(name);
-      std::cerr << "[DEBUG] checkBcCache: name=" << name << " hvcPath=" << hvcPath << " hvPath=" << hvPath << " hashIt=" << (hashIt != bytecode_hash_index_.end() ? "found" : "NOT_FOUND") << " hvExists=" << fs::exists(hvPath) << std::endl;
       if (hashIt != bytecode_hash_index_.end() && fs::exists(hvPath)) {
         // Compute current source hash
         std::string currentHash = sha256_file_hex(hvPath.string());
-        std::cerr << "[DEBUG] checkBcCache: currentHash=" << currentHash << " storedHash=" << hashIt->second << " match=" << (currentHash == hashIt->second) << std::endl;
         if (currentHash == hashIt->second) {
           // Hash matches - cache is valid
-          std::cerr << "[DEBUG] checkBcCache: HASH MATCH - using cache" << std::endl;
           return makeBcCache(hvcPath, hvPath, modulePath);
         }
         // Hash mismatch - cache is stale, fall through to mtime check
-        std::cerr << "[DEBUG] checkBcCache: HASH MISMATCH" << std::endl;
       }
 
       // Fallback to mtime check
       auto hvcTime = fs::last_write_time(hvcPath);
       bool newerOrEqual = !fs::exists(hvPath) ||
                           hvcTime >= fs::last_write_time(hvPath);
-      std::cerr << "[DEBUG] checkBcCache: mtime fallback newerOrEqual=" << newerOrEqual << std::endl;
       if (newerOrEqual) return makeBcCache(hvcPath, hvPath, modulePath);
       return std::nullopt;
     };

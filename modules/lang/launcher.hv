@@ -663,7 +663,6 @@ if args == null || #args == 0 {
 }
 
 cfg = parseArgs(args)
-print("DEBUG: cfg.scriptFiles = " + str(cfg.scriptFiles))
 
 result = 0
 if cfg.mode == "run" {

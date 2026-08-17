@@ -739,27 +739,6 @@ int havel_loader_resolve(HavelLoader *loader, const char *module_path,
    return 1;
  }
 
- if (script_dir && script_dir[0]) {
-  char cache_path[1024];
-  make_path(cache_path, sizeof(cache_path), script_dir, "__cache__", NULL);
-  char hvc_file[1024];
-  make_path(hvc_file, sizeof(hvc_file), cache_path, name, ".hvc");
-  if (file_exists(hvc_file)) {
-   out->type = HAVEL_SOURCE_BYTECODE_CACHE;
-   snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", hvc_file);
-   snprintf(out->original_name, sizeof(out->original_name), "%s", name);
-   return 1;
-  }
-  char hbc_file[1024];
-  make_path(hbc_file, sizeof(hbc_file), cache_path, name, ".hbc");
-  if (file_exists(hbc_file)) {
-   out->type = HAVEL_SOURCE_BYTECODE_CACHE;
-   snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", hbc_file);
-   snprintf(out->original_name, sizeof(out->original_name), "%s", name);
-   return 1;
-  }
- }
-
  if (loader->stdlib_path[0]) {
   if (pick_hv_or_hvc(loader->stdlib_path, name, out, HAVEL_SOURCE_STDLIB))
    return 1;

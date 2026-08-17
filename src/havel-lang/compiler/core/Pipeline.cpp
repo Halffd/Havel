@@ -9,8 +9,10 @@
 #include "../vm/VM.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "BootstrapByteCompiler.hpp"
+#include "../runtime/RuntimeSupport.hpp"
 
 #include "../../stdlib/RuntimeErrorTracker.hpp"
+#include "../../runtime/ModuleLoader.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -863,6 +865,9 @@ BytecodeSmokeResult runBytecodePipeline(const std::string &source,
       std::cerr << "=== BYTECODE ===\n" << result.snapshot.bytecode;
     }
     result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
+
+    // Auto-cache compiled chunk to ~/.cache/havel
+    autoCacheBytecodeChunk(options.compile_unit_name, *chunk);
   } catch (const std::exception &e) {
     std::string formatted = e.what();
     static const std::regex unresolved_re(
@@ -1108,6 +1113,9 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   if (!chunk) {
     COMPILER_THROW("Bytecode compilation failed");
   }
+
+  // Auto-cache compiled chunk to ~/.cache/havel
+  autoCacheBytecodeChunk(options.compile_unit_name, *chunk);
 
   return chunk;
 }

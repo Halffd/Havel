@@ -2,6 +2,9 @@
 #pragma once
 
 #include "../core/BytecodeIR.hpp"
+#include "havel-lang/runtime/ModuleLoader.hpp"
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <vector>
 #include <string>
@@ -353,5 +356,48 @@ private:
   std::string valueToJson(const Value& value);
   Value jsonToValue(const std::string& json);
 };
+
+// ============================================================================
+// Auto-cache - write a freshly compiled chunk to the single bytecode cache
+// location ~/.cache/havel/<moduleName>.hvc (see ModuleLoader::getCacheDir()).
+// Called after compiling a main script or a module from source so the next
+// run can resolve it as BytecodeCache without recompiling.
+// ============================================================================
+inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
+                                   const BytecodeChunk& chunk) {
+  try {
+    ValueSerializer serializer;
+    std::vector<uint8_t> data =
+        serializer.serializeChunk(chunk, compileUnitName);
+
+    std::string cacheDir = havel::ModuleLoader::getCacheDir();
+    std::filesystem::create_directories(cacheDir);
+
+    std::string moduleName = compileUnitName;
+    size_t lastSlash = moduleName.find_last_of('/');
+    if (lastSlash != std::string::npos) {
+      moduleName = moduleName.substr(lastSlash + 1);
+    }
+    if (moduleName.size() >= 3 &&
+        moduleName.substr(moduleName.size() - 3) == ".hv") {
+      moduleName = moduleName.substr(0, moduleName.size() - 3);
+    }
+    for (char& c : moduleName) {
+      if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
+          c == '"' || c == '<' || c == '>' || c == '|') {
+        c = '_';
+      }
+    }
+
+    std::filesystem::path hvcPath =
+        std::filesystem::path(cacheDir) / (moduleName + ".hvc");
+    std::ofstream file(hvcPath, std::ios::binary);
+    if (file.is_open()) {
+      file.write(reinterpret_cast<const char*>(data.data()), data.size());
+      file.close();
+    }
+  } catch (...) {
+  }
+}
 
 } // namespace havel::compiler

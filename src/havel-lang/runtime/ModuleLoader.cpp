@@ -134,7 +134,7 @@ static ModuleLoader::ResolvedModule makeBcCache(const std::filesystem::path &hvc
 }
 
 void ModuleLoader::addSearchPath(const std::string& path) {
-  searchPaths_.push_back(path);
+    searchPaths_.push_back(path);
 }
 
 void ModuleLoader::addModuleSoPath(const std::string& path) {
@@ -199,57 +199,58 @@ ModuleLoader::resolve(const std::string& modulePath,
     }
   }
 
-  // 1b. Check self-hosted modules path first (compiled .hvc bytecode)
-  if (!self_hosted_modules_path_.empty()) {
-    // Load hash index for persistent cache validation
+  // 1b. Check cache directory first (compiled .hvc bytecode)
+  // Load hash index for persistent cache validation
+  loadHashIndex();
+
+  auto checkBcCache = [&](const fs::path& hvcPath, const fs::path& hvPath) -> std::optional<ResolvedModule> {
+    if (!fs::exists(hvcPath)) return std::nullopt;
+
+    // Check persistent hash index first
     loadHashIndex();
-
-    auto checkBcCache = [&](const fs::path& hvcPath, const fs::path& hvPath) -> std::optional<ResolvedModule> {
-      if (!fs::exists(hvcPath)) return std::nullopt;
-
-      // Check persistent hash index first
-      loadHashIndex();
-      auto hashIt = bytecode_hash_index_.find(name);
-      if (hashIt != bytecode_hash_index_.end() && fs::exists(hvPath)) {
-        // Compute current source hash
-        std::string currentHash = sha256_file_hex(hvPath.string());
-        if (currentHash == hashIt->second) {
-          // Hash matches - cache is valid
-          return makeBcCache(hvcPath, hvPath, modulePath);
-        }
-        // Hash mismatch - cache is stale, fall through to mtime check
+    auto hashIt = bytecode_hash_index_.find(name);
+    if (hashIt != bytecode_hash_index_.end() && fs::exists(hvPath)) {
+      // Compute current source hash
+      std::string currentHash = sha256_file_hex(hvPath.string());
+      if (currentHash == hashIt->second) {
+        // Hash matches - cache is valid
+        return makeBcCache(hvcPath, hvPath, modulePath);
       }
-
-      // Fallback to mtime check
-      auto hvcTime = fs::last_write_time(hvcPath);
-      bool newerOrEqual = !fs::exists(hvPath) ||
-                          hvcTime >= fs::last_write_time(hvPath);
-      if (newerOrEqual) return makeBcCache(hvcPath, hvPath, modulePath);
-      return std::nullopt;
-    };
-
-    // Prefer .hvc only if it is present and not older than the corresponding
-    // .hv source on disk (mtime check). When the source is missing, the cache
-    // is admissible as-is.
-    if (auto bc = checkBcCache(
-          fs::path(self_hosted_modules_path_) / (name + ".hvc"),
-          fs::path(self_hosted_modules_path_) / (name + ".hv"))) {
-      return *bc;
+      // Hash mismatch - cache is stale, fall through to mtime check
     }
 
-    // modules/lang/<name>.hvc subdirectory convention
-    if (auto bc = checkBcCache(
-          fs::path(self_hosted_modules_path_) / "modules" / "lang" / (name + ".hvc"),
-          fs::path(self_hosted_modules_path_) / "modules" / "lang" / (name + ".hv"))) {
-      return *bc;
-    }
+    // Fallback to mtime check
+    auto hvcTime = fs::last_write_time(hvcPath);
+    bool newerOrEqual = !fs::exists(hvPath) ||
+                        hvcTime >= fs::last_write_time(hvPath);
+    if (newerOrEqual) return makeBcCache(hvcPath, hvPath, modulePath);
+    return std::nullopt;
+  };
 
-    // modules/std/<name>.hvc subdirectory convention (stdlib modules)
-    if (auto bc = checkBcCache(
-          fs::path(self_hosted_modules_path_) / "modules" / "std" / (name + ".hvc"),
-          fs::path(self_hosted_modules_path_) / "modules" / "std" / (name + ".hv"))) {
-      return *bc;
-    }
+  // Get cache directory
+  std::string cacheDir = getCacheDir();
+
+  // Prefer .hvc only if it is present and not older than the corresponding
+  // .hv source on disk (mtime check). When the source is missing, the cache
+  // is admissible as-is.
+  if (auto bc = checkBcCache(
+        fs::path(cacheDir) / (name + ".hvc"),
+        fs::path(cacheDir) / (name + ".hv"))) {
+    return *bc;
+  }
+
+  // modules/lang/<name>.hvc subdirectory convention
+  if (auto bc = checkBcCache(
+        fs::path(cacheDir) / "modules" / "lang" / (name + ".hvc"),
+        fs::path(cacheDir) / "modules" / "lang" / (name + ".hv"))) {
+    return *bc;
+  }
+
+  // modules/std/<name>.hvc subdirectory convention (stdlib modules)
+  if (auto bc = checkBcCache(
+        fs::path(cacheDir) / "modules" / "std" / (name + ".hvc"),
+        fs::path(cacheDir) / "modules" / "std" / (name + ".hv"))) {
+    return *bc;
   }
 
   // 2. Check script directory first for local modules:
@@ -289,31 +290,7 @@ ModuleLoader::resolve(const std::string& modulePath,
     if (pkg) return pkg;
   }
 
-  // 3. Check __cache__/name.hvc relative to scriptDir (old .hbc path, now .hvc)
-  if (!scriptDir.empty()) {
-    fs::path cachePath = fs::path(scriptDir) / "__cache__" / (name + ".hvc");
-    fs::path srcPath  = fs::path(scriptDir) / (name + ".hv");
-    if (fs::exists(cachePath)) {
-      if (fs::exists(srcPath) &&
-          fs::last_write_time(cachePath) < fs::last_write_time(srcPath)) {
-        // source newer - skip cache, fall through
-      } else {
-        return makeBcCache(cachePath, srcPath, modulePath);
-      }
-    }
-    // Also check old .hbc extension for backwards compat
-    fs::path hbcPath = fs::path(scriptDir) / "__cache__" / (name + ".hbc");
-    if (fs::exists(hbcPath)) {
-      if (fs::exists(srcPath) &&
-          fs::last_write_time(hbcPath) < fs::last_write_time(srcPath)) {
-        // source newer - skip cache
-      } else {
-        return makeBcCache(hbcPath, srcPath, modulePath);
-      }
-    }
-  }
-
-  // 4. Check stdlibPath_ for name.hvc or name.hv
+  // 3. Check stdlibPath_ for name.hvc or name.hv
   // But first, check if there's a plugin (native extension) for this module
   // in the search paths, to allow plugins to override stdlib .hv/.hvc files.
   for (const auto& sp : searchPaths_) {
@@ -602,14 +579,8 @@ bool ModuleLoader::isFreshLocked(const std::string &key) const {
     if (hash_index_loaded_) return;
     hash_index_loaded_ = true;
 
-    if (!self_hosted_modules_path_.empty()) {
-      bytecode_hash_index_path_ = (std::filesystem::path(self_hosted_modules_path_) / ".havel_bytecode_hash_index").string();
-    } else if (!stdlibPath_.empty()) {
-      bytecode_hash_index_path_ = (std::filesystem::path(stdlibPath_) / ".havel_bytecode_hash_index").string();
-    } else {
-      // No standard path, skip hash index
-      return;
-    }
+    std::string cacheDir = getCacheDir();
+    bytecode_hash_index_path_ = (std::filesystem::path(cacheDir) / ".havel_bytecode_hash_index").string();
 
     std::ifstream file(bytecode_hash_index_path_);
     if (!file.is_open()) return;
@@ -645,6 +616,12 @@ bool ModuleLoader::isFreshLocked(const std::string &key) const {
 
   std::string ModuleLoader::sha256FileHex(const std::string& path) {
     return sha256_file_hex(path);
+  }
+
+  std::string ModuleLoader::getCacheDir() {
+    const char* home = std::getenv("HOME");
+    if (!home) home = "/tmp";
+    return (std::filesystem::path(home) / ".cache" / "havel").string();
   }
 
   std::vector<core::Value> ModuleLoader::cachedValues() const {

@@ -1930,11 +1930,11 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     // Extract filename only
     const auto slash = base.find_last_of("/\\");
     std::string filename = slash == std::string::npos ? base : base.substr(slash + 1);
-    // Store in ~/.cache/havel/
+    // Store in ~/.cache/havel/ (single bytecode cache location)
     std::string cacheDir = havel::Env::cache() + "/havel";
     std::error_code ec;
     std::filesystem::create_directories(cacheDir, ec);
-    return cacheDir + "/" + filename + ".hbc";
+    return cacheDir + "/" + filename + ".hvc";
   };
 
   // Determine output path
@@ -2658,7 +2658,7 @@ int HavelLauncher::diffPipeline(const havel::init::LaunchConfig &cfg) {
       if (!entry.is_regular_file())
         continue;
       auto ext = entry.path().extension().string();
-      if (ext != ".hvc" && ext != ".hbc")
+      if (ext != ".hvc")
         continue;
       auto rel = fs::relative(entry.path(), dir).string();
       std::ifstream f(entry.path(), std::ios::binary);

@@ -42,6 +42,7 @@
 #include <regex>
 #include <set>
 #include <sstream>
+#include "../../runtime/ModuleLoader.hpp"
 
 // Globals reconstructed per-process by host modules. Since host-fn fields
 // serialize to null and these carry per-run state (app.args), they must never
@@ -95,7 +96,6 @@ VM::VM(const VMConfig &cfg) {
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
-    moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
     // Add self-hosted modules subdirectories to search paths for hierarchical module resolution
     moduleLoader_.addSearchPath(cfg.self_hosted_modules_path + "/modules/lang");
     moduleLoader_.addSearchPath(cfg.self_hosted_modules_path + "/modules/std");
@@ -140,7 +140,6 @@ VM::VM(const ::havel::HostContext &ctx, const VMConfig &cfg) {
   timer_check_interval_ = cfg.timer_check_interval;
   if (!cfg.self_hosted_modules_path.empty()) {
     self_hosted_modules_path_ = cfg.self_hosted_modules_path;
-    moduleLoader_.setSelfHostedPath(cfg.self_hosted_modules_path);
   }
   registerDefaultHostFunctions();
 
@@ -5175,21 +5174,8 @@ return cachedVal;
       COMPILER_THROW("Module " + path + " compiler returned null chunk");
     }
 
-    // Auto-cache compiled chunk
-    try {
-      ValueSerializer serializer;
-      std::vector<uint8_t> data =
-          serializer.serializeChunk(*chunk, resolved->canonicalPath);
-      std::filesystem::path hvcPath = resolved->canonicalPath;
-      hvcPath.replace_extension(".hvc");
-      std::ofstream file(hvcPath, std::ios::binary);
-      if (file.is_open()) {
-        file.write(reinterpret_cast<const char *>(data.data()), data.size());
-        file.close();
-        std::cerr << "[DEBUG] Auto-cached chunk to " << hvcPath << ", size: " << data.size() << "\n";
-      }
-    } catch (...) {
-    }
+    // Auto-cache compiled chunk to ~/.cache/havel
+    autoCacheBytecodeChunk(resolved->canonicalPath, *chunk);
   }
 
   // Execute the module in a sandboxed globals context

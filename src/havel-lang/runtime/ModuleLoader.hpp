@@ -23,15 +23,12 @@ using HostModuleFn = std::function<void(Environment &, std::shared_ptr<IHostAPI>
 
 class ModuleLoader {
 public:
-    std::string self_hosted_modules_path_ = "";
-
-    void setSelfHostedPath(const std::string& path) { self_hosted_modules_path_ = path; }
 
     // --- Resolved module info ---
     struct ResolvedModule {
         enum Type {
             Cached,           // Already in module cache
-            BytecodeCache,    // .hbc file in __cache__/
+            BytecodeCache,    // .hvc file in ~/.cache/havel
             StdlibSource,     // .hv file in stdlib/
             PackageSource,    // .hv file in ~/.havel/packages/
             UserSource,       // .hv file in user search paths
@@ -100,6 +97,7 @@ public:
 
     // Compute SHA-256 hash of a file (for persistent cache index)
     static std::string sha256FileHex(const std::string& path);
+    static std::string getCacheDir();
     std::vector<core::Value> cachedValues() const;
 
     // ========================================================================

@@ -216,17 +216,22 @@ void Havel::initialize(bool isStartup) {
     {
         auto exePath = Env::executable();
         if (!exePath.empty()) {
-            auto modulesPath = std::filesystem::path(exePath).parent_path()
-                / ".." / "modules";
+            auto modulesPath = std::filesystem::path(exePath).parent_path().parent_path()
+                / "modules";
             if (std::filesystem::exists(modulesPath)) {
-                // Only add source directory search paths if self-hosted modules are NOT enabled
-                // When self-hosted modules are enabled, the out/modules paths take priority
-                if (bytecodeVM->vmConfig().self_hosted_modules_path.empty()) {
-                    auto canonicalRoot = std::filesystem::canonical(modulesPath).string();
-                    bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/lang");
-                    bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/std");
-                    bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/app");
-                    bytecodeVM->moduleLoader().addSearchPath(canonicalRoot);
+                // Add source directory search paths for hierarchical module resolution
+                // These are needed for both self-hosted and native module resolution
+                auto canonicalRoot = std::filesystem::canonical(modulesPath).string();
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/std");
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/app");
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot);
+
+                // Also add scripts directory as a search path for user scripts
+                auto scriptsPath = std::filesystem::path(modulesPath).parent_path() / "scripts";
+                if (std::filesystem::exists(scriptsPath)) {
+                    auto canonicalScripts = std::filesystem::canonical(scriptsPath).string();
+                    bytecodeVM->moduleLoader().addSearchPath(canonicalScripts);
                 }
 
                 // Add module .so paths for havel_mod_<name>.so discovery

@@ -234,6 +234,27 @@ fn runScript(cfg) {
     bcChunk = compileProgram(emitter, result.ast, true, sourceFile)
     measure("emit", t)
 
+    // Point the VM script dir at the user script's own directory so bare
+    // module imports (use "name") resolve against scriptDir/name.hv and
+    // scriptDir/name/name.hv. Without this the dir stays at the launcher's
+    // directory (modules/lang) and colocated modules are never found.
+    if #cfg.scriptFiles > 0 {
+        scriptPath = cfg.scriptFiles[0]
+        slash = scriptPath.lastIndexOf("/")
+        if slash != null && slash >= 0 {
+            dir = scriptPath.slice(0, slash)
+            if dir.startsWith("/") {
+                bc.set_script_dir(dir)
+            }
+            else {
+                bc.set_script_dir(shell.cwd() + "/" + dir)
+            }
+        }
+        else {
+            bc.set_script_dir(shell.cwd())
+        }
+    }
+
     // Spawn the user script as a goroutine
     spawnUserScript(bcChunk)
     measure("TOTAL runScript", t_total)

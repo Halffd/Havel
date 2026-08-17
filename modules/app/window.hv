@@ -20,12 +20,29 @@ use x11
 use protocols
 use display
 use ffi
+use time
 
 // ============================================================
 // Display helpers (private)
 // ============================================================
 
 fn _dpy() { display.open() }
+
+// ============================================================
+// Timing instrumentation (gated behind HAVEL_DEBUG_WINDOW_TIMING)
+// ============================================================
+_win_timing = shell.getenv("HAVEL_DEBUG_WINDOW_TIMING") != ""
+
+fn _tstart() {
+    if _win_timing { time.now() } else { 0 }
+}
+
+fn _tend(label, t0) {
+    if _win_timing && t0 != 0 {
+        elapsed = time.now() - t0
+        print("[window.timing] $label duration=${elapsed}ms")
+    }
+}
 fn _root() {
 	_d = _dpy()
 	if _d == 0 { 0 } else { x11.rootWindow(_d) }
@@ -710,13 +727,30 @@ fn _allWindows() {
 // ============================================================
 
 fn _snapshot(_w) {
+	_t0 = _tstart()
+	_t_title = _tstart()
+	_title = _w.title()
+	_tend("snapshot.title", _t_title)
+	_t_class = _tstart()
+	_class = _w.className()
+	_tend("snapshot.class", _t_class)
+	_t_pid = _tstart()
+	_pid = _w.pid()
+	_tend("snapshot.pid", _t_pid)
+	_t_exe = _tstart()
+	_exe = _w.exe()
+	_tend("snapshot.exe", _t_exe)
+	_t_cmd = _tstart()
+	_cmd = _w.cmdline()
+	_tend("snapshot.cmdline", _t_cmd)
+	_tend("snapshot.total", _t0)
 	{
 		id: _w.id,
-		title: _w.title(),
-		class: _w.className(),
-		pid: _w.pid(),
-		exe: _w.exe(),
-		cmdline: _w.cmdline(),
+		title: _title,
+		class: _class,
+		pid: _pid,
+		exe: _exe,
+		cmdline: _cmd,
 		close: fn() { _w.close() },
 		hide: fn() { _w.hide() },
 		show: fn() { _w.show() },
@@ -740,24 +774,40 @@ fn _snapshot(_w) {
 // ============================================================
 
 fn activeId() {
+	_t0 = _tstart()
 	_d = _dpy()
 	if _d == 0 { return 0 }
 	_rw = _root()
 	if _rw != 0 {
+		_t_prop = _tstart()
 		_aid = protocols.getWindowProp(_d, _rw, protocols.netActiveWindow())
-		if _aid != 0 && _aid != _rw { return _aid }
+		_tend("activeId.getWindowProp", _t_prop)
+		if _aid != 0 && _aid != _rw {
+			_tend("activeId.total", _t0)
+			return _aid
+		}
 	}
+	_t_focus = _tstart()
 	_info = x11.getInputFocus(_d)
+	_tend("activeId.getInputFocus", _t_focus)
 	if _info.focus != 0 && _info.focus != 1 && _info.focus != _rw {
+		_tend("activeId.total", _t0)
 		return _info.focus
 	}
+	_tend("activeId.total", _t0)
 	0
 }
 
 fn active() {
+	_t0 = _tstart()
 	_aid = activeId()
-	if _aid == 0 { return null }
-	_snapshot(Window(_aid))
+	if _aid == null || _aid == 0 {
+		_tend("active.total", _t0)
+		return null
+	}
+	_result = _snapshot(Window(_aid))
+	_tend("active.total", _t0)
+	_result
 }
 
 fn list() {

@@ -209,8 +209,12 @@ Scheduler::Goroutine* Scheduler::pickNext() {
       }
       result->wait_handle.clear();
       current_.store(result, std::memory_order_release);
-      if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}",
-                        result->id, result->name, (int)result->state.load());
+      if (debugging::debug_io) {
+        auto queue_delay_us = std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now() - result->queued_at).count();
+        ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={} queue_delay={}us",
+                        result->id, result->name, (int)result->state.load(), queue_delay_us);
+      }
     }
   }
   return result;
@@ -604,6 +608,7 @@ void Scheduler::requeueFront(Goroutine* g) {
 {
     std::lock_guard lock(priority_mutex_);
     removeFromQueues(g);
+    g->queued_at = std::chrono::steady_clock::now();
     if (g->priority == FiberPriority::HOTKEY) {
       hotkey_queue_.push_front(g);
       ::havel::debug("[Scheduler] requeueFront: gid={} pushed to HOTKEY queue (size={})",

@@ -360,7 +360,7 @@ private:
 // ============================================================================
 // Auto-cache - write a freshly compiled chunk to the single bytecode cache
 // location ~/.cache/havel/ with namespaced filenames (lang.<name>.hvc,
-// std.<name>.hvc, or <name>.hvc for user modules).
+// std.<name>.hvc, or <stem>.<path-hash>.hvc for user modules).
 // Called after compiling a main script or a module from source so the next
 // run can resolve it as BytecodeCache without recompiling.
 // ============================================================================

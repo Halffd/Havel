@@ -227,7 +227,8 @@ ModuleLoader::resolve(const std::string& modulePath,
     return ResolvedModule{srcType, canonicalSrcPath, modulePath, ""};
   };
 
-  // Check if path is absolute
+  // Check if path is absolute. Bytecode caches live only in ~/.cache/havel;
+  // there is no side-by-side .hvc next to source files.
   if (fs::path(modulePath).is_absolute()) {
     if (fs::exists(modulePath)) {
       try {
@@ -235,16 +236,6 @@ ModuleLoader::resolve(const std::string& modulePath,
                             ResolvedModule::UserSource);
       } catch (...) {
         return ResolvedModule{ResolvedModule::UserSource, modulePath, modulePath};
-      }
-    }
-    // Also try with .hvc extension for absolute paths
-    fs::path hvcPath = fs::path(modulePath).replace_extension(".hvc");
-    if (fs::exists(hvcPath)) {
-      try {
-        return ResolvedModule{ResolvedModule::BytecodeCache,
-                              fs::canonical(hvcPath).string(), modulePath};
-      } catch (...) {
-        return ResolvedModule{ResolvedModule::BytecodeCache, hvcPath.string(), modulePath};
       }
     }
     return std::nullopt;
@@ -257,15 +248,6 @@ ModuleLoader::resolve(const std::string& modulePath,
       return flatCacheFor(fs::canonical(resolved).string(),
                           ResolvedModule::UserSource);
     }
-    // Also try .hvc variant
-    fs::path hvcPath = fs::path(scriptDir) / (modulePath + ".hvc");
-    if (modulePath.ends_with(".hv")) {
-      hvcPath = fs::path(scriptDir) / (modulePath.substr(0, modulePath.size() - 3) + ".hvc");
-    }
-    if (fs::exists(hvcPath)) {
-      return ResolvedModule{ResolvedModule::BytecodeCache,
-                            fs::canonical(hvcPath).string(), modulePath};
-    }
     return std::nullopt;
   }
 
@@ -273,7 +255,7 @@ ModuleLoader::resolve(const std::string& modulePath,
 
   // 1. Check cache (already loaded?)
   // If already in cache, return Cached type — BUT first drop the entry if the
-  // underlying source/.hvc filename has been touched since we cached it.
+  // underlying source filename has been touched since we cached it.
   if (cache_.count(modulePath) > 0) {
     if (!isFreshLocked(modulePath)) {
       cache_.erase(modulePath);
@@ -299,54 +281,32 @@ ModuleLoader::resolve(const std::string& modulePath,
     return *bc;
   }
 
-  // 3. <name>.hvc (user modules, no namespace)
-  if (auto bc = checkBcCache(
-        fs::path(cacheDir) / (name + ".hvc"),
-        fs::path(cacheDir) / (name + ".hv"),
-        name)) {
-    return *bc;
-  }
-
-  // 2. Check script directory first for local modules:
-  // scriptDir/name.hvc (prefer pre-compiled), then name.hv
+  // 2. Check script directory for local .hv modules. The flat cache is
+  // consulted for each resolved source; there is no scriptDir/name.hvc.
   if (!scriptDir.empty()) {
     fs::path scriptDirPath(scriptDir);
 
-    // Prefer .hvc if it exists and is newer than .hv (or .hv absent)
-    auto pickHvOrHvc = [&](const fs::path& basePath) -> std::optional<ResolvedModule> {
+    auto pickHv = [&](const fs::path& basePath) -> std::optional<ResolvedModule> {
       fs::path hvPath = fs::path(basePath) / (name + ".hv");
-      fs::path hvcPath = fs::path(basePath) / (name + ".hvc");
-      bool hvExists = fs::exists(hvPath);
-      bool hvcExists = fs::exists(hvcPath);
-      if (hvcExists && hvExists) {
-        if (fs::last_write_time(hvcPath) >= fs::last_write_time(hvPath)) {
-          return makeBcCache(hvcPath, hvPath, modulePath);
-        }
-        return flatCacheFor(fs::canonical(hvPath).string(),
-                            ResolvedModule::UserSource);
-      }
-      if (hvcExists) {
-        return makeBcCache(hvcPath, hvPath, modulePath);
-      }
-      if (hvExists) {
+      if (fs::exists(hvPath)) {
         return flatCacheFor(fs::canonical(hvPath).string(),
                             ResolvedModule::UserSource);
       }
       return std::nullopt;
     };
 
-    auto local = pickHvOrHvc(scriptDirPath);
+    auto local = pickHv(scriptDirPath);
     if (local) return local;
 
-    // Package-style: scriptDir/name/name.hv or name.hvc
+    // Package-style: scriptDir/name/name.hv
     fs::path pkgDir = scriptDirPath / name;
-    auto pkg = pickHvOrHvc(pkgDir);
+    auto pkg = pickHv(pkgDir);
     if (pkg) return pkg;
   }
 
-  // 3. Check stdlibPath_ for name.hvc or name.hv
+  // 3. Check stdlibPath_ for name.hv
   // But first, check if there's a plugin (native extension) for this module
-  // in the search paths, to allow plugins to override stdlib .hv/.hvc files.
+  // in the search paths, to allow plugins to override stdlib .hv files.
   for (const auto& sp : searchPaths_) {
     fs::path spDir(sp);
     fs::path soPath = spDir / (name + ".so");
@@ -367,43 +327,11 @@ ModuleLoader::resolve(const std::string& modulePath,
     }
   }
 
-  // 4. Check stdlibPath_ for name.hvc or name.hv
+  // 4. Check stdlibPath_ for name.hv. Bytecode caches live only in
+  // ~/.cache/havel, never side-by-side in the stdlib directory.
   if (!stdlibPath_.empty()) {
-    fs::path stdlibHvcPath = fs::path(stdlibPath_) / (name + ".hvc");
     fs::path stdlibHvPath = fs::path(stdlibPath_) / (name + ".hv");
-    bool hvcExists = fs::exists(stdlibHvcPath);
-    bool hvExists = fs::exists(stdlibHvPath);
-    if (hvcExists && hvExists) {
-      if (fs::last_write_time(stdlibHvcPath) >= fs::last_write_time(stdlibHvPath)) {
-        return makeBcCache(stdlibHvcPath, stdlibHvPath, modulePath);
-      }
-      return ResolvedModule{ResolvedModule::StdlibSource,
-                            fs::canonical(stdlibHvPath).string(), modulePath, ""};
-    }
-    if (hvcExists) {
-      // Check if there's a plugin for this module before using the cache
-      for (const auto& sp : searchPaths_) {
-        fs::path spDir(sp);
-        fs::path soPath = spDir / (name + ".so");
-        if (fs::exists(soPath)) {
-          return ResolvedModule{ResolvedModule::NativeExtension,
-                                fs::canonical(soPath).string(), modulePath, ""};
-        }
-        fs::path libPath = spDir / ("libhavel_" + name + ".so");
-        if (fs::exists(libPath)) {
-          return ResolvedModule{ResolvedModule::NativeExtension,
-                                fs::canonical(libPath).string(), modulePath, ""};
-        }
-        fs::path pluginPath = fs::path(sp) / ("havel_mod_" + name + ".so");
-        if (fs::exists(pluginPath)) {
-          return ResolvedModule{ResolvedModule::NativeExtension,
-                                fs::canonical(pluginPath).string(), modulePath, ""};
-        }
-      }
-      // No source side-by-side - use cache but no sourcePath for hash check.
-      return makeBcCache(stdlibHvcPath, stdlibHvPath, modulePath);
-    }
-    if (hvExists) {
+    if (fs::exists(stdlibHvPath)) {
       // Check if there's a plugin for this module before using the .hv file
       if (!stdlibPath_.empty()) {
         fs::path stdlibPluginPath = fs::path(stdlibPath_) / (name + havel_loader_suffix());
@@ -436,73 +364,34 @@ ModuleLoader::resolve(const std::string& modulePath,
     }
   }
 
-  // 5. Check ~/.havel/packages/name/name.hvc or name.hv
+  // 5. Check ~/.havel/packages/name/name.hv. Bytecode caches live only in
+  // ~/.cache/havel, never inside the package directory.
   if (const char* home = std::getenv("HOME")) {
     fs::path pkgDir = fs::path(home) / ".havel" / "packages" / name;
-    fs::path pkgHvcPath = pkgDir / (name + ".hvc");
     fs::path pkgHvPath = pkgDir / (name + ".hv");
-    bool hvcExists = fs::exists(pkgHvcPath);
-    bool hvExists = fs::exists(pkgHvPath);
-    if (hvcExists && hvExists) {
-      if (fs::last_write_time(pkgHvcPath) >= fs::last_write_time(pkgHvPath)) {
-        return makeBcCache(pkgHvcPath, pkgHvPath, modulePath);
-      }
-      return flatCacheFor(fs::canonical(pkgHvPath).string(),
-                          ResolvedModule::PackageSource);
-    }
-    if (hvcExists) {
-      return makeBcCache(pkgHvcPath, pkgHvPath, modulePath);
-    }
-    if (hvExists) {
+    if (fs::exists(pkgHvPath)) {
       return flatCacheFor(fs::canonical(pkgHvPath).string(),
                           ResolvedModule::PackageSource);
     }
   }
 
-// 6. Check each user search path for name.hvc, name.hv, or name/name.hv
+// 6. Check each user search path for name.hv or name/name.hv
   for (const auto& sp : searchPaths_) {
       fs::path spDir(sp);
 
-        // Prefer .hvc if available and newer
-        fs::path hvPath = spDir / (name + ".hv");
-        fs::path hvcPath = spDir / (name + ".hvc");
-        bool hvcExists = fs::exists(hvcPath);
-        bool hvExists = fs::exists(hvPath);
-    if (hvcExists && hvExists) {
-      if (fs::last_write_time(hvcPath) >= fs::last_write_time(hvPath)) {
-        return makeBcCache(hvcPath, hvPath, modulePath);
+      fs::path hvPath = spDir / (name + ".hv");
+      if (fs::exists(hvPath)) {
+        return flatCacheFor(fs::canonical(hvPath).string(),
+                            ResolvedModule::UserSource);
       }
-      return flatCacheFor(fs::canonical(hvPath).string(),
-                          ResolvedModule::UserSource);
-    }
-    if (hvcExists) {
-      return makeBcCache(hvcPath, hvPath, modulePath);
-    }
-    if (hvExists) {
-      return flatCacheFor(fs::canonical(hvPath).string(),
-                          ResolvedModule::UserSource);
-    }
 
-    // Try name/name.hv or name/name.hvc (package style)
-    fs::path pkgDir = spDir / name;
-    fs::path hvPkgPath = pkgDir / (name + ".hv");
-    fs::path hvcPkgPath = pkgDir / (name + ".hvc");
-    hvcExists = fs::exists(hvcPkgPath);
-    hvExists = fs::exists(hvPkgPath);
-    if (hvcExists && hvExists) {
-      if (fs::last_write_time(hvcPkgPath) >= fs::last_write_time(hvPkgPath)) {
-        return makeBcCache(hvcPkgPath, hvPkgPath, modulePath);
+      // Try name/name.hv (package style)
+      fs::path pkgDir = spDir / name;
+      fs::path hvPkgPath = pkgDir / (name + ".hv");
+      if (fs::exists(hvPkgPath)) {
+        return flatCacheFor(fs::canonical(hvPkgPath).string(),
+                            ResolvedModule::UserSource);
       }
-      return flatCacheFor(fs::canonical(hvPkgPath).string(),
-                          ResolvedModule::UserSource);
-    }
-    if (hvcExists) {
-      return makeBcCache(hvcPkgPath, hvPkgPath, modulePath);
-    }
-    if (hvExists) {
-      return flatCacheFor(fs::canonical(hvPkgPath).string(),
-                          ResolvedModule::UserSource);
-    }
   }
 
   // 7. Check each search path for native extensions (.so)

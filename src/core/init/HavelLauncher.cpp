@@ -1941,18 +1941,13 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     return cacheDir + "/" + cacheName + ".hvc";
   };
 
-  // Determine output path
+  // Determine output path. Bytecode caches live only in ~/.cache/havel; the
+  // default output for `--build FILE` is the flat cache path derived from the
+  // canonical source path (same name the resolver looks up).
   std::string outputPath = cfg.outputPath;
   if (outputPath.empty()) {
-    // Default: replace .hv with .hvc
-    if (!primaryFile.empty()) {
-      outputPath = primaryFile;
-      size_t dotPos = outputPath.rfind('.');
-      if (dotPos != std::string::npos) {
-        outputPath.erase(dotPos);
-      }
-      outputPath += ".hvc";
-    } else {
+    outputPath = companionCachePath(primaryFile);
+    if (outputPath.empty()) {
       outputPath = "output.hvc";
     }
   }
@@ -2620,6 +2615,9 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         return;
       }
       std::string cachePath = companionCachePath(path);
+      if (cachePath == outputPath) {
+        return; // already written as the build output
+      }
       std::ofstream cacheOut(cachePath, std::ios::binary);
       if (!cacheOut.is_open()) {
         warn("Cannot open bytecode cache file: {}", cachePath);

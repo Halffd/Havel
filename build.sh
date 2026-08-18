@@ -434,7 +434,8 @@ build() {
         fi
     fi
 
-    # Build self-hosted pipeline modules (out/modules/lang/*.hvc)
+    # Build self-hosted pipeline modules (bytecode cache at ~/.cache/havel,
+    # source mirrors in out/modules/{lang,std})
     local emit_script="${SCRIPT_DIR}/emit_pipeline.sh"
     local havel_bin="${SCRIPT_DIR}/${BUILD_DIR}/havel"
     if [[ -f "$emit_script" && -x "$havel_bin" ]]; then

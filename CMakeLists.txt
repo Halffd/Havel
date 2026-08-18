@@ -2,6 +2,25 @@ cmake_minimum_required(VERSION 3.16)
 project(Havel VERSION 1.0.0 LANGUAGES C CXX)
 
 # ==============================================================================
+# PLATFORM DETECTION (MUST RUN BEFORE ANY DEPENDENCY CHECKS)
+# ==============================================================================
+set(LINUX FALSE)
+set(WINDOWS FALSE)
+set(MACOS FALSE)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(LINUX TRUE)
+    message(STATUS "Platform:        Linux")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR MINGW OR MSYS OR CYGWIN)
+    set(WINDOWS TRUE)
+    message(STATUS "Platform:        Windows (${CMAKE_SYSTEM_NAME})")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(MACOS TRUE)
+    message(STATUS "Platform:        macOS")
+else()
+    message(STATUS "Platform:        Unknown (${CMAKE_SYSTEM_NAME}) - treating as generic POSIX")
+endif()
+
+# ==============================================================================
 # BUILD OPTIONS - Define these FIRST before any logic
 # ==============================================================================
 option(USE_CLANG "Force use of Clang compiler" ON)
@@ -110,33 +129,171 @@ endif()
 # REQUIRED SYSTEM DEPENDENCIES
 # ==============================================================================
 find_package(PkgConfig REQUIRED)
-find_package(X11 REQUIRED)
-add_definitions(-DHAVE_X11)
 find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED)
-find_package(fmt CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
 
-# Optional: GNU Readline for REPL line-editing/history
-find_library(READLINE_LIB readline)
+# X11 stack - Linux/X11 only
+set(HAVE_X11 FALSE)
+set(X11_LIBRARIES "")
+set(X11_INCLUDE_DIR "")
+set(XI_LIBRARIES "")
+set(XI_INCLUDE_DIR "")
+set(XTEST_LIB "")
+set(XRANDR_LIB "")
+set(XINERAMA_LIB "")
+set(XCOMPOSITE_LIBRARIES "")
+set(XDAMAGE_LIBRARIES "")
+if(LINUX)
+    find_package(X11 QUIET)
+    if(X11_FOUND)
+        set(HAVE_X11 TRUE)
+        add_definitions(-DHAVE_X11)
+        message(STATUS "X11:             ✓ FOUND")
+
+        pkg_check_modules(XI QUIET xi)
+
+        find_library(XTEST_LIB Xtst QUIET)
+        find_library(XRANDR_LIB Xrandr QUIET)
+        find_library(XINERAMA_LIB Xinerama QUIET)
+        pkg_check_modules(XCOMPOSITE QUIET xcomposite)
+        pkg_check_modules(XDAMAGE QUIET xdamage)
+    else()
+        message(STATUS "X11:             ✗ NOT FOUND (will use headless/Windows paths)")
+    endif()
+else()
+    message(STATUS "X11:             ✗ SKIPPED (non-Linux platform)")
+endif()
+
+find_package(fmt CONFIG QUIET)
+if(NOT fmt_FOUND)
+    pkg_check_modules(FMT QUIET fmt)
+    if(FMT_FOUND)
+        if(NOT TARGET fmt::fmt)
+            add_library(fmt::fmt UNKNOWN IMPORTED)
+            set_target_properties(fmt::fmt PROPERTIES
+                IMPORTED_LOCATION "${FMT_LINK_LIBRARIES}"
+                INTERFACE_INCLUDE_DIRECTORIES "${FMT_INCLUDE_DIRS}"
+            )
+            if(FMT_CFLAGS_OTHER)
+                set_target_properties(fmt::fmt PROPERTIES
+                    INTERFACE_COMPILE_OPTIONS "${FMT_CFLAGS_OTHER}"
+                )
+            endif()
+        endif()
+        set(fmt_FOUND TRUE)
+    else()
+        find_library(FMT_LIBRARY NAMES fmt libfmt)
+        find_path(FMT_INCLUDE_DIR NAMES fmt/core.h)
+        if(FMT_LIBRARY AND FMT_INCLUDE_DIR)
+            if(NOT TARGET fmt::fmt)
+                add_library(fmt::fmt UNKNOWN IMPORTED)
+                set_target_properties(fmt::fmt PROPERTIES
+                    IMPORTED_LOCATION "${FMT_LIBRARY}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${FMT_INCLUDE_DIR}"
+                )
+            endif()
+            set(fmt_FOUND TRUE)
+        endif()
+    endif()
+endif()
+if(NOT fmt_FOUND)
+    message(FATAL_ERROR
+        "fmt library not found. Install it using one of:\n"
+        "  MSYS2/MinGW: pacman -S mingw-w64-x86_64-fmt\n"
+        "  Ubuntu/Debian: apt install libfmt-dev\n"
+        "  Fedora/RHEL: dnf install fmt-devel\n"
+        "  Arch: pacman -S fmt\n"
+        "Or set fmt_DIR to the directory containing fmtConfig.cmake"
+    )
+endif()
+
+find_package(nlohmann_json CONFIG QUIET)
+if(NOT nlohmann_json_FOUND)
+    pkg_check_modules(NLOHMANN_JSON QUIET nlohmann_json)
+    if(NLOHMANN_JSON_FOUND)
+        if(NOT TARGET nlohmann_json::nlohmann_json)
+            add_library(nlohmann_json::nlohmann_json UNKNOWN IMPORTED)
+            set_target_properties(nlohmann_json::nlohmann_json PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${NLOHMANN_JSON_INCLUDE_DIRS}"
+            )
+            if(NLOHMANN_JSON_CFLAGS_OTHER)
+                set_target_properties(nlohmann_json::nlohmann_json PROPERTIES
+                    INTERFACE_COMPILE_OPTIONS "${NLOHMANN_JSON_CFLAGS_OTHER}"
+                )
+            endif()
+        endif()
+        set(nlohmann_json_FOUND TRUE)
+    else()
+        find_path(NLOHMANN_JSON_INCLUDE_DIR NAMES nlohmann/json.hpp)
+        if(NLOHMANN_JSON_INCLUDE_DIR)
+            if(NOT TARGET nlohmann_json::nlohmann_json)
+                add_library(nlohmann_json::nlohmann_json INTERFACE IMPORTED)
+                set_target_properties(nlohmann_json::nlohmann_json PROPERTIES
+                    INTERFACE_INCLUDE_DIRECTORIES "${NLOHMANN_JSON_INCLUDE_DIR}"
+                )
+            endif()
+            set(nlohmann_json_FOUND TRUE)
+        endif()
+    endif()
+endif()
+if(NOT nlohmann_json_FOUND)
+    message(FATAL_ERROR
+        "nlohmann_json library not found. Install it using one of:\n"
+        "  MSYS2/MinGW: pacman -S mingw-w64-x86_64-nlohmann-json\n"
+        "  Ubuntu/Debian: apt install nlohmann-json3-dev\n"
+        "  Fedora/RHEL: dnf install json-devel\n"
+        "  Arch: pacman -S nlohmann-json\n"
+        "Or set nlohmann_json_DIR to the directory containing nlohmann_jsonConfig.cmake"
+    )
+endif()
+
+# Optional: GNU Readline for REPL line-editing/history (Linux/macOS only)
+if(NOT WINDOWS)
+    find_library(READLINE_LIB readline)
+endif()
 if(READLINE_LIB)
     message(STATUS "Readline:       ✓ ENABLED")
 else()
     message(STATUS "Readline:       ✗ NOT FOUND (REPL falls back to std::getline)")
 endif()
 
-# D-Bus
-pkg_check_modules(DBUS REQUIRED dbus-1)
+# D-Bus (optional - disabled, not used; Linux-only)
+set(DBUS_FOUND FALSE)
+if(LINUX)
+    pkg_check_modules(DBUS QUIET dbus-1)
+endif()
+if(DBUS_FOUND)
+    message(STATUS "D-Bus:          ✓ FOUND (not linked, feature disabled)")
+else()
+    message(STATUS "D-Bus:          ✗ SKIPPED (not required)")
+endif()
 
 # libcurl (HTTP client)
-pkg_check_modules(CURL REQUIRED libcurl)
+pkg_check_modules(CURL QUIET libcurl)
+if(NOT CURL_FOUND)
+    find_package(CURL QUIET)
+    if(CURL_FOUND)
+        set(CURL_LIBRARIES ${CURL_LIBRARIES})
+        set(CURL_INCLUDE_DIRS ${CURL_INCLUDE_DIRS})
+    endif()
+endif()
+if(NOT CURL_FOUND)
+    message(WARNING "libcurl not found - HTTP/network features will be stubbed")
+    set(CURL_LIBRARIES "")
+    set(CURL_INCLUDE_DIRS "")
+endif()
 
-# PipeWire
-pkg_check_modules(PIPEWIRE QUIET libpipewire-0.3)
+# PipeWire (optional - Linux only)
+set(PIPEWIRE_FOUND FALSE)
+set(PIPEWIRE_LIBRARIES "")
+set(PIPEWIRE_INCLUDE_DIRS "")
+if(LINUX)
+    pkg_check_modules(PIPEWIRE QUIET libpipewire-0.3)
+endif()
 if(PIPEWIRE_FOUND)
     message(STATUS "PipeWire:        ✓ ENABLED (${PIPEWIRE_VERSION})")
 else()
-    message(STATUS "PipeWire:        ✗ NOT FOUND (Falling back to PulseAudio/ALSA)")
+    message(STATUS "PipeWire:        ✗ NOT FOUND")
 endif()
 
 # libffi (for FFI - Foreign Function Interface)
@@ -149,104 +306,39 @@ else()
     set(HAVE_LIBFFI 0)
 endif()
 
-# X11 extensions
-find_library(XTEST_LIB Xtst REQUIRED)
-find_library(XRANDR_LIB Xrandr REQUIRED)
-find_library(XINERAMA_LIB Xinerama REQUIRED)
-pkg_check_modules(XCOMPOSITE REQUIRED xcomposite)
-pkg_check_modules(XDAMAGE REQUIRED xdamage)
+# X11 extensions were already handled above in the X11 Linux block.
+# Duplicate legacy checks removed; the variables above are the source of truth.
 
-if(NOT XTEST_LIB OR NOT XRANDR_LIB OR NOT XINERAMA_LIB)
-    message(FATAL_ERROR "Missing X11 extension libraries. Install libxtst-dev libxrandr-dev libxinerama-dev")
+# ==============================================================================
+# WAYLAND SUPPORT - REMOVED (not used)
+# ==============================================================================
+message(STATUS "Wayland:        ✗ SKIPPED (not required)")
+set(GENERATED_PROTO_DIR "")
+
+# Audio: PulseAudio removed; ALSA (optional Linux-only)
+set(PULSEAUDIO_FOUND FALSE)
+set(ALSA_FOUND FALSE)
+set(ALSA_LIBRARIES "")
+set(ALSA_INCLUDE_DIRS "")
+if(LINUX)
+    pkg_check_modules(ALSA QUIET alsa)
 endif()
-
-# ==============================================================================
-# WAYLAND SUPPORT
-# ==============================================================================
-pkg_check_modules(WAYLAND REQUIRED wayland-client wayland-protocols)
-pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
-find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
-
-# Protocol generation setup
-set(PROTOCOLS_DIR /usr/share/wayland-protocols)
-set(GENERATED_PROTO_DIR ${CMAKE_BINARY_DIR}/generated/wayland)
-file(MAKE_DIRECTORY ${GENERATED_PROTO_DIR})
-
-# Helper function to generate Wayland protocol headers
-function(generate_wayland_protocol PROTO_NAME PROTO_XML)
-  set(PROTO_HEADER ${GENERATED_PROTO_DIR}/${PROTO_NAME}-client-protocol.h)
-  set(PROTO_CODE ${GENERATED_PROTO_DIR}/${PROTO_NAME}-protocol.c)
-  add_custom_command(
-    OUTPUT ${PROTO_HEADER} ${PROTO_CODE}
-    COMMAND ${WAYLAND_SCANNER} client-header ${PROTO_XML} ${PROTO_HEADER}
-    COMMAND ${WAYLAND_SCANNER} private-code ${PROTO_XML} ${PROTO_CODE}
-    DEPENDS ${PROTO_XML}
-    COMMENT "Generating ${PROTO_NAME} protocol headers"
-  )
-  set(PROTO_SOURCES ${PROTO_HEADER} ${PROTO_CODE} PARENT_SCOPE)
-endfunction()
-
-# Gamma control protocol (in-tree, wlroots)
-set(GAMMA_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-gamma-control-unstable-v1.xml)
-generate_wayland_protocol(wlr-gamma-control-unstable-v1 ${GAMMA_XML})
-
-# XDG output protocol (system)
-set(XDG_XML ${PROTOCOLS_DIR}/unstable/xdg-output/xdg-output-unstable-v1.xml)
-generate_wayland_protocol(xdg-output-unstable-v1 ${XDG_XML})
-
-# Virtual keyboard protocol (in-tree, wlroots)
-set(VKB_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/virtual-keyboard-unstable-v1.xml)
-generate_wayland_protocol(virtual-keyboard-unstable-v1 ${VKB_XML})
-
-# Virtual pointer protocol (in-tree, wlroots)
-set(VPTR_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-virtual-pointer-unstable-v1.xml)
-generate_wayland_protocol(wlr-virtual-pointer-unstable-v1 ${VPTR_XML})
-
-# Foreign toplevel management protocol (in-tree, wlroots)
-set(FTL_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-foreign-toplevel-management-unstable-v1.xml)
-generate_wayland_protocol(wlr-foreign-toplevel-management-unstable-v1 ${FTL_XML})
-
-# WLR data control protocol (in-tree, wlroots)
-set(WDC_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-data-control-unstable-v1.xml)
-generate_wayland_protocol(wlr-data-control-unstable-v1 ${WDC_XML})
-
-# ext-data-control protocol (system, staging standard)
-set(EDC_XML ${PROTOCOLS_DIR}/staging/ext-data-control/ext-data-control-v1.xml)
-if(EXISTS ${EDC_XML})
-  generate_wayland_protocol(ext-data-control-v1 ${EDC_XML})
-  set(HAS_EXT_DATA_CONTROL TRUE)
+if(ALSA_FOUND)
+    message(STATUS "ALSA:            ✓ ENABLED")
 else()
-  set(HAS_EXT_DATA_CONTROL FALSE)
-  message(STATUS "ext-data-control-v1 not found in system protocols, using wlr-data-control fallback")
+    message(STATUS "ALSA:            ✗ SKIPPED")
 endif()
 
-# Create wayland protocols library
-set(ALL_PROTO_SOURCES
-  ${PROTO_SOURCES}
-  ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-client-protocol.h
-  ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-protocol.c
-  ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-client-protocol.h
-  ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-protocol.c
-  ${GENERATED_PROTO_DIR}/virtual-keyboard-unstable-v1-client-protocol.h
-  ${GENERATED_PROTO_DIR}/virtual-keyboard-unstable-v1-protocol.c
-  ${GENERATED_PROTO_DIR}/wlr-virtual-pointer-unstable-v1-client-protocol.h
-  ${GENERATED_PROTO_DIR}/wlr-virtual-pointer-unstable-v1-protocol.c
-  ${GENERATED_PROTO_DIR}/wlr-foreign-toplevel-management-unstable-v1-client-protocol.h
-  ${GENERATED_PROTO_DIR}/wlr-foreign-toplevel-management-unstable-v1-protocol.c
-  ${GENERATED_PROTO_DIR}/wlr-data-control-unstable-v1-client-protocol.h
-  ${GENERATED_PROTO_DIR}/wlr-data-control-unstable-v1-protocol.c
-)
-if(HAS_EXT_DATA_CONTROL)
-  list(APPEND ALL_PROTO_SOURCES
-    ${GENERATED_PROTO_DIR}/ext-data-control-v1-client-protocol.h
-    ${GENERATED_PROTO_DIR}/ext-data-control-v1-protocol.c
-  )
+# ncurses (Linux/Unix only - for terminal UI stubs)
+set(NCURSES_LIB "")
+if(NOT WINDOWS)
+    find_library(NCURSES_LIB ncurses)
 endif()
-
-add_library(wayland-protos STATIC ${ALL_PROTO_SOURCES})
-target_include_directories(wayland-protos PUBLIC ${GENERATED_PROTO_DIR})
-target_link_libraries(wayland-protos PUBLIC ${WAYLAND_LIBRARIES} ${XKBCOMMON_LIBRARIES})
-target_include_directories(wayland-protos PUBLIC ${XKBCOMMON_INCLUDE_DIRS})
+if(NCURSES_LIB)
+    message(STATUS "ncurses:         ✓ FOUND")
+else()
+    message(STATUS "ncurses:         ✗ SKIPPED")
+endif()
 
 # ==============================================================================
 # QT6 GUI FRAMEWORK (CONDITIONAL - Default)
@@ -391,6 +483,13 @@ file(GLOB_RECURSE CORE_SOURCES
 list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelDaemon.*\\.cpp")
 list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelClient.*\\.cpp")
 list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelDaemonMain.*\\.cpp")
+# Exclude Wayland-dependent sources (Wayland removed, not used)
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*src/core/wayland/.*\\.cpp")
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*WaylandAdapter.*\\.cpp")
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*WaylandIOBackend.*\\.cpp")
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*DisplayManager.*\\.cpp")
+# Exclude D-Bus dependent MediaService (D-Bus removed, not used)
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*MediaService.*\\.cpp")
 # Non-Qt host sources (always built)
 file(GLOB_RECURSE _HOST_CORE_SOURCES
   "src/host/app/*.cpp"
@@ -483,6 +582,12 @@ endif()
         )
     endif()
 
+    # Exclude WaylandModule (Wayland support removed, not used)
+    list(REMOVE_ITEM HAVEL_LANG_SOURCES
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/WaylandModule.cpp
+    )
+    list(FILTER HAVEL_LANG_SOURCES EXCLUDE REGEX ".*/WaylandModule\\.cpp$")
+
     # -----------------------------------------------------------------------
     # Apply LLVM include fixes to BytecodeOrcJIT.cpp globally
     # This prevents LLVM 23's bare `namespace __detail` from polluting std::__detail
@@ -533,26 +638,51 @@ endif()
 
 
 # ==============================================================================
-pkg_check_modules(XI REQUIRED xi)
+# PCRE2 (regular expressions - required)
+pkg_check_modules(PCRE2_8 QUIET libpcre2-8)
+pkg_check_modules(PCRE2_16 QUIET libpcre2-16)
+if(NOT PCRE2_8_FOUND OR NOT PCRE2_16_FOUND)
+    message(STATUS "PCRE2 not found via pkg-config - trying system find_path...")
+    find_path(PCRE2_INCLUDE_DIR pcre2.h)
+    find_library(PCRE2_8_LIB pcre2-8)
+    find_library(PCRE2_16_LIB pcre2-16)
+    if(PCRE2_8_LIB AND PCRE2_16_LIB AND PCRE2_INCLUDE_DIR)
+        set(PCRE2_8_FOUND TRUE)
+        set(PCRE2_16_FOUND TRUE)
+        set(PCRE2_8_LIBRARIES ${PCRE2_8_LIB})
+        set(PCRE2_16_LIBRARIES ${PCRE2_16_LIB})
+        set(PCRE2_8_INCLUDE_DIRS ${PCRE2_INCLUDE_DIR})
+        set(PCRE2_16_INCLUDE_DIRS ${PCRE2_INCLUDE_DIR})
+    endif()
+endif()
+if(NOT PCRE2_8_FOUND OR NOT PCRE2_16_FOUND)
+    message(FATAL_ERROR
+        "PCRE2 libraries (libpcre2-8, libpcre2-16) not found. Install them:\n"
+        "  MSYS2/MinGW: pacman -S mingw-w64-x86_64-pcre2\n"
+        "  Ubuntu/Debian: apt install libpcre2-dev\n"
+        "  Fedora/RHEL: dnf install pcre2-devel\n"
+        "  Arch: pacman -S pcre2"
+    )
+endif()
 
-# PulseAudio
-pkg_check_modules(PULSEAUDIO libpulse)
-pkg_check_modules(PCRE2_8 REQUIRED libpcre2-8)
-pkg_check_modules(PCRE2_16 REQUIRED libpcre2-16)
-# ALSA
-pkg_check_modules(ALSA alsa)
-# Minizip for ZIP functionality
-pkg_check_modules(MINIZIP minizip)
+# Minizip for ZIP functionality (optional)
+pkg_check_modules(MINIZIP QUIET minizip)
+if(MINIZIP_FOUND)
+    message(STATUS "Minizip:         ✓ FOUND")
+else()
+    message(STATUS "Minizip:         ✗ NOT FOUND (zip module stubbed)")
+    set(MINIZIP_LIBRARIES "")
+    set(MINIZIP_INCLUDE_DIRS "")
+endif()
 
-# OCR libraries
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(TESSERACT tesseract)
-pkg_check_modules(LEPTONICA lept)
+# OCR libraries (optional)
+pkg_check_modules(TESSERACT QUIET tesseract)
+pkg_check_modules(LEPTONICA QUIET lept)
 
-# OpenCV with workaround for FFmpeg symbol version mismatch
+# OpenCV with workaround for FFmpeg symbol version mismatch (optional)
 # Some systems have libavfilter/libavutil version conflicts
 # We ignore unresolved symbols in OpenCV's FFmpeg dependencies since we don't use video
-find_package(OpenCV COMPONENTS core imgproc imgcodecs)
+find_package(OpenCV COMPONENTS core imgproc imgcodecs QUIET)
 
 if(OpenCV_FOUND)
     set(OPENCV_ESSENTIAL_LIBS
@@ -565,16 +695,22 @@ if(OpenCV_FOUND)
         message(STATUS "OpenCV found with FFmpeg - applying linker workaround for libavutil symbols")
         set(OPENCV_FFMPEG_WORKAROUND "-Wl,--unresolved-symbols=ignore-in-shared-libs")
     endif()
+    message(STATUS "OpenCV:          ✓ FOUND")
 else()
-    message(STATUS "OpenCV not found - image module will be stubbed")
+    message(STATUS "OpenCV:          ✗ NOT FOUND (image module will be stubbed)")
     set(OPENCV_ESSENTIAL_LIBS "")
     set(OPENCV_FFMPEG_WORKAROUND "")
 endif()
 
 if(TESSERACT_FOUND)
-    message(STATUS "Tesseract found - OCR will be available")
+    message(STATUS "Tesseract:       ✓ FOUND (OCR available)")
 else()
-    message(STATUS "Tesseract not found - OCR will be stubbed")
+    message(STATUS "Tesseract:       ✗ NOT FOUND (OCR stubbed)")
+endif()
+if(LEPTONICA_FOUND)
+    message(STATUS "Leptonica:       ✓ FOUND")
+else()
+    message(STATUS "Leptonica:       ✗ NOT FOUND")
 endif()
 
 # ==============================================================================
@@ -711,35 +847,61 @@ set(COMMON_LIBS
 # System libraries
 ${PCRE2_8_LIBRARIES}
 ${PCRE2_16_LIBRARIES}
-${X11_LIBRARIES}
-${XI_LIBRARIES}
-${XTEST_LIB}
-${XRANDR_LIB}
-${XINERAMA_LIB}
-${XCOMPOSITE_LIBRARIES}
-    ${XDAMAGE_LIBRARIES}
+)
+# Conditionally append Linux/X11-only libs
+if(LINUX)
+    list(APPEND COMMON_LIBS
+        ${X11_LIBRARIES}
+        ${XI_LIBRARIES}
+        ${XTEST_LIB}
+        ${XCOMPOSITE_LIBRARIES}
+        ${XDAMAGE_LIBRARIES}
+    )
+    find_library(XFIXES_LIB Xfixes QUIET)
+    if(XFIXES_LIB)
+        list(APPEND COMMON_LIBS ${XFIXES_LIB})
+    endif()
+endif()
+list(APPEND COMMON_LIBS
     OpenGL::GL
-    Xfixes
-${WAYLAND_LIBRARIES}
-${PULSEAUDIO_LIBRARIES}
     ${PIPEWIRE_LIBRARIES}
     ${ALSA_LIBRARIES}
     Threads::Threads
-    ncurses
-  ${DBUS_LIBRARIES}
+)
+if(NCURSES_LIB)
+    list(APPEND COMMON_LIBS ${NCURSES_LIB})
+endif()
 # OCR libraries (only linked if found, see image_extension/ocr_extension targets)
+list(APPEND COMMON_LIBS
 $<$<BOOL:${TESSERACT_FOUND}>:${TESSERACT_LIBRARIES}>
 $<$<BOOL:${LEPTONICA_FOUND}>:${LEPTONICA_LIBRARIES}>
 $<$<BOOL:${OpenCV_FOUND}>:${OPENCV_ESSENTIAL_LIBS}>
     # Optional Readline
     ${READLINE_LIB}
-    dl crypto ssl pthread m fmt::fmt
- ${CURL_LIBRARIES}
-    # ZIP libraries (use minizip if available, otherwise fall back to generic zip)
+)
+# Platform-specific base libs
+if(WINDOWS)
+    list(APPEND COMMON_LIBS
+        ws2_32 wsock32 crypt32 bcrypt user32 gdi32 advapi32 shell32 ole32
+    )
+    # OpenSSL on Windows: try system-installed first, otherwise stub network
+    find_package(OpenSSL QUIET)
+    if(OpenSSL_FOUND)
+        list(APPEND COMMON_LIBS OpenSSL::SSL OpenSSL::Crypto)
+    endif()
+else()
+    list(APPEND COMMON_LIBS dl crypto ssl pthread m)
+endif()
+list(APPEND COMMON_LIBS
+    fmt::fmt
+    ${CURL_LIBRARIES}
+    # ZIP libraries (use minizip if available, otherwise fall back to generic zip on non-Windows)
     $<$<BOOL:${MINIZIP_FOUND}>:${MINIZIP_LIBRARIES}>
-    $<$<NOT:$<BOOL:${MINIZIP_FOUND}>>:zip>
     # Note: Qt6 is loaded dynamically as an extension, not linked here
 )
+if(NOT WINDOWS AND NOT MINIZIP_FOUND)
+    list(APPEND COMMON_LIBS zip)
+endif()
 
 # Append backend libs to common libs
 list(APPEND COMMON_LIBS ${BACKEND_LIBS})
@@ -1062,7 +1224,6 @@ $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
 $<$<BOOL:${OpenCV_FOUND}>:HAVE_OPENCV>
 $<$<BOOL:${TESSERACT_FOUND}>:HAVE_TESSERACT>
 $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
-$<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
 $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
 $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
 )
@@ -1106,16 +1267,11 @@ foreach(lib ${COMMON_LIBS})
 endforeach()
 # Add system libraries that havel_core references but are only resolved
 # via ldconfig at link time (ldd-confirmed .so names).
-string(APPEND _NATIVE_LINK_FLAGS " -lX11 -lXext -lXtst -lXrandr -lXinerama")
-string(APPEND _NATIVE_LINK_FLAGS " -lreadline -lwayland-client -lwayland-egl")
-string(APPEND _NATIVE_LINK_FLAGS " -ldbus-1 -lpulse -lpipewire-0.3 -lasound")
+string(APPEND _NATIVE_LINK_FLAGS " -lX11 -lXext -lXtst")
+string(APPEND _NATIVE_LINK_FLAGS " -lreadline")
+string(APPEND _NATIVE_LINK_FLAGS " -lpipewire-0.3 -lasound")
 string(APPEND _NATIVE_LINK_FLAGS " -ltesseract -lleptonica")
 string(APPEND _NATIVE_LINK_FLAGS " -lopencv_core -lopencv_imgproc -lopencv_imgcodecs")
-string(APPEND _NATIVE_LINK_FLAGS " -lxkbcommon -lxkbregistry -lxkbfile")
-# wayland-protos archive holds the zwp_*/zwlr_* generated interfaces.
-# Without it the AOT executable link fails with undefined-symbol
-# errors from WaylandProtocolClient.cpp.o.
-string(APPEND _NATIVE_LINK_FLAGS " -lwayland-protos")
 string(STRIP "${_NATIVE_LINK_FLAGS}" _NATIVE_LINK_FLAGS)
 set_property(TARGET havel_core APPEND PROPERTY
     COMPILE_DEFINITIONS "HAVEL_DEFAULT_NATIVE_LINK_FLAGS=\"${_NATIVE_LINK_FLAGS}\""
@@ -1129,7 +1285,7 @@ add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
 else()
 add_library(havel_modules INTERFACE)
 endif()
-target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos)
+target_link_libraries(havel_core PUBLIC fmt::fmt)
 target_include_directories(havel_core PRIVATE
     ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
@@ -1152,12 +1308,8 @@ target_include_directories(${lib} PRIVATE
     ${CMAKE_SOURCE_DIR}/src/extensions
     ${X11_INCLUDE_DIR}
     ${XI_INCLUDE_DIR}
-    ${DBUS_INCLUDE_DIRS}
-    ${PULSEAUDIO_INCLUDE_DIRS}
     ${PIPEWIRE_INCLUDE_DIRS}
     ${ALSA_INCLUDE_DIRS}
-    ${WAYLAND_INCLUDE_DIRS}
-    ${GENERATED_PROTO_DIR}
     $<$<BOOL:${TESSERACT_FOUND}>:${TESSERACT_INCLUDE_DIRS}>
     $<$<BOOL:${LEPTONICA_FOUND}>:${LEPTONICA_INCLUDE_DIRS}>
     $<$<BOOL:${OpenCV_FOUND}>:${OpenCV_INCLUDE_DIRS}>
@@ -1171,7 +1323,6 @@ target_include_directories(${lib} PRIVATE
     $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
     $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
     $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
-    $<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
     $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
     $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
     $<$<BOOL:${OpenCV_FOUND}>:HAVE_OPENCV>
@@ -1650,13 +1801,9 @@ ${CMAKE_SOURCE_DIR}/include
 ${CMAKE_SOURCE_DIR}/src/extensions
 ${X11_INCLUDE_DIR}
 ${XI_INCLUDE_DIR}
-${DBUS_INCLUDE_DIRS}
 ${CURL_INCLUDE_DIRS}
-    ${PULSEAUDIO_INCLUDE_DIRS}
     ${PIPEWIRE_INCLUDE_DIRS}
     ${ALSA_INCLUDE_DIRS}
-    ${WAYLAND_INCLUDE_DIRS}
-    ${GENERATED_PROTO_DIR}
     $<$<BOOL:${TESSERACT_FOUND}>:${TESSERACT_INCLUDE_DIRS}>
     $<$<BOOL:${LEPTONICA_FOUND}>:${LEPTONICA_INCLUDE_DIRS}>
     $<$<BOOL:${OpenCV_FOUND}>:${OpenCV_INCLUDE_DIRS}>
@@ -1731,12 +1878,8 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
         ${CMAKE_SOURCE_DIR}/include
         ${X11_INCLUDE_DIR}
         ${XI_INCLUDE_DIR}
-        ${DBUS_INCLUDE_DIRS}
-        ${PULSEAUDIO_INCLUDE_DIRS}
         ${PIPEWIRE_INCLUDE_DIRS}
   ${ALSA_INCLUDE_DIRS}
-  ${WAYLAND_INCLUDE_DIRS}
-        ${GENERATED_PROTO_DIR}
         $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
         $<$<BOOL:${HAVE_LIBFFI}>:${LIBFFI_INCLUDE_DIRS}>
         # Note: LLVM_INCLUDE_DIRS intentionally omitted here - Qt headers cause issues
@@ -1764,12 +1907,8 @@ havel_core
         ${CMAKE_SOURCE_DIR}/include
         ${X11_INCLUDE_DIR}
         ${XI_INCLUDE_DIR}
- ${DBUS_INCLUDE_DIRS}
- ${PULSEAUDIO_INCLUDE_DIRS}
  ${PIPEWIRE_INCLUDE_DIRS}
   ${ALSA_INCLUDE_DIRS}
-  ${WAYLAND_INCLUDE_DIRS}
-        ${GENERATED_PROTO_DIR}
         $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
         $<$<BOOL:${HAVE_LIBFFI}>:${LIBFFI_INCLUDE_DIRS}>
     )
@@ -2011,13 +2150,9 @@ if(ENABLE_TESTS AND GTest_FOUND AND TEST_SOURCES)
             ${CMAKE_SOURCE_DIR}/include
             ${X11_INCLUDE_DIR}
             ${XI_INCLUDE_DIR}
- ${DBUS_INCLUDE_DIRS}
  ${CURL_INCLUDE_DIRS}
-            ${PULSEAUDIO_INCLUDE_DIRS}
             ${PIPEWIRE_INCLUDE_DIRS}
   ${ALSA_INCLUDE_DIRS}
-  ${WAYLAND_INCLUDE_DIRS}
-  ${GENERATED_PROTO_DIR}
             $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
             $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
             $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:/usr/include/qt6>
@@ -2043,7 +2178,6 @@ GTest::gtest
             $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
             $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
             $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
-            $<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
             $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
             $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:HAVE_QT_EXTENSION>
             $<$<AND:$<BOOL:${QT_BACKEND_AVAILABLE}>,$<BOOL:${ENABLE_QT_UI_BACKEND}>>:QT_CORE_LIB>
@@ -2138,13 +2272,9 @@ endif()
 if(PIPEWIRE_FOUND)
     message(STATUS "PipeWire:        ✓ ENABLED")
 endif()
-if(PULSEAUDIO_FOUND)
-    message(STATUS "PulseAudio:      ✓ ENABLED")
-endif()
 if(ALSA_FOUND)
     message(STATUS "ALSA:            ✓ ENABLED")
 endif()
-message(STATUS "Wayland:         ✓ ENABLED")
 message(STATUS "X11:             ✓ ENABLED")
 
 if(ENABLE_HAVEL_LANG)
@@ -2220,20 +2350,6 @@ message(STATUS "")
 # ==============================================================================
 # DEVELOPMENT HELPERS
 # ==============================================================================
-# Add custom target for cleaning generated files
-add_custom_target(clean-generated
-    COMMAND ${CMAKE_COMMAND} -E remove_directory ${GENERATED_PROTO_DIR}
-    COMMENT "Cleaning generated protocol files"
-)
-
-# Add custom target for regenerating protocols only
-add_custom_target(regen-protocols
-    DEPENDS ${GAMMA_HEADERS} ${XDG_HEADERS}
-    COMMENT "Regenerating Wayland protocol files"
-)
-  if(PULSEAUDIO_FOUND)
-    target_compile_definitions(havel PRIVATE HAVE_PULSEAUDIO)
-  endif()
   if(ALSA_FOUND)
     target_compile_definitions(havel PRIVATE HAVE_ALSA)
   endif()

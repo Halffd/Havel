@@ -344,11 +344,11 @@ Value ConcurrencyBridge::timeoutStart(const std::vector<Value> &args) {
   if (!vm_) return Value::makeNull();
 
   auto parsed = vm_->parseDuration(args[0]);
-if (!parsed) return Value::makeNull();
+  if (!parsed) return Value::makeNull();
 
-int ms = static_cast<int>(*parsed);
-Value callback = args[1];
-auto timeoutIdPtr = std::make_shared<uint32_t>(0);
+  int ms = static_cast<int>(*parsed);
+  Value callback = args[1];
+  auto timeoutIdPtr = std::make_shared<uint32_t>(0);
 
   auto vm_cb = [vm = vm_, callback, timeoutIdPtr]() {
     auto *eq = vm->getEventQueue();
@@ -358,26 +358,30 @@ auto timeoutIdPtr = std::make_shared<uint32_t>(0);
     }
   };
 
-auto timeoutObj = std::make_shared<Timeout>(ms, std::move(vm_cb));
-auto timeoutRef = vm_->getHeap().allocateTimeoutObj(timeoutObj);
-*timeoutIdPtr = timeoutRef.id;
-return Value::makeTimeoutId(timeoutRef.id);
+  auto timeoutObj = std::make_shared<Timeout>(ms, std::move(vm_cb));
+  auto timeoutRef = vm_->getHeap().allocateTimeoutObj(timeoutObj);
+  *timeoutIdPtr = timeoutRef.id;
+  // Pin the callback closure so GC doesn't collect it before the timer fires.
+  vm_->pinTimeoutClosure(timeoutRef.id, callback);
+  return Value::makeTimeoutId(timeoutRef.id);
 }
 
 Value ConcurrencyBridge::timeoutCancel(const std::vector<Value> &args) {
-if (args.empty() || !args[0].isTimeoutId()) {
-return Value::makeNull();
-}
+  if (args.empty() || !args[0].isTimeoutId()) {
+    return Value::makeNull();
+  }
 
-if (!vm_) return Value::makeNull();
+  if (!vm_) return Value::makeNull();
 
-uint32_t timeout_id = args[0].asTimeoutId();
-auto *timeoutObj = vm_->getHeap().timeout(timeout_id);
-if (timeoutObj) {
-timeoutObj->cancel();
-}
+  uint32_t timeout_id = args[0].asTimeoutId();
+  auto *timeoutObj = vm_->getHeap().timeout(timeout_id);
+  if (timeoutObj) {
+    timeoutObj->cancel();
+  }
+  // Release the pinned closure if any.
+  vm_->releaseTimeoutClosure(timeout_id);
 
-return Value::makeNull();
+  return Value::makeNull();
 }
 
 Value ConcurrencyBridge::channelNew(const std::vector<Value> &args) {
@@ -409,6 +413,22 @@ Value ConcurrencyBridge::channelSend(const std::vector<Value> &args) {
 
     it->second->queue.push(value);
     it->second->cv.notify_one();
+
+    // Deliver the value directly to a suspended waiter (goroutine or main
+    // fiber) and unpark it. The waiter's resume replaces the null
+    // placeholder on its stack with this value. Without this the waiter is
+    // never resumed: channel_wait_map_ is never populated and no
+    // CHANNEL_RECV event handler is registered anywhere.
+    if (vm_ && vm_->scheduler_) {
+      auto *waiter = vm_->scheduler_->findGoroutineByWaitTarget(
+          Scheduler::AwaitableType::CHANNEL_RECV, channel_id);
+      if (waiter) {
+        Value delivered = it->second->queue.front();
+        it->second->queue.pop();
+        waiter->wait_handle.resume_value = delivered;
+        vm_->scheduler_->unpark(waiter);
+      }
+    }
 
     // Resume any suspended VM fiber waiting on this channel
     if (vm_) {
@@ -458,9 +478,15 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
         auto* current_g = sched->current();
         ::havel::info("[CONCURRENCY] channelReceive: sched={}, current_g={}, state={}", 
             (void*)sched, current_g ? (void*)current_g : nullptr, current_g ? (int)current_g->state.load() : -1);
-        if (current_g && current_g->state == Scheduler::GoroutineState::Running) {
-            // Suspend the goroutine — the EventQueue will unpark us
-            // when data arrives on this channel
+        // Any goroutine context (Running or Runnable — a host call runs with
+        // the goroutine marked Runnable in the launcher flow): suspend SELF
+        // and register the channel wait on the current goroutine. The sender
+        // unparks it via findGoroutineByWaitTarget(CHANNEL_RECV). The old
+        // code only handled state==Running and otherwise parked the wait on
+        // sched->get(1), which does not exist when the user script is
+        // itself a spawned goroutine (launcher's __main__), so the waiter
+        // could never be resumed.
+        if (current_g) {
             current_g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
             current_g->wait_handle.target_id = channel_id;
             current_g->wait_handle.resume_value = Value::makeNull();

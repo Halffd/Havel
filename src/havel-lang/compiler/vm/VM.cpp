@@ -1459,23 +1459,21 @@ VM::GoroutineCallResult VM::startGoroutineCall(const Value &callable,
   }
 
   // Install the goroutine's spawn-time globals snapshot only when the
-  // ambient globals is provably the wrong map (missing a key the snapshot
-  // carries). When ambient still holds the shared script map, keep it so
-  // main-script writes (e.g. loop counters declared after spawn) stay
-  // visible on resume; unconditionally swapping to the snapshot would
-  // clobber main's live globals and re-run stale iterations.
+  // ambient globals is missing keys the snapshot carries. Merge those keys
+  // INTO ambient rather than replacing the whole map: ambient may be the
+  // live shared script map (carrying main-script writes made after spawn,
+  // e.g. loop counters) while the snapshot is a module sidecar copied at
+  // spawn from inside a module function. Replacing would throw away script
+  // globals such as imported names (see test_go_cross_chunk.hv), and
+  // wholesale swapping would also clobber main's live globals and re-run
+  // stale iterations. Merging preserves ambient and adds anything the
+  // snapshot carries that ambient lacks.
   auto snapIt = spawn_globals_snapshot_.find(closure_id);
   if (snapIt != spawn_globals_snapshot_.end() && !snapIt->second->empty()) {
-    bool missing = false;
     for (const auto &[k, v] : *snapIt->second) {
-      (void)v;
       if (!globals.count(k)) {
-        missing = true;
-        break;
+        globals.emplace(k, v);
       }
-    }
-    if (missing) {
-      globals = *snapIt->second;
     }
   }
 

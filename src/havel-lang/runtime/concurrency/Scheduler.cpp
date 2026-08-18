@@ -207,7 +207,10 @@ Scheduler::Goroutine* Scheduler::pickNext() {
         std::lock_guard glock(goroutines_mutex_);
         assert(goroutines_.count(result->id) == 1);
       }
-      result->wait_handle.clear();
+      // NOTE: Do NOT clear wait_handle here — it carries resume_value for
+      // channel operations. The resume logic in HavelEngine consumes it
+      // and clears it after use.
+      // result->wait_handle.clear();  // REMOVED
       current_.store(result, std::memory_order_release);
       if (debugging::debug_io) ::havel::debug("[Scheduler] [RUN] gid={} name='{}' state={}",
                         result->id, result->name, (int)result->state.load());
@@ -245,9 +248,10 @@ void Scheduler::unpark(Scheduler::Goroutine* g) {
 
 	g->state = GoroutineState::Runnable;
 	g->suspension_reason.store(SuspensionReason::None, std::memory_order_release);
-	{
-		g->wait_handle.clear();  // Clear stale suspension context
-	}
+	// NOTE: Do NOT clear wait_handle here — it carries resume_value for channel
+	// operations. The resume logic in HavelEngine consumes it and the next
+	// suspension will overwrite it.
+	// g->wait_handle.clear();  // REMOVED: was losing channel resume_value
 
 	{
 		std::lock_guard lock(priority_mutex_);

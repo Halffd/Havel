@@ -681,10 +681,6 @@ return
 					bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
 			for arg in node.args {
 				emitExpr(emitter, arg)
-				// Ruby-like: bare identifier in call args auto-calls zero-arg functions
-				if arg.kind == "Identifier" {
-					bc.emit("CALL_IF_FUNCTION")
-				}
 			}
 			if hasKwargs {
 				emitKwargsObject(emitter, node.kwargs)
@@ -700,10 +696,6 @@ return
 		emitExpr(emitter, callee.obj)
 		for arg in node.args {
 			emitExpr(emitter, arg)
-			// Ruby-like: bare identifier in call args auto-calls zero-arg functions
-			if arg.kind == "Identifier" {
-				bc.emit("CALL_IF_FUNCTION")
-			}
 		}
 		if hasKwargs {
 			emitKwargsObject(emitter, node.kwargs)
@@ -727,10 +719,6 @@ return
 				bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
 				for arg in node.args {
 					emitExpr(emitter, arg)
-					// Ruby-like: bare identifier in call args auto-calls zero-arg functions
-					if arg.kind == "Identifier" {
-						bc.emit("CALL_IF_FUNCTION")
-					}
 				}
 				if hasKwargs {
 					emitKwargsObject(emitter, node.kwargs)
@@ -746,10 +734,6 @@ return
 			emitLoadVar(emitter, callee.name)
 			for arg in node.args {
 				emitExpr(emitter, arg)
-				// Ruby-like: bare identifier in call args auto-calls zero-arg functions
-				if arg.kind == "Identifier" {
-					bc.emit("CALL_IF_FUNCTION")
-				}
 			}
 			if hasKwargs {
 				emitKwargsObject(emitter, node.kwargs)
@@ -769,10 +753,6 @@ return
 		emitExpr(emitter, callee)
 			for arg in node.args {
 				emitExpr(emitter, arg)
-				// Ruby-like: bare identifier in call args auto-calls zero-arg functions
-				if arg.kind == "Identifier" {
-					bc.emit("CALL_IF_FUNCTION")
-				}
 			}
 		if hasKwargs {
 			emitKwargsObject(emitter, node.kwargs)

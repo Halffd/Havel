@@ -1276,6 +1276,12 @@ const std::vector<Value> &args);
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
 
+  // Timeout closure pinning - keeps callback closures alive until timer fires
+  // or is cancelled. Returns the callback ID for the pinned closure.
+  CallbackId pinTimeoutClosure(uint32_t timeout_id, const Value &closure);
+  void releaseTimeoutClosure(uint32_t timeout_id);
+  bool isTimeoutClosurePinned(uint32_t timeout_id) const;
+
   // ========== IMAGE HELPERS ==========
   // Set timer check callback - called periodically during script execution
   void setTimerCheckFunction(TimerCheckFunction func) {

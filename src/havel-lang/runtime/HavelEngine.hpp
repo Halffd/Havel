@@ -426,10 +426,11 @@ vm_->addIntervalResult(timer_id, result);
     // processGoroutines (outside any fiber context).
     // Dedup is safe: reevalConditionalHotkeys reads live globals, so a
     // variable that changed multiple times during the queue accrual (mode=gaming
-    // then mode=default) is re-evaluated once with the final state. Reads of
-    // hotkey.grab then drain pending events via the __get_grab prototype
-    // interceptor before returning the cached bool, so any deferred
-    // re-evals run in the same goroutine tick that produced the writes.
+    // then mode=default) is re-evaluated once with the final state.
+    // The Hotkey prototype's __get_<field> interceptor (OBJECT_GET) also
+    // calls vm.drainConditionalHotkeyPending() when bare reads occur
+    // mid-tick (e.g. `hk.grab` inside a goroutine), so grab reads don't
+    // depend on reaching the tick-end drain.
     void drainPendingVarChanges() {
         std::vector<std::string> batch;
         {

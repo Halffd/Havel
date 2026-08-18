@@ -1099,21 +1099,37 @@ api.registerPrototypeMethod("Hotkey", "all", 1, [&vm](const std::vector<Value> &
     return Value::makeBool(ctx->condition_callback != 0);
   });
 
-  // grab - returns the grab state of this hotkey
+  // grab - returns the grab state of this hotkey.
+  // Prototype property-getter interceptor: registered as both `grab` (method
+  // call, explicit parens) and `__get_grab` (intercepted by OBJECT_GET when
+  // the field is read without parens). Both paths drain pending deferred
+  // re-evals synchronously so the returned value reflects the latest
+  // STORE_GLOBAL state, including mid-tick reads inside a goroutine where
+  // the scheduler-level drain only fires at tick end.
   api.registerPrototypeMethod("Hotkey", "grab", 1, [&vm](const std::vector<Value> &args) -> Value {
     if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
     auto objRef = ObjectRef{args[0].asObjectId(), true};
     auto idValue = vm.getHostObjectField(objRef, "id");
     if (idValue.isNull()) return Value::makeBool(false);
-    // Flush pending conditional-hotkey re-evals queued by recent
-    // STORE_GLOBAL ops in this goroutine tick before reporting grab.
-    // Otherwise scripts that write the dependency var then read .grab in
-    // the same tick see a stale value (the scheduler's drain at top of
-    // processGoroutines only fires after the goroutine yields/sleeps).
     vm.drainConditionalHotkeyPending();
     auto hotkeyId = resolveHotkeyId(vm, idValue);
     auto *ctx = getHotkeyContextData(hotkeyId);
     if (!ctx) return Value::makeBool(false);
+    return Value::makeBool(ctx->grab);
+  });
+  api.registerPrototypeMethod("Hotkey", "__get_grab", 1, [&vm](const std::vector<Value> &args) -> Value {
+    if (args.empty() || !args[0].isObjectId()) return Value::makeBool(false);
+    auto objRef = ObjectRef{args[0].asObjectId(), true};
+    auto idValue = vm.getHostObjectField(objRef, "id");
+    if (idValue.isNull()) return Value::makeBool(false);
+    vm.drainConditionalHotkeyPending();
+    auto hotkeyId = resolveHotkeyId(vm, idValue);
+    auto *ctx = getHotkeyContextData(hotkeyId);
+    if (!ctx) return Value::makeBool(false);
+    // Sync the Havel instance field so subsequent reads (still routed
+    // through OBJECT_GET's __get_<field> interceptor) also get the
+    // freshly-drained value without another re-eval.
+    vm.setHostObjectField(objRef, "grab", Value::makeBool(ctx->grab));
     return Value::makeBool(ctx->grab);
   });
 

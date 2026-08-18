@@ -1,6 +1,7 @@
 #include "GUIManager.hpp"
 #include "qt.hpp"
 #include "utils/Logger.hpp"
+#include "havel_platform.h"
 #include <QApplication>
 #include <QColorDialog>
 #include <QCursor>
@@ -16,8 +17,11 @@
 #include <QTextEdit>
 #include <QThread>
 #include <QVBoxLayout>
+
+#if HAVEL_PLATFORM_LINUX && defined(HAVE_X11)
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
+#endif
 
 namespace havel {
 

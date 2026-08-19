@@ -642,7 +642,6 @@ if args == null || #args == 0 {
 }
 
 cfg = parseArgs(args)
-print("DEBUG: cfg.scriptFiles = " + str(cfg.scriptFiles))
 
 result = 0
 if cfg.mode == "run" {
@@ -663,6 +662,9 @@ else {
     result = 1
 }
 
-// Don't call shell.exit() - let the goroutine system run the user script
-    // The C++ engine.execute() will call processGoroutines() after this returns
-    result
+// Propagate failure exit codes (parse errors, missing files, failed tests).
+// On success, DON'T call shell.exit(): the user script was spawned as a
+// goroutine and must run after this returns (the C++ engine.execute() calls
+// processGoroutines()).
+if result != 0 { shell.exit(result) }
+result

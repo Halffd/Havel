@@ -523,6 +523,7 @@ public:
   std::map<int, bool> keyDownState;
 
   mutable   std::once_flag backendInitFlag_;
+  bool backendInitialized_ = false;
   void ensureBackend();
   bool eventListenerThreaded_ = true;
 

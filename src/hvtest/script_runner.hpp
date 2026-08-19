@@ -242,13 +242,12 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
         } else if (result.exit_code == -6 || result.exit_code == -11) {
             if (verbose) std::cout << "[SKIP] " << name << " (crash, needs event loop)" << std::endl;
             skip++;
-        } else if (!pre_flags.empty() && result.exit_code != 255) {
-            // Self-hosted mode: script return value becomes exit code.
-            // exit=255 means process.exit(255) was called (assertion failure).
-            // Any other exit code is the script's return value (success).
-            if (verbose) std::cout << "[PASS] " << name << " (" << result.elapsed_ms << "ms)" << std::endl;
-            pass++;
         } else {
+            // Same rule as run_script_suite: only exit 0 is a pass. The
+            // self-hosted pipeline previously exited 0 even on parse errors,
+            // so a permissive "any non-255 exit is success" rule here hid
+            // broken scripts (they never actually ran). With parse errors
+            // now exiting 1, treat any nonzero exit as a failure.
             std::cout << "[FAIL] " << name << " (exit=" << result.exit_code << ")" << std::endl;
             fail++;
         }

@@ -326,6 +326,17 @@ vm_->addIntervalResult(timer_id, result);
             // deferral must also fire when deepWrapModuleFunctions is mid-
             // frame: synchronous re-eval would cross the still-being-wrapped
             // module host wrapper FFI and wedge similarly.
+            // Conditional-hotkey re-eval: defer when synchronous re-eval would
+            // wedge an active goroutine dispatch frame. Two unsafe cases:
+            //   1. deepWrapModuleFunctions is mid-frame: the cond callback's
+            //      callFunctionSync may cross the still-being-wrapped module
+            //      host wrapper FFI and wedge.
+            //   2. A goroutine fiber is mid-dispatch: same risk in spirit;
+            //      callFunctionSync nested inside the active dispatch may
+            //      wedge the host function's FFI (e.g. window.active() never
+            //      returns).
+            // Defer to pending_var_changes_ for the next processGoroutines
+            // tick drain.
             if (vm_->hasCurrentExecutingFiber() ||
                 vm_->deep_wrap_module_functions_depth_.load() > 0) {
                 std::lock_guard<std::mutex> lk(pending_var_changes_mutex_);
@@ -369,12 +380,13 @@ vm_->addIntervalResult(timer_id, result);
             bool grab;
         };
         std::vector<HotkeyAction> pendingActions;
+        // Re-entry guard: emit→eval→emit cycles can stack when a condition
+        // callback mutates a dep variable. thread_local so concurrent
+        // reeval from distinct goroutine dispatch threads don't interfere.
         static thread_local int depth = 0;
-        if (depth > 0) return; // re-entry guard for nested calls (eval→emit→eval)
+        if (depth > 0) return;
         depth++;
         struct Gd__ { ~Gd__(){ depth--; } } _gd_;
-        static const bool _trace = std::getenv("HAVEL_DEBUG_CONDHOTKEYS") != nullptr;
-        if (_trace) fprintf(stderr, "[R] var=%s\n", var_name.c_str());
         sched->forEachConditionalHotkey(
             [this, &var_name, &pendingActions](compiler::Scheduler::Goroutine* g) {
                 if (!g) return;
@@ -387,15 +399,6 @@ vm_->addIntervalResult(timer_id, result);
                 auto tracker = std::make_shared<compiler::DependencyTracker>();
                 compiler::DependencyTrackerScope scope(tracker);
                 bool conditionMet = false;
-                auto dumpTitle = [&]() {
-                    auto ti = vm_->getGlobals().find("title_");
-                    if (ti == vm_->getGlobals().end()) return std::string("<title_ missing>");
-                    if (!ti->second.isStringId()) return std::string("<title_ not string>");
-                    auto* sp = vm_->getStringPtr(ti->second);
-                    if (!sp) return std::string("<title_ null>");
-                    return *sp;
-                };
-                if (_trace) fprintf(stderr, "[R]     title_='%s' for alias=%s\n", dumpTitle().c_str(), g->hotkey_condition_alias.c_str());
                 try {
                     compiler::Value result = vm_->callFunctionSync(*condVal, {});
                     conditionMet = vm_->toBool(result);
@@ -406,13 +409,9 @@ vm_->addIntervalResult(timer_id, result);
                 g->hotkey_condition_deps.insert(newDeps.begin(), newDeps.end());
                 bool prev = g->hotkey_condition_last_result;
                 g->hotkey_condition_last_result = conditionMet;
-                if (_trace) fprintf(stderr, "[R]   g=%d alias=%s condMet=%d prev=%d deps_sz=%zu\n",
-                    g->id, g->hotkey_condition_alias.c_str(),
-                    (int)conditionMet, (int)prev, g->hotkey_condition_deps.size());
                 if (prev == conditionMet) return;
                 pendingActions.push_back({g->hotkey_condition_alias, conditionMet});
             });
-        if (_trace) fprintf(stderr, "[R] actions=%zu\n", pendingActions.size());
         for (auto& act : pendingActions) {
             if (act.alias.empty()) continue;
             auto* hm = vm_->hostContext() ? vm_->hostContext()->hotkeyManager : nullptr;
@@ -421,10 +420,17 @@ vm_->addIntervalResult(timer_id, result);
         }
     }
 
-    // Drain var_names queued from inside goroutine frames, deduped so a
+    // Drain var_names queued from inside goroutine frames. Dedupes so a
     // batch of ARRAY_PUSH ops from the same window.active() call only
     // triggers one re-eval pass per unique var_name. Must be called from
     // processGoroutines (outside any fiber context).
+    // Dedup is safe: reevalConditionalHotkeys reads live globals, so a
+    // variable that changed multiple times during the queue accrual (mode=gaming
+    // then mode=default) is re-evaluated once with the final state.
+    // The Hotkey prototype's __get_<field> interceptor (OBJECT_GET) also
+    // calls vm.drainConditionalHotkeyPending() when bare reads occur
+    // mid-tick (e.g. `hk.grab` inside a goroutine), so grab reads don't
+    // depend on reaching the tick-end drain.
     void drainPendingVarChanges() {
         std::vector<std::string> batch;
         {
@@ -432,8 +438,6 @@ vm_->addIntervalResult(timer_id, result);
             batch.swap(pending_var_changes_);
         }
         if (batch.empty()) return;
-        // Dedup while preserving first-seen order so the dep tracker sees
-        // the chronologically earliest var_name.
         std::unordered_set<std::string> seen;
         seen.reserve(batch.size() * 2);
         for (auto& name : batch) {
@@ -681,23 +685,28 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
               sched->suspend(g, toSchedulerReasonPublic(reason));
               if (fiber_reason == compiler::SuspensionReason::SLEEP) {
                 int64_t ms = reinterpret_cast<intptr_t>(context);
-                g->wait_handle.set_sleep(static_cast<uint32_t>(reinterpret_cast<intptr_t>(context)), std::chrono::steady_clock::now() + std::chrono::milliseconds(ms));
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+                g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
               }
               if (fiber_reason == compiler::SuspensionReason::COROUTINE_WAIT) {
                 uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.set_coroutine_wait(co_id);
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::COROUTINE;
+                g->wait_handle.target_id = co_id;
               }
               if (fiber_reason == compiler::SuspensionReason::THREAD_JOIN) {
                 uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.set_thread_join(tid);
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::THREAD_JOIN;
+                g->wait_handle.target_id = tid;
               }
               if (fiber_reason == compiler::SuspensionReason::CHANNEL_RECV) {
                 uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.set_channel_recv(ch_id);
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::CHANNEL_RECV;
+                g->wait_handle.target_id = ch_id;
               }
               if (fiber_reason == compiler::SuspensionReason::TIMER) {
                 uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.set_timer_wait(timer_id);
+                g->wait_handle.type = compiler::Scheduler::AwaitableType::TIMER_WAIT;
+                g->wait_handle.target_id = timer_id;
               }
               break;
             }
@@ -764,13 +773,6 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         for (;;) {
             if (vm_->exit_requested_.load()) break;
 
-            // Drain any var_names queued from inside a goroutine's dispatch
-            // loop. Doing this here (after exit check, before any fiber runs)
-            // means the re-eval runs with current_executing_fiber_ == nullptr,
-            // so callFunctionSync's nested dispatch can't wedge the goroutine
-            // frame that produced the VAR_CHANGED event.
-            drainPendingVarChanges();
-
             if (hostContext_->eventQueue) {
                 hostContext_->eventQueue->processAll();
             }
@@ -778,9 +780,8 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
 
             sched->wakeSleepingGoroutines();
             auto* g = sched->pickNext();
-        if (!g) {
-          static const bool _trace = std::getenv("HAVEL_DEBUG_SCHEDULER") != nullptr;
-          if (_trace) std::cerr << "[DEBUG] pickNext null: suspended=" << sched->suspendedCount() << " total=" << sched->goroutineCount() << "\n";
+      if (!g) {
+        std::cerr << "[DEBUG] pickNext null: suspended=" << sched->suspendedCount() << " total=" << sched->goroutineCount() << "\n";
         size_t sc = sched->suspendedCount();
         if (sc == 0) break;
         // Check if any sleeping goroutine has a deadline that will wake it
@@ -799,11 +800,10 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
       sched->setCurrent(g);
       // Start and run this goroutine to completion
       // pickNext() returns goroutines with Runnable or Created state (does NOT change state).
-       if (g->state == compiler::Scheduler::GoroutineState::Created) {
-          static const bool _trace = std::getenv("HAVEL_DEBUG_SCHEDULER") != nullptr;
-          if (_trace) std::cerr << "[DEBUG] pickNext Created gid=" << g->id << " name='" << g->name << "'\n";
-          auto result = vm_->startGoroutineCall(g->callable, g->locals);
-          if (_trace) std::cerr << "[DEBUG] startGoroutineCall gid=" << g->id << " result=" << (int)result << "\n";
+      if (g->state == compiler::Scheduler::GoroutineState::Created) {
+        std::cerr << "[DEBUG] pickNext Created gid=" << g->id << " name='" << g->name << "'\n";
+        auto result = vm_->startGoroutineCall(g->callable, g->locals);
+        std::cerr << "[DEBUG] startGoroutineCall gid=" << g->id << " result=" << (int)result << "\n";
         if (result != compiler::VM::GoroutineCallResult::Failed) {
           g->state = compiler::Scheduler::GoroutineState::Runnable;
           { vm_->current_executing_fiber_ = g->fiber; vm_->runDispatchLoopPublic(0); vm_->current_executing_fiber_ = nullptr; }
@@ -868,7 +868,8 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           auto ms = reinterpret_cast<intptr_t>(lastContext);
           {
             std::lock_guard wlock(g->wait_handle_mutex_);
-            g->wait_handle.set_sleep(static_cast<uint32_t>(reinterpret_cast<intptr_t>(lastContext)), std::chrono::steady_clock::now() + std::chrono::milliseconds(ms));
+            g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+            g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
           }
         }
         if (sched->current() == g) {
@@ -884,7 +885,8 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
             std::chrono::milliseconds(g->update_interval_ms);
         {
           std::lock_guard wlock(g->wait_handle_mutex_);
-          g->wait_handle.set_sleep(static_cast<uint32_t>(reinterpret_cast<intptr_t>(lastContext)), deadline);
+          g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
+          g->wait_handle.deadline = deadline;
         }
         g->state = compiler::Scheduler::GoroutineState::Suspended;
         g->suspension_reason.store(compiler::Scheduler::SuspensionReason::SleepWait, std::memory_order_release);
@@ -909,6 +911,16 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           g->update_callback_id = 0;
       }
     }
+
+    // Drain any var_names queued from inside the goroutine's dispatch
+    // loop. By this point current_executing_fiber_ is null (set to nullptr
+    // after runDispatchLoopPublic / yield), so conditional-hotkey re-eval
+    // callbacks execute with no active fiber and cannot wedge the dispatch
+    // frame that produced the VAR_CHANGED event. This runs for every
+    // goroutine tick, including the last one before exit_requested_
+    // terminates the loop, fixing the stale-hotkey-cache bug when a
+    // goroutine calls exit(1) after mutating a condition dependency.
+    drainPendingVarChanges();
   }
 
   // Clean up any remaining update goroutine GC roots

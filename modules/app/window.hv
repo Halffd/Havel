@@ -31,7 +31,7 @@ fn _dpy() { display.open() }
 // ============================================================
 // Timing instrumentation (gated behind HAVEL_DEBUG_WINDOW_TIMING)
 // ============================================================
-_win_timing = shell.getenv("HAVEL_DEBUG_WINDOW_TIMING") != ""
+_win_timing = shell.getenv("HAVEL_DEBUG_WINDOW_TIMING") != null && shell.getenv("HAVEL_DEBUG_WINDOW_TIMING") != ""
 
 fn _tstart() {
     if _win_timing { time.now() } else { 0 }
@@ -43,6 +43,49 @@ fn _tend(label, t0) {
         print("[window.timing] $label duration=${elapsed}ms")
     }
 }
+
+// ------------------------------------------------------------
+// Active-window TTL cache
+// ------------------------------------------------------------
+// Hotkey handlers and event loops often call window.active() several
+// times in the same tick (focus check, snapshot, etc). Each call does
+// several X property round-trips; subsequent calls within the TTL
+// reuse the cached snapshot instead of re-querying the server.
+//
+// Tunable via HAVEL_WINDOW_ACTIVE_TTL (milliseconds, default 16).
+// Set to 0 to disable the cache (every call hits X).
+_active_ttl = 16
+try {
+    _env_ttl = shell.getenv("HAVEL_WINDOW_ACTIVE_TTL")
+    if _env_ttl != null && _env_ttl != "" {
+        _parsed = int(_env_ttl)
+        if _parsed >= 0 { _active_ttl = _parsed }
+    }
+} catch {
+    // ignore non-integer env; keep default
+}
+_active_cache_result = null
+_active_cache_ts = 0
+
+fn active() {
+    _t0 = _tstart()
+    if _active_ttl > 0 && _active_cache_result != null {
+        if (time.now() - _active_cache_ts) <= _active_ttl {
+            _tend("active.total", _t0)
+            return _active_cache_result
+        }
+    }
+    _aid = activeId()
+    if _aid == null || _aid == 0 {
+        _tend("active.total", _t0)
+        return null
+    }
+    _result = _snapshot(Window(_aid))
+    _active_cache_result = _result
+    _active_cache_ts = time.now()
+    _tend("active.total", _t0)
+    _result
+}
 fn _root() {
 	_d = _dpy()
 	if _d == 0 { 0 } else { x11.rootWindow(_d) }
@@ -51,6 +94,19 @@ fn _root() {
 fn _shell(cmd) {
 	_r = shell.exec(cmd + " 2>/dev/null")
 	_r.stdout
+}
+
+// Resolve /proc fields from a pid already fetched via X, avoiding a
+// second _NET_WM_PID round-trip in _snapshot (saves ~10ms/call).
+fn _procExe(_pid) {
+	if _pid == 0 { return "" }
+	fs.readlink("/proc/${_pid}/exe")
+}
+
+fn _procCmdline(_pid) {
+	if _pid == 0 { return "" }
+	_raw = fs.read("/proc/${_pid}/cmdline")
+	if _raw == "" { "" } else { _raw.replace("\0", " ").trim() }
 }
 
 // ============================================================
@@ -738,10 +794,10 @@ fn _snapshot(_w) {
 	_pid = _w.pid()
 	_tend("snapshot.pid", _t_pid)
 	_t_exe = _tstart()
-	_exe = _w.exe()
+	_exe = _procExe(_pid)
 	_tend("snapshot.exe", _t_exe)
 	_t_cmd = _tstart()
-	_cmd = _w.cmdline()
+	_cmd = _procCmdline(_pid)
 	_tend("snapshot.cmdline", _t_cmd)
 	_tend("snapshot.total", _t0)
 	{
@@ -795,19 +851,7 @@ fn activeId() {
 		return _info.focus
 	}
 	_tend("activeId.total", _t0)
-	0
-}
-
-fn active() {
-	_t0 = _tstart()
-	_aid = activeId()
-	if _aid == null || _aid == 0 {
-		_tend("active.total", _t0)
-		return null
-	}
-	_result = _snapshot(Window(_aid))
-	_tend("active.total", _t0)
-	_result
+ 	0
 }
 
 fn list() {

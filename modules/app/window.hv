@@ -66,6 +66,21 @@ try {
 }
 _active_cache_result = null
 _active_cache_ts = 0
+// activeId() uses the same TTL. Polling loops (goroutines watching the
+// active window) call activeId() directly; without a cache every poll
+// does an X round-trip that blocks the single VM thread. The id cache
+// makes polls nearly free between expiries.
+_active_id_cache = 0
+_active_id_ts = 0
+
+fn _activeIdCached() {
+    if _active_ttl > 0 && _active_id_cache != 0 {
+        if (time.now() - _active_id_ts) <= _active_ttl {
+            return true
+        }
+    }
+    false
+}
 
 fn active() {
     _t0 = _tstart()
@@ -831,6 +846,10 @@ fn _snapshot(_w) {
 
 fn activeId() {
 	_t0 = _tstart()
+	if _activeIdCached() {
+		_tend("activeId.total", _t0)
+		return _active_id_cache
+	}
 	_d = _dpy()
 	if _d == 0 { return 0 }
 	_rw = _root()
@@ -839,6 +858,8 @@ fn activeId() {
 		_aid = protocols.getWindowProp(_d, _rw, protocols.netActiveWindow())
 		_tend("activeId.getWindowProp", _t_prop)
 		if _aid != 0 && _aid != _rw {
+			_active_id_cache = _aid
+			_active_id_ts = time.now()
 			_tend("activeId.total", _t0)
 			return _aid
 		}
@@ -847,6 +868,8 @@ fn activeId() {
 	_info = x11.getInputFocus(_d)
 	_tend("activeId.getInputFocus", _t_focus)
 	if _info.focus != 0 && _info.focus != 1 && _info.focus != _rw {
+		_active_id_cache = _info.focus
+		_active_id_ts = time.now()
 		_tend("activeId.total", _t0)
 		return _info.focus
 	}

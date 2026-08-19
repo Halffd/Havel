@@ -157,6 +157,7 @@ if(LINUX)
         find_library(XINERAMA_LIB Xinerama QUIET)
         pkg_check_modules(XCOMPOSITE QUIET xcomposite)
         pkg_check_modules(XDAMAGE QUIET xdamage)
+        pkg_check_modules(XKB QUIET xkbcommon)
     else()
         message(STATUS "X11:             ✗ NOT FOUND (will use headless/Windows paths)")
     endif()
@@ -856,6 +857,7 @@ if(LINUX)
         ${XTEST_LIB}
         ${XCOMPOSITE_LIBRARIES}
         ${XDAMAGE_LIBRARIES}
+        ${XKB_LIBRARIES}
     )
     find_library(XFIXES_LIB Xfixes QUIET)
     if(XFIXES_LIB)
@@ -998,6 +1000,7 @@ endif()
 add_library(gtk_extension MODULE src/extensions/gtk/gtk_extension.cpp)
 target_include_directories(gtk_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/src/extensions
     ${GTK4_INCLUDE_DIRS}
     /usr/include/cairo
@@ -1029,6 +1032,7 @@ if(IMGUI_BACKEND_AVAILABLE)
 add_library(imgui_extension MODULE src/extensions/imgui/imgui_extension.cpp)
 target_include_directories(imgui_extension PRIVATE
   ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src/include
   ${CMAKE_SOURCE_DIR}/src/extensions
   ${GLFW3_INCLUDE_DIRS}
   ${IMGUI_INCLUDE_DIR}
@@ -1068,6 +1072,7 @@ src/extensions/qt/QtClipboardManagerBackend.hpp
 )
 target_include_directories(havel_toolkit_qt PRIVATE
 ${CMAKE_SOURCE_DIR}/src
+${CMAKE_SOURCE_DIR}/src/include
 ${CMAKE_SOURCE_DIR}/include
 ${CMAKE_SOURCE_DIR}/src/extensions
 ${CMAKE_SOURCE_DIR}/src/havel-lang
@@ -1145,6 +1150,7 @@ add_library(havel_toolkit_imgui MODULE
 )
 target_include_directories(havel_toolkit_imgui PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/src/extensions
     ${GLFW3_INCLUDE_DIRS}
     ${IMGUI_INCLUDE_DIR}
@@ -1180,6 +1186,7 @@ add_library(havel_ui_shim MODULE
 )
 target_include_directories(havel_ui_shim PRIVATE
 	${CMAKE_SOURCE_DIR}/src
+	${CMAKE_SOURCE_DIR}/src/include
 	${CMAKE_SOURCE_DIR}/include
 )
 target_link_libraries(havel_ui_shim PRIVATE
@@ -1286,8 +1293,11 @@ else()
 add_library(havel_modules INTERFACE)
 endif()
 target_link_libraries(havel_core PUBLIC fmt::fmt)
-target_include_directories(havel_core PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/havel-lang
+target_include_directories(havel_core
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/src/include
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 if(ENABLE_QT_UI_BACKEND)
   add_library(havel_gui STATIC ${GUI_SOURCES})
@@ -1304,20 +1314,22 @@ endif()
 foreach(lib ${_LIBS})
 target_include_directories(${lib} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/extensions
     ${X11_INCLUDE_DIR}
     ${XI_INCLUDE_DIR}
-    ${PIPEWIRE_INCLUDE_DIRS}
+${PIPEWIRE_INCLUDE_DIRS}
     ${ALSA_INCLUDE_DIRS}
+    $<$<BOOL:${DBUS_FOUND}>:${DBUS_INCLUDE_DIRS}>
     $<$<BOOL:${TESSERACT_FOUND}>:${TESSERACT_INCLUDE_DIRS}>
     $<$<BOOL:${LEPTONICA_FOUND}>:${LEPTONICA_INCLUDE_DIRS}>
     $<$<BOOL:${OpenCV_FOUND}>:${OpenCV_INCLUDE_DIRS}>
     ${UI_BACKEND_INCLUDES}
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang/compiler>
-)
-    target_compile_definitions(${lib} PRIVATE
+  )
+  target_compile_definitions(${lib} PRIVATE
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:ENABLE_HAVEL_LANG>
     $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
     $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
@@ -1326,6 +1338,7 @@ target_include_directories(${lib} PRIVATE
     $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
     $<$<BOOL:${HAVE_LIBFFI}>:HAVE_LIBFFI>
     $<$<BOOL:${OpenCV_FOUND}>:HAVE_OPENCV>
+    $<$<BOOL:${DBUS_FOUND}>:HAVE_DBUS>
     $<$<BOOL:${TESSERACT_FOUND}>:HAVE_TESSERACT>
     ${UI_BACKEND_DEFS}
     UI_BACKEND=\"${UI_BACKEND}\"
@@ -1875,6 +1888,7 @@ list(REMOVE_ITEM HAVEL_LANG_CORE_SOURCES
 
     target_include_directories(havel_lang PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/include
         ${CMAKE_SOURCE_DIR}/include
         ${X11_INCLUDE_DIR}
         ${XI_INCLUDE_DIR}
@@ -1904,6 +1918,7 @@ havel_core
 
     target_include_directories(havel_lang_core PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/include
         ${CMAKE_SOURCE_DIR}/include
         ${X11_INCLUDE_DIR}
         ${XI_INCLUDE_DIR}
@@ -2001,6 +2016,7 @@ function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
   endforeach()
   target_include_directories(${MODULE_TARGET} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/havel-lang
     ${CMAKE_SOURCE_DIR}/src/extensions
@@ -2118,6 +2134,7 @@ if(ENABLE_HAVEL_LANG)
     )
     target_include_directories(havel_aot_core_shim PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/include
         ${CMAKE_SOURCE_DIR}/src/havel-lang
         ${CMAKE_SOURCE_DIR}/include
     )

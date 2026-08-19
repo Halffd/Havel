@@ -1492,10 +1492,12 @@ $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 )
 
 target_link_libraries(hvtest PRIVATE
--Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-${COMMON_LIBS}
-$<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-)
+    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group
+    ${COMMON_LIBS}
+    $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+    -Wl,--end-group
+  )
 
 if(ENABLE_MODULE_PLUGINS)
 set_target_properties(hvtest PROPERTIES ENABLE_EXPORTS ON)
@@ -1516,9 +1518,11 @@ target_include_directories(havel_api_test PRIVATE
   ${CMAKE_SOURCE_DIR}/src/havel-lang
 )
 target_link_libraries(havel_api_test PRIVATE
--Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
-${COMMON_LIBS}
-)
+    -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group
+    ${COMMON_LIBS}
+    -Wl,--end-group
+  )
 
 # brightness_test disabled - replaced by modules/lang/brightness/brightness.hv (FFI-based)
 
@@ -1578,12 +1582,16 @@ target_include_directories(hvdump PRIVATE
 )
 target_link_libraries(hvdb PRIVATE
     -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group
     ${COMMON_LIBS}
-)
+    -Wl,--end-group
+  )
 target_link_libraries(hvdump PRIVATE
     -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group
     ${COMMON_LIBS}
-)
+    -Wl,--end-group
+  )
 
 target_compile_definitions(hvdb PRIVATE
 $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
@@ -1624,8 +1632,10 @@ $<$<BOOL:${ENABLE_MODULE_PLUGINS}>:ENABLE_MODULE_PLUGINS>
 target_link_libraries(havel-dap PRIVATE
     nlohmann_json::nlohmann_json
     -Wl,--start-group havel_lang havel_core havel_modules $<$<BOOL:${ENABLE_QT_UI_BACKEND}>:havel_gui> -Wl,--end-group
+    -Wl,--start-group
     ${COMMON_LIBS}
-)
+    -Wl,--end-group
+  )
 if(ENABLE_MODULE_PLUGINS)
 set_target_properties(havel-dap PROPERTIES ENABLE_EXPORTS ON)
 endif()

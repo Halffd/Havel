@@ -665,6 +665,7 @@ void IO::ensureBackend() {
         debug("IOBackend initialized: {}", ioBackend->GetName());
     }
 #endif
+    backendInitialized_ = true;
   });
 }
 
@@ -862,7 +863,13 @@ void IO::ClearGestures() {
 IO::~IO() { cleanup(); }
 
 void IO::cleanup() {
-  ensureBackend();
+  // Do NOT call ensureBackend() here: cleanup runs from the exit-cleanup
+  // path, and in processes that never used IO (e.g. minimal self-hosted
+  // script runs) ensureBackend() would lazily CREATE an X backend just to
+  // tear it down, crashing in XSync on a half-initialized display.
+  if (!backendInitialized_) {
+    return;
+  }
 
   if (eventListener) {
     eventListener->Stop();

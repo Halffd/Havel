@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <poll.h>
@@ -14,8 +13,6 @@
 namespace hvtest {
 
 namespace fs = std::filesystem;
-
-extern char **environ;
 
 struct ScriptResult {
     std::string path;
@@ -50,40 +47,9 @@ inline std::vector<std::string> list_test_dirs(const std::string &scripts_root) 
 	};
 }
 
-// Read per-test timeout from file header.
-// Format: // smoke: timeout = <seconds>  (or // test: timeout = <seconds>)
-inline int read_test_timeout(const std::string &script_path) {
-	std::ifstream ifs(script_path);
-	if (!ifs) return 0;
-	std::string line;
-	int count = 0;
-	while (std::getline(ifs, line) && count < 20) {
-		count++;
-		// Look for // smoke: timeout = <n> or // test: timeout = <n>
-		if (line.rfind("// smoke: timeout =", 0) == 0 || line.rfind("// test: timeout =", 0) == 0) {
-			size_t eq = line.find('=');
-			if (eq != std::string::npos) {
-				std::string val = line.substr(eq + 1);
-				val.erase(0, val.find_first_not_of(" \t"));
-				val.erase(val.find_last_not_of(" \t") + 1);
-				try {
-					return std::stoi(val);
-				} catch (...) {}
-			}
-		}
-	}
-	return 0; // 0 means use default
-}
-
 inline ScriptResult run_script(const std::string &havel_bin, const std::string &script_path,
-                               int timeout_seconds = 60,
+                               int timeout_seconds = 30,
                                const std::vector<std::string> &pre_flags = {}) {
-    // Check for per-test timeout in file header (e.g., // smoke: timeout = 180)
-    int per_test_timeout = read_test_timeout(script_path);
-    if (per_test_timeout > 0) {
-        timeout_seconds = per_test_timeout;
-    }
-
     ScriptResult result;
     result.path = script_path;
     result.passed = false;
@@ -114,8 +80,7 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         if (pre_flags.empty()) {
             // Self-hosted pipeline by default (like smoke mode)
             fs::path bin_path(havel_bin);
-            fs::path repo_root = bin_path.parent_path().parent_path();
-            fs::path self_hosted_path = repo_root / "out";
+            fs::path self_hosted_path = bin_path.parent_path().parent_path();
             flags = {"--run", "--self-hosted-path", self_hosted_path.string()};
         } else {
             flags = pre_flags;
@@ -127,14 +92,7 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         }
         args.push_back(const_cast<char *>(script_path.c_str()));
         args.push_back(nullptr);
-        
-        // Pass through environment variables (needed for HAVEL_EXTENSION_DIR)
-        std::vector<char *> env;
-        for (char **e = ::environ; *e; ++e) {
-            env.push_back(*e);
-        }
-        env.push_back(nullptr);
-        execvpe(havel_bin.c_str(), args.data(), env.data());
+        execvp(havel_bin.c_str(), args.data());
         _exit(127);
     }
 
@@ -206,8 +164,7 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 }
 
 inline int run_script_suite(const std::string &havel_bin, const std::vector<std::string> &directories, bool verbose = false,
-                            const std::vector<std::string> &pre_flags = {},
-                            int timeout_seconds = 60) {
+                            const std::vector<std::string> &pre_flags = {}) {
     auto scripts = discover_scripts(directories);
     if (scripts.empty()) {
         std::cerr << "no .hv scripts found in specified directories" << std::endl;
@@ -217,39 +174,38 @@ inline int run_script_suite(const std::string &havel_bin, const std::vector<std:
     int pass = 0, fail = 0;
     std::vector<ScriptResult> results;
     for (const auto &script : scripts) {
-        auto result = run_script(havel_bin, script, timeout_seconds, pre_flags);
+        auto result = run_script(havel_bin, script, 30, pre_flags);
         results.push_back(result);
         if (result.passed) {
-            std::cout << "[PASS] " << script << " (" << result.elapsed_ms << "ms)" << std::endl << std::flush;
+            std::cout << "[PASS] " << script << " (" << result.elapsed_ms << "ms)" << std::endl;
             pass++;
         } else if (result.timed_out) {
-            std::cout << "[FAIL] " << script << " (timeout)" << std::endl << std::flush;
+            std::cout << "[FAIL] " << script << " (timeout)" << std::endl;
             fail++;
         } else {
-            std::cout << "[FAIL] " << script << " (exit=" << result.exit_code << ")" << std::endl << std::flush;
+            std::cout << "[FAIL] " << script << " (exit=" << result.exit_code << ")" << std::endl;
             fail++;
         }
     }
 
     double total_ms = 0;
     for (const auto &r : results) total_ms += r.elapsed_ms;
-    std::cout << "\nscripts: " << pass << " passed, " << fail << " failed | " << results.size() << " files, " << total_ms << "ms total" << std::endl << std::flush;
+    std::cout << "\nscripts: " << pass << " passed, " << fail << " failed | " << results.size() << " files, " << total_ms << "ms total" << std::endl;
     return fail > 0 ? 1 : 0;
 }
 
 inline int list_scripts(const std::vector<std::string> &directories) {
     auto scripts = discover_scripts(directories);
     for (const auto &script : scripts) {
-        std::cout << script << std::endl << std::flush;
+        std::cout << script << std::endl;
     }
-    std::cout << scripts.size() << " test(s)" << std::endl << std::flush;
+    std::cout << scripts.size() << " test(s)" << std::endl;
     return 0;
 }
 
 inline int run_smoke_suite(const std::string &havel_bin, const std::string &smoke_dir,
                            bool verbose = false,
-                           const std::vector<std::string> &pre_flags = {},
-                           int timeout_seconds = 60) {
+                           const std::vector<std::string> &pre_flags = {}) {
     auto scripts = discover_scripts({smoke_dir});
     if (scripts.empty()) {
         std::cerr << "no .hv smoke tests found in " << smoke_dir << std::endl;
@@ -257,18 +213,16 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
     }
 
     // Detect bytecode/self-hosted modules path: derived from havel_bin's location.
-    // For build-debug/havel -> modules dir is ../modules, self-hosted is ../out
+    // For build-debug/havel -> modules dir is ../modules
     fs::path bin_path(havel_bin);
-    fs::path repo_root = bin_path.parent_path().parent_path();
-    fs::path module_parent = repo_root;
-    fs::path self_hosted_path = repo_root / "out";
+    fs::path module_parent = bin_path.parent_path().parent_path();
     fs::path modules_root = module_parent / "modules";
     std::string bc_path = modules_root.string();
     if (!fs::exists(modules_root)) {
         bc_path = (fs::current_path() / "modules").string();
     }
     std::cout << "bytecode path: " << bc_path << std::endl;
-    std::cout << "self-hosted path: " << self_hosted_path.string() << std::endl;
+    std::cout << "self-hosted path: " << module_parent.string() << std::endl;
     std::cout << "pipeline: " << (pre_flags.empty() ? "c++" : "self-hosted") << std::endl;
 
     int pass = 0, fail = 0, skip = 0;
@@ -276,26 +230,25 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
     auto suite_start = std::chrono::high_resolution_clock::now();
 
     for (const auto &script : scripts) {
-        auto result = run_script(havel_bin, script, timeout_seconds, pre_flags);
+        auto result = run_script(havel_bin, script, 30, pre_flags);
         results.push_back(result);
         auto name = fs::path(script).stem().string();
         if (result.passed) {
-            if (verbose) std::cout << "[PASS] " << name << " (" << result.elapsed_ms << "ms)" << std::endl << std::flush;
+            if (verbose) std::cout << "[PASS] " << name << " (" << result.elapsed_ms << "ms)" << std::endl;
             pass++;
         } else if (result.timed_out) {
-            std::cout << "[FAIL] " << name << " (timeout)" << std::endl << std::flush;
+            std::cout << "[FAIL] " << name << " (timeout)" << std::endl;
             fail++;
         } else if (result.exit_code == -6 || result.exit_code == -11) {
-            if (verbose) std::cout << "[SKIP] " << name << " (crash, needs event loop)" << std::endl << std::flush;
+            if (verbose) std::cout << "[SKIP] " << name << " (crash, needs event loop)" << std::endl;
             skip++;
-        } else if (!pre_flags.empty() && result.exit_code != 255) {
-            // Self-hosted mode: script return value becomes exit code.
-            // exit=255 means process.exit(255) was called (assertion failure).
-            // Any other exit code is the script's return value (success).
-            if (verbose) std::cout << "[PASS] " << name << " (" << result.elapsed_ms << "ms)" << std::endl << std::flush;
-            pass++;
         } else {
-            std::cout << "[FAIL] " << name << " (exit=" << result.exit_code << ")" << std::endl << std::flush;
+            // Same rule as run_script_suite: only exit 0 is a pass. The
+            // self-hosted pipeline previously exited 0 even on parse errors,
+            // so a permissive "any non-255 exit is success" rule here hid
+            // broken scripts (they never actually ran). With parse errors
+            // now exiting 1, treat any nonzero exit as a failure.
+            std::cout << "[FAIL] " << name << " (exit=" << result.exit_code << ")" << std::endl;
             fail++;
         }
     }
@@ -312,17 +265,17 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
 
     std::cout << "\nsmoke: " << pass << " passed, " << fail << " failed, " << skip << " skipped | "
               << results.size() << " files, " << tests_total_ms << "ms tests, "
-              << avg_ms << "ms avg" << std::endl << std::flush;
+              << avg_ms << "ms avg" << std::endl;
     std::cout << "performance: " << suite_total_ms << "ms total suite, "
               << tests_total_ms << "ms in-process, "
-              << tests_total_ms / std::max<size_t>(results.size(), 1) << "ms/test avg" << std::endl << std::flush;
+              << tests_total_ms / std::max<size_t>(results.size(), 1) << "ms/test avg" << std::endl;
     if (!results.empty()) {
         int n = std::min<int>(5, results.size());
         std::cout << "startup time (slowest):";
         for (int i = 0; i < n; i++) {
             std::cout << " " << results[i].name() << "=" << (int)results[i].elapsed_ms << "ms";
         }
-        std::cout << std::endl << std::flush;
+        std::cout << std::endl;
     }
     return fail > 0 ? 1 : 0;
 }

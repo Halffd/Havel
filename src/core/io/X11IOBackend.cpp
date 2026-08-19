@@ -30,10 +30,15 @@ bool X11IOBackend::Initialize() {
 }
 
 void X11IOBackend::Cleanup() {
-    if (display_) {
-        UnregisterAll();
-        display_ = nullptr;
-    }
+  // display_ is owned by DisplayManager. Exit-cleanup order runs
+  // DisplayManager::Close() before IO::cleanup(), so the display may
+  // already be closed by the time this runs; touching it would crash in
+  // XSync. Only use the pointer while DisplayManager still owns a live
+  // display.
+  if (display_ && DisplayManager::IsInitialized()) {
+    UnregisterAll();
+    display_ = nullptr;
+  }
 }
 
 bool X11IOBackend::IsAvailable() const { return display_ != nullptr; }

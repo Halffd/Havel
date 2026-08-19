@@ -151,6 +151,16 @@ Value value = popStack();
                 auto* closure = heap_.closure(cf_store.closure_id);
                 if (closure && closure->module_globals) {
                     (*closure->module_globals)[name] = value;
+                    // Track the key so doReturn can refresh the caller's
+                    // stale globals copy cheaply (per-key, not full map).
+                    if (!frame_arena_.empty() && frame_count_ > 0) {
+                        auto &wf = frame_arena_[frame_count_ - 1];
+                        if (std::find(wf.written_globals.begin(),
+                                      wf.written_globals.end(), name) ==
+                            wf.written_globals.end()) {
+                            wf.written_globals.push_back(name);
+                        }
+                    }
                 }
             }
 
@@ -211,6 +221,16 @@ Value value = popStack();
             auto* closure = heap_.closure(cf_imut.closure_id);
             if (closure && closure->module_globals) {
                 (*closure->module_globals)[name] = value;
+                // Track the key so doReturn can refresh the caller's
+                // stale globals copy cheaply (per-key, not full map).
+                if (!frame_arena_.empty() && frame_count_ > 0) {
+                    auto &wf = frame_arena_[frame_count_ - 1];
+                    if (std::find(wf.written_globals.begin(),
+                                  wf.written_globals.end(), name) ==
+                        wf.written_globals.end()) {
+                        wf.written_globals.push_back(name);
+                    }
+                }
             }
         }
 

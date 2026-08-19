@@ -3590,6 +3590,42 @@ void VM::doReturn() {
   if (finished.owns_globals && !globals_stack_.empty()) {
     globals = std::move(globals_stack_.back());
     globals_stack_.pop_back();
+    // Refresh the caller's globals from the shared module map when caller
+    // and callee share the same module globals (same-module nested call).
+    // The callee's STORE_GLOBAL persisted writes to the shared map, but the
+    // caller's saved copy predates them; without this refresh module state
+    // like display._dpy/_initialized written by a nested same-module call
+    // would be lost when the caller's stale copy is restored. The original
+    // buggy ClosureId wrapper (owns_globals=true, no push) hid this by
+    // accidentally leaving globals on the working copy.
+    // Only keys the callee chain actually wrote are copied (tracked in
+    // written_globals), keeping the hot self-hosted parser path cheap.
+    if (frame_count_ > 0) {
+      uint32_t callerCid = frame_arena_[frame_count_ - 1].closure_id;
+      uint32_t calleeCid = finished.closure_id;
+      if (callerCid != 0 && calleeCid != 0) {
+        auto *cc = heap_.closure(callerCid);
+        auto *fc = heap_.closure(calleeCid);
+        if (cc && fc && cc->module_globals && fc->module_globals &&
+            cc->module_globals == fc->module_globals) {
+          auto &callerFrame = frame_arena_[frame_count_ - 1];
+          for (const auto &k : finished.written_globals) {
+            auto it = fc->module_globals->find(k);
+            if (it != fc->module_globals->end()) {
+              globals[k] = it->second;
+              // Propagate the key up so a chain A->B->C sees B's writes
+              // when A returns (A's own written_globals must include the
+              // keys its callees wrote).
+              if (std::find(callerFrame.written_globals.begin(),
+                            callerFrame.written_globals.end(), k) ==
+                  callerFrame.written_globals.end()) {
+                callerFrame.written_globals.push_back(k);
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),

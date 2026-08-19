@@ -1,0 +1,27 @@
+// Regression: goroutine calling window.active() must not crash.
+// Before the fix, the ClosureId module wrapper set owns_globals=true
+// without pushing to globals_stack_; the RET opcode popped a stale entry
+// and the goroutine's globals were corrupted, crashing with
+// "Undefined variable: '_atoms_cache'" on the first window.active() call.
+// Requires a display (X11) like the other window integration tests.
+use window
+use time
+
+go fn update() {
+	count = 0
+	loop {
+		w = window.active()
+		if w == null {
+			print("[FAIL] window.active() returned null")
+			exit(1)
+		}
+		count = count + 1
+		print("[goroutine] iteration $count ok")
+		if count >= 5 { exit(0) }
+		sleep(100)
+	}
+}
+
+sleep(5000)
+print("[FAIL] worker did not finish")
+exit(1)

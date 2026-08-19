@@ -4078,6 +4078,19 @@ Value VM::deepWrapModuleFunctions(
           size_t base = locals.size();
           locals.resize(base + callee->local_count, nullptr);
           uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
+          // IMPORTANT: owns_globals must be FALSE here. This wrapper saves
+          // globals into a local C++ variable (savedGlobals above) and
+          // restores it explicitly on return (line ~4193); it does NOT push
+          // onto globals_stack_. If owns_globals were true, the RET opcode
+          // inside the wrapped bytecode would pop a stale globals_stack_
+          // entry (one pushed by an ancestor caller), corrupting the
+          // goroutine's globals scope. This was the root cause of the
+          // "_atoms_cache undefined" crash when a goroutine called
+          // window.active() -> display.open() (a ClosureId-wrapped module
+          // function): each wrapped call leaked one globals_stack_ pop,
+          // eventually unwinding the goroutine's TCO-pushed ambient and
+          // restoring globals to a map lacking the protocols module's
+          // _atoms_cache, so the next LOAD_GLOBAL in _atom threw.
           if (frame_arena_.size() <= frame_count_) {
             CallFrame cf;
             cf.function = callee;
@@ -4086,7 +4099,7 @@ Value VM::deepWrapModuleFunctions(
             cf.locals_base = base;
             cf.closure_id = closureId;
             cf.stack_depth = frame_stack_depth;
-            cf.owns_globals = true;
+            cf.owns_globals = false;
             frame_arena_.push_back(std::move(cf));
           } else {
             frame_arena_[frame_count_].function = callee;
@@ -4095,7 +4108,7 @@ Value VM::deepWrapModuleFunctions(
             frame_arena_[frame_count_].locals_base = base;
             frame_arena_[frame_count_].closure_id = closureId;
             frame_arena_[frame_count_].stack_depth = frame_stack_depth;
-            frame_arena_[frame_count_].owns_globals = true;
+            frame_arena_[frame_count_].owns_globals = false;
           }
           frame_count_++;
 

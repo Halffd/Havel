@@ -50,9 +50,40 @@ inline std::vector<std::string> list_test_dirs(const std::string &scripts_root) 
 	};
 }
 
+// Read per-test timeout from file header.
+// Format: // smoke: timeout = <seconds>  (or // test: timeout = <seconds>)
+inline int read_test_timeout(const std::string &script_path) {
+	std::ifstream ifs(script_path);
+	if (!ifs) return 0;
+	std::string line;
+	int count = 0;
+	while (std::getline(ifs, line) && count < 20) {
+		count++;
+		// Look for // smoke: timeout = <n> or // test: timeout = <n>
+		if (line.rfind("// smoke: timeout =", 0) == 0 || line.rfind("// test: timeout =", 0) == 0) {
+			size_t eq = line.find('=');
+			if (eq != std::string::npos) {
+				std::string val = line.substr(eq + 1);
+				val.erase(0, val.find_first_not_of(" \t"));
+				val.erase(val.find_last_not_of(" \t") + 1);
+				try {
+					return std::stoi(val);
+				} catch (...) {}
+			}
+		}
+	}
+	return 0; // 0 means use default
+}
+
 inline ScriptResult run_script(const std::string &havel_bin, const std::string &script_path,
-                               int timeout_seconds = 180,
+                               int timeout_seconds = 60,
                                const std::vector<std::string> &pre_flags = {}) {
+    // Check for per-test timeout in file header (e.g., // smoke: timeout = 180)
+    int per_test_timeout = read_test_timeout(script_path);
+    if (per_test_timeout > 0) {
+        timeout_seconds = per_test_timeout;
+    }
+
     ScriptResult result;
     result.path = script_path;
     result.passed = false;
@@ -176,7 +207,7 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 
 inline int run_script_suite(const std::string &havel_bin, const std::vector<std::string> &directories, bool verbose = false,
                             const std::vector<std::string> &pre_flags = {},
-                            int timeout_seconds = 180) {
+                            int timeout_seconds = 60) {
     auto scripts = discover_scripts(directories);
     if (scripts.empty()) {
         std::cerr << "no .hv scripts found in specified directories" << std::endl;
@@ -218,7 +249,7 @@ inline int list_scripts(const std::vector<std::string> &directories) {
 inline int run_smoke_suite(const std::string &havel_bin, const std::string &smoke_dir,
                            bool verbose = false,
                            const std::vector<std::string> &pre_flags = {},
-                           int timeout_seconds = 180) {
+                           int timeout_seconds = 60) {
     auto scripts = discover_scripts({smoke_dir});
     if (scripts.empty()) {
         std::cerr << "no .hv smoke tests found in " << smoke_dir << std::endl;

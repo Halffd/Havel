@@ -1,5 +1,6 @@
 // test_collections.hv - Collections API Test
 // Tests: List (Array), Tuple, Object, Set, String
+// test: timeout = 180
 print("========== COLLECTIONS API TEST ==========")
 
 // ============================================================

@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(Havel VERSION 1.0.0 LANGUAGES C CXX)
+include(FindPkgConfig)
 
 # ==============================================================================
 # PLATFORM DETECTION (MUST RUN BEFORE ANY DEPENDENCY CHECKS)
@@ -134,15 +135,6 @@ find_package(OpenGL REQUIRED)
 
 # X11 stack - Linux/X11 only
 set(HAVE_X11 FALSE)
-set(X11_LIBRARIES "")
-set(X11_INCLUDE_DIR "")
-set(XI_LIBRARIES "")
-set(XI_INCLUDE_DIR "")
-set(XTEST_LIB "")
-set(XRANDR_LIB "")
-set(XINERAMA_LIB "")
-set(XCOMPOSITE_LIBRARIES "")
-set(XDAMAGE_LIBRARIES "")
 if(LINUX)
     find_package(X11 QUIET)
     if(X11_FOUND)
@@ -150,14 +142,13 @@ if(LINUX)
         add_definitions(-DHAVE_X11)
         message(STATUS "X11:             ✓ FOUND")
 
-        pkg_check_modules(XI QUIET xi)
-
-        find_library(XTEST_LIB Xtst QUIET)
-        find_library(XRANDR_LIB Xrandr QUIET)
-        find_library(XINERAMA_LIB Xinerama QUIET)
-        pkg_check_modules(XCOMPOSITE QUIET xcomposite)
-        pkg_check_modules(XDAMAGE QUIET xdamage)
-        pkg_check_modules(XKB QUIET xkbcommon)
+        find_library(XTEST_LIB Xtst)
+        find_library(XRANDR_LIB Xrandr)
+        find_library(XINERAMA_LIB Xinerama)
+        find_library(XI_LIBRARIES Xi)
+        find_library(XCOMPOSITE_LIBRARIES Xcomposite)
+        find_library(XDAMAGE_LIBRARIES Xdamage)
+        find_library(XKB_LIBRARIES xkbcommon)
     else()
         message(STATUS "X11:             ✗ NOT FOUND (will use headless/Windows paths)")
     endif()
@@ -311,10 +302,92 @@ endif()
 # Duplicate legacy checks removed; the variables above are the source of truth.
 
 # ==============================================================================
-# WAYLAND SUPPORT - REMOVED (not used)
+# WAYLAND SUPPORT
 # ==============================================================================
-message(STATUS "Wayland:        ✗ SKIPPED (not required)")
-set(GENERATED_PROTO_DIR "")
+pkg_check_modules(WAYLAND REQUIRED wayland-client wayland-protocols)
+pkg_check_modules(XKBCOMMON REQUIRED xkbcommon)
+find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+
+# Protocol generation setup
+set(PROTOCOLS_DIR /usr/share/wayland-protocols)
+set(GENERATED_PROTO_DIR ${CMAKE_BINARY_DIR}/generated/wayland)
+file(MAKE_DIRECTORY ${GENERATED_PROTO_DIR})
+
+# Helper function to generate Wayland protocol headers
+function(generate_wayland_protocol PROTO_NAME PROTO_XML)
+  set(PROTO_HEADER ${GENERATED_PROTO_DIR}/${PROTO_NAME}-client-protocol.h)
+  set(PROTO_CODE ${GENERATED_PROTO_DIR}/${PROTO_NAME}-protocol.c)
+  add_custom_command(
+    OUTPUT ${PROTO_HEADER} ${PROTO_CODE}
+    COMMAND ${WAYLAND_SCANNER} client-header ${PROTO_XML} ${PROTO_HEADER}
+    COMMAND ${WAYLAND_SCANNER} private-code ${PROTO_XML} ${PROTO_CODE}
+    DEPENDS ${PROTO_XML}
+    COMMENT "Generating ${PROTO_NAME} protocol headers"
+  )
+  set(PROTO_SOURCES ${PROTO_HEADER} ${PROTO_CODE} PARENT_SCOPE)
+endfunction()
+
+# Gamma control protocol (in-tree, wlroots)
+set(GAMMA_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-gamma-control-unstable-v1.xml)
+generate_wayland_protocol(wlr-gamma-control-unstable-v1 ${GAMMA_XML})
+
+# XDG output protocol (system)
+set(XDG_XML ${PROTOCOLS_DIR}/unstable/xdg-output/xdg-output-unstable-v1.xml)
+generate_wayland_protocol(xdg-output-unstable-v1 ${XDG_XML})
+
+# Virtual keyboard protocol (in-tree, wlroots)
+set(VKB_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/virtual-keyboard-unstable-v1.xml)
+generate_wayland_protocol(virtual-keyboard-unstable-v1 ${VKB_XML})
+
+# Virtual pointer protocol (in-tree, wlroots)
+set(VPTR_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-virtual-pointer-unstable-v1.xml)
+generate_wayland_protocol(wlr-virtual-pointer-unstable-v1 ${VPTR_XML})
+
+# Foreign toplevel management protocol (in-tree, wlroots)
+set(FTL_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-foreign-toplevel-management-unstable-v1.xml)
+generate_wayland_protocol(wlr-foreign-toplevel-management-unstable-v1 ${FTL_XML})
+
+# WLR data control protocol (in-tree, wlroots)
+set(WDC_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-data-control-unstable-v1.xml)
+generate_wayland_protocol(wlr-data-control-unstable-v1 ${WDC_XML})
+
+# ext-data-control protocol (system, staging standard)
+set(EDC_XML ${PROTOCOLS_DIR}/staging/ext-data-control/ext-data-control-v1.xml)
+if(EXISTS ${EDC_XML})
+  generate_wayland_protocol(ext-data-control-v1 ${EDC_XML})
+  set(HAS_EXT_DATA_CONTROL TRUE)
+else()
+  set(HAS_EXT_DATA_CONTROL FALSE)
+  message(STATUS "ext-data-control-v1 not found in system protocols, using wlr-data-control fallback")
+endif()
+
+# Create wayland protocols library
+set(ALL_PROTO_SOURCES
+  ${PROTO_SOURCES}
+  ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/virtual-keyboard-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/virtual-keyboard-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/wlr-virtual-pointer-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/wlr-virtual-pointer-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/wlr-foreign-toplevel-management-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/wlr-foreign-toplevel-management-unstable-v1-protocol.c
+  ${GENERATED_PROTO_DIR}/wlr-data-control-unstable-v1-client-protocol.h
+  ${GENERATED_PROTO_DIR}/wlr-data-control-unstable-v1-protocol.c
+)
+if(HAS_EXT_DATA_CONTROL)
+  list(APPEND ALL_PROTO_SOURCES
+    ${GENERATED_PROTO_DIR}/ext-data-control-v1-client-protocol.h
+    ${GENERATED_PROTO_DIR}/ext-data-control-v1-protocol.c
+  )
+endif()
+
+add_library(wayland-protos STATIC ${ALL_PROTO_SOURCES})
+target_include_directories(wayland-protos PUBLIC ${GENERATED_PROTO_DIR})
+target_link_libraries(wayland-protos PUBLIC ${WAYLAND_LIBRARIES} ${XKBCOMMON_LIBRARIES})
+target_include_directories(wayland-protos PUBLIC ${XKBCOMMON_INCLUDE_DIRS})
 
 # Audio: PulseAudio removed; ALSA (optional Linux-only)
 set(PULSEAUDIO_FOUND FALSE)
@@ -483,15 +556,8 @@ file(GLOB_RECURSE CORE_SOURCES
 # Exclude daemon/client from core library (they are separate executables)
 list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelDaemon.*\\.cpp")
 list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelClient.*\\.cpp")
-list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelDaemonMain.*\\.cpp")
-# Exclude Wayland-dependent sources (Wayland removed, not used)
-list(FILTER CORE_SOURCES EXCLUDE REGEX ".*src/core/wayland/.*\\.cpp")
-list(FILTER CORE_SOURCES EXCLUDE REGEX ".*WaylandAdapter.*\\.cpp")
-list(FILTER CORE_SOURCES EXCLUDE REGEX ".*WaylandIOBackend.*\\.cpp")
-list(FILTER CORE_SOURCES EXCLUDE REGEX ".*DisplayManager.*\\.cpp")
-# Exclude D-Bus dependent MediaService (D-Bus removed, not used)
-list(FILTER CORE_SOURCES EXCLUDE REGEX ".*MediaService.*\\.cpp")
-# Non-Qt host sources (always built)
+ list(FILTER CORE_SOURCES EXCLUDE REGEX ".*HavelDaemonMain.*\\.cpp")
+ # Non-Qt host sources (always built)
 file(GLOB_RECURSE _HOST_CORE_SOURCES
   "src/host/app/*.cpp"
   "src/host/automation/AutomationService.cpp"
@@ -853,19 +919,22 @@ ${PCRE2_16_LIBRARIES}
 if(LINUX)
     list(APPEND COMMON_LIBS
         ${X11_LIBRARIES}
-        ${XI_LIBRARIES}
-        ${XTEST_LIB}
-        ${XCOMPOSITE_LIBRARIES}
-        ${XDAMAGE_LIBRARIES}
-        ${XKB_LIBRARIES}
+        /usr/lib/libXi.so
+        /usr/lib/libXtst.so
+        /usr/lib/libXrandr.so
+        /usr/lib/libXcomposite.so
+        /usr/lib/libXdamage.so
+        /usr/lib/libxkbcommon.so
     )
-    find_library(XFIXES_LIB Xfixes QUIET)
-    if(XFIXES_LIB)
-        list(APPEND COMMON_LIBS ${XFIXES_LIB})
+find_library(XFIXES_LIB Xfixes QUIET)
+        if(XFIXES_LIB)
+            list(APPEND COMMON_LIBS ${XFIXES_LIB})
+        endif()
     endif()
-endif()
-list(APPEND COMMON_LIBS
+    list(APPEND COMMON_LIBS
     OpenGL::GL
+    ${WAYLAND_LIBRARIES}
+    ${DBUS_LIBRARIES}
     ${PIPEWIRE_LIBRARIES}
     ${ALSA_LIBRARIES}
     Threads::Threads
@@ -1292,7 +1361,7 @@ add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
 else()
 add_library(havel_modules INTERFACE)
 endif()
-target_link_libraries(havel_core PUBLIC fmt::fmt)
+target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos)
 target_include_directories(havel_core
     PUBLIC
         ${CMAKE_SOURCE_DIR}/src/include

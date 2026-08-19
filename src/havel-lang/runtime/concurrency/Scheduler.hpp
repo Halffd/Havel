@@ -97,6 +97,7 @@ enum class AwaitableType : uint8_t {
 
 // WaitHandle - unified suspension context for a goroutine
 // Replaces ad-hoc waiting_for_thread/waiting_for_channel/resume_at_time fields
+// State machine: NONE -> (SLEEP|THREAD_JOIN|CHANNEL_RECV|CHANNEL_SEND|TIMER_WAIT|COROUTINE|EXTERNAL) -> NONE
 struct WaitHandle {
     AwaitableType type = AwaitableType::NONE;
     uint32_t target_id = 0;  // thread_id, channel_id, interval_id, timeout_id, coroutine_id
@@ -108,6 +109,56 @@ struct WaitHandle {
         target_id = 0;
         resume_value = Value::makeNull();
         deadline = {};
+    }
+
+    // State machine transitions
+    bool is_waiting() const { return type != AwaitableType::NONE; }
+    
+    void set_sleep(uint32_t timer_id, std::chrono::steady_clock::time_point dl) {
+        type = AwaitableType::SLEEP;
+        target_id = timer_id;
+        deadline = dl;
+    }
+    
+    void set_thread_join(uint32_t thread_id) {
+        type = AwaitableType::THREAD_JOIN;
+        target_id = thread_id;
+    }
+    
+    void set_channel_recv(uint32_t channel_id) {
+        type = AwaitableType::CHANNEL_RECV;
+        target_id = channel_id;
+        resume_value = Value::makeNull(); // placeholder, replaced on resume
+    }
+    
+    void set_channel_send(uint32_t channel_id) {
+        type = AwaitableType::CHANNEL_SEND;
+        target_id = channel_id;
+    }
+    
+    void set_timer_wait(uint32_t timer_id) {
+        type = AwaitableType::TIMER_WAIT;
+        target_id = timer_id;
+    }
+    
+    void set_coroutine_wait(uint32_t coro_id) {
+        type = AwaitableType::COROUTINE;
+        target_id = coro_id;
+    }
+    
+    void set_external(uint32_t id) {
+        type = AwaitableType::EXTERNAL;
+        target_id = id;
+    }
+    
+    void set_resume_value(Value v) {
+        resume_value = std::move(v);
+    }
+    
+    Value take_resume_value() {
+        Value v = std::move(resume_value);
+        resume_value = Value::makeNull();
+        return v;
     }
 };
 

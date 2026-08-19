@@ -194,9 +194,8 @@ void Havel::initialize(bool isStartup) {
 
         // Set search paths BEFORE modules_->install() so eager plugin
         // registration (registerBitModule → vm.loadModule("bit/bit"))
-        // can resolve sidecar .hv/.hvc files. Without these paths,
-        // every sidecar module either compiles from source (ignoring
-        // pre-compiled .hvc caches) or silently fails to load at all.
+        // can resolve sidecar .hv files. Bytecode caches live only in
+        // ~/.cache/havel; these paths are for source resolution.
 {
     std::string stdlibPath;
     const char* envStdlib = std::getenv("HAVEL_STDLIB");
@@ -216,20 +215,31 @@ void Havel::initialize(bool isStartup) {
     {
         auto exePath = Env::executable();
         if (!exePath.empty()) {
-            auto modulesPath = std::filesystem::path(exePath).parent_path()
-                / ".." / "modules";
+            auto modulesPath = std::filesystem::path(exePath).parent_path().parent_path()
+                / "modules";
             if (std::filesystem::exists(modulesPath)) {
-                // Only add source directory search paths if self-hosted modules are NOT enabled
-                // When self-hosted modules are enabled, the out/modules paths take priority
-                if (bytecodeVM->vmConfig().self_hosted_modules_path.empty()) {
-                    auto canonicalRoot = std::filesystem::canonical(modulesPath).string();
-                    bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/lang");
-                    bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/std");
-                    bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/app");
-                    bytecodeVM->moduleLoader().addSearchPath(canonicalRoot);
+                // Add source directory search paths for hierarchical module resolution
+                // These are needed for both self-hosted and native module resolution
+                auto canonicalRoot = std::filesystem::canonical(modulesPath).string();
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/lang");
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/std");
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot + "/app");
+                bytecodeVM->moduleLoader().addSearchPath(canonicalRoot);
+
+                // Also add scripts directory as a search path for user scripts
+                auto scriptsPath = std::filesystem::path(modulesPath).parent_path() / "scripts";
+                if (std::filesystem::exists(scriptsPath)) {
+                    auto canonicalScripts = std::filesystem::canonical(scriptsPath).string();
+                    bytecodeVM->moduleLoader().addSearchPath(canonicalScripts);
                 }
 
                 // Add module .so paths for havel_mod_<name>.so discovery
+                // Try sibling modules/ first (build-debug/modules/) then ../modules/
+                auto siblingModulesDir = std::filesystem::path(exePath).parent_path() / "modules";
+                if (std::filesystem::exists(siblingModulesDir)) {
+                    bytecodeVM->moduleLoader().addModuleSoPath(
+                        std::filesystem::canonical(siblingModulesDir).string());
+                }
                 auto modulesDir = std::filesystem::path(exePath).parent_path() / ".." / "modules";
                 if (std::filesystem::exists(modulesDir)) {
                     bytecodeVM->moduleLoader().addModuleSoPath(

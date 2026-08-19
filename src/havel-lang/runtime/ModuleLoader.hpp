@@ -23,15 +23,12 @@ using HostModuleFn = std::function<void(Environment &, std::shared_ptr<IHostAPI>
 
 class ModuleLoader {
 public:
-    std::string self_hosted_modules_path_ = "";
-
-    void setSelfHostedPath(const std::string& path) { self_hosted_modules_path_ = path; }
 
     // --- Resolved module info ---
     struct ResolvedModule {
         enum Type {
             Cached,           // Already in module cache
-            BytecodeCache,    // .hbc file in __cache__/
+            BytecodeCache,    // .hvc file in ~/.cache/havel
             StdlibSource,     // .hv file in stdlib/
             PackageSource,    // .hv file in ~/.havel/packages/
             UserSource,       // .hv file in user search paths
@@ -97,6 +94,22 @@ public:
                              const std::string &sourcePath, const std::string &bytecodePath);
     void clearCache();
     void invalidate(const std::string& key);
+
+    // Resolve a module path to its canonical form for consistent caching.
+    // Returns empty string if the module cannot be resolved.
+    std::string canonicalizePath(const std::string& modulePath, const std::string& scriptDir) const;
+
+    // Compute SHA-256 hash of a file (for persistent cache index)
+    static std::string sha256FileHex(const std::string& path);
+
+    // Deterministic flat cache filename for a compiled source file:
+    //   lang.<stem>.hvc / std.<stem>.hvc for bundled modules,
+    //   <stem>.<8-hex-path-hash>.hvc for user modules (avoids collisions
+    //   between same-stem files in different directories).
+    // `canonicalSourcePath` must be an absolute canonical path.
+    static std::string cacheFileNameForSource(const std::string& canonicalSourcePath);
+
+    static std::string getCacheDir();
     std::vector<core::Value> cachedValues() const;
 
     // ========================================================================
@@ -143,6 +156,19 @@ private:
       long long mtime_ns = 0;
   };
   mutable std::unordered_map<std::string, CacheFreshness> freshness_;
+
+  // Persistent bytecode cache index: module name -> source hash (SHA-256 hex)
+  // Allows quick hash validation without loading .hvc file
+  mutable std::unordered_map<std::string, std::string> bytecode_hash_index_;
+  mutable std::string bytecode_hash_index_path_;
+  mutable bool hash_index_loaded_ = false;
+
+public:
+  void updateHashIndex(const std::string& moduleName, const std::string& hash);
+
+private:
+  void loadHashIndex() const;
+  void saveHashIndex() const;
 
   // True iff the source/.hvc on disk matches the recorded freshness hint.
   // If false, the entry must be invalidated before returning Cached.

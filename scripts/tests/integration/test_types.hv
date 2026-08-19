@@ -10,7 +10,7 @@ print("p1.x after p2.x = 30: " + str(Struct.get(p1, "x")))  // Should be 10 (not
 print("p2.x after p2.x = 30: " + str(Struct.get(p2, "x")))  // Should be 30
 
 // Test 2: Class reference type semantics - shared identity
-let Window = Class.define("Window", ["x", "y"])
+let Window = Class.define("Window", ["x", "y"], null, {})
 let w1 = Class.new(Window, 100, 200)
 let w2 = w1  // Should reference the same object
 Class.set(w2, "x", 300)

@@ -1,7 +1,10 @@
 #include "KeyMap.hpp"
 #include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
+#include "havel_platform.h"
+#if HAVEL_PLATFORM_LINUX && defined(HAVE_X11)
 #include <X11/XF86keysym.h>
+#endif
 #include <algorithm>
 
 // This file contains all the key mapping data extracted from IO.cpp

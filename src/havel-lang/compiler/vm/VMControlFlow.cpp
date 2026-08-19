@@ -277,6 +277,25 @@ Value callee_value = popStack();
     break;
   }
 
+  case OpCode::CALL_IF_FUNCTION: {
+    // Auto-call: if top of stack is callable, call it with 0 args.
+    // Otherwise, leave the value on stack (no-op).
+    // Used for: bare identifier as statement (newline) or pipe left operand (title |> print).
+    if (stack.empty()) {
+      COMPILER_THROW("CALL_IF_FUNCTION: stack underflow");
+    }
+    Value callee_value = stack.top();
+    if (callee_value.isHostFuncId() ||
+        callee_value.isFunctionObjId() ||
+        callee_value.isClosureId() ||
+        callee_value.isBoundMethodId()) {
+      stack.pop();
+      doCall(callee_value, {});
+    }
+    // Not callable: leave value on stack (no-op)
+    break;
+  }
+
 case OpCode::CALL_METHOD: {
     // Dispatches based on receiver type without boxing.
     if (instruction.operands.size() != 2 ||
@@ -669,15 +688,18 @@ if (instanceObj) {
         doCall(vm_func, all_args);
     }
 
-    // Check for suspension after host function call (e.g., channel.receive suspending)
+    // Check for suspension after host function call (e.g., channel.receive suspending).
+    // NOTE: do NOT advance the frame IP here. Every caller of executeInstruction
+    // already advances past the current instruction when the frame IP is still
+    // pointing at it:
+    //   - fast path op_default pre-advances frm.ip before calling executeInstruction,
+    //     so an advance here double-advances (37 -> 38 -> 39) and the suspended
+    //     fiber resumes at the WRONG instruction with a mismatched stack
+    //     (observed: "Stack underflow in function '__main__' at IP 41").
+    //   - slow path runDispatchLoop and executeOneStep advance conditionally
+    //     (frame.ip == saved_ip) in their suspension handling, which covers
+    //     this instruction too.
     if (suspension_requested_) {
-        // Advance IP past CALL_METHOD so we can resume correctly
-        if (frame_count_ > 0) {
-            auto& f = frame_arena_[frame_count_ - 1];
-            if (f.ip < f.function->instructions.size()) {
-                f.ip++;
-            }
-        }
         break; // Return to caller to process suspension
     }
     break;

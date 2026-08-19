@@ -2,11 +2,19 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <linux/input-event-codes.h>
-#include <X11/keysym.h>
-#include <X11/X.h>
+#include "havel_platform.h"
 
-#ifdef WINDOWS
+#if HAVEL_PLATFORM_LINUX
+#  include <linux/input-event-codes.h>
+#  if defined(HAVE_X11)
+#    include <X11/keysym.h>
+#    include <X11/X.h>
+#  endif
+#else
+typedef unsigned long KeySym;
+#endif
+
+#if HAVEL_PLATFORM_WINDOWS
 #include <windows.h>
 #endif
 

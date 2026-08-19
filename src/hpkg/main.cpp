@@ -163,8 +163,7 @@ static int cmd_init(const std::vector<std::string>& args) {
     fs::path gitignore = cwd / ".gitignore";
     if (!fs::exists(gitignore)) {
         std::ofstream f(gitignore);
-        f << "__cache__/\n";
-        f << "*.hbc\n";
+        f << "*.hvc\n";
         std::cout << "created .gitignore" << std::endl;
     }
 

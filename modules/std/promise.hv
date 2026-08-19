@@ -1,0 +1,36 @@
+class Promise {
+  state = "pending"
+  value = null
+  callbacks = []
+
+  fn init(resolver) {
+    resolver(fn(v) { @resolve(v) }, fn(e) { @reject(e) })
+  }
+
+  fn _resolve(val) {
+    if @state != "pending" { return }
+    @state = "fulfilled"
+    @value = val
+    for cb in @callbacks { cb.onFulfilled(val) }
+    @callbacks = []
+  }
+
+  fn _reject(err) {
+    if @state != "pending" { return }
+    @state = "rejected"
+    @value = err
+    for cb in @callbacks { cb.onRejected(err) }
+    @callbacks = []
+  }
+
+  fn then(onFulfilled, onRejected) {
+    @callbacks.push({ onFulfilled: onFulfilled, onRejected: onRejected })
+    return @
+  }
+
+  fn _catch(onRejected) {
+    return @then(null, onRejected)
+  }
+}
+
+Promise

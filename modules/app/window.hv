@@ -798,6 +798,14 @@ fn _allWindows() {
 // ============================================================
 
 fn _snapshot(_w) {
+	{
+		id: _w.id,
+		title: _w.title(),
+		class: _w.className(),
+		pid: _w.pid(),
+		exe: _w.exe(),
+		cmdline: _w.cmdline(),
+=======
 	_t0 = _tstart()
 	_t_title = _tstart()
 	_title = _w.title()
@@ -822,6 +830,7 @@ fn _snapshot(_w) {
 		pid: _pid,
 		exe: _exe,
 		cmdline: _cmd,
+>>>>>>> havel-2
 		close: fn() { _w.close() },
 		hide: fn() { _w.hide() },
 		show: fn() { _w.show() },
@@ -873,8 +882,17 @@ fn activeId() {
 		_tend("activeId.total", _t0)
 		return _info.focus
 	}
+	0
+}
+
+fn active() {
+	_aid = activeId()
+	if _aid == 0 { return null }
+	_snapshot(Window(_aid))
+=======
 	_tend("activeId.total", _t0)
  	0
+>>>>>>> havel-2
 }
 
 fn list() {

@@ -314,6 +314,7 @@ WAITGROUP_WAIT, // WaitGroup.wait(): block until counter == 0
     FORMAT_HEX, FORMAT_UNHEX,
     FORMAT_BASE64_ENCODE, FORMAT_BASE64_DECODE,
 
+    CALL_IF_FUNCTION, // Call if value is callable (auto-call bare functions in statement/pipe)
     NOP
 };
 

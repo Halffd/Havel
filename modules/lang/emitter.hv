@@ -679,9 +679,9 @@ return
 					bc.emit("LOAD_GLOBAL", bc.str_id(sid))
 					nameSid = globalIdx(emitter, callee.obj.name)
 					bc.emit("LOAD_GLOBAL", bc.str_id(nameSid))
-					for arg in node.args {
-						emitExpr(emitter, arg)
-					}
+			for arg in node.args {
+				emitExpr(emitter, arg)
+			}
 			if hasKwargs {
 				emitKwargsObject(emitter, node.kwargs)
 				bc.emit("CALL", savedArgc + 2)
@@ -751,9 +751,9 @@ return
 		}
 		emitter.inTailPosition = false
 		emitExpr(emitter, callee)
-		for arg in node.args {
-			emitExpr(emitter, arg)
-		}
+			for arg in node.args {
+				emitExpr(emitter, arg)
+			}
 		if hasKwargs {
 			emitKwargsObject(emitter, node.kwargs)
 			savedArgc = savedArgc + 1
@@ -1379,6 +1379,10 @@ return
     // Parser stores as nested: ((expr | stage1) | stage2)
     // Compile left, then pipe right using pipe temp slot
     emitExpr(emitter, node.left)
+    // Auto-call: bare identifier as pipe left operand (e.g., `title |> print`) calls zero-arg function
+    if node.left.kind == "Identifier" {
+      bc.emit("CALL_IF_FUNCTION")
+    }
     pipeSlot = scopeDeclare(emitter.scope, "__pipe__")
     bc.emit("STORE_VAR", pipeSlot)
     right = node.right
@@ -1963,6 +1967,10 @@ bc.emit("OBJECT_GET")
 			return
 		}
 		emitExpr(emitter, node.expr)
+		// Auto-call: bare identifier as statement (e.g., `newline`) calls zero-arg function
+		if node.expr.kind == "Identifier" {
+			bc.emit("CALL_IF_FUNCTION")
+		}
 		isYield = node.expr.kind == "YieldExpression"
 		if !emitter.inTailPosition && !isYield {
 			bc.emit("POP")

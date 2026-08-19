@@ -1,6 +1,8 @@
 #ifndef MEDIACONTROL_H
 #define MEDIACONTROL_H
 
+#ifdef HAVE_DBUS
+
 #include <dbus/dbus.h>
 #include <string>
 #include <vector>
@@ -344,5 +346,7 @@ public:
         return active_player;
     }
 };
+
+#endif // HAVE_DBUS
 
 #endif //MEDIACONTROL_H

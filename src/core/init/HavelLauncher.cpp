@@ -1975,17 +1975,27 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           cacheIn.seekg(0, std::ios::beg);
           std::vector<uint8_t> buffer(static_cast<size_t>(size));
           if (cacheIn.read(reinterpret_cast<char *>(buffer.data()), size)) {
-            std::ofstream outFile(outputPath, std::ios::binary);
-            if (outFile.is_open()) {
-              outFile.write(reinterpret_cast<const char *>(buffer.data()),
-                            buffer.size());
-              if (outFile.good()) {
-                info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
-                info("Build successful: {} ({} bytes)", outputPath,
-                     buffer.size());
-                return 0;
+            // Only write if output path differs from cache path.
+            // If outputPath == cachePath, the cache file already contains
+            // the correct data - don't rewrite it (avoids mtime update).
+            if (outputPath != cachePath) {
+              std::ofstream outFile(outputPath, std::ios::binary);
+              if (outFile.is_open()) {
+                outFile.write(reinterpret_cast<const char *>(buffer.data()),
+                              buffer.size());
+                if (!outFile.good()) {
+                  error("Failed to write output file: {}", outputPath);
+                  return 1;
+                }
+                outFile.close();
+              } else {
+                error("Cannot open output file: {}", outputPath);
+                return 1;
               }
             }
+            info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
+            info("Build successful: {} ({} bytes)", outputPath, buffer.size());
+            return 0;
           }
         }
       }

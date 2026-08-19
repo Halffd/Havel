@@ -24,6 +24,18 @@
 #include "c/ToolkitPlugin.h"
 #include "c/LoggerC.h"
 
+#if defined(_WIN32) || defined(__CYGWIN__) || defined(__MINGW32__)
+#define HAVEL_WINDOWS_BUILD 1
+#include <windows.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits.h>
+#include <errno.h>
+#include <direct.h>
+#define HAVE_STRUCT_TIMESPEC
+#else
+#define HAVEL_POSIX_BUILD 1
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +45,7 @@
 #include <dirent.h>
 #include <limits.h>
 #include <errno.h>
+#endif
 
 #define MAX_SEARCH_PATHS 64
 #define MAX_LOADED 128

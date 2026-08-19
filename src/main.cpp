@@ -3,15 +3,19 @@
 #include "utils/Logger.hpp"
 #include "utils/StartupTiming.hpp"
 #include "core/config/ConfigManager.hpp"
+#include "havel_platform.h"
 #include <iostream>
 #include <string>
 #include <filesystem>
+
+#if HAVEL_PLATFORM_LINUX && defined(HAVE_X11)
 #include <X11/Xlib.h>
+#endif
 
 namespace fs = std::filesystem;
 
 int main(int argc, char* argv[]) {
-#ifdef __linux__
+#if HAVEL_PLATFORM_LINUX && defined(HAVE_X11)
     XInitThreads();
 #endif
     auto t0 = havel::startup_now();

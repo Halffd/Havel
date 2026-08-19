@@ -25,7 +25,10 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "havel_platform.h"
+#if !HAVEL_PLATFORM_WINDOWS
 #include <dlfcn.h>
+#endif
 
 namespace havel {
 

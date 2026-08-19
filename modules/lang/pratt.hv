@@ -244,6 +244,13 @@ fn isDotAccessIdent(ttype) {
   getKeywordIdents()[ttype] != null or getDotAccessKeywords()[ttype] != null
 }
 
+// Operator method syntax: a.+(b), a.[](i), a.[]=(i, v), a.#, etc.
+// Mirrors the C++ parser's isOpToken list (BootstrapParser.cpp).
+fn isOperatorMethodToken(ttype) {
+  if ttype == null { return false }
+  ttype == TID.Plus || ttype == TID.Minus || ttype == TID.Multiply || ttype == TID.Divide || ttype == TID.Modulo || ttype == TID.Power || ttype == TID.Equals || ttype == TID.NotEquals || ttype == TID.Less || ttype == TID.Greater || ttype == TID.LessEquals || ttype == TID.GreaterEquals || ttype == TID.And || ttype == TID.Or || ttype == TID.Not || ttype == TID.Tilde || ttype == TID.Length || ttype == TID.Pipe || ttype == TID.PlusAssign || ttype == TID.MinusAssign || ttype == TID.MultiplyAssign || ttype == TID.DivideAssign || ttype == TID.ModuloAssign || ttype == TID.PowerAssign || ttype == TID.BitwiseAndAssign || ttype == TID.BitwiseOrAssign || ttype == TID.BitwiseXorAssign || ttype == TID.ShiftLeftAssign || ttype == TID.ShiftRightAssign || ttype == TID.OpenBracket || ttype == TID.Backslash || ttype == TID.DoubleBackslash || ttype == TID.DoubleModulo || ttype == TID.BackslashAssign || ttype == TID.DoubleModuloAssign || ttype == TID.Is || ttype == TID.Matches
+}
+
 // --- Token types that are infix/postfix operators (have led) ---
 LED_TOKENS = null
 fn getLEDTokens() {
@@ -1053,9 +1060,22 @@ if current().tid == TID.Identifier or isDotAccessIdent(current().tid) {
 prop = advance()
 return MemberExpression(left, prop.value, l, c)
 }
-else {
-return error("Expected identifier after '.'", l, c)
+// Operator method syntax: a.+(b), a.[](i), a.[]=(i, v)
+// Mirrors the C++ parser (BootstrapParser.cpp TokenType::Dot).
+if isOperatorMethodToken(current().tid) {
+sym = advance().value
+// []= needs special handling: after [, check for ] then =
+if sym == "[" && current().tid == TID.CloseBracket {
+advance()
+sym = "[]"
+if current().tid == TID.Assign {
+advance()
+sym = "[]="
 }
+}
+return MemberExpression(left, sym, l, c)
+}
+return error("Expected identifier after '.'", l, c)
 }
 // Optional chaining: expr?.field
 else if tt == TID.QuestionDot {

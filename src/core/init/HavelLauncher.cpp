@@ -1300,8 +1300,29 @@ int HavelLauncher::run(int argc, char *argv[]) {
         return 1;
       }
     } else if (!cfg.noSelfHosted && cfg.vmConfig.self_hosted_modules_path.empty()) {
-      error("Self-hosted modules path not configured");
-      return 1;
+      // Try to derive self-hosted path from binary location: binary/../out
+      namespace fs = std::filesystem;
+      auto exePath = Env::executable();
+      if (!exePath.empty()) {
+        fs::path candidate = fs::path(exePath).parent_path().parent_path() / "out";
+        if (fs::exists(candidate / "modules" / "lang")) {
+          cfg.vmConfig.self_hosted_modules_path = candidate.string();
+          fs::path langDir = candidate / "modules" / "lang";
+          if (!fs::is_empty(langDir)) {
+            if (cfg.mode == LaunchConfig::Mode::REPL ||
+                cfg.mode == LaunchConfig::Mode::SCRIPT ||
+                cfg.mode == LaunchConfig::Mode::SCRIPT_ONLY ||
+                cfg.mode == LaunchConfig::Mode::SCRIPT_AND_REPL ||
+                cfg.mode == LaunchConfig::Mode::TEST) {
+              cfg.launchMode = cfg.mode;
+              cfg.mode = LaunchConfig::Mode::SELF_HOSTED;
+              cfg.minimalMode = true;
+              cfg.pureStdlib = true;
+            }
+          }
+        }
+        // If not found, fall through to --no-self-hosted behaviour silently
+      }
     }
 
     if (!cfg.diffPipelinePath.empty()) {
@@ -1900,34 +1921,33 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     return 1;
   }
 
+  // Compute cache path for a module. Uses the same flat-namespace naming as
+  // ModuleLoader::cacheFileNameForSource (lang.<stem>.hvc / std.<stem>.hvc /
+  // <stem>.<path-hash>.hvc) derived from the canonical SOURCE path, so the
+  // resolver finds exactly what was written here.
   const auto companionCachePath = [](const std::string &path) {
     if (path.empty()) {
       return std::string{};
     }
-    const auto dot = path.find_last_of('.');
-    std::string base = dot == std::string::npos ? path : path.substr(0, dot);
-    // Extract filename only
-    const auto slash = base.find_last_of("/\\");
-    std::string filename = slash == std::string::npos ? base : base.substr(slash + 1);
-    // Store in ~/.cache/havel/
-    std::string cacheDir = havel::Env::cache() + "/havel";
     std::error_code ec;
+    std::string canonical = std::filesystem::canonical(path, ec).string();
+    if (ec) {
+      canonical = path;
+    }
+    std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(canonical);
+
+    std::string cacheDir = havel::Env::cache() + "/havel";
     std::filesystem::create_directories(cacheDir, ec);
-    return cacheDir + "/" + filename + ".hbc";
+    return cacheDir + "/" + cacheName + ".hvc";
   };
 
-  // Determine output path
+  // Determine output path. Bytecode caches live only in ~/.cache/havel; the
+  // default output for `--build FILE` is the flat cache path derived from the
+  // canonical source path (same name the resolver looks up).
   std::string outputPath = cfg.outputPath;
   if (outputPath.empty()) {
-    // Default: replace .hv with .hvc
-    if (!primaryFile.empty()) {
-      outputPath = primaryFile;
-      size_t dotPos = outputPath.rfind('.');
-      if (dotPos != std::string::npos) {
-        outputPath.erase(dotPos);
-      }
-      outputPath += ".hvc";
-    } else {
+    outputPath = companionCachePath(primaryFile);
+    if (outputPath.empty()) {
       outputPath = "output.hvc";
     }
   }
@@ -1935,7 +1955,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
   info("Building: {} -> {}", primaryFile.empty() ? "input" : primaryFile,
        outputPath);
 
-  const std::string cachePath = companionCachePath(outputPath);
+  const std::string cachePath = companionCachePath(primaryFile);
   if (!isBytecode && !primaryFile.empty() && !cachePath.empty()) {
     std::error_code cacheEc;
     std::error_code sourceEc;
@@ -2595,6 +2615,9 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         return;
       }
       std::string cachePath = companionCachePath(path);
+      if (cachePath == outputPath) {
+        return; // already written as the build output
+      }
       std::ofstream cacheOut(cachePath, std::ios::binary);
       if (!cacheOut.is_open()) {
         warn("Cannot open bytecode cache file: {}", cachePath);
@@ -2609,7 +2632,7 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
       info("Bytecode cache written to: {}", cachePath);
     };
 
-    writeCompanionCache(outputPath);
+    writeCompanionCache(primaryFile);
 
     info("Build successful: {} ({} bytes)", outputPath, data.size());
     return 0;
@@ -2637,7 +2660,7 @@ int HavelLauncher::diffPipeline(const havel::init::LaunchConfig &cfg) {
       if (!entry.is_regular_file())
         continue;
       auto ext = entry.path().extension().string();
-      if (ext != ".hvc" && ext != ".hbc")
+      if (ext != ".hvc")
         continue;
       auto rel = fs::relative(entry.path(), dir).string();
       std::ifstream f(entry.path(), std::ios::binary);

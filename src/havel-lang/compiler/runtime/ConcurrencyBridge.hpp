@@ -165,9 +165,6 @@ Value intervalStop(const std::vector<Value> &args);
 Value intervalPause(const std::vector<Value> &args);
 Value intervalResume(const std::vector<Value> &args);
 
-Value timeoutStart(const std::vector<Value> &args);
-Value timeoutCancel(const std::vector<Value> &args);
-
   Value channelNew(const std::vector<Value> &args);
   Value channelSend(const std::vector<Value> &args);
   Value channelReceive(const std::vector<Value> &args);

@@ -112,16 +112,8 @@ return intervalResume(args);
 options.host_functions["interval.resume"] = options.host_functions["interval_resume"];
 
 // Timeout operations (snake_case + dot aliases)
-  options.host_functions["timeout_start"] = [this](const std::vector<Value> &args) {
-    return timeoutStart(args);
-  };
-  options.host_functions["timeout.start"] = options.host_functions["timeout_start"];
-
-options.host_functions["timeout_cancel"] = [this](const std::vector<Value> &args) {
-return timeoutCancel(args);
-};
-options.host_functions["timeout.cancel"] = options.host_functions["timeout_cancel"];
-options.host_functions["timeout.stop"] = options.host_functions["timeout_cancel"];
+  // Timeout functions are provided by VMHostFunctions (timeout, timeout.start, timeout.cancel)
+  // with proper GC pinning. ConcurrencyBridge does not register duplicates.
 
   // Channel operations (snake_case + dot aliases)
   options.host_functions["channel_new"] = [this](const std::vector<Value> &args) {
@@ -336,50 +328,6 @@ intervalObj->resume();
 return Value::makeNull();
 }
 
-Value ConcurrencyBridge::timeoutStart(const std::vector<Value> &args) {
-  if (args.size() < 2 || (!args[1].isClosureId() && !args[1].isFunctionObjId())) {
-    return Value::makeNull();
-  }
-
-  if (!vm_) return Value::makeNull();
-
-  auto parsed = vm_->parseDuration(args[0]);
-if (!parsed) return Value::makeNull();
-
-int ms = static_cast<int>(*parsed);
-Value callback = args[1];
-auto timeoutIdPtr = std::make_shared<uint32_t>(0);
-
-  auto vm_cb = [vm = vm_, callback, timeoutIdPtr]() {
-    auto *eq = vm->getEventQueue();
-    if (eq && !eq->isShutdown()) {
-      auto *payload = new std::pair<Value, uint32_t>(callback, *timeoutIdPtr);
-      eq->push(Event(EventType::TIMER_FIRE, 1, payload));
-    }
-  };
-
-auto timeoutObj = std::make_shared<Timeout>(ms, std::move(vm_cb));
-auto timeoutRef = vm_->getHeap().allocateTimeoutObj(timeoutObj);
-*timeoutIdPtr = timeoutRef.id;
-return Value::makeTimeoutId(timeoutRef.id);
-}
-
-Value ConcurrencyBridge::timeoutCancel(const std::vector<Value> &args) {
-if (args.empty() || !args[0].isTimeoutId()) {
-return Value::makeNull();
-}
-
-if (!vm_) return Value::makeNull();
-
-uint32_t timeout_id = args[0].asTimeoutId();
-auto *timeoutObj = vm_->getHeap().timeout(timeout_id);
-if (timeoutObj) {
-timeoutObj->cancel();
-}
-
-return Value::makeNull();
-}
-
 Value ConcurrencyBridge::channelNew(const std::vector<Value> &args) {
   (void)args; // No arguments needed
 
@@ -410,15 +358,25 @@ Value ConcurrencyBridge::channelSend(const std::vector<Value> &args) {
     it->second->queue.push(value);
     it->second->cv.notify_one();
 
+    // Deliver the value directly to a suspended waiter (goroutine or main
+    // fiber) and unpark it. The waiter's resume replaces the null
+    // placeholder on its stack with this value. Without this the waiter is
+    // never resumed: channel_wait_map_ is never populated and no
+    // CHANNEL_RECV event handler is registered anywhere.
+    if (vm_ && vm_->scheduler_) {
+      auto *waiter = vm_->scheduler_->findGoroutineByWaitTarget(
+          Scheduler::AwaitableType::CHANNEL_RECV, channel_id);
+      if (waiter) {
+        Value delivered = it->second->queue.front();
+        it->second->queue.pop();
+        waiter->wait_handle.resume_value = delivered;
+        vm_->scheduler_->unpark(waiter);
+      }
+    }
+
     // Resume any suspended VM fiber waiting on this channel
     if (vm_) {
         vm_->resumeChannelWait(channel_id);
-    }
-
-    // Emit CHANNEL_RECV event so the ExecutionEngine can unpark
-    // any goroutine that is suspended waiting for data on this channel
-    if (event_queue_) {
-        event_queue_->push(Event(EventType::CHANNEL_RECV, channel_id));
     }
 
     return Value::makeBool(true);
@@ -458,12 +416,16 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
         auto* current_g = sched->current();
         ::havel::info("[CONCURRENCY] channelReceive: sched={}, current_g={}, state={}", 
             (void*)sched, current_g ? (void*)current_g : nullptr, current_g ? (int)current_g->state.load() : -1);
-        if (current_g && current_g->state == Scheduler::GoroutineState::Running) {
-            // Suspend the goroutine — the EventQueue will unpark us
-            // when data arrives on this channel
-            current_g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
-            current_g->wait_handle.target_id = channel_id;
-            current_g->wait_handle.resume_value = Value::makeNull();
+        // Any goroutine context (Running or Runnable — a host call runs with
+        // the goroutine marked Runnable in the launcher flow): suspend SELF
+        // and register the channel wait on the current goroutine. The sender
+        // unparks it via findGoroutineByWaitTarget(CHANNEL_RECV). The old
+        // code only handled state==Running and otherwise parked the wait on
+        // sched->get(1), which does not exist when the user script is
+        // itself a spawned goroutine (launcher's __main__), so the waiter
+        // could never be resumed.
+        if (current_g) {
+            current_g->wait_handle.set_channel_recv(channel_id);
             vm->requestSuspension(
                 static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV),
                 reinterpret_cast<void*>(static_cast<intptr_t>(channel_id)));
@@ -476,9 +438,7 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
             // Find main goroutine (id=1) and set its wait_handle
             auto* main_g = sched->get(1);
             if (main_g) {
-                main_g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
-                main_g->wait_handle.target_id = channel_id;
-                main_g->wait_handle.resume_value = Value::makeNull();
+                main_g->wait_handle.set_channel_recv(channel_id);
                 ::havel::info("[CONCURRENCY] channelReceive: set wait_handle on main goroutine for channel_id={}", channel_id);
             }
             vm->requestSuspension(

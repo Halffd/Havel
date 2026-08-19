@@ -277,6 +277,11 @@ struct CallFrame {
   size_t locals_base = 0;
   uint32_t closure_id = 0;
   bool owns_globals = false;
+  // Module-global keys this frame (or a same-module callee) wrote and
+  // persisted to the shared module_globals map. On return, these keys are
+  // copied from the shared map into the caller's restored globals copy so
+  // nested same-module writes are not lost (see doReturn refresh).
+  std::vector<std::string> written_globals;
   std::vector<TryHandler> try_stack;
   size_t stack_depth = 0; // Expression stack depth at call time
   std::vector<Value> defer_stack; // Deferred closures to execute on scope exit
@@ -1275,6 +1280,12 @@ const std::vector<Value> &args);
                                const std::vector<Value> &args = {});
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
+
+  // Timeout closure pinning - keeps callback closures alive until timer fires
+  // or is cancelled. Returns the callback ID for the pinned closure.
+  CallbackId pinTimeoutClosure(uint32_t timeout_id, const Value &closure);
+  void releaseTimeoutClosure(uint32_t timeout_id);
+  bool isTimeoutClosurePinned(uint32_t timeout_id) const;
 
   // ========== IMAGE HELPERS ==========
   // Set timer check callback - called periodically during script execution

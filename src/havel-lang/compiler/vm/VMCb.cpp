@@ -69,8 +69,20 @@ uint32_t VM::spawnGoroutine(const Value &callee, const std::vector<Value> &args)
   // the closure's module_globals is later reassigned by module-cache fixup.
   if (spawn_value.isClosureId()) {
     uint32_t cid = spawn_value.asClosureId();
-    spawn_globals_snapshot_[cid] =
-        std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    // Snapshot the spawned closure's OWN scope, not the caller's ambient.
+    // Spawn can happen from inside a module function (e.g. async_mod.go),
+    // where ambient globals is that module's sidecar; a script closure's
+    // imports (STORE_GLOBAL from `use { x } from "m"`) live in the script
+    // globals and would be missing from the wrong-map snapshot.
+    std::shared_ptr<std::unordered_map<std::string, Value>> snapshot_src;
+    auto *closure = heap_.closure(cid);
+    if (closure && closure->module_globals) {
+      snapshot_src = std::make_shared<std::unordered_map<std::string, Value>>(
+          *closure->module_globals);
+    } else {
+      snapshot_src = std::make_shared<std::unordered_map<std::string, Value>>(globals);
+    }
+    spawn_globals_snapshot_[cid] = std::move(snapshot_src);
   }
 
   return scheduler_->spawn(spawn_value, args, "async-task");
@@ -189,6 +201,32 @@ bool VM::isValidCallback(CallbackId id) const {
   }
 
   return externalRootValue(id).has_value();
+}
+
+// Pin a timeout callback closure by timeout_id so it stays alive until the
+// timer fires or is cancelled. The closure is stored in the
+// timeout_captured_closures_ map keyed by timeout_id, which is already
+// scanned as a GC root via collectExtraRoots().
+CallbackId VM::pinTimeoutClosure(uint32_t timeout_id, const Value &closure) {
+  if (!closure.isClosureId() && !closure.isFunctionObjId()) {
+    COMPILER_THROW("pinTimeoutClosure expects a closure or function");
+  }
+
+  CallbackId id = registerCallback(closure);
+  timeout_captured_closures_[timeout_id] = id;
+  return id;
+}
+
+void VM::releaseTimeoutClosure(uint32_t timeout_id) {
+  auto it = timeout_captured_closures_.find(timeout_id);
+  if (it != timeout_captured_closures_.end()) {
+    releaseCallback(it->second);
+    timeout_captured_closures_.erase(it);
+  }
+}
+
+bool VM::isTimeoutClosurePinned(uint32_t timeout_id) const {
+  return timeout_captured_closures_.find(timeout_id) != timeout_captured_closures_.end();
 }
 
 DirectCallThunk VM::buildDirectCallThunk(CallbackId id) {
@@ -460,8 +498,6 @@ DirectCallThunk VM::buildDirectCallThunk(CallbackId id) {
     if (!ok || thunk.calls.empty()) return {};
     return thunk;
 }
-
-
 // ============================================================================
 // Image helpers - GC-managed image creation
 // ============================================================================
@@ -527,6 +563,8 @@ void VM::executePendingTimerCallbacks() {
       Value result = callFunctionSync(cb.closure, {});
       if (cb.is_timeout) {
         addTimeoutResult(cb.timer_id, result);
+        // Release the pinned timeout closure after it fires.
+        releaseTimeoutClosure(cb.timer_id);
       } else {
         addIntervalResult(cb.timer_id, result);
       }

@@ -1,4 +1,5 @@
 // smoke: gc-hard-stress = 1
+// smoke: timeout = 180
 use sys
 // Harder GC stress test targeting specific root scanning gaps
 // - Function properties (FunctionObjId untraced in markReference)

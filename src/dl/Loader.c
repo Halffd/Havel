@@ -24,6 +24,18 @@
 #include "c/ToolkitPlugin.h"
 #include "c/LoggerC.h"
 
+#if defined(_WIN32) || defined(__CYGWIN__) || defined(__MINGW32__)
+#define HAVEL_WINDOWS_BUILD 1
+#include <windows.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits.h>
+#include <errno.h>
+#include <direct.h>
+#define HAVE_STRUCT_TIMESPEC
+#else
+#define HAVEL_POSIX_BUILD 1
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +45,7 @@
 #include <dirent.h>
 #include <limits.h>
 #include <errno.h>
+#endif
 
 #define MAX_SEARCH_PATHS 64
 #define MAX_LOADED 128
@@ -737,27 +750,6 @@ int havel_loader_resolve(HavelLoader *loader, const char *module_path,
   make_path(pkg_dir, sizeof(pkg_dir), script_dir, name, NULL);
   if (pick_hv_or_hvc(pkg_dir, name, out, HAVEL_SOURCE_USER))
    return 1;
- }
-
- if (script_dir && script_dir[0]) {
-  char cache_path[1024];
-  make_path(cache_path, sizeof(cache_path), script_dir, "__cache__", NULL);
-  char hvc_file[1024];
-  make_path(hvc_file, sizeof(hvc_file), cache_path, name, ".hvc");
-  if (file_exists(hvc_file)) {
-   out->type = HAVEL_SOURCE_BYTECODE_CACHE;
-   snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", hvc_file);
-   snprintf(out->original_name, sizeof(out->original_name), "%s", name);
-   return 1;
-  }
-  char hbc_file[1024];
-  make_path(hbc_file, sizeof(hbc_file), cache_path, name, ".hbc");
-  if (file_exists(hbc_file)) {
-   out->type = HAVEL_SOURCE_BYTECODE_CACHE;
-   snprintf(out->resolved_path, sizeof(out->resolved_path), "%s", hbc_file);
-   snprintf(out->original_name, sizeof(out->original_name), "%s", name);
-   return 1;
-  }
  }
 
  if (loader->stdlib_path[0]) {

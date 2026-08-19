@@ -2,6 +2,9 @@
 #pragma once
 
 #include "../core/BytecodeIR.hpp"
+#include "havel-lang/runtime/ModuleLoader.hpp"
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <vector>
 #include <string>
@@ -353,5 +356,46 @@ private:
   std::string valueToJson(const Value& value);
   Value jsonToValue(const std::string& json);
 };
+
+// ============================================================================
+// Auto-cache - write a freshly compiled chunk to the single bytecode cache
+// location ~/.cache/havel/ with namespaced filenames (lang.<name>.hvc,
+// std.<name>.hvc, or <stem>.<path-hash>.hvc for user modules).
+// Called after compiling a main script or a module from source so the next
+// run can resolve it as BytecodeCache without recompiling.
+// ============================================================================
+inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
+                                   const BytecodeChunk& chunk) {
+  try {
+    ValueSerializer serializer;
+    std::vector<uint8_t> data =
+        serializer.serializeChunk(chunk, compileUnitName);
+
+    std::string cacheDir = havel::ModuleLoader::getCacheDir();
+    std::filesystem::create_directories(cacheDir);
+
+    // Derive the flat cache filename from the canonical source path:
+    // lang.<stem>.hvc / std.<stem>.hvc for bundled modules,
+    // <stem>.<8-hex-path-hash>.hvc for user modules (collision-free).
+    std::string cacheName = havel::ModuleLoader::cacheFileNameForSource(compileUnitName);
+
+    std::filesystem::path hvcPath =
+        std::filesystem::path(cacheDir) / (cacheName + ".hvc");
+    std::filesystem::path hvPath =
+        std::filesystem::path(cacheDir) / (cacheName + ".hv");
+    std::ofstream file(hvcPath, std::ios::binary);
+    if (file.is_open()) {
+      file.write(reinterpret_cast<const char*>(data.data()), data.size());
+      file.close();
+    }
+    // Also copy source .hv next to .hvc for hash/mtime validation
+    std::error_code ec;
+    if (std::filesystem::exists(compileUnitName, ec) && !ec) {
+      std::filesystem::copy_file(compileUnitName, hvPath,
+                                 std::filesystem::copy_options::overwrite_existing, ec);
+    }
+  } catch (...) {
+  }
+}
 
 } // namespace havel::compiler

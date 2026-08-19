@@ -681,28 +681,23 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
               sched->suspend(g, toSchedulerReasonPublic(reason));
               if (fiber_reason == compiler::SuspensionReason::SLEEP) {
                 int64_t ms = reinterpret_cast<intptr_t>(context);
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
-                g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+                g->wait_handle.set_sleep(static_cast<uint32_t>(reinterpret_cast<intptr_t>(context)), std::chrono::steady_clock::now() + std::chrono::milliseconds(ms));
               }
               if (fiber_reason == compiler::SuspensionReason::COROUTINE_WAIT) {
                 uint32_t co_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::COROUTINE;
-                g->wait_handle.target_id = co_id;
+                g->wait_handle.set_coroutine_wait(co_id);
               }
               if (fiber_reason == compiler::SuspensionReason::THREAD_JOIN) {
                 uint32_t tid = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::THREAD_JOIN;
-                g->wait_handle.target_id = tid;
+                g->wait_handle.set_thread_join(tid);
               }
               if (fiber_reason == compiler::SuspensionReason::CHANNEL_RECV) {
                 uint32_t ch_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::CHANNEL_RECV;
-                g->wait_handle.target_id = ch_id;
+                g->wait_handle.set_channel_recv(ch_id);
               }
               if (fiber_reason == compiler::SuspensionReason::TIMER) {
                 uint32_t timer_id = static_cast<uint32_t>(reinterpret_cast<intptr_t>(context));
-                g->wait_handle.type = compiler::Scheduler::AwaitableType::TIMER_WAIT;
-                g->wait_handle.target_id = timer_id;
+                g->wait_handle.set_timer_wait(timer_id);
               }
               break;
             }
@@ -873,8 +868,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
           auto ms = reinterpret_cast<intptr_t>(lastContext);
           {
             std::lock_guard wlock(g->wait_handle_mutex_);
-            g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
-            g->wait_handle.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+            g->wait_handle.set_sleep(static_cast<uint32_t>(reinterpret_cast<intptr_t>(lastContext)), std::chrono::steady_clock::now() + std::chrono::milliseconds(ms));
           }
         }
         if (sched->current() == g) {
@@ -890,8 +884,7 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
             std::chrono::milliseconds(g->update_interval_ms);
         {
           std::lock_guard wlock(g->wait_handle_mutex_);
-          g->wait_handle.type = compiler::Scheduler::AwaitableType::SLEEP;
-          g->wait_handle.deadline = deadline;
+          g->wait_handle.set_sleep(static_cast<uint32_t>(reinterpret_cast<intptr_t>(lastContext)), deadline);
         }
         g->state = compiler::Scheduler::GoroutineState::Suspended;
         g->suspension_reason.store(compiler::Scheduler::SuspensionReason::SleepWait, std::memory_order_release);

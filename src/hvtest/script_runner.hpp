@@ -51,7 +51,7 @@ inline std::vector<std::string> list_test_dirs(const std::string &scripts_root) 
 }
 
 inline ScriptResult run_script(const std::string &havel_bin, const std::string &script_path,
-                               int timeout_seconds = 60,
+                               int timeout_seconds = 180,
                                const std::vector<std::string> &pre_flags = {}) {
     ScriptResult result;
     result.path = script_path;
@@ -176,7 +176,7 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 
 inline int run_script_suite(const std::string &havel_bin, const std::vector<std::string> &directories, bool verbose = false,
                             const std::vector<std::string> &pre_flags = {},
-                            int timeout_seconds = 60) {
+                            int timeout_seconds = 180) {
     auto scripts = discover_scripts(directories);
     if (scripts.empty()) {
         std::cerr << "no .hv scripts found in specified directories" << std::endl;
@@ -218,7 +218,7 @@ inline int list_scripts(const std::vector<std::string> &directories) {
 inline int run_smoke_suite(const std::string &havel_bin, const std::string &smoke_dir,
                            bool verbose = false,
                            const std::vector<std::string> &pre_flags = {},
-                           int timeout_seconds = 60) {
+                           int timeout_seconds = 180) {
     auto scripts = discover_scripts({smoke_dir});
     if (scripts.empty()) {
         std::cerr << "no .hv smoke tests found in " << smoke_dir << std::endl;

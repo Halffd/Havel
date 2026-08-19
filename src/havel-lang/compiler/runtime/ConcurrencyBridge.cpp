@@ -112,16 +112,8 @@ return intervalResume(args);
 options.host_functions["interval.resume"] = options.host_functions["interval_resume"];
 
 // Timeout operations (snake_case + dot aliases)
-  options.host_functions["timeout_start"] = [this](const std::vector<Value> &args) {
-    return timeoutStart(args);
-  };
-  options.host_functions["timeout.start"] = options.host_functions["timeout_start"];
-
-options.host_functions["timeout_cancel"] = [this](const std::vector<Value> &args) {
-return timeoutCancel(args);
-};
-options.host_functions["timeout.cancel"] = options.host_functions["timeout_cancel"];
-options.host_functions["timeout.stop"] = options.host_functions["timeout_cancel"];
+  // Timeout functions are provided by VMHostFunctions (timeout, timeout.start, timeout.cancel)
+  // with proper GC pinning. ConcurrencyBridge does not register duplicates.
 
   // Channel operations (snake_case + dot aliases)
   options.host_functions["channel_new"] = [this](const std::vector<Value> &args) {
@@ -336,54 +328,6 @@ intervalObj->resume();
 return Value::makeNull();
 }
 
-Value ConcurrencyBridge::timeoutStart(const std::vector<Value> &args) {
-  if (args.size() < 2 || (!args[1].isClosureId() && !args[1].isFunctionObjId())) {
-    return Value::makeNull();
-  }
-
-  if (!vm_) return Value::makeNull();
-
-  auto parsed = vm_->parseDuration(args[0]);
-  if (!parsed) return Value::makeNull();
-
-  int ms = static_cast<int>(*parsed);
-  Value callback = args[1];
-  auto timeoutIdPtr = std::make_shared<uint32_t>(0);
-
-  auto vm_cb = [vm = vm_, callback, timeoutIdPtr]() {
-    auto *eq = vm->getEventQueue();
-    if (eq && !eq->isShutdown()) {
-      auto *payload = new std::pair<Value, uint32_t>(callback, *timeoutIdPtr);
-      eq->push(Event(EventType::TIMER_FIRE, 1, payload));
-    }
-  };
-
-  auto timeoutObj = std::make_shared<Timeout>(ms, std::move(vm_cb));
-  auto timeoutRef = vm_->getHeap().allocateTimeoutObj(timeoutObj);
-  *timeoutIdPtr = timeoutRef.id;
-  // Pin the callback closure so GC doesn't collect it before the timer fires.
-  vm_->pinTimeoutClosure(timeoutRef.id, callback);
-  return Value::makeTimeoutId(timeoutRef.id);
-}
-
-Value ConcurrencyBridge::timeoutCancel(const std::vector<Value> &args) {
-  if (args.empty() || !args[0].isTimeoutId()) {
-    return Value::makeNull();
-  }
-
-  if (!vm_) return Value::makeNull();
-
-  uint32_t timeout_id = args[0].asTimeoutId();
-  auto *timeoutObj = vm_->getHeap().timeout(timeout_id);
-  if (timeoutObj) {
-    timeoutObj->cancel();
-  }
-  // Release the pinned closure if any.
-  vm_->releaseTimeoutClosure(timeout_id);
-
-  return Value::makeNull();
-}
-
 Value ConcurrencyBridge::channelNew(const std::vector<Value> &args) {
   (void)args; // No arguments needed
 
@@ -435,12 +379,6 @@ Value ConcurrencyBridge::channelSend(const std::vector<Value> &args) {
         vm_->resumeChannelWait(channel_id);
     }
 
-    // Emit CHANNEL_RECV event so the ExecutionEngine can unpark
-    // any goroutine that is suspended waiting for data on this channel
-    if (event_queue_) {
-        event_queue_->push(Event(EventType::CHANNEL_RECV, channel_id));
-    }
-
     return Value::makeBool(true);
 }
 
@@ -487,9 +425,7 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
         // itself a spawned goroutine (launcher's __main__), so the waiter
         // could never be resumed.
         if (current_g) {
-            current_g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
-            current_g->wait_handle.target_id = channel_id;
-            current_g->wait_handle.resume_value = Value::makeNull();
+            current_g->wait_handle.set_channel_recv(channel_id);
             vm->requestSuspension(
                 static_cast<uint8_t>(SuspensionReason::CHANNEL_RECV),
                 reinterpret_cast<void*>(static_cast<intptr_t>(channel_id)));
@@ -502,9 +438,7 @@ Value ConcurrencyBridge::channelReceive(const std::vector<Value> &args) {
             // Find main goroutine (id=1) and set its wait_handle
             auto* main_g = sched->get(1);
             if (main_g) {
-                main_g->wait_handle.type = Scheduler::AwaitableType::CHANNEL_RECV;
-                main_g->wait_handle.target_id = channel_id;
-                main_g->wait_handle.resume_value = Value::makeNull();
+                main_g->wait_handle.set_channel_recv(channel_id);
                 ::havel::info("[CONCURRENCY] channelReceive: set wait_handle on main goroutine for channel_id={}", channel_id);
             }
             vm->requestSuspension(

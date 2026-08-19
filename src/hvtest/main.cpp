@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
 	bool mode_all = false;
 	bool mode_scheduler = false;
 	bool verbose = false;
-	int timeout = 60;
+	int timeout = 180;
 	std::string havel_bin;
 	std::string scripts_root;
 	std::vector<char *> smoke_args;

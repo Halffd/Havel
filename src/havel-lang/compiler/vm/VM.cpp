@@ -3587,6 +3587,42 @@ void VM::doReturn() {
   if (finished.owns_globals && !globals_stack_.empty()) {
     globals = std::move(globals_stack_.back());
     globals_stack_.pop_back();
+    // Refresh the caller's globals from the shared module map when caller
+    // and callee share the same module globals (same-module nested call).
+    // The callee's STORE_GLOBAL persisted writes to the shared map, but the
+    // caller's saved copy predates them; without this refresh module state
+    // like display._dpy/_initialized written by a nested same-module call
+    // would be lost when the caller's stale copy is restored. The original
+    // buggy ClosureId wrapper (owns_globals=true, no push) hid this by
+    // accidentally leaving globals on the working copy.
+    // Only keys the callee chain actually wrote are copied (tracked in
+    // written_globals), keeping the hot self-hosted parser path cheap.
+    if (frame_count_ > 0) {
+      uint32_t callerCid = frame_arena_[frame_count_ - 1].closure_id;
+      uint32_t calleeCid = finished.closure_id;
+      if (callerCid != 0 && calleeCid != 0) {
+        auto *cc = heap_.closure(callerCid);
+        auto *fc = heap_.closure(calleeCid);
+        if (cc && fc && cc->module_globals && fc->module_globals &&
+            cc->module_globals == fc->module_globals) {
+          auto &callerFrame = frame_arena_[frame_count_ - 1];
+          for (const auto &k : finished.written_globals) {
+            auto it = fc->module_globals->find(k);
+            if (it != fc->module_globals->end()) {
+              globals[k] = it->second;
+              // Propagate the key up so a chain A->B->C sees B's writes
+              // when A returns (A's own written_globals must include the
+              // keys its callees wrote).
+              if (std::find(callerFrame.written_globals.begin(),
+                            callerFrame.written_globals.end(), k) ==
+                  callerFrame.written_globals.end()) {
+                callerFrame.written_globals.push_back(k);
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
@@ -4075,6 +4111,19 @@ Value VM::deepWrapModuleFunctions(
           size_t base = locals.size();
           locals.resize(base + callee->local_count, nullptr);
           uint32_t frame_stack_depth = static_cast<uint32_t>(stack.size());
+          // IMPORTANT: owns_globals must be FALSE here. This wrapper saves
+          // globals into a local C++ variable (savedGlobals above) and
+          // restores it explicitly on return (line ~4193); it does NOT push
+          // onto globals_stack_. If owns_globals were true, the RET opcode
+          // inside the wrapped bytecode would pop a stale globals_stack_
+          // entry (one pushed by an ancestor caller), corrupting the
+          // goroutine's globals scope. This was the root cause of the
+          // "_atoms_cache undefined" crash when a goroutine called
+          // window.active() -> display.open() (a ClosureId-wrapped module
+          // function): each wrapped call leaked one globals_stack_ pop,
+          // eventually unwinding the goroutine's TCO-pushed ambient and
+          // restoring globals to a map lacking the protocols module's
+          // _atoms_cache, so the next LOAD_GLOBAL in _atom threw.
           if (frame_arena_.size() <= frame_count_) {
             CallFrame cf;
             cf.function = callee;
@@ -4083,7 +4132,7 @@ Value VM::deepWrapModuleFunctions(
             cf.locals_base = base;
             cf.closure_id = closureId;
             cf.stack_depth = frame_stack_depth;
-            cf.owns_globals = true;
+            cf.owns_globals = false;
             frame_arena_.push_back(std::move(cf));
           } else {
             frame_arena_[frame_count_].function = callee;
@@ -4092,7 +4141,7 @@ Value VM::deepWrapModuleFunctions(
             frame_arena_[frame_count_].locals_base = base;
             frame_arena_[frame_count_].closure_id = closureId;
             frame_arena_[frame_count_].stack_depth = frame_stack_depth;
-            frame_arena_[frame_count_].owns_globals = true;
+            frame_arena_[frame_count_].owns_globals = false;
           }
           frame_count_++;
 

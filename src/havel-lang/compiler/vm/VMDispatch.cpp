@@ -143,14 +143,27 @@ Value value = popStack();
             }
             globals[name] = value;
 
-            // If this frame owns globals (module closure), also persist to the
-            // shared module_globals so subsequent calls see the updated value.
-            // This fixes module-level state like _dpy, _initialized, _display
-            // not persisting across calls.
-            if (cf_store.owns_globals && cf_store.closure_id != 0) {
+            // Persist to the shared module_globals map so subsequent calls
+            // see the updated value. Gate on closure_id only: module function
+            // frames have a non-zero closure id whether they are nested
+            // (owns_globals=true) or running inside the ClosureId host wrapper
+            // (owns_globals=false). The wrapper never pushes to globals_stack_,
+            // so persisting is safe; dropping owns_globals here is what lets
+            // module functions maintain module-global state (caches, etc).
+            if (cf_store.closure_id != 0) {
                 auto* closure = heap_.closure(cf_store.closure_id);
                 if (closure && closure->module_globals) {
                     (*closure->module_globals)[name] = value;
+                    // Track the key so doReturn can refresh the caller's
+                    // stale globals copy cheaply (per-key, not full map).
+                    if (!frame_arena_.empty() && frame_count_ > 0) {
+                        auto &wf = frame_arena_[frame_count_ - 1];
+                        if (std::find(wf.written_globals.begin(),
+                                      wf.written_globals.end(), name) ==
+                            wf.written_globals.end()) {
+                            wf.written_globals.push_back(name);
+                        }
+                    }
                 }
             }
 
@@ -206,11 +219,21 @@ Value value = popStack();
         immutable_globals_.insert(name);
         globals[name] = value;
 
-        // Persist to shared module_globals if this frame owns them
-        if (cf_imut.owns_globals && cf_imut.closure_id != 0) {
+        // Persist to shared module_globals (see STORE_GLOBAL above)
+        if (cf_imut.closure_id != 0) {
             auto* closure = heap_.closure(cf_imut.closure_id);
             if (closure && closure->module_globals) {
                 (*closure->module_globals)[name] = value;
+                // Track the key so doReturn can refresh the caller's
+                // stale globals copy cheaply (per-key, not full map).
+                if (!frame_arena_.empty() && frame_count_ > 0) {
+                    auto &wf = frame_arena_[frame_count_ - 1];
+                    if (std::find(wf.written_globals.begin(),
+                                  wf.written_globals.end(), name) ==
+                        wf.written_globals.end()) {
+                        wf.written_globals.push_back(name);
+                    }
+                }
             }
         }
 

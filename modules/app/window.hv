@@ -20,12 +20,87 @@ use x11
 use protocols
 use display
 use ffi
+use time
 
 // ============================================================
 // Display helpers (private)
 // ============================================================
 
 fn _dpy() { display.open() }
+
+// ============================================================
+// Timing instrumentation (gated behind HAVEL_DEBUG_WINDOW_TIMING)
+// ============================================================
+_win_timing = shell.getenv("HAVEL_DEBUG_WINDOW_TIMING") != null && shell.getenv("HAVEL_DEBUG_WINDOW_TIMING") != ""
+
+fn _tstart() {
+    if _win_timing { time.now() } else { 0 }
+}
+
+fn _tend(label, t0) {
+    if _win_timing && t0 != 0 {
+        elapsed = time.now() - t0
+        print("[window.timing] $label duration=${elapsed}ms")
+    }
+}
+
+// ------------------------------------------------------------
+// Active-window TTL cache
+// ------------------------------------------------------------
+// Hotkey handlers and event loops often call window.active() several
+// times in the same tick (focus check, snapshot, etc). Each call does
+// several X property round-trips; subsequent calls within the TTL
+// reuse the cached snapshot instead of re-querying the server.
+//
+// Tunable via HAVEL_WINDOW_ACTIVE_TTL (milliseconds, default 16).
+// Set to 0 to disable the cache (every call hits X).
+_active_ttl = 16
+try {
+    _env_ttl = shell.getenv("HAVEL_WINDOW_ACTIVE_TTL")
+    if _env_ttl != null && _env_ttl != "" {
+        _parsed = int(_env_ttl)
+        if _parsed >= 0 { _active_ttl = _parsed }
+    }
+} catch {
+    // ignore non-integer env; keep default
+}
+_active_cache_result = null
+_active_cache_ts = 0
+// activeId() uses the same TTL. Polling loops (goroutines watching the
+// active window) call activeId() directly; without a cache every poll
+// does an X round-trip that blocks the single VM thread. The id cache
+// makes polls nearly free between expiries.
+_active_id_cache = 0
+_active_id_ts = 0
+
+fn _activeIdCached() {
+    if _active_ttl > 0 && _active_id_cache != 0 {
+        if (time.now() - _active_id_ts) <= _active_ttl {
+            return true
+        }
+    }
+    false
+}
+
+fn active() {
+    _t0 = _tstart()
+    if _active_ttl > 0 && _active_cache_result != null {
+        if (time.now() - _active_cache_ts) <= _active_ttl {
+            _tend("active.total", _t0)
+            return _active_cache_result
+        }
+    }
+    _aid = activeId()
+    if _aid == null || _aid == 0 {
+        _tend("active.total", _t0)
+        return null
+    }
+    _result = _snapshot(Window(_aid))
+    _active_cache_result = _result
+    _active_cache_ts = time.now()
+    _tend("active.total", _t0)
+    _result
+}
 fn _root() {
 	_d = _dpy()
 	if _d == 0 { 0 } else { x11.rootWindow(_d) }
@@ -34,6 +109,19 @@ fn _root() {
 fn _shell(cmd) {
 	_r = shell.exec(cmd + " 2>/dev/null")
 	_r.stdout
+}
+
+// Resolve /proc fields from a pid already fetched via X, avoiding a
+// second _NET_WM_PID round-trip in _snapshot (saves ~10ms/call).
+fn _procExe(_pid) {
+	if _pid == 0 { return "" }
+	fs.readlink("/proc/${_pid}/exe")
+}
+
+fn _procCmdline(_pid) {
+	if _pid == 0 { return "" }
+	_raw = fs.read("/proc/${_pid}/cmdline")
+	if _raw == "" { "" } else { _raw.replace("\0", " ").trim() }
 }
 
 // ============================================================
@@ -717,6 +805,32 @@ fn _snapshot(_w) {
 		pid: _w.pid(),
 		exe: _w.exe(),
 		cmdline: _w.cmdline(),
+=======
+	_t0 = _tstart()
+	_t_title = _tstart()
+	_title = _w.title()
+	_tend("snapshot.title", _t_title)
+	_t_class = _tstart()
+	_class = _w.className()
+	_tend("snapshot.class", _t_class)
+	_t_pid = _tstart()
+	_pid = _w.pid()
+	_tend("snapshot.pid", _t_pid)
+	_t_exe = _tstart()
+	_exe = _procExe(_pid)
+	_tend("snapshot.exe", _t_exe)
+	_t_cmd = _tstart()
+	_cmd = _procCmdline(_pid)
+	_tend("snapshot.cmdline", _t_cmd)
+	_tend("snapshot.total", _t0)
+	{
+		id: _w.id,
+		title: _title,
+		class: _class,
+		pid: _pid,
+		exe: _exe,
+		cmdline: _cmd,
+>>>>>>> havel-2
 		close: fn() { _w.close() },
 		hide: fn() { _w.hide() },
 		show: fn() { _w.show() },
@@ -740,15 +854,32 @@ fn _snapshot(_w) {
 // ============================================================
 
 fn activeId() {
+	_t0 = _tstart()
+	if _activeIdCached() {
+		_tend("activeId.total", _t0)
+		return _active_id_cache
+	}
 	_d = _dpy()
 	if _d == 0 { return 0 }
 	_rw = _root()
 	if _rw != 0 {
+		_t_prop = _tstart()
 		_aid = protocols.getWindowProp(_d, _rw, protocols.netActiveWindow())
-		if _aid != 0 && _aid != _rw { return _aid }
+		_tend("activeId.getWindowProp", _t_prop)
+		if _aid != 0 && _aid != _rw {
+			_active_id_cache = _aid
+			_active_id_ts = time.now()
+			_tend("activeId.total", _t0)
+			return _aid
+		}
 	}
+	_t_focus = _tstart()
 	_info = x11.getInputFocus(_d)
+	_tend("activeId.getInputFocus", _t_focus)
 	if _info.focus != 0 && _info.focus != 1 && _info.focus != _rw {
+		_active_id_cache = _info.focus
+		_active_id_ts = time.now()
+		_tend("activeId.total", _t0)
 		return _info.focus
 	}
 	0
@@ -758,6 +889,10 @@ fn active() {
 	_aid = activeId()
 	if _aid == 0 { return null }
 	_snapshot(Window(_aid))
+=======
+	_tend("activeId.total", _t0)
+ 	0
+>>>>>>> havel-2
 }
 
 fn list() {

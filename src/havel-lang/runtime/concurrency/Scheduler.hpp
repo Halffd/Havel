@@ -231,6 +231,8 @@ static constexpr uint64_t DEFAULT_MAX_INSTRUCTIONS = 10000;
     std::string hotkey_alias;
 bool hotkey_direct_thunk = false; // true if DirectCallThunk exists for this callback
 uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
+    // Timing: when this goroutine was last enqueued (for queue delay measurement)
+    std::chrono::steady_clock::time_point queued_at;
     
     // hotkey_retrigger flag - LIFECYCLE CONTRACT:
     // ============================================

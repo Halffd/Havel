@@ -1975,17 +1975,27 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
           cacheIn.seekg(0, std::ios::beg);
           std::vector<uint8_t> buffer(static_cast<size_t>(size));
           if (cacheIn.read(reinterpret_cast<char *>(buffer.data()), size)) {
-            std::ofstream outFile(outputPath, std::ios::binary);
-            if (outFile.is_open()) {
-              outFile.write(reinterpret_cast<const char *>(buffer.data()),
-                            buffer.size());
-              if (outFile.good()) {
-                info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
-                info("Build successful: {} ({} bytes)", outputPath,
-                     buffer.size());
-                return 0;
+            // Only write if output path differs from cache path.
+            // If outputPath == cachePath, the cache file already contains
+            // the correct data - don't rewrite it (avoids mtime update).
+            if (outputPath != cachePath) {
+              std::ofstream outFile(outputPath, std::ios::binary);
+              if (outFile.is_open()) {
+                outFile.write(reinterpret_cast<const char *>(buffer.data()),
+                              buffer.size());
+                if (!outFile.good()) {
+                  error("Failed to write output file: {}", outputPath);
+                  return 1;
+                }
+                outFile.close();
+              } else {
+                error("Cannot open output file: {}", outputPath);
+                return 1;
               }
             }
+            info("Reused bytecode cache: {} -> {}", cachePath, outputPath);
+            info("Build successful: {} ({} bytes)", outputPath, buffer.size());
+            return 0;
           }
         }
       }
@@ -2598,38 +2608,70 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     auto data = serializer.serializeChunk(*chunk);
 
     info("Serialization complete, {} bytes", data.size());
-    std::ofstream outFile(outputPath, std::ios::binary);
-    if (!outFile.is_open()) {
-      error("Cannot open output file: {}", outputPath);
-      return 1;
+
+    auto writeAtomically = [&](const std::string& targetPath, const std::vector<uint8_t>& bytes) -> bool {
+        std::string tempPath = targetPath + ".tmp." + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+        std::ofstream outFile(tempPath, std::ios::binary);
+        if (!outFile.is_open()) {
+            error("Cannot open temporary output file: {}", tempPath);
+            return false;
+        }
+        outFile.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+        if (!outFile.good()) {
+            error("Failed to write output file: {}", tempPath);
+            std::error_code ec;
+            std::filesystem::remove(tempPath, ec);
+            return false;
+        }
+        outFile.close();
+        
+        std::error_code ec;
+        std::filesystem::rename(tempPath, outputPath, ec);
+        if (ec) {
+            // Cross-device rename failed, fall back to copy + remove
+            if (ec == std::errc::cross_device_link) {
+                std::ifstream src(tempPath, std::ios::binary);
+                std::ofstream dst(targetPath, std::ios::binary);
+                if (src && dst) {
+                    dst << src.rdbuf();
+                    if (!dst.good()) {
+                        error("Failed to copy output file: {}", targetPath);
+                        std::filesystem::remove(tempPath, ec);
+                        return false;
+                    }
+                    dst.close();
+                } else {
+                    error("Failed to copy output file: {}", targetPath);
+                    std::filesystem::remove(tempPath, ec);
+                    return false;
+                }
+                std::filesystem::remove(tempPath, ec);
+            } else {
+                error("Failed to rename temporary file to output: {}", ec.message());
+                std::filesystem::remove(tempPath, ec);
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (!writeAtomically(outputPath, data)) {
+        return 1;
     }
-    outFile.write(reinterpret_cast<const char *>(data.data()), data.size());
-    if (!outFile.good()) {
-      error("Failed to write output file: {}", outputPath);
-      return 1;
-    }
-    outFile.close();
 
     const auto writeCompanionCache = [&](const std::string &path) {
-      if (path.empty()) {
-        return;
-      }
-      std::string cachePath = companionCachePath(path);
-      if (cachePath == outputPath) {
-        return; // already written as the build output
-      }
-      std::ofstream cacheOut(cachePath, std::ios::binary);
-      if (!cacheOut.is_open()) {
-        warn("Cannot open bytecode cache file: {}", cachePath);
-        return;
-      }
-      cacheOut.write(reinterpret_cast<const char *>(data.data()), data.size());
-      if (!cacheOut.good()) {
-        warn("Failed to write bytecode cache file: {}", cachePath);
-        return;
-      }
-      cacheOut.close();
-      info("Bytecode cache written to: {}", cachePath);
+        if (path.empty()) {
+            return;
+        }
+        std::string cachePath = companionCachePath(path);
+        if (cachePath == outputPath) {
+            return; // already written as the build output
+        }
+        if (!writeAtomically(cachePath, data)) {
+            warn("Failed to write bytecode cache file: {}", cachePath);
+            return;
+        }
+        info("Bytecode cache written to: {}", cachePath);
     };
 
     writeCompanionCache(primaryFile);

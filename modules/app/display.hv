@@ -21,15 +21,23 @@ fn _shell(cmd) {
 use sys
 
 fn _ensureInit() {
-    if !_initialized {
-        _dpy = x11.open(null)
-        if _dpy != 0 {
-            _root = x11.rootWindow(_dpy)
-            _screen = x11.defaultScreen(_dpy)
-            _initialized = true
-            sys.registerExitCleanup(fn() {
-                close()
-            })
+    if !_initialized && _isX11 {
+        // Check if X11 socket exists to avoid blocking on XOpenDisplay
+        _display_num = displayNum()
+        _socket_path = "/tmp/.X11-unix/X" + _display_num
+        if !fs.exists(_socket_path) {
+            _isX11 = false
+            _protocol = "headless"
+        } else {
+            _dpy = x11.open(null)
+            if _dpy != 0 {
+                _root = x11.rootWindow(_dpy)
+                _screen = x11.defaultScreen(_dpy)
+                _initialized = true
+                sys.registerExitCleanup(fn() {
+                    close()
+                })
+            }
         }
     }
 }

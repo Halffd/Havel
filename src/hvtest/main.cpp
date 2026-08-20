@@ -52,6 +52,7 @@ static void print_usage(const char *prog) {
  " --scripts run .hv script tests (smoke + integration + main)\n"
 " --cpp run C++ unit tests via ctest\n"
 " --jit   run JIT smoke tests (requires LLVM build)\n"
+" --compare run comparison between C++, self-hosted, JIT, AOT for all tests\n"
 " --list list all test files without running\n"
 " --all run everything (smoke + jit + hvmoke + scripts + cpp)\n"
 "\n"
@@ -77,6 +78,7 @@ int main(int argc, char **argv) {
 	bool mode_jit = false;
 	bool mode_list = false;
 	bool mode_all = false;
+	bool mode_compare = false;
 	bool mode_scheduler = false;
 	bool verbose = false;
 	int timeout = 60;
@@ -94,6 +96,7 @@ int main(int argc, char **argv) {
         else if (arg == "--scripts") { mode_scripts = true; }
 		else if (arg == "--jit") { mode_jit = true; }
 		else if (arg == "--cpp") { mode_cpp = true; }
+		else if (arg == "--compare") { mode_compare = true; }
 		else if (arg == "--list") { mode_list = true; }
 		else if (arg == "--all") { mode_all = true; }
 		else if (arg == "--scheduler") { mode_scheduler = true; }
@@ -115,7 +118,7 @@ int main(int argc, char **argv) {
 	if (havel_bin.empty()) havel_bin = find_havel_binary();
 	if (scripts_root.empty()) scripts_root = find_scripts_root();
 
-    if (!mode_smoke && !mode_hvmoke && !mode_scripts && !mode_jit && !mode_cpp && !mode_list && !mode_all && single_files.empty()) {
+    if (!mode_smoke && !mode_hvmoke && !mode_scripts && !mode_jit && !mode_cpp && !mode_list && !mode_compare && !mode_all && single_files.empty()) {
 		mode_all = true;
 	}
 
@@ -193,7 +196,16 @@ int main(int argc, char **argv) {
         failures += hvtest::run_smoke_suite(havel_bin, smoke_dir, verbose, self_hosted_flags, timeout);
     }
 
-if (mode_all || mode_scripts) {
+if (mode_compare) {
+        std::cout << "\n=== comparison mode (C++ vs AOT) ===" << std::endl;
+        auto dirs = hvtest::list_test_dirs(scripts_root);
+        fs::path bin_path(havel_bin);
+        fs::path repo_root = bin_path.parent_path().parent_path();
+        fs::path self_hosted_path = repo_root / "out";
+        failures += hvtest::run_comparison_suite(havel_bin, dirs, self_hosted_path.string(), timeout, verbose);
+    }
+
+	if (mode_all || mode_scripts) {
         std::cout << "\n=== script tests (self-hosted) ===" << std::endl;
         auto dirs = hvtest::list_test_dirs(scripts_root);
         // Use self-hosted pipeline by default

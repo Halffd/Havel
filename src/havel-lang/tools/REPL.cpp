@@ -180,7 +180,6 @@ extern "C" void havel_rl_redisplay() {
 
     int prompt_len = visible_length(rl_prompt);
 
-    int point_up_to = 0;
     int hl_len = static_cast<int>(highlighted.size());
     int vis_count = 0;
     for (int i = 0; i < hl_len && vis_count < rl_point; ++i) {
@@ -188,10 +187,8 @@ extern "C" void havel_rl_redisplay() {
             while (i < hl_len && highlighted[i] != '\002') ++i;
         } else {
             ++vis_count;
-            point_up_to = i + 1;
         }
     }
-    if (vis_count < rl_point) point_up_to = hl_len;
 
     int target_point = prompt_len + rl_point;
     int full_len = prompt_len + visible_length(highlighted.c_str());

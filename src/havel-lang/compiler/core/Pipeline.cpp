@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <utility>
 #include <fstream>
 #include <iostream>
 #include <regex>
@@ -25,6 +26,7 @@
 
 // Macro for throwing errors with source location info
 // Reports to unified ErrorReporter before throwing
+#ifndef COMPILER_THROW
 #define COMPILER_THROW(msg)                                                    \
   do {                                                                         \
     ::havel::errors::ErrorReporter::instance().report(                         \
@@ -32,6 +34,7 @@
     throw std::runtime_error(std::string(msg) + " [" + __FILE__ + ":" +        \
                              std::to_string(__LINE__) + "]");                  \
   } while (0)
+#endif
 
 namespace havel::compiler {
 
@@ -365,10 +368,14 @@ std::string opcodeName(OpCode opcode) {
     return "JUMP_IF_NULL";
   case OpCode::CALL:
     return "CALL";
-  case OpCode::TAIL_CALL:
-    return "TAIL_CALL";
+  case OpCode::CALL_DYN:
+    return "CALL_DYN";
+  case OpCode::CALL_SPREAD:
+    return "CALL_SPREAD";
   case OpCode::CALL_METHOD:
     return "CALL_METHOD";
+  case OpCode::CALL_METHOD_SPREAD:
+    return "CALL_METHOD_SPREAD";
   case OpCode::RETURN:
     return "RETURN";
   case OpCode::TRY_ENTER:
@@ -672,6 +679,8 @@ std::string opcodeName(OpCode opcode) {
     return "BIT_RSH";
   case OpCode::BIT_NOT:
     return "BIT_NOT";
+  default:
+    std::unreachable();
   }
   return "UNKNOWN";
 }

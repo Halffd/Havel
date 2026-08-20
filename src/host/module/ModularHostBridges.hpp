@@ -855,7 +855,7 @@ public:
     explicit BrowserBridge(const HostContext *ctx) : ctx_(ctx) {}
     void install(compiler::PipelineOptions &options) override;
 private:
-    const HostContext *ctx_;
+    [[maybe_unused]] const HostContext *ctx_;
 };
 
 /**
@@ -901,7 +901,7 @@ public:
     explicit NetworkBridge(const HostContext *ctx) : ctx_(ctx) {}
     void install(compiler::PipelineOptions &options) override;
 private:
-    const HostContext *ctx_;
+    [[maybe_unused]] const HostContext *ctx_;
 };
 
 /**

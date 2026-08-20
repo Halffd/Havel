@@ -75,12 +75,6 @@ static json varToDAP(const havel::compiler::Value& val, havel::compiler::VM& vm,
     return result;
 }
 
-static json getVariableChildren(int var_ref, havel::compiler::VM& vm, int& next_ref) {
-    // var_ref encodes: positive = stack index tracking
-    // We store a mapping from var_ref -> (frame, slot) in a simple map
-    // For now, return empty (clients will re-fetch on each request)
-    return json::array();
-}
 
 static void sendEvent(const std::string& event, const json& body = {}) {
     json msg;

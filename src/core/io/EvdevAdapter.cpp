@@ -59,7 +59,7 @@ public:
         std::lock_guard<std::mutex> lock(externalWakeupFdsMutex_);
         externalWakeupFds_ = std::move(fds);
     }
-    void RecheckDevices();
+    void RecheckDevices() override;
 
     std::pair<int, int> GetMousePosition() const override;
     bool GetKeyState(uint32_t code) const override;

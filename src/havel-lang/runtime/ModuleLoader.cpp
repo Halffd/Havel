@@ -235,7 +235,7 @@ ModuleLoader::resolve(const std::string& modulePath,
         return flatCacheFor(fs::canonical(modulePath).string(),
                             ResolvedModule::UserSource);
       } catch (...) {
-        return ResolvedModule{ResolvedModule::UserSource, modulePath, modulePath};
+        return ResolvedModule{ResolvedModule::UserSource, modulePath, modulePath, ""};
       }
     }
     return std::nullopt;
@@ -261,7 +261,7 @@ ModuleLoader::resolve(const std::string& modulePath,
       cache_.erase(modulePath);
       freshness_.erase(modulePath);
     } else {
-      return ResolvedModule{ResolvedModule::Cached, "", modulePath};
+      return ResolvedModule{ResolvedModule::Cached, "", modulePath, ""};
     }
   }
 
@@ -402,14 +402,14 @@ ModuleLoader::resolve(const std::string& modulePath,
     fs::path soPath = spDir / (name + ".so");
     if (fs::exists(soPath)) {
       return ResolvedModule{ResolvedModule::NativeExtension,
-        fs::canonical(soPath).string(), modulePath};
+        fs::canonical(soPath).string(), modulePath, ""};
     }
 
     // Try libhavel_name.so
     fs::path libPath = spDir / ("libhavel_" + name + ".so");
     if (fs::exists(libPath)) {
       return ResolvedModule{ResolvedModule::NativeExtension,
-        fs::canonical(libPath).string(), modulePath};
+        fs::canonical(libPath).string(), modulePath, ""};
     }
   }
 

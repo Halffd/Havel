@@ -56,12 +56,10 @@ static void writeStderr(const char *msg) {
   (void)unused;
 }
 
-void exit(ExitReason reason, int code) {
+[[noreturn]] void exit(ExitReason reason, int code) {
   if (g_exiting.exchange(true)) {
-    if (isSignalContext(reason)) {
-      _exit(code);
-    }
-    return;
+    // Re-entrancy: already exiting. Terminate immediately.
+    _exit(code);
   }
 
   if (isSignalContext(reason)) {

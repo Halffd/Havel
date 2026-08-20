@@ -3,7 +3,8 @@
 
 namespace havel {
 
-struct AltTabService::Impl {
+class AltTabService::Impl {
+public:
     std::unique_ptr<IAltTabBackend> backend;
 };
 

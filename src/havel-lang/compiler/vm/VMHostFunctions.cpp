@@ -71,7 +71,7 @@ void VM::registerDefaultHostFunctions() {
     };
 
     api.registerFunction("io._send",
-                         [api, getIO, toStr](const std::vector<Value> &args) {
+                         [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
@@ -81,7 +81,7 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeBool(true);
                          });
     api.registerFunction("io._sendX11Key",
-                         [api, getIO, toStr](const std::vector<Value> &args) {
+                         [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
@@ -93,7 +93,7 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeBool(true);
                          });
     api.registerFunction("io._map",
-                         [api, getIO, toStr](const std::vector<Value> &args) {
+                         [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
@@ -103,7 +103,7 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeBool(true);
                          });
     api.registerFunction("io._remap",
-                         [api, getIO, toStr](const std::vector<Value> &args) {
+                         [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
@@ -113,7 +113,7 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeBool(true);
                          });
     api.registerFunction("io._unmap",
-                         [api, getIO, toStr](const std::vector<Value> &args) {
+                         [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
@@ -190,7 +190,7 @@ void VM::registerDefaultHostFunctions() {
                            return Value::makeBool(io->IsSuspended());
                          });
     api.registerFunction("io._isKeyPressed",
-                         [api, getIO, toStr](const std::vector<Value> &args) {
+                         [getIO, toStr](const std::vector<Value> &args) {
                            auto *io = getIO();
                            if (!io)
                              return Value::makeBool(false);
@@ -3955,7 +3955,7 @@ void VM::registerDefaultHostFunctions() {
 
   registerHostFunction(
       "scheduler.info", 0,
-      [this, makeGoroutineInfoObject](const std::vector<Value> &) -> Value {
+      [this](const std::vector<Value> &) -> Value {
         auto *sched = scheduler_;
         if (!sched)
           return Value::makeNull();

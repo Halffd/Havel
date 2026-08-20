@@ -1474,6 +1474,34 @@ if c == 33 && cp(1) == 123 {
           advance()
           while current() != -1 && current() != 10 && current() != 123 {
             if current() == 61 && cp(1) == 62 { break }
+            if current() == 32 || current() == 9 {
+              // Whitespace ends the hotkey token unless it continues a
+              // combo (`&`) or chord (`:`) sequence. Mirrors scanHotkey()
+              // so `^v => {...}` does not emit `^v ` with a trailing
+              // space that ParseKeyPart rejects.
+              if s.find("&") >= 0 {
+                s = s + string.fromCodePoint(current())
+                advance()
+                continue
+              }
+              look = idx
+              while look < n {
+                lcp = codepoints[look]
+                if lcp != 32 && lcp != 9 { break }
+                look = look + 1
+              }
+              if look < n {
+                lcp = codepoints[look]
+                if lcp == 38 || lcp == 58 {
+                  while idx < look {
+                    s = s + string.fromCodePoint(current())
+                    advance()
+                  }
+                  continue
+                }
+              }
+              break
+            }
             s = s + string.fromCodePoint(current())
             advance()
           }

@@ -657,9 +657,9 @@ public:
   }
     void pushFramePublic(const BytecodeFunction* function, size_t ip, size_t locals_base, uint32_t closure_id) {
         if (frame_count_ >= frame_arena_.size()) {
- frame_arena_.push_back(CallFrame{function, nullptr, ip, locals_base, closure_id, {}, {}, {}, {}});
+ frame_arena_.push_back(CallFrame{function, nullptr, ip, locals_base, closure_id, false, {}, {}, 0, {}});
  } else {
- frame_arena_[frame_count_] = CallFrame{function, nullptr, ip, locals_base, closure_id, {}, {}, {}, {}};
+ frame_arena_[frame_count_] = CallFrame{function, nullptr, ip, locals_base, closure_id, false, {}, {}, 0, {}};
         }
         frame_count_++;
     }

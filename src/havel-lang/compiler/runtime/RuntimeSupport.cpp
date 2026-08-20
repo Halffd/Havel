@@ -99,9 +99,6 @@ namespace {
         return sha256(buf.data(), buf.size());
     }
 
-    std::array<uint8_t, 32> sha256_string(const std::string& s) {
-        return sha256(reinterpret_cast<const uint8_t*>(s.data()), s.size());
-    }
 }
 
 // Macro for throwing errors with source location info
@@ -1258,7 +1255,7 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::st
     return std::nullopt;
   }
 
-  size_t fileSize = st.st_size;
+  size_t fileSize = static_cast<size_t>(st.st_size);
   if (fileSize < 4) {
     close(fd);
     return std::nullopt;
@@ -1292,7 +1289,7 @@ std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string& fileP
     return std::nullopt;
   }
 
-  if (st.st_size >= mmapThreshold) {
+  if (st.st_size >= static_cast<off_t>(mmapThreshold)) {
     ::havel::debug("[RTS-MMAP] using mmap for {} ({} bytes)", filePath, st.st_size);
     return deserializeChunkMmap(filePath);
   } else {

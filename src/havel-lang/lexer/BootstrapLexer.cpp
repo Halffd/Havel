@@ -1839,45 +1839,36 @@ if (c == '%' && peek() == '=') {
         while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) advance();
         // Check for triggers
         std::string trigger;
-        bool hasTrigger = false;
         if (peek() == '=' && peek(1) == '>') {
           trigger = "=>";
-          hasTrigger = true;
           advance(); advance();
         } else if (peek() == ':' && peek(1) == ':') {
           trigger = "::";
-          hasTrigger = true;
           advance(); advance();
         } else if (peek() == '&' && peek(1) != '&') {
           trigger = "&";
-          hasTrigger = true;
           advance();
         } else if (peek() == 'i' && peek(1) == 'f' && 
                    (!std::isalnum(static_cast<unsigned char>(peek(2))) && peek(2) != '_')) {
           trigger = "if";
-          hasTrigger = true;
           advance(); advance();
         } else if (peek() == ':') {
           if (peek(1) == 'u' && peek(2) == 'p' && 
               (!std::isalnum(static_cast<unsigned char>(peek(3))) && peek(3) != '_')) {
             trigger = ":up";
-            hasTrigger = true;
             advance(); advance(); advance();
           } else if (peek(1) == 'd' && peek(2) == 'o' && peek(3) == 'w' && peek(4) == 'n' && 
                      (!std::isalnum(static_cast<unsigned char>(peek(4))) && peek(4) != '_')) {
             trigger = ":down";
-            hasTrigger = true;
             advance(); advance(); advance(); advance(); advance();
           }
         } else if (peek() == 'u' && peek(1) == 'p' && 
                    (!std::isalnum(static_cast<unsigned char>(peek(2))) && peek(2) != '_')) {
           trigger = "up";
-          hasTrigger = true;
           advance(); advance();
         } else if (peek() == 'd' && peek(1) == 'o' && peek(2) == 'w' && peek(3) == 'n' &&
                    (!std::isalnum(static_cast<unsigned char>(peek(4))) && peek(4) != '_')) {
           trigger = "down";
-          hasTrigger = true;
           advance(); advance(); advance(); advance();
         }
         // If we found a trigger but no keyName, the hotkey is just !#= or !#-

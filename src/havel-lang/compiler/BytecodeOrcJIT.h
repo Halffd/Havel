@@ -72,12 +72,12 @@ public:
                           const std::vector<Value> &args) override;
     bool isCompiled(const std::string &func_name) const override;
 
-    void setDebugMode(bool enabled) { debug_jit_ = enabled; }
-    void setDumpIR(bool enabled) { dump_ir_ = enabled; }
-    void setDumpAsmToFile(bool enabled) { dump_asm_to_file_ = enabled; }
-    void setOptimizationLevel(uint8_t level) { optimization_level_ = level > 3 ? 3 : level; }
+    void setDebugMode(bool enabled) override { debug_jit_ = enabled; }
+    void setDumpIR(bool enabled) override { dump_ir_ = enabled; }
+    void setDumpAsmToFile(bool enabled) override { dump_asm_to_file_ = enabled; }
+    void setOptimizationLevel(uint8_t level) override { optimization_level_ = level > 3 ? 3 : level; }
     void setTargetOS(TargetOS os);
-    void setShowWarnings(bool enabled) { show_warnings_ = enabled; }
+    void setShowWarnings(bool enabled) override { show_warnings_ = enabled; }
     void setLinkedLibraries(const std::vector<std::string>& libs) { linked_libraries_ = libs; }
     void addLinkedLibrary(const std::string& lib) { linked_libraries_.push_back(lib); }
     TargetOS targetOS() const { return target_os_; }
@@ -89,7 +89,7 @@ public:
     static void clearLastError();
     void compileFunctionAtOptLevel(const BytecodeFunction &func, uint8_t level);
     void compileFunctionTier(const BytecodeFunction &func, uint8_t tier) override;
-    void compileTrace(const BytecodeFunction &func, uint32_t start_ip, uint64_t hot_count);
+    void compileTrace(const BytecodeFunction &func, uint32_t start_ip, uint64_t hot_count) override;
     void setCompilationVM(const VM* vm) { compilation_vm_ = vm; }
 
     void dumpAssembly(const std::string &filename);

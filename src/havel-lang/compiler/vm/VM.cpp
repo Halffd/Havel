@@ -435,10 +435,10 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
   executed_instructions_ = 0;
 
   if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}});
+    frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, false, {}, {}, 0, {}});
   } else {
     frame_arena_[frame_count_] =
-        CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}};
+        CallFrame{entry, &chunk, 0, 0, 0, false, {}, {}, 0, {}};
   }
   frame_count_++;
   locals.resize(entry->local_count);
@@ -686,10 +686,10 @@ Value VM::executePersistent(const BytecodeChunk &chunk,
   current_exception_ = nullptr;
 
   if (frame_arena_.size() <= frame_count_) {
-    frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}});
+    frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, false, {}, {}, 0, {}});
   } else {
     frame_arena_[frame_count_] =
-        CallFrame{entry, &chunk, 0, 0, 0, {}, {}, {}, {}};
+        CallFrame{entry, &chunk, 0, 0, 0, false, {}, {}, 0, {}};
   }
   frame_count_++;
   locals.resize(entry->local_count);
@@ -1750,9 +1750,6 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     // fprintf(stderr, "[SLEEPDBG] runDispatchLoop enter stop=%zu frames=%zu last=%d susp=%d\n", stop_frame_depth, frame_count_, (int)last_suspension_reason_, (int)suspension_requested_);
     if (last_suspension_reason_ != 0) {
       for (size_t fi = 0; fi < frame_count_ && fi < 6; ++fi) {
-        const char* fnName = "?";
-        if (frame_arena_[fi].function && !frame_arena_[fi].function->name.empty())
-          fnName = frame_arena_[fi].function->name.c_str();
         // fprintf(stderr, "[SLEEPDBG]   rdl-reenter frame[%zu] fn=%s ip=%u\n", fi, fnName, (uint32_t)frame_arena_[fi].ip);
       }
     }
@@ -2482,10 +2479,10 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
     size_t coroutine_stack_depth = stack.size();
     if (frame_arena_.size() <= frame_count_) {
       frame_arena_.push_back(
-          CallFrame{func, co_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}});
+          CallFrame{func, co_chunk, co->ip, 0, co->closure_id, false, {}, {}, 0, {}});
     } else {
       frame_arena_[frame_count_] =
-          CallFrame{func, co_chunk, co->ip, 0, co->closure_id, {}, {}, {}, {}};
+          CallFrame{func, co_chunk, co->ip, 0, co->closure_id, false, {}, {}, 0, {}};
     }
     frame_arena_[frame_count_].stack_depth = coroutine_stack_depth;
     frame_count_++;
@@ -4758,7 +4755,7 @@ return cachedVal;
       if (std::filesystem::exists(modulesPath, ec)) {
         resolved = ModuleLoader::ResolvedModule{
             ModuleLoader::ResolvedModule::UserSource,
-            std::filesystem::canonical(modulesPath, ec).string(), path};
+            std::filesystem::canonical(modulesPath, ec).string(), path, ""};
       }
     }
     if (!resolved) {
@@ -5335,10 +5332,10 @@ return cachedVal;
 
   if (frame_arena_.size() <= frame_count_) {
     frame_arena_.push_back(
-        CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}});
+        CallFrame{entry, chunk.get(), 0, 0, 0, false, {}, {}, 0, {}});
   } else {
     frame_arena_[frame_count_] =
-        CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}};
+        CallFrame{entry, chunk.get(), 0, 0, 0, false, {}, {}, 0, {}};
   }
   frame_count_++;
   locals.resize(entry->local_count);
@@ -6202,7 +6199,7 @@ Value VM::loadScript(const std::string &path) {
     if (std::filesystem::exists(directPath, ec)) {
       resolved = ModuleLoader::ResolvedModule{
           ModuleLoader::ResolvedModule::UserSource,
-          std::filesystem::canonical(directPath, ec).string(), path};
+          std::filesystem::canonical(directPath, ec).string(), path, ""};
     }
   }
   if (!resolved) {
@@ -6350,10 +6347,10 @@ Value VM::loadScript(const std::string &path) {
 
   if (frame_arena_.size() <= frame_count_) {
     frame_arena_.push_back(
-        CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}});
+        CallFrame{entry, chunk.get(), 0, 0, 0, false, {}, {}, 0, {}});
   } else {
     frame_arena_[frame_count_] =
-        CallFrame{entry, chunk.get(), 0, 0, 0, {}, {}, {}, {}};
+        CallFrame{entry, chunk.get(), 0, 0, 0, false, {}, {}, 0, {}};
   }
   frame_count_++;
   locals.resize(entry->local_count);

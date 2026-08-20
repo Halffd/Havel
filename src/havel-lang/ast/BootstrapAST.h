@@ -2172,8 +2172,8 @@ struct FunctionDeclaration : public Statement {
 		bool isCoroutine = false)
 		: name(std::move(n)), parameters(std::move(params)), body(std::move(bd)),
 		returnType(std::move(returnAnn)),
-		typeParameters(std::move(typeParams)),
-		is_coroutine(isCoroutine) {
+		is_coroutine(isCoroutine),
+		typeParameters(std::move(typeParams)) {
         kind = NodeType::FunctionDeclaration;
     }
 

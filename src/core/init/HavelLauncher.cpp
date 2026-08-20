@@ -1380,7 +1380,7 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
   if (const char* env = std::getenv("HAVEL_LOG_FILE")) {
     Logger::getInstance().setLogFile(env);
   }
-  if (const char* env = std::getenv("HAVEL_LOG_NO_COLOR")) {
+  if (std::getenv("HAVEL_LOG_NO_COLOR")) {
     Logger::getInstance().setColoredOutput(false);
   }
   if (const char* env = std::getenv("HAVEL_LOG_ORIGIN_FILTER")) {

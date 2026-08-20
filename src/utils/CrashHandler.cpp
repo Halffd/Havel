@@ -98,7 +98,7 @@ std::string generateCrashReport(const CrashReport& report) {
     return filename;
 }
 
-void panic(const std::string& message, bool generate_core_dump) {
+[[noreturn]] void panic(const std::string& message, bool generate_core_dump) {
     CrashReport report;
     report.message = message;
     report.stack_trace = captureStackTrace(2);

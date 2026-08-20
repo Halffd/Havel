@@ -33,7 +33,7 @@ std::string Clipboard::runWithTimeout(const std::string& cmd, int timeoutMs) con
   std::promise<std::string> promise;
   auto future = promise.get_future();
   
-  std::thread([this, &promise, cmd]() {
+  std::thread([&promise, cmd]() {
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) {
       promise.set_value("");
@@ -61,7 +61,7 @@ bool Clipboard::setTextWithTimeout(const std::string& text, const std::string& c
   std::promise<bool> promise;
   auto future = promise.get_future();
   
-  std::thread([this, &promise, text, cmd]() {
+  std::thread([&promise, text, cmd]() {
     FILE* pipe = popen(cmd.c_str(), "w");
     if (!pipe) {
       promise.set_value(false);

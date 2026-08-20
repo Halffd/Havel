@@ -20,8 +20,8 @@ let hasText = clipboard.hasText();
 clipboard.clear();
 
 // Test Window Module (placeholder)
-let activeWindow = window.getActive();
-let allWindows = window.getAll();
+let activeWindow = window.active();
+let allWindows = window.list();
 
 // Test Hotkey Module (placeholder) - without function callback
 let hotkeyId = hotkey.register("ctrl+alt+t", "callback_string");

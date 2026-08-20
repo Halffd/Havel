@@ -1,0 +1,117 @@
+// modules/lang/unix_socket/unix_socket.hv - Pure Havel Unix domain socket connections
+// EXPERIMENTAL: VM has issues with complex functions combining FFI + arrays + objects
+// Use the inline FFI approach in hotkeys0.2.hv instead (see cipc function)
+
+use ffi
+
+// Constants
+AF_UNIX = 1
+SOCK_STREAM = 1
+
+// Type signatures for ffi.call
+_t_iii = ["int32", "int32", "int32"]
+_t_ipl = ["int32", "pointer", "int32"]
+_t_ipll = ["int32", "pointer", "int64"]
+_t_i = ["int32"]
+
+// Connection object marker
+const _UNIX_SOCKET_MARKER = "__unix_socket"
+
+// Lazy-initialized symbols
+_libc = null
+_socket = null
+_connect = null
+_write = null
+_read = null
+_close = null
+
+fn _ensure_symbols() {
+    if _libc != null { return }
+    
+    _libc = ffi.open("libc.so.6")
+    if _libc == 0 { _libc = ffi.open("libc.so") }
+    if _libc == 0 { throw "unix_socket: failed to load libc" }
+    
+    _socket = ffi.sym(_libc, "socket")
+    _connect = ffi.sym(_libc, "connect")
+    _write = ffi.sym(_libc, "write")
+    _read = ffi.sym(_libc, "read")
+    _close = ffi.sym(_libc, "close")
+    
+    if _socket == 0 || _connect == 0 || _write == 0 || _read == 0 || _close == 0 {
+        throw "unix_socket: failed to resolve socket functions"
+    }
+}
+
+// NOTE: This function hits a VM bug when combining FFI + array + object
+// Use the inline FFI approach in hotkeys0.2.hv (cipc function) instead
+fn connect(path) {
+    _ensure_symbols()
+    
+    fd = ffi.call(_socket, "int32", _t_iii, AF_UNIX, SOCK_STREAM, 0)
+    if fd < 0 { 
+        err = ffi.errno()
+        throw "socket failed: errno=" + err 
+    }
+    
+    addr = [0] * 110
+    addr[0] = AF_UNIX & 0xFF
+    addr[1] = (AF_UNIX >> 8) & 0xFF
+    i = 0
+    path_len = path.len()
+    while i < path_len {
+        if i < 108 { addr[2 + i] = path.codePointAt(i) }
+        i = i + 1
+    }
+    
+    res = ffi.call(_connect, "int32", _t_ipl, fd, addr, 110)
+    if res < 0 {
+        err = ffi.errno()
+        ffi.call(_close, "int32", _t_i, fd)
+        throw "connect failed: errno=" + err
+    }
+    
+    conn = {}
+    conn.__fd = fd
+    conn
+}
+
+// Working test functions
+fn test_simple() { 42 }
+
+fn test_medium(n) {
+    x = [0] * 10
+    i = 0
+    while i < n {
+        x[i] = i
+        i = i + 1
+    }
+    y = 0
+    for v in x { y = y + v }
+    y
+}
+
+fn test_array() {
+    print("test_array: before array")
+    arr = [0] * 110
+    print("test_array: after array, len:", arr.len())
+    arr
+}
+
+fn test_ffi_call() {
+    _libc = ffi.open("libc.so.6")
+    if _libc == 0 { _libc = ffi.open("libc.so") }
+    if _libc == 0 { throw "failed to load libc" }
+    
+    _socket = ffi.sym(_libc, "socket")
+    if _socket == 0 { throw "failed to resolve socket" }
+    
+    fd = ffi.call(_socket, "int32", ["int32", "int32", "int32"], 1, 1, 0)
+    fd
+}
+
+fn test_return_obj() {
+    obj = {}
+    obj.value = 42
+    obj
+}

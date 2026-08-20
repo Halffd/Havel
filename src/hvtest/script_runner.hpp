@@ -328,4 +328,114 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
     return fail > 0 ? 1 : 0;
 }
 
+// Run a script in all 4 modes and compare results
+struct ComparisonResult {
+    std::string path;
+    bool cpp_passed = false;
+    bool self_hosted_passed = false;
+    bool jit_passed = false;
+    bool aot_passed = false;
+    int cpp_exit = -1;
+    int self_hosted_exit = -1;
+    int jit_exit = -1;
+    int aot_exit = -1;
+    double cpp_ms = 0;
+    double self_hosted_ms = 0;
+    double jit_ms = 0;
+    double aot_ms = 0;
+    bool all_agree = false;
+};
+
+inline ComparisonResult run_script_all_modes(const std::string &havel_bin, const std::string &script_path,
+                                              int timeout_seconds = 60,
+                                              const std::string &self_hosted_path = "") {
+    ComparisonResult result;
+    result.path = script_path;
+    int timeout_sec = timeout_seconds; // Avoid parameter shadowing
+
+    // 1. C++ interpreter mode (no flags)
+    {
+        auto start = std::chrono::high_resolution_clock::now();
+        auto script_result = run_script(havel_bin, script_path, timeout_sec, {});
+        auto end = std::chrono::high_resolution_clock::now();
+        result.cpp_ms = std::chrono::duration<double, std::milli>(end - start).count();
+        result.cpp_passed = script_result.passed;
+        result.cpp_exit = script_result.exit_code;
+    }
+
+    // 2. Self-hosted mode (if self_hosted_path provided)
+    if (!self_hosted_path.empty()) {
+        std::vector<std::string> flags = {"--run", "--self-hosted-path", self_hosted_path};
+        auto start = std::chrono::high_resolution_clock::now();
+        auto script_result = run_script(havel_bin, script_path, timeout_sec, flags);
+        auto end = std::chrono::high_resolution_clock::now();
+        result.self_hosted_ms = std::chrono::duration<double, std::milli>(end - start).count();
+        result.self_hosted_passed = script_result.passed;
+        result.self_hosted_exit = script_result.exit_code;
+    }
+
+    // 3. JIT mode (if available)
+    #ifdef HAVEL_ENABLE_LLVM
+    {
+        // JIT is currently tested via run_jit_smoke_tests which runs internal tests
+        // For now, we'll skip JIT mode for individual scripts unless we add support
+    }
+    #endif
+
+    // 4. AOT mode
+    {
+        std::string output_path = "/tmp/aot_" + fs::path(script_path).stem().string();
+        std::vector<std::string> flags = {"--target", "aot", script_path, "-o", "/tmp/aot_" + fs::path(script_path).stem().string()};
+        auto start = std::chrono::high_resolution_clock::now();
+        auto script_result = run_script(havel_bin, script_path, timeout_sec, flags);
+        auto end = std::chrono::high_resolution_clock::now();
+        result.aot_ms = std::chrono::duration<double, std::milli>(end - start).count();
+        result.aot_passed = script_result.passed;
+        result.aot_exit = script_result.exit_code;
+    }
+
+    // Check if all modes agree
+    bool has_self_hosted = !self_hosted_path.empty();
+    result.all_agree = (result.cpp_passed == result.self_hosted_passed) &&
+                       (!result.self_hosted_passed || result.cpp_passed == result.aot_passed);
+
+    return result;
 }
+
+inline int run_comparison_suite(const std::string &havel_bin, const std::vector<std::string> &directories,
+                                 const std::string &self_hosted_path = "",
+                                 int timeout_seconds = 60, bool verbose = false) {
+    auto scripts = discover_scripts(directories);
+    if (scripts.empty()) {
+        std::cerr << "no .hv scripts found in specified directories" << std::endl;
+        return 1;
+    }
+
+    int pass = 0, fail = 0, mismatch = 0;
+    auto suite_start = std::chrono::high_resolution_clock::now();
+
+    for (const auto &script : scripts) {
+        auto result = run_script_all_modes(havel_bin, script, timeout_seconds, "");
+        if (!script.empty()) {
+            std::cout << "[RUN] " << script << " ..." << std::flush << std::endl;
+        }
+        
+        if (result.cpp_passed && result.aot_passed) {
+            std::cout << "[PASS] " << script << " (cpp=" << (int)result.cpp_ms << "ms, aot=" << (int)result.aot_ms << "ms)" << std::endl << std::flush;
+        } else if (result.cpp_passed != result.aot_passed) {
+            std::cout << "[MISMATCH] " << script << " (cpp=" << (result.cpp_passed ? "PASS" : "FAIL") 
+                      << ", aot=" << (result.aot_passed ? "PASS" : "FAIL") << ")" << std::endl << std::flush;
+        } else {
+            std::cout << "[FAIL] " << script << " (cpp=" << (result.cpp_passed ? "PASS" : "FAIL") 
+                      << ", aot=" << (result.aot_passed ? "PASS" : "FAIL") << ")" << std::endl << std::flush;
+        }
+    }
+
+    auto suite_end = std::chrono::high_resolution_clock::now();
+    double total_ms = std::chrono::duration<double, std::milli>(suite_end - suite_start).count();
+
+    std::cout << "\ncomparison: " << pass << " passed, " << fail << " failed, " << mismatch << " mismatched" << std::endl << std::flush;
+    return (fail > 0 || mismatch > 0) ? 1 : 0;
+}
+
+} // namespace hvtest

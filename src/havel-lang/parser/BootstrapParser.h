@@ -155,6 +155,15 @@ private:
   std::vector<CompilerError> errors;
   RecoveryMode recoveryMode = RecoveryMode::None;
 
+  // Delimiter tracking for better error recovery
+  struct DelimiterInfo {
+    TokenType type;
+    size_t line;
+    size_t column;
+    size_t tokenIndex;
+  };
+  std::vector<DelimiterInfo> delimiterStack_;
+
   void reportError(const std::string &message);
   void reportErrorAt(const Token &token, const std::string &message);
   void reportWarning(const std::string &message);
@@ -168,6 +177,11 @@ private:
 
   // Error recovery
   void errorAt(const Token &token, const std::string &message);
+
+  // Delimiter tracking
+  void pushDelimiter(TokenType type);
+  void popDelimiter(TokenType expected);
+  std::optional<DelimiterInfo> getUnclosedDelimiter() const;
 
   // Safety checks
   void checkTokenLimit();

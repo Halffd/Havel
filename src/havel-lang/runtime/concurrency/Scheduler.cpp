@@ -659,17 +659,21 @@ bool Scheduler::wakeHotkey(Goroutine* g, const std::vector<Value>& newArgs) {
                     g->state == GoroutineState::Created ||
                     g->state == GoroutineState::Running);
 
-  // For persistent hotkeys suspended with HotkeyWait, treat as pending for
-  // Drop policy to prevent bursty input (wheel storms) from hammering the scheduler
-  bool isSuspendedHotkeyWait = (g->state == GoroutineState::Suspended &&
-                                g->suspension_reason.load(std::memory_order_acquire) == SuspensionReason::HotkeyWait);
-
   ::havel::debug("[Scheduler] wakeHotkey: gid={} state={} policy={} isPending={}",
                   g->id, static_cast<int>(g->state.load()), static_cast<int>(g->hotkey_policy), isPending);
 
+  // Drop policy coalesces triggers arriving WHILE the goroutine is queued or
+  // running (isPending). A goroutine parked in Suspended+HotkeyWait is idle,
+  // NOT pending: it is awaiting its next trigger and must be woken by it.
+  // Treating parked as pending (regression 0d576573) made isHotkeyPending()
+  // return true for every idle persistent hotkey, so the Drop pre-check in
+  // ModularHostBridges dropped the trigger before wakeHotkey was ever called
+  // and the hotkey never fired. Bursty input is still coalesced: while the
+  // hotkey body executes (100ms+ for slow bodies), state is Running and
+  // redundant triggers are dropped here.
   switch (g->hotkey_policy) {
   case HotkeyPolicy::Drop:
-    if (isPending || isSuspendedHotkeyWait) return g->persistent;
+    if (isPending) return g->persistent;
     break;
   case HotkeyPolicy::Replace:
     if (isPending) {
@@ -740,15 +744,11 @@ bool Scheduler::isHotkeyPending(uint32_t gid) const {
     auto it = goroutines_.find(gid);
     if (it == goroutines_.end()) return false;
     auto s = it->second->state.load(std::memory_order_acquire);
-    // For persistent hotkeys, also consider Suspended with HotkeyWait as "pending"
-    // to prevent bursty input from hammering the scheduler
-    if (s == GoroutineState::Suspended) {
-      auto sr = it->second->suspension_reason.load(std::memory_order_acquire);
-      if (sr == SuspensionReason::HotkeyWait) {
-        return true;
-      }
-      return false;
-    }
+    // Only goroutines queued or currently executing are "pending". A goroutine
+    // parked in Suspended+HotkeyWait is idle and awaiting its next trigger —
+    // isHotkeyPending() must return false so the Drop-policy pre-check in
+    // ModularHostBridges does not swallow the trigger (regression 0d576573
+    // returned true here and hotkeys never fired).
     return s == GoroutineState::Runnable || s == GoroutineState::Created ||
            s == GoroutineState::Running;
 }

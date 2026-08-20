@@ -155,6 +155,19 @@ void Parser::synchronize() {
   // Panic mode recovery - skip tokens until we find a statement boundary
   advance(); // Skip the current token that caused the error
 
+  // Check for unclosed delimiters and report them
+  if (auto unclosed = getUnclosedDelimiter()) {
+    std::string msg;
+    switch (unclosed->type) {
+      case TokenType::OpenParen: msg = "Unclosed '('"; break;
+      case TokenType::OpenBracket: msg = "Unclosed '['"; break;
+      case TokenType::OpenBrace: msg = "Unclosed '{'"; break;
+      default: msg = "Unclosed delimiter";
+    }
+    // Report at the opener location, not here
+    errorAt(at(), msg + " (opened at line " + std::to_string(unclosed->line) + ", col " + std::to_string(unclosed->column) + ")");
+  }
+
   while (notEOF()) {
     havel::TokenType type = at().type;
 
@@ -192,6 +205,25 @@ void Parser::synchronizeTo(havel::TokenType type) {
   if (notEOF()) {
     advance(); // Consume the target token
   }
+}
+
+void Parser::pushDelimiter(TokenType type) {
+  Token current = at();
+  delimiterStack_.push_back({type, current.line, current.column, position});
+}
+
+void Parser::popDelimiter(TokenType expected) {
+  if (!delimiterStack_.empty() && delimiterStack_.back().type == expected) {
+    delimiterStack_.pop_back();
+  }
+  // If mismatch, don't pop - let the error be caught elsewhere
+}
+
+std::optional<Parser::DelimiterInfo> Parser::getUnclosedDelimiter() const {
+  if (!delimiterStack_.empty()) {
+    return delimiterStack_.back();
+  }
+  return std::nullopt;
 }
 
 [[noreturn]] void Parser::fail(const std::string &message) {
@@ -2127,9 +2159,12 @@ start = parsePrattExpression(0);
 
 // Helper methods for Pratt parser
 std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
+  pushDelimiter(TokenType::OpenParen);
+  
   // Check for empty lambda: () => body
   if (at().type == TokenType::CloseParen && at(1).type == TokenType::Arrow) {
     advance(); // consume ')'
+    popDelimiter(TokenType::OpenParen);
     advance(); // consume '=>'
     std::vector<std::unique_ptr<ast::FunctionParameter>> params;
     std::unique_ptr<ast::Statement> body;
@@ -2169,6 +2204,7 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
     // Check for ) =>
     if (lambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::Arrow) {
       advance(); // consume ')'
+      popDelimiter(TokenType::OpenParen);
       advance(); // consume '=>'
       isMultiParamLambda = true;
     }
@@ -2216,12 +2252,14 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
     // Check for ) {
     if (braceLambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
       advance(); // consume ')'
+      popDelimiter(TokenType::OpenParen);
       // DON'T consume '{' - parseBlockStatement expects to see it
       isBraceLambda = true;
     }
   } else if (at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
     // Empty params: () { body }
     advance(); // consume ')'
+    popDelimiter(TokenType::OpenParen);
     // DON'T consume '{' - parseBlockStatement expects to see it
     isBraceLambda = true;
   }
@@ -2257,6 +2295,7 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
       failAt(at(), "Expected ')' after tuple elements");
     }
     advance(); // consume ')'
+    popDelimiter(TokenType::OpenParen);
 
     return makeNode<ast::TupleExpression>(std::move(elements));
   }
@@ -2266,6 +2305,7 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
     failAt(at(), "Expected ')'");
   }
   advance(); // consume ')'
+  popDelimiter(TokenType::OpenParen);
 
   return expr;
 }
@@ -2283,6 +2323,7 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
 
   if (at().type == TokenType::OpenParen) {
     advance(); // consume '('
+    pushDelimiter(TokenType::OpenParen);
 
     while (notEOF() && at().type != TokenType::CloseParen) {
       if (!params.empty() && at().type == TokenType::Comma) {
@@ -2317,6 +2358,7 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
     }
 
     advance(); // consume ')'
+    popDelimiter(TokenType::OpenParen);
   }
   
   // Parse body
@@ -3642,6 +3684,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 	if (at().type == havel::TokenType::OpenParen) {
 		size_t savedPos = position;
 		advance(); // consume '('
+		pushDelimiter(TokenType::OpenParen);
 		std::vector<ast::TypeParam> candidateParams;
 		bool isTypeParamList = true;
 		while (at().type != havel::TokenType::CloseParen && notEOF()) {
@@ -3680,13 +3723,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 		}
 		if (isTypeParamList && at().type == havel::TokenType::CloseParen) {
 			advance(); // consume ')'
+			popDelimiter(TokenType::OpenParen);
 			if (at().type == havel::TokenType::OpenParen && !candidateParams.empty()) {
 				typeParams = std::move(candidateParams);
 			} else {
 				position = savedPos;
+				popDelimiter(TokenType::OpenParen);
 			}
 		} else {
 			position = savedPos;
+			popDelimiter(TokenType::OpenParen);
 		}
 	}
 
@@ -3694,6 +3740,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     failAt(at(), "Expected '(' after function name");
   }
   advance(); // consume '('
+  pushDelimiter(TokenType::OpenParen);
 
   std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
   while (notEOF() && at().type != havel::TokenType::CloseParen) {
@@ -3757,6 +3804,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     failAt(at(), "Expected ')' after parameter list");
   }
     advance(); // consume ')'
+    popDelimiter(TokenType::OpenParen);
 
     // Check for return type annotation (-> Type)
     std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> returnType;
@@ -7287,9 +7335,10 @@ while (at().type == havel::TokenType::NewLine) {
     // Restore input context
     context.inInputContext = savedInputContext;
     
-  } else if (at().type == havel::TokenType::OpenBrace) {
+} else if (at().type == havel::TokenType::OpenBrace) {
     // Brace block: original behavior
     advance(); // consume '{'
+    pushDelimiter(TokenType::OpenBrace);
     
     // Save and set input context
     bool savedInputContext = context.inInputContext;
@@ -7303,8 +7352,8 @@ while (at().type == havel::TokenType::NewLine) {
             // Skip newlines and semicolons (empty statements)
             if (at().type == havel::TokenType::NewLine ||
                 at().type == havel::TokenType::Semicolon) {
-                advance();
-                continue;
+              advance();
+              continue;
             }
 
             size_t beforePos = position;
@@ -7317,7 +7366,7 @@ while (at().type == havel::TokenType::NewLine) {
                 advance();
             }
         }
-
+    
     // Restore input context
     context.inInputContext = savedInputContext;
     
@@ -7326,6 +7375,7 @@ while (at().type == havel::TokenType::NewLine) {
       failAt(at(), "Expected '}'");
     }
     advance();
+    popDelimiter(TokenType::OpenBrace);
     
   } else {
     failAt(at(), "Expected ':', '::', or '{' to start block");
@@ -9348,6 +9398,7 @@ std::unique_ptr<havel::ast::Expression>
 Parser::parseIndexExpression(std::unique_ptr<havel::ast::Expression> object) {
 
   advance(); // consume '['
+  pushDelimiter(TokenType::OpenBracket);
 
   // Check for slice syntax: [start:end] or [start:] or [:end] or [:]
   // We need to look ahead to see if there's a ':' in the index expression
@@ -9423,12 +9474,14 @@ Parser::parseIndexExpression(std::unique_ptr<havel::ast::Expression> object) {
     failAt(at(), "Expected ']' after array index or slice");
   }
   advance(); // consume ']'
+  popDelimiter(TokenType::OpenBracket);
 
   return makeNode<havel::ast::IndexExpression>(std::move(object),
                                                        std::move(index));
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
+  pushDelimiter(TokenType::OpenBracket);
   std::vector<std::unique_ptr<havel::ast::Expression>> elements;
 
   advance(); // consume '['
@@ -9479,6 +9532,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
     failAt(at(), "Expected ']' to close array literal");
   }
   advance(); // consume ']'
+  popDelimiter(TokenType::OpenBracket);
 
   return makeNode<havel::ast::ArrayLiteral>(std::move(elements));
 }
@@ -9493,9 +9547,11 @@ Parser::parseObjectLiteral(bool unsorted) {
     // already inside the object. Only advance if current token is the opener.
     if (at().type == havel::TokenType::BangOpenBrace) {
         advance(); // consume '!{'
+        pushDelimiter(TokenType::OpenBrace);
         unsorted = true;
     } else if (at().type == havel::TokenType::OpenBrace) {
         advance(); // consume '{'
+        pushDelimiter(TokenType::OpenBrace);
     }
     // else: opener was already consumed, we're past it
 
@@ -9695,6 +9751,7 @@ t == havel::TokenType::RegexString ||
     failAt(at(), "Expected '}' to close collection literal");
   }
   advance(); // consume '}'
+  popDelimiter(TokenType::OpenBrace);
 
   return makeNode<havel::ast::ObjectLiteral>(std::move(pairs),
                                                      unsorted);
@@ -9706,6 +9763,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {
   blockExpr->column = at().column;
 
   advance(); // consume '{'
+  pushDelimiter(TokenType::OpenBrace);
 
   // Parse statements until we hit an expression (last one becomes value)
   // or closing brace
@@ -9761,6 +9819,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {
     failAt(at(), "Expected '}' to close block expression");
   }
   advance(); // consume '}'
+  popDelimiter(TokenType::OpenBrace);
 
   return blockExpr;
 }

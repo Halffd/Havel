@@ -372,6 +372,8 @@ std::string opcodeName(OpCode opcode) {
     return "CALL_DYN";
   case OpCode::CALL_SPREAD:
     return "CALL_SPREAD";
+  case OpCode::TAIL_CALL:
+    return "TAIL_CALL";
   case OpCode::CALL_METHOD:
     return "CALL_METHOD";
   case OpCode::CALL_METHOD_SPREAD:
@@ -665,6 +667,8 @@ std::string opcodeName(OpCode opcode) {
     return "FORMAT_BASE64_ENCODE";
   case OpCode::FORMAT_BASE64_DECODE:
     return "FORMAT_BASE64_DECODE";
+  case OpCode::CALL_IF_FUNCTION:
+    return "CALL_IF_FUNCTION";
   case OpCode::NOP:
     return "NOP";
   case OpCode::BIT_AND:

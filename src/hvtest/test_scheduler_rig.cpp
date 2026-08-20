@@ -3012,7 +3012,13 @@ static void test_coroutine_suspend_and_resume() {
   // unpark simulates the coroutine completing
   sched.unpark(g);
   CHECK(g->state == Scheduler::GoroutineState::Runnable, "should be Runnable after unpark");
-  CHECK(g->wait_handle.type == Scheduler::AwaitableType::NONE, "wait_handle should be cleared by unpark");
+  // Contract (since 8cc8fc16): unpark must NOT clear wait_handle — it carries
+  // resume_value for channel operations. The resume logic in HavelEngine
+  // (ExecutionEngine.cpp executeFrame) consumes resume_value via
+  // replaceStackTop() and calls wait_handle.clear() after use.
+  CHECK(g->wait_handle.type == Scheduler::AwaitableType::COROUTINE,
+        "unpark preserves wait_handle (resume_value carried for resume logic)");
+  CHECK_EQ(g->wait_handle.target_id, 42u, "wait_handle target preserved after unpark");
 
   auto* picked = sched.pickNext();
   CHECK(picked != nullptr && picked->id == gid, "should be pickable after unpark");

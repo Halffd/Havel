@@ -291,7 +291,10 @@ void registerBytecodeBuilderModule(const VMApi &api) {
         }
 
         BytecodeFunction func(name, params, locals);
-		func.variadic_param_index = variadic_param_index;
+        func.variadic_param_index = variadic_param_index;
+        if (args.size() > 4 && args[4].isInt()) {
+            func.is_generator = args[4].asInt() != 0;
+        }
         g_builder.chunk->addFunction(std::move(func));
         g_builder.current_func_idx = static_cast<int32_t>(g_builder.chunk->getFunctionCount() - 1);
         return Value::makeInt(static_cast<int64_t>(g_builder.current_func_idx));

@@ -284,7 +284,14 @@ if (co) {
                 GCHeap::CallerFrame cf;
                 cf.coroutine_id = current_coroutine_id_;
                 cf.frame_count = frame_count_;
-                cf.ip = currentFrame().ip + 1;
+                // Consume stashed return address if present (fast dispatch
+                // pre-increments ip before executeInstruction; see VM.hpp).
+                if (pending_call_return_ip_ >= 0) {
+                    cf.ip = static_cast<uint32_t>(pending_call_return_ip_);
+                } else {
+                    cf.ip = currentFrame().ip + 1;
+                }
+                pending_call_return_ip_ = -1;
                 cf.locals = locals;
                 {
                     std::vector<Value> tmp;

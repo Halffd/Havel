@@ -514,6 +514,12 @@ uint32_t hotkey_callback_id = 0; // CallbackId for looking up DirectCallThunk
   size_t runnableCount() const;
   size_t suspendedCount() const;
 
+  // True if any goroutine is parked in Suspended+HotkeyWait (a registered
+  // persistent hotkey awaiting its next trigger). Such goroutines are woken
+  // asynchronously by the input listener thread, so the driving loop must
+  // stay alive while any exist instead of treating them as a deadlock.
+  bool hasHotkeyWaitSuspended() const;
+
   // Attach a Fiber to a goroutine by ID
   void attachFiber(uint32_t goroutine_id, Fiber* fiber);
 

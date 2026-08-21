@@ -1,0 +1,63 @@
+// smoke: coroutine-call-resume = 0
+// Regression: calling a generator's coroutine value with call syntax (g())
+// must resume it and return each yielded value. A CallerFrame return-address
+// off-by-one in the fast dispatch path used to skip the instruction after
+// CALL, dropping yields and corrupting locals (test_gen_gen bug).
+fn gen() {
+  yield "x"
+  yield "y"
+  return "z"
+}
+
+g = gen()
+val r1 = g()
+val r2 = g()
+val r3 = g()
+val r4 = g()
+
+if str(r1) != "x" {
+  print("FAIL coroutine-call-resume: r1 expected x, got " + str(r1))
+  process.exit(255)
+}
+if str(r2) != "y" {
+  print("FAIL coroutine-call-resume: r2 expected y, got " + str(r2))
+  process.exit(255)
+}
+if str(r3) != "z" {
+  print("FAIL coroutine-call-resume: r3 expected z, got " + str(r3))
+  process.exit(255)
+}
+if !r4.is_nil() && r4 != nil {
+  print("FAIL coroutine-call-resume: r4 expected nil, got " + str(r4))
+  process.exit(255)
+}
+
+// Nested generators: outer resumes inner via call syntax
+fn inner_gen() {
+  yield "a"
+  yield "b"
+  return "c"
+}
+fn outer_gen() {
+  val ig = inner_gen()
+  yield ig()
+  yield ig()
+  return ig()
+}
+
+og = outer_gen()
+if str(og()) != "a" {
+  print("FAIL coroutine-call-resume: nested first expected a, got " + str(og()))
+  process.exit(255)
+}
+if str(og()) != "b" {
+  print("FAIL coroutine-call-resume: nested second expected b")
+  process.exit(255)
+}
+if str(og()) != "c" {
+  print("FAIL coroutine-call-resume: nested third expected c")
+  process.exit(255)
+}
+
+val __result = 0
+return __result

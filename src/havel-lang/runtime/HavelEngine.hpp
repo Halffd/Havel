@@ -784,6 +784,16 @@ main_script_fiber_ = std::make_unique<compiler::Fiber>(0, 0, 0, "main-yield-snap
         std::cerr << "[DEBUG] pickNext null: suspended=" << sched->suspendedCount() << " total=" << sched->goroutineCount() << "\n";
         size_t sc = sched->suspendedCount();
         if (sc == 0) break;
+        // Persistent hotkeys park in Suspended+HotkeyWait and are woken
+        // asynchronously by the input listener thread (wakeHotkey). They are
+        // not a deadlock: keep pumping so the wake is picked up. Without this
+        // the self-hosted path exits as soon as a hotkey-only script parks,
+        // so its hotkeys can never fire (native mode covers this with the UI
+        // backend's runEventLoop).
+        if (sched->hasHotkeyWaitSuspended()) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(2));
+          continue;
+        }
         // Check if any sleeping goroutine has a deadline that will wake it
         auto deadline = sched->nextSleepDeadline();
         if (!deadline) break; // No sleeping goroutines with deadlines — would hang forever

@@ -1330,7 +1330,7 @@ return
   if k == "LambdaExpression" {
   // Compile the lambda body now
   // node only has parameters and body (no name, line, col)
-  result = compileLambda(emitter, null, node.parameters, node.body, null)
+  result = compileLambda(emitter, null, node.parameters, node.body, null, containsYield(node.body))
   upcount = result[0]
   chunkIdx = result[1]
   localIdx = result[2]
@@ -1732,7 +1732,7 @@ if k == "AsyncExpression" {
     else if node.body.kind == "FnDeclaration" {
       // async fn name() → compile as closure
       fnDecl = node.body
-      result = compileFuncDecl(emitter, fnDecl.name, fnDecl.params, fnDecl.body, -1, fnDecl.line)
+      result = compileFuncDecl(emitter, fnDecl.name, fnDecl.params, fnDecl.body, -1, fnDecl.line, false, fnDecl.isCoroutine == true || containsYield(fnDecl.body))
       upcount = result[0]
       chunkIdx = result[1]
       emitter.func_map[fnDecl.name] = chunkIdx
@@ -2406,7 +2406,7 @@ if k == "RepeatStatement" {
     // Declare the function name in scope
     localIdx = scopeDeclare(emitter.scope, node.name)
     // Compile the function body — compileFuncDecl returns (upcount, actualChunkIdx)
-    result = compileFuncDecl(emitter, node.name, node.params, node.body, -1, node.line)
+    result = compileFuncDecl(emitter, node.name, node.params, node.body, -1, node.line, false, node.isCoroutine == true || containsYield(node.body))
     upcount = result[0]
     chunkIdx = result[1]
     emitter.func_map[node.name] = chunkIdx
@@ -3275,8 +3275,29 @@ if node.kind == "ExpressionStatement" {
 // Function compilation (with upvalue registration)
 // ============================================================
 
-fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInstanceMethod) {
+// Recursively check whether an AST subtree contains a yield expression.
+// Mirrors the C++ compiler's functionContainsYield: functions that yield
+// must be flagged as generators so calls create coroutines instead of
+// executing the body eagerly.
+fn containsYield(node) {
+  if node == null { return false }
+  if type(node) == "array" {
+    for item in node {
+      if containsYield(item) { return true }
+    }
+    return false
+  }
+  if type(node) != "object" { return false }
+  if node.kind == "YieldExpression" { return true }
+  for k in node.keys() {
+    if k != "kind" && containsYield(node[k]) { return true }
+  }
+  return false
+}
+
+fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInstanceMethod, isGenerator) {
   if isInstanceMethod == null { isInstanceMethod = false }
+  if isGenerator == null { isGenerator = false }
   oldScope = emitter.scope
   fid = emitter.nextFuncId
   emitter.nextFuncId = fid + 1
@@ -3299,7 +3320,7 @@ fn compileFuncDecl(emitter, name, params, bodyNode, funcIdx, sourceLine, isInsta
   paramCount = #params
   localCount = paramCount + 16
   bc.func_push()
-  actualIdx = bc.func_new(name, paramCount, localCount, variadicParamIndex)
+  actualIdx = bc.func_new(name, paramCount, localCount, variadicParamIndex, isGenerator ? 1 : 0)
   newScope.bcFuncIdx = actualIdx
   // Set parameter names for kwargs support
   paramNameStrIds = []
@@ -3372,7 +3393,7 @@ bc.set_local_count(actualLocals)
  [upcount, actualIdx]
 
  }
-fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
+fn compileLambda(emitter, name, parameters, bodyNode, sourceLine, isGenerator) {
   lamId = emitter.nextFuncId
   emitter.nextFuncId = lamId + 1
   if name == null { name = "lambda_" + str(lamId) }
@@ -3400,7 +3421,7 @@ fn compileLambda(emitter, name, parameters, bodyNode, sourceLine) {
 paramCount = #(parameters != null ? parameters : [])
   localCount = paramCount + 16
   bc.func_push()
-  actualIdx = bc.func_new(name, paramCount, localCount, variadicParamIndex)
+  actualIdx = bc.func_new(name, paramCount, localCount, variadicParamIndex, isGenerator != null && isGenerator ? 1 : 0)
   newScope.bcFuncIdx = actualIdx
   // Set parameter names for kwargs support
   paramNameStrIds = []
@@ -3710,7 +3731,7 @@ while fi < #funcDecls {
     selfParam = {"name": "self", "default": null}
     implParams = [selfParam]
     for p in decl.params { implParams.push(p) }
-    result = compileFuncDecl(emitter, decl.name, implParams, decl.body, -1, decl.line, true)
+    result = compileFuncDecl(emitter, decl.name, implParams, decl.body, -1, decl.line, true, decl.isCoroutine == true || containsYield(decl.body))
     key = "impl:" + str(implFor) + "." + decl.name
     emitter.func_map[key] = result[1]
     funcChunkIdxs.push(result[1])
@@ -3718,7 +3739,7 @@ while fi < #funcDecls {
     fi = fi + 1
     continue
   }
-  result = compileFuncDecl(emitter, decl.name, decl.params, decl.body, -1, decl.line)
+  result = compileFuncDecl(emitter, decl.name, decl.params, decl.body, -1, decl.line, false, decl.isCoroutine == true || containsYield(decl.body))
   uc = result[0]
   chunkIdx = result[1]
   emitter.func_map[decl.name] = chunkIdx
@@ -4193,7 +4214,7 @@ fn emitClassMethodRegister(emitter, className, method) {
   isClassMethod = method.isClassMethod != null && method.isClassMethod
   chunkIdx = -1
   if isClassMethod {
-    result = compileFuncDecl(emitter, method.name, method.params, method.body, -1, method.line, false)
+    result = compileFuncDecl(emitter, method.name, method.params, method.body, -1, method.line, false, method.isCoroutine == true || containsYield(method.body))
     chunkIdx = result[1]
   }
   else {
@@ -4202,7 +4223,7 @@ fn emitClassMethodRegister(emitter, className, method) {
     for p in method.params {
       methodParams.push(p)
     }
-    result = compileFuncDecl(emitter, method.name, methodParams, method.body, -1, method.line, true)
+    result = compileFuncDecl(emitter, method.name, methodParams, method.body, -1, method.line, true, method.isCoroutine == true || containsYield(method.body))
     chunkIdx = result[1]
   }
 fnObj = bc.make_function_obj(chunkIdx)
@@ -4223,7 +4244,7 @@ fn emitStructMethodRegister(emitter, structName, method) {
   isClassMethod = method.isClassMethod != null && method.isClassMethod
   chunkIdx = -1
   if isClassMethod {
-    result = compileFuncDecl(emitter, method.name, method.params, method.body, -1, method.line, false)
+    result = compileFuncDecl(emitter, method.name, method.params, method.body, -1, method.line, false, method.isCoroutine == true || containsYield(method.body))
     chunkIdx = result[1]
   }
   else {
@@ -4232,7 +4253,7 @@ fn emitStructMethodRegister(emitter, structName, method) {
     for p in method.params {
       methodParams.push(p)
     }
-    result = compileFuncDecl(emitter, method.name, methodParams, method.body, -1, method.line, true)
+    result = compileFuncDecl(emitter, method.name, methodParams, method.body, -1, method.line, true, method.isCoroutine == true || containsYield(method.body))
     chunkIdx = result[1]
   }
   fnObj = bc.make_function_obj(chunkIdx)

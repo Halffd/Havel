@@ -533,13 +533,14 @@ file(GLOB_RECURSE CORE_SOURCES
  "src/c/*.cpp"
  "src/dl/*.cpp"
     "src/host/async/*.cpp"
+    "src/host/audio/*.cpp"
     "src/host/brightness/*.cpp"
     "src/host/browser/*.cpp"
     "src/host/chunker/*.cpp"
     "src/host/filesystem/*.cpp"
     "src/host/hotkey/*.cpp"
     "src/host/io/*.cpp"
-"src/host/media/*.cpp"
+    "src/host/media/*.cpp"
     "src/host/mouse/*.cpp"
     "src/host/mode/*.cpp"
 "src/host/network/*.cpp"
@@ -571,6 +572,7 @@ list(APPEND CORE_SOURCES
 "src/host/ui/GtkBackend.cpp"
 "src/host/ui/ImGuiBackend.cpp"
 "src/host/ui/UIManager.cpp"
+"src/host/window/WindowService.cpp"
 "src/Havel.cpp"
  "src/c/Config.c"
 "src/modules/HostModules.cpp"
@@ -583,6 +585,7 @@ if(ENABLE_QT_UI_BACKEND)
     "src/host/screenshot/ScreenshotService.cpp"
     "src/host/ui/QtBackend.cpp"
     "src/host/ui/UIService.cpp"
+    "src/host/window/AltTabService.cpp"
   )
   list(APPEND CORE_SOURCES ${_QT_CORE_SOURCES})
 endif()
@@ -2147,6 +2150,8 @@ add_havel_module_plugin(type         ${CMAKE_SOURCE_DIR}/src/havel-lang/stdlib/T
 
 # -- host module plugins ---------------------------------------------------
 add_havel_module_plugin(app          ${CMAKE_SOURCE_DIR}/src/modules/app/AppModule.cpp)
+add_havel_module_plugin(audio        ${CMAKE_SOURCE_DIR}/src/modules/audio/AudioModule.cpp)
+add_havel_module_plugin(automation   ${CMAKE_SOURCE_DIR}/src/modules/automation/AutomationModule.cpp)
 add_havel_module_plugin(pixel        ${CMAKE_SOURCE_DIR}/src/modules/automation/PixelModule.cpp)
 add_havel_module_plugin(clipboard    ${CMAKE_SOURCE_DIR}/src/modules/clipboard/ClipboardModule.cpp)
 add_havel_module_plugin(historyclipboard ${CMAKE_SOURCE_DIR}/src/modules/clipboard/HistoryClipboardModule.cpp)

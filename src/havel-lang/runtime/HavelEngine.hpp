@@ -24,6 +24,7 @@
 #include "core/io/IO.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "../stdlib/HotkeyModule.hpp"
+#include "core/window/WindowManager.hpp"
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -61,9 +62,8 @@ public:
     void initializeMinimal() {
         io_holder_ = std::make_shared<IO>();
         hotkeyManager_ = std::make_shared<HotkeyManager>(io_holder_);
-        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(),
-                                                 nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                                 nullptr, nullptr, std::vector<std::string>{});
+        windowManager_ = std::make_shared<WindowManager>();
+        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get());
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
@@ -542,6 +542,7 @@ private:
     std::shared_ptr<compiler::VM> vm_;
     std::shared_ptr<IO> io_holder_;
     std::shared_ptr<HotkeyManager> hotkeyManager_;
+    std::shared_ptr<WindowManager> windowManager_;
 #ifdef HAVEL_ENABLE_LLVM
     std::unique_ptr<compiler::BytecodeOrcJIT> jitCompiler_;
 #endif

@@ -8,41 +8,28 @@
 #include <vector>
 
 namespace havel {
+struct WindowInfo;
+struct WorkspaceInfo;
 class WindowManager;
-}
+} // namespace havel
 
 namespace havel::host {
 
-struct WindowInfo {
-    uint64_t id = 0;
-    std::string title;
-    std::string windowClass;
-    std::string className;
-    std::string exe;
-    int pid = 0;
-    std::string cmdline;
-    int x = 0;
-    int y = 0;
-    int width = 0;
-    int height = 0;
-    bool minimized = false;
-    bool maximized = false;
-    bool fullscreen = false;
-    bool valid = false;
-};
+// Re-export for convenience
+using ::havel::WindowInfo;
+using ::havel::WorkspaceInfo;
 
-struct WorkspaceInfo {
-    int id = 0;
-    std::string name;
-    bool active = false;
-};
-
-struct WorkspaceInfo;
-
+/**
+ * WindowService - Pure window business logic
+ *
+ * Provides system-level window operations without any language runtime
+ * coupling. All methods return simple C++ types (bool, int, string, vector,
+ * etc.)
+ */
 class WindowService {
 public:
-    WindowService();
-    ~WindowService() = default;
+  explicit WindowService(havel::WindowManager *manager);
+  ~WindowService() = default;
 
     struct WindowInfo getActiveWindowInfo() const;
     struct WindowInfo getWindowInfo(uint64_t id) const;

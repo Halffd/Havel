@@ -14,7 +14,10 @@
 
 #include "core/ocr/OCR.hpp"
 #include "core/io/IO.hpp"
-#include "core/display/DisplayManager.hpp"
+#ifdef HAVE_QT_EXTENSION
+#include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
+#endif
+#include "core/window/WindowManager.hpp"
 #ifdef HAVE_QT_EXTENSION
 #include <QCursor>
 #include <QGuiApplication>

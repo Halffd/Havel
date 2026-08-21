@@ -100,10 +100,12 @@ public:
   // Access to Config (needed by many modules)
   virtual class Configs &GetConfig() = 0;
 
-// Manager access for modules that need direct subsystem access
+  // Manager access for modules that need direct subsystem access
   // TODO: Replace with specific operation methods over time
   virtual class IO *GetIO() = 0;
   virtual class HotkeyManager *GetHotkeyManager() = 0;
+  virtual class WindowManager *GetWindowManager() = 0;
+  virtual class AudioManager *GetAudioManager() = 0;
   virtual class GUIManager *GetGUIManager() = 0;
   virtual class ScreenshotManager *GetScreenshotManager() = 0;
   virtual class ClipboardManager *GetClipboardManager() = 0;
@@ -112,7 +114,7 @@ public:
   virtual class FileManager *GetFileManager() = 0;
   virtual class ProcessManager *GetProcessManager() = 0;
   virtual class MapManager *GetMapManager() = 0;
-  virtual class compiler::VM *GetVM() = 0;
+ virtual class compiler::VM *GetVM() = 0;
 
   // Import manager for script imports
   virtual class ImportManager *GetImportManager() = 0;
@@ -133,7 +135,8 @@ public:
 class HostAPI : public IHostAPI {
 public:
   HostAPI(class IO *io, class HotkeyManager *hotkeyManager,
-          class Configs &config,
+          class Configs &config, class WindowManager *windowManager = nullptr,
+          class AudioManager *audioManager = nullptr,
           class GUIManager *guiManager = nullptr,
           class ScreenshotManager *screenshotManager = nullptr,
           class ClipboardManager *clipboardManager = nullptr,
@@ -180,12 +183,14 @@ public:
                               const std::string &defaultVal) override;
   void SetConfig(const std::string &key, const std::string &value) override;
 
-// IHostAPI implementation
+  // IHostAPI implementation
   class Configs &GetConfig() override;
 
   // Manager access for modules
   class IO *GetIO() override;
   class HotkeyManager *GetHotkeyManager() override;
+  class WindowManager *GetWindowManager() override;
+  class AudioManager *GetAudioManager() override;
   class GUIManager *GetGUIManager() override;
   class ScreenshotManager *GetScreenshotManager() override;
   class ClipboardManager *GetClipboardManager() override;
@@ -194,7 +199,7 @@ public:
   class FileManager *GetFileManager() override;
   class ProcessManager *GetProcessManager() override;
   class MapManager *GetMapManager() override;
-  class compiler::VM *GetVM() override;
+ class compiler::VM *GetVM() override;
   class ImportManager *GetImportManager() override {
     return nullptr;
   } // TODO: implement
@@ -211,6 +216,8 @@ private:
   class IO *io;
   class HotkeyManager *hotkeyManager;
   class Configs &config;
+  class WindowManager *windowManager;
+  class AudioManager *audioManager;
   class GUIManager *guiManager;
   class ScreenshotManager *screenshotManager;
   class ClipboardManager *clipboardManager;
@@ -219,7 +226,7 @@ private:
   class FileManager *fileManager;
   class ProcessManager *processManager;
   class MapManager *mapManager;
-  class compiler::VM *vm_ = nullptr;
+ class compiler::VM *vm_ = nullptr;
 
   // Command line arguments
   std::vector<std::string> commandLineArgs;

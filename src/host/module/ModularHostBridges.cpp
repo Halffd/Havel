@@ -28,6 +28,7 @@
 #include "havel-lang/compiler/vm/VMApi.hpp"
 #include "havel-lang/runtime/concurrency/Scheduler.hpp"
 #include "host/app/AppService.hpp"
+#include "host/audio/AudioService.hpp"
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/automation_suite/AutomationSuite.hpp"
 #endif
@@ -46,7 +47,10 @@
 #include "host/window/AltTabService.hpp"
 #endif
 #include "host/window/WindowService.hpp"
+#include "core/media/AudioManager.hpp"
 #include "core/process/Launcher.hpp"
+#include "core/window/WindowManager.hpp"
+#include "core/window/WindowManagerDetector.hpp"
 
 #ifdef HAVE_QT_EXTENSION
 #include <QClipboard>
@@ -1861,9 +1865,9 @@ options.host_functions["clipboard.get"] = [ctx = ctx_](const auto &args) {
 // Methods are shared static functions that take window ID as first argument
 static Value createWindowObject(
     VM *vm, const HostContext *ctx, uint64_t windowId,
-    const std::string &title = "", const std::string &className = "",
+    const std::string &title = "", const std::string &windowClass = "",
     const std::string &exe = "", int pid = 0, const std::string &cmdline = "") {
-  if (!vm || !ctx || false) {
+  if (!vm || !ctx || !ctx->windowManager) {
     return Value::makeNull();
   }
 
@@ -1873,7 +1877,7 @@ static Value createWindowObject(
 
   // Snapshot properties: win.title, win.class etc.
   api.setField(obj, "title", api.makeString(title));
-  api.setField(obj, "class", api.makeString(className));
+  api.setField(obj, "class", api.makeString(windowClass));
   api.setField(obj, "exe", api.makeString(exe));
   api.setField(obj, "pid", Value::makeInt(static_cast<int64_t>(pid)));
   api.setField(obj, "cmd", api.makeString(cmdline));
@@ -1903,12 +1907,12 @@ Value
 UIBridge::handleWindowGetActive(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
-  if (false || !ctx->vm) {
+  if (!ctx->windowManager || !ctx->vm) {
     ::havel::warn("[UIBridge] handleWindowGetActive: windowManager={} vm={}",
-                 (void*)nullptr, (void*)ctx->vm);
+                 (void*)ctx->windowManager, (void*)ctx->vm);
     return Value::makeNull();
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     ::havel::warn("[UIBridge] handleWindowGetActive: info invalid (id={} title='{}' class='{}')",
@@ -1916,12 +1920,13 @@ UIBridge::handleWindowGetActive(const std::vector<Value> &args,
     return Value::makeNull();
   }
   return createWindowObject(static_cast<VM *>(ctx->vm), ctx, info.id,
-                            info.title, info.windowClass, info.exe);
+                            info.title, info.windowClass, info.exe, info.pid,
+                            info.cmdline);
 }
 
 Value UIBridge::handleWindowCmd(const std::vector<Value> &args,
                                         const HostContext *ctx) {
-  if (args.empty() || false) {
+  if (args.empty() || !ctx->windowManager) {
     return Value::makeNull();
   }
   uint64_t wid = 0;
@@ -1930,7 +1935,7 @@ Value UIBridge::handleWindowCmd(const std::vector<Value> &args,
   else
     return Value::makeNull();
 
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getWindowInfo(wid);
   if (!info.valid) {
     return Value::makeNull();
@@ -1948,9 +1953,9 @@ static uint64_t resolveWindowId(const Value &arg,
 Value
 UIBridge::handleWindowCloseObj(const std::vector<Value> &args,
                                const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -1960,9 +1965,9 @@ UIBridge::handleWindowCloseObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowHideObj(const std::vector<Value> &args,
                               const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -1972,9 +1977,9 @@ UIBridge::handleWindowHideObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowShowObj(const std::vector<Value> &args,
                               const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -1984,9 +1989,9 @@ UIBridge::handleWindowShowObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowFocusObj(const std::vector<Value> &args,
                                const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -1996,9 +2001,9 @@ UIBridge::handleWindowFocusObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowMinObj(const std::vector<Value> &args,
                              const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -2008,9 +2013,9 @@ UIBridge::handleWindowMinObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowMaxObj(const std::vector<Value> &args,
                              const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -2020,9 +2025,9 @@ UIBridge::handleWindowMaxObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowResizeObj(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.size() < 3 || false)
+  if (args.size() < 3 || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -2041,9 +2046,9 @@ UIBridge::handleWindowResizeObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowMoveObj(const std::vector<Value> &args,
                               const HostContext *ctx) {
-  if (args.size() < 3 || false)
+  if (args.size() < 3 || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -2061,7 +2066,7 @@ UIBridge::handleWindowMoveObj(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowFind(const std::vector<Value> &args,
                                          const HostContext *ctx) {
-  if (args.empty() || false || !ctx->vm) {
+  if (args.empty() || !ctx->windowManager || !ctx->vm) {
     return Value::makeNull();
   }
 
@@ -2084,7 +2089,7 @@ Value UIBridge::handleWindowFind(const std::vector<Value> &args,
   std::string type = selector.substr(0, spacePos);
   std::string value = selector.substr(spacePos + 1);
 
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto windows = winService.getAllWindows();
 
   for (const auto &win : windows) {
@@ -2093,7 +2098,7 @@ Value UIBridge::handleWindowFind(const std::vector<Value> &args,
     if (type == "title") {
       match = (win.title.find(value) != std::string::npos);
     } else if (type == "class") {
-      match = (win.className.find(value) != std::string::npos);
+      match = (win.windowClass.find(value) != std::string::npos);
     } else if (type == "exe") {
       match = (win.exe.find(value) != std::string::npos);
     } else if (type == "pid") {
@@ -2105,7 +2110,7 @@ Value UIBridge::handleWindowFind(const std::vector<Value> &args,
 
     if (match) {
       return createWindowObject(static_cast<VM *>(ctx->vm), ctx, win.id,
-                                win.title, win.className, win.exe, win.pid,
+                                win.title, win.windowClass, win.exe, win.pid,
                                 win.cmdline);
     }
   }
@@ -2139,7 +2144,7 @@ static uint64_t resolveWindowId(const Value &arg,
         if (type == "title")
           match = win.title.find(value) != std::string::npos;
         else if (type == "class")
-          match = win.className.find(value) != std::string::npos;
+          match = win.windowClass.find(value) != std::string::npos;
         else if (type == "exe")
           match = win.exe.find(value) != std::string::npos;
         else if (type == "pid") {
@@ -2163,9 +2168,9 @@ static uint64_t resolveWindowId(const Value &arg,
 Value
 UIBridge::handleWindowClose(const std::vector<Value> &args,
                             const HostContext *ctx) {
-  if (false)
+  if (!ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2182,10 +2187,10 @@ UIBridge::handleWindowClose(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowResize(const std::vector<Value> &args,
                               const HostContext *ctx) {
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   int wIdx = 0, hIdx = 1;
   if (args.size() >= 3 && args[0].isObjectId()) {
@@ -2216,9 +2221,10 @@ UIBridge::handleWindowResize(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowMoveToMonitor(const std::vector<Value> &args,
                                     const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  ::havel::host::WindowService winService;
+  if (args.size() < 2 || !ctx->windowManager) {
+    return Value::makeBool(false);
+  }
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -2234,20 +2240,20 @@ Value
 UIBridge::handleWindowMoveToNextMonitor(const std::vector<Value> &args,
                                         const HostContext *ctx) {
   (void)args;
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
   // TODO: Implement move to next monitor
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   return Value(winService.moveWindowToMonitor(0, 0));
 }
 
 Value UIBridge::handleWindowMove(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   int xIdx = 0, yIdx = 1;
   // 3 args = window ID + x + y; 2 args = x + y (active window)
@@ -2285,8 +2291,8 @@ Value UIBridge::handleWindowMoveRel(const std::vector<Value> &args,
                                      const HostContext *ctx) {
   // moveRel(dx, dy, dw, dh) — relative move+resize on active window
   // moveRel(winId, dx, dy, dw, dh) — same on specific window
-  if (false) return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  if (!ctx->windowManager) return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   int dIdx = 0;
   if (args.size() >= 5) {  // first arg is window ID
@@ -2318,10 +2324,10 @@ Value UIBridge::handleWindowMoveRel(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowFocus(const std::vector<Value> &args,
                              const HostContext *ctx) {
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2338,10 +2344,10 @@ UIBridge::handleWindowFocus(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowMinimize(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2358,10 +2364,10 @@ UIBridge::handleWindowMinimize(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowMaximize(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2377,10 +2383,10 @@ UIBridge::handleWindowMaximize(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowHide(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2396,10 +2402,10 @@ Value UIBridge::handleWindowHide(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowShow(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2416,7 +2422,7 @@ Value UIBridge::handleWindowShow(const std::vector<Value> &args,
 // Window query functions implementation
 Value UIBridge::handleWindowAny(const std::vector<Value> &args,
                                         const HostContext *ctx) {
-  if (false || !ctx->vm) {
+  if (!ctx->windowManager || !ctx->vm) {
     return Value::makeBool(false);
   }
   if (args.empty()) {
@@ -2438,14 +2444,14 @@ Value UIBridge::handleWindowAny(const std::vector<Value> &args,
   std::string type = selector.substr(0, spacePos);
   std::string value = selector.substr(spacePos + 1);
 
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
 
   // Use anyWindow with predicate
   bool result = winService.anyWindow([&](const ::havel::host::WindowInfo &win) {
     if (type == "title") {
       return win.title.find(value) != std::string::npos;
     } else if (type == "class") {
-      return win.className.find(value) != std::string::npos;
+      return win.windowClass.find(value) != std::string::npos;
     } else if (type == "exe") {
       return win.exe.find(value) != std::string::npos;
     } else if (type == "pid") {
@@ -2467,11 +2473,11 @@ Value UIBridge::handleWindowAny(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowCount(const std::vector<Value> &args,
                             const HostContext *ctx) {
-  if (false || !ctx->vm) {
+  if (!ctx->windowManager || !ctx->vm) {
     return Value::makeInt(static_cast<int64_t>(0));
   }
 
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
 
   // If no selector provided, count all windows
   if (args.empty()) {
@@ -2501,7 +2507,7 @@ UIBridge::handleWindowCount(const std::vector<Value> &args,
     if (type == "title") {
       return win.title.find(value) != std::string::npos;
     } else if (type == "class") {
-      return win.className.find(value) != std::string::npos;
+      return win.windowClass.find(value) != std::string::npos;
     } else if (type == "exe") {
       return win.exe.find(value) != std::string::npos;
     } else if (type == "pid") {
@@ -2523,7 +2529,7 @@ UIBridge::handleWindowCount(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowFilter(const std::vector<Value> &args,
                              const HostContext *ctx) {
-  if (false || !ctx->vm) {
+  if (!ctx->windowManager || !ctx->vm) {
     return Value::makeNull();
   }
   if (args.empty()) {
@@ -2545,7 +2551,7 @@ UIBridge::handleWindowFilter(const std::vector<Value> &args,
   std::string type = selector.substr(0, spacePos);
   std::string value = selector.substr(spacePos + 1);
 
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
 
   // Use filterWindows with predicate
   auto matchingWindows =
@@ -2553,7 +2559,7 @@ UIBridge::handleWindowFilter(const std::vector<Value> &args,
         if (type == "title") {
           return win.title.find(value) != std::string::npos;
         } else if (type == "class") {
-          return win.className.find(value) != std::string::npos;
+          return win.windowClass.find(value) != std::string::npos;
         } else if (type == "exe") {
           return win.exe.find(value) != std::string::npos;
         } else if (type == "pid") {
@@ -2575,7 +2581,7 @@ UIBridge::handleWindowFilter(const std::vector<Value> &args,
   auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &win : matchingWindows) {
     auto winObj =
-        createWindowObject(vm, ctx, win.id, win.title, win.className, win.exe,
+        createWindowObject(vm, ctx, win.id, win.title, win.windowClass, win.exe,
                            win.pid, win.cmdline);
     vm->pushHostArrayValue(arr, winObj);
   }
@@ -2590,9 +2596,9 @@ UIBridge::handleWindowFilter(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowRestore(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (false)
+  if (!ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2608,9 +2614,9 @@ UIBridge::handleWindowRestore(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowSnap(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (false)
+  if (!ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   int posIdx = 0;
   if (!args.empty() && args[0].isObjectId()) {
@@ -2640,9 +2646,9 @@ Value UIBridge::handleWindowSnap(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowCenter(const std::vector<Value> &args,
                               const HostContext *ctx) {
-  if (false)
+  if (!ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2658,9 +2664,9 @@ UIBridge::handleWindowCenter(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowFullscreen(const std::vector<Value> &args,
                                         const HostContext *ctx) {
-  if (false)
+  if (!ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2676,9 +2682,9 @@ Value UIBridge::handleWindowFullscreen(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowMoveResize(const std::vector<Value> &args,
                                         const HostContext *ctx) {
-  if (false)
+  if (!ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   int xIdx = 0, yIdx = 1, wIdx = 2, hIdx = 3;
   // 5 args = wid + x,y,w,h; 4 args = x,y,w,h on active window
@@ -2710,9 +2716,9 @@ Value UIBridge::handleWindowMoveResize(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowSetAlwaysOnTop(const std::vector<Value> &args,
                                       const HostContext *ctx) {
-  if (false)
+  if (!ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   int valIdx = 0;
   if (!args.empty() && args[0].isObjectId()) {
@@ -2738,9 +2744,9 @@ UIBridge::handleWindowSetAlwaysOnTop(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowPos(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.empty() || false || !ctx->vm)
+  if (args.empty() || !ctx->windowManager || !ctx->vm)
     return Value::makeNull();
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeNull();
@@ -2757,16 +2763,16 @@ Value UIBridge::handleWindowPos(const std::vector<Value> &args,
 Value UIBridge::handleWindowList(const std::vector<Value> &args,
                                  const HostContext *ctx) {
   (void)args;
-  if (false || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
     return Value::makeNull();
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto windows = winService.getAllWindows();
   auto *vm = static_cast<VM *>(ctx->vm);
   auto arr = vm->createHostArray();
   auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &win : windows) {
     auto winObj = createWindowObject(vm, ctx, win.id, win.title,
-        win.className, win.exe, win.pid,
+        win.windowClass, win.exe, win.pid,
         win.cmdline);
     vm->pushHostArrayValue(arr, winObj);
   }
@@ -2775,9 +2781,9 @@ Value UIBridge::handleWindowList(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowTitle(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (false || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
     return Value::makeNull();
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2797,9 +2803,9 @@ Value UIBridge::handleWindowTitle(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowClass(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (false || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
     return Value::makeNull();
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2813,15 +2819,15 @@ Value UIBridge::handleWindowClass(const std::vector<Value> &args,
   if (!info.valid)
     return Value::makeNull();
   auto *vm = static_cast<VM *>(ctx->vm);
-  auto ref = vm->createRuntimeString(info.className);
+  auto ref = vm->createRuntimeString(info.windowClass);
   return Value::makeStringId(ref.id);
 }
 
 Value UIBridge::handleWindowExe(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (false || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
     return Value::makeNull();
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2841,9 +2847,9 @@ Value UIBridge::handleWindowExe(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowPid(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (false)
+  if (!ctx->windowManager)
     return Value::makeInt(0);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = 0;
   if (!args.empty()) {
     wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
@@ -2861,18 +2867,18 @@ Value UIBridge::handleWindowPid(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowId(const std::vector<Value> &args,
                                const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeInt(0);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   return Value::makeInt(static_cast<int64_t>(wid));
 }
 
 Value UIBridge::handleWindowArea(const std::vector<Value> &args,
                                  const HostContext *ctx) {
-  if (args.empty() || false || !ctx->vm)
+  if (args.empty() || !ctx->windowManager || !ctx->vm)
     return Value::makeNull();
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeNull();
@@ -2890,16 +2896,16 @@ Value UIBridge::handleWindowArea(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowEach(const std::vector<Value> &args,
                                  const HostContext *ctx) {
-  if (false || !ctx->vm)
+  if (!ctx->windowManager || !ctx->vm)
 return Value::makeNull();
-::havel::host::WindowService winService;
+::havel::host::WindowService winService(ctx->windowManager);
 auto windows = winService.getAllWindows();
 auto *vm = static_cast<VM *>(ctx->vm);
 auto arr = vm->createHostArray();
 auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
 for (const auto &win : windows) {
     auto winObj = createWindowObject(vm, ctx, win.id, win.title,
-        win.className, win.exe, win.pid,
+        win.windowClass, win.exe, win.pid,
         win.cmdline);
     vm->pushHostArrayValue(arr, winObj);
 }
@@ -2908,9 +2914,9 @@ return Value::makeArrayId(arr.id);
 
 Value UIBridge::handleWindowSort(const std::vector<Value> &args,
                                  const HostContext *ctx) {
-  if (args.empty() || false || !ctx->vm)
+  if (args.empty() || !ctx->windowManager || !ctx->vm)
     return Value::makeNull();
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto windows = winService.getAllWindows();
   auto *vm = static_cast<VM *>(ctx->vm);
   std::string field = "title";
@@ -2925,7 +2931,7 @@ Value UIBridge::handleWindowSort(const std::vector<Value> &args,
               if (field == "title")
                 return a.title < b.title;
               if (field == "class")
-                return a.className < b.className;
+                return a.windowClass < b.windowClass;
               if (field == "exe")
                 return a.exe < b.exe;
               if (field == "pid")
@@ -2938,7 +2944,7 @@ Value UIBridge::handleWindowSort(const std::vector<Value> &args,
   auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
   for (const auto &win : windows) {
     auto winObj = createWindowObject(vm, ctx, win.id, win.title,
-        win.className, win.exe, win.pid,
+        win.windowClass, win.exe, win.pid,
         win.cmdline);
     vm->pushHostArrayValue(arr, winObj);
   }
@@ -2952,9 +2958,9 @@ Value UIBridge::handleWindowSort(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowRestoreObj(const std::vector<Value> &args,
                                  const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -2963,9 +2969,9 @@ UIBridge::handleWindowRestoreObj(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowSnapObj(const std::vector<Value> &args,
                                     const HostContext *ctx) {
-  if (args.size() < 2 || false)
+  if (args.size() < 2 || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -2978,9 +2984,9 @@ Value UIBridge::handleWindowSnapObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowCenterObj(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -2990,9 +2996,9 @@ UIBridge::handleWindowCenterObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowFullscreenObj(const std::vector<Value> &args,
                                     const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -3002,9 +3008,9 @@ UIBridge::handleWindowFullscreenObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowMoveResizeObj(const std::vector<Value> &args,
                                     const HostContext *ctx) {
-  if (args.size() < 5 || false)
+  if (args.size() < 5 || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -3023,9 +3029,9 @@ UIBridge::handleWindowMoveResizeObj(const std::vector<Value> &args,
 Value
 UIBridge::handleWindowSetAlwaysOnTopObj(const std::vector<Value> &args,
                                         const HostContext *ctx) {
-  if (args.size() < 2 || false)
+  if (args.size() < 2 || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -3066,9 +3072,9 @@ Value UIBridge::handleWindowPidObj(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowMap(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -3077,9 +3083,9 @@ Value UIBridge::handleWindowMap(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowUnmap(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -3088,9 +3094,9 @@ Value UIBridge::handleWindowUnmap(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowPin(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.empty() || false)
+  if (args.empty() || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -3112,9 +3118,9 @@ Value UIBridge::handleWindowPin(const std::vector<Value> &args,
 
 Value UIBridge::handleWindowWait(const std::vector<Value> &args,
                                  const HostContext *ctx) {
-  if (args.size() < 2 || false)
+  if (args.size() < 2 || !ctx->windowManager)
     return Value::makeBool(false);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   uint64_t wid = resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
   if (wid == 0)
     return Value::makeBool(false);
@@ -3275,7 +3281,7 @@ auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
 
 Value UIBridge::handleGroupFind(const std::vector<Value> &args,
                                 const HostContext *ctx) {
-  if (args.size() < 2 || !ctx->vm || false)
+  if (args.size() < 2 || !ctx->vm || !ctx->windowManager)
     return Value::makeInt(0);
   auto *vm = static_cast<VM *>(ctx->vm);
   std::string groupName = vm->toString(args[0]);
@@ -3286,7 +3292,7 @@ Value UIBridge::handleGroupFind(const std::vector<Value> &args,
   auto it = groups.find(groupName);
   if (it == groups.end())
     return Value::makeInt(0);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   size_t spacePos = selector.find(' ');
   std::string type = (spacePos != std::string::npos)
                          ? selector.substr(0, spacePos)
@@ -3302,7 +3308,7 @@ Value UIBridge::handleGroupFind(const std::vector<Value> &args,
     if (type == "title")
       match = info.title.find(value) != std::string::npos;
     else if (type == "class")
-      match = info.className.find(value) != std::string::npos;
+      match = info.windowClass.find(value) != std::string::npos;
     else if (type == "exe")
       match = info.exe.find(value) != std::string::npos;
     else if (type == "pid") {
@@ -3313,7 +3319,7 @@ Value UIBridge::handleGroupFind(const std::vector<Value> &args,
     }
     if (match)
       return createWindowObject(vm, ctx, info.id, info.title,
-                                info.className, info.exe, info.pid,
+                                info.windowClass, info.exe, info.pid,
                                 info.cmdline);
   }
   return Value::makeInt(0);
@@ -3321,7 +3327,7 @@ Value UIBridge::handleGroupFind(const std::vector<Value> &args,
 
 Value UIBridge::handleGroupFindBy(const std::vector<Value> &args,
                                   const HostContext *ctx) {
-  if (args.size() < 3 || !ctx->vm || false)
+  if (args.size() < 3 || !ctx->vm || !ctx->windowManager)
     return Value::makeInt(0);
   auto *vm = static_cast<VM *>(ctx->vm);
   std::string groupName = vm->toString(args[0]);
@@ -3333,7 +3339,7 @@ Value UIBridge::handleGroupFindBy(const std::vector<Value> &args,
   auto it = groups.find(groupName);
   if (it == groups.end())
     return Value::makeInt(0);
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   for (auto wid : it->second) {
     auto info = winService.getWindowInfo(wid);
     if (!info.valid)
@@ -3342,7 +3348,7 @@ Value UIBridge::handleGroupFindBy(const std::vector<Value> &args,
     if (field == "title")
       match = info.title.find(value) != std::string::npos;
     else if (field == "class")
-      match = info.className.find(value) != std::string::npos;
+      match = info.windowClass.find(value) != std::string::npos;
     else if (field == "exe")
       match = info.exe.find(value) != std::string::npos;
     else if (field == "pid") {
@@ -3358,7 +3364,7 @@ Value UIBridge::handleGroupFindBy(const std::vector<Value> &args,
     }
     if (match)
       return createWindowObject(vm, ctx, info.id, info.title,
-                                info.className, info.exe, info.pid,
+                                info.windowClass, info.exe, info.pid,
                                 info.cmdline);
   }
   return Value::makeInt(0);
@@ -5118,6 +5124,391 @@ void NetworkBridge::install(PipelineOptions &options) {
 
 
 // ============================================================================
+// AudioBridge Implementation
+// ============================================================================
+
+void AudioBridge::install(PipelineOptions &options) {
+  options.host_functions["audio.getVolume"] = [ctx = ctx_](const auto &args) {
+    return handleGetVolume(args, ctx);
+  };
+  options.host_functions["audio.setVolume"] = [ctx = ctx_](const auto &args) {
+    return handleSetVolume(args, ctx);
+  };
+  options.host_functions["audio.isMuted"] = [ctx = ctx_](const auto &args) {
+    return handleIsMuted(args, ctx);
+  };
+  options.host_functions["audio.setMute"] = [ctx = ctx_](const auto &args) {
+    return handleSetMute(args, ctx);
+  };
+  options.host_functions["audio.toggleMute"] = [ctx = ctx_](const auto &args) {
+    return handleToggleMute(args, ctx);
+  };
+  options.host_functions["audio.getDevices"] = [ctx = ctx_](const auto &args) {
+    return handleGetDevices(args, ctx);
+  };
+  options.host_functions["audio.findDeviceByIndex"] =
+      [ctx = ctx_](const auto &args) {
+        return handleFindDeviceByIndex(args, ctx);
+      };
+  options.host_functions["audio.findDeviceByName"] =
+      [ctx = ctx_](const auto &args) {
+        return handleFindDeviceByName(args, ctx);
+      };
+  options.host_functions["audio.setDefaultOutput"] =
+      [ctx = ctx_](const auto &args) {
+        return handleSetDefaultOutput(args, ctx);
+      };
+  options.host_functions["audio.getDefaultOutput"] =
+      [ctx = ctx_](const auto &args) {
+        return handleGetDefaultOutput(args, ctx);
+      };
+  options.host_functions["audio.playTestSound"] =
+      [ctx = ctx_](const auto &args) { return handlePlayTestSound(args, ctx); };
+  options.host_functions["audio.increaseVolume"] =
+      [ctx = ctx_](const auto &args) {
+        return handleIncreaseVolume(args, ctx);
+      };
+  options.host_functions["audio.decreaseVolume"] =
+      [ctx = ctx_](const auto &args) {
+        return handleDecreaseVolume(args, ctx);
+      };
+}
+
+Value
+AudioBridge::handleGetVolume(const std::vector<Value> &args,
+                             const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value(1.0); // Default volume
+  }
+  // Check for device-specific overload: getVolume(device)
+  if (!args.empty() && args[0].isStringValId()) {
+    std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
+    return Value::makeDouble(ctx->audioManager->getVolume(device));
+  }
+  // Default device
+  return Value::makeDouble(ctx->audioManager->getVolume());
+}
+
+Value
+AudioBridge::handleSetVolume(const std::vector<Value> &args,
+                             const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeBool(false);
+  }
+  if (args.empty()) {
+    throw std::runtime_error(
+        "audio.setVolume() requires at least a volume number");
+  }
+
+  // Check for (device, volume) overload
+  if (args.size() >= 2) {
+    if (args[0].isStringValId()) {
+      std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
+      double volume = 1.0;
+      if (args[1].isDouble()) {
+        volume = args[1].asDouble();
+      } else if (args[1].isInt()) {
+        volume = static_cast<double>(args[1].asInt());
+      } else {
+        throw std::runtime_error(
+            "audio.setVolume(device, volume) requires volume as number");
+      }
+      return Value::makeBool(ctx->audioManager->setVolume(device, volume));
+    }
+  }
+
+  // Single argument: setVolume(volume) for default device
+  double volume = 1.0;
+  if (args[0].isDouble()) {
+    volume = args[0].asDouble();
+  } else if (args[0].isInt()) {
+    volume = static_cast<double>(args[0].asInt());
+  } else {
+    throw std::runtime_error("audio.setVolume() requires a number");
+  }
+  return Value::makeBool(ctx->audioManager->setVolume(volume));
+}
+
+Value AudioBridge::handleIsMuted(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeBool(false);
+  }
+  // Check for device-specific overload: isMuted(device)
+  if (!args.empty() && args[0].isStringValId()) {
+    std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
+    return Value::makeBool(ctx->audioManager->isMuted(device));
+  }
+  // Default device
+  return Value::makeBool(ctx->audioManager->isMuted());
+}
+
+Value AudioBridge::handleSetMute(const std::vector<Value> &args,
+                                         const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeBool(false);
+  }
+  // Check for (device, muted) overload
+  if (args.size() >= 2) {
+    if (args[0].isStringValId() &&
+        args[1].isBool()) {
+      std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
+      bool muted = args[1].asBool();
+      return Value::makeBool(ctx->audioManager->setMute(device, muted));
+    }
+  }
+  // Single argument: setMute(muted) for default device
+  if (args.empty() || !args[0].isBool()) {
+    throw std::runtime_error("audio.setMute() requires a boolean");
+  }
+  bool muted = args[0].asBool();
+  return Value::makeBool(ctx->audioManager->setMute(muted));
+}
+
+Value
+AudioBridge::handleToggleMute(const std::vector<Value> &args,
+                              const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeBool(false);
+  }
+  // Check for device-specific overload: toggleMute(device)
+  if (!args.empty() && args[0].isStringValId()) {
+    std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
+    return Value::makeBool(ctx->audioManager->toggleMute(device));
+  }
+  // Default device
+  return Value::makeBool(ctx->audioManager->toggleMute());
+}
+
+Value
+AudioBridge::handleGetDevices(const std::vector<Value> &args,
+                              const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeNull();
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return Value::makeNull();
+  }
+
+  const auto &devices = ctx->audioManager->getDevices();
+  auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
+
+  for (const auto &dev : devices) {
+    auto obj = vm->createHostObject();
+    // TODO: string pool integration - for now return null for strings
+    (void)dev.name; (void)dev.description;
+    vm->setHostObjectField(obj, "name", Value::makeNull());
+    vm->setHostObjectField(obj, "description", Value::makeNull());
+    vm->setHostObjectField(obj, "index",
+                           Value::makeInt(static_cast<int64_t>(dev.index)));
+    vm->setHostObjectField(obj, "isDefault", Value::makeBool(dev.isDefault));
+    vm->setHostObjectField(obj, "isMuted", Value::makeBool(dev.isMuted));
+    vm->setHostObjectField(obj, "volume", Value::makeDouble(dev.volume));
+    vm->setHostObjectField(obj, "channels",
+                           Value::makeInt(static_cast<int64_t>(dev.channels)));
+    vm->pushHostArrayValue(arr, Value::makeObjectId(obj.id));
+  }
+
+  return Value::makeArrayId(arr.id);
+}
+
+Value
+AudioBridge::handleFindDeviceByIndex(const std::vector<Value> &args,
+                                     const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeNull();
+  }
+  if (args.empty() || !args[0].isInt()) {
+    throw std::runtime_error("audio.findDeviceByIndex() requires an index");
+  }
+  uint32_t index = static_cast<uint32_t>(args[0].asInt());
+
+  auto *dev = ctx->audioManager->findDeviceByIndex(index);
+  if (!dev) {
+    return Value::makeNull();
+  }
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return Value::makeNull();
+  }
+
+  auto obj = vm->createHostObject();
+  // TODO: string pool integration - for now return null for strings
+  (void)dev->name; (void)dev->description;
+  vm->setHostObjectField(obj, "name", Value::makeNull());
+  vm->setHostObjectField(obj, "description", Value::makeNull());
+  vm->setHostObjectField(obj, "index",
+                         Value::makeInt(static_cast<int64_t>(dev->index)));
+  vm->setHostObjectField(obj, "isDefault", Value::makeBool(dev->isDefault));
+  vm->setHostObjectField(obj, "isMuted", Value::makeBool(dev->isMuted));
+  vm->setHostObjectField(obj, "volume", Value::makeDouble(dev->volume));
+  vm->setHostObjectField(obj, "channels",
+                         Value::makeInt(static_cast<int64_t>(dev->channels)));
+
+  delete dev;
+  return Value::makeObjectId(obj.id);
+}
+
+Value
+AudioBridge::handleFindDeviceByName(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeNull();
+  }
+  if (args.empty() || !args[0].isStringValId()) {
+    throw std::runtime_error("audio.findDeviceByName() requires a name string");
+  }
+  std::string name = strVal(args[0], ctx ? ctx->vm : nullptr);
+
+  auto *dev = ctx->audioManager->findDeviceByName(name);
+  if (!dev) {
+    return Value::makeNull();
+  }
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    delete dev;
+    return Value::makeNull();
+  }
+
+  auto obj = vm->createHostObject();
+  // TODO: string pool integration - for now return null for strings
+  (void)dev->name; (void)dev->description;
+  vm->setHostObjectField(obj, "name", Value::makeNull());
+  vm->setHostObjectField(obj, "description", Value::makeNull());
+  vm->setHostObjectField(obj, "index",
+                         Value::makeInt(static_cast<int64_t>(dev->index)));
+  vm->setHostObjectField(obj, "isDefault", Value::makeBool(dev->isDefault));
+  vm->setHostObjectField(obj, "isMuted", Value::makeBool(dev->isMuted));
+  vm->setHostObjectField(obj, "volume", Value::makeDouble(dev->volume));
+  vm->setHostObjectField(obj, "channels",
+                         Value::makeInt(static_cast<int64_t>(dev->channels)));
+
+  delete dev;
+  return Value::makeObjectId(obj.id);
+}
+
+Value
+AudioBridge::handleSetDefaultOutput(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeBool(false);
+  }
+  if (args.empty() || !args[0].isStringValId()) {
+    throw std::runtime_error("audio.setDefaultOutput() requires a device name");
+  }
+  std::string device = strVal(args[0], ctx ? ctx->vm : nullptr);
+  return Value::makeBool(ctx->audioManager->setDefaultOutput(device));
+}
+
+Value
+AudioBridge::handleGetDefaultOutput(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeNull();
+  }
+  // TODO: string pool integration - for now return null
+  (void)ctx->audioManager;
+  return Value::makeNull();
+}
+
+Value
+AudioBridge::handlePlayTestSound(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeBool(false);
+  }
+  return Value::makeBool(ctx->audioManager->playTestSound());
+}
+
+Value
+AudioBridge::handleIncreaseVolume(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeBool(false);
+  }
+
+  double amount = 0.05;
+  std::string device;
+
+  // Parse arguments: can be (amount) or (device, amount)
+  if (args.size() >= 2) {
+    // (device, amount)
+    if (args[0].isStringValId()) {
+      device = strVal(args[0], ctx ? ctx->vm : nullptr);
+    }
+    if (args[1].isDouble()) {
+      amount = args[1].asDouble();
+    } else if (args[1].isInt()) {
+      amount = static_cast<double>(args[1].asInt());
+    }
+  } else if (args.size() == 1) {
+    // (amount) or (device)
+    if (args[0].isDouble()) {
+      amount = args[0].asDouble();
+    } else if (args[0].isInt()) {
+      amount = static_cast<double>(args[0].asInt());
+    } else if (args[0].isStringValId()) {
+      device = strVal(args[0], ctx ? ctx->vm : nullptr);
+    }
+  }
+
+  if (device.empty()) {
+    return Value::makeDouble(ctx->audioManager->increaseVolume(amount));
+  } else {
+    return Value::makeDouble(ctx->audioManager->increaseVolume(device, amount));
+  }
+}
+
+Value
+AudioBridge::handleDecreaseVolume(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return Value::makeBool(false);
+  }
+
+  double amount = 0.05;
+  std::string device;
+
+  // Parse arguments: can be (amount) or (device, amount)
+  if (args.size() >= 2) {
+    // (device, amount)
+    if (args[0].isStringValId()) {
+      device = strVal(args[0], ctx ? ctx->vm : nullptr);
+    }
+    if (args[1].isDouble()) {
+      amount = args[1].asDouble();
+    } else if (args[1].isInt()) {
+      amount = static_cast<double>(args[1].asInt());
+    }
+  } else if (args.size() == 1) {
+    // (amount) or (device)
+    if (args[0].isDouble()) {
+      amount = args[0].asDouble();
+    } else if (args[0].isInt()) {
+      amount = static_cast<double>(args[0].asInt());
+    } else if (args[0].isStringValId()) {
+      device = strVal(args[0], ctx ? ctx->vm : nullptr);
+    }
+  }
+
+  if (device.empty()) {
+    return Value::makeDouble(ctx->audioManager->decreaseVolume(amount));
+  } else {
+    return Value::makeDouble(ctx->audioManager->decreaseVolume(device, amount));
+  }
+}
+
+// ============================================================================
+// DisplayBridge Implementation
+// ============================================================================
+
 void DisplayBridge::install(PipelineOptions &options) {
   options.host_functions["display.getMonitors"] =
       [ctx = ctx_](const auto &args) { return handleGetMonitors(args, ctx); };
@@ -5278,7 +5669,7 @@ DisplayBridge::handleIsX11(const std::vector<Value> &args,
                            const HostContext *ctx) {
   (void)args;
   (void)ctx;
-  return Value::makeBool(false); // WindowManager::IsX11();
+  return Value::makeBool(WindowManager::IsX11());
 }
 
 Value
@@ -5286,7 +5677,7 @@ DisplayBridge::handleIsWayland(const std::vector<Value> &args,
                                const HostContext *ctx) {
   (void)args;
   (void)ctx;
-  return Value::makeBool(false); // WindowManager::IsWayland();
+  return Value::makeBool(WindowManager::IsWayland());
 }
 
 Value
@@ -5334,13 +5725,13 @@ DisplayBridge::handleProtocol(const std::vector<Value> &args,
 
 Value
 DisplayBridge::handleWm(const std::vector<Value> &args,
-                            const HostContext *ctx) {
+                        const HostContext *ctx) {
   (void)args;
   (void)ctx;
   auto *vm = static_cast<VM *>(ctx->vm);
   if (!vm)
     return Value::makeNull();
-  std::string wmName = "unknown"; // WindowManagerDetector::GetWMName();
+  std::string wmName = WindowManagerDetector::GetWMName();
   auto ref = vm->createRuntimeString(wmName);
   return Value::makeStringId(ref.id);
 }
@@ -5816,10 +6207,10 @@ Value
 UIBridge::handleActiveTitle(const std::vector<Value> &args,
                             const HostContext *ctx) {
   (void)args;
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeNull();
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     return Value::makeNull();
@@ -5849,10 +6240,10 @@ Value UIBridge::handleActiveExe(const std::vector<Value> &args,
 Value UIBridge::handleActivePid(const std::vector<Value> &args,
                                         const HostContext *ctx) {
   (void)args;
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeInt(static_cast<int64_t>(0));
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     return Value::makeInt(static_cast<int64_t>(0));
@@ -5864,10 +6255,10 @@ Value
 UIBridge::handleActiveClose(const std::vector<Value> &args,
                             const HostContext *ctx) {
   (void)args;
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     return Value::makeBool(false);
@@ -5879,10 +6270,10 @@ UIBridge::handleActiveClose(const std::vector<Value> &args,
 Value UIBridge::handleActiveMin(const std::vector<Value> &args,
                                         const HostContext *ctx) {
   (void)args;
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     return Value::makeBool(false);
@@ -5894,10 +6285,10 @@ Value UIBridge::handleActiveMin(const std::vector<Value> &args,
 Value UIBridge::handleActiveMax(const std::vector<Value> &args,
                                         const HostContext *ctx) {
   (void)args;
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     return Value::makeBool(false);
@@ -5909,10 +6300,10 @@ Value UIBridge::handleActiveMax(const std::vector<Value> &args,
 Value UIBridge::handleActiveHide(const std::vector<Value> &args,
                                          const HostContext *ctx) {
   (void)args;
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     return Value::makeBool(false);
@@ -5924,10 +6315,10 @@ Value UIBridge::handleActiveHide(const std::vector<Value> &args,
 Value UIBridge::handleActiveShow(const std::vector<Value> &args,
                                          const HostContext *ctx) {
   (void)args;
-  if (false) {
+  if (!ctx->windowManager) {
     return Value::makeBool(false);
   }
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     return Value::makeBool(false);
@@ -5938,7 +6329,7 @@ Value UIBridge::handleActiveShow(const std::vector<Value> &args,
 
 Value UIBridge::handleActiveMove(const std::vector<Value> &args,
                                          const HostContext *ctx) {
-  if (args.size() < 2 || false) {
+  if (args.size() < 2 || !ctx->windowManager) {
     return Value::makeBool(false);
   }
   int64_t x = 0, y = 0;
@@ -5947,7 +6338,7 @@ Value UIBridge::handleActiveMove(const std::vector<Value> &args,
   if (auto *v = (args[1].isInt() ? &args[1] : nullptr))
     y = v->asInt();
 
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     return Value::makeBool(false);
@@ -5959,7 +6350,7 @@ Value UIBridge::handleActiveMove(const std::vector<Value> &args,
 Value
 UIBridge::handleActiveResize(const std::vector<Value> &args,
                              const HostContext *ctx) {
-  if (args.size() < 2 || false) {
+  if (args.size() < 2 || !ctx->windowManager) {
     return Value::makeBool(false);
   }
   int64_t w = 0, h = 0;
@@ -5968,7 +6359,7 @@ UIBridge::handleActiveResize(const std::vector<Value> &args,
   if (auto *v = (args[1].isInt() ? &args[1] : nullptr))
     h = v->asInt();
 
-  ::havel::host::WindowService winService;
+  ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
     return Value::makeBool(false);

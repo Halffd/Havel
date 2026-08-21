@@ -26,6 +26,8 @@ thread_local bool tl_inHotkeyCallback = false;
 bool HotkeyExecutor::isInHotkeyCallback() { return tl_inHotkeyCallback; }
 void HotkeyExecutor::setInHotkeyCallback(bool v) { tl_inHotkeyCallback = v; }
 #include "utils/Util.hpp"
+#include "core/window/WindowManager.hpp"
+#include "core/window/WindowManagerDetector.hpp"
 #include <chrono>
 #include <fcntl.h>
 #include <future>
@@ -35,6 +37,10 @@ void HotkeyExecutor::setInHotkeyCallback(bool v) { tl_inHotkeyCallback = v; }
 #ifdef HAVE_QT_EXTENSION
 #include "qt.hpp"
 #endif
+#include <sys/eventfd.h>
+#include <sys/resource.h>
+#include <sys/select.h>
+#include <unistd.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -386,17 +392,17 @@ std::vector<std::string> IO::GetInputDevices() {
 
 std::string IO::GetActiveWindowTitle() {
   ensureBackend();
-  return "";
+  return WindowManager::GetActiveWindowTitle();
 }
 
 std::string IO::GetActiveWindowClass() {
   ensureBackend();
-  return "";
+  return WindowManager::GetActiveWindowClass();
 }
 
 std::string IO::GetActiveWindowProcess() {
   ensureBackend();
-  return "";
+  return WindowManager::GetActiveWindowProcess();
 }
 
 void IO::listInputDevices() {
@@ -2292,13 +2298,12 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
 // Method to control send
 void IO::ControlSend(const std::string &control, const std::string &keys) {
   ensureBackend();
-  if (debugging::debug_io)
-    ::havel::debug("Control send: {} keys: {}", control, keys);
-  // wID hwnd = WindowManager::FindByTitle(control);
-  // if (!hwnd) {
-  //     havel::warning("Window not found: {}", control);
-  //   return;
-  // }
+    if (debugging::debug_io) ::havel::debug("Control send: {} keys: {}", control, keys);
+  wID hwnd = WindowManager::FindByTitle(control);
+  if (!hwnd) {
+        havel::warning("Window not found: {}", control);
+    return;
+  }
 }
 
 // Send text using clipboard + paste (more reliable than key events for complex
@@ -3095,7 +3100,7 @@ std::vector<RecordedEvent> IO::StopRecord() {
 // Additional methods for HostAPI
 pID havel::IO::GetActiveWindowPID() {
   ensureBackend();
-  return 0;
+  return WindowManager::GetActiveWindowPID();
 }
 
 void havel::IO::Scroll(int dy, int dx) {

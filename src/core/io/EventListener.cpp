@@ -93,7 +93,36 @@ EventListener::~EventListener() {
 void EventListener::InitInputBackend(
     const std::vector<std::string> &devicePaths, bool grab) {
   (void)grab; // grab is now handled in Start() after event loop is ready
-  backend_ = InputBackend::Create(InputBackendType::Evdev);
+
+  // Backend selection: IO.Backend config key, default evdev. The CLI
+  // --io flag writes this same key at startup. "auto" or empty opts into
+  // environment-based detection instead.
+  std::string backendName;
+  try {
+    backendName = Configs::Get().Get<std::string>("IO.Backend", "evdev");
+  } catch (...) {
+    backendName = "evdev";
+  }
+
+  InputBackendType requested = InputBackendType::Evdev;
+  if (backendName.empty() || backendName == "auto") {
+    requested = InputBackend::DetectBestBackend();
+    info("EventListener: IO.Backend unset/auto, detected: {}",
+         requested == InputBackendType::Evdev     ? "evdev"
+         : requested == InputBackendType::X11     ? "x11"
+         : requested == InputBackendType::Wayland ? "wayland"
+         : requested == InputBackendType::Windows ? "windows"
+                                                  : "unknown");
+  } else if (auto parsed = InputBackend::ParseBackendType(backendName)) {
+    requested = *parsed;
+    info("EventListener: using '{}' input backend", backendName);
+  } else {
+    warn("EventListener: unknown IO.Backend '{}', falling back to evdev",
+         backendName);
+    requested = InputBackendType::Evdev;
+  }
+
+  backend_ = InputBackend::Create(requested);
   if (!backend_) {
     error("EventListener: Failed to create input backend");
     return;

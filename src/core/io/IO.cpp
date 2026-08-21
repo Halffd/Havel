@@ -701,12 +701,8 @@ void IO::SetInputBackend(const std::string &backendName) {
          : type == InputBackendType::X11     ? "x11"
          : type == InputBackendType::Wayland ? "wayland"
                                              : "unknown");
-  } else if (backendName == "evdev") {
-    type = InputBackendType::Evdev;
-  } else if (backendName == "x11") {
-    type = InputBackendType::X11;
-  } else if (backendName == "wayland") {
-    type = InputBackendType::Wayland;
+  } else if (auto parsed = InputBackend::ParseBackendType(backendName)) {
+    type = *parsed;
   } else {
     warn("Unknown input backend '{}', using auto-detection", backendName);
     type = InputBackend::DetectBestBackend();

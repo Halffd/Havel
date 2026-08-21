@@ -39,6 +39,19 @@ InputBackendType InputBackend::DetectBestBackend() {
 #endif
 }
 
+std::optional<InputBackendType>
+InputBackend::ParseBackendType(const std::string &name) {
+  if (name == "evdev")
+    return InputBackendType::Evdev;
+  if (name == "x11")
+    return InputBackendType::X11;
+  if (name == "wayland")
+    return InputBackendType::Wayland;
+  if (name == "windows")
+    return InputBackendType::Windows;
+  return std::nullopt;
+}
+
 std::unique_ptr<InputBackend> InputBackend::Create(InputBackendType type) {
   switch (type) {
   case InputBackendType::Evdev:

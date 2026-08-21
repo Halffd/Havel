@@ -223,6 +223,12 @@ public:
     static std::unique_ptr<InputBackend> Create(InputBackendType type);
     static InputBackendType DetectBestBackend();
 
+    // Parse a backend name: "evdev", "x11", "wayland", "windows".
+    // Returns nullopt for unknown names. Empty string and "auto" are NOT
+    // handled here - callers decide what those mean (auto-detection).
+    static std::optional<InputBackendType>
+    ParseBackendType(const std::string &name);
+
 protected:
     std::function<void(const KeyEvent &)> keyCallback_;
     std::function<void(const MouseEvent &)> mouseCallback_;

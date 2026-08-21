@@ -2,6 +2,7 @@
 #include "Havel.hpp"
 #include "core/config/ConfigManager.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
+#include "core/io/InputBackend.hpp"
 #include "core/init/Havel.hpp"
 #include "core/util/Env.hpp"
 #include "havel-lang/common/Debug.hpp"
@@ -1688,10 +1689,22 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
           error("Unknown assembly syntax: {}. Supported: intel, att", syntax);
         }
       }
-    } else if (arg == "--input" || arg == "-i") {
-      if (i + 1 < argc) {
-        cfg.inputBackend = argv[++i];
+    } else if (arg == "--io") {
+      if (i + 1 >= argc) {
+        error("--io requires one of: evdev, x11, wayland, windows, auto");
+        continue;
       }
+      std::string backend = argv[++i];
+      if (backend != "auto" &&
+          !InputBackend::ParseBackendType(backend)) {
+        error("Unknown --io backend '{}'. Supported: evdev, x11, wayland, "
+              "windows, auto",
+              backend);
+        continue;
+      }
+      // Runtime-only config write (not persisted). EventListener reads
+      // IO.Backend when it initializes its input backend.
+      Configs::Get().Set("IO.Backend", backend, false);
     } else if (arg == "--enable-service") {
       if (i + 1 < argc) {
         cfg.serviceIncludes.insert(argv[++i]);
@@ -1807,14 +1820,6 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     havel::exit(ExitReason::Normal, 0);
   }
 
-  // Resolve input backend: CLI arg > config > auto-detect
-  if (cfg.inputBackend.empty()) {
-    cfg.inputBackend = Configs::Get().Get<std::string>("Input.Backend", "auto");
-  }
-  if (cfg.inputBackend == "auto") {
-    cfg.inputBackend = ""; // Will be resolved by auto-detection
-  }
-
   // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
 
   return cfg;
@@ -1857,7 +1862,8 @@ Options:
   --syntax TYPE       Assembly syntax: att|intel
   --no-jit            Disable JIT compilation
   --debug-jit         Print LLVM IR and Assembly
-  --input TYPE        Input backend: evdev|x11|wayland|auto
+  --io BACKEND        Input backend: evdev|x11|wayland|windows|auto
+                      (default evdev; also settable via IO.Backend config)
   --enable-service NAME  Include service
   --disable-service NAME Exclude service
   --list-services     List available services

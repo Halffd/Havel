@@ -74,6 +74,9 @@ public:
     static std::string getActiveWindowTitleStatic();
     static std::string getActiveWindowClassStatic();
     static std::string getActiveWindowProcessStatic();
+
+private:
+  havel::WindowManager *wm_; // Non-owning pointer
 };
 
 } // namespace havel::host

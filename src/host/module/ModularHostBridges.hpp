@@ -985,38 +985,6 @@ private:
                            const HostContext *ctx);
 };
 
-/**
- * DisplayBridge - Monitor information
- */
-class DisplayBridge : public BridgeModule {
-public:
-    explicit DisplayBridge(const HostContext *ctx) : ctx_(ctx) {}
-    void install(compiler::PipelineOptions &options) override;
-    static Value handleGetMonitors(const std::vector<Value> &args,
-                                    const HostContext *ctx);
-    static Value handleGetPrimary(const std::vector<Value> &args,
-                                   const HostContext *ctx);
-    static Value handleGetCount(const std::vector<Value> &args,
-                                 const HostContext *ctx);
-    static Value handleGetMonitorsArea(const std::vector<Value> &args,
-                                        const HostContext *ctx);
-    static Value handleIsX11(const std::vector<Value> &args,
-                              const HostContext *ctx);
-    static Value handleIsWayland(const std::vector<Value> &args,
-                                  const HostContext *ctx);
-    static Value handleIsWindows(const std::vector<Value> &args,
-                                  const HostContext *ctx);
-    static Value handleProtocol(const std::vector<Value> &args,
-                                 const HostContext *ctx);
-    static Value handleWm(const std::vector<Value> &args,
-                           const HostContext *ctx);
-    static Value handleDisplayNum(const std::vector<Value> &args,
-                                   const HostContext *ctx);
-    static Value handleMonitorsResolution(const std::vector<Value> &args,
-                                           const HostContext *ctx);
-private:
-    const HostContext *ctx_;
-};
 
 /**
  * ConfigBridge - Configuration management

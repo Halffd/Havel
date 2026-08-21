@@ -949,6 +949,7 @@ BytecodeSmokeResult runBytecodePipeline(const std::string &source,
     vm->registerHostFunction(name, fn);
     // registerHostFunction already adds to globals
   }
+  vm->buildNamespaceGlobals();
   if (options.vm_setup) {
     vm->setPostResetSetup([&setup = options.vm_setup](VM &vm) { setup(vm); });
   }

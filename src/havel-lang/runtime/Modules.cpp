@@ -473,6 +473,7 @@ void Modules::installStdLib() {
     for (const auto &[name, fn] : options_.host_functions) {
         ctx_->vm->registerHostFunction(name, fn);
     }
+    ctx_->vm->buildNamespaceGlobals();
 
 for (auto &setupFn : vm_setup_callbacks_) {
         setupFn(*ctx_->vm);

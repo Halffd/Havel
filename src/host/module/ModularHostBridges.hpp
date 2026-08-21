@@ -685,6 +685,23 @@ public:
                                    const HostContext *ctx);
     static Value handleActiveResize(const std::vector<Value> &args,
                                      const HostContext *ctx);
+    // Compatibility additions mirroring modules/app/window.hv API
+    static Value handleWindowActiveId(const std::vector<Value> &args,
+                                      const HostContext *ctx);
+    static Value handleWindowFindByTitle(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowFindByClass(const std::vector<Value> &args,
+                                         const HostContext *ctx);
+    static Value handleWindowFindByPid(const std::vector<Value> &args,
+                                       const HostContext *ctx);
+    static Value handleWindowFindAllBySpec(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowMoveToDesktop(const std::vector<Value> &args,
+                                           const HostContext *ctx);
+    static Value handleWindowSetOpacity(const std::vector<Value> &args,
+                                        const HostContext *ctx);
+    static Value handleWindowGroupNames(const std::vector<Value> &args,
+                                        const HostContext *ctx);
 private:
     const HostContext *ctx_;
 };

@@ -1597,6 +1597,24 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.find"] = [ctx = ctx_](const auto &args) {
     return handleWindowFind(args, ctx);
   };
+  // Compatibility additions mirroring modules/app/window.hv API
+  options.host_functions["window.activeId"] = [ctx = ctx_](const auto &args) {
+    return handleWindowActiveId(args, ctx);
+  };
+  options.host_functions["window.findByTitle"] =
+      [ctx = ctx_](const auto &args) { return handleWindowFindByTitle(args, ctx); };
+  options.host_functions["window.findByClass"] =
+      [ctx = ctx_](const auto &args) { return handleWindowFindByClass(args, ctx); };
+  options.host_functions["window.findByPid"] =
+      [ctx = ctx_](const auto &args) { return handleWindowFindByPid(args, ctx); };
+  options.host_functions["window.findAllBySpec"] =
+      [ctx = ctx_](const auto &args) { return handleWindowFindAllBySpec(args, ctx); };
+  options.host_functions["window.moveToDesktop"] =
+      [ctx = ctx_](const auto &args) { return handleWindowMoveToDesktop(args, ctx); };
+  options.host_functions["window.setOpacity"] =
+      [ctx = ctx_](const auto &args) { return handleWindowSetOpacity(args, ctx); };
+  options.host_functions["window.groupNames"] =
+      [ctx = ctx_](const auto &args) { return handleWindowGroupNames(args, ctx); };
   options.host_functions["window.close"] = [ctx = ctx_](const auto &args) {
     return handleWindowClose(args, ctx);
   };
@@ -2064,59 +2082,251 @@ UIBridge::handleWindowMoveObj(const std::vector<Value> &args,
   return Value(winService.moveWindow(wid, x, y));
 }
 
+// Spec parsing shared by window.find / window.findAllBySpec. Semantics
+// mirror modules/app/window.hv _parseSpec/_matchWindow:
+//   "title foo" / "class bar" / "cmd baz" / "exe qux" -> substring match
+//   "pid 1234" / "id 5678"                            -> exact match
+//   bare string                                       -> title substring
+static void parseWindowSpec(const std::string &selector, std::string &type,
+                            std::string &value, bool &substring) {
+  type = "title";
+  value = selector;
+  substring = true;
+  auto spacePos = selector.find(' ');
+  if (spacePos == std::string::npos)
+    return;
+  std::string prefix = selector.substr(0, spacePos);
+  std::string rest = selector.substr(spacePos + 1);
+  if (prefix == "title" || prefix == "class" || prefix == "cmd" ||
+      prefix == "exe") {
+    type = prefix;
+    value = rest;
+  } else if (prefix == "pid" || prefix == "id") {
+    type = prefix;
+    value = rest;
+    substring = false;
+  }
+}
+
+static bool matchWindowSpec(const ::havel::host::WindowInfo &win,
+                            const std::string &type,
+                            const std::string &rawValue, bool substring) {
+  if (type == "title" || type == "class" || type == "cmd" || type == "exe") {
+    std::string hay = type == "title"   ? win.title
+                      : type == "class" ? win.windowClass
+                      : type == "cmd"   ? win.cmdline
+                                        : win.exe;
+    std::transform(hay.begin(), hay.end(), hay.begin(), ::tolower);
+    std::string needle = rawValue;
+    std::transform(needle.begin(), needle.end(), needle.begin(), ::tolower);
+    return substring ? hay.find(needle) != std::string::npos : hay == needle;
+  }
+  if (type == "pid") {
+    try {
+      return win.pid == std::stoi(rawValue);
+    } catch (...) {
+      return false;
+    }
+  }
+  if (type == "id") {
+    try {
+      return static_cast<uint64_t>(std::stoull(rawValue)) == win.id;
+    } catch (...) {
+      return false;
+    }
+  }
+  return false;
+}
+
 Value UIBridge::handleWindowFind(const std::vector<Value> &args,
                                          const HostContext *ctx) {
   if (args.empty() || !ctx->windowManager || !ctx->vm) {
     return Value::makeNull();
   }
+  auto *vm = static_cast<VM *>(ctx->vm);
 
-  // TODO: string selector support disabled
-  (void)args;
-  return Value::makeNull();
-#if 0
   std::string selector;
-  if nullptr)
-    selector = *v;
+  if (args[0].isStringId() || args[0].isStringValId())
+    selector = vm->resolveStringKey(args[0]);
   else
     return Value::makeNull();
 
-  // Parse selector: "type value" where type is title/class/exe/pid/cmd
-  size_t spacePos = selector.find(' ');
-  if (spacePos == std::string::npos) {
-    return Value::makeNull();
-  }
-
-  std::string type = selector.substr(0, spacePos);
-  std::string value = selector.substr(spacePos + 1);
+  std::string type, value;
+  bool substring;
+  parseWindowSpec(selector, type, value, substring);
 
   ::havel::host::WindowService winService(ctx->windowManager);
-  auto windows = winService.getAllWindows();
-
-  for (const auto &win : windows) {
-    bool match = false;
-
-    if (type == "title") {
-      match = (win.title.find(value) != std::string::npos);
-    } else if (type == "class") {
-      match = (win.windowClass.find(value) != std::string::npos);
-    } else if (type == "exe") {
-      match = (win.exe.find(value) != std::string::npos);
-    } else if (type == "pid") {
-      int pid = std::stoi(value);
-      match = (win.pid == pid);
-    } else if (type == "cmd") {
-      match = (win.cmdline.find(value) != std::string::npos);
-    }
-
-    if (match) {
-      return createWindowObject(static_cast<VM *>(ctx->vm), ctx, win.id,
-                                win.title, win.windowClass, win.exe, win.pid,
-                                win.cmdline);
+  for (const auto &win : winService.getAllWindows()) {
+    if (matchWindowSpec(win, type, value, substring)) {
+      return createWindowObject(vm, ctx, win.id, win.title, win.windowClass,
+                                win.exe, win.pid, win.cmdline);
     }
   }
-
-#endif
   return Value::makeNull();
+}
+
+Value UIBridge::handleWindowActiveId(const std::vector<Value> &args,
+                                     const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager)
+    return Value::makeInt(0);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid)
+    return Value::makeInt(0);
+  return Value::makeInt(static_cast<int64_t>(info.id));
+}
+
+// Exact-match finders mirroring window.hv findByTitle/findByClass/findByPid
+Value UIBridge::handleWindowFindByTitle(const std::vector<Value> &args,
+                                        const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager || !ctx->vm)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string name;
+  if (args[0].isStringId() || args[0].isStringValId())
+    name = vm->resolveStringKey(args[0]);
+  else
+    return Value::makeNull();
+
+  ::havel::host::WindowService winService(ctx->windowManager);
+  for (const auto &win : winService.getAllWindows()) {
+    if (win.title == name)
+      return createWindowObject(vm, ctx, win.id, win.title, win.windowClass,
+                                win.exe, win.pid, win.cmdline);
+  }
+  return Value::makeNull();
+}
+
+Value UIBridge::handleWindowFindByClass(const std::vector<Value> &args,
+                                        const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager || !ctx->vm)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string name;
+  if (args[0].isStringId() || args[0].isStringValId())
+    name = vm->resolveStringKey(args[0]);
+  else
+    return Value::makeNull();
+
+  ::havel::host::WindowService winService(ctx->windowManager);
+  for (const auto &win : winService.getAllWindows()) {
+    if (win.windowClass == name)
+      return createWindowObject(vm, ctx, win.id, win.title, win.windowClass,
+                                win.exe, win.pid, win.cmdline);
+  }
+  return Value::makeNull();
+}
+
+Value UIBridge::handleWindowFindByPid(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager || !ctx->vm)
+    return Value::makeNull();
+  if (!args[0].isInt() && !args[0].isDouble())
+    return Value::makeNull();
+  int64_t want = args[0].isInt() ? args[0].asInt()
+                                 : static_cast<int64_t>(args[0].asDouble());
+  auto *vm = static_cast<VM *>(ctx->vm);
+
+  ::havel::host::WindowService winService(ctx->windowManager);
+  for (const auto &win : winService.getAllWindows()) {
+    if (win.pid == want)
+      return createWindowObject(vm, ctx, win.id, win.title, win.windowClass,
+                                win.exe, win.pid, win.cmdline);
+  }
+  return Value::makeNull();
+}
+
+Value UIBridge::handleWindowFindAllBySpec(const std::vector<Value> &args,
+                                          const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager || !ctx->vm)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+
+  std::string selector;
+  if (args[0].isStringId() || args[0].isStringValId())
+    selector = vm->resolveStringKey(args[0]);
+  else
+    selector = "title";
+
+  std::string type, value;
+  bool substring;
+  parseWindowSpec(selector, type, value, substring);
+
+  ::havel::host::WindowService winService(ctx->windowManager);
+  auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
+  for (const auto &win : winService.getAllWindows()) {
+    if (!matchWindowSpec(win, type, value, substring))
+      continue;
+    auto winObj =
+        createWindowObject(vm, ctx, win.id, win.title, win.windowClass,
+                           win.exe, win.pid, win.cmdline);
+    vm->pushHostArrayValue(arr, winObj);
+  }
+  return Value::makeArrayId(arr.id);
+}
+
+// window.moveToDesktop(target, desktopNum) -> backend workspace move
+Value UIBridge::handleWindowMoveToDesktop(const std::vector<Value> &args,
+                                          const HostContext *ctx) {
+  if (args.size() < 2 || !ctx->windowManager)
+    return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid =
+      resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0)
+    return Value::makeBool(false);
+  int64_t desk = 0;
+  if (args[1].isInt())
+    desk = args[1].asInt();
+  else if (args[1].isDouble())
+    desk = static_cast<int64_t>(args[1].asDouble());
+  else
+    return Value::makeBool(false);
+  return Value::makeBool(winService.moveWindowToWorkspace(wid, desk));
+}
+
+// window.setOpacity(target, value) where value is 0.0..1.0 like window.hv
+Value UIBridge::handleWindowSetOpacity(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (args.size() < 2 || !ctx->windowManager)
+    return Value::makeBool(false);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid =
+      resolveWindowId(args[0], winService, static_cast<VM *>(ctx->vm));
+  if (wid == 0)
+    return Value::makeBool(false);
+  double opacity = 1.0;
+  if (args[1].isDouble())
+    opacity = args[1].asDouble();
+  else if (args[1].isInt())
+    opacity = static_cast<double>(args[1].asInt());
+  else
+    return Value::makeBool(false);
+  if (opacity < 0.0)
+    opacity = 0.0;
+  if (opacity > 1.0)
+    opacity = 1.0;
+  return Value::makeBool(
+      ctx->windowManager->getBackend().setWindowOpacity(wid,
+                                                        static_cast<float>(opacity)));
+}
+
+Value UIBridge::handleWindowGroupNames(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  (void)args;
+  if (!ctx->windowManager || !ctx->vm)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  ::havel::host::WindowService winService(ctx->windowManager);
+  auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
+  for (const auto &name : winService.getGroupNames()) {
+    auto ref = vm->createRuntimeString(name);
+    vm->pushHostArrayValue(arr, Value::makeStringId(ref.id));
+  }
+  return Value::makeArrayId(arr.id);
 }
 
 // Helper: resolve window argument (ID, object with id field, or selector string) to window ID
@@ -6212,29 +6422,42 @@ UIBridge::handleActiveTitle(const std::vector<Value> &args,
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
-  if (!info.valid) {
+  if (!info.valid || !ctx->vm) {
     return Value::makeNull();
   }
-  // TODO: string pool integration - for now return null
-  (void)info;
-  return Value::makeNull();
+  auto ref = static_cast<VM *>(ctx->vm)->createRuntimeString(info.title);
+  return Value::makeStringId(ref.id);
 }
 
 Value
 UIBridge::handleActiveClass(const std::vector<Value> &args,
                             const HostContext *ctx) {
   (void)args;
-  (void)ctx;
-  // TODO: string pool integration - for now return null
-  return Value::makeNull();
+  if (!ctx->windowManager) {
+    return Value::makeNull();
+  }
+  ::havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto ref = static_cast<VM *>(ctx->vm)->createRuntimeString(info.windowClass);
+  return Value::makeStringId(ref.id);
 }
 
 Value UIBridge::handleActiveExe(const std::vector<Value> &args,
                                         const HostContext *ctx) {
   (void)args;
-  (void)ctx;
-  // TODO: string pool integration - for now return null
-  return Value::makeNull();
+  if (!ctx->windowManager) {
+    return Value::makeNull();
+  }
+  ::havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getActiveWindowInfo();
+  if (!info.valid || !ctx->vm) {
+    return Value::makeNull();
+  }
+  auto ref = static_cast<VM *>(ctx->vm)->createRuntimeString(info.exe);
+  return Value::makeStringId(ref.id);
 }
 
 Value UIBridge::handleActivePid(const std::vector<Value> &args,

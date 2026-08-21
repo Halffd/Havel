@@ -89,7 +89,6 @@ bool debugIo = false;
   std::vector<std::string> linkLibs;
   AsmSyntax asmSyntax = AsmSyntax::ATT;
   std::string evalString;
-  std::string inputBackend;
   compiler::VMConfig vmConfig;
   host::ServiceFilter serviceIncludes;
   host::ServiceFilter serviceExcludes;

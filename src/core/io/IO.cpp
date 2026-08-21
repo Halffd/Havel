@@ -524,26 +524,47 @@ void IO::ensureBackend() {
                 kb.name, kb.eventPath, kb.confidence * 100);
       }
 
-      std::string mouseDevice = getMouseDevice();
-      std::string gamepadDevice;
-
-      if (!mouseDevice.empty() &&
-          !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-        // Only add mouse device if it's not already in the keyboard devices
-        // list
-        bool alreadyAdded = false;
-        for (const auto &kb_device : keyboardDevices) {
-          if (kb_device.eventPath == mouseDevice) {
-            alreadyAdded = true;
-            break;
+      if (!Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+        // Add every real mouse node, not just the top-ranked one. Distinct
+        // evdev nodes can score identically (e.g. a gaming mouse's pointer
+        // node and a drawing tablet's mouse node both hit "Has mouse buttons
+        // and relative movement" at 90%); taking only mice[0] silently drops
+        // the other, so its buttons/wheel/movement never reach hotkey
+        // matching and the device is never grabbed.
+        auto mice = Device::findMice();
+        bool addedAnyMouse = false;
+        for (const auto &mouse : mice) {
+          // Skip name-only fallback guesses ("Name contains 'mouse' but
+          // lacks full mouse capabilities") - too weak to justify a grab.
+          if (mouse.confidence < 0.5)
+            continue;
+          bool alreadyAdded = false;
+          for (const auto &added : devices) {
+            if (added == mouse.eventPath) {
+              alreadyAdded = true;
+              break;
+            }
+          }
+          if (!alreadyAdded) {
+            devices.push_back(mouse.eventPath);
+            addedAnyMouse = true;
+            debug("[IO] Adding mouse device: '{}' -> {} (confidence: {:.1f}%)",
+                  mouse.name, mouse.eventPath, mouse.confidence * 100);
           }
         }
-        if (!alreadyAdded) {
-          devices.push_back(mouseDevice);
-          if (debugging::debug_io)
-            debug("Adding mouse device: {}", mouseDevice);
+        // No physical mouse detected - fall back to previous behavior of
+        // using (or creating) the single configured/virtual mouse device.
+        if (!addedAnyMouse) {
+          std::string virtualFallback = getMouseDevice();
+          if (!virtualFallback.empty()) {
+            devices.push_back(virtualFallback);
+            debug("[IO] Adding fallback virtual mouse device: {}",
+                  virtualFallback);
+          }
         }
       }
+
+      std::string gamepadDevice;
 
       bool enableGamepad =
           Configs::Get().Get<bool>("Device.EnableGamepad", false);
@@ -686,12 +707,8 @@ void IO::SetInputBackend(const std::string &backendName) {
          : type == InputBackendType::X11     ? "x11"
          : type == InputBackendType::Wayland ? "wayland"
                                              : "unknown");
-  } else if (backendName == "evdev") {
-    type = InputBackendType::Evdev;
-  } else if (backendName == "x11") {
-    type = InputBackendType::X11;
-  } else if (backendName == "wayland") {
-    type = InputBackendType::Wayland;
+  } else if (auto parsed = InputBackend::ParseBackendType(backendName)) {
+    type = *parsed;
   } else {
     warn("Unknown input backend '{}', using auto-detection", backendName);
     type = InputBackend::DetectBestBackend();

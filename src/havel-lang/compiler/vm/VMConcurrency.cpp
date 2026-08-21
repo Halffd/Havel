@@ -209,6 +209,7 @@ case OpCode::TIMEOUT_START: {
         if (!stack.empty()) {
             yield_value = popStack();
         }
+        fprintf(stderr, "[SLOWYIELD] co_id=%u val_isInt=%d val_int=%lld frame_count=%u ip=%u\n", (unsigned)current_coroutine_id_, (int)yield_value.isInt(), (long long)(yield_value.isInt() ? yield_value.asInt() : -999), (unsigned)frame_count_, (unsigned)currentFrame().ip);
 
 if (current_coroutine_id_ != UINT32_MAX) {
 auto *co = heap_.coroutine(current_coroutine_id_);

@@ -502,6 +502,16 @@ if (instanceObj) {
               if (bf && !bf->param_names.empty() && bf->param_names[0] == "self") {
                 wantsSelf = true;
               }
+              // Module function detection: if receiver is a module object in globals,
+              // don't pass receiver as self (module functions don't expect self)
+              if (!wantsSelf) {
+                for (const auto &g : globals) {
+                  if (g.second.isObjectId() && g.second.asObjectId() == receiver.asObjectId()) {
+                    found_via_module = true;
+                    break;
+                  }
+                }
+              }
               isInstanceFunc = !wantsSelf;
             }
           } else if (it->second.isObjectId()) {

@@ -978,16 +978,57 @@ op_YIELD: {
         yieldValue = Value::makeNull();
     }
     
-    // Set suspension reason to YIELD
-    last_suspension_reason_ = static_cast<uint8_t>(havel::compiler::Scheduler::SuspensionReason::Yield);
-    last_suspension_context_ = nullptr;
-    suspension_requested_ = true;
-    suspension_reason_ = static_cast<uint8_t>(havel::compiler::Scheduler::SuspensionReason::Yield);
-    suspension_context_ = nullptr;
-    
-    // Push the yield value onto the stack so it's available when resumed
+    // Coroutine context: save the coroutine's state, pop the caller frame
+    // and hand the yielded value back to the caller without suspending the
+    // goroutine (mirrors the slow-path YIELD handler in VMConcurrency.cpp).
+    if (current_coroutine_id_ != UINT32_MAX) {
+        auto *co = heap_.coroutine(current_coroutine_id_);
+        if (co) {
+            auto saved_ip = frm.ip;
+            co->ip = saved_ip;
+            co->locals = locals;
+
+            co->stack.clear();
+            {
+                std::vector<Value> tmp;
+                while (!stack.empty()) {
+                    tmp.push_back(stack.top());
+                    stack.pop();
+                }
+                for (auto it = tmp.rbegin(); it != tmp.rend(); ++it) {
+                    co->stack.push_back(*it);
+                }
+            }
+
+            co->state = GCHeap::Coroutine::Waiting;
+
+            if (!co->caller_stack.empty()) {
+                auto &caller = co->caller_stack.back();
+                frame_count_ = caller.frame_count;
+                locals = caller.locals;
+                current_coroutine_id_ = caller.coroutine_id;
+
+                frame_arena_[frame_count_ - 1].ip = caller.ip;
+
+                stack = std::stack<Value>();
+                for (auto it = caller.stack.begin(); it != caller.stack.end(); ++it) {
+                    stack.push(*it);
+                }
+
+                co->caller_stack.pop_back();
+            }
+
+            pushStack(yieldValue);
+            goto dispatch_next;
+        }
+    }
+
+    // Non-coroutine yield: keep the value on the stack and continue
     pushStack(yieldValue);
-    
+    goto dispatch_next;
+}
+
+dispatch_next:
     if (frame_count_ == 0 || frame_count_ <= stop_frame_depth) return;
     {
         auto &f2 = frame_arena_[frame_count_ - 1];
@@ -998,7 +1039,6 @@ op_YIELD: {
         }
         goto *dispatch_table[static_cast<uint8_t>(f2.function->instructions[f2.ip].opcode)];
     }
-}
 
     // --- Remaining opcodes: delegate to executeInstruction ---
 

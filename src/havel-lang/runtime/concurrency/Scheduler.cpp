@@ -440,6 +440,18 @@ size_t Scheduler::suspendedCount() const {
 	return count;
 }
 
+bool Scheduler::hasHotkeyWaitSuspended() const {
+	std::lock_guard lock(goroutines_mutex_);
+	for (const auto& [id, g] : goroutines_) {
+		if (g->state == GoroutineState::Suspended &&
+		    g->suspension_reason.load(std::memory_order_acquire) ==
+		        SuspensionReason::HotkeyWait) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void Scheduler::attachFiber(uint32_t goroutine_id, Fiber* fiber) {
 	std::lock_guard lock(goroutines_mutex_);
 	auto it = goroutines_.find(goroutine_id);

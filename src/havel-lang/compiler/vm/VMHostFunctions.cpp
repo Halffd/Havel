@@ -1664,6 +1664,14 @@ void VM::registerDefaultHostFunctions() {
   // type() builtin returns type name
   registerHostFunction("type", 1, [this](const std::vector<Value> &args) {
     const auto &value = args[0];
+    fprintf(stderr, "[TYPEENTRY] rawBits=0x%llx isCoId=%d isInt=%d isStr=%d isStrVal=%d isBoxed=%d isDbl=%d\n",
+      (unsigned long long)value.rawBits(),
+      (int)value.isCoroutineId(),
+      (int)value.isInt(),
+      (int)value.isStringId(),
+      (int)value.isStringValId(),
+      (int)(value.rawBits() & 0x8000000000000000ULL ? 1 : 0),
+      (int)value.isDouble());
     std::string typeName;
     if (value.isNull())
       typeName = "null";

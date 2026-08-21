@@ -477,6 +477,12 @@ bool prototypes_registered_ = false;
 VMConfig vm_config_{};
 size_t max_call_depth_ = 16384;
 size_t tail_call_depth_ = 0;
+// Return address for coroutine resume / YIELD_RESUME CallerFrame saves.
+// The fast dispatch path advances frame ip BEFORE executeInstruction while
+// the slow loop advances AFTER, so "currentFrame().ip + 1" is only correct
+// in the slow loop. Dispatch sites that know the true return address set
+// this before executeInstruction; the resume branches consume it (-1 = none).
+int32_t pending_call_return_ip_ = -1;
     bool profiling_enabled_ = false;
     bool trace_execution_ = false;
     std::array<uint64_t, 256> opcode_counts_{};

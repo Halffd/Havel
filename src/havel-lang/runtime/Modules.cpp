@@ -46,6 +46,7 @@ static std::string getTypeName(const Value &value) {
     if (value.isHostFuncId()) return "function";
     if (value.isBoundMethodId()) return "function";
     if (value.isChannelId()) return "channel";
+    if (value.isCoroutineId()) return "coroutine";
     return "unknown";
 }
 

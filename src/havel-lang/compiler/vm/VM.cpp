@@ -1811,6 +1811,9 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       const auto &instruction = function->instructions[ip];
 
       try {
+        // Slow loop advances ip AFTER executeInstruction, so the return
+        // address for a coroutine resume inside this instruction is ip + 1.
+        pending_call_return_ip_ = static_cast<int32_t>(ip) + 1;
         executeInstruction(instruction);
         // The switch-based executeInstruction (used by the slow dispatch
         // loop) does not propagate suspension_requested_ into last_suspension_*.
@@ -1966,6 +1969,10 @@ slow_path:
         auto disasm = BytecodeDisassembler(*current_chunk)
                           .formatInstruction(ip, instruction, opts);
       }
+      // Slow loop advances ip AFTER executeInstruction (see end of loop body),
+      // so the return address for a coroutine resume inside this instruction
+      // is ip + 1.
+      pending_call_return_ip_ = static_cast<int32_t>(ip) + 1;
       executeInstruction(instruction);
       if ((fast_path_counter & 4095) == 0 && exit_requested_.load()) {
         break;
@@ -2387,6 +2394,11 @@ void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(Value callee_value, std::vector<Value> args) {
   tail_call_depth_ = 0;
+  // Consume any stashed return address (set by dispatch sites immediately
+  // before executeInstruction). Clearing unconditionally here prevents a
+  // stale value from a previous opcode leaking into indirect doCall callers.
+  int32_t stashed_return_ip_ = pending_call_return_ip_;
+  pending_call_return_ip_ = -1;
   if (std::getenv("HAVEL_TRACE_SLEEP")) {
     // fprintf(stderr, "[SLEEPDBG] doCall enter hf=%d fn=%d cl=%d suspend_req=%d\n", (int)callee_value.isHostFuncId(), (int)callee_value.isFunctionObjId(), (int)callee_value.isClosureId(), (int)suspension_requested_);
   }
@@ -2449,7 +2461,14 @@ void VM::doCall(Value callee_value, std::vector<Value> args) {
       GCHeap::CallerFrame cf;
       cf.coroutine_id = current_coroutine_id_;
       cf.frame_count = frame_count_;
-      cf.ip = currentFrame().ip + 1;
+      // Dispatch sites stash the true return address before executeInstruction
+      // (fast path pre-increments ip; slow loop does not). Fall back to the
+      // legacy slow-loop computation for direct doCall callers.
+      if (stashed_return_ip_ >= 0) {
+        cf.ip = static_cast<uint32_t>(stashed_return_ip_);
+      } else {
+        cf.ip = currentFrame().ip + 1;
+      }
       cf.locals = locals;
       {
         std::vector<Value> tmp;

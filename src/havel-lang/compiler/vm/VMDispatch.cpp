@@ -880,6 +880,9 @@ op_CALL: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     frm.ip++;
+    // ip now points at the instruction AFTER this CALL — the exact address
+    // a coroutine yield must return to. Stash it for doCall's resume path.
+    pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
     try {
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {
@@ -1660,6 +1663,9 @@ op_default: {
     auto &frm = frame_arena_[frame_count_ - 1];
     const auto &inst = frm.function->instructions[frm.ip];
     frm.ip++;
+    // Stash post-increment ip as the return address for coroutine resumes
+    // triggered inside this instruction (e.g. YIELD_RESUME). See VM.hpp.
+    pending_call_return_ip_ = static_cast<int32_t>(frm.ip);
     try {
         executeInstruction(inst);
     } catch (const ScriptThrow &thrown) {

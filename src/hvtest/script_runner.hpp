@@ -422,12 +422,15 @@ inline int run_comparison_suite(const std::string &havel_bin, const std::vector<
         
         if (result.cpp_passed && result.aot_passed) {
             std::cout << "[PASS] " << script << " (cpp=" << (int)result.cpp_ms << "ms, aot=" << (int)result.aot_ms << "ms)" << std::endl << std::flush;
+            pass++;
         } else if (result.cpp_passed != result.aot_passed) {
             std::cout << "[MISMATCH] " << script << " (cpp=" << (result.cpp_passed ? "PASS" : "FAIL") 
                       << ", aot=" << (result.aot_passed ? "PASS" : "FAIL") << ")" << std::endl << std::flush;
+            mismatch++;
         } else {
             std::cout << "[FAIL] " << script << " (cpp=" << (result.cpp_passed ? "PASS" : "FAIL") 
                       << ", aot=" << (result.aot_passed ? "PASS" : "FAIL") << ")" << std::endl << std::flush;
+            fail++;
         }
     }
 

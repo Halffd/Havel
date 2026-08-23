@@ -2557,12 +2557,13 @@ set(CPACK_DEBIAN_PACKAGE_DEPENDS
      libgl1, libcurl4, libpipewire-0.3-0t64, libasound2t64,
      libtesseract5, libleptonica6, libopencv-core410, libopencv-imgproc410, libopencv-imgcodecs410,
      libreadline8t64, libncurses6, libffi8,
+     libqt6core6t64, libqt6gui6, libqt6widgets6, libqt6charts6,
      libllvm18 | libllvm19 | libllvm20 | libllvm21"
 )
 
 # Fedora/RHEL package dependencies (RPM) - semicolon-separated for CPack
 set(CPACK_RPM_PACKAGE_REQUIRES
-    "libX11;libXtst;libXrandr;libXinerama;libXcomposite;libXi;libXfixes;libXdamage;wayland;libxkbcommon;fmt;pcre2;mesa-libGL;libcurl;pipewire;alsa-lib;tesseract;leptonica;opencv-core;opencv-imgproc;opencv-imgcodecs;readline;ncurses;libffi;llvm-libs"
+    "libX11;libXtst;libXrandr;libXinerama;libXcomposite;libXi;libXfixes;libXdamage;wayland;libxkbcommon;fmt;pcre2;mesa-libGL;libcurl;pipewire;alsa-lib;tesseract;leptonica;opencv-core;opencv-imgproc;opencv-imgcodecs;readline;ncurses;libffi;qt6-qtbase-gui;qt6-qtcharts;llvm-libs"
 )
 
 # Debian package metadata

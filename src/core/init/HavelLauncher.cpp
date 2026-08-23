@@ -213,20 +213,22 @@ static void appendDefaultNativeLinkLibraries(std::string &linkCmd) {
 
 // ─── Shared Helpers ──────────────────────────────────────────────
 
-static std::pair<std::string, std::string>
+static std::optional<std::pair<std::string, std::string>>
 loadScriptFiles(const std::vector<std::string> &files) {
   std::string code;
   std::string names;
   for (const auto &f : files) {
     std::string content = readScriptFile(f);
-    if (!content.empty()) {
-      code += content + "\n";
-      if (!names.empty())
-        names += " + ";
-      names += f;
+    if (content.empty()) {
+      error("Failed to read script file: {}", f);
+      return std::nullopt;
     }
+    code += content + "\n";
+    if (!names.empty())
+      names += " + ";
+    names += f;
   }
-  return {code, names};
+  return {{code, names}};
 }
 
 static void appendEval(std::string &code, std::string &names,
@@ -507,7 +509,9 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
 class DaemonStrategy : public RunStrategy {
 public:
   int execute(const havel::init::LaunchConfig &cfg, int argc, char *argv[]) override {
-    auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+    auto result = loadScriptFiles(cfg.scriptFiles);
+    if (!result) return 1;
+    auto [combinedCode, combinedNames] = *result;
 
     // LINT-ONLY MODE
     if (cfg.lintOnly && !combinedCode.empty()) {
@@ -604,12 +608,10 @@ public:
     if (!hvcFiles.empty() && hvFiles.empty() && cfg.evalString.empty())
       return runBytecodeFiles(cfg, hvcFiles);
 
-    auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+    auto result = loadScriptFiles(cfg.scriptFiles);
+    if (!result) return 1;
+    auto [combinedCode, combinedNames] = *result;
     appendEval(combinedCode, combinedNames, cfg.evalString);
-    if (combinedCode.empty()) {
-      error("No script code provided");
-      return 1;
-    }
 
     // Parse once to check for hotkey bindings
     auto program = parseScript(combinedCode, cfg);
@@ -737,11 +739,11 @@ public:
     if (!hvcFiles.empty() && hvFiles.empty())
       return runBytecodeFiles(cfg, hvcFiles);
 
-    auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+    auto result = loadScriptFiles(cfg.scriptFiles);
+    if (!result) return 1;
+    auto [combinedCode, combinedNames] = *result;
     appendEval(combinedCode, combinedNames, cfg.evalString);
     readFromStdIn(combinedCode, combinedNames);
-    if (combinedCode.empty())
-      return 0;
 
     havel::parser::Parser parser{{.lexer = cfg.debugLexer,
                                   .parser = cfg.debugParser,
@@ -903,7 +905,9 @@ class ScriptAndReplStrategy : public RunStrategy {
 public:
   int execute(const havel::init::LaunchConfig &cfg, int argc, char *argv[]) override {
     try {
-      auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+      auto result = loadScriptFiles(cfg.scriptFiles);
+      if (!result) return 1;
+      auto [combinedCode, combinedNames] = *result;
 
       if (cfg.minimalMode) {
         if (cfg.scriptFiles.empty()) {
@@ -978,7 +982,9 @@ public:
     try {
       if (cfg.minimalMode) {
         info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
-        auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+        auto result = loadScriptFiles(cfg.scriptFiles);
+        if (!result) return 1;
+        auto [combinedCode, combinedNames] = *result;
 
         havel::HavelEngine engine(makeEngineConfig(cfg));
         engine.initializeMinimal();

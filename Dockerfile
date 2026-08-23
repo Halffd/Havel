@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y \
     clang \
     lld \
     llvm-dev \
+    qt6-base-dev \
+    qt6-charts-dev \
     libfmt-dev \
     nlohmann-json3-dev \
     libspdlog-dev \
@@ -40,14 +42,14 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 COPY . .
 
-# Build Havel (Release, portable, LLVM JIT enabled, no Qt, with Havel Lang and module plugins)
+# Build Havel (Release, portable, LLVM JIT + Qt6 UI backend, with Havel Lang and module plugins)
 RUN chmod +x build.sh && \
     cmake -S . -B build-release \
         -DCMAKE_BUILD_TYPE=Release \
         -DPORTABLE_BUILD=ON \
         -DENABLE_LLVM=ON \
-        -DENABLE_QT=OFF \
-        -DENABLE_QT_UI_BACKEND=OFF \
+        -DENABLE_QT=ON \
+        -DENABLE_QT_UI_BACKEND=ON \
         -DENABLE_GTK=OFF \
         -DENABLE_HAVEL_LANG=ON \
         -DENABLE_MODULE_PLUGINS=ON \
@@ -95,6 +97,10 @@ RUN apt-get update && apt-get install -y \
     libreadline8t64 \
     libncurses6 \
     libffi8 \
+    libqt6core6t64 \
+    libqt6gui6 \
+    libqt6widgets6 \
+    libqt6charts6 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root/

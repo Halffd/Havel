@@ -605,7 +605,15 @@ int WindowManager::getCurrentWorkspace() {
 }
 
 std::vector<std::string> WindowManager::getGroupNames() {
-  return GetGroupNames();
+  auto names = GetGroupNames();
+  std::unordered_set<std::string> seen(names.begin(), names.end());
+  for (const auto &win : get().getBackend().getAllWindows()) {
+    if (!win.windowClass.empty() && !seen.count(win.windowClass)) {
+      seen.insert(win.windowClass);
+      names.push_back(win.windowClass);
+    }
+  }
+  return names;
 }
 
 std::vector<WindowInfo>

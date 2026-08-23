@@ -1,0 +1,3 @@
+fn check(x) {
+    if x == 0 { throw "null pointer" }
+}

@@ -11,6 +11,7 @@
 #include "../host/clipboard/MonitoringClipboard.hpp"
 #include "../host/clipboard/ClipboardService.hpp"
 #endif
+#include "../host/audio/AudioService.hpp"
 #include "../host/screenshot/ScreenshotService.hpp"
 #ifdef HAVE_QT_EXTENSION
 #include "../host/automation/PixelAutomationService.hpp"
@@ -156,7 +157,8 @@ havel::HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI) {
 
 	ctx.io = hostAPI ? hostAPI->GetIO() : nullptr;
 	ctx.hotkeyManager = hostAPI ? hostAPI->GetHotkeyManager() : nullptr;
-	ctx.windowManager = nullptr;
+	ctx.windowManager = hostAPI ? hostAPI->GetWindowManager() : nullptr;
+	ctx.audioManager = hostAPI ? hostAPI->GetAudioManager() : nullptr;
 	ctx.guiManager = hostAPI ? hostAPI->GetGUIManager() : nullptr;
 	ctx.screenshotManager = hostAPI ? hostAPI->GetScreenshotManager() : nullptr;
 	ctx.clipboardManager = hostAPI ? hostAPI->GetClipboardManager() : nullptr;

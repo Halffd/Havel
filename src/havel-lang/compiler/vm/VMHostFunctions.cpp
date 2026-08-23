@@ -4374,6 +4374,59 @@ void VM::registerDefaultHostGlobals() {
   registerDefaultPrototypes();
 }
 
+void VM::buildNamespaceGlobals() {
+  // Group dotted host function names by their first segment and expose each
+  // group as a global object: "window.active" -> window.active(...).
+  // Bridges register functions with dotted names but nothing bound the
+  // prefix as a callable object, leaving them reachable only through
+  // _G["prefix.suffix"].
+  std::unordered_map<std::string,
+                     std::vector<std::pair<std::string, Value>>>
+      namespaces;
+  for (const auto &[name, value] : host_function_globals_) {
+    if (name.empty() || name[0] == '$')
+      continue; // internal wrappers ($module_closure_...)
+    auto dot = name.find('.');
+    if (dot == std::string::npos || dot == 0 || dot + 1 >= name.size())
+      continue;
+    namespaces[name.substr(0, dot)].emplace_back(name.substr(dot + 1), value);
+  }
+
+  for (auto &[prefix, fields] : namespaces) {
+    // Prefixes whose every field is internal (e.g. type._isNumber) must not
+    // shadow a plain global of the same name: stdlib registers type._is* and
+    // the bare type() host function must stay callable.
+    bool allInternal = true;
+    for (const auto &[fname, fval] : fields) {
+      if (!fname.empty() && fname[0] != '_') {
+        allInternal = false;
+        break;
+      }
+    }
+    if (allInternal)
+      continue;
+
+    auto it = globals.find(prefix);
+    if (it != globals.end()) {
+      if (it->second.isObjectId()) {
+        // Existing namespace object: merge missing fields instead of clobbering
+        ObjectRef ref{it->second.asObjectId(), true};
+        for (const auto &[fname, fval] : fields) {
+          auto existing = getHostObjectField(ref, fname);
+          if (existing.isHostFuncId() || existing.isNull())
+            setHostObjectField(ref, fname, fval);
+        }
+      }
+      // Non-object global with the same name wins; do not overwrite.
+      continue;
+    }
+    auto obj = heap_.allocateObject();
+    for (const auto &[fname, fval] : fields)
+      setHostObjectField(ObjectRef{obj.id, true}, fname, fval);
+    setGlobal(prefix, Value::makeObjectId(obj.id));
+  }
+}
+
 void VM::registerDefaultPrototypes() {
   if (prototypes_registered_)
     return;

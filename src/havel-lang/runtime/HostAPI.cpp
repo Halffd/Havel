@@ -8,15 +8,17 @@
 namespace havel {
 
 HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
-                 GUIManager *guiManager,
+                 WindowManager *windowManager,
+                 AudioManager *audioManager, GUIManager *guiManager,
                  ScreenshotManager *screenshotManager,
                  ClipboardManager *clipboardManager,
                  PixelAutomation *pixelAutomation,
                  AutomationManager *automationManager, FileManager *fileManager,
                  ProcessManager *processManager, MapManager *mapManager,
-                 const std::vector<std::string> &commandLineArgs)
+                const std::vector<std::string> &commandLineArgs)
     : io(io), hotkeyManager(hotkeyManager), config(config),
-      guiManager(guiManager),
+      windowManager(windowManager),
+      audioManager(audioManager), guiManager(guiManager),
       screenshotManager(screenshotManager), clipboardManager(clipboardManager),
       pixelAutomation(pixelAutomation), automationManager(automationManager),
       fileManager(fileManager), processManager(processManager),
@@ -48,6 +50,8 @@ void HostAPI::SetConfig(const std::string &, const std::string &) {}
 Configs &HostAPI::GetConfig() { return config; }
 IO *HostAPI::GetIO() { return io; }
 HotkeyManager *HostAPI::GetHotkeyManager() { return hotkeyManager; }
+WindowManager *HostAPI::GetWindowManager() { return windowManager; }
+AudioManager *HostAPI::GetAudioManager() { return audioManager; }
 GUIManager *HostAPI::GetGUIManager() { return guiManager; }
 ScreenshotManager *HostAPI::GetScreenshotManager() { return screenshotManager; }
 ClipboardManager *HostAPI::GetClipboardManager() { return clipboardManager; }
@@ -77,19 +81,24 @@ const std::vector<std::string> &HostAPI::GetCommandLineArgs() { return commandLi
 #include "extensions/gui/common/GUIManager.hpp"
 #include "extensions/gui/screenshot_manager/ScreenshotManager.hpp"
 #endif
+#include "core/media/AudioManager.hpp"
+#include "core/window/WindowManager.hpp"
+// #include <QGuiApplication>
 
 namespace havel {
 
 HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
-                 GUIManager *guiManager,
+                 WindowManager *windowManager,
+                 AudioManager *audioManager, GUIManager *guiManager,
                  ScreenshotManager *screenshotManager,
                  ClipboardManager *clipboardManager,
                  PixelAutomation *pixelAutomation,
                  AutomationManager *automationManager, FileManager *fileManager,
                  ProcessManager *processManager, MapManager *mapManager,
-                 const std::vector<std::string> &commandLineArgs)
+                const std::vector<std::string> &commandLineArgs)
     : io(io), hotkeyManager(hotkeyManager), config(config),
-      guiManager(guiManager),
+      windowManager(windowManager),
+      audioManager(audioManager), guiManager(guiManager),
       screenshotManager(screenshotManager), clipboardManager(clipboardManager),
       pixelAutomation(pixelAutomation), automationManager(automationManager),
       fileManager(fileManager), processManager(processManager),
@@ -108,21 +117,21 @@ std::string HostAPI::GetActiveWindowClass() {
 pID HostAPI::GetActiveWindowPID() { return io->GetActiveWindowPID(); }
 
 std::string HostAPI::GetActiveWindowProcess() {
-  return "";
+  return WindowManager::getProcessName(GetActiveWindowPID());
 }
 
 bool HostAPI::IsWindowInGroup(const std::string &windowTitle,
                               const std::string &groupName) {
-  return false;
+  return WindowManager::IsWindowInGroup(windowTitle.c_str(), groupName.c_str());
 }
 
 std::vector<std::string> HostAPI::GetGroupNames() {
-  return {};
+  return WindowManager::GetGroupNames();
 }
 
 std::vector<std::string>
 HostAPI::GetGroupWindows(const std::string &groupName) {
-  return {};
+  return WindowManager::GetGroupWindows(groupName.c_str());
 }
 
 // IHotkeyAPI implementation
@@ -203,6 +212,8 @@ Configs &HostAPI::GetConfig() { return config; }
 // Manager access for modules
 IO *HostAPI::GetIO() { return io; }
 HotkeyManager *HostAPI::GetHotkeyManager() { return hotkeyManager; }
+WindowManager *HostAPI::GetWindowManager() { return windowManager; }
+AudioManager *HostAPI::GetAudioManager() { return audioManager; }
 GUIManager *HostAPI::GetGUIManager() { return guiManager; }
 ScreenshotManager *HostAPI::GetScreenshotManager() { return screenshotManager; }
 ClipboardManager *HostAPI::GetClipboardManager() { return clipboardManager; }

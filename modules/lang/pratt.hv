@@ -2027,25 +2027,21 @@ if isObjKeyType {
 
             }
 }
-// Block expression: { if/for/while/loop/val/let/fn/return/go/... }
-isBlockStart = (nextTok.tid == TID.If || nextTok.tid == TID.For || nextTok.tid == TID.While || nextTok.tid == TID.Loop || nextTok.tid == TID.Repeat || nextTok.tid == TID.Let || nextTok.tid == TID.Val || nextTok.tid == TID.Fn || nextTok.tid == TID.Return || nextTok.tid == TID.Go || nextTok.tid == TID.Throw || nextTok.tid == TID.Try || nextTok.tid == TID.Match || nextTok.tid == TID.Break || nextTok.tid == TID.Continue || nextTok.tid == TID.Defer)
-if isBlockStart {
- advance() // consume {
+// Default: anonymous block — matches BootstrapParser.cpp semantics.
+// Braces only form an object/set above; everything else is a block
+// ({ print("hi") }, {"msg"}, { x = 1; foo(x) }, ...).
+advance() // consume {
+skipNewlines()
+stmts = []
+while current().tid != TID.CloseBrace and notEOF() {
  skipNewlines()
- stmts = []
- while current().tid != TID.CloseBrace and notEOF() {
-  skipNewlines()
-  if current().tid == TID.CloseBrace: break
-  s = parseStatement()
-  if s != null { stmts.push(s) }
-  skipNewlines()
- }
- expect(TID.CloseBrace)
- return BlockStatement(stmts, l, c)
+ if current().tid == TID.CloseBrace: break
+ s = parseStatement()
+ if s != null { stmts.push(s) }
+ skipNewlines()
 }
-
-// Default to object literal
-return parseObjectLiteral(false)
+expect(TID.CloseBrace)
+return BlockStatement(stmts, l, c)
 
 }
     // ===================================================================

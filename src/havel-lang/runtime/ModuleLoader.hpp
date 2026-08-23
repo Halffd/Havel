@@ -69,10 +69,13 @@ public:
     // ========================================================================
   void addSearchPath(const std::string& path);
   void addModuleSoPath(const std::string& path);
+  void addCacheDir(const std::string& path);
   void setStdlibPath(const std::string& path);
   const std::vector<std::string>& getSearchPaths() const { return searchPaths_; }
   const std::vector<std::string>& getModuleSoPaths() const { return moduleSoPaths_; }
+  const std::vector<std::string>& getCacheDirs() const { return cacheDirs_; }
   const std::string& getStdlibPath() const { return stdlibPath_; }
+  static std::string getDefaultCacheDir();
 
     // ========================================================================
     // Path resolution (priority-based)
@@ -109,7 +112,7 @@ public:
     // `canonicalSourcePath` must be an absolute canonical path.
     static std::string cacheFileNameForSource(const std::string& canonicalSourcePath);
 
-    static std::string getCacheDir();
+    std::string getCacheDir() const;
     std::vector<core::Value> cachedValues() const;
 
     // ========================================================================
@@ -139,6 +142,8 @@ private:
   std::string stdlibPath_; // Bundled stdlib directory
   // Search paths for native module .so resolution (havel_mod_<name>.so)
   std::vector<std::string> moduleSoPaths_;
+  // Additional cache directories for precompiled bytecode (e.g. /usr/share/havel/modules)
+  std::vector<std::string> cacheDirs_;
 
   // Module cache: canonicalKey -> CachedModule (exports + globals snapshot)
   mutable std::unordered_map<std::string, CachedModule> cache_;

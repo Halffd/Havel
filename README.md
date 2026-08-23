@@ -28,7 +28,125 @@
 - X11 development libraries (on Linux)
 - Qt6 development libraries
 
-## Syntax Reference
+### Quick Install (Pre-built Packages)
+
+#### Debian/Ubuntu (`.deb`)
+```bash
+# Download the latest .deb from releases or build locally
+sudo apt install ./havel-1.0.0-Linux-x86_64.deb
+# Or from GitHub releases:
+# wget https://github.com/Halffd/Havel/releases/latest/download/havel-1.0.0-Linux-x86_64.deb
+# sudo apt install ./havel-1.0.0-Linux-x86_64.deb
+```
+
+#### Fedora/RHEL (`.rpm`)
+```bash
+# Download the latest .rpm from releases or build locally
+sudo dnf install ./havel-1.0.0-Linux-x86_64.rpm
+# Or from GitHub releases:
+# wget https://github.com/Halffd/Havel/releases/latest/download/havel-1.0.0-Linux-x86_64.rpm
+# sudo dnf install ./havel-1.0.0-Linux-x86_64.rpm
+```
+
+#### Arch Linux (AUR/PKGBUILD)
+```bash
+# Using the provided PKGBUILD
+git clone https://github.com/Halffd/Havel
+cd Havel
+makepkg -si
+# Or install from AUR (when available):
+# yay -S havel
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/Halffd/Havel
+cd Havel
+
+# Detect system dependencies
+./build.sh detect
+
+# Build modes (see Build System for full table)
+# Default (mode 6): Debug, tests, Havel Lang, no LLVM
+./build.sh build
+
+# Full release with LLVM JIT (mode 5)
+./build.sh 5 build
+
+# Release without LLVM, portable binaries (mode 9 equivalent)
+./build.sh 9 build
+
+# Create .deb and .rpm packages
+./packaging/package.sh build-release
+```
+
+### Build Modes
+
+```bash
+# Mode 0: Debug + Tests + Havel Lang + LLVM
+./build.sh 0 build
+
+# Mode 5: Release + Tests + Havel Lang + LLVM (full features)
+./build.sh 5 build
+
+# Mode 6: Debug + Tests + Havel Lang + no LLVM (default, fast)
+./build.sh 6 build
+
+# Mode 9: Release + Tests + Havel Lang + no LLVM
+./build.sh 9 build
+
+# Headless (no Qt/GUI) — server/embedded use
+./build.sh 12 build  # Debug headless
+./build.sh 15 build  # Release headless
+
+# ThreadSanitizer
+./build.sh 16 build
+```
+
+### Environment Variables
+
+```bash
+# Parallel jobs (default: all cores)
+THREADS=8 ./build.sh build
+
+# Sanitizer levels (Debug builds only)
+./build.sh --asan-level full build      # strict ASAN
+./build.sh --ubsan-full build           # all UBSAN checks
+./build.sh --tsan build                 # ThreadSanitizer (mode 16)
+./build.sh --no-asan build              # disable ASAN
+```
+
+### Portable Builds (for Distribution)
+
+```bash
+# Build portable binaries without -march=native
+cmake -B build-release -DCMAKE_BUILD_TYPE=Release -DPORTABLE_BUILD=ON
+cmake --build build-release
+```
+
+## Verify Installation
+
+```bash
+# Run the binary
+havel --version
+
+# Run a script
+havel scripts/test_basic.hv
+
+# Start REPL
+havel --repl
+```
+
+### System-Wide Install (from Build)
+
+```bash
+# From build-release (mode 5 or 9)
+sudo cmake --install build-release
+
+# Verify
+havel --version
+```
 
 ### Basic Hotkey Mapping
 ```

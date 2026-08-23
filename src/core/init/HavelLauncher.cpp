@@ -214,20 +214,22 @@ static void appendDefaultNativeLinkLibraries(std::string &linkCmd) {
 
 // ─── Shared Helpers ──────────────────────────────────────────────
 
-static std::pair<std::string, std::string>
+static std::optional<std::pair<std::string, std::string>>
 loadScriptFiles(const std::vector<std::string> &files) {
   std::string code;
   std::string names;
   for (const auto &f : files) {
     std::string content = readScriptFile(f);
-    if (!content.empty()) {
-      code += content + "\n";
-      if (!names.empty())
-        names += " + ";
-      names += f;
+    if (content.empty()) {
+      error("Failed to read script file: {}", f);
+      return std::nullopt;
     }
+    code += content + "\n";
+    if (!names.empty())
+      names += " + ";
+    names += f;
   }
-  return {code, names};
+  return {{code, names}};
 }
 
 static void appendEval(std::string &code, std::string &names,
@@ -276,11 +278,8 @@ static havel::repl::REPLConfig makeREPLConfig(const havel::init::LaunchConfig &c
 }
 
 static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
-  auto *hkManager = inst.getHotkeyManagerPtr();
-  return std::make_shared<HostAPI>(
-      inst.getIOPtr(), inst.getHotkeyManagerPtr(), Configs::Get(),
-      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-      nullptr, nullptr, std::vector<std::string>{});
+  return std::make_shared<HostAPI>(inst.getIOPtr(), inst.getHotkeyManagerPtr(),
+                                   Configs::Get());
 }
 
 static int runLint(const std::string &code, const std::string &primaryFile,
@@ -508,7 +507,9 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
 class DaemonStrategy : public RunStrategy {
 public:
   int execute(const havel::init::LaunchConfig &cfg, int argc, char *argv[]) override {
-    auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+    auto result = loadScriptFiles(cfg.scriptFiles);
+    if (!result) return 1;
+    auto [combinedCode, combinedNames] = *result;
 
     // LINT-ONLY MODE
     if (cfg.lintOnly && !combinedCode.empty()) {
@@ -518,6 +519,12 @@ public:
     }
 
     auto *backend = host::UIManager::instance().backend();
+    if (!backend) {
+      error("No UI backend available. Havel needs a UI backend (Qt6 or GTK4) "
+            "for the system tray. Run 'havel --run <script>' for headless "
+            "execution.");
+      return 1;
+    }
     host::UIBackend::ApplicationMetadata meta;
     meta.argc = &argc;
     meta.argv = argv;
@@ -599,12 +606,10 @@ public:
     if (!hvcFiles.empty() && hvFiles.empty() && cfg.evalString.empty())
       return runBytecodeFiles(cfg, hvcFiles);
 
-    auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+    auto result = loadScriptFiles(cfg.scriptFiles);
+    if (!result) return 1;
+    auto [combinedCode, combinedNames] = *result;
     appendEval(combinedCode, combinedNames, cfg.evalString);
-    if (combinedCode.empty()) {
-      error("No script code provided");
-      return 1;
-    }
 
     // Parse once to check for hotkey bindings
     auto program = parseScript(combinedCode, cfg);
@@ -616,6 +621,12 @@ public:
         debug("Hotkeys detected — using full execution mode");
 
       auto *backend = host::UIManager::instance().backend();
+      if (!backend) {
+        error("No UI backend available to run hotkey scripts. Install a UI "
+              "backend (Qt6 or GTK4) or run 'havel --run <script>' for "
+              "headless execution (hotkeys will not register).");
+        return 1;
+      }
       host::UIBackend::ApplicationMetadata meta;
       meta.applicationName = "havel";
       meta.applicationVersion = "1.0";
@@ -726,11 +737,11 @@ public:
     if (!hvcFiles.empty() && hvFiles.empty())
       return runBytecodeFiles(cfg, hvcFiles);
 
-    auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+    auto result = loadScriptFiles(cfg.scriptFiles);
+    if (!result) return 1;
+    auto [combinedCode, combinedNames] = *result;
     appendEval(combinedCode, combinedNames, cfg.evalString);
     readFromStdIn(combinedCode, combinedNames);
-    if (combinedCode.empty())
-      return 0;
 
     havel::parser::Parser parser{{.lexer = cfg.debugLexer,
                                   .parser = cfg.debugParser,
@@ -851,7 +862,7 @@ static int setupFullReplCommon(const havel::init::LaunchConfig &cfg) {
 static int runMinimalReplLoop(havel::HavelEngine &engine,
                               const havel::init::LaunchConfig &cfg) {
   havel::repl::REPL repl(makeREPLConfig(cfg));
-  repl.attach(engine.vm(), engine.modules(), havel::init::collectKnownGlobals(engine.vm()));
+  repl.attach(engine.vm(), engine.modules(), collectKnownGlobals(engine.vm()));
   repl.setPumpCallback([&engine]() { engine.tickGoroutines(); });
   return repl.run();
 }
@@ -868,7 +879,7 @@ static int runFullReplLoop(const havel::init::LaunchConfig &cfg, havel::Havel &h
                                    cfg.serviceExcludes);
   hostAPI->SetVM(bytecodeVM);
   repl.attach(bytecodeVM, havel_inst.getModules(),
-              havel::init::collectKnownGlobals(bytecodeVM));
+              collectKnownGlobals(bytecodeVM));
 
   auto *io = havel_inst.getIOPtr();
   auto *hkManager = havel_inst.getHotkeyManagerPtr();
@@ -892,7 +903,9 @@ class ScriptAndReplStrategy : public RunStrategy {
 public:
   int execute(const havel::init::LaunchConfig &cfg, int argc, char *argv[]) override {
     try {
-      auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+      auto result = loadScriptFiles(cfg.scriptFiles);
+      if (!result) return 1;
+      auto [combinedCode, combinedNames] = *result;
 
       if (cfg.minimalMode) {
         if (cfg.scriptFiles.empty()) {
@@ -967,7 +980,9 @@ public:
     try {
       if (cfg.minimalMode) {
         info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
-        auto [combinedCode, combinedNames] = loadScriptFiles(cfg.scriptFiles);
+        auto result = loadScriptFiles(cfg.scriptFiles);
+        if (!result) return 1;
+        auto [combinedCode, combinedNames] = *result;
 
         havel::HavelEngine engine(makeEngineConfig(cfg));
         engine.initializeMinimal();
@@ -1297,8 +1312,10 @@ int HavelLauncher::run(int argc, char *argv[]) {
           cfg.pureStdlib = true;
         }
       } else {
-        error("Self-hosted modules not found at: " + langDir.string());
-        return 1;
+        // The self-hosted tree (<exe>/../out/modules/lang) only exists in a
+        // source checkout. System-installed binaries (/usr/bin/havel) never
+        // have it - fall back to the C++ pipeline instead of failing.
+        cfg.vmConfig.self_hosted_modules_path.clear();
       }
     } else if (!cfg.noSelfHosted && cfg.vmConfig.self_hosted_modules_path.empty()) {
       // Try to derive self-hosted path from binary location: binary/../out
@@ -1767,6 +1784,9 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--help" || arg == "-h") {
       showHelp();
       havel::exit(ExitReason::Normal, 0);
+    } else if (arg == "--version" || arg == "-v") {
+      std::cout << "havel " << HAVEL_VERSION_STRING << "\n";
+      havel::exit(ExitReason::Normal, 0);
     } else if (arg == "lexer") {
       cfg.mode = LaunchConfig::Mode::CLI;
       return cfg;
@@ -1831,6 +1851,7 @@ Usage: havel [options] <script.hv>
 
 Options:
   -h, --help          Show this help
+  -v, --version       Print version and exit
   -d, --debug         Enable debug mode
   -dp, --debug-parser Enable parser debugging
   -da, --debug-ast    Enable AST debugging

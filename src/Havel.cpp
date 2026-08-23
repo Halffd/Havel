@@ -172,11 +172,9 @@ VM::VM(bool leanStartup) : impl(std::make_unique<Impl>()) {
     impl->engine = std::make_unique<HavelEngine>(config);
     if (leanStartup) {
         impl->engine->initializeMinimal();
-} else {
+    } else {
         auto io = std::make_shared<IO>();
-        auto hostAPI = std::make_shared<HostAPI>(io.get(), nullptr, Configs::Get(),
-                                                 nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                                 nullptr, nullptr, std::vector<std::string>{});
+        auto hostAPI = std::make_shared<HostAPI>(io.get(), nullptr, Configs::Get());
         impl->engine->initializeFull(hostAPI, leanStartup);
     }
     impl->initialized = true;

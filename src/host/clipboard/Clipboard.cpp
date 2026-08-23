@@ -331,8 +331,10 @@ std::string Clipboard::getImage() const {
     if (backend_) return backend_->getImage();
     // Platform-specific image clipboard support
     switch (method_) {
+#ifdef HAVE_QT_EXTENSION
   case Method::QT:
     return getImageQt();
+#endif
   case Method::X11:
   case Method::WAYLAND:
   case Method::EXTERNAL:
@@ -348,8 +350,10 @@ std::string Clipboard::getImage() const {
 bool Clipboard::setImage(const std::string &base64Png) {
     if (backend_) return backend_->setImage(base64Png);
     switch (method_) {
+#ifdef HAVE_QT_EXTENSION
   case Method::QT:
     return setImageQt(base64Png);
+#endif
   case Method::X11:
   case Method::WAYLAND:
   case Method::EXTERNAL:

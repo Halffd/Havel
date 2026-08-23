@@ -328,35 +328,55 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
     return fail > 0 ? 1 : 0;
 }
 
-// Run a script in all 4 modes and compare results
+// Probe whether the havel binary actually supports AOT compilation
+// (requires a build with ENABLE_LLVM=ON). Runs one tiny script through
+// --target aot; cheaper and more truthful than guessing from build flags.
+inline bool probe_aot_support(const std::string &havel_bin) {
+    fs::path probe_dir = fs::temp_directory_path() /
+                         ("havel_aot_probe_" + std::to_string(getpid()));
+    std::error_code ec;
+    fs::create_directories(probe_dir, ec);
+    if (ec) return false;
+    std::string probe_script = (probe_dir / "probe.hv").string();
+    std::string probe_out = (probe_dir / "probe_out").string();
+    {
+        std::ofstream ofs(probe_script);
+        ofs << "x = 1\nprint(\"aot probe ${x}\")\n";
+    }
+    auto result = run_script(havel_bin, probe_script, 120,
+                             {"--target", "aot", "-o", probe_out});
+    fs::remove_all(probe_dir, ec);
+    return result.passed;
+}
+
+// Run a script in all modes and compare results
 struct ComparisonResult {
     std::string path;
-    bool cpp_passed = false;
-    bool self_hosted_passed = false;
-    bool jit_passed = false;
-    bool aot_passed = false;
+    bool cpp_passed = false;          // C++ pipeline (--no-self-hosted)
+    bool self_hosted_passed = false;  // self-hosted Havel pipeline
+    bool aot_passed = false;          // AOT compilation only (output not executed)
+    bool aot_skipped = false;         // binary built without LLVM support
     int cpp_exit = -1;
     int self_hosted_exit = -1;
-    int jit_exit = -1;
     int aot_exit = -1;
     double cpp_ms = 0;
     double self_hosted_ms = 0;
-    double jit_ms = 0;
     double aot_ms = 0;
-    bool all_agree = false;
 };
 
 inline ComparisonResult run_script_all_modes(const std::string &havel_bin, const std::string &script_path,
                                               int timeout_seconds = 60,
-                                              const std::string &self_hosted_path = "") {
+                                              const std::string &self_hosted_path = "",
+                                              bool aot_available = false) {
     ComparisonResult result;
     result.path = script_path;
     int timeout_sec = timeout_seconds; // Avoid parameter shadowing
 
-    // 1. C++ interpreter mode (no flags)
+    // 1. C++ pipeline mode
     {
+        std::vector<std::string> flags = {"--run", "--no-self-hosted"};
         auto start = std::chrono::high_resolution_clock::now();
-        auto script_result = run_script(havel_bin, script_path, timeout_sec, {});
+        auto script_result = run_script(havel_bin, script_path, timeout_sec, flags);
         auto end = std::chrono::high_resolution_clock::now();
         result.cpp_ms = std::chrono::duration<double, std::milli>(end - start).count();
         result.cpp_passed = script_result.passed;
@@ -374,30 +394,34 @@ inline ComparisonResult run_script_all_modes(const std::string &havel_bin, const
         result.self_hosted_exit = script_result.exit_code;
     }
 
-    // 3. JIT mode (if available)
-    #ifdef HAVEL_ENABLE_LLVM
-    {
-        // JIT is currently tested via run_jit_smoke_tests which runs internal tests
-        // For now, we'll skip JIT mode for individual scripts unless we add support
-    }
-    #endif
-
-    // 4. AOT mode
-    {
-        std::string output_path = "/tmp/aot_" + fs::path(script_path).stem().string();
-        std::vector<std::string> flags = {"--target", "aot", script_path, "-o", "/tmp/aot_" + fs::path(script_path).stem().string()};
+    // 3. AOT mode: verifies compilation only - the emitted object/shared
+    // library is not executed, so this compares pipeline agreement on
+    // compiling the script, not runtime equivalence.
+    if (aot_available) {
+        // Use unique output path per test run to avoid collisions in batch runs
+        // Include PID, timestamp, and random component for uniqueness
+        std::string stem = fs::path(script_path).stem().string();
+        std::string unique_id = std::to_string(getpid()) + "_" + std::to_string(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        std::string output_path = "/tmp/aot_" + stem + "_" + unique_id;
+        // run_script appends script_path itself - do not duplicate it here
+        std::vector<std::string> flags = {"--target", "aot", "-o", output_path};
         auto start = std::chrono::high_resolution_clock::now();
         auto script_result = run_script(havel_bin, script_path, timeout_sec, flags);
         auto end = std::chrono::high_resolution_clock::now();
         result.aot_ms = std::chrono::duration<double, std::milli>(end - start).count();
         result.aot_passed = script_result.passed;
         result.aot_exit = script_result.exit_code;
-    }
 
-    // Check if all modes agree
-    bool has_self_hosted = !self_hosted_path.empty();
-    result.all_agree = (result.cpp_passed == result.self_hosted_passed) &&
-                       (!result.self_hosted_passed || result.cpp_passed == result.aot_passed);
+        // Clean up AOT temp files after each test to prevent accumulation
+        std::error_code ec;
+        std::filesystem::remove(output_path + ".o", ec);
+        std::filesystem::remove(output_path + ".so", ec);
+        std::filesystem::remove(output_path, ec);
+    } else {
+        result.aot_skipped = true;
+    }
 
     return result;
 }
@@ -411,33 +435,65 @@ inline int run_comparison_suite(const std::string &havel_bin, const std::vector<
         return 1;
     }
 
-    int pass = 0, fail = 0, mismatch = 0;
+    // Detect AOT support once for the whole suite. Without LLVM the AOT
+    // column is skipped instead of reporting hundreds of false mismatches.
+    bool aot_available = probe_aot_support(havel_bin);
+    if (!aot_available) {
+        std::cout << "[NOTE] AOT unavailable (build without ENABLE_LLVM=ON) - aot column skipped" << std::endl << std::flush;
+    }
+
+    int pass = 0, fail = 0, mismatch = 0, skipped = 0;
     auto suite_start = std::chrono::high_resolution_clock::now();
 
     for (const auto &script : scripts) {
-        auto result = run_script_all_modes(havel_bin, script, timeout_seconds, "");
+        auto result = run_script_all_modes(havel_bin, script, timeout_seconds,
+                                           self_hosted_path, aot_available);
         if (!script.empty()) {
             std::cout << "[RUN] " << script << " ..." << std::flush << std::endl;
         }
-        
-        if (result.cpp_passed && result.aot_passed) {
-            std::cout << "[PASS] " << script << " (cpp=" << (int)result.cpp_ms << "ms, aot=" << (int)result.aot_ms << "ms)" << std::endl << std::flush;
+
+        // Columns that actually ran this iteration
+        bool cpp_ok = result.cpp_passed;
+        bool sh_ok = self_hosted_path.empty() ? cpp_ok : result.self_hosted_passed;
+        bool aot_ok = !result.aot_skipped && result.aot_passed;
+
+        auto col = [](const char *name, bool ran, bool ok) {
+            return std::string(name) + "=" + (!ran ? "SKIP" : (ok ? "PASS" : "FAIL"));
+        };
+
+        bool all_ran_agree = cpp_ok == sh_ok && (!aot_available || aot_ok == cpp_ok);
+
+        if (all_ran_agree && cpp_ok) {
+            std::cout << "[PASS] " << script
+                      << " (cpp=" << (int)result.cpp_ms << "ms"
+                      << ", sh=" << (self_hosted_path.empty() ? "-" : std::to_string((int)result.self_hosted_ms) + "ms")
+                      << ", aot=" << (result.aot_skipped ? "skip" : std::to_string((int)result.aot_ms) + "ms")
+                      << ")" << std::endl << std::flush;
             pass++;
-        } else if (result.cpp_passed != result.aot_passed) {
-            std::cout << "[MISMATCH] " << script << " (cpp=" << (result.cpp_passed ? "PASS" : "FAIL") 
-                      << ", aot=" << (result.aot_passed ? "PASS" : "FAIL") << ")" << std::endl << std::flush;
+        } else if (cpp_ok != sh_ok || (aot_available && aot_ok != cpp_ok)) {
+            std::cout << "[MISMATCH] " << script
+                      << " (" << col("cpp", true, cpp_ok)
+                      << ", " << col("sh", !self_hosted_path.empty(), sh_ok)
+                      << ", " << col("aot", aot_available, aot_ok)
+                      << ")" << std::endl << std::flush;
             mismatch++;
         } else {
-            std::cout << "[FAIL] " << script << " (cpp=" << (result.cpp_passed ? "PASS" : "FAIL") 
-                      << ", aot=" << (result.aot_passed ? "PASS" : "FAIL") << ")" << std::endl << std::flush;
+            std::cout << "[FAIL] " << script
+                      << " (" << col("cpp", true, cpp_ok)
+                      << ", " << col("sh", !self_hosted_path.empty(), sh_ok)
+                      << ", " << col("aot", aot_available, aot_ok)
+                      << ")" << std::endl << std::flush;
             fail++;
         }
+        if (result.aot_skipped) skipped++;
     }
 
     auto suite_end = std::chrono::high_resolution_clock::now();
     double total_ms = std::chrono::duration<double, std::milli>(suite_end - suite_start).count();
 
-    std::cout << "\ncomparison: " << pass << " passed, " << fail << " failed, " << mismatch << " mismatched" << std::endl << std::flush;
+    std::cout << "\ncomparison: " << pass << " passed, " << fail << " failed, "
+              << mismatch << " mismatched, " << skipped << " aot-skipped ("
+              << (int)total_ms << "ms total)" << std::endl << std::flush;
     return (fail > 0 || mismatch > 0) ? 1 : 0;
 }
 

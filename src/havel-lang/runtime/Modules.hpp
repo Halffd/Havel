@@ -21,6 +21,7 @@ class SystemBridge;
 class UIBridge;
 class InputBridge;
 class MediaBridge;
+class AudioBridge;
 class DisplayBridge;
 class ConfigBridge;
 class ModeBridge;
@@ -79,6 +80,7 @@ private:
     std::unique_ptr<compiler::UIBridge> uiBridge_;
     std::unique_ptr<compiler::InputBridge> inputBridge_;
     std::unique_ptr<compiler::MediaBridge> mediaBridge_;
+    std::unique_ptr<compiler::AudioBridge> audioBridge_;
     std::unique_ptr<compiler::DisplayBridge> displayBridge_;
     std::unique_ptr<compiler::ConfigBridge> configBridge_;
     std::unique_ptr<compiler::ModeBridge> modeBridge_;

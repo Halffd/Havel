@@ -172,6 +172,10 @@ void ModuleLoader::addModuleSoPath(const std::string& path) {
   moduleSoPaths_.push_back(path);
 }
 
+void ModuleLoader::addCacheDir(const std::string& path) {
+  cacheDirs_.push_back(path);
+}
+
 void ModuleLoader::setStdlibPath(const std::string& path) {
     stdlibPath_ = path;
 }
@@ -330,15 +334,14 @@ ModuleLoader::resolve(const std::string& modulePath,
   // 4. Check stdlibPath_ for name.hv. Bytecode caches live only in
   // ~/.cache/havel, never side-by-side in the stdlib directory.
   if (!stdlibPath_.empty()) {
+    // First check directly in stdlibPath_ (backwards compatibility)
     fs::path stdlibHvPath = fs::path(stdlibPath_) / (name + ".hv");
     if (fs::exists(stdlibHvPath)) {
       // Check if there's a plugin for this module before using the .hv file
-      if (!stdlibPath_.empty()) {
-        fs::path stdlibPluginPath = fs::path(stdlibPath_) / (name + havel_loader_suffix());
-        if (fs::exists(stdlibPluginPath)) {
-          return ResolvedModule{ResolvedModule::NativeExtension,
-                                fs::canonical(stdlibPluginPath).string(), modulePath, ""};
-        }
+      fs::path stdlibPluginPath = fs::path(stdlibPath_) / (name + havel_loader_suffix());
+      if (fs::exists(stdlibPluginPath)) {
+        return ResolvedModule{ResolvedModule::NativeExtension,
+                              fs::canonical(stdlibPluginPath).string(), modulePath, ""};
       }
       // Also check search paths for plugins
       for (const auto& sp : searchPaths_) {
@@ -361,6 +364,42 @@ ModuleLoader::resolve(const std::string& modulePath,
       }
       return flatCacheFor(fs::canonical(stdlibHvPath).string(),
                           ResolvedModule::StdlibSource);
+    }
+    // Search subdirectories of stdlibPath_ (e.g., stdlibPath_/std/name.hv, stdlibPath_/type/name.hv)
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(stdlibPath_, ec)) {
+      if (ec) break;
+      if (!entry.is_directory()) continue;
+      fs::path subdirHvPath = entry.path() / (name + ".hv");
+      if (fs::exists(subdirHvPath)) {
+        // Check for plugin in subdirectory
+        fs::path subdirPluginPath = entry.path() / (name + havel_loader_suffix());
+        if (fs::exists(subdirPluginPath)) {
+          return ResolvedModule{ResolvedModule::NativeExtension,
+                                fs::canonical(subdirPluginPath).string(), modulePath, ""};
+        }
+        // Also check search paths for plugins
+        for (const auto& sp : searchPaths_) {
+          fs::path spDir(sp);
+          fs::path soPath = spDir / (name + ".so");
+          if (fs::exists(soPath)) {
+            return ResolvedModule{ResolvedModule::NativeExtension,
+                                  fs::canonical(soPath).string(), modulePath, ""};
+          }
+          fs::path libPath = spDir / ("libhavel_" + name + ".so");
+          if (fs::exists(libPath)) {
+            return ResolvedModule{ResolvedModule::NativeExtension,
+                                  fs::canonical(libPath).string(), modulePath, ""};
+          }
+          fs::path pluginPath = fs::path(sp) / ("havel_mod_" + name + ".so");
+          if (fs::exists(pluginPath)) {
+            return ResolvedModule{ResolvedModule::NativeExtension,
+                                  fs::canonical(pluginPath).string(), modulePath, ""};
+          }
+        }
+        return flatCacheFor(fs::canonical(subdirHvPath).string(),
+                            ResolvedModule::StdlibSource);
+      }
     }
   }
 
@@ -570,7 +609,19 @@ bool ModuleLoader::isFreshLocked(const std::string &key) const {
     return "";
   }
 
-  std::string ModuleLoader::getCacheDir() {
+  std::string ModuleLoader::getCacheDir() const {
+    // Check additional cache directories first (system precompiled bytecode)
+    for (const auto& dir : cacheDirs_) {
+        std::error_code ec;
+        if (std::filesystem::exists(dir, ec) && !ec) {
+            return dir;
+        }
+    }
+    // Fall back to user cache directory
+    return getDefaultCacheDir();
+  }
+
+  std::string ModuleLoader::getDefaultCacheDir() {
     const char* home = std::getenv("HOME");
     if (!home) home = "/tmp";
     return (std::filesystem::path(home) / ".cache" / "havel").string();

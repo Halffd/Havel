@@ -52,7 +52,7 @@ static void print_usage(const char *prog) {
  " --scripts run .hv script tests (smoke + integration + main)\n"
 " --cpp run C++ unit tests via ctest\n"
 " --jit   run JIT smoke tests (requires LLVM build)\n"
-" --compare run comparison between C++, self-hosted, JIT, AOT for all tests\n"
+" --compare run comparison between C++, self-hosted and AOT pipelines\n"
 " --list list all test files without running\n"
 " --all run everything (smoke + jit + hvmoke + scripts + cpp)\n"
 "\n"
@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
     }
 
 if (mode_compare) {
-        std::cout << "\n=== comparison mode (C++ vs AOT) ===" << std::endl;
+        std::cout << "\n=== comparison mode (C++ vs self-hosted vs AOT) ===" << std::endl;
         auto dirs = hvtest::list_test_dirs(scripts_root);
         fs::path bin_path(havel_bin);
         fs::path repo_root = bin_path.parent_path().parent_path();

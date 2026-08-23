@@ -350,7 +350,8 @@ fn open(path) {
   if _fd < 0 { return null }
 
   // Read device name via EVIOCGNAME(256)
-  _name_ioctl = _EVIOCGNAME_BASE | (256 << 16)
+  _shift = 256 << 16
+  _name_ioctl = _EVIOCGNAME_BASE | _shift
   _name_buf = ffi.allocBytes(256)
   ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], _fd, _name_ioctl, _name_buf)
   _devname = ffi.string(_name_buf)
@@ -392,7 +393,8 @@ fn ungrab(handle) {
 // Get device name via EVIOCGNAME
 fn name(handle) {
   if handle == null { return "" }
-  _name_ioctl = _EVIOCGNAME_BASE | (256 << 16)
+  _shift = 256 << 16
+  _name_ioctl = _EVIOCGNAME_BASE | _shift
   _name_buf = ffi.allocBytes(256)
   ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _name_ioctl, _name_buf)
   _devname = ffi.string(_name_buf)
@@ -403,7 +405,8 @@ fn name(handle) {
 // Get physical path via EVIOCGPHYS
 fn phys(handle) {
   if handle == null { return "" }
-  _phys_ioctl = _EVIOCGPHYS_BASE | (256 << 16)
+  _shift = 256 << 16
+  _phys_ioctl = _EVIOCGPHYS_BASE | _shift
   _phys_buf = ffi.allocBytes(256)
   ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _phys_ioctl, _phys_buf)
   _physname = ffi.string(_phys_buf)
@@ -421,7 +424,7 @@ fn deviceId(handle) {
   _product = ffi.get_u16(ffi.ptr_add(_id_buf, 4))
   _version = ffi.get_u16(ffi.ptr_add(_id_buf, 6))
   ffi.free(_id_buf)
-  ({bustype: _bustype, vendor: _vendor, product: _product, version: _version})
+  {bustype: _bustype, vendor: _vendor, product: _product, version: _version}
 }
 
 // Read the current key state bitmask via EVIOCGKEY
@@ -429,7 +432,8 @@ fn deviceId(handle) {
 fn keyState(handle) {
   if handle == null { return {} }
   _key_bits_len = ((_KEY_MAX + 7) / 8)
-  _key_ioctl = _EVIOCGKEY_BASE | (_key_bits_len << 16)
+  _shift = _key_bits_len << 16
+  _key_ioctl = _EVIOCGKEY_BASE | _shift
   _buf = ffi.allocBytes(_key_bits_len)
   _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _key_ioctl, _buf)
   _result = {}
@@ -454,7 +458,8 @@ fn isKeyDown(handle, code) {
   if handle == null { return false }
   if code == null { return false }
   _key_bits_len = ((_KEY_MAX + 7) / 8)
-  _key_ioctl = _EVIOCGKEY_BASE | (_key_bits_len << 16)
+  _shift = _key_bits_len << 16
+  _key_ioctl = _EVIOCGKEY_BASE | _shift
   _buf = ffi.allocBytes(_key_bits_len)
   _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _key_ioctl, _buf)
   _down = false
@@ -473,7 +478,8 @@ fn isKeyDown(handle, code) {
 fn keyBits(handle, evType, len) {
   if handle == null { return null }
   if len == null { len = 128 }
-  _ioctl_code = _EVIOCGBIT_BASE | (evType) | (len << 16)
+  _shift = len << 16
+  _ioctl_code = _EVIOCGBIT_BASE | evType | _shift
   _buf = ffi.allocBytes(len)
   _ret = ffi.call(_ioctl, "int32", ["int32", "uint64", "pointer"], handle.fd, _ioctl_code, _buf)
   if _ret < 0 {
@@ -522,8 +528,8 @@ fn _parseEvent(buf) {
     else if _code == ABS_Y { _key_name = "y" }
   }
 
-  ({sec: _sec, usec: _usec, type: _type, type_name: _type_name,
-    code: _code, value: _value, key_name: _key_name})
+  {sec: _sec, usec: _usec, type: _type, type_name: _type_name,
+    code: _code, value: _value, key_name: _key_name}
 }
 
 // Read a single input event (blocking)

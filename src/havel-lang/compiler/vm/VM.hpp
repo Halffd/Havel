@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <shared_mutex>
+#include <span>
 #include <stack>
 #include <string>
 #include <unordered_map>
@@ -613,6 +614,11 @@ inline void periodicYieldCheck() {
     void registerDefaultPrototypes();
   Value invokeHostFunction(const std::string &name, uint32_t arg_count);
 
+public:
+    // Build namespace objects for dotted host function names so scripts can
+    // call window.active(), group.list(), etc. Skips prefixes whose global
+    // already exists (e.g. "system" handled by registerDefaultHostGlobals).
+    void buildNamespaceGlobals();
 public:
     // Value utility functions (public for prototype method implementations and JIT bridges)
     int64_t toIntPublic(const Value &value) const { return toInt(value); }

@@ -39,7 +39,11 @@ struct HavelState {
     void* user_data = nullptr;
 };
 
-static const char* HAVEL_VERSION = "0.1.0";
+#ifndef HAVEL_VERSION_STRING
+#define HAVEL_VERSION_STRING "unknown"
+#endif
+
+static const char* HAVEL_VERSION = HAVEL_VERSION_STRING;
 
 HavelState* havel_newstate() {
     auto* H = new HavelState();

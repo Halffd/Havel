@@ -105,20 +105,20 @@ public:
     virtual void UngrabDevice(const std::string &path) = 0;
     virtual void UngrabAllDevices() = 0;
 
-    virtual int GetPollFd() const = 0;
-    virtual bool PollEvents(int timeoutMs = 100) = 0;
+    // Fds carrying input data, for the OWNER of the application event loop
+    // (EventListener) to include in its poll(). Fresh snapshot every call -
+    // the set changes as devices hotplug or reconnect. Backends never block
+    // on these themselves; they only read/dispatch via OnFdsReady().
+    virtual std::vector<int> GetInputFds() const { return {}; }
 
-    // Register an external fd whose readiness should break an in-progress blocking
-    // PollEvents() wait (e.g. the VM scheduler's deferred-wakeup eventfd). The fd is
-    // only observed for readiness, never drained or closed by the backend.
-    virtual void SetExternalWakeupFd(int fd) { (void)fd; }
-
-    // Multi-fd variant: register several external wakeup fds at once (e.g.
-    // scheduler deferred-wakeup, event-queue wakeup, signalfd). All fds are
-    // observed for readiness only; never drained or closed here. Replaces the
-    // single-fd registration with the given set. Pass an empty vector (or call
-    // with no args) to clear.
-    virtual void SetExternalWakeupFds(std::vector<int> fds) { (void)fds; }
+    // Drain and dispatch pending input from fds that the external poll()
+    // reported ready. Each entry is {fd, revents} so the backend can react
+    // to POLLERR/POLLHUP (dead device cleanup). Fds not belonging to this
+    // backend are ignored.
+    virtual void OnFdsReady(
+        const std::vector<std::pair<int, short>> &ready) {
+        (void)ready;
+    }
 
     virtual std::pair<int, int> GetMousePosition() const = 0;
     virtual bool GetKeyState(uint32_t code) const = 0;

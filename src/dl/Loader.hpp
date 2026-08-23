@@ -154,11 +154,18 @@ public:
    api ? static_cast<void *>(api) : nullptr);
  }
 
- std::optional<ModulePlugin> loadModulePlugin(const std::string &name) {
-  const HavelModuleABI *abi = havel_loader_load_module(handle_, name.c_str());
+std::optional<ModulePlugin> loadModulePlugin(const std::string &name) {
+  // Handle module names that might contain path separators (e.g., "bit/bit")
+  // by using only the basename for the native loader.
+  std::string loadName = name;
+  auto slashPos = loadName.rfind('/');
+  if (slashPos != std::string::npos) {
+    loadName = loadName.substr(slashPos + 1);
+  }
+  const HavelModuleABI *abi = havel_loader_load_module(handle_, loadName.c_str());
   if (!abi) return std::nullopt;
 
-  void *dl = havel_loader_get_handle(handle_, ("havel_mod_" + name).c_str());
+  void *dl = havel_loader_get_handle(handle_, ("havel_mod_" + loadName).c_str());
   ModulePlugin plugin;
   plugin.name = abi->name ? abi->name : name;
   plugin.version = abi->version ? abi->version : "0.0.0";
@@ -168,7 +175,7 @@ public:
   plugin.register_fn = abi->register_fn;
   plugin.cleanup_fn = abi->cleanup_fn;
   return plugin;
- }
+}
 
  std::optional<ToolkitPlugin> loadToolkitPlugin(const std::string &name) {
   const HavelToolkitABI *abi = havel_loader_load_toolkit(handle_, name.c_str());

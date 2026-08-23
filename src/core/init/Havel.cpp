@@ -25,6 +25,7 @@
 #include "utils/Logger.hpp"
 #include "utils/DebugFlags.hpp"
 #include "core/util/Env.hpp"
+#include "utils/InstallPaths.hpp"
 #include "core/net/NetworkManager.hpp"
 #include "host/ServiceRegistry.hpp"
 #include "host/image/ImageService.hpp"
@@ -255,6 +256,10 @@ void Havel::initialize(bool isStartup) {
                 if (std::filesystem::exists(modulesDir)) {
                     bytecodeVM->moduleLoader().addModuleSoPath(
                         std::filesystem::canonical(modulesDir).string());
+                }
+                // System install: lib/havel/modules
+                if (auto mpRoot = install_paths::modulePluginRoot(); !mpRoot.empty()) {
+                    bytecodeVM->moduleLoader().addModuleSoPath(mpRoot.string());
                 }
             }
         }

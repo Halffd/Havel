@@ -1,6 +1,7 @@
 #include "InputManager.hpp"
 #include "HotkeyExecutor.hpp"
 #include "utils/Logger.hpp"
+#include <poll.h>
 
 namespace havel {
 
@@ -142,7 +143,29 @@ void InputManager::UnregisterHotkey(int id) {
 void InputManager::EventLoop() {
     while (running_.load()) {
         if (backend_) {
-            backend_->PollEvents(100);
+            // InputManager is a simplified event loop; it doesn't own
+            // scheduler fds. Just poll the backend's input fds.
+            auto fds = backend_->GetInputFds();
+            if (fds.empty()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            std::vector<struct pollfd> pfds;
+            pfds.reserve(fds.size());
+            for (int fd : fds) {
+                if (fd >= 0)
+                    pfds.push_back({.fd = fd, .events = POLLIN | POLLERR | POLLHUP, .revents = 0});
+            }
+            int ret = poll(pfds.data(), pfds.size(), 100);
+            if (ret > 0) {
+                std::vector<std::pair<int, short>> ready;
+                for (const auto &pfd : pfds) {
+                    if (pfd.revents)
+                        ready.emplace_back(pfd.fd, pfd.revents);
+                }
+                if (!ready.empty())
+                    backend_->OnFdsReady(ready);
+            }
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }

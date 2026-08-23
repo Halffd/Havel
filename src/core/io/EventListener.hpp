@@ -236,6 +236,10 @@ private:
   HotkeyManager *hotkeyManager = nullptr;
 
   void EventLoop();
+  // One poll() over input fds + shutdown/signal/scheduler wakeup fds.
+  // timeoutMs=0 is a non-blocking drain. Ready input fds are handed to
+  // backend_->OnFdsReady(); wakeup fds are drained here.
+  void PollRound(int timeoutMs);
   void ProcessKeyboardEvent(const input_event &ev);
   void ProcessMouseEvent(const input_event &ev, int32_t hiResVal = 0);
 

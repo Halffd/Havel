@@ -32,8 +32,7 @@ public:
     void UngrabDevice(const std::string &path) override;
     void UngrabAllDevices() override;
 
-    int GetPollFd() const override { return -1; }
-    bool PollEvents(int timeoutMs) override;
+    void OnFdsReady(const std::vector<std::pair<int, short>> &ready) override;
 
     std::pair<int, int> GetMousePosition() const override;
     bool GetKeyState(uint32_t code) const override;
@@ -113,7 +112,6 @@ private:
     HHOOK mouseHook_ = nullptr;
 #endif
 
-    [[maybe_unused]] int shutdownFd_ = -1;
     bool blockInput_ = false;
     uint32_t emergencyShutdownKey_ = 0;
 
@@ -249,23 +247,16 @@ void WindowsAdapter::UngrabAllDevices() {
     grabbed_ = false;
 }
 
-bool WindowsAdapter::PollEvents(int timeoutMs) {
+void WindowsAdapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
+    (void)ready;
 #ifdef _WIN32
+    // No pollable input fd. Hooks fire via the message queue on this thread;
+    // drain without blocking — EventListener owns the wait.
     MSG msg;
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
+    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
-    return true;
-#else
-    std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
-    return false;
 #endif
 }
 

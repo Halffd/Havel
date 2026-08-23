@@ -39,8 +39,8 @@ public:
     void UngrabDevice(const std::string &path) override;
     void UngrabAllDevices() override;
 
-    int GetPollFd() const override;
-    bool PollEvents(int timeoutMs) override;
+    std::vector<int> GetInputFds() const override;
+    void OnFdsReady(const std::vector<std::pair<int, short>> &ready) override;
 
     std::pair<int, int> GetMousePosition() const override;
     bool GetKeyState(uint32_t code) const override;
@@ -139,7 +139,6 @@ private:
     int xfd_ = -1;
 #endif
 
-    int shutdownFd_ = -1;
     bool blockInput_ = false;
     uint32_t emergencyShutdownKey_ = 0;
 
@@ -188,13 +187,10 @@ constexpr int XButtonRelease = 5;
 constexpr int XMotionNotify = 6;
 #endif
 
-X11Adapter::X11Adapter() {
-    shutdownFd_ = eventfd(0, EFD_NONBLOCK);
-}
+X11Adapter::X11Adapter() = default;
 
 X11Adapter::~X11Adapter() {
     Shutdown();
-    if (shutdownFd_ >= 0) close(shutdownFd_);
 }
 
 bool X11Adapter::Init() {
@@ -333,33 +329,28 @@ void X11Adapter::UngrabAllDevices() {
 #endif
 }
 
-int X11Adapter::GetPollFd() const {
+std::vector<int> X11Adapter::GetInputFds() const {
 #ifdef __linux__
-    return xfd_ >= 0 ? xfd_ : shutdownFd_;
-#else
-    return shutdownFd_;
+    if (xfd_ >= 0) return {xfd_};
 #endif
+    return {};
 }
 
-bool X11Adapter::PollEvents(int timeoutMs) {
+void X11Adapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
 #ifdef __linux__
-    if (!display_) return false;
-
-    struct pollfd pfd = {.fd = xfd_, .events = POLLIN, .revents = 0};
-    int ret = poll(&pfd, 1, timeoutMs);
-    if (ret <= 0) return false;
-
-    if (XPending(display_) <= 0) return false;
+    if (!display_) return;
+    bool ours = false;
+    for (const auto &[fd, revents] : ready) {
+        (void)revents;
+        if (fd == xfd_) { ours = true; break; }
+    }
+    if (!ours) return;
 
     XEvent event;
     while (XPending(display_) > 0) {
         XNextEvent(display_, &event);
         ProcessX11Event(event);
     }
-    return true;
-#else
-    std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
-    return false;
 #endif
 }
 

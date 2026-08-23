@@ -87,6 +87,16 @@ wID X11Backend::getActiveWindow() {
     }
   }
 
+  if (activeWindow == 0 || activeWindow == DefaultRootWindow(display)) {
+    Window focusedWindow = 0;
+    int revertTo = 0;
+    if (XGetInputFocus(display, &focusedWindow, &revertTo) != 0) {
+      if (focusedWindow != 0 && focusedWindow != 1 && focusedWindow != DefaultRootWindow(display)) {
+        activeWindow = focusedWindow;
+      }
+    }
+  }
+
   if (activeWindow != activeCache_.id) {
     activeCache_.id = activeWindow;
     activeCache_.title.clear();

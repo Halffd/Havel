@@ -1,4 +1,16 @@
 // monitor.hv — System resource monitoring: CPU, RAM, processes, windows, files, custom metrics
+
+use ffi
+use sys
+use os
+use string
+use array
+use map
+
+// Try to load libc
+_c = ffi.open("libc.so.6")
+if _c == 0 { _c = ffi.open("libc.so") }
+
 // Provides: cpu, cpuPerCore, ram, swap, disk, disks, load, uptime,
 // processCount, processList, processInfo, topProcesses,
 // windowCount, windowList, fileWatch, fileChanged, fileUnwatch, fileWatchers,
@@ -462,10 +474,10 @@ fn metricDel(name) { if _metrics.has(name) { del _metrics[name]; true } else { f
 _watches = {}
 _watch_counter = 0
 
-fn watch(name, fn, interval) {
+fn watch(name, callback, interval) {
     if interval == null { interval = 1000 }
     _watch_counter = _watch_counter + 1
-    _watches.set(name, {id: _watch_counter, fn: fn, interval: interval, lastResult: null})
+    _watches.set(name, {id: _watch_counter, fn: callback, interval: interval, lastResult: null})
     _watch_counter
 }
 
@@ -654,3 +666,4 @@ fn refresh() {
     _window_count_cache = null
     _window_list_cache = null
 }
+

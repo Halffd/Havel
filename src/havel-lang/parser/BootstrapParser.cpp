@@ -1,6 +1,7 @@
 #include "BootstrapParser.h"
 #include "../../utils/Logger.hpp"
 #include "../common/Debug.hpp"
+#include <array>
 #include <iostream>
 #include <sstream>
 // Check if a token is skippable (whitespace, comment, or #unsafe marker)

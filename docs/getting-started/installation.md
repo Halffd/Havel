@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install Havel from source, build modes, and system requirements."
+description: "Install Havel from source, build modes, system requirements, and package manager instructions for Debian, Fedora, and Arch."
 ---
 
 # Installation
@@ -30,11 +30,65 @@ description: "Install Havel from source, build modes, and system requirements."
 | **ImGui + GLFW** | Immediate-mode GUI | `ENABLE_IMGUI=ON` |
 | **PipeWire / PulseAudio / ALSA** | Audio | Auto-detected |
 
+## Quick Install (Pre-built Packages)
+
+### Debian/Ubuntu (`.deb`)
+
+```bash
+# Download from GitHub releases or build locally
+wget https://github.com/Halffd/Havel/releases/latest/download/havel-1.0.0-Linux-x86_64.deb
+sudo apt install ./havel-1.0.0-Linux-x86_64.deb
+```
+
+**Dependencies (auto-installed via apt):**
+```bash
+libx11-6, libxtst6, libxrandr2, libxinerama1, libxcomposite1, libxi6, libxfixes3, libxdamage1,
+libwayland-client0, libxkbcommon0, libfmt10, libpcre2-8-0, libpcre2-16-0,
+libgl1, libcurl4, libpipewire-0.3-0t64, libasound2t64,
+libtesseract5, libleptonica6, libopencv-core410, libopencv-imgproc410, libopencv-imgcodecs410,
+libreadline8t64, libncurses6, libffi8
+```
+
+### Fedora/RHEL (`.rpm`)
+
+```bash
+# Download from GitHub releases or build locally
+wget https://github.com/Halffd/Havel/releases/latest/download/havel-1.0.0-Linux-x86_64.rpm
+sudo dnf install ./havel-1.0.0-Linux-x86_64.rpm
+```
+
+**Dependencies (auto-installed via dnf):**
+```bash
+libX11, libXtst, libXrandr, libXinerama, libXcomposite, libXi, libXfixes, libXdamage,
+wayland, libxkbcommon, fmt, pcre2, mesa-libGL, libcurl, pipewire, alsa-lib,
+tesseract, leptonica, opencv-core, opencv-imgproc, opencv-imgcodecs,
+readline, ncurses, libffi
+```
+
+### Arch Linux (AUR/PKGBUILD)
+
+```bash
+# Using the provided PKGBUILD (in repo root)
+git clone https://github.com/Halffd/Havel
+cd Havel
+makepkg -si
+
+# Or install from AUR (when available):
+# yay -S havel
+```
+
+**Dependencies (from PKGBUILD):**
+```bash
+qt6-base, qt6-charts, mpv, libx11, libxrandr, libxinerama, libxcomposite,
+libxtst, libxi, libxfixes, libxdamage, libpulse, alsa-lib, dbus, pcre2,
+opencv, tesseract, leptonica, nlohmann-json, wayland, pipewire
+```
+
 ## Build from Source
 
 ```bash
-git clone https://github.com/yourorg/havel-3
-cd havel-3
+git clone https://github.com/Halffd/Havel
+cd Havel
 
 # Detect system dependencies
 ./build.sh detect
@@ -83,25 +137,38 @@ THREADS=8 ./build.sh build
 ./build.sh --no-asan build              # disable ASAN
 ```
 
+### Portable Builds (for Distribution)
+
+```bash
+# Build portable binaries without -march=native
+cmake -B build-release -DCMAKE_BUILD_TYPE=Release -DPORTABLE_BUILD=ON
+cmake --build build-release
+
+# Create .deb and .rpm packages
+./packaging/package.sh build-release
+```
+
 ## Verify Installation
 
 ```bash
 # Run the binary
-./build-debug/havel --help
+havel --version
 
 # Run a script
-./build-debug/havel scripts/test_basic.hv
+havel scripts/test_basic.hv
 
 # Start REPL
-./build-debug/havel --repl
+havel --repl
 ```
 
-## Install System-Wide (Optional)
+## Install System-Wide (from Build)
 
 ```bash
 # From build-release (mode 5 or 9)
-sudo cp build-release/havel /usr/local/bin/
-sudo cp build-release/havel-lsp /usr/local/bin/
+sudo cmake --install build-release
+
+# Or from local build directory
+sudo cmake --install build-debug
 
 # Verify
 havel --version

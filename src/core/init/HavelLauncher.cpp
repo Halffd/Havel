@@ -1296,8 +1296,10 @@ int HavelLauncher::run(int argc, char *argv[]) {
           cfg.pureStdlib = true;
         }
       } else {
-        error("Self-hosted modules not found at: " + langDir.string());
-        return 1;
+        // The self-hosted tree (<exe>/../out/modules/lang) only exists in a
+        // source checkout. System-installed binaries (/usr/bin/havel) never
+        // have it - fall back to the C++ pipeline instead of failing.
+        cfg.vmConfig.self_hosted_modules_path.clear();
       }
     } else if (!cfg.noSelfHosted && cfg.vmConfig.self_hosted_modules_path.empty()) {
       // Try to derive self-hosted path from binary location: binary/../out

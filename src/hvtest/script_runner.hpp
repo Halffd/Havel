@@ -384,14 +384,26 @@ inline ComparisonResult run_script_all_modes(const std::string &havel_bin, const
 
     // 4. AOT mode
     {
-        std::string output_path = "/tmp/aot_" + fs::path(script_path).stem().string();
-        std::vector<std::string> flags = {"--target", "aot", script_path, "-o", "/tmp/aot_" + fs::path(script_path).stem().string()};
+        // Use unique output path per test run to avoid collisions in batch runs
+        // Include PID, timestamp, and random component for uniqueness
+        std::string stem = fs::path(script_path).stem().string();
+        std::string unique_id = std::to_string(getpid()) + "_" + std::to_string(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        std::string output_path = "/tmp/aot_" + stem + "_" + unique_id;
+        std::vector<std::string> flags = {"--target", "aot", script_path, "-o", output_path};
         auto start = std::chrono::high_resolution_clock::now();
         auto script_result = run_script(havel_bin, script_path, timeout_sec, flags);
         auto end = std::chrono::high_resolution_clock::now();
         result.aot_ms = std::chrono::duration<double, std::milli>(end - start).count();
         result.aot_passed = script_result.passed;
         result.aot_exit = script_result.exit_code;
+        
+        // Clean up AOT temp files after each test to prevent accumulation
+        std::error_code ec;
+        std::filesystem::remove(output_path + ".o", ec);
+        std::filesystem::remove(output_path + ".so", ec);
+        std::filesystem::remove(output_path, ec);
     }
 
     // Check if all modes agree

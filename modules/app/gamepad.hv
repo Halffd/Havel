@@ -156,7 +156,7 @@ fn readNonBlock(handle) {
   if !handle._nonblock {
     ffi.call(_close, "int32", ["int32"], handle.fd)
     _path_cs = ffi.cstring(handle.path)
-    handle.fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, ((_O_RDONLY | _O_NONBLOCK))
+    handle.fd = ffi.call(_open, "int32", ["pointer", "int32"], _path_cs, (_O_RDONLY | _O_NONBLOCK))
     ffi.free(_path_cs)
     if handle.fd < 0 { return null }
     handle._nonblock = true

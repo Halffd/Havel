@@ -16,6 +16,7 @@
 #include "../stdlib/BytecodeBuilderModule.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../core/util/Env.hpp"
+#include "../../utils/InstallPaths.hpp"
 #include "../runtime/concurrency/WatcherRegistry.hpp"
 #include "../runtime/concurrency/Scheduler.hpp"
 #include "../runtime/concurrency/Fiber.hpp"
@@ -138,31 +139,41 @@ vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
             if (envStdlib && envStdlib[0] != '\0') {
                 stdlibPath = envStdlib;
             } else {
-                auto exePath = Env::executable();
-                if (!exePath.empty()) {
-                    stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
-                } else {
-                    stdlibPath = "./modules/std";
+                stdlibPath = install_paths::stdlibRoot();
+                if (stdlibPath.empty()) {
+                    auto exePath = Env::executable();
+                    if (!exePath.empty()) {
+                        stdlibPath = (std::filesystem::path(exePath).parent_path() / ".." / "modules" / "std").string();
+                    } else {
+                        stdlibPath = "./modules/std";
+                    }
                 }
             }
             vm_->moduleLoader().setStdlibPath(stdlibPath);
         }
 
-        // Add module search paths so `use "lexer"` etc. resolve at runtime
-        {
-            auto exePath = Env::executable();
-            std::string modulesRoot;
-            if (!exePath.empty()) {
-                modulesRoot = (std::filesystem::path(exePath).parent_path() / ".." / "modules").string();
-            } else {
-                modulesRoot = "./modules";
-            }
-            auto canonicalRoot = std::filesystem::exists(modulesRoot)
-                ? std::filesystem::canonical(modulesRoot).string() : modulesRoot;
-            vm_->moduleLoader().addSearchPath(canonicalRoot + "/lang");
-            vm_->moduleLoader().addSearchPath(canonicalRoot + "/std");
-            vm_->moduleLoader().addSearchPath(canonicalRoot + "/app");
-            vm_->moduleLoader().addSearchPath(canonicalRoot);
+        // Add module search paths so `use "lexer"` etc. resolve at runtime.
+        // Resolves the source-tree layout (<exe>/../modules) and, when that is
+        // absent, the system-install layout (<prefix>/share/havel/modules).
+        if (auto canonicalRoot = install_paths::modulesRoot(); !canonicalRoot.empty()) {
+            auto rootStr = canonicalRoot.string();
+            vm_->moduleLoader().addSearchPath(rootStr + "/lang");
+            vm_->moduleLoader().addSearchPath(rootStr + "/std");
+            vm_->moduleLoader().addSearchPath(rootStr + "/app");
+            vm_->moduleLoader().addSearchPath(rootStr);
+            vm_->moduleLoader().addModuleSoPath(rootStr);
+        }
+
+        // Add system bytecode cache directory for precompiled stdlib modules
+        // (installed to share/havel/modules by the release build).
+        if (auto bcRoot = install_paths::bytecodeRoot(); !bcRoot.empty()) {
+            vm_->moduleLoader().addCacheDir(bcRoot.string());
+        }
+
+        // Add system module plugin directory for havel_mod_<name>.so plugins
+        // (installed to lib/havel/modules by the release build).
+        if (auto mpRoot = install_paths::modulePluginRoot(); !mpRoot.empty()) {
+            vm_->moduleLoader().addModuleSoPath(mpRoot.string());
         }
 
   vm_->suspendGC();

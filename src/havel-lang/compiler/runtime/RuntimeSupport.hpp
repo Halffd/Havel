@@ -371,7 +371,7 @@ inline void autoCacheBytecodeChunk(const std::string& compileUnitName,
     std::vector<uint8_t> data =
         serializer.serializeChunk(chunk, compileUnitName);
 
-    std::string cacheDir = havel::ModuleLoader::getCacheDir();
+    std::string cacheDir = havel::ModuleLoader::getDefaultCacheDir();
     std::filesystem::create_directories(cacheDir);
 
     // Derive the flat cache filename from the canonical source path:

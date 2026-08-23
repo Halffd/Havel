@@ -65,6 +65,7 @@ option(ENABLE_QT "Enable Qt6 native backend (default)" ON)
 option(ENABLE_QT_UI_BACKEND "Build in-process Qt6 UI backend (fallback to dynamic extension)" ON)
 option(ENABLE_HEADLESS "Build without any GUI backend (server/headless mode)" OFF)
 option(ENABLE_MODULE_PLUGINS "Build stdlib/host modules as .so plugins" OFF)
+option(PORTABLE_BUILD "Produce portable binaries (omit -march=native; for distro packaging)" OFF)
 
 # set(CMAKE_PREFIX_PATH /usr ${CMAKE_PREFIX_PATH})
 # set(Qt6_DIR /usr/lib/cmake/Qt6 CACHE PATH "Path to Qt6 CMake config" FORCE)
@@ -92,14 +93,21 @@ if(NOT CMAKE_BUILD_TYPE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
 endif()
 
+# -march=native produces binaries tied to the build host CPU. Distro packages
+# and Docker images must set PORTABLE_BUILD=ON to stay distributable.
+set(HAVEL_ARCH_FLAGS "")
+if(NOT PORTABLE_BUILD)
+    set(HAVEL_ARCH_FLAGS "-march=native")
+endif()
+
 # Compiler-specific flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-fuse-ld=lld -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto=auto -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${HAVEL_ARCH_FLAGS} -flto=auto -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled -fabi-version=14 -fno-gnu-unique")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=auto -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 endif()
 
@@ -787,13 +795,19 @@ set(UI_BACKEND_DEFS "")
 set(UI_BACKEND_INCLUDES "")
 
 if(UI_BACKEND STREQUAL "QT" AND QT_BACKEND_AVAILABLE AND ENABLE_QT_UI_BACKEND)
-    # Qt6 include directories - use standard paths
-    list(APPEND UI_BACKEND_INCLUDES
-        /usr/include/qt6
-        /usr/include/qt6/QtCore
-        /usr/include/qt6/QtWidgets
-        /usr/include/qt6/QtGui
-    )
+    # Qt6 include directories: derive from the imported targets so this works
+    # on every distro layout (/usr/include/qt6 on Arch, multiarch paths on
+    # Debian/Fedora). Needed by targets that use Qt headers without linking
+    # the Qt6::* targets (e.g. havel_gui).
+    set(_QT6_TARGET_INCLUDES "")
+    foreach(_qtcomp Core Widgets Gui)
+        get_target_property(_qt_inc Qt6::${_qtcomp} INTERFACE_INCLUDE_DIRECTORIES)
+        if(_qt_inc)
+            list(APPEND _QT6_TARGET_INCLUDES ${_qt_inc})
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES _QT6_TARGET_INCLUDES)
+    list(APPEND UI_BACKEND_INCLUDES ${_QT6_TARGET_INCLUDES})
     list(APPEND BACKEND_LIBS Qt6::Core Qt6::Widgets Qt6::Gui)
     list(APPEND UI_BACKEND_DEFS HAVE_QT_EXTENSION)
     message(STATUS "Qt6:             ✓ Linked to main + dynamic extension available")
@@ -915,23 +929,29 @@ set(COMMON_LIBS
 ${PCRE2_8_LIBRARIES}
 ${PCRE2_16_LIBRARIES}
 )
-# Conditionally append Linux/X11-only libs
+# Conditionally append Linux/X11-only libs.
+# Use find_library() results (never hardcoded /usr/lib/*.so paths) so that
+# multiarch systems (Debian: /usr/lib/<triplet>, Fedora) resolve correctly.
 if(LINUX)
-    list(APPEND COMMON_LIBS
-        ${X11_LIBRARIES}
-        /usr/lib/libXi.so
-        /usr/lib/libXtst.so
-        /usr/lib/libXrandr.so
-        /usr/lib/libXcomposite.so
-        /usr/lib/libXdamage.so
-        /usr/lib/libxkbcommon.so
-    )
-find_library(XFIXES_LIB Xfixes QUIET)
-        if(XFIXES_LIB)
-            list(APPEND COMMON_LIBS ${XFIXES_LIB})
+    find_library(XI_LIB Xi QUIET)
+    find_library(XTST_LIB Xtst QUIET)
+    find_library(XRANDR_LIB2 Xrandr QUIET)
+    find_library(XINERAMA_LIB2 Xinerama QUIET)
+    find_library(XCOMPOSITE_LIB Xcomposite QUIET)
+    find_library(XDAMAGE_LIB Xdamage QUIET)
+    find_library(XKBCOMMON_LIB xkbcommon QUIET)
+    list(APPEND COMMON_LIBS ${X11_LIBRARIES})
+    foreach(_xlib XI_LIB XTST_LIB XRANDR_LIB2 XINERAMA_LIB2 XCOMPOSITE_LIB XDAMAGE_LIB XKBCOMMON_LIB)
+        if(${_xlib})
+            list(APPEND COMMON_LIBS ${${_xlib}})
         endif()
+    endforeach()
+    find_library(XFIXES_LIB Xfixes QUIET)
+    if(XFIXES_LIB)
+        list(APPEND COMMON_LIBS ${XFIXES_LIB})
     endif()
-    list(APPEND COMMON_LIBS
+endif()
+list(APPEND COMMON_LIBS
     OpenGL::GL
     ${WAYLAND_LIBRARIES}
     ${DBUS_LIBRARIES}
@@ -1024,16 +1044,14 @@ set_target_properties(gamma_ramp PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
 target_compile_options(gamma_ramp PRIVATE -fno-lto -O3)
 target_link_options(gamma_ramp PRIVATE -fno-lto)
 
-# Install to build directory and modules/app/ so brightness.hv can find it
+# Gamma ramp extension for brightness module.
+# Installed into the system library directory: modules/app/brightness.hv
+# dlopen()s it via the plain soname or /usr/lib paths (see brightness.hv).
+include(GNUInstallDirs)
 install(TARGETS gamma_ramp
-    RUNTIME DESTINATION .
-    LIBRARY DESTINATION .
-    ARCHIVE DESTINATION .
-)
-install(TARGETS gamma_ramp
-    RUNTIME DESTINATION modules/app
-    LIBRARY DESTINATION modules/app
-    ARCHIVE DESTINATION modules/app
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 # OCR extension (Tesseract-based)
@@ -2442,6 +2460,119 @@ message(STATUS "")
 message(STATUS "Installation prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "=== END CONFIGURATION ===")
 message(STATUS "")
+
+# ==============================================================================
+# BYTECODE PRECOMPILATION FOR RELEASE (bundles .hvc with install)
+# ==============================================================================
+if(ENABLE_HAVEL_LANG AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    # Precompile standard library modules to bytecode (.hvc) and install them
+    # alongside the binary so users get fast startup without JIT compilation.
+    #
+    # The .hvc files are installed to share/havel/modules/{std,lang} and
+    # the runtime loads them from there via the module search path.
+    set(HAVEL_STDLIB_SOURCES "${CMAKE_SOURCE_DIR}/modules/std")
+    set(HAVEL_LANG_SOURCES_DIR "${CMAKE_SOURCE_DIR}/modules/lang")
+
+    # Custom target to compile all .hv modules to .hvc bytecode
+    # Uses a helper script since --build only compiles one file at a time
+    configure_file(${CMAKE_SOURCE_DIR}/cmake/CompileStdlibBytecode.cmake.in
+        ${CMAKE_BINARY_DIR}/CompileStdlibBytecode.cmake @ONLY)
+    add_custom_target(compile-stdlib-bytecode
+        COMMAND ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/CompileStdlibBytecode.cmake
+        DEPENDS havel
+        COMMENT "Compiling standard library bytecode for release"
+        VERBATIM
+    )
+
+    # Install precompiled bytecode
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/share/havel/modules/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/havel/modules
+        COMPONENT Runtime
+        FILES_MATCHING PATTERN "*.hvc"
+    )
+
+    # Also install source .hv files for debugging (optional, small)
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/std/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/havel/modules/std
+        COMPONENT Runtime
+        FILES_MATCHING PATTERN "*.hv"
+    )
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/lang/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/havel/modules/lang
+        COMPONENT Runtime
+        FILES_MATCHING PATTERN "*.hv"
+    )
+    # Install all module directories from source tree that contain .hv files
+    # (excluding build-generated and test directories)
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/havel/modules
+        COMPONENT Runtime
+        FILES_MATCHING PATTERN "*.hv"
+        PATTERN ".git" EXCLUDE
+        PATTERN "build*" EXCLUDE
+        PATTERN "*.pyc" EXCLUDE
+    )
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/scripts/
+        DESTINATION share/havel/scripts
+        COMPONENT Runtime
+    )
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/protocols/
+        DESTINATION share/havel/protocols
+        COMPONENT Runtime
+    )
+
+    # Add compile-stdlib-bytecode runs after havel is built (via DEPENDS havel)
+    # No add_dependencies(havel ...) to avoid cyclic dependency
+endif()
+
+# ==============================================================================
+# CPACK PACKAGING (DEB/RPM)
+# ==============================================================================
+set(CPACK_PACKAGE_NAME "havel")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
+set(CPACK_PACKAGE_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
+set(CPACK_PACKAGE_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Havel window manager and scripting language")
+set(CPACK_PACKAGE_VENDOR "Havel Project")
+set(CPACK_PACKAGE_CONTACT "https://github.com/Halffd/Havel")
+
+# Set package file name
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+
+# Common dependencies mapped per distro
+# Debian/Ubuntu package dependencies (adjust versions per distro release)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS
+    "libx11-6, libxtst6, libxrandr2, libxinerama1, libxcomposite1, libxi6, libxfixes3, libxdamage1,
+     libwayland-client0, libxkbcommon0, libfmt10, libpcre2-8-0, libpcre2-16-0,
+     libgl1, libcurl4, libpipewire-0.3-0t64, libasound2t64,
+     libtesseract5, libleptonica6, libopencv-core410, libopencv-imgproc410, libopencv-imgcodecs410,
+     libreadline8t64, libncurses6, libffi8"
+)
+
+# Fedora/RHEL package dependencies (RPM) - semicolon-separated for CPack
+set(CPACK_RPM_PACKAGE_REQUIRES
+    "libX11;libXtst;libXrandr;libXinerama;libXcomposite;libXi;libXfixes;libXdamage;wayland;libxkbcommon;fmt;pcre2;mesa-libGL;libcurl;pipewire;alsa-lib;tesseract;leptonica;opencv-core;opencv-imgproc;opencv-imgcodecs;readline;ncurses;libffi"
+)
+
+# Debian package metadata
+set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Havel Project <https://github.com/Halffd/Havel>")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/Halffd/Havel")
+
+# RPM package metadata
+set(CPACK_RPM_PACKAGE_SUMMARY "Havel window manager and scripting language")
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_GROUP "Applications/System")
+set(CPACK_RPM_PACKAGE_VENDOR "Havel Project")
+set(CPACK_RPM_PACKAGE_URL "https://github.com/Halffd/Havel")
+
+# Package components
+set(CPACK_COMPONENTS_ALL "Runtime")
+
+# Include CPack
+include(CPack)
 
 # ==============================================================================
 # DEVELOPMENT HELPERS

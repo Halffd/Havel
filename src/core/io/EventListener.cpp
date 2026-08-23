@@ -18,8 +18,9 @@
 #include <linux/input.h>
 #include <shared_mutex>
 #include <signal.h>
+#include <cerrno>
+#include <poll.h>
 #include <sys/ioctl.h>
-#include <sys/select.h>
 #include <sys/signalfd.h>
 #include <unistd.h>
 #include <vector>
@@ -93,7 +94,36 @@ EventListener::~EventListener() {
 void EventListener::InitInputBackend(
     const std::vector<std::string> &devicePaths, bool grab) {
   (void)grab; // grab is now handled in Start() after event loop is ready
-  backend_ = InputBackend::Create(InputBackendType::Evdev);
+
+  // Backend selection: IO.Backend config key, default evdev. The CLI
+  // --io flag writes this same key at startup. "auto" or empty opts into
+  // environment-based detection instead.
+  std::string backendName;
+  try {
+    backendName = Configs::Get().Get<std::string>("IO.Backend", "evdev");
+  } catch (...) {
+    backendName = "evdev";
+  }
+
+  InputBackendType requested = InputBackendType::Evdev;
+  if (backendName.empty() || backendName == "auto") {
+    requested = InputBackend::DetectBestBackend();
+    info("EventListener: IO.Backend unset/auto, detected: {}",
+         requested == InputBackendType::Evdev     ? "evdev"
+         : requested == InputBackendType::X11     ? "x11"
+         : requested == InputBackendType::Wayland ? "wayland"
+         : requested == InputBackendType::Windows ? "windows"
+                                                  : "unknown");
+  } else if (auto parsed = InputBackend::ParseBackendType(backendName)) {
+    requested = *parsed;
+    info("EventListener: using '{}' input backend", backendName);
+  } else {
+    warn("EventListener: unknown IO.Backend '{}', falling back to evdev",
+         backendName);
+    requested = InputBackendType::Evdev;
+  }
+
+  backend_ = InputBackend::Create(requested);
   if (!backend_) {
     error("EventListener: Failed to create input backend");
     return;
@@ -539,9 +569,7 @@ void EventListener::setDeferredSendFlush(std::function<void()> flushFn) {
 
 void EventListener::PumpOnce() {
   // Always drain pending input events (non-blocking) before anything else
-  if (backend_) {
-    backend_->PollEvents(0);
-  }
+  PollRound(0);
   if (deferredSendFlush_)
     deferredSendFlush_();
 
@@ -566,118 +594,81 @@ void EventListener::PumpOnce() {
     modules_->checkTimers();
   }
 
-  if (backend_) {
-    backend_->PollEvents(1);
-  }
+  PollRound(1);
   if (deferredSendFlush_)
     deferredSendFlush_();
 }
 
-void EventListener::EventLoop() {
-  if (debugging::debug_io)
-    debug("EventListener: EventLoop started, running={}", running.load());
-  eventLoopReady_.store(false);
-  int loopCount = 0;
-  while (running.load() && !shutdown.load()) {
-
-    if (backend_) {
-      backend_->PollEvents(0);
+void EventListener::PollRound(int timeoutMs) {
+  // Build the poll set: input device fds from the backend + shutdown fd +
+  // signal fd + scheduler/event-queue wakeup fds. The backend no longer
+  // owns the wait - it only supplies fds and consumes ready input.
+  std::vector<struct pollfd> pfds;
+  std::vector<int> inputFds;
+  if (backend_) {
+    inputFds = backend_->GetInputFds();
+    for (int fd : inputFds) {
+      if (fd >= 0)
+        pfds.push_back({.fd = fd, .events = POLLIN | POLLERR | POLLHUP,
+                        .revents = 0});
     }
-    if (!eventLoopReady_.load()) {
-      eventLoopReady_.store(true);
+  }
+  int signalFd = -1;
+  int eventQueueWakeupFd = -1;
+  int deferredWakeupFd = -1;
+  if (signalHandler) {
+    signalFd = signalHandler->GetSignalFd();
+    if (signalFd >= 0)
+      pfds.push_back({.fd = signalFd, .events = POLLIN, .revents = 0});
+  }
+  if (executionEngine) {
+    auto *eq = executionEngine->getEventQueue();
+    if (eq) {
+      eventQueueWakeupFd = eq->wakeupFd();
+      if (eventQueueWakeupFd >= 0)
+        pfds.push_back({.fd = eventQueueWakeupFd, .events = POLLIN,
+                        .revents = 0});
     }
-    if (deferredSendFlush_)
-      deferredSendFlush_();
-
-    if (shutdown.load())
-      break;
-
-    if (executionEngine) {
-      if (modules_)
-        modules_->checkTimers();
-      executionEngine->executeFrame();
-
-      auto *vm = executionEngine->getVM();
-      if (vm && vm->exit_requested_.load()) {
-        int code = vm->exit_code_.load();
-        // Cooperative shutdown: record the requested exit code and signal
-        // the UI event loop to quit. Do NOT call havel::exit() here - it
-        // tears down the VM and calls std::exit() from this thread while
-        // the main thread may still be executing runBytecodePipeline,
-        // racing Qt teardown and crashing at shutdown. Do NOT stop this
-        // loop either: if the main fiber is suspended in a sleep, only
-        // checkTimers() below can wake it, and the main thread must unwind
-        // and run cleanup() via the Havel destructor before the process
-        // exits. The launcher returns the requested exit code.
-        if (!exitSignaled_) {
-          exitSignaled_ = true;
-          if (shutdownCallback_) {
-            shutdownCallback_(code);
-          }
-#ifdef HAVE_QT_EXTENSION
-          QCoreApplication::exit(code);
-#endif
-        }
-      }
-    } else if (modules_) {
-      modules_->checkTimers();
+    auto *sched = executionEngine->getScheduler();
+    if (sched) {
+      deferredWakeupFd = sched->deferredWakeupFd();
+      if (deferredWakeupFd >= 0)
+        pfds.push_back({.fd = deferredWakeupFd, .events = POLLIN,
+                        .revents = 0});
     }
+  }
+  int shutdownIdx = -1;
+  if (shutdownFd >= 0) {
+    shutdownIdx = static_cast<int>(pfds.size());
+    pfds.push_back({.fd = shutdownFd, .events = POLLIN, .revents = 0});
+  }
 
-    // Collect all external wakeup fds that need to break the upcoming
-    // blocking PollEvents() and register them with the backend so a
-    // single poll() watches evdev + shutdown + signal + event-queue +
-    // deferred-wakeup fds together. This collapses the previous
-    // PollEvents(10) + select(10ms) pair — which serialized two 10ms
-    // waits back-to-back (~20ms per cycle when no work was queued) — into
-    // a single PollEvents(N) call. The backend only watches the fd for
-    // readiness; we drain any pending bytes ourselves below.
-    std::vector<int> wakeupFds;
-    int signalFd = -1;
-    int eventQueueWakeupFd = -1;
-    int deferredWakeupFd = -1;
-    if (signalHandler) {
-      signalFd = signalHandler->GetSignalFd();
-      if (signalFd >= 0)
-        wakeupFds.push_back(signalFd);
+  if (pfds.empty()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
+    return;
+  }
+
+  int ret = poll(pfds.data(), pfds.size(), timeoutMs);
+  if (ret <= 0)
+    return;
+
+  // Shutdown fd: drain and let the caller observe shutdown flag.
+  if (shutdownIdx >= 0 && (pfds[shutdownIdx].revents & POLLIN)) {
+    uint64_t val;
+    while (read(shutdownFd, &val, sizeof(val)) == sizeof(val)) {
     }
-    if (executionEngine) {
-      auto *eq = executionEngine->getEventQueue();
-      if (eq) {
-        eventQueueWakeupFd = eq->wakeupFd();
-        if (eventQueueWakeupFd >= 0)
-          wakeupFds.push_back(eventQueueWakeupFd);
-      }
-      auto *sched = executionEngine->getScheduler();
-      if (sched) {
-        deferredWakeupFd = sched->deferredWakeupFd();
-        if (deferredWakeupFd >= 0)
-          wakeupFds.push_back(deferredWakeupFd);
+  }
+
+  // Signal fd: drain and react to shutdown signals.
+  if (signalFd >= 0) {
+    bool signalReady = false;
+    for (const auto &pfd : pfds) {
+      if (pfd.fd == signalFd && (pfd.revents & POLLIN)) {
+        signalReady = true;
+        break;
       }
     }
-    if (backend_)
-      backend_->SetExternalWakeupFds(std::move(wakeupFds));
-
-    // Single blocking poll. PollEvents() returns on any of:
-    //   - evdev device fd readable (input event)
-    //   - shutdownFd readable (async shutdown requested)
-    //   - any external wakeup fd readable
-    //   - timeout (10ms)
-    // This replaces the previous PollEvents(10) + select(10ms) sequence
-    // that spent up to 20ms per cycle even when nothing was happening.
-    if (backend_) {
-      backend_->PollEvents(10);
-    }
-    if (deferredSendFlush_)
-      deferredSendFlush_();
-
-    if (shutdown.load())
-      break;
-
-    // Drain the external fds regardless of which one fired PollEvents; a
-    // wakeup byte may be latched even if poll() returned due to evdev
-    // input or shutdown race. read() in a loop in case multiple wakeups
-    // coalesced into one eventfd signal.
-    if (signalFd >= 0) {
+    if (signalReady) {
       struct signalfd_siginfo fdsi;
       while (true) {
         ssize_t s = read(signalFd, &fdsi, sizeof(fdsi));
@@ -697,19 +688,101 @@ void EventListener::EventLoop() {
         break;
       }
     }
-    if (eventQueueWakeupFd >= 0) {
-      uint64_t val;
-      while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {
+  }
+
+  // Scheduler/event-queue wakeup fds: drain so poll() doesn't spin.
+  if (eventQueueWakeupFd >= 0) {
+    for (const auto &pfd : pfds) {
+      if (pfd.fd == eventQueueWakeupFd && (pfd.revents & POLLIN)) {
+        uint64_t val;
+        while (read(eventQueueWakeupFd, &val, sizeof(val)) == sizeof(val)) {
+        }
+        break;
       }
     }
-    if (deferredWakeupFd >= 0) {
-      uint64_t val;
-      while (read(deferredWakeupFd, &val, sizeof(val)) == sizeof(val)) {
+  }
+  if (deferredWakeupFd >= 0) {
+    for (const auto &pfd : pfds) {
+      if (pfd.fd == deferredWakeupFd && (pfd.revents & POLLIN)) {
+        uint64_t val;
+        while (read(deferredWakeupFd, &val, sizeof(val)) == sizeof(val)) {
+        }
+        break;
       }
     }
+  }
+
+  // Ready input device fds -> backend dispatch.
+  if (backend_ && !inputFds.empty()) {
+    std::vector<std::pair<int, short>> readyInput;
+    for (const auto &pfd : pfds) {
+      if (pfd.revents == 0)
+        continue;
+      bool isInput = false;
+      for (int fd : inputFds) {
+        if (fd == pfd.fd) {
+          isInput = true;
+          break;
+        }
+      }
+      if (isInput)
+        readyInput.emplace_back(pfd.fd, pfd.revents);
+    }
+    if (!readyInput.empty())
+      backend_->OnFdsReady(readyInput);
+  }
+}
+
+void EventListener::EventLoop() {
+  if (debugging::debug_io)
+    debug("EventListener: EventLoop started, running={}", running.load());
+  eventLoopReady_.store(false);
+  int loopCount = 0;
+  while (running.load() && !shutdown.load()) {
+
+    // Poll input events non-blocking
+    if (backend_) {
+      backend_->OnFdsReady({}); // Drain pending inputs
+    }
+    if (!eventLoopReady_.load()) {
+      eventLoopReady_.store(true);
+    }
+    if (deferredSendFlush_)
+      deferredSendFlush_();
 
     if (shutdown.load())
       break;
+
+    if (executionEngine) {
+      if (modules_)
+        modules_->checkTimers();
+      executionEngine->executeFrame();
+
+      auto *vm = executionEngine->getVM();
+      if (vm && vm->exit_requested_.load()) {
+        int code = vm->exit_code_.load();
+        if (!exitSignaled_) {
+          exitSignaled_ = true;
+          if (shutdownCallback_) {
+            shutdownCallback_(code);
+          }
+#ifdef HAVE_QT_EXTENSION
+          QCoreApplication::exit(code);
+#endif
+        }
+      }
+    } else if (modules_) {
+      modules_->checkTimers();
+    }
+
+    // Blocking PollRound() for input + scheduler events
+    PollRound(10);
+    if (deferredSendFlush_)
+      deferredSendFlush_();
+
+    if (shutdown.load())
+      break;
+
 
     // Fast path: when goroutines are runnable, skip the device re-check
     // gap and re-enter executeFrame() immediately so VM work (hotkey

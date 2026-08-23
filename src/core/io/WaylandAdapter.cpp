@@ -79,29 +79,30 @@ public:
 
     void UngrabAllDevices() override {}
 
-    int GetPollFd() const override {
+    std::vector<int> GetInputFds() const override {
 #ifdef __linux__
-        return display_ ? wl_display_get_fd(display_) : -1;
-#else
-        return -1;
+        if (display_) {
+            int fd = wl_display_get_fd(display_);
+            if (fd >= 0) return {fd};
+        }
 #endif
+        return {};
     }
 
-    bool PollEvents(int timeoutMs) override {
+    void OnFdsReady(const std::vector<std::pair<int, short>> &ready) override {
 #ifdef __linux__
-        if (!display_) return false;
-
-        struct pollfd pfd;
-        pfd.fd = wl_display_get_fd(display_);
-        pfd.events = POLLIN;
-
-        if (poll(&pfd, 1, timeoutMs) <= 0) return false;
-
+        if (!display_) return;
+        int displayFd = wl_display_get_fd(display_);
+        bool ours = false;
+        for (const auto &[fd, revents] : ready) {
+            (void)revents;
+            if (fd == displayFd) { ours = true; break; }
+        }
+        if (!ours) return;
         wl_display_dispatch_pending(display_);
         wl_display_flush(display_);
-        return true;
 #else
-        return false;
+        (void)ready;
 #endif
     }
 

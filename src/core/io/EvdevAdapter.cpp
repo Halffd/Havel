@@ -47,18 +47,8 @@ public:
     void UngrabDevice(const std::string &path) override;
     void UngrabAllDevices() override;
 
-    int GetPollFd() const override;
-    bool PollEvents(int timeoutMs) override;
-    void SetExternalWakeupFd(int fd) override {
-        std::lock_guard<std::mutex> lock(externalWakeupFdsMutex_);
-        externalWakeupFds_.clear();
-        if (fd >= 0) externalWakeupFds_.push_back(fd);
-    }
-
-    void SetExternalWakeupFds(std::vector<int> fds) override {
-        std::lock_guard<std::mutex> lock(externalWakeupFdsMutex_);
-        externalWakeupFds_ = std::move(fds);
-    }
+    std::vector<int> GetInputFds() const override;
+    void OnFdsReady(const std::vector<std::pair<int, short>> &ready) override;
     void RecheckDevices() override;
 
     std::pair<int, int> GetMousePosition() const override;
@@ -241,17 +231,7 @@ private:
     int comboTimeWindow_ = 0;
 
     // Shutdown coordination
-    int shutdownFd_ = -1;
     std::atomic<bool> running_{false};
-
-    // External fds whose readiness breaks a blocking PollEvents() (VM scheduler
-    // deferred-wakeup, event-queue wakeup, signalfd). Observed for readiness
-    // only; never drained or closed here. Replaces the older single-fd
-    // externalWakeupFd_ so we can collapse the EventLoop's PollEvents(10) +
-    // select(10ms) double wait into a single poll() call (saving ~10ms per
-    // cycle when no work is queued).
-    std::vector<int> externalWakeupFds_;
-    std::mutex externalWakeupFdsMutex_;
 
     // Callbacks - feed to EventListener
     KeyCallback keyDownCallback_;
@@ -264,16 +244,12 @@ private:
 };
 
 EvdevAdapter::EvdevAdapter() {
-    shutdownFd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     g_active_adapter.store(this, std::memory_order_release);
 }
 
 EvdevAdapter::~EvdevAdapter() {
     g_active_adapter.store(nullptr, std::memory_order_release);
     Shutdown();
-    if (shutdownFd_ >= 0) {
-        close(shutdownFd_);
-    }
 }
 
 bool EvdevAdapter::Init() {
@@ -291,12 +267,6 @@ bool EvdevAdapter::Init() {
 
 void EvdevAdapter::Shutdown() {
     running_ = false;
-
-    // Wake up PollEvents if it's blocked in poll()
-    if (shutdownFd_ >= 0) {
-        uint64_t val = 1;
-        write(shutdownFd_, &val, sizeof(val));
-    }
 
     ReleaseAllVirtualKeys();
     UngrabAllDevices();
@@ -468,115 +438,76 @@ void EvdevAdapter::SignalSafeUngrabAll() {
     signalSafeGrabbedCount_.store(0, std::memory_order_release);
 }
 
-int EvdevAdapter::GetPollFd() const {
-    return shutdownFd_;
+std::vector<int> EvdevAdapter::GetInputFds() const {
+    std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
+    std::vector<int> fds;
+    fds.reserve(devices_.size());
+    for (const auto &dev : devices_) {
+        if (dev.fd >= 0) {
+            fds.push_back(dev.fd);
+        }
+    }
+    return fds;
 }
 
-bool EvdevAdapter::PollEvents(int timeoutMs) {
-    static std::atomic<bool> firstPoll{true};
-    if (firstPoll.exchange(false)) {
-        if (havel::debugging::debug_io) havel::debug("EvdevAdapter: PollEvents first call, timeoutMs={} devices={}", timeoutMs, devices_.size());
-    }
-    std::vector<struct pollfd> pfds;
-
-    {
+void EvdevAdapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
+    // Match by fd value, not index: the device list may have changed between
+    // the caller's GetInputFds() snapshot and this call.
+    auto findDev = [&](int fd) -> int {
         std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-        pfds.reserve(devices_.size() + 2);
-        for (const auto &dev : devices_) {
-            if (dev.fd >= 0) {
-                pfds.push_back({.fd = dev.fd, .events = POLLIN | POLLERR | POLLHUP, .revents = 0});
-            }
+        for (size_t i = 0; i < devices_.size(); ++i) {
+            if (devices_[i].fd == fd) return static_cast<int>(i);
         }
-    }
+        return -1;
+    };
 
-    // External wakeup fds (scheduler deferred-wakeup, event-queue wakeup,
-    // signalfd). All map into the same equivalence class ("break the poll and
-    // let the caller drain/re-check") so we don't need to track indices.
-    {
-        std::lock_guard<std::mutex> lock(externalWakeupFdsMutex_);
-        for (int fd : externalWakeupFds_) {
-            if (fd >= 0) {
-                pfds.push_back({.fd = fd, .events = POLLIN, .revents = 0});
-            }
-        }
-    }
-
-    size_t shutdownIdx = SIZE_MAX;
-    if (shutdownFd_ >= 0) {
-        shutdownIdx = pfds.size();
-        pfds.push_back({.fd = shutdownFd_, .events = POLLIN, .revents = 0});
-    }
-
-    if (pfds.empty()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
-        return false;
-    }
-
-    int ret = poll(pfds.data(), pfds.size(), timeoutMs);
-    if (ret <= 0) return false;
-
-    // Drain shutdown eventfd if signaled
-    if (shutdownIdx != SIZE_MAX && pfds[shutdownIdx].revents & POLLIN) {
-        uint64_t val;
-        while (read(shutdownFd_, &val, sizeof(val)) == sizeof(val)) {}
-    }
-    // External wakeup (e.g. VM deferred wakeup) is left for the VM to drain in
-    // executeFrame(); here it merely breaks the poll wait so VM work is noticed
-    // promptly. Fall through so any latched device events are still processed.
-
-    std::vector<std::pair<size_t, input_event>> events;
-    std::vector<size_t> deadDevices;
-
-    {
+    // Handle dead devices first so we never read from a bad fd below.
+    for (const auto &[fd, revents] : ready) {
+        if (!(revents & (POLLERR | POLLHUP))) continue;
+        int idx = findDev(fd);
+        if (idx < 0) continue;
         std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-        for (size_t i = 0; i < pfds.size() && i < devices_.size(); ++i) {
-            short revents = pfds[i].revents;
-            if (revents & (POLLERR | POLLHUP)) {
-                // Device disconnected or error
-                deadDevices.push_back(i);
-                continue;
-            }
-            if (!(revents & POLLIN)) continue;
-            if (devices_[i].fd < 0) continue;
-
-            input_event ev;
-            while (read(devices_[i].fd, &ev, sizeof(ev)) == sizeof(ev)) {
-                events.emplace_back(i, ev);
-            }
+        size_t i = static_cast<size_t>(idx);
+        if (i < devices_.size() && devices_[i].fd >= 0) {
+            if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), removing", devices_[i].path, devices_[i].fd);
+            close(devices_[i].fd);
+            devices_[i].fd = -1;
+            devices_[i].path.clear();
         }
     }
 
-    // Handle dead devices
-    if (!deadDevices.empty()) {
-        std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-        for (size_t idx : deadDevices) {
-            if (idx < devices_.size() && devices_[idx].fd >= 0) {
-                if (havel::debugging::debug_io) havel::debug("EvdevAdapter: Device {} disconnected (fd={}), removing", devices_[idx].path, devices_[idx].fd);
-                close(devices_[idx].fd);
-                devices_[idx].fd = -1;
-                devices_[idx].path.clear();
-            }
-        }
-    }
+    // Read and dispatch events from readable devices.
+    for (const auto &[fd, revents] : ready) {
+        if (!(revents & POLLIN)) continue;
+        int idx = findDev(fd);
+        if (idx < 0) continue;
 
-    for (auto &[idx, ev] : events) {
         Device devCopy;
         {
             std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-            if (idx >= devices_.size()) continue;
-            devCopy = devices_[idx];
+            devCopy = devices_[static_cast<size_t>(idx)];
+            if (devCopy.fd < 0) continue;
         }
-        ProcessEvent(devCopy, ev);
+
+        std::vector<input_event> events;
+        input_event ev;
+        while (read(devCopy.fd, &ev, sizeof(ev)) == sizeof(ev)) {
+            events.push_back(ev);
+        }
+
+        for (const auto &event : events) {
+            ProcessEvent(devCopy, event);
+        }
+
         {
             std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-            if (idx < devices_.size()) {
-                devices_[idx].pending_wheel_hi_res = devCopy.pending_wheel_hi_res;
-                devices_[idx].pending_hwheel_hi_res = devCopy.pending_hwheel_hi_res;
+            size_t i = static_cast<size_t>(idx);
+            if (i < devices_.size()) {
+                devices_[i].pending_wheel_hi_res = devCopy.pending_wheel_hi_res;
+                devices_[i].pending_hwheel_hi_res = devCopy.pending_hwheel_hi_res;
             }
         }
     }
-
-    return true;
 }
 
 void EvdevAdapter::RecheckDevices() {
@@ -845,10 +776,6 @@ void EvdevAdapter::ProcessKeyEvent(Device &dev, const input_event &ev) {
     if (down && emergencyShutdownKey_ != 0 && originalCode == emergencyShutdownKey_) {
         error("EMERGENCY SHUTDOWN KEY TRIGGERED!");
         running_ = false;
-        if (shutdownFd_ >= 0) {
-            uint64_t val = 1;
-            write(shutdownFd_, &val, sizeof(val));
-        }
         EmergencyReleaseAllKeys();
         return;
     }

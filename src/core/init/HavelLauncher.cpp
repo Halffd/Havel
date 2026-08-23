@@ -517,6 +517,12 @@ public:
     }
 
     auto *backend = host::UIManager::instance().backend();
+    if (!backend) {
+      error("No UI backend available. Havel needs a UI backend (Qt6 or GTK4) "
+            "for the system tray. Run 'havel --run <script>' for headless "
+            "execution.");
+      return 1;
+    }
     host::UIBackend::ApplicationMetadata meta;
     meta.argc = &argc;
     meta.argv = argv;
@@ -615,6 +621,12 @@ public:
         debug("Hotkeys detected — using full execution mode");
 
       auto *backend = host::UIManager::instance().backend();
+      if (!backend) {
+        error("No UI backend available to run hotkey scripts. Install a UI "
+              "backend (Qt6 or GTK4) or run 'havel --run <script>' for "
+              "headless execution (hotkeys will not register).");
+        return 1;
+      }
       host::UIBackend::ApplicationMetadata meta;
       meta.applicationName = "havel";
       meta.applicationVersion = "1.0";

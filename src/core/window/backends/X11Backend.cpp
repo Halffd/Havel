@@ -97,6 +97,55 @@ wID X11Backend::getActiveWindow() {
     }
   }
 
+  if (activeWindow == 0 || activeWindow == DefaultRootWindow(display)) {
+    Atom stackingAtom = XInternAtom(display, "_NET_CLIENT_LIST_STACKING", x11::XTrue);
+    if (stackingAtom == x11::XNone) {
+      stackingAtom = XInternAtom(display, "_NET_CLIENT_LIST", x11::XTrue);
+    }
+    if (stackingAtom != x11::XNone) {
+      Atom actualType;
+      int actualFormat;
+      unsigned long nitems, bytesAfter;
+      unsigned char *prop = nullptr;
+      if (XGetWindowProperty(display, DefaultRootWindow(display), stackingAtom,
+                              0, 1024, x11::XFalse, XA_WINDOW, &actualType,
+                              &actualFormat, &nitems, &bytesAfter,
+                              &prop) == x11::XSuccess && prop) {
+        if (nitems > 0) {
+          Window *wins = reinterpret_cast<Window *>(prop);
+          activeWindow = wins[nitems - 1];
+        }
+        XFree(prop);
+      }
+    }
+  }
+
+  if (activeWindow == 0 || activeWindow == DefaultRootWindow(display)) {
+    auto allWins = getAllWindows();
+    if (!allWins.empty()) {
+      activeWindow = allWins.back().id;
+    }
+  }
+
+  if (activeWindow != 0 && activeWindow != DefaultRootWindow(display)) {
+    Window current = activeWindow;
+    Window root = DefaultRootWindow(display);
+    while (current != 0 && current != root) {
+      Window rootReturn, parentReturn;
+      Window *childrenReturn = nullptr;
+      unsigned int nChildren = 0;
+      if (XQueryTree(display, current, &rootReturn, &parentReturn, &childrenReturn, &nChildren) == 0) {
+        break;
+      }
+      if (childrenReturn) XFree(childrenReturn);
+      if (parentReturn == 0 || parentReturn == root) {
+        activeWindow = current;
+        break;
+      }
+      current = parentReturn;
+    }
+  }
+
   if (activeWindow != activeCache_.id) {
     activeCache_.id = activeWindow;
     activeCache_.title.clear();

@@ -63,10 +63,29 @@ fi
 [[ -f "${BUILD_DIR}/libgamma_ramp.so" ]] && \
     cp "${BUILD_DIR}/libgamma_ramp.so" "${STAGE}/prefix/lib/havel/"
 
+# Bundle the LLVM runtime shared library when the binary links it, so the
+# portable prefix is self-contained (binary RPATH covers $ORIGIN/../lib/havel).
+if readelf -d "${BUILD_DIR}/havel" | grep -q "libLLVM"; then
+    LLVM_LIBDIR="$(llvm-config --libdir 2>/dev/null || true)"
+    if [[ -n "${LLVM_LIBDIR}" && -d "${LLVM_LIBDIR}" ]]; then
+        for needed in $(readelf -d "${BUILD_DIR}/havel" | grep -oE 'libLLVM[^]]*\.so[0-9.]*' | sort -u); do
+            if [[ -f "${LLVM_LIBDIR}/${needed}" ]]; then
+                log blue "Bundling ${needed} into tarball lib/"
+                cp -L "${LLVM_LIBDIR}/${needed}" "${STAGE}/prefix/lib/havel/${needed}"
+            else
+                log red "WARNING: ${needed} not found in ${LLVM_LIBDIR}; tarball will require system LLVM"
+            fi
+        done
+    else
+        log red "WARNING: llvm-config unavailable; tarball will require system LLVM"
+    fi
+fi
+
 TARBALL="havel-${VERSION}-linux-x86_64.tar.gz"
 tar -czf "${DIST_DIR}/${TARBALL}" -C "${STAGE}" prefix --transform 's|^prefix|.|'
 
-# Standalone binary (basic execution only; use the tarball for full stdlib)
+# Standalone binary (basic execution only; requires system LLVM runtime libs
+# when LLVM JIT is enabled — use the tarball for the bundled, full setup)
 cp "${BUILD_DIR}/havel" "${DIST_DIR}/havel-linux-x86_64"
 
 # Checksums (exclude the sums file itself)

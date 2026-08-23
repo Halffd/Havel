@@ -2518,6 +2518,12 @@ if(ENABLE_HAVEL_LANG AND CMAKE_BUILD_TYPE STREQUAL "Release")
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/scripts/
         DESTINATION share/havel/scripts
         COMPONENT Runtime
+        # Exclude AOT experiment artifacts (ELF .so/.o files poison RPM
+        # auto-requires, e.g. scripts/tests/main/test_ranges.so)
+        PATTERN "*.so" EXCLUDE
+        PATTERN "*.o" EXCLUDE
+        PATTERN "*.ll" EXCLUDE
+        PATTERN "*.s" EXCLUDE
     )
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/protocols/
         DESTINATION share/havel/protocols
@@ -2550,12 +2556,13 @@ set(CPACK_DEBIAN_PACKAGE_DEPENDS
      libwayland-client0, libxkbcommon0, libfmt10, libpcre2-8-0, libpcre2-16-0,
      libgl1, libcurl4, libpipewire-0.3-0t64, libasound2t64,
      libtesseract5, libleptonica6, libopencv-core410, libopencv-imgproc410, libopencv-imgcodecs410,
-     libreadline8t64, libncurses6, libffi8"
+     libreadline8t64, libncurses6, libffi8,
+     libllvm18 | libllvm19 | libllvm20 | libllvm21"
 )
 
 # Fedora/RHEL package dependencies (RPM) - semicolon-separated for CPack
 set(CPACK_RPM_PACKAGE_REQUIRES
-    "libX11;libXtst;libXrandr;libXinerama;libXcomposite;libXi;libXfixes;libXdamage;wayland;libxkbcommon;fmt;pcre2;mesa-libGL;libcurl;pipewire;alsa-lib;tesseract;leptonica;opencv-core;opencv-imgproc;opencv-imgcodecs;readline;ncurses;libffi"
+    "libX11;libXtst;libXrandr;libXinerama;libXcomposite;libXi;libXfixes;libXdamage;wayland;libxkbcommon;fmt;pcre2;mesa-libGL;libcurl;pipewire;alsa-lib;tesseract;leptonica;opencv-core;opencv-imgproc;opencv-imgcodecs;readline;ncurses;libffi;llvm-libs"
 )
 
 # Debian package metadata

@@ -35,7 +35,7 @@ mkdir -p "${BUILD_DIR}"
 cmake -B "${BUILD_DIR}" -S "${REPO_ROOT}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DPORTABLE_BUILD=ON \
-    -DENABLE_LLVM=OFF \
+    -DENABLE_LLVM=ON \
     -DENABLE_TESTS=OFF \
     -DENABLE_HAVEL_LANG=ON \
     -DENABLE_MODULE_PLUGINS=ON \
@@ -48,6 +48,8 @@ cmake -B "${BUILD_DIR}" -S "${REPO_ROOT}" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld" \
     -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld" \
+    -DCMAKE_INSTALL_RPATH="\$ORIGIN/../lib/havel" \
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
     -Wno-dev
 
 log "INFO" "Building havel..." "${BLUE}"

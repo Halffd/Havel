@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     clang \
     lld \
+    llvm-dev \
     libfmt-dev \
     nlohmann-json3-dev \
     libspdlog-dev \
@@ -39,12 +40,12 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 COPY . .
 
-# Build Havel (Release, portable, no LLVM, no Qt, with Havel Lang and module plugins)
+# Build Havel (Release, portable, LLVM JIT enabled, no Qt, with Havel Lang and module plugins)
 RUN chmod +x build.sh && \
     cmake -S . -B build-release \
         -DCMAKE_BUILD_TYPE=Release \
         -DPORTABLE_BUILD=ON \
-        -DENABLE_LLVM=OFF \
+        -DENABLE_LLVM=ON \
         -DENABLE_QT=OFF \
         -DENABLE_QT_UI_BACKEND=OFF \
         -DENABLE_GTK=OFF \
@@ -68,6 +69,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install runtime dependencies (Ubuntu 24.04 noble package names)
 RUN apt-get update && apt-get install -y \
     libfmt9 \
+    libllvm18 \
     libspdlog1.12 \
     liblua5.4-0 \
     libtesseract5 \

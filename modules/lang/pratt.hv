@@ -588,7 +588,7 @@ condition = parseExpr(getRightBindingPower(TID.Where))
  }
 else if tt == TID.Interval {
   if current().tid == TID.OpenParen {
-    return MemberExpression(Identifier(tok.value, l, c), Identifier("start", l, c), l, c)
+    return MemberExpression(Identifier(tok.value, l, c), "start", l, c)
   }
   if current().tid == TID.Dot {
     return Identifier(tok.value, l, c)
@@ -603,7 +603,7 @@ else if tt == TID.Interval {
 }
 else if tt == TID.Timeout {
   if current().tid == TID.OpenParen {
-    return MemberExpression(Identifier(tok.value, l, c), Identifier("start", l, c), l, c)
+    return MemberExpression(Identifier(tok.value, l, c), "start", l, c)
   }
   if current().tid == TID.Dot {
     return Identifier(tok.value, l, c)
@@ -618,7 +618,7 @@ else if tt == TID.Timeout {
 }
 else if tt == TID.Thread {
   if current().tid == TID.OpenParen {
-    return MemberExpression(Identifier(tok.value, l, c), Identifier("spawn", l, c), l, c)
+    return MemberExpression(Identifier(tok.value, l, c), "spawn", l, c)
   }
   if current().tid == TID.Dot {
     return Identifier(tok.value, l, c)

@@ -1756,6 +1756,9 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--help" || arg == "-h") {
       showHelp();
       havel::exit(ExitReason::Normal, 0);
+    } else if (arg == "--version" || arg == "-v") {
+      std::cout << "havel " << HAVEL_VERSION_STRING << "\n";
+      havel::exit(ExitReason::Normal, 0);
     } else if (arg == "lexer") {
       cfg.mode = LaunchConfig::Mode::CLI;
       return cfg;
@@ -1828,6 +1831,7 @@ Usage: havel [options] <script.hv>
 
 Options:
   -h, --help          Show this help
+  -v, --version       Print version and exit
   -d, --debug         Enable debug mode
   -dp, --debug-parser Enable parser debugging
   -da, --debug-ast    Enable AST debugging

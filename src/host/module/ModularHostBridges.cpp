@@ -1458,7 +1458,7 @@ Value
 SystemBridge::handleSystemDetect(const std::vector<Value> &args,
                                   const HostContext *ctx) {
     (void)args;
-    if (debugging::debug_io) ::havel::debug("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
+    if (debugging::debug_io) ::havel::warn("[SystemDetect] ctx={} ctx->vm={}", static_cast<const void*>(ctx),
         ctx ? static_cast<const void*>(ctx->vm) : nullptr);
 
     if (!ctx || !ctx->vm) {
@@ -1470,7 +1470,7 @@ SystemBridge::handleSystemDetect(const std::vector<Value> &args,
   auto guard = vm->makeRoot(Value::makeObjectId(obj.id));
 
   auto sysInfo = ::havel::HardwareDetector::detectSystem();
-    if (debugging::debug_io) ::havel::debug("[SystemDetect] detected OS={}", sysInfo.os);
+    if (debugging::debug_io) ::havel::warn("[SystemDetect] detected OS={}", sysInfo.os);
 
   // Allocate strings on heap for non-empty values
   auto makeStr = [vm](const std::string &s) -> Value {
@@ -1480,12 +1480,12 @@ SystemBridge::handleSystemDetect(const std::vector<Value> &args,
   };
 
     vm->setHostObjectField(obj, "os", makeStr(sysInfo.os));
-    if (debugging::debug_io) ::havel::debug("[SystemDetect] set os field");
+    if (debugging::debug_io) ::havel::warn("[SystemDetect] set os field");
     vm->setHostObjectField(obj, "shell", makeStr(sysInfo.shell));
     vm->setHostObjectField(obj, "user", makeStr(sysInfo.user));
     vm->setHostObjectField(obj, "home", makeStr(sysInfo.home));
     vm->setHostObjectField(obj, "hostname", makeStr(sysInfo.hostname));
-    if (debugging::debug_io) ::havel::debug("[SystemDetect] all fields set, returning");
+    if (debugging::debug_io) ::havel::warn("[SystemDetect] all fields set, returning");
 
   // Linux-specific fields (always set, even if empty)
   vm->setHostObjectField(obj, "displayProtocol",
@@ -1926,14 +1926,16 @@ UIBridge::handleWindowGetActive(const std::vector<Value> &args,
                                 const HostContext *ctx) {
   (void)args;
   if (!ctx->windowManager || !ctx->vm) {
+  ::havel::warn("[UIBridge] handleWindowGetActive ENTRY");
     ::havel::warn("[UIBridge] handleWindowGetActive: windowManager={} vm={}",
                  (void*)ctx->windowManager, (void*)ctx->vm);
+  ::havel::warn("[UIBridge] handleWindowGetActive called, ctx->windowManager={} ctx->vm={}", (void*)ctx->windowManager, (void*)ctx->vm);
     return Value::makeNull();
   }
   ::havel::host::WindowService winService(ctx->windowManager);
   auto info = winService.getActiveWindowInfo();
   if (!info.valid) {
-    ::havel::warn("[UIBridge] handleWindowGetActive: info invalid (id={} title='{}' class='{}')",
+    ::havel::warn("[UIBridge] handleWindowGetActive: INFO_INVALID_CHANGED (id={} title='{}' class='{}')",
                  info.id, info.title, info.windowClass);
     return Value::makeNull();
   }
@@ -3958,7 +3960,7 @@ InputBridge::handleHotkeyRegisterConditional(const std::vector<Value> &args,
                         if (!depStr.empty()) depStr += ", ";
                         depStr += d;
                     }
-                    ::havel::debug("[InputBridge] Conditional hotkey '{}' gid={} condition_cb={} deps={}: [{}]",
+                    ::havel::warn("[InputBridge] Conditional hotkey '{}' gid={} condition_cb={} deps={}: [{}]",
                         hotkeyStr, persistentGid, conditionCb, g->hotkey_condition_deps.size(), depStr);
                 }
             }
@@ -4139,7 +4141,7 @@ InputBridge::handleHotkeyTrigger(const std::vector<Value> &args,
     std::string alias = ::havel::stdlib::HotkeyModule::resolveAlias(hotkeyId);
     if (alias.empty()) alias = hotkeyId;
 
-    ::havel::debug("[ModularHostBridges] hotkey.trigger('{}')", alias);
+    ::havel::warn("[ModularHostBridges] hotkey.trigger('{}')", alias);
 
     bool woke_persistent = false;
     if (auto *sched = vm->getScheduler(); sched) {

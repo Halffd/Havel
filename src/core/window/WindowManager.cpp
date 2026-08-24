@@ -63,6 +63,7 @@ void WindowManager::LoadGroupsFromConfig() {
 
 wID WindowManager::GetActiveWindow() {
   get().ensureBackend();
+  havel::warn("[WindowManager] GetActiveWindow() called");
   return get().getBackend().getActiveWindow();
 }
 

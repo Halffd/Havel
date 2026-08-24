@@ -49,6 +49,7 @@ std::string X11Backend::ReadProcFile(const std::string &path) const {
 
 std::optional<X11Backend::ActiveWindowContext> X11Backend::GetActiveWindowContext() {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return std::nullopt;
   ::Window root = DisplayManager::GetRootWindow();
   if (!root) return std::nullopt;
@@ -63,6 +64,7 @@ wID X11Backend::getActiveWindow() {
   }
 
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) {
     if (!InitializeX11()) return 0;
     display = DisplayManager::GetDisplay();
@@ -91,6 +93,7 @@ wID X11Backend::getActiveWindow() {
     Window focusedWindow = 0;
     int revertTo = 0;
     if (XGetInputFocus(display, &focusedWindow, &revertTo) != 0) {
+      havel::warn("[X11Backend] XGetInputFocus result: focusedWindow={} revertTo={}", focusedWindow, revertTo);
       if (focusedWindow != 0 && focusedWindow != 1 && focusedWindow != DefaultRootWindow(display)) {
         activeWindow = focusedWindow;
       }
@@ -181,6 +184,7 @@ std::string X11Backend::getActiveWindowClass() {
     return activeCache_.className;
   }
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return "";
 
   ::Window focusedWindow;
@@ -214,6 +218,7 @@ std::string X11Backend::getWindowTitle(wID id) {
   }
 
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return "";
 
   // Try _NET_WM_NAME first (UTF-8, modern standard)
@@ -252,6 +257,7 @@ std::string X11Backend::getWindowTitle(wID id) {
 pID X11Backend::getWindowPID(wID id) {
   if (id == 0) return 0;
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return 0;
 
   Atom pidAtom = XInternAtom(display, "_NET_WM_PID", x11::XTrue);
@@ -284,6 +290,7 @@ std::string X11Backend::getWindowClass(wID id) {
   }
 
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return "";
 
   XClassHint classHint;
@@ -309,6 +316,7 @@ std::string X11Backend::getWindowClass(wID id) {
 Rect X11Backend::getWindowPosition(wID id) {
   if (!id) return {};
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return {};
 
   XWindowAttributes attrs;
@@ -328,6 +336,7 @@ bool X11Backend::isWindowActive(wID id) { return getActiveWindow() == id; }
 bool X11Backend::isWindowExists(wID id) {
   if (!id) return false;
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return false;
   XWindowAttributes attr;
   return XGetWindowAttributes(display, id, &attr) != 0;
@@ -335,6 +344,7 @@ bool X11Backend::isWindowExists(wID id) {
 
 bool X11Backend::isWindowFullscreen(wID id) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display || id == 0) return false;
 
   Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", false);
@@ -360,6 +370,7 @@ bool X11Backend::isWindowFullscreen(wID id) {
 
 wID X11Backend::findWindowByPID(pID pid) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) { if (!InitializeX11()) return 0; display = DisplayManager::GetDisplay(); }
   ::Window root = DisplayManager::GetRootWindow();
   ::Window rootReturn, parentReturn;
@@ -389,6 +400,7 @@ wID X11Backend::findWindowByPID(pID pid) {
 
 wID X11Backend::findWindowByProcessName(const std::string &processName) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) { if (!InitializeX11()) return 0; display = DisplayManager::GetDisplay(); }
   ::Window root = DisplayManager::GetRootWindow();
   ::Window rootReturn, parentReturn;
@@ -426,6 +438,7 @@ wID X11Backend::findWindowByClass(const std::string &className) {
 
 wID X11Backend::findWindowByTitle(const std::string &title) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) { if (!InitializeX11()) return 0; display = DisplayManager::GetDisplay(); }
 
   ::Window rootWindow = DefaultRootWindow(display);
@@ -467,6 +480,7 @@ wID X11Backend::findWindowByTitle(const std::string &title) {
 
 wID X11Backend::newWindow(const std::string &name, std::vector<int> *dimensions, bool hide) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) { if (!InitializeX11()) return 0; display = DisplayManager::GetDisplay(); }
 
   int screen = DefaultScreen(display);
@@ -490,6 +504,7 @@ bool X11Backend::resizeWindow(wID id, int width, int height) { return moveResize
 
 bool X11Backend::moveResizeWindow(wID id, int x, int y, int width, int height) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display || id == 0) return false;
 
   XWindowAttributes attrs;
@@ -551,6 +566,7 @@ bool X11Backend::moveResizeWindow(wID id, int x, int y, int width, int height) {
 
 bool X11Backend::closeWindow(wID id) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return false;
   XEvent event;
   event.type = x11::XClientMessage;
@@ -566,6 +582,7 @@ bool X11Backend::closeWindow(wID id) {
 
 bool X11Backend::focusWindow(wID id) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return false;
   Atom activeAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW", x11::XTrue);
   if (activeAtom != x11::XNone) {
@@ -647,6 +664,7 @@ bool X11Backend::showWindow(wID id) {
 
 bool X11Backend::setWindowOpacity(wID id, float opacity) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display || id == 0) return false;
   unsigned long opacity_long = static_cast<unsigned long>(opacity * 4294967295.0f);
   Atom opacityAtom = XInternAtom(display, "_NET_WM_WINDOW_OPACITY", x11::XFalse);
@@ -675,6 +693,7 @@ bool X11Backend::setWindowAlwaysOnTop(wID id, bool onTop) {
 
 bool X11Backend::toggleWindowFullscreen(wID id) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display || id == 0) return false;
   Atom stateAtom = XInternAtom(display, "_NET_WM_STATE", x11::XFalse);
   Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", x11::XFalse);
@@ -694,6 +713,7 @@ bool X11Backend::toggleWindowFullscreen(wID id) {
 
 bool X11Backend::centerWindow(wID id) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display || id == 0) return false;
   auto monitor = DisplayManager::GetPrimaryMonitor();
   XWindowAttributes attrs;
@@ -704,6 +724,7 @@ bool X11Backend::centerWindow(wID id) {
 
 bool X11Backend::snapWindow(wID id, int position, int padding) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return false;
   ::Window win = id ? id : getActiveWindow();
   if (!win) return false;
@@ -727,6 +748,7 @@ bool X11Backend::setWindowFloating(wID, bool) { return false; }
 
 int X11Backend::getCurrentWorkspace() {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return 1;
   ::Window root = DisplayManager::GetRootWindow();
   Atom desktopAtom = XInternAtom(display, "_NET_CURRENT_DESKTOP", x11::XFalse);
@@ -760,6 +782,7 @@ bool X11Backend::moveWindowToWorkspace(wID, int workspace) { ManageVirtualDeskto
 
 void X11Backend::ManageVirtualDesktops(int action) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return;
   ::Window root = DisplayManager::GetRootWindow();
   Atom desktopAtom = XInternAtom(display, "_NET_CURRENT_DESKTOP", x11::XFalse);
@@ -797,6 +820,7 @@ void X11Backend::ManageVirtualDesktops(int action) {
 
 bool X11Backend::moveWindowToMonitor(wID id, int monitor) {
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display || id == 0) return false;
 
   XWindowAttributes winAttr;
@@ -819,6 +843,7 @@ void X11Backend::finishAltTab() {}
 std::vector<WindowInfo> X11Backend::getAllWindows() {
   std::vector<WindowInfo> windows;
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (!display) return windows;
 
   Window root = DisplayManager::GetRootWindow();
@@ -860,6 +885,7 @@ WindowInfo X11Backend::getWindowInfo(wID id) {
   info.windowClass = getWindowClass(id);
   info.valid = true;
   Display *display = DisplayManager::GetDisplay();
+  if (!display) { havel::error("[X11Backend] GetDisplay returned null"); }
   if (display) {
     XWindowAttributes attrs;
     if (XGetWindowAttributes(display, id, &attrs)) {

@@ -8,15 +8,11 @@ use time
 // ============================================================
 
 fn sleep(ms) {
-    print("ASYNC_MOD: calling time.sleep(" + ms + ")")
     time.sleep(ms)
-    print("ASYNC_MOD: returned from time.sleep(" + ms + ")")
 }
 
 fn go(func) {
-    print("async.go calling thread.spawn")
     thread.spawn(func)
-    print("async.go after thread.spawn")
 }
 
 fn await(x) { x }

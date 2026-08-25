@@ -1,27 +1,7 @@
+// async.hv — re-export of app/async_mod utilities.
+// Module system auto-exports every top-level binding, so this single
+// `use` import is the whole module. Do NOT add `fn x(...) { x(...) }`
+// wrappers here: a function body resolving its own name recurses
+// infinitely (stack overflow at call depth 16384), which used to make
+// sleep()/go()/etc. hang or die when reached through `use async`.
 use { debounce, throttle, retry, timeout, race, once, every, parallelMap, parallelFilter, parallelForEach, promise, then, all, allSettled, chan, chanSelect, merge, fanIn, fanOut, waitgroup, rateLimit, circuitBreaker, sleep, go, await } from "app/async_mod"
-
-fn debounce(f, ms) { debounce(f, ms) }
-fn throttle(f, ms) { throttle(f, ms) }
-fn retry(f, attempts, baseDelay, maxDelay, backoff) { retry(f, attempts, baseDelay, maxDelay, backoff) }
-fn timeout(f, ms, onTimeout) { timeout(f, ms, onTimeout) }
-fn race(fns) { race(fns) }
-fn once(f) { once(f) }
-fn every(f, ms) { every(f, ms) }
-fn parallelMap(items, f, concurrency) { parallelMap(items, f, concurrency) }
-fn parallelFilter(items, f, concurrency) { parallelFilter(items, f, concurrency) }
-fn parallelForEach(items, f, concurrency) { parallelForEach(items, f, concurrency) }
-fn promise(f) { promise(f) }
-fn then(promiseCh, onFulfilled, onRejected) { then(promiseCh, onFulfilled, onRejected) }
-fn all(channels) { all(channels) }
-fn allSettled(channels) { allSettled(channels) }
-fn chan(buffer) { chan(buffer) }
-fn chanSelect(channels) { chanSelect(channels) }
-fn merge(channels) { merge(channels) }
-fn fanIn(channels) { fanIn(channels) }
-fn fanOut(source, workers) { fanOut(source, workers) }
-fn waitgroup() { waitgroup() }
-fn rateLimit(maxPerSecond) { rateLimit(maxPerSecond) }
-fn circuitBreaker(f, failureThreshold, resetTimeout) { circuitBreaker(f, failureThreshold, resetTimeout) }
-fn sleep(ms) { sleep(ms) }
-fn go(f) { go(f) }
-fn await(x) { await(x) }

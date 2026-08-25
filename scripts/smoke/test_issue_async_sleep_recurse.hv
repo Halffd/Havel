@@ -1,0 +1,18 @@
+// Regression: modules/async.hv used to re-export with self-recursive wrappers
+// (fn sleep(ms) { sleep(ms) }), so any call through `use async` hit infinite
+// recursion -> "Stack overflow: maximum call depth 16384" or a permanently
+// suspended fiber inside goroutine/hotkey contexts. Wrappers were removed;
+// the single `use {...} from "app/async_mod"` import re-exports everything.
+// Expected: async.sleep completes and returns without stack overflow.
+use async
+use time
+
+start = time.millis()
+sleep(30)
+elapsed = time.millis() - start
+
+if elapsed < 20 {
+	print("FAIL async-sleep-recurse: slept ${elapsed}ms, expected >= 20ms")
+	process.exit(255)
+}
+return elapsed

@@ -85,7 +85,7 @@ fn _loadLibraries() {
   s.xrandr = ffi.open("libXrandr.so.2")
   s.c = ffi.open("libc.so.6")
 
-  if s.xrandr != 0 {
+  if !s.xrandr.isNull() {
     s.XRRGetScreenResourcesCurrent = ffi.sym(s.xrandr, "XRRGetScreenResourcesCurrent")
     s.XRRFreeScreenResources = ffi.sym(s.xrandr, "XRRFreeScreenResources")
     s.XRRGetOutputInfo = ffi.sym(s.xrandr, "XRRGetOutputInfo")
@@ -101,10 +101,10 @@ fn _loadLibraries() {
     s.XRRChangeOutputProperty = ffi.sym(s.xrandr, "XRRChangeOutputProperty")
     s.XRRGetOutputProperty = ffi.sym(s.xrandr, "XRRGetOutputProperty")
     s.XRRQueryOutputProperty = ffi.sym(s.xrandr, "XRRQueryOutputProperty")
-    if s.XRRGetScreenResourcesCurrent != 0 { s.hasXRR = true }
+    if !s.XRRGetScreenResourcesCurrent.isNull() { s.hasXRR = true }
   }
 
-  if s.x11 != 0 {
+  if !s.x11.isNull() {
     s.XOpenDisplay = ffi.sym(s.x11, "XOpenDisplay")
     s.XDefaultScreen = ffi.sym(s.x11, "XDefaultScreen")
     s.XRootWindow = ffi.sym(s.x11, "XRootWindow")
@@ -114,9 +114,9 @@ fn _loadLibraries() {
     s.XSynchronize = ffi.sym(s.x11, "XSynchronize")
   }
 
-  if s.c != 0 {
+  if !s.c.isNull() {
     s.XFree = ffi.sym(s.c, "free")
-    if s.XFree == 0 && s.x11 != 0 {
+    if s.XFree.isNull() && !s.x11.isNull() {
       s.XFree = ffi.sym(s.x11, "XFree")
     }
   }
@@ -125,7 +125,7 @@ fn _loadLibraries() {
 // === Load native gamma ramp builder ===
 fn _loadNativeRampBuilder() {
   s = _S()
-  if s.gammaRampLib == null || ffi.ptr_to_uint(s.gammaRampLib) == 0 {
+  if s.gammaRampLib.isNull() || ffi.ptr_to_uint(s.gammaRampLib).isNull() {
     // Dynamic paths based on common build directories
     cwd = fs.cwd()
     paths = [
@@ -146,23 +146,23 @@ fn _loadNativeRampBuilder() {
     }
     for p in paths {
       s.gammaRampLib = ffi.open(p)
-      if ffi.ptr_to_uint(s.gammaRampLib) != 0 { break }
+      if !ffi.ptr_to_uint(s.gammaRampLib).isNull() { break }
     }
-    if ffi.ptr_to_uint(s.gammaRampLib) == 0 { return false }
+    if ffi.ptr_to_uint(s.gammaRampLib).isNull() { return false }
     s.fillGammaRamp = ffi.sym(s.gammaRampLib, "fill_gamma_ramp")
   }
-  return ffi.ptr_to_uint(s.fillGammaRamp) != 0
+  return !ffi.ptr_to_uint(s.fillGammaRamp).isNull()
 }
 
 // === Display connection management (persistent connection) ===
 fn _ensureDisplay() {
   s = _S()
-  if s.display == 0 {
-    s.display = ffi.call(s.XOpenDisplay, "pointer", ["pointer"], 0)
-    if s.display == 0 { return false }
+  if s.display.isNull() {
+    dpyName = ffi.cstring(":0"); s.display = ffi.call(s.XOpenDisplay, "pointer", ["pointer"], dpyName); ffi.free(dpyName)
+    if s.display.isNull() { return false }
     scr = ffi.call(s.XDefaultScreen, "int32", ["pointer"], s.display)
     s.rootWin = ffi.call(s.XRootWindow, "uint64", ["pointer", "int32"], s.display, scr)
-    if s.rootWin == 0 {
+    if s.rootWin.isNull() {
       ffi.call(s.XCloseDisplay, "int32", ["pointer"], s.display)
       s.display = 0
       return false
@@ -179,7 +179,7 @@ fn _ensureDisplay() {
 fn _releaseDisplay() {
   // Keep display open for performance - only close on module unload
   // s = _S()
-  // if s.display != 0 {
+  // if !s.display.isNull() {
   //   ffi.call(s.XCloseDisplay, "int32", ["pointer"], s.display)
   //   s.display = 0
   //   s.rootWin = 0
@@ -195,7 +195,7 @@ fn _enumMonitors() {
   if !_ensureDisplay() { return }
 
   res = ffi.call(s.XRRGetScreenResourcesCurrent, "pointer", ["pointer", "uint64"], s.display, s.rootWin)
-  if res == 0 { _releaseDisplay(); return }
+  if res.isNull() { _releaseDisplay(); return }
 
   noutput = ffi.get_i32(ffi.ptr_add(res, 32))
   outputsPtr = ffi.get_ptr(ffi.ptr_add(res, 40))
@@ -208,14 +208,14 @@ fn _enumMonitors() {
   while i < noutput {
     outputId = ffi.get_u64(ffi.ptr_add(outputsPtr, i * 8))
     oinfo = ffi.call(s.XRRGetOutputInfo, "pointer", ["pointer", "pointer", "uint64"], s.display, res, outputId)
-    if oinfo != 0 {
+    if !oinfo.isNull() {
       conn = ffi.get_u16(ffi.ptr_add(oinfo, 48))
       crtc = ffi.get_u64(ffi.ptr_add(oinfo, 8))
       namePtr = ffi.get_ptr(ffi.ptr_add(oinfo, 16))
       nameLen = ffi.get_i32(ffi.ptr_add(oinfo, 24))
       monName = ""
-      if namePtr != 0 { monName = ffi.string(namePtr, nameLen) }
-      if conn == 0 && crtc != 0 && monName != "" {
+      if !namePtr.isNull() { monName = ffi.string(namePtr, nameLen) }
+      if conn.isNull() && !crtc.isNull() && monName != "" {
         gammaSize = ffi.call(s.XRRGetCrtcGammaSize, "int32", ["pointer", "uint64"], s.display, crtc)
         if gammaSize <= 0 { gammaSize = GAMMA_RAMP_SIZE }
         s.monitors.push({name: monName, crtc: crtc, output: outputId, primary: outputId == primaryOutput, gammaSize: gammaSize})
@@ -238,17 +238,17 @@ fn _applyGammaRamp(monitorName, brightness, gammaR, gammaG, gammaB, tempK, shado
   mi = s.monitorIndexByName.get(monitorName)
   if mi == null || mi < 0 { return false }
   mon = s.monitors[mi]
-  if mon.crtc == 0 { return false }
+  if mon.crtc.isNull() { return false }
 
   gammaSize = mon.gammaSize
   gamma = ffi.call(s.XRRAllocGamma, "pointer", ["int32"], gammaSize)
-  if gamma == 0 { return false }
+  if gamma.isNull() { return false }
 
   redPtr = ffi.get_ptr(ffi.ptr_add(gamma, 8))
   greenPtr = ffi.get_ptr(ffi.ptr_add(gamma, 16))
   bluePtr = ffi.get_ptr(ffi.ptr_add(gamma, 24))
 
-  if s.fillGammaRamp != 0 {
+  if !s.fillGammaRamp.isNull() {
     ffi.call(s.fillGammaRamp, "void",
       ["pointer", "pointer", "pointer", "int32", "double", "double", "double", "double", "double", "double"],
       redPtr, greenPtr, bluePtr, gammaSize, brightness, gammaR, gammaG, gammaB, tempK, shadowLiftVal)
@@ -312,7 +312,7 @@ fn _applyGammaRamp(monitorName, brightness, gammaR, gammaG, gammaB, tempK, shado
 
 fn _flush() {
   s = _S()
-  if s.display != 0 { ffi.call(s.XFlush, "int32", ["pointer"], s.display) }
+  if !s.display.isNull() { ffi.call(s.XFlush, "int32", ["pointer"], s.display) }
 }
 
 // === Capture original gamma ramp ===
@@ -324,11 +324,11 @@ fn _captureOriginalGamma(monitorName) {
   mi = s.monitorIndexByName.get(monitorName)
   if mi == null || mi < 0 { _releaseDisplay(); return }
   mon = s.monitors[mi]
-  if mon.crtc == 0 { _releaseDisplay(); return }
+  if mon.crtc.isNull() { _releaseDisplay(); return }
 
   gammaSize = mon.gammaSize
   gamma = ffi.call(s.XRRGetCrtcGamma, "pointer", ["pointer", "uint64"], s.display, mon.crtc)
-  if gamma == 0 { _releaseDisplay(); return }
+  if gamma.isNull() { _releaseDisplay(); return }
 
   redPtr = ffi.get_ptr(ffi.ptr_add(gamma, 8))
   greenPtr = ffi.get_ptr(ffi.ptr_add(gamma, 16))
@@ -357,10 +357,10 @@ fn _readCurrentGamma(monitorName) {
   mi = s.monitorIndexByName.get(monitorName)
   if mi == null || mi < 0 { _releaseDisplay(); return {r: 1.0, g: 1.0, b: 1.0} }
   mon = s.monitors[mi]
-  if mon.crtc == 0 { _releaseDisplay(); return {r: 1.0, g: 1.0, b: 1.0} }
+  if mon.crtc.isNull() { _releaseDisplay(); return {r: 1.0, g: 1.0, b: 1.0} }
 
   gamma = ffi.call(s.XRRGetCrtcGamma, "pointer", ["pointer", "uint64"], s.display, mon.crtc)
-  if gamma == 0 { _releaseDisplay(); return {r: 1.0, g: 1.0, b: 1.0} }
+  if gamma.isNull() { _releaseDisplay(); return {r: 1.0, g: 1.0, b: 1.0} }
 
   gammaSize = ffi.get_i32(gamma)
   redPtr = ffi.get_ptr(ffi.ptr_add(gamma, 8))
@@ -386,10 +386,10 @@ fn _getGammaRampBrightness(monitorName) {
   mi = s.monitorIndexByName.get(monitorName)
   if mi == null || mi < 0 { _releaseDisplay(); return -1.0 }
   mon = s.monitors[mi]
-  if mon.crtc == 0 { _releaseDisplay(); return -1.0 }
+  if mon.crtc.isNull() { _releaseDisplay(); return -1.0 }
 
   gamma = ffi.call(s.XRRGetCrtcGamma, "pointer", ["pointer", "uint64"], s.display, mon.crtc)
-  if gamma == 0 { _releaseDisplay(); return -1.0 }
+  if gamma.isNull() { _releaseDisplay(); return -1.0 }
 
   gammaSize = ffi.get_i32(gamma)
   redPtr = ffi.get_ptr(ffi.ptr_add(gamma, 8))
@@ -409,7 +409,7 @@ fn _getGammaRampBrightness(monitorName) {
 // === Xrandr backlight property ===
 fn _getBacklightProp(monitorName) {
   s = _S()
-  if !s.hasXRR || s.brightnessAtom == 0 { return -1.0 }
+  if !s.hasXRR || s.brightnessAtom.isNull() { return -1.0 }
   if !_ensureDisplay() { return -1.0 }
 
   mi = s.monitorIndexByName.get(monitorName)
@@ -429,11 +429,11 @@ fn _getBacklightProp(monitorName) {
     typePtr, fmtPtr, nitemsPtr, afterPtr, dataPtr)
 
   v = -1.0
-  if result == 0 {
+  if result.isNull() {
     fmt = ffi.get_i32(fmtPtr)
     nitems = ffi.get_i32(nitemsPtr)
     data = ffi.get_ptr(dataPtr)
-    if data != 0 && fmt == 32 && nitems >= 1 {
+    if !data.isNull() && fmt == 32 && nitems >= 1 {
       raw = ffi.get_u32(data)
       if nitems >= 2 {
         minVal = ffi.get_u32(data)
@@ -441,7 +441,7 @@ fn _getBacklightProp(monitorName) {
         if maxVal > minVal { v = num(raw) / num(maxVal - minVal) }
       } else { v = num(raw) / 65535.0 }
     }
-    if data != 0 { ffi.call(s.XFree, "void", ["pointer"], data) }
+    if !data.isNull() { ffi.call(s.XFree, "void", ["pointer"], data) }
   }
   ffi.free(typePtr); ffi.free(fmtPtr); ffi.free(nitemsPtr); ffi.free(afterPtr); ffi.free(dataPtr)
   _releaseDisplay()
@@ -450,7 +450,7 @@ fn _getBacklightProp(monitorName) {
 
 fn _setBacklightProp(monitorName, vue) {
   s = _S()
-  if !s.hasXRR || s.brightnessAtom == 0 { return false }
+  if !s.hasXRR || s.brightnessAtom.isNull() { return false }
   if !_ensureDisplay() { return false }
 
   mi = s.monitorIndexByName.get(monitorName)
@@ -589,8 +589,8 @@ fn init() {
   if s.initialized { return }
   _loadLibraries()
   _loadNativeRampBuilder()
-  print("[brightness] init: hasXRR=" + str(s.hasXRR) + " x11=" + str(s.x11 != 0) + " xrandr=" + str(s.xrandr != 0))
-  print("[brightness] init: native ramp=" + str(s.fillGammaRamp != 0))
+  print("[brightness] init: hasXRR=" + str(s.hasXRR) + " x11=" + str(!s.x11.isNull()) + " xrandr=" + str(!s.xrandr.isNull()))
+  print("[brightness] init: native ramp=" + str(!s.fillGammaRamp.isNull()))
   _enumMonitors()
   print("[brightness] init: monitors=" + str(#s.monitors))
   for mon in s.monitors {

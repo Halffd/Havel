@@ -29,7 +29,7 @@ fn _ensureInit() {
             _isX11 = false
             _protocol = "headless"
         } else {
-            _dpy = x11.open(null)
+            _dpy = x11.open(":0")
             if _dpy != 0 {
                 _root = x11.rootWindow(_dpy)
                 _screen = x11.defaultScreen(_dpy)

@@ -64,9 +64,13 @@ fn _checkDpy(dpy) {
 }
 
 fn open(name) {
-    _cs = ffi.cstring(name)
-    _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], _cs)
-    ffi.free(_cs)
+    if name == null {
+        _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], 0)
+    } else {
+        _cs = ffi.cstring(name)
+        _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], _cs)
+        ffi.free(_cs)
+    }
     _dpy
 }
 

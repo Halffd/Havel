@@ -305,6 +305,10 @@ struct CallFrame {
   std::vector<std::string> host_function_names_; // Index -> name mapping
   std::unordered_set<uint32_t> host_function_wants_self_; // Host function indices whose first param is "self"
 utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> HostFuncId Value
+  // Module-import wrapper metadata: wrapper name -> {source module key, field path}.
+  // The wrapper NAME is an ambiguous concatenation ($module_fn_<key>_<field>),
+  // so serializeGlobals must NOT re-parse it; it reads this table instead.
+  std::unordered_map<std::string, std::pair<std::string, std::string>> host_module_wrapper_meta_;
   std::unordered_map<std::string, uint64_t> host_function_gc_roots_; // Name -> pinned GC root ID
   std::unordered_map<std::string, uint64_t> module_cache_gc_roots_; // Module key -> pinned GC root for cached exports
   // Persistent class registry: class name -> class prototype object

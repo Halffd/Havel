@@ -3950,6 +3950,7 @@ Value VM::deepWrapModuleFunctions(
     }
     auto moduleChunk = chunk;
     auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
+    host_module_wrapper_meta_[wrapperName] = {canonicalKey, fieldPath};
     std::string fnCapturedKey = canonicalKey;
     std::string fnCapturedField = fieldPath;
     imported_module_globals_.push_back(moduleGlobals);
@@ -4097,6 +4098,7 @@ Value VM::deepWrapModuleFunctions(
     auto closureGlobals =
         rc->module_globals ? rc->module_globals : moduleGlobals;
     auto wrapperName = "$module_closure_" + canonicalKey + "_" + fieldPath;
+    host_module_wrapper_meta_[wrapperName] = {canonicalKey, fieldPath};
     host_function_gc_roots_[wrapperName] = closureRootId;
     std::string capturedKey = canonicalKey;
     std::string capturedField = fieldPath;
@@ -5016,11 +5018,12 @@ return cachedVal;
   std::vector<ClosureImportRef> closureRefs;
   std::filesystem::path hvcPath = resolved->canonicalPath;
   hvcPath.replace_extension(".hvc");
-// Warm-restore is disabled: restoring serialized globals re-binds closures
-  // across chunk instances and chunk-relative StringValIds then resolve
-  // against the wrong chunk's string table (corrupting string constants
-  // such as '+' -> 'payloadType'). Always run __main__ from the loaded .hvc
-  // chunk instead; that path initializes globals in the correct chunk context.
+  // Warm restore skipped for now: the restore loop calls loadModule() to
+  // re-bind closure imports, which races with concurrent goroutine loads
+  // through modules_loading_ (no mutex). The metadata serializer fix
+  // (host_module_wrapper_meta_) is kept — it ensures future warm-restore
+  // writes correct refs. Cold path + __main__ execution remains the
+  // loading strategy.
   bool hasCachedGlobals = false;
   
   if (hasCachedGlobals && !cachedGlobals.empty()) {
@@ -5047,9 +5050,6 @@ return cachedVal;
       // stale args. A stale GLBS section from an older binary can still
       // contain them, so guard both serialize and restore.
       if (runtimeGlobalsSkipList().count(name)) continue;
-      if (canonicalKey.find("pratt") != std::string::npos && (name == "parse")) {
-        std::cerr << "[DEBUG] pratt cachedGlobals parse type null=" << value.isNull() << " closure=" << value.isClosureId() << "\n";
-      }
       globals[name] = value;
     }
     // Create _G mirror
@@ -5077,22 +5077,21 @@ return cachedVal;
     // Re-bind imported closures from serialized refs
     // Warm loads skip __main__ so imports never re-run; these refs
     // were saved from the cold run's globals and must be restored now.
-    if (canonicalKey.find("pratt") != std::string::npos || canonicalKey.find("/ast.") != std::string::npos) {
-      for (auto &[n, v] : globals) {
-        if (n == "parse" || n == "Program" || n == "ErrorNode" || n == "BlockStatement") {
-        }
-      }
-    }
     for (const auto &ref : closureRefs) {
-      // Try cached module first (avoids recursive load triggering source compile)
+      // Re-bind imported closures by looking up the source module's exports.
+      // Only check the in-memory session cache — never call loadModule() from
+      // here. Cold loads handle circular imports progressively via __main__
+      // execution; the warm restore path runs inside loadModule() itself, so
+      // calling loadModule() for another module that transitively imports back
+      // hits the circular-dependency check and throws.
       Value srcExports;
       if (moduleLoader_.isCached(ref.modulePath)) {
         moduleLoader_.getCached(ref.modulePath, &srcExports);
       }
       if (!srcExports.isObjectId()) {
-        // Try loading from source .hv to re-bind
-        std::string modName = std::filesystem::path(ref.modulePath).stem().string();
-        srcExports = loadModule(modName);
+        ::havel::debug("[Cache] deferred closure import '{}' from '{}' (source not yet loaded)",
+                       ref.functionName, ref.modulePath);
+        continue;
       }
       if (!srcExports.isObjectId()) { continue; }
       auto *srcObj = heap_.object(srcExports.asObjectId());
@@ -5149,10 +5148,6 @@ return cachedVal;
     for (const auto &[name, value] : globals) {
       if (name.empty() || name[0] == '_') continue;
       (*obj)[name] = value;
-    }
-    if (canonicalKey.find("debug.hv") != std::string::npos) {
-      auto *sf = obj->get("setFlag");
-      std::cerr << "[DEBUG] debug warm exports setFlag in-obj=" << (sf != nullptr) << " bits=" << (sf ? sf->rawBits() : 0ULL) << " closure=" << (sf ? sf->isClosureId() : 0) << "\n";
     }
     unpinExternalRoot(exportsRootId);
     Value exports = Value::makeObjectId(exportsRef.id);
@@ -5679,12 +5674,10 @@ current_script_dir_ = prev_script_dir;
     }
   }
   
-// Serialize and append globals to .hvc file for fast loading is DISABLED:
-// warm global restoration re-binds closures across chunk instances and
-// chunk-relative StringValIds then resolve against the wrong chunk's string
-// table (corrupting string constants such as '+' -> 'payloadType'). Compiled
-// bytecode caching still works; only the globals round-trip is dropped.
-#if 0
+// Serialize and append globals to .hvc file for fast warm loading.
+// Serialized strings become real heap strings and imported closures become
+// ClosureImportRefs re-bound against the exporting module's exports at
+// restore time, so no chunk-relative IDs cross the round-trip.
   try {
     std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache, canonicalKey);
     std::filesystem::path hvcPath = resolved->canonicalPath;
@@ -5699,9 +5692,8 @@ current_script_dir_ = prev_script_dir;
       }
     }
   } catch (...) {
-    // Ignore serialization errors
+    // Ignore serialization errors; warm loads fall back to running __main__
   }
-#endif
   
   // Also store in globals so GC scans it as a root
   // (the module cache is not a GC root, so cached objects can be collected)
@@ -5758,7 +5750,7 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
         if (runtimeGlobals.count(name)) continue;
         // Skip host functions (they're re-registered on load)
         if (value.isHostFuncId()) {
-            // But serialize $module_closure_ and $module_fn_ entries (and
+            // Serialize $module_closure_ and $module_fn_ entries (and
             // plain-name imports resolving to such wrappers) as closure refs
             // so warm loads can re-register them. The plain-name case arises
             // when `use { fn } from "m"` binds the wrapper host-fn directly
@@ -5772,18 +5764,16 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 regName = host_function_names_[hostIdx];
             }
             const std::string &probe = regName.empty() ? name : regName;
-            std::string rest;
-            if (probe.rfind(kModuleClosurePrefix, 0) == 0) {
-                rest = probe.substr(kModuleClosurePrefix.size());
-            } else if (probe.rfind(kModuleFnPrefix, 0) == 0) {
-                rest = probe.substr(kModuleFnPrefix.size());
-            } else {
+            // The wrapper name is an ambiguous concatenation (keys/fields may
+            // contain '_'), so never re-parse it: use the metadata recorded at
+            // registration time. Wrappers without metadata are skipped.
+            auto metaIt = host_module_wrapper_meta_.find(probe);
+            if (metaIt == host_module_wrapper_meta_.end()) {
                 continue;
             }
-            size_t lastUnderscore = rest.rfind('_');
-            if (lastUnderscore != std::string::npos && lastUnderscore > 0) {
-                std::string srcKey = rest.substr(0, lastUnderscore);
-                std::string fieldName = rest.substr(lastUnderscore + 1);
+            const auto &srcKey = metaIt->second.first;
+            const auto &fieldName = metaIt->second.second;
+            if (!srcKey.empty() && !fieldName.empty()) {
                 closureImports.emplace_back(name, ClosureImportRef{srcKey, fieldName, name});
             }
             continue;

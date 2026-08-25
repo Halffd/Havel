@@ -82,6 +82,7 @@ private:
     std::unique_ptr<compiler::MediaBridge> mediaBridge_;
     std::unique_ptr<compiler::AudioBridge> audioBridge_;
     std::unique_ptr<compiler::DisplayBridge> displayBridge_;
+    std::unique_ptr<compiler::BrightnessBridge> brightnessBridge_;
     std::unique_ptr<compiler::ConfigBridge> configBridge_;
     std::unique_ptr<compiler::ModeBridge> modeBridge_;
     std::unique_ptr<compiler::TimerBridge> timerBridge_;

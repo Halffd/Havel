@@ -79,20 +79,20 @@ public:
     // === BRIGHTNESS OVERLOADS ===
     bool setBrightness(double brightness);  // All monitors
     bool setBrightness(const string& monitor, double brightness);
-    double getBrightness();
-    double getBrightness(const string& monitor);
+    double getBrightness() const;
+    double getBrightness(const string& monitor) const;
     
     // === RGB GAMMA OVERLOADS ===
     bool setGammaRGB(double red, double green, double blue);  // All monitors
     bool setGammaRGB(const string& monitor, double red, double green, double blue);
-    RGBColor getGammaRGB();
-    RGBColor getGammaRGB(const string& monitor);
+    RGBColor getGammaRGB() const;
+    RGBColor getGammaRGB(const string& monitor) const;
 
     // === KELVIN TEMPERATURE OVERLOADS ===
     bool setTemperature(int kelvin);  // All monitors
     bool setTemperature(const string& monitor, int kelvin);
-    int getTemperature();
-    int getTemperature(const string& monitor);
+    int getTemperature() const;
+    int getTemperature(const string& monitor) const;
     bool decreaseGamma(int amount = DEFAULT_TEMP_AMOUNT);
     bool increaseGamma(int amount = DEFAULT_TEMP_AMOUNT);
     bool decreaseGamma(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
@@ -121,8 +121,8 @@ public:
 
     bool setShadowLift(double lift);  // All monitors, 0.0-1.0
     bool setShadowLift(const string& monitor, double lift);
-    double getShadowLift();
-    double getShadowLift(const string& monitor);
+    double getShadowLift() const;
+    double getShadowLift(const string& monitor) const;
 
     // Optional: combined operations
     bool setBrightnessAndShadowLift(double brightness, double shadowLift);
@@ -143,7 +143,7 @@ public:
     bool switchToNight(const string& monitor);
 
     // === UTILITY ===
-    vector<string> getConnectedMonitors();
+    vector<string> getConnectedMonitors() const;
     bool isDay();  // Based on current time and settings
     string primaryMonitor;
     // Constants
@@ -160,16 +160,14 @@ public:
     
     // Wayland specific members
     #ifdef __WAYLAND__
-    struct wl_display *wl_display = nullptr;
-    struct wl_registry *wl_registry = nullptr;
-    struct zwlr_gamma_control_manager_v1 *gamma_control_manager = nullptr;
-    struct zxdg_output_manager_v1 *xdg_output_manager = nullptr;
-
+    // Connection state lives as file-static globals in BrightnessManager.cpp
+    // so the C registry callbacks can reach it without user-data plumbing.
     // Backend initialization
     void initializeWayland();
+    double getBrightnessWayland(const string& monitor) const;
     #endif
     
-    double getBrightnessGamma(const std::string &monitor);
+    double getBrightnessGamma(const std::string& monitor) const;
     bool setBrightnessGamma(const std::string &monitor, double brightness);
     // Debug logging helpers
     static void debug(const std::string& message) {
@@ -221,7 +219,7 @@ public:
     bool setGammaXrandrRGB(const string& monitor, double red, double green, double blue);
     bool setGammaXrandrRGB(double red, double green, double blue);
     double getGammaXrandr(const string& monitor);
-    RGBColor getGammaXrandrRGB(const string& monitor);
+    RGBColor getGammaXrandrRGB(const string& monitor) const;
     
     bool setBrightnessWayland(const string& monitor, double brightness);
     bool setBrightnessWayland(double brightness);
@@ -246,10 +244,10 @@ public:
     mutex settingsMutex;
     
     // Current state tracking
-    map<string, double> brightness;
-    map<string, int> temperature;
-    vector<string> monitors;
-    map<string, RGBColor> gammaRGB;
+    mutable map<string, double> brightness;
+    mutable map<string, int> temperature;
+    mutable vector<string> monitors;
+    mutable map<string, RGBColor> gammaRGB;
 };
 
 } // namespace havel

@@ -44,6 +44,7 @@ struct WaylandOutput {
   int32_t width = 0;
   int32_t height = 0;
   bool done = false;
+  uint32_t registry_name = 0;
 };
 #endif
 
@@ -165,7 +166,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
         std::min(version, 3u); // v3 gives you geometry + scale
     output.wl_output = static_cast<wl_output *>(wl_registry_bind(
         registry, name, &wl_output_interface, wl_output_version));
-    wayland_outputs.push_back(output);
+    output.registry_name = name;
+    {
+      std::scoped_lock lock(wayland_mutex);
+      wayland_outputs.push_back(std::move(output));
+    }
   } else if (strcmp(interface, zwlr_gamma_control_manager_v1_interface.name) ==
              0) {
     gamma_control_manager =
@@ -186,14 +191,14 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
 static void registry_handle_global_remove(void *data,
                                           struct wl_registry *registry,
                                           uint32_t name) {
-  if (strcmp(interface, wl_output_interface.name) == 0) {
-    WaylandOutput output;
-    output.wl_output = static_cast<wl_output *>(wl_registry_bind(
-        registry, name, &wl_output_interface, std::min(version, 3u)));
-    {
-      std::scoped_lock lock(wayland_mutex);
-      wayland_outputs.push_back(std::move(output));
-    }
+  // Remove the output with matching registry name
+  std::scoped_lock lock(wayland_mutex);
+  auto it = std::find_if(wayland_outputs.begin(), wayland_outputs.end(),
+                         [name](const WaylandOutput &o) {
+                           return o.registry_name == name;
+                         });
+  if (it != wayland_outputs.end()) {
+    wayland_outputs.erase(it);
   }
 }
 
@@ -354,11 +359,11 @@ BrightnessManager::RGBColor BrightnessManager::kelvinToRGB(int kelvin) const {
 
 // === X11 BACKEND IMPLEMENTATION
 // ===
-std::vector<std::string> BrightnessManager::getConnectedMonitors() {
+std::vector<std::string> BrightnessManager::getConnectedMonitors() const {
   // If we already have cached monitors and we're not forcing a refresh, return
   // them
   if (!monitors.empty()) {
-    return monitors;
+    return std::vector<std::string>(monitors);
   }
 
   if (displayMethod == "wayland") {
@@ -497,7 +502,7 @@ bool BrightnessManager::setShadowLift(double lift) {
   return success;
 }
 
-double BrightnessManager::getShadowLift(const string& monitor) {
+double BrightnessManager::getShadowLift(const string& monitor) const {
   // Return the stored shadow lift value, or 0.0 if not set
   auto it = monitorShadowLifts.find(monitor);
   if (it != monitorShadowLifts.end()) {
@@ -509,7 +514,7 @@ double BrightnessManager::getShadowLift(const string& monitor) {
 }
 
 // All monitors version
-double BrightnessManager::getShadowLift() {
+double BrightnessManager::getShadowLift() const {
   if (primaryMonitor.empty()) {
       vector<string> monitors = getConnectedMonitors();
       if (monitors.empty()) {
@@ -520,7 +525,7 @@ double BrightnessManager::getShadowLift() {
   }
   return getShadowLift(primaryMonitor);
 }
-double BrightnessManager::getBrightnessGamma(const std::string &monitor) {
+double BrightnessManager::getBrightnessGamma(const std::string& monitor) const {
   if (!x11_display)
     return 1.0;
 
@@ -881,17 +886,78 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
 
 // === WAYLAND BACKEND IMPLEMENTATION ===
 #ifdef __WAYLAND__
-std::vector<std::string> BrightnessManager::getConnectedMonitorsWayland() {
-  std::vector<std::string> monitors;
-  std::lock_guard<std::mutex> lock(wayland_mutex);
 
-  for (const auto &output : wayland_outputs) {
-    if (!output.name.empty()) {
-      monitors.push_back(output.name);
-    }
+// Gamma control listener for getting gamma_size
+static void gamma_handle_size(void *data,
+                              struct zwlr_gamma_control_v1 *control,
+                              uint32_t size) {
+  *static_cast<uint32_t *>(data) = size;
+}
+
+static const struct zwlr_gamma_control_v1_listener gamma_listener = {
+    .gamma_size = gamma_handle_size,
+};
+
+// Helper to apply a gamma LUT via memfd and the zwlr protocol
+static bool applyGammaLut(struct zwlr_gamma_control_v1 *control,
+                          double rMul, double rExp,
+                          double gMul, double gExp,
+                          double bMul, double bExp) {
+  // Step 1: get gamma_size from compositor
+  uint32_t gamma_size = 0;
+  zwlr_gamma_control_v1_add_listener(control, &gamma_listener, &gamma_size);
+  if (wl_display_roundtrip(wl_display) == -1 || gamma_size == 0) {
+    zwlr_gamma_control_v1_destroy(control);
+    return false;
   }
 
-  return monitors;
+  // Step 2: create memfd with packed LUT (R, G, B each gamma_size uint16)
+  const size_t lut_bytes = static_cast<size_t>(gamma_size) * 3 * sizeof(uint16_t);
+  int fd = memfd_create("havel-gamma", MFD_CLOEXEC);
+  if (fd < 0) {
+    zwlr_gamma_control_v1_destroy(control);
+    return false;
+  }
+  if (ftruncate(fd, static_cast<off_t>(lut_bytes)) != 0) {
+    close(fd);
+    zwlr_gamma_control_v1_destroy(control);
+    return false;
+  }
+
+  // Step 3: write LUT
+  std::vector<uint16_t> lut(gamma_size * 3);
+  for (uint32_t i = 0; i < gamma_size; ++i) {
+    double t = (gamma_size > 1) ? static_cast<double>(i) / (gamma_size - 1)
+                                : 1.0;
+    auto calc = [](double mul, double exp, double t) -> uint16_t {
+      if (exp == 1.0) {
+        return static_cast<uint16_t>(
+            std::clamp(mul * t * 65535.0, 0.0, 65535.0));
+      }
+      double v = std::pow(t, 1.0 / exp) * mul * 65535.0;
+      return static_cast<uint16_t>(std::clamp(v, 0.0, 65535.0));
+    };
+    lut[i] = calc(rMul, rExp, t);                     // R
+    lut[gamma_size + i] = calc(gMul, gExp, t);        // G
+    lut[2 * gamma_size + i] = calc(bMul, bExp, t);    // B
+  }
+
+  if (write(fd, lut.data(), lut_bytes) != static_cast<ssize_t>(lut_bytes)) {
+    close(fd);
+    zwlr_gamma_control_v1_destroy(control);
+    return false;
+  }
+
+  // Step 4: send fd and wait for compositor to consume
+  zwlr_gamma_control_v1_set_gamma(control, fd);
+  close(fd);
+  if (wl_display_roundtrip(wl_display) == -1) {
+    zwlr_gamma_control_v1_destroy(control);
+    return false;
+  }
+
+  zwlr_gamma_control_v1_destroy(control);
+  return true;
 }
 
 bool BrightnessManager::setBrightnessWayland(const std::string &monitor,
@@ -910,22 +976,13 @@ bool BrightnessManager::setBrightnessWayland(const std::string &monitor,
           gamma_control_manager, output.wl_output);
 
       if (gamma_control) {
-        // Create a gamma ramp with the given brightness
-        const uint16_t ramp_size = 256;
-        uint16_t ramp[ramp_size];
-
-        for (int i = 0; i < ramp_size; ++i) {
-          double value = (i * brightness * 65535) / (ramp_size - 1);
-          ramp[i] = static_cast<uint16_t>(std::clamp(value, 0.0, 65535.0));
+        // Brightness = linear ramp scaled by brightness (mul=brightness, exp=1)
+        if (applyGammaLut(gamma_control, brightness, 1.0, brightness, 1.0,
+                          brightness, 1.0)) {
+          // Cache last-set brightness for getter
+          this->brightness[monitor] = brightness;
+          success = true;
         }
-
-        // Apply the gamma ramp
-        zwlr_gamma_control_v1_set_gamma(gamma_control, ramp, ramp, ramp,
-                                        ramp_size);
-        wl_display_roundtrip(wl_display);
-
-        zwlr_gamma_control_v1_destroy(gamma_control);
-        success = true;
       }
 
       if (!monitor.empty())
@@ -955,30 +1012,10 @@ bool BrightnessManager::setGammaWaylandRGB(const std::string &monitor,
           gamma_control_manager, output.wl_output);
 
       if (gamma_control) {
-        const uint16_t ramp_size = 256;
-        uint16_t r_ramp[ramp_size];
-        uint16_t g_ramp[ramp_size];
-        uint16_t b_ramp[ramp_size];
-
-        // Generate gamma ramps for each color channel
-        for (int i = 0; i < ramp_size; ++i) {
-          double value = static_cast<double>(i) / (ramp_size - 1);
-
-          r_ramp[i] = static_cast<uint16_t>(
-              std::clamp(std::pow(value, 1.0 / red) * 65535.0, 0.0, 65535.0));
-          g_ramp[i] = static_cast<uint16_t>(
-              std::clamp(std::pow(value, 1.0 / green) * 65535.0, 0.0, 65535.0));
-          b_ramp[i] = static_cast<uint16_t>(
-              std::clamp(std::pow(value, 1.0 / blue) * 65535.0, 0.0, 65535.0));
+        // Gamma = pow curve per channel (mul=1, exp=gamma)
+        if (applyGammaLut(gamma_control, 1.0, red, 1.0, green, 1.0, blue)) {
+          success = true;
         }
-
-        // Apply the gamma ramps
-        zwlr_gamma_control_v1_set_gamma(gamma_control, r_ramp, g_ramp, b_ramp,
-                                        ramp_size);
-        wl_display_roundtrip(wl_display);
-
-        zwlr_gamma_control_v1_destroy(gamma_control);
-        success = true;
       }
 
       if (!monitor.empty())
@@ -987,6 +1024,15 @@ bool BrightnessManager::setGammaWaylandRGB(const std::string &monitor,
   }
 
   return success;
+}
+
+// Wayland brightness getter - reads cached value (no protocol read capability)
+double BrightnessManager::getBrightnessWayland(const string& monitor) const {
+  auto it = brightness.find(monitor);
+  if (it != brightness.end()) {
+    return it->second;
+  }
+  return 1.0; // Default to full brightness if never set
 }
 #endif
 // === KELVIN TEMPERATURE METHODS ===
@@ -1139,7 +1185,7 @@ bool BrightnessManager::setBrightness(double brightness) {
 }
 
 // === BRIGHTNESS GETTERS ===
-double BrightnessManager::getBrightness() {
+double BrightnessManager::getBrightness() const {
   // Get brightness from primary/first monitor
   auto monitors = getConnectedMonitors();
   if (monitors.empty())
@@ -1147,7 +1193,7 @@ double BrightnessManager::getBrightness() {
   return getBrightness(monitors[0]);
 }
 
-double BrightnessManager::getBrightness(const std::string &monitor) {
+double BrightnessManager::getBrightness(const std::string& monitor) const {
   if (WindowManagerDetector::IsX11()) {
     return getBrightnessGamma(monitor);
   }
@@ -1162,7 +1208,7 @@ double BrightnessManager::getBrightness(const std::string &monitor) {
 }
 
 // === GAMMA GETTERS ===
-BrightnessManager::RGBColor BrightnessManager::getGammaRGB() {
+BrightnessManager::RGBColor BrightnessManager::getGammaRGB() const {
   auto monitors = getConnectedMonitors();
   if (monitors.empty())
     return {1.0, 1.0, 1.0};
@@ -1170,14 +1216,14 @@ BrightnessManager::RGBColor BrightnessManager::getGammaRGB() {
 }
 
 // === TEMPERATURE GETTERS ===
-int BrightnessManager::getTemperature() {
+int BrightnessManager::getTemperature() const {
   auto monitors = getConnectedMonitors();
   if (monitors.empty())
     return 6500;
   return getTemperature(monitors[0]);
 }
 
-int BrightnessManager::getTemperature(const std::string &monitor) {
+int BrightnessManager::getTemperature(const std::string& monitor) const {
   // Get current RGB gamma values and reverse-engineer the temperature
   RGBColor currentGamma = getGammaRGB(monitor);
   int temp = rgbToKelvin(currentGamma);
@@ -1344,8 +1390,7 @@ int BrightnessManager::rgbToKelvin(const RGBColor &rgb) const {
 }
 
 // === GET CURRENT RGB GAMMA VALUES ===
-BrightnessManager::RGBColor
-BrightnessManager::getGammaRGB(const std::string &monitor) {
+BrightnessManager::RGBColor BrightnessManager::getGammaRGB(const std::string& monitor) const {
   if (WindowManagerDetector::IsX11()) {
     return getGammaXrandrRGB(monitor);
   }
@@ -1361,8 +1406,7 @@ BrightnessManager::getGammaRGB(const std::string &monitor) {
   return {1.0, 1.0, 1.0}; // neutral
 }
 
-BrightnessManager::RGBColor
-BrightnessManager::getGammaXrandrRGB(const std::string &monitor) {
+BrightnessManager::RGBColor BrightnessManager::getGammaXrandrRGB(const std::string& monitor) const {
   // Similar to getGammaX11 but returns RGB components separately
   if (!x11_display)
     return {1.0, 1.0, 1.0};
@@ -1457,6 +1501,7 @@ bool BrightnessManager::setBrightnessXrandr(double brightness) {
   return success;
 }
 
+#ifdef __WAYLAND__
 bool BrightnessManager::setBrightnessWayland(double brightness) {
   bool success = true;
   for (const auto &monitor : getConnectedMonitors()) {
@@ -1467,6 +1512,11 @@ bool BrightnessManager::setBrightnessWayland(double brightness) {
   }
   return success;
 }
+#else
+bool BrightnessManager::setBrightnessWayland(double brightness) {
+  return false;
+}
+#endif
 
 bool BrightnessManager::setGammaXrandrRGB(double red, double green,
                                           double blue) {
@@ -1483,6 +1533,7 @@ bool BrightnessManager::setGammaXrandrRGB(double red, double green,
   return success;
 }
 
+#ifdef __WAYLAND__
 bool BrightnessManager::setGammaWaylandRGB(double red, double green,
                                            double blue) {
   bool success = true;
@@ -1494,6 +1545,12 @@ bool BrightnessManager::setGammaWaylandRGB(double red, double green,
   }
   return success;
 }
+#else
+bool BrightnessManager::setGammaWaylandRGB(double red, double green,
+                                           double blue) {
+  return false;
+}
+#endif
 
 // === DAY/NIGHT AUTOMATION ===
 void BrightnessManager::enableDayNightMode(const DayNightSettings &settings) {

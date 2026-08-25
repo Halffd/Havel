@@ -223,6 +223,7 @@ FileManager *HostAPI::GetFileManager() { return fileManager; }
 ProcessManager *HostAPI::GetProcessManager() { return processManager; }
 MapManager *HostAPI::GetMapManager() { return mapManager; }
 compiler::VM *HostAPI::GetVM() { return vm_; }
+BrightnessManager *HostAPI::GetBrightnessManager() { return brightnessManager; }
 
 // Update manager pointers (called after managers are created)
 void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }

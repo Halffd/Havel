@@ -117,6 +117,7 @@ void Modules::initBridges() {
     mediaBridge_ = std::make_unique<compiler::MediaBridge>(ctx_);
     audioBridge_ = std::make_unique<compiler::AudioBridge>(ctx_);
     displayBridge_ = std::make_unique<compiler::DisplayBridge>(ctx_);
+    brightnessBridge_ = std::make_unique<compiler::BrightnessBridge>(ctx_);
     configBridge_ = std::make_unique<compiler::ConfigBridge>(ctx_);
     modeBridge_ = std::make_unique<compiler::ModeBridge>(ctx_);
     timerBridge_ = std::make_unique<compiler::TimerBridge>(ctx_);
@@ -155,6 +156,7 @@ void Modules::installHostFunctions() {
     mediaBridge_->install(options_);
     audioBridge_->install(options_);
     displayBridge_->install(options_);
+    brightnessBridge_->install(options_);
     modeBridge_->install(options_);
     timerBridge_->install(options_);
     appBridge_->install(options_);

@@ -43,6 +43,7 @@ class PixelAutomation;
 class AutomationManager;
 class FileManager;
 class ProcessManager;
+class BrightnessManager;
 
 namespace net {
 class NetworkManager;
@@ -98,6 +99,7 @@ struct HostContext {
   class FileManager *fileManager = nullptr;
   class ProcessManager *processManager = nullptr;
   class net::NetworkManager *networkManager = nullptr;
+  class BrightnessManager *brightnessManager = nullptr;
 
   // Event queue for thread-safe callback dispatch (from OS threads, timers, mode changes, etc)
   class compiler::EventQueue *eventQueue = nullptr;

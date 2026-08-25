@@ -261,10 +261,31 @@ bool WindowManagerDetector::CheckProcess(
 
           if (bytes > 0) {
             buffer[bytes] = '\0';
-            std::string cmd(buffer.data());
-            if (cmd.find(processName) != std::string::npos) {
-              closedir(dir);
-              return true;
+            // Parse null-separated cmdline arguments
+            std::string cmd(buffer.data(), bytes);
+            std::vector<std::string> args;
+            size_t pos = 0;
+            while (pos < cmd.size()) {
+              size_t nextNull = cmd.find('\0', pos);
+              if (nextNull == std::string::npos) {
+                args.push_back(cmd.substr(pos));
+                break;
+              }
+              args.push_back(cmd.substr(pos, nextNull - pos));
+              pos = nextNull + 1;
+            }
+            
+            // Check if processName matches the executable name (first arg) exactly
+            if (!args.empty()) {
+              std::string executable = args[0];
+              // Get just the executable name (basename)
+              size_t lastSlash = executable.find_last_of('/');
+              std::string exeName = (lastSlash == std::string::npos) ? executable : executable.substr(lastSlash + 1);
+              
+              if (exeName == processName) {
+                closedir(dir);
+                return true;
+              }
             }
           }
         }

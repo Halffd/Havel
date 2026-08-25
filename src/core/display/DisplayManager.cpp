@@ -23,7 +23,11 @@ std::vector<DisplayManager::MonitorInfo> DisplayManager::cached_monitors;
 
 void DisplayManager::Initialize() {
   if (!initialized) {
-    display = XOpenDisplay(nullptr);
+    const char* displayName = std::getenv("DISPLAY");
+    if (!displayName || displayName[0] == '\0') {
+      displayName = ":0";
+    }
+    display = XOpenDisplay(displayName);
     if (display) {
       root = DefaultRootWindow(display);
       XSetErrorHandler(X11ErrorHandler);

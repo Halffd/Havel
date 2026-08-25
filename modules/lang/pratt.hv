@@ -4642,6 +4642,9 @@ fn parseAtDecoratorStatement() {
     }
 }
 // ===================================================================
+
+}
+
 // PUBLIC API
 // ===================================================================
 
@@ -4697,6 +4700,9 @@ fn parseProgram(source) {
 fn parse(source) {
   return parseProgram(source)
 }
+
+}
+
 fn parseTokens(tokenList) {
   p = Parser(tokenList)
   body = []
@@ -4726,4 +4732,3 @@ fn parseTokens(tokenList) {
   return {ast: program, errors: p.errors, incomplete: p.incomplete}
 }
 
-{parse: parse, parseProgram: parseProgram, parseTokens: parseTokens}

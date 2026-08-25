@@ -148,6 +148,7 @@ private:
   std::unique_ptr<NetworkBridge> networkBridge_;
   std::unique_ptr<AudioBridge> audioBridge_;
   std::unique_ptr<DisplayBridge> displayBridge_;
+  std::unique_ptr<BrightnessBridge> brightnessBridge_;
   std::unique_ptr<ConfigBridge> configBridge_;
   std::unique_ptr<ModeBridge> modeBridge_;
   std::unique_ptr<TimerBridge> timerBridge_;

@@ -1004,6 +1004,37 @@ private:
 
 
 /**
+ * BrightnessBridge - Brightness and gamma control
+ */
+class BrightnessBridge : public BridgeModule {
+public:
+  explicit BrightnessBridge(const HostContext *ctx) : ctx_(ctx) {}
+  void install(compiler::PipelineOptions &options) override;
+
+private:
+  const HostContext *ctx_;
+  static Value handleGetBrightness(const std::vector<Value> &args,
+                                   const HostContext *ctx);
+  static Value handleSetBrightness(const std::vector<Value> &args,
+                                   const HostContext *ctx);
+  static Value handleGetTemperature(const std::vector<Value> &args,
+                                    const HostContext *ctx);
+  static Value handleSetTemperature(const std::vector<Value> &args,
+                                    const HostContext *ctx);
+  static Value handleGetGamma(const std::vector<Value> &args,
+                              const HostContext *ctx);
+  static Value handleSetGamma(const std::vector<Value> &args,
+                              const HostContext *ctx);
+  static Value handleGetShadowLift(const std::vector<Value> &args,
+                                   const HostContext *ctx);
+  static Value handleSetShadowLift(const std::vector<Value> &args,
+                                   const HostContext *ctx);
+  static Value handleGetMonitors(const std::vector<Value> &args,
+                                 const HostContext *ctx);
+};
+
+
+/**
  * ConfigBridge - Configuration management
  */
 class ConfigBridge : public BridgeModule {

@@ -27,6 +27,7 @@
 
 #include "../host/mouse/MouseService.hpp"
 #include "../host/app/AppService.hpp"
+#include "../host/brightness/BrightnessService.hpp"
 
 namespace havel {
 
@@ -133,6 +134,19 @@ if (registry.shouldRegister("clipboard", includes, excludes)) {
 		}
 	}
 
+	if (registry.shouldRegister("brightness", includes, excludes)) {
+		try {
+			auto brightnessService = std::make_shared<host::BrightnessService>();
+			if (brightnessService->initialize()) {
+				registry.registerService<host::BrightnessService>(brightnessService);
+			} else {
+				debug("initializeServiceRegistry: BrightnessService initialization failed");
+			}
+		} catch (const std::exception& e) {
+			debug("initializeServiceRegistry: BrightnessService failed: {}", e.what());
+		}
+	}
+
 	if (registry.shouldRegister("pixel", includes, excludes)) {
 #ifdef HAVE_QT_EXTENSION
 		try {
@@ -166,6 +180,7 @@ havel::HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI) {
 	ctx.automationManager = hostAPI ? hostAPI->GetAutomationManager() : nullptr;
 	ctx.fileManager = hostAPI ? hostAPI->GetFileManager() : nullptr;
 	ctx.processManager = hostAPI ? hostAPI->GetProcessManager() : nullptr;
+	ctx.brightnessManager = hostAPI ? hostAPI->GetBrightnessManager() : nullptr;
 
 	return ctx;
 }

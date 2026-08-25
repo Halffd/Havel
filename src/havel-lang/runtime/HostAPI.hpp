@@ -115,6 +115,7 @@ public:
   virtual class ProcessManager *GetProcessManager() = 0;
   virtual class MapManager *GetMapManager() = 0;
  virtual class compiler::VM *GetVM() = 0;
+  virtual class BrightnessManager *GetBrightnessManager() = 0;
 
   // Import manager for script imports
   virtual class ImportManager *GetImportManager() = 0;
@@ -200,6 +201,7 @@ public:
   class ProcessManager *GetProcessManager() override;
   class MapManager *GetMapManager() override;
  class compiler::VM *GetVM() override;
+  class BrightnessManager *GetBrightnessManager() override;
   class ImportManager *GetImportManager() override {
     return nullptr;
   } // TODO: implement
@@ -227,6 +229,7 @@ private:
   class ProcessManager *processManager;
   class MapManager *mapManager;
  class compiler::VM *vm_ = nullptr;
+  class BrightnessManager *brightnessManager = nullptr;
 
   // Command line arguments
   std::vector<std::string> commandLineArgs;

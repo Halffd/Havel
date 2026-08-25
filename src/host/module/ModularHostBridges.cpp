@@ -17,6 +17,7 @@
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/io/IO.hpp"
 #include "core/io/EventListener.hpp"
+#include "core/BrightnessManager.hpp"
 
 #ifdef HAVE_QT_EXTENSION
 #include "extensions/gui/clipboard_manager/ClipboardManager.hpp"
@@ -5987,6 +5988,243 @@ DisplayBridge::handleMonitorsResolution(const std::vector<Value> &args,
     auto ref = vm->createRuntimeString(std::move(res));
     vm->pushHostArrayValue(arr, Value::makeStringId(ref.id));
   }
+  return Value::makeArrayId(arr.id);
+}
+
+// ============================================================================
+// BrightnessBridge Implementation
+// ============================================================================
+
+void BrightnessBridge::install(PipelineOptions &options) {
+  options.host_functions["brightness.get"] =
+      [ctx = ctx_](const auto &args) { return handleGetBrightness(args, ctx); };
+  options.host_functions["brightness.set"] =
+      [ctx = ctx_](const auto &args) { return handleSetBrightness(args, ctx); };
+  options.host_functions["brightness.getTemperature"] =
+      [ctx = ctx_](const auto &args) { return handleGetTemperature(args, ctx); };
+  options.host_functions["brightness.setTemperature"] =
+      [ctx = ctx_](const auto &args) { return handleSetTemperature(args, ctx); };
+  options.host_functions["brightness.getGamma"] =
+      [ctx = ctx_](const auto &args) { return handleGetGamma(args, ctx); };
+  options.host_functions["brightness.setGamma"] =
+      [ctx = ctx_](const auto &args) { return handleSetGamma(args, ctx); };
+  options.host_functions["brightness.getShadowLift"] =
+      [ctx = ctx_](const auto &args) { return handleGetShadowLift(args, ctx); };
+  options.host_functions["brightness.setShadowLift"] =
+      [ctx = ctx_](const auto &args) { return handleSetShadowLift(args, ctx); };
+  options.host_functions["brightness.getMonitors"] =
+      [ctx = ctx_](const auto &args) { return handleGetMonitors(args, ctx); };
+}
+
+Value
+BrightnessBridge::handleGetBrightness(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeNull();
+
+  double brightness;
+  if (args.empty()) {
+    brightness = ctx->brightnessManager->getBrightness();
+  } else if (args[0].isString()) {
+    std::string monitor = args[0].asString(vm);
+    brightness = ctx->brightnessManager->getBrightness(monitor);
+  } else {
+    return Value::makeNull();
+  }
+  return Value::makeNumber(brightness);
+}
+
+Value
+BrightnessBridge::handleSetBrightness(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeBool(false);
+  if (args.size() < 1)
+    return Value::makeBool(false);
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeBool(false);
+
+  double brightness = args[0].asNumber(vm);
+  bool success;
+  if (args.size() >= 2 && args[1].isString()) {
+    std::string monitor = args[1].asString(vm);
+    success = ctx->brightnessManager->setBrightness(monitor, brightness);
+  } else {
+    success = ctx->brightnessManager->setBrightness(brightness);
+  }
+  return Value::makeBool(success);
+}
+
+Value
+BrightnessBridge::handleGetTemperature(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeNull();
+
+  int temp;
+  if (args.empty()) {
+    temp = ctx->brightnessManager->getTemperature();
+  } else if (args[0].isString()) {
+    std::string monitor = args[0].asString(vm);
+    temp = ctx->brightnessManager->getTemperature(monitor);
+  } else {
+    return Value::makeNull();
+  }
+  return Value::makeInt(temp);
+}
+
+Value
+BrightnessBridge::handleSetTemperature(const std::vector<Value> &args,
+                                       const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeBool(false);
+  if (args.size() < 1)
+    return Value::makeBool(false);
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeBool(false);
+
+  int kelvin = static_cast<int>(args[0].asNumber(vm));
+  bool success;
+  if (args.size() >= 2 && args[1].isString()) {
+    std::string monitor = args[1].asString(vm);
+    success = ctx->brightnessManager->setTemperature(monitor, kelvin);
+  } else {
+    success = ctx->brightnessManager->setTemperature(kelvin);
+  }
+  return Value::makeBool(success);
+}
+
+Value
+BrightnessBridge::handleGetGamma(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeNull();
+
+  auto rgb = ctx->brightnessManager->getGammaRGB();
+  if (args.size() >= 1 && args[0].isString()) {
+    std::string monitor = args[0].asString(vm);
+    rgb = ctx->brightnessManager->getGammaRGB(monitor);
+  }
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, "red", Value::makeNumber(rgb.red));
+  vm->setHostObjectField(obj, "green", Value::makeNumber(rgb.green));
+  vm->setHostObjectField(obj, "blue", Value::makeNumber(rgb.blue));
+  return Value::makeObjectId(obj.id);
+}
+
+Value
+BrightnessBridge::handleSetGamma(const std::vector<Value> &args,
+                                 const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeBool(false);
+  if (args.size() < 3)
+    return Value::makeBool(false);
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeBool(false);
+
+  double red = args[0].asNumber(vm);
+  double green = args[1].asNumber(vm);
+  double blue = args[2].asNumber(vm);
+  bool success;
+  if (args.size() >= 4 && args[3].isString()) {
+    std::string monitor = args[3].asString(vm);
+    success = ctx->brightnessManager->setGammaRGB(monitor, red, green, blue);
+  } else {
+    success = ctx->brightnessManager->setGammaRGB(red, green, blue);
+  }
+  return Value::makeBool(success);
+}
+
+Value
+BrightnessBridge::handleGetShadowLift(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeNull();
+
+  double lift;
+  if (args.empty()) {
+    lift = ctx->brightnessManager->getShadowLift();
+  } else if (args[0].isString()) {
+    std::string monitor = args[0].asString(vm);
+    lift = ctx->brightnessManager->getShadowLift(monitor);
+  } else {
+    return Value::makeNull();
+  }
+  return Value::makeNumber(lift);
+}
+
+Value
+BrightnessBridge::handleSetShadowLift(const std::vector<Value> &args,
+                                      const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeBool(false);
+  if (args.size() < 1)
+    return Value::makeBool(false);
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeBool(false);
+
+  double lift = args[0].asNumber(vm);
+  bool success;
+  if (args.size() >= 2 && args[1].isString()) {
+    std::string monitor = args[1].asString(vm);
+    success = ctx->brightnessManager->setShadowLift(monitor, lift);
+  } else {
+    success = ctx->brightnessManager->setShadowLift(lift);
+  }
+  return Value::makeBool(success);
+}
+
+Value
+BrightnessBridge::handleGetMonitors(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeNull();
+
+  auto monitors = ctx->brightnessManager->getConnectedMonitors();
+  auto arr = vm->createHostArray();
+  auto arrGuard = vm->makeRoot(Value::makeArrayId(arr.id));
+
+  for (const auto &name : monitors) {
+    auto obj = vm->createHostObject();
+    auto nameRef = vm->createRuntimeString(name);
+    vm->setHostObjectField(obj, "name", Value::makeStringId(nameRef.id));
+    vm->setHostObjectField(obj, "brightness",
+                           Value::makeNumber(ctx->brightnessManager->getBrightness(name)));
+    vm->setHostObjectField(obj, "temperature",
+                           Value::makeInt(ctx->brightnessManager->getTemperature(name)));
+    auto rgb = ctx->brightnessManager->getGammaRGB(name);
+    vm->setHostObjectField(obj, "gammaRed", Value::makeNumber(rgb.red));
+    vm->setHostObjectField(obj, "gammaGreen", Value::makeNumber(rgb.green));
+    vm->setHostObjectField(obj, "gammaBlue", Value::makeNumber(rgb.blue));
+    vm->setHostObjectField(obj, "shadowLift",
+                           Value::makeNumber(ctx->brightnessManager->getShadowLift(name)));
+    vm->pushHostArrayValue(arr, Value::makeObjectId(obj.id));
+  }
+
   return Value::makeArrayId(arr.id);
 }
 

@@ -130,17 +130,75 @@ public:
 
     // Stats
     size_t GetDeviceCount() const override { return devices_.size(); }
-    size_t GetGrabbedDeviceCount() const override { return grabbedFds_.size(); }
+    size_t GetGrabbedDeviceCount() const override {
+        std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
+        size_t count = 0;
+        for (const auto &dev : devices_) {
+            if (dev.grab && dev.grab->isGrabbed()) count++;
+        }
+        return count;
+    }
 
 private:
+    // RAII wrapper for EVIOCGRAB - guarantees release on all exit paths
+    // (including exceptions). Kernel also releases grab on FD close,
+    // so the critical rule is: don't leak the FD into detached threads.
+    class EvdevGrab {
+    public:
+        explicit EvdevGrab(int fd) : fd_(fd), grabbed_(false) {
+            if (fd_ >= 0 && ioctl(fd_, EVIOCGRAB, 1) == 0) {
+                grabbed_ = true;
+            }
+        }
+
+        ~EvdevGrab() {
+            if (grabbed_) {
+                ioctl(fd_, EVIOCGRAB, 0);
+            }
+        }
+
+        EvdevGrab(const EvdevGrab&) = delete;
+        EvdevGrab& operator=(const EvdevGrab&) = delete;
+
+        EvdevGrab(EvdevGrab&& other) noexcept
+            : fd_(other.fd_), grabbed_(other.grabbed_) {
+            other.fd_ = -1;
+            other.grabbed_ = false;
+        }
+
+        EvdevGrab& operator=(EvdevGrab&& other) noexcept {
+            if (this != &other) {
+                if (grabbed_) ioctl(fd_, EVIOCGRAB, 0);
+                fd_ = other.fd_;
+                grabbed_ = other.grabbed_;
+                other.fd_ = -1;
+                other.grabbed_ = false;
+            }
+            return *this;
+        }
+
+        bool isGrabbed() const { return grabbed_; }
+        int fd() const { return fd_; }
+
+    private:
+        int fd_;
+        bool grabbed_;
+    };
+
     struct Device {
         std::string path;
         std::string name;
         int fd = -1;
-        bool grabbed = false;
+        std::unique_ptr<EvdevGrab> grab;  // RAII grab state
         uint32_t capabilities = 0;
         int32_t pending_wheel_hi_res = 0;
         int32_t pending_hwheel_hi_res = 0;
+
+        Device() = default;
+        Device(Device&&) = default;
+        Device& operator=(Device&&) = default;
+        Device(const Device&) = delete;
+        Device& operator=(const Device&) = delete;
     };
 
     enum Capability : uint32_t {
@@ -357,10 +415,9 @@ void EvdevAdapter::CloseDevice(const std::string &path) {
     auto it = std::find_if(devices_.begin(), devices_.end(),
                            [&](const Device &d) { return d.path == path; });
     if (it != devices_.end()) {
-        if (it->grabbed) {
-            ioctl(it->fd, EVIOCGRAB, 0);
-            grabbedFds_.erase(it->fd);
-        }
+        // RAII grab destructor releases EVIOCGRAB automatically
+        it->grab.reset();
+        grabbedFds_.erase(it->fd);
         if (it->fd >= 0) close(it->fd);
         devices_.erase(it);
         rebuildSignalSafeFds();
@@ -373,17 +430,18 @@ bool EvdevAdapter::GrabDevice(const std::string &path) {
         [&](const Device &d) { return d.path == path; });
     if (it == devices_.end() || it->fd < 0) return false;
 
-    if (ioctl(it->fd, EVIOCGRAB, 1) < 0) {
+    it->grab = std::make_unique<EvdevGrab>(it->fd);
+    if (!it->grab->isGrabbed()) {
         error("EvdevAdapter: Failed to grab {}: {}", path, strerror(errno));
+        it->grab.reset();
         return false;
     }
 
-        it->grabbed = true;
-        grabbedFds_.insert(it->fd);
-        if (signalSafeGrabbedCount_.load(std::memory_order_relaxed) < MAX_GRABBED_FDS) {
-            signalSafeGrabbedFds_[signalSafeGrabbedCount_.load(std::memory_order_relaxed)] = it->fd;
-            signalSafeGrabbedCount_.store(signalSafeGrabbedCount_.load(std::memory_order_relaxed) + 1, std::memory_order_release);
-        }
+    grabbedFds_.insert(it->fd);
+    if (signalSafeGrabbedCount_.load(std::memory_order_relaxed) < MAX_GRABBED_FDS) {
+        signalSafeGrabbedFds_[signalSafeGrabbedCount_.load(std::memory_order_relaxed)] = it->fd;
+        signalSafeGrabbedCount_.store(signalSafeGrabbedCount_.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+    }
 
     grabEnabled_ = true;
 
@@ -398,9 +456,8 @@ void EvdevAdapter::UngrabDevice(const std::string &path) {
     std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     auto it = std::find_if(devices_.begin(), devices_.end(),
                            [&](const Device &d) { return d.path == path; });
-    if (it != devices_.end() && it->grabbed) {
-        ioctl(it->fd, EVIOCGRAB, 0);
-        it->grabbed = false;
+    if (it != devices_.end() && it->grab && it->grab->isGrabbed()) {
+        it->grab.reset();  // RAII destructor releases grab
         grabbedFds_.erase(it->fd);
         rebuildSignalSafeFds();
     }
@@ -409,9 +466,8 @@ void EvdevAdapter::UngrabDevice(const std::string &path) {
 void EvdevAdapter::UngrabAllDevices() {
     std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
     for (auto &dev : devices_) {
-        if (dev.grabbed && dev.fd >= 0) {
-            ioctl(dev.fd, EVIOCGRAB, 0);
-            dev.grabbed = false;
+        if (dev.grab && dev.grab->isGrabbed()) {
+            dev.grab.reset();  // RAII destructor releases grab
         }
     }
     grabbedFds_.clear();
@@ -420,9 +476,9 @@ void EvdevAdapter::UngrabAllDevices() {
 
 void EvdevAdapter::rebuildSignalSafeFds() {
     size_t idx = 0;
-    for (auto fd : grabbedFds_) {
-        if (idx < MAX_GRABBED_FDS) {
-            signalSafeGrabbedFds_[idx] = fd;
+    for (const auto &dev : devices_) {
+        if (dev.grab && dev.grab->isGrabbed() && idx < MAX_GRABBED_FDS) {
+            signalSafeGrabbedFds_[idx] = dev.fd;
             idx++;
         }
     }
@@ -482,10 +538,18 @@ void EvdevAdapter::OnFdsReady(const std::vector<std::pair<int, short>> &ready) {
         int idx = findDev(fd);
         if (idx < 0) continue;
 
+        // Copy only fields needed for event processing (not grab state)
         Device devCopy;
         {
             std::lock_guard<std::recursive_mutex> lock(devicesMutex_);
-            devCopy = devices_[static_cast<size_t>(idx)];
+            const Device &src = devices_[static_cast<size_t>(idx)];
+            devCopy.path = src.path;
+            devCopy.name = src.name;
+            devCopy.fd = src.fd;
+            devCopy.capabilities = src.capabilities;
+            devCopy.pending_wheel_hi_res = src.pending_wheel_hi_res;
+            devCopy.pending_hwheel_hi_res = src.pending_hwheel_hi_res;
+            // Note: grab state is NOT copied - it's tied to the original device
             if (devCopy.fd < 0) continue;
         }
 
@@ -538,10 +602,11 @@ void EvdevAdapter::RecheckDevices() {
                 dev.fd = fd;
                 // Re-grab if grab was enabled
                 if (grabEnabled_) {
-                    if (ioctl(fd, EVIOCGRAB, 1) < 0) {
+                    dev.grab = std::make_unique<EvdevGrab>(fd);
+                    if (!dev.grab->isGrabbed()) {
                         error("EvdevAdapter: Failed to re-grab {}: {}", dev.path, strerror(errno));
+                        dev.grab.reset();
                     } else {
-                        dev.grabbed = true;
                         grabbedFds_.insert(fd);
                         if (signalSafeGrabbedCount_.load(std::memory_order_relaxed) < MAX_GRABBED_FDS) {
                             signalSafeGrabbedFds_[signalSafeGrabbedCount_.load(std::memory_order_relaxed)] = fd;

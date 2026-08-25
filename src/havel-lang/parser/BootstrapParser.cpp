@@ -214,18 +214,90 @@ void Parser::pushDelimiter(TokenType type) {
 }
 
 void Parser::popDelimiter(TokenType expected) {
+  // Check for delimiter mismatch before popping
+  if (!delimiterStack_.empty() && delimiterStack_.back().type != expected) {
+    auto unclosed = delimiterStack_.back();
+    std::string expectedStr, foundStr;
+    switch (expected) {
+      case TokenType::CloseParen: expectedStr = "')'"; break;
+      case TokenType::CloseBracket: expectedStr = "']'"; break;
+      case TokenType::CloseBrace: expectedStr = "'}'"; break;
+      default: expectedStr = "closing delimiter";
+    }
+    switch (at().type) {
+      case TokenType::CloseParen: foundStr = "')'"; break;
+      case TokenType::CloseBracket: foundStr = "']'"; break;
+      case TokenType::CloseBrace: foundStr = "'}'"; break;
+      default: foundStr = "'" + at().value + "'";
+    }
+    std::string openStr;
+    switch (unclosed.type) {
+      case TokenType::OpenParen: openStr = "'('"; break;
+      case TokenType::OpenBracket: openStr = "'['"; break;
+      case TokenType::OpenBrace: openStr = "'{'"; break;
+      default: openStr = "delimiter";
+    }
+    errorAt(at(),
+      "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+      " (opened at line " + std::to_string(unclosed.line) + ", col " + std::to_string(unclosed.column) + "), but found " + foundStr);
+    // Pop the mismatched delimiter so we don't get cascading errors
+    delimiterStack_.pop_back();
+    return;
+  }
   if (!delimiterStack_.empty() && delimiterStack_.back().type == expected) {
     delimiterStack_.pop_back();
   }
   // If mismatch, don't pop - let the error be caught elsewhere
 }
 
-std::optional<Parser::DelimiterInfo> Parser::getUnclosedDelimiter() const {
+
+// Check for mismatched closing delimiter and report a clear error
+// Returns true if a mismatch was found and reported
+bool Parser::checkMismatchedClosingDelimiter() {
   if (!delimiterStack_.empty()) {
-    return delimiterStack_.back();
+    auto unclosed = delimiterStack_.back();
+    // // havel::TokenType expectedClose;
+    switch (unclosed.type) {
+      case TokenType::OpenParen: return false; // ) is handled by the caller
+      case TokenType::OpenBracket: break;
+      case TokenType::OpenBrace: break;
+      default: return false;
+    }
+    
+    // Check if current token is a closing delimiter that doesn't match
+    havel::TokenType currentType = at().type;
+    if ((unclosed.type == TokenType::OpenBracket && currentType == TokenType::CloseBrace) ||
+        (unclosed.type == TokenType::OpenBrace && currentType == TokenType::CloseBracket) ||
+        (unclosed.type == TokenType::OpenParen && (currentType == TokenType::CloseBracket || currentType == TokenType::CloseBrace))) {
+      
+      auto u = delimiterStack_.back();
+      std::string expectedStr, foundStr, openStr;
+      
+      // Determine expected and found strings
+      switch (unclosed.type) {
+        case TokenType::OpenParen: openStr = "'('"; expectedStr = "')'"; break;
+        case TokenType::OpenBracket: openStr = "'['"; expectedStr = "']'"; break;
+        case TokenType::OpenBrace: openStr = "'{'"; expectedStr = "'}'"; break;
+        default: openStr = "delimiter"; expectedStr = "closing delimiter";
+      }
+      
+      switch (at().type) {
+        case TokenType::CloseParen: foundStr = "')'"; break;
+        case TokenType::CloseBracket: foundStr = "']'"; break;
+        case TokenType::CloseBrace: foundStr = "'}'"; break;
+        default: foundStr = "'" + at().value + "'";
+      }
+      
+      errorAt(at(),
+        "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+        " (opened at line " + std::to_string(unclosed.line) + ", col " + std::to_string(unclosed.column) + "), but found " + foundStr);
+      return true;
+    }
+    return false;
   }
-  return std::nullopt;
+  return false;
 }
+
 
 [[noreturn]] void Parser::fail(const std::string &message) {
   failAt(at(), message);
@@ -1506,10 +1578,78 @@ case TokenType::Timeout:
       return inner;
     }
 
+        case TokenType::CloseParen: {
+            if (auto unclosed = getUnclosedDelimiter()) {
+              auto u = unclosed.value();
+              std::string openStr;
+              switch (u.type) {
+                case TokenType::OpenParen: openStr = "'('"; break;
+                case TokenType::OpenBracket: openStr = "'['"; break;
+                case TokenType::OpenBrace: openStr = "'{'"; break;
+                default: openStr = "delimiter";
+              }
+              errorAt(token, "Mismatched delimiter: expected ')' to close " + openStr +
+                " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
+            } else {
+              errorAt(token, "Unexpected ')' with no matching '('");
+            }
+            return nullptr;
+          }
+
+        case TokenType::CloseBracket: {
+            if (auto unclosed = getUnclosedDelimiter()) {
+              auto u = unclosed.value();
+              std::string openStr;
+              switch (u.type) {
+                case TokenType::OpenParen: openStr = "'('"; break;
+                case TokenType::OpenBracket: openStr = "'['"; break;
+                case TokenType::OpenBrace: openStr = "'{'"; break;
+                default: openStr = "delimiter";
+              }
+              // Check if the closing delimiter matches the opening delimiter
+              if (u.type != TokenType::OpenBracket) {
+                  std::string expectedStr = (u.type == TokenType::OpenParen) ? "')'" : "'}'";
+                  errorAt(token, "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+                    " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + "), but found ']'");
+                } else {
+                    errorAt(token, "Mismatched delimiter: expected ']' to close " + openStr +
+                      " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
+                }
+            } else {
+              errorAt(token, "Unexpected ']' with no matching '['");
+            }
+            return nullptr;
+          }
+
+        case TokenType::CloseBrace: {
+            if (auto unclosed = getUnclosedDelimiter()) {
+              auto u = unclosed.value();
+              std::string openStr;
+              switch (u.type) {
+                case TokenType::OpenParen: openStr = "'('"; break;
+                case TokenType::OpenBracket: openStr = "'['"; break;
+                case TokenType::OpenBrace: openStr = "'{'"; break;
+                default: openStr = "delimiter";
+              }
+              // Check if the closing delimiter matches the opening delimiter
+              if (u.type != TokenType::OpenBrace) {
+                  std::string expectedStr = (u.type == TokenType::OpenParen) ? "')'" : "']'";
+                  errorAt(token, "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+                    " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + "), but found '}'");
+                } else {
+                    errorAt(token, "Mismatched delimiter: expected '}' to close " + openStr +
+                      " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
+                }
+            } else {
+              errorAt(token, "Unexpected '}' with no matching '{'");
+            }
+            return nullptr;
+          }
+
         default: {
             errorAt(token, "Unexpected token in expression: " + token.value);
             return nullptr;
-        }
+          }
   }
 }
 
@@ -1911,7 +2051,35 @@ case TokenType::Tilde: {
             while (at().type == TokenType::NewLine) { advance(); }
         }
 
-        if (at().type != TokenType::CloseParen) {
+        // Check for mismatched closing delimiter
+        if (at().type == TokenType::CloseBracket || at().type == TokenType::CloseBrace) {
+          if (auto unclosed = getUnclosedDelimiter()) {
+            auto u = unclosed.value();
+            std::string openStr;
+            switch (u.type) {
+              case TokenType::OpenParen: openStr = "'('"; break;
+              case TokenType::OpenBracket: openStr = "'['"; break;
+              case TokenType::OpenBrace: openStr = "'{'"; break;
+              default: openStr = "delimiter";
+            }
+            std::string expectedStr, foundStr;
+            if (at().type == TokenType::CloseBracket) {
+              expectedStr = "')'";
+              foundStr = "']'";
+            } else if (at().type == TokenType::CloseBrace) {
+              expectedStr = "')'";
+              foundStr = "'}'";
+            } else {
+              expectedStr = "')'";
+              foundStr = "'" + at().value + "'";
+            }
+            errorAt(at(),
+              "Mismatched delimiter: expected " + expectedStr + " to close " + openStr +
+              " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + "), but found " + foundStr);
+          } else {
+            errorAt(at(), "Expected ')' after arguments, but found " + std::string(1, static_cast<char>(at().type)) + " (ASCII " + std::to_string(static_cast<int>(at().type)) + ")");
+          }
+        } else if (at().type != TokenType::CloseParen) {
             failAt(at(), "Expected ')' after arguments");
         }
         advance(); // consume ')'
@@ -11405,4 +11573,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDSLSleep() {
   return block;
 }
 
+std::optional<Parser::DelimiterInfo> Parser::getUnclosedDelimiter() const {
+  if (!delimiterStack_.empty()) {
+    return delimiterStack_.back();
+  }
+  return std::nullopt;
+}
 } // namespace havel::parser
+
+
+

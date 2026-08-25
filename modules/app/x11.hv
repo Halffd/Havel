@@ -14,7 +14,6 @@ if _xlib == 0 { throw "x11: failed to load libX11" }
 
 _XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
 _XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
-_XDefaultRootWindow = ffi.sym(_xlib, "XDefaultRootWindow")
 _XInternAtom = ffi.sym(_xlib, "XInternAtom")
 _XGetAtomName = ffi.sym(_xlib, "XGetAtomName")
 _XGetWindowProperty = ffi.sym(_xlib, "XGetWindowProperty")
@@ -24,6 +23,12 @@ _XMoveWindow = ffi.sym(_xlib, "XMoveWindow")
 _XResizeWindow = ffi.sym(_xlib, "XResizeWindow")
 _XGetGeometry = ffi.sym(_xlib, "XGetGeometry")
 _XGetWindowAttributes = ffi.sym(_xlib, "XGetWindowAttributes")
+_XRootWindow = ffi.sym(_xlib, "XRootWindow")
+_XDefaultScreen = ffi.sym(_xlib, "XDefaultScreen")
+_XDefaultRootWindow = ffi.sym(_xlib, "XDefaultRootWindow")
+_XSync = ffi.sym(_xlib, "XSync")
+_XFlush = ffi.sym(_xlib, "XFlush")
+_XScreenNumberOfScreen = ffi.sym(_xlib, "XScreenNumberOfScreen")
 _XTranslateCoordinates = ffi.sym(_xlib, "XTranslateCoordinates")
 _XQueryTree = ffi.sym(_xlib, "XQueryTree")
 _XGetInputFocus = ffi.sym(_xlib, "XGetInputFocus")
@@ -64,9 +69,13 @@ fn _checkDpy(dpy) {
 }
 
 fn open(name) {
-    _cs = ffi.cstring(name)
-    _dpy = ffi.call(_XOpenDisplay, "pointer", ["pointer"], _cs)
-    ffi.free(_cs)
+    if name == null {
+        _dpy = ffi.call(_XOpenDisplay, "uint64", ["pointer"], 0)
+    } else {
+        _cs = ffi.cstring(name)
+        _dpy = ffi.call(_XOpenDisplay, "uint64", ["pointer"], _cs)
+        ffi.free(_cs)
+    }
     _dpy
 }
 
@@ -77,7 +86,8 @@ fn close(dpy) {
 
 fn rootWindow(dpy) {
     _checkDpy(dpy)
-    ffi.call(_XDefaultRootWindow, "uint64", ["pointer"], dpy)
+    scr = ffi.call(_XDefaultScreen, "int32", ["pointer"], dpy)
+    ffi.call(_XRootWindow, "uint64", ["pointer", "int32"], dpy, scr)
 }
 
 fn internAtom(dpy, name, onlyIfExists) {

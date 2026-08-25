@@ -182,6 +182,7 @@ private:
   void pushDelimiter(TokenType type);
   void popDelimiter(TokenType expected);
   std::optional<DelimiterInfo> getUnclosedDelimiter() const;
+  bool checkMismatchedClosingDelimiter();
 
   // Safety checks
   void checkTokenLimit();

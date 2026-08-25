@@ -25,11 +25,18 @@ fn _ensureInit() {
         // Check if X11 socket exists to avoid blocking on XOpenDisplay
         _display_num = displayNum()
         _socket_path = "/tmp/.X11-unix/X" + _display_num
+        print("[display] socket_path: " + _socket_path + " exists: " + str(fs.exists(_socket_path)))
         if !fs.exists(_socket_path) {
             _isX11 = false
             _protocol = "headless"
         } else {
-            _dpy = x11.open(null)
+            _display_name = shell.getenv("DISPLAY")
+            if _display_name == null || _display_name == "" {
+                _display_name = ":0"
+            }
+            print("[display] opening: " + _display_name)
+            _dpy = x11.open(_display_name)
+            print("[display] opened: " + str(_dpy))
             if _dpy != 0 {
                 _root = x11.rootWindow(_dpy)
                 _screen = x11.defaultScreen(_dpy)
@@ -37,6 +44,8 @@ fn _ensureInit() {
                 sys.registerExitCleanup(fn() {
                     close()
                 })
+            } else {
+                print("[display] XOpenDisplay failed")
             }
         }
     }
@@ -78,7 +87,21 @@ fn protocol() { _protocol }
 // ============================================================
 
 fn open() {
+    print("[display] open() called")
     _ensureInit()
+    print("[display] after _ensureInit: _dpy=" + str(_dpy) + " _initialized=" + str(_initialized) + " _isX11=" + str(_isX11))
+    if _dpy == 0 {
+        _display_name = shell.getenv("DISPLAY")
+        if _display_name == null || _display_name == "" {
+            _display_name = ":0"
+        }
+        print("[display] calling x11.open with: " + _display_name)
+        _dpy = x11.open(_display_name)
+        print("[display] x11.open returned: " + str(_dpy))
+        if _dpy != 0 {
+            _root = x11.rootWindow(_dpy)
+        }
+    }
     _dpy
 }
 
@@ -91,6 +114,11 @@ fn close() {
     }
 }
 
+fn rootWindow() {
+    _ensureInit()
+    _root
+}
+
 // Note: Exit cleanup removed - OS will clean up X11 connection on process exit
 
 fn displayNum() {
@@ -101,7 +129,7 @@ fn displayNum() {
         if _colon == null { 0 }
         else {
             _dot = _d.find(".")
-            if _dot == null { 0 }
+            if _dot == null { int(_d[_colon + 1:]) }
             else { int(_d[_colon + 1:_dot]) }
         }
     }

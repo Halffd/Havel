@@ -299,6 +299,11 @@ struct CallFrame {
       open_upvalues;
     std::unordered_map<std::string, Value> globals;
     mutable std::shared_mutex globals_mutex_; // Thread-safe access to globals
+    // Thread-safe module loading: protects modules_loading_ and coordinates
+    // concurrent loads of the same module (goroutine + main fiber).
+    std::mutex modules_loading_mutex_;
+    std::condition_variable modules_loading_cv_;
+    std::unordered_set<std::string> modules_loading_; // Circular dependency detection
     std::unordered_set<std::string> immutable_globals_; // val-declared globals
     std::unordered_set<uint32_t> immutable_locals_; // val-declared local indices (per-frame)
   utils::RobinHoodHashMap<std::string, BytecodeHostFunction> host_functions;
@@ -337,7 +342,6 @@ utils::RobinHoodHashMap<std::string, Value> host_function_globals_; // Name -> H
 
     // Module system: delegate path resolution + caching to canonical ModuleLoader
     // Circular dependency detection still in VM
-    std::unordered_set<std::string> modules_loading_; // Circular dependency detection
     std::string current_script_dir_; // Directory of the currently executing script (for relative imports)
  // Keep module BytecodeChunks alive so exported closures can reference them
  std::unordered_map<std::string, std::shared_ptr<BytecodeChunk>> module_chunks_;
@@ -1382,6 +1386,13 @@ bool isLazyModuleLoaded(const std::string &name) const;
     ModuleLoader& moduleLoader() { return moduleLoader_; }
     void setPluginLoader(havel::Loader *loader) { pluginLoader_ = loader; }
     havel::Loader *pluginLoader() const { return pluginLoader_; }
+
+    // Thread-safe module loading: check if module is currently loading,
+    // wait if another goroutine is loading it, or register current load.
+    // Returns true if the module was found in cache after waiting.
+    bool enterModuleLoading(const std::string& canonicalKey);
+    // Erase from modules_loading_ and notify waiters.
+    void moduleLoadDone(const std::string& canonicalKey);
 
  // Get the current bytecode chunk (for execution contexts)
   const BytecodeChunk *getCurrentChunk() const { return current_chunk; }

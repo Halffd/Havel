@@ -1241,6 +1241,20 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunk(std::span<const u
 }
 
 // mmap-based deserialization for zero-copy bytecode loading
+// Returns the effective chunk data size, excluding a trailing
+// [globals payload][GLBS][globals_size:u32] section appended by
+// VM::writeGlobalsToHvc. Files without the trailer parse unchanged.
+static size_t chunkDataSizeExcludingGlobalsTrailer(const uint8_t* data, size_t size) {
+  if (size < 8) return size;
+  const uint8_t* tail = data + size - 8;
+  if (std::memcmp(tail, "GLBS", 4) != 0) return size;
+  uint32_t gsize = 0;
+  std::memcpy(&gsize, tail + 4, sizeof(gsize));
+  uint64_t total = static_cast<uint64_t>(gsize) + 8;
+  if (total > size) return size; // corrupt trailer — fall back to full parse
+  return size - static_cast<size_t>(total);
+}
+
 std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::string& filePath) {
   int fd = open(filePath.c_str(), O_RDONLY);
   if (fd < 0) {
@@ -1269,9 +1283,11 @@ std::optional<BytecodeChunk> ValueSerializer::deserializeChunkMmap(const std::st
     return std::nullopt;
   }
 
-  // Create span from mapped memory
+  // Create span from mapped memory, excluding any trailing GLBS globals
+  // section appended by VM::writeGlobalsToHvc
   const uint8_t* data = static_cast<const uint8_t*>(mapped);
-  std::span<const uint8_t> span(data, fileSize);
+  size_t effSize = chunkDataSizeExcludingGlobalsTrailer(data, fileSize);
+  std::span<const uint8_t> span(data, effSize);
 
   // Use existing deserializeChunk logic
   auto result = deserializeChunk(span);
@@ -1297,7 +1313,8 @@ std::optional<BytecodeChunk> ValueSerializer::loadChunk(const std::string& fileP
     std::ifstream file(filePath, std::ios::binary);
     if (!file) return std::nullopt;
     std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    return deserializeChunk(std::span<const uint8_t>(data.data(), data.size()));
+    size_t effSize = chunkDataSizeExcludingGlobalsTrailer(data.data(), data.size());
+    return deserializeChunk(std::span<const uint8_t>(data.data(), effSize));
   }
 }
 

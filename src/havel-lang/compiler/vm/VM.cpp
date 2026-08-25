@@ -3950,6 +3950,7 @@ Value VM::deepWrapModuleFunctions(
     }
     auto moduleChunk = chunk;
     auto wrapperName = "$module_fn_" + canonicalKey + "_" + fieldPath;
+    host_module_wrapper_meta_[wrapperName] = {canonicalKey, fieldPath};
     std::string fnCapturedKey = canonicalKey;
     std::string fnCapturedField = fieldPath;
     imported_module_globals_.push_back(moduleGlobals);
@@ -4097,6 +4098,7 @@ Value VM::deepWrapModuleFunctions(
     auto closureGlobals =
         rc->module_globals ? rc->module_globals : moduleGlobals;
     auto wrapperName = "$module_closure_" + canonicalKey + "_" + fieldPath;
+    host_module_wrapper_meta_[wrapperName] = {canonicalKey, fieldPath};
     host_function_gc_roots_[wrapperName] = closureRootId;
     std::string capturedKey = canonicalKey;
     std::string capturedField = fieldPath;
@@ -4537,6 +4539,30 @@ bool VM::ensureModuleLoaded(const std::string &name) {
   return true;
 }
 
+// Thread-safe module loading entry: if another goroutine is loading the same
+// module, wait for it to finish and return true (caller should use cache).
+bool VM::enterModuleLoading(const std::string& canonicalKey) {
+  std::unique_lock lock(modules_loading_mutex_);
+  while (modules_loading_.count(canonicalKey)) {
+    // Another goroutine is loading this module. Wait for it to finish.
+    modules_loading_cv_.wait_for(lock, std::chrono::seconds(30));
+  }
+  // Check if it appeared in cache while we waited
+  if (moduleLoader_.isCached(canonicalKey)) {
+    return true; // caller should use cache
+  }
+  modules_loading_.insert(canonicalKey);
+  return false;
+}
+
+void VM::moduleLoadDone(const std::string& canonicalKey) {
+  {
+    std::lock_guard lock(modules_loading_mutex_);
+    modules_loading_.erase(canonicalKey);
+  }
+  modules_loading_cv_.notify_all();
+}
+
 Value VM::loadModule(const std::string &path) {
   // Local variables needed by all return paths
   std::unordered_set<std::string> inheritedGlobalNames;
@@ -4782,11 +4808,31 @@ return cachedVal;
     }
   }
 
-  // Circular dependency detection
-  if (modules_loading_.count(canonicalKey)) {
+  // Thread-safe module loading entry. Circular dep detection: if another
+  // goroutine is already loading this module, one of us must yield. We
+  // throw rather than deadlock — cooperative scheduling means the loader
+  // will finish once we return control.
+  bool shouldUseCache = false;
+  {
+    std::lock_guard lock(modules_loading_mutex_);
+    if (modules_loading_.count(canonicalKey)) {
+      shouldUseCache = moduleLoader_.isCached(canonicalKey);
+      if (!shouldUseCache) {
+        COMPILER_THROW("Circular dependency detected: " + path);
+      }
+    } else {
+      modules_loading_.insert(canonicalKey);
+    }
+  }
+  if (shouldUseCache) {
+    Value cachedVal;
+    if (moduleLoader_.getCached(canonicalKey, &cachedVal)) {
+      moduleLoader_.putCache(canonicalKey, cachedVal);
+      pinModuleCacheExports(canonicalKey, cachedVal);
+      return cachedVal;
+    }
     COMPILER_THROW("Circular dependency detected: " + path);
   }
-  modules_loading_.insert(canonicalKey);
 
   // NativeExtension: load havel_mod_<name>.so via plugin loader
   if (resolved->type == ModuleLoader::ResolvedModule::NativeExtension) {
@@ -4825,7 +4871,7 @@ return cachedVal;
     }
 
     if (!registered) {
-      modules_loading_.erase(canonicalKey);
+      moduleLoadDone(canonicalKey);
       COMPILER_THROW("Failed to load native extension: " +
                      resolved->canonicalPath);
     }
@@ -4873,7 +4919,7 @@ return cachedVal;
 
     moduleLoader_.putCache(canonicalKey, exports);
     pinModuleCacheExports(canonicalKey, exports);
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     return exports;
   }
 
@@ -4894,7 +4940,7 @@ return cachedVal;
     std::ifstream file(resolved->canonicalPath,
                        std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-      modules_loading_.erase(canonicalKey);
+      moduleLoadDone(canonicalKey);
       COMPILER_THROW("Failed to open bytecode file: " +
                      resolved->canonicalPath);
     }
@@ -4903,7 +4949,7 @@ return cachedVal;
     ValueSerializer serializer;
     auto deserialized = serializer.loadChunk(resolved->canonicalPath, 65536);
     if (!deserialized) {
-      modules_loading_.erase(canonicalKey);
+      moduleLoadDone(canonicalKey);
       COMPILER_THROW("Failed to load bytecode: " +
                      resolved->canonicalPath);
     }
@@ -4919,7 +4965,7 @@ return cachedVal;
         const auto &c = func->constants[ci];
         if (c.isFunctionObjId() &&
             c.asFunctionObjId() >= chunk->getFunctionCount()) {
-          modules_loading_.erase(canonicalKey);
+          moduleLoadDone(canonicalKey);
           COMPILER_THROW(
               "Corrupt .hvc: function constant[" + std::to_string(ci) +
               "] has FunctionObjId " + std::to_string(c.asFunctionObjId()) +
@@ -4931,7 +4977,7 @@ return cachedVal;
         const auto &dv = func->default_values[di];
         if (dv.has_value() && dv->isFunctionObjId() &&
             dv->asFunctionObjId() >= chunk->getFunctionCount()) {
-          modules_loading_.erase(canonicalKey);
+          moduleLoadDone(canonicalKey);
           COMPILER_THROW(
               "Corrupt .hvc: function default_value[" + std::to_string(di) +
               "] has FunctionObjId " + std::to_string(dv->asFunctionObjId()) +
@@ -4944,7 +4990,7 @@ return cachedVal;
           const auto &op = func->instructions[ii].operands[oi];
           if (op.isFunctionObjId() &&
               op.asFunctionObjId() >= chunk->getFunctionCount()) {
-            modules_loading_.erase(canonicalKey);
+            moduleLoadDone(canonicalKey);
             COMPILER_THROW(
                 "Corrupt .hvc: instruction[" + std::to_string(ii) +
                 "] operand[" + std::to_string(oi) + "] has FunctionObjId " +
@@ -5016,13 +5062,17 @@ return cachedVal;
   std::vector<ClosureImportRef> closureRefs;
   std::filesystem::path hvcPath = resolved->canonicalPath;
   hvcPath.replace_extension(".hvc");
-// Warm-restore is disabled: restoring serialized globals re-binds closures
-  // across chunk instances and chunk-relative StringValIds then resolve
-  // against the wrong chunk's string table (corrupting string constants
-  // such as '+' -> 'payloadType'). Always run __main__ from the loaded .hvc
-  // chunk instead; that path initializes globals in the correct chunk context.
+  // Warm restore skips re-running __main__ on cache hits: strings deserialize
+  // as fresh heap strings and imported closures are re-bound via
+  // ClosureImportRefs, so no chunk-relative state crosses the round-trip.
+  // The restore loop only checks the session cache (never calls loadModule())
+  // to avoid circular deps between modules with mutual imports. Older .hvc
+  // files without a GLBS trailer return false here and fall back to running
+  // Warm restore disabled: closure re-binding across .hvc files creates
+  // stale function values on warm load ("non-callable value of type unknown").
+  // The bytecode chunk cache remains active; only warm global state restore is dropped.
   bool hasCachedGlobals = false;
-  
+
   if (hasCachedGlobals && !cachedGlobals.empty()) {
     // Restore globals from cache - this avoids running __main__
     // Populate with host globals first
@@ -5047,9 +5097,6 @@ return cachedVal;
       // stale args. A stale GLBS section from an older binary can still
       // contain them, so guard both serialize and restore.
       if (runtimeGlobalsSkipList().count(name)) continue;
-      if (canonicalKey.find("pratt") != std::string::npos && (name == "parse")) {
-        std::cerr << "[DEBUG] pratt cachedGlobals parse type null=" << value.isNull() << " closure=" << value.isClosureId() << "\n";
-      }
       globals[name] = value;
     }
     // Create _G mirror
@@ -5077,22 +5124,21 @@ return cachedVal;
     // Re-bind imported closures from serialized refs
     // Warm loads skip __main__ so imports never re-run; these refs
     // were saved from the cold run's globals and must be restored now.
-    if (canonicalKey.find("pratt") != std::string::npos || canonicalKey.find("/ast.") != std::string::npos) {
-      for (auto &[n, v] : globals) {
-        if (n == "parse" || n == "Program" || n == "ErrorNode" || n == "BlockStatement") {
-        }
-      }
-    }
     for (const auto &ref : closureRefs) {
-      // Try cached module first (avoids recursive load triggering source compile)
+      // Re-bind imported closures by looking up the source module's exports.
+      // Only check the in-memory session cache — never call loadModule() from
+      // here. Cold loads handle circular imports progressively via __main__
+      // execution; the warm restore path runs inside loadModule() itself, so
+      // calling loadModule() for another module that transitively imports back
+      // hits the circular-dependency check and throws.
       Value srcExports;
       if (moduleLoader_.isCached(ref.modulePath)) {
         moduleLoader_.getCached(ref.modulePath, &srcExports);
       }
       if (!srcExports.isObjectId()) {
-        // Try loading from source .hv to re-bind
-        std::string modName = std::filesystem::path(ref.modulePath).stem().string();
-        srcExports = loadModule(modName);
+        ::havel::debug("[Cache] deferred closure import '{}' from '{}' (source not yet loaded)",
+                       ref.functionName, ref.modulePath);
+        continue;
       }
       if (!srcExports.isObjectId()) { continue; }
       auto *srcObj = heap_.object(srcExports.asObjectId());
@@ -5142,17 +5188,9 @@ return cachedVal;
     ObjectRef exportsRef = createHostObject();
     auto *obj = heap_.object(exportsRef.id);
     uint64_t exportsRootId = pinExternalRoot(Value::makeObjectId(exportsRef.id));
-    if (canonicalKey.find("debug.hv") != std::string::npos) {
-      auto gi = globals.find("setFlag");
-      std::cerr << "[DEBUG] debug warm exports setFlag globals=" << (gi != globals.end()) << " bits=" << (gi != globals.end() ? gi->second.rawBits() : 0ULL) << " closure=" << (gi != globals.end() ? gi->second.isClosureId() : 0) << " hf=" << (gi != globals.end() ? gi->second.isHostFuncId() : 0) << " null=" << (gi != globals.end() ? gi->second.isNull() : 0) << "\n";
-    }
     for (const auto &[name, value] : globals) {
       if (name.empty() || name[0] == '_') continue;
       (*obj)[name] = value;
-    }
-    if (canonicalKey.find("debug.hv") != std::string::npos) {
-      auto *sf = obj->get("setFlag");
-      std::cerr << "[DEBUG] debug warm exports setFlag in-obj=" << (sf != nullptr) << " bits=" << (sf ? sf->rawBits() : 0ULL) << " closure=" << (sf ? sf->isClosureId() : 0) << "\n";
     }
     unpinExternalRoot(exportsRootId);
     Value exports = Value::makeObjectId(exportsRef.id);
@@ -5165,7 +5203,7 @@ return cachedVal;
     pinModuleCacheExports(path, exports);
     pinModuleCacheExports(canonicalKey, exports);
     globals[path] = exports;
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     return exports;
   }
   // hasCachedGlobals was false but chunk is loaded from .hvc.
@@ -5177,7 +5215,7 @@ return cachedVal;
     // Read source file and compile
     std::ifstream file(resolved->canonicalPath);
     if (!file.is_open()) {
-      modules_loading_.erase(canonicalKey);
+      moduleLoadDone(canonicalKey);
       COMPILER_THROW("Failed to open module file: " + resolved->canonicalPath);
     }
     std::string source((std::istreambuf_iterator<char>(file)),
@@ -5195,16 +5233,16 @@ return cachedVal;
     try {
       program = parser.produceAST(source);
     } catch (const ::havel::LexError &e) {
-      modules_loading_.erase(canonicalKey);
+      moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
       COMPILER_THROW("Module " + path + " lexer error: " + e.what());
     } catch (const ::havel::parser::ParseError &e) {
-      modules_loading_.erase(canonicalKey);
+      moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
       COMPILER_THROW("Module " + path + " parse error: " + e.what());
     }
     if (!program || parser.hasErrors()) {
-      modules_loading_.erase(canonicalKey);
+      moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
       std::string errors;
       if (parser.hasErrors()) {
@@ -5220,13 +5258,13 @@ return cachedVal;
       chunk =
           std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
     } catch (const std::exception &e) {
-      modules_loading_.erase(canonicalKey);
+      moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
       COMPILER_THROW("Module " + path +
                      " compilation error: " + std::string(e.what()));
     }
     if (!chunk) {
-      modules_loading_.erase(canonicalKey);
+      moduleLoadDone(canonicalKey);
       current_script_dir_ = prev_script_dir;
       COMPILER_THROW("Module " + path + " compiler returned null chunk");
     }
@@ -5336,7 +5374,7 @@ return cachedVal;
     has_current_exception_ = saved_exception;
     current_exception_ = saved_exception_val;
     current_script_dir_ = prev_script_dir;
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     COMPILER_THROW("Module " + path + " has no __main__ function");
   }
 
@@ -5383,7 +5421,7 @@ return cachedVal;
     has_current_exception_ = saved_exception;
     current_exception_ = saved_exception_val;
     current_script_dir_ = prev_script_dir;
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     throw;
   }
 
@@ -5395,10 +5433,6 @@ return cachedVal;
   // Use this for wrapping exports and for cached module loads.
   auto moduleGlobalsForCache =
       std::make_shared<std::unordered_map<std::string, Value>>(globals);
-  if (globals.find("emitError") != globals.end() && globals.find("emitterError") == globals.end()) {
-    std::cerr << "[DEBUG] COLD-SNAPSHOT-MISSES-EMITTERERROR module=" << canonicalKey
-              << " size=" << globals.size() << "\n";
-  }
 
   // Update all closures in the module's globals to use this snapshot as their
   // module_globals. This allows them to access module-level variables (like
@@ -5679,12 +5713,10 @@ current_script_dir_ = prev_script_dir;
     }
   }
   
-// Serialize and append globals to .hvc file for fast loading is DISABLED:
-// warm global restoration re-binds closures across chunk instances and
-// chunk-relative StringValIds then resolve against the wrong chunk's string
-// table (corrupting string constants such as '+' -> 'payloadType'). Compiled
-// bytecode caching still works; only the globals round-trip is dropped.
-#if 0
+// Serialize and append globals to .hvc file for fast warm loading.
+// Serialized strings become real heap strings and imported closures become
+// ClosureImportRefs re-bound against the exporting module's exports at
+// restore time, so no chunk-relative IDs cross the round-trip.
   try {
     std::vector<uint8_t> globalsData = serializeGlobals(*moduleGlobalsForCache, canonicalKey);
     std::filesystem::path hvcPath = resolved->canonicalPath;
@@ -5699,14 +5731,13 @@ current_script_dir_ = prev_script_dir;
       }
     }
   } catch (...) {
-    // Ignore serialization errors
+    // Ignore serialization errors; warm loads fall back to running __main__
   }
-#endif
   
   // Also store in globals so GC scans it as a root
   // (the module cache is not a GC root, so cached objects can be collected)
   globals[path] = exports;
-  modules_loading_.erase(canonicalKey);
+  moduleLoadDone(canonicalKey);
 
   return exports;
 }
@@ -5758,7 +5789,7 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
         if (runtimeGlobals.count(name)) continue;
         // Skip host functions (they're re-registered on load)
         if (value.isHostFuncId()) {
-            // But serialize $module_closure_ and $module_fn_ entries (and
+            // Serialize $module_closure_ and $module_fn_ entries (and
             // plain-name imports resolving to such wrappers) as closure refs
             // so warm loads can re-register them. The plain-name case arises
             // when `use { fn } from "m"` binds the wrapper host-fn directly
@@ -5772,18 +5803,16 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 regName = host_function_names_[hostIdx];
             }
             const std::string &probe = regName.empty() ? name : regName;
-            std::string rest;
-            if (probe.rfind(kModuleClosurePrefix, 0) == 0) {
-                rest = probe.substr(kModuleClosurePrefix.size());
-            } else if (probe.rfind(kModuleFnPrefix, 0) == 0) {
-                rest = probe.substr(kModuleFnPrefix.size());
-            } else {
+            // The wrapper name is an ambiguous concatenation (keys/fields may
+            // contain '_'), so never re-parse it: use the metadata recorded at
+            // registration time. Wrappers without metadata are skipped.
+            auto metaIt = host_module_wrapper_meta_.find(probe);
+            if (metaIt == host_module_wrapper_meta_.end()) {
                 continue;
             }
-            size_t lastUnderscore = rest.rfind('_');
-            if (lastUnderscore != std::string::npos && lastUnderscore > 0) {
-                std::string srcKey = rest.substr(0, lastUnderscore);
-                std::string fieldName = rest.substr(lastUnderscore + 1);
+            const auto &srcKey = metaIt->second.first;
+            const auto &fieldName = metaIt->second.second;
+            if (!srcKey.empty() && !fieldName.empty()) {
                 closureImports.emplace_back(name, ClosureImportRef{srcKey, fieldName, name});
             }
             continue;
@@ -5807,9 +5836,6 @@ std::vector<uint8_t> VM::serializeGlobals(const std::unordered_map<std::string, 
                 if (c.get() == closure->chunk) { srcKey = k; break; }
             }
             if (srcKey.empty()) continue;
-            if (name == "parse" && ownChunk) {
-                std::cerr << "[DEBUG] serialize foreign closure 'parse' srcKey=" << srcKey << "\n";
-            }
             closureImports.emplace_back(name, ClosureImportRef{srcKey, fn->name, name});
             continue;
         }
@@ -6237,7 +6263,7 @@ Value VM::loadScript(const std::string &path) {
 
   std::ifstream file(resolved->canonicalPath);
   if (!file.is_open()) {
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     COMPILER_THROW("load: cannot open file: " + resolved->canonicalPath);
   }
   std::string source((std::istreambuf_iterator<char>(file)),
@@ -6250,16 +6276,16 @@ Value VM::loadScript(const std::string &path) {
   try {
     program = parser.produceAST(source);
   } catch (const ::havel::LexError &e) {
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
     COMPILER_THROW("load: lexer error in " + path + ": " + e.what());
   } catch (const ::havel::parser::ParseError &e) {
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
     COMPILER_THROW("load: parse error in " + path + ": " + e.what());
   }
   if (!program || parser.hasErrors()) {
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
     std::string errors;
     if (parser.hasErrors()) {
@@ -6274,13 +6300,13 @@ Value VM::loadScript(const std::string &path) {
     chunk =
         std::shared_ptr<BytecodeChunk>(compiler.compile(*program).release());
   } catch (const std::exception &e) {
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
     COMPILER_THROW("load: compilation error in " + path + ": " +
                    std::string(e.what()));
   }
   if (!chunk) {
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     current_script_dir_ = prev_script_dir;
     COMPILER_THROW("load: compiler returned null chunk for " + path);
   }
@@ -6352,7 +6378,7 @@ Value VM::loadScript(const std::string &path) {
     has_current_exception_ = saved_exception;
     current_exception_ = saved_exception_val;
     current_script_dir_ = prev_script_dir;
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     COMPILER_THROW("load: script " + path + " has no __main__ function");
   }
 
@@ -6391,7 +6417,7 @@ Value VM::loadScript(const std::string &path) {
     has_current_exception_ = saved_exception;
     current_exception_ = saved_exception_val;
     current_script_dir_ = prev_script_dir;
-    modules_loading_.erase(canonicalKey);
+    moduleLoadDone(canonicalKey);
     throw;
   }
 
@@ -6429,7 +6455,7 @@ Value VM::loadScript(const std::string &path) {
     globals_stack_.pop_back();
   }
 
-  modules_loading_.erase(canonicalKey);
+  moduleLoadDone(canonicalKey);
 
   return Value::makeBool(true);
 }

@@ -222,6 +222,7 @@ void HostBridge::initBridges() {
   networkBridge_ = std::make_unique<NetworkBridge>(ctx_);
   audioBridge_ = std::make_unique<AudioBridge>(ctx_);
   displayBridge_ = std::make_unique<DisplayBridge>(ctx_);
+  brightnessBridge_ = std::make_unique<BrightnessBridge>(ctx_);
   configBridge_ = std::make_unique<ConfigBridge>(ctx_);
   modeBridge_ = std::make_unique<ModeBridge>(ctx_);
   timerBridge_ = std::make_unique<TimerBridge>(ctx_);
@@ -270,6 +271,7 @@ void HostBridge::install(InstallProfile profile, bool eagerBridgeInstall) {
     networkBridge_->install(options_);
     audioBridge_->install(options_);
     displayBridge_->install(options_);
+    brightnessBridge_->install(options_);
     modeBridge_->install(options_);
     timerBridge_->install(options_);
     appBridge_->install(options_);

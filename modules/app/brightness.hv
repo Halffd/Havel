@@ -33,6 +33,10 @@ fn setGamma(r, g, b) {
     brightness.setGamma(r, g, b)
 }
 
+fn setGammaRGB(r, g, b) {
+    brightness.setGammaRGB(r, g, b)
+}
+
 fn getShadowLift() {
     brightness.getShadowLift()
 }

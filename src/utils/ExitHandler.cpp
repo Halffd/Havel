@@ -8,6 +8,7 @@
 namespace havel {
 
 void EmergencyUngrabAllEvdevSignalSafe();
+void EmergencyUngrabAllX11SignalSafe();
 
 static std::atomic<bool> g_exiting{false};
 static std::function<void()> g_cleanup_fn;
@@ -67,12 +68,14 @@ static void writeStderr(const char *msg) {
     writeStderr(reasonStr(reason));
     writeStderr("\n");
     EmergencyUngrabAllEvdevSignalSafe();
+    EmergencyUngrabAllX11SignalSafe();
     _exit(code);
   }
 
   info("havel::exit reason={} code={}", reasonStr(reason), code);
 
   EmergencyUngrabAllEvdevSignalSafe();
+  EmergencyUngrabAllX11SignalSafe();
 
   if (g_cleanup_fn) {
     g_cleanup_fn();

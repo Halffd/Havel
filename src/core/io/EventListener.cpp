@@ -78,7 +78,10 @@ EventListener::EventListener() {
 
   static bool atexitRegistered = false;
   if (!atexitRegistered) {
-    std::atexit([]() { EmergencyUngrabAllEvdev(); });
+    std::atexit([]() {
+        EmergencyUngrabAllEvdev();
+        EmergencyUngrabAllX11();
+    });
     atexitRegistered = true;
   }
 }

@@ -837,11 +837,20 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
   }
 
   // Find the CRTC for this output
+  // Track processed CRTCs to avoid double-applying on shared CRTCs
+  std::set<RRCrtc> processed_crtcs;
+
   for (int i = 0; i < screen_res->noutput; ++i) {
       XRROutputInfo *output_info = XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
 
       if (output_info && output_info->connection == RR_Connected &&
           monitor == output_info->name && output_info->crtc != 0L) {
+
+          // Skip if this CRTC was already processed (shared CRTC case)
+          if (processed_crtcs.count(output_info->crtc)) {
+              XRRFreeOutputInfo(output_info);
+              continue;
+          }
 
           XRRCrtcInfo *crtc_info = XRRGetCrtcInfo(x11_display, screen_res, output_info->crtc);
           if (crtc_info) {
@@ -872,6 +881,9 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
               }
               XRRFreeCrtcInfo(crtc_info);
           }
+          
+          // Mark this CRTC as processed
+          processed_crtcs.insert(output_info->crtc);
       }
 
       if (output_info)

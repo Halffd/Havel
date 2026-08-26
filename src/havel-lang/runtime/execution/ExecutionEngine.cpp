@@ -532,13 +532,10 @@ void ExecutionEngine::handleReturned(Scheduler::Goroutine* g) {
       return;
     }
     // No retrigger flag: suspend and wait for next wakeHotkey from IO thread
-    // For conditional hotkeys, set state back to Created so the condition
-    // is re-evaluated on next wakeHotkey (pickNext checks Created state).
-    if (g->hotkey_condition_callback_id != 0) {
-      g->state = Scheduler::GoroutineState::Created;
-    } else {
-      g->state = Scheduler::GoroutineState::Suspended;
-    }
+    // For conditional hotkeys, use Suspended+HotkeyWait (like non-conditional).
+    // Created state incorrectly counted as "pending" by isHotkeyPending(),
+    // causing Drop policy to swallow subsequent triggers.
+    g->state = Scheduler::GoroutineState::Suspended;
     g->suspension_reason.store(Scheduler::SuspensionReason::HotkeyWait, std::memory_order_release);
     if (g->fiber) {
         g->fiber->state = FiberState::SUSPENDED;

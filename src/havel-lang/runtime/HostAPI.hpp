@@ -146,6 +146,7 @@ public:
           class FileManager *fileManager = nullptr,
           class ProcessManager *processManager = nullptr,
            class MapManager *mapManager = nullptr,
+           class BrightnessManager *brightnessManager = nullptr,
            const std::vector<std::string> &commandLineArgs = {});
 
   // IWindowAPI implementation

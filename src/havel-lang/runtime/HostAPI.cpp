@@ -15,6 +15,7 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  PixelAutomation *pixelAutomation,
                  AutomationManager *automationManager, FileManager *fileManager,
                  ProcessManager *processManager, MapManager *mapManager,
+                 BrightnessManager *brightnessManager,
                 const std::vector<std::string> &commandLineArgs)
     : io(io), hotkeyManager(hotkeyManager), config(config),
       windowManager(windowManager),
@@ -22,7 +23,7 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
       screenshotManager(screenshotManager), clipboardManager(clipboardManager),
       pixelAutomation(pixelAutomation), automationManager(automationManager),
       fileManager(fileManager), processManager(processManager),
-      mapManager(mapManager),
+      mapManager(mapManager), brightnessManager(brightnessManager),
       commandLineArgs(commandLineArgs) {}
 
 std::string HostAPI::GetActiveWindowTitle() { return ""; }
@@ -95,6 +96,7 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  PixelAutomation *pixelAutomation,
                  AutomationManager *automationManager, FileManager *fileManager,
                  ProcessManager *processManager, MapManager *mapManager,
+                 BrightnessManager *brightnessManager,
                 const std::vector<std::string> &commandLineArgs)
     : io(io), hotkeyManager(hotkeyManager), config(config),
       windowManager(windowManager),
@@ -102,7 +104,7 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
       screenshotManager(screenshotManager), clipboardManager(clipboardManager),
       pixelAutomation(pixelAutomation), automationManager(automationManager),
       fileManager(fileManager), processManager(processManager),
-      mapManager(mapManager),
+      mapManager(mapManager), brightnessManager(brightnessManager),
       commandLineArgs(commandLineArgs) {}
 
 // IWindowAPI implementation

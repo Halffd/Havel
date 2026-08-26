@@ -23,6 +23,7 @@
 #include "utils/DebugFlags.hpp"
 #include "utils/ExitHandler.hpp"
 #include "utils/Logger.hpp"
+#include "core/BrightnessManager.hpp"
 #include <iostream>
 
 #ifdef HAVEL_ENABLE_LLVM
@@ -279,7 +280,10 @@ static havel::repl::REPLConfig makeREPLConfig(const havel::init::LaunchConfig &c
 
 static std::shared_ptr<HostAPI> createHostAPI(havel::Havel &inst) {
   return std::make_shared<HostAPI>(inst.getIOPtr(), inst.getHotkeyManagerPtr(),
-                                   Configs::Get());
+                                   Configs::Get(), inst.getWindowManagerPtr(),
+                                   inst.getAudioManager(), nullptr, nullptr,
+                                   nullptr, nullptr, nullptr, nullptr, nullptr,
+                                   nullptr, inst.getBrightnessManagerPtr());
 }
 
 static int runLint(const std::string &code, const std::string &primaryFile,
@@ -421,6 +425,9 @@ static int runBytecodeFiles(const havel::init::LaunchConfig &cfg,
     havel::compiler::VMConfig vmCfg2 = vmCfg;
     havel::compiler::VM tempVm(vmCfg2);
     ctx.vm = &tempVm;
+    // Create a local BrightnessManager for non-self-hosted mode
+    auto localBrightnessManager = std::make_shared<havel::BrightnessManager>();
+    ctx.brightnessManager = localBrightnessManager.get();
     auto bridge = havel::createModules(ctx);
     auto *vm = static_cast<havel::compiler::VM *>(ctx.vm);
     const bool coreProfile = (cfg.profile == "core") || cfg.minimalMode;

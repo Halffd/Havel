@@ -12,6 +12,7 @@
 #include "utils/ExitHandler.hpp"
 #include "core/hotkey/HotkeyManager.hpp"
 #include "core/window/WindowManager.hpp"
+#include "core/BrightnessManager.hpp"
 #include "core/automation/AutomationManager.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/StartupTiming.hpp"
@@ -120,6 +121,10 @@ void Havel::initialize(bool isStartup) {
     havel::startup_timing_report("AutomationManager-create", t);
     t = havel::startup_now();
 
+    brightnessManager = std::make_shared<BrightnessManager>();
+    havel::startup_timing_report("BrightnessManager-create", t);
+    t = havel::startup_now();
+
     // Initialize NetworkManager (singleton)
     networkManager = std::shared_ptr<net::NetworkManager>(
         &net::NetworkManager::getInstance(), [](net::NetworkManager *) {});
@@ -136,6 +141,7 @@ void Havel::initialize(bool isStartup) {
   hostContext->hotkeyManager = hotkeyManager.get();
   hostContext->audioManager = audioManager.get();
   hostContext->networkManager = networkManager.get();
+  hostContext->brightnessManager = brightnessManager.get();
 
     // Create VM
         bytecodeVM = std::make_unique<compiler::VM>(*hostContext);

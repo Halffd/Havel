@@ -10,46 +10,38 @@ use ffi
 
 _xlib = ffi.open("libX11.so.6")
 if _xlib == 0 { _xlib = ffi.open("libX11.so") }
-if _xlib == 0 { throw "x11: failed to load libX11" }
+// Don't throw here - allow graceful degradation
+// if _xlib == 0 { throw "x11: failed to load libX11" }
 
-_XOpenDisplay = ffi.sym(_xlib, "XOpenDisplay")
-_XCloseDisplay = ffi.sym(_xlib, "XCloseDisplay")
-_XInternAtom = ffi.sym(_xlib, "XInternAtom")
-_XGetAtomName = ffi.sym(_xlib, "XGetAtomName")
-_XGetWindowProperty = ffi.sym(_xlib, "XGetWindowProperty")
-_XSendEvent = ffi.sym(_xlib, "XSendEvent")
-_XMoveResizeWindow = ffi.sym(_xlib, "XMoveResizeWindow")
-_XMoveWindow = ffi.sym(_xlib, "XMoveWindow")
-_XResizeWindow = ffi.sym(_xlib, "XResizeWindow")
-_XGetGeometry = ffi.sym(_xlib, "XGetGeometry")
-_XGetWindowAttributes = ffi.sym(_xlib, "XGetWindowAttributes")
-_XRootWindow = ffi.sym(_xlib, "XRootWindow")
-_XDefaultScreen = ffi.sym(_xlib, "XDefaultScreen")
-_XDefaultRootWindow = ffi.sym(_xlib, "XDefaultRootWindow")
-_XSync = ffi.sym(_xlib, "XSync")
-_XFlush = ffi.sym(_xlib, "XFlush")
-_XScreenNumberOfScreen = ffi.sym(_xlib, "XScreenNumberOfScreen")
-_XTranslateCoordinates = ffi.sym(_xlib, "XTranslateCoordinates")
-_XQueryTree = ffi.sym(_xlib, "XQueryTree")
-_XGetInputFocus = ffi.sym(_xlib, "XGetInputFocus")
-_XSetInputFocus = ffi.sym(_xlib, "XSetInputFocus")
-_XFetchName = ffi.sym(_xlib, "XFetchName")
-_XGetClassHint = ffi.sym(_xlib, "XGetClassHint")
-_XIconifyWindow = ffi.sym(_xlib, "XIconifyWindow")
-_XMapWindow = ffi.sym(_xlib, "XMapWindow")
-_XUnmapWindow = ffi.sym(_xlib, "XUnmapWindow")
-_XConfigureWindow = ffi.sym(_xlib, "XConfigureWindow")
-_XChangeProperty = ffi.sym(_xlib, "XChangeProperty")
-_XFlush = ffi.sym(_xlib, "XFlush")
-_XSync = ffi.sym(_xlib, "XSync")
-_XDefaultScreen = ffi.sym(_xlib, "XDefaultScreen")
-_XScreenCount = ffi.sym(_xlib, "XScreenCount")
-_XDisplayWidth = ffi.sym(_xlib, "XDisplayWidth")
-_XDisplayHeight = ffi.sym(_xlib, "XDisplayHeight")
-_XWidthOfScreen = ffi.sym(_xlib, "XWidthOfScreen")
-_XHeightOfScreen = ffi.sym(_xlib, "XHeightOfScreen")
-_XFree = ffi.sym(_xlib, "XFree")
-_XGetClassHint = ffi.sym(_xlib, "XGetClassHint")
+_XOpenDisplay = _xlib != 0 ? ffi.sym(_xlib, "XOpenDisplay") : 0
+_XCloseDisplay = _xlib != 0 ? ffi.sym(_xlib, "XCloseDisplay") : 0
+_XInternAtom = _xlib != 0 ? ffi.sym(_xlib, "XInternAtom") : 0
+_XGetAtomName = _xlib != 0 ? ffi.sym(_xlib, "XGetAtomName") : 0
+_XGetWindowProperty = _xlib != 0 ? ffi.sym(_xlib, "XGetWindowProperty") : 0
+_XSendEvent = _xlib != 0 ? ffi.sym(_xlib, "XSendEvent") : 0
+_XMoveResizeWindow = _xlib != 0 ? ffi.sym(_xlib, "XMoveResizeWindow") : 0
+_XMoveWindow = _xlib != 0 ? ffi.sym(_xlib, "XMoveWindow") : 0
+_XResizeWindow = _xlib != 0 ? ffi.sym(_xlib, "XResizeWindow") : 0
+_XGetGeometry = _xlib != 0 ? ffi.sym(_xlib, "XGetGeometry") : 0
+_XGetWindowAttributes = _xlib != 0 ? ffi.sym(_xlib, "XGetWindowAttributes") : 0
+_XRootWindow = _xlib != 0 ? ffi.sym(_xlib, "XRootWindow") : 0
+_XDefaultScreen = _xlib != 0 ? ffi.sym(_xlib, "XDefaultScreen") : 0
+_XDefaultRootWindow = _xlib != 0 ? ffi.sym(_xlib, "XDefaultRootWindow") : 0
+_XSync = _xlib != 0 ? ffi.sym(_xlib, "XSync") : 0
+_XFlush = _xlib != 0 ? ffi.sym(_xlib, "XFlush") : 0
+_XScreenNumberOfScreen = _xlib != 0 ? ffi.sym(_xlib, "XScreenNumberOfScreen") : 0
+_XTranslateCoordinates = _xlib != 0 ? ffi.sym(_xlib, "XTranslateCoordinates") : 0
+_XQueryTree = _xlib != 0 ? ffi.sym(_xlib, "XQueryTree") : 0
+_XGetInputFocus = _xlib != 0 ? ffi.sym(_xlib, "XGetInputFocus") : 0
+_XSetInputFocus = _xlib != 0 ? ffi.sym(_xlib, "XSetInputFocus") : 0
+_XFetchName = _xlib != 0 ? ffi.sym(_xlib, "XFetchName") : 0
+_XGetClassHint = _xlib != 0 ? ffi.sym(_xlib, "XGetClassHint") : 0
+_XIconifyWindow = _xlib != 0 ? ffi.sym(_xlib, "XIconifyWindow") : 0
+_XMapWindow = _xlib != 0 ? ffi.sym(_xlib, "XMapWindow") : 0
+_XUnmapWindow = _xlib != 0 ? ffi.sym(_xlib, "XUnmapWindow") : 0
+_XConfigureWindow = _xlib != 0 ? ffi.sym(_xlib, "XConfigureWindow") : 0
+_XChangeProperty = _xlib != 0 ? ffi.sym(_xlib, "XChangeProperty") : 0
+_XFree = _xlib != 0 ? ffi.sym(_xlib, "XFree") : 0
 
 // Type signatures
 _t_p = ["pointer"]
@@ -69,7 +61,7 @@ fn _checkDpy(dpy) {
 }
 
 fn open(name) {
-    if name == null {
+    if name == null || name == "" {
         _dpy = ffi.call(_XOpenDisplay, "uint64", ["pointer"], 0)
     } else {
         _cs = ffi.cstring(name)
@@ -118,18 +110,22 @@ fn getWindowProperty(dpy, win, atom, offset, length, delete, reqType) {
     _prop = ffi.allocBytes(8)
     _result = ffi.call(_XGetWindowProperty, "int32", ["pointer", "uint64", "uint64", "int64", "int64", "int32", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer"],
         dpy, win, atom, offset, length, delete, reqType, _actual_type, _actual_format, _nitems, _bytes_after, _prop)
-    if _result != 0 { throw "XGetWindowProperty failed" }
     _type = ffi.get_i64(_actual_type, 0)
     _format = ffi.get_i32(_actual_format, 0)
     _nitems_val = ffi.get_i64(_nitems, 0)
     _bytes_after_val = ffi.get_i64(_bytes_after, 0)
     _prop_val = ffi.get_ptr(_prop, 0)
-    if _prop_val == 0 { null }
-    else {
-        _data = ffi.string(_prop_val, _nitems_val * (_format / 8))
-        ffi.call(_XFree, "int32", ["pointer"], _prop_val)
-        { type: _type, format: _format, nitems: _nitems_val, data: _data }
+    if _prop_val == 0 {
+        { rcode: _result, ret: _result, type: _type, format: _format, nitems: _nitems_val, prop: 0 }
     }
+    else {
+        { rcode: _result, ret: _result, type: _type, format: _format, nitems: _nitems_val, prop: _prop_val }
+    }
+}
+
+fn free(ptr) {
+    _checkDpy(0)  // XFree doesn't need a display
+    if ptr != 0 { ffi.call(_XFree, "int32", ["pointer"], ptr) }
 }
 
 fn sendEvent(dpy, dest, propagate, mask, event) {
@@ -163,16 +159,22 @@ fn getGeometry(dpy, win) {
     _depth = ffi.allocBytes(4)
     _result = ffi.call(_XGetGeometry, "int32", ["pointer", "uint64", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer", "pointer"],
         dpy, win, _root, _x, _y, _w, _h, _bw, _depth)
-    if _result == 0 { throw "XGetGeometry failed" }
-    { x: ffi.get_i32(_x, 0), y: ffi.get_i32(_y, 0), width: ffi.get_u32(_w, 0), height: ffi.get_u32(_h, 0), borderWidth: ffi.get_u32(_bw, 0), depth: ffi.get_u32(_depth, 0) }
+    if _result == 0 {
+        { rcode: 0, ret: 0, x: 0, y: 0, width: 0, height: 0, borderWidth: 0, depth: 0 }
+    } else {
+        { rcode: _result, ret: _result, x: ffi.get_i32(_x, 0), y: ffi.get_i32(_y, 0), width: ffi.get_u32(_w, 0), height: ffi.get_u32(_h, 0), borderWidth: ffi.get_u32(_bw, 0), depth: ffi.get_u32(_depth, 0) }
+    }
 }
 
 fn getWindowAttributes(dpy, win) {
     _checkDpy(dpy)
     _attrs = ffi.allocBytes(200)
     _result = ffi.call(_XGetWindowAttributes, "int32", ["pointer", "uint64", "pointer"], dpy, win, _attrs)
-    if _result == 0 { throw "XGetWindowAttributes failed" }
-    { x: ffi.get_i32(_attrs, 0), y: ffi.get_i32(_attrs, 4), width: ffi.get_u32(_attrs, 8), height: ffi.get_u32(_attrs, 12), borderWidth: ffi.get_u32(_attrs, 16), depth: ffi.get_u32(_attrs, 20), visual: ffi.get_ptr(_attrs, 24), root: ffi.get_ptr(_attrs, 32), class: ffi.get_i32(_attrs, 40), bitGravity: ffi.get_i32(_attrs, 44), winGravity: ffi.get_i32(_attrs, 48), backingStore: ffi.get_i32(_attrs, 52), backingPlanes: ffi.get_u64(_attrs, 56), backingPixel: ffi.get_u64(_attrs, 64), saveUnder: ffi.get_i32(_attrs, 72), mapState: ffi.get_i32(_attrs, 76), allEventMasks: ffi.get_i64(_attrs, 80), yourEventMask: ffi.get_i64(_attrs, 88), doNotPropagateMask: ffi.get_i64(_attrs, 96), overrideRedirect: ffi.get_i32(_attrs, 100), screen: ffi.get_ptr(_attrs, 104) }
+    if _result == 0 {
+        null
+    } else {
+        { rcode: _result, ret: _result, x: ffi.get_i32(_attrs, 0), y: ffi.get_i32(_attrs, 4), width: ffi.get_u32(_attrs, 8), height: ffi.get_u32(_attrs, 12), borderWidth: ffi.get_u32(_attrs, 16), depth: ffi.get_u32(_attrs, 20), visual: ffi.get_ptr(_attrs, 24), root: ffi.get_ptr(_attrs, 32), class: ffi.get_i32(_attrs, 40), bitGravity: ffi.get_i32(_attrs, 44), winGravity: ffi.get_i32(_attrs, 48), backingStore: ffi.get_i32(_attrs, 52), backingPlanes: ffi.get_u64(_attrs, 56), backingPixel: ffi.get_u64(_attrs, 64), saveUnder: ffi.get_i32(_attrs, 72), mapState: ffi.get_i32(_attrs, 76), allEventMasks: ffi.get_i64(_attrs, 80), yourEventMask: ffi.get_i64(_attrs, 88), doNotPropagateMask: ffi.get_i64(_attrs, 96), overrideRedirect: ffi.get_i32(_attrs, 100), screen: ffi.get_ptr(_attrs, 104) }
+    }
 }
 
 fn translateCoordinates(dpy, src, dst, x, y) {
@@ -181,8 +183,11 @@ fn translateCoordinates(dpy, src, dst, x, y) {
     _dest_y = ffi.allocBytes(4)
     _child = ffi.allocBytes(8)
     _result = ffi.call(_XTranslateCoordinates, "int32", ["pointer", "uint64", "uint64", "int32", "int32", "pointer", "pointer", "pointer"], dpy, src, dst, x, y, _dest_x, _dest_y, _child)
-    if _result == 0 { throw "XTranslateCoordinates failed" }
-    { destX: ffi.get_i32(_dest_x, 0), destY: ffi.get_i32(_dest_y, 0), child: ffi.get_ptr(_child, 0) }
+    if _result == 0 {
+        { rcode: 0, ret: 0, destX: 0, destY: 0, child: 0 }
+    } else {
+        { rcode: _result, ret: _result, destX: ffi.get_i32(_dest_x, 0), destY: ffi.get_i32(_dest_y, 0), child: ffi.get_ptr(_child, 0) }
+    }
 }
 
 fn queryTree(dpy, win) {
@@ -192,7 +197,6 @@ fn queryTree(dpy, win) {
     _children = ffi.allocBytes(8)
     _nchildren = ffi.allocBytes(4)
     _result = ffi.call(_XQueryTree, "int32", ["pointer", "uint64", "pointer", "pointer", "pointer", "pointer"], dpy, win, _root, _parent, _children, _nchildren)
-    if _result == 0 { throw "XQueryTree failed" }
     _root_val = ffi.get_ptr(_root, 0)
     _parent_val = ffi.get_ptr(_parent, 0)
     _children_ptr = ffi.get_ptr(_children, 0)
@@ -204,15 +208,19 @@ fn queryTree(dpy, win) {
             if _child_ptr != 0 { _children_arr.push(_child_ptr) }
         }
     }
-    { root: _root_val, parent: _parent_val, children: _children_arr }
+    { rcode: _result, ret: _result, root: _root_val, parent: _parent_val, children: _children_arr }
 }
 
 fn getInputFocus(dpy) {
     _checkDpy(dpy)
     _focus = ffi.allocBytes(8)
     _revert = ffi.allocBytes(4)
-    ffi.call(_XGetInputFocus, "void", ["pointer", "pointer", "pointer"], dpy, _focus, _revert)
-    { focus: ffi.get_ptr(_focus, 0), revertTo: ffi.get_i32(_revert, 0) }
+    _result = ffi.call(_XGetInputFocus, "int32", ["pointer", "pointer", "pointer"], dpy, _focus, _revert)
+    if _result == 0 {
+        { rcode: 0, ret: 0, focus: 0, revertTo: 0 }
+    } else {
+        { rcode: _result, ret: _result, focus: ffi.get_ptr(_focus, 0), revertTo: ffi.get_i32(_revert, 0) }
+    }
 }
 
 fn setInputFocus(dpy, win, revert, time) {
@@ -230,10 +238,13 @@ fn getClassHint(dpy, win) {
     _checkDpy(dpy)
     _hint = ffi.allocBytes(16)
     _result = ffi.call(_XGetClassHint, "int32", ["pointer", "uint64", "pointer"], dpy, win, _hint)
-    if _result == 0 { throw "XGetClassHint failed" }
-    _resName = ffi.string(ffi.get_ptr(_hint, 0))
-    _resClass = ffi.string(ffi.get_ptr(_hint, 8))
-    { resName: _resName, resClass: _resClass }
+    if _result == 0 {
+        { rcode: 0, ret: 0, resName: "", resClass: "" }
+    } else {
+        _resName = ffi.string(ffi.get_ptr(_hint, 0))
+        _resClass = ffi.string(ffi.get_ptr(_hint, 8))
+        { rcode: _result, ret: _result, resName: _resName, resClass: _resClass }
+    }
 }
 
 fn iconifyWindow(dpy, win, screen) {

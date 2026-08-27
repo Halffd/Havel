@@ -179,7 +179,7 @@ private:
   void errorAt(const Token &token, const std::string &message);
 
   // Delimiter tracking
-  void pushDelimiter(TokenType type);
+  void pushDelimiter(TokenType type, const Token* token = nullptr);
   void popDelimiter(TokenType expected);
   std::optional<DelimiterInfo> getUnclosedDelimiter() const;
   bool checkMismatchedClosingDelimiter();

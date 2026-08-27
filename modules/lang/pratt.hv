@@ -286,6 +286,25 @@ fn getImplicitCallStarters() {
 // Parser object — encapsulates parsing state
 // ===================================================================
 fn Parser(tokenList) {
+  fn advance() {
+    if pos < tokens.len {
+      t = tokens[pos]
+      pos = pos + 1
+      _cur = pos < tokens.len ? tokens[pos] : _eof
+      skipCommentsAndNewlines()
+      return t
+    }
+    else {
+      _cur = _eof
+      return _eof
+    }
+  }
+  fn skipCommentsAndNewlines() {
+    while current().tid == TID.NewLine or current().tid == TID.Comment or current().tid == TID.UnsafeMarker {
+      advance()
+    }
+  }
+
   tokens = tokenList
   pos = 0
   errors = []
@@ -294,6 +313,7 @@ fn Parser(tokenList) {
   allowBraceSugar = true
   _eof = {type: "EOF", tid: TID.EOF, value: "", line: 0, col: 0}
   _cur = pos < tokens.len ? tokens[pos] : _eof
+  skipCommentsAndNewlines()
 
   fn at(offset) {
     i = pos + offset
@@ -303,18 +323,6 @@ fn Parser(tokenList) {
   }
   fn current() {
     return _cur
-  }
-  fn advance() {
-    if pos < tokens.len {
-      t = tokens[pos]
-      pos = pos + 1
-      _cur = pos < tokens.len ? tokens[pos] : _eof
-      return t
-    }
-    else {
-      _cur = _eof
-      return _eof
-    }
   }
   fn syncCur() {
     _cur = pos < tokens.len ? tokens[pos] : _eof
@@ -387,11 +395,6 @@ fn Parser(tokenList) {
         while current().tid == TID.NewLine or current().tid == TID.Semicolon {
             advance()
 
-        }
-    }
-    fn skipCommentsAndNewlines() {
-        while current().tid == TID.NewLine or current().tid == TID.Comment or current().tid == TID.UnsafeMarker {
-            advance()
         }
     }
     // --- Error handling ---

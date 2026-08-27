@@ -195,7 +195,7 @@ fn cinnamonGetLevel() {
 
 // --- Generic dispatch ---
 
-fn in(step) {
+fn zoomIn(step) {
     if !state.running { return false }
     if state.backend == "kwin" { return kwinZoomIn(step) }
     if state.backend == "hyprland" { return hyprZoomTo(state.level + step) }

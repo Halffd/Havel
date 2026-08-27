@@ -492,7 +492,7 @@ Value VM::callHostFunction(const Value &fn,
 
 // General function call (handles both VM closures and host functions)
 Value VM::callFunction(const Value &fn,
-                               const std::vector<Value> &args) {
+                                const std::vector<Value> &args) {
   // Host function - direct call
   if (fn.isHostFuncId()) {
     return callHostFunction(fn, args);
@@ -500,6 +500,64 @@ Value VM::callFunction(const Value &fn,
 
   // VM Closure or FunctionObject - use synchronous call with state isolation
   return callFunctionSync(fn, args);
+}
+
+// Call a method on a receiver
+// This is the canonical method call used by both VM and JIT
+Value VM::callMethod(Value receiver, uint32_t method_name_id, const std::vector<Value> &args) {
+  if (!current_chunk) return Value::makeNull();
+  
+  // Push receiver and args onto stack
+  pushStack(receiver);
+  for (const auto& arg : args) {
+    pushStack(arg);
+  }
+  
+  // Create a synthetic instruction for CALL_METHOD
+  Instruction instr;
+  instr.opcode = OpCode::CALL_METHOD;
+  
+  // Use the existing string val ID directly - no need to add a new string
+  uint32_t strIdx = method_name_id;
+  
+  // Operands: [method_name string val id, arg_count int]
+  instr.operands = {Value::makeStringValId(strIdx), Value::makeInt(args.size())};
+  
+  // Execute via the main dispatch
+  executeInstruction(instr);
+  
+  // Return the result from stack
+  if (!stack.empty()) {
+    return popStack();
+  }
+  return Value::makeNull();
+}
+
+// Call super method
+Value VM::callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &args) {
+  if (!current_chunk) return Value::makeNull();
+  
+  // Push receiver and args
+  pushStack(receiver);
+  for (const auto& arg : args) {
+    pushStack(arg);
+  }
+  
+  // Create synthetic CALL_SUPER instruction
+  Instruction instr;
+  instr.opcode = OpCode::CALL_SUPER;
+  
+  // Use the existing string val ID directly
+  uint32_t strIdx = method_id;
+  
+  instr.operands = {Value::makeStringValId(strIdx), Value::makeInt(args.size())};
+  
+  executeInstruction(instr);
+  
+  if (!stack.empty()) {
+    return popStack();
+  }
+  return Value::makeNull();
 }
 
 // Prototype system - methods on types

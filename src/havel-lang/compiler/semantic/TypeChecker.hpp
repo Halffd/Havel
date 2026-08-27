@@ -150,12 +150,17 @@ private:
     void checkLetDeclaration(const ast::LetDeclaration &let);
     void checkFunctionDeclaration(const ast::FunctionDeclaration &fn);
     void checkAssignment(const ast::AssignmentExpression &assign);
+    void checkCallExpression(const ast::CallExpression &call);
 
     void narrowFromIsCheck(const ast::Expression &condition);
     std::string exprTypeName(const ast::Expression &expr) const;
 
     bool typeConformsToProtocol(const std::string &typeName,
                                 const std::string &protoName) const;
+
+    // Type compatibility checking
+    bool areTypesCompatible(const std::string &expected, const std::string &actual) const;
+    bool isSubtype(const std::string &sub, const std::string &super) const;
 };
 
 } // namespace havel::compiler

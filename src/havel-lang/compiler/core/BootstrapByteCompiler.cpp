@@ -108,7 +108,155 @@ bool isIntegerLiteral(double value) {
   return static_cast<double>(static_cast<int64_t>(value)) == value;
 }
 
+// Try to evaluate an expression to a constant Value at compile time.
+// Returns std::nullopt if the expression cannot be evaluated at compile time.
+std::optional<Value> tryEvaluateConstantImpl(const ast::Expression &expr, const ByteCompiler *compiler) {
+  if (!compiler) return std::nullopt;
+  
+  switch (expr.kind) {
+    case ast::NodeType::NumberLiteral: {
+      const auto &num = static_cast<const ast::NumberLiteral &>(expr);
+      if (!num.was_written_as_float && isIntegerLiteral(num.value)) {
+        return Value::makeInt(static_cast<int64_t>(num.value));
+      }
+      return Value::makeDouble(num.value);
+    }
+    case ast::NodeType::StringLiteral: {
+      const auto &str = static_cast<const ast::StringLiteral &>(expr);
+      return Value::makeStringValId(compiler->addStringConstant(str.value));
+    }
+    case ast::NodeType::BooleanLiteral: {
+      const auto &b = static_cast<const ast::BooleanLiteral &>(expr);
+      return Value::makeBool(b.value);
+    }
+    case ast::NodeType::NullLiteral: {
+      return Value::makeNull();
+    }
+    case ast::NodeType::UnaryExpression: {
+      const auto &unary = static_cast<const ast::UnaryExpression &>(expr);
+      if (!unary.operand) return std::nullopt;
+      
+      auto operandVal = tryEvaluateConstantImpl(*unary.operand, compiler);
+      if (!operandVal) return std::nullopt;
+      
+      switch (unary.operator_) {
+        case ast::UnaryExpression::UnaryOperator::Minus: {
+          if (operandVal->isInt()) {
+            return Value::makeInt(-operandVal->asInt());
+          } else if (operandVal->isDouble()) {
+            return Value::makeDouble(-operandVal->asDouble());
+          }
+          return std::nullopt;
+        }
+        case ast::UnaryExpression::UnaryOperator::Not: {
+          if (operandVal->isBool()) {
+            return Value::makeBool(!operandVal->asBool());
+          }
+          // Truthy/falsy for other types
+          bool truthy = true;
+          if (operandVal->isNull()) truthy = false;
+          else if (operandVal->isBool()) truthy = operandVal->asBool();
+          else if (operandVal->isInt()) truthy = operandVal->asInt() != 0;
+          else if (operandVal->isDouble()) truthy = operandVal->asDouble() != 0.0;
+          return Value::makeBool(!truthy);
+        }
+        case ast::UnaryExpression::UnaryOperator::Length: {
+          // Can't easily get string length at compile time without chunk access
+          return std::nullopt;
+        }
+        default:
+          return std::nullopt;
+      }
+    }
+    case ast::NodeType::BinaryExpression: {
+      const auto &binary = static_cast<const ast::BinaryExpression &>(expr);
+      if (!binary.left || !binary.right) return std::nullopt;
+      
+      auto leftVal = tryEvaluateConstantImpl(*binary.left, compiler);
+      auto rightVal = tryEvaluateConstantImpl(*binary.right, compiler);
+      if (!leftVal || !rightVal) return std::nullopt;
+      
+      // Number + Number
+      if (leftVal->isNumber() && rightVal->isNumber()) {
+        double lv = leftVal->isInt() ? static_cast<double>(leftVal->asInt()) : leftVal->asDouble();
+        double rv = rightVal->isInt() ? static_cast<double>(rightVal->asInt()) : rightVal->asDouble();
+        
+        auto makeNumResult = [](double v) -> Value {
+          // Preserve integer if both were ints and result is integer
+          if (std::floor(v) == v && v >= INT64_MIN && v <= INT64_MAX) {
+            return Value::makeInt(static_cast<int64_t>(v));
+          }
+          return Value::makeDouble(v);
+        };
+        
+        switch (binary.operator_) {
+          case ast::BinaryOperator::Add: return makeNumResult(lv + rv);
+          case ast::BinaryOperator::Sub: return makeNumResult(lv - rv);
+          case ast::BinaryOperator::Mul: return makeNumResult(lv * rv);
+          case ast::BinaryOperator::Div:
+            if (rv == 0.0) return std::nullopt;
+            return makeNumResult(lv / rv);
+          case ast::BinaryOperator::Mod:
+            if (rv == 0.0) return std::nullopt;
+            return makeNumResult(std::fmod(lv, rv));
+          case ast::BinaryOperator::Pow: return makeNumResult(std::pow(lv, rv));
+          case ast::BinaryOperator::IntDiv:
+            if (rv == 0.0) return std::nullopt;
+            return Value::makeInt(static_cast<int64_t>(lv) / static_cast<int64_t>(rv));
+          case ast::BinaryOperator::Less: return Value::makeBool(lv < rv);
+          case ast::BinaryOperator::LessEqual: return Value::makeBool(lv <= rv);
+          case ast::BinaryOperator::Greater: return Value::makeBool(lv > rv);
+          case ast::BinaryOperator::GreaterEqual: return Value::makeBool(lv >= rv);
+          case ast::BinaryOperator::Equal: return Value::makeBool(lv == rv);
+          case ast::BinaryOperator::NotEqual: return Value::makeBool(lv != rv);
+          default: return std::nullopt;
+        }
+      }
+      
+      // Bool + Bool
+      if (leftVal->isBool() && rightVal->isBool()) {
+        bool lv = leftVal->asBool();
+        bool rv = rightVal->asBool();
+        switch (binary.operator_) {
+          case ast::BinaryOperator::And: return Value::makeBool(lv && rv);
+          case ast::BinaryOperator::Or: return Value::makeBool(lv || rv);
+          case ast::BinaryOperator::Equal: return Value::makeBool(lv == rv);
+          case ast::BinaryOperator::NotEqual: return Value::makeBool(lv != rv);
+          default: return std::nullopt;
+        }
+      }
+      
+      return std::nullopt;
+    }
+    case ast::NodeType::TernaryExpression: {
+      const auto &ternary = static_cast<const ast::TernaryExpression &>(expr);
+      if (!ternary.condition) return std::nullopt;
+      
+      auto condVal = tryEvaluateConstantImpl(*ternary.condition, compiler);
+      if (!condVal) return std::nullopt;
+      
+      bool truthy = false;
+      if (condVal->isBool()) truthy = condVal->asBool();
+      else if (condVal->isNull()) truthy = false;
+      else if (condVal->isInt()) truthy = condVal->asInt() != 0;
+      else if (condVal->isDouble()) truthy = condVal->asDouble() != 0.0;
+      else truthy = true;
+      
+      const ast::Expression *chosen = truthy ? ternary.trueValue.get() : ternary.falseValue.get();
+      if (!chosen) return std::nullopt;
+      return tryEvaluateConstantImpl(*chosen, compiler);
+    }
+    default:
+      return std::nullopt;
+  }
+}
+
 } // namespace
+
+// Member function wrapper
+std::optional<Value> ByteCompiler::tryEvaluateConstant(const ast::Expression &expr) const {
+  return tryEvaluateConstantImpl(expr, this);
+}
 
 std::unique_ptr<BytecodeChunk>
 ByteCompiler::compile(const ast::Program &program) {
@@ -154,6 +302,10 @@ ByteCompiler::compileImpl(const ast::Program &program) {
 
   LexicalResolver resolver;
   resolver.setKnownGlobals(known_globals_);
+  resolver.setStrictMode(strict_mode_);
+  // DEBUG
+  // std::cerr << "DEBUG: known_globals_ size = " << known_globals_.size() << std::endl;
+  // for (const auto& g : known_globals_) std::cerr << "  known: " << g << std::endl;
   lexical_resolution_ = resolver.resolve(program);
   if (!resolver.errors().empty()) {
     // Collect all errors
@@ -540,6 +692,10 @@ uint32_t ByteCompiler::addStringConstant(const std::string &str) {
     COMPILER_THROW("Attempted to add string constant without active chunk");
   }
   return chunk->addString(str);
+}
+
+uint32_t ByteCompiler::addStringConstant(const std::string &str) const {
+  return const_cast<ByteCompiler *>(this)->addStringConstant(str);
 }
 
 uint32_t ByteCompiler::emitJump(OpCode op) {
@@ -3866,9 +4022,17 @@ case ast::NodeType::AtExpression: {
         in_tail_position_ = saved_tail;
         patchJump(jumpPastRight, static_cast<uint32_t>(current_function->instructions.size()));
     } else {
+            // Try recursive constant evaluation first (handles nested expressions like 1+2+3)
+if (auto constVal = tryEvaluateConstant(expression); constVal) {
+                emit(OpCode::LOAD_CONST, addConstant(*constVal));
+                break;
+            }
+            
+            // Fall back to simple literal folding
             if (emitFoldedLiteral(*binary.left, *binary.right, binary.operator_)) {
                 break;
             }
+            
             bool saved_tail = in_tail_position_;
             in_tail_position_ = false;
             compileExpression(*binary.left);
@@ -4878,6 +5042,12 @@ case ast::NodeType::UnaryExpression: {
             COMPILER_THROW("Unary expression missing operand");
         }
 
+        // Try constant folding first
+        if (auto constVal = tryEvaluateConstant(expression); constVal) {
+            emit(OpCode::LOAD_CONST, addConstant(*constVal));
+            break;
+        }
+
         bool saved_tail = in_tail_position_;
         in_tail_position_ = false;
         switch (unary.operator_) {
@@ -4918,6 +5088,12 @@ case ast::NodeType::UnaryExpression: {
             static_cast<const ast::TernaryExpression &>(expression);
         if (!ternary.condition || !ternary.trueValue || !ternary.falseValue) {
             COMPILER_THROW("Ternary expression missing components");
+        }
+
+        // Try constant folding first
+        if (auto constVal = tryEvaluateConstant(expression); constVal) {
+            emit(OpCode::LOAD_CONST, addConstant(*constVal));
+            break;
         }
 
         // Condition is never in tail position (it's consumed by the branch)

@@ -138,6 +138,7 @@ CALL,
   TAIL_CALL, // Tail call optimization - reuse current frame
   CALL_METHOD, // Dispatch method call based on value type (no boxing)
   CALL_METHOD_SPREAD, // Method call with dynamic spread: combine args + lookup + call
+  FFI_CALL, // Direct libffi call (fn_ptr, ret_type, param_types, args...)
   RETURN,
   TRY_ENTER,      // Install exception handler (catch ip)
   TRY_EXIT,       // Remove active exception handler

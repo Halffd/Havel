@@ -6,6 +6,7 @@
 #include "../../parser/BootstrapParser.h"
 #include "../../utils/ErrorPrinter.hpp"
 #include "../semantic/TypeChecker.hpp"
+#include "../semantic/SemanticAnalyzer.hpp"
 #include "../vm/VM.hpp"
 #include "../../runtime/concurrency/Scheduler.hpp"
 #include "BootstrapByteCompiler.hpp"
@@ -831,37 +832,50 @@ BytecodeSmokeResult runBytecodePipeline(const std::string &source,
     }
     COMPILER_THROW(allErrors);
   }
-  for (const auto &err : parser.getErrors()) {
+for (const auto &err : parser.getErrors()) {
     if (err.severity == ErrorSeverity::Warning) {
       std::cerr << formatDiagnostic("Warning", err.message,
                                     options.compile_unit_name, source, err.line,
                                     err.column, 1, "")
-                << std::endl;
+              << std::endl;
     }
   }
 
-  TypeChecker typeChecker;
-  auto typeCheckResult = typeChecker.check(*program);
-  if (!typeCheckResult.errors.empty()) {
-    std::string allTypeErrors;
-    for (const auto &err : typeCheckResult.errors) {
-      allTypeErrors += "TypeError: " + err + "\n";
+  // Run standalone semantic analysis pass
+  SemanticAnalyzer::Options semOptions;
+  semOptions.checkTypes = true;
+  semOptions.resolveNames = true;
+  semOptions.collectErrors = true;
+  semOptions.treatUndefinedAsError = options.strictSemantics;
+  // Pre-populate known globals from previous REPL sessions if available
+  // (This could be passed via options in the future)
+  
+  SemanticAnalyzer semanticAnalyzer(semOptions);
+  auto semResult = semanticAnalyzer.analyze(*program);
+
+  // Report semantic errors
+  if (!semResult.errors.empty()) {
+    std::string allErrors;
+    for (const auto& err : semResult.errors) {
+      allErrors += err + "\n";
       ::havel::errors::ErrorReporter::instance().error(
           ::havel::errors::ErrorStage::Compiler, err);
     }
-    if (!allTypeErrors.empty()) {
-      COMPILER_THROW(allTypeErrors);
+    if (!allErrors.empty()) {
+      COMPILER_THROW(allErrors);
     }
   }
-  for (const auto &warn : typeCheckResult.warnings) {
-    std::cerr << formatDiagnostic("TypeWarning", warn,
-                                  options.compile_unit_name, source, 0, 0, 0,
-                                  "")
+  for (const auto& warn : semResult.warnings) {
+    std::cerr << formatDiagnostic("SemanticWarning", warn,
+                                  options.compile_unit_name, source, 0, 0, 0, "")
               << std::endl;
   }
 
+  // Use the lexical resolution from semantic analysis
   ByteCompiler compiler;
-  compiler.setTypeCheckResult(std::move(typeCheckResult));
+  compiler.setTypeCheckResult(std::move(semResult.typeCheckResult));
+  // Pre-populate lexical resolution in the compiler
+  compiler.setKnownGlobals(semResult.lexicalResolution.global_variables);
   compiler.setSourceFile(options.compile_unit_name);
   BytecodeSmokeResult result;
   std::unique_ptr<BytecodeChunk> chunk;
@@ -1117,10 +1131,34 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
     if (!allTypeErrors.empty()) {
       COMPILER_THROW(allTypeErrors);
     }
+}
+
+// Run standalone semantic analysis pass for name resolution
+  SemanticAnalyzer::Options semOptions;
+  semOptions.checkTypes = false; // Already type-checked above
+  semOptions.resolveNames = true;
+  semOptions.collectErrors = true;
+  semOptions.treatUndefinedAsError = options.strictSemantics;
+  
+  SemanticAnalyzer semanticAnalyzer(semOptions);
+  auto semResult = semanticAnalyzer.analyze(*program);
+
+  // Report semantic errors
+  if (!semResult.errors.empty()) {
+    std::string allErrors;
+    for (const auto& err : semResult.errors) {
+      allErrors += err + "\n";
+      ::havel::errors::ErrorReporter::instance().error(
+          ::havel::errors::ErrorStage::Compiler, err);
+    }
+    if (!allErrors.empty()) {
+      COMPILER_THROW(allErrors);
+    }
   }
 
   ByteCompiler compiler;
   compiler.setTypeCheckResult(std::move(typeCheckResult));
+  compiler.setKnownGlobals(semResult.lexicalResolution.global_variables);
   compiler.setSourceFile(options.compile_unit_name);
 
   auto chunk = compiler.compile(*program);

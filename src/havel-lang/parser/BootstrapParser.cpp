@@ -3890,14 +3890,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 				break;
 			}
 		}
-		if (isTypeParamList && at().type == havel::TokenType::CloseParen) {
+		if (isTypeParamList && at().type == havel::TokenType::CloseParen && !candidateParams.empty()) {
 			advance(); // consume ')'
 			popDelimiter(TokenType::OpenParen);
-			if (at().type == havel::TokenType::OpenParen && !candidateParams.empty()) {
+			if (at().type == havel::TokenType::OpenParen) {
 				typeParams = std::move(candidateParams);
 			} else {
+				// Rewind to '('; delimiter already popped above, do not pop again
 				position = savedPos;
-				popDelimiter(TokenType::OpenParen);
 			}
 		} else {
 			position = savedPos;

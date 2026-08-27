@@ -93,6 +93,7 @@ bool debugIo = false;
   host::ServiceFilter serviceIncludes;
   host::ServiceFilter serviceExcludes;
   bool listServices = false;
+  bool strictSemantics = true;
 };
 
 class RunStrategy {

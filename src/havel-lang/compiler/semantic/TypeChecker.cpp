@@ -206,22 +206,23 @@ void TypeChecker::collectFunctionDeclaration(
     const ast::FunctionDeclaration &fn) {
     if (!fn.name) return;
     TypeInfo info;
-    info.kind = TypeKind::Builtin;
+    info.kind = TypeKind::Nominal;
     info.name = fn.name->symbol;
-    FunctionSignature sig;
-    sig.arity = fn.parameters.size();
+    FunctionSignature sig = signatureFromFunction(fn);
     info.methods[fn.name->symbol] = sig;
 
-	for (const auto &typeParam : fn.typeParameters) {
-		info.metadata["typeParam:" + typeParam.name] = "true";
-		for (const auto &bound : typeParam.upperBounds) {
-			info.metadata["typeParamBound:" + typeParam.name + ":" + bound] = "true";
-		}
-	}
-	if (!fn.typeParameters.empty()) {
-		info.metadata["typeParamCount"] =
-			std::to_string(fn.typeParameters.size());
-	}
+    for (const auto &typeParam : fn.typeParameters) {
+        info.metadata["typeParam:" + typeParam.name] = "true";
+        for (const auto &bound : typeParam.upperBounds) {
+            info.metadata["typeParamBound:" + typeParam.name + ":" + bound] = "true";
+        }
+    }
+    if (!fn.typeParameters.empty()) {
+        info.metadata["typeParamCount"] =
+            std::to_string(fn.typeParameters.size());
+    }
+
+    result_.registry[info.name] = info;
 }
 
 void TypeChecker::collectImplDeclaration(const ast::ImplDeclaration &impl) {
@@ -671,6 +672,9 @@ void TypeChecker::checkExpression(const ast::Expression &expr) {
     break;
   }
   case ast::NodeType::CallExpression:
+    if (auto *call = dynamic_cast<const ast::CallExpression *>(&expr)) {
+      checkCallExpression(*call);
+    }
     break;
   default:
     break;
@@ -779,9 +783,9 @@ void TypeChecker::checkFunctionDeclaration(
 
     // Introduce type parameters into scope as type-like bindings
     // so resolveTypeName can find them when checking the body
-	for (const auto &typeParam : fn.typeParameters) {
-		env_.set(typeParam.name, "typeparam:" + typeParam.name);
-	}
+    for (const auto &typeParam : fn.typeParameters) {
+        env_.set(typeParam.name, "typeparam:" + typeParam.name);
+    }
 
     for (const auto &param : fn.parameters) {
         if (!param) continue;
@@ -898,8 +902,122 @@ std::string TypeChecker::exprTypeName(const ast::Expression &expr) const {
   }
 }
 
+void TypeChecker::checkCallExpression(const ast::CallExpression &call) {
+  // Check arguments first
+  for (const auto &arg : call.args) {
+    if (arg) checkExpression(*arg);
+  }
+
+  // If callee is an identifier, check function signature
+  if (!call.callee || call.callee->kind != ast::NodeType::Identifier) {
+    return;
+  }
+
+  const auto &calleeIdent = static_cast<const ast::Identifier &>(*call.callee);
+  std::string calleeName = calleeIdent.symbol;
+
+  // Look up function in registry
+  auto it = result_.registry.find(calleeName);
+  if (it == result_.registry.end()) return;
+
+  const auto &typeInfo = it->second;
+  if (typeInfo.methods.empty()) return;
+
+  // Check if it's a constructor (class/struct new)
+  if (typeInfo.kind == TypeKind::Nominal) {
+    // For nominal types, check if there's a "new" method
+    auto newIt = typeInfo.methods.find("new");
+    if (newIt != typeInfo.methods.end()) {
+      const auto &sig = newIt->second;
+      if (call.args.size() != sig.paramTypes.size()) {
+        result_.errors.push_back(
+            "function '" + calleeName + ".new' expects " +
+            std::to_string(sig.paramTypes.size()) + " arguments, got " +
+            std::to_string(call.args.size()));
+      } else {
+        // Check argument types
+        for (size_t i = 0; i < call.args.size(); ++i) {
+          std::string argType = exprTypeName(*call.args[i]);
+          std::string expectedType = sig.paramTypes[i];
+          if (!argType.empty() && !expectedType.empty() &&
+              !areTypesCompatible(expectedType, argType)) {
+            // Allow null for nullable types
+            if (isNullableType(expectedType) && argType == "null") continue;
+            if (argType == unwrapNullable(expectedType)) continue;
+            result_.errors.push_back(
+                "argument " + std::to_string(i + 1) + " to '" + calleeName +
+                ".new' has type '" + argType + "', expected '" + expectedType + "'");
+          }
+        }
+      }
+    }
+    // Check if it's a function (stored under its own name)
+    auto fnIt = typeInfo.methods.find(calleeName);
+    if (fnIt != typeInfo.methods.end()) {
+      const auto &sig = fnIt->second;
+      if (call.args.size() != sig.paramTypes.size()) {
+        result_.errors.push_back(
+            "function '" + calleeName + "' expects " +
+            std::to_string(sig.paramTypes.size()) + " arguments, got " +
+            std::to_string(call.args.size()));
+      } else {
+// Check argument types
+          for (size_t i = 0; i < call.args.size(); ++i) {
+            std::string argType = exprTypeName(*call.args[i]);
+            std::string expectedType = sig.paramTypes[i];
+            if (!argType.empty() && !expectedType.empty() &&
+                !areTypesCompatible(expectedType, argType)) {
+              // Allow null for nullable types
+              if (isNullableType(expectedType) && argType == "null") continue;
+              if (argType == unwrapNullable(expectedType)) continue;
+              result_.errors.push_back(
+                  "argument " + std::to_string(i + 1) + " to '" + calleeName +
+                  "' has type '" + argType + "', expected '" + expectedType + "'");
+            }
+          }
+      }
+    }
+    return;
+  }
+}
+
+// Type compatibility checking
+bool TypeChecker::areTypesCompatible(const std::string &expected,
+                                     const std::string &actual) const {
+  if (expected == actual) return true;
+
+  // Numeric type compatibility: int/number/float are compatible
+  if ((expected == "int" && actual == "number") ||
+      (expected == "number" && actual == "int") ||
+      (expected == "float" && actual == "number") ||
+      (expected == "number" && actual == "float") ||
+      (expected == "int" && actual == "float") ||
+      (expected == "float" && actual == "int")) {
+    return true;
+  }
+
+  // Nullable type compatibility: ?T accepts T and null
+  if (isNullableType(expected)) {
+    std::string inner = unwrapNullable(expected);
+    if (areTypesCompatible(inner, actual)) return true;
+    if (actual == "null") return true;
+  }
+
+  // Protocol conformance: if expected is a protocol, check conformance
+  if (result_.registry.count(expected) > 0 &&
+      result_.registry.at(expected).kind == TypeKind::Protocol) {
+    return typeConformsToProtocol(actual, expected);
+  }
+
+  return false;
+}
+
+bool TypeChecker::isSubtype(const std::string &sub, const std::string &super) const {
+  return areTypesCompatible(super, sub);
+}
+
 bool TypeChecker::typeConformsToProtocol(const std::string &typeName,
-                                         const std::string &protoName) const {
+                                          const std::string &protoName) const {
   auto typeIt = result_.registry.find(typeName);
   if (typeIt == result_.registry.end()) return false;
 

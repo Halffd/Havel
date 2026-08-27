@@ -26,6 +26,7 @@ class MediaBridge;
 class NetworkBridge;
 class AudioBridge;
 class DisplayBridge;
+class BrightnessBridge;
 class ConfigBridge;
 class ModeBridge;
 class TimerBridge;

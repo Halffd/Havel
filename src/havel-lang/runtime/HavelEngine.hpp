@@ -26,6 +26,7 @@
 #include "core/hotkey/HotkeyManager.hpp"
 #include "../stdlib/HotkeyModule.hpp"
 #include "core/window/WindowManager.hpp"
+#include "core/BrightnessManager.hpp"
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -64,7 +65,8 @@ public:
         io_holder_ = std::make_shared<IO>();
         hotkeyManager_ = std::make_shared<HotkeyManager>(io_holder_);
         windowManager_ = std::make_shared<WindowManager>();
-        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get());
+        brightnessManager_ = std::make_shared<BrightnessManager>();
+        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, brightnessManager_.get());
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
@@ -554,6 +556,7 @@ private:
     std::shared_ptr<IO> io_holder_;
     std::shared_ptr<HotkeyManager> hotkeyManager_;
     std::shared_ptr<WindowManager> windowManager_;
+    std::shared_ptr<BrightnessManager> brightnessManager_;
 #ifdef HAVEL_ENABLE_LLVM
     std::unique_ptr<compiler::BytecodeOrcJIT> jitCompiler_;
 #endif

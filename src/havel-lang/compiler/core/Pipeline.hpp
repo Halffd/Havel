@@ -34,6 +34,8 @@ struct PipelineOptions {
     // so spawned goroutines get a chance to run while main blocks in
     // a long sleep.
     std::function<void()> yield_callback;
+    // Strict semantic analysis: treat undefined variables as errors
+    bool strictSemantics = true;
 };
 
 struct BytecodeSmokeResult {

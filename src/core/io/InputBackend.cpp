@@ -12,6 +12,23 @@
 
 namespace havel {
 
+// Global active X11Adapter for signal-safe emergency ungrab
+std::atomic<X11Adapter *> g_active_x11_adapter{nullptr};
+
+void EmergencyUngrabAllX11() {
+    X11Adapter *adapter = g_active_x11_adapter.load(std::memory_order_acquire);
+    if (adapter) {
+        adapter->UngrabAllDevices();
+    }
+}
+
+void EmergencyUngrabAllX11SignalSafe() {
+    X11Adapter *adapter = g_active_x11_adapter.load(std::memory_order_acquire);
+    if (adapter) {
+        adapter->SignalSafeUngrabAll();
+    }
+}
+
 InputBackendType InputBackend::DetectBestBackend() {
 #ifdef __linux__
   const char *waylandDisplay = std::getenv("WAYLAND_DISPLAY");

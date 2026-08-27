@@ -867,19 +867,15 @@ fn activeId() {
 	_t_focus = _tstart()
 	_info = x11.getInputFocus(_d)
 	_tend("activeId.getInputFocus", _t_focus)
-	if _info.focus != 0 && _info.focus != 1 && _info.focus != _rw {
+	if _info.rcode != 0 && _info.focus != 0 && _info.focus != 1 && _info.focus != _rw {
 		_active_id_cache = _info.focus
 		_active_id_ts = time.now()
 		_tend("activeId.total", _t0)
 		return _info.focus
 	}
+	// Don't cache 0 - it means "no active window" which is a valid transient state
+	// Return 0 but don't cache it so we re-check on next call
 	0
-}
-
-fn active() {
-	_aid = activeId()
-	if _aid == 0 { return null }
-	_snapshot(Window(_aid))
 }
 
 fn list() {

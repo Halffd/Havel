@@ -100,6 +100,10 @@ public:
   void setSourceFile(const std::string& f) { source_file_ = f; }
   const std::string& sourceFile() const { return source_file_; }
 
+  // Strict mode: treat unresolved global identifiers as errors
+  void setStrictMode(bool strict) { strict_mode_ = strict; }
+  bool strictMode() const { return strict_mode_; }
+
   // Shadow helpers so COMPILER_THROW macro picks up member location
   uint32_t _compiler_err_line() const {
     return current_source_location_ ? current_source_location_->line : 0;
@@ -107,6 +111,9 @@ public:
   uint32_t _compiler_err_col() const {
     return current_source_location_ ? current_source_location_->column : 0;
   }
+
+// String constant addition (public for compile-time constant folding)
+  uint32_t addStringConstant(const std::string &str) const;
 
 private:
   std::unique_ptr<BytecodeChunk> compileImpl(const ast::Program &program);
@@ -129,11 +136,11 @@ private:
 
 void emit(OpCode op);
 void emit(OpCode op, Value operand);
-void emit(OpCode op, std::vector<Value> operands);
-uint32_t addConstant(const Value &value);
-uint32_t addStringConstant(const std::string &str);
-uint32_t emitJump(OpCode op);
-void patchJump(uint32_t jump_instruction_index, uint32_t target);
+  void emit(OpCode op, std::vector<Value> operands);
+  uint32_t addConstant(const Value &value);
+  uint32_t addStringConstant(const std::string &str);
+  uint32_t emitJump(OpCode op);
+  void patchJump(uint32_t jump_instruction_index, uint32_t target);
 
 void optimizeJumps();  // Jump threading optimization
 
@@ -224,6 +231,10 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   bool statementContainsYield(const ast::Statement &stmt) const;
   bool expressionContainsYield(const ast::Expression &expr) const;
 
+  // Try to evaluate an expression to a constant Value at compile time.
+  // Returns std::nullopt if the expression cannot be evaluated at compile time.
+  std::optional<Value> tryEvaluateConstant(const ast::Expression &expr) const;
+
   void enterFunction(BytecodeFunction &&function,
                      std::optional<uint32_t> slot = std::nullopt);
   void leaveFunction();
@@ -266,6 +277,7 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
   uint32_t next_local_index = 0;
   std::optional<SourceLocation> current_source_location_;
   LexicalResolutionResult lexical_resolution_;
+  bool strict_mode_ = false;
 
 	// Pre-known globals (from previous REPL sessions)
   std::unordered_set<std::string> known_globals_;

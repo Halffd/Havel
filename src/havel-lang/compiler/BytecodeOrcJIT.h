@@ -17,7 +17,7 @@
 
 // Forward-declare the LLVM types we store so the header stays LLVM-free
 namespace llvm::orc { class LLJIT; }
-namespace llvm       { class Module; class TargetMachine; }
+namespace llvm       { class Module; class TargetMachine; class Function; }
 
 namespace havel::compiler {
 
@@ -113,6 +113,55 @@ private:
         uint64_t trace_hash = 0;
     };
 
+    // Inline cache for method calls (CALL_METHOD, OBJECT_GET, OBJECT_SET)
+    // Monomorphic -> Polymorphic (up to MAX_IC_ENTRIES) -> Megamorphic
+    static constexpr size_t MAX_IC_ENTRIES = 4;
+    
+    struct ICEntry {
+        uint64_t receiver_type_hash;  // Hash of receiver type (class/prototype)
+        uint32_t method_name_id;      // Method name ID
+        void* method_ptr;             // Compiled method function pointer
+        uint64_t hit_count = 0;
+    };
+    
+    struct InlineCache {
+        std::array<ICEntry, MAX_IC_ENTRIES> entries{};
+        uint32_t count = 0;
+        bool is_megamorphic = false;
+        uint64_t miss_count = 0;
+        
+        void* lookup(uint64_t type_hash, uint32_t method_name_id) const {
+            for (size_t i = 0; i < count; ++i) {
+                if (entries[i].receiver_type_hash == type_hash && 
+                    entries[i].method_name_id == method_name_id) {
+                    return entries[i].method_ptr;
+                }
+            }
+            return nullptr;
+        }
+        
+        void insert(uint64_t type_hash, uint32_t method_name_id, void* method_ptr) {
+            if (count < MAX_IC_ENTRIES) {
+                entries[count++] = {type_hash, method_name_id, method_ptr, 0};
+            } else {
+                is_megamorphic = true;
+            }
+        }
+        
+        void record_hit(uint64_t type_hash, uint32_t method_name_id) {
+            for (size_t i = 0; i < count; ++i) {
+                if (entries[i].receiver_type_hash == type_hash && 
+                    entries[i].method_name_id == method_name_id) {
+                    entries[i].hit_count++;
+                    break;
+                }
+            }
+        }
+    };
+    
+    // Inline caches per call site (function IP -> InlineCache)
+    std::unordered_map<uint64_t, InlineCache> inline_caches_;
+
     std::unique_ptr<llvm::orc::LLJIT> lljit_;
     std::unordered_map<std::string, void*> fptrs_;
     std::unordered_map<uint64_t, CachedFunction> compile_cache_;
@@ -137,8 +186,112 @@ private:
     uint64_t computeFunctionHash(const BytecodeFunction &func) const;
     void loadCompileCacheIndex();
     void saveCompileCacheIndex() const;
-
+    
+    // Inline cache key: function_hash << 32 | ip
+    static uint64_t makeICKey(uint64_t func_hash, uint32_t ip) {
+        return (func_hash << 32) | ip;
+    }
+    
+    // Get receiver type hash from value
+    uint64_t getReceiverTypeHash(const VM* vm, const Value& receiver) const;
+    
+    // ============================================================================
+    // PGO (Profile-Guided Optimization) Infrastructure
+    // ============================================================================
+    
+    struct ProfileData {
+        // Per-function execution counts
+        std::unordered_map<uint64_t, uint64_t> function_call_counts;
+        // Per-basic-block execution counts
+        std::unordered_map<uint64_t, uint64_t> block_execution_counts;
+        // Edge frequencies (branch taken/not taken)
+        std::unordered_map<uint64_t, std::pair<uint64_t, uint64_t>> edge_counts;
+        // Function hotness threshold for tier promotion
+        static constexpr uint64_t HOT_THRESHOLD = 1000;
+        static constexpr uint64_t VERY_HOT_THRESHOLD = 10000;
+    };
+    
+    // Profile data collection
+    ProfileData profile_data_;
+    
+    // Record function entry
+    void recordFunctionEntry(uint64_t func_hash) {
+        profile_data_.function_call_counts[func_hash]++;
+    }
+    
+    // Record basic block execution
+    void recordBlockExecution(uint64_t block_hash) {
+        profile_data_.block_execution_counts[block_hash]++;
+    }
+    
+    // Record branch taken/not taken
+    void recordBranch(uint64_t branch_id, bool taken) {
+        auto& pair = profile_data_.edge_counts[branch_id];
+        if (taken) pair.first++; else pair.second++;
+    }
+    
+    // Get function hotness level
+    int getFunctionHotness(uint64_t func_hash) const {
+        auto it = profile_data_.function_call_counts.find(func_hash);
+        if (it == profile_data_.function_call_counts.end()) return 0;
+        uint64_t count = it->second;
+        if (count >= ProfileData::VERY_HOT_THRESHOLD) return 3;
+        if (count >= ProfileData::HOT_THRESHOLD) return 2;
+        if (count > 10) return 1;
+        return 0;
+    }
+    
+    // Apply profile data to optimize module
+    void applyProfileGuidedOptimizations(llvm::Module& module);
+    
+    // Serialize profile data to file
+    void saveProfileData(const std::string& path) const;
+    // Load profile data from file
+    void loadProfileData(const std::string& path);
+    
     static void InitializeLLVM();
+    
+    // ============================================================================
+    // Code Layout Optimization
+    // ============================================================================
+    
+    // Hot/cold block splitting based on profile data
+    void optimizeCodeLayout(llvm::Module& module);
+    
+    // Block ordering optimization using profile data
+    void optimizeBlockOrder(llvm::Function* function);
+    
+    // Cold block separation
+    void separateColdBlocks(llvm::Function* function);
+    
+    // Compute basic block hotness from profile data
+    double getBlockHotness(uint64_t func_hash, uint32_t block_id) const;
+    
+    // ============================================================================
+    // Compilation Queue System
+    // ============================================================================
+    
+    enum class CompilePriority { Low, Normal, High, Critical };
+    
+    struct CompileTask {
+        uint64_t func_hash;
+        uint32_t start_ip;
+        uint32_t end_ip;
+        CompilePriority priority;
+        std::function<void(std::unique_ptr<llvm::Module>)> callback;
+    };
+    
+    // Async compilation queue
+    void enqueueCompileTask(CompileTask task);
+    void processCompileQueue();
+    void shutdownCompileQueue();
+    
+    // Background compilation thread
+    std::thread compile_thread_;
+    std::atomic<bool> compile_thread_running_{false};
+    std::mutex queue_mutex_;
+    std::condition_variable queue_cv_;
+    std::queue<CompileTask> compile_queue_;
 };
 
 

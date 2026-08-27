@@ -60,6 +60,10 @@ public:
     known_globals_ = names;
   }
 
+  // Strict mode: treat unresolved global identifiers as errors
+  void setStrictMode(bool strict) { strict_mode_ = strict; }
+  bool strictMode() const { return strict_mode_; }
+
   const std::vector<std::string> &errors() const { return errors_; }
 
 private:
@@ -82,6 +86,7 @@ private:
   std::unordered_set<std::string> global_variables_;  // Top-level let declarations
   std::unordered_set<std::string> known_globals_;  // Pre-known globals (from previous REPL lines)
   std::vector<FunctionContext> function_stack_;
+  bool strict_mode_ = false;
 
   // Simple resolution: if not local/upvalue, it's a global
   // Runtime decides if it exists or errors

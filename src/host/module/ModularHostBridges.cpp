@@ -6008,6 +6008,14 @@ void BrightnessBridge::install(PipelineOptions &options) {
       [ctx = ctx_](const auto &args) { return handleGetGamma(args, ctx); };
   options.host_functions["brightness.setGamma"] =
       [ctx = ctx_](const auto &args) { return handleSetGamma(args, ctx); };
+  options.host_functions["brightness.setGammaRGB"] =
+      [ctx = ctx_](const auto &args) { return handleSetGammaRGB(args, ctx); };
+  options.host_functions["brightness.getGammaR"] =
+      [ctx = ctx_](const auto &args) { return handleGetGammaR(args, ctx); };
+  options.host_functions["brightness.getGammaG"] =
+      [ctx = ctx_](const auto &args) { return handleGetGammaG(args, ctx); };
+  options.host_functions["brightness.getGammaB"] =
+      [ctx = ctx_](const auto &args) { return handleGetGammaB(args, ctx); };
   options.host_functions["brightness.getShadowLift"] =
       [ctx = ctx_](const auto &args) { return handleGetShadowLift(args, ctx); };
   options.host_functions["brightness.setShadowLift"] =
@@ -6028,8 +6036,8 @@ BrightnessBridge::handleGetBrightness(const std::vector<Value> &args,
   double brightness;
   if (args.empty()) {
     brightness = ctx->brightnessManager->getBrightness();
-  } else if (args[0].isStringValId()) {
-    std::string monitor = vm->resolveStringKey(args[0]);
+} else if (args[0].isStringId() || args[0].isStringValId()) {
+    std::string monitor = strVal(args[0], vm);
     brightness = ctx->brightnessManager->getBrightness(monitor);
   } else {
     return Value::makeNull();
@@ -6051,8 +6059,8 @@ BrightnessBridge::handleSetBrightness(const std::vector<Value> &args,
 
   double brightness = args[0].asNumber();
   bool success;
-  if (args.size() >= 2 && args[1].isStringValId()) {
-    std::string monitor = vm->resolveStringKey(args[1]);
+if (args.size() >= 2 && (args[1].isStringId() || args[1].isStringValId())) {
+    std::string monitor = strVal(args[1], vm);
     success = ctx->brightnessManager->setBrightness(monitor, brightness);
   } else {
     success = ctx->brightnessManager->setBrightness(brightness);
@@ -6072,8 +6080,8 @@ BrightnessBridge::handleGetTemperature(const std::vector<Value> &args,
   int temp;
   if (args.empty()) {
     temp = ctx->brightnessManager->getTemperature();
-  } else if (args[0].isStringValId()) {
-    std::string monitor = vm->resolveStringKey(args[0]);
+} else if (args[0].isStringId() || args[0].isStringValId()) {
+    std::string monitor = strVal(args[0], vm);
     temp = ctx->brightnessManager->getTemperature(monitor);
   } else {
     return Value::makeNull();
@@ -6095,8 +6103,8 @@ BrightnessBridge::handleSetTemperature(const std::vector<Value> &args,
 
   int kelvin = static_cast<int>(args[0].asNumber());
   bool success;
-  if (args.size() >= 2 && args[1].isStringValId()) {
-    std::string monitor = vm->resolveStringKey(args[1]);
+if (args.size() >= 2 && (args[1].isStringId() || args[1].isStringValId())) {
+    std::string monitor = strVal(args[1], vm);
     success = ctx->brightnessManager->setTemperature(monitor, kelvin);
   } else {
     success = ctx->brightnessManager->setTemperature(kelvin);
@@ -6114,8 +6122,8 @@ BrightnessBridge::handleGetGamma(const std::vector<Value> &args,
     return Value::makeNull();
 
   auto rgb = ctx->brightnessManager->getGammaRGB();
-  if (args.size() >= 1 && args[0].isStringValId()) {
-    std::string monitor = vm->resolveStringKey(args[0]);
+if (args.size() >= 1 && (args[0].isStringId() || args[0].isStringValId())) {
+    std::string monitor = strVal(args[0], vm);
     rgb = ctx->brightnessManager->getGammaRGB(monitor);
   }
   auto obj = vm->createHostObject();
@@ -6141,13 +6149,101 @@ BrightnessBridge::handleSetGamma(const std::vector<Value> &args,
   double green = args[1].asNumber();
   double blue = args[2].asNumber();
   bool success;
-  if (args.size() >= 4 && args[3].isStringValId()) {
-    std::string monitor = vm->resolveStringKey(args[3]);
+if (args.size() >= 4 && (args[3].isStringId() || args[3].isStringValId())) {
+    std::string monitor = strVal(args[3], vm);
     success = ctx->brightnessManager->setGammaRGB(monitor, red, green, blue);
   } else {
     success = ctx->brightnessManager->setGammaRGB(red, green, blue);
   }
   return Value::makeBool(success);
+}
+
+Value
+BrightnessBridge::handleSetGammaRGB(const std::vector<Value> &args,
+                                    const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeBool(false);
+  if (args.size() < 3)
+    return Value::makeBool(false);
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeBool(false);
+
+  double red = args[0].asNumber();
+  double green = args[1].asNumber();
+  double blue = args[2].asNumber();
+  bool success;
+  if (args.size() >= 4 && (args[3].isStringId() || args[3].isStringValId())) {
+    std::string monitor = strVal(args[3], vm);
+    success = ctx->brightnessManager->setGammaRGB(monitor, red, green, blue);
+  } else {
+    success = ctx->brightnessManager->setGammaRGB(red, green, blue);
+  }
+  return Value::makeBool(success);
+}
+
+Value
+BrightnessBridge::handleGetGammaR(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeNull();
+
+  double val;
+  if (args.empty()) {
+    val = ctx->brightnessManager->getGammaRGB().red;
+  } else if (args[0].isStringId() || args[0].isStringValId()) {
+    std::string monitor = strVal(args[0], vm);
+    val = ctx->brightnessManager->getGammaRGB(monitor).red;
+  } else {
+    return Value::makeNull();
+  }
+  return Value::makeDouble(val);
+}
+
+Value
+BrightnessBridge::handleGetGammaG(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeNull();
+
+  double val;
+  if (args.empty()) {
+    val = ctx->brightnessManager->getGammaRGB().green;
+  } else if (args[0].isStringId() || args[0].isStringValId()) {
+    std::string monitor = strVal(args[0], vm);
+    val = ctx->brightnessManager->getGammaRGB(monitor).green;
+  } else {
+    return Value::makeNull();
+  }
+  return Value::makeDouble(val);
+}
+
+Value
+BrightnessBridge::handleGetGammaB(const std::vector<Value> &args,
+                                  const HostContext *ctx) {
+  if (!ctx || !ctx->brightnessManager)
+    return Value::makeNull();
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm)
+    return Value::makeNull();
+
+  double val;
+  if (args.empty()) {
+    val = ctx->brightnessManager->getGammaRGB().blue;
+  } else if (args[0].isStringId() || args[0].isStringValId()) {
+    std::string monitor = strVal(args[0], vm);
+    val = ctx->brightnessManager->getGammaRGB(monitor).blue;
+  } else {
+    return Value::makeNull();
+  }
+  return Value::makeDouble(val);
 }
 
 Value
@@ -6162,8 +6258,8 @@ BrightnessBridge::handleGetShadowLift(const std::vector<Value> &args,
   double lift;
   if (args.empty()) {
     lift = ctx->brightnessManager->getShadowLift();
-  } else if (args[0].isStringValId()) {
-    std::string monitor = vm->resolveStringKey(args[0]);
+} else if (args[0].isStringId() || args[0].isStringValId()) {
+    std::string monitor = strVal(args[0], vm);
     lift = ctx->brightnessManager->getShadowLift(monitor);
   } else {
     return Value::makeNull();
@@ -6185,8 +6281,8 @@ BrightnessBridge::handleSetShadowLift(const std::vector<Value> &args,
 
   double lift = args[0].asNumber();
   bool success;
-  if (args.size() >= 2 && args[1].isStringValId()) {
-    std::string monitor = vm->resolveStringKey(args[1]);
+if (args.size() >= 2 && (args[1].isStringId() || args[1].isStringValId())) {
+    std::string monitor = strVal(args[1], vm);
     success = ctx->brightnessManager->setShadowLift(monitor, lift);
   } else {
     success = ctx->brightnessManager->setShadowLift(lift);

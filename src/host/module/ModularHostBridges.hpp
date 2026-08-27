@@ -1025,6 +1025,14 @@ private:
                               const HostContext *ctx);
   static Value handleSetGamma(const std::vector<Value> &args,
                               const HostContext *ctx);
+  static Value handleSetGammaRGB(const std::vector<Value> &args,
+                                 const HostContext *ctx);
+  static Value handleGetGammaR(const std::vector<Value> &args,
+                               const HostContext *ctx);
+  static Value handleGetGammaG(const std::vector<Value> &args,
+                               const HostContext *ctx);
+  static Value handleGetGammaB(const std::vector<Value> &args,
+                               const HostContext *ctx);
   static Value handleGetShadowLift(const std::vector<Value> &args,
                                    const HostContext *ctx);
   static Value handleSetShadowLift(const std::vector<Value> &args,

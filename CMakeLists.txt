@@ -1323,6 +1323,7 @@ $<$<BOOL:${TESSERACT_FOUND}>:HAVE_TESSERACT>
 $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
 $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
 $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
+$<$<BOOL:${WAYLAND_FOUND}>:__WAYLAND__>
 )
 
 # Bake the native (system) link flags into havel_core so the AOT
@@ -1382,7 +1383,7 @@ add_library(havel_modules STATIC ${HOST_MODULES_SOURCES})
 else()
 add_library(havel_modules INTERFACE)
 endif()
-target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos)
+target_link_libraries(havel_core PUBLIC fmt::fmt wayland-protos ${COMMON_LIBS})
 target_include_directories(havel_core
     PUBLIC
         ${CMAKE_SOURCE_DIR}/src/include

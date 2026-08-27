@@ -235,11 +235,13 @@ protected:
 };
 
 class EvdevAdapter;
-class X11Adapter;
 class WaylandAdapter;
 class WindowsAdapter;
 
 void EmergencyUngrabAllEvdev();
 void EmergencyUngrabAllEvdevSignalSafe();
+
+void EmergencyUngrabAllX11();
+void EmergencyUngrabAllX11SignalSafe();
 
 }

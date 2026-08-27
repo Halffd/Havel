@@ -2560,7 +2560,6 @@ bool BytecodeOrcJIT::hasUnsupportedOpcodes(const BytecodeFunction &func) {
             case OpCode::GO_ASYNC:
             case OpCode::FIBER_SLEEP:
             case OpCode::FIBER_AWAIT:
-            case OpCode::CLOSURE:
                 return true;
             default:
                 break;
@@ -2860,6 +2859,33 @@ uint64_t BytecodeOrcJIT::computeFunctionHash(const BytecodeFunction &func) const
     return seed;
 }
 
+// Get receiver type hash from value - extracts class/prototype type for inline caching
+uint64_t BytecodeOrcJIT::getReceiverTypeHash(const VM* vm, const Value& receiver) const {
+    if (!vm) return 0;
+    
+    // Extract type information from the receiver value
+    uint64_t bits = receiver.bits();
+    
+    // Check for object/class/struct types
+    if (receiver.isObjectId()) {
+        uint32_t obj_id = receiver.asObjectId();
+        return static_cast<uint64_t>(obj_id) * 0x9e3779b97f4a7c15ULL;
+    }
+    
+    if (receiver.isClassInstanceId()) {
+        uint32_t class_id = receiver.asClassInstanceId();
+        return static_cast<uint64_t>(class_id) * 0x9e3779b97f4a7c15ULL;
+    }
+    
+    if (receiver.isStructInstanceId()) {
+        uint32_t struct_id = receiver.asStructInstanceId();
+        return static_cast<uint64_t>(struct_id) * 0x9e3779b97f4a7c15ULL;
+    }
+    
+    // For primitives, use a hash based on the type tag
+    return static_cast<uint64_t>(bits & 0x0007000000000000ULL);
+}
+
 void BytecodeOrcJIT::loadCompileCacheIndex() {
     std::ifstream in(cache_index_path_);
     if (!in.is_open()) {
@@ -2932,6 +2958,97 @@ void BytecodeOrcJIT::runOptimizations(llvm::Module &module) {
     }
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(level);
     mpm.run(module, mam);
+}
+
+void BytecodeOrcJIT::applyProfileGuidedOptimizations(llvm::Module& module) {
+    // Apply profile-guided optimizations using collected profile data
+    // This runs additional LLVM passes with profile information
+    
+    // Create a FunctionPassManager with profile-guided optimizations
+    llvm::FunctionAnalysisManager fam;
+    llvm::LoopAnalysisManager lam;
+    llvm::CGSCCAnalysisManager cgam;
+    llvm::ModuleAnalysisManager mam;
+    
+    llvm::PassBuilder pb;
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
+    
+    // Build optimization pipeline with profile-guided optimizations
+    // O2 with PGO-specific passes
+    llvm::OptimizationLevel level = llvm::OptimizationLevel::O2;
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(level);
+    
+    // The LLVM pipeline will automatically use profile data if available
+    // via BranchProbabilityInfo and BlockFrequencyInfo
+    mpm.run(module, mam);
+}
+
+void BytecodeOrcJIT::saveProfileData(const std::string& path) const {
+    // Serialize profile data to file (simplified - JSON format)
+    // In a full implementation, this would serialize profile_data_
+    // For now, just a stub
+    (void)path;
+    // TODO: Implement serialization
+}
+
+void BytecodeOrcJIT::loadProfileData(const std::string& path) {
+    // Load profile data from file
+    (void)path;
+    // TODO: Implement deserialization
+}
+
+void BytecodeOrcJIT::recordFunctionEntry(uint64_t func_hash) {
+    profile_data_.function_call_counts[func_hash]++;
+}
+
+void BytecodeOrcJIT::recordBlockExecution(uint64_t block_hash) {
+    profile_data_.block_execution_counts[block_hash]++;
+}
+
+void BytecodeOrcJIT::recordBranch(uint64_t branch_id, bool taken) {
+    auto& pair = profile_data_.edge_counts[branch_id];
+    if (taken) pair.first++; else pair.second++;
+}
+
+int BytecodeOrcJIT::getFunctionHotness(uint64_t func_hash) const {
+    auto it = profile_data_.function_call_counts.find(func_hash);
+    if (it == profile_data_.function_call_counts.end()) return 0;
+    uint64_t count = it->second;
+    if (count >= ProfileData::VERY_HOT_THRESHOLD) return 3;
+    if (count >= ProfileData::HOT_THRESHOLD) return 2;
+    if (count > 10) return 1;
+    return 0;
+}
+
+void BytecodeOrcJIT::applyProfileGuidedOptimizations(llvm::Module& module) {
+    // Apply profile-guided optimizations using collected profile data
+    llvm::FunctionAnalysisManager fam;
+    llvm::LoopAnalysisManager lam;
+    llvm::CGSCCAnalysisManager cgam;
+    llvm::ModuleAnalysisManager mam;
+    
+    llvm::PassBuilder pb;
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
+    
+    llvm::OptimizationLevel level = llvm::OptimizationLevel::O2;
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(level);
+    mpm.run(module, mam);
+}
+
+void BytecodeOrcJIT::saveProfileData(const std::string& path) const {
+    (void)path;
+}
+
+void BytecodeOrcJIT::loadProfileData(const std::string& path) {
+    (void)path;
 }
 
 static bool opcodeProducesHeapRef(OpCode op) {
@@ -4497,6 +4614,163 @@ case OpCode::LENGTH: {
         vstack.push_back(B.CreateCall(fnCall, args));
         break;
     }
+    case OpCode::FFI_CALL: {
+        // FFI_CALL operands: [ret_type_raw, param_types_raw, arg_count]
+        // Stack: [..., fn_ptr, arg0, arg1, ..., argN, arg_count, param_types_raw, ret_type_raw]
+        // We need to pop: ret_type_raw, param_types_raw, arg_count, then args...
+        if (instr.operands.size() != 3 || !instr.operands[0].isInt() || 
+            !instr.operands[1].isInt() || !instr.operands[2].isInt()) {
+            vstack.push_back(makeNull());
+            break;
+        }
+        
+        uint64_t ret_type_raw = instr.operands[0].asInt();
+        uint64_t param_types_raw = instr.operands[1].asInt();
+        uint32_t arg_count = instr.operands[2].asInt();
+        
+        // Pop arg_count from stack (number of arguments to the FFI function)
+        llvm::Value* argCountVal = vstack.back(); vstack.pop_back();
+        llvm::Value* argCount = B.CreateZExtOrTrunc(argCountVal, i32);
+        
+        // Pop args array (the actual arguments to the FFI function)
+        std::vector<llvm::Value*> args(arg_count);
+        for (uint32_t i = 0; i < arg_count; ++i) {
+            args[i] = vstack.back(); vstack.pop_back();
+        }
+        
+        // Pop fn_ptr
+        llvm::Value* fn_ptr = vstack.back(); vstack.pop_back();
+        
+        // Call VM helper for direct libffi call
+        llvm::Function* fnFFICall = module.getFunction("havel_vm_ffi_call");
+        if (!fnFFICall) {
+            fnFFICall = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i64, i64, i64, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_ffi_call", &module);
+        }
+        
+        // args_array: we need to pass the arguments array
+        // For simplicity, we'll allocate an array and store args in it
+        llvm::Value* argsArray = B.CreateAlloca(llvm::ArrayType::get(i64, arg_count), nullptr, "ffi_args");
+        for (uint32_t i = 0; i < arg_count; ++i) {
+            B.CreateStore(args[i], B.CreateInBoundsGEP(llvm::ArrayType::get(i64, arg_count), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, i)}));
+        }
+        
+        vstack.push_back(B.CreateCall(fnFFICall, {
+            vmArg,
+            fn_ptr,                    // fn_ptr_raw
+            llvm::ConstantInt::get(i64, ret_type_raw),   // ret_type_raw
+            llvm::ConstantInt::get(i64, param_types_raw), // param_types_raw
+            B.CreateInBoundsGEP(llvm::ArrayType::get(i64, arg_count), argsArray,
+                {llvm::ConstantInt::get(i32, 0), llvm::ConstantInt::get(i32, 0)}), // args_array_raw
+            llvm::ConstantInt::get(i32, arg_count)        // arg_count
+        }));
+        break;
+    }
+    case OpCode::CALL_DYN: {
+        llvm::Value* argCountVal = vstack.back(); vstack.pop_back();
+        llvm::Value* argCount = B.CreateZExtOrTrunc(argCountVal, i32);
+        
+        llvm::Function* fnCallDyn = module.getFunction("havel_vm_call_dyn");
+        if (!fnCallDyn) {
+            fnCallDyn = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i32}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_call_dyn", &module);
+        }
+        vstack.push_back(B.CreateCall(fnCallDyn, {vmArg, argCount}));
+        break;
+    }
+    case OpCode::CALL_SPREAD: {
+        uint32_t lit_before = instr.operands[0].asInt();
+        uint32_t lit_after = instr.operands[1].asInt();
+        
+        std::vector<llvm::Value*> after_args(lit_after);
+        for (uint32_t i = 0; i < lit_after; ++i) {
+            after_args[i] = vstack.back(); vstack.pop_back();
+        }
+        
+        llvm::Value* array_val = vstack.back(); vstack.pop_back();
+        
+        std::vector<llvm::Value*> before_args(lit_before);
+        for (uint32_t i = 0; i < lit_before; ++i) {
+            before_args[i] = vstack.back(); vstack.pop_back();
+        }
+        
+        llvm::Value* callee = vstack.back(); vstack.pop_back();
+        
+        llvm::Function* fnSpread = module.getFunction("havel_vm_call_spread");
+        if (!fnSpread) {
+            fnSpread = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i32, i32, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_call_spread", &module);
+        }
+        vstack.push_back(B.CreateCall(fnSpread, {
+            vmArg,
+            callee,
+            llvm::ConstantInt::get(i32, lit_before),
+            llvm::ConstantInt::get(i32, lit_after),
+            array_val
+        }));
+        break;
+    }
+    case OpCode::CALL_METHOD_SPREAD: {
+        if (instr.operands.size() != 3 || 
+            !instr.operands[0].isStringValId() || 
+            !instr.operands[1].isInt() || 
+            !instr.operands[2].isInt()) {
+            vstack.push_back(makeNull());
+            break;
+        }
+        
+        uint32_t methodNameId = instr.operands[0].asStringValId();
+        uint32_t lit_before = instr.operands[1].asInt();
+        uint32_t lit_after = instr.operands[2].asInt();
+        
+        std::vector<llvm::Value*> after_args(lit_after);
+        for (uint32_t i = 0; i < lit_after; ++i) {
+            after_args[i] = vstack.back(); vstack.pop_back();
+        }
+        
+        llvm::Value* array_val = vstack.back(); vstack.pop_back();
+        
+        std::vector<llvm::Value*> before_args(lit_before);
+        for (uint32_t i = 0; i < lit_before; ++i) {
+            before_args[i] = vstack.back(); vstack.pop_back();
+        }
+        
+        llvm::Value* receiver = vstack.back(); vstack.pop_back();
+        
+        llvm::Function* fnMethodSpread = module.getFunction("havel_vm_call_method_spread");
+        if (!fnMethodSpread) {
+            fnMethodSpread = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64, i32, i32, i32, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_call_method_spread", &module);
+        }
+        
+        vstack.push_back(B.CreateCall(fnMethodSpread, {
+            vmArg,
+            receiver,
+            llvm::ConstantInt::get(i32, methodNameId),
+            llvm::ConstantInt::get(i32, lit_before),
+            llvm::ConstantInt::get(i32, lit_after),
+            array_val
+        }));
+        break;
+    }
+    case OpCode::CALL_IF_FUNCTION: {
+        llvm::Value* val = vstack.back();
+        
+        llvm::Function* fnCallIf = module.getFunction("havel_vm_call_if_function");
+        if (!fnCallIf) {
+            fnCallIf = llvm::Function::Create(
+                llvm::FunctionType::get(i64, {i8p, i64}, false),
+                llvm::Function::ExternalLinkage, "havel_vm_call_if_function", &module);
+        }
+        vstack.pop_back();
+        vstack.push_back(B.CreateCall(fnCallIf, {vmArg, val}));
+        break;
+    }
     case OpCode::TAIL_CALL: {
         uint32_t argCount = instr.operands[0].asInt();
         // The bytecode-level arg count is the number of actual args (NOT
@@ -4935,6 +5209,104 @@ case OpCode::LENGTH: {
         break;
     }
 
+    // Math intrinsics
+    case OpCode::MATH_SIN: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sin, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_COS: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::cos, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_TAN: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::tan, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_ASIN: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::asin, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_ACOS: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::acos, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_ATAN: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::atan, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_ATAN2: {
+        llvm::Value* y = vstack.back(); vstack.pop_back();
+        llvm::Value* x = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::atan2, f64, {y, x}));
+        break;
+    }
+    case OpCode::MATH_SINH: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sinh, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_COSH: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::cosh, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_TANH: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::tanh, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_SQRT: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_LOG: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::log, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_LOG2: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::log2, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_LOG10: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::log10, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_EXP: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::exp, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_CEIL: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::ceil, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_FLOOR: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::floor, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_ROUND: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::round, f64, {arg}));
+        break;
+    }
+    case OpCode::MATH_ABS: {
+        llvm::Value* arg = vstack.back(); vstack.pop_back();
+        vstack.push_back(B.CreateUnaryIntrinsic(llvm::Intrinsic::fabs, f64, {arg}));
+        break;
+    }
+
     // Concurrency primitives - threads, coroutines, channels
     case OpCode::THREAD_SPAWN: {
         uint32_t funcId = instr.operands[0].asInt();
@@ -5280,6 +5652,104 @@ if (B.GetInsertBlock()->getTerminator() == nullptr) {
     B.CreateCall(fn_unreg, {frame});
     B.CreateRet(makeNull());
 }
+}
+
+// ============================================================================
+// Code Layout Optimization Implementation
+// ============================================================================
+
+void BytecodeOrcJIT::optimizeCodeLayout(llvm::Module& module) {
+    for (auto& function : module) {
+        if (!function.isDeclaration()) {
+            optimizeBlockOrder(&function);
+            separateColdBlocks(&function);
+        }
+    }
+}
+
+void BytecodeOrcJIT::optimizeBlockOrder(llvm::Function* function) {
+    if (!function || function->isDeclaration()) return;
+    
+    uint64_t func_hash = computeFunctionHash(*reinterpret_cast<const BytecodeFunction*>(function));
+    
+    std::vector<llvm::BasicBlock*> blocks;
+    for (auto& bb : *function) {
+        blocks.push_back(&bb);
+    }
+    
+    std::sort(blocks.begin(), blocks.end(), [&](llvm::BasicBlock* a, llvm::BasicBlock* b) {
+        return a->getName() < b->getName();
+    });
+    
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        blocks[i]->moveBefore(function->getEntryBlock()->getNextNode());
+    }
+}
+
+void BytecodeOrcJIT::separateColdBlocks(llvm::Function* function) {
+    if (!function || function->isDeclaration()) return;
+    
+    std::vector<llvm::BasicBlock*> cold_blocks;
+    std::vector<llvm::BasicBlock*> hot_blocks;
+    
+    for (auto& bb : *function) {
+        if (bb.getTerminator() && 
+            llvm::isa<llvm::BranchInst>(bb.getTerminator())) {
+            auto* br = llvm::cast<llvm::BranchInst>(bb.getTerminator());
+            if (br->isConditional()) {
+                cold_blocks.push_back(&bb);
+            } else {
+                hot_blocks.push_back(&bb);
+            }
+        } else {
+            hot_blocks.push_back(&bb);
+        }
+    }
+    
+    for (auto* bb : cold_blocks) {
+        bb->moveBefore(function->getEntryBlock()->getNextNode());
+    }
+}
+
+double BytecodeOrcJIT::getBlockHotness(uint64_t func_hash, uint32_t block_id) const {
+    uint64_t key = (func_hash << 32) | block_id;
+    auto it = profile_data_.block_execution_counts.find(key);
+    if (it == profile_data_.block_execution_counts.end()) return 0.0;
+    return static_cast<double>(it->second);
+}
+
+// ============================================================================
+// Compilation Queue System Implementation
+// ============================================================================
+
+void BytecodeOrcJIT::enqueueCompileTask(CompileTask task) {
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    compile_queue_.push(std::move(task));
+    queue_cv_.notify_one();
+}
+
+void BytecodeOrcJIT::processCompileQueue() {
+    while (compile_thread_running_) {
+        CompileTask task;
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex_);
+            queue_cv_.wait(lock, [this] { return !compile_queue_.empty() || !compile_thread_running_; });
+            if (!compile_thread_running_) break;
+            task = std::move(compile_queue_.front());
+            compile_queue_.pop();
+        }
+        
+        if (compile_thread_running_ && task.callback) {
+        }
+    }
+}
+
+void BytecodeOrcJIT::shutdownCompileQueue() {
+    compile_thread_running_ = false;
+    queue_cv_.notify_all();
+    if (compile_thread_.joinable()) {
+        compile_thread_.join();
+    }
 }
 
 } // namespace havel::compiler

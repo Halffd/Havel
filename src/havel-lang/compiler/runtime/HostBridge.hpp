@@ -34,6 +34,7 @@ class ConcurrencyBridge;
 class AutomationBridge;
 class BrowserBridge;
 class ToolsBridge;
+class BrightnessBridge;
 
 /**
  * HostBridge - Composite bridge delegating to modular components

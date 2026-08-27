@@ -30,6 +30,7 @@ class AppBridge;
 class AutomationBridge;
 class BrowserBridge;
 class ToolsBridge;
+class BrightnessBridge;
 }
 
 using havel::compiler::CallbackId;

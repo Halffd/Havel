@@ -208,8 +208,8 @@ void Parser::synchronizeTo(havel::TokenType type) {
   }
 }
 
-void Parser::pushDelimiter(TokenType type) {
-  Token current = at();
+void Parser::pushDelimiter(TokenType type, const Token* token) {
+  const Token& current = token ? *token : at();
   delimiterStack_.push_back({type, current.line, current.column, position});
 }
 
@@ -2491,8 +2491,9 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
   }
 
   if (at().type == TokenType::OpenParen) {
+    Token openParen = at();
     advance(); // consume '('
-    pushDelimiter(TokenType::OpenParen);
+    pushDelimiter(TokenType::OpenParen, &openParen);
 
     while (notEOF() && at().type != TokenType::CloseParen) {
       if (!params.empty() && at().type == TokenType::Comma) {
@@ -3852,8 +3853,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 	std::vector<ast::TypeParam> typeParams;
 	if (at().type == havel::TokenType::OpenParen) {
 		size_t savedPos = position;
+		Token openParen = at();
 		advance(); // consume '('
-		pushDelimiter(TokenType::OpenParen);
+		pushDelimiter(TokenType::OpenParen, &openParen);
 		std::vector<ast::TypeParam> candidateParams;
 		bool isTypeParamList = true;
 		while (at().type != havel::TokenType::CloseParen && notEOF()) {
@@ -3890,12 +3892,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 				break;
 			}
 		}
-		if (isTypeParamList && at().type == havel::TokenType::CloseParen) {
-			advance(); // consume ')'
-			popDelimiter(TokenType::OpenParen);
-			if (at().type == havel::TokenType::OpenParen && !candidateParams.empty()) {
+		// Check if it's a type parameter list: valid candidates, followed by ')', then another '('
+		if (isTypeParamList && at().type == havel::TokenType::CloseParen && !candidateParams.empty()) {
+			// Look ahead to see if there's another '(' after the ')'
+			size_t lookaheadPos = position + 1;
+			while (lookaheadPos < tokens.size() && tokens[lookaheadPos].type == havel::TokenType::NewLine) {
+				lookaheadPos++;
+			}
+			if (lookaheadPos < tokens.size() && tokens[lookaheadPos].type == havel::TokenType::OpenParen) {
+				// It's a type parameter list - consume ')' and commit
+				advance(); // consume ')'
+				popDelimiter(TokenType::OpenParen);
 				typeParams = std::move(candidateParams);
 			} else {
+				// Not a type parameter list - restore position, delimiter will be handled by actual param parsing
 				position = savedPos;
 				popDelimiter(TokenType::OpenParen);
 			}
@@ -3908,8 +3918,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 	if (at().type != havel::TokenType::OpenParen) {
     failAt(at(), "Expected '(' after function name");
   }
+  Token openParen = at();
   advance(); // consume '('
-  pushDelimiter(TokenType::OpenParen);
+  pushDelimiter(TokenType::OpenParen, &openParen);
 
   std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
   while (notEOF() && at().type != havel::TokenType::CloseParen) {
@@ -7506,8 +7517,9 @@ while (at().type == havel::TokenType::NewLine) {
     
 } else if (at().type == havel::TokenType::OpenBrace) {
     // Brace block: original behavior
+    Token openBrace = at();
     advance(); // consume '{'
-    pushDelimiter(TokenType::OpenBrace);
+    pushDelimiter(TokenType::OpenBrace, &openBrace);
     
     // Save and set input context
     bool savedInputContext = context.inInputContext;
@@ -9566,8 +9578,9 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
 std::unique_ptr<havel::ast::Expression>
 Parser::parseIndexExpression(std::unique_ptr<havel::ast::Expression> object) {
 
+  Token openBracket = at();
   advance(); // consume '['
-  pushDelimiter(TokenType::OpenBracket);
+  pushDelimiter(TokenType::OpenBracket, &openBracket);
 
   // Check for slice syntax: [start:end] or [start:] or [:end] or [:]
   // We need to look ahead to see if there's a ':' in the index expression
@@ -9715,12 +9728,14 @@ Parser::parseObjectLiteral(bool unsorted) {
     // consumed by parsePrattExpression's advance(), so current token is
     // already inside the object. Only advance if current token is the opener.
     if (at().type == havel::TokenType::BangOpenBrace) {
+        Token openBrace = at();
         advance(); // consume '!{'
-        pushDelimiter(TokenType::OpenBrace);
+        pushDelimiter(TokenType::OpenBrace, &openBrace);
         unsorted = true;
     } else if (at().type == havel::TokenType::OpenBrace) {
+        Token openBrace = at();
         advance(); // consume '{'
-        pushDelimiter(TokenType::OpenBrace);
+        pushDelimiter(TokenType::OpenBrace, &openBrace);
     }
     // else: opener was already consumed, we're past it
 
@@ -9931,8 +9946,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {
   blockExpr->line = at().line;
   blockExpr->column = at().column;
 
+  Token openBrace = at();
   advance(); // consume '{'
-  pushDelimiter(TokenType::OpenBrace);
+  pushDelimiter(TokenType::OpenBrace, &openBrace);
 
   // Parse statements until we hit an expression (last one becomes value)
   // or closing brace

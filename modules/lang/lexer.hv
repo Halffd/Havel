@@ -45,6 +45,7 @@ TID = {
     Tilde: 145, NotTilde: 146, At: 147, AtAt: 148, SuperArrow: 149,
     Pipe: 150, PipeRight: 151, Length: 152, NewLine: 153, EOF: 154, CharLiteral: 155,
     Hash: 156,
+    Comment: 157,
 }
 
 // --- Reverse mapping: integer ID -> string type name ---
@@ -220,15 +221,13 @@ fn Lexer(source) {
         startIdx = idx
         while current() != -1 && current() != 10 { advance() }
         commentText = src.sub(startIdx, idx - startIdx)
-        commentText = commentText.trim()
-        if commentText == "unsafe" {
-            addToken("UnsafeMarker", "#unsafe")
-        }
+        addToken("Comment", commentText)
     }
     fn skipBlockComment() {
         advance()
         advance()
         depth = 1
+        startIdx = idx
         while depth > 0 && current() != -1 {
             if current() == 42 && cp(1) == 47 {
                 advance()
@@ -242,6 +241,8 @@ fn Lexer(source) {
                 advance()
             }
         }
+        commentText = src.sub(startIdx, idx - startIdx)
+        addToken("Comment", commentText)
     }
     fn lastTokenType() {
         if tokens.len > 0 { tokens[tokens.len - 1].type } else { "NewLine" }
@@ -1755,4 +1756,4 @@ fn printTokens(tokens) {
     }
 }
 
-{tokenize: tokenize, tokenizeWithErrors: tokenizeWithErrors, printTokens: printTokens, Lexer: Lexer, isAlphaCp: isAlphaCp, isDigitCp: isDigitCp, isAlphaNumCp: isAlphaNumCp, isHexDigitCp: isHexDigitCp, isBinDigitCp: isBinDigitCp, isOctDigitCp: isOctDigitCp, isWhitespaceCp: isWhitespaceCp, isUnicodeLetterCp: isUnicodeLetterCp, isUnicodeDigitCp: isUnicodeDigitCp, isUnicodeIdentifierCharCp: isUnicodeIdentifierCharCp}
+{tokenize: tokenize, tokenizeWithErrors: tokenizeWithErrors, printTokens: printTokens, Lexer: Lexer, isAlphaCp: isAlphaCp, isDigitCp: isDigitCp, isAlphaNumCp: isAlphaNumCp, isHexDigitCp: isHexDigitCp, isBinDigitCp: isBinDigitCp, isOctDigitCp: isOctDigitCp, isWhitespaceCp: isWhitespaceCp, isUnicodeLetterCp: isUnicodeLetterCp, isUnicodeDigitCp: isUnicodeDigitCp, isUnicodeIdentifierCharCp: isUnicodeIdentifierCharCp, TID: TID, TID_NAME: TID_NAME, TOKEN_TYPES: TOKEN_TYPES}

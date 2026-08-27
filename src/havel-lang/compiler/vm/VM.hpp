@@ -436,11 +436,11 @@ void* last_suspension_context_ = nullptr;
     mutable std::shared_mutex channel_wait_mutex_;
 	
 class EventQueue* event_queue_ = nullptr;
- struct PendingTimerCallback {
- Value closure;
- uint32_t timer_id;
- bool is_timeout;
- };
+struct PendingTimerCallback {
+  CallbackId callback_id;
+  uint32_t timer_id;
+  bool is_timeout;
+};
   std::vector<PendingTimerCallback> pending_timer_callbacks_;
   std::mutex pending_timer_mutex_;
   bool timer_handler_registered_ = false;
@@ -637,6 +637,7 @@ public:
     std::optional<std::string> resolveKeyPublic(const Value &value) const { return resolveKey(value); }
     void pushStackPublic(Value value) { pushStack(std::move(value)); }
     Value popStackPublic() { return popStack(); }
+    size_t getStackSizePublic() const { return stack.size(); }
     void loadFiberStatePublic(Fiber* fiber) { loadFiberState(fiber); }
     void saveFiberStatePublic(Fiber* fiber) { saveFiberState(fiber); }
     // Replace top-of-stack with a new value (used when resuming from await)
@@ -1239,7 +1240,13 @@ uint64_t getHeapMaxBytes() const { return heap_.heapMaxBytes(); }
 
 // General function call (handles both VM closures and host functions)
 Value callFunction(const Value &fn,
-const std::vector<Value> &args);
+ const std::vector<Value> &args);
+
+// Call a method on a receiver (canonical method call)
+Value callMethod(Value receiver, uint32_t method_name_id, const std::vector<Value> &args);
+
+// Call super method
+Value callSuper(Value receiver, uint32_t method_id, const std::vector<Value> &args);
 
     void addIntervalResult(uint32_t id, Value result) { interval_results_[id] = std::move(result); }
     void addTimeoutResult(uint32_t id, Value result) { timeout_results_[id] = std::move(result); }

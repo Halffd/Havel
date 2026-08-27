@@ -509,7 +509,16 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
       // main thread is here, not inside runEventLoop(). Break so
       // vm->execute() returns and the launcher reports exit_code_.
       if (exit_requested_.load()) break;
+      // Drain the event queue so TIMER_FIRE (and HOTKEY_FIRE, CHANNEL_RECV,
+      // etc.) are dispatched to their handlers.  The timer thread pushes
+      // TIMER_FIRE events; ExecutionEngine's handler schedules them as
+      // goroutines via the scheduler.  Without this, events pile up in the
+      // queue and timeout{} / interval{} blocks never fire.
+      if (event_queue_) event_queue_->processAll();
       scheduler_->wakeSleepingGoroutines();
+      // Also drain timer callbacks pushed via VM::setEventQueue's handler
+      // (used when ExecutionEngine is not active, e.g. direct VM usage).
+      executePendingTimerCallbacks();
       auto *cur = scheduler_->pickNext();
       if (!cur) {
         size_t sc = scheduler_->suspendedCount();

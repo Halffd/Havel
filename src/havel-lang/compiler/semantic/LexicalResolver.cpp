@@ -1878,12 +1878,22 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
       }
     }
     // Dynamic language: treat all other identifiers as globals
+    if (strict_mode_) {
+      // In strict mode, check if this is a known global (built-in, stdlib, etc.)
+      // If not, it's an error - return nullopt to signal unresolved
+      if (known_globals_.count(name) == 0) {
+        return std::nullopt;
+      }
+    }
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 
   // THIRD: In nested function - check enclosing scope recursively
   auto enclosing = resolveIdentifierInFunction(name, function_index - 1);
   if (!enclosing) {
+    if (strict_mode_) {
+      return std::nullopt;
+    }
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 

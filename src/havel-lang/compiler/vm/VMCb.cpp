@@ -316,6 +316,36 @@ DirectCallThunk VM::buildDirectCallThunk(CallbackId id) {
             sim.push_back(std::nullopt); // return value not known
             break;
         }
+        case OpCode::FFI_CALL: {
+            if (instr.operands.size() != 3 || !instr.operands[0].isInt() ||
+                !instr.operands[1].isInt() || !instr.operands[2].isInt()) {
+                ok = false; break;
+            }
+            uint64_t ret_type_raw = instr.operands[0].asInt();
+            uint64_t param_types_raw = instr.operands[1].asInt();
+            uint32_t arg_count = instr.operands[2].asInt();
+            
+            if (sim.size() < arg_count + 4) { ok = false; break; }
+            
+            // Pop args
+            std::vector<Value> args(arg_count);
+            for (uint32_t i = 0; i < arg_count; ++i) {
+                auto v = sim.back(); sim.pop_back();
+                if (!v) { ok = false; break; }
+                args[arg_count - 1 - i] = *v;
+            }
+            if (!ok) break;
+            
+            // Pop fn_ptr
+            auto fn_ptr_val = sim.back(); sim.pop_back();
+            if (!fn_ptr_val || !fn_ptr_val->isPtr()) { ok = false; break; }
+            void* fn_ptr = fn_ptr_val->asPtr();
+            
+            // For now, just push null - this is a stub for callback thunk compilation
+            // Full implementation would call havel_vm_ffi_call
+            sim.push_back(Value::makeNull());
+            break;
+        }
         case OpCode::CALL_DYN: {
             if (sim.empty()) { ok = false; break; }
             auto nv = sim.back(); sim.pop_back();
@@ -537,7 +567,7 @@ void VM::setEventQueue(class EventQueue* eq) {
   if (eq && !timer_handler_registered_) {
     timer_handler_registered_ = true;
     eq->onEvent(EventType::TIMER_FIRE, [this](const Event& event) {
-      auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
+      auto *payload = static_cast<std::pair<CallbackId, uint32_t>*>(event.ptr);
       if (!payload) return;
       bool is_timeout = (event.data1 == 1);
       {
@@ -560,7 +590,7 @@ void VM::executePendingTimerCallbacks() {
   for (auto& cb : callbacks) {
     if (exit_requested_.load()) break;
     try {
-      Value result = callFunctionSync(cb.closure, {});
+      Value result = invokeCallback(cb.callback_id, {});
       if (cb.is_timeout) {
         addTimeoutResult(cb.timer_id, result);
         // Release the pinned timeout closure after it fires.
@@ -581,6 +611,11 @@ std::unique_ptr<BytecodeInterpreter> createVM() {
 void VM::processPendingEvents() {
   if (timer_check_func_) timer_check_func_();
   if (event_queue_) event_queue_->processAll();
+  // Drain fired timer/interval callbacks. TIMER_FIRE events land in
+  // pending_timer_callbacks_ via setEventQueue's handler; without this
+  // drain they are never executed and scripts relying on timeout{}
+  // blocks (e.g. test_conditional.hv's 35s exit guard) hang forever.
+  executePendingTimerCallbacks();
   // Drive scheduler sleep wakeups. Without this, a goroutine that suspends
   // via FIBER_SLEEP (which sets wait_handle.deadline) will never be promoted
   // back to Runnable while the MAIN script is blocking inside the chunked

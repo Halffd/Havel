@@ -214,11 +214,21 @@ void Parser::pushDelimiter(TokenType type, const Token* token) {
 }
 
 void Parser::popDelimiter(TokenType expected) {
+  // expected is the OPENING delimiter type (OpenParen, OpenBracket, OpenBrace)
+  // Map to the corresponding closing delimiter type for error messages
+  TokenType expectedClose;
+  switch (expected) {
+    case TokenType::OpenParen: expectedClose = TokenType::CloseParen; break;
+    case TokenType::OpenBracket: expectedClose = TokenType::CloseBracket; break;
+    case TokenType::OpenBrace: expectedClose = TokenType::CloseBrace; break;
+    default: expectedClose = TokenType::CloseParen; break;
+  }
+
   // Check for delimiter mismatch before popping
   if (!delimiterStack_.empty() && delimiterStack_.back().type != expected) {
     auto unclosed = delimiterStack_.back();
     std::string expectedStr, foundStr;
-    switch (expected) {
+    switch (expectedClose) {
       case TokenType::CloseParen: expectedStr = "')'"; break;
       case TokenType::CloseBracket: expectedStr = "']'"; break;
       case TokenType::CloseBrace: expectedStr = "'}'"; break;
@@ -1590,9 +1600,8 @@ case TokenType::Timeout:
               }
               errorAt(token, "Mismatched delimiter: expected ')' to close " + openStr +
                 " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
-            } else {
-              errorAt(token, "Unexpected ')' with no matching '('");
             }
+            // If stack is empty, this ')' may belong to an outer context. Don't error here.
             return nullptr;
           }
 
@@ -1615,9 +1624,8 @@ case TokenType::Timeout:
                     errorAt(token, "Mismatched delimiter: expected ']' to close " + openStr +
                       " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
                 }
-            } else {
-              errorAt(token, "Unexpected ']' with no matching '['");
             }
+            // If stack is empty, this ']' may belong to an outer context. Don't error here.
             return nullptr;
           }
 
@@ -1640,9 +1648,9 @@ case TokenType::Timeout:
                     errorAt(token, "Mismatched delimiter: expected '}' to close " + openStr +
                       " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
                 }
-            } else {
-              errorAt(token, "Unexpected '}' with no matching '{'");
             }
+            // If stack is empty, this '}' belongs to a statement-level block (e.g., function body).
+            // Don't error here - let the statement parser handle it.
             return nullptr;
           }
 
@@ -3892,6 +3900,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 				break;
 			}
 		}
+<<<<<<< HEAD
+		if (isTypeParamList && at().type == havel::TokenType::CloseParen && !candidateParams.empty()) {
+			advance(); // consume ')'
+			popDelimiter(TokenType::OpenParen);
+			if (at().type == havel::TokenType::OpenParen) {
+				typeParams = std::move(candidateParams);
+			} else {
+				// Rewind to '('; delimiter already popped above, do not pop again
+=======
 		// Check if it's a type parameter list: valid candidates, followed by ')', then another '('
 		if (isTypeParamList && at().type == havel::TokenType::CloseParen && !candidateParams.empty()) {
 			// Look ahead to see if there's another '(' after the ')'
@@ -3906,8 +3923,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 				typeParams = std::move(candidateParams);
 			} else {
 				// Not a type parameter list - restore position, delimiter will be handled by actual param parsing
+>>>>>>> havel-3
 				position = savedPos;
-				popDelimiter(TokenType::OpenParen);
 			}
 		} else {
 			position = savedPos;

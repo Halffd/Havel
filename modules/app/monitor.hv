@@ -415,11 +415,11 @@ fn _fileStat(path) {
     ({size: int(_nums[0]), mtime: int(_nums[1])})
 }
 
-fn fileWatch(path, interval) {
-    if interval == null { interval = 1000 }
+fn fileWatch(path, intervalMs) {
+    if intervalMs == null { intervalMs = 1000 }
     _st = _fileStat(path)
     if _st == null { return false }
-    _watchers.set(path, {size: _st.size, mtime: _st.mtime, interval: interval})
+    _watchers.set(path, {size: _st.size, mtime: _st.mtime, interval: intervalMs})
     true
 }
 
@@ -474,10 +474,10 @@ fn metricDel(name) { if _metrics.has(name) { del _metrics[name]; true } else { f
 _watches = {}
 _watch_counter = 0
 
-fn watch(name, callback, interval) {
-    if interval == null { interval = 1000 }
+fn watch(name, callback, intervalMs) {
+    if intervalMs == null { intervalMs = 1000 }
     _watch_counter = _watch_counter + 1
-    _watches.set(name, {id: _watch_counter, fn: callback, interval: interval, lastResult: null})
+    _watches.set(name, {id: _watch_counter, fn: callback, interval: intervalMs, lastResult: null})
     _watch_counter
 }
 

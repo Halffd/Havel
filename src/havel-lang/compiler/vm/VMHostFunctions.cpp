@@ -2220,13 +2220,13 @@ void VM::registerDefaultHostFunctions() {
     auto closure = args[1];
     auto intervalIdPtr = std::make_shared<uint32_t>(0);
 
-    auto callback = [this, closure, intervalIdPtr]() {
+    auto callback = [this, callbackId = registerCallback(closure), intervalIdPtr]() {
       if (event_queue_) {
-        auto *payload = new std::pair<Value, uint32_t>(closure, *intervalIdPtr);
+        auto *payload = new std::pair<CallbackId, uint32_t>(callbackId, *intervalIdPtr);
         event_queue_->push(Event(EventType::TIMER_FIRE, 0, payload));
       } else {
         try {
-          Value result = this->callFunction(closure, {});
+          Value result = invokeCallback(callbackId, {});
           interval_results_[*intervalIdPtr] = result;
         } catch (const std::exception &e) {
           ::havel::error("[interval] Exception: {}", e.what());
@@ -2370,13 +2370,13 @@ void VM::registerDefaultHostFunctions() {
     auto closure = args[1];
     auto timeoutIdPtr = std::make_shared<uint32_t>(0);
 
-    auto callback = [this, closure, timeoutIdPtr]() {
+    auto callback = [this, callbackId = registerCallback(closure), timeoutIdPtr]() {
       if (event_queue_) {
-        auto *payload = new std::pair<Value, uint32_t>(closure, *timeoutIdPtr);
+        auto *payload = new std::pair<CallbackId, uint32_t>(callbackId, *timeoutIdPtr);
         event_queue_->push(Event(EventType::TIMER_FIRE, 1, payload));
       } else {
         try {
-          Value result = this->callFunction(closure, {});
+          Value result = invokeCallback(callbackId, {});
           timeout_results_[*timeoutIdPtr] = result;
         } catch (const std::exception &e) {
           ::havel::error("[timeout] Exception: {}", e.what());

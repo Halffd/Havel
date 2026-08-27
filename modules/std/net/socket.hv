@@ -118,7 +118,7 @@ fn _bufToStr(buf, n) {
     i = 0
     while i < n {
         b = ffi.get_u8(ffi.ptr_add(buf, i))
-        result = result + char(b)
+        result = "${result}${char(b)}"
         i = i + 1
     }
     result

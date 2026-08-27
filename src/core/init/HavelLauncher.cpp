@@ -1619,6 +1619,10 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.pureStdlib = true;
     } else if (arg == "--pure-stdlib") {
       cfg.pureStdlib = true;
+    } else if (arg == "--strict-semantics") {
+      cfg.strictSemantics = true;
+    } else if (arg == "--no-strict-semantics") {
+      cfg.strictSemantics = false;
     } else if (arg == "--convert" && i + 1 < argc) {
       cfg.mode = LaunchConfig::Mode::CLI;
       cfg.buildOnly = true;
@@ -2090,6 +2094,79 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     havel::compiler::ByteCompiler compiler;
     if (cfg.debugBytecode) {
       compiler.setCollectErrors(true);
+    }
+    compiler.setStrictMode(cfg.strictSemantics);
+    // Populate known globals with built-in host functions for strict mode
+    if (cfg.strictSemantics) {
+      std::unordered_set<std::string> knownGlobals = {
+        "print", "shell", "sys", "time", "str", "int", "num", "float",
+        "range", "len", "any", "all", "eval", "inspect", "prototypes",
+        "proto", "getproto", "setproto", "caller", "defun", "del",
+        "extension.load", "extension.isLoaded", "extension.list",
+        "extension.addSearchPath", "bit", "math", "json", "json.parse",
+        "json.stringify", "fs", "fs.read", "fs.write", "fs.append",
+        "fs.exists", "fs.remove", "fs.mkdir", "fs.listdir", "fs.isDir",
+        "fs.isFile", "fs.size", "fs.mtime", "fs.copy", "fs.move",
+        "process", "process.run", "process.spawn", "process.kill",
+        "thread", "thread.sleep", "channel", "channel.send",
+        "channel.receive", "channel.close", "interval", "timeout",
+        "interval.start", "interval.stop", "timeout.start", "timeout.cancel",
+        "wait", "wait.group", "defer", "try", "catch", "finally",
+        "throw", "type", "typeof", "Hotkey", "Input", "Window", "Mouse",
+        "Display", "Brightness", "Audio", "Media", "Image", "Log",
+        "Config", "Mode", "Timer", "App", "Automation", "Browser", "Tools",
+        "HotkeyManager", "EventListener", "KeyMap", "KeyTap", "LC",
+        "LibMpv", "MPV", "Pixel", "Protocols", "Screen", "Screenshot",
+        "Socket", "UInput", "WindowMatch", "WinWatch", "X11", "Zoom",
+        "DDC", "DRMBrightness", "Compositor", "DayNight", "Device",
+        "Evdev", "Gamepad", "Group", "IO", "Keyboard", "Keymap",
+        "AsyncMod", "AudioMod", "AutomationMod", "BrightnessMod",
+        "CompositorMod", "DayNightMod", "DisplayMod", "DeviceMod",
+        "DrmBrightnessMod", "EvdevMod", "GamepadMod", "GroupMod",
+        "ImageMod", "IOMod", "KeyboardMod", "KeymapMod", "KeytapMod",
+        "LCMod", "LibMpvMod", "MediaMod", "ModeMod", "ModesMod",
+        "MonitorMod", "MouseMod", "MpvMod", "OpencvMod", "PixelMod",
+        "ProtocolsMod", "ScreenMod", "ScreenshotMod", "SocketMod",
+        "UinputMod", "WindowMod", "WinmatchMod", "WinwatchMod", "X11Mod",
+        "ZoomMod", "ord", "char", "chr", "bytes", "base64", "hex",
+        "hash", "uuid", "crypto", "random", "semaphore", "mutex",
+        "notif", "config", "dotenv", "env", "format", "fsuv", "future",
+        "html", "ini", "list", "log", "map", "number", "object", "ocr",
+        "os", "parser", "path", "print", "process", "promise", "random",
+        "semaphore", "sqlite", "string", "sys", "terminal", "toml",
+        "yaml", "time", "sleep", "async", "await", "yield", "go",
+        "defer", "try", "catch", "finally", "throw", "import", "use",
+        "from", "as", "let", "const", "fn", "class", "struct", "trait",
+        "impl", "protocol", "enum", "match", "when", "if", "else",
+        "while", "for", "loop", "break", "continue", "return", "in",
+        "out", "to", "step", "by", "do", "end", "then", "case",
+        "default", "switch", "typeof", "instanceof", "is", "as",
+        "null", "true", "false", "nil", "self", "super", "this",
+        "base", "init", "deinit", "drop", "clone", "copy", "move",
+        "ref", "mut", "const", "pub", "priv", "mod", "use", "extern",
+        "inline", "static", "virtual", "override", "final", "abstract",
+        "sealed", "open", "closed", "public", "private", "protected",
+        "internal", "fileprivate", "package", "module", "import",
+        "export", "reexport", "as", "from", "where", "if", "unless",
+        "until", "while", "for", "loop", "each", "every", "some",
+        "none", "find", "filter", "map", "reduce", "fold", "scan",
+        "zip", "enumerate", "reverse", "sort", "sorted", "min", "max",
+        "sum", "product", "avg", "mean", "median", "mode", "std",
+        "var", "count", "len", "length", "size", "empty", "any", "all",
+        "first", "last", "head", "tail", "init", "take", "drop",
+        "skip", "limit", "slice", "chunk", "split", "join", "split",
+        "trim", "upper", "lower", "capitalize", "title", "camel",
+        "snake", "kebab", "pascal", "replace", "regex", "match",
+        "find", "search", "contains", "startsWith", "endsWith",
+        "padLeft", "padRight", "center", "ljust", "rjust", "zfill",
+        "format", "printf", "sprintf", "fprintf", "println", "print",
+        "eprint", "eprintln", "input", "readline", "stdin", "stdout",
+        "stderr", "args", "argv", "env", "getenv", "setenv", "unsetenv",
+        "exit", "abort", "panic", "unreachable", "todo", "fixme",
+        "note", "warning", "deprecated", "experimental", "unstable",
+        "internal", "private", "public", "protected", "internal"
+      };
+      compiler.setKnownGlobals(knownGlobals);
     }
     try {
       chunk = compiler.compile(*program);

@@ -1,4 +1,4 @@
-// launcher.hv — pure Havel script launcher
+// launcher.hv - pure Havel script launcher
 // Handles --run, --test, --lint modes via the self-hosted pipeline
 // Usage: havel --run launcher.hv -- [flags] script.hv
 
@@ -7,7 +7,7 @@ fn now() {
 }
 
 fn measure(label, t0) {
-    print("TIMING: " + label + " = " + str(time.now() - t0) + "ms")
+    print("TIMING: ${label} = ${str(time.now() - t0)}ms")
 }
 
 fn loadCompiler() {
@@ -170,17 +170,17 @@ fn runScript(cfg) {
     for f in cfg.scriptFiles {
         content = readScriptFile(f)
         if content == null {
-            print("Error: Cannot open script file: " + f)
+            print("Error: Cannot open script file: ${f}")
             return 2
         }
-        combinedCode = combinedCode + content + "\n"
-        if combinedNames != "" { combinedNames = combinedNames + " + " }
-        combinedNames = combinedNames + f
+        combinedCode = "${combinedCode}${content}\n"
+        if combinedNames != "" { combinedNames = "${combinedNames} + " }
+        combinedNames = "${combinedNames}${f}"
     }
     if cfg.evalString != null {
-        combinedCode = combinedCode + cfg.evalString + "\n"
-        if combinedNames != "" { combinedNames = combinedNames + " + " }
-        combinedNames = combinedNames + "<eval>"
+        combinedCode = "${combinedCode}${cfg.evalString}\n"
+        if combinedNames != "" { combinedNames = "${combinedNames} + " }
+        combinedNames = "${combinedNames}<eval>"
     }
     // Read from stdin if no source
     if combinedCode == "" && !shell.isatty() {
@@ -198,7 +198,7 @@ fn runScript(cfg) {
     measure("parse: parseAST", t)
     if result.errors != null && #result.errors > 0 {
         for err in result.errors {
-            print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))
+            print("Parse error: ${str(err.msg)} at line ${str(err.line)} col ${str(err.col)}")
         }
         return 1
     }
@@ -247,7 +247,7 @@ fn runScript(cfg) {
                 bc.set_script_dir(dir)
             }
             else {
-                bc.set_script_dir(shell.cwd() + "/" + dir)
+                bc.set_script_dir("${shell.cwd()}/${dir}")
             }
         }
         else {
@@ -269,24 +269,24 @@ fn loadScriptForRepl(cfg) {
     for f in cfg.scriptFiles {
         content = readScriptFile(f)
         if content == null {
-            print("Error: Cannot open script file: " + f)
+            print("Error: Cannot open script file: ${f}")
             return 2
         }
-        combinedCode = combinedCode + content + "\n"
-        if combinedNames != "" { combinedNames = combinedNames + " + " }
-        combinedNames = combinedNames + f
+        combinedCode = "${combinedCode}${content}\n"
+        if combinedNames != "" { combinedNames = "${combinedNames} + " }
+        combinedNames = "${combinedNames}${f}"
     }
     if cfg.evalString != null {
-        combinedCode = combinedCode + cfg.evalString + "\n"
-        if combinedNames != "" { combinedNames = combinedNames + " + " }
-        combinedNames = combinedNames + "<eval>"
+        combinedCode = "${combinedCode}${cfg.evalString}\n"
+        if combinedNames != "" { combinedNames = "${combinedNames} + " }
+        combinedNames = "${combinedNames}<eval>"
     }
     if combinedCode == "" { return 0 }
 
     result = parse(combinedCode)
     if result.errors != null && #result.errors > 0 {
         for err in result.errors {
-            print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))
+            print("Parse error: ${str(err.msg)} at line ${str(err.line)} col ${str(err.col)}")
         }
         return 1
     }
@@ -386,7 +386,7 @@ fn replEvaluate(cfg, line) {
     result = parse(line)
     if result.errors != null && #result.errors > 0 {
         for err in result.errors {
-            print("Parse error: " + str(err.msg) + " at line " + str(err.line) + " col " + str(err.col))
+            print("Parse error: ${str(err.msg)} at line ${str(err.line)} col ${str(err.col)}")
         }
         return null
     }
@@ -409,10 +409,10 @@ fn replEvaluate(cfg, line) {
     try {
         value = bc.execute_persistent("__main__")
         if value != null && value != nil {
-            print("// " + str(value))
+            print("// ${str(value)}")
         }
     } catch (e) {
-        print("Runtime error: " + str(e))
+        print("Runtime error: ${str(e)}")
     }
     bc.tick()
 }
@@ -522,7 +522,8 @@ fn replLoop(cfg) {
                 }
                 if stripped == ":bytecode" || stripped == ":bc" {
                     setFlag("bytecode", !isOn("bytecode"))
-                    print("Bytecode debug: " + (isOn("bytecode") ? "ON" : "OFF"))
+                    bcFlag = isOn("bytecode")
+                    print("Bytecode debug: ${(bcFlag ? \"ON\" : \"OFF\")}")
                     if isOn("bytecode") {
                         dumpBytecodeSummary()
                     }
@@ -533,7 +534,7 @@ fn replLoop(cfg) {
                         print("No globals defined")
                     }
                     else {
-                        print("Known globals: " + knownGlobals.join(", "))
+                        print("Known globals: ${knownGlobals.join(\", \")}")
                     }
                     continue
                 }
@@ -550,9 +551,9 @@ fn replLoop(cfg) {
                 }
             }
             if pending != "" {
-                pending = pending + "\n"
+                pending = "${pending}\n"
             }
-            pending = pending + line
+            pending = "${pending}${line}"
             if replBalanced(pending) {
                 replEvaluate(cfg, pending)
                 break
@@ -569,7 +570,7 @@ fn runTests(cfg) {
     // Find all .hv files
     entries = fs.readDir(cfg.testDir)
     if entries == null {
-        print("Error: Cannot read test directory: " + cfg.testDir)
+        print("Error: Cannot read test directory: ${cfg.testDir}")
         return 1
     }
     testFiles = []
@@ -577,20 +578,20 @@ fn runTests(cfg) {
         name = e.name
         if name == null { name = str(e) }
         if name.endsWith(".hv") {
-            testFiles.push(cfg.testDir + "/" + name)
+            testFiles.push("${cfg.testDir}/${name}")
         }
     }
     // Sort
     testFiles.sort()
     if #testFiles == 0 {
-        print("Error: No .hv files found in: " + cfg.testDir)
+        print("Error: No .hv files found in: ${cfg.testDir}")
         return 1
     }
 
     total = #testFiles
     passed = 0
     failed = 0
-    print("Running " + str(total) + " tests from '" + cfg.testDir + "'")
+    print("Running ${str(total)} tests from '${cfg.testDir}'")
 
     // Find havel binary
     selfPath = shell.env("HAVEL_BIN")
@@ -613,17 +614,17 @@ fn runTests(cfg) {
         testName = parts[#parts - 1]
 
         // Run test as subprocess with timeout
-        cmd = "timeout " + str(cfg.testTimeout) + " " + selfPath + " --run " + testFile
+        cmd = "timeout ${str(cfg.testTimeout)} ${selfPath} --run ${testFile}"
         result = shell.exec(cmd)
 
         if result != null && result.exitCode == 0 {
-            print("  PASS " + testName)
+            print("  PASS ${testName}")
             passed = passed + 1
         }
         else {
-            print("  FAIL " + testName)
+            print("  FAIL ${testName}")
             if result != null && result.stderr != "" {
-                print("    " + result.stderr)
+                print("    ${result.stderr}")
             }
             failed = failed + 1
         }
@@ -631,9 +632,9 @@ fn runTests(cfg) {
 
     print("")
     print("Test Results:")
-    print("  Total:  " + str(total))
-    print("  Passed: " + str(passed))
-    print("  Failed: " + str(failed))
+    print("  Total:  ${str(total)}")
+    print("  Passed: ${str(passed)}")
+    print("  Failed: ${str(failed)}")
     if failed > 0 { return 1 }
     print("All tests passed!")
     0
@@ -679,7 +680,7 @@ else if cfg.mode == "test" {
     result = runTests(cfg)
 }
 else {
-    print("Unknown mode: " + cfg.mode)
+    print("Unknown mode: ${cfg.mode}")
     result = 1
 }
 

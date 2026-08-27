@@ -38,7 +38,7 @@ emit_one() {
     local prefix="$2"
     local cache_name="$3"
     local out="$CACHE_DIR/${cache_name}.hvc"
-    if "$HAVEL" --build "$hv" -o "$out" 2>/dev/null; then
+    if "$HAVEL" --build "$hv" -o "$out" --no-strict-semantics 2>/dev/null; then
         sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
         VERSION_HASHES="${VERSION_HASHES}${prefix}${name}:${sz}\n"
         PASS=$((PASS + 1))

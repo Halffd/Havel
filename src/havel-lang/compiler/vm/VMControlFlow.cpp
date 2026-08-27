@@ -17,6 +17,13 @@
 #include <numeric>
 #include <regex>
 
+// External FFI/JIT helper functions
+extern "C" uint64_t havel_vm_ffi_call(void *vm_ptr, uint64_t fn_ptr_raw,
+                                       uint64_t ret_type_raw,
+                                       uint64_t param_types_raw,
+                                       uint64_t args_array_raw,
+                                       uint32_t arg_count);
+
 namespace havel::compiler {
 
 bool VM::execControlFlowOp(const Instruction &instruction) {
@@ -209,6 +216,48 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
     }
 
     doCall(callee_value, std::move(args));
+    break;
+  }
+
+  case OpCode::FFI_CALL: {
+    // FFI_CALL operands: [ret_type_raw, param_types_raw, arg_count]
+    if (instruction.operands.size() != 3 || !instruction.operands[0].isInt() || 
+        !instruction.operands[1].isInt() || !instruction.operands[2].isInt()) {
+        COMPILER_THROW("FFI_CALL expects operands: <ret_type_raw, param_types_raw, arg_count>");
+    }
+    
+    uint64_t ret_type_raw = instruction.operands[0].asInt();
+    uint64_t param_types_raw = instruction.operands[1].asInt();
+    uint32_t arg_count = instruction.operands[2].asInt();
+    
+    if (stack.size() < arg_count + 4) {
+        COMPILER_THROW("Stack underflow during FFI_CALL");
+    }
+    
+    // Pop arg_count arguments
+    std::vector<Value> args(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+        args[arg_count - 1 - i] = popStack();
+    }
+    
+    // Pop fn_ptr
+    Value fn_ptr_val = popStack();
+    if (!fn_ptr_val.isPtr()) {
+        COMPILER_THROW("FFI_CALL: fn_ptr must be a pointer");
+    }
+    void* fn_ptr = fn_ptr_val.asPtr();
+    
+    // Call VM helper for direct libffi call
+    Value result = Value::fromRawBits(havel_vm_ffi_call(
+        this, 
+        reinterpret_cast<uint64_t>(fn_ptr),
+        instruction.operands[0].asInt(),  // ret_type_raw
+        instruction.operands[1].asInt(),  // param_types_raw
+        0,  // args_array_raw (not used in this path)
+        arg_count
+    ));
+    
+    pushStack(result);
     break;
   }
 

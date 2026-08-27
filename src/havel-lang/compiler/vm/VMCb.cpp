@@ -567,7 +567,7 @@ void VM::setEventQueue(class EventQueue* eq) {
   if (eq && !timer_handler_registered_) {
     timer_handler_registered_ = true;
     eq->onEvent(EventType::TIMER_FIRE, [this](const Event& event) {
-      auto *payload = static_cast<std::pair<Value, uint32_t>*>(event.ptr);
+      auto *payload = static_cast<std::pair<CallbackId, uint32_t>*>(event.ptr);
       if (!payload) return;
       bool is_timeout = (event.data1 == 1);
       {
@@ -590,7 +590,7 @@ void VM::executePendingTimerCallbacks() {
   for (auto& cb : callbacks) {
     if (exit_requested_.load()) break;
     try {
-      Value result = callFunctionSync(cb.closure, {});
+      Value result = invokeCallback(cb.callback_id, {});
       if (cb.is_timeout) {
         addTimeoutResult(cb.timer_id, result);
         // Release the pinned timeout closure after it fires.
@@ -611,6 +611,11 @@ std::unique_ptr<BytecodeInterpreter> createVM() {
 void VM::processPendingEvents() {
   if (timer_check_func_) timer_check_func_();
   if (event_queue_) event_queue_->processAll();
+  // Drain fired timer/interval callbacks. TIMER_FIRE events land in
+  // pending_timer_callbacks_ via setEventQueue's handler; without this
+  // drain they are never executed and scripts relying on timeout{}
+  // blocks (e.g. test_conditional.hv's 35s exit guard) hang forever.
+  executePendingTimerCallbacks();
   // Drive scheduler sleep wakeups. Without this, a goroutine that suspends
   // via FIBER_SLEEP (which sets wait_handle.deadline) will never be promoted
   // back to Runnable while the MAIN script is blocking inside the chunked

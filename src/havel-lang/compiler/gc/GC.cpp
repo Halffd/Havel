@@ -433,11 +433,11 @@ Value GCHeap::iteratorNext(uint32_t id) {
                 done = true;
                 first = Value::makeNull();
                 second = Value::makeNull();
-            } else {
-                first = Value::makeInt(iter->index);
-                second = Value::makeInt(current);
-                iter->index++;
-            }
+} else {
+            first = Value::makeInt(current);
+            second = Value::makeInt(current);
+            iter->index++;
+        }
         }
     } else {
         done = true;

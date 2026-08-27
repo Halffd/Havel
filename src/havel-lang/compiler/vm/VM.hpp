@@ -436,11 +436,11 @@ void* last_suspension_context_ = nullptr;
     mutable std::shared_mutex channel_wait_mutex_;
 	
 class EventQueue* event_queue_ = nullptr;
- struct PendingTimerCallback {
- Value closure;
- uint32_t timer_id;
- bool is_timeout;
- };
+struct PendingTimerCallback {
+  CallbackId callback_id;
+  uint32_t timer_id;
+  bool is_timeout;
+};
   std::vector<PendingTimerCallback> pending_timer_callbacks_;
   std::mutex pending_timer_mutex_;
   bool timer_handler_registered_ = false;

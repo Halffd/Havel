@@ -27,7 +27,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.empty()) {
       return Value(g_brightnessManager->getBrightness());
     }
-    std::string monitor = args[0].asString();
+    std::string monitor = args[0].toString();
     return Value(g_brightnessManager->getBrightness(monitor));
   });
 
@@ -39,18 +39,18 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.size() == 1) {
       return Value(g_brightnessManager->setBrightness(brightness));
     }
-    std::string monitor = args[1].asString();
+    std::string monitor = args[1].toString();
     return Value(g_brightnessManager->setBrightness(monitor, brightness));
   });
 
   api.registerFunction("brightness.getRGB",
-                       [](const std::vector<Value> &args) -> Value {
+                       [&api](const std::vector<Value> &args) -> Value {
     if (!g_brightnessManager) return Value::makeNull();
     havel::BrightnessManager::RGBColor rgb;
     if (args.empty()) {
       rgb = g_brightnessManager->getGammaRGB();
     } else {
-      std::string monitor = args[0].asString();
+      std::string monitor = args[0].toString();
       rgb = g_brightnessManager->getGammaRGB(monitor);
     }
     auto obj = api.makeObject();
@@ -70,7 +70,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.size() == 3) {
       return Value(g_brightnessManager->setGammaRGB(red, green, blue));
     }
-    std::string monitor = args[3].asString();
+    std::string monitor = args[3].toString();
     return Value(g_brightnessManager->setGammaRGB(monitor, red, green, blue));
   });
 
@@ -80,7 +80,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.empty()) {
       return Value(static_cast<int64_t>(g_brightnessManager->getTemperature()));
     }
-    std::string monitor = args[0].asString();
+    std::string monitor = args[0].toString();
     return Value(static_cast<int64_t>(g_brightnessManager->getTemperature(monitor)));
   });
 
@@ -92,7 +92,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.size() == 1) {
       return Value(g_brightnessManager->setTemperature(kelvin));
     }
-    std::string monitor = args[1].asString();
+    std::string monitor = args[1].toString();
     return Value(g_brightnessManager->setTemperature(monitor, kelvin));
   });
 
@@ -102,7 +102,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.empty()) {
       return Value(g_brightnessManager->getShadowLift());
     }
-    std::string monitor = args[0].asString();
+    std::string monitor = args[0].toString();
     return Value(g_brightnessManager->getShadowLift(monitor));
   });
 
@@ -114,7 +114,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.size() == 1) {
       return Value(g_brightnessManager->setShadowLift(lift));
     }
-    std::string monitor = args[1].asString();
+    std::string monitor = args[1].toString();
     return Value(g_brightnessManager->setShadowLift(monitor, lift));
   });
 
@@ -126,7 +126,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.size() == 1) {
       return Value(g_brightnessManager->increaseBrightness(amount));
     }
-    std::string monitor = args[1].asString();
+    std::string monitor = args[1].toString();
     return Value(g_brightnessManager->increaseBrightness(monitor, amount));
   });
 
@@ -138,7 +138,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.size() == 1) {
       return Value(g_brightnessManager->decreaseBrightness(amount));
     }
-    std::string monitor = args[1].asString();
+    std::string monitor = args[1].toString();
     return Value(g_brightnessManager->decreaseBrightness(monitor, amount));
   });
 
@@ -150,7 +150,7 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.size() == 1) {
       return Value(g_brightnessManager->increaseTemperature(amount));
     }
-    std::string monitor = args[1].asString();
+    std::string monitor = args[1].toString();
     return Value(g_brightnessManager->increaseTemperature(monitor, amount));
   });
 
@@ -162,12 +162,12 @@ void registerBrightnessModule(const VMApi &api) {
     if (args.size() == 1) {
       return Value(g_brightnessManager->decreaseTemperature(amount));
     }
-    std::string monitor = args[1].asString();
+    std::string monitor = args[1].toString();
     return Value(g_brightnessManager->decreaseTemperature(monitor, amount));
   });
 
   api.registerFunction("brightness.getMonitors",
-                       [](const std::vector<Value> &args) -> Value {
+                       [&api](const std::vector<Value> &args) -> Value {
     (void)args;
     if (!g_brightnessManager) return api.makeArray();
     auto monitors = g_brightnessManager->getConnectedMonitors();

@@ -210,6 +210,17 @@ static void appendDefaultNativeLinkLibraries(std::string &linkCmd) {
 #else
   (void)linkCmd;
 #endif
+
+  // AOT standalone executables are linked as static archives.  Under
+  // --as-needed the linker only pulls members that resolve symbols
+  // currently referenced by the link unit.  The wayland protocol
+  // interface objects (zxdg_output_v1_interface, wl_registry_interface,
+  // ...) live in wayland-protos but no symbol in the LLVM-generated AOT
+  // main references them directly, so lld drops that archive member.
+  // havel_core transitively requires those symbols on some platforms.
+  // Force the entire archive in for the native-AOT link.
+  linkCmd +=
+      " -Wl,--whole-archive -lwayland-protos -Wl,--no-whole-archive";
 }
 #endif
 

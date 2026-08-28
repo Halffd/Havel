@@ -6,7 +6,7 @@
  */
 #include "ConfigProcessor.hpp"
 #include "core/config/ConfigManager.hpp"
-#include "havel-lang/ast/AST.h"
+#include "havel-lang/ast/BootstrapAST.h"
 #include "utils/Logger.hpp"
 
 namespace havel {

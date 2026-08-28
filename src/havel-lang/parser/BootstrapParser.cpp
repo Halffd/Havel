@@ -209,26 +209,18 @@ void Parser::synchronizeTo(havel::TokenType type) {
 }
 
 void Parser::pushDelimiter(TokenType type, const Token* token) {
-  const Token& current = token ? *token : at();
-  delimiterStack_.push_back({type, current.line, current.column, position});
+  if (!token) {
+    token = &at();
+  }
+  delimiterStack_.push_back({type, token->line, token->column, position});
 }
 
 void Parser::popDelimiter(TokenType expected) {
-  // expected is the OPENING delimiter type (OpenParen, OpenBracket, OpenBrace)
-  // Map to the corresponding closing delimiter type for error messages
-  TokenType expectedClose;
-  switch (expected) {
-    case TokenType::OpenParen: expectedClose = TokenType::CloseParen; break;
-    case TokenType::OpenBracket: expectedClose = TokenType::CloseBracket; break;
-    case TokenType::OpenBrace: expectedClose = TokenType::CloseBrace; break;
-    default: expectedClose = TokenType::CloseParen; break;
-  }
-
   // Check for delimiter mismatch before popping
   if (!delimiterStack_.empty() && delimiterStack_.back().type != expected) {
     auto unclosed = delimiterStack_.back();
     std::string expectedStr, foundStr;
-    switch (expectedClose) {
+    switch (expected) {
       case TokenType::CloseParen: expectedStr = "')'"; break;
       case TokenType::CloseBracket: expectedStr = "']'"; break;
       case TokenType::CloseBrace: expectedStr = "'}'"; break;
@@ -1600,8 +1592,9 @@ case TokenType::Timeout:
               }
               errorAt(token, "Mismatched delimiter: expected ')' to close " + openStr +
                 " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
+            } else {
+              errorAt(token, "Unexpected ')' with no matching '('");
             }
-            // If stack is empty, this ')' may belong to an outer context. Don't error here.
             return nullptr;
           }
 
@@ -1624,8 +1617,9 @@ case TokenType::Timeout:
                     errorAt(token, "Mismatched delimiter: expected ']' to close " + openStr +
                       " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
                 }
+            } else {
+              errorAt(token, "Unexpected ']' with no matching '['");
             }
-            // If stack is empty, this ']' may belong to an outer context. Don't error here.
             return nullptr;
           }
 
@@ -1648,9 +1642,9 @@ case TokenType::Timeout:
                     errorAt(token, "Mismatched delimiter: expected '}' to close " + openStr +
                       " (opened at line " + std::to_string(u.line) + ", col " + std::to_string(u.column) + ")");
                 }
+            } else {
+              errorAt(token, "Unexpected '}' with no matching '{'");
             }
-            // If stack is empty, this '}' belongs to a statement-level block (e.g., function body).
-            // Don't error here - let the statement parser handle it.
             return nullptr;
           }
 
@@ -2499,9 +2493,8 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
   }
 
   if (at().type == TokenType::OpenParen) {
-    Token openParen = at();
     advance(); // consume '('
-    pushDelimiter(TokenType::OpenParen, &openParen);
+    pushDelimiter(TokenType::OpenParen);
 
     while (notEOF() && at().type != TokenType::CloseParen) {
       if (!params.empty() && at().type == TokenType::Comma) {
@@ -3861,9 +3854,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 	std::vector<ast::TypeParam> typeParams;
 	if (at().type == havel::TokenType::OpenParen) {
 		size_t savedPos = position;
-		Token openParen = at();
 		advance(); // consume '('
-		pushDelimiter(TokenType::OpenParen, &openParen);
+		pushDelimiter(TokenType::OpenParen);
 		std::vector<ast::TypeParam> candidateParams;
 		bool isTypeParamList = true;
 		while (at().type != havel::TokenType::CloseParen && notEOF()) {
@@ -3900,31 +3892,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 				break;
 			}
 		}
-<<<<<<< HEAD
 		if (isTypeParamList && at().type == havel::TokenType::CloseParen && !candidateParams.empty()) {
 			advance(); // consume ')'
 			popDelimiter(TokenType::OpenParen);
-			if (at().type == havel::TokenType::OpenParen) {
+			if (at().type == havel::TokenType::OpenParen && !candidateParams.empty()) {
 				typeParams = std::move(candidateParams);
 			} else {
-				// Rewind to '('; delimiter already popped above, do not pop again
-=======
-		// Check if it's a type parameter list: valid candidates, followed by ')', then another '('
-		if (isTypeParamList && at().type == havel::TokenType::CloseParen && !candidateParams.empty()) {
-			// Look ahead to see if there's another '(' after the ')'
-			size_t lookaheadPos = position + 1;
-			while (lookaheadPos < tokens.size() && tokens[lookaheadPos].type == havel::TokenType::NewLine) {
-				lookaheadPos++;
-			}
-			if (lookaheadPos < tokens.size() && tokens[lookaheadPos].type == havel::TokenType::OpenParen) {
-				// It's a type parameter list - consume ')' and commit
-				advance(); // consume ')'
-				popDelimiter(TokenType::OpenParen);
-				typeParams = std::move(candidateParams);
-			} else {
-				// Not a type parameter list - restore position, delimiter will be handled by actual param parsing
->>>>>>> havel-3
 				position = savedPos;
+				popDelimiter(TokenType::OpenParen);
 			}
 		} else {
 			position = savedPos;
@@ -3935,9 +3910,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 	if (at().type != havel::TokenType::OpenParen) {
     failAt(at(), "Expected '(' after function name");
   }
-  Token openParen = at();
   advance(); // consume '('
-  pushDelimiter(TokenType::OpenParen, &openParen);
+  pushDelimiter(TokenType::OpenParen);
 
   std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
   while (notEOF() && at().type != havel::TokenType::CloseParen) {
@@ -7534,9 +7508,8 @@ while (at().type == havel::TokenType::NewLine) {
     
 } else if (at().type == havel::TokenType::OpenBrace) {
     // Brace block: original behavior
-    Token openBrace = at();
     advance(); // consume '{'
-    pushDelimiter(TokenType::OpenBrace, &openBrace);
+    pushDelimiter(TokenType::OpenBrace);
     
     // Save and set input context
     bool savedInputContext = context.inInputContext;
@@ -9595,9 +9568,8 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
 std::unique_ptr<havel::ast::Expression>
 Parser::parseIndexExpression(std::unique_ptr<havel::ast::Expression> object) {
 
-  Token openBracket = at();
   advance(); // consume '['
-  pushDelimiter(TokenType::OpenBracket, &openBracket);
+  pushDelimiter(TokenType::OpenBracket);
 
   // Check for slice syntax: [start:end] or [start:] or [:end] or [:]
   // We need to look ahead to see if there's a ':' in the index expression
@@ -9745,14 +9717,12 @@ Parser::parseObjectLiteral(bool unsorted) {
     // consumed by parsePrattExpression's advance(), so current token is
     // already inside the object. Only advance if current token is the opener.
     if (at().type == havel::TokenType::BangOpenBrace) {
-        Token openBrace = at();
         advance(); // consume '!{'
-        pushDelimiter(TokenType::OpenBrace, &openBrace);
+        pushDelimiter(TokenType::OpenBrace);
         unsorted = true;
     } else if (at().type == havel::TokenType::OpenBrace) {
-        Token openBrace = at();
         advance(); // consume '{'
-        pushDelimiter(TokenType::OpenBrace, &openBrace);
+        pushDelimiter(TokenType::OpenBrace);
     }
     // else: opener was already consumed, we're past it
 
@@ -9963,9 +9933,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {
   blockExpr->line = at().line;
   blockExpr->column = at().column;
 
-  Token openBrace = at();
   advance(); // consume '{'
-  pushDelimiter(TokenType::OpenBrace, &openBrace);
+  pushDelimiter(TokenType::OpenBrace);
 
   // Parse statements until we hit an expression (last one becomes value)
   // or closing brace

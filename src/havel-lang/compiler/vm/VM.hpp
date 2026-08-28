@@ -1459,6 +1459,15 @@ bool isLazyModuleLoaded(const std::string &name) const;
   // Resolve a Value that might be a string to an actual string
   std::string resolveStringKey(const Value &value) const;
 
+  // Resolve a Value that might be StringId or StringValId to an actual string
+  // Returns empty string if not a string type
+  std::string getStringValue(const Value &value) const {
+    if (value.isStringValId() || value.isStringId()) {
+      return resolveStringKey(value);
+    }
+    return "";
+  }
+
   /** Injected embedder context; null if VM was default-constructed. */
   const HostContext *hostContext() const { return context_; }
 

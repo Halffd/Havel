@@ -10,9 +10,12 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   top_level_structs_.clear();
   global_variables_.clear();
   function_stack_.clear();
+  class_stack_.clear();
+  class_members_.clear();
 
   collectTopLevelFunctions(program);
   collectTopLevelStructs(program);
+  collectClassMembers(program);
 
   // Seed known globals from previous REPL sessions
   global_variables_.insert(known_globals_.begin(), known_globals_.end());
@@ -200,6 +203,48 @@ void LexicalResolver::collectTopLevelStructs(const ast::Program &program) {
     if (statement->kind == ast::NodeType::ClassDeclaration) {
       const auto &decl = static_cast<const ast::ClassDeclaration &>(*statement);
       top_level_structs_.insert(decl.name);
+    }
+  }
+}
+
+void LexicalResolver::collectClassMembers(const ast::Program &program) {
+  class_members_.clear();
+  // First pass: own members per class.
+  for (const auto &statement : program.body) {
+    if (!statement || statement->kind != ast::NodeType::ClassDeclaration) {
+      continue;
+    }
+    const auto &decl = static_cast<const ast::ClassDeclaration &>(*statement);
+    auto &members = class_members_[decl.name];
+    members.parent_name = decl.parentName;
+    for (const auto &field : decl.definition.fields) {
+      if (!field.isClassField) {
+        members.fields.insert(field.name);
+      }
+    }
+    for (const auto &m : decl.definition.methods) {
+      if (m && !m->isClassMethod) {
+        members.methods.insert(m->name);
+      }
+    }
+  }
+  // Second pass: propagate ancestor members through the inheritance chain.
+  for (auto &entry : class_members_) {
+    std::string parent = entry.second.parent_name;
+    std::unordered_set<std::string> seen;
+    size_t guard = 0;
+    while (!parent.empty() && seen.insert(parent).second && guard++ < 64) {
+      auto parent_it = class_members_.find(parent);
+      if (parent_it == class_members_.end()) {
+        break;
+      }
+      for (const auto &f : parent_it->second.fields) {
+        entry.second.fields.insert(f);
+      }
+      for (const auto &m : parent_it->second.methods) {
+        entry.second.methods.insert(m);
+      }
+      parent = parent_it->second.parent_name;
     }
   }
 }
@@ -895,6 +940,30 @@ case ast::NodeType::BlockStatement: {
   case ast::NodeType::ClassDeclaration: {
     const auto &classDecl =
         static_cast<const ast::ClassDeclaration &>(statement);
+    // Push class context with instance field and method names (not @@ class fields/methods)
+    ClassContext class_ctx;
+    for (const auto &field : classDecl.definition.fields) {
+      if (!field.isClassField) {
+        class_ctx.field_names.insert(field.name);
+      }
+    }
+    for (const auto &method : classDecl.definition.methods) {
+      if (method && !method->isClassMethod) {
+        class_ctx.method_names.insert(method->name);
+      }
+    }
+    class_stack_.push_back(std::move(class_ctx));
+    // Merge inherited (parent) member names so bare access to inherited
+    // members resolves as ClassMember inside derived class methods.
+    auto members_it = class_members_.find(classDecl.name);
+    if (members_it != class_members_.end()) {
+      for (const auto &f : members_it->second.fields) {
+        class_stack_.back().field_names.insert(f);
+      }
+      for (const auto &m : members_it->second.methods) {
+        class_stack_.back().method_names.insert(m);
+      }
+    }
     for (const auto &method : classDecl.definition.methods) {
       if (method) {
         beginFunction(method.get());
@@ -916,12 +985,24 @@ case ast::NodeType::BlockStatement: {
         endFunction();
       }
     }
+    class_stack_.pop_back();
     break;
   }
 
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl =
         static_cast<const ast::StructDeclaration &>(statement);
+    // Push struct context with field and method names
+    ClassContext struct_ctx;
+    for (const auto &field : structDecl.definition.fields) {
+      struct_ctx.field_names.insert(field.name);
+    }
+    for (const auto &method : structDecl.definition.methods) {
+      if (method && !method->isConstructor) {
+        struct_ctx.method_names.insert(method->name);
+      }
+    }
+    class_stack_.push_back(std::move(struct_ctx));
     for (const auto &method : structDecl.definition.methods) {
       if (method) {
         beginFunction(method.get());
@@ -941,6 +1022,7 @@ case ast::NodeType::BlockStatement: {
         endFunction();
       }
     }
+    class_stack_.pop_back();
     break;
   }
 
@@ -1191,7 +1273,8 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
 
   case ast::NodeType::CallExpression: {
     const auto &call = static_cast<const ast::CallExpression &>(expression);
-    if (call.callee) {
+    if (call.callee && !call.isSuperCall) {
+      // Skip the synthetic `__super__` callee for super calls (@->method()).
       resolveExpression(*call.callee);
     }
     for (const auto &arg : call.args) {
@@ -1236,6 +1319,24 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           static_cast<const ast::Identifier &>(*assignment.target);
         auto binding = resolveIdentifier(ident.symbol);
 
+        // Bare class member assignment target: inside a class method, an
+        // identifier matching a class field/method is an implicit @self member,
+        // not a variable to declare as a local. This must be checked before the
+        // "fake global → declare local" logic below, otherwise a param-shadowed
+        // or inherited field assignment gets mis-declared as a local.
+        if (!class_stack_.empty()) {
+          const auto &cctx = class_stack_.back();
+          if (cctx.field_names.count(ident.symbol) > 0 ||
+              cctx.method_names.count(ident.symbol) > 0) {
+            noteIdentifierBinding(ident, ResolvedBinding{
+                ResolvedBindingKind::ClassMember, 0, 0, ident.symbol, false});
+            if (assignment.value) {
+              resolveExpression(*assignment.value);
+            }
+            break;
+          }
+        }
+
         // Explicit global override (::x = ...) must never create a local.
         if (assignment.isGlobalScope || ident.isGlobalScope) {
         global_variables_.insert(ident.symbol);
@@ -1251,9 +1352,10 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
       // 1. No binding exists
       bool insideFunction = function_stack_.size() > 1;
       bool shouldDeclareLocal = !binding;
-      // Note: If binding is Local or Upvalue, use existing (don't shadow)
+      // Note: If binding is Local, Upvalue, or ClassMember, use existing (don't shadow)
       if (binding && (binding->kind == ResolvedBindingKind::Local ||
-                     binding->kind == ResolvedBindingKind::Upvalue)) {
+                     binding->kind == ResolvedBindingKind::Upvalue ||
+                     binding->kind == ResolvedBindingKind::ClassMember)) {
         shouldDeclareLocal = false;
       }
         // If binding is a "fake" Global (not in global_variables_), still declare local
@@ -1894,6 +1996,16 @@ LexicalResolver::resolveIdentifierInFunction(const std::string &name,
   // THIRD: In nested function - check enclosing scope recursively
   auto enclosing = resolveIdentifierInFunction(name, function_index - 1);
   if (!enclosing) {
+    // Check if this is a bare class member (implicit @self.field)
+    if (!class_stack_.empty()) {
+      const auto &class_ctx = class_stack_.back();
+      if (class_ctx.field_names.count(name) > 0 ||
+          class_ctx.method_names.count(name) > 0) {
+        // Found as class field or method - resolve as implicit class member
+        return ResolvedBinding{
+            ResolvedBindingKind::ClassMember, 0, 0, name, false};
+      }
+    }
     if (strict_mode_) {
       return std::nullopt;
     }
@@ -1947,6 +2059,13 @@ uint32_t LexicalResolver::addUpvalue(size_t function_index,
 
 void LexicalResolver::noteIdentifierBinding(const ast::Identifier &identifier,
                                             const ResolvedBinding &binding) {
+  // Don't overwrite ClassMember bindings with less specific ones
+  auto it = result_.identifier_bindings.find(&identifier);
+  if (it != result_.identifier_bindings.end() &&
+      it->second.kind == ResolvedBindingKind::ClassMember) {
+    // Already bound as class member - don't overwrite with Local/Global
+    return;
+  }
   result_.identifier_bindings[&identifier] = binding;
 }
 

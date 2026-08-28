@@ -2411,34 +2411,42 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
   std::vector<std::unique_ptr<ast::FunctionParameter>> braceLambdaParams;
   bool isBraceLambda = false;
 
-  if (at().type == TokenType::Identifier) {
-    // Collect comma-separated identifiers
-    while (true) {
-      if (at().type != TokenType::Identifier) {
-        break;
+  // In control-flow conditions (if/while/for/switch/catch/match), a
+  // parenthesized expression followed by '{' is the condition + body block,
+  // NOT a brace-lambda such as (x) { body }. Suppress the shorthand there so
+  // `if (x) { ... }` parses as a condition and a block instead of a lambda.
+  if (!context.suppressBraceLambda &&
+      (at().type == TokenType::Identifier ||
+       at().type == TokenType::CloseParen)) {
+    if (at().type == TokenType::Identifier) {
+      // Collect comma-separated identifiers
+      while (true) {
+        if (at().type != TokenType::Identifier) {
+          break;
+        }
+        auto pattern = makeIdentifier(advance());
+        braceLambdaParams.push_back(makeNode<ast::FunctionParameter>(
+            std::move(pattern), std::nullopt, std::nullopt, false));
+        if (at().type == TokenType::Comma) {
+          advance();
+        } else {
+          break;
+        }
       }
-      auto pattern = makeIdentifier(advance());
-      braceLambdaParams.push_back(makeNode<ast::FunctionParameter>(
-          std::move(pattern), std::nullopt, std::nullopt, false));
-      if (at().type == TokenType::Comma) {
-        advance();
-      } else {
-        break;
+      // Check for ) {
+      if (braceLambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
+        advance(); // consume ')'
+        popDelimiter(TokenType::OpenParen);
+        // DON'T consume '{' - parseBlockStatement expects to see it
+        isBraceLambda = true;
       }
-    }
-    // Check for ) {
-    if (braceLambdaParams.size() >= 1 && at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
+    } else if (at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
+      // Empty params: () { body }
       advance(); // consume ')'
       popDelimiter(TokenType::OpenParen);
       // DON'T consume '{' - parseBlockStatement expects to see it
       isBraceLambda = true;
     }
-  } else if (at().type == TokenType::CloseParen && at(1).type == TokenType::OpenBrace) {
-    // Empty params: () { body }
-    advance(); // consume ')'
-    popDelimiter(TokenType::OpenParen);
-    // DON'T consume '{' - parseBlockStatement expects to see it
-    isBraceLambda = true;
   }
 
   if (isBraceLambda) {
@@ -6290,7 +6298,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement(size_t effective
 
     bool prevAllow = context.allowBraceSugar;
     context.allowBraceSugar = false;
+    bool prevSuppress = context.suppressBraceLambda;
+    context.suppressBraceLambda = true;
     auto condition = parseExpression();
+    context.suppressBraceLambda = prevSuppress;
     context.allowBraceSugar = prevAllow;
 
     std::unique_ptr<havel::ast::Statement> consequence;
@@ -6387,7 +6398,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDoWhileStatement() {
   // Parse the condition
   bool prevAllow = context.allowBraceSugar;
   context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
   auto condition = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
   context.allowBraceSugar = prevAllow;
 
   return makeNode<havel::ast::DoWhileStatement>(std::move(body),
@@ -6400,7 +6414,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
   // Parse the switch expression
   bool prevAllow = context.allowBraceSugar;
   context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
   auto expression = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
   context.allowBraceSugar = prevAllow;
 
   // Expect opening brace
@@ -6572,7 +6589,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
   // Disable brace call sugar to prevent for loop body { from being consumed
   bool prevAllow = context.allowBraceSugar;
   context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
   auto iterable = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
   context.allowBraceSugar = prevAllow;
 
   // Skip newlines before body
@@ -6664,7 +6684,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
     // Parse condition expression
     bool prevAllow = context.allowBraceSugar;
     context.allowBraceSugar = false;
+    bool prevSuppress = context.suppressBraceLambda;
+    context.suppressBraceLambda = true;
     condition = parseExpression();
+    context.suppressBraceLambda = prevSuppress;
     context.allowBraceSugar = prevAllow;
 
     // Skip newlines before body
@@ -7315,7 +7338,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
   // Parse the condition
   bool prevAllow = context.allowBraceSugar;
   context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
   auto condition = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
   context.allowBraceSugar = prevAllow;
 
   if (at().type != havel::TokenType::OpenBrace) {
@@ -7372,7 +7398,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
   // parsed as call
   bool prevAllowBraceCallSugar = context.allowBraceSugar;
   context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
   auto countExpr = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
   context.allowBraceSugar = prevAllowBraceCallSugar;
 
   // Skip newlines before body
@@ -8264,8 +8293,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
   // Temporarily disable brace sugar to prevent { from being consumed as a lambda
   bool savedBraceSugar = context.allowBraceSugar;
   context.allowBraceSugar = false;
+  bool savedSuppressBraceLambda = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
 
   discriminants.push_back(parseBinaryExpression());
+  context.suppressBraceLambda = savedSuppressBraceLambda;
 
   // Parse additional discriminants separated by commas
   while (at().type == havel::TokenType::Comma) {
@@ -10016,7 +10048,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseIfExpression() {
   // condition
   bool prevAllow = context.allowBraceSugar;
   context.allowBraceSugar = false;
+  bool prevSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
   auto condition = parseExpression();
+  context.suppressBraceLambda = prevSuppress;
+  context.allowBraceSugar = prevAllow;
 
   // Expect then branch (block or expression)
   std::unique_ptr<havel::ast::Expression> thenBranch;
@@ -11170,6 +11206,8 @@ std::unique_ptr<ast::Expression> Parser::parseIntervalExpression() {
     // Disable brace sugar so it doesn't consume the duration expression
     auto savedBraceSugar = context.allowBraceSugar;
     context.allowBraceSugar = false;
+    bool savedSuppress = context.suppressBraceLambda;
+    context.suppressBraceLambda = true;
 
     std::unique_ptr<ast::Expression> intervalMs;
 
@@ -11188,6 +11226,7 @@ std::unique_ptr<ast::Expression> Parser::parseIntervalExpression() {
     }
 
     context.allowBraceSugar = savedBraceSugar;
+    context.suppressBraceLambda = savedSuppress;
 
     if (at().type != TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after interval duration");
@@ -11202,6 +11241,8 @@ std::unique_ptr<ast::Expression> Parser::parseUpdateBlockExpression() {
     // Note: parsePrattExpression already consumed 'update' via advance()
     auto savedBraceSugar = context.allowBraceSugar;
     context.allowBraceSugar = false;
+    bool savedSuppress = context.suppressBraceLambda;
+    context.suppressBraceLambda = true;
 
     std::unique_ptr<ast::Expression> intervalMs;
 
@@ -11219,6 +11260,7 @@ std::unique_ptr<ast::Expression> Parser::parseUpdateBlockExpression() {
     }
 
     context.allowBraceSugar = savedBraceSugar;
+    context.suppressBraceLambda = savedSuppress;
 
     if (at().type != TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after update duration");
@@ -11236,6 +11278,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseTimeoutExpression() {
   // Disable brace sugar so it doesn't consume the duration expression
   auto savedBraceSugar = context.allowBraceSugar;
   context.allowBraceSugar = false;
+  bool savedSuppress = context.suppressBraceLambda;
+  context.suppressBraceLambda = true;
 
   std::unique_ptr<ast::Expression> timeoutMs;
 
@@ -11255,6 +11299,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseTimeoutExpression() {
   }
 
   context.allowBraceSugar = savedBraceSugar;
+  context.suppressBraceLambda = savedSuppress;
 
   if (at().type != TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after timeout duration");

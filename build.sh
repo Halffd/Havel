@@ -471,11 +471,11 @@ test_suite() {
     # Run CTest (C++ unit tests)
     log "INFO" "Running CTest..." "${YELLOW}"
     if ctest --test-dir "${SCRIPT_DIR}/${BUILD_DIR}" --output-on-failure 2>&1 | tee -a "${BUILD_LOG}"; then
-        ((pass_count++))
+        ((pass_count+=1))
     else
-        ((fail_count++))
+        ((fail_count+=1))
     fi
-    ((test_count++))
+    ((test_count+=1))
     
     # Run smoke tests via havel (no-self-hosted to avoid self-hosted pipeline hang)
     log "INFO" "Running script smoke tests..." "${YELLOW}"
@@ -490,12 +490,12 @@ test_suite() {
             log "INFO" "Running $(basename "$test_file")..." "${YELLOW}"
             if "${SCRIPT_DIR}/${BUILD_DIR}/havel" --no-self-hosted "$test_file" 2>&1 | grep -q "FAIL"; then
                 log "ERROR" "FAIL: $(basename "$test_file")" "${RED}"
-                ((fail_count++))
+                ((fail_count+=1))
             else
                 log "INFO" "PASS: $(basename "$test_file")" "${GREEN}"
-                ((pass_count++))
+                ((pass_count+=1))
             fi
-            ((test_count++))
+            ((test_count+=1))
         fi
     done
     

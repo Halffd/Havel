@@ -1942,10 +1942,12 @@ case TokenType::Tilde: {
       if (left && left->kind == ast::NodeType::RangeExpression) {
         auto &existingRange = static_cast<ast::RangeExpression &>(*left);
         // If this range already has a step, it's an error or we just treat as nested
-        // Parse the end value, flattening the inner range start into a plain start
-        auto right = parsePrattExpression(getRightBindingPower(token.type));
+        // Parse the step value; preserve the original end
+        auto step = parsePrattExpression(getRightBindingPower(token.type));
         return makeNodeAt<ast::RangeExpression>(token,
-            std::move(existingRange.start), std::move(right));
+            std::move(existingRange.start),
+            std::move(existingRange.end),
+            std::move(step));
       }
 
       // Check for step: a..b..step - look ahead after parsing end

@@ -847,8 +847,11 @@ for (const auto &err : parser.getErrors()) {
   semOptions.resolveNames = true;
   semOptions.collectErrors = true;
   semOptions.treatUndefinedAsError = options.strictSemantics;
-  // Pre-populate known globals from previous REPL sessions if available
-  // (This could be passed via options in the future)
+  // Pre-populate known globals so host functions (print, str, etc.) resolve
+  for (const auto& [name, fn] : options.host_functions) {
+    (void)fn;
+    semOptions.knownGlobals.insert(name);
+  }
   
   SemanticAnalyzer semanticAnalyzer(semOptions);
   auto semResult = semanticAnalyzer.analyze(*program);
@@ -1137,6 +1140,10 @@ std::unique_ptr<BytecodeChunk> compileToBytecodeChunk(
   SemanticAnalyzer::Options semOptions;
   semOptions.checkTypes = false; // Already type-checked above
   semOptions.resolveNames = true;
+  for (const auto& [name, fn] : options.host_functions) {
+    (void)fn;
+    semOptions.knownGlobals.insert(name);
+  }
   semOptions.collectErrors = true;
   semOptions.treatUndefinedAsError = options.strictSemantics;
   

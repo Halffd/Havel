@@ -3900,16 +3900,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 				break;
 			}
 		}
-<<<<<<< HEAD
-		if (isTypeParamList && at().type == havel::TokenType::CloseParen && !candidateParams.empty()) {
-			advance(); // consume ')'
-			popDelimiter(TokenType::OpenParen);
-			if (at().type == havel::TokenType::OpenParen) {
-				typeParams = std::move(candidateParams);
-			} else {
-				// Rewind to '('; delimiter already popped above, do not pop again
-=======
-		// Check if it's a type parameter list: valid candidates, followed by ')', then another '('
+// Check if it's a type parameter list: valid candidates, followed by ')', then another '('
 		if (isTypeParamList && at().type == havel::TokenType::CloseParen && !candidateParams.empty()) {
 			// Look ahead to see if there's another '(' after the ')'
 			size_t lookaheadPos = position + 1;
@@ -3922,11 +3913,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 				popDelimiter(TokenType::OpenParen);
 				typeParams = std::move(candidateParams);
 			} else {
-				// Not a type parameter list - restore position, delimiter will be handled by actual param parsing
->>>>>>> havel-3
+				// Not a type parameter list - rewind and pop the '(' we pushed above
 				position = savedPos;
+				popDelimiter(TokenType::OpenParen);
 			}
 		} else {
+			// Not a type parameter list at all - rewind and pop the '(' we pushed above
 			position = savedPos;
 			popDelimiter(TokenType::OpenParen);
 		}

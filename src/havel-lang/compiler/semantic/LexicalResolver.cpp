@@ -1784,14 +1784,17 @@ case ast::NodeType::MemberExpression: {
     }
 
     case ast::NodeType::AtExpression: {
-        const auto &at = static_cast<const ast::AtExpression &>(expression);
-        if (at.field) resolveExpression(*at.field);
+        // @field is member access on the implicit `this` receiver. The field
+        // name is NOT a lexical identifier -- it binds to a class member and is
+        // resolved directly by the bytecode compiler (LOAD_VAR 0 + OBJECT_GET).
+        // Resolving it here would incorrectly report "Unresolved identifier"
+        // inside class bodies. Treat it like ThisExpression: no-op.
         break;
     }
 
     case ast::NodeType::AtAtExpression: {
-        const auto &atat = static_cast<const ast::AtAtExpression &>(expression);
-        if (atat.field) resolveExpression(*atat.field);
+        // @@field is member access on the class object. Same as AtExpression:
+        // the field name is a class member, not a lexical identifier.
         break;
     }
 

@@ -352,7 +352,8 @@ case OpCode::ARRAY_GET: {
             if (!index) {
                 COMPILER_THROW("ARRAY_GET expects integer index");
             }
-            auto *array = heap_.array(container.asArrayId());
+            uint32_t array_id = container.asArrayId();
+            auto *array = heap_.array(array_id);
             if (!array) {
                 COMPILER_THROW("ARRAY_GET unknown array id");
             }
@@ -366,7 +367,28 @@ case OpCode::ARRAY_GET: {
       if (idx < 0 || static_cast<size_t>(idx) >= array->size()) {
         result = Value::makeNull();
       } else {
-        result = (*array)[static_cast<size_t>(idx)];
+        // Use inline cache for fast array access
+        auto &frame = currentFrame();
+        auto &cache = getArrayInlineCache(container.asArrayId(), frame.ip);
+        
+        if (!cache.is_valid || cache.array_ptr != array) {
+          // Cache miss - populate cache
+          cache.invalidate();
+          cache.is_valid = true;
+          cache.is_array = true;
+          cache.array_ptr = array;
+          cache.array_frozen = array->frozen;
+          cache.misses++;
+        } else {
+          cache.hits++;
+        }
+        
+        // Bounds check
+        if (idx < 0 || static_cast<size_t>(idx) >= array->size()) {
+          result = Value::makeNull();
+        } else {
+          result = (*array)[static_cast<size_t>(idx)];
+        }
       }
       
   if (hot_func_cb_) {
@@ -500,17 +522,34 @@ if (container.isSetId()) {
       COMPILER_THROW("ARRAY_SET index out of bounds: " + std::to_string(*index));
     }
   }
-	const auto idx_size = static_cast<size_t>(idx);
-	if (idx_size >= 100'000'000) {
-		COMPILER_THROW("ARRAY_SET index too large: " + std::to_string(idx));
-	}
-	auto old_size = array->size();
-	if (idx_size >= old_size) {
-		array->resize(idx_size + 1, Value::makeNull());
-	}
-(*array)[idx_size] = value;
-      heap_.writeArrayBarrier(array->data, value);
-      heap_.bumpArrayVersion(container.asArrayId());
+  const auto idx_size = static_cast<size_t>(idx);
+  if (idx_size >= 100'000'000) {
+    COMPILER_THROW("ARRAY_SET index too large: " + std::to_string(idx));
+  }
+  auto old_size = array->size();
+  if (idx_size >= old_size) {
+    array->resize(idx_size + 1, Value::makeNull());
+  }
+  
+  // Use inline cache for fast array access
+  auto &frame = currentFrame();
+  auto &cache = getArrayInlineCache(container.asArrayId(), frame.ip);
+  
+  if (!cache.is_valid || cache.array_ptr != array) {
+    // Cache miss - populate cache
+    cache.invalidate();
+    cache.is_valid = true;
+    cache.is_array = true;
+    cache.array_ptr = array;
+    cache.array_frozen = array->frozen;
+    cache.misses++;
+  } else {
+    cache.hits++;
+  }
+  
+  (*array)[idx_size] = value;
+  heap_.writeArrayBarrier(array->data, value);
+  heap_.bumpArrayVersion(container.asArrayId());
   emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":[" + std::to_string(idx) + "]");
   if (old_size != array->size()) {
     emitVariableChanged("@A" + std::to_string(container.asArrayId()) + ":length");

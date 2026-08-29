@@ -6785,4 +6785,78 @@ void VM::detachDebugger() {
   debug_breakpoints_.clear();
 }
 
+// ============================================================================
+// Inline Cache Implementation
+// ============================================================================
+
+VM::ArrayInlineCache& VM::getArrayInlineCache(uint32_t array_id, uint32_t ip) {
+  uint64_t key = (static_cast<uint64_t>(array_id) << 32) | ip;
+  auto& cache = array_inline_cache_[key];
+  return cache;
+}
+
+VM::PropertyInlineCache& VM::getPropertyInlineCache(uint32_t object_id, uint32_t name_id) {
+  uint64_t key = (static_cast<uint64_t>(object_id) << 32) | name_id;
+  auto& cache = property_inline_cache_[key];
+  return cache;
+}
+
+VM::IteratorInlineCache& VM::getIteratorInlineCache(uint32_t iterator_id) {
+  uint64_t key = iterator_id;
+  auto& cache = iterator_inline_cache_[key];
+  return cache;
+}
+
+void VM::invalidateArrayInlineCache(uint32_t array_id) {
+  for (auto it = array_inline_cache_.begin(); it != array_inline_cache_.end();) {
+    if ((it->first >> 32) == array_id) {
+      it = array_inline_cache_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void VM::invalidatePropertyInlineCache(uint32_t object_id, uint32_t name_id) {
+  uint64_t key = (static_cast<uint64_t>(object_id) << 32) | name_id;
+  property_inline_cache_.erase(key);
+}
+
+void VM::invalidateIteratorInlineCache(uint32_t iterator_id) {
+  iterator_inline_cache_.erase(iterator_id);
+}
+
+void VM::trimInlineCaches() {
+  if (array_inline_cache_.size() > MAX_INLINE_CACHE_SIZE) {
+    // Remove entries with fewest hits
+    std::vector<std::pair<uint64_t, uint32_t>> entries;
+    entries.reserve(array_inline_cache_.size());
+    for (auto& [key, cache] : array_inline_cache_) {
+      entries.emplace_back(key, cache.hits);
+    }
+    std::sort(entries.begin(), entries.end(),
+              [](const auto& a, const auto& b) { return a.second < b.second; });
+    
+    size_t to_remove = array_inline_cache_.size() - MAX_INLINE_CACHE_SIZE / 2;
+    for (size_t i = 0; i < to_remove; ++i) {
+      array_inline_cache_.erase(entries[i].first);
+    }
+  }
+  
+  if (property_inline_cache_.size() > MAX_INLINE_CACHE_SIZE) {
+    std::vector<std::pair<uint64_t, uint32_t>> entries;
+    entries.reserve(property_inline_cache_.size());
+    for (auto& [key, cache] : property_inline_cache_) {
+      entries.emplace_back(key, cache.hits);
+    }
+    std::sort(entries.begin(), entries.end(),
+              [](const auto& a, const auto& b) { return a.second < b.second; });
+    
+    size_t to_remove = property_inline_cache_.size() - MAX_INLINE_CACHE_SIZE / 2;
+    for (size_t i = 0; i < to_remove; ++i) {
+      property_inline_cache_.erase(entries[i].first);
+    }
+  }
+}
+
 } // namespace havel::compiler

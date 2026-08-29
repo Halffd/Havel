@@ -1517,6 +1517,104 @@ private:
     void* serviceRegistry_ = nullptr;
     bool inline_yield_active_ = false;
 
+    // ============================================================================
+    // Inline Cache for hot operations (ARRAY_GET, ARRAY_SET, etc.)
+    // ============================================================================
+    
+    // Inline cache entry for array operations
+    struct ArrayInlineCache {
+        // Cache key: (array_id << 32) | instruction_ip
+        uint64_t key = 0;
+        
+        // Cached type information
+        bool is_valid = false;
+        bool is_string = false;
+        bool is_array = false;
+        bool is_object = false;
+        
+        // For arrays: direct pointer to array data
+        GCHeap::ArrayEntry* array_ptr = nullptr;
+        bool array_frozen = false;
+        
+        // For strings: direct pointer to string data
+        const std::string* string_ptr = nullptr;
+        
+        // For objects: cached property offset (if object has hidden class)
+        uint32_t property_offset = 0;
+        
+        // Cache statistics
+        uint32_t hits = 0;
+        uint32_t misses = 0;
+        
+        void invalidate() {
+            is_valid = false;
+            is_string = false;
+            is_array = false;
+            is_object = false;
+            array_ptr = nullptr;
+            array_frozen = false;
+            string_ptr = nullptr;
+            property_offset = 0;
+        }
+    };
+    
+    // Inline cache for array operations (ARRAY_GET, ARRAY_SET, ARRAY_LEN)
+    // Keyed by (array_id << 32) | instruction_ip
+    std::unordered_map<uint64_t, ArrayInlineCache> array_inline_cache_;
+    
+    // Inline cache for property access (OBJECT_GET, OBJECT_SET)
+    // Keyed by (object_id << 32) | property_name_id
+    struct PropertyInlineCache {
+        uint64_t key = 0;
+        bool is_valid = false;
+        uint32_t property_offset = 0;
+        uint32_t object_id = 0;
+        bool is_object = false;
+        uint32_t hits = 0;
+        uint32_t misses = 0;
+        
+        void invalidate() {
+            is_valid = false;
+            property_offset = 0;
+            object_id = 0;
+            is_object = false;
+        }
+    };
+    
+    std::unordered_map<uint64_t, PropertyInlineCache> property_inline_cache_;
+    
+    // Inline cache for iterator operations (ITER_NEXT)
+    struct IteratorInlineCache {
+        uint64_t key = 0;
+        bool is_valid = false;
+        uint32_t iterator_id = 0;
+        uint32_t hits = 0;
+        uint32_t misses = 0;
+        
+        void invalidate() {
+            is_valid = false;
+            iterator_id = 0;
+        }
+    };
+    
+    std::unordered_map<uint64_t, IteratorInlineCache> iterator_inline_cache_;
+    
+    // Global inline cache configuration
+    static constexpr size_t MAX_INLINE_CACHE_SIZE = 4096;
+    static constexpr uint32_t INLINE_CACHE_THRESHOLD = 10; // Start caching after N executions
+    
+    // Helper functions for inline cache
+    ArrayInlineCache& getArrayInlineCache(uint32_t array_id, uint32_t ip);
+    PropertyInlineCache& getPropertyInlineCache(uint32_t object_id, uint32_t name_id);
+    IteratorInlineCache& getIteratorInlineCache(uint32_t iterator_id);
+    
+    void invalidateArrayInlineCache(uint32_t array_id);
+    void invalidatePropertyInlineCache(uint32_t object_id, uint32_t name_id);
+    void invalidateIteratorInlineCache(uint32_t iterator_id);
+    
+    // Clean up old cache entries if cache grows too large
+    void trimInlineCaches();
+
   public:
 bool isInExecute() const { return vm_in_execute_.load(std::memory_order_acquire); }
     void setServiceRegistry(void* sr) { serviceRegistry_ = sr; }

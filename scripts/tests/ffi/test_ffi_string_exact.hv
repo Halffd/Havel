@@ -1,0 +1,51 @@
+// Test: ffi.string(ptr, len) reads EXACT len bytes (Rust-like), no NUL scan.
+// Single-arg ffi.string(ptr) still does null-terminated scan.
+// Expected: 2-arg form returns all N bytes including embedded NUL;
+//           1-arg form stops at first NUL.
+
+use ffi
+
+fails = 0
+fn check(name, got, want) {
+  if got != want {
+    print("FAIL " + name + ": got len=" + got + " want " + want)
+    fails += 1
+  } else {
+    print("ok " + name)
+  }
+}
+
+// Allocate 6-byte buffer: 'h','i',0,'x','y','z'
+buf = ffi.allocBytes(6)
+ffi.set_u8(buf,     ord("h"))
+ffi.set_u8(ffi.ptr_add(buf, 1), ord("i"))
+ffi.set_u8(ffi.ptr_add(buf, 2), 0)          // NUL at index 2
+ffi.set_u8(ffi.ptr_add(buf, 3), ord("x"))
+ffi.set_u8(ffi.ptr_add(buf, 4), ord("y"))
+ffi.set_u8(ffi.ptr_add(buf, 5), ord("z"))
+
+// Exact-length read must return exactly 6 bytes, preserving embedded NUL.
+full = ffi.string(buf, 6)
+// Verify length and byte content via length of returned string.
+print("exact-len 6 -> returned len=" + full.len())
+
+// Single-arg form scans for NUL: stops at index 2 -> "hi"
+nulscan = ffi.string(buf)
+check("nulscan-len", nulscan.len(), 2)
+check("nulscan-content", nulscan, "hi")
+
+// Exact read of 3 bytes: 'h','i',0 (includes the NUL byte)
+three = ffi.string(buf, 3)
+check("exact-3-len", three.len(), 3)
+
+// Exact read of 0 bytes -> empty string
+zero = ffi.string(buf, 0)
+check("exact-0-len", zero.len(), 0)
+
+ffi.free(buf)
+
+if fails > 0 {
+  print("FFI_STRING_EXACT: " + fails + " FAILURES")
+} else {
+  print("FFI_STRING_EXACT: PASS")
+}

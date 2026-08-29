@@ -335,16 +335,20 @@ static Value ffiString(const compiler::VMApi& api, const std::vector<Value>& raw
     void* ptr = resolvePtr(args[0]);
     if (!ptr) return Value::makeNull();
     const char* str = static_cast<const char*>(ptr);
-constexpr size_t FFI_MAX_STRING_READ = 64 * 1024 * 1024;
-	size_t max_len = FFI_MAX_STRING_READ;
-	if (args.size() >= 2 && args[1].isInt()) {
-		int64_t user_max = args[1].asInt64();
-		if (user_max > 0) max_len = std::min(static_cast<size_t>(user_max), FFI_MAX_STRING_READ);
-	}
-    size_t len = strnlen(str, max_len);
-    if (len == max_len) {
+
+    // Rust-like exact-length read: ffi.string(ptr, len) reads exactly len bytes,
+    // no NUL scanning, no truncation. Matches str::from_utf8(raw_parts(ptr, len)).
+    if (args.size() >= 2 && args[1].isInt() && args[1].asInt64() >= 0) {
+        size_t len = static_cast<size_t>(args[1].asInt64());
+        return api.makeString(std::string(str, len));
+    }
+
+    // Single-arg fallback: null-terminated C-string scan.
+    constexpr size_t FFI_MAX_STRING_READ = 64 * 1024 * 1024;
+    size_t len = strnlen(str, FFI_MAX_STRING_READ);
+    if (len == FFI_MAX_STRING_READ) {
         ::havel::warn("ffi.string: string at {} not null-terminated within {} bytes, truncating",
-                      ptr, max_len);
+                      ptr, FFI_MAX_STRING_READ);
     }
     return api.makeString(std::string(str, len));
 }

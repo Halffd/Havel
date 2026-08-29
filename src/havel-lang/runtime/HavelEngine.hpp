@@ -45,10 +45,12 @@ struct EngineConfig {
     bool debugAst = false;
     bool stopOnError = false;
     bool leanMinimalStartup = false;
-  bool pureStdlib = false;
-  compiler::VMConfig vmConfig;
-  host::ServiceFilter serviceIncludes;
-  host::ServiceFilter serviceExcludes;
+    bool headlessMode = false;
+    bool pureStdlib = false;
+    std::string self_hosted_modules_path;
+    compiler::VMConfig vmConfig;
+    host::ServiceFilter serviceIncludes;
+    host::ServiceFilter serviceExcludes;
 };
 
 class HavelEngine {
@@ -65,8 +67,10 @@ public:
         io_holder_ = std::make_shared<IO>();
         hotkeyManager_ = std::make_shared<HotkeyManager>(io_holder_);
         windowManager_ = std::make_shared<WindowManager>();
-        brightnessManager_ = std::make_shared<BrightnessManager>();
-        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, brightnessManager_.get());
+        if (!config_.headlessMode) {
+            brightnessManager_ = std::make_shared<BrightnessManager>();
+        }
+        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, config_.headlessMode ? nullptr : brightnessManager_.get());
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
@@ -75,7 +79,7 @@ public:
         auto t0 = havel::startup_now();
 
         host::ServiceRegistry::instance().clear();
-        initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes);
+        initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes, config_.headlessMode);
         auto t = havel::startup_now();
         havel::startup_timing_report("service-registry", t0);
 
@@ -84,6 +88,10 @@ public:
         t = havel::startup_now();
 
 vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
+        if (!config_.self_hosted_modules_path.empty()) {
+            vm_->setSelfHostedModulesPath(config_.self_hosted_modules_path);
+        }
+        vm_->setHeadlessMode(config_.headlessMode);
         hostContext_->vm = vm_.get();
         hostAPI->SetVM(vm_.get());
         vm_->registerDefaultHostGlobals();  // Ensure host functions are in globals
@@ -462,7 +470,8 @@ vm_->addIntervalResult(timer_id, result);
 
     compiler::Value execute(const std::string& source,
                             const std::string& entryPoint = "__main__",
-                            const std::string& compileUnitName = "unit") {
+                            const std::string& compileUnitName = "unit",
+                            bool strictSemantics = true) {
         if (!initialized_) {
             throw std::runtime_error("HavelEngine not initialized");
         }
@@ -470,6 +479,7 @@ vm_->addIntervalResult(timer_id, result);
         compiler::PipelineOptions options = modules_->options();
         options.compile_unit_name = compileUnitName;
         options.vm_override = vm_.get();
+        options.strictSemantics = strictSemantics;
         for (const auto &[name, fn] : vm_->getHostFunctions()) {
             options.host_functions[name] = fn;
         }

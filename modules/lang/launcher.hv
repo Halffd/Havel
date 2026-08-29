@@ -314,7 +314,7 @@ fn loadScriptForRepl(cfg) {
 // ============================================================
 
 // Track known globals for :globals command
-knownGlobals = []
+knownGlobals = ["process", "sys", "shell"]
 useReadline = false
 
 // Simple text-based global extraction from REPL line

@@ -1122,6 +1122,8 @@ public:
       appArgList.push_back("--debug-ast");
     if (cfg.stopOnError)
       appArgList.push_back("--error");
+    if (cfg.headlessMode)
+      appArgList.push_back("--headless");
 
     // Script files
     for (const auto &f : cfg.scriptFiles)

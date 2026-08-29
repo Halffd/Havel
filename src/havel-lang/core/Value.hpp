@@ -255,6 +255,9 @@ public:
   }
 
   static Value makeRangeId(uint32_t id) {
+    // DEBUG
+    fprintf(stderr, "DEBUG makeRangeId: id=%u, result=0x%lx\n", id, makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::RANGE_ID), id));
+    fflush(stderr);
     return Value(makeExtendedRaw(static_cast<uint64_t>(ExtendedTag::RANGE_ID), id));
   }
 
@@ -374,7 +377,12 @@ public:
            extractExtendedTag(bits_) == ExtendedTag::SET_ID;
   }
 
-  bool isRangeId() const {
+bool isRangeId() const {
+    uint64_t tag = static_cast<uint64_t>(extractTag(bits_));
+    uint64_t extTag = static_cast<uint64_t>(extractExtendedTag(bits_));
+    fprintf(stderr, "DEBUG isRangeId: tag=%llu extTag=%llu isBoxed=%d\n", 
+            (unsigned long long)tag, (unsigned long long)extTag, isBoxed(bits_));
+    fflush(stderr);
     return isBoxed(bits_) && extractTag(bits_) == ValueTag::EXTENDED &&
            extractExtendedTag(bits_) == ExtendedTag::RANGE_ID;
   }

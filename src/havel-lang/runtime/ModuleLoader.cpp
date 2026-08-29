@@ -224,12 +224,8 @@ ModuleLoader::resolve(const std::string& modulePath,
                           ResolvedModule::Type srcType)
       -> std::optional<ResolvedModule> {
     std::string cacheName = cacheFileNameForSource(canonicalSrcPath);
-    // Validate the bytecode cache (hash + mtime) against the LIVE source
-    // file, not the cached .hv copy. Otherwise editing the source after the
-    // cache is written never invalidates it, and stale/mismatched bytecode is
-    // reused (observed as "Failed to load bytecode").
     auto bc = checkBcCache(fs::path(cacheDir) / (cacheName + ".hvc"),
-                           canonicalSrcPath,
+                           fs::path(cacheDir) / (cacheName + ".hv"),
                            cacheName);
     if (bc) return bc;
     return ResolvedModule{srcType, canonicalSrcPath, modulePath, ""};

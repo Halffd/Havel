@@ -444,62 +444,6 @@ ByteCompiler::compileImpl(const ast::Program &program) {
     compileFunction(*decl);
   }
 
- // First pass: collect own (non-inherited) field/method names for every class.
- // This lets derived classes resolve bare members inherited from their ancestors.
- class_members_by_name_.clear();
- {
-   std::vector<const ast::ClassDeclaration *> class_decls;
-   for (const auto &statement : program.body) {
-     if (!statement || statement->kind != ast::NodeType::ClassDeclaration) {
-       continue;
-     }
-     const auto &class_decl =
-         static_cast<const ast::ClassDeclaration &>(*statement);
-     class_decls.push_back(&class_decl);
-     auto &names = class_members_by_name_[class_decl.name];
-     names.parent_name = class_decl.parentName;
-     for (const auto &field : class_decl.definition.fields) {
-       if (!field.isClassField) {
-         names.fields.insert(field.name);
-       }
-     }
-     for (const auto &m : class_decl.definition.methods) {
-       if (m && !m->isClassMethod) {
-         names.methods.insert(m->name);
-       }
-     }
-   }
-   // Second pass: propagate ancestor member names through the inheritance chain.
-   for (auto &entry : class_members_by_name_) {
-     const ast::ClassDeclaration *decl = nullptr;
-     for (const auto *cd : class_decls) {
-       if (cd->name == entry.first) {
-         decl = cd;
-         break;
-       }
-     }
-     if (!decl) {
-       continue;
-     }
-     std::string parent = decl->parentName;
-     std::unordered_set<std::string> seen;
-     size_t guard = 0;
-     while (!parent.empty() && seen.insert(parent).second && guard++ < 64) {
-       auto parent_it = class_members_by_name_.find(parent);
-       if (parent_it == class_members_by_name_.end()) {
-         break;
-       }
-       for (const auto &f : parent_it->second.fields) {
-         entry.second.fields.insert(f);
-       }
-       for (const auto &m : parent_it->second.methods) {
-         entry.second.methods.insert(m);
-       }
-       parent = parent_it->second.parent_name;
-     }
-   }
- }
-
  for (const auto &statement : program.body) {
  if (!statement) {
  continue;
@@ -509,20 +453,12 @@ ByteCompiler::compileImpl(const ast::Program &program) {
  }
  const auto &class_decl =
  static_cast<const ast::ClassDeclaration &>(*statement);
-    // Collect all method names for this class (own + inherited)
-    std::unordered_set<std::string> class_method_names =
-        class_members_by_name_[class_decl.name].methods;
-    for (const auto &m : class_decl.definition.methods) {
-      if (m && !m->isClassMethod) {
-        class_method_names.insert(m->name);
-      }
-    }
     for (const auto &method : class_decl.definition.methods) {
       if (!method) {
         continue;
       }
       compileClassMethod(class_decl.name, *method, class_decl.definition.fields,
-                         class_decl.parentName, class_method_names);
+                         class_decl.parentName);
     }
   }
 
@@ -1198,8 +1134,7 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
 void ByteCompiler::compileClassMethod(
     const std::string &class_name, const ast::ClassMethodDef &method,
     const std::vector<ast::ClassFieldDef> &fields,
-    const std::string &parent_class_name,
-    const std::unordered_set<std::string> &method_names) {
+    const std::string &parent_class_name) {
   auto index_it = class_method_indices_by_node_.find(&method);
   if (index_it == class_method_indices_by_node_.end()) {
     COMPILER_THROW("Missing function index for class method: " + method.name);
@@ -1323,32 +1258,8 @@ void ByteCompiler::compileClassMethod(
 
   const std::string prev_class_name = current_class_name_;
   const std::string prev_parent_name = current_parent_class_name_;
-  const auto prev_class_fields = current_class_field_names_;
-  const auto prev_class_methods = current_class_method_names_;
   current_class_name_ = class_name;
   current_parent_class_name_ = parent_class_name;
-  // Set up current class field and method names for bare member access
-  current_class_field_names_.clear();
-  current_class_method_names_ = method_names;
-  for (const auto &field : fields) {
-    if (!field.isClassField) {
-      current_class_field_names_.insert(field.name);
-    }
-  }
-  // Include inherited field names so bare member access works in derived classes.
-  {
-    auto members_it = class_members_by_name_.find(class_name);
-    if (members_it != class_members_by_name_.end()) {
-      for (const auto &f : members_it->second.fields) {
-        current_class_field_names_.insert(f);
-      }
-      for (const auto &m : members_it->second.methods) {
-        current_class_method_names_.insert(m);
-      }
-    }
-  }
-  // We don't have easy access to all method names here, but we can collect from the class definition if needed
-  // For now, we'll rely on the field names for bare field access
 
   if (method.body) {
     const auto &stmts = method.body->body;
@@ -1406,8 +1317,6 @@ void ByteCompiler::compileClassMethod(
 
   current_class_name_ = prev_class_name;
   current_parent_class_name_ = prev_parent_name;
-  current_class_field_names_ = prev_class_fields;
-  current_class_method_names_ = prev_class_methods;
   
   leaveFunction();
 }
@@ -1486,15 +1395,7 @@ void ByteCompiler::compileStructMethod(
 
 
   const std::string prev_class_name = current_class_name_;
-  const auto prev_class_fields = current_class_field_names_;
-  const auto prev_class_methods = current_class_method_names_;
   current_class_name_ = struct_name;
-  // Set up current struct field names for bare member access
-  current_class_field_names_.clear();
-  current_class_method_names_.clear();
-  for (const auto &field : fields) {
-    current_class_field_names_.insert(field.name);
-  }
 
   if (method.body) {
     const auto &stmts = method.body->body;
@@ -1551,11 +1452,9 @@ void ByteCompiler::compileStructMethod(
     current_function->is_generator = functionContainsYield(*method.body);
   }
 
-  current_class_name_ = prev_class_name;
-  current_class_field_names_ = prev_class_fields;
-  current_class_method_names_ = prev_class_methods;
+	current_class_name_ = prev_class_name;
 
-  leaveFunction();
+	leaveFunction();
 }
 
 void ByteCompiler::compileDefaultMethodBody(
@@ -3785,30 +3684,14 @@ break;
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
       break;
     }
+
     const auto *binding = bindingFor(id);
     if (!binding) {
       COMPILER_THROW("Missing lexical binding for identifier: " +
-                                 id.symbol);
-    }
+                               id.symbol);
+}
 
-    // Check for bare class member access (implicit @self.field)
-    // If resolver gave Global but we're in a class context and the name
-    // matches a class field/method, treat it as class member access.
-    // Local bindings (parameters, locals shadowing a field) are trusted as
-    // locals — they must not be converted to field access (e.g. `@x = x`
-    // where `x` is both a param and a field).
-    if (!current_class_name_.empty() &&
-        binding->kind == ResolvedBindingKind::Global &&
-        (current_class_field_names_.count(binding->name) > 0 ||
-         current_class_method_names_.count(binding->name) > 0)) {
-      // Treat as implicit class member access
-      emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-      { uint32_t _sid = addStringConstant(binding->name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      emit(OpCode::OBJECT_GET);
-      break;
-    }
-
-    switch (binding->kind) {
+switch (binding->kind) {
   case ResolvedBindingKind::Local:
     emit(OpCode::LOAD_VAR, binding->slot);
     break;
@@ -3832,18 +3715,6 @@ break;
   case ResolvedBindingKind::Global:
     // Global variable - runtime will decide
     {
-      uint32_t strId = addStringConstant(binding->name);
-      emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-    }
-    break;
-  case ResolvedBindingKind::ClassMember:
-    // Bare class member (implicit @self.field) - load self and get field
-    if (!current_class_name_.empty()) {
-      emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-      { uint32_t _sid = addStringConstant(binding->name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-      emit(OpCode::OBJECT_GET);
-    } else {
-      // Should not happen if resolver is correct, but fall back to global
       uint32_t strId = addStringConstant(binding->name);
       emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
     }
@@ -4350,7 +4221,7 @@ case ast::NodeType::CastExpression: {
     auto emitStoreIdentifierWithResult = [&](const ResolvedBinding &binding) {
       if (binding.is_const) {
         COMPILER_THROW("Cannot assign to const binding: " +
-                                  binding.name);
+                                 binding.name);
       }
       emit(OpCode::DUP);
       if (binding.kind == ResolvedBindingKind::Local) {
@@ -4362,27 +4233,6 @@ case ast::NodeType::CastExpression: {
           uint32_t strId = addStringConstant(binding.name);
           emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
         }
-      } else if (binding.kind == ResolvedBindingKind::ClassMember) {
-        // @field assignment - store to self.field
-        // Value is already on the stack from the common RHS compilation above
-        // Get field name from binding
-        std::string field_name = binding.name;
-        // Store to self.field: OBJECT_SET expects [obj, value, key]
-        // Use temp slots to arrange the stack correctly
-        uint32_t temp_val = next_local_index;
-        reserveLocalSlot(temp_val);
-        emit(OpCode::STORE_VAR, temp_val); // pop value (already on stack)
-        // Stack is now empty
-        { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-        uint32_t temp_key = next_local_index;
-        reserveLocalSlot(temp_key);
-        emit(OpCode::STORE_VAR, temp_key); // pop key
-        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0)); // [self]
-        emit(OpCode::LOAD_VAR, temp_val); // [self, value]
-        emit(OpCode::LOAD_VAR, temp_key); // [self, value, key]
-        emit(OpCode::OBJECT_SET);
-        emit(OpCode::POP); // discard pushed-back object
-        emit(OpCode::LOAD_VAR, temp_val); // result = RHS
       } else {
         COMPILER_THROW("Assignment target is not mutable: " + binding.name + " (kind=" + std::to_string(static_cast<int>(binding.kind)) + ")");
       }
@@ -4391,18 +4241,7 @@ case ast::NodeType::CastExpression: {
     auto emitLoadIdentifier = [&](const ResolvedBinding &binding) {
       if (binding.is_const && assignment.operator_ != "=") {
         COMPILER_THROW("Cannot mutate const binding: " +
-                                  binding.name);
-      }
-      // Check for bare class member access (implicit @self.field)
-      // Only Global bindings are candidates: Local bindings (params/locals
-      // shadowing a field) must stay locals, e.g. `x += 1` where `x` is a param.
-      if (!current_class_name_.empty() &&
-          binding.kind == ResolvedBindingKind::Global &&
-          current_class_field_names_.count(binding.name) > 0) {
-        emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-        { uint32_t _sid = addStringConstant(binding.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-        emit(OpCode::OBJECT_GET);
-        return;
+                                 binding.name);
       }
       if (binding.kind == ResolvedBindingKind::Local) {
         emit(OpCode::LOAD_VAR, binding.slot);
@@ -4410,16 +4249,6 @@ case ast::NodeType::CastExpression: {
         emit(OpCode::LOAD_UPVALUE, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Global) {
         {
-          uint32_t strId = addStringConstant(binding.name);
-          emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
-        }
-      } else if (binding.kind == ResolvedBindingKind::ClassMember) {
-        // Load self.field for compound assignment
-        if (!current_class_name_.empty()) {
-          emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-          { uint32_t _sid = addStringConstant(binding.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-          emit(OpCode::OBJECT_GET);
-        } else {
           uint32_t strId = addStringConstant(binding.name);
           emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
         }
@@ -4487,29 +4316,6 @@ case ast::NodeType::CastExpression: {
           COMPILER_THROW(
               "Missing lexical binding for assignment target: " +
               target_id->symbol);
-        }
-        // Check for bare class member assignment (implicit @self.field = value)
-        // Only Global bindings: Local bindings (params shadowing a field) stay
-        // assigned to the local.
-        if (!current_class_name_.empty() &&
-            binding->kind == ResolvedBindingKind::Global &&
-            current_class_field_names_.count(binding->name) > 0) {
-          // Treat as implicit class field assignment
-          std::string field_name = binding->name;
-          uint32_t temp_val = next_local_index;
-          reserveLocalSlot(temp_val);
-          emit(OpCode::STORE_VAR, temp_val);
-          { uint32_t _sid = addStringConstant(field_name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-          uint32_t temp_key = next_local_index;
-          reserveLocalSlot(temp_key);
-          emit(OpCode::STORE_VAR, temp_key);
-          emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-          emit(OpCode::LOAD_VAR, temp_val);
-          emit(OpCode::LOAD_VAR, temp_key);
-          emit(OpCode::OBJECT_SET);
-          emit(OpCode::POP);
-          emit(OpCode::LOAD_VAR, temp_val);
-          break;
         }
         emitStoreIdentifierWithResult(*binding);
         break;
@@ -5459,81 +5265,6 @@ if (expression.callee->kind == ast::NodeType::Identifier) {
         const auto &callee_id =
             static_cast<const ast::Identifier &>(*expression.callee);
         const auto *binding = bindingFor(callee_id);
-        // Check for bare class method call (implicit @self.method())
-        if (binding && binding->kind == ResolvedBindingKind::ClassMember) {
-          // Use CALL_METHOD so inherited methods resolve through the prototype
-          // chain and zero-arg methods are not auto-called by OBJECT_GET.
-          if (!current_class_name_.empty()) {
-            emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-          } else {
-            COMPILER_THROW("Class member call outside of class context");
-          }
-          uint32_t totalArgs = 0;
-          for (const auto &arg : expression.args) {
-            if (!arg) {
-              emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-              totalArgs++;
-              continue;
-            }
-            compileExpression(*arg);
-            totalArgs++;
-          }
-          if (hasKwargs) {
-            emit(OpCode::OBJECT_NEW);
-            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
-            { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-            emit(OpCode::OBJECT_SET);
-            for (const auto &kwarg : expression.kwargs) {
-              compileExpression(*kwarg.value);
-              { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-              emit(OpCode::OBJECT_SET);
-            }
-            totalArgs++;
-          }
-          uint32_t method_sid = addStringConstant(callee_id.symbol);
-          emit(OpCode::CALL_METHOD, std::vector<Value>{
-              Value::makeStringValId(method_sid),
-              Value(totalArgs)});
-          in_tail_position_ = saved_tail_position;
-          return;
-        }
-        // Check for bare class method call when resolver gave Local/Global
-        if (!current_class_name_.empty() &&
-            (binding && (binding->kind == ResolvedBindingKind::Local ||
-                         binding->kind == ResolvedBindingKind::Global)) &&
-            current_class_method_names_.count(callee_id.symbol) > 0) {
-          // Use CALL_METHOD so inherited methods resolve through the prototype
-          // chain and zero-arg methods are not auto-called by OBJECT_GET.
-          emit(OpCode::LOAD_VAR, static_cast<uint32_t>(0));
-          uint32_t totalArgs = 0;
-          for (const auto &arg : expression.args) {
-            if (!arg) {
-              emit(OpCode::LOAD_CONST, addConstant(Value::makeNull()));
-              totalArgs++;
-              continue;
-            }
-            compileExpression(*arg);
-            totalArgs++;
-          }
-          if (hasKwargs) {
-            emit(OpCode::OBJECT_NEW);
-            emit(OpCode::LOAD_CONST, addConstant(Value::makeBool(true)));
-            { uint32_t _sid = addStringConstant("__kwargs"); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-            emit(OpCode::OBJECT_SET);
-            for (const auto &kwarg : expression.kwargs) {
-              compileExpression(*kwarg.value);
-              { uint32_t _sid = addStringConstant(kwarg.name); emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(_sid))); };
-              emit(OpCode::OBJECT_SET);
-            }
-            totalArgs++;
-          }
-          uint32_t method_sid = addStringConstant(callee_id.symbol);
-          emit(OpCode::CALL_METHOD, std::vector<Value>{
-              Value::makeStringValId(method_sid),
-              Value(totalArgs)});
-          in_tail_position_ = saved_tail_position;
-          return;
-        }
         if (binding && binding->kind == ResolvedBindingKind::Global &&
             top_level_struct_names_.find(callee_id.symbol) !=
                 top_level_struct_names_.end()) {

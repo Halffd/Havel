@@ -21,10 +21,6 @@ struct FunctionSignature {
     std::vector<std::string> paramTypes;
     std::string returnType;
     size_t arity = 0;
-    // Number of parameters without a default value. Calls must provide at
-    // least this many arguments; the remainder up to paramTypes.size() are
-    // filled by defaults at runtime.
-    size_t minRequiredParams = 0;
 };
 
 struct TypeInfo {

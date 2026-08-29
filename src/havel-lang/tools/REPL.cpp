@@ -274,7 +274,7 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
 
   // Initialize service registry with all services (if IO is available)
   if (hostAPI->GetIO()) {
-    havel::initializeServiceRegistry(hostAPI, {}, {}, false);
+    havel::initializeServiceRegistry(hostAPI);
   }
 
   // Create VM

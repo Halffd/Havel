@@ -232,11 +232,6 @@ public:
     void applyCurrentTimeSettings();
     RGBColor applyShadowLift(const RGBColor& input, double lift);
     bool applyAllSettings(const string &monitor);
-    
-    public:
-    // Helper: get monitor name by index (for hotkeys script compatibility)
-    string getMonitorByIndex(size_t index) const;
-    
     // === STATE ===
     DayNightSettings dayNightSettings;
     

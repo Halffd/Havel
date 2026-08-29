@@ -421,23 +421,27 @@ Value GCHeap::iteratorNext(uint32_t id) {
                 second = first;
             }
         }
-    } else if (iter->iterable.isRangeId()) {
+} else if (iter->iterable.isRangeId()) {
         auto *r = range(iter->iterable.asRangeId());
         if (!r) {
             done = true;
             first = Value::makeNull();
             second = Value::makeNull();
         } else {
+            // DEBUG
+            fprintf(stderr, "DEBUG iter_next range: index=%zu, start=%ld, end=%ld, step=%ld, current=%ld\n",
+                    iter->index, r->start, r->end, r->step, r->start + (iter->index * r->step));
+            fflush(stderr);
             int64_t current = r->start + (iter->index * r->step);
             if ((r->step > 0 && current > r->end) || (r->step < 0 && current < r->end)) {
                 done = true;
                 first = Value::makeNull();
                 second = Value::makeNull();
-} else {
-            first = Value::makeInt(current);
-            second = Value::makeInt(current);
-            iter->index++;
-        }
+            } else {
+                first = Value::makeInt(current);
+                second = Value::makeInt(current);
+                iter->index++;
+            }
         }
     } else {
         done = true;

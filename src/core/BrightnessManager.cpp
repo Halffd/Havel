@@ -896,15 +896,6 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
   return success;
 }
 
-// Helper: get monitor name by index (for hotkeys script compatibility)
-string BrightnessManager::getMonitorByIndex(size_t index) const {
-  auto monitors = getConnectedMonitors();
-  if (index < monitors.size()) {
-    return monitors[index];
-  }
-  return "";
-}
-
 // === WAYLAND BACKEND IMPLEMENTATION ===
 #ifdef __WAYLAND__
 

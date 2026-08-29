@@ -54,8 +54,7 @@ void declareAllServices() {
 
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 							   const host::ServiceFilter& includes,
-							   const host::ServiceFilter& excludes,
-							   bool headlessMode = false) {
+							   const host::ServiceFilter& excludes) {
 	if (!hostAPI) {
 		debug("initializeServiceRegistry: hostAPI is null, skipping service registration");
 		return;
@@ -135,7 +134,7 @@ if (registry.shouldRegister("clipboard", includes, excludes)) {
 		}
 	}
 
-	if (!headlessMode && registry.shouldRegister("brightness", includes, excludes)) {
+	if (registry.shouldRegister("brightness", includes, excludes)) {
 		try {
 			auto brightnessService = std::make_shared<host::BrightnessService>();
 			if (brightnessService->initialize()) {

@@ -11,8 +11,7 @@ class IHostAPI;
 
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI,
 							   const host::ServiceFilter& includes = {},
-							   const host::ServiceFilter& excludes = {},
-							   bool headlessMode = false);
+							   const host::ServiceFilter& excludes = {});
 
 void declareAllServices();
 

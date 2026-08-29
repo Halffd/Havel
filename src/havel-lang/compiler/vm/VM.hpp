@@ -201,6 +201,9 @@ struct VMConfig {
 
     // Self-hosted modules
     std::string self_hosted_modules_path;
+
+    // Headless mode - skip hardware initialization
+    bool headlessMode = false;
 };
 
 class __attribute__((visibility("default"))) VM : public BytecodeInterpreter {
@@ -1113,8 +1116,11 @@ void setJITCompiler(std::unique_ptr<JITCompiler> jit) { jit_compiler_ = std::mov
         return opcode_counts_[static_cast<uint8_t>(opcode)];
     }
 
-void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
-void runGarbageCollection() { collectGarbage(); }
+    void setHeadlessMode(bool enabled) { headlessMode_ = enabled; }
+    bool isHeadlessMode() const { return headlessMode_; }
+
+    void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
+    void runGarbageCollection() { collectGarbage(); }
 GCHeap::Stats gcStats() const { return heap_.stats(); }
 GCHeap& getHeap() { return heap_; }
 const GCHeap& getHeap() const { return heap_; }
@@ -1500,7 +1506,8 @@ private:
     std::unordered_set<uint64_t> hot_trace_sites_;
     std::mutex hot_trace_mutex_;
     HotTraceCallback hot_trace_cb_;
-bool tier2_flush_on_shutdown_ = false;
+    bool tier2_flush_on_shutdown_ = false;
+    bool headlessMode_ = false;
     uint32_t jit_active_closure_id_ = 0;
     std::function<void(VM&)> post_reset_setup_;
     int gc_suspend_counter_ = 0;

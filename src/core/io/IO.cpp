@@ -507,7 +507,7 @@ void IO::ensureBackend() {
 
 #ifdef __linux__
     // EventListener needs DisplayManager to be initialized
-    {
+    if (!headlessMode_) {
       // Use new unified EventListener
       if (debugging::debug_io)
         debug("Using new unified EventListener");

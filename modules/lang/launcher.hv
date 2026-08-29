@@ -124,6 +124,9 @@ fn parseArgs(args) {
         else if arg == "--error" || arg == "-e" {
             cfg.stopOnError = true
         }
+        else if arg == "--headless" {
+            cfg.headless = true
+        }
         else if arg == "--" {
             // Everything after -- is script arguments
             j = i + 1

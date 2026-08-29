@@ -838,9 +838,16 @@ uint64_t havel_vm_range_new(void* vm_ptr, uint64_t start_bits, uint64_t end_bits
   Value start, end;
   std::memcpy(&start, &start_bits, sizeof(uint64_t));
   std::memcpy(&end, &end_bits, sizeof(uint64_t));
+  // DEBUG
+  fprintf(stderr, "DEBUG havel_vm_range_new: start_bits=0x%lx end_bits=0x%lx\n", start_bits, end_bits);
+  fprintf(stderr, "DEBUG havel_vm_range_new: start.isInt()=%d end.isInt()=%d\n", start.isInt(), end.isInt());
+  fflush(stderr);
   if (!start.isInt() || !end.isInt()) return Value::makeNull().rawBits();
   auto ref = vm->getHeap().allocateRange(start.asInt(), end.asInt(), 1);
-  return Value::makeRangeId(ref.id).rawBits();
+  uint64_t result = Value::makeRangeId(ref.id).rawBits();
+  fprintf(stderr, "DEBUG havel_vm_range_new: returning range_id=%u, raw_bits=0x%lx\n", ref.id, result);
+  fflush(stderr);
+  return result;
 }
 
 uint64_t havel_vm_iter_new(void* vm_ptr, uint64_t coll_bits) {
@@ -858,6 +865,20 @@ uint64_t havel_vm_iter_next(void* vm_ptr, uint64_t iter_bits) {
   Value iter;
   std::memcpy(&iter, &iter_bits, sizeof(uint64_t));
   if (!iter.isIteratorId()) return Value::makeNull().rawBits();
+  
+  // DEBUG
+  uint32_t iter_id = iter.asIteratorId();
+  auto* iter_ref = vm->getHeap().iterator(iter_id);
+  if (iter_ref && iter_ref->iterable.isRangeId()) {
+    auto* r = vm->getHeap().range(iter_ref->iterable.asRangeId());
+    if (r) {
+      fprintf(stderr, "DEBUG iter_next: index=%u, start=%ld, end=%ld, step=%ld, current=%ld\n",
+              iter_ref->index, r->start, r->end, r->step, 
+              r->start + (iter_ref->index * r->step));
+      fflush(stderr);
+    }
+  }
+  
   return vm->iteratorNext(IteratorRef{iter.asIteratorId()}).rawBits();
 }
 
@@ -1514,6 +1535,10 @@ uint64_t havel_vm_range_step_new(void* vm_ptr, uint64_t start_bits, uint64_t end
     int64_t start_val = vm->toIntPublic(start);
     int64_t end_val = vm->toIntPublic(end);
     int64_t step_val = vm->toIntPublic(step);
+    // DEBUG
+    fprintf(stderr, "DEBUG havel_vm_range_step_new: start=%ld end=%ld step=%ld\n", 
+            start_val, end_val, step_val);
+    fflush(stderr);
     auto ref = vm->getHeap().allocateRange(start_val, end_val, step_val);
     return Value::makeRangeId(ref.id).rawBits();
 }
@@ -1766,6 +1791,11 @@ uint64_t havel_vm_string_promote(void* vm_ptr, uint64_t str_bits) {
   auto* vm = static_cast<VM*>(vm_ptr);
   Value v;
   std::memcpy(&v, &str_bits, sizeof(uint64_t));
+  // DEBUG
+  fprintf(stderr, "DEBUG havel_vm_string_promote: isString=%d isRange=%d isInt=%d\n",
+          v.isStringValId(), v.isRangeId(), v.isInt());
+  fflush(stderr);
+  if (!v.isStringValId()) return str_bits;
   std::string s = vm->toString(v);
   auto ref = vm->createRuntimeString(std::move(s));
   return Value::makeStringId(ref.id).rawBits();
@@ -3877,15 +3907,28 @@ case OpCode::INCLOCAL:
         vstack.push_back(B.CreateCall(fnReplace, {vmArg, str, oldVal, newVal}));
         break;
     }
-    case OpCode::STRING_PROMOTE: {
+case OpCode::STRING_PROMOTE: {
         llvm::Value* str = vstack.back(); vstack.pop_back();
+        
+        // Check if value is already a string (STRING_ID tag)
+        // If not a string, pass through unchanged (for ranges, etc.)
+        llvm::Value* isString = B.CreateICmpEQ(
+            B.CreateAnd(str, B.getInt64(0x7ull << 48)),  // Tag mask for EXTENDED types
+            B.getInt64(0x7ull << 48 | (static_cast<uint64_t>(core::ValueTag::STRING_ID) << 48))
+        );
+        
+        // If string, promote; otherwise pass through unchanged
         llvm::Function* fnPromote = module.getFunction("havel_vm_string_promote");
         if (!fnPromote) {
             fnPromote = llvm::Function::Create(
                 llvm::FunctionType::get(i64, {i8p, i64}, false),
                 llvm::Function::ExternalLinkage, "havel_vm_string_promote", &module);
         }
-        vstack.push_back(B.CreateCall(fnPromote, {vmArg, str}));
+        llvm::Value* promoted = B.CreateCall(fnPromote, {vmArg, str});
+        
+        // Use select to choose between promoted value and original value
+        llvm::Value* result = B.CreateSelect(isString, B.CreateCall(fnPromote, {vmArg, str}), str);
+        vstack.push_back(result);
         break;
     }
 

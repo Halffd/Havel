@@ -193,9 +193,6 @@ class IO {
 
     ModifierState currentModifierState{};
 
-    // Headless mode - skip hardware initialization
-    bool headlessMode_ = false;
-
 public:
     bool isSuspended = false;
     static bool globalEvdev;
@@ -217,8 +214,6 @@ public:
   InputBackendType GetInputBackendType() const { return inputBackendType; }
   void SetInputBackend(const std::string &backendName);
   void SetEventListenerThreaded(bool threaded);
-  void SetHeadlessMode(bool headless) { headlessMode_ = headless; }
-  bool IsHeadlessMode() const { return headlessMode_; }
 
     // Backend device management
     std::vector<std::string> ListDevices();

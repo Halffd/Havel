@@ -45,7 +45,6 @@ struct EngineConfig {
     bool debugAst = false;
     bool stopOnError = false;
     bool leanMinimalStartup = false;
-    bool headlessMode = false;
   bool pureStdlib = false;
   compiler::VMConfig vmConfig;
   host::ServiceFilter serviceIncludes;
@@ -66,10 +65,8 @@ public:
         io_holder_ = std::make_shared<IO>();
         hotkeyManager_ = std::make_shared<HotkeyManager>(io_holder_);
         windowManager_ = std::make_shared<WindowManager>();
-        if (!config_.headlessMode) {
-            brightnessManager_ = std::make_shared<BrightnessManager>();
-        }
-        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, config_.headlessMode ? nullptr : brightnessManager_.get());
+        brightnessManager_ = std::make_shared<BrightnessManager>();
+        auto hostAPI = std::make_shared<HostAPI>(io_holder_.get(), hotkeyManager_.get(), Configs::Get(), windowManager_.get(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, brightnessManager_.get());
         initializeFull(hostAPI, config_.leanMinimalStartup);
     }
 
@@ -78,7 +75,7 @@ public:
         auto t0 = havel::startup_now();
 
         host::ServiceRegistry::instance().clear();
-        initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes, config_.headlessMode);
+        initializeServiceRegistry(hostAPI, config_.serviceIncludes, config_.serviceExcludes);
         auto t = havel::startup_now();
         havel::startup_timing_report("service-registry", t0);
 
@@ -87,7 +84,6 @@ public:
         t = havel::startup_now();
 
 vm_ = std::make_shared<compiler::VM>(*hostContext_, config_.vmConfig);
-        vm_->setHeadlessMode(config_.headlessMode);
         hostContext_->vm = vm_.get();
         hostAPI->SetVM(vm_.get());
         vm_->registerDefaultHostGlobals();  // Ensure host functions are in globals

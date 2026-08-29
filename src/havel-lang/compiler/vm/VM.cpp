@@ -4959,13 +4959,15 @@ return cachedVal;
     auto deserialized = serializer.loadChunk(resolved->canonicalPath, 65536);
     if (!deserialized) {
       // The cached .hvc can't be deserialized (e.g. bytecode format drift
-      // between versions). Fall back to recompiling from source if one
-      // exists, so a stale cache never hard-fails the import.
-      if (!resolved->sourcePath.empty() &&
-          std::filesystem::exists(resolved->sourcePath)) {
-        resolved = ModuleLoader::ResolvedModule{
-            ModuleLoader::ResolvedModule::UserSource, resolved->sourcePath,
-            resolved->moduleName, resolved->sourcePath};
+      // between versions). Drop the stale cache and recompile from source so
+      // a bad cache never hard-fails the import. The source-compile path
+      // writes a fresh cache, so the module self-heals on the next run.
+      std::error_code removeEc;
+      std::filesystem::remove(resolved->canonicalPath, removeEc);
+      auto reResolved = moduleLoader_.resolve(path, prev_script_dir);
+      if (reResolved &&
+          reResolved->type != ModuleLoader::ResolvedModule::BytecodeCache) {
+        resolved = std::move(*reResolved);
         goto load_from_source;
       }
       moduleLoadDone(canonicalKey);

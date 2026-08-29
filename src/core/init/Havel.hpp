@@ -47,7 +47,7 @@ namespace havel {
 class Havel {
 public:
   Havel(bool isStartup, std::string scriptFile, bool repl, bool gui,
-        const std::vector<std::string> &args, bool headless = false);
+        const std::vector<std::string> &args);
   ~Havel();
 
   // Non-copyable, non-movable
@@ -151,7 +151,6 @@ private:
   std::once_flag cleanupOnce;
   bool guiMode{false};
   bool replMode{false};
-  bool headlessMode{false};
   std::string scriptFile;
   std::vector<std::string> commandLineArgs;
 };

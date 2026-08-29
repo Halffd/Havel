@@ -547,13 +547,7 @@ Token Lexer::scanString(bool isFString, bool isRegexString, bool isRawString, ch
 
     raw += c;
 
-    if (c == '\\' && !isAtEnd()) {
-        // Process escapes both outside (braceDepth==0) and inside ${...}
-        // interpolation (braceDepth>0). Inside interpolation the escaped char
-        // (e.g. \" or \}) must become a literal char in the token value;
-        // otherwise the raw backslash survives into the interpolation body and
-        // breaks the nested re-lex in parseExpressionFromString (a ternary like
-        // ${x ? \"A\" : \"B\"} failed with "Unexpected token in expression").
+    if (braceDepth == 0 && c == '\\' && !isAtEnd()) {
         advance(); // consume backslash
         raw += peek();
         bool suppressInterp = false;

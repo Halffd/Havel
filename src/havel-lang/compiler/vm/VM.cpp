@@ -5366,7 +5366,21 @@ return cachedVal;
   // execute() would call heap_.reset() which destroys the caller's objects.
   // Instead, we set up the call frame directly (like executePersistent).
   current_chunk = chunk.get();
+
+  // Try to find the module entry point. Self-hosted modules use
+  // __init_<safeName> where safeName is derived from the canonical path
+  // (replacing /, ., - with _). C++ modules use __main__.
   const auto *entry = chunk->getFunction("__main__");
+  if (!entry) {
+    // Derive expected self-hosted init function name from canonicalKey
+    // (same logic as loader.hv: replace / . - with _)
+    std::string safeName = canonicalKey;
+    for (char &c : safeName) {
+      if (c == '/' || c == '.' || c == '-') c = '_';
+    }
+    std::string initName = "__init_" + safeName;
+    entry = chunk->getFunction(initName);
+  }
   if (!entry) {
     // Restore everything on error
     globals = std::move(globals_stack_.back());
@@ -5384,7 +5398,7 @@ return cachedVal;
     current_exception_ = saved_exception_val;
     current_script_dir_ = prev_script_dir;
     moduleLoadDone(canonicalKey);
-    COMPILER_THROW("Module " + path + " has no __main__ function");
+    COMPILER_THROW("Module " + path + " has no __main__ or __init_* entry point");
   }
 
   while (!stack.empty())

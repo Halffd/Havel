@@ -301,7 +301,7 @@ fn loadScriptForRepl(cfg) {
     // Track globals from script
     for line in combinedCode.split("\n") {
         for name in extractGlobalsFromLine(line) {
-            if !(name in knownGlobals) { 
+            if !(name in knownGlobals) {
                 knownGlobals.push(name)
                 if useReadline { readline.add_completion_word(name) }
             }
@@ -330,7 +330,7 @@ fn extractGlobalsFromLine(line) {
     names = []
     stripped = line.trim()
     if stripped == "" { return names }
-    
+
     // Function declaration: fn name(...)
     if stripped.startsWith("fn ") {
         rest = stripped.slice(3).trim()
@@ -340,7 +340,7 @@ fn extractGlobalsFromLine(line) {
             if name != "" { names.push(name) }
         }
     }
-    
+
     // Class declaration: class Name
     if stripped.startsWith("class ") {
         rest = stripped.slice(6).trim()
@@ -362,7 +362,7 @@ fn extractGlobalsFromLine(line) {
             if name != "" { names.push(name) }
         }
     }
-    
+
     // Simple assignment at start of line: name = ...
     // (not compound assignment, not inside expression)
     // Match: ^name =  (where name is identifier)
@@ -385,7 +385,7 @@ fn extractGlobalsFromLine(line) {
             }
         }
     }
-    
+
     names
 }
 
@@ -404,7 +404,7 @@ fn replEvaluate(cfg, line) {
     }
     // Track new globals from this line
     for name in extractGlobalsFromLine(line) {
-        if !(name in knownGlobals) { 
+        if !(name in knownGlobals) {
             knownGlobals.push(name)
             if useReadline { readline.add_completion_word(name) }
         }
